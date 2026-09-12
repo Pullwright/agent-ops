@@ -556,6 +556,7 @@ Keys:
 | `monitor_max_input_bytes` | `300000` | The largest digest the Script will hand the Pipeline Monitor. The Monitor never reads the fleet log or `data.js` itself; it reads this digest, and the Script bounds it by shedding samples and the specs' gotcha sections before it ever truncates. `0` disables the bound. |
 | `monitor_max_filings_per_run` | `3` | The most items one monitor run may file (tech-debt issues, `pw::decision` records and escalations together). Everything past the cap is deferred, named in the report with its finding key, and offered again next run. `0` files nothing and reports everything. |
 | `monitor_tactical_keys` | `[]` | The configuration keys the Monitor may decide on its own authority, recorded as a `pw::decision` a human vetoes by reopening. Empty (the default) means it proposes tactical levers in its report and moves none. |
+| `monitor_promote_after` | `2` | How many Monitor reports must restate the same finding key before the Script turns it into a `pager: add invariant <key>` tech-debt issue and marks the key `promoted`, so the model stops re-reporting it. `0` disables promotion. |
 | `timeout_coordinator` | *(unset)* | Minutes, and an override. Leave it out — the backstop tunes itself, and a key set here outranks the derivation for as long as it is there. A repo entry's own `stage_timeouts` outranks this key in turn, for that repo alone — see [`repos`](#extended-notes-repos). |
 | `timeout_implementer` | *(unset)* | Minutes, and an override. As above. |
 | `timeout_reviewer` | *(unset)* | Minutes, and an override. As above. |
@@ -2101,6 +2102,16 @@ instead of when somebody happens to look.
   (`Monitor: monitor/<date> M-<nn>`), deduplicated against what previous runs
   already filed — so a fault that persists is restated in the report and cites
   the issue already tracking it, rather than filing a second one.
+
+**A repeat finding promotes into a pager invariant, autonomously.** Once a
+finding key has been carried by `monitor_promote_after` (default 2) or more
+reports, the Script stops filing (or citing) the same finding and instead
+files one `pager: add invariant <key>` tech-debt issue, carrying the
+detection rule and every report's own evidence — so the fix becomes a piece
+of code the fleet implements once, rather than an issue restated for ever.
+The key stays flagged `promoted` in the digest until that invariant actually
+exists, at which point it drops out of the digest and the report altogether.
+`monitor_promote_after: 0` disables this outright.
 
 **What it files, by class.** A **mechanical** finding — a defect with a
 knowable fix — becomes a `pw::type:tech-debt` issue in the repository it

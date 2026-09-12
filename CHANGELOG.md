@@ -42,6 +42,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   losing the size guard and the confined SC1091 handling — when the full
   sweep OOM-killed in a memory-constrained container.
 
+- **The Pipeline Monitor promotes a repeat finding into a pager invariant,
+  autonomously** (issue #1285, part 6 of the #1126 findings). Once a finding
+  key has been carried by `monitor_promote_after` (default 2) or more of the
+  fleet's own `monitor-report-written` reports, `monitor-cycle.sh` — never the
+  model — files one `pager: add invariant <key>` `pw::type:tech-debt` issue
+  into `pager_repo` (falling back to `crash_loop_repo`), carrying the
+  detection rule and every report's own evidence, and logs
+  `monitor-promoted {key, issue}`. `lib/monitor-digest.sh` gains a
+  Promoted-findings section naming every promoted-but-not-yet-retired key, so
+  the model has a reason not to restate it; once the invariant it named
+  actually exists — a `pager-fired`/`pager-cleared` transition for the key, or
+  `lib/pager-invariants.sh`'s own registration — the key retires from the
+  digest and is filtered out of the stage's own findings before the report
+  ever sees it. `monitor_promote_after: 0` disables promotion outright.
+
 - **CI now enforces the tech-debt record-file flip a closing pull request
   owes** (issue #1363, extended by #1438).
   `scripts/check-closing-keyword.sh` takes a repo slug

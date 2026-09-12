@@ -216,11 +216,17 @@ creates_of() {
 # `repos` keeps one real-looking slug so a mechanical finding has somewhere
 # legitimate to be filed; `state_repo` empty keeps the slot claim off the
 # network; the pager/escalation repositories are this fixture's own.
+# `monitor_promote_after = 0` disables M13a/M13b here: every section below
+# this point restates a key at most once on purpose, to test M13's own
+# already-open dedup in isolation — the schema's default of 2 would otherwise
+# promote several of them on their second restatement instead, which is
+# exactly what section 11 below exists to test on its own, explicit terms.
 BASE='.state_repo = ""
       | .repos = [{slug: "o/target", sources: ["issues:medium", "tech-debt", "abandoned-drafts"]}]
       | .crash_loop_repo = "o/ops"
       | .pager_repo = "o/ops"
-      | .enabler_assignee = "someone"'
+      | .enabler_assignee = "someone"
+      | .monitor_promote_after = 0'
 
 # ============================================================================
 # 1. Four findings file three and defer the fourth, with its key (M11/M12)
@@ -567,6 +573,83 @@ report="$(report_of "$d")"
 assert_contains "a malformed key is refused, not rewritten" "no usable finding_key" "$report"
 assert_contains "and an unconfigured repository is refused by name" \
   "is not a repository this installation configures" "$report"
+
+# ============================================================================
+# 11. Promoting a repeat finding into a pager invariant (M13a/M13b, #1285)
+# ============================================================================
+d="$(make_node promotion "$BASE | .monitor_promote_after = 2")"
+
+# Run 1: an ordinary mechanical finding, filed as usual — the repeat count
+# starts here.
+cat > "$d/stub/result.json" <<'EOF'
+{"status":"complete",
+ "report_markdown":"### What is broken now\n\na recurring thing\n\n### What limited throughput\n\nnothing\n\n### What is new\n\nnothing\n\n### Pages\n\nnone",
+ "findings":[
+   {"key":"repeat-thing","class":"mechanical","title":"A thing that keeps recurring","body":"report one's own evidence","repo":"o/target"}],
+ "page_triage":[]}
+EOF
+out="$(run_monitor "$d" --once)"
+assert_eq "run one files the finding as an ordinary mechanical issue" "1" "$(creates_of "$d")"
+assert_contains "and the report records it as filed" "\`repeat-thing\` | filed" "$(report_of "$d")"
+
+# Run 2: the same key, restated. The threshold is now met — the Script
+# promotes it instead of filing (or dedup-citing) the same finding again.
+cat > "$d/stub/result.json" <<'EOF'
+{"status":"complete",
+ "report_markdown":"### What is broken now\n\nstill the recurring thing\n\n### What limited throughput\n\nnothing\n\n### What is new\n\nnothing\n\n### Pages\n\nnone",
+ "findings":[
+   {"key":"repeat-thing","class":"mechanical","title":"A thing that keeps recurring","body":"report two's own evidence","repo":"o/target"}],
+ "page_triage":[]}
+EOF
+out="$(run_monitor "$d" --once)"
+assert_eq "run two files exactly one more issue — the promotion, not a second mechanical filing" \
+  "2" "$(creates_of "$d")"
+promote_call="$(grep '^issue create' "$d/stub/calls.log" | sed -n '2p')"
+assert_contains "the promotion is titled for the key" "pager: add invariant repeat-thing" "$promote_call"
+assert_contains "and filed into the pager repository, not the finding's own" "-R o/ops" "$promote_call"
+promoted_body="$(cat "$d/stub/bodies/901.md")"
+assert_contains "the promotion issue carries the first report's own evidence" \
+  "report one's own evidence" "$promoted_body"
+assert_contains "and the second report's" "report two's own evidence" "$promoted_body"
+assert_contains "it carries its own provenance line" "Monitor: monitor/$TODAY M-02" "$promoted_body"
+assert_contains "and the machine-readable key" "monitor-finding-key: repeat-thing" "$promoted_body"
+report="$(report_of "$d")"
+assert_contains "the report records the promotion" "\`repeat-thing\` | promoted" "$report"
+assert_eq "and the run's own event names the issue" "https://github.com/o/ops/issues/901" \
+  "$(events_of "$d" | jq -rs '[.[] | select(.event == "monitor-promoted")] | last | .issue')"
+assert_eq "under the promoted key" "repeat-thing" \
+  "$(events_of "$d" | jq -rs '[.[] | select(.event == "monitor-promoted")] | last | .key')"
+
+# Run 3: restated a third time. Already promoted — nothing new is filed, and
+# the report cites the existing promotion issue. The digest handed to the
+# stage marks the key promoted too, which is what is meant to stop the model
+# restating it in the first place.
+out="$(run_monitor "$d" --once)"
+assert_eq "a third restatement files nothing more" "2" "$(creates_of "$d")"
+assert_contains "the report cites the already-open promotion" \
+  "\`repeat-thing\` | already-promoted" "$(report_of "$d")"
+assert_contains "the digest carries a promoted-findings section" \
+  "Promoted findings" "$(cat "$d/stub/prompt.txt")"
+assert_contains "naming the key and its tracking issue, so the stage knows not to restate it" \
+  "\`repeat-thing\` — tracked at https://github.com/o/ops/issues/901" "$(cat "$d/stub/prompt.txt")"
+
+# --- Retirement (M13b): once the invariant this promotion asked for exists —
+# here, a pager-fired transition for the same key — the key needs no further
+# mention anywhere, even when the stage restates it anyway (the stubbed
+# claude's result.json is unchanged from run two, and still returns it).
+printf '{"ts":"%s","cycle":"pub","node":"%s","event":"pager-fired","key":"repeat-thing","evidence":"the invariant now fires on this","issue_number":1,"issue_url":"u","remedy_class":"owner-only","nodes":[]}\n' \
+  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(basename "$d")" >> "$(state_of "$d")/log.jsonl"
+before_report="$(report_of "$d")"
+out="$(run_monitor "$d" --once)"
+assert_eq "retirement files nothing either" "2" "$(creates_of "$d")"
+report_after="$(report_of "$d")"
+new_section="${report_after#"$before_report"}"
+assert_lacks "a retired key is dropped before the ledger sees it — no row at all this run" \
+  "repeat-thing" "$new_section"
+assert_eq "so this run stated nothing, exactly as if the model had not returned it" "0" \
+  "$(events_of "$d" | jq -rs '[.[] | select(.event == "monitor-report-written")] | last | .findings_stated')"
+assert_lacks "and the digest's promoted-findings section no longer names it" \
+  "\`repeat-thing\` — tracked at" "$(cat "$d/stub/prompt.txt")"
 
 printf '\n'
 if (( failures )); then
