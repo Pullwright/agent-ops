@@ -1268,6 +1268,16 @@
         "spec": "The tactical allow-list (M14). A finding whose `config_key` is in this list is filed as a `pw::decision` through the same decision-log convention `escalation_autonomy: decide-tactical` already uses, veto window included (agent-ops#937); any other key is proposed in the report only. Empty by default, so the Monitor's tactical path is config-gated closed on a fresh installation."
       }
     },
+    "monitor_promote_after": {
+      "description": "How many Monitor reports must restate the same finding key before the Script — never the model — turns it into a `pager: add invariant <key>` tech-debt issue and marks the key promoted, so the model stops re-reporting it and the pipeline gets a deterministic check instead of a recurring one. 0 disables promotion: every repeat finding is reported for ever.",
+      "type": "integer",
+      "minimum": 0,
+      "default": 2,
+      "x-docs": {
+        "readme": "How many Monitor reports must restate the same finding key before the Script turns it into a `pager: add invariant <key>` tech-debt issue and marks the key `promoted`, so the model stops re-reporting it. `0` disables promotion.",
+        "spec": "The repeat count promotion (M13a) is measured against. A finding key restated across this many reports is filed once as a `pager: add invariant <key>` issue and logged as `monitor-promoted`; the key retires from the digest altogether once the invariant it names actually exists (M13b). `0` disables promotion outright."
+      }
+    },
     "timeout_coordinator": {
       "$ref": "#/$defs/timeoutMinutes",
       "description": "Override for the Co-Ordinator's wall-clock backstop, in minutes. Omit it: the backstop is derived per (actor, repository, model) and starts at a shipped prior.",

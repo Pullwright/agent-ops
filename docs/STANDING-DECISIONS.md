@@ -153,3 +153,11 @@ principle it rests on.`
   repository: accept the GC tail** — no support ticket, history rewrite,
   credential rotation or exhaustive blob scan; one note under requirement
   2.5.
+- 2026-09-13 · #1444/#1437 · **The closing-keyword record-flip check accepts
+  both terminal states, `status: resolved` and `status: not-debt` (option
+  1)** — both are terminal everywhere else in the register (`td-check.pl`,
+  `lib/work-gone.sh`, `lib/candidate-gather.sh`, TECH-DEBT.md "Resolution
+  and history"), `td-check.pl` still requires a `not-debt` row to carry its
+  `ref:`, and the pull-request review — not a red CI check — is where a
+  not-debt conclusion gets its human eyes. Answered by a delegate on the
+  owner's direction of 2026-09-13.

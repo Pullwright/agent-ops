@@ -980,6 +980,7 @@ and the schema must carry every one of them.
 | `monitor_max_input_bytes` | `300000` | The largest digest the Script hands the Monitor stage (M6). Stated in bytes for the reason `coordinator_prompt_max_bytes` is: bytes are what the Script can count without a tokenizer. The default is the same arithmetic that key records, against a prompt far shorter than the Co-Ordinator's and a report longer than a verdict. `0` disables the bound. |
 | `monitor_max_filings_per_run` | `3` | The filing budget of one monitor run (M12). Counted across every filing class, since the cap exists to bound what the fleet is asked to work, not what any one class produces. |
 | `monitor_tactical_keys` | `[]` | The tactical allow-list (M14). A finding whose `config_key` is in this list is filed as a `pw::decision` through the same decision-log convention `escalation_autonomy: decide-tactical` already uses, veto window included (agent-ops#937); any other key is proposed in the report only. Empty by default, so the Monitor's tactical path is config-gated closed on a fresh installation. |
+| `monitor_promote_after` | `2` | The repeat count promotion (M13a) is measured against. A finding key restated across this many reports is filed once as a `pager: add invariant <key>` issue and logged as `monitor-promoted`; the key retires from the digest altogether once the invariant it names actually exists (M13b). `0` disables promotion outright. |
 | `timeout_coordinator` | *(unset)* | An override for the wall-clock backstop of requirement 4e, taking precedence over the derivation of requirement 4f. Absent is the normal case and the intended one: a configured value wins permanently, so setting it turns the self-tuning off for that actor. |
 | `timeout_implementer` | *(unset)* | As `timeout_coordinator`, for the Implementer. The interim raise to 120 this key carried (#203, #209) has gone with the fixed cap it belonged to: the shipped prior is 150 and the derivation moves from there. |
 | `timeout_reviewer` | *(unset)* | As `timeout_coordinator`, for the Reviewer. This is the key #203 was opened about: it was raised 30 → 45 → 60 in two days, and 45 lasted six hours before a complex-model review of a 16-file diff consumed all of it. Complex-model reviews are killed roughly six times as often as default-model ones, so a single fixed number spans two quite different populations — which is why the derivation keys on the model. |
@@ -10646,7 +10647,10 @@ implements.
     an earlier direct filing — that file is still the permanent register
     entry: the same pull request must also flip its frontmatter to `status:
     resolved`, filling `resolved:` and `ref:`, exactly as `TECH-DEBT.md`'s
-    "Claiming an item" step 6 describes (PR #1313 is the precedent) —
+    "Claiming an item" step 6 describes (PR #1313 is the precedent) — or,
+    where the work's conclusion is that the item was never debt, to
+    `status: not-debt` with `ref:` pointing at where the content moved
+    (`TECH-DEBT.md` "Resolution and history"; issue #1437) —
     closing the issue alone does not resolve it, and skipping this step is
     what left `tech-debt/TD-PPagop-26082412.md` at `status: open` after PR
     #1355's first round. An issue with no such line has no file to flip and
@@ -10775,7 +10779,12 @@ implements.
     register.sh` or an earlier direct filing), `check-closing-keyword.sh`
     also reads this pull request's own changed-files listing (`gh api
     …/pulls/<n>/files`) and fails, naming the issue and the file, unless its
-    diff adds a `status: resolved` line for it. PR #1355's first round is
+    diff adds a line setting that file's `status:` to one of the register's
+    two terminal states — `resolved`, or `not-debt` for an item the
+    resolving pull request concludes was never debt (issue #1437: both are
+    equally terminal to `td-check.pl`, `lib/work-gone.sh` and
+    `lib/candidate-gather.sh`, and `td-check.pl` still requires a `not-debt`
+    row to carry its `ref:`). PR #1355's first round is
     the concrete miss this closes: the issue closed, the file left at
     `status: open` on `main` until a later round caught it by hand — nothing
     before this checked the flip mechanically, only the prose
@@ -19914,7 +19923,8 @@ What exists, and the requirements each part answers to:
     earlier direct filing), it reads this pull request's own changed-files
     listing (`gh api repos/<slug>/pulls/<n>/files`) and exits non-zero,
     naming the issue and the record file, unless that file's diff adds a
-    `status: resolved` line. This is the CI-side check for the miss PR
+    line setting its `status:` to a terminal state — `resolved` or
+    `not-debt` (issue #1437). This is the CI-side check for the miss PR
     #1355's first round made by hand — issue closed, `tech-debt/TD-PPagop-
     26082412.md` left at `status: open` until a later round. Either `gh`
     call that fails outright (the token, a transient outage) warns rather
@@ -23572,10 +23582,12 @@ oblige anyone to edit a test.
    record-flip half: an issue with no "Filed as" line, or one carrying it
    but not `pw::type:tech-debt`-labelled, passes exactly as without the two
    extra arguments; a "Filed as"-line issue whose named record file's diff
-   adds `status: resolved` passes; the same issue whose diff never touches
-   that file fails naming that, and one whose diff touches it without adding
-   that line fails naming *that* — each asserted on its own message, never on
-   the record path both carry; a markerless bare closing keyword on a branch
+   adds `status: resolved` — or `status: not-debt`, the register's other
+   terminal state (issue #1437) — passes; the same issue whose diff never
+   touches that file fails naming that, and one whose diff touches it
+   without adding a terminal `status:` line (left as it was, or flipped to
+   the non-terminal `in-progress`) fails naming *that* — each asserted on
+   its own message, never on the record path both carry; a markerless bare closing keyword on a branch
    that is neither `agent/<N>` nor otherwise anchored — the exact shape the
    marker/keyword half's first clause above passes unconditionally — is
    still pulled into this half once a repo slug and pull request number are
