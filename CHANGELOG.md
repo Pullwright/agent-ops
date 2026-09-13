@@ -884,16 +884,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `Fixes Pullwright/agent-ops#198` or `Fixes GH-198` alongside its
   `agent-ops:closes-issue` marker turned a required status check red over a
   pull request that had done nothing wrong, and could not go green without
-  rewording the body. The keyword list and the issue reference are now two
-  shared patterns in the one script, with the reference accepting all three
-  spellings; the repo-qualified form satisfies the check whatever its
-  `owner/repo` reads, since this half is only ever asked whether a closing
-  keyword for the marked number exists — never in which repository — and it
-  runs where no repo slug was passed to it at all
-  (`lib/closing-keyword-gate.sh`). The `(^|[^[:alnum:]])` word-of-its-own
-  boundary and the trailing non-digit guard are unchanged and cover the new
-  spellings too, so `unclosed GH-198` and `discloses owner/repo#77` still
-  close nothing, exactly as `unclosed #198` already did.
+  rewording the body. The keyword list is now one shared pattern both of the
+  script's halves match on, and the marker check's issue reference accepts all
+  three spellings; the repo-qualified form satisfies *that* half whatever its
+  `owner/repo` reads, since it is only ever asked whether a closing keyword
+  for the marked number exists — never in which repository — and it runs where
+  no repo slug was passed to it at all (`lib/closing-keyword-gate.sh`). The
+  `(^|[^[:alnum:]])` word-of-its-own boundary and the trailing non-digit guard
+  are unchanged and cover the new spellings too, so `unclosed GH-198` and
+  `discloses owner/repo#77` still close nothing, exactly as `unclosed #198`
+  already did.
+
+- **A tech-debt issue closed by the `GH-N` or `owner/repo#N` spelling no
+  longer escapes the record-flip check** (issue #1460). The keyword harvest
+  that pulls a markerless `Fixes #N` into `check-closing-keyword.sh`'s
+  record-flip loop — the dragnet added for issue #1438, so a human's or an
+  interactive agent's pull request cannot close a `pw::type:tech-debt` issue
+  and leave its `tech-debt/<id>.md` at `status: open` — read only the `#N`
+  spelling, so the same close written `Fixes GH-1438` harvested nothing and
+  the record stayed open: the PR #1355 miss again, through a third path. The
+  harvest now reads all three spellings, with one deliberate asymmetry against
+  the marker check above: the repo-qualified form counts only where its
+  `owner/repo` is this repository's own, matched case-insensitively, because
+  `Fixes otherowner/otherrepo#5` closes someone else's issue and must not
+  demand a flip of our record for it. The issue number is read from the end of
+  each match rather than its first digit run, a repository name being free to
+  carry digits of its own (`acme/widgets2#198` harvests 198, not 2).
 
 - **`test/gh-shim-auth.test.sh`'s "nothing configured" fixture no longer
   leaks a host's ambient `PW_GH_DEGRADE_TOKEN` into its assertion**

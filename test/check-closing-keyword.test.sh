@@ -367,6 +367,63 @@ assert_pass_tdr "a keyword lookalike (discloses/unfixed) demands no record flip"
   "This discloses #240, and an unfixed #240 note." \
   "fix/some-branch" "acme/widgets" "9" "bare-unflipped"
 
+# --- The other two linked-issue spellings reach this half too (issue #1460) --
+# GitHub closes the referenced issue on merge for "GH-N" and "owner/repo#N" as
+# well as "#N", so a markerless close written either way must pull its issue
+# into this loop exactly as a bare "#N" does — otherwise the record closes at
+# `status: open` through a spelling the harvest never looked for. Every
+# assertion here runs against the *unflipped* fixtures, which is what makes
+# "harvested" and "not harvested" tell apart: a harvested number fails, an
+# unharvested one passes.
+assert_fail_tdr "a markerless Fixes GH-N with an unflipped record still fails" \
+  "Fixes GH-240 for real this time." \
+  "fix/some-branch" "acme/widgets" "9" "bare-unflipped" \
+  "does not set its frontmatter status: to resolved"
+
+assert_fail_tdr "a markerless Fixes owner/repo#N for this repo still fails" \
+  "Fixes acme/widgets#240 for real this time." \
+  "fix/some-branch" "acme/widgets" "9" "bare-unflipped" \
+  "does not set its frontmatter status: to resolved"
+
+assert_fail_tdr "the owner/repo slug is matched case-insensitively" \
+  "Fixes ACME/Widgets#240 for real this time." \
+  "fix/some-branch" "acme/widgets" "9" "bare-unflipped" \
+  "does not set its frontmatter status: to resolved"
+
+# A *foreign* owner/repo closes someone else's #240, not ours. Harvesting it
+# would demand a flip of our own record over an issue this pull request never
+# closes here — the one way this half's reference rule must differ from the
+# marker check's, which has no repository to be wrong about.
+assert_pass_tdr "a foreign owner/repo#N is not harvested into the record-flip loop" \
+  "Fixes otherowner/otherrepo#240 for real this time." \
+  "fix/some-branch" "acme/widgets" "9" "bare-unflipped"
+
+# The word-of-its-own guard governs the new spellings here too, exactly as it
+# does the bare "#N" case above.
+assert_pass_tdr "a keyword lookalike in the new spellings demands no record flip" \
+  "This discloses acme/widgets#240, and an unfixed GH-240 note." \
+  "fix/some-branch" "acme/widgets" "9" "bare-unflipped"
+
+# A repository name can carry digits of its own ("acme/widgets2"), so the
+# issue number is taken from the end of each match rather than from its first
+# digit run — an unanchored extraction would harvest the slug's own 2 and
+# demand a record flip for issue #2. The fixtures make the difference visible:
+# #2 is a tech-debt issue naming a record this diff never touches, #240 is not
+# a tech-debt issue at all, so this passes only if 2 was never harvested.
+mkdir -p "$tmp_dir/slug-digits"
+cat > "$tmp_dir/slug-digits/issue-2.json" <<'JSON'
+{"body": "A debt item.\n\nFiled as `tech-debt/TD-2.md`, 2026-08-01.",
+ "labels": [{"name": "pw::type:tech-debt"}]}
+JSON
+cat > "$tmp_dir/slug-digits/issue-240.json" <<'JSON'
+{"body": "An ordinary issue with nothing special about its last line.",
+ "labels": [{"name": "bug"}]}
+JSON
+cp "$tmp_dir/bare-unflipped/files.json" "$tmp_dir/slug-digits/files.json"
+assert_pass_tdr "digits in the repo slug are not harvested as an issue number" \
+  "Fixes acme/widgets2#240 for real this time." \
+  "fix/some-branch" "acme/widgets2" "9" "slug-digits"
+
 if (( failures > 0 )); then
   echo "$failures failure(s)"
   exit 1
