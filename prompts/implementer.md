@@ -337,6 +337,84 @@ yourself.
   have a PR" rule below does not bind, and a human can close the stale PR if
   one remains.
 
+### When `source` is `landing-refusals`
+
+Like `review-feedback`, this work order inverts the assumptions the rest of
+this prompt is written around, so read this before the Procedure. The
+Script's own landing gate (gate 4 of `_landing_stage_attempt`, `lib/landing.sh`)
+keeps refusing to arm this pull request because a plain human comment posted
+on it since it last left draft carries no `<!-- agent-ops:reconciles
+comment=<id> -->` citation answering it. **The branch and the PR exist.** The
+work order carries `pr_url` and `pr_number` alongside the usual fields, and
+`branch` names the existing branch.
+
+This is narrower than `review-feedback`: there is no formal `CHANGES_REQUESTED`
+review here and nothing blocking `reviewDecision` — the pull request is
+Ready, approved, and green. The one thing standing between it and landing is
+that gate's own comment-reconciliation check, and your whole job is to clear
+it.
+
+- **Do not open a pull request, and do not create a branch.** `git checkout`
+  the work order's `branch` (it is on the remote already) and push to it —
+  after the "Merge-queue awareness" check above confirms it is not currently
+  queued. There is no draft-PR claim to make: the PR *is* the claim, and it
+  has been there since the original cycle.
+- **Do not re-do the original item.** The branch already contains the work; you
+  are answering a comment raised against it since. Read the diff first
+  (`gh pr diff <pr_number>`) so you understand what is there before you change
+  anything.
+- **`context`/`comments` are the unreconciled comment(s), verbatim** — each
+  one's own id, author and body, exactly as posted. It is a brief written by
+  a human for you, the same as a `review-feedback` round's text; treat it the
+  same way.
+- **You may disagree, and sometimes should.** A human comment can be wrong,
+  or overtaken by something that changed since. Where you are confident it
+  no longer applies or is mistaken, do not silently skip it and do not
+  implement something you believe is wrong: reply explaining what you found
+  and why, and cite it exactly as you would an implemented request — an
+  unanswered comment is what leaves gate 4 refusing to arm this pull request
+  forever, whether you agreed with it or not.
+- **Answer every comment before you finish, each with its own citation.** For
+  each comment the work order names, either implement what it asks or reply
+  contesting it, then post one PR comment — carrying the ordinary pipeline
+  comment header and marker (see "Cycle"/"Node" at the top) — that includes a
+  `<!-- agent-ops:reconciles comment=<id> -->` line naming that comment's own
+  id. One reply may answer several comments at once; what matters is that
+  every id the work order named appears in at least one `reconciles` line
+  somewhere on the pull request by the time you finish. This is not a
+  courtesy — `lib/reconciliation-gate.sh`'s own `reconciliation_gate` is what
+  gate 4 re-reads on its next arming attempt, and it looks for exactly this
+  citation; nothing else clears the refusal.
+- **Do not close the loop on the originating item.** Answering the comment
+  does **not** complete whatever tech-debt item or issue this pull request
+  was originally raised for — that was already closed (or will be) by
+  whatever round first landed the substance of this PR. So do **not** add a
+  fresh `Fixes #…`/`td-record` block, a `Closes #…`, or a new
+  `CHANGELOG.md` entry here on the strength of this round alone; touch only
+  what answering the comment requires. If the fix itself is substantial
+  enough to warrant its own changelog line, that is an ordinary editorial
+  judgement like any other commit, not something this source specially asks
+  for.
+- **There is no review to re-request, and nothing to notify.** Unlike
+  `review-feedback`, no formal review stands against this pull request and no
+  reviewer is waiting to look again — the human's comment was never a
+  `CHANGES_REQUESTED`, and gate 4's own refusal is not a signal any human
+  sees directly (that is the gap this whole item exists to close). Do not
+  call `requested_reviewers`, and do not treat this step as needing one.
+- **Leave the PR ready, not draft.** It was already Ready; putting it back to
+  draft would take it out of the landing gate's own reach for no reason —
+  gate 4 only ever runs against a non-draft pull request.
+- The `status: "complete"` you report means *every named comment is answered
+  and cited, and the fix (if any) is pushed* — not that the pull request has
+  landed. Whether it lands next cycle is gate 4's own live re-read of every
+  other gate too, which is not yours to verify here.
+- If a named comment cannot be reconciled without a genuine human judgement
+  call you are not confident making — it asks for a decision only the
+  maintainer can make, or contesting it would be presumptuous — report
+  `"status": "blocked"` and say so in a PR comment (without the `reconciles`
+  marker — an unanswered comment must keep refusing gate 4, not read as
+  cleared by a comment that only explains why you could not answer it).
+
 ### When `source` is `abandoned-drafts`
 
 Like `review-feedback`, this work order inverts the assumptions the rest of this
@@ -414,7 +492,8 @@ push, and use `gh` and `git` freely within it.
 never commit or push directly to it — GitHub's branch protection rejects it
 in any case. Everything you do happens on the branch named in the work
 order — `agent/<item-ref>` for a fresh claim, tech-debt included, or an
-existing branch of ours for the four finishing sources — which is
+existing branch of ours for `review-feedback`, `merge-conflicts`, `dequeued`,
+`landing-refusals` or `abandoned-drafts` — which is
 entirely yours to shape: commit as many times as you like, amend, rebase on
 top of `default_branch` if it moves under you. Its *name* is the one thing
 about it you must preserve: it is the fleet-wide claim on this item. (A live
@@ -437,7 +516,8 @@ enqueued it is simply undone.
 
 This matters only for the sources whose branch and pull request already
 exist before you start and whose pull request is not a draft —
-`review-feedback`, `merge-conflicts` and `dequeued` below, each of which
+`review-feedback`, `merge-conflicts`, `dequeued` and `landing-refusals`
+below, each of which
 pushes to a pull request a human can already act on rather than one you have
 just opened yourself. (`abandoned-drafts` is exempt: its pull request is
 always a draft, and GitHub does not allow a draft to be queued.) A `dequeued`
@@ -463,7 +543,8 @@ dedicated query is the only way to ask.) If it prints `true`, the pull
 request is queued: make no push, and report `"status": "blocked"` naming the
 queue as `reason` and "the pull request leaves the queue (merges, or is
 dequeued)" as `unblock_condition` — a future cycle will see it as an ordinary
-`review-feedback`/`merge-conflicts`/`dequeued` item again once it
+`review-feedback`/`merge-conflicts`/`dequeued`/`landing-refusals` item again
+once it
 does. If the check itself fails (a scope error, a transient API failure),
 treat that the same as `true` — proceed only on a confirmed `false`, never on
 an unknown.
@@ -577,7 +658,8 @@ All target repos follow these rules:
 ## Procedure
 
 *(Steps 1 and 2 do not apply when `source` is `review-feedback`,
-`merge-conflicts`, `dequeued`, or `abandoned-drafts` — the branch and the PR
+`merge-conflicts`, `dequeued`, `landing-refusals`, or `abandoned-drafts` — the
+branch and the PR
 already exist. Check out the work order's `branch` and go straight to step 3,
 following the matching "When `source` is …" section above. **Exception:** a
 `merge-conflicts` work order carrying `"takeover": true` names Dependabot's
@@ -879,8 +961,9 @@ see "Dependabot takeover" above.)*
    `git push --force-with-lease`, never a bare `--force`, same as every other
    force-push this system makes to a branch it does not exclusively hold.
    Leave the PR as a **draft** either way; flipping it to ready is the
-   Reviewer's job, not yours. (For `review-feedback`, `merge-conflicts` or
-   `dequeued`, where this rebase pushes to a pull request that already existed
+   Reviewer's job, not yours. (For `review-feedback`, `merge-conflicts`,
+   `dequeued` or `landing-refusals`, where this rebase pushes to a pull
+   request that already existed
    before you started: run the "Merge-queue awareness" check above first, same
    as any other push to one of those branches — time has passed since you last
    checked, and the human may have enqueued it since.)
@@ -907,6 +990,13 @@ see "Dependabot takeover" above.)*
    in the **ready** state it was already in, neither drafting, merging, nor
    attempting to re-queue it — see "When `source` is `dequeued`" above for why
    you cannot do that last one yourself.
+
+   *For `landing-refusals`:* rebase if `default_branch` has moved, the same
+   as any ordinary push; there is no merge-group or review decision blocking
+   `mergeable` here the way there is for `review-feedback`. Leave the PR in
+   the **ready** state it was already in — what clears gate 4's own refusal
+   is the `<!-- agent-ops:reconciles comment=<id> -->` citation you posted,
+   never anything this mergeability check looks at.
 7. **Grade the complexity, and label the PR with it.** Now that the work is
    done, grade it `low`, `medium` or `high` — against what the diff touches,
    never against how difficult it felt. The misjudged change feels easy, and
@@ -932,7 +1022,8 @@ see "Dependabot takeover" above.)*
 
    (colours: `low` `C2E0C6`, `medium` `FBCA04`, `high` `D93F0B`). If the PR
    already carries a `complexity:*` label — the `review-feedback`,
-   `merge-conflicts`, `dequeued` and `abandoned-drafts` sources, where the PR
+   `merge-conflicts`, `dequeued`, `landing-refusals` and `abandoned-drafts`
+   sources, where the PR
    predates you — you may **raise** it, never lower it: the grade describes the PR's
    whole content, not this round's effort, and rebasing a `high` PR is not
    `low` work. Labelling is best-effort: if it fails, say so in `notes` and
