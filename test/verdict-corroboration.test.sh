@@ -149,7 +149,7 @@ assert_eq "a void extract past the argv cap still drops the void item" \
 # token is absent is not eligible; an issue outside its own listed rank is not
 # either) have something to be absent from.
 eligible_repos='[{"slug":"org/a","default_branch":"main",
-  "sources":["security","review-feedback","merge-conflicts","issues:high","abandoned-drafts",
+  "sources":["security","review-feedback","merge-conflicts","landing-refusals","issues:high","abandoned-drafts",
              "human-visibility","tech-debt","register-hygiene"],
   "findings":[{"source":"security","ref":"dependabot-alert-1"},{"source":"code-quality","ref":"code-scanning-alert-4"}],
   "review_feedback":[{"ref":"pr-1-review-9"}],
@@ -157,6 +157,7 @@ eligible_repos='[{"slug":"org/a","default_branch":"main",
                      {"ref":"pr-3-conflict-bb","bot":true,"rebase_requested":false,"superseded_by":"dependabot/npm/foo-2"},
                      {"ref":"pr-4-conflict-cc","bot":true,"rebase_requested":true,"superseded_by":null},
                      {"ref":"pr-5-conflict-dd"}],
+  "landing_refusals":[{"ref":"pr-7-landing-refusal-4718691960"}],
   "abandoned_drafts":[{"ref":"pr-6-abandoned-ee"}],
   "human_visibility":[{"ref":"human-visibility-ff"}],
   "register_hygiene":[{"ref":"register-hygiene-gg"}],
@@ -170,6 +171,10 @@ assert_eq "a security finding is eligible under its own source token" '["dependa
 assert_eq "the code-quality half of the same array is not — its token is unlisted" '[]' "$(band_of code-quality)"
 assert_eq "review-feedback: presence in the array is the candidate test" '["pr-1-review-9"]' "$(band_of review-feedback)"
 assert_eq "abandoned-drafts likewise" '["pr-6-abandoned-ee"]' "$(band_of abandoned-drafts)"
+# requirement 53 (issue #979): a band left out of this function would make a
+# cycle whose only work is a landing refusal corroborate its own "nothing
+# selected" verdict.
+assert_eq "landing-refusals likewise" '["pr-7-landing-refusal-4718691960"]' "$(band_of landing-refusals)"
 assert_eq "human-visibility likewise" '["human-visibility-ff"]' "$(band_of human-visibility)"
 assert_eq "register-hygiene likewise" '["register-hygiene-gg"]' "$(band_of register-hygiene)"
 assert_eq "tech-debt likewise, in id order" '["TD1","TD2"]' "$(band_of tech-debt)"
@@ -205,7 +210,9 @@ assert_eq "the plain issues token admits every band" '["11","12","13"]' \
 # Reading the list rather than the arrays is what stops a restricted cycle
 # owing an account of bands it was forbidden to select from. `eligible_repos`'s
 # own `sources` only carries three of the four finishing bands (no
-# `dequeued`), so that is all the narrowing below leaves behind.
+# `dequeued`), so that is all the narrowing below leaves behind —
+# `landing-refusals` is listed but is deliberately not one of the four
+# (requirement 53), so back-pressure drops it here like any other band.
 bp_repos="$(jq -c 'map(.issues = [] | .tech_debt = [])' \
   <<<"$(handoff_narrow_repos_to_finishing_sources "$eligible_repos")")"
 assert_eq "back-pressure's narrowed sources list bounds eligibility" \

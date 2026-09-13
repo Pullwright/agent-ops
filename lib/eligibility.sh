@@ -64,7 +64,7 @@ live_pr_refs_json="$(jq -c \
 # Co-Ordinator whole: drop any entry this repo's own blocked or void record
 # names, exactly as exclude_claimed_items already dropped claimed ones.
 # `findings`, `review_feedback`, `abandoned_drafts`, `merge_conflicts`,
-# `dequeued`, `register_hygiene`, `human_visibility` and `tech_debt` all get the identical
+# `dequeued`, `landing_refusals`, `register_hygiene`, `human_visibility` and `tech_debt` all get the identical
 # second pass `exclude_blocked_or_void_items` first gave `tech_debt` alone
 # (issue #310) — there is nothing about that exclusion tech-debt-specific,
 # only tech-debt was the band it was first proven on. Every band the repo
@@ -86,7 +86,7 @@ live_pr_refs_json="$(jq -c \
 # void — with no per-item judgement left for it to apply, and no room for a
 # verdict like "requires per-item evaluation against blocked/void/claimed
 # records" to be true of any of them.
-for eligibility_band in findings review_feedback abandoned_drafts merge_conflicts dequeued register_hygiene human_visibility tech_debt; do
+for eligibility_band in findings review_feedback abandoned_drafts merge_conflicts dequeued landing_refusals register_hygiene human_visibility tech_debt; do
   while IFS= read -r eb_slug; do
     [[ -n "$eb_slug" ]] || continue
     eb_current="$(jq -c --arg s "$eb_slug" --arg f "$eligibility_band" \

@@ -9769,9 +9769,10 @@ implements.
     ladder (requirement 4i) may already have trimmed, and are asked to
     reproduce kilobytes of that input verbatim — a task requirements 17f/17g
     could only ever catch failing after the fact. This requirement removes
-    the task instead of catching its failure: for the ten sources the Script
-    already gathers as structured data (`security`, `code-quality`,
-    `review-feedback`, `merge-conflicts`, `dequeued`, `abandoned-drafts`,
+    the task instead of catching its failure: for the eleven sources the
+    Script already gathers as structured data (`security`, `code-quality`,
+    `review-feedback`, `merge-conflicts`, `dequeued`, `landing-refusals`,
+    `abandoned-drafts`,
     `human-visibility`, `register-hygiene`, `tech-debt`, `issues`), the
     Co-Ordinator selects `{repo, source, item}` and the Script itself builds
     `context`, `acceptance` and `title` immediately before the claim
@@ -13135,8 +13136,8 @@ implements.
     `identical` or `behind` means every commit on the branch is already an
     ancestor of `default_branch`, so the draft's work landed some other way
     while it sat. Run only for `review-feedback`, `merge-conflicts`,
-    `dequeued` and
-    `abandoned-drafts` — the four sources whose branch and pull request
+    `dequeued`, `landing-refusals` and
+    `abandoned-drafts` — the five sources whose branch and pull request
     predate the claim (`lib/preflight.sh`'s
     `preflight_existing_branch_source`) — and never for an ordinary
     `issues`/`tech-debt` claim, whose branch the Script has just created at
@@ -17780,7 +17781,19 @@ with the Reviewer's own.
     expensive-gather-cache.sh`) alongside its eight siblings, `emit_first_seen`
     and claim exclusion (`exclude_claimed_prs`/`exclude_claimed_items`)
     applied identically, and carried on the Co-Ordinator's own runtime input
-    as each repo entry's `landing_refusals` array. Deliberately **not**
+    as each repo entry's `landing_refusals` array. The selection side is
+    wired to match, band for band, with the same five lists every other
+    pre-fetched source appears in: requirement 3c/3u's blocked-and-void
+    second pass (`lib/eligibility.sh`'s own band loop), requirement 3x's
+    eligible-set denominator (`coordinator_eligible_items`), requirement 17h's
+    compose (`CANDIDATE_ENTRY_LOOKUP_JQ`/`CANDIDATE_TEMPLATE_JQ`, whose
+    `acceptance` for this source is to answer every unreconciled comment and
+    cite each with its own `<!-- agent-ops:reconciles comment=<id> -->` line),
+    requirement 3v's deterministic fallback (`fallback_select_candidate`,
+    ranked immediately after `dequeued`), and
+    `PREFLIGHT_EXISTING_BRANCH_SOURCES` (requirement 34m), which this source
+    joins as a fifth member because its branch and pull request predate the
+    claim. Deliberately **not**
     folded into requirement 2.2a's four-source back-pressure/drain finishing
     set, nor into the claim-pattern and void-corroboration parity the other
     four finishing sources share (`lib/drain.sh`, `lib/claim.sh`, `lib/void-
@@ -18515,8 +18528,9 @@ What exists, and the requirements each part answers to:
    that can become false again. `preflight_branch_merged_reason`
    is the other done-signal, kept separate because it is impure (one live
    `gh api compare` call against the target repository) and `preflight_existing_branch_source`
-   is the gate that scopes it to the four sources whose branch predates the
-   claim (review-feedback, merge-conflicts, dequeued, abandoned-drafts) — see
+   is the gate that scopes it to the five sources whose branch predates the
+   claim (review-feedback, merge-conflicts, dequeued, landing-refusals,
+   abandoned-drafts) — see
    requirement 34m for why an ordinary claim's freshly created branch cannot
    use this check. `preflight_review_feedback_reason` is the third done-signal
    (requirement 34m, issue #1360), scoped to `review-feedback` items alone:
@@ -23745,7 +23759,8 @@ oblige anyone to edit a test.
    reads `identical`/`behind` from a stubbed `gh api compare` as already
    merged, `diverged`/`ahead` as still live, and an unreadable or failed
    comparison as deciding nothing; `preflight_existing_branch_source` is true
-   for exactly `review-feedback`, `merge-conflicts` and `abandoned-drafts`,
+   for exactly `review-feedback`, `merge-conflicts`, `dequeued`,
+   `landing-refusals` and `abandoned-drafts`,
    false for every other source (including one that merely contains one of
    those names as a substring). `preflight_review_feedback_reason` (issue
    #1360), against a stubbed `gh api pulls/<n>/reviews`, reads the item's own

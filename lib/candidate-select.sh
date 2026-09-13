@@ -914,6 +914,7 @@ CANDIDATE_ENTRY_LOOKUP_JQ='
       elif $source == "review-feedback" then ($r.review_feedback // [])[] | select(.ref == $item)
       elif $source == "merge-conflicts" then ($r.merge_conflicts // [])[] | select(.ref == $item)
       elif $source == "dequeued" then ($r.dequeued // [])[] | select(.ref == $item)
+      elif $source == "landing-refusals" then ($r.landing_refusals // [])[] | select(.ref == $item)
       elif $source == "abandoned-drafts" then ($r.abandoned_drafts // [])[] | select(.ref == $item)
       elif $source == "human-visibility" then ($r.human_visibility // [])[] | select(.ref == $item)
       elif $source == "register-hygiene" then ($r.register_hygiene // [])[] | select(.ref == $item)
@@ -974,6 +975,9 @@ CANDIDATE_TEMPLATE_JQ='
   elif $source == "dequeued" then
     {title: (.title // ""), context: (.body // ""),
      acceptance: "Diagnose and fix the merge-group checks failure that got this pull request dequeued, then push to the existing branch."}
+  elif $source == "landing-refusals" then
+    {title: (.title // ""), context: (.body // ""),
+     acceptance: "Answer every unreconciled comment above on the existing pull request — implementing what it asks or replying to contest it — and cite each one with its own <!-- agent-ops:reconciles comment=<id> --> line; leave the pull request ready."}
   elif $source == "abandoned-drafts" then
     {title: (.title // ""), context: (.body // ""),
      acceptance: "Finish the existing draft pull request to the item'"'"'s own acceptance."}
@@ -994,7 +998,7 @@ CANDIDATE_TEMPLATE_JQ='
 # already selected, so neither ever authors those three fields for a
 # pre-fetched source — the model's own job narrows to selection (and to
 # `model`/`model_reason`, a judgement call this does not touch). Scoped to
-# the ten sources the Script already gathers as structured data
+# the eleven sources the Script already gathers as structured data
 # (`CANDIDATE_ENTRY_LOOKUP_JQ` above); the three sources the Co-Ordinator
 # still derives itself live — `project-review`, `failed-runs`,
 # `implementation-plan` — have no pre-fetched band for the Script to compose
@@ -1323,6 +1327,7 @@ coordinator_eligible_items() {  # <ordered-repos-json> <blocked-json>
                            or ((.superseded_by // null) != null))];
                  "merge-conflicts"),
             band($r; $srcs; $e.dequeued; "dequeued"),
+            band($r; $srcs; $e.landing_refusals; "landing-refusals"),
             band($r; $srcs; $e.abandoned_drafts; "abandoned-drafts"),
             band($r; $srcs; $e.human_visibility; "human-visibility"),
             band($r; $srcs; $e.register_hygiene; "register-hygiene"),

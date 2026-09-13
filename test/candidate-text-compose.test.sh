@@ -243,6 +243,27 @@ assert_eq "…acceptance is the deterministic per-source instruction" \
 assert_eq "…branch/pr_url/pr_number survive unchanged" "agent/57 https://github.com/o/r/pull/57 57" \
   "$(jq -r '[.branch, .pr_url, (.pr_number|tostring)] | join(" ")' <<<"$out_rf")"
 
+# --- compose_selected_candidate_text: landing-refusals (requirement 53,
+# --- issue #979) — the band is pre-fetched like review-feedback, so a
+# --- selected candidate must compose from its own entry rather than fail
+# --- closed into the "untraceable" cause the claim loop gives rc 1 ---------
+
+repos_lr='[{"slug":"o/r","landing_refusals":[{"ref":"pr-61-landing-refusal-4718691960","title":"fix(cache): drop the stale key","body":"── human comment by warwickallen at 2026-08-24T01:00:00Z (id 4718691960)\nThis needs a note in the gotchas section.","branch":"agent/td26082401","pr_url":"https://github.com/o/r/pull/61","pr_number":61}]}]'
+cand_lr='{"repo":"o/r","default_branch":"main","pr_label":"autonomous-agent","source":"landing-refusals","item":"pr-61-landing-refusal-4718691960","model":"claude-sonnet-5","model_reason":"stub","branch":"agent/td26082401","pr_url":"https://github.com/o/r/pull/61","pr_number":61}'
+
+reset_gh_calls
+out_lr="$(compose_selected_candidate_text "$cand_lr" "$repos_lr" "$refinements")"
+rc=$?
+assert_eq "compose_selected_candidate_text (landing-refusals) succeeds without any live fetch" "0" "$rc"
+assert_eq "…no gh call at all — the band entry is never trimmed" "0" "$(gh_calls)"
+assert_contains "…context is the entry's own body: the unreconciled comment, verbatim" \
+  "$(jq -r '.context' <<<"$out_lr")" "This needs a note in the gotchas section."
+assert_contains "…acceptance names the reconciles citation that is the only thing clearing gate 4" \
+  "$(jq -r '.acceptance' <<<"$out_lr")" "<!-- agent-ops:reconciles comment=<id> -->"
+assert_eq "…title is the pull request's own" "fix(cache): drop the stale key" "$(jq -r '.title' <<<"$out_lr")"
+assert_eq "…branch/pr_url/pr_number survive unchanged" "agent/td26082401 https://github.com/o/r/pull/61 61" \
+  "$(jq -r '[.branch, .pr_url, (.pr_number|tostring)] | join(" ")' <<<"$out_lr")"
+
 # --- compose_selected_candidate_text: a Dependabot takeover gets its own ----
 # --- acceptance, never the ordinary "rebase" instruction (agent-ops#250) ---
 

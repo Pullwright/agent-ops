@@ -98,6 +98,13 @@ assert_eq "merge-conflicts' branch predates the claim" "0" \
   "$(preflight_existing_branch_source merge-conflicts; echo $?)"
 assert_eq "abandoned-drafts' branch predates the claim" "0" \
   "$(preflight_existing_branch_source abandoned-drafts; echo $?)"
+assert_eq "dequeued's branch predates the claim" "0" \
+  "$(preflight_existing_branch_source dequeued; echo $?)"
+# requirement 53 (issue #979): the landing-refusals PR and its branch were
+# raised by an earlier cycle, so the merged-branch comparison means something
+# here exactly as it does for the other four.
+assert_eq "landing-refusals' branch predates the claim" "0" \
+  "$(preflight_existing_branch_source landing-refusals; echo $?)"
 assert_eq "an ordinary tech-debt claim's branch does not" "1" \
   "$(preflight_existing_branch_source tech-debt; echo $?)"
 assert_eq "an ordinary issues claim's branch does not" "1" \

@@ -313,6 +313,30 @@ assert_contains "a mechanical pick's context pastes the item's own body" "TD1 bo
 assert_eq "a mechanical pick carries the configured pr_label" "house-label" \
   "$(jq -r '.pr_label' <<<"$td_pick")"
 
+# requirement 53 (issue #979): landing-refusals is pre-fetched like every
+# other finishing band, so the mechanical picker must be able to reach it —
+# ranked immediately after `dequeued` and ahead of `tech-debt` — and must
+# carry the existing branch and pull request, since this source never opens
+# one of its own.
+lr_repos='[{"slug":"acme/widgets","default_branch":"main",
+  "sources":["security","issues:urgent","review-feedback","merge-conflicts","dequeued","landing-refusals","human-visibility","abandoned-drafts","issues:high","tech-debt","issues:medium","issues:low","code-quality","register-hygiene"],
+  "findings":[],"review_feedback":[],"merge_conflicts":[],"dequeued":[],
+  "landing_refusals":[{"ref":"pr-61-landing-refusal-4718691960","pr_number":61,"pr_url":"https://x/pull/61","title":"fix(cache): drop the stale key","branch":"agent/td26082401","body":"── human comment by warwickallen at 2026-08-24T01:00:00Z (id 4718691960)\nThis needs a note in the gotchas section."}],
+  "abandoned_drafts":[],"human_visibility":[],"issues":[],
+  "tech_debt":[{"source":"tech-debt","ref":"TD1","id":"TD1","title":"fix TD1","filed":"2026-08-01","url":"https://x/TD1.md","body":"TD1 body"}],
+  "register_hygiene":[]}]'
+lr_pick="$(fallback_select_candidate "$lr_repos" "m")"
+assert_eq "landing-refusals outranks tech-debt in the mechanical walk" "landing-refusals" "$(jq -r '.source' <<<"$lr_pick")"
+assert_eq "…and names the entry's own ref" "pr-61-landing-refusal-4718691960" "$(jq -r '.item' <<<"$lr_pick")"
+assert_eq "…carrying the existing branch and pull request, never a new one" \
+  "agent/td26082401 https://x/pull/61 61" \
+  "$(jq -r '[.branch, .pr_url, (.pr_number|tostring)] | join(" ")' <<<"$lr_pick")"
+assert_contains "…with the reconciles citation named in its acceptance" \
+  "<!-- agent-ops:reconciles comment=<id> -->" "$(jq -r '.acceptance' <<<"$lr_pick")"
+assert_eq "…and a repo not listing the source reaches nothing in the band" "tech-debt" \
+  "$(jq -r '.source' <<<"$(fallback_select_candidate \
+     "$(jq -c 'map(.sources = (.sources | map(select(. != "landing-refusals"))))' <<<"$lr_repos")" "m")")"
+
 empty_repos='[{"slug":"acme/widgets","default_branch":"main",
   "sources":["security","issues:urgent","review-feedback","merge-conflicts","human-visibility","abandoned-drafts","issues:high","tech-debt","issues:medium","issues:low","code-quality","register-hygiene"],"findings":[],"review_feedback":[],"merge_conflicts":[],"abandoned_drafts":[],"human_visibility":[],"issues":[],"tech_debt":[],"register_hygiene":[]}]'
 assert_eq "every band empty prints null, not a crash" "null" "$(fallback_select_candidate "$empty_repos" "m")"
