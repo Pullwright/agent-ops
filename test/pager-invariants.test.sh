@@ -60,12 +60,20 @@ trap 'rm -rf "$WORKDIR"' EXIT
 
 # --- verdict-unanimous ---------------------------------------------------------
 
-node_row() {  # node_row NAME STALE STAGE_VERDICT UPDATER_STATUS DOCTOR_VERDICT
-  jq -nc --arg n "$1" --argjson stale "$2" --arg sv "$3" --arg us "$4" --arg dv "$5" '
+# DOCTOR_FAILS is optional and is a JSON array — the bounded `fails`
+# scripts/state-sync.sh folds into the heartbeat (agent-ops#1397). Omitting it
+# leaves the `doctor` object exactly the `{timestamp, verdict}` shape every
+# peer published before that, which is what keeps the no-detail cases below
+# honest about an older peer rather than merely about an empty array.
+node_row() {  # node_row NAME STALE STAGE_VERDICT UPDATER_STATUS DOCTOR_VERDICT [DOCTOR_FAILS]
+  jq -nc --arg n "$1" --argjson stale "$2" --arg sv "$3" --arg us "$4" --arg dv "$5" \
+         --argjson df "${6:-null}" '
     {node: $n, stale: $stale,
      stage_health: (if $sv == "" then null else {stages: {coordinator: {verdict: $sv}}} end),
      updater: (if $us == "" then null else {status: $us} end),
-     doctor: (if $dv == "" then null else {verdict: $dv} end)}'
+     doctor: (if $dv == "" then null
+              else ({verdict: $dv} + (if $df == null then {} else {fails: $df} end))
+              end)}'
 }
 # fleet3 ROW1 ROW2 ROW3 -> a 3-element JSON array. Built by feeding each row
 # to `jq -s` on stdin rather than process substitution (`<(...)`): this
@@ -109,6 +117,72 @@ fleet3_doctor_fail="$(fleet3 "$(node_row n1 false "" "" fail)" \
   "$(node_row n2 false "" "" fail)" "$(node_row n3 false "" "" fail)")"
 verdict="$(pager_eval_verdict_unanimous "$fleet3_doctor_fail" /dev/null)"
 assert_eq "doctor.verdict fail on every active node: fires" "true" "$(jq -r '.firing' <<<"$verdict")"
+assert_eq "  ... a peer publishing no fails at all names no check, rather than an empty one" \
+  "0" "$(grep -c 'failing on every one of them' <<<"$(jq -r '.evidence' <<<"$verdict")")"
+
+# agent-ops#1397: the failing check travels with the verdict, so the page
+# names it instead of sending someone to read four nodes' .doctor-status.json
+# by hand — which is exactly what #1398 cost.
+d_write='Poetic-Poems/poetic is readable but not writable with this token — a cycle would claim work here and lose it at push'
+d_state='Poetic-Poems/agent-ops-state is readable but not writable with this token — this node could fetch fleet state and never publish its own'
+shared_fails="$(jq -nc --arg a "$d_write" --arg b "$d_state" '[$a, $b]')"
+fleet3_doctor_named="$(fleet3 "$(node_row n1 false "" "" fail "$shared_fails")" \
+  "$(node_row n2 false "" "" fail "$shared_fails")" \
+  "$(node_row n3 false "" "" fail "$shared_fails")")"
+verdict="$(pager_eval_verdict_unanimous "$fleet3_doctor_named" /dev/null)"
+evidence="$(jq -r '.evidence' <<<"$verdict")"
+assert_eq "a fail every node shares still fires" "true" "$(jq -r '.firing' <<<"$verdict")"
+assert_eq "  ... and the evidence names the check, not merely the verdict" \
+  "1" "$(grep -cF "$d_write" <<<"$evidence")"
+assert_eq "  ... naming the second shared check too" \
+  "1" "$(grep -cF "$d_state" <<<"$evidence")"
+assert_eq "  ... and still carries the #1071 signature it always did" \
+  "1" "$(grep -c '#1071' <<<"$evidence")"
+
+# Only the intersection: a check one node alone reports is not what the
+# unanimity is about, and naming it would point the reader at the wrong node.
+odd_fails="$(jq -nc --arg a "$d_write" '[$a, "n2 alone says this"]')"
+fleet3_doctor_partial="$(fleet3 "$(node_row n1 false "" "" fail "$shared_fails")" \
+  "$(node_row n2 false "" "" fail "$odd_fails")" \
+  "$(node_row n3 false "" "" fail "$shared_fails")")"
+evidence="$(jq -r '.evidence' <<<"$(pager_eval_verdict_unanimous "$fleet3_doctor_partial" /dev/null)")"
+assert_eq "a check every node shares is named" "1" "$(grep -cF "$d_write" <<<"$evidence")"
+assert_eq "  ... while one node's own extra fail is not" \
+  "0" "$(grep -c 'n2 alone says this' <<<"$evidence")"
+assert_eq "  ... and neither is a check the other two share but n2 does not" \
+  "0" "$(grep -cF "$d_state" <<<"$evidence")"
+
+# Nodes failing genuinely different checks: the verdict is still unanimous,
+# so it still fires, but there is no shared check to name and inventing one
+# would be worse than the bare verdict.
+disjoint_a="$(jq -nc '["only n1 and n3 say this"]')"
+disjoint_b="$(jq -nc '["only n2 says this"]')"
+fleet3_doctor_disjoint="$(fleet3 "$(node_row n1 false "" "" fail "$disjoint_a")" \
+  "$(node_row n2 false "" "" fail "$disjoint_b")" \
+  "$(node_row n3 false "" "" fail "$disjoint_a")")"
+verdict="$(pager_eval_verdict_unanimous "$fleet3_doctor_disjoint" /dev/null)"
+assert_eq "nodes failing different checks still fire on the unanimous verdict" \
+  "true" "$(jq -r '.firing' <<<"$verdict")"
+assert_eq "  ... but no check is named, rather than the wrong one" \
+  "0" "$(grep -c 'failing on every one of them' <<<"$(jq -r '.evidence' <<<"$verdict")")"
+
+# At most two, however many they share: this is a page title's worth of
+# evidence, not the whole array.
+many_fails="$(jq -nc '["check one","check two","check three","check four"]')"
+fleet3_doctor_many="$(fleet3 "$(node_row n1 false "" "" fail "$many_fails")" \
+  "$(node_row n2 false "" "" fail "$many_fails")" \
+  "$(node_row n3 false "" "" fail "$many_fails")")"
+evidence="$(jq -r '.evidence' <<<"$(pager_eval_verdict_unanimous "$fleet3_doctor_many" /dev/null)")"
+assert_eq "four shared fails name the first two" "1" "$(grep -c 'check one' <<<"$evidence")"
+assert_eq "  ... and stop there" "0" "$(grep -c 'check three' <<<"$evidence")"
+
+# The stage_health and updater branches carry no detail, and their evidence
+# is unchanged to the byte — agent-ops#1397 called their formatting adequate
+# and left it alone.
+verdict="$(pager_eval_verdict_unanimous "$fleet3_all_failing" /dev/null)"
+assert_eq "the stage_health branch's evidence is untouched" \
+  "stage_health[coordinator] on every active node (n1, n2, n3) — the #1071 signature: a uniform fleet-wide failure is almost always the reader being wrong, not every node failing alike at once" \
+  "$(jq -r '.evidence' <<<"$verdict")"
 
 fleet3_healthy="$(fleet3 "$(node_row n1 false ok stuck fail)" \
   "$(node_row n2 false ok running ok)" "$(node_row n3 false failing running ok)")"

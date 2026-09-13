@@ -17302,13 +17302,22 @@ with the Reviewer's own.
       heartbeat already, requirement 2.8), `updater.status == "stuck"` on
       every active node (requirement 2.6), or `doctor.verdict == "fail"` on
       every active node — the last of these needed a heartbeat change of its
-      own: `.doctor-status.json`'s `{timestamp, verdict}` (never the full
-      record — `fails`/`warns`/`skips` are unbounded diagnostic prose and
-      `token_expiry` has no reader off the node holding the credential, so
-      all four stay local) now folds into `heartbeat.json` as `doctor`, the
-      same way `stage_health`'s does, since this invariant is the first
-      reader anywhere that needs a peer's doctor verdict rather than only
-      this node's own. `publish-dashboard.sh` projects this node's own fleet
+      own: `.doctor-status.json`'s `{timestamp, verdict}` now folds into
+      `heartbeat.json` as `doctor`, the same way `stage_health`'s does, since
+      this invariant is the first reader anywhere that needs a peer's doctor
+      verdict rather than only this node's own. Since agent-ops#1397 a
+      **bounded** `fails` folds in beside them — the first three entries,
+      each truncated to 200 characters — and the doctor branch's evidence
+      names the entries common to every active node (at most two), so the
+      page says *which* check failed rather than only that one did; nodes
+      failing genuinely different checks, or a peer still publishing the
+      older shape, yield no such clause rather than a wrong one, and the
+      `stage_health`/`updater` branches' evidence is unchanged. Bounding is
+      the point: `warns`/`skips` remain unbounded diagnostic prose with no
+      off-node reader and `token_expiry` has no reader off the node holding
+      the credential, so those three stay local, and the whole fleet
+      re-fetches this file every `schedule.state_sync_fetch_minutes`.
+      `publish-dashboard.sh` projects this node's own fleet
       row identically, so every row in the fleet answers to one shape. Its
       pipeline-act remedy files a
       `pw::type:tech-debt` issue against this pipeline's own repository (the
@@ -18984,12 +18993,28 @@ What exists, and the requirements each part answers to:
     missing scope stops looking like a repository with no work in it.
     Write access is one `gh api repos/<slug> --jq` call per configured
     repository, folded into the same per-repository pass as the read/label
-    check: `.permissions.push == true` is `ok`, `== false` is `fail` (a cycle
-    would claim that repository's work and lose it at push), and an absent
-    `.permissions` — present only on an authenticated request, so its
-    absence is a fact about the request rather than the token — is `skip`,
-    never `fail`; `.archived: true` is `fail` regardless of `.permissions`,
-    since no token can push to an archived repository. In the same
+    check. `.archived: true` is `fail` whatever else the response says, since
+    no token can push to an archived repository. Past that, which source
+    answers "can this token push here?" depends on the identity the transport
+    will present for the call (`lib/gh-shim.sh`'s own three conditions —
+    `GH_TOKEN` empty, the authoring App configured, a mint for that owner
+    succeeding), because `.permissions` answers for a PAT and only for a PAT
+    (agent-ops#1397). On the **PAT** path: `.permissions.push == true` is
+    `ok`, `== false` is `fail` (a cycle would claim that repository's work and
+    lose it at push), and an absent `.permissions` — present only on an
+    authenticated request, so its absence is a fact about the request rather
+    than the token — is `skip`, never `fail`. On the **App** path
+    `.permissions` is not read at all: GitHub returns it present with every
+    member false to an installation token whatever the installation was
+    granted (`pull: false` on a read that has just succeeded is the tell), so
+    the installation's own record answers instead — `contents: write` from
+    `author_token_installation_permissions` (what this identity may do) and a
+    repository selection covering the slug from
+    `author_token_installation_repositories` (where it may do it; `all`
+    covers everything). Both present is `ok`; either genuinely missing is
+    `fail`, and an owner act in both cases; either read being unreachable is
+    `skip`, never `fail`, on the same reasoning as the absent-`.permissions`
+    branch — no network failure may mint a verdict only an owner can clear. In the same
     per-repository ruleset pass agent-ops#391's check already makes
     (requirement 38's dependency, below), a repository whose configured
     `merge_autonomy` (its own override, or the top-level key) is
@@ -24358,10 +24383,16 @@ oblige anyone to edit a test.
     passes, against a stubbed `gh` and `claude` on `PATH` — the seam
     `doctor.sh` leaves for both, carrying no override variable for either —
     run without `--offline` so these checks are actually exercised, with
-    nothing on `PATH` able to reach a real network regardless: a
-    `.permissions.push` of `true` is `ok`, `false` is `fail`, and an absent
-    field is `skip`; `.archived: true` is `fail` even when `.permissions.push`
-    is `true`; Claude credentials check whichever of D4's two paths this
+    nothing on `PATH` able to reach a real network regardless: on the PAT
+    path a `.permissions.push` of `true` is `ok`, `false` is `fail`, and an
+    absent field is `skip`; `.archived: true` is `fail` even when
+    `.permissions.push` is `true`; under the forge authoring App — stubbed
+    through `AUTHOR_TOKEN_CURL` with a throwaway key, `GH_TOKEN` exported
+    empty as the cron view has it — `.permissions` all false is *not* read as
+    "cannot push" (agent-ops#1397), an installation carrying `contents:
+    write` over a covered repository is `ok`, a narrower grant or a selection
+    leaving the repository out is `fail` naming which, and either installation
+    read being unreachable is `skip`; Claude credentials check whichever of D4's two paths this
     environment carries — a non-empty `ANTHROPIC_API_KEY` shaped like an
     Anthropic key (the `sk-ant-` prefix) is `ok`, one that is not is `warn`,
     and OAuth is not consulted when a key is present; absent a key,

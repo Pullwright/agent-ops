@@ -254,3 +254,59 @@ author_token_identity_login() {
     "${AUTHOR_TOKEN_OPENSSL:-openssl}" \
     "$now"
 }
+
+# author_token_installation_permissions SLUG_OR_OWNER [NOW_EPOCH]
+# Print the forge authoring App installation SLUG_OR_OWNER's owner resolves
+# to's actual granted permissions — the live `.permissions` object from
+# `GET /app/installations/<id>`
+# (`{"contents":"write","metadata":"read","pull_requests":"write",...}`) — or
+# return non-zero, printing nothing, on the same "gate unreadable" terms as
+# `author_token_get` (2 no credential, 1 mint/request failed).
+#
+# The Approver's identical wrapper reads this to verify an installation was
+# granted what the fleet needs; this identity reads it for a different
+# question (agent-ops#1397): what a token may actually *do* to a repository,
+# when `GET /repos/<slug>`'s own `.permissions` cannot answer. GitHub returns
+# that object all-false to an App installation token whatever the grant
+# really is — `pull: false` on a read that has just succeeded gives it away —
+# so the installation's own record is the only honest source, and
+# `scripts/doctor.sh`'s write-access check reads it here rather than
+# believing a field the endpoint does not populate for this identity.
+author_token_installation_permissions() {
+  local slug="${1:-}" now="${2:-$(date +%s)}" installation_id
+  installation_id="$(author_token_installation_for_owner "$slug")" || installation_id=""
+  github_app_token_installation_permissions \
+    "${PULLWRIGHT_AUTHOR_APP_ID:-}" \
+    "$installation_id" \
+    "${PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH:-}" \
+    "${AUTHOR_TOKEN_CURL:-curl}" \
+    "${AUTHOR_TOKEN_OPENSSL:-openssl}" \
+    "$now"
+}
+
+# author_token_installation_repositories SLUG_OR_OWNER [NOW_EPOCH]
+# Print the repositories the forge authoring App installation SLUG_OR_OWNER's
+# owner resolves to can actually act on — one `owner/name` per line — or the
+# single word `all` when the installation was granted every repository in the
+# account. Returns non-zero, printing nothing, on the same "gate unreadable"
+# terms as `author_token_get` (2 no credential, 1 request failed).
+#
+# The other half of the write-access question above (agent-ops#1397):
+# `contents: write` says what this identity may do, and the repository
+# selection says where it may do it. An installation scoped to `selected`
+# that leaves a configured repository out can push nowhere near it, with
+# nothing in config.json the wiser — which is a real "claims work here and
+# loses it at push", and the one case the doctor's App path must still fail.
+author_token_installation_repositories() {
+  local slug="${1:-}" now="${2:-$(date +%s)}" installation_id
+  installation_id="$(author_token_installation_for_owner "$slug")" || installation_id=""
+  github_app_token_installation_repositories \
+    "${PULLWRIGHT_AUTHOR_APP_ID:-}" \
+    "$installation_id" \
+    "${PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH:-}" \
+    "${AUTHOR_TOKEN_CACHE_DIR:-/dev/shm}" \
+    "pullwright-author-token" \
+    "${AUTHOR_TOKEN_CURL:-curl}" \
+    "${AUTHOR_TOKEN_OPENSSL:-openssl}" \
+    "$now"
+}

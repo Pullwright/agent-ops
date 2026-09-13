@@ -1939,11 +1939,15 @@ operator noticed hours later.
 This panel itself renders only this node's own `status.doctor` — a
 repository's configuration and this node's own GitHub access are this
 node's alone to report, so a peer's doctor pass has nothing to add here.
-`doctor`'s own *verdict* (never the fail/warn/skip detail) does now travel
-in `fleet.nodes[].doctor`, the same way `compose`/`image`/`switch` already
-did — but that is for `lib/pager.sh`'s own `verdict-unanimous` invariant
-(implementation spec requirement 51) to read fleet-wide, not for this
-panel, which stays node-local by design.
+`doctor`'s own *verdict* does now travel in `fleet.nodes[].doctor`, the same
+way `compose`/`image`/`switch` already did, and since agent-ops#1397 a
+bounded `fails` travels beside it — the first three entries, each truncated
+to 200 characters, so that a page can name the check that failed without the
+whole fleet re-fetching unbounded diagnostic prose every
+`schedule.state_sync_fetch_minutes`. `warns`, `skips` and `token_expiry`
+stay node-local still. All of that is for `lib/pager.sh`'s own
+`verdict-unanimous` invariant (implementation spec requirement 51) to read
+fleet-wide, not for this panel, which stays node-local by design.
 
 The **Stage health** panel (agent-ops#662) renders `status.stage_health`: the
 most recent per-stage verdict computed on *this* node, read from

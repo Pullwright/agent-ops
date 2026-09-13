@@ -1147,7 +1147,24 @@ elif ! gh auth status >/dev/null 2>&1; then
   fail "gh is not authenticated — run 'gh auth login' or set GH_TOKEN; every work source reads through it"
 else
   gh_ready=1
-  ok "gh is authenticated as $(gh api user --jq .login 2>/dev/null || echo '(login unavailable)')"
+  # `GET /user` answers for a PAT and only for a PAT: asked with an App
+  # installation token it returns 403 "Resource not accessible by
+  # integration", which this line used to print verbatim as the login —
+  # `gh is authenticated as {"message":"Resource not accessible by
+  # integration",…}(login unavailable)` (agent-ops#1397). An App has no
+  # authenticated *user* to report; it has its own login, which
+  # `author_token_identity_login` reads from `GET /app`. So ask whichever
+  # endpoint can actually answer for the identity the transport will
+  # present — the same condition lib/gh-shim.sh mints under — and keep
+  # `/user` for the PAT path, where it is still the only source.
+  gh_identity_login=""
+  # shellcheck disable=SC2119 # "is this identity configured at all", exactly as the shim's own gate asks it
+  if [[ -z "${GH_TOKEN:-}" ]] && author_token_credential_present; then
+    gh_identity_login="$(author_token_identity_login "" 2>/dev/null)" || gh_identity_login=""
+  fi
+  [[ -n "$gh_identity_login" ]] \
+    || gh_identity_login="$(gh api user --jq .login 2>/dev/null)" || gh_identity_login=""
+  ok "gh is authenticated as ${gh_identity_login:-(login unavailable)}"
 fi
 
 # The forge authoring App's own mint path, exercised once (D18 decision 1,
@@ -1310,6 +1327,34 @@ if ((gh_ready)); then
   # counts as ok/fail/skip, the way a hand-rolled state_repo check once did:
   # its own `push == false || push == null` collapsed both into `fail`,
   # reporting a token that merely can't be asked as one that can't push.
+  #
+  # **`.permissions` answers for a PAT and only for a PAT** (agent-ops#1397).
+  # Asked with a forge authoring App installation token, GitHub returns the
+  # object present but every member false —
+  # `{"admin":false,"maintain":false,"pull":false,"push":false,"triage":false}`
+  # — whatever that installation was actually granted. `pull: false` on a read
+  # that has just succeeded is what gives it away: the field is not a report
+  # on this token at all. Since the Author App went live (#1396) the seam
+  # leaves `GH_TOKEN` empty in PID 1's environment, so every cron child's `gh`
+  # mints through the App and every repository read `push == false` — which
+  # this check turned into seven `fail`s per node on all four nodes at once,
+  # against a token that was pushing pull requests the whole time. That
+  # fleet-wide uniformity is the #1071 signature, and it was the reader.
+  #
+  # So the question is asked of whichever source can answer it for the
+  # identity the transport will actually present:
+  #
+  #   - **PAT** (`GH_TOKEN` set, or no App configured): `.permissions.push`,
+  #     exactly as before. A fine-grained PAT really does split read from
+  #     write this way, and this is still the only place that shows it.
+  #   - **App**: the installation's own record — `contents: write` (what it
+  #     may do) *and* the repository selection covering this slug (where it
+  #     may do it). Both are owner acts, invisible to config.json, and a
+  #     `selected` installation that leaves a configured repository out is a
+  #     genuine "claims work here and loses it at push" this must still fail.
+  #
+  # `archived` is read from the same response for both paths: that one is a
+  # fact about the repository, which the App token reads perfectly well.
   check_repo_access() {
     local slug="$1" ok_msg="${2:-is writable — the token can push claim branches}" \
           fail_msg="${3:-is readable but not writable with this token — a cycle would claim work here and lose it at push}" \
@@ -1323,12 +1368,99 @@ if ((gh_ready)); then
     push="$(jq -r '.push' <<<"$json" 2>/dev/null)"
     if [[ "$archived" == "true" ]]; then
       fail "$slug is archived — no branch can be pushed to it, whatever the token's permissions"
+      return
+    fi
+    if check_repo_access_is_app "$slug"; then
+      check_repo_access_app "$slug" "$ok_msg" "$fail_msg"
     elif [[ "$push" == "true" ]]; then
       ok "$slug $ok_msg"
     elif [[ "$push" == "false" ]]; then
       fail "$slug $fail_msg"
     else
       skip "$slug's write permission is not visible to this token (no .permissions field) — cannot confirm push access"
+    fi
+  }
+
+  # Whether a `gh` call this run makes about SLUG will present the forge
+  # authoring App's installation token rather than a PAT. The three
+  # conditions are lib/gh-shim.sh's `gh_shim_resolve_token`'s own, in its
+  # order — an explicit `GH_TOKEN` passes through the shim untouched, the
+  # credential-present gate is owner-less there too, and a mint that fails
+  # degrades to the PAT — so this can never report on an identity other than
+  # the one the transport actually presented for the read above. Asking it
+  # per slug rather than once is what keeps a fleet whose owners resolve to
+  # different installations honest; `author_token_get` serves a cached token
+  # per installation, so the repetition costs no extra mint.
+  check_repo_access_is_app() {
+    local owner="${1%%/*}" token
+    [[ -z "${GH_TOKEN:-}" ]] || return 1
+    # shellcheck disable=SC2119 # "is this identity configured at all", exactly as the shim's own gate asks it
+    author_token_credential_present || return 1
+    token="$(author_token_get "" "$owner" 2>/dev/null)" && [[ -n "$token" ]]
+  }
+
+  # The App path's verdict, memoised per installation: two owners on one
+  # installation are one pair of reads, and the same owner's several
+  # repositories cost nothing after the first. Both reads are JWT- or
+  # installation-signed calls this check would otherwise repeat per
+  # repository.
+  #
+  # Unreadable is a `skip`, never a `fail`, on exactly the reasoning the
+  # absent-`.permissions` branch above already follows and the Approver's own
+  # repository-selection read follows (agent-ops#721): a network failure must
+  # never be able to mint the "this token cannot push here" verdict that an
+  # owner act is the only fix for.
+  declare -A cra_perm_readable=()   # installation id -> 1/0, was the grant readable
+  declare -A cra_perm_contents=()   # installation id -> the live `contents` grant
+  declare -A cra_repos_readable=()  # installation id -> 1/0, was the selection readable
+  declare -A cra_repos_list=()      # installation id -> covered slugs, or the word `all`
+  check_repo_access_app() {
+    local slug="$1" ok_msg="$2" fail_msg="$3" owner="${slug%%/*}" \
+          inst perms_json contents list
+    inst="$(author_token_installation_for_owner "$owner" 2>/dev/null)" || inst=""
+    if [[ -z "$inst" ]]; then
+      # Unreachable in practice — `check_repo_access_is_app` only returns
+      # true after a mint against this very owner succeeded — but a verdict
+      # that silently read an empty installation id would be worse than one
+      # that says it could not be made.
+      skip "$slug's write access with the forge authoring App — no installation is configured for $owner, so its grant could not be read"
+      return
+    fi
+    if [[ -z "${cra_perm_readable[$inst]:-}" ]]; then
+      if perms_json="$(author_token_installation_permissions "$owner" 2>/dev/null)"; then
+        cra_perm_readable[$inst]=1
+        cra_perm_contents[$inst]="$(jq -r '.contents // ""' <<<"$perms_json" 2>/dev/null)" \
+          || cra_perm_contents[$inst]=""
+      else
+        cra_perm_readable[$inst]=0
+      fi
+    fi
+    if (( ! cra_perm_readable[$inst] )); then
+      skip "$slug's write access with the forge authoring App — GitHub did not answer /app/installations/<id>, or the response could not be read, for the installation for $owner (id $inst); \`gh\` reports \`.permissions\` all false for an App whatever the grant, so there is nothing else to read it from (agent-ops#1397)"
+      return
+    fi
+    contents="${cra_perm_contents[$inst]}"
+    if [[ "$contents" != "write" ]]; then
+      fail "$slug $fail_msg — the forge authoring App installation for $owner (id $inst) is granted contents:${contents:-none}, and pushing a branch needs contents:write; only the installer can regrant it (owner act)"
+      return
+    fi
+    if [[ -z "${cra_repos_readable[$inst]:-}" ]]; then
+      if list="$(author_token_installation_repositories "$owner" 2>/dev/null)"; then
+        cra_repos_readable[$inst]=1
+        cra_repos_list[$inst]="$list"
+      else
+        cra_repos_readable[$inst]=0
+      fi
+    fi
+    if (( ! cra_repos_readable[$inst] )); then
+      skip "$slug's write access with the forge authoring App — its installation for $owner (id $inst) carries contents:write, but GitHub did not answer /installation/repositories, or the listing came back incomplete, so whether the selection covers this repository is unconfirmed"
+      return
+    fi
+    list="${cra_repos_list[$inst]}"
+    if [[ "$list" == "all" ]] || grep -qixF -- "$slug" <<<"$list"; then
+      ok "$slug $ok_msg"
+    else
+      fail "$slug $fail_msg — the forge authoring App installation for $owner (id $inst) carries contents:write, but its repository selection does not cover this repository; only the installer can add it to the selection (owner act)"
     fi
   }
 

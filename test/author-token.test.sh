@@ -289,13 +289,29 @@ cat > "$tmp_dir/curl-by-id" <<STUB
 #!/usr/bin/env bash
 d="$tmp_dir"
 printf 'call\n' >> "\$d/curl_calls"
-cat >/dev/null 2>&1
+cfg="\$(cat 2>/dev/null)"
 url=""
 for a in "\$@"; do case "\$a" in https://*) url="\$a" ;; esac; done
 case "\$url" in
   */access_tokens)
     id="\${url#*/app/installations/}"; id="\${id%%/access_tokens}"
     printf '{"token":"ghs_for_%s","expires_at":"2099-01-01T00:00:00Z"}\n201' "\$id"
+    exit 0 ;;
+  */installation/repositories*)
+    # This URL names no installation, so which one is asking is carried by
+    # the bearer token the mint above issued — which is exactly what makes
+    # it worth asserting that the owner resolved to the right one.
+    tok="\$(printf '%s' "\$cfg" | sed -n 's/.*Bearer ghs_for_\([0-9]*\).*/\1/p' | head -n1)"
+    printf '{"total_count":1,"repository_selection":"selected","repositories":[{"full_name":"inst-%s/widgets"}]}\n200' "\$tok"
+    exit 0 ;;
+  */app/installations/*)
+    # The wrapper prints the permissions object alone, so the installation
+    # that answered is stamped inside it — under a key GitHub would never
+    # send, which is the point: it can only have come from this id's own
+    # response. (No backticks in this heredoc: it is unquoted, so they would
+    # be command substitution run while the stub is written.)
+    id="\${url##*/}"
+    printf '{"id":%s,"permissions":{"contents":"write","metadata":"read","probe_installation":"%s"}}\n200' "\$id" "\$id"
     exit 0 ;;
   */app)
     printf '{"slug":"pullwright-author","id":7710033}\n200'
@@ -448,6 +464,35 @@ assert_eq "identity login: no owner on a map-only fleet still answers — /app n
 out="$(author_token_identity_login "$now" "third-org" 2>/dev/null)"; rc=$?
 assert_eq "identity login: an owner named by neither is gate-unreadable" "" "$out"
 assert_eq "  ... exit 2" "2" "$rc"
+
+# --- The two installation reads scripts/doctor.sh's write-access check needs
+#     (agent-ops#1397) --------------------------------------------------------
+# GitHub answers `GET /repos/<slug>` with `.permissions` all false for an App
+# installation token whatever the grant really is, so "can this identity push
+# here?" has to be asked of the installation instead: its `contents` grant and
+# its repository selection. What belongs in *this* file is only which
+# installation each resolves against — the mechanics of both reads are
+# lib/github-app-token.sh's, and its own suite covers them.
+map_env "$two_orgs"
+assert_eq "installation permissions: an owner the map names reads that owner's installation" \
+  "222222222" "$(jq -r '.probe_installation' <<<"$(author_token_installation_permissions "Poetic-Poems" "$now")")"
+assert_eq "  ... and reports the grant itself, for the caller to compare" \
+  "write" "$(jq -r '.contents' <<<"$(author_token_installation_permissions "Poetic-Poems" "$now")")"
+assert_eq "installation permissions: a full slug resolves by its owner half" \
+  "111111111" "$(jq -r '.probe_installation' <<<"$(author_token_installation_permissions "Pullwright/agent-ops" "$now")")"
+out="$(author_token_installation_permissions "third-org" "$now" 2>/dev/null)"; rc=$?
+assert_eq "installation permissions: an owner named by neither is gate-unreadable" "" "$out"
+assert_eq "  ... exit 2, never an empty grant a caller could read as \"no write\"" "2" "$rc"
+
+rm -f "$cache_dir"/*
+assert_eq "installation repositories: resolves through the same owner map" \
+  "inst-222222222/widgets" "$(author_token_installation_repositories "Poetic-Poems" "$now")"
+rm -f "$cache_dir"/*
+assert_eq "  ... and a different owner reads its own installation's selection" \
+  "inst-111111111/widgets" "$(author_token_installation_repositories "Pullwright/agent-ops" "$now")"
+out="$(author_token_installation_repositories "third-org" "$now" 2>/dev/null)"; rc=$?
+assert_eq "installation repositories: an owner named by neither is gate-unreadable" "" "$out"
+assert_eq "  ... exit 2, never an empty listing a caller could read as \"not covered\"" "2" "$rc"
 
 unset PULLWRIGHT_AUTHOR_INSTALLATION_IDS
 clear_env
