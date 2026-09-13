@@ -899,7 +899,7 @@ and the schema must carry every one of them.
 <!-- config-table:start id=main — GENERATED from config.schema.json by scripts/render-config-table.sh; edit the schema, not these rows -->
 | Key | Value | Notes |
 |---|---|---|
-| `repos` | `["Poetic-Poems/poetic", "Poetic-Poems/poetic-fiddle"]` | Work-source lists per repo as in the table above (`security`, `issues:urgent`, `review-feedback`, `merge-conflicts`, `dequeued`, `human-visibility`, `abandoned-drafts`, `failed-runs`, `issues:high`, `tech-debt`, `issues:medium`, `implementation-plan`, `project-review`, `issues:low`, `code-quality`, `register-hygiene`); structure the config so a repo or source can be added without code changes. The `issues:<band>` tokens are the one source that appears more than once — the...[continued below](#extended-notes-repos) |
+| `repos` | `["Poetic-Poems/poetic", "Poetic-Poems/poetic-fiddle"]` | Work-source lists per repo as in the table above (`security`, `issues:urgent`, `review-feedback`, `merge-conflicts`, `dequeued`, `landing-refusals`, `human-visibility`, `abandoned-drafts`, `failed-runs`, `issues:high`, `tech-debt`, `issues:medium`, `implementation-plan`, `project-review`, `issues:low`, `code-quality`, `register-hygiene`); structure the config so a repo or source can be added without code changes. The `issues:<band>` tokens are the one source that appears more...[continued below](#extended-notes-repos) |
 | `state_dir` | `~/.local/state/poetic-agents` | Lock, shared log, per-cycle stage transcripts. Required — there is no product default; this installation's own value is below. |
 | `workspace_root` | `~/.cache/poetic-agents/workspaces` | Ephemeral clones live and die here, including the state repository's mirror. Required — there is no product default; this installation's own value is below. |
 | `state_repo` | `Poetic-Poems/agent-ops-state` | The private repository through which `state_dir` replicates between nodes (requirement 2.5). Its `main` carries the small shared surface: the claim registry (requirement 17a) and the fleet flags `fleet/disabled.json` and `fleet/limit.json` (requirements 2.3a and 2.1). Unset means a single-node operation: every mode of `scripts/state-sync.sh` becomes a no-op, and the fleet-flag reads and writes quietly do nothing. This installation's own value, `Poetic-Poems/agent-ops-state`...[continued below](#extended-notes-state_repo) |
@@ -1044,7 +1044,7 @@ same value; no other qualifier is accepted.
 
 ### Extended notes: `repos`
 
-Work-source lists per repo as in the table above (`security`, `issues:urgent`, `review-feedback`, `merge-conflicts`, `dequeued`, `human-visibility`, `abandoned-drafts`, `failed-runs`, `issues:high`, `tech-debt`, `issues:medium`, `implementation-plan`, `project-review`, `issues:low`, `code-quality`, `register-hygiene`); structure the config so a repo or source can be added without code changes.
+Work-source lists per repo as in the table above (`security`, `issues:urgent`, `review-feedback`, `merge-conflicts`, `dequeued`, `landing-refusals`, `human-visibility`, `abandoned-drafts`, `failed-runs`, `issues:high`, `tech-debt`, `issues:medium`, `implementation-plan`, `project-review`, `issues:low`, `code-quality`, `register-hygiene`); structure the config so a repo or source can be added without code changes.
 
 The `issues:<band>` tokens are the one source that appears more than once — the same `issues` source at four ranks (requirement 15e). A repo that lists none of them has the issues source off; one that lists a subset sees only issues in those bands.
 
@@ -1157,7 +1157,7 @@ It must not be `blocked` nor `obsolete`, for the reasons given against `enabler_
 
 ### Extended notes: `refinement_policy`
 
-Per-source refinement policy (requirement 39a): `required`, `preferred` or `exempt`, read by the Co-Ordinator alongside `refinements` (requirement 3h) to decide whether an unrefined item may be ranked at all. A source absent from this object is `exempt`. Shipped default: `issues` and `tech-debt` both `preferred` — of every source this key can name, these two are the ones whose items can otherwise reach an Implementer carrying a specification `coordinator_model` composed itself rather than one already written elsewhere, so the invariant of requirement 1c names them explicitly rather than leaving the object's absence do it implicitly. Bounded by what requirement 39's candidate gathering reads — the `findings`, `review_feedback`, `abandoned_drafts`, `merge_conflicts`, `dequeued`, `register_hygiene`, `issues` and `tech_debt` arrays every repo's `ordered_repos_json` entry carries, plus `project_review` and `implementation_plan`, read only into the Refiner-only copy of the repos array (`refiner_repos_json`, requirement 3y) and only where `refiner_model` is set — with no Refiner to launch, neither is read at all — and the repo's own `sources` lists the source and its policy for it is not itself `exempt`. `failed-runs` is the one source with no array at all, so a policy set for it shapes selection only. A `required` source with `refiner_model` empty is refused at startup — `config_required_refinement_sources_without_refiner` (requirement 1c) — since nothing would ever refine its items and they would wait forever.
+Per-source refinement policy (requirement 39a): `required`, `preferred` or `exempt`, read by the Co-Ordinator alongside `refinements` (requirement 3h) to decide whether an unrefined item may be ranked at all. A source absent from this object is `exempt`. Shipped default: `issues` and `tech-debt` both `preferred` — of every source this key can name, these two are the ones whose items can otherwise reach an Implementer carrying a specification `coordinator_model` composed itself rather than one already written elsewhere, so the invariant of requirement 1c names them explicitly rather than leaving the object's absence do it implicitly. Bounded by what requirement 39's candidate gathering reads — the `findings`, `review_feedback`, `abandoned_drafts`, `merge_conflicts`, `dequeued`, `landing_refusals`, `register_hygiene`, `issues` and `tech_debt` arrays every repo's `ordered_repos_json` entry carries, plus `project_review` and `implementation_plan`, read only into the Refiner-only copy of the repos array (`refiner_repos_json`, requirement 3y) and only where `refiner_model` is set — with no Refiner to launch, neither is read at all — and the repo's own `sources` lists the source and its policy for it is not itself `exempt`. `failed-runs` is the one source with no array at all, so a policy set for it shapes selection only. A `required` source with `refiner_model` empty is refused at startup — `config_required_refinement_sources_without_refiner` (requirement 1c) — since nothing would ever refine its items and they would wait forever.
 
 ### Extended notes: `label_prefix`
 
@@ -17709,6 +17709,96 @@ with the Reviewer's own.
     evaluation site and the `WITH_GITHUB`-not-merely-`FULL` gate; its own
     page-rendering section documents the `pager-firing` banner and node-card
     badge this requirement's `nodes` field feeds.
+
+53. **Landing-refusal pre-fetch (issue #979).** Requirement 8d gate 4
+    (`_landing_stage_attempt`, `lib/landing.sh`) refuses to arm a pull request
+    over an unreconciled human comment (`reconciliation-unanswered:`) or an
+    unreadable comment-reconciliation read (`reconciliation-unreadable:`) —
+    correctly, since it is the human veto D18 promises — but that refusal by
+    itself is a dead end: `scripts/gather-review-feedback.sh`'s own candidate
+    rule cannot see it (no formal `CHANGES_REQUESTED`, no draft flip), and
+    `scripts/gather-abandoned-drafts.sh` only ever sees drafts, while the
+    pull request stays Ready. Before this requirement, the only trace was one
+    `landing-refused` log line per cycle that nothing read back into work, and
+    `scripts/sweep-human-visibility.sh`'s own idle nudge (requirement 38c)
+    told the assignee the pull request "is waiting on a merge click" — true of
+    every other approved, green, mergeable pull request, false of this one.
+
+    `scripts/gather-landing-refusals.sh` (`gather_landing_refusals`,
+    `lib/candidate-select.sh`) is the route back: for a repo whose `sources`
+    lists `landing-refusals`, it lists that repo's own open, non-draft
+    `pr_label` pull requests and, for each, reads the *fleet-wide* union log's
+    most recent `landing-refused` event for that pull request
+    (`lib/landing.sh`'s `landing_latest_refusal_reason`, the same `LOG_FILE`
+    convention `landing_retry_tier` already established — a peer node's own
+    cycle may have logged the refusal this node must still see). A pull
+    request is a candidate iff that event's `reason` begins
+    `reconciliation-unanswered:` or `reconciliation-unreadable:` *and*
+    `lib/reconciliation-gate.sh`'s own `reconciliation_unreconciled_comments`
+    (unbounded, the identical call gate 4 itself makes), asked fresh right
+    now, still reports at least one unreconciled human comment — the
+    "answered clause" every finishing source needs (`scripts/gather-
+    dequeued.sh`'s own header), since the old log event never disappears once
+    the Implementer's `<!-- agent-ops:reconciles comment=<id> -->` reply
+    clears it. Reading the *logged refusal* rather than recomputing gate 4's
+    own reconciliation check independently is deliberate: gate 4 only ever
+    reaches that check once every gate before it — approval, no formal
+    `CHANGES_REQUESTED`, a green required-check list — has already passed, so
+    this source stays complementary to `review-feedback` rather than
+    duplicating it for a pull request review-feedback already covers for a
+    different reason.
+
+    `_reconciliation_gate_comments` (`lib/reconciliation-gate.sh`) carries a
+    `who` field (the comment author's login) alongside its existing
+    `id`/`at`/`body`/`bot` fields, and `_reconciliation_gate_unreconciled`
+    factors the "unreconciled" test `reconciliation_gate` itself reports as
+    `dirty` into its own function, returning `{id, at, author, body}` per
+    unreconciled comment (requirement 34a: one definition per rule) — the
+    structured shape `reconciliation_unreconciled_comments` (a new public
+    entry point, unbounded NOT_AFTER) exposes for a caller needing the
+    comment's own text rather than a permalink string. `reconciliation_gate`
+    itself is unchanged in every observable respect: it calls the same shared
+    helper internally and still reports `clean`/`dirty<TAB>reason`/
+    `unknown<TAB>reason` exactly as before.
+
+    The candidate ref is `pr-<n>-landing-refusal-<ids>`, where `<ids>` is the
+    sorted, hyphen-joined set of currently-unreconciled comment ids — not the
+    pull request alone — on the same "an item recorded blocked stays blocked
+    until something clears it" reasoning every sibling finishing source's own
+    scoped ref follows (`scripts/gather-dequeued.sh`'s header): answering one
+    comment, or a fresh comment arriving, changes the set and mints a
+    candidate no old block or void covers, while an unchanged set keeps the
+    same ref and stays correctly blocked or claimed. The candidate carries
+    `refused_at`/`reason` (the logged event), `comments` (the structured
+    array) and `body` (every unreconciled comment rendered verbatim, oldest
+    first, the way `gather-review-feedback.sh` assembles review text) — the
+    Implementer's brief is the comment prose itself, never a summary of it.
+
+    Wired into the ordinary pre-fetch machinery exactly as `review-feedback`/
+    `merge-conflicts`/`dequeued` are: gated on `sources` naming
+    `landing-refusals`, folded into the "expensive" per-cycle band (`lib/
+    expensive-gather-cache.sh`) alongside its eight siblings, `emit_first_seen`
+    and claim exclusion (`exclude_claimed_prs`/`exclude_claimed_items`)
+    applied identically, and carried on the Co-Ordinator's own runtime input
+    as each repo entry's `landing_refusals` array. Deliberately **not**
+    folded into requirement 2.2a's four-source back-pressure/drain finishing
+    set, nor into the claim-pattern and void-corroboration parity the other
+    four finishing sources share (`lib/drain.sh`, `lib/claim.sh`, `lib/void-
+    guard.sh`) — extending those is a separate policy question (whether this
+    source alone should keep back-pressure from tripping, or a drain from
+    reaching rest) this issue's own refined scope did not ask for, tracked
+    instead as its own deferred item.
+
+    `scripts/sweep-human-visibility.sh`'s idle nudge (requirement 38c) takes
+    an optional fourth argument, the fleet-wide union log; when a pull
+    request's most recent `landing-refused` event reads
+    `reconciliation-unanswered:`/`reconciliation-unreadable:` and no fresher
+    live check clears it, the nudge names that reason instead of "waiting on
+    a merge click" — the same marker-based once-per-state suppression as
+    before, `<!-- agent-ops:human-nudge -->`, so the fix changes the wording a
+    human sees, not how often they see it. `lib/standdown.sh`'s own call site
+    passes `union_log` alongside the existing `cycle_id`/`node_name`
+    arguments.
 
 ## Components
 

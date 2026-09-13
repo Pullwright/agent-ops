@@ -117,11 +117,34 @@
 # request (agent-ops#393).
 # The caller logs them; this script logs nothing itself. Exit 0 unless the
 # arguments are unusable.
+#   5. Where a pull request otherwise due the idle nudge above is one gate 4
+#      (`lib/landing.sh`'s `_landing_stage_attempt`) most recently refused to
+#      arm over an unreconciled comment or an unreadable comment-
+#      reconciliation read (requirement 53, issue #979), the nudge names that
+#      real reason instead of "waiting on a merge click" — the misleading text
+#      every other approved/green/mergeable pull request gets, which is simply
+#      false of one the pipeline is actively refusing to land over a human's
+#      own comment. Read from UNION_LOG (below), the fleet-wide log —
+#      `landing-refused` is a fact only this pipeline's own log carries, and
+#      the refusal a peer node's own cycle logged is not visible any other
+#      way — and re-confirmed live via `lib/reconciliation-gate.sh`'s
+#      `reconciliation_unreconciled_comments` before the substitution is
+#      trusted, the same "the logged refusal never disappears once answered"
+#      reasoning `scripts/gather-landing-refusals.sh`'s own header explains:
+#      once the Implementer's marked reply clears it, the stale log line must
+#      not still be read as standing. Idempotent per pull request via the
+#      identical `<!-- agent-ops:human-nudge -->` marker the ordinary nudge
+#      already uses — this changes the nudge's wording, never how often it
+#      fires.
 #
-# Usage: sweep-human-visibility.sh <owner/repo> [cycle-id] [node-name]
+# Usage: sweep-human-visibility.sh <owner/repo> [cycle-id] [node-name] [union-log]
 # cycle-id and node-name stamp the nudge comment's header (requirement 9d,
 # lib/pipeline-marker.sh) the same way every other pipeline-authored comment
 # is stamped; both default to a placeholder a test or a manual run can ignore.
+# union-log (requirement 53) is the fleet-wide union log `lib/landing.sh`'s
+# `landing_latest_refusal_reason` reads; omitted or unreadable, item 5 above
+# simply never fires and the nudge reads exactly as it did before this
+# requirement existed.
 # Environment: SWEEP_GH overrides `gh` (tests stub it); AGENT_OPS_CONFIG
 # overrides the config path, as agent-cycle.sh accepts it.
 
@@ -149,14 +172,44 @@ export MERGE_QUEUE_GH
 . "$SCRIPT_DIR/lib/handoff.sh"
 # shellcheck source=lib/pipeline-marker.sh
 . "$SCRIPT_DIR/lib/pipeline-marker.sh"
+RECONCILIATION_GATE_GH="$GH"
+export RECONCILIATION_GATE_GH
+# shellcheck source=lib/reconciliation-gate.sh
+. "$SCRIPT_DIR/lib/reconciliation-gate.sh"
+# shellcheck source=lib/landing.sh
+. "$SCRIPT_DIR/lib/landing.sh"
 
 slug="${1:-}"
 cycle_id="${2:-sweep}"
 node_name="${3:-unknown}"
+union_log="${4:-}"
 if [[ -z "$slug" ]]; then
-  echo "usage: sweep-human-visibility.sh <owner/repo> [cycle-id] [node-name]" >&2
+  echo "usage: sweep-human-visibility.sh <owner/repo> [cycle-id] [node-name] [union-log]" >&2
   exit 64
 fi
+
+# requirement 53: true (exit 0) iff PR_URL's most recent `landing-refused`
+# event reads `reconciliation-unanswered:`/`reconciliation-unreadable:` *and*
+# a fresh, live check still finds at least one unreconciled human comment —
+# the same "the logged refusal never disappears once answered" reasoning
+# scripts/gather-landing-refusals.sh's own header explains. Prints the
+# refusal's own reason string on success. A missing/unreadable union_log, or
+# a refusal of any other class, is simply "no" — the ordinary idle-nudge text
+# applies unchanged.
+_sweep_landing_refusal_reason() {
+  local pr_url="$1" refusal reason unreconciled_json
+  [[ -n "$union_log" ]] || return 1
+  refusal="$(landing_latest_refusal_reason "$pr_url" "$union_log")"
+  [[ -n "$refusal" ]] || return 1
+  reason="${refusal#*$'\t'}"
+  case "$reason" in
+    reconciliation-unanswered:* | reconciliation-unreadable:*) ;;
+    *) return 1 ;;
+  esac
+  unreconciled_json="$(reconciliation_unreconciled_comments "$pr_url" 2>/dev/null)" || return 1
+  jq -e 'type == "array" and length > 0' <<<"$unreconciled_json" >/dev/null 2>&1 || return 1
+  printf '%s' "$reason"
+}
 
 # config_defaults (issue #197) is the only place a default is written; see
 # scripts/sweep-orphan-branches.sh for the same pattern and why.
@@ -535,9 +588,22 @@ $mq_marker"
   threshold_seconds="$(awk -v h="$idle_hours" 'BEGIN{printf "%d", h*3600}')"
   (( now_epoch - approved_epoch >= threshold_seconds )) || continue
 
+  # requirement 53: an approved/mergeable/green pull request reads exactly
+  # the same to every check above whether it is genuinely waiting on a human
+  # merge click or the pipeline's own gate 4 is refusing to arm it over an
+  # unreconciled comment — GitHub has no field for the latter. Substitute the
+  # real reason where one currently stands, rather than tell the assignee to
+  # do something (click merge) that will not do anything.
+  landing_refusal_reason="$(_sweep_landing_refusal_reason "$pr_url")" || landing_refusal_reason=""
+  if [[ -n "$landing_refusal_reason" ]]; then
+    nudge_text="This pull request has been approved, mergeable and green for over ${idle_hours}h, but the pipeline is refusing to land it: ${landing_refusal_reason} — @${assignee}, it needs your reply before it can be armed, not a merge click."
+  else
+    nudge_text="This pull request has been approved, mergeable and green for over ${idle_hours}h with nothing further for the pipeline to do — @${assignee}, it is waiting on a merge click."
+  fi
+
   body="$(pipeline_comment_header script "$node_name")
 
-This pull request has been approved, mergeable and green for over ${idle_hours}h with nothing further for the pipeline to do — @${assignee}, it is waiting on a merge click.
+$nudge_text
 
 $(pipeline_comment_marker "$cycle_id" script)
 <!-- agent-ops:human-nudge -->"

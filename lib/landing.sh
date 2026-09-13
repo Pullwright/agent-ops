@@ -977,6 +977,34 @@ landing_retry_tier() {
   printf '%s' "$out"
 }
 
+# landing_latest_refusal_reason PR_URL [LOG_FILE]
+# Print `TS<TAB>REASON` for the most recent `landing-refused` event
+# (`_landing_refuse`, above) logged against PR_URL, or nothing at all when
+# none has ever been logged or the read fails — the fleet-log analogue
+# `scripts/gather-landing-refusals.sh` needs (issue #979): unlike every gate
+# `_landing_stage_attempt` itself re-reads fresh from GitHub on each attempt,
+# gate 4's refusal is a fact only this pipeline's own log carries — GitHub has
+# no record of "the Script declined to arm this" — so a caller asking whether
+# landing was ever refused, and why, has nowhere else to look. Same LOG_FILE
+# convention as `landing_retry_tier` (`-` for stdin, a path, or empty to read
+# nothing): pass the fleet-wide `union_log`, not a single node's own log, or a
+# refusal a peer's node logged is invisible to this read.
+landing_latest_refusal_reason() {
+  local pr_url="$1" src="${2:--}" out=""
+  # shellcheck disable=SC2016  # $pr_url is jq's own --arg variable, not the shell's.
+  local jq_prog='
+    [ .[] | select(.event == "landing-refused" and (.pr_url // "") == $u) ]
+    | sort_by(.ts) | last | if . == null then empty else (.ts + "\t" + (.reason // "")) end'
+  if [[ "$src" == "-" ]]; then
+    out="$(jq -c -R 'fromjson? // empty' 2>/dev/null \
+      | jq -rs --arg u "$pr_url" "$jq_prog" 2>/dev/null || true)"
+  elif [[ -s "$src" ]]; then
+    out="$(jq -c -R 'fromjson? // empty' "$src" 2>/dev/null \
+      | jq -rs --arg u "$pr_url" "$jq_prog" 2>/dev/null || true)"
+  fi
+  printf '%s' "$out"
+}
+
 # landing_approver_adjudication_history PR_URL [SRC1] [SRC2]
 # Every `approver-verdict` event for PR_URL, oldest first — a compact JSON
 # array of `{ts, tier, model, verdict, adjudication, refuse_streak, posted}` —

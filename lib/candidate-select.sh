@@ -2036,6 +2036,28 @@ gather_dequeued() {
   printf '%s' "$out"
 }
 
+# Pre-fetch the repo's own pull requests gate 4 (`lib/landing.sh`'s
+# `_landing_stage_attempt`) keeps refusing to arm over an unreconciled comment
+# (requirement 53, issue #979). `union_log` is the cycle's own fleet-wide
+# global (agent-cycle.sh) — `landing-refused` is a fact only this pipeline's
+# log carries, so the gatherer reads it rather than GitHub.
+gather_landing_refusals() {
+  local slug="$1" out safe
+  safe="${slug//\//_}"
+  out="$("$SCRIPT_DIR/scripts/gather-landing-refusals.sh" "$slug" "$pr_label" "$branch_prefix" "$union_log" "$tech_debt_branch_prefix" \
+        2>"$cycle_dir/landing-refusals-$safe.err" || true)"
+  if [[ -n "$out" ]] && jq -e 'type == "array"' <<<"$out" >/dev/null 2>&1 \
+     && [[ ! -s "$cycle_dir/landing-refusals-$safe.err" ]]; then
+    : > "$cycle_dir/landing-refusals-$safe.ok"
+  fi
+  if [[ -z "$out" ]] || ! jq -e 'type == "array"' <<<"$out" >/dev/null 2>&1; then
+    printf '[]'
+    return
+  fi
+  printf '%s\n' "$out" > "$cycle_dir/landing-refusals-$safe.json"
+  printf '%s' "$out"
+}
+
 # Pre-fetch the repo's TECH-DEBT.md when it disagrees with itself (requirement
 # 3i). Unlike the three above this one's candidacy is a pure function of one
 # file's content, so the repo's head SHA would already wake the cycle that
