@@ -22,6 +22,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   now runs against a copy of the body with fenced code blocks, inline code
   spans, and blockquote lines stripped first; the marker/keyword half stays
   on the raw body, unaffected.
+- **The prompts that tell a stage to read a target repository's own
+  instructions now name `AGENTS.md` first** (issue #1470). Eight locations
+  across `prompts/implementer.md`, `prompts/reviewer.md`,
+  `prompts/project-reviewer.md`, `prompts/approver.md`,
+  `prompts/coordinator.md` and `prompts/enabler.md` told a stage to read the
+  target repo's `CLAUDE.md` at its root; as target repositories migrate their
+  instructions into `AGENTS.md` with `CLAUDE.md` reduced to a one-line
+  `@AGENTS.md` import, a stage that opens `CLAUDE.md` directly with a Read
+  tool (rather than starting in the clone, where Claude Code expands the
+  import as project memory) would see only that one line. Each location now
+  names `AGENTS.md` as the file to read, with `CLAUDE.md` as the fallback for
+  a repository that has not migrated. `docs/IMPLEMENTATION-PIPELINE-SPEC.md`
+  and `docs/REVIEW-PIPELINE-SPEC.md` are updated to match.
 
 ### Added
 

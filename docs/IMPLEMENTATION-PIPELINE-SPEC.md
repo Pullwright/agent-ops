@@ -9,7 +9,8 @@ them. It describes the system as it exists, and it must keep doing so — any
 change to the pipeline lands together with the edit that keeps this document
 accurate (see `CLAUDE.md`, "As-built specifications"). Where this document is
 silent, follow the conventions of the two target repositories (their
-`CLAUDE.md` files are binding on any agent working inside them).
+`AGENTS.md` files — or `CLAUDE.md`, for a repository that has not migrated —
+are binding on any agent working inside them).
 
 <!-- toc:start -->
 - [About this document](#about-this-document)
@@ -462,16 +463,21 @@ file and carries placeholders only; `.env` itself is never committed.
   `127.0.0.1` while nothing on any network can, so containerisation costs the
   dashboard's privacy model nothing. The sidecar's `ts-serve.json` proxies
   `https://<node>.<tailnet>` to `http://127.0.0.1:8787` and allows no Funnel.
-  Its own `restart: on-failure:5` bounds it the same as the sidecar, overriding
-  the anchor's `unless-stopped`: joining a network namespace whose owning
-  container is not running is refused outright, so once `tailscale` has given
-  up over a missing `TS_AUTHKEY` and stopped, `dashboard` cannot start either,
-  for the same unfixable reason, on every retry. Left unbounded this container
-  thrashed at Docker's capped backoff indefinitely once the sidecar had already
-  stopped — the loop issue #644 was fixing had moved to a different service
-  rather than ending (TD-PPagop-26082303). The limit here is not this
-  container's own transient-error budget; it exists only to keep `dashboard`
-  settling on the same schedule as the dependency it cannot run without.
+  It carries `restart: on-failure:5`, like the sidecar, overriding the
+  anchor's `unless-stopped` — but as a statement of intent rather than an
+  observed bound: joining a network namespace whose owning container is not
+  running is refused at *start*, so once `tailscale` has given up over a
+  missing `TS_AUTHKEY` and stopped, `dashboard` never runs and never exits,
+  and a policy keyed on exit codes — `on-failure:5` here, or the anchor's
+  `unless-stopped` — is never consulted either way. Measured on VM1,
+  2026-08-24, and corroborated on a keyless node: it lands in `Created` with
+  a `RestartCount` of 0 and exit 128, at zero attempts under *both* policies
+  (TD-PPagop-26091401 records the measurement against TD-PPagop-26082303,
+  whose belief that `unless-stopped` retries this failure indefinitely did
+  not reproduce). `on-failure:5` is kept here as intent, not as this
+  container's own transient-error budget — it would bound a genuine
+  crash-and-exit failure of this container, should one arise, but the
+  namespace-join failure it was added for never reaches it.
 - **`dashboard-local`** (profile `local`) — the same server on a node with no
   tailnet, readable on that host's loopback and nowhere else (`DASHBOARD-SPEC`).
   It gets there in two moves: the server is told to bind `0.0.0.0` *inside the
@@ -10464,8 +10470,10 @@ implements.
     rather than ending its turn expecting an external notification when
     they finish. A command too slow to wait out within the stage timeout is
     grounds for `"status": "blocked"`, not an early, hopeful end of turn.
-22. Runs inside the cycle's clone. First reads the repo's `CLAUDE.md` and
-    obeys it throughout. Checks out the branch named in the work order —
+22. Runs inside the cycle's clone. First reads the repo's `AGENTS.md` — or
+    `CLAUDE.md`, for a repo that has not migrated; `CLAUDE.md` imports
+    `AGENTS.md` where it has — and obeys it throughout. Checks out the branch
+    named in the work order —
     already created on origin by the Script as the item's claim (requirement
     17a) — and never creates, renames, or deletes a branch of its own.
 23. **Makes the claim visible before implementing.** The branch is the
@@ -10521,8 +10529,8 @@ implements.
     "genuine push" in the sense requirement 3e's own activity clock already
     watches for.
 24. Implements the item, then runs the same checks the repo's CI runs (as
-    documented in that repo's `CLAUDE.md` and workflow files) and fixes
-    anything they surface.
+    documented in that repo's `AGENTS.md`/`CLAUDE.md` and workflow files) and
+    fixes anything they surface.
 24a. **Checks the preview deployment its own pull request produced.** Where the
     target repository deploys from GitHub — poetic-fiddle, through Vercel's Git
     integration — every pull request head SHA gets its own preview deployment,
@@ -21044,23 +21052,30 @@ oblige anyone to edit a test.
 1c-v. **The tailnet sidecar refuses to start without `TS_AUTHKEY`, and does
    not retry forever over one — and neither does the dashboard sharing its
    namespace.** On a live node with the `tailnet` profile selected and
-   `TS_AUTHKEY` unset, `docker compose up -d` exits with both `tailscale` and
-   `dashboard` in a failed state and `docker compose logs tailscale` carries a
-   single line naming the missing variable and the active profile, never
-   reaching `tailscaled` — no new node key is registered against the tailnet.
-   `docker compose ps` shows neither restarting indefinitely — but they
-   settle by **different mechanisms, and at different counts**, and the check
-   asserts each separately. `tailscale` reaches `Exited` with a
-   `RestartCount` of 5: it starts, exits non-zero, and its own
-   `restart: on-failure:5` bounds the retries where the rest of the file is
-   `unless-stopped`. `dashboard` reaches **`Created` with a `RestartCount` of
-   0**: joining the network namespace of a container that is not running is
-   refused at *start*, so the container never runs, never exits, and a policy
-   keyed on exit codes is never consulted. Its `on-failure:5` is therefore
-   not a budget it spends — it is what stops `unless-stopped` retrying a
-   start that cannot succeed, which is the thrash TD-PPagop-26082303 recorded.
-   `docker events` over the window shows five restart attempts for the
-   sidecar and none for the dashboard, not an unbounded stream from either.
+   `TS_AUTHKEY` unset, `docker compose up -d` exits non-zero — Docker reports
+   `cannot join network namespace of container: … is restarting` — leaving
+   both `tailscale` and `dashboard` in a failed state, and `docker compose
+   logs tailscale` carries one line per attempt naming the missing variable
+   and the active profile (six identical lines, observed on issue #728's
+   keyless run against `main` @ `412b025`), never reaching `tailscaled` — no
+   new node key is registered against the tailnet. `docker compose ps` shows
+   neither restarting indefinitely — but they settle by **different
+   mechanisms, and at different counts**, and the check asserts each
+   separately. `tailscale` reaches `Exited` with a
+   `RestartCount` of 5: it starts, exits non-zero six times over (one
+   initial attempt plus five retries), and its own `restart: on-failure:5`
+   bounds the retries where the rest of the file is `unless-stopped`.
+   `dashboard` reaches **`Created` with a `RestartCount` of 0**: joining the
+   network namespace of a container that is not running is refused at
+   *start*, so the container never runs, never exits, and a policy keyed on
+   exit codes is never consulted — whether that policy is `on-failure:5` or
+   the anchor's `unless-stopped` makes no observed difference, since neither
+   is ever consulted; both settle at zero attempts immediately
+   (TD-PPagop-26091401 records the measurement against TD-PPagop-26082303,
+   whose belief that `unless-stopped` retries this failure indefinitely did
+   not reproduce). `docker events` over the window shows five restart
+   attempts for the sidecar and none for the dashboard, not an unbounded
+   stream from either.
 
    The dashboard half is **observed**: on VM1, 2026-08-24, `dashboard` sat at
    `status=created, RestartCount=0, ExitCode=128` behind a `tailscale` at
@@ -21070,8 +21085,10 @@ oblige anyone to edit a test.
    `tailscale up` instead of at the entrypoint. It transfers for the
    dashboard regardless, whose view of both cases is identical: the sidecar
    is stopped, and the namespace cannot be joined. The sidecar's own unset
-   path — one line naming the missing variable, `tailscaled` never reached —
-   remains unobserved (#706).
+   path — one line per attempt naming the missing variable, `tailscaled`
+   never reached — is separately observed, on issue #728's keyless run
+   against `main` @ `412b025`, corroborated on the deployed node
+   `ockham-container` with `TS_AUTHKEY` genuinely absent.
    With `TS_AUTHKEY` set, the same `up -d` starts both containers normally and
    `docker compose exec tailscale tailscale status` succeeds.
 1c-vi. **A node applies its own merged compose.yaml, and only when it is

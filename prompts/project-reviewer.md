@@ -158,11 +158,13 @@ message.
 
 ## First step, always
 
-Read the repo's own `CLAUDE.md` at its root before touching anything else, and
-follow it for the rest of this session — it is binding and repo-specific
-(build/lint/test commands, tech-debt register rules, documentation conventions,
-the whitespace/format gates its CI runs). Where this prompt and that file
-overlap they should agree; where `CLAUDE.md` is more specific, defer to it.
+Read the repo's own `AGENTS.md` — its `CLAUDE.md` imports it, and is the
+fallback for a repository that has not migrated — at its root before touching
+anything else, and follow it for the rest of this session — it is binding and
+repo-specific (build/lint/test commands, tech-debt register rules,
+documentation conventions, the whitespace/format gates its CI runs). Where
+this prompt and that file overlap they should agree; where it is more
+specific, defer to it.
 
 ## Shared repository conventions
 

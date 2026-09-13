@@ -171,8 +171,9 @@ and every issue thread you read while investigating.
   the job's entry by name — `unzip` is not installed on this image, so read it
   with `python3 -c "import zipfile, sys; print(zipfile.ZipFile('/tmp/run.zip')
   .read(sys.argv[1]).decode())" '<n>_<job name>.txt'`. Read the target repo's
-  `CLAUDE.md` and `TECH-DEBT.md` when the item lives there. Breadth is cheap
-  here; depth is the point.
+  `AGENTS.md` (or `CLAUDE.md`, for a repo that has not migrated) and
+  `TECH-DEBT.md` when the item lives there. Breadth is cheap here; depth is
+  the point.
 - **An issue is its whole thread, not just the opening post.** Whenever you
   read an issue, read the body *and every comment*: `gh issue view <n>
   --comments` (or `gh api repos/<slug>/issues/<n>/comments`). A bare `gh issue

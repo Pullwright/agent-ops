@@ -757,26 +757,24 @@ services:
     mem_limit: ${AGENT_OPS_DASHBOARD_MEMORY:-512m}
     cpus: ${AGENT_OPS_DASHBOARD_CPUS:-1.0}
     pids_limit: ${AGENT_OPS_DASHBOARD_PIDS_LIMIT:-512}
-    # Bounded like the sidecar it shares a namespace with, overriding the
-    # anchor's `unless-stopped`: this container cannot start at all without
-    # `tailscale`'s namespace to join, so once the sidecar has given up
-    # (`restart: on-failure:5` above) every further attempt here fails the
-    # same way for the same unfixable reason. Left at `unless-stopped` this
-    # retried at Docker's capped backoff forever after the sidecar had
-    # already stopped — a container thrashing where none of the loop issue
-    # #644 was fixing had moved, just to a different service
-    # (TD-PPagop-26082303). `on-failure:5` is not this container's own
-    # transient-error budget; it exists only so this container settles rather
-    # than thrashing once the dependency it cannot run without has stopped.
-    #
-    # It settles at **zero** attempts, not five, and the difference is worth
-    # knowing before reading a `docker ps`. Joining a stopped container's
-    # namespace is refused at *start*, so this container never runs and never
-    # exits, and a policy keyed on exit codes is never consulted at all: it
-    # lands in `Created` with `RestartCount: 0` and exit 128, where the
-    # sidecar lands in `Exited` with `RestartCount: 5`. `unless-stopped`
-    # retried that impossible start regardless, which is why it thrashed.
-    # Measured on VM1, 2026-08-24; acceptance check 1c-v carries both halves.
+    # Carries `on-failure:5`, like the sidecar, overriding the anchor's
+    # `unless-stopped` — but as a statement of intent, not because it changes
+    # observed behaviour. This container cannot start at all without
+    # `tailscale`'s namespace to join, and joining the namespace of a
+    # container that is not running is refused at *start*, before the
+    # joining container ever runs. A container refused at start never exits,
+    # so a policy keyed on exit codes — `on-failure:5` here, or the anchor's
+    # `unless-stopped` — is never consulted either way: measured on VM1,
+    # 2026-08-24, and corroborated on a keyless node, this container settles
+    # at **zero** restart attempts under *both* policies, landing in
+    # `Created` with `RestartCount: 0` and exit 128, where the sidecar lands
+    # in `Exited` with `RestartCount: 5` (TD-PPagop-26091401 records the
+    # measurement against TD-PPagop-26082303, whose belief that
+    # `unless-stopped` retries this failure indefinitely did not reproduce).
+    # `on-failure:5` is kept here as intent — it would bound a genuine
+    # crash-and-exit failure of this container, should one ever arise — not
+    # as this container's own transient-error budget being spent.
+    # Acceptance check 1c-v carries both halves.
     #
     # One consequence beyond restart behaviour: watchtower scans only running
     # containers, so while this one is down it is never rolled and never

@@ -111,8 +111,9 @@ plus one small record file.
 You're in the same ephemeral clone the Implementer and Reviewer used, under
 `workspace_root/<cycle-id>/`, with the pull request's branch checked out —
 not one of the user's own working copies. You have full read access: `git
-diff`, `git log`, `gh pr view`, `gh pr diff`, the repo's own `CLAUDE.md` and
-conventions, anything you need to judge the change. **Do not edit, commit, or
+diff`, `git log`, `gh pr view`, `gh pr diff`, the repo's own `AGENTS.md` (or
+`CLAUDE.md`, for a repo that has not migrated) and conventions, anything you
+need to judge the change. **Do not edit, commit, or
 push anything** — this session's working tree is read-only in spirit even
 though nothing stops you mechanically; a fix you make here is a fix nobody
 ever sees, since your final message is the only thing that leaves this
