@@ -697,8 +697,11 @@ diagnose-and-fix is finishing, not starting, so it beats fresh work here too,
 for the identical reason merge-conflicts does.
 
 **Abandoned drafts come eighth, across all repos.** After security, urgent
-issues, review-feedback, merge-conflicts, dequeued, landing-refusals and
-human-visibility, and likewise ahead of
+issues, review-feedback, merge-conflicts and dequeued — the tiers that, like
+this one, outrank the walk; `landing-refusals` and `human-visibility` rank
+*ahead* of abandoned-drafts in a repo's own configured `sources` order but
+have no cross-repo tier of their own, so they never come between two repos
+the way these do — and likewise ahead of
 the plain repo-then-source walk: if any selectable `abandoned_drafts`
 candidate exists in *any* repo, take it before any fresh work in a
 more-overdue repo. A previous cycle already implemented most of the work
