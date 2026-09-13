@@ -18068,6 +18068,60 @@ What exists, and the requirements each part answers to:
    oldest first. Fails safe to `[]` (exit 0), including on a reviews or
    comments read it cannot make. Must pass `shellcheck`; its candidate rule is
    regression-tested in `test/gather-dequeued.test.sh`.
+53. `scripts/gather-landing-refusals.sh` implementing requirement 53: given a
+   repo slug, PR label, branch prefix and the fleet-wide union log, prints the
+   JSON array of this system's own PRs (open, non-draft, ours) whose most
+   recent `landing-refused` event (read from the union log via
+   `lib/landing.sh`'s `landing_latest_refusal_reason`) has a `reason`
+   beginning `reconciliation-unanswered:` or `reconciliation-unreadable:`, and
+   which `lib/reconciliation-gate.sh`'s `reconciliation_unreconciled_comments`
+   (asked fresh, unbounded) still reports at least one unreconciled comment
+   for — each carrying the PR's `head_sha`, the refusal's own
+   `refused_at`/`reason`, every unreconciled comment as
+   `{id, at, author, body}`, an assembled `body` of the same verbatim and
+   oldest-first, and a ref scoped to the sorted, hyphen-joined set of
+   unreconciled comment ids, ordered by `refused_at` oldest first. Fails safe
+   to `[]` (exit 0), including on a timeline or comments read it cannot make.
+   Must pass `shellcheck`; its candidate rule is regression-tested in
+   `test/gather-landing-refusals.test.sh`.
+
+   `lib/reconciliation-gate.sh` gains `_reconciliation_gate_unreconciled`
+   (the "unreconciled" test `reconciliation_gate` itself uses, factored out
+   for reuse — requirement 34a), the public `reconciliation_unreconciled_
+   comments`, and a `who` field on `_reconciliation_gate_comments`'s own
+   output; `reconciliation_gate` itself is behaviour-unchanged and remains
+   regression-tested in `test/reconciliation-gate.test.sh`.
+   `lib/landing.sh` gains `landing_latest_refusal_reason PR_URL [LOG_FILE]`,
+   the same `LOG_FILE`/stdin convention `landing_retry_tier` already
+   established, printing `TS<TAB>REASON` for the most recent `landing-refused`
+   event logged against PR_URL, or nothing.
+
+   `gather_landing_refusals` (`lib/candidate-select.sh`) and its wiring into
+   `lib/candidate-gather.sh`'s per-repo gather loop are otherwise identical to
+   `review-feedback`/`merge-conflicts`/`dequeued`: gated on `sources` naming
+   `landing-refusals`, read as a tenth expensive-gather band (`lib/expensive-
+   gather-cache.sh`) alongside its nine siblings, and claim-excluded
+   (`exclude_claimed_prs`/`exclude_claimed_items`) and first-seen-emitted
+   the same way. Deliberately **not** folded into requirement 2.2a's
+   four-source back-pressure/drain finishing set (`lib/drain.sh`'s own ref
+   pattern and band count), nor into the claim-pattern/void-guard parity
+   the other four finishing sources share (`lib/claim.sh`, `lib/void-
+   guard.sh`) — a candidate here is selectable exactly like `human-
+   visibility`: within the ordinary repo-then-source walk, at its configured
+   rank, never given a cross-repo priority bump nor counted toward back-
+   pressure exemption. Extending that parity is a separate policy decision
+   this item's own refined scope did not ask for.
+
+   `scripts/sweep-human-visibility.sh`'s idle nudge (requirement 38c) takes
+   an optional fourth argument, the fleet-wide union log; when a pull
+   request's most recent `landing-refused` event reads
+   `reconciliation-unanswered:`/`reconciliation-unreadable:`, and a fresh
+   `reconciliation_unreconciled_comments` call still confirms it, the nudge
+   text names that reason instead of "waiting on a merge click" — reusing the
+   existing `<!-- agent-ops:human-nudge -->` marker's once-per-state
+   suppression unchanged. `lib/standdown.sh`'s own call site passes
+   `union_log` as this fourth argument. Regression-tested in
+   `test/sweep-human-visibility.test.sh`.
 3i. `scripts/gather-register-hygiene.sh` implementing requirement 3i: given a
    repo slug, default branch and (requirement 34l) an optional JSON array of
    this repo's void register-shaped candidates, prints a JSON array holding
@@ -22199,6 +22253,29 @@ oblige anyone to edit a test.
    the `dequeued_at` ordering, and the head-SHA-scoped ref — is
    regression-tested (through the real script, via `DEQUEUED_GH`/
    `MERGE_QUEUE_GH`) in `test/gather-dequeued.test.sh`.
+53. `scripts/gather-landing-refusals.sh o/r autonomous-agent agent/
+   /path/to/empty-union-log` prints `[]` and exits 0 — a missing repo, an
+   empty or unreadable union log, or an API error never aborts the cycle
+   (requirement 53, issue #979). Its candidate rule — the class filter on the
+   most recent logged `landing-refused` event (`reconciliation-unanswered:`/
+   `reconciliation-unreadable:` only, read from the union log, never
+   recomputed independently), the live answered clause
+   (`reconciliation_unreconciled_comments` reporting at least one
+   unreconciled comment right now; a read that fails outright drops the
+   candidate rather than admitting it), the `refused_at` ordering, and the
+   ref scoped to the sorted, joined set of unreconciled comment ids — is
+   regression-tested (through the real script, via `LANDING_REFUSALS_GH`) in
+   `test/gather-landing-refusals.test.sh`. `lib/reconciliation-gate.sh`'s
+   `_reconciliation_gate_unreconciled`/`reconciliation_unreconciled_comments`
+   and `lib/landing.sh`'s `landing_latest_refusal_reason` are exercised
+   through the same test and, for `reconciliation_gate`'s own unchanged
+   behaviour, `test/reconciliation-gate.test.sh`.
+   `scripts/sweep-human-visibility.sh`'s landing-refusal nudge-text
+   substitution — fires only for the two comment-reconciliation refusal
+   classes, re-confirmed live before trusting a possibly-stale logged
+   refusal, and falls back to the ordinary "waiting on a merge click" text
+   the moment the citation lands — is regression-tested in
+   `test/sweep-human-visibility.test.sh`.
 2h. **Dependabot's own conflicted PRs are nudged, then — only after a full
    cycle at the same head — offered as a takeover (requirement 3s).**
    `lib/dependabot-bump.sh`'s family/version parsing and its
