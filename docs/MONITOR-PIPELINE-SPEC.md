@@ -123,9 +123,9 @@ rendered into the `id=main` configuration tables of `README.md` and
 other top-level key (`CLAUDE.md`, "Generated regions"). This document
 deliberately carries no fourth generated region: the keys are
 `monitor_model`, `monitor_max_input_bytes`, `monitor_max_filings_per_run`,
-`monitor_tactical_keys`, `schedule.monitor_hour`,
+`monitor_tactical_keys`, `monitor_promote_after`, `schedule.monitor_hour`,
 `schedule.monitor_offset_minutes` and `prompt_overrides.monitor`, and adding
-a fifth region to `scripts/render-config-table.sh` to restate seven rows a
+a fifth region to `scripts/render-config-table.sh` to restate eight rows a
 reader can already find in one place would be a second copy to keep honest
 for no gain.
 
@@ -279,6 +279,13 @@ M6. **The model never reads a primary record.** The Script assembles a digest
      diagnosed once. The incident runbook (agent-ops#1149) does not exist; when
      it does it joins this list rather than replacing it, since the two answer
      different halves of "what does this signature mean".
+   - **every finding key already promoted, but not yet retired** (M13a/M13b),
+     with its tracking issue — a key the model has a reason not to restate.
+     Whether a promoted key has been retired needs a live read of the union
+     log's pager-fired/pager-cleared events and this checkout's own
+     pager-invariant registry, neither of which the pure digest builder
+     (M6a) may perform itself, so the Script decides it and hands this
+     section the already-narrowed result; a retired key is simply absent.
 
 M6a. **Deterministic.** Every function in `lib/monitor-digest.sh` is a pure
    reader: it takes paths and JSON on argv, reads no `config.json`, calls no
@@ -417,12 +424,15 @@ M11. **Every filing carries a provenance line and a finding key.** The
    finding.
 
 M12. **A filing budget.** At most `monitor_max_filings_per_run` (default 3)
-   GitHub items are created per run, counted across every class together. The
+   GitHub items are created per run, counted across every class together,
+   a promotion (M13a) included — it is a GitHub item like any other, so it
+   spends the same budget rather than sitting outside it. The
    Script walks `findings[]` in the order the stage returned them — that order
    is the stage's priority call — and everything past the cap is recorded as
    `deferred` in the report **with its key**, so the next run's dedup can tell
    it apart from a finding that was never stated.
-   `monitor_max_filings_per_run: 0` files nothing and reports everything.
+   `monitor_max_filings_per_run: 0` files nothing and reports everything —
+   promotion included, on the same terms.
 
 M13. **Search-first dedup.** Before the stage runs, the Script lists every
    open issue in every repository it may file into whose body carries a
@@ -434,6 +444,70 @@ M13. **Search-first dedup.** Before the stage runs, the Script lists every
    budget, for an answer one listing already holds. A finding filed earlier in
    the same run is added to the in-memory list, so two findings sharing a key
    inside one run dedup against each other too.
+
+M13a. **Promoting a repeat finding into a pager invariant, autonomously**
+   (agent-ops#1285, part 6 of the #1126 findings). When a finding key has been
+   carried by `monitor_promote_after` or more of the fleet's own
+   `monitor-report-written` events' ledgers — counted across reports, not
+   runs: two pager-triggered runs the same calendar day both append to that
+   day's one report, so this counts events rather than dates, which is the
+   same thing on the ordinary daily cadence and needs no day-boundary
+   handling — the Script, not the model, turns the repeat into a pager
+   invariant proposal instead of filing (or dedup-citing) the same finding for
+   ever:
+
+   1. it files **one** `pw::type:tech-debt` issue titled `pager: add
+      invariant <key>` into `pager_repo` (falling back to `crash_loop_repo`,
+      M6's own resolution, since the invariant code this issue asks for lives
+      in this pipeline's own repository, exactly as
+      `pager_remedy_verdict_unanimous` already files its own reader-defect
+      issues there) — carrying the detection rule and evidence every report
+      that restated the key supplied, so the fleet implements it as ordinary
+      autonomous work under requirement 16's `tech-debt` band;
+   2. it logs `monitor-promoted {key, issue}` to `monitor-log.jsonl`, and
+      every later run's digest marks the key `promoted` with its issue (a
+      dedicated digest section, distinct from `open_findings`) for as long as
+      the key stays promoted-but-not-retired (M13b), so the model has a
+      reason not to restate it;
+   3. nothing is filed for a key already carrying a `monitor-promoted` event
+      — recorded as `already-promoted` in the report instead, citing the
+      existing issue, checked ahead of M13's own already-open dedup so a
+      mechanical finding that was promoted after already being filed once
+      does not fall into that dedup path for ever and never reach this one
+      again.
+
+   `monitor_promote_after` (default 2) is the repeat count; `0` disables
+   promotion outright, and every repeat finding is then filed/cited for ever
+   exactly as before this requirement existed. A run with nowhere to file
+   (both `pager_repo` and `crash_loop_repo` empty) records `proposed`
+   instead, on M14d's own "nowhere to file is not a failure" terms; a filing
+   the forge refuses is `failed` and re-offered by the next run that reaches
+   the threshold again, on M14d's own retry terms.
+
+   A promotion counts against `monitor_max_filings_per_run` exactly like any
+   other class's filing (M12) — it is checked, and (on success) spent, before
+   the issue is created, never after. A key that reaches the threshold while
+   the run's budget is already spent, or while `monitor_max_filings_per_run`
+   is `0`, is recorded `deferred` rather than `promoted` (the `promotion-
+   proposed` outcome above is reserved for "nowhere to file", a different
+   fact from "no budget left"), and is re-offered by the next run that still
+   finds the key restated — `monitor_key_prior_reports` counts a `deferred`
+   row for a key the same as any other outcome, so deferring a promotion for
+   budget does not reset its repeat count.
+
+M13b. **Retirement.** Once the invariant a promotion proposed actually
+   exists — a `pager-fired` or `pager-cleared` transition for the key has
+   been logged anywhere in the fleet (proof `lib/pager.sh` is evaluating it),
+   or this checkout's own `lib/pager-invariants.sh` registers the key even
+   before it has ever fired — the key is retired: dropped from the digest's
+   promoted-findings section entirely (M6, M6a — the determination itself
+   needs a live registry read and is made by the Script, handed to the pure
+   digest builder as already-decided input) and, as a mechanical backstop for
+   a stage that restates it anyway, filtered out of `findings[]` before
+   anything else is done with them — no ledger row, no report row, exactly
+   as if the model had never stated it. Past this point the key needs no
+   further mention anywhere: the invariant it named is now the deterministic
+   check, and the Monitor's own filing has done its job.
 
 M14. **Filing by class**, mirroring `escalation_autonomy`'s own taxonomy:
 
@@ -525,9 +599,11 @@ M16. **A dated report in the state store.** `state_dir/monitor/<date>/report.md`
    by the Script, not the stage — a filings ledger and a triage ledger. The
    ledger is what makes the report verifiable: one row per finding, naming its
    class, its key, its outcome (`filed`, `already-open`, `deferred`,
-   `proposed`, `refused`, `failed`) with the reason, and the issue URL where
-   there is one. The Script owns the heading levels — `# Monitor report —
-   <date>` for the day, `## Run <id>` per run, `###` for everything inside one
+   `proposed`, `refused`, `failed`, or M13a/M13b's own `promoted`,
+   `already-promoted`, `promotion-proposed`, `promotion-failed`) with the
+   reason, and the issue URL where there is one. The Script owns the heading
+   levels — `# Monitor report — <date>` for the day, `## Run <id>` per run,
+   `###` for everything inside one
    — which is why `prompts/monitor.md` asks the stage for `###` sections
    rather than `##`: a stage writing `##` would put its own readings beside
    the run heading instead of under it, and the Script's ledger would then
@@ -566,8 +642,10 @@ M18. **Streams.** Monitor *operational* events go to
    is untouched and the three pipelines stay separable. It reuses
    `lib/log-event.sh`'s envelope. Events: `monitor-start`,
    `monitor-stand-down`, `monitor-skipped`, `monitor-digest-built`,
-   `monitor-stage-start`, `stage-end`, `attempt-failed`,
-   `monitor-report-written`, `monitor-end`, `warning`, and — written by
+   `monitor-stage-start`, `stage-end`, `attempt-failed`, `monitor-promoted`
+   (M13a — `{key, issue}`, the promotion record M13b's retirement check and
+   every later digest read against), `monitor-report-written`, `monitor-end`,
+   `warning`, and — written by
    `lib/github-limit.sh`'s `github_budget_record` through this script's own
    `log_event`, as it does for every stage of the other two pipelines
    (requirement 2.0d) — `github-budget`. Common fields: an
@@ -606,12 +684,16 @@ M19. **No `node-state` transition.** The Monitor writes none of requirement
    switches, the role guard, the CronJob shape, both stand-downs, the due gate
    and the slot claim), M8/M8a (cleanup and the signal handler),
    M9/M9a/M10b (the stage and its caps, assembled through
-   `lib/prompt-overrides.sh`), M11–M16 (every filing, the triage comments and
-   the report), M17 (the stage-health verdict, through
-   `lib/stage-health.sh`), M18 (its own stream) and M19 (no `node-state`
-   event). `shellcheck`-clean; sets its own `PATH`.
-2. `lib/monitor-digest.sh` implementing M6, M6a, M6b and M7. Pure readers,
-   unit-tested over fixture logs (`test/monitor-digest.test.sh`);
+   `lib/prompt-overrides.sh`), M11–M16 (every filing, the triage comments,
+   M13a/M13b's promotion and retirement, and the report), M17 (the
+   stage-health verdict, through `lib/stage-health.sh`), M18 (its own stream,
+   including `monitor-promoted`) and M19 (no `node-state` event). Sources
+   `lib/pager.sh` and `lib/pager-invariants.sh` for the registry membership
+   check M13b needs, and nothing else from either — no evaluation, no filing,
+   no fleet-wide claim. `shellcheck`-clean; sets its own `PATH`.
+2. `lib/monitor-digest.sh` implementing M6, M6a, M6b and M7, including the
+   promoted-findings section (M13a) `monitor_digest_promoted` shapes. Pure
+   readers, unit-tested over fixture logs (`test/monitor-digest.test.sh`);
    `shellcheck`-clean.
 3. `prompts/monitor.md` implementing M10, M10a and M15.
 4. `lib/stage-health.sh`'s `STAGE_NAMES_JSON` parameter and merging writer,
@@ -661,6 +743,23 @@ supplies its own values.
 5. **Dedup (M13).** Same file: a second run whose findings carry the same keys
    creates no issue at all, and the report cites the open issue's number for
    each.
+5a. **Promotion (M13a).** Same file: two fixture reports sharing a key —
+   two runs of the Script, its own `monitor-report-written` ledger from the
+   first read back by the second — file exactly one `pager: add invariant
+   <key>` issue on the second, whose body carries both reports' own evidence;
+   the run logs `monitor-promoted`; and a third run's digest carries the key
+   under its promoted-findings section, citing the issue.
+5b. **Retirement (M13b).** Same file: a promoted key for which the fixture's
+   union log already carries a `pager-fired` event is retired — absent from
+   the digest's promoted-findings section, and dropped from `findings[]`
+   before the ledger or the report see it, even when the stubbed `claude`
+   restates it anyway.
+5c. **Promotion spends the M12 budget (M12/M13a).** Same file: a key that
+   reaches `monitor_promote_after` while `monitor_max_filings_per_run` is
+   already spent by earlier findings in the same run creates no issue and is
+   recorded `deferred`, not `promoted`; with `monitor_max_filings_per_run: 0`
+   a key past the promotion threshold is deferred the same way rather than
+   filed regardless of budget.
 6. **The tactical gate is closed by default (M14b).** Same file: a tactical
    finding with `monitor_tactical_keys` empty produces a proposal in the
    report and **no** `pw::decision` issue; with the key listed, it produces a
@@ -704,6 +803,8 @@ supplies its own values.
 | A page stays open long after the Monitor called it a phantom | Correct and deliberate (M15a). A page retires only through `pager_close` or `page-outlived-item`. If the fact really has cleared and the page has not, the bug is in the invariant's own evaluation, not here. |
 | `.stage-health.json` shows `monitor` as `idle` on a node that runs it | The verdict is written only by a run that actually engaged the stage. A node whose every tick stands down (not due, standby, deferring to a sibling) never writes one, which reads as `idle` — "this stage has had no work" — and is true. |
 | The Monitor's backstop never moves off 45 minutes | `lib/stage-budget.sh`'s derivation is being handed only `log.jsonl`. The monitor's own `stage-end` events live in `monitor-log.jsonl`, and M9a's concatenation is what puts them in front of the derivation. |
+| A finding is promoted (or restated as `already-promoted`) that a human would swear was just fixed | Check `lib/pager-invariants.sh` in *this* checkout for the key (M13b's registry check reads the code on disk, not GitHub) and the union log for a `pager-fired`/`pager-cleared` event carrying it. If neither exists yet, the promotion issue (`pager: add invariant <key>`) is open but not yet implemented — that is `monitor-promoted` doing its job, not a bug. |
+| A promoted key never leaves the digest, run after run, even though the invariant clearly exists | The invariant's own key does not match the finding key the Monitor chose — M13b only retires by exact key equality against the union log and the registry, on purpose: a fuzzy match risks retiring the wrong key. Check `pager_register_builtin_invariants` names the finding key verbatim. |
 
 ## Cost profile
 
@@ -753,6 +854,34 @@ state only what is.
   thinks in, and `monitor/<date>` is the provenance line's own citation. A
   file per run would make `Monitor: monitor/<date> M-<nn>` ambiguous on any
   day with two runs, which is precisely the day worth reading.
+- **A repeat finding promotes into `lib/pager-invariants.sh`, autonomously
+  (M13a/M13b, agent-ops#1285).** Ten of the fourteen incidents #1126 catalogued
+  are one-line invariants now that they have names, and the Monitor is the
+  thing that names them; without this rule it names the same one every day,
+  into a backlog where consumption, not generation, is the bottleneck.
+  Promoting into `pager: add invariant <key>` rather than merely raising
+  `monitor_max_filings_per_run` for that key keeps the fix a piece of code a
+  human reviews once, rather than a tolerance for noise that grows with every
+  incident.
+- **Promoted into `pager_repo`, not the repository the original finding
+  named.** The invariant code a promotion asks for lives in this pipeline's
+  own repository, never in whichever repository the underlying fault was
+  found in — `pager_remedy_verdict_unanimous` already draws exactly this line
+  for its own reader-defect filings, and a promotion issue is the same kind of
+  fix in the same kind of place.
+- **Counted by report, not by calendar date.** `monitor_promote_after` reads
+  as "the same key in two reports" (the issue's own words), and the simplest
+  faithful reading counts `monitor-report-written` events rather than dates:
+  two pager-triggered runs the same day both append to that one day's report
+  anyway, so the two definitions coincide on the cadence this pipeline
+  actually runs at, and counting events avoids a day-boundary special case
+  that buys nothing here.
+- **Retirement checks the registry as well as the union log.** A freshly
+  merged invariant has code but no history — it has never fired or cleared,
+  so the union log alone would leave a just-shipped fix looking exactly like
+  an unimplemented promotion for as long as the fact behind it happens not to
+  recur. Reading `lib/pager-invariants.sh`'s own registration is what lets
+  retirement happen the moment the fix lands, not the moment it first fires.
 - **The Monitor defers to the review pipeline as well as to the
   implementation cycle.** R3.2 names one lock because the review pipeline was
   the newcomer when it was written. The reason it gives is about quota, not

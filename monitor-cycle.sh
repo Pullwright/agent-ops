@@ -102,6 +102,10 @@ PROMPTS_DIR="$SCRIPT_DIR/prompts"
 . "$SCRIPT_DIR/lib/prompt-overrides.sh"
 # shellcheck source=lib/monitor-digest.sh
 . "$SCRIPT_DIR/lib/monitor-digest.sh"
+# shellcheck source=lib/pager.sh
+. "$SCRIPT_DIR/lib/pager.sh"
+# shellcheck source=lib/pager-invariants.sh
+. "$SCRIPT_DIR/lib/pager-invariants.sh"
 
 # --- Flags ---
 DRY_RUN=0
@@ -155,6 +159,8 @@ monitor_model_raw="$(cfg '.monitor_model')"
 monitor_max_input_bytes="$(cfg '.monitor_max_input_bytes')"
 monitor_max_filings="$(cfg '.monitor_max_filings_per_run')"
 monitor_tactical_keys_json="$(cfg_json '.monitor_tactical_keys')"
+monitor_promote_after="$(cfg '.monitor_promote_after')"
+[[ "$monitor_promote_after" =~ ^[0-9]+$ ]] || monitor_promote_after=2
 monitor_hour="$(cfg '.schedule.monitor_hour')"
 prompt_overrides_json="$(cfg_json '.prompt_overrides')"
 limit_cooldown_default_hours="$(cfg '.limit_cooldown_default')"
@@ -670,6 +676,104 @@ while IFS= read -r filing_repo; do
     2>/dev/null || printf '%s' "$open_findings_json")"
 done < <(jq -r '.[]' <<<"$filing_repos_json")
 
+# --- Promoted findings (issue #1285, part 6 of #1126's findings) ------------
+# A finding key that repeats across `monitor_promote_after` reports gets
+# turned into a pager-invariant proposal by the Script, mechanically, rather
+# than filed (or dedup-cited) by hand for ever. Two independent tracks:
+#
+#   PROMOTED   an issue already exists — a `monitor-promoted` event carries
+#              this key. Read from the fleet's own monitor-log union, exactly
+#              as M13's open-findings dedup is a search over the fleet's
+#              record rather than a per-finding live search.
+#   RETIRED    the invariant the promotion proposed now actually exists — a
+#              `pager-fired`/`pager-cleared` transition for this key has been
+#              logged (proof the key is registered and lib/pager.sh evaluated
+#              it), or this checkout's own lib/pager-invariants.sh registers
+#              it (a key that exists in code but has never yet fired or
+#              cleared). Past this point the key needs no further mention
+#              anywhere — not "promoted" in the digest, not in the report.
+#
+# lib/pager.sh and lib/pager-invariants.sh are sourced at the top of this
+# script for exactly this membership check and nothing else: no evaluation,
+# no filing, no fleet-wide claim — those are the Publisher's own, and stay
+# there.
+# The default (180) is the function's own; only the key names matter here,
+# never node-stale's filing hysteresis, so the explicit argument is only to
+# still pass one when this call is not the Publisher's own (which reads
+# pager_stale_file_after_minutes for exactly that hysteresis).
+pager_register_builtin_invariants 180 >/dev/null 2>&1 || true
+registered_keys_json="$(pager_registered_keys | jq -R -s -c 'split("\n") | map(select(length > 0))')"
+
+# monitor_key_retired KEY -> true (0) once its invariant exists, in either
+# sense above; false (1) otherwise.
+monitor_key_retired() {
+  local key="$1"
+  jq -e --arg k "$key" 'index($k) != null' <<<"$registered_keys_json" >/dev/null 2>&1 && return 0
+  [[ -s "$union_log" ]] || return 1
+  jq -e -R -n --arg k "$key" '
+    [ inputs | select(length > 0) | (fromjson? // empty)
+      | select(.event == "pager-fired" or .event == "pager-cleared")
+      | select((.key // "") == $k) ] | length > 0
+  ' "$union_log" >/dev/null 2>&1
+}
+
+# monitor_key_prior_reports KEY -> how many past monitor-report-written events
+# (this run's own not yet written) already carried this key in their ledger,
+# whatever the outcome was — a restatement is a restatement whether the
+# earlier attempt was filed, already-open, deferred or proposed. This is what
+# `monitor_promote_after` is measured against: "a previous report also
+# carried it" (issue #1285), not "a previous *run*" — two pager-triggered runs
+# inside one calendar day both append to the same day's report, so counting
+# by monitor-report-written events rather than by date is the same thing for
+# the ordinary daily cadence and simpler to reason about than a day boundary.
+monitor_key_prior_reports() {
+  local key="$1"
+  jq -r -R -n --arg k "$key" '
+    [ inputs | select(length > 0) | (fromjson? // empty)
+      | select(.event == "monitor-report-written")
+      | select([(.ledger // [])[] | select(.key == $k)] | length > 0) ] | length
+  ' "$monitor_union_log" 2>/dev/null || printf 0
+}
+
+# monitor_key_prior_evidences KEY -> JSON array of past reports' own evidence
+# text for this key (the `evidence` field every ledger row now carries — see
+# monitor_ledger below), oldest first, so a promotion's own issue body can
+# cite what each earlier report actually said rather than only this run's.
+monitor_key_prior_evidences() {
+  local key="$1"
+  jq -c -R -n --arg k "$key" '
+    [ inputs | select(length > 0) | (fromjson? // empty)
+      | select(.event == "monitor-report-written")
+      | (.ledger // [])[] | select(.key == $k) | (.evidence // "") | select(length > 0) ]
+  ' "$monitor_union_log" 2>/dev/null || printf '[]'
+}
+
+# Every key promoted so far, latest event per key (a key is promoted at most
+# once in the ordinary run of this script, but latest-wins if it were ever
+# hand-edited — the same rule lib/pager.sh's own pager_register follows for a
+# re-registered key).
+promoted_all_json="$(jq -c -R -n '
+  [ inputs | select(length > 0) | (fromjson? // empty)
+    | select(.event == "monitor-promoted") | {key: (.key // ""), issue: (.issue // "")} ]
+  | group_by(.key) | map(last)
+  ' "$monitor_union_log" 2>/dev/null)" || promoted_all_json='[]'
+[[ -n "$promoted_all_json" ]] || promoted_all_json='[]'
+
+# Split into retired (drop from the digest and the report entirely) and
+# open (still promoted, still worth telling the model not to restate).
+retired_keys_json='[]'
+promoted_open_json='[]'
+while IFS= read -r promoted_row; do
+  [[ -n "$promoted_row" ]] || continue
+  promoted_key="$(jq -r '.key' <<<"$promoted_row" 2>/dev/null || true)"
+  [[ -n "$promoted_key" ]] || continue
+  if monitor_key_retired "$promoted_key"; then
+    retired_keys_json="$(jq -c --arg k "$promoted_key" '. + [$k]' <<<"$retired_keys_json")"
+  else
+    promoted_open_json="$(jq -c --argjson r "$promoted_row" '. + [$r]' <<<"$promoted_open_json")"
+  fi
+done < <(jq -c '.[]' <<<"$promoted_all_json")
+
 # --- Build the digest (M6/M7) ---
 digest_json="$(monitor_digest_build \
   "$(jq -nc --arg f "$since_iso" --arg t "$(date -u -d "@$now_epoch" +%Y-%m-%dT%H:%M:%SZ)" \
@@ -681,7 +785,8 @@ digest_json="$(monitor_digest_build \
   "$(monitor_digest_forge "$forge_prs_json" "$forge_issues_json" "$forge_escalations_json")" \
   "$(monitor_digest_gotchas "$SCRIPT_DIR/docs/IMPLEMENTATION-PIPELINE-SPEC.md" \
        "$SCRIPT_DIR/docs/REVIEW-PIPELINE-SPEC.md" "$SCRIPT_DIR/docs/MONITOR-PIPELINE-SPEC.md" \
-       "$SCRIPT_DIR/docs/DASHBOARD-SPEC.md")")"
+       "$SCRIPT_DIR/docs/DASHBOARD-SPEC.md")" \
+  "$(monitor_digest_promoted "$promoted_open_json")")"
 
 digest_file="$run_dir/digest.md"
 IFS=$'\t' read -r digest_rung digest_bytes \
@@ -811,6 +916,16 @@ if [[ -s "$report_file" ]]; then
 fi
 
 findings_json="$(jq -c '[.findings // [] | .[]]' <<<"$result_json" 2>/dev/null || printf '[]')"
+# A retired key (M13b) is dropped before anything else touches it: no ledger
+# row, no report row, nothing — the same as if the model had never stated it.
+# The model was told not to restate it (the digest carries no promoted-key
+# entry for a retired key at all); this is the mechanical backstop for the
+# case where it does anyway.
+if jq -e 'length > 0' <<<"$retired_keys_json" >/dev/null 2>&1; then
+  findings_json="$(jq -c --argjson r "$retired_keys_json" \
+    'map(select((.key // "") as $k | ($r | index($k)) == null))' \
+    <<<"$findings_json" 2>/dev/null || printf '%s' "$findings_json")"
+fi
 triage_json="$(jq -c '[.page_triage // [] | .[]]' <<<"$result_json" 2>/dev/null || printf '[]')"
 report_markdown="$(jq -r '.report_markdown // ""' <<<"$result_json" 2>/dev/null || true)"
 
@@ -825,7 +940,8 @@ monitor_ledger() {
     '{outcome: $outcome, index: $idx, key: ($f.key // ""), class: ($f.class // ""),
       title: ($f.title // ""), repo: ($f.repo // ""), config_key: ($f.config_key // ""),
       number: (if $number == "" then null else ($number | tonumber) end),
-      url: (if $url == "" then null else $url end), detail: $detail}' >> "$ledger_file"
+      url: (if $url == "" then null else $url end), detail: $detail,
+      evidence: (($f.body // "") | .[0:4000])}' >> "$ledger_file"
 }
 
 # monitor_open_finding KEY -> "<number>\t<url>" for an already-open filing
@@ -870,6 +986,84 @@ while IFS= read -r finding; do
   # would file a second issue against the first run's finding.
   if [[ ! "$f_key" =~ ^[a-z0-9][a-z0-9-]{2,63}$ ]] || [[ -z "$f_title" ]]; then
     monitor_ledger refused "$finding" 0 "" "" "the finding carries no usable finding_key or title"
+    continue
+  fi
+
+  # --- Promotion (issue #1285, M13a/M13b) --------------------------------
+  # Already promoted: nothing new to file, whatever class this run gave it —
+  # the tracked pager-invariant proposal already covers it. Checked ahead of
+  # M13's own already-open dedup below, since a mechanical finding this
+  # promoted a while ago would otherwise reach that check first every time
+  # and never reach this one again.
+  already_promoted_issue="$(jq -r --arg k "$f_key" \
+    'map(select(.key == $k)) | first | .issue // empty' <<<"$promoted_all_json" 2>/dev/null || true)"
+  if [[ -n "$already_promoted_issue" ]]; then
+    monitor_ledger already-promoted "$finding" 0 "" "$already_promoted_issue" \
+      "this key was already promoted to a pager-invariant proposal"
+    continue
+  fi
+
+  prior_reports="$(monitor_key_prior_reports "$f_key")"
+  [[ "$prior_reports" =~ ^[0-9]+$ ]] || prior_reports=0
+  promote_total=$(( prior_reports + 1 ))
+  if (( monitor_promote_after > 0 )) && (( promote_total >= monitor_promote_after )); then
+    if [[ -z "$pager_repo" ]]; then
+      monitor_ledger promotion-proposed "$finding" 0 "" "" \
+        "restated in $promote_total reports (monitor_promote_after=$monitor_promote_after) — no pager_repo or crash_loop_repo is configured, so there is nowhere to file the invariant proposal"
+      continue
+    fi
+    # A promotion is a GitHub item like any other class's filing, so it is
+    # counted against the same M12 budget rather than created on top of it —
+    # `monitor_max_filings_per_run: 0` disables all filing, promotions
+    # included, and a promotion past an already-spent budget is deferred and
+    # re-offered next run exactly as a mechanical/strategic filing is
+    # (`monitor_key_prior_reports` counts a `deferred` row the same as any
+    # other outcome, so the repeat count is preserved across the defer).
+    if (( monitor_max_filings == 0 )); then
+      monitor_ledger deferred "$finding" 0 "" "" \
+        "restated in $promote_total reports (monitor_promote_after=$monitor_promote_after) — monitor_max_filings_per_run is 0 — this run files nothing and reports everything"
+      continue
+    fi
+    if (( filed_count >= monitor_max_filings )); then
+      monitor_ledger deferred "$finding" 0 "" "" \
+        "restated in $promote_total reports (monitor_promote_after=$monitor_promote_after) — the run's filing budget (monitor_max_filings_per_run=$monitor_max_filings) was already spent"
+      continue
+    fi
+    monitor_claim_index
+    body_file="$run_dir/finding-$finding_index.md"
+    prior_evidence_json="$(monitor_key_prior_evidences "$f_key")"
+    {
+      printf 'The finding `%s` has now been restated across %d Monitor reports — the `monitor_promote_after` threshold for turning a repeat finding into a deterministic pager invariant rather than a recurring issue (agent-ops#1285).\n\n' \
+        "$f_key" "$promote_total"
+      printf '## %s\n\n' "$f_title"
+      printf '### Detection rule and evidence, by report\n\n'
+      evidence_n=0
+      while IFS= read -r prior_evidence; do
+        [[ -n "$prior_evidence" ]] || continue
+        evidence_n=$(( evidence_n + 1 ))
+        printf '#### Report %d\n\n%s\n\n' "$evidence_n" "$prior_evidence"
+      done < <(jq -r '.[]' <<<"$prior_evidence_json" 2>/dev/null)
+      evidence_n=$(( evidence_n + 1 ))
+      printf '#### Report %d (this run)\n\n%s\n\n' "$evidence_n" "$f_body"
+      printf '## What to build\n\nAdd a new invariant to `lib/pager-invariants.sh` for the fact described above, and register it in `pager_register_builtin_invariants`, so the fleet catches this automatically instead of depending on the Pipeline Monitor noticing it again.\n\n'
+      printf -- '---\n%s\nmonitor-finding-key: %s\n' "$(monitor_provenance "$finding_index")" "$f_key"
+    } > "$body_file"
+    labels_ensure_role "$CONFIG_FILE" "$SCHEMA_FILE" "$pager_repo" target >/dev/null 2>&1 || true
+    promoted_created="$(monitor_create_issue "$pager_repo" "pager: add invariant $f_key" \
+      "$body_file" "pw::type:tech-debt" "" || true)"
+    if [[ -n "$promoted_created" ]]; then
+      promoted_url="${promoted_created#*$'\t'}"
+      log_event "monitor-promoted" "$(jq -nc --arg k "$f_key" --arg i "$promoted_url" '{key: $k, issue: $i}')"
+      monitor_ledger promoted "$finding" "$finding_index" \
+        "${promoted_created%%$'\t'*}" "$promoted_url" \
+        "restated in $promote_total reports — promoted to a pager-invariant proposal"
+      promoted_all_json="$(jq -c --arg k "$f_key" --arg i "$promoted_url" \
+        '. + [{key: $k, issue: $i}]' <<<"$promoted_all_json")"
+      filed_count=$(( filed_count + 1 ))
+    else
+      monitor_ledger promotion-failed "$finding" "$finding_index" "" "" \
+        "restated in $promote_total reports — the pager-invariant proposal could not be filed; re-offered next run"
+    fi
     continue
   fi
 
