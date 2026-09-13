@@ -45,6 +45,9 @@ repositories.
 +        "merge-conflicts", "dequeued", "human-visibility", "abandoned-drafts",
 +        "failed-runs", "tech-debt", "code-quality", "register-hygiene"],
 +      "merge_autonomy_routine_complexity": ["low", "medium", "high"],
+       "merge_autonomy_protected_paths": [".github/*", "deploy/*", "prompts/*",
+         "lib/*", "scripts/*", "config.schema.json", "config.json",
+         "agent-cycle.sh", "review-cycle.sh", "CODEOWNERS"],
        "merge_budget_per_day": 24,
 ```
 
@@ -93,8 +96,16 @@ Notes on each choice:
   refuse-by-default posture applies to a security-sourced pull request like any
   other, so the widening is written whole here and the narrowing left as an
   explicit owner choice rather than a silent one. agent-ops's own
-  `merge_autonomy_protected_paths` is left unset in this diff — its schema
-  default is already agent-ops's nine paths, so there is nothing to override.
+  `merge_autonomy_protected_paths` already carries an explicit override,
+  landed independently of this diff to close TD-PPagop-26082422
+  (agent-ops#977): the inherited nine paths plus `scripts/*`. The nine
+  predate `merge_autonomy_routine_complexity` being widenable at all, and
+  left `scripts/*` — home to `detect-classifier-escapes.sh`, `doctor.sh`,
+  `autonomy-stage-report.sh` and the other scripts the D18 gate itself
+  depends on — unprotected, for the same reason the paragraph above adds
+  `scripts/*` to poetic's and poetic-fiddle's own lists. This diff therefore
+  makes no change to agent-ops's `merge_autonomy_protected_paths`; §1's diff
+  above already shows it as context.
 - **agent-ops also widens `merge_autonomy_routine_complexity` to
   `["low", "medium", "high"]`** — the other half of #402's Stage 3 row for
   agent-ops, "+ `complexity:high`". agent-ops#725 made the ceiling
@@ -105,7 +116,9 @@ Notes on each choice:
   security, CI/workflow machinery or shared library code, so this widening
   routes exactly that class of agent-ops diff through automatic landing; the
   protected-path gate (belt and braces, risk register item 1) stays in force
-  regardless.
+  regardless, and — since TD-PPagop-26082422 (agent-ops#977) closed —
+  actually covers that class: `scripts/*` is protected alongside `lib/*` and
+  `.github/*`.
 
 ## 2. Preconditions
 
