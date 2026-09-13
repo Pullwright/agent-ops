@@ -1415,8 +1415,12 @@ if ((gh_ready)); then
   declare -A cra_repos_readable=()  # installation id -> 1/0, was the selection readable
   declare -A cra_repos_list=()      # installation id -> covered slugs, or the word `all`
   check_repo_access_app() {
-    local slug="$1" ok_msg="$2" fail_msg="$3" owner="${slug%%/*}" \
-          inst perms_json contents list
+    local slug="$1" ok_msg="$2" fail_msg="$3" inst perms_json contents list
+    # A second `local`, deliberately: within one `local` an assignment cannot
+    # read a name the same statement is declaring, so `owner="${slug%%/*}"`
+    # beside `slug="$1"` would silently take whatever `slug` the *caller's*
+    # scope held (SC2318).
+    local owner="${slug%%/*}"
     inst="$(author_token_installation_for_owner "$owner" 2>/dev/null)" || inst=""
     if [[ -z "$inst" ]]; then
       # Unreachable in practice — `check_repo_access_is_app` only returns
