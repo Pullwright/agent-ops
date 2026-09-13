@@ -2713,7 +2713,8 @@ To modify this system (add a new work source, change the selection logic, etc.),
 This repo follows the same conventions as its target repos:
 - `main` is protected; no direct commits. All changes go through pull requests.
 - PR titles must be in [Conventional Commits](https://www.conventionalcommits.org/) format (`<type>[(scope)]: <description>`).
-- Both repo's CLAUDE.md files bind all work done inside them.
+- `AGENTS.md` (which `CLAUDE.md` imports) binds all work done inside this
+  repository, as each target repository's own `AGENTS.md` binds work there.
 
 ## Development
 
@@ -2791,6 +2792,19 @@ read as a broken branch rather than a broken invocation.
   last built from, not the working tree in front of you, so a fix made here is
   invisible to a suite run there. `docker run` copies the current working tree
   in fresh; `docker exec` never does. `docker run`, never `docker exec`.
+
+Two smaller traps of the same shape. `run-tests.sh` prints per-assertion
+detail only for a file that fails — a passing file is one `PASS <name>` line
+— so a new assertion that silently asserts nothing looks exactly like a pass;
+to see the `ok - …` lines for one file, run it alone inside a container from
+the image (`tar -cf - . | docker run --rm -i --entrypoint bash <image> -c
+'d="$(mktemp -d)" && cd "$d" && tar -xf - && bash test/<file>.test.sh'` —
+`mktemp -d`, because `/` is not writable in the image), and follow a new
+assertion by reverting the fix and confirming the assertion fails. And
+`shellcheck` is pinned to v0.10.0 in CI and in the image while a developer
+host commonly has 0.8.0, which misses findings CI fails on (SC2317 on a stub
+function called only from an `eval`ed block, for one); run
+`./scripts/lint-shell.sh` inside a container from the image before pushing.
 
 `AGENT_OPS_TEST_IMAGE` picks the image, for testing against a locally built one
 rather than `ghcr.io`'s latest:
