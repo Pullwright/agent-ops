@@ -15725,7 +15725,8 @@ implements.
     candidate iff **all** of:
     1. it appears in this cycle's pre-fetched source arrays — `findings`
        (`security`/`code-quality`), `review_feedback`, `abandoned_drafts`,
-       `merge_conflicts`, `register_hygiene`, `issues`, `tech_debt`
+       `merge_conflicts`, `dequeued`, `landing_refusals`, `register_hygiene`,
+       `issues`, `tech_debt`
        (requirement 3), the same arrays the Co-Ordinator reads, keyed the
        same way (`source`, `ref`), plus `project_review` and
        `implementation_plan`, keyed the same way again but carried only by
@@ -17782,7 +17783,7 @@ with the Reviewer's own.
     and claim exclusion (`exclude_claimed_prs`/`exclude_claimed_items`)
     applied identically, and carried on the Co-Ordinator's own runtime input
     as each repo entry's `landing_refusals` array. The selection side is
-    wired to match, band for band, with the same five lists every other
+    wired to match, band for band, with the same six lists every other
     pre-fetched source appears in: requirement 3c/3u's blocked-and-void
     second pass (`lib/eligibility.sh`'s own band loop), requirement 3x's
     eligible-set denominator (`coordinator_eligible_items`), requirement 17h's
@@ -17790,7 +17791,10 @@ with the Reviewer's own.
     `acceptance` for this source is to answer every unreconciled comment and
     cite each with its own `<!-- agent-ops:reconciles comment=<id> -->` line),
     requirement 3v's deterministic fallback (`fallback_select_candidate`,
-    ranked immediately after `dequeued`), and
+    ranked immediately after `dequeued`), and requirement 39a's own Refiner
+    candidate walk (`refiner_candidate_items`, `lib/refinement.sh`), which
+    reaches this band like any other so a `refinement_policy` set for it can
+    actually be satisfied — and
     `PREFLIGHT_EXISTING_BRANCH_SOURCES` (requirement 34m), which this source
     joins as a fifth member because its branch and pull request predate the
     claim. Deliberately **not**
