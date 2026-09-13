@@ -148,8 +148,55 @@ for item in "${items[@]:-}"; do
   fi
 done
 
+# GitHub's own parser never turns a keyword into a closing reference inside a
+# fenced code block, an inline code span, or a blockquote line — quoting the
+# convention, or someone else's PR body, reads as a real reference to this
+# script's own `grep`, without this (issue #1463). Scoped to the record-flip
+# harvest below only: the marker/keyword check above stays on raw `$body`,
+# unchanged, so a stripping bug here cannot affect the older, marker-anchored
+# half.
+strip_markdown_noise() {
+  local no_fences
+  # A closing fence only counts, to GitHub's own renderer, if it repeats the
+  # opening fence's character and is at least as long — a bare "```" inside a
+  # "````"-opened block is literal fenced content, not the end of it. Tracks
+  # the opening marker's character and run length explicitly (rather than a
+  # naive open/close toggle on "any line of 3+ backticks or tildes") so a
+  # shorter same-character run nested inside a longer fence does not
+  # prematurely close it: doing so would put everything after the *real*
+  # closing fence back outside the block, undoing the strip on a real
+  # keyword GitHub itself still treats as fenced. Counts runs with a
+  # substr()-scanning while loop rather than a `{n,}` interval regex, because
+  # an interval combined with a backtick/tilde alternation panics this
+  # image's mawk (REcompile crash).
+  no_fences="$(awk '
+    BEGIN { in_fence = 0; fence_ch = ""; fence_len = 0 }
+    {
+      stripped = $0
+      sub(/^[[:space:]]*/, "", stripped)
+      ch = substr(stripped, 1, 1)
+      run = 0
+      if (ch == "`" || ch == "~") {
+        while (substr(stripped, run + 1, 1) == ch) run++
+      }
+      if (in_fence) {
+        rest = substr(stripped, run + 1)
+        sub(/[[:space:]]*$/, "", rest)
+        if (run >= 3 && ch == fence_ch && run >= fence_len && rest == "") in_fence = 0
+        next
+      }
+      if (run >= 3) { in_fence = 1; fence_ch = ch; fence_len = run; next }
+      if (stripped ~ /^>/) next
+      print
+    }
+  ' <<<"$1")"
+  # shellcheck disable=SC2016  # the backticks are literal Markdown, not command substitution
+  sed -E 's/`+[^`]*`+/ /g' <<<"$no_fences"
+}
+
 # --- the tech-debt record-flip check (issue #1363, extended by #1438) -------
 if [[ -n "$repo_slug" && -n "$pr_number" ]]; then
+  harvest_body="$(strip_markdown_noise "$body")"
   # Every issue number the body cites via a bare closing keyword, independent
   # of the marker/branch anchors above — this is what lets the record-flip
   # loop below catch a markerless `Fixes #N` PR (issue #1438): a human's PR,
@@ -181,7 +228,7 @@ if [[ -n "$repo_slug" && -n "$pr_number" ]]; then
   # run in it: the leading boundary character is never a digit, but a repo
   # slug of its own can carry one ("acme/widgets2#198"), and an unanchored
   # extraction would harvest that 2 as though it were an issue.
-  mapfile -t keyword_items < <(grep -oiE "(^|[^[:alnum:]])${keyword_re}${harvest_ref_re}[0-9]+" <<<"$body" \
+  mapfile -t keyword_items < <(grep -oiE "(^|[^[:alnum:]])${keyword_re}${harvest_ref_re}[0-9]+" <<<"$harvest_body" \
     | grep -oE '[0-9]+$')
   mapfile -t unique_items < <(printf '%s\n' "${items[@]}" "${keyword_items[@]}" | grep -v '^$' | sort -un)
   for item in "${unique_items[@]:-}"; do

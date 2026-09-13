@@ -262,6 +262,13 @@ if [[ "$path" == */reviews ]]; then
   for (( p = 0; p < pages; p++ )); do jq -c "$jqfilter" "$d/reviews"; done
 elif [[ "$path" == */comments ]]; then
   for (( p = 0; p < pages; p++ )); do jq -c "$jqfilter" "$d/issue-comments.json"; done
+elif [[ "$path" == */timeline ]]; then
+  # requirement 53: lib/reconciliation-gate.sh's own anchor read
+  # (_sweep_landing_refusal_reason -> reconciliation_unreconciled_comments).
+  for (( p = 0; p < pages; p++ )); do jq -c "$jqfilter" "$d/rc-timeline.json"; done
+elif [[ "$path" == repos/*/pulls/* ]]; then
+  # requirement 53: the anchor's creation-time fallback.
+  jq -c "$jqfilter" "$d/rc-pr.json"
 fi
 STUB
 chmod +x "$tmp_dir/gh"
@@ -386,6 +393,7 @@ reset_stub() {
   printf 'warwickallen\n' > "$tmp_dir/author"
   printf '[]' > "$tmp_dir/issue-comments.json"
   : > "$tmp_dir/pending"; : > "$tmp_dir/posts"; : > "$tmp_dir/comments.log"
+  : > "$tmp_dir/union-log.jsonl"
   rm -f "$tmp_dir/api-fail" "$tmp_dir/api-fail-msg" "$tmp_dir/api-fail-pending" \
         "$tmp_dir/post-fail" "$tmp_dir/list-fail" \
         "$tmp_dir/view-fail" "$tmp_dir/comment-fail" "$tmp_dir/pages" "$tmp_dir/mq-fail" \
@@ -395,7 +403,32 @@ reset_stub() {
 }
 
 run_sweep() {
-  SWEEP_GH="$tmp_dir/gh" AGENT_OPS_CONFIG="$config" bash "$SWEEP" o/r c1 node1
+  SWEEP_GH="$tmp_dir/gh" AGENT_OPS_CONFIG="$config" bash "$SWEEP" o/r c1 node1 "$tmp_dir/union-log.jsonl"
+}
+
+# requirement 53 fixtures ----------------------------------------------------
+#
+# set_landing_refused REASON — appends a `landing-refused` event for $URL to
+# the fleet-wide union log `_sweep_landing_refusal_reason` reads.
+set_landing_refused() {
+  jq -nc --arg u "$URL" --arg r "$1" \
+    '{ts: "2026-08-24T01:00:00Z", event: "landing-refused", pr_url: $u, reason: $r}' \
+    >> "$tmp_dir/union-log.jsonl"
+}
+
+# set_rc_comments — the fixture `reconciliation_unreconciled_comments`'s own
+# `gh` reads want: a `ready_for_review` timeline event, a bare pull-request
+# creation-time fallback (unused once the timeline read succeeds), and the
+# general PR comment(s) themselves, each carrying the id/login/type fields
+# `_reconciliation_gate_comments` reads that `_sweep_round_answered`'s own
+# narrower `{at, body}` filter does not need.
+set_rc_comments() {  # <id> <body> [login] [type]
+  jq -nc '[{event: "ready_for_review", created_at: "2026-08-20T00:00:00Z"}]' \
+    > "$tmp_dir/rc-timeline.json"
+  jq -nc '{created_at: "2026-08-15T00:00:00Z"}' > "$tmp_dir/rc-pr.json"
+  jq -nc --argjson id "$1" --arg body "$2" --arg login "${3:-warwickallen}" --arg type "${4:-User}" \
+    '[{id: $id, created_at: "2026-08-21T00:00:00Z", body: $body,
+       user: {login: $login, type: $type}}]' > "$tmp_dir/issue-comments.json"
 }
 
 # --- No pull requests: costs one listing and nothing else -----------------------
@@ -857,6 +890,89 @@ out="$(run_sweep)"
 assert_eq "idle_hours 0 disables the nudge only" "human-review-requested" \
   "$(jq -r '.action' <<<"$out")"
 write_config warwickallen 24
+
+# --- requirement 53: the idle nudge names a standing landing-refusal ------------
+# An approved/mergeable/green/idle pull request reads identically to the idle
+# nudge's own checks whether it is genuinely waiting on a human's merge click or
+# gate 4 is refusing to arm it over an unreconciled comment — so the nudge text
+# must say the real thing when one stands, on the strength of a live
+# reconciliation read, not merely the (possibly stale) logged refusal alone.
+reset_stub
+set_reviews "$(review Warwick-Allen APPROVED)"
+idle_view APPROVED MERGEABLE yes "2020-01-01T00:00:00Z" no
+set_landing_refused "reconciliation-unanswered:human comment(s) posted on $URL since it last left draft carry no <!-- agent-ops:reconciles comment=<id> --> line answering them: $URL#issuecomment-111"
+set_rc_comments 111 "Please fix the widget too."
+out="$(run_sweep)"
+nudge_body="$(comments)"
+assert_eq "a standing reconciliation-unanswered refusal still nudges" "nudged" \
+  "$(jq -r 'select(.action == "nudged" or .action == "human-review-requested") | .action' <<<"$out" | tail -n1)"
+assert_contains "  ... naming the real reason, not a merge click" \
+  "the pipeline is refusing to land it: reconciliation-unanswered:" "$nudge_body"
+assert_contains "  ... quoting the unanswered comment's own permalink" \
+  "$URL#issuecomment-111" "$nudge_body"
+if [[ "$nudge_body" == *"waiting on a merge click"* ]]; then
+  printf 'FAIL - the misleading merge-click text leaked into the landing-refusal nudge\n     actual: %s\n' "$nudge_body"
+  failures=$(( failures + 1 ))
+fi
+
+# `reconciliation-unreadable:` gets the same treatment as `reconciliation-
+# unanswered:` — both are gate 4's own comment-reconciliation refusal classes.
+reset_stub
+set_reviews "$(review Warwick-Allen APPROVED)"
+idle_view APPROVED MERGEABLE yes "2020-01-01T00:00:00Z" no
+set_landing_refused "reconciliation-unreadable:could not confirm every human comment on $URL since it last left draft is reconciled"
+set_rc_comments 222 "One more thing before this lands."
+out="$(run_sweep)"
+nudge_body="$(comments)"
+assert_contains "a reconciliation-unreadable refusal is named too" \
+  "the pipeline is refusing to land it: reconciliation-unreadable:" "$nudge_body"
+
+# Once the Implementer's reply carries the reconciles marker, a fresh live
+# read finds nothing unreconciled — the stale log line must not still be
+# trusted, so the nudge reverts to its ordinary wording.
+reset_stub
+set_reviews "$(review Warwick-Allen APPROVED)"
+idle_view APPROVED MERGEABLE yes "2020-01-01T00:00:00Z" no
+set_landing_refused "reconciliation-unanswered:human comment(s) posted on $URL since it last left draft carry no line answering them: $URL#issuecomment-333"
+jq -nc --arg m "$(pipeline_comment_marker c1 implementer)" '[
+  {id: 333, created_at: "2026-08-21T00:00:00Z", body: "Please fix the widget too.",
+   user: {login: "warwickallen", type: "User"}},
+  {id: 334, created_at: "2026-08-21T01:00:00Z",
+   body: ("Answered.\n\n<!-- agent-ops:reconciles comment=333 -->\n\n" + $m),
+   user: {login: "warwickallen", type: "User"}}
+]' > "$tmp_dir/issue-comments.json"
+jq -nc '[{event: "ready_for_review", created_at: "2026-08-20T00:00:00Z"}]' > "$tmp_dir/rc-timeline.json"
+jq -nc '{created_at: "2026-08-15T00:00:00Z"}' > "$tmp_dir/rc-pr.json"
+out="$(run_sweep)"
+nudge_body="$(comments)"
+assert_contains "a reconciled refusal falls back to the ordinary nudge text" \
+  "waiting on a merge click" "$nudge_body"
+if [[ "$nudge_body" == *"the pipeline is refusing to land it"* ]]; then
+  printf 'FAIL - a stale, already-reconciled refusal still overrode the nudge text\n     actual: %s\n' "$nudge_body"
+  failures=$(( failures + 1 ))
+fi
+
+# A landing-refused event of any other class (e.g. a human CHANGES_REQUESTED
+# standing) never triggers the substitution — only the two comment-
+# reconciliation refusal classes gate 4 itself logs.
+reset_stub
+set_reviews "$(review Warwick-Allen APPROVED)"
+idle_view APPROVED MERGEABLE yes "2020-01-01T00:00:00Z" no
+set_landing_refused "human-changes-requested:a human CHANGES_REQUESTED stands (warwickallen)"
+out="$(run_sweep)"
+nudge_body="$(comments)"
+assert_contains "a non-reconciliation refusal class leaves the ordinary nudge untouched" \
+  "waiting on a merge click" "$nudge_body"
+
+# No union-log argument at all (e.g. an older call site) behaves exactly as
+# before this requirement existed — the ordinary nudge, never a crash.
+reset_stub
+set_reviews "$(review Warwick-Allen APPROVED)"
+idle_view APPROVED MERGEABLE yes "2020-01-01T00:00:00Z" no
+out="$(SWEEP_GH="$tmp_dir/gh" AGENT_OPS_CONFIG="$config" bash "$SWEEP" o/r c1 node1)"
+nudge_body="$(comments)"
+assert_contains "omitting the union-log argument keeps the ordinary nudge text" \
+  "waiting on a merge click" "$nudge_body"
 
 # --- Failures are warnings, never a silent "nothing to do" ----------------------
 # An unreadable `/reviews` breaks two independent reads on the same pull

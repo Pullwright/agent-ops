@@ -2758,14 +2758,21 @@ for (( ci = 0; ci < n_cand; ci++ )); do
   pr_claim_lost=0
   c_pr_key=""
   if [[ "$c_source" == "review-feedback" || "$c_source" == "abandoned-drafts" \
-        || "$c_source" == "dequeued" \
+        || "$c_source" == "dequeued" || "$c_source" == "landing-refusals" \
         || ( "$c_source" == "merge-conflicts" && "$c_takeover" != "true" ) ]]; then
     # No new branch to create — the PR already exists (a human's review round for
     # review-feedback, this system's own stalled draft for abandoned-drafts, a
     # ready-but-conflicted PR of ours for merge-conflicts, a checks-failure-
-    # dequeued PR of ours for dequeued). The lock is a
+    # dequeued PR of ours for dequeued, a PR gate 4 keeps refusing to arm over
+    # an unreconciled comment for landing-refusals). The lock is a
     # create-only registry file keyed on the item ref, not a branch create that
     # would 422 against the branch already there.
+    #
+    # This set is `PREFLIGHT_EXISTING_BRANCH_SOURCES` (lib/preflight.sh) plus
+    # the `merge-conflicts` takeover carve-out below; the two must agree, or a
+    # source preflight believes has a pre-existing branch would have a fresh
+    # one minted for it here and the candidate's own `branch` overwritten with
+    # it (requirement 53, issue #979).
     #
     # A `merge-conflicts` candidate carrying `takeover: true` (requirement 3s,
     # issue #250) is the one exception: it names Dependabot's PR, not one of

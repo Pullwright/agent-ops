@@ -439,8 +439,9 @@ run_coordinator_stage_attempt() {  # <attempt-out-file> <prompt> [extra-budget-j
 # Each candidate is built straight from its own pre-fetched entry — the same
 # fields the Co-Ordinator's own contract in `prompts/coordinator.md`'s
 # "Output" section requires (`item`, `branch`/`pr_url`/`pr_number` for the
-# four finishing sources, the Dependabot `takeover` shape for
-# merge-conflicts) — with `context` a verbatim paste of the entry's own body
+# five sources whose branch and pull request predate the claim — the
+# `PREFLIGHT_EXISTING_BRANCH_SOURCES` set, `landing-refusals` included — the
+# Dependabot `takeover` shape for merge-conflicts) — with `context` a verbatim paste of the entry's own body
 # text and `acceptance` a generic instruction naming the source's standard
 # procedure, since there is no model here to compose a bespoke one.
 # `model`/`model_reason` are supplied by the caller (ordinarily
@@ -542,6 +543,11 @@ fallback_select_candidate() {  # <ordered-repos-json> <default-model> <refinemen
           "Diagnose and fix the merge-group checks failure that got this pull request dequeued, then push to the existing branch.";
           {branch: .branch, pr_url: .pr_url, pr_number: .pr_number, base: .base})];
 
+    def lr_cands: [.[] | select(lists("landing-refusals")) | .slug as $r | .default_branch as $db | (.landing_refusals // [])[]
+      | mk($r; $db; "landing-refusals"; .ref; .title; (.body // "");
+          "Answer every unreconciled comment above on the existing pull request — implementing what it asks or replying to contest it — and cite each one with its own <!-- agent-ops:reconciles comment=<id> --> line; leave the pull request ready.";
+          {branch: .branch, pr_url: .pr_url, pr_number: .pr_number})];
+
     def ad_cands: [.[] | select(lists("abandoned-drafts")) | .slug as $r | .default_branch as $db | (.abandoned_drafts // [])[]
       | mk($r; $db; "abandoned-drafts"; .ref; .title; (.body // "");
           "Finish the existing draft pull request to the item'"'"'s own acceptance.";
@@ -572,7 +578,7 @@ fallback_select_candidate() {  # <ordered-repos-json> <default-model> <refinemen
           "Repair only the flagged register inconsistencies per TECH-DEBT.md'"'"'s claiming/filing discipline; touch nothing else.";
           {})];
 
-    [ sec_cands, issue_band("Urgent"), rf_cands, mc_cands, dq_cands, ad_cands, hv_cands,
+    [ sec_cands, issue_band("Urgent"), rf_cands, mc_cands, dq_cands, lr_cands, ad_cands, hv_cands,
       issue_band("High"), td_cands, issue_band("Medium"), issue_band("Low"), cq_cands, rh_cands ]
     | map(select(length > 0))
     | if length > 0 then (.[0] | sort_by(._rank) | .[0] | del(._rank)) else null end

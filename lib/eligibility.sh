@@ -64,7 +64,7 @@ live_pr_refs_json="$(jq -c \
 # Co-Ordinator whole: drop any entry this repo's own blocked or void record
 # names, exactly as exclude_claimed_items already dropped claimed ones.
 # `findings`, `review_feedback`, `abandoned_drafts`, `merge_conflicts`,
-# `dequeued`, `register_hygiene`, `human_visibility` and `tech_debt` all get the identical
+# `dequeued`, `landing_refusals`, `register_hygiene`, `human_visibility` and `tech_debt` all get the identical
 # second pass `exclude_blocked_or_void_items` first gave `tech_debt` alone
 # (issue #310) — there is nothing about that exclusion tech-debt-specific,
 # only tech-debt was the band it was first proven on. Every band the repo
@@ -86,7 +86,7 @@ live_pr_refs_json="$(jq -c \
 # void — with no per-item judgement left for it to apply, and no room for a
 # verdict like "requires per-item evaluation against blocked/void/claimed
 # records" to be true of any of them.
-for eligibility_band in findings review_feedback abandoned_drafts merge_conflicts dequeued register_hygiene human_visibility tech_debt; do
+for eligibility_band in findings review_feedback abandoned_drafts merge_conflicts dequeued landing_refusals register_hygiene human_visibility tech_debt; do
   while IFS= read -r eb_slug; do
     [[ -n "$eb_slug" ]] || continue
     eb_current="$(jq -c --arg s "$eb_slug" --arg f "$eligibility_band" \
@@ -199,6 +199,15 @@ enabler_eligible_json="$(enabler_eligible_items "$union_log" \
 # `.repo`/`.item` *after* `$live |` would read them off the live-refs array
 # instead of off the eligible entry — jq has no other way to hold onto the
 # outer `.` across a nested pipe.
+#
+# `landing-refusal` (requirement 53) has no arm in the pattern below: its ref
+# is scoped to the unreconciled comment ids, not a head SHA, so it cannot
+# reuse this SHA-shaped test as written and would need its own live-set
+# comparison against `landing_refusals` if extended here. This is the cost
+# saving above, never the correctness gate, so the omission only means a
+# stale landing-refusal ref pays for a full Enabler re-check rather than
+# being pre-filtered; tracked alongside this source's other deferred parity
+# questions (issue #1481).
 stale_enabler_refs_json='[]'
 [[ -z "$live_pr_refs_json" ]] || { stale_enabler_refs_json="$(jq -c --argjson live "$live_pr_refs_json" '
   [ .[] | (.repo // "") as $repo | (.item // "") as $item
