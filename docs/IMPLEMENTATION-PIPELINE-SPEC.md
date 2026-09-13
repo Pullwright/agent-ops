@@ -21024,11 +21024,12 @@ oblige anyone to edit a test.
    `cannot join network namespace of container: … is restarting` — leaving
    both `tailscale` and `dashboard` in a failed state, and `docker compose
    logs tailscale` carries one line per attempt naming the missing variable
-   and the active profile (six identical lines over the run below), never
-   reaching `tailscaled` — no new node key is registered against the
-   tailnet. `docker compose ps` shows neither restarting indefinitely — but
-   they settle by **different mechanisms, and at different counts**, and the
-   check asserts each separately. `tailscale` reaches `Exited` with a
+   and the active profile (six identical lines, observed on issue #728's
+   keyless run against `main` @ `412b025`), never reaching `tailscaled` — no
+   new node key is registered against the tailnet. `docker compose ps` shows
+   neither restarting indefinitely — but they settle by **different
+   mechanisms, and at different counts**, and the check asserts each
+   separately. `tailscale` reaches `Exited` with a
    `RestartCount` of 5: it starts, exits non-zero six times over (one
    initial attempt plus five retries), and its own `restart: on-failure:5`
    bounds the retries where the rest of the file is `unless-stopped`.
@@ -21052,8 +21053,10 @@ oblige anyone to edit a test.
    `tailscale up` instead of at the entrypoint. It transfers for the
    dashboard regardless, whose view of both cases is identical: the sidecar
    is stopped, and the namespace cannot be joined. The sidecar's own unset
-   path — one line naming the missing variable, `tailscaled` never reached —
-   remains unobserved (#706).
+   path — one line per attempt naming the missing variable, `tailscaled`
+   never reached — is separately observed, on issue #728's keyless run
+   against `main` @ `412b025`, corroborated on the deployed node
+   `ockham-container` with `TS_AUTHKEY` genuinely absent.
    With `TS_AUTHKEY` set, the same `up -d` starts both containers normally and
    `docker compose exec tailscale tailscale status` succeeds.
 1c-vi. **A node applies its own merged compose.yaml, and only when it is
