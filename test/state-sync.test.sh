@@ -167,9 +167,19 @@ printf '{"ts":"2026-07-20T00:00:00Z"}\n' > "$state/.state-sync-published.json"
 mkdir -p "$state/expensive-gather"
 printf '{"findings":[]}\n' > "$state/expensive-gather/o_r.json"
 # The hourly unattended doctor pass's own artefacts (agent-ops#543): local to
-# this node, like the caches above, so neither should replicate.
+# this node, like the caches above, so neither file should replicate. Its
+# *verdict* is folded into the heartbeat (agent-ops#1278) and, as of
+# agent-ops#1397, so are its failing checks — bounded. This fixture therefore
+# carries more fails than that bound and one longer than the truncation, which
+# is what the heartbeat assertions further down read.
 printf 'doctor noise\n' > "$state/doctor.log"
-printf '{"verdict":"ok"}\n' > "$state/.doctor-status.json"
+jq -nc --arg long "$(printf 'x%.0s' $(seq 1 260))" '
+  {timestamp: "2026-07-20T00:05:00Z",
+   verdict: "fail",
+   fails: ["first failing check", $long, "third failing check", "fourth failing check"],
+   warns: ["a warning no peer reads"],
+   skips: 2,
+   token_expiry: "2026-12-01"}' > "$state/.doctor-status.json"
 # The per-stage health snapshot (lib/stage-health.sh, agent-ops#662): local to
 # this node as a raw file, on the same reasoning as the doctor status cache
 # above — but unlike it, its content is meant to reach peers, folded into the
@@ -324,6 +334,32 @@ assert_eq "the heartbeat carries the stage-health verdict computed this cycle" "
   "$(jq -r '.stage_health.stages.coordinator.verdict' <<<"$hb")"
 assert_eq "with its consecutive-failure count intact" "5" \
   "$(jq -r '.stage_health.stages.coordinator.consecutive_failures' <<<"$hb")"
+
+# --- The heartbeat carries the doctor verdict (agent-ops#1278) and, bounded,
+#     the checks that failed (agent-ops#1397) --------------------------------
+# The verdict alone is what lib/pager.sh's `verdict-unanimous` invariant fires
+# on; with nothing but the verdict it could say only that every node was
+# unhappy, which cost a hand search of four nodes' `.doctor-status.json` to
+# learn they were all failing the same check (#1398). The checks now travel
+# with it — bounded, which is the whole reason the array stayed local before:
+# the whole fleet re-fetches this file every schedule.state_sync_fetch_minutes,
+# and unbounded diagnostic prose there is a cost with no ceiling.
+assert_eq "the heartbeat carries the doctor verdict" "fail" \
+  "$(jq -r '.doctor.verdict' <<<"$hb")"
+assert_eq "and the time the pass was computed" "2026-07-20T00:05:00Z" \
+  "$(jq -r '.doctor.timestamp' <<<"$hb")"
+assert_eq "and names the check that failed, not merely that one did" "first failing check" \
+  "$(jq -r '.doctor.fails[0]' <<<"$hb")"
+assert_eq "at most three of them, however many the node reported" "3" \
+  "$(jq -r '.doctor.fails | length' <<<"$hb")"
+assert_eq "  ... so the fourth does not travel" "0" \
+  "$(jq -r '[.doctor.fails[] | select(. == "fourth failing check")] | length' <<<"$hb")"
+assert_eq "each truncated, so one node's prose cannot grow the shared file without bound" "200" \
+  "$(jq -r '.doctor.fails[1] | length' <<<"$hb")"
+assert_eq "warns stay local — no reader off this node" "false" \
+  "$(jq -r '.doctor | has("warns")' <<<"$hb")"
+assert_eq "and so does token_expiry, which only the node holding the credential can act on" "false" \
+  "$(jq -r '.doctor | has("token_expiry")' <<<"$hb")"
 
 # --- The heartbeat carries a mirror-rebuild verdict slot (#604) ---------------
 # lib/mirror-integrity.sh's own behaviour (a corrupted mirror is discarded

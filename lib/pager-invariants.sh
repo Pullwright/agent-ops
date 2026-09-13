@@ -291,6 +291,18 @@
 # the first hit wins: a stage_health stage failing on every active node, the
 # updater stuck on every active node, the doctor verdict `fail` on every
 # active node.
+#
+# The doctor branch also names the checks (agent-ops#1397): the `fails`
+# entries common to *every* active node, at most two of them, from the
+# bounded array scripts/state-sync.sh folds into each heartbeat. The
+# intersection is the right set for a unanimity invariant — what all of them
+# say is what the suspect reader said — and it is what turns this evidence
+# from "every node's doctor is unhappy" into the name of the check to go and
+# read, which #1398 could not do and cost a hand search of four nodes.
+# Absent (an older peer, still publishing `{timestamp, verdict}` alone) or
+# disjoint (nodes failing genuinely different checks) both yield no clause
+# rather than a wrong one, and the `stage_health`/`updater` branches, which
+# carry no `detail`, keep their evidence byte-identical.
 pager_eval_verdict_unanimous() {
   local fleet_nodes_json="$1"
   jq -c -n --argjson nodes "$fleet_nodes_json" '
@@ -307,11 +319,22 @@ pager_eval_verdict_unanimous() {
         | ( if ($active | all(.updater.status? == "stuck"))
             then {kind: "updater.status=stuck", nodes: [$active[].node]} else null end ) as $updater_hit
         | ( if ($active | all(.doctor.verdict? == "fail"))
-            then {kind: "doctor.verdict=fail", nodes: [$active[].node]} else null end ) as $doctor_hit
+            then {kind: "doctor.verdict=fail", nodes: [$active[].node],
+                  detail: ( [$active[] | (.doctor.fails // [])]
+                            | if (length > 0) and (all(.[]; length > 0))
+                              then reduce .[1:][] as $f (.[0]; . - (. - $f))
+                              else [] end
+                            | .[0:2] )}
+            else null end ) as $doctor_hit
         | ($stage_hit // $updater_hit // $doctor_hit) as $hit
         | if $hit == null then {firing: false}
-          else {firing: true,
-                evidence: "\($hit.kind) on every active node (\($hit.nodes | join(", "))) — the #1071 signature: a uniform fleet-wide failure is almost always the reader being wrong, not every node failing alike at once"}
+          else
+            ( ($hit.detail // [])
+              | if length == 0 then ""
+                else " — failing on every one of them: " + (map("“\(.)”") | join("; "))
+                end ) as $detail
+            | {firing: true,
+               evidence: "\($hit.kind) on every active node (\($hit.nodes | join(", ")))\($detail) — the #1071 signature: a uniform fleet-wide failure is almost always the reader being wrong, not every node failing alike at once"}
           end
       end
   ' 2>/dev/null || printf '{"firing":false}'

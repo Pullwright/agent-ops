@@ -333,6 +333,170 @@ out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID 
 assert_contains "state_repo unwritable is reported with its own wording" \
   "[fail] $slug is readable but not writable with this token" "$out"
 
+# --- Write access under the forge authoring App (agent-ops#1397) ----------
+# Since the Author App went live (#1396) the seam leaves GH_TOKEN empty in
+# every cron child, so `gh` mints an installation token — and GitHub answers
+# `GET /repos/<slug>` with `.permissions` *present and every member false*,
+# whatever that installation was really granted. `pull: false` on a read that
+# has just succeeded is the tell. Read literally, that is `push == false`,
+# which is how this check produced seven fails a node on all four nodes at
+# once (#1398) against a token that was authoring pull requests throughout.
+# So the App path reads the installation's own record instead: `contents:
+# write` for what it may do, and a repository selection covering this
+# repository for where it may do it.
+#
+# Stubbed the same way the Approver's installation reads below are — a real
+# throwaway RSA key, so the JWT is signed for real, and a stub curl through
+# AUTHOR_TOKEN_CURL, never a real one. It dispatches on URL because four
+# reads reach it: the mint, the permissions, the repository selection, and
+# `GET /app` for the identity line.
+author_key="$tmp/author-perm-key.pem"
+openssl genrsa -out "$author_key" 2048 >/dev/null 2>&1
+author_curl="$tmp/author-curl"
+author_cache="$tmp/author-token-cache"
+mkdir -p "$author_cache"
+cat > "$author_curl" <<'STUB'
+#!/usr/bin/env bash
+d="$(dirname "$0")"
+cat >/dev/null 2>&1
+url=""
+for a in "$@"; do case "$a" in https://*) url="$a" ;; esac; done
+case "$url" in
+  */access_tokens)
+    printf '{"token":"ghs_author_stub","expires_at":"2099-01-01T00:00:00Z"}\n201'
+    exit 0 ;;
+  */app)
+    printf '{"slug":"pullwright-author"}\n200'
+    exit 0 ;;
+  */installation/repositories*)
+    [[ -f "$d/author_repos_fail" ]] && exit 1
+    printf '%s\n%s' "$(cat "$d/author_repos_body" 2>/dev/null || echo '{}')" \
+                    "$(cat "$d/author_repos_status" 2>/dev/null || echo 200)"
+    exit 0 ;;
+esac
+[[ -f "$d/author_perm_fail" ]] && exit 1
+printf '%s\n%s' "$(cat "$d/author_perm_body" 2>/dev/null || echo '{}')" \
+                "$(cat "$d/author_perm_status" 2>/dev/null || echo 200)"
+STUB
+chmod +x "$author_curl"
+stub_author_perm() {
+  printf '%s' "${1:-200}" > "$tmp/author_perm_status"
+  printf '%s' "$2" > "$tmp/author_perm_body"
+  rm -f "$tmp/author_perm_fail"
+}
+stub_author_repos() {
+  printf '%s' "${1:-200}" > "$tmp/author_repos_status"
+  printf '%s' "$2" > "$tmp/author_repos_body"
+  # The mint is cached per installation, and the selection read rides on it;
+  # clearing the cache keeps each case's own stub the one that answers.
+  rm -f "$tmp/author_repos_fail"
+  rm -f "$author_cache"/* 2>/dev/null || true
+}
+# What GitHub really answers a repository read made with an installation
+# token — verbatim, including the `pull: false` that gives the field away as
+# no report on this token at all.
+app_repo_json='{"permissions":{"admin":false,"maintain":false,"pull":false,"push":false,"triage":false},"archived":false}'
+# run_doctor_app CONFIG [VAR=value…] — the App configured and GH_TOKEN
+# exported empty, which is precisely the cron view (`docker compose exec`
+# inherits the container's *config* environment instead, which is why an
+# interactive doctor run disagreed with `.doctor-status.json` throughout
+# #1398).
+run_doctor_app() {
+  local cfg="$1"; shift
+  out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID \
+      -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH \
+      -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u ANTHROPIC_API_KEY \
+      PATH="$stub_bin:$PATH" GH_TOKEN= \
+      PULLWRIGHT_AUTHOR_APP_ID=4907434 PULLWRIGHT_AUTHOR_INSTALLATION_ID=160827220 \
+      PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH="$author_key" \
+      AUTHOR_TOKEN_CURL="$author_curl" AUTHOR_TOKEN_CACHE_DIR="$author_cache" \
+      STUB_REPO_JSON="$app_repo_json" "$@" \
+      bash "$DOCTOR" --config "$cfg" 2>&1)"
+  rc=$?
+}
+
+stub_author_perm 200 '{"permissions":{"contents":"write","metadata":"read","pull_requests":"write"}}'
+stub_author_repos 200 "$(printf '{"total_count":1,"repository_selection":"selected","repositories":[{"full_name":"%s"}]}' "$slug")"
+run_doctor_app "$base_config"
+assert_contains "an App installation granted contents:write over this repo is writable, whatever .permissions says" \
+  "[ ok ] $slug is writable — the token can push claim branches" "$out"
+assert_not_contains "  ... and the all-false .permissions no longer produces the #1398 fail" \
+  "$slug is readable but not writable" "$out"
+assert_contains "  ... and the identity line reports the App's own login, not /user's 403" \
+  "gh is authenticated as pullwright-author[bot]" "$out"
+
+stub_author_repos 200 '{"total_count":0,"repository_selection":"all","repositories":[]}'
+run_doctor_app "$base_config"
+assert_contains "a whole-account installation covers this repo by construction" \
+  "[ ok ] $slug is writable — the token can push claim branches" "$out"
+
+# The two cases that are genuinely "claims work here and loses it at push"
+# under an App, and that this path exists to keep failing.
+stub_author_repos 200 "$(printf '{"total_count":1,"repository_selection":"selected","repositories":[{"full_name":"%s"}]}' "$slug")"
+stub_author_perm 200 '{"permissions":{"contents":"read","metadata":"read","pull_requests":"write"}}'
+run_doctor_app "$base_config"
+assert_contains "an installation granted only contents:read still fails, naming the grant" \
+  "[fail] $slug is readable but not writable with this token" "$out"
+assert_contains "  ... and says which grant is missing, and that regranting it is an owner act" \
+  "is granted contents:read, and pushing a branch needs contents:write" "$out"
+assert_eq "  ... and doctor.sh exits 1" "1" "$rc"
+
+stub_author_perm 200 '{"permissions":{"contents":"write","metadata":"read","pull_requests":"write"}}'
+stub_author_repos 200 '{"total_count":1,"repository_selection":"selected","repositories":[{"full_name":"acme-org/some-other-repo"}]}'
+run_doctor_app "$base_config"
+assert_contains "an installation whose selection leaves this repo out fails" \
+  "[fail] $slug is readable but not writable with this token" "$out"
+assert_contains "  ... naming the selection, not the permission, as what is missing" \
+  "its repository selection does not cover this repository" "$out"
+assert_eq "  ... and doctor.sh exits 1" "1" "$rc"
+
+# Unreadable is a skip on both halves, never a fail: a network failure must
+# not be able to mint a verdict whose only remedy is an owner act.
+stub_author_repos 200 "$(printf '{"total_count":1,"repository_selection":"selected","repositories":[{"full_name":"%s"}]}' "$slug")"
+touch "$tmp/author_perm_fail"
+run_doctor_app "$base_config"
+assert_contains "an unreadable installation grant is a skip, never a fail" \
+  "[skip] $slug's write access with the forge authoring App" "$out"
+assert_not_contains "  ... and never the writable verdict either" \
+  "[ ok ] $slug is writable" "$out"
+rm -f "$tmp/author_perm_fail"
+
+stub_author_perm 200 '{"permissions":{"contents":"write","metadata":"read","pull_requests":"write"}}'
+stub_author_repos 200 "$(printf '{"total_count":1,"repository_selection":"selected","repositories":[{"full_name":"%s"}]}' "$slug")"
+touch "$tmp/author_repos_fail"
+run_doctor_app "$base_config"
+assert_contains "an unreadable repository selection is a skip too" \
+  "[skip] $slug's write access with the forge authoring App" "$out"
+assert_contains "  ... saying the grant was fine and only the coverage is unconfirmed" \
+  "carries contents:write, but GitHub did not answer /installation/repositories" "$out"
+rm -f "$tmp/author_repos_fail"
+
+# An archived repository is still a fail before either installation read: it
+# is a fact about the repository, which the App token reads perfectly well,
+# and no grant can push to it.
+stub_author_perm 200 '{"permissions":{"contents":"write","metadata":"read","pull_requests":"write"}}'
+run_doctor_app "$base_config" \
+  STUB_REPO_JSON='{"permissions":{"admin":false,"maintain":false,"pull":false,"push":false,"triage":false},"archived":true}'
+assert_contains "an archived repo fails under the App path too" \
+  "[fail] $slug is archived" "$out"
+
+# The PAT path is untouched, and an explicit GH_TOKEN is what selects it:
+# lib/gh-shim.sh passes a caller's own token through without minting, so
+# `.permissions.push` is once again a real report and must still be believed.
+out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID \
+    -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH \
+    -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u ANTHROPIC_API_KEY \
+    PATH="$stub_bin:$PATH" GH_TOKEN=ghp_a_real_pat \
+    PULLWRIGHT_AUTHOR_APP_ID=4907434 PULLWRIGHT_AUTHOR_INSTALLATION_ID=160827220 \
+    PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH="$author_key" \
+    AUTHOR_TOKEN_CURL="$author_curl" AUTHOR_TOKEN_CACHE_DIR="$author_cache" \
+    STUB_REPO_JSON='{"permissions":{"push":false},"archived":false}' \
+    bash "$DOCTOR" --config "$base_config" 2>&1)"
+assert_contains "with an explicit GH_TOKEN the App is configured but not effective — push:false is believed" \
+  "[fail] $slug is readable but not writable with this token" "$out"
+assert_not_contains "  ... and the installation's grant is not consulted at all" \
+  "the forge authoring App installation for acme-org" "$out"
+
 # --- Publication freshness: outbound health, not self-report (agent-ops#602) --
 # A node whose own clock says it is fine is exactly what read fresh for four
 # days on 2026-08-08 while state-sync.sh push was silently failing. This

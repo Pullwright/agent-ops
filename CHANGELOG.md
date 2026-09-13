@@ -22,6 +22,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   now runs against a copy of the body with fenced code blocks, inline code
   spans, and blockquote lines stripped first; the marker/keyword half stays
   on the raw body, unaffected.
+
+- **The doctor's write-access check no longer reads a field GitHub does not
+  populate for a GitHub App** (issue #1397). `check_repo_access` decided
+  whether a token could push from `GET /repos/<slug>`'s `.permissions.push`.
+  Asked with an App installation token that object comes back present with
+  every member false — `pull: false` on a read that has just succeeded is the
+  tell — whatever the installation was actually granted. Since the forge
+  authoring App went live (#1396) the forge-auth seam leaves `GH_TOKEN` empty
+  in every cron child, so each unattended pass read `push == false` for every
+  repository and reported seven failures a node, on all four nodes at once,
+  against a token that was authoring pull requests throughout (page #1398).
+  Under an App identity the check now reads the installation's own record
+  instead — its `contents` grant, and whether its repository selection covers
+  the repository — and fails only when one of those is genuinely missing,
+  which is an owner act in either case; either read being unreachable is a
+  `skip`, never a `fail`. The PAT path is unchanged, and an explicit
+  `GH_TOKEN` still selects it, because `lib/gh-shim.sh` passes a caller's own
+  token through without minting. The identity line no longer prints `GET
+  /user`'s 403 body as the login either: under an App it reports the App's
+  own login, which `GET /app` answers.
+
+- **A fleet-wide `doctor.verdict=fail` page now names the check that failed**
+  (issue #1397). `scripts/state-sync.sh` folded only `{timestamp, verdict}`
+  from `.doctor-status.json` into each node's `heartbeat.json`, so
+  `pager_eval_verdict_unanimous` could say only that every node's doctor was
+  unhappy — which cost a hand search of four nodes' status files to learn
+  they were all failing the same check (#1398). The heartbeat now carries the
+  failing checks as well, bounded to the first three and each truncated,
+  which is the reason the array stayed local until now: the whole fleet
+  re-fetches that file every `schedule.state_sync_fetch_minutes`, and
+  unbounded diagnostic prose there is a cost with no ceiling. The invariant's
+  evidence names the checks common to every active node; nodes failing
+  genuinely different checks, or a peer still publishing the older
+  `{timestamp, verdict}` shape, yield no clause rather than a wrong one, and
+  the `stage_health` and `updater` branches are unchanged.
+
 - **The prompts that tell a stage to read a target repository's own
   instructions now name `AGENTS.md` first** (issue #1470). Eight locations
   across `prompts/implementer.md`, `prompts/reviewer.md`,

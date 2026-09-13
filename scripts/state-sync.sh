@@ -192,14 +192,20 @@ peers_dir="$(fleet_peers_dir "$workspace_root")"
 #                   travels the identical way as of agent-ops#1278:
 #                   lib/pager.sh's `verdict-unanimous` invariant is the first
 #                   reader anywhere that needs a peer's doctor verdict, not
-#                   only this node's own. `{timestamp, verdict}` and nothing
-#                   else — `fails`/`warns`/`skips` stay local on the same
-#                   reasoning as `.stage-health.json`'s own raw file, and
-#                   they are unbounded arrays of diagnostic prose in a file
+#                   only this node's own. As of agent-ops#1397 a *bounded*
+#                   `fails` travels with it — the first three entries, each
+#                   truncated — because a verdict with no failing check named
+#                   sent someone node-hunting for `.doctor-status.json` by
+#                   hand to learn what every node was already saying (#1398).
+#                   Bounded is the whole point, and the reason the array did
+#                   not travel before: unbounded diagnostic prose in a file
 #                   the whole fleet re-fetches every
-#                   `schedule.state_sync_fetch_minutes`; `token_expiry`
-#                   stays local because a credential's expiry date has no
-#                   reader off the node that holds the credential.
+#                   `schedule.state_sync_fetch_minutes` is a cost with no
+#                   ceiling, whereas three truncated lines are the smallest
+#                   thing that names the check. `warns`/`skips` stay local —
+#                   nothing off-node reads them — and so does `token_expiry`,
+#                   because a credential's expiry date has no reader off the
+#                   node that holds the credential.
 #   the stage       `*.stream.jsonl` is a stage's whole event stream, every
 #   streams          message and every tool result (lib/stage-run.sh). It is
 #                   local forensics and, while the stage runs, its liveness
@@ -634,7 +640,9 @@ do_push() {
     --argjson mirror_rebuild "$(mirror_rebuild_verdict "$state_dir")" \
     --argjson updater "$(updater_status "$state_dir/updater-ledger" "$updater_stuck_after_seconds" \
       "$updater_defer_stuck_after_seconds" "${HOSTNAME:-}" "${AGENT_OPS_SERVICE:-}" || echo null)" \
-    --argjson doctor "$(jq -c '{timestamp, verdict}' "$state_dir/.doctor-status.json" 2>/dev/null || echo null)" \
+    --argjson doctor "$(jq -c '{timestamp, verdict,
+                                fails: ([(.fails // [])[] | .[0:200]] | .[0:3])}' \
+                          "$state_dir/.doctor-status.json" 2>/dev/null || echo null)" \
     '{node: $node, role: $role, ts: $ts, last_cycle: $lc, version: $version,
       compose: $compose, compose_reconcile: $compose_reconcile,
       image: $image, switch: $switch,
