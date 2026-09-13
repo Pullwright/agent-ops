@@ -20,8 +20,8 @@ stream (`lib/stage-run.sh`'s `run_claude_stage`), and the
 "straight-parse-else-last-fenced-```json```-block" result parser. This
 pipeline **reuses** those, and must not reinvent them. References of the form
 "requirement N" mean requirement N of `docs/IMPLEMENTATION-PIPELINE-SPEC.md`. The target
-repositories' `CLAUDE.md` files remain binding on any agent working inside
-them.
+repositories' `AGENTS.md` files — or `CLAUDE.md`, for a repository that has
+not migrated — remain binding on any agent working inside them.
 
 ## What it is
 
@@ -865,9 +865,10 @@ R9. **One-shot constraint** (requirement 21). A single non-interactive
    grounds for `"status": "blocked"`, not a hopeful early end of turn.
 
 R10. **Obey the repo.** Runs inside the clone. First reads the repo's
-   `CLAUDE.md` and obeys it throughout (branch workflow, commit format,
-   tech-debt register conventions, documentation-as-built rules, the
-   `npm run check` whitespace gate, etc.).
+   `AGENTS.md` — or `CLAUDE.md`, for a repo that has not migrated;
+   `CLAUDE.md` imports `AGENTS.md` where it has — and obeys it throughout
+   (branch workflow, commit format, tech-debt register conventions,
+   documentation-as-built rules, the `npm run check` whitespace gate, etc.).
 
 R11. **Run the skill end-to-end.** Invoke the vendored `project-review` skill
    and follow it to completion: produce the report set (index, summary,
@@ -948,9 +949,10 @@ R13. **Raise one pull request.** Create the branch
    Record the PR URL to `.git/agent-ops-review-pr-url` immediately on opening
    it (the breadcrumb R5d relies on).
 
-R14. **Prove it is landable.** Run the repo's own checks (as its `CLAUDE.md`
-   and workflow files define — for a docs-only change this is chiefly the
-   whitespace/format gates and commit-format) and fix anything they surface.
+R14. **Prove it is landable.** Run the repo's own checks (as its
+   `AGENTS.md`/`CLAUDE.md` and workflow files define — for a docs-only
+   change this is chiefly the whitespace/format gates and commit-format)
+   and fix anything they surface.
    Verify the PR via `gh pr view --json mergeable,mergeStateStatus` against
    GitHub's own view, and resolve any conflict with the current default branch
    — a rebase republished only with `git push --force-with-lease`, the sole
