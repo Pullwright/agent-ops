@@ -424,6 +424,38 @@ assert_pass_tdr "digits in the repo slug are not harvested as an issue number" \
   "Fixes acme/widgets2#240 for real this time." \
   "fix/some-branch" "acme/widgets2" "9" "slug-digits"
 
+# --- Markdown context is stripped before the record-flip harvest (issue #1463) ---
+# GitHub's own parser creates no closing reference inside a fenced code
+# block, an inline code span, or a blockquote line, so harvesting one from
+# any of these would demand a record flip GitHub itself never asked for. All
+# three reuse the "bare-unflipped" fixture (issue #240, tech-debt, unflipped
+# record) — the only way any of these passes is if #240 was never harvested.
+assert_pass_tdr "a fenced-code-block keyword demands no record flip" \
+  "before
+
+\`\`\`
+Fixes #240 for real this time.
+\`\`\`
+
+after" \
+  "fix/some-branch" "acme/widgets" "9" "bare-unflipped"
+
+assert_pass_tdr "an inline-code-span keyword demands no record flip (PR #1396 case)" \
+  "\`Fixes #240\` is deliberately absent: that issue closes when the owner decides." \
+  "fix/some-branch" "acme/widgets" "9" "bare-unflipped"
+
+assert_pass_tdr "a blockquote-line keyword demands no record flip" \
+  "> Fixes #240 for real this time." \
+  "fix/some-branch" "acme/widgets" "9" "bare-unflipped"
+
+# The stripper must not over-reach: a real, unquoted keyword outside all
+# three contexts is still harvested and still demands the flip — the #1438
+# regression case this change must not reintroduce.
+assert_fail_tdr "an ordinary unquoted keyword outside any markdown context is still harvested" \
+  "Fixes #240 for real this time." \
+  "fix/some-branch" "acme/widgets" "9" "bare-unflipped" \
+  "does not set its frontmatter status: to resolved"
+
 if (( failures > 0 )); then
   echo "$failures failure(s)"
   exit 1

@@ -142,8 +142,29 @@ for item in "${items[@]:-}"; do
   fi
 done
 
+# GitHub's own parser never turns a keyword into a closing reference inside a
+# fenced code block, an inline code span, or a blockquote line — quoting the
+# convention, or someone else's PR body, reads as a real reference to this
+# script's own `grep`, without this (issue #1463). Scoped to the record-flip
+# harvest below only: the marker/keyword check above stays on raw `$body`,
+# unchanged, so a stripping bug here cannot affect the older, marker-anchored
+# half.
+strip_markdown_noise() {
+  local no_fences
+  no_fences="$(awk '
+    BEGIN { in_fence = 0 }
+    /^[[:space:]]*(```+|~~~+)/ { in_fence = !in_fence; next }
+    in_fence { next }
+    /^[[:space:]]*>/ { next }
+    { print }
+  ' <<<"$1")"
+  # shellcheck disable=SC2016  # the backticks are literal Markdown, not command substitution
+  sed -E 's/`+[^`]*`+/ /g' <<<"$no_fences"
+}
+
 # --- the tech-debt record-flip check (issue #1363, extended by #1438) -------
 if [[ -n "$repo_slug" && -n "$pr_number" ]]; then
+  harvest_body="$(strip_markdown_noise "$body")"
   # Every issue number the body cites via a bare closing keyword, independent
   # of the marker/branch anchors above — this is what lets the record-flip
   # loop below catch a markerless `Fixes #N` PR (issue #1438): a human's PR,
@@ -175,7 +196,7 @@ if [[ -n "$repo_slug" && -n "$pr_number" ]]; then
   # run in it: the leading boundary character is never a digit, but a repo
   # slug of its own can carry one ("acme/widgets2#198"), and an unanchored
   # extraction would harvest that 2 as though it were an issue.
-  mapfile -t keyword_items < <(grep -oiE "(^|[^[:alnum:]])${keyword_re}${harvest_ref_re}[0-9]+" <<<"$body" \
+  mapfile -t keyword_items < <(grep -oiE "(^|[^[:alnum:]])${keyword_re}${harvest_ref_re}[0-9]+" <<<"$harvest_body" \
     | grep -oE '[0-9]+$')
   mapfile -t unique_items < <(printf '%s\n' "${items[@]}" "${keyword_items[@]}" | grep -v '^$' | sort -un)
   for item in "${unique_items[@]:-}"; do
