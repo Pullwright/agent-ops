@@ -10714,7 +10714,13 @@ implements.
     - **The marker.** Every `<!-- agent-ops:closes-issue item=N -->` marker
       (requirement 23b) in the body fails the check, naming the missing
       number, unless the body also carries a real closing keyword for that
-      same `N`.
+      same `N`, in any of the three spellings GitHub's own linked-issue
+      syntax honours: `#N`, `GH-N`, or `owner/repo#N`. The repo-qualified
+      spelling satisfies the marker whatever its `owner/repo` reads, since
+      this anchor is only ever asked whether a closing keyword for `N`
+      exists at all — never in which repository — and it runs where no repo
+      slug was passed to the checker in the first place
+      (`lib/closing-keyword-gate.sh`, acceptance check 17a).
     - **The branch.** A head branch of exactly `agent/<N>` — the name the
       Script itself mints for any work order whose item is a bare issue
       number, `issues` and `tech-debt` sources alike (`claim_branch_for`),
@@ -10749,7 +10755,11 @@ implements.
     head branch at all** (issue #1438: a human's PR, or an interactive
     agent's, that closes a `pw::type:tech-debt` issue with a plain
     `Fixes #N` and nothing else the marker/branch anchors above would have
-    caught). Where such an issue is `pw::type:tech-debt`-labelled and its
+    caught) — in `#N` and `GH-N` spelling alike, and in the repo-qualified
+    `owner/repo#N` spelling only where `owner/repo` is this repository's own,
+    since a keyword naming another repository's issue closes nothing here and
+    must not demand a flip of a record this pull request never owed (issue
+    #1460). Where such an issue is `pw::type:tech-debt`-labelled and its
     body's last non-blank line names a permanent register file (a "Filed as
     `tech-debt/<id>.md`, <date>." line — `scripts/migrate-tech-debt-
     register.sh` or an earlier direct filing), `check-closing-keyword.sh`
@@ -19842,9 +19852,13 @@ What exists, and the requirements each part answers to:
     `<!-- agent-ops:closes-issue item=N -->` marker (requirement 23b) and
     exits non-zero, naming the missing number, for any that has no matching
     GitHub closing keyword (`close(s|d)`, `fix(es|ed)`, `resolve(s|d)`,
-    case-insensitive, a word of its own, immediately followed by `#N`) in the
+    case-insensitive, a word of its own, immediately followed by the issue
+    reference in any of the three spellings GitHub's own linked-issue syntax
+    honours — `#N`, `GH-N`, or `owner/repo#N`, the last for any `owner/repo`
+    (issue #1460)) in the
     same body — "unclosed #N" and "discloses #N" contain a keyword and close
-    nothing, exactly as they do to GitHub's own parser. A body
+    nothing, exactly as they do to GitHub's own parser, in every
+    spelling. A body
     with no marker passes trivially. The workflow runs on every
     `pull_request` event, passing the body through `env:` rather than
     interpolating it into the step directly, so an attacker-controlled title
@@ -19861,10 +19875,21 @@ What exists, and the requirements each part answers to:
     a plain `Fixes #N` and nothing else this script's marker/branch
     resolution would otherwise notice), it fetches that issue (`gh issue
     view … --json body,labels`). A number is harvested from a keyword only
-    under the same word-of-its-own rule the marker half applies, so
-    "discloses #N" and "unfixed #N" drag nothing into this loop either — a
-    lookalike that closes no issue must not demand a record flip of a pull
-    request that closes none. Where the issue is `pw::type:tech-debt`-labelled
+    under the same word-of-its-own rule the marker half applies — the one
+    shared pattern both halves match on — so "discloses #N" and "unfixed #N"
+    drag nothing into this loop either, in any spelling: a lookalike that
+    closes no issue must not demand a record flip of a pull request that
+    closes none. The issue *reference* is where the two halves differ (issue
+    #1460). Both read `#N` and `GH-N`; the repo-qualified `owner/repo#N` is
+    harvested here only when its `owner/repo` case-insensitively equals the
+    repo slug passed in, so `Fixes otherowner/otherrepo#5` contributes
+    nothing — it closes someone else's #5, and demanding this repository's
+    own record flip for it would fail a pull request over an issue it never
+    closes. The marker half applies no such filter, deliberately, because it
+    runs where no slug was passed at all (the bullet above; issue #1468
+    tracks what that leaves open). The number is read from the end of each
+    match rather than its first digit run, a repository name being free to
+    carry digits of its own. Where the issue is `pw::type:tech-debt`-labelled
     and its body's last non-blank line reads "Filed as `tech-debt/<id>.md`,
     <date>." (left by `scripts/migrate-tech-debt-register.sh` or an
     earlier direct filing), it reads this pull request's own changed-files
@@ -23509,28 +23534,38 @@ oblige anyone to edit a test.
    for the *wrong* number does not satisfy a marker (`Closes #199` does not
    satisfy `item=198`); every recognised keyword form (`Closes`/`Fixes`/
    `Resolves`, past tense, a colon, case-insensitive, Markdown emphasis
-   around it) passes; a word merely ending in a keyword ("unclosed #198",
-   "discloses #77") does not; and multiple markers on one body are checked
-   independently — one satisfied marker never excuses another. Given a repo
-   slug and pull request number (a stubbed `gh`, issue #1363), the same
-   suite passes for the tech-debt record-flip half: an issue with no "Filed
-   as" line, or one carrying it but not `pw::type:tech-debt`-labelled,
-   passes exactly as without the two extra arguments; a "Filed as"-line
-   issue whose named record file's diff adds `status: resolved` passes; the
-   same issue whose diff never touches that file fails naming that, and one
-   whose diff touches it without adding that line fails naming *that* — each
-   asserted on its own message, never on the record path both carry; a
-   markerless bare closing keyword on a branch that is neither `agent/<N>`
-   nor otherwise anchored — the exact shape the marker/keyword half's first
-   clause above passes unconditionally — is still pulled into this half once
-   a repo slug and pull request number are given (issue #1438): an unflipped
-   record fails it the same way the marker/branch-anchored path does, and a
-   correctly flipped record passes; the same word-of-its-own guard that keeps
-   "unclosed"/"discloses" from satisfying a keyword governs this half too, so
-   a body containing only a keyword lookalike ("discloses #240", "an unfixed
-   #240 note") demands no record flip at all; and neither a failed `gh issue
-   view` nor a failed changed-files read (an unreadable issue, a token
-   without access, a transient outage) ever fails the check itself.
+   around it) passes, in each of the three issue-reference spellings GitHub
+   honours (`#198`, `GH-198`, `owner/repo#198` for any `owner/repo`); a word
+   merely ending in a keyword ("unclosed #198", "discloses #77", and the
+   same near-misses in the other two spellings) does not; and multiple
+   markers on one body are checked independently — one satisfied marker
+   never excuses another. Given a repo slug and pull request number (a
+   stubbed `gh`, issue #1363), the same suite passes for the tech-debt
+   record-flip half: an issue with no "Filed as" line, or one carrying it
+   but not `pw::type:tech-debt`-labelled, passes exactly as without the two
+   extra arguments; a "Filed as"-line issue whose named record file's diff
+   adds `status: resolved` passes; the same issue whose diff never touches
+   that file fails naming that, and one whose diff touches it without adding
+   that line fails naming *that* — each asserted on its own message, never on
+   the record path both carry; a markerless bare closing keyword on a branch
+   that is neither `agent/<N>` nor otherwise anchored — the exact shape the
+   marker/keyword half's first clause above passes unconditionally — is
+   still pulled into this half once a repo slug and pull request number are
+   given (issue #1438): an unflipped record fails it the same way the
+   marker/branch-anchored path does, and a correctly flipped record passes;
+   the same word-of-its-own guard that keeps "unclosed"/"discloses" from
+   satisfying a keyword governs this half too, so a body containing only a
+   keyword lookalike ("discloses #240", "an unfixed #240 note") demands no
+   record flip at all, in every spelling; a markerless `Fixes GH-240` and a
+   markerless `Fixes owner/repo#240` naming the repo slug passed in — matched
+   case-insensitively — are each harvested into this half exactly as the bare
+   `#240` is, while `Fixes otherowner/otherrepo#240` is not, the fixtures
+   holding an unflipped record throughout so that harvesting and not
+   harvesting are told apart by the verdict (issue #1460); a repo slug
+   carrying digits of its own (`acme/widgets2`) contributes none of them as an
+   issue number; and neither a failed `gh issue view` nor a failed
+   changed-files read (an unreadable issue, a token without access, a
+   transient outage) ever fails the check itself.
    `test/sweep-closed-issues.test.sh` passes against a stubbed
    `gh`: a merged, marker-carrying pull request whose issue is still open is
    closed with the merge cited as evidence; a merged, markerless pull

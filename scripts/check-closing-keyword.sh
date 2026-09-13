@@ -91,6 +91,25 @@ mapfile -t items < <(grep -oE '<!-- agent-ops:closes-issue item=[0-9]+ -->' <<<"
 
 status=0
 
+# The keyword part of a closing reference — GitHub's own closing-keyword
+# list, case-insensitive, optionally colon-separated from the issue
+# reference that follows. Factored out so the marker check below and the
+# record-flip harvest further down share one definition rather than drifting
+# apart (issue #1460) — what counts as a keyword is the same question in both
+# halves, even though what counts as a reference is not (see `harvest_ref_re`).
+keyword_re='(close[sd]?|fix(e[sd])?|resolve[sd]?):?[[:space:]]+'
+
+# The issue-reference part: GitHub honours three spellings for the same
+# issue — "#N", "GH-N", and "owner/repo#N" — and closes the referenced issue
+# on merge for all three (issue #1460). The marker check below asks only
+# "does some closing keyword exist for this item", not "in which repo" — it
+# runs whether or not a repo slug was even passed, since
+# lib/closing-keyword-gate.sh never passes one — so it accepts any
+# owner/repo here rather than filtering to a specific one. The record-flip
+# harvest is asked the other question and uses its own `harvest_ref_re`
+# instead; issue #1468 tracks the gap the any-owner reading leaves here.
+issue_ref_re='(#|GH-|[[:alnum:]_.-]+/[[:alnum:]_.-]+#)'
+
 # The branch anchor: `agent/<N>` is minted by the Script only for a work
 # order whose item is a bare issue number — one there is therefore always
 # something to close — so it demands the marker's *presence*, the one thing the
@@ -109,16 +128,16 @@ fi
 for item in "${items[@]:-}"; do
   [[ -n "$item" ]] || continue
   # GitHub's own closing-keyword list: close(s|d), fix(es|ed), resolve(s|d),
-  # case-insensitive, immediately followed by "#N" (optionally ": #N") for
-  # the same number the marker names.
+  # case-insensitive, immediately followed by "#N", "GH-N" or "owner/repo#N"
+  # (optionally ": #N" etc.) for the same number the marker names.
   #
   # The keyword has to be a word of its own, as it is to GitHub's own parser —
   # "unclosed #198" and "discloses #198" contain "closed" and "closes" but
   # close nothing, and a check that accepted them would pass exactly the PR
   # it exists to fail. Markdown emphasis, backticks and hyphens are all
   # non-alphanumeric, so "**Closes #198**" still passes.
-  if ! grep -qiE "(^|[^[:alnum:]])(close[sd]?|fix(e[sd])?|resolve[sd]?):?[[:space:]]+#${item}([^0-9]|\$)" <<<"$body"; then
-    echo "::error::PR body names issue #${item} (agent-ops:closes-issue marker) but has no closing keyword (Closes/Fixes/Resolves #${item}) for it" >&2
+  if ! grep -qiE "(^|[^[:alnum:]])${keyword_re}${issue_ref_re}${item}([^0-9]|\$)" <<<"$body"; then
+    echo "::error::PR body names issue #${item} (agent-ops:closes-issue marker) but has no closing keyword (Closes/Fixes/Resolves #${item}, GH-${item}, or owner/repo#${item}) for it" >&2
     status=1
   fi
 done
@@ -137,11 +156,27 @@ if [[ -n "$repo_slug" && -n "$pr_number" ]]; then
   # same reason: "discloses #240" and "unfixed #240" contain a keyword and
   # close nothing, to GitHub's own parser as to this script — so harvesting a
   # number out of one would demand a record flip from a pull request that
-  # closes no such issue, failing a required check over a word in prose. The
-  # leading boundary character the match carries is never a digit, so the
-  # number extraction below is unaffected by it.
-  mapfile -t keyword_items < <(grep -oiE '(^|[^[:alnum:]])(close[sd]?|fix(e[sd])?|resolve[sd]?):?[[:space:]]+#[0-9]+' <<<"$body" \
-    | grep -oE '[0-9]+')
+  # closes no such issue, failing a required check over a word in prose. Hence
+  # the shared `keyword_re`: one definition, so the two halves cannot drift on
+  # what counts as a keyword.
+  #
+  # The issue *reference* is where the two halves legitimately differ (issue
+  # #1460). Both accept "#N" and "GH-N", but this half accepts the
+  # repo-qualified "owner/repo#N" only when the slug is this repository's own:
+  # the marker check is asked whether a closing keyword for a number exists at
+  # all, whereas this half is asked which of *our* issues merging will close,
+  # and `Fixes otherowner/otherrepo#5` closes someone else's #5 — harvesting it
+  # would demand a flip of our own `tech-debt/<id>.md` over a record this pull
+  # request has no business touching. `$repo_slug` is always non-empty here,
+  # and `.` is the only ERE metacharacter a GitHub owner or repository name can
+  # contain, so escaping it is the whole of what interpolating one safely needs.
+  harvest_ref_re="(#|GH-|${repo_slug//./\\.}#)"
+  # The number is taken from the end of each match, not from the first digit
+  # run in it: the leading boundary character is never a digit, but a repo
+  # slug of its own can carry one ("acme/widgets2#198"), and an unanchored
+  # extraction would harvest that 2 as though it were an issue.
+  mapfile -t keyword_items < <(grep -oiE "(^|[^[:alnum:]])${keyword_re}${harvest_ref_re}[0-9]+" <<<"$body" \
+    | grep -oE '[0-9]+$')
   mapfile -t unique_items < <(printf '%s\n' "${items[@]}" "${keyword_items[@]}" | grep -v '^$' | sort -un)
   for item in "${unique_items[@]:-}"; do
     [[ -n "$item" ]] || continue
