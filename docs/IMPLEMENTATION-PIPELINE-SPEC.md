@@ -2675,7 +2675,8 @@ implements.
       raising, until the claiming cycle ends (issue #360), so counting it
       would double-count that PR for as long as that cycle's Reviewer stage
       runs. An item-keyed entry whose ref is `pr-<n>-<kind>-<scope>` — the
-      shape the four finishing sources (requirements 3c, 3e, 3g and 3z; see
+      shape the five sources that finish an existing pull request
+      (requirements 3c, 3e, 3g, 3z and 53; see
       requirement 3p) key their items on — is dropped only when that PR is
       among the drafts and
       changes-requested PRs actually counted, which is why the caller passes
@@ -5605,10 +5606,11 @@ implements.
 
    - every claim-registry entry younger than `claim_ttl_hours` for that repo
      (`lib/claim.sh claims`) — the only source for a *file* claim, since
-     `review-feedback`, `merge-conflicts`, `dequeued` and `abandoned-drafts` finish an
+     `review-feedback`, `merge-conflicts`, `dequeued`, `landing-refusals` and
+     `abandoned-drafts` finish an
      existing PR and mint no branch; `age_hours` is the entry's exact age, and
      `pr_number` rides along when the underlying registry entry recorded one —
-     which, for the four finishing sources, is always, once requirement 17a's
+     which, for all five of those sources, is always, once requirement 17a's
      PR-keyed claim exists alongside the item-keyed one; and
    - every live `<tech_debt_branch_prefix>*`/`<branch_prefix>*` branch (default
      `tech_debt_branch_prefix` is `td/`; empty disables that namespace and only
@@ -5643,8 +5645,10 @@ implements.
    ref, a register-hygiene or project-review ref — none of which contain a
    character `claim_branch_for`'s sanitiser would have touched, so there is
    nothing lossy to recover from.
-3p. **PR-level candidate exclusion (issue #238).** The four finishing sources'
-   ref-per-round/per-head-SHA item refs (requirements 3c, 3e, 3g, 3z) mean a
+3p. **PR-level candidate exclusion (issue #238).** The scoped item refs the
+   five sources that finish an existing pull request mint — per review round,
+   per head SHA, or (for `landing-refusals`) per set of unreconciled comment
+   ids (requirements 3c, 3e, 3g, 3z, 53) — mean a
    peer's claim on a PR under one round's or one head's ref is invisible to
    exclusion 16's ordinary repo+item lookup against `claimed` the moment a
    fresh review round or a fresh push mints a *different* ref for the *same*
@@ -5653,7 +5657,8 @@ implements.
    reasoned past it, because the item ref genuinely didn't match).
    Deterministic code closes this, not a comparison added to the
    Co-Ordinator's own judgement calls: for each repo, before its
-   `review_feedback`, `merge_conflicts`, `dequeued` and `abandoned_drafts`
+   `review_feedback`, `merge_conflicts`, `dequeued`, `landing_refusals` and
+   `abandoned_drafts`
    arrays are assembled into the runtime input, the Script drops any candidate
    whose `pr_number` appears among that repo's freshly gathered `claimed` set's
    `pr_number` values. A PR already excluded this way never reaches the
@@ -5665,9 +5670,10 @@ implements.
    the same create-only way every other claim does.
 3q. **Item-level candidate exclusion.** The same deterministic-code-not-
    model-judgement decision as 3p, extended from PR numbers to item refs and
-   from the four finishing sources to every array the Script pre-fetches:
+   from those five sources to every array the Script pre-fetches:
    for each repo, before its `issues`, `findings`, `tech_debt`,
-   `register_hygiene`, `review_feedback`, `merge_conflicts`, `dequeued` and
+   `register_hygiene`, `review_feedback`, `merge_conflicts`, `dequeued`,
+   `landing_refusals` and
    `abandoned_drafts` arrays are assembled into the runtime input, the Script
    drops any entry whose `ref` — the exact string a claim on that item is
    keyed on, minted by every gather script by construction — appears among
@@ -6338,7 +6344,8 @@ implements.
      file-backed source at once (implementation-plan, project-review, the
      code); the pre-fetched `findings` cover security and code-quality
      verbatim; the pre-fetched `review_feedback`, `merge_conflicts`,
-     `dequeued` and `abandoned_drafts` arrays cover those four finishing sources verbatim,
+     `dequeued`, `landing_refusals` and `abandoned_drafts` arrays cover those
+     five sources verbatim,
      `register_hygiene` covers register-hygiene the same way, and `tech_debt`
      (requirement 3t) covers the tech-debt band the same way again (belt and
      braces in both cases — `head_sha` already moves whenever the register
@@ -9290,11 +9297,13 @@ implements.
       an open PR whose branch or body already references the same alert
       (`ref`, alert URL, or the affected package/rule); for a `project-review`
       recommendation, an open PR whose branch or body references its ref
-      (`review-<date>-R-NN`); for the four finishing sources, whose own
-      ref-per-round/per-head-SHA item refs would otherwise dodge this bullet's
+      (`review-<date>-R-NN`); for the five sources that finish an existing
+      pull request, whose own scoped item refs would otherwise dodge this
+      bullet's
       repo+item lookup, requirement 3p has already dropped any candidate whose
       `pr_number` matches a peer's claim from `review_feedback`,
-      `merge_conflicts`, `dequeued` and `abandoned_drafts` before this runtime
+      `merge_conflicts`, `dequeued`, `landing_refusals` and
+      `abandoned_drafts` before this runtime
       input was assembled — there is nothing left in those arrays for this
       exclusion to apply to, deterministically, rather than a comparison added
       to this judgement call;
