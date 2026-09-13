@@ -10741,10 +10741,16 @@ implements.
     setting is verified, it being the one piece of requirement 25a no file
     in this repository carries.
 
-    **A second, independent gap the same check closes (issue #1363): the
-    tech-debt record-file flip requirement 25 asks for.** Where the closing
-    keyword's own issue is `pw::type:tech-debt`-labelled and its body's last
-    non-blank line names a permanent register file (a "Filed as
+    **A second, independent gap the same check closes (issue #1363, extended
+    by #1438): the tech-debt record-file flip requirement 25 asks for.**
+    This half checks every issue number the closing keyword covers — the
+    marker- and branch-anchored ones above, **and any issue number the PR
+    body cites via a bare closing keyword with no marker and no `agent/<N>`
+    head branch at all** (issue #1438: a human's PR, or an interactive
+    agent's, that closes a `pw::type:tech-debt` issue with a plain
+    `Fixes #N` and nothing else the marker/branch anchors above would have
+    caught). Where such an issue is `pw::type:tech-debt`-labelled and its
+    body's last non-blank line names a permanent register file (a "Filed as
     `tech-debt/<id>.md`, <date>." line — `scripts/migrate-tech-debt-
     register.sh` or an earlier direct filing), `check-closing-keyword.sh`
     also reads this pull request's own changed-files listing (`gh api
@@ -19849,11 +19855,19 @@ What exists, and the requirements each part answers to:
     predates issue #1363 — gets exactly the behaviour above and nothing
     more), the same script also enforces requirement 25's tech-debt
     record-file flip: for each issue number the marker/keyword resolution
-    above yields, it fetches that issue (`gh issue view … --json
-    body,labels`) and, where it is `pw::type:tech-debt`-labelled and its
-    body's last non-blank line reads "Filed as `tech-debt/<id>.md`,
+    above yields, **or that the PR body cites via a bare closing keyword
+    alone with no marker and no `agent/<N>` head branch** (issue #1438 — a
+    human's PR, or an interactive agent's, that closes a tech-debt issue with
+    a plain `Fixes #N` and nothing else this script's marker/branch
+    resolution would otherwise notice), it fetches that issue (`gh issue
+    view … --json body,labels`). A number is harvested from a keyword only
+    under the same word-of-its-own rule the marker half applies, so
+    "discloses #N" and "unfixed #N" drag nothing into this loop either — a
+    lookalike that closes no issue must not demand a record flip of a pull
+    request that closes none. Where the issue is `pw::type:tech-debt`-labelled
+    and its body's last non-blank line reads "Filed as `tech-debt/<id>.md`,
     <date>." (left by `scripts/migrate-tech-debt-register.sh` or an
-    earlier direct filing), reads this pull request's own changed-files
+    earlier direct filing), it reads this pull request's own changed-files
     listing (`gh api repos/<slug>/pulls/<n>/files`) and exits non-zero,
     naming the issue and the record file, unless that file's diff adds a
     `status: resolved` line. This is the CI-side check for the miss PR
@@ -23482,30 +23496,41 @@ oblige anyone to edit a test.
    register's own `td-check.pl` problems and a `VOIDED STATUS` problem
    coexist in the same one candidate rather than competing.
 8l. **A closing keyword is enforced, not requested (requirements 23b, 25a,
-   17c).** `test/check-closing-keyword.test.sh` passes: a PR body with no
-   `agent-ops:closes-issue` marker and no `agent/<N>` head branch always
-   passes; a marker with no matching closing keyword for the same number
-   fails, naming it; an `agent/<N>` head branch with no marker for `N` fails
-   naming the marker, and with no keyword for `N` fails naming the number —
-   presence is demanded by the branch anchor, not requested of the prompt —
-   while a non-numeric agent branch (`agent/td…`, `agent/register-hygiene-…`)
-   and a `td/` branch demand nothing; a keyword for the *wrong* number does
-   not satisfy a marker (`Closes #199` does not satisfy `item=198`); every
-   recognised keyword form (`Closes`/`Fixes`/`Resolves`, past tense, a colon,
-   case-insensitive, Markdown emphasis around it) passes; a word merely
-   ending in a keyword ("unclosed #198", "discloses #77") does not; and
-   multiple markers on one body are checked independently — one satisfied
-   marker never excuses another. Given a repo slug and pull request number
-   (a stubbed `gh`, issue #1363), the same suite passes for the tech-debt
-   record-flip half: an issue with no "Filed as" line, or one carrying it
-   but not `pw::type:tech-debt`-labelled, passes exactly as without the two
-   extra arguments; a "Filed as"-line issue whose named record file's diff
-   adds `status: resolved` passes; the same issue whose diff never touches
-   that file fails naming that, and one whose diff touches it without adding
-   that line fails naming *that* — each asserted on its own message, never on
-   the record path both carry; and neither a failed `gh issue view` nor a
-   failed changed-files read (an unreadable issue, a token without access, a
-   transient outage) ever fails the check itself.
+   17c).** `test/check-closing-keyword.test.sh` passes: called with only a
+   body and a branch — no repo slug or pull request number, which the
+   record-flip half below needs and the marker/keyword half does not — a PR
+   body with no `agent-ops:closes-issue` marker and no `agent/<N>` head
+   branch always passes; a marker with no matching closing keyword for the
+   same number fails, naming it; an `agent/<N>` head branch with no marker
+   for `N` fails naming the marker, and with no keyword for `N` fails naming
+   the number — presence is demanded by the branch anchor, not requested of
+   the prompt — while a non-numeric agent branch (`agent/td…`,
+   `agent/register-hygiene-…`) and a `td/` branch demand nothing; a keyword
+   for the *wrong* number does not satisfy a marker (`Closes #199` does not
+   satisfy `item=198`); every recognised keyword form (`Closes`/`Fixes`/
+   `Resolves`, past tense, a colon, case-insensitive, Markdown emphasis
+   around it) passes; a word merely ending in a keyword ("unclosed #198",
+   "discloses #77") does not; and multiple markers on one body are checked
+   independently — one satisfied marker never excuses another. Given a repo
+   slug and pull request number (a stubbed `gh`, issue #1363), the same
+   suite passes for the tech-debt record-flip half: an issue with no "Filed
+   as" line, or one carrying it but not `pw::type:tech-debt`-labelled,
+   passes exactly as without the two extra arguments; a "Filed as"-line
+   issue whose named record file's diff adds `status: resolved` passes; the
+   same issue whose diff never touches that file fails naming that, and one
+   whose diff touches it without adding that line fails naming *that* — each
+   asserted on its own message, never on the record path both carry; a
+   markerless bare closing keyword on a branch that is neither `agent/<N>`
+   nor otherwise anchored — the exact shape the marker/keyword half's first
+   clause above passes unconditionally — is still pulled into this half once
+   a repo slug and pull request number are given (issue #1438): an unflipped
+   record fails it the same way the marker/branch-anchored path does, and a
+   correctly flipped record passes; the same word-of-its-own guard that keeps
+   "unclosed"/"discloses" from satisfying a keyword governs this half too, so
+   a body containing only a keyword lookalike ("discloses #240", "an unfixed
+   #240 note") demands no record flip at all; and neither a failed `gh issue
+   view` nor a failed changed-files read (an unreadable issue, a token
+   without access, a transient outage) ever fails the check itself.
    `test/sweep-closed-issues.test.sh` passes against a stubbed
    `gh`: a merged, marker-carrying pull request whose issue is still open is
    closed with the merge cited as evidence; a merged, markerless pull
