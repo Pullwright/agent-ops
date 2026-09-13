@@ -222,6 +222,16 @@ out="$(run "$c" '[{"item":"pr-266-dequeued-abc123def456","detail":"the merge-gro
 assert_eq "a dequeued-shaped void is never actioned here" "" "$out"
 assert_eq "and gh is never even called for it either" "" "$(cat "$c/calls.log" 2>/dev/null || true)"
 
+# --- Case 4b-iii: a landing-refusal void likewise names a pull request and is left alone ---
+# `pr-<n>-landing-refusal-<ids>` (requirement 53, issue #979) makes the same
+# shape of claim `-conflict-`/`-dequeued-` do — the comment-reconciliation
+# refusal is gone, not the pull request, which stays live and ready — so it
+# carries the identical exclusion.
+c="$tmp_dir/case4b3"; mkdir -p "$c"
+out="$(run "$c" '[{"item":"pr-267-landing-refusal-123-456","detail":"every unreconciled comment answered","stage":"coordinator"}]')"
+assert_eq "a landing-refusal-shaped void is never actioned here" "" "$out"
+assert_eq "and gh is never even called for it either" "" "$(cat "$c/calls.log" 2>/dev/null || true)"
+
 # --- Case 4c: a Dependabot supersession void closes through the ordinary branch ---
 # A superseded Dependabot bump mints the distinct `pr-<n>-superseded-…` shape
 # (scripts/gather-merge-conflicts.sh, TD-PPagop-26081304) — its claim is that the

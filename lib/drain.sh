@@ -13,6 +13,10 @@
 # only when back-pressure trips): every repo's four finishing bands —
 # `review_feedback`, `merge_conflicts`, `dequeued`, `abandoned_drafts` — are
 # empty, *and* no live claim (requirement 17a) names a finishing-source ref.
+# `landing_refusals` (requirement 53) is deliberately not a fifth: whether
+# this source should share the other four's back-pressure/drain/claim/
+# void-guard treatment is a separate policy question issue #979's own refined
+# scope did not ask for, tracked as its own deferred item (issue #1481).
 # The second half exists because a claim can be taken moments before its PR
 # is opened; a cycle's own gather sees no PR yet, but the work is not
 # actually finished, and a `drained` event fired on that gap would be a false

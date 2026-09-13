@@ -696,8 +696,9 @@ merge-group's own checks failure is fixed, it cannot be re-queued. A
 diagnose-and-fix is finishing, not starting, so it beats fresh work here too,
 for the identical reason merge-conflicts does.
 
-**Abandoned drafts come seventh, across all repos.** After security, urgent
-issues, review-feedback, merge-conflicts and dequeued, and likewise ahead of
+**Abandoned drafts come eighth, across all repos.** After security, urgent
+issues, review-feedback, merge-conflicts, dequeued, landing-refusals and
+human-visibility, and likewise ahead of
 the plain repo-then-source walk: if any selectable `abandoned_drafts`
 candidate exists in *any* repo, take it before any fresh work in a
 more-overdue repo. A previous cycle already implemented most of the work

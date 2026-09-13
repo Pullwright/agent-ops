@@ -12948,8 +12948,8 @@ implements.
     - **a pull request** (`pr-<n>-abandoned-…`, `-review-…`, `-superseded-…`)
       — closed the same way, iff still open.
 
-    **The `-conflict-` and `-dequeued-` shapes are excluded from the
-    pull-request case
+    **The `-conflict-`, `-dequeued-` and `-landing-refusal-` shapes are
+    excluded from the pull-request case
     above.** `pr-<n>-conflict-<head-sha>` names the pull request only to say
     the *conflict* on it resolved — the void is about the conflict, not about
     the pull request, which stays a live, ready PR of ours the moment the
@@ -12962,8 +12962,14 @@ implements.
     (TD-PPagop-26080901). `pr-<n>-dequeued-<head-sha>` (requirement 3z) makes
     the identical shape of claim about a dequeue rather than a conflict — the
     pull request stays live and ready, waiting on the human's own re-queue —
-    so it is excluded on the same reasoning (TD-PPagop-26081409). So a void of
-    either shape closes nothing: it is left
+    so it is excluded on the same reasoning (TD-PPagop-26081409).
+    `pr-<n>-landing-refusal-<ids>` (requirement 53, issue #979) makes the
+    identical shape of claim about a comment-reconciliation refusal instead —
+    the pull request stays live and ready, waiting on nothing but the answer
+    a landing-refusals Implementer round already gave it — scoped to the
+    unreconciled comment ids exactly as `-conflict-`/`-dequeued-` are scoped
+    to a head SHA, so it is excluded on the same reasoning. So a void of any
+    of the three shapes closes nothing: it is left
     exactly like a void shape that names no GitHub object at all, below. The
     exclusion is decided before the per-call action cap, exactly as the
     `stage` gate below is: these shapes are never actionable on any cycle, so
@@ -17797,7 +17803,19 @@ with the Reviewer's own.
     actually be satisfied — and
     `PREFLIGHT_EXISTING_BRANCH_SOURCES` (requirement 34m), which this source
     joins as a fifth member because its branch and pull request predate the
-    claim. Deliberately **not**
+    claim. Two more inputs outside that six-list set also carry
+    `landing_refusals`, for reasons requirement 3b and 34k's own text already
+    give in general: `lib/noop-skip.sh`'s no-op fingerprint (requirement 3b)
+    hashes it verbatim, on the identical reasoning `dequeued` already
+    established there — gate 4's own refusal moves nothing else the
+    fingerprint samples, so leaving this source out of it would be the exact
+    silent stall that file's own header warns against, for the one source
+    whose entire purpose is giving a refusal a route back to work; and
+    `scripts/close-void-github-items.sh`'s pull-request-close exclusion
+    (requirement 34k) treats `pr-<n>-landing-refusal-<ids>` exactly as it
+    treats `-conflict-`/`-dequeued-`, since a landing-refusals void makes the
+    identical claim (the refusal is gone, not the pull request). Deliberately
+    **not**
     folded into requirement 2.2a's four-source back-pressure/drain finishing
     set, nor into the claim-pattern and void-corroboration parity the other
     four finishing sources share (`lib/drain.sh`, `lib/claim.sh`, `lib/void-
@@ -22293,7 +22311,14 @@ oblige anyone to edit a test.
    classes, re-confirmed live before trusting a possibly-stale logged
    refusal, and falls back to the ordinary "waiting on a merge click" text
    the moment the citation lands — is regression-tested in
-   `test/sweep-human-visibility.test.sh`.
+   `test/sweep-human-visibility.test.sh`. `lib/noop-skip.sh`'s no-op
+   fingerprint hashes `landing_refusals` verbatim, so a fresh refusal (or one
+   answered) busts the fingerprint on the same terms as `dequeued` —
+   regression-tested in `test/noop-skip.test.sh`.
+   `scripts/close-void-github-items.sh` never closes a `pr-<n>-landing-
+   refusal-<ids>`-shaped void's pull request, on the same reasoning as its
+   `-conflict-`/`-dequeued-` exclusion (requirement 34k) — regression-tested
+   in `test/close-void-github-items.test.sh`.
 2h. **Dependabot's own conflicted PRs are nudged, then — only after a full
    cycle at the same head — offered as a takeover (requirement 3s).**
    `lib/dependabot-bump.sh`'s family/version parsing and its

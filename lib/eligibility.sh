@@ -199,6 +199,15 @@ enabler_eligible_json="$(enabler_eligible_items "$union_log" \
 # `.repo`/`.item` *after* `$live |` would read them off the live-refs array
 # instead of off the eligible entry — jq has no other way to hold onto the
 # outer `.` across a nested pipe.
+#
+# `landing-refusal` (requirement 53) has no arm in the pattern below: its ref
+# is scoped to the unreconciled comment ids, not a head SHA, so it cannot
+# reuse this SHA-shaped test as written and would need its own live-set
+# comparison against `landing_refusals` if extended here. This is the cost
+# saving above, never the correctness gate, so the omission only means a
+# stale landing-refusal ref pays for a full Enabler re-check rather than
+# being pre-filtered; tracked alongside this source's other deferred parity
+# questions (issue #1481).
 stale_enabler_refs_json='[]'
 [[ -z "$live_pr_refs_json" ]] || { stale_enabler_refs_json="$(jq -c --argjson live "$live_pr_refs_json" '
   [ .[] | (.repo // "") as $repo | (.item // "") as $item
