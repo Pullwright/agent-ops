@@ -64,6 +64,25 @@
 #      information merely because this is the first sweep to see it. `0`
 #      disables the notice outright, guarded explicitly rather than left to
 #      fall out of the age arithmetic (agent-ops#429).
+#   5. Where a pull request otherwise due the idle nudge above is one gate 4
+#      (`lib/landing.sh`'s `_landing_stage_attempt`) most recently refused to
+#      arm over an unreconciled comment or an unreadable comment-
+#      reconciliation read (requirement 53, issue #979), the nudge names that
+#      real reason instead of "waiting on a merge click" — the misleading text
+#      every other approved/green/mergeable pull request gets, which is simply
+#      false of one the pipeline is actively refusing to land over a human's
+#      own comment. Read from UNION_LOG (below), the fleet-wide log —
+#      `landing-refused` is a fact only this pipeline's own log carries, and
+#      the refusal a peer node's own cycle logged is not visible any other
+#      way — and re-confirmed live via `lib/reconciliation-gate.sh`'s
+#      `reconciliation_unreconciled_comments` before the substitution is
+#      trusted, the same "the logged refusal never disappears once answered"
+#      reasoning `scripts/gather-landing-refusals.sh`'s own header explains:
+#      once the Implementer's marked reply clears it, the stale log line must
+#      not still be read as standing. Idempotent per pull request via the
+#      identical `<!-- agent-ops:human-nudge -->` marker the ordinary nudge
+#      already uses — this changes the nudge's wording, never how often it
+#      fires.
 #
 # ## Why the sweep may call `confirm_review_requested`, and only narrowly
 #
@@ -117,25 +136,6 @@
 # request (agent-ops#393).
 # The caller logs them; this script logs nothing itself. Exit 0 unless the
 # arguments are unusable.
-#   5. Where a pull request otherwise due the idle nudge above is one gate 4
-#      (`lib/landing.sh`'s `_landing_stage_attempt`) most recently refused to
-#      arm over an unreconciled comment or an unreadable comment-
-#      reconciliation read (requirement 53, issue #979), the nudge names that
-#      real reason instead of "waiting on a merge click" — the misleading text
-#      every other approved/green/mergeable pull request gets, which is simply
-#      false of one the pipeline is actively refusing to land over a human's
-#      own comment. Read from UNION_LOG (below), the fleet-wide log —
-#      `landing-refused` is a fact only this pipeline's own log carries, and
-#      the refusal a peer node's own cycle logged is not visible any other
-#      way — and re-confirmed live via `lib/reconciliation-gate.sh`'s
-#      `reconciliation_unreconciled_comments` before the substitution is
-#      trusted, the same "the logged refusal never disappears once answered"
-#      reasoning `scripts/gather-landing-refusals.sh`'s own header explains:
-#      once the Implementer's marked reply clears it, the stale log line must
-#      not still be read as standing. Idempotent per pull request via the
-#      identical `<!-- agent-ops:human-nudge -->` marker the ordinary nudge
-#      already uses — this changes the nudge's wording, never how often it
-#      fires.
 #
 # Usage: sweep-human-visibility.sh <owner/repo> [cycle-id] [node-name] [union-log]
 # cycle-id and node-name stamp the nudge comment's header (requirement 9d,

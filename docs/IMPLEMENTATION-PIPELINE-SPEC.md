@@ -9876,16 +9876,28 @@ implements.
       claimed — only the *kind* of claim differs, decided by the work order's
       `takeover` field, which the Co-Ordinator sets and the Script reads
       before deriving `agent/<item-ref>` as usual.
-    - *File claims* (`review-feedback`, `dequeued` and `abandoned-drafts`,
+    - *File claims* (`review-feedback`, `dequeued`, `landing-refusals` and
+      `abandoned-drafts`,
       plus every `merge-conflicts` work order *except* a takeover, which
       finish an existing PR and have no new branch to create): a create-only
       contents-API PUT (no `sha`) of `claims/<repo>/<ref>.json` in the state
       repository. For `abandoned-drafts` the ref is scoped to the draft's head SHA
       (`pr-<n>-abandoned-<head-sha>`), for `merge-conflicts` likewise to the
-      PR's head SHA (`pr-<n>-conflict-<head-sha>`), and for `dequeued`
-      likewise again (`pr-<n>-dequeued-<head-sha>`), so two nodes racing to
+      PR's head SHA (`pr-<n>-conflict-<head-sha>`), for `dequeued`
+      likewise again (`pr-<n>-dequeued-<head-sha>`), and for
+      `landing-refusals` to the unreconciled comment ids instead
+      (`pr-<n>-landing-refusal-<ids>`, requirement 53 — that source's own
+      candidacy turns on which comments are unanswered, not on the head),
+      so two nodes racing to
       finish, rebase, or fix the same PR contend on the same file and one
-      wins. A takeover needs no separate file claim of its own: `agent/<item-ref>` is derived
+      wins. This list is exactly `PREFLIGHT_EXISTING_BRANCH_SOURCES`
+      (requirement 34m) plus the takeover carve-out above, and the two are
+      written down in two places (`agent-cycle.sh`'s claim dispatch and
+      `lib/preflight.sh`) that must agree: a source preflight believes has a
+      pre-existing branch, but the dispatch does not, gets a fresh branch
+      minted for it off the default branch and the candidate's own `branch`
+      overwritten with it, handing the Implementer a branch no pull request
+      tracks. A takeover needs no separate file claim of its own: `agent/<item-ref>` is derived
       from the same head-SHA-scoped ref, so two nodes racing to take over the
       *same* Dependabot PR compute the identical branch name and contend on
       that single `POST /git/refs` instead — one claim, not two.
@@ -9894,15 +9906,17 @@ implements.
       round's or head's ref — the mechanism that let PR #205 be worked by three
       nodes at once. So immediately after winning a finishing-source item claim
       taken via the file-claim path above — every `review-feedback`,
-      `dequeued` and `abandoned-drafts` work order, and every `merge-conflicts`
+      `dequeued`, `landing-refusals` and `abandoned-drafts` work order, and
+      every `merge-conflicts`
       work order except a takeover, which contends on its branch claim instead —
       the Script takes a second, separate file claim keyed `pr-<number>` (same
       repository, same create-only primitive) *before* handing the work order
       onward. The number is the candidate's own `pr_number` where it carries a
-      usable one, and otherwise the one its **item ref** embeds — all four
-      finishing sources mint refs shaped `pr-<n>-review-<id>`,
-      `pr-<n>-conflict-<sha>`, `pr-<n>-dequeued-<sha>` and `pr-<n>-abandoned-<sha>`
-      (requirements 3c, 3e, 3g, 3z), so the Script derives it deterministically
+      usable one, and otherwise the one its **item ref** embeds — all five
+      sources mint refs shaped `pr-<n>-review-<id>`,
+      `pr-<n>-conflict-<sha>`, `pr-<n>-dequeued-<sha>`,
+      `pr-<n>-landing-refusal-<ids>` and `pr-<n>-abandoned-<sha>`
+      (requirements 3c, 3e, 3g, 3z, 53), so the Script derives it deterministically
       rather than depending on the Co-Ordinator having copied a field: a gate
       that engages only when the model remembered would silently reopen the
       very failure this closes. Only a ref of none of those shapes yields no
@@ -17803,7 +17817,15 @@ with the Reviewer's own.
     actually be satisfied — and
     `PREFLIGHT_EXISTING_BRANCH_SOURCES` (requirement 34m), which this source
     joins as a fifth member because its branch and pull request predate the
-    claim. Two more inputs outside that six-list set also carry
+    claim — and, for the same reason and necessarily together with it,
+    requirement 17's own claim dispatch (`agent-cycle.sh`), where this source
+    takes the *file* claim keyed on its item ref and the PR-keyed `pr-<n>`
+    claim beside it, never a branch claim: a branch claim here would mint
+    `agent/pr-<n>-landing-refusal-<ids>` fresh off the default branch and
+    overwrite the candidate's own `branch` with it, so the Implementer would
+    push to a branch the refused pull request does not track and the
+    `<!-- agent-ops:reconciles comment=<id> -->` line that clears gate 4 would
+    never reach it. Two more inputs outside that six-list set also carry
     `landing_refusals`, for reasons requirement 3b and 34k's own text already
     give in general: `lib/noop-skip.sh`'s no-op fingerprint (requirement 3b)
     hashes it verbatim, on the identical reasoning `dequeued` already
@@ -22319,6 +22341,13 @@ oblige anyone to edit a test.
    refusal-<ids>`-shaped void's pull request, on the same reasoning as its
    `-conflict-`/`-dequeued-` exclusion (requirement 34k) — regression-tested
    in `test/close-void-github-items.test.sh`.
+   Requirement 17's claim dispatch gives this source the file claim (and the
+   PR-keyed `pr-<n>` claim beside it), never a branch claim — the condition is
+   lifted verbatim out of `agent-cycle.sh` and evaluated per source in
+   `test/claim-dispatch-existing-branch.test.sh`, which also asserts the
+   dispatch and `PREFLIGHT_EXISTING_BRANCH_SOURCES` (requirement 34m) name the
+   same set, since the two disagreeing is what mints a fresh branch for a
+   source whose pull request already exists.
 2h. **Dependabot's own conflicted PRs are nudged, then — only after a full
    cycle at the same head — offered as a takeover (requirement 3s).**
    `lib/dependabot-bump.sh`'s family/version parsing and its

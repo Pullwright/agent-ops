@@ -8,6 +8,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **A `landing-refusals` work source** (issue #979, requirement 53). Gate 4 of
+  `_landing_stage_attempt` (`lib/landing.sh`) refuses to arm a pull request
+  over an unreconciled human comment (`reconciliation-unanswered:`) or a
+  comment-reconciliation read it could not make
+  (`reconciliation-unreadable:`) — correctly, since that is the human veto D18
+  promises, but with no route back to work: `gather-review-feedback.sh` cannot
+  see a plain comment carrying no formal `CHANGES_REQUESTED`, and
+  `gather-abandoned-drafts.sh` only ever sees drafts, while the pull request
+  stays Ready. The refusal cost one log line per cycle, indefinitely, that
+  nothing read. `scripts/gather-landing-refusals.sh` is the route back: keyed
+  on the fleet-wide union log's most recent `landing-refused` event per pull
+  request (`landing_latest_refusal_reason`) plus a live re-check through
+  `lib/reconciliation-gate.sh`'s new `reconciliation_unreconciled_comments`,
+  it offers the pull request as a candidate carrying every unreconciled
+  comment verbatim, and the Implementer answers each and cites it with its own
+  `<!-- agent-ops:reconciles comment=<id> -->` line. Wired into the ordinary
+  candidate machinery exactly as `dequeued` is — `sources` gating, the
+  expensive-gather cache, claim exclusion and the file-claim/PR-keyed-claim
+  dispatch, first-seen emission, the no-op fingerprint, the Refiner's own
+  candidate walk, and `close-void-github-items.sh`'s pull-request-close
+  exclusion. Added to `Pullwright/agent-ops`'s own `sources`, the only
+  configured repo at `merge_autonomy: agent-merges-routine` or above, since
+  gate 4 never runs below that level. Back-pressure/drain and void-guard
+  parity with the other four finishing sources is deliberately out of scope
+  and tracked separately (issue #1481).
+
+- **The idle nudge now names a standing landing refusal** (issue #979,
+  requirement 38c). `scripts/sweep-human-visibility.sh` takes an optional
+  fourth argument, the fleet-wide union log; where a pull request otherwise
+  due the nudge is one gate 4 is currently refusing to arm, the comment names
+  that reason instead of telling the assignee it "is waiting on a merge
+  click", which is false of exactly that pull request. Live-reconfirmed before
+  substitution, so an already-answered refusal falls back to the ordinary
+  text. Same `<!-- agent-ops:human-nudge -->` suppression as before — this
+  changes the wording, never how often the nudge fires.
+
 - **`docs/DATA-HANDLING.md`** (issue #975): a data-handling inventory stating
   what the pipeline reads (public GitHub usernames, issue/PR/comment/review
   text, repository metadata), what it stores and where (cycle logs and
