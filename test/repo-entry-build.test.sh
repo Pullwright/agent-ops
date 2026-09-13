@@ -4,16 +4,17 @@
 # per-repo entry build (requirement 4g, TD-PPagop-26081406): the inline block
 # in the main gather loop that assembles one repo's whole
 # findings/review_feedback/abandoned_drafts/merge_conflicts/dequeued/
-# register_hygiene/issues/tech_debt bands, plus its slug/default_branch/sources/
+# landing_refusals/register_hygiene/issues/tech_debt bands, plus its
+# slug/default_branch/sources/
 # implementation_plan_path, into the single `entry` object folded into
 # `ordered_repos_json` — the Co-Ordinator's whole per-repo runtime input.
 #
-# Each of the eight bands is unbounded past this call — issue threads
+# Each of the nine bands is unbounded past this call — issue threads
 # (requirement 3d/#118) and the open tech-debt register (requirement 3t/#310)
-# included — and used to ride into jq as eight separate --argjson flags. Past
+# included — and used to ride into jq as nine separate --argjson flags. Past
 # MAX_ARG_STRLEN (131072 bytes) the build died at execve, silently dropping
 # the repo's whole entry from the Co-Ordinator's input for the cycle.
-# Requirement 4g moves all eight onto stdin, one document per line, bound
+# Requirement 4g moves all nine onto stdin, one document per line, bound
 # positionally with `input as $name` in the order printed — `$sources` alone
 # stays in argv, bounded by configuration.
 #
@@ -59,15 +60,16 @@ fi
 
 run_entry_build() {  # run_entry_build <slug> <default_branch> <sources-json> <ipp>
   #                     <findings> <review_feedback> <abandoned_drafts>
-  #                     <merge_conflicts> <dequeued> <register_hygiene> <issues>
+  #                     <merge_conflicts> <dequeued> <landing_refusals>
+  #                     <register_hygiene> <issues>
   #                     <tech_debt> [issues_excluded]
   # Every one of these is consumed only by the eval'd entry_build_block,
   # invisible to shellcheck, including the `entry` it assigns.
   # shellcheck disable=SC2034
   ( slug="$1" default_branch="$2" sources="$3" implementation_plan_path="$4" \
     findings="$5" review_feedback="$6" abandoned_drafts="$7" merge_conflicts="$8" \
-    dequeued="$9" register_hygiene="${10}" issues="${11}" tech_debt="${12}" \
-    issues_excluded="${13:-[]}"
+    dequeued="$9" landing_refusals="${10}" register_hygiene="${11}" issues="${12}" tech_debt="${13}" \
+    issues_excluded="${14:-[]}"
     eval "$entry_build_block"
     # shellcheck disable=SC2154
     printf '%s' "$entry" )
@@ -80,6 +82,7 @@ out="$(run_entry_build "o/r" "main" '["tech-debt"]' "" \
   '[{"source":"abandoned-drafts","ref":"pr-2-abandoned-aa"}]' \
   '[{"source":"merge-conflicts","ref":"pr-3-conflict-bb"}]' \
   '[{"source":"dequeued","ref":"pr-4-dequeued-dd"}]' \
+  '[{"source":"landing-refusals","ref":"pr-5-landing-refusal-ee"}]' \
   '[{"source":"register-hygiene","ref":"register-hygiene-cc"}]' \
   '[{"source":"issues","ref":"11"}]' \
   '[{"source":"tech-debt","ref":"TD1"}]' \
@@ -93,6 +96,7 @@ assert_eq "review_feedback carries through" "pr-1-review-1" "$(jq -r '.review_fe
 assert_eq "abandoned_drafts carries through" "pr-2-abandoned-aa" "$(jq -r '.abandoned_drafts[0].ref' <<<"$out")"
 assert_eq "merge_conflicts carries through" "pr-3-conflict-bb" "$(jq -r '.merge_conflicts[0].ref' <<<"$out")"
 assert_eq "dequeued carries through" "pr-4-dequeued-dd" "$(jq -r '.dequeued[0].ref' <<<"$out")"
+assert_eq "landing_refusals carries through" "pr-5-landing-refusal-ee" "$(jq -r '.landing_refusals[0].ref' <<<"$out")"
 assert_eq "register_hygiene carries through" "register-hygiene-cc" "$(jq -r '.register_hygiene[0].ref' <<<"$out")"
 assert_eq "issues carries through" "11" "$(jq -r '.issues[0].ref' <<<"$out")"
 assert_eq "issues_excluded carries through" '{"number":12,"reason":"assigned"}' \
@@ -103,13 +107,13 @@ assert_eq "no implementation_plan_path key when the source isn't configured" "fa
   "$(jq 'has("implementation_plan_path")' <<<"$out")"
 
 out_ipp="$(run_entry_build "o/r" "main" '["implementation-plan"]' "W10-breach-handling" \
-  '[]' '[]' '[]' '[]' '[]' '[]' '[]' '[]')"
+  '[]' '[]' '[]' '[]' '[]' '[]' '[]' '[]' '[]')"
 assert_eq "implementation_plan_path is added when the source is configured" "W10-breach-handling" \
   "$(jq -r '.implementation_plan_path' <<<"$out_ipp")"
 
 # --- The argv cap (requirement 4g, TD-PPagop-26081406) ---------------------
 # One band alone (issues, carrying a whole pre-fetched thread) pushed past
-# the cap; the other seven stay small, proving the stdin delivery survives
+# the cap; the other eight stay small, proving the stdin delivery survives
 # regardless of which band is the oversized one.
 oversized_body="$(head -c 140000 < /dev/zero | tr '\0' 'x')"
 big_issues="$(printf '[{"source": "issues", "ref": "99", "body": "%s"}]' "$oversized_body")"
@@ -117,7 +121,7 @@ assert_eq "the oversized issues-band fixture really is past MAX_ARG_STRLEN" "1" 
   "$(( ${#big_issues} > 131072 ))"
 
 out_big="$(run_entry_build "o/r" "main" '["issues"]' "" \
-  '[]' '[]' '[]' '[]' '[]' '[]' "$big_issues" '[]')"
+  '[]' '[]' '[]' '[]' '[]' '[]' '[]' "$big_issues" '[]')"
 assert_eq "an oversized issues band still produces the entry" "o/r" "$(jq -r '.slug' <<<"$out_big")"
 # Bash string matching, not grep -F with the oversized string as an
 # argument: that would hit the very argv cap this section exists to prove
@@ -129,9 +133,9 @@ assert_eq "  ... and every other band still comes through, none dropped" "true" 
   "$(jq '(.findings == []) and (.review_feedback == []) and (.tech_debt == [])' <<<"$out_big")"
 
 # --- The expensive-gather cache save (requirement 4g/48, agent-ops#1107) ----
-# lib/candidate-gather.sh's fresh branch folds the same nine bands (the eight
+# lib/candidate-gather.sh's fresh branch folds the same ten bands (the nine
 # above, plus issues_excluded) into expensive_gather_cache_save's own third
-# argument. Before agent-ops#1107 this went through `jq --argjson`, nine
+# argument. Before agent-ops#1107 this went through `jq --argjson`, ten
 # flags in argv — the exact shape this file's own entry-build assertions
 # above already rule out for the entry build itself — and agent-ops's own
 # tech_debt_raw band (421,622 bytes) died at `execve` inside `$(…)` silently,
@@ -176,7 +180,8 @@ eval "$log_event_src"
 
 run_cache_build() {  # run_cache_build <state_dir> <slug> <findings_raw>
                       #   <review_feedback_raw> <abandoned_drafts_raw>
-                      #   <merge_conflicts_raw> <dequeued_raw> <register_hygiene_raw>
+                      #   <merge_conflicts_raw> <dequeued_raw> <landing_refusals_raw>
+                      #   <register_hygiene_raw>
                       #   <issues_raw> <issues_excluded_raw> <tech_debt_raw>
   # Every one of these is consumed only by the eval'd cache_build_block,
   # invisible to shellcheck — including expensive_gather_fresh and
@@ -184,8 +189,8 @@ run_cache_build() {  # run_cache_build <state_dir> <slug> <findings_raw>
   # shellcheck disable=SC2034
   ( state_dir="$1" slug="$2" findings_raw="$3" review_feedback_raw="$4" \
     abandoned_drafts_raw="$5" merge_conflicts_raw="$6" dequeued_raw="$7" \
-    register_hygiene_raw="$8" issues_raw="$9" issues_excluded_raw="${10}" \
-    tech_debt_raw="${11}" cycle_id="test-cycle" node_name="node-a" \
+    landing_refusals_raw="$8" register_hygiene_raw="$9" issues_raw="${10}" issues_excluded_raw="${11}" \
+    tech_debt_raw="${12}" cycle_id="test-cycle" node_name="node-a" \
     log_file="$1/cache-build.log.jsonl"
     eval "$cache_build_block" )
 }
@@ -198,7 +203,7 @@ big_tech_debt="$(printf '[{"source": "tech-debt", "ref": "TD1", "body": "%s"}]' 
 assert_eq "the oversized tech-debt fixture really is past MAX_ARG_STRLEN" "1" \
   "$(( ${#big_tech_debt} > 131072 ))"
 
-run_cache_build "$cache_state" "o/cache-repo" '[]' '[]' '[]' '[]' '[]' '[]' '[]' 'null' "$big_tech_debt"
+run_cache_build "$cache_state" "o/cache-repo" '[]' '[]' '[]' '[]' '[]' '[]' '[]' '[]' 'null' "$big_tech_debt"
 
 assert_eq "the cache build leaves a non-empty cache file, not the 0-byte pre-#1107 failure mode" \
   "1" "$([[ -s "$cache_state/expensive-gather/o_cache-repo.json" ]] && echo 1 || echo 0)"

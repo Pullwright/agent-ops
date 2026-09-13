@@ -235,6 +235,18 @@ assert_eq "a claim ageing out of the array changes the fingerprint" "1" \
 assert_ne "a human requesting changes changes the fingerprint" \
   "$(fp_with '.repos[0].review_feedback += [{"ref": "pr-57-review-99", "number": 57, "reviewed_at": "2026-07-17T01:22:54Z", "body": "please fix the gitignore gap"}]')"
 
+# landing-refusals (requirement 53, issue #979). Gate 4's own refusal moves no
+# commit, no `updated_at`, and lives only in the fleet-wide union log — the
+# same class of gap dequeued closes for the merge-queue probe. The ref is
+# scoped to the unreconciled comment ids, so a fresh comment or a cleared one
+# both mint a different entry and must both bust the fingerprint.
+assert_ne "a fresh landing-refusal changes the fingerprint" \
+  "$(fp_with '.repos[0].landing_refusals += [{"source": "landing-refusals", "ref": "pr-9-landing-refusal-123", "number": 9, "pr_number": 9, "url": "https://github.com/o/one/pull/9", "reason": "reconciliation-unanswered:human comment(s)…", "comments": [{"id": 123, "at": "2026-07-17T01:00:00Z", "author": "warwickallen", "body": "please fix this"}], "body": "…"}]')"
+two_unreconciled_fp="$(base_input | jq -c '.repos[0].landing_refusals = [{"source": "landing-refusals", "ref": "pr-9-landing-refusal-123-456", "number": 9, "comments": [{"id": 123}, {"id": 456}]}]' | noop_fingerprint)"
+one_answered_fp="$(base_input | jq -c '.repos[0].landing_refusals = [{"source": "landing-refusals", "ref": "pr-9-landing-refusal-456", "number": 9, "comments": [{"id": 456}]}]' | noop_fingerprint)"
+assert_eq "answering one of two unreconciled comments changes the fingerprint" "1" \
+  "$([[ "$two_unreconciled_fp" != "$one_answered_fp" ]] && echo 1 || echo 0)"
+
 # human-visibility (requirement 38e). A violation surfaces off a `warning`
 # scripts/sweep-human-visibility.sh already logged, and its live re-check
 # (scripts/gather-human-visibility-hygiene.sh) resolving it moves no commit,

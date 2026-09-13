@@ -42,6 +42,14 @@
 # review folder that minted the ref is no longer the repository's current
 # one.
 #
+# `pr-<n>-landing-refusal-<ids>` (requirement 53, issue #979) has no liveness
+# signal here, unlike its sibling finishing shapes above: a void of it would
+# retire on requirement 34n's original age-only rule instead. Whether it
+# should join the six — and by what test, since its ref is scoped to
+# unreconciled comment ids rather than a head SHA — is the same deferred
+# parity question issue #1481 tracks for this source's other finishing-shape
+# machinery.
+#
 # A third rule sits alongside those two, for the residue neither can reach
 # (PR #340 review, decided 2026-08-13): liveness decides nothing without the
 # source's own successful gather, and a source is only gathered for a repo

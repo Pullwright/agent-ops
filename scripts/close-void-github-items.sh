@@ -167,22 +167,27 @@ while IFS=$'\t' read -r item detail evidence stage; do
     *) continue ;;
   esac
 
-  # A `pr-<n>-conflict-…` or `pr-<n>-dequeued-…` void names the pull request
-  # only to say the *conflict* (or the dequeue) on it resolved — the PR itself
-  # is not the work that is gone, and closing it here would discard a live PR
-  # of ours (requirement 34k, TD-PPagop-26080901, extended to `dequeued` by
-  # TD-PPagop-26081409). Left unprocessed, exactly like a
+  # A `pr-<n>-conflict-…`, `pr-<n>-dequeued-…` or `pr-<n>-landing-refusal-…`
+  # void names the pull request only to say the *conflict* (or the dequeue, or
+  # the comment-reconciliation refusal) on it resolved — the PR itself is not
+  # the work that is gone, and closing it here would discard a live PR of ours
+  # (requirement 34k, TD-PPagop-26080901, extended to `dequeued` by
+  # TD-PPagop-26081409 and to `landing-refusal` by issue #979's own requirement
+  # 53: this shape's ref is scoped to the unreconciled comment ids exactly as
+  # `-conflict-`/`-dequeued-` are scoped to a head SHA, so it makes the
+  # identical claim). Left unprocessed, exactly like a
   # void shape that names no GitHub object at all — and skipped here, before
   # the action cap, for the same reason the stage gate above is: this script
   # will never action these shapes on any cycle, so they must not eat a slot,
   # nor count as deferred work a later pass could do. Counting it would report
   # `remaining: N` for items nothing will ever do, every cycle forever, since
   # a shape this never closes never earns the `void-object-closed` that would
-  # retire it (requirement 34n). This exclusion matches `-conflict-` and
-  # `-dequeued-` alone — their sibling shape `pr-<n>-superseded-…` makes the
-  # opposite claim (the pull request itself is moot) and falls through to the
-  # ordinary `pr-<n>-…` close branch below (TD-PPagop-26081304).
-  if grep -qE '^pr-[0-9]+-(conflict|dequeued)-' <<<"$item"; then
+  # retire it (requirement 34n). This exclusion matches `-conflict-`,
+  # `-dequeued-` and `-landing-refusal-` alone — their sibling shape
+  # `pr-<n>-superseded-…` makes the opposite claim (the pull request itself is
+  # moot) and falls through to the ordinary `pr-<n>-…` close branch below
+  # (TD-PPagop-26081304).
+  if grep -qE '^pr-[0-9]+-(conflict|dequeued|landing-refusal)-' <<<"$item"; then
     continue
   fi
 

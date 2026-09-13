@@ -87,8 +87,9 @@ push, use `git` and `gh` freely.
 
 **The only branch this system protects is `default_branch`.** Never commit
 or push to it. The PR's own branch (`branch` above — `agent/<item-ref>` for
-a fresh claim, tech-debt included, or an existing branch of ours for the
-four finishing sources) is entirely at your disposal —
+a fresh claim, tech-debt included, or an existing branch of ours for
+`review-feedback`, `merge-conflicts`, `dequeued`, `landing-refusals` or
+`abandoned-drafts`) is entirely at your disposal —
 commit, amend, rebase onto the current `default_branch`, or force-push it
 as you judge best; nothing about its *contents* needs preserving for its
 own sake, but never rename or delete it — its name is the fleet-wide claim
@@ -109,9 +110,13 @@ signal that this happened. This matters only while
 the pull request is not a draft: a draft cannot be queued, and for the
 ordinary flow the PR stays draft through step 6 below, so nothing here
 applies until step 7's flip — by which point you are done pushing. It does
-matter for the `review-feedback` source (below): there, the pull request is
-never a draft during this session, so it is capable of being queued for the
-whole time you might push to it.
+matter for the `review-feedback` source (below) and for `landing-refusals`:
+in both, the pull request is never a draft during this session, so it is
+capable of being queued for the whole time you might push to it. For
+`landing-refusals` the window is the wider of the two — that pull request is
+Ready, approved, green and mergeable throughout, which is precisely why the
+Script's own arming step keeps reaching it and refusing over the unreconciled
+comment.
 
 Where it applies, check before you push:
 

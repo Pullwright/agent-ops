@@ -105,7 +105,7 @@ claimed_json="[]"
 # Requirement 48 (agent-ops#1086, offset agent-ops#1106): of every repo
 # `repos_json` names, the one whose expensive per-repository sources
 # (findings, review-feedback, abandoned-drafts, merge-conflicts, dequeued,
-# register-hygiene, issues, tech-debt) this cycle actually reads fresh from
+# landing-refusals, register-hygiene, issues, tech-debt) this cycle actually reads fresh from
 # GitHub — every other one reuses the snapshot this same node captured the
 # last time its own turn came around (lib/expensive-gather-cache.sh). Picked
 # once, ahead of the per-repo loop below, from `repos_json` rather than
@@ -218,9 +218,9 @@ while IFS=$'\t' read -r _ slug default_branch; do
   # further down, which filters every one of these arrays in place, a second
   # time, once they do.
   #
-  # Requirement 48 (agent-ops#1086): the eight expensive bands below —
+  # Requirement 48 (agent-ops#1086): the nine expensive bands below —
   # findings, review-feedback, abandoned-drafts, merge-conflicts, dequeued,
-  # register-hygiene, issues (+ issues_excluded) and tech-debt — are read
+  # landing-refusals, register-hygiene, issues (+ issues_excluded) and tech-debt — are read
   # fresh from GitHub only for `expensive_gather_slug`, the one repository
   # this cycle picked for this node's turn (lib/expensive-gather-cache.sh).
   # Every other configured repository reuses the raw gather this same node
@@ -269,6 +269,12 @@ while IFS=$'\t' read -r _ slug default_branch; do
     dequeued_raw="$(gather_dequeued "$slug")"
     emit_first_seen "$slug" dequeued "$dequeued_raw"
     dequeued="$(exclude_claimed_items "$(exclude_claimed_prs "$dequeued_raw" "$claimed_pr_numbers_json")" "$claimed_item_refs_json")"
+  fi
+  landing_refusals="[]"; landing_refusals_raw="[]"
+  if jq -e 'any(.[]; . == "landing-refusals")' <<<"$sources" >/dev/null 2>&1; then
+    landing_refusals_raw="$(gather_landing_refusals "$slug")"
+    emit_first_seen "$slug" landing-refusals "$landing_refusals_raw"
+    landing_refusals="$(exclude_claimed_items "$(exclude_claimed_prs "$landing_refusals_raw" "$claimed_pr_numbers_json")" "$claimed_item_refs_json")"
   fi
   register_hygiene="[]"; register_hygiene_raw="[]"
   if jq -e 'any(.[]; . == "register-hygiene")' <<<"$sources" >/dev/null 2>&1; then
@@ -444,7 +450,7 @@ while IFS=$'\t' read -r _ slug default_branch; do
   fi
   expensive_gather_fresh=1
   expensive_gather_as_of="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  # The nine raw bands below are each unbounded past this call — agent-ops's
+  # The ten raw bands below are each unbounded past this call — agent-ops's
   # own tech_debt_raw alone has reached 421,622 bytes, far past MAX_ARG_STRLEN
   # (131072) — so, exactly like the per-repo entry build further down, they
   # arrive on stdin, one document per line, bound positionally with `input as
@@ -456,13 +462,14 @@ while IFS=$'\t' read -r _ slug default_branch; do
   # `set -e`, and `expensive_gather_cache_save` below now refuses that empty
   # input outright rather than writing a 0-byte cache (agent-ops#1107).
   expensive_gather_cache_docs="$(printf '%s\n' "$findings_raw" "$review_feedback_raw" \
-    "$abandoned_drafts_raw" "$merge_conflicts_raw" "$dequeued_raw" "$register_hygiene_raw" \
-    "$issues_raw" "$issues_excluded_raw" "$tech_debt_raw")"
+    "$abandoned_drafts_raw" "$merge_conflicts_raw" "$dequeued_raw" "$landing_refusals_raw" \
+    "$register_hygiene_raw" "$issues_raw" "$issues_excluded_raw" "$tech_debt_raw")"
   expensive_gather_cache_save "$state_dir" "$slug" "$(jq -nc --arg at "$expensive_gather_as_of" \
-      'input as $f | input as $rf | input as $ad | input as $mc | input as $dq | input as $rh
-       | input as $is | input as $ie | input as $td
+      'input as $f | input as $rf | input as $ad | input as $mc | input as $dq | input as $lr
+       | input as $rh | input as $is | input as $ie | input as $td
        | {gathered_at: $at, findings_raw: $f, review_feedback_raw: $rf,
           abandoned_drafts_raw: $ad, merge_conflicts_raw: $mc, dequeued_raw: $dq,
+          landing_refusals_raw: $lr,
           register_hygiene_raw: $rh, issues_raw: $is, issues_excluded_raw: $ie,
           tech_debt_raw: $td}' <<<"$expensive_gather_cache_docs")" \
     || log_event "warning" "$(jq -nc --arg d "could not persist the expensive-gather cache for $slug — its next non-selected cycle will see empty bands, not this cycle's read" '{detail: $d}')"
@@ -485,6 +492,7 @@ while IFS=$'\t' read -r _ slug default_branch; do
   abandoned_drafts_raw="$(jq -c '.abandoned_drafts_raw // []' <<<"$expensive_gather_cache_json" 2>/dev/null || echo '[]')"
   merge_conflicts_raw="$(jq -c '.merge_conflicts_raw // []' <<<"$expensive_gather_cache_json" 2>/dev/null || echo '[]')"
   dequeued_raw="$(jq -c '.dequeued_raw // []' <<<"$expensive_gather_cache_json" 2>/dev/null || echo '[]')"
+  landing_refusals_raw="$(jq -c '.landing_refusals_raw // []' <<<"$expensive_gather_cache_json" 2>/dev/null || echo '[]')"
   register_hygiene_raw="$(jq -c '.register_hygiene_raw // []' <<<"$expensive_gather_cache_json" 2>/dev/null || echo '[]')"
   issues_raw="$(jq -c '.issues_raw // []' <<<"$expensive_gather_cache_json" 2>/dev/null || echo '[]')"
   issues_excluded_raw="$(jq -c '.issues_excluded_raw // null' <<<"$expensive_gather_cache_json" 2>/dev/null || echo 'null')"
@@ -506,6 +514,10 @@ while IFS=$'\t' read -r _ slug default_branch; do
   dequeued="[]"
   if jq -e 'any(.[]; . == "dequeued")' <<<"$sources" >/dev/null 2>&1; then
     dequeued="$(exclude_claimed_items "$(exclude_claimed_prs "$dequeued_raw" "$claimed_pr_numbers_json")" "$claimed_item_refs_json")"
+  fi
+  landing_refusals="[]"
+  if jq -e 'any(.[]; . == "landing-refusals")' <<<"$sources" >/dev/null 2>&1; then
+    landing_refusals="$(exclude_claimed_items "$(exclude_claimed_prs "$landing_refusals_raw" "$claimed_pr_numbers_json")" "$claimed_item_refs_json")"
   fi
   register_hygiene="[]"
   if jq -e 'any(.[]; . == "register-hygiene")' <<<"$sources" >/dev/null 2>&1; then
@@ -532,27 +544,27 @@ while IFS=$'\t' read -r _ slug default_branch; do
       '.[] | select(.slug == $s) | .implementation_plan_path // ""' <<<"$repos_json")"
   fi
   # findings/review_feedback/abandoned_drafts/merge_conflicts/dequeued/
-  # register_hygiene/issues/tech_debt are the pre-fetched bands themselves —
+  # landing_refusals/register_hygiene/issues/tech_debt are the pre-fetched bands themselves —
   # issue threads (requirement 3d/#118) and the open tech-debt register
   # (requirement 3t/#310) included — each unbounded past this call and each
   # tens of kilobytes alone; $sources is this repo's configured source list,
-  # bounded by config, and stays in argv (requirement 4g). The eight bands arrive on
+  # bounded by config, and stays in argv (requirement 4g). The nine bands arrive on
   # stdin, one document per line, bound positionally with `input as $name` in
   # the order printed (TD-PPagop-26081406) — never in argv, where past
   # MAX_ARG_STRLEN this build would silently drop the repo's whole entry.
   entry_docs="$(printf '%s\n' "$findings" "$review_feedback" "$abandoned_drafts" \
-    "$merge_conflicts" "$dequeued" "$register_hygiene" "$issues" "$tech_debt")"
+    "$merge_conflicts" "$dequeued" "$landing_refusals" "$register_hygiene" "$issues" "$tech_debt")"
   # `issues_excluded` rides in as its own --argjson, not on this stdin
-  # stream: unlike the eight bands above, it is bounded by the gatherer's own
+  # stream: unlike the nine bands above, it is bounded by the gatherer's own
   # 100-item page (scripts/gather-issues.sh) and each entry is a bare number
   # and a short reason, tens of bytes at most — nowhere near MAX_ARG_STRLEN.
   entry="$(jq -nc --arg slug "$slug" --arg db "$default_branch" --argjson sources "$sources" \
     --arg ipp "$implementation_plan_path" --argjson ie "$issues_excluded" \
-    'input as $findings | input as $rf | input as $ad | input as $mc | input as $dq | input as $rh
-     | input as $issues | input as $td
-     | {slug: $slug, default_branch: $db, sources: $sources, findings: $findings, review_feedback: $rf, abandoned_drafts: $ad, merge_conflicts: $mc, dequeued: $dq, register_hygiene: $rh, human_visibility: [], issues: $issues, issues_excluded: $ie, tech_debt: $td}
+    'input as $findings | input as $rf | input as $ad | input as $mc | input as $dq | input as $lr
+     | input as $rh | input as $issues | input as $td
+     | {slug: $slug, default_branch: $db, sources: $sources, findings: $findings, review_feedback: $rf, abandoned_drafts: $ad, merge_conflicts: $mc, dequeued: $dq, landing_refusals: $lr, register_hygiene: $rh, human_visibility: [], issues: $issues, issues_excluded: $ie, tech_debt: $td}
      + (if $ipp == "" then {} else {implementation_plan_path: $ipp} end)' <<<"$entry_docs")"
-  # Requirement 48 (agent-ops#1086): whether the eight bands above came from
+  # Requirement 48 (agent-ops#1086): whether the nine bands above came from
   # this cycle's own read of $slug or from this node's cache of an earlier
   # cycle's — lib/coordinator-input.sh documents what a reader (the
   # Co-Ordinator, a human, the no-op fingerprint) may conclude from each.

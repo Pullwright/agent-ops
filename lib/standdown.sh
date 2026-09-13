@@ -593,7 +593,7 @@ if ! (( DRY_RUN )); then
           '{detail: ("human-visibility sweep (" + $r + "): " + (del(.action) | tostring))}' \
           <<<"$sweep_action")" ;;
       esac
-    done < <(timeout 120 "$SCRIPT_DIR/scripts/sweep-human-visibility.sh" "$sweep_slug" "$cycle_id" "$node_name" \
+    done < <(timeout 120 "$SCRIPT_DIR/scripts/sweep-human-visibility.sh" "$sweep_slug" "$cycle_id" "$node_name" "$union_log" \
                2>>"$cycle_dir/human-visibility-sweep.err" || true)
   done < <(jq -r '.repos[].slug' "$CONFIG_FILE" 2>/dev/null || true)
   tail -n "+$(( log_lines_before + 1 ))" "$log_file" >> "$union_log" 2>/dev/null || true

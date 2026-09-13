@@ -905,7 +905,7 @@ and the schema must carry every one of them.
 <!-- config-table:start id=main — GENERATED from config.schema.json by scripts/render-config-table.sh; edit the schema, not these rows -->
 | Key | Value | Notes |
 |---|---|---|
-| `repos` | `["Poetic-Poems/poetic", "Poetic-Poems/poetic-fiddle"]` | Work-source lists per repo as in the table above (`security`, `issues:urgent`, `review-feedback`, `merge-conflicts`, `dequeued`, `human-visibility`, `abandoned-drafts`, `failed-runs`, `issues:high`, `tech-debt`, `issues:medium`, `implementation-plan`, `project-review`, `issues:low`, `code-quality`, `register-hygiene`); structure the config so a repo or source can be added without code changes. The `issues:<band>` tokens are the one source that appears more than once — the...[continued below](#extended-notes-repos) |
+| `repos` | `["Poetic-Poems/poetic", "Poetic-Poems/poetic-fiddle"]` | Work-source lists per repo as in the table above (`security`, `issues:urgent`, `review-feedback`, `merge-conflicts`, `dequeued`, `landing-refusals`, `human-visibility`, `abandoned-drafts`, `failed-runs`, `issues:high`, `tech-debt`, `issues:medium`, `implementation-plan`, `project-review`, `issues:low`, `code-quality`, `register-hygiene`); structure the config so a repo or source can be added without code changes. The `issues:<band>` tokens are the one source that appears more...[continued below](#extended-notes-repos) |
 | `state_dir` | `~/.local/state/poetic-agents` | Lock, shared log, per-cycle stage transcripts. Required — there is no product default; this installation's own value is below. |
 | `workspace_root` | `~/.cache/poetic-agents/workspaces` | Ephemeral clones live and die here, including the state repository's mirror. Required — there is no product default; this installation's own value is below. |
 | `state_repo` | `Poetic-Poems/agent-ops-state` | The private repository through which `state_dir` replicates between nodes (requirement 2.5). Its `main` carries the small shared surface: the claim registry (requirement 17a) and the fleet flags `fleet/disabled.json` and `fleet/limit.json` (requirements 2.3a and 2.1). Unset means a single-node operation: every mode of `scripts/state-sync.sh` becomes a no-op, and the fleet-flag reads and writes quietly do nothing. This installation's own value, `Poetic-Poems/agent-ops-state`...[continued below](#extended-notes-state_repo) |
@@ -1051,7 +1051,7 @@ same value; no other qualifier is accepted.
 
 ### Extended notes: `repos`
 
-Work-source lists per repo as in the table above (`security`, `issues:urgent`, `review-feedback`, `merge-conflicts`, `dequeued`, `human-visibility`, `abandoned-drafts`, `failed-runs`, `issues:high`, `tech-debt`, `issues:medium`, `implementation-plan`, `project-review`, `issues:low`, `code-quality`, `register-hygiene`); structure the config so a repo or source can be added without code changes.
+Work-source lists per repo as in the table above (`security`, `issues:urgent`, `review-feedback`, `merge-conflicts`, `dequeued`, `landing-refusals`, `human-visibility`, `abandoned-drafts`, `failed-runs`, `issues:high`, `tech-debt`, `issues:medium`, `implementation-plan`, `project-review`, `issues:low`, `code-quality`, `register-hygiene`); structure the config so a repo or source can be added without code changes.
 
 The `issues:<band>` tokens are the one source that appears more than once — the same `issues` source at four ranks (requirement 15e). A repo that lists none of them has the issues source off; one that lists a subset sees only issues in those bands.
 
@@ -1164,7 +1164,7 @@ It must not be `blocked` nor `obsolete`, for the reasons given against `enabler_
 
 ### Extended notes: `refinement_policy`
 
-Per-source refinement policy (requirement 39a): `required`, `preferred` or `exempt`, read by the Co-Ordinator alongside `refinements` (requirement 3h) to decide whether an unrefined item may be ranked at all. A source absent from this object is `exempt`. Shipped default: `issues` and `tech-debt` both `preferred` — of every source this key can name, these two are the ones whose items can otherwise reach an Implementer carrying a specification `coordinator_model` composed itself rather than one already written elsewhere, so the invariant of requirement 1c names them explicitly rather than leaving the object's absence do it implicitly. Bounded by what requirement 39's candidate gathering reads — the `findings`, `review_feedback`, `abandoned_drafts`, `merge_conflicts`, `dequeued`, `register_hygiene`, `issues` and `tech_debt` arrays every repo's `ordered_repos_json` entry carries, plus `project_review` and `implementation_plan`, read only into the Refiner-only copy of the repos array (`refiner_repos_json`, requirement 3y) and only where `refiner_model` is set — with no Refiner to launch, neither is read at all — and the repo's own `sources` lists the source and its policy for it is not itself `exempt`. `failed-runs` is the one source with no array at all, so a policy set for it shapes selection only. A `required` source with `refiner_model` empty is refused at startup — `config_required_refinement_sources_without_refiner` (requirement 1c) — since nothing would ever refine its items and they would wait forever.
+Per-source refinement policy (requirement 39a): `required`, `preferred` or `exempt`, read by the Co-Ordinator alongside `refinements` (requirement 3h) to decide whether an unrefined item may be ranked at all. A source absent from this object is `exempt`. Shipped default: `issues` and `tech-debt` both `preferred` — of every source this key can name, these two are the ones whose items can otherwise reach an Implementer carrying a specification `coordinator_model` composed itself rather than one already written elsewhere, so the invariant of requirement 1c names them explicitly rather than leaving the object's absence do it implicitly. Bounded by what requirement 39's candidate gathering reads — the `findings`, `review_feedback`, `abandoned_drafts`, `merge_conflicts`, `dequeued`, `landing_refusals`, `register_hygiene`, `issues` and `tech_debt` arrays every repo's `ordered_repos_json` entry carries, plus `project_review` and `implementation_plan`, read only into the Refiner-only copy of the repos array (`refiner_repos_json`, requirement 3y) and only where `refiner_model` is set — with no Refiner to launch, neither is read at all — and the repo's own `sources` lists the source and its policy for it is not itself `exempt`. `failed-runs` is the one source with no array at all, so a policy set for it shapes selection only. A `required` source with `refiner_model` empty is refused at startup — `config_required_refinement_sources_without_refiner` (requirement 1c) — since nothing would ever refine its items and they would wait forever.
 
 ### Extended notes: `label_prefix`
 
@@ -2682,7 +2682,8 @@ implements.
       raising, until the claiming cycle ends (issue #360), so counting it
       would double-count that PR for as long as that cycle's Reviewer stage
       runs. An item-keyed entry whose ref is `pr-<n>-<kind>-<scope>` — the
-      shape the four finishing sources (requirements 3c, 3e, 3g and 3z; see
+      shape the five sources that finish an existing pull request
+      (requirements 3c, 3e, 3g, 3z and 53; see
       requirement 3p) key their items on — is dropped only when that PR is
       among the drafts and
       changes-requested PRs actually counted, which is why the caller passes
@@ -5612,10 +5613,11 @@ implements.
 
    - every claim-registry entry younger than `claim_ttl_hours` for that repo
      (`lib/claim.sh claims`) — the only source for a *file* claim, since
-     `review-feedback`, `merge-conflicts`, `dequeued` and `abandoned-drafts` finish an
+     `review-feedback`, `merge-conflicts`, `dequeued`, `landing-refusals` and
+     `abandoned-drafts` finish an
      existing PR and mint no branch; `age_hours` is the entry's exact age, and
      `pr_number` rides along when the underlying registry entry recorded one —
-     which, for the four finishing sources, is always, once requirement 17a's
+     which, for all five of those sources, is always, once requirement 17a's
      PR-keyed claim exists alongside the item-keyed one; and
    - every live `<tech_debt_branch_prefix>*`/`<branch_prefix>*` branch (default
      `tech_debt_branch_prefix` is `td/`; empty disables that namespace and only
@@ -5650,8 +5652,10 @@ implements.
    ref, a register-hygiene or project-review ref — none of which contain a
    character `claim_branch_for`'s sanitiser would have touched, so there is
    nothing lossy to recover from.
-3p. **PR-level candidate exclusion (issue #238).** The four finishing sources'
-   ref-per-round/per-head-SHA item refs (requirements 3c, 3e, 3g, 3z) mean a
+3p. **PR-level candidate exclusion (issue #238).** The scoped item refs the
+   five sources that finish an existing pull request mint — per review round,
+   per head SHA, or (for `landing-refusals`) per set of unreconciled comment
+   ids (requirements 3c, 3e, 3g, 3z, 53) — mean a
    peer's claim on a PR under one round's or one head's ref is invisible to
    exclusion 16's ordinary repo+item lookup against `claimed` the moment a
    fresh review round or a fresh push mints a *different* ref for the *same*
@@ -5660,7 +5664,8 @@ implements.
    reasoned past it, because the item ref genuinely didn't match).
    Deterministic code closes this, not a comparison added to the
    Co-Ordinator's own judgement calls: for each repo, before its
-   `review_feedback`, `merge_conflicts`, `dequeued` and `abandoned_drafts`
+   `review_feedback`, `merge_conflicts`, `dequeued`, `landing_refusals` and
+   `abandoned_drafts`
    arrays are assembled into the runtime input, the Script drops any candidate
    whose `pr_number` appears among that repo's freshly gathered `claimed` set's
    `pr_number` values. A PR already excluded this way never reaches the
@@ -5672,9 +5677,10 @@ implements.
    the same create-only way every other claim does.
 3q. **Item-level candidate exclusion.** The same deterministic-code-not-
    model-judgement decision as 3p, extended from PR numbers to item refs and
-   from the four finishing sources to every array the Script pre-fetches:
+   from those five sources to every array the Script pre-fetches:
    for each repo, before its `issues`, `findings`, `tech_debt`,
-   `register_hygiene`, `review_feedback`, `merge_conflicts`, `dequeued` and
+   `register_hygiene`, `review_feedback`, `merge_conflicts`, `dequeued`,
+   `landing_refusals` and
    `abandoned_drafts` arrays are assembled into the runtime input, the Script
    drops any entry whose `ref` — the exact string a claim on that item is
    keyed on, minted by every gather script by construction — appears among
@@ -6345,7 +6351,8 @@ implements.
      file-backed source at once (implementation-plan, project-review, the
      code); the pre-fetched `findings` cover security and code-quality
      verbatim; the pre-fetched `review_feedback`, `merge_conflicts`,
-     `dequeued` and `abandoned_drafts` arrays cover those four finishing sources verbatim,
+     `dequeued`, `landing_refusals` and `abandoned_drafts` arrays cover those
+     five sources verbatim,
      `register_hygiene` covers register-hygiene the same way, and `tech_debt`
      (requirement 3t) covers the tech-debt band the same way again (belt and
      braces in both cases — `head_sha` already moves whenever the register
@@ -9297,11 +9304,13 @@ implements.
       an open PR whose branch or body already references the same alert
       (`ref`, alert URL, or the affected package/rule); for a `project-review`
       recommendation, an open PR whose branch or body references its ref
-      (`review-<date>-R-NN`); for the four finishing sources, whose own
-      ref-per-round/per-head-SHA item refs would otherwise dodge this bullet's
+      (`review-<date>-R-NN`); for the five sources that finish an existing
+      pull request, whose own scoped item refs would otherwise dodge this
+      bullet's
       repo+item lookup, requirement 3p has already dropped any candidate whose
       `pr_number` matches a peer's claim from `review_feedback`,
-      `merge_conflicts`, `dequeued` and `abandoned_drafts` before this runtime
+      `merge_conflicts`, `dequeued`, `landing_refusals` and
+      `abandoned_drafts` before this runtime
       input was assembled — there is nothing left in those arrays for this
       exclusion to apply to, deterministically, rather than a comparison added
       to this judgement call;
@@ -9776,9 +9785,10 @@ implements.
     ladder (requirement 4i) may already have trimmed, and are asked to
     reproduce kilobytes of that input verbatim — a task requirements 17f/17g
     could only ever catch failing after the fact. This requirement removes
-    the task instead of catching its failure: for the ten sources the Script
-    already gathers as structured data (`security`, `code-quality`,
-    `review-feedback`, `merge-conflicts`, `dequeued`, `abandoned-drafts`,
+    the task instead of catching its failure: for the eleven sources the
+    Script already gathers as structured data (`security`, `code-quality`,
+    `review-feedback`, `merge-conflicts`, `dequeued`, `landing-refusals`,
+    `abandoned-drafts`,
     `human-visibility`, `register-hygiene`, `tech-debt`, `issues`), the
     Co-Ordinator selects `{repo, source, item}` and the Script itself builds
     `context`, `acceptance` and `title` immediately before the claim
@@ -9882,16 +9892,28 @@ implements.
       claimed — only the *kind* of claim differs, decided by the work order's
       `takeover` field, which the Co-Ordinator sets and the Script reads
       before deriving `agent/<item-ref>` as usual.
-    - *File claims* (`review-feedback`, `dequeued` and `abandoned-drafts`,
+    - *File claims* (`review-feedback`, `dequeued`, `landing-refusals` and
+      `abandoned-drafts`,
       plus every `merge-conflicts` work order *except* a takeover, which
       finish an existing PR and have no new branch to create): a create-only
       contents-API PUT (no `sha`) of `claims/<repo>/<ref>.json` in the state
       repository. For `abandoned-drafts` the ref is scoped to the draft's head SHA
       (`pr-<n>-abandoned-<head-sha>`), for `merge-conflicts` likewise to the
-      PR's head SHA (`pr-<n>-conflict-<head-sha>`), and for `dequeued`
-      likewise again (`pr-<n>-dequeued-<head-sha>`), so two nodes racing to
+      PR's head SHA (`pr-<n>-conflict-<head-sha>`), for `dequeued`
+      likewise again (`pr-<n>-dequeued-<head-sha>`), and for
+      `landing-refusals` to the unreconciled comment ids instead
+      (`pr-<n>-landing-refusal-<ids>`, requirement 53 — that source's own
+      candidacy turns on which comments are unanswered, not on the head),
+      so two nodes racing to
       finish, rebase, or fix the same PR contend on the same file and one
-      wins. A takeover needs no separate file claim of its own: `agent/<item-ref>` is derived
+      wins. This list is exactly `PREFLIGHT_EXISTING_BRANCH_SOURCES`
+      (requirement 34m) plus the takeover carve-out above, and the two are
+      written down in two places (`agent-cycle.sh`'s claim dispatch and
+      `lib/preflight.sh`) that must agree: a source preflight believes has a
+      pre-existing branch, but the dispatch does not, gets a fresh branch
+      minted for it off the default branch and the candidate's own `branch`
+      overwritten with it, handing the Implementer a branch no pull request
+      tracks. A takeover needs no separate file claim of its own: `agent/<item-ref>` is derived
       from the same head-SHA-scoped ref, so two nodes racing to take over the
       *same* Dependabot PR compute the identical branch name and contend on
       that single `POST /git/refs` instead — one claim, not two.
@@ -9900,15 +9922,17 @@ implements.
       round's or head's ref — the mechanism that let PR #205 be worked by three
       nodes at once. So immediately after winning a finishing-source item claim
       taken via the file-claim path above — every `review-feedback`,
-      `dequeued` and `abandoned-drafts` work order, and every `merge-conflicts`
+      `dequeued`, `landing-refusals` and `abandoned-drafts` work order, and
+      every `merge-conflicts`
       work order except a takeover, which contends on its branch claim instead —
       the Script takes a second, separate file claim keyed `pr-<number>` (same
       repository, same create-only primitive) *before* handing the work order
       onward. The number is the candidate's own `pr_number` where it carries a
-      usable one, and otherwise the one its **item ref** embeds — all four
-      finishing sources mint refs shaped `pr-<n>-review-<id>`,
-      `pr-<n>-conflict-<sha>`, `pr-<n>-dequeued-<sha>` and `pr-<n>-abandoned-<sha>`
-      (requirements 3c, 3e, 3g, 3z), so the Script derives it deterministically
+      usable one, and otherwise the one its **item ref** embeds — all five
+      sources mint refs shaped `pr-<n>-review-<id>`,
+      `pr-<n>-conflict-<sha>`, `pr-<n>-dequeued-<sha>`,
+      `pr-<n>-landing-refusal-<ids>` and `pr-<n>-abandoned-<sha>`
+      (requirements 3c, 3e, 3g, 3z, 53), so the Script derives it deterministically
       rather than depending on the Co-Ordinator having copied a field: a gate
       that engages only when the model remembered would silently reopen the
       very failure this closes. Only a ref of none of those shapes yields no
@@ -12974,8 +12998,8 @@ implements.
     - **a pull request** (`pr-<n>-abandoned-…`, `-review-…`, `-superseded-…`)
       — closed the same way, iff still open.
 
-    **The `-conflict-` and `-dequeued-` shapes are excluded from the
-    pull-request case
+    **The `-conflict-`, `-dequeued-` and `-landing-refusal-` shapes are
+    excluded from the pull-request case
     above.** `pr-<n>-conflict-<head-sha>` names the pull request only to say
     the *conflict* on it resolved — the void is about the conflict, not about
     the pull request, which stays a live, ready PR of ours the moment the
@@ -12988,8 +13012,14 @@ implements.
     (TD-PPagop-26080901). `pr-<n>-dequeued-<head-sha>` (requirement 3z) makes
     the identical shape of claim about a dequeue rather than a conflict — the
     pull request stays live and ready, waiting on the human's own re-queue —
-    so it is excluded on the same reasoning (TD-PPagop-26081409). So a void of
-    either shape closes nothing: it is left
+    so it is excluded on the same reasoning (TD-PPagop-26081409).
+    `pr-<n>-landing-refusal-<ids>` (requirement 53, issue #979) makes the
+    identical shape of claim about a comment-reconciliation refusal instead —
+    the pull request stays live and ready, waiting on nothing but the answer
+    a landing-refusals Implementer round already gave it — scoped to the
+    unreconciled comment ids exactly as `-conflict-`/`-dequeued-` are scoped
+    to a head SHA, so it is excluded on the same reasoning. So a void of any
+    of the three shapes closes nothing: it is left
     exactly like a void shape that names no GitHub object at all, below. The
     exclusion is decided before the per-call action cap, exactly as the
     `stage` gate below is: these shapes are never actionable on any cycle, so
@@ -13162,8 +13192,8 @@ implements.
     `identical` or `behind` means every commit on the branch is already an
     ancestor of `default_branch`, so the draft's work landed some other way
     while it sat. Run only for `review-feedback`, `merge-conflicts`,
-    `dequeued` and
-    `abandoned-drafts` — the four sources whose branch and pull request
+    `dequeued`, `landing-refusals` and
+    `abandoned-drafts` — the five sources whose branch and pull request
     predate the claim (`lib/preflight.sh`'s
     `preflight_existing_branch_source`) — and never for an ordinary
     `issues`/`tech-debt` claim, whose branch the Script has just created at
@@ -15751,7 +15781,8 @@ implements.
     candidate iff **all** of:
     1. it appears in this cycle's pre-fetched source arrays — `findings`
        (`security`/`code-quality`), `review_feedback`, `abandoned_drafts`,
-       `merge_conflicts`, `register_hygiene`, `issues`, `tech_debt`
+       `merge_conflicts`, `dequeued`, `landing_refusals`, `register_hygiene`,
+       `issues`, `tech_debt`
        (requirement 3), the same arrays the Co-Ordinator reads, keyed the
        same way (`source`, `ref`), plus `project_review` and
        `implementation_plan`, keyed the same way again but carried only by
@@ -17737,6 +17768,131 @@ with the Reviewer's own.
     page-rendering section documents the `pager-firing` banner and node-card
     badge this requirement's `nodes` field feeds.
 
+53. **Landing-refusal pre-fetch (issue #979).** Requirement 8d gate 4
+    (`_landing_stage_attempt`, `lib/landing.sh`) refuses to arm a pull request
+    over an unreconciled human comment (`reconciliation-unanswered:`) or an
+    unreadable comment-reconciliation read (`reconciliation-unreadable:`) —
+    correctly, since it is the human veto D18 promises — but that refusal by
+    itself is a dead end: `scripts/gather-review-feedback.sh`'s own candidate
+    rule cannot see it (no formal `CHANGES_REQUESTED`, no draft flip), and
+    `scripts/gather-abandoned-drafts.sh` only ever sees drafts, while the
+    pull request stays Ready. Before this requirement, the only trace was one
+    `landing-refused` log line per cycle that nothing read back into work, and
+    `scripts/sweep-human-visibility.sh`'s own idle nudge (requirement 38c)
+    told the assignee the pull request "is waiting on a merge click" — true of
+    every other approved, green, mergeable pull request, false of this one.
+
+    `scripts/gather-landing-refusals.sh` (`gather_landing_refusals`,
+    `lib/candidate-select.sh`) is the route back: for a repo whose `sources`
+    lists `landing-refusals`, it lists that repo's own open, non-draft
+    `pr_label` pull requests and, for each, reads the *fleet-wide* union log's
+    most recent `landing-refused` event for that pull request
+    (`lib/landing.sh`'s `landing_latest_refusal_reason`, the same `LOG_FILE`
+    convention `landing_retry_tier` already established — a peer node's own
+    cycle may have logged the refusal this node must still see). A pull
+    request is a candidate iff that event's `reason` begins
+    `reconciliation-unanswered:` or `reconciliation-unreadable:` *and*
+    `lib/reconciliation-gate.sh`'s own `reconciliation_unreconciled_comments`
+    (unbounded, the identical call gate 4 itself makes), asked fresh right
+    now, still reports at least one unreconciled human comment — the
+    "answered clause" every finishing source needs (`scripts/gather-
+    dequeued.sh`'s own header), since the old log event never disappears once
+    the Implementer's `<!-- agent-ops:reconciles comment=<id> -->` reply
+    clears it. Reading the *logged refusal* rather than recomputing gate 4's
+    own reconciliation check independently is deliberate: gate 4 only ever
+    reaches that check once every gate before it — approval, no formal
+    `CHANGES_REQUESTED`, a green required-check list — has already passed, so
+    this source stays complementary to `review-feedback` rather than
+    duplicating it for a pull request review-feedback already covers for a
+    different reason.
+
+    `_reconciliation_gate_comments` (`lib/reconciliation-gate.sh`) carries a
+    `who` field (the comment author's login) alongside its existing
+    `id`/`at`/`body`/`bot` fields, and `_reconciliation_gate_unreconciled`
+    factors the "unreconciled" test `reconciliation_gate` itself reports as
+    `dirty` into its own function, returning `{id, at, author, body}` per
+    unreconciled comment (requirement 34a: one definition per rule) — the
+    structured shape `reconciliation_unreconciled_comments` (a new public
+    entry point, unbounded NOT_AFTER) exposes for a caller needing the
+    comment's own text rather than a permalink string. `reconciliation_gate`
+    itself is unchanged in every observable respect: it calls the same shared
+    helper internally and still reports `clean`/`dirty<TAB>reason`/
+    `unknown<TAB>reason` exactly as before.
+
+    The candidate ref is `pr-<n>-landing-refusal-<ids>`, where `<ids>` is the
+    sorted, hyphen-joined set of currently-unreconciled comment ids — not the
+    pull request alone — on the same "an item recorded blocked stays blocked
+    until something clears it" reasoning every sibling finishing source's own
+    scoped ref follows (`scripts/gather-dequeued.sh`'s header): answering one
+    comment, or a fresh comment arriving, changes the set and mints a
+    candidate no old block or void covers, while an unchanged set keeps the
+    same ref and stays correctly blocked or claimed. The candidate carries
+    `refused_at`/`reason` (the logged event), `comments` (the structured
+    array) and `body` (every unreconciled comment rendered verbatim, oldest
+    first, the way `gather-review-feedback.sh` assembles review text) — the
+    Implementer's brief is the comment prose itself, never a summary of it.
+
+    Wired into the ordinary pre-fetch machinery exactly as `review-feedback`/
+    `merge-conflicts`/`dequeued` are: gated on `sources` naming
+    `landing-refusals`, folded into the "expensive" per-cycle band (`lib/
+    expensive-gather-cache.sh`) alongside its eight siblings, `emit_first_seen`
+    and claim exclusion (`exclude_claimed_prs`/`exclude_claimed_items`)
+    applied identically, and carried on the Co-Ordinator's own runtime input
+    as each repo entry's `landing_refusals` array. The selection side is
+    wired to match, band for band, with the same six lists every other
+    pre-fetched source appears in: requirement 3c/3u's blocked-and-void
+    second pass (`lib/eligibility.sh`'s own band loop), requirement 3x's
+    eligible-set denominator (`coordinator_eligible_items`), requirement 17h's
+    compose (`CANDIDATE_ENTRY_LOOKUP_JQ`/`CANDIDATE_TEMPLATE_JQ`, whose
+    `acceptance` for this source is to answer every unreconciled comment and
+    cite each with its own `<!-- agent-ops:reconciles comment=<id> -->` line),
+    requirement 3v's deterministic fallback (`fallback_select_candidate`,
+    ranked immediately after `dequeued`), and requirement 39a's own Refiner
+    candidate walk (`refiner_candidate_items`, `lib/refinement.sh`), which
+    reaches this band like any other so a `refinement_policy` set for it can
+    actually be satisfied — and
+    `PREFLIGHT_EXISTING_BRANCH_SOURCES` (requirement 34m), which this source
+    joins as a fifth member because its branch and pull request predate the
+    claim — and, for the same reason and necessarily together with it,
+    requirement 17's own claim dispatch (`agent-cycle.sh`), where this source
+    takes the *file* claim keyed on its item ref and the PR-keyed `pr-<n>`
+    claim beside it, never a branch claim: a branch claim here would mint
+    `agent/pr-<n>-landing-refusal-<ids>` fresh off the default branch and
+    overwrite the candidate's own `branch` with it, so the Implementer would
+    push to a branch the refused pull request does not track and the
+    `<!-- agent-ops:reconciles comment=<id> -->` line that clears gate 4 would
+    never reach it. Two more inputs outside that six-list set also carry
+    `landing_refusals`, for reasons requirement 3b and 34k's own text already
+    give in general: `lib/noop-skip.sh`'s no-op fingerprint (requirement 3b)
+    hashes it verbatim, on the identical reasoning `dequeued` already
+    established there — gate 4's own refusal moves nothing else the
+    fingerprint samples, so leaving this source out of it would be the exact
+    silent stall that file's own header warns against, for the one source
+    whose entire purpose is giving a refusal a route back to work; and
+    `scripts/close-void-github-items.sh`'s pull-request-close exclusion
+    (requirement 34k) treats `pr-<n>-landing-refusal-<ids>` exactly as it
+    treats `-conflict-`/`-dequeued-`, since a landing-refusals void makes the
+    identical claim (the refusal is gone, not the pull request). Deliberately
+    **not**
+    folded into requirement 2.2a's four-source back-pressure/drain finishing
+    set, nor into the claim-pattern and void-corroboration parity the other
+    four finishing sources share (`lib/drain.sh`, `lib/claim.sh`, `lib/void-
+    guard.sh`) — extending those is a separate policy question (whether this
+    source alone should keep back-pressure from tripping, or a drain from
+    reaching rest) this issue's own refined scope did not ask for, tracked
+    instead as its own deferred item.
+
+    `scripts/sweep-human-visibility.sh`'s idle nudge (requirement 38c) takes
+    an optional fourth argument, the fleet-wide union log; when a pull
+    request's most recent `landing-refused` event reads
+    `reconciliation-unanswered:`/`reconciliation-unreadable:` and no fresher
+    live check clears it, the nudge names that reason instead of "waiting on
+    a merge click" — the same marker-based once-per-state suppression as
+    before, `<!-- agent-ops:human-nudge -->`, so the fix changes the wording a
+    human sees, not how often they see it. `lib/standdown.sh`'s own call site
+    passes `union_log` alongside the existing `cycle_id`/`node_name`
+    arguments.
+
 ## Components
 
 What exists, and the requirements each part answers to:
@@ -18005,6 +18161,60 @@ What exists, and the requirements each part answers to:
    oldest first. Fails safe to `[]` (exit 0), including on a reviews or
    comments read it cannot make. Must pass `shellcheck`; its candidate rule is
    regression-tested in `test/gather-dequeued.test.sh`.
+53. `scripts/gather-landing-refusals.sh` implementing requirement 53: given a
+   repo slug, PR label, branch prefix and the fleet-wide union log, prints the
+   JSON array of this system's own PRs (open, non-draft, ours) whose most
+   recent `landing-refused` event (read from the union log via
+   `lib/landing.sh`'s `landing_latest_refusal_reason`) has a `reason`
+   beginning `reconciliation-unanswered:` or `reconciliation-unreadable:`, and
+   which `lib/reconciliation-gate.sh`'s `reconciliation_unreconciled_comments`
+   (asked fresh, unbounded) still reports at least one unreconciled comment
+   for — each carrying the PR's `head_sha`, the refusal's own
+   `refused_at`/`reason`, every unreconciled comment as
+   `{id, at, author, body}`, an assembled `body` of the same verbatim and
+   oldest-first, and a ref scoped to the sorted, hyphen-joined set of
+   unreconciled comment ids, ordered by `refused_at` oldest first. Fails safe
+   to `[]` (exit 0), including on a timeline or comments read it cannot make.
+   Must pass `shellcheck`; its candidate rule is regression-tested in
+   `test/gather-landing-refusals.test.sh`.
+
+   `lib/reconciliation-gate.sh` gains `_reconciliation_gate_unreconciled`
+   (the "unreconciled" test `reconciliation_gate` itself uses, factored out
+   for reuse — requirement 34a), the public `reconciliation_unreconciled_
+   comments`, and a `who` field on `_reconciliation_gate_comments`'s own
+   output; `reconciliation_gate` itself is behaviour-unchanged and remains
+   regression-tested in `test/reconciliation-gate.test.sh`.
+   `lib/landing.sh` gains `landing_latest_refusal_reason PR_URL [LOG_FILE]`,
+   the same `LOG_FILE`/stdin convention `landing_retry_tier` already
+   established, printing `TS<TAB>REASON` for the most recent `landing-refused`
+   event logged against PR_URL, or nothing.
+
+   `gather_landing_refusals` (`lib/candidate-select.sh`) and its wiring into
+   `lib/candidate-gather.sh`'s per-repo gather loop are otherwise identical to
+   `review-feedback`/`merge-conflicts`/`dequeued`: gated on `sources` naming
+   `landing-refusals`, read as a tenth expensive-gather band (`lib/expensive-
+   gather-cache.sh`) alongside its nine siblings, and claim-excluded
+   (`exclude_claimed_prs`/`exclude_claimed_items`) and first-seen-emitted
+   the same way. Deliberately **not** folded into requirement 2.2a's
+   four-source back-pressure/drain finishing set (`lib/drain.sh`'s own ref
+   pattern and band count), nor into the claim-pattern/void-guard parity
+   the other four finishing sources share (`lib/claim.sh`, `lib/void-
+   guard.sh`) — a candidate here is selectable exactly like `human-
+   visibility`: within the ordinary repo-then-source walk, at its configured
+   rank, never given a cross-repo priority bump nor counted toward back-
+   pressure exemption. Extending that parity is a separate policy decision
+   this item's own refined scope did not ask for.
+
+   `scripts/sweep-human-visibility.sh`'s idle nudge (requirement 38c) takes
+   an optional fourth argument, the fleet-wide union log; when a pull
+   request's most recent `landing-refused` event reads
+   `reconciliation-unanswered:`/`reconciliation-unreadable:`, and a fresh
+   `reconciliation_unreconciled_comments` call still confirms it, the nudge
+   text names that reason instead of "waiting on a merge click" — reusing the
+   existing `<!-- agent-ops:human-nudge -->` marker's once-per-state
+   suppression unchanged. `lib/standdown.sh`'s own call site passes
+   `union_log` as this fourth argument. Regression-tested in
+   `test/sweep-human-visibility.test.sh`.
 3i. `scripts/gather-register-hygiene.sh` implementing requirement 3i: given a
    repo slug, default branch and (requirement 34l) an optional JSON array of
    this repo's void register-shaped candidates, prints a JSON array holding
@@ -18398,8 +18608,9 @@ What exists, and the requirements each part answers to:
    that can become false again. `preflight_branch_merged_reason`
    is the other done-signal, kept separate because it is impure (one live
    `gh api compare` call against the target repository) and `preflight_existing_branch_source`
-   is the gate that scopes it to the four sources whose branch predates the
-   claim (review-feedback, merge-conflicts, dequeued, abandoned-drafts) — see
+   is the gate that scopes it to the five sources whose branch predates the
+   claim (review-feedback, merge-conflicts, dequeued, landing-refusals,
+   abandoned-drafts) — see
    requirement 34m for why an ordinary claim's freshly created branch cannot
    use this check. `preflight_review_feedback_reason` is the third done-signal
    (requirement 34m, issue #1360), scoped to `review-feedback` items alone:
@@ -22170,6 +22381,43 @@ oblige anyone to edit a test.
    the `dequeued_at` ordering, and the head-SHA-scoped ref — is
    regression-tested (through the real script, via `DEQUEUED_GH`/
    `MERGE_QUEUE_GH`) in `test/gather-dequeued.test.sh`.
+53. `scripts/gather-landing-refusals.sh o/r autonomous-agent agent/
+   /path/to/empty-union-log` prints `[]` and exits 0 — a missing repo, an
+   empty or unreadable union log, or an API error never aborts the cycle
+   (requirement 53, issue #979). Its candidate rule — the class filter on the
+   most recent logged `landing-refused` event (`reconciliation-unanswered:`/
+   `reconciliation-unreadable:` only, read from the union log, never
+   recomputed independently), the live answered clause
+   (`reconciliation_unreconciled_comments` reporting at least one
+   unreconciled comment right now; a read that fails outright drops the
+   candidate rather than admitting it), the `refused_at` ordering, and the
+   ref scoped to the sorted, joined set of unreconciled comment ids — is
+   regression-tested (through the real script, via `LANDING_REFUSALS_GH`) in
+   `test/gather-landing-refusals.test.sh`. `lib/reconciliation-gate.sh`'s
+   `_reconciliation_gate_unreconciled`/`reconciliation_unreconciled_comments`
+   and `lib/landing.sh`'s `landing_latest_refusal_reason` are exercised
+   through the same test and, for `reconciliation_gate`'s own unchanged
+   behaviour, `test/reconciliation-gate.test.sh`.
+   `scripts/sweep-human-visibility.sh`'s landing-refusal nudge-text
+   substitution — fires only for the two comment-reconciliation refusal
+   classes, re-confirmed live before trusting a possibly-stale logged
+   refusal, and falls back to the ordinary "waiting on a merge click" text
+   the moment the citation lands — is regression-tested in
+   `test/sweep-human-visibility.test.sh`. `lib/noop-skip.sh`'s no-op
+   fingerprint hashes `landing_refusals` verbatim, so a fresh refusal (or one
+   answered) busts the fingerprint on the same terms as `dequeued` —
+   regression-tested in `test/noop-skip.test.sh`.
+   `scripts/close-void-github-items.sh` never closes a `pr-<n>-landing-
+   refusal-<ids>`-shaped void's pull request, on the same reasoning as its
+   `-conflict-`/`-dequeued-` exclusion (requirement 34k) — regression-tested
+   in `test/close-void-github-items.test.sh`.
+   Requirement 17's claim dispatch gives this source the file claim (and the
+   PR-keyed `pr-<n>` claim beside it), never a branch claim — the condition is
+   lifted verbatim out of `agent-cycle.sh` and evaluated per source in
+   `test/claim-dispatch-existing-branch.test.sh`, which also asserts the
+   dispatch and `PREFLIGHT_EXISTING_BRANCH_SOURCES` (requirement 34m) name the
+   same set, since the two disagreeing is what mints a fresh branch for a
+   source whose pull request already exists.
 2h. **Dependabot's own conflicted PRs are nudged, then — only after a full
    cycle at the same head — offered as a takeover (requirement 3s).**
    `lib/dependabot-bump.sh`'s family/version parsing and its
@@ -23651,7 +23899,8 @@ oblige anyone to edit a test.
    reads `identical`/`behind` from a stubbed `gh api compare` as already
    merged, `diverged`/`ahead` as still live, and an unreadable or failed
    comparison as deciding nothing; `preflight_existing_branch_source` is true
-   for exactly `review-feedback`, `merge-conflicts` and `abandoned-drafts`,
+   for exactly `review-feedback`, `merge-conflicts`, `dequeued`,
+   `landing-refusals` and `abandoned-drafts`,
    false for every other source (including one that merely contains one of
    those names as a substring). `preflight_review_feedback_reason` (issue
    #1360), against a stubbed `gh api pulls/<n>/reviews`, reads the item's own

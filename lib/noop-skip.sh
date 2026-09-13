@@ -42,6 +42,7 @@
 #   review-feedback                                      | review_feedback (verbatim)
 #   merge-conflicts                                      | merge_conflicts (verbatim)
 #   dequeued                                             | dequeued (verbatim)
+#   landing-refusals                                     | landing_refusals (verbatim)
 #   abandoned-drafts                                     | abandoned_drafts (verbatim)
 #   register-hygiene                                     | register_hygiene (verbatim)
 #   human-visibility                                     | human_visibility (verbatim)
@@ -111,6 +112,20 @@
 # re-keyed the entry to the new head SHA — busting this fingerprint on every
 # round while nothing had actually changed, which is precisely the wake-up this
 # file exists to avoid paying for twice.
+#
+# `landing_refusals` (requirement 53, issue #979) is hashed verbatim for the
+# same class of reason as `dequeued`: gate 4's own refusal
+# (`_landing_stage_attempt`, `lib/landing.sh`) moves nothing the `open_prs`
+# digest samples — no commit lands, `updated_at` does not move, and the
+# refusal itself lives only in the fleet-wide union log, a fact no digest
+# above reads at all. gather-landing-refusals.sh's own live re-check
+# (`reconciliation_unreconciled_comments`) is what makes the array's presence
+# or absence track the true state — a fresh refusal *adds* an entry (scoped to
+# the unreconciled comment ids, so a new comment or a reply that clears one
+# also changes the entry) and busts the fingerprint the cycle it appears;
+# leaving this source out of the fingerprint would be the exact silent stall
+# this file's own header warns about, for the one source whose entire purpose
+# is giving a refusal a route back to work.
 #
 # `claimed` (requirement 3o) is hashed too, projected to `repo|item` like
 # `blocked`/`void`, for the same class of gap `abandoned_drafts` and
@@ -260,6 +275,7 @@ NOOP_CANON_JQ='
         review_feedback: (.review_feedback // []),
         merge_conflicts: (.merge_conflicts // []),
         dequeued: (.dequeued // []),
+        landing_refusals: (.landing_refusals // []),
         abandoned_drafts: (.abandoned_drafts // []),
         register_hygiene: (.register_hygiene // []),
         human_visibility: (.human_visibility // []),

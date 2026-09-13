@@ -180,10 +180,13 @@ _reconciliation_gate_anchor() {
 }
 
 # _reconciliation_gate_comments SLUG NUMBER ANCHOR
-# Print a compact JSON array of `{id, at, body, bot}` for every general PR
-# comment (`/issues/<number>/comments`, where `gh pr comment` files them)
+# Print a compact JSON array of `{id, at, body, who, bot}` for every general
+# PR comment (`/issues/<number>/comments`, where `gh pr comment` files them)
 # whose `created_at` is strictly after ANCHOR. `id` is the issue-comment id
-# the `<!-- agent-ops:reconciles comment=<id> -->` convention refers to.
+# the `<!-- agent-ops:reconciles comment=<id> -->` convention refers to; `who`
+# is its author's login, carried so a caller that needs to attribute an
+# unreconciled comment (`_reconciliation_gate_unreconciled`) does not have to
+# re-fetch the same endpoint for a field this read already has in hand.
 # Returns non-zero, printing nothing, when the API could not be asked at all.
 #
 # Every comment is streamed one object per line first — `gh api --jq` has no
@@ -195,12 +198,33 @@ _reconciliation_gate_anchor() {
 _reconciliation_gate_comments() {
   local slug="$1" number="$2" anchor="$3" gh_bin="${RECONCILIATION_GATE_GH:-gh}" lines
   lines="$("$gh_bin" api "repos/$slug/issues/$number/comments" --paginate \
-             --jq '.[] | {id, at: .created_at, body: (.body // ""),
+             --jq '.[] | {id, at: .created_at, body: (.body // ""), who: .user.login,
                           bot: (((.user.type // "User") == "Bot")
                                 or (.user.login | endswith("[bot]"))
                                 or (.performed_via_github_app != null))}' \
              2>/dev/null)" || return 1
   jq -s -c --arg anchor "$anchor" '[.[] | select(.at > $anchor)]' <<<"$lines" 2>/dev/null || return 1
+}
+
+# _reconciliation_gate_unreconciled COMMENTS_JSON
+# Given the JSON array `_reconciliation_gate_comments` produces (each object
+# carrying id, at, body, who, bot), print a compact JSON array of
+# `{id, at, author, body}` for every human comment in it that carries no
+# `<!-- agent-ops:reconciles comment=<id> -->` citation in some pipeline
+# comment in the same array — the one "unreconciled" test `reconciliation_gate`
+# reports as `dirty`, factored out here so a caller needing the comment's own
+# text (scripts/gather-landing-refusals.sh) reuses this definition rather than
+# reimplementing it (requirement 34a: one definition per rule). Prints `[]` on
+# a COMMENTS_JSON this cannot parse, never a non-JSON value.
+_reconciliation_gate_unreconciled() {
+  local comments="$1" marker="${PIPELINE_COMMENT_MARKER_PREFIX:-<!-- agent-ops:pipeline-comment}"
+  local rprefix="${PIPELINE_RECONCILES_MARKER_PREFIX:-<!-- agent-ops:reconciles}"
+  jq -c --arg marker "$marker" --arg rx "${rprefix#<!-- } comment=([0-9]+)" '
+    ( [.[] | select(.body | contains($marker)) | .body | [scan($rx)] | map(.[0])] | flatten ) as $reconciled
+    | [.[] | select(.bot | not) | select((.body | contains($marker)) | not)
+           | select((.id | tostring) as $i | ($reconciled | index($i)) == null)
+           | {id, at, author: (.who // ""), body}]
+  ' <<<"$comments" 2>/dev/null || printf '[]'
 }
 
 # reconciliation_gate PR_URL [NOT_AFTER]
@@ -223,8 +247,8 @@ _reconciliation_gate_comments() {
 #             ask is not a failure" contract `lib/closing-keyword-gate.sh`
 #             already keeps).
 reconciliation_gate() {
-  local url="${1:-}" not_after="${2:-}" parts slug number anchor comments marker rprefix
-  local human reconciled unreconciled named
+  local url="${1:-}" not_after="${2:-}" parts slug number anchor comments rprefix
+  local unreconciled_json unreconciled named
 
   if [[ -z "$url" ]] || ! parts="$(_reconciliation_gate_pr_parts "$url")"; then
     printf 'dirty\tno pull request URL to check'
@@ -247,28 +271,13 @@ reconciliation_gate() {
     return 0
   fi
 
-  marker="${PIPELINE_COMMENT_MARKER_PREFIX:-<!-- agent-ops:pipeline-comment}"
   rprefix="${PIPELINE_RECONCILES_MARKER_PREFIX:-<!-- agent-ops:reconciles}"
-
-  human="$(jq -r --arg marker "$marker" \
-    '.[] | select(.bot | not) | select((.body | contains($marker)) | not) | (.id | tostring)' \
-    <<<"$comments" 2>/dev/null)"
-  if [[ -z "$human" ]]; then
+  unreconciled_json="$(_reconciliation_gate_unreconciled "$comments")"
+  if [[ "$(jq 'length' <<<"$unreconciled_json" 2>/dev/null || echo 0)" == "0" ]]; then
     printf 'clean'
     return 0
   fi
-
-  reconciled="$(jq -r --arg marker "$marker" --arg rx "${rprefix#<!-- } comment=([0-9]+)" \
-    '[.[] | select(.body | contains($marker)) | .body
-          | [scan($rx)] | map(.[0])]
-     | flatten | .[]' \
-    <<<"$comments" 2>/dev/null)"
-
-  unreconciled="$(comm -23 <(sort -u <<<"$human") <(sort -u <<<"$reconciled"))"
-  if [[ -z "$unreconciled" ]]; then
-    printf 'clean'
-    return 0
-  fi
+  unreconciled="$(jq -r '.[].id' <<<"$unreconciled_json" 2>/dev/null)"
 
   # Named as permalinks, not as bare ids or a count. This string is the whole
   # of what reaches the requirement 32a handback and, through it, the next
@@ -284,4 +293,41 @@ reconciliation_gate() {
   printf 'dirty\thuman comment(s) posted on %s since it last left draft (%s) carry no %s comment=<id> --> line answering them: %s' \
     "$url" "$anchor" "$rprefix" "$(paste -sd', ' <<<"$named")"
   return 1
+}
+
+# reconciliation_unreconciled_comments PR_URL [NOT_AFTER]
+# Print a compact JSON array of `{id, at, author, body}` for every
+# unreconciled human comment on PR_URL since it last left draft — the exact
+# set `reconciliation_gate` reports as `dirty`, exposed here in structured
+# form (requirement 34a: one definition per rule) for a caller
+# (scripts/gather-landing-refusals.sh) that needs to hand the comment's own
+# text to the Implementer rather than merely a permalink string. NOT_AFTER is
+# the same round-start bound `reconciliation_gate` takes; omit it for the
+# unbounded read gate 4's own arming-time call makes (lib/landing.sh).
+#
+# Prints `[]` and returns 1 when the question could not be put at all — the
+# URL is unparseable, or the timeline/creation-time/comment-list reads fail —
+# which a caller must not read as "nothing to reconcile"; it is the structured
+# analogue of `reconciliation_gate`'s own `unknown`.
+reconciliation_unreconciled_comments() {
+  local url="${1:-}" not_after="${2:-}" parts slug number anchor comments
+
+  if [[ -z "$url" ]] || ! parts="$(_reconciliation_gate_pr_parts "$url")"; then
+    printf '[]'
+    return 1
+  fi
+  IFS=$'\t' read -r slug number <<<"$parts"
+
+  if ! anchor="$(_reconciliation_gate_anchor "$slug" "$number" "$not_after")" || [[ -z "$anchor" ]]; then
+    printf '[]'
+    return 1
+  fi
+
+  if ! comments="$(_reconciliation_gate_comments "$slug" "$number" "$anchor")" \
+     || ! jq -e 'type == "array"' <<<"$comments" >/dev/null 2>&1; then
+    printf '[]'
+    return 1
+  fi
+
+  _reconciliation_gate_unreconciled "$comments"
 }

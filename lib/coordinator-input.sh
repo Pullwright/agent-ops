@@ -33,7 +33,8 @@
 # back-pressure block already singles out exactly those two, for exactly the
 # same reason, when it empties them on a restricted cycle. Every other band is
 # left alone, and deliberately: `review-feedback`, `merge-conflicts`,
-# `dequeued`, `abandoned-drafts`, `register-hygiene` and `human-visibility` all
+# `dequeued`, `landing-refusals`, `abandoned-drafts`, `register-hygiene` and
+# `human-visibility` all
 # carry bodies `prompts/coordinator.md` requires pasted *verbatim* into the
 # work order, they are bounded by the number of open pull requests rather than
 # by history, and together they were 34 KB of the 354 KB that overflowed.

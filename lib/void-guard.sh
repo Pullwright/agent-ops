@@ -22,7 +22,11 @@
 #
 # The PR-diff check below only fires when the voided repo+item matches a
 # gathered candidate carrying a `pr_number` — the finishing sources
-# (review-feedback, merge-conflicts, dequeued, abandoned-drafts). For everything else —
+# (review-feedback, merge-conflicts, dequeued, abandoned-drafts).
+# `landing-refusals` (requirement 53) is deliberately not a fifth here: a
+# landing-refusals void report needs an ordinary PR/commit/file citation, not
+# this auto-corroboration — see issue #1481, which tracks whether it should
+# share it. For everything else —
 # most tech-debt items, every review recommendation, a failed-runs entry —
 # nothing tested the citation itself, only that the `evidence` field was
 # non-empty, and a model willing to assert a false reason is just as willing
