@@ -10795,7 +10795,17 @@ implements.
     `owner/repo#N` spelling only where `owner/repo` is this repository's own,
     since a keyword naming another repository's issue closes nothing here and
     must not demand a flip of a record this pull request never owed (issue
-    #1460). Where such an issue is `pw::type:tech-debt`-labelled and its
+    #1460). This harvest runs against a copy of the body with every fenced
+    code block, inline code span, and line beginning with `>` (a blockquote)
+    stripped first — GitHub's own parser creates no closing reference inside
+    any of the three, so a keyword quoting the convention or someone else's
+    PR body would otherwise demand a record flip GitHub itself never asked
+    for (issue #1463; PR #1396's body is the concrete case: a `Closes #1083`
+    written inside an inline code span, discussing why that issue is
+    deliberately left open). The marker/branch anchors above are unaffected —
+    they check the raw body, never this stripped copy, so a stripping defect
+    can only ever affect this half. Where such an issue is
+    `pw::type:tech-debt`-labelled and its
     body's last non-blank line names a permanent register file (a "Filed as
     `tech-debt/<id>.md`, <date>." line — `scripts/migrate-tech-debt-
     register.sh` or an earlier direct filing), `check-closing-keyword.sh`
@@ -20117,7 +20127,16 @@ What exists, and the requirements each part answers to:
     runs where no slug was passed at all (the bullet above; issue #1468
     tracks what that leaves open). The number is read from the end of each
     match rather than its first digit run, a repository name being free to
-    carry digits of its own. Where the issue is `pw::type:tech-debt`-labelled
+    carry digits of its own. This harvest reads from a copy of the body with
+    every fenced code block, inline code span, and line beginning with `>`
+    stripped out first — GitHub's own parser creates no closing reference
+    inside any of the three, so a keyword written there (documenting the
+    convention, or quoting someone else's PR body — PR #1396's `` `Closes
+    #1083` `` discussing why that issue is deliberately left open, the
+    concrete case) closes nothing and must not demand a record flip GitHub
+    itself never asked for (issue #1463). The marker/keyword half above reads
+    the raw body throughout, never this stripped copy, so a defect in the
+    stripping can only affect this half. Where the issue is `pw::type:tech-debt`-labelled
     and its body's last non-blank line reads "Filed as `tech-debt/<id>.md`,
     <date>." (left by `scripts/migrate-tech-debt-register.sh` or an
     earlier direct filing), it reads this pull request's own changed-files
@@ -23849,9 +23868,15 @@ oblige anyone to edit a test.
    holding an unflipped record throughout so that harvesting and not
    harvesting are told apart by the verdict (issue #1460); a repo slug
    carrying digits of its own (`acme/widgets2`) contributes none of them as an
-   issue number; and neither a failed `gh issue view` nor a failed
+   issue number; neither a failed `gh issue view` nor a failed
    changed-files read (an unreadable issue, a token without access, a
-   transient outage) ever fails the check itself.
+   transient outage) ever fails the check itself; and, against the same
+   unflipped-record fixture, a keyword written inside a fenced code block, an
+   inline code span (the PR #1396 shape), or a line beginning with `>` demands
+   no record flip at all, while an ordinary unquoted keyword outside all
+   three still does (issue #1463) — proving the stripping neither
+   under-reaches (a real close still caught) nor over-reaches (the #1438
+   regression case does not return).
    `test/sweep-closed-issues.test.sh` passes against a stubbed
    `gh`: a merged, marker-carrying pull request whose issue is still open is
    closed with the merge cited as evidence; a merged, markerless pull

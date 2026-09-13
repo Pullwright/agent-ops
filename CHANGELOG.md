@@ -8,6 +8,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **The tech-debt record-flip check's keyword harvest is now markdown-aware**
+  (issue #1463). `scripts/check-closing-keyword.sh`'s record-flip half
+  harvested a closing keyword via a raw `grep` over the pull request body, so
+  a keyword written inside a fenced code block, an inline code span, or a
+  blockquote line — quoting the convention, or someone else's PR body, rather
+  than using it — was harvested exactly as a real closing keyword, demanding
+  a record flip GitHub itself never asked for. PR #1396's body is the
+  concrete case: `` `Closes #1083` `` written inside an inline code span,
+  discussing why that issue is deliberately left open — had #1083 been a
+  migrated tech-debt issue, that PR would have failed the required
+  `closing-keyword` check over a reference GitHub itself ignored. The harvest
+  now runs against a copy of the body with fenced code blocks, inline code
+  spans, and blockquote lines stripped first; the marker/keyword half stays
+  on the raw body, unaffected.
 - **The prompts that tell a stage to read a target repository's own
   instructions now name `AGENTS.md` first** (issue #1470). Eight locations
   across `prompts/implementer.md`, `prompts/reviewer.md`,
