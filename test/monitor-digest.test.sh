@@ -268,14 +268,26 @@ assert_lacks "and the section stops at the next heading" "not part of the gotcha
 assert_eq "no readable file at all yields an empty array" "[]" \
   "$(monitor_digest_gotchas "$tmp_dir/absent.md")"
 
+# --- Promoted findings (issue #1285, M13a/M13b) -----------------------------
+promoted="$(monitor_digest_promoted '[{"key":"coordinator-budget-negative","issue":"https://github.com/o/r/issues/42"},{"ignored":"no key, dropped"}]')"
+assert_eq "a promoted row is kept" "1" "$(jq 'length' <<<"$promoted")"
+assert_eq "and its issue is carried" "https://github.com/o/r/issues/42" \
+  "$(jq -r '.[0].issue' <<<"$promoted")"
+assert_eq "a row with no key contributes nothing" "0" \
+  "$(jq '[.[] | select(.key == "")] | length' <<<"$promoted")"
+assert_eq "a malformed argument degrades to none rather than failing" \
+  "[]" "$(monitor_digest_promoted 'not json')"
+assert_eq "the default is empty" "[]" "$(monitor_digest_promoted)"
+
 # --- The whole digest, and M7's ladder --------------------------------------
 digest="$(monitor_digest_build \
   "$(jq -nc --arg f "$SINCE" --arg t "$NOW_ISO" '{from: $f, to: $t, hours: 24, node: "n1"}')" \
   "$events" "$pager" "$nodes" "$work" "$forge" \
   "$(monitor_digest_gotchas "$SCRIPT_DIR/docs/IMPLEMENTATION-PIPELINE-SPEC.md" \
-       "$SCRIPT_DIR/docs/MONITOR-PIPELINE-SPEC.md")")"
+       "$SCRIPT_DIR/docs/MONITOR-PIPELINE-SPEC.md")" \
+  "$promoted")"
 
-for section in window events pager nodes work forge gotchas; do
+for section in window events pager nodes work forge gotchas promoted; do
   assert_eq "the digest carries its $section section" "1" \
     "$(jq --arg s "$section" 'has($s) | if . then 1 else 0 end' <<<"$digest")"
 done
@@ -296,6 +308,9 @@ assert_contains "every open page is flagged as owed a triage verdict" \
   "owed a triage verdict" "$rendered"
 assert_contains "the node table names a failing stage" "implementer" "$rendered"
 assert_contains "the gotcha sections are present at rung 0" "## Known signatures" "$rendered"
+assert_contains "a promoted key is named, so the model does not restate it" \
+  "coordinator-budget-negative" "$rendered"
+assert_contains "with its tracking issue" "https://github.com/o/r/issues/42" "$rendered"
 
 # Deterministic: the same inputs render byte-identically, which is what the
 # dedup of M13 rests on.

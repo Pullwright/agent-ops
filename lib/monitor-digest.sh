@@ -146,6 +146,28 @@ monitor_digest_pager() {
   printf '%s\n' "$out"
 }
 
+# monitor_digest_promoted PROMOTED_JSON
+# Repeat findings the Script has already turned into a pager-invariant
+# proposal (issue #1285, M13a) but whose invariant has not yet landed (M13b)
+# — narrowed to the fields the report cites: the key, so the stage can
+# recognise a fault it has already promoted, and the tracking issue, so a
+# reader can follow it. PROMOTED_JSON is whatever the caller (monitor-cycle.sh)
+# determined is promoted-but-not-retired: "has the invariant landed" needs a
+# live read of the union log's pager-fired/pager-cleared events and this
+# checkout's own pager-invariant registry, neither of which a pure jq reader
+# may touch (M6a) — so a retired key is simply never in this array, and this
+# function only shapes what it is handed. A key whose invariant has landed
+# needs no entry here at all: it has nothing left to tell the model to avoid
+# restating.
+monitor_digest_promoted() {
+  local promoted="${1:-[]}" out
+  jq -e 'type == "array"' <<<"$promoted" >/dev/null 2>&1 || promoted='[]'
+  out="$(jq -c 'map({key: (.key // ""), issue: (.issue // "")}) | map(select(.key != ""))' \
+    <<<"$promoted" 2>/dev/null)" || out=''
+  [[ -n "$out" ]] || out='[]'
+  printf '%s\n' "$out"
+}
+
 # monitor_digest_nodes SELF_NODE STATE_DIR PEERS_DIR
 # Every node's published verdicts, as [{node, self, ts, role, stage_health,
 # updater, compose, image, mirror, doctor, host}] sorted with self first.
@@ -301,20 +323,22 @@ monitor_digest_gotchas() {
 }
 
 # monitor_digest_build WINDOW_JSON EVENTS_JSON PAGER_JSON NODES_JSON \
-#                      WORK_JSON FORGE_JSON GOTCHAS_JSON
+#                      WORK_JSON FORGE_JSON GOTCHAS_JSON [PROMOTED_JSON]
 # The whole digest as one object. A plain assembly, kept as its own function
 # so the key names exist in exactly one place: `monitor_digest_render` below
 # and `prompts/monitor.md` both name these sections, and a rename that
 # reached only one of them would leave the stage reading a heading that is
-# not there.
+# not there. PROMOTED_JSON defaults to `[]` — a caller that has not yet
+# adopted M13a's promotion still gets a digest, just with nothing to say in
+# that section.
 monitor_digest_build() {
   local window="${1:-{\}}" events="${2:-[]}" pager="${3:-{\}}" nodes="${4:-[]}" \
-        work="${5:-{\}}" forge="${6:-{\}}" gotchas="${7:-[]}" out
+        work="${5:-{\}}" forge="${6:-{\}}" gotchas="${7:-[]}" promoted="${8:-[]}" out
   out="$(jq -nc --argjson window "$window" --argjson events "$events" \
     --argjson pager "$pager" --argjson nodes "$nodes" --argjson work "$work" \
-    --argjson forge "$forge" --argjson gotchas "$gotchas" \
+    --argjson forge "$forge" --argjson gotchas "$gotchas" --argjson promoted "$promoted" \
     '{window: $window, events: $events, pager: $pager, nodes: $nodes,
-      work: $work, forge: $forge, gotchas: $gotchas}' 2>/dev/null)" || out=''
+      work: $work, forge: $forge, gotchas: $gotchas, promoted: $promoted}' 2>/dev/null)" || out=''
   [[ -n "$out" ]] || out='{}'
   printf '%s\n' "$out"
 }
@@ -443,6 +467,10 @@ _monitor_digest_render_at() {
                           then " — assigned to \((.assignees | join(", ")))" else "" end)
                        + "\n\n  ```\n  " + ((.body // "") | esc) + "\n  ```" ]
                    | join("\n") ) + "\n" end ) )),
+
+    block("Promoted findings — do not restate these";
+      ( if (.promoted | length) == 0 then "_none_\n"
+        else ( [ .promoted[] | "- `\(.key)` — tracked at \(.issue)" ] | join("\n") ) + "\n" end )),
 
     block("Nodes";
       ( "| Node | Self | Published | Role | Failing stages | Updater | Compose | Image | Mirror | Doctor | Host facts |\n"

@@ -72,6 +72,10 @@ sections:
 - **Known signatures** — the specs' own gotcha sections: faults this system
   has already diagnosed once, with what each one looks like from the outside.
   Check a symptom against these before calling it new.
+- **Promoted findings** — keys that have already repeated across enough
+  reports that the Script has turned them into a pager-invariant proposal
+  (`pager: add invariant <key>`), each with its tracking issue. Do not
+  restate one of these; see "Finding keys" below.
 
 A digest may be truncated to fit a byte bound; when it is, it says so at the
 cut. Reason from what you were given and say in your report that the window
@@ -144,6 +148,14 @@ fault is still true, with the same key** — the Script will file nothing and
 cite the open issue in the report instead, which is exactly right: the report
 should say the fault persists. Do not invent a new key to get around the
 dedup, and do not silently drop a fault because you mentioned it yesterday.
+
+A key in the digest's **Promoted findings** section is the one exception:
+once a repeat has been turned into a pager-invariant proposal, restating it
+buys nothing — the Script will simply record it as already promoted, citing
+the same tracking issue every time. Drop it from your findings once you see
+it there. It reappears on its own if it is ever needed again: a key retires
+from that section entirely once its invariant actually lands, and the Script
+would then treat a fresh occurrence as a brand new finding.
 
 ## Triaging pager pages
 
