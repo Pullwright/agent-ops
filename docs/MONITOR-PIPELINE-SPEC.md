@@ -424,12 +424,15 @@ M11. **Every filing carries a provenance line and a finding key.** The
    finding.
 
 M12. **A filing budget.** At most `monitor_max_filings_per_run` (default 3)
-   GitHub items are created per run, counted across every class together. The
+   GitHub items are created per run, counted across every class together,
+   a promotion (M13a) included — it is a GitHub item like any other, so it
+   spends the same budget rather than sitting outside it. The
    Script walks `findings[]` in the order the stage returned them — that order
    is the stage's priority call — and everything past the cap is recorded as
    `deferred` in the report **with its key**, so the next run's dedup can tell
    it apart from a finding that was never stated.
-   `monitor_max_filings_per_run: 0` files nothing and reports everything.
+   `monitor_max_filings_per_run: 0` files nothing and reports everything —
+   promotion included, on the same terms.
 
 M13. **Search-first dedup.** Before the stage runs, the Script lists every
    open issue in every repository it may file into whose body carries a
@@ -480,6 +483,17 @@ M13a. **Promoting a repeat finding into a pager invariant, autonomously**
    instead, on M14d's own "nowhere to file is not a failure" terms; a filing
    the forge refuses is `failed` and re-offered by the next run that reaches
    the threshold again, on M14d's own retry terms.
+
+   A promotion counts against `monitor_max_filings_per_run` exactly like any
+   other class's filing (M12) — it is checked, and (on success) spent, before
+   the issue is created, never after. A key that reaches the threshold while
+   the run's budget is already spent, or while `monitor_max_filings_per_run`
+   is `0`, is recorded `deferred` rather than `promoted` (the `promotion-
+   proposed` outcome above is reserved for "nowhere to file", a different
+   fact from "no budget left"), and is re-offered by the next run that still
+   finds the key restated — `monitor_key_prior_reports` counts a `deferred`
+   row for a key the same as any other outcome, so deferring a promotion for
+   budget does not reset its repeat count.
 
 M13b. **Retirement.** Once the invariant a promotion proposed actually
    exists — a `pager-fired` or `pager-cleared` transition for the key has
@@ -740,6 +754,12 @@ supplies its own values.
    the digest's promoted-findings section, and dropped from `findings[]`
    before the ledger or the report see it, even when the stubbed `claude`
    restates it anyway.
+5c. **Promotion spends the M12 budget (M12/M13a).** Same file: a key that
+   reaches `monitor_promote_after` while `monitor_max_filings_per_run` is
+   already spent by earlier findings in the same run creates no issue and is
+   recorded `deferred`, not `promoted`; with `monitor_max_filings_per_run: 0`
+   a key past the promotion threshold is deferred the same way rather than
+   filed regardless of budget.
 6. **The tactical gate is closed by default (M14b).** Same file: a tactical
    finding with `monitor_tactical_keys` empty produces a proposal in the
    report and **no** `pw::decision` issue; with the key listed, it produces a

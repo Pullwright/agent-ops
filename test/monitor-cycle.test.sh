@@ -651,6 +651,88 @@ assert_eq "so this run stated nothing, exactly as if the model had not returned 
 assert_lacks "and the digest's promoted-findings section no longer names it" \
   "\`repeat-thing\` — tracked at" "$(cat "$d/stub/prompt.txt")"
 
+# ============================================================================
+# 12. A promotion spends the M12 filing budget, and is deferred when there is
+#     none left (M12/M13a)
+# ============================================================================
+
+# 12a. `monitor_max_filings_per_run: 0` defers a promotion-eligible key
+# exactly as it defers every other class — no issue, `deferred`, not
+# `promoted`.
+d="$(make_node promotion-budget-off "$BASE | .monitor_promote_after = 1 | .monitor_max_filings_per_run = 0")"
+cat > "$d/stub/result.json" <<'EOF'
+{"status":"complete",
+ "report_markdown":"### What is broken now\n\na thing\n\n### What limited throughput\n\nnothing\n\n### What is new\n\nnothing\n\n### Pages\n\nnone",
+ "findings":[
+   {"key":"budget-off-thing","class":"mechanical","title":"A thing eligible for promotion","body":"evidence","repo":"o/target"}],
+ "page_triage":[]}
+EOF
+out="$(run_monitor "$d" --once)"
+assert_eq "monitor_max_filings_per_run=0 files nothing, promotion included" "0" "$(creates_of "$d")"
+assert_contains "the key is deferred, not promoted" \
+  "\`budget-off-thing\` | deferred" "$(report_of "$d")"
+assert_contains "and the report says why" \
+  "monitor_max_filings_per_run is 0" "$(report_of "$d")"
+assert_eq "no monitor-promoted event is logged" "0" \
+  "$(events_of "$d" | jq -rs '[.[] | select(.event == "monitor-promoted")] | length')"
+
+# 12b. A promotion-eligible key that reaches the threshold while an earlier
+# finding in the same run already spent the (nonzero) budget is deferred, not
+# promoted — and is re-offered, and files, the next run once the budget is
+# free again. `monitor_key_prior_reports` counts the deferred run's own
+# report the same as any other outcome, so the repeat count survives the
+# defer. `monitor_promote_after = 2`, as in section 11, so `other-thing`'s own
+# single restatement below never itself qualifies for promotion — only
+# `promo-thing`, which is stated here for the second time, does.
+d="$(make_node promotion-budget "$BASE | .monitor_promote_after = 2 | .monitor_max_filings_per_run = 1")"
+cat > "$d/stub/result.json" <<'EOF'
+{"status":"complete",
+ "report_markdown":"### What is broken now\n\na thing\n\n### What limited throughput\n\nnothing\n\n### What is new\n\nnothing\n\n### Pages\n\nnone",
+ "findings":[
+   {"key":"promo-thing","class":"mechanical","title":"A thing eligible for promotion","body":"evidence one","repo":"o/target"}],
+ "page_triage":[]}
+EOF
+out="$(run_monitor "$d" --once)"
+assert_eq "run one files the finding as an ordinary mechanical issue" "1" "$(creates_of "$d")"
+
+# Run 2: `promo-thing` is restated (now meeting the threshold) alongside a new
+# `other-thing` that comes first in the stage's own order and spends the
+# run's one-item budget before `promo-thing` is reached.
+cat > "$d/stub/result.json" <<'EOF'
+{"status":"complete",
+ "report_markdown":"### What is broken now\n\ntwo things\n\n### What limited throughput\n\nthe budget\n\n### What is new\n\nnothing\n\n### Pages\n\nnone",
+ "findings":[
+   {"key":"other-thing","class":"mechanical","title":"An unrelated finding that spends the budget first","body":"x","repo":"o/target"},
+   {"key":"promo-thing","class":"mechanical","title":"A thing eligible for promotion","body":"evidence two","repo":"o/target"}],
+ "page_triage":[]}
+EOF
+out="$(run_monitor "$d" --once)"
+assert_eq "only the budget-holding finding is filed" "2" "$(creates_of "$d")"
+report="$(report_of "$d")"
+assert_contains "the other finding is filed" "\`other-thing\` | filed" "$report"
+assert_contains "the promotion-eligible one is deferred, not promoted" \
+  "\`promo-thing\` | deferred" "$report"
+assert_contains "and the report says the budget, not 'nowhere to file', was the reason" \
+  "the run's filing budget" "$report"
+assert_eq "no monitor-promoted event is logged yet" "0" \
+  "$(events_of "$d" | jq -rs '[.[] | select(.event == "monitor-promoted")] | length')"
+
+# Run 3: the same key alone, budget free again — it is re-offered and now
+# promotes.
+cat > "$d/stub/result.json" <<'EOF'
+{"status":"complete",
+ "report_markdown":"### What is broken now\n\nstill the thing\n\n### What limited throughput\n\nnothing\n\n### What is new\n\nnothing\n\n### Pages\n\nnone",
+ "findings":[
+   {"key":"promo-thing","class":"mechanical","title":"A thing eligible for promotion","body":"evidence three","repo":"o/target"}],
+ "page_triage":[]}
+EOF
+out="$(run_monitor "$d" --once)"
+assert_eq "the deferred key is re-offered and now files as a promotion" "3" "$(creates_of "$d")"
+assert_contains "the report records the promotion" \
+  "\`promo-thing\` | promoted" "$(report_of "$d")"
+assert_eq "and the promotion event is logged" "1" \
+  "$(events_of "$d" | jq -rs '[.[] | select(.event == "monitor-promoted")] | length')"
+
 printf '\n'
 if (( failures )); then
   printf '%d assertion(s) failed\n' "$failures"

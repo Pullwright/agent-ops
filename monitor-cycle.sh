@@ -1012,6 +1012,23 @@ while IFS= read -r finding; do
         "restated in $promote_total reports (monitor_promote_after=$monitor_promote_after) — no pager_repo or crash_loop_repo is configured, so there is nowhere to file the invariant proposal"
       continue
     fi
+    # A promotion is a GitHub item like any other class's filing, so it is
+    # counted against the same M12 budget rather than created on top of it —
+    # `monitor_max_filings_per_run: 0` disables all filing, promotions
+    # included, and a promotion past an already-spent budget is deferred and
+    # re-offered next run exactly as a mechanical/strategic filing is
+    # (`monitor_key_prior_reports` counts a `deferred` row the same as any
+    # other outcome, so the repeat count is preserved across the defer).
+    if (( monitor_max_filings == 0 )); then
+      monitor_ledger deferred "$finding" 0 "" "" \
+        "restated in $promote_total reports (monitor_promote_after=$monitor_promote_after) — monitor_max_filings_per_run is 0 — this run files nothing and reports everything"
+      continue
+    fi
+    if (( filed_count >= monitor_max_filings )); then
+      monitor_ledger deferred "$finding" 0 "" "" \
+        "restated in $promote_total reports (monitor_promote_after=$monitor_promote_after) — the run's filing budget (monitor_max_filings_per_run=$monitor_max_filings) was already spent"
+      continue
+    fi
     monitor_claim_index
     body_file="$run_dir/finding-$finding_index.md"
     prior_evidence_json="$(monitor_key_prior_evidences "$f_key")"
@@ -1042,6 +1059,7 @@ while IFS= read -r finding; do
         "restated in $promote_total reports — promoted to a pager-invariant proposal"
       promoted_all_json="$(jq -c --arg k "$f_key" --arg i "$promoted_url" \
         '. + [{key: $k, issue: $i}]' <<<"$promoted_all_json")"
+      filed_count=$(( filed_count + 1 ))
     else
       monitor_ledger promotion-failed "$finding" "$finding_index" "" "" \
         "restated in $promote_total reports — the pager-invariant proposal could not be filed; re-offered next run"
