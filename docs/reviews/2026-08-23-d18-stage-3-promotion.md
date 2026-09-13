@@ -99,14 +99,13 @@ Notes on each choice:
   `merge_autonomy_protected_paths` already carries an explicit override,
   landed independently of this diff to close TD-PPagop-26082422
   (agent-ops#977): the inherited nine paths plus `scripts/*`. The nine
-  predate
-  `merge_autonomy_routine_complexity` being widenable at all, and left
-  `scripts/*` — home to `detect-classifier-escapes.sh`, `doctor.sh`,
+  predate `merge_autonomy_routine_complexity` being widenable at all, and
+  left `scripts/*` — home to `detect-classifier-escapes.sh`, `doctor.sh`,
   `autonomy-stage-report.sh` and the other scripts the D18 gate itself
   depends on — unprotected, for the same reason the paragraph above adds
   `scripts/*` to poetic's and poetic-fiddle's own lists. This diff therefore
-  makes no change to agent-ops's `merge_autonomy_protected_paths`; it already
-  reads as shown below.
+  makes no change to agent-ops's `merge_autonomy_protected_paths`; §1's diff
+  above already shows it as context.
 - **agent-ops also widens `merge_autonomy_routine_complexity` to
   `["low", "medium", "high"]`** — the other half of #402's Stage 3 row for
   agent-ops, "+ `complexity:high`". agent-ops#725 made the ceiling
