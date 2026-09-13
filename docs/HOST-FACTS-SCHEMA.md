@@ -50,7 +50,7 @@ its top level:
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `node` | string | The node's own name — `NODE_NAME`, or a bare `hostname` fallback, the same identity `state-sync.sh` publishes under. |
+| `node` | string | The node's own name — `NODE_NAME`, or a bare `hostname` fallback, with every character outside `[A-Za-z0-9._-]` replaced by `-`: the same identity `state-sync.sh` publishes under, sanitized by the same rule it and every reader of this record already apply before building a path from a node name, so this record's own filename is the string each of them looks for (issue #1344). |
 | `driver` | string | `"compose"` or `"kubernetes"` — which vantage produced this record. |
 | `generated_at` | string | UTC `YYYY-MM-DDTHH:MM:SSZ`, this collection pass's own timestamp. |
 | `host` | object | Facts about the node's own host — disk, memory, load, network. Present on both drivers; a Kubernetes collector populates whatever its own pod's vantage can read and fills the rest `null` (see "Degradation" below) rather than omitting the section. |
