@@ -151,12 +151,38 @@ done
 # half.
 strip_markdown_noise() {
   local no_fences
+  # A closing fence only counts, to GitHub's own renderer, if it repeats the
+  # opening fence's character and is at least as long — a bare "```" inside a
+  # "````"-opened block is literal fenced content, not the end of it. Tracks
+  # the opening marker's character and run length explicitly (rather than a
+  # naive open/close toggle on "any line of 3+ backticks or tildes") so a
+  # shorter same-character run nested inside a longer fence does not
+  # prematurely close it: doing so would put everything after the *real*
+  # closing fence back outside the block, undoing the strip on a real
+  # keyword GitHub itself still treats as fenced. Counts runs with a
+  # substr()-scanning while loop rather than a `{n,}` interval regex, because
+  # an interval combined with a backtick/tilde alternation panics this
+  # image's mawk (REcompile crash).
   no_fences="$(awk '
-    BEGIN { in_fence = 0 }
-    /^[[:space:]]*(```+|~~~+)/ { in_fence = !in_fence; next }
-    in_fence { next }
-    /^[[:space:]]*>/ { next }
-    { print }
+    BEGIN { in_fence = 0; fence_ch = ""; fence_len = 0 }
+    {
+      stripped = $0
+      sub(/^[[:space:]]*/, "", stripped)
+      ch = substr(stripped, 1, 1)
+      run = 0
+      if (ch == "`" || ch == "~") {
+        while (substr(stripped, run + 1, 1) == ch) run++
+      }
+      if (in_fence) {
+        rest = substr(stripped, run + 1)
+        sub(/[[:space:]]*$/, "", rest)
+        if (run >= 3 && ch == fence_ch && run >= fence_len && rest == "") in_fence = 0
+        next
+      }
+      if (run >= 3) { in_fence = 1; fence_ch = ch; fence_len = run; next }
+      if (stripped ~ /^>/) next
+      print
+    }
   ' <<<"$1")"
   # shellcheck disable=SC2016  # the backticks are literal Markdown, not command substitution
   sed -E 's/`+[^`]*`+/ /g' <<<"$no_fences"

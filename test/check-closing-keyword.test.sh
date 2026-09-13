@@ -456,6 +456,24 @@ assert_fail_tdr "an ordinary unquoted keyword outside any markdown context is st
   "fix/some-branch" "acme/widgets" "9" "bare-unflipped" \
   "does not set its frontmatter status: to resolved"
 
+# A closing fence only counts, to GitHub's own renderer, if it repeats the
+# opening fence's character and is at least as long: a bare "```" nested
+# inside a "````"-opened block is literal fenced content, not the block's
+# end. A naive open/close toggle on "any line of 3+ backticks" closes on
+# that nested line instead, then treats the block's *real* closing fence as
+# a fresh opener — pushing everything after it back inside a "fence" that
+# never actually reopened, swallowing a real keyword GitHub itself still
+# treats as unfenced text. This must still demand the flip.
+assert_fail_tdr "a real keyword after a nested shorter-fence line is still harvested" \
+  "\`\`\`\`
+example fence:
+\`\`\`
+nested content
+\`\`\`\`
+Fixes #240 for real this time." \
+  "fix/some-branch" "acme/widgets" "9" "bare-unflipped" \
+  "does not set its frontmatter status: to resolved"
+
 if (( failures > 0 )); then
   echo "$failures failure(s)"
   exit 1
