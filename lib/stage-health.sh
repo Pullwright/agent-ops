@@ -28,16 +28,15 @@
 # (`fromjson? // empty`), the same tolerance every other log reader in this
 # codebase gives a partial write.
 #
-# The stream is parsed with `jq -R -n 'inputs'`, one line at a time, and
-# deliberately not with the slurp-then-split-on-newlines spelling the other
-# log readers here use (lib/crash-loop.sh, lib/review-gate.sh,
-# lib/escalation-autonomy.sh — TD-PPagop-26082503). That spelling runs an
-# oniguruma regex over the whole slurped file, which is quadratic enough in
-# practice that a real 2.3 MB `log.jsonl` takes ~80 s to split and ~0.07 s
-# to read with `inputs` — a difference that matters here more than it does
-# there, because this reader runs inside every cycle's own `cleanup()` and
-# `log.jsonl` is never rotated (scripts/rotate-logs.sh), so the cost would
-# grow without bound for the life of the node.
+# The stream is parsed with `jq -R -n 'inputs'`, one line at a time, rather
+# than slurping the whole file and splitting it with a regex: that spelling
+# runs an oniguruma regex over the whole slurped file, which is quadratic
+# enough in practice that a real 2.3 MB `log.jsonl` takes ~80 s to split and
+# ~0.07 s to read with `inputs` (PR #792, agent-ops#791/#982) — a difference
+# that matters here more than most places, because this reader runs inside
+# every cycle's own `cleanup()` and `log.jsonl` is never rotated
+# (scripts/rotate-logs.sh), so the cost would grow without bound for the life
+# of the node.
 #
 # For each stage in `stage_names` (below) it returns:
 #   - last_success: the `ts` of the most recent `stage-end` with exit_code 0
