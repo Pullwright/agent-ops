@@ -1678,8 +1678,8 @@ the problem this change exists to close never applied to them.
   sources you still author `context` for — it must be self-contained: paste
   the relevant text verbatim rather than referring to "the ticket". The
   Implementer starts with nothing but the work order and the repo's own
-  `CLAUDE.md`, whether the Script composed that work order's `context` or you
-  did.
+  `AGENTS.md` (or `CLAUDE.md`, for a repo that has not migrated), whether the
+  Script composed that work order's `context` or you did.
 - `unblocked` lists any item identifiers whose **impediment you found to have
   lifted** while working through the algorithm above (may be non-empty even when
   unrelated to the item you selected, and independent of whether

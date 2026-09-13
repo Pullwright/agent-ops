@@ -9,7 +9,8 @@ them. It describes the system as it exists, and it must keep doing so — any
 change to the pipeline lands together with the edit that keeps this document
 accurate (see `CLAUDE.md`, "As-built specifications"). Where this document is
 silent, follow the conventions of the two target repositories (their
-`CLAUDE.md` files are binding on any agent working inside them).
+`AGENTS.md` files — or `CLAUDE.md`, for a repository that has not migrated —
+are binding on any agent working inside them).
 
 <!-- toc:start -->
 - [About this document](#about-this-document)
@@ -10469,8 +10470,10 @@ implements.
     rather than ending its turn expecting an external notification when
     they finish. A command too slow to wait out within the stage timeout is
     grounds for `"status": "blocked"`, not an early, hopeful end of turn.
-22. Runs inside the cycle's clone. First reads the repo's `CLAUDE.md` and
-    obeys it throughout. Checks out the branch named in the work order —
+22. Runs inside the cycle's clone. First reads the repo's `AGENTS.md` — or
+    `CLAUDE.md`, for a repo that has not migrated; `CLAUDE.md` imports
+    `AGENTS.md` where it has — and obeys it throughout. Checks out the branch
+    named in the work order —
     already created on origin by the Script as the item's claim (requirement
     17a) — and never creates, renames, or deletes a branch of its own.
 23. **Makes the claim visible before implementing.** The branch is the
@@ -10526,8 +10529,8 @@ implements.
     "genuine push" in the sense requirement 3e's own activity clock already
     watches for.
 24. Implements the item, then runs the same checks the repo's CI runs (as
-    documented in that repo's `CLAUDE.md` and workflow files) and fixes
-    anything they surface.
+    documented in that repo's `AGENTS.md`/`CLAUDE.md` and workflow files) and
+    fixes anything they surface.
 24a. **Checks the preview deployment its own pull request produced.** Where the
     target repository deploys from GitHub — poetic-fiddle, through Vercel's Git
     integration — every pull request head SHA gets its own preview deployment,

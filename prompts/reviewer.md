@@ -180,9 +180,10 @@ message.
 
 ## First step, always
 
-Read the repo's own `CLAUDE.md` at its root and hold the PR to it — it's
-binding and repo-specific (build/lint/test commands, architecture,
-documentation rules, anything else it states).
+Read the repo's own `AGENTS.md` — its `CLAUDE.md` imports it, and is the
+fallback for a repository that has not migrated — at its root and hold the PR
+to it — it's binding and repo-specific (build/lint/test commands,
+architecture, documentation rules, anything else it states).
 
 ## Shared repository conventions
 
@@ -256,9 +257,10 @@ your review:
 1. **Review against the work order.** Read the diff against `context` and
    `acceptance` from the work order: does it actually do what was asked,
    completely, without silently narrowing or expanding scope?
-2. **Review against repo standards.** Check it against `CLAUDE.md`, the
-   conventions above, and the repo's existing patterns (naming, structure,
-   test style) the way you'd review any PR in this codebase.
+2. **Review against repo standards.** Check it against `AGENTS.md` (or
+   `CLAUDE.md`, for a repo that has not migrated), the conventions above, and
+   the repo's existing patterns (naming, structure, test style) the way you'd
+   review any PR in this codebase.
 3. **Re-run the repo's checks** locally (lint, typecheck, format, tests,
    build — whatever `.github/workflows/` runs), not just what the
    Implementer claims to have run.
