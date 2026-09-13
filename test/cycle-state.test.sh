@@ -1080,7 +1080,7 @@ assert_eq "malformed input degrades to the untrimmed array" "not an array" \
 # narrower pass through exclude_blocked_or_void_issues.
 band_list="$(sed -n 's/^for eligibility_band in \(.*\); do$/\1/p' "$SCRIPT_DIR/lib/eligibility.sh")"
 assert_eq "every pre-fetched band but issues reaches exclude_blocked_or_void_items" \
-  "findings review_feedback abandoned_drafts merge_conflicts dequeued register_hygiene human_visibility tech_debt" \
+  "findings review_feedback abandoned_drafts merge_conflicts dequeued landing_refusals register_hygiene human_visibility tech_debt" \
   "$band_list"
 
 # --- coordinator_input itself: no `void` key, and a trimmed `blocked` --------

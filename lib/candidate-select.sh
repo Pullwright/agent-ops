@@ -914,6 +914,7 @@ CANDIDATE_ENTRY_LOOKUP_JQ='
       elif $source == "review-feedback" then ($r.review_feedback // [])[] | select(.ref == $item)
       elif $source == "merge-conflicts" then ($r.merge_conflicts // [])[] | select(.ref == $item)
       elif $source == "dequeued" then ($r.dequeued // [])[] | select(.ref == $item)
+      elif $source == "landing-refusals" then ($r.landing_refusals // [])[] | select(.ref == $item)
       elif $source == "abandoned-drafts" then ($r.abandoned_drafts // [])[] | select(.ref == $item)
       elif $source == "human-visibility" then ($r.human_visibility // [])[] | select(.ref == $item)
       elif $source == "register-hygiene" then ($r.register_hygiene // [])[] | select(.ref == $item)
@@ -974,6 +975,9 @@ CANDIDATE_TEMPLATE_JQ='
   elif $source == "dequeued" then
     {title: (.title // ""), context: (.body // ""),
      acceptance: "Diagnose and fix the merge-group checks failure that got this pull request dequeued, then push to the existing branch."}
+  elif $source == "landing-refusals" then
+    {title: (.title // ""), context: (.body // ""),
+     acceptance: "Answer every unreconciled comment above on the existing pull request — implementing what it asks or replying to contest it — and cite each one with its own <!-- agent-ops:reconciles comment=<id> --> line; leave the pull request ready."}
   elif $source == "abandoned-drafts" then
     {title: (.title // ""), context: (.body // ""),
      acceptance: "Finish the existing draft pull request to the item'"'"'s own acceptance."}
@@ -994,7 +998,7 @@ CANDIDATE_TEMPLATE_JQ='
 # already selected, so neither ever authors those three fields for a
 # pre-fetched source — the model's own job narrows to selection (and to
 # `model`/`model_reason`, a judgement call this does not touch). Scoped to
-# the ten sources the Script already gathers as structured data
+# the eleven sources the Script already gathers as structured data
 # (`CANDIDATE_ENTRY_LOOKUP_JQ` above); the three sources the Co-Ordinator
 # still derives itself live — `project-review`, `failed-runs`,
 # `implementation-plan` — have no pre-fetched band for the Script to compose
@@ -1323,6 +1327,7 @@ coordinator_eligible_items() {  # <ordered-repos-json> <blocked-json>
                            or ((.superseded_by // null) != null))];
                  "merge-conflicts"),
             band($r; $srcs; $e.dequeued; "dequeued"),
+            band($r; $srcs; $e.landing_refusals; "landing-refusals"),
             band($r; $srcs; $e.abandoned_drafts; "abandoned-drafts"),
             band($r; $srcs; $e.human_visibility; "human-visibility"),
             band($r; $srcs; $e.register_hygiene; "register-hygiene"),
@@ -2033,6 +2038,28 @@ gather_dequeued() {
     return
   fi
   printf '%s\n' "$out" > "$cycle_dir/dequeued-$safe.json"
+  printf '%s' "$out"
+}
+
+# Pre-fetch the repo's own pull requests gate 4 (`lib/landing.sh`'s
+# `_landing_stage_attempt`) keeps refusing to arm over an unreconciled comment
+# (requirement 53, issue #979). `union_log` is the cycle's own fleet-wide
+# global (agent-cycle.sh) — `landing-refused` is a fact only this pipeline's
+# log carries, so the gatherer reads it rather than GitHub.
+gather_landing_refusals() {
+  local slug="$1" out safe
+  safe="${slug//\//_}"
+  out="$("$SCRIPT_DIR/scripts/gather-landing-refusals.sh" "$slug" "$pr_label" "$branch_prefix" "$union_log" "$tech_debt_branch_prefix" \
+        2>"$cycle_dir/landing-refusals-$safe.err" || true)"
+  if [[ -n "$out" ]] && jq -e 'type == "array"' <<<"$out" >/dev/null 2>&1 \
+     && [[ ! -s "$cycle_dir/landing-refusals-$safe.err" ]]; then
+    : > "$cycle_dir/landing-refusals-$safe.ok"
+  fi
+  if [[ -z "$out" ]] || ! jq -e 'type == "array"' <<<"$out" >/dev/null 2>&1; then
+    printf '[]'
+    return
+  fi
+  printf '%s\n' "$out" > "$cycle_dir/landing-refusals-$safe.json"
   printf '%s' "$out"
 }
 
