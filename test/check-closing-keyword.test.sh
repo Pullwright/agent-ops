@@ -311,8 +311,8 @@ assert_fail_tdr "'Filed as' present, diff never touches the record: fail" \
   "$body_240" "agent/240" "acme/widgets" "9" "untouched" \
   "does not touch that file"
 
-# A "Filed as" line, and this PR's diff touches the file but never sets
-# status: resolved (left open, or flipped to something else).
+# A "Filed as" line, and this PR's diff touches the file but never sets a
+# terminal status (left open here; flipped to a non-terminal state below).
 mkdir -p "$tmp_dir/unflipped"
 cp "$tmp_dir/flipped/issue-240.json" "$tmp_dir/unflipped/issue-240.json"
 cat > "$tmp_dir/unflipped/files.json" <<'JSON'
@@ -321,7 +321,32 @@ cat > "$tmp_dir/unflipped/files.json" <<'JSON'
 JSON
 assert_fail_tdr "'Filed as' present, diff leaves status unchanged: fail" \
   "$body_240" "agent/240" "acme/widgets" "9" "unflipped" \
-  "does not set its frontmatter status: to resolved"
+  "does not set its frontmatter status: to a terminal state"
+
+# `not-debt` is the register's other terminal state (TECH-DEBT.md "Resolution
+# and history"; issue #1437): a resolving PR that correctly concludes the
+# item was never debt flips to `status: not-debt` with `ref:`, and must pass
+# exactly as a `resolved` flip does.
+mkdir -p "$tmp_dir/flipped-not-debt"
+cp "$tmp_dir/flipped/issue-240.json" "$tmp_dir/flipped-not-debt/issue-240.json"
+cat > "$tmp_dir/flipped-not-debt/files.json" <<'JSON'
+[[{"filename": "tech-debt/TD-1.md",
+  "patch": "@@ -1,5 +1,6 @@\n ---\n id: TD-1\n-status: open\n+status: not-debt\n+ref: https://github.com/acme/widgets/pull/9\n filed: 2026-08-01\n ---"}]]
+JSON
+assert_pass_tdr "'Filed as' present, diff flips status to not-debt: pass" \
+  "$body_240" "agent/240" "acme/widgets" "9" "flipped-not-debt"
+
+# The widened match stays anchored to the two terminal states: a flip to a
+# non-terminal `in-progress` is not a resolution and still fails.
+mkdir -p "$tmp_dir/flipped-non-terminal"
+cp "$tmp_dir/flipped/issue-240.json" "$tmp_dir/flipped-non-terminal/issue-240.json"
+cat > "$tmp_dir/flipped-non-terminal/files.json" <<'JSON'
+[[{"filename": "tech-debt/TD-1.md",
+  "patch": "@@ -1,5 +1,5 @@\n ---\n id: TD-1\n-status: open\n+status: in-progress\n filed: 2026-08-01\n ---"}]]
+JSON
+assert_fail_tdr "a flip to a non-terminal status (in-progress) still fails" \
+  "$body_240" "agent/240" "acme/widgets" "9" "flipped-non-terminal" \
+  "does not set its frontmatter status: to a terminal state"
 
 # A `gh` call that fails outright never fails the check itself — only a
 # positive reading of the issue and the diff decides pass or fail here. Both
@@ -350,7 +375,7 @@ cat > "$tmp_dir/bare-unflipped/files.json" <<'JSON'
 JSON
 assert_fail_tdr "a markerless Fixes #N with an unflipped record still fails" \
   "$body_240_bare" "fix/some-branch" "acme/widgets" "9" "bare-unflipped" \
-  "does not set its frontmatter status: to resolved"
+  "does not set its frontmatter status: to a terminal state"
 
 mkdir -p "$tmp_dir/bare-flipped"
 cp "$tmp_dir/flipped/issue-240.json" "$tmp_dir/bare-flipped/issue-240.json"
@@ -378,17 +403,17 @@ assert_pass_tdr "a keyword lookalike (discloses/unfixed) demands no record flip"
 assert_fail_tdr "a markerless Fixes GH-N with an unflipped record still fails" \
   "Fixes GH-240 for real this time." \
   "fix/some-branch" "acme/widgets" "9" "bare-unflipped" \
-  "does not set its frontmatter status: to resolved"
+  "does not set its frontmatter status: to a terminal state"
 
 assert_fail_tdr "a markerless Fixes owner/repo#N for this repo still fails" \
   "Fixes acme/widgets#240 for real this time." \
   "fix/some-branch" "acme/widgets" "9" "bare-unflipped" \
-  "does not set its frontmatter status: to resolved"
+  "does not set its frontmatter status: to a terminal state"
 
 assert_fail_tdr "the owner/repo slug is matched case-insensitively" \
   "Fixes ACME/Widgets#240 for real this time." \
   "fix/some-branch" "acme/widgets" "9" "bare-unflipped" \
-  "does not set its frontmatter status: to resolved"
+  "does not set its frontmatter status: to a terminal state"
 
 # A *foreign* owner/repo closes someone else's #240, not ours. Harvesting it
 # would demand a flip of our own record over an issue this pull request never

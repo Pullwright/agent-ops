@@ -10646,7 +10646,10 @@ implements.
     an earlier direct filing — that file is still the permanent register
     entry: the same pull request must also flip its frontmatter to `status:
     resolved`, filling `resolved:` and `ref:`, exactly as `TECH-DEBT.md`'s
-    "Claiming an item" step 6 describes (PR #1313 is the precedent) —
+    "Claiming an item" step 6 describes (PR #1313 is the precedent) — or,
+    where the work's conclusion is that the item was never debt, to
+    `status: not-debt` with `ref:` pointing at where the content moved
+    (`TECH-DEBT.md` "Resolution and history"; issue #1437) —
     closing the issue alone does not resolve it, and skipping this step is
     what left `tech-debt/TD-PPagop-26082412.md` at `status: open` after PR
     #1355's first round. An issue with no such line has no file to flip and
@@ -10765,7 +10768,12 @@ implements.
     register.sh` or an earlier direct filing), `check-closing-keyword.sh`
     also reads this pull request's own changed-files listing (`gh api
     …/pulls/<n>/files`) and fails, naming the issue and the file, unless its
-    diff adds a `status: resolved` line for it. PR #1355's first round is
+    diff adds a line setting that file's `status:` to one of the register's
+    two terminal states — `resolved`, or `not-debt` for an item the
+    resolving pull request concludes was never debt (issue #1437: both are
+    equally terminal to `td-check.pl`, `lib/work-gone.sh` and
+    `lib/candidate-gather.sh`, and `td-check.pl` still requires a `not-debt`
+    row to carry its `ref:`). PR #1355's first round is
     the concrete miss this closes: the issue closed, the file left at
     `status: open` on `main` until a later round caught it by hand — nothing
     before this checked the flip mechanically, only the prose
@@ -19895,7 +19903,8 @@ What exists, and the requirements each part answers to:
     earlier direct filing), it reads this pull request's own changed-files
     listing (`gh api repos/<slug>/pulls/<n>/files`) and exits non-zero,
     naming the issue and the record file, unless that file's diff adds a
-    `status: resolved` line. This is the CI-side check for the miss PR
+    line setting its `status:` to a terminal state — `resolved` or
+    `not-debt` (issue #1437). This is the CI-side check for the miss PR
     #1355's first round made by hand — issue closed, `tech-debt/TD-PPagop-
     26082412.md` left at `status: open` until a later round. Either `gh`
     call that fails outright (the token, a transient outage) warns rather
@@ -23553,10 +23562,12 @@ oblige anyone to edit a test.
    record-flip half: an issue with no "Filed as" line, or one carrying it
    but not `pw::type:tech-debt`-labelled, passes exactly as without the two
    extra arguments; a "Filed as"-line issue whose named record file's diff
-   adds `status: resolved` passes; the same issue whose diff never touches
-   that file fails naming that, and one whose diff touches it without adding
-   that line fails naming *that* — each asserted on its own message, never on
-   the record path both carry; a markerless bare closing keyword on a branch
+   adds `status: resolved` — or `status: not-debt`, the register's other
+   terminal state (issue #1437) — passes; the same issue whose diff never
+   touches that file fails naming that, and one whose diff touches it
+   without adding a terminal `status:` line (left as it was, or flipped to
+   the non-terminal `in-progress`) fails naming *that* — each asserted on
+   its own message, never on the record path both carry; a markerless bare closing keyword on a branch
    that is neither `agent/<N>` nor otherwise anchored — the exact shape the
    marker/keyword half's first clause above passes unconditionally — is
    still pulled into this half once a repo slug and pull request number are

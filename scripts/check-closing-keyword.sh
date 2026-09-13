@@ -40,9 +40,11 @@
 # its own body — a final line reading "Filed as `tech-debt/<id>.md`, <date>."
 # (`scripts/migrate-tech-debt-register.sh`, `TECH-DEBT.md` "Resolution and
 # history"). The pull request that closes such an issue must, in the same
-# diff, flip that file's frontmatter to `status: resolved`
+# diff, flip that file's frontmatter to a terminal state — `status: resolved`
 # (`prompts/implementer.md`/`prompts/reviewer.md`, TECH-DEBT.md "Claiming an
-# item" step 6) — but nothing before this checked it mechanically. PR #1355's
+# item" step 6), or `status: not-debt` for an item the resolution concludes
+# was never debt (TECH-DEBT.md "Resolution and history"; issue #1437) — but
+# nothing before this checked it mechanically. PR #1355's
 # first round is the concrete miss: issue closed, `status: open` left behind,
 # wrong on `main` until a later round caught it by hand. Given a repo slug
 # and this PR's own number (both optional — omitting either just skips this
@@ -55,8 +57,11 @@
 # closing keyword and checks each of those too, not only the marker/branch
 # survivors. Where a resolved number's body's last non-blank line has that
 # "Filed as" shape and it carries `pw::type:tech-debt`, this requires this
-# PR's own diff (`gh api …/pulls/<n>/files`) to add a `status: resolved` line
-# to the record file it names.
+# PR's own diff (`gh api …/pulls/<n>/files`) to add a line setting the named
+# record file's `status:` to one of the register's two terminal states,
+# `resolved` or `not-debt` — both are equally terminal to `td-check.pl`,
+# `lib/work-gone.sh` and `lib/candidate-gather.sh`, and `td-check.pl` still
+# requires a `not-debt` row to carry its `ref:` (issue #1437).
 #
 # A `gh` call that fails outright (the token, a transient outage) is not
 # turned into a failure of this check — the existing marker/keyword logic
@@ -70,7 +75,8 @@
 #   (where applicable) its tech-debt record correctly flipped.
 # Exit 1: a marker with no matching closing keyword, an `agent/<N>` branch
 #   missing the marker or the keyword, or a named tech-debt record this PR's
-#   diff does not flip to `status: resolved` — printing why in each case.
+#   diff does not flip to a terminal `status:` (`resolved`/`not-debt`) —
+#   printing why in each case.
 #
 # GH overrides the `gh` binary, for tests.
 
@@ -212,10 +218,10 @@ if [[ -n "$repo_slug" && -n "$pr_number" ]]; then
       'map(select(.filename == $p)) | (.[0].patch // "")' <<<"$files_json" 2>/dev/null)"
 
     if [[ -z "$patch" ]]; then
-      echo "::error::issue #${item} names ${record_path} (its body's \"Filed as\" line) but this pull request's diff does not touch that file — closing the issue must also flip its frontmatter to status: resolved (TECH-DEBT.md \"Claiming an item\" step 6)" >&2
+      echo "::error::issue #${item} names ${record_path} (its body's \"Filed as\" line) but this pull request's diff does not touch that file — closing the issue must also flip its frontmatter to a terminal status: — resolved (TECH-DEBT.md \"Claiming an item\" step 6) or not-debt (\"Resolution and history\")" >&2
       status=1
-    elif ! grep -qE '^\+status:[[:space:]]*resolved[[:space:]]*$' <<<"$patch"; then
-      echo "::error::issue #${item} names ${record_path} (its body's \"Filed as\" line) but this pull request's diff does not set its frontmatter status: to resolved" >&2
+    elif ! grep -qE '^\+status:[[:space:]]*(resolved|not-debt)[[:space:]]*$' <<<"$patch"; then
+      echo "::error::issue #${item} names ${record_path} (its body's \"Filed as\" line) but this pull request's diff does not set its frontmatter status: to a terminal state (resolved, or not-debt for an item that turns out not to be debt)" >&2
       status=1
     fi
   done
