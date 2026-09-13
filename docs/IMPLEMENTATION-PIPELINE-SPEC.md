@@ -462,16 +462,21 @@ file and carries placeholders only; `.env` itself is never committed.
   `127.0.0.1` while nothing on any network can, so containerisation costs the
   dashboard's privacy model nothing. The sidecar's `ts-serve.json` proxies
   `https://<node>.<tailnet>` to `http://127.0.0.1:8787` and allows no Funnel.
-  Its own `restart: on-failure:5` bounds it the same as the sidecar, overriding
-  the anchor's `unless-stopped`: joining a network namespace whose owning
-  container is not running is refused outright, so once `tailscale` has given
-  up over a missing `TS_AUTHKEY` and stopped, `dashboard` cannot start either,
-  for the same unfixable reason, on every retry. Left unbounded this container
-  thrashed at Docker's capped backoff indefinitely once the sidecar had already
-  stopped — the loop issue #644 was fixing had moved to a different service
-  rather than ending (TD-PPagop-26082303). The limit here is not this
-  container's own transient-error budget; it exists only to keep `dashboard`
-  settling on the same schedule as the dependency it cannot run without.
+  It carries `restart: on-failure:5`, like the sidecar, overriding the
+  anchor's `unless-stopped` — but as a statement of intent rather than an
+  observed bound: joining a network namespace whose owning container is not
+  running is refused at *start*, so once `tailscale` has given up over a
+  missing `TS_AUTHKEY` and stopped, `dashboard` never runs and never exits,
+  and a policy keyed on exit codes — `on-failure:5` here, or the anchor's
+  `unless-stopped` — is never consulted either way. Measured on VM1,
+  2026-08-24, and corroborated on a keyless node: it lands in `Created` with
+  a `RestartCount` of 0 and exit 128, at zero attempts under *both* policies
+  (TD-PPagop-26091401 records the measurement against TD-PPagop-26082303,
+  whose belief that `unless-stopped` retries this failure indefinitely did
+  not reproduce). `on-failure:5` is kept here as intent, not as this
+  container's own transient-error budget — it would bound a genuine
+  crash-and-exit failure of this container, should one arise, but the
+  namespace-join failure it was added for never reaches it.
 - **`dashboard-local`** (profile `local`) — the same server on a node with no
   tailnet, readable on that host's loopback and nowhere else (`DASHBOARD-SPEC`).
   It gets there in two moves: the server is told to bind `0.0.0.0` *inside the
@@ -21015,23 +21020,29 @@ oblige anyone to edit a test.
 1c-v. **The tailnet sidecar refuses to start without `TS_AUTHKEY`, and does
    not retry forever over one — and neither does the dashboard sharing its
    namespace.** On a live node with the `tailnet` profile selected and
-   `TS_AUTHKEY` unset, `docker compose up -d` exits with both `tailscale` and
-   `dashboard` in a failed state and `docker compose logs tailscale` carries a
-   single line naming the missing variable and the active profile, never
-   reaching `tailscaled` — no new node key is registered against the tailnet.
-   `docker compose ps` shows neither restarting indefinitely — but they
-   settle by **different mechanisms, and at different counts**, and the check
-   asserts each separately. `tailscale` reaches `Exited` with a
-   `RestartCount` of 5: it starts, exits non-zero, and its own
-   `restart: on-failure:5` bounds the retries where the rest of the file is
-   `unless-stopped`. `dashboard` reaches **`Created` with a `RestartCount` of
-   0**: joining the network namespace of a container that is not running is
-   refused at *start*, so the container never runs, never exits, and a policy
-   keyed on exit codes is never consulted. Its `on-failure:5` is therefore
-   not a budget it spends — it is what stops `unless-stopped` retrying a
-   start that cannot succeed, which is the thrash TD-PPagop-26082303 recorded.
-   `docker events` over the window shows five restart attempts for the
-   sidecar and none for the dashboard, not an unbounded stream from either.
+   `TS_AUTHKEY` unset, `docker compose up -d` exits non-zero — Docker reports
+   `cannot join network namespace of container: … is restarting` — leaving
+   both `tailscale` and `dashboard` in a failed state, and `docker compose
+   logs tailscale` carries one line per attempt naming the missing variable
+   and the active profile (six identical lines over the run below), never
+   reaching `tailscaled` — no new node key is registered against the
+   tailnet. `docker compose ps` shows neither restarting indefinitely — but
+   they settle by **different mechanisms, and at different counts**, and the
+   check asserts each separately. `tailscale` reaches `Exited` with a
+   `RestartCount` of 5: it starts, exits non-zero six times over (one
+   initial attempt plus five retries), and its own `restart: on-failure:5`
+   bounds the retries where the rest of the file is `unless-stopped`.
+   `dashboard` reaches **`Created` with a `RestartCount` of 0**: joining the
+   network namespace of a container that is not running is refused at
+   *start*, so the container never runs, never exits, and a policy keyed on
+   exit codes is never consulted — whether that policy is `on-failure:5` or
+   the anchor's `unless-stopped` makes no observed difference, since neither
+   is ever consulted; both settle at zero attempts immediately
+   (TD-PPagop-26091401 records the measurement against TD-PPagop-26082303,
+   whose belief that `unless-stopped` retries this failure indefinitely did
+   not reproduce). `docker events` over the window shows five restart
+   attempts for the sidecar and none for the dashboard, not an unbounded
+   stream from either.
 
    The dashboard half is **observed**: on VM1, 2026-08-24, `dashboard` sat at
    `status=created, RestartCount=0, ExitCode=128` behind a `tailscale` at
