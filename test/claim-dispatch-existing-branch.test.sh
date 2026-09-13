@@ -77,6 +77,11 @@ printf 'ok   - lifted the dispatch condition: %s\n' "$condition"
 # takes_file_claim <source> [takeover] — "file" when the lifted condition
 # selects the pre-existing-branch arm, "branch" otherwise.
 takes_file_claim() {
+  # shellcheck disable=SC2034  # Both are read by $condition, inside the eval
+  # below — the point of lifting the real condition rather than restating it is
+  # that shellcheck cannot see through the string, and neither can a reader
+  # grepping for the names. They are the same two variable names agent-cycle.sh
+  # itself tests, deliberately, so the lifted text needs no rewriting.
   local c_source="$1" c_takeover="${2:-false}"
   if eval "$condition"; then
     printf 'file'
