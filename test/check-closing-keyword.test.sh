@@ -73,6 +73,37 @@ assert_pass "markdown emphasis around the keyword still passes" \
   "**Closes #55**
 <!-- agent-ops:closes-issue item=55 -->"
 
+# --- GitHub's other linked-issue spellings (issue #1460) ---------------------------
+# GitHub closes the referenced issue on merge for "GH-N" and "owner/repo#N"
+# too, not just "#N" — the marker check has no notion of "the right" repo (no
+# repo slug reaches it from lib/closing-keyword-gate.sh), so it accepts any
+# owner/repo here.
+assert_pass "GH-N form" "Fixes GH-198.
+<!-- agent-ops:closes-issue item=198 -->"
+assert_pass "owner/repo#N form" "Fixes Pullwright/agent-ops#198.
+<!-- agent-ops:closes-issue item=198 -->"
+assert_pass "owner/repo#N form, any repo accepted by the marker check" \
+  "Fixes otherowner/otherrepo#5.
+<!-- agent-ops:closes-issue item=5 -->"
+assert_pass "case-insensitive GH-N" "fixes gh-198.
+<!-- agent-ops:closes-issue item=198 -->"
+assert_fail "GH-N for the wrong number does not satisfy the marker" \
+  "Closes GH-199.
+<!-- agent-ops:closes-issue item=198 -->" \
+  "#198"
+assert_fail "owner/repo#N for the wrong number does not satisfy the marker" \
+  "Closes acme/widgets#199.
+<!-- agent-ops:closes-issue item=198 -->" \
+  "#198"
+assert_fail "a word merely ending in a keyword does not close anything (GH-N form)" \
+  "This leaves GH-198 unclosed GH-198 for now.
+<!-- agent-ops:closes-issue item=198 -->" \
+  "#198"
+assert_fail "\"discloses\" is not \"closes\" (owner/repo#N form)" \
+  "The report discloses owner/repo#77 in full.
+<!-- agent-ops:closes-issue item=77 -->" \
+  "#77"
+
 # --- The keyword must be a word of its own, as it is to GitHub ---------------------
 assert_fail "a word merely ending in a keyword does not close anything" \
   "This leaves #198 unclosed #198 for now.

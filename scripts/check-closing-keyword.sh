@@ -91,6 +91,22 @@ mapfile -t items < <(grep -oE '<!-- agent-ops:closes-issue item=[0-9]+ -->' <<<"
 
 status=0
 
+# The keyword part of a closing reference — GitHub's own closing-keyword
+# list, case-insensitive, optionally colon-separated from the issue
+# reference that follows. Factored out so the marker check below and any
+# future match this script makes share one definition rather than drifting
+# apart (issue #1460).
+keyword_re='(close[sd]?|fix(e[sd])?|resolve[sd]?):?[[:space:]]+'
+
+# The issue-reference part: GitHub honours three spellings for the same
+# issue — "#N", "GH-N", and "owner/repo#N" — and closes the referenced issue
+# on merge for all three (issue #1460). The marker check below asks only
+# "does some closing keyword exist for this item", not "in which repo" — it
+# runs whether or not a repo slug was even passed, since
+# lib/closing-keyword-gate.sh never passes one — so it accepts any
+# owner/repo here rather than filtering to a specific one.
+issue_ref_re='(#|GH-|[[:alnum:]_.-]+/[[:alnum:]_.-]+#)'
+
 # The branch anchor: `agent/<N>` is minted by the Script only for a work
 # order whose item is a bare issue number — one there is therefore always
 # something to close — so it demands the marker's *presence*, the one thing the
@@ -109,16 +125,16 @@ fi
 for item in "${items[@]:-}"; do
   [[ -n "$item" ]] || continue
   # GitHub's own closing-keyword list: close(s|d), fix(es|ed), resolve(s|d),
-  # case-insensitive, immediately followed by "#N" (optionally ": #N") for
-  # the same number the marker names.
+  # case-insensitive, immediately followed by "#N", "GH-N" or "owner/repo#N"
+  # (optionally ": #N" etc.) for the same number the marker names.
   #
   # The keyword has to be a word of its own, as it is to GitHub's own parser —
   # "unclosed #198" and "discloses #198" contain "closed" and "closes" but
   # close nothing, and a check that accepted them would pass exactly the PR
   # it exists to fail. Markdown emphasis, backticks and hyphens are all
   # non-alphanumeric, so "**Closes #198**" still passes.
-  if ! grep -qiE "(^|[^[:alnum:]])(close[sd]?|fix(e[sd])?|resolve[sd]?):?[[:space:]]+#${item}([^0-9]|\$)" <<<"$body"; then
-    echo "::error::PR body names issue #${item} (agent-ops:closes-issue marker) but has no closing keyword (Closes/Fixes/Resolves #${item}) for it" >&2
+  if ! grep -qiE "(^|[^[:alnum:]])${keyword_re}${issue_ref_re}${item}([^0-9]|\$)" <<<"$body"; then
+    echo "::error::PR body names issue #${item} (agent-ops:closes-issue marker) but has no closing keyword (Closes/Fixes/Resolves #${item}, GH-${item}, or owner/repo#${item}) for it" >&2
     status=1
   fi
 done
