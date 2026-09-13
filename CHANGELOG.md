@@ -875,6 +875,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **The `closing-keyword` check no longer fails a pull request that spells
+  its closing keyword the way GitHub's own linked-issue syntax also allows**
+  (issue #1460). `scripts/check-closing-keyword.sh` matched a closing
+  keyword only when it was immediately followed by `#N`, but GitHub honours
+  `KEYWORD GH-N` and `KEYWORD OWNER/REPOSITORY#N` too and closes the
+  referenced issue on merge for all three — so a body reading
+  `Fixes Pullwright/agent-ops#198` or `Fixes GH-198` alongside its
+  `agent-ops:closes-issue` marker turned a required status check red over a
+  pull request that had done nothing wrong, and could not go green without
+  rewording the body. The keyword list and the issue reference are now two
+  shared patterns in the one script, with the reference accepting all three
+  spellings; the repo-qualified form satisfies the check whatever its
+  `owner/repo` reads, since this half is only ever asked whether a closing
+  keyword for the marked number exists — never in which repository — and it
+  runs where no repo slug was passed to it at all
+  (`lib/closing-keyword-gate.sh`). The `(^|[^[:alnum:]])` word-of-its-own
+  boundary and the trailing non-digit guard are unchanged and cover the new
+  spellings too, so `unclosed GH-198` and `discloses owner/repo#77` still
+  close nothing, exactly as `unclosed #198` already did.
+
 - **`test/gh-shim-auth.test.sh`'s "nothing configured" fixture no longer
   leaks a host's ambient `PW_GH_DEGRADE_TOKEN` into its assertion**
   (agent-ops#1432). `gh_shim_resolve_token` falls back to
