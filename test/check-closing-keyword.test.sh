@@ -479,7 +479,7 @@ assert_pass_tdr "a blockquote-line keyword demands no record flip" \
 assert_fail_tdr "an ordinary unquoted keyword outside any markdown context is still harvested" \
   "Fixes #240 for real this time." \
   "fix/some-branch" "acme/widgets" "9" "bare-unflipped" \
-  "does not set its frontmatter status: to resolved"
+  "does not set its frontmatter status: to a terminal state"
 
 # A closing fence only counts, to GitHub's own renderer, if it repeats the
 # opening fence's character and is at least as long: a bare "```" nested
@@ -497,7 +497,7 @@ nested content
 \`\`\`\`
 Fixes #240 for real this time." \
   "fix/some-branch" "acme/widgets" "9" "bare-unflipped" \
-  "does not set its frontmatter status: to resolved"
+  "does not set its frontmatter status: to a terminal state"
 
 if (( failures > 0 )); then
   echo "$failures failure(s)"
