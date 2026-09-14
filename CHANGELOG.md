@@ -8,6 +8,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **The host-facts record's filename now derives from the same node-name rule
+  every reader applies** (issue #1344). `lib/host-facts.sh`'s
+  `host_facts_node_name()` returned `NODE_NAME` (or the `hostname` fallback)
+  raw, while every consumer sanitizes its own copy with
+  `${name//[^A-Za-z0-9._-]/-}` before building a path from it —
+  `scripts/publish-dashboard.sh`'s self card, `scripts/doctor.sh`'s
+  host-budget and egress-MTU checks, `lib/monitor-digest.sh`'s self row,
+  `lib/standdown.sh`'s host-budget gate, and the peer directories
+  `scripts/state-sync.sh` publishes under. A `NODE_NAME` carrying any other
+  character therefore had `scripts/collect-host-facts.sh` write
+  `host-facts/<raw>.json` while all of them read `host-facts/<sanitized>.json`,
+  so each read `null` for ever without saying so — a silently absent host
+  card, and a host-budget stand-down gate with no evidence to judge.
+  `host_facts_node_name()` now applies that character class itself, leaving
+  one rule shared by the writer and every reader.
+
 - **The tech-debt record-flip check's keyword harvest is now markdown-aware**
   (issue #1463). `scripts/check-closing-keyword.sh`'s record-flip half
   harvested a closing keyword via a raw `grep` over the pull request body, so

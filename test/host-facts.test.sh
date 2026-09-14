@@ -64,6 +64,16 @@ fi
 assert_eq "DOCKER_MTU falls back to 1500, the same default compose.yaml uses" \
   "1500" "$(env -u DOCKER_MTU bash -c '. "'"$SCRIPT_DIR"'/lib/host-facts.sh"; host_facts_network_json' | jq -r '.docker_mtu_configured')"
 
+# --- host_facts_node_name sanitization (issue #1344) --------------------------
+# scripts/publish-dashboard.sh sanitizes its own copy of the node name
+# (`${self_node//[^A-Za-z0-9._-]/-}`) before reading a host-facts record; this
+# must sanitize the same way so the collector's write and the dashboard's
+# reads never disagree about the filename.
+assert_eq "a hostname-shaped NODE_NAME passes through unchanged" \
+  "poetic-1" "$(NODE_NAME='poetic-1' host_facts_node_name)"
+assert_eq "a NODE_NAME with a disallowed character is sanitized" \
+  "a-b-c" "$(NODE_NAME='a b:c' host_facts_node_name)"
+
 # --- host.mem_total_bytes / host.cpu_count (issue #757) ----------------------
 # Both read real, unfixtured system files (/proc/meminfo, /proc/cpuinfo, the
 # same files host_facts_mem_available_bytes already reads without an

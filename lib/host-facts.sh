@@ -18,9 +18,15 @@
 # host_facts_node_name — this node's own identity, the same fallback
 # `state-sync.sh` already uses (`NODE_NAME`, or a bare `hostname`), so a
 # record and the heartbeat beside it never disagree about whose node they
-# describe.
+# describe. Sanitized with the same character class
+# `scripts/publish-dashboard.sh` applies to its own `self_node` before
+# building a host-facts path, so the collector's write and the dashboard's
+# reads always derive the filename from one rule (issue #1344) — a
+# `NODE_NAME` containing any other character no longer orphans the self
+# card's `host` field.
 host_facts_node_name() {
-  printf '%s' "${NODE_NAME:-$(hostname 2>/dev/null || echo unknown)}"
+  local raw="${NODE_NAME:-$(hostname 2>/dev/null || echo unknown)}"
+  printf '%s' "${raw//[^A-Za-z0-9._-]/-}"
 }
 
 # host_facts_mem_available_bytes — `MemAvailable` from /proc/meminfo, in
