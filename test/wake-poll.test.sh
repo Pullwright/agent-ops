@@ -187,6 +187,20 @@ assert_eq "exactly one wake-poll-triggered event was logged (the two real wakes 
 # than copied a second time and drifting from it (agent-ops#TD26071401's own
 # "a second copy is how detectors drift apart" lesson, generalised to test
 # doubles).
+#
+# Not asserted here: the `claim-lost` event itself, with its `cause` field
+# (`held`/`pr-held`/`unreachable`) — that mapping and the `log_event` call
+# live inline in agent-cycle.sh's own claim loop, coupled to state (the
+# cycle id, the log file, the candidate) no unit test can construct without
+# either sourcing the whole script (which runs the pipeline, not a function)
+# or duplicating the loop. test/claim.test.sh itself stops at the same
+# boundary, for the same reason: it proves exactly what this file proves —
+# `lib/claim.sh` exits 0 for the winner and 3 for the loser — which is the
+# one fact `claim_rc == 3 → cause: "held"` (agent-cycle.sh, requirement 17a)
+# derives the logged cause from. The contended-loss-per-selection ratio
+# `scripts/pickup-metrics.sh` reports staying flat is, by its own nature, a
+# production measurement taken after this deploys and the fleet has run
+# under it — not something a pre-merge test can assert.
 claim_stub_dir="$tmp_dir/claim-bin"
 mkdir -p "$claim_stub_dir"
 cat > "$claim_stub_dir/gh" <<'STUB'
