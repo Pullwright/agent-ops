@@ -764,6 +764,23 @@ assert_eq "reserved label: refused, never applied" "reserved" \
 assert_eq "  ... nothing reached gh for it" "0" \
   "$(grep -cE 'gh-label (add|remove) o/r 55 blocked$' <<<"$calls")"
 
+# agent-ops#1293: for a tech-debt item, the item ref and the backing issue
+# number differ — the labels-minted event must carry the ref, matching every
+# sibling per-item event, not the bare number `_refiner_apply_labels` mints
+# against.
+td_number_candidates='[{"repo":"o/r","source":"tech-debt","item":"TD-PPagop-26080801",
+                         "entry":{"number":960,"ref":"TD-PPagop-26080801"}}]'
+verdicts='[{"repo":"o/r","item":"TD-PPagop-26080801","verdict":"refined",
+            "reason":"specified, and named a label",
+            "comments_posted":["https://github.com/o/r/issues/960#issuecomment-1"],
+            "labels":[{"name":"good-topic","colour":"112233","description":"a topic"}]}]'
+calls="$(run_case "refined tech-debt with a minted label" "$td_number_candidates" "$verdicts")"
+lm_evt="$(events_named "$calls" labels-minted | head -n1)"
+assert_eq "tech-debt minted label: item is the ref, not the issue number" \
+  "o/r TD-PPagop-26080801" "$(jq -r '"\(.repo) \(.item)"' <<<"$lm_evt")"
+assert_contains "  ... and gh still receives the real issue number" \
+  "gh-label add o/r 960 good-topic" "$calls"
+
 # The engagement-wide pool (10, requirement 6c) is shared across every item in
 # one engagement, not reset per item: five items, the first three taking
 # their own per-item cap of 3 (9 of the pool spent), the fourth taking the
