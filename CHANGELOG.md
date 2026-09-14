@@ -90,6 +90,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Event-driven dispatch: a wake-poll cron line wakes an idle node between
+  ordinary cycle firings** (issue #613, requirement 54). Pickup latency for a
+  source-relevant event previously had a floor of one
+  `schedule.cycle_interval_minutes` — the next cron firing, whatever happened
+  in the meantime. `scripts/wake-poll.sh`, on its own crontab line
+  (`schedule.wake_poll_minutes`, default 2m), does one conditional GET
+  (`If-None-Match`) per configured repository against a small, fixed set of
+  endpoints chosen to union-cover `lib/noop-skip.sh`'s own fingerprint table,
+  and invokes `agent-cycle.sh` — the identical entry point the ordinary cron
+  line uses, so a woken node takes the same lock, the same claims and the
+  same back-pressure cap as a cron-fired one — the moment any of them shows a
+  real change rather than a `304`. A poller, not a webhook receiver: nodes
+  have no public ingress, and a webhook needs an owner-only act a poller
+  does not. `abandoned-drafts` and `merge-conflicts` stay cron-only, since
+  neither moves any forge event a poll can see; `security`/`code-quality`
+  are also left to cron, since this deployment's own token cannot read the
+  Dependabot-alerts endpoint. `scripts/pickup-metrics.sh` gains a second,
+  forge-`created_at`-anchored pickup-latency measure
+  (`pickup_latency_forge_anchored`), since a poll-driven `first-seen` cannot
+  honestly measure a poll-driven pickup-latency improvement.
+
 - **A `landing-refusals` work source** (issue #979, requirement 53). Gate 4 of
   `_landing_stage_attempt` (`lib/landing.sh`) refuses to arm a pull request
   over an unreconciled human comment (`reconciliation-unanswered:`) or a

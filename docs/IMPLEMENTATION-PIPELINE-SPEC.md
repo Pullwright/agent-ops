@@ -9050,6 +9050,105 @@ implements.
     finish-then-continue (39) both
     raise how often nodes contend for the same item, which is why this
     became worth watching rather than left to a `claim-lost` grep.
+54. **Wake-poll: an event-driven wake between cron firings (D14, issue
+    #613).** `scripts/wake-poll.sh`, on its own crontab line
+    (`schedule.wake_poll_minutes`, default 2m — well under
+    `cycle_interval_minutes`'s own 15m default), does one conditional GET
+    (`If-None-Match`) per configured repository against a small, fixed set
+    of endpoints, and invokes `agent-cycle.sh` — the identical entry point
+    the cron line's own `@CYCLE_MINUTE@` firing uses, so a woken node
+    takes the same lock (requirement 1), the same claims (17a), and the
+    same back-pressure cap as a cron-fired one — the moment any of them
+    answers with real content rather than a `304`. This shortens pickup
+    latency for a source-relevant event without widening the
+    concurrent-claim window: nothing on the claim path changes, only how
+    soon `agent-cycle.sh` is invoked.
+
+    Mechanism, priced under D14: a GitHub webhook receiver was rejected —
+    nodes have no public ingress (they sit behind Tailscale,
+    `deploy/tailscaled.init`) and standing one up needs an owner-only act
+    per repository (ingress, a webhook registration, a shared secret). A
+    poller needs none of that, and its own cost is bounded and measured,
+    not assumed: GitHub does not charge a `304` against the primary
+    rate-limit budget (verified live against this deployment's own token
+    while this item was built — `x-ratelimit-remaining` held steady across
+    a conditional `304` and dropped by exactly one on the very next
+    ordinary call), so an idle repository's wake-poll ticks cost nothing;
+    a real change costs one call per endpoint that changed, at the exact
+    moment a cycle is about to spend far more anyway. Each endpoint call
+    is independent, so no lock guards two overlapping wake-poll runs — the
+    worst an overlap costs is a duplicated conditional GET, still free on
+    a `304`.
+
+    Endpoint choice walks `lib/noop-skip.sh`'s own fingerprint table
+    source by source, since the wake trigger must be a *subset* of what
+    busts that fingerprint or it wakes nodes for nothing:
+    `repos/<slug>/issues` (an issue or a comment on one bumps its own
+    `updated_at`, covering `issues` and `tech-debt`), `repos/<slug>/pulls`
+    (a review, a review comment or a plain comment on an open pull request
+    bumps its `updated_at` the same way, covering `review-feedback`,
+    `landing-refusals` and `human-visibility`), `repos/<slug>/actions/runs`
+    (a merge-group run — what a dequeue is decided from — is an ordinary
+    workflow run, covering `failed-runs` and `dequeued`), and
+    `repos/<slug>/commits` (anything living in the repository's own tree
+    changes by a push, covering `code`, `implementation-plan`,
+    `project-review` and `register-hygiene`). `security`/`code-quality`
+    are deliberately absent: this deployment's own token cannot read
+    `repos/<slug>/dependabot/alerts` (`403`, measured live) — polling an
+    endpoint the token cannot read would only ever log a warning, never a
+    wake. `abandoned-drafts` and `merge-conflicts` are absent by design,
+    not oversight, on `lib/noop-skip.sh`'s own header: neither moves any
+    forge event a poll can see (a draft goes abandoned by sitting
+    untouched; a pull request turns `CONFLICTING` when its *base* moves,
+    an event on a different item's own history) — the ordinary cron
+    firing is never replaced, only pre-empted, and everything wake-poll
+    does not cover still gets its ordinary `cycle_interval_minutes` look.
+
+    A repository's first-ever tick on a node has no stored `ETag`, so
+    every endpoint reads as "changed" and this wakes a cycle regardless of
+    whether anything actually moved since `main`'s last commit — the
+    identical bootstrap shape `lib/candidate-select.sh`'s own
+    `emit_first_seen` already names (its `bootstrap` flag), for the
+    identical reason: a first observation cannot be compared against a
+    previous one that does not exist. Costs at most one extra cycle per
+    (node, repository), once; the stored ETags are node-local
+    (`state_dir/wake-poll/`, excluded from `state-sync.sh` replication on
+    the same reasoning as `expensive-gather/`).
+
+    A wake logs one `wake-poll-triggered` event (`{ts, cycle: null, node,
+    event, changed}`, the same out-of-cycle envelope shape
+    `scripts/publish-revert-rate.sh`'s own `rework` rows use) — never a
+    quiet tick, matching this repository's own "don't pay to log the
+    no-op case" convention.
+
+    **Acceptance measurement.** A poll-driven `first-seen` cannot honestly
+    measure a poll-driven pickup-latency improvement, because waking a
+    node moves both ends of the gap `scripts/pickup-metrics.sh` already
+    measures (`first-seen` to `selection`) earlier by the same amount.
+    `lib/candidate-select.sh`'s `emit_first_seen` therefore carries a
+    candidate's own `created_at` forward as `forge_created_at` when the
+    source provides one (`scripts/gather-issues.sh` and
+    `scripts/gather-tech-debt.sh` both already do), and
+    `lib/item-lifecycle.sh`'s `item_lifecycle_pickup_pairs` pairs it
+    against the item's `selection` for a second measure,
+    `pickup_latency_forge_anchored` — anchored on the forge's own clock,
+    not this fleet's poll cadence, and therefore not bounded below by
+    `cadence_bound_minutes` the way `pickup_latency` is. A source whose
+    candidates carry no `created_at` simply contributes nothing to this
+    second measure (`coverage.forge_anchored` counts how many paired
+    items did); this is not a defect — it names exactly which sources'
+    improvement is honestly measurable today.
+
+    **The claim race.** `agent-cycle.sh`'s own claim step (17a) is already
+    race-correct by construction and unchanged by this requirement — a
+    wake reaches it through the identical path a cron firing does, adding
+    no new entry point. `test/wake-poll.test.sh` demonstrates this
+    directly: two claims racing the same item through `lib/claim.sh`,
+    framed as two "woken" nodes rather than test/claim.test.sh's own two
+    cron-fired ones, still resolve to exactly one winner (exit 0) and one
+    contended loss (exit 3, `cause: "held"`) — the same invariant
+    `scripts/pickup-metrics.sh`'s contended-loss-per-selection ratio
+    already counts.
 
 ### Every stage (untrusted external content)
 
