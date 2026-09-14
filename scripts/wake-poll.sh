@@ -115,6 +115,10 @@ flags, reads config.json beside this script.
   --dry-run    detect and log a change but never invoke agent-cycle.sh
 
 Exit status is always 0 — see this file's own header for why.
+
+Environment:
+  WAKE_POLL_AGENT_CYCLE_BIN  override which script a detected change invokes
+                             (test/wake-poll.test.sh points this at a stub).
 EOF
 }
 
@@ -236,5 +240,9 @@ jq -nc --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg node "$node_name" \
     '{ts: $ts, cycle: null, node: $node, event: "wake-poll-triggered", changed: $changed}' \
   >> "$log_file" 2>/dev/null || true
 
-"$SCRIPT_DIR/agent-cycle.sh"
+# WAKE_POLL_AGENT_CYCLE_BIN lets a test point this at a stub rather than the
+# real agent-cycle.sh (test/wake-poll.test.sh) — the same override-by-env-var
+# seam test/claim.test.sh's CLAIM_GH and test/state-sync.test.sh's
+# STATE_SYNC_REMOTE already use, never read in production.
+"${WAKE_POLL_AGENT_CYCLE_BIN:-$SCRIPT_DIR/agent-cycle.sh}"
 exit 0
