@@ -246,8 +246,10 @@ enforces mechanically.
 
 `tech-debt/` is a **frozen historical archive** of the per-item register
 this repository used before this policy: every record ever allocated
-under scope `PPagop`, kept in place forever — never edited, deleted, or
-renamed. `TECH-DEBT.md` is a short policy pointer; `docs/TECH-DEBT-REGISTER.md`
+under scope `PPagop`, kept in place forever — never deleted or renamed,
+and never edited beyond the terminal-`status:` frontmatter flip above,
+which leaves each record's body exactly as
+filed. `TECH-DEBT.md` is a short policy pointer; `docs/TECH-DEBT-REGISTER.md`
 in `Poetic-Poems/poetic` documents the frozen archive's format, ID grammar
 and the scope-code registry. Do not add new files to `tech-debt/`, and do
 not resurrect the `td/<id>` claim-branch workflow — both belong to the

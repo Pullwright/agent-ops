@@ -12,9 +12,11 @@ then carries the record into `main`'s own immutable history.
 
 `tech-debt/` is a **frozen historical archive**: every record this
 repository ever allocated under its `PPagop` scope while debt was tracked
-as a per-item register, before that policy changed. Its files are never
-edited, deleted, or renamed — `git log --follow tech-debt/<id>.md` remains
-each one's audit trail. The frozen format, ID grammar and scope-code
+as a per-item register, before that policy changed. No file is added to it,
+deleted from it, or renamed within it, and the only edit any of its files
+still takes is the terminal-`status:` frontmatter flip below —
+`git log --follow tech-debt/<id>.md` remains each one's audit trail. The
+frozen format, ID grammar and scope-code
 registry are documented in
 [docs/TECH-DEBT-REGISTER.md in Poetic-Poems/poetic](https://github.com/Poetic-Poems/poetic/blob/main/docs/TECH-DEBT-REGISTER.md).
 
