@@ -34,10 +34,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   this exit-0 failure mode was the majority of recorded stage failures, and
   an alternating mix of it with genuine non-zero exits never reached
   `THRESHOLD`, so a stage failing every cycle could report `ok` throughout.
-  `stage-end` and `attempt-failed` are now joined on their shared `cycle` +
-  `stage`, so either a non-zero exit or a matching `attempt-failed` counts
-  as a failed attempt, and `last_detail` is derived from the same join so it
-  never shows a detail from an already-cleared streak.
+  `stage-end` and `attempt-failed` are now joined on their shared cycle id
+  (`cycle` for the implementation pipeline's own `log.jsonl`, `monitor` for
+  the Monitor's `monitor-log.jsonl`) plus `stage`, so either a non-zero exit
+  or a matching `attempt-failed` counts as a failed attempt, and
+  `last_detail` is derived from the same join so it never shows a detail
+  from an already-cleared streak.
 
 - **The tech-debt record-flip check's keyword harvest is now markdown-aware**
   (issue #1463). `scripts/check-closing-keyword.sh`'s record-flip half
