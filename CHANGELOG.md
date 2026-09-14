@@ -71,9 +71,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   them, reading `failing` for a coordinator that never actually failed once.
   Each of those three call sites now carries a `kind` on its `attempt-failed`
   (`"needs-refinement"`, already present for an unrelated reason, or the new
-  `"item-block"` for a void refusal), and `stage_health_verdicts`' join
-  excludes any `attempt-failed` carrying a non-empty `kind` — a genuine
-  stage failure never sets one.
+  `"item-block"` for a void refusal) — see the next entry for how
+  `stage_health_verdicts`' own join is kept from counting it.
+
+- **The per-stage health verdict no longer misreads a freshly blocked item as
+  a stage failure** (issue #1511). Issue #983's own fix, above, joined
+  `stage-end` and `attempt-failed` on cycle + stage so a stage that exits 0
+  while nonetheless failing still counts as a failed attempt — but
+  `attempt-failed` is also requirement 34's item-block record: a
+  needs-refinement block, a void-refusal, a hand-flagged-label block, a
+  Reviewer hand-back, or an Implementer's own `blocked`/`void-refused`
+  report all log one for a stage that ran to completion and reported
+  truthfully on the *item*, never on itself, with its own `stage-end` for
+  that cycle carrying `exit_code: 0` regardless. The join had no way to
+  tell the two apart, so three consecutive, genuinely successful cycles
+  that each freshly blocked a different item flipped the stage's verdict to
+  `failing` on the dashboard and in the monitor digest's failing-stages
+  column, with `last_detail` showing the item's block reason as though it
+  were the stage's own. Every genuine stage-attempt failure now carries
+  `stage_failure: true` — `log_attempt_failed`'s own callers in
+  `agent-cycle.sh`, `handle_stage_failure` and the coordinator's
+  unparseable-message path in `lib/stage-attempt.sh`, and both of
+  `monitor-cycle.sh`'s own failure writers — and the join now requires that
+  field rather than reading `kind` (above), leaving every item-verdict
+  `attempt-failed` correctly out of the count regardless of which call site
+  logged it. `kind` remains, unchanged, for its other readers
+  (`lib/refinement.sh`, `lib/enabler.sh`, the dashboard).
 
 - **The tech-debt record-flip check's keyword harvest is now markdown-aware**
   (issue #1463). `scripts/check-closing-keyword.sh`'s record-flip half

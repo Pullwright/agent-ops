@@ -4684,20 +4684,25 @@ implements.
    via `log_event`) plus stage: `last_success` (the most recent `stage-end`
    with exit_code 0, or null), `consecutive_failures` (a running streak of
    `stage-end`s that each count as failed — either a non-zero `exit_code`, or
-   a zero one with a genuine `attempt-failed` logged for that same `cycle` (a
-   stage can exit 0 while its attempt nonetheless failed, e.g. an unparseable
-   final message, and that counts exactly as much as a non-zero exit;
-   TD-PPagop-26082504) — reset to 0 by a `stage-end` that fails neither test.
-   "Genuine" excludes an `attempt-failed` carrying a non-empty `kind` (issue
-   #1498): the Co-Ordinator's own per-item block records — a needs-refinement
-   block and a hand-flag (`kind: "needs-refinement"`), a void refusal (`kind:
-   "item-block"`) — are logged with `stage: "coordinator"` even in cycles
-   where the coordinator stage itself succeeded, and the join must not count
-   one of those as a coordinator stage failure.
-   The same reduction `crash_loop_verdict` already uses, but per-stage,
-   per-node, and without requiring an identical failure detail, since "always
-   wrong in some new way" is exactly as unhealthy as "always wrong the same
-   way"), `last_detail` (the current streak's own most recent failure's
+   a zero one with an `attempt-failed` carrying `stage_failure: true` logged
+   for that same `cycle` (a stage can exit 0 while its attempt nonetheless
+   failed, e.g. an unparseable final message, and that counts exactly as
+   much as a non-zero exit; TD-PPagop-26082504) — reset to 0 by a `stage-end`
+   that fails neither test. `stage_failure: true` is what distinguishes a
+   genuine stage-attempt failure from an `attempt-failed` that instead
+   records a verdict about the *item* a stage reached by running to
+   completion — a needs-refinement block, a hand-flag, a void-refusal (`kind:
+   "needs-refinement"`/`"item-block"` respectively, issue #1498, read by
+   `lib/refinement.sh`, `lib/enabler.sh` and the dashboard for reasons
+   unrelated to this join), a hand-flagged label, a Reviewer hand-back, an
+   Implementer's own `blocked`/`void-refused` report — which shares the event
+   name and the stage+cycle join key (requirement 34 reads both the same way
+   to block an item) but is not a stage failure, and whose writer therefore
+   never sets the field (issue #1511). The same reduction `crash_loop_verdict`
+   already uses, but per-stage, per-node, and without requiring an identical
+   failure detail, since "always wrong in some new way" is exactly as
+   unhealthy as "always wrong the same way"), `last_detail` (the current
+   streak's own most recent failure's
    detail — its matching `attempt-failed` by that same `cycle` join, or,
    where a non-zero exit has no matching `attempt-failed`, a synthesized
    `"stage-end exited <exit_code>"` — cleared to null the moment a success
