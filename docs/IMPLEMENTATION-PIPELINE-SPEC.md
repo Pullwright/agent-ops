@@ -17904,13 +17904,13 @@ with the Reviewer's own.
     `scripts/sweep-human-visibility.sh`'s idle nudge (requirement 38c) takes
     an optional fourth argument, the fleet-wide union log; when a pull
     request's most recent `landing-refused` event reads
-    `reconciliation-unanswered:`/`reconciliation-unreadable:` and no fresher
-    live check clears it, the nudge names that reason instead of "waiting on
-    a merge click" — the same marker-based once-per-state suppression as
-    before, `<!-- agent-ops:human-nudge -->`, so the fix changes the wording a
-    human sees, not how often they see it. `lib/standdown.sh`'s own call site
-    passes `union_log` alongside the existing `cycle_id`/`node_name`
-    arguments.
+    `reconciliation-unanswered:`/`reconciliation-unreadable:` and a fresh
+    live check still confirms at least one unreconciled comment, the nudge
+    names that reason instead of "waiting on a merge click" — the same
+    marker-based once-per-state suppression as before, `<!-- agent-ops:human-nudge
+    -->`, so the fix changes the wording a human sees, not how often they see it.
+    `lib/standdown.sh`'s own call site passes `union_log` alongside the
+    existing `cycle_id`/`node_name` arguments.
 
 ## Components
 
