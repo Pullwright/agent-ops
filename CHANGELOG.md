@@ -8,6 +8,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **An already-settled open question no longer resurfaces in a later
+  adjudication pass or escalation issue body** (issue #984).
+  `landing_open_question_latest` (`lib/landing.sh`) carried every
+  `open-question-raised` event forward forever, deduplicated by question
+  text but with no filter at the pull request's own last `settled`-verdict
+  `open-question-adjudication` event. Once question A settled and its label
+  was released, a later Reviewer round raising question B handed the next
+  adjudication pass — and any escalation issue — both A and B, which could
+  drag a pass to escalate and list a question as open that a human had
+  already answered. `landing_open_question_latest` now filters to a
+  high-water mark: only `open-question-raised` events at or after the most
+  recent settled adjudication survive; the union/dedup behaviour above that
+  mark is unchanged. The adjudication prompt's own description of what
+  `questions` contains, and the label-release-failure warning (which
+  wrongly claimed the question "will settle again next round"), are
+  corrected to match.
+
 - **A `labels-minted` event now names the item ref, whichever stage emitted
   it** (issue #1293, requirement 6c). `_refiner_apply_labels`
   (`lib/refinement.sh`) received only the backing issue number and logged

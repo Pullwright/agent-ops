@@ -945,6 +945,45 @@ out="$(landing_open_question_latest "https://github.com/acme/widgets/pull/12" < 
 assert_eq "stdin works the same as a named file (LOG_FILE omitted/-)" \
   "2" "$(jq 'length' <<<"$out")"
 
+# --- landing_open_question_latest: the settled high-water mark (agent-ops#984) --
+
+cat > "$log_file" <<'LOG'
+{"ts":"2026-08-20T00:00:00Z","event":"open-question-raised","repo":"acme/widgets","pr_url":"https://github.com/acme/widgets/pull/12","questions":[{"question":"Is CODEOWNERS in scope?","why_this_actor_cannot_settle_it":"scope call","comment_url":"https://github.com/acme/widgets/pull/12#issuecomment-1"}]}
+{"ts":"2026-08-20T01:00:00Z","event":"open-question-adjudication","repo":"acme/widgets","pr_url":"https://github.com/acme/widgets/pull/12","verdict":"settled","evidence":"the diff already answers it","adjudication":true}
+{"ts":"2026-08-21T00:00:00Z","event":"open-question-raised","repo":"acme/widgets","pr_url":"https://github.com/acme/widgets/pull/12","questions":[{"question":"Is the second file also in scope?","why_this_actor_cannot_settle_it":"scope call","comment_url":"https://github.com/acme/widgets/pull/12#issuecomment-2"}]}
+LOG
+
+out="$(landing_open_question_latest "https://github.com/acme/widgets/pull/12" "$log_file")"
+assert_eq "AC1: a question settled before a later round's own raise is excluded" \
+  "1" "$(jq 'length' <<<"$out")"
+assert_contains "  ... only the later, still-unsettled question remains" \
+  "Is the second file also in scope?" "$out"
+assert_eq "  ... never the one the settled adjudication already answered" \
+  "0" "$(jq '[.[] | select(.question | contains("CODEOWNERS"))] | length' <<<"$out")"
+
+cat > "$log_file" <<'LOG'
+{"ts":"2026-08-20T00:00:00Z","event":"open-question-raised","repo":"acme/widgets","pr_url":"https://github.com/acme/widgets/pull/12","questions":[{"question":"Is CODEOWNERS in scope?","why_this_actor_cannot_settle_it":"scope call","comment_url":"https://github.com/acme/widgets/pull/12#issuecomment-1"}]}
+{"ts":"2026-08-20T01:00:00Z","event":"open-question-adjudication","repo":"acme/widgets","pr_url":"https://github.com/acme/widgets/pull/12","verdict":"settled","evidence":"the diff already answers it","adjudication":true}
+LOG
+
+out="$(landing_open_question_latest "https://github.com/acme/widgets/pull/12" "$log_file")"
+assert_eq "AC2: the settled event alone excludes the question, whether or not the label release that followed it succeeded — this reader never consults the label" \
+  "0" "$(jq 'length' <<<"$out")"
+
+cat > "$log_file" <<'LOG'
+{"ts":"2026-08-20T00:00:00Z","event":"open-question-raised","repo":"acme/widgets","pr_url":"https://github.com/acme/widgets/pull/12","questions":[{"question":"Is CODEOWNERS in scope?","why_this_actor_cannot_settle_it":"scope call","comment_url":"https://github.com/acme/widgets/pull/12#issuecomment-1"}]}
+{"ts":"2026-08-20T01:00:00Z","event":"open-question-adjudication","repo":"acme/widgets","pr_url":"https://github.com/acme/widgets/pull/12","verdict":"escalate","evidence":"a human decision is needed","adjudication":true}
+{"ts":"2026-08-21T00:00:00Z","event":"open-question-raised","repo":"acme/widgets","pr_url":"https://github.com/acme/widgets/pull/12","questions":[{"question":"Is the second file also in scope?","why_this_actor_cannot_settle_it":"scope call","comment_url":"https://github.com/acme/widgets/pull/12#issuecomment-2"}]}
+LOG
+
+out="$(landing_open_question_latest "https://github.com/acme/widgets/pull/12" "$log_file")"
+assert_eq "AC3: an escalate verdict sets no mark — the union above it is unchanged" \
+  "2" "$(jq 'length' <<<"$out")"
+assert_contains "  ... the never-settled first question still carries forward" \
+  "Is CODEOWNERS in scope?" "$out"
+assert_contains "  ... alongside the later one" \
+  "Is the second file also in scope?" "$out"
+
 echo
 if (( failures == 0 )); then
   echo "All landing assertions passed."

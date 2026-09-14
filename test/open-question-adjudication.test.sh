@@ -237,6 +237,8 @@ rc="$(run_case_a LEVEL="adjudicate-first" PASS_AVAILABLE_RC="0" RELEASE_RC="1" \
 assert_eq "a settled verdict whose label release failed still falls through" "0" "$rc"
 assert_contains "... and logs a warning naming the label" \
   "could not be removed" "$(event_of_a warning)"
+assert_contains "... naming the true next-round outcome (escalates on the still-present label, never re-settles silently — agent-ops#984)" \
+  "escalate on the still-present label" "$(event_of_a warning)"
 
 # --- adjudicate-first, escalate: escalates with the adjudication's own
 #     evidence and refuses ---------------------------------------------
