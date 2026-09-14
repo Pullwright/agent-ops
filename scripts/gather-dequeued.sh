@@ -16,7 +16,7 @@
 # Co-Ordinator can select: this script is that other half.
 #
 # Given a repo slug, print a JSON array of candidates: open, *non-draft* PRs
-# carrying <pr-label> whose head branch is ours (<branch-prefix> or `td/`),
+# carrying <pr-label> whose head branch is ours (<branch-prefix>),
 # which GitHub's merge queue most recently removed for a merge-group checks
 # failure and has not since re-queued, and which are not already conflicting
 # against their base (that is requirement 3g's own candidate — see "Why this
@@ -51,8 +51,8 @@
 # ## The candidate rule
 #
 # A PR is a candidate iff it is open, **not** a draft, carries <pr-label>,
-# its head branch starts with <branch-prefix> (or `td/`, the tech-debt claim
-# branch) — i.e. this system raised it, the same "ours" test
+# its head branch starts with <branch-prefix> — i.e. this system raised it,
+# the same "ours" test
 # gather-merge-conflicts.sh applies, since force-pushing a fix onto a
 # human's own branch is exactly what the Landing Gate reserves every other
 # branch against — and:

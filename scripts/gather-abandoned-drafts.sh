@@ -48,8 +48,8 @@
 #     claim marker (requirement 23): a draft that has been sitting untouched is a
 #     claim whose owner never came back. A *ready* PR is finished work waiting on
 #     the human and is not ours to touch (that is review-feedback's job).
-#   - it carries <pr-label> and its head branch starts with <branch-prefix> (or
-#     `td/`, the tech-debt claim branch) — i.e. this system raised it. The Human
+#   - it carries <pr-label> and its head branch starts with <branch-prefix> —
+#     i.e. this system raised it. The Human
 #     Gate reserves every other branch for humans; an abandoned draft on a human's
 #     branch is the human's to finish, not ours to force-push.
 #   - its last **real** activity was at least <stale-hours> ago (TD26072605). A

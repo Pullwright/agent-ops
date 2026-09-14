@@ -58,8 +58,8 @@
 #   - it is open and not a draft — a draft is the Implementer's own claim
 #     marker, and `lib/landing.sh` gate 4 never runs against one in the first
 #     place, so there is nothing here for `gather-abandoned-drafts.sh` to miss;
-#   - it carries <pr-label> and its head branch starts with <branch-prefix> (or
-#     `td/`, the tech-debt claim branch) — i.e. this system raised it, the same
+#   - it carries <pr-label> and its head branch starts with <branch-prefix> —
+#     i.e. this system raised it, the same
 #     "ours" test every sibling finishing source applies;
 #   - the most recent `landing-refused` event logged against it in <union-log>
 #     has a `reason` beginning `reconciliation-unanswered:` or

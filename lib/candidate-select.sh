@@ -85,7 +85,7 @@ claim_branch_for() {  # <source> <item>
 # branch found here is either still fresh or has real work pushed to it, and
 # either way belongs in the list — no separate TTL check is needed for it.
 #
-# A branch-derived item is recovered by stripping `td/` or `branch_prefix`
+# A branch-derived item is recovered by stripping `branch_prefix`
 # from the branch name, the exact inverse of claim_branch_for above. That
 # recovery is exact for every item this system ever mints such a branch for —
 # an issue number, an alert ref, or a project-review ref —
@@ -111,11 +111,10 @@ gather_claimed() {  # <target-slug> -> JSON array of {item, age_hours, pr_number
   # one repo, growing with claim volume) and can hit MAX_ARG_STRLEN (test 1);
   # `[]` here reads exactly like "this repo genuinely has no claims" (test 2),
   # which the caller uses to decide whether a candidate is already claimed.
-  out="$(jq -c -n --arg tp 'td/' --arg ap "$branch_prefix" --argjson reg "$registry_out" --argjson br "$branches_out" '
+  out="$(jq -c -n --arg ap "$branch_prefix" --argjson reg "$registry_out" --argjson br "$branches_out" '
     ( [ $reg[] | {item, age_hours, pr_number: (.pr_number // null)} ] ) as $from_registry
     | ( [ $br[]
-          | (if startswith($tp) then .[($tp | length):]
-             elif ($ap != "" and startswith($ap)) then .[($ap | length):]
+          | (if ($ap != "" and startswith($ap)) then .[($ap | length):]
              else empty end)
           | select(. != "")
           | {item: ., age_hours: null, pr_number: null} ] ) as $from_branches

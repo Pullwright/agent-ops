@@ -11,10 +11,8 @@
 #                   — even at the same SHA, which a plain `git push` of an
 #                   identical ref would silently no-op ("Everything
 #                   up-to-date", both racers convinced they won). The claim
-#                   branch *is* the working branch: `td/<ID>` for tech-debt —
-#                   the same lock the human claiming workflow in TECH-DEBT.md
-#                   takes, so agents and humans contend safely — and
-#                   `agent/<item-ref>` for everything else.
+#                   branch *is* the working branch: `agent/<item-ref>` for
+#                   every source, tech-debt included.
 #   file claims     a create-only contents-API PUT (no `sha`) in the state
 #                   repository, for work that has no new branch to create:
 #                   review-feedback amends an existing PR.
@@ -35,7 +33,7 @@
 #                                                      # a pull request <counted-prs> already counted
 #   claim.sh claims   <target-slug>                   # registry entries younger than claim_ttl_hours,
 #                                                      # as {item, kind, age_hours, pr_number?} (both shapes)
-#   claim.sh branches <target-slug>                   # live td/*, <branch_prefix>* branch names
+#   claim.sh branches <target-slug>                   # live <branch_prefix>* branch names
 #   claim.sh gc                                       # sweep entries older than claim_ttl_hours
 #
 # Exit codes: 0 won / done · 3 lost (someone else holds it) · 1 error.

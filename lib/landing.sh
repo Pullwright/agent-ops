@@ -894,8 +894,8 @@ _landing_arm_failure_reason() {
 # lib/cycle-state.sh. Malformed lines are skipped, not fatal (`fromjson? //
 # empty`, the same tolerant-line convention `blocked_items` uses); several
 # `selection` events for the same repo/branch keep only the most recent
-# (`sort_by(.ts) | last`) — a branch this system reuses (a tech-debt item's
-# `td/<ID>` retried under a fresh claim) still resolves to its current claim,
+# (`sort_by(.ts) | last`) — a branch this system reuses (an item retried
+# under a fresh claim) still resolves to its current claim,
 # never a stale one. Empty on no match, an unreadable log, or nothing to
 # read — the sweep must skip a candidate it cannot classify, never guess at
 # a source that could put a non-routine pull request through the routine
