@@ -808,6 +808,32 @@ assert_eq "  ... the fifth item's suggestion is refused engagement-cap" "engagem
 assert_eq "  ... with nothing created or applied for it" '{"created":[],"applied":[]}' \
   "$(jq -c '{created, applied}' <<<"$(sed -n '5p' <<<"$lm_evts")")"
 
+# agent-ops#1293, the other half: the engagement-cap refusal is its own
+# emitter, reached by an early return before `labels_mint` is ever called, so
+# it has to name the item ref too. Same pool arithmetic as the case above,
+# with a tech-debt item — ref and issue number distinct — in the refused seat.
+cap_td_candidates="$(jq -nc '[range(1;5) | {repo: "o/r", source: "issues", item: (. | tostring)}]
+  + [{repo: "o/r", source: "tech-debt", item: "TD-PPagop-26080801",
+      entry: {number: 960, ref: "TD-PPagop-26080801"}}]')"
+verdicts="$(jq -nc '
+  def mk(item; url_n; labels): {repo: "o/r", item: item, verdict: "refined",
+    reason: "engagement cap probe",
+    comments_posted: [("https://github.com/o/r/issues/" + (url_n | tostring) + "#issuecomment-1")],
+    labels: labels};
+  [ mk("1"; 1; [{name:"f1"},{name:"f2"},{name:"f3"}]),
+    mk("2"; 2; [{name:"g1"},{name:"g2"},{name:"g3"}]),
+    mk("3"; 3; [{name:"h1"},{name:"h2"},{name:"h3"}]),
+    mk("4"; 4; [{name:"i1"}]),
+    mk("TD-PPagop-26080801"; 960; [{name:"j1"}]) ]')"
+calls="$(run_case "engagement cap refuses a tech-debt item" "$cap_td_candidates" "$verdicts")"
+lm_evt="$(events_named "$calls" labels-minted | sed -n '5p')"
+assert_eq "engagement-cap refusal: item is the ref, not the issue number" \
+  "TD-PPagop-26080801" "$(jq -r '.item' <<<"$lm_evt")"
+assert_eq "  ... and it really is the engagement-cap branch that refused it" \
+  "engagement-cap" "$(jq -r '.refused[0].reason' <<<"$lm_evt")"
+assert_eq "  ... with nothing reaching labels_mint for it" "0" \
+  "$(grep -cE 'gh-label add o/r 960 j1$' <<<"$calls")"
+
 # --- One home per refinement (agent-ops#1128) ---------------------------------
 #
 # `refinement_record_fields` used to record whatever the verdict offered: a
