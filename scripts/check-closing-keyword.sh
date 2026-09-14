@@ -32,7 +32,7 @@
 # a head branch matching `agent/<N>` therefore *requires* both the marker for
 # `N` (which the post-merge sweep keys on, requirement 17c) and a closing
 # keyword for `N`. A PR with no marker and a non-numeric branch covers every
-# source with nothing to close (register-hygiene, security, project-review,
+# source with nothing to close (security, project-review,
 # …), and passes.
 #
 # A second, independent gap (issue #1363): a `pw::type:tech-debt` issue

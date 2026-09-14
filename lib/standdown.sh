@@ -572,7 +572,7 @@ fi
 # uses to see its own cycle's freshly-logged events: `human_visibility_json`,
 # computed later this cycle from `union_log` (requirement 38e), must see a
 # violation this very sweep just found, not only one a previous cycle logged —
-# otherwise the register-hygiene pre-fetch a few hundred lines below would
+# otherwise the human-visibility hygiene pass a few hundred lines below would
 # never catch what its own cycle's sweep just discovered, and the violation
 # would sit one full cycle behind its own detection for no reason.
 if ! (( DRY_RUN )); then

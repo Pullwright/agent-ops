@@ -42,7 +42,7 @@
 #                         `implementation_plan_path` document on the default
 #                         branch, is checked (`- [x]`)
 #
-# Everything else — a security or code-quality finding, a register-hygiene or
+# Everything else — a security or code-quality finding, or a
 # human-visibility item — is left blocked for the Enabler, and deliberately:
 # `gather-findings.sh` degrades to `[]` on an API error *by design*, because
 # its output is given to the Co-Ordinator and a Co-Ordinator that sees no
@@ -50,10 +50,9 @@
 # "every alert is fixed", and one 403 would clear every alert block on the
 # fleet. The digest this file reads instead carries `ok` precisely so that an
 # unsampled repo can be told from an empty one (requirement 3b), and an
-# `ok: false` repo clears nothing here. Neither a register-hygiene nor a
-# human-visibility item has a completion signal at all to read — the
-# register, or GitHub's own live pull-request state, *is* the item, and its
-# own re-derivation is what `gather-register-hygiene.sh` or
+# `ok: false` repo clears nothing here. A human-visibility item has no
+# completion signal at all to read — GitHub's own live pull-request state
+# *is* the item, and its own re-derivation is what
 # `gather-human-visibility-hygiene.sh` itself repairs.
 #
 # The event written is `unblocked`, never `item-void`. Requirement 34d makes a
@@ -85,7 +84,7 @@ WORK_GONE_REVIEW_RE='^review-[0-9]{4}-[0-9]{2}-[0-9]{2}-R-[0-9]+$'
 
 # `W10-breach-handling`: an implementation-plan task id, distinguished from the
 # other shapes above (and from `dependabot-alert-4`, `code-scanning-alert-7`,
-# `register-hygiene-<hash>`, `human-visibility-<hash>`, none of which start
+# `human-visibility-<hash>`, none of which start
 # with an upper-case letter) by construction rather than by enumerating what
 # it is not.
 WORK_GONE_PLAN_RE='^[A-Z][A-Za-z0-9]*-[a-z0-9][a-z0-9-]*$'

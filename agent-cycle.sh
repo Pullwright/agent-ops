@@ -2050,7 +2050,7 @@ if (( backpressure_tripped )) || (( DRAINING )); then
   # restricted cycle, and one that would strip the no-op fingerprint exactly
   # when the gate is fullest. The narrowing of `sources` just below does the
   # same job for the bands this block leaves populated (`findings`,
-  # `register_hygiene`, `human_visibility`): `coordinator_eligible_items` reads
+  # `human_visibility`): `coordinator_eligible_items` reads
   # the list, not the array. A drain narrows exactly the same way — refusing
   # new intake means every non-finishing source, not merely `issues`/
   # `tech_debt` — so the Refiner (which reads only those two, requirement 2.9)

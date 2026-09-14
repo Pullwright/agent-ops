@@ -240,9 +240,8 @@ void_entry_resolvable_evidence() {
 # `gh api` exits non-zero for every HTTP error alike, but GitHub's own response
 # body says which one it was, and `gh` hands that body back on stdout even as
 # it exits: `{"message": "Not Found", …, "status": "404"}`. Testing GitHub's
-# answer rather than `gh`'s phrasing of it is the idiom
-# `scripts/gather-register-hygiene.sh` already uses to tell "this repo keeps no
-# register" from "we could not look", and it is the same distinction here.
+# answer rather than `gh`'s phrasing of it is what tells "this repo keeps
+# none" from "we could not look" here.
 #
 # A `ref` GitHub cannot resolve is a 404 too, but a differently-worded one
 # ("No commit found for the ref …"), and it is *not* absence: nothing was

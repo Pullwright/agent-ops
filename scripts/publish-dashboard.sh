@@ -2690,11 +2690,10 @@ if (( WITH_GITHUB )); then
     # metadata has not been read yet are kept — they are not yet known *not* to
     # be work — and render as the bare ID until the cache reaches them.
     # A repo with no register just 404s to an empty roster — legitimate, and
-    # distinguished from a real failure the same way gather-register-hygiene.sh
-    # tells the two apart: gh still prints the API's own JSON error body (with
-    # its own `.status`) on a non-2xx response, so a genuine 404 and a rate
-    # limit or outage are told apart from the body, not guessed from an empty
-    # string either could equally produce.
+    # distinguished from a real failure by the API's own JSON error body
+    # (with its own `.status`) on a non-2xx response: gh still prints it, so
+    # a genuine 404 and a rate limit or outage are told apart from the body,
+    # not guessed from an empty string either could equally produce.
     td_rows="$work_tmp/td.rows"; : > "$td_rows"
     td_raw="$(gh_call api "repos/$slug/contents/tech-debt")"
     td_rc=$?

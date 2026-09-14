@@ -17,10 +17,8 @@
 # JSON and exits 0 — a missing feature must never abort a cycle. A real
 # failure (a timeout, a rate limit, an outage) is different: it must not
 # render exactly like "nothing to report" (TD-PPagop-26080201), so it is
-# distinguished from an absent feature the same way
-# scripts/gather-register-hygiene.sh tells a repo with no register apart from
-# an API that would not answer — the error body's own `.status` — and the
-# script exits 1 rather than swallowing it. 403 alone cannot carry that
+# distinguished from an absent feature by the error body's own `.status`,
+# and the script exits 1 rather than swallowing it. 403 alone cannot carry that
 # distinction on its own, unlike 404: GitHub uses it both for "this feature is
 # turned off here" and for "you have been rate-limited", so a 403 is only
 # legitimate when its own message does not say rate limit.
