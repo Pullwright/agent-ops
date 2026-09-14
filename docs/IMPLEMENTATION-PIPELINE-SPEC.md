@@ -10688,14 +10688,14 @@ implements.
     an earlier direct filing — that file is still the permanent register
     entry: the same pull request must also flip its frontmatter to `status:
     resolved`, filling `resolved:` and `ref:`, exactly as `TECH-DEBT.md`'s
-    "Claiming an item" step 6 describes (PR #1313 is the precedent) — or,
+    "Resolution and history" describes (PR #1313 is the precedent) — or,
     where the work's conclusion is that the item was never debt, to
     `status: not-debt` with `ref:` pointing at where the content moved
     (`TECH-DEBT.md` "Resolution and history"; issue #1437) —
     closing the issue alone does not resolve it, and skipping this step is
     what left `tech-debt/TD-PPagop-26082412.md` at `status: open` after PR
-    #1355's first round. An issue with no such line has no file to flip and
-    no `td-check.pl` to satisfy — this is a pull-request-body convention,
+    #1355's first round. An issue with no such line has no file to flip —
+    this is a pull-request-body convention,
     not a file, for that case only — and the block's shape is fixed so the
     archive mirror and later analytics can parse it (the mirror and its own
     retention are D15's separate concern, not this requirement's).
@@ -10785,9 +10785,9 @@ implements.
     diff adds a line setting that file's `status:` to one of the register's
     two terminal states — `resolved`, or `not-debt` for an item the
     resolving pull request concludes was never debt (issue #1437: both are
-    equally terminal to `td-check.pl`, `lib/work-gone.sh` and
-    `lib/candidate-gather.sh`, and `td-check.pl` still requires a `not-debt`
-    row to carry its `ref:`). PR #1355's first round is
+    equally terminal to `lib/work-gone.sh` and
+    `lib/candidate-gather.sh`, and a `not-debt` row still requires a `ref:`
+    of its own). PR #1355's first round is
     the concrete miss this closes: the issue closed, the file left at
     `status: open` on `main` until a later round caught it by hand — nothing
     before this checked the flip mechanically, only the prose
@@ -18886,8 +18886,8 @@ What exists, and the requirements each part answers to:
     **Discovery is a search, never a list, and is checked from the other
     side.** Documents are found by walking the tree for `-f query='` at an
     argv token boundary — the one form all of them use — rather than read from
-    a list, for the reason component 10 and `td-tooling-drift.yml` both give
-    about their own file sets. Three kinds of file carry the delimiter without
+    a list, the same reason component 10 gives
+    about its own file set. Three kinds of file carry the delimiter without
     sending anything and are excluded: `test/`, because a stub answers without
     asking and this check's own fixtures are deliberately broken documents;
     the script itself, which quotes the delimiter throughout its commentary;
@@ -19996,8 +19996,7 @@ What exists, and the requirements each part answers to:
     `--check` renders each region — table and notes alike — to a temporary
     file instead and exits non-zero, naming the file, the region and the
     first differing key, the moment any region is stale — what
-    `.github/workflows/config-table.yml` runs on every pull request,
-    modelled on `.github/workflows/tech-debt-register.yml`.
+    `.github/workflows/config-table.yml` runs on every pull request.
     Regression-tested end to end, against the shipped script copied into a
     scratch fixture repository rather than a reimplementation of its logic,
     in `test/render-config-table.test.sh`; must pass `shellcheck`.
@@ -20721,23 +20720,6 @@ What exists, and the requirements each part answers to:
     none prints nothing;
     must pass `shellcheck`.
 
-23c. `scripts/find-similar-tech-debt.sh` implementing the dedup half of
-    requirements 24b/30d/36c/42a: given a working title, normalises it
-    (lower-cased, punctuation folded to spaces, runs collapsed) and compares
-    it against every `open`/`in-progress` `tech-debt/*.md` record's own
-    `title:`, by equality always and by containment (either direction) only
-    once *both* the normalised query and the normalised candidate title reach
-    eight characters — short of that floor on either side, containment alone
-    would swamp the register with noise (a short existing title matching by
-    containment inside an unrelated long query is the same false positive as
-    the reverse, so the floor gates both). Prints each match's id and title,
-    tab-separated, one per line, and exits non-zero iff it found any — a hit
-    means the gap is already tracked, so the caller cites the existing id
-    instead of reserving a new one. Reads the working tree at whatever ref is
-    checked out, not a fixed one. Regression-tested in
-    `test/find-similar-tech-debt.test.sh` (exact-match, containment,
-    below-the-length-floor on either side, `open`/`in-progress` included,
-    `resolved`/`not-debt` excluded); must pass `shellcheck`.
 23d. `lib/tech-debt-file.sh` implementing the filing half of requirements 36c,
     42a and 32c — the Approver and Enabler must never write to GitHub or a
     branch themselves, and the Reviewer whose subject merged mid-pass no
@@ -20794,10 +20776,7 @@ What exists, and the requirements each part answers to:
       (`_techdebt_title_dedup_match`/`_techdebt_normalize_title`: lower-cased,
       punctuation folded to spaces, whitespace collapsed, then compared for
       equality or — both titles at least eight normalized characters —
-      containment either way, the same algorithm
-      `scripts/find-similar-tech-debt.sh` uses against this repository's own
-      register, reimplemented rather than shared since the two read different
-      data for the same question). That search states its own page cap —
+      containment either way). That search states its own page cap —
       `--limit TECHDEBT_DEDUP_LIST_LIMIT` (default 500), never `gh issue
       list`'s undeclared default of 30 — for the reason every other listing in
       this pipeline states one ("A listing that silently comes back at its
@@ -25334,8 +25313,8 @@ oblige anyone to edit a test.
     off. The `ok` states only the settings actually read, since they are a
     necessary condition for that call rather than a sufficient one
     (`test/doctor.test.sh`).
-    `./scripts/render-config-table.sh --check`, `./scripts/lint-shell.sh`
-    and `perl scripts/td-check.pl` are clean.
+    `./scripts/render-config-table.sh --check` and `./scripts/lint-shell.sh`
+    are clean.
 8u. **A pull request the arming step already approved once, but could not
     land for a reason that can change without the pull request changing, is
     re-armed without a human's click (TD-PPagop-26081701).**
@@ -25709,8 +25688,7 @@ oblige anyone to edit a test.
     `counts.escape_audits`'s aggregation over `classifier-escape`/
     `landing-audit` events only — never `landing-audit-skip` — (all-time,
     not windowed) and the per-row `audit`/`audit_reason` join into the WI-8
-    digest's `armed` rows. `./scripts/lint-shell.sh` and
-    `perl scripts/td-check.pl` are clean.
+    digest's `armed` rows. `./scripts/lint-shell.sh` is clean.
 
 8w. **A repository's autonomy readiness is one verdict, and it never fails for
     what it could not read (component 14, agent-ops#575).**
@@ -25803,18 +25781,8 @@ oblige anyone to edit a test.
     an Approver `refuse` each still file alongside their own ordinary
     handling, proving the two are independent rather than one silently
     suppressing the other.
-8y. **A stage files inline, on its own branch, and the reservation it used
-    releases itself once the record lands (agent-ops#631).**
-    `test/find-similar-tech-debt.test.sh` passes: an exact-normalised-title
-    match and a containment match (either direction, with *both* the
-    normalised query and the normalised candidate title at least eight
-    characters) against an `open`/`in-progress` record both print the id and
-    exit non-zero; a `resolved`/`not-debt` record with the same title is not
-    matched; a title under the length floor matches only exactly, never by
-    containment — on either side of the comparison, so neither a short query
-    inside a long existing title nor a short existing title inside a long
-    query is a hit.
-
+8y. **A stage files inline, on its own branch, and a stale pre-#874
+    reservation drains itself rather than sitting forever (agent-ops#631).**
     `test/release-pending-reservations.test.sh` passes (requirement 17g,
     component 23f, TD-PPagop-26082427): with no `state_repo` configured, or
     an empty `reservation-releases/` tree, the script is a silent no-op that
@@ -25830,13 +25798,11 @@ oblige anyone to edit a test.
     handled independently.
 
     Requirements 24b and 30d are covered by
-    `prompts/implementer.md`/`prompts/reviewer.md` naming
-    `scripts/find-similar-tech-debt.sh` and `TECH-DEBT.md`'s "Filing
-    alongside other work" explicitly (read, not executed — an Implementer or
-    Reviewer engagement is a live model session this suite does not drive),
-    and by `TECH-DEBT.md` itself documenting the variant generally, with the
-    release rule, rather than only inside `prompts/project-reviewer.md`
-    (which now cross-references it instead of restating it).
+    `prompts/implementer.md`/`prompts/reviewer.md` naming the dedup-search
+    step explicitly — `gh issue list -R <repo> --label pw::type:tech-debt
+    --search "<working title>"` — before filing a fresh
+    `pw::type:tech-debt` issue (read, not executed — an Implementer or
+    Reviewer engagement is a live model session this suite does not drive).
 
 8x. **One durable audit record justifies every autonomous landing, and a
     landing with none is an anomaly, not a null (D18, agent-ops#578).**
