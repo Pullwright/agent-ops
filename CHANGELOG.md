@@ -24,6 +24,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `host_facts_node_name()` now applies that character class itself, leaving
   one rule shared by the writer and every reader.
 
+- **The per-stage health verdict no longer misses an exit-0 stage failure**
+  (issue #983). `stage_health_verdicts` (`lib/stage-health.sh`) derived
+  `consecutive_failures` purely from `stage-end` events' own `exit_code`, so
+  a stage attempt that exits 0 while nonetheless failing — the Script logs
+  an `attempt-failed` for it, e.g. "unparseable final message" — read as a
+  success: it neither incremented the streak nor was counted, and it reset
+  any streak already in progress. Measured against a real node's `log.jsonl`
+  this exit-0 failure mode was the majority of recorded stage failures, and
+  an alternating mix of it with genuine non-zero exits never reached
+  `THRESHOLD`, so a stage failing every cycle could report `ok` throughout.
+  `stage-end` and `attempt-failed` are now joined on their shared `cycle` +
+  `stage`, so either a non-zero exit or a matching `attempt-failed` counts
+  as a failed attempt, and `last_detail` is derived from the same join so it
+  never shows a detail from an already-cleared streak.
+
 - **The tech-debt record-flip check's keyword harvest is now markdown-aware**
   (issue #1463). `scripts/check-closing-keyword.sh`'s record-flip half
   harvested a closing keyword via a raw `grep` over the pull request body, so
