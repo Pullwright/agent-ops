@@ -8,6 +8,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A `labels-minted` event now names the item ref, whichever stage emitted
+  it** (issue #1293, requirement 6c). `_refiner_apply_labels`
+  (`lib/refinement.sh`) received only the backing issue number and logged
+  that as the event's `item`, while the Implementer-side emitter
+  (`agent-cycle.sh`) logged the work order's own item ref and every sibling
+  per-item event (`refiner-examined`, `issue-prioritised`, `item-refined`)
+  did the same. For a tech-debt item, whose ref is not its issue number, the
+  two disagreed: reconstructing that item's trail by grepping `log.jsonl`
+  for its ref silently skipped its `labels-minted` events. The function now
+  takes `e_item` alongside `e_repo`/`e_number` — matching
+  `_refiner_apply_priority`'s own signature — and logs it as `item` in both
+  branches, the `engagement-cap` refusal included, while `labels_mint` and
+  the `gh` write underneath still receive the real issue number. Nothing
+  reads these events to decide anything (requirement 6c's inertness
+  invariant), so this changes the diagnostic trail alone.
+
 - **The host-facts record's filename now derives from the same node-name rule
   every reader applies** (issue #1344). `lib/host-facts.sh`'s
   `host_facts_node_name()` returned `NODE_NAME` (or the `hostname` fallback)

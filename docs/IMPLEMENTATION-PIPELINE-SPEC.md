@@ -7635,7 +7635,12 @@ implements.
    a projection be undone), and `release_refinement_label` must not touch
    one. One `labels-minted` event per item (requirement 33) carries `repo`,
    `item`, `actor` (`"refiner"` or `"implementer"`), and the names created,
-   applied and refused.
+   applied and refused. `item` is the **item ref**, from both emitters and
+   whatever the actor — the same value every other per-item event carries
+   (`refiner-examined`, `issue-prioritised`, `item-refined`), not the issue
+   or pull-request number the label was actually applied to. For a
+   tech-debt item the two differ, and it is the ref that keeps one item's
+   whole trail greppable out of `log.jsonl` by a single key.
 7. **Implementer stage.** Launch the Implementer in the clone (model from
    the work order, `--dangerously-skip-permissions`, stage timeout), passing
    the implementer prompt plus the work order, and this cycle's `cycle` id and
@@ -24754,7 +24759,9 @@ oblige anyone to edit a test.
     fourth of five items that each request labels within a shared budget
     still lands on an exactly-exhausted pool, and the fifth's own suggestion
     is refused `engagement-cap` before any `labels_mint` call is even
-    attempted.
+    attempted. A tech-debt item whose ref is not its backing issue number
+    logs that ref as its `labels-minted` event's `item` (requirement 6c),
+    while the `gh` write underneath it still names the number.
     `test/implementer-labels-wiring.test.sh` passes: a summary with no
     `labels` field, or an empty one, calls `labels_mint` not at all; a
     non-empty one calls it exactly once, against the pull request's own repo
