@@ -214,24 +214,41 @@ exclude_claimed_items() {  # <candidates-json> <claimed-item-refs-json>
 # event. $first_seen_bootstrap is one small flag, decided once at the top of
 # the cycle, and cheap enough to pass with --argjson like any config-sized
 # value.
+#
+# requirement 54 (issue #613): a new item's logged event also carries
+# forward `forge_created_at` when the candidate object itself has a
+# `created_at` field — scripts/gather-issues.sh and scripts/gather-tech-
+# debt.sh both already do, since it is the issue's own creation timestamp.
+# scripts/pickup-metrics.sh pairs this against the item's `selection` for a
+# pickup-latency measure anchored on the forge's own clock rather than on
+# this fleet's poll cadence — the trap wake-poll's own spec calls out: a
+# poll-driven `first-seen` cannot honestly measure a poll-driven
+# improvement, since waking a node moves both ends of that gap by the same
+# amount. A source whose candidates carry no `created_at` (most of them)
+# simply omits the field, additive on the same terms `reworked_after_landed`
+# is omitted rather than `null`ed elsewhere in this fold.
 emit_first_seen() {  # <repo> <source> <candidates-json>
-  local repo="$1" source="$2" candidates="$3" docs result new_refs ref
+  local repo="$1" source="$2" candidates="$3" docs result new_refs created_at_by_ref ref forge_created_at
   docs="$(printf '%s\n' "$first_seen_known_json" "$candidates")"
   result="$(jq -nc --arg r "$repo" '
     input as $known | input as $cands
     | ($known | map(select(.repo == $r)) | map(.item)) as $seen
     | ([$cands[].ref // empty | select(. != "")] | unique
        | map(select(. as $ref | ($seen | index($ref)) == null))) as $new
-    | {new: $new, known: ($known + ($new | map({repo: $r, item: .})))}
-  ' <<<"$docs" 2>/dev/null || echo '{"new":[],"known":null}')"
+    | ($cands | map(select((.ref // "") != "" and (.created_at // "") != ""))
+       | map({key: .ref, value: .created_at}) | from_entries) as $created_at_by_ref
+    | {new: $new, known: ($known + ($new | map({repo: $r, item: .}))), created_at_by_ref: $created_at_by_ref}
+  ' <<<"$docs" 2>/dev/null || echo '{"new":[],"known":null,"created_at_by_ref":{}}')"
   new_refs="$(jq -c '.new' <<<"$result" 2>/dev/null || echo '[]')"
+  created_at_by_ref="$(jq -c '.created_at_by_ref // {}' <<<"$result" 2>/dev/null || echo '{}')"
   if jq -e '.known != null' <<<"$result" >/dev/null 2>&1; then
     first_seen_known_json="$(jq -c '.known' <<<"$result")"
   fi
   while IFS= read -r ref; do
     [[ -n "$ref" ]] || continue
-    log_event "first-seen" "$(jq -nc --arg r "$repo" --arg i "$ref" --arg s "$source" --argjson b "$first_seen_bootstrap" \
-      '{repo: $r, item: $i, source: $s, basis: "poll", bootstrap: $b}')"
+    forge_created_at="$(jq -r --arg ref "$ref" '.[$ref] // empty' <<<"$created_at_by_ref" 2>/dev/null || true)"
+    log_event "first-seen" "$(jq -nc --arg r "$repo" --arg i "$ref" --arg s "$source" --argjson b "$first_seen_bootstrap" --arg fc "$forge_created_at" \
+      '{repo: $r, item: $i, source: $s, basis: "poll", bootstrap: $b} + (if $fc == "" then {} else {forge_created_at: $fc} end)')"
   done < <(jq -r '.[]' <<<"$new_refs" 2>/dev/null || true)
 }
 

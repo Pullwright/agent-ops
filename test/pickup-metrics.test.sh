@@ -171,6 +171,39 @@ assert_eq "coverage: first_seen_only is 1 (C, never claimed)" \
 assert_eq "coverage: selection_only is 1 (D, no first-seen at all)" \
   "1" "$(jq -r '.coverage.selection_only' <<<"$out_lat")"
 
+# --- requirement 54 (issue #613): forge-anchored pickup latency ------------
+# item G: first-seen carries forge_created_at 20 minutes before its own ts
+# (a poll-driven first-seen is never earlier than the forge event it is
+# reporting) — selection 10 minutes after first-seen, so pickup_latency
+# (poll-anchored) reads 600s while pickup_latency_forge_anchored reads 1800s
+# (30 minutes: forge_created_at to selection).
+# item H: first-seen carries a malformed forge_created_at — must be excluded
+# from the forge-anchored measure without aborting the whole report, the
+# same "must not abort the report" property the legacy-shaped block below
+# tests for the poll-anchored measure.
+forge_state="$tmp_dir/forge-state"
+forge_peers="$tmp_dir/forge-peers"
+mkdir -p "$forge_state" "$forge_peers"
+cat > "$forge_state/log.jsonl" <<'EOF'
+{"ts":"2026-04-10T00:00:00Z","node":"node-a","event":"first-seen","repo":"r","item":"G","source":"issues","basis":"poll","bootstrap":false,"forge_created_at":"2026-04-09T23:40:00Z"}
+{"ts":"2026-04-10T00:10:00Z","node":"node-a","event":"selection","repo":"r","item":"G","source":"issues"}
+{"ts":"2026-04-10T00:00:00Z","node":"node-a","event":"first-seen","repo":"r","item":"H","source":"issues","basis":"poll","bootstrap":false,"forge_created_at":"not-a-date"}
+{"ts":"2026-04-10T00:05:00Z","node":"node-a","event":"selection","repo":"r","item":"H","source":"issues"}
+EOF
+
+out_forge="$("$PICKUP" --state-dir "$forge_state" --peers-dir "$forge_peers")"
+assert_eq "forge-anchored: exits 0 despite H's malformed forge_created_at" "0" "$?"
+assert_eq "forge-anchored: coverage.paired is 2 (G, H both paired on the poll-anchored measure)" \
+  "2" "$(jq -r '.coverage.paired' <<<"$out_forge")"
+assert_eq "forge-anchored: coverage.forge_anchored is 1 (only G has a usable forge_created_at)" \
+  "1" "$(jq -r '.coverage.forge_anchored' <<<"$out_forge")"
+assert_eq "forge-anchored: fleet poll-anchored median is 450s (G's 600s and H's 300s both count)" \
+  "450" "$(jq -r '.pickup_latency.fleet.median_seconds' <<<"$out_forge")"
+assert_eq "forge-anchored: G's forge-anchored latency is 1800s (forge_created_at to selection)" \
+  "1800" "$(jq -r '.pickup_latency_forge_anchored.fleet.median_seconds' <<<"$out_forge")"
+assert_eq "forge-anchored: G's forge-anchored latency is attributed to the claiming node" \
+  "1800" "$(jq -r '.pickup_latency_forge_anchored.by_node["node-a"].median_seconds' <<<"$out_forge")"
+
 # --- Acceptance 4: first-wins — two nodes race to log the same item's
 #     first-seen; the earliest ts wins, and the item is attributed to
 #     whichever node's selection actually claimed it -----------------------
