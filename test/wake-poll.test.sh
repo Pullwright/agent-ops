@@ -170,7 +170,7 @@ assert_contains "an unreachable endpoint logs a warning, not a crash" "unreachab
 # out-of-cycle writer (scripts/publish-revert-rate.sh's own `rework` rows,
 # lib/log-event.sh's header).
 triggered_events="$(jq -c 'select(.event == "wake-poll-triggered")' "$state/log.jsonl" 2>/dev/null | wc -l | tr -d ' ')"
-assert_eq "exactly one wake-poll-triggered event was logged (the two real wakes above)" "2" "$triggered_events"
+assert_eq "one wake-poll-triggered event per real wake, and none for the quiet, --dry-run or unreachable ticks" "2" "$triggered_events"
 
 # === Part 2: the claim race — a woken node contends exactly as a cron-fired
 #     one does (issue #613's own acceptance: "the concurrent-claim window is

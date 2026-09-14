@@ -290,6 +290,13 @@ EXCLUDES=(
   # repository's own `tech-debt-archive/` tree directly, not in a local
   # file this replication would otherwise need to carry.
   --exclude=tech-debt-archive.log
+  # wake-poll.log (scripts/wake-poll.sh, requirement 54, issue #613): the
+  # wake poller's own text output, local to this node on the same reasoning
+  # as doctor.log above — and the fastest-growing of them, a line every
+  # schedule.wake_poll_minutes. Its one structured record, the
+  # `wake-poll-triggered` event, is written to log.jsonl, which does travel,
+  # so a peer reading the union still sees every wake this node decided on.
+  --exclude=wake-poll.log
   --exclude=.dashboard-github.json
   --exclude=.dashboard-tick-cost
   --exclude=.dashboard-payload

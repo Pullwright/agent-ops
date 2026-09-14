@@ -912,7 +912,7 @@ and the schema must carry every one of them.
 | `cycles_retained` | *(unset)* | Cycle directories kept in the replicated mirror — bounds a repository that is force-pushed after every cycle. A span of history, not a literal cycle count (requirement 1d): derived from the mean gap between cycles (`schedule.cycle_interval_minutes`, `cycle_hours`, `excluded_minutes`) to hold the ~8.3 days 200 cycles represented at the historical hourly cadence; a configured value floors the derivation rather than replacing it, the same shape `lock_stale_after` (requirement...[continued below](#extended-notes-cycles_retained) |
 | `state_local_cycles_retained` | *(unset)* | Cycle and review directories the node's *own* `state_dir` keeps; the same push that replicates prunes to it (requirement 2.5). Deliberately far above `cycles_retained`, so the local machine is always the longer record, with a floor of one protecting the cycle being recorded. A span of history, not a literal cycle count (requirement 1d): derived from the mean gap between cycles (`schedule.cycle_interval_minutes`, `cycle_hours`, `excluded_minutes`) to hold the ~41.7 days 1000...[continued below](#extended-notes-state_local_cycles_retained) |
 | `state_local_streams_retained` | *(unset)* | Cycle and review directories whose derived files are kept — the stage event streams (`<stage>.stream.jsonl`, requirement 4d) and the fleet-log snapshot (`.fleet-log.jsonl`, requirement 2.5); the push that replicates prunes to it (requirement 2.5). Far below `state_local_cycles_retained` because each is a different order of size from the record holding it — a cycle directory without them is kilobytes, one Reviewer stream megabytes, one snapshot the whole fleet's history to...[continued below](#extended-notes-state_local_streams_retained) |
-| `log_retained_bytes` | `2000000` | Size at which `scripts/rotate-logs.sh` rotates `dashboard.log`, `state-sync.log`, `doctor.log`, `revert-rate.log`, `tech-debt-archive.log`, `cron.log` and `review-cron.log` (requirement 2.6). `log.jsonl`, `review-log.jsonl` and `revert-rate.jsonl` are never rotated regardless of size. `ROTATE_LOGS_RETAINED_BYTES` overrides it for tests. |
+| `log_retained_bytes` | `2000000` | Size at which `scripts/rotate-logs.sh` rotates `dashboard.log`, `state-sync.log`, `doctor.log`, `revert-rate.log`, `tech-debt-archive.log`, `wake-poll.log`, `cron.log` and `review-cron.log` (requirement 2.6). `log.jsonl`, `review-log.jsonl` and `revert-rate.jsonl` are never rotated regardless of size. `ROTATE_LOGS_RETAINED_BYTES` overrides it for tests. |
 | `log_generations` | `3` | Rotated generations of each log kept beside the live file (`<name>.1` … `<name>.<log_generations>`), floored at one. `ROTATE_LOGS_GENERATIONS` overrides it for tests. |
 | `analytics_retained_days` | `0` | How long the analytics records `log.jsonl`/`review-log.jsonl` carry are retained (requirement 2.6d), independent of requirement 2.6's rotation and requirement 2.5's `cycles/`/`reviews/` pruning — neither ever reaches either file. `0` (the default) means retain indefinitely, preserving today's behaviour: this key states the policy, not an enforced expiry, which nothing yet implements. |
 | `coordinator_model` | `claude-haiku-4-5-20251001` | Selection is cheap triage. |
@@ -4053,10 +4053,11 @@ implements.
 2.6. **Log rotation.** Requirement 2.5 bounds the *records* in `state_dir` —
    `cycles/` and `reviews/` are pruned on every push — but its logs are
    appended to forever otherwise. `scripts/rotate-logs.sh`, on its own
-   crontab line independent of the pipelines, bounds seven of them:
+   crontab line independent of the pipelines, bounds eight of them:
    `dashboard.log`, `state-sync.log`, `doctor.log`, `revert-rate.log`,
-   `tech-debt-archive.log`, `cron.log` and `review-cron.log`. Each
-   is renamed to `<name>.1` (an existing `.1` first shifts to `.2`, and so
+   `tech-debt-archive.log`, `wake-poll.log`, `cron.log` and
+   `review-cron.log`. Each is renamed to `<name>.1` (an existing `.1` first
+   shifts to `.2`, and so
    on) once it reaches `log_retained_bytes`, keeping the newest
    `log_generations` generations; a fresh, empty file replaces it
    immediately, so nothing is ever left missing. A plain rename is enough —
@@ -9089,7 +9090,12 @@ implements.
     bumps its `updated_at` the same way, covering `review-feedback`,
     `landing-refusals` and `human-visibility`), `repos/<slug>/actions/runs`
     (a merge-group run — what a dequeue is decided from — is an ordinary
-    workflow run, covering `failed-runs` and `dequeued`), and
+    workflow run, so every run *created* moves this listing's own
+    `total_count` and reaches `failed-runs` and `dequeued`; a run that
+    merely *completes* while a newer run already exists moves neither that
+    count nor the single newest-created run the listing returns, and waits
+    for the ordinary cron firing — under-coverage, which the subset rule
+    above permits, never over-coverage), and
     `repos/<slug>/commits` (anything living in the repository's own tree
     changes by a push, covering `code`, `implementation-plan`,
     `project-review` and `register-hygiene`). `security`/`code-quality`
@@ -9115,11 +9121,34 @@ implements.
     (`state_dir/wake-poll/`, excluded from `state-sync.sh` replication on
     the same reasoning as `expensive-gather/`).
 
+    **What a wake does *not* guarantee: requirement 48's rotation.** A
+    woken cycle is an ordinary cycle, which means it reads the nine
+    expensive bands fresh for exactly one repository — `expensive_gather_slug`,
+    whichever this node has gone longest without expensively reading
+    (requirement 48) — and reuses its cached snapshot for every other
+    configured repository. A wake triggered by a change in repository *X*
+    therefore only re-reads *X* when the rotation happens to land there,
+    and the change is not re-offered: `scripts/wake-poll.sh` stores the new
+    `ETag` before it wakes, so that endpoint answers `304` on the next tick
+    whether or not the cycle it woke looked at *X*. The improvement this
+    requirement claims is accordingly statistical rather than
+    item-deterministic — every woken cycle advances the rotation by one
+    step, so a fleet under wake-poll reaches each repository's fresh read
+    far more often than `cycle_interval_minutes` alone would — and no item
+    is ever *lost* by it, since the ordinary cron firing still rotates on
+    its own schedule. Biasing `expensive_gather_pick_repo` toward the woken
+    repository would make it deterministic, at the cost of the
+    every-repository-eventually guarantee that function is built on; that
+    trade is not made here.
+
     A wake logs one `wake-poll-triggered` event (`{ts, cycle: null, node,
     event, changed}`, the same out-of-cycle envelope shape
     `scripts/publish-revert-rate.sh`'s own `rework` rows use) — never a
     quiet tick, matching this repository's own "don't pay to log the
-    no-op case" convention.
+    no-op case" convention. Its human-readable output, including the quiet
+    ticks, goes to `wake-poll.log`, which `scripts/rotate-logs.sh` bounds
+    (requirement 2.6) and `scripts/state-sync.sh` keeps local to the node,
+    on the same terms as every other per-tick diagnostic log.
 
     **Acceptance measurement.** A poll-driven `first-seen` cannot honestly
     measure a poll-driven pickup-latency improvement, because waking a
@@ -18616,8 +18645,9 @@ What exists, and the requirements each part answers to:
    (`test/state-sync.test.sh`); must pass `shellcheck`.
 3i. `scripts/rotate-logs.sh` implementing requirement 2.6: rotates
    `dashboard.log`, `state-sync.log`, `doctor.log`, `revert-rate.log`,
-   `tech-debt-archive.log`, `cron.log` and `review-cron.log` by
-   size, leaving `log.jsonl`, `review-log.jsonl` and `revert-rate.jsonl`
+   `tech-debt-archive.log`, `wake-poll.log`, `cron.log` and
+   `review-cron.log` by size,
+   leaving `log.jsonl`, `review-log.jsonl` and `revert-rate.jsonl`
    untouched. Called by its
    own container crontab line, independent of both pipelines. Unit-tested
    against a synthesised `state_dir` (`test/rotate-logs.test.sh`); must pass

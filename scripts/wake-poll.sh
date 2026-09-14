@@ -38,8 +38,14 @@
 #                                 request bumps its `updated_at` the same way)
 #   failed-runs, dequeued        `repos/<slug>/actions/runs` (a merge-group
 #                                 run — what a dequeue is decided from — is an
-#                                 ordinary workflow run, so it changes this
-#                                 listing exactly as a failed CI run does)
+#                                 ordinary workflow run, so every run created
+#                                 moves this listing's own `total_count`. A
+#                                 run that merely *completes* while a newer
+#                                 run already exists moves neither that count
+#                                 nor the single newest-created run the
+#                                 listing returns, and waits for the ordinary
+#                                 cron firing: under-coverage, which the
+#                                 subset rule above permits)
 #   code, implementation-plan,
 #   project-review,
 #   register-hygiene             `repos/<slug>/commits` (anything living in
@@ -79,7 +85,23 @@
 # immediately, so an overlapping wake costs one lock check, not a duplicate
 # cycle. Its output inherits this script's own stdout/stderr — wake-poll.log,
 # not cron.log — so the log that names *why* a cycle started at an odd
-# minute is the same one that decided to start it.
+# minute is the same one that decided to start it. That file grows a line
+# every wake_poll_minutes, quiet ticks included, which is why
+# scripts/rotate-logs.sh bounds it (requirement 2.6) and scripts/state-sync.sh
+# keeps it local to this node.
+#
+# What a wake does *not* guarantee is that the woken cycle reads the
+# repository that changed. A woken cycle is an ordinary cycle, so it reads
+# the nine expensive bands fresh for exactly one repository —
+# `expensive_gather_slug`, whichever this node has gone longest without
+# expensively reading (requirement 48, lib/expensive-gather-cache.sh) — and
+# reuses its cached snapshot for the rest. The change is not re-offered
+# either: the new ETag is stored below *before* the wake, so the next tick
+# answers 304 whether or not the cycle looked at that repository. Nothing is
+# lost by this — the ordinary cron firing still rotates on its own schedule —
+# but the win is statistical (every woken cycle advances the rotation a step)
+# rather than item-deterministic. See requirement 54 for why biasing the
+# rotation toward the woken repository is not done here.
 #
 # Never fails the cron job: every `gh` call that cannot be read as a status
 # line logs a warning and is skipped, exactly like the doctor line's own
@@ -114,7 +136,8 @@ flags, reads config.json beside this script.
   --state-dir  override state_dir (tests use a throwaway directory)
   --dry-run    detect and log a change but never invoke agent-cycle.sh
 
-Exit status is always 0 — see this file's own header for why.
+Exit status is always 0 once polling begins — see this file's own header for
+why. A usage error (an unknown argument) exits 64 before any poll runs.
 
 Environment:
   WAKE_POLL_AGENT_CYCLE_BIN  override which script a detected change invokes

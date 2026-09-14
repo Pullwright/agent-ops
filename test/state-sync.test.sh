@@ -214,6 +214,12 @@ printf '{"o/r":{"settled_aggregate":{"count":1,"post_merge":{"reverts":0,"follow
 # rate.log it has no structured sibling at all, since what it publishes
 # lands in the state repository's own tech-debt-archive/ tree directly.
 printf 'tech-debt-archive noise\n' > "$state/tech-debt-archive.log"
+# The wake poller's own text output (scripts/wake-poll.sh, requirement 54,
+# issue #613): local to this node, like the publish logs above, and the
+# fastest-growing of them — a line every schedule.wake_poll_minutes. Its one
+# structured record, the wake-poll-triggered event, goes to log.jsonl, which
+# does replicate.
+printf 'wake-poll: nothing changed — no wake\n' > "$state/wake-poll.log"
 # The gh transport shim's own state (lib/gh-shim.sh, requirement 2.0e,
 # agent-ops#1084): the stored response bodies are this node's own cache, on
 # the same reasoning as the caches above, and the largest and fastest-churning
@@ -262,6 +268,7 @@ assert_eq "the revert-rate publish log does not replicate" "0" "$(test -e "$push
 assert_eq "the revert-rate cumulative-state cache does not replicate" "0" \
   "$(test -e "$pushed/revert-rate-cumulative-state.json" && echo 1 || echo 0)"
 assert_eq "the tech-debt archive publish log does not replicate" "0" "$(test -e "$pushed/tech-debt-archive.log" && echo 1 || echo 0)"
+assert_eq "the wake-poll log does not replicate" "0" "$(test -e "$pushed/wake-poll.log" && echo 1 || echo 0)"
 assert_eq "the generated dashboard does not replicate" "0" "$(test -e "$pushed/dashboard" && echo 1 || echo 0)"
 assert_eq "the gh shim's HTTP cache does not replicate" "0" \
   "$(test -e "$pushed/gh-shim/http-cache" && echo 1 || echo 0)"

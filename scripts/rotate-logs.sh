@@ -14,8 +14,8 @@
 #
 #   dashboard.log, state-sync.log,  pure diagnostics, excluded from the
 #   doctor.log, revert-rate.log,   state branch (scripts/state-sync.sh) —
-#   tech-debt-archive.log          safe to rotate on size alone. doctor.log
-#                                   is the hourly `doctor.sh --unattended`
+#   tech-debt-archive.log,         safe to rotate on size alone. doctor.log
+#   wake-poll.log                   is the hourly `doctor.sh --unattended`
 #                                   pass's own text output (agent-ops#543);
 #                                   the dashboard reads the structured
 #                                   .doctor-status.json beside it, not this
@@ -33,7 +33,15 @@
 #                                   counterpart at all, since what it
 #                                   publishes lands in the state repository
 #                                   itself (`tech-debt-archive/`), not in a
-#                                   local file beside this log.
+#                                   local file beside this log. wake-poll.log
+#                                   is scripts/wake-poll.sh's own text output
+#                                   (requirement 54, issue #613) and the
+#                                   fastest-growing of this group: one line
+#                                   every schedule.wake_poll_minutes, quiet
+#                                   ticks included. Its one structured record
+#                                   — the `wake-poll-triggered` event — goes
+#                                   to log.jsonl, which is never rotated, so
+#                                   bounding this file loses no decision.
 #   cron.log, review-cron.log       published to the node's state branch, so
 #                                   bounding them here also bounds the
 #                                   mirror. scripts/publish-dashboard.sh
@@ -117,7 +125,7 @@ generations="${ROTATE_LOGS_GENERATIONS:-$(cfg '.log_generations')}"
 
 # The logs this script owns. log.jsonl, review-log.jsonl, monitor-log.jsonl
 # and revert-rate.jsonl are deliberately absent — see the file header.
-LOGS=(dashboard.log state-sync.log doctor.log revert-rate.log tech-debt-archive.log cron.log review-cron.log monitor-cron.log gh-shim/ledger.ndjson)
+LOGS=(dashboard.log state-sync.log doctor.log revert-rate.log tech-debt-archive.log wake-poll.log cron.log review-cron.log monitor-cron.log gh-shim/ledger.ndjson)
 
 file_size() {
   stat -c%s -- "$1" 2>/dev/null || stat -f%z -- "$1" 2>/dev/null || echo 0

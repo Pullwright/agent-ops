@@ -142,6 +142,15 @@ run_rotate "$d" ROTATE_LOGS_RETAINED_BYTES=1000 ROTATE_LOGS_GENERATIONS=3
 assert_eq "the oversized tech-debt-archive.log is renamed to .1" "2000" "$(stat -c%s "$d/tech-debt-archive.log.1" 2>/dev/null || stat -f%z "$d/tech-debt-archive.log.1")"
 assert_eq "  ... and the live file reappears immediately, empty" "0" "$(stat -c%s "$d/tech-debt-archive.log" 2>/dev/null || stat -f%z "$d/tech-debt-archive.log")"
 
+# --- wake-poll.log rotates like every other diagnostic log (requirement 54,
+#     issue #613) — the fastest-growing of them, a line every
+#     schedule.wake_poll_minutes, quiet ticks included -----------------------
+
+make_log "$d/wake-poll.log" 2000
+run_rotate "$d" ROTATE_LOGS_RETAINED_BYTES=1000 ROTATE_LOGS_GENERATIONS=3
+assert_eq "the oversized wake-poll.log is renamed to .1" "2000" "$(stat -c%s "$d/wake-poll.log.1" 2>/dev/null || stat -f%z "$d/wake-poll.log.1")"
+assert_eq "  ... and the live file reappears immediately, empty" "0" "$(stat -c%s "$d/wake-poll.log" 2>/dev/null || stat -f%z "$d/wake-poll.log")"
+
 # --- A second rotation shifts .1 to .2, dropping what falls off the end ----
 d="$(new_home stack)"
 make_log "$d/dashboard.log" 2000
