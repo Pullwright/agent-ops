@@ -58,10 +58,10 @@
 # survivors. Where a resolved number's body's last non-blank line has that
 # "Filed as" shape and it carries `pw::type:tech-debt`, this requires this
 # PR's own diff (`gh api …/pulls/<n>/files`) to add a line setting the named
-# record file's `status:` to one of the register's two terminal states,
-# `resolved` or `not-debt` — both are equally terminal to `td-check.pl`,
-# `lib/work-gone.sh` and `lib/candidate-gather.sh`, and `td-check.pl` still
-# requires a `not-debt` row to carry its `ref:` (issue #1437).
+# record file's `status:` to one of the frozen archive's two terminal states,
+# `resolved` or `not-debt` — both are equally terminal to `lib/work-gone.sh`
+# and `lib/candidate-gather.sh`, and `TECH-DEBT.md` requires a `not-debt` row
+# to carry its `ref:` too (issue #1437).
 #
 # A `gh` call that fails outright (the token, a transient outage) is not
 # turned into a failure of this check — the existing marker/keyword logic

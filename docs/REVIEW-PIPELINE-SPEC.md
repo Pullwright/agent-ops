@@ -103,9 +103,9 @@ that document's, currently `Poetic-Poems/poetic` and
 `Poetic-Poems/poetic-fiddle`, and their shared conventions (protected `main`,
 squash-merge so the PR title becomes the commit, Conventional Commits) bind
 the Reviewer-Agent exactly as they bind the Implementer. Where a configured
-repository still carries a per-item tech-debt register (`tech-debt/`, with
-`scripts/reserve-tech-debt-id.pl` allocating new IDs), that register binds
-the Implementer's own filing as it always has; the Reviewer-Agent only ever
+repository still carries a per-item tech-debt register (`tech-debt/`), that
+register is a frozen archive: no ID is allocated into it and no file is added
+to it. The Reviewer-Agent only ever
 reads it, to update an item it finds already resolved (R12) — new debt this
 review surfaces is filed as a labelled GitHub issue instead, never into that
 register.

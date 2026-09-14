@@ -47,8 +47,7 @@
 #                                 cron firing: under-coverage, which the
 #                                 subset rule above permits)
 #   code, implementation-plan,
-#   project-review,
-#   register-hygiene             `repos/<slug>/commits` (anything living in
+#   project-review               `repos/<slug>/commits` (anything living in
 #                                 the repository's own tree changes by a push)
 #
 # `security`/`code-quality` are deliberately absent: `repos/<slug>/dependabot/

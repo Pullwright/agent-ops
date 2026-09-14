@@ -13,8 +13,8 @@
 #
 # ## Only the ids asked for, and only when they are blocked
 #
-# This is not a register reader; `scripts/gather-register-hygiene.sh` is that,
-# and it pays for a whole tarball to run the checker over every file. This
+# This is not a whole-register reader — nothing in the pipeline is, now that
+# the frozen archive has no checker walking it. This
 # answers one question about a handful of named items — "is this one still
 # work?" — and the Script calls it only for the blocked items whose ids are
 # register ids, which is nearly always none. A fleet with no blocked register
@@ -90,9 +90,10 @@ fi
 
 # item_frontmatter — read an item file on stdin, print the item's `id`,
 # `legacy-id` and `status`, one per line, empty when the file does not carry
-# them. The shape `scripts/td-check.pl` and `scripts/get-tech-debt-record.pl`
-# parse: a leading `---`, `key: value` lines with the key case-folded, a closing
-# `---`. Anything else prints three empty lines, which resolve nothing.
+# them. The frozen archive's own frontmatter shape, documented in
+# `docs/TECH-DEBT-REGISTER.md` in `Poetic-Poems/poetic`: a leading `---`,
+# `key: value` lines with the key case-folded, a closing `---`. Anything else
+# prints three empty lines, which resolve nothing.
 #
 # One field per line, not one tab-separated line: tab is IFS whitespace, so a
 # `read` over "id<TAB><TAB>status" collapses the empty middle field and shifts
@@ -139,8 +140,8 @@ for id in "$@"; do
     fi
   done <<< "$names"
   # Exactly one claimant, and it said something. Two files claiming one id is a
-  # register that disagrees with itself — `register-hygiene` repairs that, and
-  # until it does, this reports nothing rather than picking one.
+  # frozen archive that disagrees with itself — nothing repairs that any more,
+  # so this reports nothing rather than picking one.
   if (( matches == 1 )) && [[ -n "$status" ]]; then
     out="$(jq -c --arg k "$id" --arg v "$status" '. + {($k): $v}' <<<"$out" 2>/dev/null || printf '%s' "$out")"
   fi

@@ -181,9 +181,8 @@ All target repos follow these rules:
   files are never deleted or renamed. This binds only the resolved-item
   bookkeeping step 2 describes — new debt this review surfaces is filed as a
   `pw::type:tech-debt`-labelled issue instead (step 2), never a register
-  file, so the register's own ID-reservation tooling
-  (`scripts/reserve-tech-debt-id.pl`, `scripts/next-tech-debt-id.pl`,
-  `scripts/get-tech-debt-record.pl`) plays no part in this prompt.
+  file. A register you find is a frozen archive: no ID is allocated into it,
+  and nothing in this prompt reserves one.
 - CI runs on every PR: the repo's build/lint/typecheck/format/test workflow,
   CodeQL, and a commit-format check — plus a trailing-whitespace check
   (`npm run check`). Read `.github/workflows/` to see exactly what runs.

@@ -9,12 +9,13 @@
 # put it there — a transient window that failed a filing's branch-create or
 # contents-write call is the same window that could fail the DELETE meant to
 # undo it. Nothing before this script ever retried that DELETE:
-# `scripts/sweep-orphan-branches.sh` deliberately leaves a bare `td/<id>`
-# reservation branch alone (issue #545, since it cannot tell whether <id> has
-# since been filed elsewhere), and
-# `.github/workflows/release-td-branch.yml` only ever fires for a `td/<id>`
-# whose record actually reached `main` — an id that was reserved and then
-# abandoned never gets that push. Left uncovered, a reservation orphaned this
+# `scripts/sweep-orphan-branches.sh` leaves a bare `td/<id>` reservation
+# branch alone (issue #545, since it cannot tell whether <id> has since been
+# filed elsewhere — and, since #882 retired the `td/` namespace from that
+# walk, it no longer lists the namespace at all), and the release workflow
+# that once swept them only ever fired for a `td/<id>` whose record actually
+# reached `main` — an id that was reserved and then
+# abandoned never got that push. Left uncovered, a reservation orphaned this
 # way is "left for good", the exact phrase `lib/tech-debt-file.sh`'s own
 # header used to concede before this script existed: observed for real on
 # this repository, fourteen consecutive reservations (TD-PPagop-26082407
@@ -33,7 +34,7 @@
 # `--repo`, it walks that tree, retries each marker's own delete, and clears
 # the marker once the branch is confirmed gone — by this retry, by a peer
 # node's concurrent retry, or by anything else that already deleted it
-# (`.github/workflows/release-td-branch.yml`'s own ordinary path included).
+# (a human's own `git push --delete`, now that nothing else sweeps `td/`).
 # A delete that fails again leaves the marker in place for the next cycle's
 # pass, so recovery costs no more than time: the marker survives until a
 # transient GitHub failure finally clears, or a human deletes the branch by
@@ -110,8 +111,8 @@ release_one() {  # <dir> <file>
     # retired it along with the rest of that filing path
     # (lib/tech-debt-file.sh):
     # a DELETE can fail because the branch is already gone — released by a
-    # peer node's own concurrent retry, or by release-td-branch.yml's
-    # ordinary path, since a marker is only ever cleared once, never
+    # peer node's own concurrent retry, or deleted by hand, since a marker is
+    # only ever cleared once, never
     # renewed. Only a confirmed 404 counts as "nothing left to retry"; any
     # other answer, including the confirmation call itself failing, leaves
     # the marker standing for the next pass.

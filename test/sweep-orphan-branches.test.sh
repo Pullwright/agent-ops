@@ -447,7 +447,7 @@ assert_not_contains "and no recovery draft is ever opened for it" \
 # --- Case 15: same, but the record landed some other way — reservation kept ------
 # The declined-filing arm still deletes td-record/<id> (its pull request was
 # still closed unmerged, regardless of how the id's record made it to main),
-# but must not release td/<id> when release-td-branch.yml already owns it.
+# but must not release td/<id> when the record did reach main some other way.
 c="$tmp_dir/declined-filing-record-landed"; mkdir -p "$c"
 : > "$c/refs-td_tsv"
 : > "$c/refs-agent_tsv"

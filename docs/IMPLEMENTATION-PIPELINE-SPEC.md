@@ -6813,10 +6813,10 @@ implements.
    whole `$violations` argument as a single argv element to the script's own
    `execve` (`test/gather-human-visibility-hygiene.test.sh`).
    TD-PPagop-26081503 completed the sweep over four further sites found after
-   TD-PPagop-26081406 resolved: `gather-source-state.sh`'s final state build
+   TD-PPagop-26081406 resolved, three of which survive:
+   `gather-source-state.sh`'s final state build
    (`test/gather-source-state.test.sh`), `gather-findings.sh`'s
    combine-and-order build (`test/gather-findings.test.sh`),
-   `gather-register-hygiene.sh`'s problems merge and final candidate build,
    and `publish-dashboard.sh`'s
    `github_json` build (`test/publish-dashboard.test.sh`).
    TD-PPagop-26081506 converted the two sites that item's own Implementer
@@ -9011,8 +9011,8 @@ implements.
     for the ordinary cron firing — under-coverage, which the subset rule
     above permits, never over-coverage), and
     `repos/<slug>/commits` (anything living in the repository's own tree
-    changes by a push, covering `code`, `implementation-plan`,
-    `project-review` and `register-hygiene`). `security`/`code-quality`
+    changes by a push, covering `code`, `implementation-plan` and
+    `project-review`). `security`/`code-quality`
     are deliberately absent: this deployment's own token cannot read
     `repos/<slug>/dependabot/alerts` (`403`, measured live) — polling an
     endpoint the token cannot read would only ever log a warning, never a
