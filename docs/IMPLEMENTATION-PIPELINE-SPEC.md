@@ -4682,10 +4682,16 @@ implements.
    via `log_event`) plus stage: `last_success` (the most recent `stage-end`
    with exit_code 0, or null), `consecutive_failures` (a running streak of
    `stage-end`s that each count as failed — either a non-zero `exit_code`, or
-   a zero one with an `attempt-failed` logged for that same `cycle` (a stage
-   can exit 0 while its attempt nonetheless failed, e.g. an unparseable final
-   message, and that counts exactly as much as a non-zero exit;
+   a zero one with a genuine `attempt-failed` logged for that same `cycle` (a
+   stage can exit 0 while its attempt nonetheless failed, e.g. an unparseable
+   final message, and that counts exactly as much as a non-zero exit;
    TD-PPagop-26082504) — reset to 0 by a `stage-end` that fails neither test.
+   "Genuine" excludes an `attempt-failed` carrying a non-empty `kind` (issue
+   #1498): the Co-Ordinator's own per-item block records — a needs-refinement
+   block and a hand-flag (`kind: "needs-refinement"`), a void refusal (`kind:
+   "item-block"`) — are logged with `stage: "coordinator"` even in cycles
+   where the coordinator stage itself succeeded, and the join must not count
+   one of those as a coordinator stage failure.
    The same reduction `crash_loop_verdict` already uses, but per-stage,
    per-node, and without requiring an identical failure detail, since "always
    wrong in some new way" is exactly as unhealthy as "always wrong the same
