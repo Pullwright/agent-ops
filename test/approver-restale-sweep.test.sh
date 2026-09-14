@@ -162,6 +162,7 @@ _approver_restale_review() {
 }
 
 _approver_sweep_claimed_pr_numbers() {
+  printf '.' >>"$T/claimed-pr-calls"
   printf '%s' "${CLAIMED_PRS:-[]}"
 }
 
@@ -212,7 +213,7 @@ review_row() {  # id login at
 
 run_case() {  # PR_LIST_JSON=... plus any stub-steering env
   : >"$tmp_dir/events"; : >"$tmp_dir/review-calls"; : >"$tmp_dir/dismiss-calls"; : >"$tmp_dir/escalate-calls"
-  : >"$tmp_dir/unreviewed-escalate-calls"
+  : >"$tmp_dir/unreviewed-escalate-calls"; : >"$tmp_dir/claimed-pr-calls"
   env -i PATH="$PATH" HOME="$HOME" \
     T="$tmp_dir" SCRIPT_DIR="$SCRIPT_DIR" \
     LEVEL="agent-merges-routine" \
@@ -227,6 +228,7 @@ escalate_calls() { cat "$tmp_dir/escalate-calls" 2>/dev/null || true; }
 unreviewed_escalate_calls() { cat "$tmp_dir/unreviewed-escalate-calls" 2>/dev/null || true; }
 events() { cat "$tmp_dir/events" 2>/dev/null || true; }
 count() { [[ -s "$1" ]] && wc -l <"$1" | tr -d ' ' || printf '0'; }
+claimed_pr_call_count() { [[ -s "$tmp_dir/claimed-pr-calls" ]] && wc -c <"$tmp_dir/claimed-pr-calls" | tr -d ' ' || printf '0'; }
 
 # --- The happy path: a stale, progressed review reaches a real re-review -----
 
@@ -329,6 +331,44 @@ assert_eq "a currently-approved pull request (#22) is not a CHANGES_REQUESTED ca
   "" "$(grep 'pull/22' <(review_calls) <(dismiss_calls) <(escalate_calls) || true)"
 assert_eq "a pull request with no readable head sha (#23) is skipped" \
   "" "$(grep 'pull/23' <(review_calls) <(dismiss_calls) <(escalate_calls) || true)"
+
+# --- issue #987: a pull request under a live fleet claim is a peer's, ---------
+#     never touched by the stale trigger either
+
+rc="$(run_case PR_LIST_JSON="$stale_progressed_list" \
+  STANDING_STATE_7="CHANGES_REQUESTED" STANDING_AT_7="$recent_at" STANDING_COMMIT_7="oldsha7" \
+  REVIEWS_7="[$(review_row 555 "pullwright-approver[bot]" "$recent_at")]" \
+  NEWEST_7="$progressed_at" REVIEW_ACTION_7="posted" CLAIMED_PRS='[7]')"
+assert_eq "a claimed pull request never reaches _approver_restale_review" "0" "$(count "$tmp_dir/review-calls")"
+assert_eq "  ... nor dismissal" "0" "$(count "$tmp_dir/dismiss-calls")"
+assert_eq "  ... nor escalation" "0" "$(count "$tmp_dir/escalate-calls")"
+assert_contains "  ... and the skip is logged, visibly (unlike the other skip causes above)" \
+  "approver-restale-sweep-skipped-claimed" "$(events)"
+assert_contains "  ... naming the claimed pull request" "pull/7" "$(events)"
+
+rc="$(run_case PR_LIST_JSON="$stale_progressed_list" \
+  STANDING_STATE_7="CHANGES_REQUESTED" STANDING_AT_7="$recent_at" STANDING_COMMIT_7="oldsha7" \
+  REVIEWS_7="[$(review_row 555 "pullwright-approver[bot]" "$recent_at")]" \
+  NEWEST_7="$progressed_at" REVIEW_ACTION_7="posted" CLAIMED_PRS='[999]')"
+assert_eq "…while a candidate whose number the claim listing does not name is still offered" \
+  "1" "$(count "$tmp_dir/review-calls")"
+
+# --- issue #987: the claim listing is fetched once per pass, never once per
+#     trigger — a repository with a candidate in both the stale and the
+#     unreviewed trigger still asks the registry only once.
+
+combined_list="$(jq -sc '.' <(
+  pr_row 7 "https://github.com/acme/widgets/pull/7" "agent/td-7" "newsha7" false "CHANGES_REQUESTED" "fix: thing" "complexity:medium"
+  pr_row 30 "https://github.com/acme/widgets/pull/30" "agent/890-30" "sha30" false "REVIEW_REQUIRED" "fix: stranded" "complexity:low" "$created_old"
+))"
+rc="$(run_case PR_LIST_JSON="$combined_list" \
+  STANDING_STATE_7="CHANGES_REQUESTED" STANDING_AT_7="$recent_at" STANDING_COMMIT_7="oldsha7" \
+  REVIEWS_7="[$(review_row 555 "pullwright-approver[bot]" "$recent_at")]" \
+  NEWEST_7="$progressed_at" REVIEW_ACTION_7="posted" REVIEW_ACTION_30="posted")"
+assert_eq "both triggers reach their own candidate in the one pass" \
+  "2" "$(count "$tmp_dir/review-calls")"
+assert_eq "  ... yet the claim listing was fetched exactly once for the whole pass" \
+  "1" "$(claimed_pr_call_count)"
 
 # --- The standing-review read itself ------------------------------------------
 

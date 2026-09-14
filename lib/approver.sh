@@ -1309,15 +1309,16 @@ RESTALE_ESC_BODY
 # ref's leading number, or the `pr_number` recorded on any other claim.
 # Printed as a JSON array of numbers, `[]` when nothing named one. The
 # unreviewed trigger (agent-ops#890, acceptance criterion 4) reads this so
-# it never engages a pull request a peer's cycle is working right now —
-# unlike the other fleet-wide pull-request sweeps, which act without
-# consulting the claim at all (TD-PPagop-26082509; this function is the seam
-# they should move onto rather than a rule to re-derive). `claim.sh claims`
-# prints `[]` for an unreadable registry by its own contract, so an empty
-# answer here is advisory, not proof of absence — acceptable because the
-# registry is advisory by design (the claim's lock is the branch or file,
-# and the union-log engagement memory below is the second, fleet-wide guard
-# against a doubled engagement).
+# it never engages a pull request a peer's cycle is working right now; the
+# stale trigger immediately above it, and `_landing_retry_sweep_repo`
+# (`lib/landing.sh`), read the identical listing for the identical reason
+# (issue #987, TD-PPagop-26082509) — this is the one seam every fleet-wide
+# pull-request sweep consults before acting, rather than each re-deriving
+# its own rule. `claim.sh claims` prints `[]` for an unreadable registry by
+# its own contract, so an empty answer here is advisory, not proof of
+# absence — acceptable because the registry is advisory by design (the
+# claim's lock is the branch or file, and the union-log engagement memory
+# below is the second, fleet-wide guard against a doubled engagement).
 _approver_sweep_claimed_pr_numbers() {
   local slug="$1" out
   out="$("$SCRIPT_DIR/lib/claim.sh" claims "$slug" 2>/dev/null)" || out='[]'
@@ -1435,7 +1436,14 @@ UNREVIEWED_ESC_BODY
 # re-reviewed nor dismissed, since nothing has actually changed for either
 # action to judge — and is left alone until `approver_restale_escalate_after_
 # hours` hands it to a human instead (`_approver_restale_escalate`, criteria 3
-# and 4).
+# and 4). A pull request a peer node's fleet-wide `pr-<n>` claim currently
+# holds (issue #987, TD-PPagop-26082509) — under whatever item ref won it
+# there, a `review-feedback` round most often — never reaches any of the
+# three: `_approver_sweep_claimed_pr_numbers` is read once for the whole
+# pass (shared with the unreviewed trigger below, never fetched twice for
+# one repository), and a candidate it names is skipped, logged, and left for
+# next cycle exactly as an unresolved source or a truncated listing already
+# is.
 #
 # **Unreviewed trigger** (agent-ops#890) — a ready pull request that carries
 # no Approver review at all: the gap PR #828 fell into for days, and #1049
@@ -1494,6 +1502,14 @@ _approver_restale_sweep_repo() {
 
   local cand pr_url branch number head title complexity standing state commit review_at
   local reviews_raw review_id item_ref newest cutoff
+  # Issue #987: fetched once, lazily, for the whole pass — shared with the
+  # unreviewed trigger further down rather than asked for twice — and only
+  # when this trigger actually has a candidate to spend it on, the same
+  # laziness the unreviewed trigger's own read already holds.
+  local claimed_prs=""
+  if [[ "$(jq 'length' <<<"$candidates" 2>/dev/null || echo 0)" != "0" ]]; then
+    claimed_prs="$(_approver_sweep_claimed_pr_numbers "$slug")"
+  fi
   while IFS= read -r cand; do
     [[ -n "$cand" ]] || continue
     pr_url="$(jq -r '.url' <<<"$cand")"
@@ -1503,6 +1519,15 @@ _approver_restale_sweep_repo() {
     title="$(jq -r '.title' <<<"$cand")"
     complexity="$(jq -r '.complexity' <<<"$cand")"
     [[ -n "$head" ]] || continue
+
+    # Issue #987: a peer node's fleet-wide claim on this pull request owns
+    # whatever happens to its stale review next — skipped, not failed, so
+    # an unclaimed retry next cycle still finds it.
+    if jq -e --argjson n "$number" 'index($n) != null' <<<"${claimed_prs:-[]}" >/dev/null 2>&1; then
+      log_event "approver-restale-sweep-skipped-claimed" "$(jq -nc --arg r "$slug" --arg u "$pr_url" --argjson n "$number" \
+        '{repo: $r, pr_url: $u, number: $n}')"
+      continue
+    fi
 
     standing="$(landing_approver_standing_review_at "$slug" "$number" "$login" 2>/dev/null)" || continue
     IFS=$'\t' read -r state review_at commit <<<"$standing"
@@ -1547,7 +1572,7 @@ _approver_restale_sweep_repo() {
   done < <(jq -c '.[]' <<<"$candidates" 2>/dev/null || true)
 
   # --- The unreviewed trigger (agent-ops#890) — see the header above. -------
-  local unreviewed engage_cutoff escalate_cutoff claimed_prs prior first_engaged_at last_result
+  local unreviewed engage_cutoff escalate_cutoff prior first_engaged_at last_result
   engage_cutoff="$(jq -n -r --arg h "$approver_unreviewed_engage_after_hours" \
     '(now - ($h|tonumber)*3600) | strftime("%Y-%m-%dT%H:%M:%SZ")' 2>/dev/null || true)"
   if [[ -z "$engage_cutoff" ]]; then
@@ -1565,8 +1590,10 @@ _approver_restale_sweep_repo() {
   [[ "$(jq 'length' <<<"$unreviewed" 2>/dev/null || echo 0)" != "0" ]] || return 0
 
   # One registry listing for the whole arm, taken only once a candidate
-  # exists to spend it on — the common cycle has none.
-  claimed_prs="$(_approver_sweep_claimed_pr_numbers "$slug")"
+  # exists to spend it on — the common cycle has none. Issue #987: reused
+  # from the stale trigger above when that trigger already fetched it this
+  # pass, rather than asking twice for one repository.
+  [[ -n "$claimed_prs" ]] || claimed_prs="$(_approver_sweep_claimed_pr_numbers "$slug")"
 
   while IFS= read -r cand; do
     [[ -n "$cand" ]] || continue

@@ -1408,7 +1408,16 @@ a fresh review round. The one gate the sweep answers differently from the
 original round is the pull request's own `source`: never re-derivable from
 GitHub (there is no field for it), so the sweep reads it back from the
 fleet's own union log instead (`landing_retry_source`, `lib/landing.sh`) and
-skips a pull request it cannot resolve one for, rather than guessing.
+skips a pull request it cannot resolve one for, rather than guessing. A pull
+request a peer node's fleet-wide `pr-<n>` claim currently holds — under
+whatever item ref won it there, a `review-feedback` round most often — is
+excluded before any of that: this sweep and the requirement-46 restale
+sweep below are the two fleet-wide pull-request sweeps that act across every
+node's own work rather than a single cycle's own claimed item, so neither
+ever consulted the claim that exists to keep two nodes off the same pull
+request until issue #987 (TD-PPagop-26082509) gave both one shared read,
+`_approver_sweep_claimed_pr_numbers` (`lib/approver.sh`), fetched once per
+repository per pass and never per candidate.
 
 Every other branch **created by this system** (i.e. under `branch_prefix`)
 is entirely at the agents' disposal: the Reviewer may amend, add to, rebase,
@@ -16573,7 +16582,15 @@ with the Reviewer's own.
     standing review. **Stale** (`approver_review_stale`,
     `lib/approver.sh`) means that review's own `commit_id` no longer matches
     the pull request's current head — the deterministic trigger, never
-    `requested_reviewers`.
+    `requested_reviewers`. A pull request a peer's cycle holds right now is
+    excluded here exactly as it is from the unreviewed trigger below
+    (issue #987, TD-PPagop-26082509): the same fleet-wide `pr-<n>` claim
+    listing (`_approver_sweep_claimed_pr_numbers`), fetched once for
+    whichever of the two triggers reaches a candidate first this pass and
+    reused by the other rather than fetched twice, and a claimed candidate
+    is skipped and logged (`approver-restale-sweep-skipped-claimed`) rather
+    than reaching `_approver_restale_review`, `_approver_restale_dismiss` or
+    `_approver_restale_escalate`.
 
     A stale review then splits on whether real work happened since it was
     submitted, decided from the pull request's own commit history rather
@@ -25507,6 +25524,12 @@ oblige anyone to edit a test.
     standing Approver `APPROVED` review is skipped silently, logging nothing
     (ordinary in-flight work, never a stall to report); a source
     `landing_retry_source` cannot resolve drops the candidate the same way;
+    a pull request a peer node's fleet-wide `pr-<n>` claim currently holds
+    (issue #987) never reaches `_landing_stage_attempt` either, logging a
+    `landing-retry-sweep-skipped-claimed` event that names the pull request,
+    while a candidate the claim listing does not name is still offered, and
+    the stubbed `_approver_sweep_claimed_pr_numbers` is confirmed called at
+    most once across a pass regardless of how many candidates it holds;
     a truncated pull-request listing (`github_pr_list_truncated`) logs one
     `warning` naming the repository; and an unreadable default branch falls
     back to `main` while a readable one is passed through unchanged. It also
@@ -25580,7 +25603,17 @@ oblige anyone to edit a test.
     id, so nothing runs; nothing runs at `merge_autonomy: human` (the
     Approver itself never engages there); and a truncated pull-request
     listing logs one `warning` naming the repository and saying a stale
-    review beyond it is not swept this cycle.
+    review beyond it is not swept this cycle; a pull request a peer node's
+    fleet-wide `pr-<n>` claim currently holds (issue #987) reaches none of
+    `_approver_restale_review`, `_approver_restale_dismiss` or
+    `_approver_restale_escalate`, logging an
+    `approver-restale-sweep-skipped-claimed` event that names it, while a
+    candidate the claim listing does not name is still offered normally; and
+    a repository with a candidate in both the stale and the unreviewed
+    trigger in the same pass still calls the stubbed
+    `_approver_sweep_claimed_pr_numbers` exactly once, confirming the two
+    triggers share the one fetch rather than each asking the registry for
+    itself.
 
     The same harness lifts `approver_unreviewed_prior_engagement` verbatim
     alongside the sweep and pins the unreviewed trigger (agent-ops#890)
