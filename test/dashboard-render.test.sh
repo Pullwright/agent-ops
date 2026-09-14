@@ -779,6 +779,44 @@ assert_not_contains "an explicit 0 renders no badge, and no repo's absence rende
 assert_contains "while the work-source panel it sits in renders as it always did" \
   "Poetic-Poems/agent-ops" "$out"
 
+# --- work-source-totals.json: "N of M" behind the issues/tech-debt caps ----------
+# `github.inputs[<slug>].issues_total`/`tech_debt_total` (agent-ops#1171) carry
+# the true count behind the panel's own per-source caps (issues: one GitHub
+# REST page; tech-debt: the panel's own top-40) — a best-effort figure the
+# Publisher may not always have, so the fixture also covers a source with no
+# total field at all, which must render exactly as it did before the feature
+# existed.
+out="$(render work-source-totals.json)" || \
+  { printf 'FAIL - work-source-totals.json did not render:\n%s\n' "$out"; exit 1; }
+
+assert_contains "an issues total past the shown count renders as 'shown of total'" \
+  "1 of 5 open issues" "$out"
+assert_contains "a tech-debt total past the shown count appends a shown/total note" \
+  "1 open tech-debt items (1 of 47 shown)" "$out"
+assert_contains "a total equal to the shown count renders the plain count" \
+  "0 open issues" "$out"
+assert_not_contains "  ... never as a misleading 'of' against itself" \
+  "of 0 open issues" "$out"
+assert_contains "a source with no total field renders exactly as before the feature existed" \
+  "0 open tech-debt items" "$out"
+assert_not_contains "  ... with no shown/total note fabricated for it" \
+  "0 open tech-debt items (0 of" "$out"
+# The shown/total note is compared and printed against `tdRead` (the same
+# figure the sentence opens with), never `td.length`, which also counts rows
+# still unread — otherwise the two numbers in one sentence would be counting
+# different things.
+assert_contains "the note reads the read count, not the raw shown-row count" \
+  "1 open tech-debt items (+1 unread) (1 of 3 shown)" "$out"
+assert_not_contains "  ... never the row count including the unread one" \
+  "2 of 3 shown" "$out"
+# Distinguished from the case above by what immediately follows: this repo's
+# total (1) equals what is already read (1), so the sentence ends at the
+# unread note, straight into the next field's " · " separator.
+assert_contains "a total that only equals what is already read prints no note at all" \
+  "1 open tech-debt items (+1 unread) · 0 code-quality findings" "$out"
+assert_not_contains "  ... a cold cache's total must never look like it is disclosing more" \
+  "1 open tech-debt items (+1 unread) (1 of 1 shown)" "$out"
+
 # --- merge-queue.json: queued badge, dequeued warning (agent-ops#375, D17) --------
 # The Publisher's own `queued`/`dequeued` fields (test/publish-dashboard.test.sh
 # covers how it derives them) driving the open-PR table's badges: #500 is

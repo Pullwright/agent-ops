@@ -2735,9 +2735,15 @@
   // A failed source must not show a count of zero — indistinguishable from a
   // repo that genuinely has none — so it renders a "couldn't read" marker
   // instead. `answered_404` is a real, legitimate zero (unlike `failed`) and
-  // renders as an ordinary count.
-  function countText(g, key, count, label) {
-    return srcState(g, key) === "failed" ? ("couldn't read " + label) : (count + " " + label);
+  // renders as an ordinary count. `total`, when given, is the true count
+  // behind a source the panel caps (issues: one GitHub REST page;
+  // tech-debt: the panel's own top-40) — shown as "N of M" only once the cap
+  // has actually clipped something (`total > count`); omitted, or read as a
+  // plain count, on a `data.js` from before the field existed, so an old
+  // snapshot renders exactly as it always did.
+  function countText(g, key, count, label, total) {
+    if (srcState(g, key) === "failed") return "couldn't read " + label;
+    return (typeof total === "number" && total > count ? count + " of " + total : count) + " " + label;
   }
 
   function inputsPanel() {
@@ -2778,11 +2784,17 @@
           "  ·  " + [
             countText(g, "findings", secCount, "security findings"),
             countText(g, "failed_runs", g.failed_runs ? g.failed_runs.length : 0, "failing workflows"),
-            countText(g, "issues", g.issues ? g.issues.length : 0, "open issues"),
+            countText(g, "issues", g.issues ? g.issues.length : 0, "open issues", g.issues_total),
             (srcState(g, "tech_debt") === "failed"
               ? "couldn't read tech-debt items"
               : (tdRead + " open tech-debt items" +
-                 (td.length > tdRead ? " (+" + (td.length - tdRead) + " unread)" : ""))),
+                 (td.length > tdRead ? " (+" + (td.length - tdRead) + " unread)" : "") +
+                 // Compared against `tdRead`, the same figure the sentence
+                 // opens with — never `td.length`, which also counts rows
+                 // still unread and so is not the same quantity
+                 // `tech_debt_total` counts either (see the Publisher).
+                 (typeof g.tech_debt_total === "number" && g.tech_debt_total > tdRead
+                   ? " (" + tdRead + " of " + g.tech_debt_total + " shown)" : ""))),
             countText(g, "findings", cqCount, "code-quality findings")
           ].join(" · ")})
       ]));

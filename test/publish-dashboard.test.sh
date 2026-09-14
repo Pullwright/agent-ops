@@ -2199,6 +2199,148 @@ assert_eq "and a fully-read register is down to the items that are actually work
 run_publish "$w" NODE_NAME=nodeW-self
 assert_eq "a local-only tick carries the ledger forward" "3" \
   "$(td_of "$(data_of "$w")" ' | length')"
+# The register above (8 files) is well under the panel's own 40-row cap, but
+# its true size is 2, not the 3 shown: TD-PPagop-26070104 (sha ddddddd4)
+# never answers, so its status stays unread forever, and an unread item must
+# never count as unresolved — the read-and-confirmed TD-PPagop-26070101
+# (open) and -26070102 (in-progress) are the only two the total may claim.
+assert_eq "the total counts only rows confirmed open/in-progress, not one that never answers" "2" \
+  "$(jq -r '.github.inputs["Pullwright/agent-ops"].tech_debt_total' <<<"$(data_of "$w")")"
+
+# --- The tech-debt ledger's true size, past the panel's own top-40 cap -----------
+# The panel shows at most 40 unresolved rows; a register past that has to say
+# so — but only once a row is *confirmed* open or in-progress, never while it
+# is merely unread (TD-PPagop-26080201's own "not yet known not to be work"
+# rule keeps an unread item in the visible list, but its real status could
+# still turn out to be resolved, so it may never inflate the total).
+td_big_stub="$tmp_dir/stub-gh-td-big.sh"
+cat > "$td_big_stub" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$GH_CALL_LOG"
+gh_jq() { if [[ "$3" == "--jq" ]]; then jq -r "$4"; else cat; fi; }
+case "$1 $2" in
+  "pr list")  printf '[]' ;;
+  "run list") printf '[]' ;;
+  "api --paginate")
+    case "$3" in
+      "repos/"*"/dependabot/alerts"*|"repos/"*"/code-scanning/alerts"*) printf '[]' ;;
+      *) exit 1 ;;
+    esac ;;
+  "api "*)
+    case "$2" in
+      "repos/"*"/issues?"*) printf '[]' ;;
+      "repos/Pullwright/agent-ops/contents/tech-debt")
+        { printf '['
+          for n in $(seq -w 1 45); do
+            [[ "$n" == "01" ]] || printf ','
+            printf '{"type":"file","name":"TD-PPagop-260800%s.md","sha":"0abcdef0%s"}' "$n" "$n"
+          done
+          printf ']'
+        } | gh_jq "$@" ;;
+      "repos/Pullwright/agent-ops/git/blobs/"*)
+        printf -- '---\nid: an-item\ntitle: A big-register item\nstatus: open\nfiled: 2026-08-01\n---\n\nWhy it matters.\n' \
+          | base64 -w 60 | jq -Rsc '{content: ., encoding: "base64"}' | gh_jq "$@" ;;
+      "repos/"*"/contents/tech-debt")
+        printf '{"message":"Not Found","documentation_url":"https://docs.github.com/rest","status":"404"}'
+        echo "gh: Not Found (HTTP 404)" >&2
+        exit 1 ;;
+      *)
+        case "$4" in
+          *default_branch*) printf 'main' ;;
+          *) exit 1 ;;
+        esac ;;
+    esac ;;
+  *) exit 1 ;;
+esac
+STUB
+chmod +x "$td_big_stub"
+
+# Cold: a fresh cache reads only TD_META_MISS_BUDGET (4) items this tick, so
+# 41 of the 45 stay unread. The total must reflect only what was actually
+# confirmed, never the register's raw size — the exact bug a reviewer
+# caught in this PR (agent-ops#1508): a naive unsliced-length total would
+# have read 45 here, order-of-magnitude off the true count of one.
+tb="$(new_home nodeTDBig)"
+env HOME="$tb" NODE_NAME=nodeTDBig-self GH_CALL_LOG="$gh_calls" \
+    DASHBOARD_GH_CMD="$td_big_stub" "$PUBLISH" >/dev/null 2>&1
+tbdata="$(data_of "$tb")"
+assert_eq "the panel still shows at most 40 tech-debt rows" "40" \
+  "$(jq '.github.inputs["Pullwright/agent-ops"].tech_debt | length' <<<"$tbdata")"
+assert_eq "a cold cache's total counts only what this tick actually confirmed" "4" \
+  "$(jq -r '.github.inputs["Pullwright/agent-ops"].tech_debt_total' <<<"$tbdata")"
+
+# Warm: every item's metadata is already cached, as a fully-read register
+# eventually is, so all 45 are confirmed and the total says so — genuinely
+# past the cap now, the two figures legitimately apart.
+tb2="$(new_home nodeTDBig2)"
+td_cache_dir="$tb2/.local/state/poetic-agents"
+mkdir -p "$td_cache_dir"
+jq -n '[range(1;46)] | map({
+    key: ("0abcdef0" + (if . < 10 then "0" else "" end) + (. | tostring)),
+    value: {title: "A big-register item", status: "open", seen: (now | floor)}
+  }) | from_entries' > "$td_cache_dir/.dashboard-td.json"
+env HOME="$tb2" NODE_NAME=nodeTDBig2-self GH_CALL_LOG="$gh_calls" \
+    DASHBOARD_GH_CMD="$td_big_stub" "$PUBLISH" >/dev/null 2>&1
+tb2data="$(data_of "$tb2")"
+assert_eq "a fully-confirmed register still shows at most 40 rows" "40" \
+  "$(jq '.github.inputs["Pullwright/agent-ops"].tech_debt | length' <<<"$tb2data")"
+assert_eq "but its total now reports every confirmed row, past the cap" "45" \
+  "$(jq -r '.github.inputs["Pullwright/agent-ops"].tech_debt_total' <<<"$tb2data")"
+
+# --- The open-issues total, behind the panel's own one-page cap (agent-ops#1171) --
+# The 30-row `per_page` fetch cannot itself say whether it saw every open
+# issue; a separate, cheap Search API call (`.total_count`) can. It is its own
+# endpoint with its own rate limit, so it is read as best-effort: a repo whose
+# total call fails simply leaves `issues_total` unknown (`null`), exactly as a
+# `data.js` from before the field existed reads, rather than joining
+# `gh_fail_msgs` and failing the issues source — or the whole repo — over a
+# figure the main listing never needed.
+gh_issues_total_stub="$tmp_dir/stub-gh-issues-total.sh"
+cat > "$gh_issues_total_stub" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$GH_CALL_LOG"
+gh_jq() { if [[ "$3" == "--jq" ]]; then jq -r "$4"; else cat; fi; }
+case "$1 $2" in
+  "pr list")  printf '[]' ;;
+  "run list") printf '[]' ;;
+  "api --paginate")
+    case "$3" in
+      "repos/"*"/dependabot/alerts"*|"repos/"*"/code-scanning/alerts"*) printf '[]' ;;
+      *) exit 1 ;;
+    esac ;;
+  "api "*)
+    case "$2" in
+      "repos/"*"/issues?"*) printf '[]' ;;
+      "search/issues?q=repo:Pullwright/agent-ops+type:issue+state:open")
+        printf '{"total_count": 47}' | gh_jq "$@" ;;
+      "search/issues?q=repo:"*"+type:issue+state:open")
+        exit 1 ;;   # every other repo's total is unavailable this tick
+      "repos/"*"/contents/tech-debt")
+        printf '{"message":"Not Found","documentation_url":"https://docs.github.com/rest","status":"404"}'
+        echo "gh: Not Found (HTTP 404)" >&2
+        exit 1 ;;
+      *)
+        case "$4" in
+          *default_branch*) printf 'main' ;;
+          *) exit 1 ;;
+        esac ;;
+    esac ;;
+  *) exit 1 ;;
+esac
+STUB
+chmod +x "$gh_issues_total_stub"
+
+it="$(new_home nodeIssuesTotal)"
+env HOME="$it" NODE_NAME=nodeIssuesTotal-self GH_CALL_LOG="$gh_calls" \
+    DASHBOARD_GH_CMD="$gh_issues_total_stub" "$PUBLISH" >/dev/null 2>&1
+itdata="$(data_of "$it")"
+assert_eq "the Search API's total_count reaches the page as issues_total" "47" \
+  "$(jq -r '.github.inputs["Pullwright/agent-ops"].issues_total' <<<"$itdata")"
+assert_eq "a repo whose total call fails leaves issues_total unknown, not zero" "null" \
+  "$(jq -r '.github.inputs["Poetic-Poems/poetic"].issues_total' <<<"$itdata")"
+assert_eq "  ... and never marks the issues source itself failed over it" "answered" \
+  "$(jq -r '.github.inputs["Poetic-Poems/poetic"].state.issues' <<<"$itdata")"
+assert_eq "  ... nor the page-wide alarm" "true" "$(jq -r '.github.ok' <<<"$itdata")"
 
 # --- Per-source, per-repo read state (TD-PPagop-26080201) -----------------------
 # Four of `github.inputs[<slug>]`'s five sources used to conflate "answered
