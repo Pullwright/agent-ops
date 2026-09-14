@@ -241,25 +241,6 @@ assert_eq "a live check that itself fails yields no candidate, never an 'unanswe
 assert_eq "…and says so on stderr rather than dropping it silently" \
   "1" "$(grep -c "could not confirm pr #208's unreconciled comments" "$tmp_dir/stderr")"
 
-# --- tech_debt_branch_prefix: an explicit empty argument disables the td/
-# namespace rather than defaulting back to it (the ${5-td/} shape) ---------
-jq -nc --argjson p "$(pr_entry 300 td/TD99)" '[$p]' > "$tmp_dir/prlist.json"
-: > "$tmp_dir/union-log.jsonl"
-union_log_add "https://github.com/o/r/pull/300" "reconciliation-unanswered:…"
-jq -nc '{"300": [{"event": "ready_for_review", "created_at": "2026-08-20T00:00:00Z"}]}' > "$tmp_dir/timeline.json"
-jq -nc '{"300": [{"id": 9001, "created_at": "2026-08-21T00:00:00Z", "body": "…",
-                   "user": {"login": "warwickallen", "type": "User"}}]}' > "$tmp_dir/comments.json"
-
-default_out="$(LANDING_REFUSALS_GH="$tmp_dir/gh" "$SCRIPT_DIR/scripts/gather-landing-refusals.sh" \
-  "o/r" "autonomous-agent" "agent/" "$tmp_dir/union-log.jsonl" 2>/dev/null)"
-assert_eq "omitting tech_debt_branch_prefix defaults to td/, so a td/ branch is still a candidate" \
-  "[300]" "$(jq -c '[.[].number]' <<<"$default_out")"
-
-disabled_out="$(LANDING_REFUSALS_GH="$tmp_dir/gh" "$SCRIPT_DIR/scripts/gather-landing-refusals.sh" \
-  "o/r" "autonomous-agent" "agent/" "$tmp_dir/union-log.jsonl" "" 2>/dev/null)"
-assert_eq "an explicit empty tech_debt_branch_prefix disables the td/ namespace" \
-  "[]" "$(jq -c '[.[].number]' <<<"$disabled_out")"
-
 # --- A missing/unreadable union log yields no candidates, never a crash ----
 empty_log_out="$(LANDING_REFUSALS_GH="$tmp_dir/gh" "$SCRIPT_DIR/scripts/gather-landing-refusals.sh" \
   "o/r" "autonomous-agent" "agent/" "$tmp_dir/no-such-log.jsonl" 2>/dev/null)"

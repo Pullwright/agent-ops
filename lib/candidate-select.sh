@@ -66,12 +66,8 @@ release_pr_claim() {
 # tech-debt's own item is now a bare issue number (the store moved to
 # labelled issues, D15 as revised, #869/#875/#879), the same shape an
 # `issues` item already has, so it claims the same way. `td/<ID>` is no
-# longer minted for a fresh claim; `lib/claim.sh`'s `branches` listing and
-# this file's own `gather_claimed` still recognise a *live* `td/*` branch —
-# a repo's own pre-migration human tech-debt-claim protocol
-# (`tech_debt_branch_prefix`, deprecated) or a claim this code minted before
-# this change landed — so as not to let a peer double-claim one; that
-# recognition retires only in the roadmap's later register-retirement issue.
+# longer minted for a fresh claim, and the register-retirement issue (#882)
+# retired the `tech_debt_branch_prefix` namespace itself.
 claim_branch_for() {  # <source> <item>
   local item="$2"
   printf 'agent/%s' "${item//[^A-Za-z0-9._-]/-}"
@@ -1908,7 +1904,7 @@ gather_findings() {
 gather_review_feedback() {
   local slug="$1" out safe
   safe="${slug//\//_}"
-  out="$("$SCRIPT_DIR/scripts/gather-review-feedback.sh" "$slug" "$pr_label" "$branch_prefix" "$tech_debt_branch_prefix" \
+  out="$("$SCRIPT_DIR/scripts/gather-review-feedback.sh" "$slug" "$pr_label" "$branch_prefix" \
         2>"$cycle_dir/review-feedback-$safe.err" || true)"
   if [[ -n "$out" ]] && jq -e 'type == "array"' <<<"$out" >/dev/null 2>&1; then
     printf '%s\n' "$out" > "$cycle_dir/review-feedback-$safe.json"
@@ -1927,7 +1923,7 @@ gather_review_feedback() {
 gather_abandoned_drafts() {
   local slug="$1" out safe
   safe="${slug//\//_}"
-  out="$("$SCRIPT_DIR/scripts/gather-abandoned-drafts.sh" "$slug" "$pr_label" "$branch_prefix" "$abandoned_draft_after_hours" "$tech_debt_branch_prefix" \
+  out="$("$SCRIPT_DIR/scripts/gather-abandoned-drafts.sh" "$slug" "$pr_label" "$branch_prefix" "$abandoned_draft_after_hours" \
         2>"$cycle_dir/abandoned-drafts-$safe.err" || true)"
   if [[ -n "$out" ]] && jq -e 'type == "array"' <<<"$out" >/dev/null 2>&1; then
     printf '%s\n' "$out" > "$cycle_dir/abandoned-drafts-$safe.json"
@@ -1951,7 +1947,7 @@ gather_abandoned_drafts() {
 gather_merge_conflicts() {
   local slug="$1" out safe nudge_result
   safe="${slug//\//_}"
-  out="$("$SCRIPT_DIR/scripts/gather-merge-conflicts.sh" "$slug" "$pr_label" "$branch_prefix" "$tech_debt_branch_prefix" \
+  out="$("$SCRIPT_DIR/scripts/gather-merge-conflicts.sh" "$slug" "$pr_label" "$branch_prefix" \
         2>"$cycle_dir/merge-conflicts-$safe.err" || true)"
   # Requirement 34n's liveness retirement (TD-PPagop-26081303): a
   # `merge-conflicts-$safe.ok` marker, written iff this cycle's own read
@@ -2053,7 +2049,7 @@ gather_merge_conflicts() {
 gather_dequeued() {
   local slug="$1" out safe
   safe="${slug//\//_}"
-  out="$("$SCRIPT_DIR/scripts/gather-dequeued.sh" "$slug" "$pr_label" "$branch_prefix" "$tech_debt_branch_prefix" \
+  out="$("$SCRIPT_DIR/scripts/gather-dequeued.sh" "$slug" "$pr_label" "$branch_prefix" \
         2>"$cycle_dir/dequeued-$safe.err" || true)"
   # Requirement 34n's liveness retirement, same marker discipline as
   # `merge-conflicts-$safe.ok`: written iff this cycle's own read produced a
@@ -2078,7 +2074,7 @@ gather_dequeued() {
 gather_landing_refusals() {
   local slug="$1" out safe
   safe="${slug//\//_}"
-  out="$("$SCRIPT_DIR/scripts/gather-landing-refusals.sh" "$slug" "$pr_label" "$branch_prefix" "$union_log" "$tech_debt_branch_prefix" \
+  out="$("$SCRIPT_DIR/scripts/gather-landing-refusals.sh" "$slug" "$pr_label" "$branch_prefix" "$union_log" \
         2>"$cycle_dir/landing-refusals-$safe.err" || true)"
   if [[ -n "$out" ]] && jq -e 'type == "array"' <<<"$out" >/dev/null 2>&1 \
      && [[ ! -s "$cycle_dir/landing-refusals-$safe.err" ]]; then

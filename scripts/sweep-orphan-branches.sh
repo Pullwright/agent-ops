@@ -14,13 +14,11 @@
 # entry was lost (a best-effort write that never landed), wedging its item the
 # same way with nothing to recover at all.
 #
-# For one repository, this sweeps every `<tech_debt_branch_prefix>*`,
-# `<branch_prefix>*`, and `td-record/*` ref — the last unconditionally, never
-# gated by `tech_debt_branch_prefix`, since a `td-record/<id>` branch is never
-# itself claim-prefixed the way the other two are. `techdebt_file_debt`
-# (`lib/tech-debt-file.sh`) no longer mints one — agent-ops#874 moved its
-# filing to a `pw::type:tech-debt`-labelled issue — but this walk still has to
-# recognise and retire any branch a filing from before that move left behind
+# For one repository, this sweeps every `<branch_prefix>*` and `td-record/*`
+# ref. `techdebt_file_debt` (`lib/tech-debt-file.sh`) no longer mints a
+# `td-record/<id>` branch — agent-ops#874 moved its filing to a
+# `pw::type:tech-debt`-labelled issue — but this walk still has to recognise
+# and retire any branch a filing from before that move left behind
 # (agent-ops#1219) — and, for each one that is provably an orphan — **no
 # open PR** uses it, **no registry entry** stands for it, and its tip commit
 # is **older than `abandoned_draft_after_hours`** (the same judgement that
@@ -50,16 +48,6 @@
 #                                         recovery draft would resurrect
 #                                         superseded — sometimes regressed —
 #                                         code (issue #500)
-#   a `td/<ID>` branch whose sole commit
-#   ahead is reserve-tech-debt-id.pl's
-#   own reservation commit (its fixed
-#   subject, no files touched)            touch nothing: it is the
-#                                         ID-reservation scheme's atomic claim
-#                                         lock, not work, whether or not <ID>
-#                                         has since been filed — and, when it
-#                                         has, regardless of which branch that
-#                                         filing actually landed on
-#                                         (issue #545)
 #   a `td-record/<id>` branch whose only
 #   pull request was closed without
 #   merging                               delete the ref: a human declined
@@ -144,7 +132,6 @@ DEFAULTED_CONFIG="$(config_defaults "$CONFIG_FILE" "$SCHEMA_FILE" 2>/dev/null)"
 cfg() { jq -r "$1" <<<"$DEFAULTED_CONFIG" 2>/dev/null; }
 
 branch_prefix="$(cfg '.branch_prefix')"
-tech_debt_branch_prefix="$(cfg '.tech_debt_branch_prefix')"
 pr_label="$(cfg '.pr_label')"
 stale_hours="$(cfg '.abandoned_draft_after_hours')"
 state_repo="$(cfg '.state_repo')"
@@ -158,17 +145,11 @@ max_actions=3
 
 # stem BRANCH — reduce a claim branch to its item ref, for comparing two
 # branches that might carry the same work: strip the leading
-# `$tech_debt_branch_prefix` or `$branch_prefix`, then drop a trailing
-# 12-hex-digit random suffix if one is present (exactly twelve, no more and
-# no fewer — claim.sh's own width).
+# `$branch_prefix`, then drop a trailing 12-hex-digit random suffix if one is
+# present (exactly twelve, no more and no fewer — claim.sh's own width).
 stem() {
-  local b="$1" p
-  for p in "$tech_debt_branch_prefix" "$branch_prefix"; do
-    if [[ -n "$p" && "$b" == "$p"* ]]; then
-      b="${b#"$p"}"
-      break
-    fi
-  done
+  local b="$1"
+  [[ -n "$branch_prefix" && "$b" == "$branch_prefix"* ]] && b="${b#"$branch_prefix"}"
   [[ "$b" =~ ^(.+)-[0-9a-f]{12}$ ]] && b="${BASH_REMATCH[1]}"
   printf '%s' "$b"
 }
@@ -228,13 +209,13 @@ sweep_record_branch() {
 # td-record/<ID>, ask whether <ID>'s record reached the default branch some
 # other way. A clean 404 proves it never did, so the id is spent with
 # nothing to show for it and its td/<ID> reservation is released alongside
-# it; a 200 means the record landed some other way, so
-# release-td-branch.yml already owns that reservation; any other failure
-# answers nothing, so — fail closed, like every guard above — it is left
-# alone. Deliberately narrower than the issue #545 reservation-lock
-# exemption above: this only ever runs for a td/<ID> whose td-record/<ID>
-# sibling was just confirmed declined, never for a bare reservation with no
-# sibling at all.
+# it; a 200 means the record landed some other way, so the reservation is
+# left alone — nothing else in this walk still recognises the td/ namespace
+# (#882), so a td/<ID> left here stays as an inert, unswept ref rather than
+# a wrongly-deleted one; any other failure answers nothing, so — fail
+# closed, like every guard above — it is left alone too. This only ever
+# runs for a td/<ID> whose td-record/<ID> sibling was just confirmed
+# declined; it never touches a bare reservation with no sibling at all.
 release_paired_reservation() {
   local id="$1" content_err
   content_err="$("$GH" api "repos/$slug/contents/tech-debt/$id.md?ref=$default_branch" \
@@ -331,26 +312,6 @@ sweep_branch() {  # <branch> <tip-sha>
   if ! [[ "$ahead" =~ ^[0-9]+$ ]]; then
     warn "$branch" "could not compare against $default_branch — leaving it alone"
     return 0
-  fi
-
-  # reserve-tech-debt-id.pl's own reservation commit: a `td/<ID>` branch
-  # whose sole commit ahead carries that script's fixed subject and touches
-  # no files is the ID-reservation scheme's atomic claim lock, not work,
-  # whether or not `<ID>` has since been filed — and, when it has, whether
-  # the filing landed on this branch or, as usually happens, on whichever
-  # branch the containing item's own work actually shipped from. The lock's
-  # own commit shape says all of that without needing a lookup into either
-  # (issue #545). Leave it exactly as found: neither recovered nor deleted.
-  if [[ -n "$tech_debt_branch_prefix" && "$branch" == "$tech_debt_branch_prefix"* && "$ahead" == "1" ]]; then
-    local reservation_id reservation_message reservation_subject reservation_files
-    reservation_id="${branch#"$tech_debt_branch_prefix"}"
-    reservation_message="$(jq -r '.commits[0].commit.message // empty' <<<"$compare_json" 2>/dev/null)"
-    reservation_subject="${reservation_message%%$'\n'*}"
-    reservation_files="$(jq -r '(.files // []) | length' <<<"$compare_json" 2>/dev/null)"
-    if [[ "$reservation_subject" == "chore(tech-debt): reserve $reservation_id" \
-          && "$reservation_files" == "0" ]]; then
-      return 0
-    fi
   fi
 
   if (( ahead == 0 )); then
@@ -487,14 +448,12 @@ ORPHAN_BODY
   return 0
 }
 
-# Both claim namespaces, prefix-listed server-side, plus td-record/ —
-# unconditional, never gated by tech_debt_branch_prefix, since a td-record/
-# branch is never itself claim-prefixed (TECHDEBT_RECORD_BRANCH_PREFIX,
-# lib/tech-debt-file.sh). techdebt_file_debt no longer mints one
-# (agent-ops#874); this walk drains whatever a pre-#874 filing left. A failed
-# listing is an unanswered question about the whole namespace: warn and move
-# on.
-for prefix in "$tech_debt_branch_prefix" "$branch_prefix" "$TECHDEBT_RECORD_BRANCH_PREFIX"; do
+# The claim namespace, prefix-listed server-side, plus td-record/
+# (TECHDEBT_RECORD_BRANCH_PREFIX, lib/tech-debt-file.sh): techdebt_file_debt
+# no longer mints one (agent-ops#874); this walk drains whatever a pre-#874
+# filing left. A failed listing is an unanswered question about the whole
+# namespace: warn and move on.
+for prefix in "$branch_prefix" "$TECHDEBT_RECORD_BRANCH_PREFIX"; do
   [[ -n "$prefix" ]] || continue
   refs="$("$GH" api "repos/$slug/git/matching-refs/heads/$prefix" \
     --jq '.[] | [(.ref | sub("^refs/heads/"; "")), .object.sha] | @tsv' 2>/dev/null)" || {
