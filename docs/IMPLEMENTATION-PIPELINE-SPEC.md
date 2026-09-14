@@ -1077,6 +1077,8 @@ A repo entry may also carry `landing_cool_off_hours` — the per-repository over
 
 A repo entry may also carry `escalation_autonomy` — the per-repository override of the top-level key of the same name (D18, agent-ops#627), on the same precedence as `stage_timeouts`: this entry wins when present, the top-level key otherwise.
 
+A repo entry may also carry `preview` — this repository's preview-deployment arrangement (D19 Phase 1, agent-ops#586), read by requirement 24a instead of that requirement naming a provider or a repository. Absent, or absent its own `provider`, resolves to `"none"`: no preview deployment, so neither stage runs a preview step. `"vercel"` is the only implemented provider; its own `vercel.bypass_secret_env` (default `VERCEL_AUTOMATION_BYPASS_SECRET`) and `vercel.token_env` (default `VERCEL_TOKEN`) name the environment variables carrying this repository's Vercel credentials — never the credentials themselves. There is no top-level default for this key: a preview arrangement is inherently repository-specific, unlike `merge_autonomy` and its neighbours above.
+
 Every optional key sits on the repository's own entry, beside `slug` and `sources`:
 
 ```json
@@ -1091,7 +1093,8 @@ Every optional key sits on the repository's own entry, beside `slug` and `source
     "implementation_plan_path": "docs/IMPLEMENTATION-PLAN.md",
     "nice": -5,
     "stage_timeouts": { "implementer": 90 },
-    "stage_inactivity": { "implementer": 20 }
+    "stage_inactivity": { "implementer": 20 },
+    "preview": { "provider": "vercel" }
   }
 ]
 ```
@@ -10734,15 +10737,25 @@ implements.
 24. Implements the item, then runs the same checks the repo's CI runs (as
     documented in that repo's `AGENTS.md`/`CLAUDE.md` and workflow files) and
     fixes anything they surface.
-24a. **Checks the preview deployment its own pull request produced.** Where the
-    target repository deploys from GitHub — poetic-fiddle, through Vercel's Git
-    integration — every pull request head SHA gets its own preview deployment,
-    and requirement 24's checks say nothing about it: the integration reports
-    through GitHub's *deployments* API rather than as a check run, so
-    `gh pr checks` is green over a preview that never built.
+24a. **Checks the preview deployment its own pull request produced, for a
+    repository whose config declares one (D19 Phase 1, agent-ops#586).** Which
+    provider, if any, applies is stated in that repository's own `preview`
+    config block (`repos[].preview`, requirement 1b's schema) — never
+    hard-coded in either stage's prompt or in this requirement. Absent, or
+    absent its own `provider`, resolves to `"none"`: this step does not run,
+    and neither stage reports anything about it. `"vercel"` is the only implemented
+    provider: where the target repository deploys from GitHub through
+    Vercel's Git integration, every pull request head SHA gets its own preview
+    deployment, and requirement 24's checks say nothing about it — the
+    integration reports through GitHub's *deployments* API rather than as a
+    check run, so `gh pr checks` is green over a preview that never built.
     `scripts/preview-deploy.sh` (component 13) is how a stage asks. A preview
     that failed to build, or that answers an error, is a defect in the pull
-    request and is fixed like any other.
+    request and is fixed like any other. The Script resolves the block once,
+    from `config_defaults`, and stamps it onto the work order's own `preview`
+    field before either stage's prompt is assembled (`lib/preview-config.sh`'s
+    `preview_config_for_repo`) — a mechanical field, on the same "no model
+    judgement to report" terms as `pr_label` (requirement 20).
 
     **A preview the stage cannot reach is not a failure of the pull request.**
     Preview deployments sit behind Vercel Authentication, and an
@@ -10751,10 +10764,21 @@ implements.
     check reading a status code alone certifies a wall as a healthy deployment.
     The script therefore judges where a response points rather than what it is
     numbered, and reports a protected preview as "could not check" (exit 2),
-    naming the node configuration that would fix it. `VERCEL_AUTOMATION_BYPASS_SECRET`
-    is a property of the node, not of the branch: a node without it runs every
-    cycle exactly as it did before this check existed, and neither stage may
-    report `blocked` for the want of it.
+    naming the node configuration that would fix it. The script itself still
+    reads exactly two fixed environment variable names,
+    `VERCEL_AUTOMATION_BYPASS_SECRET` and `VERCEL_TOKEN` — that is unchanged by
+    this item, D19's "served"/"rendered" tiers being separate work — but a
+    repository's own `preview.vercel.bypass_secret_env`/`preview.vercel.token_env`
+    may name a *different* environment variable to read the credential from
+    (default the same two fixed names, so an installation that has set
+    neither is unaffected), which the Script remaps onto the two fixed names
+    the script reads, immediately before either stage runs
+    (`preview_config_export_vercel_credentials`) — the one thing that would
+    otherwise have to change per repository once a second Vercel-deployed
+    repository needs its own secret on the same node. Either way, the
+    credential is a property of the node, not of the branch: a node without it
+    runs every cycle exactly as it did before this check existed, and neither
+    stage may report `blocked` for the want of it.
 
     **A passing check says only that the preview answers, not what it
     answers.** `--path` (a single route, judged for pass/fail) and `--fetch`
@@ -22963,6 +22987,22 @@ oblige anyone to edit a test.
    real protected preview, `scripts/preview-deploy.sh --repo
    Poetic-Poems/poetic-fiddle --pr <n>` from a shell with no bypass secret set
    reports that the deployment built and that the page could not be checked.
+   `test/preview-config.test.sh` covers the config-block half of the same
+   requirement (D19 Phase 1): `preview_config_for_repo` resolves a configured
+   `{"provider": "vercel"}` entry unchanged, falls back to
+   `{"provider": "none"}` for a repo carrying no `preview` key at all and for
+   a slug absent from `repos[]` entirely, and `preview_config_export_vercel_credentials`
+   exports the two fixed variable names `scripts/preview-deploy.sh` reads
+   from whichever variable name a `vercel.bypass_secret_env`/`vercel.token_env`
+   override names, is a no-op on the defaulted names, and is inert for
+   `provider: "none"`. `test/config-schema.test.sh` covers `scripts/doctor.sh`'s
+   (component 14) own side of this same requirement, alongside its other
+   cross-key rules: the shape half through `config_schema_errors` directly
+   (rejecting an unknown `provider`, an unknown key inside `preview`, a
+   `bypass_secret_env` that is not a bare shell identifier), and the
+   credential-presence check through a real `scripts/doctor.sh` run, asserting
+   it warns rather than fails when a `"vercel"`-configured repo's named
+   variable is unset on the node it runs on.
 2g. **Every pipeline comment is visibly attributed (requirement 9d).**
    `test/comment-identity.test.sh` passes: `pipeline_actor_label` returns the
    right display name for each of `script`, `coordinator`, `implementer`,

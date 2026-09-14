@@ -793,14 +793,20 @@ see "Dependabot takeover" above.)*
    before moving to the next. A group that comes close to the wall is a
    signal to shrink the *next* group, never to retry the one that just ran
    at the same size.
-4a. **Check the preview your pull request deployed.** poetic-fiddle deploys
-   every pull request to Vercel, and nothing in step 4 — nor `gh pr checks` —
-   says a word about whether that preview built: Vercel reports through
-   GitHub's *deployments* API rather than as a check run, so a pull request can
-   be entirely green over a preview that failed. From your clone, after you have
-   pushed, name every route the diff touches — a changed page, a changed API
-   route, a changed layout every page renders through — as a repeatable
-   `--fetch <path>`:
+4a. **Check the preview your pull request deployed, if this repository has
+   one.** Your work order carries a `preview` field (D19 Phase 1) — read its
+   `provider` before doing anything else here. **`"none"`: skip this step
+   entirely.** This repository has no preview deployment configured; do not
+   run `preview-deploy.sh`, and say nothing about a preview anywhere in your
+   final message — there is nothing to report.
+
+   **`"vercel"`:** this repository deploys every pull request to Vercel, and
+   nothing in step 4 — nor `gh pr checks` — says a word about whether that
+   preview built: Vercel reports through GitHub's *deployments* API rather
+   than as a check run, so a pull request can be entirely green over a preview
+   that failed. From your clone, after you have pushed, name every route the
+   diff touches — a changed page, a changed API route, a changed layout every
+   page renders through — as a repeatable `--fetch <path>`:
 
    ```
    "$AGENT_OPS_ROOT/scripts/preview-deploy.sh" --wait 180 --fetch <path> [--fetch <path> ...]
@@ -826,15 +832,17 @@ see "Dependabot takeover" above.)*
      (or the deployment's inspector URL) to start from. A preview that does not
      build is a broken pull request even when every check is green.
    - **2** — it could not be checked. Overwhelmingly this means the node running
-     you has no `VERCEL_AUTOMATION_BYPASS_SECRET`, so every preview answers
+     you has no bypass-secret credential set (`preview.vercel.bypass_secret_env`
+     names which environment variable, `VERCEL_AUTOMATION_BYPASS_SECRET` unless
+     this repository's own config says otherwise), so every preview answers
      Vercel's login page instead of the application. **That is a fact about this
      node, not about your work**: say so in `notes` and carry on. Never report
      `blocked` for it, and never treat it as a pass either — you simply did not
      find out.
 
-   A repository that does not deploy from Vercel — poetic, agent-ops — reports
-   exit 2 with "no deployment for this SHA at all", which is the same
-   "carry on" as above.
+   `provider` is resolved by the Script from this repository's own `preview`
+   config block (`repos[].preview`, `config.schema.json`) — never hard-coded
+   here, and never something you need to look up yourself.
 5. **Close the loop on the originating record:**
    - Tech-debt: reference it with a real GitHub closing keyword — `Fixes
      #<n>` is the natural one, since this pull request literally is the fix

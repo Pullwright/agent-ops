@@ -172,6 +172,41 @@
               "decide-tactical",
               "decide-with-veto"
             ]
+          },
+          "preview": {
+            "description": "This repository's preview-deployment arrangement (D19 Phase 1, agent-ops#586), read by the Implementer's and Reviewer's own preview-check step instead of either stage naming a provider or a repository. Absent, or absent its own `provider`, resolves to \"none\": this repository has no preview deployment, so neither stage runs a preview step or reports anything about one. There is no top-level default for this key — a preview arrangement is inherently repository-specific (one deployment project per repository), unlike `merge_autonomy` and its neighbours above.",
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "provider": {
+                "description": "Which preview provider this repository uses. \"vercel\" is the only implemented provider; \"none\" (the default) declares that this repository has no preview deployment at all.",
+                "type": "string",
+                "enum": [
+                  "vercel",
+                  "none"
+                ],
+                "default": "none"
+              },
+              "vercel": {
+                "description": "Vercel-specific settings, read only when `provider` is \"vercel\". The interface is shaped so a second provider can arrive as its own sibling key here, selected the same way by `provider`, without a breaking change to this one.",
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "bypass_secret_env": {
+                    "description": "The name of the environment variable carrying this repository's Vercel Protection Bypass for Automation secret — never the secret itself; config.json is not a secret store. Defaults to VERCEL_AUTOMATION_BYPASS_SECRET, the one name every node used before this key existed. Set this only when more than one Vercel-deployed repository needs distinct secrets on the same node. A shell identifier only — this is a variable name the Script indirects through (`${!name}`), not free text.",
+                    "type": "string",
+                    "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                    "default": "VERCEL_AUTOMATION_BYPASS_SECRET"
+                  },
+                  "token_env": {
+                    "description": "The name of the environment variable carrying this repository's Vercel API token, read only for a failed build's log. Optional — absent (or its named variable unset), a failed build names its inspector URL instead. Defaults to VERCEL_TOKEN, on the same terms as bypass_secret_env. Same shell-identifier constraint as bypass_secret_env.",
+                    "type": "string",
+                    "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                    "default": "VERCEL_TOKEN"
+                  }
+                }
+              }
+            }
           }
         }
       },
@@ -205,9 +240,10 @@
           "A repo entry may also carry `merge_autonomy_routine_complexity` — the per-repo override of the top-level key of the same name, on the same precedence. Omit it and the repository follows the fleet-wide default.",
           "A repo entry may also carry `landing_cool_off_hours` — the per-repo override of the top-level key of the same name, on the same precedence. Omit it and the repository follows the fleet-wide default.",
           "A repo entry may also carry `escalation_autonomy` — the per-repo override of the top-level key of the same name, on the same precedence. Omit it and the repository follows the fleet-wide default.",
+          "A repo entry may also carry `preview` — this repository's preview-deployment arrangement (D19 Phase 1), read by the Implementer's and Reviewer's own preview-check step instead of either stage naming a provider or a repository. Absent, or absent its own `provider`, is `none` — no preview deployment, so neither stage runs a preview step. `{\"provider\": \"vercel\"}` is what poetic-fiddle's own entry sets; `vercel.bypass_secret_env` (default `VERCEL_AUTOMATION_BYPASS_SECRET`) and `vercel.token_env` (default `VERCEL_TOKEN`) each name an environment variable rather than carry a credential, and need setting only when a second Vercel-deployed repository wants a distinct secret on the same node.",
           "Every optional key goes on the repo's own entry, beside `slug` and `sources`:",
           {
-            "code": "\"repos\": [\n  {\n    \"slug\": \"Poetic-Poems/poetic\",\n    \"sources\": [\"security\", \"issues:urgent\", \"tech-debt\", \"issues:low\"]\n  },\n  {\n    \"slug\": \"Poetic-Poems/poetic-fiddle\",\n    \"sources\": [\"security\", \"issues:urgent\", \"implementation-plan\", \"issues:low\"],\n    \"implementation_plan_path\": \"docs/IMPLEMENTATION-PLAN.md\",\n    \"nice\": -5,\n    \"stage_timeouts\": { \"implementer\": 90 },\n    \"stage_inactivity\": { \"implementer\": 20 }\n  }\n]",
+            "code": "\"repos\": [\n  {\n    \"slug\": \"Poetic-Poems/poetic\",\n    \"sources\": [\"security\", \"issues:urgent\", \"tech-debt\", \"issues:low\"]\n  },\n  {\n    \"slug\": \"Poetic-Poems/poetic-fiddle\",\n    \"sources\": [\"security\", \"issues:urgent\", \"implementation-plan\", \"issues:low\"],\n    \"implementation_plan_path\": \"docs/IMPLEMENTATION-PLAN.md\",\n    \"nice\": -5,\n    \"stage_timeouts\": { \"implementer\": 90 },\n    \"stage_inactivity\": { \"implementer\": 20 },\n    \"preview\": { \"provider\": \"vercel\" }\n  }\n]",
             "lang": "json"
           },
           "Each of them is set by editing `config.json`, like every other key here — see [Configuration](#configuration) for how that edit reaches a fleet already running."
@@ -225,9 +261,10 @@
           "A repo entry may also carry `merge_autonomy_routine_complexity` — the per-repository override of the top-level key of the same name (D18 Stage 3, requirement 8d, agent-ops#725), on the same precedence as `stage_timeouts`: this entry wins when present, the top-level key otherwise.",
           "A repo entry may also carry `landing_cool_off_hours` — the per-repository override of the top-level key of the same name (D18 WI-12, agent-ops#415), on the same precedence as `stage_timeouts`: this entry wins when present, the top-level key otherwise.",
           "A repo entry may also carry `escalation_autonomy` — the per-repository override of the top-level key of the same name (D18, agent-ops#627), on the same precedence as `stage_timeouts`: this entry wins when present, the top-level key otherwise.",
+          "A repo entry may also carry `preview` — this repository's preview-deployment arrangement (D19 Phase 1, agent-ops#586), read by requirement 24a instead of that requirement naming a provider or a repository. Absent, or absent its own `provider`, resolves to `\"none\"`: no preview deployment, so neither stage runs a preview step. `\"vercel\"` is the only implemented provider; its own `vercel.bypass_secret_env` (default `VERCEL_AUTOMATION_BYPASS_SECRET`) and `vercel.token_env` (default `VERCEL_TOKEN`) name the environment variables carrying this repository's Vercel credentials — never the credentials themselves. There is no top-level default for this key: a preview arrangement is inherently repository-specific, unlike `merge_autonomy` and its neighbours above.",
           "Every optional key sits on the repository's own entry, beside `slug` and `sources`:",
           {
-            "code": "\"repos\": [\n  {\n    \"slug\": \"Poetic-Poems/poetic\",\n    \"sources\": [\"security\", \"issues:urgent\", \"tech-debt\", \"issues:low\"]\n  },\n  {\n    \"slug\": \"Poetic-Poems/poetic-fiddle\",\n    \"sources\": [\"security\", \"issues:urgent\", \"implementation-plan\", \"issues:low\"],\n    \"implementation_plan_path\": \"docs/IMPLEMENTATION-PLAN.md\",\n    \"nice\": -5,\n    \"stage_timeouts\": { \"implementer\": 90 },\n    \"stage_inactivity\": { \"implementer\": 20 }\n  }\n]",
+            "code": "\"repos\": [\n  {\n    \"slug\": \"Poetic-Poems/poetic\",\n    \"sources\": [\"security\", \"issues:urgent\", \"tech-debt\", \"issues:low\"]\n  },\n  {\n    \"slug\": \"Poetic-Poems/poetic-fiddle\",\n    \"sources\": [\"security\", \"issues:urgent\", \"implementation-plan\", \"issues:low\"],\n    \"implementation_plan_path\": \"docs/IMPLEMENTATION-PLAN.md\",\n    \"nice\": -5,\n    \"stage_timeouts\": { \"implementer\": 90 },\n    \"stage_inactivity\": { \"implementer\": 20 },\n    \"preview\": { \"provider\": \"vercel\" }\n  }\n]",
             "lang": "json"
           }
         ],

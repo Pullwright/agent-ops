@@ -661,6 +661,8 @@ A repo entry may also carry `landing_cool_off_hours` — the per-repo override o
 
 A repo entry may also carry `escalation_autonomy` — the per-repo override of the top-level key of the same name, on the same precedence. Omit it and the repository follows the fleet-wide default.
 
+A repo entry may also carry `preview` — this repository's preview-deployment arrangement (D19 Phase 1), read by the Implementer's and Reviewer's own preview-check step instead of either stage naming a provider or a repository. Absent, or absent its own `provider`, is `none` — no preview deployment, so neither stage runs a preview step. `{"provider": "vercel"}` is what poetic-fiddle's own entry sets; `vercel.bypass_secret_env` (default `VERCEL_AUTOMATION_BYPASS_SECRET`) and `vercel.token_env` (default `VERCEL_TOKEN`) each name an environment variable rather than carry a credential, and need setting only when a second Vercel-deployed repository wants a distinct secret on the same node.
+
 Every optional key goes on the repo's own entry, beside `slug` and `sources`:
 
 ```json
@@ -675,7 +677,8 @@ Every optional key goes on the repo's own entry, beside `slug` and `sources`:
     "implementation_plan_path": "docs/IMPLEMENTATION-PLAN.md",
     "nice": -5,
     "stage_timeouts": { "implementer": 90 },
-    "stage_inactivity": { "implementer": 20 }
+    "stage_inactivity": { "implementer": 20 },
+    "preview": { "provider": "vercel" }
   }
 ]
 ```

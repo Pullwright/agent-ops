@@ -247,6 +247,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   any non-Poetic-Poems installation. Linked from README.md's Installation
   section.
 
+- **A per-repository `preview` config block** (issue #586, D19 Phase 1,
+  requirement 24a). `scripts/preview-deploy.sh`'s preview-deployment check was
+  Vercel-shaped and Poetic-shaped at once — the Implementer's and Reviewer's
+  prompts named `poetic-fiddle` directly, so an adopting repository inherited
+  Poetic's preview arrangement whether or not it had one. `repos[].preview` in
+  `config.schema.json` now states, per repository, whether it has a preview
+  deployment at all (`provider: "none"`, the default) and, where it does,
+  which provider (`"vercel"`, the only one implemented) and — since one node
+  may run more than one Vercel-deployed repository — which environment
+  variables carry its bypass-secret and API-token credentials
+  (`vercel.bypass_secret_env`/`vercel.token_env`, defaulting to the two fixed
+  names every node already used). `lib/preview-config.sh` resolves the block
+  and remaps those credentials onto the fixed names
+  `scripts/preview-deploy.sh` itself still reads, so that script needs no
+  change; `agent-cycle.sh` stamps the resolved block onto every work order's
+  own `preview` field, mechanically, before either stage's prompt is
+  assembled. Neither `prompts/implementer.md` nor `prompts/reviewer.md` names
+  a repository any more — both read the work order's `preview` field, and a
+  repository configured `"none"` (poetic and agent-ops today) gets no preview
+  step and no warning about a missing one. `scripts/doctor.sh` validates the
+  credential named by a `"vercel"`-configured repository is actually present
+  on the node — a warning, never a failure, on the same terms the check
+  itself already treats a missing credential.
+
 ### Fixed
 
 - **The dashboard's cost-window `<select>` is now programmatically
