@@ -1413,11 +1413,11 @@ request a peer node's fleet-wide `pr-<n>` claim currently holds — under
 whatever item ref won it there, a `review-feedback` round most often — is
 excluded before any of that: this sweep and the requirement-46 restale
 sweep below are the two fleet-wide pull-request sweeps that act across every
-node's own work rather than a single cycle's own claimed item, so neither
-ever consulted the claim that exists to keep two nodes off the same pull
-request until issue #987 (TD-PPagop-26082509) gave both one shared read,
-`_approver_sweep_claimed_pr_numbers` (`lib/approver.sh`), fetched once per
-repository per pass and never per candidate.
+node's own work rather than a single cycle's own claimed item, so both
+consult the claim that keeps two nodes off the same pull request through one
+shared read, `_approver_sweep_claimed_pr_numbers` (`lib/approver.sh`),
+fetched once per repository per pass and never per candidate (issue #987,
+TD-PPagop-26082509).
 
 Every other branch **created by this system** (i.e. under `branch_prefix`)
 is entirely at the agents' disposal: the Reviewer may amend, add to, rebase,

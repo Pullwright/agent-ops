@@ -34,6 +34,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **The fleet-wide pull-request sweeps no longer act on a pull request a peer
+  node is working right now** (issue #987, TD-PPagop-26082509). The 2.1e
+  landing-retry sweep (`_landing_retry_sweep_repo`, `lib/landing.sh`) and the
+  stale trigger of the requirement-46 restale sweep
+  (`_approver_restale_sweep_repo`, `lib/approver.sh`) both act across every
+  node's work rather than a single cycle's own claimed item, yet neither
+  consulted the fleet-wide `pr-<n>` claim (`lib/claim.sh`) that exists to keep
+  two nodes off one pull request — so the landing-retry sweep could arm an
+  auto-merge on a pull request a peer was mid-fix on, and the restale sweep
+  could spend a full `run_approver_stage` engagement re-reviewing a pull
+  request already under review. The compounding case ran both in the one
+  cycle, in the order the code deliberately chose: the restale sweep
+  re-reviews and approves, and the landing-retry sweep immediately after finds
+  exactly the standing-`APPROVED` candidate it looks for. Both call sites now
+  read `_approver_sweep_claimed_pr_numbers` — the same helper the unreviewed
+  trigger already used — once per repository per sweep pass, lazily, and skip
+  a claimed candidate rather than failing it, logging
+  `landing-retry-sweep-skipped-claimed` / `approver-restale-sweep-skipped-claimed`
+  so the skip is visible; both sweeps are idempotent, so an unclaimed retry
+  next cycle still finds it. Inside `_approver_restale_sweep_repo` the stale
+  and unreviewed triggers share the one listing rather than fetching it twice.
+  Giving the sweeps a claim of their own stays out of scope (this is a
+  read-only guard), as does capping the restale sweep to one re-review per
+  cycle (issue #988).
+
 - **An already-settled open question no longer resurfaces in a later
   adjudication pass or escalation issue body** (issue #984).
   `landing_open_question_latest` (`lib/landing.sh`) carried every
