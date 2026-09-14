@@ -44,24 +44,27 @@
 #     for that stage, or null if it has never once succeeded on this node.
 #   - consecutive_failures: how many of this stage's `stage-end` events in a
 #     row, most recent first, count as a failed attempt — reset to 0 the
-#     instant a success is seen. Every event carries its own `cycle`
-#     (`log_event`), so a `stage-end` counts as failed when *either* its own
-#     `exit_code` is non-zero *or* an `attempt-failed` was logged for that
-#     same `cycle` + stage (TD-PPagop-26082504) — a stage can exit 0 while its
-#     attempt nonetheless failed (an unparseable final message, say), and that
-#     is exactly as much a failure as a non-zero exit. The same running-streak
+#     instant a success is seen. Every event carries its own cycle id
+#     (`log_event`) — `cycle` for `agent-cycle.sh`'s `log.jsonl`, `monitor`
+#     for `monitor-cycle.sh`'s own `monitor-log.jsonl`, the two streams this
+#     reader is actually called on (never both in the same invocation) — so a
+#     `stage-end` counts as failed when *either* its own `exit_code` is
+#     non-zero *or* an `attempt-failed` was logged for that same cycle +
+#     stage (TD-PPagop-26082504) — a stage can exit 0 while its attempt
+#     nonetheless failed (an unparseable final message, say), and that is
+#     exactly as much a failure as a non-zero exit. The same running-streak
 #     reduction `crash_loop_verdict` already uses, but per-stage, per-node,
 #     and without requiring an identical failure detail: any failure counts,
 #     because "always wrong in some new way" is exactly as unhealthy as
 #     "always wrong the same way".
 #   - last_detail: the `detail` of the current streak's own most recent
 #     failure — its matching `attempt-failed` for that failing `stage-end`'s
-#     own `cycle`, or, when a non-zero exit has no matching `attempt-failed`
+#     own cycle id, or, when a non-zero exit has no matching `attempt-failed`
 #     at all, a synthesized `"stage-end exited <exit_code>"` — while
-#     `consecutive_failures` > 0, else null. Joining on `cycle` rather than
-#     taking the stage's globally-last `attempt-failed` matters here: without
-#     it, a failure from a streak a later success already cleared could still
-#     be shown as the *current* one's detail.
+#     `consecutive_failures` > 0, else null. Joining on the cycle id rather
+#     than taking the stage's globally-last `attempt-failed` matters here:
+#     without it, a failure from a streak a later success already cleared
+#     could still be shown as the *current* one's detail.
 #   - verdict: one of:
 #       `idle`    — this stage has no `stage-end` record at all on this node
 #                   (never invoked, e.g. a Reviewer this node has never had
@@ -137,11 +140,11 @@ stage_health_verdicts() {
         . + { ($stage): (
           ($events | map(select(.event == "stage-end" and (.stage // "") == $stage)) | sort_by(.ts)) as $ends
           | ($events | map(select(.event == "attempt-failed" and (.stage // "") == $stage
-                                   and (.cycle // "") != "")) | sort_by(.ts)) as $fails
+                                   and (.cycle // .monitor // "") != "")) | sort_by(.ts)) as $fails
           | ($ends | map(
               . as $e
-              | (($e.cycle // "") | if . == "" then null else . end) as $end_cycle
-              | ($fails | map(select($end_cycle != null and .cycle == $end_cycle)) | last) as $match
+              | (($e.cycle // $e.monitor // "") | if . == "" then null else . end) as $end_cycle
+              | ($fails | map(select($end_cycle != null and (.cycle // .monitor) == $end_cycle)) | last) as $match
               | {
                   exit_code: ($e.exit_code // 1),
                   is_failure: (($e.exit_code // 1) != 0 or ($match != null)),

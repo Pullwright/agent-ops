@@ -228,6 +228,21 @@ assert_eq "a non-zero exit with no matching attempt-failed still counts as a fai
 assert_eq "  ... its last_detail is a synthesized message, not an earlier cleared streak's detail" \
   "stage-end exited 7" "$(jq -r '.coordinator.last_detail' <<<"$verdict")"
 
+# --- the exit-0-but-failed join also works over monitor-log.jsonl ----------
+#
+# `monitor-cycle.sh`'s own `log_event` (monitor-cycle.sh:223) stamps its
+# events' id field as `monitor`, not `cycle` — `stage_health_verdicts` is
+# called over this stream too (`["monitor"]`, agent-ops#1284), so the join
+# must recognise either id field, not just `cycle`.
+
+monitor_exit0_failure="$(jq -nc '{ts:"2026-08-21T09:00:00Z", node:"n1", monitor:"m1", event:"attempt-failed", stage:"monitor", detail:"unparseable final message"}'
+  jq -nc '{ts:"2026-08-21T09:00:00Z", node:"n1", monitor:"m1", event:"stage-end", stage:"monitor", exit_code:0}')"
+verdict="$(stage_health_verdicts 3 48 "$NOW_EPOCH" '["monitor"]' <<<"$monitor_exit0_failure")"
+assert_eq "an exit-0 monitor stage-end with a matching attempt-failed for its own monitor id counts as a failure" \
+  "1" "$(jq -r '.monitor.consecutive_failures' <<<"$verdict")"
+assert_eq "  ... and last_detail reflects that id's own attempt-failed detail, not the synthesized fallback" \
+  "unparseable final message" "$(jq -r '.monitor.last_detail' <<<"$verdict")"
+
 # --- a stale success reads idle, not ok, once nothing has failed since -----
 
 stale_success="$(stage_end_at 2026-01-01T00:00:00Z reviewer 0)"
