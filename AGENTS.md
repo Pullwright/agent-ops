@@ -222,31 +222,33 @@ them. A routine configuration change must not break a test.
 
 ## Tech debt
 
-When you defer work, take a shortcut, or notice a known gap, record it in
-the tech-debt register — do not leave it only in a commit message or in
-chat. This repository's register is per-item: one `tech-debt/<id>.md` file
-per record (YAML frontmatter plus a Markdown body), IDs scoped `PPagop`,
-with `TECH-DEBT.md` at the repo root holding only the policy — the filing
-and claiming workflows and the declared scope.
-`docs/TECH-DEBT-REGISTER.md` in `Poetic-Poems/poetic` specifies the format
-and the scope-code registry.
+When you defer work, take a shortcut, or notice a known gap, record it —
+do not leave it only in a commit message or in chat. Tech debt is filed as
+a GitHub issue labelled `pw::type:tech-debt`, not as a file in this
+repository: dedup-search first (`gh issue list --label pw::type:tech-debt
+--search "<working title>"`), and cite an existing hit instead of filing a
+second one. File the issue with the shortcut and its provenance in the
+body (e.g. "Noticed while working #631"), then add a `Defers: #<n>` line
+to the pull request that noticed it — never a closing keyword, since
+deferring is not resolving.
 
-Resolving an item is a frontmatter-only edit — `status: resolved`, plus
-`resolved:` and `ref:` — with the body left in place; item files are never
-deleted or renamed (CI enforces both). Where the item's work order arrived
-as a GitHub issue instead — the common case since #1039's migration —
-closing the issue does not resolve it: the same pull request must still
-make this frontmatter edit. See TECH-DEBT.md's "Resolution and history"
-for how the two compose, and its one exception (an issue filed with no
-file behind it at all). `perl scripts/td-check.pl`
-(argless — it detects the register's format) checks the register and is
-what `.github/workflows/tech-debt-register.yml` runs on every pull
-request, so run it before you push. The register scripts are
-byte-identical copies of the canonical ones in `Poetic-Poems/poetic`
-(see `.github/workflows/td-tooling-drift.yml`) — fix them upstream, never
-here.
+Resolve a tech-debt issue by closing it with a real closing keyword (e.g.
+`Fixes #<n>`) in the pull request that fixes it, plus a fenced `td-record`
+block in that pull request's body (`issue`, `title`, `filed`, `summary`,
+`resolution`) — the squash-merge commit then carries the permanent record
+into `main`'s own immutable history, since a GitHub issue is mutable and
+editable but `main`'s history is not. Where the issue names a frozen
+register file (its body's final line reading "Filed as
+`tech-debt/<id>.md`, <date>."), the same pull request must also flip that
+file's frontmatter to a terminal `status:` — see TECH-DEBT.md's
+"Resolution and history" — which `scripts/check-closing-keyword.sh`
+enforces mechanically.
 
-Roadmap item #882 retires this register machinery in favour of the labelled
-issues already used by `Poetic-Poems/poetic` and `poetic-fiddle`; until it
-lands, this section, `TECH-DEBT.md` and the `td` skill describe the hybrid
-that is in force.
+`tech-debt/` is a **frozen historical archive** of the per-item register
+this repository used before this policy: every record ever allocated
+under scope `PPagop`, kept in place forever — never edited, deleted, or
+renamed. `TECH-DEBT.md` is a short policy pointer; `docs/TECH-DEBT-REGISTER.md`
+in `Poetic-Poems/poetic` documents the frozen archive's format, ID grammar
+and the scope-code registry. Do not add new files to `tech-debt/`, and do
+not resurrect the `td/<id>` claim-branch workflow — both belong to the
+frozen format, not the current policy.
