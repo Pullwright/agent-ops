@@ -1529,7 +1529,7 @@ _refiner_process_one_verdict() {
   e_labels_json="$(jq -c '.labels // []' <<<"$ex" 2>/dev/null || echo '[]')"
   if [[ -n "$e_number" ]] && ! (( DRY_RUN )) \
        && [[ "$(jq 'length' <<<"$e_labels_json" 2>/dev/null || echo 0)" -gt 0 ]]; then
-    _refiner_apply_labels "$e_repo" "$e_number" "$e_labels_json"
+    _refiner_apply_labels "$e_repo" "$e_item" "$e_number" "$e_labels_json"
   fi
 
   log_event "refiner-examined" "$(jq -nc --arg r "$e_repo" --arg i "$e_item" --arg s "$e_source" \
@@ -1537,7 +1537,7 @@ _refiner_process_one_verdict() {
     '{repo: $r, item: $i, source: $s, outcome: $o, detail: $d} + $x')"
 }
 
-# _refiner_apply_labels REPO NUMBER LABELS_JSON
+# _refiner_apply_labels REPO ITEM NUMBER LABELS_JSON
 # Requirement 39h/6c (issue #714): mint and apply one verdict's own `labels`
 # suggestion onto the issue behind it. Draws from
 # `_refiner_labels_engagement_remaining`, a `local` its caller's caller
@@ -1548,10 +1548,14 @@ _refiner_process_one_verdict() {
 # own per-item cap of 3 is. Once the pool is empty, every further item's own
 # suggestions are refused `engagement-cap` without spending a `labels_mint`
 # call — a mint that could only ever refuse everything it was given.
+#
+# The `labels-minted` event logs `item: $e_item` — the item ref, matching
+# every sibling per-item event (`refiner-examined`, `issue-prioritised`) —
+# rather than `e_number`: for a tech-debt item the two differ (agent-ops#1293).
 _refiner_apply_labels() {
-  local e_repo="$1" e_number="$2" labels_json="$3"
+  local e_repo="$1" e_item="$2" e_number="$3" labels_json="$4"
   if (( _refiner_labels_engagement_remaining <= 0 )); then
-    log_event "labels-minted" "$(jq -nc --arg r "$e_repo" --arg i "$e_number" --arg by "refiner" \
+    log_event "labels-minted" "$(jq -nc --arg r "$e_repo" --arg i "$e_item" --arg by "refiner" \
       --argjson refused "$(jq -c '[.[] | {name: (.name // ""), reason: "engagement-cap"}]' \
         <<<"$labels_json" 2>/dev/null || echo '[]')" \
       '{repo: $r, item: $i, actor: $by, created: [], applied: [], refused: $refused}')"
@@ -1564,7 +1568,7 @@ _refiner_apply_labels() {
     < <(labels_reserved_names "$CONFIG_FILE" "$SCHEMA_FILE"))"
   applied_count="$(jq '.applied | length' <<<"$report" 2>/dev/null || echo 0)"
   _refiner_labels_engagement_remaining=$(( _refiner_labels_engagement_remaining - applied_count ))
-  log_event "labels-minted" "$(jq -nc --arg r "$e_repo" --arg i "$e_number" --arg by "refiner" \
+  log_event "labels-minted" "$(jq -nc --arg r "$e_repo" --arg i "$e_item" --arg by "refiner" \
     --argjson x "$report" '{repo: $r, item: $i, actor: $by} + $x')"
 }
 
