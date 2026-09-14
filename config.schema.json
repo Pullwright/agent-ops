@@ -1750,7 +1750,7 @@
           },
           "x-docs": {
             "readme": "Minutes the per-node `CYCLE_MINUTE` (env or hash) may never land on. This repo's own config excludes `0` because poetic's hourly sync workflow owns the top of the hour; a fresh install with no such conflict should ship `[]`.",
-            "spec": "Minutes `CYCLE_MINUTE` (env or the per-node hash) may never land on, rendered from `deploy/docker/crontab.tmpl`. Poetic's own value excludes `0` because its hourly sync workflow owns the top of the hour; a deployment with no such conflict ships `[]`. Excluding every minute of the hour is a misconfiguration the renderer refuses rather than spinning on.",
+            "spec": "Minutes `CYCLE_MINUTE` (env or the per-node hash) may never land on, rendered from `deploy/docker/crontab.tmpl`. Poetic's own value excludes `0` because its hourly sync workflow owns the top of the hour; a deployment with no such conflict ships `[]`. Excluding every minute of the hour is a misconfiguration the renderer refuses rather than spinning on. This governs only the *scheduled* `CYCLE_MINUTE`: a wake-poll-triggered invocation (requirement 54) does not consult this key at all and may start a cycle on a minute it excludes — see requirement 54's own note on why that is acceptable.",
             "value": "`[0]`"
           }
         },
