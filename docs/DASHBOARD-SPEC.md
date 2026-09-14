@@ -432,8 +432,8 @@ All paths derive from `config.json` (tilde-expanded `state_dir` and
   alongside `gh_json`) and `gather-findings.sh`'s own exit code are what make
   the distinction: for the tech-debt listing, `answered_404` is reserved for
   a legitimately empty case the API itself says so about — a repo with no
-  `tech-debt/` directory returns 404, the same way
-  `gather-register-hygiene.sh` already told that apart from a real failure —
+  `tech-debt/` directory returns 404, told apart from a real failure by the
+  response body's own `.status` —
   and anything else non-2xx is `failed`. `gather-findings.sh` draws the same
   line without a state of its own to carry it: a repo with neither alert type
   enabled (403 or 404, provided a 403's own message does not name a rate

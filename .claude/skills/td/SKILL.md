@@ -1,27 +1,25 @@
 ---
 name: td
 description: >-
-  Launch an agent to work on a single item from TECH-DEBT.md. Use when the user
-  invokes /td <id-segment> — it resolves the tech-debt record whose ID ends
-  with <id-segment> and hands it to a subagent to fix. Searches every repo
-  attached to the session (workspace-aware), resolving against origin/main via
-  scripts/get-tech-debt-record.pl; if the segment matches more than one record
-  — including the same ID in two repos — matches none, or is missing/invalid,
-  stop and ask rather than guessing.
+  Launch an agent to work on a single tech-debt item. Use when the user
+  invokes /td <n> — it resolves the pw::type:tech-debt-labelled GitHub issue
+  numbered <n> and hands it to a subagent to fix. Searches every repo
+  attached to the session (workspace-aware), resolving against origin/main
+  via `gh issue view`; if <n> matches such an issue in more than one repo,
+  matches none, or is missing/invalid, stop and ask rather than guessing.
 ---
 
 # Work a tech-debt item (/td)
 
-Parse `/td <id-segment>`. `<id-segment>` is the trailing part of a
-`TECH-DEBT.md` record ID (e.g. `3`, `803`, `070803`, `TD26070803`). Resolve it
-to **exactly one** record in **exactly one** repo, then hand that record to a
-subagent to fix. Never assume which item is meant when the result is anything
-other than a single clean match.
+Parse `/td <n>`. `<n>` is a GitHub issue number. Resolve it to **exactly
+one** open, `pw::type:tech-debt`-labelled issue in **exactly one** repo, then
+hand that issue to a subagent to fix. Never assume which item is meant when
+the result is anything other than a single clean match.
 
-Record IDs are only unique within one repository: sister repos allocate from
-the same date-based sequence, so the same ID can name different items in
-different repos. A match is therefore a **(repo, ID) pair**, and ambiguity
-across repos is still ambiguity.
+Issue numbers are only unique within one repository: sister repos each
+number their own issues from 1, so the same `<n>` can name different items —
+or no item at all — in different repos. A match is therefore a **(repo,
+issue)** pair, and ambiguity across repos is still ambiguity.
 
 ## 1. Determine the candidate repos
 
@@ -32,90 +30,87 @@ across repos is still ambiguity.
   working directory that is a git repo, plus every immediate child directory
   of each working directory that is a git repo.
 
-Keep only candidates that track tech debt (both `TECH-DEBT.md` and
-`scripts/get-tech-debt-record.pl` exist), and de-duplicate by
-`git remote get-url origin` — workspaces often hold more than one checkout of
-the same repo; resolve each origin only once.
+De-duplicate by `git remote get-url origin` — workspaces often hold more than
+one checkout of the same repo; resolve each origin only once.
 
-## 2. Resolve the segment to one record
+## 2. Resolve the number to one issue
 
-In each candidate repo, fetch and run that repo's own resolver against the
-shared state — never trust a possibly stale or wrongly-branched local
-checkout:
+In each candidate repo, fetch first — never trust a possibly stale local
+checkout for the repo slug — then query GitHub's own state directly, rather
+than the local checkout, for the issue itself:
 
 ```bash
 git -C <repo> fetch -q origin main
-(cd <repo> && perl scripts/get-tech-debt-record.pl --ref origin/main <id-segment>)
+gh issue view <n> --repo <owner>/<repo> --json number,title,body,labels,state
 ```
 
-(If the fetch fails — e.g. offline — fall back to the working tree, without
-`--ref`, and note that in the final report.)
+(`<owner>/<repo>` comes from that repo's `origin` remote.) Keep a result only
+if `state` is `OPEN` and `labels` includes `pw::type:tech-debt`; anything
+else (not found, closed, unlabelled) is not a match in that repo. Collect
+every match across all candidate repos as (repo, issue) pairs, then branch:
 
-The script prints each matching record as a YAML map (`id`, `title`,
-`status`, `path`, `body`, plus `legacy-id` where one exists) and sets its
-exit code to (matches − 1), so **exit 0 means exactly one match in that
-repo**. A segment also matches against a record's `legacy-id`, so IDs from
-before the per-item register still resolve. Collect every match across all
-candidate repos as (repo, ID) pairs, then branch:
+- **Exactly one (repo, issue) pair.** Proceed to step 3 with that issue and
+  its repo.
+- **More than one pair** — matches in more than one repo (the same `<n>`
+  happens to name a qualifying issue in each). Ambiguous — do NOT pick one.
+  Stop and list every match as `<repo> — #<n> — <title>`, and ask the user
+  which one they mean. Do not launch an agent.
+- **No matches in any repo.** `<n>` did not resolve to an open
+  `pw::type:tech-debt` issue in any candidate repo. Stop, say so, and suggest
+  the user check the issue number and its labels. Do not launch an agent.
+- **Invalid or missing argument** (not a positive integer, or `/td` invoked
+  with no argument at all). Stop and ask the user for a valid issue number.
+  Do not launch an agent.
 
-- **Exactly one (repo, ID) pair.** Proceed to step 3 with that record and its
-  repo.
-- **More than one pair** — several records in one repo, or matches in more
-  than one repo (even for the same ID). Ambiguous — do NOT pick one. Stop and
-  list every match as `<repo> — <id> — <title>`, and ask the user which one
-  they mean. Do not launch an agent.
-- **No matches in any repo.** Nothing matched `<id-segment>`. Stop, say so,
-  and suggest the user check the IDs in each repo's register (`tech-debt/`
-  or `TECH-DEBT.md`). Do not launch an agent.
-- **Invalid or missing segment** (the script died — stderr contains
-  "Invalid ID segment" or "Please supply an ID segment"). Stop and ask the user
-  for a valid segment: digits, optionally prefixed by `D` or `TD`, or the
-  trailing part of a scoped ID (e.g. `poet-26070801`,
-  `TD-PPpoet-26070801`). Do not launch an agent.
+## 3. Launch an agent to fix the resolved issue
 
-If `/td` is invoked with no argument at all, treat it as the missing-segment
-case above and ask which item to work on.
-
-## 3. Launch an agent to fix the resolved record
-
-Once — and only once — a single (repo, record) is resolved, launch a
+Once — and only once — a single (repo, issue) is resolved, launch a
 `general-purpose` agent to do the work; the agent should be appropriately
-spec'd: not too costly yet capable enough to (mostly likely) do the task
+spec'd: not too costly yet capable enough to (most likely) do the task
 correctly on its first attempt. Put the resolved repo (its `origin` URL) and
-the record's `id`, `title`, and `body` verbatim into its prompt so it has the
-full description and the suggested fix, and instruct it to:
+the issue's `number`, `title`, and `body` verbatim into its prompt so it has
+the full description and the suggested fix, and instruct it to:
 
 1. Make its own dedicated fresh clone of the resolved repo's `origin/main`
    and work only in that clone — never in a checkout shared with the user or
-   another agent. Then read that repo's `CLAUDE.md` first and follow its
-   conventions (Conventional Commits, the CHANGELOG/as-built-docs policy, and
-   the tech-debt policy).
-2. Before doing anything else, follow `TECH-DEBT.md`'s "Claiming an item"
-   workflow: confirm the record's status is `open` (not `in-progress`)
-   **as of `origin/main`**, confirm no claim branch exists
-   (`git ls-remote origin "refs/heads/td/<id>"` returns nothing), and skim
-   open pull requests for its ID — if it looks already claimed, stop and
-   report that instead of duplicating work. Otherwise create the claim branch,
-   named exactly **`td/<id>`**, flip the record's `status:` frontmatter in
-   `tech-debt/<id>.md` to `in-progress`, commit, and push. The
-   branch name is the claim lock: **if the push is rejected because the
-   branch already exists, another agent claimed the item in the race window —
-   stop and report; never force-push.** Then open a **draft** pull request
-   right away (the status-flip commit can be the PR's first commit).
-3. Implement the fix described in the record's `body`, pushing further
-   commits to the same branch/PR.
-4. Run the relevant checks for the area it touched (e.g. `npm test`,
-   `npm run build`, `npm run check`, `npm run check:build`; on WSL/Linux via
-   `./scripts/setup-linux.sh`).
-5. On success, mark the record resolved: edit only the item's
-   frontmatter — `status: resolved`, `resolved:` (today's date), `ref:`
-   (the PR number); the body stays, and the file is never deleted or
-   renamed. If the record's body notes references to its ID elsewhere
-   (e.g. in code comments), remove those too, per `CLAUDE.md`'s tech-debt
-   policy, and verify with `perl scripts/td-check.pl` before pushing.
-6. Add an `[Unreleased]` `CHANGELOG.md` entry, but only if the resolved repo
-   maintains a `CHANGELOG.md` in the first place — skip this step otherwise
-   (agent-ops currently has no `CHANGELOG.md`, so skip it here).
+   another agent. Then read that repo's `AGENTS.md` first (its `CLAUDE.md`
+   imports it) and follow its conventions (Conventional Commits, the
+   CHANGELOG/as-built-docs policy, and the tech-debt policy).
+2. Before doing anything else, check the issue isn't already being worked:
+   skim open pull requests for its number (e.g. `gh pr list --repo
+   <owner>/<repo> --search "Fixes #<n>" --state open`). If it looks already
+   claimed, stop and report that instead of duplicating work. Otherwise
+   create an ordinary feature branch (no special naming requirement — there
+   is no claim-branch lock to observe) and open a **draft** pull request
+   right away, before implementing, so the claim is visible to anyone else
+   scanning open PRs; comment on the issue linking the draft PR.
+3. Implement the fix described in the issue's `body`, pushing commits to the
+   branch/PR as the work progresses.
+4. Run the relevant checks for the area it touched, as that repo's
+   `AGENTS.md` lists them (for agent-ops: `./scripts/run-tests.sh`, and
+   `scripts/lint-shell.sh` for any `*.sh` touched).
+5. Add an `[Unreleased]` `CHANGELOG.md` entry if the change is notable under
+   that repo's documentation principles (skip it for routine/patch-level
+   fixes, per that file's own header).
+6. On success, close the loop per `AGENTS.md`'s "Tech debt" section: the PR
+   body carries a real GitHub closing keyword (e.g. `Fixes #<n>`) naming the
+   resolved issue, plus a fenced `td-record` block —
+
+   ```td-record
+   issue: <n>
+   title: "<the issue's own title, verbatim>"
+   filed: <the issue's own creation date, YYYY-MM-DD>
+   summary: "<what the debt was, briefly>"
+   resolution: "<what this PR did about it>"
+   ```
+
+   — so the squash-merge commit writes a permanent record into `main`'s own
+   immutable history. There is no register file to edit and no frontmatter to
+   flip, unless the issue's own body's final line reads "Filed as
+   `tech-debt/<id>.md`, <date>." — a legacy issue migrated from the frozen
+   register — in which case this same pull request must also flip that
+   file's frontmatter to a terminal `status:` (`TECH-DEBT.md`'s "Resolution
+   and history").
 7. Before marking the PR ready for review, update its description
    (`gh pr edit <n> --body ...`) to reflect the finished state: replace the
    "This draft PR claims the item..." line (it's no longer a draft) with a
@@ -125,12 +120,11 @@ full description and the suggested fix, and instruct it to:
    outside the obvious scope, follow-ups left undone, tech-debt entries added).
    Keep the PR title as-is; only the body changes.
 8. Push the final commits and mark the draft PR ready for review — per
-   `CLAUDE.md`'s branch workflow, agents work autonomously up to the PR
+   `AGENTS.md`'s branch workflow, agents work autonomously up to the PR
    stage without pausing to ask first. If verification fails and the agent
-   can't resolve it, close the draft PR and delete the `td/<id>` branch (this
-   releases the claim — the in-progress flip only ever lived on the branch,
-   so the record on `main` still says `open`), and report what blocked it
-   instead of leaving a stale claim in place.
+   can't resolve it, close the draft PR and delete the branch (this releases
+   the claim), and report what blocked it instead of leaving a stale claim in
+   place.
 
 The agent's final message comes back as the tool result and is not shown to the
 user, so relay its outcome (what it changed, test results, the PR URL, and
