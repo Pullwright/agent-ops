@@ -49,30 +49,40 @@
 #     for `monitor-cycle.sh`'s own `monitor-log.jsonl`, the two streams this
 #     reader is actually called on (never both in the same invocation) — so a
 #     `stage-end` counts as failed when *either* its own `exit_code` is
-#     non-zero *or* a genuine `attempt-failed` was logged for that same cycle +
-#     stage (TD-PPagop-26082504) — a stage can exit 0 while its attempt
-#     nonetheless failed (an unparseable final message, say), and that is
-#     exactly as much a failure as a non-zero exit. The same running-streak
-#     reduction `crash_loop_verdict` already uses, but per-stage, per-node,
-#     and without requiring an identical failure detail: any failure counts,
-#     because "always wrong in some new way" is exactly as unhealthy as
-#     "always wrong the same way".
+#     non-zero *or* an `attempt-failed` carrying `stage_failure: true` was
+#     logged for that same cycle + stage (TD-PPagop-26082504) — a stage can
+#     exit 0 while its attempt nonetheless failed (an unparseable final
+#     message, say), and that is exactly as much a failure as a non-zero
+#     exit. The same running-streak reduction `crash_loop_verdict` already
+#     uses, but per-stage, per-node, and without requiring an identical
+#     failure detail: any failure counts, because "always wrong in some new
+#     way" is exactly as unhealthy as "always wrong the same way".
 #
-#     "Genuine" excludes any `attempt-failed` carrying a non-empty `kind`
-#     (issue #1498): the Co-Ordinator logs `stage: "coordinator"`
-#     `attempt-failed` events for its own per-item block records too — a
-#     needs-refinement block and a hand-flag (`lib/candidate-select.sh`,
-#     `lib/candidate-gather.sh`; `kind: "needs-refinement"`, `lib/refinement.sh`'s
-#     `REFINEMENT_BLOCK_KIND`) and a void refusal (`kind: "item-block"`) — in
-#     cycles where the coordinator stage itself succeeded (`stage-end exit_code
-#     0`, work selected or a clean nothing-to-do). Joined in without this
-#     exclusion, a sweep that blocks or hand-flags several items across
-#     successive cycles reads `failing` for a coordinator that never actually
-#     failed once. `kind` is otherwise only ever set on this class of record
-#     (never on a genuine stage failure, e.g. `lib/stage-attempt.sh`'s
-#     "unparseable final message" or a launch failure), so excluding any
-#     non-empty value — not just one literal — catches every item-block shape
-#     at once, present or future, without the join needing to enumerate them.
+#     `stage_failure: true` is what a genuine stage-attempt failure carries
+#     (`log_attempt_failed` in `agent-cycle.sh`, `handle_stage_failure` and
+#     `run_coordinator_stage_attempt`'s unparseable-message path in
+#     `lib/stage-attempt.sh`, and `monitor-cycle.sh`'s own two failure
+#     writers) — never an `attempt-failed` that instead records a verdict
+#     *about an item* a stage reached genuinely: a needs-refinement block and
+#     a hand-flagged label (`lib/candidate-select.sh`, `lib/candidate-gather.sh`;
+#     `kind: "needs-refinement"`, `lib/refinement.sh`'s `REFINEMENT_BLOCK_KIND`),
+#     a void refusal (`kind: "item-block"`, issue #1498), a Reviewer hand-back,
+#     or an Implementer's own `blocked`/`void-refused` report. The latter share
+#     the event name and the stage+cycle join key because requirement 34 reads
+#     them the same way to block an item, but they are not a stage failure:
+#     the stage that logged one ran to completion and reported truthfully on
+#     the *item*, not on itself, and its own `stage-end` for that cycle
+#     carries `exit_code: 0` right alongside it. Before this field existed,
+#     three fresh needs-refinement blocks (or void refusals, or hand-flags) in
+#     three consecutive, genuinely successful Co-Ordinator cycles — or the
+#     same pattern for any other stage's own item-verdict path — was
+#     indistinguishable from three real crashes, and flipped `verdict` to
+#     `failing` for a stage that had not actually failed once (issues #1498,
+#     #1511). `kind` still discriminates the needs-refinement and item-block
+#     shapes for `lib/refinement.sh`, `lib/enabler.sh` and the dashboard, which
+#     read it for reasons unrelated to this join; this join itself no longer
+#     needs to read it, since no writer ever sets both `kind` and
+#     `stage_failure` on the same record.
 #   - last_detail: the `detail` of the current streak's own most recent
 #     failure — its matching `attempt-failed` for that failing `stage-end`'s
 #     own cycle id, or, when a non-zero exit has no matching `attempt-failed`
@@ -156,8 +166,8 @@ stage_health_verdicts() {
         . + { ($stage): (
           ($events | map(select(.event == "stage-end" and (.stage // "") == $stage)) | sort_by(.ts)) as $ends
           | ($events | map(select(.event == "attempt-failed" and (.stage // "") == $stage
-                                   and (.cycle // .monitor // "") != ""
-                                   and (.kind // "") == "")) | sort_by(.ts)) as $fails
+                                   and (.stage_failure == true)
+                                   and (.cycle // .monitor // "") != "")) | sort_by(.ts)) as $fails
           | ($ends | map(
               . as $e
               | (($e.cycle // $e.monitor // "") | if . == "" then null else . end) as $end_cycle

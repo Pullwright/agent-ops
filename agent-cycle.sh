@@ -1105,6 +1105,16 @@ selected_source=""
 # what requirement 9's last fallback is built on.
 selected_branch=""
 
+# This one function backs both a genuine stage-attempt failure (a crash, a
+# timeout, a SIGTERM) and a stage's own truthful verdict that the *item* it
+# was handed is blocked or void (the Implementer's `void refused`/`blocked`
+# reports below, `log_reviewer_handback` in lib/review-gate.sh) — both are
+# `attempt-failed` against repo+item (requirement 34), but only the former is
+# a stage failure for lib/stage-health.sh's own purposes (issue #1511): a
+# caller reporting the latter must not add `stage_failure: true` to `extra`,
+# and every caller that does — the SIGTERM handler below, and
+# lib/stage-attempt.sh's `handle_stage_failure` — is a real crash, never an
+# item verdict a stage reached by running to completion.
 log_attempt_failed() {
   local stage="$1" detail="$2" extra="${3:-{\}}"
   log_event "attempt-failed" \
@@ -1420,7 +1430,7 @@ on_signal() {  # on_signal NAME NUM
   fi
   actor="${stage_name:-cycle}"
   log_attempt_failed "$actor" "$actor terminated by SIG$name" \
-    "$(jq -nc --arg u "$pr_url" 'if $u == "" then {} else {pr_url: $u} end')"
+    "$(jq -nc --arg u "$pr_url" '{stage_failure: true} + (if $u == "" then {} else {pr_url: $u} end)')"
   claim_release_timeout=8
   if [[ -n "$pr_url" ]]; then
     release_claim have-pr

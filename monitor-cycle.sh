@@ -338,8 +338,12 @@ on_signal() {  # on_signal NAME NUM
     kill -KILL "-$stage_pid" 2>/dev/null || true
   fi
   actor="${stage_name:-cycle}"
+  # stage_failure: true — the monitor pipeline logs no item-verdict
+  # attempt-failed (it selects and blocks nothing), so both of its writers
+  # are unconditionally genuine failures for lib/stage-health.sh's join
+  # (issue #1511).
   log_event "attempt-failed" "$(jq -nc --arg s "$actor" --arg d "$actor terminated by SIG$name" \
-    '{stage: $s, detail: $d}')"
+    '{stage: $s, detail: $d, stage_failure: true}')"
   exit "$(( 128 + num ))"
 }
 trap 'on_signal TERM 15' TERM
@@ -877,7 +881,7 @@ if (( monitor_rc != 0 )) || [[ -z "$result_json" ]] \
   if (( monitor_rc == 124 )); then detail="the Monitor timed out"
   elif (( monitor_rc != 0 )); then detail="the Monitor exited $monitor_rc"
   else detail="the Monitor returned no usable completion"; fi
-  log_event "attempt-failed" "$(jq -nc --arg d "$detail" '{stage: "monitor", detail: $d}')"
+  log_event "attempt-failed" "$(jq -nc --arg d "$detail" '{stage: "monitor", detail: $d, stage_failure: true}')"
   exit 0
 fi
 

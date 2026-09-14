@@ -19,10 +19,18 @@
 #                                  detail is not a permanent scar
 #   exit 0 can still be a failure  a `stage-end` counts as failed if its own
 #                                  `exit_code` is non-zero *or* an
-#                                  `attempt-failed` was logged for that same
-#                                  `cycle` — a stage can exit 0 while its
-#                                  attempt nonetheless failed, and that counts
+#                                  `attempt-failed` carrying `stage_failure:
+#                                  true` was logged for that same `cycle` — a
+#                                  stage can exit 0 while its attempt
+#                                  nonetheless failed, and that counts
 #                                  exactly as much (TD-PPagop-26082504)
+#   an item verdict is not one     an `attempt-failed` a stage logs about the
+#                                  *item* it was handed — a needs-refinement
+#                                  block, a void-refusal, a Reviewer hand-back
+#                                  — carries no `stage_failure` and must never
+#                                  move `consecutive_failures`, however many
+#                                  of them share an otherwise genuinely
+#                                  successful cycle (issue #1511)
 #   last_detail tracks the streak  it is the current streak's own most recent
 #                                  failure's detail, joined by `cycle`, never
 #                                  simply the stage's globally-last
@@ -83,14 +91,30 @@ stage_end_at() {  # stage_end_at TS STAGE EXIT_CODE [CYCLE]
     '{ts: $ts, node: "n1", event: "stage-end", stage: $stage, exit_code: $rc, cycle: $cycle}'
 }
 attempt_failed_at() {  # attempt_failed_at TS STAGE DETAIL [CYCLE]
+  # A genuine stage-attempt failure — every real writer (log_attempt_failed's
+  # own callers, lib/stage-attempt.sh, monitor-cycle.sh) sets stage_failure:
+  # true, and only that field is what lib/stage-health.sh's own join now
+  # requires (issue #1511). Tests wanting the *other* shape — an item-verdict
+  # attempt-failed a stage logs while running to completion — use
+  # item_verdict_attempt_failed_at below instead.
+  jq -nc --arg ts "$1" --arg stage "$2" --arg d "$3" --arg cycle "${4:-$1}" \
+    '{ts: $ts, node: "n1", event: "attempt-failed", stage: $stage, detail: $d, cycle: $cycle, stage_failure: true}'
+}
+item_verdict_attempt_failed_at() {  # item_verdict_attempt_failed_at TS STAGE DETAIL [CYCLE]
+  # The needs-refinement/void-refusal/hand-back shape: an `attempt-failed`
+  # a stage logs about the item it was handed, not about itself — its own
+  # `stage-end` for this cycle still carries exit_code 0. Never carries
+  # stage_failure, so it must never move consecutive_failures on its own.
   jq -nc --arg ts "$1" --arg stage "$2" --arg d "$3" --arg cycle "${4:-$1}" \
     '{ts: $ts, node: "n1", event: "attempt-failed", stage: $stage, detail: $d, cycle: $cycle}'
 }
 # item_block_attempt_failed_at TS STAGE DETAIL KIND [CYCLE]
-# Same shape as attempt_failed_at, but carrying a `kind` — the marker the
-# Co-Ordinator's own per-item block records (a needs-refinement block, a
-# hand-flag, a void refusal) log on `attempt-failed`, distinct from a genuine
-# stage failure (issue #1498).
+# The item-verdict shape above, plus the `kind` the Co-Ordinator's own per-item
+# block records (a needs-refinement block, a hand-flag, a void refusal) carry
+# on `attempt-failed` for their other readers (issue #1498). Like
+# item_verdict_attempt_failed_at, and unlike attempt_failed_at, it sets no
+# stage_failure — the field, not the `kind`, is what this join reads — so these
+# cases pin that a kind-tagged block stays out of the streak too.
 item_block_attempt_failed_at() {
   jq -nc --arg ts "$1" --arg stage "$2" --arg d "$3" --arg kind "$4" --arg cycle "${5:-$1}" \
     '{ts: $ts, node: "n1", event: "attempt-failed", stage: $stage, detail: $d, kind: $kind, cycle: $cycle}'
@@ -207,6 +231,54 @@ assert_eq "  ... it increments the streak instead of resetting it" \
 assert_eq "  ... and last_detail reflects that cycle's own attempt-failed detail" \
   "unparseable final message" "$(jq -r '.coordinator.last_detail' <<<"$verdict")"
 
+# --- an exit-0 stage-end freshly blocking an item is not a failure (#1511) -
+#
+# record_needs_refinement_block, the void-refusal paths, the hand-flagged-
+# label path and an Implementer's/Reviewer's own item verdict all log
+# `attempt-failed` for a stage that ran to completion and reported truthfully
+# on the *item* it was handed — never on itself. Before stage_failure existed,
+# these were indistinguishable from a genuine crash under the TD-PPagop-
+# 26082504 join above, and three such genuinely successful cycles in a row
+# read as `failing`.
+item_verdict_block="$(item_verdict_attempt_failed_at 2026-08-21T09:00:00Z coordinator \
+    'hand-applied the needs-refinement label'
+  stage_end_at 2026-08-21T09:00:00Z coordinator 0)"
+verdict="$(stage_health_verdicts 3 48 "$NOW_EPOCH" <<<"$item_verdict_block")"
+assert_eq "a genuinely successful cycle that also blocks an item reads ok" \
+  "ok" "$(jq -r '.coordinator.verdict' <<<"$verdict")"
+assert_eq "  ... consecutive_failures is not incremented" \
+  "0" "$(jq -r '.coordinator.consecutive_failures' <<<"$verdict")"
+assert_eq "  ... last_detail carries none of the item-verdict's own detail" \
+  "null" "$(jq -c '.coordinator.last_detail' <<<"$verdict")"
+assert_eq "  ... and last_success is still this cycle's own timestamp" \
+  "2026-08-21T09:00:00Z" "$(jq -r '.coordinator.last_success' <<<"$verdict")"
+
+three_item_verdict_blocks="$(item_verdict_attempt_failed_at 2026-08-21T09:00:00Z coordinator 'void refused'
+  stage_end_at 2026-08-21T09:00:00Z coordinator 0
+  item_verdict_attempt_failed_at 2026-08-21T10:00:00Z coordinator 'needs refinement'
+  stage_end_at 2026-08-21T10:00:00Z coordinator 0
+  item_verdict_attempt_failed_at 2026-08-21T11:00:00Z coordinator 'hand-applied the needs-refinement label'
+  stage_end_at 2026-08-21T11:00:00Z coordinator 0)"
+verdict="$(stage_health_verdicts 3 48 "$NOW_EPOCH" <<<"$three_item_verdict_blocks")"
+assert_eq "three consecutive genuinely successful item-blocking cycles never reach failing" \
+  "ok" "$(jq -r '.coordinator.verdict' <<<"$verdict")"
+assert_eq "  ... consecutive_failures stays 0 throughout" \
+  "0" "$(jq -r '.coordinator.consecutive_failures' <<<"$verdict")"
+
+# A genuine failure and an item-verdict one sharing the same exit-0 cycle:
+# the exit-0 stage-end must still be read as failed, on the genuine one's
+# marker — and last_detail must be its detail, never the item-verdict's,
+# which is what proves the join filters $fails by the field rather than by
+# picking whichever of the two happens to sort last.
+mixed_two_fails_one_cycle="$(stage_end_at 2026-08-21T09:00:00Z coordinator 0
+  attempt_failed_at 2026-08-21T09:00:00Z coordinator 'unparseable final message'
+  item_verdict_attempt_failed_at 2026-08-21T09:00:00Z coordinator 'void refused')"
+verdict="$(stage_health_verdicts 3 48 "$NOW_EPOCH" <<<"$mixed_two_fails_one_cycle")"
+assert_eq "an exit-0 cycle with both a genuine and an item-verdict attempt-failed still counts as failed" \
+  "1" "$(jq -r '.coordinator.consecutive_failures' <<<"$verdict")"
+assert_eq "  ... last_detail is the genuine failure's own detail, not the item-verdict's" \
+  "unparseable final message" "$(jq -r '.coordinator.last_detail' <<<"$verdict")"
+
 # The report's own worst case: alternating non-zero exits and exit-0-but-
 # failed cycles never reached THRESHOLD under the old exit-code-only count
 # (the longest such run measured on a real node's log was 2) — so a stage
@@ -231,9 +303,9 @@ assert_eq "  ... counting all three cycles, not just the two genuine non-zero ex
 # "coordinator"` for its own per-item block records too — a needs-refinement
 # block, a hand-flag, a void refusal — in cycles where the coordinator stage
 # itself ran to completion (`stage-end exit_code 0`). Those carry a non-empty
-# `kind` (`"needs-refinement"` or `"item-block"`) precisely so this join can
-# tell them apart from a genuine failure; the exit-0-can-still-fail rule
-# above must not fire for them.
+# `kind` (`"needs-refinement"` or `"item-block"`) for readers elsewhere, and,
+# being item verdicts, no `stage_failure` — so the exit-0-can-still-fail rule
+# above must not fire for them, whichever of the two `kind`s they carry.
 
 item_blocks_only="$(item_block_attempt_failed_at 2026-08-21T09:00:00Z coordinator 'gated on a decision' needs-refinement
   stage_end_at 2026-08-21T09:00:00Z coordinator 0
@@ -282,7 +354,7 @@ assert_eq "  ... its last_detail is a synthesized message, not an earlier cleare
 # called over this stream too (`["monitor"]`, agent-ops#1284), so the join
 # must recognise either id field, not just `cycle`.
 
-monitor_exit0_failure="$(jq -nc '{ts:"2026-08-21T09:00:00Z", node:"n1", monitor:"m1", event:"attempt-failed", stage:"monitor", detail:"unparseable final message"}'
+monitor_exit0_failure="$(jq -nc '{ts:"2026-08-21T09:00:00Z", node:"n1", monitor:"m1", event:"attempt-failed", stage:"monitor", detail:"unparseable final message", stage_failure:true}'
   jq -nc '{ts:"2026-08-21T09:00:00Z", node:"n1", monitor:"m1", event:"stage-end", stage:"monitor", exit_code:0}')"
 verdict="$(stage_health_verdicts 3 48 "$NOW_EPOCH" '["monitor"]' <<<"$monitor_exit0_failure")"
 assert_eq "an exit-0 monitor stage-end with a matching attempt-failed for its own monitor id counts as a failure" \
