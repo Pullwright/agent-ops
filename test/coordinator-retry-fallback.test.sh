@@ -230,14 +230,12 @@ repos_with_security='[{"slug":"acme/widgets","default_branch":"main",
   "findings":[{"source":"security","kind":"dependabot","severity":"high","ref":"dependabot-alert-1","title":"bump foo","package":"foo","url":"https://x/1"}],
   "review_feedback":[],"merge_conflicts":[],"abandoned_drafts":[],"human_visibility":[],"issues":[],
   "tech_debt":[{"source":"tech-debt","ref":"TD1","id":"TD1","title":"fix TD1","filed":"2026-08-01","url":"https://x/TD1.md","body":"TD1 body"},
-               {"source":"tech-debt","ref":"TD2","id":"TD2","title":"fix TD2","filed":"2026-08-01","url":"https://x/TD2.md","body":"TD2 body"}],
-  "register_hygiene":[]}]'
+               {"source":"tech-debt","ref":"TD2","id":"TD2","title":"fix TD2","filed":"2026-08-01","url":"https://x/TD2.md","body":"TD2 body"}]}]'
 repos_tech_debt_only='[{"slug":"acme/widgets","default_branch":"main",
   "sources":["security","issues:urgent","review-feedback","merge-conflicts","human-visibility","abandoned-drafts","issues:high","tech-debt","issues:medium","issues:low","code-quality"],
   "findings":[],"review_feedback":[],"merge_conflicts":[],"abandoned_drafts":[],"human_visibility":[],"issues":[],
   "tech_debt":[{"source":"tech-debt","ref":"TD1","id":"TD1","title":"fix TD1","filed":"2026-08-01","url":"https://x/TD1.md","body":"TD1 body"},
-               {"source":"tech-debt","ref":"TD2","id":"TD2","title":"fix TD2","filed":"2026-08-01","url":"https://x/TD2.md","body":"TD2 body"}],
-  "register_hygiene":[]}]'
+               {"source":"tech-debt","ref":"TD2","id":"TD2","title":"fix TD2","filed":"2026-08-01","url":"https://x/TD2.md","body":"TD2 body"}]}]'
 
 # run_full_scenario DESC ATTEMPT1_JSON ATTEMPT2_RC ATTEMPT2_JSON REPOS_JSON
 # Reconstructs the real flow exactly: attempt 1 runs outside the function
@@ -323,8 +321,7 @@ lr_repos='[{"slug":"acme/widgets","default_branch":"main",
   "findings":[],"review_feedback":[],"merge_conflicts":[],"dequeued":[],
   "landing_refusals":[{"ref":"pr-61-landing-refusal-4718691960","pr_number":61,"pr_url":"https://x/pull/61","title":"fix(cache): drop the stale key","branch":"agent/td26082401","body":"── human comment by warwickallen at 2026-08-24T01:00:00Z (id 4718691960)\nThis needs a note in the gotchas section."}],
   "abandoned_drafts":[],"human_visibility":[],"issues":[],
-  "tech_debt":[{"source":"tech-debt","ref":"TD1","id":"TD1","title":"fix TD1","filed":"2026-08-01","url":"https://x/TD1.md","body":"TD1 body"}],
-  "register_hygiene":[]}]'
+  "tech_debt":[{"source":"tech-debt","ref":"TD1","id":"TD1","title":"fix TD1","filed":"2026-08-01","url":"https://x/TD1.md","body":"TD1 body"}]}]'
 lr_pick="$(fallback_select_candidate "$lr_repos" "m")"
 assert_eq "landing-refusals outranks tech-debt in the mechanical walk" "landing-refusals" "$(jq -r '.source' <<<"$lr_pick")"
 assert_eq "…and names the entry's own ref" "pr-61-landing-refusal-4718691960" "$(jq -r '.item' <<<"$lr_pick")"
@@ -354,8 +351,7 @@ never_nudged_repos='[{"slug":"acme/widgets","default_branch":"main",
   "sources":["security","issues:urgent","review-feedback","merge-conflicts","human-visibility","abandoned-drafts","issues:high","tech-debt","issues:medium","issues:low","code-quality"],"findings":[],"review_feedback":[],
   "merge_conflicts":[{"ref":"pr-9-conflict-abc","pr_number":9,"pr_url":"https://x/pull/9","title":"bump foo","branch":"dependabot/npm/foo","base":"main","body":"bump","bot":true,"rebase_requested":false,"superseded_by":null}],
   "abandoned_drafts":[],"human_visibility":[],"issues":[],
-  "tech_debt":[{"source":"tech-debt","ref":"TD1","id":"TD1","title":"fix TD1","filed":"2026-08-01","url":"https://x/TD1.md","body":"TD1 body"}],
-  "register_hygiene":[]}]'
+  "tech_debt":[{"source":"tech-debt","ref":"TD1","id":"TD1","title":"fix TD1","filed":"2026-08-01","url":"https://x/TD1.md","body":"TD1 body"}]}]'
 nn_pick="$(fallback_select_candidate "$never_nudged_repos" "m")"
 assert_eq "a never-nudged Dependabot entry is skipped, not a candidate" "tech-debt" "$(jq -r '.source' <<<"$nn_pick")"
 
@@ -426,8 +422,7 @@ issue_repos='[{"slug":"acme/widgets","default_branch":"main","sources":["issues:
   "findings":[],"review_feedback":[],"merge_conflicts":[],"abandoned_drafts":[],"human_visibility":[],
   "issues":[{"source":"issues","ref":"12","number":12,"priority":"Medium","title":"medium one","body":"b","comments":[]},
             {"source":"issues","ref":"11","number":11,"priority":"High","title":"high one","body":"b","comments":[]}],
-  "tech_debt":[{"source":"tech-debt","ref":"TD1","id":"TD1","title":"fix TD1","filed":"2026-08-01","url":"https://x/TD1.md","body":"TD1 body"}],
-  "register_hygiene":[]}]'
+  "tech_debt":[{"source":"tech-debt","ref":"TD1","id":"TD1","title":"fix TD1","filed":"2026-08-01","url":"https://x/TD1.md","body":"TD1 body"}]}]'
 assert_eq "only the listed issue rank is reachable — High outranks tech-debt" "11" \
   "$(jq -r '.item' <<<"$(fallback_select_candidate "$issue_repos" "m")")"
 assert_eq "…and the unlisted Medium rank never wins, even with tech-debt gone" "null" \

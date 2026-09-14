@@ -1946,9 +1946,9 @@ gather_merge_conflicts() {
   # produced a valid array and said nothing on stderr. gather-merge-
   # conflicts.sh always exits 0 by design (its output feeds the Co-Ordinator,
   # and a source that cannot look must simply not fire rather than abort the
-  # cycle), so stderr is the only signal a real `gh` failure leaves — the same
-  # distinction scripts/gather-register-hygiene.sh draws between "empty
-  # because there is nothing" and "empty because it could not look".
+  # cycle), so stderr is the only signal a real `gh` failure leaves —
+  # distinguishing "empty because there is nothing" from "empty because it
+  # could not look".
   if [[ -n "$out" ]] && jq -e 'type == "array"' <<<"$out" >/dev/null 2>&1 \
      && [[ ! -s "$cycle_dir/merge-conflicts-$safe.err" ]]; then
     : > "$cycle_dir/merge-conflicts-$safe.ok"
@@ -2192,8 +2192,8 @@ gather_issues_excluded() {
 
 # Pre-fetch the repo's open `pw::type:tech-debt`-labelled issues (requirement
 # 3t, issue #310; D15 as revised, #869/#875) — the same move issues, findings,
-# review-feedback, merge-conflicts, abandoned-drafts and register-hygiene
-# already got: a source the model could silently misdescribe or decline to
+# review-feedback, merge-conflicts and abandoned-drafts already got: a
+# source the model could silently misdescribe or decline to
 # re-derive becomes an input instead of an errand. Claimed-item exclusion is
 # applied by the caller via exclude_claimed_items, like every other
 # pre-fetched array; blocked/void exclusion is applied by a second pass once

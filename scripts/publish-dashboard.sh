@@ -735,9 +735,9 @@ gh_fail_summary() {
 epoch_of() { date -d "$1" +%s 2>/dev/null || echo 0; }
 
 # td_frontmatter — read a tech-debt item file on stdin, print "<title>\t<status>".
-# The same shape scripts/td-check.pl and scripts/get-tech-debt-record.pl parse:
-# a leading `---` line, `key: value` lines with the key case-folded, a closing
-# `---`. Anything else prints an empty pair, which renders as the bare ID —
+# The frozen archive's own shape: a leading `---` line, `key: value` lines
+# with the key case-folded, a closing `---`. Anything else prints an empty
+# pair, which renders as the bare ID —
 # the page must never turn a malformed item into a missing one. Tabs in a
 # value would split the pair, so they are spaces by the time it is emitted.
 td_frontmatter() {
