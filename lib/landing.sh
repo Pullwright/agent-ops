@@ -2062,6 +2062,13 @@ OQ_ESC_BODY
 #     claim time regardless. A pull request whose source cannot be resolved
 #     this cycle (the claim predates this node's log window, or the union
 #     log itself could not be read) is skipped, never guessed at.
+#   - A pull request a peer node's fleet-wide `pr-<n>` claim currently holds
+#     (issue #987, TD-PPagop-26082509) is never offered to
+#     `_landing_stage_attempt` at all — `_approver_sweep_claimed_pr_numbers`
+#     (`lib/approver.sh`) read once per repository per pass, lazily, only
+#     when a candidate exists to spend it on, exactly as its own callers in
+#     that file already do. Skipped, logged, and left for next cycle, same
+#     as an unresolved source above.
 #
 # Every remaining gate — level, eligibility, review, budget, queue, the arm
 # itself — is `_landing_stage_attempt`'s alone; this function never repeats
@@ -2116,6 +2123,15 @@ _landing_retry_sweep_repo() {
     | select(.complexity == "low" or .complexity == "medium")
     | {number, url, branch: .headRefName, complexity}]' <<<"$open" 2>/dev/null || echo '[]')"
 
+  # Issue #987/TD-PPagop-26082509: fetched once per repository for this
+  # pass, lazily — only when a candidate exists to spend it on, matching the
+  # cost model `_approver_sweep_claimed_pr_numbers`'s own callers already
+  # hold — never per candidate.
+  local claimed_prs=""
+  if [[ "$(jq 'length' <<<"$candidates" 2>/dev/null || echo 0)" != "0" ]]; then
+    claimed_prs="$(_approver_sweep_claimed_pr_numbers "$slug")"
+  fi
+
   local cand pr_url branch number complexity standing source item
   while IFS= read -r cand; do
     [[ -n "$cand" ]] || continue
@@ -2123,6 +2139,16 @@ _landing_retry_sweep_repo() {
     branch="$(jq -r '.branch' <<<"$cand")"
     number="$(jq -r '.number' <<<"$cand")"
     complexity="$(jq -r '.complexity' <<<"$cand")"
+
+    # Issue #987: a peer node's fleet-wide `pr-<n>` claim on this pull
+    # request — under whatever item ref won it there — excludes this sweep
+    # exactly as it excludes the ordinary claim loop; skipped, not failed,
+    # so an unclaimed retry next cycle still finds it.
+    if jq -e --argjson n "$number" 'index($n) != null' <<<"${claimed_prs:-[]}" >/dev/null 2>&1; then
+      log_event "landing-retry-sweep-skipped-claimed" "$(jq -nc --arg r "$slug" --arg u "$pr_url" --argjson n "$number" \
+        '{repo: $r, pr_url: $u, number: $n}')"
+      continue
+    fi
 
     standing="$(landing_approver_standing_review "$slug" "$number" "$login" 2>/dev/null)" || continue
     [[ "$standing" == "APPROVED" ]] || continue

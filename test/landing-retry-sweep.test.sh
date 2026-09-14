@@ -152,6 +152,17 @@ landing_retry_item() {
   printf '%s' "${!key:-}"
 }
 
+# issue #987: the fleet-wide claim registry's view of held pull requests,
+# normally defined in lib/approver.sh and called here across files exactly
+# as lib/standdown.sh already calls both sweeps by name — steered by
+# CLAIMED_PRS, mirroring the stub test/approver-restale-sweep.test.sh
+# already uses for the same function. Counts its own calls so a test can pin
+# the "fetched once per pass, not per candidate" cost model.
+_approver_sweep_claimed_pr_numbers() {
+  printf '.' >>"$T/claimed-pr-calls"
+  printf '%s' "${CLAIMED_PRS:-[]}"
+}
+
 _landing_stage_attempt() {
   local pr_url="$2" already_armed="${7:-0}" item="${8:-}" num="${2##*/}" armvar
   printf 'slug=%s\tpr_url=%s\tcomplexity=%s\tsource=%s\tdefault_branch=%s\tretry=%s\talready_armed=%s\titem=%s\n' \
@@ -188,7 +199,7 @@ pr_open() {  # number url branch draft complexity_label
 }
 
 run_case() {  # PR_LIST_JSON=... plus any stub-steering env
-  : >"$tmp_dir/events"; : >"$tmp_dir/attempts"; rm -f "$tmp_dir/armed_by_repo_flag"
+  : >"$tmp_dir/events"; : >"$tmp_dir/attempts"; : >"$tmp_dir/claimed-pr-calls"; rm -f "$tmp_dir/armed_by_repo_flag"
   env -i PATH="$PATH" HOME="$HOME" \
     T="$tmp_dir" SCRIPT_DIR="$SCRIPT_DIR" \
     LEVEL="agent-merges-routine" \
@@ -201,6 +212,7 @@ attempts() { cat "$tmp_dir/attempts" 2>/dev/null || true; }
 count_attempts() { [[ -s "$tmp_dir/attempts" ]] && wc -l <"$tmp_dir/attempts" | tr -d ' ' || printf '0'; }
 events() { cat "$tmp_dir/events" 2>/dev/null || true; }
 armed_by_repo_flag() { cat "$tmp_dir/armed_by_repo_flag" 2>/dev/null || true; }
+claimed_pr_call_count() { [[ -s "$tmp_dir/claimed-pr-calls" ]] && wc -c <"$tmp_dir/claimed-pr-calls" | tr -d ' ' || printf '0'; }
 
 open_list="$(jq -sc '.' <(
   pr_open 1 "https://github.com/acme/widgets/pull/1" "td/TD-1" false "complexity:low"
@@ -257,6 +269,25 @@ assert_eq "an unreadable standing-review read is not offered (never a guessed pa
 rc="$(run_case PR_LIST_JSON="$open_list" STANDING_1="APPROVED")"
 assert_eq "a candidate whose source cannot be resolved is skipped, never guessed at" \
   "0" "$(count_attempts)"
+
+# --- issue #987: a pull request under a live fleet claim is a peer's, ---------
+#     never offered to _landing_stage_attempt
+
+rc="$(run_case PR_LIST_JSON="$open_list" STANDING_1="APPROVED" SOURCE_td_TD_1="tech-debt" CLAIMED_PRS='[1]')"
+assert_eq "a claimed pull request never reaches _landing_stage_attempt" "0" "$(count_attempts)"
+assert_contains "  ... and the skip is logged, visibly" \
+  "landing-retry-sweep-skipped-claimed" "$(events)"
+assert_contains "  ... naming the claimed pull request" "pull/1" "$(events)"
+
+rc="$(run_case PR_LIST_JSON="$open_list" STANDING_1="APPROVED" SOURCE_td_TD_1="tech-debt" CLAIMED_PRS='[999]')"
+assert_eq "…while a candidate whose number the claim listing does not name is still offered" \
+  "1" "$(count_attempts)"
+
+rc="$(run_case PR_LIST_JSON="$open_list" STANDING_1="APPROVED" SOURCE_td_TD_1="tech-debt")"
+assert_eq "an empty claimed-PR set filters nothing — the one eligible candidate is still offered" \
+  "1" "$(count_attempts)"
+assert_eq "  ... and the claim listing is fetched exactly once for the whole pass" \
+  "1" "$(claimed_pr_call_count)"
 
 # --- The truncated-listing warning --------------------------------------------
 
