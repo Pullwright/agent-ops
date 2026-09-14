@@ -105,7 +105,7 @@ claimed_json="[]"
 # Requirement 48 (agent-ops#1086, offset agent-ops#1106): of every repo
 # `repos_json` names, the one whose expensive per-repository sources
 # (findings, review-feedback, abandoned-drafts, merge-conflicts, dequeued,
-# landing-refusals, register-hygiene, issues, tech-debt) this cycle actually reads fresh from
+# landing-refusals, issues, tech-debt) this cycle actually reads fresh from
 # GitHub — every other one reuses the snapshot this same node captured the
 # last time its own turn came around (lib/expensive-gather-cache.sh). Picked
 # once, ahead of the per-repo loop below, from `repos_json` rather than
@@ -218,9 +218,9 @@ while IFS=$'\t' read -r _ slug default_branch; do
   # further down, which filters every one of these arrays in place, a second
   # time, once they do.
   #
-  # Requirement 48 (agent-ops#1086): the nine expensive bands below —
+  # Requirement 48 (agent-ops#1086): the eight expensive bands below —
   # findings, review-feedback, abandoned-drafts, merge-conflicts, dequeued,
-  # landing-refusals, register-hygiene, issues (+ issues_excluded) and tech-debt — are read
+  # landing-refusals, issues (+ issues_excluded) and tech-debt — are read
   # fresh from GitHub only for `expensive_gather_slug`, the one repository
   # this cycle picked for this node's turn (lib/expensive-gather-cache.sh).
   # Every other configured repository reuses the raw gather this same node
@@ -275,12 +275,6 @@ while IFS=$'\t' read -r _ slug default_branch; do
     landing_refusals_raw="$(gather_landing_refusals "$slug")"
     emit_first_seen "$slug" landing-refusals "$landing_refusals_raw"
     landing_refusals="$(exclude_claimed_items "$(exclude_claimed_prs "$landing_refusals_raw" "$claimed_pr_numbers_json")" "$claimed_item_refs_json")"
-  fi
-  register_hygiene="[]"; register_hygiene_raw="[]"
-  if jq -e 'any(.[]; . == "register-hygiene")' <<<"$sources" >/dev/null 2>&1; then
-    register_hygiene_raw="$(gather_register_hygiene "$slug" "$default_branch" prefetch)"
-    emit_first_seen "$slug" register-hygiene "$register_hygiene_raw"
-    register_hygiene="$(exclude_claimed_items "$register_hygiene_raw" "$claimed_item_refs_json")"
   fi
   # The issues source is one source at four ranks (`issues:urgent` …
   # `issues:low`, requirement 15e), so any band in `sources` warrants the one
@@ -450,7 +444,7 @@ while IFS=$'\t' read -r _ slug default_branch; do
   fi
   expensive_gather_fresh=1
   expensive_gather_as_of="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  # The ten raw bands below are each unbounded past this call — agent-ops's
+  # The nine raw bands below are each unbounded past this call — agent-ops's
   # own tech_debt_raw alone has reached 421,622 bytes, far past MAX_ARG_STRLEN
   # (131072) — so, exactly like the per-repo entry build further down, they
   # arrive on stdin, one document per line, bound positionally with `input as
@@ -463,14 +457,14 @@ while IFS=$'\t' read -r _ slug default_branch; do
   # input outright rather than writing a 0-byte cache (agent-ops#1107).
   expensive_gather_cache_docs="$(printf '%s\n' "$findings_raw" "$review_feedback_raw" \
     "$abandoned_drafts_raw" "$merge_conflicts_raw" "$dequeued_raw" "$landing_refusals_raw" \
-    "$register_hygiene_raw" "$issues_raw" "$issues_excluded_raw" "$tech_debt_raw")"
+    "$issues_raw" "$issues_excluded_raw" "$tech_debt_raw")"
   expensive_gather_cache_save "$state_dir" "$slug" "$(jq -nc --arg at "$expensive_gather_as_of" \
       'input as $f | input as $rf | input as $ad | input as $mc | input as $dq | input as $lr
-       | input as $rh | input as $is | input as $ie | input as $td
+       | input as $is | input as $ie | input as $td
        | {gathered_at: $at, findings_raw: $f, review_feedback_raw: $rf,
           abandoned_drafts_raw: $ad, merge_conflicts_raw: $mc, dequeued_raw: $dq,
           landing_refusals_raw: $lr,
-          register_hygiene_raw: $rh, issues_raw: $is, issues_excluded_raw: $ie,
+          issues_raw: $is, issues_excluded_raw: $ie,
           tech_debt_raw: $td}' <<<"$expensive_gather_cache_docs")" \
     || log_event "warning" "$(jq -nc --arg d "could not persist the expensive-gather cache for $slug — its next non-selected cycle will see empty bands, not this cycle's read" '{detail: $d}')"
   else
@@ -493,7 +487,6 @@ while IFS=$'\t' read -r _ slug default_branch; do
   merge_conflicts_raw="$(jq -c '.merge_conflicts_raw // []' <<<"$expensive_gather_cache_json" 2>/dev/null || echo '[]')"
   dequeued_raw="$(jq -c '.dequeued_raw // []' <<<"$expensive_gather_cache_json" 2>/dev/null || echo '[]')"
   landing_refusals_raw="$(jq -c '.landing_refusals_raw // []' <<<"$expensive_gather_cache_json" 2>/dev/null || echo '[]')"
-  register_hygiene_raw="$(jq -c '.register_hygiene_raw // []' <<<"$expensive_gather_cache_json" 2>/dev/null || echo '[]')"
   issues_raw="$(jq -c '.issues_raw // []' <<<"$expensive_gather_cache_json" 2>/dev/null || echo '[]')"
   issues_excluded_raw="$(jq -c '.issues_excluded_raw // null' <<<"$expensive_gather_cache_json" 2>/dev/null || echo 'null')"
   tech_debt_raw="$(jq -c '.tech_debt_raw // []' <<<"$expensive_gather_cache_json" 2>/dev/null || echo '[]')"
@@ -519,10 +512,6 @@ while IFS=$'\t' read -r _ slug default_branch; do
   if jq -e 'any(.[]; . == "landing-refusals")' <<<"$sources" >/dev/null 2>&1; then
     landing_refusals="$(exclude_claimed_items "$(exclude_claimed_prs "$landing_refusals_raw" "$claimed_pr_numbers_json")" "$claimed_item_refs_json")"
   fi
-  register_hygiene="[]"
-  if jq -e 'any(.[]; . == "register-hygiene")' <<<"$sources" >/dev/null 2>&1; then
-    register_hygiene="$(exclude_claimed_items "$register_hygiene_raw" "$claimed_item_refs_json")"
-  fi
   issues="[]"; issues_excluded="[]"
   if jq -e 'any(.[]; startswith("issues"))' <<<"$sources" >/dev/null 2>&1; then
     issues="$(exclude_claimed_items "$issues_raw" "$claimed_item_refs_json")"
@@ -544,27 +533,27 @@ while IFS=$'\t' read -r _ slug default_branch; do
       '.[] | select(.slug == $s) | .implementation_plan_path // ""' <<<"$repos_json")"
   fi
   # findings/review_feedback/abandoned_drafts/merge_conflicts/dequeued/
-  # landing_refusals/register_hygiene/issues/tech_debt are the pre-fetched bands themselves —
-  # issue threads (requirement 3d/#118) and the open tech-debt register
+  # landing_refusals/issues/tech_debt are the pre-fetched bands themselves —
+  # issue threads (requirement 3d/#118) and the open tech-debt band
   # (requirement 3t/#310) included — each unbounded past this call and each
   # tens of kilobytes alone; $sources is this repo's configured source list,
-  # bounded by config, and stays in argv (requirement 4g). The nine bands arrive on
+  # bounded by config, and stays in argv (requirement 4g). The eight bands arrive on
   # stdin, one document per line, bound positionally with `input as $name` in
   # the order printed (TD-PPagop-26081406) — never in argv, where past
   # MAX_ARG_STRLEN this build would silently drop the repo's whole entry.
   entry_docs="$(printf '%s\n' "$findings" "$review_feedback" "$abandoned_drafts" \
-    "$merge_conflicts" "$dequeued" "$landing_refusals" "$register_hygiene" "$issues" "$tech_debt")"
+    "$merge_conflicts" "$dequeued" "$landing_refusals" "$issues" "$tech_debt")"
   # `issues_excluded` rides in as its own --argjson, not on this stdin
-  # stream: unlike the nine bands above, it is bounded by the gatherer's own
+  # stream: unlike the eight bands above, it is bounded by the gatherer's own
   # 100-item page (scripts/gather-issues.sh) and each entry is a bare number
   # and a short reason, tens of bytes at most — nowhere near MAX_ARG_STRLEN.
   entry="$(jq -nc --arg slug "$slug" --arg db "$default_branch" --argjson sources "$sources" \
     --arg ipp "$implementation_plan_path" --argjson ie "$issues_excluded" \
     'input as $findings | input as $rf | input as $ad | input as $mc | input as $dq | input as $lr
-     | input as $rh | input as $issues | input as $td
-     | {slug: $slug, default_branch: $db, sources: $sources, findings: $findings, review_feedback: $rf, abandoned_drafts: $ad, merge_conflicts: $mc, dequeued: $dq, landing_refusals: $lr, register_hygiene: $rh, human_visibility: [], issues: $issues, issues_excluded: $ie, tech_debt: $td}
+     | input as $issues | input as $td
+     | {slug: $slug, default_branch: $db, sources: $sources, findings: $findings, review_feedback: $rf, abandoned_drafts: $ad, merge_conflicts: $mc, dequeued: $dq, landing_refusals: $lr, human_visibility: [], issues: $issues, issues_excluded: $ie, tech_debt: $td}
      + (if $ipp == "" then {} else {implementation_plan_path: $ipp} end)' <<<"$entry_docs")"
-  # Requirement 48 (agent-ops#1086): whether the nine bands above came from
+  # Requirement 48 (agent-ops#1086): whether the eight bands above came from
   # this cycle's own read of $slug or from this node's cache of an earlier
   # cycle's — lib/coordinator-input.sh documents what a reader (the
   # Co-Ordinator, a human, the no-op fingerprint) may conclude from each.
@@ -962,10 +951,10 @@ void_json="$(void_items "$union_log")"
 # Requirement 34n's memory, applied the moment the extract exists: every pair
 # an earlier cycle already retired (a `void-retired` event on the log — a
 # fact, not a state, exactly as `void-object-closed` is) is subtracted here,
-# before the 34k sweep, the 34l register pass and 34n's own evidence-gathering
-# below ever see the set. Two bounds follow that re-deciding retirement from
-# scratch each cycle would not give: the register read below runs only over
-# the *unretired* residue, so an id retired once is never asked about again —
+# before the 34k sweep and 34n's own evidence-gathering below ever see the
+# set. Two bounds follow that re-deciding retirement from scratch each cycle
+# would not give: the register-status read below runs only over the
+# *unretired* residue, so an id retired once is never asked about again —
 # per-cycle GitHub cost proportional to what is still live, not to every void
 # ever filed — and the extract stays bounded even on a cycle whose register
 # read fails, because this subtraction needs nothing but the log. The
@@ -974,12 +963,12 @@ void_json="$(void_items "$union_log")"
 #
 # Neither pass between here and 34n loses anything to the narrowing: 34k's
 # closed-object gate already skips every issue- or PR-shaped id a retirement
-# could cover (a closed object is what actioned it), and 34l's register repair
-# has nothing to do once a row reads `resolved`/`not-debt`, which retirement
-# itself required first — narrowing before 34l is what stops a repo whose
-# void register ids are all retired paying a register fetch forever. The 34f
-# label route is computed further up, from `void_items` directly, so a human's
-# `unvoided` still reaches a retired-but-void item.
+# could cover (a closed object is what actioned it), and the register-status
+# read has nothing to do once a row reads `resolved`/`not-debt`, which
+# retirement itself required first — narrowing before it is what stops a
+# repo whose void register ids are all retired paying a register fetch
+# forever. The 34f label route is computed further up, from `void_items`
+# directly, so a human's `unvoided` still reaches a retired-but-void item.
 #
 # Gated on the same switch as retirement itself: `0` must restore the full,
 # unretired extract — the recorded facts stay on the log, but stop masking —
@@ -1044,55 +1033,12 @@ if ! (( DRY_RUN )); then
   done < <(jq -r '[.[].repo] | unique[]' <<<"$void_close_candidates_json" 2>/dev/null || true)
 fi
 
-# Register rows, requirement 34l — the other half of acting on a void: a void
-# item shaped like a tech-debt register id (issue #240) names a file, not a
-# GitHub object, so close-void-github-items.sh above leaves it untouched
-# entirely — this instead re-derives that repo's register-hygiene candidate
-# with the void evidence folded in (gather-register-hygiene.sh's VOIDED STATUS
-# problem class), so the ordinary register-hygiene Implementer flow flips
-# the row exactly as it repairs any other frontmatter drift. Only for repos
-# that actually have a void register item — everywhere else costs nothing
-# beyond the one jq read below. This necessarily re-fetches the register (a
-# second read this cycle, alongside the plain one the loop at "3. Repo
-# ordering" already took) because that earlier pass runs before void_json
-# exists to hand it; the alternative is reordering the cycle around a state
-# read this is the only consumer of.
+# Register-shaped void ids (a legacy tech-debt register id, issue #240) —
+# still computed here even though the register-hygiene re-derivation pass
+# that used to consume it retired with the register itself (#882): the
+# void-retirement liveness pass further down still reads it for any
+# still-unretired void carrying one of these legacy ids.
 void_register_ids_json="$(work_gone_register_ids "$void_json")"
-while IFS= read -r vr_slug; do
-  [[ -n "$vr_slug" ]] || continue
-  vr_branch="$(jq -r --arg s "$vr_slug" 'map(select(.slug == $s)) | .[0].default_branch // ""' \
-    <<<"$ordered_repos_json" 2>/dev/null || true)"
-  [[ -n "$vr_branch" ]] || continue
-  # The void extract on stdin, never in argv (requirement 4g) — same failure
-  # shape as the sweep above: past MAX_ARG_STRLEN this call would fall into
-  # its `|| echo '[]'` and the pass would silently find nothing. `ids` stays
-  # an --argjson: it is one repo's matching register ids, bounded by the
-  # register itself.
-  vr_candidates_json="$(jq -c --arg r "$vr_slug" \
-    --argjson ids "$(jq -c --arg s "$vr_slug" '.[$s] // []' <<<"$void_register_ids_json")" \
-    -n 'input as $void
-        | [ $void[] | select(.repo == $r and (.item as $i | $ids | index($i)) != null)
-            | {item, detail, evidence} ]' <<<"$void_json" 2>&1)" \
-    || { guard_warn "vr_candidates_json" "$vr_candidates_json"; vr_candidates_json='[]'; }
-  vr_hygiene_json="$(gather_register_hygiene "$vr_slug" "$vr_branch" void "$vr_candidates_json")"
-  # Only ever *adds* to what the first pass found. gather_register_hygiene
-  # fails safe to `[]`, and this second read can fail where the first
-  # succeeded — a rate limit, a network blip, a branch moved between the two.
-  # Overwriting on that answer would delete a genuine register-hygiene
-  # candidate the cycle already holds, on no evidence at all; the whole point
-  # of this pass is a superset of the first, so an empty result is the one
-  # answer it can never mean. `purpose void` is what keeps that reasoning
-  # true of the tee files as well as of this variable: the two passes wrote
-  # to one filename until requirement 34n's liveness rule started reading it,
-  # at which point this pass's failure became a false retirement of the other
-  # pass's still-live findings.
-  vr_hygiene_n="$(jq 'length' <<<"$vr_hygiene_json" 2>&1)" \
-    || { guard_warn "vr_hygiene_n" "$vr_hygiene_n"; vr_hygiene_n=0; }
-  [[ "$vr_hygiene_n" != "0" ]] || continue
-  ordered_repos_json="$(jq -c --arg r "$vr_slug" --argjson rh "$vr_hygiene_json" \
-    'map(if .slug == $r then .register_hygiene = $rh else . end)' \
-    <<<"$ordered_repos_json" 2>/dev/null || printf '%s' "$ordered_repos_json")" # TD-PPagop-26081407: passes test 2 -- falls back to the unchanged prior aggregate, not a fabricated empty
-done < <(jq -r 'keys[]' <<<"$void_register_ids_json" 2>/dev/null || true)
 
 # Human-visibility hygiene, requirement 38e — the read-back half of
 # tech-debt/TD-PPagop-26080801.md's fix: a violation requirement 38c's sweep
@@ -1100,14 +1046,11 @@ done < <(jq -r 'keys[]' <<<"$void_register_ids_json" 2>/dev/null || true)
 # `union_log`, re-verified live by scripts/gather-human-visibility-hygiene.sh
 # (a stale or already-resolved one is dropped there, never here), and — where
 # one survives — assigned into that repo's own `human_visibility` array. Its
-# own source (issue #284's decision 2), never register-hygiene's: a violation
-# here means finished work is invisible to the human whose merge everything
-# waits on, ranked immediately after `merge-conflicts` (config.schema.json),
-# the same "finishing beats starting" class as the four sources around it —
-# register-hygiene's cosmetic-repair, last-place rationale does not describe
-# it. Assigned, not appended: unlike `register_hygiene` above (which two
-# passes can each contribute to — the plain gather and the void
-# re-derivation) this array has exactly one writer, so there is nothing a
+# own source (issue #284's decision 2): a violation here means finished work
+# is invisible to the human whose merge everything waits on, ranked
+# immediately after `merge-conflicts` (config.schema.json), the same
+# "finishing beats starting" class as the four sources around it. Assigned,
+# not appended: this array has exactly one writer, so there is nothing a
 # plain assignment could clobber. Only for repos whose `sources` actually
 # list `human-visibility`, and only for repos this reduction found a
 # violation for at all — everywhere else costs nothing beyond the one
@@ -1171,15 +1114,12 @@ done < <(jq -rn --argjson v "$hv_void_repos_json" \
 # actioned; the only way one left the set at all was a human's hand-appended
 # `unvoided` (issue #309).
 #
-# The 34k sweep and the 34l register-hygiene pass above saw the extract with
-# *recorded* retirements already subtracted (the block where `void_json` is
-# first computed), but not the ones this block is about to decide — and
-# neither needs those either, being already safe to run against an
-# item this rule would go on to retire — 34k's own `void_object_closed_items`
-# gate already skips a closed object, and 34l's register-hygiene repair has
-# nothing left to do once the row already reads `resolved`/`not-debt`, which
-# is exactly the state this rule requires before it will retire a register
-# void at all. `unvoid_clearances_json`, computed earlier from `void_items`
+# The 34k sweep above saw the extract with *recorded* retirements already
+# subtracted (the block where `void_json` is first computed), but not the
+# ones this block is about to decide — and it needs neither either, being
+# already safe to run against an item this rule would go on to retire — 34k's
+# own `void_object_closed_items` gate already skips a closed object.
+# `unvoid_clearances_json`, computed earlier from `void_items`
 # directly, is unaffected for the same reason `void_items` itself is: neither
 # this reassignment nor requirement 34c's own semantics change — a void stays
 # void forever, on the raw log, for every reader that recomputes it there
@@ -1187,7 +1127,7 @@ done < <(jq -rn --argjson v "$hv_void_repos_json" \
 # monitoring dashboard's own use of `void_items`). Retirement narrows only
 # what this one cycle goes on to hand somebody, never what counts as void.
 #
-# "Actioned" is built from six signals, none of them needing a `gh` call this
+# "Actioned" is built from five signals, none of them needing a `gh` call this
 # rule does not already budget for:
 #
 #   - an issue or pull request GitHub itself confirms closed
@@ -1199,10 +1139,10 @@ done < <(jq -rn --argjson v "$hv_void_repos_json" \
 #     register ids, alongside the one 34i already makes for that repo's
 #     blocked ones — the recorded subtraction above is what keeps that
 #     residue, and so this read, bounded;
-#   - liveness, for the six shapes the cycle already gathers as structured
+#   - liveness, for the five shapes the cycle already gathers as structured
 #     data each cycle (TD-PPagop-26081303, extended by TD-PPagop-26081409):
 #     a `dependabot-alert-<n>`/
-#     `code-scanning-alert-<n>`, a `register-hygiene-<hash>`, either
+#     `code-scanning-alert-<n>`, either
 #     merge-conflicts shape (`pr-<n>-conflict-<head-sha>`, which requirement
 #     34k deliberately excludes from its own close, and
 #     `pr-<n>-superseded-<head-sha>`, which it closes — same gather, so the
@@ -1224,7 +1164,7 @@ done < <(jq -rn --argjson v "$hv_void_repos_json" \
 #     reach (`void_config_actioned`, lib/void-liveness.sh; PR #340 review):
 #     liveness needs the source's own successful gather, and a source is
 #     gathered only for a repo whose `sources` still list it, so a repo that
-#     drops `merge-conflicts` — or `security`, or `register-hygiene` — freezes
+#     drops `merge-conflicts` — or `security` — freezes
 #     every void of that shape it had already minted, and a repo dropped from
 #     the config altogether freezes every shape but the closed-object one.
 #     Both are read straight off `all_repos_json`, which costs nothing and is
@@ -1233,10 +1173,10 @@ done < <(jq -rn --argjson v "$hv_void_repos_json" \
 #     `ordered_repos_json`'s own `sources` are rewritten by back-pressure
 #     (step 2.2a, further down) to the four finishing sources.
 #
-# Age-only retirement for the six liveness shapes was considered and
+# Age-only retirement for the five liveness shapes was considered and
 # rejected: a void whose id is *still being gathered* — a still-open alert, a
-# register-hygiene finding the register still has, a workflow still failing, a
-# PR still conflicted — is doing live suppression work every cycle, and
+# workflow still failing, a PR still conflicted — is doing live suppression
+# work every cycle, and
 # retiring it on age alone would re-expose the item to be rediscovered void
 # all over again, the exact rediscovery churn requirement 34k exists to stop.
 # That objection does not reach the config signal: it needs the item to be
@@ -1335,13 +1275,13 @@ if (( void_retire_after_days > 0 )); then
   done < <(jq -r 'to_entries[] | .key + "\t" + (.value | join(" "))' \
            <<<"$(work_gone_plan_ids "$void_json")" 2>/dev/null || true)
 
-  # The six liveness shapes (TD-PPagop-26081303, extended by TD-PPagop-26081409
+  # The five liveness shapes (TD-PPagop-26081303, extended by TD-PPagop-26081409
   # for `dequeued` and by agent-ops#646 for `human-visibility`): per repo,
-  # whatever gather_findings/gather_register_hygiene/gather_merge_conflicts/
+  # whatever gather_findings/gather_merge_conflicts/
   # gather_dequeued/gather_human_visibility_hygiene
   # already wrote to the cycle dir during the repo loop — the `.ok` marker
   # (this cycle's own read of that source succeeded) and the ids it currently
-  # yields — read straight off those tee files, so alert/register-hygiene/
+  # yields — read straight off those tee files, so alert/
   # merge-conflict/dequeued/human-visibility liveness costs no further `gh`
   # call at all.
   # `failed-run` is the one exception: gather-source-state.sh's own `workflows`
@@ -1365,17 +1305,6 @@ if (( void_retire_after_days > 0 )); then
       vl_alert_ok=true
       vl_alert_ids="$(jq -c '[.[].ref]' "$cycle_dir/findings-$vl_safe.json" 2>&1)" \
         || { guard_warn "void-liveness:vl_alert_ids:$vl_safe" "$vl_alert_ids"; vl_alert_ids='[]'; }
-    fi
-
-    # The `prefetch` pass's own files, never requirement 34l's `void` pass:
-    # that second pass folds the void evidence in (so its array answers a
-    # different question) and can fail where the first succeeded, which is
-    # why the two carry separate `purpose` prefixes at all.
-    vl_rh_ok=false; vl_rh_ids='[]'
-    if [[ -f "$cycle_dir/register-hygiene-prefetch-$vl_safe.ok" ]]; then
-      vl_rh_ok=true
-      vl_rh_ids="$(jq -c '[.[].ref]' "$cycle_dir/register-hygiene-prefetch-$vl_safe.json" 2>&1)" \
-        || { guard_warn "void-liveness:vl_rh_ids:$vl_safe" "$vl_rh_ids"; vl_rh_ids='[]'; }
     fi
 
     vl_mc_ok=false; vl_mc_ids='[]'
@@ -1424,13 +1353,11 @@ if (( void_retire_after_days > 0 )); then
 
     void_liveness_gather_json="$(jq -c --arg s "$vl_slug" \
       --argjson alert_ok "$vl_alert_ok" --argjson alert_ids "$vl_alert_ids" \
-      --argjson rh_ok "$vl_rh_ok" --argjson rh_ids "$vl_rh_ids" \
       --argjson mc_ok "$vl_mc_ok" --argjson mc_ids "$vl_mc_ids" \
       --argjson dq_ok "$vl_dq_ok" --argjson dq_ids "$vl_dq_ids" \
       --argjson hv_ok "$vl_hv_ok" --argjson hv_ids "$vl_hv_ids" \
       --argjson fr_ok "$vl_fr_ok" --argjson fr_ids "$vl_fr_ids" \
       '. + {($s): {alert: {ok: $alert_ok, ids: $alert_ids},
-                   "register-hygiene": {ok: $rh_ok, ids: $rh_ids},
                    "merge-conflict": {ok: $mc_ok, ids: $mc_ids},
                    "dequeued": {ok: $dq_ok, ids: $dq_ids},
                    "human-visibility": {ok: $hv_ok, ids: $hv_ids},

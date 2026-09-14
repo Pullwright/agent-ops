@@ -312,7 +312,7 @@ landing_protected_paths_hit() {
 # _landing_routine_sources CONFIG_JSON SLUG
 # The routine-source list SLUG is governed by: its own `repos[]` entry's
 # `merge_autonomy_routine_sources` when present, else the top-level key,
-# else the schema default `["register-hygiene","tech-debt"]` — the same
+# else the schema default `["tech-debt"]` — the same
 # entry-wins-else-top-level-else-shipped-default precedence
 # `merge_autonomy_configured_level` and `merge_budget_effective_cap` both
 # already use. Prints a compact JSON array; never fails — a config that
@@ -335,7 +335,7 @@ _landing_routine_sources() {
     printf '%s' "$top_list"
     return 0
   fi
-  printf '["register-hygiene","tech-debt"]'
+  printf '["tech-debt"]'
 }
 
 # _landing_routine_complexity CONFIG_JSON SLUG

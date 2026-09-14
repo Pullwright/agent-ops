@@ -44,7 +44,6 @@
 #   dequeued                                             | dequeued (verbatim)
 #   landing-refusals                                     | landing_refusals (verbatim)
 #   abandoned-drafts                                     | abandoned_drafts (verbatim)
-#   register-hygiene                                     | register_hygiene (verbatim)
 #   human-visibility                                     | human_visibility (verbatim)
 #   issues (incl. their Priority band, req. 15e)         | issues (verbatim) + issues digest
 #   failed-runs                                          | workflows digest
@@ -139,17 +138,6 @@
 # place (issue #175) was to stop the model's own live check from being the
 # only thing that ever noticed a peer's claim.
 #
-# `register_hygiene` is hashed verbatim too, but for a weaker reason, and saying
-# so is the point: unlike the two above, this source needs no rescuing. A
-# register drifts only when somebody commits to `TECH-DEBT.md`, and that moves
-# the repo's `head_sha` — which is already here. There is no transition the
-# existing signals would sleep through. It is hashed anyway because a
-# per-source exception is a thing to remember, and "covered by something else"
-# is precisely how a source ends up covered by nothing; and because candidacy
-# depends on the checker as well as the file, so an edit to
-# `scripts/td-check.pl` can add or retire the item with no commit to the target
-# repo at all, and only this array carries that.
-#
 # `human_visibility` is hashed verbatim for the same class of reason
 # `abandoned_drafts` and `merge_conflicts` are (requirement 38e): a violation
 # becomes live re-checkable candidacy off a `warning` event
@@ -161,11 +149,10 @@
 # resolving, would sit unnoticed behind a matching fingerprint until the
 # forced recheck.
 #
-# `tech_debt` (requirement 3t, issue #310) is hashed verbatim for the same
-# weaker-but-still-real reason as `register_hygiene`: an item's `status:`
-# frontmatter changes only on a commit to the target repo, which already moves
-# `head_sha`, so there is no transition here that `head_sha` alone would sleep
-# through. It is hashed anyway for uniformity, and because this array is what
+# `tech_debt` (requirement 3t, issue #310) is hashed verbatim for a weaker
+# but still real reason: as a GitHub issue, an item's state changes only via
+# a live `gh` read, which no other signal here samples. It is hashed anyway
+# for uniformity, and because this array is what
 # lets requirement 3t's machine corroboration compare the Co-Ordinator's verdict
 # against the Script's own eligible count — a fingerprint that dropped this
 # array could match an old none-selected event from before a blocked or void
@@ -277,7 +264,6 @@ NOOP_CANON_JQ='
         dequeued: (.dequeued // []),
         landing_refusals: (.landing_refusals // []),
         abandoned_drafts: (.abandoned_drafts // []),
-        register_hygiene: (.register_hygiene // []),
         human_visibility: (.human_visibility // []),
         tech_debt: (.tech_debt // []),
         issues_prefetched: (.issues // []),

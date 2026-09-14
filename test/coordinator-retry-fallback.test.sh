@@ -226,14 +226,14 @@ eligible='[{"repo":"acme/widgets","item":"TD1","source":"tech-debt"},{"repo":"ac
 # plus a security finding that outranks them, for the fallback band-order
 # assertions below.
 repos_with_security='[{"slug":"acme/widgets","default_branch":"main",
-  "sources":["security","issues:urgent","review-feedback","merge-conflicts","human-visibility","abandoned-drafts","issues:high","tech-debt","issues:medium","issues:low","code-quality","register-hygiene"],
+  "sources":["security","issues:urgent","review-feedback","merge-conflicts","human-visibility","abandoned-drafts","issues:high","tech-debt","issues:medium","issues:low","code-quality"],
   "findings":[{"source":"security","kind":"dependabot","severity":"high","ref":"dependabot-alert-1","title":"bump foo","package":"foo","url":"https://x/1"}],
   "review_feedback":[],"merge_conflicts":[],"abandoned_drafts":[],"human_visibility":[],"issues":[],
   "tech_debt":[{"source":"tech-debt","ref":"TD1","id":"TD1","title":"fix TD1","filed":"2026-08-01","url":"https://x/TD1.md","body":"TD1 body"},
                {"source":"tech-debt","ref":"TD2","id":"TD2","title":"fix TD2","filed":"2026-08-01","url":"https://x/TD2.md","body":"TD2 body"}],
   "register_hygiene":[]}]'
 repos_tech_debt_only='[{"slug":"acme/widgets","default_branch":"main",
-  "sources":["security","issues:urgent","review-feedback","merge-conflicts","human-visibility","abandoned-drafts","issues:high","tech-debt","issues:medium","issues:low","code-quality","register-hygiene"],
+  "sources":["security","issues:urgent","review-feedback","merge-conflicts","human-visibility","abandoned-drafts","issues:high","tech-debt","issues:medium","issues:low","code-quality"],
   "findings":[],"review_feedback":[],"merge_conflicts":[],"abandoned_drafts":[],"human_visibility":[],"issues":[],
   "tech_debt":[{"source":"tech-debt","ref":"TD1","id":"TD1","title":"fix TD1","filed":"2026-08-01","url":"https://x/TD1.md","body":"TD1 body"},
                {"source":"tech-debt","ref":"TD2","id":"TD2","title":"fix TD2","filed":"2026-08-01","url":"https://x/TD2.md","body":"TD2 body"}],
@@ -319,7 +319,7 @@ assert_eq "a mechanical pick carries the configured pr_label" "house-label" \
 # carry the existing branch and pull request, since this source never opens
 # one of its own.
 lr_repos='[{"slug":"acme/widgets","default_branch":"main",
-  "sources":["security","issues:urgent","review-feedback","merge-conflicts","dequeued","landing-refusals","human-visibility","abandoned-drafts","issues:high","tech-debt","issues:medium","issues:low","code-quality","register-hygiene"],
+  "sources":["security","issues:urgent","review-feedback","merge-conflicts","dequeued","landing-refusals","human-visibility","abandoned-drafts","issues:high","tech-debt","issues:medium","issues:low","code-quality"],
   "findings":[],"review_feedback":[],"merge_conflicts":[],"dequeued":[],
   "landing_refusals":[{"ref":"pr-61-landing-refusal-4718691960","pr_number":61,"pr_url":"https://x/pull/61","title":"fix(cache): drop the stale key","branch":"agent/td26082401","body":"── human comment by warwickallen at 2026-08-24T01:00:00Z (id 4718691960)\nThis needs a note in the gotchas section."}],
   "abandoned_drafts":[],"human_visibility":[],"issues":[],
@@ -338,20 +338,20 @@ assert_eq "…and a repo not listing the source reaches nothing in the band" "te
      "$(jq -c 'map(.sources = (.sources | map(select(. != "landing-refusals"))))' <<<"$lr_repos")" "m")")"
 
 empty_repos='[{"slug":"acme/widgets","default_branch":"main",
-  "sources":["security","issues:urgent","review-feedback","merge-conflicts","human-visibility","abandoned-drafts","issues:high","tech-debt","issues:medium","issues:low","code-quality","register-hygiene"],"findings":[],"review_feedback":[],"merge_conflicts":[],"abandoned_drafts":[],"human_visibility":[],"issues":[],"tech_debt":[],"register_hygiene":[]}]'
+  "sources":["security","issues:urgent","review-feedback","merge-conflicts","human-visibility","abandoned-drafts","issues:high","tech-debt","issues:medium","issues:low","code-quality"],"findings":[],"review_feedback":[],"merge_conflicts":[],"abandoned_drafts":[],"human_visibility":[],"issues":[],"tech_debt":[]}]'
 assert_eq "every band empty prints null, not a crash" "null" "$(fallback_select_candidate "$empty_repos" "m")"
 
 takeover_repos='[{"slug":"acme/widgets","default_branch":"main",
-  "sources":["security","issues:urgent","review-feedback","merge-conflicts","human-visibility","abandoned-drafts","issues:high","tech-debt","issues:medium","issues:low","code-quality","register-hygiene"],"findings":[],"review_feedback":[],
+  "sources":["security","issues:urgent","review-feedback","merge-conflicts","human-visibility","abandoned-drafts","issues:high","tech-debt","issues:medium","issues:low","code-quality"],"findings":[],"review_feedback":[],
   "merge_conflicts":[{"ref":"pr-9-conflict-abc","pr_number":9,"pr_url":"https://x/pull/9","title":"bump foo","branch":"dependabot/npm/foo","base":"main","body":"bump","bot":true,"rebase_requested":true,"superseded_by":null}],
-  "abandoned_drafts":[],"human_visibility":[],"issues":[],"tech_debt":[],"register_hygiene":[]}]'
+  "abandoned_drafts":[],"human_visibility":[],"issues":[],"tech_debt":[]}]'
 tk_pick="$(fallback_select_candidate "$takeover_repos" "m")"
 assert_eq "a Dependabot takeover candidate carries takeover:true" "true" "$(jq -r '.takeover' <<<"$tk_pick")"
 assert_eq "…and omits branch" "null" "$(jq -r '.branch // null' <<<"$tk_pick")"
 assert_eq "…but keeps pr_number" "9" "$(jq -r '.pr_number' <<<"$tk_pick")"
 
 never_nudged_repos='[{"slug":"acme/widgets","default_branch":"main",
-  "sources":["security","issues:urgent","review-feedback","merge-conflicts","human-visibility","abandoned-drafts","issues:high","tech-debt","issues:medium","issues:low","code-quality","register-hygiene"],"findings":[],"review_feedback":[],
+  "sources":["security","issues:urgent","review-feedback","merge-conflicts","human-visibility","abandoned-drafts","issues:high","tech-debt","issues:medium","issues:low","code-quality"],"findings":[],"review_feedback":[],
   "merge_conflicts":[{"ref":"pr-9-conflict-abc","pr_number":9,"pr_url":"https://x/pull/9","title":"bump foo","branch":"dependabot/npm/foo","base":"main","body":"bump","bot":true,"rebase_requested":false,"superseded_by":null}],
   "abandoned_drafts":[],"human_visibility":[],"issues":[],
   "tech_debt":[{"source":"tech-debt","ref":"TD1","id":"TD1","title":"fix TD1","filed":"2026-08-01","url":"https://x/TD1.md","body":"TD1 body"}],
@@ -360,9 +360,9 @@ nn_pick="$(fallback_select_candidate "$never_nudged_repos" "m")"
 assert_eq "a never-nudged Dependabot entry is skipped, not a candidate" "tech-debt" "$(jq -r '.source' <<<"$nn_pick")"
 
 rf_repos='[{"slug":"acme/widgets","default_branch":"main",
-  "sources":["security","issues:urgent","review-feedback","merge-conflicts","human-visibility","abandoned-drafts","issues:high","tech-debt","issues:medium","issues:low","code-quality","register-hygiene"],"findings":[],
+  "sources":["security","issues:urgent","review-feedback","merge-conflicts","human-visibility","abandoned-drafts","issues:high","tech-debt","issues:medium","issues:low","code-quality"],"findings":[],
   "review_feedback":[{"ref":"pr-57-review-1","pr_number":57,"pr_url":"https://x/pull/57","title":"fix x","branch":"agent/td1","item":"TD1","body":"review body"}],
-  "merge_conflicts":[],"abandoned_drafts":[],"human_visibility":[],"issues":[],"tech_debt":[],"register_hygiene":[]}]'
+  "merge_conflicts":[],"abandoned_drafts":[],"human_visibility":[],"issues":[],"tech_debt":[]}]'
 rf_pick="$(fallback_select_candidate "$rf_repos" "m")"
 assert_eq "review-feedback carries its own branch verbatim" "agent/td1" "$(jq -r '.branch' <<<"$rf_pick")"
 assert_eq "…and its own pr_url" "https://x/pull/57" "$(jq -r '.pr_url' <<<"$rf_pick")"
@@ -375,14 +375,14 @@ assert_eq "no internal ranking key leaks onto the winning candidate" "null" \
 # a *lower* band wins instead of it — the mechanical path must not be able to
 # select what no Co-Ordinator engagement was allowed to rank.
 td_and_hygiene='[{"slug":"acme/widgets","default_branch":"main",
-  "sources":["security","issues:urgent","review-feedback","merge-conflicts","human-visibility","abandoned-drafts","issues:high","tech-debt","issues:medium","issues:low","code-quality","register-hygiene"],
-  "findings":[],"review_feedback":[],"merge_conflicts":[],"abandoned_drafts":[],"human_visibility":[],"issues":[],
-  "tech_debt":[{"source":"tech-debt","ref":"TD1","id":"TD1","title":"fix TD1","filed":"2026-08-01","url":"https://x/TD1.md","body":"TD1 body"}],
-  "register_hygiene":[{"source":"register-hygiene","ref":"RH1","body":"stale row","url":"https://x/rh","blob_sha":"abc","problems":["orphan"]}]}]'
+  "sources":["security","issues:urgent","review-feedback","merge-conflicts","human-visibility","abandoned-drafts","issues:high","tech-debt","issues:medium","issues:low","code-quality"],
+  "findings":[{"source":"code-quality","ref":"cq-1","kind":"lint","rule":"no-unused","location":"a.js:1","url":"https://x/cq","title":"unused var"}],
+  "review_feedback":[],"merge_conflicts":[],"abandoned_drafts":[],"human_visibility":[],"issues":[],
+  "tech_debt":[{"source":"tech-debt","ref":"TD1","id":"TD1","title":"fix TD1","filed":"2026-08-01","url":"https://x/TD1.md","body":"TD1 body"}]}]'
 refined_td1='{"acme/widgets":{"TD1":{"ts":"2026-08-12T00:00:00Z","cycle":"c1","spec":"do this"}}}'
 
 assert_eq "an unrefined item from a required source is skipped, and a lower band wins" \
-  "register-hygiene" \
+  "code-quality" \
   "$(jq -r '.source' <<<"$(fallback_select_candidate "$td_and_hygiene" "m" '{}' '{"tech-debt":"required"}')")"
 assert_eq "…and a refined one from that same source is selected normally" "tech-debt" \
   "$(jq -r '.source' <<<"$(fallback_select_candidate "$td_and_hygiene" "m" "$refined_td1" '{"tech-debt":"required"}')")"
@@ -624,7 +624,7 @@ issues_repos='[{"slug":"acme/widgets","default_branch":"main","sources":["issues
   "review_feedback":[{"source":"review-feedback","ref":"pr-57-review-1","pr_number":57,"pr_url":"https://x/pull/57","title":"fix x","branch":"agent/x","body":"review body"}],
   "merge_conflicts":[],"abandoned_drafts":[],"human_visibility":[],
   "issues":[{"source":"issues","ref":"11","number":11,"priority":"High","title":"an issue","body":"b","comments":[]}],
-  "tech_debt":[],"register_hygiene":[]}]'
+  "tech_debt":[]}]'
 mixed_eligible='[{"repo":"acme/widgets","item":"11","source":"issues"},
                  {"repo":"acme/widgets","item":"pr-57-review-1","source":"review-feedback"}]'
 
@@ -694,9 +694,9 @@ big_tech_debt="$(jq -nc --argjson n "$big_n" \
   '[range(1; $n + 1) | {source: "tech-debt", ref: ("TD" + (. | tostring)), id: ("TD" + (. | tostring)),
     title: "fix", filed: "2026-08-01", url: "https://x/TD.md", body: "body"}]')"
 big_repos="$(jq -nc 'input as $td | [{"slug":"acme/widgets","default_branch":"main",
-  "sources":["security","issues:urgent","review-feedback","merge-conflicts","human-visibility","abandoned-drafts","issues:high","tech-debt","issues:medium","issues:low","code-quality","register-hygiene"],
+  "sources":["security","issues:urgent","review-feedback","merge-conflicts","human-visibility","abandoned-drafts","issues:high","tech-debt","issues:medium","issues:low","code-quality"],
   "findings":[],"review_feedback":[],"merge_conflicts":[],"abandoned_drafts":[],"human_visibility":[],"issues":[],
-  "tech_debt":$td,"register_hygiene":[]}]' <<<"$big_tech_debt")"
+  "tech_debt":$td}]' <<<"$big_tech_debt")"
 assert_eq "the oversized eligible fixture really is past MAX_ARG_STRLEN" "1" \
   "$(( $(printf '%s' "$big_eligible" | wc -c) > 131072 ))"
 

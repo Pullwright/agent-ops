@@ -177,7 +177,7 @@
       },
       "x-docs": {
         "readme": [
-          "Array of `{\"slug\": \"...\", \"sources\": [...]}`. `sources` is that repo's work sources in priority order (`security`, `issues:urgent`, `review-feedback`, `merge-conflicts`, `dequeued`, `landing-refusals`, `human-visibility`, `abandoned-drafts`, `failed-runs`, `issues:high`, `tech-debt`, `issues:medium`, `implementation-plan`, `project-review`, `issues:low`, `code-quality`, `register-hygiene`).",
+          "Array of `{\"slug\": \"...\", \"sources\": [...]}`. `sources` is that repo's work sources in priority order (`security`, `issues:urgent`, `review-feedback`, `merge-conflicts`, `dequeued`, `landing-refusals`, `human-visibility`, `abandoned-drafts`, `failed-runs`, `issues:high`, `tech-debt`, `issues:medium`, `implementation-plan`, `project-review`, `issues:low`, `code-quality`).",
           {
             "list": [
               "`security` (open Dependabot + security code-scanning alerts) is always first, and any security-related item is prioritised ahead of all non-security work.",
@@ -186,10 +186,9 @@
               "`merge-conflicts` (agent PRs otherwise ready for review or merge but conflicting with their base) comes fourth for the same reason — a rebase-and-resolve unblocks a PR you are waiting to land, and nothing else on it can proceed until it merges cleanly.",
               "`dequeued` (agent PRs GitHub's merge queue removed over a merge-group checks failure without merging) comes fifth, alongside `merge-conflicts`: a real defect in the pull request itself, of the same \"finishing beats starting\" kind, just surfaced by the queue's speculative merge rather than by git.",
               "`landing-refusals` (agent PRs the Script's own landing gate keeps declining to arm over an unreconciled human comment) comes sixth, immediately after `dequeued`: a human veto sitting unanswered on an otherwise-ready pull request is the same \"finishing beats starting\" gap, just raised by the pipeline's own arming step rather than by GitHub.",
-              "`human-visibility` (an agent PR the sweep could not confirm a human was actually asked to review, or nudge, after `human_nudge_idle_hours` idle) comes seventh, ranked with the sources around it rather than beside `register-hygiene`: finished work invisible to the human whose merge everything waits on is the same \"finishing beats starting\" gap, not a cosmetic repair.",
+              "`human-visibility` (an agent PR the sweep could not confirm a human was actually asked to review, or nudge, after `human_nudge_idle_hours` idle) comes seventh: finished work invisible to the human whose merge everything waits on is the same \"finishing beats starting\" gap.",
               "`abandoned-drafts` (draft PRs this system raised and then left untouched past `abandoned_draft_after_hours`) comes eighth for the same reason — finishing a stalled draft of ours turns a slot silted with a dead draft into a PR you can merge.",
-              "`project-review` (the latest repository review's recommendations that aren't already tech-debt or issues) sits just above `issues:low` and `code-quality` (non-security code-scanning findings).",
-              "`register-hygiene` (the repo's tech-debt register failing its own consistency check — an item file whose frontmatter disagrees with its filename, its declared scope, or itself) is last, because a deterministic cosmetic repair must never outrank real work, and each repo's `tech-debt-register` CI check keeps its volume near zero anyway."
+              "`project-review` (the latest repository review's recommendations that aren't already tech-debt or issues) sits just above `issues:low` and `code-quality` (non-security code-scanning findings), which are last."
             ]
           },
           "The four `issues:<band>` tokens are the *same* source at four ranks, banded by each issue's `Priority` field — see \"Issue priority\" below; list a subset to have the pipeline see only those bands, or none to turn issues off for that repo. Adding a repo or source is a config-only change.",
@@ -213,7 +212,7 @@
           "Each of them is set by editing `config.json`, like every other key here — see [Configuration](#configuration) for how that edit reaches a fleet already running."
         ],
         "spec": [
-          "Work-source lists per repo as in the table above (`security`, `issues:urgent`, `review-feedback`, `merge-conflicts`, `dequeued`, `landing-refusals`, `human-visibility`, `abandoned-drafts`, `failed-runs`, `issues:high`, `tech-debt`, `issues:medium`, `implementation-plan`, `project-review`, `issues:low`, `code-quality`, `register-hygiene`); structure the config so a repo or source can be added without code changes.",
+          "Work-source lists per repo as in the table above (`security`, `issues:urgent`, `review-feedback`, `merge-conflicts`, `dequeued`, `landing-refusals`, `human-visibility`, `abandoned-drafts`, `failed-runs`, `issues:high`, `tech-debt`, `issues:medium`, `implementation-plan`, `project-review`, `issues:low`, `code-quality`); structure the config so a repo or source can be added without code changes.",
           "The `issues:<band>` tokens are the one source that appears more than once — the same `issues` source at four ranks (requirement 15e). A repo that lists none of them has the issues source off; one that lists a subset sees only issues in those bands.",
           "A repo entry may also carry `implementation_plan_path` — the path, relative to that repo's root, of its plan document; required whenever `sources` lists `implementation-plan` (requirement 3k), since that source has no path of its own outside this config. This installation's own poetic-fiddle entry uses `docs/IMPLEMENTATION-PLAN.md`, a worked example rather than a value to copy.",
           "A repo entry may also carry `nice` — an optional integer from `-19` to `19` (absent means `0`). Inspired by Linux `nice`. Each repo's default-branch staleness age is multiplied by `2^(-nice/3)` (each three steps of `nice` is a 2x change in attention), so a negative value buys the repo earlier attention and a positive one later. It biases the walk but never starves a repo — the global tiers still outrank the walk, and a repo that alone has qualifying work is selected regardless of its `nice`. The Script refuses to start a cycle if `nice` is not an integer in that range.",
@@ -654,7 +653,7 @@
       }
     },
     "refinement_policy": {
-      "description": "Per-source policy for whether an item must be marked `refined` (or carry a spec the Refiner wrote) before the Co-Ordinator may select it: `required` — never select an unrefined item from this source; `preferred` — rank a refined item ahead of an otherwise-equal unrefined one, but the Co-Ordinator may still select an unrefined item on its own judgement; `exempt` — the source already carries its own specification (a merge conflict, a review comment, a security finding) and the dimension does not apply. A source absent from this object is `exempt`. The Refiner's own candidate gathering reaches every source the Script pre-fetches as structured data for the Co-Ordinator — `issues`, `security`, `code-quality`, `review-feedback`, `merge-conflicts`, `dequeued`, `landing-refusals`, `abandoned-drafts`, `register-hygiene`, `tech-debt` — plus `project-review` and `implementation-plan`, read only into a Refiner-only copy of the repos array and only where that repo's `sources` lists the source and this policy for it is not itself `exempt`. A source resolved to `required` needs `refiner_model` set — otherwise nothing ever refines its items and they wait forever — and `scripts/doctor.sh`/`agent-cycle.sh` refuse a configuration where one is `required` with `refiner_model` empty (requirement 1c; agent-ops#822).",
+      "description": "Per-source policy for whether an item must be marked `refined` (or carry a spec the Refiner wrote) before the Co-Ordinator may select it: `required` — never select an unrefined item from this source; `preferred` — rank a refined item ahead of an otherwise-equal unrefined one, but the Co-Ordinator may still select an unrefined item on its own judgement; `exempt` — the source already carries its own specification (a merge conflict, a review comment, a security finding) and the dimension does not apply. A source absent from this object is `exempt`. The Refiner's own candidate gathering reaches every source the Script pre-fetches as structured data for the Co-Ordinator — `issues`, `security`, `code-quality`, `review-feedback`, `merge-conflicts`, `dequeued`, `landing-refusals`, `abandoned-drafts`, `tech-debt` — plus `project-review` and `implementation-plan`, read only into a Refiner-only copy of the repos array and only where that repo's `sources` lists the source and this policy for it is not itself `exempt`. A source resolved to `required` needs `refiner_model` set — otherwise nothing ever refines its items and they wait forever — and `scripts/doctor.sh`/`agent-cycle.sh` refuse a configuration where one is `required` with `refiner_model` empty (requirement 1c; agent-ops#822).",
       "type": "object",
       "additionalProperties": false,
       "default": {
@@ -697,14 +696,11 @@
         },
         "code-quality": {
           "$ref": "#/$defs/refinementPolicyValue"
-        },
-        "register-hygiene": {
-          "$ref": "#/$defs/refinementPolicyValue"
         }
       },
       "x-docs": {
-        "readme": "Per source: `required` (never select unrefined), `preferred` (rank refined items first, but an unrefined one may still be picked), or `exempt` (no refinement dimension — the default for every source not listed). Shipped default: `issues` and `tech-debt` both `preferred` — the two sources whose items can otherwise carry a specification the Co-Ordinator composed itself rather than one already written elsewhere (a merge conflict, a review comment, a security finding). See [Refined items and the Refiner](#refined-items-and-the-refiner). Every source the Refiner's own candidate gathering reads — `issues`, `security`, `code-quality`, `review-feedback`, `abandoned-drafts`, `merge-conflicts`, `dequeued`, `landing-refusals`, `register-hygiene`, `tech-debt`, `project-review` and `implementation-plan` — reaches an engagement; the latter two are read only for a repo whose `sources` lists them and whose policy for them is not itself `exempt`. A `required` source with `refiner_model` empty is refused at startup (requirement 1c).",
-        "spec": "Per-source refinement policy (requirement 39a): `required`, `preferred` or `exempt`, read by the Co-Ordinator alongside `refinements` (requirement 3h) to decide whether an unrefined item may be ranked at all. A source absent from this object is `exempt`. Shipped default: `issues` and `tech-debt` both `preferred` — of every source this key can name, these two are the ones whose items can otherwise reach an Implementer carrying a specification `coordinator_model` composed itself rather than one already written elsewhere, so the invariant of requirement 1c names them explicitly rather than leaving the object's absence do it implicitly. Bounded by what requirement 39's candidate gathering reads — the `findings`, `review_feedback`, `abandoned_drafts`, `merge_conflicts`, `dequeued`, `landing_refusals`, `register_hygiene`, `issues` and `tech_debt` arrays every repo's `ordered_repos_json` entry carries, plus `project_review` and `implementation_plan`, read only into the Refiner-only copy of the repos array (`refiner_repos_json`, requirement 3y) and only where `refiner_model` is set — with no Refiner to launch, neither is read at all — and the repo's own `sources` lists the source and its policy for it is not itself `exempt`. `failed-runs` is the one source with no array at all, so a policy set for it shapes selection only. A `required` source with `refiner_model` empty is refused at startup — `config_required_refinement_sources_without_refiner` (requirement 1c) — since nothing would ever refine its items and they would wait forever.",
+        "readme": "Per source: `required` (never select unrefined), `preferred` (rank refined items first, but an unrefined one may still be picked), or `exempt` (no refinement dimension — the default for every source not listed). Shipped default: `issues` and `tech-debt` both `preferred` — the two sources whose items can otherwise carry a specification the Co-Ordinator composed itself rather than one already written elsewhere (a merge conflict, a review comment, a security finding). See [Refined items and the Refiner](#refined-items-and-the-refiner). Every source the Refiner's own candidate gathering reads — `issues`, `security`, `code-quality`, `review-feedback`, `abandoned-drafts`, `merge-conflicts`, `dequeued`, `landing-refusals`, `tech-debt`, `project-review` and `implementation-plan` — reaches an engagement; the latter two are read only for a repo whose `sources` lists them and whose policy for them is not itself `exempt`. A `required` source with `refiner_model` empty is refused at startup (requirement 1c).",
+        "spec": "Per-source refinement policy (requirement 39a): `required`, `preferred` or `exempt`, read by the Co-Ordinator alongside `refinements` (requirement 3h) to decide whether an unrefined item may be ranked at all. A source absent from this object is `exempt`. Shipped default: `issues` and `tech-debt` both `preferred` — of every source this key can name, these two are the ones whose items can otherwise reach an Implementer carrying a specification `coordinator_model` composed itself rather than one already written elsewhere, so the invariant of requirement 1c names them explicitly rather than leaving the object's absence do it implicitly. Bounded by what requirement 39's candidate gathering reads — the `findings`, `review_feedback`, `abandoned_drafts`, `merge_conflicts`, `dequeued`, `landing_refusals`, `issues` and `tech_debt` arrays every repo's `ordered_repos_json` entry carries, plus `project_review` and `implementation_plan`, read only into the Refiner-only copy of the repos array (`refiner_repos_json`, requirement 3y) and only where `refiner_model` is set — with no Refiner to launch, neither is read at all — and the repo's own `sources` lists the source and its policy for it is not itself `exempt`. `failed-runs` is the one source with no array at all, so a policy set for it shapes selection only. A `required` source with `refiner_model` empty is refused at startup — `config_required_refinement_sources_without_refiner` (requirement 1c) — since nothing would ever refine its items and they would wait forever.",
         "value": "`{\"issues\": \"required\", \"tech-debt\": \"required\"}`"
       }
     },
@@ -931,7 +927,6 @@
       "type": "array",
       "uniqueItems": true,
       "default": [
-        "register-hygiene",
         "tech-debt"
       ],
       "items": {
@@ -940,7 +935,7 @@
       "x-docs": {
         "readme": "D18 WI-7: which work sources may be armed automatically at `agent-merges-routine` and above — a pull request also needs a `complexity:*` grade in `merge_autonomy_routine_complexity`, and — below `agent-merges-all` — to touch no protected path; at `agent-merges-all` a protected-path hit is deferred to the critical-tier and `landing_cool_off_hours` controls rather than refused. A `repos[]` entry may override this per repository — see [Extended notes: `repos`](#extended-notes-repos). Takes `landingSourceToken`s, not the `sourceToken`s `repos[].sources` takes: issue work is the plain `issues` here, never `issues:<band>`, because banding is spent at gathering time and a finished work order carries the bare word.",
         "spec": "D18 WI-7 (requirement 8d, `lib/landing.sh`'s `landing_eligible`): which work sources may be armed automatically at `agent-merges-routine` and above, fleet-wide default; a `repos[]` entry's own `merge_autonomy_routine_sources` overrides it for that repository, the same precedence `merge_autonomy` uses (requirement 4f). An eligible pull request also needs a `complexity:*` grade in `merge_autonomy_routine_complexity` and, below `agent-merges-all`, `landing_protected_paths_hit` to report no protected path touched; at `agent-merges-all` a hit is deferred to requirement 8d's own gate 4.5 (D18 WI-12) rather than refused. Matched against a pull request's own `source` by exact string equality, over the `landingSourceToken` vocabulary rather than `repos[].sources`' `sourceToken` one: `scripts/gather-issues.sh` collapses all four bands to `\"source\": \"issues\"`, so `issues` is the only spelling that can match an issue work order, and the four banded spellings are rejected by the schema outright (agent-ops#558). Until that fix the two were one shared enum, which offered only the spellings landing can never match — and `scripts/doctor.sh`'s banded-token warning (agent-ops#519) named a remedy, `issues`, that the same enum refused. `scripts/doctor.sh` warns when a repository's own effective list names a source that repository's `sources` never gathers, reading a bare `issues` as satisfied by any `issues:<band>` the repository gathers.",
-        "value": "`[\"register-hygiene\", \"tech-debt\"]`"
+        "value": "`[\"tech-debt\"]`"
       }
     },
     "merge_autonomy_protected_paths": {
@@ -2284,8 +2279,7 @@
         "implementation-plan",
         "project-review",
         "issues:low",
-        "code-quality",
-        "register-hygiene"
+        "code-quality"
       ]
     },
     "reviewTextPaths": {
@@ -2312,8 +2306,7 @@
         "tech-debt",
         "implementation-plan",
         "project-review",
-        "code-quality",
-        "register-hygiene"
+        "code-quality"
       ]
     }
   }

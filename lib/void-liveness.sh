@@ -5,9 +5,9 @@
 # never covered (TD-PPagop-26081303).
 #
 # Requirement 34n retires a void entry once it is both actioned and old, but
-# "actioned" was only ever defined for the two shapes requirements 34k and 34l
-# already act on. Every other shape a cycle can void —
-# `dependabot-alert-<n>`/`code-scanning-alert-<n>`, `register-hygiene-<hash>`,
+# "actioned" was only ever defined for the two shapes requirement 34k and the
+# register-status read already act on. Every other shape a cycle can void —
+# `dependabot-alert-<n>`/`code-scanning-alert-<n>`,
 # `failed-run-<workflow>`, and `pr-<n>-conflict-<head-sha>` (later joined by
 # its sibling shape `pr-<n>-superseded-<head-sha>`, TD-PPagop-26081304, by
 # `pr-<n>-dequeued-<head-sha>`, TD-PPagop-26081409, and by
@@ -18,12 +18,11 @@
 #
 # The decided direction (TD-PPagop-26081303, filed against PR #311's review):
 # age-only retirement is rejected, because a void whose id is *still being
-# gathered* — a still-open alert, a register-hygiene finding the register
-# still has, a workflow still failing, a PR still conflicted or dequeued — is
-# doing live suppression work every cycle, and retiring it on age alone
-# re-exposes the item to be rediscovered void all over again (the exact churn
-# requirement 34k exists to stop). The actioned analogue these six shapes
-# have is liveness:
+# gathered* — a still-open alert, a workflow still failing, a PR still
+# conflicted or dequeued — is doing live suppression work every cycle, and
+# retiring it on age alone re-exposes the item to be rediscovered void all
+# over again (the exact churn requirement 34k exists to stop). The actioned
+# analogue these five shapes have is liveness:
 # the source that mints the id no longer yields it, this cycle, and the
 # source's own gather succeeded — "unknown is not gone" (requirement 34i)
 # applies here exactly as it does to the blocked set.
@@ -54,7 +53,7 @@
 # (PR #340 review, decided 2026-08-13): liveness decides nothing without the
 # source's own successful gather, and a source is only gathered for a repo
 # whose configured `sources` still list it — so a repo that drops
-# `merge-conflicts` (or `security`, or `register-hygiene`) freezes every void
+# `merge-conflicts` (or `security`) freezes every void
 # of that shape it had already accumulated, and a repo dropped from the config
 # altogether freezes every shape but the closed-object one. `void_config_
 # actioned` reads that config fact directly. It is not a weakening of
@@ -83,20 +82,14 @@
 # / "code-scanning-alert-" + the alert number).
 VOID_LIVENESS_ALERT_RE='^(dependabot|code-scanning)-alert-[0-9]+$'
 
-# scripts/gather-register-hygiene.sh's own ref: `register-hygiene-` plus a
-# 12-hex-character digest of the register's tree and policy blob SHAs.
-VOID_LIVENESS_REGISTER_HYGIENE_RE='^register-hygiene-[0-9a-f]{12}$'
-
 # scripts/gather-human-visibility-hygiene.sh's own ref (agent-ops#646):
 # `human-visibility-` plus a 12-hex-character sha256 of the surviving
-# violations' own `pr_url|detail` pairs. The same digest-over-a-set shape as
-# the register-hygiene ref above, and it retires the same way, but note what
-# makes an id absent here: the digest is scoped to *this* violation set, so a
+# violations' own `pr_url|detail` pairs. A digest-over-a-set shape: note what
+# makes an id absent here — the digest is scoped to *this* violation set, so a
 # set that has merely changed mints a different ref rather than dropping this
-# one, and the void of the old ref is dead weight from that moment on. That is
-# the same reasoning the register-hygiene shape rests on — neither ref is ever
-# re-offered once its set has moved — and it is why the absent-from-the-gather
-# test is sound for both despite the ref never repeating.
+# one, and the void of the old ref is dead weight from that moment on. Neither
+# ref is ever re-offered once its set has moved, which is why the
+# absent-from-the-gather test is sound despite the ref never repeating.
 VOID_LIVENESS_HUMAN_VISIBILITY_RE='^human-visibility-[0-9a-f]{12}$'
 
 # Requirement 19's `failed-runs` item id: `failed-run-` plus the workflow
@@ -132,16 +125,15 @@ VOID_LIVENESS_DEQUEUED_RE='^pr-[0-9]+-dequeued-[0-9a-f]{6,40}$'
 # void_liveness_actioned VOID_JSON GATHER_JSON
 # Print, as a JSON array of `{repo, item, by}`, the pairs from VOID_JSON that
 # requirement 34n's liveness rule counts as actioned: an entry whose item
-# matches one of the six shapes above, whose repo carries a GATHER_JSON entry
+# matches one of the five shapes above, whose repo carries a GATHER_JSON entry
 # for that shape with `ok: true`, and whose item is absent from that shape's
 # `ids`.
 #
 # GATHER_JSON is keyed repo -> shape -> `{ok, ids}`, shape one of "alert",
-# "register-hygiene", "failed-run", "merge-conflict", "dequeued",
+# "failed-run", "merge-conflict", "dequeued",
 # "human-visibility":
 #
 #   {"owner/repo": {"alert": {"ok": true, "ids": ["dependabot-alert-3"]},
-#                    "register-hygiene": {"ok": true, "ids": []},
 #                    "failed-run": {"ok": false, "ids": []},
 #                    "merge-conflict": {"ok": true, "ids": ["pr-9-conflict-1a2b3c4d5e6f"]},
 #                    "dequeued": {"ok": true, "ids": []},
@@ -170,7 +162,6 @@ void_liveness_actioned() {
   local void_json="${1:-[]}" gather_json="${2:-{\}}" out=""
   out="$(jq -c -n \
     --arg alert_re "$VOID_LIVENESS_ALERT_RE" \
-    --arg rh_re "$VOID_LIVENESS_REGISTER_HYGIENE_RE" \
     --arg fr_re "$VOID_LIVENESS_FAILED_RUN_RE" \
     --arg mc_re "$VOID_LIVENESS_MERGE_CONFLICT_RE" \
     --arg dq_re "$VOID_LIVENESS_DEQUEUED_RE" \
@@ -178,7 +169,6 @@ void_liveness_actioned() {
     input as $void | input as $gather
     | def shape_of($item):
         if ($item | test($alert_re)) then "alert"
-        elif ($item | test($rh_re)) then "register-hygiene"
         elif ($item | test($fr_re)) then "failed-run"
         elif ($item | test($mc_re)) then "merge-conflict"
         elif ($item | test($dq_re)) then "dequeued"
@@ -287,8 +277,8 @@ void_review_plan_actioned() {
 # neither means what this rule reads it as: `--repo`'s own filter, which
 # would make every other repo read as dropped, and back-pressure, which
 # rewrites `sources` down to the four finishing sources for a repo with work
-# waiting and would mint a spurious `source-dropped` for `security` and
-# `register-hygiene` on every back-pressured cycle.
+# waiting and would mint a spurious `source-dropped` for `security`
+# on every back-pressured cycle.
 #
 # The shape -> source map is the inverse of the repo walk's own gating: each
 # shape is minted by exactly one gather, and that gather runs only for a repo
@@ -305,7 +295,7 @@ void_review_plan_actioned() {
 # not among them, though it was named here until agent-ops#646: it mints
 # exactly one id shape, its own `human-visibility-<hash>` ref (the `hv_cands`
 # arm of agent-cycle.sh's candidate build passes `.ref` through, never a pull
-# request number), so the inverse is as well defined for it as for the five
+# request number), so the inverse is as well defined for it as for the four
 # above and the shape belongs in the map. The `repo-dropped`
 # half needs no map at all and so applies to
 # every shape: nothing in a repo the config does not name can be offered by
@@ -324,7 +314,6 @@ void_config_actioned() {
   local void_json="${1:-[]}" repos_json="${2:-[]}" out=""
   out="$(jq -c -n \
     --arg alert_re "$VOID_LIVENESS_ALERT_RE" \
-    --arg rh_re "$VOID_LIVENESS_REGISTER_HYGIENE_RE" \
     --arg fr_re "$VOID_LIVENESS_FAILED_RUN_RE" \
     --arg mc_re "$VOID_LIVENESS_MERGE_CONFLICT_RE" \
     --arg dq_re "$VOID_LIVENESS_DEQUEUED_RE" \
@@ -335,7 +324,6 @@ void_config_actioned() {
     input as $void | input as $repos
     | def minted_by($item):
         if ($item | test($alert_re)) then ["security", "code-quality"]
-        elif ($item | test($rh_re)) then ["register-hygiene"]
         elif ($item | test($fr_re)) then ["failed-runs"]
         elif ($item | test($mc_re)) then ["merge-conflicts"]
         elif ($item | test($dq_re)) then ["dequeued"]
