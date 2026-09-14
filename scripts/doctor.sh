@@ -676,12 +676,21 @@ while IFS= read -r pv_slug; do
     vercel)
       pv_bypass_name="$(jq -r '.vercel.bypass_secret_env // "VERCEL_AUTOMATION_BYPASS_SECRET"' <<<"$pv_json" 2>/dev/null)"
       pv_token_name="$(jq -r '.vercel.token_env // "VERCEL_TOKEN"' <<<"$pv_json" 2>/dev/null)"
-      if [[ -n "${!pv_bypass_name:-}" ]]; then
+      # Guarded the same way preview_config_export_vercel_credentials guards its
+      # own indirection: the schema `pattern` already rejects a name that isn't a
+      # bare shell identifier (reported above by config_schema_errors as a
+      # `[fail]`), but that check does not stop this script early, so a bad name
+      # can still reach here — `${!name}` on one throws "invalid variable name",
+      # a raw shell error that would otherwise escape doctor's [ok]/[warn]/[fail]
+      # report instead of degrading into one of its own lines.
+      if [[ ! "$pv_bypass_name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+        warn "$pv_slug's preview.vercel.bypass_secret_env (\"$pv_bypass_name\") is not a valid environment variable name — see the [fail] above"
+      elif [[ -n "${!pv_bypass_name:-}" ]]; then
         ok "$pv_slug's preview.vercel.bypass_secret_env ($pv_bypass_name) is set on this node"
       else
         warn "$pv_slug is configured preview.provider \"vercel\" but $pv_bypass_name is not set on this node — every preview will read as behind Vercel Authentication (exit 2, \"could not check\"); this is a fact about this node, never a reason to block a pull request (requirement 24a)"
       fi
-      if [[ -z "${!pv_token_name:-}" ]]; then
+      if [[ "$pv_token_name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] && [[ -z "${!pv_token_name:-}" ]]; then
         ok "$pv_slug's preview.vercel.token_env ($pv_token_name) is not set — a failed build's log falls back to its inspector URL"
       fi
       ;;

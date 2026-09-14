@@ -1166,6 +1166,9 @@ assert_doctor "doctor skips the preview-check step for a repo with no preview co
 assert_doctor "doctor warns, never fails, a vercel-configured repo whose named credential is unset on this node" \
   '.repos[0].preview = {"provider": "vercel", "vercel": {"bypass_secret_env": "PW_TEST_UNSET_PREVIEW_SECRET_XYZ"}}' \
   0 "$BASE_REPO_1 is configured preview.provider \"vercel\" but PW_TEST_UNSET_PREVIEW_SECRET_XYZ is not set on this node"
+assert_doctor "doctor degrades a schema-invalid bypass_secret_env into a [warn], not a raw shell error" \
+  '.repos[0].preview = {"provider": "vercel", "vercel": {"bypass_secret_env": "not a valid name"}}' \
+  1 "$BASE_REPO_1's preview.vercel.bypass_secret_env (\"not a valid name\") is not a valid environment variable name"
 assert_doctor_shipped "doctor passes distinct project_review.repos slugs" \
   '.' 0 'every project_review.repos entry names a distinct repository'
 # --- issue #589/D7: a configured review_instructions/review_context path
