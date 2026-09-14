@@ -639,7 +639,7 @@ All target repos follow these rules:
   migration or an earlier direct filing — the same pull request that closes
   the issue (step 5 below) must also flip that file's frontmatter to
   `status: resolved`, filling `resolved:` and `ref:`, exactly as
-  `TECH-DEBT.md`'s "Claiming an item" step 6 describes (PR #1313 is the
+  `TECH-DEBT.md`'s "Resolution and history" describes (PR #1313 is the
   precedent). Never write, delete or rename one for any other reason. An
   issue with no such line — filed straight to an issue by a branchless
   stage — has no file at all, and closing it is the whole of its
@@ -704,13 +704,6 @@ see "Dependabot takeover" above.)*
      claim (and, once the PR merges, the completion) is visible to any other
      cycle scanning PRs. There is no ledger to flip and no issue to comment on;
      do **not** modify the review folder — it is a point-in-time record.
-   - **Register hygiene** (`source` of `register-hygiene`): the work order's
-     branch is the ordinary `agent/<item>` — `agent/register-hygiene-…` —
-     already pushed on your behalf. Name the ref (`item`) in the PR body,
-     along with the problem lines from `context`, so the claim is visible to
-     any other cycle scanning open PRs. There is no record to flip and no
-     issue to comment on: the item *is* the register inconsistency, not an
-     entry in it.
    - **Human visibility** (`source` of `human-visibility`): the work order's
      branch is the ordinary `agent/<item>` — `agent/human-visibility-…` —
      already pushed on your behalf. Name the ref (`item`) in the PR body,
@@ -719,8 +712,7 @@ see "Dependabot takeover" above.)*
      issue to comment on: the item *is* the violation, not an entry in a
      register.
 
-     This is **not** register editing and `td-check.pl` has nothing to say
-     about it. It reports that a human was not shown a pull request — a
+     It reports that a human was not shown a pull request — a
      review request or an idle nudge that could not be delivered, or a repo
      whose open-pull-request listing could not be read. Diagnose the named
      failure (start at `scripts/sweep-human-visibility.sh` and
@@ -868,11 +860,11 @@ see "Dependabot takeover" above.)*
      #1039's migration, or an earlier direct filing — that file is still
      the permanent register entry: flip its frontmatter to `status:
      resolved` in this same pull request, filling `resolved:` and `ref:`,
-     exactly as `TECH-DEBT.md`'s "Claiming an item" step 6 describes (PR
+     exactly as `TECH-DEBT.md`'s "Resolution and history" describes (PR
      #1313 is the precedent) — closing the issue alone does not resolve it,
      and skipping this step is what left `tech-debt/TD-PPagop-26082412.md`
      at `status: open` after PR #1355's first round. An issue with no such
-     line has no file to flip and no `td-check.pl` to satisfy — this is a
+     line has no file to flip — this is a
      pull-request-body convention, not a file, for that case only.
    - Issue: reference it with a real GitHub closing keyword (`Closes #123`
      — `Fixes`/`Resolves` also count) in the PR body, naming the exact
@@ -906,61 +898,6 @@ see "Dependabot takeover" above.)*
      on — the violation itself is the item. Once your fix (or your diagnosis
      that the cause lies outside the repository) lands, there is nothing
      further to close.
-   - Register hygiene: there is no originating record to close — the register
-     itself is the item — but the repair has a discipline, and skipping it turns
-     a tidy-up into a loss of information. The problem labels in `context`
-     (BAD NAME, BAD FRONTMATTER, MISSING FIELD, BAD FIELD, BAD STATUS,
-     BAD SCOPE, NO SCOPE, ID MISMATCH, DATE MISMATCH, STALE FIELD,
-     DUPLICATE ID) are `td-check.pl`'s own; **VOIDED STATUS** is not, and is
-     the one label the checker will never confirm for you:
-     - Most are one-line frontmatter corrections — a missing `ref:` on a
-       resolved item, a status typo, a `filed:` date disagreeing with the
-       ID's. Correct the frontmatter to match the facts — the pull request
-       the item's `ref:` names, the filename, the `scope:` declared in
-       `TECH-DEBT.md` — never the facts to match the frontmatter. Where the
-       facts are not recoverable from git history (`git log --follow --
-       tech-debt/<id>.md`, and the PRs it names), report
-       `"status": "blocked"` naming the file and what you could not
-       establish.
-     - **STALE FIELD** (a resolution field set on an open item): follow the
-       `ref:` and confirm whether the fix actually landed on the default
-       branch. If it did, the *status* is what is stale — flip it to
-       `resolved`; if it did not, clear the resolution fields and leave the
-       item open.
-     - **VOIDED STATUS** (the pipeline's own void log records this item as
-       done, but its file still says `open` or `in-progress`): the problem
-       line carries the item's path, its on-disk status and the void's own
-       reason, and the `body` in `context` carries the evidence under its
-       own heading. Follow that evidence and confirm the work really did
-       land on the default branch — most often under some *other* item's
-       pull request, which is why the row was never flipped. If it did, flip
-       `status:` to `resolved` and fill `resolved:` (the date it landed) and
-       `ref:` (the pull request the evidence names). If the evidence does
-       not hold up — you cannot find the change on the default branch —
-       leave the row exactly as it is and say so in your final `notes`: an
-       unconfirmed void is not a licence to close a real item.
-     - `td-check.pl` **cannot see a VOIDED STATUS problem, and exits 0 with
-       the row still open.** It checks each file against itself, its
-       filename and the declared scope; "the fleet already knows this is
-       done" is a fact from outside the register, so a green checker proves
-       nothing about this label. Do not read exit 0 as "there was nothing to
-       do here".
-     - **Never delete or rename an item file** — the register is an
-       append-only set and CI enforces it. An ID MISMATCH is repaired by
-       fixing the `id:` field to match the filename (or, only for a file
-       not yet on the default branch, renaming to the next free NN).
-     - **Touch nothing `context`'s problem lines do not flag.** Item files
-       are permanent records; do not re-word titles, trim bodies, or tidy
-       frontmatter no problem line names.
-     - Re-run `perl scripts/td-check.pl` until it exits 0 — that is what
-       the repo's own CI will run on your PR. It is the whole acceptance
-       only for the checker's own labels; where `context` carries a VOIDED
-       STATUS line, the acceptance is additionally that the row it names is
-       flipped (or that your `notes` say why the evidence did not hold up).
-     - **The pull request must be pure register housekeeping** — the register
-       and nothing else. If a stale body or field turns out to describe work
-       that was never done, do not do that work here; leave the item open
-       (which is the repair) and let it be selected on its own merits.
    - Add a `CHANGELOG.md` entry if the change is notable by the repo's own
      definition of that (a security fix usually is).
 6. **Verify the PR itself**, against GitHub's view, not your local guess:

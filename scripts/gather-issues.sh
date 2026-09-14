@@ -60,8 +60,8 @@
 # is the model-side twin of the fingerprint gap requirement 3b warns about:
 # no error, no alert, just tidy none-selected events over live work. Handing
 # the candidates over pre-fetched, like every source that has drifted this
-# way before (findings, review-feedback, merge-conflicts, abandoned-drafts,
-# register-hygiene), removes the ambiguity instead of wording it away.
+# way before (findings, review-feedback, merge-conflicts, abandoned-drafts),
+# removes the ambiguity instead of wording it away.
 #
 # ## What is filtered here, and what is not
 #

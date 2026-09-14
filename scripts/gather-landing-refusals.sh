@@ -58,8 +58,8 @@
 #   - it is open and not a draft — a draft is the Implementer's own claim
 #     marker, and `lib/landing.sh` gate 4 never runs against one in the first
 #     place, so there is nothing here for `gather-abandoned-drafts.sh` to miss;
-#   - it carries <pr-label> and its head branch starts with <branch-prefix> (or
-#     `td/`, the tech-debt claim branch) — i.e. this system raised it, the same
+#   - it carries <pr-label> and its head branch starts with <branch-prefix> —
+#     i.e. this system raised it, the same
 #     "ours" test every sibling finishing source applies;
 #   - the most recent `landing-refused` event logged against it in <union-log>
 #     has a `reason` beginning `reconciliation-unanswered:` or
@@ -129,9 +129,8 @@ slug="${1:-}"
 pr_label="${2:-autonomous-agent}"
 branch_prefix="${3:-agent/}"
 union_log="${4:-}"
-tech_debt_branch_prefix="${5-td/}"
 if [[ -z "$slug" || -z "$union_log" ]]; then
-  echo "usage: gather-landing-refusals.sh <owner/repo> <pr-label> <branch-prefix> <union-log> [tech-debt-branch-prefix]" >&2
+  echo "usage: gather-landing-refusals.sh <owner/repo> <pr-label> <branch-prefix> <union-log>" >&2
   exit 64
 fi
 
@@ -155,15 +154,8 @@ if github_pr_list_truncated "$(jq 'length' <<<"$all_prs")"; then
   echo "gather-landing-refusals: $slug: the pull-request listing came back at its ${GITHUB_PR_LIST_LIMIT}-item cap; a refused PR beyond it is not offered this cycle" >&2
 fi
 
-# Empty tech_debt_branch_prefix disables the tech-debt namespace: the `or`
-# clause is dropped rather than built with an empty startswith(""), which
-# would match every head.
-td_clause=""
-if [[ -n "$tech_debt_branch_prefix" ]]; then
-  td_clause=" or (.headRefName | startswith(\"$tech_debt_branch_prefix\"))"
-fi
 ours="$(jq -c "[.[] | select(.isDraft | not)
-                    | select((.headRefName | startswith(\"$branch_prefix\"))$td_clause)]" \
+                    | select(.headRefName | startswith(\"$branch_prefix\"))]" \
         <<<"$all_prs" 2>/dev/null || echo '[]')"
 jq -e 'type == "array"' <<<"$ours" >/dev/null 2>&1 || ours='[]'
 

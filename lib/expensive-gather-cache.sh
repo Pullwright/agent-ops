@@ -2,8 +2,8 @@
 #
 # lib/expensive-gather-cache.sh — per-node cache that lets
 # `gather_ordered_repos` (lib/candidate-gather.sh) run each cycle's expensive
-# per-repository reads — issue threads with comments, the tech-debt register,
-# PR review reads, merge-conflict/dequeued/register-hygiene walks — for one
+# per-repository reads — issue threads with comments,
+# PR review reads, merge-conflict/dequeued walks — for one
 # configured repository only, instead of every one of them (requirement 48,
 # agent-ops#1086).
 #

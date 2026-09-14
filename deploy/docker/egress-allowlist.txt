@@ -26,9 +26,11 @@ github.com
 # gh's API host, and lib/approver-token.sh's raw curl App-token flow.
 api.github.com
 # Never named in any source file, and required all the same: the REST
-# tarball endpoint (scripts/gather-tech-debt.sh, gather-register-hygiene.sh)
-# answers with a 302 to this host, which gh follows. Blocking it fails the
-# register gatherers quietly — a degrade, not an error — every cycle.
+# tarball endpoint answers with a 302 to this host, which gh follows —
+# scripts/gather-register-hygiene.sh, the last script to call it, retired
+# with the tech-debt register (#882); left allowlisted rather than pulled,
+# since codeload.github.com also serves plain git-over-https redirects this
+# repo's own clones depend on.
 codeload.github.com
 # GitHub's content/redirect hosts, as one suffix on purpose: release-asset
 # downloads 302 here (poetic-fiddle's root dependency is a release tarball,

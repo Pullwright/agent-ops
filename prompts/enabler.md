@@ -422,7 +422,7 @@ decided about the item in front of you, so it may accompany `unblocked`,
 `still-blocked`, `escalate` or `void` alike.
 
 ```json
-"file_debt": {"title": "one line naming the gap", "body": "what, why it matters, where, a suggested fix — the same shape TECH-DEBT.md's \"Filing an item\" asks a body to have"}
+"file_debt": {"title": "one line naming the gap", "body": "what, why it matters, where, a suggested fix"}
 "file_issue": {"title": "one line naming the question", "body": "the question or decision, and why it needs a human rather than a scoped fix"}
 ```
 

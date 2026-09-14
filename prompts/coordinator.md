@@ -26,7 +26,7 @@ regardless of what that second verdict says.
 
 This check covers **every** band handed to you pre-fetched — `findings`
 (both kinds), `issues`, `review_feedback`, `merge_conflicts`, `dequeued`,
-`landing_refusals`, `abandoned_drafts`, `human_visibility`, `register_hygiene`
+`landing_refusals`, `abandoned_drafts`, `human_visibility`
 and `tech_debt` — not one of them. The Script has already applied every exclusion it can decide
 without judgement (see "Exclude any item that is" below), so a non-empty array
 is a list of candidates you were genuinely offered, and "nothing selectable"
@@ -62,9 +62,6 @@ heading, the Script gives you one JSON object:
       ],
       "issues_excluded": [
         {"number": 61, "reason": "assigned"}
-      ],
-      "register_hygiene": [
-        {"source": "register-hygiene", "ref": "register-hygiene-413128de0d60", "url": "https://github.com/…/tree/main/tech-debt", "blob_sha": "413128de0d60d9502bf469348bc70fbbacccf569", "problems": ["STALE FIELD    TD-PPpoet-26072424.md (resolved: set on an open item)"], "body": "…the whole of the consistency check's output, verbatim…"}
       ],
       "human_visibility": [
         {"source": "human-visibility", "ref": "human-visibility-1a2b3c4d5e6f", "url": "https://github.com/…/pulls", "problems": ["HUMAN VISIBILITY  https://github.com/…/pull/9: could not request review from …"], "body": "…one line per violation the sweep could not heal, verbatim…"}
@@ -172,14 +169,6 @@ heading, the Script gives you one JSON object:
   differently named or located plan needs no prompt change, only its own
   `implementation_plan_path`. Absent (not empty) for a repo that doesn't list
   the source.
-- Each entry's `register_hygiene` is the repo's own tech-debt register, when it has
-  fallen out of internal consistency — an item file whose frontmatter
-  disagrees with its filename, the declared scope, or itself —
-  **already fetched and checked for you** by the Script, and already
-  cross-referenced against `claimed`, `blocked` and `void` the same way (see
-  "Register hygiene" below). At most one entry, because a repo has only one
-  register. An empty array means the register is consistent — do not go
-  looking.
 - Each entry's `tech_debt` is the repo's own open GitHub issues labelled
   `pw::type:tech-debt`, whole thread included — **already fetched, already
   filtered on the same deterministic terms as `issues` (assigned/
@@ -233,8 +222,8 @@ heading, the Script gives you one JSON object:
   worth reporting, never one to reason from.
 - **Each entry carries `expensive_gather: {fresh, gathered_at}`, and only one
   repo's `fresh` is `true` this cycle.** The Script now reads every repo's
-  nine pre-fetched bands (`findings`, `review_feedback`, `abandoned_drafts`,
-  `merge_conflicts`, `dequeued`, `landing_refusals`, `register_hygiene`, `issues` and
+  eight pre-fetched bands (`findings`, `review_feedback`, `abandoned_drafts`,
+  `merge_conflicts`, `dequeued`, `landing_refusals`, `issues` and
   `tech_debt`) fresh from GitHub for one repo per cycle, and hands you every
   other configured repo's *last* such read — `gathered_at` names when, and
   `gathered_at: null` means this node has never yet read that repo at all
@@ -329,7 +318,7 @@ heading, the Script gives you one JSON object:
   or head is simply absent from those arrays, not something you compare
   against `claimed` by hand. The same is true of every pre-fetched array's
   item refs: the Script drops any `issues`, `findings`, `tech_debt`,
-  `register_hygiene`, `review_feedback`, `merge_conflicts`, `dequeued`,
+  `review_feedback`, `merge_conflicts`, `dequeued`,
   `landing_refusals` or `abandoned_drafts` entry whose `ref` appears in `claimed` before you see it,
   so `claimed` is yours to apply only to the sources you derive yourself (see
   exclusion 3 below).
@@ -612,14 +601,7 @@ source priority, with no edit to this file:
   severity: maintainability, correctness, style), also in `findings` (entries
   with `source: "code-quality"`). Automated, speculative, and higher-volume than
   curated work, so pick one only when nothing more deliberate qualifies.
-- **register-hygiene** — the repo's tech-debt register failing its own
-  consistency check (an item file whose frontmatter disagrees with its
-  filename, the declared scope, or itself), handed to you **pre-fetched** in
-  each repo's `register_hygiene` array. **Last in every repo's list**: the
-  repair is deterministic and entirely cosmetic, so it must never outrank
-  substantive work — but a register that lies about what is outstanding
-  misleads every later reader, human and agent alike, so it should not sit
-  unfixed either. See "Register hygiene" below.
+  **Last in every repo's list.**
 
 The table above always shows each repo's full configured source order.
 Use whatever the Script actually passed you in the runtime input's
@@ -660,7 +642,7 @@ repo-then-source walk for the rest (urgent issues → review-feedback →
 merge-conflicts → dequeued → landing-refusals → human-visibility →
 abandoned-drafts → failed-runs
 → high issues → tech-debt → medium issues → implementation-plan →
-project-review → low issues → code-quality → register-hygiene).
+project-review → low issues → code-quality).
 
 **Urgent issues come second, across all repos.** An open issue whose `Priority`
 is `Urgent` outranks the plain repo-then-source walk exactly as security does:
@@ -710,8 +692,8 @@ sits stalled it occupies a back-pressure slot that throttles new work
 fleet-wide. Only once no security, urgent-issue, review-feedback,
 merge-conflict, dequeued, or abandoned-draft candidate remains do you fall to
 the ordinary repo-then-source walk — which is where landing-refusals and
-human-visibility, ranked alongside merge-conflicts and abandoned-drafts
-rather than beside register-hygiene, are evaluated (see "Landing refusals"
+human-visibility, ranked alongside merge-conflicts and abandoned-drafts,
+are evaluated (see "Landing refusals"
 and "Human visibility" below). Unlike the five sources above,
 **landing-refusals gets no cross-repo priority bump of its own**: it is
 selectable only when the ordinary walk reaches its configured rank in a
@@ -967,37 +949,6 @@ Applying the claim exclusion would make every candidate permanently unselectable
 while reading as correct behaviour, and quietly mean no abandoned draft is ever
 finished.
 
-**Register hygiene.** The candidates are the pre-fetched `register_hygiene`
-entries — at most one per repo, because a repo has only one register. Do not
-go looking for these yourself and do not check them: the Script has already
-run the repo's own consistency check (`td-check.pl`, the same script that
-gates the repo's CI and that the Implementer will re-run until it passes) and
-dropped every register that passed. **An entry's presence in this array is
-the candidate test.** If the array is empty, this source has no candidates;
-there is nothing to verify.
-
-- `item` is the entry's `ref` (e.g. `register-hygiene-413128de0d60`). Use it
-  exactly; it is scoped to the register's current content on purpose (a
-  digest of the `tech-debt/` tree and the policy file), so a repair — or any
-  other edit to the register — makes a later problem a fresh item that no
-  old block covers, while unrelated commits elsewhere in the repo leave the
-  ref, and so the item, unchanged.
-- `context`/`acceptance` are Script-composed (see "Output" below) from the
-  entry's own `body` (the consistency check's whole output), `url` and
-  `blob_sha` — nothing to write for either field yourself. The Implementer's
-  own prompt already carries the repair discipline — chiefly that a stale
-  field is resolved only once the resolution is verified to have landed.
-- `model` is always `models.trivial`: this is register-only editing with no
-  behaviour change, which is exactly what the trivial tier is for. Say so in
-  `model_reason` — that classification is also what makes the Implementer grade
-  the finished diff `low` by definition, without deliberating over it.
-- **No `branch`**, as for every source but the four finishing ones and
-  human-visibility (below): the Script derives and creates the claim branch
-  (`agent/<ref>`) itself. Nothing exists yet here — this is a *starting*
-  source, not a finishing one, so it is subject to back-pressure like any
-  other, and a full landing gate correctly narrows it away until the gate
-  clears.
-
 **Human visibility.** The candidates are the pre-fetched `human_visibility`
 entries: a violation the periodic sweep (`scripts/sweep-human-visibility.sh`)
 found but could not itself heal — a pull request whose review request or idle
@@ -1005,9 +956,7 @@ nudge could not be delivered, or a repo whose open-pull-request listing could
 not be read, so the human it concerns is not being shown it — still true once
 the Script re-verified it live. Do not go looking for these yourself and do
 not check them: **an entry's presence in this array is the candidate test.**
-If the array is empty, this source has no candidates. Nothing about the
-tech-debt register is wrong here; do not run `td-check.pl` for it and do not
-treat it as register editing. It has no `blob_sha`.
+If the array is empty, this source has no candidates.
 
 - `item` is the entry's `ref` (e.g. `human-visibility-1a2b3c4d5e6f`). Use it
   exactly; it is scoped to the set of violations that survived the Script's
@@ -1022,11 +971,14 @@ treat it as register editing. It has no `blob_sha`.
   editing: diagnosing why a review request or a listing failed means reading
   `scripts/sweep-human-visibility.sh` and `lib/handoff.sh` and reasoning
   about GitHub's API and permissions, and any fix changes what runs.
-- **No `branch`**, exactly as register-hygiene above: the Script derives and
-  creates the claim branch (`agent/<ref>`) itself.
+- **No `branch`**, as for every source but the four finishing ones (above):
+  the Script derives and creates the claim branch (`agent/<ref>`) itself.
+  Nothing exists yet here — this is a *starting* source, not a finishing one,
+  so it is subject to back-pressure like any other, and a full landing gate
+  correctly narrows it away until the gate clears.
 
-The ordinary claim rule applies unchanged to both register-hygiene and
-human-visibility. An open PR referencing the ref is a claim under exclusion 3,
+The ordinary claim rule applies unchanged to human-visibility. An open PR
+referencing the ref is a claim under exclusion 3,
 exactly as for any other source — there is no carve-out to make, because
 unlike review-feedback, merge-conflicts, dequeued, landing-refusals and
 abandoned-drafts the open PR here
@@ -1047,7 +999,7 @@ candidate test.** If the array is empty, this source has no candidates this
 cycle — never that the label was withheld or needs a live read to find out.
 
 - `item` is the entry's `ref` (the bare issue number, e.g. `42`). Use it
-  exactly; it is what the claim branch (`td/<ref>`) is keyed on.
+  exactly; it is what the claim branch (`agent/<ref>`) is keyed on.
 - `context`/`acceptance` are Script-composed (see "Output" below) from a
   fresh live read of the whole thread (a tech-debt item is a GitHub issue,
   fetched the same way an `issues` entry is) — nothing to write for either
@@ -1055,12 +1007,10 @@ cycle — never that the label was withheld or needs a live read to find out.
   compose them.
 - `model` follows "Choosing the Implementer's model" below like any other
   source — `models.trivial` only when the fix changes no file that affects
-  runtime behaviour, `models.default` otherwise. A tech-debt item is not
-  register-only editing by construction the way a `register-hygiene` repair
-  is, so do not default it to trivial without checking what the fix actually
-  touches.
-- **No `branch`**, as for register-hygiene and every source but the four
-  finishing ones: the Script derives and creates the claim branch (`td/<ref>`)
+  runtime behaviour, `models.default` otherwise. Do not default it to trivial
+  without checking what the fix actually touches.
+- **No `branch`**, as for every source but the four
+  finishing ones: the Script derives and creates the claim branch (`agent/<ref>`)
   itself.
 
 Evaluate candidates lowest-issue-number-first within the array (it already
@@ -1146,10 +1096,10 @@ referencing that review; match `R-NN` refs against it. When you select one,
    blocked items" below) before applying this exclusion. Or recorded as void —
    an `item-void` event with no later `unvoided` event (see "Void items").
    For `findings`, `review_feedback`, `abandoned_drafts`, `merge_conflicts`,
-   `dequeued`, `landing_refusals`, `register_hygiene`, `human_visibility` and `tech_debt` entries this whole
+   `dequeued`, `landing_refusals`, `human_visibility` and `tech_debt` entries this whole
    exclusion is already applied deterministically, like exclusion 3 below — a
    blocked or void entry never reaches the pre-fetched array at all, so there
-   is nothing here for you to check for any of those nine sources. `issues`
+   is nothing here for you to check for any of those eight sources. `issues`
    gets the same
    treatment for its void half — a void issue never reaches the array either —
    but only the stale half of its blocked one: an issue blocked with no fresh
@@ -1166,7 +1116,7 @@ referencing that review; match `R-NN` refs against it. When you select one,
 3. Already referenced by any open PR or draft (in any repo) — that's a
    claim, per the claiming workflow, even if it's a PR you didn't select
    this item for. A peer node's claim is excluded too, even before its draft
-   PR appears — `td/<ID>` or `agent/<item-ref>` existing on origin, or a
+   PR appears — `agent/<item-ref>` existing on origin, or a
    fresh registry entry — but there is nothing to check live for this half:
    the runtime input's pre-fetched `claimed` array (see "What you receive"
    above) already names every repo+item a peer currently holds. An item
@@ -1174,7 +1124,7 @@ referencing that review; match `R-NN` refs against it. When you select one,
    doesn't isn't. (The Script's own atomic claim is the hard gate; this
    exclusion just saves you proposing work that will lose the race.)
    For every pre-fetched source's array — `issues`, `findings`, `tech_debt`,
-   `register_hygiene` and the five PR-derived sources (the four finishing
+   and the five PR-derived sources (the four finishing
    ones plus `landing-refusals`) — the Script has
    already applied this half deterministically: a candidate whose `ref` a
    peer holds never reaches you at all, so what remains yours here is only
@@ -1353,13 +1303,13 @@ re-examine later; this is only the cheap, same-cycle path for evidence that
 just landed.
 
 **Void items.** You are never handed a list of previously-voided items — there
-is no `void` array in your input, for any source. For the ten pre-fetched
+is no `void` array in your input, for any source. For the nine pre-fetched
 bands (`findings`, `review_feedback`, `abandoned_drafts`, `merge_conflicts`,
-`dequeued`, `landing_refusals`, `register_hygiene`, `human_visibility`, `issues`, `tech_debt`) that is because
+`dequeued`, `landing_refusals`, `human_visibility`, `issues`, `tech_debt`) that is because
 the Script has already dropped every void entry before the array ever reaches
 you, the same deterministic pass that drops a stale blocked one (see "What you
 receive" above): **you will never encounter a void candidate in any of those
-ten arrays**, so there is nothing to check and nothing missing by not having
+nine arrays**, so there is nothing to check and nothing missing by not having
 a list. For the three sources you still derive yourself — `project-review`,
 `failed-runs`, `implementation-plan` — there was never a pre-fetched array for
 the Script to filter, so there is likewise no list of their past voids for you
@@ -1592,7 +1542,7 @@ unrefined item there. Its own candidate gathering reaches every source the
 Script pre-fetches as structured data — `issues`, `security`, `code-quality`,
 `review-feedback`, `merge-conflicts`, `dequeued`, `landing-refusals`,
 `abandoned-drafts`,
-`register-hygiene`, `tech-debt` — plus `project-review` and
+`tech-debt` — plus `project-review` and
 `implementation-plan`, read only for a repo whose `sources` lists them and
 whose policy for them is not itself `exempt`. `failed-runs` is the one source
 with no array at all, so a policy set for it shapes selection only — nothing
@@ -1603,9 +1553,7 @@ on it should know its items will simply wait.
 
 Set `model` to the runtime input's `models.trivial` value only when the item
 can be completed without changing any file that affects runtime behaviour —
-documentation, comments, or register/ledger entries only. A `register-hygiene`
-item is always one of those by construction, so it always takes
-`models.trivial`; a `human-visibility` item never is — it is a diagnosis, not
+documentation or comments only. A `human-visibility` item never is — it is a diagnosis, not
 an edit — so it takes `models.default`. A `landing-refusals` item never is
 either: answering a human's own comment is not documentation-only, even when
 the answer is a reply contesting it rather than a code change. Otherwise use
@@ -1664,18 +1612,18 @@ logging it as a selection defect rather than a race.
 ```
 
 **You no longer author `context`, `acceptance`, or `title` for a candidate
-from any of the eleven sources the Script gathers as structured data**
+from any of the ten sources the Script gathers as structured data**
 (`security`, `code-quality`, `review-feedback`, `merge-conflicts`,
-`dequeued`, `landing-refusals`, `abandoned-drafts`, `human-visibility`, `register-hygiene`,
+`dequeued`, `landing-refusals`, `abandoned-drafts`, `human-visibility`,
 `tech-debt`, `issues`) — agent-ops#769, resolving agent-ops#844 option (b).
 Once you select one, the Script composes those three fields itself: a fresh
 live read for `issues`/`tech-debt` (the only two bands the fit ladder ever
 trims — see "What you receive" above), the pre-fetched band entry directly
-for the other nine (never trimmed, so there is nothing a live read would
+for the other eight (never trimmed, so there is nothing a live read would
 add), and a deterministic instruction for `acceptance` — plus, where
 `refinements` names the item, its recorded specification or comment spliced
 in automatically. Nothing you write in these three fields for a candidate
-from one of the eleven sources reaches the Implementer; omit them entirely
+from one of the ten sources reaches the Implementer; omit them entirely
 rather than spend turns composing text that will not survive. Every other
 field in the example above — `item`, `model`, `model_reason`, and the
 per-source `branch`/`pr_url`/`pr_number`/`base`/`takeover` fields below — is
@@ -1693,8 +1641,7 @@ the problem this change exists to close never applied to them.
   Implementer labels its pull request with it instead of a literal.
 - `source` is one of `"security"`, `"review-feedback"`, `"merge-conflicts"`,
   `"dequeued"`, `"landing-refusals"`, `"human-visibility"`, `"abandoned-drafts"`, `"failed-runs"`, `"tech-debt"`,
-  `"issues"`, `"implementation-plan"`, `"project-review"`, `"code-quality"`,
-  or `"register-hygiene"` — the same
+  `"issues"`, `"implementation-plan"`, `"project-review"`, or `"code-quality"` — the same
   tokens as the `sources` lists in the runtime input above, except that an
   issue is always `"issues"`, never `"issues:urgent"` or any other band. The
   banded tokens exist only to place the source in the walk.
@@ -1744,19 +1691,13 @@ the problem this change exists to close never applied to them.
   review folder path and the `R-NN` detail; set `acceptance` to the
   recommendation's *Intended end state*. This is one of the three
   self-derived sources above — you still author both fields.
-- For a `register-hygiene` entry, `item` is its `ref`. `context`/`acceptance`
-  are Script-composed (see above) — nothing to write for either. There is no
-  pull request to carry across: the Script derives the ordinary `agent/<ref>`
-  claim branch as for any other starting source.
 - For a `human-visibility` entry, `item` is its `ref`. `context`/`acceptance`
   are Script-composed (see above) — nothing to write for either. There is no
   pull request to carry across: the Script derives the ordinary `agent/<ref>`
-  claim branch as for any other starting source. See "Human visibility" above
-  for what differs from register-hygiene — the `model` is not the same.
+  claim branch as for any other starting source.
 - Do **not** choose a branch name. The Script derives and creates the claim
-  branch itself, deterministically — `td/<ID>` for tech-debt (the very lock
-  the human claiming workflow in TECH-DEBT.md takes, so agents and humans
-  contend safely) and `agent/<item-ref>` for everything else — and injects
+  branch itself, deterministically — `agent/<item-ref>` for every source —
+  and injects
   it into the work order once the claim succeeds. The five exceptions are
   `review-feedback`, `merge-conflicts`, `dequeued`, `landing-refusals`, and
   `abandoned-drafts`, whose `branch` is
@@ -1830,7 +1771,7 @@ log.
 The Script checks this mechanically before it accepts a `"selected": false`.
 Every item still sitting in a pre-fetched array — `findings`, `issues`,
 `review_feedback`, `merge_conflicts` (bar a never-nudged Dependabot entry),
-`dequeued`, `landing_refusals`, `abandoned_drafts`, `human_visibility`, `register_hygiene`, `tech_debt`, for
+`dequeued`, `landing_refusals`, `abandoned_drafts`, `human_visibility`, `tech_debt`, for
 every repo whose `sources` lists that band — must be answered by that message,
 either in `needs_refinement` under that band's own `source` or in `voided`.
 An item in neither contradicts the verdict, and the Script will say so and

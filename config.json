@@ -2,11 +2,11 @@
   "repos": [
     {
       "slug": "Poetic-Poems/poetic",
-      "sources": ["security", "issues:urgent", "review-feedback", "merge-conflicts", "dequeued", "human-visibility", "abandoned-drafts", "failed-runs", "issues:high", "tech-debt", "issues:medium", "project-review", "issues:low", "code-quality", "register-hygiene"]
+      "sources": ["security", "issues:urgent", "review-feedback", "merge-conflicts", "dequeued", "human-visibility", "abandoned-drafts", "failed-runs", "issues:high", "tech-debt", "issues:medium", "project-review", "issues:low", "code-quality"]
     },
     {
       "slug": "Poetic-Poems/poetic-fiddle",
-      "sources": ["security", "issues:urgent", "review-feedback", "merge-conflicts", "dequeued", "human-visibility", "abandoned-drafts", "failed-runs", "issues:high", "tech-debt", "issues:medium", "implementation-plan", "project-review", "issues:low", "code-quality", "register-hygiene"],
+      "sources": ["security", "issues:urgent", "review-feedback", "merge-conflicts", "dequeued", "human-visibility", "abandoned-drafts", "failed-runs", "issues:high", "tech-debt", "issues:medium", "implementation-plan", "project-review", "issues:low", "code-quality"],
       "nice": 6,
       "implementation_plan_path": "docs/IMPLEMENTATION-PLAN.md",
       "preview": { "provider": "vercel" }
@@ -14,10 +14,10 @@
     {
       "slug": "Pullwright/agent-ops",
       "merge_autonomy": "agent-merges-routine",
-      "merge_autonomy_routine_sources": ["register-hygiene", "tech-debt", "issues"],
+      "merge_autonomy_routine_sources": ["tech-debt", "issues"],
       "merge_autonomy_protected_paths": [".github/*", "deploy/*", "prompts/*", "lib/*", "scripts/*", "config.schema.json", "config.json", "agent-cycle.sh", "review-cycle.sh", "CODEOWNERS"],
       "merge_budget_per_day": 24,
-      "sources": ["security", "issues:urgent", "review-feedback", "merge-conflicts", "dequeued", "landing-refusals", "human-visibility", "abandoned-drafts", "failed-runs", "issues:high", "tech-debt", "issues:medium", "issues:low", "code-quality", "register-hygiene"],
+      "sources": ["security", "issues:urgent", "review-feedback", "merge-conflicts", "dequeued", "landing-refusals", "human-visibility", "abandoned-drafts", "failed-runs", "issues:high", "tech-debt", "issues:medium", "issues:low", "code-quality"],
       "nice": -18
     }
   ],

@@ -627,7 +627,7 @@ while IFS= read -r rs_slug; do
   rs_missing="$(jq -r --arg slug "$rs_slug" '
     ((.repos // [])[] | select(.slug == $slug)) as $r
     | ($r.merge_autonomy_routine_sources // .merge_autonomy_routine_sources
-       // ["register-hygiene","tech-debt"]) as $routine
+       // ["tech-debt"]) as $routine
     | ($r.sources // []) as $have
     | (if ($have | any(startswith("issues"))) then $have + ["issues"] else $have end) as $have
     | ($routine - $have) | .[]
@@ -648,7 +648,7 @@ while IFS= read -r rs_slug; do
   rs_banded="$(jq -r --arg slug "$rs_slug" '
     ((.repos // [])[] | select(.slug == $slug)) as $r
     | ($r.merge_autonomy_routine_sources // .merge_autonomy_routine_sources
-       // ["register-hygiene","tech-debt"])
+       // ["tech-debt"])
     | map(select(startswith("issues:"))) | .[]
   ' <<<"$DEFAULTED_CONFIG" 2>/dev/null | paste -sd, - || true)"
   if [[ -n "$rs_banded" ]]; then

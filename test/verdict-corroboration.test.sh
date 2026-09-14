@@ -150,7 +150,7 @@ assert_eq "a void extract past the argv cap still drops the void item" \
 # either) have something to be absent from.
 eligible_repos='[{"slug":"org/a","default_branch":"main",
   "sources":["security","review-feedback","merge-conflicts","landing-refusals","issues:high","abandoned-drafts",
-             "human-visibility","tech-debt","register-hygiene"],
+             "human-visibility","tech-debt"],
   "findings":[{"source":"security","ref":"dependabot-alert-1"},{"source":"code-quality","ref":"code-scanning-alert-4"}],
   "review_feedback":[{"ref":"pr-1-review-9"}],
   "merge_conflicts":[{"ref":"pr-2-conflict-aa","bot":true,"rebase_requested":false,"superseded_by":null},
@@ -160,7 +160,6 @@ eligible_repos='[{"slug":"org/a","default_branch":"main",
   "landing_refusals":[{"ref":"pr-7-landing-refusal-4718691960"}],
   "abandoned_drafts":[{"ref":"pr-6-abandoned-ee"}],
   "human_visibility":[{"ref":"human-visibility-ff"}],
-  "register_hygiene":[{"ref":"register-hygiene-gg"}],
   "issues":[{"ref":"11","priority":"High"},{"ref":"12","priority":"Medium"},{"ref":"13","priority":"High"}],
   "tech_debt":[{"ref":"TD1"},{"ref":"TD2"}]}]'
 
@@ -176,7 +175,6 @@ assert_eq "abandoned-drafts likewise" '["pr-6-abandoned-ee"]' "$(band_of abandon
 # selected" verdict.
 assert_eq "landing-refusals likewise" '["pr-7-landing-refusal-4718691960"]' "$(band_of landing-refusals)"
 assert_eq "human-visibility likewise" '["human-visibility-ff"]' "$(band_of human-visibility)"
-assert_eq "register-hygiene likewise" '["register-hygiene-gg"]' "$(band_of register-hygiene)"
 assert_eq "tech-debt likewise, in id order" '["TD1","TD2"]' "$(band_of tech-debt)"
 
 # merge-conflicts is the band with a Script-computable non-candidate in it: a
@@ -206,7 +204,7 @@ assert_eq "the plain issues token admits every band" '["11","12","13"]' \
 
 # Back-pressure (requirement 2.2a) narrows `sources` to lib/handoff.sh's four
 # finishing bands (sourced above, issue #431) and empties `issues`/`tech_debt`,
-# but leaves `findings`, `register_hygiene` and `human_visibility` populated.
+# but leaves `findings` and `human_visibility` populated.
 # Reading the list rather than the arrays is what stops a restricted cycle
 # owing an account of bands it was forbidden to select from. `eligible_repos`'s
 # own `sources` only carries three of the four finishing bands (no

@@ -312,7 +312,7 @@ landing_protected_paths_hit() {
 # _landing_routine_sources CONFIG_JSON SLUG
 # The routine-source list SLUG is governed by: its own `repos[]` entry's
 # `merge_autonomy_routine_sources` when present, else the top-level key,
-# else the schema default `["register-hygiene","tech-debt"]` — the same
+# else the schema default `["tech-debt"]` — the same
 # entry-wins-else-top-level-else-shipped-default precedence
 # `merge_autonomy_configured_level` and `merge_budget_effective_cap` both
 # already use. Prints a compact JSON array; never fails — a config that
@@ -335,7 +335,7 @@ _landing_routine_sources() {
     printf '%s' "$top_list"
     return 0
   fi
-  printf '["register-hygiene","tech-debt"]'
+  printf '["tech-debt"]'
 }
 
 # _landing_routine_complexity CONFIG_JSON SLUG
@@ -894,8 +894,8 @@ _landing_arm_failure_reason() {
 # lib/cycle-state.sh. Malformed lines are skipped, not fatal (`fromjson? //
 # empty`, the same tolerant-line convention `blocked_items` uses); several
 # `selection` events for the same repo/branch keep only the most recent
-# (`sort_by(.ts) | last`) — a branch this system reuses (a tech-debt item's
-# `td/<ID>` retried under a fresh claim) still resolves to its current claim,
+# (`sort_by(.ts) | last`) — a branch this system reuses (an item retried
+# under a fresh claim) still resolves to its current claim,
 # never a stale one. Empty on no match, an unreadable log, or nothing to
 # read — the sweep must skip a candidate it cannot classify, never guess at
 # a source that could put a non-routine pull request through the routine

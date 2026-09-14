@@ -56,8 +56,8 @@
 #
 # Prints one JSON object on success and always exits 0 — a guard comment this
 # script fails to post is not a broken close, the same "advisory, never
-# fails its caller" contract scripts/release-td-branch.sh's own header states
-# for the same reason:
+# fails its caller" contract every housekeeping script in this directory
+# keeps, for the same reason:
 #   {"issue": N, "action": "none", "reason": "<why nothing was needed>"}
 #   {"issue": N, "action": "commented", "reason": "<what was missing>"}
 #   {"issue": N, "action": "skipped", "reason": "guard already commented on this close"}

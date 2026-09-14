@@ -187,11 +187,10 @@ run_sweep() {
 
 # --- Case 1: every guard, one branch each ---------------------------------------
 c="$tmp_dir/guards"; mkdir -p "$c"
-printf 'td/open-pr\tsha1\ntd/claimed\tsha2\ntd/reg-err\tsha3\ntd/fresh\tsha4\n' > "$c/refs-td_tsv"
-printf 'agent/moved\tsha5\nagent/empty\tsha6\n' > "$c/refs-agent_tsv"
-echo 1 > "$c/prs-open-td_open-pr"
-touch "$c/registry-td__claimed"
-touch "$c/registry-500-td__reg-err"
+printf 'agent/open-pr\tsha1\nagent/claimed\tsha2\nagent/reg-err\tsha3\nagent/fresh\tsha4\nagent/moved\tsha5\nagent/empty\tsha6\n' > "$c/refs-agent_tsv"
+echo 1 > "$c/prs-open-agent_open-pr"
+touch "$c/registry-agent__claimed"
+touch "$c/registry-500-agent__reg-err"
 for s in sha1 sha2 sha3 sha5 sha6; do echo "$stale" > "$c/date-$s"; done
 echo "$fresh" > "$c/date-sha4"
 compare_fixture "$c" agent/moved 2 "$stale"
@@ -214,17 +213,17 @@ assert_eq "a stale empty orphan's ref is released" \
 assert_contains "by deleting the ref" \
   "api -X DELETE repos/x/y/git/refs/heads/agent/empty" "$calls"
 
-assert_not_contains "a branch with an open PR is left alone" "td/open-pr" \
+assert_not_contains "a branch with an open PR is left alone" "agent/open-pr" \
   "$(jq -c 'select(.action != "warning")' <<<"$out")"
-assert_not_contains "a branch with a live registry entry is left alone" "td/claimed" "$out"
+assert_not_contains "a branch with a live registry entry is left alone" "agent/claimed" "$out"
 assert_not_contains "and its tip is never even dated" \
   "api repos/x/y/commits/sha2" "$calls"
-assert_not_contains "a branch younger than the threshold is left alone" "td/fresh" "$out"
+assert_not_contains "a branch younger than the threshold is left alone" "agent/fresh" "$out"
 assert_eq "a registry error that is not 404 warns and touches nothing" \
-  '{"action":"warning","branch":"td/reg-err","detail":"registry read failed with something other than 404 — leaving it alone"}' \
+  '{"action":"warning","branch":"agent/reg-err","detail":"registry read failed with something other than 404 — leaving it alone"}' \
   "$(jq -c 'select(.action == "warning")' <<<"$out")"
 assert_not_contains "so no compare, delete or create ever mentions it" \
-  "td/reg-err" "$(grep -vE '^(api repos/Poetic-Poems|pr list)' "$c/calls.log")"
+  "agent/reg-err" "$(grep -vE '^(api repos/Poetic-Poems|pr list)' "$c/calls.log")"
 
 # --- Case 2: the per-run cap ----------------------------------------------------
 c="$tmp_dir/cap"; mkdir -p "$c"
@@ -316,22 +315,22 @@ assert_not_contains "and no recovery draft is ever opened for it" \
   "pr create" "$(grep 'human-visibility-16d187652d3f' "$c/calls.log" || true)"
 
 # --- Case 7: superseded, tech-debt id stems ---------------------------------------
-# A `td/` claim branch reduces to its bare ID whether or not a random suffix
+# A claim branch reduces to its bare ID whether or not a random suffix
 # is present — the algorithm strips the prefix and the suffix independently,
 # so a loser carrying a suffix must still match a winner that never had one.
 c="$tmp_dir/superseded-td-stem"; mkdir -p "$c"
-printf 'td/TD26051201-1a87f76d0cd3\tsha-td-loser\n' > "$c/refs-td_tsv"
-: > "$c/refs-agent_tsv"
+: > "$c/refs-td_tsv"
+printf 'agent/TD26051201-1a87f76d0cd3\tsha-td-loser\n' > "$c/refs-agent_tsv"
 echo "$stale" > "$c/date-sha-td-loser"
-compare_fixture "$c" td/TD26051201-1a87f76d0cd3 1 2026-08-10T00:00:00Z
-jq -n '[{head: {ref: "td/TD26051201"},
+compare_fixture "$c" agent/TD26051201-1a87f76d0cd3 1 2026-08-10T00:00:00Z
+jq -n '[{head: {ref: "agent/TD26051201"},
          merged_at: "2026-08-11T00:00:00Z",
          html_url: "https://github.com/x/y/pull/400"}]' > "$c/rivals.json"
 
 out="$(run_sweep "$c")"
-assert_eq "a td/ loser is matched to a suffix-less td/ winner by bare ID" \
-  '{"action":"released","branch":"td/TD26051201-1a87f76d0cd3","reason":"superseded","superseded_by":"https://github.com/x/y/pull/400"}' \
-  "$(jq -c 'select(.branch == "td/TD26051201-1a87f76d0cd3")' <<<"$out")"
+assert_eq "a loser is matched to a suffix-less winner by bare ID" \
+  '{"action":"released","branch":"agent/TD26051201-1a87f76d0cd3","reason":"superseded","superseded_by":"https://github.com/x/y/pull/400"}' \
+  "$(jq -c 'select(.branch == "agent/TD26051201-1a87f76d0cd3")' <<<"$out")"
 
 # --- Case 8: a same-stem rival that merged before this branch even started -------
 # Coincidence, not a race: a same-named rival that merged before this
@@ -380,17 +379,17 @@ assert_contains "and warns, naming the branch, rather than staying silent" \
 # other tech-debt item under the same scope prefix — deleting a branch that
 # carries real, unrelated, unlanded work.
 c="$tmp_dir/td-stem-bound"; mkdir -p "$c"
-printf 'td/TD-PPagop-26081403\tsha-td-real\n' > "$c/refs-td_tsv"
-: > "$c/refs-agent_tsv"
+: > "$c/refs-td_tsv"
+printf 'agent/TD-PPagop-26081403\tsha-td-real\n' > "$c/refs-agent_tsv"
 echo "$stale" > "$c/date-sha-td-real"
-compare_fixture "$c" td/TD-PPagop-26081403 1 2026-08-10T00:00:00Z
-jq -n '[{head: {ref: "td/TD-PPagop-99999999"},
+compare_fixture "$c" agent/TD-PPagop-26081403 1 2026-08-10T00:00:00Z
+jq -n '[{head: {ref: "agent/TD-PPagop-99999999"},
          merged_at: "2026-08-11T00:00:00Z",
          html_url: "https://github.com/x/y/pull/600"}]' > "$c/rivals.json"
 
 out="$(run_sweep "$c")"
 assert_eq "an unrelated same-scope tech-debt id is not read as a rival" \
-  "td/TD-PPagop-26081403" \
+  "agent/TD-PPagop-26081403" \
   "$(jq -r 'select(.action == "recovered") | .branch' <<<"$out")"
 
 # --- Case 11: the compare payload itself carries no readable first-commit date ---
@@ -416,51 +415,6 @@ assert_contains "and warns, naming the branch, rather than staying silent" \
   "$(jq -r 'select(.action == "warning" and .branch == "agent/baz-dddddddddddd") | .detail' <<<"$out")"
 assert_not_contains "without ever asking GitHub for rivals at all" \
   "pulls?state=closed" "$calls"
-
-# --- Case 12: a pure ID-reservation lock is never swept (issue #545) -------------
-# reserve-tech-debt-id.pl pushes a `td/<ID>` branch with exactly one commit —
-# its own reservation, touching no files — before any work exists at all.
-# That is a lock, not orphaned work, whether or not <ID> has since been filed
-# (and regardless of which branch any such filing landed on: PR #523's real
-# instance had its item filed and merged entirely under a different branch),
-# so the sweep must neither recover it as a draft PR nor delete it as an
-# empty orphan.
-c="$tmp_dir/reservation-lock"; mkdir -p "$c"
-printf 'td/TD-PPagop-26081701\tsha-reservation\n' > "$c/refs-td_tsv"
-: > "$c/refs-agent_tsv"
-echo "$stale" > "$c/date-sha-reservation"
-jq -n '{ahead_by: 1, files: [],
-        commits: [{commit: {
-          message: "chore(tech-debt): reserve TD-PPagop-26081701\n\nReservation nonce: 1755391086-123-456789",
-          committer: {date: "2026-08-17T00:38:06Z"}}}]}' \
-  > "$c/compare-td_TD-PPagop-26081701.json"
-
-out="$(run_sweep "$c")"
-calls="$(cat "$c/calls.log")"
-assert_eq "a pure ID-reservation lock produces no action at all" "" "$out"
-assert_not_contains "so no recovery draft is ever opened for it" \
-  "pr create" "$(grep 'TD-PPagop-26081701' "$c/calls.log" || true)"
-assert_not_contains "and its ref is never deleted either" \
-  "api -X DELETE repos/x/y/git/refs/heads/td/TD-PPagop-26081701" "$calls"
-
-# --- Case 13: same shape, but real work — not a reservation lock -----------------
-# A single commit ahead is not on its own proof of a lock: the commit
-# message must actually match reserve-tech-debt-id.pl's own fixed subject.
-# An ordinary one-commit `td/` orphan with unrelated work is still recovered.
-c="$tmp_dir/one-commit-real-work"; mkdir -p "$c"
-printf 'td/TD-PPagop-26081702\tsha-real-work\n' > "$c/refs-td_tsv"
-: > "$c/refs-agent_tsv"
-echo "$stale" > "$c/date-sha-real-work"
-jq -n '{ahead_by: 1, files: ["tech-debt/TD-PPagop-26081702.md"],
-        commits: [{commit: {
-          message: "chore(tech-debt): file TD-PPagop-26081702",
-          committer: {date: "2026-08-17T00:38:06Z"}}}]}' \
-  > "$c/compare-td_TD-PPagop-26081702.json"
-
-out="$(run_sweep "$c")"
-assert_eq "a one-commit branch that is not the reservation itself is still recovered" \
-  "td/TD-PPagop-26081702" \
-  "$(jq -r 'select(.action == "recovered") | .branch' <<<"$out")"
 
 # --- Case 14: td-record/ delete-only — a declined filing releases both refs -----
 # TD-PPagop-26082310: a human closed the filing pull request without merging,
@@ -493,7 +447,7 @@ assert_not_contains "and no recovery draft is ever opened for it" \
 # --- Case 15: same, but the record landed some other way — reservation kept ------
 # The declined-filing arm still deletes td-record/<id> (its pull request was
 # still closed unmerged, regardless of how the id's record made it to main),
-# but must not release td/<id> when release-td-branch.yml already owns it.
+# but must not release td/<id> when the record did reach main some other way.
 c="$tmp_dir/declined-filing-record-landed"; mkdir -p "$c"
 : > "$c/refs-td_tsv"
 : > "$c/refs-agent_tsv"
@@ -590,30 +544,6 @@ assert_not_contains "and the paired-reservation question is never even asked" \
   "contents/tech-debt/TD-PPagop-30000007" "$calls"
 assert_not_contains "so td/<id> is never deleted" \
   "api -X DELETE repos/x/y/git/refs/heads/td/TD-PPagop-30000007" "$calls"
-
-# --- Case 19: regression guard — a bare td/<ID> lock with no td-record/ sibling --
-# TD-PPagop-26082310's own narrowness rule: release_paired_reservation must
-# only ever run from inside the declined-filing arm above, never for an
-# ordinary td/<ID> reservation branch encountered on its own — issue #545's
-# exemption stays exactly as it was for every branch with no td-record/
-# sibling to trigger it.
-c="$tmp_dir/reservation-lock-no-sibling"; mkdir -p "$c"
-printf 'td/TD-PPagop-30000006\tsha-lock-only\n' > "$c/refs-td_tsv"
-: > "$c/refs-agent_tsv"
-: > "$c/refs-td-record_tsv"
-echo "$stale" > "$c/date-sha-lock-only"
-jq -n '{ahead_by: 1, files: [],
-        commits: [{commit: {
-          message: "chore(tech-debt): reserve TD-PPagop-30000006\n\nReservation nonce: 1755391086-999-111222",
-          committer: {date: "2026-08-17T00:38:06Z"}}}]}' \
-  > "$c/compare-td_TD-PPagop-30000006.json"
-
-out="$(run_sweep "$c")"
-calls="$(cat "$c/calls.log")"
-assert_eq "a bare td/<ID> lock with no td-record/ sibling still produces no action" \
-  "" "$out"
-assert_not_contains "the new contents check is never even reached for it" \
-  "contents/tech-debt/TD-PPagop-30000006" "$calls"
 
 # --- Case 20: the declined-filing pair defers whole, never straddling the cap ----
 # Review feedback on PR #907: the entry-level `actions >= max_actions` check

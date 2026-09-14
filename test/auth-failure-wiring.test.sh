@@ -33,7 +33,8 @@
 # claim-loop classification to handle rather than being escalated here.
 #
 # The block is lifted verbatim out of agent-cycle.sh, the way
-# test/backpressure-wiring.test.sh and test/void-retire-wiring.test.sh lift
+# test/backpressure-wiring.test.sh and
+# test/gathered-repo-labels-wiring.test.sh lift
 # their own, so the assertions are about the shipped code rather than a copy
 # of its logic.
 #

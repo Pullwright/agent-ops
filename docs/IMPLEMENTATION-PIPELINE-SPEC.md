@@ -39,7 +39,6 @@ are binding on any agent working inside them).
   - [Extended notes: `label_prefix`](#extended-notes-label_prefix)
   - [Extended notes: `prompt_overrides`](#extended-notes-prompt_overrides)
   - [Extended notes: `pr_label`](#extended-notes-pr_label)
-  - [Extended notes: `tech_debt_branch_prefix`](#extended-notes-tech_debt_branch_prefix)
   - [Extended notes: `coordinator_prompt_max_bytes`](#extended-notes-coordinator_prompt_max_bytes)
   - [Extended notes: `claim_ttl_hours`](#extended-notes-claim_ttl_hours)
   - [Extended notes: `abandoned_draft_after_hours`](#extended-notes-abandoned_draft_after_hours)
@@ -707,8 +706,8 @@ file and carries placeholders only; `.env` itself is never committed.
 
 | Repo | GitHub | Work sources, in priority order |
 |---|---|---|
-| poetic (framework) | `Poetic-Poems/poetic` | 1. **security findings** · 2. **`issues:urgent`** · 3. **review-feedback** · 4. **merge-conflicts** · 5. **human-visibility** · 6. **abandoned-drafts** · 7. failed Actions runs on `main` · 8. `issues:high` · 9. `TECH-DEBT.md` · 10. `issues:medium` · 11. project-review recommendations · 12. `issues:low` · 13. code-quality findings · 14. register-hygiene |
-| poetic-fiddle (web app) | `Poetic-Poems/poetic-fiddle` | 1. **security findings** · 2. **`issues:urgent`** · 3. **review-feedback** · 4. **merge-conflicts** · 5. **human-visibility** · 6. **abandoned-drafts** · 7. failed Actions runs on `main` · 8. `issues:high` · 9. `TECH-DEBT.md` · 10. `issues:medium` · 11. `implementation-plan` (its configured plan document, `docs/IMPLEMENTATION-PLAN.md`; next milestone task) · 12. project-review recommendations · 13. `issues:low` · 14. code-quality findings · 15. register-hygiene |
+| poetic (framework) | `Poetic-Poems/poetic` | 1. **security findings** · 2. **`issues:urgent`** · 3. **review-feedback** · 4. **merge-conflicts** · 5. **human-visibility** · 6. **abandoned-drafts** · 7. failed Actions runs on `main` · 8. `issues:high` · 9. `TECH-DEBT.md` · 10. `issues:medium` · 11. project-review recommendations · 12. `issues:low` · 13. code-quality findings |
+| poetic-fiddle (web app) | `Poetic-Poems/poetic-fiddle` | 1. **security findings** · 2. **`issues:urgent`** · 3. **review-feedback** · 4. **merge-conflicts** · 5. **human-visibility** · 6. **abandoned-drafts** · 7. failed Actions runs on `main` · 8. `issues:high` · 9. `TECH-DEBT.md` · 10. `issues:medium` · 11. `implementation-plan` (its configured plan document, `docs/IMPLEMENTATION-PLAN.md`; next milestone task) · 12. project-review recommendations · 13. `issues:low` · 14. code-quality findings |
 
 This is this installation's current `config.json`: its `repos` array names
 these two repos and each one's `sources`, in this order. Unlike this document,
@@ -749,24 +748,6 @@ own log (requirement 38c), read back and re-verified live:
   `abandoned-drafts`: finished work invisible to the human whose merge
   everything waits on is not a cosmetic repair, and must not sit behind the
   full repo walk on a rationale that does not describe it.
-
-The `register-hygiene` source draws on the repo's own per-item tech-debt
-register, checked against the convention that register states for itself:
-
-- **`register-hygiene`** — the repo's register failing `scripts/td-check.pl`
-  (requirement 3i): an item file whose frontmatter disagrees with its
-  filename, its repository's declared scope, or itself. **Last in every
-  repo's list.** The repair is deterministic and touches
-  nothing but the register, so it must never outrank substantive work; but a
-  register that advertises finished work as outstanding misleads every later
-  reader, human and agent alike, and this pipeline reads it as a work source.
-  It is a *starting* source like any other, and so subject to back-pressure
-  (requirement 2.2a). Its volume trends to zero, because each consumer repo
-  also runs the same check in CI
-  (`.github/workflows/tech-debt-register.yml`), which fails the pull request
-  that would introduce the drift; this source exists for the drift that lands
-  anyway — a register that predates the guard, a direct push, a merge that
-  reintroduces it.
 
 The `issues` source is **banded by the issue's own `Priority` field**, so it
 occupies four separate ranks rather than one:
@@ -846,7 +827,7 @@ rather than starting new work — and all are pre-fetched:
   (requirement 3b).
 - **`abandoned-drafts`** — draft pull requests this system raised and then
   abandoned: still open, still draft, carrying `pr_label` on a branch under
-  `branch_prefix` (or `td/`), and untouched for at least
+  `branch_prefix`, and untouched for at least
   `abandoned_draft_after_hours` (requirement 3e). A stage that timed out, hit a
   usage limit, or died leaves its draft PR behind as a stalled claim; finishing it
   costs less than starting fresh and turns the back-pressure slot it occupies —
@@ -867,25 +848,18 @@ Conventions shared by all configured repos (agents must honour all of these):
 - `main` is protected: no direct pushes by anyone or anything; every change
   lands via a pull request, squash-merged, so **the PR title becomes the
   commit on `main` and must be in Conventional Commits format**.
-- The tech-debt register holds deferred work as dated records carrying a
-  status (`open` / `in-progress` / `resolved` / `not-debt`), one
-  `tech-debt/<id>.md` file per record, frontmatter plus a Markdown body.
-  Claiming and resolving are both frontmatter-only edits (`status:`, and on
-  resolution `resolved:` and `ref:`), the body stays in place either way, and
-  a file already on the default branch is never deleted or renamed. The
-  "Claiming an item" workflow flips `status:` to `in-progress` and opens a
-  **draft** pull request immediately, so the claim is visible; flip to
-  `resolved` and mark the PR ready when done.
-  `scripts/get-tech-debt-record.pl` resolves an ID to its record,
-  `scripts/next-tech-debt-id.pl` allocates IDs by scanning the register at a
-  ref, `scripts/reserve-tech-debt-id.pl` allocates an ID atomically by
-  pushing its `td/<id>` branch from `origin/main` (the "Filing an item"
-  workflow's own reservation step), `scripts/td-check.pl` cross-checks the
-  register against its own rules (exit 0 consistent, 1 problems), and
-  `scripts/check-tech-debt-open-rewrites.pl` flags a pull request that
-  rewrites an open item's body without moving its `status:`. All five are
-  canonical in `Poetic-Poems/poetic` and held here as byte-identical copies
-  (`.github/workflows/td-tooling-drift.yml`).
+- Tech debt is filed as an open GitHub issue carrying the `pw::type:tech-debt`
+  label (D15 as revised, #869/#875/#879), claimed and worked exactly like any
+  other issue-shaped item — an `agent/<issue-number>` branch, never a
+  register file — and resolved by closing the issue with a real GitHub
+  closing keyword together with a fenced `td-record` block in the same pull
+  request's body (requirement 25), which becomes the permanent record once
+  the squash-merge commit carries it onto `main`. `tech-debt/<id>.md` is a
+  frozen historical archive of every item a repository filed while debt
+  was tracked as a per-item register, before that policy changed: its files
+  are never edited, deleted or renamed, and an issue migrated from that
+  archive additionally flips its named file's frontmatter to a terminal
+  `status:` on resolution (`TECH-DEBT.md`).
 - CI runs on every PR (build/lint/test workflows plus CodeQL and
   commit-format checks). A PR is not finished until its checks pass and
   `gh pr view --json mergeable,mergeStateStatus` reports it mergeable.
@@ -906,7 +880,7 @@ and the schema must carry every one of them.
 <!-- config-table:start id=main — GENERATED from config.schema.json by scripts/render-config-table.sh; edit the schema, not these rows -->
 | Key | Value | Notes |
 |---|---|---|
-| `repos` | `["Poetic-Poems/poetic", "Poetic-Poems/poetic-fiddle"]` | Work-source lists per repo as in the table above (`security`, `issues:urgent`, `review-feedback`, `merge-conflicts`, `dequeued`, `landing-refusals`, `human-visibility`, `abandoned-drafts`, `failed-runs`, `issues:high`, `tech-debt`, `issues:medium`, `implementation-plan`, `project-review`, `issues:low`, `code-quality`, `register-hygiene`); structure the config so a repo or source can be added without code changes. The `issues:<band>` tokens are the one source that appears more...[continued below](#extended-notes-repos) |
+| `repos` | `["Poetic-Poems/poetic", "Poetic-Poems/poetic-fiddle"]` | Work-source lists per repo as in the table above (`security`, `issues:urgent`, `review-feedback`, `merge-conflicts`, `dequeued`, `landing-refusals`, `human-visibility`, `abandoned-drafts`, `failed-runs`, `issues:high`, `tech-debt`, `issues:medium`, `implementation-plan`, `project-review`, `issues:low`, `code-quality`); structure the config so a repo or source can be added without code changes. The `issues:<band>` tokens are the one source that appears more than once — the...[continued below](#extended-notes-repos) |
 | `state_dir` | `~/.local/state/poetic-agents` | Lock, shared log, per-cycle stage transcripts. Required — there is no product default; this installation's own value is below. |
 | `workspace_root` | `~/.cache/poetic-agents/workspaces` | Ephemeral clones live and die here, including the state repository's mirror. Required — there is no product default; this installation's own value is below. |
 | `state_repo` | `Poetic-Poems/agent-ops-state` | The private repository through which `state_dir` replicates between nodes (requirement 2.5). Its `main` carries the small shared surface: the claim registry (requirement 17a) and the fleet flags `fleet/disabled.json` and `fleet/limit.json` (requirements 2.3a and 2.1). Unset means a single-node operation: every mode of `scripts/state-sync.sh` becomes a no-op, and the fleet-flag reads and writes quietly do nothing. This installation's own value, `Poetic-Poems/agent-ops-state`...[continued below](#extended-notes-state_repo) |
@@ -951,7 +925,6 @@ and the schema must carry every one of them.
 | `prompt_overrides` | `{}` | Per-installation prompt extension/replacement (requirement 4a): an object keyed `coordinator`/`implementer`/`reviewer`/`enabler`/`refiner`/`monitor`, each holding `extend` (an array of file paths, appended in order) and/or `replace` (a file path substituted for that stage's shipped `prompts/<stage>.md`). A relative path resolves against `state_dir`. Empty or a stage absent from it changes nothing for that stage. `approver` is deliberately absent from the enumeration: the...[continued below](#extended-notes-prompt_overrides) |
 | `pr_label` | `autonomous-agent` | Applied to every PR this system raises. It must not be `obsolete`: the pipeline would then project requirement 34k's human-only corroboration onto every draft it raises, and the void guard would close live drafts on the pipeline's own say-so — `scripts/doctor.sh` fails the config. The claim loop (requirement 17a) stamps this value onto every claimed work order's own `pr_label` field unconditionally, the guaranteed source regardless of whether the Co-Ordinator's runtime input...[continued below](#extended-notes-pr_label) |
 | `branch_prefix` | `agent/` | Branch name `agent/<item-slug>`, e.g. `agent/td26051201-fix-xyz`. |
-| `tech_debt_branch_prefix` | `td/` | Deprecated (D15 as revised, #869/#879): no longer minted for a fresh claim (requirement 17a) — read only so `lib/claim.sh` and the gatherer/sweep scripts of requirements 3c/3e/3g/3z/17b still recognise a pre-migration human tech-debt-claim branch, or a `td/<ID>` branch minted before this revision, as not their own agent's fresh claim. Branch name `<tech_debt_branch_prefix><ID>`, e.g. `td/TD26051201`. Empty disables the tech-debt namespace: those scripts then match only...[continued below](#extended-notes-tech_debt_branch_prefix) |
 | `max_open_agent_prs` | `8` | Back-pressure: draft PRs, ready PRs still `CHANGES_REQUESTED`, and live claim-registry entries, carrying `pr_label` across all repositories — excludes ready PRs whose next action lies outside the pipeline (requirement 2.2). |
 | `candidates_max` | `3` | How many ranked candidates the Co-Ordinator returns; the Script claims down the list (requirement 17a), so alternates turn a lost race into the next-best item instead of a wasted cycle. |
 | `coordinator_prompt_max_bytes` | `500000` | The largest assembled prompt the Script will hand the Co-Ordinator (requirement 4i). The default is derived from the 200000-token window of the Co-Ordinator model this installation runs, less the system prompt and tool definitions the Script neither assembles nor can measure, less a reserve for the verdict itself, at the bytes per token JSON-escaped Markdown actually costs. All three terms are measured rather than assumed, and all three moved between the key being added and...[continued below](#extended-notes-coordinator_prompt_max_bytes) |
@@ -962,7 +935,7 @@ and the schema must carry every one of them.
 | `merge_queue_dequeue_notice_max_age_hours` | 24 h | Hours a merge-queue-dequeue notice (requirement 38f) may still fire for after `dequeued_at`, so a removal event that predates this feature (or this repository's queue adoption) is not read as fresh news merely because a sweep is only now seeing it. agent-ops#394, tech-debt/TD-PPagop-26081409.md. `0` disables the notice outright (agent-ops#429), guarded explicitly rather than left to the arithmetic threshold this bounds, since a repository with no merge queue should express...[continued below](#extended-notes-merge_queue_dequeue_notice_max_age_hours) |
 | `merge_autonomy` | `human` | The D18 trust ladder (docs/reviews/2026-08-14-autonomy-investigation.md §5.1), fleet-wide default; a `repos[]` entry's own `merge_autonomy` overrides it for that repository, the same precedence `stage_timeouts` uses (requirement 4f). `scripts/doctor.sh` fails a configured level above `human` with no `approver_app_id` or no `approver_model_default`, a level of `agent-merges-routine` or above while the repository's own default-branch ruleset still requires code-owner review...[continued below](#extended-notes-merge_autonomy) |
 | `merge_budget_per_day` | `8` | D18's spend governor (§5.4, `lib/merge-budget.sh`, requirement 2.3c): a rolling-24-hour cap on pull requests this pipeline may land in one repository, fleet-wide default; a `repos[]` entry's own `merge_budget_per_day` overrides it for that repository, the same precedence `merge_autonomy` uses (requirement 4f). `0` means unlimited and skips the count entirely. `merge_budget_decide` answers `arm` (under cap), `hold` (cap reached — approved but not armed, the backlog visible) or...[continued below](#extended-notes-merge_budget_per_day) |
-| `merge_autonomy_routine_sources` | `["register-hygiene", "tech-debt"]` | D18 WI-7 (requirement 8d, `lib/landing.sh`'s `landing_eligible`): which work sources may be armed automatically at `agent-merges-routine` and above, fleet-wide default; a `repos[]` entry's own `merge_autonomy_routine_sources` overrides it for that repository, the same precedence `merge_autonomy` uses (requirement 4f). An eligible pull request also needs a `complexity:*` grade in `merge_autonomy_routine_complexity` and, below `agent-merges-all`, `landing_protected_paths_hit`...[continued below](#extended-notes-merge_autonomy_routine_sources) |
+| `merge_autonomy_routine_sources` | `["tech-debt"]` | D18 WI-7 (requirement 8d, `lib/landing.sh`'s `landing_eligible`): which work sources may be armed automatically at `agent-merges-routine` and above, fleet-wide default; a `repos[]` entry's own `merge_autonomy_routine_sources` overrides it for that repository, the same precedence `merge_autonomy` uses (requirement 4f). An eligible pull request also needs a `complexity:*` grade in `merge_autonomy_routine_complexity` and, below `agent-merges-all`, `landing_protected_paths_hit`...[continued below](#extended-notes-merge_autonomy_routine_sources) |
 | `merge_autonomy_protected_paths` | `[".github/*", "deploy/*", "prompts/*", "lib/*", "config.schema.json", "config.json", "agent-cycle.sh", "review-cycle.sh", "CODEOWNERS"]` | D18 Stage 3 (agent-ops#724, `lib/landing.sh`'s `landing_eligible`/`_landing_is_protected`): the whole-path prefixes a routine-tier landing must touch none of, fleet-wide default; a `repos[]` entry's own `merge_autonomy_protected_paths` overrides it for that repository, the same precedence `merge_autonomy_routine_sources` uses (requirement 4f). Below `agent-merges-all` a hit is an outright `ineligible`; at `agent-merges-all` it is deferred to requirement 8d's own gate 4.5 (D18...[continued below](#extended-notes-merge_autonomy_protected_paths) |
 | `merge_autonomy_routine_complexity` | `["low", "medium"]` | D18 Stage 3 (requirement 8d, `lib/landing.sh`'s `landing_eligible`, agent-ops#725): which `complexity:*` grades may be armed automatically at `agent-merges-routine` and above, fleet-wide default; a `repos[]` entry's own `merge_autonomy_routine_complexity` overrides it for that repository, the same precedence `merge_autonomy` uses (requirement 4f). An eligible pull request also needs a `source` in `merge_autonomy_routine_sources` and, below `agent-merges-all`...[continued below](#extended-notes-merge_autonomy_routine_complexity) |
 | `landing_cool_off_hours` | 24 h | D18 WI-12 (Stage 4, §7 risk 1, `lib/landing.sh`'s `landing_protected_path_controls_ok`/`landing_cool_off_effective_hours`/`landing_cool_off_remaining_hours`): the wait between the Approver's own approval of a protected-path pull request and the arming step (requirement 8d) landing it, fleet-wide default; a `repos[]` entry's own `landing_cool_off_hours` overrides it for that repository, the same precedence `merge_autonomy` uses (requirement 4f). Binds only at...[continued below](#extended-notes-landing_cool_off_hours) |
@@ -1053,7 +1026,7 @@ same value; no other qualifier is accepted.
 
 ### Extended notes: `repos`
 
-Work-source lists per repo as in the table above (`security`, `issues:urgent`, `review-feedback`, `merge-conflicts`, `dequeued`, `landing-refusals`, `human-visibility`, `abandoned-drafts`, `failed-runs`, `issues:high`, `tech-debt`, `issues:medium`, `implementation-plan`, `project-review`, `issues:low`, `code-quality`, `register-hygiene`); structure the config so a repo or source can be added without code changes.
+Work-source lists per repo as in the table above (`security`, `issues:urgent`, `review-feedback`, `merge-conflicts`, `dequeued`, `landing-refusals`, `human-visibility`, `abandoned-drafts`, `failed-runs`, `issues:high`, `tech-debt`, `issues:medium`, `implementation-plan`, `project-review`, `issues:low`, `code-quality`); structure the config so a repo or source can be added without code changes.
 
 The `issues:<band>` tokens are the one source that appears more than once — the same `issues` source at four ranks (requirement 15e). A repo that lists none of them has the issues source off; one that lists a subset sees only issues in those bands.
 
@@ -1169,7 +1142,7 @@ It must not be `blocked` nor `obsolete`, for the reasons given against `enabler_
 
 ### Extended notes: `refinement_policy`
 
-Per-source refinement policy (requirement 39a): `required`, `preferred` or `exempt`, read by the Co-Ordinator alongside `refinements` (requirement 3h) to decide whether an unrefined item may be ranked at all. A source absent from this object is `exempt`. Shipped default: `issues` and `tech-debt` both `preferred` — of every source this key can name, these two are the ones whose items can otherwise reach an Implementer carrying a specification `coordinator_model` composed itself rather than one already written elsewhere, so the invariant of requirement 1c names them explicitly rather than leaving the object's absence do it implicitly. Bounded by what requirement 39's candidate gathering reads — the `findings`, `review_feedback`, `abandoned_drafts`, `merge_conflicts`, `dequeued`, `landing_refusals`, `register_hygiene`, `issues` and `tech_debt` arrays every repo's `ordered_repos_json` entry carries, plus `project_review` and `implementation_plan`, read only into the Refiner-only copy of the repos array (`refiner_repos_json`, requirement 3y) and only where `refiner_model` is set — with no Refiner to launch, neither is read at all — and the repo's own `sources` lists the source and its policy for it is not itself `exempt`. `failed-runs` is the one source with no array at all, so a policy set for it shapes selection only. A `required` source with `refiner_model` empty is refused at startup — `config_required_refinement_sources_without_refiner` (requirement 1c) — since nothing would ever refine its items and they would wait forever.
+Per-source refinement policy (requirement 39a): `required`, `preferred` or `exempt`, read by the Co-Ordinator alongside `refinements` (requirement 3h) to decide whether an unrefined item may be ranked at all. A source absent from this object is `exempt`. Shipped default: `issues` and `tech-debt` both `preferred` — of every source this key can name, these two are the ones whose items can otherwise reach an Implementer carrying a specification `coordinator_model` composed itself rather than one already written elsewhere, so the invariant of requirement 1c names them explicitly rather than leaving the object's absence do it implicitly. Bounded by what requirement 39's candidate gathering reads — the `findings`, `review_feedback`, `abandoned_drafts`, `merge_conflicts`, `dequeued`, `landing_refusals`, `issues` and `tech_debt` arrays every repo's `ordered_repos_json` entry carries, plus `project_review` and `implementation_plan`, read only into the Refiner-only copy of the repos array (`refiner_repos_json`, requirement 3y) and only where `refiner_model` is set — with no Refiner to launch, neither is read at all — and the repo's own `sources` lists the source and its policy for it is not itself `exempt`. `failed-runs` is the one source with no array at all, so a policy set for it shapes selection only. A `required` source with `refiner_model` empty is refused at startup — `config_required_refinement_sources_without_refiner` (requirement 1c) — since nothing would ever refine its items and they would wait forever.
 
 ### Extended notes: `label_prefix`
 
@@ -1182,10 +1155,6 @@ Per-installation prompt extension/replacement (requirement 4a): an object keyed 
 ### Extended notes: `pr_label`
 
 Applied to every PR this system raises. It must not be `obsolete`: the pipeline would then project requirement 34k's human-only corroboration onto every draft it raises, and the void guard would close live drafts on the pipeline's own say-so — `scripts/doctor.sh` fails the config. The claim loop (requirement 17a) stamps this value onto every claimed work order's own `pr_label` field unconditionally, the guaranteed source regardless of whether the Co-Ordinator's runtime input copy (requirement 4) or its own candidate (requirement 20) carries it correctly; the Implementer labels its pull request with that field (requirement 23).
-
-### Extended notes: `tech_debt_branch_prefix`
-
-Deprecated (D15 as revised, #869/#879): no longer minted for a fresh claim (requirement 17a) — read only so `lib/claim.sh` and the gatherer/sweep scripts of requirements 3c/3e/3g/3z/17b still recognise a pre-migration human tech-debt-claim branch, or a `td/<ID>` branch minted before this revision, as not their own agent's fresh claim. Branch name `<tech_debt_branch_prefix><ID>`, e.g. `td/TD26051201`. Empty disables the tech-debt namespace: those scripts then match only `branch_prefix`. Retires with the `td/` namespace itself in the roadmap's later register-retirement issue.
 
 ### Extended notes: `coordinator_prompt_max_bytes`
 
@@ -1333,7 +1302,7 @@ resolution, `lib/merge-autonomy.sh`):
     library code, so widening this list to admit `high` routes exactly
     that class of diff through automatic landing;
   - its work order's `source` is a member of `merge_autonomy_routine_sources`
-    (config, default `register-hygiene`/`tech-debt`) for this repository;
+    (config, default `tech-debt`) for this repository;
   - below `agent-merges-all`, its diff touches none of
     `merge_autonomy_protected_paths` (config, D18 Stage 3, agent-ops#724) —
     the second half of the belt and braces, and this design's own answer to
@@ -4878,12 +4847,10 @@ implements.
    model tokens on paginating and digesting those verbose APIs.
 3c. **Review-feedback pre-fetch (requirement 3c).** For each configured repo
    whose `sources` include `review-feedback` (requirement 48: freshly for the one repository this cycle picks, replayed from this node's expensive-gather cache for the rest), run
-   `scripts/gather-review-feedback.sh <slug> <pr_label> <branch_prefix>
-   <tech_debt_branch_prefix>` and
+   `scripts/gather-review-feedback.sh <slug> <pr_label> <branch_prefix>` and
    attach the array to that repo's entry as `review_feedback`. It prints the
    PRs *waiting on us to answer a human's review*: open, non-draft, carrying
-   `pr_label`, head branch under `branch_prefix` (or `tech_debt_branch_prefix`,
-   default `td/`; empty disables that namespace), `reviewDecision` of
+   `pr_label`, head branch under `branch_prefix`, `reviewDecision` of
    `CHANGES_REQUESTED`, and — the load-bearing clause — **no GitHub
    review-thread event has answered the blocking review**: no marked reply
    whose marker's `actor=` field is `implementer` (a review or general PR
@@ -5013,8 +4980,7 @@ implements.
      (tech-debt/TD-PPagop-26081306.md).
 3e. **Abandoned-drafts pre-fetch.** For each configured repo (requirement 48: freshly for the one repository this cycle picks, replayed from this node's expensive-gather cache for the rest), run
    `scripts/gather-abandoned-drafts.sh <slug>
-   <pr_label> <branch_prefix> <abandoned_draft_after_hours>
-   <tech_debt_branch_prefix>` and attach the array
+   <pr_label> <branch_prefix> <abandoned_draft_after_hours>` and attach the array
    to that repo's entry as `abandoned_drafts` — unconditionally, because
    `abandoned-drafts` is a required member of every repository's `sources`
    (the schema's `contains` rule, enforced by requirement 1b's gate; decided
@@ -5028,8 +4994,7 @@ implements.
    *position* in `sources` remains the installation's choice: required means
    listed, not ranked anywhere in particular. It prints the draft PRs *this
    system raised and then abandoned*: open, **draft**, carrying `pr_label`, head
-   branch under `branch_prefix` (or `tech_debt_branch_prefix`, default `td/`;
-   empty disables that namespace), and whose last **real** activity
+   branch under `branch_prefix`, and whose last **real** activity
    (below) is older than `now − abandoned_draft_after_hours`. Each entry carries
    the round's ref, the PR number and URL, the existing branch, the head SHA,
    that last-real-activity timestamp (as `updated_at`), and the draft PR's own
@@ -5123,12 +5088,11 @@ implements.
      live work, not leaving a stalled draft one more cycle. `shellcheck`-clean.
 3g. **Merge-conflicts pre-fetch.** For each configured repo whose `sources`
    include `merge-conflicts` (requirement 48: freshly for the one repository this cycle picks, replayed from this node's expensive-gather cache for the rest), run `scripts/gather-merge-conflicts.sh <slug>
-   <pr_label> <branch_prefix> <tech_debt_branch_prefix>` and attach the array
+   <pr_label> <branch_prefix>` and attach the array
    to that repo's entry as
    `merge_conflicts`. It prints the PRs *this system raised that are otherwise
    ready but conflict with their base*: open, **non-draft**, carrying `pr_label`,
-   head branch under `branch_prefix` (or `tech_debt_branch_prefix`, default
-   `td/`; empty disables that namespace), and with `mergeable` exactly
+   head branch under `branch_prefix`, and with `mergeable` exactly
    `CONFLICTING`. Each entry carries a head-SHA-scoped ref, the PR number and URL,
    the existing branch, its `base`, the head SHA, the `updatedAt`, and the PR's
    own body verbatim.
@@ -5303,13 +5267,11 @@ implements.
    every other conflicted PR is.
 3z. **Dequeued-PR pre-fetch (TD-PPagop-26081409, issue #374).** For each
    configured repo whose `sources` include `dequeued` (requirement 48: freshly for the one repository this cycle picks, replayed from this node's expensive-gather cache for the rest), run
-   `scripts/gather-dequeued.sh <slug> <pr_label> <branch_prefix>
-   <tech_debt_branch_prefix>` and attach the
+   `scripts/gather-dequeued.sh <slug> <pr_label> <branch_prefix>` and attach the
    array to that repo's entry as `dequeued`. It prints the PRs *this system
    raised that GitHub's merge queue removed over a merge-group checks failure
    without merging*: open, **non-draft**, carrying `pr_label`, head branch under
-   `branch_prefix` (or `tech_debt_branch_prefix`, default `td/`; empty
-   disables that namespace), with `mergeable` exactly `MERGEABLE`, and whose
+   `branch_prefix`, with `mergeable` exactly `MERGEABLE`, and whose
    most recent `lib/merge-queue.sh` `merge_queue_probe` reports `queued: false`,
    a non-null `dequeued_at`, and a `dequeue_reason` reading, case-insensitively,
    exactly `failed_checks`, **and whose dequeue is still unanswered** — no
@@ -5420,65 +5382,6 @@ implements.
      `source` is `dequeued`" procedure rather than opening a new one.
    - Fails safe to `[]` (exit 0), with the same stderr discipline as
      requirement 3g. `shellcheck`-clean.
-3i. **Register-hygiene pre-fetch.** For each configured repo whose `sources`
-   include `register-hygiene` (requirement 48: freshly for the one repository this cycle picks, replayed from this node's expensive-gather cache for the rest), run `scripts/gather-register-hygiene.sh <slug>
-   <default_branch>` and attach the array to that repo's entry as
-   `register_hygiene`. One root-tree listing read
-   (`gh api repos/<slug>/git/trees/<default_branch>`) gives both the
-   `tech-debt` tree SHA and the policy blob SHA (`TECH-DEBT.md`). No
-   `tech-debt` tree means `[]`, silently — no register, or an empty one, and
-   either way there is nothing this source could repair; an empty register's
-   scope declaration is validated by that repo's own CI, not by this one.
-   Otherwise it reads the whole register in one call via the tarball endpoint
-   (`gh api repos/<slug>/tarball/<default_branch>`), extracts `tech-debt/`,
-   and runs `scripts/td-check.pl` over the extracted directory, printing at
-   most one candidate carrying a ref derived from the register's identity,
-   the register's URL on the default branch (`…/tree/<branch>/tech-debt`),
-   the `tech-debt/` tree SHA as `blob_sha`, the problem lines as an array,
-   and the checker's whole output verbatim as `body`.
-
-   - **The candidate rule is the checker's exit status**, and deliberately
-     nothing more: `td-check.pl` exits 1 when the register reports any of BAD
-     NAME, BAD FRONTMATTER, MISSING FIELD, BAD FIELD, BAD STATUS, BAD SCOPE,
-     NO SCOPE, ID MISMATCH, DATE MISMATCH, STALE FIELD or DUPLICATE ID. There
-     is no severity ordering and no partial candidacy — the register is
-     either consistent or it is not, and either way the repair is one pull
-     request. At most one candidate per repo, because a repo has one
-     register.
-   - **The same script is the CI guard and the acceptance test.** Each
-     consumer repo runs argless `perl scripts/td-check.pl` on every pull
-     request (`.github/workflows/tech-debt-register.yml`); a file argument
-     now dies rather than checking anything. This pre-fetch runs it to decide
-     candidacy, and the Implementer re-runs it until it exits 0. One
-     definition, three consumers (requirement 34a); a model re-deriving the
-     rule would be a fourth opinion about what a consistent register looks
-     like, and the one that disagreed would be the one nobody noticed.
-     `td-check.pl` is canonical in `Poetic-Poems/poetic` and held here as a
-     byte-identical copy, guarded by `td-tooling-drift.yml`.
-   - **The ref is scoped to the register's identity** — the first 12 hex
-     characters of a sha256 digest of `<tech-debt-tree-sha>:<policy-blob-sha>`,
-     digesting both the `tech-debt/` tree and the scope-declaring
-     `TECH-DEBT.md` blob so a repair to either retires the ref — not a bare
-     `register-hygiene` — so a block recorded against one state of the
-     register does not swallow a later, possibly-repairable one, while a
-     repair retires the ref and drift re-detected against an unchanged
-     register keeps it. Commits that touch anything else in the repo leave
-     the identity, and so the item, alone. Same expiry-by-irrelevance
-     reasoning as requirements 3c, 3e and 3g.
-   - **Unlike requirements 3e and 3g, its candidacy needs no rescuing by the
-     fingerprint**, and the spec says so rather than leaving a reader to assume
-     the usual argument applies: drift is a pure function of the register's
-     content, so it can only appear on a commit to the default branch, which
-     moves the `head_sha` requirement 3b already hashes. The array is fed to
-     the fingerprint verbatim anyway — for uniformity, because a per-source
-     exception is a thing to remember and "covered by something else" is how a
-     source ends up covered by nothing, and because candidacy depends on the
-     checker too, so an edit to `td-check.pl` can add or retire the item with no
-     commit to the target repo at all.
-   - Otherwise fails safe to `[]` (exit 0) with the same stderr discipline as
-     requirement 3c: a 404 (no such repo or branch) is distinguished from a
-     genuine failure by the API's own status, not by parsing `gh`'s wording,
-     and only the failure prints to stderr. `shellcheck`-clean.
 3j. **Issues pre-fetch.** For each configured repo whose `sources` include any
    `issues:<band>` entry (one source at four ranks — any band warrants the one
    fetch) (requirement 48: freshly for the one repository this cycle picks, replayed from this node's expensive-gather cache for the rest), run `scripts/gather-issues.sh <slug>`, which prints
@@ -5509,7 +5412,7 @@ implements.
      read is the model-side twin of the fingerprint gap requirement 3b warns
      about: no error, just tidy `none-selected` events over live work. The
      array makes the candidate set an input rather than an errand, the same
-     move every drifted source before it got (3a, 3c, 3e, 3g, 3i).
+     move every drifted source before it got (3a, 3c, 3e, 3g).
    - **The deterministic half of requirement 16.4 is applied here**: assigned
      issues, issues labelled `blocked` (case-insensitive), issues naming an
      unresolved `Blocked-by:` reference (requirement 34j, checked live once
@@ -5651,9 +5554,7 @@ implements.
      `pr_number` rides along when the underlying registry entry recorded one —
      which, for all five of those sources, is always, once requirement 17a's
      PR-keyed claim exists alongside the item-keyed one; and
-   - every live `<tech_debt_branch_prefix>*`/`<branch_prefix>*` branch (default
-     `tech_debt_branch_prefix` is `td/`; empty disables that namespace and only
-     `<branch_prefix>*` is listed) on the target repository
+   - every live `<branch_prefix>*` branch on the target repository
      itself (`lib/claim.sh branches`), which still catches a claim the
      registry missed — `state_repo` unset, or a best-effort registry write
      that failed — with `age_hours` reported as `null` when no registry entry
@@ -5676,12 +5577,9 @@ implements.
 
    Item refs recovered from a branch name mirror `claim_branch_for`
    (requirement 17a): `<branch_prefix><ref>` strips to `<ref>` for a fresh
-   claim, and `td/<ID>` — no longer minted by `claim_branch_for` itself, but
-   still matched here — strips to `<ID>` for a legacy branch (a repository's
-   pre-migration human tech-debt-claim workflow, or one this pipeline minted
-   before this revision). That recovery is exact in practice for every item
+   claim. That recovery is exact in practice for every item
    type this system ever mints such a branch for — an issue number, an alert
-   ref, a register-hygiene or project-review ref — none of which contain a
+   ref, or a project-review ref — none of which contain a
    character `claim_branch_for`'s sanitiser would have touched, so there is
    nothing lossy to recover from.
 3p. **PR-level candidate exclusion (issue #238).** The scoped item refs the
@@ -5711,7 +5609,7 @@ implements.
    model-judgement decision as 3p, extended from PR numbers to item refs and
    from those five sources to every array the Script pre-fetches:
    for each repo, before its `issues`, `findings`, `tech_debt`,
-   `register_hygiene`, `review_feedback`, `merge_conflicts`, `dequeued`,
+   `review_feedback`, `merge_conflicts`, `dequeued`,
    `landing_refusals` and
    `abandoned_drafts` arrays are assembled into the runtime input, the Script
    drops any entry whose `ref` — the exact string a claim on that item is
@@ -5827,7 +5725,7 @@ implements.
    (see 3b's own note on rejected verdicts, below): 6 selections on 08-10, 0
    on 08-11 (240 stand-downs, not one Co-Ordinator invocation), 9 on 08-12.
    Handing the candidates over pre-fetched and pre-filtered, exactly as every
-   other drifted source got before it (3a, 3c, 3e, 3g, 3i, 3j), removes the
+   other drifted source got before it (3a, 3c, 3e, 3g, 3j), removes the
    judgement step that kept getting reasoned past.
 
    **Machine corroboration, and fingerprint rejection.** A `selected: false`
@@ -5885,7 +5783,7 @@ implements.
    3t's own second pass runs, after every reconciliation requirement 34 runs
    and after requirement 34n's retirement — the Script re-applies
    `exclude_blocked_or_void_items` to `findings`, `review_feedback`,
-   `abandoned_drafts`, `merge_conflicts`, `register_hygiene` and
+   `abandoned_drafts`, `merge_conflicts` and
    `human_visibility`, exactly as it
    already did to `tech_debt`: any entry whose `ref` is recorded blocked or
    void for that repo is dropped, scoped by repo exactly as
@@ -6005,8 +5903,8 @@ implements.
      `prompts/coordinator.md`'s "Selection algorithm": the five cross-repo
      overrides (security, urgent issues, review-feedback, merge-conflicts,
      abandoned-drafts) ahead of the residual bands (human-visibility, high
-     issues, tech-debt, medium issues, low issues, code-quality,
-     register-hygiene) — restricted to the bands `ordered_repos_json` itself
+     issues, tech-debt, medium issues, low issues,
+     code-quality) — restricted to the bands `ordered_repos_json` itself
      carries an array for; `failed-runs`, `implementation-plan` and
      `project-review` have none there and are skipped rather than
      approximated (each would need a live `gh` read or a tree fetch the
@@ -6023,8 +5921,8 @@ implements.
      have its own `issues:<band>` token listed, exactly as for the
      Co-Ordinator. Requirement 3x made that necessary as well as tidy — the
      pre-fetched arrays stopped being the authority the moment requirement
-     2.2a's back-pressure began narrowing the *list* while leaving `findings`,
-     `register_hygiene` and `human_visibility` populated. Under requirement 3t
+     2.2a's back-pressure began narrowing the *list* while leaving `findings`
+     and `human_visibility` populated. Under requirement 3t
      the point could not arise (back-pressure empties `tech_debt`, so a
      tech-debt-only gate could never reject during a restricted cycle, and
      this function was unreachable); under a gate that also counts the
@@ -6188,7 +6086,7 @@ implements.
    #322).** Requirement 3t machine-checks a `none-selected` verdict against
    exactly one band. A verdict claiming "no candidates" over a non-empty
    `issues` array — or `findings`, `review_feedback`, `abandoned_drafts`,
-   `merge_conflicts`, `register_hygiene`, `human_visibility` — went entirely
+   `merge_conflicts`, `human_visibility` — went entirely
    un-corroborated, which is the same failure shape as issue #310 one band
    over: requirement 3j's pre-fetch closed the "model declines to read the
    source live" hole for `issues`, and nothing closed the "model misdescribes
@@ -6207,8 +6105,8 @@ implements.
    tech-debt-only predecessor was — after requirement 2.2a's back-pressure
    decision — and each band is gated on the repo's own **`sources` list**
    rather than merely on its array being non-empty. The list is the authority
-   because back-pressure narrows it without emptying `findings`,
-   `register_hygiene` or `human_visibility`, and a verdict owes no account of
+   because back-pressure narrows it without emptying `findings`
+   or `human_visibility`, and a verdict owes no account of
    a band the cycle forbade it to select from. Three bands need more than
    "every entry in the array", and each for a reason already written down
    elsewhere:
@@ -6384,16 +6282,13 @@ implements.
      code); the pre-fetched `findings` cover security and code-quality
      verbatim; the pre-fetched `review_feedback`, `merge_conflicts`,
      `dequeued`, `landing_refusals` and `abandoned_drafts` arrays cover those
-     five sources verbatim,
-     `register_hygiene` covers register-hygiene the same way, and `tech_debt`
-     (requirement 3t) covers the tech-debt band the same way again (belt and
-     braces in both cases — `head_sha` already moves whenever the register
-     does, but a source exempted from the map is one nobody re-checks when the
-     map changes, and an edit to `td-check.pl` moves register-hygiene's own
-     candidacy with no repo commit at all; `tech_debt`'s belt-and-braces is
-     what lets requirement 3t's machine corroboration compare the
-     Co-Ordinator's verdict against the Script's own eligible count without a
-     stale fingerprint standing in the way) — the latter two matter especially
+     five sources verbatim, and `tech_debt`
+     (requirement 3t) covers the tech-debt band the same way (a source
+     exempted from the map is one nobody re-checks when the map changes;
+     `tech_debt`'s coverage is what lets requirement 3t's machine
+     corroboration compare the Co-Ordinator's verdict against the Script's
+     own eligible count without a stale fingerprint standing in the way) —
+     the latter two matter especially
      among the finishing sources, because each turns on a transition the
      open-PR digest does not carry: `abandoned_drafts` gains an entry the cycle a
      draft goes stale (the mere passage of time), and `merge_conflicts` the cycle a
@@ -6874,7 +6769,7 @@ implements.
    only `cycle-start`/`cycle-end` pairs while the dashboard's work-source
    panel, fed by the publisher's own fetch, kept advertising candidates no
    Co-Ordinator would ever read. At the act-on-void sweep (requirement 34k),
-   the register-void pass (requirement 34l) and the unvoid-label read
+   the register-void pass (since retired) and the unvoid-label read
    (requirement 34f), the same delivery sat behind `2>/dev/null || echo
    '[]'` guards and degraded silently instead — and what those three
    implement is exactly the machinery that retires void state, so the
@@ -6932,11 +6827,11 @@ implements.
    whole `$violations` argument as a single argv element to the script's own
    `execve` (`test/gather-human-visibility-hygiene.test.sh`).
    TD-PPagop-26081503 completed the sweep over four further sites found after
-   TD-PPagop-26081406 resolved: `gather-source-state.sh`'s final state build
+   TD-PPagop-26081406 resolved, three of which survive:
+   `gather-source-state.sh`'s final state build
    (`test/gather-source-state.test.sh`), `gather-findings.sh`'s
    combine-and-order build (`test/gather-findings.test.sh`),
-   `gather-register-hygiene.sh`'s problems merge and final candidate build
-   (`test/register-hygiene.test.sh`), and `publish-dashboard.sh`'s
+   and `publish-dashboard.sh`'s
    `github_json` build (`test/publish-dashboard.test.sh`).
    TD-PPagop-26081506 converted the two sites that item's own Implementer
    found but left out of scope, both in `publish-dashboard.sh` upstream of
@@ -6961,12 +6856,10 @@ implements.
 
    **The cap is per argv element, not per flag.** `--arg` is bound by
    `MAX_ARG_STRLEN` exactly as `--argjson` is, so a rendered string counts
-   against this requirement wherever it grows with fleet state. Three sites
+   against this requirement wherever it grows with fleet state. Two sites
    carry one: `scripts/gather-review-feedback.sh` assembles every fresh review
-   and inline comment into one body, `scripts/gather-human-visibility-hygiene.sh`
-   renders its survivor set into a digest, and
-   `scripts/gather-register-hygiene.sh` renders `td-check.pl`'s report — plus
-   any VOIDED STATUS section — into its own candidate body. All three keep
+   and inline comment into one body, and `scripts/gather-human-visibility-hygiene.sh`
+   renders its survivor set into a digest. Both keep
    that value JSON-encoded and hand it to their candidate build on stdin
    beside the array(s) it came from — an `--arg` there would put the same
    bytes back into a single argv element and leave the threshold where it
@@ -9132,8 +9025,8 @@ implements.
     for the ordinary cron firing — under-coverage, which the subset rule
     above permits, never over-coverage), and
     `repos/<slug>/commits` (anything living in the repository's own tree
-    changes by a push, covering `code`, `implementation-plan`,
-    `project-review` and `register-hygiene`). `security`/`code-quality`
+    changes by a push, covering `code`, `implementation-plan` and
+    `project-review`). `security`/`code-quality`
     are deliberately absent: this deployment's own token cannot read
     `repos/<slug>/dependabot/alerts` (`403`, measured live) — polling an
     endpoint the token cannot read would only ever log a warning, never a
@@ -9458,12 +9351,12 @@ implements.
       found the recorded blocker still holds — or recorded as void (an
       `item-void` event not followed by `unvoided`), which has no re-check to
       preserve for any source. For `findings`, `review_feedback`,
-      `abandoned_drafts`, `merge_conflicts`, `dequeued`, `register_hygiene`,
+      `abandoned_drafts`, `merge_conflicts`, `dequeued`,
       `human_visibility` and
       `tech_debt`, both halves are already applied deterministically by the
       Script (requirement 3u) before the runtime input is assembled — there
       is nothing left here for the Co-Ordinator to check for any of those
-      eight sources. `issues` gets the same treatment for its void half and for a
+      seven sources. `issues` gets the same treatment for its void half and for a
       *stale* blocked entry; only a blocked issue carrying evidence fresh
       enough to warrant requirement 18a's live re-check ever reaches the
       Co-Ordinator;
@@ -9479,7 +9372,7 @@ implements.
       atomic claim in requirement 17a is the hard gate, this exclusion merely
       avoids proposing work that will lose the race. Unlike the open-PR half,
       there is nothing to check live here: `claimed` is exhaustive over both a
-      registry entry and a live `td/<ID>`/`agent/<item-ref>` branch, already
+      registry entry and a live `agent/<item-ref>` branch, already
       age-filtered to `claim_ttl_hours`, so an entry present excludes and an
       entry absent (or aged out) does not — for
       a `security`/`code-quality` finding, that means
@@ -9967,11 +9860,11 @@ implements.
     ladder (requirement 4i) may already have trimmed, and are asked to
     reproduce kilobytes of that input verbatim — a task requirements 17f/17g
     could only ever catch failing after the fact. This requirement removes
-    the task instead of catching its failure: for the eleven sources the
+    the task instead of catching its failure: for the ten sources the
     Script already gathers as structured data (`security`, `code-quality`,
     `review-feedback`, `merge-conflicts`, `dequeued`, `landing-refusals`,
     `abandoned-drafts`,
-    `human-visibility`, `register-hygiene`, `tech-debt`, `issues`), the
+    `human-visibility`, `tech-debt`, `issues`), the
     Co-Ordinator selects `{repo, source, item}` and the Script itself builds
     `context`, `acceptance` and `title` immediately before the claim
     (`compose_selected_candidate_text`, `lib/candidate-select.sh`) — the model
@@ -10054,16 +9947,6 @@ implements.
       (ref exists, even at the same SHA — which a plain `git push` of an
       identical ref would no-op) means a peer holds the item: log
       `claim-lost` and move to the next candidate.
-
-      `td/<ID>` is no longer minted for a fresh claim — `tech_debt_branch_prefix`
-      is deprecated — but a *live* one is still recognised elsewhere as not
-      this pipeline's own fresh claim: `lib/claim.sh`'s `branches` listing
-      (requirement 17b's orphan-branch sweep, and this requirement's own
-      `gather_claimed`) still matches it, so a repository's pre-migration
-      human tech-debt-claim workflow (`TECH-DEBT.md`) and a `td/<ID>` branch
-      this pipeline minted before this revision are both left alone rather
-      than double-claimed or swept. That recognition, and the namespace
-      itself, retires only in the roadmap's later register-retirement issue.
 
       A `merge-conflicts` work order carrying `"takeover": true` (requirement
       3s) takes a *branch* claim, not the file claim every other
@@ -10248,31 +10131,16 @@ implements.
     best-effort registry write never landed, wedging the item with nothing
     to recover. So after the gc (2.1a), every cycle runs
     `scripts/sweep-orphan-branches.sh` over each configured repo's
-    `<tech_debt_branch_prefix>*` (default `td/`; empty disables that
-    namespace), `<branch_prefix>*`, and `td-record/*` refs — the last swept
-    unconditionally rather than gated by `tech_debt_branch_prefix`, since a
-    `td-record/<id>` branch is never itself claim-prefixed the way the other
-    two are. `techdebt_file_debt` (`lib/tech-debt-file.sh`) no longer mints
+    `<branch_prefix>*` and `td-record/*` refs.
+    `techdebt_file_debt` (`lib/tech-debt-file.sh`) no longer mints
     one — agent-ops#874 moved its filing to a labelled issue — but this walk
     still needs to recognise, and eventually retire, any branch a filing from
     before that move left behind. A ref is a provable orphan only when **all
     three** hold: no open PR uses it, no registry entry stands for it (only
     a clean 404 proves absence — any other failure skips the ref, fail
     closed), and its tip commit is older than `abandoned_draft_after_hours`
-    — the same judgement that makes a draft abandoned — provided it is not
-    itself `reserve-tech-debt-id.pl`'s own reservation commit: a
-    `<tech_debt_branch_prefix><ID>` branch (`reserve-tech-debt-id.pl` itself
-    always names it `td/<ID>`, so this recognition only fires where
-    `tech_debt_branch_prefix` is left at its `td/` default) whose sole commit
-    ahead carries that script's fixed
-    `chore(tech-debt): reserve <ID>` subject and touches no files is the
-    ID-reservation scheme's atomic claim lock, not work — regardless of
-    whether `<ID>` has since been filed, and regardless of which branch any
-    such filing actually landed on, since recognising the lock by its
-    commit's own shape needs no lookup into that at all (issue #545). Such a
-    ref is swept as neither recovered nor deleted: the sweep leaves it
-    exactly as found, a spent lock cleared by hand once its ID's fate is
-    settled elsewhere. `td-record/<ID>` is swept differently again, and is
+    — the same judgement that makes a draft abandoned.
+    `td-record/<ID>` is swept differently again, and is
     the one prefix that is delete-only, never recovered: a filing pull
     request a human has closed without merging means they declined that
     record, and a recovery draft would hand it straight back to them
@@ -10289,8 +10157,7 @@ implements.
     means it never did, so the id is spent with nothing to show for it and
     its `td/<ID>` reservation is released alongside it (a second `released`);
     a 200 means the record landed some other way, so
-    `release-td-branch.yml` already owns that reservation and the sweep
-    leaves it alone; any other failure answers nothing, so — fail closed,
+    the reservation is left alone as an inert, already-honoured lock; any other failure answers nothing, so — fail closed,
     like every guard here — it is left alone too. Because this delete and
     release together can cost two actions against the per-run cap below, the
     sweep reserves both up front rather than checking once per branch: a run
@@ -10322,7 +10189,7 @@ implements.
     stream of redundant recovery drafts (issue #302) — **or unless the
     branch's own *work*, not its own head, already landed via a rival
     branch**, which the sweep checks by reducing both branches to a stem —
-    the `tech_debt_branch_prefix`/`branch_prefix` claim prefix stripped from
+    the `branch_prefix` claim prefix stripped from
     the front and a
     trailing, **exactly** twelve-hex-character random suffix stripped from
     the back, if present (a lower bound would misfire: a tech-debt id like
@@ -10435,8 +10302,7 @@ implements.
     target repo, so this is not a per-repo loop the way 17b/17c are — and
     for each: retries the branch's own delete; on success, or on a delete
     that fails but a follow-up read confirms the branch already gone
-    (released by a peer's own concurrent retry, or by the ordinary
-    `release-td-branch.yml` path), clears the marker; on a delete that fails
+    (released by a peer's own concurrent retry), clears the marker; on a delete that fails
     again, leaves the marker for the next cycle's pass. Recovery therefore
     costs no more than time — the marker survives until the transient
     GitHub failure that first defeated `_techdebt_unfile` finally clears, or
@@ -10573,7 +10439,7 @@ implements.
     deterministic, so every node derives the same claim key. `source` is one of
     `security`, `review-feedback`, `merge-conflicts`, `abandoned-drafts`,
     `failed-runs`, `tech-debt`, `issues`, `implementation-plan`, `project-review`,
-    `code-quality` or `register-hygiene`
+    or `code-quality`
     — an issue is `issues` whichever band it was selected from
     (requirement 15e); the `issues:<band>` tokens exist only in `sources`, to
     place the source in the walk, and never in a work order.
@@ -10616,14 +10482,7 @@ implements.
     `pr_number` and `base`, and `context` is the PR's own `body` verbatim;
     `acceptance` names diagnosing and fixing the merge-group's own checks
     failure, pushed to the existing branch, with the PR left ready for a
-    human's fresh "Merge when ready". For a `register-hygiene` entry, `item`
-    is its `ref`, there is no PR to carry (the Script derives the ordinary
-    `agent/<ref>` claim branch), `model` is always
-    `implementer_model_trivial` — register-only editing, no behaviour change
-    — and `context` is the entry's `body`, the consistency check's whole
-    output, verbatim, plus its `url` and `blob_sha`. `acceptance` names
-    argless `perl scripts/td-check.pl` exiting 0, with the repair discipline
-    of requirement 25 followed. For a `human-visibility` entry, `item` is its
+    human's fresh "Merge when ready". For a `human-visibility` entry, `item` is its
     `ref`, there is no PR to carry, `model` is always
     `implementer_model_default` (a diagnosis, not an edit), and `context` is
     the entry's `body` verbatim plus its `url`. For a `security`/
@@ -10882,14 +10741,14 @@ implements.
     an earlier direct filing — that file is still the permanent register
     entry: the same pull request must also flip its frontmatter to `status:
     resolved`, filling `resolved:` and `ref:`, exactly as `TECH-DEBT.md`'s
-    "Claiming an item" step 6 describes (PR #1313 is the precedent) — or,
+    "Resolution and history" describes (PR #1313 is the precedent) — or,
     where the work's conclusion is that the item was never debt, to
     `status: not-debt` with `ref:` pointing at where the content moved
     (`TECH-DEBT.md` "Resolution and history"; issue #1437) —
     closing the issue alone does not resolve it, and skipping this step is
     what left `tech-debt/TD-PPagop-26082412.md` at `status: open` after PR
-    #1355's first round. An issue with no such line has no file to flip and
-    no `td-check.pl` to satisfy — this is a pull-request-body convention,
+    #1355's first round. An issue with no such line has no file to flip —
+    this is a pull-request-body convention,
     not a file, for that case only — and the block's shape is fixed so the
     archive mirror and later analytics can parse it (the mirror and its own
     retention are D15's separate concern, not this requirement's).
@@ -10906,44 +10765,6 @@ implements.
     Adds a `CHANGELOG.md` entry when the change is notable by that repo's
     definition (a security fix usually is).
 
-    For a `register-hygiene` item (requirement 3i) there is no originating
-    record to close — the register *is* the item — but the repair has a
-    discipline, and without it a tidy-up destroys information. The problem
-    labels the work order carries are BAD NAME, BAD FRONTMATTER, MISSING
-    FIELD, BAD FIELD, BAD STATUS, BAD SCOPE, NO SCOPE, ID MISMATCH, DATE
-    MISMATCH, STALE FIELD or DUPLICATE ID — all `td-check.pl`'s own — and
-    VOIDED STATUS, which is not (requirement 34l):
-    - Most are one-line frontmatter corrections, made to match the facts —
-      the pull request its `ref:` names, the filename, the `scope:` declared
-      in `TECH-DEBT.md` — never the other way round. Where the facts are not
-      recoverable from git history, the Implementer reports `blocked` naming
-      the file and what could not be established.
-    - A **STALE FIELD** (a resolution field set on an open item) is judged by
-      following the `ref:` and confirming the fix has landed before the
-      status itself is flipped to `resolved`, or the resolution fields
-      cleared and the item left open.
-    - A **VOIDED STATUS** (requirement 34l: the fleet's void log records the
-      item done, the file still says `open`/`in-progress`) is judged by
-      following the void's own evidence, carried in the work order's `body`,
-      and confirming the change did land on the default branch — usually
-      under some other item's pull request, which is why the row was never
-      flipped. If it did, `status:` is flipped to `resolved` with `resolved:`
-      and `ref:` filled from that evidence; if it did not, the row is left
-      exactly as it is and the Implementer's `notes` say why.
-    - An item file is **never deleted or renamed** once on the default
-      branch — the directory is an append-only set and CI enforces it — and
-      nothing is touched beyond what the work order's problem lines flag:
-      item files are permanent records, not a place to re-word titles or
-      tidy accepted frontmatter.
-
-    The pull request is pure register housekeeping — the register and
-    nothing else — and argless `perl scripts/td-check.pl` exits 0 before the
-    item is complete, the same check the target repo's own CI will run on
-    the PR. That checker is the whole acceptance only for its own labels: it
-    reads each file against itself, its filename and the declared scope, so
-    it exits 0 on a VOIDED STATUS row untouched. Where the work order carries
-    one, the item is complete only once that row is flipped or the
-    Implementer has said why the evidence did not hold up.
 25a. **The closing keyword requirement 25 asks for is enforced deterministically
     — by CI and by the Script — not by trusting the prompt.**
     `.github/workflows/closing-keyword.yml` runs
@@ -11017,9 +10838,9 @@ implements.
     diff adds a line setting that file's `status:` to one of the register's
     two terminal states — `resolved`, or `not-debt` for an item the
     resolving pull request concludes was never debt (issue #1437: both are
-    equally terminal to `td-check.pl`, `lib/work-gone.sh` and
-    `lib/candidate-gather.sh`, and `td-check.pl` still requires a `not-debt`
-    row to carry its `ref:`). PR #1355's first round is
+    equally terminal to `lib/work-gone.sh` and
+    `lib/candidate-gather.sh`, and a `not-debt` row still requires a `ref:`
+    of its own). PR #1355's first round is
     the concrete miss this closes: the issue closed, the file left at
     `status: open` on `main` until a later round caught it by hand — nothing
     before this checked the flip mechanically, only the prose
@@ -11143,9 +10964,7 @@ implements.
 
     **Advisory only, and only ever that.** The workflow never reopens the
     issue, never relabels it, and never fails its own run over a
-    non-compliant close — `tech-debt-close-guard.sh` always exits 0, the same
-    "advisory, never fails its caller" contract `scripts/release-td-branch.sh`
-    states for the same reason. Nothing reads this workflow's conclusion:
+    non-compliant close — `tech-debt-close-guard.sh` always exits 0. Nothing reads this workflow's conclusion:
     it is not a required status check, it gates no merge (an issue close has
     none to gate), and no work source or gate anywhere in this pipeline
     consults it. A red run means the guard itself could not operate — `gh`
@@ -11975,10 +11794,10 @@ implements.
     `first-seen` (TD-PPagop-26081405, issue #248 acceptance 4) is written by
     `emit_first_seen` (lib/candidate-select.sh) the first time any node's gather
     ever
-    reports a given `{repo, item}` pair, for each of the eight pre-fetched
+    reports a given `{repo, item}` pair, for each of the seven pre-fetched
     arrays requirement 3q names (`issues`, `findings` — split into its own
     `security`/`code-quality` `source`, since one gather call answers for
-    both — `tech_debt`, `register_hygiene`, `review_feedback`,
+    both — `tech_debt`, `review_feedback`,
     `merge_conflicts`, `dequeued`, `abandoned_drafts`), carrying `repo`,
     `item`, `source`
     (the same label the eventual `selection` for that item carries),
@@ -12023,8 +11842,9 @@ implements.
     no `ref` at all, so `emit_first_seen` would log nothing there, and a
     synthetic one keyed on `pr_url` could never pair with the composite `ref`
     the eventual `selection` carries. Measuring this source honestly means
-    re-scoping its `ref` to per-violation identity, which requirement 3i's
-    expiry-by-irrelevance rule for that ref depends on; until that is done
+    re-scoping its `ref` to per-violation identity, the same
+    expiry-by-irrelevance rule requirements 3c, 3e and 3g's own refs depend
+    on; until that is done
     the boundary stands and is disclosed rather than papered over.
     `bootstrap` exists because a node's first cycle
     emitting `first-seen` at all — freshly onboarded, or the cycle this
@@ -13088,12 +12908,12 @@ implements.
       (requirement 3), because a Co-Ordinator that sees no findings declines and
       the two agree. Read as a clearing signal the same `[]` says "every alert
       is fixed", so one 403 would clear every alert block on the fleet. A
-      register-hygiene item (`register-hygiene-<hash>`) or a human-visibility
+      human-visibility
       item (`human-visibility-<hash>` — requirement 38e) is excluded for the
-      plainer reason that neither has a completion signal to read at all —
-      the register, or GitHub's own live pull-request state, *is* the item,
-      and its own re-derivation is what `gather-register-hygiene.sh` or
-      `gather-human-visibility-hygiene.sh` itself repairs. Both remain the
+      plainer reason that it has no completion signal to read at all —
+      GitHub's own live pull-request state *is* the item,
+      and its own re-derivation is what
+      `gather-human-visibility-hygiene.sh` itself repairs. It remains the
       Enabler's, exactly as before.
     - **It clears, it never voids.** The event is `unblocked`, which requirement
       34 calls the safe direction — a wrongly cleared item becomes a candidate
@@ -13294,7 +13114,8 @@ implements.
     Every other void shape — a tech-debt register id, a project-review ref,
     an implementation-plan task id — names something that is not a GitHub
     object to close, and requirement 34k does nothing with it; a register id
-    is instead requirement 34l's concern, immediately below.
+    is instead requirement 34n's own register-status signal's concern,
+    below.
 
     **Only a corroborated void — the three stage writers, and the delegate
     mandate's own act.** `void_json` holds the unresolved `item-void` events
@@ -13340,46 +13161,6 @@ implements.
     reported, never silent, same as every other sweep here), and a `gh` read
     before every close means the worst outcome of two nodes racing is both
     finding nothing left to do. Skipped on `--dry-run`.
-34l. **Register rows, voided.** A void naming a tech-debt register id
-    (`lib/work-gone.sh`'s `WORK_GONE_REGISTER_RE`) names a file, not a
-    GitHub object — 34k's own close has nothing to do with it. But the same
-    defect it exists to close applies just as much here: the fleet's void
-    log already knows the item is done, most often because the fix landed
-    some way other than that item's own claim branch, and the register file
-    still says `status: open`, advertising unfinished work forever
-    (TD-PPpfid-26071901, voided in July, still `open` months later; issue
-    #240).
-
-    So, for every repo `work_gone_register_ids` names against `void_json`
-    (the same shared function requirement 34i's clearance rule already
-    calls, applied here to the void set instead of the blocked one), the
-    Script re-derives that repo's register-hygiene candidate —
-    `scripts/gather-register-hygiene.sh`, called a second time this cycle,
-    now with the void items and their evidence — and replaces the entry
-    requirement 3i's own pre-fetch loop already built for it in the
-    Co-Ordinator's runtime input. The replacement only ever happens on a
-    non-empty answer: this pass is a superset of the first by construction,
-    so an empty result means the second read failed where the first
-    succeeded, and overwriting on it would delete a candidate the cycle
-    already holds on no evidence at all. The gatherer's own `VOIDED STATUS` problem
-    class (a second, disjoint source of candidacy layered on top of
-    `td-check.pl`'s internal-consistency rules, never fed back into the
-    byte-identical upstream checker) is what makes this a candidate at all
-    when `td-check.pl` alone would find the file fine. The repair travels
-    through the ordinary register-hygiene Implementer flow (prompts/
-    implementer.md's "Register hygiene" procedure) exactly as any other
-    frontmatter drift — flipping `status:` to `resolved` with the void's own
-    evidence as `ref:`, or clearing stray resolution fields, whichever the
-    facts support — never a write this pipeline makes directly against a
-    protected default branch.
-
-    Re-fetching the register a second time per repo (rather than reordering
-    the cycle so requirement 3i's own pass already had `void_json`) costs
-    one extra tarball read, and only for a repo that actually has a void
-    register item — everywhere else, nothing. The alternative was moving
-    34f/34g/34i/34k's whole pre-extract window earlier than the ordering
-    those requirements are already deliberate about.
-
 34m. **A freshly claimed item gets the same gone-work check, before the
     Implementer runs, not inside it.** 34i clears a *blocked* item's void
     without asking anyone, from digests the cycle already gathered; a
@@ -13521,11 +13302,10 @@ implements.
         register ids (a `TD<date><nn>`/`TD-<scope>-<date><nn>` shape) by a
         further `scripts/gather-register-status.sh` call per repo, alongside
         the one requirement 34i already makes for that repo's blocked ones;
-      - **liveness**, for the six shapes the cycle already gathers as
+      - **liveness**, for the five shapes the cycle already gathers as
         structured data each cycle (TD-PPagop-26081303, extended by
         TD-PPagop-26081409 and agent-ops#646): a
-        `dependabot-alert-<n>`/`code-scanning-alert-<n>`, a
-        `register-hygiene-<hash>`, a `human-visibility-<hash>`, either
+        `dependabot-alert-<n>`/`code-scanning-alert-<n>`, a `human-visibility-<hash>`, either
         merge-conflicts shape
         (`pr-<n>-conflict-<head-sha>`, which 34k deliberately excludes from its
         own close, and `pr-<n>-superseded-<head-sha>`, which it closes — both
@@ -13538,42 +13318,27 @@ implements.
         cycle's own gather for its source, decided only when that source's
         gather succeeded this cycle, and (b) nothing else — liveness is not
         itself the age test, which the second half of this rule still
-        applies uniformly. Age-only retirement for these six shapes was
+        applies uniformly. Age-only retirement for these five shapes was
         considered and rejected: a void whose id is *still being gathered* —
-        a still-open alert, a register-hygiene finding the register still
-        has, a workflow still failing, a PR still conflicted or dequeued — is doing live
+        a still-open alert, a workflow still failing, a PR still conflicted or dequeued — is doing live
         suppression work every cycle, and retiring it on age alone would
         re-expose the item to be rediscovered void all over again, the exact
         rediscovery churn requirement 34k exists to stop. "This cycle's own
-        gather" is, for the first five, the same array the Co-Ordinator's
+        gather" is, for the first four, the same array the Co-Ordinator's
         runtime input already carries for that repo — read from the tee
-        files `gather_findings`/`gather_register_hygiene`/
+        files `gather_findings`/
         `gather_merge_conflicts`/`gather_dequeued`/
         `gather_human_visibility_hygiene` already write during the
         repo walk, before
         claim exclusion narrows them (a claimed alert is still an open one),
         so this costs no further `gh` call; "that source's gather succeeded"
-        is a `.ok` marker each of those five functions writes *only*
+        is a `.ok` marker each of those four functions writes *only*
         alongside its tee file — never on its own, since a marker with no
         array beside it reads downstream as "gathered, found nothing", the
         one sentence it exists to stop the cycle saying — and only when that
         read also succeeded: gather-findings.sh's own exit code for the alert
         shape, stderr emptiness for the other two, which never signal failure
-        via exit code by design (see their own headers). Because a tee file
-        is now read rather than merely kept for debugging, every gather that
-        writes one names the pass it is serving in the filename:
-        `gather_register_hygiene` is called twice per cycle for one repo —
-        here during the repo walk and again for requirement 34l's void
-        re-derivation — and takes a `purpose` argument (`prefetch`, `void`)
-        exactly as `gather_review_status`/`gather_plan_status` do for
-        requirement 34i's two passes. Liveness reads the `prefetch` pass's
-        files only. Sharing one filename was a defect, not a saving:
-        `scripts/gather-register-hygiene.sh` prints `[]` on stdout for every
-        failure path, which is a valid array, so a failed second read
-        replaced a successful first read's array with an empty one beneath a
-        `.ok` marker the first read had already written — and liveness then
-        retired every still-live `register-hygiene-<hash>` void in the repo
-        on the strength of a rate limit. The
+        via exit code by design (see their own headers). The
         merge-conflicts shape is the one whose id is minted per occurrence
         rather than per object — a fresh `<head-sha>` mints a fresh id, so no
         two ever coalesce — which makes it the fastest-growing member of
@@ -13589,8 +13354,8 @@ implements.
 
         The `human-visibility-<hash>` shape (agent-ops#646) joins on the same
         rule and needs one thing none of the others do. Its ref is a digest
-        of the surviving violations' own `pr_url|detail` pairs, so — like
-        `register-hygiene-<hash>`, and unlike every `pr-<n>-…` shape — a
+        of the surviving violations' own `pr_url|detail` pairs, so — unlike
+        every `pr-<n>-…` shape — a
         violation set that merely *changes* mints a different ref rather than
         dropping this one, and the void of the superseded ref is dead weight
         from that moment on; the absent-from-this-cycle's-gather test is
@@ -13656,7 +13421,7 @@ implements.
         2026-08-13). Liveness decides nothing without the source's own
         successful gather, and a source is gathered only for a repo whose
         `sources` still list it — so a repo that drops `merge-conflicts` (or
-        `security`, or `register-hygiene`) freezes every void of that shape
+        `security`) freezes every void of that shape
         it had already minted, and a repo dropped from `repos` altogether
         freezes every shape but the closed-object one. An entry is actioned
         when its repo is absent from the configured repo set (`by:
@@ -13698,8 +13463,8 @@ implements.
         under which every other repo would read as dropped, and
         `ordered_repos_json`'s `sources` are rewritten by back-pressure
         (requirement 2.2a) down to the four finishing sources, which would
-        mint a spurious `source-dropped` for `security` and
-        `register-hygiene` on every back-pressured cycle. A `repos` array
+        mint a spurious `source-dropped` for `security`
+        on every back-pressured cycle. A `repos` array
         that is empty or unreadable decides nothing rather than retiring the
         whole extract at once. The decision is config-derived and so is only
         as fleet-consistent as the config: a node running a stale image can
@@ -13732,7 +13497,7 @@ implements.
     The next cycle reads the recorded set back (`void_retired_items`,
     `lib/cycle-state.sh`) and subtracts it from the extract
     (`subtract_retired_voids`) the moment `void_items` has produced it —
-    before the 34k sweep, the 34l register pass, and this requirement's own
+    before the 34k sweep, the register-status read, and this requirement's own
     evidence-gathering. Two bounds follow that re-deciding retirement from
     scratch each cycle would not give: the per-cycle GitHub cost is
     proportional to the *unretired residue*, never to every void ever filed —
@@ -13747,19 +13512,20 @@ implements.
     dry run sees the extract a real cycle would.
 
     `retire_void_items` (`lib/cycle-state.sh`) is the one implementation,
-    called once, immediately after requirement 34l's register-hygiene pass
+    called once, immediately after the register-status read
     and before anything downstream reads `void_json`: the Script reassigns
     `void_json` to its answer rather than introducing a second name, so the
     Refiner's candidate filter, the no-op fingerprint and the Co-Ordinator's
     own input all see the bounded set with nothing to remember. Every earlier
-    reader this same cycle — the 34k sweep and the 34l register-hygiene pass,
+    reader this same cycle — the 34k sweep and the register-status read,
     both running against the extract with recorded retirements already
     subtracted, and `unvoid_clearances_json`, which reads `void_items`
     directly and so still reaches a retired-but-void item — needs nothing
     from the narrower set this call produces: 34k's own closed-object gate
-    already skips a closed item on its own account, and 34l's repair has
-    nothing left to do once a row already reads `resolved`/`not-debt`, which
-    is a precondition retirement itself requires. (Narrowing before 34l is
+    already skips a closed item on its own account, and the register-status
+    read has nothing left to do once a row already reads `resolved`/`not-debt`, which
+    is a precondition retirement itself requires. (Narrowing before the
+    register-status read is
     also what stops a repo whose void register ids have all retired paying a
     register fetch every cycle forever.)
 
@@ -13804,7 +13570,7 @@ implements.
     entirely — the Script logs a `warning` naming the byte size and entry
     count whenever `void_json` is still over 100,000 bytes after retirement:
     a live signal that retirement itself has fallen behind (a burst of new
-    voids, `void_retire_after_days` set too high, or 34k/34l failing to
+    voids, `void_retire_after_days` set too high, or 34k failing to
     action items), well before any cap could bite.
 
 ### The Enabler
@@ -15694,30 +15460,29 @@ implements.
       `merge-conflicts` (config.schema.json's `sources` enum and priority-order
       notes), the same "finishing beats starting" class as `review-feedback`,
       `merge-conflicts` and `abandoned-drafts`: a violation here means finished
-      work is invisible to the human whose merge everything waits on, which
-      `register-hygiene`'s deterministic-cosmetic-repair, last-place rationale
-      does not describe. Selection, branch derivation (`agent/<ref>`) and the
-      block/void escape hatch all work exactly as `register-hygiene`'s own
+      work is invisible to the human whose merge everything waits on, not a
+      cosmetic repair that can safely wait its turn. Selection, branch
+      derivation (`agent/<ref>`) and the
+      block/void escape hatch all work exactly as any other source's
       still do — only the source name and its rank differ. Its `ref` —
       `human-visibility-<hash>`, a digest of the surviving violations'
       identities and details — is its own namespace, so a repeat detection of
       the *same* set of violations stays correctly blocked while a later,
       disjoint set gets a fresh ref.
-    - **The work order is its own kind, not register-content's.** A
+    - **The work order is its own kind: a diagnosis, not a repair.** A
       `human-visibility-<hash>` entry has no `blob_sha`; its `acceptance` is
       that each named violation no longer holds — or that the Implementer
       reports `blocked` naming a cause outside the repository (a token's
       scopes, an `enabler_assignee` who is not a collaborator, a GitHub
-      outage) — never that `td-check.pl` exits 0, which does not apply to it;
-      and its `model` is `models.default`, not the `models.trivial` that
-      register-only editing always takes. `prompts/coordinator.md` and
-      `prompts/implementer.md` give this source its own section, distinct from
-      `register-hygiene`'s, so the Co-Ordinator does not emit an
+      outage); and its `model` is `models.default`.
+      `prompts/coordinator.md` and
+      `prompts/implementer.md` give this source its own section, so the
+      Co-Ordinator does not emit an
       already-satisfied acceptance test, a trivial model tier or a `blob_sha`
       that does not exist for a diagnosis of GitHub's API and permissions.
     - Fed to the no-op fingerprint (requirement 3b) via its own `human_visibility`
-      array, hashed verbatim (`lib/noop-skip.sh`) — its own key because it no
-      longer rides `register_hygiene`'s.
+      array, hashed verbatim (`lib/noop-skip.sh`) — its own key, not shared
+      with any other source's.
 
     A pull request whose only legal review-request candidate is its own
     author is covered by requirement 38a's own `skip\tno-candidate` and this
@@ -16000,7 +15765,7 @@ implements.
     candidate iff **all** of:
     1. it appears in this cycle's pre-fetched source arrays — `findings`
        (`security`/`code-quality`), `review_feedback`, `abandoned_drafts`,
-       `merge_conflicts`, `dequeued`, `landing_refusals`, `register_hygiene`,
+       `merge_conflicts`, `dequeued`, `landing_refusals`,
        `issues`, `tech_debt`
        (requirement 3), the same arrays the Co-Ordinator reads, keyed the
        same way (`source`, `ref`), plus `project_review` and
@@ -17031,9 +16796,9 @@ with the Reviewer's own.
     request there is.
 
 48. **Expensive per-repository gather runs for one repository per cycle, not
-    every configured one (agent-ops#1086).** The eight bands requirement 3
+    every configured one (agent-ops#1086).** The seven bands requirement 3
     pre-fetches whole — `findings`, `review_feedback`, `abandoned_drafts`,
-    `merge_conflicts`, `dequeued`, `register_hygiene`, `issues` (with
+    `merge_conflicts`, `dequeued`, `issues` (with
     `issues_excluded`) and `tech_debt` — are read fresh from GitHub, each
     cycle, for exactly one of `gather_ordered_repos`'s configured
     repositories: the one whose expensive-gather cache
@@ -18163,7 +17928,7 @@ What exists, and the requirements each part answers to:
    selection (requirements 3o, 3p, 3t, 3u, 17f, among others; #771): the
    per-source gatherers (`gather_findings`, `gather_review_feedback`,
    `gather_abandoned_drafts`, `gather_merge_conflicts`, `gather_dequeued`,
-   `gather_register_hygiene`, `gather_human_visibility_hygiene`,
+   `gather_human_visibility_hygiene`,
    `gather_issues`, `gather_issues_excluded`, `gather_tech_debt`,
    `gather_project_review_candidates`, `gather_implementation_plan_candidates`,
    `gather_unvoid_requests`, `gather_hand_flagged_refinements`,
@@ -18443,29 +18208,6 @@ What exists, and the requirements each part answers to:
    suppression unchanged. `lib/standdown.sh`'s own call site passes
    `union_log` as this fourth argument. Regression-tested in
    `test/sweep-human-visibility.test.sh`.
-3i. `scripts/gather-register-hygiene.sh` implementing requirement 3i: given a
-   repo slug, default branch and (requirement 34l) an optional JSON array of
-   this repo's void register-shaped candidates, prints a JSON array holding
-   at most one candidate — the repo's per-item tech-debt register, when
-   `scripts/td-check.pl` says it disagrees with itself, or when a named void
-   candidate's file still carries `status: open`/`in-progress` (the
-   `VOIDED STATUS` problem class, this script's own, layered on top of and
-   never fed back into `td-check.pl`) — carrying a ref scoped to the
-   register's identity (a digest of the `tech-debt/` tree SHA and the policy
-   blob SHA), the register's URL, the `tech-debt/` tree SHA as the blob SHA,
-   the problem lines (both classes combined), and a body holding the
-   checker's output verbatim plus a section naming each `VOIDED STATUS`
-   item's void evidence. A repo with no `tech-debt` tree prints `[]`
-   silently; an API failure prints `[]` with `gh`'s diagnosis on stderr.
-   Fails safe to `[]` (exit 0).
-   Its candidate rule is regression-tested in `test/register-hygiene.test.sh`;
-   must pass `shellcheck`. `scripts/td-check.pl` is a byte-identical copy of
-   the canonical script in `Poetic-Poems/poetic`, held here (as this
-   repository does not framework-sync) and guarded by
-   `.github/workflows/td-tooling-drift.yml`.
-   `.github/workflows/tech-debt-register.yml` runs the check (argless) on this
-   repository's own register on every pull request, the deterministic layer
-   that keeps this source's volume near zero.
 3t. `scripts/gather-human-visibility-hygiene.sh` implementing requirement 38e:
    given a repo slug and this repo's slice of
    `human_visibility_violations` (`lib/human-visibility-hygiene.sh`, a pure
@@ -18514,14 +18256,13 @@ What exists, and the requirements each part answers to:
    any other warning shape for as long as the pull request stays open and
    not a draft; an unreadable re-check is kept, not dropped) — carrying a
    ref scoped to the surviving violations' own identities and details
-   (`human-visibility-<hash>`, disjoint from `register-hygiene-<hash>`), a
+   (`human-visibility-<hash>`), a
    `problems` line per violation and a body naming each one and the timestamp
    of the latest event that carried it (the one the reduction kept). Its own
-   source, `source: "human-visibility"` — not `gather-register-hygiene.sh`'s
-   (3i above) — ranked immediately after `merge-conflicts`
-   (config.schema.json); the Co-Ordinator's and Implementer's prompts give it
-   its own section, distinct from `register-hygiene`'s, because the work
-   order the two kinds deserve is not the same one. Called for every repo
+   source, `source: "human-visibility"`, ranked immediately after
+   `merge-conflicts` (config.schema.json); the Co-Ordinator's and
+   Implementer's prompts give it its own section, because the work order it
+   deserves is not the same as another source's. Called for every repo
    whose `sources` include `human-visibility`, whenever
    `human_visibility_violations` names that repo, and assigned to that
    repo's own `human_visibility` array. Sources `lib/github-limit.sh` like
@@ -18798,7 +18539,7 @@ What exists, and the requirements each part answers to:
    fifth and seventh actioned signals: `void_liveness_actioned`, which given
    the void extract and
    this cycle's own per-repo, per-shape gather (`{ok, ids}` for `alert`,
-   `register-hygiene`, `failed-run` and `merge-conflict`) prints one
+   `failed-run` and `merge-conflict`) prints one
    `{repo, item, by}` per void whose id its source no longer yields;
    `void_review_plan_actioned`, which does the same for a project-review ref a
    merged pull request names (`review-merged`) or whose review folder is no
@@ -18854,9 +18595,8 @@ What exists, and the requirements each part answers to:
    `preflight_review_feedback_reason` calls. Unit-tested
    (`test/preflight.test.sh`); must pass `shellcheck`.
 3n. `scripts/sweep-orphan-branches.sh` implementing requirement 17b's sweep:
-   given a repo slug, examines every `td/*`, `<branch_prefix>*` and
-   `td-record/*` ref — the last unconditionally, never gated by
-   `tech_debt_branch_prefix` — and
+   given a repo slug, examines every `<branch_prefix>*` and
+   `td-record/*` ref, and
    prints one JSON action object per orphan handled (`recovered`, `released`,
    `deferred`, `warning`) for the Script to log. `td-record/*` is delete-only,
    never recovered: a filing pull request closed without merging releases that
@@ -19205,8 +18945,8 @@ What exists, and the requirements each part answers to:
     **Discovery is a search, never a list, and is checked from the other
     side.** Documents are found by walking the tree for `-f query='` at an
     argv token boundary — the one form all of them use — rather than read from
-    a list, for the reason component 10 and `td-tooling-drift.yml` both give
-    about their own file sets. Three kinds of file carry the delimiter without
+    a list, the same reason component 10 gives
+    about its own file set. Three kinds of file carry the delimiter without
     sending anything and are excluded: `test/`, because a stub answers without
     asking and this check's own fixtures are deliberately broken documents;
     the script itself, which quotes the delimiter throughout its commentary;
@@ -20315,8 +20055,7 @@ What exists, and the requirements each part answers to:
     `--check` renders each region — table and notes alike — to a temporary
     file instead and exits non-zero, naming the file, the region and the
     first differing key, the moment any region is stale — what
-    `.github/workflows/config-table.yml` runs on every pull request,
-    modelled on `.github/workflows/tech-debt-register.yml`.
+    `.github/workflows/config-table.yml` runs on every pull request.
     Regression-tested end to end, against the shipped script copied into a
     scratch fixture repository rather than a reimplementation of its logic,
     in `test/render-config-table.test.sh`; must pass `shellcheck`.
@@ -21040,23 +20779,6 @@ What exists, and the requirements each part answers to:
     none prints nothing;
     must pass `shellcheck`.
 
-23c. `scripts/find-similar-tech-debt.sh` implementing the dedup half of
-    requirements 24b/30d/36c/42a: given a working title, normalises it
-    (lower-cased, punctuation folded to spaces, runs collapsed) and compares
-    it against every `open`/`in-progress` `tech-debt/*.md` record's own
-    `title:`, by equality always and by containment (either direction) only
-    once *both* the normalised query and the normalised candidate title reach
-    eight characters — short of that floor on either side, containment alone
-    would swamp the register with noise (a short existing title matching by
-    containment inside an unrelated long query is the same false positive as
-    the reverse, so the floor gates both). Prints each match's id and title,
-    tab-separated, one per line, and exits non-zero iff it found any — a hit
-    means the gap is already tracked, so the caller cites the existing id
-    instead of reserving a new one. Reads the working tree at whatever ref is
-    checked out, not a fixed one. Regression-tested in
-    `test/find-similar-tech-debt.test.sh` (exact-match, containment,
-    below-the-length-floor on either side, `open`/`in-progress` included,
-    `resolved`/`not-debt` excluded); must pass `shellcheck`.
 23d. `lib/tech-debt-file.sh` implementing the filing half of requirements 36c,
     42a and 32c — the Approver and Enabler must never write to GitHub or a
     branch themselves, and the Reviewer whose subject merged mid-pass no
@@ -21113,10 +20835,7 @@ What exists, and the requirements each part answers to:
       (`_techdebt_title_dedup_match`/`_techdebt_normalize_title`: lower-cased,
       punctuation folded to spaces, whitespace collapsed, then compared for
       equality or — both titles at least eight normalized characters —
-      containment either way, the same algorithm
-      `scripts/find-similar-tech-debt.sh` uses against this repository's own
-      register, reimplemented rather than shared since the two read different
-      data for the same question). That search states its own page cap —
+      containment either way). That search states its own page cap —
       `--limit TECHDEBT_DEDUP_LIST_LIMIT` (default 500), never `gh issue
       list`'s undeclared default of 30 — for the reason every other listing in
       this pipeline states one ("A listing that silently comes back at its
@@ -21191,36 +20910,6 @@ What exists, and the requirements each part answers to:
     `lib/enabler.sh` and `lib/merge-observed.sh` the same way
     `test/approver-wiring.test.sh` and `test/enabler-verdicts.test.sh` already
     do for the rest of either stage's own wiring. Must pass `shellcheck`.
-23e. `.github/workflows/release-td-branch.yml` and
-    `scripts/release-td-branch.sh` implement "Filing alongside other work"'s
-    release rule (`TECH-DEBT.md`): once a `tech-debt/<id>.md` record lands on
-    `main` via *any* pull request, the `td/<id>` reservation branch
-    `scripts/reserve-tech-debt-id.pl` locked has done its job and is deleted.
-    This is the other half of `scripts/sweep-orphan-branches.sh`'s own
-    deliberate blind spot (issue #545, component 3n): a `td/<id>` branch whose
-    sole commit ahead is the reservation itself is the lock, not orphaned
-    work, and that sweep leaves it alone forever because it cannot tell
-    whether `<id>` has since been filed on some other branch without reading
-    the whole register on every pass — this workflow is triggered by the one
-    event that actually answers that question. The workflow runs on every
-    push to `main`, diffing `before`..`after` for `tech-debt/*.md` files
-    *added* (never modified/renamed — the register is append-only and CI
-    already enforces that) by that push; for each, `release-td-branch.sh`
-    best-effort deletes `refs/heads/td/<id>` on the same repository if it
-    still exists, reporting `"absent"` rather than an error when it is
-    already gone — the ordinary case for "Claiming an item"'s own branch,
-    which GitHub's repository-level delete-on-merge setting already retires
-    once *its* pull request lands, before this workflow's push event ever
-    fires. Always exits 0: a branch this script fails to delete must not fail
-    the push to `main` it is reacting to, and both
-    `scripts/sweep-orphan-branches.sh`'s own periodic pass and "Filing an
-    item"'s manual fallback (`git push origin --delete td/<id>`) still stand
-    behind it. Regression-tested in `test/release-td-branch.test.sh` (existing
-    branch deleted, already-absent branch reported not an error, a failing
-    delete call reported as a warning without failing the run, modified/
-    unrelated/malformed files ignored, two records in one push each getting
-    their own line, an all-zero before-SHA treated as a no-op that calls `gh`
-    not at all); must pass `shellcheck`.
 23f. `scripts/release-pending-reservations.sh` implementing requirement 17g's
     reservation-release retry sweep — the durable half of TD-PPagop-26082427,
     behind component 23d's own marker-writing half. A no-op (exit 0, no `gh`
@@ -21232,8 +20921,7 @@ What exists, and the requirements each part answers to:
     missing `repo` or `branch` — is reported as a `warning` and left in
     place rather than acted on. On success, or on a delete that fails but a
     follow-up `git/ref/heads/<branch>` read confirms the branch is already
-    gone (a peer node's own concurrent retry, or `.github/workflows/
-    release-td-branch.yml`'s ordinary path — since a marker is only ever
+    gone (a peer node's own concurrent retry — since a marker is only ever
     cleared once, never renewed), the marker itself is deleted from
     `state_repo` and the outcome (`"released"`/`"absent"`) is printed; a
     delete that fails again — or whose follow-up confirmation itself cannot
@@ -21270,8 +20958,7 @@ What exists, and the requirements each part answers to:
     close guarded anyway, and a second comment on every workflow re-run.
     Always exits 0 except on malformed arguments (usage, exit 2, before any
     `gh` call): a comment-post failure is reported as a `warning`, never a
-    failure of the run, the same "advisory, never fails its caller" contract
-    component 23e's `release-td-branch.sh` states for the same reason.
+    failure of the run.
     Regression-tested in `test/tech-debt-close-guard.test.sh` (unlabelled
     issue skipped with no `gh` call at all; a linked pull request or commit,
     or an existing comment, each independently sufficient for `completed`; a
@@ -21374,9 +21061,7 @@ oblige anyone to edit a test.
    image is not the delivery path for this file", which is weaker than "nothing
    reads it" and has to be: a cycle working on this repository reads its own
    `CLAUDE.md` and its tech-debt register, but from the `gh repo clone` in
-   `workspace_root`, and `scripts/gather-register-hygiene.sh` reads the
-   register — `TECH-DEBT.md` or `tech-debt/`, whichever this repository
-   uses — directly from the API (requirement 3i) — both current the moment a
+   `workspace_root` — both current the moment a
    pull request merges, with no image involved. The copy at /app
    is what nothing reads, because every stage's working directory is under
    `workspace_root` or `state_dir` (requirement 6's assertion pins the first),
@@ -22685,23 +22370,6 @@ oblige anyone to edit a test.
    array it returns; an already-nudged or superseded candidate is neither
    commented on nor dropped; a non-bot candidate is untouched; a failed post is
    recorded but still drops nothing extra to retry next cycle.
-2e. `scripts/gather-register-hygiene.sh Poetic-Poems/does-not-exist main` prints
-   `[]` and exits 0, silently — a repo (or a repo with no register, or an
-   as-yet-empty one) is a normal `[]`, not an error. Against each configured
-   repo it prints `[]` while that repo's register is consistent.
-   `test/register-hygiene.test.sh` passes against the per-item fixtures
-   `test/fixtures/tech-debt-items-consistent/` and
-   `test/fixtures/tech-debt-items-drifted/`, driven by a stubbed root-tree
-   listing (naming the `tech-debt` tree and the `TECH-DEBT.md` policy blob)
-   and a stubbed tarball endpoint: a consistent register yields `[]`; a
-   drifted one yields exactly one candidate whose `ref` digests *both* the
-   `tech-debt` tree SHA and the policy blob SHA together (so a repair to
-   either retires it) and whose `blob_sha` carries the tree SHA. The
-   candidate's `problems` array holds one entry per problem line and its
-   `body` is the checker's output verbatim; a tree naming no `tech-debt` tree
-   yields `[]` with nothing on stderr; and an API error at any step yields
-   `[]` *with* stderr, since the difference between "no register" and "no
-   answer" is the whole of what a silent `[]` costs you at 3 a.m.
 2d. **Issue priority is read, defaulted and fingerprinted.**
    `test/issue-priority.test.sh` passes: against a stubbed issues endpoint,
    `scripts/gather-source-state.sh` bands each issue by its `Priority` issue
@@ -22789,7 +22457,7 @@ oblige anyone to edit a test.
    `MAX_ARG_STRLEN` the same way `test/verdict-corroboration.test.sh`'s own
    oversized-void fixture is. The band list the generic pass loops over is
    pinned too — `findings`, `review_feedback`, `abandoned_drafts`,
-   `merge_conflicts`, `register_hygiene`, `human_visibility`, `tech_debt`,
+   `merge_conflicts`, `human_visibility`, `tech_debt`,
    every pre-fetched band but `issues` — because it is inline shell rather
    than a function, and a band added to a repo entry but not to it would keep
    handing the Co-Ordinator blocked and void candidates it has no `void` list
@@ -22879,8 +22547,8 @@ oblige anyone to edit a test.
    `Priority` band's token and drops one recorded blocked (repo-scoped exactly
    as `exclude_blocked_or_void_items` scopes it, blank `repo` included); bounds
    everything by the narrowed `sources` list a back-pressured cycle leaves
-   behind, so a restricted cycle owes no account of `findings`,
-   `register_hygiene` or `human_visibility` still sitting populated; and
+   behind, so a restricted cycle owes no account of `findings`
+   or `human_visibility` still sitting populated; and
    degrades to `[]` on malformed repos, and to filtering nothing rather than
    everything on a malformed `blocked`. `unaccounted_items` matches a
    `needs_refinement` report on repo **and** item **and** source — the same
@@ -23165,7 +22833,7 @@ oblige anyone to edit a test.
    without it, the state the pipeline is least able to escape is the one it is
    guaranteed to reach.
 6e. **An abandoned draft is finished, not restarted (requirements 3e, 15c).**
-   With an open *draft* PR carrying `pr_label` on a `branch_prefix` (or `td/`)
+   With an open *draft* PR carrying `pr_label` on a `branch_prefix`
    branch whose `updatedAt` is older than `abandoned_draft_after_hours`, a cycle
    must select it (`source: "abandoned-drafts"`, `item` the head-SHA-scoped ref,
    `branch` the PR's existing branch), and the Implementer must check out that
@@ -23177,7 +22845,7 @@ oblige anyone to edit a test.
    create-ref against the already-existing branch (requirement 17a), or every
    attempt would 422 and no abandoned draft could ever be picked up.
 6f. **A conflicted PR is rebased, not restarted (requirements 3g, 15d).** With an
-   open *non-draft* PR carrying `pr_label` on a `branch_prefix` (or `td/`) branch
+   open *non-draft* PR carrying `pr_label` on a `branch_prefix` branch
    whose `mergeable` is `CONFLICTING`, a cycle must select it (`source:
    "merge-conflicts"`, `item` the head-SHA-scoped ref, `branch` the PR's existing
    branch), and the Implementer must check out that branch, rebase onto the base
@@ -23191,7 +22859,7 @@ oblige anyone to edit a test.
    picked up.
 6i. **A merge-group-checks-failure dequeue is fixed, not restarted
    (requirements 3z, 15d; TD-PPagop-26081409).** With an open *non-draft* PR
-   carrying `pr_label` on a `branch_prefix` (or `td/`) branch whose `mergeable`
+   carrying `pr_label` on a `branch_prefix` branch whose `mergeable`
    is `MERGEABLE` and whose most recent `merge_queue_probe` reports
    `queued: false`, a non-null `dequeued_at`, and `dequeue_reason` exactly
    `failed_checks`, a cycle must select it (`source: "dequeued"`, `item` the
@@ -23290,8 +22958,7 @@ oblige anyone to edit a test.
    yields a ref delete and a `released` action rather than another recovery
    draft, and a failure to determine the merge state leaves the ref alone
    and says so; a stale ref with commits ahead, no merged PR of its own, but
-   a rival branch sharing its stem merged after its first commit — including
-   where the stem match crosses a `td/` claim's trailing random suffix —
+   a rival branch sharing its stem merged after its first commit
    yields a ref delete and a `released` action carrying `reason: superseded`
    and the rival's URL, with **no** `pr create` call ever made; a same-stem
    rival that merged before this branch's own first commit does not count,
@@ -23302,12 +22969,7 @@ oblige anyone to edit a test.
    rival lookup also still yields the ordinary recovery draft, but with a
    `warning` naming the branch, distinct from the silent no-match case; and
    a backlog past the per-run cap acts on the cap's worth and reports the
-   remainder (`deferred`) rather than flooding or staying silent; a `td/<ID>`
-   branch whose sole commit ahead is `reserve-tech-debt-id.pl`'s own
-   reservation commit (fixed subject, no files touched) yields no action at
-   all — neither a recovery draft nor a ref delete; and an ordinary
-   one-commit `td/` branch that is not that reservation shape is still
-   recovered normally (issue #545). For the `td-record/*` namespace
+   remainder (`deferred`) rather than flooding or staying silent. For the `td-record/*` namespace
    (TD-PPagop-26082310): a stale record branch whose only pull request was
    closed without merging yields a ref delete carrying
    `reason: "filing-declined"` and, on a clean 404 for `tech-debt/<id>.md` at
@@ -23318,9 +22980,8 @@ oblige anyone to edit a test.
    released by the ordinary merged-PR arm instead, never counted as declined
    and never asked the reservation question at all; a record branch with an
    open PR is left untouched and one with no PR at all is still recovered as
-   a draft, both by the ordinary flow; a bare `td/<ID>` lock with no
-   `td-record/` sibling still yields no action, so the issue #545 exemption is
-   unchanged; and a run with only one action of headroom left defers the
+   a draft, both by the ordinary flow; and a run with only one action of
+   headroom left defers the
    declined pair whole — neither ref touched — so the per-run cap holds
    strictly rather than overshooting by the release.
 7c. **Claim visibility is deterministic, both shapes and both directions
@@ -23328,9 +22989,9 @@ oblige anyone to edit a test.
    section passes: a fresh branch claim's registry entry appears in `claims`'
    output tagged `kind: "branch"` with its item; an entry older than
    `claim_ttl_hours` does not (the staleness escape survives); and `branches`
-   lists a live `td/*` ref regardless of its age, including one whose
-   registry entry has already aged out — proving the two sources are
-   independent, not one gated on the other. `test/noop-skip.test.sh` covers
+   no longer recognises the `td/` namespace at all — a live `td/*` ref
+   matches nothing it lists, regardless of its age or its registry entry.
+   `test/noop-skip.test.sh` covers
    the fingerprint half: a fresh entry added to `claimed` changes the
    fingerprint, and an empty `claimed` array canonicalises identically to an
    absent key, so a claim ageing back out of the array changes it too — the
@@ -23937,7 +23598,7 @@ oblige anyone to edit a test.
    (`TD26072401`) resolving through the renamed file that carries it, and assert
    that the classes still left to the Enabler stay blocked — above all a
    `dependabot-alert-N`, whose source degrades to `[]` on an API error and would
-   otherwise read as "every alert is fixed", and a `register-hygiene-<hash>`
+   otherwise read as "every alert is fixed", and a `human-visibility-<hash>`
    item, which has no completion signal at all. `scripts/gather-register-status.sh`,
    `scripts/gather-review-status.sh` and `scripts/gather-plan-status.sh` each run
    for real against a stubbed `gh` in that file, so what is asserted is the
@@ -24064,16 +23725,6 @@ oblige anyone to edit a test.
    case: such a void closes its pull request through the ordinary
    `pr-<n>-…` branch, exactly as an `enabler` one does, while an
    unrecognised stage is still skipped before the action cap.
-8k. **A void'd register row becomes a candidate even when `td-check.pl` finds
-   nothing wrong (requirement 34l).** `test/register-hygiene.test.sh`'s void
-   section passes against the shipped `scripts/gather-register-hygiene.sh`
-   and a real `td-check.pl` run: a consistent register stays `[]` until a
-   void names one of its `open` items, at which point exactly one candidate
-   appears carrying a `VOIDED STATUS` problem line quoting the void's own
-   reason; a void naming an item already `resolved` adds nothing; a void
-   naming a file that does not exist adds nothing; and a genuinely drifted
-   register's own `td-check.pl` problems and a `VOIDED STATUS` problem
-   coexist in the same one candidate rather than competing.
 8l. **A closing keyword is enforced, not requested (requirements 23b, 25a,
    17c).** `test/check-closing-keyword.test.sh` passes: called with only a
    body and a branch — no repo slug or pull request number, which the
@@ -24273,8 +23924,8 @@ oblige anyone to edit a test.
    retires, once its source stops yielding it (requirement 34n's liveness
    rule, TD-PPagop-26081303).** `test/cycle-state.test.sh`'s
    `void_liveness_actioned` section passes, against `lib/void-liveness.sh`:
-   for each of the six structured-gather shapes (an alert ref, a
-   register-hygiene ref, a `failed-run-` ref, a merge-conflict ref, a
+   for each of the five structured-gather shapes (an alert ref, a
+   `failed-run-` ref, a merge-conflict ref, a
    `pr-<n>-dequeued-<head-sha>` ref, a `human-visibility-<hash>` ref), an id
    still present in GATHER_JSON's `ids` for its repo+shape is never actioned,
    however old; an id absent from a `{ok: true}` gather is actioned, tagged
@@ -24283,7 +23934,7 @@ oblige anyone to edit a test.
    same "unknown is not gone" rule requirement 34i's own clearances observe;
    a same-numbered id in a different, unlisted repo is untouched; a
    repo-less (hand-appended) void matches no shape's repo lookup; an id
-   shaped like none of the six is ignored; and malformed `VOID_JSON` or
+   shaped like none of the five is ignored; and malformed `VOID_JSON` or
    `GATHER_JSON` fails safe to `[]`. The `void_review_plan_actioned` section
    passes the same way for the two on-demand-reader shapes: a project-review
    ref is actioned once a status map reports `"merged"`, an
@@ -25222,7 +24873,7 @@ oblige anyone to edit a test.
     violation rather than dropping it; a repo-level and a pull-request
     violation for the same repo combine into one candidate; and every
     surviving candidate carries `source: "human-visibility"` and a
-    `human-visibility-`-prefixed ref, never `register-hygiene-`.
+    `human-visibility-`-prefixed ref.
     `test/human-visibility-wiring.test.sh` passes against the block lifted
     verbatim out of `agent-cycle.sh` — the gate and the assignment that join
     the reduction to the gatherer, which neither test either side of it can
@@ -25737,8 +25388,8 @@ oblige anyone to edit a test.
     off. The `ok` states only the settings actually read, since they are a
     necessary condition for that call rather than a sufficient one
     (`test/doctor.test.sh`).
-    `./scripts/render-config-table.sh --check`, `./scripts/lint-shell.sh`
-    and `perl scripts/td-check.pl` are clean.
+    `./scripts/render-config-table.sh --check` and `./scripts/lint-shell.sh`
+    are clean.
 8u. **A pull request the arming step already approved once, but could not
     land for a reason that can change without the pull request changing, is
     re-armed without a human's click (TD-PPagop-26081701).**
@@ -26112,8 +25763,7 @@ oblige anyone to edit a test.
     `counts.escape_audits`'s aggregation over `classifier-escape`/
     `landing-audit` events only — never `landing-audit-skip` — (all-time,
     not windowed) and the per-row `audit`/`audit_reason` join into the WI-8
-    digest's `armed` rows. `./scripts/lint-shell.sh` and
-    `perl scripts/td-check.pl` are clean.
+    digest's `armed` rows. `./scripts/lint-shell.sh` is clean.
 
 8w. **A repository's autonomy readiness is one verdict, and it never fails for
     what it could not read (component 14, agent-ops#575).**
@@ -26206,27 +25856,8 @@ oblige anyone to edit a test.
     an Approver `refuse` each still file alongside their own ordinary
     handling, proving the two are independent rather than one silently
     suppressing the other.
-8y. **A stage files inline, on its own branch, and the reservation it used
-    releases itself once the record lands (agent-ops#631).**
-    `test/find-similar-tech-debt.test.sh` passes: an exact-normalised-title
-    match and a containment match (either direction, with *both* the
-    normalised query and the normalised candidate title at least eight
-    characters) against an `open`/`in-progress` record both print the id and
-    exit non-zero; a `resolved`/`not-debt` record with the same title is not
-    matched; a title under the length floor matches only exactly, never by
-    containment — on either side of the comparison, so neither a short query
-    inside a long existing title nor a short existing title inside a long
-    query is a hit.
-
-    `test/release-td-branch.test.sh` passes: a `tech-debt/<id>.md` newly
-    *added* by a push deletes its `td/<id>` branch when one still exists,
-    reports `"absent"` (not a failure) when it is already gone, reports
-    `"warning"` and still exits 0 when the delete call itself fails, ignores
-    a modified (not added) tech-debt file and anything outside `tech-debt/`
-    or not matching the id pattern, handles two records added by the same
-    push independently, and treats an all-zero before-SHA as a no-op that
-    calls `gh` not at all.
-
+8y. **A stage files inline, on its own branch, and a stale pre-#874
+    reservation drains itself rather than sitting forever (agent-ops#631).**
     `test/release-pending-reservations.test.sh` passes (requirement 17g,
     component 23f, TD-PPagop-26082427): with no `state_repo` configured, or
     an empty `reservation-releases/` tree, the script is a silent no-op that
@@ -26242,13 +25873,11 @@ oblige anyone to edit a test.
     handled independently.
 
     Requirements 24b and 30d are covered by
-    `prompts/implementer.md`/`prompts/reviewer.md` naming
-    `scripts/find-similar-tech-debt.sh` and `TECH-DEBT.md`'s "Filing
-    alongside other work" explicitly (read, not executed — an Implementer or
-    Reviewer engagement is a live model session this suite does not drive),
-    and by `TECH-DEBT.md` itself documenting the variant generally, with the
-    release rule, rather than only inside `prompts/project-reviewer.md`
-    (which now cross-references it instead of restating it).
+    `prompts/implementer.md`/`prompts/reviewer.md` naming the dedup-search
+    step explicitly — `gh issue list -R <repo> --label pw::type:tech-debt
+    --search "<working title>"` — before filing a fresh
+    `pw::type:tech-debt` issue (read, not executed — an Implementer or
+    Reviewer engagement is a live model session this suite does not drive).
 
 8x. **One durable audit record justifies every autonomous landing, and a
     landing with none is an anomaly, not a null (D18, agent-ops#578).**
@@ -27152,44 +26781,6 @@ requirements above, which state only what is.
   write. Refusing is still the guard's
   preferred direction of failure — but only where a wrong acceptance is
   destructive, which is exactly where the strict reading now sits.
-- **A register that lies about itself is repaired by the pipeline, and prevented
-  by CI — two layers, because one was demonstrably not enough.** The register
-  now keeps one convention throughout: a `tech-debt/<id>.md` file per record,
-  resolving meaning a frontmatter flip with the body kept in place. It did not
-  start that way. Every repo here used to keep its deferred work in a legacy
-  single `TECH-DEBT.md` — live bodies under `## Current Items`, a permanent
-  Ledger row for every id ever allocated, resolving meaning removing the body
-  and keeping the row. In July 2026, in that format, twelve items across the
-  three repos were found flipped to `resolved` with their bodies still in
-  place — `## Current Items` advertising a dozen pieces of work already done,
-  to humans and to this pipeline alike. `prompts/implementer.md` had
-  prescribed the removal since it was written; the drift accumulated anyway,
-  because resolutions also arrive from humans and from interactive sessions
-  that no prompt governs. The per-item format retires that particular
-  failure — resolution is a frontmatter flip, with no second edit to
-  forget — but keeps its own smaller surface: a copy-pasted id, a wrong
-  scope, a status typo. So the rule is enforced where it can be *checked*
-  rather than only where it is instructed: each consumer repo runs
-  `scripts/td-check.pl` on its own register in CI, so the pull request that
-  creates drift fails its own checks; and the `register-hygiene` source
-  (requirement 3i) detects and repairs whatever lands anyway — a register
-  that predates the guard, a direct push, a merge that reintroduces it. The
-  first layer is what makes the second cheap: with the guards in place the
-  source's volume trends to zero, and an empty array costs one or two API
-  calls.
-
-  Three choices carry the design. It is **last in every repo's list**, because a
-  deterministic cosmetic repair must never outrank substantive work, and a
-  source that cannot be starved (its volume is bounded by CI) loses nothing by
-  waiting. It is worked by the **ordinary Implementer, not a new actor role**:
-  the repair is an edit to the register against a machine-checkable acceptance
-  test, which is precisely what that role already does, and a role exists to
-  carry a different *kind* of judgement, not a different kind of file. And the
-  ref is scoped to the register's **identity** — a digest of both the
-  `tech-debt/` tree SHA and the policy blob SHA, so a repair to either object
-  retires it — so an item retires itself the moment the register changes and
-  unrelated commits never fork a new one — the same expiry-by-irrelevance the
-  PR-derived sources get from their head SHAs.
 - **An issue's `Priority` is a rank, not a label — so the source is banded, not
   sorted.** Issues were a single rank in the walk, which meant the only way a
   human could say "this one first" was to file it as something else. GitHub's

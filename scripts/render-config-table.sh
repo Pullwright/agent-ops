@@ -144,8 +144,8 @@
 # place. `--check` renders each region to a temporary file instead and exits
 # non-zero — naming the file, the region and the first differing key — the
 # moment any region is stale; this is what `.github/workflows/config-table.yml`
-# runs on every pull request, the same way `.github/workflows/tech-debt-register.yml`
-# gates the tech-debt register.
+# runs on every pull request, the same way `.github/workflows/toc.yml` gates
+# `scripts/render-toc.sh`'s own regions.
 
 set -euo pipefail
 

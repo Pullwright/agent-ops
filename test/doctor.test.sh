@@ -1531,7 +1531,7 @@ assert_eq "a single-owner fleet: PULLWRIGHT_APPROVER_INSTALLATION_IDS is unset t
 # other five the same way a single-repo $out used to isolate it for free.
 # $base_config's own repo (unmodified, at $slug) lists only ["security",
 # "abandoned-drafts"], and neither is in the shipped default
-# ["register-hygiene", "tech-debt"], so it alone already exercises the
+# ["tech-debt"], so it alone already exercises the
 # warning with no override needed.
 rs_ok_slug="acme-org/rs-ok-repo"
 rs_override_slug="acme-org/rs-override-repo"
@@ -1544,7 +1544,7 @@ jq --arg slug "$slug" --arg ok_slug "$rs_ok_slug" --arg override_slug "$rs_overr
    --arg noissues_slug "$rs_noissues_slug" '
   .repos = [
     {slug: $slug, sources: ["security", "abandoned-drafts"]},
-    {slug: $ok_slug, sources: ["security", "abandoned-drafts", "tech-debt", "register-hygiene"]},
+    {slug: $ok_slug, sources: ["security", "abandoned-drafts", "tech-debt"]},
     {slug: $override_slug, sources: ["security", "abandoned-drafts", "code-quality"],
      merge_autonomy_routine_sources: ["code-quality", "tech-debt"]},
     {slug: $banded_slug, sources: ["security", "abandoned-drafts", "issues:low", "tech-debt"],
@@ -1563,7 +1563,7 @@ rs_line() { grep -F "$1's merge_autonomy_routine_sources" <<<"$out"; }
 
 rs_default_line="$(rs_line "$slug")"
 assert_contains "the shipped default merge_autonomy_routine_sources warns when this repo gathers neither" \
-  "[warn] $slug's merge_autonomy_routine_sources names [register-hygiene,tech-debt], which its own sources list never gathers" \
+  "[warn] $slug's merge_autonomy_routine_sources names [tech-debt], which its own sources list never gathers" \
   "$rs_default_line"
 
 rs_ok_line="$(rs_line "$rs_ok_slug")"

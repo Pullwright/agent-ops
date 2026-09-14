@@ -144,7 +144,7 @@ while IFS= read -r hit; do
   [[ -n "$labelled_at" ]] || continue
 
   # A pull request's branch names its item more reliably than its prose does
-  # (`td/TD26072114`), and costs one call on a hit that is rare by construction.
+  # (`agent/TD26072114`), and costs one call on a hit that is rare by construction.
   branch=""
   if [[ "$kind" == "pr" ]]; then
     branch="$(gh api "repos/$slug/pulls/$number" --jq '.head.ref // ""' 2>/dev/null || true)"

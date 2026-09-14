@@ -904,7 +904,7 @@ refiner_policy_value() {
 # refiner_candidate_items REPOS_JSON POLICY_JSON REFINEMENTS_JSON BLOCKED_JSON VOID_JSON CLAIMED_JSON DECISIONS_JSON
 # Print, as a JSON array, every item from this cycle's pre-fetched source
 # arrays — `findings`, `review_feedback`, `abandoned_drafts`, `merge_conflicts`,
-# `dequeued`, `landing_refusals`, `register_hygiene`, `issues`, `tech_debt`,
+# `dequeued`, `landing_refusals`, `issues`, `tech_debt`,
 # `project_review`, `implementation_plan` — that the Refiner may spend an
 # engagement on: its
 # source's policy is not `exempt` (requirement 39a), it carries no refinement
@@ -989,7 +989,7 @@ refiner_candidate_items() {
       | ( ($r.findings // [])[]?, ($r.review_feedback // [])[]?,
           ($r.abandoned_drafts // [])[]?, ($r.merge_conflicts // [])[]?,
           ($r.dequeued // [])[]?, ($r.landing_refusals // [])[]?,
-          ($r.register_hygiene // [])[]?, ($r.issues // [])[]?,
+          ($r.issues // [])[]?,
           ($r.tech_debt // [])[]?, ($r.project_review // [])[]?,
           ($r.implementation_plan // [])[]? )
       | . as $e

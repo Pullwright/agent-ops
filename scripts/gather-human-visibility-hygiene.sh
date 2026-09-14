@@ -22,12 +22,11 @@
 # `MAX_ARG_STRLEN` exactly as `jq --argjson` is (requirement 4g;
 # tech-debt/TD-PPagop-26081502.md).
 #
-# Candidate shape — its own source (issue #284's decision 2), not a
-# register-hygiene ref-prefix split: a violation here means finished work is
+# Candidate shape — its own source (issue #284's decision 2): a violation
+# here means finished work is
 # invisible to the human whose merge everything waits on, the same
 # "finishing beats starting" class `review-feedback`, `merge-conflicts` and
-# `abandoned-drafts` are, which register-hygiene's cosmetic-repair rationale
-# does not describe:
+# `abandoned-drafts` are:
 #   {
 #     "source": "human-visibility",
 #     "ref": "human-visibility-1a2b3c4d5e6f",  // scoped to THIS set of violations
@@ -213,9 +212,7 @@
 #
 # `human-visibility-<12 hex>`, a digest of the surviving violations' own
 # identities and details (sorted, so entry order never matters) — not a bare
-# `human-visibility`, for the same "expiry by irrelevance" reason
-# gather-register-hygiene.sh's own ref is scoped to the register's identity
-# (requirement 3i): a block recorded against one set of violations must not
+# `human-visibility`, for "expiry by irrelevance": a block recorded against one set of violations must not
 # swallow a later, disjoint set, while re-detecting the *same* set keeps the
 # same ref and stays correctly blocked.
 #

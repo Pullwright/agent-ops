@@ -181,8 +181,8 @@ if [[ -z "$review_date_and_dir" ]]; then
   # ref in the repository, and requirement 34n's retirements are facts nothing
   # clears. A rate limit landing between two back-to-back calls would
   # otherwise mint a `review-superseded` that could never be taken back —
-  # the same shape of defect the shared-filename `.ok` marker caused for the
-  # `register-hygiene` shape.
+  # the same shape of defect a shared-filename `.ok` marker can cause for any
+  # two-pass gatherer that shares one.
   #
   # The listing above succeeded, so it decides instead: no directory matching
   # the format's first dynamic segment means nothing can exist beneath it, a

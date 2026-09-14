@@ -82,7 +82,7 @@
 # a beat; treating that as a conflict would send the Implementer to rebase a
 # PR that may not even conflict), and either:
 #   - **ours**: it carries <pr-label> and its head branch starts with
-#     <branch-prefix> (or `td/`, the tech-debt claim branch) — i.e. this
+#     <branch-prefix> — i.e. this
 #     system raised it. The Landing Gate reserves every other branch for
 #     humans; force-pushing a rebase onto a human's branch because it had
 #     drifted would be a memorable way to learn that. Or,
@@ -194,9 +194,8 @@ GH="${MERGE_CONFLICTS_GH:-gh}"
 slug="${1:-}"
 pr_label="${2:-autonomous-agent}"
 branch_prefix="${3:-agent/}"
-tech_debt_branch_prefix="${4-td/}"
 if [[ -z "$slug" ]]; then
-  echo "usage: gather-merge-conflicts.sh <owner/repo> [pr-label] [branch-prefix] [tech-debt-branch-prefix]" >&2
+  echo "usage: gather-merge-conflicts.sh <owner/repo> [pr-label] [branch-prefix]" >&2
   exit 64
 fi
 
@@ -241,20 +240,11 @@ if github_pr_list_truncated "$(jq 'length' <<<"$ours_all")"; then
 fi
 
 # `mergeable` is selected against `== "CONFLICTING"` exactly (never UNKNOWN —
-# see the header). Heads may be `agent/…` or — for tech-debt items, whose claim
-# branch is the human protocol's own `<tech_debt_branch_prefix><ID>` — `td/…`
-# — the label filter is the primary "ours" signal either way.
-#
-# Empty tech_debt_branch_prefix disables the tech-debt namespace: the `or`
-# clause is dropped rather than built with an empty startswith(""), which
-# would match every head.
-td_clause=""
-if [[ -n "$tech_debt_branch_prefix" ]]; then
-  td_clause=" or (.headRefName | startswith(\"$tech_debt_branch_prefix\"))"
-fi
+# see the header). The label filter is the primary "ours" signal; the head
+# also carries `branch_prefix`, every claim branch's own prefix.
 ours="$(jq -c "[.[] | select(.isDraft | not)
                     | select(.mergeable == \"CONFLICTING\")
-                    | select((.headRefName | startswith(\"$branch_prefix\"))$td_clause)]" \
+                    | select(.headRefName | startswith(\"$branch_prefix\"))]" \
         <<<"$ours_all" 2>/dev/null || echo '[]')"
 jq -e 'type == "array"' <<<"$ours" >/dev/null 2>&1 || ours='[]'
 

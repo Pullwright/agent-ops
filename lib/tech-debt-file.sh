@@ -32,9 +32,8 @@
 #   `lib/labels.sh` ensures exists in every target repository. Deduped first
 #   against REPO's own open `pw::type:tech-debt` issues by normalised title
 #   (_techdebt_title_dedup_match, below): a match gets BODY/PROVENANCE as a
-#   comment instead of a second filing, the same "don't file a duplicate"
-#   outcome TECH-DEBT.md's "Filing alongside other work" always asked of a
-#   human filer, now applied automatically here. That search states its own
+#   comment instead of a second filing, the "don't file a duplicate" outcome
+#   applied automatically here. That search states its own
 #   page cap (TECHDEBT_DEDUP_LIST_LIMIT, below) rather than inheriting `gh`'s
 #   default of 30. Prints "<number>\t<url>" on
 #   success — the new issue's, or the matched one's — and prints nothing and
@@ -189,14 +188,11 @@ techdebt_file_issue() {
 }
 
 # _techdebt_normalize_title TITLE
-# Lower-cased, punctuation folded to spaces, runs of whitespace collapsed —
-# the same algorithm scripts/find-similar-tech-debt.sh's own normalize()
-# uses for the register's `tech-debt/*.md` files. Reimplemented here rather
-# than sourced from there because the two read different data (a local
-# register vs REPO's live GitHub Issues) for the same "is this title already
-# tracked" question; find-similar-tech-debt.sh stays the tool for this
-# repository's own register (still per-item — see TECH-DEBT.md), never
-# called by this file.
+# Lower-cased, punctuation folded to spaces, runs of whitespace collapsed.
+# Title normalisation is the whole of the dedup test here, so it is spelled
+# out in this file rather than shared: the only "is this title already
+# tracked" question the pipeline still asks is this one, against REPO's live
+# `pw::type:tech-debt` issues.
 _techdebt_normalize_title() {
   printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -c '[:alnum:]' ' ' | tr -s ' ' | sed 's/^ *//; s/ *$//'
 }
@@ -205,9 +201,9 @@ _techdebt_normalize_title() {
 # NEEDLE is an already-normalized title; LIST_JSON is a JSON array of
 # `{number, url, title}`. Prints the `number` of the first entry whose own
 # normalized title equals NEEDLE, or — both at least eight normalized
-# characters, mirroring find-similar-tech-debt.sh's own containment floor so
-# a short, generic title cannot match by containment inside an unrelated
-# long one — contains it or is contained by it. Prints nothing on no match.
+# characters, a containment floor so a short, generic title cannot match by
+# containment inside an unrelated long one — contains it or is contained by
+# it. Prints nothing on no match.
 _techdebt_title_dedup_match() {
   local needle="$1" list_json="$2" allow_contains=0 hay number title
   [[ ${#needle} -ge 8 ]] && allow_contains=1

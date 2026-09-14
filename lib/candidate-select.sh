@@ -66,12 +66,8 @@ release_pr_claim() {
 # tech-debt's own item is now a bare issue number (the store moved to
 # labelled issues, D15 as revised, #869/#875/#879), the same shape an
 # `issues` item already has, so it claims the same way. `td/<ID>` is no
-# longer minted for a fresh claim; `lib/claim.sh`'s `branches` listing and
-# this file's own `gather_claimed` still recognise a *live* `td/*` branch —
-# a repo's own pre-migration human tech-debt-claim protocol
-# (`tech_debt_branch_prefix`, deprecated) or a claim this code minted before
-# this change landed — so as not to let a peer double-claim one; that
-# recognition retires only in the roadmap's later register-retirement issue.
+# longer minted for a fresh claim, and the register-retirement issue (#882)
+# retired the `tech_debt_branch_prefix` namespace itself.
 claim_branch_for() {  # <source> <item>
   local item="$2"
   printf 'agent/%s' "${item//[^A-Za-z0-9._-]/-}"
@@ -89,10 +85,10 @@ claim_branch_for() {  # <source> <item>
 # branch found here is either still fresh or has real work pushed to it, and
 # either way belongs in the list — no separate TTL check is needed for it.
 #
-# A branch-derived item is recovered by stripping `td/` or `branch_prefix`
+# A branch-derived item is recovered by stripping `branch_prefix`
 # from the branch name, the exact inverse of claim_branch_for above. That
 # recovery is exact for every item this system ever mints such a branch for —
-# an issue number, an alert ref, a register-hygiene or project-review ref —
+# an issue number, an alert ref, or a project-review ref —
 # none of which contain a character claim_branch_for's sanitiser would have
 # touched, so there is nothing lossy to recover from in practice.
 #
@@ -115,11 +111,10 @@ gather_claimed() {  # <target-slug> -> JSON array of {item, age_hours, pr_number
   # one repo, growing with claim volume) and can hit MAX_ARG_STRLEN (test 1);
   # `[]` here reads exactly like "this repo genuinely has no claims" (test 2),
   # which the caller uses to decide whether a candidate is already claimed.
-  out="$(jq -c -n --arg tp 'td/' --arg ap "$branch_prefix" --argjson reg "$registry_out" --argjson br "$branches_out" '
+  out="$(jq -c -n --arg ap "$branch_prefix" --argjson reg "$registry_out" --argjson br "$branches_out" '
     ( [ $reg[] | {item, age_hours, pr_number: (.pr_number // null)} ] ) as $from_registry
     | ( [ $br[]
-          | (if startswith($tp) then .[($tp | length):]
-             elif ($ap != "" and startswith($ap)) then .[($ap | length):]
+          | (if ($ap != "" and startswith($ap)) then .[($ap | length):]
              else empty end)
           | select(. != "")
           | {item: ., age_hours: null, pr_number: null} ] ) as $from_branches
@@ -206,7 +201,7 @@ exclude_claimed_items() {  # <candidates-json> <claimed-item-refs-json>
 # $first_seen_known_json (seeded from first_seen_known_items over the union
 # log, lib/cycle-state.sh) is the running "already logged" set, updated here so
 # a later source's own candidates this same cycle see this call's new items
-# too — a `register-hygiene` id first-seen alongside a `tech-debt` one in the
+# too — an id first-seen alongside a `tech-debt` one in the
 # same cycle must not both fire twice. Like every aggregate requirement 4g
 # names, it can grow with the fleet's whole history, so it travels to jq on
 # stdin, never as an --argjson; on malformed input it is left exactly as it
@@ -386,7 +381,7 @@ coordinator_refinements_view() {  # <refinements-json> <ordered-repos-json>
     input as $refinements | input as $repos
     | ( [ $repos[]?
           | {key: (.slug // "" | tostring),
-             value: ( [ (.findings, .review_feedback, .issues, .register_hygiene,
+             value: ( [ (.findings, .review_feedback, .issues,
                          .human_visibility, .tech_debt, .plan_tasks)[]?
                         | .ref? // empty | tostring ]
                       | map({key: ., value: true}) | from_entries )} ]
@@ -934,7 +929,6 @@ CANDIDATE_ENTRY_LOOKUP_JQ='
       elif $source == "landing-refusals" then ($r.landing_refusals // [])[] | select(.ref == $item)
       elif $source == "abandoned-drafts" then ($r.abandoned_drafts // [])[] | select(.ref == $item)
       elif $source == "human-visibility" then ($r.human_visibility // [])[] | select(.ref == $item)
-      elif $source == "register-hygiene" then ($r.register_hygiene // [])[] | select(.ref == $item)
       else empty
       end
     ] | .[0] // empty
@@ -1001,11 +995,6 @@ CANDIDATE_TEMPLATE_JQ='
   elif $source == "human-visibility" then
     {title: ("human-visibility: " + $item), context: ((.body // "") + "\n\nurl: " + (.url // "")),
      acceptance: "Diagnose and fix the named human-visibility failure per its own record above; report blocked if the cause is outside this repository."}
-  elif $source == "register-hygiene" then
-    {title: ("register-hygiene: " + $item),
-     context: ((.body // "") + "\n\nurl: " + (.url // "") + "\nblob_sha: " + (.blob_sha // "")
-                + "\nproblems: " + ((.problems // []) | join("; "))),
-     acceptance: "Repair only the flagged register inconsistencies per TECH-DEBT.md'"'"'s claiming/filing discipline; touch nothing else."}
   else empty
   end
 '
@@ -1285,7 +1274,7 @@ coordinator_unassessable_items() {  # <eligible-json> <trimmed-json>
 # account of a band this cycle forbade it to select from. Which is also why
 # each band is gated on the repo's own `sources` here rather than on the array
 # merely being non-empty: back-pressure narrows the list without emptying
-# `findings`, `register_hygiene` or `human_visibility`, so the list is the
+# `findings` or `human_visibility`, so the list is the
 # authority on what was selectable and the array is not.
 #
 # Three bands need more than "every entry in the array":
@@ -1308,7 +1297,7 @@ coordinator_unassessable_items() {  # <eligible-json> <trimmed-json>
 #     `voided`, which is an account.
 #
 # Every other band is exactly "an entry's presence in this array is the
-# candidate test", which is the prompt's own words for all six of them. A jq
+# candidate test", which is the prompt's own words for all five of them. A jq
 # failure yields `[]` — no corroboration rather than a false one — on the same
 # fail-open terms as every exclusion above.
 coordinator_eligible_items() {  # <ordered-repos-json> <blocked-json>
@@ -1347,7 +1336,6 @@ coordinator_eligible_items() {  # <ordered-repos-json> <blocked-json>
             band($r; $srcs; $e.landing_refusals; "landing-refusals"),
             band($r; $srcs; $e.abandoned_drafts; "abandoned-drafts"),
             band($r; $srcs; $e.human_visibility; "human-visibility"),
-            band($r; $srcs; $e.register_hygiene; "register-hygiene"),
             band($r; $srcs; $e.tech_debt; "tech-debt"),
             ( ($e.issues // [])[]
               | (((.priority // "Medium") | tostring | ascii_downcase)) as $pband
@@ -1913,7 +1901,7 @@ gather_findings() {
 gather_review_feedback() {
   local slug="$1" out safe
   safe="${slug//\//_}"
-  out="$("$SCRIPT_DIR/scripts/gather-review-feedback.sh" "$slug" "$pr_label" "$branch_prefix" "$tech_debt_branch_prefix" \
+  out="$("$SCRIPT_DIR/scripts/gather-review-feedback.sh" "$slug" "$pr_label" "$branch_prefix" \
         2>"$cycle_dir/review-feedback-$safe.err" || true)"
   if [[ -n "$out" ]] && jq -e 'type == "array"' <<<"$out" >/dev/null 2>&1; then
     printf '%s\n' "$out" > "$cycle_dir/review-feedback-$safe.json"
@@ -1932,7 +1920,7 @@ gather_review_feedback() {
 gather_abandoned_drafts() {
   local slug="$1" out safe
   safe="${slug//\//_}"
-  out="$("$SCRIPT_DIR/scripts/gather-abandoned-drafts.sh" "$slug" "$pr_label" "$branch_prefix" "$abandoned_draft_after_hours" "$tech_debt_branch_prefix" \
+  out="$("$SCRIPT_DIR/scripts/gather-abandoned-drafts.sh" "$slug" "$pr_label" "$branch_prefix" "$abandoned_draft_after_hours" \
         2>"$cycle_dir/abandoned-drafts-$safe.err" || true)"
   if [[ -n "$out" ]] && jq -e 'type == "array"' <<<"$out" >/dev/null 2>&1; then
     printf '%s\n' "$out" > "$cycle_dir/abandoned-drafts-$safe.json"
@@ -1956,16 +1944,16 @@ gather_abandoned_drafts() {
 gather_merge_conflicts() {
   local slug="$1" out safe nudge_result
   safe="${slug//\//_}"
-  out="$("$SCRIPT_DIR/scripts/gather-merge-conflicts.sh" "$slug" "$pr_label" "$branch_prefix" "$tech_debt_branch_prefix" \
+  out="$("$SCRIPT_DIR/scripts/gather-merge-conflicts.sh" "$slug" "$pr_label" "$branch_prefix" \
         2>"$cycle_dir/merge-conflicts-$safe.err" || true)"
   # Requirement 34n's liveness retirement (TD-PPagop-26081303): a
   # `merge-conflicts-$safe.ok` marker, written iff this cycle's own read
   # produced a valid array and said nothing on stderr. gather-merge-
   # conflicts.sh always exits 0 by design (its output feeds the Co-Ordinator,
   # and a source that cannot look must simply not fire rather than abort the
-  # cycle), so stderr is the only signal a real `gh` failure leaves — the same
-  # distinction scripts/gather-register-hygiene.sh draws between "empty
-  # because there is nothing" and "empty because it could not look".
+  # cycle), so stderr is the only signal a real `gh` failure leaves —
+  # distinguishing "empty because there is nothing" from "empty because it
+  # could not look".
   if [[ -n "$out" ]] && jq -e 'type == "array"' <<<"$out" >/dev/null 2>&1 \
      && [[ ! -s "$cycle_dir/merge-conflicts-$safe.err" ]]; then
     : > "$cycle_dir/merge-conflicts-$safe.ok"
@@ -2058,7 +2046,7 @@ gather_merge_conflicts() {
 gather_dequeued() {
   local slug="$1" out safe
   safe="${slug//\//_}"
-  out="$("$SCRIPT_DIR/scripts/gather-dequeued.sh" "$slug" "$pr_label" "$branch_prefix" "$tech_debt_branch_prefix" \
+  out="$("$SCRIPT_DIR/scripts/gather-dequeued.sh" "$slug" "$pr_label" "$branch_prefix" \
         2>"$cycle_dir/dequeued-$safe.err" || true)"
   # Requirement 34n's liveness retirement, same marker discipline as
   # `merge-conflicts-$safe.ok`: written iff this cycle's own read produced a
@@ -2083,7 +2071,7 @@ gather_dequeued() {
 gather_landing_refusals() {
   local slug="$1" out safe
   safe="${slug//\//_}"
-  out="$("$SCRIPT_DIR/scripts/gather-landing-refusals.sh" "$slug" "$pr_label" "$branch_prefix" "$union_log" "$tech_debt_branch_prefix" \
+  out="$("$SCRIPT_DIR/scripts/gather-landing-refusals.sh" "$slug" "$pr_label" "$branch_prefix" "$union_log" \
         2>"$cycle_dir/landing-refusals-$safe.err" || true)"
   if [[ -n "$out" ]] && jq -e 'type == "array"' <<<"$out" >/dev/null 2>&1 \
      && [[ ! -s "$cycle_dir/landing-refusals-$safe.err" ]]; then
@@ -2097,58 +2085,9 @@ gather_landing_refusals() {
   printf '%s' "$out"
 }
 
-# Pre-fetch the repo's TECH-DEBT.md when it disagrees with itself (requirement
-# 3i). Unlike the three above this one's candidacy is a pure function of one
-# file's content, so the repo's head SHA would already wake the cycle that
-# introduced the drift; the array is fed to the fingerprint verbatim anyway, for
-# uniformity with its siblings and because editing scripts/td-check.pl changes
-# candidacy with no commit to the target repo at all (see
-# scripts/gather-register-hygiene.sh and lib/noop-skip.sh).
-#
-# PURPOSE, like gather_review_status's own, names the asking pass — `prefetch`
-# (this repo walk) or `void` (requirement 34l's void re-derivation below) —
-# and lands in the diagnostic filenames. Unlike its siblings this function has
-# *two* callers per cycle for the same repo, and before they were separated
-# the second one's tee silently overwrote the first's: gather-register-
-# hygiene.sh prints `[]` on stdout for every failure path (a rate limit, a
-# network blip, a branch moved between the two — the exact cases the void pass
-# below names), which is a valid array, so a failed second read replaced a
-# successful first read's array with an empty one while the `.ok` marker that
-# read had already written stayed put. The liveness pass then read
-# marker-present plus no ids as "gathered, found nothing" and retired every
-# still-live `register-hygiene-<hash>` void in the repo — a retirement caused
-# by a failed read, which is the one thing the marker exists to prevent.
-gather_register_hygiene() {
-  local slug="$1" branch="$2" purpose="$3" void="${4:-[]}" out safe
-  safe="$purpose-${slug//\//_}"
-  out="$("$SCRIPT_DIR/scripts/gather-register-hygiene.sh" "$slug" "$branch" "$void" \
-        2>"$cycle_dir/register-hygiene-$safe.err" || true)"
-  if [[ -n "$out" ]] && jq -e 'type == "array"' <<<"$out" >/dev/null 2>&1; then
-    printf '%s\n' "$out" > "$cycle_dir/register-hygiene-$safe.json"
-    printf '%s' "$out"
-    # Requirement 34n's liveness retirement (TD-PPagop-26081303): a
-    # `register-hygiene-$safe.ok` marker, written iff this read said nothing
-    # on stderr. gather-register-hygiene.sh always exits 0 by design (a real
-    # API failure is deliberately as silent, on stdout, as "no register" —
-    # see its own header — with the diagnosis reaching only stderr), so
-    # stderr emptiness is the one signal a real failure leaves. Written as a
-    # full `if`, not a `&&` list: this is the last command in the function,
-    # and a bare `&&` whose test fails would return 1 from the function
-    # itself — which under `set -e` aborts the whole cycle at the plain
-    # assignment the void-register-hygiene pass below makes.
-    if [[ ! -s "$cycle_dir/register-hygiene-$safe.err" ]]; then
-      : > "$cycle_dir/register-hygiene-$safe.ok"
-    fi
-  else
-    printf '[]'
-  fi
-}
-
 # Pre-fetch this repo's still-live human-visibility violations (requirement
-# 38e) — its own source, `human-visibility` (issue #284's decision 2), never
-# `gather_register_hygiene`'s: a violation is a fact about GitHub's live
-# pull-request state, unrelated to the register content that source reasons
-# about, so the two never share a candidate or a ref (see
+# 38e) — its own source, `human-visibility` (issue #284's decision 2): a
+# violation is a fact about GitHub's live pull-request state (see
 # scripts/gather-human-visibility-hygiene.sh). `violations` is the fleet-wide
 # array `human_visibility_violations` produced from the union log; the script
 # itself filters to this repo's slice. Piped on stdin, never argv — it is
@@ -2258,8 +2197,8 @@ gather_issues_excluded() {
 
 # Pre-fetch the repo's open `pw::type:tech-debt`-labelled issues (requirement
 # 3t, issue #310; D15 as revised, #869/#875) — the same move issues, findings,
-# review-feedback, merge-conflicts, abandoned-drafts and register-hygiene
-# already got: a source the model could silently misdescribe or decline to
+# review-feedback, merge-conflicts and abandoned-drafts already got: a
+# source the model could silently misdescribe or decline to
 # re-derive becomes an input instead of an errand. Claimed-item exclusion is
 # applied by the caller via exclude_claimed_items, like every other
 # pre-fetched array; blocked/void exclusion is applied by a second pass once

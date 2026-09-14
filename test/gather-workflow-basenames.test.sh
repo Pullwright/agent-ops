@@ -14,8 +14,7 @@
 #     partial map read as complete, which is exactly the "unknown is not
 #     gone" failure requirement 34n's liveness rule guards against.
 #
-# The gatherer is run for real against a stubbed `gh`, matching the pattern
-# test/register-hygiene.test.sh already uses.
+# The gatherer is run for real against a stubbed `gh`.
 #
 # No test framework is used (none exists elsewhere in this repo). Run
 # directly:

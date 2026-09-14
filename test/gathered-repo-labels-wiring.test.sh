@@ -21,7 +21,7 @@
 # this test is what pins the wiring in place rather than the intent.
 #
 # The block is lifted verbatim out of agent-cycle.sh, the way
-# test/backpressure-wiring.test.sh and test/void-retire-wiring.test.sh lift
+# test/backpressure-wiring.test.sh and test/auth-failure-wiring.test.sh lift
 # their own, so the assertions are about the shipped code rather than a copy
 # of its logic.
 #

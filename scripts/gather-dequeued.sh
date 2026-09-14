@@ -16,7 +16,7 @@
 # Co-Ordinator can select: this script is that other half.
 #
 # Given a repo slug, print a JSON array of candidates: open, *non-draft* PRs
-# carrying <pr-label> whose head branch is ours (<branch-prefix> or `td/`),
+# carrying <pr-label> whose head branch is ours (<branch-prefix>),
 # which GitHub's merge queue most recently removed for a merge-group checks
 # failure and has not since re-queued, and which are not already conflicting
 # against their base (that is requirement 3g's own candidate — see "Why this
@@ -51,8 +51,8 @@
 # ## The candidate rule
 #
 # A PR is a candidate iff it is open, **not** a draft, carries <pr-label>,
-# its head branch starts with <branch-prefix> (or `td/`, the tech-debt claim
-# branch) — i.e. this system raised it, the same "ours" test
+# its head branch starts with <branch-prefix> — i.e. this system raised it,
+# the same "ours" test
 # gather-merge-conflicts.sh applies, since force-pushing a fix onto a
 # human's own branch is exactly what the Landing Gate reserves every other
 # branch against — and:
@@ -200,9 +200,8 @@ export MERGE_QUEUE_GH
 slug="${1:-}"
 pr_label="${2:-autonomous-agent}"
 branch_prefix="${3:-agent/}"
-tech_debt_branch_prefix="${4-td/}"
 if [[ -z "$slug" ]]; then
-  echo "usage: gather-dequeued.sh <owner/repo> [pr-label] [branch-prefix] [tech-debt-branch-prefix]" >&2
+  echo "usage: gather-dequeued.sh <owner/repo> [pr-label] [branch-prefix]" >&2
   exit 64
 fi
 
@@ -231,20 +230,10 @@ fi
 
 # `mergeable` selected against `== "MERGEABLE"` exactly — never `CONFLICTING`
 # (that PR belongs to gather-merge-conflicts.sh alone, see the header) and
-# never `UNKNOWN`. Heads may be `agent/…` or, for tech-debt items,
-# `<tech_debt_branch_prefix><ID>`; the label filter is the primary "ours"
-# signal either way.
-#
-# Empty tech_debt_branch_prefix disables the tech-debt namespace: the `or`
-# clause is dropped rather than built with an empty startswith(""), which
-# would match every head.
-td_clause=""
-if [[ -n "$tech_debt_branch_prefix" ]]; then
-  td_clause=" or (.headRefName | startswith(\"$tech_debt_branch_prefix\"))"
-fi
+# never `UNKNOWN`. The label filter is the primary "ours" signal.
 ours="$(jq -c "[.[] | select(.isDraft | not)
                     | select(.mergeable == \"MERGEABLE\")
-                    | select((.headRefName | startswith(\"$branch_prefix\"))$td_clause)]" \
+                    | select(.headRefName | startswith(\"$branch_prefix\"))]" \
         <<<"$ours_all" 2>/dev/null || echo '[]')"
 jq -e 'type == "array"' <<<"$ours" >/dev/null 2>&1 || ours='[]'
 

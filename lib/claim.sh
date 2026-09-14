@@ -11,10 +11,8 @@
 #                   — even at the same SHA, which a plain `git push` of an
 #                   identical ref would silently no-op ("Everything
 #                   up-to-date", both racers convinced they won). The claim
-#                   branch *is* the working branch: `td/<ID>` for tech-debt —
-#                   the same lock the human claiming workflow in TECH-DEBT.md
-#                   takes, so agents and humans contend safely — and
-#                   `agent/<item-ref>` for everything else.
+#                   branch *is* the working branch: `agent/<item-ref>` for
+#                   every source, tech-debt included.
 #   file claims     a create-only contents-API PUT (no `sha`) in the state
 #                   repository, for work that has no new branch to create:
 #                   review-feedback amends an existing PR.
@@ -35,7 +33,7 @@
 #                                                      # a pull request <counted-prs> already counted
 #   claim.sh claims   <target-slug>                   # registry entries younger than claim_ttl_hours,
 #                                                      # as {item, kind, age_hours, pr_number?} (both shapes)
-#   claim.sh branches <target-slug>                   # live td/*, <branch_prefix>* branch names
+#   claim.sh branches <target-slug>                   # live <branch_prefix>* branch names
 #   claim.sh gc                                       # sweep entries older than claim_ttl_hours
 #
 # Exit codes: 0 won / done · 3 lost (someone else holds it) · 1 error.
@@ -112,7 +110,6 @@ cfg() { jq -r "$1" <<<"$DEFAULTED_CONFIG" 2>/dev/null; }
 state_repo="$(cfg '.state_repo')"
 claim_ttl_hours="$(cfg '.claim_ttl_hours')"
 branch_prefix="$(cfg '.branch_prefix')"
-tech_debt_branch_prefix="$(cfg '.tech_debt_branch_prefix')"
 
 say() { printf 'claim: %s\n' "$*"; }
 
@@ -351,30 +348,17 @@ do_claims() {  # <target-slug> -> JSON array of {item, kind, age_hours, pr_numbe
   printf '%s\n' "$out"
 }
 
-do_branches() {  # <target-slug> -> JSON array of live <tech_debt_branch_prefix>*, <branch_prefix>* branch names
-  # --paginate --slurp on both listings: matching-refs pages at the default
-  # page size, so a repository that accumulates more claim branches than one
-  # page holds (stale squash-merged refs alone can get there) would silently
-  # hide the overflow from every consumer of this listing — the Co-Ordinator's
+do_branches() {  # <target-slug> -> JSON array of live <branch_prefix>* branch names
+  # --paginate --slurp: matching-refs pages at the default page size, so a
+  # repository that accumulates more claim branches than one page holds
+  # (stale squash-merged refs alone can get there) would silently hide the
+  # overflow from every consumer of this listing — the Co-Ordinator's
   # `claimed` input and the Script's own candidate filters both go blind
-  # exactly where the contention is worst. --slurp folds the pages into one
-  # array of arrays, flattened here.
-  local slug="$1" td_prefix prefix td_refs pfx_refs
-  td_prefix="$tech_debt_branch_prefix"
-  td_refs='[]'
-  if [[ -n "$td_prefix" ]]; then
-    td_refs="$("$GH" api --paginate --slurp "repos/$slug/git/matching-refs/heads/$td_prefix" \
-      --jq '[.[][].ref | ltrimstr("refs/heads/")]' 2>/dev/null)"
-    [[ -n "$td_refs" ]] || td_refs='[]'
-  fi
-  prefix="$branch_prefix"
-  pfx_refs='[]'
-  if [[ "$prefix" != "$td_prefix" ]]; then
-    pfx_refs="$("$GH" api --paginate --slurp "repos/$slug/git/matching-refs/heads/$prefix" \
-      --jq '[.[][].ref | ltrimstr("refs/heads/")]' 2>/dev/null)"
-    [[ -n "$pfx_refs" ]] || pfx_refs='[]'
-  fi
-  jq -c -n --argjson a "$td_refs" --argjson b "$pfx_refs" '$a + $b' 2>/dev/null || echo '[]'
+  # exactly where the contention is worst.
+  local slug="$1" pfx_refs
+  pfx_refs="$("$GH" api --paginate --slurp "repos/$slug/git/matching-refs/heads/$branch_prefix" \
+    --jq '[.[][].ref | ltrimstr("refs/heads/")]' 2>/dev/null)"
+  [[ -n "$pfx_refs" ]] && printf '%s' "$pfx_refs" || echo '[]'
 }
 
 do_gc() {

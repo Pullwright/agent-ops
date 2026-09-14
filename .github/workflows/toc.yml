@@ -4,7 +4,7 @@ name: Table of Contents check
 # docs/IMPLEMENTATION-PIPELINE-SPEC.md: both must be exactly what
 # scripts/render-toc.sh renders from their ## and ### headings, or a heading
 # can drift out of the ToC (see the script's own header). Modelled on
-# config-table.yml and tech-debt-register.yml.
+# config-table.yml.
 #
 # Deliberately `pull_request` (not `pull_request_target`), so a fork PR never
 # runs with write-scoped secrets, and ungated by `paths:` — a heading edit

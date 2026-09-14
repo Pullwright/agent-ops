@@ -32,7 +32,7 @@
 #     written to match it word for word.
 #
 # The block is lifted verbatim out of agent-cycle.sh, the way
-# test/void-retire-wiring.test.sh lifts its own, so the assertions are about
+# test/auth-failure-wiring.test.sh lifts its own, so the assertions are about
 # the shipped code rather than a copy of its logic.
 #
 # No network: `gh` and `lib/claim.sh` are both stubs, the first replaying a

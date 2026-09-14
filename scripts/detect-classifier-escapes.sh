@@ -353,7 +353,7 @@ _escape_audit_routine_sources() {
     printf '%s' "$top_list"
     return 0
   fi
-  printf '["register-hygiene","tech-debt"]'
+  printf '["tech-debt"]'
 }
 
 # --- The reimplemented routine-complexity resolution -------------------------

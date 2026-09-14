@@ -48,8 +48,8 @@
 #     claim marker (requirement 23): a draft that has been sitting untouched is a
 #     claim whose owner never came back. A *ready* PR is finished work waiting on
 #     the human and is not ours to touch (that is review-feedback's job).
-#   - it carries <pr-label> and its head branch starts with <branch-prefix> (or
-#     `td/`, the tech-debt claim branch) — i.e. this system raised it. The Human
+#   - it carries <pr-label> and its head branch starts with <branch-prefix> —
+#     i.e. this system raised it. The Human
 #     Gate reserves every other branch for humans; an abandoned draft on a human's
 #     branch is the human's to finish, not ours to force-push.
 #   - its last **real** activity was at least <stale-hours> ago (TD26072605). A
@@ -164,9 +164,8 @@ slug="${1:-}"
 pr_label="${2:-autonomous-agent}"
 branch_prefix="${3:-agent/}"
 stale_hours="${4:-3}"
-tech_debt_branch_prefix="${5-td/}"
 if [[ -z "$slug" ]]; then
-  echo "usage: gather-abandoned-drafts.sh <owner/repo> [pr-label] [branch-prefix] [stale-hours] [tech-debt-branch-prefix]" >&2
+  echo "usage: gather-abandoned-drafts.sh <owner/repo> [pr-label] [branch-prefix] [stale-hours]" >&2
   exit 64
 fi
 
@@ -195,9 +194,6 @@ fi
 # indistinguishable from "no abandoned drafts", and the source silently never
 # fires — the `[]`-on-error trap in the Gotchas table that cost
 # gather-review-feedback.sh a debugging round.
-# Heads may be `agent/…` or — for tech-debt items, whose claim branch is the
-# human protocol's own `<tech_debt_branch_prefix><ID>` — `td/…`; the label
-# filter is the primary "ours" signal either way.
 #
 # `headRefOid`, not the whole `commits` collection. Asking for `commits` cost
 # 31 GraphQL points per call against a repository with three open pull requests
@@ -225,15 +221,8 @@ if github_pr_list_truncated "$(jq 'length' <<<"$all_prs")"; then
   echo "gather-abandoned-drafts: $slug: the pull-request listing came back at its ${GITHUB_PR_LIST_LIMIT}-item cap; a draft beyond it is not offered this cycle" >&2
 fi
 
-# Empty tech_debt_branch_prefix disables the tech-debt namespace: the `or`
-# clause is dropped rather than built with an empty startswith(""), which
-# would match every head.
-td_clause=""
-if [[ -n "$tech_debt_branch_prefix" ]]; then
-  td_clause=" or (.headRefName | startswith(\"$tech_debt_branch_prefix\"))"
-fi
 prs="$(jq -c "[.[] | select(.isDraft)
-                   | select((.headRefName | startswith(\"$branch_prefix\"))$td_clause)]" <<<"$all_prs" 2>/dev/null || true)"
+                   | select(.headRefName | startswith(\"$branch_prefix\"))]" <<<"$all_prs" 2>/dev/null || true)"
 if [[ -z "$prs" ]] || ! jq -e 'type == "array"' <<<"$prs" >/dev/null 2>&1; then
   printf '[]'
   exit 0

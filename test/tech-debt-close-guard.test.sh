@@ -31,7 +31,8 @@
 #   - **Malformed arguments exit 2 without calling `gh`.**
 #
 # `gh` is stubbed through GH, matching the technique
-# test/release-td-branch.test.sh's stub uses for its own `gh api` calls.
+# test/release-pending-reservations.test.sh's stub uses for its own `gh api`
+# calls.
 #
 # No test framework is used (none exists elsewhere in this repo). Run it
 # directly:

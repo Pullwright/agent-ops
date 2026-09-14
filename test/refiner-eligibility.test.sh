@@ -69,9 +69,6 @@ repos='[
    "landing_refusals": [
      {"source": "landing-refusals", "ref": "pr-61-landing-refusal-4718691960", "title": "opted in"}
    ],
-   "register_hygiene": [
-     {"source": "register-hygiene", "ref": "register-hygiene-abc", "title": "opted in"}
-   ],
    "tech_debt": [
      {"source": "tech-debt", "ref": "TD-PPagop-1", "title": "opted in"}
    ],
@@ -82,7 +79,7 @@ repos='[
      {"source": "implementation-plan", "ref": "W10-breach-handling", "title": "opted in"}
    ]}
 ]'
-policy='{"issues": "preferred", "register-hygiene": "required", "tech-debt": "required",
+policy='{"issues": "preferred", "tech-debt": "required",
          "landing-refusals": "required",
          "project-review": "required", "implementation-plan": "required"}'
 refinements='{"o/r": {"6": {"ts": "2026-08-01T00:00:00Z", "comment_url": "https://x/6"}}}'
@@ -110,15 +107,13 @@ assert_eq "a merge conflict, exempt by default, is not a candidate" "no" \
 # forever instead of refining it.
 assert_eq "a landing-refusals item, opted into required, is a candidate" "yes" \
   "$(jq -r 'any(.[]; .source == "landing-refusals") | if . then "yes" else "no" end' <<<"$candidates")"
-assert_eq "a register-hygiene item, opted into required, is a candidate" "yes" \
-  "$(jq -r 'any(.[]; .source == "register-hygiene") | if . then "yes" else "no" end' <<<"$candidates")"
 assert_eq "a tech-debt item, opted into required, is a candidate" "yes" \
   "$(jq -r 'any(.[]; .source == "tech-debt") | if . then "yes" else "no" end' <<<"$candidates")"
 assert_eq "a project-review item, opted into required, is a candidate" "yes" \
   "$(jq -r 'any(.[]; .source == "project-review") | if . then "yes" else "no" end' <<<"$candidates")"
 assert_eq "an implementation-plan item, opted into required, is a candidate" "yes" \
   "$(jq -r 'any(.[]; .source == "implementation-plan") | if . then "yes" else "no" end' <<<"$candidates")"
-assert_eq "exactly six candidates survive" "6" "$(jq 'length' <<<"$candidates")"
+assert_eq "exactly five candidates survive" "5" "$(jq 'length' <<<"$candidates")"
 assert_eq "the candidate carries the gatherer's own entry verbatim" "unrefined issue" \
   "$(jq -r '.[] | select(.item == "5") | .entry.title' <<<"$candidates")"
 
@@ -149,7 +144,7 @@ assert_eq "the oversized void fixture really is past MAX_ARG_STRLEN" "1" \
 candidates_big_void="$(refiner_candidate_items "$repos" "$policy" "$refinements" "$blocked" "$big_void" "$claimed")"
 assert_eq "a void extract past the argv cap still excludes the voided item" "no" \
   "$(jq -r 'any(.[]; .item == "8") | if . then "yes" else "no" end' <<<"$candidates_big_void")"
-assert_eq "  ... while every other candidate still comes through unaffected" "6" \
+assert_eq "  ... while every other candidate still comes through unaffected" "5" \
   "$(jq 'length' <<<"$candidates_big_void")"
 
 # project-review and implementation-plan are only reachable when the

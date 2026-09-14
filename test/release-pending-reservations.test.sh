@@ -10,7 +10,7 @@
 #   - **A marker whose branch delete now succeeds is reported "released"**,
 #     and its own marker file is cleared from the state repository.
 #   - **A marker whose branch is already gone (a peer's concurrent retry, or
-#     the ordinary release-td-branch.yml path) reports "absent"**, not an
+#     a delete by hand) reports "absent"**, not an
 #     error, and is cleared the same way.
 #   - **A marker whose delete fails again reports "warning"**, and is left in
 #     place — checked by asserting no DELETE of the marker file itself is

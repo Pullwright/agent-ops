@@ -172,7 +172,7 @@ Four things to know:
   and which don't; the agent honours that split.
 
 Only PRs the system is managing are eligible (labelled `autonomous-agent`, on an
-`agent/` or `td/` branch — see [Handing a pull request to the
+`agent/` branch — see [Handing a pull request to the
 pipeline](#handing-a-pull-request-to-the-pipeline)). Your own branches are never
 touched.
 
@@ -349,11 +349,13 @@ the fleet to carry an existing PR the rest of the way.
 
 Two things to know:
 
-- **It only applies to `agent/` and `td/` branches** — the ones the system is
-  allowed to push to. `/td` raises its PRs on `td/<id>` and the implementation
-  cycle on `agent/<item>`, so both qualify; labelling a PR on any other branch (e.g.
-  `feature/…`) does nothing, because the landing gate reserves those and the
-  gatherers skip them even when labelled.
+- **It only applies to `agent/` branches** — the ones the system is
+  allowed to push to; the implementation cycle raises every PR on
+  `agent/<item>`. `/td` raises its own PRs on an ordinary feature branch with
+  no fixed naming convention, so name it `agent/<something>` yourself if you
+  want to hand it to the fleet this way. Labelling a PR on any other branch
+  (e.g. `feature/…`) does nothing, because the landing gate reserves those and
+  the gatherers skip them even when labelled.
 - **Labelling grants write access.** A labelled PR is one the fleet may push to —
   including a `--force-with-lease` rebase to clear a conflict — and it counts
   toward the open-PR back-pressure cap. Remove the label to take the PR back.
@@ -475,7 +477,7 @@ Keys:
 <!-- config-table:start id=main — GENERATED from config.schema.json by scripts/render-config-table.sh; edit the schema, not these rows -->
 | Key | Default | Notes |
 |---|---|---|
-| `repos` | see `config.json` | Array of `{"slug": "...", "sources": [...]}`. `sources` is that repo's work sources in priority order (`security`, `issues:urgent`, `review-feedback`, `merge-conflicts`, `dequeued`, `landing-refusals`, `human-visibility`, `abandoned-drafts`, `failed-runs`, `issues:high`, `tech-debt`, `issues:medium`, `implementation-plan`, `project-review`, `issues:low`, `code-quality`, `register-hygiene`). `security` (open Dependabot + security code-scanning alerts) is always first, and any...[continued below](#extended-notes-repos) |
+| `repos` | see `config.json` | Array of `{"slug": "...", "sources": [...]}`. `sources` is that repo's work sources in priority order (`security`, `issues:urgent`, `review-feedback`, `merge-conflicts`, `dequeued`, `landing-refusals`, `human-visibility`, `abandoned-drafts`, `failed-runs`, `issues:high`, `tech-debt`, `issues:medium`, `implementation-plan`, `project-review`, `issues:low`, `code-quality`). `security` (open Dependabot + security code-scanning alerts) is always first, and any security-related...[continued below](#extended-notes-repos) |
 | `state_dir` | *(required)* | Lock, shared log, stage transcripts. Required — there is no default; this installation's own value is `~/.local/state/poetic-agents`, shown in the specification as a worked example. |
 | `workspace_root` | *(required)* | Ephemeral clones. Each cycle gets its own subdirectory, and the state repository keeps its mirror here. Required — there is no default; this installation's own value is `~/.cache/poetic-agents/workspaces`, shown in the specification as a worked example. |
 | `state_repo` | `Poetic-Poems/agent-ops-state` | Private repository through which `state_dir` replicates between nodes. See [Keeping every node warm](#keeping-every-node-warm). Leave it out and nothing syncs — a single-node install behaves exactly as before. The value shown is this installation's own private repository, not a generic default — every installation names its own. |
@@ -520,7 +522,6 @@ Keys:
 | `prompt_overrides` | `{}` | Add house rules to a stage's operating prompt, or replace it outright, without forking `prompts/`. The Approver's prompt takes no override — it is the trust gate the merge-autonomy ladder rests on. See [Prompt overrides](#prompt-overrides). |
 | `pr_label` | `autonomous-agent` | Applied to every PR this system raises. Do not name it `obsolete`, which is reserved for a human to mark one of these PRs as unwanted. The claim loop stamps this value onto every work order's own `pr_label` field, guaranteed regardless of the Co-Ordinator's own output, and the Implementer labels its pull request with it. |
 | `branch_prefix` | `agent/` | Branch naming: `agent/<item-slug>`. |
-| `tech_debt_branch_prefix` | `td/` | Deprecated: legacy recognition only, for a pre-migration human tech-debt-claim branch or a `td/<ID>` branch minted before D15's revision. A fresh tech-debt selection now claims `branch_prefix` like any other item. Leave it empty for a repository that never followed the `TECH-DEBT.md` convention — the affected scripts then match only `branch_prefix`. |
 | `max_open_agent_prs` | `8` | Back-pressure limit: draft PRs, changes-requested PRs and claims across all configured repositories — not PRs only waiting on approval or merge. |
 | `candidates_max` | `3` | How many ranked candidates the Co-Ordinator returns; the Script claims down the list, so a lost race costs the next-best item rather than the cycle. |
 | `coordinator_prompt_max_bytes` | `500000` | The largest assembled prompt the Script will hand the Co-Ordinator. What a context window rejects is the whole prompt, not the runtime input alone, so the Script measures the rendered base prompt, subtracts it, and trims the two bands that carry a whole document each — an issue's entire thread and a tech-debt issue's entire thread — into what is left. Prose is shed and candidacy is not: every entry stays selectable, and every cut carries a marker naming how many bytes went...[continued below](#extended-notes-coordinator_prompt_max_bytes) |
@@ -531,7 +532,7 @@ Keys:
 | `merge_queue_dequeue_notice_max_age_hours` | `24` | Hours a merge-queue-dequeue notice comment (`scripts/sweep-human-visibility.sh`, requirement 38f) may still fire for after the removal event's own time — bounds the notice to genuinely new information rather than an event a sweep is only now seeing for the first time. `0` disables the notice entirely, at the cost of losing the only human signal this pipeline raises for a merge-group failure. |
 | `merge_autonomy` | `human` | The D18 merge-autonomy trust ladder: `human` (today's behaviour — a human approves and merges), `agent-approves` (the Approver App reviews; a human still merges), `agent-merges-routine`/`agent-merges-all` (the Script itself lands an eligible pull request — see `merge_autonomy_routine_sources` — and a human's residual act narrows to whatever the classifier refused). A `repos[]` entry may override this per repository — see [Extended notes: `repos`](#extended-notes-repos). Every...[continued below](#extended-notes-merge_autonomy) |
 | `merge_budget_per_day` | `8` | D18's spend governor: a rolling-24-hour cap on pull requests this pipeline may land in one repository, counted from GitHub's own merged-PR record. A `repos[]` entry may override this per repository — see [Extended notes: `repos`](#extended-notes-repos). `0` means unlimited. Reaching the cap approves a pull request but does not merge it — the backlog queues visibly; landing more than the cap is a counting anomaly that freezes the repository to `agent-approves` and escalates to a human. |
-| `merge_autonomy_routine_sources` | `["register-hygiene", "tech-debt"]` | D18 WI-7: which work sources may be armed automatically at `agent-merges-routine` and above — a pull request also needs a `complexity:*` grade in `merge_autonomy_routine_complexity`, and — below `agent-merges-all` — to touch no protected path; at `agent-merges-all` a protected-path hit is deferred to the critical-tier and `landing_cool_off_hours` controls rather than refused. A `repos[]` entry may override this per repository — see...[continued below](#extended-notes-merge_autonomy_routine_sources) |
+| `merge_autonomy_routine_sources` | `["tech-debt"]` | D18 WI-7: which work sources may be armed automatically at `agent-merges-routine` and above — a pull request also needs a `complexity:*` grade in `merge_autonomy_routine_complexity`, and — below `agent-merges-all` — to touch no protected path; at `agent-merges-all` a protected-path hit is deferred to the critical-tier and `landing_cool_off_hours` controls rather than refused. A `repos[]` entry may override this per repository — see...[continued below](#extended-notes-merge_autonomy_routine_sources) |
 | `merge_autonomy_protected_paths` | `[".github/*", "deploy/*", "prompts/*", "lib/*", "config.schema.json", "config.json", "agent-cycle.sh", "review-cycle.sh", "CODEOWNERS"]` | D18 Stage 3: the whole-path prefixes a routine-tier landing must touch none of — below `agent-merges-all` a hit refuses outright; at `agent-merges-all` it is deferred to the critical-tier and `landing_cool_off_hours` controls instead. An entry ending `/*` matches a whole-path prefix; any other entry matches an exact path. A `repos[]` entry may override this per repository — see [Extended notes: `repos`](#extended-notes-repos). Defaults to agent-ops's own gate paths, which...[continued below](#extended-notes-merge_autonomy_protected_paths) |
 | `merge_autonomy_routine_complexity` | `["low", "medium"]` | D18 Stage 3: which `complexity:*` grades may be armed automatically at `agent-merges-routine` and above — a pull request also needs a `source` in `merge_autonomy_routine_sources`, and — below `agent-merges-all` — to touch no protected path. A `repos[]` entry may override this per repository — see [Extended notes: `repos`](#extended-notes-repos). Widening past the default to include `high` is a bigger step than it looks: requirement 26a already forces `high` onto the riskiest...[continued below](#extended-notes-merge_autonomy_routine_complexity) |
 | `landing_cool_off_hours` | `24` | D18 WI-12 (Stage 4): the wait, in hours, between the Approver's own approval of a protected-path pull request and the arming step landing it — only at `agent-merges-all`, and only alongside the critical-tier control. Measured from the standing review's own timestamp, re-read fresh every cycle; a fresh push restarts it, since the standing review's own commit no longer matches the pull request's current head. A `repos[]` entry may override this per repository — see...[continued below](#extended-notes-landing_cool_off_hours) |
@@ -622,7 +623,7 @@ The `project_review` object configures the separate repository-review pipeline �
 
 ### Extended notes: `repos`
 
-Array of `{"slug": "...", "sources": [...]}`. `sources` is that repo's work sources in priority order (`security`, `issues:urgent`, `review-feedback`, `merge-conflicts`, `dequeued`, `landing-refusals`, `human-visibility`, `abandoned-drafts`, `failed-runs`, `issues:high`, `tech-debt`, `issues:medium`, `implementation-plan`, `project-review`, `issues:low`, `code-quality`, `register-hygiene`).
+Array of `{"slug": "...", "sources": [...]}`. `sources` is that repo's work sources in priority order (`security`, `issues:urgent`, `review-feedback`, `merge-conflicts`, `dequeued`, `landing-refusals`, `human-visibility`, `abandoned-drafts`, `failed-runs`, `issues:high`, `tech-debt`, `issues:medium`, `implementation-plan`, `project-review`, `issues:low`, `code-quality`).
 
 - `security` (open Dependabot + security code-scanning alerts) is always first, and any security-related item is prioritised ahead of all non-security work.
 - `issues:urgent` comes second and likewise outranks the repo walk, because an issue you have marked `Urgent` is the strongest thing you can say short of a security alert.
@@ -630,10 +631,9 @@ Array of `{"slug": "...", "sources": [...]}`. `sources` is that repo's work sour
 - `merge-conflicts` (agent PRs otherwise ready for review or merge but conflicting with their base) comes fourth for the same reason — a rebase-and-resolve unblocks a PR you are waiting to land, and nothing else on it can proceed until it merges cleanly.
 - `dequeued` (agent PRs GitHub's merge queue removed over a merge-group checks failure without merging) comes fifth, alongside `merge-conflicts`: a real defect in the pull request itself, of the same "finishing beats starting" kind, just surfaced by the queue's speculative merge rather than by git.
 - `landing-refusals` (agent PRs the Script's own landing gate keeps declining to arm over an unreconciled human comment) comes sixth, immediately after `dequeued`: a human veto sitting unanswered on an otherwise-ready pull request is the same "finishing beats starting" gap, just raised by the pipeline's own arming step rather than by GitHub.
-- `human-visibility` (an agent PR the sweep could not confirm a human was actually asked to review, or nudge, after `human_nudge_idle_hours` idle) comes seventh, ranked with the sources around it rather than beside `register-hygiene`: finished work invisible to the human whose merge everything waits on is the same "finishing beats starting" gap, not a cosmetic repair.
+- `human-visibility` (an agent PR the sweep could not confirm a human was actually asked to review, or nudge, after `human_nudge_idle_hours` idle) comes seventh: finished work invisible to the human whose merge everything waits on is the same "finishing beats starting" gap.
 - `abandoned-drafts` (draft PRs this system raised and then left untouched past `abandoned_draft_after_hours`) comes eighth for the same reason — finishing a stalled draft of ours turns a slot silted with a dead draft into a PR you can merge.
-- `project-review` (the latest repository review's recommendations that aren't already tech-debt or issues) sits just above `issues:low` and `code-quality` (non-security code-scanning findings).
-- `register-hygiene` (the repo's tech-debt register failing its own consistency check — an item file whose frontmatter disagrees with its filename, its declared scope, or itself) is last, because a deterministic cosmetic repair must never outrank real work, and each repo's `tech-debt-register` CI check keeps its volume near zero anyway.
+- `project-review` (the latest repository review's recommendations that aren't already tech-debt or issues) sits just above `issues:low` and `code-quality` (non-security code-scanning findings), which are last.
 
 The four `issues:<band>` tokens are the *same* source at four ranks, banded by each issue's `Priority` field — see "Issue priority" below; list a subset to have the pipeline see only those bands, or none to turn issues off for that repo. Adding a repo or source is a config-only change.
 
@@ -733,7 +733,7 @@ Do not set it to `blocked`, which is a label that excludes an issue from the pip
 
 ### Extended notes: `refinement_policy`
 
-Per source: `required` (never select unrefined), `preferred` (rank refined items first, but an unrefined one may still be picked), or `exempt` (no refinement dimension — the default for every source not listed). Shipped default: `issues` and `tech-debt` both `preferred` — the two sources whose items can otherwise carry a specification the Co-Ordinator composed itself rather than one already written elsewhere (a merge conflict, a review comment, a security finding). See [Refined items and the Refiner](#refined-items-and-the-refiner). Every source the Refiner's own candidate gathering reads — `issues`, `security`, `code-quality`, `review-feedback`, `abandoned-drafts`, `merge-conflicts`, `dequeued`, `landing-refusals`, `register-hygiene`, `tech-debt`, `project-review` and `implementation-plan` — reaches an engagement; the latter two are read only for a repo whose `sources` lists them and whose policy for them is not itself `exempt`. A `required` source with `refiner_model` empty is refused at startup (requirement 1c).
+Per source: `required` (never select unrefined), `preferred` (rank refined items first, but an unrefined one may still be picked), or `exempt` (no refinement dimension — the default for every source not listed). Shipped default: `issues` and `tech-debt` both `preferred` — the two sources whose items can otherwise carry a specification the Co-Ordinator composed itself rather than one already written elsewhere (a merge conflict, a review comment, a security finding). See [Refined items and the Refiner](#refined-items-and-the-refiner). Every source the Refiner's own candidate gathering reads — `issues`, `security`, `code-quality`, `review-feedback`, `abandoned-drafts`, `merge-conflicts`, `dequeued`, `landing-refusals`, `tech-debt`, `project-review` and `implementation-plan` — reaches an engagement; the latter two are read only for a repo whose `sources` lists them and whose policy for them is not itself `exempt`. A `required` source with `refiner_model` empty is refused at startup (requirement 1c).
 
 ### Extended notes: `unvoid_label`
 

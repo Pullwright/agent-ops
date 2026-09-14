@@ -318,11 +318,13 @@ claims_out="$(env CLAIM_GH="$stub_bin/gh" "$CLAIM" claims Poetic-Poems/poetic 2>
 assert_eq "claims excludes an entry older than claim_ttl_hours (the staleness escape)" "0" \
   "$(jq '[.[] | select(.item == "TD-OLD")] | length' <<<"$claims_out")"
 
-# --- branches: live td/*, <branch_prefix>* refs on the target repo (issue #175) ------
+# --- branches: live <branch_prefix>* refs on the target repo (issue #175) ------
+# The td/ namespace itself retired (#882): a live td/ branch is no longer
+# recognised here at all, regardless of its registry entry or age.
 branches_out="$(env CLAIM_GH="$stub_bin/gh" "$CLAIM" branches Poetic-Poems/poetic 2>/dev/null)"
-assert_eq "branches lists the live td/ claim branch, registry entry or not" "1" \
+assert_eq "branches no longer recognises the td/ namespace" "0" \
   "$(jq '[.[] | select(. == "td/TD-CLAIMS-1")] | length' <<<"$branches_out")"
-assert_eq "branches is not TTL-filtered — the ref alone is the signal" "1" \
+assert_eq "  ... not even a long-lived one" "0" \
   "$(jq '[.[] | select(. == "td/TD-OLD")] | length' <<<"$branches_out")"
 
 # --- expire: a discarded engagement's tombstone is backdated, not released ---------

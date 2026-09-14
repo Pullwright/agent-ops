@@ -77,8 +77,9 @@
 #
 # DISCOVERY IS A SEARCH, NEVER A LIST, and it is checked from the other side.
 # The documents are found by walking the tree for `-f query='`, the one form
-# all of them use, rather than from a list somebody maintains — for the reason
-# `.github/workflows/td-tooling-drift.yml` gives about its own manifest: a
+# all of them use, rather than from a list somebody maintains — for the
+# reason every drift check of this kind eventually learns about its own
+# manifest: a
 # hard-coded list can only cover what someone already thought to add to it, so
 # the document added tomorrow is invisible to the very check meant to cover
 # it. But a search keyed on one spelling is a list of whoever happened to

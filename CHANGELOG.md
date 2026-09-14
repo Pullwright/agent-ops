@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Removed
+
+- **The tech-debt register machinery** (issue #882), now that every register
+  in the fleet is frozen (#880, Poetic-Poems/poetic#199,
+  Poetic-Poems/poetic-fiddle#349) and tech debt lives entirely as
+  `pw::type:tech-debt`-labelled GitHub issues (D15 as revised, #869/#874/
+  #875). Removed: the register CI workflows
+  (`.github/workflows/tech-debt-register.yml`, `td-tooling-drift.yml`,
+  `release-td-branch.yml`) and the seven vendored perl/shell tools they ran
+  (`td-check.pl`, `next-tech-debt-id.pl`, `reserve-tech-debt-id.pl`,
+  `get-tech-debt-record.pl`, `check-tech-debt-open-rewrites.pl`,
+  `find-similar-tech-debt.sh`, `release-td-branch.sh`); the deprecated
+  `tech_debt_branch_prefix` config key and the `td/` claim-branch namespace
+  it enabled (tech-debt now claims `agent/<item-ref>` like every other
+  source); the `register-hygiene` work source end to end
+  (`scripts/gather-register-hygiene.sh` and its wiring through
+  `lib/candidate-select.sh`, `lib/candidate-gather.sh`, `lib/void-liveness.sh`,
+  `lib/eligibility.sh`, `lib/noop-skip.sh`, `lib/refinement.sh`,
+  `lib/stage-attempt.sh`, `scripts/doctor.sh`, `lib/landing.sh` and
+  `scripts/detect-classifier-escapes.sh`'s default fallbacks, and the schema).
+  `scripts/is-docs-only.sh` drops its `tech-debt/*` allowlist entry, since the
+  frozen register no longer rides in PRs. `TECH-DEBT.md` becomes a short
+  pointer to the frozen archive and the labelled-issue policy; the `td` skill
+  retargets at issue lookup. The frozen `tech-debt/` directory itself is
+  untouched — every record it holds stays in place as a permanent archive.
+
 ### Fixed
 
 - **An already-settled open question no longer resurfaces in a later

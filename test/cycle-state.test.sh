@@ -522,8 +522,8 @@ assert_eq "round-trip: a fresh verdict after the retirement re-enters the extrac
 # --- void_liveness_actioned (requirement 34n's liveness rule, --------------
 # --- TD-PPagop-26081303) ----------------------------------------------------
 #
-# The six shapes the cycle already gathers as structured data each cycle:
-# an alert ref, a register-hygiene ref, a failed-run ref, a merge-conflict
+# The five shapes the cycle already gathers as structured data each cycle:
+# an alert ref, a failed-run ref, a merge-conflict
 # ref (the addendum's `pr-<n>-conflict-<head-sha>` — "merge-conflict-
 # resolved" below), a dequeued ref (TD-PPagop-26081409's own
 # `pr-<n>-dequeued-<head-sha>`) and a human-visibility ref (agent-ops#646's
@@ -536,8 +536,6 @@ void_shapes='[
   {"repo":"o/r","item":"dependabot-alert-1","ts":"2026-07-01T00:00:00Z"},
   {"repo":"o/r","item":"dependabot-alert-2","ts":"2026-07-01T00:00:00Z"},
   {"repo":"o/r","item":"code-scanning-alert-9","ts":"2026-07-01T00:00:00Z"},
-  {"repo":"o/r","item":"register-hygiene-aaaaaaaaaaaa","ts":"2026-07-01T00:00:00Z"},
-  {"repo":"o/r","item":"register-hygiene-bbbbbbbbbbbb","ts":"2026-07-01T00:00:00Z"},
   {"repo":"o/r","item":"failed-run-ci","ts":"2026-07-01T00:00:00Z"},
   {"repo":"o/r","item":"failed-run-sync-framework","ts":"2026-07-01T00:00:00Z"},
   {"repo":"o/r","item":"pr-12-conflict-1a2b3c4d5e6f","ts":"2026-07-01T00:00:00Z"},
@@ -554,7 +552,6 @@ void_shapes='[
 gather_map='{
   "o/r": {
     "alert": {"ok": true, "ids": ["dependabot-alert-1"]},
-    "register-hygiene": {"ok": true, "ids": ["register-hygiene-aaaaaaaaaaaa"]},
     "failed-run": {"ok": false, "ids": []},
     "merge-conflict": {"ok": true, "ids": ["pr-12-conflict-1a2b3c4d5e6f", "pr-14-superseded-1234567890ab"]},
     "dequeued": {"ok": true, "ids": ["pr-16-dequeued-fedcba098765"]},
@@ -569,11 +566,6 @@ assert_eq "alert: absent from a successful gather is actioned" \
   "liveness-alert" "$(jq -r '.[] | select(.item == "dependabot-alert-2") | .by' <<<"$liveness_out")"
 assert_eq "alert: the code-scanning shape is recognised too" \
   "liveness-alert" "$(jq -r '.[] | select(.item == "code-scanning-alert-9") | .by' <<<"$liveness_out")"
-assert_eq "register-hygiene: still present is never actioned" \
-  "0" "$(jq '[.[] | select(.item == "register-hygiene-aaaaaaaaaaaa")] | length' <<<"$liveness_out")"
-assert_eq "register-hygiene: absent from a successful gather is actioned" \
-  "liveness-register-hygiene" \
-  "$(jq -r '.[] | select(.item == "register-hygiene-bbbbbbbbbbbb") | .by' <<<"$liveness_out")"
 assert_eq "failed-run: absent but the gather did not succeed decides nothing" \
   "0" "$(jq '[.[] | select(.item == "failed-run-ci")] | length' <<<"$liveness_out")"
 assert_eq "  ... neither failed-run entry is actioned while ok is false" \
@@ -652,7 +644,7 @@ liveness_void='[
   {"ts":"2026-07-01T00:00:00Z","repo":"o/r","item":"dependabot-alert-101","detail":"actioned and old"},
   {"ts":"2026-08-10T00:00:00Z","repo":"o/r","item":"dependabot-alert-102","detail":"actioned but young"}
 ]'
-liveness_gather='{"o/r":{"alert":{"ok":true,"ids":[]},"register-hygiene":{"ok":true,"ids":[]},"failed-run":{"ok":true,"ids":[]},"merge-conflict":{"ok":true,"ids":[]}}}'
+liveness_gather='{"o/r":{"alert":{"ok":true,"ids":[]},"failed-run":{"ok":true,"ids":[]},"merge-conflict":{"ok":true,"ids":[]}}}'
 liveness_actioned="$(void_liveness_actioned "$liveness_void" "$liveness_gather")"
 assert_eq "liveness feeding retire_void_items: actioned and old retires" \
   "0" "$(retire_void_items "$liveness_void" "$liveness_actioned" 30 "$liveness_now_epoch" \
@@ -749,7 +741,6 @@ assert_eq "a malformed fourth input still yields []" \
 cfg_void='[
   {"repo":"o/kept","item":"dependabot-alert-1","ts":"2026-07-01T00:00:00Z"},
   {"repo":"o/kept","item":"code-scanning-alert-2","ts":"2026-07-01T00:00:00Z"},
-  {"repo":"o/kept","item":"register-hygiene-aaaaaaaaaaaa","ts":"2026-07-01T00:00:00Z"},
   {"repo":"o/kept","item":"pr-13-conflict-9f8e7d6c5b4a","ts":"2026-07-01T00:00:00Z"},
   {"repo":"o/kept","item":"pr-16-dequeued-fedcba098765","ts":"2026-07-01T00:00:00Z"},
   {"repo":"o/kept","item":"human-visibility-cccccccccccc","ts":"2026-07-01T00:00:00Z"},
@@ -764,7 +755,7 @@ cfg_void='[
   {"item":"dependabot-alert-1","ts":"2026-07-01T00:00:00Z"}
 ]'
 # Every mapped source still listed: nothing here is the config's business.
-cfg_all='[{"slug":"o/kept","sources":["security","code-quality","register-hygiene","merge-conflicts","dequeued","failed-runs","project-review","tech-debt","implementation-plan","issues:high","review-feedback","abandoned-drafts","human-visibility"]},{"slug":"o/gone","sources":["security"]}]'
+cfg_all='[{"slug":"o/kept","sources":["security","code-quality","merge-conflicts","dequeued","failed-runs","project-review","tech-debt","implementation-plan","issues:high","review-feedback","abandoned-drafts","human-visibility"]},{"slug":"o/gone","sources":["security"]}]'
 assert_eq "a repo still listing every mapped source actions nothing" \
   "0" "$(void_config_actioned "$cfg_void" "$cfg_all" | jq '[.[] | select(.repo == "o/kept")] | length')"
 
@@ -783,8 +774,6 @@ assert_eq "alert: both security and code-quality gone is source-dropped" \
   "source-dropped" "$(by_item "$cfg_out" dependabot-alert-1)"
 assert_eq "  ... and the code-scanning half of that shape too" \
   "source-dropped" "$(by_item "$cfg_out" code-scanning-alert-2)"
-assert_eq "register-hygiene: source gone is source-dropped" \
-  "source-dropped" "$(by_item "$cfg_out" register-hygiene-aaaaaaaaaaaa)"
 assert_eq "merge-conflict: source gone is source-dropped" \
   "source-dropped" "$(by_item "$cfg_out" pr-13-conflict-9f8e7d6c5b4a)"
 assert_eq "dequeued: source gone is source-dropped" \
@@ -838,16 +827,16 @@ assert_eq "malformed VOID_JSON fails safe to []" \
 # The age half, as for every other signal: liveness is not the age test.
 cfg_now_epoch=1786579200
 cfg_age_void='[
-  {"ts":"2026-07-01T00:00:00Z","repo":"o/kept","item":"register-hygiene-aaaaaaaaaaaa","detail":"actioned and old"},
-  {"ts":"2026-08-10T00:00:00Z","repo":"o/kept","item":"register-hygiene-bbbbbbbbbbbb","detail":"actioned but young"}
+  {"ts":"2026-07-01T00:00:00Z","repo":"o/kept","item":"dependabot-alert-201","detail":"actioned and old"},
+  {"ts":"2026-08-10T00:00:00Z","repo":"o/kept","item":"dependabot-alert-202","detail":"actioned but young"}
 ]'
 cfg_age_actioned="$(void_config_actioned "$cfg_age_void" "$cfg_stripped")"
 assert_eq "config signal feeding retire_void_items: actioned and old retires" \
   "0" "$(retire_void_items "$cfg_age_void" "$cfg_age_actioned" 30 "$cfg_now_epoch" \
-         | jq '[.[] | select(.item == "register-hygiene-aaaaaaaaaaaa")] | length')"
+         | jq '[.[] | select(.item == "dependabot-alert-201")] | length')"
 assert_eq "config signal feeding retire_void_items: actioned but young is kept" \
   "1" "$(retire_void_items "$cfg_age_void" "$cfg_age_actioned" 30 "$cfg_now_epoch" \
-         | jq '[.[] | select(.item == "register-hygiene-bbbbbbbbbbbb")] | length')"
+         | jq '[.[] | select(.item == "dependabot-alert-202")] | length')"
 
 # --- open_blocked_items (requirement 34h) ---
 # Where the two states meet, void wins. The shape is not exotic: `item-void`
@@ -1080,7 +1069,7 @@ assert_eq "malformed input degrades to the untrimmed array" "not an array" \
 # narrower pass through exclude_blocked_or_void_issues.
 band_list="$(sed -n 's/^for eligibility_band in \(.*\); do$/\1/p' "$SCRIPT_DIR/lib/eligibility.sh")"
 assert_eq "every pre-fetched band but issues reaches exclude_blocked_or_void_items" \
-  "findings review_feedback abandoned_drafts merge_conflicts dequeued landing_refusals register_hygiene human_visibility tech_debt" \
+  "findings review_feedback abandoned_drafts merge_conflicts dequeued landing_refusals human_visibility tech_debt" \
   "$band_list"
 
 # --- coordinator_input itself: no `void` key, and a trimmed `blocked` --------

@@ -400,7 +400,7 @@ run_coordinator_stage_attempt() {  # <attempt-out-file> <prompt> [extra-budget-j
 # algorithm" — the five cross-repo overrides (security, urgent issues,
 # review-feedback, merge-conflicts, abandoned-drafts) ahead of the residual
 # bands (human-visibility, high issues, tech-debt, medium issues, low issues,
-# code-quality, register-hygiene) — restricted to the bands the Script has a
+# code-quality) — restricted to the bands the Script has a
 # pre-fetched array for. Approximates, not mirrors, in two respects a
 # mechanical pick can afford: the walk is band-major across the whole fleet
 # rather than the Co-Ordinator's repo-then-source walk. `failed-runs`,
@@ -421,7 +421,7 @@ run_coordinator_stage_attempt() {  # <attempt-out-file> <prompt> [extra-budget-j
 # arrays, and that is load-bearing rather than tidiness (requirement 3x): the
 # arrays alone stopped being the authority on what a cycle may select once
 # requirement 2.2a's back-pressure began narrowing the *list* while leaving
-# `findings`, `register_hygiene` and `human_visibility` populated. Before 3x
+# `findings` and `human_visibility` populated. Before 3x
 # the point could not arise — back-pressure emptied `tech_debt`, so the
 # tech-debt-only gate could never reject during a restricted cycle and this
 # function was never reached — but a gate that now counts the finishing
@@ -572,15 +572,8 @@ fallback_select_candidate() {  # <ordered-repos-json> <default-model> <refinemen
           "Resolve the finding per its own record above, following this repo'"'"'s standard code-quality handling.";
           {})];
 
-    def rh_cands: [.[] | select(lists("register-hygiene")) | .slug as $r | .default_branch as $db | (.register_hygiene // [])[]
-      | mk($r; $db; "register-hygiene"; .ref; ("register-hygiene: " + .ref);
-          ((.body // "") + "\n\nurl: " + (.url // "") + "\nblob_sha: " + (.blob_sha // "")
-           + "\nproblems: " + ((.problems // []) | join("; ")));
-          "Repair only the flagged register inconsistencies per TECH-DEBT.md'"'"'s claiming/filing discipline; touch nothing else.";
-          {})];
-
     [ sec_cands, issue_band("Urgent"), rf_cands, mc_cands, dq_cands, lr_cands, ad_cands, hv_cands,
-      issue_band("High"), td_cands, issue_band("Medium"), issue_band("Low"), cq_cands, rh_cands ]
+      issue_band("High"), td_cands, issue_band("Medium"), issue_band("Low"), cq_cands ]
     | map(select(length > 0))
     | if length > 0 then (.[0] | sort_by(._rank) | .[0] | del(._rank)) else null end
   ' <<<"$repos"

@@ -354,7 +354,7 @@ was narrower than that list suggests:
 | Field | Meaning |
 | --- | --- |
 | `repo` | The item's own repository slug. |
-| `item` | The item's own reference — a bare issue number, a finishing source's own id (`pr-<n>-abandoned-…` and siblings), a review recommendation ref, or a register-hygiene/human-visibility ref. Always paired with `repo`: an id is only unique within its own repository (`lib/cycle-state.sh`'s own header gives the reason — both repositories carry a `dependabot-alert-1`). |
+| `item` | The item's own reference — a bare issue number, a finishing source's own id (`pr-<n>-abandoned-…` and siblings), a review recommendation ref, or a human-visibility ref. Always paired with `repo`: an id is only unique within its own repository (`lib/cycle-state.sh`'s own header gives the reason — both repositories carry a `dependabot-alert-1`). |
 | `source` | The most recent `selection` event's own `.source` for this item, or `null` if the item was never selected (a `first-seen` with no claim yet, or an item this fold only knows from a non-`selection` event such as `orphan-branch-released`). |
 | `first_seen` | The earliest `first-seen` event's own `ts` for this item, or `null` if none was ever logged (a finishing-source item, whose branch and pull request already exist before any cycle "discovers" it the way `first-seen` means). |
 | `instants` | Every event this fold found for the item, in timestamp order: `{event, ts, node, cycle, fields}`, where `fields` is that event's own payload minus `repo`/`item`/`event`/`ts`/`node`/`cycle` — the originating event and everything it carried, exactly as logged, never summarised or re-derived. |

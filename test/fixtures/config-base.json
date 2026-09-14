@@ -2,11 +2,11 @@
   "repos": [
     {
       "slug": "Test-Org/first-repo",
-      "sources": ["security", "issues:urgent", "abandoned-drafts", "tech-debt", "register-hygiene", "issues:low"]
+      "sources": ["security", "issues:urgent", "abandoned-drafts", "tech-debt", "issues:low"]
     },
     {
       "slug": "Test-Org/second-repo",
-      "sources": ["security", "abandoned-drafts", "tech-debt", "register-hygiene", "code-quality"],
+      "sources": ["security", "abandoned-drafts", "tech-debt", "code-quality"],
       "nice": 6
     }
   ],
