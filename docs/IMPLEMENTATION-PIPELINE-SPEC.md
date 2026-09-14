@@ -4678,13 +4678,23 @@ implements.
    every stage that logs a `stage-end` of its own, so that a stage this
    reader does not name can never be one whose failures go unread — it
    derives, from that stage's own `stage-end`
-   and `attempt-failed` events: `last_success` (the most recent `stage-end`
-   with exit_code 0, or null), `consecutive_failures` (a running streak reset
-   to 0 by a success — the same reduction `crash_loop_verdict` already uses,
-   but per-stage, per-node, and without requiring an identical failure detail,
-   since "always wrong in some new way" is exactly as unhealthy as "always
-   wrong the same way"), `last_detail` (the most recent `attempt-failed`
-   detail, cleared to null the moment a success resets the streak), and a
+   and `attempt-failed` events, joined on `cycle` (every event carries one,
+   via `log_event`) plus stage: `last_success` (the most recent `stage-end`
+   with exit_code 0, or null), `consecutive_failures` (a running streak of
+   `stage-end`s that each count as failed — either a non-zero `exit_code`, or
+   a zero one with an `attempt-failed` logged for that same `cycle` (a stage
+   can exit 0 while its attempt nonetheless failed, e.g. an unparseable final
+   message, and that counts exactly as much as a non-zero exit;
+   TD-PPagop-26082504) — reset to 0 by a `stage-end` that fails neither test.
+   The same reduction `crash_loop_verdict` already uses, but per-stage,
+   per-node, and without requiring an identical failure detail, since "always
+   wrong in some new way" is exactly as unhealthy as "always wrong the same
+   way"), `last_detail` (the current streak's own most recent failure's
+   detail — its matching `attempt-failed` by that same `cycle` join, or,
+   where a non-zero exit has no matching `attempt-failed`, a synthesized
+   `"stage-end exited <exit_code>"` — cleared to null the moment a success
+   resets the streak, so an already-cleared streak's failure never leaks in
+   as the current one's detail), and a
    `verdict` — `idle` (no `stage-end` record at all, i.e. never invoked, or a
    last success older than `IDLE_AFTER_HOURS` with nothing failed since —
    a stage with no recent work is not unhealthy), `failing`

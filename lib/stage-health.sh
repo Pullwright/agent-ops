@@ -42,18 +42,29 @@
 # For each stage in `stage_names` (below) it returns:
 #   - last_success: the `ts` of the most recent `stage-end` with exit_code 0
 #     for that stage, or null if it has never once succeeded on this node.
-#   - consecutive_failures: how many `stage-end` events in a row, most
-#     recent first, this stage has recorded a non-zero exit_code — reset to
-#     0 the instant a success is seen. The same running-streak reduction
-#     `crash_loop_verdict` already uses, but per-stage, per-node, and
-#     without requiring an identical failure detail: any failure counts,
+#   - consecutive_failures: how many of this stage's `stage-end` events in a
+#     row, most recent first, count as a failed attempt — reset to 0 the
+#     instant a success is seen. Every event carries its own cycle id
+#     (`log_event`) — `cycle` for `agent-cycle.sh`'s `log.jsonl`, `monitor`
+#     for `monitor-cycle.sh`'s own `monitor-log.jsonl`, the two streams this
+#     reader is actually called on (never both in the same invocation) — so a
+#     `stage-end` counts as failed when *either* its own `exit_code` is
+#     non-zero *or* an `attempt-failed` was logged for that same cycle +
+#     stage (TD-PPagop-26082504) — a stage can exit 0 while its attempt
+#     nonetheless failed (an unparseable final message, say), and that is
+#     exactly as much a failure as a non-zero exit. The same running-streak
+#     reduction `crash_loop_verdict` already uses, but per-stage, per-node,
+#     and without requiring an identical failure detail: any failure counts,
 #     because "always wrong in some new way" is exactly as unhealthy as
 #     "always wrong the same way".
-#   - last_detail: the `detail` of the most recent `attempt-failed` event
-#     for this stage, but only while `consecutive_failures` > 0 — null again
-#     the moment a success clears the streak, because this describes the
-#     *current* failure, not a history of every failure this stage has ever
-#     logged.
+#   - last_detail: the `detail` of the current streak's own most recent
+#     failure — its matching `attempt-failed` for that failing `stage-end`'s
+#     own cycle id, or, when a non-zero exit has no matching `attempt-failed`
+#     at all, a synthesized `"stage-end exited <exit_code>"` — while
+#     `consecutive_failures` > 0, else null. Joining on the cycle id rather
+#     than taking the stage's globally-last `attempt-failed` matters here:
+#     without it, a failure from a streak a later success already cleared
+#     could still be shown as the *current* one's detail.
 #   - verdict: one of:
 #       `idle`    — this stage has no `stage-end` record at all on this node
 #                   (never invoked, e.g. a Reviewer this node has never had
@@ -128,8 +139,19 @@ stage_health_verdicts() {
         {};
         . + { ($stage): (
           ($events | map(select(.event == "stage-end" and (.stage // "") == $stage)) | sort_by(.ts)) as $ends
-          | ($events | map(select(.event == "attempt-failed" and (.stage // "") == $stage)) | sort_by(.ts)) as $fails
-          | (reduce $ends[] as $e (0; if (($e.exit_code // 1) == 0) then 0 else . + 1 end)) as $consecutive
+          | ($events | map(select(.event == "attempt-failed" and (.stage // "") == $stage
+                                   and (.cycle // .monitor // "") != "")) | sort_by(.ts)) as $fails
+          | ($ends | map(
+              . as $e
+              | (($e.cycle // $e.monitor // "") | if . == "" then null else . end) as $end_cycle
+              | ($fails | map(select($end_cycle != null and (.cycle // .monitor) == $end_cycle)) | last) as $match
+              | {
+                  exit_code: ($e.exit_code // 1),
+                  is_failure: (($e.exit_code // 1) != 0 or ($match != null)),
+                  detail: ($match.detail // null)
+                }
+            )) as $attempts
+          | (reduce $attempts[] as $a (0; if $a.is_failure then . + 1 else 0 end)) as $consecutive
           | ($ends | map(select((.exit_code // 1) == 0)) | last | .ts) as $last_success
           | (if $last_success == null then null
              else (try ($last_success | fromdateiso8601) catch null) end) as $last_success_epoch
@@ -144,7 +166,12 @@ stage_health_verdicts() {
           | {
               last_success: $last_success,
               consecutive_failures: $consecutive,
-              last_detail: (if $consecutive > 0 then ($fails | last | .detail // null) else null end),
+              last_detail: (
+                if $consecutive > 0 then
+                  ($attempts | last | (.detail // "stage-end exited \(.exit_code)"))
+                else null
+                end
+              ),
               verdict: $verdict
             }
         )}
