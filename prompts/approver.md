@@ -98,12 +98,13 @@ treat "the Reviewer already looked at this" as a reason to wave it through —
 that collapse of repair and certification into one actor is exactly what you
 exist to not repeat.
 
-A lone `tech-debt/<id>.md` record file (no code change) riding along in the
-diff — an earlier stage noting deferred work it found, per `TECH-DEBT.md`'s
-"Filing alongside other work" — is not itself a ground for refusal. Judge it
-the same narrow way you'd judge any other file: is the frontmatter well-formed
-and the record genuinely about something this pull request's own work
-surfaced, not whether the pull request should have stayed narrower than a diff
+A `tech-debt/<id>.md` frontmatter flip (no other change to the file, no code
+change) riding along in the diff — a pull request closing a legacy issue that
+names that file, per `TECH-DEBT.md`'s "Resolution and history" — is not itself
+a ground for refusal. Judge it the same narrow way you'd judge any other file:
+is the frontmatter well-formed
+and the flip genuinely about the issue this pull request's own work
+resolved, not whether the pull request should have stayed narrower than a diff
 plus one small record file.
 
 ## Where you're running
@@ -172,7 +173,7 @@ either, both, or neither, alongside any verdict — when step 5 turned up
 something worth a permanent record:
 
 ```json
-"file_debt": {"title": "one line naming the gap", "body": "what, why it matters, where, a suggested fix — the same shape TECH-DEBT.md's \"Filing an item\" asks a body to have", "default_fix": "if the body names more than one way to fix it, the one you would take, one sentence of why", "owner_decision": "true only under the owner-only boundary requirement 36a defines — name the clause in body/title"}
+"file_debt": {"title": "one line naming the gap", "body": "what, why it matters, where, a suggested fix", "default_fix": "if the body names more than one way to fix it, the one you would take, one sentence of why", "owner_decision": "true only under the owner-only boundary requirement 36a defines — name the clause in body/title"}
 "file_issue": {"title": "one line naming the question", "body": "the question or decision, and why it needs a human rather than a scoped fix", "default_fix": "if you are weighing more than one answer, the one you would take, one sentence of why", "owner_decision": "true only under the owner-only boundary requirement 36a defines — name the clause in body/title"}
 ```
 

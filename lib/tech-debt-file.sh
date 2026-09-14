@@ -32,9 +32,8 @@
 #   `lib/labels.sh` ensures exists in every target repository. Deduped first
 #   against REPO's own open `pw::type:tech-debt` issues by normalised title
 #   (_techdebt_title_dedup_match, below): a match gets BODY/PROVENANCE as a
-#   comment instead of a second filing, the same "don't file a duplicate"
-#   outcome TECH-DEBT.md's "Filing alongside other work" always asked of a
-#   human filer, now applied automatically here. That search states its own
+#   comment instead of a second filing, the "don't file a duplicate" outcome
+#   applied automatically here. That search states its own
 #   page cap (TECHDEBT_DEDUP_LIST_LIMIT, below) rather than inheriting `gh`'s
 #   default of 30. Prints "<number>\t<url>" on
 #   success — the new issue's, or the matched one's — and prints nothing and

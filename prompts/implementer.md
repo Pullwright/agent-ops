@@ -639,7 +639,7 @@ All target repos follow these rules:
   migration or an earlier direct filing — the same pull request that closes
   the issue (step 5 below) must also flip that file's frontmatter to
   `status: resolved`, filling `resolved:` and `ref:`, exactly as
-  `TECH-DEBT.md`'s "Claiming an item" step 6 describes (PR #1313 is the
+  `TECH-DEBT.md`'s "Resolution and history" describes (PR #1313 is the
   precedent). Never write, delete or rename one for any other reason. An
   issue with no such line — filed straight to an issue by a branchless
   stage — has no file at all, and closing it is the whole of its
@@ -852,7 +852,7 @@ see "Dependabot takeover" above.)*
      #1039's migration, or an earlier direct filing — that file is still
      the permanent register entry: flip its frontmatter to `status:
      resolved` in this same pull request, filling `resolved:` and `ref:`,
-     exactly as `TECH-DEBT.md`'s "Claiming an item" step 6 describes (PR
+     exactly as `TECH-DEBT.md`'s "Resolution and history" describes (PR
      #1313 is the precedent) — closing the issue alone does not resolve it,
      and skipping this step is what left `tech-debt/TD-PPagop-26082412.md`
      at `status: open` after PR #1355's first round. An issue with no such

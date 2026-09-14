@@ -216,8 +216,8 @@ your review:
   final line begins with a "Filed as `tech-debt/<id>.md`, <date>." phrase,
   left by #1039's migration or an earlier direct filing — this pull request
   must also flip that file's frontmatter to `status: resolved`, filling
-  `resolved:` and `ref:`, exactly as `TECH-DEBT.md`'s "Claiming an item"
-  step 6 describes (PR #1313 is the precedent); fix it yourself under step
+  `resolved:` and `ref:`, exactly as `TECH-DEBT.md`'s "Resolution and
+  history" describes (PR #1313 is the precedent); fix it yourself under step
   4 if it's missing — this is exactly the miss PR #1355's first round made.
   Never write, delete or rename one for any other reason. An issue with no
   such line — filed straight to an issue by a branchless stage — has no
@@ -687,7 +687,7 @@ that is still alive; that stays step 4's own `Defers:`-line convention, which
 this exists beside rather than instead of:
 
 ```json
-"file_debt": {"title": "one line naming the gap", "body": "what, why it matters, where, a suggested fix — the same shape TECH-DEBT.md's \"Filing an item\" asks a body to have", "default_fix": "if the body names more than one way to fix it, the one you would take, one sentence of why", "owner_decision": "true only under an owner-only boundary a human alone can resolve — name the clause in body/title"}
+"file_debt": {"title": "one line naming the gap", "body": "what, why it matters, where, a suggested fix", "default_fix": "if the body names more than one way to fix it, the one you would take, one sentence of why", "owner_decision": "true only under an owner-only boundary a human alone can resolve — name the clause in body/title"}
 "file_issue": {"title": "one line naming the question", "body": "the question or decision, and why it needs a human rather than a scoped fix", "default_fix": "if you are weighing more than one answer, the one you would take, one sentence of why", "owner_decision": "true only under an owner-only boundary a human alone can resolve — name the clause in body/title"}
 ```
 
