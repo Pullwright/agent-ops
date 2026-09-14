@@ -801,6 +801,21 @@ assert_contains "a source with no total field renders exactly as before the feat
   "0 open tech-debt items" "$out"
 assert_not_contains "  ... with no shown/total note fabricated for it" \
   "0 open tech-debt items (0 of" "$out"
+# The shown/total note is compared and printed against `tdRead` (the same
+# figure the sentence opens with), never `td.length`, which also counts rows
+# still unread — otherwise the two numbers in one sentence would be counting
+# different things.
+assert_contains "the note reads the read count, not the raw shown-row count" \
+  "1 open tech-debt items (+1 unread) (1 of 3 shown)" "$out"
+assert_not_contains "  ... never the row count including the unread one" \
+  "2 of 3 shown" "$out"
+# Distinguished from the case above by what immediately follows: this repo's
+# total (1) equals what is already read (1), so the sentence ends at the
+# unread note, straight into the next field's " · " separator.
+assert_contains "a total that only equals what is already read prints no note at all" \
+  "1 open tech-debt items (+1 unread) · 0 code-quality findings" "$out"
+assert_not_contains "  ... a cold cache's total must never look like it is disclosing more" \
+  "1 open tech-debt items (+1 unread) (1 of 1 shown)" "$out"
 
 # --- merge-queue.json: queued badge, dequeued warning (agent-ops#375, D17) --------
 # The Publisher's own `queued`/`dequeued` fields (test/publish-dashboard.test.sh

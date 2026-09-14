@@ -2748,9 +2748,18 @@ if (( WITH_GITHUB )); then
     [[ -n "$td_full_json" ]] || td_full_json='[]'
     # The panel shows at most 40 (below); the register listing above is
     # already the repo's whole tech-debt directory in one call, so the true
-    # count behind that cap costs nothing extra — just read off the unsliced
-    # list before the slice.
-    td_total="$(jq 'length' <<<"$td_full_json" 2>/dev/null)"
+    # count behind that cap costs nothing extra. Counted as `open`/
+    # `in-progress` only, never the unsliced list's own length: that list
+    # still holds every item whose metadata has not been read yet (kept by
+    # the filter above on "not yet known not to be work"), and an unread
+    # item's true status could turn out to be resolved. Counting it as
+    # unresolved would overstate the debt on exactly the register a cold or
+    # partial `.dashboard-td.json` cache leaves mostly unread — the opposite
+    # of "a cold cache must degrade to saying less, never to overstating the
+    # debt" a few lines up. A total that only counts confirmed-unresolved
+    # rows can only under-count while the cache is still catching up, never
+    # over-count.
+    td_total="$(jq '[.[] | select(.status == "open" or .status == "in-progress")] | length' <<<"$td_full_json" 2>/dev/null)"
     td_total="${td_total:-0}"
     td_json="$(jq -c '.[0:40]' <<<"$td_full_json" 2>/dev/null)"
     [[ -n "$td_json" ]] || td_json='[]'

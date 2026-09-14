@@ -2789,8 +2789,12 @@
               ? "couldn't read tech-debt items"
               : (tdRead + " open tech-debt items" +
                  (td.length > tdRead ? " (+" + (td.length - tdRead) + " unread)" : "") +
-                 (typeof g.tech_debt_total === "number" && g.tech_debt_total > td.length
-                   ? " (" + td.length + " of " + g.tech_debt_total + " shown)" : ""))),
+                 // Compared against `tdRead`, the same figure the sentence
+                 // opens with — never `td.length`, which also counts rows
+                 // still unread and so is not the same quantity
+                 // `tech_debt_total` counts either (see the Publisher).
+                 (typeof g.tech_debt_total === "number" && g.tech_debt_total > tdRead
+                   ? " (" + tdRead + " of " + g.tech_debt_total + " shown)" : ""))),
             countText(g, "findings", cqCount, "code-quality findings")
           ].join(" · ")})
       ]));

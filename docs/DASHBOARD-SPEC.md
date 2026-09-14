@@ -403,8 +403,10 @@ All paths derive from `config.json` (tilde-expanded `state_dir` and
   and each item's blob SHA, then that item's own `title` and `status` out of
   its frontmatter, capped at 40 (`{id, title, status, url}`; an ID names no
   work, and a mature register is mostly resolved items the Co-Ordinator will
-  never pick up, so those are dropped here) with the true, unsliced count
-  carried alongside as `tech_debt_total`; and one record per pull request
+  never pick up, so those are dropped here) with the count of items
+  *confirmed* `open`/`in-progress` across the whole register — never an
+  item still unread, whose real status is unknown — carried alongside as
+  `tech_debt_total`; and one record per pull request
   the page refers to (`github.pr_index`, keyed `<owner>/<repo>#<number>`) — the
   open ones from the query above, the rest by `gh pr view`, cached permanently
   once terminal (see the Publisher).
@@ -939,11 +941,16 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                              tech_debt:[{id,title,status,url}],  // unresolved
                                        //   items only; title/status empty
                                        //   until the item file has been read
-                             tech_debt_total,   // true count of unresolved
-                                       //   items behind `tech_debt`'s own
+                             tech_debt_total,   // count of items *confirmed*
+                                       //   open/in-progress across the whole
+                                       //   register, behind `tech_debt`'s own
                                        //   top-40 cap — free (the roster
                                        //   listing already reads the whole
-                                       //   directory), so always a number
+                                       //   directory), so always a number.
+                                       //   Never counts an unread item (an
+                                       //   unknown status could turn out to
+                                       //   be resolved), so a cold cache
+                                       //   under-counts, never over-counts
                              state:{issues, failed_runs, tech_debt, findings}}},
                                        // "answered" | "answered_404" | "failed"
                                        //   per source, per repo — "answered_404"
@@ -3714,17 +3721,35 @@ number's twins elsewhere on the page.
   is keeping up. `issues_total` and `tech_debt_total` fix that without
   changing what either cap fetches or shows: the tech-debt one is free (the
   `contents/tech-debt` listing already reads the whole directory in one
-  call; the true count is just the unsliced length, read before the `[0:40]`
-  slice rather than after it), while the issues one costs a second call — the
-  Search API's `.total_count` (the same read `lib/pager-invariants.sh`
-  already makes for a different invariant) — because the 30-row listing is
-  itself only ever a page, with no cheaper way to ask how big the whole
-  thing is. That second call is best-effort and never promoted to a real
-  failure: it is its own endpoint with its own, tighter rate limit, and a
-  miss on a cosmetic total the main listing never needed has no business
-  joining `gh_fail_msgs` or flipping `github.ok` — it simply leaves
-  `issues_total` `null`, which the page reads exactly as it read a `data.js`
-  from before the field existed. The page itself only ever adds text: "N of
-  M" replaces a bare count solely where the total is a known number greater
-  than what is shown, so a healthy, uncapped repo (`total` absent, `null`, or
-  equal to the count) renders precisely as it always has.
+  call), while the issues one costs a second call — the Search API's
+  `.total_count` (the same read `lib/pager-invariants.sh` already makes for
+  a different invariant) — because the 30-row listing is itself only ever a
+  page, with no cheaper way to ask how big the whole thing is. That second
+  call is best-effort and never promoted to a real failure: it is its own
+  endpoint with its own, tighter rate limit, and a miss on a cosmetic total
+  the main listing never needed has no business joining `gh_fail_msgs` or
+  flipping `github.ok` — it simply leaves `issues_total` `null`, which the
+  page reads exactly as it read a `data.js` from before the field existed.
+  The page itself only ever adds text: "N of M" replaces a bare count solely
+  where the total is a known number greater than what is shown, so a
+  healthy, uncapped repo (`total` absent, `null`, or equal to the count)
+  renders precisely as it always has.
+
+  `tech_debt_total` is *not* simply the unsliced roster's length, because
+  that list still holds every item whose metadata has not been read yet —
+  kept by the filter above on "not yet known not to be work", since an
+  unread item could just as easily turn out to be resolved. Counting one as
+  unresolved would overstate the debt on exactly the register a cold or
+  still-catching-up `.dashboard-td.json` cache leaves mostly unread — the
+  opposite of this same section's own "a cold cache must degrade to saying
+  less, never to overstating the debt" a few paragraphs up, and it would
+  make the two figures the panel prints in one sentence disagree about what
+  they are counting: `tdRead` (the headline number) already excludes unread
+  rows, so pairing it with a total that includes them reads as two
+  different quantities glued together. `tech_debt_total` therefore counts
+  only rows *confirmed* `open` or `in-progress`, across the whole register,
+  and the page compares it against that same `tdRead` — never `td.length`,
+  which is the shown-row count including any still-unread ones. A
+  register with more unread rows than the cap can show therefore reports a
+  *lower* total while the cache is cold, catching up as reads land, rather
+  than ever a number the true count could turn out to be short of.
