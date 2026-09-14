@@ -76,8 +76,10 @@ heading, the Script gives you one JSON object:
 ```
 
 `questions` is every open question a Reviewer round has raised against this
-pull request that has not yet been settled or escalated — read every entry,
-not just the first, and address each explicitly in `evidence`. Fetch
+pull request since the last one this same ladder settled for it (or every
+one raised so far, if none has settled yet) — a question already answered
+by a prior `settled` verdict never reappears here. Read every entry, not
+just the first, and address each explicitly in `evidence`. Fetch
 `comment_url` (`gh api`/`gh pr view --comments`) to read the Reviewer's own
 words in full rather than judging from the JSON summary alone, and read the
 pull request's own diff and description (`gh pr diff "$pr_url"`, `gh pr view

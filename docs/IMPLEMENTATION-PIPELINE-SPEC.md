@@ -26474,9 +26474,13 @@ oblige anyone to edit a test.
    `landing_open_question_label_release` removes only the fixed
    `open-question` label; `landing_open_question_latest` reads every
    question a pull request's own `open-question-raised` events carry off a
-   synthetic log — deduplicated by question text across rounds, never only
-   the most recent round's, so a second round's further question never
-   drops the first — and `[]` when none is on it.
+   synthetic log, filtered to a high-water mark first — only events logged
+   at or after the most recent `settled`-verdict `open-question-adjudication`
+   event for that pull request survive, or every event if none has settled
+   yet — then deduplicated by question text across whatever rounds remain,
+   never only the most recent round's, so a second round's further question
+   never drops a still-unsettled first one, while a question a prior round
+   already settled never resurfaces; `[]` when none is on it.
 
    `test/landing-wiring.test.sh` lifts the modified `_landing_stage_attempt`
    verbatim and proves the new gate sits between eligibility and the review
