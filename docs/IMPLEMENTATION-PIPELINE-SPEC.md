@@ -12191,7 +12191,13 @@ implements.
     one (requirement 32a), and — for the refinement class of requirement 34e —
     `kind: "needs-refinement"`, the `unblock_condition` taken from the report's
     `missing`, its `evidence` and reporting `source`, plus
-    `needs_refinement_label` when the Script managed to project the label. A
+    `needs_refinement_label` when the Script managed to project the label. It
+    carries `stage_failure: true` when, and only when, the stage's own attempt
+    is what failed — a crash, a timeout, a signal, an unparseable final
+    message — and never when the event instead records a verdict about the
+    *item* a stage reached by running to completion; requirement 2.8 is the
+    reader that requires the marker and sets out why the two shapes have to be
+    told apart. A
     `recheck-clean` (requirement 18a) carries the `item` and `repo` the
     Co-Ordinator named in `recheck_clean` — repo-scoped, unlike `unblocked`,
     because the two fail in opposite directions: an `unblocked` that
