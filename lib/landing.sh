@@ -1766,7 +1766,7 @@ $(pipeline_comment_marker "$cycle_id" approver-adjudicate-open-question)" >/dev/
         return 0
       fi
       log_event "warning" "$(jq -nc --arg u "$pr_url" --arg l "$LANDING_OPEN_QUESTION_LABEL" \
-        --arg d "the open-question adjudication settled $pr_url but the $LANDING_OPEN_QUESTION_LABEL label could not be removed — it will settle again next round" \
+        --arg d "the open-question adjudication settled $pr_url but the $LANDING_OPEN_QUESTION_LABEL label could not be removed — the settled event is already logged, so a later round will escalate on the still-present label rather than re-settling it silently" \
         '{detail: $d, pr_url: $u, label: $l}')"
       return 0
     fi
@@ -2236,13 +2236,24 @@ landing_open_question_label_release() {
 
 # landing_open_question_latest PR_URL [SRC]
 # Every question a Reviewer round has logged against PR_URL via
-# `open-question-raised`, deduplicated by its own `question` text — never
-# only the most recent round's, so a second round raising a further question
-# while an earlier one still stands does not silently drop the first from an
-# escalation issue's body or an adjudication pass's own input (agent-ops#668
-# design point: "whether more than one open question per pull request is
-# permitted" — yes, and every one of them is carried forward). `[]` if none
-# is on the log SRC names.
+# `open-question-raised` since the last time one of them was settled,
+# deduplicated by its own `question` text — never only the most recent
+# round's, so a second round raising a further question while an earlier one
+# still stands does not silently drop the first from an escalation issue's
+# body or an adjudication pass's own input (agent-ops#668 design point:
+# "whether more than one open question per pull request is permitted" —
+# yes, and every one of them is carried forward, *above the high-water
+# mark below*). `[]` if none is on the log SRC names.
+#
+# High-water mark (agent-ops#984): a question this pull request already
+# settled must not resurface in a later round's adjudication input or
+# escalation body just because the log still carries the `open-question-
+# raised` event that first raised it. Every `open-question-raised` event is
+# included only if it was logged at or after the most recent `settled`-
+# verdict `open-question-adjudication` event for PR_URL — no settled event
+# yet on the log means every round is still included, unchanged from
+# before this mark existed. The union/dedup behaviour above stays exactly
+# as it was for whatever remains after that filter.
 #
 # SRC follows `landing_approver_adjudication_history`'s own convention:
 # `$log_file` on the round that first raises a question (this process's own
@@ -2259,8 +2270,12 @@ landing_open_question_latest() {
   local pr_url="$1" src="${2:--}" out=""
   # shellcheck disable=SC2016  # $pr_url is jq's own --arg variable, not the shell's.
   local jq_prog='
-    [ .[] | select(.event == "open-question-raised" and (.pr_url // "") == $u)
-      | (.questions // [])[] ]
+    ( [ .[] | select(.event == "open-question-adjudication" and (.pr_url // "") == $u
+                      and (.verdict // "") == "settled") | (.ts // "") ]
+      | sort | last // "" ) as $mark
+    | [ .[] | select(.event == "open-question-raised" and (.pr_url // "") == $u
+                      and (.ts // "") >= $mark)
+        | (.questions // [])[] ]
     | unique_by(.question // "")'
   if [[ "$src" == "-" ]]; then
     out="$(jq -c -R 'fromjson? // empty' 2>/dev/null \

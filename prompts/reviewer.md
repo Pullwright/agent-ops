@@ -403,14 +403,20 @@ your review:
    for a reason you can't, that's a `blocked` outcome (see "Ending"),
    not a PR you mark ready.
 
-   **Green checks are not the whole answer where the repo deploys.**
-   poetic-fiddle deploys every pull request to Vercel, and that deployment
-   reports through GitHub's *deployments* API rather than as a check run — so
-   `gh pr checks` is green over a preview that never built. Run it yourself
-   rather than trusting the Implementer's run, because a preview is per head
-   SHA and any fix you pushed in step 4 minted a new one — and name every
-   route the diff touches, same as the Implementer did, since your push may
-   have moved which routes those are:
+   **Green checks are not the whole answer where the repo deploys.** Your
+   work order carries a `preview` field (D19 Phase 1) — read its `provider`
+   before doing anything else here. **`"none"`: skip this whole check.** This
+   repository has no preview deployment configured; do not run
+   `preview-deploy.sh`, and say nothing about a preview anywhere in your
+   output — there is nothing to report.
+
+   **`"vercel"`:** this repository deploys every pull request to Vercel, and
+   that deployment reports through GitHub's *deployments* API rather than as a
+   check run — so `gh pr checks` is green over a preview that never built. Run
+   it yourself rather than trusting the Implementer's run, because a preview is
+   per head SHA and any fix you pushed in step 4 minted a new one — and name
+   every route the diff touches, same as the Implementer did, since your push
+   may have moved which routes those are:
 
    ```
    "$AGENT_OPS_ROOT/scripts/preview-deploy.sh" --wait 180 --fetch <path> [--fetch <path> ...]
@@ -420,11 +426,17 @@ your review:
    — a failed build, or a page serving an error — and belongs in step 4 or, if
    you can't fix it with confidence, in a comment and a `blocked` outcome. Exit
    **2** means the check could not be made, almost always because this node has
-   no `VERCEL_AUTOMATION_BYPASS_SECRET` and the preview answered Vercel's login
-   page; that is this node's configuration, not this PR's problem, so note it in
-   `fixes_applied`-adjacent prose if useful and carry on to step 7. Do not
-   block on it, and do not record it as a passing preview — you did not find
-   out.
+   no bypass-secret credential set (`preview.vercel.bypass_secret_env` names
+   which environment variable, `VERCEL_AUTOMATION_BYPASS_SECRET` unless this
+   repository's own config says otherwise) and the preview answered Vercel's
+   login page; that is this node's configuration, not this PR's problem, so
+   note it in `fixes_applied`-adjacent prose if useful and carry on to step 7.
+   Do not block on it, and do not record it as a passing preview — you did not
+   find out.
+
+   `provider` is resolved by the Script from this repository's own `preview`
+   config block (`repos[].preview`, `config.schema.json`) — never hard-coded
+   here, and never something you need to look up yourself.
 
    `--fetch` rides along on the same invocation regardless of that verdict: it
    prints each named route's response status, headers and body — read them as

@@ -208,6 +208,8 @@ export AGENT_OPS_ROOT="$SCRIPT_DIR"
 . "$SCRIPT_DIR/lib/enabler.sh"
 # shellcheck source=lib/escalation-autonomy.sh
 . "$SCRIPT_DIR/lib/escalation-autonomy.sh"
+# shellcheck source=lib/preview-config.sh
+. "$SCRIPT_DIR/lib/preview-config.sh"
 # shellcheck source=lib/issue-priority.sh
 . "$SCRIPT_DIR/lib/issue-priority.sh"
 # shellcheck source=lib/tech-debt-file.sh
@@ -1101,6 +1103,16 @@ selected_source=""
 # what requirement 9's last fallback is built on.
 selected_branch=""
 
+# This one function backs both a genuine stage-attempt failure (a crash, a
+# timeout, a SIGTERM) and a stage's own truthful verdict that the *item* it
+# was handed is blocked or void (the Implementer's `void refused`/`blocked`
+# reports below, `log_reviewer_handback` in lib/review-gate.sh) — both are
+# `attempt-failed` against repo+item (requirement 34), but only the former is
+# a stage failure for lib/stage-health.sh's own purposes (issue #1511): a
+# caller reporting the latter must not add `stage_failure: true` to `extra`,
+# and every caller that does — the SIGTERM handler below, and
+# lib/stage-attempt.sh's `handle_stage_failure` — is a real crash, never an
+# item verdict a stage reached by running to completion.
 log_attempt_failed() {
   local stage="$1" detail="$2" extra="${3:-{\}}"
   log_event "attempt-failed" \
@@ -1416,7 +1428,7 @@ on_signal() {  # on_signal NAME NUM
   fi
   actor="${stage_name:-cycle}"
   log_attempt_failed "$actor" "$actor terminated by SIG$name" \
-    "$(jq -nc --arg u "$pr_url" 'if $u == "" then {} else {pr_url: $u} end')"
+    "$(jq -nc --arg u "$pr_url" '{stage_failure: true} + (if $u == "" then {} else {pr_url: $u} end)')"
   claim_release_timeout=8
   if [[ -n "$pr_url" ]]; then
     release_claim have-pr
@@ -2950,6 +2962,18 @@ selected_source="$(jq -r '.source // ""' <<<"$work_order_json")"
 selected_branch="$(jq -r '.branch // ""' <<<"$work_order_json")"
 selected_source="$(jq -r '.source // ""' <<<"$work_order_json")"
 selected_default_branch="$(jq -r '.default_branch // "main"' <<<"$work_order_json")"
+# `preview` (D19 Phase 1, requirement 24a) is stamped onto the work order here,
+# deterministically, rather than left to the Co-Ordinator to copy: the same
+# reasoning `pr_label`'s own header comment already gives — a mechanical field
+# needs no model judgement, and a claimed_json path (review-feedback,
+# merge-conflicts, dequeued, landing-refusals, abandoned-drafts) never passes
+# through the Co-Ordinator at all, so this is the one point every path
+# converges on before either stage prompt is assembled.
+selected_preview_json="$(preview_config_for_repo "$DEFAULTED_CONFIG" "$selected_repo")"
+work_order_json="$(jq -c --argjson p "$selected_preview_json" '. + {preview: $p}' <<<"$work_order_json")"
+# Remapped once here, ahead of both the Implementer and the Reviewer stage
+# launches below, since both inherit this same shell's exported environment.
+preview_config_export_vercel_credentials "$selected_preview_json"
 # `race_losses` is present only when this selection recovered from at least
 # one lost claim (issue #245) — an ordinary first-try selection, still the
 # overwhelming majority, carries nothing new on this event. `selected_by`

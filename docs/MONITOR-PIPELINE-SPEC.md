@@ -620,7 +620,15 @@ M16. **A dated report in the state store.** `state_dir/monitor/<date>/report.md`
 M17. **A stage-health verdict, from day one.** The Monitor logs `stage-end`
    with `stage: "monitor"` and `attempt-failed` with the same field into its
    own stream, which are the exact event name and field `lib/stage-health.sh`
-   already reads — so this pipeline needs no second reader. At the end of a
+   already reads — so this pipeline needs no second reader. Both of this
+   pipeline's `attempt-failed` writers — M8a's signal handler, and the path
+   that records a Monitor which exited non-zero, timed out or returned no
+   usable completion — also carry `stage_failure: true`, the marker that same
+   reader requires before an exit-0 `stage-end` counts as failed
+   (`docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 2.8): the Monitor
+   selects and blocks no item, so it writes no item-verdict `attempt-failed`
+   and every one of its own is unconditionally a genuine stage failure. At
+   the end of a
    run that actually engaged the stage, `stage_health_write_status` computes
    the verdict for `["monitor"]` over `monitor-log.jsonl` and **merges** it
    into `state_dir/.stage-health.json`, which `scripts/state-sync.sh` folds

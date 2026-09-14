@@ -1771,17 +1771,22 @@ log_voided_items() {
     # any other failed attempt does (requirement 34), which is what puts it in
     # front of the Enabler.
     #
-    # `kind: "item-block"` (issue #1498): this event pins a per-item block, not
-    # a coordinator stage failure — the coordinator stage itself ran to
-    # completion and produced a verdict, just one the void guard refused. Left
-    # unmarked, `stage_health_verdicts` (lib/stage-health.sh) would join this
-    # `attempt-failed` onto the same cycle's `stage-end` and count a healthy
-    # coordinator as failed. The needs-refinement block and hand-flag call
-    # sites already carry a `kind` (`REFINEMENT_BLOCK_KIND`, "needs-refinement")
-    # for an unrelated reason (lib/refinement.sh), which already discriminates
-    # them the same way — `stage_health_verdicts` excludes any non-empty
-    # `kind`, not just this literal value, so this is the one call site that
-    # needed one added.
+    # This event pins a per-item block, not a coordinator stage failure — the
+    # coordinator stage itself ran to completion and produced a verdict, just
+    # one the void guard refused. What keeps `stage_health_verdicts`
+    # (lib/stage-health.sh) from joining it onto the same cycle's `stage-end`
+    # and counting a healthy coordinator as failed is the *absence* of
+    # `stage_failure: true` (issue #1511): that join counts only an
+    # `attempt-failed` carrying the marker, which every genuine stage-attempt
+    # failure sets and no item-verdict call site — this one included — ever
+    # does. So nothing here has to opt out; it simply never opts in.
+    #
+    # `kind: "item-block"` (issue #1498) names the shape on the record
+    # alongside the needs-refinement block's and hand-flag's own
+    # `REFINEMENT_BLOCK_KIND` (lib/refinement.sh), and travels with the block
+    # to the Enabler via `blocked_items`' own `kind` field (lib/cycle-state.sh).
+    # It was first added to discriminate this record for the health join; that
+    # reading is now the marker's, and `kind` is no longer part of it.
     log_event "warning" "$(jq -nc \
       --arg d "co-ordinator void refused for ${repo:-<no repo>} $item — $refusal; recorded blocked instead" \
       '{detail: $d}')"

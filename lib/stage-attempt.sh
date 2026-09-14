@@ -306,7 +306,8 @@ handle_stage_failure() {
   fi
   log_attempt_failed "$stage" "$detail" \
     "$(jq -nc --arg u "$pr_url" --arg r "$refusal" --arg m "$refusal_msg" --arg c "$refusal_class" \
-       '(if $u == "" then {} else {pr_url: $u} end)
+       '{stage_failure: true}
+        + (if $u == "" then {} else {pr_url: $u} end)
         + (if $r == "" then {} else {api_refusal: $r} end)
         + (if $m == "" then {} else {api_message: $m} end)
         + (if $c == "" then {} else {api_refusal_class: $c} end)')"
@@ -382,7 +383,7 @@ run_coordinator_stage_attempt() {  # <attempt-out-file> <prompt> [extra-budget-j
   if [[ -z "$coord_attempt_result_json" ]]; then
     detect_and_log_limit_hit "$out_file" || true
     log_event "attempt-failed" "$(jq -nc --argjson e "$extra" \
-      '{stage: "coordinator", detail: "unparseable final message"} + $e')"
+      '{stage: "coordinator", detail: "unparseable final message", stage_failure: true} + $e')"
     return 1
   fi
   return 0

@@ -57,6 +57,7 @@ are binding on any agent working inside them).
   - [Extended notes: `host_budget_reserved_memory_bytes`](#extended-notes-host_budget_reserved_memory_bytes)
   - [Extended notes: `host_budget_reserved_cpus`](#extended-notes-host_budget_reserved_cpus)
   - [Extended notes: `none_selected_recheck_hours`](#extended-notes-none_selected_recheck_hours)
+  - [Extended notes: `schedule.excluded_minutes`](#extended-notes-scheduleexcluded_minutes)
 - [The Landing Gate](#the-landing-gate)
 - [Requirements](#requirements)
   - [The Script (`agent-cycle.sh`)](#the-script-agent-cyclesh)
@@ -992,7 +993,7 @@ and the schema must carry every one of them.
 | `dashboard_refresh_seconds` | `5` | How often an open dashboard tab polls for freshly-written data (`docs/DASHBOARD-SPEC.md`) — a small stamp every tick, the full `data.js` payload only when the stamp's fingerprint changed. Match it to the heartbeat cadence: a shorter interval polls a stamp nothing has rewritten, a longer one shows a cycle that has already moved on. |
 | `schedule.cycle_hours` | `*` | The hour field of the implementation cycle's crontab line, rendered by `deploy/docker/render-crontab.sh`; `*` is every hour. |
 | `schedule.cycle_interval_minutes` | `15` | How often, in minutes, the implementation cycle's crontab line fires within an allowed hour, rendered by `deploy/docker/render-crontab.sh`; `60` reproduces the single-firing-per-hour shape every release before this key carried. |
-| `schedule.excluded_minutes` | `[0]` | Minutes `CYCLE_MINUTE` (env or the per-node hash) may never land on, rendered from `deploy/docker/crontab.tmpl`. Poetic's own value excludes `0` because its hourly sync workflow owns the top of the hour; a deployment with no such conflict ships `[]`. Excluding every minute of the hour is a misconfiguration the renderer refuses rather than spinning on. |
+| `schedule.excluded_minutes` | `[0]` | Minutes `CYCLE_MINUTE` (env or the per-node hash) may never land on, rendered from `deploy/docker/crontab.tmpl`. Poetic's own value excludes `0` because its hourly sync workflow owns the top of the hour; a deployment with no such conflict ships `[]`. Excluding every minute of the hour is a misconfiguration the renderer refuses rather than spinning on. This governs only the *scheduled* `CYCLE_MINUTE`: a wake-poll-triggered invocation (requirement 54) does not consult this key...[continued below](#extended-notes-scheduleexcluded_minutes) |
 | `schedule.excluded_minutes_reason` | `"poetic's hourly sync workflow owns the top of the hour"` | Free text recording *why* `excluded_minutes` excludes what it does; read by nothing, kept for the next reader. |
 | `schedule.review_hour` | `3` | The hour the review tick fires. |
 | `schedule.review_offset_minutes` | `29` | Minutes past `CYCLE_MINUTE` (mod 60) the review tick's minute is set to, keeping one node's two heavy pipelines apart within the hour. |
@@ -1049,6 +1050,8 @@ A repo entry may also carry `landing_cool_off_hours` — the per-repository over
 
 A repo entry may also carry `escalation_autonomy` — the per-repository override of the top-level key of the same name (D18, agent-ops#627), on the same precedence as `stage_timeouts`: this entry wins when present, the top-level key otherwise.
 
+A repo entry may also carry `preview` — this repository's preview-deployment arrangement (D19 Phase 1, agent-ops#586), read by requirement 24a instead of that requirement naming a provider or a repository. Absent, or absent its own `provider`, resolves to `"none"`: no preview deployment, so neither stage runs a preview step. `"vercel"` is the only implemented provider; its own `vercel.bypass_secret_env` (default `VERCEL_AUTOMATION_BYPASS_SECRET`) and `vercel.token_env` (default `VERCEL_TOKEN`) name the environment variables carrying this repository's Vercel credentials — never the credentials themselves. There is no top-level default for this key: a preview arrangement is inherently repository-specific, unlike `merge_autonomy` and its neighbours above.
+
 Every optional key sits on the repository's own entry, beside `slug` and `sources`:
 
 ```json
@@ -1063,7 +1066,8 @@ Every optional key sits on the repository's own entry, beside `slug` and `source
     "implementation_plan_path": "docs/IMPLEMENTATION-PLAN.md",
     "nice": -5,
     "stage_timeouts": { "implementer": 90 },
-    "stage_inactivity": { "implementer": 20 }
+    "stage_inactivity": { "implementer": 20 },
+    "preview": { "provider": "vercel" }
   }
 ]
 ```
@@ -1225,6 +1229,10 @@ The CPU-core margin requirement 2.0g's host-budget check reserves for the host i
 ### Extended notes: `none_selected_recheck_hours`
 
 The no-op short-circuit's safety valve (requirement 3b): the Co-Ordinator is engaged regardless once the last `none-selected` is this old, even if nothing changed. Bounds how long a gap in fingerprint coverage can stall the pipeline. "This old" means 24 cadence firings (requirement 1d), not a fixed 24 h: derived from the worst-case gap between cycles (`schedule.cycle_interval_minutes`, `cycle_hours`, `excluded_minutes`); a configured non-zero value floors the derivation rather than replacing it. `0` disables the valve — don't — and, unlike a non-zero override, is never raised by the derivation: the valve stays off exactly as configured.
+
+### Extended notes: `schedule.excluded_minutes`
+
+Minutes `CYCLE_MINUTE` (env or the per-node hash) may never land on, rendered from `deploy/docker/crontab.tmpl`. Poetic's own value excludes `0` because its hourly sync workflow owns the top of the hour; a deployment with no such conflict ships `[]`. Excluding every minute of the hour is a misconfiguration the renderer refuses rather than spinning on. This governs only the *scheduled* `CYCLE_MINUTE`: a wake-poll-triggered invocation (requirement 54) does not consult this key at all and may start a cycle on a minute it excludes — see requirement 54's own note on why that is acceptable.
 
 <!-- config-table:notes-end -->
 
@@ -4645,7 +4653,8 @@ implements.
    `crash_loop_verdict` reads: a stage that is healthy on every other node
    says nothing about whether it is healthy on this one. For each of
    `coordinator`, `approver`, `approver-adjudicate-open-question`,
-   `enabler-adjudicate`, `enabler`, `refiner`, `implementer` and `reviewer` —
+   `enabler-adjudicate`, `enabler-decide`, `enabler`, `refiner`, `implementer`
+   and `reviewer` —
    every stage that logs a `stage-end` of its own, so that a stage this
    reader does not name can never be one whose failures go unread — it
    derives, from that stage's own `stage-end`
@@ -4653,20 +4662,25 @@ implements.
    via `log_event`) plus stage: `last_success` (the most recent `stage-end`
    with exit_code 0, or null), `consecutive_failures` (a running streak of
    `stage-end`s that each count as failed — either a non-zero `exit_code`, or
-   a zero one with a genuine `attempt-failed` logged for that same `cycle` (a
-   stage can exit 0 while its attempt nonetheless failed, e.g. an unparseable
-   final message, and that counts exactly as much as a non-zero exit;
-   TD-PPagop-26082504) — reset to 0 by a `stage-end` that fails neither test.
-   "Genuine" excludes an `attempt-failed` carrying a non-empty `kind` (issue
-   #1498): the Co-Ordinator's own per-item block records — a needs-refinement
-   block and a hand-flag (`kind: "needs-refinement"`), a void refusal (`kind:
-   "item-block"`) — are logged with `stage: "coordinator"` even in cycles
-   where the coordinator stage itself succeeded, and the join must not count
-   one of those as a coordinator stage failure.
-   The same reduction `crash_loop_verdict` already uses, but per-stage,
-   per-node, and without requiring an identical failure detail, since "always
-   wrong in some new way" is exactly as unhealthy as "always wrong the same
-   way"), `last_detail` (the current streak's own most recent failure's
+   a zero one with an `attempt-failed` carrying `stage_failure: true` logged
+   for that same `cycle` (a stage can exit 0 while its attempt nonetheless
+   failed, e.g. an unparseable final message, and that counts exactly as
+   much as a non-zero exit; TD-PPagop-26082504) — reset to 0 by a `stage-end`
+   that fails neither test. `stage_failure: true` is what distinguishes a
+   genuine stage-attempt failure from an `attempt-failed` that instead
+   records a verdict about the *item* a stage reached by running to
+   completion — a needs-refinement block, a hand-flag, a void-refusal (`kind:
+   "needs-refinement"`/`"item-block"` respectively, issue #1498, read by
+   `lib/refinement.sh`, `lib/enabler.sh` and the dashboard for reasons
+   unrelated to this join), a hand-flagged label, a Reviewer hand-back, an
+   Implementer's own `blocked`/`void-refused` report — which shares the event
+   name and the stage+cycle join key (requirement 34 reads both the same way
+   to block an item) but is not a stage failure, and whose writer therefore
+   never sets the field (issue #1511). The same reduction `crash_loop_verdict`
+   already uses, but per-stage, per-node, and without requiring an identical
+   failure detail, since "always wrong in some new way" is exactly as
+   unhealthy as "always wrong the same way"), `last_detail` (the current
+   streak's own most recent failure's
    detail — its matching `attempt-failed` by that same `cycle` join, or,
    where a non-zero exit has no matching `attempt-failed`, a synthesized
    `"stage-end exited <exit_code>"` — cleared to null the moment a success
@@ -9055,6 +9069,24 @@ implements.
     every-repository-eventually guarantee that function is built on; that
     trade is not made here.
 
+    **What a wake does not honour: `schedule.excluded_minutes`.** A wake
+    invokes `agent-cycle.sh` the instant a change is detected, on whatever
+    minute the wake-poll crontab line itself fired — without consulting
+    `schedule.excluded_minutes` at all, so it can start a cycle on a minute
+    the exclusion forbids the *scheduled* `@CYCLE_MINUTE@` firing from ever
+    landing on. This is intentional, not an oversight: the exclusion's
+    contract governs the scheduled *start* minute rendered into the crontab
+    (`deploy/docker/render-crontab.sh`), guarding against a conflicting
+    workload that runs at a fixed minute; a cycle, once started, already
+    runs across every minute of the hour regardless of which minute
+    triggered it, so guarding an out-of-band wake's own start-minute the
+    same way would buy little against that same conflict. Skipping the wake
+    instead of running it late is not an option either: `scripts/wake-poll.sh`
+    stores the new `ETag` before it wakes (see above), so a wake skipped on
+    an excluded minute would silently consume the change and leave the item
+    waiting for the next ordinary cron firing with no second wake to catch
+    it.
+
     A wake logs one `wake-poll-triggered` event (`{ts, cycle: null, node,
     event, changed}`, the same out-of-cycle envelope shape
     `scripts/publish-revert-rate.sh`'s own `rework` rows use) — never a
@@ -10564,15 +10596,25 @@ implements.
 24. Implements the item, then runs the same checks the repo's CI runs (as
     documented in that repo's `AGENTS.md`/`CLAUDE.md` and workflow files) and
     fixes anything they surface.
-24a. **Checks the preview deployment its own pull request produced.** Where the
-    target repository deploys from GitHub — poetic-fiddle, through Vercel's Git
-    integration — every pull request head SHA gets its own preview deployment,
-    and requirement 24's checks say nothing about it: the integration reports
-    through GitHub's *deployments* API rather than as a check run, so
-    `gh pr checks` is green over a preview that never built.
+24a. **Checks the preview deployment its own pull request produced, for a
+    repository whose config declares one (D19 Phase 1, agent-ops#586).** Which
+    provider, if any, applies is stated in that repository's own `preview`
+    config block (`repos[].preview`, requirement 1b's schema) — never
+    hard-coded in either stage's prompt or in this requirement. Absent, or
+    absent its own `provider`, resolves to `"none"`: this step does not run,
+    and neither stage reports anything about it. `"vercel"` is the only implemented
+    provider: where the target repository deploys from GitHub through
+    Vercel's Git integration, every pull request head SHA gets its own preview
+    deployment, and requirement 24's checks say nothing about it — the
+    integration reports through GitHub's *deployments* API rather than as a
+    check run, so `gh pr checks` is green over a preview that never built.
     `scripts/preview-deploy.sh` (component 13) is how a stage asks. A preview
     that failed to build, or that answers an error, is a defect in the pull
-    request and is fixed like any other.
+    request and is fixed like any other. The Script resolves the block once,
+    from `config_defaults`, and stamps it onto the work order's own `preview`
+    field before either stage's prompt is assembled (`lib/preview-config.sh`'s
+    `preview_config_for_repo`) — a mechanical field, on the same "no model
+    judgement to report" terms as `pr_label` (requirement 20).
 
     **A preview the stage cannot reach is not a failure of the pull request.**
     Preview deployments sit behind Vercel Authentication, and an
@@ -10581,10 +10623,21 @@ implements.
     check reading a status code alone certifies a wall as a healthy deployment.
     The script therefore judges where a response points rather than what it is
     numbered, and reports a protected preview as "could not check" (exit 2),
-    naming the node configuration that would fix it. `VERCEL_AUTOMATION_BYPASS_SECRET`
-    is a property of the node, not of the branch: a node without it runs every
-    cycle exactly as it did before this check existed, and neither stage may
-    report `blocked` for the want of it.
+    naming the node configuration that would fix it. The script itself still
+    reads exactly two fixed environment variable names,
+    `VERCEL_AUTOMATION_BYPASS_SECRET` and `VERCEL_TOKEN` — that is unchanged by
+    this item, D19's "served"/"rendered" tiers being separate work — but a
+    repository's own `preview.vercel.bypass_secret_env`/`preview.vercel.token_env`
+    may name a *different* environment variable to read the credential from
+    (default the same two fixed names, so an installation that has set
+    neither is unaffected), which the Script remaps onto the two fixed names
+    the script reads, immediately before either stage runs
+    (`preview_config_export_vercel_credentials`) — the one thing that would
+    otherwise have to change per repository once a second Vercel-deployed
+    repository needs its own secret on the same node. Either way, the
+    credential is a property of the node, not of the branch: a node without it
+    runs every cycle exactly as it did before this check existed, and neither
+    stage may report `blocked` for the want of it.
 
     **A passing check says only that the preview answers, not what it
     answers.** `--path` (a single route, judged for pass/fail) and `--fetch`
@@ -12006,7 +12059,13 @@ implements.
     one (requirement 32a), and — for the refinement class of requirement 34e —
     `kind: "needs-refinement"`, the `unblock_condition` taken from the report's
     `missing`, its `evidence` and reporting `source`, plus
-    `needs_refinement_label` when the Script managed to project the label. A
+    `needs_refinement_label` when the Script managed to project the label. It
+    carries `stage_failure: true` when, and only when, the stage's own attempt
+    is what failed — a crash, a timeout, a signal, an unparseable final
+    message — and never when the event instead records a verdict about the
+    *item* a stage reached by running to completion; requirement 2.8 is the
+    reader that requires the marker and sets out why the two shapes have to be
+    told apart. A
     `recheck-clean` (requirement 18a) carries the `item` and `repo` the
     Co-Ordinator named in `recheck_clean` — repo-scoped, unlike `unblocked`,
     because the two fail in opposite directions: an `unblocked` that
@@ -22596,6 +22655,22 @@ oblige anyone to edit a test.
    real protected preview, `scripts/preview-deploy.sh --repo
    Poetic-Poems/poetic-fiddle --pr <n>` from a shell with no bypass secret set
    reports that the deployment built and that the page could not be checked.
+   `test/preview-config.test.sh` covers the config-block half of the same
+   requirement (D19 Phase 1): `preview_config_for_repo` resolves a configured
+   `{"provider": "vercel"}` entry unchanged, falls back to
+   `{"provider": "none"}` for a repo carrying no `preview` key at all and for
+   a slug absent from `repos[]` entirely, and `preview_config_export_vercel_credentials`
+   exports the two fixed variable names `scripts/preview-deploy.sh` reads
+   from whichever variable name a `vercel.bypass_secret_env`/`vercel.token_env`
+   override names, is a no-op on the defaulted names, and is inert for
+   `provider: "none"`. `test/config-schema.test.sh` covers `scripts/doctor.sh`'s
+   (component 14) own side of this same requirement, alongside its other
+   cross-key rules: the shape half through `config_schema_errors` directly
+   (rejecting an unknown `provider`, an unknown key inside `preview`, a
+   `bypass_secret_env` that is not a bare shell identifier), and the
+   credential-presence check through a real `scripts/doctor.sh` run, asserting
+   it warns rather than fails when a `"vercel"`-configured repo's named
+   variable is unset on the node it runs on.
 2g. **Every pipeline comment is visibly attributed (requirement 9d).**
    `test/comment-identity.test.sh` passes: `pipeline_actor_label` returns the
    right display name for each of `script`, `coordinator`, `implementer`,
@@ -26239,9 +26314,13 @@ oblige anyone to edit a test.
    `landing_open_question_label_release` removes only the fixed
    `open-question` label; `landing_open_question_latest` reads every
    question a pull request's own `open-question-raised` events carry off a
-   synthetic log — deduplicated by question text across rounds, never only
-   the most recent round's, so a second round's further question never
-   drops the first — and `[]` when none is on it.
+   synthetic log, filtered to a high-water mark first — only events logged
+   at or after the most recent `settled`-verdict `open-question-adjudication`
+   event for that pull request survive, or every event if none has settled
+   yet — then deduplicated by question text across whatever rounds remain,
+   never only the most recent round's, so a second round's further question
+   never drops a still-unsettled first one, while a question a prior round
+   already settled never resurfaces; `[]` when none is on it.
 
    `test/landing-wiring.test.sh` lifts the modified `_landing_stage_attempt`
    verbatim and proves the new gate sits between eligibility and the review

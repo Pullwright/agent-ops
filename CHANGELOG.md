@@ -34,6 +34,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **An already-settled open question no longer resurfaces in a later
+  adjudication pass or escalation issue body** (issue #984).
+  `landing_open_question_latest` (`lib/landing.sh`) carried every
+  `open-question-raised` event forward forever, deduplicated by question
+  text but with no filter at the pull request's own last `settled`-verdict
+  `open-question-adjudication` event. Once question A settled and its label
+  was released, a later Reviewer round raising question B handed the next
+  adjudication pass — and any escalation issue — both A and B, which could
+  drag a pass to escalate and list a question as open that a human had
+  already answered. `landing_open_question_latest` now filters to a
+  high-water mark: only `open-question-raised` events at or after the most
+  recent settled adjudication survive; the union/dedup behaviour above that
+  mark is unchanged. The adjudication prompt's own description of what
+  `questions` contains, and the label-release-failure warning (which
+  wrongly claimed the question "will settle again next round"), are
+  corrected to match.
+
 - **A `labels-minted` event now names the item ref, whichever stage emitted
   it** (issue #1293, requirement 6c). `_refiner_apply_labels`
   (`lib/refinement.sh`) received only the backing issue number and logged
@@ -97,9 +114,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   them, reading `failing` for a coordinator that never actually failed once.
   Each of those three call sites now carries a `kind` on its `attempt-failed`
   (`"needs-refinement"`, already present for an unrelated reason, or the new
-  `"item-block"` for a void refusal), and `stage_health_verdicts`' join
-  excludes any `attempt-failed` carrying a non-empty `kind` — a genuine
-  stage failure never sets one.
+  `"item-block"` for a void refusal) — see the next entry for how
+  `stage_health_verdicts`' own join is kept from counting it.
+
+- **The per-stage health verdict no longer misreads a freshly blocked item as
+  a stage failure** (issue #1511). Issue #983's own fix, above, joined
+  `stage-end` and `attempt-failed` on cycle + stage so a stage that exits 0
+  while nonetheless failing still counts as a failed attempt — but
+  `attempt-failed` is also requirement 34's item-block record: a
+  needs-refinement block, a void-refusal, a hand-flagged-label block, a
+  Reviewer hand-back, or an Implementer's own `blocked`/`void-refused`
+  report all log one for a stage that ran to completion and reported
+  truthfully on the *item*, never on itself, with its own `stage-end` for
+  that cycle carrying `exit_code: 0` regardless. The join had no way to
+  tell the two apart, so three consecutive, genuinely successful cycles
+  that each freshly blocked a different item flipped the stage's verdict to
+  `failing` on the dashboard and in the monitor digest's failing-stages
+  column, with `last_detail` showing the item's block reason as though it
+  were the stage's own. Every genuine stage-attempt failure now carries
+  `stage_failure: true` — `log_attempt_failed`'s own callers in
+  `agent-cycle.sh`, `handle_stage_failure` and the coordinator's
+  unparseable-message path in `lib/stage-attempt.sh`, and both of
+  `monitor-cycle.sh`'s own failure writers — and the join now requires that
+  field rather than reading `kind` (above), leaving every item-verdict
+  `attempt-failed` correctly out of the count regardless of which call site
+  logged it. `kind` remains, unchanged, for its other readers
+  (`lib/refinement.sh`, `lib/enabler.sh`, the dashboard).
 
 - **The tech-debt record-flip check's keyword harvest is now markdown-aware**
   (issue #1463). `scripts/check-closing-keyword.sh`'s record-flip half
@@ -232,6 +272,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `state_local_cycles_retained`, `log_retained_bytes`) — ahead of onboarding
   any non-Poetic-Poems installation. Linked from README.md's Installation
   section.
+
+- **A per-repository `preview` config block** (issue #586, D19 Phase 1,
+  requirement 24a). `scripts/preview-deploy.sh`'s preview-deployment check was
+  Vercel-shaped and Poetic-shaped at once — the Implementer's and Reviewer's
+  prompts named `poetic-fiddle` directly, so an adopting repository inherited
+  Poetic's preview arrangement whether or not it had one. `repos[].preview` in
+  `config.schema.json` now states, per repository, whether it has a preview
+  deployment at all (`provider: "none"`, the default) and, where it does,
+  which provider (`"vercel"`, the only one implemented) and — since one node
+  may run more than one Vercel-deployed repository — which environment
+  variables carry its bypass-secret and API-token credentials
+  (`vercel.bypass_secret_env`/`vercel.token_env`, defaulting to the two fixed
+  names every node already used). `lib/preview-config.sh` resolves the block
+  and remaps those credentials onto the fixed names
+  `scripts/preview-deploy.sh` itself still reads, so that script needs no
+  change; `agent-cycle.sh` stamps the resolved block onto every work order's
+  own `preview` field, mechanically, before either stage's prompt is
+  assembled. Neither `prompts/implementer.md` nor `prompts/reviewer.md` names
+  a repository any more — both read the work order's `preview` field, and a
+  repository configured `"none"` (poetic and agent-ops today) gets no preview
+  step and no warning about a missing one. `scripts/doctor.sh` validates the
+  credential named by a `"vercel"`-configured repository is actually present
+  on the node — a warning, never a failure, on the same terms the check
+  itself already treats a missing credential.
 
 ### Fixed
 
