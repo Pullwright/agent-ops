@@ -1765,13 +1765,25 @@ log_voided_items() {
     # `attempt-failed` is the state: it blocks the item on repo+item exactly as
     # any other failed attempt does (requirement 34), which is what puts it in
     # front of the Enabler.
+    #
+    # `kind: "item-block"` (issue #1498): this event pins a per-item block, not
+    # a coordinator stage failure — the coordinator stage itself ran to
+    # completion and produced a verdict, just one the void guard refused. Left
+    # unmarked, `stage_health_verdicts` (lib/stage-health.sh) would join this
+    # `attempt-failed` onto the same cycle's `stage-end` and count a healthy
+    # coordinator as failed. The needs-refinement block and hand-flag call
+    # sites already carry a `kind` (`REFINEMENT_BLOCK_KIND`, "needs-refinement")
+    # for an unrelated reason (lib/refinement.sh), which already discriminates
+    # them the same way — `stage_health_verdicts` excludes any non-empty
+    # `kind`, not just this literal value, so this is the one call site that
+    # needed one added.
     log_event "warning" "$(jq -nc \
       --arg d "co-ordinator void refused for ${repo:-<no repo>} $item — $refusal; recorded blocked instead" \
       '{detail: $d}')"
     log_event "attempt-failed" "$(item_event_fields "coordinator" \
       "void refused ($refusal). The Co-Ordinator's stated reason was: $reason" "$repo" "$item" \
       "$(jq -nc --arg c "Establish from the repository itself whether this item describes any remaining work." \
-        '{unblock_condition: $c}')")"
+        '{kind: "item-block", unblock_condition: $c}')")"
   done < <(jq -c '.voided[]? // empty' <<<"$wo" 2>/dev/null || true)
 }
 

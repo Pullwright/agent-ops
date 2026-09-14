@@ -57,6 +57,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `last_detail` is derived from the same join so it never shows a detail
   from an already-cleared streak.
 
+- **The per-stage health verdict no longer counts the Co-Ordinator's own
+  per-item block records as coordinator stage failures** (issue #1498).
+  Since #983's join above, `stage_health_verdicts` counted a `stage-end` as
+  failed whenever a matching `attempt-failed` existed for the same cycle and
+  stage — but `attempt-failed` with `stage: "coordinator"` is also how the
+  Co-Ordinator pins a per-item block: a needs-refinement block and a
+  hand-flag (`lib/candidate-select.sh`, `lib/candidate-gather.sh`), and a
+  void refusal (`lib/candidate-select.sh`), all logged in cycles where the
+  coordinator stage itself succeeded. A sweep that blocks or hand-flags
+  several items across successive cycles, with no block-free success
+  between, incremented `consecutive_failures` on every one and reset none of
+  them, reading `failing` for a coordinator that never actually failed once.
+  Each of those three call sites now carries a `kind` on its `attempt-failed`
+  (`"needs-refinement"`, already present for an unrelated reason, or the new
+  `"item-block"` for a void refusal), and `stage_health_verdicts`' join
+  excludes any `attempt-failed` carrying a non-empty `kind` — a genuine
+  stage failure never sets one.
+
 - **The tech-debt record-flip check's keyword harvest is now markdown-aware**
   (issue #1463). `scripts/check-closing-keyword.sh`'s record-flip half
   harvested a closing keyword via a raw `grep` over the pull request body, so

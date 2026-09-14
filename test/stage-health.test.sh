@@ -86,6 +86,15 @@ attempt_failed_at() {  # attempt_failed_at TS STAGE DETAIL [CYCLE]
   jq -nc --arg ts "$1" --arg stage "$2" --arg d "$3" --arg cycle "${4:-$1}" \
     '{ts: $ts, node: "n1", event: "attempt-failed", stage: $stage, detail: $d, cycle: $cycle}'
 }
+# item_block_attempt_failed_at TS STAGE DETAIL KIND [CYCLE]
+# Same shape as attempt_failed_at, but carrying a `kind` — the marker the
+# Co-Ordinator's own per-item block records (a needs-refinement block, a
+# hand-flag, a void refusal) log on `attempt-failed`, distinct from a genuine
+# stage failure (issue #1498).
+item_block_attempt_failed_at() {
+  jq -nc --arg ts "$1" --arg stage "$2" --arg d "$3" --arg kind "$4" --arg cycle "${5:-$1}" \
+    '{ts: $ts, node: "n1", event: "attempt-failed", stage: $stage, detail: $d, kind: $kind, cycle: $cycle}'
+}
 epoch_of() { jq -nr --arg t "$1" '$t | fromdateiso8601'; }
 
 NOW="2026-08-21T12:00:00Z"
@@ -214,6 +223,44 @@ verdict="$(stage_health_verdicts 3 48 "$NOW_EPOCH" <<<"$alternating")"
 assert_eq "an alternating non-zero/exit-0-but-failed mix still reaches failing at threshold" \
   "failing" "$(jq -r '.coordinator.verdict' <<<"$verdict")"
 assert_eq "  ... counting all three cycles, not just the two genuine non-zero exits" \
+  "3" "$(jq -r '.coordinator.consecutive_failures' <<<"$verdict")"
+
+# --- a kind-tagged attempt-failed is a per-item block, not a stage failure -
+#
+# (issue #1498) The Co-Ordinator logs `attempt-failed` with `stage:
+# "coordinator"` for its own per-item block records too — a needs-refinement
+# block, a hand-flag, a void refusal — in cycles where the coordinator stage
+# itself ran to completion (`stage-end exit_code 0`). Those carry a non-empty
+# `kind` (`"needs-refinement"` or `"item-block"`) precisely so this join can
+# tell them apart from a genuine failure; the exit-0-can-still-fail rule
+# above must not fire for them.
+
+item_blocks_only="$(item_block_attempt_failed_at 2026-08-21T09:00:00Z coordinator 'gated on a decision' needs-refinement
+  stage_end_at 2026-08-21T09:00:00Z coordinator 0
+  item_block_attempt_failed_at 2026-08-21T10:00:00Z coordinator 'hand-applied the needs-refinement label' needs-refinement
+  stage_end_at 2026-08-21T10:00:00Z coordinator 0
+  item_block_attempt_failed_at 2026-08-21T11:00:00Z coordinator 'void refused (…)' item-block
+  stage_end_at 2026-08-21T11:00:00Z coordinator 0)"
+verdict="$(stage_health_verdicts 3 48 "$NOW_EPOCH" <<<"$item_blocks_only")"
+assert_eq "three consecutive cycles each logging only a kind-tagged item-block resolve to a healthy verdict" \
+  "ok" "$(jq -r '.coordinator.verdict' <<<"$verdict")"
+assert_eq "  ... the streak never increments" \
+  "0" "$(jq -r '.coordinator.consecutive_failures' <<<"$verdict")"
+assert_eq "  ... and last_detail stays clear" \
+  "null" "$(jq -r '.coordinator.last_detail' <<<"$verdict")"
+
+item_block_then_genuine_failure="$(item_block_attempt_failed_at 2026-08-21T08:00:00Z coordinator 'gated on a decision' needs-refinement
+  stage_end_at 2026-08-21T08:00:00Z coordinator 0
+  attempt_failed_at 2026-08-21T09:00:00Z coordinator 'unparseable final message'
+  stage_end_at 2026-08-21T09:00:00Z coordinator 0
+  stage_end_at 2026-08-21T10:00:00Z coordinator 1
+  attempt_failed_at 2026-08-21T10:00:00Z coordinator 'coordinator was refused by the API'
+  stage_end_at 2026-08-21T11:00:00Z coordinator 1
+  attempt_failed_at 2026-08-21T11:00:00Z coordinator 'coordinator was refused by the API')"
+verdict="$(stage_health_verdicts 3 48 "$NOW_EPOCH" <<<"$item_block_then_genuine_failure")"
+assert_eq "three genuine mid-item failures still reach failing, unaffected by an earlier kind-tagged block" \
+  "failing" "$(jq -r '.coordinator.verdict' <<<"$verdict")"
+assert_eq "  ... counting only the three genuine failures, not the item-block cycle that reset the streak" \
   "3" "$(jq -r '.coordinator.consecutive_failures' <<<"$verdict")"
 
 # --- last_detail: synthesized fallback, and never a stale streak's detail --

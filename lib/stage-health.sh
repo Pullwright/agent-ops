@@ -49,7 +49,7 @@
 #     for `monitor-cycle.sh`'s own `monitor-log.jsonl`, the two streams this
 #     reader is actually called on (never both in the same invocation) — so a
 #     `stage-end` counts as failed when *either* its own `exit_code` is
-#     non-zero *or* an `attempt-failed` was logged for that same cycle +
+#     non-zero *or* a genuine `attempt-failed` was logged for that same cycle +
 #     stage (TD-PPagop-26082504) — a stage can exit 0 while its attempt
 #     nonetheless failed (an unparseable final message, say), and that is
 #     exactly as much a failure as a non-zero exit. The same running-streak
@@ -57,6 +57,22 @@
 #     and without requiring an identical failure detail: any failure counts,
 #     because "always wrong in some new way" is exactly as unhealthy as
 #     "always wrong the same way".
+#
+#     "Genuine" excludes any `attempt-failed` carrying a non-empty `kind`
+#     (issue #1498): the Co-Ordinator logs `stage: "coordinator"`
+#     `attempt-failed` events for its own per-item block records too — a
+#     needs-refinement block and a hand-flag (`lib/candidate-select.sh`,
+#     `lib/candidate-gather.sh`; `kind: "needs-refinement"`, `lib/refinement.sh`'s
+#     `REFINEMENT_BLOCK_KIND`) and a void refusal (`kind: "item-block"`) — in
+#     cycles where the coordinator stage itself succeeded (`stage-end exit_code
+#     0`, work selected or a clean nothing-to-do). Joined in without this
+#     exclusion, a sweep that blocks or hand-flags several items across
+#     successive cycles reads `failing` for a coordinator that never actually
+#     failed once. `kind` is otherwise only ever set on this class of record
+#     (never on a genuine stage failure, e.g. `lib/stage-attempt.sh`'s
+#     "unparseable final message" or a launch failure), so excluding any
+#     non-empty value — not just one literal — catches every item-block shape
+#     at once, present or future, without the join needing to enumerate them.
 #   - last_detail: the `detail` of the current streak's own most recent
 #     failure — its matching `attempt-failed` for that failing `stage-end`'s
 #     own cycle id, or, when a non-zero exit has no matching `attempt-failed`
@@ -140,7 +156,8 @@ stage_health_verdicts() {
         . + { ($stage): (
           ($events | map(select(.event == "stage-end" and (.stage // "") == $stage)) | sort_by(.ts)) as $ends
           | ($events | map(select(.event == "attempt-failed" and (.stage // "") == $stage
-                                   and (.cycle // .monitor // "") != "")) | sort_by(.ts)) as $fails
+                                   and (.cycle // .monitor // "") != ""
+                                   and (.kind // "") == "")) | sort_by(.ts)) as $fails
           | ($ends | map(
               . as $e
               | (($e.cycle // $e.monitor // "") | if . == "" then null else . end) as $end_cycle
