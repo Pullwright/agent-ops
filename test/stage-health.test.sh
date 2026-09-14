@@ -13,9 +13,22 @@
 #   one failure is not a verdict   normal transients exist; only a
 #                                  consecutive run reaching THRESHOLD reads
 #                                  as `failing`
-#   a success resets the streak    consecutive_failures returns to 0, and
+#   a success resets the streak    a `stage-end` that fails neither test below
+#                                  returns consecutive_failures to 0, and
 #                                  last_detail clears with it — the streak's
 #                                  detail is not a permanent scar
+#   exit 0 can still be a failure  a `stage-end` counts as failed if its own
+#                                  `exit_code` is non-zero *or* an
+#                                  `attempt-failed` was logged for that same
+#                                  `cycle` — a stage can exit 0 while its
+#                                  attempt nonetheless failed, and that counts
+#                                  exactly as much (TD-PPagop-26082504)
+#   last_detail tracks the streak  it is the current streak's own most recent
+#                                  failure's detail, joined by `cycle`, never
+#                                  simply the stage's globally-last
+#                                  `attempt-failed` — a detail from a streak
+#                                  a later success already cleared must never
+#                                  leak in as the current one's
 #   never-run reads idle, not ok   a stage with no `stage-end` at all (e.g. a
 #                                  Reviewer this node has never had a PR for)
 #                                  must never look "healthy" the way a stage
@@ -61,13 +74,17 @@ assert_contains() {
 }
 
 # Event constructors, so the cases below read as timelines rather than JSON.
-stage_end_at() {  # stage_end_at TS STAGE EXIT_CODE
-  jq -nc --arg ts "$1" --arg stage "$2" --argjson rc "$3" \
-    '{ts: $ts, node: "n1", event: "stage-end", stage: $stage, exit_code: $rc}'
+# CYCLE defaults to TS: every existing call below pairs a stage-end with an
+# attempt-failed at the identical timestamp for what is conceptually the same
+# cycle, so this default joins them exactly as `log_event`'s real `cycle`
+# field would, with no need to thread an explicit id through every call site.
+stage_end_at() {  # stage_end_at TS STAGE EXIT_CODE [CYCLE]
+  jq -nc --arg ts "$1" --arg stage "$2" --argjson rc "$3" --arg cycle "${4:-$1}" \
+    '{ts: $ts, node: "n1", event: "stage-end", stage: $stage, exit_code: $rc, cycle: $cycle}'
 }
-attempt_failed_at() {  # attempt_failed_at TS STAGE DETAIL
-  jq -nc --arg ts "$1" --arg stage "$2" --arg d "$3" \
-    '{ts: $ts, node: "n1", event: "attempt-failed", stage: $stage, detail: $d}'
+attempt_failed_at() {  # attempt_failed_at TS STAGE DETAIL [CYCLE]
+  jq -nc --arg ts "$1" --arg stage "$2" --arg d "$3" --arg cycle "${4:-$1}" \
+    '{ts: $ts, node: "n1", event: "attempt-failed", stage: $stage, detail: $d, cycle: $cycle}'
 }
 epoch_of() { jq -nr --arg t "$1" '$t | fromdateiso8601'; }
 
@@ -161,6 +178,55 @@ assert_eq "last_detail clears with it" \
   "null" "$(jq -c '.coordinator.last_detail' <<<"$verdict")"
 assert_eq "last_success is the success's own timestamp" \
   "2026-08-21T11:55:00Z" "$(jq -r '.coordinator.last_success' <<<"$verdict")"
+
+# --- an exit-0 stage-end can still be a failure (TD-PPagop-26082504) -------
+#
+# A stage can exit 0 while its attempt nonetheless failed — the Script logs
+# `attempt-failed` for it with a detail such as "unparseable final message" —
+# and that reads as a genuine success under a bare exit_code test, both
+# failing to increment the streak and resetting whatever was accumulating.
+
+exit0_failure="$(attempt_failed_at 2026-08-21T09:00:00Z coordinator 'coordinator exited 1'
+  stage_end_at 2026-08-21T09:00:00Z coordinator 1
+  attempt_failed_at 2026-08-21T10:00:00Z coordinator 'unparseable final message'
+  stage_end_at 2026-08-21T10:00:00Z coordinator 0)"
+verdict="$(stage_health_verdicts 3 48 "$NOW_EPOCH" <<<"$exit0_failure")"
+assert_eq "an exit-0 stage-end with a matching attempt-failed for its own cycle is not yet failing" \
+  "ok" "$(jq -r '.coordinator.verdict' <<<"$verdict")"
+assert_eq "  ... it increments the streak instead of resetting it" \
+  "2" "$(jq -r '.coordinator.consecutive_failures' <<<"$verdict")"
+assert_eq "  ... and last_detail reflects that cycle's own attempt-failed detail" \
+  "unparseable final message" "$(jq -r '.coordinator.last_detail' <<<"$verdict")"
+
+# The report's own worst case: alternating non-zero exits and exit-0-but-
+# failed cycles never reached THRESHOLD under the old exit-code-only count
+# (the longest such run measured on a real node's log was 2) — so a stage
+# failing every cycle, in this alternating shape, silently reported `ok`
+# throughout. This pins the fix: three such cycles in a row must reach
+# `failing`.
+alternating="$(stage_end_at 2026-08-21T09:00:00Z coordinator 1
+  attempt_failed_at 2026-08-21T09:00:00Z coordinator 'coordinator exited 1'
+  attempt_failed_at 2026-08-21T10:00:00Z coordinator 'unparseable final message'
+  stage_end_at 2026-08-21T10:00:00Z coordinator 0
+  stage_end_at 2026-08-21T11:00:00Z coordinator 1
+  attempt_failed_at 2026-08-21T11:00:00Z coordinator 'coordinator was refused by the API')"
+verdict="$(stage_health_verdicts 3 48 "$NOW_EPOCH" <<<"$alternating")"
+assert_eq "an alternating non-zero/exit-0-but-failed mix still reaches failing at threshold" \
+  "failing" "$(jq -r '.coordinator.verdict' <<<"$verdict")"
+assert_eq "  ... counting all three cycles, not just the two genuine non-zero exits" \
+  "3" "$(jq -r '.coordinator.consecutive_failures' <<<"$verdict")"
+
+# --- last_detail: synthesized fallback, and never a stale streak's detail --
+
+stale_detail_not_leaked="$(attempt_failed_at 2026-08-21T09:00:00Z coordinator 'an old failure from a cleared streak'
+  stage_end_at 2026-08-21T09:00:00Z coordinator 1
+  stage_end_at 2026-08-21T10:00:00Z coordinator 0
+  stage_end_at 2026-08-21T11:00:00Z coordinator 7)"
+verdict="$(stage_health_verdicts 3 48 "$NOW_EPOCH" <<<"$stale_detail_not_leaked")"
+assert_eq "a non-zero exit with no matching attempt-failed still counts as a failure" \
+  "1" "$(jq -r '.coordinator.consecutive_failures' <<<"$verdict")"
+assert_eq "  ... its last_detail is a synthesized message, not an earlier cleared streak's detail" \
+  "stage-end exited 7" "$(jq -r '.coordinator.last_detail' <<<"$verdict")"
 
 # --- a stale success reads idle, not ok, once nothing has failed since -----
 
