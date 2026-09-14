@@ -166,6 +166,11 @@ printf '{"ts":"2026-07-20T00:00:00Z"}\n' > "$state/.state-sync-published.json"
 # from the fleet state branch would carry a checkout-fresh mtime.
 mkdir -p "$state/expensive-gather"
 printf '{"findings":[]}\n' > "$state/expensive-gather/o_r.json"
+# The wake-poll cache (scripts/wake-poll.sh, requirement 54, issue #613):
+# this node's own stored ETags, local on the same reasoning as
+# expensive-gather/ above — no peer reads another node's copy.
+mkdir -p "$state/wake-poll/o_r"
+printf 'W/"deadbeef"\n' > "$state/wake-poll/o_r/issues.etag"
 # The hourly unattended doctor pass's own artefacts (agent-ops#543): local to
 # this node, like the caches above, so neither file should replicate. Its
 # *verdict* is folded into the heartbeat (agent-ops#1278) and, as of
@@ -248,6 +253,7 @@ assert_eq "the GitHub cache does not replicate" "0" "$(test -e "$pushed/.dashboa
 assert_eq "the image-drift cache does not replicate" "0" "$(test -e "$pushed/.image-drift-cache.json" && echo 1 || echo 0)"
 assert_eq "the publication cache does not replicate" "0" "$(test -e "$pushed/.state-sync-published.json" && echo 1 || echo 0)"
 assert_eq "the expensive-gather cache does not replicate" "0" "$(test -e "$pushed/expensive-gather" && echo 1 || echo 0)"
+assert_eq "the wake-poll cache does not replicate" "0" "$(test -e "$pushed/wake-poll" && echo 1 || echo 0)"
 assert_eq "the doctor log does not replicate" "0" "$(test -e "$pushed/doctor.log" && echo 1 || echo 0)"
 assert_eq "the doctor status cache does not replicate" "0" "$(test -e "$pushed/.doctor-status.json" && echo 1 || echo 0)"
 assert_eq "the stage-health cache does not replicate as a raw file" "0" "$(test -e "$pushed/.stage-health.json" && echo 1 || echo 0)"

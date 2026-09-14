@@ -341,6 +341,13 @@ EXCLUDES=(
   # must travel. The lock files are this node's own, like lock.json above.
   --exclude=/gh-shim/http-cache/
   --exclude=/gh-shim/*.lock
+  # wake-poll/ (scripts/wake-poll.sh, requirement 54, issue #613): this
+  # node's own stored ETags, one per (repo, endpoint) it polls — local to
+  # this node on the same reasoning as labels-ensured/ above: no peer reads
+  # another node's copy, each node polls and wakes independently, and the
+  # cadence is cheap enough (a `304` costs nothing against the rate-limit
+  # budget) that there is nothing here worth the replication.
+  --exclude=/wake-poll/
   --exclude=*.stream.jsonl
   --exclude=.fleet-log.jsonl
   --exclude=/dashboard/

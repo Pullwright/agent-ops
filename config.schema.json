@@ -1821,6 +1821,17 @@
             "spec": "Interval, in minutes, of `state-sync.sh fetch` (requirement 2.5)."
           }
         },
+        "wake_poll_minutes": {
+          "description": "Interval, in minutes, of `scripts/wake-poll.sh`'s crontab line (requirement 54, issue #613): how often it checks every configured repository for a source-relevant change via a conditional GET (`If-None-Match`) and, on a real change (not a `304`), invokes `agent-cycle.sh` immediately rather than waiting for the next `cycle_interval_minutes` firing. Independent of `schedule.cycle_interval_minutes` (requirement 1d): wake-poll has its own crontab line and runs on its own terms; the cycle's own cron firing never stops, since `abandoned-drafts` and `merge-conflicts` move no forge event a poll can see. A `304` costs nothing against the primary GitHub rate-limit budget (requirement 54's own D14 pricing), so a tight interval is cheap on an idle repository; a real change costs one call per endpoint, at the exact moment a cycle is about to spend far more anyway.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 59,
+          "default": 2,
+          "x-docs": {
+            "readme": "Interval, in minutes, of the containerised node's wake-poll cron line (`scripts/wake-poll.sh`, issue #613) — how often it checks for a source-relevant change and wakes an idle node between ordinary cycle firings.",
+            "spec": "Interval, in minutes, of `scripts/wake-poll.sh`'s crontab line (requirement 54)."
+          }
+        },
         "log_rotation_minute": {
           "description": "The minute past every hour scripts/rotate-logs.sh runs. Independent of `schedule.cycle_interval_minutes` (requirement 1d): log rotation has its own crontab line and runs on its own terms.",
           "type": "integer",

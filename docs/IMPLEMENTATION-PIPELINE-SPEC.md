@@ -1026,6 +1026,7 @@ and the schema must carry every one of them.
 | `schedule.heartbeat_minutes` | `5` | Interval, in minutes, of the dashboard heartbeat cron line (`publish-dashboard-launcher.sh`). |
 | `schedule.state_sync_push_minutes` | `5` | Interval, in minutes, of `state-sync.sh push` (requirement 2.5). |
 | `schedule.state_sync_fetch_minutes` | `7` | Interval, in minutes, of `state-sync.sh fetch` (requirement 2.5). |
+| `schedule.wake_poll_minutes` | `2` | Interval, in minutes, of `scripts/wake-poll.sh`'s crontab line (requirement 54). |
 | `schedule.log_rotation_minute` | `19` | The minute past every hour `rotate-logs.sh` runs (requirement 2.6). |
 | `schedule.doctor_offset_minutes` | `44` | Minutes past `CYCLE_MINUTE` (mod 60) the hourly `doctor.sh --unattended` pass's minute is set to, jittering it across the fleet the same way `review_offset_minutes` jitters the review tick. |
 | `schedule.revert_rate_hour` | `2` | The hour the daily revert-rate publishing tick fires. |

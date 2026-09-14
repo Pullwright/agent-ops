@@ -596,6 +596,7 @@ Keys:
 | `schedule.heartbeat_minutes` | `5` | Interval, in minutes, of the containerised node's dashboard-heartbeat cron line. |
 | `schedule.state_sync_push_minutes` | `5` | Interval, in minutes, of the containerised node's `state-sync.sh push` line. |
 | `schedule.state_sync_fetch_minutes` | `7` | Interval, in minutes, of the containerised node's `state-sync.sh fetch` line. |
+| `schedule.wake_poll_minutes` | `2` | Interval, in minutes, of the containerised node's wake-poll cron line (`scripts/wake-poll.sh`, issue #613) — how often it checks for a source-relevant change and wakes an idle node between ordinary cycle firings. |
 | `schedule.log_rotation_minute` | `19` | The minute past every hour the containerised node's `rotate-logs.sh` line runs. |
 | `schedule.doctor_offset_minutes` | `44` | Minutes past `CYCLE_MINUTE` (mod 60) the hourly unattended `doctor.sh` pass's minute is set to (agent-ops#543), on the same per-node jitter `review_offset_minutes` uses. |
 | `schedule.revert_rate_hour` | `2` | The hour the containerised node's daily revert-rate publishing tick (`scripts/publish-revert-rate.sh`, agent-ops#579) fires. |
