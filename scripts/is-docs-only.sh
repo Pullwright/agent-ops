@@ -16,10 +16,9 @@
 # "Cannot reach a node through the image" is the exact test, and it is not the
 # same thing as "nobody reads it". A cycle working on *this* repository does
 # read its `CLAUDE.md` and its `TECH-DEBT.md` — but out of the fresh
-# `gh repo clone` in `workspace_root`, and scripts/gather-register-hygiene.sh
-# reads the register straight from the contents API. Both arrive from GitHub
+# `gh repo clone` in `workspace_root`, which arrives from GitHub
 # the moment a pull request merges, with no image in the path, so no build can
-# make them arrive sooner and skipping one delays nothing.
+# make it arrive sooner and skipping one delays nothing.
 #
 # What is never read is the copy at /app. Every `claude -p` in agent-cycle.sh
 # and review-cycle.sh runs with its working directory under `workspace_root`
@@ -57,8 +56,7 @@ is_inert() {
     docs/*) return 0 ;;                   # the as-built specs and the roadmap
     README.md) return 0 ;;
     CLAUDE.md) return 0 ;;                # a cycle reads the clone's copy, never /app's
-    TECH-DEBT.md) return 0 ;;             # likewise, and via the contents API
-    tech-debt/*) return 0 ;;              # the per-item register: item files are records, not code
+    TECH-DEBT.md) return 0 ;;             # likewise
     LICENCE) return 0 ;;
     deploy/docker/README.md) return 0 ;;  # the node runbook
     *) return 1 ;;
