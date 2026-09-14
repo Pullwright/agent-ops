@@ -109,10 +109,12 @@ item_verdict_attempt_failed_at() {  # item_verdict_attempt_failed_at TS STAGE DE
     '{ts: $ts, node: "n1", event: "attempt-failed", stage: $stage, detail: $d, cycle: $cycle}'
 }
 # item_block_attempt_failed_at TS STAGE DETAIL KIND [CYCLE]
-# Same shape as attempt_failed_at, but carrying a `kind` — the marker the
-# Co-Ordinator's own per-item block records (a needs-refinement block, a
-# hand-flag, a void refusal) log on `attempt-failed`, distinct from a genuine
-# stage failure (issue #1498).
+# The item-verdict shape above, plus the `kind` the Co-Ordinator's own per-item
+# block records (a needs-refinement block, a hand-flag, a void refusal) carry
+# on `attempt-failed` for their other readers (issue #1498). Like
+# item_verdict_attempt_failed_at, and unlike attempt_failed_at, it sets no
+# stage_failure — the field, not the `kind`, is what this join reads — so these
+# cases pin that a kind-tagged block stays out of the streak too.
 item_block_attempt_failed_at() {
   jq -nc --arg ts "$1" --arg stage "$2" --arg d "$3" --arg kind "$4" --arg cycle "${5:-$1}" \
     '{ts: $ts, node: "n1", event: "attempt-failed", stage: $stage, detail: $d, kind: $kind, cycle: $cycle}'
@@ -301,9 +303,9 @@ assert_eq "  ... counting all three cycles, not just the two genuine non-zero ex
 # "coordinator"` for its own per-item block records too — a needs-refinement
 # block, a hand-flag, a void refusal — in cycles where the coordinator stage
 # itself ran to completion (`stage-end exit_code 0`). Those carry a non-empty
-# `kind` (`"needs-refinement"` or `"item-block"`) precisely so this join can
-# tell them apart from a genuine failure; the exit-0-can-still-fail rule
-# above must not fire for them.
+# `kind` (`"needs-refinement"` or `"item-block"`) for readers elsewhere, and,
+# being item verdicts, no `stage_failure` — so the exit-0-can-still-fail rule
+# above must not fire for them, whichever of the two `kind`s they carry.
 
 item_blocks_only="$(item_block_attempt_failed_at 2026-08-21T09:00:00Z coordinator 'gated on a decision' needs-refinement
   stage_end_at 2026-08-21T09:00:00Z coordinator 0
