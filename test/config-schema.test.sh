@@ -980,6 +980,22 @@ assert_valid "every merge_autonomy level, top-level and per-repo, is accepted" \
   '.merge_autonomy = "agent-merges-all" | .repos[0].merge_autonomy = "agent-approves"'
 assert_valid "a repo with no merge_autonomy override is accepted (inherits the top-level key)" \
   '.merge_autonomy = "agent-approves"'
+assert_valid "a repo with no preview key at all is accepted (D19 Phase 1)" '.'
+assert_valid "a repo's preview provider none is accepted" \
+  '.repos[0].preview = {"provider": "none"}'
+assert_valid "a repo's preview provider vercel, with no vercel block, is accepted" \
+  '.repos[0].preview = {"provider": "vercel"}'
+assert_valid "a repo's preview.vercel names its own bypass_secret_env and token_env" \
+  '.repos[0].preview = {"provider": "vercel", "vercel": {"bypass_secret_env": "ACME_BYPASS", "token_env": "ACME_TOKEN"}}'
+assert_rejected "an unknown preview provider is rejected" \
+  '.repos[0].preview = {"provider": "netlify"}' \
+  'config.repos[0].preview.provider: "netlify" is not one of'
+assert_rejected "a preview.vercel.bypass_secret_env that is not a bare shell identifier is rejected" \
+  '.repos[0].preview = {"provider": "vercel", "vercel": {"bypass_secret_env": "not a valid name"}}' \
+  'config.repos[0].preview.vercel.bypass_secret_env: "not a valid name" does not match'
+assert_rejected "an unknown key inside preview is rejected" \
+  '.repos[0].preview = {"provider": "none", "extra": true}' \
+  'config.repos[0].preview: unknown key "extra"'
 assert_rejected "a negative merge_budget_per_day is rejected" \
   '.merge_budget_per_day = -1' 'config.merge_budget_per_day: -1 is below the minimum 0'
 assert_rejected "a negative per-repo merge_budget_per_day override is rejected" \
@@ -1145,6 +1161,11 @@ assert_doctor "doctor fails an implementation-plan source with no path, as agent
 assert_doctor "doctor fails duplicate slugs in project_review.repos, as review-cycle.sh would" \
   '.project_review.repos[1].slug = .project_review.repos[0].slug' 1 \
   "project_review.repos lists [$BASE_REPO_1] more than once"
+assert_doctor "doctor skips the preview-check step for a repo with no preview configured (D19 Phase 1)" \
+  '.' 0 "$BASE_REPO_1 has no preview deployment configured"
+assert_doctor "doctor warns, never fails, a vercel-configured repo whose named credential is unset on this node" \
+  '.repos[0].preview = {"provider": "vercel", "vercel": {"bypass_secret_env": "PW_TEST_UNSET_PREVIEW_SECRET_XYZ"}}' \
+  0 "$BASE_REPO_1 is configured preview.provider \"vercel\" but PW_TEST_UNSET_PREVIEW_SECRET_XYZ is not set on this node"
 assert_doctor_shipped "doctor passes distinct project_review.repos slugs" \
   '.' 0 'every project_review.repos entry names a distinct repository'
 # --- issue #589/D7: a configured review_instructions/review_context path

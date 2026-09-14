@@ -208,6 +208,8 @@ export AGENT_OPS_ROOT="$SCRIPT_DIR"
 . "$SCRIPT_DIR/lib/enabler.sh"
 # shellcheck source=lib/escalation-autonomy.sh
 . "$SCRIPT_DIR/lib/escalation-autonomy.sh"
+# shellcheck source=lib/preview-config.sh
+. "$SCRIPT_DIR/lib/preview-config.sh"
 # shellcheck source=lib/issue-priority.sh
 . "$SCRIPT_DIR/lib/issue-priority.sh"
 # shellcheck source=lib/tech-debt-file.sh
@@ -2954,6 +2956,18 @@ selected_source="$(jq -r '.source // ""' <<<"$work_order_json")"
 selected_branch="$(jq -r '.branch // ""' <<<"$work_order_json")"
 selected_source="$(jq -r '.source // ""' <<<"$work_order_json")"
 selected_default_branch="$(jq -r '.default_branch // "main"' <<<"$work_order_json")"
+# `preview` (D19 Phase 1, requirement 24a) is stamped onto the work order here,
+# deterministically, rather than left to the Co-Ordinator to copy: the same
+# reasoning `pr_label`'s own header comment already gives — a mechanical field
+# needs no model judgement, and a claimed_json path (review-feedback,
+# merge-conflicts, dequeued, landing-refusals, abandoned-drafts) never passes
+# through the Co-Ordinator at all, so this is the one point every path
+# converges on before either stage prompt is assembled.
+selected_preview_json="$(preview_config_for_repo "$DEFAULTED_CONFIG" "$selected_repo")"
+work_order_json="$(jq -c --argjson p "$selected_preview_json" '. + {preview: $p}' <<<"$work_order_json")"
+# Remapped once here, ahead of both the Implementer and the Reviewer stage
+# launches below, since both inherit this same shell's exported environment.
+preview_config_export_vercel_credentials "$selected_preview_json"
 # `race_losses` is present only when this selection recovered from at least
 # one lost claim (issue #245) — an ordinary first-try selection, still the
 # overwhelming majority, carries nothing new on this event. `selected_by`

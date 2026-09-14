@@ -75,6 +75,8 @@ source "$SCRIPT_DIR/lib/merge-budget.sh"
 source "$SCRIPT_DIR/lib/merge-autonomy.sh"
 # shellcheck source=lib/escalation-autonomy.sh
 source "$SCRIPT_DIR/lib/escalation-autonomy.sh"
+# shellcheck source=lib/preview-config.sh
+source "$SCRIPT_DIR/lib/preview-config.sh"
 # shellcheck source=lib/merge-queue.sh
 source "$SCRIPT_DIR/lib/merge-queue.sh"
 # shellcheck source=lib/approver-token.sh
@@ -652,6 +654,38 @@ while IFS= read -r rs_slug; do
   if [[ -n "$rs_banded" ]]; then
     warn "$rs_slug's merge_autonomy_routine_sources names [$rs_banded], a banded issues:<band> token — every issues:<band> work order's own source collapses to the plain word \"issues\" before landing_eligible's comparison ever runs (lib/landing.sh's own header), so this entry can never match a work order; list \"issues\" itself if this repository should land issues work routinely (D18 WI-7)"
   fi
+done < <(cfg '.repos[]?.slug // empty')
+
+# `preview` (D19 Phase 1, requirement 24a): shape is already schema-enforced
+# (config_schema_errors, run ahead of this point), so what is left to check
+# here is the one thing the schema cannot — whether the credential a
+# "vercel" repo names is actually present on *this* node. Absent is not a
+# `fail`: prompts/implementer.md step 4a and prompts/reviewer.md's own check
+# both treat a missing bypass secret as this node's own configuration, not a
+# defect in any pull request, and never block on it (requirement 24a).
+while IFS= read -r pv_slug; do
+  [[ -n "$pv_slug" ]] || continue
+  pv_json="$(jq -c --arg slug "$pv_slug" \
+    '(.repos // [])[] | select(.slug == $slug) | .preview // {"provider":"none"}' \
+    <<<"$DEFAULTED_CONFIG" 2>/dev/null)"
+  pv_provider="$(jq -r '.provider // "none"' <<<"$pv_json" 2>/dev/null)"
+  case "$pv_provider" in
+    none)
+      ok "$pv_slug has no preview deployment configured — the Implementer's and Reviewer's preview-check step is skipped for it"
+      ;;
+    vercel)
+      pv_bypass_name="$(jq -r '.vercel.bypass_secret_env // "VERCEL_AUTOMATION_BYPASS_SECRET"' <<<"$pv_json" 2>/dev/null)"
+      pv_token_name="$(jq -r '.vercel.token_env // "VERCEL_TOKEN"' <<<"$pv_json" 2>/dev/null)"
+      if [[ -n "${!pv_bypass_name:-}" ]]; then
+        ok "$pv_slug's preview.vercel.bypass_secret_env ($pv_bypass_name) is set on this node"
+      else
+        warn "$pv_slug is configured preview.provider \"vercel\" but $pv_bypass_name is not set on this node — every preview will read as behind Vercel Authentication (exit 2, \"could not check\"); this is a fact about this node, never a reason to block a pull request (requirement 24a)"
+      fi
+      if [[ -z "${!pv_token_name:-}" ]]; then
+        ok "$pv_slug's preview.vercel.token_env ($pv_token_name) is not set — a failed build's log falls back to its inspector URL"
+      fi
+      ;;
+  esac
 done < <(cfg '.repos[]?.slug // empty')
 
 # `blocked` excludes an issue from the issues source, so projecting it onto an
