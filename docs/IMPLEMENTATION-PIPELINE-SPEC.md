@@ -4676,7 +4676,8 @@ implements.
    `crash_loop_verdict` reads: a stage that is healthy on every other node
    says nothing about whether it is healthy on this one. For each of
    `coordinator`, `approver`, `approver-adjudicate-open-question`,
-   `enabler-adjudicate`, `enabler`, `refiner`, `implementer` and `reviewer` —
+   `enabler-adjudicate`, `enabler-decide`, `enabler`, `refiner`, `implementer`
+   and `reviewer` —
    every stage that logs a `stage-end` of its own, so that a stage this
    reader does not name can never be one whose failures go unread — it
    derives, from that stage's own `stage-end`
