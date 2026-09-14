@@ -66,12 +66,27 @@
 # nothing on this image reads a cron job's exit status, and a stood-down tick
 # is not a crashed script.
 #
+# @WAKE_POLL_MINUTES@ is schedule.wake_poll_minutes (requirement 54, issue
+# #613): every that-many minutes, scripts/wake-poll.sh does one conditional
+# GET (If-None-Match) per configured repo against a small set of endpoints
+# chosen to union-cover lib/noop-skip.sh's own fingerprint table, and invokes
+# agent-cycle.sh — the same entry point the @CYCLE_MINUTE@ line below uses —
+# the moment any of them shows a real change rather than a `304`. This is a
+# wake-up, not a second schedule: it never stops the @CYCLE_MINUTE@ line
+# below, since `abandoned-drafts` and `merge-conflicts` move no forge event a
+# poll can see, and a woken node takes the same lock, the same claims and the
+# same back-pressure cap as a cron-fired one. It ends `|| true` for the same
+# reason the doctor line does: nothing on this image reads a cron job's exit
+# status, and a repository wake-poll could not reach this tick is simply
+# retried next tick, not a crashed script.
+#
 # Everything not a placeholder is documented in the baked crontab, which is
 # also the fallback whenever this template cannot be rendered.
 
 LOGDIR=/home/agent/.local/state/poetic-agents
 
 */@HEARTBEAT_MINUTES@ * * * *  /app/scripts/publish-dashboard-launcher.sh
+*/@WAKE_POLL_MINUTES@ * * * *  /app/scripts/wake-poll.sh >> $LOGDIR/wake-poll.log 2>&1 || true
 @CYCLE_MINUTE@ @CYCLE_HOURS@ * * *  /app/agent-cycle.sh  >> $LOGDIR/cron.log        2>&1
 @REVIEW_MINUTE@ @REVIEW_HOUR@ * * *  /app/review-cycle.sh >> $LOGDIR/review-cron.log 2>&1
 @DOCTOR_MINUTE@ * * * *  /app/scripts/doctor.sh --unattended >> $LOGDIR/doctor.log 2>&1 || true

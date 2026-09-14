@@ -166,6 +166,11 @@ printf '{"ts":"2026-07-20T00:00:00Z"}\n' > "$state/.state-sync-published.json"
 # from the fleet state branch would carry a checkout-fresh mtime.
 mkdir -p "$state/expensive-gather"
 printf '{"findings":[]}\n' > "$state/expensive-gather/o_r.json"
+# The wake-poll cache (scripts/wake-poll.sh, requirement 54, issue #613):
+# this node's own stored ETags, local on the same reasoning as
+# expensive-gather/ above — no peer reads another node's copy.
+mkdir -p "$state/wake-poll/o_r"
+printf 'W/"deadbeef"\n' > "$state/wake-poll/o_r/issues.etag"
 # The hourly unattended doctor pass's own artefacts (agent-ops#543): local to
 # this node, like the caches above, so neither file should replicate. Its
 # *verdict* is folded into the heartbeat (agent-ops#1278) and, as of
@@ -209,6 +214,12 @@ printf '{"o/r":{"settled_aggregate":{"count":1,"post_merge":{"reverts":0,"follow
 # rate.log it has no structured sibling at all, since what it publishes
 # lands in the state repository's own tech-debt-archive/ tree directly.
 printf 'tech-debt-archive noise\n' > "$state/tech-debt-archive.log"
+# The wake poller's own text output (scripts/wake-poll.sh, requirement 54,
+# issue #613): local to this node, like the publish logs above, and the
+# fastest-growing of them — a line every schedule.wake_poll_minutes. Its one
+# structured record, the wake-poll-triggered event, goes to log.jsonl, which
+# does replicate.
+printf 'wake-poll: nothing changed — no wake\n' > "$state/wake-poll.log"
 # The gh transport shim's own state (lib/gh-shim.sh, requirement 2.0e,
 # agent-ops#1084): the stored response bodies are this node's own cache, on
 # the same reasoning as the caches above, and the largest and fastest-churning
@@ -248,6 +259,7 @@ assert_eq "the GitHub cache does not replicate" "0" "$(test -e "$pushed/.dashboa
 assert_eq "the image-drift cache does not replicate" "0" "$(test -e "$pushed/.image-drift-cache.json" && echo 1 || echo 0)"
 assert_eq "the publication cache does not replicate" "0" "$(test -e "$pushed/.state-sync-published.json" && echo 1 || echo 0)"
 assert_eq "the expensive-gather cache does not replicate" "0" "$(test -e "$pushed/expensive-gather" && echo 1 || echo 0)"
+assert_eq "the wake-poll cache does not replicate" "0" "$(test -e "$pushed/wake-poll" && echo 1 || echo 0)"
 assert_eq "the doctor log does not replicate" "0" "$(test -e "$pushed/doctor.log" && echo 1 || echo 0)"
 assert_eq "the doctor status cache does not replicate" "0" "$(test -e "$pushed/.doctor-status.json" && echo 1 || echo 0)"
 assert_eq "the stage-health cache does not replicate as a raw file" "0" "$(test -e "$pushed/.stage-health.json" && echo 1 || echo 0)"
@@ -256,6 +268,7 @@ assert_eq "the revert-rate publish log does not replicate" "0" "$(test -e "$push
 assert_eq "the revert-rate cumulative-state cache does not replicate" "0" \
   "$(test -e "$pushed/revert-rate-cumulative-state.json" && echo 1 || echo 0)"
 assert_eq "the tech-debt archive publish log does not replicate" "0" "$(test -e "$pushed/tech-debt-archive.log" && echo 1 || echo 0)"
+assert_eq "the wake-poll log does not replicate" "0" "$(test -e "$pushed/wake-poll.log" && echo 1 || echo 0)"
 assert_eq "the generated dashboard does not replicate" "0" "$(test -e "$pushed/dashboard" && echo 1 || echo 0)"
 assert_eq "the gh shim's HTTP cache does not replicate" "0" \
   "$(test -e "$pushed/gh-shim/http-cache" && echo 1 || echo 0)"

@@ -34,6 +34,28 @@ ITEM_LIFECYCLE_KEY_JQ='
 # first-wins-by-ts per {repo, item}, a bootstrap-flagged first-seen excluded
 # from the latency sample but still counted, and an unpaired half reported
 # under `coverage` rather than silently shrinking the count.
+#
+# requirement 54 (issue #613): a paired item whose `first-seen` carries
+# `forge_created_at` (lib/candidate-select.sh's `emit_first_seen`, set when
+# the source's own candidate has a `created_at`) additionally contributes to
+# `pickup_latency_forge_anchored` — the same fleet/by_node shape as
+# `pickup_latency`, but the gap from the forge's own creation timestamp to
+# `selection`, not from this fleet's own poll-driven `first-seen`. The two
+# are deliberately separate fields, never blended into one: `pickup_latency`
+# answers "how long since this fleet noticed", which a poll-driven wake
+# necessarily shortens by moving `first-seen` earlier; `pickup_latency_
+# forge_anchored` answers "how long since the item actually appeared on the
+# forge", which is what a wake mechanism's own improvement has to be judged
+# against (wake-poll's own header explains why the first figure cannot).
+# `coverage.forge_anchored` counts how many paired items had a usable
+# `forge_created_at` — most sources have none yet, so this starts well below
+# `coverage.paired` and is not a defect. `try … catch null` guards the one
+# field whose value crosses a trust boundary (an external `created_at`
+# string, not this pipeline's own `ts`): a single malformed value degrades
+# that one item's forge measurement to uncounted, never aborts the whole
+# fold the way an unguarded `fromdateiso8601` failure would (jq errors here
+# are not local — see the ITEM_LIFECYCLE_FOLD_JQ comment below on the same
+# risk).
 # shellcheck disable=SC2016  # jq's own $since/$all/etc, not the shell's.
 ITEM_LIFECYCLE_PICKUP_PAIRS_JQ='
   '"$ITEM_LIFECYCLE_KEY_JQ"'
@@ -71,33 +93,46 @@ ITEM_LIFECYCLE_PICKUP_PAIRS_JQ='
   | ($paired_keys | map(
        $fs_by_key[.] as $fs | $sel_by_key[.] as $sel
        | {node: $sel.node, bootstrap: ($fs.bootstrap // false),
-          latency_seconds: (($sel.ts | fromdateiso8601) - ($fs.ts | fromdateiso8601))}
+          latency_seconds: (($sel.ts | fromdateiso8601) - ($fs.ts | fromdateiso8601)),
+          forge_latency_seconds: (
+            if ($fs.forge_created_at // "") == "" then null
+            else (try (($sel.ts | fromdateiso8601) - ($fs.forge_created_at | fromdateiso8601)) catch null)
+            end)}
      )) as $paired
   | ($paired | map(select(.bootstrap | not))) as $measured
   | ($paired | map(select(.bootstrap)) | length) as $bootstrap_excluded_count
   | ($measured | map(select(((.node // "") | tostring) != "")) | group_by(.node)
        | map({key: .[0].node, value: (map(.latency_seconds) | latency_stats(.))})
        | from_entries) as $by_node
+  | ($measured | map(select(.forge_latency_seconds != null))) as $forge_measured
+  | ($forge_measured | map(select(((.node // "") | tostring) != "")) | group_by(.node)
+       | map({key: .[0].node, value: (map(.forge_latency_seconds) | latency_stats(.))})
+       | from_entries) as $forge_by_node
   | {
       coverage: {
         paired: ($paired_keys | length),
         first_seen_only: ($fs_only_keys | length),
-        selection_only: ($sel_only_keys | length)
+        selection_only: ($sel_only_keys | length),
+        forge_anchored: ($forge_measured | length)
       },
       pickup_latency: {
         bootstrap_excluded_count: $bootstrap_excluded_count,
         fleet: ($measured | map(.latency_seconds) | latency_stats(.)),
         by_node: $by_node
+      },
+      pickup_latency_forge_anchored: {
+        fleet: ($forge_measured | map(.forge_latency_seconds) | latency_stats(.)),
+        by_node: $forge_by_node
       }
     }
 '
 
 # item_lifecycle_pickup_pairs SINCE [LOG_FILE]
-# Print `{coverage, pickup_latency}` — the shape `scripts/pickup-metrics.sh`
-# merges into its own report — folded from LOG_FILE (or stdin, "-" or
-# omitted). Always succeeds, printing the all-empty shape for a missing,
-# empty or unreadable log, on the same terms every reader in
-# lib/cycle-state.sh does.
+# Print `{coverage, pickup_latency, pickup_latency_forge_anchored}` — the
+# shape `scripts/pickup-metrics.sh` merges into its own report — folded from
+# LOG_FILE (or stdin, "-" or omitted). Always succeeds, printing the
+# all-empty shape for a missing, empty or unreadable log, on the same terms
+# every reader in lib/cycle-state.sh does.
 item_lifecycle_pickup_pairs() {
   local since="${1:-}" src="${2:--}" all_json="" out=""
   if [[ "$src" == "-" ]]; then
@@ -108,7 +143,7 @@ item_lifecycle_pickup_pairs() {
   [[ -n "$all_json" ]] || all_json='[]'
   out="$(jq -nc --arg since "$since" 'input as $all | ('"$ITEM_LIFECYCLE_PICKUP_PAIRS_JQ"')' \
     <<<"$all_json" 2>/dev/null || true)"
-  [[ -n "$out" ]] || out='{"coverage":{"paired":0,"first_seen_only":0,"selection_only":0},"pickup_latency":{"bootstrap_excluded_count":0,"fleet":{"count":0,"median_seconds":null,"p90_seconds":null},"by_node":{}}}'
+  [[ -n "$out" ]] || out='{"coverage":{"paired":0,"first_seen_only":0,"selection_only":0,"forge_anchored":0},"pickup_latency":{"bootstrap_excluded_count":0,"fleet":{"count":0,"median_seconds":null,"p90_seconds":null},"by_node":{}},"pickup_latency_forge_anchored":{"fleet":{"count":0,"median_seconds":null,"p90_seconds":null},"by_node":{}}}'
   printf '%s' "$out"
 }
 

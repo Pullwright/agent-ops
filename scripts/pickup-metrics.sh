@@ -95,12 +95,23 @@ Read-only. Prints, as JSON on stdout:
     `bootstrap_excluded_count`, paired items left out of those figures
     because their `first-seen` carried `bootstrap: true`: issue #248
     acceptance 4.
+  - `pickup_latency_forge_anchored`: the same shape as `pickup_latency`, but
+    measured from the item's own forge `created_at` (when its `first-seen`
+    carries one — see lib/candidate-select.sh's `emit_first_seen`) to
+    `selection`, rather than from this fleet's own poll-driven `first-seen`
+    (requirement 54, issue #613). `cadence_bound_minutes` below is not a
+    floor on this figure: a wake-poll-driven pickup can beat it, which is
+    the whole point — `pickup_latency` cannot show that, since waking a node
+    moves both its own `first-seen` and its `selection` earlier by the same
+    amount.
   - `coverage`: `paired` (both events seen), `first_seen_only` (seen, not yet
-    claimed) and `selection_only` (claimed, but never `first-seen` — e.g.
-    predating this instrumentation) item counts.
+    claimed), `selection_only` (claimed, but never `first-seen` — e.g.
+    predating this instrumentation) and `forge_anchored` (paired items whose
+    `first-seen` carried a usable `forge_created_at`) item counts.
   - `cadence_bound_minutes`: this repository's own `schedule.cycle_interval_minutes`
-    — the noise floor under every latency figure above, since a poll-based
-    `first-seen` is only as fresh as the gather that logged it.
+    — the noise floor under `pickup_latency` above, since a poll-based
+    `first-seen` is only as fresh as the gather that logged it; not a floor
+    on `pickup_latency_forge_anchored`, see above.
   - `window`: the timestamps the report covers.
 
   --since       only count events at or after this ISO-8601 timestamp
