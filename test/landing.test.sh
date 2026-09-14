@@ -432,12 +432,12 @@ assert_eq "an empty complexity is ineligible, never eligible by omission" \
   'ineligible:complexity is empty, not in acme/widgets'\''s configured routine complexity ["low","medium"]' "$out"
 
 out="$(landing_eligible "$base_cfg" acme/widgets 12 medium issues agent-merges-routine)"
-assert_eq "a source outside the default routine list (register-hygiene, tech-debt) is ineligible" \
-  'ineligible:source issues is not in acme/widgets'\''s configured routine list ["register-hygiene","tech-debt"]' "$out"
+assert_eq "a source outside the default routine list (tech-debt) is ineligible" \
+  'ineligible:source issues is not in acme/widgets'\''s configured routine list ["tech-debt"]' "$out"
 
 out="$(landing_eligible "$base_cfg" acme/widgets 12 medium "" agent-merges-routine)"
 assert_eq "an empty source is ineligible, never eligible by omission" \
-  'ineligible:source empty is not in acme/widgets'\''s configured routine list ["register-hygiene","tech-debt"]' "$out"
+  'ineligible:source empty is not in acme/widgets'\''s configured routine list ["tech-debt"]' "$out"
 
 out="$(landing_eligible "$base_cfg" acme/widgets 12 low tech-debt agent-merges-routine)"
 assert_eq "complexity:low, a routine source, no protected path: eligible" "eligible" "$out"
@@ -455,7 +455,7 @@ out="$(landing_eligible "$top_complexity_cfg" acme/widgets 12 high tech-debt age
 assert_eq "a top-level merge_autonomy_routine_complexity override admits complexity:high fleet-wide" \
   "eligible" "$out"
 
-out="$(landing_eligible "$base_cfg" acme/widgets 12 medium register-hygiene agent-merges-all)"
+out="$(landing_eligible "$base_cfg" acme/widgets 12 medium tech-debt agent-merges-all)"
 assert_eq "agent-merges-all is eligible too, on the same terms" "eligible" "$out"
 
 files "lib/x.sh"

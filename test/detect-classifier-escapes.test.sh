@@ -159,7 +159,7 @@ done
 
 for cfg in '{"repos":[]}' \
            '{"repos":[{"slug":"acme/widgets","merge_autonomy_routine_sources":["issues"]}]}' \
-           '{"merge_autonomy_routine_sources":["register-hygiene"]}' \
+           '{"merge_autonomy_routine_sources":["tech-debt"]}' \
            '{}'; do
   landing_out="$(_landing_routine_sources "$cfg" "acme/widgets")"
   escape_out="$(_escape_audit_routine_sources "$cfg" "acme/widgets")"
@@ -356,7 +356,7 @@ LOGIN="pullwright-approver[bot]"
 #       protected path) and README.md, complexity:low at merge, source
 #       recorded as tech-debt in the log — an injected known escape.
 #   #2  merged by the Approver, merge commit touches only scripts/foo.sh,
-#       complexity:medium at merge, source register-hygiene — clean.
+#       complexity:medium at merge, source tech-debt — clean.
 #   #3  merged by the Approver, but the merge commit's own file list is
 #       unreadable (simulates "too large to enumerate") — unverifiable.
 #   #4  merged by the Approver, two complexity:* labels standing at merge
@@ -365,14 +365,14 @@ LOGIN="pullwright-approver[bot]"
 #       an audit finding: reports outcome "not-approver" instead, naming who
 #       merged it.
 #   #8  merged by the Approver, no protected path, complexity:low, source
-#       register-hygiene — every input the other checks look at agrees, but
+#       tech-debt — every input the other checks look at agrees, but
 #       the effective merge_autonomy level its own landing-armed event
 #       recorded is below agent-merges-routine — the fourth way recomputation
 #       can disagree, and the one none of #1/#6/#7 cover.
 #   #9  merged by the Approver, every other input agreeing, but its
 #       landing-armed event predates the `level` field — unverifiable, never
 #       clean and never an escape.
-#   #6  merged by the Approver, no protected path, source register-hygiene,
+#   #6  merged by the Approver, no protected path, source tech-debt,
 #       but complexity:high standing at merge — an escape the protected-path
 #       check alone would have called clean.
 #   #7  merged by the Approver, no protected path, complexity:low, but the
@@ -444,10 +444,10 @@ EOF
 log_file="$tmp_dir/log.jsonl"
 cat > "$log_file" <<EOF
 {"event":"landing-armed","repo":"$SLUG","pr_url":"https://github.com/$SLUG/pull/1","source":"tech-debt","complexity":"low","level":"agent-merges-routine"}
-{"event":"landing-armed","repo":"$SLUG","pr_url":"https://github.com/$SLUG/pull/2","source":"register-hygiene","complexity":"medium","level":"agent-merges-routine"}
+{"event":"landing-armed","repo":"$SLUG","pr_url":"https://github.com/$SLUG/pull/2","source":"tech-debt","complexity":"medium","level":"agent-merges-routine"}
 {"event":"landing-armed","repo":"$SLUG","pr_url":"https://github.com/$SLUG/pull/3","source":"tech-debt","complexity":"low","level":"agent-merges-routine"}
 {"event":"landing-armed","repo":"$SLUG","pr_url":"https://github.com/$SLUG/pull/4","source":"tech-debt","complexity":"low","level":"agent-merges-routine"}
-{"event":"landing-armed","repo":"$SLUG","pr_url":"https://github.com/$SLUG/pull/6","source":"register-hygiene","complexity":"low","level":"agent-merges-routine"}
+{"event":"landing-armed","repo":"$SLUG","pr_url":"https://github.com/$SLUG/pull/6","source":"tech-debt","complexity":"low","level":"agent-merges-routine"}
 {"event":"landing-armed","repo":"$SLUG","pr_url":"https://github.com/$SLUG/pull/7","source":"issues","complexity":"low","level":"agent-merges-all"}
 EOF
 
@@ -544,7 +544,7 @@ cat > "$STUB_DIR_LEVEL/events-8.json" <<'EOF'
 [{"event": "labeled", "label": {"name": "complexity:low"}, "created_at": "2026-08-20T09:00:00Z"}]
 EOF
 log_file_level="$tmp_dir/log-level.jsonl"
-echo "{\"event\":\"landing-armed\",\"repo\":\"$SLUG\",\"pr_url\":\"https://github.com/$SLUG/pull/8\",\"source\":\"register-hygiene\",\"complexity\":\"low\",\"level\":\"agent-approves\"}" \
+echo "{\"event\":\"landing-armed\",\"repo\":\"$SLUG\",\"pr_url\":\"https://github.com/$SLUG/pull/8\",\"source\":\"tech-debt\",\"complexity\":\"low\",\"level\":\"agent-approves\"}" \
   > "$log_file_level"
 
 out_level="$(STUB_DIR="$STUB_DIR_LEVEL" \
@@ -564,7 +564,7 @@ assert_contains "  ... naming the level recorded at arming, not one resolved fro
 # nothing is known to be wrong with, and drive the D18 Stage 2 "zero
 # classifier escapes" exit criterion non-zero on an operator's dial-down.
 log_file_nolevel="$tmp_dir/log-nolevel.jsonl"
-echo "{\"event\":\"landing-armed\",\"repo\":\"$SLUG\",\"pr_url\":\"https://github.com/$SLUG/pull/8\",\"source\":\"register-hygiene\",\"complexity\":\"low\"}" \
+echo "{\"event\":\"landing-armed\",\"repo\":\"$SLUG\",\"pr_url\":\"https://github.com/$SLUG/pull/8\",\"source\":\"tech-debt\",\"complexity\":\"low\"}" \
   > "$log_file_nolevel"
 
 out_nolevel="$(STUB_DIR="$STUB_DIR_LEVEL" \
@@ -633,7 +633,7 @@ cat > "$STUB_DIR_ALL/events-10.json" <<'EOF'
 [{"event": "labeled", "label": {"name": "complexity:low"}, "created_at": "2026-08-20T09:00:00Z"}]
 EOF
 log_file_all="$tmp_dir/log-all.jsonl"
-echo "{\"event\":\"landing-armed\",\"repo\":\"$SLUG\",\"pr_url\":\"https://github.com/$SLUG/pull/10\",\"source\":\"register-hygiene\",\"complexity\":\"low\",\"level\":\"agent-merges-all\"}" \
+echo "{\"event\":\"landing-armed\",\"repo\":\"$SLUG\",\"pr_url\":\"https://github.com/$SLUG/pull/10\",\"source\":\"tech-debt\",\"complexity\":\"low\",\"level\":\"agent-merges-all\"}" \
   > "$log_file_all"
 
 out_all="$(STUB_DIR="$STUB_DIR_ALL" \
@@ -663,7 +663,7 @@ cat > "$STUB_DIR_ALL2/events-11.json" <<'EOF'
 [{"event": "labeled", "label": {"name": "complexity:high"}, "created_at": "2026-08-20T09:00:00Z"}]
 EOF
 log_file_all2="$tmp_dir/log-all2.jsonl"
-echo "{\"event\":\"landing-armed\",\"repo\":\"$SLUG\",\"pr_url\":\"https://github.com/$SLUG/pull/11\",\"source\":\"register-hygiene\",\"complexity\":\"low\",\"level\":\"agent-merges-all\"}" \
+echo "{\"event\":\"landing-armed\",\"repo\":\"$SLUG\",\"pr_url\":\"https://github.com/$SLUG/pull/11\",\"source\":\"tech-debt\",\"complexity\":\"low\",\"level\":\"agent-merges-all\"}" \
   > "$log_file_all2"
 
 out_all2="$(STUB_DIR="$STUB_DIR_ALL2" \
@@ -704,7 +704,7 @@ assert_eq "  ... and costs no gh call at all, never even the pulls/N read" \
 # --- A source not recorded at all: unverifiable, never guessed -------------
 log_file3="$tmp_dir/log3.jsonl"
 cat > "$log_file3" <<EOF
-{"event":"landing-armed","repo":"$SLUG","pr_url":"https://github.com/$SLUG/pull/2","source":"register-hygiene"}
+{"event":"landing-armed","repo":"$SLUG","pr_url":"https://github.com/$SLUG/pull/2","source":"tech-debt"}
 EOF
 out3="$("$DETECTOR" "$SLUG" "$LOGIN" "$log_file3" --config "$config_file")"
 line1_3="$(grep '"number":1,' <<<"$out3")"
