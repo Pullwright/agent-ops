@@ -58,6 +58,7 @@ are binding on any agent working inside them).
   - [Extended notes: `host_budget_reserved_memory_bytes`](#extended-notes-host_budget_reserved_memory_bytes)
   - [Extended notes: `host_budget_reserved_cpus`](#extended-notes-host_budget_reserved_cpus)
   - [Extended notes: `none_selected_recheck_hours`](#extended-notes-none_selected_recheck_hours)
+  - [Extended notes: `schedule.excluded_minutes`](#extended-notes-scheduleexcluded_minutes)
 - [The Landing Gate](#the-landing-gate)
 - [Requirements](#requirements)
   - [The Script (`agent-cycle.sh`)](#the-script-agent-cyclesh)
@@ -1019,7 +1020,7 @@ and the schema must carry every one of them.
 | `dashboard_refresh_seconds` | `5` | How often an open dashboard tab polls for freshly-written data (`docs/DASHBOARD-SPEC.md`) — a small stamp every tick, the full `data.js` payload only when the stamp's fingerprint changed. Match it to the heartbeat cadence: a shorter interval polls a stamp nothing has rewritten, a longer one shows a cycle that has already moved on. |
 | `schedule.cycle_hours` | `*` | The hour field of the implementation cycle's crontab line, rendered by `deploy/docker/render-crontab.sh`; `*` is every hour. |
 | `schedule.cycle_interval_minutes` | `15` | How often, in minutes, the implementation cycle's crontab line fires within an allowed hour, rendered by `deploy/docker/render-crontab.sh`; `60` reproduces the single-firing-per-hour shape every release before this key carried. |
-| `schedule.excluded_minutes` | `[0]` | Minutes `CYCLE_MINUTE` (env or the per-node hash) may never land on, rendered from `deploy/docker/crontab.tmpl`. Poetic's own value excludes `0` because its hourly sync workflow owns the top of the hour; a deployment with no such conflict ships `[]`. Excluding every minute of the hour is a misconfiguration the renderer refuses rather than spinning on. |
+| `schedule.excluded_minutes` | `[0]` | Minutes `CYCLE_MINUTE` (env or the per-node hash) may never land on, rendered from `deploy/docker/crontab.tmpl`. Poetic's own value excludes `0` because its hourly sync workflow owns the top of the hour; a deployment with no such conflict ships `[]`. Excluding every minute of the hour is a misconfiguration the renderer refuses rather than spinning on. This governs only the *scheduled* `CYCLE_MINUTE`: a wake-poll-triggered invocation (requirement 54) does not consult this key...[continued below](#extended-notes-scheduleexcluded_minutes) |
 | `schedule.excluded_minutes_reason` | `"poetic's hourly sync workflow owns the top of the hour"` | Free text recording *why* `excluded_minutes` excludes what it does; read by nothing, kept for the next reader. |
 | `schedule.review_hour` | `3` | The hour the review tick fires. |
 | `schedule.review_offset_minutes` | `29` | Minutes past `CYCLE_MINUTE` (mod 60) the review tick's minute is set to, keeping one node's two heavy pipelines apart within the hour. |
@@ -1256,6 +1257,10 @@ The CPU-core margin requirement 2.0g's host-budget check reserves for the host i
 ### Extended notes: `none_selected_recheck_hours`
 
 The no-op short-circuit's safety valve (requirement 3b): the Co-Ordinator is engaged regardless once the last `none-selected` is this old, even if nothing changed. Bounds how long a gap in fingerprint coverage can stall the pipeline. "This old" means 24 cadence firings (requirement 1d), not a fixed 24 h: derived from the worst-case gap between cycles (`schedule.cycle_interval_minutes`, `cycle_hours`, `excluded_minutes`); a configured non-zero value floors the derivation rather than replacing it. `0` disables the valve — don't — and, unlike a non-zero override, is never raised by the derivation: the valve stays off exactly as configured.
+
+### Extended notes: `schedule.excluded_minutes`
+
+Minutes `CYCLE_MINUTE` (env or the per-node hash) may never land on, rendered from `deploy/docker/crontab.tmpl`. Poetic's own value excludes `0` because its hourly sync workflow owns the top of the hour; a deployment with no such conflict ships `[]`. Excluding every minute of the hour is a misconfiguration the renderer refuses rather than spinning on. This governs only the *scheduled* `CYCLE_MINUTE`: a wake-poll-triggered invocation (requirement 54) does not consult this key at all and may start a cycle on a minute it excludes — see requirement 54's own note on why that is acceptable.
 
 <!-- config-table:notes-end -->
 
@@ -9161,6 +9166,24 @@ implements.
     repository would make it deterministic, at the cost of the
     every-repository-eventually guarantee that function is built on; that
     trade is not made here.
+
+    **What a wake does not honour: `schedule.excluded_minutes`.** A wake
+    invokes `agent-cycle.sh` the instant a change is detected, on whatever
+    minute the wake-poll crontab line itself fired — without consulting
+    `schedule.excluded_minutes` at all, so it can start a cycle on a minute
+    the exclusion forbids the *scheduled* `@CYCLE_MINUTE@` firing from ever
+    landing on. This is intentional, not an oversight: the exclusion's
+    contract governs the scheduled *start* minute rendered into the crontab
+    (`deploy/docker/render-crontab.sh`), guarding against a conflicting
+    workload that runs at a fixed minute; a cycle, once started, already
+    runs across every minute of the hour regardless of which minute
+    triggered it, so guarding an out-of-band wake's own start-minute the
+    same way would buy little against that same conflict. Skipping the wake
+    instead of running it late is not an option either: `scripts/wake-poll.sh`
+    stores the new `ETag` before it wakes (see above), so a wake skipped on
+    an excluded minute would silently consume the change and leave the item
+    waiting for the next ordinary cron firing with no second wake to catch
+    it.
 
     A wake logs one `wake-poll-triggered` event (`{ts, cycle: null, node,
     event, changed}`, the same out-of-cycle envelope shape
