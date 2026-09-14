@@ -6275,16 +6275,13 @@ implements.
      code); the pre-fetched `findings` cover security and code-quality
      verbatim; the pre-fetched `review_feedback`, `merge_conflicts`,
      `dequeued`, `landing_refusals` and `abandoned_drafts` arrays cover those
-     five sources verbatim,
-     `register_hygiene` covers register-hygiene the same way, and `tech_debt`
-     (requirement 3t) covers the tech-debt band the same way again (belt and
-     braces in both cases — `head_sha` already moves whenever the register
-     does, but a source exempted from the map is one nobody re-checks when the
-     map changes, and an edit to `td-check.pl` moves register-hygiene's own
-     candidacy with no repo commit at all; `tech_debt`'s belt-and-braces is
-     what lets requirement 3t's machine corroboration compare the
-     Co-Ordinator's verdict against the Script's own eligible count without a
-     stale fingerprint standing in the way) — the latter two matter especially
+     five sources verbatim, and `tech_debt`
+     (requirement 3t) covers the tech-debt band the same way (a source
+     exempted from the map is one nobody re-checks when the map changes;
+     `tech_debt`'s coverage is what lets requirement 3t's machine
+     corroboration compare the Co-Ordinator's verdict against the Script's
+     own eligible count without a stale fingerprint standing in the way) —
+     the latter two matter especially
      among the finishing sources, because each turns on a transition the
      open-PR digest does not carry: `abandoned_drafts` gains an entry the cycle a
      draft goes stale (the mere passage of time), and `merge_conflicts` the cycle a
@@ -6826,8 +6823,8 @@ implements.
    TD-PPagop-26081406 resolved: `gather-source-state.sh`'s final state build
    (`test/gather-source-state.test.sh`), `gather-findings.sh`'s
    combine-and-order build (`test/gather-findings.test.sh`),
-   `gather-register-hygiene.sh`'s problems merge and final candidate build
-   (`test/register-hygiene.test.sh`), and `publish-dashboard.sh`'s
+   `gather-register-hygiene.sh`'s problems merge and final candidate build,
+   and `publish-dashboard.sh`'s
    `github_json` build (`test/publish-dashboard.test.sh`).
    TD-PPagop-26081506 converted the two sites that item's own Implementer
    found but left out of scope, both in `publish-dashboard.sh` upstream of
@@ -6852,12 +6849,10 @@ implements.
 
    **The cap is per argv element, not per flag.** `--arg` is bound by
    `MAX_ARG_STRLEN` exactly as `--argjson` is, so a rendered string counts
-   against this requirement wherever it grows with fleet state. Three sites
+   against this requirement wherever it grows with fleet state. Two sites
    carry one: `scripts/gather-review-feedback.sh` assembles every fresh review
-   and inline comment into one body, `scripts/gather-human-visibility-hygiene.sh`
-   renders its survivor set into a digest, and
-   `scripts/gather-register-hygiene.sh` renders `td-check.pl`'s report — plus
-   any VOIDED STATUS section — into its own candidate body. All three keep
+   and inline comment into one body, and `scripts/gather-human-visibility-hygiene.sh`
+   renders its survivor set into a digest. Both keep
    that value JSON-encoded and hand it to their candidate build on stdin
    beside the array(s) it came from — an `--arg` there would put the same
    bytes back into a single argv element and leave the threshold where it
@@ -9331,12 +9326,12 @@ implements.
       found the recorded blocker still holds — or recorded as void (an
       `item-void` event not followed by `unvoided`), which has no re-check to
       preserve for any source. For `findings`, `review_feedback`,
-      `abandoned_drafts`, `merge_conflicts`, `dequeued`, `register_hygiene`,
+      `abandoned_drafts`, `merge_conflicts`, `dequeued`,
       `human_visibility` and
       `tech_debt`, both halves are already applied deterministically by the
       Script (requirement 3u) before the runtime input is assembled — there
       is nothing left here for the Co-Ordinator to check for any of those
-      eight sources. `issues` gets the same treatment for its void half and for a
+      seven sources. `issues` gets the same treatment for its void half and for a
       *stale* blocked entry; only a blocked issue carrying evidence fresh
       enough to warrant requirement 18a's live re-check ever reaches the
       Co-Ordinator;
@@ -9840,11 +9835,11 @@ implements.
     ladder (requirement 4i) may already have trimmed, and are asked to
     reproduce kilobytes of that input verbatim — a task requirements 17f/17g
     could only ever catch failing after the fact. This requirement removes
-    the task instead of catching its failure: for the eleven sources the
+    the task instead of catching its failure: for the ten sources the
     Script already gathers as structured data (`security`, `code-quality`,
     `review-feedback`, `merge-conflicts`, `dequeued`, `landing-refusals`,
     `abandoned-drafts`,
-    `human-visibility`, `register-hygiene`, `tech-debt`, `issues`), the
+    `human-visibility`, `tech-debt`, `issues`), the
     Co-Ordinator selects `{repo, source, item}` and the Script itself builds
     `context`, `acceptance` and `title` immediately before the claim
     (`compose_selected_candidate_text`, `lib/candidate-select.sh`) — the model
@@ -9927,16 +9922,6 @@ implements.
       (ref exists, even at the same SHA — which a plain `git push` of an
       identical ref would no-op) means a peer holds the item: log
       `claim-lost` and move to the next candidate.
-
-      `td/<ID>` is no longer minted for a fresh claim — `tech_debt_branch_prefix`
-      is deprecated — but a *live* one is still recognised elsewhere as not
-      this pipeline's own fresh claim: `lib/claim.sh`'s `branches` listing
-      (requirement 17b's orphan-branch sweep, and this requirement's own
-      `gather_claimed`) still matches it, so a repository's pre-migration
-      human tech-debt-claim workflow (`TECH-DEBT.md`) and a `td/<ID>` branch
-      this pipeline minted before this revision are both left alone rather
-      than double-claimed or swept. That recognition, and the namespace
-      itself, retires only in the roadmap's later register-retirement issue.
 
       A `merge-conflicts` work order carrying `"takeover": true` (requirement
       3s) takes a *branch* claim, not the file claim every other

@@ -133,8 +133,7 @@ prs="$(jq -c '
 candidate_filter() {
   jq -c --arg cutoff "$cutoff" --arg marker "$marker" \
     '[.[] | select(.isDraft)
-          | select((.headRefName | startswith("agent/"))
-                   or (.headRefName | startswith("td/")))
+          | select(.headRefName | startswith("agent/"))
           | (((((.reviews  // []) | length) >= 100)
               or (((.comments // []) | length) >= 100))) as $at_cap
           | (if $at_cap or .head_committed_at == null then null
@@ -148,7 +147,7 @@ candidate_filter() {
 }
 
 assert_eq "only open, draft, ours-by-branch, actually-stale PRs are candidates" \
-  "[80,84,85,86,89,94,93]" "$(candidate_filter)"
+  "[80,85,86,89,94,93]" "$(candidate_filter)"
 
 # Each exclusion, named, so a future edit that drops one fails loudly:
 # - #81 ready: a ready PR is finished work waiting on the human. Finishing it is
@@ -156,8 +155,11 @@ assert_eq "only open, draft, ours-by-branch, actually-stale PRs are candidates" 
 # - #82 a human's comment, after the cutoff: a draft still being worked, or one
 #   a peer node just touched. Stealing it would force-push over live work. This
 #   is the assertion that keeps the feature from cannibalising in-flight cycles.
-# - #83 human branch: only branches under agent/ (or the tech-debt td/ claim
-#   branch) are ours; the Landing Gate reserves the rest.
+# - #83 human branch: only branches under agent/ are ours; the Landing Gate
+#   reserves the rest.
+# - #84 the retired tech-debt td/ claim namespace (#882): tech-debt now claims
+#   agent/<ref> like every other source, so a td/ branch is nobody's claim
+#   this script recognises.
 # - #87 a human's comment resets the clock even though the last commit is old —
 #   the direct contrast with #86, whose only recent write is marker-stamped.
 # - #88 a review resets the clock too, same as any other real activity.
@@ -168,9 +170,9 @@ assert_eq "a ready PR is never an abandoned-draft candidate" \
 assert_eq "a human's recent comment keeps a draft off the list — never steal live work" \
   "false" "$(is_candidate 82)"
 assert_eq "a human's own branch is never ours to finish" \
-  "0" "$(jq '[.[] | select(.number == 83) | select((.headRefName | startswith("agent/")) or (.headRefName | startswith("td/")))] | length' <<<"$prs")"
-assert_eq "a tech-debt td/ claim branch counts as ours" \
-  "1" "$(jq '[.[] | select(.number == 84) | select(.headRefName | startswith("td/"))] | length' <<<"$prs")"
+  "0" "$(jq '[.[] | select(.number == 83) | select(.headRefName | startswith("agent/"))] | length' <<<"$prs")"
+assert_eq "a retired td/ claim branch no longer counts as ours" \
+  "0" "$(jq '[.[] | select(.number == 84) | select(.headRefName | startswith("agent/"))] | length' <<<"$prs")"
 assert_eq "a human's recent comment resets the clock even over an old commit" \
   "false" "$(is_candidate 87)"
 assert_eq "a human review resets the clock" \

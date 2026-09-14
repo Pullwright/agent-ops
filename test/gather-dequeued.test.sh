@@ -78,13 +78,12 @@ prs='[
 candidate_filter() {
   jq -c '[.[] | select(.isDraft | not)
               | select(.mergeable == "MERGEABLE")
-              | select((.headRefName | startswith("agent/"))
-                       or (.headRefName | startswith("td/")))
+              | select(.headRefName | startswith("agent/"))
               | .number]' <<<"$prs"
 }
 
 assert_eq "only open, non-draft, MERGEABLE, ours-by-branch PRs pass the ours filter" \
-  "[90,95]" "$(candidate_filter)"
+  "[90]" "$(candidate_filter)"
 
 # - #91 draft: never enqueueable in the first place, so never dequeueable either.
 # - #92 CONFLICTING: this is scripts/gather-merge-conflicts.sh's own candidate —
@@ -93,7 +92,10 @@ assert_eq "only open, non-draft, MERGEABLE, ours-by-branch PRs pass the ours fil
 # - #93 UNKNOWN: the transient state gather-merge-conflicts.sh also never
 #   trusts; this rule requires MERGEABLE exactly, so an UNKNOWN PR passes
 #   neither rule until GitHub finishes computing it.
-# - #94 human branch: only agent/ or td/ branches are ours.
+# - #94 human branch: only agent/ branches are ours.
+# - #95 the retired tech-debt td/ claim namespace (#882): tech-debt now claims
+#   agent/<ref> like every other source, so a td/ branch is nobody's claim
+#   this script recognises.
 assert_eq "a draft PR is never a dequeued candidate" \
   "0" "$(jq '[.[] | select(.number == 91) | select(.isDraft | not)] | length' <<<"$prs")"
 assert_eq "a CONFLICTING PR is never a dequeued candidate — that is merge-conflicts' alone" \
@@ -101,9 +103,9 @@ assert_eq "a CONFLICTING PR is never a dequeued candidate — that is merge-conf
 assert_eq "an UNKNOWN-mergeability PR is not a candidate — never act on a guess" \
   "0" "$(jq '[.[] | select(.number == 93) | select(.mergeable == "MERGEABLE")] | length' <<<"$prs")"
 assert_eq "a human's own branch is never ours to fix" \
-  "0" "$(jq '[.[] | select(.number == 94) | select((.headRefName | startswith("agent/")) or (.headRefName | startswith("td/")))] | length' <<<"$prs")"
-assert_eq "a tech-debt td/ claim branch counts as ours" \
-  "1" "$(jq '[.[] | select(.number == 95) | select(.headRefName | startswith("td/"))] | length' <<<"$prs")"
+  "0" "$(jq '[.[] | select(.number == 94) | select(.headRefName | startswith("agent/"))] | length' <<<"$prs")"
+assert_eq "a retired td/ claim branch no longer counts as ours" \
+  "0" "$(jq '[.[] | select(.number == 95) | select(.headRefName | startswith("agent/"))] | length' <<<"$prs")"
 
 # --- The ref: scoped to the head SHA, identically to gather-merge-conflicts.sh ---
 ref_of() { jq -r '"pr-\(.number)-dequeued-\(.head_sha[0:12])"' <<<"$1"; }

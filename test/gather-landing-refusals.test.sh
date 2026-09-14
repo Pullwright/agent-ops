@@ -58,19 +58,18 @@ prs='[
 
 candidate_filter() {
   jq -c '[.[] | select(.isDraft | not)
-              | select((.headRefName | startswith("agent/"))
-                       or (.headRefName | startswith("td/")))
+              | select(.headRefName | startswith("agent/"))
               | .number]' <<<"$prs"
 }
 
 assert_eq "only open, non-draft, ours-by-branch PRs pass the ours filter" \
-  "[90,93]" "$(candidate_filter)"
+  "[90]" "$(candidate_filter)"
 assert_eq "a draft PR is never a candidate — gate 4 never runs against one" \
   "0" "$(jq '[.[] | select(.number == 91) | select(.isDraft | not)] | length' <<<"$prs")"
 assert_eq "a human's own branch is never ours to answer" \
-  "0" "$(jq '[.[] | select(.number == 92) | select((.headRefName | startswith("agent/")) or (.headRefName | startswith("td/")))] | length' <<<"$prs")"
-assert_eq "a tech-debt td/ claim branch counts as ours" \
-  "1" "$(jq '[.[] | select(.number == 93) | select(.headRefName | startswith("td/"))] | length' <<<"$prs")"
+  "0" "$(jq '[.[] | select(.number == 92) | select(.headRefName | startswith("agent/"))] | length' <<<"$prs")"
+assert_eq "a retired td/ claim branch no longer counts as ours" \
+  "0" "$(jq '[.[] | select(.number == 93) | select(.headRefName | startswith("agent/"))] | length' <<<"$prs")"
 
 # --- The ref: scoped to the sorted, joined unreconciled comment ids ---------
 ref_of() { jq -r '"pr-\(.number)-landing-refusal-\(.ids | join("-"))"' <<<"$1"; }

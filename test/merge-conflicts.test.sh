@@ -73,13 +73,12 @@ prs='[
 candidate_filter() {
   jq -c '[.[] | select(.isDraft | not)
               | select(.mergeable == "CONFLICTING")
-              | select((.headRefName | startswith("agent/"))
-                       or (.headRefName | startswith("td/")))
+              | select(.headRefName | startswith("agent/"))
               | .number]' <<<"$prs"
 }
 
 assert_eq "only open, non-draft, CONFLICTING, ours-by-branch PRs are candidates" \
-  "[90,95]" "$(candidate_filter)"
+  "[90]" "$(candidate_filter)"
 
 # Each exclusion, named, so a future edit that drops one fails loudly:
 # - #91 draft: a draft is the Implementer's own claim marker; a draft's conflict
@@ -89,9 +88,11 @@ assert_eq "only open, non-draft, CONFLICTING, ours-by-branch PRs are candidates"
 #   moved reads UNKNOWN for a beat. Treating that as a conflict would send the
 #   Implementer to rebase a PR that may not conflict. This is the assertion that
 #   keeps the feature from acting on a guess.
-# - #94 human branch: only branches under agent/ (or the tech-debt td/ claim
-#   branch) are ours; the Landing Gate reserves the rest — force-pushing a rebase
-#   onto a human's PR would breach it.
+# - #94 human branch: only branches under agent/ are ours; the Landing Gate
+#   reserves the rest — force-pushing a rebase onto a human's PR would breach it.
+# - #95 the retired tech-debt td/ claim namespace (#882): tech-debt now claims
+#   agent/<ref> like every other source, so a td/ branch is nobody's claim
+#   this script recognises.
 assert_eq "a draft PR is never a merge-conflicts candidate" \
   "0" "$(jq '[.[] | select(.number == 91) | select(.isDraft | not)] | length' <<<"$prs")"
 assert_eq "a mergeable PR is never a merge-conflicts candidate" \
@@ -99,9 +100,9 @@ assert_eq "a mergeable PR is never a merge-conflicts candidate" \
 assert_eq "an UNKNOWN-mergeability PR is not a candidate — never rebase on a guess" \
   "0" "$(jq '[.[] | select(.number == 93) | select(.mergeable == "CONFLICTING")] | length' <<<"$prs")"
 assert_eq "a human's own branch is never ours to rebase" \
-  "0" "$(jq '[.[] | select(.number == 94) | select((.headRefName | startswith("agent/")) or (.headRefName | startswith("td/")))] | length' <<<"$prs")"
-assert_eq "a tech-debt td/ claim branch counts as ours" \
-  "1" "$(jq '[.[] | select(.number == 95) | select(.headRefName | startswith("td/"))] | length' <<<"$prs")"
+  "0" "$(jq '[.[] | select(.number == 94) | select(.headRefName | startswith("agent/"))] | length' <<<"$prs")"
+assert_eq "a retired td/ claim branch no longer counts as ours" \
+  "0" "$(jq '[.[] | select(.number == 95) | select(.headRefName | startswith("agent/"))] | length' <<<"$prs")"
 
 # --- The ref: scoped to the head SHA ---
 #
@@ -347,7 +348,6 @@ STUB
     cycle_dir='$fallback_tmp/cycle'
     pr_label=autonomous-agent
     branch_prefix=agent/
-    tech_debt_branch_prefix=td/
     cycle_id=test-cycle
     node_name=test-node
     DRY_RUN=0
@@ -403,7 +403,6 @@ STUB
     cycle_dir='$malformed_tmp/cycle'
     pr_label=autonomous-agent
     branch_prefix=agent/
-    tech_debt_branch_prefix=td/
     cycle_id=test-cycle
     node_name=test-node
     DRY_RUN=0
