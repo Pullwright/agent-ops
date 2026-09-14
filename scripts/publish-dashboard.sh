@@ -2653,6 +2653,18 @@ if (( WITH_GITHUB )); then
         <<<"$issues_raw" 2>/dev/null)"
       issues="${issues:-[]}"
     fi
+    # Best-effort true count behind the 30-row cap above (agent-ops#1171): the
+    # Search API returns it in one call (`.total_count`, the same call
+    # lib/pager-invariants.sh's live-issue check already makes), but it is its
+    # own endpoint with its own, tighter rate limit, so a miss here falls back
+    # to leaving the total unknown — the panel then shows the plain count, as
+    # it always has — rather than joining gh_fail_msgs and marking the whole
+    # repo unreadable over a cosmetic total the main listing did not need.
+    issues_total=""
+    if (( issues_rc == 0 )); then
+      issues_total="$(gh_call api "search/issues?q=repo:$slug+type:issue+state:open" --jq '.total_count')"
+      [[ "$issues_total" =~ ^[0-9]+$ ]] || issues_total=""
+    fi
 
     runs="$(gh_call run list -R "$slug" --branch "$db" --limit 40 --json workflowName,conclusion,status,event,createdAt,url)"
     runs_rc=$?
@@ -2720,7 +2732,7 @@ if (( WITH_GITHUB )); then
       ($c[0] // {}) as $cache
       | split("\t") | select(length == 2) | select($cache[.[0]] == null) | .[0]' \
       "$td_rows" 2>/dev/null)
-    td_json="$(jq -n --rawfile rows "$td_rows" --slurpfile cache "$td_cache_json" \
+    td_full_json="$(jq -n --rawfile rows "$td_rows" --slurpfile cache "$td_cache_json" \
       --slurpfile fresh "$td_new" --arg slug "$slug" --arg db "$db" '
       ($cache[0] // {}) as $c
       | (reduce $fresh[] as $e ({}; .[$e.sha] = $e)) as $n
@@ -2732,8 +2744,15 @@ if (( WITH_GITHUB )); then
               status: (($m.status // "") | ascii_downcase),
               url:    "https://github.com/\($slug)/blob/\($db)/tech-debt/\(.id).md" } ]
       | map(select(.status != "resolved" and .status != "not-debt"))
-      | sort_by([ (if .status == "in-progress" then 0 elif .status == "open" then 1 else 2 end), .id ])
-      | .[0:40]' 2>/dev/null)"
+      | sort_by([ (if .status == "in-progress" then 0 elif .status == "open" then 1 else 2 end), .id ])' 2>/dev/null)"
+    [[ -n "$td_full_json" ]] || td_full_json='[]'
+    # The panel shows at most 40 (below); the register listing above is
+    # already the repo's whole tech-debt directory in one call, so the true
+    # count behind that cap costs nothing extra — just read off the unsliced
+    # list before the slice.
+    td_total="$(jq 'length' <<<"$td_full_json" 2>/dev/null)"
+    td_total="${td_total:-0}"
+    td_json="$(jq -c '.[0:40]' <<<"$td_full_json" 2>/dev/null)"
     [[ -n "$td_json" ]] || td_json='[]'
 
     # Security & code-quality findings, via the same script the pipeline uses,
@@ -2759,8 +2778,11 @@ if (( WITH_GITHUB )); then
 
     inputs_json="$(jq -c --arg slug "$slug" \
       --argjson issues "$issues" --argjson failed "$failed_runs" --argjson td "$td_json" --argjson findings "$findings" \
-      --arg s_issues "$state_issues" --arg s_runs "$state_runs" --arg s_td "$state_td" --arg s_findings "$state_findings" '
+      --arg s_issues "$state_issues" --arg s_runs "$state_runs" --arg s_td "$state_td" --arg s_findings "$state_findings" \
+      --arg issues_total "$issues_total" --argjson td_total "$td_total" '
       . + {($slug): {issues: $issues, failed_runs: $failed, tech_debt: $td, findings: $findings,
+                     issues_total: (if $issues_total == "" then null else ($issues_total | tonumber) end),
+                     tech_debt_total: $td_total,
                      state: {issues: $s_issues, failed_runs: $s_runs, tech_debt: $s_td, findings: $s_findings}}}' \
       <<<"$inputs_json")"
   done < <(jq -r '.[].slug' <<<"$repos_json")

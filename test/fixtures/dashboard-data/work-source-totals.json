@@ -1,0 +1,58 @@
+{
+  "generated_at": "@now",
+  "node": "poetic-1",
+  "config": {
+    "timeout_coordinator": 15, "timeout_implementer": 90,
+    "timeout_reviewer": 30, "timeout_enabler": 30,
+    "lock_stale_after": 4, "dashboard_refresh_seconds": 5,
+    "repos": [
+      {
+        "slug": "Poetic-Poems/poetic",
+        "sources": ["security", "tech-debt"]
+      },
+      {
+        "slug": "Poetic-Poems/agent-ops",
+        "sources": ["security", "tech-debt"]
+      }
+    ]
+  },
+  "status": {
+    "switch": {"disabled": false},
+    "limit": {"active": false},
+    "running": false,
+    "lock": null,
+    "current": null,
+    "last_cycle": null
+  },
+  "counts": {
+    "spend_today_usd": 0, "spend_total_usd": 0,
+    "failures_shown": 0, "cycles_shown": 0, "prs_reached_ready": 0,
+    "by_day": [], "by_model": [], "by_actor": []
+  },
+  "cycles": [],
+  "blocked": [],
+  "void": [],
+  "github": {
+    "ok": true, "fetched_at": "@ago:1m", "prs": [], "pr_index": {},
+    "inputs": {
+      "Poetic-Poems/poetic": {
+        "issues": [
+          {"number": 501, "title": "A total-count fixture issue", "url": "https://github.com/Poetic-Poems/poetic/issues/501", "priority": "High"}
+        ],
+        "issues_total": 5,
+        "failed_runs": [], "tech_debt": [], "findings": []
+      },
+      "Poetic-Poems/agent-ops": {
+        "issues": [], "issues_total": 0, "failed_runs": [],
+        "tech_debt": [
+          {"id": "TD-PPagop-90000001", "title": "A total-count fixture item", "status": "open", "url": "https://github.com/Poetic-Poems/agent-ops/blob/main/tech-debt/TD-PPagop-90000001.md"}
+        ],
+        "tech_debt_total": 47,
+        "findings": []
+      }
+    }
+  },
+  "log_tail": [],
+  "cron_tail": ["30 * * * *  /app/agent-cycle.sh"],
+  "max_open_agent_prs": 3
+}
