@@ -172,7 +172,7 @@ Four things to know:
   and which don't; the agent honours that split.
 
 Only PRs the system is managing are eligible (labelled `autonomous-agent`, on an
-`agent/` or `td/` branch — see [Handing a pull request to the
+`agent/` branch — see [Handing a pull request to the
 pipeline](#handing-a-pull-request-to-the-pipeline)). Your own branches are never
 touched.
 
@@ -349,11 +349,13 @@ the fleet to carry an existing PR the rest of the way.
 
 Two things to know:
 
-- **It only applies to `agent/` and `td/` branches** — the ones the system is
-  allowed to push to. `/td` raises its PRs on `td/<id>` and the implementation
-  cycle on `agent/<item>`, so both qualify; labelling a PR on any other branch (e.g.
-  `feature/…`) does nothing, because the landing gate reserves those and the
-  gatherers skip them even when labelled.
+- **It only applies to `agent/` branches** — the ones the system is
+  allowed to push to; the implementation cycle raises every PR on
+  `agent/<item>`. `/td` raises its own PRs on an ordinary feature branch with
+  no fixed naming convention, so name it `agent/<something>` yourself if you
+  want to hand it to the fleet this way. Labelling a PR on any other branch
+  (e.g. `feature/…`) does nothing, because the landing gate reserves those and
+  the gatherers skip them even when labelled.
 - **Labelling grants write access.** A labelled PR is one the fleet may push to —
   including a `--force-with-lease` rebase to clear a conflict — and it counts
   toward the open-PR back-pressure cap. Remove the label to take the PR back.
