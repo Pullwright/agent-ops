@@ -18306,6 +18306,15 @@ with the Reviewer's own.
     one — calling the same collector on the same interval before its own
     `exec`, detached from the shell's job table so the `exec` (which
     replaces the process image, not the backgrounded job) leaves it running.
+    The loop lives exactly as long as the server: `exec` keeps the shell's
+    pid, so the loop polls that pid every ten seconds and exits when it is
+    gone, rather than sleeping the whole interval and running for ever
+    after a server killed by anything but the container stopping (six such
+    orphans on poetic-2's scheduler on 2026-09-15, two per run of
+    `test/dashboard-exposure.test.sh`, which starts the script inside the
+    scheduler and kills it; that test now unsets `AGENT_OPS_SERVICE` for
+    the spawn, since the bind address it checks has nothing to do with
+    sampling).
 
     **The report.** `resource_budget_report` (`lib/resource-usage.sh`) is
     the pure derivation `scripts/resource-budget-report.sh` wraps for
