@@ -357,6 +357,35 @@ assert_rejected "a non-string prompt-override replace is rejected" \
   '.prompt_overrides = {coordinator: {replace: ["a.md"]}}' \
   'config.prompt_overrides.coordinator.replace: expected string, got array'
 
+# --- A repository's own prompt_overrides layer (requirement 4a, agent-ops#588)
+#     is restricted to `implementer`/`reviewer` — the two stages that already
+#     run against a single known repository. Naming any other stage there
+#     must fail loudly at validation time rather than be silently ignored;
+#     the installation-wide key above already accepts all six. ---
+assert_valid "a repo's own prompt_overrides.implementer is accepted" \
+  '.repos[0].prompt_overrides = {implementer: {extend: ["x.md"]}}'
+assert_valid "a repo's own prompt_overrides.reviewer is accepted" \
+  '.repos[0].prompt_overrides = {reviewer: {replace: "r.md"}}'
+assert_valid "a repo's own prompt_overrides naming both implementer and reviewer is accepted" \
+  '.repos[0].prompt_overrides = {implementer: {extend: ["x.md"]}, reviewer: {replace: "r.md"}}'
+assert_rejected "a repo's own prompt_overrides naming coordinator is rejected — the Co-Ordinator has no per-repository invocation to scope it to" \
+  '.repos[0].prompt_overrides = {coordinator: {extend: ["x.md"]}}' \
+  "config.repos[0].prompt_overrides: unknown key \"coordinator\""
+assert_rejected "a repo's own prompt_overrides naming enabler is rejected" \
+  '.repos[0].prompt_overrides = {enabler: {extend: ["x.md"]}}' \
+  "config.repos[0].prompt_overrides: unknown key \"enabler\""
+assert_rejected "a repo's own prompt_overrides naming refiner is rejected" \
+  '.repos[0].prompt_overrides = {refiner: {extend: ["x.md"]}}' \
+  "config.repos[0].prompt_overrides: unknown key \"refiner\""
+assert_rejected "a repo's own prompt_overrides naming monitor is rejected" \
+  '.repos[0].prompt_overrides = {monitor: {extend: ["x.md"]}}' \
+  "config.repos[0].prompt_overrides: unknown key \"monitor\""
+assert_rejected "a repo's own prompt_overrides still enforces the same per-stage structural shape" \
+  '.repos[0].prompt_overrides = {implementer: {extned: ["x.md"]}}' \
+  "config.repos[0].prompt_overrides.implementer: unknown key \"extned\""
+assert_valid "a repo with no prompt_overrides override is accepted (inherits the installation-wide key)" \
+  '.prompt_overrides = {implementer: {extend: ["x.md"]}}'
+
 # --- A key with no fallback anywhere in the code is required: absent, the
 #     `jq -r` that reads it yields the string "null", and the pipeline runs on
 #     that. ---

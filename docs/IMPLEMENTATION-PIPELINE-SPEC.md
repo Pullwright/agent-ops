@@ -1072,6 +1072,8 @@ A repo entry may also carry `escalation_autonomy` — the per-repository overrid
 
 A repo entry may also carry `preview` — this repository's preview-deployment arrangement (D19 Phase 1, agent-ops#586), read by requirement 24a instead of that requirement naming a provider or a repository. Absent, or absent its own `provider`, resolves to `"none"`: no preview deployment, so neither stage runs a preview step. `"vercel"` is the only implemented provider; its own `vercel.bypass_secret_env` (default `VERCEL_AUTOMATION_BYPASS_SECRET`) and `vercel.token_env` (default `VERCEL_TOKEN`) name the environment variables carrying this repository's Vercel credentials — never the credentials themselves. There is no top-level default for this key: a preview arrangement is inherently repository-specific, unlike `merge_autonomy` and its neighbours above.
 
+A repo entry may also carry `prompt_overrides` — the per-repository layer of the top-level key of the same name (requirement 4a, agent-ops#588), keyed only `implementer`/`reviewer` — the two stages requirement 4a already runs against a single known repository — each on the same precedence as `stage_timeouts`: this entry's own stage key wins when present, the top-level `prompt_overrides` entry for that stage otherwise. A repo entry naming any other stage key (`coordinator`, `enabler`, `refiner` or `monitor`, none of which yet has a per-invocation home to scope an override to) is a schema error, not a silently ignored key — `config.schema.json`'s `repoPromptOverrides` enumerates only the two stages this precedence covers.
+
 Every optional key sits on the repository's own entry, beside `slug` and `sources`:
 
 ```json
@@ -1170,7 +1172,7 @@ Namespace prefix `lib/labels.sh`'s `labels_reconcile` reconciles full CRUD for (
 
 ### Extended notes: `prompt_overrides`
 
-Per-installation prompt extension/replacement (requirement 4a): an object keyed `coordinator`/`implementer`/`reviewer`/`enabler`/`refiner`/`monitor`, each holding `extend` (an array of file paths, appended in order) and/or `replace` (a file path substituted for that stage's shipped `prompts/<stage>.md`). A relative path resolves against `state_dir`. Empty or a stage absent from it changes nothing for that stage. `approver` is deliberately absent from the enumeration: the Approver's adversarial prompt is the gate the D18 trust ladder rests on, and no installation may extend or replace it (requirement 4a, #469). A `replace` file substitutes the whole shipped prompt, its `## Untrusted external content` section included (requirement 45): preserving the canonical marker-delimited block is part of the replacement's contract — `test/prompt-untrusted-framing.test.sh` pins only the shipped prompts.
+Per-installation prompt extension/replacement (requirement 4a): an object keyed `coordinator`/`implementer`/`reviewer`/`enabler`/`refiner`/`monitor`, each holding `extend` (an array of file paths, appended in order) and/or `replace` (a file path substituted for that stage's shipped `prompts/<stage>.md`). A relative path resolves against `state_dir`. Empty or a stage absent from it changes nothing for that stage. `approver` is deliberately absent from the enumeration: the Approver's adversarial prompt is the gate the D18 trust ladder rests on, and no installation may extend or replace it (requirement 4a, #469). A `replace` file substitutes the whole shipped prompt, its `## Untrusted external content` section included (requirement 45): preserving the canonical marker-delimited block is part of the replacement's contract — `test/prompt-untrusted-framing.test.sh` pins only the shipped prompts. `implementer` and `reviewer` — the two stages that already run against a single known repository — additionally take a per-repository layer, `repos[].prompt_overrides` (`repoPromptOverrides`), resolved one stage at a time on the `stage_timeouts` precedence: that repository's own stage entry wins when present, this installation-wide entry for the same stage otherwise. A repository naming any other stage there is a schema error, not a silently ignored key — `coordinator`, `enabler`, `refiner` and `monitor` have no per-repository invocation to scope an override to.
 
 ### Extended notes: `pr_label`
 
@@ -3901,6 +3903,53 @@ implements.
    disk does, once it is already gone. A mirror-level `flock` serialises the
    cron push against the end-of-cycle push.
 
+   **A push that cannot write says so, and an orphaned index lock does not
+   stop it (agent-ops#1377).** The `flock` above is state-sync's own;
+   `.git/index.lock` in the mirror is git's, taken by every command that
+   writes the index and left behind by one that died mid-write — a container
+   stopped under it, a git the kernel OOM-killed. Nothing examined it, so on
+   poetic-1 (2026-09-09 to -11, 27 hours) and poetic-2 (2026-09-13 to -15,
+   three days) every push failed at its first index write with `fatal:
+   Unable to create '…/.git/index.lock': File exists` while the push's own
+   progress lines kept printing, the node kept cycling, `--status` read every
+   stage `ok`, and the only node-side voice was the doctor's hourly
+   publication check (#602), into a file nothing surfaced. So, after
+   `mirror_init` and before the first write, `do_push` clears that lock when
+   three things hold — it exists, it is older than one push interval
+   (`schedule.state_sync_push_minutes`, the interval this script itself runs
+   on; a live git holds the index lock for seconds, so one older than the
+   gap between two pushes belongs to a process that is not coming back), and
+   no git process is working in the mirror (`mirror_git_busy`, read from
+   `/proc`: any process named `git` whose working directory is the mirror or
+   whose command line names it; where `/proc` cannot be read the answer is
+   "busy") — and logs `state-sync-lock-cleared` `{age_s}` to `log.jsonl`,
+   which replicates, rather than only to its own log. A lock any live git
+   may hold is never removed; a young one is left with a line saying so.
+   Independently, every writing git command of the push (`reset`, `clean`,
+   `add`, `commit`, `push`) runs through `mirror_write`: on failure the first
+   `fatal:`/`error:` line is said and logged as `state-sync-push-failed`
+   `{step, detail}`, git's full stderr is passed through as before, and the
+   run still ends non-zero — a push that did not push is a failure, and
+   supercronic's exit-status line stays true. The doctor's own publication
+   check is unchanged: it already fails a node whose read-back is older than
+   `node_stale_after_minutes` — the fleet-wide definition of stale, applied
+   identically to a peer's row and to a node's own so the two cannot
+   disagree (that key's own notes) — and did so hourly throughout both
+   incidents; a second, tighter threshold for the doctor alone would have the
+   node call itself stale while its peers still called it fresh. What was
+   missing was a reader, so `--status` gains two lines (`lib/manage.sh`, on
+   the same terms as requirement 2.8's `stages:` section — `check-nodes.sh`
+   prints `--status` per node and inherits them for free): `published:`,
+   this node's own publication verdict through `fleet_publication_status`
+   over `.state-sync-published.json` — `fresh`/`STALE` with the age and the
+   threshold, `unknown` before the first read-back, `not configured` without
+   a `state_repo` — and `doctor:`, the last unattended pass's verdict and
+   age from `.doctor-status.json`, with the count of failing checks and the
+   first of them (the same bounded `fails` the heartbeat carries, #1397), or
+   a plain sentence when no pass has run. `test/state-sync.test.sh` drives
+   the three lock cases (young, held by a live process, orphaned) and both
+   events; `test/manage-status.test.sh` the two lines.
+
    **Fetch.** Every node materialises every *other* node's branch, whole,
    under the peers directory (`lib/fleet.sh`, `<workspace_root>/
    .agent-ops-peers/<node>/`), on its own schedule: `git archive` into a
@@ -4806,7 +4855,12 @@ implements.
    reads this file (never recomputes it) and prints it as a new `stages:`
    section, one line per stage — `coordinator failing (11 consecutive, last
    success 8h ago)`, `reviewer idle (never run)` — or a plain "no data yet"
-   line on a node that has not completed a cycle since upgrading.
+   line on a node that has not completed a cycle since upgrading. A failing
+   stage's line is followed by an indented `last: <last_detail>` line when
+   the streak carries one (2026-09-15): the record held the detail all
+   along, but the terminal showed only the count, so six cycles of a lapsed
+   login on ockham-2 read as any failure at all when the detail — requirement
+   4i's `authentication_failed` — named the one thing to do.
    `check-nodes.sh` (external to this repository; not committed here) prints
    `--status` per node and so inherits the new section for free, with
    nothing in this repository to change.
@@ -6532,7 +6586,7 @@ implements.
    order and no instructions would spend a model to no purpose.
    That tolerance is for *runtime* faults only.
    `config.json`'s `prompt_overrides` itself must be structurally valid to
-   full depth — an object (possibly `{}`) keyed only by the five stage names,
+   full depth — an object (possibly `{}`) keyed only by the six stage names,
    each stage an object holding only `extend` (an array of file-path strings)
    and/or `replace` (a file-path string); any other shape — an unknown stage
    key, a non-object stage value, an unknown key within a stage, a wrong
@@ -6565,6 +6619,36 @@ implements.
    short-circuit. The digest is a pure function of the override
    configuration and the contributing files' bytes, never of the node's
    filesystem layout.
+
+   **A per-repository layer, for the two stages that already run against a
+   single known repository (agent-ops#588).** The Co-Ordinator runs once per
+   cycle across every configured repository together (requirement 4), so an
+   installation-wide `prompt_overrides` entry is the only granularity it can
+   take; the Implementer (requirement 7) and the Reviewer (requirement 8)
+   each already run against exactly one repository — the one the Co-Ordinator
+   selected that cycle — so `repos[].prompt_overrides` (`config.schema.json`'s
+   `repoPromptOverrides`) lets a repository add or replace its own
+   `implementer`/`reviewer` prompt without reaching into the installation-wide
+   key that would otherwise apply to every repository at once.
+   `lib/prompt-overrides.sh`'s `prompt_overrides_json_for_repo` resolves the
+   two layers before either stage's prompt is assembled: for a stage `<s>` in
+   `{implementer, reviewer}`, the selected repository's own
+   `repos[].prompt_overrides.<s>` entry wins outright — the whole
+   `{extend, replace}` object, not a field-by-field merge with the
+   installation-wide entry — when that repository's own entry sets `<s>`,
+   the installation-wide `prompt_overrides.<s>` entry otherwise; the same
+   precedence `stage_timeouts` and `merge_autonomy` already give one actor's
+   or one scalar's repository-level override. A repository that sets neither
+   stage, or that is missing from `repos[]` entirely, sees the
+   installation-wide object unchanged — `prompt_overrides_json_for_repo`
+   degrades to reading `.prompt_overrides` directly, byte for byte. Every
+   other stage name is refused on a repository's own entry rather than
+   silently ignored: `repoPromptOverrides`, unlike the installation-wide
+   `promptOverride` enumeration, admits only `implementer` and `reviewer` as
+   properties, and `additionalProperties: false` turns a `coordinator`,
+   `enabler`, `refiner` or `monitor` key there into the same schema-gate
+   fatal misconfiguration (requirement 1b) as any other unknown key — none of
+   those four stages has a single repository to scope an override to yet.
 4b. **The repo/work-sources table is generated from `config.json`, not
    hand-maintained in the prompt (issue #78).** `prompts/coordinator.md`
    carries a `@@WORK_SOURCES_TABLE@@` marker where a table naming consumer
@@ -7239,6 +7323,23 @@ implements.
    ladder would never have fired on the outage it was needed for. The
    escalation's own hint now names `coordinator.out` first.
 
+   One refusal carries no status at all and is recognised by its shape
+   (2026-09-15, ockham-2): a node whose subscription OAuth credential lapsed
+   while it stood down — re-enabled after days on Standby, its refresh token
+   expired with nothing having used it — records `terminal_reason:
+   "api_error"`, `api_error_status: null` and `result: "Failed to
+   authenticate: OAuth session expired and could not be refreshed"`, because
+   the runner refused the request itself, having no credential to make it
+   with, before any API call could return a status. Six consecutive cycles
+   read `coordinator exited 1` (and `enabler`, `refiner`), the same useless
+   account #641 fixed for the status-bearing kind. So `stage_api_refusal`'s
+   gate is the numeric status *or* that shape — the runner's own `api_error`
+   reason *and* an authentication message (`authenticat|oauth|unauthori[sz]ed`,
+   case-insensitive) — and the shape is named `authentication_failed`,
+   whether or not a status rides with it, so one outage never reads as two
+   details. The gate is deliberately both halves: an `api_error` with no
+   status and no such message still gets its honest exit code.
+
    **Not every refusal is deterministic, and the record now says which
    (issue #1073).** `stage_api_refusal`'s stable token cannot itself carry
    that distinction — the whole point of narrowing it was to keep a moving
@@ -7249,7 +7350,9 @@ implements.
    any other 4xx — the API considered the request and declined it, and no
    amount of retrying changes that — and `transient` for a 5xx or a
    connection-level fault — the request never reached a considered answer,
-   the fault is external, and it clears on its own. `handle_stage_failure`
+   the fault is external, and it clears on its own — and `refused` for
+   `authentication_failed`, which no retry clears, only a person completing
+   the login. `handle_stage_failure`
    carries it on the `attempt-failed` event as `api_refusal_class`, empty
    when `stage_api_refusal` found nothing to classify. `crash_loop_verdict`
    is the one reader of this field today (requirement 2.7); no other part of
@@ -19252,6 +19355,14 @@ What exists, and the requirements each part answers to:
    ordering and its disclaimer wrapper, for `replace` (including falling back
    to the shipped prompt when the configured file is unreadable), and for
    every one of those changing `stage_prompt_sha`; must pass `shellcheck`.
+   `prompt_overrides_json_for_repo` (agent-ops#588) resolves requirement 4a's
+   per-repository layer down to the same `{stage: {extend, replace}}` shape
+   `stage_prompt_text`/`stage_prompt_sha` already take, so neither of those two
+   functions has any per-repository knowledge of its own; `agent-cycle.sh`
+   calls it against the cycle's own `$repo_slug` immediately before assembling
+   the Implementer's (requirement 7) and Reviewer's (requirement 8) prompts,
+   the two call sites `prompt_overrides_json` (the plain installation-wide
+   object) still feeds directly for every other stage.
 4b. `lib/coordinator-brief.sh` implementing requirement 4b:
    `coordinator_work_sources_table`, given `config.json`'s `repos` array,
    renders the Markdown table naming each repo and its numbered `sources`

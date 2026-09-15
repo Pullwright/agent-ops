@@ -19,6 +19,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   #755 gave every container a `mem_limit`/`cpus` enforcement ceiling; this
   is the measured, reported half D14 also asks for, for the two resources
   (disk, bandwidth) this substrate cannot enforce at all.
+- **`prompt_overrides` takes a per-repository layer for the Implementer and
+  Reviewer stages** (issue #588, `docs/ROADMAP.md` Phase 1). Those two
+  stages already run against a single known repository each cycle, unlike
+  the Co-Ordinator, which runs once per cycle across every configured
+  repository together — so `repos[].prompt_overrides`
+  (`config.schema.json`'s `repoPromptOverrides`), keyed only
+  `implementer`/`reviewer`, lets one repository add or replace its own
+  operating-prompt house rules without reaching into the installation-wide
+  `prompt_overrides` key that would otherwise apply to every repository at
+  once. Resolved on the same precedence `stage_timeouts` and
+  `merge_autonomy` already give a repository-level override: a repository's
+  own stage entry wins outright (the whole `{extend, replace}` object, not a
+  field-by-field merge) when present, the installation-wide entry for that
+  stage otherwise —
+  `lib/prompt-overrides.sh`'s new `prompt_overrides_json_for_repo` resolves
+  this before `stage_prompt_text`/`stage_prompt_sha` ever run, so neither
+  function gained any per-repository knowledge of its own. A repository
+  naming any other stage (`coordinator`, `enabler`, `refiner` or `monitor`
+  — none of which yet has a per-invocation home to scope an override to) is
+  a schema error at validation time, not a silently ignored key.
 
 ### Fixed
 
@@ -30,6 +50,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   each still calling the collector every five minutes. It now polls the
   server's pid every ten seconds and exits when it is gone; the test unsets
   `AGENT_OPS_SERVICE` for its spawn and asserts the lifetime directly.
+
+- **A stage refused for want of a valid Claude login is named as such, and
+  `--status` shows a failing stage's detail** (2026-09-15). A node whose
+  subscription OAuth credential lapsed while it stood down records
+  `terminal_reason: "api_error"` with no HTTP status and `result: "Failed to
+  authenticate: OAuth session expired and could not be refreshed"`;
+  `stage_api_refusal` keyed on a numeric status alone, so six consecutive
+  cycles on ockham-2 read `coordinator exited 1`, indistinguishable from any
+  other failure. The shape — the runner's `api_error` reason together with an
+  authentication message — is now the refusal `authentication_failed`,
+  classified `refused` (no retry clears it), and the `stages:` block of
+  `--status` follows a failing stage's line with an indented `last:` line
+  carrying the streak's detail, so `check-nodes.sh` shows the reason beside
+  the count.
+
+- **`state-sync.sh push` clears an orphaned `index.lock` and names a push
+  that fails** (issue #1377). A `.git/index.lock` a dead git left in the
+  mirror used to fail every later push at its first index write, silently:
+  27 hours on poetic-1 and three days on poetic-2 with the node cycling,
+  `--status` reading every stage `ok`, and only the doctor's hourly
+  publication check saying anything, into a file nothing surfaced. The push
+  now clears such a lock when it is older than one push interval and no git
+  process is working in the mirror (never a lock a live git may hold),
+  logging `state-sync-lock-cleared` with its age; every writing git command
+  runs through `mirror_write`, which on failure logs
+  `state-sync-push-failed` with the step and git's first `fatal:` line and
+  still exits non-zero. `--status` gains `published:` (this node's own
+  publication verdict, the same one the doctor and the dashboard derive) and
+  `doctor:` (the last unattended pass's verdict, age and first failing
+  check), so `check-nodes.sh` shows both.
 
 - **The state-sync mirror's own garbage collection can no longer be the
   thing that fails, and a `gc.log` now fails its integrity check** (#604's

@@ -425,6 +425,35 @@ echo '{"is_error":true,"api_error_status":529,"result":"Overloaded"}' > "$tmp_di
 assert_eq "a refusal the runner did not name falls back to its HTTP status" \
   "api_error_529" "$(stage_api_refusal "$tmp_dir/overloaded.out")"
 
+# The statusless refusal (2026-09-15, ockham-2, verbatim but for the fields
+# nothing here reads): a node whose OAuth credential lapsed while it stood
+# down. The runner refused the request itself, with no credential to make it
+# with, so there is no HTTP status to stand in — six cycles read
+# `coordinator exited 1` before anyone opened the file.
+cat > "$tmp_dir/unauthenticated.out" <<'REC'
+{"type":"result","subtype":"success","is_error":true,"terminal_reason":"api_error","api_error_status":null,"duration_ms":559,"num_turns":1,"result":"Failed to authenticate: OAuth session expired and could not be refreshed","total_cost_usd":0}
+REC
+assert_eq "a lapsed login is named as a refusal despite carrying no status" \
+  "authentication_failed" "$(stage_api_refusal "$tmp_dir/unauthenticated.out")"
+assert_eq "…with the runner's own words beside it" \
+  "Failed to authenticate: OAuth session expired and could not be refreshed" \
+  "$(stage_api_refusal_message "$tmp_dir/unauthenticated.out")"
+assert_eq "…and classified refused: no retry clears it, only a person logging in" \
+  "refused" "$(stage_api_refusal_class "$tmp_dir/unauthenticated.out")"
+# The same reason with a status still takes the authentication name — the
+# name is what the ladder groups on, and one outage must not read as two.
+echo '{"is_error":true,"terminal_reason":"api_error","api_error_status":401,"result":"Failed to authenticate: invalid token"}' \
+  > "$tmp_dir/unauthenticated-401.out"
+assert_eq "an authentication refusal that does carry a status is named the same way" \
+  "authentication_failed" "$(stage_api_refusal "$tmp_dir/unauthenticated-401.out")"
+# But an `api_error` with no status and no authentication text is not one:
+# the gate is the reason *and* the message, never the reason alone.
+echo '{"is_error":true,"terminal_reason":"api_error","api_error_status":null,"result":"something else went wrong"}' \
+  > "$tmp_dir/statusless-other.out"
+assert_eq "a statusless api_error that is not about authentication is still not a refusal" \
+  "" "$(stage_api_refusal "$tmp_dir/statusless-other.out")"
+assert_eq "…and has no class" "" "$(stage_api_refusal_class "$tmp_dir/statusless-other.out")"
+
 # And the shapes that must NOT be called a refusal: a stage that ran and then
 # failed, a clean result, an empty file, and a file that is not JSON at all.
 # Mislabelling any of these would replace an honest exit code with a confident

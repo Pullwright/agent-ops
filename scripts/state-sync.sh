@@ -50,6 +50,8 @@ SCHEMA_FILE="$SCRIPT_DIR/config.schema.json"
 . "$SCRIPT_DIR/lib/resource-usage.sh"
 # shellcheck source=lib/redact.sh
 . "$SCRIPT_DIR/lib/redact.sh"
+# shellcheck source=lib/log-event.sh
+. "$SCRIPT_DIR/lib/log-event.sh"
 
 usage() {
   cat <<'EOF'
@@ -134,6 +136,12 @@ updater_stuck_after_seconds="$(cfg '.updater_stuck_after_minutes * 60 | floor')"
 # re-deriving them, since this is bounding the same hook's own behaviour.
 updater_defer_stuck_after_seconds="$(cfg \
   '([.lock_stale_after // 4, .project_review.lock_stale_after // 6] | max) * 3600 | floor')"
+
+# One push interval in seconds (agent-ops#1377): the age past which an
+# `index.lock` in the mirror can no longer belong to a live git — this script
+# is the only writer of that index, and it runs once per interval. The same
+# jq conversion as above, for the same `set -e` reason.
+push_interval_seconds="$(cfg '.schedule.state_sync_push_minutes * 60 | floor')"
 
 node_name="${NODE_NAME:-$(hostname)}"
 node_name="${node_name//[^A-Za-z0-9._-]/-}"
@@ -401,6 +409,94 @@ mirror_lock() {
   fi
 }
 
+# --- The mirror's own index lock (agent-ops#1377) ------------------------------
+# `$mirror.lock` above serialises this script's runs; `.git/index.lock` is
+# git's, taken by every command that writes the index and left behind by one
+# that died mid-write — a container stopped under it, a git the kernel
+# OOM-killed. Nothing ever examined it, so on poetic-1 (2026-09-09 to -11, 27
+# hours) and poetic-2 (2026-09-13 to -15, three days) every push failed at
+# the first index write with `fatal: Unable to create '…/.git/index.lock':
+# File exists`, while the push step's own progress lines kept printing, the
+# node kept cycling, `--status` read every stage `ok`, and the only node-side
+# voice was the doctor's hourly publication check (#602), into a file nothing
+# surfaced.
+#
+# The lock is cleared when three things hold: it exists; it is older than one
+# push interval (`schedule.state_sync_push_minutes` — the interval this very
+# script runs on, and a live git holds the index lock for seconds, so one
+# older than the gap between two pushes belongs to a process that is not
+# coming back); and no git process is working in the mirror right now. That
+# last is read from /proc rather than inferred from the flock, because a git
+# run by hand inside the container, or a gc that detached, is not a state-sync
+# run and holds no `$mirror.lock`. Where /proc cannot be read the answer is
+# "busy" and the lock stays: an orphan that persists is the failure
+# `mirror_write` below now names, whereas a live lock removed is a corrupted
+# index.
+mirror_git_busy() {
+  local p cmd cwd
+  [[ -d /proc/self ]] || return 0
+  for p in /proc/[0-9]*; do
+    [[ "${p#/proc/}" == "$$" ]] && continue
+    cmd="$(tr '\0' ' ' < "$p/cmdline" 2>/dev/null)" || continue
+    [[ "$cmd" == git\ * || "$cmd" == */git\ * ]] || continue
+    cwd="$(readlink "$p/cwd" 2>/dev/null)" || cwd=""
+    if [[ "$cwd" == "$mirror" || "$cwd" == "$mirror/"* || "$cmd" == *"$mirror"* ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+mirror_clear_stale_index_lock() {
+  local lock="$mirror/.git/index.lock" now mtime age
+  [[ -e "$lock" ]] || return 0
+  now="$(date +%s)"
+  mtime="$(stat -c %Y "$lock" 2>/dev/null)" || mtime="$now"
+  age=$(( now - mtime ))
+  if (( age <= push_interval_seconds )); then
+    say "the mirror's index.lock is ${age}s old, within one push interval — leaving it"
+    return 0
+  fi
+  if mirror_git_busy; then
+    say "WARNING: the mirror's index.lock is ${age}s old but a git process is working in the mirror — leaving it"
+    return 0
+  fi
+  rm -f "$lock"
+  say "WARNING: cleared an orphaned index.lock from the mirror (${age}s old, no git process alive)"
+  # Into log.jsonl, which replicates, rather than only this script's own log:
+  # the event is a fact about this node's publication the fleet should see.
+  log_event_append "$state_dir/log.jsonl" cycle "" "$node_name" state-sync-lock-cleared \
+    "$(jq -nc --argjson age "$age" '{age_s: $age}')"
+  return 0
+}
+
+# mirror_write STEP GIT-ARGS…
+# One of the push's writing git commands, run against the mirror. Under
+# `set -e` a failure here used to end the run with git's own stderr as the
+# only trace — in cron.log, not in any log the fleet reads — and nothing
+# named the step, so the "pruned N derived file(s)" lines that print before
+# it read as a push that worked (#1377). Now the first `fatal:`/`error:` line
+# is said and logged as a `state-sync-push-failed` event, and the run still
+# ends non-zero: a push that did not push is a failure, and supercronic's
+# exit-status line stays true. git's full stderr is passed through either
+# way, so a warning on a successful command (a stale `gc.log` being
+# reprinted, say) is not swallowed.
+mirror_write() {
+  local step="$1" out first; shift
+  if out="$(git -C "$mirror" "$@" 2>&1)"; then
+    [[ -z "$out" ]] || printf '%s\n' "$out" >&2
+    return 0
+  fi
+  [[ -z "$out" ]] || printf '%s\n' "$out" >&2
+  first="$(grep -m1 -E '^(fatal|error):' <<<"$out" || true)"
+  [[ -n "$first" ]] || first="$(head -n 1 <<<"$out")"
+  [[ -n "$first" ]] || first="git $step exited non-zero with no message"
+  say "WARNING: push failed at $step — $first"
+  log_event_append "$state_dir/log.jsonl" cycle "" "$node_name" state-sync-push-failed \
+    "$(jq -nc --arg step "$step" --arg detail "${first:0:500}" '{step: $step, detail: $detail}')"
+  return 1
+}
+
 mirror_init() {
   local fresh=0
   if [[ ! -d "$mirror/.git" ]]; then
@@ -535,6 +631,7 @@ do_push() {
   require git
   mirror_lock
   mirror_init
+  mirror_clear_stale_index_lock
 
   # Bound this node's own history before mirroring any of it: the local cap
   # (`state_local_cycles_retained`) sits deliberately far above the mirror's
@@ -548,8 +645,8 @@ do_push() {
   # Start from the branch's current tip when there is one — the amend below
   # keeps history a single rolling commit per node.
   if git -C "$mirror" fetch --quiet --depth 1 origin "$state_branch" 2>/dev/null; then
-    git -C "$mirror" reset --quiet --hard FETCH_HEAD
-    git -C "$mirror" clean -qfd
+    mirror_write reset reset --quiet --hard FETCH_HEAD
+    mirror_write clean clean -qfd
   fi
 
   # Everything but the cycle directories, which need a filter of their own.
@@ -737,19 +834,19 @@ do_push() {
   # without bound. A mid-cycle push is fine now: peers consume logs and the
   # dashboard tolerates a torn transcript for one tick, and nobody adopts
   # this state wholesale any more.
-  git -C "$mirror" add -A
+  mirror_write add add -A
   local msg
   msg="state: $node_name $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  local commit=(git -C "$mirror"
+  local commit=(
     -c "user.name=${GIT_USER_NAME:-agent-ops}"
     -c "user.email=${GIT_USER_EMAIL:-agent-ops@localhost}"
     commit --quiet -m "$msg")
   if git -C "$mirror" rev-parse --verify --quiet HEAD >/dev/null; then
-    "${commit[@]}" --amend
+    mirror_write commit "${commit[@]}" --amend
   else
-    "${commit[@]}"
+    mirror_write commit "${commit[@]}"
   fi
-  git -C "$mirror" push --quiet --force origin "HEAD:refs/heads/$state_branch"
+  mirror_write push push --quiet --force origin "HEAD:refs/heads/$state_branch"
   say "pushed $(du -sh "$mirror" 2>/dev/null | cut -f1) of state as $state_branch"
 }
 

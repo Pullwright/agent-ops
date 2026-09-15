@@ -209,6 +209,86 @@ overlap_status_report() {
   printf 'overrun:  %s firing(s) overrun in the last 24h\n' "$count"
 }
 
+# manage_age_phrase SECONDS -> "42s" | "7m" | "3h" | "2d"
+# The coarse age the `stages:` lines already use (lib/stage-health.sh's own
+# `ago`), for the two lines below, so `--status` reads one way throughout.
+manage_age_phrase() {
+  local s="${1:-0}"
+  [[ "$s" =~ ^[0-9]+$ ]] || s=0
+  if (( s < 60 )); then printf '%ss' "$s"
+  elif (( s < 3600 )); then printf '%sm' "$(( s / 60 ))"
+  elif (( s < 86400 )); then printf '%sh' "$(( s / 3600 ))"
+  else printf '%sd' "$(( s / 86400 ))"
+  fi
+}
+
+# The `--status` line for this node's own publication into the shared state
+# (agent-ops#1377): `.state-sync-published.json` — `scripts/state-sync.sh
+# fetch`'s read-back of what the state repository actually holds for this
+# node's branch — through `fleet_publication_status`, the one verdict
+# scripts/doctor.sh and the dashboard's fleet strip already derive
+# (requirement 34a), so `--status` can never disagree with either. Here
+# because `check-nodes.sh` (external to this repository) prints `--status`
+# per node and that is where the maintainer looks: from 2026-09-12 to -15
+# poetic-2 published nothing for three days while its every stage read `ok`
+# and the doctor failed this same check hourly into a file nothing surfaced.
+publication_status_report() {
+  local ts json verdict age threshold
+  if [[ -z "${state_repo:-}" ]]; then
+    printf 'published: not configured (no state_repo)\n'
+    return 0
+  fi
+  threshold="$(cfg '.node_stale_after_minutes * 60 | floor')"
+  [[ "$threshold" =~ ^[0-9]+$ ]] || threshold=1800
+  ts="$(fleet_ts_field "$state_dir/.state-sync-published.json")"
+  json="$(fleet_publication_status "$ts" "$threshold")"
+  verdict="$(jq -r '.verdict' <<<"$json" 2>/dev/null)"
+  age="$(jq -r '.age_s // 0' <<<"$json" 2>/dev/null)"
+  case "$verdict" in
+    fresh)
+      printf 'published: fresh — last confirmed publication %s ago, under the %s threshold\n' \
+        "$(manage_age_phrase "$age")" "$(manage_age_phrase "$threshold")" ;;
+    stale)
+      printf 'published: STALE — last confirmed publication %s ago, over the %s threshold; state-sync.sh push has likely stopped working even if cycles are still running (agent-ops#602)\n' \
+        "$(manage_age_phrase "$age")" "$(manage_age_phrase "$threshold")" ;;
+    *)
+      printf 'published: unknown — no fetch has read this node'"'"'s own branch back yet\n' ;;
+  esac
+}
+
+# The `--status` line for the scheduled doctor's last verdict
+# (`.doctor-status.json`, `write_unattended_status`, requirement 2.6a),
+# naming its first failing check the way the heartbeat's bounded `fails`
+# does (agent-ops#1397). The doctor is the one node-side check that looks
+# past the pipeline's own stages — at the credential, the disk, the
+# publication above — and its verdict reached the dashboard and the pager
+# but never the terminal a maintainer actually has open.
+doctor_status_report() {
+  local f="$state_dir/.doctor-status.json" line
+  if [[ ! -s "$f" ]]; then
+    printf 'doctor:   no unattended pass recorded yet\n'
+    return 0
+  fi
+  line="$(jq -r --argjson now "$(date -u +%s)" '
+      (.verdict // "unknown") as $v
+      | ((.timestamp // "") | (try fromdateiso8601 catch null)) as $t
+      | (if $t == null then 0 else ([$now - $t, 0] | max) end) as $age
+      | (.fails // []) as $f
+      | "\($v)\t\($age)\t\($f | length)\t\(if ($f | length) > 0 then ($f[0] | .[0:200]) else "" end)"
+    ' "$f" 2>/dev/null)" || line=""
+  if [[ -z "$line" ]]; then
+    printf 'doctor:   unreadable .doctor-status.json\n'
+    return 0
+  fi
+  local verdict age nfails first
+  IFS=$'\t' read -r verdict age nfails first <<<"$line"
+  if (( nfails > 0 )); then
+    printf 'doctor:   %s (%s ago) — %s failing, first: %s\n' "$verdict" "$(manage_age_phrase "$age")" "$nfails" "$first"
+  else
+    printf 'doctor:   %s (%s ago)\n' "$verdict" "$(manage_age_phrase "$age")"
+  fi
+}
+
 # run_manage_command — the `--disable`/`--enable`/`--status`/`--clear-limit`/
 # `--kill-merge-autonomy` handling itself, called once from `agent-cycle.sh`
 # in place of the inline block it replaces (#771). Returns without doing
@@ -235,6 +315,8 @@ if [[ -n "$MANAGE_ACTION" ]]; then
       stage_health_status_report
       decisions_status_report
       overlap_status_report
+      publication_status_report
+      doctor_status_report
       exit 0
       ;;
     disable)
