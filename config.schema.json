@@ -384,11 +384,7 @@
       "default": 0.3,
       "x-docs": {
         "readme": "The minimum share of fleet node-time a candidate must account for before the constraint statement names it as the binding constraint — below it, the statement reads \"insufficient evidence\" rather than naming the largest bucket regardless of size.",
-        "spec": "The minimum share of fleet node-time (0-1) a candidate must account for before the constraint statement (D21, issue #609) names it as the binding constraint; below it, `scripts/constraint.sh`/`lib/constraint.sh`'s `constraint_classify` reports `insufficient-evidence` rather than naming the largest bucket regardless of size.",
-        "value": {
-          "readme": "*(unset)*",
-          "spec": "*(unset)*"
-        }
+        "spec": "The minimum share of fleet node-time (0-1) a candidate must account for before the constraint statement (D21, issue #609) names it as the binding constraint; below it, `scripts/constraint.sh`/`lib/constraint.sh`'s `constraint_classify` reports `insufficient-evidence` rather than naming the largest bucket regardless of size."
       }
     },
     "constraint_min_sample_seconds": {
@@ -398,11 +394,7 @@
       "default": 14400,
       "x-docs": {
         "readme": "The minimum aggregate node-seconds the time account must cover before the constraint statement states one at all — below it, the statement reads \"insufficient evidence\" rather than trusting a share computed from too little data.",
-        "spec": "The minimum aggregate node-seconds (`expected_total_seconds`, node-count x window) the node time-state account must cover before the constraint statement (issue #609) states one at all; below it, `constraint_classify` reports `insufficient-evidence` with reason `window-below-minimum-sample` rather than trusting a share computed from too little data.",
-        "value": {
-          "readme": "*(unset)*",
-          "spec": "*(unset)*"
-        }
+        "spec": "The minimum aggregate node-seconds (`expected_total_seconds`, node-count x window) the node time-state account must cover before the constraint statement (issue #609) states one at all; below it, `constraint_classify` reports `insufficient-evidence` with reason `window-below-minimum-sample` rather than trusting a share computed from too little data."
       }
     },
     "coordinator_model": {

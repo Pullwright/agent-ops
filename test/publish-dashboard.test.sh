@@ -3458,10 +3458,16 @@ assert_eq "and the cycle window is cached per cycle" "1" \
 sleep 1   # generated_at has one-second resolution and must be seen to move
 b798_fast
 fast798="$(data_of "$f798")"
-for _k in counts blocked void landings decisions config github_budget; do
+# `constraint` (D21, issue #609) is in this set for a second reason besides
+# its cost: it is the only roll-up needing a second fleet-wide log union
+# (review-log.jsonl), so a fast build that recomputed it would pay that read
+# twice per tick for a value it does not even publish.
+for _k in counts blocked void landings decisions config github_budget constraint; do
   assert_eq "a fast build carries .$_k forward unchanged" \
     "$(jq -Sc ".$_k" <<<"$full798")" "$(jq -Sc ".$_k" <<<"$fast798")"
 done
+assert_eq "  ... and the carried-forward constraint is a real statement, not a null placeholder" \
+  "true" "$(jq -r '.constraint | type == "object" and has("sentence") and has("candidates")' <<<"$fast798")"
 assert_eq "and is not merely the old page: generated_at moves" "1" \
   "$([[ "$(jq -r .generated_at <<<"$fast798")" > "$(jq -r .generated_at <<<"$full798")" ]] && echo 1 || echo 0)"
 

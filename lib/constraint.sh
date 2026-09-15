@@ -161,7 +161,19 @@ CONSTRAINT_CLASSIFY_JQ='
     ] as $candidates
 
   | ($window.from == null) as $no_account
-  | (if $no_account then true else ($expected_total < $min_sample_seconds) end) as $below_sample
+  # A zero-node-second account is below *any* minimum sample, including a
+  # configured MIN_SAMPLE_SECONDS of 0 (the schema allows it). Stating that
+  # explicitly rather than leaning on the comparison is what keeps every
+  # candidate share non-null from here on: shares are null exactly when
+  # $expected_total is 0, and an account carrying a single node-state event
+  # has a zero-length window and so a zero expected total while still
+  # reporting a non-null window.from. Without this, MIN_SAMPLE_SECONDS of 0
+  # let such an account reach the no-candidate-above-minimum-share branch
+  # below and multiply a null share by 100, which is a jq type error — the
+  # fold then printed nothing at all instead of the one valid object this
+  # contract promises.
+  | (if $no_account then true
+     else ($expected_total <= 0 or $expected_total < $min_sample_seconds) end) as $below_sample
   | ($candidates | map(select(.evaluable == true))) as $evaluable_candidates
   | ($evaluable_candidates | max_by(.share // -1)) as $top
   | (if $top == null then null else $top.share end) as $top_share

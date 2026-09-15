@@ -273,8 +273,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   largest bucket regardless of size. `scripts/constraint.sh` is the read-only
   CLI (`constraint_min_share`/`constraint_min_sample_seconds`,
   `config.schema.json`); `scripts/publish-dashboard.sh` computes it once per
-  full build and `dashboard/index.html` renders the sentence with the
-  account's own breakdown by state beneath it as evidence.
+  full build — never on a fast tick, where it would pay for a second
+  fleet-wide log union (`review-log.jsonl`) for a value the fast payload
+  carries forward from the cache instead — and `dashboard/index.html` renders
+  the sentence with the account's own breakdown by state beneath it as
+  evidence.
 - **`--fetch` output states its own provenance, so a stage reads it as
   untrusted data rather than as instructions** (issue #599, D19's *served*
   tier). `scripts/preview-deploy.sh` wraps each fetched route's status,

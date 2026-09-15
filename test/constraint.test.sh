@@ -171,6 +171,37 @@ assert_eq "coordinator-declined dominance still abstains: no candidate captures 
 assert_eq "  ... the largest ranked candidate share is thin (peer-claimed 10000/1814400)" \
   "no-candidate-above-minimum-share" "$(jq -r '.insufficient_reason' <<<"$out_declined")"
 
+# --- overhead dominance never becomes a candidate either: it is not a
+#     throughput constraint at all, however large the bucket ------------------
+
+overhead_dominant="$(account_json "2026-09-01T00:00:00Z" "2026-09-08T00:00:00Z" 1814400 \
+  '{"awaiting-tick":10000,"back-pressure":10000,"peer-claimed":10000,"coordinator-declined":5000}' \
+  '{"usage-limit":1000}' '{"idle-without-demand":0,"overhead":1400000}')"
+out_overhead="$(classify_of "$overhead_dominant" 0.3 14400)"
+assert_eq "overhead dominance abstains: the largest bucket on the page is not a candidate" \
+  "insufficient-evidence" "$(jq -r '.status' <<<"$out_overhead")"
+assert_eq "  ... for the minimum-share reason, not for a missing account" \
+  "no-candidate-above-minimum-share" "$(jq -r '.insufficient_reason' <<<"$out_overhead")"
+assert_eq "  ... and no candidate's own share ever counts overhead's seconds" \
+  "0" "$(jq -r '[.candidates[] | select(.evaluable) | .seconds] | map(select(. >= 1400000)) | length' <<<"$out_overhead")"
+
+# --- A zero-node-second account is below any minimum sample, including a
+#     configured minimum of 0: one node-state event gives a zero-length
+#     window, so every candidate share is null, and the fold must still
+#     print one valid object rather than dying on the arithmetic -------------
+
+zero_window='{"window":{"from":"2026-09-01T00:00:00Z","to":"2026-09-01T00:00:00Z","seconds":0},"nodes":["n1"],"expected_total_seconds":0,"totals":{},"idle_with_demand_by_cause":{},"externally_blocked_by_cause":{}}'
+out_zero="$(classify_of "$zero_window" 0.3 0)"
+assert_eq "a zero-second window with min_sample 0 still prints one valid object" \
+  "0" "$(jq -e . >/dev/null 2>&1 <<<"$out_zero"; echo $?)"
+assert_eq "  ... reporting window-below-minimum-sample, never a null-share crash" \
+  "window-below-minimum-sample" "$(jq -r '.insufficient_reason' <<<"$out_zero")"
+assert_eq "  ... and naming no constraint" \
+  "null" "$(jq -c '.leading_candidate' <<<"$out_zero")"
+out_zero_both="$(classify_of "$zero_window" 0 0)"
+assert_eq "  ... the same holds with min_share 0 too (no candidate on zero evidence)" \
+  "insufficient-evidence" "$(jq -r '.status' <<<"$out_zero_both")"
+
 # --- model-capacity: usage-limit isolated from other externally-blocked
 #     causes (github-budget must not inflate it) -----------------------------
 
@@ -185,7 +216,7 @@ assert_eq "  ... its seconds are usage-limit's alone, github-budget excluded" \
 
 # --- The two structurally-unevaluable candidates report so on every call ----
 
-for fixture_name in none thin diffuse grow shrink pc declined mc; do
+for fixture_name in none thin diffuse grow shrink pc declined overhead zero mc; do
   out_var="out_$fixture_name"
   out="${!out_var}"
   assert_eq "$fixture_name: human-merge-gate is never evaluable" \

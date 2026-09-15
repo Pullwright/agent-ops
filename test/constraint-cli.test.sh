@@ -120,15 +120,26 @@ assert_eq "  ... naming the missing time-account data" \
 
 # --- Config wiring: min_share/min_sample_seconds/cadence_bound_minutes come
 #     from this repository's own config.json -------------------------------
+#
+# Read back through `config_defaults` — the same resolution scripts/
+# constraint.sh itself uses — rather than against config.json plus a repeated
+# literal default. Whether these keys are set in config.json or left to the
+# schema is exactly the routine configuration change AGENTS.md §Tests says
+# must not break a test, and a hard-coded `// 0.3` here would break on a
+# schema default anyone edited for good reason.
 
-assert_eq "min_share echoes this repository's own config.json (or the schema default)" \
-  "$(jq -r '.constraint_min_share // 0.3' "$SCRIPT_DIR/config.json")" \
+# shellcheck source=lib/config-schema.sh
+. "$SCRIPT_DIR/lib/config-schema.sh"
+resolved_config="$(config_defaults "$SCRIPT_DIR/config.json" "$SCRIPT_DIR/config.schema.json")"
+
+assert_eq "min_share echoes this repository's own resolved constraint_min_share" \
+  "$(jq -r '.constraint_min_share' <<<"$resolved_config")" \
   "$(jq -r '.min_share' <<<"$out_empty")"
-assert_eq "min_sample_seconds echoes this repository's own config.json (or the schema default)" \
-  "$(jq -r '.constraint_min_sample_seconds // 14400' "$SCRIPT_DIR/config.json")" \
+assert_eq "min_sample_seconds echoes this repository's own resolved constraint_min_sample_seconds" \
+  "$(jq -r '.constraint_min_sample_seconds' <<<"$resolved_config")" \
   "$(jq -r '.min_sample_seconds' <<<"$out_empty")"
 assert_eq "cadence_bound_minutes echoes schedule.cycle_interval_minutes" \
-  "$(jq -r '.schedule.cycle_interval_minutes' "$SCRIPT_DIR/config.json")" \
+  "$(jq -r '.schedule.cycle_interval_minutes' <<<"$resolved_config")" \
   "$(jq -r '.cadence_bound_minutes' <<<"$out_empty")"
 
 printf '\n'

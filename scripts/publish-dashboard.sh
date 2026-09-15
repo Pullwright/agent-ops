@@ -3424,29 +3424,44 @@ fi
 # does: either can log a `node-state` transition, and folding only
 # `log.jsonl` (already in `$ALL_EVENTS`) would read a node running
 # `review-cycle.sh` as `down`.
-review_log_union="$work_tmp/review-log-union.jsonl"
-fleet_logs "$state_dir" "$peers_dir" review-log.jsonl > "$review_log_union" 2>/dev/null \
-  || : > "$review_log_union"
-node_time_state_json="$( { printf '%s\n' "$ALL_EVENTS"; cat "$review_log_union"; } \
-  | node_time_state_fold - "" "" 2>/dev/null)"
-[[ -n "$node_time_state_json" ]] || node_time_state_json='{}'
-constraint_json="$(constraint_classify "$node_time_state_json" \
-  "$(cfg '.constraint_min_share')" "$(cfg '.constraint_min_sample_seconds')" \
-  "$(cfg '.schedule.cycle_interval_minutes')" 2>/dev/null)"
-if ! jq -e 'type == "object" and has("sentence")' <<<"$constraint_json" >/dev/null 2>&1; then
-  # Same explicit-failure discipline as rework_json's own degrade path just
-  # above: a payload this could not assemble must never render as a
-  # confident "insufficient evidence" — that is a real verdict this fold can
-  # reach, and a null sentence is the only shape that cannot be mistaken for
-  # it.
-  constraint_json='{"sentence":null,"status":null,"insufficient_reason":null,"window":null,"nodes":null,"expected_total_seconds":null,"min_share":null,"min_sample_seconds":null,"cadence_bound_minutes":null,"leading_candidate":null,"candidates":null}'
+#
+# FULL-gated, and it has to be: this is the only panel on the page that needs
+# a *second* fleet-wide log union (review-log.jsonl — the pager's own read at
+# `WITH_GITHUB` above is the only other one in this script), and that is a
+# whole extra read-and-sort of the fleet's logs, exactly the per-tick cost the
+# single-`fleet_logs` note beside `$raw_events_jsonl` was written about. A
+# fast tick could not use the result anyway: `constraint` is assembled into
+# the FULL payload alone and is absent from `$fresh_json`, so it carries
+# forward from the cache like every other history roll-up
+# (docs/DASHBOARD-SPEC.md's own fast-tick key list). `null` is what that
+# carrying-forward needs the variable to hold in the meantime, on the same
+# terms `pager_json='null'` above states for itself.
+constraint_json='null'
+if (( FULL )); then
+  review_log_union="$work_tmp/review-log-union.jsonl"
+  fleet_logs "$state_dir" "$peers_dir" review-log.jsonl > "$review_log_union" 2>/dev/null \
+    || : > "$review_log_union"
+  node_time_state_json="$( { printf '%s\n' "$ALL_EVENTS"; cat "$review_log_union"; } \
+    | node_time_state_fold - "" "" 2>/dev/null)"
+  [[ -n "$node_time_state_json" ]] || node_time_state_json='{}'
+  constraint_json="$(constraint_classify "$node_time_state_json" \
+    "$(cfg '.constraint_min_share')" "$(cfg '.constraint_min_sample_seconds')" \
+    "$(cfg '.schedule.cycle_interval_minutes')" 2>/dev/null)"
+  if ! jq -e 'type == "object" and has("sentence")' <<<"$constraint_json" >/dev/null 2>&1; then
+    # Same explicit-failure discipline as rework_json's own degrade path just
+    # above: a payload this could not assemble must never render as a
+    # confident "insufficient evidence" — that is a real verdict this fold can
+    # reach, and a null sentence is the only shape that cannot be mistaken for
+    # it.
+    constraint_json='{"sentence":null,"status":null,"insufficient_reason":null,"window":null,"nodes":null,"expected_total_seconds":null,"min_share":null,"min_sample_seconds":null,"cadence_bound_minutes":null,"leading_candidate":null,"candidates":null}'
+  fi
+  # The account's own breakdown by state rides beside the verdict as `account`
+  # — the evidence for or against `sentence`, rendered beneath it (the house
+  # pattern this page already keeps for every other panel: computation here,
+  # rendering in dashboard/index.html).
+  constraint_json="$(jq -c --argjson acct "$node_time_state_json" '. + {account: $acct}' \
+    <<<"$constraint_json" 2>/dev/null || printf '%s' "$constraint_json")"
 fi
-# The account's own breakdown by state rides beside the verdict as `account`
-# — the evidence for or against `sentence`, rendered beneath it (the house
-# pattern this page already keeps for every other panel: computation here,
-# rendering in dashboard/index.html).
-constraint_json="$(jq -c --argjson acct "$node_time_state_json" '. + {account: $acct}' \
-  <<<"$constraint_json" 2>/dev/null || printf '%s' "$constraint_json")"
 
 # --- GitHub API budget card (issue #1090) ------------------------------------
 # `github_budget`, folded from the fleet-wide `github-budget` events

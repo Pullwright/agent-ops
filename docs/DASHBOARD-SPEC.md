@@ -619,9 +619,13 @@ So a tick has two kinds, and `--fast` chooses:
   `cycles`, `log_tail`, `cron_tail`, `fleet`, `revert_rate`, `log_repair` —
   and merges those keys over the last full payload. The history roll-ups
   (`counts` and its actor-scorecard and classifier-escape enrichments,
-  `blocked`, `void`, `landings`, `github_budget`, `rework`, `constraint`, and the stage
-  budgets inside `config`) are not computed at all: they read the fleet's
-  whole history and change on the scale of cycles, not ticks.
+  `blocked`, `void`, `landings`, `github_budget`, `rework`, `constraint`, and
+  the stage budgets inside `config`) are not computed at all: they read the
+  fleet's whole history and change on the scale of cycles, not ticks.
+  `constraint` is the one whose skipping is worth its own sentence: it is the
+  only roll-up needing a *second* fleet-wide log union (`review-log.jsonl`
+  beside `log.jsonl`), so computing it on a fast tick would double that read
+  on the per-tick path for a value the fast payload does not carry.
 
 A fast build emits only the keys it recomputed and merges them **over** the
 cached payload rather than assembling a whole object from variables the skipped
@@ -1776,8 +1780,12 @@ distinct empty states, never collapsed into one "nothing to report": `"no-
 time-account-data"` (the account has no `node-state` events at all —
 `window.from` is null, the state of the world before issue #597 lands, or
 any window with none in it), `"window-below-minimum-sample"` (an account
-exists but `expected_total_seconds` is below `constraint_min_sample_seconds`
-— too little observed to trust any share computed from it), and `"no-
+exists but `expected_total_seconds` is zero, or below
+`constraint_min_sample_seconds` — too little observed to trust any share
+computed from it; zero is stated separately because it is below *any*
+minimum, `constraint_min_sample_seconds: 0` included, and because it is what
+a single `node-state` event produces — a zero-length window, and so every
+candidate's `share` null while `window.from` is not), and `"no-
 candidate-above-minimum-share"` (a sufficient sample, but every evaluable
 candidate's own share is below `constraint_min_share` — the sentence still
 names the largest observed candidate, as context, but `leading_candidate`
