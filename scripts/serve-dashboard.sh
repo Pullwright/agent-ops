@@ -49,5 +49,31 @@ dir="$state_dir/dashboard"
 [[ -f "$dir/index.html" ]] || "$SCRIPT_DIR/scripts/publish-dashboard.sh" || true
 [[ -d "$dir" ]] || { echo "serve-dashboard: nothing to serve at $dir" >&2; exit 1; }
 
+# Self-measured resource sampling for `dashboard`/`dashboard-local`
+# (requirement 55, D14, issue #606): unlike `scheduler`, neither profile
+# runs supercronic — this script's own `exec` below replaces the container's
+# PID 1 with the HTTP server directly — so there is no crontab line for
+# scripts/collect-resource-usage.sh to run from in here. A small background
+# loop before the exec is the substitute, on the same interval
+# schedule.resource_sample_minutes gives the scheduler's own crontab line;
+# it is started only when AGENT_OPS_SERVICE is set (this script running
+# inside the compose container), never for a human running this on a
+# laptop to browse the dashboard, where it would have no business sampling
+# resource usage at all. `disown` detaches it from this shell's own job
+# table so the `exec` below (which replaces this process image, not this
+# job) leaves it running as an ordinary orphaned child, reparented the same
+# way any backgrounded process outlives an `exec`'d parent.
+if [[ -n "${AGENT_OPS_SERVICE:-}" ]]; then
+  resource_sample_minutes="$(jq -r '.schedule.resource_sample_minutes // 5' "$SCRIPT_DIR/config.json" 2>/dev/null)"
+  [[ "$resource_sample_minutes" =~ ^[0-9]+$ ]] && (( resource_sample_minutes > 0 )) || resource_sample_minutes=5
+  (
+    while true; do
+      sleep "$(( resource_sample_minutes * 60 ))"
+      "$SCRIPT_DIR/scripts/collect-resource-usage.sh" >> "$state_dir/resource-usage.log" 2>&1 || true
+    done
+  ) &
+  disown
+fi
+
 echo "Serving $dir at http://$bind:$port  (Ctrl-C to stop)"
 cd "$dir" && exec python3 -m http.server "$port" --bind "$bind"

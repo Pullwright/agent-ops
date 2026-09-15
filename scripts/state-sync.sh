@@ -46,6 +46,8 @@ SCHEMA_FILE="$SCRIPT_DIR/config.schema.json"
 . "$SCRIPT_DIR/lib/drain.sh"
 # shellcheck source=lib/mirror-integrity.sh
 . "$SCRIPT_DIR/lib/mirror-integrity.sh"
+# shellcheck source=lib/resource-usage.sh
+. "$SCRIPT_DIR/lib/resource-usage.sh"
 # shellcheck source=lib/redact.sh
 . "$SCRIPT_DIR/lib/redact.sh"
 
@@ -297,6 +299,13 @@ EXCLUDES=(
   # `wake-poll-triggered` event, is written to log.jsonl, which does travel,
   # so a peer reading the union still sees every wake this node decided on.
   --exclude=wake-poll.log
+  # resource-usage.log (scripts/collect-resource-usage.sh, requirement 55,
+  # D14, issue #606): the sampler's own text output, local to this node on
+  # the same reasoning as doctor.log above. Its structured samples
+  # (.resource-samples.jsonl, excluded further up) and the derived report
+  # folded into heartbeat.json's `resources` field are what actually
+  # travel.
+  --exclude=resource-usage.log
   --exclude=.dashboard-github.json
   --exclude=.dashboard-tick-cost
   --exclude=.dashboard-payload
@@ -358,6 +367,18 @@ EXCLUDES=(
   --exclude=*.stream.jsonl
   --exclude=.fleet-log.jsonl
   --exclude=/dashboard/
+  # .resource-samples.jsonl / .resource-usage-state.json / .resource-usage.lock
+  # (scripts/collect-resource-usage.sh, requirement 55, D14, issue #606):
+  # this node's own raw CPU/memory/network/disk samples and the small
+  # last-cumulative-reading cache they are derived from — a peer's copy
+  # would answer for a container that is not there, on the same reasoning
+  # as .image-drift-cache.json above. The *derived* report reaches peers
+  # instead, folded into heartbeat.json's `resources` field below
+  # (scripts/resource-budget-report.sh, a summary never a series), exactly
+  # as `stage_health`'s raw file is excepted the same way further up.
+  --exclude=.resource-samples.jsonl
+  --exclude=.resource-usage-state.json
+  --exclude=.resource-usage.lock
 )
 
 require() {
@@ -640,6 +661,25 @@ do_push() {
       heartbeat_switch_json="$(jq -c --argjson d "$heartbeat_drain_cached" '. + {drain: $d}' <<<"$heartbeat_switch_json")"
     fi
   fi
+  # Resource-budget report (requirement 55, D14, issue #606): this node's
+  # own scripts/resource-budget-report.sh, over resources.report_window_hours
+  # — the compact per-container/per-volume {latest, median/growth, p95}
+  # summary scripts/collect-resource-usage.sh's local samples derive into,
+  # never the raw samples themselves (excluded above). `null` rather than
+  # an error on a report that could not be read: a node that has not run
+  # the collector yet (or has neither container this feature measures) is
+  # simply absent from the fleet's resource picture, the same "no evidence
+  # is not evidence" degradation the doctor/updater fields above already
+  # hold for a record that has not been written yet.
+  heartbeat_resources_window_hours="$(jq -r '.resources.report_window_hours // 24' <<<"$DEFAULTED_CONFIG")"
+  [[ "$heartbeat_resources_window_hours" =~ ^[0-9]+$ ]] || heartbeat_resources_window_hours=24
+  heartbeat_resources_samples=""
+  if [[ -r "$state_dir/.resource-samples.jsonl" ]]; then
+    heartbeat_resources_samples="$(cat "$state_dir/.resource-samples.jsonl")"
+  fi
+  heartbeat_resources_window_start="$(jq -nr --argjson secs "$(( heartbeat_resources_window_hours * 3600 ))" \
+    '(now - $secs) | todateiso8601' 2>/dev/null)"
+  heartbeat_resources_json="$(resource_budget_report "$heartbeat_resources_samples" "$heartbeat_resources_window_start" 2>/dev/null || echo null)"
   jq -nc \
     --arg node "$node_name" \
     --arg role "${AGENT_OPS_ROLE:-standby}" \
@@ -657,11 +697,12 @@ do_push() {
     --argjson doctor "$(jq -c '{timestamp, verdict,
                                 fails: ([(.fails // [])[] | .[0:200]] | .[0:3])}' \
                           "$state_dir/.doctor-status.json" 2>/dev/null || echo null)" \
+    --argjson resources "$heartbeat_resources_json" \
     '{node: $node, role: $role, ts: $ts, last_cycle: $lc, version: $version,
       compose: $compose, compose_reconcile: $compose_reconcile,
       image: $image, switch: $switch,
       stage_health: $stage_health, mirror: $mirror_rebuild, updater: $updater,
-      doctor: $doctor}' > "$mirror/heartbeat.json"
+      doctor: $doctor, resources: $resources}' > "$mirror/heartbeat.json"
 
   # Redact before committing (agent-ops#966): nothing above stops a token or
   # a home path that reaches a stage's stdout/stderr — a verbose git/curl

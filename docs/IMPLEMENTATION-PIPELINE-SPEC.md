@@ -58,6 +58,7 @@ are binding on any agent working inside them).
   - [Extended notes: `host_budget_reserved_cpus`](#extended-notes-host_budget_reserved_cpus)
   - [Extended notes: `none_selected_recheck_hours`](#extended-notes-none_selected_recheck_hours)
   - [Extended notes: `schedule.excluded_minutes`](#extended-notes-scheduleexcluded_minutes)
+  - [Extended notes: `resources`](#extended-notes-resources)
 - [The Landing Gate](#the-landing-gate)
 - [Requirements](#requirements)
   - [The Script (`agent-cycle.sh`)](#the-script-agent-cyclesh)
@@ -690,7 +691,22 @@ file and carries placeholders only; `.env` itself is never committed.
   blkio throttles need kernel support the WSL2 kernel lacks (`docker info`
   warns `No blkio throttle.read_bps_device support`), and Compose has no
   per-container egress cap at all. Disk and bandwidth are therefore bounded
-  only by what the pipeline itself does.
+  only by what the pipeline itself does — measured and reported rather than
+  enforced (requirement 55, agent-ops#606): `scripts/collect-resource-usage.sh`
+  self-samples both from inside `scheduler`/`dashboard`/`dashboard-local`,
+  and `scripts/doctor.sh` warns when the windowed figure crosses
+  `config.json`'s own `resources` budget, the same "reportable, not
+  enforceable" answer this file's own D16 open-question table gives disk and
+  bandwidth generally.
+  Nor does `mem_limit` bound the *whole* of what a container may hold: it is
+  a ceiling on `memory.current` (resident plus page cache), never on
+  `memory.current` plus swap, so on a host `docker info` reports "No swap
+  limit support" for (every node in this fleet, as of the ceilings above), a
+  container over its ceiling swaps into the host's own swap file rather than
+  being killed — the OOM trade this paragraph states two sentences up simply
+  does not happen there, and a container that should have been killed
+  instead keeps running while the host's own swap fills, which is a slower
+  and less legible version of the same freeze the ceiling exists to prevent.
   A scheduler's own `mem_limit` is not the whole of what bounds it: an
   opted-in node also creates it under a parent cgroup
   (`scripts/cgroup-parent-setup.sh`) carrying `memory.high` (the proactive
@@ -1003,6 +1019,7 @@ and the schema must carry every one of them.
 | `schedule.state_sync_push_minutes` | `5` | Interval, in minutes, of `state-sync.sh push` (requirement 2.5). |
 | `schedule.state_sync_fetch_minutes` | `7` | Interval, in minutes, of `state-sync.sh fetch` (requirement 2.5). |
 | `schedule.wake_poll_minutes` | `2` | Interval, in minutes, of `scripts/wake-poll.sh`'s crontab line (requirement 54). |
+| `schedule.resource_sample_minutes` | `5` | Interval, in minutes, of `scripts/collect-resource-usage.sh`'s crontab line (requirement 55) inside the `scheduler` service, and the same interval the background loop `scripts/serve-dashboard.sh` starts for `dashboard`/`dashboard-local` polls on. |
 | `schedule.log_rotation_minute` | `19` | The minute past every hour `rotate-logs.sh` runs (requirement 2.6). |
 | `schedule.doctor_offset_minutes` | `44` | Minutes past `CYCLE_MINUTE` (mod 60) the hourly `doctor.sh --unattended` pass's minute is set to, jittering it across the fleet the same way `review_offset_minutes` jitters the review tick. |
 | `schedule.revert_rate_hour` | `2` | The hour the daily revert-rate publishing tick fires. |
@@ -1012,6 +1029,7 @@ and the schema must carry every one of them.
 | `schedule.monitor_hour` | `5` | The hour the daily monitor run is due (`docs/MONITOR-PIPELINE-SPEC.md` M4). The crontab line itself is hourly, so a node asleep at this hour still picks the day's run up at its next firing. |
 | `schedule.monitor_offset_minutes` | `19` | Minutes past `CYCLE_MINUTE` (mod 60) the hourly monitor tick's minute is set to, jittering it across the fleet the same way `doctor_offset_minutes` jitters the unattended doctor pass. |
 | `revert_rate_baseline` | `{"source": "docs/reviews/2026-08-15-merge-autonomy-baseline.md", "generated": "2026-08-15", "repos": [{"slug": "Poetic-Poems/poetic", "count": 84, "reverts": 0, "follow_up_fixes": 31}, {"slug": "Poetic-Poems/poetic-fiddle", "count": 119, "reverts": 0, "follow_up_fixes": 44}, {"slug": "Pullwright/agent-ops", "count": 120, "reverts": 0, "follow_up_fixes": 106}]}` | The D18 Stage 0 merge-autonomy baseline (docs/reviews/2026-08-15-merge-autonomy-baseline.md §6), copied here once as a fixed reference rather than re-derived at runtime (issue #579): `scripts/publish-revert-rate.sh` compares every window's revert-or-follow-up rate against these figures. A repository absent from `repos` reports its baseline comparison `unavailable` rather than failing. |
+| `resources` | see `config.json` | Per-container (`resources.containers.<AGENT_OPS_SERVICE>`) and per-volume (`resources.volumes.<name>`) budgets requirement 55 (D14, issue #606) compares `scripts/resource-budget-report.sh`'s windowed actuals against. Covers only the three containers that run this image and self-measure (`scripts/collect-resource-usage.sh`) — `scheduler`, `dashboard`, `dashboard-local` — plus the two volumes they mount; `tailscale`/`watchtower`/`egress-proxy`/`collector`/`reconciler` are out...[continued below](#extended-notes-resources) |
 <!-- config-table:end -->
 
 Model IDs are pinned in config (one place to update); do not use floating
@@ -1235,6 +1253,10 @@ The no-op short-circuit's safety valve (requirement 3b): the Co-Ordinator is eng
 ### Extended notes: `schedule.excluded_minutes`
 
 Minutes `CYCLE_MINUTE` (env or the per-node hash) may never land on, rendered from `deploy/docker/crontab.tmpl`. Poetic's own value excludes `0` because its hourly sync workflow owns the top of the hour; a deployment with no such conflict ships `[]`. Excluding every minute of the hour is a misconfiguration the renderer refuses rather than spinning on. This governs only the *scheduled* `CYCLE_MINUTE`: a wake-poll-triggered invocation (requirement 54) does not consult this key at all and may start a cycle on a minute it excludes — see requirement 54's own note on why that is acceptable.
+
+### Extended notes: `resources`
+
+Per-container (`resources.containers.<AGENT_OPS_SERVICE>`) and per-volume (`resources.volumes.<name>`) budgets requirement 55 (D14, issue #606) compares `scripts/resource-budget-report.sh`'s windowed actuals against. Covers only the three containers that run this image and self-measure (`scripts/collect-resource-usage.sh`) — `scheduler`, `dashboard`, `dashboard-local` — plus the two volumes they mount; `tailscale`/`watchtower`/`egress-proxy`/`collector`/`reconciler` are out of scope (deferred; see requirement 55). `containers.*.memory_bytes`/`containers.*.cpu_cores` mirror `deploy/docker/compose.yaml`'s own `mem_limit`/`cpus` defaults, the enforcement side D14 already ships; `containers.*.bandwidth_bytes_per_hour` and every `volumes.*.disk_bytes` are provisional pending a real fleet window.
 
 <!-- config-table:notes-end -->
 
@@ -17915,6 +17937,206 @@ with the Reviewer's own.
     `lib/standdown.sh`'s own call site passes `union_log` alongside the
     existing `cycle_id`/`node_name` arguments.
 
+55. **Resource usage and budgets, self-measured (D14, issue #606).** #755
+    gave every container a `mem_limit`/`cpus` ceiling (this file's own
+    "Every container carries a resource ceiling" design decision, above) and
+    requirement 2.0g checks the declared sum against the host, but neither
+    *measures* what a container actually uses, and neither says anything
+    about disk or bandwidth at all — the two budgets D14 also names that
+    Compose and this kernel cannot enforce (the same design decision's own
+    paragraph). This requirement is the measured, reported half: a baseline
+    for all four resources, budgets stated in `config.json` rather than only
+    in a compose comment, actuals published per node and per container, and
+    a container or volume over budget made a reportable condition — the
+    "Done when" the issue's own specification (2026-08-21, adjudicated
+    adequate the same day) sets out.
+
+    **What is measured, and from where.** `lib/resource-usage.sh` reads this
+    container's own cgroup and `/proc/net/dev` directly — self-measurement,
+    not the host-facts collector's Docker-socket vantage
+    (`scripts/collect-host-facts.sh`, requirement 2.0g's own source): every
+    container that vantage could reach either already has a `mem_limit`/
+    `cpus` ceiling from #755 (the enforcement half) or is out of scope for
+    self-measurement here regardless (`tailscale`/`watchtower` run no
+    agent-ops script to self-measure from; `egress-proxy`/`collector`/
+    `reconciler` are deferred, agent-ops#1563). In scope: `scheduler`,
+    `dashboard` and `dashboard-local` — the three services that run this
+    image — plus the `workspace_root`/`state_dir` volumes they mount.
+    `resource_cgroup_version` reads `ROOT/cgroup.controllers` (v2) or
+    `ROOT/memory/memory.usage_in_bytes` (v1) to tell the two cgroup layouts
+    apart — the fleet is not uniform, one node presents v1 and its siblings
+    v2 — and every read below takes that layout as an argument rather than
+    assuming one, returning empty, never a fabricated `0`, off an
+    `"unknown"` layout or a missing file. `resource_memory_current_bytes`
+    reads `memory.current` (v2) or `memory/memory.usage_in_bytes` (v1);
+    `resource_cpu_usage_nanos` reads `cpu.stat`'s `usage_usec` (v2, scaled
+    to nanoseconds) or `cpuacct/cpuacct.usage` (v1, already nanoseconds) —
+    both cumulative counters since the cgroup was created, never a rate by
+    themselves. `resource_net_bytes` sums every non-loopback interface's
+    `rx`/`tx` byte counters from `/proc/net/dev` (not namespaced away from
+    this container — reading it from inside answers for this container's
+    own interface, unlike `/proc/meminfo`, which requirement 2.0f's own
+    header already establishes reads the *host's* figures because memory
+    accounting is not namespaced the same way). `resource_disk_usage_bytes`
+    is `du -sb` on a volume path.
+
+    **Deltas, never absolutes, for CPU and bandwidth.** `resource_cpu_cores`
+    and `resource_rate_per_hour` each take two samples — a value and a
+    Unix-epoch timestamp, taken and cached a tick apart — and refuse to
+    report a rate when the later value is smaller than the earlier one: a
+    container recreation resets both counters to zero, and reporting the
+    negative delta a naive subtraction would produce is worse than
+    reporting nothing, the same "no evidence is not evidence" discipline
+    `lib/host-budget.sh`'s own unknown-ceiling exclusion already holds.
+    Memory and disk are read as instantaneous values, not deltas — a
+    cgroup's `memory.current` and a volume's `du` total are already the
+    figure a budget compares against, not a counter to difference.
+
+    **The collector, its cadence, and what it writes.**
+    `scripts/collect-resource-usage.sh` is one sample tick: it reads
+    `AGENT_OPS_SERVICE` (or `--service`) to know which container it is
+    running in, tags every sample and every disk reading with that name —
+    the same key `config.json`'s `resources.containers`/`resources.volumes`
+    budgets are read back under — computes this tick's `cpu_cores`/
+    `net_rx_bytes_per_hour`/`net_tx_bytes_per_hour` against the previous
+    tick's cached cumulative reading (`state_dir/.resource-usage-state.json`,
+    one small JSON object keyed by service name), appends a sample line to
+    `state_dir/.resource-samples.jsonl`, and prunes anything older than
+    `resources.sample_retention_hours` (default 48) on every tick unless
+    called with `--no-prune`. Disk is sampled far less often — a `du` on a
+    multi-GB tree is not the cheap read a cgroup file is — throttled
+    separately to `resources.disk_sample_interval_minutes` (default 60) via
+    a marker in the same state file, and only for a volume this container
+    actually has mounted (`-d` checked before `du`). Both files are guarded
+    with `flock` (the same ledger-append idiom `lib/gh-shim.sh` already
+    uses) because `state_dir` is a volume `scheduler` and `dashboard`/
+    `dashboard-local` mount in common on a node running both, so two
+    containers can tick inside the same window.
+
+    Runs every `schedule.resource_sample_minutes` minutes (default 5) from
+    `scheduler`'s own crontab line (`deploy/docker/crontab.tmpl`); `dashboard`/
+    `dashboard-local` run no crontab at all (`serve-dashboard.sh` `exec`s the
+    HTTP server as the container's own process), so that script starts a
+    small background loop — gated on `AGENT_OPS_SERVICE` being set, so a
+    human running it on a laptop to browse the dashboard never spawns
+    one — calling the same collector on the same interval before its own
+    `exec`, detached from the shell's job table so the `exec` (which
+    replaces the process image, not the backgrounded job) leaves it running.
+
+    **The report.** `resource_budget_report` (`lib/resource-usage.sh`) is
+    the pure derivation `scripts/resource-budget-report.sh` wraps for
+    standalone use and `scripts/state-sync.sh`/`scripts/doctor.sh`/
+    `scripts/publish-dashboard.sh` call directly: given the sample text and
+    a window-start bound, it groups by `service` and by `volume`, and for
+    every numeric field prints `{latest, median, p95}` (nearest-rank —
+    the value at index `floor(p * (n-1))` of the sorted sample array, not
+    interpolated, so a reader can point at the one real sample that
+    produced the figure) for `cpu_cores`/`memory_bytes`/
+    `net_rx_bytes_per_hour`/`net_tx_bytes_per_hour` per container, and
+    `{latest, growth_bytes_per_day}` (a straight line between the window's
+    oldest and newest disk sample — never a regression, since disk is
+    sampled hourly at most and two points is the ordinary case) for
+    `disk_bytes` per volume. A line that is not valid JSON, or parses to
+    something other than an object, is skipped rather than failing the
+    whole report, the same discipline `test/pickup-metrics.test.sh` already
+    exercises for `log.jsonl`; an empty or entirely-unparseable input
+    degrades to `{"containers":{},"volumes":{},"sample_count":0,
+    "window_start":null}`, never a jq failure — the same "always one valid
+    object" contract `lib/metering.sh`'s own `metering_fields` holds for a
+    missing stage envelope.
+
+    **Budgets, in versioned configuration.** `config.schema.json`'s
+    `resources` key states them: `resources.containers.<AGENT_OPS_SERVICE>`
+    (`cpu_cores`, `memory_bytes`, `bandwidth_bytes_per_hour`) and
+    `resources.volumes.<name>` (`disk_bytes`), for exactly the three
+    containers and two volumes this requirement measures.
+    `containers.*.cpu_cores`/`containers.*.memory_bytes` default to the
+    same figures `deploy/docker/compose.yaml`'s own `cpus`/`mem_limit`
+    already ship (2.0/1536m for `scheduler`, 1.0/512m for `dashboard` and
+    `dashboard-local`) — the read side of a budget the compose file already
+    enforces, not a second enforcement path, and keeping the two in step
+    across an edit is a human responsibility today (D16's own control-plane
+    migration, when it comes, is what removes the duplication by generating
+    both from one source). `containers.*.bandwidth_bytes_per_hour` and
+    every `volumes.*.disk_bytes` are provisional: neither resource had ever
+    been measured before this requirement, so both ship generously above
+    what a quiet node is expected to use, meant to be tightened once
+    `scripts/resource-budget-report.sh` has real fleet windows to set them
+    from — a config edit, per the issue's own reinterpreted acceptance
+    criterion, never a re-implementation.
+
+    **Published per node and per container.** `scripts/state-sync.sh`
+    folds `resource_budget_report`'s own output into `heartbeat.json`'s
+    `resources` field, over `resources.report_window_hours` (default 24) —
+    a summary, never a series, the same "latest plus the window's p95"
+    shape the issue's own specification asks for and the same reasoning
+    `stage_health`/`compose_reconcile` already give for what travels in a
+    heartbeat versus what stays a raw local file
+    (`.resource-samples.jsonl`/`.resource-usage-state.json`, both excluded
+    from state-sync's replication — a raw sample is this node's own
+    forensics, never a fact a peer would read). `scripts/publish-
+    dashboard.sh` reads the identical field from a peer's heartbeat, and
+    recomputes the identical report live for this node's own row (the same
+    "self is read live, a peer is read from its heartbeat" split every
+    other per-node fact on the page already holds) — `docs/DASHBOARD-SPEC.md`
+    documents the resulting `resource budget` badge.
+
+    **A breach is a reportable condition.** `resource_budget_breaches`
+    (`lib/resource-usage.sh`) is `scripts/doctor.sh`'s "Resource budgets"
+    comparison, factored out of that section exactly as `lib/host-budget.sh`
+    is factored out of its own host-budget section (requirement 2.0g) — given
+    the report and the configured budgets, it prints one entry per breach
+    (windowed p95 for CPU/memory/bandwidth, latest for disk, an unbudgeted
+    or unmeasured resource contributing nothing) rather than a verdict, so a
+    caller decides what to do with each. `doctor.sh` `warn`s one line per
+    entry, naming the container or volume, the resource, the measured
+    figure and the configured budget — never silent, and never only
+    something a human reading a graph would notice. Skips cleanly, the same
+    "no evidence, not a failure" posture requirement 2.0g's own host-budget
+    section already takes on an unwritten host-facts record, when
+    `.resource-samples.jsonl` does not exist yet or carries no samples
+    inside the window.
+
+    `dashboard/index.html`'s `resourcesLine` applies the identical rule —
+    windowed p95 for CPU/memory/bandwidth, latest for disk, an unbudgeted or
+    unmeasured resource contributing nothing — but cannot share the
+    function: it is JavaScript running in a browser over the payload, with
+    no route to a bash library, the same constraint every other badge on
+    that page already works under. What the two genuinely share is their
+    *input*, `resource_budget_report`'s own output shape, identical whether
+    a row's `resources` field was recomputed live for this node or carried
+    in a peer's heartbeat. The duplication is therefore real and is kept in
+    step by hand: `resource_budget_breaches`'s own at/under/over-the-line
+    boundary test (acceptance check 55) is what pins the rule, and a change
+    to either side has to be made to both.
+
+    **Tests.** `test/resource-usage.test.sh` covers `lib/resource-usage.sh`
+    directly: the collector's arithmetic against canned cgroup v1 and v2
+    fixtures and a canned `/proc/net/dev`, the delta/rate guards (a fresh
+    baseline, a recreated container), the report's derivation from a
+    canned sample set (latest/median/p95, disk growth, a malformed line
+    skipped), the unknown-layout degradation, and `resource_budget_breaches`'s
+    own comparison at, just under and just over the line — the boundary
+    `scripts/doctor.sh` calls directly and `dashboard/index.html`'s
+    `resourcesLine` re-states in JavaScript, pinned here so the rule both
+    sides implement has one authoritative test.
+    `test/collect-resource-usage.test.sh` covers the
+    collector script end-to-end against fixture cgroup/proc files — two
+    ticks, five minutes apart, producing the expected delta, and a
+    baseline-reset on a simulated container recreation — the disk-sampling
+    throttle, two services sharing one `state_dir` without clobbering each
+    other's cached baseline, and the prune (`--no-prune` versus the
+    default). `test/resource-budget-report.test.sh` covers the thin
+    script wrapper: config-resolved `state_dir`/window versus the
+    `--state-dir`/`--window-hours` overrides, and the clean empty-report
+    degradation on a missing config or an unwritten samples file.
+    `test/config-schema.test.sh` covers the reportable half — what
+    `scripts/doctor.sh`'s own "Resource budgets" section prints over a
+    breach, an all-clear, an unwritten samples file and a window with
+    nothing in it — because that is where this repository's
+    `doctor.sh --offline` assertions live rather than in
+    `test/doctor.test.sh`, whose own header records why.
+
 ## Components
 
 What exists, and the requirements each part answers to:
@@ -26512,6 +26734,64 @@ oblige anyone to edit a test.
     region that no longer exists (or, in the reversed case, silently
     corrupted); `test/render-toc.test.sh` exercises all of these
     marker-validation cases against the real script.
+
+55. **Resource usage is self-measured, both cgroup layouts are handled, and
+    a budget breach is reportable (requirement 55, D14, issue #606).**
+    Against a v2 cgroup fixture (`cgroup.controllers`, `memory.current`,
+    `cpu.stat`), `resource_memory_current_bytes`/`resource_cpu_usage_nanos`
+    read the same figures a real container's own `/sys/fs/cgroup` would
+    carry; against a v1 fixture (`memory/memory.usage_in_bytes`,
+    `cpuacct/cpuacct.usage`) they read the same figures from the legacy
+    layout; against a directory carrying neither marker they read empty,
+    never a fabricated `0` — `test/resource-usage.test.sh` exercises all
+    three. `resource_cpu_cores`/`resource_rate_per_hour` given a later
+    cumulative value smaller than the earlier one (a simulated container
+    recreation) print nothing rather than a negative rate. `scripts/collect-
+    resource-usage.sh --config … --service scheduler --cgroup-root … --net-
+    dev-file … --now …`, run twice five minutes apart against fixtures whose
+    counters advance between calls, appends a first sample with no
+    `cpu_cores`/`net_*_bytes_per_hour` (no baseline yet) and a second
+    carrying the correct delta-derived figures — `test/collect-resource-
+    usage.test.sh` computes the expected numbers by hand and asserts them
+    exactly. The same fixture run twice inside `resources.
+    disk_sample_interval_minutes` samples disk once, not twice; run again
+    past that interval, it samples again. `resource_budget_report` given a
+    canned six-line sample set (one malformed) reports `sample_count: 5`,
+    the correct `{latest, median, p95}` per numeric field (nearest-rank,
+    asserted against hand-computed values) and the correct
+    `growth_bytes_per_day` for a two-point disk series; given no input at
+    all it reports `{"containers":{},"volumes":{},"sample_count":0,
+    "window_start":null}`, never a jq failure. `resource_budget_breaches`
+    given a report and a budget object reports no breach for a figure
+    exactly at the budget or just under it, and exactly one breach for a
+    figure just over it, naming the container/volume, the resource, the
+    measured figure and the configured budget; given an unbudgeted
+    container it reports nothing for that container regardless of usage.
+    `scripts/doctor.sh --config … --offline` against a fixture samples file
+    whose `scheduler` CPU and memory figures and `workspace_root` disk usage
+    all exceed the (default-shipped) `resources` budgets prints three
+    `[warn]` lines under "Resource budgets", each naming the
+    container/volume, the resource, the actual figure, the budget and the
+    `config.json` key that states it, and says nothing about the resources
+    still within budget; against a fixture within every budget it prints one
+    `[ ok ]` line naming the sample count and window and no breach warning at
+    all; against a node with no `.resource-samples.jsonl` yet, and against
+    one whose every sample predates `resources.report_window_hours`, it
+    prints `[skip]` naming the file — `test/config-schema.test.sh` exercises
+    all four, alongside every other `doctor.sh --offline` assertion
+    (`test/doctor.test.sh`'s own header records why the offline half lives
+    there). `deploy/docker/render-crontab.sh` against a
+    config naming `schedule.resource_sample_minutes` renders
+    `*/<N> * * * * /app/scripts/collect-resource-usage.sh …` with no
+    `@RESOURCE_SAMPLE_MINUTES@` placeholder surviving — `test/render-
+    crontab.test.sh`'s own "no placeholder survives a render" and
+    "supercronic accepts the rendered schedule" assertions cover it
+    alongside every other cadence. `scripts/resource-budget-report.sh`
+    against a state directory with no samples file at all prints the
+    identical empty-report shape rather than erroring, and `--state-dir`/
+    `--window-hours`/`--now` each override what `config.json` would
+    otherwise supply — `test/resource-budget-report.test.sh` exercises all
+    four.
 
 ## Host provisioning (human steps)
 

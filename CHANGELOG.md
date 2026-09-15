@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Per-container resource usage is measured and compared against a budget
+  (D14, issue #606).** `scripts/collect-resource-usage.sh` self-samples
+  CPU, memory and network from inside `scheduler`, `dashboard` and
+  `dashboard-local` (both cgroup v1 and v2), plus disk usage of
+  `workspace_root`/`state_dir`; `config.schema.json`'s new `resources` key
+  states a budget for each. `scripts/doctor.sh` warns when a windowed
+  figure crosses its budget, and the dashboard renders a `resource budget`
+  badge from the same comparison, published per node in `heartbeat.json`.
+  #755 gave every container a `mem_limit`/`cpus` enforcement ceiling; this
+  is the measured, reported half D14 also asks for, for the two resources
+  (disk, bandwidth) this substrate cannot enforce at all.
+
 ### Fixed
 
 - **`TOKEN_EXPIRY_WARN_DAYS` no longer reads an environment override**
