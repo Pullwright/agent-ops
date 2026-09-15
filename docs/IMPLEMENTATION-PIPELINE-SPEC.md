@@ -21413,8 +21413,13 @@ oblige anyone to edit a test.
    `0.0.0.0` on that same container port, without which the published mapping
    would reach nothing; the `tailnet` `dashboard` is in the sidecar's namespace
    (`network_mode: service:tailscale`), publishes no port and is given no bind
-   address, so it keeps loopback where Serve proxies to it; and no other
-   service publishes a port at all. `scripts/serve-dashboard.sh` invoked with
+   address, so it keeps loopback where Serve proxies to it; the `node-health`
+   service (requirement 58d) publishes the one mapping
+   `127.0.0.1:${NODE_HEALTH_PORT:-8788}:${NODE_HEALTH_PORT:-8788}`, takes no
+   `network_mode`, and is told to bind `0.0.0.0` on that same port; those two
+   are the only services that publish anything at all, and every mapping
+   either of them declares is `127.0.0.1`-scoped.
+   `scripts/serve-dashboard.sh` invoked with
    no bind address resolves to `127.0.0.1`, and to `0.0.0.0` when given it.
    The socket-level half of the property — that a request from another machine
    is refused — is check 1c, which needs the stack up; this check runs in the
