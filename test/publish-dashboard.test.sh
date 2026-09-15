@@ -2013,39 +2013,17 @@ case "$1 $2" in
       # An ordinary, healthy answer: no open issues. TD-PPagop-26080201's own
       # cases below are what exercise a failed listing.
       "repos/"*"/issues?"*) printf '[]' ;;
-      # One repo keeps a register; the others 404, as a repo with none does —
-      # a real `contents/tech-debt` 404 carries the API's own error body, which
-      # is what tells that apart from a call that simply did not answer
-      # (TD-PPagop-26080201); a stub that only ever printed nothing here would
-      # make every repo without a register look exactly like a failed read.
-      # Four items say what the panel has to get right — open, in-progress,
-      # resolved, and one whose blob will not answer — and four more make the
-      # roster too big to read in one tick.
-      "repos/Pullwright/agent-ops/contents/tech-debt")
-        { printf '[{"type":"file","name":"TD-PPagop-26070101.md","sha":"aaaaaaa1"}'
-          printf ',{"type":"file","name":"TD-PPagop-26070102.md","sha":"bbbbbbb2"}'
-          printf ',{"type":"file","name":"TD-PPagop-26070103.md","sha":"ccccccc3"}'
-          printf ',{"type":"file","name":"TD-PPagop-26070104.md","sha":"ddddddd4"}'
-          for n in 05 06 07 08; do
-            printf ',{"type":"file","name":"TD-PPagop-260702%s.md","sha":"f00000%s"}' "$n" "$n"
-          done
-          printf ',{"type":"dir","name":"drafts","sha":"eeeeeee5"}]'
-        } | gh_jq "$@" ;;
-      "repos/Pullwright/agent-ops/git/blobs/"*)
-        case "${2##*/}" in
-          aaaaaaa1) td_title="An open thing";              td_status=open ;;
-          bbbbbbb2) td_title="A thing already being worked"; td_status=in-progress ;;
-          ccccccc3) td_title="A thing long since resolved"; td_status=resolved ;;
-          f00000*)  td_title="A filler item";              td_status=resolved ;;
-          *) exit 1 ;;   # ddddddd4: the read that never answers
-        esac
-        printf -- '---\nid: an-item\ntitle: %s\nstatus: %s\nfiled: 2026-07-01\n---\n\nWhy it matters.\n' \
-          "$td_title" "$td_status" \
-          | base64 -w 60 | jq -Rsc '{content: ., encoding: "base64"}' | gh_jq "$@" ;;
-      "repos/"*"/contents/tech-debt")
-        printf '{"message":"Not Found","documentation_url":"https://docs.github.com/rest","status":"404"}'
-        echo "gh: Not Found (HTTP 404)" >&2
-        exit 1 ;;
+      # One repo has open tech-debt issues; the others' label search comes back
+      # empty, an ordinary `answered` zero rather than a failure — a stub that
+      # only ever printed nothing here would make every repo with no debt look
+      # exactly like a failed read.
+      "search/issues?q=repo:Pullwright/agent-ops+label:pw::type:tech-debt+type:issue+state:open&per_page=40&sort=created&order=asc")
+        printf '{"total_count":2,"items":[
+          {"number":101,"title":"An open thing","html_url":"https://github.com/Pullwright/agent-ops/issues/101"},
+          {"number":102,"title":"Another open thing","html_url":"https://github.com/Pullwright/agent-ops/issues/102"}
+        ]}' | gh_jq "$@" ;;
+      "search/issues?q=repo:"*"+label:pw::type:tech-debt+type:issue+state:open&per_page=40&sort=created&order=asc")
+        printf '{"total_count":0,"items":[]}' | gh_jq "$@" ;;
       *)
         # `api repos/<slug> --jq .default_branch`: the lookup's own filter
         # program is $4, not $3 (`--jq` itself) — matching $3 here would never
@@ -2142,14 +2120,14 @@ assert_eq "a cold index is filled a few references a tick, not all at once" \
   "1" "$(( y_views <= 8 ))"
 assert_eq "and it does make progress" "1" "$(( y_views > 0 ))"
 
-# --- The tech-debt ledger's rows -------------------------------------------------
+# --- The tech-debt ledger's rows (issue #881) ------------------------------------
 # The panel is headed "what the Co-Ordinator sees", so a row has to say what the
-# work *is*: an ID alone named nothing, and most of a mature register is
-# resolved items the Co-Ordinator will never pick up. Titles and statuses live
-# one blob read per item down, which is affordable only because the read is
-# keyed by the item's blob SHA and so never repeats — the property asserted
-# below, since a re-read register renders exactly like a cached one and the only
-# symptom of losing it is the API bill.
+# work *is*: a bare issue number named nothing on its own. The ledger source is
+# one label search per repo for open `pw::type:tech-debt` issues (the same band
+# the Co-Ordinator itself reads, scripts/gather-tech-debt.sh), so every row it
+# can return already carries its own title and is already open — there is
+# nothing left to read a second time, unlike the frozen register's per-item
+# blob fetch this replaced.
 w="$(new_home nodeW)"
 run_w_publish() {
   env HOME="$w" NODE_NAME=nodeW-self GH_CALL_LOG="$gh_calls" \
@@ -2161,58 +2139,32 @@ td_of() {  # td_of <data> <jq-suffix>
 : > "$gh_calls"
 run_w_publish
 wdata="$(data_of "$w")"
-assert_eq "an item's row carries the title out of its own file" "An open thing" \
-  "$(td_of "$wdata" '[] | select(.id == "TD-PPagop-26070101") | .title')"
-assert_eq "and the status the Co-Ordinator would find" "open" \
-  "$(td_of "$wdata" '[] | select(.id == "TD-PPagop-26070101") | .status')"
-assert_eq "and a link to the item file behind it" \
-  "https://github.com/Pullwright/agent-ops/blob/main/tech-debt/TD-PPagop-26070101.md" \
-  "$(td_of "$wdata" '[] | select(.id == "TD-PPagop-26070101") | .url')"
-assert_eq "a resolved item is no work source, and is not shown as one" "false" \
-  "$(td_of "$wdata" ' | any(.id == "TD-PPagop-26070103")')"
-assert_eq "an item already being worked sorts above the merely open" "TD-PPagop-26070102" \
-  "$(td_of "$wdata" '[0].id')"
-assert_eq "an item whose file would not read is still listed, as the bare ID it was" "" \
-  "$(td_of "$wdata" '[] | select(.id == "TD-PPagop-26070104") | .title')"
-# The cold-start bound, for the same reason as the pull-request index above: a
-# fleet's worth of registers is well over a hundred blobs and would not fit in
-# one publish.
-w_blobs="$(grep -c 'git/blobs' "$gh_calls")"
-assert_eq "a cold register is read a few items a tick, not all at once" \
-  "1" "$(( w_blobs <= 4 ))"
-assert_eq "and it does make progress" "1" "$(( w_blobs > 0 ))"
-
-run_w_publish            # the ticks that finish the roster
-run_w_publish
-: > "$gh_calls"
-run_w_publish            # …and one with nothing left to read
-assert_eq "a warm register re-reads none of the items it has already read" "0" \
-  "$(grep -c 'git/blobs/[abcf]' "$gh_calls")"
-assert_eq "while a read that never answered is tried again" "1" \
-  "$(grep -c 'git/blobs/ddddddd4' "$gh_calls")"
-wdata="$(data_of "$w")"
-assert_eq "and a fully-read register is down to the items that are actually work" "3" \
+assert_eq "an item's row carries the title the search returned" "An open thing" \
+  "$(td_of "$wdata" '[] | select(.id == "#101") | .title')"
+assert_eq "and a status of open, since the search only ever returns open issues" "open" \
+  "$(td_of "$wdata" '[] | select(.id == "#101") | .status')"
+assert_eq "and a link to the issue itself" \
+  "https://github.com/Pullwright/agent-ops/issues/101" \
+  "$(td_of "$wdata" '[] | select(.id == "#101") | .url')"
+assert_eq "the search's one call answers every returned row, not just a few" "2" \
   "$(td_of "$wdata" ' | length')"
+assert_eq "the true count comes back in the same call, as the Search API's own total" "2" \
+  "$(jq -r '.github.inputs["Pullwright/agent-ops"].tech_debt_total' <<<"$wdata")"
+
+run_w_publish   # a second GitHub tick, log not cleared in between
+assert_eq "each GitHub tick re-issues the search — no cache persists between ticks" "2" \
+  "$(grep -c 'search/issues?q=repo:Pullwright/agent-ops+label:pw::type:tech-debt' "$gh_calls")"
 
 # A --no-github tick carries the rows forward like every other GitHub-sourced
 # panel, rather than blanking the ledger between fetches.
 run_publish "$w" NODE_NAME=nodeW-self
-assert_eq "a local-only tick carries the ledger forward" "3" \
+assert_eq "a local-only tick carries the ledger forward" "2" \
   "$(td_of "$(data_of "$w")" ' | length')"
-# The register above (8 files) is well under the panel's own 40-row cap, but
-# its true size is 2, not the 3 shown: TD-PPagop-26070104 (sha ddddddd4)
-# never answers, so its status stays unread forever, and an unread item must
-# never count as unresolved — the read-and-confirmed TD-PPagop-26070101
-# (open) and -26070102 (in-progress) are the only two the total may claim.
-assert_eq "the total counts only rows confirmed open/in-progress, not one that never answers" "2" \
-  "$(jq -r '.github.inputs["Pullwright/agent-ops"].tech_debt_total' <<<"$(data_of "$w")")"
 
 # --- The tech-debt ledger's true size, past the panel's own top-40 cap -----------
-# The panel shows at most 40 unresolved rows; a register past that has to say
-# so — but only once a row is *confirmed* open or in-progress, never while it
-# is merely unread (TD-PPagop-26080201's own "not yet known not to be work"
-# rule keeps an unread item in the visible list, but its real status could
-# still turn out to be resolved, so it may never inflate the total).
+# The panel shows at most 40 rows; a repo past that has to say so, via the
+# Search API's own `.total_count` returned in the same call as the rows —
+# free, unlike the open-issues total below, which needs a second call.
 td_big_stub="$tmp_dir/stub-gh-td-big.sh"
 cat > "$td_big_stub" <<'STUB'
 #!/usr/bin/env bash
@@ -2229,21 +2181,16 @@ case "$1 $2" in
   "api "*)
     case "$2" in
       "repos/"*"/issues?"*) printf '[]' ;;
-      "repos/Pullwright/agent-ops/contents/tech-debt")
-        { printf '['
-          for n in $(seq -w 1 45); do
+      "search/issues?q=repo:Pullwright/agent-ops+label:pw::type:tech-debt+type:issue+state:open&per_page=40&sort=created&order=asc")
+        { printf '{"total_count":45,"items":['
+          for n in $(seq -w 1 40); do
             [[ "$n" == "01" ]] || printf ','
-            printf '{"type":"file","name":"TD-PPagop-260800%s.md","sha":"0abcdef0%s"}' "$n" "$n"
+            printf '{"number":8%s,"title":"A big-ledger item","html_url":"https://github.com/Pullwright/agent-ops/issues/8%s"}' "$n" "$n"
           done
-          printf ']'
+          printf ']}'
         } | gh_jq "$@" ;;
-      "repos/Pullwright/agent-ops/git/blobs/"*)
-        printf -- '---\nid: an-item\ntitle: A big-register item\nstatus: open\nfiled: 2026-08-01\n---\n\nWhy it matters.\n' \
-          | base64 -w 60 | jq -Rsc '{content: ., encoding: "base64"}' | gh_jq "$@" ;;
-      "repos/"*"/contents/tech-debt")
-        printf '{"message":"Not Found","documentation_url":"https://docs.github.com/rest","status":"404"}'
-        echo "gh: Not Found (HTTP 404)" >&2
-        exit 1 ;;
+      "search/issues?q=repo:"*"+label:pw::type:tech-debt+type:issue+state:open&per_page=40&sort=created&order=asc")
+        printf '{"total_count":0,"items":[]}' | gh_jq "$@" ;;
       *)
         case "$4" in
           *default_branch*) printf 'main' ;;
@@ -2255,37 +2202,14 @@ esac
 STUB
 chmod +x "$td_big_stub"
 
-# Cold: a fresh cache reads only TD_META_MISS_BUDGET (4) items this tick, so
-# 41 of the 45 stay unread. The total must reflect only what was actually
-# confirmed, never the register's raw size — the exact bug a reviewer
-# caught in this PR (agent-ops#1508): a naive unsliced-length total would
-# have read 45 here, order-of-magnitude off the true count of one.
 tb="$(new_home nodeTDBig)"
 env HOME="$tb" NODE_NAME=nodeTDBig-self GH_CALL_LOG="$gh_calls" \
     DASHBOARD_GH_CMD="$td_big_stub" "$PUBLISH" >/dev/null 2>&1
 tbdata="$(data_of "$tb")"
 assert_eq "the panel still shows at most 40 tech-debt rows" "40" \
   "$(jq '.github.inputs["Pullwright/agent-ops"].tech_debt | length' <<<"$tbdata")"
-assert_eq "a cold cache's total counts only what this tick actually confirmed" "4" \
+assert_eq "but the total says the true size behind that cap" "45" \
   "$(jq -r '.github.inputs["Pullwright/agent-ops"].tech_debt_total' <<<"$tbdata")"
-
-# Warm: every item's metadata is already cached, as a fully-read register
-# eventually is, so all 45 are confirmed and the total says so — genuinely
-# past the cap now, the two figures legitimately apart.
-tb2="$(new_home nodeTDBig2)"
-td_cache_dir="$tb2/.local/state/poetic-agents"
-mkdir -p "$td_cache_dir"
-jq -n '[range(1;46)] | map({
-    key: ("0abcdef0" + (if . < 10 then "0" else "" end) + (. | tostring)),
-    value: {title: "A big-register item", status: "open", seen: (now | floor)}
-  }) | from_entries' > "$td_cache_dir/.dashboard-td.json"
-env HOME="$tb2" NODE_NAME=nodeTDBig2-self GH_CALL_LOG="$gh_calls" \
-    DASHBOARD_GH_CMD="$td_big_stub" "$PUBLISH" >/dev/null 2>&1
-tb2data="$(data_of "$tb2")"
-assert_eq "a fully-confirmed register still shows at most 40 rows" "40" \
-  "$(jq '.github.inputs["Pullwright/agent-ops"].tech_debt | length' <<<"$tb2data")"
-assert_eq "but its total now reports every confirmed row, past the cap" "45" \
-  "$(jq -r '.github.inputs["Pullwright/agent-ops"].tech_debt_total' <<<"$tb2data")"
 
 # --- The open-issues total, behind the panel's own one-page cap (agent-ops#1171) --
 # The 30-row `per_page` fetch cannot itself say whether it saw every open
@@ -2315,10 +2239,8 @@ case "$1 $2" in
         printf '{"total_count": 47}' | gh_jq "$@" ;;
       "search/issues?q=repo:"*"+type:issue+state:open")
         exit 1 ;;   # every other repo's total is unavailable this tick
-      "repos/"*"/contents/tech-debt")
-        printf '{"message":"Not Found","documentation_url":"https://docs.github.com/rest","status":"404"}'
-        echo "gh: Not Found (HTTP 404)" >&2
-        exit 1 ;;
+      "search/issues?q=repo:"*"+label:pw::type:tech-debt+type:issue+state:open&per_page=40&sort=created&order=asc")
+        printf '{"total_count":0,"items":[]}' ;;
       *)
         case "$4" in
           *default_branch*) printf 'main' ;;
@@ -2343,32 +2265,33 @@ assert_eq "  ... and never marks the issues source itself failed over it" "answe
 assert_eq "  ... nor the page-wide alarm" "true" "$(jq -r '.github.ok' <<<"$itdata")"
 
 # --- Per-source, per-repo read state (TD-PPagop-26080201) -----------------------
-# Four of `github.inputs[<slug>]`'s five sources used to conflate "answered
-# emptily" with "did not answer at all": `issues`, `failed_runs`, `tech_debt`
-# and `findings` all degraded a failed call to the same `[]` a genuinely empty
-# one produces, indistinguishable on the page. Each now carries a `state`
-# alongside its data — "answered", "answered_404" (a legitimate absence, only
-# ever `tech_debt`) or "failed" — and `github.ok`/`error` reflect a failure
-# from any of them, not only `pr list`'s.
+# `github.inputs[<slug>]`'s four state-carrying sources — `issues`,
+# `failed_runs`, `tech_debt` and `findings` — used to conflate "answered
+# emptily" with "did not answer at all": each degraded a failed call to the
+# same `[]` a genuinely empty one produces, indistinguishable on the page.
+# Each now carries a `state` alongside its data — "answered" or "failed" —
+# and `github.ok`/`error` reflect a failure from any of them, not only `pr
+# list`'s.
 #
 # The healthy fleet against `xdata` (the PR-index run above, same stub) is the
-# ordinary case: every source for every repo answered, and the two repos with
-# no register 404 legitimately rather than failing.
+# ordinary case: every source for every repo answered, including a repo with
+# no open tech-debt issues, which is an ordinary empty `answered`, not a
+# distinct state.
 assert_eq "a healthy repo's issues read as answered" "answered" \
   "$(jq -r '.github.inputs["Poetic-Poems/poetic"].state.issues' <<<"$xdata")"
 assert_eq "and its failing-runs listing too" "answered" \
   "$(jq -r '.github.inputs["Poetic-Poems/poetic"].state.failed_runs' <<<"$xdata")"
 assert_eq "and its findings gathering too" "answered" \
   "$(jq -r '.github.inputs["Poetic-Poems/poetic"].state.findings' <<<"$xdata")"
-assert_eq "a repo with no tech-debt register 404s legitimately, not a failure" \
-  "answered_404" "$(jq -r '.github.inputs["Poetic-Poems/poetic"].state.tech_debt' <<<"$xdata")"
-assert_eq "the repo whose register does exist reads it as answered" "answered" \
+assert_eq "a repo with no open tech-debt issues answers with an ordinary empty ledger" \
+  "answered" "$(jq -r '.github.inputs["Poetic-Poems/poetic"].state.tech_debt' <<<"$xdata")"
+assert_eq "the repo with open tech-debt issues reads them as answered too" "answered" \
   "$(jq -r '.github.inputs["Pullwright/agent-ops"].state.tech_debt' <<<"$xdata")"
 
 # A second stub, parameterised by $GH_STUB_FAIL, answers every source
 # healthily except the one under test, which it fails for a reason that is
-# NOT a legitimate absence (a rate limit, `status: "403"`, distinct from the
-# `tech_debt` 404 above) — the case the fix exists for.
+# a genuine failure (a rate limit, `status: "403"`) — the case the fix
+# exists for.
 gh_fail_stub="$tmp_dir/stub-gh-fail.sh"
 cat > "$gh_fail_stub" <<'STUB'
 #!/usr/bin/env bash
@@ -2397,18 +2320,14 @@ case "$1 $2" in
       "repos/"*"/issues?"*)
         [[ "$GH_STUB_FAIL" == "issues" ]] && rate_limited
         printf '[]' ;;
-      "repos/Poetic-Poems/poetic/contents/tech-debt")
+      "search/issues?q=repo:Poetic-Poems/poetic+label:pw::type:tech-debt+type:issue+state:open&per_page=40&sort=created&order=asc")
         [[ "$GH_STUB_FAIL" == "tech_debt" ]] && rate_limited
-        printf '{"message":"Not Found","documentation_url":"https://docs.github.com/rest","status":"404"}'
-        echo "gh: Not Found (HTTP 404)" >&2
-        exit 1 ;;
-      "repos/"*"/contents/tech-debt")
-        # Every other repo still 404s legitimately, whichever source this run
-        # is failing, so this scenario proves `failed` and `answered_404` are
-        # told apart from each other, not just from `answered`.
-        printf '{"message":"Not Found","documentation_url":"https://docs.github.com/rest","status":"404"}'
-        echo "gh: Not Found (HTTP 404)" >&2
-        exit 1 ;;
+        printf '{"total_count":0,"items":[]}' ;;
+      "search/issues?q=repo:"*"+label:pw::type:tech-debt+type:issue+state:open&per_page=40&sort=created&order=asc")
+        # Every other repo still answers healthily, whichever source this run
+        # is failing, so this scenario proves the failure is told apart
+        # per-repo, not just per-source.
+        printf '{"total_count":0,"items":[]}' ;;
       *)
         # See the healthy stub above: the filter program is $4, not $3. A
         # failed lookup here (issue #692) used to hand `gh`'s own JSON error
@@ -2462,9 +2381,9 @@ assert_eq "a failed findings gathering is marked failed" "failed" \
 f="$(new_home nodeFail4)"
 run_fail_publish "$f" tech_debt
 fdata="$(data_of "$f")"
-assert_eq "a real tech-debt-listing failure is marked failed, not a legitimate 404" \
+assert_eq "a real tech-debt-listing failure is marked failed" \
   "failed" "$(jq -r '.github.inputs["Poetic-Poems/poetic"].state.tech_debt' <<<"$fdata")"
-assert_eq "while an unrelated repo's genuine 404 still reads as one" "answered_404" \
+assert_eq "while an unrelated repo's healthy search still reads answered" "answered" \
   "$(jq -r '.github.inputs["Poetic-Poems/poetic-fiddle"].state.tech_debt' <<<"$fdata")"
 
 f="$(new_home nodeFail5)"
@@ -2501,7 +2420,8 @@ case "$1 $2" in
   "api "*)
     case "$2" in
       "repos/"*"/issues?"*)         auth_failed ;;
-      "repos/"*"/contents/tech-debt") auth_failed ;;
+      "search/issues?q=repo:"*"+label:pw::type:tech-debt+type:issue+state:open&per_page=40&sort=created&order=asc")
+        auth_failed ;;
       *)
         # The filter program is $4, not $3 (--jq itself) — see the healthy
         # stub above. Deliberately not one of #695's five sources: this
@@ -2559,10 +2479,8 @@ case "$1 $2" in
         printf '{"message":"API rate limit exceeded for user ID 1.","status":"403"}'
         echo "gh: API rate limit exceeded (HTTP 403)" >&2
         exit 1 ;;
-      "repos/"*"/contents/tech-debt")
-        printf '{"message":"Not Found","documentation_url":"https://docs.github.com/rest","status":"404"}'
-        echo "gh: Not Found (HTTP 404)" >&2
-        exit 1 ;;
+      "search/issues?q=repo:"*"+label:pw::type:tech-debt+type:issue+state:open&per_page=40&sort=created&order=asc")
+        printf '{"total_count":0,"items":[]}' ;;
       *)
         # The filter program is $4, not $3 (--jq itself) — see the healthy
         # stub above.
@@ -3020,10 +2938,8 @@ case "$1 $2" in
   "api "*)
     case "$2" in
       "repos/"*"/issues?"*) printf '[]' ;;
-      "repos/"*"/contents/tech-debt")
-        printf '{"message":"Not Found","documentation_url":"https://docs.github.com/rest","status":"404"}'
-        echo "gh: Not Found (HTTP 404)" >&2
-        exit 1 ;;
+      "search/issues?q=repo:"*"+label:pw::type:tech-debt+type:issue+state:open&per_page=40&sort=created&order=asc")
+        printf '{"total_count":0,"items":[]}' ;;
       *)
         # The default-branch lookup (`api repos/<slug> --jq .default_branch`):
         # this suite is about the merge-queue probe, not this source, so it
@@ -3119,10 +3035,8 @@ case "$1 $2" in
   "api "*)
     case "$2" in
       "repos/"*"/issues?"*) printf '[]' ;;
-      "repos/"*"/contents/tech-debt")
-        printf '{"message":"Not Found","documentation_url":"https://docs.github.com/rest","status":"404"}'
-        echo "gh: Not Found (HTTP 404)" >&2
-        exit 1 ;;
+      "search/issues?q=repo:"*"+label:pw::type:tech-debt+type:issue+state:open&per_page=40&sort=created&order=asc")
+        printf '{"total_count":0,"items":[]}' ;;
       *) exit 1 ;;
     esac ;;
   *) exit 1 ;;

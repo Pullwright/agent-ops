@@ -289,12 +289,6 @@ claims_cache="$state_dir/.dashboard-claims.json"
 # see the index build below for what keeps the file from growing. Kept out of
 # the served dir like the two caches above.
 pr_cache="$state_dir/.dashboard-prs.json"
-# Tech-debt item metadata (title, status) by blob SHA, on the same never-stale
-# argument as the claims cache: an item file's SHA names its bytes, so the
-# title behind it cannot change without the SHA changing. An item is written
-# once and touched again only when its status flips, so a warm register costs
-# no call at all. Kept out of the served dir like the three caches above.
-td_cache="$state_dir/.dashboard-td.json"
 # The merge-queue state machine for every open agent pull request, by
 # "<owner>/<repo>#<number>" — not a TTL cache like the others above, but the
 # Publisher's own memory of `{queued, warn}`, which is what lets a dequeue be
@@ -733,27 +727,6 @@ gh_fail_summary() {
 }
 
 epoch_of() { date -d "$1" +%s 2>/dev/null || echo 0; }
-
-# td_frontmatter — read a tech-debt item file on stdin, print "<title>\t<status>".
-# The frozen archive's own shape: a leading `---` line, `key: value` lines
-# with the key case-folded, a closing `---`. Anything else prints an empty
-# pair, which renders as the bare ID —
-# the page must never turn a malformed item into a missing one. Tabs in a
-# value would split the pair, so they are spaces by the time it is emitted.
-td_frontmatter() {
-  awk '
-    NR == 1              { if ($0 !~ /^---[ \t\r]*$/) exit; next }
-    /^---[ \t\r]*$/      { exit }
-    /^[A-Za-z][A-Za-z-]*:/ {
-      key = tolower(substr($0, 1, index($0, ":") - 1))
-      val = substr($0, index($0, ":") + 1)
-      gsub(/\t/, " ", val); sub(/^[ ]+/, "", val); sub(/[ \r]+$/, "", val)
-      if      (key == "title")  title  = val
-      else if (key == "status") status = val
-    }
-    END { printf "%s\t%s\n", title, status }
-  '
-}
 
 # --- Build the whole detail window's JSON in one jq program -------------------
 # TD26072201: this used to be two functions, stage_json and cycle_json, each
@@ -2503,20 +2476,6 @@ PR_INDEX_MISS_BUDGET=8
 # An open pull request's record moves; a merged or closed one never does. So
 # the cache is permanent for terminal states and this old for the rest.
 PR_INDEX_OPEN_TTL=3600
-# How many unread tech-debt items a repo's register may cost in one tick, on
-# exactly the reasoning above: the fleet's registers hold well over a hundred
-# items between them and a cold cache cannot read them all in one publish, so
-# it fills a few a tick and is warm within the hour. Nothing waits on it — an
-# unread item renders as the bare ID it always was. Per repo rather than per
-# tick, so that every register fills at once: a budget shared across the fleet
-# is spent entirely on the first repo in the config, and the last one stays
-# bare for as long as the first one took to warm. What that costs is a ceiling
-# that grows with the repo count, which is why it is this small.
-TD_META_MISS_BUDGET=4
-# How long an item's metadata survives after the last register that named it.
-# Item files are append-only, so this bounds the cache rather than trimming it:
-# what it collects is the superseded SHA left behind by every status flip.
-TD_CACHE_TTL=2592000   # 30 days
 
 prs_json='[]'; inputs_json='{}'; gh_ok=false; gh_err=""
 # Every source's failure this tick (TD-PPagop-26080201): each entry is one
@@ -2525,15 +2484,6 @@ prs_json='[]'; inputs_json='{}'; gh_ok=false; gh_err=""
 # not only the first (historically `pr list`, the only one that raised it).
 gh_fail_msgs=()
 pr_rows="$work_tmp/pr.rows"; : > "$pr_rows"
-# This tick's tech-debt reads, and every item SHA the registers still name.
-td_new="$work_tmp/td.new";   : > "$td_new"
-td_seen="$work_tmp/td.seen"; : > "$td_seen"
-td_cache_json="$work_tmp/td-cache.json"
-if [[ -s "$td_cache" ]] && jq -e 'type == "object"' "$td_cache" >/dev/null 2>&1; then
-  cp "$td_cache" "$td_cache_json"
-else
-  printf '{}' > "$td_cache_json"
-fi
 # Default for a build that never reaches the WITH_GITHUB block below (a fast
 # tick, or a full local-only one run with --no-github): the FULL-build
 # assemble further down always needs this defined, and "no pager section
@@ -2680,88 +2630,30 @@ if (( WITH_GITHUB )); then
       failed_runs="${failed_runs:-[]}"
     fi
 
-    # The per-item register. One listing read gives the roster, and free with
-    # each filename comes the item's blob SHA — which is what makes the title
-    # and status behind it affordable: the metadata cache is keyed by that SHA,
-    # so a register whose items are not moving costs exactly the one call it
-    # always did. An ID on its own names no work; and three-quarters of a
-    # mature register is resolved items the Co-Ordinator will never pick up, so
-    # those are dropped here rather than shown as work sources. Items whose
-    # metadata has not been read yet are kept — they are not yet known *not* to
-    # be work — and render as the bare ID until the cache reaches them.
-    # A repo with no register just 404s to an empty roster — legitimate, and
-    # distinguished from a real failure by the API's own JSON error body
-    # (with its own `.status`) on a non-2xx response: gh still prints it, so
-    # a genuine 404 and a rate limit or outage are told apart from the body,
-    # not guessed from an empty string either could equally produce.
-    td_rows="$work_tmp/td.rows"; : > "$td_rows"
-    td_raw="$(gh_call api "repos/$slug/contents/tech-debt")"
+    # The ledger source (D15 as revised, #869; issue #881): one label search
+    # per repo for open `pw::type:tech-debt` issues. The Search API hands
+    # back the page of results and the true `.total_count` behind it in the
+    # same call, so — unlike the open-issues total above — nothing further is
+    # needed to know whether the top-40 cap has clipped anything. Sorted
+    # oldest first, matching scripts/gather-tech-debt.sh's own "the item that
+    # has waited longest is kept first" convention. This replaced a listing
+    # read of `contents/tech-debt`: that register is now a frozen archive
+    # (#880 and its sibling issues), so reading it no longer answers what the
+    # Co-Ordinator would actually pick up.
+    td_raw="$(gh_call api "search/issues?q=repo:$slug+label:pw::type:tech-debt+type:issue+state:open&per_page=40&sort=created&order=asc")"
     td_rc=$?
     if (( td_rc == 0 )); then
       state_td="answered"
-      jq -r '.[] | select(.type == "file" and (.name | endswith(".md"))) | "\(.sha)\t\(.name)"' \
-        <<<"$td_raw" > "$td_rows" 2>/dev/null || true
-    elif [[ "$(jq -r '.status // ""' <<<"$td_raw" 2>/dev/null)" == "404" ]]; then
-      state_td="answered_404"
+      td_json="$(jq -c '[ .items[]? | {id: ("#" + (.number | tostring)), title, status: "open", url: .html_url} ]' \
+        <<<"$td_raw" 2>/dev/null)"
+      [[ -n "$td_json" ]] || td_json='[]'
+      td_total="$(jq -r '.total_count // 0' <<<"$td_raw" 2>/dev/null)"
+      [[ "$td_total" =~ ^[0-9]+$ ]] || td_total=0
     else
       state_td="failed"
       gh_ok=false; gh_fail_msgs+=("tech-debt listing failed for $slug: $(gh_call_err)")
+      td_json='[]'; td_total=0
     fi
-    cat "$td_rows" >> "$td_seen"
-    td_fetched=0
-    while IFS= read -r td_sha; do
-      (( td_fetched < TD_META_MISS_BUDGET )) || break
-      [[ "$td_sha" =~ ^[0-9a-f]{7,40}$ ]] || continue
-      # Counted before the call, not after: a register whose blobs will not
-      # answer must cost the budget and stop, not walk the whole roster making
-      # a failing call for every item in it.
-      td_fetched=$(( td_fetched + 1 ))
-      # Through a file, so a call that answered nothing stays distinguishable
-      # from an item that parsed to nothing. The first has to be tried again
-      # next tick; the second is a malformed item — cached as read-and-empty so
-      # that it costs one call rather than one every tick for ever.
-      gh_json api "repos/$slug/git/blobs/$td_sha" --jq '.content' \
-        | tr -d '\n' | base64 -d > "$work_tmp/td.blob" 2>/dev/null
-      [[ -s "$work_tmp/td.blob" ]] || continue
-      td_meta="$(td_frontmatter < "$work_tmp/td.blob")"
-      jq -Rc --arg s "$td_sha" \
-        'split("\t") | {sha: $s, title: (.[0] // ""), status: (.[1] // "")}' \
-        <<<"$td_meta" >> "$td_new" 2>/dev/null || true
-    done < <(jq -Rr --slurpfile c "$td_cache_json" '
-      ($c[0] // {}) as $cache
-      | split("\t") | select(length == 2) | select($cache[.[0]] == null) | .[0]' \
-      "$td_rows" 2>/dev/null)
-    td_full_json="$(jq -n --rawfile rows "$td_rows" --slurpfile cache "$td_cache_json" \
-      --slurpfile fresh "$td_new" --arg slug "$slug" --arg db "$db" '
-      ($cache[0] // {}) as $c
-      | (reduce $fresh[] as $e ({}; .[$e.sha] = $e)) as $n
-      | [ $rows | split("\n")[] | select(length > 0) | split("\t") | select(length == 2)
-          | { id: (.[1] | sub("\\.md$"; "")), sha: .[0] }
-          | ($n[.sha] // $c[.sha] // {}) as $m
-          | { id,
-              title:  ($m.title // ""),
-              status: (($m.status // "") | ascii_downcase),
-              url:    "https://github.com/\($slug)/blob/\($db)/tech-debt/\(.id).md" } ]
-      | map(select(.status != "resolved" and .status != "not-debt"))
-      | sort_by([ (if .status == "in-progress" then 0 elif .status == "open" then 1 else 2 end), .id ])' 2>/dev/null)"
-    [[ -n "$td_full_json" ]] || td_full_json='[]'
-    # The panel shows at most 40 (below); the register listing above is
-    # already the repo's whole tech-debt directory in one call, so the true
-    # count behind that cap costs nothing extra. Counted as `open`/
-    # `in-progress` only, never the unsliced list's own length: that list
-    # still holds every item whose metadata has not been read yet (kept by
-    # the filter above on "not yet known not to be work"), and an unread
-    # item's true status could turn out to be resolved. Counting it as
-    # unresolved would overstate the debt on exactly the register a cold or
-    # partial `.dashboard-td.json` cache leaves mostly unread — the opposite
-    # of "a cold cache must degrade to saying less, never to overstating the
-    # debt" a few lines up. A total that only counts confirmed-unresolved
-    # rows can only under-count while the cache is still catching up, never
-    # over-count.
-    td_total="$(jq '[.[] | select(.status == "open" or .status == "in-progress")] | length' <<<"$td_full_json" 2>/dev/null)"
-    td_total="${td_total:-0}"
-    td_json="$(jq -c '.[0:40]' <<<"$td_full_json" 2>/dev/null)"
-    [[ -n "$td_json" ]] || td_json='[]'
 
     # Security & code-quality findings, via the same script the pipeline uses,
     # so the dashboard shows the highest-priority work source the Co-Ordinator
@@ -2905,24 +2797,6 @@ if (( WITH_GITHUB )); then
   # Classified and collapsed by gh_fail_summary (#695), rather than
   # concatenated raw: the full per-call list still reaches dashboard.log.
   gh_fail_summary
-
-  # Fold this tick's item reads into the metadata cache, stamp everything the
-  # registers still name as seen, and drop what none of them has named for a
-  # month. Stamping — rather than keeping only what was seen this tick — is
-  # what makes a failed listing cost nothing: a register that could not be read
-  # keeps its items' metadata, instead of paying to read every one of them
-  # again, four a tick, once it comes back.
-  jq -n --slurpfile cache "$td_cache_json" --slurpfile fresh "$td_new" \
-        --rawfile seen "$td_seen" --argjson now "$now_epoch" --argjson ttl "$TD_CACHE_TTL" '
-    (($cache[0] // {})
-     + (reduce $fresh[] as $e ({};
-          .[$e.sha] = {title: $e.title, status: $e.status, seen: $now}))) as $all
-    | ([ $seen | split("\n")[] | select(length > 0) | split("\t")[0]
-         | {key: ., value: $now} ] | from_entries) as $stamp
-    | $all
-    | with_entries(.value += {seen: ($stamp[.key] // .value.seen // 0)})
-    | with_entries(select(.value.seen + $ttl >= $now))' \
-    > "$td_cache.t" 2>/dev/null && mv "$td_cache.t" "$td_cache"
 
   # Refresh the fleet-flag cache while we are talking to GitHub anyway
   # (requirement 2.3a): the cycles fall back to these cached copies when the

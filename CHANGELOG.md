@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **The dashboard's tech-debt ledger panel now reads a `pw::type:tech-debt`
+  label search instead of the frozen `tech-debt/` register** (issue #881,
+  following D15 as revised, #869). Every register in the fleet is now frozen
+  (#880, Poetic-Poems/poetic#199, Poetic-Poems/poetic-fiddle#349), so the
+  `contents/tech-debt` listing `scripts/publish-dashboard.sh` used to read
+  each tick had quietly stopped answering the live ledger — it still
+  returned 200, just against an archive that no longer grows. The panel now
+  reads the same open-issue search the Co-Ordinator itself does
+  (`scripts/gather-tech-debt.sh`'s own source), one call per repo, which also
+  retires the per-tick miss budget and the blob-SHA-keyed metadata cache
+  (`.dashboard-td.json`) the old listing needed — a label search answers
+  every row it can show, and the total behind its own 40-row cap, in that
+  one call. `docs/DASHBOARD-SPEC.md`'s `tech_debt` roster contract is updated
+  to match; the answered/failed degrade semantics are unchanged, though the
+  register-specific `answered_404` state no longer occurs (a label search
+  with no matches is an ordinary empty `answered`, not a distinct absence).
+  `scripts/gather-register-status.sh` was considered for retirement alongside
+  this change but left untouched: it answers a different question (legacy
+  `Blocked-by:` register-id clearance, implementation-pipeline-spec
+  requirement 34i) for a caller unrelated to this panel.
+
 ### Removed
 
 - **The tech-debt register machinery** (issue #882), now that every register

@@ -109,13 +109,12 @@
       "Poetic-Poems/agent-ops": {
         "issues": [], "failed_runs": [], "findings": [],
         "tech_debt": [
-          {"id": "TD-PPagop-26072902", "title": "The ledger names no work on the dashboard",
-            "status": "in-progress",
-            "url": "https://github.com/Poetic-Poems/agent-ops/blob/main/tech-debt/TD-PPagop-26072902.md"},
-          {"id": "TD-PPagop-26072801", "title": "An active node's state_dir grows without bound",
+          {"id": "#2902", "title": "The ledger names no work on the dashboard",
             "status": "open",
-            "url": "https://github.com/Poetic-Poems/agent-ops/blob/main/tech-debt/TD-PPagop-26072801.md"},
-          {"id": "TD-PPagop-26072803", "title": "", "status": "", "url": ""}
+            "url": "https://github.com/Poetic-Poems/agent-ops/issues/2902"},
+          {"id": "#2801", "title": "An active node's state_dir grows without bound",
+            "status": "open",
+            "url": "https://github.com/Poetic-Poems/agent-ops/issues/2801"}
         ]
       },
       "Poetic-Poems/poetic-fiddle": {

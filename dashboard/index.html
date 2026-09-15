@@ -2723,23 +2723,21 @@
 
   // ---------- inputs ----------
   // A source's per-repo read state (TD-PPagop-26080201): "answered" (the
-  // ordinary case), "answered_404" (a legitimate absence — e.g. a repo with
-  // no tech-debt register), or "failed" (the call did not answer at all).
-  // Absent altogether on data carried forward from before this field existed,
-  // which reads as "answered" — the only state that renders exactly as it
-  // always did.
+  // ordinary case) or "failed" (the call did not answer at all). Absent
+  // altogether on data carried forward from before this field existed, which
+  // reads as "answered" — the only state that renders exactly as it always
+  // did.
   function srcState(g, key) {
     return (g.state && g.state[key]) || "answered";
   }
   // A failed source must not show a count of zero — indistinguishable from a
   // repo that genuinely has none — so it renders a "couldn't read" marker
-  // instead. `answered_404` is a real, legitimate zero (unlike `failed`) and
-  // renders as an ordinary count. `total`, when given, is the true count
-  // behind a source the panel caps (issues: one GitHub REST page;
-  // tech-debt: the panel's own top-40) — shown as "N of M" only once the cap
-  // has actually clipped something (`total > count`); omitted, or read as a
-  // plain count, on a `data.js` from before the field existed, so an old
-  // snapshot renders exactly as it always did.
+  // instead. `total`, when given, is the true count behind a source the panel
+  // caps (issues: one GitHub REST page; tech-debt: the panel's own top-40) —
+  // shown as "N of M" only once the cap has actually clipped something
+  // (`total > count`); omitted, or read as a plain count, on a `data.js` from
+  // before the field existed, so an old snapshot renders exactly as it always
+  // did.
   function countText(g, key, count, label, total) {
     if (srcState(g, key) === "failed") return "couldn't read " + label;
     return (typeof total === "number" && total > count ? count + " of " + total : count) + " " + label;
@@ -2761,12 +2759,10 @@
       var findings = g.findings || [];
       var secCount = findings.filter(function (f){ return f.security; }).length;
       var cqCount  = findings.length - secCount;
-      // The ledger rows, as the Co-Ordinator would meet them: {id, title,
-      // status, url}, resolved items already dropped by the publisher. An item
-      // whose metadata the publisher has not read yet carries no status; it is
-      // shown, because it is not yet known *not* to be work, but it is counted
-      // apart from the ones that are known open — a cold cache must degrade to
-      // saying less, never to overstating the debt.
+      // The ledger rows: one per open `pw::type:tech-debt` issue, as the
+      // Co-Ordinator would meet them ({id, title, status, url}; status is
+      // always "open", since the label search behind this only ever returns
+      // open issues).
       var td = (g.tech_debt || []).map(function (t) {
         // A fetch carried forward from before the rows carried titles is a
         // "| ID |" string; nothing else ever is.
@@ -2774,7 +2770,6 @@
           ? { id: t.replace(/^\s*\|\s*/, "").replace(/\s*\|\s*$/, ""), title:"", status:"", url:"" }
           : (t || {});
       });
-      var tdRead = td.filter(function (t){ return t.status; }).length;
       var box = el("div", {class:"panel", style:"padding:14px; margin-bottom:12px"});
       box.appendChild(el("div", {style:"font-weight:650; margin-bottom:8px"}, [
         el("span",{class:"mono",text: slug}),
@@ -2784,16 +2779,7 @@
             countText(g, "findings", secCount, "security findings"),
             countText(g, "failed_runs", g.failed_runs ? g.failed_runs.length : 0, "failing workflows"),
             countText(g, "issues", g.issues ? g.issues.length : 0, "open issues", g.issues_total),
-            (srcState(g, "tech_debt") === "failed"
-              ? "couldn't read tech-debt items"
-              : (tdRead + " open tech-debt items" +
-                 (td.length > tdRead ? " (+" + (td.length - tdRead) + " unread)" : "") +
-                 // Compared against `tdRead`, the same figure the sentence
-                 // opens with — never `td.length`, which also counts rows
-                 // still unread and so is not the same quantity
-                 // `tech_debt_total` counts either (see the Publisher).
-                 (typeof g.tech_debt_total === "number" && g.tech_debt_total > tdRead
-                   ? " (" + tdRead + " of " + g.tech_debt_total + " shown)" : ""))),
+            countText(g, "tech_debt", td.length, "open tech-debt items", g.tech_debt_total),
             countText(g, "findings", cqCount, "code-quality findings")
           ].join(" · ")})
       ]));
@@ -2838,7 +2824,7 @@
         });
       }
       if (td.length) {
-        var TD_CLASS = { "in-progress": "b-blue", open: "b-amber" };
+        var TD_CLASS = { open: "b-amber" };
         box.appendChild(el("div", {class:"muted", style:"margin:8px 0 2px", text:"Tech-debt ledger (unresolved items):"}));
         td.slice(0,12).forEach(function (t){
           box.appendChild(el("div", {style:"margin:2px 0; white-space:normal"}, [

@@ -49,7 +49,7 @@
       },
       "Poetic-Poems/poetic-fiddle": {
         "issues": [], "failed_runs": [], "tech_debt": [], "findings": [],
-        "state": {"issues": "failed", "failed_runs": "answered", "tech_debt": "answered_404", "findings": "answered"}
+        "state": {"issues": "failed", "failed_runs": "answered", "tech_debt": "answered", "findings": "answered"}
       }
     }
   },
