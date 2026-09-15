@@ -389,6 +389,66 @@ assert_eq "and each card reads as a real empty array rather than a missing key" 
 assert_eq "the stated minimum sample rides alongside" "5" \
   "$(jq -r '.counts.actor_scorecards.min_sample' <<<"$data")"
 
+# --- cost_rows carries the token dimension too (issue #594, D21) -----------
+# Same derivation site as the model split above (issue #536): each
+# modelUsage entry's own token counts ride alongside its costUSD, with no
+# second scan over the transcripts.
+t="$(new_home nodeT)"
+tcid="${today_day}T080000Z-81"
+mkdir -p "$t/.local/state/poetic-agents/cycles/$tcid"
+printf '{"type":"result","subtype":"success","total_cost_usd":0.6,"duration_ms":5,"num_turns":1,"is_error":false,"modelUsage":{"claude-sonnet-5":{"costUSD":0.6,"inputTokens":1000,"outputTokens":200,"cacheCreationInputTokens":50,"cacheReadInputTokens":900}},"result":"ok"}' \
+  > "$t/.local/state/poetic-agents/cycles/$tcid/coordinator.out"
+# A transcript with no readable modelUsage must carry null tokens on its
+# unknown-model row, never zero — a zero would corrupt a prompt-cache ratio
+# computed over it, exactly as a genuinely-zero figure elsewhere in this
+# schema must not be confused with "not measured".
+ucid2="${today_day}T080100Z-82"
+mkdir -p "$t/.local/state/poetic-agents/cycles/$ucid2"
+printf '{"type":"result","subtype":"success","total_cost_usd":0.05,"duration_ms":5,"num_turns":1,"is_error":false,"modelUsage":{},"result":"ok"}' \
+  > "$t/.local/state/poetic-agents/cycles/$ucid2/coordinator.out"
+
+run_publish "$t"
+tdata="$(data_of "$t")"
+
+assert_eq "a cost_rows entry carries that model's own token counts" "true" \
+  "$(jq -r --arg cid "$tcid" '.counts.cost_rows[] | select(.cycle==$cid) | (.tokens_input==1000 and .tokens_output==200 and .tokens_cache_creation==50 and .tokens_cache_read==900)' <<<"$tdata")"
+assert_eq "an unknown-model row carries null tokens, never zero" "true" \
+  "$(jq -r --arg cid "$ucid2" '.counts.cost_rows[] | select(.cycle==$cid) | (.tokens_input==null and .tokens_output==null and .tokens_cache_creation==null and .tokens_cache_read==null)' <<<"$tdata")"
+
+# --- counts.stage_gaps: the stall profile (issue #594, D21) ----------------
+# Read straight off the gaps object on stage-end/review-stage-end events —
+# never re-derived from an envelope, since gaps is what lib/stage-run.sh
+# observed of the run while it happened, not a fact the envelope records.
+# review-stage-end carries no .stage of its own, so it rolls up under the
+# literal "project-reviewer" rather than colliding with the implementation
+# pipeline's own "reviewer" stage — a different actor under the same word.
+g="$(new_home nodeG)"
+{
+  printf '{"ts":"2026-01-01T00:00:00Z","node":"nodeG","event":"stage-end","stage":"implementer","gaps":{"n":5,"p50":10,"p95":30,"p99":40,"max":50}}\n'
+  printf '{"ts":"2026-01-01T00:10:00Z","node":"nodeG","event":"stage-end","stage":"implementer","gaps":{"n":3,"p50":20,"p95":25,"p99":26,"max":26}}\n'
+  printf '{"ts":"2026-01-01T00:20:00Z","node":"nodeG","event":"stage-end","stage":"reviewer","gaps":null}\n'
+} > "$g/.local/state/poetic-agents/log.jsonl"
+printf '{"ts":"2026-01-01T00:30:00Z","node":"nodeG","event":"review-stage-end","gaps":{"n":2,"p50":5,"p95":5,"p99":5,"max":5}}\n' \
+  > "$g/.local/state/poetic-agents/review-log.jsonl"
+
+run_publish "$g"
+gdata="$(data_of "$g")"
+
+assert_eq "stage_gaps rolls up runs per stage, excluding a null-gaps stage-end" "2" \
+  "$(jq -r '.counts.stage_gaps.by_stage[] | select(.stage=="implementer") | .runs' <<<"$gdata")"
+assert_eq "median_of_run_p50 is a nearest-rank median over each run's own p50, never a pooled percentile" "10" \
+  "$(jq -r '.counts.stage_gaps.by_stage[] | select(.stage=="implementer") | .median_of_run_p50' <<<"$gdata")"
+assert_eq "worst_run_p95 is the largest single run's own p95" "30" \
+  "$(jq -r '.counts.stage_gaps.by_stage[] | select(.stage=="implementer") | .worst_run_p95' <<<"$gdata")"
+assert_eq "worst_run_max is the longest single silence any run saw" "50" \
+  "$(jq -r '.counts.stage_gaps.by_stage[] | select(.stage=="implementer") | .worst_run_max' <<<"$gdata")"
+assert_eq "a stage-end whose gaps is null means not measured, and is excluded from the stall profile entirely" "0" \
+  "$(jq -r '[.counts.stage_gaps.by_stage[] | select(.stage=="reviewer")] | length' <<<"$gdata")"
+assert_eq "a review-stage-end (carrying no .stage of its own) rolls up under project-reviewer" "1" \
+  "$(jq -r '.counts.stage_gaps.by_stage[] | select(.stage=="project-reviewer") | .runs' <<<"$gdata")"
+assert_eq "and its own figures come through unpooled, exactly like any other single-run stage" "5" \
+  "$(jq -r '.counts.stage_gaps.by_stage[] | select(.stage=="project-reviewer") | .worst_run_max' <<<"$gdata")"
+
 # --- The classifier-escape audit roll-up (requirement 8e, agent-ops#572) ----
 # Real bash/jq aggregation over classifier-escape/landing-audit events,
 # distinct from test/dashboard-render.test.sh's own coverage — that file
