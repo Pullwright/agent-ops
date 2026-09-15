@@ -265,7 +265,7 @@ cat > "$overlap_fixture" <<'EOF'
 EOF
 overlap_report="$(fold_of "$overlap_fixture")"
 assert_eq "one node's merged timeline over two streams still sums to exactly one window" \
-  "900" "$(jq -c '[.by_node.n1 | del(.idle_with_demand_by_cause) | to_entries[] | .value] | add' <<<"$overlap_report")"
+  "900" "$(jq -c '[.by_node.n1 | del(.idle_with_demand_by_cause, .externally_blocked_by_cause) | to_entries[] | .value] | add' <<<"$overlap_report")"
 assert_eq "  ... expected_total_seconds agrees (1 node x 900s)" \
   "900" "$(jq -c '.expected_total_seconds' <<<"$overlap_report")"
 assert_eq "  ... and it balances" "true" "$(jq -c '.balanced' <<<"$overlap_report")"
@@ -300,6 +300,32 @@ assert_eq "  ... both intervals land under unspecified, none of the four named c
   "1200" "$(jq -c '.by_node.n1.idle_with_demand_by_cause.unspecified' <<<"$no_cause_report")"
 assert_eq "  ... and the fleet-wide split agrees" \
   "1200" "$(jq -c '.idle_with_demand_by_cause.unspecified' <<<"$no_cause_report")"
+
+# --- externally-blocked is split by cause on the same terms idle-with-demand
+#     is (issue #609): usage-limit isolated from the other seven, and an
+#     unrecognised/absent cause files under unspecified rather than being
+#     dropped or guessed at ---------------------------------------------------
+
+eb_fixture="$tmp_dir/eb-cause.jsonl"
+cat > "$eb_fixture" <<'EOF'
+{"ts":"2026-05-02T00:00:00Z","node":"n1","event":"node-state","state":"externally-blocked","cause":"usage-limit"}
+{"ts":"2026-05-02T00:10:00Z","node":"n1","event":"node-state","state":"externally-blocked","cause":"disk-full"}
+{"ts":"2026-05-02T00:20:00Z","node":"n1","event":"node-state","state":"externally-blocked"}
+{"ts":"2026-05-02T00:30:00Z","node":"n1","event":"node-state","state":"overhead"}
+EOF
+eb_report="$(fold_of "$eb_fixture")"
+assert_eq "externally-blocked sums all three stretches" \
+  "1800" "$(jq -c '.by_node.n1["externally-blocked"]' <<<"$eb_report")"
+assert_eq "usage-limit is isolated from the other externally-blocked causes" \
+  "600" "$(jq -c '.externally_blocked_by_cause["usage-limit"]' <<<"$eb_report")"
+assert_eq "disk-full is counted separately from usage-limit" \
+  "600" "$(jq -c '.externally_blocked_by_cause["disk-full"]' <<<"$eb_report")"
+assert_eq "a missing cause files under unspecified, never dropped or guessed at" \
+  "600" "$(jq -c '.externally_blocked_by_cause.unspecified' <<<"$eb_report")"
+assert_eq "  ... and the per-node split agrees" \
+  "600" "$(jq -c '.by_node.n1.externally_blocked_by_cause["usage-limit"]' <<<"$eb_report")"
+assert_eq "  ... the invariant still balances" \
+  "true" "$(jq -c '.balanced' <<<"$eb_report")"
 
 # --- A malformed raw line and an event naming no node are both excluded,
 #     never fatal to the fold, and counted under skipped_events ------------
@@ -351,6 +377,8 @@ assert_eq "  ... balanced true, window seconds 0" \
   '{"balanced":true,"seconds":0}' "$(jq -c '{balanced, seconds: .window.seconds}' <<<"$empty_out")"
 assert_eq "  ... and an empty by_node object, never a missing key" \
   '{}' "$(jq -c '.by_node' <<<"$empty_out")"
+assert_eq "  ... externally_blocked_by_cause is empty too, same as idle_with_demand_by_cause with zero nodes" \
+  '{}' "$(jq -c '.externally_blocked_by_cause' <<<"$empty_out")"
 
 # --- review-cycle.sh: a stand-down that exits while agent-cycle.sh owns the
 #     node emits no node-state transition -----------------------------------

@@ -376,6 +376,27 @@
         "spec": "How long the analytics records `log.jsonl`/`review-log.jsonl` carry are retained (requirement 2.6d), independent of requirement 2.6's rotation and requirement 2.5's `cycles/`/`reviews/` pruning — neither ever reaches either file. `0` (the default) means retain indefinitely, preserving today's behaviour: this key states the policy, not an enforced expiry, which nothing yet implements."
       }
     },
+    "constraint_min_share": {
+      "description": "The minimum share of the fleet's node-time (0-1) a candidate must account for before the constraint statement (docs/ROADMAP.md D21, issue #609) names it as the binding constraint. Below this, every candidate is too thin to mean anything and the statement reads \"insufficient evidence\" rather than naming the largest bucket regardless of how small it is.",
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "default": 0.3,
+      "x-docs": {
+        "readme": "The minimum share of fleet node-time a candidate must account for before the constraint statement names it as the binding constraint — below it, the statement reads \"insufficient evidence\" rather than naming the largest bucket regardless of size.",
+        "spec": "The minimum share of fleet node-time (0-1) a candidate must account for before the constraint statement (D21, issue #609) names it as the binding constraint; below it, `scripts/constraint.sh`/`lib/constraint.sh`'s `constraint_classify` reports `insufficient-evidence` rather than naming the largest bucket regardless of size."
+      }
+    },
+    "constraint_min_sample_seconds": {
+      "description": "The minimum aggregate node-seconds the node time-state account (docs/ROADMAP.md D21, issue #597) must cover before the constraint statement (issue #609) states one at all — below this, the account itself is too thin to trust any share computed from it, and the statement reads \"insufficient evidence\" naming the window observed against this minimum.",
+      "type": "integer",
+      "minimum": 0,
+      "default": 14400,
+      "x-docs": {
+        "readme": "The minimum aggregate node-seconds the time account must cover before the constraint statement states one at all — below it, the statement reads \"insufficient evidence\" rather than trusting a share computed from too little data.",
+        "spec": "The minimum aggregate node-seconds (`expected_total_seconds`, node-count x window) the node time-state account must cover before the constraint statement (issue #609) states one at all; below it, `constraint_classify` reports `insufficient-evidence` with reason `window-below-minimum-sample` rather than trusting a share computed from too little data."
+      }
+    },
     "coordinator_model": {
       "$ref": "#/$defs/modelId",
       "description": "The Co-Ordinator's model. Selection is cheap triage.",

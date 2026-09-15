@@ -1393,6 +1393,47 @@ assert_contains "a rework payload the Publisher could not assemble reads as an o
 assert_not_contains "  ... never as a quiet zero-rework tick" \
   "Rework share:" "$out"
 
+# --- constraint.json / constraint-outage.json: the constraint statement
+#     (D21, docs/ROADMAP.md; issue #609) ------------------------------------
+# lib/constraint.sh's own fold is unit-tested directly in
+# test/constraint.test.sh; this only checks that `D.constraint` renders as the
+# leading sentence, the candidate table (including the two structurally
+# unevaluable candidates), and the account's own breakdown by state beneath
+# it as evidence — and that a Publisher-side assembly failure (every field
+# null) reads as an outage rather than a quiet "nothing to report", the same
+# distinction every other roll-up on this page makes.
+out="$(render constraint.json)" || { printf 'FAIL - constraint.json did not render:\n%s\n' "$out"; exit 1; }
+constraint_section="$(awk '$0 == "  <section>" { on = 0 } on { print } $0 == "      Constraint" { on = 1 }' <<<"$out")"
+assert_contains "the leading sentence names the constraint, its share and the recommendation" \
+  "The back-pressure cap (max_open_agent_prs) accounted for 44.1% of fleet node-time" "$constraint_section"
+assert_contains "  ... and the recommended change" \
+  "raise max_open_agent_prs, or climb a rung of the autonomy ladder in D18" "$constraint_section"
+assert_contains "the window line states the sample and the minimums" \
+  "3 node(s), 1814400 node-second(s) observed" "$constraint_section"
+assert_contains "the candidate table lists the winning candidate's own share" \
+  "44.1%" "$constraint_section"
+assert_contains "the shrink-direction candidate (node count) is on the same table, not singled out" \
+  "run fewer nodes: it costs no throughput and saves the idle spend" "$constraint_section"
+assert_contains "the human merge gate reports why it is not evaluable, naming its record" \
+  "not evaluable" "$constraint_section"
+assert_contains "  ... citing #574" "#574" "$constraint_section"
+assert_contains "the pipeline's own defect rate reports why it is not evaluable, naming its record" \
+  "#596" "$constraint_section"
+assert_contains "the account's own breakdown by state renders beneath the sentence, as evidence" \
+  "The account's own breakdown by state" "$constraint_section"
+assert_contains "  ... including the totals table" \
+  "Producing" "$constraint_section"
+assert_contains "  ... and the idle-with-demand cause breakdown" \
+  "Idle with demand, by cause" "$constraint_section"
+assert_contains "  ... and the externally-blocked cause breakdown, usage-limit isolated" \
+  "Externally blocked, by cause" "$constraint_section"
+
+out="$(render constraint-outage.json)" || { printf 'FAIL - constraint-outage.json did not render:\n%s\n' "$out"; exit 1; }
+assert_contains "a constraint payload the Publisher could not assemble reads as an outage" \
+  "The constraint statement could not be assembled this tick." "$out"
+assert_not_contains "  ... never as a quiet zero-idleness tick" \
+  "accounted for" "$out"
+
 printf '\n'
 if (( failures > 0 )); then
   printf '%d assertion(s) failed\n' "$failures"

@@ -728,7 +728,7 @@ induced outage rather than only over a quiet afternoon.
       different readers, they share one page today, and the arithmetic belongs
       where the dashboard split already puts assembly — in one container,
       never on every agent node's cron. *[interactive]*
-- [ ] State the constraint (D21). The analytics surface leads with one
+- [x] State the constraint (D21). The analytics surface leads with one
       sentence — what is limiting throughput right now, over what share of the
       window, and what to do about it — computed from the time account above:
       the landing gate, the back-pressure cap, model capacity, node count,

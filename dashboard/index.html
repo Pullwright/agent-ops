@@ -2269,6 +2269,92 @@
     return tableOf(["Repo", "Rolling window", "Cumulative since baseline", "Baseline", "vs baseline"], trs);
   }
 
+  // ---------- constraint panel (D21, docs/ROADMAP.md; issue #609) ----------
+  // Renders `D.constraint` — lib/constraint.sh's own `constraint_classify`
+  // over the node time-state account (lib/node-time-state.sh's
+  // `node_time_state_fold`, issue #597). The leading sentence is the whole
+  // point: one line naming what is limiting throughput, its share of the
+  // window, and the recommended change, or "insufficient evidence" and
+  // exactly why. Everything below it — the candidate table, then the
+  // account's own breakdown by state — is evidence for or against that
+  // sentence, never a second verdict of its own.
+  function constraintCandidatesTable(candidates) {
+    var rows = (candidates || []).map(function (c) {
+      if (!c.evaluable) {
+        return el("tr", {}, [
+          el("td", {text: c.label}),
+          el("td", {class:"muted", text:"not evaluable"}),
+          el("td", {class:"muted", text:"—"}),
+          el("td", {class:"wrap muted", text: c.not_evaluable_reason + " (" + c.depends_on + ")"})
+        ]);
+      }
+      return el("tr", {}, [
+        el("td", {text: c.label}),
+        el("td", {class:"mono", text: pct(c.share)}),
+        el("td", {class:"mono", text: c.direction}),
+        el("td", {class:"wrap", text: c.recommendation +
+          (c.effect_node_seconds != null ? " (up to " + num(c.effect_node_seconds) + "s, " +
+            (c.effect_note || "an upper bound") + ")" : "")})
+      ]);
+    });
+    return tableOf(["Candidate", "Share of window", "Direction", "Recommendation"], rows);
+  }
+  function constraintCauseTable(byCause, causes) {
+    var rows = causes.map(function (c) {
+      return el("tr", {}, [el("td", {class:"mono", text: c}), el("td", {class:"mono", text: num((byCause || {})[c])})]);
+    });
+    return tableOf(["Cause", "Node-seconds"], rows);
+  }
+  function constraintPanel() {
+    var c = D.constraint;
+    if (!c || c.sentence == null) {
+      return el("div", {class:"panel"}, el("div", {class:"empty",
+        text: "The constraint statement could not be assembled this tick. See cron.log."}));
+    }
+    var body = [];
+    body.push(el("div", {class:"panel", style:"font-size:15px;font-weight:600", text: c.sentence}));
+    if (c.window && c.window.from) {
+      body.push(el("div", {class:"panel muted", text:
+        "Window: " + fmtTime(c.window.from) + " – " + fmtTime(c.window.to) + " (" + num(c.nodes) +
+        " node(s), " + num(c.expected_total_seconds) + " node-second(s) observed — the retained log " +
+        "union and nothing more). Minimum share to name a constraint: " + pct(c.min_share) +
+        "; minimum sample: " + num(c.min_sample_seconds) + " node-second(s)." +
+        (c.cadence_bound_minutes ? " Nothing here is trustworthy below roughly this repository's own " +
+          c.cadence_bound_minutes + "-minute cycle interval — the same resolution floor " +
+          "scripts/pickup-metrics.sh states beside its own figures." : "")}));
+    }
+    body.push(constraintCandidatesTable(c.candidates));
+    body.push(el("div", {class:"panel muted", text:
+      "The human merge gate and the pipeline's own defect rate are never evaluable from this account " +
+      "alone: they are measured in pull-request wait time and in tokens/elapsed-time/items respectively, " +
+      "not in node-seconds, so they cannot rank alongside the four time-account candidates above without " +
+      "a separate attribution this item does not build."}));
+    var acct = c.account || {};
+    var t = acct.totals || {};
+    var totalsRows = [
+      ["Producing", t.producing], ["Overhead", t.overhead],
+      ["Externally blocked", t["externally-blocked"]], ["Idle with demand", t["idle-with-demand"]],
+      ["Idle without demand", t["idle-without-demand"]], ["Down", t.down], ["Unaccounted", t.unaccounted]
+    ].map(function (pair) {
+      return el("tr", {}, [el("td", {text: pair[0]}), el("td", {class:"mono", text: num(pair[1])})]);
+    });
+    body.push(el("div", {class:"panel muted", text: "The account's own breakdown by state — the evidence " +
+      "for or against the sentence above, not a second verdict."}));
+    body.push(tableOf(["State", "Node-seconds"], totalsRows));
+    body.push(el("div", {}, [
+      el("div", {class:"muted", style:"margin-top:8px", text:"Idle with demand, by cause"}),
+      constraintCauseTable(acct.idle_with_demand_by_cause,
+        ["awaiting-tick", "back-pressure", "peer-claimed", "coordinator-declined", "unspecified"])
+    ]));
+    body.push(el("div", {}, [
+      el("div", {class:"muted", style:"margin-top:8px", text:"Externally blocked, by cause"}),
+      constraintCauseTable(acct.externally_blocked_by_cause,
+        ["usage-limit", "github-budget", "unreachable", "unauthorized", "disk-low", "disk-full",
+         "memory-low", "host-overcommit", "unspecified"])
+    ]));
+    return el("div", {}, body);
+  }
+
   // ---------- rework panel (D23, issue #611) ----------
   // Renders `D.rework` — lib/rework-panel.sh's own fold over the rework
   // record and the item lifecycle record (docs/FLOW-SCHEMA.md). All-time,
@@ -3615,6 +3701,15 @@
     // audits of an autonomous act a human did not approve inline — a landing
     // logged and audited, a decision logged and vetoable.
     app.appendChild(sectionOf("Decisions", "Decisions (last " + (((D.decisions || {}).window_days) || 7) + " days)", decisionsPanel()));
+
+    // ---------- constraint statement ----------
+    // Leads the analytics cluster below (D21, docs/ROADMAP.md; issue #609):
+    // one sentence naming what is limiting this installation's throughput
+    // right now, over what share of the window, and what to do about it.
+    // Everything from here to Scorecards exists to justify or refute that
+    // sentence, which is why it sits first among them rather than beside
+    // the operational panels above.
+    app.appendChild(sectionOf("Constraint", "Constraint", constraintPanel()));
 
     // ---------- revert rate by repository ----------
     // Directly under the landings it audits: D18's Stage 2 exit criterion
