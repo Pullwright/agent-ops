@@ -402,7 +402,7 @@ assert_defaults "crash_loop_min_clear_minutes absent resolves to its 30-minute p
   'del(.crash_loop_min_clear_minutes)' '.crash_loop_min_clear_minutes == 30'
 assert_defaults "a nested object absent as a whole is synthesised from its own leaves' defaults" \
   'del(.schedule)' \
-  '.schedule == {cycle_hours: "*", cycle_interval_minutes: 15, excluded_minutes: [], review_hour: 3, review_offset_minutes: 29, heartbeat_minutes: 5, state_sync_push_minutes: 5, state_sync_fetch_minutes: 7, wake_poll_minutes: 2, log_rotation_minute: 19, doctor_offset_minutes: 44, revert_rate_hour: 2, revert_rate_offset_minutes: 51, tech_debt_archive_hour: 4, tech_debt_archive_offset_minutes: 37, monitor_hour: 5, monitor_offset_minutes: 19}'
+  '.schedule == {cycle_hours: "*", cycle_interval_minutes: 15, excluded_minutes: [], review_hour: 3, review_offset_minutes: 29, heartbeat_minutes: 5, state_sync_push_minutes: 5, state_sync_fetch_minutes: 7, wake_poll_minutes: 2, resource_sample_minutes: 5, log_rotation_minute: 19, doctor_offset_minutes: 44, revert_rate_hour: 2, revert_rate_offset_minutes: 51, tech_debt_archive_hour: 4, tech_debt_archive_offset_minutes: 37, monitor_hour: 5, monitor_offset_minutes: 19}'
 assert_defaults "one leaf missing from a present nested object is filled without disturbing its siblings" \
   '.schedule = {review_hour: 9}' \
   '.schedule.review_hour == 9 and .schedule.cycle_hours == "*" and .schedule.log_rotation_minute == 19'
