@@ -28,6 +28,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   over HTTP (`/livez`, `/readyz`, `/healthz`, `/metrics`) on the host's own
   loopback for a reader that can only speak HTTP. Read-only throughout,
   makes no network call beyond one cached, TTL-bounded `/rate_limit` read.
+- **The dashboard surfaces the token and gap series `lib/metering.sh` already
+  records (D21, issue #594).** `counts.cost_rows[]` now carries each model's
+  own `tokens_input`/`tokens_output`/`tokens_cache_creation`/
+  `tokens_cache_read`, and a new `counts.stage_gaps` roll-up states the
+  per-stage stall profile over its own window. The dashboard renders two new
+  panels — token totals and the prompt-cache ratio, by stage and by model,
+  riding the cost charts' own time-frame selector; and the stall profile,
+  compared against each stage's own watchdog backstop — each naming the
+  decision it informs, or "no action indicated"/"insufficient evidence" per
+  the lever rule.
 - **Per-container resource usage is measured and compared against a budget
   (D14, issue #606).** `scripts/collect-resource-usage.sh` self-samples
   CPU, memory and network from inside `scheduler`, `dashboard` and
