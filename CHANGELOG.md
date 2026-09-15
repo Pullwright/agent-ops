@@ -19,6 +19,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   #755 gave every container a `mem_limit`/`cpus` enforcement ceiling; this
   is the measured, reported half D14 also asks for, for the two resources
   (disk, bandwidth) this substrate cannot enforce at all.
+- **`prompt_overrides` takes a per-repository layer for the Implementer and
+  Reviewer stages** (issue #588, `docs/ROADMAP.md` Phase 1). Those two
+  stages already run against a single known repository each cycle, unlike
+  the Co-Ordinator, which runs once per cycle across every configured
+  repository together — so `repos[].prompt_overrides`
+  (`config.schema.json`'s `repoPromptOverrides`), keyed only
+  `implementer`/`reviewer`, lets one repository add or replace its own
+  operating-prompt house rules without reaching into the installation-wide
+  `prompt_overrides` key that would otherwise apply to every repository at
+  once. Resolved on the same precedence `stage_timeouts` and
+  `merge_autonomy` already give a repository-level override: a repository's
+  own stage entry wins outright (the whole `{extend, replace}` object, not a
+  field-by-field merge) when present, the installation-wide entry for that
+  stage otherwise —
+  `lib/prompt-overrides.sh`'s new `prompt_overrides_json_for_repo` resolves
+  this before `stage_prompt_text`/`stage_prompt_sha` ever run, so neither
+  function gained any per-repository knowledge of its own. A repository
+  naming any other stage (`coordinator`, `enabler`, `refiner` or `monitor`
+  — none of which yet has a per-invocation home to scope an override to) is
+  a schema error at validation time, not a silently ignored key.
 
 ### Fixed
 
