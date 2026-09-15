@@ -2645,8 +2645,6 @@ if (( coord_n_merged == 0 )); then
   fi
 fi
 
-selected="true"
-
 # --- 5b. Candidates, and the claim (requirement 17a) ---
 # `candidates_json` is already the merged, tier-ordered, `candidates_max`-
 # capped list "5" above built — either the reconciled real candidates from
