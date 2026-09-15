@@ -3331,7 +3331,9 @@
       (sg.window_to ? fmtTime(sg.window_to) : "—") +
       " (the retained log union — a different, usually longer, span than the cost charts' own window) · " +
       "median-of-run and worst-run figures are stated “across runs,” never as a pooled percentile " +
-      "(percentiles of percentiles are not percentiles) · worst-run max is exact."
+      "(percentiles of percentiles are not percentiles) · worst-run max is exact · " +
+      "this table's own “Stage” column is stage-end's own stage name, not the token panel's " +
+      "actor/filename-stem vocabulary above — the two are not interchangeable."
     ]));
     var body = (sg.by_stage || []).length
       ? tableOf(["Stage", "Runs", "Median run p50", "Worst run p95", "Worst run max", "Decision"],

@@ -453,6 +453,26 @@ assert_eq "window_from is the earliest ts among every event read, across both lo
 assert_eq "window_to is the latest ts, reaching into review-log.jsonl's own union" "2026-01-01T00:30:00Z" \
   "$(jq -r '.counts.stage_gaps.window_to' <<<"$gdata")"
 
+# review-log.jsonl reaches the stage-gaps slurp via fleet_logs, not
+# read_events, so — unlike log.jsonl — it arrived here unsanitised: one
+# malformed line used to abort the `jq -s` slurp outright (agent-ops#794),
+# discarding even the already-clean log.jsonl half of the union. Sanitised
+# with read_events' own `fromjson? // empty` idiom before the slurp now.
+gm="$(new_home nodeGMalformed)"
+printf '{"ts":"2026-01-01T00:00:00Z","node":"nodeGMalformed","event":"stage-end","stage":"implementer","gaps":{"n":5,"p50":10,"p95":30,"p99":40,"max":50}}\n' \
+  > "$gm/.local/state/poetic-agents/log.jsonl"
+{
+  printf 'not valid json at all\n'
+  printf '{"ts":"2026-01-01T00:30:00Z","node":"nodeGMalformed","event":"review-stage-end","gaps":{"n":2,"p50":5,"p95":5,"p99":5,"max":5}}\n'
+} > "$gm/.local/state/poetic-agents/review-log.jsonl"
+
+run_publish "$gm"
+gmdata="$(data_of "$gm")"
+assert_eq "a malformed review-log.jsonl line does not abort the stage_gaps slurp" "1" \
+  "$(jq -r '.counts.stage_gaps.by_stage[] | select(.stage=="implementer") | .runs' <<<"$gmdata")"
+assert_eq "...and the clean review-log.jsonl event still reaches it too" "1" \
+  "$(jq -r '.counts.stage_gaps.by_stage[] | select(.stage=="project-reviewer") | .runs' <<<"$gmdata")"
+
 # --- The classifier-escape audit roll-up (requirement 8e, agent-ops#572) ----
 # Real bash/jq aggregation over classifier-escape/landing-audit events,
 # distinct from test/dashboard-render.test.sh's own coverage — that file
