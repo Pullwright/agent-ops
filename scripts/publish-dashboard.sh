@@ -1612,7 +1612,15 @@ done
 # .costUSD` a hard jq error, taking a parseable envelope's whole row down with
 # it, so it is skipped rather than fatal. An empty or unreadable `modelUsage`
 # falls back to one `unknown` entry carrying the transcript's whole cost, so
-# that total is never lost — only its model attribution is.
+# that total is never lost — only its model attribution is. Each entry also
+# carries that model's own token counts (issue #594, D21) — `inputTokens`/
+# `outputTokens`/`cacheCreationInputTokens`/`cacheReadInputTokens`, the same
+# fields `lib/metering.sh`'s `tokens` sums per stage — pulled out of the same
+# `modelUsage` map with no second scan. The `unknown` fallback carries `null`
+# for all four rather than `0`: it has no per-model breakdown to offer, and a
+# transcript that certainly spent some tokens reading as zero would corrupt
+# every cache-ratio computed over it, exactly as a genuinely-zero figure must
+# not be confused with "not measured" anywhere else in this schema.
 # shellcheck disable=SC2016  # `$p` below is a jq binding, not a shell variable
 find "${cost_dirs[@]}" -name '*.out' -type f -print0 2>/dev/null | sort -z \
   | xargs -0 -r -n 25 jq -c '
@@ -1623,9 +1631,14 @@ find "${cost_dirs[@]}" -name '*.out' -type f -print0 2>/dev/null | sort -z \
          | (if ($mu | type) == "object" then $mu else {} end)
          | to_entries
          | map(select(.value | type == "object"))
-         | map({model: .key, usd: (.value.costUSD // 0)})) as $model_entries
+         | map({model: .key, usd: (.value.costUSD // 0),
+                tokens_input: (.value.inputTokens // 0),
+                tokens_output: (.value.outputTokens // 0),
+                tokens_cache_creation: (.value.cacheCreationInputTokens // 0),
+                tokens_cache_read: (.value.cacheReadInputTokens // 0)})) as $model_entries
       | (if ($model_entries | length) > 0 then $model_entries
-         else [{model: "unknown", usd: $total}] end) as $models
+         else [{model: "unknown", usd: $total, tokens_input: null, tokens_output: null,
+                tokens_cache_creation: null, tokens_cache_read: null}] end) as $models
       | {
           day: ($cid[0:8]),
           ts: (if ($cid | test("^[0-9]{8}T[0-9]{6}Z"))
@@ -1739,6 +1752,8 @@ counts_json="$(jq -n --slurpfile cyc "$cycles_file" --slurpfile costs_in "$costs
         | (($c.actor == "coordinator" or $c.actor == "implementer" or $c.actor == "reviewer")
            and $facts != null) as $attributed
         | {day: $c.day, model: $m.model, actor: $c.actor, usd: $m.usd, cycle: $c.cycle,
+           tokens_input: $m.tokens_input, tokens_output: $m.tokens_output,
+           tokens_cache_creation: $m.tokens_cache_creation, tokens_cache_read: $m.tokens_cache_read,
            repo:      (if $attributed then $facts.repo else null end),
            item:      (if $attributed then $facts.item else null end),
            source:    (if $attributed then $facts.source else null end),
@@ -2114,6 +2129,79 @@ fi
 # one object for its metric cards.
 counts_merged="$(jq -c --slurpfile v "$scorecards_file" \
   '. + {actor_scorecards: $v[0]}' <<<"$counts_json" 2>/dev/null)"
+[[ -n "$counts_merged" ]] && counts_json="$counts_merged"
+
+# --- Stage gap series (issue #594, D21) ---------------------------------------
+# The stall profile the pipelines already measure and never display: how long
+# each stage went silent between one growth of its own event stream and the
+# next (docs/METERING-SCHEMA.md's `gaps`). Read straight off the `gaps` object
+# on every `stage-end`/`review-stage-end` event, never re-derived from an
+# envelope — `gaps` cannot be; it is what `lib/stage-run.sh` observed of the
+# run while it happened, not a fact the envelope itself records.
+# `review-stage-end` carries no `.stage` field of its own (unlike `stage-end`),
+# so its row is keyed `project-reviewer` — the same actor name the cost scan's
+# own `reviews/` rows use — rather than left to collide with the
+# implementation pipeline's own `reviewer` stage, a different actor under the
+# same word (the same distinction the by-actor spend chart already draws).
+#
+# `review-log.jsonl` is a *second* fleet-wide log union — `$ALL_EVENTS` covers
+# `log.jsonl` alone — fetched here once and reused by the constraint panel
+# below (which otherwise would fetch it a second time): reading the fleet's
+# logs twice in one tick is exactly the per-tick cost that panel's own note on
+# `review_log_union` already exists to avoid paying.
+review_log_union="$work_tmp/review-log-union.jsonl"
+fleet_logs "$state_dir" "$peers_dir" review-log.jsonl > "$review_log_union" 2>/dev/null \
+  || : > "$review_log_union"
+# Percentiles of percentiles are not percentiles (docs/METERING-SCHEMA.md,
+# "gaps"): each `stage-end`'s own p50/p95/p99 is nearest-rank over *that run's*
+# sample alone, and the raw samples are not retained, so this cannot re-derive
+# a pooled percentile across runs. What it reports instead, per stage: `runs`
+# (how many stage-ends carried a measurement), `median_of_run_p50` (nearest-
+# rank median, same convention as `lib/stage-run.sh`'s own percentiles, over
+# the sample of each run's own p50 — described on the page as "across runs",
+# never as a pooled percentile), `worst_run_p95` (the largest p95 any single
+# run reported), and `worst_run_max` (the longest silence any run saw — a max
+# of maxima is a max, so this one figure *is* exact). A `stage-end` whose
+# `gaps` is `null` means "not measured," never "never quiet"
+# (docs/METERING-SCHEMA.md), and is excluded from `runs` rather than counted
+# as a silent run.
+stage_gaps_file="$work_tmp/stage-gaps.json"
+# `review_log_union` is a peer read straight off `fleet_logs`, unlike
+# `$ALL_EVENTS` (already sanitised by `read_events`): a NUL-holed line a
+# peer's `fleet_repair_log` hasn't reached yet still reaches this slurp
+# raw, and one malformed line aborts `jq -s` outright (agent-ops#794) —
+# taking the already-clean `$ALL_EVENTS` half down with it. Sanitised here
+# with `read_events`'s own idiom before the slurp, same as every other
+# consumer of a fleet log union.
+{ printf '%s\n' "$ALL_EVENTS"; cat "$review_log_union"; } \
+  | jq -c -R 'fromjson? // empty' | jq -sc '
+  def pct_of($arr; $q):
+    ($arr | sort) as $s | ($s | length) as $n
+    | if $n == 0 then null
+      else $s[ ((($n * $q) | ceil) - 1) | if . < 0 then 0 else . end ]
+      end;
+  ([ .[] | select(.event == "stage-end" and (.stage // "") != "")
+         | {stage: .stage, gaps: .gaps} ]
+   + [ .[] | select(.event == "review-stage-end")
+           | {stage: "project-reviewer", gaps: .gaps} ]) as $carriers
+  | ([ .[] | .ts // empty ]) as $tss
+  | ($carriers | map(select(.gaps != null))
+     | group_by(.stage) | map(
+         (.[0].stage) as $stage
+         | (map(.gaps.p50)) as $p50s
+         | (map(.gaps.p95)) as $p95s
+         | (map(.gaps.max))  as $maxs
+         | { stage: $stage, runs: length,
+             median_of_run_p50: pct_of($p50s; 0.5),
+             worst_run_p95: ($p95s | max),
+             worst_run_max: ($maxs | max) }
+       ) | sort_by(-.runs)) as $by_stage
+  | {window_from: ($tss | min), window_to: ($tss | max), by_stage: $by_stage}
+' > "$stage_gaps_file" 2>/dev/null
+jq -e 'type == "object"' "$stage_gaps_file" >/dev/null 2>&1 \
+  || printf '{"window_from":null,"window_to":null,"by_stage":[]}' > "$stage_gaps_file"
+counts_merged="$(jq -c --slurpfile v "$stage_gaps_file" \
+  '. + {stage_gaps: $v[0]}' <<<"$counts_json" 2>/dev/null)"
 [[ -n "$counts_merged" ]] && counts_json="$counts_merged"
 
 # --- Blocked and void items (requirements 34, 34c, 34h) ----------------------
@@ -3449,11 +3537,13 @@ fi
 # `log.jsonl` (already in `$ALL_EVENTS`) would read a node running
 # `review-cycle.sh` as `down`.
 #
-# FULL-gated, and it has to be: this is the only panel on the page that needs
-# a *second* fleet-wide log union (review-log.jsonl — the pager's own read at
-# `WITH_GITHUB` above is the only other one in this script), and that is a
-# whole extra read-and-sort of the fleet's logs, exactly the per-tick cost the
-# single-`fleet_logs` note beside `$raw_events_jsonl` was written about. A
+# FULL-gated, and it has to be: this panel needs the *second* fleet-wide log
+# union (review-log.jsonl — the pager's own read at `WITH_GITHUB` above is the
+# only other one in this script), and reading it is a whole extra read-and-sort
+# of the fleet's logs, exactly the per-tick cost the single-`fleet_logs` note
+# beside `$raw_events_jsonl` was written about. `$review_log_union` is that
+# same fetch, already made once above for the stage-gap series — reused here
+# rather than fetched a second time in the same tick. A
 # fast tick could not use the result anyway: `constraint` is assembled into
 # the FULL payload alone and is absent from `$fresh_json`, so it carries
 # forward from the cache like every other history roll-up
@@ -3462,9 +3552,6 @@ fi
 # terms `pager_json='null'` above states for itself.
 constraint_json='null'
 if (( FULL )); then
-  review_log_union="$work_tmp/review-log-union.jsonl"
-  fleet_logs "$state_dir" "$peers_dir" review-log.jsonl > "$review_log_union" 2>/dev/null \
-    || : > "$review_log_union"
   node_time_state_json="$( { printf '%s\n' "$ALL_EVENTS"; cat "$review_log_union"; } \
     | node_time_state_fold - "" "" 2>/dev/null)"
   [[ -n "$node_time_state_json" ]] || node_time_state_json='{}'
