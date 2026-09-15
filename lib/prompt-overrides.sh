@@ -22,6 +22,18 @@
 # path is visible as an unexplained fingerprint change rather than silently
 # eaten.
 #
+# `implementer` and `reviewer` — the two stages that already run against a
+# single known repository — additionally take a per-repository layer,
+# `repos[].prompt_overrides` (`config.schema.json`'s `repoPromptOverrides`),
+# on the `stage_timeouts`/`merge_autonomy` precedence: `prompt_overrides_json_for_repo`
+# resolves that down to the plain per-stage object every function below
+# already takes, so `stage_prompt_text`/`stage_prompt_sha` themselves know
+# nothing about repositories at all. The schema restricts a repo's own entry
+# to `implementer`/`reviewer` only — every other stage runs across repos or
+# ahead of selection and has no one repository to scope an override to — so
+# this resolver never has to reject a stage itself; a config that tried would
+# already have failed the schema gate before any of this file runs.
+#
 # Sourced by agent-cycle.sh.
 
 # resolve_prompt_override_path STATE_DIR RAW
@@ -34,6 +46,28 @@ resolve_prompt_override_path() {
   [[ "$p" == "~"* ]] && p="$HOME${p:1}"
   [[ "$p" == /* ]] || p="$state_dir/$p"
   printf '%s\n' "$p"
+}
+
+# prompt_overrides_json_for_repo CONFIG_JSON SLUG
+# The `overrides_json` every function below takes, resolved for one
+# repository: SLUG's own `repos[].prompt_overrides` entry layered over the
+# installation-wide `prompt_overrides` object, one stage key at a time — a
+# stage SLUG's own entry sets wins outright (the whole `{extend, replace}`
+# object, not a field-by-field merge of the two), the installation-wide entry
+# for that stage otherwise. This is `merge_autonomy_configured_level`'s
+# precedence applied per stage key rather than to one scalar, the same
+# generalisation `stage_timeouts`/`stage_inactivity` already make for one
+# actor's number. With no matching `repos[]` entry, or none carrying
+# `prompt_overrides`, this reproduces the installation-wide object exactly —
+# byte-identical to reading `.prompt_overrides` directly, so a caller with no
+# per-repository entry to resolve never has to special-case that.
+prompt_overrides_json_for_repo() {
+  local config_json="$1" slug="$2"
+  jq -c --arg slug "$slug" '
+    (.prompt_overrides // {}) as $top
+    | (((.repos // [])[] | select(.slug == $slug) | .prompt_overrides) // {}) as $repo
+    | $top + $repo
+  ' <<<"$config_json"
 }
 
 # stage_base_prompt_file PROMPTS_DIR STATE_DIR STAGE OVERRIDES_JSON

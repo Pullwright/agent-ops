@@ -3123,7 +3123,12 @@ ensure_labels_for() {
 ensure_labels_for "$repo_slug" target
 
 # --- 7. Implementer stage ---
-implementer_prompt="$(stage_prompt_text "$PROMPTS_DIR" "$state_dir" implementer "$prompt_overrides_json")
+# implementer is one of the two stages requirement 4a's per-repository layer
+# covers (agent-ops#588): $repo_slug's own repos[].prompt_overrides.implementer
+# entry wins when present, the installation-wide prompt_overrides.implementer
+# entry otherwise — prompt_overrides_json_for_repo resolves that precedence
+# before stage_prompt_text ever sees it.
+implementer_prompt="$(stage_prompt_text "$PROMPTS_DIR" "$state_dir" implementer "$(prompt_overrides_json_for_repo "$DEFAULTED_CONFIG" "$repo_slug")")
 
 ## Work order
 
@@ -3444,7 +3449,9 @@ if [[ -n "$closing_keyword_finding" ]]; then
 "
 fi
 
-reviewer_prompt="$(stage_prompt_text "$PROMPTS_DIR" "$state_dir" reviewer "$prompt_overrides_json")
+# reviewer is requirement 4a's other per-repository stage — same resolution
+# as the Implementer's above, against the same $repo_slug this cycle worked.
+reviewer_prompt="$(stage_prompt_text "$PROMPTS_DIR" "$state_dir" reviewer "$(prompt_overrides_json_for_repo "$DEFAULTED_CONFIG" "$repo_slug")")
 
 ## Work order
 

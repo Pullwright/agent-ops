@@ -868,6 +868,29 @@ done < <(cfg_json '.prompt_overrides' | jq -r '
   | ((.value.extend // [])[] | [$stage, "extend", .] | @tsv),
     (select((.value.replace // "") != "") | [$stage, "replace", .value.replace] | @tsv)')
 
+# A repository's own `prompt_overrides` layer (requirement 4a, agent-ops#588)
+# — schema-restricted to `implementer`/`reviewer` already (config_schema_errors,
+# run ahead of this point) — is checked the same way, one repo at a time, so a
+# broken per-repository path is named against the repository it belongs to
+# rather than folded into the installation-wide report above.
+while IFS=$'\t' read -r repo_slug stage mode path; do
+  [[ -n "$path" ]] || continue
+  case "$path" in
+    "~"*) resolved_path="$HOME${path:1}" ;;
+    /*) resolved_path="$path" ;;
+    *) resolved_path="$state_dir/$path" ;;
+  esac
+  if [[ -r "$resolved_path" ]]; then
+    ok "$repo_slug's repos[].prompt_overrides.$stage.$mode → $resolved_path"
+  else
+    warn "$repo_slug's repos[].prompt_overrides.$stage.$mode names $resolved_path, which is not readable — this entry is dropped the same as an unreadable installation-wide one would be, but it does not fall back to any installation-wide prompt_overrides.$stage entry: naming $stage here already discarded that entry whole (prompt_overrides_json_for_repo replaces, never merges), so $repo_slug's $stage stage is left with only what the rest of its own entry (if anything) still resolves to"
+  fi
+done < <(cfg_json '.repos // []' | jq -r '
+  .[] | .slug as $slug | (.prompt_overrides // {}) | to_entries[]
+  | .key as $stage
+  | ((.value.extend // [])[] | [$slug, $stage, "extend", .] | @tsv),
+    (select((.value.replace // "") != "") | [$slug, $stage, "replace", .value.replace] | @tsv)')
+
 # --- Review instructions & context (issue #589, D7) ---
 
 section "Review instructions & context"

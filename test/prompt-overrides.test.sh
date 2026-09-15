@@ -218,6 +218,52 @@ case "$(stage_prompt_text "$prompts_dir" "$state_dir" coordinator "$overrides_ab
     failures=$(( failures + 1 )) ;;
 esac
 
+# --- prompt_overrides_json_for_repo: the per-repository layer (requirement
+#     4a, agent-ops#588). Structural validation of a repo's own entry (an
+#     unknown stage key, a non-object value) is config.schema.json's concern
+#     — test/config-schema.test.sh covers it, the same split the header above
+#     already draws for the installation-wide object. What belongs here is
+#     the precedence itself: a repo's own stage entry wins whole when
+#     present, the installation-wide entry for that stage otherwise, and an
+#     unconfigured repo sees the installation-wide object unchanged. ---
+repo_cfg='{
+  "prompt_overrides": {
+    "implementer": {"replace": "top-implementer.md"},
+    "coordinator": {"extend": ["top-coordinator.md"]}
+  },
+  "repos": [
+    {"slug": "a/b", "prompt_overrides": {"implementer": {"extend": ["repo-implementer.md"]}}}
+  ]
+}'
+assert_eq "a repository's own stage entry replaces the installation-wide entry for that stage whole, not merged field-by-field" \
+  '{"implementer":{"extend":["repo-implementer.md"]},"coordinator":{"extend":["top-coordinator.md"]}}' \
+  "$(prompt_overrides_json_for_repo "$repo_cfg" a/b)"
+assert_eq "a repository absent from repos[] sees the installation-wide object unchanged" \
+  '{"implementer":{"replace":"top-implementer.md"},"coordinator":{"extend":["top-coordinator.md"]}}' \
+  "$(prompt_overrides_json_for_repo "$repo_cfg" c/d)"
+assert_eq "a repos[] entry present but carrying no prompt_overrides of its own sees the installation-wide object unchanged" \
+  "$(jq -c '.prompt_overrides' <<<"$repo_cfg")" \
+  "$(prompt_overrides_json_for_repo "$(jq -c '.repos += [{"slug":"e/f"}]' <<<"$repo_cfg")" e/f)"
+assert_eq "no prompt_overrides configured at all resolves to {} for any repository" \
+  '{}' \
+  "$(prompt_overrides_json_for_repo '{"repos":[{"slug":"a/b"}]}' a/b)"
+assert_eq "no repos[] array at all still resolves the installation-wide object" \
+  '{"coordinator":{"extend":["top-coordinator.md"]}}' \
+  "$(prompt_overrides_json_for_repo '{"prompt_overrides":{"coordinator":{"extend":["top-coordinator.md"]}}}' a/b)"
+
+# The resolved object feeds straight into stage_prompt_text unchanged — this
+# is the whole point of returning the same {stage: {...}} shape.
+printf 'base implementer prompt\n' > "$prompts_dir/implementer.md"
+printf 'repo house rule\n' > "$state_dir/repo-implementer.md"
+resolved="$(prompt_overrides_json_for_repo "$repo_cfg" a/b)"
+case "$(stage_prompt_text "$prompts_dir" "$state_dir" implementer "$resolved")" in
+  *"base implementer prompt"*"repo house rule"*)
+    printf 'ok   - %s\n' "a resolved per-repository override feeds stage_prompt_text exactly like an installation-wide one" ;;
+  *)
+    printf 'FAIL - a resolved per-repository override did not reach stage_prompt_text\n'
+    failures=$(( failures + 1 )) ;;
+esac
+
 echo
 if (( failures == 0 )); then
   echo "All prompt-overrides assertions passed."
