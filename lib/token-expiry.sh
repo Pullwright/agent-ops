@@ -30,6 +30,7 @@
 # decision that needs a human" — a fixed constant shared by doctor.sh's own
 # warn/ok split and agent-cycle.sh's escalation decision, so the two can
 # never drift apart.
+# shellcheck disable=SC2034  # read by scripts/doctor.sh and agent-cycle.sh, which source this file
 TOKEN_EXPIRY_WARN_DAYS=7
 
 # token_expiry_header
