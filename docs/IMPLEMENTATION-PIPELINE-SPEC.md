@@ -3901,6 +3901,53 @@ implements.
    disk does, once it is already gone. A mirror-level `flock` serialises the
    cron push against the end-of-cycle push.
 
+   **A push that cannot write says so, and an orphaned index lock does not
+   stop it (agent-ops#1377).** The `flock` above is state-sync's own;
+   `.git/index.lock` in the mirror is git's, taken by every command that
+   writes the index and left behind by one that died mid-write — a container
+   stopped under it, a git the kernel OOM-killed. Nothing examined it, so on
+   poetic-1 (2026-09-09 to -11, 27 hours) and poetic-2 (2026-09-13 to -15,
+   three days) every push failed at its first index write with `fatal:
+   Unable to create '…/.git/index.lock': File exists` while the push's own
+   progress lines kept printing, the node kept cycling, `--status` read every
+   stage `ok`, and the only node-side voice was the doctor's hourly
+   publication check (#602), into a file nothing surfaced. So, after
+   `mirror_init` and before the first write, `do_push` clears that lock when
+   three things hold — it exists, it is older than one push interval
+   (`schedule.state_sync_push_minutes`, the interval this script itself runs
+   on; a live git holds the index lock for seconds, so one older than the
+   gap between two pushes belongs to a process that is not coming back), and
+   no git process is working in the mirror (`mirror_git_busy`, read from
+   `/proc`: any process named `git` whose working directory is the mirror or
+   whose command line names it; where `/proc` cannot be read the answer is
+   "busy") — and logs `state-sync-lock-cleared` `{age_s}` to `log.jsonl`,
+   which replicates, rather than only to its own log. A lock any live git
+   may hold is never removed; a young one is left with a line saying so.
+   Independently, every writing git command of the push (`reset`, `clean`,
+   `add`, `commit`, `push`) runs through `mirror_write`: on failure the first
+   `fatal:`/`error:` line is said and logged as `state-sync-push-failed`
+   `{step, detail}`, git's full stderr is passed through as before, and the
+   run still ends non-zero — a push that did not push is a failure, and
+   supercronic's exit-status line stays true. The doctor's own publication
+   check is unchanged: it already fails a node whose read-back is older than
+   `node_stale_after_minutes` — the fleet-wide definition of stale, applied
+   identically to a peer's row and to a node's own so the two cannot
+   disagree (that key's own notes) — and did so hourly throughout both
+   incidents; a second, tighter threshold for the doctor alone would have the
+   node call itself stale while its peers still called it fresh. What was
+   missing was a reader, so `--status` gains two lines (`lib/manage.sh`, on
+   the same terms as requirement 2.8's `stages:` section — `check-nodes.sh`
+   prints `--status` per node and inherits them for free): `published:`,
+   this node's own publication verdict through `fleet_publication_status`
+   over `.state-sync-published.json` — `fresh`/`STALE` with the age and the
+   threshold, `unknown` before the first read-back, `not configured` without
+   a `state_repo` — and `doctor:`, the last unattended pass's verdict and
+   age from `.doctor-status.json`, with the count of failing checks and the
+   first of them (the same bounded `fails` the heartbeat carries, #1397), or
+   a plain sentence when no pass has run. `test/state-sync.test.sh` drives
+   the three lock cases (young, held by a live process, orphaned) and both
+   events; `test/manage-status.test.sh` the two lines.
+
    **Fetch.** Every node materialises every *other* node's branch, whole,
    under the peers directory (`lib/fleet.sh`, `<workspace_root>/
    .agent-ops-peers/<node>/`), on its own schedule: `git archive` into a

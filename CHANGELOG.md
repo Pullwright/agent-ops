@@ -22,6 +22,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`state-sync.sh push` clears an orphaned `index.lock` and names a push
+  that fails** (issue #1377). A `.git/index.lock` a dead git left in the
+  mirror used to fail every later push at its first index write, silently:
+  27 hours on poetic-1 and three days on poetic-2 with the node cycling,
+  `--status` reading every stage `ok`, and only the doctor's hourly
+  publication check saying anything, into a file nothing surfaced. The push
+  now clears such a lock when it is older than one push interval and no git
+  process is working in the mirror (never a lock a live git may hold),
+  logging `state-sync-lock-cleared` with its age; every writing git command
+  runs through `mirror_write`, which on failure logs
+  `state-sync-push-failed` with the step and git's first `fatal:` line and
+  still exits non-zero. `--status` gains `published:` (this node's own
+  publication verdict, the same one the doctor and the dashboard derive) and
+  `doctor:` (the last unattended pass's verdict, age and first failing
+  check), so `check-nodes.sh` shows both.
+
 - **The state-sync mirror's own garbage collection can no longer be the
   thing that fails, and a `gc.log` now fails its integrity check** (#604's
   second clause, 2026-09-15). `scripts/state-sync.sh push` amends one
