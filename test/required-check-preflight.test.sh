@@ -194,6 +194,30 @@ out="$(required_check_preflight_findings "$SLUG" "$BASE" "$NUMBER")"
 assert_eq "a deleted workflow whose job is a required context is found" \
   "$(printf 'register\t.github/workflows/tech-debt-register.yml')" "$out"
 
+# Everything this function says travels on stdout; its exit status is always
+# 0, including on the path that finds something. agent-cycle.sh assigns its
+# output under `set -euo pipefail` (requirement 56's own block), so a stray
+# non-zero here does not merely mislead a caller — it ends the cycle in
+# exactly the case this whole seam exists for, after the pull request is
+# raised and before the escalation can be filed.
+#
+# The status is only ever wrong when the removed job id does not happen to
+# sort *last* among the `unique`-sorted required contexts — which is why the
+# assertion above cannot catch it: "register" sorts after "CI". agent-ops's
+# own ruleset is the other shape ("register" before "shellcheck", "toc"), so
+# the required list here puts a surviving context on each side of the removed
+# one.
+set_rules '[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"CI"},{"context":"register"},{"context":"toc"}]}}]'
+out="$(required_check_preflight_findings "$SLUG" "$BASE" "$NUMBER")"; rc=$?
+assert_eq "  ... with a required context sorting after it, still found" \
+  "$(printf 'register\t.github/workflows/tech-debt-register.yml')" "$out"
+assert_eq "  ... and exits 0, never failing agent-cycle.sh's own set -e" "0" "$rc"
+
+required_check_preflight_findings "$SLUG" "$BASE" "$NUMBER" >/dev/null; rc=$?
+assert_eq "  ... uncaptured too, the shape a set -e caller actually sees" "0" "$rc"
+
+set_rules '[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"CI"},{"context":"register"}]}}]'
+
 # A modified (not deleted) workflow that simply drops the job is the same
 # finding, from the diff between the old and new content at each side's own
 # commit.

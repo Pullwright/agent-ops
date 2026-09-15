@@ -78,6 +78,16 @@ _required_check_preflight_content() {
 # same non-blocking convention `review_gate_security_alerts` and this file's
 # own ready-gate backstop (`lib/review-gate.sh`) already apply to an API they
 # cannot ask.
+#
+# Everything this function has to say travels on stdout; its exit status is
+# always 0, including — especially — on the path that actually finds
+# something. Without the explicit `return 0` closing it, the status would be
+# the inner per-context loop's last `grep … && printf …`, which is false
+# whenever the removed job id does not happen to sort last among the
+# `unique`-sorted required contexts. agent-cycle.sh assigns this function's
+# output under `set -euo pipefail`, so that stray 1 aborted the Implementer
+# stage in exactly the case requirement 56 exists for — findings printed,
+# cycle killed before the escalation could be filed.
 required_check_preflight_findings() {
   local slug="$1" base="$2" number="$3" gh_bin="${REQUIRED_CHECK_PREFLIGHT_GH:-gh}"
   local rules required files_json base_sha head_sha
@@ -133,6 +143,11 @@ required_check_preflight_findings() {
       grep -qxF "$ctx" <<<"$removed_ids" && printf '%s\t%s\n' "$ctx" "$filename"
     done <<<"$required"
   done < <(jq -r '.[] | [.status, .filename, (.previous_filename // "")] | @tsv' <<<"$files_json" 2>/dev/null)
+
+  # Not decoration — see the header. The loops above end on whatever their
+  # last `grep` said, which is a fact about the last required context
+  # inspected and never about whether this call succeeded.
+  return 0
 }
 
 # required_check_preflight_escalate SLUG ITEM PR_URL BASE_BRANCH FINDINGS

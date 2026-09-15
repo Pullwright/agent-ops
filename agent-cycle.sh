@@ -3351,7 +3351,12 @@ if [[ -n "$impl_pr_url" ]]; then
   # .github/workflows/tech-debt-register.yml. `lib/review-gate.sh`'s own
   # backstop (requirement 55) catches the same fact again at the Reviewer's
   # `ready` handoff, as a safety net for a finding missed here.
-  rcp_findings="$(required_check_preflight_findings "$repo_slug" "$selected_default_branch" "${impl_pr_url##*/}")"
+  # `|| true` for the same reason `closing_keyword_gate`'s own call above
+  # carries one: this block is advisory, and nothing it can fail at is worth
+  # ending a cycle whose pull request is already raised. The function itself
+  # promises exit 0 (see its header), so this guards the call site against a
+  # future edit to it, not against today's behaviour.
+  rcp_findings="$(required_check_preflight_findings "$repo_slug" "$selected_default_branch" "${impl_pr_url##*/}")" || true
   if [[ -n "$rcp_findings" ]]; then
     rcp_created="$(required_check_preflight_escalate "$repo_slug" "$selected_item" "$impl_pr_url" \
       "$selected_default_branch" "$rcp_findings")" || true

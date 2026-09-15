@@ -11045,6 +11045,17 @@ implements.
     ask — and an escalation that could not be filed warns and is retried the
     next time this runs, rather than failing the Implementer's own handoff.
 
+    Nothing this gate finds ends the cycle. Its whole verdict travels on
+    `required_check_preflight_findings`'s stdout; the function's exit status
+    is always 0, on the finding path as much as on the no-finding and
+    could-not-read ones, and `agent-cycle.sh`'s own block assigns it with a
+    `|| true` besides. Both halves are deliberate: this block runs after the
+    pull request is already raised and under `set -euo pipefail`, so a
+    non-zero status leaking out of the one path this requirement exists for
+    would abort the Implementer stage — no `complexity:*` label, no Reviewer
+    engagement, and no escalation filed — precisely when a finding was in
+    hand.
+
     The Refiner applies the same rule ahead of selection: where an item's own
     inventory names a `.github/workflows/*.yml` file being deleted or
     substantially rewritten, its specification states the ruleset-edit
@@ -24060,7 +24071,11 @@ oblige anyone to edit a test.
    dropped job that was never a required context finds nothing; and an
    unreadable ruleset, changed-file list, or base commit each find nothing
    rather than blocking, the same non-blocking convention requirement 55's
-   own backstop applies. `required_check_preflight_escalate` — stubbing
+   own backstop applies. The finding path exits 0 — asserted both captured
+   and uncaptured, with a required context deliberately sorting *after* the
+   removed job id, the arrangement under which the loops' own last `grep`
+   would otherwise be what the function returned, and the arrangement
+   agent-ops's own ruleset is. `required_check_preflight_escalate` — stubbing
    `create_escalation_issue` exactly as `test/crash-loop-escalate.test.sh`
    already does — files exactly one escalation per call, carrying
    `enabler_escalation_label`, a title naming the missing context(s), the
