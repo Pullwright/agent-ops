@@ -335,6 +335,17 @@ else
   ok "every repo listing implementation-plan names its plan document"
 fi
 
+# config.schema.json's uniqueItems on repos only rejects byte-identical whole
+# entries, so two entries sharing a slug but differing elsewhere pass it —
+# and the per-repo resolvers then disagree silently about which entry governs
+# (lib/config-schema.sh's config_duplicate_repos_slugs, issue #1570).
+duplicate_repos_slugs="$(config_duplicate_repos_slugs "$(cfg_json '.repos // []')")"
+if [[ -n "$duplicate_repos_slugs" ]]; then
+  fail "repos lists [$duplicate_repos_slugs] more than once — the per-repo resolvers (lib/prompt-overrides.sh, lib/escalation-autonomy.sh, lib/preview-config.sh, agent-cycle.sh's merge_autonomy lookup) disagree about which entry governs a duplicated slug"
+else
+  ok "every repos entry names a distinct repository"
+fi
+
 # Requirement 342's resolution rule assumes exactly one project_review.repos
 # entry per repository; two entries for the same slug leave no way to say
 # which one's overrides apply, so review-cycle.sh refuses to start rather

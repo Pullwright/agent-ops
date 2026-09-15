@@ -1190,6 +1190,17 @@ assert_doctor "doctor fails an implementation-plan source with no path, as agent
 assert_doctor "doctor fails duplicate slugs in project_review.repos, as review-cycle.sh would" \
   '.project_review.repos[1].slug = .project_review.repos[0].slug' 1 \
   "project_review.repos lists [$BASE_REPO_1] more than once"
+# issue #1570: the top-level repos[] array has the same duplicate-slug gap
+# project_review.repos already had (requirement R1b) — config.schema.json's
+# uniqueItems only rejects byte-identical whole entries, and nothing before
+# this check caught two repos[] entries sharing a slug while differing
+# elsewhere. Doctor-only: unlike config_duplicate_project_review_slugs,
+# nothing yet reads this as a reason for agent-cycle.sh to refuse at startup.
+assert_doctor "doctor fails duplicate slugs in repos[]" \
+  '.repos[1].slug = .repos[0].slug' 1 \
+  "repos lists [$BASE_REPO_1] more than once"
+assert_doctor_shipped "doctor passes distinct repos[] slugs" \
+  '.' 0 'every repos entry names a distinct repository'
 assert_doctor "doctor skips the preview-check step for a repo with no preview configured (D19 Phase 1)" \
   '.' 0 "$BASE_REPO_1 has no preview deployment configured"
 assert_doctor "doctor warns, never fails, a vercel-configured repo whose named credential is unset on this node" \

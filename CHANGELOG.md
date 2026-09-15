@@ -65,6 +65,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   carrying the streak's detail, so `check-nodes.sh` shows the reason beside
   the count.
 
+- **`scripts/doctor.sh` fails two `repos[]` entries sharing a `slug`**
+  (issue #1570). `config.schema.json`'s `uniqueItems` on `repos` only
+  rejects byte-identical whole entries, so two entries naming the same
+  repository but differing elsewhere passed silently — and the per-repo
+  resolvers (`lib/prompt-overrides.sh`, `lib/escalation-autonomy.sh`,
+  `lib/preview-config.sh`, `agent-cycle.sh`'s `merge_autonomy` lookup) then
+  disagreed about which entry governs. `lib/config-schema.sh`'s new
+  `config_duplicate_repos_slugs`, doctor-only, mirrors the existing
+  `project_review.repos` duplicate-slug check for the top-level array.
+
 - **`state-sync.sh push` clears an orphaned `index.lock` and names a push
   that fails** (issue #1377). A `.git/index.lock` a dead git left in the
   mirror used to fail every later push at its first index write, silently:
