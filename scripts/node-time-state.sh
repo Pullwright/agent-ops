@@ -58,6 +58,13 @@ Read-only. Prints the node time-state report as JSON on stdout:
     four causes D21 names (`awaiting-tick`, `back-pressure`,
     `peer-claimed`, `coordinator-declined`), plus `unspecified` for one
     whose own `cause` this fold does not recognise.
+  - `externally_blocked_by_cause`: `externally-blocked` seconds split by the
+    eight causes D21 names (`usage-limit`, `github-budget`, `unreachable`,
+    `unauthorized`, `disk-low`, `disk-full`, `memory-low`,
+    `host-overcommit`), plus `unspecified` for one whose own `cause` this
+    fold does not recognise — issue #609's constraint statement needs
+    `usage-limit` isolated from the other seven to attribute this bucket to
+    model capacity rather than to a host or GitHub fault.
   - `by_node`: the same breakdown, per node.
   - `skipped_events`: `node-state` events missing `node` or `state`, or
     whose `ts` is missing or fails `fromdateiso8601` — excluded from every

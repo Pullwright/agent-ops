@@ -1,0 +1,114 @@
+{
+  "generated_at": "@now",
+  "node": "poetic-1",
+  "config": {
+    "timeout_coordinator": 15,
+    "timeout_implementer": 90,
+    "timeout_reviewer": 30,
+    "timeout_enabler": 30,
+    "lock_stale_after": 4,
+    "dashboard_refresh_seconds": 5
+  },
+  "status": {
+    "switch": {"disabled": false},
+    "limit": {"active": false},
+    "running": false,
+    "lock": null,
+    "current": null,
+    "last_cycle": null
+  },
+  "counts": {
+    "spend_today_usd": 0, "spend_total_usd": 0,
+    "failures_shown": 0, "cycles_shown": 0, "prs_reached_ready": 0,
+    "by_day": [], "by_model": [], "by_actor": []
+  },
+  "cycles": [],
+  "blocked": [],
+  "void": [],
+  "github": {"ok": true, "fetched_at": "@ago:1m", "prs": [], "pr_index": {}, "inputs": {}},
+  "log_tail": [],
+  "cron_tail": ["30 * * * *  /app/agent-cycle.sh"],
+  "max_open_agent_prs": 3,
+  "constraint": {
+    "window": {"from": "2026-09-01T00:00:00Z", "to": "2026-09-08T00:00:00Z", "seconds": 604800},
+    "nodes": 3,
+    "expected_total_seconds": 1814400,
+    "min_share": 0.3,
+    "min_sample_seconds": 14400,
+    "cadence_bound_minutes": 15,
+    "status": "ok",
+    "insufficient_reason": null,
+    "sentence": "The back-pressure cap (max_open_agent_prs) accounted for 44.1% of fleet node-time between 2026-09-01T00:00:00Z and 2026-09-08T00:00:00Z; raise max_open_agent_prs, or climb a rung of the autonomy ladder in D18 (up to 800000s recoverable this window, an upper bound).",
+    "leading_candidate": "back-pressure",
+    "candidates": [
+      {
+        "key": "cron-latency", "label": "Cron latency (waiting for the next tick)",
+        "evaluable": true, "seconds": 50000, "share": 0.028,
+        "direction": "grow", "recommendation": "shorten schedule.cycle_interval_minutes, or move to event-driven dispatch",
+        "effect_node_seconds": 50000,
+        "effect_note": "upper bound: node-seconds this window that could move to producing if cron latency were removed",
+        "not_evaluable_reason": null, "depends_on": null
+      },
+      {
+        "key": "back-pressure", "label": "The back-pressure cap (max_open_agent_prs)",
+        "evaluable": true, "seconds": 800000, "share": 0.441,
+        "direction": "grow", "recommendation": "raise max_open_agent_prs, or climb a rung of the autonomy ladder in D18",
+        "effect_node_seconds": 800000,
+        "effect_note": "upper bound: node-seconds this window that could move to producing if the cap were raised",
+        "not_evaluable_reason": null, "depends_on": null
+      },
+      {
+        "key": "node-count", "label": "Node count (more nodes than there is work for)",
+        "evaluable": true, "seconds": 40000, "share": 0.022,
+        "direction": "shrink", "recommendation": "run fewer nodes: it costs no throughput and saves the idle spend",
+        "effect_node_seconds": 40000,
+        "effect_note": "upper bound: idle node-seconds this window a smaller fleet would not have spent",
+        "not_evaluable_reason": null, "depends_on": null
+      },
+      {
+        "key": "model-capacity", "label": "Model capacity (usage-limit stand-downs)",
+        "evaluable": true, "seconds": 5000, "share": 0.003,
+        "direction": "grow", "recommendation": "raise model capacity or quota for the blocked actor, or move it to a less-constrained tier",
+        "effect_node_seconds": 5000,
+        "effect_note": "upper bound: node-seconds this window that could move to producing if the quota were raised",
+        "not_evaluable_reason": null, "depends_on": null
+      },
+      {
+        "key": "human-merge-gate", "label": "The human merge gate",
+        "evaluable": false, "seconds": null, "share": null,
+        "direction": null, "recommendation": null,
+        "effect_node_seconds": null, "effect_note": null,
+        "not_evaluable_reason": "the time account carries no node-time-state cause for pull requests waiting on a human decision; the merge_budget governor's own deferral observability (#574) measures pull-request wait time, not node-seconds, so it cannot rank alongside this account's own candidates without a separate attribution this item does not build",
+        "depends_on": "#574"
+      },
+      {
+        "key": "pipeline-defect-rate", "label": "The pipeline's own defect rate",
+        "evaluable": false, "seconds": null, "share": null,
+        "direction": null, "recommendation": null,
+        "effect_node_seconds": null, "effect_note": null,
+        "not_evaluable_reason": "the rework record (#596) counts tokens, elapsed time and items, not a node-time-state cause; it cannot rank alongside this account's own candidates without a separate node-seconds attribution this item does not build",
+        "depends_on": "#596"
+      }
+    ],
+    "account": {
+      "window": {"from": "2026-09-01T00:00:00Z", "to": "2026-09-08T00:00:00Z", "seconds": 604800},
+      "nodes": ["n1", "n2", "n3"],
+      "skipped_events": 0,
+      "totals": {
+        "producing": 900000, "overhead": 19400, "externally-blocked": 5000,
+        "idle-with-demand": 890000, "idle-without-demand": 0, "down": 0, "unaccounted": 0
+      },
+      "expected_total_seconds": 1814400,
+      "balanced": true,
+      "idle_with_demand_by_cause": {
+        "awaiting-tick": 50000, "back-pressure": 800000, "peer-claimed": 40000,
+        "coordinator-declined": 0, "unspecified": 0
+      },
+      "externally_blocked_by_cause": {
+        "usage-limit": 5000, "github-budget": 0, "unreachable": 0, "unauthorized": 0,
+        "disk-low": 0, "disk-full": 0, "memory-low": 0, "host-overcommit": 0, "unspecified": 0
+      },
+      "by_node": {}
+    }
+  }
+}

@@ -255,6 +255,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **The dashboard leads its analytics region with the constraint statement**
+  (D21, `docs/ROADMAP.md`; issue #609): one sentence, computed from the node
+  time-state account (`lib/node-time-state.sh`, issue #597), naming what is
+  limiting this installation's throughput right now, over what share of the
+  window, and what to do about it. `lib/constraint.sh`'s `constraint_classify`
+  ranks four candidates the account attributes directly — cron latency, the
+  back-pressure cap, node count (folding both peer-claimed contention and
+  idle-without-demand, so a shrink recommendation competes on equal footing
+  with the three grow-side candidates), and model capacity (isolated from
+  the account's other seven `externally-blocked` causes via the new
+  `externally_blocked_by_cause` split) — and names two more, the human merge
+  gate and the pipeline's own defect rate, that are structurally never
+  evaluable from a time account alone and always report why (#574, #596).
+  Below a stated minimum share and minimum sample the statement reads
+  "insufficient evidence" naming what is missing, rather than naming the
+  largest bucket regardless of size. `scripts/constraint.sh` is the read-only
+  CLI (`constraint_min_share`/`constraint_min_sample_seconds`,
+  `config.schema.json`); `scripts/publish-dashboard.sh` computes it once per
+  full build and `dashboard/index.html` renders the sentence with the
+  account's own breakdown by state beneath it as evidence.
 - **`--fetch` output states its own provenance, so a stage reads it as
   untrusted data rather than as instructions** (issue #599, D19's *served*
   tier). `scripts/preview-deploy.sh` wraps each fetched route's status,

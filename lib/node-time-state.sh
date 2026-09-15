@@ -250,6 +250,7 @@ finalize_node_state_for_review() {
 NODE_TIME_STATE_FOLD_JQ='
   def valid_states: ["producing","overhead","externally-blocked","idle-with-demand","idle-without-demand","down"];
   def idle_causes: ["awaiting-tick","back-pressure","peer-claimed","coordinator-declined"];
+  def eb_causes: ["usage-limit","github-budget","unreachable","unauthorized","disk-low","disk-full","memory-low","host-overcommit"];
   def ts_ok: (.ts // "") != "" and ((try (.ts | fromdateiso8601) catch null) != null);
 
   ($all | map(select(type == "object" and .event == "node-state"))) as $ns_candidates
@@ -278,13 +279,16 @@ NODE_TIME_STATE_FOLD_JQ='
           | {start: $p.epoch, end: $seg_end, state: $p.state, cause: $p.cause}
          ]) as $segments
       | (reduce $segments[] as $seg
-          ({seconds: {}, idle_by_cause: {}, unaccounted_seconds: 0};
+          ({seconds: {}, idle_by_cause: {}, eb_by_cause: {}, unaccounted_seconds: 0};
            (if $seg.end > $seg.start then ($seg.end - $seg.start) else 0 end) as $dur
            | if (valid_states | index($seg.state)) then
                (.seconds[$seg.state] = ((.seconds[$seg.state] // 0) + $dur))
                | if $seg.state == "idle-with-demand" then
                    ((if (idle_causes | index($seg.cause)) then $seg.cause else "unspecified" end) as $c
                     | .idle_by_cause[$c] = ((.idle_by_cause[$c] // 0) + $dur))
+                 elif $seg.state == "externally-blocked" then
+                   ((if (eb_causes | index($seg.cause)) then $seg.cause else "unspecified" end) as $c
+                    | .eb_by_cause[$c] = ((.eb_by_cause[$c] // 0) + $dur))
                  else . end
              else
                .unaccounted_seconds += $dur
@@ -300,6 +304,10 @@ NODE_TIME_STATE_FOLD_JQ='
       ({}; reduce (idle_causes + ["unspecified"])[] as $c
              (.; .[$c] = ((.[$c] // 0) + ($n.idle_by_cause[$c] // 0)))
        )) as $idle_with_demand_by_cause
+  | (reduce $per_node[] as $n
+      ({}; reduce (eb_causes + ["unspecified"])[] as $c
+             (.; .[$c] = ((.[$c] // 0) + ($n.eb_by_cause[$c] // 0)))
+       )) as $externally_blocked_by_cause
   | (($nodes | length) * $win_seconds) as $expected_total
   | ((valid_states | map($fleet_seconds[.]) | add // 0) + $fleet_unaccounted) as $actual_total
 
@@ -318,6 +326,7 @@ NODE_TIME_STATE_FOLD_JQ='
       expected_total_seconds: $expected_total,
       balanced: ($actual_total == $expected_total),
       idle_with_demand_by_cause: $idle_with_demand_by_cause,
+      externally_blocked_by_cause: $externally_blocked_by_cause,
       by_node: ($per_node | map({key: .node, value: ({
           producing: (.seconds.producing // 0), overhead: (.seconds.overhead // 0),
           "externally-blocked": (.seconds["externally-blocked"] // 0),
@@ -325,7 +334,8 @@ NODE_TIME_STATE_FOLD_JQ='
           "idle-without-demand": (.seconds["idle-without-demand"] // 0),
           down: (.seconds.down // 0),
           unaccounted: .unaccounted_seconds,
-          idle_with_demand_by_cause: .idle_by_cause
+          idle_with_demand_by_cause: .idle_by_cause,
+          externally_blocked_by_cause: .eb_by_cause
         })}) | from_entries)
     }
 '
@@ -333,10 +343,14 @@ NODE_TIME_STATE_FOLD_JQ='
 # node_time_state_fold LOG_FILE [SINCE [UNTIL]]
 # Print the node time-state report — `window`, `totals` (the six states plus
 # `unaccounted`), `expected_total_seconds`/`balanced` (the invariant:
-# node-count x window seconds), `idle_with_demand_by_cause`, and `by_node` —
-# folded from LOG_FILE, or stdin if it is "-". Always succeeds, printing the
-# all-empty shape for a missing, empty or unreadable log, on the same terms
-# `lib/item-lifecycle.sh`'s `item_lifecycle_fold` already does.
+# node-count x window seconds), `idle_with_demand_by_cause`,
+# `externally_blocked_by_cause` (the same per-cause split, over the eight
+# `externally-blocked` causes — issue #609 needs `usage-limit` isolated from
+# the other seven to attribute idleness to model capacity rather than to a
+# host or GitHub fault), and `by_node` — folded from LOG_FILE, or stdin if it
+# is "-". Always succeeds, printing the all-empty shape for a missing, empty
+# or unreadable log, on the same terms `lib/item-lifecycle.sh`'s
+# `item_lifecycle_fold` already does.
 node_time_state_fold() {
   local src="${1:--}" since="${2:-}" until="${3:-}" raw="" all_json="" out=""
   if [[ "$src" == "-" ]]; then
@@ -349,6 +363,6 @@ node_time_state_fold() {
 
   out="$(jq -nc --arg since "$since" --arg until "$until" \
       'input as $all | ('"$NODE_TIME_STATE_FOLD_JQ"')' <<<"$all_json" 2>/dev/null || true)"
-  [[ -n "$out" ]] || out='{"window":{"from":null,"to":null,"seconds":0},"nodes":[],"skipped_events":0,"totals":{"producing":0,"overhead":0,"externally-blocked":0,"idle-with-demand":0,"idle-without-demand":0,"down":0,"unaccounted":0},"expected_total_seconds":0,"balanced":true,"idle_with_demand_by_cause":{"awaiting-tick":0,"back-pressure":0,"peer-claimed":0,"coordinator-declined":0,"unspecified":0},"by_node":{}}'
+  [[ -n "$out" ]] || out='{"window":{"from":null,"to":null,"seconds":0},"nodes":[],"skipped_events":0,"totals":{"producing":0,"overhead":0,"externally-blocked":0,"idle-with-demand":0,"idle-without-demand":0,"down":0,"unaccounted":0},"expected_total_seconds":0,"balanced":true,"idle_with_demand_by_cause":{"awaiting-tick":0,"back-pressure":0,"peer-claimed":0,"coordinator-declined":0,"unspecified":0},"externally_blocked_by_cause":{"usage-limit":0,"github-budget":0,"unreachable":0,"unauthorized":0,"disk-low":0,"disk-full":0,"memory-low":0,"host-overcommit":0,"unspecified":0},"by_node":{}}'
   printf '%s' "$out"
 }

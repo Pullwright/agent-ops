@@ -673,7 +673,15 @@ six is not excluded — the instant it names is real even if the label is
 not — its interval lands in `unaccounted_seconds` instead, and an
 `idle-with-demand` event whose `cause` is missing or unrecognised still
 counts fully toward `idle-with-demand`'s own total, with the cause itself
-filed under `unspecified` rather than dropped.
+filed under `unspecified` rather than dropped. `externally-blocked` gets the
+identical per-cause treatment, over its own eight-token half of the table
+above: `node_time_state_fold`'s `externally_blocked_by_cause` (fleet-wide)
+and each node's own copy under `by_node` (issue #609) — a missing or
+unrecognised cause files under `unspecified` there too, never dropped. This
+split exists because the eight causes are not interchangeable to a reader
+acting on them: `usage-limit` is model capacity, the other seven are a host
+or GitHub fault, and a constraint statement that could not tell them apart
+would recommend the wrong lever with full confidence.
 
 ### Absence is `down`
 

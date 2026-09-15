@@ -619,7 +619,7 @@ So a tick has two kinds, and `--fast` chooses:
   `cycles`, `log_tail`, `cron_tail`, `fleet`, `revert_rate`, `log_repair` —
   and merges those keys over the last full payload. The history roll-ups
   (`counts` and its actor-scorecard and classifier-escape enrichments,
-  `blocked`, `void`, `landings`, `github_budget`, `rework`, and the stage
+  `blocked`, `void`, `landings`, `github_budget`, `rework`, `constraint`, and the stage
   budgets inside `config`) are not computed at all: they read the fleet's
   whole history and change on the scale of cycles, not ticks.
 
@@ -1704,6 +1704,116 @@ panel alone how long they have. A payload the Publisher could not assemble sets
 assembled this tick", the same outage-not-a-quiet-night distinction `armed`
 above makes; an empty window is a real, reportable "no decisions taken",
 never confused with it.
+
+The **Constraint** panel (D21, `docs/ROADMAP.md`; issue #609) leads the
+page's analytics cluster — everything from here to Scorecards exists to
+justify or refute the one sentence this panel states. It renders
+`constraint`, assembled by `lib/constraint.sh`'s `constraint_classify` over
+the node time-state account `lib/node-time-state.sh`'s `node_time_state_fold`
+already produces (issue #597) — never a second fold over raw events, so it
+cannot disagree with that account's own arithmetic. A payload the Publisher
+could not assemble sets `constraint.sentence` (and every other field) to
+`null`, rendered "the constraint statement could not be assembled this
+tick", the same outage-not-a-quiet-tick distinction every other roll-up on
+this page makes.
+
+**The sentence's own grammar.** One line, always present: `<candidate's own
+label> accounted for <share>% of fleet node-time between <window.from> and
+<window.to>; <recommendation>`, with a grow-direction candidate's own
+sentence additionally stating `(up to <effect_node_seconds>s recoverable
+this window, an upper bound)` — the expected effect, in node-seconds, never
+in money or a unit of delivered work (D21's own scope bound; `docs/
+ROADMAP.md`'s open-questions table still has D21's numerator open). A
+shrink-direction candidate's own sentence states the recommendation alone,
+with no recoverable figure — shrinking does not recover producing time, it
+avoids spending idle time a smaller fleet would not have had.
+
+**The candidate table**, `constraint.candidates`, always exactly six, fixed
+order, each `{key, label, evaluable, seconds, share, direction,
+recommendation, effect_node_seconds, effect_note, not_evaluable_reason,
+depends_on}`:
+
+| Candidate (`key`) | Attributed from | `direction` |
+| --- | --- | --- |
+| `cron-latency` | `idle_with_demand_by_cause["awaiting-tick"]` | `grow` |
+| `back-pressure` | `idle_with_demand_by_cause["back-pressure"]` | `grow` |
+| `node-count` | `idle_with_demand_by_cause["peer-claimed"]` + `totals["idle-without-demand"]` | `shrink` |
+| `model-capacity` | `externally_blocked_by_cause["usage-limit"]` | `grow` |
+| `human-merge-gate` | never evaluable from this account (`#574`) | `null` |
+| `pipeline-defect-rate` | never evaluable from this account (`#596`) | `null` |
+
+`node-count` deliberately folds two different time-account signals into one
+lever: `peer-claimed` idleness (nodes contending over a shrinking backlog)
+and the fleet-wide `idle-without-demand` healthy zero (nothing eligible
+anywhere) both read as "more node capacity than there is work for," and both
+recommend the same fix — run fewer nodes — so folding them is what lets the
+shrink case compete for `leading_candidate` on equal footing with the three
+grow-side candidates, rather than being structurally unable to lead the
+sentence the way a lone `idle-without-demand` reading would be (it is the
+healthy zero, not a resource anything is bound on — see the roadmap's own
+"a constraint is not the largest bucket" pitfall). `idle_with_demand_by_cause`'s
+fourth cause, `coordinator-declined`, names no candidate here on purpose: it
+is a model-selection question (D22's own "which model runs each actor"), a
+different lever category from the six this item ranks. Its seconds are never
+silently dropped — they render in the account breakdown beneath the sentence
+(below), just never rankable as "the constraint" by this fold.
+
+The last two candidates are never evaluable from the time account alone, and
+say so on every single call, never flipping to evaluable regardless of
+whether `#574`/`#596` have since landed: D21's own three-way split names
+time, spend and flow as separate accounts, and the human merge gate (pull-
+request wait time) and the pipeline's own defect rate (rework's tokens,
+elapsed time and item counts) are spend/flow-account measures, not a
+node-time-state cause this account's fold can attribute a share of
+node-seconds to. Ranking them against the four time-account candidates would
+need a separate attribution this item does not build — `not_evaluable_reason`
+states this in the object itself, `depends_on` names the record it would
+start from.
+
+**Never the largest bucket by default.** `status` is `"ok"` or
+`"insufficient-evidence"`, with `insufficient_reason` naming one of three
+distinct empty states, never collapsed into one "nothing to report": `"no-
+time-account-data"` (the account has no `node-state` events at all —
+`window.from` is null, the state of the world before issue #597 lands, or
+any window with none in it), `"window-below-minimum-sample"` (an account
+exists but `expected_total_seconds` is below `constraint_min_sample_seconds`
+— too little observed to trust any share computed from it), and `"no-
+candidate-above-minimum-share"` (a sufficient sample, but every evaluable
+candidate's own share is below `constraint_min_share` — the sentence still
+names the largest observed candidate, as context, but `leading_candidate`
+stays `null`). `constraint_min_share` (default `0.3`) and
+`constraint_min_sample_seconds` (default `14400`) are `config.json` keys,
+echoed back on the object so a reader can see what gated the verdict without
+a second lookup; `cadence_bound_minutes` (`schedule.cycle_interval_minutes`)
+rides beside them purely informationally — the same resolution floor
+`scripts/pickup-metrics.sh` states beside its own figures, never a gate this
+fold applies itself.
+
+**The account's own breakdown by state**, `constraint.account` — the same
+shape `scripts/node-time-state.sh` prints, `window`/`totals`/
+`expected_total_seconds`/`balanced`/`idle_with_demand_by_cause`/
+`externally_blocked_by_cause`/`by_node` — renders beneath the sentence and
+the candidate table as the evidence for or against it, never a second
+verdict of its own: the totals table (all six states plus `unaccounted`),
+then the idle-with-demand cause breakdown, then the externally-blocked cause
+breakdown. `externally_blocked_by_cause` (issue #609) is the one addition
+`node_time_state_fold` itself gained for this item — `externally-blocked`
+seconds split by its own eight causes, `usage-limit` isolated from the other
+seven so the account can tell "model capacity is the constraint" from "a
+host or GitHub fault is," on the same terms `idle_with_demand_by_cause`
+already split idle-with-demand seconds by its own four causes. **The window
+is the retained log union and nothing more** — `log.jsonl` and
+`review-log.jsonl` are both unioned and neither is ever rotated by size
+(requirement 2.6), so every share this panel states is honestly "over the
+node-state history this fleet still has," the same bound every other
+history roll-up on this page already carries.
+
+`scripts/constraint.sh` is the read-only CLI a human or another tool can run
+directly — `lib/constraint.sh`'s own header is the field-by-field contract,
+mirrored here rather than duplicated. It is never called from this panel's
+own render path; the Publisher computes `constraint` once per full build,
+exactly as it does `rework` and the actor scorecards, and the page only ever
+reads the payload.
 
 The **Revert rate by repository** panel (D18 issue #579) is the continuous
 half of Stage 2's exit criterion ("revert rate ≤ baseline"):
