@@ -42,6 +42,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A stage refused for want of a valid Claude login is named as such, and
+  `--status` shows a failing stage's detail** (2026-09-15). A node whose
+  subscription OAuth credential lapsed while it stood down records
+  `terminal_reason: "api_error"` with no HTTP status and `result: "Failed to
+  authenticate: OAuth session expired and could not be refreshed"`;
+  `stage_api_refusal` keyed on a numeric status alone, so six consecutive
+  cycles on ockham-2 read `coordinator exited 1`, indistinguishable from any
+  other failure. The shape — the runner's `api_error` reason together with an
+  authentication message — is now the refusal `authentication_failed`,
+  classified `refused` (no retry clears it), and the `stages:` block of
+  `--status` follows a failing stage's line with an indented `last:` line
+  carrying the streak's detail, so `check-nodes.sh` shows the reason beside
+  the count.
+
 - **`state-sync.sh push` clears an orphaned `index.lock` and names a push
   that fails** (issue #1377). A `.git/index.lock` a dead git left in the
   mirror used to fail every later push at its first index write, silently:

@@ -4855,7 +4855,12 @@ implements.
    reads this file (never recomputes it) and prints it as a new `stages:`
    section, one line per stage — `coordinator failing (11 consecutive, last
    success 8h ago)`, `reviewer idle (never run)` — or a plain "no data yet"
-   line on a node that has not completed a cycle since upgrading.
+   line on a node that has not completed a cycle since upgrading. A failing
+   stage's line is followed by an indented `last: <last_detail>` line when
+   the streak carries one (2026-09-15): the record held the detail all
+   along, but the terminal showed only the count, so six cycles of a lapsed
+   login on ockham-2 read as any failure at all when the detail — requirement
+   4i's `authentication_failed` — named the one thing to do.
    `check-nodes.sh` (external to this repository; not committed here) prints
    `--status` per node and so inherits the new section for free, with
    nothing in this repository to change.
@@ -7318,6 +7323,23 @@ implements.
    ladder would never have fired on the outage it was needed for. The
    escalation's own hint now names `coordinator.out` first.
 
+   One refusal carries no status at all and is recognised by its shape
+   (2026-09-15, ockham-2): a node whose subscription OAuth credential lapsed
+   while it stood down — re-enabled after days on Standby, its refresh token
+   expired with nothing having used it — records `terminal_reason:
+   "api_error"`, `api_error_status: null` and `result: "Failed to
+   authenticate: OAuth session expired and could not be refreshed"`, because
+   the runner refused the request itself, having no credential to make it
+   with, before any API call could return a status. Six consecutive cycles
+   read `coordinator exited 1` (and `enabler`, `refiner`), the same useless
+   account #641 fixed for the status-bearing kind. So `stage_api_refusal`'s
+   gate is the numeric status *or* that shape — the runner's own `api_error`
+   reason *and* an authentication message (`authenticat|oauth|unauthori[sz]ed`,
+   case-insensitive) — and the shape is named `authentication_failed`,
+   whether or not a status rides with it, so one outage never reads as two
+   details. The gate is deliberately both halves: an `api_error` with no
+   status and no such message still gets its honest exit code.
+
    **Not every refusal is deterministic, and the record now says which
    (issue #1073).** `stage_api_refusal`'s stable token cannot itself carry
    that distinction — the whole point of narrowing it was to keep a moving
@@ -7328,7 +7350,9 @@ implements.
    any other 4xx — the API considered the request and declined it, and no
    amount of retrying changes that — and `transient` for a 5xx or a
    connection-level fault — the request never reached a considered answer,
-   the fault is external, and it clears on its own. `handle_stage_failure`
+   the fault is external, and it clears on its own — and `refused` for
+   `authentication_failed`, which no retry clears, only a person completing
+   the login. `handle_stage_failure`
    carries it on the `attempt-failed` event as `api_refusal_class`, empty
    when `stage_api_refusal` found nothing to classify. `crash_loop_verdict`
    is the one reader of this field today (requirement 2.7); no other part of
