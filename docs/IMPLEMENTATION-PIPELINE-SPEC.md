@@ -3589,8 +3589,17 @@ implements.
    unpacked is the shape damage actually arrives in. Either figure is three
    orders of magnitude inside the 5-minute push / 7-minute fetch interval
    this runs on, so no stamp-file gate is needed to keep it off the common
-   path. On any nonzero exit — 2 for an empty loose object, 3 for other
-   corruption — `mirror_init` discards the checkout (`rm -rf`, `git init`,
+   path. A non-empty `.git/gc.log` fails the check in its own right, ahead
+   of the fsck (#604's second clause, implemented 2026-09-15): it is git's
+   record that its last garbage collection failed and its instruction to
+   itself to decline every later `gc --auto` and merely reprint the old
+   error, so the condition it names is permanent until the file goes — and
+   `fsck` does not see it, because a store that was never packed is a
+   valid store. On 2026-09-14/15 both workstation mirrors carried one
+   (`pack-objects died of signal 9`, a gc the kernel had OOM-killed) over
+   24,000–27,000 valid loose objects and 1.4–1.7 GiB. On any nonzero exit
+   — 2 for an empty loose object, 3 for other corruption — or on that
+   `gc.log`, `mirror_init` discards the checkout (`rm -rf`, `git init`,
    `remote add`) rather than repairing it: the mirror is wholly derived,
    this node's own branch is rsync'd back out of `state_dir` on the very
    next push and every peer branch is re-fetched at `--depth 1` by the very
@@ -3604,6 +3613,59 @@ implements.
    heartbeat's `mirror` verdict (below), so a rebuild is as visible to a
    human or a peer as any other node fact, and a *second* rebuild is
    visibly a repeat rather than one more indistinguishable line.
+
+   **Mirror object store.** After the check, on every push and fetch and
+   whichever path the mirror took (kept, created or rebuilt), `mirror_init`
+   applies `mirror_configure_store` (`lib/mirror-integrity.sh`): the seven
+   git configuration keys `mirror_store_config` lists, each written only
+   when it does not already hold its value, and the removal of `.git/logs`.
+   The push below amends one rolling commit and force-pushes it, orphaning
+   the previous snapshot every few minutes; under git's defaults the reflog
+   kept every orphan reachable for thirty days, so a month of superseded
+   snapshots accumulated as loose objects — gigabytes — before any was
+   prunable, and the `gc --auto` that finally fired handed all of it to a
+   `pack-objects` with one thread per CPU inside a scheduler whose
+   `memory.max` is 1536m and which was usually running a stage. That is the
+   gc the kernel killed, and the `gc.log` it left is what the check above
+   now catches. So the store is bounded instead: no reflog
+   (`core.logAllRefUpdates false`, and the existing reflog files removed,
+   because with the setting false git still appends to any that exist —
+   `git reflog expire` alone left the pile regrowing on 2026-09-15);
+   unreachable objects pruned by the gc that finds them (`gc.pruneExpire
+   now`, safe only because every git process that touches the mirror runs
+   under `$mirror.lock`); the auto-gc run in the foreground of the `git
+   commit` or `git fetch` that triggered it (`gc.autoDetach false`), so it
+   completes inside that lock — a detached gc pruning at `now` would outlive
+   the lock and race the next state-sync's fetch for objects it had written
+   but not yet referenced — and, as a foreground gc never writes `gc.log`, a
+   failure is retried at the next trigger rather than declining every gc for
+   ever; a loose-object trigger of 1,000 (`gc.auto`) so the pile between gcs
+   stays around a thousand objects rather than 6,700; a pack limit of one
+   (`gc.autoPackLimit`), because the gc a loose trigger runs is an
+   *incremental* repack and, at that moment, the mirror's remote-tracking
+   ref for its own branch — moved by the depth-1 fetch that opens every
+   push — still names the snapshot the amend has just superseded, so that
+   one snapshot is packed and becomes garbage only when the push moves the
+   ref, garbage an incremental repack never drops and a consolidating
+   `repack -a -d` does — which git schedules at 50 packs by default and, at
+   this limit, in the fetch that opens the push after every incremental gc;
+   and a single-threaded, window-bounded repack (`pack.threads 1`,
+   `pack.windowMemory 64m`), since the reachable set alone is small (about
+   12.5 MiB packed on the Poetic nodes) and the ceiling is what killed the
+   last one. Under those the store settles at one pack holding the current
+   snapshot and at most the one before it, with the current snapshot's own
+   objects loose until the next incremental gc. The keys live in the
+   mirror's own `.git/config`, so a rebuild loses them — which is why they
+   are applied on every run rather than at init, and why a mirror that
+   predates this reaches the same state on its next push: its reflog-kept
+   pile becomes unreachable the moment `.git/logs` goes, and the next
+   auto-gc prunes it under the same bounds (the two VM nodes' 43,000-entry
+   reflogs and 48–50 packs went that way by hand on 2026-09-15, 11–12 s
+   and 210–280 MiB peak each). `test/state-sync.test.sh` forces the gc by
+   planting two blobs whose ids fall in the `objects/17/` bucket `gc
+   --auto` samples, with the threshold lowered through git's
+   environment-config channel, and asserts the settled shape across six
+   pushes.
 
    **Push.** Every node — active or standby — mirrors its `state_dir` into
    its **own branch**, `nodes/<NODE_NAME>`, every few minutes from the

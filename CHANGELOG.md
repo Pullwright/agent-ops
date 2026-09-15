@@ -8,6 +8,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **The state-sync mirror's own garbage collection can no longer be the
+  thing that fails, and a `gc.log` now fails its integrity check** (#604's
+  second clause, 2026-09-15). `scripts/state-sync.sh push` amends one
+  rolling commit and force-pushes it every few minutes; under git's defaults
+  the reflog kept every superseded snapshot for thirty days, so each node's
+  mirror grew to 1.0–2.0 GB of loose objects, and the `gc --auto` that
+  eventually fired ran `pack-objects` with a thread per CPU inside the
+  scheduler's 1536m ceiling — where the kernel killed it, leaving a
+  `.git/gc.log` that declined every later gc while `fsck` stayed clean.
+  `mirror_init` now applies a bounded configuration to the mirror on every
+  push and fetch (`lib/mirror-integrity.sh`'s `mirror_configure_store`: no
+  reflog and the existing reflog files removed, prune at once, gc in the
+  foreground under the mirror lock, a lower loose trigger, consolidation at
+  two packs, a single-threaded window-bounded repack), so the store settles
+  at one pack of the current snapshot and at most the one before it; and
+  `mirror_integrity_ok` treats a non-empty `gc.log` as the failed check it
+  is, triggering the same recorded rebuild a corrupt object does.
+
 - **`TOKEN_EXPIRY_WARN_DAYS` no longer reads an environment override**
   (issue #989). `lib/token-expiry.sh` declared it as
   `${TOKEN_EXPIRY_WARN_DAYS:-7}` while `dashboard/index.html` hardcodes the

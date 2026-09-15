@@ -16,11 +16,15 @@
 #   what comes back   a fetch materialises every peer, whole, and prunes a
 #                     peer whose branch is gone — half a peer or a ghost peer
 #                     both poison the union readers.
-#   what is trusted   a mirror whose object store has quietly corrupted is
+#   what is trusted   a mirror whose object store has quietly corrupted, or
+#                     whose own gc has failed and given up (a `gc.log`), is
 #                     discarded and rebuilt rather than kept and published
 #                     from — the property that makes an unclean shutdown a
 #                     one-tick blip instead of a four-day silent outage
-#                     (#604).
+#                     (#604) — and the store is configured so that the
+#                     snapshots every amend orphans are pruned at once
+#                     instead of piling up for a month behind a reflog
+#                     until a gc the scheduler's memory ceiling kills.
 #   what never leaves  everything replicated is redacted first (lib/redact.sh,
 #   raw                agent-ops#966) — a token or a home path that reaches a
 #                     published file must not survive the commit this push
@@ -43,6 +47,8 @@ SYNC="$SCRIPT_DIR/scripts/state-sync.sh"
 . "$SCRIPT_DIR/lib/fleet.sh"
 # shellcheck source=lib/config-schema.sh
 . "$SCRIPT_DIR/lib/config-schema.sh"
+# shellcheck source=lib/mirror-integrity.sh
+. "$SCRIPT_DIR/lib/mirror-integrity.sh"
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
@@ -709,6 +715,152 @@ mi_pushed_4="$tmp_dir/mi-pushed-4"
 git clone --quiet --branch nodes/mirror-integrity-node "$remote" "$mi_pushed_4"
 assert_eq "a rebuild triggered by fetch counts the same as one triggered by push" "3" \
   "$(jq -r '.mirror.count' "$mi_pushed_4/heartbeat.json" 2>/dev/null)"
+
+# A non-empty gc.log is a failed check in its own right — #604's second
+# clause. It is git's record that its last gc failed and will not be retried,
+# and on 2026-09-14/15 both workstation mirrors carried one (a `pack-objects`
+# the kernel had OOM-killed) over a store fsck called clean: 24,000–27,000
+# valid loose objects that nothing would ever pack again.
+printf 'error: pack-objects died of signal 9\nfatal: failed to run repack\n' \
+  > "$mi_mirror/.git/gc.log"
+assert_eq "the mirror with a gc.log still passes fsck (the objects are valid)" "0" \
+  "$(git -C "$mi_mirror" fsck --connectivity-only >/dev/null 2>&1 && echo 0 || echo 1)"
+out="$(sync_as "$mi_home" active push)"
+assert_eq "a push over a mirror carrying a gc.log exits 0" "0" "$?"
+assert_contains "a non-empty gc.log fails the integrity check on its own" \
+  "failed its integrity check" "$out"
+assert_eq "the rebuilt mirror carries no gc.log" "0" \
+  "$(test -e "$mi_mirror/.git/gc.log" && echo 1 || echo 0)"
+mi_pushed_5="$tmp_dir/mi-pushed-5"
+git clone --quiet --branch nodes/mirror-integrity-node "$remote" "$mi_pushed_5"
+assert_eq "a gc.log rebuild is recorded like a corruption rebuild" "4" \
+  "$(jq -r '.mirror.count' "$mi_pushed_5/heartbeat.json" 2>/dev/null)"
+
+# ==============================================================================
+# mirror object store — bounded by configuration, so the mirror's own gc is
+# never again the thing that fails (2026-09-15; lib/mirror-integrity.sh's
+# header has the mechanism)
+# ==============================================================================
+# Every push amends one rolling commit and force-pushes it, orphaning the
+# previous snapshot. Left to git's defaults the reflog kept every orphan for
+# thirty days and `gc --auto` then handed the month's pile to a `pack-objects`
+# with one thread per CPU, inside a 1536m scheduler — which the kernel killed,
+# leaving a gc.log that stopped every later gc. The remedy is configuration
+# `mirror_init` applies on every run, so the assertions here are on the
+# mirror the section above has been pushing through.
+while read -r key value; do
+  [[ -n "$key" ]] || continue
+  assert_eq "mirror_init sets $key" "$value" \
+    "$(git -C "$mi_mirror" config --local --get "$key" 2>/dev/null)"
+done < <(mirror_store_config)
+assert_eq "the mirror keeps no reflog files" "0" \
+  "$(test -e "$mi_mirror/.git/logs" && echo 1 || echo 0)"
+
+# A mirror that predates the configuration carries reflog files, and with
+# core.logAllRefUpdates=false git still appends to any that exist — which is
+# exactly how a hand compaction on 2026-09-15 left the pile regrowing. So
+# the files themselves must go, not merely be expired.
+mkdir -p "$mi_mirror/.git/logs/refs/heads"
+printf '0000000000000000000000000000000000000000 %s x <x> 0 +0000\tstale\n' \
+  "$(git -C "$mi_mirror" rev-parse HEAD)" > "$mi_mirror/.git/logs/HEAD"
+out="$(sync_as "$mi_home" active push)"
+assert_eq "a push over a mirror with old reflog files exits 0" "0" "$?"
+assert_eq "…and removes them" "0" \
+  "$(test -e "$mi_mirror/.git/logs" && echo 1 || echo 0)"
+
+# The bound itself. `gc --auto`'s loose-object trigger estimates the count
+# from the `objects/17/` bucket alone (one object there stands for 256), so
+# it is forced here by planting two blobs whose ids begin with `17` — the
+# contents below were found by search and are asserted before use — with the
+# threshold lowered to 1 through git's environment-config channel, which
+# reaches every git process state-sync.sh runs without touching the mirror's
+# own config. The estimate needs *more than* threshold/256 objects in the
+# bucket, hence two. The shape this pins is the one lib/mirror-integrity.sh's
+# header describes: the gc a loose trigger runs is incremental and, because
+# the mirror's remote-tracking ref still names the snapshot the amend has
+# just superseded, packs that one snapshot; the push after it consolidates
+# (gc.autoPackLimit 1) and drops what the push before made garbage. So the
+# store settles at one pack holding the current snapshot and at most the one
+# before it — never a reflog's month of them.
+gc_home="$(new_node gc-bound-node)"
+gc_state="$gc_home/.local/state/poetic-agents"
+gc_mirror="$gc_home/.cache/poetic-agents/workspaces/.agent-ops-state"
+gc_env=(GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=gc.auto GIT_CONFIG_VALUE_0=1)
+gc_loose()       { git -C "$gc_mirror" count-objects -v | awk '/^count:/{print $2}'; }
+gc_packs()       { git -C "$gc_mirror" count-objects -v | awk '/^packs:/{print $2}'; }
+gc_in_pack()     { git -C "$gc_mirror" count-objects -v | awk '/^in-pack:/{print $2}'; }
+gc_unreachable() { git -C "$gc_mirror" fsck --unreachable --no-progress 2>/dev/null | grep -c '^unreachable' || true; }
+# Two pushes with changing content first, each amend orphaning the snapshot
+# before it, and no gc yet — nothing has landed in the sampled bucket.
+printf '{"ts":"2026-09-15T00:00:00Z","event":"cycle-start"}\n' > "$gc_state/log.jsonl"
+out="$(sync_as "$gc_home" active push "${gc_env[@]}")"
+assert_eq "the first push on the gc-bound node exits 0" "0" "$?"
+gc_first="$(git -C "$gc_mirror" rev-parse HEAD)"
+printf '{"ts":"2026-09-15T00:05:00Z","event":"cycle-end"}\n' >> "$gc_state/log.jsonl"
+out="$(sync_as "$gc_home" active push "${gc_env[@]}")"
+assert_eq "the second push exits 0" "0" "$?"
+assert_eq "before any gc the orphaned snapshot's objects are still loose" "1" "$(( $(gc_loose) > 0 ))"
+assert_eq "…and no reflog holds them reachable" "1" "$(( $(gc_unreachable) > 0 ))"
+# The third push plants the bucket, so the commit that amends in this
+# content triggers the gc — over a store now holding two orphaned snapshots.
+printf 'seed-553' > "$gc_state/bucket-a"
+printf 'seed-1537' > "$gc_state/bucket-b"
+assert_eq "the two planted blobs hash into git's sampled bucket" "17 17" \
+  "$(for f in bucket-a bucket-b; do git hash-object "$gc_state/$f" | cut -c1-2; done | tr '\n' ' ' | sed 's/ $//')"
+printf '{"ts":"2026-09-15T00:10:00Z","event":"cycle-start"}\n' >> "$gc_state/log.jsonl"
+gc_before_third="$(git -C "$gc_mirror" rev-parse HEAD)"
+out="$(sync_as "$gc_home" active push "${gc_env[@]}")"
+assert_eq "the third push exits 0" "0" "$?"
+assert_eq "the gc it triggered ran in the foreground: no loose object is left" "0" "$(gc_loose)"
+assert_eq "…into one pack" "1" "$(gc_packs)"
+assert_eq "…the first snapshot, orphaned two pushes ago, pruned outright rather than kept for two weeks" "1" \
+  "$(git -C "$gc_mirror" cat-file -e "$gc_first" 2>/dev/null && echo 0 || echo 1)"
+assert_eq "…and only the snapshot this very push superseded still packed" "" \
+  "$(comm -23 <(git -C "$gc_mirror" fsck --unreachable --no-progress 2>/dev/null | awk '{print $3}' | sort) \
+              <(git -C "$gc_mirror" rev-list --objects "$gc_before_third" | awk '{print $1}' | sort))"
+assert_eq "…with no gc.log written, so the next auto-gc is not declined" "0" \
+  "$(test -e "$gc_mirror/.git/gc.log" && echo 1 || echo 0)"
+# A fourth push with new content, no trigger: its predecessor becomes garbage
+# in the pack. A fifth forces another incremental gc (a second pack); the
+# sixth is what consolidates — the depth-1 fetch that opens it runs its own
+# auto-maintenance, finds the pack count over the limit and repacks with
+# `-a`, before the amend writes the sixth snapshot — and what remains is one
+# pack of the fifth snapshot and the ones it reaches, the sixth snapshot
+# loose until the next incremental gc, and no garbage older than the fifth.
+printf '{"ts":"2026-09-15T00:15:00Z","event":"cycle-end"}\n' >> "$gc_state/log.jsonl"
+out="$(sync_as "$gc_home" active push "${gc_env[@]}")"
+assert_eq "the fourth push exits 0" "0" "$?"
+printf 'seed-1691' > "$gc_state/bucket-c"
+printf 'seed-2166' > "$gc_state/bucket-d"
+assert_eq "the second planted pair hashes into the bucket too" "17 17" \
+  "$(for f in bucket-c bucket-d; do git hash-object "$gc_state/$f" | cut -c1-2; done | tr '\n' ' ' | sed 's/ $//')"
+printf '{"ts":"2026-09-15T00:20:00Z","event":"cycle-start"}\n' >> "$gc_state/log.jsonl"
+out="$(sync_as "$gc_home" active push "${gc_env[@]}")"
+assert_eq "the fifth push exits 0" "0" "$?"
+assert_eq "the second incremental gc leaves a second pack" "2" "$(gc_packs)"
+printf '{"ts":"2026-09-15T00:25:00Z","event":"cycle-end"}\n' >> "$gc_state/log.jsonl"
+gc_before_sixth="$(git -C "$gc_mirror" rev-parse HEAD)"
+out="$(sync_as "$gc_home" active push "${gc_env[@]}")"
+assert_eq "the sixth push exits 0" "0" "$?"
+assert_eq "the push after an incremental gc consolidates to one pack" "1" "$(gc_packs)"
+assert_eq "…every loose object being the current snapshot's own, none of it garbage" "" \
+  "$(comm -23 <(find "$gc_mirror/.git/objects" -type f -path '*/??/*' | sed -E 's#.*/objects/(..)/(.*)#\1\2#' | sort) \
+              <(git -C "$gc_mirror" rev-list --objects HEAD | awk '{print $1}' | sort))"
+assert_eq "…holding the current snapshot and at most the one before it" "1" \
+  "$(( $(gc_in_pack) <= $(git -C "$gc_mirror" rev-list --objects --all | wc -l) \
+                        + $(git -C "$gc_mirror" rev-list --objects "$gc_before_sixth" | wc -l) ))"
+assert_eq "…every unreachable object belonging to that one superseded snapshot" "" \
+  "$(comm -23 <(git -C "$gc_mirror" fsck --unreachable --no-progress 2>/dev/null | awk '{print $3}' | sort) \
+              <(git -C "$gc_mirror" rev-list --objects "$gc_before_sixth" | awk '{print $1}' | sort))"
+assert_eq "…and still no gc.log" "0" "$(test -e "$gc_mirror/.git/gc.log" && echo 1 || echo 0)"
+gc_pushed="$tmp_dir/gc-pushed"
+git clone --quiet --branch nodes/gc-bound-node "$remote" "$gc_pushed"
+assert_eq "the branch is still one rolling commit" "1" \
+  "$(git -C "$gc_pushed" rev-list --count nodes/gc-bound-node)"
+assert_eq "…carrying the node's current log content" "6" \
+  "$(grep -c . "$gc_pushed/log.jsonl")"
+assert_eq "…and nothing reported a rebuild — this was a gc, not a discard" "null" \
+  "$(jq -c '.mirror' "$gc_pushed/heartbeat.json" 2>/dev/null)"
 
 # ==============================================================================
 # fetch — peers materialised whole, pruned when gone
