@@ -61,8 +61,7 @@
       "Poetic-Poems/poetic-fiddle": {
         "issues": [], "failed_runs": [],
         "tech_debt": [
-          {"id": "TD-PPfid-90000001", "title": "A read, confirmed-open fixture item", "status": "open", "url": "https://github.com/Poetic-Poems/poetic-fiddle/blob/main/tech-debt/TD-PPfid-90000001.md"},
-          {"id": "TD-PPfid-90000002", "title": "", "status": "", "url": ""}
+          {"id": "#9001", "title": "A shown-equals-total fixture item", "status": "open", "url": "https://github.com/Poetic-Poems/poetic-fiddle/issues/9001"}
         ],
         "tech_debt_total": 1,
         "findings": []
@@ -70,10 +69,10 @@
       "Poetic-Poems/helper-scripts": {
         "issues": [], "failed_runs": [],
         "tech_debt": [
-          {"id": "TD-PPhelp-90000001", "title": "A read, confirmed-open fixture item", "status": "open", "url": "https://github.com/Poetic-Poems/helper-scripts/blob/main/tech-debt/TD-PPhelp-90000001.md"},
-          {"id": "TD-PPhelp-90000002", "title": "", "status": "", "url": ""}
+          {"id": "#9101", "title": "A shown-past-total fixture item", "status": "open", "url": "https://github.com/Poetic-Poems/helper-scripts/issues/9101"},
+          {"id": "#9102", "title": "A second shown-past-total fixture item", "status": "open", "url": "https://github.com/Poetic-Poems/helper-scripts/issues/9102"}
         ],
-        "tech_debt_total": 3,
+        "tech_debt_total": 5,
         "findings": []
       }
     }

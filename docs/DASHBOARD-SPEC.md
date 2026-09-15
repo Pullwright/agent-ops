@@ -398,57 +398,48 @@ All paths derive from `config.json` (tilde-expanded `state_dir` and
   implementation-pipeline spec, requirement 15e), capped at one REST page
   (`per_page=30`, agent-ops#1171) with the true count behind that cap read
   separately, best-effort, as `issues_total`; security and code-quality
-  findings, via `scripts/gather-findings.sh`; the tech-debt register's
-  unresolved items — one listing read of `contents/tech-debt` for the roster
-  and each item's blob SHA, then that item's own `title` and `status` out of
-  its frontmatter, capped at 40 (`{id, title, status, url}`; an ID names no
-  work, and a mature register is mostly resolved items the Co-Ordinator will
-  never pick up, so those are dropped here) with the count of items
-  *confirmed* `open`/`in-progress` across the whole register — never an
-  item still unread, whose real status is unknown — carried alongside as
-  `tech_debt_total`; and one record per pull request
+  findings, via `scripts/gather-findings.sh`; the tech-debt ledger's open
+  items — one label search per repo for open `pw::type:tech-debt` issues
+  (issue #881), capped at 40 (`{id, title, status, url}`; `status` is always
+  `"open"`, since the search only ever returns open issues) with the true
+  count behind that cap read alongside, for free, as `tech_debt_total` — the
+  Search API's own `.total_count`, returned in the same call as the page of
+  results; and one record per pull request
   the page refers to (`github.pr_index`, keyed `<owner>/<repo>#<number>`) — the
   open ones from the query above, the rest by `gh pr view`, cached permanently
   once terminal (see the Publisher).
 
-  Four of the five sources above (issues, failing runs, the tech-debt
-  listing, findings) are read per repo as one of two states, `answered` or
-  `failed`, carried in `github.inputs[<slug>].state` — the tech-debt listing
-  alone can also read a third, `answered_404`, for a repo with no register
-  (below) — rather than the call's raw output being trusted at face value;
-  `pr list` keeps its own long-standing pass/fail signal folded straight into
+  All five sources above (issues, failing runs, the tech-debt listing,
+  findings, `pr list`) are read per repo as one of two states, `answered` or
+  `failed`, carried in `github.inputs[<slug>].state` for the first four — `pr
+  list` keeps its own long-standing pass/fail signal folded straight into
   `github.ok`/`github.error` instead, since no per-repo PR count is ever
   rendered for a `failed` marker to replace. The reason for the other four is
   that they used to conflate "nothing to report" with "the call did not
   answer": `gh_json` (the Publisher's plain reader) discards stderr, so a call
   that timed out, rate-limited or 500'd printed nothing, and nothing is
   exactly what a legitimately empty result also prints. A repo's tech-debt
-  ledger can be genuinely empty since the resolved-items drop (PR #163), so
-  "no unresolved debt" and "the listing call failed" had become
-  indistinguishable on the page — observed directly during that PR's own
-  testing, where a repo's ledger read empty on one tick and thirteen items
-  the next with nothing in the register having changed (TD-PPagop-26080201).
+  ledger can be genuinely empty, so "no open debt" and "the listing call
+  failed" had become indistinguishable on the page — observed directly
+  during PR #163's own testing, where a repo's ledger read empty on one tick
+  and thirteen items the next with nothing in the register having changed
+  (TD-PPagop-26080201, against the register-backed listing this replaced).
   `gh_call` (the Publisher's stderr- and exit-status-preserving reader,
   alongside `gh_json`) and `gather-findings.sh`'s own exit code are what make
-  the distinction: for the tech-debt listing, `answered_404` is reserved for
-  a legitimately empty case the API itself says so about — a repo with no
-  `tech-debt/` directory returns 404, told apart from a real failure by the
-  response body's own `.status` —
-  and anything else non-2xx is `failed`. `gather-findings.sh` draws the same
-  line without a state of its own to carry it: a repo with neither alert type
-  enabled (403 or 404, provided a 403's own message does not name a rate
-  limit) still exits 0 and reads `answered`, exactly as a repo with both
-  features on and nothing open does; only a real failure — a timeout, rate
-  limit or outage — exits 1 and reads `failed`. A `failed` source renders a
-  "couldn't read" marker in place of its count, never a bare zero (see the
-  Site, below); an `answered_404` source renders as an ordinary, honest zero.
-  `github.ok`/`github.error` reflect a `failed` state from *any* of the five
-  sources, not only `pr list`'s (historically the only one that raised the
-  "GitHub unavailable" banner). If `gh` fails, the GitHub panels mark
-  themselves stale and the rest still renders. On a `--no-github` refresh the
-  fetch is skipped entirely and the last successful result is carried
-  forward (see the Publisher below), so only a fetch that was *attempted and
-  failed* ever shows as unavailable.
+  the distinction: any non-2xx response is `failed`. `gather-findings.sh`
+  draws the same line without a state of its own to carry it: a repo with
+  neither alert type enabled (403 or 404, provided a 403's own message does
+  not name a rate limit) still exits 0 and reads `answered`, exactly as a
+  repo with both features on and nothing open does; only a real failure — a
+  timeout, rate limit or outage — exits 1 and reads `failed`. A `failed`
+  source renders a "couldn't read" marker in place of its count, never a bare
+  zero (see the Site, below). `github.ok`/`github.error` reflect a `failed`
+  state from *any* of the five sources, not only `pr list`'s (historically
+  the only one that raised the "GitHub unavailable" banner). If `gh` fails,
+  the GitHub panels mark themselves stale and the rest still renders. On a
+  `--no-github` refresh the fetch is skipped entirely and the last successful
+  result is carried forward (see the Publisher below), so only a fetch that
+  was *attempted and failed* ever shows as unavailable.
 
   `github.error` is a classified, collapsed summary, not the raw failures
   concatenated: every failed call's own message (`<source> failed for
@@ -938,24 +929,18 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                                        //   null when the best-effort Search
                                        //   API read that answers it did not
                                        //   land this tick — never 0 by default
-                             tech_debt:[{id,title,status,url}],  // unresolved
-                                       //   items only; title/status empty
-                                       //   until the item file has been read
-                             tech_debt_total,   // count of items *confirmed*
-                                       //   open/in-progress across the whole
-                                       //   register, behind `tech_debt`'s own
-                                       //   top-40 cap — free (the roster
-                                       //   listing already reads the whole
-                                       //   directory), so always a number.
-                                       //   Never counts an unread item (an
-                                       //   unknown status could turn out to
-                                       //   be resolved), so a cold cache
-                                       //   under-counts, never over-counts
+                             tech_debt:[{id,title,status,url}],  // open
+                                       //   pw::type:tech-debt issues only;
+                                       //   status is always "open"
+                             tech_debt_total,   // the Search API's own
+                                       //   .total_count behind `tech_debt`'s
+                                       //   own top-40 cap — free (returned in
+                                       //   the same call as the rows), so
+                                       //   always a number when that call
+                                       //   answered at all
                              state:{issues, failed_runs, tech_debt, findings}}},
-                                       // "answered" | "answered_404" | "failed"
-                                       //   per source, per repo — "answered_404"
-                                       //   only ever on tech_debt (a repo with
-                                       //   no register)
+                                       // "answered" | "failed", per source,
+                                       //   per repo
              pr_index: { "<owner>/<repo>#<n>":                  // one per
                          { repo, number, title, url, state,     //   number the
                            is_draft, author, labels[], base,    //   page shows
@@ -1122,20 +1107,16 @@ amber banner (`⚠ N open agent PR(s) removed from the merge queue without
 merging.`) beside the failing-checks one, so it is visible without opening the
 table.
 
-`github.inputs[<slug>].tech_debt` is that repo's register as work: one row per
-**unresolved** item, carrying the item's own `title` and `status` and a link to
-the file, because an ID on its own names nothing and most of a mature register
-is items already resolved. The roster listing hands back each item's blob SHA
-free, so the metadata behind it is read once and cached by SHA in
-`<state_dir>/.dashboard-td.json` — the same never-stale-by-construction
-argument as the claim cache below, and an item file is written once and touched
-again only when its status flips, so a warm register costs no call at all.
-A cold one is filled at most four items **per repo** per tick, so that every
-register fills at once rather than the first repo in the config consuming the
-whole budget; an item not yet read has no status, is kept (it is not yet known
-*not* to be work), and renders as the bare ID the panel used to show. Entries
-are dropped a month after the last register that named them, which bounds a
-file that would otherwise collect a SHA per status flip for ever.
+`github.inputs[<slug>].tech_debt` is that repo's open tech-debt issues as
+work: one row per open `pw::type:tech-debt`-labelled issue, carrying the
+issue's own `title`, a link to it, and `status: "open"` (issue #881; every row
+this label search can return is open by construction, so no other status
+ever appears). The search that fills it hands back the true count behind its
+own 40-row cap in the same call — `.total_count` — so nothing further is
+read to know whether the cap has clipped anything, and nothing is cached
+between ticks: unlike the frozen register this replaced, a label search
+answers every row in one call, so there is no per-tick miss budget to spend
+and no per-item metadata to keep warm.
 
 `fleet.claims` is the live claim registry (implementation spec 17a), read on
 the GitHub tick and carried between ticks by the same cache as `github` (it
@@ -2544,14 +2525,13 @@ number's twins elsewhere on the page.
   the panel that says the pipeline is stuck, which looks exactly like a pipeline
   that is not. Each of the five GitHub sources (TD-PPagop-26080201) is
   exercised both ways against a stubbed `gh`: healthy, each of the four
-  state-carrying sources reads `answered` and a repo with no tech-debt
-  register reads `answered_404`, never `failed`, while a healthy `pr list`
-  leaves `github.ok` true; with one source's call failing (a rate limit, not
-  the register's 404), that source alone reads `failed` (or, for `pr list`,
-  is named in `github.error` directly), `github.ok` turns false — while an
-  unrelated repo's own legitimate 404 still reads `answered_404` in the same
-  tick, proving the two are told apart from each other and not just from the
-  healthy case.
+  state-carrying sources reads `answered`, while a healthy `pr list` leaves
+  `github.ok` true; with one source's call failing (a rate limit), that
+  source alone reads `failed` (or, for `pr list`, is named in `github.error`
+  directly) and `github.ok` turns false — while an unrelated repo's own
+  healthy call for the same source still reads `answered` in the same tick,
+  proving the failure is told apart per-repo rather than flipping the state
+  for every repo at once.
   The actor-scorecards aggregate (issue #610, D22) is asserted from two
   synthetic logs. The first drives the Co-Ordinator's own `measure` — the
   folded issue #319 corroboration rate — through the same five shapes its
@@ -2679,12 +2659,11 @@ number's twins elsewhere on the page.
   later one is the claims (17a) working as designed — while a cycle with no
   `race_losses` at all shows none. A source marked
   `failed` in `github.inputs[<slug>].state` (TD-PPagop-26080201) renders a
-  "couldn't read" marker in place of its count, a source marked
-  `answered_404` (a repo with no tech-debt register) still renders an
-  ordinary zero, and a fixture carrying no `state` field at all — every
-  repo's data from before this field existed — renders exactly as it always
-  did. The spend-today card's persisted GMT/local/24h choice (#186) is
-  asserted by seeding the harness's `localStorage` stub rather than
+  "couldn't read" marker in place of its count, and a fixture carrying no
+  `state` field at all — every repo's data from before this field existed —
+  renders exactly as it always did. The spend-today card's persisted
+  GMT/local/24h choice (#186) is asserted by seeding the harness's
+  `localStorage` stub rather than
   simulating the click: with no stored choice the card reads "today (GMT)"
   against `spend_today_usd`, and a stored `24h` relabels it "last 24h" and
   sums only the `recent_costs` rows within a rolling 24 hours; a stored
@@ -3713,43 +3692,47 @@ number's twins elsewhere on the page.
   state, never a re-reading of a GitHub event that predates the question.
 - **A capped work source says how much it is hiding, not just what it shows**
   (agent-ops#1171). The open-issues panel reads one REST page (`per_page=30`)
-  and the tech-debt panel keeps only the top 40 unresolved rows, both for the
-  reasons given above — but neither cap used to say so: a repo at 47 open
-  issues or 120 unresolved tech-debt items rendered identically to one that
-  genuinely had 28 or 40, and the panel is headed "what the Co-Ordinator
-  sees" on a page an operator reads precisely to judge whether the pipeline
-  is keeping up. `issues_total` and `tech_debt_total` fix that without
-  changing what either cap fetches or shows: the tech-debt one is free (the
-  `contents/tech-debt` listing already reads the whole directory in one
-  call), while the issues one costs a second call — the Search API's
-  `.total_count` (the same read `lib/pager-invariants.sh` already makes for
-  a different invariant) — because the 30-row listing is itself only ever a
-  page, with no cheaper way to ask how big the whole thing is. That second
-  call is best-effort and never promoted to a real failure: it is its own
-  endpoint with its own, tighter rate limit, and a miss on a cosmetic total
-  the main listing never needed has no business joining `gh_fail_msgs` or
-  flipping `github.ok` — it simply leaves `issues_total` `null`, which the
-  page reads exactly as it read a `data.js` from before the field existed.
-  The page itself only ever adds text: "N of M" replaces a bare count solely
-  where the total is a known number greater than what is shown, so a
-  healthy, uncapped repo (`total` absent, `null`, or equal to the count)
-  renders precisely as it always has.
-
-  `tech_debt_total` is *not* simply the unsliced roster's length, because
-  that list still holds every item whose metadata has not been read yet —
-  kept by the filter above on "not yet known not to be work", since an
-  unread item could just as easily turn out to be resolved. Counting one as
-  unresolved would overstate the debt on exactly the register a cold or
-  still-catching-up `.dashboard-td.json` cache leaves mostly unread — the
-  opposite of this same section's own "a cold cache must degrade to saying
-  less, never to overstating the debt" a few paragraphs up, and it would
-  make the two figures the panel prints in one sentence disagree about what
-  they are counting: `tdRead` (the headline number) already excludes unread
-  rows, so pairing it with a total that includes them reads as two
-  different quantities glued together. `tech_debt_total` therefore counts
-  only rows *confirmed* `open` or `in-progress`, across the whole register,
-  and the page compares it against that same `tdRead` — never `td.length`,
-  which is the shown-row count including any still-unread ones. A
-  register with more unread rows than the cap can show therefore reports a
-  *lower* total while the cache is cold, catching up as reads land, rather
-  than ever a number the true count could turn out to be short of.
+  and the tech-debt panel keeps only the top 40 rows, both for the reasons
+  given above — but neither cap used to say so: a repo at 47 open issues or
+  120 open tech-debt items rendered identically to one that genuinely had 28
+  or 40, and the panel is headed "what the Co-Ordinator sees" on a page an
+  operator reads precisely to judge whether the pipeline is keeping up.
+  `issues_total` and `tech_debt_total` fix that without changing what either
+  cap fetches or shows. The issues listing is a plain REST page with no
+  `.total_count` of its own, so its total costs a second call — the Search
+  API's `.total_count` (the same read `lib/pager-invariants.sh` already makes
+  for a different invariant) — best-effort and never promoted to a real
+  failure: it is its own endpoint with its own, tighter rate limit, and a
+  miss on a cosmetic total the main listing never needed has no business
+  joining `gh_fail_msgs` or flipping `github.ok` — it simply leaves
+  `issues_total` `null`, which the page reads exactly as it read a `data.js`
+  from before the field existed. The tech-debt listing, by contrast, *is*
+  already a Search API call (issue #881), so its own `.total_count` comes
+  back in the same response as the rows — free, and always a number whenever
+  that one call answered at all. The page itself only ever adds text: "N of
+  M" replaces a bare count solely where the total is a known number greater
+  than what is shown, so a healthy, uncapped repo (`total` absent, `null`, or
+  equal to the count) renders precisely as it always has.
+- **The tech-debt ledger reads a label search, not the frozen register**
+  (issue #881, following D15 as revised, #869). Every register in the fleet
+  is now frozen (#880 and its sibling issues in the other repositories) and
+  tech debt lives instead as `pw::type:tech-debt`-labelled GitHub issues, so
+  the `contents/tech-debt` listing this panel used to read had quietly
+  stopped answering the live ledger — it still returned 200, but against an
+  archive that no longer grows. The fix reads the same source the
+  Co-Ordinator itself now does (`scripts/gather-tech-debt.sh`): a search for
+  open `pw::type:tech-debt` issues. The dashboard's own read is a plain
+  Search API call rather than that gatherer's paginated GraphQL walk,
+  because the panel only ever needs `{id, title, status, url}` and a total —
+  never the issue bodies or comment threads that walk exists to fetch. This
+  also retired the per-tick miss budget and the blob-SHA-keyed metadata
+  cache (`<state_dir>/.dashboard-td.json`) the old listing needed: a search
+  answers every row it can show in the one call that also answers the total,
+  so there is nothing left to warm across ticks.
+  `scripts/gather-register-status.sh` was considered for retirement alongside
+  this change but left untouched: it answers a different question (whether a
+  `Blocked-by:` reference naming a pre-freeze register id has since
+  resolved, implementation-pipeline-spec requirement 34i) for a caller
+  (`lib/candidate-select.sh`) that has nothing to do with this panel, and
+  retiring it would have silently broken that caller's own legacy-reference
+  clearance.

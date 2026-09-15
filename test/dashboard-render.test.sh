@@ -637,8 +637,7 @@ assert_contains "a single-node page's header carries live state itself" \
 assert_not_contains "with no fleet strip to duplicate it" \
   'class="cards fleet"' "$out"
 # The work-sources panel's tech-debt ledger. A row is the item's own title and
-# status, not the ID alone — the whole point of reading the item files — and an
-# item whose metadata has not been read yet still appears, as the bare ID.
+# status, not the ID alone.
 assert_contains "a tech-debt row names the work, not just its ID" \
   "An active node's state_dir grows without bound" "$out"
 # Against the tree flattened to one line: the harness serialises each node on
@@ -647,14 +646,10 @@ assert_contains "a tech-debt row names the work, not just its ID" \
 flat="$(tr '\n' ' ' <<<"$out" | tr -s ' ')"
 assert_contains "and carries the status the Co-Ordinator would find" \
   '<span class="badge b-amber"> open ' "$flat"
-assert_contains "an item already being worked is badged as such" \
-  '<span class="badge b-blue"> in-progress ' "$flat"
-assert_contains "each row links its own item file" \
-  "blob/main/tech-debt/TD-PPagop-26072801.md" "$out"
-assert_contains "an unread item still appears, as the bare ID it always was" \
-  "TD-PPagop-26072803" "$out"
-assert_contains "the header counts the read items as open and the rest as unread" \
-  "2 open tech-debt items (+1 unread)" "$out"
+assert_contains "each row links its own issue" \
+  "https://github.com/Poetic-Poems/agent-ops/issues/2801" "$out"
+assert_contains "the header counts every row shown, all of them open" \
+  "2 open tech-debt items" "$out"
 # A fetch cached before the ledger rows carried titles is a "| ID |" string,
 # and a --no-github tick carries it forward until the next real fetch.
 assert_contains "a ledger row from an older fetch still renders as its ID" \
@@ -754,13 +749,13 @@ assert_not_contains "a repo with no nice key renders no badge for it" \
 
 # A failed source (TD-PPagop-26080201) must not render as a bare zero, which
 # would be indistinguishable from a repo that genuinely has none: the fixture
-# fails poetic-fiddle's `issues` read and marks its `tech_debt` a legitimate
-# 404, so the two must render differently from each other and from a repo
-# (poetic, agent-ops) whose fixture carries no `state` at all, which must
-# still render exactly as it did before this field existed.
+# fails poetic-fiddle's `issues` read while its `tech_debt` answers healthily
+# with no open items, so the two must render differently from each other and
+# from a repo (poetic, agent-ops) whose fixture carries no `state` at all,
+# which must still render exactly as it did before this field existed.
 assert_contains "a failed source reads 'couldn't read', never a false zero" \
   "couldn't read open issues" "$out"
-assert_contains "a legitimate absence (a repo with no register) still reads as an honest zero" \
+assert_contains "an answered source with nothing open still reads as an honest zero" \
   "0 open tech-debt items" "$out"
 assert_not_contains "and never shows the couldn't-read marker for it" \
   "couldn't read tech-debt" "$out"
@@ -791,8 +786,8 @@ out="$(render work-source-totals.json)" || \
 
 assert_contains "an issues total past the shown count renders as 'shown of total'" \
   "1 of 5 open issues" "$out"
-assert_contains "a tech-debt total past the shown count appends a shown/total note" \
-  "1 open tech-debt items (1 of 47 shown)" "$out"
+assert_contains "a tech-debt total past the shown count renders the same way" \
+  "1 of 47 open tech-debt items" "$out"
 assert_contains "a total equal to the shown count renders the plain count" \
   "0 open issues" "$out"
 assert_not_contains "  ... never as a misleading 'of' against itself" \
@@ -800,22 +795,18 @@ assert_not_contains "  ... never as a misleading 'of' against itself" \
 assert_contains "a source with no total field renders exactly as before the feature existed" \
   "0 open tech-debt items" "$out"
 assert_not_contains "  ... with no shown/total note fabricated for it" \
-  "0 open tech-debt items (0 of" "$out"
-# The shown/total note is compared and printed against `tdRead` (the same
-# figure the sentence opens with), never `td.length`, which also counts rows
-# still unread — otherwise the two numbers in one sentence would be counting
-# different things.
-assert_contains "the note reads the read count, not the raw shown-row count" \
-  "1 open tech-debt items (+1 unread) (1 of 3 shown)" "$out"
-assert_not_contains "  ... never the row count including the unread one" \
-  "2 of 3 shown" "$out"
-# Distinguished from the case above by what immediately follows: this repo's
-# total (1) equals what is already read (1), so the sentence ends at the
-# unread note, straight into the next field's " · " separator.
-assert_contains "a total that only equals what is already read prints no note at all" \
-  "1 open tech-debt items (+1 unread) · 0 code-quality findings" "$out"
-assert_not_contains "  ... a cold cache's total must never look like it is disclosing more" \
-  "1 open tech-debt items (+1 unread) (1 of 1 shown)" "$out"
+  "of 0 open tech-debt items" "$out"
+# A total equal to what is shown prints no note at all, straight into the
+# next field's " · " separator — the same "no note against itself" rule the
+# issues assertions above already cover, restated for tech_debt's own total.
+assert_contains "a tech-debt total equal to the shown count renders the plain count" \
+  "1 open tech-debt items · 0 code-quality findings" "$out"
+assert_not_contains "  ... never as a misleading 'of' against itself" \
+  "of 1 open tech-debt items" "$out"
+# A second, multi-row case for the "shown of total" note, distinct from the
+# single-row one above.
+assert_contains "a tech-debt total past a multi-row shown count still says so" \
+  "2 of 5 open tech-debt items" "$out"
 
 # --- merge-queue.json: queued badge, dequeued warning (agent-ops#375, D17) --------
 # The Publisher's own `queued`/`dequeued` fields (test/publish-dashboard.test.sh
