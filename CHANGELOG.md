@@ -105,7 +105,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `config_duplicate_repos_slugs` doctor already used, refusing to start and
   naming the duplicated slug(s), mirroring
   `config_duplicate_project_review_slugs`'s own startup refusal in
-  `review-cycle.sh`.
+  `review-cycle.sh`. `scripts/doctor.sh`'s `fail` for the same condition
+  names that refusal too, so the operator reads the consequence the cycle
+  will enforce rather than only the silent disagreement it avoids.
 
 - **`state-sync.sh push` clears an orphaned `index.lock` and names a push
   that fails** (issue #1377). A `.git/index.lock` a dead git left in the
