@@ -80,11 +80,26 @@
 # status, and a repository wake-poll could not reach this tick is simply
 # retried next tick, not a crashed script.
 #
+# The line below carries no substitution token at all, so render-crontab.sh
+# leaves it untouched. It is the liveness marker `scripts/node-health.sh
+# --live` reads (requirement 55, issue #608): `touch`ing a file every minute
+# is
+# nearly the cheapest thing supercronic can be asked to prove it is still
+# firing jobs at all, deliberately decoupled from every other job's own
+# health — a wedged dashboard-launcher window or a stuck cycle must not
+# read as "not live", and a job that did real work to prove liveness could
+# itself hang and take the liveness signal down with it. `|| true` for the
+# same reason every other line here carries it: nothing on this image reads
+# a cron job's exit status, and a `touch` failing (a full disk, a volume
+# gone read-only) is a fact `node_health_liveness`'s own aged-out reading
+# already reports, not a crashed script to double-report.
+#
 # Everything not a placeholder is documented in the baked crontab, which is
 # also the fallback whenever this template cannot be rendered.
 
 LOGDIR=/home/agent/.local/state/poetic-agents
 
+* * * * *  touch $LOGDIR/.node-alive 2>/dev/null || true
 */@HEARTBEAT_MINUTES@ * * * *  /app/scripts/publish-dashboard-launcher.sh
 */@WAKE_POLL_MINUTES@ * * * *  /app/scripts/wake-poll.sh >> $LOGDIR/wake-poll.log 2>&1 || true
 @CYCLE_MINUTE@ @CYCLE_HOURS@ * * *  /app/agent-cycle.sh  >> $LOGDIR/cron.log        2>&1

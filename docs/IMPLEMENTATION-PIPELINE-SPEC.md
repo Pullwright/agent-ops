@@ -297,7 +297,11 @@ a node updates by pulling a new image rather than by pulling a branch.
   miner over a bounded window once a day, with nobody watching either; and
   one tech-debt-archive line (requirement 2.6c), `publish-tech-debt-
   archive.sh`, which mirrors every `pw::type:tech-debt`-labelled issue into
-  the state repository once a day, with nobody watching that either. Every
+  the state repository once a day, with nobody watching that either; and one
+  liveness-marker line (requirement 55, issue #608), running every minute
+  with no substitution token of its own, which `touch`es
+  `state_dir/.node-alive` — the marker `scripts/node-health.sh --live`
+  reads. Every
   cadence named above — the heartbeat and both fleet lines' intervals, the
   log-rotation minute, and the doctor, revert-rate and tech-debt-archive
   passes' own offsets — comes from `config.json`'s `schedule`
@@ -385,7 +389,16 @@ file and carries placeholders only; `.env` itself is never committed.
 - **`scheduler`** — `supercronic /app/deploy/docker/crontab`, in no profile, so
   it runs on every node. `AGENT_OPS_ROLE` comes from `ROLE` in `.env` and
   **defaults to `standby`** if unset, so a half-configured node cannot become a
-  second worker.
+  second worker. Carries a `healthcheck:` running `scripts/node-health.sh
+  --live` in-container (requirement 58c, issue #608) — the same command a
+  Kubernetes `exec` probe would run, so this line and that manifest's own
+  probe answer identically. Deliberately the liveness verdict alone: a
+  sidecar HTTP responder answering `200` while supercronic is wedged beside
+  it would be the same self-certification that let two nodes report
+  themselves fresh for four days on 2026-08-08 (agent-ops#602's own
+  motivation) — the `node-health` service below is a second surface over the
+  identical computation, for a reader that can only speak HTTP, not what
+  makes this check honest.
 - **`egress-proxy` and the egress fence (D24)** — the scheduler reaches the
   internet only through this service. The scheduler sits on the
   `egress` network, declared `internal: true`, so Docker attaches no
@@ -487,6 +500,17 @@ file and carries placeholders only; `.env` itself is never committed.
   network the host is on. `DASHBOARD_PORT` moves the host side of that mapping
   only, and exists because the host may already have something on 8787 — the
   laptop's legacy SysV dashboard does.
+- **`node-health`** (profile `node-health`) — the HTTP surface over
+  `scripts/node-health.sh` (requirement 58d, issue #608):
+  `scripts/node-health-server.py` answering `/livez`, `/readyz`, `/healthz`
+  and `/metrics`. Off by default, in no other profile, and published on the
+  identical loopback-only pattern `dashboard-local` uses immediately above:
+  bind `0.0.0.0` inside the container,
+  `127.0.0.1:${NODE_HEALTH_PORT:-8788}:${NODE_HEALTH_PORT:-8788}` on the host
+  side. It is a second front over the same computation the scheduler's own
+  `healthcheck:` already runs in-container, never a substitute for it — see
+  that service's own entry below for why a sidecar cannot be what makes a
+  container's liveness honest.
 - **`watchtower`** (profile `auto-update`) — how a node picks up new code: it
   polls for a new image tag and restarts the services into it. Enabled by
   label, so it touches this stack's containers and no others on the host. It
@@ -991,6 +1015,8 @@ and the schema must carry every one of them.
 | `none_selected_recheck_hours` | *(unset)* | The no-op short-circuit's safety valve (requirement 3b): the Co-Ordinator is engaged regardless once the last `none-selected` is this old, even if nothing changed. Bounds how long a gap in fingerprint coverage can stall the pipeline. "This old" means 24 cadence firings (requirement 1d), not a fixed 24 h: derived from the worst-case gap between cycles (`schedule.cycle_interval_minutes`, `cycle_hours`, `excluded_minutes`); a configured non-zero value floors the derivation...[continued below](#extended-notes-none_selected_recheck_hours) |
 | `image_behind_grace_hours` | 3 h | The dashboard badge's (and `scripts/check-node-image.sh`'s) tolerance for a node behind the registry's newest image (`lib/image-drift.sh`, requirement 2.5, #155) before it turns amber / fails: a roll defers while a cycle is in flight, so being behind an image published more recently than this is the ordinary mid-roll state, not a fault. |
 | `updater_stuck_after_minutes` | 20 min | The dashboard badge's tolerance for a container that was allowed to roll (`lib/updater-health.sh`'s `updater_status`, requirement 2.5, #603) before it turns amber: past this, the container the hook told to go ahead is still running, which a healthy roll never takes this long to resolve on its own — unlike `image_behind_grace_hours`, this is not an ordinary mid-roll wait. |
+| `node_health_live_stale_after_minutes` | 3 min | The liveness threshold `node_health_liveness` (`lib/node-health.sh`) applies to the marker's own mtime (requirement 55): comfortably above the one-minute crontab cadence that touches it, so an ordinary scheduling jitter never trips it, and far below any cycle's own worst-case runtime, so a genuinely wedged supercronic is caught within a few minutes rather than a whole cycle interval. |
+| `node_health_forge_check_cache_seconds` | 30 s | The TTL on `_node_health_rate_limit`'s cache (`state_dir/.node-health-ratelimit-cache.json`, requirement 56): short enough that a real credential or budget change is visible within one ordinary polling interval, long enough that even a sub-second poll (a Kubernetes exec probe at its own default cadence) makes at most one real call per window. |
 | `node_stale_after_minutes` | 30 min | The dashboard fleet strip's (and `scripts/doctor.sh`'s) tolerance for a node's last confirmed publication into the shared state (`lib/fleet.sh`'s `fleet_publication_status`, requirement 2.5, #602) before it turns stale: three missed heartbeat/fetch cycles at the shipped cadence, not clock jitter — applied identically to a peer's row and to a node's own, so the two implementations that used to compute this (a hardcoded literal for peers, a hardcoded `false` for self) can no longer disagree. |
 | `dashboard_refresh_seconds` | `5` | How often an open dashboard tab polls for freshly-written data (`docs/DASHBOARD-SPEC.md`) — a small stamp every tick, the full `data.js` payload only when the stamp's fingerprint changed. Match it to the heartbeat cadence: a shorter interval polls a stamp nothing has rewritten, a longer one shows a cycle that has already moved on. |
 | `schedule.cycle_hours` | `*` | The hour field of the implementation cycle's crontab line, rendered by `deploy/docker/render-crontab.sh`; `*` is every hour. |
@@ -9135,6 +9161,203 @@ implements.
     contended loss (exit 3, `cause: "held"`) — the same invariant
     `scripts/pickup-metrics.sh`'s contended-loss-per-selection ratio
     already counts.
+
+55. **Liveness: is supercronic still firing this node's jobs at all (issue
+    #608, Phase 2).** A dedicated crontab line, carrying no substitution
+    token of its own (`deploy/docker/crontab.tmpl`), touches
+    `state_dir/.node-alive` every minute — deliberately the cheapest thing
+    supercronic can be asked to prove it is still scheduling jobs, and
+    deliberately decoupled from every other job's own health: a wedged
+    `publish-dashboard-launcher.sh` window or a stuck cycle must not read
+    as "not live", and a job doing real work to prove liveness could itself
+    hang and take the liveness signal down with it. `lib/node-health.sh`'s
+    `node_health_liveness` reads the marker's own mtime against
+    `node_health_live_stale_after_minutes` and answers `{live, age_s,
+    reason}` — never the cycle lock (`lock.json`): a lock held by a running
+    Implementer stage is the pipeline doing its job, and a liveness probe
+    that restarted a node over that misreading would be the graceful-drain
+    failure arriving by another route. Never returns non-zero, and reports
+    `live: false` with a stated reason rather than a bare boolean when the
+    marker has never been touched at all (a container in its first minute).
+
+56. **Readiness: could a cycle start now.** `lib/node-health.sh`'s
+    `node_health_readiness` composes a `{ready, unmet}` verdict from facts
+    `scripts/node-health.sh --ready` gathers, every unmet condition named
+    by its own stable code rather than folded into a bare boolean:
+    `credentials-missing` (`$CLAUDE_CONFIG_DIR/.credentials.json` absent —
+    existence only, on the same terms `scripts/doctor.sh --unattended`
+    already holds to, requirement 1c), `gh-unauthenticated`/
+    `gh-forge-unreachable` (`lib/github-limit.sh`'s `github_auth_probe`, the
+    two failure shapes requirement 2.0b already distinguishes),
+    `disk-low` (`state_dir`'s free space against `min_free_workspace_bytes`,
+    `lib/disk-space.sh`), `github-core-budget-low`/
+    `github-graphql-budget-low` (against `github_min_core_budget`/
+    `github_min_graphql_budget`), `node-disabled`/`fleet-disabled` (the two
+    switches, requirements 2.4/2.3a — read from local evidence only, see
+    56a) and `usage-limit-freeze` (the cooldown of requirement 2.1, read
+    from the local log union only, see 56a). A condition this node cannot
+    read at all — an unreadable disk meter, a `null` budget figure with
+    `gh_auth: "ok"` — supports no verdict and is never folded into
+    "not ready": only a reading that actually crosses its floor blocks
+    readiness, the same "no evidence, no stand-down" reasoning requirement
+    2.0's own `unknown` already rests on. An unreachable forge is the one
+    exception stated as its own code (`gh-forge-unreachable`) rather than
+    folded into "unknown": it is honestly evidence readiness cannot
+    proceed, not merely evidence this node cannot say so.
+
+    56a. **No network call beyond the one exempt read, and no live fetch of
+    fleet state.** `--ready` makes exactly one network call —
+    `gh api rate_limit`, cached in `state_dir/.node-health-ratelimit-cache.json`
+    with a TTL of `node_health_forge_check_cache_seconds` — so that an
+    orchestrator polling readiness every few seconds cannot itself become a
+    load source, and read from `/rate_limit`'s own body rather than a
+    metered call's headers because that endpoint is exempt from the limits
+    it reports (`github_min_core_budget`'s own note); this is a coarser,
+    cheaper signal than requirement 2.0's own header-based budget gate, not
+    a replacement for it. The node and fleet switches and the usage-limit
+    freeze are read from local evidence only — `toggle_state` (a local
+    file), `fleet_disabled_state_cached` (`lib/toggle.sh`, added
+    alongside `fleet_disabled_state` for this requirement: the same
+    vocabulary, read from `fleet_cache_file`'s own last-fetched copy
+    instead of a live `fleet_flag_fetch`) and the local fleet log union
+    (`lib/fleet.sh`'s `fleet_logs`, never a peer over the network) folded
+    with the local `fleet-cache/limit.json` copy via `limit_later_record` —
+    never a live fetch of `fleet/disabled.json` or `fleet/limit.json`: a
+    stale local copy costs at most one wrongly-answered poll between the
+    ordinary fetch cadence's own ticks, the same trade every other
+    local-cache reader in this codebase already makes. A switch in `drain`
+    mode does not block readiness — a cycle can still start while a drain
+    winds down, exactly as requirement 2.4's own cycle-start check treats
+    it — only a full stop does.
+
+57. **Health: is this node doing its job over time, composed from named
+    components, never restating liveness.** `lib/node-health.sh`'s
+    `node_health_health` folds exactly two named components —
+    `outbound` (`lib/fleet.sh`'s `fleet_publication_status` over this
+    node's own `.state-sync-published.json`, requirement 2.5, #602) and
+    `converged` (itself a fold of `updater`, `lib/updater-health.sh`'s
+    `updater_status`, requirement 2.5, #603, and `image`,
+    `lib/image-drift.sh`'s `image_drift_status`) — read back from this
+    node's own last-published `heartbeat.json`
+    (`workspace_root/.agent-ops-state/heartbeat.json`) rather than
+    recomputed: `scripts/node-health.sh` makes no state-sync call, no
+    registry read and no ledger read of its own (requirement 58c). The
+    fold (`node_health_fold`, used at both the `converged` level and the
+    top level, so the two can never compose differently): `fail` if
+    anything folded is `fail`; `unknown` if anything is `unknown` and
+    nothing is `fail`; `ok` only when everything folded is `ok`. A
+    component whose source does not exist yet — no heartbeat has ever been
+    published, or it predates a field — reads `unknown`, never `ok`: the
+    2026-08-08 failure of two nodes self-certifying freshness for four days
+    is exactly the green-endpoint-that-means-nothing this composition rule
+    exists to close.
+
+    57a. **`updater` and `image` component mappings.** `updater`: `stuck`
+    (a fault only a human clears) is `fail`; `rolled` and `deferring` (both
+    ordinary, the second self-resolving) are `ok`; `null` (no ledger
+    evidence yet) is `unknown`. `image`: `current` is `ok`; `unverified`
+    (a registry read that failed, or an image with no revision label) is
+    `unknown`; `behind` is `ok` while the registry's newest image is
+    younger than `image_behind_grace_hours` (a roll waits for a cycle in
+    flight, so this is routine) and `fail` once it is older, or once
+    `registry_created_at` cannot be read at all — mirroring
+    `dashboard/index.html`'s own `imageLine` colouring exactly (an
+    unreadable age reads the same as "past grace" there too), so the
+    endpoint and the dashboard page can never disagree about what "behind"
+    means; `null` (this node runs no CI-stamped image, or the heartbeat
+    predates this field) is `unknown`.
+
+58. **The CLI surface: `scripts/node-health.sh`.** `[--live|--ready|--health|
+    --metrics] [--json] [--config FILE] [--state-dir DIR] [--peers-dir DIR]`
+    (the last three test-only overrides, on the same convention
+    `scripts/pickup-metrics.sh` already carries). Exactly one compact JSON
+    object on stdout per call, always — `--json` is accepted but changes
+    nothing, since there is no other rendering to select. Exit code matches
+    the verdict: `--live`/`--ready` exit `0` when the verdict is good, `1`
+    otherwise; `--health` exits `0` (`ok`), `1` (`fail`) or `2` (`unknown`)
+    — a third code, distinct from both, since "the endpoint could not tell"
+    is not the same fact as "the endpoint tells you it is broken"; `--metrics`
+    always exits `0`, since it reports data, never a verdict. No argument
+    prints `--health`.
+
+    58a. **Read-only throughout.** Touches no lock, writes no event,
+    publishes nothing, and — beyond the one cached forge read of 56a —
+    makes no network call and triggers no state-sync push, gather, dashboard
+    publish or `claude` invocation: every verdict computes on demand from
+    what cron already wrote. `test/node-health-cli.test.sh` asserts this
+    directly — a fixture `state_dir`/`workspace_root` are byte-identical,
+    file for file, before and after every mode runs, excepting only the one
+    cache file 56a's own header documents.
+
+    58b. **The three verdicts genuinely diverge, from one CLI, in one
+    process.** `test/node-health-cli.test.sh` builds a fixture that is live
+    (a fresh marker), not ready (the node switch set) and unhealthy (a
+    `stuck` updater verdict and a stale publication) all at once, and
+    asserts all three answers from the same three calls — the acceptance
+    criterion this whole item exists to satisfy, proven end to end through
+    the CLI rather than only through `lib/node-health.sh`'s own pure
+    functions (`test/node-health.test.sh`).
+
+    58c. **The container-runtime healthcheck runs the identical CLI.**
+    `deploy/docker/compose.yaml`'s `scheduler` service carries a
+    `healthcheck:` running `scripts/node-health.sh --live` *inside* the
+    container — the same command a Kubernetes `exec` probe would run, so
+    the two can never disagree about what "live" means. Deliberately the
+    liveness verdict alone, never readiness or health: a sidecar answering
+    for a wedged scheduler beside it would be the identical
+    self-certification the 2026-08-08 incident exposed, arriving by a new
+    route. `docker compose config` renders it cleanly.
+
+    58d. **The HTTP surface is a second front over the identical
+    computation, never a second answer.** `scripts/node-health-server.py`
+    answers `/livez`, `/readyz`, `/healthz`, `/metrics` by shelling out to
+    the same `scripts/node-health.sh` the container healthcheck runs
+    in-container — `200` when the underlying call exits `0`, `503`
+    otherwise (`/metrics`: always `200`, since it reports data, not a
+    verdict), the CLI's own JSON body either way; any other path answers
+    `404`. Holds no cache and no state of its own — a request while
+    `state_dir` is unreadable still returns valid JSON, reading `unknown`
+    rather than hanging or stack-tracing, because the underlying CLI itself
+    never crashes on that input (`lib/node-health.sh`'s own contract).
+    Served by the `node-health` compose service, off by default and in no
+    profile of its own action beyond that — bound `0.0.0.0` *inside* the
+    container, published to the host's own loopback alone
+    (`127.0.0.1:${NODE_HEALTH_PORT:-8788}:${NODE_HEALTH_PORT:-8788}`), the
+    identical loopback-only pattern `scripts/serve-dashboard.sh`'s own
+    header documents for `dashboard-local`. This service is never what
+    makes the scheduler's own liveness honest (58c already is, in-process);
+    it exists solely for a reader — a collector, an orchestrator's own
+    URL-level probe — that can only speak HTTP.
+
+    58e. **`--metrics`' field list is the node metrics shape
+    `docs/METERING-SCHEMA.md` documents under its own stability policy.**
+    Node identity (`node`, `role`, `ts`, `version`), all three other
+    verdicts and their components in full (`live`, `ready`, `health`),
+    cycle counters over this node's own retained `log.jsonl`
+    (`cycles.log_selections`, `cycles.log_attempts_failed` — this node's
+    own log only, deliberately never the fleet union, so nothing here
+    double-counts against whatever else unions each peer), and per-
+    container resource actuals-against-budget where issue #606's collector
+    has produced them (`host-facts/<node>.json`'s own `budget` section,
+    `containers`, `null` when absent — reported where it exists, never
+    fabricated: issue #606 itself, not this item, produces those figures).
+    Explicitly not Prometheus/OpenMetrics, not OTLP, and no adapter to
+    either — the wire-format question issue #614 owns, deliberately parked
+    by this item's own scope. `test/node-health-cli.test.sh` asserts every
+    top-level field's presence against this documented shape.
+
+    58f. **New config keys, documented and rendered.**
+    `node_health_live_stale_after_minutes` (55) and
+    `node_health_forge_check_cache_seconds` (56a) — both flat top-level
+    keys, `config.schema.json`'s existing convention, never nested: this
+    feature is fleet-wide like `node_stale_after_minutes` and
+    `updater_stuck_after_minutes` beside it, not per-repository like
+    `repos[].preview`. Neither the HTTP bind address nor its port is a
+    `config.json` key — `NODE_HEALTH_PORT` is a compose/`.env` variable on
+    the identical convention `DASHBOARD_PORT` already carries for the
+    dashboard's own `local` profile, since a listening port is a deployment
+    topology choice, not pipeline behaviour. `scripts/render-config-table.sh
+    --check` passes against both new keys.
 
 ### Every stage (untrusted external content)
 
@@ -26512,6 +26735,40 @@ oblige anyone to edit a test.
     region that no longer exists (or, in the reversed case, silently
     corrupted); `test/render-toc.test.sh` exercises all of these
     marker-validation cases against the real script.
+
+53. **Node health, readiness and liveness (requirements 55-58, issue #608).**
+    `test/node-health.test.sh` passes: `lib/node-health.sh`'s
+    `node_health_fold` composition rule (fail beats unknown beats ok, empty
+    input reads unknown), `node_health_liveness` (no marker, a fresh marker,
+    an aged-out marker, a future mtime clamped to zero age), the
+    `outbound`/`updater`/`image` component mappings of requirement 57a
+    against every named status (including "behind" both within and past
+    `image_behind_grace_hours`, and with an unreadable `registry_created_at`),
+    `node_health_converged` and `node_health_health`'s composition —
+    including, for acceptance criterion 4, health reaching `unknown` when
+    neither #602's nor #603's own field has ever been published, then `ok`
+    and `fail` once fixture stand-ins for both exist — and
+    `node_health_readiness` naming every one of the eight conditions
+    requirement 56 enumerates by its own stable code, an unreadable local
+    meter never blocking readiness on its own, and every simultaneously
+    failing condition reported together rather than only the first.
+    `test/node-health-cli.test.sh` passes: `scripts/node-health.sh` is
+    read-only end to end (a fixture `state_dir`/`workspace_root` unchanged,
+    file for file, across every mode, excepting only the documented
+    rate-limit cache), a single fixture proves the node simultaneously live,
+    not-ready and unhealthy across three separate calls, liveness stays true
+    while a cycle holds `lock.json` and false once the marker is removed,
+    `--health`'s three exit codes (`0`/`1`/`2`) are distinct for `ok`/`fail`/
+    `unknown`, and `--metrics` carries every field requirement 58e documents.
+    `test/render-crontab.test.sh` passes unchanged with the new liveness-
+    marker line in `deploy/docker/crontab.tmpl` (requirement 55), and
+    `test/state-sync.test.sh` asserts the two new node-health caches
+    (`.node-health-ratelimit-cache.json`, `.node-alive`) do not replicate
+    (requirement 56a). `docker compose config` (in `deploy/docker/`) renders
+    the scheduler's new `healthcheck:` and the new `node-health` service
+    cleanly. `scripts/lint-shell.sh` is clean over every new/changed shell
+    file; the new `scripts/node-health-server.py` is syntactically valid
+    Python 3.
 
 ## Host provisioning (human steps)
 

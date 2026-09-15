@@ -489,6 +489,27 @@ services:
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
       DISABLE_AUTOUPDATER: "1"
       ENABLE_CLAUDEAI_MCP_SERVERS: "false"
+    # The container-runtime liveness check (requirement 55, issue #608): runs
+    # `scripts/node-health.sh --live` *inside* this container, exactly as a
+    # Kubernetes `exec` probe would — the CLI is the same in both places, so
+    # this line and that manifest's own probe can never disagree about what
+    # "live" means. Deliberately the liveness verdict alone, never readiness
+    # or health: a sidecar HTTP responder answering `200` while supercronic is
+    # wedged beside it would be the same self-certification that let two
+    # nodes report themselves fresh for four days (the `node-health` service
+    # below is a second surface over the identical computation, for readers
+    # that can only speak HTTP — it is not itself what makes this container's
+    # liveness honest). `start_period` covers the render-crontab.sh pass and
+    # the first liveness-marker tick after a fresh start or a roll; the
+    # interval and retries are short because a wedged scheduler is exactly
+    # the failure this check exists to catch quickly, not one worth being
+    # patient about.
+    healthcheck:
+      test: ["CMD", "/app/scripts/node-health.sh", "--live"]
+      interval: 60s
+      timeout: 10s
+      start_period: 120s
+      retries: 3
 
   # The scheduler's only route out (D24): squid, running the same agent-ops
   # image, on both the default network (the internet) and the internal-only
@@ -834,6 +855,46 @@ services:
     # Depend on the scheduler so the shared `state` volume is seeded by one
     # container on a node's first start, not two at once. See the `dashboard`
     # service above for why.
+    depends_on:
+      - scheduler
+
+  # --- node-health profile -------------------------------------------------
+  # The HTTP surface over `scripts/node-health.sh` (requirement 56, issue
+  # #608): `/livez`, `/readyz`, `/healthz`, `/metrics`, for a reader that can
+  # only speak HTTP — a collector, or an orchestrator's own liveness/
+  # readiness probe wired at the URL level rather than as an `exec`. Off by
+  # default, like the dashboard's own profiles, and published the identical
+  # loopback-only way `dashboard-local` is: bind 0.0.0.0 *inside* the
+  # container (a server on the container's own loopback is reachable from
+  # nothing) and publish only to the host's own loopback
+  # (127.0.0.1:${NODE_HEALTH_PORT}:${NODE_HEALTH_PORT}), never wider — the
+  # same guarantee `scripts/serve-dashboard.sh`'s own header documents. This
+  # is a second surface over the exact computation the scheduler's own
+  # `healthcheck:` above already runs in-container; it is not what makes
+  # that liveness check honest (see that comment) — a sidecar answering for
+  # a wedged scheduler beside it would be exactly the self-certification
+  # issue #608 exists to avoid, which is why this service never substitutes
+  # for the exec check and the exec check never depends on this one running.
+  node-health:
+    <<: *agent-ops
+    profiles: [node-health]
+    command: ["/app/scripts/node-health-server.py", "${NODE_HEALTH_PORT:-8788}", "0.0.0.0"]
+    # Which compose service this container is — see the scheduler's own
+    # AGENT_OPS_SERVICE above for why lib/updater-health.sh needs it.
+    environment:
+      <<: *agent-ops-env
+      AGENT_OPS_SERVICE: node-health
+    # The same modest ceilings as the dashboard services: this container
+    # renders JSON from state another container wrote, and shells out to the
+    # same read-only CLI a healthcheck already runs.
+    mem_limit: ${AGENT_OPS_DASHBOARD_MEMORY:-512m}
+    cpus: ${AGENT_OPS_DASHBOARD_CPUS:-1.0}
+    pids_limit: ${AGENT_OPS_DASHBOARD_PIDS_LIMIT:-512}
+    ports:
+      - "127.0.0.1:${NODE_HEALTH_PORT:-8788}:${NODE_HEALTH_PORT:-8788}"
+    # Depend on the scheduler so the shared `state` volume is seeded by one
+    # container on a node's first start, not two at once — see `dashboard`
+    # above for why.
     depends_on:
       - scheduler
 

@@ -358,6 +358,21 @@ EXCLUDES=(
   --exclude=*.stream.jsonl
   --exclude=.fleet-log.jsonl
   --exclude=/dashboard/
+  # .node-health-ratelimit-cache.json (scripts/node-health.sh, requirement
+  # 56, issue #608): this node's own cached `/rate_limit` read for its
+  # readiness check — a peer's copy would answer for a forge budget nobody
+  # on that peer read, on the same reasoning as .image-drift-cache.json
+  # above. Never published as a verdict either, unlike that file's own
+  # image drift: readiness is answered live, on demand, never folded into
+  # the heartbeat.
+  --exclude=.node-health-ratelimit-cache.json
+  # .node-alive (deploy/docker/crontab.tmpl, requirement 55, issue #608):
+  # the liveness marker a dedicated crontab line touches every minute — a
+  # peer's copy would carry a checkout-fresh mtime and answer for *its*
+  # replication lag, not for whether that peer's own supercronic is still
+  # firing jobs, on the same reasoning labels-ensured/ above gives for a
+  # mtime-keyed local marker.
+  --exclude=.node-alive
 )
 
 require() {
