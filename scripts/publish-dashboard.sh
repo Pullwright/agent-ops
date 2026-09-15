@@ -2167,7 +2167,15 @@ fleet_logs "$state_dir" "$peers_dir" review-log.jsonl > "$review_log_union" 2>/d
 # (docs/METERING-SCHEMA.md), and is excluded from `runs` rather than counted
 # as a silent run.
 stage_gaps_file="$work_tmp/stage-gaps.json"
-{ printf '%s\n' "$ALL_EVENTS"; cat "$review_log_union"; } | jq -sc '
+# `review_log_union` is a peer read straight off `fleet_logs`, unlike
+# `$ALL_EVENTS` (already sanitised by `read_events`): a NUL-holed line a
+# peer's `fleet_repair_log` hasn't reached yet still reaches this slurp
+# raw, and one malformed line aborts `jq -s` outright (agent-ops#794) —
+# taking the already-clean `$ALL_EVENTS` half down with it. Sanitised here
+# with `read_events`'s own idiom before the slurp, same as every other
+# consumer of a fleet log union.
+{ printf '%s\n' "$ALL_EVENTS"; cat "$review_log_union"; } \
+  | jq -c -R 'fromjson? // empty' | jq -sc '
   def pct_of($arr; $q):
     ($arr | sort) as $s | ($s | length) as $n
     | if $n == 0 then null
