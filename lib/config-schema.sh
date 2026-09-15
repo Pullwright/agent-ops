@@ -23,10 +23,11 @@
 # *between* two keys (or two array entries) rather than about one, which is
 # outside what `additionalProperties`/`required`/etc. on a single object can
 # express. `config_enabler_assignee_ok`, `config_missing_plan_path_repos`,
-# `config_model_tier_floor_violations` and
-# `config_required_refinement_sources_without_refiner` are `agent-cycle.sh`'s
+# `config_model_tier_floor_violations`,
+# `config_required_refinement_sources_without_refiner` and
+# `config_duplicate_repos_slugs` are `agent-cycle.sh`'s
 # own startup guards; `config_duplicate_project_review_slugs` is
-# `review-cycle.sh`'s. `scripts/doctor.sh` calls all five so no pipeline's
+# `review-cycle.sh`'s. `scripts/doctor.sh` calls all six so no pipeline's
 # refusal can ever drift from what `doctor.sh` reports.
 #
 # `config_model_tier_floor_violations` reads `lib/model-id.sh`'s
@@ -686,10 +687,12 @@ config_duplicate_project_review_slugs() {
 # #1570): some (`lib/prompt-overrides.sh`'s `prompt_overrides_json_for_repo`,
 # `lib/escalation-autonomy.sh`, `lib/preview-config.sh`) return every match,
 # while others (`agent-cycle.sh`'s `merge_autonomy` lookup) take only the
-# first. `scripts/doctor.sh` is this function's only caller: unlike
-# `config_duplicate_project_review_slugs`, nothing yet reads a duplicate as a
-# reason to refuse at cycle start. Empty when every slug is unique (including
-# the vacuous case of an empty array).
+# first. `agent-cycle.sh` refuses to start on a duplicate slug (issue #1576),
+# the same as `config_duplicate_project_review_slugs` already does for
+# `project_review.repos`, and `scripts/doctor.sh` reports the identical
+# condition as a `fail` through this same function, so the two can never
+# drift. Empty when every slug is unique (including the vacuous case of an
+# empty array).
 config_duplicate_repos_slugs() {
   local repos_json="$1"
   jq -r '[.[].slug] | group_by(.) | map(select(length > 1) | .[0]) | join(", ")' <<<"$repos_json"

@@ -19916,9 +19916,12 @@ What exists, and the requirements each part answers to:
     whole entries), and then the per-repo resolvers (`lib/prompt-overrides.sh`'s
     `prompt_overrides_json_for_repo`, `lib/escalation-autonomy.sh`,
     `lib/preview-config.sh`, `agent-cycle.sh`'s own `merge_autonomy` lookup)
-    disagree silently about which entry governs (issue #1570). Unlike the
-    other three, it is doctor-only: nothing yet reads a `repos[]` duplicate as
-    a reason for `agent-cycle.sh` to refuse at startup. `doctor.sh` is the
+    disagree silently about which entry governs (issue #1570). `agent-cycle.sh`
+    refuses to start on a `repos[]` duplicate the same way it already does for
+    the first two — `config_enabler_assignee_ok` and
+    `config_missing_plan_path_repos` — rather than `review-cycle.sh`'s, since
+    `repos[]` is the implementation pipeline's own list (issue #1576).
+    `doctor.sh` is the
     operator's command: it runs the schema check, then
     `config_documented_value_mismatches` — every leaf whose
     `x-docs.value` differs from its own schema `default` (documenting Poetic's
@@ -19933,8 +19936,7 @@ What exists, and the requirements each part answers to:
     top-level `merge_autonomy` key, and each repository's own override) is a
     `fail` where the level is above `human` and `approver_app_id` is empty,
     `ok` naming the level otherwise; doctor-only, since nothing yet consumes
-    the pairing at cycle start the way the three shared cross-key rules do —
-    `config_duplicate_repos_slugs` above is doctor-only for the same reason;
+    the pairing at cycle start the way the four shared cross-key rules do;
     and the environment half of the same identity, reconciled against the
     config's (requirement 14b): a set `PULLWRIGHT_APPROVER_APP_ID` differing
     from a set `approver_app_id` is a `fail` — the token wrapper mints

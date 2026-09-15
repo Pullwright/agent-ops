@@ -95,6 +95,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `config_duplicate_repos_slugs`, doctor-only, mirrors the existing
   `project_review.repos` duplicate-slug check for the top-level array.
 
+- **`agent-cycle.sh` refuses to start on a duplicate `repos[]` slug, the
+  same as `project_review.repos` already does** (issue #1576, follow-up to
+  #1570 above). Doctor could already report the condition; nothing yet
+  stopped a cycle from running on it, so `lib/prompt-overrides.sh`'s
+  `prompt_overrides_json_for_repo` — the one resolver of the group with no
+  `head -1`/`first` guard — could still emit a multi-line, unparseable
+  overrides string to its caller. `agent-cycle.sh` now calls the same
+  `config_duplicate_repos_slugs` doctor already used, refusing to start and
+  naming the duplicated slug(s), mirroring
+  `config_duplicate_project_review_slugs`'s own startup refusal in
+  `review-cycle.sh`.
+
 - **`state-sync.sh push` clears an orphaned `index.lock` and names a push
   that fails** (issue #1377). A `.git/index.lock` a dead git left in the
   mirror used to fail every later push at its first index write, silently:
