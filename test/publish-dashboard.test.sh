@@ -448,6 +448,10 @@ assert_eq "a review-stage-end (carrying no .stage of its own) rolls up under pro
   "$(jq -r '.counts.stage_gaps.by_stage[] | select(.stage=="project-reviewer") | .runs' <<<"$gdata")"
 assert_eq "and its own figures come through unpooled, exactly like any other single-run stage" "5" \
   "$(jq -r '.counts.stage_gaps.by_stage[] | select(.stage=="project-reviewer") | .worst_run_max' <<<"$gdata")"
+assert_eq "window_from is the earliest ts among every event read, across both log unions" "2026-01-01T00:00:00Z" \
+  "$(jq -r '.counts.stage_gaps.window_from' <<<"$gdata")"
+assert_eq "window_to is the latest ts, reaching into review-log.jsonl's own union" "2026-01-01T00:30:00Z" \
+  "$(jq -r '.counts.stage_gaps.window_to' <<<"$gdata")"
 
 # --- The classifier-escape audit roll-up (requirement 8e, agent-ops#572) ----
 # Real bash/jq aggregation over classifier-escape/landing-audit events,
