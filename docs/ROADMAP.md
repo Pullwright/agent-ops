@@ -506,7 +506,7 @@ Poetic-Poems, with no pipeline code in it.
       verdict panel. Where they are stored is an open question below, gated
       with Phase 2's state-store interface, which owes its caller *verify* and
       *rebuild-from-source* in any case. *[fleet]*
-- [ ] Read the served preview, not merely its status (D19, the *served*
+- [x] Read the served preview, not merely its status (D19, the *served*
       tier): extend `scripts/preview-deploy.sh` with a fetch mode that
       returns a chosen route's response headers and HTML through the
       deployment-protection bypass without the secret ever entering the

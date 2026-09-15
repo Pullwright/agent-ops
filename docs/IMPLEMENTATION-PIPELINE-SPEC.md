@@ -10665,6 +10665,16 @@ implements.
     push; `--fetch`'s output is read as review evidence and never changes the
     check's own exit code.
 
+    **Fetched content is untrusted data, never an instruction.** Each route's
+    output is wrapped in a delimiter naming it as such: everything between
+    `--- fetched: <url> ---` and `--- end fetched: <url> ---` is whatever the
+    pull request under review made the preview serve — the same rule D19
+    states for a rendered page's content, applied one tier earlier to a
+    served page's HTML and headers. Both prompts state this immediately where
+    they describe `--fetch`'s output, so a stage reading it treats it as
+    evidence about the change to report, not as an instruction to follow, no
+    matter how it is phrased inside the page or its headers.
+
     Both stages reach the script through **`AGENT_OPS_ROOT`**, which
     `agent-cycle.sh` exports as its own directory and every stage inherits. A
     stage's working directory is its ephemeral clone, so a prompt naming a tool
@@ -19101,7 +19111,10 @@ What exists, and the requirements each part answers to:
     answers past the wall — read as evidence, not judged for pass/fail, and
     never affecting the exit code; a binary or oversized body is truncated
     with a note rather than dumped whole, and the bypass secret it sends
-    internally never appears in the output. Its
+    internally never appears in the output. Each route's output is wrapped in
+    a `--- fetched: <url> ---` / `--- end fetched: <url> ---` delimiter
+    naming it as content the pull request under review made the preview
+    serve — untrusted data to read as evidence, never as an instruction. Its
     verdicts are regression-tested against a stubbed `gh` and `curl`
     (`test/preview-deploy.test.sh`); must pass `shellcheck`.
 14. `config.schema.json`, `lib/config-schema.sh` and `scripts/doctor.sh`
