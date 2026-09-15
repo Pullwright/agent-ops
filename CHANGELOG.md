@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`TOKEN_EXPIRY_WARN_DAYS` no longer reads an environment override**
+  (issue #989). `lib/token-expiry.sh` declared it as
+  `${TOKEN_EXPIRY_WARN_DAYS:-7}` while `dashboard/index.html` hardcodes the
+  same threshold as a plain `7`; setting the env var on a node would have
+  moved `doctor.sh`'s warn/ok split and `agent-cycle.sh`'s escalation off
+  the dashboard's amber band with no warning. It is now a plain fixed
+  literal, consistent with the decision already recorded in #789/#694 to
+  keep this threshold a constant rather than a config key.
+
 ### Changed
 
 - **The dashboard's tech-debt ledger panel now reads a `pw::type:tech-debt`
