@@ -201,7 +201,12 @@ serve_bind() {  # serve_bind [bind-address] — the address the server resolves 
   printf '<html></html>\n' > "$tmp/.local/state/poetic-agents/dashboard/index.html"
   out="$tmp/serve.log"
 
-  HOME="$tmp" "$SERVE" 0 ${1+"$1"} > "$out" 2>&1 &
+  # AGENT_OPS_SERVICE is unset for the spawn: inside a scheduler container it
+  # is set, and with it the script starts its resource-sampling loop
+  # (requirement 55), which is not what this test is about and which — before
+  # the loop was tied to the server's own lifetime — outlived the `kill`
+  # below, two orphans per run (2026-09-15, poetic-2).
+  env -u AGENT_OPS_SERVICE HOME="$tmp" "$SERVE" 0 ${1+"$1"} > "$out" 2>&1 &
   pid=$!
   for _ in $(seq 1 50); do
     grep -q 'Serving .* at http://' "$out" 2>/dev/null && break
@@ -219,6 +224,36 @@ assert_eq "invoked with no bind address the server binds loopback" \
   "127.0.0.1" "$(serve_bind)"
 assert_eq "and the setting the local profile depends on works" \
   "0.0.0.0" "$(serve_bind 0.0.0.0)"
+
+# --- the sampler loop dies with the server ------------------------------------
+# With AGENT_OPS_SERVICE set the script forks its resource-sampling loop
+# (requirement 55) before exec'ing python. The loop must not outlive the
+# server: on 2026-09-15 poetic-2's scheduler carried six of them, two per run
+# of this very test, each still calling the collector every five minutes. The
+# loop polls the server's pid every ten seconds, so a killed server is
+# followed out within that.
+sampler_tmp="$(mktemp -d)"
+mkdir -p "$sampler_tmp/.local/state/poetic-agents/dashboard"
+printf '<html></html>\n' > "$sampler_tmp/.local/state/poetic-agents/dashboard/index.html"
+AGENT_OPS_SERVICE=test HOME="$sampler_tmp" "$SERVE" 0 > "$sampler_tmp/serve.log" 2>&1 &
+sampler_server=$!
+for _ in $(seq 1 50); do
+  grep -q 'Serving .* at http://' "$sampler_tmp/serve.log" 2>/dev/null && break
+  sleep 0.1
+done
+sampler_loop="$(pgrep -P "$sampler_server" -f 'serve-dashboard.sh' | head -n 1)"
+assert_eq "with AGENT_OPS_SERVICE set the server has a sampler loop beside it" "1" \
+  "$([[ -n "$sampler_loop" ]] && echo 1 || echo 0)"
+kill "$sampler_server" 2>/dev/null
+wait "$sampler_server" 2>/dev/null
+for _ in $(seq 1 150); do
+  kill -0 "$sampler_loop" 2>/dev/null || break
+  sleep 0.1
+done
+assert_eq "…and the loop is gone within one poll of the server being killed" "0" \
+  "$(kill -0 "$sampler_loop" 2>/dev/null && echo 1 || echo 0)"
+kill "$sampler_loop" 2>/dev/null
+rm -rf "$sampler_tmp"
 
 printf '\n'
 if (( failures > 0 )); then

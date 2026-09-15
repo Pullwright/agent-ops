@@ -63,12 +63,28 @@ dir="$state_dir/dashboard"
 # table so the `exec` below (which replaces this process image, not this
 # job) leaves it running as an ordinary orphaned child, reparented the same
 # way any backgrounded process outlives an `exec`'d parent.
+#
+# The loop lives exactly as long as the server it samples for, and no
+# longer: `exec` keeps this shell's pid, so `$$` — which inside `( … )`
+# names the invoking shell, not the subshell — is the server's own pid once
+# python has replaced this image, and the loop stops the moment that pid is
+# gone, polling every ten seconds rather than sleeping the whole interval
+# blind. Without that, a server killed by anything other than the container
+# stopping left the loop running for ever (2026-09-15: six of them on
+# poetic-2's scheduler, two per run of test/dashboard-exposure.test.sh,
+# which starts this script inside the scheduler where AGENT_OPS_SERVICE is
+# set, kills the server and moves on), each still calling the collector
+# every five minutes against a HOME the test had already removed.
 if [[ -n "${AGENT_OPS_SERVICE:-}" ]]; then
   resource_sample_minutes="$(jq -r '.schedule.resource_sample_minutes // 5' "$SCRIPT_DIR/config.json" 2>/dev/null)"
   [[ "$resource_sample_minutes" =~ ^[0-9]+$ ]] && (( resource_sample_minutes > 0 )) || resource_sample_minutes=5
   (
-    while true; do
-      sleep "$(( resource_sample_minutes * 60 ))"
+    server_pid=$$
+    while kill -0 "$server_pid" 2>/dev/null; do
+      for (( waited = 0; waited < resource_sample_minutes * 60; waited += 10 )); do
+        sleep 10
+        kill -0 "$server_pid" 2>/dev/null || exit 0
+      done
       "$SCRIPT_DIR/scripts/collect-resource-usage.sh" >> "$state_dir/resource-usage.log" 2>&1 || true
     done
   ) &

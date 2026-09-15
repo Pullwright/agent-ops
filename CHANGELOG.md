@@ -22,6 +22,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`serve-dashboard.sh`'s resource-sampling loop dies with the server it
+  samples for** (requirement 55, follow-up to #1564). The loop forked before
+  the `exec` slept its whole interval blind, so a server killed by anything
+  but the container stopping left it running for ever — six on poetic-2's
+  scheduler on 2026-09-15, two per run of `test/dashboard-exposure.test.sh`,
+  each still calling the collector every five minutes. It now polls the
+  server's pid every ten seconds and exits when it is gone; the test unsets
+  `AGENT_OPS_SERVICE` for its spawn and asserts the lifetime directly.
+
 - **The state-sync mirror's own garbage collection can no longer be the
   thing that fails, and a `gc.log` now fails its integrity check** (#604's
   second clause, 2026-09-15). `scripts/state-sync.sh push` amends one
