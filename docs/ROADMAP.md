@@ -592,7 +592,7 @@ induced outage rather than only over a quiet afternoon.
       container (agent-ops#607) — the sole exception is the Claude
       subscription OAuth login (D4), interactive per node by design.
       *[fleet]*
-- [ ] Health, readiness, and liveness endpoints plus structured metrics
+- [x] Health, readiness, and liveness endpoints plus structured metrics
       export. Health has to mean *outbound* health and not merely local
       liveness: a node whose last state-sync push failed is unhealthy even
       though its cycles run, its logs look ordinary, and its own dashboard

@@ -913,6 +913,28 @@ fleet_disabled_state() {
   _toggle_eval "$raw" present
 }
 
+# fleet_disabled_state_cached STATE_REPO STATE_DIR
+# Argument for argument what fleet_disabled_state above takes — STATE_REPO is
+# accepted and never read, so a caller can swap one for the other without
+# rearranging its own call — and the same vocabulary back, read from
+# `fleet_cache_file`'s
+# own last-fetched copy only — never `fleet_flag_fetch`, so never a network
+# call (issue #608's readiness check: "no network call except the single
+# /rate_limit read readiness needs"). A cache that does not exist yet (no
+# live fetch has ever landed on this node) reads "enabled", the same
+# fail-open default `fleet_disabled_state` gives an absent flag; a cache
+# that exists but will not parse reads "disabled", the same fail-safe
+# `_toggle_eval` gives any other unreadable-but-present record.
+fleet_disabled_state_cached() {
+  local cache
+  cache="$(fleet_cache_file "${2:-}" disabled)"
+  if [[ ! -f "$cache" ]]; then
+    printf '{"state":"enabled"}'
+    return 0
+  fi
+  _toggle_eval "$(cat "$cache" 2>/dev/null || true)" present
+}
+
 # fleet_limit_resume_at STATE_REPO STATE_DIR
 # Print fleet/limit.json's resume_at, or nothing. Garbage prints nothing: a
 # limit flag is machine-written, and an unreadable one failing open costs at

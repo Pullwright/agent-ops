@@ -2554,8 +2554,13 @@ number's twins elsewhere on the page.
   the two halves fail in opposite directions, one to a page on every interface
   and one to a page that answers nothing. The `tailnet` `dashboard` publishes
   no port, keeps the sidecar's namespace and takes the default bind, so Serve
-  reaches it and nothing else does. No other service publishes a port, and a
-  bare `serve-dashboard.sh` still resolves to `127.0.0.1`.
+  reaches it and nothing else does. The only other service that publishes
+  anything is the node-health HTTP surface (`node-health`,
+  `docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 60d), guarded the same
+  way and for the same two reasons — one loopback-scoped mapping, no
+  `network_mode`, `0.0.0.0` inside the container — and every mapping either
+  publisher declares is `127.0.0.1`-scoped. A bare `serve-dashboard.sh` still
+  resolves to `127.0.0.1`.
 - `test/version.test.sh` passes: a stamped image reports its build, an empty
   stamp (what a local `docker build` produces) falls through to git, a checkout
   reports `HEAD` and flags uncommitted work, neither source reports `null`

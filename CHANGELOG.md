@@ -8,6 +8,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Health, readiness and liveness endpoints, and structured node metrics
+  beside them** (issue #608, Phase 2). `scripts/node-health.sh
+  [--live|--ready|--health|--metrics]` answers three distinct, separately
+  correct verdicts for a node — live (is supercronic still firing jobs,
+  evidenced by a dedicated once-a-minute crontab marker, never the cycle
+  lock), ready (could a cycle start now: credentials, `gh` auth, disk, the
+  two GitHub budgets, the node/fleet switches, a usage-limit freeze — every
+  unmet condition named by its own code) and health (is this node's own
+  state reaching the fleet and running the version the installation intends,
+  composed from #602's outbound-publication verdict and #603's updater
+  status alongside the existing image-drift verdict; a component whose
+  source does not exist yet reads `unknown`, never `ok`) — plus `--metrics`,
+  a structured JSON object of node identity, all three verdicts and cycle/
+  container counters, documented under `docs/METERING-SCHEMA.md`'s stability
+  policy. The scheduler container carries a `healthcheck:` running the
+  identical CLI in-container, usable verbatim as a Kubernetes `exec` probe;
+  a new opt-in `node-health` compose profile serves the same four verdicts
+  over HTTP (`/livez`, `/readyz`, `/healthz`, `/metrics`) on the host's own
+  loopback for a reader that can only speak HTTP. Read-only throughout,
+  makes no network call beyond one cached, TTL-bounded `/rate_limit` read.
 - **Per-container resource usage is measured and compared against a budget
   (D14, issue #606).** `scripts/collect-resource-usage.sh` self-samples
   CPU, memory and network from inside `scheduler`, `dashboard` and

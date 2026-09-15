@@ -1737,6 +1737,32 @@
         }
       }
     },
+    "node_health_live_stale_after_minutes": {
+      "description": "How long the liveness marker `scripts/node-health.sh --live` reads (a file a dedicated crontab line touches every minute, requirement 57) may age before it reports this node not live (issue #608). Deliberately independent of every other threshold in this file — liveness is answered from that marker alone, never the cycle lock (a lock held by a running Implementer stage is the pipeline working, not evidence the node has stopped): a probe that restarted a node mid-cycle over that misreading would be the graceful-drain failure arriving by another route.",
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "default": 3,
+      "x-docs": {
+        "readme": "Minutes the liveness marker may age before `scripts/node-health.sh --live` (and the container healthcheck it backs) reports the node not live. A few missed minute-ticks, never the cycle lock.",
+        "spec": "The liveness threshold `node_health_liveness` (`lib/node-health.sh`) applies to the marker's own mtime (requirement 57): comfortably above the one-minute crontab cadence that touches it, so an ordinary scheduling jitter never trips it, and far below any cycle's own worst-case runtime, so a genuinely wedged supercronic is caught within a few minutes rather than a whole cycle interval.",
+        "value": {
+          "spec": "3 min"
+        }
+      }
+    },
+    "node_health_forge_check_cache_seconds": {
+      "description": "How long `scripts/node-health.sh --ready` caches its one `gh api rate_limit` read (issue #608) before making it again — the pitfall its own header names: readiness must never spend the very budget it is reporting on, so a polling orchestrator reads a cached figure between real reads rather than turning readiness into a load source. `/rate_limit` is itself exempt from the limits it reports (see github_min_core_budget's own note), so this cache bounds call *volume*, not spend.",
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "default": 30,
+      "x-docs": {
+        "readme": "Seconds `scripts/node-health.sh --ready` caches its one GitHub rate-limit read before refreshing it, so polling readiness cannot itself become a load source.",
+        "spec": "The TTL on `_node_health_rate_limit`'s cache (`state_dir/.node-health-ratelimit-cache.json`, requirement 58a): short enough that a real credential or budget change is visible within one ordinary polling interval, long enough that even a sub-second poll (a Kubernetes exec probe at its own default cadence) makes at most one real call per window.",
+        "value": {
+          "spec": "30 s"
+        }
+      }
+    },
     "node_stale_after_minutes": {
       "description": "How long a node's last confirmed publication into the shared state (state_repo) may age before lib/fleet.sh's fleet_publication_status calls it stale (agent-ops#602) — applied identically to a peer's row and to a node's own, so the two can never disagree about what counts as fresh. Derived from the heartbeat/state-sync cadence: pushed every schedule.heartbeat_minutes (5 by default) and read back every schedule.state_sync_fetch_minutes (7 by default), so three missed cycles of either is the ordinary reasoning behind the default, not clock jitter. Independent of schedule.cycle_interval_minutes (requirement 1d): a property of the fleet's replication cadence, not the implementation cycle's. A node's own row reads this off `.state-sync-published.json` (state_dir), state-sync.sh fetch's read-back of what the shared state holds for this node's own branch, never off the local clock — the read that went missing is what let both laptop nodes report themselves fresh for four days on 2026-08-08 while publishing nothing.",
       "type": "number",
@@ -2258,7 +2284,7 @@
       }
     },
     "resources": {
-      "description": "Per-container and per-volume resource budgets requirement 55 (D14, issue #606) compares measured actuals against: scripts/doctor.sh warns when scripts/resource-budget-report.sh's windowed figure for a container or volume exceeds its own budget here, and scripts/publish-dashboard.sh renders the same comparison per node (folded into heartbeat.json by scripts/state-sync.sh). Covers exactly the three containers that run this image and can self-measure their own cgroup and /proc/net/dev from the inside (`scheduler`, `dashboard`, `dashboard-local` — scripts/collect-resource-usage.sh) plus the two volumes they mount (`workspace_root`, `state_dir`); `tailscale`/`watchtower` and this project's other agent-ops services (`egress-proxy`, `collector`, `reconciler`) are not measured here — reaching them needs the collector's own Docker-socket vantage or a host-side collector, deferred as tech debt (agent-ops#1563). `containers.*.memory_bytes`/`containers.*.cpu_cores` mirror deploy/docker/compose.yaml's own `mem_limit`/`cpus` defaults, which remain the enforcement mechanism (D14) — this object is the read side scripts/doctor.sh and the dashboard compare actuals against, not a second enforcement path, and keeping the two in step across an edit is a human responsibility today (D16's own control-plane migration is what eventually removes the duplication). `containers.*.bandwidth_bytes_per_hour` and every `volumes.*.disk_bytes` are provisional: neither resource had ever been measured before this key existed, so both are set generously above what a quiet node is expected to use, meant to be tightened once scripts/resource-budget-report.sh has real fleet windows to set them from — a config edit, not a re-implementation.",
+      "description": "Per-container and per-volume resource budgets requirement 55 (D14, issue #606) compares measured actuals against: scripts/doctor.sh warns when scripts/resource-budget-report.sh's windowed figure for a container or volume exceeds its own budget here, and scripts/publish-dashboard.sh renders the same comparison per node (folded into heartbeat.json by scripts/state-sync.sh). Covers exactly the three containers that run this image and can self-measure their own cgroup and /proc/net/dev from the inside (`scheduler`, `dashboard`, `dashboard-local` — scripts/collect-resource-usage.sh) plus the two volumes they mount (`workspace_root`, `state_dir`); `tailscale`/`watchtower` and this project's other agent-ops services (`egress-proxy`, `collector`, `reconciler`, `node-health`) are not measured here — reaching them needs the collector's own Docker-socket vantage or a host-side collector, deferred as tech debt (agent-ops#1563). `containers.*.memory_bytes`/`containers.*.cpu_cores` mirror deploy/docker/compose.yaml's own `mem_limit`/`cpus` defaults, which remain the enforcement mechanism (D14) — this object is the read side scripts/doctor.sh and the dashboard compare actuals against, not a second enforcement path, and keeping the two in step across an edit is a human responsibility today (D16's own control-plane migration is what eventually removes the duplication). `containers.*.bandwidth_bytes_per_hour` and every `volumes.*.disk_bytes` are provisional: neither resource had ever been measured before this key existed, so both are set generously above what a quiet node is expected to use, meant to be tightened once scripts/resource-budget-report.sh has real fleet windows to set them from — a config edit, not a re-implementation.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -2358,7 +2384,7 @@
       },
       "x-docs": {
         "readme": "Per-container and per-volume budgets D14 compares measured actuals against (`scripts/doctor.sh` warns on a breach; the dashboard renders the comparison per node). `memory_bytes`/`cpu_cores` mirror `deploy/docker/compose.yaml`'s own `mem_limit`/`cpus`, which remain the enforcement mechanism; `bandwidth_bytes_per_hour` and every `disk_bytes` are provisional, set before any real fleet window existed.",
-        "spec": "Per-container (`resources.containers.<AGENT_OPS_SERVICE>`) and per-volume (`resources.volumes.<name>`) budgets requirement 55 (D14, issue #606) compares `scripts/resource-budget-report.sh`'s windowed actuals against. Covers only the three containers that run this image and self-measure (`scripts/collect-resource-usage.sh`) — `scheduler`, `dashboard`, `dashboard-local` — plus the two volumes they mount; `tailscale`/`watchtower`/`egress-proxy`/`collector`/`reconciler` are out of scope (deferred; see requirement 55). `containers.*.memory_bytes`/`containers.*.cpu_cores` mirror `deploy/docker/compose.yaml`'s own `mem_limit`/`cpus` defaults, the enforcement side D14 already ships; `containers.*.bandwidth_bytes_per_hour` and every `volumes.*.disk_bytes` are provisional pending a real fleet window.",
+        "spec": "Per-container (`resources.containers.<AGENT_OPS_SERVICE>`) and per-volume (`resources.volumes.<name>`) budgets requirement 55 (D14, issue #606) compares `scripts/resource-budget-report.sh`'s windowed actuals against. Covers only the three containers that run this image and self-measure (`scripts/collect-resource-usage.sh`) — `scheduler`, `dashboard`, `dashboard-local` — plus the two volumes they mount; `tailscale`/`watchtower`/`egress-proxy`/`collector`/`reconciler`/`node-health` are out of scope (deferred; see requirement 55). `containers.*.memory_bytes`/`containers.*.cpu_cores` mirror `deploy/docker/compose.yaml`'s own `mem_limit`/`cpus` defaults, the enforcement side D14 already ships; `containers.*.bandwidth_bytes_per_hour` and every `volumes.*.disk_bytes` are provisional pending a real fleet window.",
         "value": "see `config.json`"
       }
     }

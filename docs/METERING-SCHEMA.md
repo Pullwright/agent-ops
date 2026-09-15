@@ -165,6 +165,37 @@ recent `log.jsonl` retains. Their fields:
 | `cost_rows[].repo`, `.item`, `.source`, `.outcome` | string \| null | — | Which work item the row's cost bought (issue #593, D21), joined by `cycle` against the fleet-wide event union (`log.jsonl`, the same union `cycles[]` renders from) rather than against `cycles[]` itself — the union is never rotated (`docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 2.6) and is retained per `analytics_retained_days` (requirement 2.6d) rather than the `MAX_CYCLES` cap that keeps `cycles[]` to a recent detail window, so the join reaches back over the whole `COST_SCAN_DAYS` span the roll-ups themselves cover. Derived exactly as `cycles[].repo`/`.item`/`.source`/`.outcome` are: the last event in the cycle's own events carrying `.repo`/`.item`, the most recent `selection` event's `.source`, and the same outcome ladder (`pr-ready` > `pr-raised` > `attempt-failed` > `none-selected` > `stand-down` > `cycle-skipped` > `selection` > `ended`). All four are `null` together whenever `.attributed` (below) is `false`. |
 | `cost_rows[].attributed` | boolean | — | Whether the four fields above are populated. `true` only for a `coordinator`/`implementer`/`reviewer` row whose own cycle has events in the union. `false` for every other actor — `enabler`, `refiner`, `limit-probe` and `project-reviewer` — even when the row's `cycle` matches a real, populated cycle: the Enabler/Refiner/limit-probe share their triggering cycle's directory (and so its `cycle` id) but spend on a different item than the one that cycle selected, and a `project-reviewer` row's `cycle` is a review id that never appears in `log.jsonl` at all (the review pipeline logs to its own `review-log.jsonl`). Also `false` for a `coordinator`/`implementer`/`reviewer` row whose own cycle has no events in the union — rare in practice, since `log.jsonl` is never rotated and its analytics content outlives transcript pruning by design; a `state_dir` reset predating the cycle, or a line lost to `lib/fleet.sh`'s NUL-corruption repair (`fleet_repair_log`), are the realistic causes, not rotation. A row is never dropped from `cost_rows[]` for lacking attribution; only these five fields go null. |
 
+## Node metrics
+
+`scripts/node-health.sh --metrics` / the HTTP surface's `/metrics`
+(`scripts/node-health-server.py`, `docs/IMPLEMENTATION-PIPELINE-SPEC.md`
+requirements 57-60, issue #608) — a different shape from everything above:
+where the per-stage record and the roll-ups are about *spend*, this is about
+*node state*, one node's own liveness, readiness and health verdicts plus a
+handful of counters, read fresh on every call rather than aggregated over
+history. Documented here, under this document's own stability policy below,
+because that policy — additive changes are free, a rename/removal/unit
+change ships in the same pull request as its code — is the contract this
+object needs exactly as much as the per-stage record does, not because it
+shares that record's own fields.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `node` | string | `NODE_NAME`, or a bare `hostname` fallback. |
+| `role` | string | `AGENT_OPS_ROLE` (`active`\|`standby`). |
+| `ts` | string | This call's own timestamp, ISO-8601 UTC. |
+| `version` | object | `lib/version.sh`'s `agent_ops_version` — the same object `heartbeat.json`'s own `version` field carries. |
+| `live` | object | `scripts/node-health.sh --live`'s own output verbatim: `{live, age_s, reason}`. |
+| `ready` | object | `scripts/node-health.sh --ready`'s own output verbatim: `{ready, unmet}`. |
+| `health` | object | `scripts/node-health.sh --health`'s own output verbatim: `{status, components: {outbound, converged}}`. |
+| `cycles.log_selections` | integer | Count of `selection` events in this node's own retained `log.jsonl` — this node's log only, never the fleet union, so nothing here double-counts against a reader that also unions every peer. |
+| `cycles.log_attempts_failed` | integer | Count of `attempt-failed` events, same source and scope as `log_selections`. |
+| `containers` | object \| null | `host-facts/<node>.json`'s own `budget` section (issue #606's collector) where it exists, `null` otherwise — reported where produced, never fabricated by this endpoint. |
+
+Additive-only in practice so far (no field has ever been renamed, removed, or
+changed unit or type) — governed by the same policy as every other object
+this document defines: see "Stability policy" below.
+
 ## Stability policy
 
 This is a contract other code depends on — the dashboard today, and (per
@@ -227,3 +258,7 @@ reduces to one producer to check, rather than two.
 sample, and — against a stub that emits with controlled pauses — that a real
 run's gaps are measured from stream growth, that the silence after the last
 event is counted, and that a stage which emitted nothing reports `null`.
+
+`test/node-health-cli.test.sh` covers the node metrics object above: it
+asserts `scripts/node-health.sh --metrics`'s output carries every top-level
+field this section documents, against a fixture `state_dir`.

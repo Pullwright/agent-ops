@@ -22,6 +22,15 @@
 # local symptom. The rest are here because the property is "and on no network",
 # which no single service can be checked for alone.
 #
+# The same property, and the same two failure directions, apply to every other
+# service that publishes anything — today that is `node-health` (issue #608,
+# IMPLEMENTATION-PIPELINE-SPEC requirement 60d), which serves `/livez`,
+# `/readyz`, `/healthz` and `/metrics` the identical loopback-only way. So the
+# closing check here is not "one service publishes" but "these services
+# publish, and every mapping any of them declares is scoped to the host's
+# loopback": a new `ports:` on a service nobody meant to expose still fails,
+# and so does a loopback prefix dropped from any of them.
+#
 # Scope: this reads `deploy/docker/compose.yaml` and runs
 # `scripts/serve-dashboard.sh`. It cannot prove the socket-level result — that
 # a request from another machine is refused — because that needs the stack
@@ -172,19 +181,55 @@ tailnet_command="$(service_key dashboard command)"
 assert_eq "the tailnet dashboard's server is given no bind address, so it keeps loopback" \
   '["/app/scripts/serve-dashboard.sh", "8787"]' "$tailnet_command"
 
+# --- node-health: the same arrangement, for the same reasons ------------------
+# The HTTP health surface (issue #608) is the second service that publishes,
+# and it publishes exactly as `dashboard-local` does — so it is guarded exactly
+# as `dashboard-local` is. Its container side moves with the host side (the
+# server is handed the same variable in its command), which is the one
+# difference from the dashboard's fixed 8787.
+
+nh_ports="$(service_ports node-health)"
+
+assert_eq "the node-health service publishes exactly one port" \
+  "1" "$(printf '%s\n' "$nh_ports" | grep -c .)"
+# shellcheck disable=SC2016
+assert_eq "with NODE_HEALTH_PORT moving both sides together" \
+  '127.0.0.1:${NODE_HEALTH_PORT:-8788}:${NODE_HEALTH_PORT:-8788}' "$nh_ports"
+assert_eq "the node-health service takes no network_mode" \
+  "" "$(service_key node-health network_mode)"
+
+nh_command="$(service_key node-health command)"
+assert_contains "the node-health server binds the container's every address" \
+  '"0.0.0.0"' "$nh_command"
+# shellcheck disable=SC2016  # the literal compose text, unexpanded, is the point
+assert_contains "on the port the mapping's container side names" \
+  '${NODE_HEALTH_PORT:-8788}' "$nh_command"
+assert_contains "running the health responder and nothing else" \
+  "/app/scripts/node-health-server.py" "$nh_command"
+
 # --- nothing else publishes anything ------------------------------------------
 # The guarantee is about the dashboard, but it is stated as "and on no network",
 # and the scheduler shares the dashboard's image and its whole environment. A
 # `ports:` pasted onto the wrong service is exactly the kind of edit this
-# catches.
+# catches — as is a mapping on a service that *is* meant to publish, but
+# without the loopback prefix that keeps it off the host's other interfaces.
 
 publishers=""
+unscoped_any=""
 while IFS= read -r svc; do
   [[ -n "$svc" ]] || continue
-  [[ -n "$(service_ports "$svc")" ]] && publishers="$publishers $svc"
+  svc_ports="$(service_ports "$svc")"
+  [[ -n "$svc_ports" ]] || continue
+  publishers="$publishers $svc"
+  while IFS= read -r mapping; do
+    [[ -n "$mapping" ]] || continue
+    [[ "$mapping" == 127.0.0.1:* ]] || unscoped_any="$unscoped_any $svc:$mapping"
+  done <<< "$svc_ports"
 done <<< "$(service_names)"
-assert_eq "dashboard-local is the only service that publishes a port" \
-  " dashboard-local" "$publishers"
+assert_eq "the dashboard's local profile and the health surface are the only publishers" \
+  " dashboard-local node-health" "$publishers"
+assert_eq "and every mapping any of them declares is scoped to the host's loopback" \
+  "" "$unscoped_any"
 
 # --- the server's own default is loopback -------------------------------------
 # Run for real, because the default is the whole contract for every caller that
