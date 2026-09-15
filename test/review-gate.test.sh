@@ -110,6 +110,13 @@ URL="https://github.com/Poetic-Poems/poetic-fiddle/pull/216"
 #                             and would silently disarm the whole gate, so the
 #                             stub answers only the merge ref and any other
 #                             pull-request ref fails the call outright.
+#   $tmp_dir/rules-branches.json  the `repos/<slug>/rules/branches/<base>`
+#                             payload the issue #1543 backstop reads — the
+#                             array of active rules GitHub reports for a
+#                             branch, one `required_status_checks` rule among
+#                             them; "ERROR" makes the call fail (a fact about
+#                             this node or GitHub, not the pull request, so
+#                             the backstop must skip rather than block).
 cat >"$tmp_dir/gh" <<'STUB'
 #!/usr/bin/env bash
 d="$(dirname "$0")"
@@ -141,6 +148,12 @@ if [[ "$1" == "api" ]]; then
     printf '%s' "$content"
     exit 0
   fi
+  if [[ "$path" == */rules/branches/* ]]; then
+    content="$(cat "$d/rules-branches.json" 2>/dev/null || printf '[]')"
+    [[ "$content" == "ERROR" ]] && exit 1
+    printf '%s' "$content"
+    exit 0
+  fi
   case "$ref" in
     refs/pull/*/merge) file="$d/pr-alerts.tsv" ;;
     refs/heads/*)      file="$d/base-alerts.tsv" ;;
@@ -161,6 +174,7 @@ set_required() { printf '%s' "$1" >"$tmp_dir/required.json"; }
 set_pr_alerts() { printf '%s' "$1" >"$tmp_dir/pr-alerts.tsv"; }
 set_base_alerts() { printf '%s' "$1" >"$tmp_dir/base-alerts.tsv"; }
 set_analyses() { printf '%s' "$1" >"$tmp_dir/analyses.count"; }
+set_rules_branches() { printf '%s' "$1" >"$tmp_dir/rules-branches.json"; }
 
 set_required '[{"name":"CI","bucket":"pass"},{"name":"commit-format","bucket":"pass"}]'
 set_pr_alerts ''
@@ -208,7 +222,67 @@ out="$(review_gate_required_checks "")"; rc=$?
 assert_eq "no PR url at all is dirty" "dirty" "${out%%$'\t'*}"
 assert_eq "  ... and exits 1" "1" "$rc"
 
+# --- review_gate_required_checks: the issue #1543 ruleset backstop -----------
+# `gh pr checks --required` lists check *runs*; a branch that deletes the
+# workflow (or removes/renames the job) producing one of the base branch's
+# required contexts leaves that context with no run at all, which is not a
+# failing entry — it is simply absent — so the plain all-pass test above is
+# vacuously true for it (the shape PR #1503/issue #1540 actually hit). Passing
+# a base branch turns on a second, independent read: the branch's own
+# `required_status_checks` ruleset, compared against what actually ran.
+
+set_required '[{"name":"CI","bucket":"pass"},{"name":"commit-format","bucket":"pass"}]'
+set_rules_branches '[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"CI"},{"context":"commit-format"}]}}]'
+out="$(review_gate_required_checks "$URL" "main")"; rc=$?
+assert_eq "every ruleset context present and passing is still clean" "clean" "$out"
+assert_eq "  ... and exits 0" "0" "$rc"
+
+set_rules_branches '[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"CI"},{"context":"register"}]}}]'
+out="$(review_gate_required_checks "$URL" "main")"; rc=$?
+assert_eq "a ruleset context with no check run at all is dirty, not vacuously clean" "dirty" "${out%%$'\t'*}"
+assert_contains "  ... naming the missing context" "register" "$out"
+assert_eq "  ... and exits 1" "1" "$rc"
+
+# The pre-existing shapes must not move: a genuinely failing required check
+# still wins its own dirty reason, never the backstop's.
+set_required '[{"name":"CI","bucket":"fail"},{"name":"commit-format","bucket":"pass"}]'
+set_rules_branches '[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"CI"},{"context":"commit-format"}]}}]'
+out="$(review_gate_required_checks "$URL" "main")"; rc=$?
+assert_eq "a failing required check still wins over the backstop" "dirty" "${out%%$'\t'*}"
+assert_contains "  ... naming the failing check, not the backstop" "CI" "$out"
+assert_eq "  ... and exits 1" "1" "$rc"
+
+# ... and the empty-list trap and the unreadable-list `unknown` are unchanged
+# by a base branch being passed alongside them.
+set_required 'NONE'
+out="$(review_gate_required_checks "$URL" "main")"; rc=$?
+assert_eq "the no-required-checks trap is unaffected by a base branch" "dirty" "${out%%$'\t'*}"
+assert_contains "  ... still naming the trap" "no required checks at all" "$out"
+assert_eq "  ... and exits 1" "1" "$rc"
+
+set_required 'ERROR'
+out="$(review_gate_required_checks "$URL" "main")"; rc=$?
+assert_eq "an unreadable required-check list is still unknown with a base branch given" "unknown" "${out%%$'\t'*}"
+assert_eq "  ... and exits 1" "1" "$rc"
+
+# A ruleset the backstop cannot read is a fact about this node or GitHub, not
+# the pull request — it must not turn an otherwise-clean pull request dirty,
+# and it must not introduce a third channel of its own.
 set_required '[{"name":"CI","bucket":"pass"}]'
+set_rules_branches 'ERROR'
+out="$(review_gate_required_checks "$URL" "main")"; rc=$?
+assert_eq "an unreadable ruleset skips the backstop rather than blocking" "clean" "$out"
+assert_eq "  ... and exits 0" "0" "$rc"
+
+# No base branch at all — every caller that predates this — skips the
+# backstop exactly as if it had found nothing.
+set_rules_branches '[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"register"}]}}]'
+out="$(review_gate_required_checks "$URL")"; rc=$?
+assert_eq "no base branch given skips the backstop entirely" "clean" "$out"
+assert_eq "  ... and exits 0" "0" "$rc"
+
+set_required '[{"name":"CI","bucket":"pass"}]'
+set_rules_branches ''
 
 # --- review_gate_security_alerts ----------------------------------------------
 

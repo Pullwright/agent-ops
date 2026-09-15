@@ -93,6 +93,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   read-only guard), as does capping the restale sweep to one re-review per
   cycle (issue #988).
 
+- **A pull request that deletes, or edits away, the workflow job producing a
+  required status check now names the ruleset edit as an owner-act
+  prerequisite at pull-request time, and the ready-gate now catches the same
+  fact as a backstop** (issue #1543). `gh pr checks --required` lists check
+  *runs*; a required context with no run at all — the shape a branch leaves
+  behind when it deletes the producing workflow or removes/renames the job —
+  is not a failing entry, it is simply absent, so `review_gate_required_checks`'s
+  own `all(.bucket == "pass")` test read it as a vacuous pass (the trap PR
+  #1503/#1540 hit: every check that ran was green, `mergeStateStatus` sat
+  `BLOCKED`, and nothing named the cause until an unrelated item happened to
+  block on it 6+ hours later). `review_gate_required_checks`
+  (`lib/review-gate.sh`) now takes the base branch and compares its own
+  `required_status_checks` ruleset against what actually ran, reporting
+  `dirty` and naming the missing context when the two disagree.
+  `lib/required-check-preflight.sh` is the earlier, deterministic half: right
+  after the Implementer's pull request is raised, it reads the diff for a
+  deleted or edited-away workflow job matching a required context and — when
+  it finds one — files an owner-act escalation issue and comments on the
+  pull request naming it, rather than waiting for a downstream item to
+  happen to block. `docs/STANDING-DECISIONS.md` records the converse of the
+  2026-08-22 `#648` decision: the ruleset edit is a prerequisite, and doing
+  it early is harmless, so it always precedes the merge.
+
 - **An already-settled open question no longer resurfaces in a later
   adjudication pass or escalation issue body** (issue #984).
   `landing_open_question_latest` (`lib/landing.sh`) carried every

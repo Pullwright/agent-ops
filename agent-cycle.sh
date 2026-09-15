@@ -184,6 +184,8 @@ export AGENT_OPS_ROOT="$SCRIPT_DIR"
 . "$SCRIPT_DIR/lib/review-gate.sh"
 # shellcheck source=lib/closing-keyword-gate.sh
 . "$SCRIPT_DIR/lib/closing-keyword-gate.sh"
+# shellcheck source=lib/required-check-preflight.sh
+. "$SCRIPT_DIR/lib/required-check-preflight.sh"
 # shellcheck source=lib/reconciliation-gate.sh
 . "$SCRIPT_DIR/lib/reconciliation-gate.sh"
 # shellcheck source=lib/void-guard.sh
@@ -3338,6 +3340,37 @@ if [[ -n "$impl_pr_url" ]]; then
         '{detail: ("could not check whether " + $u + " carries its closing keyword: " + $d), pr_url: $u}')"
       ;;
   esac
+
+  # Requirement 56 (issue #1543): a pull request that deletes, or edits away,
+  # the workflow job producing a required status check on this repository's
+  # default branch can never report that context again — GitHub evaluates a
+  # `pull_request` workflow from its head commit — and only an owner can drop
+  # the context from the ruleset. Name that prerequisite now, at pull-request
+  # time, rather than waiting for a downstream item to happen to block on
+  # this one the way #1540 did, 6+ hours after PR #1503 deleted
+  # .github/workflows/tech-debt-register.yml. `lib/review-gate.sh`'s own
+  # backstop (requirement 55) catches the same fact again at the Reviewer's
+  # `ready` handoff, as a safety net for a finding missed here.
+  rcp_findings="$(required_check_preflight_findings "$repo_slug" "$selected_default_branch" "${impl_pr_url##*/}")"
+  if [[ -n "$rcp_findings" ]]; then
+    rcp_created="$(required_check_preflight_escalate "$repo_slug" "$selected_item" "$impl_pr_url" \
+      "$selected_default_branch" "$rcp_findings")" || true
+    if [[ -n "$rcp_created" ]]; then
+      rcp_issue_url="${rcp_created#*$'\t'}"
+      log_event "required-check-preflight-escalated" "$(jq -nc --arg u "$impl_pr_url" \
+        --arg n "${rcp_created%%$'\t'*}" --arg iu "$rcp_issue_url" --arg f "$rcp_findings" \
+        '{pr_url: $u, issue_number: ($n | tonumber), issue_url: $iu, findings: $f}')"
+      gh pr comment "$impl_pr_url" --body "$(pipeline_comment_header script "$node_name")
+
+This pull request deletes, or edits away, the workflow job producing a required status check — a ruleset amendment is an owner-only prerequisite before it can merge. Filed as $rcp_issue_url (issue #1543).
+
+$(pipeline_comment_marker "$cycle_id" script)" >/dev/null 2>&1 || true
+    else
+      log_event "warning" "$(jq -nc --arg u "$impl_pr_url" --arg f "$rcp_findings" \
+        --arg d "$impl_pr_url deletes or edits away the workflow job producing a required status check, and the owner-act escalation could not be filed — will retry next cycle" \
+        '{detail: $d, pr_url: $u, findings: $f}')"
+    fi
+  fi
 
   # Requirement 26b/6c (issue #714): the Implementer may *name* labels for its
   # own pull request in its summary's optional `labels` field — the Script

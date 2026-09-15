@@ -123,8 +123,18 @@ run_gate_block() {
     printf '%s\n' 'set -euo pipefail'
     printf 'impl_pr_url=%q\n' "https://github.com/Poetic-Poems/poetic-fiddle/pull/198"
     printf 'repo_slug=%q\n' "Poetic-Poems/poetic-fiddle"
+    printf 'selected_item=%q\n' "198"
+    printf 'selected_default_branch=%q\n' "main"
+    printf 'node_name=%q\n' "n"
+    printf 'cycle_id=%q\n' "c"
     printf '%s\n' 'log_event() { printf "%s\t%s\n" "$1" "$(jq -r ".detail // \"\"" <<<"$2")" >>'"$(printf '%q' "$tmp_dir/events")"'; }'
     printf '%s\n' 'release_claim() { :; }'
+    # required_check_preflight_findings/escalate (issue #1543) are this
+    # file's own tested unit elsewhere (test/required-check-preflight.test.sh)
+    # — stubbed here to a no-finding no-op so this file's own assertions stay
+    # about the closing-keyword consequence alone.
+    printf '%s\n' 'required_check_preflight_findings() { :; }'
+    printf '%s\n' 'required_check_preflight_escalate() { :; }'
     printf 'closing_keyword_gate() { printf %%s %q; [[ %q == dirty* ]] && return 1; return 0; }\n' \
       "$verdict" "$verdict"
     printf '%s\n' "$gate_block"

@@ -151,6 +151,18 @@ A missing acceptance criterion derivable from the repository, a scope bound
 its existing conventions already imply, a reproduction reconstructible from
 what the item already says: those are yours to settle.
 
+Where an item's own inventory names a `.github/workflows/*.yml` file being
+deleted or substantially rewritten (requirement 56, issue #1543): state, in
+the specification itself, that the workflow's job(s) may be one of the target
+repository's own required status checks, and that if so the pull request
+raising this change must name the ruleset edit as an owner-act prerequisite —
+naming it here means the Implementer confirms a prerequisite the work order
+already carries rather than discovering it cold. You are not asked to read the
+repository's own ruleset yourself to confirm this; naming the possibility is
+enough; `lib/required-check-preflight.sh`'s deterministic check (at
+pull-request time) and `lib/review-gate.sh`'s own backstop (at the ready
+handoff) are what actually confirm it.
+
 ## What you may do
 
 - **Read.** `gh issue view`, `gh pr view`, `gh api`, and read-only local

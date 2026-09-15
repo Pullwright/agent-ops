@@ -101,7 +101,51 @@ _review_gate_pr_parts() {
   printf '%s/%s\t%s' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}"
 }
 
-# review_gate_required_checks PR_URL
+# _review_gate_missing_required_contexts SLUG BASE_BRANCH RAW_JSON
+# Print, comma-separated, every context named in BASE_BRANCH's own
+# `required_status_checks` rule that has no entry at all in RAW_JSON — the
+# `gh pr checks --required --json name,bucket` payload
+# `review_gate_required_checks` already read. Prints nothing when there is
+# none, when BASE_BRANCH is empty, or when the ruleset itself could not be
+# read: a required context is only ever reported *missing* here off a ruleset
+# this call actually saw, never off one it could not ask — the same
+# non-blocking-on-unreadable convention `review_gate_security_alerts` already
+# applies to an alerts API it cannot reach (see this file's header), chosen
+# deliberately over a third `unknown` channel so a degraded `rules/branches`
+# read costs nothing beyond what the required-checks read already covers.
+#
+# This is the backstop half of issue #1543: `gh pr checks --required` lists
+# check *runs*, and a required context with no run at all on the head commit
+# — the shape a branch leaves behind when it deletes the workflow, or removes
+# or renames the job, that used to produce it — is not a failing entry, it is
+# simply absent, so `all(.bucket == "pass")` over the runs that did happen is
+# vacuously true for it. This asks the ruleset itself
+# (`repos/<slug>/rules/branches/<base>`, the authoritative list) rather than
+# trusting the runs alone.
+_review_gate_missing_required_contexts() {
+  local slug="$1" branch="$2" raw="$3" gh_bin="${REVIEW_GATE_GH:-gh}"
+  local rules required present missing=""
+
+  [[ -n "$slug" && -n "$branch" ]] || return 0
+  rules="$("$gh_bin" api "repos/$slug/rules/branches/$branch" 2>/dev/null)" || return 0
+  jq -e 'type == "array"' <<<"$rules" >/dev/null 2>&1 || return 0
+
+  required="$(jq -r '[.[] | select(.type == "required_status_checks")
+                        | .parameters.required_status_checks[]?.context]
+                      | unique[]' <<<"$rules" 2>/dev/null)"
+  [[ -n "$required" ]] || return 0
+  present="$(jq -r '[.[].name] | join("\n")' <<<"$raw" 2>/dev/null)"
+
+  while IFS= read -r ctx; do
+    [[ -n "$ctx" ]] || continue
+    grep -qxF "$ctx" <<<"$present" && continue
+    missing="${missing:+$missing, }$ctx"
+  done <<<"$required"
+
+  printf '%s' "$missing"
+}
+
+# review_gate_required_checks PR_URL [BASE_BRANCH]
 # Print `clean`, `dirty<TAB>reason`, or `unknown<TAB>reason`. Exit 0 for
 # clean, 1 for dirty *or* unknown — both refuse the handoff. A pull request
 # reporting no required checks stays `dirty`, never a vacuous "clean" (see
@@ -115,9 +159,17 @@ _review_gate_pr_parts() {
 #
 # Both of those arrive as a failed `gh` call with empty stdout, so the header's
 # stderr test — not the shape of stdout — is what separates them.
+#
+# BASE_BRANCH, when given, also runs the issue #1543 backstop: a required
+# context the base branch's own ruleset names but that earns no entry at all
+# in the check-runs list — distinct from one that ran and failed — is `dirty`
+# too, naming the context (`_review_gate_missing_required_contexts` above).
+# Omitting BASE_BRANCH (every existing caller that predates this) skips the
+# backstop exactly as if it had found nothing, so a required-checks read with
+# no base branch in hand behaves exactly as it always has.
 review_gate_required_checks() {
-  local url="${1:-}" gh_bin="${REVIEW_GATE_GH:-gh}" parts slug number raw failing
-  local err_file diagnosis no_checks
+  local url="${1:-}" base_branch="${2:-}" gh_bin="${REVIEW_GATE_GH:-gh}" parts slug number raw failing
+  local err_file diagnosis no_checks missing
 
   if [[ -z "$url" ]] || ! parts="$(_review_gate_pr_parts "$url")"; then
     printf 'dirty\tcould not resolve a pull request from %s' "$url"
@@ -154,6 +206,12 @@ review_gate_required_checks() {
     return 1
   fi
   if jq -e 'all(.[]; .bucket == "pass")' <<<"$raw" >/dev/null 2>&1; then
+    missing="$(_review_gate_missing_required_contexts "$slug" "$base_branch" "$raw")"
+    if [[ -n "$missing" ]]; then
+      printf 'dirty\trequired context(s) reported no check run at all against %s'\''s head commit (a deleted or renamed workflow job?): %s' \
+        "$url" "$missing"
+      return 1
+    fi
     printf 'clean'
     return 0
   fi
@@ -303,7 +361,7 @@ review_gate_verdict() {
   local url="${1:-}" default_branch="${2:-main}"
   local checks_word checks_reason alerts_word alerts_reason combined
 
-  combined="$(review_gate_required_checks "$url")"
+  combined="$(review_gate_required_checks "$url" "$default_branch")"
   IFS=$'\t' read -r checks_word checks_reason <<<"$combined"
   if [[ "$checks_word" == "dirty" ]]; then
     printf 'dirty\t%s' "$checks_reason"

@@ -10991,6 +10991,71 @@ implements.
     consults it. A red run means the guard itself could not operate — `gh`
     unreachable, a malformed event payload — never that the close was
     irregular.
+56. **A pull request that deletes, or edits away, the workflow job producing
+    a required status check names the ruleset edit as an owner-act
+    prerequisite deterministically, at pull-request time — not only once a
+    downstream item happens to block on it (issue #1543).** The live
+    instance is requirement 55's own: PR #1503 deleted
+    `.github/workflows/tech-debt-register.yml`, whose `register` job ruleset
+    18857310 required, and nothing named the ruleset edit as a prerequisite
+    until #1529 happened to block on the merge 6+ hours later. This is the
+    earlier of the issue's two seams; requirement 55 is the backstop that
+    catches the same fact again at the Reviewer's `ready` handoff, for a
+    finding this one missed or a workflow edited after the Implementer's own
+    pass.
+
+    `lib/required-check-preflight.sh`'s `required_check_preflight_findings`
+    runs right after the Implementer's pull request is raised — the same
+    moment requirement 25a's `closing_keyword_gate` already runs, in
+    `agent-cycle.sh`'s own Implementer-stage block. It reads the base
+    branch's `required_status_checks` contexts
+    (`repos/<slug>/rules/branches/<base>`), the pull request's changed-file
+    list (`repos/<slug>/pulls/<n>/files`), and — for every changed
+    `.github/workflows/*.yml`/`*.yaml` file whose status is `removed`,
+    `modified` or `renamed` — that file's raw content on each side
+    (`repos/<slug>/contents/<path>?ref=<sha>`, the base and head commits
+    `pulls/<n>` itself reports), extracting each side's top-level job ids
+    with a line-oriented heuristic over the literal YAML text
+    (`_required_check_preflight_job_ids`: the direct 2-space-indented keys of
+    a 0-indent `jobs:` map) rather than a full parser — it recognises the
+    ordinary shape, the one PR #1503's own `register` job was, and says
+    nothing for a workflow whose `jobs:` is laid out some other way, so a
+    shape it cannot read costs one missed finding, never a false escalation.
+    A job id dropped between the two sides that matches a required context
+    is a finding: the context and the file that used to produce it.
+
+    Any finding runs `required_check_preflight_escalate`, a thin body
+    composition around `create_escalation_issue` (`lib/enabler.sh`) — the
+    same escalation primitive `lib/landing.sh`'s open-question escalation,
+    `lib/approver.sh`'s stale-review escalations and `lib/standdown.sh`'s
+    auth-failure escalation already call directly, ahead of any Enabler
+    engagement, so this follows the pipeline's existing convention for a
+    Script-side gate that needs a human now rather than inventing a second
+    escalation route. The issue this files carries `enabler_escalation_label`
+    and names the missing context(s), the file(s) that used to produce them,
+    and the ruleset edit itself as the ask; a `gh pr comment` on the pull
+    request (`pipeline_comment_header`/`pipeline_comment_marker`, the
+    ordinary Script-authored comment shape) links it, so a human reading the
+    pull request sees the prerequisite without having to find the escalation
+    issue first. A ruleset, changed-file list or file content this cannot
+    read is a fact about this node or GitHub's availability, not the pull
+    request — `required_check_preflight_findings` prints nothing rather than
+    guessing, the same non-blocking convention requirement 55's own backstop
+    and `review_gate_security_alerts` already apply to an API they cannot
+    ask — and an escalation that could not be filed warns and is retried the
+    next time this runs, rather than failing the Implementer's own handoff.
+
+    The Refiner applies the same rule ahead of selection: where an item's own
+    inventory names a `.github/workflows/*.yml` file being deleted or
+    substantially rewritten, its specification states the ruleset-edit
+    prerequisite explicitly, so an Implementer that later reaches this
+    requirement's own deterministic check is confirming a prerequisite the
+    work order already named, not discovering it cold.
+
+    `docs/STANDING-DECISIONS.md` carries the converse of 2026-08-22 · #648:
+    doing the ruleset edit early is harmless — a pull request that still
+    carries the workflow keeps running it, only without gating — so the safe
+    ordering (edit the ruleset, then merge) never wedges the repository.
 26. Verifies the PR via `gh pr view --json mergeable,mergeStateStatus`
     (against GitHub's view, not inferred locally) and resolves any conflict
     with the current default branch. Leaves the PR as a **draft** — the
@@ -11539,6 +11604,49 @@ implements.
     by the Script — and `prompts/reviewer.md`'s own "When this pull request
     merges while you are still reviewing it" is the instruction that
     replaces the improvisation: no replacement pull request, ever.
+55. **`review_gate_required_checks` also compares the base branch's own
+    ruleset against what actually ran, so a required context with no run at
+    all is caught, not read as a vacuous pass (issue #1543).** `gh pr checks
+    --required` lists check *runs*; a branch that deletes the workflow, or
+    removes or renames the job, producing one of the base branch's required
+    contexts leaves that context with no run at all on the head commit —
+    which is not a failing entry, it is simply absent, so requirement 31c's
+    own `all(.bucket == "pass")` test is vacuously true for it. The live
+    instance: PR #1503 (issue #882) deleted
+    `.github/workflows/tech-debt-register.yml`, whose `register` job ruleset
+    18857310 required; every check that did run was green, `mergeStateStatus`
+    sat `BLOCKED`, and nothing surfaced the cause until an unrelated item
+    (#1529) happened to block on this one 6+ hours later and #1540 escalated
+    it only then.
+
+    `review_gate_required_checks` (`lib/review-gate.sh`) takes an optional
+    second argument, the base branch, and — only once the check-runs list it
+    already read comes back all-`pass` — asks
+    `repos/<slug>/rules/branches/<base>` for the branch's own active rules,
+    collects every `required_status_checks` rule's `context`s, and compares
+    that list against the `name`s the check-runs list actually carried. Any
+    context present in the ruleset and absent from the runs is `dirty`,
+    naming the missing context, distinct from both requirement 31c's existing
+    `dirty` reasons (a real failing check, or the empty-list trap) and its
+    `unknown`. A base branch whose ruleset itself cannot be read — `gh api`
+    failing outright, no `required_status_checks` rule on it at all — skips
+    the backstop exactly as if it had found nothing, the same non-blocking
+    convention `review_gate_security_alerts` already applies to an alerts API
+    it cannot reach: a ruleset this call could not ask is a fact about this
+    node or GitHub's availability, not proof the branch is missing a check,
+    and costs nothing beyond the one comparison this call already makes.
+    Omitting the base branch — every caller that predates this — skips the
+    backstop identically, so `review_gate_required_checks("$url")` alone is
+    unchanged. `review_gate_verdict` (and therefore `handoff_complete_review`
+    and `landing_arm`, its two live callers) already passes its own
+    `default_branch` argument through to `review_gate_required_checks`, so
+    both of requirement 31c's own gates — the Reviewer's `ready` handoff and
+    the landing gate — get the backstop with no call-site change of their
+    own.
+
+    This is the backstop half of a two-seam fix; requirement 56 is the
+    earlier, deterministic half, run once at pull-request time rather than
+    waiting for this backstop to catch it at handoff.
 32. Ends with a single JSON object:
     `{"status": "ready" | "blocked", "pr_url": …, "fixes_applied": […], "comments_left": n, "ci": "passing" | …}`,
     plus `reason` — one line naming what is wrong — on `blocked`, which becomes
@@ -23920,6 +24028,46 @@ oblige anyone to edit a test.
    its prompt; an `unknown` one warns and hands the Reviewer nothing; a clean
    one does neither, and leaves the prompt byte-for-byte as it was before the
    section existed.
+55. **The ready-gate backstop catches a required context with no check run at
+   all, and leaves every pre-existing shape alone (issue #1543).**
+   `test/review-gate.test.sh` passes, against the same stubbed `gh` its other
+   assertions already use, extended to stub
+   `repos/<slug>/rules/branches/<base>`: a base branch given alongside an
+   all-`pass` check-runs list whose contexts cover every one the ruleset
+   names is still `clean`; the same all-`pass` list with the ruleset naming
+   one context absent from it is `dirty`, naming the missing context; a
+   genuinely failing required check still wins its own `dirty` reason over
+   the backstop when both are true at once; the empty-list trap and the
+   unreadable-list `unknown` are byte-for-byte unchanged by a base branch
+   being passed alongside them; a ruleset this cannot read (an `ERROR` stub,
+   the same convention `review_gate_security_alerts`'s own stub uses) skips
+   the backstop and reports `clean` rather than blocking; and omitting the
+   base branch entirely — every caller that predates this — skips the
+   backstop exactly the same way. `review_gate_verdict`'s own existing
+   assertions are unchanged, since `handoff_complete_review` and
+   `landing_arm` already pass their own `default_branch` through unmodified.
+56. **The deterministic pre-flight finds a deleted or edited-away required
+   check's producing job, and escalates it (issue #1543).**
+   `test/required-check-preflight.test.sh` passes, against a stubbed `gh`:
+   `_required_check_preflight_job_ids` extracts every top-level job id from a
+   workflow's literal YAML text and nothing from one with no `jobs:` key at
+   all; `required_check_preflight_findings` finds the PR #1503 precedent
+   itself — a wholly deleted workflow file whose one job is a required
+   context — and finds the same fact when the file is merely *modified* to
+   drop the job, comparing each side's own commit; a rename that keeps every
+   job finds nothing, reading the rename's own `previous_filename` for the
+   old side; a file outside `.github/workflows/` is never inspected; a
+   dropped job that was never a required context finds nothing; and an
+   unreadable ruleset, changed-file list, or base commit each find nothing
+   rather than blocking, the same non-blocking convention requirement 55's
+   own backstop applies. `required_check_preflight_escalate` — stubbing
+   `create_escalation_issue` exactly as `test/crash-loop-escalate.test.sh`
+   already does — files exactly one escalation per call, carrying
+   `enabler_escalation_label`, a title naming the missing context(s), the
+   base branch and the pull request, and a body naming the context, the file
+   that used to produce it, the `required_status_checks` rule as the ask, and
+   issue #1543 itself; no findings at all calls `create_escalation_issue`
+   not once.
 25b. **The tech-debt close-guard finds exactly what requirement 25b's
    evidence rules say it should, posts once per close, and never fails its
    own run (issue #877).** `test/tech-debt-close-guard.test.sh` passes,
