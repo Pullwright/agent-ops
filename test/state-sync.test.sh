@@ -3,7 +3,7 @@
 # test/state-sync.test.sh — regression test for scripts/state-sync.sh under
 # the multi-active fleet model (per-node branches, no lease).
 #
-# Six things here are worth a test rather than a careful reading:
+# Seven things here are worth a test rather than a careful reading:
 #
 #   what replicates   the exclude list is the difference between a fleet that
 #                     shares its memory and one that shares its locks.
@@ -25,6 +25,11 @@
 #                     snapshots every amend orphans are pruned at once
 #                     instead of piling up for a month behind a reflog
 #                     until a gc the scheduler's memory ceiling kills.
+#   what unblocks it  an `index.lock` a dead git left in the mirror is cleared
+#                     once it is older than a push interval and no git is
+#                     alive in there, a live one never is, and a push that
+#                     fails names its step and git's line in log.jsonl
+#                     rather than exiting in silence (#1377).
 #   what never leaves  everything replicated is redacted first (lib/redact.sh,
 #   raw                agent-ops#966) — a token or a home path that reaches a
 #                     published file must not survive the commit this push
@@ -861,6 +866,78 @@ assert_eq "…carrying the node's current log content" "6" \
   "$(grep -c . "$gc_pushed/log.jsonl")"
 assert_eq "…and nothing reported a rebuild — this was a gc, not a discard" "null" \
   "$(jq -c '.mirror' "$gc_pushed/heartbeat.json" 2>/dev/null)"
+
+# ==============================================================================
+# the mirror's own index.lock — an orphan is cleared, a live one is not, and
+# a push that fails says so (agent-ops#1377)
+# ==============================================================================
+# The fault this reproduces: a git that died mid-write left `.git/index.lock`
+# behind, and every later push failed at the first index write while its own
+# progress lines kept printing — 27 hours on poetic-1 (2026-09-09 to -11),
+# three days on poetic-2 (2026-09-13 to -15), and nothing on either node
+# named it.
+il_home="$(new_node index-lock-node)"
+il_state="$il_home/.local/state/poetic-agents"
+il_mirror="$il_home/.cache/poetic-agents/workspaces/.agent-ops-state"
+il_push_s="$(config_defaults "$SCRIPT_DIR/config.json" "$SCRIPT_DIR/config.schema.json" \
+  | jq -r '.schedule.state_sync_push_minutes * 60 | floor')"
+printf '{"ts":"2026-09-13T01:40:00Z","event":"cycle-start"}\n' > "$il_state/log.jsonl"
+out="$(sync_as "$il_home" active push)"
+assert_eq "the index-lock node's first push exits 0" "0" "$?"
+
+# A fresh lock — younger than one push interval — may belong to a live git,
+# and is left alone. The push then fails at the write that needs it, and
+# that failure is now a named event rather than a silent non-zero exit.
+: > "$il_mirror/.git/index.lock"
+printf '{"ts":"2026-09-13T01:45:00Z","event":"cycle-end"}\n' >> "$il_state/log.jsonl"
+out="$(sync_as "$il_home" active push)"
+assert_eq "a push over a fresh index.lock exits non-zero" "1" "$?"
+assert_contains "…and says it left the young lock alone" \
+  "within one push interval — leaving it" "$out"
+assert_contains "…and names the step and git's own fatal line" \
+  "push failed at reset — fatal:" "$out"
+assert_eq "…and logs a state-sync-push-failed event with that line" "1" \
+  "$(jq -c 'select(.event == "state-sync-push-failed" and .step == "reset" and (.detail | startswith("fatal:")))' \
+       "$il_state/log.jsonl" | wc -l)"
+assert_eq "the fresh lock is still there" "1" "$(test -e "$il_mirror/.git/index.lock" && echo 1 || echo 0)"
+
+# An old lock with a git process working in the mirror is a live lock,
+# whatever its age: never removed. The process here is a sleeper wearing
+# git's name with the mirror as its working directory — the two facts
+# `mirror_git_busy` reads — since a real git cannot be made to hold the
+# index lock for the length of a test.
+touch -d "@$(( $(date +%s) - il_push_s * 3 ))" "$il_mirror/.git/index.lock"
+( cd "$il_mirror" && exec -a git sleep 60 ) &
+il_sleeper=$!
+sleep 0.2
+out="$(sync_as "$il_home" active push)"
+assert_eq "a push over an old lock with a git process in the mirror exits non-zero" "1" "$?"
+assert_contains "…and says why the lock was left" \
+  "a git process is working in the mirror — leaving it" "$out"
+assert_eq "the lock a live process may hold is never removed" "1" \
+  "$(test -e "$il_mirror/.git/index.lock" && echo 1 || echo 0)"
+kill "$il_sleeper" 2>/dev/null; wait "$il_sleeper" 2>/dev/null
+
+# The same old lock with no git process alive is the orphan: cleared, logged
+# with its age, and the push completes with the node's current content.
+out="$(sync_as "$il_home" active push)"
+assert_eq "a push over an orphaned index.lock exits 0" "0" "$?"
+assert_contains "…and reports clearing it" "cleared an orphaned index.lock" "$out"
+assert_eq "…the lock is gone" "0" "$(test -e "$il_mirror/.git/index.lock" && echo 1 || echo 0)"
+assert_eq "…a state-sync-lock-cleared event carries an age past one push interval" "1" \
+  "$(jq -c --argjson p "$il_push_s" 'select(.event == "state-sync-lock-cleared" and .age_s > $p)' \
+       "$il_state/log.jsonl" | wc -l)"
+assert_eq "…the event names the node" "index-lock-node" \
+  "$(jq -r 'select(.event == "state-sync-lock-cleared") | .node' "$il_state/log.jsonl" | tail -1)"
+assert_eq "…with a null cycle, since no cycle wrote it" "null" \
+  "$(jq -c 'select(.event == "state-sync-lock-cleared") | .cycle' "$il_state/log.jsonl" | tail -1)"
+il_pushed="$tmp_dir/il-pushed"
+git clone --quiet --branch nodes/index-lock-node "$remote" "$il_pushed"
+assert_eq "…and the branch carries the content the failed pushes could not publish" "1" \
+  "$(grep -c 'cycle-end' "$il_pushed/log.jsonl")"
+assert_eq "…including both events, which replicate like any other" "2" \
+  "$(jq -r 'select(.event == "state-sync-push-failed" or .event == "state-sync-lock-cleared") | .event' \
+       "$il_pushed/log.jsonl" | sort -u | wc -l)"
 
 # ==============================================================================
 # fetch — peers materialised whole, pruned when gone
