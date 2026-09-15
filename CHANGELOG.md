@@ -62,6 +62,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`config.stage_backstops` can now carry a `project-reviewer` entry**
+  (issue #1586). `scripts/publish-dashboard.sh` fed the stage-budget fold
+  only `$ALL_EVENTS` (the `log.jsonl` union), never `review-log.jsonl`, so a
+  `review-stage-end` event — which `lib/stage-budget.sh`'s
+  `stage_budget_observations` already maps to actor `project-reviewer` — was
+  never seen, and the review pipeline's real cap (`review_backstop_min`)
+  never reached the published `config.stage_backstops` fallback any reader
+  keyed on that actor name could compare against. The stage-budget fold now
+  reads the same `review_log_union` the constraint panel already unions in,
+  at no extra fetch cost.
+
 - **`serve-dashboard.sh`'s resource-sampling loop dies with the server it
   samples for** (requirement 55, follow-up to #1564). The loop forked before
   the `exec` slept its whole interval blind, so a server killed by anything

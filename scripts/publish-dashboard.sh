@@ -3449,12 +3449,14 @@ fi
 # `log.jsonl` (already in `$ALL_EVENTS`) would read a node running
 # `review-cycle.sh` as `down`.
 #
-# FULL-gated, and it has to be: this is the only panel on the page that needs
-# a *second* fleet-wide log union (review-log.jsonl — the pager's own read at
-# `WITH_GITHUB` above is the only other one in this script), and that is a
-# whole extra read-and-sort of the fleet's logs, exactly the per-tick cost the
-# single-`fleet_logs` note beside `$raw_events_jsonl` was written about. A
-# fast tick could not use the result anyway: `constraint` is assembled into
+# FULL-gated, and it has to be: this is what needs a *second* fleet-wide log
+# union (review-log.jsonl — the pager's own read at `WITH_GITHUB` above is the
+# only other one in this script), and that is a whole extra read-and-sort of
+# the fleet's logs, exactly the per-tick cost the single-`fleet_logs` note
+# beside `$raw_events_jsonl` was written about. `review_log_union`, built here,
+# is read a second time below by the stage budgets (issue #1586) — one fetch,
+# two consumers, so that reuse costs nothing further. A fast tick could not
+# use the result anyway: `constraint` is assembled into
 # the FULL payload alone and is absent from `$fresh_json`, so it carries
 # forward from the cache like every other history roll-up
 # (docs/DASHBOARD-SPEC.md's own fast-tick key list). `null` is what that
@@ -3611,9 +3613,16 @@ if (( FULL )); then
 # and the page uses it to decide when a peer that stopped publishing should
 # stop being believed; and the per-actor backstops let a row whose event
 # predates the announcement still be judged against something real. Both are
-# computed from the same union the rest of this script reads.
+# computed from the same union the rest of this script reads — plus
+# `review_log_union`, unioned in alongside it exactly as `node_time_state_json`
+# above already does: `stage_budget_observations` (lib/stage-budget.sh) already
+# maps a `review-stage-end` event to actor `project-reviewer`, but that event
+# lives only in review-log.jsonl, never in `$ALL_EVENTS`, so leaving it out
+# means `project-reviewer` can never appear in `config.stage_backstops` below
+# (issue #1586).
 stage_budget_json="$(stage_budget_table \
-  "$(printf '%s\n' "$ALL_EVENTS" | stage_budget_observations 2>/dev/null || printf '[]')" \
+  "$( { printf '%s\n' "$ALL_EVENTS"; cat "$review_log_union"; } \
+      | stage_budget_observations 2>/dev/null || printf '[]')" \
   "$(stage_budget_settings "$(cat "$CONFIG_FILE" 2>/dev/null || printf '{}')")" 2>/dev/null \
   || printf '{"cells":{},"actors":{}}')"
 lock_stale_derived_hours="$(jq -nr --argjson sec \

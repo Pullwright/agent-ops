@@ -622,10 +622,14 @@ So a tick has two kinds, and `--fast` chooses:
   `blocked`, `void`, `landings`, `github_budget`, `rework`, `constraint`, and
   the stage budgets inside `config`) are not computed at all: they read the
   fleet's whole history and change on the scale of cycles, not ticks.
-  `constraint` is the one whose skipping is worth its own sentence: it is the
-  only roll-up needing a *second* fleet-wide log union (`review-log.jsonl`
-  beside `log.jsonl`), so computing it on a fast tick would double that read
-  on the per-tick path for a value the fast payload does not carry.
+  `constraint` is the one whose skipping is worth its own sentence: it is what
+  needs a *second* fleet-wide log union (`review-log.jsonl` beside
+  `log.jsonl`), so computing it on a fast tick would double that read on the
+  per-tick path for a value the fast payload does not carry. The stage
+  budgets read that same union a second time (issue #1586, so that
+  `config.stage_backstops` can carry a `project-reviewer` entry) rather than
+  fetching it again, so this stays a single extra read shared by two
+  roll-ups, not two.
 
 A fast build emits only the keys it recomputed and merges them **over** the
 cached payload rather than assembling a whole object from variables the skipped
