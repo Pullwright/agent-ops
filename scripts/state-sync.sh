@@ -413,11 +413,13 @@ mirror_init() {
   git -C "$mirror" remote set-url origin "$remote_url"
 
   # A mirror that already existed has to prove it still deserves the trust a
-  # bare directory check used to hand it for free (lib/mirror-integrity.sh).
-  # A mirror this call just created has nothing to have failed yet, so the
-  # check — and any rebuild it might otherwise log — never runs against a
-  # fresh init: that first-ever push must stay silent, not report
-  # self-healing that never happened.
+  # bare directory check used to hand it for free (lib/mirror-integrity.sh):
+  # its objects reachable and parseable, and no `gc.log` saying its own
+  # garbage collection has failed and given up. A mirror this call just
+  # created has nothing to have failed yet, so the check — and any rebuild
+  # it might otherwise log — never runs against a fresh init: that
+  # first-ever push must stay silent, not report self-healing that never
+  # happened.
   if (( ! fresh )) && ! mirror_integrity_ok "$mirror"; then
     say "WARNING: mirror failed its integrity check — discarding and rebuilding from source"
     rm -rf "$mirror"
@@ -426,6 +428,16 @@ mirror_init() {
     git -C "$mirror" remote add origin "$remote_url"
     mirror_record_rebuild "$state_dir"
   fi
+
+  # Whichever of the three paths above the mirror took — kept, created or
+  # rebuilt — its object store is bounded by configuration before anything
+  # commits into it (lib/mirror-integrity.sh's header has the mechanism):
+  # the amend-and-force-push below orphans a whole snapshot every push, and
+  # left to git's defaults those snapshots were kept a month by the reflog
+  # and then handed, gigabytes at a time, to a `gc --auto` the scheduler's
+  # memory ceiling killed. Applied every run rather than only on init, so a
+  # mirror that predates this reaches the same state on its next push.
+  mirror_configure_store "$mirror"
 }
 
 # Newest-first list of the cycle directories worth keeping. Their names are
