@@ -677,6 +677,24 @@ config_duplicate_project_review_slugs() {
   jq -r '[.[].slug] | group_by(.) | map(select(length > 1) | .[0]) | join(", ")' <<<"$repos_json"
 }
 
+# config_duplicate_repos_slugs REPOS_JSON
+# Given config.json's top-level `repos` array (as JSON text), prints the
+# comma-joined slugs that name more than one entry. `config.schema.json`'s
+# `uniqueItems` on `repos` only rejects byte-identical whole entries, so two
+# entries sharing a `slug` but differing elsewhere pass it — and then the
+# per-repo resolvers disagree silently about which entry governs (issue
+# #1570): some (`lib/prompt-overrides.sh`'s `prompt_overrides_json_for_repo`,
+# `lib/escalation-autonomy.sh`, `lib/preview-config.sh`) return every match,
+# while others (`agent-cycle.sh`'s `merge_autonomy` lookup) take only the
+# first. `scripts/doctor.sh` is this function's only caller: unlike
+# `config_duplicate_project_review_slugs`, nothing yet reads a duplicate as a
+# reason to refuse at cycle start. Empty when every slug is unique (including
+# the vacuous case of an empty array).
+config_duplicate_repos_slugs() {
+  local repos_json="$1"
+  jq -r '[.[].slug] | group_by(.) | map(select(length > 1) | .[0]) | join(", ")' <<<"$repos_json"
+}
+
 # config_documented_value_mismatches DEFAULTED_CONFIG_JSON SCHEMA_FILE
 # Prints one `key<TAB>documented<TAB>resolved` line per leaf key whose
 # `x-docs.value` documents a specific installation's choice — differs,

@@ -19659,20 +19659,32 @@ What exists, and the requirements each part answers to:
     way to say which one's overrides apply — and is shared the same way
     between `review-cycle.sh`'s own startup refusal and `doctor.sh`'s `fail`
     (`docs/REVIEW-PIPELINE-SPEC.md` requirement R1b) instead of
-    `agent-cycle.sh`'s. `doctor.sh` is the operator's command: it runs the
-    schema check, then `config_documented_value_mismatches` — every leaf whose
+    `agent-cycle.sh`'s. A fourth, `config_duplicate_repos_slugs`, holds the
+    same way between two entries of the top-level `repos[]` array: two
+    entries sharing a `slug` but differing elsewhere pass
+    `config.schema.json`'s `uniqueItems` (which only rejects byte-identical
+    whole entries), and then the per-repo resolvers (`lib/prompt-overrides.sh`'s
+    `prompt_overrides_json_for_repo`, `lib/escalation-autonomy.sh`,
+    `lib/preview-config.sh`, `agent-cycle.sh`'s own `merge_autonomy` lookup)
+    disagree silently about which entry governs (issue #1570). Unlike the
+    other three, it is doctor-only: nothing yet reads a `repos[]` duplicate as
+    a reason for `agent-cycle.sh` to refuse at startup. `doctor.sh` is the
+    operator's command: it runs the schema check, then
+    `config_documented_value_mismatches` — every leaf whose
     `x-docs.value` differs from its own schema `default` (documenting Poetic's
     own choice for that key, not the product's shipped one) compared, by
     parsed value rather than rendered text, against what the live config
     actually resolves to, `warn` naming the key, the documented value and the
     resolved one when they differ, silent for a key whose `x-docs.value`
     equals its `default`, has none at all, is keyed `readme`/`spec`, or has no
-    `default` to differ from (issue #567) — then those three cross-key rules, then the D18 merge-autonomy
+    `default` to differ from (issue #567) — then those four cross-key rules,
+    then the D18 merge-autonomy
     pairing (requirement 2.3b) — every configured *source* of a level (the
     top-level `merge_autonomy` key, and each repository's own override) is a
     `fail` where the level is above `human` and `approver_app_id` is empty,
     `ok` naming the level otherwise; doctor-only, since nothing yet consumes
-    the pairing at cycle start the way the three shared cross-key rules do;
+    the pairing at cycle start the way the three shared cross-key rules do —
+    `config_duplicate_repos_slugs` above is doctor-only for the same reason;
     and the environment half of the same identity, reconciled against the
     config's (requirement 14b): a set `PULLWRIGHT_APPROVER_APP_ID` differing
     from a set `approver_app_id` is a `fail` — the token wrapper mints
