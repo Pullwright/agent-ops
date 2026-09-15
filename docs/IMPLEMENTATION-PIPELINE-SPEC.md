@@ -6008,47 +6008,52 @@ implements.
    existing, already-compliant function and a new function built the same
    way; neither introduces a new `--argjson` delivery for either extract.
 
-3v. **Corroboration retry, and mechanical fallback selection (issue #321).**
-   Requirement 3t's gate stops a rejected verdict from arming the no-op
-   fingerprint, so the *next* cycle asks again unconditionally — but the
-   rejected cycle itself still stood down, and if the confabulation recurs
-   cycle after cycle (as it did across 2026-08-10 to 08-12, issue #310), the
-   fleet degrades into a warning-per-cycle loop with zero selections:
-   visible on the log, but liveness still depending entirely on the model
-   eventually getting it right. A corroboration-rejected verdict costs at
-   most one extra Co-Ordinator engagement, never the cycle, and in the limit
-   selection liveness does not depend on the model at all:
+3v. **Corroboration, scoped to the repositories that said no, and mechanical
+   fallback selection (issue #321; scope narrowed to drop the model retry by
+   issue #587).** Requirement 3t's gate stops a rejected verdict from arming
+   the no-op fingerprint, so the *next* cycle asks again unconditionally —
+   but the rejected cycle itself still stood down, and before requirement
+   15's per-repository split, if the confabulation recurred cycle after
+   cycle (as it did across 2026-08-10 to 08-12, issue #310), the fleet
+   degraded into a warning-per-cycle loop with zero selections: visible on
+   the log, but liveness still depending entirely on the model eventually
+   getting it right. Requirement 15's split changes the blast radius of a
+   single confabulation on its own: one repository's own engagement
+   returning a wrong `"selected": false` now costs only that repository's
+   own opportunity this cycle, not the whole cycle's, since every other
+   configured repository still got its own independent engagement and its
+   own independent chance. A model retry — asking the same repository again,
+   in the same cycle, when its own engagement confabulated — was judged not
+   worth its own added cost once N engagements per cycle already exist
+   instead of one (D14, priced in the pull request that made this change):
+   retrying every repository that said no could as much as double this
+   cycle's own already-multiplied cost for a recovery this repository's own
+   *next* cycle already provides for free. What remains is corroboration
+   (unchanged in kind, narrowed in scope) and the same mechanical fallback as
+   before, now the sole recourse once every repository's own confabulation is
+   on the record:
 
-   - **The retry.** When the gate rejects the first verdict
-     (`unaccounted_n > 0`), the Script re-invokes the Co-Ordinator once
-     more in the same cycle, same model, same base prompt, with an addendum
-     stating the Script's own arithmetic verbatim — the eligible total, how
-     many the first verdict accounted for, and the exact refs still
-     unaccounted, grouped by the band each was eligible in (requirement 3x),
-     since a `needs_refinement` entry only accounts for an item under that
-     item's own `source` — and asking for a per-item verdict on each of them
-     or a selection. `stage_budget_apply`/`run_claude_stage`/`stage-end`/
-     `attempt-failed` are the same mechanism the first attempt uses (factored
-     into `run_coordinator_stage_attempt`, called with `{"retry": true}` for
-     this second engagement), so a retry's own launch failure or unparseable
-     message is handled exactly as the first attempt's would be — it does not
-     reach fallback selection, below. Capped at exactly one retry per cycle:
-     the retry's own verdict, corroborated or not, is never itself retried.
-     Its `needs_refinement`/`voided` processing (unblocked/recheck-clean
-     unrestricted) is restricted to the items the addendum named unaccounted —
-     an entry repeating an already-accounted item, or naming one outside that
-     set, is dropped before requirement 16a's/34d's recording, so a model that
-     re-derives its whole first verdict does not double the void-guard check,
-     the refinement label, or any GitHub comment either one posts. The two
-     attempts' recorded `needs_refinement`/`voided` are unioned (never
-     re-processed) before the retry's own corroboration check runs, so an item
-     the *first* attempt already accounted for does not need re-accounting by
-     the retry.
-   - **Fallback selection.** If the retry's own verdict is also rejected by
-     requirement 3t's gate (against the union of both attempts' recorded
-     arrays), the Script selects mechanically — no third Co-Ordinator
-     engagement. `fallback_select_candidate` walks a fixed source-band
-     priority order over `ordered_repos_json`, approximating
+   - **Corroboration, scoped to the repositories whose own engagement said
+     no.** A repository that selected needs no corroboration — it already
+     accounted for its own eligible work by returning it — so only a
+     repository whose own verdict was `"selected": false` can have left
+     something eligible unaccounted for. Once every configured repository's
+     own engagement this cycle has answered, the Script checks the *union*
+     of the eligible items belonging to repositories that said no against
+     the *union* of every repository's own recorded `needs_refinement`/
+     `voided` entries (every repository's own entries, selected or not, fold
+     into this union — a selected repository can still report one alongside
+     its candidates) — `unaccounted_items` (requirement 3x), applied exactly
+     as it was before the split, just against these two fleet-scoped-but-
+     no-repository-filtered unions rather than the single engagement's own
+     recorded bands.
+   - **Fallback selection.** If the merged, reordered candidate list
+     (requirement 15z) from every repository that *did* select is empty —
+     nothing was selected fleet-wide — and the corroboration above finds an
+     eligible item some repository's own `false` verdict left unaccounted,
+     the Script selects mechanically — no further Co-Ordinator engagement of
+     any kind this cycle. `fallback_select_candidate` walks a fixed
+     source-band priority order over `ordered_repos_json`, approximating
      `prompts/coordinator.md`'s "Selection algorithm": the five cross-repo
      overrides (security, urgent issues, review-feedback, merge-conflicts,
      abandoned-drafts) ahead of the residual bands (human-visibility, high
@@ -6062,10 +6067,14 @@ implements.
      deliberately not a selection input). It is an
      approximation in one further respect, which costs at most a
      less-preferred pick on a path that exists to pick *something*: the walk
-     is band-major across the whole fleet rather than the Co-Ordinator's
-     repo-then-source walk (so a lower-ranked repo's higher band outranks a
-     higher-ranked repo's lower one). It is **not** an approximation of what
-     the cycle was allowed to select from: each repo's own configured
+     is band-major across the whole fleet rather than the per-repository
+     source walk requirement 15 now runs, and it is a **separate**
+     approximation from requirement 15z's own merge — the two do not share
+     code, so an edit to one's band order does not silently move the other's
+     (so a lower-ranked repo's higher band outranks a higher-ranked repo's
+     lower one, here, where requirement 15z's own merge would not). It is
+     **not** an approximation of what the cycle was allowed to select from:
+     each repo's own configured
      `sources` list bounds every band, and an issue's `Priority` band must
      have its own `issues:<band>` token listed, exactly as for the
      Co-Ordinator. Requirement 3x made that necessary as well as tidy — the
@@ -6129,25 +6138,20 @@ implements.
      Co-Ordinator's verdict quality as the corroboration rate requirement 3w
      computes from `corroboration` events, not from a fallback count keyed on
      this field.
-     Every corroboration check — both attempts, accepted or rejected — logs
-     its own `corroboration` event (`attempt: 1|2`, `verdict:
-     "accepted"|"rejected"|"accepted-by-selection"`, `eligible_total`,
-     `unaccounted_total`, requirement 3x's per-band `bands` tally on a
-     rejection, and (attempt 2 only) `lib/metering.sh`'s cost/time
-     fields for that retry engagement), so the retry's own cost is visible on
-     the event that explains why it ran, not only inferable by
-     cross-referencing `stage-end` timestamps by hand.
+     The one corroboration check this cycle runs — across every repository
+     that said no, once — logs its own `corroboration` event (`attempt: 1`
+     always, now that there is no second attempt to distinguish it from;
+     `verdict: "accepted"|"rejected"`, `eligible_total`, `unaccounted_total`,
+     requirement 3x's per-band `bands` tally on a rejection), so a rejection's
+     own scope is visible on the event that explains it.
    - **Fingerprint un-arming is unchanged, and `none-selected` still names
      the outcome.** Requirement 3t's own rule — omit `fingerprint` from
-     `none-selected` whenever any eligible item is left unaccounted — applies
-     identically to the retry's own rejected verdict, whose `none-selected`
-     carries `retried: true` and no fingerprint. Only a `none-selected` fully
-     accounted for on the first attempt, or accepted on the retry, ever
-     carries one. A cycle that *falls back* logs no `none-selected` at all:
-     the twice-rejected verdict is already fully on the record (two
-     `warning`s, and a `corroboration` per attempt carrying each verdict's own
-     `reason`), and `none-selected` names a cycle's outcome rather than a
-     verdict — requirement 3b's fingerprint reads it that way, and so does the
+     `none-selected` whenever any eligible item is left unaccounted —
+     applies identically here. A cycle that *falls back* logs no
+     `none-selected` at all: the rejected verdict is already fully on the
+     record (a `warning` and a `corroboration` carrying its own `reason`),
+     and `none-selected` names a cycle's outcome rather than a verdict —
+     requirement 3b's fingerprint reads it that way, and so does the
      dashboard's outcome precedence (`DASHBOARD-SPEC.md`, where it outranks
      both `selection` and `stand-down`), so a cycle emitting both it and the
      `selection` its mechanical pick won would render as "Nothing selected"
@@ -6156,13 +6160,6 @@ implements.
      and the cycle really does select nothing; a fallback pick that is then
      lost to a claim race stands down through requirement 17a's ordinary
      path, and records that (`stand-down`, cause `raced`), not this.
-   - **Explicitly deferred.** Escalating the retry to a stronger model (a
-     `coordinator_model` override for the retry invocation only) is not part
-     of this requirement — whether the rejection rate observed through issue
-     #319's metrics justifies any model spend there, or a wholesale
-     `coordinator_model` upgrade instead, is a configuration decision for
-     later, informed by data this requirement's own `corroboration` events
-     now make visible.
 3w. **Verdict quality is a rate, and every verdict pays for its own
    denominator (issue #319).** Requirement 3t made a confabulated verdict
    detectable and requirement 3v made it recoverable, and between them they
@@ -6974,7 +6971,7 @@ implements.
    (`test/merge-conflicts.test.sh`), the per-repo claims fold
    (`test/pr-claim-exclusion.test.sh`), the verdict-contradiction warning and
    corroboration events and the `unaccounted_items` eligible-set read feeding
-   them (`test/coordinator-retry-fallback.test.sh`,
+   them (`test/coordinator-merge-fallback.test.sh`,
    `test/verdict-corroboration.test.sh`), the hand-flagged-refinement
    accumulator (`test/needs-refinement.test.sh`), `work_gone_clearances`'s
    register/review/plan status maps (`test/work-gone.test.sh`), the Enabler
@@ -6985,7 +6982,7 @@ implements.
    accumulators, both `{needs_refinement, voided}` builds feeding
    `unaccounted_items` and the retry's own merge of both attempts'
    accumulators (`test/verdict-corroboration.test.sh`,
-   `test/coordinator-retry-fallback.test.sh`), the per-repo entry build that
+   `test/coordinator-merge-fallback.test.sh`), the per-repo entry build that
    feeds the Co-Ordinator's whole input (`test/repo-entry-build.test.sh`),
    the review-feedback, abandoned-drafts, issues, human-visibility-hygiene
    and unvoid-request gatherers' own candidate builds and folds
@@ -9413,42 +9410,78 @@ implements.
     "blocked"/"won't do" note, or a maintainer turning a discussion into an
     actionable task. A later comment that contradicts the body is the current
     instruction; the body alone is never taken as the whole ask.
-15. Walks the repos in the order given. Within a repo, checks work sources
-    in the configured priority order. For "failed Actions runs", a candidate
-    exists only where the **most recent** run of a workflow on the default
-    branch is a failure (a later green run supersedes older failures). The
-    `security` source's candidates are the pre-fetched `findings` with
-    `source: "security"` (Dependabot alerts and security-severity
-    code-scanning alerts); the `code-quality` source's candidates are the
-    `findings` with `source: "code-quality"`. The `project-review` source's
-    candidates are the recommendations (`R-NN`) in the **most recent**
-    `reviews/project-review-YYYY-MM-DD/` folder on the default branch: read
-    that folder's `03-recommendations.md` and `04-improvement-prompts.md` via
-    `gh api .../contents/...` (no pre-fetch — these are ordinary tracked files,
-    like `TECH-DEBT.md`). A recommendation's stable ref is
-    `review-<review-date>-R-NN`; the paired improvement prompt is the brief.
-    The `issues` source's candidates are the pre-fetched `issues` array
-    (requirement 3j), and it appears at four ranks rather than one, banded by
-    each entry's `priority` — see requirement 15e. The `implementation-plan`
-    source's candidates are the next unblocked task(s) in the repo's own plan
-    document, read at the path in that repo's runtime-input
-    `implementation_plan_path` (requirement 3k) — no pre-fetch, and no path
-    named in the prompt.
-15b. **Review feedback comes third, across all repos.** Like security and
-    urgent issues, this outranks the plain repo-then-source walk: any selectable
-    `review_feedback` candidate in any repo is taken before any work below it
-    elsewhere. The
+15. One Co-Ordinator engagement per configured repository, launched in the
+    walk order requirement 3 computes — not one engagement across every
+    repository together (issue #587; before this, a single engagement's
+    `repos` array held every configured repository, and this requirement
+    read "walks the repos in the order given"). Each engagement's own
+    runtime input's `repos` holds exactly one entry — that repository's own
+    — and the engagement walks that repository's own work sources in the
+    configured priority order; it never sees another repository's own data,
+    and nothing in its runtime input names one. For "failed Actions runs", a
+    candidate exists only where the **most recent** run of a workflow on the
+    default branch is a failure (a later green run supersedes older
+    failures). The `security` source's candidates are the pre-fetched
+    `findings` with `source: "security"` (Dependabot alerts and
+    security-severity code-scanning alerts); the `code-quality` source's
+    candidates are the `findings` with `source: "code-quality"`. The
+    `project-review` source's candidates are the recommendations (`R-NN`) in
+    the **most recent** `reviews/project-review-YYYY-MM-DD/` folder on the
+    default branch: read that folder's `03-recommendations.md` and
+    `04-improvement-prompts.md` via `gh api .../contents/...` (no pre-fetch —
+    these are ordinary tracked files, like `TECH-DEBT.md`). A
+    recommendation's stable ref is `review-<review-date>-R-NN`; the paired
+    improvement prompt is the brief. The `issues` source's candidates are the
+    pre-fetched `issues` array (requirement 3j), and it appears at four ranks
+    rather than one, banded by each entry's `priority` — see requirement
+    15e. The `implementation-plan` source's candidates are the next
+    unblocked task(s) in the repo's own plan document, read at the path in
+    that repo's runtime-input `implementation_plan_path` (requirement 3k) —
+    no pre-fetch, and no path named in the prompt.
+15z. **The Script reconciles the six cross-repository tiers itself, once
+    every repository's own engagement this cycle has answered** (issue
+    #587). Before the split, one engagement saw every repository at once and
+    could judge "is repository Z's security finding more urgent than
+    repository A's plain issue" directly; a per-repository engagement has no
+    other repository's candidates in front of it to make that judgement
+    with. `coordinator_merge_candidates` (`lib/stage-attempt.sh`) takes
+    every repository's own returned `candidates` array, tagged by the Script
+    with that repository's own walk-order position (requirement 3) and that
+    candidate's own rank within its repository's list, and sorts the merged
+    whole by: the candidate's tier (security, urgent issues, review-feedback,
+    merge-conflicts, dequeued, abandoned-drafts, then every other source as
+    one residual tier — requirements 15a/15e/15b/15d/15f/15c respectively),
+    then repository walk order, then the candidate's own rank within its
+    repository. The residual tier is where requirement 3's plain repository
+    order alone decides between two candidates — landing-refusals,
+    human-visibility, tech-debt, `issues:high`/`issues:medium`/`issues:low`,
+    code-quality, and the three sources with no pre-fetched array collapse
+    into it exactly because none of them carries a cross-repository tier of
+    its own (requirement 15g), which is what stops a residual-tier source in
+    a less-overdue repository from ever outranking one in a more-overdue
+    repository the way a true tier's own candidate does. The merged,
+    reordered list is then capped to `candidates_max` (requirement 17a) —
+    the one enforcement of that bound that happens mechanically rather than
+    by instruction, since no single engagement can cap a merge across
+    repositories it never saw.
+15b. **Review feedback comes third, across repositories.** Like security and
+    urgent issues, this outranks the plain source walk: any selectable
+    `review_feedback` candidate in any repository is taken before any work
+    below it in another — reconciled by the Script (requirement 15z) rather
+    than judged by any one engagement, which sees only its own repository's
+    `review_feedback` array. The
     human is this system's only consumer and its scarcest resource; when they
     have spent their time and asked for something specific, answering beats
     starting something new — and the work is already 90% done. The Co-Ordinator
     must **not** apply requirement 16's claim exclusion to this source: the open
     PR *is* the item, and excluding it makes every candidate permanently
     unselectable while looking entirely correct.
-15d. **Merge conflicts come fourth, across all repos.** After security, urgent
+15d. **Merge conflicts come fourth, across repositories.** After security, urgent
     issues and review-feedback, and likewise outranking the plain
-    repo-then-source walk: any
-    selectable `merge_conflicts` candidate in any repo is taken before any fresh
-    work in a more-overdue repo. The PR is otherwise ready to land, and until
+    source walk: any
+    selectable `merge_conflicts` candidate in any repository is taken before any fresh
+    work in a more-overdue one — reconciled by the Script (requirement 15z),
+    the same as review-feedback. The PR is otherwise ready to land, and until
     the conflict is resolved nothing else on it can proceed, so
     a rebase-and-resolve is finishing, not starting. As with review-feedback, the
     Co-Ordinator must **not** apply requirement 16's claim exclusion to this
@@ -9469,10 +9502,24 @@ implements.
     routing it through a second source or a back-pressure carve-out of its own
     would be exactly the new ledger/escalation concept the feature was built
     without (issue #250's acceptance criteria).
-15c. **Abandoned drafts come fifth, across all repos.** After security, urgent
-    issues, review-feedback and merge-conflicts, and likewise outranking the plain
-    repo-then-source walk: any selectable `abandoned_drafts` candidate in any repo
-    is taken before any fresh work in a more-overdue repo. A previous cycle already
+15f. **Dequeued pull requests come fifth, across repositories.** After
+    security, urgent issues, review-feedback and merge-conflicts, and
+    likewise outranking the plain source walk: any selectable `dequeued`
+    candidate in any repository is taken before any fresh work in a
+    more-overdue one — reconciled by the Script (requirement 15z), the same
+    as review-feedback and merge-conflicts. The PR was otherwise ready and
+    something had already committed it to landing, and until the
+    merge-group's own checks failure is fixed it cannot be re-queued, so a
+    diagnose-and-fix is finishing, not starting, for the identical reason
+    merge-conflicts ranks where it does. As with review-feedback, the
+    Co-Ordinator must **not** apply requirement 16's claim exclusion to this
+    source — the open PR *is* the item, and the pre-fetch has already
+    established it is ours, dequeued and actionable.
+15c. **Abandoned drafts come sixth, across repositories.** After security, urgent
+    issues, review-feedback, merge-conflicts and dequeued, and likewise outranking the plain
+    source walk: any selectable `abandoned_drafts` candidate in any repository
+    is taken before any fresh work in a more-overdue one — reconciled by the
+    Script (requirement 15z), the same as the four tiers above. A previous cycle already
     implemented most of the work behind that draft, so finishing beats starting;
     and every cycle it sits stalled it holds a back-pressure slot that throttles new
     work fleet-wide. As with review-feedback, the Co-Ordinator must **not** apply
@@ -9480,13 +9527,23 @@ implements.
     item, and the pre-fetch (requirement 3e) has already established it is stale
     and ours, so treating it as a claim would make every candidate permanently
     unselectable.
+15g. **landing-refusals and human-visibility carry no cross-repository tier
+    of their own**, unlike the six sources requirements 15a/15e/15b/15d/15f/15c
+    name — each is selectable only when its own repository's ordinary source
+    walk reaches its configured rank there, and requirement 15z's merge
+    leaves both in the residual tier alongside tech-debt, the three
+    lower issue bands and code-quality: two candidates from that tier, from
+    two different repositories, are ordered by repository walk order alone,
+    never by which of the two sources either one is.
 15a. **Security is always prioritised.** Beyond `security` being first in the
     source order, any candidate that is security-related — a `security`
     finding, a GitHub issue labelled `security`/`vulnerability`, a
     tech-debt entry flagged as a security concern, or a `project-review`
     recommendation whose text flags a security concern — outranks every
-    non-security candidate across all repos and sources. If any selectable
-    security candidate exists anywhere, the Co-Ordinator selects one of those
+    non-security candidate across repositories and sources, reconciled by
+    the Script (requirement 15z) exactly as the other five cross-repository
+    tiers are. If any selectable
+    security candidate exists anywhere, the merged ranking places one of those
     before any non-security item, with the most severe first
     (`critical` > `high` > `medium` > `low`). Repo ordering (requirement 3)
     breaks ties among security candidates of equal severity.
@@ -9498,9 +9555,16 @@ implements.
 
     - **`Urgent` is a global tier, second only to security.** Like
       review-feedback, merge-conflicts, dequeued and abandoned-drafts, it
-      outranks the plain repo-then-source walk: if any selectable urgent issue
-      exists in any repo, it is taken before any non-security item anywhere —
-      including ahead of the four finishing sources. Those tiers exist because
+      outranks the plain source walk: if any selectable urgent issue
+      exists in any repository, it is taken before any non-security item anywhere —
+      including ahead of the four finishing sources — reconciled by the
+      Script (requirement 15z) exactly as those four tiers are: an engagement
+      ranks its own repository's urgent issues by age among themselves
+      (oldest first), and the Script's merge breaks ties between two
+      different repositories' own urgent issues by repository walk order,
+      an approximation of "oldest first" fleet-wide that no per-repository
+      engagement could otherwise make without seeing another repository's
+      own issue dates. Those tiers exist because
       finishing beats starting; `Urgent` is the one signal that outranks even
       that, because it is the human stating outright that this cannot wait,
       and a top band that still queued behind four other tiers would not mean
@@ -12445,28 +12509,28 @@ implements.
     `unvoided` written from a label (requirement 34f) carries `repo`,
     `by: "label"`, the `request_url` that authorised it, `labelled_at`, and the
     `cleared_void_ts` it reopened; the bare hand-appended form remains valid.
-    A `corroboration` (requirement 3v) is one Co-Ordinator verdict measured
-    against the Script's own eligible set across every pre-fetched band
-    (requirement 3x; the tech-debt band alone before it): `attempt` (1 for the
-    original engagement, 2 for its one retry), `verdict` — `accepted`,
-    `rejected`, or `accepted-by-selection` where the retry selected work
-    instead of restating a verdict — `eligible_total`, `unaccounted_total`,
-    and, on a rejection, a `bands` object counting the unaccounted per source,
-    the `unaccounted` `{repo, item, source}` triples and the
-    verdict's own `reason`. The attempt-2 events carry requirement 33a's
-    metering for the retry engagement, and every one of them carries
-    requirement 3w's `coordinator_model`. This is the record a rejection
-    *rate* is computed from, one event per verdict; the cycle's outcome is
-    `none-selected` or `selection`, which is a different question and
-    deliberately a different event.
+    A `corroboration` (requirement 3v) is one cycle-wide verdict measured
+    against the Script's own eligible set across every repository whose own
+    engagement said no (requirement 3x; the tech-debt band alone before it,
+    every configured repository's own engagement together before issue
+    #587's split): `attempt` (always `1` — there is no retry to distinguish
+    it from, since issue #587 dropped the model retry a rejection used to
+    buy), `verdict` — `accepted` or `rejected` — `eligible_total`,
+    `unaccounted_total`, and, on a rejection, a `bands` object counting the
+    unaccounted per source, the `unaccounted` `{repo, item, source}` triples
+    and the verdict's own `reason` (every repository that said no, joined).
+    Every event carries requirement 3w's `coordinator_model`. This is the
+    record a rejection *rate* is computed from, one event per cycle that
+    reaches it; the cycle's outcome is `none-selected` or `selection`, which
+    is a different question and deliberately a different event.
     A `none-selected` carries the Co-Ordinator's own `reason`; the
     `fingerprint` requirement 3b arms the no-op short-circuit with, omitted
     where there was nothing to fingerprint or where the corroboration gate
     rejected
     the verdict — which carries `td_verdict_rejected: true` (a name requirement
-    3x keeps though the gate is no longer tech-debt-only), requirement 3x's
-    `bands`, and `retried:
-    true` where requirement 3v's retry was spent, instead; and, on **every**
+    3x keeps though the gate is no longer tech-debt-only) and requirement
+    3x's `bands` instead, once the mechanical fallback (requirement 3v) also
+    found nothing; and, on **every**
     branch, requirement 3w's `eligible_total` and `coordinator_model`, so a
     cycle whose bands were genuinely empty — which logs no `corroboration` at
     all — still says so on the record rather than being indistinguishable
@@ -18486,10 +18550,13 @@ What exists, and the requirements each part answers to:
    calls them). Sourced, never executed. Must pass `shellcheck`.
 2c. `lib/stage-attempt.sh` implementing the Co-Ordinator stage-attempt
    sequence and the failure handling every stage shares (requirement 3v,
-   4d and 4i; #771): `run_coordinator_stage_attempt` (one launch/parse/
-   salvage attempt), `fallback_select_candidate` and
-   `coordinator_corroborate_retry_or_fallback` (the mechanical last resort
-   once a `none-selected` verdict has failed corroboration twice), and
+   4d and 4i; #771; issue #587): `run_coordinator_stage_attempt` (one
+   launch/parse/salvage attempt, called once per configured repository —
+   requirement 15), `fallback_select_candidate` (the mechanical last resort
+   once a `none-selected` verdict has failed corroboration — requirement 3v),
+   `coordinator_merge_candidates` (the Script's own cross-repository
+   reconciliation of every repository's own returned candidates —
+   requirement 15z), and
    `extract_json_result`/`stage_salvage_result`/`dump_stage_output`/
    `stage_api_refusal`/`stage_api_refusal_message`/`handle_stage_failure`,
    used by every stage this pipeline runs. Sourced, never executed. Must
@@ -23017,71 +23084,90 @@ oblige anyone to edit a test.
    (`test/noop-skip.test.sh`) is unaffected and still hashes both extracts,
    untrimmed, exactly as before this requirement.
 
-2j-i. **A rejected verdict costs one retry, then a mechanical pick, never the
-   cycle (requirement 3v).** `test/coordinator-retry-fallback.test.sh` passes,
-   against `run_coordinator_stage_attempt` and `fallback_select_candidate`
-   lifted verbatim out of `lib/stage-attempt.sh` and a stubbed `run_claude_stage`
-   returning a queued sequence of canned verdicts (one per call, so the first
-   and second engagement can answer differently):
-   - **Retry succeeds.** A first verdict `td_verdict_rejected` and a second
-     (retry) verdict that selects a candidate: the Co-Ordinator is invoked
-     exactly twice, the second `stage-start`/`stage-end` pair carries
-     `retry: true`, two `corroboration` events log (`attempt: 1,
-     verdict: "rejected"`, then `attempt: 2, verdict: "accepted-by-selection"`
-     carrying cost/time fields), no `none-selected` event logs at all, and the
-     work order the caller ends up with is the retry's own `candidates`.
-   - **Retry corroborates cleanly.** A first verdict rejected, a second
-     verdict `selected: false` that fully accounts for the band (via
-     `needs_refinement`/`voided` naming exactly the refs the retry addendum
-     listed): two `corroboration` events (`rejected` then `accepted`), one
-     `none-selected` event carrying the fingerprint and `reason` from the
-     *retry's* message, and no fallback candidate is requested.
-   - **Fallback fires.** Both verdicts `selected: false` and still
-     `td_verdict_rejected` after unioning both attempts' recorded
-     `needs_refinement`/`voided`: two `warning` events, two `corroboration`
-     events (both `rejected`), *no* `none-selected` event — the cycle
-     selected something — and `fallback_select_candidate` is called and its
-     single candidate reaches the caller with `selected_by_fallback=1`.
-   - **Fallback finds nothing.** The same two rejected verdicts against a
-     fleet whose every pre-fetched band is empty: one `none-selected`
-     carrying `retried: true` and no `fingerprint`, and the function returns
-     1 for the caller to stand the cycle down.
+2j-i. **The merge reconciles repositories correctly, and a rejected verdict
+   costs a mechanical pick, never the cycle (requirements 15z, 3v; issue
+   #587).** `test/coordinator-merge-fallback.test.sh` passes, against
+   `run_coordinator_stage_attempt`, `fallback_select_candidate`,
+   `coordinator_merge_candidates` and `coordinator_corroborate_and_fallback`
+   lifted verbatim out of `lib/stage-attempt.sh`:
+   - **`coordinator_merge_candidates`'s six-tier order, unit-tested
+     directly.** A security-tier candidate wins even ranked last within its
+     own repository; an `issues`-source candidate whose *own* repository
+     marks it `Urgent` outranks a `review-feedback` candidate from a
+     later-walk-order repository, while the identical ref is not treated as
+     `Urgent` by a different repository that does not mark it so (the tier
+     lookup is scoped to the candidate's own repository's `issues` array);
+     all six named tiers (security, urgent issues, review-feedback,
+     merge-conflicts, dequeued, abandoned-drafts) sort in the prompt's own
+     order regardless of walk order; two residual-tier candidates from
+     different repositories — carrying no cross-repository tier of their own
+     — order by walk order alone, whichever of the residual sources either
+     one is; two same-tier candidates from different repositories break
+     their tie by walk order, and two candidates from the *same* repository's
+     own tier break theirs by that repository's own rank; `candidates_max`
+     caps the *merged* result (four raw candidates across two repositories,
+     capped to two, keep the more-overdue repository's own two rather than
+     one from each — repository order dominates a residual tier entirely);
+     no internal `_tier`/`_repo_order`/`_rank` tag leaks onto a returned
+     candidate; a non-array `candidates` argument degrades to an empty
+     result, a non-array `repos` argument still merges by tier/rank alone,
+     and a non-numeric `candidates_max` degrades to the documented default
+     (`3`) — never a crash.
+   - **`coordinator_corroborate_and_fallback` scopes corroboration to the
+     repositories that said no.** A repository that selected needs no
+     corroboration at all, even when a *different* selected repository's own
+     eligible item went unreported — asserted directly: an eligible item
+     belonging to a repository outside the false-repos list produces zero
+     `corroboration` events regardless of whether it was ever accounted for.
+     A false repository's own unaccounted item is rejected (`attempt: 1`
+     always now — there is no second attempt to distinguish it from, since
+     issue #587 dropped the model retry a fleet-wide rejection used to buy),
+     and the mechanical fallback fires and finds it, with no `none-selected`
+     event at all (the cycle selected something). A false repository whose
+     own `needs_refinement`/`voided` report fully accounts for its band is
+     accepted, with no fallback call and no `td_verdict_rejected`. When the
+     fallback also finds nothing, the resulting `none-selected` carries
+     `td_verdict_rejected: true`, the unaccounted `bands` tally, and no
+     `fingerprint` (requirement 3t: a rejected verdict must never arm the
+     no-op short-circuit) — proving the fingerprint-omission rule survives
+     the retry's removal intact. When every configured repository's own
+     bands are genuinely empty, no `corroboration` event fires at all (there
+     is nothing to corroborate), and the resulting `none-selected` carries no
+     `td_verdict_rejected`.
    - **`refinement_policy` binds the mechanical pick.** Against
      `fallback_select_candidate` in isolation: under
      `{"tech-debt": "required"}` an unrefined tech-debt item is not selected
-     and a lower band wins instead, a refined one is selected normally, and
-     under `{"tech-debt": "preferred"}` the refined item wins its band over
-     an unrefined one that precedes it while an all-unrefined band is still
-     selectable.
-   - **The retry's recording is scoped to what it was asked about.** A retry
-     message that repeats a `voided`/`needs_refinement` entry the first
-     attempt already recorded, alongside a new one for an item the addendum
-     actually named unaccounted: only the new entry reaches
-     `record_needs_refinement_block`/the void guard — asserted by call count,
-     not just by the corroboration math coming out right.
-   - **A retry launch failure does not fall back.** The stubbed
-     `run_claude_stage` fails (non-zero exit) on the second call only:
-     `run_coordinator_stage_attempt` returns non-zero, `attempt-failed`/
-     `handle_stage_failure` fire for it exactly as they would for a first-
-     attempt failure, and `fallback_select_candidate` is never called.
+     and a lower band wins instead.
    - **`fallback_select_candidate`'s band order and shapes, unit-tested
      directly** (no stage stub needed): against a synthetic
      `ordered_repos_json`, a security finding outranks a tech-debt item in
-     the same repo; a Dependabot merge-conflicts entry with
-     `bot: true, rebase_requested: true, superseded_by: null` produces
-     `takeover: true` with `branch` omitted and `pr_url`/`pr_number` present;
-     one with `rebase_requested: false` is skipped (falls through to the next
-     band, never a candidate); a `review-feedback`/`abandoned-drafts` entry
-     carries its own `branch`/`pr_url`/`pr_number` verbatim; every band empty
-     prints `null`, not a crash or an empty-string candidate accepted
-     downstream as one.
+     the same repo; a `landing-refusals` entry outranks tech-debt and carries
+     its own existing branch/PR; every band empty prints `null`, not a crash
+     or an empty-string candidate accepted downstream as one.
    - **`sources` bounds the mechanical pick (requirement 3x).** The same
      fixture with its `sources` narrowed to the four finishing bands and its
      `issues`/`tech_debt` emptied — requirement 2.2a's own back-pressure
      shape — yields `null` rather than the security finding still sitting in
      its `findings` array, and yields that finding again the moment the token
-     is restored. A repo listing `issues:high` alone offers its High issue and
-     never its Medium one, whatever else is empty.
+     is restored.
+   - **The gate is no longer tech-debt-only, and stays scoped to the
+     repositories that said no (requirement 3x, issue #322).** A silent
+     `selected: false` over a non-empty `issues` array and a non-empty
+     `review_feedback` array — with the tech-debt band empty, so a
+     tech-debt-only gate would have accepted it — is rejected, `eligible_total`
+     counts both bands, and the `warning` and `corroboration` both carry a
+     `bands` tally naming each; the rejected verdict's own mechanical
+     fallback then picks the highest reachable band. A report filed under the
+     wrong `source` leaves its actual band exactly as unaccounted as silence
+     would. A verdict answering each band by its own route (a
+     `needs_refinement` for the issue, a `voided` for the review-feedback
+     entry) is accepted, buys no fallback call, and keeps its fingerprint.
+   - **The argv cap survives the split (requirement 4g, TD-PPagop-26081401/
+     26081406).** 3000 unclaimed tech-debt items, none reported back, still
+     reach the `warning`/`corroboration` events in full past `MAX_ARG_STRLEN`
+     (131072 bytes); 3000 recorded `needs_refinement` reports, read back
+     through the same function, still fully account for an equally large
+     eligible set.
 2j-ii. **The corroboration covers every pre-fetched band (requirement 3x,
    issue #322).** `test/verdict-corroboration.test.sh` passes:
    `coordinator_eligible_items` emits `{repo, item, source}` for each band the
@@ -23103,7 +23189,7 @@ oblige anyone to edit a test.
    repo+item in whichever band it was eligible in; it applies
    `refinement_policy` per entry's own source, so `"required"` exempts that
    band and no other; and every entry it returns carries the band it was
-   eligible in. `test/coordinator-retry-fallback.test.sh` passes the wiring:
+   eligible in. `test/coordinator-merge-fallback.test.sh` passes the wiring:
    a silent `selected: false` over a non-empty `issues` array and a non-empty
    `review_feedback` array — with the tech-debt band empty, so requirement 3t
    alone would have accepted it — is rejected, `eligible_total` counts both

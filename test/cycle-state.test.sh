@@ -1072,30 +1072,33 @@ assert_eq "every pre-fetched band but issues reaches exclude_blocked_or_void_ite
   "findings review_feedback abandoned_drafts merge_conflicts dequeued landing_refusals human_visibility tech_debt" \
   "$band_list"
 
-# --- coordinator_input itself: no `void` key, and a trimmed `blocked` --------
+# --- coord_repo_input itself: no `void` key, and a trimmed `blocked` --------
 # The build is lifted verbatim out of agent-cycle.sh, the same way the three
-# functions above are: what the Co-Ordinator is handed is the claim requirement
-# 3u makes, and it is made by this block rather than by any of them.
+# functions above are: what a repository's own Co-Ordinator engagement is
+# handed is the claim requirement 3u makes, and it is made by this block
+# rather than by any of them. Issue #587 split the single fleet-wide
+# `coordinator_input` into one `coord_repo_input` per repository; this lifts
+# the per-repo build directly rather than the `for` loop around it —
+# `coord_repo_slug`/`coord_repo_only_json` are set as stand-ins for what the
+# loop would otherwise have just computed, the same substitution the old
+# fleet-wide test made for `ordered_repos_json`.
 ci_src="$(awk '
-  /^coordinator_blocked_json="\$\(coordinator_blocked_view/ { on = 1 }
-  on                                                        { print }
-  on && /<<<"\$coordinator_stdin"\)"$/                       { exit }
+  /^  coord_repo_blocked_json="\$\(jq -c --arg r "\$coord_repo_slug" \\$/ { on = 1 }
+  on                                                                     { print }
+  on && /coord_repo_claimed_json"\)"\)"$/                                { exit }
 ' "$SCRIPT_DIR/agent-cycle.sh")"
-if [[ "$ci_src" != *coordinator_input=* ]]; then
-  printf 'FAIL - could not extract the coordinator_input build from agent-cycle.sh\n'
+if [[ "$ci_src" != *coord_repo_input=* ]]; then
+  printf 'FAIL - could not extract the coord_repo_input build from agent-cycle.sh\n'
   exit 1
 fi
-# All eight are consumed by the eval'd block, which shellcheck cannot see into
-# — as is `coordinator_input`, which that block is what assigns.
+# All are consumed by the eval'd block, which shellcheck cannot see into —
+# as is `coord_repo_input`, which that block is what assigns.
 # shellcheck disable=SC2034
 {
-  blocked_json="$rich_blocked"
-  ordered_repos_json='[{"slug":"o/r"}]'
+  coordinator_blocked_json="$(coordinator_blocked_view "$rich_blocked")"
+  coord_repo_slug="o/r"
+  coord_repo_only_json='[{"slug":"o/r"}]'
   refinements_json='{}'
-  # Requirement 4j: the lifted build spends the scoped view, which the block
-  # above it in agent-cycle.sh assigns. Produced here by the shipped function
-  # rather than hard-coded, so this stays a lift rather than a re-implementation.
-  coordinator_refinements_json="$(coordinator_refinements_view "$refinements_json" "$ordered_repos_json")"
   claimed_json='[]'
   implementer_model_default="claude-sonnet-5"
   implementer_model_trivial="claude-haiku-4-5-20251001"
@@ -1105,15 +1108,15 @@ fi
 }
 eval "$ci_src"
 # shellcheck disable=SC2154
-assert_eq "the Co-Ordinator's input carries no void key at all" \
-  "false" "$(jq 'has("void")' <<<"$coordinator_input")"
-assert_eq "  ... and its blocked entries are the trimmed view" \
+assert_eq "a repository's own Co-Ordinator input carries no void key at all" \
+  "false" "$(jq 'has("void")' <<<"$coord_repo_input")"
+assert_eq "  ... and its blocked entries are the trimmed view, this repo's own plus any fleet-wide one" \
   '{"item":"52","ts":"2026-08-01T00:00:00Z","detail":"waiting","repo":"o/r","recheck_clean_ts":"2026-08-02T00:00:00Z"}' \
-  "$(jq -c '.blocked[0]' <<<"$coordinator_input")"
+  "$(jq -c '.blocked[0]' <<<"$coord_repo_input")"
 assert_eq "  ... with no stage/cycle/event/unblock_condition surviving" \
   "false" \
   "$(jq '.blocked | any(has("stage") or has("cycle") or has("event") or has("unblock_condition"))' \
-     <<<"$coordinator_input")"
+     <<<"$coord_repo_input")"
 
 # --- latest_issues_excluded (requirement 33, review decisions on -------------
 # --- agent-ops#452 concerns 1 and 3) ------------------------------------------

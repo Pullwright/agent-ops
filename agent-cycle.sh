@@ -2501,88 +2501,160 @@ fi
 # check.
 coordinator_blocked_json="$(coordinator_blocked_view "$blocked_json")"
 
-# The four fleet-state arrays on stdin, never in argv (requirement 4g) — the
-# same delivery, order coupling and here-string reasoning as the no-op
-# fingerprint's build above.
-coordinator_stdin="$(printf '%s\n' \
-  "$ordered_repos_json" "$coordinator_blocked_json" "$coordinator_refinements_json" "$claimed_json")"
-coordinator_input="$(jq -nc \
-  --arg model_default "$implementer_model_default" \
-  --arg model_trivial "$implementer_model_trivial" \
-  --arg label "$pr_label" \
-  --argjson cmax "$candidates_max" \
-  --argjson policies "$refinement_policy_json" \
-  'input as $repos | input as $blocked | input as $refinements | input as $claimed
-   | {repos: $repos, blocked: $blocked, refinements: $refinements, claimed: $claimed,
-      models: {default: $model_default, trivial: $model_trivial}, pr_label: $label,
-      candidates_max: $cmax, refinement_policy: $policies}' <<<"$coordinator_stdin")"
-
-# --- 4. Co-Ordinator stage ---
+# --- 4. Co-Ordinator stage — one invocation per repository (issue #587) ---
 # `coordinator_base_prompt` is rendered further up, ahead of requirement 4i's
 # fit, because that fit has to know how many of the window's bytes the prompt
 # text itself has already spent before it can decide what the runtime input may
-# have.
-coordinator_prompt="$coordinator_base_prompt
+# have. It is identical across every repository's invocation below — only the
+# small per-repo runtime input differs — which is what lets provider-side
+# prompt caching discount the repeated prefix on every engagement after the
+# first (see the pull request that introduced this loop for the measured
+# per-cycle cost, priced under D14).
+#
+# Each repo in `ordered_repos_json` — already in requirement 3's walk order —
+# gets its own engagement, seeing only its own `repos` entry, `blocked`,
+# `refinements` and `claimed`: a repo B block or claim can never leak into
+# repo A's prompt, and a repo carries no bytes of another repo's backlog. The
+# five requirement-15a-15e cross-repo tiers (security, urgent issues,
+# review-feedback, merge-conflicts, dequeued, abandoned-drafts) that used to
+# let one completion judge "is repo Z's finding more urgent than repo A's
+# plain issue" directly no longer have a single completion to be judged in —
+# no per-repo engagement ever sees another repo's candidates — so the Script
+# performs that reconciliation itself, once every repo has answered, in
+# `coordinator_merge_candidates` below.
+coord_all_candidates_json='[]'
+coord_false_repo_slugs_json='[]'
+coord_false_reasons=()
+# Accumulated by hand across every repo's own log_needs_refinement_items/
+# log_voided_items call below: each call resets its own
+# coord_recorded_refinement_json/coord_recorded_voided_json to just that call's
+# own band (lib/candidate-select.sh) rather than adding to a running total,
+# which is exactly right when there is one call per cycle but loses every
+# earlier repo's own band here unless this loop folds each one in itself.
+coord_fleet_recorded_refinement_json='[]'
+coord_fleet_recorded_voided_json='[]'
+
+coord_n_repos="$(jq 'length' <<<"$ordered_repos_json")"
+for (( coord_ri = 0; coord_ri < coord_n_repos; coord_ri++ )); do
+  coord_repo_entry="$(jq -c --argjson i "$coord_ri" '.[$i]' <<<"$ordered_repos_json")"
+  coord_repo_slug="$(jq -r '.slug' <<<"$coord_repo_entry")"
+  coord_repo_only_json="$(jq -c '[.]' <<<"$coord_repo_entry")"
+  # A blocked entry with no `repo` at all (a fleet-level block, never tied to
+  # one repository) is included in every repo's own list rather than none —
+  # `(.repo // $r) == $r` reads true whether the entry names this repo or
+  # names none — so a fleet-wide block can never be silently dropped from
+  # every per-repo view the way excluding it outright would risk.
+  coord_repo_blocked_json="$(jq -c --arg r "$coord_repo_slug" \
+    '[.[] | select((.repo // $r) == $r)]' <<<"$coordinator_blocked_json")"
+  coord_repo_refinements_json="$(coordinator_refinements_view "$refinements_json" "$coord_repo_only_json")"
+  coord_repo_claimed_json="$(jq -c --arg r "$coord_repo_slug" '[.[] | select(.repo == $r)]' <<<"$claimed_json")"
+  coord_repo_input="$(jq -nc \
+    --arg model_default "$implementer_model_default" \
+    --arg model_trivial "$implementer_model_trivial" \
+    --arg label "$pr_label" \
+    --argjson cmax "$candidates_max" \
+    --argjson policies "$refinement_policy_json" \
+    'input as $repos | input as $blocked | input as $refinements | input as $claimed
+     | {repos: $repos, blocked: $blocked, refinements: $refinements, claimed: $claimed,
+        models: {default: $model_default, trivial: $model_trivial}, pr_label: $label,
+        candidates_max: $cmax, refinement_policy: $policies}' \
+    <<<"$(printf '%s\n' "$coord_repo_only_json" "$coord_repo_blocked_json" "$coord_repo_refinements_json" "$coord_repo_claimed_json")")"
+
+  coordinator_prompt="$coordinator_base_prompt
 
 ## Runtime input for this cycle
 
 \`\`\`json
-$(jq . <<<"$coordinator_input")
+$(jq . <<<"$coord_repo_input")
 \`\`\`
 "
-coordinator_out="$cycle_dir/coordinator.out"
+  coordinator_out="$cycle_dir/coordinator-$coord_repo_slug.out"
+  if ! run_coordinator_stage_attempt "$coordinator_out" "$coordinator_prompt" \
+      "$(jq -nc --arg r "$coord_repo_slug" '{repo: $r}')"; then
+    # This repo's own engagement failed to launch or never produced a
+    # parseable message — run_coordinator_stage_attempt already logged
+    # attempt-failed/handle_stage_failure for it (no claim of this repo's own
+    # to release; the Co-Ordinator holds none). One repo's failure must not
+    # cost every other repo this cycle's own chance, so the loop continues
+    # rather than exiting the way the single fleet-wide attempt used to.
+    continue
+  fi
+  # shellcheck disable=SC2154  # coord_attempt_result_json: run_coordinator_stage_attempt (lib/stage-attempt.sh) assigns it.
+  coord_repo_work_order_json="$coord_attempt_result_json"
 
-# The Co-Ordinator runs *before* selection, so it has no repository either
-# and is keyed `*` for the same reason as the Enabler (requirement 4f).
+  if (( DRY_RUN )); then
+    jq --arg r "$coord_repo_slug" '{repo: $r} + .' <<<"$coord_repo_work_order_json"
+  fi
+
+  log_unblocked_items "$coord_repo_work_order_json"
+  log_recheck_clean_items "$coord_repo_work_order_json"
+  # This repo's own entry, verbatim: the void guard (requirement 34d) tests a
+  # verdict against the same candidates that produced it, so it can never
+  # refuse a void over something this engagement could not have seen.
+  log_voided_items "$coord_repo_work_order_json" "$coord_repo_only_json"
+  # shellcheck disable=SC2154  # coord_recorded_voided_json: log_voided_items (lib/candidate-select.sh) assigns it.
+  coord_fleet_recorded_voided_json="$(jq -nc 'input as $a | input as $b | $a + $b' \
+    <<<"$coord_fleet_recorded_voided_json"$'\n'"$coord_recorded_voided_json")"
+  # Requirement 16a's reports, recorded after the two clearing paths above so
+  # an item this cycle unblocked or voided is not immediately re-blocked by a
+  # report in the same message.
+  log_needs_refinement_items "$coord_repo_work_order_json"
+  # shellcheck disable=SC2154  # coord_recorded_refinement_json: log_needs_refinement_items (lib/candidate-select.sh) assigns it.
+  coord_fleet_recorded_refinement_json="$(jq -nc 'input as $a | input as $b | $a + $b' \
+    <<<"$coord_fleet_recorded_refinement_json"$'\n'"$coord_recorded_refinement_json")"
+
+  coord_repo_selected="$(jq -r '.selected' <<<"$coord_repo_work_order_json")"
+  if [[ "$coord_repo_selected" == "true" ]]; then
+    coord_repo_cands="$(jq -c --argjson idx "$coord_ri" \
+      '[(.candidates // [])
+        | to_entries[]
+        | .value + {_repo_order: $idx, _rank: .key}]' \
+      <<<"$coord_repo_work_order_json" 2>/dev/null)"
+    [[ -n "$coord_repo_cands" ]] || coord_repo_cands='[]'
+    coord_all_candidates_json="$(jq -nc 'input as $a | input as $b | $a + $b' \
+      <<<"$coord_all_candidates_json"$'\n'"$coord_repo_cands")"
+  else
+    coord_false_repo_slugs_json="$(jq -c --arg r "$coord_repo_slug" '. + [$r]' <<<"$coord_false_repo_slugs_json")"
+    coord_false_reasons+=("$coord_repo_slug: $(jq -r '.reason // "no reason given"' <<<"$coord_repo_work_order_json")")
+  fi
+done
+
+# The running fleet-wide totals, restored to the names the corroboration
+# below (and any future reader) expects — exactly what the single fleet-wide
+# invocation's own one call to each log_* function used to leave behind.
+coord_recorded_refinement_json="$coord_fleet_recorded_refinement_json"
+coord_recorded_voided_json="$coord_fleet_recorded_voided_json"
+
+# --- 5. Merge, corroborate, and — only if every repo came back empty —
+#        mechanically fall back (requirements 3v/15z/17a) ---
+# `candidates_max` is a fleet-wide cap here for the first time: no per-repo
+# engagement could enforce it across repos it never saw, so each one is
+# still free to return up to its own `candidates_max`, and the Script caps
+# the merged, tier-ordered result before it ever reaches "5b" below.
+candidates_json="$(coordinator_merge_candidates "$coord_all_candidates_json" "$ordered_repos_json" "$candidates_max")"
+coord_n_merged="$(jq 'length' <<<"$candidates_json" 2>/dev/null || echo 0)"
 selected_by_fallback=0
-if ! run_coordinator_stage_attempt "$coordinator_out" "$coordinator_prompt"; then
-  exit 0
-fi
-# shellcheck disable=SC2154  # coord_attempt_result_json: run_coordinator_stage_attempt (lib/stage-attempt.sh) assigns it.
-work_order_json="$coord_attempt_result_json"
+coord_reason="$(printf '%s; ' ${coord_false_reasons[@]+"${coord_false_reasons[@]}"})"
+coord_reason="${coord_reason%; }"
+[[ -n "$coord_reason" ]] || coord_reason="no repository reported a verdict this cycle"
 
-if (( DRY_RUN )); then
-  jq . <<<"$work_order_json"
-fi
-
-log_unblocked_items "$work_order_json"
-log_recheck_clean_items "$work_order_json"
-# The repos the Co-Ordinator was given, verbatim: the void guard (requirement
-# 34d) tests a verdict against the same candidates that produced it, so it can
-# never refuse a void over something the Co-Ordinator could not have seen.
-log_voided_items "$work_order_json" "$ordered_repos_json"
-# Requirement 16a's reports, recorded after the two clearing paths above so an
-# item this cycle unblocked or voided is not immediately re-blocked by a report
-# in the same message.
-log_needs_refinement_items "$work_order_json"
-
-# --- 5. Nothing selected ---
-selected="$(jq -r '.selected' <<<"$work_order_json")"
-if [[ "$selected" != "true" ]]; then
-  if ! coordinator_corroborate_retry_or_fallback; then
+if (( coord_n_merged == 0 )); then
+  if ! coordinator_corroborate_and_fallback "$coord_false_repo_slugs_json" "$coord_reason" \
+      "$coord_recorded_refinement_json" "$coord_recorded_voided_json"; then
     exit 0
   fi
 fi
 
+selected="true"
+
 # --- 5b. Candidates, and the claim (requirement 17a) ---
-# The Co-Ordinator returns a ranked candidate list; the former single-selection
-# shape is accepted for one release as a one-candidate list. The claim itself
-# is taken by the Script, never the model: keys are derived deterministically
-# (two nodes must compute the same name for the same item), the write is
-# create-only so GitHub arbitrates the race, and a lost race just moves down
-# the ranking instead of costing the cycle.
-#
-# A fallback selection (requirement 3v, issue #321) has already built its own
-# one-candidate `candidates_json` above — `fallback_select_candidate`'s output
-# is a single candidate object, not a work order with its own `.candidates`
-# array, so it must not be re-derived here the way a real work order's is.
-if (( selected_by_fallback )); then
-  :
-elif jq -e '.candidates | type == "array"' <<<"$work_order_json" >/dev/null 2>&1; then
-  candidates_json="$(jq -c '.candidates' <<<"$work_order_json")"
-else
-  candidates_json="$(jq -c '[del(.selected, .unblocked, .recheck_clean, .voided)]' <<<"$work_order_json")"
-fi
+# `candidates_json` is already the merged, tier-ordered, `candidates_max`-
+# capped list "5" above built — either the reconciled real candidates from
+# every repo that selected, or the one-candidate fallback pick. The claim
+# itself is taken by the Script, never the model: keys are derived
+# deterministically (two nodes must compute the same name for the same
+# item), the write is create-only so GitHub arbitrates the race, and a lost
+# race just moves down the ranking instead of costing the cycle.
 
 if (( DRY_RUN )); then
   # A dry run claims nothing: record the top of the ranking and stop.

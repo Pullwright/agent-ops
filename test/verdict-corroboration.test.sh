@@ -465,7 +465,7 @@ assert_eq "a refused void still accounts for its item (the block de-eligibles it
 # needs_refinement/voided array — not by seeding the variable and calling
 # again. Driving that many real entries through the whole recording loop
 # (event logging, the requirement 34d bar, the fold) is what made an earlier
-# attempt at this section, in test/coordinator-retry-fallback.test.sh, run
+# attempt at this section, in test/coordinator-merge-fallback.test.sh, run
 # for minutes: each fold re-serialises the whole accumulator, so the total
 # cost is quadratic in entry count. That file's own section pins the
 # downstream build cheaply, by assigning the accumulator directly rather
