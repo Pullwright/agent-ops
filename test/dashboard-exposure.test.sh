@@ -24,7 +24,7 @@
 #
 # The same property, and the same two failure directions, apply to every other
 # service that publishes anything — today that is `node-health` (issue #608,
-# IMPLEMENTATION-PIPELINE-SPEC requirement 58d), which serves `/livez`,
+# IMPLEMENTATION-PIPELINE-SPEC requirement 60d), which serves `/livez`,
 # `/readyz`, `/healthz` and `/metrics` the identical loopback-only way. So the
 # closing check here is not "one service publishes" but "these services
 # publish, and every mapping any of them declares is scoped to the host's

@@ -2556,7 +2556,7 @@ number's twins elsewhere on the page.
   no port, keeps the sidecar's namespace and takes the default bind, so Serve
   reaches it and nothing else does. The only other service that publishes
   anything is the node-health HTTP surface (`node-health`,
-  `docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 58d), guarded the same
+  `docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 60d), guarded the same
   way and for the same two reasons — one loopback-scoped mapping, no
   `network_mode`, `0.0.0.0` inside the container — and every mapping either
   publisher declares is `127.0.0.1`-scoped. A bare `serve-dashboard.sh` still
@@ -3605,6 +3605,37 @@ number's twins elsewhere on the page.
   directly; it rejoins this badge once #1339 gives it a route to succeed on
   a healthy node. No badge (and no line at all) when the record is absent
   or carries none of the three facts above.
+- **A sixth badge, `resource budget`, compares this node's own measured
+  CPU/memory/bandwidth/disk against `config.json`'s `resources` budgets
+  (requirement 55, D14, agent-ops#606)** — the dashboard's half of the same
+  comparison `doctor.sh`'s own "Resource budgets" section makes, over the
+  identical `resource_budget_report` derivation (`lib/resource-usage.sh`).
+  The rule is stated twice, not shared: `doctor.sh` calls
+  `resource_budget_breaches`, and this page — JavaScript in a browser, with
+  no route to a bash library — re-states it in `resourcesLine`, so keeping
+  the two in step across an edit is a maintenance obligation, pinned by
+  `resource_budget_breaches`'s own boundary test. The row's
+  `resources` field (self: recomputed live from this node's own
+  `.resource-samples.jsonl`; a peer: carried in its heartbeat, `null` when
+  the peer predates this feature or has not run its collector yet) is the
+  windowed `{latest, median/growth, p95}` report per container/volume;
+  `D.config.resources` is this run's own resolved (schema-defaulted)
+  budgets. Amber, titled with every breach found — each named as
+  `<container>'s <resource> (p95 <actual> > budget <budget>)`, or for a
+  volume, `<volume>'s disk usage (<actual> > budget <budget>), growing
+  <n> bytes/day` when the report has a growth figure — on the same "badges
+  only for an exceptional condition" discipline `host degraded` above
+  already holds: a container or volume within budget contributes nothing,
+  so the badge itself, not just its absence, is the signal. Growth rate is
+  named ahead of the bare figure for a disk breach because D21's lever rule
+  requires it: "this volume has grown every day for thirteen days" is the
+  sentence a human actually needs, not an isolated byte count. Every other
+  figure the report carries — a container's own latest/median, a resource
+  nobody has budgeted — stays out of this badge on the same "routine, one
+  click away in the raw record" reasoning the host-facts badge above
+  already gives for per-container memory/cpu; the full report is in
+  `D.fleet[<node>].resources` for anyone reading it directly. No badge when
+  the row carries no `resources` field at all.
 - **A node-scoped disable (implementation spec 2.3, `--disable --this-node`,
   issue #379) gets its own badge beside the role badge**, not just the
   page-top switch banner. The banner (above) is keyed to *this* node's own

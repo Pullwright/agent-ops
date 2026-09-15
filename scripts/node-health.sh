@@ -183,7 +183,7 @@ _node_health_rate_limit() {
       jq -c '.' "$cache" 2>/dev/null && return 0
     fi
   fi
-  # One call, not two (requirement 56a): `github_auth_probe` *is* this same
+  # One call, not two (requirement 58a): `github_auth_probe` *is* this same
   # free `/rate_limit` request, and it returns only its verdict — so asking
   # it first and then reading the body would make two identical requests of
   # the forge every time the cache expires, which is precisely what the

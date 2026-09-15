@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # test/node-health-http.test.sh — scripts/node-health-server.py (issue #608,
-# requirement 58d): the HTTP surface over scripts/node-health.sh.
+# requirement 60d): the HTTP surface over scripts/node-health.sh.
 #
 # The two other node-health suites cover the computation
 # (test/node-health.test.sh) and the CLI that gathers its inputs

@@ -46,8 +46,12 @@ SCHEMA_FILE="$SCRIPT_DIR/config.schema.json"
 . "$SCRIPT_DIR/lib/drain.sh"
 # shellcheck source=lib/mirror-integrity.sh
 . "$SCRIPT_DIR/lib/mirror-integrity.sh"
+# shellcheck source=lib/resource-usage.sh
+. "$SCRIPT_DIR/lib/resource-usage.sh"
 # shellcheck source=lib/redact.sh
 . "$SCRIPT_DIR/lib/redact.sh"
+# shellcheck source=lib/log-event.sh
+. "$SCRIPT_DIR/lib/log-event.sh"
 
 usage() {
   cat <<'EOF'
@@ -132,6 +136,12 @@ updater_stuck_after_seconds="$(cfg '.updater_stuck_after_minutes * 60 | floor')"
 # re-deriving them, since this is bounding the same hook's own behaviour.
 updater_defer_stuck_after_seconds="$(cfg \
   '([.lock_stale_after // 4, .project_review.lock_stale_after // 6] | max) * 3600 | floor')"
+
+# One push interval in seconds (agent-ops#1377): the age past which an
+# `index.lock` in the mirror can no longer belong to a live git — this script
+# is the only writer of that index, and it runs once per interval. The same
+# jq conversion as above, for the same `set -e` reason.
+push_interval_seconds="$(cfg '.schedule.state_sync_push_minutes * 60 | floor')"
 
 node_name="${NODE_NAME:-$(hostname)}"
 node_name="${node_name//[^A-Za-z0-9._-]/-}"
@@ -297,6 +307,13 @@ EXCLUDES=(
   # `wake-poll-triggered` event, is written to log.jsonl, which does travel,
   # so a peer reading the union still sees every wake this node decided on.
   --exclude=wake-poll.log
+  # resource-usage.log (scripts/collect-resource-usage.sh, requirement 55,
+  # D14, issue #606): the sampler's own text output, local to this node on
+  # the same reasoning as doctor.log above. Its structured samples
+  # (.resource-samples.jsonl, excluded further up) and the derived report
+  # folded into heartbeat.json's `resources` field are what actually
+  # travel.
+  --exclude=resource-usage.log
   --exclude=.dashboard-github.json
   --exclude=.dashboard-tick-cost
   --exclude=.dashboard-payload
@@ -359,20 +376,32 @@ EXCLUDES=(
   --exclude=.fleet-log.jsonl
   --exclude=/dashboard/
   # .node-health-ratelimit-cache.json (scripts/node-health.sh, requirement
-  # 56, issue #608): this node's own cached `/rate_limit` read for its
+  # 58, issue #608): this node's own cached `/rate_limit` read for its
   # readiness check — a peer's copy would answer for a forge budget nobody
   # on that peer read, on the same reasoning as .image-drift-cache.json
   # above. Never published as a verdict either, unlike that file's own
   # image drift: readiness is answered live, on demand, never folded into
   # the heartbeat.
   --exclude=.node-health-ratelimit-cache.json
-  # .node-alive (deploy/docker/crontab.tmpl, requirement 55, issue #608):
+  # .node-alive (deploy/docker/crontab.tmpl, requirement 57, issue #608):
   # the liveness marker a dedicated crontab line touches every minute — a
   # peer's copy would carry a checkout-fresh mtime and answer for *its*
   # replication lag, not for whether that peer's own supercronic is still
   # firing jobs, on the same reasoning labels-ensured/ above gives for a
   # mtime-keyed local marker.
   --exclude=.node-alive
+  # .resource-samples.jsonl / .resource-usage-state.json / .resource-usage.lock
+  # (scripts/collect-resource-usage.sh, requirement 55, D14, issue #606):
+  # this node's own raw CPU/memory/network/disk samples and the small
+  # last-cumulative-reading cache they are derived from — a peer's copy
+  # would answer for a container that is not there, on the same reasoning
+  # as .image-drift-cache.json above. The *derived* report reaches peers
+  # instead, folded into heartbeat.json's `resources` field below
+  # (scripts/resource-budget-report.sh, a summary never a series), exactly
+  # as `stage_health`'s raw file is excepted the same way further up.
+  --exclude=.resource-samples.jsonl
+  --exclude=.resource-usage-state.json
+  --exclude=.resource-usage.lock
 )
 
 require() {
@@ -395,6 +424,94 @@ mirror_lock() {
   fi
 }
 
+# --- The mirror's own index lock (agent-ops#1377) ------------------------------
+# `$mirror.lock` above serialises this script's runs; `.git/index.lock` is
+# git's, taken by every command that writes the index and left behind by one
+# that died mid-write — a container stopped under it, a git the kernel
+# OOM-killed. Nothing ever examined it, so on poetic-1 (2026-09-09 to -11, 27
+# hours) and poetic-2 (2026-09-13 to -15, three days) every push failed at
+# the first index write with `fatal: Unable to create '…/.git/index.lock':
+# File exists`, while the push step's own progress lines kept printing, the
+# node kept cycling, `--status` read every stage `ok`, and the only node-side
+# voice was the doctor's hourly publication check (#602), into a file nothing
+# surfaced.
+#
+# The lock is cleared when three things hold: it exists; it is older than one
+# push interval (`schedule.state_sync_push_minutes` — the interval this very
+# script runs on, and a live git holds the index lock for seconds, so one
+# older than the gap between two pushes belongs to a process that is not
+# coming back); and no git process is working in the mirror right now. That
+# last is read from /proc rather than inferred from the flock, because a git
+# run by hand inside the container, or a gc that detached, is not a state-sync
+# run and holds no `$mirror.lock`. Where /proc cannot be read the answer is
+# "busy" and the lock stays: an orphan that persists is the failure
+# `mirror_write` below now names, whereas a live lock removed is a corrupted
+# index.
+mirror_git_busy() {
+  local p cmd cwd
+  [[ -d /proc/self ]] || return 0
+  for p in /proc/[0-9]*; do
+    [[ "${p#/proc/}" == "$$" ]] && continue
+    cmd="$(tr '\0' ' ' < "$p/cmdline" 2>/dev/null)" || continue
+    [[ "$cmd" == git\ * || "$cmd" == */git\ * ]] || continue
+    cwd="$(readlink "$p/cwd" 2>/dev/null)" || cwd=""
+    if [[ "$cwd" == "$mirror" || "$cwd" == "$mirror/"* || "$cmd" == *"$mirror"* ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+mirror_clear_stale_index_lock() {
+  local lock="$mirror/.git/index.lock" now mtime age
+  [[ -e "$lock" ]] || return 0
+  now="$(date +%s)"
+  mtime="$(stat -c %Y "$lock" 2>/dev/null)" || mtime="$now"
+  age=$(( now - mtime ))
+  if (( age <= push_interval_seconds )); then
+    say "the mirror's index.lock is ${age}s old, within one push interval — leaving it"
+    return 0
+  fi
+  if mirror_git_busy; then
+    say "WARNING: the mirror's index.lock is ${age}s old but a git process is working in the mirror — leaving it"
+    return 0
+  fi
+  rm -f "$lock"
+  say "WARNING: cleared an orphaned index.lock from the mirror (${age}s old, no git process alive)"
+  # Into log.jsonl, which replicates, rather than only this script's own log:
+  # the event is a fact about this node's publication the fleet should see.
+  log_event_append "$state_dir/log.jsonl" cycle "" "$node_name" state-sync-lock-cleared \
+    "$(jq -nc --argjson age "$age" '{age_s: $age}')"
+  return 0
+}
+
+# mirror_write STEP GIT-ARGS…
+# One of the push's writing git commands, run against the mirror. Under
+# `set -e` a failure here used to end the run with git's own stderr as the
+# only trace — in cron.log, not in any log the fleet reads — and nothing
+# named the step, so the "pruned N derived file(s)" lines that print before
+# it read as a push that worked (#1377). Now the first `fatal:`/`error:` line
+# is said and logged as a `state-sync-push-failed` event, and the run still
+# ends non-zero: a push that did not push is a failure, and supercronic's
+# exit-status line stays true. git's full stderr is passed through either
+# way, so a warning on a successful command (a stale `gc.log` being
+# reprinted, say) is not swallowed.
+mirror_write() {
+  local step="$1" out first; shift
+  if out="$(git -C "$mirror" "$@" 2>&1)"; then
+    [[ -z "$out" ]] || printf '%s\n' "$out" >&2
+    return 0
+  fi
+  [[ -z "$out" ]] || printf '%s\n' "$out" >&2
+  first="$(grep -m1 -E '^(fatal|error):' <<<"$out" || true)"
+  [[ -n "$first" ]] || first="$(head -n 1 <<<"$out")"
+  [[ -n "$first" ]] || first="git $step exited non-zero with no message"
+  say "WARNING: push failed at $step — $first"
+  log_event_append "$state_dir/log.jsonl" cycle "" "$node_name" state-sync-push-failed \
+    "$(jq -nc --arg step "$step" --arg detail "${first:0:500}" '{step: $step, detail: $detail}')"
+  return 1
+}
+
 mirror_init() {
   local fresh=0
   if [[ ! -d "$mirror/.git" ]]; then
@@ -407,11 +524,13 @@ mirror_init() {
   git -C "$mirror" remote set-url origin "$remote_url"
 
   # A mirror that already existed has to prove it still deserves the trust a
-  # bare directory check used to hand it for free (lib/mirror-integrity.sh).
-  # A mirror this call just created has nothing to have failed yet, so the
-  # check — and any rebuild it might otherwise log — never runs against a
-  # fresh init: that first-ever push must stay silent, not report
-  # self-healing that never happened.
+  # bare directory check used to hand it for free (lib/mirror-integrity.sh):
+  # its objects reachable and parseable, and no `gc.log` saying its own
+  # garbage collection has failed and given up. A mirror this call just
+  # created has nothing to have failed yet, so the check — and any rebuild
+  # it might otherwise log — never runs against a fresh init: that
+  # first-ever push must stay silent, not report self-healing that never
+  # happened.
   if (( ! fresh )) && ! mirror_integrity_ok "$mirror"; then
     say "WARNING: mirror failed its integrity check — discarding and rebuilding from source"
     rm -rf "$mirror"
@@ -420,6 +539,16 @@ mirror_init() {
     git -C "$mirror" remote add origin "$remote_url"
     mirror_record_rebuild "$state_dir"
   fi
+
+  # Whichever of the three paths above the mirror took — kept, created or
+  # rebuilt — its object store is bounded by configuration before anything
+  # commits into it (lib/mirror-integrity.sh's header has the mechanism):
+  # the amend-and-force-push below orphans a whole snapshot every push, and
+  # left to git's defaults those snapshots were kept a month by the reflog
+  # and then handed, gigabytes at a time, to a `gc --auto` the scheduler's
+  # memory ceiling killed. Applied every run rather than only on init, so a
+  # mirror that predates this reaches the same state on its next push.
+  mirror_configure_store "$mirror"
 }
 
 # Newest-first list of the cycle directories worth keeping. Their names are
@@ -517,6 +646,7 @@ do_push() {
   require git
   mirror_lock
   mirror_init
+  mirror_clear_stale_index_lock
 
   # Bound this node's own history before mirroring any of it: the local cap
   # (`state_local_cycles_retained`) sits deliberately far above the mirror's
@@ -530,8 +660,8 @@ do_push() {
   # Start from the branch's current tip when there is one — the amend below
   # keeps history a single rolling commit per node.
   if git -C "$mirror" fetch --quiet --depth 1 origin "$state_branch" 2>/dev/null; then
-    git -C "$mirror" reset --quiet --hard FETCH_HEAD
-    git -C "$mirror" clean -qfd
+    mirror_write reset reset --quiet --hard FETCH_HEAD
+    mirror_write clean clean -qfd
   fi
 
   # Everything but the cycle directories, which need a filter of their own.
@@ -655,6 +785,25 @@ do_push() {
       heartbeat_switch_json="$(jq -c --argjson d "$heartbeat_drain_cached" '. + {drain: $d}' <<<"$heartbeat_switch_json")"
     fi
   fi
+  # Resource-budget report (requirement 55, D14, issue #606): this node's
+  # own scripts/resource-budget-report.sh, over resources.report_window_hours
+  # — the compact per-container/per-volume {latest, median/growth, p95}
+  # summary scripts/collect-resource-usage.sh's local samples derive into,
+  # never the raw samples themselves (excluded above). `null` rather than
+  # an error on a report that could not be read: a node that has not run
+  # the collector yet (or has neither container this feature measures) is
+  # simply absent from the fleet's resource picture, the same "no evidence
+  # is not evidence" degradation the doctor/updater fields above already
+  # hold for a record that has not been written yet.
+  heartbeat_resources_window_hours="$(jq -r '.resources.report_window_hours // 24' <<<"$DEFAULTED_CONFIG")"
+  [[ "$heartbeat_resources_window_hours" =~ ^[0-9]+$ ]] || heartbeat_resources_window_hours=24
+  heartbeat_resources_samples=""
+  if [[ -r "$state_dir/.resource-samples.jsonl" ]]; then
+    heartbeat_resources_samples="$(cat "$state_dir/.resource-samples.jsonl")"
+  fi
+  heartbeat_resources_window_start="$(jq -nr --argjson secs "$(( heartbeat_resources_window_hours * 3600 ))" \
+    '(now - $secs) | todateiso8601' 2>/dev/null)"
+  heartbeat_resources_json="$(resource_budget_report "$heartbeat_resources_samples" "$heartbeat_resources_window_start" 2>/dev/null || echo null)"
   jq -nc \
     --arg node "$node_name" \
     --arg role "${AGENT_OPS_ROLE:-standby}" \
@@ -672,11 +821,12 @@ do_push() {
     --argjson doctor "$(jq -c '{timestamp, verdict,
                                 fails: ([(.fails // [])[] | .[0:200]] | .[0:3])}' \
                           "$state_dir/.doctor-status.json" 2>/dev/null || echo null)" \
+    --argjson resources "$heartbeat_resources_json" \
     '{node: $node, role: $role, ts: $ts, last_cycle: $lc, version: $version,
       compose: $compose, compose_reconcile: $compose_reconcile,
       image: $image, switch: $switch,
       stage_health: $stage_health, mirror: $mirror_rebuild, updater: $updater,
-      doctor: $doctor}' > "$mirror/heartbeat.json"
+      doctor: $doctor, resources: $resources}' > "$mirror/heartbeat.json"
 
   # Redact before committing (agent-ops#966): nothing above stops a token or
   # a home path that reaches a stage's stdout/stderr — a verbose git/curl
@@ -699,19 +849,19 @@ do_push() {
   # without bound. A mid-cycle push is fine now: peers consume logs and the
   # dashboard tolerates a torn transcript for one tick, and nobody adopts
   # this state wholesale any more.
-  git -C "$mirror" add -A
+  mirror_write add add -A
   local msg
   msg="state: $node_name $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  local commit=(git -C "$mirror"
+  local commit=(
     -c "user.name=${GIT_USER_NAME:-agent-ops}"
     -c "user.email=${GIT_USER_EMAIL:-agent-ops@localhost}"
     commit --quiet -m "$msg")
   if git -C "$mirror" rev-parse --verify --quiet HEAD >/dev/null; then
-    "${commit[@]}" --amend
+    mirror_write commit "${commit[@]}" --amend
   else
-    "${commit[@]}"
+    mirror_write commit "${commit[@]}"
   fi
-  git -C "$mirror" push --quiet --force origin "HEAD:refs/heads/$state_branch"
+  mirror_write push push --quiet --force origin "HEAD:refs/heads/$state_branch"
   say "pushed $(du -sh "$mirror" 2>/dev/null | cut -f1) of state as $state_branch"
 }
 

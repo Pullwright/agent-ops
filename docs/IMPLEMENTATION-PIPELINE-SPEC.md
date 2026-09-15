@@ -58,6 +58,7 @@ are binding on any agent working inside them).
   - [Extended notes: `host_budget_reserved_cpus`](#extended-notes-host_budget_reserved_cpus)
   - [Extended notes: `none_selected_recheck_hours`](#extended-notes-none_selected_recheck_hours)
   - [Extended notes: `schedule.excluded_minutes`](#extended-notes-scheduleexcluded_minutes)
+  - [Extended notes: `resources`](#extended-notes-resources)
 - [The Landing Gate](#the-landing-gate)
 - [Requirements](#requirements)
   - [The Script (`agent-cycle.sh`)](#the-script-agent-cyclesh)
@@ -298,7 +299,7 @@ a node updates by pulling a new image rather than by pulling a branch.
   one tech-debt-archive line (requirement 2.6c), `publish-tech-debt-
   archive.sh`, which mirrors every `pw::type:tech-debt`-labelled issue into
   the state repository once a day, with nobody watching that either; and one
-  liveness-marker line (requirement 55, issue #608), running every minute
+  liveness-marker line (requirement 57, issue #608), running every minute
   with no substitution token of its own, which `touch`es
   `state_dir/.node-alive` — the marker `scripts/node-health.sh --live`
   reads. Every
@@ -390,7 +391,7 @@ file and carries placeholders only; `.env` itself is never committed.
   it runs on every node. `AGENT_OPS_ROLE` comes from `ROLE` in `.env` and
   **defaults to `standby`** if unset, so a half-configured node cannot become a
   second worker. Carries a `healthcheck:` running `scripts/node-health.sh
-  --live` in-container (requirement 58c, issue #608) — the same command a
+  --live` in-container (requirement 60c, issue #608) — the same command a
   Kubernetes `exec` probe would run, so this line and that manifest's own
   probe answer identically. Deliberately the liveness verdict alone: a
   sidecar HTTP responder answering `200` while supercronic is wedged beside
@@ -501,7 +502,7 @@ file and carries placeholders only; `.env` itself is never committed.
   only, and exists because the host may already have something on 8787 — the
   laptop's legacy SysV dashboard does.
 - **`node-health`** (profile `node-health`) — the HTTP surface over
-  `scripts/node-health.sh` (requirement 58d, issue #608):
+  `scripts/node-health.sh` (requirement 60d, issue #608):
   `scripts/node-health-server.py` answering `/livez`, `/readyz`, `/healthz`
   and `/metrics`. Off by default, in no other profile, and published on the
   identical loopback-only pattern `dashboard-local` uses immediately above:
@@ -714,7 +715,22 @@ file and carries placeholders only; `.env` itself is never committed.
   blkio throttles need kernel support the WSL2 kernel lacks (`docker info`
   warns `No blkio throttle.read_bps_device support`), and Compose has no
   per-container egress cap at all. Disk and bandwidth are therefore bounded
-  only by what the pipeline itself does.
+  only by what the pipeline itself does — measured and reported rather than
+  enforced (requirement 55, agent-ops#606): `scripts/collect-resource-usage.sh`
+  self-samples both from inside `scheduler`/`dashboard`/`dashboard-local`,
+  and `scripts/doctor.sh` warns when the windowed figure crosses
+  `config.json`'s own `resources` budget, the same "reportable, not
+  enforceable" answer this file's own D16 open-question table gives disk and
+  bandwidth generally.
+  Nor does `mem_limit` bound the *whole* of what a container may hold: it is
+  a ceiling on `memory.current` (resident plus page cache), never on
+  `memory.current` plus swap, so on a host `docker info` reports "No swap
+  limit support" for (every node in this fleet, as of the ceilings above), a
+  container over its ceiling swaps into the host's own swap file rather than
+  being killed — the OOM trade this paragraph states two sentences up simply
+  does not happen there, and a container that should have been killed
+  instead keeps running while the host's own swap fills, which is a slower
+  and less legible version of the same freeze the ceiling exists to prevent.
   A scheduler's own `mem_limit` is not the whole of what bounds it: an
   opted-in node also creates it under a parent cgroup
   (`scripts/cgroup-parent-setup.sh`) carrying `memory.high` (the proactive
@@ -1015,8 +1031,8 @@ and the schema must carry every one of them.
 | `none_selected_recheck_hours` | *(unset)* | The no-op short-circuit's safety valve (requirement 3b): the Co-Ordinator is engaged regardless once the last `none-selected` is this old, even if nothing changed. Bounds how long a gap in fingerprint coverage can stall the pipeline. "This old" means 24 cadence firings (requirement 1d), not a fixed 24 h: derived from the worst-case gap between cycles (`schedule.cycle_interval_minutes`, `cycle_hours`, `excluded_minutes`); a configured non-zero value floors the derivation...[continued below](#extended-notes-none_selected_recheck_hours) |
 | `image_behind_grace_hours` | 3 h | The dashboard badge's (and `scripts/check-node-image.sh`'s) tolerance for a node behind the registry's newest image (`lib/image-drift.sh`, requirement 2.5, #155) before it turns amber / fails: a roll defers while a cycle is in flight, so being behind an image published more recently than this is the ordinary mid-roll state, not a fault. |
 | `updater_stuck_after_minutes` | 20 min | The dashboard badge's tolerance for a container that was allowed to roll (`lib/updater-health.sh`'s `updater_status`, requirement 2.5, #603) before it turns amber: past this, the container the hook told to go ahead is still running, which a healthy roll never takes this long to resolve on its own — unlike `image_behind_grace_hours`, this is not an ordinary mid-roll wait. |
-| `node_health_live_stale_after_minutes` | 3 min | The liveness threshold `node_health_liveness` (`lib/node-health.sh`) applies to the marker's own mtime (requirement 55): comfortably above the one-minute crontab cadence that touches it, so an ordinary scheduling jitter never trips it, and far below any cycle's own worst-case runtime, so a genuinely wedged supercronic is caught within a few minutes rather than a whole cycle interval. |
-| `node_health_forge_check_cache_seconds` | 30 s | The TTL on `_node_health_rate_limit`'s cache (`state_dir/.node-health-ratelimit-cache.json`, requirement 56): short enough that a real credential or budget change is visible within one ordinary polling interval, long enough that even a sub-second poll (a Kubernetes exec probe at its own default cadence) makes at most one real call per window. |
+| `node_health_live_stale_after_minutes` | 3 min | The liveness threshold `node_health_liveness` (`lib/node-health.sh`) applies to the marker's own mtime (requirement 57): comfortably above the one-minute crontab cadence that touches it, so an ordinary scheduling jitter never trips it, and far below any cycle's own worst-case runtime, so a genuinely wedged supercronic is caught within a few minutes rather than a whole cycle interval. |
+| `node_health_forge_check_cache_seconds` | 30 s | The TTL on `_node_health_rate_limit`'s cache (`state_dir/.node-health-ratelimit-cache.json`, requirement 58a): short enough that a real credential or budget change is visible within one ordinary polling interval, long enough that even a sub-second poll (a Kubernetes exec probe at its own default cadence) makes at most one real call per window. |
 | `node_stale_after_minutes` | 30 min | The dashboard fleet strip's (and `scripts/doctor.sh`'s) tolerance for a node's last confirmed publication into the shared state (`lib/fleet.sh`'s `fleet_publication_status`, requirement 2.5, #602) before it turns stale: three missed heartbeat/fetch cycles at the shipped cadence, not clock jitter — applied identically to a peer's row and to a node's own, so the two implementations that used to compute this (a hardcoded literal for peers, a hardcoded `false` for self) can no longer disagree. |
 | `dashboard_refresh_seconds` | `5` | How often an open dashboard tab polls for freshly-written data (`docs/DASHBOARD-SPEC.md`) — a small stamp every tick, the full `data.js` payload only when the stamp's fingerprint changed. Match it to the heartbeat cadence: a shorter interval polls a stamp nothing has rewritten, a longer one shows a cycle that has already moved on. |
 | `schedule.cycle_hours` | `*` | The hour field of the implementation cycle's crontab line, rendered by `deploy/docker/render-crontab.sh`; `*` is every hour. |
@@ -1029,6 +1045,7 @@ and the schema must carry every one of them.
 | `schedule.state_sync_push_minutes` | `5` | Interval, in minutes, of `state-sync.sh push` (requirement 2.5). |
 | `schedule.state_sync_fetch_minutes` | `7` | Interval, in minutes, of `state-sync.sh fetch` (requirement 2.5). |
 | `schedule.wake_poll_minutes` | `2` | Interval, in minutes, of `scripts/wake-poll.sh`'s crontab line (requirement 54). |
+| `schedule.resource_sample_minutes` | `5` | Interval, in minutes, of `scripts/collect-resource-usage.sh`'s crontab line (requirement 55) inside the `scheduler` service, and the same interval the background loop `scripts/serve-dashboard.sh` starts for `dashboard`/`dashboard-local` polls on. |
 | `schedule.log_rotation_minute` | `19` | The minute past every hour `rotate-logs.sh` runs (requirement 2.6). |
 | `schedule.doctor_offset_minutes` | `44` | Minutes past `CYCLE_MINUTE` (mod 60) the hourly `doctor.sh --unattended` pass's minute is set to, jittering it across the fleet the same way `review_offset_minutes` jitters the review tick. |
 | `schedule.revert_rate_hour` | `2` | The hour the daily revert-rate publishing tick fires. |
@@ -1038,6 +1055,7 @@ and the schema must carry every one of them.
 | `schedule.monitor_hour` | `5` | The hour the daily monitor run is due (`docs/MONITOR-PIPELINE-SPEC.md` M4). The crontab line itself is hourly, so a node asleep at this hour still picks the day's run up at its next firing. |
 | `schedule.monitor_offset_minutes` | `19` | Minutes past `CYCLE_MINUTE` (mod 60) the hourly monitor tick's minute is set to, jittering it across the fleet the same way `doctor_offset_minutes` jitters the unattended doctor pass. |
 | `revert_rate_baseline` | `{"source": "docs/reviews/2026-08-15-merge-autonomy-baseline.md", "generated": "2026-08-15", "repos": [{"slug": "Poetic-Poems/poetic", "count": 84, "reverts": 0, "follow_up_fixes": 31}, {"slug": "Poetic-Poems/poetic-fiddle", "count": 119, "reverts": 0, "follow_up_fixes": 44}, {"slug": "Pullwright/agent-ops", "count": 120, "reverts": 0, "follow_up_fixes": 106}]}` | The D18 Stage 0 merge-autonomy baseline (docs/reviews/2026-08-15-merge-autonomy-baseline.md §6), copied here once as a fixed reference rather than re-derived at runtime (issue #579): `scripts/publish-revert-rate.sh` compares every window's revert-or-follow-up rate against these figures. A repository absent from `repos` reports its baseline comparison `unavailable` rather than failing. |
+| `resources` | see `config.json` | Per-container (`resources.containers.<AGENT_OPS_SERVICE>`) and per-volume (`resources.volumes.<name>`) budgets requirement 55 (D14, issue #606) compares `scripts/resource-budget-report.sh`'s windowed actuals against. Covers only the three containers that run this image and self-measure (`scripts/collect-resource-usage.sh`) — `scheduler`, `dashboard`, `dashboard-local` — plus the two volumes they mount; `tailscale`/`watchtower`/`egress-proxy`/`collector`/`reconciler` are out...[continued below](#extended-notes-resources) |
 <!-- config-table:end -->
 
 Model IDs are pinned in config (one place to update); do not use floating
@@ -1079,6 +1097,8 @@ A repo entry may also carry `landing_cool_off_hours` — the per-repository over
 A repo entry may also carry `escalation_autonomy` — the per-repository override of the top-level key of the same name (D18, agent-ops#627), on the same precedence as `stage_timeouts`: this entry wins when present, the top-level key otherwise.
 
 A repo entry may also carry `preview` — this repository's preview-deployment arrangement (D19 Phase 1, agent-ops#586), read by requirement 24a instead of that requirement naming a provider or a repository. Absent, or absent its own `provider`, resolves to `"none"`: no preview deployment, so neither stage runs a preview step. `"vercel"` is the only implemented provider; its own `vercel.bypass_secret_env` (default `VERCEL_AUTOMATION_BYPASS_SECRET`) and `vercel.token_env` (default `VERCEL_TOKEN`) name the environment variables carrying this repository's Vercel credentials — never the credentials themselves. There is no top-level default for this key: a preview arrangement is inherently repository-specific, unlike `merge_autonomy` and its neighbours above.
+
+A repo entry may also carry `prompt_overrides` — the per-repository layer of the top-level key of the same name (requirement 4a, agent-ops#588), keyed only `implementer`/`reviewer` — the two stages requirement 4a already runs against a single known repository — each on the same precedence as `stage_timeouts`: this entry's own stage key wins when present, the top-level `prompt_overrides` entry for that stage otherwise. A repo entry naming any other stage key (`coordinator`, `enabler`, `refiner` or `monitor`, none of which yet has a per-invocation home to scope an override to) is a schema error, not a silently ignored key — `config.schema.json`'s `repoPromptOverrides` enumerates only the two stages this precedence covers.
 
 Every optional key sits on the repository's own entry, beside `slug` and `sources`:
 
@@ -1178,7 +1198,7 @@ Namespace prefix `lib/labels.sh`'s `labels_reconcile` reconciles full CRUD for (
 
 ### Extended notes: `prompt_overrides`
 
-Per-installation prompt extension/replacement (requirement 4a): an object keyed `coordinator`/`implementer`/`reviewer`/`enabler`/`refiner`/`monitor`, each holding `extend` (an array of file paths, appended in order) and/or `replace` (a file path substituted for that stage's shipped `prompts/<stage>.md`). A relative path resolves against `state_dir`. Empty or a stage absent from it changes nothing for that stage. `approver` is deliberately absent from the enumeration: the Approver's adversarial prompt is the gate the D18 trust ladder rests on, and no installation may extend or replace it (requirement 4a, #469). A `replace` file substitutes the whole shipped prompt, its `## Untrusted external content` section included (requirement 45): preserving the canonical marker-delimited block is part of the replacement's contract — `test/prompt-untrusted-framing.test.sh` pins only the shipped prompts.
+Per-installation prompt extension/replacement (requirement 4a): an object keyed `coordinator`/`implementer`/`reviewer`/`enabler`/`refiner`/`monitor`, each holding `extend` (an array of file paths, appended in order) and/or `replace` (a file path substituted for that stage's shipped `prompts/<stage>.md`). A relative path resolves against `state_dir`. Empty or a stage absent from it changes nothing for that stage. `approver` is deliberately absent from the enumeration: the Approver's adversarial prompt is the gate the D18 trust ladder rests on, and no installation may extend or replace it (requirement 4a, #469). A `replace` file substitutes the whole shipped prompt, its `## Untrusted external content` section included (requirement 45): preserving the canonical marker-delimited block is part of the replacement's contract — `test/prompt-untrusted-framing.test.sh` pins only the shipped prompts. `implementer` and `reviewer` — the two stages that already run against a single known repository — additionally take a per-repository layer, `repos[].prompt_overrides` (`repoPromptOverrides`), resolved one stage at a time on the `stage_timeouts` precedence: that repository's own stage entry wins when present, this installation-wide entry for the same stage otherwise. A repository naming any other stage there is a schema error, not a silently ignored key — `coordinator`, `enabler`, `refiner` and `monitor` have no per-repository invocation to scope an override to.
 
 ### Extended notes: `pr_label`
 
@@ -1261,6 +1281,10 @@ The no-op short-circuit's safety valve (requirement 3b): the Co-Ordinator is eng
 ### Extended notes: `schedule.excluded_minutes`
 
 Minutes `CYCLE_MINUTE` (env or the per-node hash) may never land on, rendered from `deploy/docker/crontab.tmpl`. Poetic's own value excludes `0` because its hourly sync workflow owns the top of the hour; a deployment with no such conflict ships `[]`. Excluding every minute of the hour is a misconfiguration the renderer refuses rather than spinning on. This governs only the *scheduled* `CYCLE_MINUTE`: a wake-poll-triggered invocation (requirement 54) does not consult this key at all and may start a cycle on a minute it excludes — see requirement 54's own note on why that is acceptable.
+
+### Extended notes: `resources`
+
+Per-container (`resources.containers.<AGENT_OPS_SERVICE>`) and per-volume (`resources.volumes.<name>`) budgets requirement 55 (D14, issue #606) compares `scripts/resource-budget-report.sh`'s windowed actuals against. Covers only the three containers that run this image and self-measure (`scripts/collect-resource-usage.sh`) — `scheduler`, `dashboard`, `dashboard-local` — plus the two volumes they mount; `tailscale`/`watchtower`/`egress-proxy`/`collector`/`reconciler` are out of scope (deferred; see requirement 55). `containers.*.memory_bytes`/`containers.*.cpu_cores` mirror `deploy/docker/compose.yaml`'s own `mem_limit`/`cpus` defaults, the enforcement side D14 already ships; `containers.*.bandwidth_bytes_per_hour` and every `volumes.*.disk_bytes` are provisional pending a real fleet window.
 
 <!-- config-table:notes-end -->
 
@@ -3615,8 +3639,17 @@ implements.
    unpacked is the shape damage actually arrives in. Either figure is three
    orders of magnitude inside the 5-minute push / 7-minute fetch interval
    this runs on, so no stamp-file gate is needed to keep it off the common
-   path. On any nonzero exit — 2 for an empty loose object, 3 for other
-   corruption — `mirror_init` discards the checkout (`rm -rf`, `git init`,
+   path. A non-empty `.git/gc.log` fails the check in its own right, ahead
+   of the fsck (#604's second clause, implemented 2026-09-15): it is git's
+   record that its last garbage collection failed and its instruction to
+   itself to decline every later `gc --auto` and merely reprint the old
+   error, so the condition it names is permanent until the file goes — and
+   `fsck` does not see it, because a store that was never packed is a
+   valid store. On 2026-09-14/15 both workstation mirrors carried one
+   (`pack-objects died of signal 9`, a gc the kernel had OOM-killed) over
+   24,000–27,000 valid loose objects and 1.4–1.7 GiB. On any nonzero exit
+   — 2 for an empty loose object, 3 for other corruption — or on that
+   `gc.log`, `mirror_init` discards the checkout (`rm -rf`, `git init`,
    `remote add`) rather than repairing it: the mirror is wholly derived,
    this node's own branch is rsync'd back out of `state_dir` on the very
    next push and every peer branch is re-fetched at `--depth 1` by the very
@@ -3630,6 +3663,59 @@ implements.
    heartbeat's `mirror` verdict (below), so a rebuild is as visible to a
    human or a peer as any other node fact, and a *second* rebuild is
    visibly a repeat rather than one more indistinguishable line.
+
+   **Mirror object store.** After the check, on every push and fetch and
+   whichever path the mirror took (kept, created or rebuilt), `mirror_init`
+   applies `mirror_configure_store` (`lib/mirror-integrity.sh`): the seven
+   git configuration keys `mirror_store_config` lists, each written only
+   when it does not already hold its value, and the removal of `.git/logs`.
+   The push below amends one rolling commit and force-pushes it, orphaning
+   the previous snapshot every few minutes; under git's defaults the reflog
+   kept every orphan reachable for thirty days, so a month of superseded
+   snapshots accumulated as loose objects — gigabytes — before any was
+   prunable, and the `gc --auto` that finally fired handed all of it to a
+   `pack-objects` with one thread per CPU inside a scheduler whose
+   `memory.max` is 1536m and which was usually running a stage. That is the
+   gc the kernel killed, and the `gc.log` it left is what the check above
+   now catches. So the store is bounded instead: no reflog
+   (`core.logAllRefUpdates false`, and the existing reflog files removed,
+   because with the setting false git still appends to any that exist —
+   `git reflog expire` alone left the pile regrowing on 2026-09-15);
+   unreachable objects pruned by the gc that finds them (`gc.pruneExpire
+   now`, safe only because every git process that touches the mirror runs
+   under `$mirror.lock`); the auto-gc run in the foreground of the `git
+   commit` or `git fetch` that triggered it (`gc.autoDetach false`), so it
+   completes inside that lock — a detached gc pruning at `now` would outlive
+   the lock and race the next state-sync's fetch for objects it had written
+   but not yet referenced — and, as a foreground gc never writes `gc.log`, a
+   failure is retried at the next trigger rather than declining every gc for
+   ever; a loose-object trigger of 1,000 (`gc.auto`) so the pile between gcs
+   stays around a thousand objects rather than 6,700; a pack limit of one
+   (`gc.autoPackLimit`), because the gc a loose trigger runs is an
+   *incremental* repack and, at that moment, the mirror's remote-tracking
+   ref for its own branch — moved by the depth-1 fetch that opens every
+   push — still names the snapshot the amend has just superseded, so that
+   one snapshot is packed and becomes garbage only when the push moves the
+   ref, garbage an incremental repack never drops and a consolidating
+   `repack -a -d` does — which git schedules at 50 packs by default and, at
+   this limit, in the fetch that opens the push after every incremental gc;
+   and a single-threaded, window-bounded repack (`pack.threads 1`,
+   `pack.windowMemory 64m`), since the reachable set alone is small (about
+   12.5 MiB packed on the Poetic nodes) and the ceiling is what killed the
+   last one. Under those the store settles at one pack holding the current
+   snapshot and at most the one before it, with the current snapshot's own
+   objects loose until the next incremental gc. The keys live in the
+   mirror's own `.git/config`, so a rebuild loses them — which is why they
+   are applied on every run rather than at init, and why a mirror that
+   predates this reaches the same state on its next push: its reflog-kept
+   pile becomes unreachable the moment `.git/logs` goes, and the next
+   auto-gc prunes it under the same bounds (the two VM nodes' 43,000-entry
+   reflogs and 48–50 packs went that way by hand on 2026-09-15, 11–12 s
+   and 210–280 MiB peak each). `test/state-sync.test.sh` forces the gc by
+   planting two blobs whose ids fall in the `objects/17/` bucket `gc
+   --auto` samples, with the threshold lowered through git's
+   environment-config channel, and asserts the settled shape across six
+   pushes.
 
    **Push.** Every node — active or standby — mirrors its `state_dir` into
    its **own branch**, `nodes/<NODE_NAME>`, every few minutes from the
@@ -3842,6 +3928,53 @@ implements.
    belongs on the list for the same reason. Nothing reports the omission: the
    disk does, once it is already gone. A mirror-level `flock` serialises the
    cron push against the end-of-cycle push.
+
+   **A push that cannot write says so, and an orphaned index lock does not
+   stop it (agent-ops#1377).** The `flock` above is state-sync's own;
+   `.git/index.lock` in the mirror is git's, taken by every command that
+   writes the index and left behind by one that died mid-write — a container
+   stopped under it, a git the kernel OOM-killed. Nothing examined it, so on
+   poetic-1 (2026-09-09 to -11, 27 hours) and poetic-2 (2026-09-13 to -15,
+   three days) every push failed at its first index write with `fatal:
+   Unable to create '…/.git/index.lock': File exists` while the push's own
+   progress lines kept printing, the node kept cycling, `--status` read every
+   stage `ok`, and the only node-side voice was the doctor's hourly
+   publication check (#602), into a file nothing surfaced. So, after
+   `mirror_init` and before the first write, `do_push` clears that lock when
+   three things hold — it exists, it is older than one push interval
+   (`schedule.state_sync_push_minutes`, the interval this script itself runs
+   on; a live git holds the index lock for seconds, so one older than the
+   gap between two pushes belongs to a process that is not coming back), and
+   no git process is working in the mirror (`mirror_git_busy`, read from
+   `/proc`: any process named `git` whose working directory is the mirror or
+   whose command line names it; where `/proc` cannot be read the answer is
+   "busy") — and logs `state-sync-lock-cleared` `{age_s}` to `log.jsonl`,
+   which replicates, rather than only to its own log. A lock any live git
+   may hold is never removed; a young one is left with a line saying so.
+   Independently, every writing git command of the push (`reset`, `clean`,
+   `add`, `commit`, `push`) runs through `mirror_write`: on failure the first
+   `fatal:`/`error:` line is said and logged as `state-sync-push-failed`
+   `{step, detail}`, git's full stderr is passed through as before, and the
+   run still ends non-zero — a push that did not push is a failure, and
+   supercronic's exit-status line stays true. The doctor's own publication
+   check is unchanged: it already fails a node whose read-back is older than
+   `node_stale_after_minutes` — the fleet-wide definition of stale, applied
+   identically to a peer's row and to a node's own so the two cannot
+   disagree (that key's own notes) — and did so hourly throughout both
+   incidents; a second, tighter threshold for the doctor alone would have the
+   node call itself stale while its peers still called it fresh. What was
+   missing was a reader, so `--status` gains two lines (`lib/manage.sh`, on
+   the same terms as requirement 2.8's `stages:` section — `check-nodes.sh`
+   prints `--status` per node and inherits them for free): `published:`,
+   this node's own publication verdict through `fleet_publication_status`
+   over `.state-sync-published.json` — `fresh`/`STALE` with the age and the
+   threshold, `unknown` before the first read-back, `not configured` without
+   a `state_repo` — and `doctor:`, the last unattended pass's verdict and
+   age from `.doctor-status.json`, with the count of failing checks and the
+   first of them (the same bounded `fails` the heartbeat carries, #1397), or
+   a plain sentence when no pass has run. `test/state-sync.test.sh` drives
+   the three lock cases (young, held by a live process, orphaned) and both
+   events; `test/manage-status.test.sh` the two lines.
 
    **Fetch.** Every node materialises every *other* node's branch, whole,
    under the peers directory (`lib/fleet.sh`, `<workspace_root>/
@@ -4748,7 +4881,12 @@ implements.
    reads this file (never recomputes it) and prints it as a new `stages:`
    section, one line per stage — `coordinator failing (11 consecutive, last
    success 8h ago)`, `reviewer idle (never run)` — or a plain "no data yet"
-   line on a node that has not completed a cycle since upgrading.
+   line on a node that has not completed a cycle since upgrading. A failing
+   stage's line is followed by an indented `last: <last_detail>` line when
+   the streak carries one (2026-09-15): the record held the detail all
+   along, but the terminal showed only the count, so six cycles of a lapsed
+   login on ockham-2 read as any failure at all when the detail — requirement
+   4i's `authentication_failed` — named the one thing to do.
    `check-nodes.sh` (external to this repository; not committed here) prints
    `--status` per node and so inherits the new section for free, with
    nothing in this repository to change.
@@ -6474,7 +6612,7 @@ implements.
    order and no instructions would spend a model to no purpose.
    That tolerance is for *runtime* faults only.
    `config.json`'s `prompt_overrides` itself must be structurally valid to
-   full depth — an object (possibly `{}`) keyed only by the five stage names,
+   full depth — an object (possibly `{}`) keyed only by the six stage names,
    each stage an object holding only `extend` (an array of file-path strings)
    and/or `replace` (a file-path string); any other shape — an unknown stage
    key, a non-object stage value, an unknown key within a stage, a wrong
@@ -6507,6 +6645,36 @@ implements.
    short-circuit. The digest is a pure function of the override
    configuration and the contributing files' bytes, never of the node's
    filesystem layout.
+
+   **A per-repository layer, for the two stages that already run against a
+   single known repository (agent-ops#588).** The Co-Ordinator runs once per
+   cycle across every configured repository together (requirement 4), so an
+   installation-wide `prompt_overrides` entry is the only granularity it can
+   take; the Implementer (requirement 7) and the Reviewer (requirement 8)
+   each already run against exactly one repository — the one the Co-Ordinator
+   selected that cycle — so `repos[].prompt_overrides` (`config.schema.json`'s
+   `repoPromptOverrides`) lets a repository add or replace its own
+   `implementer`/`reviewer` prompt without reaching into the installation-wide
+   key that would otherwise apply to every repository at once.
+   `lib/prompt-overrides.sh`'s `prompt_overrides_json_for_repo` resolves the
+   two layers before either stage's prompt is assembled: for a stage `<s>` in
+   `{implementer, reviewer}`, the selected repository's own
+   `repos[].prompt_overrides.<s>` entry wins outright — the whole
+   `{extend, replace}` object, not a field-by-field merge with the
+   installation-wide entry — when that repository's own entry sets `<s>`,
+   the installation-wide `prompt_overrides.<s>` entry otherwise; the same
+   precedence `stage_timeouts` and `merge_autonomy` already give one actor's
+   or one scalar's repository-level override. A repository that sets neither
+   stage, or that is missing from `repos[]` entirely, sees the
+   installation-wide object unchanged — `prompt_overrides_json_for_repo`
+   degrades to reading `.prompt_overrides` directly, byte for byte. Every
+   other stage name is refused on a repository's own entry rather than
+   silently ignored: `repoPromptOverrides`, unlike the installation-wide
+   `promptOverride` enumeration, admits only `implementer` and `reviewer` as
+   properties, and `additionalProperties: false` turns a `coordinator`,
+   `enabler`, `refiner` or `monitor` key there into the same schema-gate
+   fatal misconfiguration (requirement 1b) as any other unknown key — none of
+   those four stages has a single repository to scope an override to yet.
 4b. **The repo/work-sources table is generated from `config.json`, not
    hand-maintained in the prompt (issue #78).** `prompts/coordinator.md`
    carries a `@@WORK_SOURCES_TABLE@@` marker where a table naming consumer
@@ -7181,6 +7349,23 @@ implements.
    ladder would never have fired on the outage it was needed for. The
    escalation's own hint now names `coordinator.out` first.
 
+   One refusal carries no status at all and is recognised by its shape
+   (2026-09-15, ockham-2): a node whose subscription OAuth credential lapsed
+   while it stood down — re-enabled after days on Standby, its refresh token
+   expired with nothing having used it — records `terminal_reason:
+   "api_error"`, `api_error_status: null` and `result: "Failed to
+   authenticate: OAuth session expired and could not be refreshed"`, because
+   the runner refused the request itself, having no credential to make it
+   with, before any API call could return a status. Six consecutive cycles
+   read `coordinator exited 1` (and `enabler`, `refiner`), the same useless
+   account #641 fixed for the status-bearing kind. So `stage_api_refusal`'s
+   gate is the numeric status *or* that shape — the runner's own `api_error`
+   reason *and* an authentication message (`authenticat|oauth|unauthori[sz]ed`,
+   case-insensitive) — and the shape is named `authentication_failed`,
+   whether or not a status rides with it, so one outage never reads as two
+   details. The gate is deliberately both halves: an `api_error` with no
+   status and no such message still gets its honest exit code.
+
    **Not every refusal is deterministic, and the record now says which
    (issue #1073).** `stage_api_refusal`'s stable token cannot itself carry
    that distinction — the whole point of narrowing it was to keep a moving
@@ -7191,7 +7376,9 @@ implements.
    any other 4xx — the API considered the request and declined it, and no
    amount of retrying changes that — and `transient` for a 5xx or a
    connection-level fault — the request never reached a considered answer,
-   the fault is external, and it clears on its own. `handle_stage_failure`
+   the fault is external, and it clears on its own — and `refused` for
+   `authentication_failed`, which no retry clears, only a person completing
+   the login. `handle_stage_failure`
    carries it on the `attempt-failed` event as `api_refusal_class`, empty
    when `stage_api_refusal` found nothing to classify. `crash_loop_verdict`
    is the one reader of this field today (requirement 2.7); no other part of
@@ -9162,7 +9349,7 @@ implements.
     `scripts/pickup-metrics.sh`'s contended-loss-per-selection ratio
     already counts.
 
-55. **Liveness: is supercronic still firing this node's jobs at all (issue
+57. **Liveness: is supercronic still firing this node's jobs at all (issue
     #608, Phase 2).** A dedicated crontab line, carrying no substitution
     token of its own (`deploy/docker/crontab.tmpl`), touches
     `state_dir/.node-alive` every minute — deliberately the cheapest thing
@@ -9180,7 +9367,7 @@ implements.
     `live: false` with a stated reason rather than a bare boolean when the
     marker has never been touched at all (a container in its first minute).
 
-56. **Readiness: could a cycle start now.** `lib/node-health.sh`'s
+58. **Readiness: could a cycle start now.** `lib/node-health.sh`'s
     `node_health_readiness` composes a `{ready, unmet}` verdict from facts
     `scripts/node-health.sh --ready` gathers, every unmet condition named
     by its own stable code rather than folded into a bare boolean:
@@ -9205,7 +9392,7 @@ implements.
     folded into "unknown": it is honestly evidence readiness cannot
     proceed, not merely evidence this node cannot say so.
 
-    56a. **No network call beyond the one exempt read, and no live fetch of
+    58a. **No network call beyond the one exempt read, and no live fetch of
     fleet state.** `--ready` makes exactly one network call —
     `gh api rate_limit`, cached in `state_dir/.node-health-ratelimit-cache.json`
     with a TTL of `node_health_forge_check_cache_seconds` — so that an
@@ -9245,7 +9432,7 @@ implements.
     winds down, exactly as requirement 2.4's own cycle-start check treats
     it — only a full stop does.
 
-57. **Health: is this node doing its job over time, composed from named
+59. **Health: is this node doing its job over time, composed from named
     components, never restating liveness.** `lib/node-health.sh`'s
     `node_health_health` folds exactly two named components —
     `outbound` (`lib/fleet.sh`'s `fleet_publication_status` over this
@@ -9256,7 +9443,7 @@ implements.
     node's own last-published `heartbeat.json`
     (`workspace_root/.agent-ops-state/heartbeat.json`) rather than
     recomputed: `scripts/node-health.sh` makes no state-sync call, no
-    registry read and no ledger read of its own (requirement 58c). The
+    registry read and no ledger read of its own (requirement 60c). The
     fold (`node_health_fold`, used at both the `converged` level and the
     top level, so the two can never compose differently): `fail` if
     anything folded is `fail`; `unknown` if anything is `unknown` and
@@ -9267,7 +9454,7 @@ implements.
     is exactly the green-endpoint-that-means-nothing this composition rule
     exists to close.
 
-    57a. **`updater` and `image` component mappings.** `updater`: `stuck`
+    59a. **`updater` and `image` component mappings.** `updater`: `stuck`
     (a fault only a human clears) is `fail`; `rolled` and `deferring` (both
     ordinary, the second self-resolving) are `ok`; `null` (no ledger
     evidence yet) is `unknown`. `image`: `current` is `ok`; `unverified`
@@ -9282,7 +9469,7 @@ implements.
     means; `null` (this node runs no CI-stamped image, or the heartbeat
     predates this field) is `unknown`.
 
-58. **The CLI surface: `scripts/node-health.sh`.** `[--live|--ready|--health|
+60. **The CLI surface: `scripts/node-health.sh`.** `[--live|--ready|--health|
     --metrics] [--json] [--config FILE] [--state-dir DIR] [--peers-dir DIR]`
     (the last three test-only overrides, on the same convention
     `scripts/pickup-metrics.sh` already carries). Exactly one compact JSON
@@ -9295,7 +9482,7 @@ implements.
     always exits `0`, since it reports data, never a verdict. No argument
     prints `--health`.
 
-    58a. **Read-only throughout.** Touches no lock, writes no event,
+    60a. **Read-only throughout.** Touches no lock, writes no event,
     publishes nothing, and — beyond the one cached forge read of 56a —
     makes no network call and triggers no state-sync push, gather, dashboard
     publish or `claude` invocation: every verdict computes on demand from
@@ -9304,7 +9491,7 @@ implements.
     file for file, before and after every mode runs, excepting only the one
     cache file 56a's own header documents.
 
-    58b. **The three verdicts genuinely diverge, from one CLI, in one
+    60b. **The three verdicts genuinely diverge, from one CLI, in one
     process.** `test/node-health-cli.test.sh` builds a fixture that is live
     (a fresh marker), not ready (the node switch set) and unhealthy (a
     `stuck` updater verdict and a stale publication) all at once, and
@@ -9313,7 +9500,7 @@ implements.
     the CLI rather than only through `lib/node-health.sh`'s own pure
     functions (`test/node-health.test.sh`).
 
-    58c. **The container-runtime healthcheck runs the identical CLI.**
+    60c. **The container-runtime healthcheck runs the identical CLI.**
     `deploy/docker/compose.yaml`'s `scheduler` service carries a
     `healthcheck:` running `scripts/node-health.sh --live` *inside* the
     container — the same command a Kubernetes `exec` probe would run, so
@@ -9323,7 +9510,7 @@ implements.
     self-certification the 2026-08-08 incident exposed, arriving by a new
     route. `docker compose config` renders it cleanly.
 
-    58d. **The HTTP surface is a second front over the identical
+    60d. **The HTTP surface is a second front over the identical
     computation, never a second answer.** `scripts/node-health-server.py`
     answers `/livez`, `/readyz`, `/healthz`, `/metrics` by shelling out to
     the same `scripts/node-health.sh` the container healthcheck runs
@@ -9347,7 +9534,7 @@ implements.
     it exists solely for a reader — a collector, an orchestrator's own
     URL-level probe — that can only speak HTTP.
 
-    58e. **`--metrics`' field list is the node metrics shape
+    60e. **`--metrics`' field list is the node metrics shape
     `docs/METERING-SCHEMA.md` documents under its own stability policy.**
     Node identity (`node`, `role`, `ts`, `version`), all three other
     verdicts and their components in full (`live`, `ready`, `health`),
@@ -9364,9 +9551,9 @@ implements.
     by this item's own scope. `test/node-health-cli.test.sh` asserts every
     top-level field's presence against this documented shape.
 
-    58f. **New config keys, documented and rendered.**
-    `node_health_live_stale_after_minutes` (55) and
-    `node_health_forge_check_cache_seconds` (56a) — both flat top-level
+    60f. **New config keys, documented and rendered.**
+    `node_health_live_stale_after_minutes` (57) and
+    `node_health_forge_check_cache_seconds` (58a) — both flat top-level
     keys, `config.schema.json`'s existing convention, never nested: this
     feature is fleet-wide like `node_stale_after_minutes` and
     `updater_stuck_after_minutes` beside it, not per-repository like
@@ -11232,6 +11419,82 @@ implements.
     consults it. A red run means the guard itself could not operate — `gh`
     unreachable, a malformed event payload — never that the close was
     irregular.
+56. **A pull request that deletes, or edits away, the workflow job producing
+    a required status check names the ruleset edit as an owner-act
+    prerequisite deterministically, at pull-request time — not only once a
+    downstream item happens to block on it (issue #1543).** The live
+    instance is requirement 55's own: PR #1503 deleted
+    `.github/workflows/tech-debt-register.yml`, whose `register` job ruleset
+    18857310 required, and nothing named the ruleset edit as a prerequisite
+    until #1529 happened to block on the merge 6+ hours later. This is the
+    earlier of the issue's two seams; requirement 55 is the backstop that
+    catches the same fact again at the Reviewer's `ready` handoff, for a
+    finding this one missed or a workflow edited after the Implementer's own
+    pass.
+
+    `lib/required-check-preflight.sh`'s `required_check_preflight_findings`
+    runs right after the Implementer's pull request is raised — the same
+    moment requirement 25a's `closing_keyword_gate` already runs, in
+    `agent-cycle.sh`'s own Implementer-stage block. It reads the base
+    branch's `required_status_checks` contexts
+    (`repos/<slug>/rules/branches/<base>`), the pull request's changed-file
+    list (`repos/<slug>/pulls/<n>/files`), and — for every changed
+    `.github/workflows/*.yml`/`*.yaml` file whose status is `removed`,
+    `modified` or `renamed` — that file's raw content on each side
+    (`repos/<slug>/contents/<path>?ref=<sha>`, the base and head commits
+    `pulls/<n>` itself reports), extracting each side's top-level job ids
+    with a line-oriented heuristic over the literal YAML text
+    (`_required_check_preflight_job_ids`: the direct 2-space-indented keys of
+    a 0-indent `jobs:` map) rather than a full parser — it recognises the
+    ordinary shape, the one PR #1503's own `register` job was, and says
+    nothing for a workflow whose `jobs:` is laid out some other way, so a
+    shape it cannot read costs one missed finding, never a false escalation.
+    A job id dropped between the two sides that matches a required context
+    is a finding: the context and the file that used to produce it.
+
+    Any finding runs `required_check_preflight_escalate`, a thin body
+    composition around `create_escalation_issue` (`lib/enabler.sh`) — the
+    same escalation primitive `lib/landing.sh`'s open-question escalation,
+    `lib/approver.sh`'s stale-review escalations and `lib/standdown.sh`'s
+    auth-failure escalation already call directly, ahead of any Enabler
+    engagement, so this follows the pipeline's existing convention for a
+    Script-side gate that needs a human now rather than inventing a second
+    escalation route. The issue this files carries `enabler_escalation_label`
+    and names the missing context(s), the file(s) that used to produce them,
+    and the ruleset edit itself as the ask; a `gh pr comment` on the pull
+    request (`pipeline_comment_header`/`pipeline_comment_marker`, the
+    ordinary Script-authored comment shape) links it, so a human reading the
+    pull request sees the prerequisite without having to find the escalation
+    issue first. A ruleset, changed-file list or file content this cannot
+    read is a fact about this node or GitHub's availability, not the pull
+    request — `required_check_preflight_findings` prints nothing rather than
+    guessing, the same non-blocking convention requirement 55's own backstop
+    and `review_gate_security_alerts` already apply to an API they cannot
+    ask — and an escalation that could not be filed warns and is retried the
+    next time this runs, rather than failing the Implementer's own handoff.
+
+    Nothing this gate finds ends the cycle. Its whole verdict travels on
+    `required_check_preflight_findings`'s stdout; the function's exit status
+    is always 0, on the finding path as much as on the no-finding and
+    could-not-read ones, and `agent-cycle.sh`'s own block assigns it with a
+    `|| true` besides. Both halves are deliberate: this block runs after the
+    pull request is already raised and under `set -euo pipefail`, so a
+    non-zero status leaking out of the one path this requirement exists for
+    would abort the Implementer stage — no `complexity:*` label, no Reviewer
+    engagement, and no escalation filed — precisely when a finding was in
+    hand.
+
+    The Refiner applies the same rule ahead of selection: where an item's own
+    inventory names a `.github/workflows/*.yml` file being deleted or
+    substantially rewritten, its specification states the ruleset-edit
+    prerequisite explicitly, so an Implementer that later reaches this
+    requirement's own deterministic check is confirming a prerequisite the
+    work order already named, not discovering it cold.
+
+    `docs/STANDING-DECISIONS.md` carries the converse of 2026-08-22 · #648:
+    doing the ruleset edit early is harmless — a pull request that still
+    carries the workflow keeps running it, only without gating — so the safe
+    ordering (edit the ruleset, then merge) never wedges the repository.
 26. Verifies the PR via `gh pr view --json mergeable,mergeStateStatus`
     (against GitHub's view, not inferred locally) and resolves any conflict
     with the current default branch. Leaves the PR as a **draft** — the
@@ -11780,6 +12043,49 @@ implements.
     by the Script — and `prompts/reviewer.md`'s own "When this pull request
     merges while you are still reviewing it" is the instruction that
     replaces the improvisation: no replacement pull request, ever.
+55. **`review_gate_required_checks` also compares the base branch's own
+    ruleset against what actually ran, so a required context with no run at
+    all is caught, not read as a vacuous pass (issue #1543).** `gh pr checks
+    --required` lists check *runs*; a branch that deletes the workflow, or
+    removes or renames the job, producing one of the base branch's required
+    contexts leaves that context with no run at all on the head commit —
+    which is not a failing entry, it is simply absent, so requirement 31c's
+    own `all(.bucket == "pass")` test is vacuously true for it. The live
+    instance: PR #1503 (issue #882) deleted
+    `.github/workflows/tech-debt-register.yml`, whose `register` job ruleset
+    18857310 required; every check that did run was green, `mergeStateStatus`
+    sat `BLOCKED`, and nothing surfaced the cause until an unrelated item
+    (#1529) happened to block on this one 6+ hours later and #1540 escalated
+    it only then.
+
+    `review_gate_required_checks` (`lib/review-gate.sh`) takes an optional
+    second argument, the base branch, and — only once the check-runs list it
+    already read comes back all-`pass` — asks
+    `repos/<slug>/rules/branches/<base>` for the branch's own active rules,
+    collects every `required_status_checks` rule's `context`s, and compares
+    that list against the `name`s the check-runs list actually carried. Any
+    context present in the ruleset and absent from the runs is `dirty`,
+    naming the missing context, distinct from both requirement 31c's existing
+    `dirty` reasons (a real failing check, or the empty-list trap) and its
+    `unknown`. A base branch whose ruleset itself cannot be read — `gh api`
+    failing outright, no `required_status_checks` rule on it at all — skips
+    the backstop exactly as if it had found nothing, the same non-blocking
+    convention `review_gate_security_alerts` already applies to an alerts API
+    it cannot reach: a ruleset this call could not ask is a fact about this
+    node or GitHub's availability, not proof the branch is missing a check,
+    and costs nothing beyond the one comparison this call already makes.
+    Omitting the base branch — every caller that predates this — skips the
+    backstop identically, so `review_gate_required_checks("$url")` alone is
+    unchanged. `review_gate_verdict` (and therefore `handoff_complete_review`
+    and `landing_arm`, its two live callers) already passes its own
+    `default_branch` argument through to `review_gate_required_checks`, so
+    both of requirement 31c's own gates — the Reviewer's `ready` handoff and
+    the landing gate — get the backstop with no call-site change of their
+    own.
+
+    This is the backstop half of a two-seam fix; requirement 56 is the
+    earlier, deterministic half, run once at pull-request time rather than
+    waiting for this backstop to catch it at handoff.
 32. Ends with a single JSON object:
     `{"status": "ready" | "blocked", "pr_url": …, "fixes_applied": […], "comments_left": n, "ci": "passing" | …}`,
     plus `reason` — one line naming what is wrong — on `blocked`, which becomes
@@ -18156,6 +18462,206 @@ with the Reviewer's own.
     `lib/standdown.sh`'s own call site passes `union_log` alongside the
     existing `cycle_id`/`node_name` arguments.
 
+55. **Resource usage and budgets, self-measured (D14, issue #606).** #755
+    gave every container a `mem_limit`/`cpus` ceiling (this file's own
+    "Every container carries a resource ceiling" design decision, above) and
+    requirement 2.0g checks the declared sum against the host, but neither
+    *measures* what a container actually uses, and neither says anything
+    about disk or bandwidth at all — the two budgets D14 also names that
+    Compose and this kernel cannot enforce (the same design decision's own
+    paragraph). This requirement is the measured, reported half: a baseline
+    for all four resources, budgets stated in `config.json` rather than only
+    in a compose comment, actuals published per node and per container, and
+    a container or volume over budget made a reportable condition — the
+    "Done when" the issue's own specification (2026-08-21, adjudicated
+    adequate the same day) sets out.
+
+    **What is measured, and from where.** `lib/resource-usage.sh` reads this
+    container's own cgroup and `/proc/net/dev` directly — self-measurement,
+    not the host-facts collector's Docker-socket vantage
+    (`scripts/collect-host-facts.sh`, requirement 2.0g's own source): every
+    container that vantage could reach either already has a `mem_limit`/
+    `cpus` ceiling from #755 (the enforcement half) or is out of scope for
+    self-measurement here regardless (`tailscale`/`watchtower` run no
+    agent-ops script to self-measure from; `egress-proxy`/`collector`/
+    `reconciler` are deferred, agent-ops#1563). In scope: `scheduler`,
+    `dashboard` and `dashboard-local` — the three services that run this
+    image — plus the `workspace_root`/`state_dir` volumes they mount.
+    `resource_cgroup_version` reads `ROOT/cgroup.controllers` (v2) or
+    `ROOT/memory/memory.usage_in_bytes` (v1) to tell the two cgroup layouts
+    apart — the fleet is not uniform, one node presents v1 and its siblings
+    v2 — and every read below takes that layout as an argument rather than
+    assuming one, returning empty, never a fabricated `0`, off an
+    `"unknown"` layout or a missing file. `resource_memory_current_bytes`
+    reads `memory.current` (v2) or `memory/memory.usage_in_bytes` (v1);
+    `resource_cpu_usage_nanos` reads `cpu.stat`'s `usage_usec` (v2, scaled
+    to nanoseconds) or `cpuacct/cpuacct.usage` (v1, already nanoseconds) —
+    both cumulative counters since the cgroup was created, never a rate by
+    themselves. `resource_net_bytes` sums every non-loopback interface's
+    `rx`/`tx` byte counters from `/proc/net/dev` (not namespaced away from
+    this container — reading it from inside answers for this container's
+    own interface, unlike `/proc/meminfo`, which requirement 2.0f's own
+    header already establishes reads the *host's* figures because memory
+    accounting is not namespaced the same way). `resource_disk_usage_bytes`
+    is `du -sb` on a volume path.
+
+    **Deltas, never absolutes, for CPU and bandwidth.** `resource_cpu_cores`
+    and `resource_rate_per_hour` each take two samples — a value and a
+    Unix-epoch timestamp, taken and cached a tick apart — and refuse to
+    report a rate when the later value is smaller than the earlier one: a
+    container recreation resets both counters to zero, and reporting the
+    negative delta a naive subtraction would produce is worse than
+    reporting nothing, the same "no evidence is not evidence" discipline
+    `lib/host-budget.sh`'s own unknown-ceiling exclusion already holds.
+    Memory and disk are read as instantaneous values, not deltas — a
+    cgroup's `memory.current` and a volume's `du` total are already the
+    figure a budget compares against, not a counter to difference.
+
+    **The collector, its cadence, and what it writes.**
+    `scripts/collect-resource-usage.sh` is one sample tick: it reads
+    `AGENT_OPS_SERVICE` (or `--service`) to know which container it is
+    running in, tags every sample and every disk reading with that name —
+    the same key `config.json`'s `resources.containers`/`resources.volumes`
+    budgets are read back under — computes this tick's `cpu_cores`/
+    `net_rx_bytes_per_hour`/`net_tx_bytes_per_hour` against the previous
+    tick's cached cumulative reading (`state_dir/.resource-usage-state.json`,
+    one small JSON object keyed by service name), appends a sample line to
+    `state_dir/.resource-samples.jsonl`, and prunes anything older than
+    `resources.sample_retention_hours` (default 48) on every tick unless
+    called with `--no-prune`. Disk is sampled far less often — a `du` on a
+    multi-GB tree is not the cheap read a cgroup file is — throttled
+    separately to `resources.disk_sample_interval_minutes` (default 60) via
+    a marker in the same state file, and only for a volume this container
+    actually has mounted (`-d` checked before `du`). Both files are guarded
+    with `flock` (the same ledger-append idiom `lib/gh-shim.sh` already
+    uses) because `state_dir` is a volume `scheduler` and `dashboard`/
+    `dashboard-local` mount in common on a node running both, so two
+    containers can tick inside the same window.
+
+    Runs every `schedule.resource_sample_minutes` minutes (default 5) from
+    `scheduler`'s own crontab line (`deploy/docker/crontab.tmpl`); `dashboard`/
+    `dashboard-local` run no crontab at all (`serve-dashboard.sh` `exec`s the
+    HTTP server as the container's own process), so that script starts a
+    small background loop — gated on `AGENT_OPS_SERVICE` being set, so a
+    human running it on a laptop to browse the dashboard never spawns
+    one — calling the same collector on the same interval before its own
+    `exec`, detached from the shell's job table so the `exec` (which
+    replaces the process image, not the backgrounded job) leaves it running.
+
+    **The report.** `resource_budget_report` (`lib/resource-usage.sh`) is
+    the pure derivation `scripts/resource-budget-report.sh` wraps for
+    standalone use and `scripts/state-sync.sh`/`scripts/doctor.sh`/
+    `scripts/publish-dashboard.sh` call directly: given the sample text and
+    a window-start bound, it groups by `service` and by `volume`, and for
+    every numeric field prints `{latest, median, p95}` (nearest-rank —
+    the value at index `floor(p * (n-1))` of the sorted sample array, not
+    interpolated, so a reader can point at the one real sample that
+    produced the figure) for `cpu_cores`/`memory_bytes`/
+    `net_rx_bytes_per_hour`/`net_tx_bytes_per_hour` per container, and
+    `{latest, growth_bytes_per_day}` (a straight line between the window's
+    oldest and newest disk sample — never a regression, since disk is
+    sampled hourly at most and two points is the ordinary case) for
+    `disk_bytes` per volume. A line that is not valid JSON, or parses to
+    something other than an object, is skipped rather than failing the
+    whole report, the same discipline `test/pickup-metrics.test.sh` already
+    exercises for `log.jsonl`; an empty or entirely-unparseable input
+    degrades to `{"containers":{},"volumes":{},"sample_count":0,
+    "window_start":null}`, never a jq failure — the same "always one valid
+    object" contract `lib/metering.sh`'s own `metering_fields` holds for a
+    missing stage envelope.
+
+    **Budgets, in versioned configuration.** `config.schema.json`'s
+    `resources` key states them: `resources.containers.<AGENT_OPS_SERVICE>`
+    (`cpu_cores`, `memory_bytes`, `bandwidth_bytes_per_hour`) and
+    `resources.volumes.<name>` (`disk_bytes`), for exactly the three
+    containers and two volumes this requirement measures.
+    `containers.*.cpu_cores`/`containers.*.memory_bytes` default to the
+    same figures `deploy/docker/compose.yaml`'s own `cpus`/`mem_limit`
+    already ship (2.0/1536m for `scheduler`, 1.0/512m for `dashboard` and
+    `dashboard-local`) — the read side of a budget the compose file already
+    enforces, not a second enforcement path, and keeping the two in step
+    across an edit is a human responsibility today (D16's own control-plane
+    migration, when it comes, is what removes the duplication by generating
+    both from one source). `containers.*.bandwidth_bytes_per_hour` and
+    every `volumes.*.disk_bytes` are provisional: neither resource had ever
+    been measured before this requirement, so both ship generously above
+    what a quiet node is expected to use, meant to be tightened once
+    `scripts/resource-budget-report.sh` has real fleet windows to set them
+    from — a config edit, per the issue's own reinterpreted acceptance
+    criterion, never a re-implementation.
+
+    **Published per node and per container.** `scripts/state-sync.sh`
+    folds `resource_budget_report`'s own output into `heartbeat.json`'s
+    `resources` field, over `resources.report_window_hours` (default 24) —
+    a summary, never a series, the same "latest plus the window's p95"
+    shape the issue's own specification asks for and the same reasoning
+    `stage_health`/`compose_reconcile` already give for what travels in a
+    heartbeat versus what stays a raw local file
+    (`.resource-samples.jsonl`/`.resource-usage-state.json`, both excluded
+    from state-sync's replication — a raw sample is this node's own
+    forensics, never a fact a peer would read). `scripts/publish-
+    dashboard.sh` reads the identical field from a peer's heartbeat, and
+    recomputes the identical report live for this node's own row (the same
+    "self is read live, a peer is read from its heartbeat" split every
+    other per-node fact on the page already holds) — `docs/DASHBOARD-SPEC.md`
+    documents the resulting `resource budget` badge.
+
+    **A breach is a reportable condition.** `resource_budget_breaches`
+    (`lib/resource-usage.sh`) is `scripts/doctor.sh`'s "Resource budgets"
+    comparison, factored out of that section exactly as `lib/host-budget.sh`
+    is factored out of its own host-budget section (requirement 2.0g) — given
+    the report and the configured budgets, it prints one entry per breach
+    (windowed p95 for CPU/memory/bandwidth, latest for disk, an unbudgeted
+    or unmeasured resource contributing nothing) rather than a verdict, so a
+    caller decides what to do with each. `doctor.sh` `warn`s one line per
+    entry, naming the container or volume, the resource, the measured
+    figure and the configured budget — never silent, and never only
+    something a human reading a graph would notice. Skips cleanly, the same
+    "no evidence, not a failure" posture requirement 2.0g's own host-budget
+    section already takes on an unwritten host-facts record, when
+    `.resource-samples.jsonl` does not exist yet or carries no samples
+    inside the window.
+
+    `dashboard/index.html`'s `resourcesLine` applies the identical rule —
+    windowed p95 for CPU/memory/bandwidth, latest for disk, an unbudgeted or
+    unmeasured resource contributing nothing — but cannot share the
+    function: it is JavaScript running in a browser over the payload, with
+    no route to a bash library, the same constraint every other badge on
+    that page already works under. What the two genuinely share is their
+    *input*, `resource_budget_report`'s own output shape, identical whether
+    a row's `resources` field was recomputed live for this node or carried
+    in a peer's heartbeat. The duplication is therefore real and is kept in
+    step by hand: `resource_budget_breaches`'s own at/under/over-the-line
+    boundary test (acceptance check 55) is what pins the rule, and a change
+    to either side has to be made to both.
+
+    **Tests.** `test/resource-usage.test.sh` covers `lib/resource-usage.sh`
+    directly: the collector's arithmetic against canned cgroup v1 and v2
+    fixtures and a canned `/proc/net/dev`, the delta/rate guards (a fresh
+    baseline, a recreated container), the report's derivation from a
+    canned sample set (latest/median/p95, disk growth, a malformed line
+    skipped), the unknown-layout degradation, and `resource_budget_breaches`'s
+    own comparison at, just under and just over the line — the boundary
+    `scripts/doctor.sh` calls directly and `dashboard/index.html`'s
+    `resourcesLine` re-states in JavaScript, pinned here so the rule both
+    sides implement has one authoritative test.
+    `test/collect-resource-usage.test.sh` covers the
+    collector script end-to-end against fixture cgroup/proc files — two
+    ticks, five minutes apart, producing the expected delta, and a
+    baseline-reset on a simulated container recreation — the disk-sampling
+    throttle, two services sharing one `state_dir` without clobbering each
+    other's cached baseline, and the prune (`--no-prune` versus the
+    default). `test/resource-budget-report.test.sh` covers the thin
+    script wrapper: config-resolved `state_dir`/window versus the
+    `--state-dir`/`--window-hours` overrides, and the clean empty-report
+    degradation on a missing config or an unwritten samples file.
+    `test/config-schema.test.sh` covers the reportable half — what
+    `scripts/doctor.sh`'s own "Resource budgets" section prints over a
+    breach, an all-clear, an unwritten samples file and a window with
+    nothing in it — because that is where this repository's
+    `doctor.sh --offline` assertions live rather than in
+    `test/doctor.test.sh`, whose own header records why.
+
 ## Components
 
 What exists, and the requirements each part answers to:
@@ -19081,6 +19587,14 @@ What exists, and the requirements each part answers to:
    ordering and its disclaimer wrapper, for `replace` (including falling back
    to the shipped prompt when the configured file is unreadable), and for
    every one of those changing `stage_prompt_sha`; must pass `shellcheck`.
+   `prompt_overrides_json_for_repo` (agent-ops#588) resolves requirement 4a's
+   per-repository layer down to the same `{stage: {extend, replace}}` shape
+   `stage_prompt_text`/`stage_prompt_sha` already take, so neither of those two
+   functions has any per-repository knowledge of its own; `agent-cycle.sh`
+   calls it against the cycle's own `$repo_slug` immediately before assembling
+   the Implementer's (requirement 7) and Reviewer's (requirement 8) prompts,
+   the two call sites `prompt_overrides_json` (the plain installation-wide
+   object) still feeds directly for every other stage.
 4b. `lib/coordinator-brief.sh` implementing requirement 4b:
    `coordinator_work_sources_table`, given `config.json`'s `repos` array,
    renders the Markdown table naming each repo and its numbered `sources`
@@ -21414,7 +21928,7 @@ oblige anyone to edit a test.
    would reach nothing; the `tailnet` `dashboard` is in the sidecar's namespace
    (`network_mode: service:tailscale`), publishes no port and is given no bind
    address, so it keeps loopback where Serve proxies to it; the `node-health`
-   service (requirement 58d) publishes the one mapping
+   service (requirement 60d) publishes the one mapping
    `127.0.0.1:${NODE_HEALTH_PORT:-8788}:${NODE_HEALTH_PORT:-8788}`, takes no
    `network_mode`, and is told to bind `0.0.0.0` on that same port; those two
    are the only services that publish anything at all, and every mapping
@@ -24166,6 +24680,50 @@ oblige anyone to edit a test.
    its prompt; an `unknown` one warns and hands the Reviewer nothing; a clean
    one does neither, and leaves the prompt byte-for-byte as it was before the
    section existed.
+55. **The ready-gate backstop catches a required context with no check run at
+   all, and leaves every pre-existing shape alone (issue #1543).**
+   `test/review-gate.test.sh` passes, against the same stubbed `gh` its other
+   assertions already use, extended to stub
+   `repos/<slug>/rules/branches/<base>`: a base branch given alongside an
+   all-`pass` check-runs list whose contexts cover every one the ruleset
+   names is still `clean`; the same all-`pass` list with the ruleset naming
+   one context absent from it is `dirty`, naming the missing context; a
+   genuinely failing required check still wins its own `dirty` reason over
+   the backstop when both are true at once; the empty-list trap and the
+   unreadable-list `unknown` are byte-for-byte unchanged by a base branch
+   being passed alongside them; a ruleset this cannot read (an `ERROR` stub,
+   the same convention `review_gate_security_alerts`'s own stub uses) skips
+   the backstop and reports `clean` rather than blocking; and omitting the
+   base branch entirely — every caller that predates this — skips the
+   backstop exactly the same way. `review_gate_verdict`'s own existing
+   assertions are unchanged, since `handoff_complete_review` and
+   `landing_arm` already pass their own `default_branch` through unmodified.
+56. **The deterministic pre-flight finds a deleted or edited-away required
+   check's producing job, and escalates it (issue #1543).**
+   `test/required-check-preflight.test.sh` passes, against a stubbed `gh`:
+   `_required_check_preflight_job_ids` extracts every top-level job id from a
+   workflow's literal YAML text and nothing from one with no `jobs:` key at
+   all; `required_check_preflight_findings` finds the PR #1503 precedent
+   itself — a wholly deleted workflow file whose one job is a required
+   context — and finds the same fact when the file is merely *modified* to
+   drop the job, comparing each side's own commit; a rename that keeps every
+   job finds nothing, reading the rename's own `previous_filename` for the
+   old side; a file outside `.github/workflows/` is never inspected; a
+   dropped job that was never a required context finds nothing; and an
+   unreadable ruleset, changed-file list, or base commit each find nothing
+   rather than blocking, the same non-blocking convention requirement 55's
+   own backstop applies. The finding path exits 0 — asserted both captured
+   and uncaptured, with a required context deliberately sorting *after* the
+   removed job id, the arrangement under which the loops' own last `grep`
+   would otherwise be what the function returned, and the arrangement
+   agent-ops's own ruleset is. `required_check_preflight_escalate` — stubbing
+   `create_escalation_issue` exactly as `test/crash-loop-escalate.test.sh`
+   already does — files exactly one escalation per call, carrying
+   `enabler_escalation_label`, a title naming the missing context(s), the
+   base branch and the pull request, and a body naming the context, the file
+   that used to produce it, the `required_status_checks` rule as the ask, and
+   issue #1543 itself; no findings at all calls `create_escalation_issue`
+   not once.
 25b. **The tech-debt close-guard finds exactly what requirement 25b's
    evidence rules say it should, posts once per close, and never fails its
    own run (issue #877).** `test/tech-debt-close-guard.test.sh` passes,
@@ -26759,12 +27317,12 @@ oblige anyone to edit a test.
     corrupted); `test/render-toc.test.sh` exercises all of these
     marker-validation cases against the real script.
 
-53. **Node health, readiness and liveness (requirements 55-58, issue #608).**
+57. **Node health, readiness and liveness (requirements 57-60, issue #608).**
     `test/node-health.test.sh` passes: `lib/node-health.sh`'s
     `node_health_fold` composition rule (fail beats unknown beats ok, empty
     input reads unknown), `node_health_liveness` (no marker, a fresh marker,
     an aged-out marker, a future mtime clamped to zero age), the
-    `outbound`/`updater`/`image` component mappings of requirement 57a
+    `outbound`/`updater`/`image` component mappings of requirement 59a
     against every named status (including "behind" both within and past
     `image_behind_grace_hours`, and with an unreadable `registry_created_at`),
     `node_health_converged` and `node_health_health`'s composition —
@@ -26772,11 +27330,11 @@ oblige anyone to edit a test.
     neither #602's nor #603's own field has ever been published, then `ok`
     and `fail` once fixture stand-ins for both exist — and
     `node_health_readiness` naming every one of the eight conditions
-    requirement 56 enumerates by its own stable code, an unreadable local
+    requirement 58 enumerates by its own stable code, an unreadable local
     meter never blocking readiness on its own, and every simultaneously
     failing condition reported together rather than only the first. It also
     holds every component and `node_health_health` itself to requirement
-    57's "one valid object, never a non-zero return" contract against input
+    59's "one valid object, never a non-zero return" contract against input
     that does not parse as JSON at all — a heartbeat truncated by a
     container killed mid-write — as well as against a bare scalar, an array
     and the empty string, each of which must read `unknown`.
@@ -26787,27 +27345,85 @@ oblige anyone to edit a test.
     not-ready and unhealthy across three separate calls, liveness stays true
     while a cycle holds `lock.json` and false once the marker is removed,
     `--health`'s three exit codes (`0`/`1`/`2`) are distinct for `ok`/`fail`/
-    `unknown`, and `--metrics` carries every field requirement 58e documents;
-    with a `gh` stub on `PATH` it also asserts requirement 56a's own
+    `unknown`, and `--metrics` carries every field requirement 60e documents;
+    with a `gh` stub on `PATH` it also asserts requirement 58a's own
     arithmetic — that `--ready` reads *both* budget figures out of the forge
     response, that one poll makes exactly one forge call, and that a second
     poll inside the TTL makes none. `test/node-health-http.test.sh` passes:
     `scripts/node-health-server.py`, started on a free port against a
-    fixture `HOME`, answers all four documented paths with requirement 58d's
+    fixture `HOME`, answers all four documented paths with requirement 60d's
     own status codes and a JSON body on each (including the `503` halves),
     `404`s every other path — a trailing slash, a query string and a
     traversal attempt among them — and still answers `/healthz` with valid
     JSON reading `unknown` while `state_dir` is unreadable (acceptance
     criterion 8), rather than hanging or stack-tracing.
     `test/render-crontab.test.sh` passes unchanged with the new liveness-
-    marker line in `deploy/docker/crontab.tmpl` (requirement 55), and
+    marker line in `deploy/docker/crontab.tmpl` (requirement 57), and
     `test/state-sync.test.sh` asserts the two new node-health caches
     (`.node-health-ratelimit-cache.json`, `.node-alive`) do not replicate
-    (requirement 56a). `docker compose config` (in `deploy/docker/`) renders
+    (requirement 58a). `docker compose config` (in `deploy/docker/`) renders
     the scheduler's new `healthcheck:` and the new `node-health` service
     cleanly. `scripts/lint-shell.sh` is clean over every new/changed shell
     file; the new `scripts/node-health-server.py` is syntactically valid
     Python 3.
+
+55. **Resource usage is self-measured, both cgroup layouts are handled, and
+    a budget breach is reportable (requirement 55, D14, issue #606).**
+    Against a v2 cgroup fixture (`cgroup.controllers`, `memory.current`,
+    `cpu.stat`), `resource_memory_current_bytes`/`resource_cpu_usage_nanos`
+    read the same figures a real container's own `/sys/fs/cgroup` would
+    carry; against a v1 fixture (`memory/memory.usage_in_bytes`,
+    `cpuacct/cpuacct.usage`) they read the same figures from the legacy
+    layout; against a directory carrying neither marker they read empty,
+    never a fabricated `0` — `test/resource-usage.test.sh` exercises all
+    three. `resource_cpu_cores`/`resource_rate_per_hour` given a later
+    cumulative value smaller than the earlier one (a simulated container
+    recreation) print nothing rather than a negative rate. `scripts/collect-
+    resource-usage.sh --config … --service scheduler --cgroup-root … --net-
+    dev-file … --now …`, run twice five minutes apart against fixtures whose
+    counters advance between calls, appends a first sample with no
+    `cpu_cores`/`net_*_bytes_per_hour` (no baseline yet) and a second
+    carrying the correct delta-derived figures — `test/collect-resource-
+    usage.test.sh` computes the expected numbers by hand and asserts them
+    exactly. The same fixture run twice inside `resources.
+    disk_sample_interval_minutes` samples disk once, not twice; run again
+    past that interval, it samples again. `resource_budget_report` given a
+    canned six-line sample set (one malformed) reports `sample_count: 5`,
+    the correct `{latest, median, p95}` per numeric field (nearest-rank,
+    asserted against hand-computed values) and the correct
+    `growth_bytes_per_day` for a two-point disk series; given no input at
+    all it reports `{"containers":{},"volumes":{},"sample_count":0,
+    "window_start":null}`, never a jq failure. `resource_budget_breaches`
+    given a report and a budget object reports no breach for a figure
+    exactly at the budget or just under it, and exactly one breach for a
+    figure just over it, naming the container/volume, the resource, the
+    measured figure and the configured budget; given an unbudgeted
+    container it reports nothing for that container regardless of usage.
+    `scripts/doctor.sh --config … --offline` against a fixture samples file
+    whose `scheduler` CPU and memory figures and `workspace_root` disk usage
+    all exceed the (default-shipped) `resources` budgets prints three
+    `[warn]` lines under "Resource budgets", each naming the
+    container/volume, the resource, the actual figure, the budget and the
+    `config.json` key that states it, and says nothing about the resources
+    still within budget; against a fixture within every budget it prints one
+    `[ ok ]` line naming the sample count and window and no breach warning at
+    all; against a node with no `.resource-samples.jsonl` yet, and against
+    one whose every sample predates `resources.report_window_hours`, it
+    prints `[skip]` naming the file — `test/config-schema.test.sh` exercises
+    all four, alongside every other `doctor.sh --offline` assertion
+    (`test/doctor.test.sh`'s own header records why the offline half lives
+    there). `deploy/docker/render-crontab.sh` against a
+    config naming `schedule.resource_sample_minutes` renders
+    `*/<N> * * * * /app/scripts/collect-resource-usage.sh …` with no
+    `@RESOURCE_SAMPLE_MINUTES@` placeholder surviving — `test/render-
+    crontab.test.sh`'s own "no placeholder survives a render" and
+    "supercronic accepts the rendered schedule" assertions cover it
+    alongside every other cadence. `scripts/resource-budget-report.sh`
+    against a state directory with no samples file at all prints the
+    identical empty-report shape rather than erroring, and `--state-dir`/
+    `--window-hours`/`--now` each override what `config.json` would
+    otherwise supply — `test/resource-budget-report.test.sh` exercises all
+    four.
 
 ## Host provisioning (human steps)
 

@@ -169,7 +169,7 @@ recent `log.jsonl` retains. Their fields:
 
 `scripts/node-health.sh --metrics` / the HTTP surface's `/metrics`
 (`scripts/node-health-server.py`, `docs/IMPLEMENTATION-PIPELINE-SPEC.md`
-requirements 55-58, issue #608) — a different shape from everything above:
+requirements 57-60, issue #608) — a different shape from everything above:
 where the per-stage record and the roll-ups are about *spend*, this is about
 *node state*, one node's own liveness, readiness and health verdicts plus a
 handful of counters, read fresh on every call rather than aggregated over

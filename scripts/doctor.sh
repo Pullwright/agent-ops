@@ -95,6 +95,8 @@ source "$SCRIPT_DIR/lib/token-expiry.sh"
 source "$SCRIPT_DIR/lib/host-facts.sh"
 # shellcheck source=lib/host-budget.sh
 source "$SCRIPT_DIR/lib/host-budget.sh"
+# shellcheck source=lib/resource-usage.sh
+source "$SCRIPT_DIR/lib/resource-usage.sh"
 # shellcheck source=lib/notify.sh
 # `notify_resolve_webhook_url` alone, to resolve notify_webhook_url the same
 # way agent-cycle.sh and scripts/publish-dashboard.sh do (issue #1279),
@@ -866,6 +868,29 @@ done < <(cfg_json '.prompt_overrides' | jq -r '
   | ((.value.extend // [])[] | [$stage, "extend", .] | @tsv),
     (select((.value.replace // "") != "") | [$stage, "replace", .value.replace] | @tsv)')
 
+# A repository's own `prompt_overrides` layer (requirement 4a, agent-ops#588)
+# — schema-restricted to `implementer`/`reviewer` already (config_schema_errors,
+# run ahead of this point) — is checked the same way, one repo at a time, so a
+# broken per-repository path is named against the repository it belongs to
+# rather than folded into the installation-wide report above.
+while IFS=$'\t' read -r repo_slug stage mode path; do
+  [[ -n "$path" ]] || continue
+  case "$path" in
+    "~"*) resolved_path="$HOME${path:1}" ;;
+    /*) resolved_path="$path" ;;
+    *) resolved_path="$state_dir/$path" ;;
+  esac
+  if [[ -r "$resolved_path" ]]; then
+    ok "$repo_slug's repos[].prompt_overrides.$stage.$mode → $resolved_path"
+  else
+    warn "$repo_slug's repos[].prompt_overrides.$stage.$mode names $resolved_path, which is not readable — this entry is dropped the same as an unreadable installation-wide one would be, but it does not fall back to any installation-wide prompt_overrides.$stage entry: naming $stage here already discarded that entry whole (prompt_overrides_json_for_repo replaces, never merges), so $repo_slug's $stage stage is left with only what the rest of its own entry (if anything) still resolves to"
+  fi
+done < <(cfg_json '.repos // []' | jq -r '
+  .[] | .slug as $slug | (.prompt_overrides // {}) | to_entries[]
+  | .key as $stage
+  | ((.value.extend // [])[] | [$slug, $stage, "extend", .] | @tsv),
+    (select((.value.replace // "") != "") | [$slug, $stage, "replace", .value.replace] | @tsv)')
+
 # --- Review instructions & context (issue #589, D7) ---
 
 section "Review instructions & context"
@@ -1063,6 +1088,53 @@ else
         ok "host budget: $host_budget_description"
       fi
     fi
+  fi
+fi
+
+# --- Resource budgets ---
+
+# Requirement 55 (D14, agent-ops#606): whether this node's own measured
+# CPU/memory/bandwidth (scripts/collect-resource-usage.sh, self-measured
+# from inside `scheduler`/`dashboard`/`dashboard-local`) or disk usage
+# (workspace_root/state_dir) has crossed the budget config.json's own
+# `resources.containers`/`resources.volumes` states — the one check this
+# feature exists to make reportable rather than something only a human
+# reading a graph would notice. `scripts/resource-budget-report.sh`'s own
+# derivation is read here directly (lib/resource-usage.sh's
+# `resource_budget_report`, the identical pure function that script wraps)
+# rather than shelled out to, the same "one definition, read directly"
+# discipline the host-budget section above holds for `lib/host-budget.sh`.
+section "Resource budgets"
+resources_samples_file="$state_dir/.resource-samples.jsonl"
+if [[ ! -r "$resources_samples_file" ]]; then
+  skip "resource budgets: $resources_samples_file does not exist yet — scripts/collect-resource-usage.sh has not run on this node"
+else
+  resources_window_hours="$(cfg '.resources.report_window_hours // 24')"
+  [[ "$resources_window_hours" =~ ^[0-9]+$ ]] || resources_window_hours=24
+  resources_window_start="$(jq -nr --argjson secs "$(( resources_window_hours * 3600 ))" \
+    '(now - $secs) | todateiso8601' 2>/dev/null)"
+  resources_report="$(resource_budget_report "$(cat "$resources_samples_file")" "$resources_window_start" 2>/dev/null)"
+  if [[ -z "$resources_report" ]]; then
+    skip "resource budgets: $resources_samples_file could not be read as a report"
+  elif [[ "$(jq -r '.sample_count' <<<"$resources_report")" == "0" ]]; then
+    skip "resource budgets: $resources_samples_file carries no samples in the last ${resources_window_hours}h yet"
+  else
+    resources_budgets="$(cfg_json '.resources // {}')"
+    resources_breaches="$(resource_budget_breaches "$resources_report" "$resources_budgets")"
+    resources_breach_count="$(jq -r 'length' <<<"$resources_breaches" 2>/dev/null)"
+    [[ "$resources_breach_count" =~ ^[0-9]+$ ]] || resources_breach_count=0
+
+    while IFS=$'\t' read -r scope name resource actual budget; do
+      [[ -n "$name" ]] || continue
+      if [[ "$scope" == "volume" ]]; then
+        warn "resource budget: $name's own disk usage is $actual bytes, over its $budget budget (resources.volumes.$name.disk_bytes, requirement 55)"
+      else
+        warn "resource budget: $name's own $resource is $actual, over its $budget budget (resources.containers.$name.$resource, requirement 55)"
+      fi
+    done < <(jq -r '.[] | [.scope, .name, .resource, (.actual|tostring), (.budget|tostring)] | @tsv' \
+      <<<"$resources_breaches" 2>/dev/null)
+
+    (( resources_breach_count == 0 )) && ok "resource budgets: every measured container and volume is within its configured budget ($(jq -r '.sample_count' <<<"$resources_report") sample(s) in the last ${resources_window_hours}h)"
   fi
 fi
 

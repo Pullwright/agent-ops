@@ -28,8 +28,87 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   over HTTP (`/livez`, `/readyz`, `/healthz`, `/metrics`) on the host's own
   loopback for a reader that can only speak HTTP. Read-only throughout,
   makes no network call beyond one cached, TTL-bounded `/rate_limit` read.
+- **Per-container resource usage is measured and compared against a budget
+  (D14, issue #606).** `scripts/collect-resource-usage.sh` self-samples
+  CPU, memory and network from inside `scheduler`, `dashboard` and
+  `dashboard-local` (both cgroup v1 and v2), plus disk usage of
+  `workspace_root`/`state_dir`; `config.schema.json`'s new `resources` key
+  states a budget for each. `scripts/doctor.sh` warns when a windowed
+  figure crosses its budget, and the dashboard renders a `resource budget`
+  badge from the same comparison, published per node in `heartbeat.json`.
+  #755 gave every container a `mem_limit`/`cpus` enforcement ceiling; this
+  is the measured, reported half D14 also asks for, for the two resources
+  (disk, bandwidth) this substrate cannot enforce at all.
+- **`prompt_overrides` takes a per-repository layer for the Implementer and
+  Reviewer stages** (issue #588, `docs/ROADMAP.md` Phase 1). Those two
+  stages already run against a single known repository each cycle, unlike
+  the Co-Ordinator, which runs once per cycle across every configured
+  repository together — so `repos[].prompt_overrides`
+  (`config.schema.json`'s `repoPromptOverrides`), keyed only
+  `implementer`/`reviewer`, lets one repository add or replace its own
+  operating-prompt house rules without reaching into the installation-wide
+  `prompt_overrides` key that would otherwise apply to every repository at
+  once. Resolved on the same precedence `stage_timeouts` and
+  `merge_autonomy` already give a repository-level override: a repository's
+  own stage entry wins outright (the whole `{extend, replace}` object, not a
+  field-by-field merge) when present, the installation-wide entry for that
+  stage otherwise —
+  `lib/prompt-overrides.sh`'s new `prompt_overrides_json_for_repo` resolves
+  this before `stage_prompt_text`/`stage_prompt_sha` ever run, so neither
+  function gained any per-repository knowledge of its own. A repository
+  naming any other stage (`coordinator`, `enabler`, `refiner` or `monitor`
+  — none of which yet has a per-invocation home to scope an override to) is
+  a schema error at validation time, not a silently ignored key.
 
 ### Fixed
+
+- **A stage refused for want of a valid Claude login is named as such, and
+  `--status` shows a failing stage's detail** (2026-09-15). A node whose
+  subscription OAuth credential lapsed while it stood down records
+  `terminal_reason: "api_error"` with no HTTP status and `result: "Failed to
+  authenticate: OAuth session expired and could not be refreshed"`;
+  `stage_api_refusal` keyed on a numeric status alone, so six consecutive
+  cycles on ockham-2 read `coordinator exited 1`, indistinguishable from any
+  other failure. The shape — the runner's `api_error` reason together with an
+  authentication message — is now the refusal `authentication_failed`,
+  classified `refused` (no retry clears it), and the `stages:` block of
+  `--status` follows a failing stage's line with an indented `last:` line
+  carrying the streak's detail, so `check-nodes.sh` shows the reason beside
+  the count.
+
+- **`state-sync.sh push` clears an orphaned `index.lock` and names a push
+  that fails** (issue #1377). A `.git/index.lock` a dead git left in the
+  mirror used to fail every later push at its first index write, silently:
+  27 hours on poetic-1 and three days on poetic-2 with the node cycling,
+  `--status` reading every stage `ok`, and only the doctor's hourly
+  publication check saying anything, into a file nothing surfaced. The push
+  now clears such a lock when it is older than one push interval and no git
+  process is working in the mirror (never a lock a live git may hold),
+  logging `state-sync-lock-cleared` with its age; every writing git command
+  runs through `mirror_write`, which on failure logs
+  `state-sync-push-failed` with the step and git's first `fatal:` line and
+  still exits non-zero. `--status` gains `published:` (this node's own
+  publication verdict, the same one the doctor and the dashboard derive) and
+  `doctor:` (the last unattended pass's verdict, age and first failing
+  check), so `check-nodes.sh` shows both.
+
+- **The state-sync mirror's own garbage collection can no longer be the
+  thing that fails, and a `gc.log` now fails its integrity check** (#604's
+  second clause, 2026-09-15). `scripts/state-sync.sh push` amends one
+  rolling commit and force-pushes it every few minutes; under git's defaults
+  the reflog kept every superseded snapshot for thirty days, so each node's
+  mirror grew to 1.0–2.0 GB of loose objects, and the `gc --auto` that
+  eventually fired ran `pack-objects` with a thread per CPU inside the
+  scheduler's 1536m ceiling — where the kernel killed it, leaving a
+  `.git/gc.log` that declined every later gc while `fsck` stayed clean.
+  `mirror_init` now applies a bounded configuration to the mirror on every
+  push and fetch (`lib/mirror-integrity.sh`'s `mirror_configure_store`: no
+  reflog and the existing reflog files removed, prune at once, gc in the
+  foreground under the mirror lock, a lower loose trigger, consolidation at
+  two packs, a single-threaded window-bounded repack), so the store settles
+  at one pack of the current snapshot and at most the one before it; and
+  `mirror_integrity_ok` treats a non-empty `gc.log` as the failed check it
+  is, triggering the same recorded rebuild a corrupt object does.
 
 - **`TOKEN_EXPIRY_WARN_DAYS` no longer reads an environment override**
   (issue #989). `lib/token-expiry.sh` declared it as
@@ -115,6 +194,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Giving the sweeps a claim of their own stays out of scope (this is a
   read-only guard), as does capping the restale sweep to one re-review per
   cycle (issue #988).
+
+- **A pull request that deletes, or edits away, the workflow job producing a
+  required status check now names the ruleset edit as an owner-act
+  prerequisite at pull-request time, and the ready-gate now catches the same
+  fact as a backstop** (issue #1543). `gh pr checks --required` lists check
+  *runs*; a required context with no run at all — the shape a branch leaves
+  behind when it deletes the producing workflow or removes/renames the job —
+  is not a failing entry, it is simply absent, so `review_gate_required_checks`'s
+  own `all(.bucket == "pass")` test read it as a vacuous pass (the trap PR
+  #1503/#1540 hit: every check that ran was green, `mergeStateStatus` sat
+  `BLOCKED`, and nothing named the cause until an unrelated item happened to
+  block on it 6+ hours later). `review_gate_required_checks`
+  (`lib/review-gate.sh`) now takes the base branch and compares its own
+  `required_status_checks` ruleset against what actually ran, reporting
+  `dirty` and naming the missing context when the two disagree.
+  `lib/required-check-preflight.sh` is the earlier, deterministic half: right
+  after the Implementer's pull request is raised, it reads the diff for a
+  deleted or edited-away workflow job matching a required context and — when
+  it finds one — files an owner-act escalation issue and comments on the
+  pull request naming it, rather than waiting for a downstream item to
+  happen to block. `docs/STANDING-DECISIONS.md` records the converse of the
+  2026-08-22 `#648` decision: the ruleset edit is a prerequisite, and doing
+  it early is harmless, so it always precedes the merge.
 
 - **An already-settled open question no longer resurfaces in a later
   adjudication pass or escalation issue body** (issue #984).

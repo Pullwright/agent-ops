@@ -207,6 +207,10 @@
                 }
               }
             }
+          },
+          "prompt_overrides": {
+            "description": "Override for the top-level prompt_overrides key, for this repository only, one stage at a time: this entry's own stage key wins when present, the top-level prompt_overrides key for that stage otherwise — the same precedence merge_autonomy and its neighbours above use. Only `implementer` and `reviewer` may be named here — the two stages that already run against a single known repository (docs/ROADMAP.md Phase 1); naming any other stage (e.g. `coordinator`, which runs once per cycle across every repository together and cannot yet take a per-repository override) is a schema error, not a silently ignored key.",
+            "$ref": "#/$defs/repoPromptOverrides"
           }
         }
       },
@@ -240,6 +244,7 @@
           "A repo entry may also carry `landing_cool_off_hours` — the per-repo override of the top-level key of the same name, on the same precedence. Omit it and the repository follows the fleet-wide default.",
           "A repo entry may also carry `escalation_autonomy` — the per-repo override of the top-level key of the same name, on the same precedence. Omit it and the repository follows the fleet-wide default.",
           "A repo entry may also carry `preview` — this repository's preview-deployment arrangement (D19 Phase 1), read by the Implementer's and Reviewer's own preview-check step instead of either stage naming a provider or a repository. Absent, or absent its own `provider`, is `none` — no preview deployment, so neither stage runs a preview step. `{\"provider\": \"vercel\"}` is what poetic-fiddle's own entry sets; `vercel.bypass_secret_env` (default `VERCEL_AUTOMATION_BYPASS_SECRET`) and `vercel.token_env` (default `VERCEL_TOKEN`) each name an environment variable rather than carry a credential, and need setting only when a second Vercel-deployed repository wants a distinct secret on the same node.",
+          "A repo entry may also carry `prompt_overrides` — the per-repo layer of the top-level key of the same name, keyed `implementer`/`reviewer` only, resolved one stage at a time on the same precedence as `merge_autonomy`: this entry's own stage wins when present, the top-level `prompt_overrides` entry for that stage otherwise. Naming any other stage (`coordinator`, `enabler`, `refiner` or `monitor` — none of them yet runs against one known repository) is rejected at validation time rather than silently ignored. See [Prompt overrides](#prompt-overrides).",
           "Every optional key goes on the repo's own entry, beside `slug` and `sources`:",
           {
             "code": "\"repos\": [\n  {\n    \"slug\": \"Poetic-Poems/poetic\",\n    \"sources\": [\"security\", \"issues:urgent\", \"tech-debt\", \"issues:low\"]\n  },\n  {\n    \"slug\": \"Poetic-Poems/poetic-fiddle\",\n    \"sources\": [\"security\", \"issues:urgent\", \"implementation-plan\", \"issues:low\"],\n    \"implementation_plan_path\": \"docs/IMPLEMENTATION-PLAN.md\",\n    \"nice\": -5,\n    \"stage_timeouts\": { \"implementer\": 90 },\n    \"stage_inactivity\": { \"implementer\": 20 },\n    \"preview\": { \"provider\": \"vercel\" }\n  }\n]",
@@ -261,6 +266,7 @@
           "A repo entry may also carry `landing_cool_off_hours` — the per-repository override of the top-level key of the same name (D18 WI-12, agent-ops#415), on the same precedence as `stage_timeouts`: this entry wins when present, the top-level key otherwise.",
           "A repo entry may also carry `escalation_autonomy` — the per-repository override of the top-level key of the same name (D18, agent-ops#627), on the same precedence as `stage_timeouts`: this entry wins when present, the top-level key otherwise.",
           "A repo entry may also carry `preview` — this repository's preview-deployment arrangement (D19 Phase 1, agent-ops#586), read by requirement 24a instead of that requirement naming a provider or a repository. Absent, or absent its own `provider`, resolves to `\"none\"`: no preview deployment, so neither stage runs a preview step. `\"vercel\"` is the only implemented provider; its own `vercel.bypass_secret_env` (default `VERCEL_AUTOMATION_BYPASS_SECRET`) and `vercel.token_env` (default `VERCEL_TOKEN`) name the environment variables carrying this repository's Vercel credentials — never the credentials themselves. There is no top-level default for this key: a preview arrangement is inherently repository-specific, unlike `merge_autonomy` and its neighbours above.",
+          "A repo entry may also carry `prompt_overrides` — the per-repository layer of the top-level key of the same name (requirement 4a, agent-ops#588), keyed only `implementer`/`reviewer` — the two stages requirement 4a already runs against a single known repository — each on the same precedence as `stage_timeouts`: this entry's own stage key wins when present, the top-level `prompt_overrides` entry for that stage otherwise. A repo entry naming any other stage key (`coordinator`, `enabler`, `refiner` or `monitor`, none of which yet has a per-invocation home to scope an override to) is a schema error, not a silently ignored key — `config.schema.json`'s `repoPromptOverrides` enumerates only the two stages this precedence covers.",
           "Every optional key sits on the repository's own entry, beside `slug` and `sources`:",
           {
             "code": "\"repos\": [\n  {\n    \"slug\": \"Poetic-Poems/poetic\",\n    \"sources\": [\"security\", \"issues:urgent\", \"tech-debt\", \"issues:low\"]\n  },\n  {\n    \"slug\": \"Poetic-Poems/poetic-fiddle\",\n    \"sources\": [\"security\", \"issues:urgent\", \"implementation-plan\", \"issues:low\"],\n    \"implementation_plan_path\": \"docs/IMPLEMENTATION-PLAN.md\",\n    \"nice\": -5,\n    \"stage_timeouts\": { \"implementer\": 90 },\n    \"stage_inactivity\": { \"implementer\": 20 },\n    \"preview\": { \"provider\": \"vercel\" }\n  }\n]",
@@ -807,7 +813,7 @@
       }
     },
     "prompt_overrides": {
-      "description": "Per-installation prompt extension or replacement, so house rules survive an update instead of forking prompts/. A relative path resolves against `state_dir`. Absent, or a stage absent from it, reproduces the shipped prompt byte for byte.",
+      "description": "Per-installation prompt extension or replacement, so house rules survive an update instead of forking prompts/. A relative path resolves against `state_dir`. Absent, or a stage absent from it, reproduces the shipped prompt byte for byte. `implementer` and `reviewer` additionally take a per-repository override on `repos[].prompt_overrides` (requirement 4a): that repository's own stage entry wins when present, this installation-wide entry for the same stage otherwise.",
       "type": "object",
       "additionalProperties": false,
       "default": {},
@@ -832,8 +838,8 @@
         }
       },
       "x-docs": {
-        "readme": "Add house rules to a stage's operating prompt, or replace it outright, without forking `prompts/`. The Approver's prompt takes no override — it is the trust gate the merge-autonomy ladder rests on. See [Prompt overrides](#prompt-overrides).",
-        "spec": "Per-installation prompt extension/replacement (requirement 4a): an object keyed `coordinator`/`implementer`/`reviewer`/`enabler`/`refiner`/`monitor`, each holding `extend` (an array of file paths, appended in order) and/or `replace` (a file path substituted for that stage's shipped `prompts/<stage>.md`). A relative path resolves against `state_dir`. Empty or a stage absent from it changes nothing for that stage. `approver` is deliberately absent from the enumeration: the Approver's adversarial prompt is the gate the D18 trust ladder rests on, and no installation may extend or replace it (requirement 4a, #469). A `replace` file substitutes the whole shipped prompt, its `## Untrusted external content` section included (requirement 45): preserving the canonical marker-delimited block is part of the replacement's contract — `test/prompt-untrusted-framing.test.sh` pins only the shipped prompts."
+        "readme": "Add house rules to a stage's operating prompt, or replace it outright, without forking `prompts/`. The Approver's prompt takes no override — it is the trust gate the merge-autonomy ladder rests on. `implementer` and `reviewer` may additionally be scoped to one repository via that repository's own `repos[].prompt_overrides` entry — see \"Configuration\" above. See [Prompt overrides](#prompt-overrides).",
+        "spec": "Per-installation prompt extension/replacement (requirement 4a): an object keyed `coordinator`/`implementer`/`reviewer`/`enabler`/`refiner`/`monitor`, each holding `extend` (an array of file paths, appended in order) and/or `replace` (a file path substituted for that stage's shipped `prompts/<stage>.md`). A relative path resolves against `state_dir`. Empty or a stage absent from it changes nothing for that stage. `approver` is deliberately absent from the enumeration: the Approver's adversarial prompt is the gate the D18 trust ladder rests on, and no installation may extend or replace it (requirement 4a, #469). A `replace` file substitutes the whole shipped prompt, its `## Untrusted external content` section included (requirement 45): preserving the canonical marker-delimited block is part of the replacement's contract — `test/prompt-untrusted-framing.test.sh` pins only the shipped prompts. `implementer` and `reviewer` — the two stages that already run against a single known repository — additionally take a per-repository layer, `repos[].prompt_overrides` (`repoPromptOverrides`), resolved one stage at a time on the `stage_timeouts` precedence: that repository's own stage entry wins when present, this installation-wide entry for the same stage otherwise. A repository naming any other stage there is a schema error, not a silently ignored key — `coordinator`, `enabler`, `refiner` and `monitor` have no per-repository invocation to scope an override to."
       }
     },
     "pr_label": {
@@ -1732,13 +1738,13 @@
       }
     },
     "node_health_live_stale_after_minutes": {
-      "description": "How long the liveness marker `scripts/node-health.sh --live` reads (a file a dedicated crontab line touches every minute, requirement 55) may age before it reports this node not live (issue #608). Deliberately independent of every other threshold in this file — liveness is answered from that marker alone, never the cycle lock (a lock held by a running Implementer stage is the pipeline working, not evidence the node has stopped): a probe that restarted a node mid-cycle over that misreading would be the graceful-drain failure arriving by another route.",
+      "description": "How long the liveness marker `scripts/node-health.sh --live` reads (a file a dedicated crontab line touches every minute, requirement 57) may age before it reports this node not live (issue #608). Deliberately independent of every other threshold in this file — liveness is answered from that marker alone, never the cycle lock (a lock held by a running Implementer stage is the pipeline working, not evidence the node has stopped): a probe that restarted a node mid-cycle over that misreading would be the graceful-drain failure arriving by another route.",
       "type": "integer",
       "exclusiveMinimum": 0,
       "default": 3,
       "x-docs": {
         "readme": "Minutes the liveness marker may age before `scripts/node-health.sh --live` (and the container healthcheck it backs) reports the node not live. A few missed minute-ticks, never the cycle lock.",
-        "spec": "The liveness threshold `node_health_liveness` (`lib/node-health.sh`) applies to the marker's own mtime (requirement 55): comfortably above the one-minute crontab cadence that touches it, so an ordinary scheduling jitter never trips it, and far below any cycle's own worst-case runtime, so a genuinely wedged supercronic is caught within a few minutes rather than a whole cycle interval.",
+        "spec": "The liveness threshold `node_health_liveness` (`lib/node-health.sh`) applies to the marker's own mtime (requirement 57): comfortably above the one-minute crontab cadence that touches it, so an ordinary scheduling jitter never trips it, and far below any cycle's own worst-case runtime, so a genuinely wedged supercronic is caught within a few minutes rather than a whole cycle interval.",
         "value": {
           "spec": "3 min"
         }
@@ -1751,7 +1757,7 @@
       "default": 30,
       "x-docs": {
         "readme": "Seconds `scripts/node-health.sh --ready` caches its one GitHub rate-limit read before refreshing it, so polling readiness cannot itself become a load source.",
-        "spec": "The TTL on `_node_health_rate_limit`'s cache (`state_dir/.node-health-ratelimit-cache.json`, requirement 56): short enough that a real credential or budget change is visible within one ordinary polling interval, long enough that even a sub-second poll (a Kubernetes exec probe at its own default cadence) makes at most one real call per window.",
+        "spec": "The TTL on `_node_health_rate_limit`'s cache (`state_dir/.node-health-ratelimit-cache.json`, requirement 58a): short enough that a real credential or budget change is visible within one ordinary polling interval, long enough that even a sub-second poll (a Kubernetes exec probe at its own default cadence) makes at most one real call per window.",
         "value": {
           "spec": "30 s"
         }
@@ -1899,6 +1905,17 @@
           "x-docs": {
             "readme": "Interval, in minutes, of the containerised node's wake-poll cron line (`scripts/wake-poll.sh`, issue #613) — how often it checks for a source-relevant change and wakes an idle node between ordinary cycle firings.",
             "spec": "Interval, in minutes, of `scripts/wake-poll.sh`'s crontab line (requirement 54)."
+          }
+        },
+        "resource_sample_minutes": {
+          "description": "Interval, in minutes, of `scripts/collect-resource-usage.sh`'s crontab line inside the `scheduler` service (requirement 55, D14, issue #606) — a cheap cgroup/proc tick every this-many minutes, with its own internal `resources.disk_sample_interval_minutes` throttle for the expensive `du` reads. `dashboard`/`dashboard-local` run no crontab at all, so they call the same script from a background loop `scripts/serve-dashboard.sh` starts on this same interval, read directly rather than through a second config key. Independent of `schedule.cycle_interval_minutes` (requirement 1d): resource sampling has its own crontab line and runs on its own terms.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 59,
+          "default": 5,
+          "x-docs": {
+            "readme": "Interval, in minutes, of the containerised node's resource-usage sampling (`scripts/collect-resource-usage.sh`, issue #606) — a cheap cgroup/proc tick; disk sampling is throttled separately by `resources.disk_sample_interval_minutes`.",
+            "spec": "Interval, in minutes, of `scripts/collect-resource-usage.sh`'s crontab line (requirement 55) inside the `scheduler` service, and the same interval the background loop `scripts/serve-dashboard.sh` starts for `dashboard`/`dashboard-local` polls on."
           }
         },
         "log_rotation_minute": {
@@ -2265,6 +2282,111 @@
         "spec": "The D18 Stage 0 merge-autonomy baseline (docs/reviews/2026-08-15-merge-autonomy-baseline.md §6), copied here once as a fixed reference rather than re-derived at runtime (issue #579): `scripts/publish-revert-rate.sh` compares every window's revert-or-follow-up rate against these figures. A repository absent from `repos` reports its baseline comparison `unavailable` rather than failing.",
         "value": "`{\"source\": \"docs/reviews/2026-08-15-merge-autonomy-baseline.md\", \"generated\": \"2026-08-15\", \"repos\": [{\"slug\": \"Poetic-Poems/poetic\", \"count\": 84, \"reverts\": 0, \"follow_up_fixes\": 31}, {\"slug\": \"Poetic-Poems/poetic-fiddle\", \"count\": 119, \"reverts\": 0, \"follow_up_fixes\": 44}, {\"slug\": \"Pullwright/agent-ops\", \"count\": 120, \"reverts\": 0, \"follow_up_fixes\": 106}]}`"
       }
+    },
+    "resources": {
+      "description": "Per-container and per-volume resource budgets requirement 55 (D14, issue #606) compares measured actuals against: scripts/doctor.sh warns when scripts/resource-budget-report.sh's windowed figure for a container or volume exceeds its own budget here, and scripts/publish-dashboard.sh renders the same comparison per node (folded into heartbeat.json by scripts/state-sync.sh). Covers exactly the three containers that run this image and can self-measure their own cgroup and /proc/net/dev from the inside (`scheduler`, `dashboard`, `dashboard-local` — scripts/collect-resource-usage.sh) plus the two volumes they mount (`workspace_root`, `state_dir`); `tailscale`/`watchtower` and this project's other agent-ops services (`egress-proxy`, `collector`, `reconciler`) are not measured here — reaching them needs the collector's own Docker-socket vantage or a host-side collector, deferred as tech debt (agent-ops#1563). `containers.*.memory_bytes`/`containers.*.cpu_cores` mirror deploy/docker/compose.yaml's own `mem_limit`/`cpus` defaults, which remain the enforcement mechanism (D14) — this object is the read side scripts/doctor.sh and the dashboard compare actuals against, not a second enforcement path, and keeping the two in step across an edit is a human responsibility today (D16's own control-plane migration is what eventually removes the duplication). `containers.*.bandwidth_bytes_per_hour` and every `volumes.*.disk_bytes` are provisional: neither resource had ever been measured before this key existed, so both are set generously above what a quiet node is expected to use, meant to be tightened once scripts/resource-budget-report.sh has real fleet windows to set them from — a config edit, not a re-implementation.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sample_retention_hours": {
+          "description": "How long scripts/collect-resource-usage.sh keeps a raw sample in state_dir/.resource-samples.jsonl before pruning it on a later tick — long enough that report_window_hours' own window always has data. Never replicated (scripts/state-sync.sh's EXCLUDES): a raw sample is this node's own forensics, not a fact a peer would read.",
+          "type": "integer",
+          "minimum": 1,
+          "default": 48,
+          "x-docs": {
+            "readme": "Hours scripts/collect-resource-usage.sh keeps a raw local sample before pruning it — long enough that the report window below always has data.",
+            "spec": "Hours scripts/collect-resource-usage.sh keeps a raw sample in state_dir/.resource-samples.jsonl (never replicated) before pruning it on a later tick — long enough that resources.report_window_hours' own window always has data.",
+            "value": "`48`"
+          }
+        },
+        "report_window_hours": {
+          "description": "The window scripts/resource-budget-report.sh derives latest/median/p95 over — read by scripts/doctor.sh's over-budget check and folded into heartbeat.json by scripts/state-sync.sh.",
+          "type": "integer",
+          "minimum": 1,
+          "default": 24,
+          "x-docs": {
+            "readme": "Hours scripts/resource-budget-report.sh derives its latest/median/p95 figures over.",
+            "spec": "The window, in hours, scripts/resource-budget-report.sh derives latest/median/p95 over — read by requirement 55's over-budget check (scripts/doctor.sh) and folded into heartbeat.json by scripts/state-sync.sh.",
+            "value": "`24`"
+          }
+        },
+        "disk_sample_interval_minutes": {
+          "description": "How often scripts/collect-resource-usage.sh samples a volume's own disk usage (a `du -sb`, expensive enough on a multi-GB tree to throttle separately from the cgroup/proc reads it takes every tick).",
+          "type": "integer",
+          "minimum": 1,
+          "default": 60,
+          "x-docs": {
+            "readme": "Minutes between scripts/collect-resource-usage.sh's own `du -sb` disk samples — throttled separately from its cheap, every-tick cgroup/proc reads.",
+            "spec": "Minutes between scripts/collect-resource-usage.sh's own disk samples (`du -sb` on workspace_root/state_dir), throttled separately from the cgroup/proc reads it takes every tick because `du` on a multi-GB tree is not cheap.",
+            "value": "`60`"
+          }
+        },
+        "containers": {
+          "description": "Budgets keyed by AGENT_OPS_SERVICE (deploy/docker/compose.yaml) — the same name scripts/collect-resource-usage.sh tags every sample with. Each entry's `cpu_cores`/`memory_bytes`/`bandwidth_bytes_per_hour` is what scripts/doctor.sh compares scripts/resource-budget-report.sh's windowed p95 against; `cpu_cores`/`memory_bytes` mirror this container's own deploy/docker/compose.yaml `cpus`/`mem_limit` default, `bandwidth_bytes_per_hour` is provisional (Compose has no per-container egress cap at all, and no fleet bandwidth had been measured before this key existed).",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "scheduler": {
+              "description": "Measured 2026-08-24/2026-09-04 (deploy/docker/compose.yaml's own D14 comment): 190-450 MiB resident, 1.0-1.3 cores; bandwidth is provisional.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cpu_cores": { "type": "number", "exclusiveMinimum": 0, "default": 2.0 },
+                "memory_bytes": { "type": "integer", "exclusiveMinimum": 0, "default": 1610612736 },
+                "bandwidth_bytes_per_hour": { "type": "integer", "exclusiveMinimum": 0, "default": 2147483648 }
+              }
+            },
+            "dashboard": {
+              "description": "Measured 2026-08-24 (deploy/docker/compose.yaml's own D14 comment): 11-54 MiB resident, negligible CPU; bandwidth is provisional.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cpu_cores": { "type": "number", "exclusiveMinimum": 0, "default": 1.0 },
+                "memory_bytes": { "type": "integer", "exclusiveMinimum": 0, "default": 536870912 },
+                "bandwidth_bytes_per_hour": { "type": "integer", "exclusiveMinimum": 0, "default": 268435456 }
+              }
+            },
+            "dashboard-local": {
+              "description": "Shares deploy/docker/compose.yaml's own AGENT_OPS_DASHBOARD_MEMORY/AGENT_OPS_DASHBOARD_CPUS defaults with `dashboard` above — the two profiles run the identical image and entrypoint.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cpu_cores": { "type": "number", "exclusiveMinimum": 0, "default": 1.0 },
+                "memory_bytes": { "type": "integer", "exclusiveMinimum": 0, "default": 536870912 },
+                "bandwidth_bytes_per_hour": { "type": "integer", "exclusiveMinimum": 0, "default": 268435456 }
+              }
+            }
+          }
+        },
+        "volumes": {
+          "description": "Disk budgets keyed by volume name — the same name scripts/collect-resource-usage.sh tags a disk sample with. Each entry's `disk_bytes` is what scripts/doctor.sh compares scripts/resource-budget-report.sh's own latest disk_bytes reading against; provisional throughout — WSL2 has no blkio throttling to enforce it, and neither volume's growth had been sampled over time before this key existed.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "workspace_root": {
+              "description": "Measured at 6.0 GB on the ockham node 2026-08-21 (issue #606), of which 1.3 GB was orphaned clones (issue #605) — this budget sits well above that, pending a real growth-rate window.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "disk_bytes": { "type": "integer", "exclusiveMinimum": 0, "default": 10737418240 }
+              }
+            },
+            "state_dir": {
+              "description": "Never measured before this key existed. Holds every peer's state mirror plus this node's own logs and cycle history, so it grows with fleet size, not just with this node's own activity.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "disk_bytes": { "type": "integer", "exclusiveMinimum": 0, "default": 5368709120 }
+              }
+            }
+          }
+        }
+      },
+      "x-docs": {
+        "readme": "Per-container and per-volume budgets D14 compares measured actuals against (`scripts/doctor.sh` warns on a breach; the dashboard renders the comparison per node). `memory_bytes`/`cpu_cores` mirror `deploy/docker/compose.yaml`'s own `mem_limit`/`cpus`, which remain the enforcement mechanism; `bandwidth_bytes_per_hour` and every `disk_bytes` are provisional, set before any real fleet window existed.",
+        "spec": "Per-container (`resources.containers.<AGENT_OPS_SERVICE>`) and per-volume (`resources.volumes.<name>`) budgets requirement 55 (D14, issue #606) compares `scripts/resource-budget-report.sh`'s windowed actuals against. Covers only the three containers that run this image and self-measure (`scripts/collect-resource-usage.sh`) — `scheduler`, `dashboard`, `dashboard-local` — plus the two volumes they mount; `tailscale`/`watchtower`/`egress-proxy`/`collector`/`reconciler` are out of scope (deferred; see requirement 55). `containers.*.memory_bytes`/`containers.*.cpu_cores` mirror `deploy/docker/compose.yaml`'s own `mem_limit`/`cpus` defaults, the enforcement side D14 already ships; `containers.*.bandwidth_bytes_per_hour` and every `volumes.*.disk_bytes` are provisional pending a real fleet window.",
+        "value": "see `config.json`"
+      }
     }
   },
   "$defs": {
@@ -2313,6 +2435,19 @@
         "replace": {
           "type": "string",
           "minLength": 1
+        }
+      }
+    },
+    "repoPromptOverrides": {
+      "description": "A repository's own `prompt_overrides` layer (requirement 4a): the same shape as the top-level `prompt_overrides` object, but keyed only `implementer`/`reviewer` — the two stages that already run against a single known repository. Naming any other stage here is refused at validation time: a stage that cannot yet take a per-repository override (the Co-Ordinator, until its invocation is split across repositories; the Enabler, Refiner and Monitor, none of which run against one repository either) must reject one for itself loudly rather than silently ignore it.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "implementer": {
+          "$ref": "#/$defs/promptOverride"
+        },
+        "reviewer": {
+          "$ref": "#/$defs/promptOverride"
         }
       }
     },

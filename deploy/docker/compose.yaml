@@ -489,7 +489,7 @@ services:
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
       DISABLE_AUTOUPDATER: "1"
       ENABLE_CLAUDEAI_MCP_SERVERS: "false"
-    # The container-runtime liveness check (requirement 55, issue #608): runs
+    # The container-runtime liveness check (requirement 60c, issue #608): runs
     # `scripts/node-health.sh --live` *inside* this container, exactly as a
     # Kubernetes `exec` probe would — the CLI is the same in both places, so
     # this line and that manifest's own probe can never disagree about what
@@ -859,7 +859,7 @@ services:
       - scheduler
 
   # --- node-health profile -------------------------------------------------
-  # The HTTP surface over `scripts/node-health.sh` (requirement 56, issue
+  # The HTTP surface over `scripts/node-health.sh` (requirement 60d, issue
   # #608): `/livez`, `/readyz`, `/healthz`, `/metrics`, for a reader that can
   # only speak HTTP — a collector, or an orchestrator's own liveness/
   # readiness probe wired at the URL level rather than as an `exec`. Off by

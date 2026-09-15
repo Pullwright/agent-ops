@@ -1530,6 +1530,68 @@
     return el("div", {class:"ver"}, el("span", {class:"badge b-amber", text:"host degraded", title: bad}));
   }
 
+  // Whether this node's own resource-budget report (scripts/resource-
+  // budget-report.sh, requirement 55, D14, agent-ops#606) shows any
+  // measured container or volume over its config.json `resources` budget
+  // — n.resources is the identical `{containers, volumes, sample_count,
+  // window_start}` object doctor.sh's own "Resource budgets" section
+  // compares. The comparison itself is stated twice, not shared: doctor.sh
+  // calls lib/resource-usage.sh's `resource_budget_breaches`, and this
+  // function — JavaScript in a browser, with no route to a bash library —
+  // re-states the identical rule (windowed p95 for CPU/memory/bandwidth,
+  // latest for disk, an unbudgeted or unmeasured resource contributing
+  // nothing). Change one and you must change the other;
+  // test/resource-usage.test.sh's at/under/over-the-line assertions are
+  // where that rule is pinned.
+  // Same "badges only for an exceptional condition" discipline hostFactsLine
+  // above already holds: a container or volume within budget renders
+  // nothing here — see that function's own comment for why per-container
+  // figures are otherwise left off this page entirely — and D.config's own
+  // `resources` block is this run's one source for what each budget is,
+  // the same way TOKEN_EXPIRY_WARN_DAYS above is read from a constant
+  // rather than from the payload. Growth rate, not just the latest figure,
+  // is named for a disk breach (D21's lever rule: "this volume has grown
+  // every day for N days" is the sentence worth reading, not a bare byte
+  // count) wherever the report actually has one.
+  function resourcesLine(n) {
+    var r = n.resources;
+    if (!r) return null;
+    var budgets = (D.config && D.config.resources) || {};
+    var bad = [];
+    Object.keys(r.containers || {}).forEach(function (name) {
+      var actual = r.containers[name] || {};
+      var budget = (budgets.containers || {})[name];
+      if (!budget) return;
+      ["cpu_cores", "memory_bytes"].forEach(function (field) {
+        var a = actual[field] && actual[field].p95;
+        var b = budget[field];
+        if (a != null && b != null && a > b) {
+          bad.push(name + "'s " + field + " (p95 " + a + " > budget " + b + ")");
+        }
+      });
+      ["net_rx_bytes_per_hour", "net_tx_bytes_per_hour"].forEach(function (field) {
+        var a = actual[field] && actual[field].p95;
+        var b = budget.bandwidth_bytes_per_hour;
+        if (a != null && b != null && a > b) {
+          bad.push(name + "'s " + field + " (p95 " + a + " > budget " + b + ")");
+        }
+      });
+    });
+    Object.keys(r.volumes || {}).forEach(function (name) {
+      var actual = r.volumes[name] || {};
+      var budget = (budgets.volumes || {})[name];
+      if (!budget || budget.disk_bytes == null) return;
+      if (actual.latest != null && actual.latest > budget.disk_bytes) {
+        var growth = actual.growth_bytes_per_day;
+        bad.push(name + "'s disk usage (" + actual.latest + " > budget " + budget.disk_bytes + ")" +
+          (growth != null ? ", growing " + growth + " bytes/day" : ""));
+      }
+    });
+    if (!bad.length) return null;
+    return el("div", {class:"ver"}, el("span", {class:"badge b-amber", text:"resource budget",
+      title: "over its configured requirement-55 budget: " + bad.join("; ")}));
+  }
+
   // ---------- section builder ----------
   // `label` is a short, stable name — unlike `title`, whose h2 text often
   // carries a live count or the current node filter and so cannot itself
@@ -1853,6 +1915,8 @@
     if (providerUnreachable) card.appendChild(providerUnreachable);
     var hostFacts = hostFactsLine(n);
     if (hostFacts) card.appendChild(hostFacts);
+    var resources = resourcesLine(n);
+    if (resources) card.appendChild(resources);
 
     // This line is about the freshness of the VERSION/compose/image info above
     // it, which for self is always read live regardless of n.stale (self's own

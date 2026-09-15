@@ -84,6 +84,7 @@ heartbeat_minutes="$(cfg '.schedule.heartbeat_minutes')"
 push_minutes="$(cfg '.schedule.state_sync_push_minutes')"
 fetch_minutes="$(cfg '.schedule.state_sync_fetch_minutes')"
 wake_poll_minutes="$(cfg '.schedule.wake_poll_minutes')"
+resource_sample_minutes="$(cfg '.schedule.resource_sample_minutes')"
 rotation_minute="$(cfg '.schedule.log_rotation_minute')"
 
 if ! jq -e 'type == "array" and all(.[]; type == "number")' <<<"$excluded_minutes" >/dev/null 2>&1; then
@@ -181,6 +182,7 @@ if ! sed \
       -e "s#@STATE_SYNC_PUSH_MINUTES@#$push_minutes#g" \
       -e "s#@STATE_SYNC_FETCH_MINUTES@#$fetch_minutes#g" \
       -e "s#@WAKE_POLL_MINUTES@#$wake_poll_minutes#g" \
+      -e "s#@RESOURCE_SAMPLE_MINUTES@#$resource_sample_minutes#g" \
       -e "s#@LOG_ROTATION_MINUTE@#$rotation_minute#g" \
       -e "s#@DOCTOR_MINUTE@#$doctor_minute#g" \
       -e "s#@MONITOR_MINUTE@#$monitor_minute#g" \
@@ -199,5 +201,5 @@ if grep -q '@[A-Z_]\{1,\}@' "$tmp"; then
   exit 1
 fi
 mv -f "$tmp" "$out"
-say "node $node: cycle at minute(s) $cycle_minutes past $cycle_hours (every ${cycle_interval}m), review at $review_minute past $review_hour:00, unattended doctor at :$doctor_minute hourly, monitor tick at :$monitor_minute hourly (due daily at $monitor_hour:00, or after a page fires), revert-rate publish at $revert_rate_minute past $revert_rate_hour:00, tech-debt archive publish at $tech_debt_archive_minute past $tech_debt_archive_hour:00, wake-poll every ${wake_poll_minutes}m"
+say "node $node: cycle at minute(s) $cycle_minutes past $cycle_hours (every ${cycle_interval}m), review at $review_minute past $review_hour:00, unattended doctor at :$doctor_minute hourly, monitor tick at :$monitor_minute hourly (due daily at $monitor_hour:00, or after a page fires), revert-rate publish at $revert_rate_minute past $revert_rate_hour:00, tech-debt archive publish at $tech_debt_archive_minute past $tech_debt_archive_hour:00, wake-poll every ${wake_poll_minutes}m, resource sampling every ${resource_sample_minutes}m"
 exit 0

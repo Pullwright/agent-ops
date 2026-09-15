@@ -47,6 +47,8 @@ TEMPLATE="$SCRIPT_DIR/dashboard/index.html"
 
 # shellcheck source=lib/config-schema.sh
 . "$SCRIPT_DIR/lib/config-schema.sh"
+# shellcheck source=lib/resource-usage.sh
+. "$SCRIPT_DIR/lib/resource-usage.sh"
 # shellcheck source=lib/limit-detect.sh
 . "$SCRIPT_DIR/lib/limit-detect.sh"
 # shellcheck source=lib/cycle-state.sh
@@ -329,6 +331,20 @@ doctor_status_json="$(jq -c '.' "$doctor_status_file" 2>/dev/null || echo null)"
 # full record still reaches `status.doctor` above, where it is local to this
 # node and the page's own doctor panel reads `fails`/`warns` from it.
 doctor_heartbeat_json="$(jq -c '{timestamp, verdict}' "$doctor_status_file" 2>/dev/null || echo null)"
+# This node's own resource-budget report (scripts/resource-budget-report.sh,
+# requirement 55, D14, agent-ops#606) — read directly via the identical pure
+# function that script wraps, on the same precedent doctor_heartbeat_json
+# above already sets: this node's own *fleet row* must carry exactly the
+# shape a peer's heartbeat.json `resources` field does, so both are read by
+# the one dashboard code path (`resourcesLine` et al.) without a
+# self-vs-peer branch.
+self_resources_window_hours="$(jq -r '.resources.report_window_hours // 24' <<<"$DEFAULTED_CONFIG")"
+[[ "$self_resources_window_hours" =~ ^[0-9]+$ ]] || self_resources_window_hours=24
+self_resources_samples=""
+[[ -r "$state_dir/.resource-samples.jsonl" ]] && self_resources_samples="$(cat "$state_dir/.resource-samples.jsonl")"
+self_resources_window_start="$(jq -nr --argjson secs "$(( self_resources_window_hours * 3600 ))" \
+  '(now - $secs) | todateiso8601' 2>/dev/null)"
+self_resources_json="$(resource_budget_report "$self_resources_samples" "$self_resources_window_start" 2>/dev/null || echo null)"
 # This node's own per-stage health verdict (lib/stage-health.sh,
 # agent-ops#662), written by agent-cycle.sh's own cleanup at the end of every
 # real cycle — read rather than recomputed, on the identical precedent
@@ -2310,6 +2326,7 @@ jq -nc --arg n "$self_node" --arg r "$(role_current)" --arg lc "$last_local_cycl
   --argjson stage_health "$stage_health_json" \
   --argjson updater "$updater_json" \
   --argjson doctor "$doctor_heartbeat_json" \
+  --argjson resources "$self_resources_json" \
   --argjson pu "$provider_unreachable_json" \
   --argjson host "$self_host_facts_json" \
   --argjson pub "$self_pub_json" \
@@ -2318,7 +2335,8 @@ jq -nc --arg n "$self_node" --arg r "$(role_current)" --arg lc "$last_local_cycl
     stale: ($pub.verdict != "fresh"),
     live: $live, version: $version, compose: $compose,
     compose_reconcile: $compose_reconcile, image: $image, switch: $switch,
-    stage_health: $stage_health, updater: $updater, doctor: $doctor, host: $host,
+    stage_health: $stage_health, updater: $updater, doctor: $doctor,
+    resources: $resources, host: $host,
     provider_unreachable: (if $pu != null and (($pu.nodes // []) | index($n) != null) then $pu else null end)}' > "$nodes_rows"
 for hb in "$peers_dir"/*/heartbeat.json; do
   [[ -f "$hb" ]] || continue
@@ -2389,6 +2407,12 @@ for hb in "$peers_dir"/*/heartbeat.json; do
        # built before this travelled (agent-ops#1278) yields null rather
        # than this node guessing at a doctor run it never made.
        doctor: ($h.doctor // null),
+       # And for the resource-budget report (scripts/resource-budget-
+       # report.sh, requirement 55, D14, agent-ops#606): only the peer
+       # itself ran its own collector, so a heartbeat built before this
+       # travelled yields null rather than this node guessing at a
+       # container it never measured.
+       resources: ($h.resources // null),
        host: $host,
        # Unlike the fields above, `provider_unreachable` is not a report from
        # the peer about itself — it is this node reading the fleet-wide
@@ -3619,6 +3643,16 @@ config_json="$(jq -c --argjson t "$stage_budget_json" --argjson lock "$lock_stal
         | reduce .[] as $e ({};
             .[$e.value.actor] = ([ (.[$e.value.actor] // 0), $e.value.backstop_min ] | max)))}' \
   "$CONFIG_FILE")"
+# `resources` (requirement 55, D14, agent-ops#606) is read from
+# $DEFAULTED_CONFIG rather than folded into the allow-list jq filter above
+# with everything else: it is schema-defaulted (deploy/docker/compose.yaml's
+# own mem_limit/cpus mirrored in, per-container/per-volume), and every other
+# field above is a raw config.json value a fresh install ships unset for —
+# reading it undefaulted here would make `resourcesLine`'s own budget
+# comparison compare against `null` on the common case of an installation
+# that has never edited this key.
+config_json="$(jq -c --argjson r "$(jq -c '.resources // {}' <<<"$DEFAULTED_CONFIG")" \
+  '. + {resources: $r}' <<<"$config_json")"
 fi  # FULL
 
 # cycles/github/log_tail can each be large; hand them to jq via files.

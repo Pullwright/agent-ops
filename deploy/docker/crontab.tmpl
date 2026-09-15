@@ -82,7 +82,7 @@
 #
 # The line below carries no substitution token at all, so render-crontab.sh
 # leaves it untouched. It is the liveness marker `scripts/node-health.sh
-# --live` reads (requirement 55, issue #608): `touch`ing a file every minute
+# --live` reads (requirement 57, issue #608): `touch`ing a file every minute
 # is nearly the cheapest thing supercronic can be asked to prove it is still
 # firing jobs at all, deliberately decoupled from every other job's own
 # health — a wedged dashboard-launcher window or a stuck cycle must not
@@ -93,6 +93,20 @@
 # gone read-only) is a fact `node_health_liveness`'s own aged-out reading
 # already reports, not a crashed script to double-report.
 #
+# @RESOURCE_SAMPLE_MINUTES@ is schedule.resource_sample_minutes (requirement
+# 55, D14, issue #606): every that-many minutes,
+# scripts/collect-resource-usage.sh takes one cheap cgroup/proc reading of
+# this container's own CPU, memory and network counters, appending it to
+# this node's local resource-usage log — with its own internal
+# resources.disk_sample_interval_minutes throttle for the `du` reads, which
+# are not cheap. Runs only inside `scheduler` (this line); `dashboard`/
+# `dashboard-local` run no crontab at all, so `scripts/serve-dashboard.sh`
+# starts a small background loop calling the same script on the same
+# interval instead. It ends `|| true` for the same reason the doctor line
+# does: nothing on this image reads a cron job's exit status, and a tick
+# that could not read one counter this time is simply retried next tick,
+# not a crashed script.
+#
 # Everything not a placeholder is documented in the baked crontab, which is
 # also the fallback whenever this template cannot be rendered.
 
@@ -101,6 +115,7 @@ LOGDIR=/home/agent/.local/state/poetic-agents
 * * * * *  touch $LOGDIR/.node-alive 2>/dev/null || true
 */@HEARTBEAT_MINUTES@ * * * *  /app/scripts/publish-dashboard-launcher.sh
 */@WAKE_POLL_MINUTES@ * * * *  /app/scripts/wake-poll.sh >> $LOGDIR/wake-poll.log 2>&1 || true
+*/@RESOURCE_SAMPLE_MINUTES@ * * * *  /app/scripts/collect-resource-usage.sh >> $LOGDIR/resource-usage.log 2>&1 || true
 @CYCLE_MINUTE@ @CYCLE_HOURS@ * * *  /app/agent-cycle.sh  >> $LOGDIR/cron.log        2>&1
 @REVIEW_MINUTE@ @REVIEW_HOUR@ * * *  /app/review-cycle.sh >> $LOGDIR/review-cron.log 2>&1
 @DOCTOR_MINUTE@ * * * *  /app/scripts/doctor.sh --unattended >> $LOGDIR/doctor.log 2>&1 || true

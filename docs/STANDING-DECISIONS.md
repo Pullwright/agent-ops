@@ -162,3 +162,10 @@ principle it rests on.`
   pull-request review — not a red CI check — is where a not-debt conclusion
   gets its human eyes. Answered by a delegate on the owner's direction of
   2026-09-13; citation amended 2026-09-15 — the decision itself is unchanged.
+- 2026-09-14 · #1543 · **A pull request that retires a required check's
+  producer names the ruleset edit as a prerequisite owner act, and the edit
+  precedes the merge.** The converse of #648 (a check that should hold a
+  merge is marked required, never special-cased): doing the ruleset edit
+  early is harmless — a pull request that still carries the workflow keeps
+  running it, only without gating — so the safe ordering never wedges the
+  repository.

@@ -357,6 +357,35 @@ assert_rejected "a non-string prompt-override replace is rejected" \
   '.prompt_overrides = {coordinator: {replace: ["a.md"]}}' \
   'config.prompt_overrides.coordinator.replace: expected string, got array'
 
+# --- A repository's own prompt_overrides layer (requirement 4a, agent-ops#588)
+#     is restricted to `implementer`/`reviewer` — the two stages that already
+#     run against a single known repository. Naming any other stage there
+#     must fail loudly at validation time rather than be silently ignored;
+#     the installation-wide key above already accepts all six. ---
+assert_valid "a repo's own prompt_overrides.implementer is accepted" \
+  '.repos[0].prompt_overrides = {implementer: {extend: ["x.md"]}}'
+assert_valid "a repo's own prompt_overrides.reviewer is accepted" \
+  '.repos[0].prompt_overrides = {reviewer: {replace: "r.md"}}'
+assert_valid "a repo's own prompt_overrides naming both implementer and reviewer is accepted" \
+  '.repos[0].prompt_overrides = {implementer: {extend: ["x.md"]}, reviewer: {replace: "r.md"}}'
+assert_rejected "a repo's own prompt_overrides naming coordinator is rejected — the Co-Ordinator has no per-repository invocation to scope it to" \
+  '.repos[0].prompt_overrides = {coordinator: {extend: ["x.md"]}}' \
+  "config.repos[0].prompt_overrides: unknown key \"coordinator\""
+assert_rejected "a repo's own prompt_overrides naming enabler is rejected" \
+  '.repos[0].prompt_overrides = {enabler: {extend: ["x.md"]}}' \
+  "config.repos[0].prompt_overrides: unknown key \"enabler\""
+assert_rejected "a repo's own prompt_overrides naming refiner is rejected" \
+  '.repos[0].prompt_overrides = {refiner: {extend: ["x.md"]}}' \
+  "config.repos[0].prompt_overrides: unknown key \"refiner\""
+assert_rejected "a repo's own prompt_overrides naming monitor is rejected" \
+  '.repos[0].prompt_overrides = {monitor: {extend: ["x.md"]}}' \
+  "config.repos[0].prompt_overrides: unknown key \"monitor\""
+assert_rejected "a repo's own prompt_overrides still enforces the same per-stage structural shape" \
+  '.repos[0].prompt_overrides = {implementer: {extned: ["x.md"]}}' \
+  "config.repos[0].prompt_overrides.implementer: unknown key \"extned\""
+assert_valid "a repo with no prompt_overrides override is accepted (inherits the installation-wide key)" \
+  '.prompt_overrides = {implementer: {extend: ["x.md"]}}'
+
 # --- A key with no fallback anywhere in the code is required: absent, the
 #     `jq -r` that reads it yields the string "null", and the pipeline runs on
 #     that. ---
@@ -402,7 +431,7 @@ assert_defaults "crash_loop_min_clear_minutes absent resolves to its 30-minute p
   'del(.crash_loop_min_clear_minutes)' '.crash_loop_min_clear_minutes == 30'
 assert_defaults "a nested object absent as a whole is synthesised from its own leaves' defaults" \
   'del(.schedule)' \
-  '.schedule == {cycle_hours: "*", cycle_interval_minutes: 15, excluded_minutes: [], review_hour: 3, review_offset_minutes: 29, heartbeat_minutes: 5, state_sync_push_minutes: 5, state_sync_fetch_minutes: 7, wake_poll_minutes: 2, log_rotation_minute: 19, doctor_offset_minutes: 44, revert_rate_hour: 2, revert_rate_offset_minutes: 51, tech_debt_archive_hour: 4, tech_debt_archive_offset_minutes: 37, monitor_hour: 5, monitor_offset_minutes: 19}'
+  '.schedule == {cycle_hours: "*", cycle_interval_minutes: 15, excluded_minutes: [], review_hour: 3, review_offset_minutes: 29, heartbeat_minutes: 5, state_sync_push_minutes: 5, state_sync_fetch_minutes: 7, wake_poll_minutes: 2, resource_sample_minutes: 5, log_rotation_minute: 19, doctor_offset_minutes: 44, revert_rate_hour: 2, revert_rate_offset_minutes: 51, tech_debt_archive_hour: 4, tech_debt_archive_offset_minutes: 37, monitor_hour: 5, monitor_offset_minutes: 19}'
 assert_defaults "one leaf missing from a present nested object is filled without disturbing its siblings" \
   '.schedule = {review_hour: 9}' \
   '.schedule.review_hour == 9 and .schedule.cycle_hours == "*" and .schedule.log_rotation_minute == 19'
@@ -1621,6 +1650,72 @@ assert_contains "the duplicate-slug guard names the repeated slug" \
   "project_review.repos lists [$BASE_REPO_1] more than once" "$guard_out"
 assert_not_contains "a config the schema accepts is not reported as a schema failure" \
   "does not match config.schema.json" "$guard_out"
+
+# --- requirement 55 (D14, agent-ops#606): the "Resource budgets" section is
+#     where a container or volume over budget becomes a *reportable*
+#     condition rather than something only a human reading a graph would
+#     notice, so what it prints is asserted here rather than left to
+#     lib/resource-usage.sh's own unit coverage of the comparison
+#     (test/resource-usage.test.sh). Every fixture below points state_dir at
+#     this run's own tmp directory so the samples file under test is the one
+#     written here and never whichever one the node this suite runs on
+#     happens to carry; the budgets compared against are the schema's own
+#     shipped defaults, read back through config_defaults the same way
+#     doctor.sh reads them. ---
+resources_state="$tmp/resources-state"
+mkdir -p "$resources_state"
+resources_now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+jq --arg sd "$resources_state" '.state_dir = $sd' "$BASE_CONFIG" > "$tmp/resources.json"
+
+# No samples file at all — a node whose collector has not run yet. Not a
+# warning and not an ok: a check that could not be made.
+resources_out="$(bash "$SCRIPT_DIR/scripts/doctor.sh" --offline --config "$tmp/resources.json" 2>&1)"
+assert_contains "doctor skips the resource-budget check on a node with no samples file yet, naming the file" \
+  "[skip] resource budgets: $resources_state/.resource-samples.jsonl does not exist yet" "$resources_out"
+
+# Every figure inside its shipped budget — one ok line, naming how much
+# evidence it rests on.
+cat > "$resources_state/.resource-samples.jsonl" <<EOF
+{"ts":"$resources_now","service":"scheduler","cpu_cores":0.4,"memory_bytes":220000000,"net_rx_bytes_per_hour":1000,"net_tx_bytes_per_hour":1000}
+{"ts":"$resources_now","volume":"workspace_root","disk_bytes":1000000}
+EOF
+resources_out="$(bash "$SCRIPT_DIR/scripts/doctor.sh" --offline --config "$tmp/resources.json" 2>&1)"
+assert_contains "doctor reports every measured container and volume within budget, naming the sample count and window" \
+  "[ ok ] resource budgets: every measured container and volume is within its configured budget (2 sample(s) in the last 24h)" \
+  "$resources_out"
+assert_not_contains "…and raises no breach warning while nothing is over the line" \
+  "resource budget: " "$resources_out"
+
+# Over the line on three of the four things a breach can be — a container's
+# CPU, its memory, and a volume's disk — each warned about by name, with the
+# measured figure, the budget, and the config key that states it.
+cat > "$resources_state/.resource-samples.jsonl" <<EOF
+{"ts":"$resources_now","service":"scheduler","cpu_cores":9.5,"memory_bytes":9999999999,"net_rx_bytes_per_hour":1000,"net_tx_bytes_per_hour":1000}
+{"ts":"$resources_now","volume":"workspace_root","disk_bytes":99999999999}
+EOF
+resources_out="$(bash "$SCRIPT_DIR/scripts/doctor.sh" --offline --config "$tmp/resources.json" 2>&1)"
+assert_contains "doctor warns on a container over its CPU budget, naming container, resource, actual, budget and key" \
+  "[warn] resource budget: scheduler's own cpu_cores is 9.5, over its 2.0 budget (resources.containers.scheduler.cpu_cores, requirement 55)" \
+  "$resources_out"
+assert_contains "doctor warns on a container over its memory budget the same way" \
+  "[warn] resource budget: scheduler's own memory_bytes is 9999999999, over its 1610612736 budget (resources.containers.scheduler.memory_bytes, requirement 55)" \
+  "$resources_out"
+assert_contains "doctor warns on a volume over its disk budget, naming the volume and its own key" \
+  "[warn] resource budget: workspace_root's own disk usage is 99999999999 bytes, over its 10737418240 budget (resources.volumes.workspace_root.disk_bytes, requirement 55)" \
+  "$resources_out"
+assert_not_contains "…and says nothing about the resources that are still within budget" \
+  "net_rx_bytes_per_hour is 1000" "$resources_out"
+
+# A sample older than resources.report_window_hours is outside the window the
+# report derives over, so it is neither compared nor counted — the skip names
+# the window rather than silently reporting an all-clear.
+cat > "$resources_state/.resource-samples.jsonl" <<'EOF'
+{"ts":"2020-01-01T00:00:00Z","service":"scheduler","cpu_cores":9.5,"memory_bytes":9999999999}
+EOF
+resources_out="$(bash "$SCRIPT_DIR/scripts/doctor.sh" --offline --config "$tmp/resources.json" 2>&1)"
+assert_contains "doctor skips rather than warns when every sample predates the report window" \
+  "[skip] resource budgets: $resources_state/.resource-samples.jsonl carries no samples in the last 24h yet" \
+  "$resources_out"
 
 # --- A config that will not parse is a different conversation from one that
 #     parses and is wrong: exit 2, and nothing downstream is even attempted. ---
