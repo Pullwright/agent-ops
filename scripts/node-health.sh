@@ -145,10 +145,23 @@ cmd_live() {
 # The one network call this whole CLI ever makes: `gh api rate_limit`,
 # cached in state_dir so a polling caller cannot turn readiness into a load
 # source (see the header, and issue #608's own pitfall: "do not spend the
-# budget you are reporting on"). Prints `<verdict>\t<detail>\t<core>\t<graphql>`
-# — verdict is github_auth_probe's own vocabulary (ok/unauthorized/
-# unreachable); core/graphql are `.resources.{core,graphql}.remaining` from
-# the same response, empty when unavailable. Read from `/rate_limit`'s body
+# budget you are reporting on"). Prints — and caches — one compact JSON
+# object, `{verdict, detail, core, graphql}`: verdict is github_auth_probe's
+# own vocabulary (ok/unauthorized/unreachable), core/graphql are
+# `.resources.{core,graphql}.remaining` from the same response and `null`
+# when unavailable.
+#
+# JSON rather than the tab-separated line this first carried, because a
+# delimited line cannot survive an empty field here: tab is an IFS
+# *whitespace* character, so `IFS=$'\t' read` folds a run of them into one
+# separator and drops empties entirely — and `detail` is empty on precisely
+# the path that has budget figures to report (`verdict: ok`), so every
+# healthy read shifted `core` into `detail` and `graphql` into `core`, and
+# readiness compared the graphql pool against `github_min_core_budget` while
+# `github_min_graphql_budget` was never checked at all. A cached object read
+# back with `jq` cannot mis-associate a field, whatever any of them holds.
+#
+# Read from `/rate_limit`'s body
 # rather than a metered call's headers, deliberately: this endpoint is
 # exempt from the limits it reports (config.schema.json's own note on
 # github_min_core_budget), which is what lets an orchestrator poll readiness
@@ -163,22 +176,44 @@ _node_health_rate_limit() {
   [[ "$ttl" =~ ^[0-9]+$ ]] || ttl=30
   if [[ -s "$cache" ]]; then
     age=$(( now_epoch - $(stat -c %Y "$cache" 2>/dev/null || echo 0) ))
-    (( age >= 0 && age <= ttl )) && { cat "$cache" 2>/dev/null && return 0; }
+    # A cache that will not parse is no cache at all — re-read rather than
+    # hand a caller something it would have to guess at.
+    if (( age >= 0 && age <= ttl )) \
+       && jq -e 'type == "object" and has("verdict")' "$cache" >/dev/null 2>&1; then
+      jq -c '.' "$cache" 2>/dev/null && return 0
+    fi
   fi
-  local verdict detail body="" core="" graphql=""
-  read -r verdict detail < <(github_auth_probe) || true
-  if [[ "$verdict" == "ok" ]]; then
-    body="$(command gh api rate_limit 2>/dev/null)" || body=""
+  # One call, not two (requirement 56a): `github_auth_probe` *is* this same
+  # free `/rate_limit` request, and it returns only its verdict — so asking
+  # it first and then reading the body would make two identical requests of
+  # the forge every time the cache expires, which is precisely what the
+  # requirement's "exactly one network call" exists to prevent. Make the
+  # call here, classify its own response the way the probe classifies its
+  # own, and fall back to the probe only when that call did not come back
+  # usable: there it buys the one thing this response cannot, which is *why*
+  # (a rejected token, no token at all, an unreachable forge), and there is
+  # no budget figure to be had on that path in any case.
+  local verdict detail="" body="" core="" graphql=""
+  body="$(command gh api rate_limit 2>/dev/null)" || body=""
+  if jq -e 'type == "object" and has("resources")' <<<"$body" >/dev/null 2>&1; then
+    verdict="ok"
     core="$(jq -r '.resources.core.remaining // empty' <<<"$body" 2>/dev/null)"
     graphql="$(jq -r '.resources.graphql.remaining // empty' <<<"$body" 2>/dev/null)"
+  else
+    read -r verdict detail < <(github_auth_probe) || true
   fi
-  local line
-  line="$(printf '%s\t%s\t%s\t%s' "$verdict" "$detail" "$core" "$graphql")"
+  local record
+  [[ "$core" =~ ^[0-9]+$ ]] || core=""
+  [[ "$graphql" =~ ^[0-9]+$ ]] || graphql=""
+  record="$(jq -nc --arg v "$verdict" --arg d "$detail" \
+    --argjson c "${core:-null}" --argjson g "${graphql:-null}" \
+    '{verdict:$v, detail:$d, core:$c, graphql:$g}')" \
+    || record='{"verdict":"unreachable","detail":"","core":null,"graphql":null}'
   mkdir -p "$state_dir" 2>/dev/null || true
-  if printf '%s' "$line" > "$cache.$$" 2>/dev/null; then
+  if printf '%s' "$record" > "$cache.$$" 2>/dev/null; then
     mv -f "$cache.$$" "$cache" 2>/dev/null || rm -f "$cache.$$" 2>/dev/null
   fi
-  printf '%s' "$line"
+  printf '%s' "$record"
 }
 
 cmd_ready() {
@@ -189,9 +224,13 @@ cmd_ready() {
   local ttl
   ttl="$(cfg '.node_health_forge_check_cache_seconds')"
   [[ "$ttl" =~ ^[0-9]+$ ]] || ttl=30
-  local gh_verdict gh_detail core_remaining graphql_remaining
-  IFS=$'\t' read -r gh_verdict gh_detail core_remaining graphql_remaining \
-    < <(_node_health_rate_limit "$state_dir" "$ttl")
+  local probe gh_verdict gh_detail core_remaining graphql_remaining
+  probe="$(_node_health_rate_limit "$state_dir" "$ttl")"
+  gh_verdict="$(jq -r '.verdict // "unreachable"' <<<"$probe" 2>/dev/null)"
+  [[ -n "$gh_verdict" ]] || gh_verdict="unreachable"
+  gh_detail="$(jq -r '.detail // ""' <<<"$probe" 2>/dev/null)"
+  core_remaining="$(jq -r '.core // empty' <<<"$probe" 2>/dev/null)"
+  graphql_remaining="$(jq -r '.graphql // empty' <<<"$probe" 2>/dev/null)"
 
   local disk_free_kb min_free_bytes
   disk_free_kb="$(disk_space_free_kb "$state_dir")"

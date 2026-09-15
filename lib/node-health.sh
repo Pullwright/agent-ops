@@ -51,6 +51,28 @@
 
 set -uo pipefail
 
+# _node_health_json_or_null VALUE
+# Every component below is handed a field somebody else read out of a
+# heartbeat, a cache or a fixture, and "somebody else" includes a container
+# killed mid-write: a truncated `heartbeat.json` hands a half-object down
+# here as readily as a whole one. Anything that is not exactly one JSON
+# value becomes `null` — which every component already reads as "no
+# evidence", the one answer that is always supportable — rather than
+# reaching `jq --argjson`, which would fail the interpolation, print
+# nothing, and return non-zero out of a function whose whole contract
+# (see the header) is that it never does either. `lib/metering.sh`'s own
+# header records the same rule for the same reason: these objects are
+# interpolated into `jq` at their call sites, so a helper that dies on odd
+# input costs its caller more than its own field.
+_node_health_json_or_null() {
+  local v="${1:-null}" out
+  out="$(jq -c '.' <<<"$v" 2>/dev/null)" || { printf 'null'; return 0; }
+  # Empty (no JSON value at all) or multi-line (more than one) is no more
+  # interpolatable than a parse error is.
+  [[ -n "$out" && "$out" != *$'\n'* ]] || { printf 'null'; return 0; }
+  printf '%s' "$out"
+}
+
 # node_health_fold STATUS...
 # The one composition rule both `converged` and `health` use. Never returns
 # non-zero: an empty argument list (nothing to fold) reads `unknown`, on the
@@ -114,8 +136,9 @@ node_health_liveness() {
 # first successful push has been fetched back at all, or #602's own
 # machinery predates this heartbeat — never read as healthy).
 node_health_outbound_component() {
-  local pub="${1:-null}" verdict
-  verdict="$(jq -r '.verdict // "unknown"' <<<"$pub" 2>/dev/null || echo unknown)"
+  local pub verdict
+  pub="$(_node_health_json_or_null "${1:-null}")"
+  verdict="$(jq -r 'if type == "object" then (.verdict // "unknown") else "unknown" end' <<<"$pub" 2>/dev/null || echo unknown)"
   case "$verdict" in
     fresh) jq -nc --argjson p "$pub" '{status:"ok", publication:$p}' ;;
     stale) jq -nc --argjson p "$pub" '{status:"fail", publication:$p}' ;;
@@ -130,7 +153,8 @@ node_health_outbound_component() {
 # (no ledger evidence yet) -> unknown; `stuck` -> fail (a fault only a human
 # clears); `rolled`/`deferring` -> ok, both ordinary and self-resolving.
 node_health_updater_component() {
-  local upd="${1:-null}" status
+  local upd status
+  upd="$(_node_health_json_or_null "${1:-null}")"
   status="$(jq -r 'if type == "object" then (.status // "unknown") else "absent" end' <<<"$upd" 2>/dev/null || echo absent)"
   case "$status" in
     stuck)               jq -nc --argjson u "$upd" '{status:"fail", updater:$u}' ;;
@@ -153,7 +177,8 @@ node_health_updater_component() {
 # as "just happened"); `null` (this node runs no CI-stamped image, or the
 # heartbeat predates this field) -> unknown.
 node_health_image_component() {
-  local img="${1:-null}" grace_hours="${2:-3}" now_epoch="${3:-}" status
+  local img grace_hours="${2:-3}" now_epoch="${3:-}" status
+  img="$(_node_health_json_or_null "${1:-null}")"
   [[ -n "$now_epoch" ]] || now_epoch="$(date -u +%s)"
   [[ "$grace_hours" =~ ^[0-9]+$ ]] || grace_hours=3
   (( grace_hours >= 1 )) || grace_hours=1

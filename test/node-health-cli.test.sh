@@ -131,6 +131,49 @@ assert_eq "metrics.cycles carries log_selections" "true" \
 assert_eq "metrics.cycles carries log_attempts_failed" "true" \
   "$(jq 'has("log_attempts_failed")' <<<"$(jq -c '.cycles' <<<"$metrics_out")")"
 
+# --- One forge read per TTL window, and the body is what readiness reads ---
+# Requirement 56a: `--ready` makes exactly one `/rate_limit` call on the
+# ordinary path, and caches it for node_health_forge_check_cache_seconds so a
+# polling orchestrator cannot turn readiness into a load source. A `gh` stub
+# on PATH counts the calls and hands back a budget below the fixture's own
+# floor, which is also what proves the response body actually reaches the
+# verdict rather than only its verdict word.
+stub_dir="$tmp_dir/stub"
+mkdir -p "$stub_dir"
+calls="$tmp_dir/gh-calls"
+: > "$calls"
+cat > "$stub_dir/gh" <<STUB
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$calls"
+if [[ "\$*" == "api rate_limit" ]]; then
+  printf '%s' '{"resources":{"core":{"remaining":17,"limit":5000},"graphql":{"remaining":9,"limit":5000}}}'
+  exit 0
+fi
+exit 1
+STUB
+chmod +x "$stub_dir/gh"
+
+budget_state="$tmp_dir/state-budget"
+mkdir -p "$budget_state"
+budget_config="$tmp_dir/config-budget.json"
+jq -nc --arg sd "$budget_state" --arg wr "$ws" \
+  '{state_dir:$sd, workspace_root:$wr, github_min_core_budget:1000,
+    github_min_graphql_budget:500, node_health_forge_check_cache_seconds:300}' > "$budget_config"
+
+budget_out="$(PATH="$stub_dir:$PATH" "$CLI" --config "$budget_config" --state-dir "$budget_state" --ready)"
+assert_eq "readiness reads the forge response body, not just its verdict (core)" "true" \
+  "$(jq '[.unmet[].code] | index("github-core-budget-low") != null' <<<"$budget_out")"
+assert_eq "readiness reads the forge response body, not just its verdict (graphql)" "true" \
+  "$(jq '[.unmet[].code] | index("github-graphql-budget-low") != null' <<<"$budget_out")"
+assert_eq "readiness does not also report the forge unreachable or unauthenticated" "0" \
+  "$(jq '[.unmet[].code | select(startswith("gh-"))] | length' <<<"$budget_out")"
+assert_eq "exactly one forge call, never the probe's own read as well" "1" \
+  "$(grep -c . "$calls")"
+
+PATH="$stub_dir:$PATH" "$CLI" --config "$budget_config" --state-dir "$budget_state" --ready >/dev/null
+assert_eq "a second poll inside the TTL makes no further call at all" "1" \
+  "$(grep -c . "$calls")"
+
 echo
 if (( failures > 0 )); then
   printf '%d failure(s)\n' "$failures"

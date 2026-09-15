@@ -166,6 +166,28 @@ unreadable_core="$(jq -c '. + {core_remaining:null,core_floor:300,gh_auth:"ok"}'
 assert_eq "readiness: an unreadable core budget alone (gh itself ok) does not block readiness" "true" \
   "$(node_health_readiness "$unreadable_core" | jq -r '.ready')"
 
+# --- Acceptance criterion 1: one valid object for *every* input ------------
+# A truncated heartbeat hands a half-written object down as readily as a whole
+# one, and the contract this whole library is written under (see its header,
+# and issue #608's "never let the probe be the thing that breaks the node")
+# is that no input makes one of these functions print nothing or return
+# non-zero. Every component, every shape: malformed, a bare scalar, an array,
+# two values at once, and the empty string.
+for bad in '{not json' '{"status":' '[]' '"a string"' '42' '{} {}' ''; do
+  for fn in node_health_outbound_component node_health_updater_component node_health_image_component; do
+    out="$("$fn" "$bad")"; rc=$?
+    assert_eq "$fn returns zero on input $(printf '%q' "$bad")" "0" "$rc"
+    assert_eq "$fn prints one valid object on input $(printf '%q' "$bad")" "unknown" \
+      "$(jq -r '.status' <<<"$out" 2>/dev/null)"
+  done
+  out="$(node_health_health "$bad" "$bad" "$bad" 3 "$now")"; rc=$?
+  assert_eq "node_health_health returns zero on input $(printf '%q' "$bad")" "0" "$rc"
+  assert_eq "node_health_health folds an unusable input to unknown, never ok" "unknown" \
+    "$(jq -r '.status' <<<"$out" 2>/dev/null)"
+done
+assert_eq "malformed readiness facts are reported, not crashed on" "unreadable-facts" \
+  "$(node_health_readiness '{not json' | jq -r '.unmet[0].code')"
+
 # Multiple conditions failing at once are all named, not just the first.
 multi="$(jq -c '. + {credentials_present:false, node_disabled:true}' <<<"$all_good")"
 assert_eq "readiness: multiple failed conditions are all reported" "2" \
