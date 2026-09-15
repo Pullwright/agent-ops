@@ -132,7 +132,7 @@ assert_eq "metrics.cycles carries log_attempts_failed" "true" \
   "$(jq 'has("log_attempts_failed")' <<<"$(jq -c '.cycles' <<<"$metrics_out")")"
 
 # --- One forge read per TTL window, and the body is what readiness reads ---
-# Requirement 56a: `--ready` makes exactly one `/rate_limit` call on the
+# Requirement 58a: `--ready` makes exactly one `/rate_limit` call on the
 # ordinary path, and caches it for node_health_forge_check_cache_seconds so a
 # polling orchestrator cannot turn readiness into a load source. A `gh` stub
 # on PATH counts the calls and hands back a budget below the fixture's own
