@@ -883,7 +883,7 @@ while IFS=$'\t' read -r repo_slug stage mode path; do
   if [[ -r "$resolved_path" ]]; then
     ok "$repo_slug's repos[].prompt_overrides.$stage.$mode → $resolved_path"
   else
-    warn "$repo_slug's repos[].prompt_overrides.$stage.$mode names $resolved_path, which is not readable — $repo_slug's $stage stage falls back to the installation-wide prompt_overrides.$stage entry, if any"
+    warn "$repo_slug's repos[].prompt_overrides.$stage.$mode names $resolved_path, which is not readable — this entry is dropped the same as an unreadable installation-wide one would be, but it does not fall back to any installation-wide prompt_overrides.$stage entry: naming $stage here already discarded that entry whole (prompt_overrides_json_for_repo replaces, never merges), so $repo_slug's $stage stage is left with only what the rest of its own entry (if anything) still resolves to"
   fi
 done < <(cfg_json '.repos // []' | jq -r '
   .[] | .slug as $slug | (.prompt_overrides // {}) | to_entries[]
