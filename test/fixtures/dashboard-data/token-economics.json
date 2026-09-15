@@ -1,0 +1,61 @@
+{
+  "generated_at": "@now",
+  "node": "poetic-1",
+  "config": {
+    "timeout_coordinator": 15, "timeout_implementer": 90,
+    "timeout_reviewer": 30, "timeout_enabler": 30,
+    "lock_stale_after": 4, "dashboard_refresh_seconds": 5
+  },
+  "status": {
+    "switch": {"disabled": false},
+    "limit": {"active": false},
+    "running": false,
+    "lock": null,
+    "current": null,
+    "last_cycle": null
+  },
+  "counts": {
+    "spend_today_usd": 0, "spend_total_usd": 0,
+    "failures_shown": 0, "cycles_shown": 0, "prs_reached_ready": 0,
+    "by_day": [], "by_model": [], "by_actor": [],
+    "cost_rows": [
+      {"day": "@day:0", "model": "claude-sonnet-5-20260101", "actor": "implementer", "usd": 0.1, "cycle": "c-impl-1",
+       "tokens_input": 1000, "tokens_output": 500, "tokens_cache_creation": 200, "tokens_cache_read": 9000},
+      {"day": "@day:0", "model": "claude-sonnet-5-20260101", "actor": "implementer", "usd": 0.1, "cycle": "c-impl-2",
+       "tokens_input": 1000, "tokens_output": 500, "tokens_cache_creation": 200, "tokens_cache_read": 9000},
+      {"day": "@day:0", "model": "claude-sonnet-5-20260101", "actor": "implementer", "usd": 0.1, "cycle": "c-impl-3",
+       "tokens_input": 1000, "tokens_output": 500, "tokens_cache_creation": 200, "tokens_cache_read": 9000},
+      {"day": "@day:0", "model": "claude-sonnet-5-20260101", "actor": "implementer", "usd": 0.1, "cycle": "c-impl-4",
+       "tokens_input": 1000, "tokens_output": 500, "tokens_cache_creation": 200, "tokens_cache_read": 9000},
+      {"day": "@day:0", "model": "claude-sonnet-5-20260101", "actor": "implementer", "usd": 0.1, "cycle": "c-impl-5",
+       "tokens_input": 1000, "tokens_output": 500, "tokens_cache_creation": 200, "tokens_cache_read": 9000},
+      {"day": "@day:0", "model": "claude-sonnet-5-20260101", "actor": "implementer", "usd": 0.1, "cycle": "c-impl-6",
+       "tokens_input": 1000, "tokens_output": 500, "tokens_cache_creation": 200, "tokens_cache_read": 9000},
+      {"day": "@day:0", "model": "claude-haiku-4-5-20251001", "actor": "reviewer", "usd": 0.5, "cycle": "c-rev-1",
+       "tokens_input": 9000, "tokens_output": 1000, "tokens_cache_creation": 900, "tokens_cache_read": 100},
+      {"day": "@day:0", "model": "claude-haiku-4-5-20251001", "actor": "reviewer", "usd": 0.5, "cycle": "c-rev-2",
+       "tokens_input": 9000, "tokens_output": 1000, "tokens_cache_creation": 900, "tokens_cache_read": 100},
+      {"day": "@day:0", "model": "claude-haiku-4-5-20251001", "actor": "reviewer", "usd": 0.5, "cycle": "c-rev-3",
+       "tokens_input": 9000, "tokens_output": 1000, "tokens_cache_creation": 900, "tokens_cache_read": 100},
+      {"day": "@day:0", "model": "claude-haiku-4-5-20251001", "actor": "reviewer", "usd": 0.5, "cycle": "c-rev-4",
+       "tokens_input": 9000, "tokens_output": 1000, "tokens_cache_creation": 900, "tokens_cache_read": 100},
+      {"day": "@day:0", "model": "claude-haiku-4-5-20251001", "actor": "reviewer", "usd": 0.5, "cycle": "c-rev-5",
+       "tokens_input": 9000, "tokens_output": 1000, "tokens_cache_creation": 900, "tokens_cache_read": 100},
+      {"day": "@day:0", "model": "claude-haiku-4-5-20251001", "actor": "reviewer", "usd": 0.5, "cycle": "c-rev-6",
+       "tokens_input": 9000, "tokens_output": 1000, "tokens_cache_creation": 900, "tokens_cache_read": 100},
+      {"day": "@day:0", "model": "claude-opus-5-20260101", "actor": "coordinator", "usd": 1.0, "cycle": "c-coord-1",
+       "tokens_input": 2000, "tokens_output": 500, "tokens_cache_creation": 100, "tokens_cache_read": 3000},
+      {"day": "@day:0", "model": "claude-opus-5-20260101", "actor": "coordinator", "usd": 1.0, "cycle": "c-coord-2",
+       "tokens_input": 2000, "tokens_output": 500, "tokens_cache_creation": 100, "tokens_cache_read": 3000},
+      {"day": "@day:0", "model": "unknown", "actor": "enabler", "usd": 0.3, "cycle": "c-enabler-1",
+       "tokens_input": null, "tokens_output": null, "tokens_cache_creation": null, "tokens_cache_read": null}
+    ]
+  },
+  "cycles": [],
+  "blocked": [],
+  "void": [],
+  "github": {"ok": true, "fetched_at": "@ago:1m", "prs": [], "pr_index": {}, "inputs": {}},
+  "log_tail": [],
+  "cron_tail": [],
+  "max_open_agent_prs": 3
+}

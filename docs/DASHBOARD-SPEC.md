@@ -731,6 +731,9 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
              recent_costs[],       // {ts, cost} per row, last 3 days, for the
                                     //   spend-today card's GMT/local/24h toggle
              cost_rows[],           // {day, model, actor, usd, cycle,
+                                     //  tokens_input, tokens_output,
+                                     //  tokens_cache_creation,
+                                     //  tokens_cache_read,
                                      //  repo, item, source, outcome,
                                      //  attributed} per row, one per
                                      //   (transcript × model)
@@ -740,7 +743,15 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                                      //   over the whole COST_SCAN_DAYS
                                      //   window, unsummed — backs the
                                      //   model/actor charts' own time-frame
-                                     //   selector (issue #334). `cycle` is
+                                     //   selector (issue #334), and the
+                                     //   token/prompt-cache panels' own use of
+                                     //   the same selector (issue #594, D21).
+                                     //   tokens_* are that model's own token
+                                     //   counts (docs/METERING-SCHEMA.md) —
+                                     //   null together on an `unknown`-model
+                                     //   row, never 0, since that row has no
+                                     //   per-model breakdown to attribute them
+                                     //   to. `cycle` is
                                      //   the transcript's own id, shared by
                                      //   every row it split into — the
                                      //   selector's client-side re-aggregation
@@ -882,6 +893,35 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                                       //   `by:"refiner"`), never stage-end
                                       //   attempts, since the Refiner's own
                                       //   stage-end spans several items
+             stage_gaps: {          // the stall profile (issue #594, D21):
+               window_from, window_to, //   docs/METERING-SCHEMA.md's own
+                                      //   `gaps`, rolled up by stage. Its own
+                                      //   window, deliberately not
+                                      //   COST_SCAN_DAYS — the source is
+                                      //   log.jsonl/review-log.jsonl's
+                                      //   retained union (analytics_retained_
+                                      //   days), not the transcripts the cost
+                                      //   scan walks
+               by_stage: [ {
+                 stage,               // stage-end's own `stage` (coordinator/
+                                      //   implementer/reviewer/enabler/
+                                      //   enabler-adjudicate/enabler-decide/
+                                      //   refiner), or the literal
+                                      //   "project-reviewer" for a
+                                      //   review-stage-end row (which carries
+                                      //   no `.stage`) — not the same
+                                      //   vocabulary as cost_rows[].actor
+                 runs,                // stage-ends whose gaps was non-null;
+                                      //   gaps:null ("not measured") is
+                                      //   excluded, never counted as silent
+                 median_of_run_p50,   // nearest-rank median over each run's
+                                      //   own gaps.p50 — rendered "across
+                                      //   runs," never a pooled percentile
+                 worst_run_p95,       // the largest gaps.p95 any one run saw
+                                      //   — also "across runs," not pooled
+                 worst_run_max        // the longest silence any run saw — a
+                                      //   max of maxima, so this one is exact
+               } ] }
   cycles:  [ { id, node, started_at, ended_at, outcome, repo, item, source, title,
                pr_url, reason, fail_detail, warning, total_cost_usd, limit_hit,
                raced, race_losses,          // true/count iff the cycle lost a claim

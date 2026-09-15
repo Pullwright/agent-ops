@@ -1434,6 +1434,50 @@ assert_contains "a constraint payload the Publisher could not assemble reads as 
 assert_not_contains "  ... never as a quiet zero-idleness tick" \
   "accounted for" "$out"
 
+# --- token-economics.json: the token and prompt-cache panels (issue #594, D21) ---
+# Token totals by stage and by model, and the prompt-cache ratio each implies,
+# read off cost_rows[]'s own tokens_* fields (docs/METERING-SCHEMA.md) —
+# riding the same window/time-frame selector as the cost charts, never a
+# second scan.
+te="$(render token-economics.json)" || { printf 'FAIL - token-economics.json did not render:\n%s\n' "$te"; exit 1; }
+teflat="$(tr '\n' ' ' <<<"$te" | tr -s ' ')"
+
+assert_contains "the panel renders a by-stage breakdown" "By stage (actor)" "$te"
+assert_contains "  ... and a by-model breakdown" "By model" "$te"
+assert_contains "a stage/model with a healthy sample and a high cache-read share reads no action indicated" \
+  "88.2% — no action indicated" "$teflat"
+assert_contains "a stage/model with a healthy sample and a low cache-read share names the lever" \
+  "1% — below 50%; prompt prefix may be varying between cycles — consider stabilising it or its prompts/ override" \
+  "$teflat"
+assert_contains "a stage/model below the minimum sample reads insufficient evidence instead of a rate" \
+  "insufficient evidence (2 transcripts)" "$teflat"
+assert_contains "the largest token consumer is named, so the row informs which model assignment to review" \
+  "Largest token consumer this window: reviewer (60,000 tokens)" "$teflat"
+assert_not_contains "an unknown-model row (no readable modelUsage) is excluded, never counted as zero tokens" \
+  "enabler" "$te"
+
+# --- stall-profile.json: the gap/stall-profile panel (issue #594, D21) -----------
+# The per-stage stall profile read from counts.stage_gaps — its own window
+# (the retained log union), never the cost charts' COST_SCAN_DAYS — with
+# each row's own figure compared against that stage's own watchdog backstop
+# (implementation spec requirement 4e).
+sp="$(render stall-profile.json)" || { printf 'FAIL - stall-profile.json did not render:\n%s\n' "$sp"; exit 1; }
+spflat="$(tr '\n' ' ' <<<"$sp" | tr -s ' ')"
+
+assert_contains "the panel states its own window, distinct from the cost charts'" \
+  "the retained log union — a different, usually longer, span than the cost charts' own window" "$sp"
+assert_contains "across-run figures are labelled as such, never as pooled percentiles" \
+  "percentiles of percentiles are not percentiles" "$sp"
+assert_contains "a stage whose worst silence nears its own backstop names the lever and the direction" \
+  "worst silence reached 90% of the 20m backstop — consider raising it before a healthy run is killed" \
+  "$spflat"
+assert_contains "a stage comfortably inside its own backstop reads no action indicated" \
+  "worst silence 1.1% of the 150m backstop — no action indicated" "$spflat"
+assert_contains "a stage below the minimum sample reads insufficient evidence rather than a verdict" \
+  "insufficient evidence (2 runs)" "$spflat"
+assert_contains "a stage with no known backstop says so rather than guessing a direction" \
+  "no cap on record for this stage — no action indicated" "$spflat"
+
 printf '\n'
 if (( failures > 0 )); then
   printf '%d assertion(s) failed\n' "$failures"

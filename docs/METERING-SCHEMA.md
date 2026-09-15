@@ -164,6 +164,35 @@ recent `log.jsonl` retains. Their fields:
 | `by_actor[].usd`, `.n` | number, integer | US dollars, count | Cost and transcript count for one actor. The actor is the transcript's own filename stem, so the set is open, not enumerated: `coordinator`, `implementer`, `reviewer`, `enabler`, `refiner` and `limit-probe` from a cycle directory, `project-reviewer` normalised from a review's `reviewer-<repo>.out`, and any other stem verbatim — see the dashboard spec's note on actor naming. |
 | `cost_rows[].repo`, `.item`, `.source`, `.outcome` | string \| null | — | Which work item the row's cost bought (issue #593, D21), joined by `cycle` against the fleet-wide event union (`log.jsonl`, the same union `cycles[]` renders from) rather than against `cycles[]` itself — the union is never rotated (`docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 2.6) and is retained per `analytics_retained_days` (requirement 2.6d) rather than the `MAX_CYCLES` cap that keeps `cycles[]` to a recent detail window, so the join reaches back over the whole `COST_SCAN_DAYS` span the roll-ups themselves cover. Derived exactly as `cycles[].repo`/`.item`/`.source`/`.outcome` are: the last event in the cycle's own events carrying `.repo`/`.item`, the most recent `selection` event's `.source`, and the same outcome ladder (`pr-ready` > `pr-raised` > `attempt-failed` > `none-selected` > `stand-down` > `cycle-skipped` > `selection` > `ended`). All four are `null` together whenever `.attributed` (below) is `false`. |
 | `cost_rows[].attributed` | boolean | — | Whether the four fields above are populated. `true` only for a `coordinator`/`implementer`/`reviewer` row whose own cycle has events in the union. `false` for every other actor — `enabler`, `refiner`, `limit-probe` and `project-reviewer` — even when the row's `cycle` matches a real, populated cycle: the Enabler/Refiner/limit-probe share their triggering cycle's directory (and so its `cycle` id) but spend on a different item than the one that cycle selected, and a `project-reviewer` row's `cycle` is a review id that never appears in `log.jsonl` at all (the review pipeline logs to its own `review-log.jsonl`). Also `false` for a `coordinator`/`implementer`/`reviewer` row whose own cycle has no events in the union — rare in practice, since `log.jsonl` is never rotated and its analytics content outlives transcript pruning by design; a `state_dir` reset predating the cycle, or a line lost to `lib/fleet.sh`'s NUL-corruption repair (`fleet_repair_log`), are the realistic causes, not rotation. A row is never dropped from `cost_rows[]` for lacking attribution; only these five fields go null. |
+| `cost_rows[].tokens_input`, `.tokens_output`, `.tokens_cache_creation`, `.tokens_cache_read` | integer \| null | tokens | Issue #594, D21. That row's own `modelUsage` entry's token counts — the same fields, the same units, as the per-stage record's `tokens.*` above — pulled from the same cost-scan pass that already reads `costUSD` from that entry, so no second scan. All four are `null` together on an `unknown`-model row (an envelope with no readable `modelUsage`): that row has no per-model breakdown to offer, and reading it as `0` would corrupt a prompt-cache ratio computed over it, exactly as `tokens: null` on the per-stage record above means "not measured," never "measured as zero." |
+
+The prompt-cache ratio a reader computes from these four fields — `cache_read
+/ (cache_read + cache_creation + input)`, the share of prompt-side tokens
+served from cache; output tokens are not in the denominator — is not itself a
+stored field: it is computed client-side, per stage and per model, over
+whatever `cost_rows[]` slice the page's own time-frame selector picks,
+exactly as the spend-by-model and spend-by-actor charts already re-aggregate
+that array (`docs/DASHBOARD-SPEC.md`, "spend charts").
+
+## `counts.stage_gaps` (D21)
+
+The stall profile: the per-stage record's own `gaps` (above), rolled up by
+stage. Unlike `cost_rows[]`, this does **not** ride `COST_SCAN_DAYS` — its
+source is the `gaps` object on `stage-end`/`review-stage-end` events in
+`log.jsonl`/`review-log.jsonl`, not the transcripts the cost scan walks, and
+those two logs' own retention (`analytics_retained_days`, requirement 2.6d —
+`0` by default, meaning indefinitely) is a materially different, and usually
+longer, span than the 60-day cost window. Presenting the two under one implied
+window would be wrong, so this object states its own:
+
+| Field | Type | Unit | Meaning |
+| --- | --- | --- | --- |
+| `window_from`, `window_to` | string \| null | ISO 8601 | The earliest and latest `ts` among every event read to build this object — the same "state the window" convention `counts.actor_scorecards` already follows, not the cost scan's `COST_SCAN_DAYS` cutoff. |
+| `by_stage[].stage` | string | — | `stage-end`'s own `stage` field verbatim (`coordinator`, `implementer`, `reviewer`, `enabler`, `enabler-adjudicate`, `enabler-decide`, `refiner`) for a `stage-end` row, or the literal `project-reviewer` for a `review-stage-end` row — `review-stage-end` carries no `.stage` field of its own, so it is keyed the same way the cost scan's own `reviews/` rows are, rather than left to collide with the implementation pipeline's own `reviewer` stage: a different actor under the same word. This vocabulary is **not** `cost_rows[].actor`'s (a transcript's filename stem) — a reader joining the two panels must not treat them as interchangeable. |
+| `by_stage[].runs` | integer | count | How many `stage-end`/`review-stage-end` records for this stage carried a non-null `gaps`. A record whose `gaps` is `null` means "not measured" (per-stage record table, above) and is excluded here rather than counted as a silent run. |
+| `by_stage[].median_of_run_p50` | integer \| null | seconds | Nearest-rank median (the same convention `lib/stage-run.sh` uses for its own percentiles) over the sample of each contributing run's own `gaps.p50`. Rendered on the page as "across runs" — **never** as a pooled percentile: percentiles of percentiles are not percentiles, and the raw per-gap samples behind each run's own figures are not retained (see "`gaps`", above), so no pooled percentile can be computed from what this schema keeps. |
+| `by_stage[].worst_run_p95` | integer \| null | seconds | The largest `gaps.p95` any single contributing run reported. Also "across runs," not pooled — the same reasoning as `median_of_run_p50`. |
+| `by_stage[].worst_run_max` | integer \| null | seconds | The longest single silence any contributing run saw — the maximum of each run's own `gaps.max`. Unlike the two figures above, this **is** an exact percentile-free fact: a max of maxima is a max, not an approximation of one. |
 
 ## Stability policy
 

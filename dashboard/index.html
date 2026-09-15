@@ -3176,6 +3176,171 @@
     }));
   }
 
+  // ---------- token economics (issue #594, D21) ----------
+  // The two dimensions `lib/metering.sh` already records and nothing reads
+  // until now: token totals by stage and by model, and the prompt-cache
+  // ratio each implies. Rides the same `cost_rows[]` the spend charts above
+  // read and the same time-frame selector — no reason for the token panels
+  // to disagree with the reader about which window they are looking at.
+  //
+  // `n` counts distinct transcripts the same way `aggregateCostRows` does
+  // (deduped by `cycle`, falling back to row index for a payload predating
+  // it) — the sample size a rate is drawn from, not a row count a
+  // multi-model transcript could inflate.
+  //
+  // An `unknown`-model row (an envelope whose `modelUsage` could not be
+  // read) carries `tokens_*: null` on every field, never `0`
+  // (docs/METERING-SCHEMA.md) — folding it in as zero would understate that
+  // row's true token spend and, worse, corrupt the cache ratio computed over
+  // it, so it is skipped here entirely rather than counted as "zero tokens."
+  function fmtTokens(n) { return n == null ? "—" : Number(n).toLocaleString(); }
+  function aggregateTokenRows(rows, keyFn) {
+    var order = [], sums = Object.create(null), ids = Object.create(null);
+    rows.forEach(function (r, i) {
+      if (r.tokens_input == null && r.tokens_output == null &&
+          r.tokens_cache_creation == null && r.tokens_cache_read == null) return;
+      var k = keyFn(r);
+      if (!(k in sums)) { order.push(k); sums[k] = {input:0, output:0, cache_creation:0, cache_read:0}; ids[k] = Object.create(null); }
+      sums[k].input += r.tokens_input || 0;
+      sums[k].output += r.tokens_output || 0;
+      sums[k].cache_creation += r.tokens_cache_creation || 0;
+      sums[k].cache_read += r.tokens_cache_read || 0;
+      ids[k][r.cycle != null ? ("c:" + r.cycle) : ("i:" + i)] = true;
+    });
+    return order.map(function (k) {
+      var s = sums[k], n = Object.keys(ids[k]).length;
+      var promptTotal = s.cache_read + s.cache_creation + s.input;
+      return {
+        key: k, n: n, input: s.input, output: s.output,
+        cache_creation: s.cache_creation, cache_read: s.cache_read,
+        cache_ratio: promptTotal > 0 ? (s.cache_read / promptTotal) : null
+      };
+    }).sort(function (a, b) { return (b.input + b.output) - (a.input + a.output); });
+  }
+  function windowedTokenBreakdown(keyFn) {
+    var effective = effectiveCostWindow(costWindowAvailableDays());
+    var rows = effective === "all" ? ((D.counts && D.counts.cost_rows) || []) : costRowsForWindow(effective);
+    return aggregateTokenRows(rows, keyFn);
+  }
+  // Below this many contributing transcripts a cache ratio is noise, not a
+  // reading — the same `min_sample` of 5 the actor/model scorecards already
+  // use (`lib/verdict-fate.sh`'s own convention, agent-ops#573), reused
+  // rather than a second invented threshold.
+  var TOKEN_MIN_SAMPLE = 5;
+  // The lever this ratio informs (D21's lever rule): a low share served from
+  // cache means the stage's own prompt prefix is not landing on a warm cache
+  // between runs — worth stabilising the prompt, or revisiting its
+  // `prompts/` override. 0.5 is stated here, not buried in a comparison,
+  // because an unstated threshold is exactly the "mystery number" this
+  // pipeline's own discipline (implementation spec requirement 4f) refuses
+  // elsewhere; a healthy repeated-prompt stage runs well above it in
+  // practice; a ratio below it names an actionable prefix drift rather than
+  // ordinary run-to-run variance.
+  var CACHE_RATIO_ACTION_THRESHOLD = 0.5;
+  function cacheRatioVerdict(r) {
+    if (r.n < TOKEN_MIN_SAMPLE) return {text: "insufficient evidence (" + r.n + " transcripts)", action: false};
+    if (r.cache_ratio == null) return {text: "insufficient evidence (no prompt-side tokens)", action: false};
+    if (r.cache_ratio < CACHE_RATIO_ACTION_THRESHOLD) {
+      return {text: pct(r.cache_ratio) + " — below " + pct(CACHE_RATIO_ACTION_THRESHOLD)
+        + "; prompt prefix may be varying between cycles — consider stabilising it or its prompts/ override", action: true};
+    }
+    return {text: pct(r.cache_ratio) + " — no action indicated", action: false};
+  }
+  function tokenRow(r, labelFn) {
+    return el("tr", {}, [
+      el("td", {class:"mono", text: labelFn(r.key)}),
+      el("td", {class:"mono", text: fmtTokens(r.input)}),
+      el("td", {class:"mono", text: fmtTokens(r.output)}),
+      el("td", {class:"mono", text: fmtTokens(r.cache_read)}),
+      el("td", {class:"mono", text: fmtTokens(r.cache_creation)}),
+      el("td", {class:"mono", text: String(r.n)}),
+      el("td", {class:"muted", style:"font-size:11.5px", text: cacheRatioVerdict(r).text})
+    ]);
+  }
+  function tokenBreakdownPanel(title, rows, labelFn) {
+    var body = rows.length
+      ? tableOf(["", "Input", "Output", "Cache read", "Cache write", "n", "Prompt-cache ratio (cache_read / (cache_read + cache_write + input)) — decision"],
+                rows.map(function (r) { return tokenRow(r, labelFn); }))
+      : el("div", {class:"empty", text:"No token counts recorded in this time frame."});
+    // Names the lever the by-stage/by-model split itself informs (D21):
+    // whichever row carries the most tokens is the actor/model whose D12
+    // model assignment is driving the token cost, worth reviewing first.
+    var top = rows[0];
+    var lede = top
+      ? el("div", {class:"muted", style:"font-size:11.5px; margin-bottom:8px"},
+          "Largest token consumer this window: " + labelFn(top.key) + " (" +
+          fmtTokens(top.input + top.output) + " tokens) — review its model assignment (D12) first if token spend is a concern.")
+      : null;
+    return el("div", {style:"margin-bottom:16px"}, [ el("h3", {text:title}), lede, body ]);
+  }
+  function tokenEconomicsPanel() {
+    var byStage = windowedTokenBreakdown(function (r) { return r.actor || "unknown"; });
+    var byModel = windowedTokenBreakdown(function (r) { return r.model || "unknown"; });
+    return el("div", {}, [
+      tokenBreakdownPanel("By stage (actor)", byStage, function (k) { var m = ACTOR[k]; return m ? m[0] : k; }),
+      tokenBreakdownPanel("By model", byModel, shortModel),
+      el("p", {class:"muted", style:"font-size:11.5px", text:
+        "Token counts ride the same window and time-frame selector as the cost charts above. " +
+        "A row below " + TOKEN_MIN_SAMPLE + " contributing transcripts reads “insufficient evidence” " +
+        "for its cache ratio rather than a number too thin to mean anything."})
+    ]);
+  }
+
+  // ---------- stall profile (issue #594, D21) ----------
+  // The other half of what `lib/metering.sh` records and nothing read:
+  // `gaps` (docs/METERING-SCHEMA.md), rolled up by `scripts/publish-
+  // dashboard.sh` into `counts.stage_gaps`. Its own window — never
+  // COST_SCAN_DAYS — since the source is the retained log union
+  // (`log.jsonl`/`review-log.jsonl`, `analytics_retained_days`), not the
+  // transcripts the cost scan walks.
+  function fmtGapSecs(s) { return s == null ? "—" : fmtDur(s * 1000); }
+  // The lever this informs (D21): whether the stage-cap settings the
+  // watchdog enforces (implementation spec requirement 4e) should move, and
+  // which way. Compared against `stageBackstopMin`, the same figure the
+  // fleet strip's own overrun badge already holds a live stage against, so
+  // this panel cannot recommend a number the rest of the page disagrees with.
+  var STALL_NEAR_BACKSTOP_RATIO = 0.9;
+  function stallVerdict(row) {
+    if (row.runs < TOKEN_MIN_SAMPLE) return "insufficient evidence (" + row.runs + " runs)";
+    var backstopMin = stageBackstopMin(row.stage, null);
+    if (!(backstopMin > 0) || row.worst_run_max == null) return "no cap on record for this stage — no action indicated";
+    var ratio = row.worst_run_max / (backstopMin * 60);
+    if (ratio >= STALL_NEAR_BACKSTOP_RATIO) {
+      return "worst silence reached " + pct(ratio) + " of the " + backstopMin
+        + "m backstop — consider raising it before a healthy run is killed";
+    }
+    return "worst silence " + pct(ratio) + " of the " + backstopMin + "m backstop — no action indicated";
+  }
+  function stallRow(row) {
+    return el("tr", {}, [
+      el("td", {class:"mono", text: row.stage}),
+      el("td", {class:"mono", text: String(row.runs)}),
+      el("td", {class:"mono", text: fmtGapSecs(row.median_of_run_p50)}),
+      el("td", {class:"mono", text: fmtGapSecs(row.worst_run_p95)}),
+      el("td", {class:"mono", text: fmtGapSecs(row.worst_run_max)}),
+      el("td", {class:"muted", style:"font-size:11.5px", text: stallVerdict(row)})
+    ]);
+  }
+  function stallProfilePanel() {
+    var sg = (D.counts && D.counts.stage_gaps) || null;
+    if (!sg) return el("div", {class:"panel"}, el("div", {class:"empty",
+      text:"No stall-profile data in this page — it was written by a Publisher that did not record it yet."}));
+    var wrap = el("div");
+    wrap.appendChild(el("div", {class:"muted", style:"font-size:11.5px; margin-bottom:10px"}, [
+      "Window " + (sg.window_from ? fmtTime(sg.window_from) : "—") + " → " +
+      (sg.window_to ? fmtTime(sg.window_to) : "—") +
+      " (the retained log union — a different, usually longer, span than the cost charts' own window) · " +
+      "median-of-run and worst-run figures are stated “across runs,” never as a pooled percentile " +
+      "(percentiles of percentiles are not percentiles) · worst-run max is exact."
+    ]));
+    var body = (sg.by_stage || []).length
+      ? tableOf(["Stage", "Runs", "Median run p50", "Worst run p95", "Worst run max", "Decision"],
+                (sg.by_stage || []).map(stallRow))
+      : el("div", {class:"empty", text:"No stage-end carried a gaps measurement in the retained log."});
+    wrap.appendChild(body);
+    return wrap;
+  }
+
   // ---------- log & cron ----------
   // Which agent an event is the work of, or null where none was acting.
   //
@@ -3831,6 +3996,10 @@
     var costId = tocSlug("Cost");
     tocEntries.push({id: costId, label: "Cost"});
     app.appendChild(el("section", {id: costId}, [costWindowControl(), costgrid]));
+
+    // ---------- token economics & stall profile (issue #594, D21) ----------
+    app.appendChild(sectionOf("Tokens", "Token economics", tokenEconomicsPanel()));
+    app.appendChild(sectionOf("Stall profile", "Stall profile", stallProfilePanel()));
 
     app.appendChild(sectionOf("Log",
       (nodeFilter ? "Recent log events — " + nodeFilter + " only (click its card to clear)" : "Recent log events") +
