@@ -9381,8 +9381,8 @@ implements.
     `github-graphql-budget-low` (against `github_min_core_budget`/
     `github_min_graphql_budget`), `node-disabled`/`fleet-disabled` (the two
     switches, requirements 2.4/2.3a — read from local evidence only, see
-    56a) and `usage-limit-freeze` (the cooldown of requirement 2.1, read
-    from the local log union only, see 56a). A condition this node cannot
+    58a) and `usage-limit-freeze` (the cooldown of requirement 2.1, read
+    from the local log union only, see 58a). A condition this node cannot
     read at all — an unreadable disk meter, a `null` budget figure with
     `gh_auth: "ok"` — supports no verdict and is never folded into
     "not ready": only a reading that actually crosses its floor blocks
@@ -9483,13 +9483,13 @@ implements.
     prints `--health`.
 
     60a. **Read-only throughout.** Touches no lock, writes no event,
-    publishes nothing, and — beyond the one cached forge read of 56a —
+    publishes nothing, and — beyond the one cached forge read of 58a —
     makes no network call and triggers no state-sync push, gather, dashboard
     publish or `claude` invocation: every verdict computes on demand from
     what cron already wrote. `test/node-health-cli.test.sh` asserts this
     directly — a fixture `state_dir`/`workspace_root` are byte-identical,
     file for file, before and after every mode runs, excepting only the one
-    cache file 56a's own header documents.
+    cache file 58a's own header documents.
 
     60b. **The three verdicts genuinely diverge, from one CLI, in one
     process.** `test/node-health-cli.test.sh` builds a fixture that is live
@@ -9530,7 +9530,7 @@ implements.
     (`127.0.0.1:${NODE_HEALTH_PORT:-8788}:${NODE_HEALTH_PORT:-8788}`), the
     identical loopback-only pattern `scripts/serve-dashboard.sh`'s own
     header documents for `dashboard-local`. This service is never what
-    makes the scheduler's own liveness honest (58c already is, in-process);
+    makes the scheduler's own liveness honest (60c already is, in-process);
     it exists solely for a reader — a collector, an orchestrator's own
     URL-level probe — that can only speak HTTP.
 
@@ -27361,7 +27361,7 @@ oblige anyone to edit a test.
     marker line in `deploy/docker/crontab.tmpl` (requirement 57), and
     `test/state-sync.test.sh` asserts the two new node-health caches
     (`.node-health-ratelimit-cache.json`, `.node-alive`) do not replicate
-    (requirement 58a). `docker compose config` (in `deploy/docker/`) renders
+    (requirements 58a and 57 respectively). `docker compose config` (in `deploy/docker/`) renders
     the scheduler's new `healthcheck:` and the new `node-health` service
     cleanly. `scripts/lint-shell.sh` is clean over every new/changed shell
     file; the new `scripts/node-health-server.py` is syntactically valid

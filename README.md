@@ -908,6 +908,7 @@ including the cheaper arm instance classes — with nothing to choose.
 |---|---|
 | `tailnet` | Tailscale sidecar + the dashboard, served to your tailnet over HTTPS at `https://<node>.<tailnet>` — never to the public internet |
 | `local` | the dashboard on the machine's own loopback instead (`http://127.0.0.1:8787`), for a node with no tailnet or no authkey |
+| `node-health` | the node-health HTTP surface (`/livez`, `/readyz`, `/healthz`, `/metrics`) on the machine's own loopback (`http://127.0.0.1:8788`, moved by `NODE_HEALTH_PORT`), for a collector or an orchestrator that can only probe over HTTP. The scheduler's own liveness check runs the same CLI in-container whether or not this is on |
 | `auto-update` | watchtower, which pulls new images and restarts into them |
 
 The scheduler is in no profile: it runs on every node, whatever else does.

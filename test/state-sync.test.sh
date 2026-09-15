@@ -246,7 +246,7 @@ printf '{"abc":{"core":{"limit":5000,"used":7,"remaining":4993,"reset":189345600
 printf '' > "$state/gh-shim/ledger.ndjson.lock"
 mkdir -p "$state/dashboard"
 printf '<html>\n' > "$state/dashboard/index.html"
-# scripts/node-health.sh's own caches (requirements 55/56, issue #608):
+# scripts/node-health.sh's own caches (requirements 57/58a, issue #608):
 # local to this node on the same reasoning as .image-drift-cache.json and
 # labels-ensured/ above — neither answers for anything a peer would read.
 printf '{"ok":true}\n' > "$state/.node-health-ratelimit-cache.json"

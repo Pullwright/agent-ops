@@ -165,7 +165,9 @@ ip link show <interface>    # gives its mtu
 
 `COMPOSE_PROFILES` in `.env` decides what that brings up — `tailnet` for the
 dashboard over your tailnet, `local` for the dashboard on this machine's own
-loopback, `auto-update` for watchtower. The scheduler starts regardless: it is
+loopback, `node-health` for the node-health HTTP surface on that same loopback
+(`http://127.0.0.1:$NODE_HEALTH_PORT`, default 8788), `auto-update` for
+watchtower. The scheduler starts regardless: it is
 in no profile, because a node that runs no cycles and no heartbeat is not a
 node. So does the `collector` (issue #1283) — the container that holds the
 read-only Docker socket and cgroup mounts that let `scripts/collect-host-facts.sh`
