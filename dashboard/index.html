@@ -1535,7 +1535,14 @@
   // measured container or volume over its config.json `resources` budget
   // — n.resources is the identical `{containers, volumes, sample_count,
   // window_start}` object doctor.sh's own "Resource budgets" section
-  // compares, so the two can never disagree about what counts as a breach.
+  // compares. The comparison itself is stated twice, not shared: doctor.sh
+  // calls lib/resource-usage.sh's `resource_budget_breaches`, and this
+  // function — JavaScript in a browser, with no route to a bash library —
+  // re-states the identical rule (windowed p95 for CPU/memory/bandwidth,
+  // latest for disk, an unbudgeted or unmeasured resource contributing
+  // nothing). Change one and you must change the other;
+  // test/resource-usage.test.sh's at/under/over-the-line assertions are
+  // where that rule is pinned.
   // Same "badges only for an exceptional condition" discipline hostFactsLine
   // above already holds: a container or volume within budget renders
   // nothing here — see that function's own comment for why per-container

@@ -1622,6 +1622,72 @@ assert_contains "the duplicate-slug guard names the repeated slug" \
 assert_not_contains "a config the schema accepts is not reported as a schema failure" \
   "does not match config.schema.json" "$guard_out"
 
+# --- requirement 55 (D14, agent-ops#606): the "Resource budgets" section is
+#     where a container or volume over budget becomes a *reportable*
+#     condition rather than something only a human reading a graph would
+#     notice, so what it prints is asserted here rather than left to
+#     lib/resource-usage.sh's own unit coverage of the comparison
+#     (test/resource-usage.test.sh). Every fixture below points state_dir at
+#     this run's own tmp directory so the samples file under test is the one
+#     written here and never whichever one the node this suite runs on
+#     happens to carry; the budgets compared against are the schema's own
+#     shipped defaults, read back through config_defaults the same way
+#     doctor.sh reads them. ---
+resources_state="$tmp/resources-state"
+mkdir -p "$resources_state"
+resources_now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+jq --arg sd "$resources_state" '.state_dir = $sd' "$BASE_CONFIG" > "$tmp/resources.json"
+
+# No samples file at all — a node whose collector has not run yet. Not a
+# warning and not an ok: a check that could not be made.
+resources_out="$(bash "$SCRIPT_DIR/scripts/doctor.sh" --offline --config "$tmp/resources.json" 2>&1)"
+assert_contains "doctor skips the resource-budget check on a node with no samples file yet, naming the file" \
+  "[skip] resource budgets: $resources_state/.resource-samples.jsonl does not exist yet" "$resources_out"
+
+# Every figure inside its shipped budget — one ok line, naming how much
+# evidence it rests on.
+cat > "$resources_state/.resource-samples.jsonl" <<EOF
+{"ts":"$resources_now","service":"scheduler","cpu_cores":0.4,"memory_bytes":220000000,"net_rx_bytes_per_hour":1000,"net_tx_bytes_per_hour":1000}
+{"ts":"$resources_now","volume":"workspace_root","disk_bytes":1000000}
+EOF
+resources_out="$(bash "$SCRIPT_DIR/scripts/doctor.sh" --offline --config "$tmp/resources.json" 2>&1)"
+assert_contains "doctor reports every measured container and volume within budget, naming the sample count and window" \
+  "[ ok ] resource budgets: every measured container and volume is within its configured budget (2 sample(s) in the last 24h)" \
+  "$resources_out"
+assert_not_contains "…and raises no breach warning while nothing is over the line" \
+  "resource budget: " "$resources_out"
+
+# Over the line on three of the four things a breach can be — a container's
+# CPU, its memory, and a volume's disk — each warned about by name, with the
+# measured figure, the budget, and the config key that states it.
+cat > "$resources_state/.resource-samples.jsonl" <<EOF
+{"ts":"$resources_now","service":"scheduler","cpu_cores":9.5,"memory_bytes":9999999999,"net_rx_bytes_per_hour":1000,"net_tx_bytes_per_hour":1000}
+{"ts":"$resources_now","volume":"workspace_root","disk_bytes":99999999999}
+EOF
+resources_out="$(bash "$SCRIPT_DIR/scripts/doctor.sh" --offline --config "$tmp/resources.json" 2>&1)"
+assert_contains "doctor warns on a container over its CPU budget, naming container, resource, actual, budget and key" \
+  "[warn] resource budget: scheduler's own cpu_cores is 9.5, over its 2.0 budget (resources.containers.scheduler.cpu_cores, requirement 55)" \
+  "$resources_out"
+assert_contains "doctor warns on a container over its memory budget the same way" \
+  "[warn] resource budget: scheduler's own memory_bytes is 9999999999, over its 1610612736 budget (resources.containers.scheduler.memory_bytes, requirement 55)" \
+  "$resources_out"
+assert_contains "doctor warns on a volume over its disk budget, naming the volume and its own key" \
+  "[warn] resource budget: workspace_root's own disk usage is 99999999999 bytes, over its 10737418240 budget (resources.volumes.workspace_root.disk_bytes, requirement 55)" \
+  "$resources_out"
+assert_not_contains "…and says nothing about the resources that are still within budget" \
+  "net_rx_bytes_per_hour is 1000" "$resources_out"
+
+# A sample older than resources.report_window_hours is outside the window the
+# report derives over, so it is neither compared nor counted — the skip names
+# the window rather than silently reporting an all-clear.
+cat > "$resources_state/.resource-samples.jsonl" <<'EOF'
+{"ts":"2020-01-01T00:00:00Z","service":"scheduler","cpu_cores":9.5,"memory_bytes":9999999999}
+EOF
+resources_out="$(bash "$SCRIPT_DIR/scripts/doctor.sh" --offline --config "$tmp/resources.json" 2>&1)"
+assert_contains "doctor skips rather than warns when every sample predates the report window" \
+  "[skip] resource budgets: $resources_state/.resource-samples.jsonl carries no samples in the last 24h yet" \
+  "$resources_out"
+
 # --- A config that will not parse is a different conversation from one that
 #     parses and is wrong: exit 2, and nothing downstream is even attempted. ---
 printf '{ nope\n' > "$tmp/broken.json"

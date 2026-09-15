@@ -18082,10 +18082,9 @@ with the Reviewer's own.
     documents the resulting `resource budget` badge.
 
     **A breach is a reportable condition.** `resource_budget_breaches`
-    (`lib/resource-usage.sh`) is the one comparison both `scripts/doctor.sh`'s
-    "Resource budgets" section and `dashboard/index.html`'s `resourcesLine`
-    make, factored out exactly as `lib/host-budget.sh` is factored out of
-    `scripts/doctor.sh`'s own host-budget section (requirement 2.0g) — given
+    (`lib/resource-usage.sh`) is `scripts/doctor.sh`'s "Resource budgets"
+    comparison, factored out of that section exactly as `lib/host-budget.sh`
+    is factored out of its own host-budget section (requirement 2.0g) — given
     the report and the configured budgets, it prints one entry per breach
     (windowed p95 for CPU/memory/bandwidth, latest for disk, an unbudgeted
     or unmeasured resource contributing nothing) rather than a verdict, so a
@@ -18098,16 +18097,30 @@ with the Reviewer's own.
     `.resource-samples.jsonl` does not exist yet or carries no samples
     inside the window.
 
+    `dashboard/index.html`'s `resourcesLine` applies the identical rule —
+    windowed p95 for CPU/memory/bandwidth, latest for disk, an unbudgeted or
+    unmeasured resource contributing nothing — but cannot share the
+    function: it is JavaScript running in a browser over the payload, with
+    no route to a bash library, the same constraint every other badge on
+    that page already works under. What the two genuinely share is their
+    *input*, `resource_budget_report`'s own output shape, identical whether
+    a row's `resources` field was recomputed live for this node or carried
+    in a peer's heartbeat. The duplication is therefore real and is kept in
+    step by hand: `resource_budget_breaches`'s own at/under/over-the-line
+    boundary test (acceptance check 55) is what pins the rule, and a change
+    to either side has to be made to both.
+
     **Tests.** `test/resource-usage.test.sh` covers `lib/resource-usage.sh`
     directly: the collector's arithmetic against canned cgroup v1 and v2
     fixtures and a canned `/proc/net/dev`, the delta/rate guards (a fresh
     baseline, a recreated container), the report's derivation from a
     canned sample set (latest/median/p95, disk growth, a malformed line
     skipped), the unknown-layout degradation, and `resource_budget_breaches`'s
-    own comparison at, just under and just over the line — the one
-    boundary test both `scripts/doctor.sh` and `dashboard/index.html` rely
-    on being right, tested once here rather than twice against two
-    different callers. `test/collect-resource-usage.test.sh` covers the
+    own comparison at, just under and just over the line — the boundary
+    `scripts/doctor.sh` calls directly and `dashboard/index.html`'s
+    `resourcesLine` re-states in JavaScript, pinned here so the rule both
+    sides implement has one authoritative test.
+    `test/collect-resource-usage.test.sh` covers the
     collector script end-to-end against fixture cgroup/proc files — two
     ticks, five minutes apart, producing the expected delta, and a
     baseline-reset on a simulated container recreation — the disk-sampling
@@ -18117,6 +18130,12 @@ with the Reviewer's own.
     script wrapper: config-resolved `state_dir`/window versus the
     `--state-dir`/`--window-hours` overrides, and the clean empty-report
     degradation on a missing config or an unwritten samples file.
+    `test/config-schema.test.sh` covers the reportable half — what
+    `scripts/doctor.sh`'s own "Resource budgets" section prints over a
+    breach, an all-clear, an unwritten samples file and a window with
+    nothing in it — because that is where this repository's
+    `doctor.sh --offline` assertions live rather than in
+    `test/doctor.test.sh`, whose own header records why.
 
 ## Components
 
@@ -26749,13 +26768,19 @@ oblige anyone to edit a test.
     measured figure and the configured budget; given an unbudgeted
     container it reports nothing for that container regardless of usage.
     `scripts/doctor.sh --config … --offline` against a fixture samples file
-    whose `scheduler` figures and `workspace_root` disk usage both exceed
-    the (default-shipped) `resources` budgets prints three `[warn]` lines
-    under "Resource budgets", each naming the container/volume, the
-    resource, the actual figure and the budget; against a fixture within
-    every budget it prints one `[ ok ]` line naming the sample count and
-    window; against a node with no `.resource-samples.jsonl` yet it prints
-    `[skip]` naming the file. `deploy/docker/render-crontab.sh` against a
+    whose `scheduler` CPU and memory figures and `workspace_root` disk usage
+    all exceed the (default-shipped) `resources` budgets prints three
+    `[warn]` lines under "Resource budgets", each naming the
+    container/volume, the resource, the actual figure, the budget and the
+    `config.json` key that states it, and says nothing about the resources
+    still within budget; against a fixture within every budget it prints one
+    `[ ok ]` line naming the sample count and window and no breach warning at
+    all; against a node with no `.resource-samples.jsonl` yet, and against
+    one whose every sample predates `resources.report_window_hours`, it
+    prints `[skip]` naming the file — `test/config-schema.test.sh` exercises
+    all four, alongside every other `doctor.sh --offline` assertion
+    (`test/doctor.test.sh`'s own header records why the offline half lives
+    there). `deploy/docker/render-crontab.sh` against a
     config naming `schedule.resource_sample_minutes` renders
     `*/<N> * * * * /app/scripts/collect-resource-usage.sh …` with no
     `@RESOURCE_SAMPLE_MINUTES@` placeholder surviving — `test/render-

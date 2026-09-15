@@ -3603,9 +3603,13 @@ number's twins elsewhere on the page.
 - **A sixth badge, `resource budget`, compares this node's own measured
   CPU/memory/bandwidth/disk against `config.json`'s `resources` budgets
   (requirement 55, D14, agent-ops#606)** — the dashboard's half of the same
-  comparison `doctor.sh`'s own "Resource budgets" section makes, read from
-  the identical `resource_budget_report` derivation (`lib/resource-usage.sh`)
-  so the two can never disagree about what counts as a breach. The row's
+  comparison `doctor.sh`'s own "Resource budgets" section makes, over the
+  identical `resource_budget_report` derivation (`lib/resource-usage.sh`).
+  The rule is stated twice, not shared: `doctor.sh` calls
+  `resource_budget_breaches`, and this page — JavaScript in a browser, with
+  no route to a bash library — re-states it in `resourcesLine`, so keeping
+  the two in step across an edit is a maintenance obligation, pinned by
+  `resource_budget_breaches`'s own boundary test. The row's
   `resources` field (self: recomputed live from this node's own
   `.resource-samples.jsonl`; a peer: carried in its heartbeat, `null` when
   the peer predates this feature or has not run its collector yet) is the
