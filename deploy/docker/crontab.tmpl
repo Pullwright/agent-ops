@@ -83,8 +83,7 @@
 # The line below carries no substitution token at all, so render-crontab.sh
 # leaves it untouched. It is the liveness marker `scripts/node-health.sh
 # --live` reads (requirement 55, issue #608): `touch`ing a file every minute
-# is
-# nearly the cheapest thing supercronic can be asked to prove it is still
+# is nearly the cheapest thing supercronic can be asked to prove it is still
 # firing jobs at all, deliberately decoupled from every other job's own
 # health — a wedged dashboard-launcher window or a stuck cycle must not
 # read as "not live", and a job that did real work to prove liveness could

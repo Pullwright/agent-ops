@@ -9210,7 +9210,22 @@ implements.
     `gh api rate_limit`, cached in `state_dir/.node-health-ratelimit-cache.json`
     with a TTL of `node_health_forge_check_cache_seconds` — so that an
     orchestrator polling readiness every few seconds cannot itself become a
-    load source, and read from `/rate_limit`'s own body rather than a
+    load source. That one call answers both halves of the check: its own
+    response is classified into `github_auth_probe`'s vocabulary *and* read
+    for the two budget figures, rather than the probe being asked first and
+    the body fetched after, which would make the identical request twice per
+    TTL window. `github_auth_probe` is consulted only when that call did not
+    come back usable, where it buys the diagnosis the response cannot give
+    (a rejected token, no token at all, an unreachable forge) and no budget
+    figure exists on that path regardless. The cached answer is one JSON
+    object (`{verdict, detail, core, graphql}`) read back with `jq`, never a
+    delimited line, because a delimited line cannot carry this record safely:
+    `detail` is empty on exactly the path that has budget figures to report,
+    and `IFS=$'\t' read` drops an empty field rather than preserving it —
+    tab is an IFS *whitespace* character, so a run of them folds into a
+    single separator — which would shift every remaining figure one field
+    left and have readiness compare the GraphQL pool against
+    `github_min_core_budget`. Read from `/rate_limit`'s own body rather than a
     metered call's headers because that endpoint is exempt from the limits
     it reports (`github_min_core_budget`'s own note); this is a coarser,
     cheaper signal than requirement 2.0's own header-based budget gate, not
@@ -9315,12 +9330,15 @@ implements.
     in-container — `200` when the underlying call exits `0`, `503`
     otherwise (`/metrics`: always `200`, since it reports data, not a
     verdict), the CLI's own JSON body either way; any other path answers
-    `404`. Holds no cache and no state of its own — a request while
+    `404` — including a path that merely resembles one of the four (a
+    trailing slash, a query string), which is matched literally rather than
+    normalised. Holds no cache and no state of its own — a request while
     `state_dir` is unreadable still returns valid JSON, reading `unknown`
     rather than hanging or stack-tracing, because the underlying CLI itself
     never crashes on that input (`lib/node-health.sh`'s own contract).
-    Served by the `node-health` compose service, off by default and in no
-    profile of its own action beyond that — bound `0.0.0.0` *inside* the
+    Served by the `node-health` compose service, which is in that one
+    profile and no other, so it is off unless a node opts in — bound
+    `0.0.0.0` *inside* the
     container, published to the host's own loopback alone
     (`127.0.0.1:${NODE_HEALTH_PORT:-8788}:${NODE_HEALTH_PORT:-8788}`), the
     identical loopback-only pattern `scripts/serve-dashboard.sh`'s own
@@ -26751,7 +26769,12 @@ oblige anyone to edit a test.
     `node_health_readiness` naming every one of the eight conditions
     requirement 56 enumerates by its own stable code, an unreadable local
     meter never blocking readiness on its own, and every simultaneously
-    failing condition reported together rather than only the first.
+    failing condition reported together rather than only the first. It also
+    holds every component and `node_health_health` itself to requirement
+    57's "one valid object, never a non-zero return" contract against input
+    that does not parse as JSON at all — a heartbeat truncated by a
+    container killed mid-write — as well as against a bare scalar, an array
+    and the empty string, each of which must read `unknown`.
     `test/node-health-cli.test.sh` passes: `scripts/node-health.sh` is
     read-only end to end (a fixture `state_dir`/`workspace_root` unchanged,
     file for file, across every mode, excepting only the documented
@@ -26759,7 +26782,18 @@ oblige anyone to edit a test.
     not-ready and unhealthy across three separate calls, liveness stays true
     while a cycle holds `lock.json` and false once the marker is removed,
     `--health`'s three exit codes (`0`/`1`/`2`) are distinct for `ok`/`fail`/
-    `unknown`, and `--metrics` carries every field requirement 58e documents.
+    `unknown`, and `--metrics` carries every field requirement 58e documents;
+    with a `gh` stub on `PATH` it also asserts requirement 56a's own
+    arithmetic — that `--ready` reads *both* budget figures out of the forge
+    response, that one poll makes exactly one forge call, and that a second
+    poll inside the TTL makes none. `test/node-health-http.test.sh` passes:
+    `scripts/node-health-server.py`, started on a free port against a
+    fixture `HOME`, answers all four documented paths with requirement 58d's
+    own status codes and a JSON body on each (including the `503` halves),
+    `404`s every other path — a trailing slash, a query string and a
+    traversal attempt among them — and still answers `/healthz` with valid
+    JSON reading `unknown` while `state_dir` is unreadable (acceptance
+    criterion 8), rather than hanging or stack-tracing.
     `test/render-crontab.test.sh` passes unchanged with the new liveness-
     marker line in `deploy/docker/crontab.tmpl` (requirement 55), and
     `test/state-sync.test.sh` asserts the two new node-health caches

@@ -913,8 +913,11 @@ fleet_disabled_state() {
   _toggle_eval "$raw" present
 }
 
-# fleet_disabled_state_cached STATE_DIR
-# The same vocabulary as fleet_disabled_state, read from `fleet_cache_file`'s
+# fleet_disabled_state_cached STATE_REPO STATE_DIR
+# Argument for argument what fleet_disabled_state above takes — STATE_REPO is
+# accepted and never read, so a caller can swap one for the other without
+# rearranging its own call — and the same vocabulary back, read from
+# `fleet_cache_file`'s
 # own last-fetched copy only — never `fleet_flag_fetch`, so never a network
 # call (issue #608's readiness check: "no network call except the single
 # /rate_limit read readiness needs"). A cache that does not exist yet (no
@@ -924,7 +927,7 @@ fleet_disabled_state() {
 # `_toggle_eval` gives any other unreadable-but-present record.
 fleet_disabled_state_cached() {
   local cache
-  cache="$(fleet_cache_file "$2" disabled)"
+  cache="$(fleet_cache_file "${2:-}" disabled)"
   if [[ ! -f "$cache" ]]; then
     printf '{"state":"enabled"}'
     return 0
