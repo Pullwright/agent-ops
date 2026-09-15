@@ -268,7 +268,13 @@ stage_health_write_status() {
 # `stage_health_write_status`-shaped STATUS_FILE. A missing or unreadable
 # file (no cycle has completed on this node since this feature shipped)
 # prints one explanatory line instead of nothing, so `--status` never goes
-# quiet on a question it was just asked.
+# quiet on a question it was just asked. A failing stage's line is followed
+# by an indented `last:` line carrying the streak's `last_detail` when there
+# is one: the record held the detail all along, but the terminal showed only
+# the count, so on 2026-09-15 six cycles of `coordinator failing (6
+# consecutive, last success 3d ago)` on ockham-2 read as any failure at all
+# when the detail was one specific thing — the node's lapsed Claude login
+# (lib/stage-attempt.sh's `authentication_failed`).
 stage_health_status_lines() {
   local status_file="$1" now="${2:-}"
   [[ "$now" =~ ^[0-9]+$ ]] || now="$(date +%s)"
@@ -292,6 +298,7 @@ stage_health_status_lines() {
     | .key as $stage | .value as $v
     | if $v.verdict == "failing" then
         "  \($stage) failing (\($v.consecutive_failures) consecutive, last success \($v.last_success | ago))"
+        + (if (($v.last_detail // "") | length) > 0 then "\n    last: \($v.last_detail)" else "" end)
       elif $v.verdict == "idle" and $v.last_success == null then
         "  \($stage) idle (never run)"
       else

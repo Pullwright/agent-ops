@@ -478,6 +478,12 @@ assert_eq "while refreshing its own" "failing" \
 lines="$(stage_health_status_lines "$status_file" "$NOW_EPOCH")"
 assert_contains "the failing stage's line names the consecutive count" \
   "$lines" "coordinator failing (3 consecutive"
+assert_eq "…and is followed by the streak's own detail, indented" \
+  "    last: coordinator was refused by the API" \
+  "$(printf '%s\n' "$lines" | grep -A1 '^  coordinator failing' | tail -n 1)"
+assert_eq "only failing stages carry a detail line" \
+  "$(jq -r '[.stages[] | select(.verdict == "failing" and (.last_detail // "") != "")] | length' "$status_file")" \
+  "$(printf '%s\n' "$lines" | grep -c '^    last: ')"
 assert_contains "an idle-never-run stage says so plainly" \
   "$lines" "enabler idle (never run)"
 

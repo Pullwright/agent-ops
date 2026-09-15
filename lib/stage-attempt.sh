@@ -206,13 +206,34 @@ dump_stage_output() {
 # An HTTP status on the record is the API itself saying it declined the
 # request. `terminal_reason` names which refusal when the runner recorded one
 # (`prompt_too_long`); the status stands in when it did not.
+#
+# One refusal carries no status at all, and is recognised by its shape
+# instead (2026-09-15, ockham-2): a node whose subscription OAuth credential
+# has lapsed — re-enabled after days on Standby, its refresh token expired
+# with nothing having used it — records `terminal_reason: "api_error"`,
+# `api_error_status: null` and `result: "Failed to authenticate: OAuth
+# session expired and could not be refreshed"`, because the runner refused
+# the request itself, having no credential to make it with, before any API
+# call could return a status. Six consecutive cycles on that node read
+# `coordinator exited 1`, `enabler exited 1`, `refiner exited 1` — the same
+# useless account of an outage that #641 fixed for the status-bearing kind —
+# and the stage-health record could not tell it from any other failure. It
+# is named `authentication_failed`: a stable token, no moving part, and the
+# text the runner emits is fixed. The gate is deliberately narrow — the
+# runner's own `api_error` reason *and* an authentication message — so a
+# stage that ran and then failed, or an `api_error` of some other statusless
+# kind, still gets its honest exit code rather than a confident falsehood.
 stage_api_refusal() {  # <out-file> -> terminal reason, or empty
   local out_file="$1"
   [[ -s "$out_file" ]] || return 0
   jq -r 'select((.is_error // false) == true)
-         | select((.api_error_status // null) | type == "number")
-         | ((.terminal_reason // "") as $r
-            | if $r == "" or $r == "completed" then "api_error_\(.api_error_status)" else $r end)' \
+         | (((.terminal_reason // "") == "api_error")
+            and ((.result // "") | test("authenticat|oauth|unauthori[sz]ed"; "i"))) as $auth
+         | select($auth or ((.api_error_status // null) | type == "number"))
+         | if $auth then "authentication_failed"
+           else ((.terminal_reason // "") as $r
+                 | if $r == "" or $r == "completed" then "api_error_\(.api_error_status)" else $r end)
+           end' \
     "$out_file" 2>/dev/null | head -1
 }
 
@@ -220,7 +241,9 @@ stage_api_refusal_message() {  # <out-file> -> the API's own words, truncated
   local out_file="$1"
   [[ -s "$out_file" ]] || return 0
   jq -r 'select((.is_error // false) == true)
-         | select((.api_error_status // null) | type == "number")
+         | (((.terminal_reason // "") == "api_error")
+            and ((.result // "") | test("authenticat|oauth|unauthori[sz]ed"; "i"))) as $auth
+         | select($auth or ((.api_error_status // null) | type == "number"))
          | (.result // "") | .[0:600]' \
     "$out_file" 2>/dev/null | head -1
 }
@@ -250,14 +273,19 @@ stage_api_refusal_message() {  # <out-file> -> the API's own words, truncated
 # below defaults an unrecognised case to `refused` rather than guessing
 # `transient`, since escalating a puzzle for a human to read is the safe
 # failure and silently swallowing a real deterministic loop is not.
+# `authentication_failed` (stage_api_refusal above) is `refused`: no retry
+# clears a lapsed login, only a person completing one.
 stage_api_refusal_class() {  # <out-file> -> "transient", "refused", or empty
   local out_file="$1"
   [[ -s "$out_file" ]] || return 0
   jq -r 'select((.is_error // false) == true)
-         | select((.api_error_status // null) | type == "number")
+         | (((.terminal_reason // "") == "api_error")
+            and ((.result // "") | test("authenticat|oauth|unauthori[sz]ed"; "i"))) as $auth
+         | select($auth or ((.api_error_status // null) | type == "number"))
          | (.terminal_reason // "") as $r
-         | (.api_error_status) as $status
-         | if ($r == "prompt_too_long" or $r == "invalid_request_error") then "refused"
+         | (.api_error_status // 0) as $status
+         | if $auth then "refused"
+           elif ($r == "prompt_too_long" or $r == "invalid_request_error") then "refused"
            elif ($r | test("connection|network|overload"; "i")) then "transient"
            elif ($status >= 500) then "transient"
            else "refused"
