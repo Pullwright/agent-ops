@@ -1541,6 +1541,16 @@ printf '{"pid":%s,"started_at":"2026-01-01T05:00:00Z"}' "$$" > "$f/.local/state/
 # one still on the previous release must render rather than break.
 printf '{"resume_at":"2031-01-01T00:00:00Z","class":"monthly-spend","needs_human":true,"node":"peer1","ts":"2026-01-01T04:01:00Z"}' \
   > "$f/.local/state/poetic-agents/fleet-cache/limit.json"
+# A `review-stage-end` in review-log.jsonl, never log.jsonl — the review
+# pipeline's own stream (issue #1586). `stage_budget_observations` already
+# maps this event to actor `project-reviewer`; this fixture is what proves
+# the Publisher actually feeds it that stream. Dated against real "now"
+# (unlike this block's other, fixed 2026-01-01 events, which the stage-budget
+# fold never reads) because `stage_budget_table`'s own window_days bounds how
+# far back it looks, and `run_publish` below pins no `--now` of its own.
+printf '{"ts":"%s","node":"nodeF-self","event":"review-stage-end","repo":"Poetic-Poems/poetic","model":"model-a","exit_code":0,"duration_ms":600000}\n' \
+  "$(date -u -d '-1 hour' +%Y-%m-%dT%H:%M:%SZ)" \
+  > "$f/.local/state/poetic-agents/review-log.jsonl"
 
 run_publish "$f" NODE_NAME=nodeF-self
 assert_eq "a fleet publish exits 0" "0" "$?"
@@ -1614,6 +1624,11 @@ assert_eq "a peer row carries it too, which is the only clock its card has" "tru
   "$(jq -r '[.fleet.nodes[] | select(.live != null) | (.live | has("stage_backstop_min"))] | all' <<<"$fdata")"
 assert_eq "and the fleet-wide fallback per actor reaches the page" "object" \
   "$(jq -r '.config.stage_backstops | type' <<<"$fdata")"
+# The review pipeline logs its own `review-stage-end` to review-log.jsonl,
+# never log.jsonl (issue #1586) — this is what proves the stage-budget fold
+# actually reads that stream too, not just $ALL_EVENTS.
+assert_eq "a review-stage-end reaches config.stage_backstops as project-reviewer" "true" \
+  "$(jq -r '(.config.stage_backstops["project-reviewer"] // 0) > 0' <<<"$fdata")"
 # `lock_stale_after` is no longer a configured constant but a derivation over
 # the backstops in force; the page still reads it under that name, so it has
 # to arrive as a number whether or not the configuration mentions it.
