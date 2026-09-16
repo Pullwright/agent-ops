@@ -740,10 +740,14 @@ analysis, not just files in the tree:
   tool) that carry a security severity. All Dependabot alerts are security by
   nature; a code-scanning alert counts here when its
   `security_severity_level` is set. This source is **first in every repo's
-  list**, and, more strongly, **any security-related candidate takes
-  precedence over every non-security candidate regardless of which source it
-  came from** — including a GitHub issue labelled `security`/`vulnerability`
-  or a tech-debt item flagged as a security concern. Security work is
+  list**, and, more strongly, **within a repository any security-related
+  candidate takes precedence over every non-security candidate regardless of
+  which source it came from** — including a GitHub issue labelled
+  `security`/`vulnerability` or a tech-debt item flagged as a security
+  concern. Across repositories it is this source itself that carries the
+  top global tier (requirement 15a): a security-labelled issue or a
+  security-flagged tech-debt item is reconciled at its own source's tier
+  there, never ahead of another repository's ordinary work. Security work is
   always prioritised.
 - **`code-quality`** — the remaining open **code-scanning alerts** (those
   *without* a security severity: maintainability, correctness, and style
@@ -9604,9 +9608,13 @@ implements.
     code-scanning alert) — a security-labelled issue, a security-flagged
     tech-debt entry, and a security-flagged project-review recommendation
     remain security-related within their own repository's own ranking, but
-    carry no cross-repository tier of their own and are ordered, alongside
-    every other issue/tech-debt/project-review candidate, by requirement
-    15g's residual tier. Within global tier 0, the merge breaks a tie between
+    carry no cross-repository tier of their own: the merge places each at
+    whatever tier its own source and band would have earned it with no
+    security flagging at all — requirement 15g's residual tier for a
+    tech-debt entry, a `project-review` recommendation or a
+    `High`/`Medium`/`Low` issue, and requirement 15e's `Urgent` tier for an
+    issue the organisation marks `Urgent`. Within global tier 0, the merge
+    breaks a tie between
     two different repositories' own `security` candidates by repository
     walk order (requirement 3) alone — an approximation of "most severe
     fleet-wide" the same way requirement 15e's `Urgent` bullet documents for
@@ -27686,8 +27694,10 @@ requirements above, which state only what is.
   PR-as-source-of-truth pattern the findings sources use, so the review folder
   stays an immutable point-in-time record.
 - **Security findings are a first-class, always-first work source.** GitHub's
-  own Dependabot and code-scanning alerts are treated as work items, and any
-  security-related candidate outranks all non-security work (requirement 15a),
+  own Dependabot and code-scanning alerts are treated as work items; within a
+  repository any security-related candidate outranks all non-security work,
+  and across repositories this source itself is the one tier above every
+  other (requirement 15a),
   even a red `main` — a known, exploitable vulnerability is the highest-stakes
   thing the pipeline can be pointed at. Non-security code-scanning findings
   become the `code-quality` source, ranked below every curated source: real, but
