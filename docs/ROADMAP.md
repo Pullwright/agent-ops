@@ -514,7 +514,7 @@ Poetic-Poems, with no pipeline code in it.
       at the routes the diff touches — response headers included, which is
       the class poetic-fiddle#319 proved a status probe cannot catch.
       *[fleet]*
-- [ ] Move the preview check behind per-repo configuration (D19): the
+- [x] Move the preview check behind per-repo configuration (D19): the
       Vercel specifics — one project per secret, the bypass header, the
       poetic-fiddle mention hardcoded into two prompts — become a `preview`
       block in `config.json` (provider, URL resolution, credential shape,
