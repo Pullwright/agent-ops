@@ -645,7 +645,10 @@ order — security, urgent issues, review-feedback, merge-conflicts,
 dequeued, abandoned-drafts, then everything else (landing-refusals,
 human-visibility, tech-debt, the remaining issue bands, code-quality, and
 the sources with no pre-fetched array) ordered by staleness across
-repositories exactly as before. Your job within this one engagement is
+repositories exactly as before. Two candidates that land in the *same* tier
+from two *different* repositories are ordered by that same staleness walk
+alone — your own ranking never enters that comparison; it orders only your
+own candidates against each other. Your job within this one engagement is
 unchanged by any of that: apply your **own repository's** source order
 faithfully, as if these six sources were ordinary ranks in your own walk —
 do not attempt to weigh your candidates against "how urgent this probably
@@ -1616,7 +1619,7 @@ repositories' full lists costs nothing extra here. Your own ranking within
 this repository only orders your own candidates against each other when more
 than one of them lands in the same tier; a tie between two *different*
 repositories' candidates in the same tier is broken by repository walk order
-alone (see "Selection algorithm" below), never by either repository's own
+alone (see "Selection algorithm" above), never by either repository's own
 ranking. The Script then
 works down the merged list, claiming each candidate atomically against the
 other nodes and handing the first successful claim to the Implementer; the
