@@ -203,18 +203,18 @@ assert_contains "the warning reports the union, not only the file's own length" 
   "3 lines, 44 including everything it sources" "$out"
 
 # --- The budget is consulted for every file, not only ones above some fixed
-#     line count (agent-ops#1305) --------------------------------------------
+#     line count (agent-ops#1305), and is driven by this script's own
+#     explicit budget, never the parent cgroup's memory.high (agent-ops#1620)
+#     ----------------------------------------------------------------------
 #
 # scripts/doctor.sh's real union (9,367 lines) sits comfortably under the old
 # 10,000-line LARGE_LINES gate and so was never costed at all — on a node
-# bound by a parent cgroup's memory.high (deploy/docker/compose.yaml), that
-# meant `shellcheck -x` ran uncosted, at an estimated 772 MiB, against a
-# ceiling of 768. This exercises the *real*, un-overridden cost estimator
-# (no LINT_SHELL_COST_P* here) against a fixture file well short of the old
-# threshold, with the budget itself pinned to a heavily parented node via
-# LINT_SHELL_PARENT_HIGH_FILE — the same read-only window
-# deploy/docker/compose.yaml mounts for lib/memory.sh's own parent-ceiling
-# reads.
+# whose budget was too small, that meant `shellcheck -x` ran uncosted, at an
+# estimated 772 MiB, against a ceiling below that. This exercises the *real*,
+# un-overridden cost estimator (no LINT_SHELL_COST_P* here) against a fixture
+# file well short of the old threshold, with the budget pinned via
+# LINT_SHELL_BUDGET_MIB — this script's own explicit knob (agent-ops#1620),
+# independent of whatever the parent cgroup's memory.high happens to be.
 real_repo="$tmp_dir/real-repo"
 mkdir -p "$real_repo/scripts"
 cp "$LINT" "$real_repo/scripts/lint-shell.sh"
@@ -224,23 +224,30 @@ git -C "$real_repo" init --quiet
 git -C "$real_repo" add midsize.sh
 git -C "$real_repo" -c user.email=t@t -c user.name=t commit --quiet -m init
 
-parent_high_fixture="$tmp_dir/parent-memory.high"
 # 50 MiB: far below the ~400 MiB the real estimator gives a 5,000-line union
 # (interpolated from the measured points in scripts/lint-shell.sh's own
 # header), and far below any real budget this test host itself is likely to
 # report — so this is what actually binds, whatever machine runs the suite.
-printf '%s\n' "$(( 50 * 1048576 ))" > "$parent_high_fixture"
-
 : > "$invocations"
-out="$(cd "$real_repo" && LINT_SHELL_PARENT_HIGH_FILE="$parent_high_fixture" LINT_SHELL_PLAIN_MIB=1 \
+out="$(cd "$real_repo" && LINT_SHELL_BUDGET_MIB=50 LINT_SHELL_PLAIN_MIB=1 \
   ./scripts/lint-shell.sh 2>&1)"
-assert_contains "a fixture parent ceiling well below the real estimate degrades a file far under the old 10,000-line gate" \
+assert_contains "an explicit budget well below the real estimate degrades a file far under the old 10,000-line gate" \
   "midsize.sh" "$out"
-assert_contains "…linted WITHOUT -x, since even that ceiling cannot afford to follow it" \
+assert_contains "…linted WITHOUT -x, since even that budget cannot afford to follow it" \
   "was linted WITHOUT -x" "$out"
 assert_not_contains "…and is not run with -x" "-x -- midsize.sh" "$(cat "$invocations")"
-assert_contains "…and the warning names the parent cgroup as what actually bound the budget" \
-  "the parent cgroup's memory.high" "$out"
+assert_contains "…and the warning names the explicit budget as what actually bound it" \
+  "LINT_SHELL_BUDGET_MIB" "$out"
+
+# The parent cgroup's memory.high used to feed straight into this budget
+# (LINT_SHELL_PARENT_HIGH_FILE), which is exactly the coupling agent-ops#1620
+# closes: raising the parent's ceiling for the publisher's sake must not also
+# raise how much this guard follows with -x, and lowering it must not starve
+# this guard either — neither variable is read here at all any more.
+assert_not_contains "the parent cgroup's memory.high is no longer a budget source" \
+  "parent cgroup's memory.high" "$(cat "$LINT")"
+assert_not_contains "…nor is the env var that used to feed it read anywhere in the script" \
+  "LINT_SHELL_PARENT_HIGH_FILE" "$(cat "$LINT")"
 
 # --- File-selector arguments: lint a named subset instead of the sweep -------
 # $repo now tracks small.sh, big.sh, hook-like, wide-entry.sh and lone-entry.sh

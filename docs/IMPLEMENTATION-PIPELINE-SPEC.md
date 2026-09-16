@@ -2453,17 +2453,29 @@ implements.
       — let `memory_cgroup_verdict` read the parent's own hard ceiling and let
       `doctor.sh` read the parent's raw throttle counter. `memory_cgroup_verdict`
       gains two verdicts from this: `livelocked` (a real parent `memory.high`
-      with the parent's own `memory.max` left at `max` — warns, and is never
-      `[ ok ]`) and `unconfirmed` (the same real parent `memory.high`, but the
-      parent's own `memory.max` window cannot be read — an un-migrated
-      `compose.yaml`, or a node not yet re-run through `cgroup-parent-setup.sh`
-      — warns rather than guessing `parented`, since a guess given as `[ ok ]`
-      is exactly what left this incident's node wedged for 75 minutes).
-      `doctor.sh` additionally reads the parent's `memory.events` `high`
-      counter every run, persists one sample to `state_dir`, and warns on any
-      rising delta since the last one — a signal that needs no ceiling to be
-      correctly configured first, so it still fires on a `livelocked` or
-      `unconfirmed` node, which is the exact gap this incident fell through.
+      with the parent's own `memory.max` either left at `max`, or a real
+      number that is no higher than the child's own — either way nothing the
+      child can reach reclaims or kills before it, so throttling never
+      disengages — warns, and is never `[ ok ]`) and `unconfirmed` (the same
+      real parent `memory.high`, but the parent's own `memory.max` window
+      cannot be read — an un-migrated `compose.yaml`, or a node not yet
+      re-run through `cgroup-parent-setup.sh` — warns rather than guessing
+      `parented`, since a guess given as `[ ok ]` is exactly what left this
+      incident's node wedged for 75 minutes). `parented` itself needs the
+      parent's own `memory.max` to sit *strictly above* the child's, not
+      merely to exist: agent-ops#1620 measured `ockham-container` livelocked
+      for most of 2026-09-16 with a real parent `memory.max` (1536 MiB)
+      coincident with the child's own — a hard ceiling that exists but adds
+      no headroom over one the child already has is inert in exactly the same
+      way an unbounded parent `memory.max` is, because the kernel's reclaim
+      under `memory.high` throttles severely enough near a shared ceiling
+      that the workload never makes enough progress to reach either kill
+      point. `doctor.sh` additionally reads the parent's `memory.events`
+      `high` counter every run, persists one sample to `state_dir`, and warns
+      on any rising delta since the last one — a signal that needs no ceiling
+      to be correctly configured first, so it still fires on a `livelocked`
+      or `unconfirmed` node, which is the exact gap this incident fell
+      through.
 
       The script refuses to run inside a container, and refuses on the
       `/.dockerenv` sentinel (`lib/compose-drift.sh`'s own) rather than on
@@ -22504,26 +22516,30 @@ oblige anyone to edit a test.
    binary is not linked with `-rtsopts`) and reserves a 1 TB address space, so
    neither a heap cap nor `ulimit -v` can bound it; the only thing that can is
    not running it. So `scripts/lint-shell.sh` reads the smallest of its own
-   cgroup ceiling, the *parent* cgroup's `memory.high`
-   (`LINT_SHELL_PARENT_HIGH_FILE`, defaulting to `/run/cgroup-parent/
-   memory.high` — the same read-only window `deploy/docker/compose.yaml`
-   mounts for `lib/memory.sh`'s own parent-ceiling reads) and `MemAvailable`,
-   names whichever of the three actually bound it, and estimates **every**
-   file's own cost to follow with `-x` by interpolating/extrapolating between
-   three measured points (`estimated_follow_mib`: 4,945 union lines at 396
-   MiB, 23,569 at 1,983 MiB, 26,262 at 4,543 MiB, the last of these a floor
-   rather than a peak since that run never finished) rather than gating on a
-   fixed line count first. This is what closes agent-ops#1305's own reading of
-   the guard: a line count picked to isolate one file says nothing about what
-   the node running it can afford, and the former 10,000-line gate let
-   everything below it follow sources unconditionally, whatever the budget.
+   cgroup ceiling, its own explicit `LINT_SHELL_BUDGET_MIB` (unset by
+   default — never the *parent* cgroup's `memory.high`, deliberately, since
+   agent-ops#1620: that ceiling has to be sized for
+   `scripts/publish-dashboard.sh`'s real working set, ~1.4 GiB, and this
+   guard needs roughly ≤700 MiB to keep steering the largest unions off `-x`,
+   and one knob could not hold both without livelocking the node the way it
+   did for most of 2026-09-16) and `MemAvailable`, names whichever of the
+   three actually bound it, and estimates **every** file's own cost to follow
+   with `-x` by interpolating/extrapolating between three measured points
+   (`estimated_follow_mib`: 4,945 union lines at 396 MiB, 23,569 at 1,983
+   MiB, 26,262 at 4,543 MiB, the last of these a floor rather than a peak
+   since that run never finished) rather than gating on a fixed line count
+   first. This is what closes agent-ops#1305's own reading of the guard: a
+   line count picked to isolate one file says nothing about what the node
+   running it can afford, and the former 10,000-line gate let everything
+   below it follow sources unconditionally, whatever the budget.
    `scripts/doctor.sh` is the clearest case — 9,367 union lines, under that
-   gate, and an estimated 772 MiB to follow, against the 768 MiB a parented
-   node actually has. That is an uncosted `shellcheck -x` sized at the
-   incident's own first measured kill (964 MB anon-rss), on a node the guard
-   was reporting nothing about. A file whose estimate fits the budget follows with `-x`; one whose
-   estimate exceeds it but whose budget is still at least `LINT_SHELL_PLAIN_MIB`
-   (1,024, a roughly constant cost regardless of the file's own size) is linted
+   gate, and an estimated 772 MiB to follow, against the 768 MiB a node
+   explicitly budgeted at that figure actually has. That is an uncosted
+   `shellcheck -x` sized at the incident's own first measured kill (964 MB
+   anon-rss), on a node the guard was reporting nothing about. A file whose
+   estimate fits the budget follows with `-x`; one whose estimate exceeds it
+   but whose budget is still at least `LINT_SHELL_PLAIN_MIB` (1,024, a
+   roughly constant cost regardless of the file's own size) is linted
    without `-x`, suppressing SC1091, SC2154 and SC2034 for that file — all
    three artefacts of the degradation rather than findings about the code:
    without `-x` shellcheck sees none of the modules the file sources, so a
@@ -22532,18 +22548,20 @@ oblige anyone to edit a test.
    #771 is 25 of them in `agent-cycle.sh` with nothing wrong with any of them.
    Below `LINT_SHELL_PLAIN_MIB` the file is not linted at all, and which of
    the two reduced modes a node lands in is a property of that node's budget
-   rather than of the file. An un-parented scheduler container has its whole
-   1,536 MiB, which is above `LINT_SHELL_PLAIN_MIB`, so nothing there is ever
-   skipped: `agent-cycle.sh` without `-x` completes in 634 MiB, comfortably
-   inside that ceiling, where before #771's split it was killed at that
-   ceiling and skipped outright. A **parented** node has the parent's
-   `memory.high` instead — 768 MiB at `scripts/cgroup-parent-setup.sh`'s own
-   default, which is *below* `LINT_SHELL_PLAIN_MIB` — so on one of those the
-   skip path is reached in practice, for every file whose estimate exceeds
-   the budget: `agent-cycle.sh`, `scripts/publish-dashboard.sh` and
-   `scripts/doctor.sh` as the tree stands. That is the trade agent-ops#1305
-   accepted deliberately — reduced local coverage, announced on stderr, is
-   strictly better than an invocation the node cannot afford — and it is
+   rather than of the file. A scheduler container with `LINT_SHELL_BUDGET_MIB`
+   unset has its whole container ceiling to work with — 1,536 MiB by default,
+   which is above `LINT_SHELL_PLAIN_MIB` — so nothing there is ever skipped:
+   `agent-cycle.sh` without `-x` completes in 634 MiB, comfortably inside that
+   ceiling, where before #771's split it was killed at that ceiling and
+   skipped outright. A node whose operator has set `LINT_SHELL_BUDGET_MIB` to
+   today's typical parent-ceiling figure — 768 MiB, `scripts/
+   cgroup-parent-setup.sh`'s own `--limit` default — has that instead, which
+   is *below* `LINT_SHELL_PLAIN_MIB` — so on one of those the skip path is
+   reached in practice, for every file whose estimate exceeds the budget:
+   `agent-cycle.sh`, `scripts/publish-dashboard.sh` and `scripts/doctor.sh` as
+   the tree stands. That is the trade agent-ops#1305 accepted deliberately —
+   reduced local coverage, announced on stderr, is strictly better than an
+   invocation the node cannot afford — and it is
    another reason the skip does not fail the run: CI has the memory and
    checks all three in full. What no local ceiling can buy is following the
    sources *inside* it, and nothing else can either: a 172-line entry point
@@ -23278,15 +23296,21 @@ oblige anyone to edit a test.
    window carries a real one below `memory.max`, the verdict depends on the
    parent's *own* `memory.max` (agent-ops#1305, read via the
    `AGENT_OPS_SCHEDULER_CGROUP_MAX` mount, `MEMORY_CGROUP_PARENT_MAX`):
-   `parented` when the parent's own `memory.max` is a real ceiling above the
-   parent's `memory.high` (a hard wall exists somewhere, so `memory.high`'s
-   throttling eventually disengages); `livelocked` when the parent's own
-   `memory.max` is `max` (no wall anywhere, so throttling never disengages —
-   the exact band that wedged `ockham-container` for 75 minutes with 2,788,595
-   throttle events); `unconfirmed` when the parent's own `memory.max` window
-   cannot be read (an un-migrated `compose.yaml`, or a node that has not
-   re-run `cgroup-parent-setup.sh` since it started mounting that window) —
-   never reported `parented` on an unmeasured guess. `parented` is the only
+   `parented` when the parent's own `memory.max` is a real ceiling **strictly
+   above** this cgroup's own `memory.max` (a hard wall exists somewhere with
+   actual headroom to reclaim into, so `memory.high`'s throttling eventually
+   disengages); `livelocked` when the parent's own `memory.max` is `max` (no
+   wall anywhere) **or** a real number that is no higher than this cgroup's
+   own `memory.max` (agent-ops#1620: a wall exists but adds no headroom
+   beyond one this cgroup already has, so reaching it is not something the
+   child can do any more than reaching an absent one is) — either shape
+   throttles without ever disengaging, the exact band that wedged
+   `ockham-container` for 75 minutes with 2,788,595 throttle events on
+   2026-09-09 (`memory.max` `max`) and again for most of 2026-09-16 (a real,
+   coincident `memory.max`); `unconfirmed` when the parent's own `memory.max`
+   window cannot be read (an un-migrated `compose.yaml`, or a node that has
+   not re-run `cgroup-parent-setup.sh` since it started mounting that window)
+   — never reported `parented` on an unmeasured guess. `parented` is the only
    one of these three that reads `[ ok ]`; `livelocked` and `unconfirmed` both
    warn, exactly as `bounded` does, and for the same reason: a state that
    might not still be true tomorrow — or was never actually measured — is not

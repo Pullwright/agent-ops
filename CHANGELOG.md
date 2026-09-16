@@ -107,6 +107,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   both, matching `egress-proxy`'s own placement, while keeping its published
   loopback port unchanged.
 
+- **`scripts/publish-dashboard.sh` no longer holds the whole fleet-wide event
+  log in a bash variable, and `scripts/lint-shell.sh`'s `-x` steering no
+  longer shares a knob with the parent cgroup's `memory.high`** (issue
+  #1620). Both ockham schedulers spent most of 2026-09-16 livelocked under
+  `memory.high` throttling: the Publisher's real working set scales with
+  `log.jsonl`, which is never rotated by design, and every full-log
+  consumer read it through a bash string (`$ALL_EVENTS`) that every
+  subshell the rest of the script forked afterwards carried its own copy
+  of — measured at five nested subshells holding 219 MiB apiece on a node
+  with a mature log — while the parent ceiling tuned to keep that in bounds
+  (768 MiB) was simultaneously the number `lint-shell.sh` read to decide
+  which files to follow with `-x`, leaving no single value able to serve
+  both. Every full-build consumer now reads `$events_jsonl` (or the merged
+  `$review_events_union`) directly, as a jq file argument or a library
+  function's own `LOG_FILE` parameter, and `lint-shell.sh` gets its own
+  explicit `LINT_SHELL_BUDGET_MIB` instead of reading the parent's
+  `memory.high` at all — so the parent ceiling can be sized for the
+  Publisher's own working set without narrowing or widening what
+  `lint-shell.sh` follows. `lib/memory.sh`'s `memory_cgroup_verdict` also no
+  longer reports `parented [ ok ]` for a parent `memory.max` that merely
+  coincides with (or sits below) the child's own — the exact shape that read
+  `[ ok ]` throughout this incident — reporting `livelocked` instead, the
+  same as an unbounded parent `memory.max` already does.
+
 - **`config.stage_backstops` can now carry a `project-reviewer` entry**
   (issue #1586). `scripts/publish-dashboard.sh` fed the stage-budget fold
   only `$ALL_EVENTS` (the `log.jsonl` union), never `review-log.jsonl`, so a

@@ -60,11 +60,14 @@
 # what that costs: a 9,367-line union, comfortably under the old gate, and an
 # estimated 772 MiB to follow — against the 768 MiB a node bound by a parent
 # cgroup's `memory.high` (deploy/docker/compose.yaml,
-# `scripts/cgroup-parent-setup.sh`) actually has (agent-ops#1305). What "large
-# enough to matter" means depends on what the node running this actually has,
-# not on a line count picked in advance — so every file's estimated cost is
-# compared against the budget, and a small file on a small enough budget
-# degrades exactly like a large one on a starved one.
+# `scripts/cgroup-parent-setup.sh`) actually had at the time (agent-ops#1305;
+# `BUDGET_MIB` above is what a node sets today to reproduce that same 768 MiB
+# steering, since the parent's own `memory.high` no longer feeds this budget
+# directly — agent-ops#1620). What "large enough to matter" means depends on
+# what the node running this actually has, not on a line count picked in
+# advance — so every file's estimated cost is compared against the budget, and
+# a small file on a small enough budget degrades exactly like a large one on a
+# starved one.
 #
 # This is still a real reduction in coverage, so it is announced on every run
 # rather than left to be discovered. What the guard can no longer say is that
@@ -107,14 +110,25 @@ invocation_dir="$PWD"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root" || exit 1
 
-# The window this container's own cgroup cannot see: an ancestor cgroup's
-# `memory.high`, bind-mounted read-only where `deploy/docker/compose.yaml`
-# puts it (the same file `lib/memory.sh`'s `memory_cgroup_parent_high` reads,
-# for the same reason — a cgroup namespace makes this container's own cgroup
-# the root of what it can see, so a parent ceiling is otherwise invisible from
-# in here). Overridable so the test suite can point it at a fixture instead of
-# the real mount.
-PARENT_HIGH_FILE="${LINT_SHELL_PARENT_HIGH_FILE:-/run/cgroup-parent/memory.high}"
+# This script's own explicit -x budget, in MiB — deliberately independent of
+# the ancestor cgroup's own soft ceiling (agent-ops#1620). Before this
+# existed the only number available to steer `-x` was read straight off that
+# ancestor's window (bind-mounted read-only, the same one `lib/memory.sh`'s
+# own parent-ceiling reads use for `doctor.sh`'s verdict), and that coupled
+# two concerns that need different values: the ancestor's ceiling has to be
+# sized for `scripts/publish-dashboard.sh`'s real working set (~1.4 GiB,
+# scaling with `log.jsonl`), while this guard needs roughly ≤700 MiB to keep
+# steering the largest unions off `-x`. One knob could not hold both, so
+# ockham spent most of 2026-09-16 livelocked: the ancestor was tuned to 768
+# MiB for lint-shell's sake, and that same 768 MiB was below the publisher's
+# own working set on a node with a mature log. Unset by default — no
+# constraint from this source — since a node that has never touched this
+# knob should behave as it always has (container ceiling and `MemAvailable`
+# still apply); an operator who wants to keep today's degrade/skip pattern on
+# a node whose ancestor ceiling is being raised for the publisher's sake sets
+# this explicitly, e.g. to whatever that ancestor's soft ceiling used to
+# carry.
+BUDGET_MIB="${LINT_SHELL_BUDGET_MIB:-}"
 
 # What a shellcheck invocation costs to follow a file's sources with `-x`, in
 # MiB, is estimated by interpolating/extrapolating between three points
@@ -160,21 +174,20 @@ fi
 
 # budget_mib
 # How much memory a single shellcheck may actually use here, in MiB, and which
-# ceiling it came from (as a second word: container | parent | host | none) —
-# the smallest of this process's own cgroup ceiling, the parent cgroup's
-# `memory.high` (PARENT_HIGH_FILE, invisible to this container's own cgroup
-# reads — see that variable's own header), and what the host says is
-# available. The container figure matters because inside the scheduler
+# ceiling it came from (as a second word: container | explicit | host | none)
+# — the smallest of this process's own cgroup ceiling, this script's own
+# explicit `BUDGET_MIB` (see that variable's own header — deliberately never
+# the parent cgroup's `memory.high`, agent-ops#1620), and what the host says
+# is available. The container figure matters because inside the scheduler
 # container /proc/meminfo still reports the host's memory, and it is the
-# cgroup that does the killing; the parent figure matters because a scheduler
-# bounded by a parent's `memory.high` throttles well below its own
-# `memory.max`, and a shellcheck invocation sized to the container alone is
-# exactly the shape of stage that wedged agent-ops#1305's node; the host
-# figure matters because a developer's machine has no cgroup limit worth
-# reading. An unreadable or absent limit is not treated as zero — it means "no
-# constraint found", and only a constraint we actually read may lower this.
-# Read via `read -r budget budget_source <<<"$(budget_mib)"`, never by command
-# substitution assigning straight to two variables — bash has no such form.
+# cgroup that does the killing; the explicit figure matters because it is the
+# one way an operator can steer this guard independently of whatever the
+# parent cgroup is sized for; the host figure matters because a developer's
+# machine has no cgroup limit worth reading. An unreadable or absent limit is
+# not treated as zero — it means "no constraint found", and only a constraint
+# we actually read may lower this. Read via `read -r budget budget_source
+# <<<"$(budget_mib)"`, never by command substitution assigning straight to two
+# variables — bash has no such form.
 budget_mib() {
   local budget=0 v source=none
   if [[ -r /sys/fs/cgroup/memory.max ]]; then                     # cgroup v2
@@ -187,10 +200,8 @@ budget_mib() {
       budget=$(( v / 1048576 )); source=container
     fi
   fi
-  v="$(cat "$PARENT_HIGH_FILE" 2>/dev/null)"
-  if [[ "$v" =~ ^[0-9]+$ ]]; then
-    v=$(( v / 1048576 ))
-    if (( budget == 0 || v < budget )); then budget=$v; source=parent; fi
+  if [[ "$BUDGET_MIB" =~ ^[0-9]+$ ]]; then
+    if (( budget == 0 || BUDGET_MIB < budget )); then budget=$BUDGET_MIB; source=explicit; fi
   fi
   v="$(awk '/^MemAvailable:/{print int($2/1024)}' /proc/meminfo 2>/dev/null)"
   if [[ "$v" =~ ^[0-9]+$ ]] && (( v > 0 )); then
@@ -210,7 +221,7 @@ budget_mib() {
 budget_source_phrase() {
   case "${1:-none}" in
     container) printf "this container's memory.max" ;;
-    parent)    printf "the parent cgroup's memory.high" ;;
+    explicit)  printf "LINT_SHELL_BUDGET_MIB" ;;
     host)      printf 'MemAvailable' ;;
     *)         printf 'no constraint found' ;;
   esac

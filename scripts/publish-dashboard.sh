@@ -978,13 +978,17 @@ def cycle_obj($cid; $ev; $manifest_idx; $cap):
     end;
 JQDEFS
 
-# --- Slurp all events once (shared by cycle_json and summaries) ---------------
-# The union lands on disk first, and the variable is filled from it with bash's
-# own `$(<file)` rather than from a pipe. `x="$(read_events)"` made the shell
-# read nine megabytes through a subshell and a pipe, and `$events_file` was then
-# built by writing all of it back out to jq — twice the traffic for one answer.
-# Consumers below still read `$ALL_EVENTS`; the ones on the per-tick hot path
-# read the file directly.
+# --- The union lands on disk once (shared by cycle_json and summaries) -------
+# Every full-build consumer below reads `$events_jsonl` directly, as a jq file
+# argument or through a library function's own LOG_FILE parameter, rather than
+# through a bash variable holding the whole log (agent-ops#1620): a `jq -s`
+# process that reads a file frees its memory the moment it exits, but a bash
+# variable the size of the log is copied by every subshell the rest of the
+# script forks afterwards — measured on ockham 2026-09-16 at up to five nested
+# subshells each holding their own copy of it, 219 MiB apiece, which is what
+# actually pushed the container over its cgroup ceiling. `$events_jsonl` is
+# already the on-disk reference every consumer needs; there is nothing a
+# bash-string copy of it buys that the file itself does not.
 events_jsonl="$work_tmp/events.jsonl"
 raw_events_jsonl="$work_tmp/raw-events.jsonl"
 # The union lands raw first and is parsed *from the file*, rather than
@@ -1004,10 +1008,6 @@ fleet_logs "$state_dir" "$peers_dir" log.jsonl > "$raw_events_jsonl" 2>/dev/null
 read_events "$raw_events_jsonl" > "$events_jsonl" 2>/dev/null || : > "$events_jsonl"
 dropped_log_lines=$(( $(count_lines "$raw_events_jsonl") - $(count_lines "$events_jsonl") ))
 (( dropped_log_lines >= 0 )) || dropped_log_lines=0
-# Only a full build still has consumers that want it as a string; filling it
-# costs a nine-megabyte read the fast path would never look at.
-ALL_EVENTS=""
-(( FULL )) && ALL_EVENTS="$(<"$events_jsonl")"
 # The same events as one JSON array on disk, for the per-cycle filters: a file
 # beats re-piping the whole stream once per cycle, and files (unlike argv) have
 # no 128 KB cap.
@@ -2144,7 +2144,7 @@ counts_merged="$(jq -c --slurpfile v "$scorecards_file" \
 # implementation pipeline's own `reviewer` stage, a different actor under the
 # same word (the same distinction the by-actor spend chart already draws).
 #
-# `review-log.jsonl` is a *second* fleet-wide log union — `$ALL_EVENTS` covers
+# `review-log.jsonl` is a *second* fleet-wide log union — `$events_jsonl` covers
 # `log.jsonl` alone — fetched here once and reused by the constraint panel and
 # the stage budgets below (issue #1586), both of which would otherwise fetch
 # it again themselves: reading the fleet's logs twice (or three times) in one
@@ -2153,6 +2153,16 @@ counts_merged="$(jq -c --slurpfile v "$scorecards_file" \
 review_log_union="$work_tmp/review-log-union.jsonl"
 fleet_logs "$state_dir" "$peers_dir" review-log.jsonl > "$review_log_union" 2>/dev/null \
   || : > "$review_log_union"
+# Both pipelines' logs, concatenated on disk once and reused by every consumer
+# below that needs the union rather than `log.jsonl` alone (`node_time_state_json`,
+# `stage_budget_json`) — streamed file-to-file through `cat`, never assembled as
+# a bash string the way `$ALL_EVENTS` used to be (agent-ops#1620). The explicit
+# `printf '\n'` guards the join itself: `cat` alone would run `events_jsonl`'s
+# last line straight into `review_log_union`'s first if the former did not
+# already end in a newline, silently merging two records into one malformed line.
+review_events_union="$work_tmp/review-events-union.jsonl"
+{ cat "$events_jsonl"; printf '\n'; cat "$review_log_union"; } \
+  > "$review_events_union" 2>/dev/null || : > "$review_events_union"
 # Percentiles of percentiles are not percentiles (docs/METERING-SCHEMA.md,
 # "gaps"): each `stage-end`'s own p50/p95/p99 is nearest-rank over *that run's*
 # sample alone, and the raw samples are not retained, so this cannot re-derive
@@ -2168,14 +2178,13 @@ fleet_logs "$state_dir" "$peers_dir" review-log.jsonl > "$review_log_union" 2>/d
 # as a silent run.
 stage_gaps_file="$work_tmp/stage-gaps.json"
 # `review_log_union` is a peer read straight off `fleet_logs`, unlike
-# `$ALL_EVENTS` (already sanitised by `read_events`): a NUL-holed line a
-# peer's `fleet_repair_log` hasn't reached yet still reaches this slurp
+# `$events_jsonl` (already sanitised by `read_events`): a NUL-holed line a
+# peer's `fleet_repair_log` hasn't reached yet still reaches `$review_events_union`
 # raw, and one malformed line aborts `jq -s` outright (agent-ops#794) —
-# taking the already-clean `$ALL_EVENTS` half down with it. Sanitised here
-# with `read_events`'s own idiom before the slurp, same as every other
-# consumer of a fleet log union.
-{ printf '%s\n' "$ALL_EVENTS"; cat "$review_log_union"; } \
-  | jq -c -R 'fromjson? // empty' | jq -sc '
+# taking the already-clean half down with it. Sanitised here with
+# `read_events`'s own idiom before the slurp, same as every other consumer of
+# a fleet log union.
+jq -c -R 'fromjson? // empty' "$review_events_union" | jq -sc '
   def pct_of($arr; $q):
     ($arr | sort) as $s | ($s | length) as $n
     | if $n == 0 then null
@@ -2218,7 +2227,7 @@ counts_merged="$(jq -c --slurpfile v "$stage_gaps_file" \
 # standing — `item-void` clears nothing — so listing the raw blocked set here
 # put items in *both* tables, in the one panel whose whole purpose is to keep
 # the two apart, and left them there for as long as the log remembered them.
-blocked_json="$(printf '%s\n' "$ALL_EVENTS" | open_blocked_items - | jq -c \
+blocked_json="$(open_blocked_items "$events_jsonl" | jq -c \
   'map({repo: (.repo // ""), item: .item, ts: .ts, detail: (.detail // ""), stage: (.stage // ""), kind: (.kind // "")})' 2>/dev/null)"
 [[ -z "$blocked_json" ]] && blocked_json='[]'
 
@@ -2230,12 +2239,19 @@ blocked_json="$(printf '%s\n' "$ALL_EVENTS" | open_blocked_items - | jq -c \
 # move. Only marks newer than the block count, so a re-blocked item does not
 # inherit the resolved escalation of an older one.
 #
-# The rows arrive on stdin ahead of the events, never as an `--argjson`
-# (requirement 4g): the blocked extract grows with the fleet's history, and this
-# guard would swallow an `execve` past MAX_ARG_STRLEN as an empty enrichment —
-# every escalation and Enabler verdict silently dropped from a panel that still
-# rendered. `input` takes the rows, `inputs` the event stream behind them; the
-# order is the order the here-string prints them in.
+# The rows arrive as a file argument ahead of the events, never as an
+# `--argjson` (requirement 4g): the blocked extract grows with the fleet's
+# history, and this guard would swallow an `execve` past MAX_ARG_STRLEN as an
+# empty enrichment — every escalation and Enabler verdict silently dropped
+# from a panel that still rendered. `input` takes the rows, `inputs` the
+# event stream behind them; the order is the order the two files are named
+# in. `blocked_json` itself is small — a filtered, already-deduplicated
+# extract, never the whole log — so writing it to a temp file ahead of
+# `$events_jsonl` costs nothing that the here-string this replaced did not
+# already cost, and stops the events half from ever passing through bash
+# (agent-ops#1620).
+blocked_rows_file="$work_tmp/blocked-rows.json"
+printf '%s\n' "$blocked_json" > "$blocked_rows_file"
 # shellcheck disable=SC2016  # jq's $rows/$events/$r/$esc/$exam, not the shell's.
 blocked_json="$(jq -nc '
   input as $rows
@@ -2252,10 +2268,10 @@ blocked_json="$(jq -nc '
                  escalation_url: ($esc.issue_url // "")} end)
         + (if $exam == null then {}
            else {enabler_outcome: ($exam.outcome // ""), enabler_ts: ($exam.ts // "")} end) ]' \
-  <<<"$blocked_json"$'\n'"$ALL_EVENTS" 2>/dev/null || true)"
+  "$blocked_rows_file" "$events_jsonl" 2>/dev/null || true)"
 [[ -z "$blocked_json" ]] && blocked_json='[]'
 
-void_json="$(printf '%s\n' "$ALL_EVENTS" | void_items - | jq -c \
+void_json="$(void_items "$events_jsonl" | jq -c \
   'map({repo: (.repo // ""), item: .item, ts: .ts, detail: (.detail // ""), stage: (.stage // ""), evidence: (.evidence // "")})' 2>/dev/null)"
 [[ -z "$void_json" ]] && void_json='[]'
 
@@ -3231,7 +3247,7 @@ jq -c '(.merge_budget_per_day // 8) as $top
   || printf '{}' > "$work_tmp/landing-config.json"
 jq -e 'type == "object"' "$work_tmp/landing-config.json" >/dev/null 2>&1 \
   || printf '{}' > "$work_tmp/landing-config.json"
-landings_json="$(printf '%s\n' "$ALL_EVENTS" | jq -c -s \
+landings_json="$(jq -c -s \
   --arg now "$now_iso" \
   --argjson hours "${LANDING_DIGEST_WINDOW_HOURS:-24}" \
   --slurpfile ghf "$work_tmp/landing-github.json" \
@@ -3414,7 +3430,7 @@ landings_json="$(printf '%s\n' "$ALL_EVENTS" | jq -c -s \
               status: $status, reason: $reason, oldest_waiting: $backlog,
               as_of: (if $lb and ($status == "held" or $status == "frozen")
                       then ($lb.ts // null) else null end) } ] )
-  }' 2>/dev/null)"
+  }' "$events_jsonl" 2>/dev/null)"
 if ! jq -e 'type == "object"' <<<"$landings_json" >/dev/null 2>&1; then
   # Same fail-visible-not-fail-silent rule the rest of this script follows: an
   # empty object renders as "nothing landed", which is a claim, so degrade to
@@ -3438,7 +3454,7 @@ fi
 # file (no `issue_number` at all) falls back to the repo+item+ts ordering
 # every other join in this file uses when there is nothing more specific to
 # key on.
-decisions_json="$(printf '%s\n' "$ALL_EVENTS" | jq -c -s \
+decisions_json="$(jq -c -s \
   --arg now "$now_iso" --argjson days "${DECISIONS_DIGEST_WINDOW_DAYS:-7}" '
   ($now | fromdateiso8601) as $now_s
   | ($now_s - ($days * 86400)) as $from_s
@@ -3467,7 +3483,7 @@ decisions_json="$(printf '%s\n' "$ALL_EVENTS" | jq -c -s \
             act_after: ($d.act_after // ""),
             pending_act: $p,
             vetoed: $v } ]
-    }' 2>/dev/null)"
+    }' "$events_jsonl" 2>/dev/null)"
 if ! jq -e 'type == "object"' <<<"$decisions_json" >/dev/null 2>&1; then
   decisions_json="$(jq -nc --arg now "$now_iso" \
     '{window_days: null, generated_at: $now, decisions: null}')"
@@ -3481,7 +3497,7 @@ fi
 # union, the same `classifier-escape`/`landing-audit` events already joined
 # into `landings_json.armed` above by `audit_for`, so the two can never
 # disagree about which pull requests carry which outcome.
-escape_audits_json="$(printf '%s\n' "$ALL_EVENTS" | jq -c -s '
+escape_audits_json="$(jq -c -s '
   ([ .[] | select(.event == "classifier-escape") | . + {outcome: "escape"} ]
     + [ .[] | select(.event == "landing-audit") ]) as $all
   | ($all | group_by(.pr_url // "") | map(sort_by(.ts // "") | last)) as $latest
@@ -3495,7 +3511,7 @@ escape_audits_json="$(printf '%s\n' "$ALL_EVENTS" | jq -c -s '
       unverifiable_list: ([ $latest[] | select(.outcome == "unverifiable")
           | {ts: (.ts // ""), repo: (.repo // ""), pr_url: (.pr_url // ""),
              reason: (.reason // "")} ] | sort_by(.ts) | reverse) }
-' 2>/dev/null)"
+' "$events_jsonl" 2>/dev/null)"
 if ! jq -e 'type == "object"' <<<"$escape_audits_json" >/dev/null 2>&1; then
   # Same explicit-failure discipline as landings_json's own degrade path:
   # a payload this could not assemble must never render as "zero escapes".
@@ -3518,7 +3534,7 @@ counts_with_escapes="$(jq -c --argjson e "$escape_audits_json" '. + {escape_audi
 # — a caught defect's rung is a permanent fact about it, on the same argument
 # `escape_audits_json`'s own header makes for never letting an escape age out
 # of a 24 h window.
-rework_json="$(printf '%s\n' "$ALL_EVENTS" | rework_panel_build - "" 2>/dev/null)"
+rework_json="$(rework_panel_build "$events_jsonl" "" 2>/dev/null)"
 if ! jq -e 'type == "object" and has("escape_ladder")' <<<"$rework_json" >/dev/null 2>&1; then
   # Same explicit-failure discipline as escape_audits_json's own degrade path:
   # a payload this could not assemble must never render as "no rework this
@@ -3535,7 +3551,7 @@ fi
 # cannot disagree with that account's own arithmetic. Both pipelines' logs
 # are unioned into the fold, the same reason `scripts/node-time-state.sh`
 # does: either can log a `node-state` transition, and folding only
-# `log.jsonl` (already in `$ALL_EVENTS`) would read a node running
+# `log.jsonl` (already in `$events_jsonl`) would read a node running
 # `review-cycle.sh` as `down`.
 #
 # FULL-gated, and it has to be: this panel needs the *second* fleet-wide log
@@ -3554,8 +3570,7 @@ fi
 # terms `pager_json='null'` above states for itself.
 constraint_json='null'
 if (( FULL )); then
-  node_time_state_json="$( { printf '%s\n' "$ALL_EVENTS"; cat "$review_log_union"; } \
-    | node_time_state_fold - "" "" 2>/dev/null)"
+  node_time_state_json="$(node_time_state_fold "$review_events_union" "" "" 2>/dev/null)"
   [[ -n "$node_time_state_json" ]] || node_time_state_json='{}'
   constraint_json="$(constraint_classify "$node_time_state_json" \
     "$(cfg '.constraint_min_share')" "$(cfg '.constraint_min_sample_seconds')" \
@@ -3607,7 +3622,7 @@ fi
 #     empty state — no `github-budget` event anywhere in the log union — kept
 #     distinct from the degrade-to-null path below, which means the roll-up
 #     itself could not be assembled.
-github_budget_json="$(printf '%s\n' "$ALL_EVENTS" | jq -c -s \
+github_budget_json="$(jq -c -s \
   --arg now "$now_iso" \
   --argjson min_core "${github_budget_min_core:-0}" \
   --argjson min_graphql "${github_budget_min_graphql:-0}" \
@@ -3650,7 +3665,7 @@ github_budget_json="$(printf '%s\n' "$ALL_EVENTS" | jq -c -s \
         ($lat == null or (($lat.ts // "" | length) == 0)
          or (try ($lat.ts | fromdateiso8601) catch 0) < ($now_s - ($interval * 2 * 60))) end)
     }
-' 2>/dev/null)"
+' "$events_jsonl" 2>/dev/null)"
 if ! jq -e 'type == "object"' <<<"$github_budget_json" >/dev/null 2>&1; then
   # Same explicit-failure discipline as landings_json/escape_audits_json's own
   # degrade paths: a payload this could not assemble must never render as "no
@@ -3704,12 +3719,11 @@ if (( FULL )); then
 # `review_log_union`, unioned in alongside it exactly as `node_time_state_json`
 # above already does: `stage_budget_observations` (lib/stage-budget.sh) already
 # maps a `review-stage-end` event to actor `project-reviewer`, but that event
-# lives only in review-log.jsonl, never in `$ALL_EVENTS`, so leaving it out
+# lives only in review-log.jsonl, never in `$events_jsonl`, so leaving it out
 # means `project-reviewer` can never appear in `config.stage_backstops` below
 # (issue #1586).
 stage_budget_json="$(stage_budget_table \
-  "$( { printf '%s\n' "$ALL_EVENTS"; cat "$review_log_union"; } \
-      | stage_budget_observations 2>/dev/null || printf '[]')" \
+  "$(stage_budget_observations < "$review_events_union" 2>/dev/null || printf '[]')" \
   "$(stage_budget_settings "$(cat "$CONFIG_FILE" 2>/dev/null || printf '{}')")" 2>/dev/null \
   || printf '{"cells":{},"actors":{}}')"
 lock_stale_derived_hours="$(jq -nr --argjson sec \
