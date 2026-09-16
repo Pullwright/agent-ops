@@ -2319,14 +2319,18 @@ reader could otherwise mistake a per-run figure for a fleet-wide percentile.
 
 Each row's own **Decision** cell is the lever the stall profile informs (D21):
 whether the stage-cap settings the watchdog enforces (implementation spec
-requirement 4e) should move, and which way. Below `TOKEN_MIN_SAMPLE` runs it
-reads "insufficient evidence"; otherwise `worst_run_max` is compared against
-`stageBackstopMin` — the same figure the fleet strip's own stage-overrun badge
-already holds a live stage against, so this panel cannot recommend a number
-the rest of the page would disagree with. At or above `STALL_NEAR_BACKSTOP_
-RATIO` (0.9) of that backstop it names the lever directly — raise the
-backstop before a healthy run is killed; below it, "no action indicated." A
-row `stageBackstopMin` resolves to no positive number — no per-row announced
+requirement 4e) should move, and which way. `worst_run_max` is compared
+against `stageBackstopMin` — the same figure the fleet strip's own
+stage-overrun badge already holds a live stage against, so this panel cannot
+recommend a number the rest of the page would disagree with — **before** the
+sample-size check, and independently of it: `worst_run_max` is a max of
+maxima, not a rate, so it is exact at any sample size, including a single
+run. At or above `STALL_NEAR_BACKSTOP_RATIO` (0.9) of that backstop the cell
+names the lever directly — raise the backstop before a healthy run is
+killed — no matter how few runs the row carries. Only below that ratio does
+the sample size matter: under `TOKEN_MIN_SAMPLE` runs the cell reads
+"insufficient evidence"; at or above it, "no action indicated." A row whose
+`stageBackstopMin` resolves to no positive number — no per-row announced
 value, no entry for that stage in the published `config.stage_backstops`
 (see the fast-tick section's note on stage budgets and issue #1586, so that
 `config.stage_backstops` can carry a `project-reviewer` entry; this now covers
@@ -3004,14 +3008,17 @@ number's twins elsewhere on the page.
   clearing `TOKEN_MIN_SAMPLE` where a `cycle`-only dedup would have left it
   short — while the by-stage rows for those same actors are unaffected.
   `stall-profile.json` holds `counts.stage_gaps` rows
-  exercising all four of that panel's own Decision branches: a stage whose
+  exercising all five of that panel's own Decision branches: a stage whose
   `worst_run_max` is at `STALL_NEAR_BACKSTOP_RATIO` of its known backstop
   (names the lever and the direction — raise it), one comfortably inside it
-  ("no action indicated"), one below the minimum sample ("insufficient
-  evidence"), and one this page holds no backstop for at all ("no cap on
-  record for this stage"); the panel's own caption is asserted to state its
-  window separately from the cost charts' and to label its across-run figures
-  as such rather than as pooled percentiles.
+  ("no action indicated"), one below the minimum sample and below that ratio
+  ("insufficient evidence"), one below the minimum sample but *at or above*
+  that ratio (still names the lever and the direction — the near-backstop
+  read does not wait on a sample, since `worst_run_max` is exact at any size),
+  and one this page holds no backstop for at all ("no cap on record for this
+  stage"); the panel's own caption is asserted to state its window separately
+  from the cost charts' and to label its across-run figures as such rather
+  than as pooled percentiles.
 - `test/dashboard-refresh.test.sh` drives the SPA refresh tick itself (issue
   #1288), under a second, narrower stub (`test/dashboard-refresh-harness.js`)
   that fires the page's own `#refreshbtn` click listener — the one external

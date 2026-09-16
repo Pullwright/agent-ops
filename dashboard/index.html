@@ -3306,14 +3306,21 @@
   // this panel cannot recommend a number the rest of the page disagrees with.
   var STALL_NEAR_BACKSTOP_RATIO = 0.9;
   function stallVerdict(row) {
-    if (row.runs < TOKEN_MIN_SAMPLE) return "insufficient evidence (" + row.runs + " runs)";
+    // `worst_run_max` is a max of maxima, not a rate — exact at any sample
+    // size — so the near-backstop read is checked before the min-sample gate,
+    // which exists only to keep noisy rates (cache ratios, medians) from
+    // being read as evidence at low `runs`.
     var backstopMin = stageBackstopMin(row.stage, null);
+    if (backstopMin > 0 && row.worst_run_max != null) {
+      var nearRatio = row.worst_run_max / (backstopMin * 60);
+      if (nearRatio >= STALL_NEAR_BACKSTOP_RATIO) {
+        return "worst silence reached " + pct(nearRatio) + " of the " + backstopMin
+          + "m backstop — consider raising it before a healthy run is killed";
+      }
+    }
+    if (row.runs < TOKEN_MIN_SAMPLE) return "insufficient evidence (" + row.runs + " runs)";
     if (!(backstopMin > 0) || row.worst_run_max == null) return "no cap on record for this stage — no action indicated";
     var ratio = row.worst_run_max / (backstopMin * 60);
-    if (ratio >= STALL_NEAR_BACKSTOP_RATIO) {
-      return "worst silence reached " + pct(ratio) + " of the " + backstopMin
-        + "m backstop — consider raising it before a healthy run is killed";
-    }
     return "worst silence " + pct(ratio) + " of the " + backstopMin + "m backstop — no action indicated";
   }
   function stallRow(row) {

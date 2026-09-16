@@ -25,7 +25,8 @@
         {"stage": "coordinator", "runs": 6, "median_of_run_p50": 300, "worst_run_p95": 900, "worst_run_max": 1080},
         {"stage": "implementer", "runs": 6, "median_of_run_p50": 10, "worst_run_p95": 50, "worst_run_max": 100},
         {"stage": "refiner", "runs": 2, "median_of_run_p50": 5, "worst_run_p95": 8, "worst_run_max": 10},
-        {"stage": "project-reviewer", "runs": 5, "median_of_run_p50": 60, "worst_run_p95": 200, "worst_run_max": 300}
+        {"stage": "project-reviewer", "runs": 5, "median_of_run_p50": 60, "worst_run_p95": 200, "worst_run_max": 300},
+        {"stage": "reviewer", "runs": 1, "median_of_run_p50": 4000, "worst_run_p95": 5130, "worst_run_max": 5130}
       ]
     }
   },
