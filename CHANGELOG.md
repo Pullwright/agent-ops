@@ -198,6 +198,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Removed
 
+- **The one-time `.dashboard-td.json` cleanup shim** (issue #1610, follow-up
+  to #1555/#1585). PR #1585 added an unconditional `rm -f` for the retired
+  tech-debt metadata cache #881 orphaned, safe to run forever but only
+  useful until every node in the fleet had run the post-#881 Publisher at
+  least once; that has now happened, so the `rm -f` line, its comment, the
+  matching sentence in `docs/DASHBOARD-SPEC.md`'s #881 design-decision
+  bullet, and the orphan-cleanup test in `test/publish-dashboard.test.sh`
+  are gone.
+
 - **The tech-debt register machinery** (issue #882), now that every register
   in the fleet is frozen (#880, Poetic-Poems/poetic#199,
   Poetic-Poems/poetic-fiddle#349) and tech debt lives entirely as
