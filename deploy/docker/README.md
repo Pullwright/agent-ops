@@ -146,6 +146,22 @@ beside the live file — `check-node-compose.sh` flags those too, and each one
 carries whatever tokens were live when it was made, undead until someone
 finds and deletes it.
 
+### 2a. The `.env` interpolation trap
+
+When you run `docker compose up -d`, the compose file reads `.env` only through
+interpolation — `compose.yaml` has no `env_file:` directive. If you have a
+credential (e.g. `GH_TOKEN`, `VERCEL_TOKEN`) **exported in your shell**, that
+exported value silently overrides the `.env` value you just edited. This is a
+common trap during credential rotation: you export the outgoing token to check
+it against the API before rotating, then edit `.env` to the new token and run
+`docker compose up -d` — the container gets the old, still-exported value
+instead, silently ignoring the new one you just wrote to `.env`.
+
+**Run `docker compose up -d` from a shell with no sensitive credentials
+exported, or explicitly `unset` them first** (e.g. `unset GH_TOKEN` before the
+compose command, or `docker compose up -d` from a fresh shell). This matters
+for any per-node credential rotation, not just initial setup.
+
 ### 3. Start it
 
 ```bash
