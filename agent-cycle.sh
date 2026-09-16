@@ -2637,8 +2637,24 @@ $(jq . <<<"$coord_repo_input")
        | map(.value + {_repo_order: $idx, _rank: .key})' \
       <<<"$coord_repo_work_order_json" 2>/dev/null)"
     [[ -n "$coord_repo_cands" ]] || coord_repo_cands='[]'
-    coord_all_candidates_json="$(jq -nc 'input as $a | input as $b | $a + $b' \
-      <<<"$coord_all_candidates_json"$'\n'"$coord_repo_cands")"
+    if [[ "$(jq 'length' <<<"$coord_repo_cands" 2>/dev/null || echo 0)" == "0" ]]; then
+      # `"selected": true` with a `candidates` array present but empty is a
+      # contract violation the engagement itself should never produce — the
+      # grace path above always contributes exactly one candidate, so this
+      # can only be an explicit empty array. Trusting the `true` verdict
+      # anyway would leave this repository out of `coord_false_repo_slugs_json`
+      # while contributing nothing to the merge: requirement 3v's
+      # corroboration is scoped to that set, so this repository's own
+      # eligible items would be checked by nothing, and a fleet-wide
+      # `none-selected` could arm the no-op fingerprint (requirement 3b)
+      # against a backlog no verdict actually accounted for. Fold it into the
+      # false set instead, exactly as an honest `"selected": false` is.
+      coord_false_repo_slugs_json="$(jq -c --arg r "$coord_repo_slug" '. + [$r]' <<<"$coord_false_repo_slugs_json")"
+      coord_false_reasons+=("$coord_repo_slug: reported selected:true but returned no candidates")
+    else
+      coord_all_candidates_json="$(jq -nc 'input as $a | input as $b | $a + $b' \
+        <<<"$coord_all_candidates_json"$'\n'"$coord_repo_cands")"
+    fi
   else
     coord_false_repo_slugs_json="$(jq -c --arg r "$coord_repo_slug" '. + [$r]' <<<"$coord_false_repo_slugs_json")"
     coord_false_reasons+=("$coord_repo_slug: $(jq -r '.reason // "no reason given"' <<<"$coord_repo_work_order_json")")

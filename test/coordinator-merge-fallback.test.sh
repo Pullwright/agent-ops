@@ -763,6 +763,50 @@ else
     "$(jq -r '[.[]._rank] | join(" ")' <<<"$coord_repo_cands")"
 fi
 
+# --- A `"selected": true` engagement that contributes zero candidates is
+#     folded into the false-repos set, not silently accepted ---------------
+# Without this guard, an engagement that says `"selected": true` but returns
+# an explicit empty `candidates` array contributes nothing to the merge and
+# is never added to `coord_false_repo_slugs_json` either — invisible to
+# requirement 3v's corroboration, and able to arm requirement 3b's no-op
+# fingerprint against a backlog this repository's own answer never actually
+# accounted for (review round 2 of PR #1560, issue #587).
+zerocands_src="$(awk '
+  /^    if \[\[ "\$\(jq '"'"'length'"'"'/ { on = 1 }
+  on                                     { print }
+  on && /^    fi$/                       { exit }
+' "$SCRIPT_DIR/agent-cycle.sh")"
+if [[ -z "$zerocands_src" ]]; then
+  printf 'FAIL - could not extract the zero-candidates guard from agent-cycle.sh\n'
+  failures=$(( failures + 1 ))
+else
+  # shellcheck disable=SC2034  # coord_repo_slug: read by the lifted block eval'd on the next line.
+  coord_repo_slug="acme/widgets"
+  coord_false_repo_slugs_json='[]'
+  coord_false_reasons=()
+  coord_all_candidates_json='[]'
+  coord_repo_cands='[]'
+  eval "$zerocands_src"
+  assert_eq "an explicit empty candidates array is folded into the false-repos set" \
+    '["acme/widgets"]' "$coord_false_repo_slugs_json"
+  assert_eq "…with a reason naming the contract violation" "1" \
+    "$( [[ "${coord_false_reasons[0]}" == *"selected:true but returned no candidates"* ]] && echo 1 || echo 0 )"
+  assert_eq "…and contributes nothing to the merged candidates" \
+    "[]" "$coord_all_candidates_json"
+
+  # shellcheck disable=SC2034  # coord_repo_slug: read by the lifted block eval'd on the next line.
+  coord_repo_slug="acme/widgets"
+  coord_false_repo_slugs_json='[]'
+  coord_false_reasons=()
+  coord_all_candidates_json='[]'
+  coord_repo_cands='[{"repo":"acme/widgets","item":"A"}]'
+  eval "$zerocands_src"
+  assert_eq "a non-empty candidates list is not folded into the false-repos set" \
+    "[]" "$coord_false_repo_slugs_json"
+  assert_eq "…and its own candidate is carried into the merge as before" \
+    "A" "$(jq -r '.[0].item' <<<"$coord_all_candidates_json")"
+fi
+
 # --- Every engagement failing ends the cycle before the stand-down ---------
 # The pre-split single attempt exited here; so must this, since a cycle that
 # asked nobody has nothing to stand down over and would otherwise reach the

@@ -9501,6 +9501,24 @@ implements.
       that could not ask every repository has not established it, and must
       leave the short-circuit unarmed for the same reason requirement 3t's
       rejected verdict does. The reason text names the shortfall too.
+    - **A `"selected": true` engagement that contributes zero candidates is
+      treated as an answered-`false` repository, not as a selection.** This
+      is a distinct case from the two above — the engagement launched,
+      parsed, and answered — but a `true` verdict whose `candidates` array is
+      present and empty is a contract violation the engagement itself should
+      never produce (requirement 20's single-selection grace, for the
+      no-`candidates`-array shape, always contributes exactly one candidate,
+      so this can only be an explicit empty array). Trusting the verdict at
+      face value would leave this repository out of
+      `coord_false_repo_slugs_json` while it contributed nothing to the
+      merge: requirement 3v's corroboration is scoped to that set, so this
+      repository's own eligible items would be checked by nothing, and — if
+      every other repository was likewise empty or genuinely had nothing — a
+      fleet-wide `none-selected` could arm the no-op fingerprint against a
+      backlog this repository's own answer never actually accounted for. The
+      Script folds it into `coord_false_repo_slugs_json` instead, with a
+      reason naming the contract violation, exactly as an honest
+      `"selected": false` is.
 15b. **Review feedback comes third, across repositories.** Like security and
     urgent issues, this outranks the plain source walk: any selectable
     `review_feedback` candidate in any repository is taken before any work
