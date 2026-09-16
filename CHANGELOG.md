@@ -73,6 +73,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reads the same `review_log_union` the constraint panel already unions in,
   at no extra fetch cost.
 
+- **The orphaned `.dashboard-td.json` cache file is cleaned up on any node
+  that ran the pre-#881 Publisher** (issue #1555). PR #1553 (#881) removed
+  everything that read or wrote this tech-debt metadata cache but never
+  deleted the file itself, leaving it a permanent orphan in `state_dir` —
+  and, since `scripts/state-sync.sh`'s exclusion list never covered it, along
+  for every state sync too. `scripts/publish-dashboard.sh` now `rm -f`s it
+  once alongside the other cache declarations; safe to run indefinitely,
+  since `rm -f` on a missing file is a silent no-op.
+
 - **`serve-dashboard.sh`'s resource-sampling loop dies with the server it
   samples for** (requirement 55, follow-up to #1564). The loop forked before
   the `exec` slept its whole interval blind, so a server killed by anything

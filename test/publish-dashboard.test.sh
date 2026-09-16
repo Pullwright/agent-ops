@@ -2176,6 +2176,21 @@ run_publish "$w" NODE_NAME=nodeW-self
 assert_eq "a local-only tick carries the ledger forward" "2" \
   "$(td_of "$(data_of "$w")" ' | length')"
 
+# --- The orphaned .dashboard-td.json cache is cleaned up (issue #1555) ------------
+# #881 above removed everything that read or wrote this file, but never deleted
+# it, so a node that ran the pre-#881 Publisher carries it forever unless
+# something removes it. A one-time `rm -f` at the site that used to own it does
+# that on the very first post-upgrade tick.
+orphan="$(new_home nodeOrphan)"
+orphan_td="$orphan/.local/state/poetic-agents/.dashboard-td.json"
+printf '{"stale":true}' > "$orphan_td"
+run_publish "$orphan" NODE_NAME=nodeOrphan-self
+assert_eq "a leftover cache from before #881 is deleted" "0" \
+  "$(test -e "$orphan_td" && echo 1 || echo 0)"
+run_publish "$orphan" NODE_NAME=nodeOrphan-self
+assert_eq "a second tick with nothing left to clean up still succeeds" "0" \
+  "$(test -e "$orphan_td" && echo 1 || echo 0)"
+
 # --- The tech-debt ledger's true size, past the panel's own top-40 cap -----------
 # The panel shows at most 40 rows; a repo past that has to say so, via the
 # Search API's own `.total_count` returned in the same call as the rows —
