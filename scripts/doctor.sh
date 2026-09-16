@@ -335,13 +335,17 @@ else
   ok "every repo listing implementation-plan names its plan document"
 fi
 
-# config.schema.json's uniqueItems on repos only rejects byte-identical whole
-# entries, so two entries sharing a slug but differing elsewhere pass it —
+# config.schema.json states no uniqueness constraint on repos at all, and a
+# uniqueItems there would reject only byte-identical whole entries, so two
+# entries sharing a slug but differing elsewhere pass the schema gate —
 # and the per-repo resolvers then disagree silently about which entry governs
-# (lib/config-schema.sh's config_duplicate_repos_slugs, issue #1570).
+# (lib/config-schema.sh's config_duplicate_repos_slugs, issue #1570), which is
+# why agent-cycle.sh refuses to start on one (issue #1576) — named here so the
+# operator reads the same consequence from doctor that the cycle will enforce,
+# the way the two guards either side of this one already do.
 duplicate_repos_slugs="$(config_duplicate_repos_slugs "$(cfg_json '.repos // []')")"
 if [[ -n "$duplicate_repos_slugs" ]]; then
-  fail "repos lists [$duplicate_repos_slugs] more than once — the per-repo resolvers (lib/prompt-overrides.sh, lib/escalation-autonomy.sh, lib/preview-config.sh, agent-cycle.sh's merge_autonomy lookup) disagree about which entry governs a duplicated slug"
+  fail "repos lists [$duplicate_repos_slugs] more than once — agent-cycle.sh refuses to start, since the per-repo resolvers (lib/prompt-overrides.sh, lib/escalation-autonomy.sh, lib/preview-config.sh, agent-cycle.sh's merge_autonomy lookup) cannot tell which entry governs a duplicated slug"
 else
   ok "every repos entry names a distinct repository"
 fi

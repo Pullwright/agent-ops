@@ -1191,11 +1191,12 @@ assert_doctor "doctor fails duplicate slugs in project_review.repos, as review-c
   '.project_review.repos[1].slug = .project_review.repos[0].slug' 1 \
   "project_review.repos lists [$BASE_REPO_1] more than once"
 # issue #1570: the top-level repos[] array has the same duplicate-slug gap
-# project_review.repos already had (requirement R1b) — config.schema.json's
-# uniqueItems only rejects byte-identical whole entries, and nothing before
-# this check caught two repos[] entries sharing a slug while differing
-# elsewhere. Doctor-only: unlike config_duplicate_project_review_slugs,
-# nothing yet reads this as a reason for agent-cycle.sh to refuse at startup.
+# project_review.repos already had (requirement R1b) — config.schema.json
+# states no uniqueness constraint on repos at all, and a uniqueItems there
+# would reject only byte-identical whole entries, so nothing before this
+# check caught two repos[] entries sharing a slug while differing elsewhere. Issue #1576 (below) makes agent-cycle.sh refuse at startup on
+# the same condition too, the same as config_duplicate_project_review_slugs
+# already does for project_review.repos.
 assert_doctor "doctor fails duplicate slugs in repos[]" \
   '.repos[1].slug = .repos[0].slug' 1 \
   "repos lists [$BASE_REPO_1] more than once"
@@ -1631,6 +1632,16 @@ run_cycle_guard "$(jq -c '.enabler_assignee = ""' "$BASE_CONFIG")"
 assert_eq "an unassigned enabled Enabler still exits 1, past the schema gate" "1" "$guard_rc"
 assert_contains "the enabler_assignee guard still fires, shared with doctor.sh" \
   "enabler_model is set but enabler_assignee is not configured" "$guard_out"
+assert_not_contains "a config the schema accepts is not reported as a schema failure" \
+  "does not match config.schema.json" "$guard_out"
+
+# agent-cycle.sh's own cross-key guard: duplicate repos[] slugs (issue #1576),
+# shared with doctor.sh's own `fail` above through the same
+# lib/config-schema.sh function.
+run_cycle_guard "$(jq -c '.repos[1].slug = .repos[0].slug' "$BASE_CONFIG")"
+assert_eq "duplicate repos[] slugs exit 1, past the schema gate" "1" "$guard_rc"
+assert_contains "the duplicate-slug guard names the repeated slug" \
+  "repos lists [$BASE_REPO_1] more than once" "$guard_out"
 assert_not_contains "a config the schema accepts is not reported as a schema failure" \
   "does not match config.schema.json" "$guard_out"
 

@@ -1671,7 +1671,19 @@ implements.
    `config_missing_plan_path_repos`, `config_model_tier_floor_violations` and
    `config_required_refinement_sources_without_refiner` are the one
    implementation each script calls, so the Script's refusal and `doctor.sh`'s
-   `fail` can never drift on what counts as a fault.
+   `fail` can never drift on what counts as a fault. A fifth guard,
+   `config_duplicate_repos_slugs`, stays in code for the same reason one step
+   out: it holds between two *entries* of `repos[]` rather than between two
+   keys of one object, which no array keyword the schema has can state
+   either — `uniqueItems` rejects only byte-identical whole entries, and
+   `repos` carries none in any case — so two entries sharing a `slug` while
+   differing elsewhere leave the per-repo resolvers with no way to say which
+   one's overrides apply. `agent-cycle.sh` refuses to start on it,
+   naming the duplicated slug(s), and `scripts/doctor.sh` reports the same
+   condition as a `fail` through that one implementation, so those two cannot
+   drift either (component 14 below; `config_duplicate_project_review_slugs`
+   is the same rule for `project_review.repos`, shared with `review-cycle.sh`
+   instead — `docs/REVIEW-PIPELINE-SPEC.md` requirement R1b).
 
 1c. **The model-tier floor (agent-ops#822).** Nothing before this requirement
     stopped the cheapest model in the fleet from authoring a work order
@@ -19912,13 +19924,18 @@ What exists, and the requirements each part answers to:
     `agent-cycle.sh`'s. A fourth, `config_duplicate_repos_slugs`, holds the
     same way between two entries of the top-level `repos[]` array: two
     entries sharing a `slug` but differing elsewhere pass
-    `config.schema.json`'s `uniqueItems` (which only rejects byte-identical
-    whole entries), and then the per-repo resolvers (`lib/prompt-overrides.sh`'s
+    `config.schema.json`, which states no uniqueness constraint on `repos` at
+    all — and a `uniqueItems` there would reject only byte-identical whole
+    entries — and then the per-repo resolvers (`lib/prompt-overrides.sh`'s
     `prompt_overrides_json_for_repo`, `lib/escalation-autonomy.sh`,
     `lib/preview-config.sh`, `agent-cycle.sh`'s own `merge_autonomy` lookup)
-    disagree silently about which entry governs (issue #1570). Unlike the
-    other three, it is doctor-only: nothing yet reads a `repos[]` duplicate as
-    a reason for `agent-cycle.sh` to refuse at startup. `doctor.sh` is the
+    disagree silently about which entry governs (issue #1570). `agent-cycle.sh`
+    refuses to start on a `repos[]` duplicate the same way it already does for
+    the first two — `config_enabler_assignee_ok` and
+    `config_missing_plan_path_repos` — rather than `review-cycle.sh`'s, since
+    `repos[]` is the implementation pipeline's own list (issue #1576), and
+    `doctor.sh` names that same refusal in its own `fail` so the operator
+    reads the consequence the cycle will enforce. `doctor.sh` is the
     operator's command: it runs the schema check, then
     `config_documented_value_mismatches` — every leaf whose
     `x-docs.value` differs from its own schema `default` (documenting Poetic's
@@ -19933,8 +19950,7 @@ What exists, and the requirements each part answers to:
     top-level `merge_autonomy` key, and each repository's own override) is a
     `fail` where the level is above `human` and `approver_app_id` is empty,
     `ok` naming the level otherwise; doctor-only, since nothing yet consumes
-    the pairing at cycle start the way the three shared cross-key rules do —
-    `config_duplicate_repos_slugs` above is doctor-only for the same reason;
+    the pairing at cycle start the way the four shared cross-key rules do;
     and the environment half of the same identity, reconciled against the
     config's (requirement 14b): a set `PULLWRIGHT_APPROVER_APP_ID` differing
     from a set `approver_app_id` is a `fail` — the token wrapper mints
@@ -25308,7 +25324,9 @@ oblige anyone to edit a test.
     stub is ever reached; the retired `nice` and `prompt_overrides` guards'
     own wording is asserted gone in favour of the schema's, and the
     surviving Enabler-assignee guard is asserted to still fire on a config
-    the schema itself accepts. Every case is a mutation of
+    the schema itself accepts — as is the duplicate-`repos[]`-slug refusal,
+    which exits 1 naming the repeated slug rather than reporting a schema
+    failure the schema itself does not find. Every case is a mutation of
     `test/fixtures/config-base.json` — a configuration the suite owns, which
     names no `merge_autonomy` or `approver_*` key at all, so a cross-key
     rule's negative case builds the state it claims to test instead of

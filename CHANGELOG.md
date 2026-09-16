@@ -97,14 +97,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the count.
 
 - **`scripts/doctor.sh` fails two `repos[]` entries sharing a `slug`**
-  (issue #1570). `config.schema.json`'s `uniqueItems` on `repos` only
-  rejects byte-identical whole entries, so two entries naming the same
+  (issue #1570). `config.schema.json` states no uniqueness constraint on
+  `repos` at all, and a `uniqueItems` there would reject only byte-identical
+  whole entries, so two entries naming the same
   repository but differing elsewhere passed silently — and the per-repo
   resolvers (`lib/prompt-overrides.sh`, `lib/escalation-autonomy.sh`,
   `lib/preview-config.sh`, `agent-cycle.sh`'s `merge_autonomy` lookup) then
   disagreed about which entry governs. `lib/config-schema.sh`'s new
   `config_duplicate_repos_slugs`, doctor-only, mirrors the existing
   `project_review.repos` duplicate-slug check for the top-level array.
+
+- **`agent-cycle.sh` refuses to start on a duplicate `repos[]` slug, the
+  same as `project_review.repos` already does** (issue #1576, follow-up to
+  #1570 above). Doctor could already report the condition; nothing yet
+  stopped a cycle from running on it, so `lib/prompt-overrides.sh`'s
+  `prompt_overrides_json_for_repo` — the one resolver of the group with no
+  `head -1`/`first` guard — could still emit a multi-line, unparseable
+  overrides string to its caller. `agent-cycle.sh` now calls the same
+  `config_duplicate_repos_slugs` doctor already used, refusing to start and
+  naming the duplicated slug(s), mirroring
+  `config_duplicate_project_review_slugs`'s own startup refusal in
+  `review-cycle.sh`. `scripts/doctor.sh`'s `fail` for the same condition
+  names that refusal too, so the operator reads the consequence the cycle
+  will enforce rather than only the silent disagreement it avoids.
 
 - **`state-sync.sh push` clears an orphaned `index.lock` and names a push
   that fails** (issue #1377). A `.git/index.lock` a dead git left in the

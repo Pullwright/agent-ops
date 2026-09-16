@@ -495,6 +495,26 @@ fi
 # below, with no `// literal` of its own to drift from the schema's.
 DEFAULTED_CONFIG="$(config_defaults "$CONFIG_FILE" "$SCHEMA_FILE")"
 
+# Requirement 1b's cross-key duplicate-slug guard for repos[] (issue #1576):
+# unlike project_review.repos (config_duplicate_project_review_slugs, shared
+# with review-cycle.sh's own startup refusal), nothing checked repos[] itself
+# for two entries naming the same slug. lib/prompt-overrides.sh's
+# prompt_overrides_json_for_repo has no head -1/first guard and would emit a
+# multi-line, unparseable overrides string on a duplicate; refusing here
+# means no resolver's behaviour under a duplicate slug ever depends on
+# whether it happens to guard itself the way lib/escalation-autonomy.sh's and
+# lib/landing.sh's already do. Checked here, right after config_defaults
+# resolves .repos and before anything reads it (the first read today is
+# all_repos_json below), since this is a configuration error independent of
+# whether this cycle happens to reach a .repos read; shared with
+# scripts/doctor.sh's own `fail` through the same config_duplicate_repos_slugs
+# (lib/config-schema.sh).
+duplicate_repos_slugs="$(config_duplicate_repos_slugs "$(cfg_json '.repos')")"
+if [[ -n "$duplicate_repos_slugs" ]]; then
+  echo "agent-cycle: repos lists [$duplicate_repos_slugs] more than once — refusing to start rather than guess which entry's overrides apply" >&2
+  exit 1
+fi
+
 state_dir="$(expand_home "$(cfg '.state_dir')")"
 workspace_root="$(expand_home "$(cfg '.workspace_root')")"
 # Exported, not merely a local, so every subprocess this cycle forks from
