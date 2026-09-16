@@ -1612,9 +1612,12 @@ engagement may return up to `candidates_max` of its own, and the Script
 merges every repository's list, re-ranks it by the six cross-repository
 tiers "Selection algorithm" describes, and caps the *merged* result to
 `candidates_max` before claiming anything — so a large fleet returning many
-repositories' full lists costs nothing extra here, and your own ranking
-within this repository is what the Script's merge relies on to break ties
-against another repository's candidates in the same tier. The Script then
+repositories' full lists costs nothing extra here. Your own ranking within
+this repository only orders your own candidates against each other when more
+than one of them lands in the same tier; a tie between two *different*
+repositories' candidates in the same tier is broken by repository walk order
+alone (see "Selection algorithm" below), never by either repository's own
+ranking. The Script then
 works down the merged list, claiming each candidate atomically against the
 other nodes and handing the first successful claim to the Implementer; the
 alternates cost nothing when the first claim succeeds, and save the whole

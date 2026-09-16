@@ -9572,18 +9572,29 @@ implements.
     lower issue bands and code-quality: two candidates from that tier, from
     two different repositories, are ordered by repository walk order alone,
     never by which of the two sources either one is.
-15a. **Security is always prioritised.** Beyond `security` being first in the
-    source order, any candidate that is security-related — a `security`
-    finding, a GitHub issue labelled `security`/`vulnerability`, a
-    tech-debt entry flagged as a security concern, or a `project-review`
-    recommendation whose text flags a security concern — outranks every
-    non-security candidate across repositories and sources, reconciled by
-    the Script (requirement 15z) exactly as the other five cross-repository
-    tiers are. If any selectable
-    security candidate exists anywhere, the merged ranking places one of those
-    before any non-security item, with the most severe first
-    (`critical` > `high` > `medium` > `low`). Repo ordering (requirement 3)
-    breaks ties among security candidates of equal severity.
+15a. **Security is always prioritised.** Within a single repository, a
+    candidate is security-related if it is a `security` finding, a GitHub
+    issue labelled `security`/`vulnerability`, a tech-debt entry flagged as
+    a security concern, or a `project-review` recommendation whose text
+    flags a security concern — and the repository's own engagement ranks any
+    such candidate ahead of every non-security item it returns, most severe
+    first where severity is known (the pre-fetched `findings` array arrives
+    already sorted that way). Only the first of those four kinds carries that
+    priority **across** repositories: the Script's own reconciliation
+    (requirement 15z) gives global tier 0 to a candidate only when
+    `source == "security"` (a Dependabot alert or a security-severity
+    code-scanning alert) — a security-labelled issue, a security-flagged
+    tech-debt entry, and a security-flagged project-review recommendation
+    remain security-related within their own repository's own ranking, but
+    carry no cross-repository tier of their own and are ordered, alongside
+    every other issue/tech-debt/project-review candidate, by requirement
+    15g's residual tier. Within global tier 0, the merge breaks a tie between
+    two different repositories' own `security` candidates by repository
+    walk order (requirement 3) alone — an approximation of "most severe
+    fleet-wide" the same way requirement 15e's `Urgent` bullet documents for
+    issues: a repository's own findings are sorted most-severe-first before
+    the Script ever sees them, but the merge does not itself compare
+    severity across repositories once every engagement has answered.
 15e. **Issues rank by their `Priority` field.** An open issue's band is its
     organisation-level `Priority` issue field — `Urgent`, `High`, `Medium` or
     `Low` — and the band is the issue's rank in the walk, as
