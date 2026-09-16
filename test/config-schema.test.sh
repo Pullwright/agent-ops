@@ -1191,10 +1191,10 @@ assert_doctor "doctor fails duplicate slugs in project_review.repos, as review-c
   '.project_review.repos[1].slug = .project_review.repos[0].slug' 1 \
   "project_review.repos lists [$BASE_REPO_1] more than once"
 # issue #1570: the top-level repos[] array has the same duplicate-slug gap
-# project_review.repos already had (requirement R1b) — config.schema.json's
-# uniqueItems only rejects byte-identical whole entries, and nothing before
-# this check caught two repos[] entries sharing a slug while differing
-# elsewhere. Issue #1576 (below) makes agent-cycle.sh refuse at startup on
+# project_review.repos already had (requirement R1b) — config.schema.json
+# states no uniqueness constraint on repos at all, and a uniqueItems there
+# would reject only byte-identical whole entries, so nothing before this
+# check caught two repos[] entries sharing a slug while differing elsewhere. Issue #1576 (below) makes agent-cycle.sh refuse at startup on
 # the same condition too, the same as config_duplicate_project_review_slugs
 # already does for project_review.repos.
 assert_doctor "doctor fails duplicate slugs in repos[]" \

@@ -1674,10 +1674,11 @@ implements.
    `fail` can never drift on what counts as a fault. A fifth guard,
    `config_duplicate_repos_slugs`, stays in code for the same reason one step
    out: it holds between two *entries* of `repos[]` rather than between two
-   keys of one object, which `uniqueItems` cannot state either, since it only
-   rejects byte-identical whole entries and two entries sharing a `slug`
-   while differing elsewhere leave the per-repo resolvers with no way to say
-   which one's overrides apply. `agent-cycle.sh` refuses to start on it,
+   keys of one object, which no array keyword the schema has can state
+   either — `uniqueItems` rejects only byte-identical whole entries, and
+   `repos` carries none in any case — so two entries sharing a `slug` while
+   differing elsewhere leave the per-repo resolvers with no way to say which
+   one's overrides apply. `agent-cycle.sh` refuses to start on it,
    naming the duplicated slug(s), and `scripts/doctor.sh` reports the same
    condition as a `fail` through that one implementation, so those two cannot
    drift either (component 14 below; `config_duplicate_project_review_slugs`
@@ -19923,8 +19924,9 @@ What exists, and the requirements each part answers to:
     `agent-cycle.sh`'s. A fourth, `config_duplicate_repos_slugs`, holds the
     same way between two entries of the top-level `repos[]` array: two
     entries sharing a `slug` but differing elsewhere pass
-    `config.schema.json`'s `uniqueItems` (which only rejects byte-identical
-    whole entries), and then the per-repo resolvers (`lib/prompt-overrides.sh`'s
+    `config.schema.json`, which states no uniqueness constraint on `repos` at
+    all — and a `uniqueItems` there would reject only byte-identical whole
+    entries — and then the per-repo resolvers (`lib/prompt-overrides.sh`'s
     `prompt_overrides_json_for_repo`, `lib/escalation-autonomy.sh`,
     `lib/preview-config.sh`, `agent-cycle.sh`'s own `merge_autonomy` lookup)
     disagree silently about which entry governs (issue #1570). `agent-cycle.sh`

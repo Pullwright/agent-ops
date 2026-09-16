@@ -335,8 +335,9 @@ else
   ok "every repo listing implementation-plan names its plan document"
 fi
 
-# config.schema.json's uniqueItems on repos only rejects byte-identical whole
-# entries, so two entries sharing a slug but differing elsewhere pass it —
+# config.schema.json states no uniqueness constraint on repos at all, and a
+# uniqueItems there would reject only byte-identical whole entries, so two
+# entries sharing a slug but differing elsewhere pass the schema gate —
 # and the per-repo resolvers then disagree silently about which entry governs
 # (lib/config-schema.sh's config_duplicate_repos_slugs, issue #1570), which is
 # why agent-cycle.sh refuses to start on one (issue #1576) — named here so the

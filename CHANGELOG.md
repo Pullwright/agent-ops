@@ -86,8 +86,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the count.
 
 - **`scripts/doctor.sh` fails two `repos[]` entries sharing a `slug`**
-  (issue #1570). `config.schema.json`'s `uniqueItems` on `repos` only
-  rejects byte-identical whole entries, so two entries naming the same
+  (issue #1570). `config.schema.json` states no uniqueness constraint on
+  `repos` at all, and a `uniqueItems` there would reject only byte-identical
+  whole entries, so two entries naming the same
   repository but differing elsewhere passed silently — and the per-repo
   resolvers (`lib/prompt-overrides.sh`, `lib/escalation-autonomy.sh`,
   `lib/preview-config.sh`, `agent-cycle.sh`'s `merge_autonomy` lookup) then
