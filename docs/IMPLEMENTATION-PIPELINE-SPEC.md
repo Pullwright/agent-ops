@@ -9457,9 +9457,11 @@ implements.
     The one cached `/rate_limit` read takes the node's D24 egress path from
     *whichever* container makes it — `deploy/docker/compose.yaml`'s
     `scheduler` and `node-health` services both carry the same proxy
-    variables and both sit on the internal-only `egress` network alongside
-    `default`, so a readiness verdict is never evidence gathered over a
-    route the cycle it reports on could not use (issue #1587 — the "answer
+    variables and both reach the forge only through the internal-only
+    `egress` network — the scheduler confined to it alone, `node-health` on
+    `default` and `egress` both for its published loopback port — so a
+    readiness verdict is never evidence gathered over a route the cycle it
+    reports on could not use (issue #1587 — the "answer
     came from a path the subject does not use" shape issue #608 already
     exists to close, one layer out). This matters because the cache file
     itself is shared: `state_dir/.node-health-ratelimit-cache.json` lives on
