@@ -3886,7 +3886,13 @@ number's twins elsewhere on the page.
   also retired the per-tick miss budget and the blob-SHA-keyed metadata
   cache (`<state_dir>/.dashboard-td.json`) the old listing needed: a search
   answers every row it can show in the one call that also answers the total,
-  so there is nothing left to warm across ticks.
+  so there is nothing left to warm across ticks. A node that ran the
+  pre-#881 Publisher can still carry that retired file on disk, so
+  `publish-dashboard.sh` `rm -f`s it unconditionally on every tick alongside
+  its other cache declarations (agent-ops#1555) — safe indefinitely, since
+  `rm -f` on a file already gone is a silent no-op — and this line, with the
+  cleanup itself, can be dropped once the fleet has cycled past #881
+  everywhere.
   `scripts/gather-register-status.sh` was considered for retirement alongside
   this change but left untouched: it answers a different question (whether a
   `Blocked-by:` reference naming a pre-freeze register id has since
