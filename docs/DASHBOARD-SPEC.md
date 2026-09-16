@@ -2282,6 +2282,15 @@ all `null` (an `unknown`-model row with no readable `modelUsage`) is excluded
 from both breakdowns entirely, never folded in as zero — see
 `docs/METERING-SCHEMA.md`.
 
+Each row's own `n` counts distinct transcripts, deduped by `(cycle, actor)`
+rather than by `cycle` alone (`aggregateTokenRows`, issue #1591): the by-stage
+breakdown's own groups are already one actor each, so that pair reduces to
+`cycle` there and its `n` is unaffected, but the by-model breakdown groups by
+model, where a cycle whose several actors share one model must count as that
+many distinct transcripts, not one — a `cycle`-only dedup, correct for
+`aggregateCostRows`'s own `by_actor`/`by_model` totals above, would undercount
+it here.
+
 Each row's own cache ratio carries the lever the figure informs, in the same
 cell: below `TOKEN_MIN_SAMPLE` (5, the same minimum sample the actor/model
 scorecards already use) it reads "insufficient evidence" rather than a rate
@@ -2988,7 +2997,12 @@ number's twins elsewhere on the page.
   `TOKEN_MIN_SAMPLE` (reads "insufficient evidence" instead of a rate) — plus
   an `unknown`-model row carrying `tokens_*: null` on every field, asserted
   absent from both the by-stage and by-model breakdowns entirely rather than
-  folded in as zero. `stall-profile.json` holds `counts.stage_gaps` rows
+  folded in as zero. `token-economics-dedup.json` (issue #1591) holds one
+  model shared by two actors within one cycle and by three actors across two
+  more, asserting the by-model row counts all five as distinct transcripts —
+  clearing `TOKEN_MIN_SAMPLE` where a `cycle`-only dedup would have left it
+  short — while the by-stage rows for those same actors are unaffected.
+  `stall-profile.json` holds `counts.stage_gaps` rows
   exercising all four of that panel's own Decision branches: a stage whose
   `worst_run_max` is at `STALL_NEAR_BACKSTOP_RATIO` of its known backstop
   (names the lever and the direction — raise it), one comfortably inside it

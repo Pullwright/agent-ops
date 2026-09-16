@@ -1456,6 +1456,23 @@ assert_contains "the largest token consumer is named, so the row informs which m
 assert_not_contains "an unknown-model row (no readable modelUsage) is excluded, never counted as zero tokens" \
   "enabler" "$te"
 
+# --- token-economics-dedup.json: by-model dedups by (cycle, actor), not cycle
+# alone (issue #1591) --------------------------------------------------------
+# A cycle whose coordinator and implementer both ran the same model
+# contributes two distinct transcripts to that model's by-model row, not one
+# — dedup-by-cycle-alone would collapse them and undercount the sample. The
+# by-stage breakdown is unaffected: each of its own groups is already a
+# single actor, so its dedup key was already unique per cycle.
+ted="$(render token-economics-dedup.json)" || { printf 'FAIL - token-economics-dedup.json did not render:\n%s\n' "$ted"; exit 1; }
+tedflat="$(tr '\n' ' ' <<<"$ted" | tr -s ' ')"
+
+assert_contains "by-model counts 5 distinct (cycle, actor) transcripts, clearing the sample gate" \
+  "90% — no action indicated" "$tedflat"
+assert_contains "by-stage leaves an actor spanning 2 cycles at n=2, same as before the fix" \
+  "insufficient evidence (2 transcripts)" "$tedflat"
+assert_contains "  ... and an actor with a single cycle at n=1" \
+  "insufficient evidence (1 transcripts)" "$tedflat"
+
 # --- stall-profile.json: the gap/stall-profile panel (issue #594, D21) -----------
 # The per-stage stall profile read from counts.stage_gaps — its own window
 # (the retained log union), never the cost charts' COST_SCAN_DAYS — with

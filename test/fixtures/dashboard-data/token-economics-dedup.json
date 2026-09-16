@@ -1,0 +1,41 @@
+{
+  "generated_at": "@now",
+  "node": "poetic-1",
+  "config": {
+    "timeout_coordinator": 15, "timeout_implementer": 90,
+    "timeout_reviewer": 30, "timeout_enabler": 30,
+    "lock_stale_after": 4, "dashboard_refresh_seconds": 5
+  },
+  "status": {
+    "switch": {"disabled": false},
+    "limit": {"active": false},
+    "running": false,
+    "lock": null,
+    "current": null,
+    "last_cycle": null
+  },
+  "counts": {
+    "spend_today_usd": 0, "spend_total_usd": 0,
+    "failures_shown": 0, "cycles_shown": 0, "prs_reached_ready": 0,
+    "by_day": [], "by_model": [], "by_actor": [],
+    "cost_rows": [
+      {"day": "@day:0", "model": "claude-shared-5", "actor": "coordinator", "usd": 0.1, "cycle": "c-shared-1",
+       "tokens_input": 1000, "tokens_output": 500, "tokens_cache_creation": 0, "tokens_cache_read": 9000},
+      {"day": "@day:0", "model": "claude-shared-5", "actor": "implementer", "usd": 0.1, "cycle": "c-shared-1",
+       "tokens_input": 1000, "tokens_output": 500, "tokens_cache_creation": 0, "tokens_cache_read": 9000},
+      {"day": "@day:0", "model": "claude-shared-5", "actor": "reviewer", "usd": 0.1, "cycle": "c-shared-1",
+       "tokens_input": 1000, "tokens_output": 500, "tokens_cache_creation": 0, "tokens_cache_read": 9000},
+      {"day": "@day:0", "model": "claude-shared-5", "actor": "coordinator", "usd": 0.1, "cycle": "c-shared-2",
+       "tokens_input": 1000, "tokens_output": 500, "tokens_cache_creation": 0, "tokens_cache_read": 9000},
+      {"day": "@day:0", "model": "claude-shared-5", "actor": "implementer", "usd": 0.1, "cycle": "c-shared-2",
+       "tokens_input": 1000, "tokens_output": 500, "tokens_cache_creation": 0, "tokens_cache_read": 9000}
+    ]
+  },
+  "cycles": [],
+  "blocked": [],
+  "void": [],
+  "github": {"ok": true, "fetched_at": "@ago:1m", "prs": [], "pr_index": {}, "inputs": {}},
+  "log_tail": [],
+  "cron_tail": [],
+  "max_open_agent_prs": 3
+}
