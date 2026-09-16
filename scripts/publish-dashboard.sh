@@ -316,8 +316,6 @@ queue_cache="$state_dir/.dashboard-queue.json"
 # same file: whichever of the two next crosses the cache's TTL pays the one
 # query and the other reads its answer off disk.
 image_cache="$state_dir/.image-drift-cache.json"
-# One-time post-#881 cleanup: remove the retired tech-debt metadata cache.
-rm -f -- "$state_dir/.dashboard-td.json"
 # The hourly `doctor.sh --unattended` pass's own artefact (agent-ops#543),
 # read rather than recomputed: its GitHub section alone makes several calls
 # per configured repository, too much to repeat on this script's own 5-minute
