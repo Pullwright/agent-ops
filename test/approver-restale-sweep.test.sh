@@ -177,7 +177,11 @@ _approver_restale_dismiss() {
 }
 
 _approver_restale_escalate() {
-  printf 'slug=%s\tpr_url=%s\tnumber=%s\titem_ref=%s\treview_at=%s\n' "$1" "$2" "$3" "$4" "$5" >>"$T/escalate-calls"
+  # `cause` (agent-ops#988) decides which of the two bounded branches the
+  # escalation issue's own "why" describes, so which one the sweep passes is
+  # this harness's business exactly as the item ref already is.
+  printf 'slug=%s\tpr_url=%s\tnumber=%s\titem_ref=%s\treview_at=%s\tcause=%s\n' \
+    "$1" "$2" "$3" "$4" "$5" "${6:-rebase-only}" >>"$T/escalate-calls"
 }
 
 HARNESS
@@ -306,6 +310,8 @@ assert_eq "a prior unposted engagement past the threshold escalates instead" \
 assert_contains "  ... naming the same review-scoped item ref the no-progress branch uses" \
   "item_ref=pr-7-approver-restale-555" "$(escalate_calls)"
 assert_contains "  ... and the standing review's own submitted_at" "review_at=$recent_at" "$(escalate_calls)"
+assert_contains "  ... under its own cause, so the issue does not claim every push was a rebase" \
+  "cause=unposted" "$(escalate_calls)"
 assert_eq "  ... never a fresh re-review" "0" "$(count "$tmp_dir/review-calls")"
 assert_eq "  ... never a dismissal" "0" "$(count "$tmp_dir/dismiss-calls")"
 
@@ -354,6 +360,8 @@ rc="$(run_case PR_LIST_JSON="$rebase_only_list" \
 assert_eq "a rebase-only review past the threshold escalates" "1" "$(count "$tmp_dir/escalate-calls")"
 assert_contains "  ... naming a review-scoped item ref" "item_ref=pr-8-approver-restale-556" "$(escalate_calls)"
 assert_contains "  ... and the review's own submitted_at" "review_at=$old_at" "$(escalate_calls)"
+assert_contains "  ... under the rebase-only cause, not the unposted one" \
+  "cause=rebase-only" "$(escalate_calls)"
 assert_eq "  ... never a re-review" "0" "$(count "$tmp_dir/review-calls")"
 assert_eq "  ... never a dismissal" "0" "$(count "$tmp_dir/dismiss-calls")"
 
@@ -549,6 +557,17 @@ prior_posted="$(jq -nc --arg ts "$engaged_recent" \
   '{ts: $ts, event: "approver-unreviewed-engaged", pr_url: "https://github.com/acme/widgets/pull/30", head: "sha30", result: "posted"}')"
 rc="$(run_case PR_LIST_JSON="$unreviewed_list" UNION_JSON="$prior_posted")"
 assert_eq "a head whose engagement already posted a verdict is never re-engaged" \
+  "0" "$(count "$tmp_dir/review-calls")"
+assert_eq "  ... nor escalated inside the escalation bound" "0" "$(count "$tmp_dir/unreviewed-escalate-calls")"
+
+# agent-ops#988 split `unposted` out of `posted` for the *stale* trigger's own
+# bound. This trigger's bound is "a verdict was reached at all", so both must
+# hold it — reading `unposted` as retry-worthy here would re-engage a full
+# critical-tier round every cycle, the very thing that issue removed next door.
+prior_unposted="$(jq -nc --arg ts "$engaged_recent" \
+  '{ts: $ts, event: "approver-unreviewed-engaged", pr_url: "https://github.com/acme/widgets/pull/30", head: "sha30", result: "unposted"}')"
+rc="$(run_case PR_LIST_JSON="$unreviewed_list" UNION_JSON="$prior_unposted")"
+assert_eq "a head whose engagement reached a verdict it never wrote is never re-engaged either" \
   "0" "$(count "$tmp_dir/review-calls")"
 assert_eq "  ... nor escalated inside the escalation bound" "0" "$(count "$tmp_dir/unreviewed-escalate-calls")"
 

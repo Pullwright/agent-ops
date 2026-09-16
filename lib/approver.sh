@@ -1274,7 +1274,7 @@ _approver_restale_dismiss() {
   (( ok ))
 }
 
-# _approver_restale_escalate SLUG PR_URL NUMBER ITEM_REF REVIEW_AT
+# _approver_restale_escalate SLUG PR_URL NUMBER ITEM_REF REVIEW_AT [CAUSE]
 # Requirement 46 (agent-ops#682), acceptance criteria 3 and 4: a
 # rebase-only-stale Approver review — the head keeps moving, but no commit has
 # been authored since the review — retried every cycle with nothing ever
@@ -1286,17 +1286,36 @@ _approver_restale_dismiss() {
 # `create_escalation_issue` (`enabler_assignee`) every other escalation in
 # this file already uses — never a destination this function names itself
 # (D18, agent-ops#627/#679).
+#
+# CAUSE names which of the stale trigger's two bounded branches called, so
+# the issue a human opens explains the situation they are actually looking at
+# rather than the other one: `rebase-only` (the default, the branch above) or
+# `unposted` (agent-ops#988 — a commit *was* authored since the review, it
+# *was* re-reviewed, and that re-review reached a verdict it never wrote to
+# GitHub). The two differ in every fact that matters to the reader, so they
+# get their own "why", and share everything else — the same item ref, the
+# same `create_escalation_issue` dedup, the same `approver-restale-escalated`
+# event.
 _approver_restale_escalate() {
-  local slug="$1" pr_url="$2" number="$3" item_ref="$4" review_at="$5"
+  local slug="$1" pr_url="$2" number="$3" item_ref="$4" review_at="$5" cause="${6:-rebase-only}"
   local body_file created
 
   body_file="$cycle_dir/approver-restale-escalation-${number}.md"
   {
     printf '## What the autonomous pipeline needs from you\n\n'
-    printf 'Review %s yourself and either dismiss the standing Approver review or push a real fix — the pipeline could not tell the difference between a genuine fix and a rebase.\n\n' "$pr_url"
+    if [[ "$cause" == "unposted" ]]; then
+      printf 'Review %s yourself and either dismiss the standing Approver review or request the change you want — the pipeline re-reviewed the fix and its own adjudication declined to settle it.\n\n' "$pr_url"
+    else
+      printf 'Review %s yourself and either dismiss the standing Approver review or push a real fix — the pipeline could not tell the difference between a genuine fix and a rebase.\n\n' "$pr_url"
+    fi
     printf '## Why the pipeline is blocked\n\n'
-    printf "The Approver's own \`CHANGES_REQUESTED\` review (submitted %s) no longer matches this pull request's head, but no commit has been authored since that review was submitted — every push since has been a rebase, never a fix. The restale sweep (requirement 46, agent-ops#682) does not treat that as progress worth a fresh Approver engagement, and \`approver_restale_escalate_after_hours\` (%s h) has now passed with the review still standing.\n\n" \
-      "$review_at" "$approver_restale_escalate_after_hours"
+    if [[ "$cause" == "unposted" ]]; then
+      printf "The Approver's own \`CHANGES_REQUESTED\` review (submitted %s) no longer matches this pull request's head, and a commit *has* been authored since it — genuine progress, so the restale sweep (requirement 46, agent-ops#682) re-reviewed the pull request. That re-review reached a verdict but wrote nothing to GitHub — overwhelmingly an adjudication \`escalate\` — so the standing review, its \`commit_id\` and this trigger's own precondition are all exactly as they were. Re-engaging every cycle would only reach the same verdict at the same cost (agent-ops#988), so the sweep stopped, and \`approver_restale_escalate_after_hours\` (%s h) has now passed since that first unposted engagement with the review still standing.\n\n" \
+        "$review_at" "$approver_restale_escalate_after_hours"
+    else
+      printf "The Approver's own \`CHANGES_REQUESTED\` review (submitted %s) no longer matches this pull request's head, but no commit has been authored since that review was submitted — every push since has been a rebase, never a fix. The restale sweep (requirement 46, agent-ops#682) does not treat that as progress worth a fresh Approver engagement, and \`approver_restale_escalate_after_hours\` (%s h) has now passed with the review still standing.\n\n" \
+        "$review_at" "$approver_restale_escalate_after_hours"
+    fi
     cat <<RESTALE_ESC_BODY
 ## When you're done: close this issue
 
@@ -1633,7 +1652,7 @@ _approver_restale_sweep_repo() {
             --arg d "empty cutoff computed from approver_restale_escalate_after_hours=$approver_restale_escalate_after_hours in _approver_restale_sweep_repo — the unposted-escalate check for this pull request is skipped this cycle" \
             '{detail: $d, key: $k, value: $v, fn: $fn}')"
         elif [[ "$unposted_first_at" < "$cutoff" ]]; then
-          _approver_restale_escalate "$slug" "$pr_url" "$number" "$item_ref" "$review_at"
+          _approver_restale_escalate "$slug" "$pr_url" "$number" "$item_ref" "$review_at" unposted
         fi
         continue
       fi
@@ -1731,7 +1750,12 @@ _approver_restale_sweep_repo() {
       # A verdict that was reached is never re-engaged from here: the review
       # write's own retry machinery owns it now, and re-judging the same
       # head would only spend a full engagement to reach the same verdict.
-      [[ "$last_result" != "posted" ]] || continue
+      # Both outcomes that reached one count (agent-ops#988): `unposted` is
+      # the case that used to report itself as `posted` — a verdict reached
+      # whose write never landed, an adjudication `escalate` among them —
+      # and splitting the two apart for the stale trigger's own bound must
+      # not quietly turn this trigger's bound off for it.
+      [[ "$last_result" != "posted" && "$last_result" != "unposted" ]] || continue
     fi
 
     _approver_restale_review "$slug" "$pr_url" "$number" "$branch" "$complexity" "$title" unreviewed

@@ -17371,10 +17371,15 @@ with the Reviewer's own.
       — the identical per-review-id-deduplicated escalation path
       (`pr-<n>-approver-restale-<review-id>`) the no-progress branch already
       uses, so the same standing review is never escalated twice under two
-      different names. A fresh engagement (never attempted while a prior
-      `unposted` engagement is still within the bound) that itself reports
-      `unposted` logs the `approver-restale-unposted-engaged` event that
-      starts this clock.
+      different names. That escalation's own issue body states this branch's
+      facts rather than the no-progress branch's: a commit *was* authored
+      since the review, it *was* re-reviewed, and the re-review reached a
+      verdict it never wrote — which is the opposite of the "every push
+      since has been a rebase, never a fix" the branch below says, so the
+      two share the path and the dedup but never the wording. A fresh
+      engagement (never attempted while a prior `unposted` engagement is
+      still within the bound) that itself reports `unposted` logs the
+      `approver-restale-unposted-engaged` event that starts this clock.
     - **No commit authored since the review** — a push landed (the head
       moved, or the trigger would not have fired at all) but it authored
       nothing new, i.e. a rebase alone. Neither re-reviewed (there is
@@ -17452,12 +17457,17 @@ with the Reviewer's own.
     (`approver_unreviewed_prior_engagement`, keyed on the exact head sha —
     a push makes the pull request a genuinely new judgement, so the count
     and the escalation clock start over with it): a head whose most recent
-    engagement reported `posted` is never re-engaged — the verdict was
-    reached, and re-judging the same head would spend a full engagement to
-    reach the same verdict; the review write's own `approver_post_or_warn`
-    retry (PR #1101) owns a refused post, and a write that still never
-    lands is exactly what the escalation below exists for — while an
-    `unavailable` one is retried next cycle.
+    engagement reached a verdict at all — `posted`, or the `unposted` of
+    agent-ops#988 — is never re-engaged, because the verdict was reached,
+    and re-judging the same head would spend a full engagement to reach the
+    same verdict; the review write's own `approver_post_or_warn` retry (PR
+    #1101) owns a refused post, and a write that still never lands is
+    exactly what the escalation below exists for — while an `unavailable`
+    one is retried next cycle. Both reached-a-verdict outcomes bind here
+    even though the stale trigger above treats them differently: splitting
+    `unposted` out of `posted` sharpened that trigger's own bound, and must
+    not loosen this one, where the distinction buys nothing and a fresh
+    engagement every cycle is precisely what this bound exists to prevent.
     Once the *first* engagement at the current head is older than
     `approver_restale_escalate_after_hours` with still no standing review,
     `_approver_unreviewed_escalate` hands the pull request to a human
@@ -26651,15 +26661,18 @@ oblige anyone to edit a test.
     `_approver_restale_review` nor `_approver_restale_dismiss` again; once
     that first `unposted` engagement is older than the threshold, the same
     pass reaches `_approver_restale_escalate` instead — naming the identical
-    review-scoped item ref the no-progress branch below uses — and never a
-    fresh `_approver_restale_review` call; a stale review with nothing
+    review-scoped item ref the no-progress branch below uses, and its own
+    `unposted` cause, so the issue a human opens does not claim every push
+    since the review was a rebase — and never a fresh
+    `_approver_restale_review` call; a stale review with nothing
     authored since it (a rebase-only push) reaches neither
     `_approver_restale_review` nor `_approver_restale_dismiss` — under
     `approver_restale_escalate_after_hours` nothing at all is logged, and
     once the standing review's own `submitted_at` is older than the
     threshold `_approver_restale_escalate` is called instead, naming a
-    review-round-scoped item ref (`pr-<n>-approver-restale-<review-id>`) and
-    the review's own `submitted_at`, never `updatedAt`; a schema-illegal
+    review-round-scoped item ref (`pr-<n>-approver-restale-<review-id>`),
+    the review's own `submitted_at`, never `updatedAt`, and the rebase-only
+    cause rather than the `unposted` one; a schema-illegal
     `approver_restale_escalate_after_hours` (reaching jq's `tonumber` and
     erroring) computes an empty cutoff instead, which fails the same way —
     no escalation — but first logs a `warning` naming the config key, the
@@ -26700,8 +26713,9 @@ oblige anyone to edit a test.
     fleet `pr-<n>` claim, one with a standing `APPROVED` review, one whose
     standing-review read is unreadable, and a `CHANGES_REQUESTED` one are
     all left alone (the claim-held and unreadable cases logging nothing); a
-    head whose prior engagement reported `posted` is never re-engaged while
-    an `unavailable` one is retried; a first engagement at the current head
+    head whose prior engagement reported `posted` is never re-engaged, nor
+    is one that reported `unposted` (agent-ops#988), while an `unavailable`
+    one is retried; a first engagement at the current head
     older than `approver_restale_escalate_after_hours` with still no
     standing review reaches `_approver_unreviewed_escalate` — naming the
     head-scoped item ref and that first engagement's own timestamp, never a
