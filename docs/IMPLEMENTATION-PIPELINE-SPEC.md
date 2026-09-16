@@ -6168,13 +6168,17 @@ implements.
    happen, and does that rate justify changing `coordinator_model`?* A rate
    needs both terms, and only the rejections were ever counted.
 
-   **The unit is the verdict, not the cycle.** Requirement 3v made a cycle
-   able to produce two — the first engagement and its one retry are two
-   separate answers from the model, each corroborated against the same
-   eligible set on its own — and a retry rejected in turn is a second wrong
-   answer, not the same one restated. Requirement 3v's `corroboration` events
-   are therefore the record a rate is computed from: one per verdict, already
-   carrying `attempt`, `verdict` and the Script's own `eligible_total`.
+   **The unit is the verdict, not the cycle.** Requirement 15's per-repository
+   split makes a cycle produce one verdict per configured repository, each an
+   independent answer from the model about its own repository alone.
+   Requirement 3v's `corroboration` event is the record a rate is computed
+   from, carrying `attempt` (always `1` — since issue #587 there is no retry
+   for it to distinguish a second answer from), `verdict` and the Script's own
+   `eligible_total`. A cycle writes at most one, after every engagement has
+   answered and only when the merged candidate list came back empty: it
+   corroborates, together, exactly those repositories that returned
+   `"selected": false`, and its `eligible_total` is the Script's count across
+   those repositories' own bands, not the fleet's.
 
    What they did not carry, and now do, is **`coordinator_model`** — the model
    id the stage was *invoked* with, not a key of its envelope's `modelUsage`
@@ -6185,15 +6189,16 @@ implements.
    for, subagents included, so keying on it would split one setting across
    several labels and disagree with every other record of the same run. This
    is the same choice, for the same reason, that `lib/metering.sh` documents.
-   Both attempts of a cycle run under the same id, so the retry's verdict is
-   attributed to the model that produced the first.
+   Every one of a cycle's per-repository engagements runs under the same id,
+   so the cycle's own corroboration verdict is attributed unambiguously.
 
-   Two `corroboration` events gain a field alongside it. The
-   `accepted-by-selection` verdict — the retry getting it right — carries
-   `eligible_total` too, because it is a verdict that survived corroboration
-   and a denominator that counted only the ones still phrased as
-   `none-selected` would credit the recovery to nobody and flatter every model
-   that recovers that way.
+   A third `verdict` value, `accepted-by-selection`, appears in history and is
+   read by the dashboard's aggregate but is written by no current code path:
+   it recorded the retry issue #587 removed getting it right on a second
+   engagement, and carried `eligible_total` for the same reason the other two
+   do — a denominator counting only the verdicts still phrased as
+   `none-selected` would credit that recovery to nobody. A reader computing a
+   rate over history must still accept it.
 
    **`none-selected` carries `eligible_total` and `coordinator_model` on every
    branch**, which matters for the cycles that log no `corroboration` at all:
@@ -6213,9 +6218,8 @@ implements.
 
    Neither field changes what the fingerprint covers or how requirements 3t
    and 3v decide: a rejected verdict still omits `fingerprint` entirely, an
-   accepted one still carries it, and the retry and fallback still fire on
-   exactly the same condition. They are a record of the decision, not an input
-   to it.
+   accepted one still carries it, and the fallback still fires on exactly the
+   same condition. They are a record of the decision, not an input to it.
 
    A reader that meets a verdict from before this requirement may fall back to
    the model on that cycle's own coordinator `stage-end` — the same invocation
@@ -9464,6 +9468,39 @@ implements.
     the one enforcement of that bound that happens mechanically rather than
     by instruction, since no single engagement can cap a merge across
     repositories it never saw.
+15y. **An engagement that produces no verdict costs its own repository's
+    opportunity, and nothing else** (issue #587). Each engagement writes its
+    own stage transcript to `<cycle-dir>/coordinator-<slug>.out` (plus the
+    `.out.stderr` and `.stream.jsonl` `run_claude_stage` derives from it),
+    where `<slug>` is that repository's configured slug with its `/`
+    flattened to `-` — one flat file per repository in the cycle directory,
+    never a path with a directory component in it, which nothing in the cycle
+    creates and which would fail both of those redirections before `claude`
+    was ever launched. An engagement that fails to launch, is killed, or
+    returns an unparseable final message is recorded (requirement 21's
+    `attempt-failed`, and `handle_stage_failure`) and the cycle moves to the
+    next repository rather than exiting, since one repository's failure must
+    not cost every other repository this cycle's own chance. Two consequences
+    follow for the stand-down, and both exist because a repository that was
+    never successfully asked has established nothing about its own backlog:
+
+    - **Where every engagement failed, the cycle exits exactly where the
+      pre-split single attempt exited** — before requirement 3v's
+      corroboration and before any `none-selected` is written at all. No
+      repository is in the "said no" set, so corroboration would have nothing
+      to check and would fall straight through to a stand-down the model
+      never actually reported. A launch failure is typically node-wide (an
+      API refusal, a usage limit, an image fault), so this is the ordinary
+      shape of the failure rather than an exotic one.
+    - **Where some engagements failed and the cycle still stands down, the
+      `none-selected` event omits `fingerprint` and carries
+      `engagements_failed`** — the count of engagements that produced no
+      verdict. The fingerprint is a fleet-wide claim that every configured
+      repository was asked and none had anything, which is what arms
+      requirement 3b's no-op short-circuit against the *next* cycle; a cycle
+      that could not ask every repository has not established it, and must
+      leave the short-circuit unarmed for the same reason requirement 3t's
+      rejected verdict does. The reason text names the shortfall too.
 15b. **Review feedback comes third, across repositories.** Like security and
     urgent issues, this outranks the plain source walk: any selectable
     `review_feedback` candidate in any repository is taken before any work
@@ -12525,7 +12562,9 @@ implements.
     is a different question and deliberately a different event.
     A `none-selected` carries the Co-Ordinator's own `reason`; the
     `fingerprint` requirement 3b arms the no-op short-circuit with, omitted
-    where there was nothing to fingerprint or where the corroboration gate
+    where there was nothing to fingerprint, where some engagement produced no
+    verdict at all (requirement 15y — the event then carries
+    `engagements_failed`, the count of them), or where the corroboration gate
     rejected
     the verdict — which carries `td_verdict_rejected: true` (a name requirement
     3x keeps though the gate is no longer tech-debt-only) and requirement

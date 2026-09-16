@@ -84,7 +84,7 @@ extract_json_result_fn="$(extract_fn 'extract_json_result() {' "$SCRIPT_DIR/lib/
 run_coordinator_stage_attempt_fn="$(extract_fn 'run_coordinator_stage_attempt() {  # <attempt-out-file> <prompt> [extra-budget-json]' "$SCRIPT_DIR/lib/stage-attempt.sh")"
 fallback_select_candidate_fn="$(extract_fn 'fallback_select_candidate() {  # <ordered-repos-json> <default-model> <refinements-json> <refinement-policy-json> <pr-label>' "$SCRIPT_DIR/lib/stage-attempt.sh")"
 coordinator_merge_candidates_fn="$(extract_fn 'coordinator_merge_candidates() {  # <candidates-json> <ordered-repos-json> <candidates-max>' "$SCRIPT_DIR/lib/stage-attempt.sh")"
-coordinator_corroborate_and_fallback_fn="$(extract_fn 'coordinator_corroborate_and_fallback() {  # <false-repos-json> <reason> <recorded-refinement-json> <recorded-voided-json>' "$SCRIPT_DIR/lib/stage-attempt.sh")"
+coordinator_corroborate_and_fallback_fn="$(extract_fn 'coordinator_corroborate_and_fallback() {  # <false-repos-json> <reason> <recorded-refinement-json> <recorded-voided-json> [failed-engagements]' "$SCRIPT_DIR/lib/stage-attempt.sh")"
 
 for pair in \
   "unaccounted_items_fn:\$eligible" \
@@ -444,7 +444,7 @@ assert_eq "a non-numeric candidates_max degrades to the documented default (3)" 
 # ============================================================================
 
 # run_corroborate DESC FALSE_REPOS REASON RECORDED_REFINEMENT RECORDED_VOIDED \
-#                  ELIGIBLE_JSON ELIGIBLE_TOTAL ORDERED_REPOS_JSON
+#                  ELIGIBLE_JSON ELIGIBLE_TOTAL ORDERED_REPOS_JSON [N_FAILED]
 # Sets `fn_rc` and prints the accumulated calls log.
 run_corroborate() {
   calls_log="$tmp_dir/calls-$RANDOM.log"
@@ -455,7 +455,7 @@ run_corroborate() {
   eligible_items_total="$7"
   # shellcheck disable=SC2034
   ordered_repos_json="$8"
-  if coordinator_corroborate_and_fallback "$2" "$3" "$4" "$5"; then
+  if coordinator_corroborate_and_fallback "$2" "$3" "$4" "$5" "${9:-0}"; then
     fn_rc=0
   else
     fn_rc=1
@@ -628,6 +628,162 @@ c1="$(events_named "$calls" corroboration | head -n1)"
 assert_eq "every one of the 3000 recorded reports is read back, past the argv cap, and accounted for" \
   "0" "$(jq '.unaccounted_total' <<<"$c1")"
 assert_eq "  ... so the verdict is accepted" "accepted" "$(jq -r '.verdict' <<<"$c1")"
+
+# ============================================================================
+# Requirement 15y: an engagement that produced no verdict must not let the
+# cycle arm the no-op short-circuit
+# ============================================================================
+#
+# The fingerprint is a fleet-wide claim — "every configured repository was
+# asked, and none of them had anything" — that stands the *next* cycle down
+# against it (requirement 3b). A cycle that could not ask every repository
+# has established no such thing for the ones it could not ask, so a
+# `none-selected` it writes must leave the short-circuit unarmed, exactly as
+# requirement 3t's rejected verdict does. Before this was pinned, a cycle in
+# which engagements failed still logged the fingerprint, which is the silent
+# stall `lib/noop-skip.sh`'s own header calls this system's signature failure
+# mode: every node refusing the stage (an API refusal, a usage limit, an
+# image fault) would stand the fleet down against a verdict no model gave.
+
+# --- One engagement of two failed: the survivor's clean stand-down is real,
+#     but it is not the fleet's ------------------------------------------
+run_corroborate "one engagement failed" '["acme/widgets"]' "acme/widgets: nothing here (+1 of 2 engagement(s) produced no verdict at all)" \
+  '[]' '[]' '[]' 0 "$empty_repos" 1 > "$tmp_dir/scenario.out"
+calls="$(cat "$tmp_dir/scenario.out")"
+ns_evt="$(events_named "$calls" none-selected | head -n1)"
+assert_eq "an engagement that produced no verdict omits the fingerprint" "null" \
+  "$(jq -r '.fingerprint // null' <<<"$ns_evt")"
+assert_eq "…and records how many engagements produced none" "1" \
+  "$(jq -r '.engagements_failed' <<<"$ns_evt")"
+assert_eq "…and says so in the reason a reader sees" "1" \
+  "$(jq -r '[.reason | test("produced no verdict")] | if .[0] then 1 else 0 end' <<<"$ns_evt")"
+assert_eq "…function still returns 1 (caller should exit)" "1" "$fn_rc"
+
+# --- Every engagement answered: the fingerprint is armed, as before --------
+run_corroborate "no engagement failed" '["acme/widgets"]' "acme/widgets: nothing here" \
+  '[]' '[]' '[]' 0 "$empty_repos" 0 > "$tmp_dir/scenario.out"
+calls="$(cat "$tmp_dir/scenario.out")"
+ns_evt="$(events_named "$calls" none-selected | head -n1)"
+assert_eq "a complete cycle still arms the fingerprint" "fp-abc123" \
+  "$(jq -r '.fingerprint' <<<"$ns_evt")"
+assert_eq "…and carries no engagements_failed at all" "null" \
+  "$(jq -r '.engagements_failed // null' <<<"$ns_evt")"
+
+# --- The argument degrades safely, the way every other one here does -------
+run_corroborate "non-numeric failure count" '["acme/widgets"]' "acme/widgets: nothing here" \
+  '[]' '[]' '[]' 0 "$empty_repos" "not-a-number" > "$tmp_dir/scenario.out"
+calls="$(cat "$tmp_dir/scenario.out")"
+assert_eq "a non-numeric failure count degrades to zero, not a crash" "fp-abc123" \
+  "$(events_named "$calls" none-selected | head -n1 | jq -r '.fingerprint')"
+
+# ============================================================================
+# The per-repository wiring in agent-cycle.sh itself (requirement 15y/20)
+# ============================================================================
+#
+# Three single-line-to-single-block decisions that live in the cycle body
+# rather than in any function, lifted verbatim out of agent-cycle.sh the way
+# test/cycle-state.test.sh lifts the `coord_repo_input` build. Each one is
+# invisible to every function-level test in this file and each one was, or
+# would have been, a fleet-wide outage.
+
+# --- The stage transcript path must not carry the slug's own `/` -----------
+# `$cycle_dir/coordinator-Pullwright/agent-ops.out` names a directory
+# component nothing in the cycle creates; `run_claude_stage` redirects into
+# both `stage_stream_file "$out_file"` and `"$out_file.stderr"`, so the
+# backgrounded subshell would die before `claude` was ever exec'd — for every
+# repository, on every cycle, with CI green over it because no function-level
+# test builds this path.
+out_path_src="$(sed -n 's/^  \(coordinator_out=.*\)$/\1/p' "$SCRIPT_DIR/agent-cycle.sh")"
+if [[ -z "$out_path_src" ]]; then
+  printf 'FAIL - could not extract the coordinator_out build from agent-cycle.sh\n'
+  failures=$(( failures + 1 ))
+else
+  cycle_dir="$tmp_dir/cycle"
+  mkdir -p "$cycle_dir"
+  coord_repo_slug="Pullwright/agent-ops"
+  eval "$out_path_src"
+  # shellcheck disable=SC2154  # coordinator_out: assigned by the lifted line just eval'd — it is what the line is.
+  assert_eq "a repository's stage transcript is one flat file in the cycle directory" \
+    "$cycle_dir" "$(dirname "$coordinator_out")"
+  assert_eq "…named for the repository, slug flattened" \
+    "coordinator-Pullwright-agent-ops.out" "$(basename "$coordinator_out")"
+  # The redirections run_claude_stage performs, performed here: this is the
+  # assertion that would have failed on the original path.
+  assert_eq "…and both of run_claude_stage's own redirections open against it" "0" \
+    "$( : > "$coordinator_out" && : > "$coordinator_out.stderr" && echo 0 || echo 1 )"
+  # Two configured repositories must never share a transcript.
+  first_out="$coordinator_out"
+  # shellcheck disable=SC2034  # coord_repo_slug: read by the lifted line eval'd on the next line.
+  coord_repo_slug="Pullwright/poetic"
+  eval "$out_path_src"
+  assert_eq "two repositories get two transcripts" "1" \
+    "$( [[ "$first_out" != "$coordinator_out" ]] && echo 1 || echo 0 )"
+fi
+
+# --- Requirement 20's single-selection grace survives the split ------------
+# A work order carrying the candidate fields at the top level, with no
+# `candidates` array, is still one candidate. Dropping it loses that
+# repository's whole selection in silence *and* invisibly: a repository that
+# reported `"selected": true` is never in the false-repos list, so the
+# corroboration above cannot catch the loss either.
+cands_src="$(awk '
+  /^    coord_repo_cands="\$\(jq -c --argjson idx "\$coord_ri" \\$/ { on = 1 }
+  on                                                                { print }
+  on && /<<<"\$coord_repo_work_order_json" 2>\/dev\/null\)"$/       { exit }
+' "$SCRIPT_DIR/agent-cycle.sh")"
+if [[ -z "$cands_src" ]]; then
+  printf 'FAIL - could not extract the coord_repo_cands lift from agent-cycle.sh\n'
+  failures=$(( failures + 1 ))
+else
+  # Both are read by the lifted block eval'd below, which shellcheck cannot
+  # see into — and `coord_repo_cands` is what that block assigns.
+  # shellcheck disable=SC2034
+  coord_ri=2
+  # shellcheck disable=SC2034
+  coord_repo_work_order_json='{"selected":true,"unblocked":[],"recheck_clean":[],"voided":[],
+    "repo":"acme/widgets","item":"TD1","source":"tech-debt","model":"m","title":"t"}'
+  eval "$cands_src"
+  # shellcheck disable=SC2154  # assigned by the lifted block just eval'd
+  assert_eq "a top-level work order is still exactly one candidate" "1" \
+    "$(jq 'length' <<<"$coord_repo_cands")"
+  assert_eq "…carrying its own identity fields" "TD1 tech-debt acme/widgets" \
+    "$(jq -r '.[0] | "\(.item) \(.source) \(.repo)"' <<<"$coord_repo_cands")"
+  assert_eq "…with the four envelope fields stripped" "false" \
+    "$(jq '.[0] | has("selected") or has("unblocked") or has("recheck_clean") or has("voided")' \
+       <<<"$coord_repo_cands")"
+  assert_eq "…and tagged with this repository's own walk order and rank" "2 0" \
+    "$(jq -r '.[0] | "\(._repo_order) \(._rank)"' <<<"$coord_repo_cands")"
+  # shellcheck disable=SC2034  # read by the lifted block eval'd on the next line.
+  coord_repo_work_order_json='{"selected":true,"candidates":[
+    {"repo":"acme/widgets","item":"A"},{"repo":"acme/widgets","item":"B"}]}'
+  eval "$cands_src"
+  assert_eq "a real candidates array is still read as itself, in order" "A B" \
+    "$(jq -r '[.[].item] | join(" ")' <<<"$coord_repo_cands")"
+  assert_eq "…with each entry carrying its own rank" "0 1" \
+    "$(jq -r '[.[]._rank] | join(" ")' <<<"$coord_repo_cands")"
+fi
+
+# --- Every engagement failing ends the cycle before the stand-down ---------
+# The pre-split single attempt exited here; so must this, since a cycle that
+# asked nobody has nothing to stand down over and would otherwise reach the
+# `none-selected` branch above with an empty false-repos list — and, before
+# the guard above, an armed fingerprint.
+allfail_src="$(awk '
+  /^if \(\( coord_n_repos > 0 && coord_n_failed >= coord_n_repos \)\); then$/ { on = 1 }
+  on                                                                          { print }
+  on && /^fi$/                                                                { exit }
+' "$SCRIPT_DIR/agent-cycle.sh")"
+if [[ -z "$allfail_src" ]]; then
+  printf 'FAIL - could not extract the all-engagements-failed guard from agent-cycle.sh\n'
+  failures=$(( failures + 1 ))
+else
+  assert_eq "every engagement failing exits the cycle" "0" \
+    "$( coord_n_repos=3 coord_n_failed=3 bash -c "$allfail_src"$'\nexit 9'; echo $? )"
+  assert_eq "…and a partial failure carries on to the stand-down" "9" \
+    "$( coord_n_repos=3 coord_n_failed=2 bash -c "$allfail_src"$'\nexit 9'; echo $? )"
+  assert_eq "…and a fleet with no configured repository at all does not exit here" "9" \
+    "$( coord_n_repos=0 coord_n_failed=0 bash -c "$allfail_src"$'\nexit 9'; echo $? )"
+fi
 
 printf '\n'
 if (( failures > 0 )); then

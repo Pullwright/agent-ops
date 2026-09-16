@@ -1819,7 +1819,7 @@ if ! (( DRY_RUN )) && (( crash_loop_after > 0 )) \
       crash_loop_escalate_or_defer "$crash_loop_json" "crash-loop:coordinator" \
         "Co-Ordinator failures" \
         "Crash loop: the Co-Ordinator is failing fleet-wide" \
-        "Start with the newest failing cycle's \`coordinator.out\` under \`state_dir/cycles/\` — a stage the API refused outright records the refusal there, as a \`result\` with \`is_error: true\`, and leaves \`coordinator.out.stderr\` empty (agent-ops#641). Read \`coordinator.out.stderr\` too, for a stage that died rather than being refused; the stage transcripts survive every failure."
+        "Start with the newest failing cycle's \`coordinator-<repo-slug>.out\` files under \`state_dir/cycles/\` — one per configured repository, since each gets its own engagement (requirement 15) — a stage the API refused outright records the refusal there, as a \`result\` with \`is_error: true\`, and leaves the matching \`.out.stderr\` empty (agent-ops#641). Read those \`.out.stderr\` files too, for a stage that died rather than being refused; the stage transcripts survive every failure."
     else
       log_event "provider-unreachable" "$crash_loop_json"
     fi
@@ -2525,6 +2525,13 @@ coordinator_blocked_json="$(coordinator_blocked_view "$blocked_json")"
 coord_all_candidates_json='[]'
 coord_false_repo_slugs_json='[]'
 coord_false_reasons=()
+# How many of this cycle's engagements never produced a verdict at all — a
+# refused launch, a wedged run, an unparseable final message. Distinct from
+# `coord_false_repo_slugs_json` (a repository that answered, and answered
+# "nothing here"): a repository that was never successfully asked has
+# established nothing about its own backlog, which is what the two guards
+# below this loop turn on.
+coord_n_failed=0
 # Accumulated by hand across every repo's own log_needs_refinement_items/
 # log_voided_items call below: each call resets its own
 # coord_recorded_refinement_json/coord_recorded_voided_json to just that call's
@@ -2568,7 +2575,16 @@ for (( coord_ri = 0; coord_ri < coord_n_repos; coord_ri++ )); do
 $(jq . <<<"$coord_repo_input")
 \`\`\`
 "
-  coordinator_out="$cycle_dir/coordinator-$coord_repo_slug.out"
+  # The slug's own `/` is flattened out of the filename, never carried into
+  # it: `$cycle_dir/coordinator-Pullwright/agent-ops.out` names a directory
+  # component nothing in this cycle creates, and `run_claude_stage` redirects
+  # into both `stage_stream_file "$out_file"` and `"$out_file.stderr"` — so
+  # every engagement, in every repository, on every cycle, would die in its
+  # own backgrounded subshell before `claude` was ever exec'd. One flat file
+  # per repository in the cycle directory instead, which is also the shape
+  # `scripts/state-sync.sh` and `scripts/publish-dashboard.sh` already expect
+  # a cycle's stage transcripts to have.
+  coordinator_out="$cycle_dir/coordinator-${coord_repo_slug//\//-}.out"
   if ! run_coordinator_stage_attempt "$coordinator_out" "$coordinator_prompt" \
       "$(jq -nc --arg r "$coord_repo_slug" '{repo: $r}')"; then
     # This repo's own engagement failed to launch or never produced a
@@ -2577,6 +2593,7 @@ $(jq . <<<"$coord_repo_input")
     # to release; the Co-Ordinator holds none). One repo's failure must not
     # cost every other repo this cycle's own chance, so the loop continues
     # rather than exiting the way the single fleet-wide attempt used to.
+    coord_n_failed=$(( coord_n_failed + 1 ))
     continue
   fi
   # shellcheck disable=SC2154  # coord_attempt_result_json: run_coordinator_stage_attempt (lib/stage-attempt.sh) assigns it.
@@ -2605,10 +2622,19 @@ $(jq . <<<"$coord_repo_input")
 
   coord_repo_selected="$(jq -r '.selected' <<<"$coord_repo_work_order_json")"
   if [[ "$coord_repo_selected" == "true" ]]; then
+    # Requirement 20's single-selection grace, preserved verbatim through the
+    # split: a work order that carries no `candidates` array at all — the
+    # work-order fields at the top level instead — is still read as a
+    # one-candidate list, with the same four fields stripped the pre-split
+    # "5b" block stripped. Dropping it here would lose that repository's whole
+    # selection in silence, and invisibly: a repository that said
+    # `"selected": true` is not in `coord_false_repo_slugs_json`, so
+    # requirement 3v's corroboration cannot catch the loss either.
     coord_repo_cands="$(jq -c --argjson idx "$coord_ri" \
-      '[(.candidates // [])
-        | to_entries[]
-        | .value + {_repo_order: $idx, _rank: .key}]' \
+      '(if (.candidates | type) == "array" then .candidates
+        else [del(.selected, .unblocked, .recheck_clean, .voided)] end)
+       | to_entries
+       | map(.value + {_repo_order: $idx, _rank: .key})' \
       <<<"$coord_repo_work_order_json" 2>/dev/null)"
     [[ -n "$coord_repo_cands" ]] || coord_repo_cands='[]'
     coord_all_candidates_json="$(jq -nc 'input as $a | input as $b | $a + $b' \
@@ -2625,6 +2651,23 @@ done
 coord_recorded_refinement_json="$coord_fleet_recorded_refinement_json"
 coord_recorded_voided_json="$coord_fleet_recorded_voided_json"
 
+# Not one engagement produced a verdict: exit exactly where the single
+# fleet-wide attempt exited, and for the same reason. Every failure is
+# already recorded (`run_coordinator_stage_attempt` logs attempt-failed and
+# calls `handle_stage_failure`, which sets this node's own terminal state),
+# and this cycle established *nothing* about any repository's backlog — so
+# the corroboration/stand-down below must not run at all: with no repository
+# in `coord_false_repo_slugs_json` it would sail past both corroboration
+# branches and log a `none-selected` carrying `noop_fingerprint_value`,
+# arming `noop_skip_reason` against a fingerprint no model ever saw. A launch
+# failure is typically node-wide — an API refusal, a usage limit, an image
+# fault — so "every engagement failed" is the ordinary shape of this failure,
+# not an exotic one, and the symptom it would buy is the silent stall
+# `lib/noop-skip.sh`'s own header calls this system's signature failure mode.
+if (( coord_n_repos > 0 && coord_n_failed >= coord_n_repos )); then
+  exit 0
+fi
+
 # --- 5. Merge, corroborate, and — only if every repo came back empty —
 #        mechanically fall back (requirements 3v/15z/17a) ---
 # `candidates_max` is a fleet-wide cap here for the first time: no per-repo
@@ -2637,10 +2680,20 @@ selected_by_fallback=0
 coord_reason="$(printf '%s; ' ${coord_false_reasons[@]+"${coord_false_reasons[@]}"})"
 coord_reason="${coord_reason%; }"
 [[ -n "$coord_reason" ]] || coord_reason="no repository reported a verdict this cycle"
+# A cycle that could not ask every repository says so in its own stand-down
+# reason, rather than letting the repositories that *did* answer read as the
+# whole fleet's verdict.
+if (( coord_n_failed > 0 )); then
+  coord_reason="$coord_reason (+$coord_n_failed of $coord_n_repos engagement(s) produced no verdict at all)"
+fi
 
 if (( coord_n_merged == 0 )); then
+  # `coord_n_failed` is passed through so a partial cycle cannot arm the
+  # no-op short-circuit either: a fleet-wide fingerprint claims every
+  # configured repository was asked and had nothing, which is exactly what a
+  # cycle with a failed engagement has not established.
   if ! coordinator_corroborate_and_fallback "$coord_false_repo_slugs_json" "$coord_reason" \
-      "$coord_recorded_refinement_json" "$coord_recorded_voided_json"; then
+      "$coord_recorded_refinement_json" "$coord_recorded_voided_json" "$coord_n_failed"; then
     exit 0
   fi
 fi

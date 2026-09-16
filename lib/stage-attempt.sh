@@ -9,11 +9,13 @@
 #
 # Split out of agent-cycle.sh (#771) as the "stage orchestration and prompt
 # assembly" seam docs/IMPLEMENTATION-PIPELINE-SPEC.md's requirements name:
-# `run_coordinator_stage_attempt` is the one launch/parse/salvage sequence the
-# Co-Ordinator's first attempt and its corroboration retry both run through,
-# `fallback_select_candidate` and `coordinator_corroborate_retry_or_fallback`
-# are the requirement-3v ladder built on top of it once a `none-selected`
-# verdict fails corroboration, and `extract_json_result`/`stage_salvage_result`/
+# `run_coordinator_stage_attempt` is the one launch/parse/salvage sequence
+# every one of a cycle's per-repository Co-Ordinator engagements runs through,
+# `coordinator_merge_candidates` reconciles what they each returned into one
+# tier-ordered, `candidates_max`-capped list, `fallback_select_candidate` and
+# `coordinator_corroborate_and_fallback` are the requirement-3v ladder built
+# on top of them once that merged list is empty and a `none-selected` verdict
+# fails corroboration, and `extract_json_result`/`stage_salvage_result`/
 # `dump_stage_output`/`stage_api_refusal`/`stage_api_refusal_message`/
 # `handle_stage_failure` are what every stage — Co-Ordinator, Approver,
 # Enabler, Refiner, Implementer, Reviewer — shares to turn a stage's raw
@@ -426,10 +428,13 @@ run_coordinator_stage_attempt() {  # <attempt-out-file> <prompt> [extra-budget-j
 }
 
 # Requirement 3v (issue #321): the mechanical last resort once a `none-selected`
-# verdict has failed corroboration twice in the same cycle (the original
-# engagement and its one retry — see "5. Nothing selected" below). At that
-# point liveness must stop depending on the model getting it right at all, so
-# the Script itself picks: the highest-priority non-empty source band, its
+# verdict has failed corroboration in this cycle (see "5. Merge, corroborate,
+# and — only if every repo came back empty — mechanically fall back" in
+# agent-cycle.sh; since issue #587 there is no model retry to fail first — one
+# repository's own confabulation costs only that repository's own opportunity,
+# and every other repository already had its own independent engagement). At
+# that point liveness must stop depending on the model getting it right at all,
+# so the Script itself picks: the highest-priority non-empty source band, its
 # first item in repo order, with no per-item judgement applied.
 #
 # The band order approximates `prompts/coordinator.md`'s own "Selection
@@ -709,11 +714,12 @@ coordinator_merge_candidates() {  # <candidates-json> <ordered-repos-json> <cand
 # then found nothing either — `scripts/publish-dashboard.sh`'s corroboration-
 # rate panel reads those two fields by name) and returns 1 for the caller to
 # `exit 0`.
-coordinator_corroborate_and_fallback() {  # <false-repos-json> <reason> <recorded-refinement-json> <recorded-voided-json>
+coordinator_corroborate_and_fallback() {  # <false-repos-json> <reason> <recorded-refinement-json> <recorded-voided-json> [failed-engagements]
   local false_repos="${1:-[]}" reason="${2:-no repository reported a verdict this cycle}" \
-        recorded_refinement="${3:-[]}" recorded_voided="${4:-[]}" \
+        recorded_refinement="${3:-[]}" recorded_voided="${4:-[]}" n_failed="${5:-0}" \
         eligible_false_json eligible_false_total unaccounted_json unaccounted_n \
         unaccounted_bands_json fallback_candidate_json fallback_empty=0
+  [[ "$n_failed" =~ ^[0-9]+$ ]] || n_failed=0
 
   # --- Verdict corroboration, scoped to the repositories that said no
   #     (requirements 3t/3x) ---
@@ -782,11 +788,22 @@ coordinator_corroborate_and_fallback() {  # <false-repos-json> <reason> <recorde
   # name) the pre-split single invocation's own twice-rejected
   # `none-selected` carried. `fallback_empty` is set on no other branch, so
   # reusing it for both is exact, not a shortcut.
+  #
+  # `n_failed` omits the fingerprint for the second reason the split
+  # introduced (issue #587): the fingerprint is a fleet-wide claim — "every
+  # configured repository was asked, and none of them had anything" — that
+  # stands the *next* cycle down until an input moves. A cycle in which some
+  # engagement never produced a verdict has not established that claim for
+  # the repositories it could not ask, so it must leave the short-circuit
+  # unarmed and let the next cycle ask again, exactly as a rejected verdict
+  # does.
   log_event "none-selected" "$(jq -nc --arg r "$reason" --arg f "$noop_fingerprint_value" \
     --argjson total "$eligible_items_total" --arg m "$coordinator_model" \
     --argjson rejected "$fallback_empty" --argjson bands "$unaccounted_bands_json" \
-    '{reason: $r} + (if $rejected == 1 or $f == "" then {} else {fingerprint: $f} end)
+    --argjson failed "$n_failed" \
+    '{reason: $r} + (if $rejected == 1 or $failed > 0 or $f == "" then {} else {fingerprint: $f} end)
      + {eligible_total: $total, coordinator_model: $m}
+     + (if $failed > 0 then {engagements_failed: $failed} else {} end)
      + (if $rejected == 1 then {td_verdict_rejected: true, bands: $bands} else {} end)')"
   local nts_state="" nts_cause=""
   IFS=$'\t' read -r nts_state nts_cause < <(node_time_state_idle_split "$eligible_items_total" coordinator-declined)

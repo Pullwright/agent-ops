@@ -120,9 +120,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (dropped as a cost this split's own N-fold invocation increase does not
   buy back): the mechanical fallback (`fallback_select_candidate`, unchanged)
   is now reached directly once a repository's own rejected verdict leaves an
-  eligible item unaccounted for and nothing else this cycle selected.
-  `docs/IMPLEMENTATION-PIPELINE-SPEC.md`'s requirements 15/15a-15g/3v are
-  updated to match.
+  eligible item unaccounted for and nothing else this cycle selected. Each
+  engagement writes its own stage transcript, `coordinator-<slug>.out` in the
+  cycle directory with the slug's `/` flattened to `-`, in place of the single
+  `coordinator.out`. An engagement that produces no verdict at all costs only
+  its own repository's opportunity — the cycle carries on to the next
+  repository — but never lets the cycle overclaim: where every engagement
+  failed the cycle exits exactly where the single fleet-wide attempt did, and
+  where some did, the `none-selected` event omits the fingerprint that would
+  otherwise stand the *next* cycle down (requirement 15y) and records
+  `engagements_failed` instead. Requirement 20's single-selection grace shape —
+  a work order carrying the candidate fields at the top level rather than a
+  `candidates` array — is still accepted, per repository.
+  `docs/IMPLEMENTATION-PIPELINE-SPEC.md`'s requirements 15/15y/15a-15g/3v/3w
+  are updated to match.
 
 - **The dashboard's tech-debt ledger panel now reads a `pw::type:tech-debt`
   label search instead of the frozen `tech-debt/` register** (issue #881,
