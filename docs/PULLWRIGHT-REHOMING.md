@@ -138,8 +138,16 @@ on a node) or *fleet* (an ordinary pull request the pipeline can build).
 3. Merge the sweep PR (rebase first if `main` moved; pushes to the old remote
    redirect). Watch "Build the node image" publish
    `ghcr.io/pullwright/agent-ops:latest`. Open the new package's settings:
-   link it to the repository and confirm it is **public** — a package first
-   published from a workflow may not be.
+   it is **private by default** when a package is first published by a workflow
+   into a fresh namespace, and must be switched to public. (Note: GHCR returns
+   `denied` for both a private package and a non-existent one, so if
+   `docker compose pull` fails between the merge and the publish run finishing,
+   check the "Publish to GHCR" workflow to tell whether `:latest` is not yet
+   published or published-but-private — the workflow runs only on `push` to
+   `refs/heads/main`, not on merge-queue runs, so `:latest` can briefly not
+   exist between a merge and the push-triggered publish completing. The
+   repository link needs no action: `build-image.yml` already sets
+   `org.opencontainers.image.source`, which links the package automatically.)
 4. On each node — `~/poetic-node-1` (ockham-container), `~/poetic-node-2`
    (ockham-2), `/opt/poetic-node` (poetic-1), `/opt/poetic-node-2`
    (poetic-2). A running container keeps the `.env` it was created with, so
@@ -149,6 +157,9 @@ on a node) or *fleet* (an ordinary pull request the pipeline can build).
                   # AGENT_OPS_IMAGE=ghcr.io/pullwright/agent-ops:latest
                   # the per-owner Approver installation variable #913 settles on
    until docker exec agent-ops-scheduler-1 /app/deploy/docker/watchtower-pre-update.sh >/dev/null 2>&1; do sleep 30; done
+   # ⚠️ docker compose up -d reads .env only via interpolation (compose.yaml has no env_file:),
+   # so a GH_TOKEN exported in the shell will override the .env value just edited.
+   # Run this from a shell with no GH_TOKEN exported, or unset GH_TOKEN first.
    docker compose pull && docker compose up -d
    docker compose ps -a --format "table {{.Name}}\t{{.Service}}\t{{.Status}}"   # one row per profiled service
    docker exec agent-ops-scheduler-1 /app/scripts/doctor.sh                       # token writes to both owners; App covers agent-ops
