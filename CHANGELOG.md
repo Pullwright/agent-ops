@@ -72,6 +72,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **The token-economics panel's by-model breakdown no longer undercounts
+  `n` when several actors in one cycle share a model** (issue #1591).
+  `aggregateTokenRows` deduped its sample count by `cycle` alone, exact for
+  the by-stage table (each of its groups is already one actor) but not for
+  the by-model one: a cycle whose coordinator, implementer and reviewer all
+  ran the same model contributed three transcripts but counted as `n: 1`,
+  delaying a cache-ratio reading past `TOKEN_MIN_SAMPLE` longer than the
+  real sample warranted. It now dedups by `(cycle, actor)`, the transcript's
+  real identity.
+
 - **`config.stage_backstops` can now carry a `project-reviewer` entry**
   (issue #1586). `scripts/publish-dashboard.sh` fed the stage-budget fold
   only `$ALL_EVENTS` (the `log.jsonl` union), never `review-log.jsonl`, so a

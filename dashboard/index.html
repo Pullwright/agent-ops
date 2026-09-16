@@ -3183,10 +3183,15 @@
   // read and the same time-frame selector — no reason for the token panels
   // to disagree with the reader about which window they are looking at.
   //
-  // `n` counts distinct transcripts the same way `aggregateCostRows` does
-  // (deduped by `cycle`, falling back to row index for a payload predating
-  // it) — the sample size a rate is drawn from, not a row count a
-  // multi-model transcript could inflate.
+  // `n` counts distinct transcripts — deduped by `(cycle, actor)`, falling
+  // back to row index for a payload predating `cycle` — the sample size a
+  // rate is drawn from, not a row count a multi-model transcript could
+  // inflate. This differs from `aggregateCostRows`, which dedups by `cycle`
+  // alone: that is exact for the by-stage table (each group is already one
+  // actor, so a cycle contributes one id per actor-group) but would
+  // undercount the by-model table, where several actors sharing one cycle
+  // and one model must count as that many distinct transcripts, not one
+  // (issue #1591).
   //
   // An `unknown`-model row (an envelope whose `modelUsage` could not be
   // read) carries `tokens_*: null` on every field, never `0`
@@ -3205,7 +3210,7 @@
       sums[k].output += r.tokens_output || 0;
       sums[k].cache_creation += r.tokens_cache_creation || 0;
       sums[k].cache_read += r.tokens_cache_read || 0;
-      ids[k][r.cycle != null ? ("c:" + r.cycle) : ("i:" + i)] = true;
+      ids[k][(r.cycle != null ? ("c:" + r.cycle) : ("i:" + i)) + "|" + (r.actor || "")] = true;
     });
     return order.map(function (k) {
       var s = sums[k], n = Object.keys(ids[k]).length;
