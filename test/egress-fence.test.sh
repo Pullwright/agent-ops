@@ -68,8 +68,9 @@ fi
 # service. Lifted rather than restated so this fails when the file moves on.
 scheduler_block="$(awk '/^  scheduler:$/{on=1; next} on && /^  [a-z-]+:$/{exit} on' "$compose")"
 proxy_block="$(awk '/^  egress-proxy:$/{on=1; next} on && /^  [a-z-]+:$/{exit} on' "$compose")"
-if [[ -z "$scheduler_block" || -z "$proxy_block" ]]; then
-  echo "FAIL - could not lift the scheduler or egress-proxy service block from compose.yaml"
+node_health_block="$(awk '/^  node-health:$/{on=1; next} on && /^  [a-z-]+:$/{exit} on' "$compose")"
+if [[ -z "$scheduler_block" || -z "$proxy_block" || -z "$node_health_block" ]]; then
+  echo "FAIL - could not lift the scheduler, egress-proxy or node-health service block from compose.yaml"
   exit 1
 fi
 
@@ -101,6 +102,22 @@ if grep -qE '^      EGRESS_EXTRA_ALLOW: ' <<<"$proxy_block"; then
 else
   flunk "EGRESS_EXTRA_ALLOW is not named in egress-proxy's environment, so a node's .env additions reach nothing"
 fi
+
+# node-health's one outbound call (the cached /rate_limit read) must take the
+# same D24 egress path a cycle uses, or its readiness verdict is evidence
+# gathered over a route the scheduler could not actually take (issue #1587).
+if grep -qF 'networks: [default, egress]' <<<"$node_health_block"; then
+  pass "node-health bridges the internal network and the default one"
+else
+  flunk "node-health is not on exactly [default, egress] — its /readyz forge read would leave outside the D24 fence"
+fi
+for var in HTTPS_PROXY HTTP_PROXY https_proxy http_proxy NO_PROXY no_proxy; do
+  if grep -qE "^      $var: " <<<"$node_health_block"; then
+    pass "node-health environment names $var"
+  else
+    flunk "node-health environment is missing $var (compose's environment block is an allowlist — an unnamed variable reaches nothing)"
+  fi
+done
 
 egress_net="$(awk '/^  egress:$/{on=1; next} on && /^  [a-z-]+:$/{exit} on' "$compose")"
 if grep -qF 'internal: true' <<<"$egress_net"; then
