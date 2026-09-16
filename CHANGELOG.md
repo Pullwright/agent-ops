@@ -82,6 +82,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   real sample warranted. It now dedups by `(cycle, actor)`, the transcript's
   real identity.
 
+- **The `node-health` sidecar's `/readyz` forge read now leaves through the
+  same D24 egress path a cycle uses** (issue #1587). The `node-health`
+  compose service inherited the default network and none of the scheduler's
+  proxy variables, so its one outbound call (`gh api rate_limit`) left the
+  node directly while the cycle whose readiness it reports would leave only
+  through `egress-proxy` — a broken allowlist, a wedged proxy or a down
+  `egress` network read as `200 ready` over a route no cycle could actually
+  take. The service now carries the scheduler's own `HTTPS_PROXY`/
+  `HTTP_PROXY` variables (both spellings) and sits on `default` and `egress`
+  both, matching `egress-proxy`'s own placement, while keeping its published
+  loopback port unchanged.
+
 - **`config.stage_backstops` can now carry a `project-reviewer` entry**
   (issue #1586). `scripts/publish-dashboard.sh` fed the stage-budget fold
   only `$ALL_EVENTS` (the `log.jsonl` union), never `review-log.jsonl`, so a

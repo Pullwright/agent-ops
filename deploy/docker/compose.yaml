@@ -875,15 +875,38 @@ services:
   # a wedged scheduler beside it would be exactly the self-certification
   # issue #608 exists to avoid, which is why this service never substitutes
   # for the exec check and the exec check never depends on this one running.
+  #
+  # `/readyz`'s one outbound call (`gh api rate_limit`, cached in the shared
+  # `state` volume — see 58a) must leave through the same D24 egress path a
+  # cycle uses, or a verdict answered here is evidence gathered over a route
+  # the scheduler could not actually take (issue #1587) — the "answer came
+  # from a path the subject does not use" shape issue #608 already exists to
+  # close, one layer out. So this service carries the scheduler's own proxy
+  # variables and adds the internal-only `egress` network alongside its
+  # existing `default` placement, rather than moving onto `egress` alone: the
+  # property wanted is which path the forge read takes, not confinement of
+  # this container, and `egress` is `internal: true` — a published port into
+  # it is not the reachable loopback mapping requirement 60d depends on. This
+  # is a vantage fix, not a widening of the fence's security boundary: the
+  # fence exists because the scheduler runs `claude` over text anyone on
+  # GitHub can author, with live credentials, which this read-only responder
+  # never does.
   node-health:
     <<: *agent-ops
     profiles: [node-health]
     command: ["/app/scripts/node-health-server.py", "${NODE_HEALTH_PORT:-8788}", "0.0.0.0"]
+    networks: [default, egress]
     # Which compose service this container is — see the scheduler's own
     # AGENT_OPS_SERVICE above for why lib/updater-health.sh needs it.
     environment:
       <<: *agent-ops-env
       AGENT_OPS_SERVICE: node-health
+      HTTPS_PROXY: http://egress-proxy:3128
+      HTTP_PROXY: http://egress-proxy:3128
+      https_proxy: http://egress-proxy:3128
+      http_proxy: http://egress-proxy:3128
+      NO_PROXY: localhost,127.0.0.1
+      no_proxy: localhost,127.0.0.1
     # The same modest ceilings as the dashboard services: this container
     # renders JSON from state another container wrote, and shells out to the
     # same read-only CLI a healthcheck already runs.
@@ -894,9 +917,11 @@ services:
       - "127.0.0.1:${NODE_HEALTH_PORT:-8788}:${NODE_HEALTH_PORT:-8788}"
     # Depend on the scheduler so the shared `state` volume is seeded by one
     # container on a node's first start, not two at once — see `dashboard`
-    # above for why.
+    # above for why. Also depend on egress-proxy, whose route the forge read
+    # above now takes.
     depends_on:
       - scheduler
+      - egress-proxy
 
   # --- auto-update profile -----------------------------------------------
   # How a node picks up new code: CI builds an image from main, watchtower
