@@ -195,6 +195,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **The Co-Ordinator now runs once per configured repository instead of
+  once fleet-wide, each cycle** (issue #587). Selection used to happen in a
+  single completion that saw every configured repository's own candidates
+  at once; it now runs one engagement per repository, each scoped to that
+  repository's own data, in the same effective-age walk order as before.
+  The six cross-repository priority tiers `prompts/coordinator.md`'s
+  "Selection algorithm" states (security, urgent issues, review-feedback,
+  merge-conflicts, dequeued, abandoned-drafts) — which a single completion
+  used to judge directly — are now reconciled by the Script itself
+  (`coordinator_merge_candidates`, `lib/stage-attempt.sh`) once every
+  repository's own engagement has answered, and `candidates_max` is now a
+  cap the Script enforces on that merged, reordered result rather than an
+  instruction trusted to one completion. `max_open_agent_prs` and the no-op
+  fingerprint short-circuit are both unchanged — both already ran fleet-wide
+  and once per cycle, ahead of the Co-Ordinator, before this split. A
+  corroboration-rejected verdict no longer buys a same-cycle model retry
+  (dropped as a cost this split's own N-fold invocation increase does not
+  buy back): the mechanical fallback (`fallback_select_candidate`, unchanged)
+  is now reached directly once a repository's own rejected verdict leaves an
+  eligible item unaccounted for and nothing else this cycle selected. Each
+  engagement writes its own stage transcript, `coordinator-<slug>.out` in the
+  cycle directory with the slug's `/` flattened to `-`, in place of the single
+  `coordinator.out`. An engagement that produces no verdict at all costs only
+  its own repository's opportunity — the cycle carries on to the next
+  repository — but never lets the cycle overclaim: where every engagement
+  failed the cycle exits exactly where the single fleet-wide attempt did, and
+  where some did, the `none-selected` event omits the fingerprint that would
+  otherwise stand the *next* cycle down (requirement 15y) and records
+  `engagements_failed` instead. Requirement 20's single-selection grace shape —
+  a work order carrying the candidate fields at the top level rather than a
+  `candidates` array — is still accepted, per repository.
+  `docs/IMPLEMENTATION-PIPELINE-SPEC.md`'s requirements 15/15y/15a-15g/3v/3w
+  are updated to match.
+
 - **The dashboard's tech-debt ledger panel now reads a `pw::type:tech-debt`
   label search instead of the frozen `tech-debt/` register** (issue #881,
   following D15 as revised, #869). Every register in the fleet is now frozen

@@ -90,8 +90,14 @@ fi
 # And so is the assembly the block's allowance has to predict. If the fenced
 # scaffolding ever changes shape, the block's own `coordinator_fit_scaffold_
 # bytes` must change with it, and this is what notices.
+#
+# Indented two spaces, not anchored at column 0: issue #587 moved this
+# assignment inside the Co-Ordinator's per-repository loop. The closing `"`
+# line is not indented — a bash multi-line string literal's own continuation
+# lines are never touched by the assignment's own indentation — so only the
+# start anchor needs it.
 # shellcheck disable=SC2016  # The anchors are awk regexes matching agent-cycle.sh's own text, not expansions for this shell.
-assembly_block="$(extract_block '^coordinator_prompt="\$coordinator_base_prompt$' '^"$' "$AGENT_CYCLE")"
+assembly_block="$(extract_block '^  coordinator_prompt="\$coordinator_base_prompt$' '^"$' "$AGENT_CYCLE")"
 if [[ -z "$assembly_block" || "$assembly_block" != *'Runtime input for this cycle'* ]]; then
   echo "FAIL - could not extract the prompt assembly from agent-cycle.sh" >&2
   exit 1
@@ -206,7 +212,10 @@ run_fit() {  # <max-bytes> <repos-json>  -> assembled prompt size on stdout
     "$ordered_repos_json" "$(coordinator_blocked_view "$blocked_json")" \
     "$coordinator_refinements_json" "$claimed_json")"
   # shellcheck disable=SC2034  # Assembled here only to be interpolated by the lifted assembly block below.
-  coordinator_input="$(jq -nc \
+  # Named coord_repo_input, not coordinator_input: issue #587 split the
+  # single fleet-wide input into one per repository, and the lifted assembly
+  # block below now interpolates that per-repo name.
+  coord_repo_input="$(jq -nc \
     --arg model_default "$implementer_model_default" \
     --arg model_trivial "$implementer_model_trivial" \
     --arg label "$pr_label" \

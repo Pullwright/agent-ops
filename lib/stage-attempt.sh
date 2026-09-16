@@ -9,11 +9,13 @@
 #
 # Split out of agent-cycle.sh (#771) as the "stage orchestration and prompt
 # assembly" seam docs/IMPLEMENTATION-PIPELINE-SPEC.md's requirements name:
-# `run_coordinator_stage_attempt` is the one launch/parse/salvage sequence the
-# Co-Ordinator's first attempt and its corroboration retry both run through,
-# `fallback_select_candidate` and `coordinator_corroborate_retry_or_fallback`
-# are the requirement-3v ladder built on top of it once a `none-selected`
-# verdict fails corroboration, and `extract_json_result`/`stage_salvage_result`/
+# `run_coordinator_stage_attempt` is the one launch/parse/salvage sequence
+# every one of a cycle's per-repository Co-Ordinator engagements runs through,
+# `coordinator_merge_candidates` reconciles what they each returned into one
+# tier-ordered, `candidates_max`-capped list, `fallback_select_candidate` and
+# `coordinator_corroborate_and_fallback` are the requirement-3v ladder built
+# on top of them once that merged list is empty and a `none-selected` verdict
+# fails corroboration, and `extract_json_result`/`stage_salvage_result`/
 # `dump_stage_output`/`stage_api_refusal`/`stage_api_refusal_message`/
 # `handle_stage_failure` are what every stage — Co-Ordinator, Approver,
 # Enabler, Refiner, Implementer, Reviewer — shares to turn a stage's raw
@@ -351,31 +353,36 @@ $(pipeline_comment_marker "$cycle_id" script)" >/dev/null 2>&1 || true
   fi
 }
 
-# Requirement 3v (issue #321): one Co-Ordinator engagement, launched, parsed,
-# and its own failure paths handled — factored out of the "4. Co-Ordinator
-# stage" flow below so the corroboration retry can call it a second time
-# without duplicating the launch/parse/salvage machinery. Sets
+# Issue #587: one Co-Ordinator engagement, launched, parsed, and its own
+# failure paths handled — factored out of the "4. Co-Ordinator stage" flow
+# below so the per-repository loop can call it once per configured
+# repository without duplicating the launch/parse/salvage machinery. Sets
 # `coord_attempt_result_json` to the parsed work order on success (empty on
 # any failure — a launch failure, an unparseable final message even after
 # salvage) and `coord_attempt_metering_json` to this attempt's own cost/time
 # fields (lib/metering.sh) every time, success or failure, so a caller can
 # report what the attempt cost regardless of its outcome. Returns 1 on any
 # failure, after this attempt's own `attempt-failed`/`stage-end` logging and
-# (for a launch failure) `handle_stage_failure`'s claim release — the same
-# handling the single inline attempt used to do for itself, run here for
-# either attempt.
+# (for a launch failure) `handle_stage_failure`'s claim release.
 #
 # `extra` (default `{}`) is spliced into both `stage_budget_apply`'s own
-# `stage-start` event and this attempt's `stage-end`/`attempt-failed` events,
-# so the first (and by far the common) attempt is untouched — no argument,
-# `{}` merges to nothing — while the retry tags every event it produces
-# `{"retry": true}`, letting a reader (or requirement 3v's own corroboration
-# events, below) tell which attempt paid for what without cross-referencing
-# `stage-start` timestamps by hand.
+# `stage-start` event and this attempt's `stage-end`/`attempt-failed` events.
+# The per-repository loop below passes `{"repo": "<slug>"}` on every call —
+# the one place left that says which repository a given engagement's cost
+# and outcome belong to, now that there is no longer exactly one Co-Ordinator
+# engagement per cycle to assume it of.
 run_coordinator_stage_attempt() {  # <attempt-out-file> <prompt> [extra-budget-json]
   local out_file="$1" prompt="$2" extra="${3:-{\}}" rc=0 watchdog_warning result
   jq -e 'type == "object"' <<<"$extra" >/dev/null 2>&1 || extra='{}'
 
+  # The budget key stays the fleet-wide "*", not the repo `extra` carries:
+  # `lib/stage-budget.sh`'s per-actor/per-repo/per-model self-tuning has no
+  # history for a repo-scoped Co-Ordinator cell yet, and starting one cold on
+  # the day this ships would derive a backstop from zero history rather than
+  # the fleet-wide history already accumulated under "*". Keying it per repo
+  # is a genuine future improvement (each repo's own backlog could earn its
+  # own tuned backstop) but is not something this change preserves, so it is
+  # left for a follow-up rather than bundled in here.
   stage_budget_apply coordinator "*" "$coordinator_model" "$extra"
   if run_claude_stage coordinator "$(( stage_backstop_min * 60 ))" "$coordinator_model" "$prompt" "$out_file" "$cycle_dir" "$(( stage_inactivity_min * 60 ))"; then
     rc=0
@@ -386,8 +393,11 @@ run_coordinator_stage_attempt() {  # <attempt-out-file> <prompt> [extra-budget-j
   log_event "stage-end" "$(jq -nc --argjson rc "$rc" --arg kr "$stage_kill_reason" \
     --argjson m "$coord_attempt_metering_json" --argjson e "$extra" \
     '{stage: "coordinator", exit_code: $rc} + (if $kr == "" then {} else {kill_reason: $kr} end) + $m + $e')"
-  # No repo/item: the Co-Ordinator runs ahead of selection, over every
-  # configured repository at once (docs/FLOW-SCHEMA.md's "where applicable").
+  # Still no repo/item passed to rework_stage_rerun_maybe: that function's
+  # third/fourth positional arguments feed the crash-loop machinery's own
+  # per-repo grouping, which issue #587 leaves fleet-wide (unchanged, see
+  # docs/IMPLEMENTATION-PIPELINE-SPEC.md's updated requirement 15) rather than
+  # splitting further in the same change that split selection itself.
   rework_stage_rerun_maybe "coordinator" "$stage_kill_reason"
   log_node_state_transition overhead
   # `if`, not `&&` — see the identical comment at the original call site below.
@@ -418,10 +428,13 @@ run_coordinator_stage_attempt() {  # <attempt-out-file> <prompt> [extra-budget-j
 }
 
 # Requirement 3v (issue #321): the mechanical last resort once a `none-selected`
-# verdict has failed corroboration twice in the same cycle (the original
-# engagement and its one retry — see "5. Nothing selected" below). At that
-# point liveness must stop depending on the model getting it right at all, so
-# the Script itself picks: the highest-priority non-empty source band, its
+# verdict has failed corroboration in this cycle (see "5. Merge, corroborate,
+# and — only if every repo came back empty — mechanically fall back" in
+# agent-cycle.sh; since issue #587 there is no model retry to fail first — one
+# repository's own confabulation costs only that repository's own opportunity,
+# and every other repository already had its own independent engagement). At
+# that point liveness must stop depending on the model getting it right at all,
+# so the Script itself picks: the highest-priority non-empty source band, its
 # first item in repo order, with no per-item judgement applied.
 #
 # The band order approximates `prompts/coordinator.md`'s own "Selection
@@ -607,364 +620,193 @@ fallback_select_candidate() {  # <ordered-repos-json> <default-model> <refinemen
   ' <<<"$repos"
 }
 
-# Requirement 3v (issue #321): the Co-Ordinator's own `selected: false`
-# verdict, corroborated, retried, and — as a last resort — mechanically
-# resolved, all in one call. Called only when the first attempt's own
-# `work_order_json` reports `selected != true` (the caller's "5. Nothing
-# selected" guard); reads and writes that same global, along with `selected`,
-# `reason`, `candidates_json` and `selected_by_fallback`, exactly the way the
-# top-level flow that used to hold this logic inline did — factored out
-# purely so it can `return` instead of `exit`, which is what makes it
-# testable (`extract_fn`-and-`eval`, the technique `maybe_run_enabler` already
-# established) and what lets its caller decide whether standing down means
-# ending the process or falling through to "5b. Candidates, and the claim"
-# with a work order now ready to claim.
+# Issue #587: the Script-side reconciliation the split invocation model needs
+# now that no single Co-Ordinator completion ever sees more than one repo's
+# candidates. `prompts/coordinator.md`'s "Selection algorithm" states six
+# tiers that override the plain repo-then-source walk fleet-wide — security,
+# urgent issues, review-feedback, merge-conflicts, dequeued, abandoned-drafts,
+# in that order — and everything else (landing-refusals, human-visibility,
+# tech-debt, the remaining issue bands, code-quality, and the three sources
+# with no pre-fetched array) has *no* cross-repo tier of its own: two
+# candidates from that residual set are ordered by repo order alone, exactly
+# as they would be if one engagement had reached them in its own repo-then-
+# source walk. This mirrors the prompt's own rule precisely (unlike
+# `fallback_select_candidate`'s deliberately looser approximation, which
+# never had a merge step to get right — see that function's own comment) and
+# is a *separate* table from it: the two do not share code, so a
+# `fallback_select_candidate` band-order edit does not silently move this
+# one, and vice versa.
 #
-# Returns 0 when `work_order_json`/`candidates_json` are ready for 5b (a
-# retry that selected, or a fallback pick); returns 1 when the caller should
-# `exit 0` immediately — every event this needs logged (`none-selected`,
-# `warning`, `corroboration`, and any failed-attempt handling
-# `run_coordinator_stage_attempt` already did for a launch failure) has
-# already been written by the time it returns 1.
-coordinator_corroborate_retry_or_fallback() {
-  reason="$(jq -r '.reason // "no reason given"' <<<"$work_order_json")"
+# CANDS is the concatenation of every repo's own returned `candidates` array,
+# each entry pre-tagged by the caller with `_repo_order` (that repo's index
+# in `ordered_repos_json`, the walk order requirement 3 already computes) and
+# `_rank` (its 0-based position in that repo's own ranked list). REPOS is
+# `ordered_repos_json`, read only to look up an `issues`-source candidate's
+# own `priority` (the tag that decides whether it is the second, global
+# "urgent issues" tier or an ordinary residual-tier issue) — a Co-Ordinator's
+# returned candidate object never carries `priority` itself.
+#
+# Sorts by (tier, repo order, that repo's own rank), then keeps the first
+# CMAX — the fleet-wide cap requirement 17a's `candidates_max` names, applied
+# here because no single engagement can enforce it across repos it never
+# saw. Every `_repo_order`/`_rank` tag is stripped from what is returned, so
+# the result is exactly the shape the pre-split single invocation returned in
+# its own `candidates` array.
+coordinator_merge_candidates() {  # <candidates-json> <ordered-repos-json> <candidates-max>
+  local cands="${1:-[]}" repos="${2:-[]}" cmax="${3:-3}"
+  jq -e 'type == "array"' <<<"$cands" >/dev/null 2>&1 || cands='[]'
+  jq -e 'type == "array"' <<<"$repos" >/dev/null 2>&1 || repos='[]'
+  [[ "$cmax" =~ ^[0-9]+$ ]] || cmax=3
+  jq -nc --argjson cmax "$cmax" '
+    input as $cands | input as $repos
+    | ( [ $repos[] | {key: (.slug // ""), value: .} ] | from_entries ) as $by_slug
+    | def issue_priority($repo; $item):
+        ( ($by_slug[$repo].issues // [])
+          | map(select(((.ref // (.number | tostring)) | tostring) == ($item | tostring)))
+          | (.[0].priority // "Medium") );
+    def tier($c):
+        if $c.source == "security" then 0
+        elif ($c.source == "issues" and issue_priority($c.repo; $c.item) == "Urgent") then 1
+        elif $c.source == "review-feedback" then 2
+        elif $c.source == "merge-conflicts" then 3
+        elif $c.source == "dequeued" then 4
+        elif $c.source == "abandoned-drafts" then 5
+        else 6
+        end;
+    $cands
+      | map(. + {_tier: tier(.)})
+      | sort_by([._tier, ._repo_order, ._rank])
+      | .[0:$cmax]
+      | map(del(._tier, ._repo_order, ._rank))
+  ' <<<"$(printf '%s\n%s\n' "$cands" "$repos")"
+}
 
-  # --- 5a. Verdict corroboration (requirements 3t/3x, issues #310, #322) ---
-  # See unaccounted_items' own comment above for the rule, and
-  # coordinator_eligible_items' for what "eligible" means per band; only worth
-  # computing at all when the Script found something eligible to check the
-  # verdict against. Fed the recording loops' own collections (steps above),
-  # never $work_order_json's arrays verbatim: the account is what the Script
-  # put on the record, not what the message claimed to.
-  unaccounted_json="[]"
-  if (( eligible_items_total > 0 )); then
-    # $nr/$v are the recording loops' own collections and grow with the
-    # cycle's whole needs_refinement/voided bands — unbounded past this call,
-    # never argv (requirement 4g, TD-PPagop-26081406): both arrive on stdin,
-    # bound positionally with `input as $name` in the order printed.
+# Issue #587: corroboration and mechanical fallback, run once per cycle after
+# every configured repository's own Co-Ordinator engagement has answered and
+# `coordinator_merge_candidates` above has still come back empty — the
+# narrowed remainder of what `coordinator_corroborate_retry_or_fallback` did
+# before this change (see requirement 3v). There is no model retry here: a
+# repository's own confabulated `"selected": false` now costs only that
+# repository's own opportunity this cycle (every other configured repository
+# still got its own independent engagement), so the model retry a fleet-wide
+# `none-selected` used to buy itself was judged not worth its own added
+# cost once N engagements already exist instead of one (D14, priced in the
+# pull request that made this change).
+#
+# FALSE_REPOS is the JSON array of repository slugs whose own engagement
+# returned `"selected": false` this cycle — the only repositories that can
+# have left something eligible unaccounted for, since a repository that
+# selected already accounted for its own eligible work by returning it.
+# REASON is those repositories' own reasons, already joined by the caller.
+# RECORDED_REFINEMENT/RECORDED_VOIDED are the fleet-wide `needs_refinement`/
+# `voided` totals accumulated across every repository's own engagement this
+# cycle (every repository's own entries, not only the false ones — a
+# selected repository can still report one alongside its candidates).
+#
+# Reads the cycle's own globals exactly as the function it replaces did:
+# `eligible_items_json`, `refinement_policy_json`, `coordinator_fit_trimmed_json`,
+# `ordered_repos_json`, `implementer_model_default`, `refinements_json`,
+# `pr_label`, `coordinator_model`, `noop_fingerprint_value`,
+# `eligible_items_total`. Sets `candidates_json` (the fallback's one-candidate
+# list) and `selected_by_fallback=1` and returns 0 when the fallback found
+# something to claim; otherwise logs `none-selected` itself (`td_verdict_rejected`/
+# `bands` present only when corroboration rejected a verdict and the fallback
+# then found nothing either — `scripts/publish-dashboard.sh`'s corroboration-
+# rate panel reads those two fields by name) and returns 1 for the caller to
+# `exit 0`.
+coordinator_corroborate_and_fallback() {  # <false-repos-json> <reason> <recorded-refinement-json> <recorded-voided-json> [failed-engagements]
+  local false_repos="${1:-[]}" reason="${2:-no repository reported a verdict this cycle}" \
+        recorded_refinement="${3:-[]}" recorded_voided="${4:-[]}" n_failed="${5:-0}" \
+        eligible_false_json eligible_false_total unaccounted_json unaccounted_n \
+        unaccounted_bands_json fallback_candidate_json fallback_empty=0
+  [[ "$n_failed" =~ ^[0-9]+$ ]] || n_failed=0
+
+  # --- Verdict corroboration, scoped to the repositories that said no
+  #     (requirements 3t/3x) ---
+  eligible_false_json="$(jq -c --argjson repos "$false_repos" \
+    '[.[] | select(.repo as $r | $repos | index($r) != null)]' <<<"$eligible_items_json")"
+  eligible_false_total="$(jq 'length' <<<"$eligible_false_json" 2>/dev/null || echo 0)"
+  unaccounted_json='[]'
+  if (( eligible_false_total > 0 )); then
     unaccounted_json="$(unaccounted_items \
       "$(jq -nc 'input as $nr | input as $v | {needs_refinement: $nr, voided: $v}' \
-          <<<"${coord_recorded_refinement_json:-[]}"$'\n'"${coord_recorded_voided_json:-[]}")" \
-      "$eligible_items_json" "$refinement_policy_json" "${coordinator_fit_trimmed_json:-[]}")"
+          <<<"$recorded_refinement"$'\n'"$recorded_voided")" \
+      "$eligible_false_json" "$refinement_policy_json" "${coordinator_fit_trimmed_json:-[]}")"
   fi
-  unaccounted_n="$(jq 'length' <<<"$unaccounted_json" 2>&1)" \
-    || { guard_warn "unaccounted_n" "$unaccounted_n"; unaccounted_n=0; }
-  # Requirement 3x's band tag: the same rejection, split by the band it was
-  # rejected over, so a fleet reading requirement 3w's rate can tell "the
-  # model keeps confabulating the issues band away" from "it keeps forgetting
-  # to void superseded Dependabot conflicts" without re-deriving either from
-  # the `unaccounted` refs. One `corroboration` per verdict still, never one
-  # per band: the rate's unit is the verdict (requirement 3w), and a
-  # per-band event would inflate its denominator by however many bands a
-  # cycle happened to have work in.
-  unaccounted_bands_json="$(jq -c 'group_by(.source)
-    | map({key: (.[0].source // ""), value: length}) | from_entries' \
-    <<<"$unaccounted_json" 2>&1)" \
-    || { guard_warn "unaccounted_bands_json" "$unaccounted_bands_json"; unaccounted_bands_json='{}'; }
+  unaccounted_n="$(jq 'length' <<<"$unaccounted_json" 2>/dev/null || echo 0)"
+  unaccounted_bands_json='{}'
 
-  # Requirement 3w (issue #319): what every verdict this cycle records owes
-  # the rate. Requirement 3v's `corroboration` events already carry the
-  # Script's own `eligible_total`, which is the denominator; what neither they
-  # nor `none-selected` carried is *which model produced the verdict*, and
-  # without that the fleet cannot tell a rate that would justify changing
-  # `coordinator_model` from one that would not. The only other record of this
-  # cycle's Co-Ordinator model is its `stage-end` metering — a per-verdict
-  # join for any reader — or its transcript, which is retained on an entirely
-  # different schedule from the log.
-  #
-  # `coordinator_model` is the id the stage was *invoked* with, not a key of
-  # the envelope's `modelUsage` map, for the reason lib/metering.sh gives for
-  # making the same choice: the invocation id is the thing an operator sets
-  # and the thing `stage-end` already records, while `modelUsage` names
-  # whatever the session actually reached for — including a subagent's model —
-  # so keying on it would split one setting's rate across several labels and
-  # disagree with every other record of the same run. Both attempts run under
-  # the same id (`run_coordinator_stage_attempt` above), so the retry's own
-  # verdict is attributed to the same model that produced the first.
-  coord_model_json="$(jq -nc --arg m "$coordinator_model" '{coordinator_model: $m}')"
+  if (( unaccounted_n > 0 )); then
+    unaccounted_bands_json="$(jq -c 'group_by(.source)
+      | map({key: (.[0].source // ""), value: length}) | from_entries' \
+      <<<"$unaccounted_json" 2>/dev/null || echo '{}')"
+    log_event "warning" "$(jq -nc --argjson n "$unaccounted_n" --argjson total "$eligible_false_total" \
+      --argjson bands "$unaccounted_bands_json" --arg r "$reason" \
+      'input as $items | {detail: ("verdict contradiction: the Script found " + ($total | tostring)
+                 + " eligible item(s) across the repo(s) that reported selected:false, but "
+                 + ($n | tostring)
+                 + " of them — " + (($bands | to_entries | map(.key + " " + (.value | tostring)) | join(", ")))
+                 + " — were neither selected, covered by a needs_refinement report, nor voided this cycle"
+                 + " — the reported reason(s) (\"" + $r + "\") do not account for them"),
+        eligible_total: $total, bands: $bands, unaccounted: $items}' <<<"$unaccounted_json")"
+    log_event "corroboration" "$(jq -nc --argjson a 1 --arg v "rejected" --argjson total "$eligible_false_total" \
+      --argjson n "$unaccounted_n" --arg r "$reason" --argjson bands "$unaccounted_bands_json" \
+      --arg m "$coordinator_model" \
+      'input as $items | {attempt: $a, verdict: $v, eligible_total: $total, unaccounted_total: $n,
+        bands: $bands, unaccounted: $items, reason: $r, coordinator_model: $m}' <<<"$unaccounted_json")"
 
-  # The fingerprint recorded here is the one taken *before* the Co-Ordinator
-  # ran, which is the only correct choice. Anything that changed while it was
-  # working is, by definition, something it may not have seen — so it must be
-  # allowed to change the fingerprint and buy the next cycle a fresh look. A
-  # fingerprint taken now would absorb that change and skip on it.
-  #
-  # An empty fingerprint is omitted, not stored: the next cycle must find no
-  # fingerprint here rather than an empty one it might match against an equally
-  # empty sample of its own (see gather-source-state.sh). A verdict this cycle
-  # found to contradict the Script's own eligible count, in any band, is
-  # omitted the same way and for the same reason a failed sample is unfingerprintable
-  # (requirement 3b's "a sample that failed is not a sample"): a wrong
-  # `none-selected` cemented into the fingerprint would freeze the fleet on
-  # that wrong answer until `none_selected_recheck_hours` forced a recheck —
-  # which is exactly what held the whole fleet down for a full day on
-  # 2026-08-11. Rejecting the fingerprint here instead means the very next
-  # cycle asks again, unconditionally.
-  if (( unaccounted_n == 0 )); then
-    if (( eligible_items_total > 0 )); then
-      log_event "corroboration" "$(jq -nc --argjson a 1 --arg v "accepted" --argjson total "$eligible_items_total" \
-        --argjson m "$coord_model_json" '{attempt: $a, verdict: $v, eligible_total: $total, unaccounted_total: 0} + $m')"
+    # --- Deterministic selection (requirement 3v) ---
+    # No per-repo retry — see this function's own header. Straight to the
+    # same mechanical, fleet-wide, no-model-call picker a fleet-wide
+    # `none-selected` used to fall back to only after its own one retry had
+    # also failed corroboration; unchanged, and still the backstop that
+    # keeps the fleet moving when nothing selectable was actually reported.
+    fallback_candidate_json="$(fallback_select_candidate "$ordered_repos_json" \
+      "$implementer_model_default" "$refinements_json" "$refinement_policy_json" "$pr_label")"
+    if [[ -n "$fallback_candidate_json" && "$fallback_candidate_json" != "null" ]]; then
+      candidates_json="$(jq -c '[.]' <<<"$fallback_candidate_json")"
+      selected_by_fallback=1
+      return 0
     fi
-    # `eligible_total` rides the `none-selected` too, and on every branch
-    # below (requirement 3w): a cycle whose bands were genuinely empty logs no
-    # `corroboration` at all, so without the figure here a reader cannot tell
-    # "nothing was eligible" — which is a clean verdict with no rate to be
-    # part of — from an event written before any of this existed.
-    log_event "none-selected" "$(jq -nc --arg r "$reason" --arg f "$noop_fingerprint_value" \
-      --argjson total "$eligible_items_total" --argjson m "$coord_model_json" \
-      '{reason: $r} + (if $f == "" then {} else {fingerprint: $f} end) + {eligible_total: $total} + $m')"
-    # node-state (docs/FLOW-SCHEMA.md, D21): the Co-Ordinator ran and declined
-    # against its own eligible count — idle-with-demand/coordinator-declined
-    # when that count is positive, the healthy idle-without-demand zero
-    # otherwise.
-    local nts_state="" nts_cause=""
-    IFS=$'\t' read -r nts_state nts_cause < <(node_time_state_idle_split "$eligible_items_total" coordinator-declined)
-    set_node_state_terminal "$nts_state" "$nts_cause"
-    return 1
-  fi
-
-  # requirement 4g (TD-PPagop-26081401): $unaccounted_json is the unaccounted
-  # eligible items carried whole out of the pre-fetched bands, unbounded past
-  # this jq call, so it arrives on stdin — the only unbounded value at each
-  # call site, everything else (n, total, bands, reason, model fields) stays
-  # bounded by configuration and travels as --arg/--argjson as before.
-  log_event "warning" "$(jq -nc --argjson n "$unaccounted_n" --argjson total "$eligible_items_total" \
-    --argjson bands "$unaccounted_bands_json" --arg r "$reason" \
-    'input as $items | {detail: ("verdict contradiction: the Script found " + ($total | tostring)
-               + " eligible item(s) across the pre-fetched bands (unclaimed, unblocked, not void), but "
-               + ($n | tostring)
-               + " of them — " + (($bands | to_entries | map(.key + " " + (.value | tostring)) | join(", ")))
-               + " — were neither selected, covered by a needs_refinement report the Script"
-               + " recorded under that item'"'"'s own source, nor by a voided entry it disposed of this cycle"
-               + " — the Co-Ordinator'"'"'s stated reason (\"" + $r + "\") does not account for them"),
-      eligible_total: $total, bands: $bands, unaccounted: $items}' <<<"$unaccounted_json")"
-  log_event "corroboration" "$(jq -nc --argjson a 1 --arg v "rejected" --argjson total "$eligible_items_total" \
-    --argjson n "$unaccounted_n" --arg r "$reason" \
-    --argjson bands "$unaccounted_bands_json" --argjson m "$coord_model_json" \
-    'input as $items | {attempt: $a, verdict: $v, eligible_total: $total, unaccounted_total: $n, bands: $bands, unaccounted: $items, reason: $r} + $m' <<<"$unaccounted_json")"
-
-  # --- 5a-retry. One re-prompt, quoting the contradiction (requirement 3v, issue #321) ---
-  # A confabulated `none-selected` costs the Script nothing to detect (above),
-  # but until now it still cost the whole cycle: the fingerprint stays
-  # unarmed (so the *next* cycle asks again unconditionally — #314's fix for
-  # #310's day-long freeze), but this cycle itself still stood down. If the
-  # model's confabulation is persistent rather than a one-off — #310 showed
-  # the same wrong verdict recurring across cycles and nodes — the fleet
-  # degrades into a warning-per-cycle loop with zero selections: visible on
-  # the log, but liveness still depends entirely on the model eventually
-  # getting it right. This retry, and the fallback selection below when it
-  # too fails corroboration, are what stop that dependency: a rejected
-  # verdict now costs at most one extra Co-Ordinator engagement, never the
-  # cycle.
-  #
-  # Same model, same base prompt, plus an addendum stating the Script's own
-  # arithmetic and naming exactly which eligible items the first verdict left
-  # unaccounted — the contradiction itself, not a generic "try again", on the
-  # theory that the failure mode is pattern-matching against a band
-  # description rather than reading it, and a pointed, specific contradiction
-  # is what breaks that pattern. One retry only: the retry's own verdict,
-  # corroborated or not, is never itself retried.
-  coord_recorded_refinement_json_1="${coord_recorded_refinement_json:-[]}"
-  coord_recorded_voided_json_1="${coord_recorded_voided_json:-[]}"
-  # Grouped by band, and each ref given with its repo and its source token,
-  # because the addendum's whole theory is specificity: the retry has to know
-  # which array a given ref belongs to before it can issue a per-item verdict
-  # for it, and `needs_refinement` is only an account when its `source`
-  # matches the band the item was eligible in (unaccounted_items above).
-  unaccounted_refs="$(jq -r 'group_by(.source)
-    | map("- `" + (.[0].source // "") + "`: "
-          + ([.[] | ((.repo // "") + " " + (.item // ""))] | join(", ")))
-    | join("\n")' <<<"$unaccounted_json" 2>/dev/null || printf '(unavailable)')" # TD-PPagop-26081407: passes test 2 -- "(unavailable)" is not English text a real band summary could ever produce, so a reader can never mistake it for content
-  coordinator_retry_prompt="$coordinator_prompt
-
-## Corroboration retry — your previous verdict this cycle was rejected
-
-Your final message a moment ago in this same cycle reported \`\"selected\": false\`
-with reason: \"$reason\"
-
-The Script independently counts $eligible_items_total eligible item(s) across
-the bands it pre-fetched for you this cycle (unclaimed, unblocked, not void,
-and listed in that repo's own \`sources\`). Your verdict accounted for only
-$(( eligible_items_total - unaccounted_n )) of them, via \`needs_refinement\`
-(under the item's own \`source\`) or \`voided\`. The remaining $unaccounted_n
-item(s) were neither selected, reported, nor voided, and are still unaccounted
-for, by band:
-
-$unaccounted_refs
-
-This is your one retry for this cycle. Issue a per-item verdict for every item
-named above — add it to \`needs_refinement\` (with all five required fields, and
-\`source\` set to the band it is listed under above) or to \`voided\` (with
-\`evidence\`) — or select one of them, or any other eligible candidate, in
-\`candidates\`. Send your entire final message exactly as before: one JSON
-object, nothing else.
-"
-  coordinator_retry_out="$cycle_dir/coordinator-retry.out"
-  if ! run_coordinator_stage_attempt "$coordinator_retry_out" "$coordinator_retry_prompt" '{"retry": true}'; then
-    # The retry engagement itself failed to launch or never produced a
-    # parseable message — run_coordinator_stage_attempt already logged
-    # attempt-failed/handle_stage_failure for it. That is a different failure
-    # mode from a rendered-but-uncorroborated verdict (network, rate limit, a
-    # wedged session), so it does not reach fallback selection below — the
-    # ordinary attempt-failed handling already in place is this cycle's
-    # answer, same as it would be for the first attempt.
-    return 1
-  fi
-  retry_work_order_json="$coord_attempt_result_json"
-  retry_metering_json="$coord_attempt_metering_json"
-
-  log_unblocked_items "$retry_work_order_json"
-  log_recheck_clean_items "$retry_work_order_json"
-  # Restricted to exactly the items the retry addendum named unaccounted: the
-  # retry received the full runtime input again, so a `needs_refinement`/
-  # `voided` entry it repeats for something the first attempt already
-  # accounted for is not new information, and processing it again would
-  # double the void-guard check, the refinement label, and any GitHub comment
-  # either one posts. An item outside `unaccounted_json` was never asked
-  # about, so an entry naming one is dropped the same way. Matched on the ref
-  # alone, not on repo+item+source as the corroboration itself is: this filter
-  # decides what gets *processed*, and a report the retry mis-attributes to
-  # the wrong source is still a report about an item the addendum asked about
-  # — recording it is right even though it will not account for anything.
-  # requirement 4g (TD-PPagop-26081401): $unaccounted_json is the same
-  # unbounded aggregate site 3's log_event calls above deliver on stdin — a
-  # fifth consumer in this same function, previously still riding in as an
-  # --argjson. Unguarded, so past MAX_ARG_STRLEN this used to die the whole
-  # cycle under set -e rather than degrade. On a jq failure here, falling
-  # back to the unfiltered retry_work_order_json costs at most some
-  # redundant void-guard/refinement-label processing for an item attempt 1
-  # already accounted for — never the silent loss a fallback to "nothing
-  # filtered" would risk.
-  retry_filter_docs="$(printf '%s\n' "$retry_work_order_json" "$unaccounted_json")"
-  retry_work_order_filtered_json="$(jq -nc '
-    input as $wo | input as $unaccounted
-    | ($unaccounted | map(.item | tostring)) as $u
-    | $wo + {
-        needs_refinement: (($wo.needs_refinement // []) | map(select((.item | tostring) as $i | $u | index($i) != null))),
-        voided: (($wo.voided // []) | map(select((.item | tostring) as $i | $u | index($i) != null)))
-      }
-    ' <<<"$retry_filter_docs" 2>/dev/null || printf '%s' "$retry_work_order_json")" # TD-PPagop-26081407: passes test 2 -- falls back to the unfiltered work order, a value the caller already accepted, not a fabricated empty
-  log_voided_items "$retry_work_order_filtered_json" "$ordered_repos_json"
-  log_needs_refinement_items "$retry_work_order_filtered_json"
-
-  retry_selected="$(jq -r '.selected' <<<"$retry_work_order_json")"
-  retry_reason="$(jq -r '.reason // "no reason given"' <<<"$retry_work_order_json")"
-  # Both grow with the cycle's whole recorded band across both attempts —
-  # unbounded past this call, never argv (requirement 4g, TD-PPagop-26081406):
-  # each pair arrives on stdin, bound positionally with `input as $name` in
-  # the order printed.
-  recorded_refinement_all_json="$(jq -nc 'input as $a | input as $b | $a + $b' \
-    <<<"$coord_recorded_refinement_json_1"$'\n'"${coord_recorded_refinement_json:-[]}")"
-  recorded_voided_all_json="$(jq -nc 'input as $a | input as $b | $a + $b' \
-    <<<"$coord_recorded_voided_json_1"$'\n'"${coord_recorded_voided_json:-[]}")"
-
-  if [[ "$retry_selected" == "true" ]]; then
-    # `eligible_total` here too (requirement 3w): this verdict is one the
-    # retry got right, and a denominator that counted only the verdicts still
-    # phrased as `none-selected` would credit the recovery to nobody and
-    # overstate every model that ever recovers this way.
-    log_event "corroboration" "$(jq -nc --argjson a 2 --arg v "accepted-by-selection" --argjson m "$retry_metering_json" \
-      --argjson total "$eligible_items_total" --argjson cm "$coord_model_json" \
-      '{attempt: $a, verdict: $v, eligible_total: $total} + $m + $cm')"
-    # The retry's own work order — an ordinary model selection, no different
-    # from one the first attempt could have made — is what the caller feeds
-    # "5b. Candidates, and the claim" once this returns 0.
-    work_order_json="$retry_work_order_json"
-    selected="true"
-    return 0
-  fi
-
-  # $nr/$v are the same unbounded recorded-band aggregates as the first
-  # attempt's build above — stdin, never argv (requirement 4g,
-  # TD-PPagop-26081406).
-  unaccounted_retry_json="$(unaccounted_items \
-    "$(jq -nc 'input as $nr | input as $v | {needs_refinement: $nr, voided: $v}' \
-        <<<"$recorded_refinement_all_json"$'\n'"$recorded_voided_all_json")" \
-    "$eligible_items_json" "$refinement_policy_json" "${coordinator_fit_trimmed_json:-[]}")"
-  unaccounted_retry_n="$(jq 'length' <<<"$unaccounted_retry_json" 2>&1)" \
-    || { guard_warn "unaccounted_retry_n" "$unaccounted_retry_n"; unaccounted_retry_n=0; }
-  unaccounted_retry_bands_json="$(jq -c 'group_by(.source)
-    | map({key: (.[0].source // ""), value: length}) | from_entries' \
-    <<<"$unaccounted_retry_json" 2>&1)" \
-    || { guard_warn "unaccounted_retry_bands_json" "$unaccounted_retry_bands_json"; unaccounted_retry_bands_json='{}'; }
-
-  if (( unaccounted_retry_n == 0 )); then
-    log_event "corroboration" "$(jq -nc --argjson a 2 --arg v "accepted" --argjson total "$eligible_items_total" \
-      --argjson m "$retry_metering_json" --argjson cm "$coord_model_json" \
-      '{attempt: $a, verdict: $v, eligible_total: $total, unaccounted_total: 0} + $m + $cm')"
-    log_event "none-selected" "$(jq -nc --arg r "$retry_reason" --arg f "$noop_fingerprint_value" \
-      --argjson total "$eligible_items_total" --argjson m "$coord_model_json" \
-      '{reason: $r} + (if $f == "" then {} else {fingerprint: $f} end) + {eligible_total: $total} + $m')"
-    local nts_state="" nts_cause=""
-    IFS=$'\t' read -r nts_state nts_cause < <(node_time_state_idle_split "$eligible_items_total" coordinator-declined)
-    set_node_state_terminal "$nts_state" "$nts_cause"
-    return 1
-  fi
-
-  # requirement 4g (TD-PPagop-26081401): $unaccounted_retry_json is the same
-  # shape as $unaccounted_json above, and just as unbounded, so it too
-  # arrives on stdin rather than as an --argjson.
-  log_event "warning" "$(jq -nc --argjson n "$unaccounted_retry_n" --argjson total "$eligible_items_total" \
-    --argjson bands "$unaccounted_retry_bands_json" --arg r "$retry_reason" \
-    'input as $items | {detail: ("verdict contradiction (retry): the Script found " + ($total | tostring)
-               + " eligible item(s) across the pre-fetched bands, but " + ($n | tostring)
-               + " — " + (($bands | to_entries | map(.key + " " + (.value | tostring)) | join(", ")))
-               + " — remain unaccounted for after the one retry this cycle allows"
-               + " — the Co-Ordinator'"'"'s retried reason (\"" + $r + "\") does not account for them"),
-      eligible_total: $total, bands: $bands, unaccounted: $items}' <<<"$unaccounted_retry_json")"
-  log_event "corroboration" "$(jq -nc --argjson a 2 --arg v "rejected" --argjson total "$eligible_items_total" \
-    --argjson n "$unaccounted_retry_n" --arg r "$retry_reason" \
-    --argjson bands "$unaccounted_retry_bands_json" \
-    --argjson m "$retry_metering_json" --argjson cm "$coord_model_json" \
-    'input as $items | {attempt: $a, verdict: $v, eligible_total: $total, unaccounted_total: $n, bands: $bands, unaccounted: $items, reason: $r} + $m + $cm' <<<"$unaccounted_retry_json")"
-
-  # --- 5a-fallback. Deterministic selection (requirement 3v, issue #321) ---
-  # Both engagements this cycle failed to corroborate a `none-selected`
-  # against bands the Script itself can already see are
-  # non-empty (`eligible_items_total > 0` is what let the gate reject a
-  # verdict at all). Liveness now stops depending on the model: the Script
-  # picks mechanically, through the same create-only claim race any
-  # model-ranked candidate goes through (requirement 17a, in the caller) — a
-  # possibly-suboptimal pick is strictly better than a frozen fleet.
-  #
-  # The twice-rejected verdict is fully on the record by this point — two
-  # `warning`s and two `corroboration` events, the second carrying the
-  # retry's own `reason` — so it is deliberately *not* also written as a
-  # `none-selected` before the pick is attempted. `none-selected` names a
-  # cycle's outcome, not a verdict: every other reader treats it that way,
-  # from requirement 3b's fingerprint to the dashboard's own outcome ladder
-  # (`scripts/publish-dashboard.sh`, where it outranks both `selection` and
-  # `stand-down`), so a cycle that logged one *and* went on to select would
-  # render as "Nothing selected" — reporting the recovery as the failure it
-  # recovered from, and undercounting fallback picks for issue #319's
-  # metrics. It is logged below instead, on the one branch where the cycle
-  # really does select nothing.
-  fallback_candidate_json="$(fallback_select_candidate "$ordered_repos_json" \
-    "$implementer_model_default" "$refinements_json" "$refinement_policy_json" "$pr_label")"
-  if [[ -z "$fallback_candidate_json" || "$fallback_candidate_json" == "null" ]]; then
     # Not observed in practice (see fallback_select_candidate's own comment
     # for the guarantee this would defy), but fail closed rather than assume
-    # it away: nothing to claim, so stand down exactly as an ordinary
-    # corroboration rejection would — including requirement 3t's un-armed
-    # fingerprint, which a rejected verdict is denied however the cycle ends.
-    # `td_verdict_rejected` keeps its name though the gate is no longer
-    # tech-debt-only (requirement 3x): it is what every reader of this event
-    # already keys on — `scripts/publish-dashboard.sh`'s verdict-quality
-    # aggregate, and every such event already in the retained log — and a
-    # rename would silently zero the rejection count for the history it can
-    # still see. `bands` carries what the name no longer says.
-    log_event "none-selected" "$(jq -nc --arg r "$retry_reason" \
-      --argjson total "$eligible_items_total" --argjson bands "$unaccounted_retry_bands_json" \
-      --argjson m "$coord_model_json" \
-      '{reason: $r, td_verdict_rejected: true, retried: true, eligible_total: $total, bands: $bands} + $m')"
-    local nts_state="" nts_cause=""
-    IFS=$'\t' read -r nts_state nts_cause < <(node_time_state_idle_split "$eligible_items_total" coordinator-declined)
-    set_node_state_terminal "$nts_state" "$nts_cause"
-    return 1
+    # it away.
+    fallback_empty=1
+  elif (( eligible_false_total > 0 )); then
+    log_event "corroboration" "$(jq -nc --argjson a 1 --arg v "accepted" --argjson total "$eligible_false_total" \
+      --arg m "$coordinator_model" \
+      '{attempt: $a, verdict: $v, eligible_total: $total, unaccounted_total: 0, coordinator_model: $m}')"
   fi
-  candidates_json="$(jq -c '[.]' <<<"$fallback_candidate_json")"
-  selected_by_fallback=1
-  selected="true"
-  work_order_json="$fallback_candidate_json"
-  return 0
+
+  # `eligible_total` here is the fleet-wide count (every repo, not just the
+  # ones that said no), matching what the single fleet-wide invocation's own
+  # `none-selected` always carried. `td_verdict_rejected`/`bands` are added,
+  # and the fingerprint omitted (requirement 3t: a rejected verdict must
+  # never arm the no-op short-circuit), only on the one branch reachable
+  # here where corroboration rejected a verdict and the mechanical fallback
+  # above then found nothing either — the same two fields (and the same
+  # name) the pre-split single invocation's own twice-rejected
+  # `none-selected` carried. `fallback_empty` is set on no other branch, so
+  # reusing it for both is exact, not a shortcut.
+  #
+  # `n_failed` omits the fingerprint for the second reason the split
+  # introduced (issue #587): the fingerprint is a fleet-wide claim — "every
+  # configured repository was asked, and none of them had anything" — that
+  # stands the *next* cycle down until an input moves. A cycle in which some
+  # engagement never produced a verdict has not established that claim for
+  # the repositories it could not ask, so it must leave the short-circuit
+  # unarmed and let the next cycle ask again, exactly as a rejected verdict
+  # does.
+  log_event "none-selected" "$(jq -nc --arg r "$reason" --arg f "$noop_fingerprint_value" \
+    --argjson total "$eligible_items_total" --arg m "$coordinator_model" \
+    --argjson rejected "$fallback_empty" --argjson bands "$unaccounted_bands_json" \
+    --argjson failed "$n_failed" \
+    '{reason: $r} + (if $rejected == 1 or $failed > 0 or $f == "" then {} else {fingerprint: $f} end)
+     + {eligible_total: $total, coordinator_model: $m}
+     + (if $failed > 0 then {engagements_failed: $failed} else {} end)
+     + (if $rejected == 1 then {td_verdict_rejected: true, bands: $bands} else {} end)')"
+  local nts_state="" nts_cause=""
+  IFS=$'\t' read -r nts_state nts_cause < <(node_time_state_idle_split "$eligible_items_total" coordinator-declined)
+  set_node_state_terminal "$nts_state" "$nts_cause"
+  return 1
 }
