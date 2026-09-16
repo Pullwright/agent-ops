@@ -636,14 +636,19 @@ approver_stage_complexity() {
 # best-effort escalation, and the caller's own `pr-ready` log and
 # `release_pr_claim` follow unconditionally regardless of what happened here.
 #
-# Reports its own outcome through three globals, reset here on every call
+# Reports its own outcome through four globals, reset here on every call
 # rather than left to whatever a previous pull request's round left behind
 # — `approver_stage_verdict` (this round's `verdict`, or empty when the
 # stage did not reach one), `approver_stage_adjudicating` (`1` iff the
-# refuse streak, not the complexity grade, chose the tier), and
+# refuse streak, not the complexity grade, chose the tier),
 # `approver_stage_tier` (D18 WI-12, agent-ops#415: this round's own tier,
 # `trivial`/`standard`/`high`/`critical` — `critical` whenever a protected
-# path forced it, whatever the complexity grade said). `run_landing_stage`
+# path forced it, whatever the complexity grade said), and
+# `approver_stage_posted` (agent-ops#988: `true` only once a real GitHub
+# review write was both attempted and confirmed — the same condition the
+# `approver-verdict` log event's own `posted` field already computes;
+# `false` for every other outcome, including a verdict that was reached but
+# writes nothing, such as an adjudication `escalate`). `run_landing_stage`
 # (D18 WI-7, requirement 8d), called immediately after this function
 # returns, is the one reader of the first two: it arms nothing at all unless
 # this round's own engagement reached an explicit, non-adjudicating
@@ -653,7 +658,10 @@ approver_stage_complexity() {
 # gate (D18 WI-12) is the reader of the third, on the original arming round
 # only — a re-arm reads `landing_retry_tier` from the fleet log instead,
 # since that round's own `approver_stage_tier` belongs to a process this one
-# never was. A return value rather than a global would say the same thing,
+# never was. `_approver_restale_review` is the one reader of the fourth: it
+# is the sharper fact that distinguishes a re-review that wrote nothing to
+# GitHub from one that could not even be attempted (see its own header
+# below). A return value rather than a global would say the same thing,
 # but every existing caller of this function already reads nothing from it
 # (`run_approver_stage "$impl_pr_url" "$approver_complexity"`, no
 # assignment) and a second, unrelated caller could plausibly want the
@@ -665,6 +673,7 @@ run_approver_stage() {
   local pr_url="$1" complexity="$2"
   local level login streak tier model="" mode="" adjudicating=0 kill_json
   local prompt out rc status_json verdict="" reasons_json="[]"
+  approver_stage_posted="false"
   approver_stage_verdict=""
   approver_stage_adjudicating=0
   approver_stage_tier=""
@@ -1087,6 +1096,7 @@ $node_name
   # action, so the divergence report (`lib/verdict-fate.sh`) drops it rather
   # than reading a failed write as either agreement or divergence.
   [[ -n "$posted_review" && "$approver_last_post_ok" == "1" ]] && posted_bool="true"
+  approver_stage_posted="$posted_bool"
 
   adj_bool="false"
   (( adjudicating )) && adj_bool="true"
@@ -1140,15 +1150,21 @@ $node_name
 # rather than a second copy of it.
 #
 # Reports its outcome through the global `_approver_restale_review_result`,
-# set on every path before this function returns — `posted` once
-# `run_approver_stage` reached a real verdict (whether or not the GitHub write
-# itself then succeeded — that failure is already `approver_post_or_warn`'s
-# own warning, and retrying it again immediately would only compound writes
-# rather than fix anything), `unavailable` when a verdict could not even be
-# reached: the clone or checkout failed, or `run_approver_stage` bailed out
-# before engaging (the stage disabled at this level, the credential absent,
-# the streak unreadable, no model resolved). `unavailable` is what tells the
-# caller acceptance criterion 2's dismissal is the fallback to take instead.
+# set on every path before this function returns to one of three values —
+# `posted` once `run_approver_stage`'s own `approver_stage_posted` confirms a
+# real GitHub review write was attempted and succeeded; `unposted`
+# (agent-ops#988) once it reached a real verdict that wrote nothing to
+# GitHub instead — an adjudication `escalate`, or an unrecognised verdict —
+# distinct from `posted` because nothing on the pull request changed, so the
+# caller must not treat this the way a genuine write is treated (retrying it
+# again immediately would only reach the same verdict, at the same cost);
+# and `unavailable` when a verdict could not even be reached: the clone or
+# checkout failed, or `run_approver_stage` bailed out before engaging (the
+# stage disabled at this level, the credential absent, the streak unreadable,
+# no model resolved). `unavailable` is what tells the caller acceptance
+# criterion 2's dismissal is the fallback to take instead; `unposted` is what
+# tells it to bound further engagement instead of dismissing or retrying
+# unconditionally (see `_approver_restale_sweep_repo`'s own header below).
 #
 # A global rather than something printed for the caller to capture, the same
 # signalling `_landing_stage_attempt_armed` uses and for a sharper version of
@@ -1206,7 +1222,13 @@ _approver_restale_review() {
     rev_status_json="$synthetic_rev"
 
     run_approver_stage "$pr_url" "$complexity"
-    [[ -n "$approver_stage_verdict" ]] && _approver_restale_review_result="posted"
+    if [[ -n "$approver_stage_verdict" ]]; then
+      if [[ "$approver_stage_posted" == "true" ]]; then
+        _approver_restale_review_result="posted"
+      else
+        _approver_restale_review_result="unposted"
+      fi
+    fi
   fi
 
   [[ -d "$restale_clone_dir" ]] && rm -rf -- "$restale_clone_dir"
@@ -1354,6 +1376,34 @@ approver_unreviewed_prior_engagement() {
   return 0
 }
 
+# approver_restale_unposted_prior_engagement UNION_LOG REVIEW_ID
+# The stale trigger's own memory for a genuine-progress re-review whose
+# `run_approver_stage` reached a verdict that wrote nothing to GitHub
+# (agent-ops#988: `_approver_restale_review_result` of `unposted` — an
+# adjudication `escalate` is the case this exists for), reduced from the
+# fleet's union log the same way `approver_unreviewed_prior_engagement`
+# immediately above is. Prints the `ts` of the first `approver-restale-
+# unposted-engaged` event any node has logged for REVIEW_ID, or nothing at
+# all when no node has. Always exits 0: an unreadable or malformed union
+# reads as "never engaged", the same recoverable direction every other
+# reader of this file's union log already takes. Keyed on the standing
+# review's own numeric id, not the pull request or its head: a genuine fix
+# pushed after an `unposted` engagement does not move the review id (only a
+# fresh Approver write — `posted` — replaces it), so the memory stays live
+# across a rebase-only push the way the caller's own escalation dedup
+# (`item_ref`, built from this same id) already does.
+approver_restale_unposted_prior_engagement() {
+  local union="$1" review_id="$2"
+  [[ -s "$union" ]] || return 0
+  jq -s -r --argjson id "$review_id" '
+    [.[] | select((.event // "") == "approver-restale-unposted-engaged"
+                  and (.review_id // -1) == $id)]
+    | sort_by(.ts // "")
+    | if length == 0 then empty else (first.ts // "") end
+  ' "$union" 2>/dev/null || true
+  return 0
+}
+
 # _approver_unreviewed_escalate SLUG PR_URL NUMBER ITEM_REF FIRST_ENGAGED_AT
 # Requirement 46's unreviewed trigger, terminal state (agent-ops#890,
 # acceptance criterion 5): a ready pull request the sweep has been engaging
@@ -1428,15 +1478,27 @@ UNREVIEWED_ESC_BODY
 # A stale review with a commit *authored* since it was submitted
 # (`approver_newest_commit_authored_at`) is genuine progress — a rebase alone
 # cannot produce one, since it reuses each replayed commit's own original
-# author date — and gets a real re-review (`_approver_restale_review`,
-# acceptance criterion 1), falling back to a self-dismissal
-# (`_approver_restale_dismiss`, criterion 2) only when the re-review itself
-# could not even be attempted. A stale review with nothing authored since it
-# is a rebase-only push masquerading as one worth reviewing — neither
-# re-reviewed nor dismissed, since nothing has actually changed for either
-# action to judge — and is left alone until `approver_restale_escalate_after_
-# hours` hands it to a human instead (`_approver_restale_escalate`, criteria 3
-# and 4). A pull request a peer node's fleet-wide `pr-<n>` claim currently
+# author date — and gets a real re-review (`_approver_restale_review`), whose
+# three-way outcome (agent-ops#988) decides what happens next: `posted`
+# (acceptance criterion 1's "unaffected" case, criterion 4) needs nothing
+# further — a fresh review now stands. `unavailable` falls back to a
+# self-dismissal (`_approver_restale_dismiss`, criterion 2) — the re-review
+# could not even be attempted. `unposted` — a verdict was reached (most often
+# an adjudication `escalate`) but it wrote nothing to GitHub, so the standing
+# review is exactly as stale as before — is neither dismissed (the
+# adjudicator declined to clear it) nor re-engaged again this cycle
+# (`approver_restale_unposted_prior_engagement`, keyed on the standing
+# review's own id): the first such outcome is remembered, and only once
+# `approver_restale_escalate_after_hours` has passed since it with the review
+# still standing does `_approver_restale_escalate` hand the pull request to a
+# human (criterion 3) — the same per-review-id-deduplicated path the
+# rebase-only branch below already uses, so a human is summoned once, not
+# every cycle. A stale review with nothing authored since it is a
+# rebase-only push masquerading as one worth reviewing — neither re-reviewed
+# nor dismissed, since nothing has actually changed for either action to
+# judge — and is left alone until `approver_restale_escalate_after_hours`
+# hands it to a human instead (`_approver_restale_escalate`, criteria 3 and
+# 4). A pull request a peer node's fleet-wide `pr-<n>` claim currently
 # holds (issue #987, TD-PPagop-26082509) — under whatever item ref won it
 # there, a `review-feedback` round most often — never reaches any of the
 # three: `_approver_sweep_claimed_pr_numbers` is read once for the whole
@@ -1501,7 +1563,7 @@ _approver_restale_sweep_repo() {
     | {number, url, branch: .headRefName, head: (.headRefOid // ""), title, complexity}]' <<<"$open" 2>/dev/null || echo '[]')"
 
   local cand pr_url branch number head title complexity standing state commit review_at
-  local reviews_raw review_id item_ref newest cutoff
+  local reviews_raw review_id item_ref newest cutoff unposted_first_at
   # Issue #987: fetched once, lazily, for the whole pass — shared with the
   # unreviewed trigger further down rather than asked for twice — and only
   # when this trigger actually has a candidate to spend it on, the same
@@ -1551,11 +1613,43 @@ _approver_restale_sweep_repo() {
 
     if newest="$(approver_newest_commit_authored_at "$pr_url" 2>/dev/null)" && [[ -n "$newest" ]] \
        && [[ "$newest" > "$review_at" ]]; then
-      _approver_restale_review "$slug" "$pr_url" "$number" "$branch" "$complexity" "$title"
-      if [[ "$_approver_restale_review_result" != "posted" ]]; then
-        _approver_restale_dismiss "$slug" "$pr_url" "$review_id" \
-          "Dismissed by the autonomous pipeline (requirement 46, agent-ops#682): a commit was authored after this review, but a fresh re-review could not be attempted this cycle." || true
+      # agent-ops#988: a prior engagement on this exact standing review
+      # already reached a verdict that wrote nothing to GitHub (an
+      # adjudication `escalate`) — nothing here has changed since, so a
+      # fresh full engagement would only spend another approver_model_
+      # critical round to reach the same verdict again. Bound it instead,
+      # the same way the rebase-only branch below is already bounded, from
+      # that first unposted engagement's own timestamp, and hand it to a
+      # human once past the threshold — reusing this review's own item_ref,
+      # which `_approver_restale_escalate`'s own `create_escalation_issue`
+      # already dedups on.
+      unposted_first_at="$(approver_restale_unposted_prior_engagement "$union_log" "$review_id")"
+      if [[ -n "$unposted_first_at" ]]; then
+        cutoff="$(jq -n -r --arg h "$approver_restale_escalate_after_hours" \
+          '(now - ($h|tonumber)*3600) | strftime("%Y-%m-%dT%H:%M:%SZ")' 2>/dev/null || true)"
+        if [[ -z "$cutoff" ]]; then
+          log_event "warning" "$(jq -nc --arg k "approver_restale_escalate_after_hours" \
+            --arg v "$approver_restale_escalate_after_hours" --arg fn "_approver_restale_sweep_repo" \
+            --arg d "empty cutoff computed from approver_restale_escalate_after_hours=$approver_restale_escalate_after_hours in _approver_restale_sweep_repo — the unposted-escalate check for this pull request is skipped this cycle" \
+            '{detail: $d, key: $k, value: $v, fn: $fn}')"
+        elif [[ "$unposted_first_at" < "$cutoff" ]]; then
+          _approver_restale_escalate "$slug" "$pr_url" "$number" "$item_ref" "$review_at"
+        fi
+        continue
       fi
+
+      _approver_restale_review "$slug" "$pr_url" "$number" "$branch" "$complexity" "$title"
+      case "$_approver_restale_review_result" in
+        unposted)
+          log_event "approver-restale-unposted-engaged" "$(jq -nc --arg u "$pr_url" --arg r "$slug" \
+            --argjson id "$review_id" '{pr_url: $u, repo: $r, review_id: $id}')"
+          ;;
+        posted) ;;
+        *)
+          _approver_restale_dismiss "$slug" "$pr_url" "$review_id" \
+            "Dismissed by the autonomous pipeline (requirement 46, agent-ops#682): a commit was authored after this review, but a fresh re-review could not be attempted this cycle." || true
+          ;;
+      esac
     else
       cutoff="$(jq -n -r --arg h "$approver_restale_escalate_after_hours" \
         '(now - ($h|tonumber)*3600) | strftime("%Y-%m-%dT%H:%M:%SZ")' 2>/dev/null || true)"

@@ -188,11 +188,18 @@ if [[ -z "$prior_block" || "$prior_block" != *"approver-unreviewed-engaged"* ]];
   exit 1
 fi
 
+unposted_prior_block="$(extract approver_restale_unposted_prior_engagement)"
+if [[ -z "$unposted_prior_block" || "$unposted_prior_block" != *"approver-restale-unposted-engaged"* ]]; then
+  echo "FAIL - could not extract approver_restale_unposted_prior_engagement from lib/approver.sh — has it moved?" >&2
+  exit 1
+fi
+
 {
-  # The union-log reduction is lifted verbatim too — the unreviewed trigger's
-  # bound is only as good as this reduction, so it runs against a real
-  # fixture file rather than a stub.
+  # The union-log reductions are lifted verbatim too — both bounds are only
+  # as good as their own reduction, so each runs against a real fixture file
+  # rather than a stub.
   printf '%s\n' "$prior_block"
+  printf '%s\n' "$unposted_prior_block"
   printf '%s\n' "$sweep_block"
   printf '_approver_restale_sweep_repo "acme/widgets" "pullwright-approver[bot]"\n'
 } >>"$tmp_dir/harness.sh"
@@ -261,6 +268,68 @@ rc="$(run_case PR_LIST_JSON="$stale_progressed_list" \
 assert_eq "an unavailable re-review falls back to dismissal" "1" "$(count "$tmp_dir/dismiss-calls")"
 assert_contains "  ... naming the review id resolved from the reviews list" "review_id=555" "$(dismiss_calls)"
 assert_eq "  ... and never escalates on the same pass" "0" "$(count "$tmp_dir/escalate-calls")"
+
+# --- agent-ops#988: a re-review that reaches a verdict but posts nothing to
+#     GitHub (an adjudication escalate) is neither dismissed nor re-engaged
+#     every cycle — bounded the same way the rebase-only branch below is ----
+
+rc="$(run_case PR_LIST_JSON="$stale_progressed_list" \
+  STANDING_STATE_7="CHANGES_REQUESTED" STANDING_AT_7="$recent_at" STANDING_COMMIT_7="oldsha7" \
+  REVIEWS_7="[$(review_row 555 "pullwright-approver[bot]" "$recent_at")]" \
+  NEWEST_7="$progressed_at" \
+  REVIEW_ACTION_7="unposted")"
+assert_eq "an unposted re-review is neither dismissed..." "0" "$(count "$tmp_dir/dismiss-calls")"
+assert_eq "  ... nor escalated on the first such engagement" "0" "$(count "$tmp_dir/escalate-calls")"
+assert_contains "  ... and the engagement is recorded for the union log" \
+  "approver-restale-unposted-engaged" "$(events)"
+assert_contains "  ... naming the standing review's own id" '"review_id":555' "$(events)"
+
+unposted_prior_recent="$(jq -nc --arg ts "$recent_at" --argjson id 555 \
+  '{ts: $ts, event: "approver-restale-unposted-engaged", review_id: $id}')"
+rc="$(run_case PR_LIST_JSON="$stale_progressed_list" \
+  STANDING_STATE_7="CHANGES_REQUESTED" STANDING_AT_7="$recent_at" STANDING_COMMIT_7="oldsha7" \
+  REVIEWS_7="[$(review_row 555 "pullwright-approver[bot]" "$recent_at")]" \
+  NEWEST_7="$progressed_at" UNION_JSON="$unposted_prior_recent")"
+assert_eq "a prior unposted engagement still inside the threshold reaches no fresh re-review" \
+  "0" "$(count "$tmp_dir/review-calls")"
+assert_eq "  ... nor dismissal" "0" "$(count "$tmp_dir/dismiss-calls")"
+assert_eq "  ... nor escalation" "0" "$(count "$tmp_dir/escalate-calls")"
+
+unposted_prior_old="$(jq -nc --arg ts "$old_at" --argjson id 555 \
+  '{ts: $ts, event: "approver-restale-unposted-engaged", review_id: $id}')"
+rc="$(run_case PR_LIST_JSON="$stale_progressed_list" \
+  STANDING_STATE_7="CHANGES_REQUESTED" STANDING_AT_7="$recent_at" STANDING_COMMIT_7="oldsha7" \
+  REVIEWS_7="[$(review_row 555 "pullwright-approver[bot]" "$recent_at")]" \
+  NEWEST_7="$progressed_at" UNION_JSON="$unposted_prior_old")"
+assert_eq "a prior unposted engagement past the threshold escalates instead" \
+  "1" "$(count "$tmp_dir/escalate-calls")"
+assert_contains "  ... naming the same review-scoped item ref the no-progress branch uses" \
+  "item_ref=pr-7-approver-restale-555" "$(escalate_calls)"
+assert_contains "  ... and the standing review's own submitted_at" "review_at=$recent_at" "$(escalate_calls)"
+assert_eq "  ... never a fresh re-review" "0" "$(count "$tmp_dir/review-calls")"
+assert_eq "  ... never a dismissal" "0" "$(count "$tmp_dir/dismiss-calls")"
+
+unposted_prior_other_review="$(jq -nc --arg ts "$old_at" --argjson id 999 \
+  '{ts: $ts, event: "approver-restale-unposted-engaged", review_id: $id}')"
+rc="$(run_case PR_LIST_JSON="$stale_progressed_list" \
+  STANDING_STATE_7="CHANGES_REQUESTED" STANDING_AT_7="$recent_at" STANDING_COMMIT_7="oldsha7" \
+  REVIEWS_7="[$(review_row 555 "pullwright-approver[bot]" "$recent_at")]" \
+  NEWEST_7="$progressed_at" UNION_JSON="$unposted_prior_other_review" REVIEW_ACTION_7="posted")"
+assert_eq "an unposted engagement recorded against a different review id neither blocks nor escalates this one" \
+  "1" "$(count "$tmp_dir/review-calls")"
+assert_eq "  ... and does not escalate" "0" "$(count "$tmp_dir/escalate-calls")"
+
+rc="$(run_case PR_LIST_JSON="$stale_progressed_list" \
+  STANDING_STATE_7="CHANGES_REQUESTED" STANDING_AT_7="$recent_at" STANDING_COMMIT_7="oldsha7" \
+  REVIEWS_7="[$(review_row 555 "pullwright-approver[bot]" "$recent_at")]" \
+  NEWEST_7="$progressed_at" UNION_JSON="$unposted_prior_old" APPROVER_RESTALE_ESCALATE_AFTER_HOURS="2h")"
+assert_eq "a schema-illegal escalate threshold at the unposted-bound check also fails safe: no escalation" \
+  "0" "$(count "$tmp_dir/escalate-calls")"
+assert_eq "  ... and never falls through to a fresh re-review either" "0" "$(count "$tmp_dir/review-calls")"
+assert_contains "  ... and logs its own warning naming the config key" \
+  '"key":"approver_restale_escalate_after_hours"' "$(events)"
+assert_contains "  ... and the raw value that failed to produce a cutoff" \
+  '"value":"2h"' "$(events)"
 
 # --- A stale but rebase-only review (no commit authored since) is left alone
 #     under the escalation threshold, and escalated once past it -------------
@@ -538,6 +607,7 @@ clone_repo() { [[ "${CLONE_FAILS:-0}" == "1" ]] && return 1; mkdir -p "$2"; retu
 git() { return 0; }
 
 approver_stage_verdict=""
+approver_stage_posted="false"
 run_approver_stage() {
   # Records what the swapped-in globals looked like from inside the call, and
   # writes to stdout exactly as a `--once` run's own `dump_stage_output` does.
@@ -550,6 +620,11 @@ run_approver_stage() {
   # `${…-…}`, not `${…:-…}`: an explicitly empty VERDICT is the case being
   # steered — a stage that ran and reached no verdict of its own.
   approver_stage_verdict="${VERDICT-approve}"
+  # agent-ops#988: POSTED steers whether the reached verdict actually wrote
+  # to GitHub — an adjudication `escalate` reaches a verdict but posts
+  # nothing, which is exactly the case `approver_stage_posted` (the real
+  # function's own fourth global) exists to distinguish from `posted`.
+  approver_stage_posted="${POSTED-true}"
 }
 RHARNESS
 {
@@ -596,6 +671,12 @@ assert_contains "the recovery clone is torn down" "clone_left=no" "$review_out"
 rc="$(run_review_case VERDICT="")"
 assert_contains "a stage that reached no verdict at all is unavailable" \
   "result=unavailable" "$(cat "$tmp_dir/review-stdout")"
+
+rc="$(run_review_case VERDICT="escalate" POSTED="false")"
+assert_contains "a verdict reached but not written to GitHub (e.g. an adjudication escalate) is unposted" \
+  "result=unposted" "$(cat "$tmp_dir/review-stdout")"
+assert_contains "  ... and reports the same way in unreviewed mode" \
+  "unreviewed_result=unposted" "$(cat "$tmp_dir/review-stdout")"
 
 rc="$(run_review_case CLONE_FAILS=1)"
 assert_eq "a failed clone is not a failed cycle" "0" "$rc"

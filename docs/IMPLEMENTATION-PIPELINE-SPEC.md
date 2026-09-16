@@ -944,7 +944,7 @@ and the schema must carry every one of them.
 | `approver_model_default` | `claude-sonnet-5` | Standard-tier Approver engagements: work graded `complexity:medium` (requirement 8b). Empty disables the Approver stage. |
 | `approver_model_complex` | `claude-opus-5` | High-tier Approver engagements: work graded `complexity:high` (requirement 8b). Empty falls back to `approver_model_default`, which switches the escalation off. |
 | `approver_model_critical` | `claude-fable-5` | Adjudication engagements, triggered by a refuse streak of two rather than by complexity (requirement 8c). Empty falls back to `approver_model_complex`. |
-| `approver_restale_escalate_after_hours` | 24 h | Requirement 46: how long the restale sweep tolerates a pull request making no recoverable progress before escalating rather than retrying every cycle indefinitely. For the stale-review trigger (agent-ops#682) — a standing `CHANGES_REQUESTED` `commit_id` mismatched against the pull request's head, but its most recently authored commit no older than the review itself — measured from the standing review's own `submitted_at`, which a rebase does not move. For the unreviewed...[continued below](#extended-notes-approver_restale_escalate_after_hours) |
+| `approver_restale_escalate_after_hours` | 24 h | Requirement 46: how long the restale sweep tolerates a pull request making no recoverable progress before escalating rather than retrying every cycle indefinitely. For the stale-review trigger's no-progress branch (agent-ops#682) — a standing `CHANGES_REQUESTED` `commit_id` mismatched against the pull request's head, with nothing authored since the review — measured from the standing review's own `submitted_at`, which a rebase does not move. For the same trigger's...[continued below](#extended-notes-approver_restale_escalate_after_hours) |
 | `approver_unreviewed_engage_after_hours` | 2 h | Requirement 46: how long the unreviewed trigger (agent-ops#890) waits, from a pull request's own `createdAt`, before treating a ready, non-draft, `pr_label` pull request with no Approver review at all as stranded rather than as ordinary in-flight work, and arming a recovery engagement. |
 | `enabler_model` | `claude-opus-5` | The Enabler (requirement 35). The highest-tier model this system runs, affordable only because the eligibility rule of 35a engages it rarely and the claims of 35c stop it being engaged twice. Empty disables the stage. |
 | `enabler_model_critical` | `claude-fable-5` | The Enabler's critical tier (requirement 36d, D18 §6): both `run_enabler_adjudication` (`adjudicate-first`) and `run_enabler_decide` (`decide-tactical`) run at this model rather than `enabler_model` — the Enabler's own first appearance of a second tier, on the same empty-falls-back pattern `approver_model_critical` uses for the Approver's own adjudication. Empty falls back to `enabler_model`. |
@@ -1142,7 +1142,7 @@ Cycle and review directories whose derived files are kept — the stage event st
 
 ### Extended notes: `approver_restale_escalate_after_hours`
 
-Requirement 46: how long the restale sweep tolerates a pull request making no recoverable progress before escalating rather than retrying every cycle indefinitely. For the stale-review trigger (agent-ops#682) — a standing `CHANGES_REQUESTED` `commit_id` mismatched against the pull request's head, but its most recently authored commit no older than the review itself — measured from the standing review's own `submitted_at`, which a rebase does not move. For the unreviewed trigger (agent-ops#890) — a ready pull request with no Approver review at all whose recovery engagements are not producing one — measured from the first `approver-unreviewed-engaged` event at the pull request's current head.
+Requirement 46: how long the restale sweep tolerates a pull request making no recoverable progress before escalating rather than retrying every cycle indefinitely. For the stale-review trigger's no-progress branch (agent-ops#682) — a standing `CHANGES_REQUESTED` `commit_id` mismatched against the pull request's head, with nothing authored since the review — measured from the standing review's own `submitted_at`, which a rebase does not move. For the same trigger's genuine-progress branch when a re-review reaches a verdict but posts nothing to GitHub (agent-ops#988: overwhelmingly an adjudication `escalate`) — measured from the first such `approver-restale-unposted-engaged` event logged against that standing review's own id, so a real fix that finally posts, not merely a rebase, is what retires the clock. For the unreviewed trigger (agent-ops#890) — a ready pull request with no Approver review at all whose recovery engagements are not producing one — measured from the first `approver-unreviewed-engaged` event at the pull request's current head.
 
 ### Extended notes: `enabler_assignee`
 
@@ -17338,10 +17338,43 @@ with the Reviewer's own.
       stage transcript to stdout itself under `--once`
       (`dump_stage_output`), so a caller capturing this function's output
       would read that transcript as the outcome and route a posted
-      re-review into the dismissal fallback below. A pull request this re-review
-      approves is picked up by the very next requirement-8u sweep pass in
-      the same cycle, since a fresh `APPROVED` standing review is exactly
-      that sweep's own precondition.
+      re-review into the dismissal fallback below. The result is one of
+      three values, read off `run_approver_stage`'s own `approver_stage_
+      posted` (agent-ops#988) rather than merely whether it reached a
+      verdict at all: `posted` once a real GitHub review write was attempted
+      and succeeded — a pull request this re-review approves is picked up
+      by the very next requirement-8u sweep pass in the same cycle, since a
+      fresh `APPROVED` standing review is exactly that sweep's own
+      precondition; `unposted` once a verdict was reached but nothing was
+      written to GitHub — overwhelmingly an adjudication `escalate`, whose
+      own `approver_escalate` files or dedups onto an escalation issue and
+      leaves the standing `CHANGES_REQUESTED` review, its `commit_id` and
+      this trigger's own precondition exactly as they were, so a naive retry
+      would re-fire the identical `approver_model_critical` engagement every
+      cycle indefinitely (the gap this requirement's own predecessor left
+      open until agent-ops#988: before it, this case read as `posted`
+      merely because a verdict was reached, so it neither dismissed nor
+      bounded, and the sweep re-engaged unboundedly); and `unavailable` when
+      no verdict was reached at all.
+
+      An `unposted` outcome is bounded rather than retried every cycle:
+      `approver_restale_unposted_prior_engagement` reads the fleet's union
+      log for the first `approver-restale-unposted-engaged` event logged
+      against this exact standing review's own numeric id (never the pull
+      request or its head — only a fresh Approver write, which produces
+      `posted` and a new review id, retires this memory; a rebase-only push
+      in the meantime does not). While that first engagement is younger than
+      `approver_restale_escalate_after_hours`, no further engagement is
+      attempted this cycle — the sweep leaves the review exactly as it
+      stands, the same as the no-progress branch below. Once it is older,
+      `_approver_restale_escalate` hands the pull request to a human instead
+      — the identical per-review-id-deduplicated escalation path
+      (`pr-<n>-approver-restale-<review-id>`) the no-progress branch already
+      uses, so the same standing review is never escalated twice under two
+      different names. A fresh engagement (never attempted while a prior
+      `unposted` engagement is still within the bound) that itself reports
+      `unposted` logs the `approver-restale-unposted-engaged` event that
+      starts this clock.
     - **No commit authored since the review** — a push landed (the head
       moved, or the trigger would not have fired at all) but it authored
       nothing new, i.e. a rebase alone. Neither re-reviewed (there is
@@ -17359,18 +17392,21 @@ with the Reviewer's own.
       standing review after a human acts gets its own escalation rather than
       colliding with the old one's.
 
-    A genuine re-review that could not even be attempted — the clone or
-    branch checkout failed, or `run_approver_stage` bailed out before
-    engaging at all (the stage disabled at this level, the credential
-    absent, the refuse streak unreadable, no model resolved) — falls back to
+    A genuine re-review that reports `unavailable` — the clone or branch
+    checkout failed, or `run_approver_stage` bailed out before engaging at
+    all (the stage disabled at this level, the credential absent, the
+    refuse streak unreadable, no model resolved) — falls back to
     `_approver_restale_dismiss`: a self-dismissal of the Approver's own
     stale review via `PUT .../reviews/{id}/dismissals`
     (`approver_dismiss_review`, `lib/approver.sh`), which needs no
     permission beyond what posting a review already grants, since both write
     under the same App identity. This is reached only when genuine progress
-    was found but a real re-review is not achievable this cycle — never in
-    place of one that succeeded, and never for the no-progress case above,
-    where dismissing a review that may still be correct would be worse than
+    was found but a real re-review could not even be attempted this cycle —
+    never in place of one that posted, never for one that reached a verdict
+    and reported `unposted` (that review was actually judged; dismissing it
+    would discard a completed, if unwritten, judgement rather than merely a
+    missed attempt), and never for the no-progress case above, where
+    dismissing a review that may still be correct would be worse than
     leaving it stand. Every write this requirement makes is best-effort: a
     failure at any step logs a `warning` and leaves the pull request exactly
     as it was, for the sweep to find again next cycle.
@@ -26603,18 +26639,32 @@ oblige anyone to edit a test.
     `posted`; the same candidate falls back to `_approver_restale_dismiss`,
     naming the review id resolved from the reviews list, only when
     `_approver_restale_review` reports `unavailable`, and never escalates on
-    that pass; a stale review with nothing authored since it (a rebase-only
-    push) reaches neither `_approver_restale_review` nor
-    `_approver_restale_dismiss` — under `approver_restale_escalate_after_
-    hours` nothing at all is logged, and once the standing review's own
-    `submitted_at` is older than the threshold `_approver_restale_escalate`
-    is called instead, naming a review-round-scoped item ref
-    (`pr-<n>-approver-restale-<review-id>`) and the review's own
-    `submitted_at`, never `updatedAt`; a schema-illegal
+    that pass; the identical candidate, when `_approver_restale_review`
+    reports `unposted` instead (agent-ops#988: a verdict was reached — most
+    often an adjudication `escalate` — but nothing was written to GitHub),
+    falls back to neither dismissal nor a fresh engagement on the very next
+    pass — a stubbed `approver_restale_unposted_prior_engagement` fixture
+    with no prior event still lets the first engagement through and logs
+    `approver-restale-unposted-engaged` naming the review id, while a second
+    pass with that event now on the union log, still inside `approver_
+    restale_escalate_after_hours` of it, reaches neither
+    `_approver_restale_review` nor `_approver_restale_dismiss` again; once
+    that first `unposted` engagement is older than the threshold, the same
+    pass reaches `_approver_restale_escalate` instead — naming the identical
+    review-scoped item ref the no-progress branch below uses — and never a
+    fresh `_approver_restale_review` call; a stale review with nothing
+    authored since it (a rebase-only push) reaches neither
+    `_approver_restale_review` nor `_approver_restale_dismiss` — under
+    `approver_restale_escalate_after_hours` nothing at all is logged, and
+    once the standing review's own `submitted_at` is older than the
+    threshold `_approver_restale_escalate` is called instead, naming a
+    review-round-scoped item ref (`pr-<n>-approver-restale-<review-id>`) and
+    the review's own `submitted_at`, never `updatedAt`; a schema-illegal
     `approver_restale_escalate_after_hours` (reaching jq's `tonumber` and
     erroring) computes an empty cutoff instead, which fails the same way —
     no escalation — but first logs a `warning` naming the config key, the
-    raw value and `_approver_restale_sweep_repo`; a longer configured
+    raw value and `_approver_restale_sweep_repo`, pinned at both the
+    no-progress site and the `unposted`-bound site; a longer configured
     threshold holds the identical review back from escalation; a review
     whose commit still matches the pull request's current head, a draft
     pull request, a currently-`APPROVED` pull request and one with no
@@ -26671,13 +26721,16 @@ oblige anyone to edit a test.
     dying on the unset read, engages `run_approver_stage` under the pull
     request's own slug, its own fresh clone and the synthetic work
     order/Implementer summary/Reviewer summary, reports `posted` in
-    `_approver_restale_review_result` even when the stage writes its whole
-    transcript to stdout (`--once`), reports `unavailable` for a stage that
-    reached no verdict and for a clone that failed (engaging nothing in that
-    case), restores every borrowed global, and tears its recovery clone down;
-    called again in `unreviewed` mode it engages the stage under a synthetic
-    work order naming `pr-<n>-approver-unreviewed` instead, reporting its
-    outcome through the same global.
+    `_approver_restale_review_result` when the stubbed stage reaches a
+    verdict with `approver_stage_posted` true — even when the stage writes
+    its whole transcript to stdout (`--once`) — reports `unposted`
+    (agent-ops#988) when the stubbed stage reaches a verdict but
+    `approver_stage_posted` is false, reports `unavailable` for a stage that
+    reached no verdict at all and for a clone that failed (engaging nothing
+    in that case), restores every borrowed global, and tears its recovery
+    clone down; called again in `unreviewed` mode it engages the stage under
+    a synthetic work order naming `pr-<n>-approver-unreviewed` instead,
+    reporting its outcome through the same global.
 8v. **A D18 rollout stage's own exit criteria are measured, not recalled
     (component 22).** `test/autonomy-stage-report.test.sh` passes: a
     repository at `human` (Stage 0) verdicts `met` once a baseline file
