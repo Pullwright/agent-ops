@@ -9484,9 +9484,12 @@ implements.
     returns an unparseable final message is recorded (requirement 21's
     `attempt-failed`, and `handle_stage_failure`) and the cycle moves to the
     next repository rather than exiting, since one repository's failure must
-    not cost every other repository this cycle's own chance. Two consequences
-    follow for the stand-down, and both exist because a repository that was
-    never successfully asked has established nothing about its own backlog:
+    not cost every other repository this cycle's own chance. Three
+    consequences follow for the stand-down. The first two exist because a
+    repository that was never successfully asked has established nothing
+    about its own backlog; the third because a repository that answered
+    without contributing a candidate has not accounted for its own backlog
+    either, and so must be treated the same way:
 
     - **Where every engagement failed, the cycle exits exactly where the
       pre-split single attempt exited** — before requirement 3v's
