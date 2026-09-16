@@ -2317,9 +2317,12 @@ already holds a live stage against, so this panel cannot recommend a number
 the rest of the page would disagree with. At or above `STALL_NEAR_BACKSTOP_
 RATIO` (0.9) of that backstop it names the lever directly — raise the
 backstop before a healthy run is killed; below it, "no action indicated." A
-stage this page holds no backstop for (a stage name `stageBackstopMin` does
-not recognise, e.g. `refiner` or `project-reviewer`) reads "no cap on record
-for this stage" rather than guessing a direction.
+row `stageBackstopMin` resolves to no positive number — no per-row announced
+value, no entry for that stage in the published `config.stage_backstops`
+(:628-632; this now covers `project-reviewer`, and `refiner` the same way,
+once the fleet-wide fold has observed a stage-end for it), and no shipped
+prior for that stage name — reads "no cap on record for this stage" rather
+than guessing a direction.
 
 The **recent log** is the newest 80 events, one row each: time, the event as a
 badge, **Node**, **Repo**, **Actor**, and the event's own detail. A
