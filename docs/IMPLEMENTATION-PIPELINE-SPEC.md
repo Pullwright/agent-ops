@@ -511,7 +511,12 @@ file and carries placeholders only; `.env` itself is never committed.
   side. It is a second front over the same computation the scheduler's own
   `healthcheck:` already runs in-container, never a substitute for it — see
   that service's own entry below for why a sidecar cannot be what makes a
-  container's liveness honest.
+  container's liveness honest. It also carries the scheduler's own proxy
+  variables and sits on `default` and `egress` both — not `egress` alone,
+  which is `internal: true` and would strand its published loopback port —
+  so `/readyz`'s one forge read (58a) leaves through the same D24 egress
+  path the scheduler uses, rather than a route the cycle it reports on could
+  not itself take (issue #1587).
 - **`watchtower`** (profile `auto-update`) — how a node picks up new code: it
   polls for a new image tag and restarts the services into it. Enabled by
   label, so it touches this stack's containers and no others on the host. It
@@ -9449,6 +9454,20 @@ implements.
     winds down, exactly as requirement 2.4's own cycle-start check treats
     it — only a full stop does.
 
+    The one cached `/rate_limit` read takes the node's D24 egress path from
+    *whichever* container makes it — `deploy/docker/compose.yaml`'s
+    `scheduler` and `node-health` services both carry the same proxy
+    variables and both sit on the internal-only `egress` network alongside
+    `default`, so a readiness verdict is never evidence gathered over a
+    route the cycle it reports on could not use (issue #1587 — the "answer
+    came from a path the subject does not use" shape issue #608 already
+    exists to close, one layer out). This matters because the cache file
+    itself is shared: `state_dir/.node-health-ratelimit-cache.json` lives on
+    the `state` volume both containers mount, so a verdict either container
+    writes is read back by the other within the TTL — the two must not read
+    the forge by different routes, or the dishonesty just moves from the
+    answer to the cache behind it.
+
 59. **Health: is this node doing its job over time, composed from named
     components, never restating liveness.** `lib/node-health.sh`'s
     `node_health_health` folds exactly two named components —
@@ -9549,7 +9568,14 @@ implements.
     header documents for `dashboard-local`. This service is never what
     makes the scheduler's own liveness honest (60c already is, in-process);
     it exists solely for a reader — a collector, an orchestrator's own
-    URL-level probe — that can only speak HTTP.
+    URL-level probe — that can only speak HTTP. It also carries the
+    scheduler's own `HTTPS_PROXY`/`HTTP_PROXY` variables (both spellings)
+    and sits on `default` and `egress` both, alongside its loopback
+    publishing — never `egress` alone, since that network is
+    `internal: true` and a published port into it is not the reachable
+    mapping this paragraph already requires — so the one forge read 58a
+    describes leaves through the same D24 egress path the scheduler uses
+    (issue #1587).
 
     60e. **`--metrics`' field list is the node metrics shape
     `docs/METERING-SCHEMA.md` documents under its own stability policy.**
