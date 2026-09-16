@@ -735,6 +735,9 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
              recent_costs[],       // {ts, cost} per row, last 3 days, for the
                                     //   spend-today card's GMT/local/24h toggle
              cost_rows[],           // {day, model, actor, usd, cycle,
+                                     //  tokens_input, tokens_output,
+                                     //  tokens_cache_creation,
+                                     //  tokens_cache_read,
                                      //  repo, item, source, outcome,
                                      //  attributed} per row, one per
                                      //   (transcript × model)
@@ -744,7 +747,15 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                                      //   over the whole COST_SCAN_DAYS
                                      //   window, unsummed — backs the
                                      //   model/actor charts' own time-frame
-                                     //   selector (issue #334). `cycle` is
+                                     //   selector (issue #334), and the
+                                     //   token/prompt-cache panels' own use of
+                                     //   the same selector (issue #594, D21).
+                                     //   tokens_* are that model's own token
+                                     //   counts (docs/METERING-SCHEMA.md) —
+                                     //   null together on an `unknown`-model
+                                     //   row, never 0, since that row has no
+                                     //   per-model breakdown to attribute them
+                                     //   to. `cycle` is
                                      //   the transcript's own id, shared by
                                      //   every row it split into — the
                                      //   selector's client-side re-aggregation
@@ -886,6 +897,35 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                                       //   `by:"refiner"`), never stage-end
                                       //   attempts, since the Refiner's own
                                       //   stage-end spans several items
+             stage_gaps: {          // the stall profile (issue #594, D21):
+               window_from, window_to, //   docs/METERING-SCHEMA.md's own
+                                      //   `gaps`, rolled up by stage. Its own
+                                      //   window, deliberately not
+                                      //   COST_SCAN_DAYS — the source is
+                                      //   log.jsonl/review-log.jsonl's
+                                      //   retained union (analytics_retained_
+                                      //   days), not the transcripts the cost
+                                      //   scan walks
+               by_stage: [ {
+                 stage,               // stage-end's own `stage` (coordinator/
+                                      //   implementer/reviewer/enabler/
+                                      //   enabler-adjudicate/enabler-decide/
+                                      //   refiner), or the literal
+                                      //   "project-reviewer" for a
+                                      //   review-stage-end row (which carries
+                                      //   no `.stage`) — not the same
+                                      //   vocabulary as cost_rows[].actor
+                 runs,                // stage-ends whose gaps was non-null;
+                                      //   gaps:null ("not measured") is
+                                      //   excluded, never counted as silent
+                 median_of_run_p50,   // nearest-rank median over each run's
+                                      //   own gaps.p50 — rendered "across
+                                      //   runs," never a pooled percentile
+                 worst_run_p95,       // the largest gaps.p95 any one run saw
+                                      //   — also "across runs," not pooled
+                 worst_run_max        // the longest silence any run saw — a
+                                      //   max of maxima, so this one is exact
+               } ] }
   cycles:  [ { id, node, started_at, ended_at, outcome, repo, item, source, title,
                pr_url, reason, fail_detail, warning, total_cost_usd, limit_hit,
                raced, race_losses,          // true/count iff the cycle lost a claim
@@ -2226,6 +2266,64 @@ recorded any of this," and a `data.js` written before the aggregate existed
 says so outright rather than rendering a clean-looking empty card set it has
 no data for.
 
+The **Token economics** panel (issue #594, D21) surfaces the token dimension
+`lib/metering.sh` records on every stage and nothing before this read: two
+breakdowns, **by stage** and **by model**, each a table of input/output/
+cache-read/cache-write token totals plus the **prompt-cache ratio** —
+`cache_read / (cache_read + cache_creation + input)`, stated in the table
+header itself rather than left for a reader to infer, since an unstated
+denominator is exactly the "counter on a wall" the lever rule (D21) forbids.
+Both ride `counts.cost_rows[]` and the cost charts' own time-frame selector
+(`windowedTokenBreakdown`, mirroring `windowedCostBreakdown`) — the same
+window, moved by the same control, so a reader who narrows the time frame to
+answer "what did yesterday cost" gets the same narrowing applied to "what did
+yesterday's tokens buy." A `cost_rows[]` row whose four `tokens_*` fields are
+all `null` (an `unknown`-model row with no readable `modelUsage`) is excluded
+from both breakdowns entirely, never folded in as zero — see
+`docs/METERING-SCHEMA.md`.
+
+Each row's own cache ratio carries the lever the figure informs, in the same
+cell: below `TOKEN_MIN_SAMPLE` (5, the same minimum sample the actor/model
+scorecards already use) it reads "insufficient evidence" rather than a rate
+too thin to mean anything; at or above it, a ratio below
+`CACHE_RATIO_ACTION_THRESHOLD` (0.5, stated on the page rather than left a
+mystery number per implementation spec requirement 4f) names the lever
+directly — the stage's own prompt prefix may be varying between cycles, worth
+stabilising or revisiting its `prompts/` override — and a ratio at or above it
+reads "no action indicated." Each breakdown also names its own largest token
+consumer in a caption above the table — the actor or model whose D12
+assignment is driving the token cost, the lever the by-stage/by-model split
+itself informs.
+
+The **Stall profile** panel (issue #594, D21) renders `counts.stage_gaps`: the
+other series `lib/metering.sh` records and nothing read before this — how long
+each stage went silent, by stage. It states its own window
+(`window_from`/`window_to`) above the table, deliberately not the cost charts'
+`COST_SCAN_DAYS`: its source is the `gaps` object on `stage-end`/
+`review-stage-end` events in the retained log union, a materially different —
+usually longer — span (`docs/METERING-SCHEMA.md`). The caption also states,
+in words, that `median_of_run_p50` and `worst_run_p95` are read "across runs"
+rather than as pooled percentiles, and that `worst_run_max` alone is exact (a
+max of maxima is a max) — the same distinction `docs/METERING-SCHEMA.md`'s own
+`gaps` section draws, restated here since it is the one place on the page a
+reader could otherwise mistake a per-run figure for a fleet-wide percentile.
+
+Each row's own **Decision** cell is the lever the stall profile informs (D21):
+whether the stage-cap settings the watchdog enforces (implementation spec
+requirement 4e) should move, and which way. Below `TOKEN_MIN_SAMPLE` runs it
+reads "insufficient evidence"; otherwise `worst_run_max` is compared against
+`stageBackstopMin` — the same figure the fleet strip's own stage-overrun badge
+already holds a live stage against, so this panel cannot recommend a number
+the rest of the page would disagree with. At or above `STALL_NEAR_BACKSTOP_
+RATIO` (0.9) of that backstop it names the lever directly — raise the
+backstop before a healthy run is killed; below it, "no action indicated." A
+row `stageBackstopMin` resolves to no positive number — no per-row announced
+value, no entry for that stage in the published `config.stage_backstops`
+(:628-632; this now covers `project-reviewer`, and `refiner` the same way,
+once the fleet-wide fold has observed a stage-end for it), and no shipped
+prior for that stage name — reads "no cap on record for this stage" rather
+than guessing a direction.
+
 The **recent log** is the newest 80 events, one row each: time, the event as a
 badge, **Node**, **Repo**, **Actor**, and the event's own detail. A
 `disabled`/`enabled` event's badge additionally names its `scope` (issue
@@ -2598,7 +2696,20 @@ number's twins elsewhere on the page.
   The cost scan attributes each
   transcript to the actor that wrote it, names a review's as the Project
   Reviewer rather than a second cycle Reviewer, and leaves the actors summing
-  to the total. Each node's version comes from its own heartbeat, and a peer
+  to the total. The batched cost scan's per-model entries (issue #594, D21)
+  each carry that model's own `tokens_input`/`tokens_output`/
+  `tokens_cache_creation`/`tokens_cache_read`, summed from a canned envelope's
+  `modelUsage` map the same way its `costUSD` already is, with a `modelUsage`
+  entry that is not an object skipped exactly as the existing `costUSD`
+  handling skips it; the `unknown`-model fallback carries all four as `null`,
+  never `0`. `counts.stage_gaps` folds a synthetic event set of `stage-end`/
+  `review-stage-end` records into its per-stage `runs`/`median_of_run_p50`/
+  `worst_run_p95`/`worst_run_max`: a `stage-end` with `gaps: null` is excluded
+  from `runs` rather than counted as a silent one, a `review-stage-end` (which
+  carries no `.stage`) rolls up under the literal `project-reviewer` rather
+  than colliding with the implementation pipeline's own `reviewer` stage, and
+  `window_from`/`window_to` reflect the full synthetic set's own timestamps,
+  not `COST_SCAN_DAYS`. Each node's version comes from its own heartbeat, and a peer
   publishing none reads as unknown rather than inheriting ours; the
   compose-drift and image-drift verdicts ride the same rule — a peer's from
   its heartbeat, a peer publishing none as null, never locally computed, and
@@ -2868,6 +2979,24 @@ number's twins elsewhere on the page.
   pull request rather than every ready one, and that the narrowing itself
   never reaches a `CHANGES_REQUESTED` pull request, which the pipeline owes a
   change at every level.
+- The **Token economics** and **Stall profile** panels (issue #594, D21) are
+  each asserted from their own fixture. `token-economics.json` holds three
+  stage/model rows over `cost_rows[]`'s new `tokens_*` fields — one with a
+  healthy sample and a high cache-read share (reads its ratio and "no action
+  indicated"), one with a healthy sample and a low share (names the lever:
+  the prompt prefix may be varying, consider stabilising it), and one below
+  `TOKEN_MIN_SAMPLE` (reads "insufficient evidence" instead of a rate) — plus
+  an `unknown`-model row carrying `tokens_*: null` on every field, asserted
+  absent from both the by-stage and by-model breakdowns entirely rather than
+  folded in as zero. `stall-profile.json` holds `counts.stage_gaps` rows
+  exercising all four of that panel's own Decision branches: a stage whose
+  `worst_run_max` is at `STALL_NEAR_BACKSTOP_RATIO` of its known backstop
+  (names the lever and the direction — raise it), one comfortably inside it
+  ("no action indicated"), one below the minimum sample ("insufficient
+  evidence"), and one this page holds no backstop for at all ("no cap on
+  record for this stage"); the panel's own caption is asserted to state its
+  window separately from the cost charts' and to label its across-run figures
+  as such rather than as pooled percentiles.
 - `test/dashboard-refresh.test.sh` drives the SPA refresh tick itself (issue
   #1288), under a second, narrower stub (`test/dashboard-refresh-harness.js`)
   that fires the page's own `#refreshbtn` click listener — the one external

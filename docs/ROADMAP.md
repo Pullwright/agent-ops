@@ -434,27 +434,24 @@ Poetic-Poems, with no pipeline code in it.
 - [x] Provider-qualified model identifiers in the config schema, so models
       from other providers can arrive later without a breaking change
       (D12). *[fleet]*
-- [ ] Make the spend data say *what* the money bought, before anything is
-      built on it (D21). Two defects stand between today's metering and any
-      productivity figure — a third, the model dimension, is already fixed
-      (issue #536): `scripts/publish-dashboard.sh`'s cost scan now reads each
-      `modelUsage` entry's own `costUSD` rather than crediting a transcript's
-      whole `total_cost_usd` to whichever model `keys` sorted first, and
-      summing those entries reproduces `total_cost_usd` to the cent.
-      **The item dimension is absent:** `cost_rows[]` is
-      `{day, model, actor, usd}`, so "what did we spend on work that never
-      landed" cannot be asked at all — though the scan already holds the cycle
-      id it discards (`$cid`, the same string it slices `day` and `ts` out of)
-      and that cycle's own record already names its repo, item, source and
-      outcome. **The token dimension is recorded and never read:**
-      `lib/metering.sh` writes `tokens.input`, `tokens.output`,
-      `tokens.cache_creation`, `tokens.cache_read` and
-      `gaps.{n,p50,p95,p99,max}` onto every `stage-end`, and neither the
-      Publisher nor the page reads one of them, so the prompt-cache
-      economics and the stall profile the pipeline already pays to measure are
-      invisible. Carry `{repo, item, source, cycle, outcome}` on each cost
-      row, and surface the token and gap series — both additive under the
-      metering schema's own stability policy. *[fleet]*
+- [x] Make the spend data say *what* the money bought (D21). Three defects
+      stood between the metering this pipeline already recorded and any
+      productivity figure, and all three are now fixed. **The model
+      dimension** (issue #536): `scripts/publish-dashboard.sh`'s cost scan
+      reads each `modelUsage` entry's own `costUSD` rather than crediting a
+      transcript's whole `total_cost_usd` to whichever model `keys` sorted
+      first, and summing those entries reproduces `total_cost_usd` to the
+      cent. **The item dimension** (issue #593): `cost_rows[]` carries
+      `{repo, item, source, cycle, outcome}` alongside `{day, model, actor,
+      usd}`, joined by `cycle` against the fleet-wide event union, so "what
+      did we spend on work that never landed" can be asked directly.
+      **The token and gap dimensions** (issue #594): `cost_rows[]` also
+      carries each model's own `tokens_input`/`tokens_output`/
+      `tokens_cache_creation`/`tokens_cache_read`, and a new
+      `counts.stage_gaps` roll-up states the per-stage stall profile over its
+      own window — both read by the dashboard's Token economics and Stall
+      profile panels, each figure naming the decision it informs per the
+      lever rule below. *[fleet]*
 - [x] Fix the flow-and-outcome event contract now, for the reason the metering
       schema was fixed now (D21): an analytic can only ever be computed from
       what was recorded while the work happened, so every month the contract
