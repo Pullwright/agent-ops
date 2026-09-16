@@ -22559,7 +22559,13 @@ oblige anyone to edit a test.
    is *below* `LINT_SHELL_PLAIN_MIB` — so on one of those the skip path is
    reached in practice, for every file whose estimate exceeds the budget:
    `agent-cycle.sh`, `scripts/publish-dashboard.sh` and `scripts/doctor.sh` as
-   the tree stands. That is the trade agent-ops#1305 accepted deliberately —
+   the tree stands. Setting it is a node-level act, like the Vercel variables
+   above: `LINT_SHELL_BUDGET_MIB` is named in `deploy/docker/compose.yaml`'s
+   shared environment block, so a node carries it by way of its own `.env` and
+   a `docker compose up -d` — that block being an allowlist with no
+   `env_file:` beside it, a variable absent from it never reaches the
+   container at all, however it is spelled in `.env`. That is the trade
+   agent-ops#1305 accepted deliberately —
    reduced local coverage, announced on stderr, is strictly better than an
    invocation the node cannot afford — and it is
    another reason the skip does not fail the run: CI has the memory and

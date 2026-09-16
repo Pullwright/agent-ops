@@ -125,7 +125,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   explicit `LINT_SHELL_BUDGET_MIB` instead of reading the parent's
   `memory.high` at all — so the parent ceiling can be sized for the
   Publisher's own working set without narrowing or widening what
-  `lint-shell.sh` follows. `lib/memory.sh`'s `memory_cgroup_verdict` also no
+  `lint-shell.sh` follows. That variable is named in
+  `deploy/docker/compose.yaml`'s shared environment block, so a node sets it
+  in its own `.env`; like every other variable there it arrives only when a
+  human updates that node's `compose.yaml` and `.env` and runs
+  `docker compose up -d`, never on an image roll. `lib/memory.sh`'s `memory_cgroup_verdict` also no
   longer reports `parented [ ok ]` for a parent `memory.max` that merely
   coincides with (or sits below) the child's own — the exact shape that read
   `[ ok ]` throughout this incident — reporting `livelocked` instead, the

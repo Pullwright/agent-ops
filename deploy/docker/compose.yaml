@@ -109,6 +109,18 @@ x-agent-ops-env: &agent-ops-env
   # unset and needs no change.
   PULLWRIGHT_AUTHOR_INSTALLATION_IDS: ${PULLWRIGHT_AUTHOR_INSTALLATION_IDS:-}
   PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH: ${PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH:-}
+  # `scripts/lint-shell.sh`'s own `-x` budget in MiB (agent-ops#1620), and the
+  # only way to set one on a containerised node: this block is an allowlist and
+  # there is no `env_file:`, so a variable not named here never reaches the
+  # container however it is spelled in `.env`. Left unset the guard takes no
+  # constraint from this source and falls back to the container's own
+  # `memory.max` and `MemAvailable`. It is deliberately *not* the parent
+  # cgroup's `memory.high` any more, which is mounted read-only below for
+  # `lib/memory.sh`'s verdict alone: that ceiling has to be sized for
+  # `scripts/publish-dashboard.sh`'s real working set, while this guard needs
+  # roughly ≤700 MiB to keep steering the largest unions off `-x`, and one knob
+  # holding both is what livelocked both ockham nodes on 2026-09-16.
+  LINT_SHELL_BUDGET_MIB: ${LINT_SHELL_BUDGET_MIB:-}
   TZ: ${TZ:-Pacific/Auckland}
 
 x-agent-ops: &agent-ops
