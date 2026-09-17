@@ -1494,6 +1494,9 @@ assert_contains "a stage below the minimum sample reads insufficient evidence ra
   "insufficient evidence (2 runs)" "$spflat"
 assert_contains "a stage with no known backstop says so rather than guessing a direction" \
   "no cap on record for this stage — no action indicated" "$spflat"
+assert_contains "a near-backstop worst_run_max below the minimum sample still names the backstop, since a max of maxima is exact at any sample size" \
+  "worst silence reached 95% of the 90m backstop — consider raising it before a healthy run is killed" \
+  "$spflat"
 
 printf '\n'
 if (( failures > 0 )); then

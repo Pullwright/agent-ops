@@ -72,6 +72,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **The stall profile's Decision cell no longer hides a near-backstop
+  `worst_run_max` behind the minimum-sample gate** (issue #1590). The Stall
+  profile panel (D21, issue #594) checked `row.runs < TOKEN_MIN_SAMPLE`
+  before comparing `worst_run_max` against the stage's own backstop, so a
+  stage with fewer than five measured runs whose single worst silence
+  already sat at or above `STALL_NEAR_BACKSTOP_RATIO` of its own watchdog
+  backstop read "insufficient evidence" instead of naming the lever —
+  exactly the reading the panel exists to surface before a healthy run is
+  killed. `worst_run_max` is a max of maxima, not a rate, so it is exact at
+  any sample size; `stallVerdict` now checks the near-backstop condition
+  first, independently of `row.runs`, and falls back to the sample-size gate
+  only below that ratio.
+
 - **The token-economics panel's by-model breakdown no longer undercounts
   `n` when several actors in one cycle share a model** (issue #1591).
   `aggregateTokenRows` deduped its sample count by `cycle` alone, exact for
