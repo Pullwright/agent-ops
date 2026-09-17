@@ -348,14 +348,17 @@ ITEM_LIFECYCLE_FOLD_JQ='
 # cannot be read enters nothing.
 item_lifecycle_fold() {
   local src="${1:--}" since="${2:-}" log_file="" tmp_log="" all_json_file="" \
-        void_json="" blocked_json="" obsolete_json="" out=""
-  # Never hold the log in a bash variable (agent-ops#1620): a variable the
-  # size of the log is copied by every subshell forked afterwards, which is
-  # what pushed the publisher over its cgroup ceiling. `void_items`/
-  # `blocked_items`/`draft_obsolete_flags` already read a file argument
-  # directly, so the only read this function must materialise itself is
-  # stdin's own one-shot stream — spooled to a temp file so it, too, can be
-  # read more than once without ever passing through a bash string.
+        void_file="" blocked_file="" obsolete_file="" out_file="" f=""
+  # Nothing that scales with the log is ever held in a bash variable
+  # (agent-ops#1620): a variable that size is copied by every subshell forked
+  # afterwards, which is what pushed the publisher over its cgroup ceiling.
+  # That rule covers this function's four jq inputs *and* its own output —
+  # `records[]` carries one entry per item the log has ever seen, so the
+  # result is itself log-scale (36 MB on a 43 MB log) and is streamed from a
+  # temp file rather than captured. `void_items`/`blocked_items`/
+  # `draft_obsolete_flags` already read a file argument directly, so the only
+  # read this function must materialise itself is stdin's own one-shot stream
+  # — spooled to a temp file so it, too, can be read more than once.
   if [[ "$src" == "-" ]]; then
     tmp_log="$(mktemp 2>/dev/null)" && { cat > "$tmp_log" 2>/dev/null; log_file="$tmp_log"; }
   elif [[ -s "$src" ]]; then
@@ -363,25 +366,36 @@ item_lifecycle_fold() {
   fi
 
   all_json_file="$(mktemp 2>/dev/null)" || true
-  if [[ -n "$log_file" && -n "$all_json_file" ]]; then
+  void_file="$(mktemp 2>/dev/null)" || true
+  blocked_file="$(mktemp 2>/dev/null)" || true
+  obsolete_file="$(mktemp 2>/dev/null)" || true
+  out_file="$(mktemp 2>/dev/null)" || true
+  if [[ -n "$log_file" && -n "$all_json_file" && -n "$void_file" \
+        && -n "$blocked_file" && -n "$obsolete_file" ]]; then
     jq -c -R 'fromjson? // empty' "$log_file" 2>/dev/null | jq -sc '.' > "$all_json_file" 2>/dev/null
-    void_json="$(void_items "$log_file" 2>/dev/null || true)"
-    blocked_json="$(blocked_items "$log_file" 2>/dev/null || true)"
-    obsolete_json="$(draft_obsolete_flags "$log_file" 2>/dev/null || true)"
+    void_items "$log_file" > "$void_file" 2>/dev/null || true
+    blocked_items "$log_file" > "$blocked_file" 2>/dev/null || true
+    draft_obsolete_flags "$log_file" > "$obsolete_file" 2>/dev/null || true
   fi
-  [[ -n "$all_json_file" && -s "$all_json_file" ]] \
-    || { [[ -n "$all_json_file" ]] && printf '[]' > "$all_json_file" 2>/dev/null; }
-  [[ -n "$void_json" ]] || void_json='[]'
-  [[ -n "$blocked_json" ]] || blocked_json='[]'
-  [[ -n "$obsolete_json" ]] || obsolete_json='[]'
+  for f in "$all_json_file" "$void_file" "$blocked_file" "$obsolete_file"; do
+    [[ -n "$f" && -s "$f" ]] || { [[ -n "$f" ]] && printf '[]' > "$f" 2>/dev/null; }
+  done
 
-  if [[ -n "$all_json_file" ]]; then
-    out="$(jq -nc --arg since "$since" \
+  # `-j` (with `-n`) writes the compact object with no trailing newline, which
+  # is what the `printf '%s' "$(…)"` this replaced produced — callers compare
+  # this output byte for byte.
+  if [[ -n "$all_json_file" && -n "$void_file" && -n "$blocked_file" \
+        && -n "$obsolete_file" && -n "$out_file" ]]; then
+    jq -n -j -c --arg since "$since" \
         'input as $all | input as $void | input as $blocked | input as $obsolete | ('"$ITEM_LIFECYCLE_FOLD_JQ"')' \
-        "$all_json_file" - <<<"$void_json"$'\n'"$blocked_json"$'\n'"$obsolete_json" 2>/dev/null || true)"
+        "$all_json_file" "$void_file" "$blocked_file" "$obsolete_file" \
+        > "$out_file" 2>/dev/null || true
   fi
-  rm -f "$tmp_log" "$all_json_file" 2>/dev/null
 
-  [[ -n "$out" ]] || out='{"window":{"from":null,"to":null},"totals":{"entered":0,"leaving":0,"in_progress":0,"unaccounted":0,"balanced":true},"fates":{"landed":0,"voided":0,"superseded":0,"abandoned":0,"blocked":0,"open":0},"unaccounted":[],"records":[]}'
-  printf '%s' "$out"
+  if [[ -n "$out_file" && -s "$out_file" ]]; then
+    cat "$out_file" 2>/dev/null || true
+  else
+    printf '%s' '{"window":{"from":null,"to":null},"totals":{"entered":0,"leaving":0,"in_progress":0,"unaccounted":0,"balanced":true},"fates":{"landed":0,"voided":0,"superseded":0,"abandoned":0,"blocked":0,"open":0},"unaccounted":[],"records":[]}'
+  fi
+  rm -f "$tmp_log" "$all_json_file" "$void_file" "$blocked_file" "$obsolete_file" "$out_file" 2>/dev/null
 }

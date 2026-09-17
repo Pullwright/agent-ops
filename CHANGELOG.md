@@ -139,8 +139,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   full path even once its own top-level `$ALL_EVENTS` was gone. All three
   now write the parsed array straight to a temp file and feed it to `jq` as
   a file argument (or a nested library call's own `LOG_FILE` parameter)
-  instead; the `"-"` stdin path every existing caller still uses is
-  unchanged. `lib/memory.sh`'s `memory_cgroup_verdict` also no
+  instead — and so do the log-scale *derivatives* those folds pass between
+  themselves, which is where the last of the copies lived:
+  `item_lifecycle_fold`'s own result carries one `records[]` entry per item
+  the log has ever seen (36 MB on a 43 MB log), and it was captured into a
+  bash string by `rework_panel_build` and handed on through a here-string,
+  as were `void_items`/`blocked_items`/`draft_obsolete_flags`'s results
+  inside `item_lifecycle_fold`. Every one of those is now spooled to a temp
+  file and passed to `jq` as a file argument, and `item_lifecycle_fold`
+  streams its own result rather than capturing it, so what these functions
+  hold in bash is now a constant few MB rather than a multiple of the log:
+  measured on a 43 MB log, `rework_panel_build`'s peak bash RSS falls from
+  653 MB to 6 MB and its peak process-group RSS from 730 MB to 435 MB, the
+  remainder being `jq`'s own cost of holding the parsed array. The `"-"`
+  stdin path every existing caller still uses is unchanged, and all three
+  folds' output is byte-for-byte what it was. `lib/memory.sh`'s
+  `memory_cgroup_verdict` also no
   longer reports `parented [ ok ]` for a parent `memory.max` that merely
   coincides with (or sits below) the child's own — the exact shape that read
   `[ ok ]` throughout this incident — reporting `livelocked` instead, the

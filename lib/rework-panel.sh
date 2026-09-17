@@ -328,24 +328,29 @@ REWORK_PANEL_JQ='
 #   honest is not, and holds for the errors nobody anticipated as well as
 #   the ones they did.
 rework_panel_build() {
-  local src="${1:--}" since="${2:-}" log_file="" tmp_log="" all_json_file="" lifecycle_json="" out=""
-  # Never hold the log in a bash variable (agent-ops#1620): a variable the
-  # size of the log is copied by every subshell forked afterwards — measured
-  # on ockham at up to five nested copies, which is what pushed the publisher
-  # over its cgroup ceiling. stdin is spooled to a temp file so both
-  # `item_lifecycle_fold` (which itself now reads a file argument, never a
-  # bash-string copy) and this fold's own parsed array can each read the log
-  # straight off disk.
+  local src="${1:--}" since="${2:-}" log_file="" tmp_log="" all_json_file="" lifecycle_file="" out=""
+  # Nothing that scales with the log is ever held in a bash variable
+  # (agent-ops#1620): a variable that size is copied by every subshell forked
+  # afterwards — measured on ockham at up to five nested copies, which is what
+  # pushed the publisher over its cgroup ceiling. That covers
+  # `item_lifecycle_fold`'s own result as well as the log: its `records[]`
+  # carries one entry per item the log has ever seen (36 MB on a 43 MB log),
+  # so it is spooled straight to a temp file and handed to `jq` as a file
+  # argument rather than captured and passed on through a here-string. stdin
+  # is spooled the same way, so both that call and this fold's own parsed
+  # array can each read the log straight off disk.
   if [[ "$src" == "-" ]]; then
     tmp_log="$(mktemp 2>/dev/null)" && { cat > "$tmp_log" 2>/dev/null; log_file="$tmp_log"; }
   elif [[ -s "$src" ]]; then
     log_file="$src"
   fi
 
-  if [[ -n "$log_file" ]]; then
-    lifecycle_json="$(item_lifecycle_fold "$log_file" "$since" 2>/dev/null || true)"
+  lifecycle_file="$(mktemp 2>/dev/null)" || true
+  if [[ -n "$log_file" && -n "$lifecycle_file" ]]; then
+    item_lifecycle_fold "$log_file" "$since" > "$lifecycle_file" 2>/dev/null || true
   fi
-  [[ -n "$lifecycle_json" ]] || lifecycle_json='{"records":[]}'
+  [[ -n "$lifecycle_file" && -s "$lifecycle_file" ]] \
+    || { [[ -n "$lifecycle_file" ]] && printf '{"records":[]}' > "$lifecycle_file" 2>/dev/null; }
 
   all_json_file="$(mktemp 2>/dev/null)" || true
   if [[ -n "$log_file" && -n "$all_json_file" ]]; then
@@ -354,11 +359,11 @@ rework_panel_build() {
   [[ -n "$all_json_file" && -s "$all_json_file" ]] \
     || { [[ -n "$all_json_file" ]] && printf '[]' > "$all_json_file" 2>/dev/null; }
 
-  if [[ -n "$all_json_file" ]]; then
+  if [[ -n "$all_json_file" && -n "$lifecycle_file" ]]; then
     out="$(jq -nc 'input as $all | input as $lifecycle | ('"$REWORK_PANEL_JQ"')' \
-        "$all_json_file" - <<<"$lifecycle_json" 2>/dev/null || true)"
+        "$all_json_file" "$lifecycle_file" 2>/dev/null || true)"
   fi
-  rm -f "$tmp_log" "$all_json_file" 2>/dev/null
+  rm -f "$tmp_log" "$all_json_file" "$lifecycle_file" 2>/dev/null
 
   [[ -n "$out" ]] || out='{"how_much":null,"whose":null,"escape_ladder":null,"clean_count":null}'
   printf '%s' "$out"
