@@ -174,8 +174,8 @@ assert_eq "an unreadable cgroup is unknown, never a verdict" \
 # can act on, `parented` in the case below is a node quietly ratcheting while
 # doctor calls it healthy.
 
-stub_cgroup max 1610612736 805306368 1610612736
-assert_eq "a ceiling on the parent, itself hard-ceilinged, is parented" \
+stub_cgroup max 1610612736 805306368 2147483648
+assert_eq "a ceiling on the parent, itself hard-ceilinged above this container's own, is parented" \
   "parented" "$(memory_cgroup_verdict)"
 
 stub_cgroup max 1610612736 max
@@ -222,6 +222,25 @@ assert_eq "a parent high with the parent's own max unreadable is unconfirmed, no
 stub_cgroup max 1610612736 805306368 3221225472
 assert_eq "a parent high with a real parent max above it stays parented" \
   "parented" "$(memory_cgroup_verdict)"
+
+# --- memory_cgroup_verdict: a real parent max that adds no headroom
+#     (agent-ops#1620) --------------------------------------------------------
+#
+# The 2026-09-16 incident: parent memory.high 768 MiB, parent memory.max 1536
+# MiB, this container's own memory.max also 1536 MiB — a real hard ceiling on
+# the parent, but one that coincides with the child's own, so the kernel's
+# proactive reclaim under memory.high throttles severely enough near that
+# shared ceiling that the workload never makes enough progress to reach either
+# kill point. doctor.sh read this exact shape as `parented [ ok ]` throughout
+# the incident.
+
+stub_cgroup max 1610612736 805306368 1610612736
+assert_eq "a parent max coincident with this container's own is livelocked, not parented" \
+  "livelocked" "$(memory_cgroup_verdict)"
+
+stub_cgroup max 1610612736 805306368 1073741824
+assert_eq "a parent max below this container's own is livelocked too" \
+  "livelocked" "$(memory_cgroup_verdict)"
 
 # --- memory_cgroup_parent_max -------------------------------------------------
 
@@ -282,6 +301,17 @@ assert_contains "memory_cgroup_livelock_describe names the parent's high" "768 M
 assert_contains "memory_cgroup_livelock_describe names the hard ceiling" "1536 MiB" "$desc"
 assert_contains "memory_cgroup_livelock_describe names what is held now" "750 MiB" "$desc"
 assert_contains "memory_cgroup_livelock_describe points at the fix" \
+  "cgroup-parent-setup.sh" "$desc"
+
+stub_cgroup max 1610612736 805306368 1610612736
+desc="$(memory_cgroup_livelock_describe)"
+assert_contains "memory_cgroup_livelock_describe (coincident max) names the parent's high" \
+  "768 MiB" "$desc"
+assert_contains "memory_cgroup_livelock_describe (coincident max) names the parent's own max" \
+  "1536 MiB" "$desc"
+assert_contains "memory_cgroup_livelock_describe (coincident max) says it adds no headroom" \
+  "no headroom" "$desc"
+assert_contains "memory_cgroup_livelock_describe (coincident max) points at the fix" \
   "cgroup-parent-setup.sh" "$desc"
 
 # --- memory_cgroup_unconfirmed_describe ---------------------------------------

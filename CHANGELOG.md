@@ -107,6 +107,59 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   both, matching `egress-proxy`'s own placement, while keeping its published
   loopback port unchanged.
 
+- **`scripts/publish-dashboard.sh` no longer holds the whole fleet-wide event
+  log in a bash variable, and `scripts/lint-shell.sh`'s `-x` steering no
+  longer shares a knob with the parent cgroup's `memory.high`** (issue
+  #1620). Both ockham schedulers spent most of 2026-09-16 livelocked under
+  `memory.high` throttling: the Publisher's real working set scales with
+  `log.jsonl`, which is never rotated by design, and every full-log
+  consumer read it through a bash string (`$ALL_EVENTS`) that every
+  subshell the rest of the script forked afterwards carried its own copy
+  of — measured at five nested subshells holding 219 MiB apiece on a node
+  with a mature log — while the parent ceiling tuned to keep that in bounds
+  (768 MiB) was simultaneously the number `lint-shell.sh` read to decide
+  which files to follow with `-x`, leaving no single value able to serve
+  both. Every full-build consumer now reads `$events_jsonl` (or the merged
+  `$review_events_union`) directly, as a jq file argument or a library
+  function's own `LOG_FILE` parameter, and `lint-shell.sh` gets its own
+  explicit `LINT_SHELL_BUDGET_MIB` instead of reading the parent's
+  `memory.high` at all — so the parent ceiling can be sized for the
+  Publisher's own working set without narrowing or widening what
+  `lint-shell.sh` follows. That variable is named in
+  `deploy/docker/compose.yaml`'s shared environment block, so a node sets it
+  in its own `.env`; like every other variable there it arrives only when a
+  human updates that node's `compose.yaml` and `.env` and runs
+  `docker compose up -d`, never on an image roll. The same whole-log bash
+  copy survived one level down (agent-ops#1638): `lib/rework-panel.sh`'s
+  `rework_panel_build`, `lib/item-lifecycle.sh`'s `item_lifecycle_fold` and
+  `lib/node-time-state.sh`'s `node_time_state_fold` each read a real file
+  path straight through — building a full-size `all_json` bash string from
+  it, and (the first two) a here-string to pass that same copy to a nested
+  call — so the Publisher's working set still scaled with `log.jsonl` on the
+  full path even once its own top-level `$ALL_EVENTS` was gone. All three
+  now write the parsed array straight to a temp file and feed it to `jq` as
+  a file argument (or a nested library call's own `LOG_FILE` parameter)
+  instead — and so do the log-scale *derivatives* those folds pass between
+  themselves, which is where the last of the copies lived:
+  `item_lifecycle_fold`'s own result carries one `records[]` entry per item
+  the log has ever seen (36 MB on a 43 MB log), and it was captured into a
+  bash string by `rework_panel_build` and handed on through a here-string,
+  as were `void_items`/`blocked_items`/`draft_obsolete_flags`'s results
+  inside `item_lifecycle_fold`. Every one of those is now spooled to a temp
+  file and passed to `jq` as a file argument, and `item_lifecycle_fold`
+  streams its own result rather than capturing it, so what these functions
+  hold in bash is now a constant few MB rather than a multiple of the log:
+  measured on a 43 MB log, `rework_panel_build`'s peak bash RSS falls from
+  653 MB to 6 MB and its peak process-group RSS from 730 MB to 435 MB, the
+  remainder being `jq`'s own cost of holding the parsed array. The `"-"`
+  stdin path every existing caller still uses is unchanged, and all three
+  folds' output is byte-for-byte what it was. `lib/memory.sh`'s
+  `memory_cgroup_verdict` also no
+  longer reports `parented [ ok ]` for a parent `memory.max` that merely
+  coincides with (or sits below) the child's own — the exact shape that read
+  `[ ok ]` throughout this incident — reporting `livelocked` instead, the
+  same as an unbounded parent `memory.max` already does.
+
 - **`config.stage_backstops` can now carry a `project-reviewer` entry**
   (issue #1586). `scripts/publish-dashboard.sh` fed the stage-budget fold
   only `$ALL_EVENTS` (the `log.jsonl` union), never `review-log.jsonl`, so a
