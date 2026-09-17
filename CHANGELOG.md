@@ -129,7 +129,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `deploy/docker/compose.yaml`'s shared environment block, so a node sets it
   in its own `.env`; like every other variable there it arrives only when a
   human updates that node's `compose.yaml` and `.env` and runs
-  `docker compose up -d`, never on an image roll. `lib/memory.sh`'s `memory_cgroup_verdict` also no
+  `docker compose up -d`, never on an image roll. The same whole-log bash
+  copy survived one level down (agent-ops#1638): `lib/rework-panel.sh`'s
+  `rework_panel_build`, `lib/item-lifecycle.sh`'s `item_lifecycle_fold` and
+  `lib/node-time-state.sh`'s `node_time_state_fold` each read a real file
+  path straight through — building a full-size `all_json` bash string from
+  it, and (the first two) a here-string to pass that same copy to a nested
+  call — so the Publisher's working set still scaled with `log.jsonl` on the
+  full path even once its own top-level `$ALL_EVENTS` was gone. All three
+  now write the parsed array straight to a temp file and feed it to `jq` as
+  a file argument (or a nested library call's own `LOG_FILE` parameter)
+  instead; the `"-"` stdin path every existing caller still uses is
+  unchanged. `lib/memory.sh`'s `memory_cgroup_verdict` also no
   longer reports `parented [ ok ]` for a parent `memory.max` that merely
   coincides with (or sits below) the child's own — the exact shape that read
   `[ ok ]` throughout this incident — reporting `livelocked` instead, the

@@ -352,17 +352,30 @@ NODE_TIME_STATE_FOLD_JQ='
 # or unreadable log, on the same terms `lib/item-lifecycle.sh`'s
 # `item_lifecycle_fold` already does.
 node_time_state_fold() {
-  local src="${1:--}" since="${2:-}" until="${3:-}" raw="" all_json="" out=""
+  local src="${1:--}" since="${2:-}" until="${3:-}" log_file="" tmp_log="" all_json_file="" out=""
+  # Never hold the log in a bash variable (agent-ops#1620): a variable the
+  # size of the log is copied by every subshell forked afterwards. stdin is
+  # spooled to a temp file so the parsed array below can be written straight
+  # from one file to another, with the log never passing through bash.
   if [[ "$src" == "-" ]]; then
-    raw="$(cat 2>/dev/null || true)"
+    tmp_log="$(mktemp 2>/dev/null)" && { cat > "$tmp_log" 2>/dev/null; log_file="$tmp_log"; }
   elif [[ -s "$src" ]]; then
-    raw="$(cat "$src" 2>/dev/null || true)"
+    log_file="$src"
   fi
-  all_json="$(jq -c -R 'fromjson? // empty' <<<"$raw" 2>/dev/null | jq -sc '.' 2>/dev/null || true)"
-  [[ -n "$all_json" ]] || all_json='[]'
 
-  out="$(jq -nc --arg since "$since" --arg until "$until" \
-      'input as $all | ('"$NODE_TIME_STATE_FOLD_JQ"')' <<<"$all_json" 2>/dev/null || true)"
+  all_json_file="$(mktemp 2>/dev/null)" || true
+  if [[ -n "$log_file" && -n "$all_json_file" ]]; then
+    jq -c -R 'fromjson? // empty' "$log_file" 2>/dev/null | jq -sc '.' > "$all_json_file" 2>/dev/null
+  fi
+  [[ -n "$all_json_file" && -s "$all_json_file" ]] \
+    || { [[ -n "$all_json_file" ]] && printf '[]' > "$all_json_file" 2>/dev/null; }
+
+  if [[ -n "$all_json_file" ]]; then
+    out="$(jq -nc --arg since "$since" --arg until "$until" \
+        'input as $all | ('"$NODE_TIME_STATE_FOLD_JQ"')' "$all_json_file" 2>/dev/null || true)"
+  fi
+  rm -f "$tmp_log" "$all_json_file" 2>/dev/null
+
   [[ -n "$out" ]] || out='{"window":{"from":null,"to":null,"seconds":0},"nodes":[],"skipped_events":0,"totals":{"producing":0,"overhead":0,"externally-blocked":0,"idle-with-demand":0,"idle-without-demand":0,"down":0,"unaccounted":0},"expected_total_seconds":0,"balanced":true,"idle_with_demand_by_cause":{"awaiting-tick":0,"back-pressure":0,"peer-claimed":0,"coordinator-declined":0,"unspecified":0},"externally_blocked_by_cause":{"usage-limit":0,"github-budget":0,"unreachable":0,"unauthorized":0,"disk-low":0,"disk-full":0,"memory-low":0,"host-overcommit":0,"unspecified":0},"by_node":{}}'
   printf '%s' "$out"
 }

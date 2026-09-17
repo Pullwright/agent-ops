@@ -328,21 +328,38 @@ REWORK_PANEL_JQ='
 #   honest is not, and holds for the errors nobody anticipated as well as
 #   the ones they did.
 rework_panel_build() {
-  local src="${1:--}" since="${2:-}" raw="" all_json="" lifecycle_json="" out=""
+  local src="${1:--}" since="${2:-}" log_file="" tmp_log="" all_json_file="" lifecycle_json="" out=""
+  # Never hold the log in a bash variable (agent-ops#1620): a variable the
+  # size of the log is copied by every subshell forked afterwards — measured
+  # on ockham at up to five nested copies, which is what pushed the publisher
+  # over its cgroup ceiling. stdin is spooled to a temp file so both
+  # `item_lifecycle_fold` (which itself now reads a file argument, never a
+  # bash-string copy) and this fold's own parsed array can each read the log
+  # straight off disk.
   if [[ "$src" == "-" ]]; then
-    raw="$(cat 2>/dev/null || true)"
+    tmp_log="$(mktemp 2>/dev/null)" && { cat > "$tmp_log" 2>/dev/null; log_file="$tmp_log"; }
   elif [[ -s "$src" ]]; then
-    raw="$(cat "$src" 2>/dev/null || true)"
+    log_file="$src"
   fi
 
-  lifecycle_json="$(item_lifecycle_fold - "$since" <<<"$raw" 2>/dev/null || true)"
+  if [[ -n "$log_file" ]]; then
+    lifecycle_json="$(item_lifecycle_fold "$log_file" "$since" 2>/dev/null || true)"
+  fi
   [[ -n "$lifecycle_json" ]] || lifecycle_json='{"records":[]}'
 
-  all_json="$(jq -c -R 'fromjson? // empty' <<<"$raw" 2>/dev/null | jq -sc '.' 2>/dev/null || true)"
-  [[ -n "$all_json" ]] || all_json='[]'
+  all_json_file="$(mktemp 2>/dev/null)" || true
+  if [[ -n "$log_file" && -n "$all_json_file" ]]; then
+    jq -c -R 'fromjson? // empty' "$log_file" 2>/dev/null | jq -sc '.' > "$all_json_file" 2>/dev/null
+  fi
+  [[ -n "$all_json_file" && -s "$all_json_file" ]] \
+    || { [[ -n "$all_json_file" ]] && printf '[]' > "$all_json_file" 2>/dev/null; }
 
-  out="$(jq -nc 'input as $all | input as $lifecycle | ('"$REWORK_PANEL_JQ"')' \
-      <<<"$all_json"$'\n'"$lifecycle_json" 2>/dev/null || true)"
+  if [[ -n "$all_json_file" ]]; then
+    out="$(jq -nc 'input as $all | input as $lifecycle | ('"$REWORK_PANEL_JQ"')' \
+        "$all_json_file" - <<<"$lifecycle_json" 2>/dev/null || true)"
+  fi
+  rm -f "$tmp_log" "$all_json_file" 2>/dev/null
+
   [[ -n "$out" ]] || out='{"how_much":null,"whose":null,"escape_ladder":null,"clean_count":null}'
   printf '%s' "$out"
 }

@@ -347,30 +347,41 @@ ITEM_LIFECYCLE_FOLD_JQ='
 # a caller running under `set -e` must not be killed by one, and a log that
 # cannot be read enters nothing.
 item_lifecycle_fold() {
-  local src="${1:--}" since="${2:-}" raw="" all_json="" void_json blocked_json obsolete_json out=""
-  # Read the whole log into a variable rather than a file descriptor: stdin
-  # can only be consumed once, and `void_items`/`blocked_items`/
-  # `draft_obsolete_flags` each need their own full read below, exactly as
-  # this function's own fold does.
+  local src="${1:--}" since="${2:-}" log_file="" tmp_log="" all_json_file="" \
+        void_json="" blocked_json="" obsolete_json="" out=""
+  # Never hold the log in a bash variable (agent-ops#1620): a variable the
+  # size of the log is copied by every subshell forked afterwards, which is
+  # what pushed the publisher over its cgroup ceiling. `void_items`/
+  # `blocked_items`/`draft_obsolete_flags` already read a file argument
+  # directly, so the only read this function must materialise itself is
+  # stdin's own one-shot stream — spooled to a temp file so it, too, can be
+  # read more than once without ever passing through a bash string.
   if [[ "$src" == "-" ]]; then
-    raw="$(cat 2>/dev/null || true)"
+    tmp_log="$(mktemp 2>/dev/null)" && { cat > "$tmp_log" 2>/dev/null; log_file="$tmp_log"; }
   elif [[ -s "$src" ]]; then
-    raw="$(cat "$src" 2>/dev/null || true)"
+    log_file="$src"
   fi
 
-  all_json="$(jq -c -R 'fromjson? // empty' <<<"$raw" 2>/dev/null | jq -sc '.' 2>/dev/null || true)"
-  [[ -n "$all_json" ]] || all_json='[]'
-
-  void_json="$(void_items - <<<"$raw" 2>/dev/null || true)"
+  all_json_file="$(mktemp 2>/dev/null)" || true
+  if [[ -n "$log_file" && -n "$all_json_file" ]]; then
+    jq -c -R 'fromjson? // empty' "$log_file" 2>/dev/null | jq -sc '.' > "$all_json_file" 2>/dev/null
+    void_json="$(void_items "$log_file" 2>/dev/null || true)"
+    blocked_json="$(blocked_items "$log_file" 2>/dev/null || true)"
+    obsolete_json="$(draft_obsolete_flags "$log_file" 2>/dev/null || true)"
+  fi
+  [[ -n "$all_json_file" && -s "$all_json_file" ]] \
+    || { [[ -n "$all_json_file" ]] && printf '[]' > "$all_json_file" 2>/dev/null; }
   [[ -n "$void_json" ]] || void_json='[]'
-  blocked_json="$(blocked_items - <<<"$raw" 2>/dev/null || true)"
   [[ -n "$blocked_json" ]] || blocked_json='[]'
-  obsolete_json="$(draft_obsolete_flags - <<<"$raw" 2>/dev/null || true)"
   [[ -n "$obsolete_json" ]] || obsolete_json='[]'
 
-  out="$(jq -nc --arg since "$since" \
-      'input as $all | input as $void | input as $blocked | input as $obsolete | ('"$ITEM_LIFECYCLE_FOLD_JQ"')' \
-      <<<"$all_json"$'\n'"$void_json"$'\n'"$blocked_json"$'\n'"$obsolete_json" 2>/dev/null || true)"
+  if [[ -n "$all_json_file" ]]; then
+    out="$(jq -nc --arg since "$since" \
+        'input as $all | input as $void | input as $blocked | input as $obsolete | ('"$ITEM_LIFECYCLE_FOLD_JQ"')' \
+        "$all_json_file" - <<<"$void_json"$'\n'"$blocked_json"$'\n'"$obsolete_json" 2>/dev/null || true)"
+  fi
+  rm -f "$tmp_log" "$all_json_file" 2>/dev/null
+
   [[ -n "$out" ]] || out='{"window":{"from":null,"to":null},"totals":{"entered":0,"leaving":0,"in_progress":0,"unaccounted":0,"balanced":true},"fates":{"landed":0,"voided":0,"superseded":0,"abandoned":0,"blocked":0,"open":0},"unaccounted":[],"records":[]}'
   printf '%s' "$out"
 }
