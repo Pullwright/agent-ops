@@ -23634,6 +23634,21 @@ oblige anyone to edit a test.
      (131072 bytes); 3000 recorded `needs_refinement` reports, read back
      through the same function, still fully account for an equally large
      eligible set.
+   - **A no-verdict or zero-candidate Co-Ordinator engagement omits the
+     fingerprint (requirement 15y).** The three consequences of requirement 15y
+     are asserted in lifted blocks from `agent-cycle.sh`: the all-engagements-
+     failed exit exits 0 when every engagement failed (full failure), exits 9
+     when only some failed (partial failure), and exits 9 when zero repositories
+     are configured (zero-configured case), proving every failure mode is
+     correctly distinguished; an engagement that produced no verdict omits the
+     fingerprint and records the count in `engagements_failed`, so the next
+     cycle asks again (requirement 3t, requirement 3b), while a complete cycle
+     where every engagement answered arms the fingerprint and carries no
+     `engagements_failed` at all; a `selected:true` engagement that returned an
+     empty `candidates` array is folded into the false-repos set with a reason
+     naming the contract violation ("selected:true but returned no candidates"),
+     contributes nothing to the merged candidates, and is distinguished from a
+     non-empty list, which is carried into the merge as before.
 2j-ii. **The corroboration covers every pre-fetched band (requirement 3x,
    issue #322).** `test/verdict-corroboration.test.sh` passes:
    `coordinator_eligible_items` emits `{repo, item, source}` for each band the
