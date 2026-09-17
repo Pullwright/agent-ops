@@ -15,6 +15,7 @@ A self-hosted, unattended pipeline that automatically selects, implements, and r
   - [Extended notes: `repos`](#extended-notes-repos)
   - [Extended notes: `state_local_cycles_retained`](#extended-notes-state_local_cycles_retained)
   - [Extended notes: `state_local_streams_retained`](#extended-notes-state_local_streams_retained)
+  - [Extended notes: `approver_restale_escalate_after_hours`](#extended-notes-approver_restale_escalate_after_hours)
   - [Extended notes: `escalation_autonomy`](#extended-notes-escalation_autonomy)
   - [Extended notes: `standing_decisions_file`](#extended-notes-standing_decisions_file)
   - [Extended notes: `decision_veto_window_hours`](#extended-notes-decision_veto_window_hours)
@@ -497,7 +498,7 @@ Keys:
 | `approver_model_default` | `claude-sonnet-5` | The Approver's model for work graded `complexity:medium`, active once `merge_autonomy` (see below) is above `human`. Leave it empty to switch the whole stage off — no App review is ever posted, at any level. |
 | `approver_model_complex` | `claude-opus-5` | The same gate for work graded `complexity:high`, refuse-by-default. Leave it empty to run every Approver engagement on `approver_model_default`. |
 | `approver_model_critical` | `claude-fable-5` | The Approver's model for adjudicating a pull request the Approver has refused twice in a row — the rarest and most expensive tier, re-entered every round while that two-refusal streak holds, until an approval resets it; the escalation issue a refusal raises stays deduplicated to one per pull request rather than one per round. Leave it empty to fall back to `approver_model_complex`. |
-| `approver_restale_escalate_after_hours` | `24` | Hours the restale sweep retries a pull request before escalating it to `enabler_assignee` instead: a stale Approver `CHANGES_REQUESTED` — its `commit_id` no longer matching the head, but with no commit authored since (a rebase-only push, never a fix) — measured from the review's own `submitted_at`, or a ready pull request with no Approver review at all whose recovery engagements are not producing one, measured from the first such engagement at its current head. |
+| `approver_restale_escalate_after_hours` | `24` | Hours the restale sweep retries a pull request before escalating it to `enabler_assignee` instead: a stale Approver `CHANGES_REQUESTED` — its `commit_id` no longer matching the head, but with no commit authored since (a rebase-only push, never a fix) — measured from the review's own `submitted_at`; the same trigger's genuine-progress case when a re-review reaches a verdict but posts nothing to GitHub (an adjudication escalate, most often), measured from the first such...[continued below](#extended-notes-approver_restale_escalate_after_hours) |
 | `approver_unreviewed_engage_after_hours` | `2` | Hours an open, ready pull request the pipeline raised may carry no Approver review at all before the restale sweep engages the Approver for it — the recovery for a cycle that died, or a verdict write that was refused, between the Reviewer's handoff and the Approver (agent-ops#890). |
 | `enabler_model` | `claude-opus-5` | The Enabler: re-examines long-blocked items and escalates the ones needing you. The most expensive model here, engaged rarely — see [Blocked items and the Enabler](#blocked-items-and-the-enabler). Leave it empty to switch the stage off. |
 | `enabler_model_critical` | `claude-fable-5` | The Enabler's model for its narrower bounded pass — the `adjudicate-first`/`decide-tactical` adjudication or decide pass over one item alone, see [Blocked items and the Enabler](#blocked-items-and-the-enabler). Leave it empty to run that pass on `enabler_model` itself. |
@@ -700,6 +701,10 @@ Cycle and review directories the node's own `state_dir` keeps; the same push tha
 ### Extended notes: `state_local_streams_retained`
 
 Cycle and review directories whose derived files are kept — the stage event streams (`<stage>.stream.jsonl`) and the fleet-log snapshot (`.fleet-log.jsonl`). Both are large and local-only — never replicated — so they are bounded well below `state_local_cycles_retained`; the records themselves are untouched. Derived from `schedule.cycle_interval_minutes` to hold ~2.1 days regardless of cadence (requirement 1d); a configured value floors it, never caps it. A value below the derivation does nothing — `STATE_SYNC_STREAMS_RETAINED` bypasses it, but only for tests — and the disk floor is `min_free_workspace_bytes` (2.0c), not this key.
+
+### Extended notes: `approver_restale_escalate_after_hours`
+
+Hours the restale sweep retries a pull request before escalating it to `enabler_assignee` instead: a stale Approver `CHANGES_REQUESTED` — its `commit_id` no longer matching the head, but with no commit authored since (a rebase-only push, never a fix) — measured from the review's own `submitted_at`; the same trigger's genuine-progress case when a re-review reaches a verdict but posts nothing to GitHub (an adjudication escalate, most often), measured from the first such engagement against that standing review's own id; or a ready pull request with no Approver review at all whose recovery engagements are not producing one, measured from the first such engagement at its current head.
 
 ### Extended notes: `escalation_autonomy`
 
