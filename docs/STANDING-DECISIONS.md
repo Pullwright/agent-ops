@@ -169,3 +169,12 @@ principle it rests on.`
   early is harmless — a pull request that still carries the workflow keeps
   running it, only without gating — so the safe ordering never wedges the
   repository.
+- 2026-09-19 · #1605/#1602 · **Finishing-source pull requests land
+  autonomously on agent-ops (option 1).** `Pullwright/agent-ops`'s
+  `merge_autonomy_routine_sources` widens from `tech-debt` and `issues` to
+  add `review-feedback`, `merge-conflicts` and `abandoned-drafts`; every
+  other landing gate is unchanged — the Approver verdict,
+  `merge_autonomy_routine_complexity`, the protected paths, a human
+  `CHANGES_REQUESTED`, the merge budget — and no other source is added.
+  Decided by the owner on 2026-09-19; the alternative, a surfaced
+  human-merge queue, was declined.
