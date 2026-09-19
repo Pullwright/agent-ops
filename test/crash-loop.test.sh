@@ -77,6 +77,18 @@ success_at() {  # success_at TS NODE
   jq -nc --arg ts "$1" --arg node "$2" \
     '{ts: $ts, node: $node, event: "stage-end", stage: "coordinator", exit_code: 0}'
 }
+# fail_repo_at TS NODE REPO DETAIL — the shape a per-repository Co-Ordinator
+# engagement's own attempt-failed carries since agent-ops#1560/#1630: the
+# same `{repo: <slug>}` extra merge run_coordinator_stage_attempt and
+# handle_stage_failure both make.
+fail_repo_at() {
+  jq -nc --arg ts "$1" --arg node "$2" --arg repo "$3" --arg d "$4" \
+    '{ts: $ts, node: $node, repo: $repo, event: "attempt-failed", stage: "coordinator", detail: $d}'
+}
+success_repo_at() {  # success_repo_at TS NODE REPO
+  jq -nc --arg ts "$1" --arg node "$2" --arg repo "$3" \
+    '{ts: $ts, node: $node, repo: $repo, event: "stage-end", stage: "coordinator", exit_code: 0}'
+}
 escalated_at() {  # escalated_at TS DETAIL [ISSUE_NUMBER]
   jq -nc --arg ts "$1" --arg d "$2" --argjson n "${3:-0}" \
     '{ts: $ts, node: "n1", event: "crash-loop-escalated", stage: "coordinator", detail: $d}
@@ -220,6 +232,82 @@ assert_eq "a success mid-run resets a transient run too" "" \
   "$(crash_loop_verdict 15 <<<"$(head -n2 <<<"$sixteen_transient"
     success_at 2026-08-29T22:05:00Z n2
     tail -n14 <<<"$sixteen_transient")")"
+
+# --- crash_loop_verdict: per-repository grouping (agent-ops#1630) ----------------
+#
+# Since issue #587 split Co-Ordinator selection into one engagement per
+# configured repository, a single repository's own deterministic failure
+# would otherwise be reset every cycle by a sibling repository's success —
+# exactly the starvation-with-no-escalation-rung gap #1630 exists to close.
+
+# Repo A accumulates threshold-many consecutive same-detail failures while
+# repo B succeeds every cycle in between: A's own count must not be touched
+# by B's success.
+repo_a_vs_b="$(fail_repo_at 2026-09-16T10:00:00Z n1 A 'coordinator exited 1'
+  success_repo_at 2026-09-16T10:05:00Z n1 B
+  fail_repo_at 2026-09-16T10:15:00Z n1 A 'coordinator exited 1'
+  success_repo_at 2026-09-16T10:20:00Z n1 B
+  fail_repo_at 2026-09-16T10:30:00Z n1 A 'coordinator exited 1'
+  success_repo_at 2026-09-16T10:35:00Z n1 B
+  fail_repo_at 2026-09-16T10:45:00Z n1 A 'coordinator exited 1')"
+assert_eq "repo A's own run escalates untouched by repo B's own success" \
+  '{"stage":"coordinator","detail":"coordinator exited 1","count":4,"first_ts":"2026-09-16T10:00:00Z","last_ts":"2026-09-16T10:45:00Z","nodes":["n1"],"escalate":true,"repo":"A"}' \
+  "$(crash_loop_verdict 4 <<<"$repo_a_vs_b")"
+
+# A repo-less event (pre-#587 history, or a future caller with none) falls
+# back into its own group, independent of every real repository's own group
+# in the same stream — a repo-tagged repo's own success never resets it, and
+# it never resets a repo-tagged run either.
+repo_and_repoless="$(cat <<<"$four_fails"
+  fail_repo_at 2026-09-16T11:00:00Z n1 A 'coordinator exited 1'
+  fail_repo_at 2026-09-16T11:15:00Z n1 A 'coordinator exited 1'
+  fail_repo_at 2026-09-16T11:30:00Z n1 A 'coordinator exited 1'
+  fail_repo_at 2026-09-16T11:45:00Z n1 A 'coordinator exited 1')"
+assert_eq "a repo-less run still reaches its own verdict, with no repo field" \
+  "4" "$(crash_loop_verdict 4 <<<"$repo_and_repoless" | jq -s 'map(select(has("repo") | not)) | .[0].count')"
+assert_eq "and the repo-tagged run alongside it reaches its own, independently" \
+  "4" "$(crash_loop_verdict 4 <<<"$repo_and_repoless" | jq -s 'map(select(.repo == "A")) | .[0].count')"
+
+# Two repositories independently crash-looping in the same cycle both
+# escalate, each carrying its own repo field and its own count/window —
+# never merged into one verdict, and neither is dropped for the other.
+two_repos="$(fail_repo_at 2026-09-16T12:00:00Z n1 A 'coordinator exited 1'
+  fail_repo_at 2026-09-16T12:15:00Z n1 A 'coordinator exited 1'
+  fail_repo_at 2026-09-16T12:30:00Z n1 A 'coordinator exited 1'
+  fail_repo_at 2026-09-16T12:45:00Z n1 A 'coordinator exited 1'
+  fail_repo_at 2026-09-16T13:00:00Z n2 B 'coordinator exited 126'
+  fail_repo_at 2026-09-16T13:15:00Z n2 B 'coordinator exited 126'
+  fail_repo_at 2026-09-16T13:30:00Z n2 B 'coordinator exited 126'
+  fail_repo_at 2026-09-16T13:45:00Z n2 B 'coordinator exited 126')"
+two_repos_verdicts="$(crash_loop_verdict 4 <<<"$two_repos")"
+assert_eq "both repositories reach a verdict, one line each" \
+  "2" "$(wc -l <<<"$two_repos_verdicts" | tr -d ' ')"
+assert_eq "repo A's own line names its own detail and count" \
+  '["A","coordinator exited 1",4]' \
+  "$(jq -c 'select(.repo == "A") | [.repo, .detail, .count]' <<<"$two_repos_verdicts")"
+assert_eq "repo B's own line names its own detail and count" \
+  '["B","coordinator exited 126",4]' \
+  "$(jq -c 'select(.repo == "B") | [.repo, .detail, .count]' <<<"$two_repos_verdicts")"
+
+# --- crash_loop_reverify: per-repository matching (agent-ops#1630) ---------------
+#
+# A retry queued for repository A's own run must not be mistaken for
+# repository B's, even when the two share a detail and a first_ts down to the
+# second — the `repo` field is matched, not just `detail`+`first_ts`.
+collision_ts="2026-09-17T00:00:00Z"
+collision_a="$(fail_repo_at "$collision_ts" n1 A 'coordinator exited 1'
+  fail_repo_at 2026-09-17T00:15:00Z n1 A 'coordinator exited 1'
+  fail_repo_at 2026-09-17T00:30:00Z n1 A 'coordinator exited 1'
+  fail_repo_at 2026-09-17T00:45:00Z n1 A 'coordinator exited 1')"
+collision_b="$(fail_repo_at "$collision_ts" n2 B 'coordinator exited 1'
+  fail_repo_at 2026-09-17T00:15:00Z n2 B 'coordinator exited 1'
+  fail_repo_at 2026-09-17T00:30:00Z n2 B 'coordinator exited 1'
+  fail_repo_at 2026-09-17T00:45:00Z n2 B 'coordinator exited 1')"
+collision_verdict_a="$(crash_loop_verdict 4 <<<"$collision_a")"
+assert_eq "reverify against a stream carrying only B's own run finds nothing for A" \
+  "" "$(crash_loop_reverify "$collision_verdict_a" 4 <<<"$collision_b")"
+assert_eq "reverify against a stream carrying both finds A's own line, not B's" \
+  "A" "$(crash_loop_reverify "$collision_verdict_a" 4 <<<"$(cat <<<"$collision_a"; cat <<<"$collision_b")" | jq -r '.repo')"
 
 # --- crash_loop_preselection_verdict ---------------------------------------------
 #

@@ -16,12 +16,32 @@
 #
 # `crash_loop_verdict`'s detection is deliberately narrow: *consecutive*
 # Co-Ordinator `attempt-failed` events carrying *one identical* detail, with
-# no Co-Ordinator success anywhere in the fleet in between. Identical detail
-# is what separates the deterministic class (every node says `coordinator
-# exited 126`) from ordinary transient noise (one timeout here, one
-# unparseable message there), and any Co-Ordinator success resets the count
-# to zero — a fleet that is mostly working is not in a crash loop, however
-# many failures it accumulates over a week.
+# no Co-Ordinator success for that same repository anywhere in the fleet in
+# between. Identical detail is what separates the deterministic class (every
+# node says `coordinator exited 126`) from ordinary transient noise (one
+# timeout here, one unparseable message there), and any same-repository
+# Co-Ordinator success resets that repository's own count to zero — a
+# repository that is mostly working is not in a crash loop, however many
+# failures it accumulates over a week.
+#
+# Since issue #587 split Co-Ordinator selection into one engagement per
+# configured repository, each engagement's own `attempt-failed`/`stage-end`
+# events carry that repository's own `repo` field (the `{repo: <slug>}`
+# `extra` merge `run_coordinator_stage_attempt` and `handle_stage_failure`
+# both make, lib/stage-attempt.sh). `crash_loop_verdict` runs its reduction
+# independently *per repository*, grouped by that field, so one repository's
+# own deterministic failure accumulates its own consecutive count instead of
+# being reset every cycle by a sibling repository's success (agent-ops#1630)
+# — the gap left when issue #587 first split selection but deliberately left
+# this detector fleet-wide (`run_coordinator_stage_attempt`'s own comment,
+# "rather than splitting further in the same change that split selection
+# itself"). An event carrying no `repo` at all — history from before #587, or
+# any future Co-Ordinator caller that legitimately has none — falls back into
+# its own group, reduced exactly as the whole stream used to be: fleet-wide,
+# resetting on any repo-less success. That fallback group is independent of
+# every real repository's own group; a repo-less success never resets a
+# repository-scoped run, and a repository-scoped success never resets the
+# fallback group.
 #
 # `crash_loop_preselection_verdict` (TD-PPagop-26081302) covers the class the
 # first reader cannot see: a cycle that dies while assembling its own runtime
@@ -38,24 +58,32 @@
 # as the dashboard's reader treats the same stream.
 
 # crash_loop_verdict THRESHOLD < union.jsonl
-# Print one JSON object — {stage, detail, count, first_ts, last_ts, nodes,
-# escalate} — when the stream's tail shows THRESHOLD or more consecutive
-# same-detail Co-Ordinator failures with no intervening Co-Ordinator success;
-# print nothing otherwise. A THRESHOLD that is not a positive integer prints
-# nothing: 0 (or an unset key upstream) is the feature's off switch.
+# Print one JSON object per line (JSON Lines) — {stage, detail, count,
+# first_ts, last_ts, nodes, escalate, repo?} — one line for every repository
+# (plus the repo-less fallback group) whose own tail independently shows
+# THRESHOLD or more consecutive same-detail Co-Ordinator failures with no
+# intervening same-repository Co-Ordinator success; print nothing when no
+# group reaches THRESHOLD. `repo` is present iff the group's own events
+# carried one — the repo-less fallback group's object omits it, exactly as
+# every verdict object did before repositories were grouped, so a caller that
+# only ever fed this a repo-less stream sees byte-identical output. Multiple
+# lines mean multiple repositories are independently crash-looping in the
+# same cycle; each is a separate, independently-escalatable run. A THRESHOLD
+# that is not a positive integer prints nothing: 0 (or an unset key upstream)
+# is the feature's off switch.
 #
 # `escalate` (issue #1073) is `false` exactly when every failure counted in
-# the run carries `api_refusal_class: "transient"` on its own event — the API
-# was unreachable, not refusing the request, and no amount of retrying inside
-# this repository clears that. It is `true` otherwise: a run with no class at
-# all (a crash, a timeout, an unparseable message — nothing `stage_api_refusal`
-# ever classified) defaults to escalating exactly as it always has, and one
-# `refused` failure anywhere in the run is enough to call the whole run
-# escalate-worthy, on the theory that a mixed run is evidence of *something*
-# deterministic even if not every member proves it alone. The run is still
-# counted and still resets on a success either way — `escalate` only changes
-# what the caller does with a verdict that already fired, never whether one
-# fires.
+# that group's own run carries `api_refusal_class: "transient"` on its own
+# event — the API was unreachable, not refusing the request, and no amount of
+# retrying inside this repository clears that. It is `true` otherwise: a run
+# with no class at all (a crash, a timeout, an unparseable message — nothing
+# `stage_api_refusal` ever classified) defaults to escalating exactly as it
+# always has, and one `refused` failure anywhere in that group's own run is
+# enough to call the whole run escalate-worthy, on the theory that a mixed
+# run is evidence of *something* deterministic even if not every member
+# proves it alone. The run is still counted and still resets on a
+# same-repository success either way — `escalate` only changes what the
+# caller does with a verdict that already fired, never whether one fires.
 crash_loop_verdict() {
   local threshold="${1:-0}"
   if ! [[ "$threshold" =~ ^[0-9]+$ ]] || (( threshold < 1 )); then
@@ -68,29 +96,41 @@ crash_loop_verdict() {
         or ((.event == "stage-end") and ((.stage // "") == "coordinator")
             and ((.exit_code // 1) == 0))
       ))
-    # The stream is time-ordered by `fleet_logs`; the reduction walks it once.
-    # A success resets everything — including after the "stage-end 0 then
-    # attempt-failed: unparseable" sequence, where the reset lands first and
-    # the failure then counts 1, which is the truth of that cycle.
-    | reduce .[] as $e (
-        {detail: "", count: 0, first_ts: null, last_ts: null, nodes: [], all_transient: true};
-        if $e.event == "stage-end" then
-          {detail: "", count: 0, first_ts: null, last_ts: null, nodes: [], all_transient: true}
-        elif ($e.detail // "") == .detail and .count > 0 then
-          {detail: .detail, count: (.count + 1), first_ts: .first_ts,
-           last_ts: ($e.ts // .last_ts),
-           nodes: ((.nodes + [$e.node // "?"]) | unique),
-           all_transient: (.all_transient and (($e.api_refusal_class // "") == "transient"))}
-        else
-          {detail: ($e.detail // ""), count: 1,
-           first_ts: ($e.ts // null), last_ts: ($e.ts // null),
-           nodes: [$e.node // "?"],
-           all_transient: (($e.api_refusal_class // "") == "transient")}
-        end
+    # group_by sorts by key with a stable sort, so each group keeps the same
+    # relative (time) order fleet_logs produced for that subsequence — the
+    # property the reduction below depends on. Grouping by .repo // "" folds
+    # every repo-less event (pre-#587 history, or a future caller with none)
+    # into one shared fallback group, reduced exactly as the whole stream
+    # used to be — independent of every real group of a named repository.
+    | group_by(.repo // "")
+    | map(
+        (.[0].repo // "") as $repo
+        # A success resets the run for this group — including after the
+        # "stage-end 0 then attempt-failed: unparseable" sequence, where the
+        # reset lands first and the failure then counts 1, which is the
+        # truth of that cycle.
+        | reduce .[] as $e (
+            {detail: "", count: 0, first_ts: null, last_ts: null, nodes: [], all_transient: true};
+            if $e.event == "stage-end" then
+              {detail: "", count: 0, first_ts: null, last_ts: null, nodes: [], all_transient: true}
+            elif ($e.detail // "") == .detail and .count > 0 then
+              {detail: .detail, count: (.count + 1), first_ts: .first_ts,
+               last_ts: ($e.ts // .last_ts),
+               nodes: ((.nodes + [$e.node // "?"]) | unique),
+               all_transient: (.all_transient and (($e.api_refusal_class // "") == "transient"))}
+            else
+              {detail: ($e.detail // ""), count: 1,
+               first_ts: ($e.ts // null), last_ts: ($e.ts // null),
+               nodes: [$e.node // "?"],
+               all_transient: (($e.api_refusal_class // "") == "transient")}
+            end
+          )
+        | select(.count >= $threshold and .detail != "")
+        | {stage: "coordinator", detail, count, first_ts, last_ts, nodes,
+           escalate: (.all_transient | not)}
+          + (if $repo == "" then {} else {repo: $repo} end)
       )
-    | select(.count >= $threshold and .detail != "")
-    | {stage: "coordinator", detail, count, first_ts, last_ts, nodes,
-       escalate: (.all_transient | not)}
+    | .[]
   ' 2>/dev/null || true
 }
 
@@ -177,43 +217,52 @@ crash_loop_preselection_verdict() {
   ' 2>/dev/null || true
 }
 
-# crash_loop_escalated_since FIRST_TS DETAIL < union.jsonl
-# Exit 0 when a `crash-loop-escalated` event with the same detail exists at
-# or after FIRST_TS — the current run of failures has already been escalated,
-# by this node or a peer — and 1 otherwise. Keying on the run's own first
-# failure is what lets a *new* loop with the same detail, months after the
-# old issue was closed, escalate afresh: its first_ts postdates every old
-# event.
+# crash_loop_escalated_since FIRST_TS DETAIL [REPO] < union.jsonl
+# Exit 0 when a `crash-loop-escalated` event with the same detail (and, if
+# REPO is given, the same `repo` — an event carrying none matches only
+# REPO="") exists at or after FIRST_TS — the current run of failures has
+# already been escalated, by this node or a peer — and 1 otherwise. Keying on
+# the run's own first failure is what lets a *new* loop with the same detail,
+# months after the old issue was closed, escalate afresh: its first_ts
+# postdates every old event. REPO defaults to "" (matching only repo-less
+# events), the pre-#1630 behaviour, for a caller that predates per-repository
+# grouping. Without it, two repositories sharing a generic detail — e.g. both
+# saying "coordinator exited 1" — would dedup against each other's escalation
+# instead of each getting its own.
 crash_loop_escalated_since() {
-  local first_ts="$1" detail="$2" hits
-  hits="$(jq -r -R -n --arg ts "$first_ts" --arg detail "$detail" '
+  local first_ts="$1" detail="$2" repo="${3:-}" hits
+  hits="$(jq -r -R -n --arg ts "$first_ts" --arg detail "$detail" --arg repo "$repo" '
     [ inputs | select(length > 0) | (fromjson? // empty)
       | select(.event == "crash-loop-escalated"
                and (.detail // "") == $detail
+               and ((.repo // "") == $repo)
                and (.ts // "") >= $ts) ]
     | length
   ' 2>/dev/null || echo 0)"
   [[ "$hits" =~ ^[0-9]+$ ]] && (( hits > 0 ))
 }
 
-# crash_loop_deferred_since FIRST_TS DETAIL < union.jsonl
-# Exit 0 when a `crash-loop-deferred` event with the same detail exists at or
-# after FIRST_TS — a previous cycle already tried and failed to file this
-# exact run's escalation — and 1 otherwise (agent-ops#1074). This is what
-# tells apart a *fresh* verdict (never yet attempted; safe to file the moment
-# it is computed, exactly as `crash_loop_escalate` always has) from a
-# *deferred retry* (already attempted and failed at least once; the verdict
-# computed at this same early point in the cycle cannot see a recovery this
-# cycle's own Co-Ordinator attempt has not run yet, so filing it here would
-# repeat the 2026-08-29/30 Ockham false alarm, agent-ops#1070). Keyed the
-# same way `crash_loop_escalated_since` is, for the same reason: a new run
-# with an old detail must not inherit an old run's deferral.
+# crash_loop_deferred_since FIRST_TS DETAIL [REPO] < union.jsonl
+# Exit 0 when a `crash-loop-deferred` event with the same detail (and REPO,
+# on the same terms as `crash_loop_escalated_since` above) exists at or after
+# FIRST_TS — a previous cycle already tried and failed to file this exact
+# run's escalation — and 1 otherwise (agent-ops#1074). This is what tells
+# apart a *fresh* verdict (never yet attempted; safe to file the moment it is
+# computed, exactly as `crash_loop_escalate` always has) from a *deferred
+# retry* (already attempted and failed at least once; the verdict computed at
+# this same early point in the cycle cannot see a recovery this cycle's own
+# Co-Ordinator attempt has not run yet, so filing it here would repeat the
+# 2026-08-29/30 Ockham false alarm, agent-ops#1070). Keyed the same way
+# `crash_loop_escalated_since` is, for the same reason: a new run with an old
+# detail must not inherit an old run's deferral, and a same-detail run in a
+# different repository must not inherit either.
 crash_loop_deferred_since() {
-  local first_ts="$1" detail="$2" hits
-  hits="$(jq -r -R -n --arg ts "$first_ts" --arg detail "$detail" '
+  local first_ts="$1" detail="$2" repo="${3:-}" hits
+  hits="$(jq -r -R -n --arg ts "$first_ts" --arg detail "$detail" --arg repo "$repo" '
     [ inputs | select(length > 0) | (fromjson? // empty)
       | select(.event == "crash-loop-deferred"
                and (.detail // "") == $detail
+               and ((.repo // "") == $repo)
                and (.ts // "") >= $ts) ]
     | length
   ' 2>/dev/null || echo 0)"
@@ -225,7 +274,13 @@ crash_loop_deferred_since() {
 # dispatches to `crash_loop_verdict`, "pre-selection" to
 # `crash_loop_preselection_verdict`) against the CURRENT stdin, and print the
 # fresh result iff it still names the exact same run — same `detail`, same
-# `first_ts` — as VERDICT_JSON; print nothing otherwise (agent-ops#1074).
+# `first_ts`, same `repo` (VERDICT_JSON carrying none matches only a fresh
+# verdict that also carries none) — as VERDICT_JSON; print nothing otherwise
+# (agent-ops#1074). The `repo` match matters once `crash_loop_verdict` can
+# return more than one run in the same cycle (agent-ops#1630): without it, a
+# retry queued for repository A could match a fresh line naming repository
+# B's own run, if the two happened to share a detail and a first_ts down to
+# the second — implausible, but the field is right there and free to check.
 #
 # "Prints nothing" covers two different facts on stdin, deliberately folded
 # together: no verdict at all (a success, or for pre-selection a cycle
@@ -244,24 +299,29 @@ crash_loop_deferred_since() {
 # "silence must never retire an alarm").
 crash_loop_reverify() {
   local verdict_json="$1" threshold="$2"
-  local stage detail first_ts fresh f_detail f_first_ts
+  local stage detail first_ts repo fresh match
   stage="$(jq -r '.stage // ""' <<<"$verdict_json" 2>/dev/null)"
   detail="$(jq -r '.detail // ""' <<<"$verdict_json" 2>/dev/null)"
   first_ts="$(jq -r '.first_ts // ""' <<<"$verdict_json" 2>/dev/null)"
+  repo="$(jq -r '.repo // ""' <<<"$verdict_json" 2>/dev/null)"
   case "$stage" in
     coordinator) fresh="$(crash_loop_verdict "$threshold")" ;;
     pre-selection) fresh="$(crash_loop_preselection_verdict "$threshold")" ;;
     *) return 0 ;;
   esac
   [[ -n "$fresh" ]] || return 0
-  f_detail="$(jq -r '.detail // ""' <<<"$fresh" 2>/dev/null)"
-  f_first_ts="$(jq -r '.first_ts // ""' <<<"$fresh" 2>/dev/null)"
-  if [[ "$f_detail" == "$detail" && "$f_first_ts" == "$first_ts" ]]; then
-    printf '%s' "$fresh"
-  fi
+  # `fresh` may now be more than one JSON-Lines object (crash_loop_verdict,
+  # agent-ops#1630); pick the one line, if any, naming this exact run.
+  match="$(jq -c -R -n --arg detail "$detail" --arg first_ts "$first_ts" --arg repo "$repo" '
+    [ inputs | select(length > 0) | (fromjson? // empty)
+      | select((.detail // "") == $detail and (.first_ts // "") == $first_ts
+               and ((.repo // "") == $repo)) ]
+    | first // empty
+  ' <<<"$fresh" 2>/dev/null)"
+  [[ -n "$match" ]] && printf '%s' "$match"
 }
 
-# crash_loop_last_success_since STAGE FIRST_TS < union.jsonl
+# crash_loop_last_success_since STAGE FIRST_TS [REPO] < union.jsonl
 # Print the timestamp of the earliest `stage-end` for STAGE with exit 0 at or
 # after FIRST_TS — the success that would break a run starting there — or
 # nothing if none exists. Named evidence for the retirement comment a broken
@@ -269,36 +329,58 @@ crash_loop_reverify() {
 # `STAGE=coordinator`, the only class `crash_loop_reverify` can name a single
 # resetting stage-end for (pre-selection resets on either a clean cycle exit
 # or a selection-path stage-start, no single event answers "the" success).
+# A non-empty REPO restricts the match to that repository's own successes,
+# once the run this is naming evidence for is itself repository-scoped
+# (agent-ops#1630) — a sibling repository's Co-Ordinator succeeding is not
+# evidence this run broke. An *empty* REPO means no repository constraint at
+# all — any Co-Ordinator success counts, exactly as before #1630 — and not
+# "repo-less successes only", which is the one reading that would have
+# stranded every escalation filed before this grouping existed: those carry
+# no `repo`, while every success logged since issue #587 carries one, so a
+# repo-less-only lookup could never again name the success that broke such a
+# run, and `crash_loop_retire_resolved`'s "positive evidence only" guard
+# would leave the issue open forever. Safe in both directions, because
+# `crash_loop_reverify` has already had to find the run broken before this
+# is ever consulted: this names the evidence, it does not decide the fact.
 crash_loop_last_success_since() {
-  local stage="$1" first_ts="$2"
-  jq -r -R -n --arg stage "$stage" --arg ts "$first_ts" '
+  local stage="$1" first_ts="$2" repo="${3:-}"
+  jq -r -R -n --arg stage "$stage" --arg ts "$first_ts" --arg repo "$repo" '
     [ inputs | select(length > 0) | (fromjson? // empty)
       | select(.event == "stage-end" and (.stage // "") == $stage
-               and ((.exit_code // 1) == 0) and (.ts // "") >= $ts) ]
+               and ((.exit_code // 1) == 0) and (.ts // "") >= $ts
+               and ($repo == "" or (.repo // "") == $repo)) ]
     | sort_by(.ts) | first | .ts // empty
   ' 2>/dev/null || true
 }
 
-# crash_loop_detail_recurred_since DETAIL SINCE_TS < union.jsonl
-# Exit 0 when a Co-Ordinator `attempt-failed` event carrying DETAIL exists
-# with `ts` at or after SINCE_TS — regardless of whether it ever reaches
-# `crash_loop_after` many in a row — and 1 otherwise. The 2026-09-05 fleet
-# flap (six escalations in four hours, every one the same detail, each
-# retired within minutes of a lone clearing success before the very same
-# failure resumed) is what this exists to catch: `crash_loop_retire_
-# resolved`'s own `active_detail` guard only sees a *re-crossed* run, so a
-# same-detail failure that has resumed but not yet reached threshold again
-# looks identical, to that guard, to a clean recovery. This reads the
-# failures themselves rather than waiting for another verdict to fire, so a
-# resolving success is never treated as the end of the incident while its
-# own detail is still visibly recurring in the very log the retirement
-# decision is reading.
+# crash_loop_detail_recurred_since DETAIL SINCE_TS [REPO] < union.jsonl
+# Exit 0 when a Co-Ordinator `attempt-failed` event carrying DETAIL (and, if
+# REPO is given, that same `repo`) exists with `ts` at or after SINCE_TS —
+# regardless of whether it ever reaches `crash_loop_after` many in a row —
+# and 1 otherwise. The 2026-09-05 fleet flap (six escalations in four hours,
+# every one the same detail, each retired within minutes of a lone clearing
+# success before the very same failure resumed) is what this exists to
+# catch: `crash_loop_retire_resolved`'s own `active_detail` guard only sees a
+# *re-crossed* run, so a same-detail failure that has resumed but not yet
+# reached threshold again looks identical, to that guard, to a clean
+# recovery. This reads the failures themselves rather than waiting for
+# another verdict to fire, so a resolving success is never treated as the
+# end of the incident while its own detail is still visibly recurring in the
+# very log the retirement decision is reading. A non-empty REPO keeps two
+# repositories that happen to share a generic detail (agent-ops#1630) from
+# reading each other's failures as this run's own recurrence; an empty REPO
+# means no repository constraint at all, on the same terms — and for the same
+# reason — as `crash_loop_last_success_since` above, so a pre-#1630 repo-less
+# escalation still has its flap guard read the whole fleet's failures rather
+# than the empty set of repo-less ones. Unfiltered is the conservative
+# direction here: this guard only ever *blocks* a retirement.
 crash_loop_detail_recurred_since() {
-  local detail="$1" since_ts="$2" hits
-  hits="$(jq -r -R -n --arg d "$detail" --arg ts "$since_ts" '
+  local detail="$1" since_ts="$2" repo="${3:-}" hits
+  hits="$(jq -r -R -n --arg d "$detail" --arg ts "$since_ts" --arg repo "$repo" '
     [ inputs | select(length > 0) | (fromjson? // empty)
       | select(.event == "attempt-failed" and (.stage // "") == "coordinator"
-               and (.detail // "") == $d and (.ts // "") >= $ts) ]
+               and (.detail // "") == $d and (.ts // "") >= $ts
+               and ($repo == "" or (.repo // "") == $repo)) ]
     | length
   ' 2>/dev/null || echo 0)"
   [[ "$hits" =~ ^[0-9]+$ ]] && (( hits > 0 ))
@@ -306,9 +388,10 @@ crash_loop_detail_recurred_since() {
 
 # crash_loop_open_escalations < union.jsonl
 # Print one JSON object per line — {stage, detail, first_ts, issue_number,
-# issue_url} — for each crash-loop escalation this fleet has filed (a
-# `crash-loop-escalated` event carrying an `issue_number`) that no
-# `crash-loop-retired` event has since named by that same `issue_number`
+# issue_url, repo?} — `repo` present iff the binding `crash-loop-escalated`
+# event carried one (agent-ops#1630) — for each crash-loop escalation this
+# fleet has filed (a `crash-loop-escalated` event carrying an `issue_number`)
+# that no `crash-loop-retired` event has since named by that same `issue_number`
 # (agent-ops#1074). One entry per `issue_number`, keeping the *newest* (by
 # `ts`) `crash-loop-escalated` event bound to it (agent-ops#1140):
 # `create_escalation_issue`'s own open-issue dedup keys on the item ref and
@@ -338,5 +421,6 @@ crash_loop_open_escalations() {
     | map(select((.issue_number as $n | $retired | index($n)) == null))
     | .[]
     | {stage, detail, first_ts, issue_number, issue_url}
+      + (if (.repo // "") == "" then {} else {repo} end)
   ' 2>/dev/null || true
 }

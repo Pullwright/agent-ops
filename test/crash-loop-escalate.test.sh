@@ -132,6 +132,12 @@ mkdir -p "$state_dir" "$peers_dir"
 
 fail_at() { jq -nc --arg ts "$1" --arg node "$2" --arg d "$3" '{ts: $ts, node: $node, event: "attempt-failed", stage: "coordinator", detail: $d}'; }
 success_at() { jq -nc --arg ts "$1" --arg node "$2" '{ts: $ts, node: $node, event: "stage-end", stage: "coordinator", exit_code: 0}'; }
+# fail_repo_at/success_repo_at (agent-ops#1630): the shape a per-repository
+# Co-Ordinator engagement's own events carry since agent-ops#1560.
+fail_repo_at() { jq -nc --arg ts "$1" --arg node "$2" --arg repo "$3" --arg d "$4" '{ts: $ts, node: $node, repo: $repo, event: "attempt-failed", stage: "coordinator", detail: $d}'; }
+success_repo_at() { jq -nc --arg ts "$1" --arg node "$2" --arg repo "$3" '{ts: $ts, node: $node, repo: $repo, event: "stage-end", stage: "coordinator", exit_code: 0}'; }
+escalated_repo_at() { jq -nc --arg ts "$1" --arg d "$2" --arg repo "$3" --argjson n "$4" \
+  '{ts: $ts, node: "n1", event: "crash-loop-escalated", stage: "coordinator", detail: $d, repo: $repo, first_ts: $ts, issue_number: $n, issue_url: "https://github.com/o/r/issues/\($n)"}'; }
 
 four_fails="$(fail_at 2026-08-01T10:00:00Z n1 'coordinator exited 126'
   fail_at 2026-08-01T10:15:00Z n1 'coordinator exited 126'
@@ -317,6 +323,134 @@ crash_loop_retire_resolved 2026-08-01T13:45:00Z
 assert_eq "an open escalation is never closed while the same detail is active again under a new run" \
   "0" "$STUB_GH_CLOSE_CALLS"
 assert_eq "and no retirement is logged for it" "0" "$(events_of crash-loop-retired | wc -l | tr -d ' ')"
+
+# --- Per-repository dedup and retirement (agent-ops#1630) --------------------
+#
+# Two repositories that happen to share a generic detail — plausible for
+# something as bare as "coordinator exited 1" — must not dedup, defer or
+# retire against each other's own run: `crash_loop_escalated_since`,
+# `crash_loop_deferred_since`, `crash_loop_last_success_since` and
+# `crash_loop_detail_recurred_since` are all now matched on `repo` too.
+
+collision_detail='coordinator exited 1'
+repoB_verdict="$(crash_loop_verdict 4 <<<"$(fail_repo_at 2026-09-16T11:00:00Z n1 B "$collision_detail"
+  fail_repo_at 2026-09-16T11:15:00Z n1 B "$collision_detail"
+  fail_repo_at 2026-09-16T11:30:00Z n1 B "$collision_detail"
+  fail_repo_at 2026-09-16T11:45:00Z n1 B "$collision_detail")")"
+
+# Repo A is already escalated (issue #601 below); repo B's own run, sharing
+# the same detail but a later first_ts, must still file its own issue rather
+# than being suppressed by A's dedup.
+escalated_A_601="$(escalated_repo_at 2026-09-16T10:00:00Z "$collision_detail" A 601)"
+union_log="$WORKDIR/union-repo-dedup.jsonl"
+{
+  printf '%s\n' "$(fail_repo_at 2026-09-16T10:00:00Z n1 A "$collision_detail")"
+  printf '%s\n' "$escalated_A_601"
+} > "$union_log"
+STUB_CREATE_MODE="success"; stub_create_calls_reset; EVENTS=(); crash_loop_pending_refile=()
+crash_loop_escalate_or_defer "$repoB_verdict" "crash-loop:coordinator:B" "failures" "title" "evidence"
+assert_eq "repo B's own run files its own issue, undeterred by repo A's same-detail escalation" \
+  "1" "$(stub_create_calls)"
+
+# Retirement: repo A's escalation is closed once repo A's own Co-Ordinator
+# succeeds, even while repo B — sharing the same detail — is still actively
+# failing under its own, independent run.
+union_log="$WORKDIR/union-repo-retire.jsonl"
+{
+  printf '%s\n' "$(fail_repo_at 2026-09-16T10:00:00Z n1 A "$collision_detail")"
+  printf '%s\n' "$escalated_A_601"
+  success_repo_at 2026-09-16T12:00:00Z n1 A
+  printf '%s\n' "$(fail_repo_at 2026-09-16T13:00:00Z n1 B "$collision_detail")"
+  printf '%s\n' "$(fail_repo_at 2026-09-16T13:15:00Z n1 B "$collision_detail")"
+} > "$union_log"
+STUB_GH_CLOSE_MODE="success"; STUB_GH_CLOSE_CALLS=0; EVENTS=()
+crash_loop_retire_resolved 2026-09-16T13:15:00Z
+assert_eq "repo A's own escalation is retired on its own repo's clearing success" \
+  "1" "$STUB_GH_CLOSE_CALLS"
+assert_eq "naming repo A's own clearing success" "1" \
+  "$(grep -c '2026-09-16T12:00:00Z' <<<"$STUB_GH_CLOSE_LAST_BODY")"
+
+# The counterfactual: repo B succeeding is never evidence repo A's own run
+# broke — a cross-repository success must not retire an unrelated repo's
+# still-open escalation.
+union_log="$WORKDIR/union-repo-retire-wrong-repo.jsonl"
+{
+  printf '%s\n' "$(fail_repo_at 2026-09-16T10:00:00Z n1 A "$collision_detail")"
+  printf '%s\n' "$escalated_A_601"
+  success_repo_at 2026-09-16T12:00:00Z n1 B
+} > "$union_log"
+STUB_GH_CLOSE_MODE="success"; STUB_GH_CLOSE_CALLS=0; EVENTS=()
+crash_loop_retire_resolved 2026-09-16T12:00:00Z
+assert_eq "repo B's own success never retires repo A's own open escalation" \
+  "0" "$STUB_GH_CLOSE_CALLS"
+assert_eq "and nothing is logged for it" "0" "$(events_of crash-loop-retired | wc -l | tr -d ' ')"
+
+# The transition case: an escalation filed before per-repository grouping
+# existed carries no `repo` at all, while every Co-Ordinator success logged
+# since issue #587 carries one. Its clearing success must still be nameable —
+# reading `repo: ""` as "repo-less successes only" would search the empty set
+# and strand every such issue open forever, `crash_loop_retire_resolved`'s
+# "positive evidence only" guard having nothing left to name.
+legacy_detail='coordinator exited 126'
+legacy_escalated="$(jq -nc --arg ts 2026-09-16T10:00:00Z --arg d "$legacy_detail" \
+  '{ts: $ts, node: "n1", event: "crash-loop-escalated", stage: "coordinator", detail: $d,
+    first_ts: $ts, issue_number: 701, issue_url: "https://github.com/o/r/issues/701"}')"
+union_log="$WORKDIR/union-legacy-repoless.jsonl"
+{
+  printf '%s\n' "$(fail_at 2026-09-16T10:00:00Z n1 "$legacy_detail")"
+  printf '%s\n' "$legacy_escalated"
+  success_repo_at 2026-09-16T12:00:00Z n1 A
+} > "$union_log"
+STUB_GH_CLOSE_MODE="success"; STUB_GH_CLOSE_CALLS=0; EVENTS=()
+crash_loop_retire_resolved 2026-09-16T12:00:00Z
+assert_eq "a pre-#1630 repo-less escalation is still retired by a repo-carrying success" \
+  "1" "$STUB_GH_CLOSE_CALLS"
+assert_eq "naming that success" "1" \
+  "$(grep -c '2026-09-16T12:00:00Z' <<<"$STUB_GH_CLOSE_LAST_BODY")"
+
+# ...and that entry's flap guard still reads the whole fleet for the same
+# reason: a repo-carrying failure of its own detail after the clearing
+# success blocks the retirement, exactly as a repo-less one always did.
+union_log="$WORKDIR/union-legacy-repoless-recurred.jsonl"
+{
+  printf '%s\n' "$(fail_at 2026-09-16T10:00:00Z n1 "$legacy_detail")"
+  printf '%s\n' "$legacy_escalated"
+  success_repo_at 2026-09-16T12:00:00Z n1 A
+  printf '%s\n' "$(fail_repo_at 2026-09-16T12:30:00Z n1 A "$legacy_detail")"
+} > "$union_log"
+STUB_GH_CLOSE_MODE="success"; STUB_GH_CLOSE_CALLS=0; EVENTS=()
+crash_loop_retire_resolved 2026-09-16T12:30:00Z
+assert_eq "and a repo-carrying recurrence of its own detail still blocks that retirement" \
+  "0" "$STUB_GH_CLOSE_CALLS"
+assert_eq "with no retirement logged for it" "0" "$(events_of crash-loop-retired | wc -l | tr -d ' ')"
+
+# --- A real owner/name slug's issue body lands on disk (agent-ops#1687) ----
+#
+# Every section above uses single-segment repo names (`A`, `B`) that never
+# exercise the `/` a real slug carries (config.schema.json's `repos[].slug`,
+# e.g. `Poetic-Poems/poetic`) — so none of them would have caught
+# `crash_loop_escalate`'s own ITEM_REF flowing unsanitized into `cl_body`'s
+# filesystem path: `crash-loop-issue-coordinator:Poetic-Poems/poetic.md`
+# names a directory component nothing in the cycle directory creates, so the
+# redirect that writes the issue body used to fail silently and
+# `create_escalation_issue --body-file` was never even reached.
+slug_detail='coordinator exited 1'
+slug_verdict="$(crash_loop_verdict 4 <<<"$(fail_repo_at 2026-09-17T09:00:00Z n1 Poetic-Poems/poetic "$slug_detail"
+  fail_repo_at 2026-09-17T09:15:00Z n1 Poetic-Poems/poetic "$slug_detail"
+  fail_repo_at 2026-09-17T09:30:00Z n1 Poetic-Poems/poetic "$slug_detail"
+  fail_repo_at 2026-09-17T09:45:00Z n1 Poetic-Poems/poetic "$slug_detail")")"
+union_log="$WORKDIR/union-slug.jsonl"
+: > "$union_log"
+STUB_CREATE_MODE="success"; stub_create_calls_reset; EVENTS=()
+crash_loop_escalate "$slug_verdict" "crash-loop:coordinator:Poetic-Poems/poetic" "failures" "title" "evidence"
+slug_body="$cycle_dir/crash-loop-issue-coordinator:Poetic-Poems-poetic.md"
+assert_eq "a real owner/name slug's issue body is written flat under the cycle directory, never a nested path" \
+  "1" "$( [[ -f "$slug_body" ]] && printf 1 || printf 0 )"
+assert_eq "the body's own ref: footer still carries the slug verbatim, unsanitized" \
+  "1" "$(grep -c '^ref: crash-loop:coordinator:Poetic-Poems/poetic$' "$slug_body" 2>/dev/null || printf 0)"
+assert_eq "the filing itself still succeeds (create_escalation_issue was reached)" "1" "$(stub_create_calls)"
+assert_eq "and it is logged crash-loop-escalated, not crash-loop-deferred" \
+  "1" "$(events_of crash-loop-escalated | wc -l | tr -d ' ')"
 
 # --- The retirement hysteresis (2026-09-05 fleet flap) ----------------------
 #

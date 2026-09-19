@@ -1456,13 +1456,23 @@
   // condition is expected to clear on its own, same colour the "updater
   // stuck" badge above uses for "this wants attention", not "this is a
   // failure of this node's own code".
+  //
+  // Since agent-ops#1630 the run this reads is counted per repository, so
+  // `repo` is present whenever the engagements it counted named one, and the
+  // success that ends it is that repository's own — named in the title, since
+  // "a Co-Ordinator engagement succeeded" is no longer one fleet-wide fact.
+  // The Publisher keeps only the first such run when more than one repository
+  // is transient at once (agent-ops#1624 tracks showing them all), so an
+  // absent badge is not proof no other repository is in the same state.
   function providerUnreachableLine(n) {
     var pu = n.provider_unreachable;
     if (!pu || !pu.detail) return null;
-    var title = pu.count + " consecutive Co-Ordinator failure(s), every one `" + pu.detail +
+    var scope = pu.repo ? " for " + pu.repo : "";
+    var title = pu.count + " consecutive Co-Ordinator failure(s)" + scope + ", every one `" + pu.detail +
       "`, since " + fmtAgo(pu.first_ts) + ", still failing as of " + fmtAgo(pu.last_ts) +
       " — classified transient (the API was unreachable, not refusing the request); " +
-      "clears on its own the moment a Co-Ordinator engagement succeeds anywhere in the fleet";
+      "clears on its own the moment a Co-Ordinator engagement" + scope +
+      " succeeds anywhere in the fleet";
     return el("div", {class:"ver"}, el("span", {class:"badge b-amber", text:"provider unreachable",
       title: title}));
   }

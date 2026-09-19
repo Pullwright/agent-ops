@@ -92,6 +92,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A single repository's own deterministic Co-Ordinator failure now
+  reaches the crash-loop escalation rung instead of being reset every cycle
+  by a sibling repository's success** (issue #1630). Since issue #587 split
+  selection into one engagement per configured repository,
+  `crash_loop_verdict` (`lib/crash-loop.sh`) still counted consecutive
+  same-detail Co-Ordinator failures across the whole fleet and reset that
+  count on *any* Co-Ordinator success — so a repository failing
+  deterministically every cycle, while every other repository succeeded,
+  could never reach `crash_loop_after` and was silently starved of
+  selection with no escalation at all, which is the exact failure class
+  requirement 2.7 exists to catch. The reduction is now grouped by the
+  `repo` field those per-repository engagements already carry, and prints
+  one JSON-Lines verdict per independently crash-looping repository rather
+  than at most one for the fleet; `agent-cycle.sh` escalates each under its
+  own item ref (`crash-loop:coordinator:<repo>`), so two repositories
+  crash-looping at once get an issue each. The dedup, deferral, re-verify,
+  retirement and flap-guard readers are all repository-aware to match, so
+  two repositories that happen to share a generic detail (both saying
+  `coordinator exited 1`, say) can no longer dedup, defer or retire against
+  each other's run. An event carrying no `repo` — history from before #587,
+  or any future Co-Ordinator caller that legitimately has none — falls back
+  to one fleet-wide group reduced exactly as the whole stream used to be,
+  and an escalation filed before this change is still retired by, and still
+  flap-guarded against, the whole fleet's Co-Ordinator events, since every
+  success logged since #587 carries a repository and a repo-less run would
+  otherwise have no nameable clearing success at all.
+  `crash_loop_preselection_verdict` stays fleet-wide and exit-code-grouped:
+  it fires before selection has assigned a repository to anything. The
+  dashboard's **provider unreachable** badge names the repository a
+  transient run belongs to, and shows the first such run when more than one
+  repository is transient at once (issue #1624 tracks showing them all).
+
 - **The stall profile's Decision cell no longer hides a near-backstop
   `worst_run_max` behind the minimum-sample gate** (issue #1590). The Stall
   profile panel (D21, issue #594) checked `row.runs < TOKEN_MIN_SAMPLE`

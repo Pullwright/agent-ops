@@ -295,8 +295,18 @@ stage_api_refusal_class() {  # <out-file> -> "transient", "refused", or empty
     "$out_file" 2>/dev/null | head -1
 }
 
-handle_stage_failure() {
-  local stage="$1" rc="$2" out_file="$3" pr_url="${4:-}" detail refusal refusal_msg refusal_class
+# `extra` (default `{}`, agent-ops#1630) is merged into this failure's own
+# `attempt-failed` event, same as `log_attempt_failed`'s own `extra` argument
+# everywhere else — the one way to tag this event with a field, `repo`
+# included, that `item_event_fields`'s `$selected_repo`/`$selected_item`
+# globals cannot supply here: the Co-Ordinator's per-repository loop
+# (`run_coordinator_stage_attempt`, below) calls this before selection has
+# ever run, when both globals are still empty. Every other caller —
+# Implementer, Reviewer — passes nothing and gets exactly the fields the
+# globals already give it, unchanged.
+handle_stage_failure() {  # <stage> <rc> <out-file> [pr-url] [extra-json]
+  local stage="$1" rc="$2" out_file="$3" pr_url="${4:-}" extra="${5:-{\}}" detail refusal refusal_msg refusal_class
+  jq -e 'type == "object"' <<<"$extra" >/dev/null 2>&1 || extra='{}'
   # 124 is now both caps, and they are not the same news to whoever reads this
   # next — the Enabler, or a human asking why an item is blocked. "Ran to its
   # wall-clock cap while still working" argues for a longer cap; "produced
@@ -335,12 +345,13 @@ handle_stage_failure() {
     refusal_class="$(stage_api_refusal_class "$out_file")"
   fi
   log_attempt_failed "$stage" "$detail" \
-    "$(jq -nc --arg u "$pr_url" --arg r "$refusal" --arg m "$refusal_msg" --arg c "$refusal_class" \
+    "$(jq -nc --arg u "$pr_url" --arg r "$refusal" --arg m "$refusal_msg" --arg c "$refusal_class" --argjson e "$extra" \
        '{stage_failure: true}
         + (if $u == "" then {} else {pr_url: $u} end)
         + (if $r == "" then {} else {api_refusal: $r} end)
         + (if $m == "" then {} else {api_message: $m} end)
-        + (if $c == "" then {} else {api_refusal_class: $c} end)')"
+        + (if $c == "" then {} else {api_refusal_class: $c} end)
+        + $e')"
   if [[ -n "$pr_url" ]]; then
     gh pr comment "$pr_url" --body "$(pipeline_comment_header script "$node_name")
 
@@ -393,11 +404,14 @@ run_coordinator_stage_attempt() {  # <attempt-out-file> <prompt> [extra-budget-j
   log_event "stage-end" "$(jq -nc --argjson rc "$rc" --arg kr "$stage_kill_reason" \
     --argjson m "$coord_attempt_metering_json" --argjson e "$extra" \
     '{stage: "coordinator", exit_code: $rc} + (if $kr == "" then {} else {kill_reason: $kr} end) + $m + $e')"
-  # Still no repo/item passed to rework_stage_rerun_maybe: that function's
-  # third/fourth positional arguments feed the crash-loop machinery's own
-  # per-repo grouping, which issue #587 leaves fleet-wide (unchanged, see
-  # docs/IMPLEMENTATION-PIPELINE-SPEC.md's updated requirement 15) rather than
-  # splitting further in the same change that split selection itself.
+  # Still no repo/item passed to rework_stage_rerun_maybe: its third/fourth
+  # positional arguments are the `rework` record's own attribution
+  # (requirement 47), which stays unattributed for this class. The crash-loop
+  # machinery issue #587 did leave fleet-wide is no longer the reason —
+  # agent-ops#1630 has since grouped `crash_loop_verdict` by the `repo` this
+  # same `$extra` carries — so what remains here is only that a Co-Ordinator
+  # stage-rerun record names no repository even though this engagement now
+  # belongs to exactly one, tracked as agent-ops#1688.
   rework_stage_rerun_maybe "coordinator" "$stage_kill_reason"
   log_node_state_transition overhead
   # `if`, not `&&` — see the identical comment at the original call site below.
@@ -408,7 +422,7 @@ run_coordinator_stage_attempt() {  # <attempt-out-file> <prompt> [extra-budget-j
   (( ONCE )) && dump_stage_output "$out_file"
 
   if (( rc != 0 )); then
-    handle_stage_failure "coordinator" "$rc" "$out_file" ""
+    handle_stage_failure "coordinator" "$rc" "$out_file" "" "$extra"
     coord_attempt_result_json=""
     return 1
   fi
