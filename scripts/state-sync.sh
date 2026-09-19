@@ -84,7 +84,7 @@ Environment:
                         override `state_local_streams_retained` (likewise).
   STATE_SYNC_MIN_FREE_WORKSPACE_BYTES
                         override `min_free_workspace_bytes` (tests only).
-  STATE_SYNC_FREE_KB   override the free-space reading `push` takes of
+  STATE_SYNC_FREE_KB    override the free-space reading `push` takes of
                         state_dir's filesystem for the disk-pressure prune
                         below (tests only — a real push always reads it via
                         lib/disk-space.sh).
