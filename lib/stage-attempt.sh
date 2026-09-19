@@ -404,11 +404,14 @@ run_coordinator_stage_attempt() {  # <attempt-out-file> <prompt> [extra-budget-j
   log_event "stage-end" "$(jq -nc --argjson rc "$rc" --arg kr "$stage_kill_reason" \
     --argjson m "$coord_attempt_metering_json" --argjson e "$extra" \
     '{stage: "coordinator", exit_code: $rc} + (if $kr == "" then {} else {kill_reason: $kr} end) + $m + $e')"
-  # Still no repo/item passed to rework_stage_rerun_maybe: that function's
-  # third/fourth positional arguments feed the crash-loop machinery's own
-  # per-repo grouping, which issue #587 leaves fleet-wide (unchanged, see
-  # docs/IMPLEMENTATION-PIPELINE-SPEC.md's updated requirement 15) rather than
-  # splitting further in the same change that split selection itself.
+  # Still no repo/item passed to rework_stage_rerun_maybe: its third/fourth
+  # positional arguments are the `rework` record's own attribution
+  # (requirement 47), which stays unattributed for this class. The crash-loop
+  # machinery issue #587 did leave fleet-wide is no longer the reason —
+  # agent-ops#1630 has since grouped `crash_loop_verdict` by the `repo` this
+  # same `$extra` carries — so what remains here is only that a Co-Ordinator
+  # stage-rerun record names no repository even though this engagement now
+  # belongs to exactly one, tracked as agent-ops#1688.
   rework_stage_rerun_maybe "coordinator" "$stage_kill_reason"
   log_node_state_transition overhead
   # `if`, not `&&` — see the identical comment at the original call site below.

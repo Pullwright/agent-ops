@@ -21401,9 +21401,10 @@ What exists, and the requirements each part answers to:
     otherwise, including for a THRESHOLD under 1 (the off switch, matching
     `lib/crash-loop.sh`'s `crash_loop_verdict`). It reuses that function's
     reduce-over-a-filtered-stream, run-resets-on-success shape rather than
-    calling into it, because `crash_loop_verdict` counts fleet-wide — one run
-    shared by every node — where a `gh` degraded on one node is a per-node
-    fact a peer's success must never reset.
+    calling into it, because `crash_loop_verdict` counts across the whole
+    fleet — one run per repository (agent-ops#1630), shared by every node —
+    where a `gh` degraded on one node is a per-node fact a peer's success
+    must never reset.
 
     `review_gate_degraded_since FIRST_TS NODE`, its dedup companion, exits 0
     when NODE's own `review-gate-checks-degraded` event for the run that
