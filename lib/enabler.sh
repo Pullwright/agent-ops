@@ -413,7 +413,18 @@ crash_loop_escalate() {
   if crash_loop_escalated_since "$cl_first_ts" "$cl_detail" "$cl_repo" < "$union_log"; then
     return 0
   fi
-  cl_body="$cycle_dir/crash-loop-issue-${item_ref#crash-loop:}.md"
+  # The item ref itself stays untouched everywhere else — the dedup search,
+  # the `ref:` footer below, and `escalation_recent_close`'s body-contains
+  # match all key on it verbatim. Only this filesystem path needs the `/` a
+  # real `owner/name` repo slug carries (config.schema.json's `repos[].slug`)
+  # flattened out, the same way agent-cycle.sh's own `coord_repo_slug`
+  # becomes `coordinator-${coord_repo_slug//\//-}.out` — a raw slug here
+  # would otherwise name a directory component nothing in this cycle
+  # creates, so the redirect below fails silently and the issue never files
+  # (agent-ops#1687 review).
+  local cl_body_slug="${item_ref#crash-loop:}"
+  cl_body_slug="${cl_body_slug//\//-}"
+  cl_body="$cycle_dir/crash-loop-issue-${cl_body_slug}.md"
   {
     printf '## What the fleet log shows\n\n'
     jq -r --arg k "$kind_label" \

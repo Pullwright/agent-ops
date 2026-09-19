@@ -424,6 +424,34 @@ assert_eq "and a repo-carrying recurrence of its own detail still blocks that re
   "0" "$STUB_GH_CLOSE_CALLS"
 assert_eq "with no retirement logged for it" "0" "$(events_of crash-loop-retired | wc -l | tr -d ' ')"
 
+# --- A real owner/name slug's issue body lands on disk (agent-ops#1687) ----
+#
+# Every section above uses single-segment repo names (`A`, `B`) that never
+# exercise the `/` a real slug carries (config.schema.json's `repos[].slug`,
+# e.g. `Poetic-Poems/poetic`) — so none of them would have caught
+# `crash_loop_escalate`'s own ITEM_REF flowing unsanitized into `cl_body`'s
+# filesystem path: `crash-loop-issue-coordinator:Poetic-Poems/poetic.md`
+# names a directory component nothing in the cycle directory creates, so the
+# redirect that writes the issue body used to fail silently and
+# `create_escalation_issue --body-file` was never even reached.
+slug_detail='coordinator exited 1'
+slug_verdict="$(crash_loop_verdict 4 <<<"$(fail_repo_at 2026-09-17T09:00:00Z n1 Poetic-Poems/poetic "$slug_detail"
+  fail_repo_at 2026-09-17T09:15:00Z n1 Poetic-Poems/poetic "$slug_detail"
+  fail_repo_at 2026-09-17T09:30:00Z n1 Poetic-Poems/poetic "$slug_detail"
+  fail_repo_at 2026-09-17T09:45:00Z n1 Poetic-Poems/poetic "$slug_detail")")"
+union_log="$WORKDIR/union-slug.jsonl"
+: > "$union_log"
+STUB_CREATE_MODE="success"; stub_create_calls_reset; EVENTS=()
+crash_loop_escalate "$slug_verdict" "crash-loop:coordinator:Poetic-Poems/poetic" "failures" "title" "evidence"
+slug_body="$cycle_dir/crash-loop-issue-coordinator:Poetic-Poems-poetic.md"
+assert_eq "a real owner/name slug's issue body is written flat under the cycle directory, never a nested path" \
+  "1" "$( [[ -f "$slug_body" ]] && printf 1 || printf 0 )"
+assert_eq "the body's own ref: footer still carries the slug verbatim, unsanitized" \
+  "1" "$(grep -c '^ref: crash-loop:coordinator:Poetic-Poems/poetic$' "$slug_body" 2>/dev/null || printf 0)"
+assert_eq "the filing itself still succeeds (create_escalation_issue was reached)" "1" "$(stub_create_calls)"
+assert_eq "and it is logged crash-loop-escalated, not crash-loop-deferred" \
+  "1" "$(events_of crash-loop-escalated | wc -l | tr -d ' ')"
+
 # --- The retirement hysteresis (2026-09-05 fleet flap) ----------------------
 #
 # Six enabler-escalation issues in four hours, every one the identical
