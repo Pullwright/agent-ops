@@ -92,6 +92,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`state-sync.sh push` no longer lets a full disk stand a node down
+  without first reclaiming derived files it can safely drop** (issue #1678).
+  `state_local_streams_retained`'s count-based prune of `.fleet-log.jsonl`/
+  `*.stream.jsonl` only ever rises (requirement 1d's floor-never-ceiling
+  contract), so at this installation's 15-minute cadence it filled both
+  poetic nodes' shared host to zero free bytes on 2026-09-18 — 200 retained
+  snapshots at 45 MB apiece, ~7.3–7.4 GB per node, regrowing at ~4.3
+  GB/node/day (the measured figures requirement 1d's own extended notes
+  carry now, closing #1025's ask for a real baseline) — and stood both
+  nodes down for disk before either had pruned a byte of them. `push` now
+  reads `state_dir`'s free space against `min_free_workspace_bytes`
+  (the same floor and functions the pre-clone stand-down uses) immediately
+  after the count-based prune, and strips further under pressure — oldest
+  cycle first, stopping at the floor or the newest cycle's derived files,
+  whichever comes first. Safe regardless of the configured count: a
+  snapshot is read only by the cycle that wrote it, so every retained copy
+  but the newest already exists purely for after-the-fact diagnosis.
+  `state_local_streams_retained`'s own derivation and floor-never-ceiling
+  contract are unchanged.
+
 - **The stall profile's Decision cell no longer hides a near-backstop
   `worst_run_max` behind the minimum-sample gate** (issue #1590). The Stall
   profile panel (D21, issue #594) checked `row.runs < TOKEN_MIN_SAMPLE`
