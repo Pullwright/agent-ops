@@ -113,8 +113,16 @@ new_node() {  # new_node <name> -> prints its HOME
 
 sync_as() {  # sync_as <home> <role> <mode> [env assignments…]
   local home="$1" role="$2" mode="$3"; shift 3
+  # A `push` now also prunes derived files under disk pressure
+  # (agent-ops#1678), reading state_dir's real free space and
+  # min_free_workspace_bytes' real 2 GiB default unless overridden — every
+  # push below except the disk-pressure cases themselves needs to behave
+  # exactly as it did before that prune existed, regardless of how much
+  # space this container actually has free, so the floor defaults off here;
+  # a later `STATE_SYNC_MIN_FREE_WORKSPACE_BYTES=…` in "$@" still wins, `env`
+  # sets same-named operands in the order given.
   env HOME="$home" AGENT_OPS_ROLE="$role" NODE_NAME="$(basename "$home")" \
-    STATE_SYNC_REMOTE="$remote" "$@" \
+    STATE_SYNC_REMOTE="$remote" STATE_SYNC_MIN_FREE_WORKSPACE_BYTES=0 "$@" \
     "$SYNC" "$mode" 2>&1
 }
 
@@ -610,6 +618,103 @@ assert_eq "…and keep their own records too" "1" \
   "$(test -f "$sr_state/reviews/20260301T000000Z-0/review.out" && echo 1 || echo 0)"
 assert_eq "no cycle directory is removed by the derived prune" "4" \
   "$(find "$sr_state/cycles" -mindepth 1 -maxdepth 1 -type d | wc -l)"
+
+# --- Disk-pressure prune of the derived files (agent-ops#1678) ----------------
+# The count-based retention above only ever rises (requirement 1d's
+# floor-never-ceiling contract) — on 2026-09-18 that let 200 retained
+# fleet-log snapshots at 45 MB apiece fill the host before either node ever
+# pruned one of them. `min_free_workspace_bytes` is state-sync's own backstop:
+# once `state_dir` reads below it, `push` strips derived files further than
+# `state_local_streams_retained` would alone, oldest cycle first, stopping the
+# moment it reads clear again (or at the newest cycle, whichever comes
+# first). Two nodes, same four-cycle fixture, differing only in the free-KB
+# figure `STATE_SYNC_FREE_KB` injects: one node never crosses the floor and
+# is pruned exactly as the count-only case above; the other starts below it
+# and is stripped down past the count to the newest cycle alone — the "more
+# than the newest cycle's derived files present" case the acceptance
+# criteria ask for.
+dp_setup() {  # dp_setup <home> -> populates 4 cycle/review dirs with derived files
+  local home="$1" state i d r
+  state="$home/.local/state/poetic-agents"
+  printf '{"ts":"2026-07-22T00:00:00Z","event":"cycle-start"}\n' > "$state/log.jsonl"
+  i=0
+  while (( i < 4 )); do
+    d="$(printf '%s/cycles/20260401T%06dZ-%d' "$state" "$i" "$i")"
+    mkdir -p "$d"
+    printf 'filler\n' > "$d/coordinator.out"
+    printf '{"type":"system"}\n' > "$d/coordinator.stream.jsonl"
+    printf '{"type":"union"}\n' > "$d/.fleet-log.jsonl"
+    r="$(printf '%s/reviews/20260401T%06dZ-%d' "$state" "$i" "$i")"
+    mkdir -p "$r"
+    printf 'filler\n' > "$r/review.out"
+    printf '{"type":"system"}\n' > "$r/reviewer.stream.jsonl"
+    printf '{"type":"union"}\n' > "$r/.fleet-log.jsonl"
+    i=$(( i + 1 ))
+  done
+}
+
+# Both the floor and the free-KB reading are test doubles here
+# (STATE_SYNC_MIN_FREE_WORKSPACE_BYTES, STATE_SYNC_FREE_KB) — neither is a
+# real df read nor config.json's own shipped 2 GiB default, so the "low"/"ok"
+# cases below are exact regardless of what either happens to be configured.
+#
+# Comfortably clear of the floor, so this case exercises the count-based
+# prune (streams_retained=3, cycle 0 only) with the pressure check present
+# but never tripping.
+dp_ok_home="$(new_node disk-pressure-ok-node)"
+dp_ok_state="$dp_ok_home/.local/state/poetic-agents"
+dp_setup "$dp_ok_home"
+out="$(sync_as "$dp_ok_home" active push STATE_SYNC_LOCAL_RETAINED=10 \
+  STATE_SYNC_STREAMS_RETAINED=3 STATE_SYNC_MIN_FREE_WORKSPACE_BYTES=1000000 \
+  STATE_SYNC_FREE_KB=1000000)"
+assert_eq "the clear-of-the-floor push exits 0" "0" "$?"
+assert_contains "the ordinary count-based prune still runs" "pruned 2 derived file(s) from cycles" "$out"
+assert_lacks "…and the pressure prune never engages" "under disk pressure" "$out"
+assert_eq "cycles 1-3 keep their streams when the floor is never crossed" "1" \
+  "$(test -f "$dp_ok_state/cycles/20260401T000001Z-1/coordinator.stream.jsonl" && echo 1 || echo 0)"
+
+# Below the floor throughout — STATE_SYNC_FREE_KB is a fixed test double, not
+# a real meter that falls as files come off — so the pressure loop runs to
+# its other stop condition, the newest-cycle floor, rather than to recovery.
+dp_low_home="$(new_node disk-pressure-low-node)"
+dp_low_state="$dp_low_home/.local/state/poetic-agents"
+dp_setup "$dp_low_home"
+out="$(sync_as "$dp_low_home" active push STATE_SYNC_LOCAL_RETAINED=10 \
+  STATE_SYNC_STREAMS_RETAINED=3 STATE_SYNC_MIN_FREE_WORKSPACE_BYTES=1000000 \
+  STATE_SYNC_FREE_KB=1)"
+assert_eq "the below-the-floor push exits 0" "0" "$?"
+assert_contains "the ordinary count-based prune still runs first" "pruned 2 derived file(s) from cycles" "$out"
+assert_contains "the pressure prune strips past what the count alone kept" \
+  "pruned 4 derived file(s) from cycles under disk pressure" "$out"
+assert_contains "…reviews are pruned under pressure the same way" \
+  "pruned 4 derived file(s) from reviews under disk pressure" "$out"
+assert_eq "cycle 1's derived files are gone under pressure, though the count alone would have kept them" "0" \
+  "$(test -e "$dp_low_state/cycles/20260401T000001Z-1/coordinator.stream.jsonl" && echo 1 || echo 0)"
+assert_eq "cycle 2's derived files are gone under pressure too" "0" \
+  "$(test -e "$dp_low_state/cycles/20260401T000002Z-2/.fleet-log.jsonl" && echo 1 || echo 0)"
+assert_eq "only the newest cycle keeps its derived files under sustained pressure" "1" \
+  "$(test -f "$dp_low_state/cycles/20260401T000003Z-3/coordinator.stream.jsonl" && echo 1 || echo 0)"
+assert_eq "…its fleet-log snapshot too — the running cycle's own gates still read it" "1" \
+  "$(test -f "$dp_low_state/cycles/20260401T000003Z-3/.fleet-log.jsonl" && echo 1 || echo 0)"
+assert_eq "no cycle directory itself is removed by the pressure prune, only the derived files inside them" "4" \
+  "$(find "$dp_low_state/cycles" -mindepth 1 -maxdepth 1 -type d | wc -l)"
+assert_eq "…and every record's own output survives" "1" \
+  "$(test -f "$dp_low_state/cycles/20260401T000001Z-1/coordinator.out" && echo 1 || echo 0)"
+
+# A `0` floor is "off", the same as 2.0c's own pre-clone gate (disk_space_
+# verdict's own contract): zero free KB injected alongside it must still
+# prune nothing beyond the ordinary count-based retention.
+dp_off_home="$(new_node disk-pressure-off-node)"
+dp_off_state="$dp_off_home/.local/state/poetic-agents"
+dp_setup "$dp_off_home"
+out="$(sync_as "$dp_off_home" active push STATE_SYNC_LOCAL_RETAINED=10 \
+  STATE_SYNC_STREAMS_RETAINED=3 STATE_SYNC_MIN_FREE_WORKSPACE_BYTES=0 \
+  STATE_SYNC_FREE_KB=0)"
+assert_eq "the floor-off push still exits 0" "0" "$?"
+assert_contains "…and still runs the ordinary count-based prune" "pruned 2 derived file(s) from cycles" "$out"
+assert_lacks "…with the pressure prune off regardless of free-KB" "under disk pressure" "$out"
+assert_eq "cycles 1-3 keep their streams with the floor off" "1" \
+  "$(test -f "$dp_off_state/cycles/20260401T000001Z-1/coordinator.stream.jsonl" && echo 1 || echo 0)"
 
 # A derived file already in the mirror from before its exclusion existed is
 # deleted from it, not merely left behind: `--delete-excluded` is what makes
