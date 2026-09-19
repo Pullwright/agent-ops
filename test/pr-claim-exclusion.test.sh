@@ -478,6 +478,58 @@ assert_eq "…including the ref an empty live set would have dropped" "1" \
 assert_eq "…and nothing is logged as stale on that path" "false" \
   "$(jq -r '.logged | test("enabler-stale-refs-skipped")' <<<"$broken_result")"
 
+# --- A retired pre-migration tech-debt register ref is stale by definition ---
+# --- (issue #1699) ---
+# `TD-<scope>-<id>` is the shape `tech-debt/<id>.md`'s pre-migration register
+# ids took. TECH-DEBT.md declares that store a frozen archive since D15 as
+# revised (#875), so `gather_tech_debt` (lib/candidate-select.sh) has emitted
+# only bare issue numbers as `.ref` ever since — a ref shaped like this can
+# never appear in this cycle's own `tech_debt` gather, so it is provably
+# "absent from every live band" exactly as a moved-head merge-conflict ref
+# is, and gets the identical drop-and-log treatment. `TD-PPagop-26082416` is
+# the exact retired ref issue #1699 was filed over.
+td_ordered='[{"slug": "Poetic-Poems/agent-ops", "tech_debt": [{"ref": "1699"}]}]'
+td_blocked='[{"item": "TD-PPagop-26082416", "repo": "Poetic-Poems/agent-ops", "ts": "2026-08-28T00:00:00Z"}]'
+td_eligible='[
+  {"repo": "Poetic-Poems/agent-ops", "item": "TD-PPagop-26082416", "reason": "threshold"},
+  {"repo": "Poetic-Poems/agent-ops", "item": "1699", "reason": "threshold"}
+]'
+td_result="$(run_stale_ref_block "$td_ordered" "$td_eligible" "$td_blocked")"
+assert_eq "a retired pre-migration tech-debt register ref is dropped as stale (issue #1699)" "0" \
+  "$(jq '[.eligible[] | select(.item == "TD-PPagop-26082416")] | length' <<<"$td_result")"
+assert_eq "  ... while a live tech-debt id (an ordinary issue number) survives untouched" "1" \
+  "$(jq '[.eligible[] | select(.item == "1699")] | length' <<<"$td_result")"
+assert_eq "  ... and the drop is logged under the same event as the PR-ref family" "true" \
+  "$(jq -r '.logged | test("enabler-stale-refs-skipped")' <<<"$td_result")"
+assert_eq "  ... naming the retired ref" "TD-PPagop-26082416" \
+  "$(jq -r '.fields | fromjson | .skipped[0].item' <<<"$td_result")"
+
+# A retired ref sharing its repo with a live merge-conflict ref proves the two
+# live sets are independent: the tech-debt snapshot never contaminates the
+# PR-ref one, or vice versa.
+mixed_ordered='[{"slug": "o/r",
+                 "merge_conflicts": [{"ref": "pr-205-conflict-6319fee06dfc"}],
+                 "abandoned_drafts": [],
+                 "tech_debt": [{"ref": "42"}]}]'
+mixed_eligible='[
+  {"repo": "o/r", "item": "pr-205-conflict-6319fee06dfc", "reason": "threshold"},
+  {"repo": "o/r", "item": "TD-PPagop-26082801", "reason": "threshold"}
+]'
+mixed_result="$(run_stale_ref_block "$mixed_ordered" "$mixed_eligible")"
+assert_eq "the live conflict ref survives alongside an unrelated stale tech-debt ref" "1" \
+  "$(jq '[.eligible[] | select(.item == "pr-205-conflict-6319fee06dfc")] | length' <<<"$mixed_result")"
+assert_eq "  ... while the retired tech-debt ref in the same repo is still dropped" "0" \
+  "$(jq '[.eligible[] | select(.item == "TD-PPagop-26082801")] | length' <<<"$mixed_result")"
+
+# The same degradation requirement 35e promises for the PR-ref family applies
+# here too: a failed live-set derivation must not fabricate staleness for a
+# retired ref either.
+td_broken_result="$(run_stale_ref_block 'not json at all' "$td_eligible")"
+assert_eq "a failed live-set derivation leaves a retired tech-debt ref unfiltered too" "2" \
+  "$(jq '.eligible | length' <<<"$td_broken_result")"
+assert_eq "…including the ref an empty live set would have dropped" "1" \
+  "$(jq '[.eligible[] | select(.item == "TD-PPagop-26082416")] | length' <<<"$td_broken_result")"
+
 printf '\n%s\n' "----------------------------------------"
 if (( failures == 0 )); then
   printf 'All assertions passed.\n'
