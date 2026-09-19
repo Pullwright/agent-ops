@@ -14,7 +14,7 @@
     {
       "slug": "Pullwright/agent-ops",
       "merge_autonomy": "agent-merges-routine",
-      "merge_autonomy_routine_sources": ["tech-debt", "issues"],
+      "merge_autonomy_routine_sources": ["tech-debt", "issues", "review-feedback", "merge-conflicts", "abandoned-drafts"],
       "merge_autonomy_protected_paths": [".github/*", "deploy/*", "prompts/*", "lib/*", "scripts/*", "config.schema.json", "config.json", "agent-cycle.sh", "review-cycle.sh", "CODEOWNERS"],
       "merge_budget_per_day": 24,
       "sources": ["security", "issues:urgent", "review-feedback", "merge-conflicts", "dequeued", "landing-refusals", "human-visibility", "abandoned-drafts", "failed-runs", "issues:high", "tech-debt", "issues:medium", "issues:low", "code-quality"],
