@@ -46,6 +46,8 @@ SCHEMA_FILE="$SCRIPT_DIR/config.schema.json"
 . "$SCRIPT_DIR/lib/drain.sh"
 # shellcheck source=lib/mirror-integrity.sh
 . "$SCRIPT_DIR/lib/mirror-integrity.sh"
+# shellcheck source=lib/mirror-lock.sh
+. "$SCRIPT_DIR/lib/mirror-lock.sh"
 # shellcheck source=lib/resource-usage.sh
 . "$SCRIPT_DIR/lib/resource-usage.sh"
 # shellcheck source=lib/redact.sh
@@ -80,6 +82,9 @@ Environment:
                         small value).
   STATE_SYNC_STREAMS_RETAINED
                         override `state_local_streams_retained` (likewise).
+  STATE_SYNC_PUSH_DEADLINE_SECONDS
+                        override the redaction loop's deadline, normally one
+                        push interval (tests use a small value).
 EOF
 }
 
@@ -142,6 +147,17 @@ updater_defer_stuck_after_seconds="$(cfg \
 # is the only writer of that index, and it runs once per interval. The same
 # jq conversion as above, for the same `set -e` reason.
 push_interval_seconds="$(cfg '.schedule.state_sync_push_minutes * 60 | floor')"
+
+# The redaction loop's own deadline (agent-ops#1679): the same one push
+# interval used above — long enough to cover an ordinary push (measured in
+# the low seconds even at hundreds of megabytes; three consecutive pushes
+# completed inside single-digit minutes of each other on ockham-2 the day
+# this wedged), short enough that a wedge inside it still releases the
+# mirror lock within the gap between two scheduled pushes rather than
+# holding it indefinitely. `STATE_SYNC_PUSH_DEADLINE_SECONDS` overrides it
+# for tests, the same way `STATE_SYNC_LOCAL_RETAINED`/`STATE_SYNC_STREAMS_RETAINED`
+# already do.
+push_deadline_seconds="${STATE_SYNC_PUSH_DEADLINE_SECONDS:-$push_interval_seconds}"
 
 node_name="${NODE_NAME:-$(hostname)}"
 node_name="${node_name//[^A-Za-z0-9._-]/-}"
@@ -415,13 +431,31 @@ require() {
 # One state-sync per mirror at a time: the every-few-minutes cron push and the
 # end-of-cycle push are the same operation racing on the same checkout, and
 # the loser of that race has nothing to add that the winner will not.
+#
+# "another state-sync holds the mirror" is only genuinely self-clearing for
+# an ordinary slow fetch — a push wedged inside the redaction loop looks
+# identical from here otherwise (agent-ops#1679), so the losing side names
+# the current holder's own age (lib/mirror-lock.sh's marker, written only by
+# the process that actually won the flock) and says so explicitly once that
+# age passes one push interval, rather than reporting every contention as
+# equally ordinary.
 mirror_lock() {
   mkdir -p "$(dirname "$mirror")"
   exec 9>"$mirror.lock"
   if ! flock -n 9; then
-    say "another state-sync holds the mirror — nothing to do"
+    local holder_age
+    holder_age="$(mirror_lock_holder_age_s "$mirror")"
+    if [[ -n "$holder_age" ]] && (( holder_age > push_interval_seconds )); then
+      say "another state-sync holds the mirror — holding for ${holder_age}s, longer than one push interval — may be wedged"
+    elif [[ -n "$holder_age" ]]; then
+      say "another state-sync holds the mirror — holding for ${holder_age}s — nothing to do"
+    else
+      say "another state-sync holds the mirror — nothing to do"
+    fi
     exit 0
   fi
+  mirror_lock_mark_started "$mirror" "$MODE"
+  trap 'mirror_lock_clear_started "$mirror"' EXIT
 }
 
 # --- The mirror's own index lock (agent-ops#1377) ------------------------------
@@ -485,6 +519,22 @@ mirror_clear_stale_index_lock() {
   return 0
 }
 
+# state_sync_push_failed STEP DETAIL
+# The `state-sync-push-failed` event: said, and logged to log.jsonl (which
+# replicates, rather than only this script's own log — the event is a fact
+# about this node's publication the fleet should see) so a push that did not
+# push is a failure a human or the doctor can actually find, and supercronic's
+# exit-status line stays true. One place both `mirror_write` below and the
+# redaction loop's own deadline (agent-ops#1679) build this event, so the two
+# cannot drift into different shapes for what is, from log.jsonl's own
+# reader's side, the identical fact: a named step didn't finish.
+state_sync_push_failed() {
+  local step="$1" detail="$2"
+  say "WARNING: push failed at $step — $detail"
+  log_event_append "$state_dir/log.jsonl" cycle "" "$node_name" state-sync-push-failed \
+    "$(jq -nc --arg step "$step" --arg detail "${detail:0:500}" '{step: $step, detail: $detail}')"
+}
+
 # mirror_write STEP GIT-ARGS…
 # One of the push's writing git commands, run against the mirror. Under
 # `set -e` a failure here used to end the run with git's own stderr as the
@@ -506,9 +556,7 @@ mirror_write() {
   first="$(grep -m1 -E '^(fatal|error):' <<<"$out" || true)"
   [[ -n "$first" ]] || first="$(head -n 1 <<<"$out")"
   [[ -n "$first" ]] || first="git $step exited non-zero with no message"
-  say "WARNING: push failed at $step — $first"
-  log_event_append "$state_dir/log.jsonl" cycle "" "$node_name" state-sync-push-failed \
-    "$(jq -nc --arg step "$step" --arg detail "${first:0:500}" '{step: $step, detail: $detail}')"
+  state_sync_push_failed "$step" "$first"
   return 1
 }
 
@@ -639,6 +687,37 @@ prune_derived() {
              | sort -r | tail -n "+$(( retained + 1 ))")
   (( pruned > 0 )) && say "pruned $pruned derived file(s) from $(basename "$dir"), keeping those of the newest $retained"
   return 0
+}
+
+# redact_mirror_files MIRROR
+# do_push's own redaction pass (agent-ops#966), its own function so it can
+# run as a background job under `mirror_run_with_deadline` (agent-ops#1679) —
+# a plain `while … done < <(find …)` inline in `do_push` cannot be
+# backgrounded and killed as a unit the way a function call can.
+#
+# A single file's redaction failing here — permission denied, the file
+# vanished between `find`'s stat and `sed -i`'s open, disk full mid-rewrite —
+# used to end the whole loop under `set -e`: the loop was `do_push`'s own
+# top-level code, not a condition, so `errexit` unwound the run the instant
+# `redact_file` returned non-zero, abandoning the read side of `find`'s
+# process substitution before it reached EOF. Bash does not close that
+# pipe's read end when a loop exits early — only the shell's own exit does —
+# so `find`, part-way through mirroring 339 MB of state on ockham-2 on
+# 2026-09-18, blocked writing into a pipe nothing was reading any more, and
+# the shell's own `set -e` exit blocked in turn waiting to reap it before it
+# could close that pipe and free it: an unwind and an unconsumed process
+# substitution deadlocking each other, the seven-hour wedge agent-ops#1679
+# reports (the exact trigger — which file, which error — was not recovered
+# from the incident; this closes the general hazard the loop's own shape
+# creates, whatever specific error trips it). A failed redaction is now a
+# warning and a skip instead: the file reaches the branch unredacted rather
+# than the run not reaching the branch at all, and the caller's own deadline
+# stands behind this as the safety net regardless of cause.
+redact_mirror_files() {
+  local mirror="$1" f
+  while IFS= read -r -d '' f; do
+    redact_file "$f" || say "WARNING: could not redact $f — committing it unredacted"
+  done < <(find "$mirror" -mindepth 1 -type f -not -path "$mirror/.git/*" -print0)
 }
 
 do_push() {
@@ -838,9 +917,30 @@ do_push() {
   # ordinary file just staged by the two rsyncs above, and the heartbeat just
   # written, gets the identical pattern set in place; `.git` is excluded
   # because it is the mirror's own object store, not published content.
-  while IFS= read -r -d '' f; do
-    redact_file "$f"
-  done < <(find "$mirror" -mindepth 1 -type f -not -path "$mirror/.git/*" -print0)
+  #
+  # Bounded by a deadline (agent-ops#1679): this loop is exactly where a push
+  # wedged for almost seven hours on ockham-2 on 2026-09-18, holding
+  # `mirror_lock` the whole time while every fetch read "another state-sync
+  # holds the mirror" as if it were an ordinary slow one — indistinguishable,
+  # on a standby node whose only publication is its liveness, from a dead
+  # node. `mirror_run_with_deadline` (lib/mirror-lock.sh) runs
+  # `redact_mirror_files` as a background job of this process and kills its
+  # whole tree if it is still running past `push_deadline_seconds` — one push
+  # interval by default — so a wedge here releases the lock on its own within
+  # that bound rather than holding it for however long it takes a human to
+  # notice. This stands regardless of cause: `redact_mirror_files`'s own
+  # header names the specific defect this incident's own wedge traced to and
+  # fixes it, but the deadline is the safety net for any other cause too.
+  local redact_rc=0
+  mirror_run_with_deadline "$push_deadline_seconds" redact_mirror_files "$mirror" || redact_rc=$?
+  if (( redact_rc == 124 )); then
+    state_sync_push_failed "redaction-loop-deadline" \
+      "the redaction loop did not finish within ${push_deadline_seconds}s — killed, abandoning this push"
+    return 1
+  elif (( redact_rc != 0 )); then
+    state_sync_push_failed "redaction-loop" "redact_mirror_files exited $redact_rc"
+    return 1
+  fi
 
   # One rolling commit per node, amended and force-pushed. The state files
   # carry their own history — log.jsonl is append-only and every cycle keeps

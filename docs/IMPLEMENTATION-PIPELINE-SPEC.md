@@ -3637,6 +3637,21 @@ implements.
    committed to the state repository's history before this pass existed —
    a one-off cleanup, not a push-time behaviour this requirement covers.
 
+   The pass is best-effort per file, not all-or-nothing (agent-ops#1679,
+   below): a `redact_file` call that fails on one file — `redact_file` is a
+   bare `sed -i`, so a directory the mirror copy cannot be rewritten in, a
+   full disk, a file removed between `find`'s stat and `sed`'s open — is
+   said as a `WARNING: could not redact … — committing it unredacted` line
+   and skipped, and that one file reaches the branch as it stands while
+   every other file is redacted normally. It is deliberately the weaker of
+   the two guarantees: making the failure fatal instead is what deadlocked a
+   whole push against its own unread process substitution for almost seven
+   hours, and the run not reaching the branch at all costs a node its
+   publication rather than saving anything (#1679's own section sets out
+   both sides). So the backstop above holds for every file the pass can
+   rewrite, and the warning line is the only notice that it did not hold for
+   one that it could not.
+
    That one-off cleanup was decided, not left open: content pushed to
    `agent-ops-state` before this pass landed (2026-09-08T17:55Z) went up
    unredacted. What it carried was home paths, with no token-shaped string
@@ -4008,6 +4023,64 @@ implements.
    a plain sentence when no pass has run. `test/state-sync.test.sh` drives
    the three lock cases (young, held by a live process, orphaned) and both
    events; `test/manage-status.test.sh` the two lines.
+
+   **A push that wedges holding `mirror_lock` releases it on its own, and a
+   long hold is named as a possible wedge rather than reported as an
+   ordinary one (agent-ops#1679).** On 2026-09-18 a push on `ockham-2`
+   wedged for almost seven hours inside the redaction loop
+   (`lib/redact.sh`, above), holding `mirror_lock` throughout: bash does not
+   close a `< <(find …)` process substitution's read end when the loop
+   reading it exits early — only the shell's own exit does — so a
+   `redact_file` call failing on one file (a permission error, a file
+   removed between `find`'s stat and `sed -i`'s open) used to unwind the
+   whole run under `set -e` before `find` reached EOF, leaving `find`
+   blocked writing into a pipe nothing was reading any more and the
+   unwinding shell blocked in turn waiting to reap it — an `errexit` and an
+   unconsumed process substitution deadlocking each other. Meanwhile
+   "another state-sync holds the mirror — nothing to do" (`mirror_lock`,
+   above) is genuinely self-clearing only for an ordinary slow fetch, so
+   nothing told the two apart: the doctor's own publication check (this
+   same requirement, above) still caught the resulting silence hourly, into
+   a file nothing surfaced, exactly as it did throughout #1377.
+
+   Three changes, independent of each other: a failed `redact_file` call is
+   now a warning and a skip (`redact_mirror_files`, `scripts/state-sync.sh`)
+   rather than a loop-ending failure, closing the specific hazard this
+   incident traced to; the redaction pass runs under a deadline
+   (`mirror_run_with_deadline`, `lib/mirror-lock.sh`) — one push interval by
+   default, `STATE_SYNC_PUSH_DEADLINE_SECONDS` overriding it for tests —
+   that backgrounds the pass and kills its whole process tree (a /proc walk
+   over parent/child edges, generalising `mirror_git_busy`'s own search for
+   a live git to any process) if it is still running past that bound,
+   logging `state-sync-push-failed` `{step: "redaction-loop-deadline",
+   detail}` (the shape `mirror_write` already uses, both now built by one
+   `state_sync_push_failed` helper) and ending the push non-zero — a safety
+   net regardless of whether a future wedge shares this incident's own
+   cause; and `mirror_lock` itself now names how long the current holder has
+   been running. That last part needs a fact the lock file itself cannot
+   answer — `exec 9>"$mirror.lock"` truncates it on every attempt, winner
+   and loser alike, so its mtime is reset by the very call that is asking —
+   so the process that actually wins the flock stamps a start time into a
+   marker beside it (`mirror_lock_mark_started`/`mirror_lock_clear_started`,
+   `lib/mirror-lock.sh`) that only it writes and only it removes on release.
+   A losing `mirror_lock` call reads that marker's age and says so: "holding
+   for Ns" always, and "longer than one push interval — may be wedged" once
+   that age passes `push_interval_seconds`. `--status`'s `published:` line
+   (above) gains the same fact for a human who is not reading `cron.log`:
+   `publication_status_report` (`lib/manage.sh`) probes the lock live
+   (`mirror_lock_probe`, a momentary `flock`(1) against the lock file rather
+   than a bash-builtin fd, since this is a read-only caller that never takes
+   the lock itself) and appends the same "may be wedged" note once a live
+   hold outruns one push interval — read live, since a wedge's whole defect
+   is that it never reaches the confirmed-publication read-back the rest of
+   that line is built from. `test/state-sync.test.sh` covers the deadline in
+   isolation (a simulated wedge via `sleep`, killed and reported `124`
+   without waiting out its own runtime), a single unredactable file no
+   longer aborting the loop, a genuinely slow redaction pass (thousands of
+   trivial files) hitting the deadline end to end — event logged, lock
+   freed, the very next push unobstructed — and both sides of a real lock
+   contention naming the holder's age; `test/manage-status.test.sh` covers
+   the `published:` line's own note, on and off the wedge threshold.
 
    **Fetch.** Every node materialises every *other* node's branch, whole,
    under the peers directory (`lib/fleet.sh`, `<workspace_root>/
@@ -22339,11 +22412,15 @@ oblige anyone to edit a test.
    pruned to the newest `state_local_cycles_retained` by the same push,
    newest always kept, and `log.jsonl` is byte-for-byte untouched by that
    same local prune regardless of how many cycle/review directories it
-   removes (requirement 2.6d); everything the push commits is redacted first
+   removes (requirement 2.6d); every file the push commits that `redact_file`
+   can rewrite is redacted first
    (requirement 2.5, `lib/redact.sh`) — a token- and home-path-shaped
    fixture planted in `cron.log` and in a cycle transcript reaches the
    branch as `[REDACTED-TOKEN]` and `~`, neither raw form survives, and the
-   redacted transcript still parses as JSON; a fetch materialises a peer whole
+   redacted transcript still parses as JSON, while a file the pass cannot
+   rewrite at all is warned about and committed as it stands rather than
+   ending the run (requirement 2.5's best-effort clause, agent-ops#1679);
+   a fetch materialises a peer whole
    under the peers directory, leaves the node's own `state_dir` alone, never
    includes the node itself, and prunes a peer whose branch is gone; the
    union read (`lib/fleet.sh`) carries both nodes' events in time order; and

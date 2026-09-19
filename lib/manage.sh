@@ -233,7 +233,7 @@ manage_age_phrase() {
 # poetic-2 published nothing for three days while its every stage read `ok`
 # and the doctor failed this same check hourly into a file nothing surfaced.
 publication_status_report() {
-  local ts json verdict age threshold
+  local ts json verdict age threshold mirror push_interval lock_json lock_age note=""
   if [[ -z "${state_repo:-}" ]]; then
     printf 'published: not configured (no state_repo)\n'
     return 0
@@ -244,15 +244,32 @@ publication_status_report() {
   json="$(fleet_publication_status "$ts" "$threshold")"
   verdict="$(jq -r '.verdict' <<<"$json" 2>/dev/null)"
   age="$(jq -r '.age_s // 0' <<<"$json" 2>/dev/null)"
+  # The mirror lock's own current holder (agent-ops#1679): a push wedged
+  # inside the redaction loop holds `mirror_lock` for hours while every fetch
+  # reads "another state-sync holds the mirror" as if it were an ordinary
+  # slow one, and this is the line a human actually looks at — read live
+  # (`mirror_lock_probe`, lib/mirror-lock.sh) rather than from the last
+  # confirmed publication above, since a wedge's whole defect is that it
+  # never reaches that read-back at all.
+  mirror="${STATE_SYNC_MIRROR:-$workspace_root/.agent-ops-state}"
+  push_interval="$(cfg '.schedule.state_sync_push_minutes * 60 | floor')"
+  [[ "$push_interval" =~ ^[0-9]+$ ]] || push_interval=300
+  lock_json="$(mirror_lock_probe "$mirror" 2>/dev/null)"
+  if [[ "$(jq -r '.held // false' <<<"$lock_json" 2>/dev/null)" == "true" ]]; then
+    lock_age="$(jq -r '.age_s // empty' <<<"$lock_json" 2>/dev/null)"
+    if [[ -n "$lock_age" ]] && (( lock_age > push_interval )); then
+      note=" — a push has been holding the mirror lock for $(manage_age_phrase "$lock_age"), longer than one push interval; it may be wedged (agent-ops#1679)"
+    fi
+  fi
   case "$verdict" in
     fresh)
-      printf 'published: fresh — last confirmed publication %s ago, under the %s threshold\n' \
-        "$(manage_age_phrase "$age")" "$(manage_age_phrase "$threshold")" ;;
+      printf 'published: fresh — last confirmed publication %s ago, under the %s threshold%s\n' \
+        "$(manage_age_phrase "$age")" "$(manage_age_phrase "$threshold")" "$note" ;;
     stale)
-      printf 'published: STALE — last confirmed publication %s ago, over the %s threshold; state-sync.sh push has likely stopped working even if cycles are still running (agent-ops#602)\n' \
-        "$(manage_age_phrase "$age")" "$(manage_age_phrase "$threshold")" ;;
+      printf 'published: STALE — last confirmed publication %s ago, over the %s threshold; state-sync.sh push has likely stopped working even if cycles are still running (agent-ops#602)%s\n' \
+        "$(manage_age_phrase "$age")" "$(manage_age_phrase "$threshold")" "$note" ;;
     *)
-      printf 'published: unknown — no fetch has read this node'"'"'s own branch back yet\n' ;;
+      printf 'published: unknown — no fetch has read this node'"'"'s own branch back yet%s\n' "$note" ;;
   esac
 }
 

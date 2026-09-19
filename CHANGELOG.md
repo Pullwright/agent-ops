@@ -92,6 +92,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A `state-sync.sh push` wedged in the redaction loop no longer holds the
+  mirror lock indefinitely, and a long hold is now named as a possible
+  wedge rather than reported as an ordinary one** (issue #1679). On
+  2026-09-18 a push wedged for almost seven hours holding `mirror_lock`: a
+  `redact_file` failure on one file used to abort the whole redaction loop
+  under `set -e` before `find`'s process substitution reached EOF,
+  deadlocking the unwinding shell against its own unread pipe, while every
+  fetch read "another state-sync holds the mirror" as if it were an
+  ordinary slow one. A failed redaction is now a warning and a skip; the
+  redaction pass runs under a deadline (one push interval by default) that
+  kills its whole process tree and releases the lock if it is still running
+  past that bound, logging `state-sync-push-failed` regardless of cause;
+  and both the losing side of a lock contention and `--status`'s
+  `published:` line now name how long the current holder has been running,
+  calling out a hold older than one push interval as a possible wedge.
+
 - **The stall profile's Decision cell no longer hides a near-backstop
   `worst_run_max` behind the minimum-sample gate** (issue #1590). The Stall
   profile panel (D21, issue #594) checked `row.runs < TOKEN_MIN_SAMPLE`
