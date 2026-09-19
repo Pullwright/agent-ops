@@ -1899,7 +1899,11 @@ leaves an empty `.out` and a stream showing exactly how far it had got.
 Streams stay on the node that produced them — they are never replicated to
 the state repository — and are pruned to the newest
 `state_local_streams_retained` cycles, well ahead of the cycle directories
-themselves. When a cycle
+themselves. A push that finds `state_dir` below `min_free_workspace_bytes`
+prunes them further still, oldest cycle first, down to the newest cycle's
+alone if that is what it takes to get back over the floor: they are read only
+by the cycle that wrote them, so under disk pressure they go before the node
+does (requirement 2.5). When a cycle
 pre-fetches findings, that directory also holds `findings-<owner>_<repo>.json`
 (the normalised Dependabot + code-scanning alerts the Co-Ordinator was given).
 
