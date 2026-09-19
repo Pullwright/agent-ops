@@ -1867,6 +1867,61 @@ own render path; the Publisher computes `constraint` once per full build,
 exactly as it does `rework` and the actor scorecards, and the page only ever
 reads the payload.
 
+The **Fleet sizing** panel (D21/D14, `docs/ROADMAP.md`; issue #612) sits
+directly under Constraint, as the per-node evidence behind that panel's own
+`node-count` candidate: `constraint` states one fleet-wide bucket, this
+states which node, if any, is the one to remove. It renders `fleet_sizing`,
+assembled by `lib/fleet-sizing.sh`'s `fleet_sizing_classify` over three
+inputs, none of them a second raw-event scan of a fold this page already
+paid for: the same node time-state account `constraint` itself reads
+(`by_node[node]["idle-without-demand"]`); `lib/fleet-sizing.sh`'s own
+`fleet_sizing_contention_by_node`, the identical selection/contended-
+claim-lost population `scripts/pickup-metrics.sh` already counts
+(TD-PPagop-26080808), grouped by node instead of by adoption era; and
+`lib/fleet-sizing.sh`'s own `fleet_sizing_exclusive_landings_by_node` over
+`item_lifecycle_fold`'s own records — a landed item whose only competing
+`claim-lost` events (if any) came from its own claiming node is "exclusive":
+no peer would have taken it. A payload the Publisher could not assemble sets
+`fleet_sizing.sentence` (and every other field) to `null`, the same
+outage-not-a-quiet-tick discipline `constraint` itself follows.
+
+**The verdict, per node**, `fleet_sizing.by_node[]`, each `{node,
+idle_without_demand_seconds, idle_share, claim_lost_contended, selections,
+claim_lost_share, exclusive_landings, total_landings, verdict,
+recommendation, lever}`. `idle_share` is that node's own
+idle-without-demand seconds over the window's own length — a *time* share;
+`claim_lost_share` is that node's own contended `claim-lost` count over the
+**fleet-wide** pool of contended losses — a *pool* share, deliberately a
+different kind of denominator, since "how much of this node's own time was
+idle" and "how much of the fleet's own contention does this node account
+for" are different questions the fold answers separately rather than
+blending into one number. `verdict` is `"shrink-candidate"` only when all
+three of idle share, claim-lost share and exclusive landings cross their own
+threshold at once — high idle time or high contention alone is not enough,
+and a node that is idle and contended but still delivers exclusive work is
+earning its place regardless. `recommendation` is non-null only on a
+shrink-candidate, naming the node and its own evidence in one sentence;
+`lever` states the decision every row informs either way — "run fewer
+nodes" on a shrink-candidate, "no action indicated" (with the reason) on a
+healthy one — the lever rule (D21) applied per row, not only to the
+fleet-wide sentence above it.
+
+**The thresholds**, echoed on the object so a reader can see what gated the
+verdict without a second lookup: `min_idle_share` and `min_claim_lost_share`
+(default `0.3` each, the same default `constraint_min_share` uses, for the
+same "roughly a third" reading of "elevated") and
+`max_exclusive_landings_for_shrink` (default `0` — "few exclusive landings"
+read at its strictest). **Never a guess below the evidence floor**: the same
+`status`/`insufficient_reason` shape `constraint` uses, with one addition —
+`"too-few-nodes"` (fewer than two nodes recorded; a shrink candidate needs
+at least one peer to have contended with, which a single-node fleet cannot
+supply) alongside `"no-time-account-data"` and
+`"window-below-minimum-sample"` (`min_sample_seconds`, default `14400`, the
+same default `constraint_min_sample_seconds` uses). `shrink_candidates` is
+the plain list of node names `verdict == "shrink-candidate"`, `[]` — never
+omitted — when the fleet is not indicated as over-provisioned by this
+measure; the sentence states which reading applies in words.
+
 The **Revert rate by repository** panel (D18 issue #579) is the continuous
 half of Stage 2's exit criterion ("revert rate ≤ baseline"):
 `scripts/mine-merge-history.sh` produced that criterion's Stage 0 baseline
@@ -2337,6 +2392,73 @@ value, no entry for that stage in the published `config.stage_backstops`
 `project-reviewer`, and `refiner` the same way, once the fleet-wide fold has
 observed a stage-end for it), and no shipped prior for that stage name —
 reads "no cap on record for this stage" rather than guessing a direction.
+
+The **Spend by fate** panel (D21/D14, `docs/ROADMAP.md`; issue #612) is the
+other half of "where do the tokens go?" — the fate account `docs/
+ROADMAP.md`'s own D21 accounting decision calls for, whereas Token economics
+and the Stall profile above answer "how efficiently" and "how quiet," this
+answers "on what." It renders `spend_fate`, assembled by
+`lib/fleet-pricing.sh`'s `fleet_pricing_spend_fate` over the same
+`counts.cost_rows[]` the cost charts and Token economics already read, this
+time joined against `lib/rework-panel.sh`'s own `rework_cycles` (issue #611's
+cycle-membership test, never re-derived) and `item_lifecycle_fold`'s own
+per-item terminal fate, both already computed elsewhere on the page. Unlike
+Token economics this panel is **not** windowed by the cost charts' own
+time-frame selector: a row's fate is a permanent fact about it, the same
+"never windowed" argument the escape-ladder and rework panels above already
+make for a caught defect's own rung.
+
+**The fate mapping**, applied in this order, first match wins, so every row
+lands in exactly one of six buckets — never dropped, never double-counted
+(`lib/fleet-pricing.sh`'s own header carries the full reasoning; this is the
+summary a reader of the page needs):
+
+| Order | Fate | A row matches when |
+| --- | --- | --- |
+| 1 | `overhead` | `attributed` is false, or `repo`/`item` are both empty even though `attributed` is true (a coordinator cycle that selected nothing, stood down, was skipped, or simply ended) |
+| 2 | `rework` | the row's own `cycle` is one `rework_panel_build`'s own `rework_cycles` names |
+| 3 | `defect_driven` | `outcome == "failed"` (an attempt errored outright) and not already claimed by rework |
+| 4 | `delivered` | the row's `{repo, item}` terminal fate, from `item_lifecycle_fold`, is `landed` |
+| 4 | `discarded` | that terminal fate is `voided`, `superseded` or `abandoned` |
+| 4 | `unaccounted` | anything else — `blocked`, `open`, an item lifecycle itself reports `unaccounted`, or an item this fold's population never saw: not yet resolved, never a forced guess between delivered and discarded |
+
+**Reconciliation is checked, not asserted**: `spend_fate.reconciled` is
+`true` iff the six buckets' own `usd` sum, rounded to the cent, equals
+`spend_fate.total_usd` rounded the same way — the identical rounding issue
+#536 already uses to reconcile `cost_rows[]` against `total_cost_usd`. A
+`false` here is a bug in the fold, not a rounding note, and the panel says so
+in words rather than rendering a silently-wrong table. Each bucket's own
+`usd`/`n` and the decision it informs (the lever rule, D21) render together
+in one row, `spend_fate.lever[<bucket>]` in the same cell as its own figures
+— `delivered` is the reference baseline (not itself a lever), `rework`
+points at D23's own class/cause accounting, `discarded` at item-selection
+judgement, `overhead` at cycle cadence and back-pressure caps (the same
+candidates `constraint` itself names), `defect_driven` at whatever crashed
+or timed out the stage, and `unaccounted` says plainly that the item has not
+resolved yet.
+
+The **Turns per landed item** panel (D21/D14, `docs/ROADMAP.md`; issue #612)
+is the companion figure to Token economics' own prompt-cache ratio for the
+same "per stage and model" reading D21's own "Done when" line asks for. It
+renders `turns_per_landed_item`, assembled by `lib/fleet-pricing.sh`'s
+`fleet_pricing_turns_per_landed_item` over `item_lifecycle_fold`'s own
+records — every landed item's own `stage-end` instants, `num_turns` and
+`stage`/`model` read directly off them, never a second raw scan. Grouped by
+`(stage, model)`, each row states `n` (landed items sampled), `mean_turns`
+and `median_turns`. `n_landed_with_turns` — landed items carrying at least
+one stage-end with a measured `num_turns` — is reported beside
+`n_landed_total` rather than folded into it, so a landed item predating this
+record (or whose stage-end predates `num_turns` being recorded at all) never
+reads as a silent zero. The Co-Ordinator's own stage-end is not counted here
+for the identical reason the actor/model scorecards above already exclude
+its own engagement from their item-scoped joins: it typically carries no
+`{repo, item}` of its own, since its stage spans selecting rather than one
+item's work, so its turns cannot be attributed to one specific landed item
+without a different join this figure does not build. The lever this
+informs (D22): a model taking materially more turns than a peer for the
+same stage on the same class of work is a prompt or tool-loop inefficiency
+to fix at the model or prompt level, before the token spend it drives is
+treated as a volume problem.
 
 The **recent log** is the newest 80 events, one row each: time, the event as a
 badge, **Node**, **Repo**, **Actor**, and the event's own detail. A
@@ -3066,6 +3188,32 @@ number's twins elsewhere on the page.
   that an unassembled payload (every field `null`) reads as an outage rather
   than a quiet zero-rework tick — the fold's own correctness is
   `rework-panel.test.sh`'s job, not this one's.
+- `test/fleet-sizing.test.sh` and `test/fleet-pricing.test.sh`
+  (`docs/ROADMAP.md` D21/D14, issue #612) drive `lib/fleet-sizing.sh`'s and
+  `lib/fleet-pricing.sh`'s own folds directly, on `test/constraint.test.sh`'s
+  own precedent: `fleet-sizing.test.sh` demonstrates the acceptance
+  criterion itself — a constructed fixture carrying one over-provisioned
+  node (high idle-without-demand share, high share of the fleet-wide
+  contended-claim-loss pool, no exclusive landings) and one healthy node,
+  asserting the fold names the first as a shrink candidate and the second as
+  healthy — plus the three insufficient-evidence gates (no time-account
+  data, a window below the minimum sample, fewer than two nodes) and that a
+  node with real exclusive delivery is never recommended for removal
+  regardless of how idle or contended it otherwise reads;
+  `fleet-pricing.test.sh` demonstrates every row of the fate-mapping
+  priority order landing in its own bucket on one constructed
+  `cost_rows[]` (including that a row already claimed by rework outranks
+  its own landed terminal fate), that the six buckets reconcile to
+  `total_usd` to the cent, and the turns-per-landed-item mean/median over a
+  constructed set of landed and open items. `test/dashboard-render.test.sh`'s
+  own `fleet-sizing.json`/`fleet-sizing-outage.json` and
+  `fleet-pricing.json`/`fleet-pricing-outage.json` fixtures then check only
+  that `D.fleet_sizing`, `D.spend_fate` and `D.turns_per_landed_item` render
+  as their own panels — the shrink candidate and the healthy node on the same
+  table, every fate bucket's own lever in the same cell as its figures, the
+  by-stage/model turns table — and that an unassembled payload on any of the
+  three reads as an outage rather than a quiet zero, the same discipline the
+  constraint and rework fixtures just above already exercise.
 - `claim-expired-tombstone.json` (agent-ops#839) holds one claim backdated to
   `do_expire()`'s sentinel `1970-01-01T00:00:01Z` alongside one with a real,
   recent `ts`: the live-claims panel's Held column reads the first "expired —

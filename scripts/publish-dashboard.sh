@@ -64,6 +64,19 @@ TEMPLATE="$SCRIPT_DIR/dashboard/index.html"
 # output above — never raw events — so the two stay in lockstep with the
 # account's own arithmetic rather than a second, potentially-drifting fold.
 . "$SCRIPT_DIR/lib/constraint.sh"
+# shellcheck source=lib/fleet-sizing.sh
+# The fleet-sizing figure (D21/D14, issue #612): per node, idle-without-demand
+# time against its share of contended claim losses and its exclusive
+# landings — the per-node breakdown behind `constraint_classify`'s own
+# fleet-wide node-count candidate above, never a replacement for it.
+. "$SCRIPT_DIR/lib/fleet-sizing.sh"
+# shellcheck source=lib/fleet-pricing.sh
+# "Where do the tokens go?" (D21/D14, issue #612): the spend account split by
+# fate, and turns per landed item by stage and model — both read off
+# `counts.cost_rows[]`, `rework_panel_build`'s own rework-cycle
+# classification and `item_lifecycle_fold`'s own records, never a second raw
+# scan.
+. "$SCRIPT_DIR/lib/fleet-pricing.sh"
 # shellcheck source=lib/toggle.sh
 . "$SCRIPT_DIR/lib/toggle.sh"
 # shellcheck source=lib/fleet.sh
@@ -3589,6 +3602,47 @@ if (( FULL )); then
   # rendering in dashboard/index.html).
   constraint_json="$(jq -c --argjson acct "$node_time_state_json" '. + {account: $acct}' \
     <<<"$constraint_json" 2>/dev/null || printf '%s' "$constraint_json")"
+
+  # --- Fleet sizing (D21/D14, issue #612) ------------------------------------
+  # "Is this fleet the right size?" — per node, idle-without-demand time and
+  # share of contended claim losses, set against items it landed that no peer
+  # would have taken. The per-node breakdown behind `constraint_json`'s own
+  # fleet-wide node-count candidate above, built from the same
+  # `node_time_state_json` account plus two more folds over data this run
+  # already holds: `$events_jsonl` (the same union `item_lifecycle_fold`/
+  # `rework_panel_build` already read for `$lifecycle_file` below) for the
+  # contention counts, and `$lifecycle_file` itself for exclusive landings —
+  # neither a second raw-event scan of its own.
+  contention_by_node_json="$(fleet_sizing_contention_by_node "$events_jsonl" "" 2>/dev/null)"
+  [[ -n "$contention_by_node_json" ]] || contention_by_node_json='{}'
+  exclusive_landings_json="$(fleet_sizing_exclusive_landings_by_node "$lifecycle_file" 2>/dev/null)"
+  [[ -n "$exclusive_landings_json" ]] || exclusive_landings_json='{}'
+  fleet_sizing_json="$(fleet_sizing_classify "$node_time_state_json" \
+    "$contention_by_node_json" "$exclusive_landings_json" 2>/dev/null)"
+  if ! jq -e 'type == "object" and has("sentence")' <<<"$fleet_sizing_json" >/dev/null 2>&1; then
+    # Same explicit-failure discipline as constraint_json's own degrade path
+    # just above: a payload this could not assemble must never render as a
+    # confident "insufficient evidence" or a confident "no candidate."
+    fleet_sizing_json='{"sentence":null,"status":null,"insufficient_reason":null,"window":null,"nodes":null,"min_idle_share":null,"min_claim_lost_share":null,"max_exclusive_landings_for_shrink":null,"min_sample_seconds":null,"shrink_candidates":null,"by_node":null}'
+  fi
+
+  # --- Spend by fate, and turns per landed item (D21/D14, issue #612) -------
+  # "Where do the tokens go?" — the other half of the same issue. Both fold
+  # over `item_lifecycle_fold`'s own `$lifecycle_file`; the fate account
+  # additionally reads `counts.cost_rows[]` (spooled to its own file, the
+  # same `--slurpfile` convention `$lifecycle_file` itself already uses,
+  # rather than a second `--argjson` capture of a value this size) and
+  # `rework_json`'s own `rework_cycles` (issue #611's own cycle-membership
+  # test, never re-derived here).
+  cost_rows_file="$work_tmp/cost-rows.json"
+  jq -c '.cost_rows // []' <<<"$counts_json" > "$cost_rows_file" 2>/dev/null
+  [[ -s "$cost_rows_file" ]] || printf '[]' > "$cost_rows_file"
+  rework_cycles_json="$(jq -c '.rework_cycles // []' <<<"$rework_json" 2>/dev/null)"
+  [[ -n "$rework_cycles_json" ]] || rework_cycles_json='[]'
+  spend_fate_json="$(fleet_pricing_spend_fate "$cost_rows_file" "$rework_cycles_json" "$lifecycle_file" 2>/dev/null)"
+  [[ -n "$spend_fate_json" ]] || spend_fate_json='{"total_usd":null,"row_count":null,"by_fate":null,"reconciled":null,"lever":null}'
+  turns_per_landed_json="$(fleet_pricing_turns_per_landed_item "$lifecycle_file" 2>/dev/null)"
+  [[ -n "$turns_per_landed_json" ]] || turns_per_landed_json='{"n_landed_total":null,"n_landed_with_turns":null,"by_stage_model":null,"lever":null}'
 fi
 
 # --- GitHub API budget card (issue #1090) ------------------------------------
@@ -3793,6 +3847,9 @@ printf '%s' "$void_json"    > "$work_tmp/void.json"
 printf '%s' "$github_budget_json" > "$work_tmp/github-budget.json"
 printf '%s' "$rework_json" > "$work_tmp/rework.json"
 printf '%s' "$constraint_json" > "$work_tmp/constraint.json"
+printf '%s' "$fleet_sizing_json" > "$work_tmp/fleet-sizing.json"
+printf '%s' "$spend_fate_json" > "$work_tmp/spend-fate.json"
+printf '%s' "$turns_per_landed_json" > "$work_tmp/turns-per-landed.json"
 data_json="$(jq -n \
   --arg generated_at "$now_iso" \
   --arg self_node "$self_node" \
@@ -3809,6 +3866,9 @@ data_json="$(jq -n \
   --slurpfile gb "$work_tmp/github-budget.json" \
   --slurpfile rw "$work_tmp/rework.json" \
   --slurpfile ct "$work_tmp/constraint.json" \
+  --slurpfile fs "$work_tmp/fleet-sizing.json" \
+  --slurpfile sf "$work_tmp/spend-fate.json" \
+  --slurpfile tpl "$work_tmp/turns-per-landed.json" \
   --slurpfile gh "$work_tmp/github.json" \
   --slurpfile lt "$work_tmp/logtail.json" \
   --argjson cron_tail "$cron_tail_json" \
@@ -3825,6 +3885,7 @@ data_json="$(jq -n \
     void: $void[0], github: $gh[0], log_tail: $lt[0], landings: $landings[0],
     decisions: $decisions[0],
     revert_rate: $rr[0], github_budget: $gb[0], rework: $rw[0], constraint: $ct[0],
+    fleet_sizing: $fs[0], spend_fate: $sf[0], turns_per_landed_item: $tpl[0],
     cron_tail: $cron_tail, max_open_agent_prs: ($max_prs|tonumber),
     log_repair: {dropped_log_lines: $dropped_log, dropped_revert_rate_lines: $dropped_rr},
     pager: $pager,

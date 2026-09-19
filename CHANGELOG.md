@@ -8,6 +8,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Price the fleet and the tokens: a per-node fleet-sizing figure and a
+  spend account split by fate** (D21/D14, issue #612). Two new dashboard
+  panels, both stated per the lever rule (D21) — every figure names the
+  decision it informs, or "no action indicated"/"insufficient evidence."
+  **Fleet sizing** (`lib/fleet-sizing.sh`) folds each node's own
+  idle-without-demand time, its share of the fleet-wide pool of contended
+  `claim-lost` events (the duplicate-work measure `scripts/pickup-
+  metrics.sh` already computes, now also reported per node via a new
+  `contention_by_node` field), and its exclusive landings — items it claimed
+  and delivered with no competing claim from any peer — into a per-node
+  verdict, willing to recommend removing a node when all three cross their
+  own threshold at once. **Spend by fate** (`lib/fleet-pricing.sh`) maps
+  every `cost_rows[]` row onto one of six buckets — delivered, rework,
+  discarded, overhead, defect-driven, unaccounted — reusing the rework panel's
+  own cycle classification (D23) and each item's terminal fate, reconciled to
+  `total_usd` to the cent with an explicit `unaccounted` remainder for a row
+  not yet resolved rather than one dropped or guessed into a bucket. A new
+  **Turns per landed item** panel reports `num_turns` per stage and model
+  over landed items, the companion figure to the existing prompt-cache-ratio
+  panel (issue #594) for the same "where do the tokens go" question.
 - **Health, readiness and liveness endpoints, and structured node metrics
   beside them** (issue #608, Phase 2). `scripts/node-health.sh
   [--live|--ready|--health|--metrics]` answers three distinct, separately

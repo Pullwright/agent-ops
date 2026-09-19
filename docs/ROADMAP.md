@@ -793,7 +793,7 @@ induced outage rather than only over a quiet afternoon.
       actor and model scorecards above: rework attributed to a stage is that
       stage's model's
       record, and it is the outcome half of D22's grading. *[fleet]*
-- [ ] Price the fleet and the tokens (D21, D14). Two questions the accounts
+- [x] Price the fleet and the tokens (D21, D14). Two questions the accounts
       make answerable and nothing asks today. **Is this fleet the right
       size?** — per node, the items it landed that no peer would have taken,
       set against its idle-without-demand hours and its share of contended

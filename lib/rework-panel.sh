@@ -286,7 +286,16 @@ REWORK_PANEL_JQ='
       how_much: ($tokens_time + { first_pass_yield: $first_pass_yield, rework_count: ($rew | length) }),
       whose: $whose,
       escape_ladder: $escape_ladder,
-      clean_count: $n_clean
+      clean_count: $n_clean,
+      # Additive (issue #612): the same cycle-id set the how_much cost join
+      # already computed above, lifted to the top level so a caller pricing
+      # the spend account by fate (lib/fleet-pricing.sh) can classify a
+      # cost_rows[] row as rework by the identical membership test used for
+      # this panel own tokens/elapsed/cost shares, rather than re-deriving it
+      # from the raw rework stream a second time. Undeduped, on purpose: see
+      # the rework_cycles definition above, where cycle membership, not a
+      # count, is what a cost row classification needs.
+      rework_cycles: $rework_cycles
     }
 '
 
@@ -365,6 +374,6 @@ rework_panel_build() {
   fi
   rm -f "$tmp_log" "$all_json_file" "$lifecycle_file" 2>/dev/null
 
-  [[ -n "$out" ]] || out='{"how_much":null,"whose":null,"escape_ladder":null,"clean_count":null}'
+  [[ -n "$out" ]] || out='{"how_much":null,"whose":null,"escape_ladder":null,"clean_count":null,"rework_cycles":null}'
   printf '%s' "$out"
 }

@@ -122,6 +122,8 @@ assert_eq "how_much.elapsed_ms.rework sums only the rework-bearing cycles' durat
   "6000" "$(jq -c '.how_much.elapsed_ms.rework' <<<"$report")"
 assert_eq "how_much.rework_count is the deduped rework record count (4 records)" \
   "4" "$(jq -c '.how_much.rework_count' <<<"$report")"
+assert_eq "rework_cycles (issue #612) is every cycle a raw rework event named, post-merge-revert's null cycle excluded (c2, c3, c4)" \
+  '["c2","c3","c4"]' "$(jq -Sc '.rework_cycles' <<<"$report")"
 assert_eq "first_pass_yield.landed_total counts every landed item" \
   "4" "$(jq -c '.how_much.first_pass_yield.landed_total' <<<"$report")"
 assert_eq "first_pass_yield.first_pass excludes only items with an attributed rework record (item 3 alone)" \
@@ -399,7 +401,7 @@ cat > "$internal_err" <<'EOF'
 EOF
 internal_err_report="$(panel_of "$internal_err")"
 assert_eq "a fold that aborts internally reports the outage shape, never a quiet zero-rework fleet" \
-  '{"clean_count":null,"escape_ladder":null,"how_much":null,"whose":null}' \
+  '{"clean_count":null,"escape_ladder":null,"how_much":null,"rework_cycles":null,"whose":null}' \
   "$(jq -Sc '.' <<<"$internal_err_report")"
 
 if (( failures > 0 )); then
