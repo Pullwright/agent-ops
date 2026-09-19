@@ -415,8 +415,8 @@ node_stale_after_seconds="$(cfg '.node_stale_after_minutes * 60 | floor')"
 # many minutes, so it needs the unconverted value the same way `updater_
 # stuck_after_minutes_raw` above does for `updater-stuck`.
 node_stale_after_minutes_raw="$(cfg '.node_stale_after_minutes')"
-# The fleet-wide transient-refusal verdict (lib/crash-loop.sh, issue #1073):
-# a `crash_loop_verdict` run whose `escalate` is `false` — every failure it
+# The transient-refusal verdict (lib/crash-loop.sh, issue #1073): a
+# `crash_loop_verdict` run whose `escalate` is `false` — every failure it
 # counted was the API being unreachable, not refusing a request — never
 # reaches an escalation issue (requirement 2.7), so this is the only place
 # it is ever surfaced. Read straight from the same union `agent-cycle.sh`
@@ -426,13 +426,20 @@ node_stale_after_minutes_raw="$(cfg '.node_stale_after_minutes')"
 # needing this node to have run the cycle that would have escalated it.
 # `crash_loop_after` 0 (or absent) disables this the same way it disables the
 # escalation itself — a run this reads back is one whose threshold is off.
+#
+# `crash_loop_verdict` now prints one JSON-Lines object per independently
+# crash-looping repository (agent-ops#1630); `--argjson` below needs exactly
+# one JSON value, so only the first matching line is kept — a repository this
+# dashboard omits when more than one is transient at once is tracked
+# separately (agent-ops#1624), not a regression this defensive `head -n1`
+# introduces.
 crash_loop_after_dashboard="$(cfg '.crash_loop_after')"
 [[ "$crash_loop_after_dashboard" =~ ^[0-9]+$ ]] || crash_loop_after_dashboard=0
 provider_unreachable_json='null'
 if (( crash_loop_after_dashboard > 0 )); then
   provider_unreachable_json="$(fleet_logs "$state_dir" "$peers_dir" log.jsonl \
     | crash_loop_verdict "$crash_loop_after_dashboard" 2>/dev/null \
-    | jq -c 'select(.escalate == false)' 2>/dev/null)"
+    | jq -c 'select(.escalate == false)' 2>/dev/null | head -n1)"
   [[ -z "$provider_unreachable_json" ]] && provider_unreachable_json='null'
 fi
 updater_json="$(updater_status "$state_dir/updater-ledger" "$updater_stuck_after_seconds" \

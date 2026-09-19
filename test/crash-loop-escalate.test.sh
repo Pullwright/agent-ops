@@ -132,6 +132,12 @@ mkdir -p "$state_dir" "$peers_dir"
 
 fail_at() { jq -nc --arg ts "$1" --arg node "$2" --arg d "$3" '{ts: $ts, node: $node, event: "attempt-failed", stage: "coordinator", detail: $d}'; }
 success_at() { jq -nc --arg ts "$1" --arg node "$2" '{ts: $ts, node: $node, event: "stage-end", stage: "coordinator", exit_code: 0}'; }
+# fail_repo_at/success_repo_at (agent-ops#1630): the shape a per-repository
+# Co-Ordinator engagement's own events carry since agent-ops#1560.
+fail_repo_at() { jq -nc --arg ts "$1" --arg node "$2" --arg repo "$3" --arg d "$4" '{ts: $ts, node: $node, repo: $repo, event: "attempt-failed", stage: "coordinator", detail: $d}'; }
+success_repo_at() { jq -nc --arg ts "$1" --arg node "$2" --arg repo "$3" '{ts: $ts, node: $node, repo: $repo, event: "stage-end", stage: "coordinator", exit_code: 0}'; }
+escalated_repo_at() { jq -nc --arg ts "$1" --arg d "$2" --arg repo "$3" --argjson n "$4" \
+  '{ts: $ts, node: "n1", event: "crash-loop-escalated", stage: "coordinator", detail: $d, repo: $repo, first_ts: $ts, issue_number: $n, issue_url: "https://github.com/o/r/issues/\($n)"}'; }
 
 four_fails="$(fail_at 2026-08-01T10:00:00Z n1 'coordinator exited 126'
   fail_at 2026-08-01T10:15:00Z n1 'coordinator exited 126'
@@ -317,6 +323,67 @@ crash_loop_retire_resolved 2026-08-01T13:45:00Z
 assert_eq "an open escalation is never closed while the same detail is active again under a new run" \
   "0" "$STUB_GH_CLOSE_CALLS"
 assert_eq "and no retirement is logged for it" "0" "$(events_of crash-loop-retired | wc -l | tr -d ' ')"
+
+# --- Per-repository dedup and retirement (agent-ops#1630) --------------------
+#
+# Two repositories that happen to share a generic detail — plausible for
+# something as bare as "coordinator exited 1" — must not dedup, defer or
+# retire against each other's own run: `crash_loop_escalated_since`,
+# `crash_loop_deferred_since`, `crash_loop_last_success_since` and
+# `crash_loop_detail_recurred_since` are all now matched on `repo` too.
+
+collision_detail='coordinator exited 1'
+repoB_verdict="$(crash_loop_verdict 4 <<<"$(fail_repo_at 2026-09-16T11:00:00Z n1 B "$collision_detail"
+  fail_repo_at 2026-09-16T11:15:00Z n1 B "$collision_detail"
+  fail_repo_at 2026-09-16T11:30:00Z n1 B "$collision_detail"
+  fail_repo_at 2026-09-16T11:45:00Z n1 B "$collision_detail")")"
+
+# Repo A is already escalated (issue #601 below); repo B's own run, sharing
+# the same detail but a later first_ts, must still file its own issue rather
+# than being suppressed by A's dedup.
+escalated_A_601="$(escalated_repo_at 2026-09-16T10:00:00Z "$collision_detail" A 601)"
+union_log="$WORKDIR/union-repo-dedup.jsonl"
+{
+  printf '%s\n' "$(fail_repo_at 2026-09-16T10:00:00Z n1 A "$collision_detail")"
+  printf '%s\n' "$escalated_A_601"
+} > "$union_log"
+STUB_CREATE_MODE="success"; stub_create_calls_reset; EVENTS=(); crash_loop_pending_refile=()
+crash_loop_escalate_or_defer "$repoB_verdict" "crash-loop:coordinator:B" "failures" "title" "evidence"
+assert_eq "repo B's own run files its own issue, undeterred by repo A's same-detail escalation" \
+  "1" "$(stub_create_calls)"
+
+# Retirement: repo A's escalation is closed once repo A's own Co-Ordinator
+# succeeds, even while repo B — sharing the same detail — is still actively
+# failing under its own, independent run.
+union_log="$WORKDIR/union-repo-retire.jsonl"
+{
+  printf '%s\n' "$(fail_repo_at 2026-09-16T10:00:00Z n1 A "$collision_detail")"
+  printf '%s\n' "$escalated_A_601"
+  success_repo_at 2026-09-16T12:00:00Z n1 A
+  printf '%s\n' "$(fail_repo_at 2026-09-16T13:00:00Z n1 B "$collision_detail")"
+  printf '%s\n' "$(fail_repo_at 2026-09-16T13:15:00Z n1 B "$collision_detail")"
+} > "$union_log"
+STUB_GH_CLOSE_MODE="success"; STUB_GH_CLOSE_CALLS=0; EVENTS=()
+crash_loop_retire_resolved 2026-09-16T13:15:00Z
+assert_eq "repo A's own escalation is retired on its own repo's clearing success" \
+  "1" "$STUB_GH_CLOSE_CALLS"
+assert_eq "naming repo A's own clearing success" "1" \
+  "$(grep -c '2026-09-16T12:00:00Z' <<<"$STUB_GH_CLOSE_LAST_BODY")"
+
+# The counterfactual: repo B succeeding is never evidence repo A's own run
+# broke — a cross-repository success must not retire an unrelated repo's
+# still-open escalation.
+union_log="$WORKDIR/union-repo-retire-wrong-repo.jsonl"
+{
+  printf '%s\n' "$(fail_repo_at 2026-09-16T10:00:00Z n1 A "$collision_detail")"
+  printf '%s\n' "$escalated_A_601"
+  success_repo_at 2026-09-16T12:00:00Z n1 B
+} > "$union_log"
+STUB_GH_CLOSE_MODE="success"; STUB_GH_CLOSE_CALLS=0; EVENTS=()
+crash_loop_retire_resolved 2026-09-16T12:00:00Z
+assert_eq "repo B's own success never retires repo A's own open escalation" \
+  "0" "$STUB_GH_CLOSE_CALLS"
+assert_eq "and nothing is logged for it" "0" "$(events_of crash-loop-retired | wc -l | tr -d ' ')"
 
 # --- The retirement hysteresis (2026-09-05 fleet flap) ----------------------
 #

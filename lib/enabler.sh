@@ -406,10 +406,11 @@ $(pipeline_comment_marker "$cycle_id" script)"
 # defer`) knows to queue it.
 crash_loop_escalate() {
   local verdict_json="$1" item_ref="$2" kind_label="$3" title_prefix="$4" evidence_line="$5"
-  local cl_detail cl_first_ts cl_body cl_created
+  local cl_detail cl_first_ts cl_repo cl_body cl_created
   cl_detail="$(jq -r '.detail // ""' <<<"$verdict_json")"
   cl_first_ts="$(jq -r '.first_ts // ""' <<<"$verdict_json")"
-  if crash_loop_escalated_since "$cl_first_ts" "$cl_detail" < "$union_log"; then
+  cl_repo="$(jq -r '.repo // ""' <<<"$verdict_json")"
+  if crash_loop_escalated_since "$cl_first_ts" "$cl_detail" "$cl_repo" < "$union_log"; then
     return 0
   fi
   cl_body="$cycle_dir/crash-loop-issue-${item_ref#crash-loop:}.md"
@@ -494,13 +495,14 @@ CRASH_LOOP_BODY
 # had its chance to prove the run over.
 crash_loop_escalate_or_defer() {
   local verdict_json="$1" item_ref="$2" kind_label="$3" title_prefix="$4" evidence_line="$5"
-  local cl_detail cl_first_ts
+  local cl_detail cl_first_ts cl_repo
   cl_detail="$(jq -r '.detail // ""' <<<"$verdict_json")"
   cl_first_ts="$(jq -r '.first_ts // ""' <<<"$verdict_json")"
-  if crash_loop_escalated_since "$cl_first_ts" "$cl_detail" < "$union_log"; then
+  cl_repo="$(jq -r '.repo // ""' <<<"$verdict_json")"
+  if crash_loop_escalated_since "$cl_first_ts" "$cl_detail" "$cl_repo" < "$union_log"; then
     return 0
   fi
-  if crash_loop_deferred_since "$cl_first_ts" "$cl_detail" < "$union_log"; then
+  if crash_loop_deferred_since "$cl_first_ts" "$cl_detail" "$cl_repo" < "$union_log"; then
     crash_loop_pending_refile+=("$(jq -nc \
       --arg ref "$item_ref" --arg kl "$kind_label" --arg tp "$title_prefix" --arg ev "$evidence_line" \
       --argjson v "$verdict_json" \
@@ -585,15 +587,16 @@ crash_loop_refile_pending() {
 # deterministic stand-in for "now".
 #
 # Before touching any open escalation, this also checks whether the same
-# `$union_log` already shows a *fresh* Co-Ordinator run under the very same
-# detail — regardless of that run's own `first_ts` — via a plain
-# `crash_loop_verdict` recompute, and skips retirement outright if so
-# (agent-ops#1134 review). `crash_loop_reverify` below already refuses to
-# retire the *exact* run an open issue names; it cannot see a *new* run that
-# has since re-crossed `crash_loop_after` under the same detail, because that
-# new run has a different `first_ts` and so reads as a different run to a
-# same-first_ts match. Step 1b in agent-cycle.sh now runs this function
-# before either `crash_loop_escalate_or_defer` call, which closes the
+# `$union_log` already shows a *fresh* Co-Ordinator run, in that escalation's
+# own repository (agent-ops#1630 — `crash_loop_verdict` groups by `repo`, so
+# this recompute is filtered to the entry's own group), under the very same
+# detail — regardless of that run's own `first_ts` — and skips retirement
+# outright if so (agent-ops#1134 review). `crash_loop_reverify` below already
+# refuses to retire the *exact* run an open issue names; it cannot see a
+# *new* run that has since re-crossed `crash_loop_after` under the same
+# detail, because that new run has a different `first_ts` and so reads as a
+# different run to a same-first_ts match. Step 1b in agent-cycle.sh now runs
+# this function before either `crash_loop_escalate_or_defer` call, which closes the
 # single-cycle, single-node version of that gap — but a peer node can still
 # have escalated (and so rebound the still-open issue to) that new run in an
 # earlier cycle whose own rebind event has not yet reached this node's
@@ -635,24 +638,31 @@ crash_loop_refile_pending() {
 crash_loop_retire_resolved() {
   local union_log_horizon="$1"
   [[ -n "$crash_loop_repo" && -s "$union_log" ]] || return 0
-  local entry stage detail first_ts issue_number issue_url success_ts body
+  local entry stage detail first_ts repo issue_number issue_url success_ts body
   local active_detail min_clear_minutes success_epoch horizon_epoch
   min_clear_minutes="${crash_loop_min_clear_minutes:-0}"
   [[ "$min_clear_minutes" =~ ^[0-9]+$ ]] || min_clear_minutes=0
-  active_detail="$(jq -r '.detail // empty' <<<"$(crash_loop_verdict "$crash_loop_after" < "$union_log")" 2>/dev/null)"
   while IFS= read -r entry; do
     [[ -n "$entry" ]] || continue
     stage="$(jq -r '.stage // ""' <<<"$entry")"
     [[ "$stage" == "coordinator" ]] || continue
     detail="$(jq -r '.detail // ""' <<<"$entry")"
     first_ts="$(jq -r '.first_ts // ""' <<<"$entry")"
+    repo="$(jq -r '.repo // ""' <<<"$entry")"
     issue_number="$(jq -r '.issue_number // ""' <<<"$entry")"
     issue_url="$(jq -r '.issue_url // ""' <<<"$entry")"
     [[ -n "$detail" && -n "$first_ts" && "$issue_number" =~ ^[0-9]+$ ]] || continue
+    # A fresh Co-Ordinator run under the very same detail, in this same
+    # repository's own group (agent-ops#1134 review, generalised for
+    # per-repository grouping by agent-ops#1630) — recomputed per entry,
+    # scoped to that entry's own repo, since crash_loop_verdict can now name
+    # more than one repository's own active run in the same cycle.
+    active_detail="$(crash_loop_verdict "$crash_loop_after" < "$union_log" \
+      | jq -r --arg r "$repo" 'select((.repo // "") == $r) | .detail' 2>/dev/null | head -n1)"
     [[ -n "$active_detail" && "$active_detail" == "$detail" ]] && continue
-    [[ -z "$(crash_loop_reverify "$(jq -nc --arg s "$stage" --arg d "$detail" --arg f "$first_ts" \
-                '{stage: $s, detail: $d, first_ts: $f}')" "$crash_loop_after" < "$union_log")" ]] || continue
-    success_ts="$(crash_loop_last_success_since "$stage" "$first_ts" < "$union_log")"
+    [[ -z "$(crash_loop_reverify "$(jq -nc --arg s "$stage" --arg d "$detail" --arg f "$first_ts" --arg r "$repo" \
+                '{stage: $s, detail: $d, first_ts: $f} + (if $r == "" then {} else {repo: $r} end)')" "$crash_loop_after" < "$union_log")" ]] || continue
+    success_ts="$(crash_loop_last_success_since "$stage" "$first_ts" "$repo" < "$union_log")"
     # Positive evidence only. `crash_loop_reverify` going quiet is not the
     # same fact as "the Co-Ordinator recovered": a run stops matching the
     # detector whenever it stops being *this* run, and a still-broken fleet
@@ -675,7 +685,7 @@ crash_loop_retire_resolved() {
     # `crash_loop_min_clear_minutes`, leaving room for a recurrence that has
     # not synced here yet. Either way this is not (or not provably yet) the
     # end of the incident; leave the issue open for a rebind to reuse.
-    crash_loop_detail_recurred_since "$detail" "$success_ts" < "$union_log" && continue
+    crash_loop_detail_recurred_since "$detail" "$success_ts" "$repo" < "$union_log" && continue
     if (( min_clear_minutes > 0 )); then
       success_epoch="$(date -u -d "$success_ts" +%s 2>/dev/null || echo 0)"
       horizon_epoch="$(date -u -d "${union_log_horizon:-}" +%s 2>/dev/null || echo 0)"

@@ -295,8 +295,18 @@ stage_api_refusal_class() {  # <out-file> -> "transient", "refused", or empty
     "$out_file" 2>/dev/null | head -1
 }
 
-handle_stage_failure() {
-  local stage="$1" rc="$2" out_file="$3" pr_url="${4:-}" detail refusal refusal_msg refusal_class
+# `extra` (default `{}`, agent-ops#1630) is merged into this failure's own
+# `attempt-failed` event, same as `log_attempt_failed`'s own `extra` argument
+# everywhere else — the one way to tag this event with a field, `repo`
+# included, that `item_event_fields`'s `$selected_repo`/`$selected_item`
+# globals cannot supply here: the Co-Ordinator's per-repository loop
+# (`run_coordinator_stage_attempt`, below) calls this before selection has
+# ever run, when both globals are still empty. Every other caller —
+# Implementer, Reviewer — passes nothing and gets exactly the fields the
+# globals already give it, unchanged.
+handle_stage_failure() {  # <stage> <rc> <out-file> [pr-url] [extra-json]
+  local stage="$1" rc="$2" out_file="$3" pr_url="${4:-}" extra="${5:-{\}}" detail refusal refusal_msg refusal_class
+  jq -e 'type == "object"' <<<"$extra" >/dev/null 2>&1 || extra='{}'
   # 124 is now both caps, and they are not the same news to whoever reads this
   # next — the Enabler, or a human asking why an item is blocked. "Ran to its
   # wall-clock cap while still working" argues for a longer cap; "produced
@@ -335,12 +345,13 @@ handle_stage_failure() {
     refusal_class="$(stage_api_refusal_class "$out_file")"
   fi
   log_attempt_failed "$stage" "$detail" \
-    "$(jq -nc --arg u "$pr_url" --arg r "$refusal" --arg m "$refusal_msg" --arg c "$refusal_class" \
+    "$(jq -nc --arg u "$pr_url" --arg r "$refusal" --arg m "$refusal_msg" --arg c "$refusal_class" --argjson e "$extra" \
        '{stage_failure: true}
         + (if $u == "" then {} else {pr_url: $u} end)
         + (if $r == "" then {} else {api_refusal: $r} end)
         + (if $m == "" then {} else {api_message: $m} end)
-        + (if $c == "" then {} else {api_refusal_class: $c} end)')"
+        + (if $c == "" then {} else {api_refusal_class: $c} end)
+        + $e')"
   if [[ -n "$pr_url" ]]; then
     gh pr comment "$pr_url" --body "$(pipeline_comment_header script "$node_name")
 
@@ -408,7 +419,7 @@ run_coordinator_stage_attempt() {  # <attempt-out-file> <prompt> [extra-budget-j
   (( ONCE )) && dump_stage_output "$out_file"
 
   if (( rc != 0 )); then
-    handle_stage_failure "coordinator" "$rc" "$out_file" ""
+    handle_stage_failure "coordinator" "$rc" "$out_file" "" "$extra"
     coord_attempt_result_json=""
     return 1
   fi

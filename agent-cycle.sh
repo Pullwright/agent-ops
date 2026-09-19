@@ -1750,7 +1750,7 @@ if [[ -f "$state_dir/roll-pending.json" ]]; then
 fi
 
 # --- 1b. Crash-loop escalation (requirement 2.7) ---
-# A Co-Ordinator failure pins no repo/item — nothing is blocked, so the whole
+# A Co-Ordinator failure pins no item — nothing is blocked, so the whole
 # blocked → Enabler → escalation ladder that covers item failures never sees
 # it — and the cycle still ends 0, so the dashboard shows a healthy idle
 # fleet. When the failure is deterministic and ships in the image (the
@@ -1774,7 +1774,14 @@ fi
 # `execve` failing on an oversized argv kills the cycle before `stage-start`
 # for any stage is ever logged, so no `attempt-failed` exists for
 # `crash_loop_verdict` to count. Each class keys its own item ref, so either
-# can escalate independently of the other.
+# can escalate independently of the other. `crash_loop_verdict` further keys
+# by repository (agent-ops#1630): since issue #587 split Co-Ordinator
+# selection into one engagement per configured repository, it can now return
+# more than one line, each an independent per-repository run, so a single
+# repository's own deterministic failure is never reset by a sibling
+# repository's success and can escalate on its own — see the loop below.
+# `crash_loop_preselection_verdict` stays fleet-wide/exit-code-grouped: it
+# fires before selection ever assigns a repository to anything.
 #
 # `crash_loop_verdict`'s own run can additionally be *transient* (issue
 # #1073): every failure it counted was the API being unreachable — a 5xx, a
@@ -1833,17 +1840,29 @@ if ! (( DRY_RUN )) && (( crash_loop_after > 0 )) \
   # right now.
   crash_loop_retire_resolved "$union_log_horizon"
 
-  crash_loop_json="$(crash_loop_verdict "$crash_loop_after" < "$union_log")"
-  if [[ -n "$crash_loop_json" ]]; then
-    if [[ "$(jq -r '.escalate' <<<"$crash_loop_json")" == "true" ]]; then
-      crash_loop_escalate_or_defer "$crash_loop_json" "crash-loop:coordinator" \
+  # crash_loop_verdict now prints one JSON-Lines object per independently
+  # crash-looping repository (plus the repo-less fallback group) — each line
+  # is escalated on its own, under its own item ref, so one repository
+  # reaching threshold never waits on, or gets folded into, another's.
+  while IFS= read -r crash_loop_line; do
+    [[ -n "$crash_loop_line" ]] || continue
+    crash_loop_verdict_repo="$(jq -r '.repo // ""' <<<"$crash_loop_line")"
+    if [[ -n "$crash_loop_verdict_repo" ]]; then
+      crash_loop_item_ref="crash-loop:coordinator:$crash_loop_verdict_repo"
+      crash_loop_title_prefix="Crash loop: the Co-Ordinator is failing for $crash_loop_verdict_repo"
+    else
+      crash_loop_item_ref="crash-loop:coordinator"
+      crash_loop_title_prefix="Crash loop: the Co-Ordinator is failing fleet-wide"
+    fi
+    if [[ "$(jq -r '.escalate' <<<"$crash_loop_line")" == "true" ]]; then
+      crash_loop_escalate_or_defer "$crash_loop_line" "$crash_loop_item_ref" \
         "Co-Ordinator failures" \
-        "Crash loop: the Co-Ordinator is failing fleet-wide" \
+        "$crash_loop_title_prefix" \
         "Start with the newest failing cycle's \`coordinator-<repo-slug>.out\` files under \`state_dir/cycles/\` — one per configured repository, since each gets its own engagement (requirement 15) — a stage the API refused outright records the refusal there, as a \`result\` with \`is_error: true\`, and leaves the matching \`.out.stderr\` empty (agent-ops#641). Read those \`.out.stderr\` files too, for a stage that died rather than being refused; the stage transcripts survive every failure."
     else
-      log_event "provider-unreachable" "$crash_loop_json"
+      log_event "provider-unreachable" "$crash_loop_line"
     fi
-  fi
+  done < <(crash_loop_verdict "$crash_loop_after" < "$union_log")
 
   crash_loop_preselection_json="$(crash_loop_preselection_verdict "$crash_loop_after" < "$union_log")"
   if [[ -n "$crash_loop_preselection_json" ]]; then

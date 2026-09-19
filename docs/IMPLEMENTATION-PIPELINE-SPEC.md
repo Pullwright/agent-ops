@@ -50,6 +50,7 @@ are binding on any agent working inside them).
   - [Extended notes: `merge_autonomy_protected_paths`](#extended-notes-merge_autonomy_protected_paths)
   - [Extended notes: `merge_autonomy_routine_complexity`](#extended-notes-merge_autonomy_routine_complexity)
   - [Extended notes: `landing_cool_off_hours`](#extended-notes-landing_cool_off_hours)
+  - [Extended notes: `crash_loop_after`](#extended-notes-crash_loop_after)
   - [Extended notes: `crash_loop_min_clear_minutes`](#extended-notes-crash_loop_min_clear_minutes)
   - [Extended notes: `notify_webhook_url`](#extended-notes-notify_webhook_url)
   - [Extended notes: `min_free_memory_bytes`](#extended-notes-min_free_memory_bytes)
@@ -991,9 +992,9 @@ and the schema must carry every one of them.
 | `merge_autonomy_routine_complexity` | `["low", "medium"]` | D18 Stage 3 (requirement 8d, `lib/landing.sh`'s `landing_eligible`, agent-ops#725): which `complexity:*` grades may be armed automatically at `agent-merges-routine` and above, fleet-wide default; a `repos[]` entry's own `merge_autonomy_routine_complexity` overrides it for that repository, the same precedence `merge_autonomy` uses (requirement 4f). An eligible pull request also needs a `source` in `merge_autonomy_routine_sources` and, below `agent-merges-all`...[continued below](#extended-notes-merge_autonomy_routine_complexity) |
 | `landing_cool_off_hours` | 24 h | D18 WI-12 (Stage 4, §7 risk 1, `lib/landing.sh`'s `landing_protected_path_controls_ok`/`landing_cool_off_effective_hours`/`landing_cool_off_remaining_hours`): the wait between the Approver's own approval of a protected-path pull request and the arming step (requirement 8d) landing it, fleet-wide default; a `repos[]` entry's own `landing_cool_off_hours` overrides it for that repository, the same precedence `merge_autonomy` uses (requirement 4f). Binds only at...[continued below](#extended-notes-landing_cool_off_hours) |
 | `approver_app_id` | *(unset)* | The Approver GitHub App's id (§5.3) — required for any `merge_autonomy` level above `human`, and reconciled by `scripts/doctor.sh` against the `PULLWRIGHT_APPROVER_APP_ID` environment the token wrapper (requirement 14b) mints from: a set pair that differs is a doctor `fail`. Deliberately one fleet-wide scalar string with no per-repo override — see the Design decisions entry on this key's shape. |
-| `crash_loop_after` | `4` | Consecutive fleet-wide failures, with no intervening recovery, before the Script escalates the crash loop as an issue (requirement 2.7) — either same-detail Co-Ordinator failures, or same-exit-code cycles that died before any stage started. At four nodes each hitting the same deterministic failure once per cycle, this crosses within about one `schedule.cycle_interval_minutes` interval. `0` (or absent) disables both checks. |
+| `crash_loop_after` | `4` | Consecutive failures, with no intervening recovery, before the Script escalates the crash loop as an issue (requirement 2.7) — either same-detail Co-Ordinator failures, counted independently per repository since one Co-Ordinator engagement runs per configured repository (agent-ops#1630; a repo-less event falls back to one fleet-wide group), or same-exit-code cycles that died before any stage started (fleet-wide — a pre-selection death has no repository to group by). At four...[continued below](#extended-notes-crash_loop_after) |
 | `crash_loop_repo` | `Pullwright/agent-ops` | Where requirement 2.7's escalation issues are filed — the pipeline's own repository, because a cycle that cannot run belongs to no target repo's backlog. Empty disables both checks. This installation's own value, `Pullwright/agent-ops`, is documented below (and checked live by `scripts/doctor.sh`) because it differs from the empty product default — it names this installation's own repository, not a value to copy. |
-| `crash_loop_min_clear_minutes` | 30 min | Requirement 2.7's own retirement hysteresis: a Co-Ordinator-class escalation's clearing success must be at least this many minutes old, with the same detail never having resumed since, before `crash_loop_retire_resolved` closes the issue. `30` is two `schedule.cycle_interval_minutes`-default cycles, long enough for a same-detail recurrence to reach this node's own peer-synced union before the success is trusted. `0` disables the hysteresis outright, retiring on the first...[continued below](#extended-notes-crash_loop_min_clear_minutes) |
+| `crash_loop_min_clear_minutes` | 30 min | Requirement 2.7's own retirement hysteresis: a Co-Ordinator-class escalation's clearing success must be at least this many minutes old, with the same detail never having resumed since in that run's own repository (agent-ops#1630), before `crash_loop_retire_resolved` closes the issue. `30` is two `schedule.cycle_interval_minutes`-default cycles, long enough for a same-detail recurrence to reach this node's own peer-synced union before the success is trusted. `0` disables the...[continued below](#extended-notes-crash_loop_min_clear_minutes) |
 | `escalation_webhook_url` | *(unset)* | An alias for `notify_webhook_url` (requirement 2m), accepted for one release when `notify_webhook_url` is itself empty. `scripts/doctor.sh` warns whenever this key is set. Empty contributes nothing. |
 | `notify_webhook_url` | *(unset)* | The URL every `notify_post` (`lib/notify.sh`) POST goes to (requirement 2m). `escalation_webhook_url` is accepted as an alias for one release when this is empty; `doctor.sh` warns on the old name. Empty (both) disables the channel: no POST is attempted, so an installation with none configured is unaffected. Must be `https://` when set. Fleet-wide like every key here, and inert on a node whose `EGRESS_EXTRA_ALLOW` does not name the webhook's host — `doctor.sh`'s own...[continued below](#extended-notes-notify_webhook_url) |
 | `notify_events` | `["escalation", "pager", "fleet-standdown"]` | Which of the three notify classes (requirement 2m) `notify_post` sends: `escalation`, `pager`, `fleet-standdown`. Default is all three. An event whose class is absent here is dropped before `notify_webhook_url` is read — never sent, never logged as suppressed. |
@@ -1259,9 +1260,13 @@ D18 Stage 3 (requirement 8d, `lib/landing.sh`'s `landing_eligible`, agent-ops#72
 
 D18 WI-12 (Stage 4, §7 risk 1, `lib/landing.sh`'s `landing_protected_path_controls_ok`/`landing_cool_off_effective_hours`/`landing_cool_off_remaining_hours`): the wait between the Approver's own approval of a protected-path pull request and the arming step (requirement 8d) landing it, fleet-wide default; a `repos[]` entry's own `landing_cool_off_hours` overrides it for that repository, the same precedence `merge_autonomy` uses (requirement 4f). Binds only at `agent-merges-all`, alongside the critical-tier control (`approver_model_critical`, forced regardless of complexity by a protected-path hit) — the compensating controls Stage 4 requires before a protected-path pull request is eligible at all. Measured from `landing_approver_standing_review_at`'s own `submitted_at`, re-read fresh at every arming attempt; a fresh push restarts the wait, since the standing review's own `commit_id` (also read there) no longer matches a fresh read of the pull request's `headRefOid`, and the mismatch alone refuses regardless of how much of `submitted_at`'s own cool-off has elapsed. `0` disables the wait.
 
+### Extended notes: `crash_loop_after`
+
+Consecutive failures, with no intervening recovery, before the Script escalates the crash loop as an issue (requirement 2.7) — either same-detail Co-Ordinator failures, counted independently per repository since one Co-Ordinator engagement runs per configured repository (agent-ops#1630; a repo-less event falls back to one fleet-wide group), or same-exit-code cycles that died before any stage started (fleet-wide — a pre-selection death has no repository to group by). At four nodes each hitting the same deterministic failure once per cycle in the same repository, this crosses within about one `schedule.cycle_interval_minutes` interval. `0` (or absent) disables both checks.
+
 ### Extended notes: `crash_loop_min_clear_minutes`
 
-Requirement 2.7's own retirement hysteresis: a Co-Ordinator-class escalation's clearing success must be at least this many minutes old, with the same detail never having resumed since, before `crash_loop_retire_resolved` closes the issue. `30` is two `schedule.cycle_interval_minutes`-default cycles, long enough for a same-detail recurrence to reach this node's own peer-synced union before the success is trusted. `0` disables the hysteresis outright, retiring on the first nameable success exactly as before this key existed.
+Requirement 2.7's own retirement hysteresis: a Co-Ordinator-class escalation's clearing success must be at least this many minutes old, with the same detail never having resumed since in that run's own repository (agent-ops#1630), before `crash_loop_retire_resolved` closes the issue. `30` is two `schedule.cycle_interval_minutes`-default cycles, long enough for a same-detail recurrence to reach this node's own peer-synced union before the success is trusted. `0` disables the hysteresis outright, retiring on the first nameable success exactly as before this key existed.
 
 ### Extended notes: `notify_webhook_url`
 
@@ -4544,7 +4549,7 @@ implements.
    directly for the item-lifecycle fold by `test/item-lifecycle.test.sh`'s
    two-node fixture, and for the rework record by
    `test/rework-panel.test.sh`'s own "first-wins" fixture.
-2.7. **Crash-loop escalation.** A Co-Ordinator failure pins no repo/item
+2.7. **Crash-loop escalation.** A Co-Ordinator failure pins no item
    (requirement 33's fields are set only after selection), so the entire
    blocked → Enabler → escalation ladder that covers item failures never
    sees it — and the cycle still ends 0, so the dashboard shows a healthy
@@ -4561,19 +4566,50 @@ implements.
    - `crash_loop_verdict` scans for `crash_loop_after` or more
      **consecutive** Co-Ordinator `attempt-failed` events carrying **one
      identical detail**, with no Co-Ordinator success (`stage-end`, stage
-     `coordinator`, exit 0) anywhere in the fleet in between. Identical
-     detail is what separates the deterministic class from transient
-     noise; any success resets the count. The run's own `escalate` field
-     (issue #1073) is `false` when every failure it counted carries
-     `api_refusal_class: "transient"` on its own `attempt-failed` event —
-     the API was unreachable (a 5xx, a dropped connection), not refusing a
-     considered request — and `true` otherwise, including a run with no
-     class at all. `detail` alone cannot carry this: it is the field the
-     count groups on (requirement 4i), and folding a second axis into it
-     would split one outage into as many "distinct" failures as it had
-     status codes. See requirement 4i's own text on `stage_api_refusal`
-     and `stage_api_refusal_class` for where the class comes from and why
-     it travels beside `detail` rather than inside it.
+     `coordinator`, exit 0) for that same repository anywhere in the fleet
+     in between — **grouped by the event's own `repo` field** (agent-ops#1630),
+     so one repository's own deterministic failure accumulates its own
+     consecutive count independently of every other configured repository,
+     printing one JSON-Lines object per repository (plus one for the
+     repo-less fallback group below) that has independently reached
+     `crash_loop_after`, rather than at most one verdict for the whole
+     fleet. Since issue #587 split Co-Ordinator selection into one
+     engagement per configured repository, each engagement's own
+     `attempt-failed`/`stage-end` events already carry that repository's
+     own `repo` field (the `{repo: <slug>}` `extra` merge
+     `run_coordinator_stage_attempt` and `handle_stage_failure` both make,
+     `lib/stage-attempt.sh`) — without this grouping, every other
+     repository's own success reset a repository's count every cycle,
+     starving it of an escalation rung with no other symptom (requirement
+     2.7 exists precisely to give the Co-Ordinator's own failures a rung,
+     so a gap that silently removes it for a subset of repositories is the
+     same failure class this requirement was built against, just narrower).
+     An event that carries no `repo` at all — history from before issue
+     #587, or a future Co-Ordinator caller that legitimately has none —
+     falls back into its own group, reduced exactly as the whole stream
+     used to be: fleet-wide, resetting on any repo-less success, and
+     independent of every real repository's own group. Identical detail is
+     what separates the deterministic class from transient noise within a
+     group; any same-repository success resets that group's own count. The
+     run's own `escalate` field (issue #1073) is `false` when every failure
+     it counted carries `api_refusal_class: "transient"` on its own
+     `attempt-failed` event — the API was unreachable (a 5xx, a dropped
+     connection), not refusing a considered request — and `true` otherwise,
+     including a run with no class at all. `detail` alone cannot carry
+     this: it is the field the count groups on (requirement 4i), and
+     folding a second axis into it would split one outage into as many
+     "distinct" failures as it had status codes. See requirement 4i's own
+     text on `stage_api_refusal` and `stage_api_refusal_class` for where
+     the class comes from and why it travels beside `detail` rather than
+     inside it. `crash_loop_reverify`, the escalated/deferred/recurred-since
+     dedup checks, and the retirement's own success lookup
+     (`crash_loop_last_success_since`) are all matched on `repo` too, on
+     the same fallback terms, so two repositories that happen to share a
+     generic detail (e.g. both saying "coordinator exited 1") can never
+     dedup, defer or retire against each other's own run.
+     `crash_loop_preselection_verdict` below stays fleet-wide, grouped only
+     by `exit_code` — it fires before selection ever assigns a repository
+     to anything, so it has no `repo` to group by.
    - `crash_loop_preselection_verdict` scans for `crash_loop_after` or
      more **consecutive** cycles that each logged `cycle-start` followed by
      a `cycle-end` with a **non-zero `exit_code`** and *no* `stage-start`
@@ -4598,28 +4634,37 @@ implements.
      running, or killed too abruptly to log one) is dropped, counted
      neither way.
 
-   On a verdict from either reader whose `escalate` is not `false` — every
+   The Script (agent-cycle.sh) loops over every line `crash_loop_verdict`
+   returns, escalating each independently, before turning to
+   `crash_loop_preselection_verdict`'s own single verdict (agent-ops#1630) —
+   so two repositories that both crash-loop in the same cycle each get their
+   own escalation attempt, neither waiting on nor folded into the other. On a
+   verdict from either reader whose `escalate` is not `false` — every
    `crash_loop_preselection_verdict` run qualifies, since an `execve`
    failure is never a network refusal and that reader carries no class at
    all — and unless `crash_loop_escalated_since` finds a
-   `crash-loop-escalated` event with the same detail at or after the run's
-   own first failure (so the same loop is never escalated twice, while a
-   fresh loop with an old detail escalates anew), `crash_loop_escalate_or_
-   defer` (lib/enabler.sh) decides whether this verdict is safe to file
-   right here. This point in the cycle runs before the Co-Ordinator's own
-   attempt (deliberately — the alarm must fire even on a cycle that stands
-   down before reaching it), so a verdict computed here can never see a
-   recovery that attempt is about to produce.
+   `crash-loop-escalated` event with the same detail (and the same `repo`,
+   where the verdict carries one) at or after the run's own first failure
+   (so the same loop is never escalated twice, while a fresh loop with an
+   old detail escalates anew), `crash_loop_escalate_or_defer` (lib/enabler.sh)
+   decides whether this verdict is safe to file right here. This point in
+   the cycle runs before the Co-Ordinator's own attempt (deliberately — the
+   alarm must fire even on a cycle that stands down before reaching it), so
+   a verdict computed here can never see a recovery that attempt is about to
+   produce.
 
    - A **fresh** verdict — `crash_loop_deferred_since` finds no prior
-     `crash-loop-deferred` event for this exact first_ts+detail, so nothing
-     has attempted to file it before — is filed immediately, through the
-     Enabler's own `create_escalation_issue`: same open-issue dedup (item ref
-     `crash-loop:coordinator` for the first class, `crash-loop:pre-selection`
-     for the second, so either can escalate independently of the other),
-     same label, same load-bearing assignee that keeps the pipeline from
+     `crash-loop-deferred` event for this exact first_ts+detail(+repo), so
+     nothing has attempted to file it before — is filed immediately, through
+     the Enabler's own `create_escalation_issue`: same open-issue dedup (item
+     ref `crash-loop:coordinator` for the first class — `crash-loop:coordinator:
+     <repo>` where the verdict names one (agent-ops#1630) — `crash-loop:
+     pre-selection` for the second, so either class, and each repository
+     within the first, can escalate independently of every other), same
+     label, same load-bearing assignee that keeps the pipeline from
      selecting its own SOS as work. Success logs `crash-loop-escalated` with
-     the verdict's fields and the issue's number and URL. Failure logs
+     the verdict's fields (`repo` included, when the verdict carries one)
+     and the issue's number and URL. Failure logs
      `crash-loop-deferred` instead, carrying the verdict's own fields
      (`detail`, `first_ts`, …) untouched plus a human-readable `message`, and
      queues the same attempt in `crash_loop_pending_refile` for a same-cycle
@@ -4675,8 +4720,10 @@ implements.
    own open-issue dedup keys on the item ref and label alone, never on
    `detail`/`first_ts`, so a run reusing a still-open issue logs a second
    such event against it, agent-ops#1140), the one judged is the newest by
-   `ts` — a `crash_loop_reverify` finding the run broken *and* a
-   `crash_loop_last_success_since` naming the Co-Ordinator
+   `ts` (carrying that repository's own `repo`, when the escalation was
+   repository-scoped, agent-ops#1630) — a `crash_loop_reverify` finding the
+   run broken *and* a `crash_loop_last_success_since`, scoped to that same
+   `repo`, naming the Co-Ordinator
    success that broke it close the issue with a comment naming that success,
    and log `crash-loop-retired`; a run still active leaves the issue
    untouched. Both conditions are required, and the second is the load-
@@ -4704,10 +4751,13 @@ implements.
      reused issue number. Running retirement first closes the resolved run's
      issue before either filing call can see it, so a same-cycle re-crossing
      opens a fresh issue instead of inheriting the retired one.
-   - **A same-detail run already active anywhere in `$union_log`, regardless
-     of its own `first_ts`, blocks retirement outright** — a plain
-     `crash_loop_verdict` recompute against the same log, checked before the
-     `crash_loop_reverify` per-issue check above. This is the residual,
+   - **A same-detail run already active in that same repository anywhere in
+     `$union_log`, regardless of its own `first_ts`, blocks retirement
+     outright** — a plain `crash_loop_verdict` recompute against the same
+     log, filtered to the entry's own `repo` (agent-ops#1630 — a sibling
+     repository's own same-detail run is not evidence about this one),
+     checked before the `crash_loop_reverify` per-issue check above. This is
+     the residual,
      cross-node version of the same race the reordering above closes only
      within one node's own cycle: a peer can have escalated (and so rebound
      the still-open issue to) a new same-detail run in an earlier cycle whose
@@ -4735,7 +4785,8 @@ implements.
    closed issue leaves it nothing to find.
 
    - **`crash_loop_detail_recurred_since`** (lib/crash-loop.sh) blocks
-     retirement outright when the same `detail` has already resumed failing,
+     retirement outright when the same `detail`, in that same repository
+     (agent-ops#1630), has already resumed failing,
      anywhere in `$union_log`, at or after the clearing success — whether or
      not it has reached `crash_loop_after` again. Unconditional, not a
      tunable: closing the issue while the very log the decision is reading
@@ -23831,8 +23882,9 @@ oblige anyone to edit a test.
    with no output changes no limit state and the reason ends
    `(probe: inconclusive)`. `--dry-run` with the same injected event launches
    no probe.
-5a. **A fleet-wide crash loop, of either class, is detected once and
-   escalated once (requirement 2.7).** `test/crash-loop.test.sh` passes: for
+5a. **A crash loop, of either class and in each configured repository
+   independently, is detected once and escalated once (requirement 2.7).**
+   `test/crash-loop.test.sh` passes: for
    `crash_loop_verdict`, a stream of threshold-many consecutive same-detail
    Co-Ordinator failures yields a verdict carrying the count, the window and
    every failing node; one fewer yields nothing; a Co-Ordinator success
@@ -23840,7 +23892,18 @@ oblige anyone to edit a test.
    precedes an `unparseable final message` failure, which counts as one, not
    threshold-plus); a detail change restarts the count at one; item-stage
    failures and other nodes' noise never contribute; a threshold of 0 is the
-   off switch. `crash_loop_preselection_verdict` passes the same shape of
+   off switch. Per-repository grouping (agent-ops#1630): repository A
+   accumulating `crash_loop_after` consecutive same-detail failures while
+   repository B succeeds every cycle in between still yields A's own verdict,
+   untouched by B's success; an event carrying no `repo` at all still yields
+   its own verdict, with no `repo` field, independent of every real
+   repository's own group in the same stream; two repositories independently
+   crash-looping in the same cycle both yield their own verdict — one
+   JSON-Lines line each, each carrying its own `repo`, `detail` and count.
+   `crash_loop_reverify` matches a retry to the correct one of several
+   same-cycle verdicts by `repo` as well as `detail`/`first_ts`, so a retry
+   queued for one repository's own run is never mismatched to another's, even
+   sharing a detail and a first_ts. `crash_loop_preselection_verdict` passes the same shape of
    cases against the class `crash_loop_verdict` cannot see: threshold-many
    consecutive cycles that each logged `cycle-start` then `cycle-end` with
    the same non-zero `exit_code` and no `stage-start` anywhere between them
@@ -23881,6 +23944,14 @@ oblige anyone to edit a test.
    old that success is, a success that has genuinely held the window with no
    recurrence is retired exactly as before, and `crash_loop_min_clear_
    minutes` 0 restores instant retirement on the first nameable success.
+   The same file also covers per-repository dedup and retirement
+   (agent-ops#1630), two repositories sharing a generic detail (e.g. both
+   "coordinator exited 1"): repository B's own run still files its own
+   escalation issue undeterred by repository A's own same-detail escalation;
+   repository A's own escalation is retired on repository A's own clearing
+   success even while repository B, sharing the detail, is still actively
+   failing under its own independent run; and repository B's own clearing
+   success never retires repository A's own still-open escalation.
    back-pressure, and the logged reason states the count's composition
    (`N ready + N draft + N unraised claim(s)`).
 5b. **A personal access token's own expiry is read, recorded, and escalated
