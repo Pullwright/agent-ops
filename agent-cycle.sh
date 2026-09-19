@@ -160,6 +160,11 @@ export AGENT_OPS_ROOT="$SCRIPT_DIR"
 # Sourced after toggle.sh (uses _toggle_iso) and fleet.sh (uses fleet_logs),
 # and ahead of manage.sh below, whose --status/--drain handling calls into it.
 . "$SCRIPT_DIR/lib/drain.sh"
+# shellcheck source=lib/mirror-lock.sh
+# Sourced for manage.sh's own --status `published:` line below (agent-ops#1679):
+# scripts/state-sync.sh sources it too, for the winning/losing sides of the
+# lock itself, but this is a read-only probe that never takes the lock.
+. "$SCRIPT_DIR/lib/mirror-lock.sh"
 # shellcheck source=lib/manage.sh
 # Sourced after toggle.sh, limit-detect.sh, fleet.sh and merge-autonomy.sh —
 # the four its own --status reports are built from; like standdown.sh above,

@@ -4009,6 +4009,64 @@ implements.
    the three lock cases (young, held by a live process, orphaned) and both
    events; `test/manage-status.test.sh` the two lines.
 
+   **A push that wedges holding `mirror_lock` releases it on its own, and a
+   long hold is named as a possible wedge rather than reported as an
+   ordinary one (agent-ops#1679).** On 2026-09-18 a push on `ockham-2`
+   wedged for almost seven hours inside the redaction loop
+   (`lib/redact.sh`, above), holding `mirror_lock` throughout: bash does not
+   close a `< <(find …)` process substitution's read end when the loop
+   reading it exits early — only the shell's own exit does — so a
+   `redact_file` call failing on one file (a permission error, a file
+   removed between `find`'s stat and `sed -i`'s open) used to unwind the
+   whole run under `set -e` before `find` reached EOF, leaving `find`
+   blocked writing into a pipe nothing was reading any more and the
+   unwinding shell blocked in turn waiting to reap it — an `errexit` and an
+   unconsumed process substitution deadlocking each other. Meanwhile
+   "another state-sync holds the mirror — nothing to do" (`mirror_lock`,
+   above) is genuinely self-clearing only for an ordinary slow fetch, so
+   nothing told the two apart: the doctor's own publication check (this
+   same requirement, above) still caught the resulting silence hourly, into
+   a file nothing surfaced, exactly as it did throughout #1377.
+
+   Three changes, independent of each other: a failed `redact_file` call is
+   now a warning and a skip (`redact_mirror_files`, `scripts/state-sync.sh`)
+   rather than a loop-ending failure, closing the specific hazard this
+   incident traced to; the redaction pass runs under a deadline
+   (`mirror_run_with_deadline`, `lib/mirror-lock.sh`) — one push interval by
+   default, `STATE_SYNC_PUSH_DEADLINE_SECONDS` overriding it for tests —
+   that backgrounds the pass and kills its whole process tree (a /proc walk
+   over parent/child edges, generalising `mirror_git_busy`'s own search for
+   a live git to any process) if it is still running past that bound,
+   logging `state-sync-push-failed` `{step: "redaction-loop-deadline",
+   detail}` (the shape `mirror_write` already uses, both now built by one
+   `state_sync_push_failed` helper) and ending the push non-zero — a safety
+   net regardless of whether a future wedge shares this incident's own
+   cause; and `mirror_lock` itself now names how long the current holder has
+   been running. That last part needs a fact the lock file itself cannot
+   answer — `exec 9>"$mirror.lock"` truncates it on every attempt, winner
+   and loser alike, so its mtime is reset by the very call that is asking —
+   so the process that actually wins the flock stamps a start time into a
+   marker beside it (`mirror_lock_mark_started`/`mirror_lock_clear_started`,
+   `lib/mirror-lock.sh`) that only it writes and only it removes on release.
+   A losing `mirror_lock` call reads that marker's age and says so: "holding
+   for Ns" always, and "longer than one push interval — may be wedged" once
+   that age passes `push_interval_seconds`. `--status`'s `published:` line
+   (above) gains the same fact for a human who is not reading `cron.log`:
+   `publication_status_report` (`lib/manage.sh`) probes the lock live
+   (`mirror_lock_probe`, a momentary `flock`(1) against the lock file rather
+   than a bash-builtin fd, since this is a read-only caller that never takes
+   the lock itself) and appends the same "may be wedged" note once a live
+   hold outruns one push interval — read live, since a wedge's whole defect
+   is that it never reaches the confirmed-publication read-back the rest of
+   that line is built from. `test/state-sync.test.sh` covers the deadline in
+   isolation (a simulated wedge via `sleep`, killed and reported `124`
+   without waiting out its own runtime), a single unredactable file no
+   longer aborting the loop, a genuinely slow redaction pass (thousands of
+   trivial files) hitting the deadline end to end — event logged, lock
+   freed, the very next push unobstructed — and both sides of a real lock
+   contention naming the holder's age; `test/manage-status.test.sh` covers
+   the `published:` line's own note, on and off the wedge threshold.
+
    **Fetch.** Every node materialises every *other* node's branch, whole,
    under the peers directory (`lib/fleet.sh`, `<workspace_root>/
    .agent-ops-peers/<node>/`), on its own schedule: `git archive` into a
