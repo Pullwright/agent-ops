@@ -2419,6 +2419,48 @@
     return el("div", {}, body);
   }
 
+  // ---------- fleet sizing (D21/D14, issue #612) ----------
+  // Renders `D.fleet_sizing` — lib/fleet-sizing.sh's own `fleet_sizing_
+  // classify`: the per-node breakdown behind the constraint panel's own
+  // node-count candidate above — "is this fleet the right size?", answered
+  // per node rather than as one fleet-wide bucket.
+  function fleetSizingRow(row) {
+    return el("tr", {}, [
+      el("td", {class:"mono", text: row.node}),
+      el("td", {class:"mono", text: row.idle_share == null ? "—" : pct(row.idle_share)}),
+      el("td", {class:"mono", text: row.claim_lost_share == null ? "—" : pct(row.claim_lost_share)}),
+      el("td", {class:"mono", text: num(row.exclusive_landings) + " / " + num(row.total_landings)}),
+      el("td", {}, el("span", {class:"badge " + (row.verdict === "shrink-candidate" ? "b-red" : "b-green"),
+        text: row.verdict})),
+      el("td", {class:"wrap muted", style:"font-size:11.5px", text: row.lever})
+    ]);
+  }
+  function fleetSizingPanel() {
+    var fs = D.fleet_sizing;
+    if (!fs || fs.sentence == null) {
+      return el("div", {class:"panel"}, el("div", {class:"empty",
+        text: "The fleet-sizing figure could not be assembled this tick. See cron.log."}));
+    }
+    var body = [];
+    body.push(el("div", {class:"panel", style:"font-size:15px;font-weight:600", text: fs.sentence}));
+    if (fs.window && fs.window.from) {
+      body.push(el("div", {class:"panel muted", text:
+        "Window: " + fmtTime(fs.window.from) + " – " + fmtTime(fs.window.to) + " (" + num(fs.nodes ? fs.nodes.length : null) +
+        " node(s)). Shrink thresholds: idle-without-demand share at or above " + pct(fs.min_idle_share) +
+        ", contended-claim-loss share at or above " + pct(fs.min_claim_lost_share) +
+        ", at most " + num(fs.max_exclusive_landings_for_shrink) + " exclusive landing(s) this window."}));
+    }
+    body.push((fs.by_node || []).length
+      ? tableOf(["Node", "Idle-without-demand share", "Share of fleet contended claim losses",
+                 "Exclusive / total landings", "Verdict", "Lever"], (fs.by_node || []).map(fleetSizingRow))
+      : el("div", {class:"empty", text:"No per-node data in this window."}));
+    body.push(el("div", {class:"panel muted", text:
+      "“Exclusive” landings are items this node claimed and delivered where no other node ever " +
+      "logged a competing claim-lost on the same item — the evidence that a node still earns its " +
+      "place even when its own idle time or contention is high."}));
+    return el("div", {}, body);
+  }
+
   // ---------- rework panel (D23, issue #611) ----------
   // Renders `D.rework` — lib/rework-panel.sh's own fold over the rework
   // record and the item lifecycle record (docs/FLOW-SCHEMA.md). All-time,
@@ -3355,6 +3397,81 @@
     return wrap;
   }
 
+  // ---------- spend by fate (D21/D14, issue #612) ----------
+  // Renders `D.spend_fate` — lib/fleet-pricing.sh's own `fleet_pricing_
+  // spend_fate`: the same `cost_rows[]` the charts and the token panels
+  // above already read, this time split by what the money bought rather
+  // than by day/model/actor. All-time, on the same terms the rework panel
+  // above is: a row's fate is a permanent fact about it, not something a
+  // time-frame selector should be able to change underneath the
+  // reconciliation check.
+  var FATE_LABEL = {
+    delivered: "Delivered", rework: "Rework", discarded: "Discarded",
+    overhead: "Overhead", defect_driven: "Defect-driven", unaccounted: "Unaccounted"
+  };
+  var FATE_ORDER = ["delivered", "rework", "discarded", "overhead", "defect_driven", "unaccounted"];
+  function spendFateRow(sf, key) {
+    var b = (sf.by_fate || {})[key] || {usd: 0, n: 0};
+    var share = sf.total_usd ? (b.usd / sf.total_usd) : null;
+    return el("tr", {}, [
+      el("td", {text: FATE_LABEL[key] || key}),
+      el("td", {class:"mono", text: usd(b.usd)}),
+      el("td", {class:"mono", text: pct(share)}),
+      el("td", {class:"mono", text: num(b.n)}),
+      el("td", {class:"wrap muted", style:"font-size:11.5px", text: (sf.lever || {})[key] || "—"})
+    ]);
+  }
+  function spendFatePanel() {
+    var sf = D.spend_fate;
+    if (!sf || sf.reconciled == null) {
+      return el("div", {class:"panel"}, el("div", {class:"empty",
+        text: "The spend-by-fate account could not be assembled this tick. See cron.log."}));
+    }
+    var body = [];
+    body.push(el("div", {class:"panel muted", text:
+      "Total spend this account covers: " + usd(sf.total_usd) + " across " + num(sf.row_count) +
+      " (transcript × model) row(s) — the same rows the cost charts and token panels above " +
+      "aggregate by day, model and actor. " +
+      (sf.reconciled
+        ? "Reconciles to the cent: every bucket below sums back to the total."
+        : "Does not reconcile — a bug, not a rounding note; see cron.log.")}));
+    body.push(tableOf(["Fate", "USD", "Share", "Rows", "Lever (the decision this bucket informs)"],
+      FATE_ORDER.map(function (k) { return spendFateRow(sf, k); })));
+    return el("div", {}, body);
+  }
+
+  // ---------- turns per landed item (D21/D14, issue #612) ----------
+  // Renders `D.turns_per_landed_item` — lib/fleet-pricing.sh's own
+  // `fleet_pricing_turns_per_landed_item`: `num_turns` averaged per (stage,
+  // model) over landed items only, the companion figure to the prompt-cache
+  // ratio above for the same "where do the tokens go" question.
+  function turnsPerLandedRow(row) {
+    return el("tr", {}, [
+      el("td", {class:"mono", text: row.stage}),
+      el("td", {class:"mono", text: shortModel(row.model)}),
+      el("td", {class:"mono", text: String(row.n)}),
+      el("td", {class:"mono", text: row.mean_turns == null ? "—" : row.mean_turns}),
+      el("td", {class:"mono", text: row.median_turns == null ? "—" : row.median_turns})
+    ]);
+  }
+  function turnsPerLandedPanel() {
+    var tpl = D.turns_per_landed_item;
+    if (!tpl || tpl.by_stage_model == null) {
+      return el("div", {class:"panel"}, el("div", {class:"empty",
+        text: "Turns per landed item could not be assembled this tick. See cron.log."}));
+    }
+    var body = [];
+    body.push(el("div", {class:"panel muted", text:
+      num(tpl.n_landed_with_turns) + " of " + num(tpl.n_landed_total) + " landed item(s) carried at " +
+      "least one measured stage-end this window (the rest landed before this record existed, or their " +
+      "stage-end predates num_turns being recorded). " + (tpl.lever || "")}));
+    body.push((tpl.by_stage_model || []).length
+      ? tableOf(["Stage", "Model", "Stage-ends sampled", "Mean turns", "Median turns"],
+                (tpl.by_stage_model || []).map(turnsPerLandedRow))
+      : el("div", {class:"empty", text:"No landed item carried a measured num_turns yet."}));
+    return el("div", {}, body);
+  }
+
   // ---------- log & cron ----------
   // Which agent an event is the work of, or null where none was acting.
   //
@@ -3954,6 +4071,13 @@
     // the operational panels above.
     app.appendChild(sectionOf("Constraint", "Constraint", constraintPanel()));
 
+    // ---------- fleet sizing ----------
+    // Directly under the constraint statement it is the per-node evidence
+    // for (D21/D14, issue #612): that panel's own node-count candidate is a
+    // single fleet-wide bucket, and this is which node, if any, is the
+    // over-provisioned one.
+    app.appendChild(sectionOf("Fleet sizing", "Fleet sizing", fleetSizingPanel()));
+
     // ---------- revert rate by repository ----------
     // Directly under the landings it audits: D18's Stage 2 exit criterion
     // ("revert rate ≤ baseline") is a fact this panel makes checkable at a
@@ -4014,6 +4138,15 @@
     // ---------- token economics & stall profile (issue #594, D21) ----------
     app.appendChild(sectionOf("Tokens", "Token economics", tokenEconomicsPanel()));
     app.appendChild(sectionOf("Stall profile", "Stall profile", stallProfilePanel()));
+
+    // ---------- spend by fate & turns per landed item (D21/D14, issue #612) ----------
+    // Directly under token economics and the stall profile they complete:
+    // together the four panels answer "where do the tokens go" — by day/
+    // model/actor (the cost charts above), by cache ratio (token economics),
+    // by silence (stall profile), by fate (this one), and by turns per
+    // landed item (the next one).
+    app.appendChild(sectionOf("Spend by fate", "Spend by fate", spendFatePanel()));
+    app.appendChild(sectionOf("Turns per landed item", "Turns per landed item", turnsPerLandedPanel()));
 
     app.appendChild(sectionOf("Log",
       (nodeFilter ? "Recent log events — " + nodeFilter + " only (click its card to clear)" : "Recent log events") +

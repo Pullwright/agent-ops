@@ -94,6 +94,23 @@ assert_eq "after ratio" "1" "$(jq -r '.after.ratio' <<<"$out")"
 assert_eq "window starts at the earliest ts" "2026-01-01T00:00:01Z" "$(jq -r '.window.from' <<<"$out")"
 assert_eq "window ends at the latest ts" "2026-01-01T00:00:07Z" "$(jq -r '.window.to' <<<"$out")"
 assert_eq "since is null when not given" "null" "$(jq -r '.since' <<<"$out")"
+
+# --- contention_by_node (issue #612): the identical population, grouped by
+#     node instead of by era — never split into before/after, since fleet
+#     sizing has no adoption-boundary question to ask.
+assert_eq "contention_by_node fleet selections is before+after (3+2)" \
+  "5" "$(jq -r '.contention_by_node.fleet.selections' <<<"$out")"
+assert_eq "contention_by_node fleet contended_losses is before+after (2+2)" \
+  "4" "$(jq -r '.contention_by_node.fleet.contended_losses' <<<"$out")"
+assert_eq "node-a: 2 selections (T1, T5), 2 contended losses (held item 2, pr-held item 5)" \
+  '{"contended_losses":2,"ratio":1,"selections":2}' \
+  "$(jq -Sc '.contention_by_node.by_node["node-a"]' <<<"$out")"
+assert_eq "node-b: 2 selections (U1, U3), 1 contended loss (held item 9)" \
+  '{"contended_losses":1,"ratio":0.5,"selections":2}' \
+  "$(jq -Sc '.contention_by_node.by_node["node-b"]' <<<"$out")"
+assert_eq "node-c: 1 selection (V1), 1 contended loss (held item 11)" \
+  '{"contended_losses":1,"ratio":1,"selections":1}' \
+  "$(jq -Sc '.contention_by_node.by_node["node-c"]' <<<"$out")"
 assert_eq "cadence_bound_minutes echoes this repository's own config" \
   "$(jq -r '.schedule.cycle_interval_minutes' "$SCRIPT_DIR/config.json")" \
   "$(jq -r '.cadence_bound_minutes' <<<"$out")"

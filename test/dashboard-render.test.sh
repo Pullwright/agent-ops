@@ -1434,6 +1434,37 @@ assert_contains "a constraint payload the Publisher could not assemble reads as 
 assert_not_contains "  ... never as a quiet zero-idleness tick" \
   "accounted for" "$out"
 
+# --- fleet-sizing.json / fleet-sizing-outage.json: the fleet-sizing figure
+#     (D21/D14, docs/ROADMAP.md; issue #612) --------------------------------
+# lib/fleet-sizing.sh's own folds are unit-tested directly in
+# test/fleet-sizing.test.sh; this only checks that `D.fleet_sizing` renders as
+# the leading sentence and the per-node table — including that a
+# shrink-candidate and a healthy node read differently on the same table —
+# and that a Publisher-side assembly failure reads as an outage, the same
+# distinction the constraint panel just above already makes.
+out="$(render fleet-sizing.json)" || { printf 'FAIL - fleet-sizing.json did not render:\n%s\n' "$out"; exit 1; }
+fleet_sizing_section="$(awk '$0 == "  <section>" { on = 0 } on { print } $0 == "      Fleet sizing" { on = 1 }' <<<"$out")"
+assert_contains "the leading sentence names the shrink candidate" \
+  "Fleet-sizing candidate(s) for shrinking: poetic-over" "$fleet_sizing_section"
+assert_contains "the per-node table names the over-provisioned node" \
+  "poetic-over" "$fleet_sizing_section"
+assert_contains "  ... its own idle-without-demand share" \
+  "82.7%" "$fleet_sizing_section"
+assert_contains "  ... and its own shrink-candidate verdict" \
+  "shrink-candidate" "$fleet_sizing_section"
+assert_contains "the healthy node is on the same table, not singled out" \
+  "poetic-healthy" "$fleet_sizing_section"
+assert_contains "  ... reading healthy rather than a shrink candidate" \
+  "healthy" "$fleet_sizing_section"
+assert_contains "the exclusive-landings caveat renders beneath the table" \
+  "no other node ever" "$fleet_sizing_section"
+
+out="$(render fleet-sizing-outage.json)" || { printf 'FAIL - fleet-sizing-outage.json did not render:\n%s\n' "$out"; exit 1; }
+assert_contains "a fleet-sizing payload the Publisher could not assemble reads as an outage" \
+  "The fleet-sizing figure could not be assembled this tick." "$out"
+assert_not_contains "  ... never as a quiet no-candidate tick" \
+  "Fleet-sizing candidate(s)" "$out"
+
 # --- token-economics.json: the token and prompt-cache panels (issue #594, D21) ---
 # Token totals by stage and by model, and the prompt-cache ratio each implies,
 # read off cost_rows[]'s own tokens_* fields (docs/METERING-SCHEMA.md) —
@@ -1497,6 +1528,49 @@ assert_contains "a stage with no known backstop says so rather than guessing a d
 assert_contains "a near-backstop worst_run_max below the minimum sample still names the backstop, since a max of maxima is exact at any sample size" \
   "worst silence reached 95% of the 90m backstop — consider raising it before a healthy run is killed" \
   "$spflat"
+
+# --- fleet-pricing.json / fleet-pricing-outage.json: spend by fate and turns
+#     per landed item (D21/D14, docs/ROADMAP.md; issue #612) ----------------
+# lib/fleet-pricing.sh's own folds are unit-tested directly in
+# test/fleet-pricing.test.sh; this only checks that `D.spend_fate` and
+# `D.turns_per_landed_item` render as their own tables, each cell naming the
+# decision it informs (the lever rule, D21), and that a Publisher-side
+# assembly failure on either reads as an outage rather than a quiet zero.
+fp="$(render fleet-pricing.json)" || { printf 'FAIL - fleet-pricing.json did not render:\n%s\n' "$fp"; exit 1; }
+spend_fate_section="$(awk '$0 == "  <section>" { on = 0 } on { print } $0 == "      Spend by fate" { on = 1 }' <<<"$fp")"
+assert_contains "the total and row count render" \
+  "29.6" "$spend_fate_section"
+assert_contains "  ... and that it reconciles" \
+  "Reconciles to the cent" "$spend_fate_section"
+assert_contains "every fate bucket has its own row, labelled" \
+  "Delivered" "$spend_fate_section"
+assert_contains "  ... Rework" "Rework" "$spend_fate_section"
+assert_contains "  ... Discarded" "Discarded" "$spend_fate_section"
+assert_contains "  ... Overhead" "Overhead" "$spend_fate_section"
+assert_contains "  ... Defect-driven" "Defect-driven" "$spend_fate_section"
+assert_contains "  ... Unaccounted" "Unaccounted" "$spend_fate_section"
+assert_contains "each row's own lever renders in the same cell" \
+  "reference baseline" "$spend_fate_section"
+
+turns_section="$(awk '$0 == "  <section>" { on = 0 } on { print } $0 == "      Turns per landed item" { on = 1 }' <<<"$fp")"
+assert_contains "the landed-with-turns population renders against the landed total" \
+  "2 of 3 landed" "$turns_section"
+assert_contains "the by-stage/model table names the stage" \
+  "implementer" "$turns_section"
+assert_contains "  ... the model" \
+  "m1" "$turns_section"
+assert_contains "  ... and the mean turns" \
+  "7" "$turns_section"
+assert_contains "the lever renders too (D22)" \
+  "D22" "$turns_section"
+
+out="$(render fleet-pricing-outage.json)" || { printf 'FAIL - fleet-pricing-outage.json did not render:\n%s\n' "$out"; exit 1; }
+assert_contains "a spend_fate payload the Publisher could not assemble reads as an outage" \
+  "The spend-by-fate account could not be assembled this tick." "$out"
+assert_contains "a turns_per_landed_item payload the Publisher could not assemble reads as an outage too" \
+  "Turns per landed item could not be assembled this tick." "$out"
+assert_not_contains "  ... never as a quiet zero-spend tick" \
+  "Reconciles to the cent" "$out"
 
 printf '\n'
 if (( failures > 0 )); then

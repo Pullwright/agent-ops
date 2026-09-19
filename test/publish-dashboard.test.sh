@@ -3561,12 +3561,23 @@ fast798="$(data_of "$f798")"
 # its cost: it is the only roll-up needing a second fleet-wide log union
 # (review-log.jsonl), so a fast build that recomputed it would pay that read
 # twice per tick for a value it does not even publish.
-for _k in counts blocked void landings decisions config github_budget constraint; do
+for _k in counts blocked void landings decisions config github_budget constraint \
+          fleet_sizing spend_fate turns_per_landed_item; do
   assert_eq "a fast build carries .$_k forward unchanged" \
     "$(jq -Sc ".$_k" <<<"$full798")" "$(jq -Sc ".$_k" <<<"$fast798")"
 done
 assert_eq "  ... and the carried-forward constraint is a real statement, not a null placeholder" \
   "true" "$(jq -r '.constraint | type == "object" and has("sentence") and has("candidates")' <<<"$fast798")"
+# fleet_sizing/spend_fate/turns_per_landed_item (D21/D14, issue #612): the
+# same FULL-only, carry-forward-on-a-fast-tick treatment as constraint above,
+# for the identical reason — each needs a full-history fold this fixture's
+# full build already paid for once.
+assert_eq "  ... fleet_sizing is a real statement too, not a null placeholder" \
+  "true" "$(jq -r '.fleet_sizing | type == "object" and has("sentence") and has("by_node")' <<<"$fast798")"
+assert_eq "  ... spend_fate is a real account too, not a null placeholder" \
+  "true" "$(jq -r '.spend_fate | type == "object" and has("by_fate") and has("reconciled")' <<<"$fast798")"
+assert_eq "  ... turns_per_landed_item is a real report too, not a null placeholder" \
+  "true" "$(jq -r '.turns_per_landed_item | type == "object" and has("by_stage_model")' <<<"$fast798")"
 assert_eq "and is not merely the old page: generated_at moves" "1" \
   "$([[ "$(jq -r .generated_at <<<"$fast798")" > "$(jq -r .generated_at <<<"$full798")" ]] && echo 1 || echo 0)"
 

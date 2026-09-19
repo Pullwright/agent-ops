@@ -78,6 +78,14 @@ SCHEMA_FILE="$SCRIPT_DIR/config.schema.json"
 # CLI contract, output field names and this file's own test all stay
 # unchanged; only where the pairing/coverage figures are computed moved.
 . "$SCRIPT_DIR/lib/item-lifecycle.sh"
+# shellcheck source=lib/fleet-sizing.sh
+# `fleet_sizing_contention_by_node` (issue #612) is the per-node breakdown of
+# this same before/after fold's own contended-`claim-lost`/`selection`
+# population, factored out here so the fleet-sizing figure the dashboard
+# computes (lib/fleet-sizing.sh's own `fleet_sizing_classify`) reads the
+# identical counts this script reports rather than a second, independently
+# maintained tally of the same events.
+. "$SCRIPT_DIR/lib/fleet-sizing.sh"
 
 usage() {
   cat <<'EOF'
@@ -112,6 +120,13 @@ Read-only. Prints, as JSON on stdout:
     — the noise floor under `pickup_latency` above, since a poll-based
     `first-seen` is only as fresh as the gather that logged it; not a floor
     on `pickup_latency_forge_anchored`, see above.
+  - `contention_by_node`: the identical `selection`/contended-`claim-lost`
+    population as the before/after split above, grouped by node instead of
+    by era — `.fleet` (the fleet-wide totals the before/after split already
+    sums to) and `.by_node` (per node: `selections`, `contended_losses`,
+    `ratio`) — the per-node input the fleet-sizing figure
+    (`lib/fleet-sizing.sh`, issue #612) folds against node idle time and
+    exclusive landings.
   - `window`: the timestamps the report covers.
 
   --since       only count events at or after this ISO-8601 timestamp
@@ -182,9 +197,11 @@ trap 'rm -f "$log_tmp"' EXIT
 fleet_logs "$state_dir" "$peers_dir" log.jsonl > "$log_tmp"
 
 pairs_json="$(item_lifecycle_pickup_pairs "$since" "$log_tmp")"
+contention_by_node_json="$(fleet_sizing_contention_by_node "$log_tmp" "$since")"
 
 jq -c -R 'fromjson? // empty' "$log_tmp" \
-  | jq -s --arg since "$since" --argjson cadence "$cadence_bound_minutes" --argjson pairs "$pairs_json" '
+  | jq -s --arg since "$since" --argjson cadence "$cadence_bound_minutes" --argjson pairs "$pairs_json" \
+      --argjson contention "$contention_by_node_json" '
       def era($fc; $node; $ts):
         if $fc[$node] and $ts >= $fc[$node] then "after" else "before" end;
       def ratio($c; $s): (if $s == 0 then null else ($c / $s) end);
@@ -227,6 +244,7 @@ jq -c -R 'fromjson? // empty' "$log_tmp" \
             selections: $sel.after,
             contended_losses: $cont.after,
             ratio: ratio($cont.after; $sel.after)
-          }
+          },
+          contention_by_node: $contention
         } + $pairs
     '

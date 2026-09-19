@@ -1,0 +1,72 @@
+{
+  "generated_at": "@now",
+  "node": "poetic-1",
+  "config": {
+    "timeout_coordinator": 15,
+    "timeout_implementer": 90,
+    "timeout_reviewer": 30,
+    "timeout_enabler": 30,
+    "lock_stale_after": 4,
+    "dashboard_refresh_seconds": 5
+  },
+  "status": {
+    "switch": {"disabled": false},
+    "limit": {"active": false},
+    "running": false,
+    "lock": null,
+    "current": null,
+    "last_cycle": null
+  },
+  "counts": {
+    "spend_today_usd": 0, "spend_total_usd": 0,
+    "failures_shown": 0, "cycles_shown": 0, "prs_reached_ready": 0,
+    "by_day": [], "by_model": [], "by_actor": []
+  },
+  "cycles": [],
+  "blocked": [],
+  "void": [],
+  "github": {"ok": true, "fetched_at": "@ago:1m", "prs": [], "pr_index": {}, "inputs": {}},
+  "log_tail": [],
+  "cron_tail": ["30 * * * *  /app/agent-cycle.sh"],
+  "max_open_agent_prs": 3,
+  "fleet_sizing": {
+    "window": {"from": "2026-09-01T00:00:00Z", "to": "2026-09-08T00:00:00Z", "seconds": 604800},
+    "nodes": ["poetic-over", "poetic-healthy"],
+    "min_idle_share": 0.3,
+    "min_claim_lost_share": 0.3,
+    "max_exclusive_landings_for_shrink": 0,
+    "min_sample_seconds": 14400,
+    "status": "ok",
+    "insufficient_reason": null,
+    "sentence": "Fleet-sizing candidate(s) for shrinking: poetic-over (see by_node for the evidence behind each one).",
+    "shrink_candidates": ["poetic-over"],
+    "by_node": [
+      {
+        "node": "poetic-over",
+        "idle_without_demand_seconds": 500000,
+        "idle_share": 0.827,
+        "claim_lost_contended": 80,
+        "selections": 10,
+        "claim_lost_share": 0.8,
+        "exclusive_landings": 0,
+        "total_landings": 1,
+        "verdict": "shrink-candidate",
+        "recommendation": "remove poetic-over from the fleet: 83% idle-without-demand this window, 80% share of fleet-wide contended claim losses, and 0 exclusive landing(s)",
+        "lever": "node count: run fewer nodes, no cost in elapsed time"
+      },
+      {
+        "node": "poetic-healthy",
+        "idle_without_demand_seconds": 1000,
+        "idle_share": 0.002,
+        "claim_lost_contended": 20,
+        "selections": 200,
+        "claim_lost_share": 0.2,
+        "exclusive_landings": 30,
+        "total_landings": 50,
+        "verdict": "healthy",
+        "recommendation": null,
+        "lever": "no action indicated: idle time and contention here are not both elevated, or exclusive delivery justifies the node"
+      }
+    ]
+  }
+}

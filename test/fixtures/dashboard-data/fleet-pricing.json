@@ -1,0 +1,62 @@
+{
+  "generated_at": "@now",
+  "node": "poetic-1",
+  "config": {
+    "timeout_coordinator": 15,
+    "timeout_implementer": 90,
+    "timeout_reviewer": 30,
+    "timeout_enabler": 30,
+    "lock_stale_after": 4,
+    "dashboard_refresh_seconds": 5
+  },
+  "status": {
+    "switch": {"disabled": false},
+    "limit": {"active": false},
+    "running": false,
+    "lock": null,
+    "current": null,
+    "last_cycle": null
+  },
+  "counts": {
+    "spend_today_usd": 0, "spend_total_usd": 0,
+    "failures_shown": 0, "cycles_shown": 0, "prs_reached_ready": 0,
+    "by_day": [], "by_model": [], "by_actor": []
+  },
+  "cycles": [],
+  "blocked": [],
+  "void": [],
+  "github": {"ok": true, "fetched_at": "@ago:1m", "prs": [], "pr_index": {}, "inputs": {}},
+  "log_tail": [],
+  "cron_tail": ["30 * * * *  /app/agent-cycle.sh"],
+  "max_open_agent_prs": 3,
+  "spend_fate": {
+    "total_usd": 29.6,
+    "row_count": 7,
+    "reconciled": true,
+    "by_fate": {
+      "delivered": {"usd": 10, "n": 1},
+      "rework": {"usd": 7, "n": 1},
+      "discarded": {"usd": 5.25, "n": 1},
+      "overhead": {"usd": 2.25, "n": 2},
+      "defect_driven": {"usd": 3.1, "n": 1},
+      "unaccounted": {"usd": 2, "n": 1}
+    },
+    "lever": {
+      "delivered": "reference baseline: spend that produced landed value; every other bucket's share is read against this one, not itself a lever",
+      "rework": "D23's own lever: fix the class or cause driving repeated attempts (the rework-by-class panel) to shrink this share without redoing delivered work",
+      "discarded": "item-selection judgement: spend on items voided, superseded or abandoned before landing; tighter candidate screening or needs-refinement review shrinks this",
+      "overhead": "cycle cadence and back-pressure caps, the same grow/shrink candidates lib/constraint.sh already names, not any one model or stage",
+      "defect_driven": "a single attempt errored outright; the lever is whatever crashed or timed out the stage, fixed at the stage or model level, distinct from rework's repeated-attempt cost",
+      "unaccounted": "not yet resolved: the item this spend bought is still open or blocked, or the rare case its cycle union or lifecycle window lost the join; re-read once the item resolves"
+    }
+  },
+  "turns_per_landed_item": {
+    "n_landed_total": 3,
+    "n_landed_with_turns": 2,
+    "by_stage_model": [
+      {"stage": "implementer", "model": "m1", "n": 2, "mean_turns": 7, "median_turns": 7},
+      {"stage": "reviewer", "model": "m2", "n": 1, "mean_turns": 3, "median_turns": 3}
+    ],
+    "lever": "turns per landed item, by stage and model: a model taking materially more turns than a peer for the same stage on the same class of work is a prompt or tool-loop inefficiency to fix at the model or prompt level (D22), before the token spend it drives is treated as a volume problem"
+  }
+}
