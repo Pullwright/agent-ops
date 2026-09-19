@@ -59,8 +59,17 @@ fleet_mark_peers() {  # <peers_dir> true|false
     return
   fi
 
+  # `|| true` and the object guard together are what make "unreadable →
+  # rewrite" actually reachable: every caller of this function runs under
+  # `set -euo pipefail` (scripts/state-sync.sh), and a bare
+  # `x="$(jq … )"` over a truncated marker fails the *assignment*, which
+  # errexit turns into an abort of the whole fetch before this branch is
+  # ever taken — leaving the corrupt marker in place and unwritten for
+  # every subsequent failure. `type == "object"` catches the JSON that
+  # parses but cannot be indexed (a bare scalar, `null`), which `.ok`
+  # would otherwise raise on for the same result.
   marker_json=""
-  [[ -s "$marker" ]] && marker_json="$(jq -c '.' "$marker" 2>/dev/null)"
+  [[ -s "$marker" ]] && marker_json="$(jq -c 'select(type == "object")' "$marker" 2>/dev/null || true)"
   if [[ -n "$marker_json" ]]; then
     prev_ok="$(jq -r '.ok // false' <<<"$marker_json" 2>/dev/null)"
     [[ "$prev_ok" == "true" ]] || return 0
@@ -105,10 +114,14 @@ fleet_peers_stale() {  # <peers_dir> [fetch_minutes]
   local dir="$1" fetch_minutes="${2:-7}" marker ok ts threshold cap now then_epoch age
   marker="$(fleet_peers_marker "$dir")"
   [[ -s "$marker" ]] || return 1
-  ok="$(jq -r '.ok // false' "$marker" 2>/dev/null)"
+  # `|| true` for the same reason `fleet_mark_peers` above needs it: a
+  # corrupt marker makes jq exit non-zero, and under a caller's `set -e` a
+  # bare assignment from it aborts that caller rather than reaching the
+  # "not `true`" branch below, which reads an unreadable marker as stale.
+  ok="$(jq -r 'if type == "object" then (.ok // false) else false end' "$marker" 2>/dev/null || true)"
   [[ "$ok" == "true" ]] || return 0
 
-  ts="$(jq -r '.ts // empty' "$marker" 2>/dev/null)"
+  ts="$(jq -r '.ts // empty' "$marker" 2>/dev/null || true)"
   [[ -n "$ts" ]] || return 0
 
   threshold="${FLEET_PEERS_STALE_SECONDS:-}"

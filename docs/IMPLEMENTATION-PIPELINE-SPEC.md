@@ -4138,7 +4138,14 @@ implements.
    long ago it started), or it says `ok: true` with `ts` older than the
    threshold (the fetch cron itself has stopped running, without ever
    logging a failure); an absent marker is not stale — the bootstrap case,
-   caught instead by the union's own emptiness. The threshold is
+   caught instead by the union's own emptiness — and a marker present but
+   unreadable *is* stale, the one case the two answers differ on, since a
+   marker that will not parse is evidence of a write that went wrong rather
+   than of a fetch that has never run. Neither that read nor
+   `fleet_mark_peers`' own may fail its caller: both run under
+   `set -euo pipefail` (`scripts/state-sync.sh`), where an unguarded
+   assignment from a `jq` that rejects the file would abort the fetch at the
+   read instead of reaching the rewrite. The threshold is
    `min(3 × schedule.state_sync_fetch_minutes × 60, LABEL_OWN_GRACE_SECONDS)`
    — 21 minutes at the shipped 7-minute cadence, capped at 1800s (#1053's
    principle: a staleness bound must never exceed the fault threshold it
