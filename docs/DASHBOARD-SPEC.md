@@ -1069,14 +1069,21 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                                             //   ways it got there
                          provider_unreachable: { stage, detail, count,
                                           first_ts, last_ts, nodes,
-                                          escalate },            // the fleet-
-                                            //   wide transient-refusal
+                                          escalate, repo? },      // the
+                                            //   transient-refusal
                                             //   verdict (#1073,
                                             //   `crash_loop_verdict`'s own
                                             //   `escalate: false` case), read
                                             //   fresh from the union log every
                                             //   publish and applied to every
-                                            //   node its own `nodes` names;
+                                            //   node its own `nodes` names.
+                                            //   `repo` is present iff the run
+                                            //   is repository-scoped
+                                            //   (agent-ops#1630); only the
+                                            //   first such run is published
+                                            //   when several repositories are
+                                            //   transient at once, which
+                                            //   agent-ops#1624 tracks;
                                             //   null when no such run is
                                             //   currently active or this node
                                             //   was not one it named
@@ -3718,12 +3725,19 @@ number's twins elsewhere on the page.
   **provider unreachable**, amber like `updater stuck` — a fault worth a
   human's attention, but not one this node's own code caused — on every
   node the run's own `nodes` names, titled with the consecutive count, the
+  repository the run belongs to where it has one, the
   verbatim detail, and how long the run has been going. It renders nothing
   the moment no such run is currently active (the newest verdict's
   `escalate` reads `true`, or no run has reached `crash_loop_after` at all)
   — there is no separate "cleared" state to track, since the union log is
-  read fresh every publish and a Co-Ordinator success anywhere in the fleet
-  ends the run the same way it already ends the escalating case.
+  read fresh every publish and a Co-Ordinator success for that same
+  repository, anywhere in the fleet, ends the run the same way it already
+  ends the escalating case. `crash_loop_verdict` counts per repository
+  (agent-ops#1630) and so can name more than one transient run at once; the
+  Publisher keeps only the first, since this field holds a single verdict —
+  a narrowing agent-ops#1624 tracks rather than one this badge hides, so an
+  absent badge is not evidence that no other repository is in the same
+  state.
 - **A fifth badge reads the host-facts record a node's own collector
   writes (`scripts/collect-host-facts.sh`, agent-ops#1283,
   `docs/HOST-FACTS-SCHEMA.md`), a fact source none of the four badges
