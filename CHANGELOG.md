@@ -124,6 +124,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   transient run belongs to, and shows the first such run when more than one
   repository is transient at once (issue #1624 tracks showing them all).
 
+- **A blocked marker keyed to a retired pre-migration tech-debt register ref
+  no longer sits `enabler_eligible` forever** (issue #1699). The Enabler's
+  eligible-set staleness filter (`compute_enabler_eligible_set`,
+  `lib/eligibility.sh`, requirement 35e) already dropped a stale
+  merge-conflict/abandoned-draft ref before it reached eligibility by testing
+  it against this cycle's own fresh gather, but exempted every other blocked
+  item kind on the grounds that none had a re-detectable "current" state to
+  compare against. That was true of a *live* tech-debt id but not of a
+  `TD-<scope>-<id>` register ref: since D15 as revised (#875) moved the
+  tech-debt band onto `pw::type:tech-debt` issues, `TECH-DEBT.md`'s frozen
+  archive means such a ref can never appear in a live gather again, so a
+  marker keyed to one (`TD-PPagop-26082416`, the retired key for #972) was
+  re-examined at full engagement cost on every recheck window — nine times
+  over 2026-08-28 through 2026-09-19 — with no push, resolution or human
+  action ever able to clear it. The filter now tests a `TD-<scope>-<id>` ref
+  against this cycle's own fresh `tech_debt` gather the same way, and drops
+  it as stale when absent, logged through the same
+  `enabler-stale-refs-skipped` event.
+
 - **The stall profile's Decision cell no longer hides a near-backstop
   `worst_run_max` behind the minimum-sample gate** (issue #1590). The Stall
   profile panel (D21, issue #594) checked `row.runs < TOKEN_MIN_SAMPLE`
