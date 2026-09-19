@@ -1105,6 +1105,140 @@ assert_eq "a populated union with a peers directory never fetched (no marker at 
   "$(fleet_logs_healthy "$sb_state" "$no_marker_peers" "$union_log_file" >/dev/null 2>&1; echo $?)"
 
 # ==============================================================================
+# fleet_mark_peers — the marker schema and its transition rule (#990, owner
+# decision at escalation #1065): a last-successful-fetch time a failure
+# carries forward rather than overwrites, and a marker that stops moving once
+# an outage sets in.
+# ==============================================================================
+mark_dir="$tmp_dir/mark-peers"
+mkdir -p "$mark_dir"
+marker_file="$mark_dir/.last-fetch.json"
+
+fleet_mark_peers "$mark_dir" true
+assert_eq "a success writes ok:true" "true" "$(jq -r '.ok' "$marker_file")"
+assert_eq "  ... with ts and last_ok_ts equal" "1" \
+  "$([[ "$(jq -r '.ts' "$marker_file")" == "$(jq -r '.last_ok_ts' "$marker_file")" ]] && echo 1 || echo 0)"
+
+first_success_ts="$(jq -r '.ts' "$marker_file")"
+sleep 1
+fleet_mark_peers "$mark_dir" false
+assert_eq "the first failure after a success writes ok:false" "false" "$(jq -r '.ok' "$marker_file")"
+assert_eq "  ... carrying last_ok_ts forward unchanged from the previous marker" "$first_success_ts" \
+  "$(jq -r '.last_ok_ts' "$marker_file")"
+assert_eq "  ... with a new ts" "1" \
+  "$([[ "$(jq -r '.ts' "$marker_file")" != "$first_success_ts" ]] && echo 1 || echo 0)"
+
+before_mtime="$(stat -c %Y "$marker_file")"
+before_bytes="$(cat "$marker_file")"
+sleep 1
+fleet_mark_peers "$mark_dir" false
+after_mtime="$(stat -c %Y "$marker_file")"
+after_bytes="$(cat "$marker_file")"
+assert_eq "a second consecutive failure leaves the marker file byte-identical" "1" \
+  "$([[ "$before_bytes" == "$after_bytes" ]] && echo 1 || echo 0)"
+assert_eq "  ... and mtime-unchanged — its mtime feeds local_state_fingerprint, so a needless move here would rebuild the dashboard once per failed fetch attempt" "1" \
+  "$([[ "$before_mtime" == "$after_mtime" ]] && echo 1 || echo 0)"
+
+sleep 1
+fleet_mark_peers "$mark_dir" true
+assert_eq "a success after a run of failures restores ok:true" "true" "$(jq -r '.ok' "$marker_file")"
+assert_eq "  ... with ts = last_ok_ts = now" "1" \
+  "$([[ "$(jq -r '.ts' "$marker_file")" == "$(jq -r '.last_ok_ts' "$marker_file")" ]] && echo 1 || echo 0)"
+
+mark_no_marker_dir="$tmp_dir/mark-no-marker"
+mkdir -p "$mark_no_marker_dir"
+fleet_mark_peers "$mark_no_marker_dir" false
+assert_eq "a failure with no marker present writes ok:false" "false" \
+  "$(jq -r '.ok' "$mark_no_marker_dir/.last-fetch.json")"
+assert_eq "  ... and last_ok_ts:null, since there is no prior success to carry forward" "null" \
+  "$(jq -r '.last_ok_ts' "$mark_no_marker_dir/.last-fetch.json")"
+
+mark_legacy_dir="$tmp_dir/mark-legacy"
+mkdir -p "$mark_legacy_dir"
+legacy_ts="2026-01-01T00:00:00Z"
+printf '{"ok":true,"ts":"%s"}' "$legacy_ts" > "$mark_legacy_dir/.last-fetch.json"
+fleet_mark_peers "$mark_legacy_dir" false
+assert_eq "a legacy {ok:true,ts} marker with no last_ok_ts field yields last_ok_ts = that marker's own ts on failure" \
+  "$legacy_ts" "$(jq -r '.last_ok_ts' "$mark_legacy_dir/.last-fetch.json")"
+
+# The "unreadable marker → rewrite" branch, exercised the way its only caller
+# actually reaches it: scripts/state-sync.sh runs `set -euo pipefail` and
+# calls fleet_mark_peers bare, so a `x="$(jq …)"` that fails over a truncated
+# marker aborts the whole fetch at the read rather than falling through — the
+# marker then stays corrupt for every subsequent failure, and the caller's own
+# `return 1` and the warning after it never run. A plain call from this
+# script's own `set -uo pipefail` would not catch that, so the subshell below
+# reproduces the caller's flags and its bare-call position deliberately.
+mark_corrupt_dir="$tmp_dir/mark-corrupt"
+mkdir -p "$mark_corrupt_dir"
+printf '{"ok":true,"ts":"2026-01-0' > "$mark_corrupt_dir/.last-fetch.json"
+corrupt_rc=0
+( set -euo pipefail; . "$SCRIPT_DIR/lib/fleet.sh"; fleet_mark_peers "$mark_corrupt_dir" false ) \
+  >/dev/null 2>&1 || corrupt_rc=$?
+assert_eq "a failure over a truncated marker does not abort a set -e caller" "0" "$corrupt_rc"
+assert_eq "  ... and rewrites it, an unreadable marker reading the same as an absent one" "false" \
+  "$(jq -r '.ok' "$mark_corrupt_dir/.last-fetch.json")"
+assert_eq "  ... with last_ok_ts:null, nothing readable having survived to carry forward" "null" \
+  "$(jq -r '.last_ok_ts' "$mark_corrupt_dir/.last-fetch.json")"
+
+# ==============================================================================
+# fleet_peers_stale — the one staleness predicate (#990), shared by
+# fleet_logs_healthy below and the dashboard's fleet-strip badge
+# ==============================================================================
+stale_dir_false="$tmp_dir/stale-ok-false"
+mkdir -p "$stale_dir_false"
+printf '{"ok":false,"ts":"%s","last_ok_ts":null}' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  > "$stale_dir_false/.last-fetch.json"
+assert_eq "ok:false reads stale regardless of ts" "0" \
+  "$(fleet_peers_stale "$stale_dir_false" >/dev/null 2>&1; echo $?)"
+
+stale_dir_fresh="$tmp_dir/stale-ok-true-fresh"
+mkdir -p "$stale_dir_fresh"
+fresh_ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+printf '{"ok":true,"ts":"%s","last_ok_ts":"%s"}' "$fresh_ts" "$fresh_ts" > "$stale_dir_fresh/.last-fetch.json"
+assert_eq "ok:true with a fresh ts reads not stale" "1" \
+  "$(fleet_peers_stale "$stale_dir_fresh" >/dev/null 2>&1; echo $?)"
+
+stale_dir_old="$tmp_dir/stale-ok-true-old"
+mkdir -p "$stale_dir_old"
+old_ts="$(date -u -d '-30 minutes' +%Y-%m-%dT%H:%M:%SZ)"
+printf '{"ok":true,"ts":"%s","last_ok_ts":"%s"}' "$old_ts" "$old_ts" > "$stale_dir_old/.last-fetch.json"
+assert_eq "ok:true with a ts older than 3 fetch intervals reads stale — a dead fetch cron that never logged a failure" "0" \
+  "$(fleet_peers_stale "$stale_dir_old" >/dev/null 2>&1; echo $?)"
+
+stale_dir_none="$tmp_dir/stale-no-marker"
+mkdir -p "$stale_dir_none"
+assert_eq "no marker at all reads not stale — the bootstrap case, caught by the union's own emptiness instead" "1" \
+  "$(fleet_peers_stale "$stale_dir_none" >/dev/null 2>&1; echo $?)"
+
+stale_dir_corrupt="$tmp_dir/stale-corrupt"
+mkdir -p "$stale_dir_corrupt"
+printf '{"ok":true,"ts":"2026-01-0' > "$stale_dir_corrupt/.last-fetch.json"
+assert_eq "a marker that will not parse reads stale, rather than aborting a set -e caller at the read" "0" \
+  "$( ( set -euo pipefail; . "$SCRIPT_DIR/lib/fleet.sh"; fleet_peers_stale "$stale_dir_corrupt" ) >/dev/null 2>&1; echo $?)"
+
+stale_dir_cap="$tmp_dir/stale-cap"
+mkdir -p "$stale_dir_cap"
+# 35 minutes (2100s) sits between the 1800s LABEL_OWN_GRACE_SECONDS cap and
+# the 3600s an uncapped 3*20 fetch-minute threshold would otherwise allow —
+# stale only because the cap applies.
+cap_ts="$(date -u -d '-35 minutes' +%Y-%m-%dT%H:%M:%SZ)"
+printf '{"ok":true,"ts":"%s","last_ok_ts":"%s"}' "$cap_ts" "$cap_ts" > "$stale_dir_cap/.last-fetch.json"
+assert_eq "the threshold is capped at LABEL_OWN_GRACE_SECONDS even for a longer configured fetch interval (#1053)" "0" \
+  "$(fleet_peers_stale "$stale_dir_cap" 20 >/dev/null 2>&1; echo $?)"
+
+sleep 2
+assert_eq "FLEET_PEERS_STALE_SECONDS overrides the computed threshold downward" "0" \
+  "$(FLEET_PEERS_STALE_SECONDS=1 fleet_peers_stale "$stale_dir_fresh" >/dev/null 2>&1; echo $?)"
+assert_eq "  ... and upward" "1" \
+  "$(FLEET_PEERS_STALE_SECONDS=3600 fleet_peers_stale "$stale_dir_old" >/dev/null 2>&1; echo $?)"
+
+assert_eq "a populated union behind an ok:true marker whose ts has gone stale reads unhealthy too (#990)" "1" \
+  "$(fleet_logs_healthy "$sb_state" "$stale_dir_old" "$union_log_file" >/dev/null 2>&1; echo $?)"
+assert_eq "  ... and fleet_logs_healthy's own optional fetch_minutes argument narrows the threshold the same way" "1" \
+  "$(fleet_logs_healthy "$sb_state" "$stale_dir_cap" "$union_log_file" 20 >/dev/null 2>&1; echo $?)"
+
+# ==============================================================================
 # fleet_repair_log — NUL-run repair for the JSONL logs and dashboard.log alike
 # (agent-ops#794): a container killed mid-append leaves NUL bytes where the
 # last writes should be, which makes the whole file binary to grep/jq. The

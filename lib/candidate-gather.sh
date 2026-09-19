@@ -142,10 +142,10 @@ first_seen_bootstrap="$(jq -c '(length == 0)' <<<"$(first_seen_known_items "$log
 # together, and a once-per-cycle warning says so once rather than once per
 # repo.
 union_log_healthy=1
-if ! fleet_logs_healthy "$state_dir" "$peers_dir" "$union_log"; then
+if ! fleet_logs_healthy "$state_dir" "$peers_dir" "$union_log" "$(cfg '.schedule.state_sync_fetch_minutes')"; then
   union_log_healthy=0
   log_event "warning" "$(jq -nc \
-    --arg d "this cycle's fleet-wide log looks degraded (an empty union, or the peers directory's own fetch marker reporting failure) — requirement 38b's live blocked-label reconciliation is skipped this cycle rather than risk reading a block's absence off an incomplete view of it" \
+    --arg d "this cycle's fleet-wide log looks degraded (an empty union, or the peers directory's own fetch marker reporting failure or age) — requirement 38b's live blocked-label reconciliation is skipped this cycle rather than risk reading a block's absence off an incomplete view of it" \
     '{detail: $d}')"
 fi
 latest_issues_excluded_json="$(latest_issues_excluded "$union_log")"

@@ -2579,6 +2579,22 @@ fleet_flags_json="$(jq -nc \
   '{disabled: $d, limit: $l, merge_autonomy_kill: $mak}' 2>/dev/null)"
 [[ -z "$fleet_flags_json" ]] && fleet_flags_json='{"disabled":null,"limit":null,"merge_autonomy_kill":{"state":"enabled"}}'
 
+# The peers directory's own freshness marker (requirement 2.5/#990), read
+# directly — local, so this costs no API call and a --no-github tick still
+# shows it. `fleet_peers_stale` (lib/fleet.sh) is the one predicate for
+# "stale" this page and requirement 38b's live reconciliation both use, so
+# the two can never disagree; `stale` is the field the fleet-strip badge
+# renders from, `ok`/`ts`/`last_ok_ts` are the marker's own fields for its
+# wording. Both null when no fetch has ever run (single-node operation, or a
+# fresh node before its first state-sync) — the bootstrap case, not itself a
+# failure, so the badge renders nothing for it.
+fleet_peers_marker_json="$(jq -c '.' "$(fleet_peers_marker "$peers_dir")" 2>/dev/null || echo null)"
+fleet_peers_stale_flag="false"
+fleet_peers_stale "$peers_dir" "$(cfg '.schedule.state_sync_fetch_minutes')" && fleet_peers_stale_flag="true"
+fleet_peers_json="$(jq -nc --argjson m "$fleet_peers_marker_json" --argjson stale "$fleet_peers_stale_flag" \
+  '{stale: $stale, ok: $m.ok, ts: $m.ts, last_ok_ts: $m.last_ok_ts}' 2>/dev/null)"
+[[ -z "$fleet_peers_json" ]] && fleet_peers_json='{"stale":false,"ok":null,"ts":null,"last_ok_ts":null}'
+
 # --- Live GitHub (best-effort) -----------------------------------------------
 # The check roll-up and the index entry, written once and used by both the
 # open-PR rows and the pull-request index below. The table and the hover card
@@ -3874,6 +3890,7 @@ data_json="$(jq -n \
   --argjson cron_tail "$cron_tail_json" \
   --argjson fleet_nodes "$fleet_nodes_json" \
   --argjson fleet_flags "$fleet_flags_json" \
+  --argjson fleet_peers "$fleet_peers_json" \
   --arg max_prs "$max_open_agent_prs" \
   --argjson dropped_log "$dropped_log_lines" \
   --argjson dropped_rr "$dropped_revert_rate_lines" \
@@ -3889,7 +3906,7 @@ data_json="$(jq -n \
     cron_tail: $cron_tail, max_open_agent_prs: ($max_prs|tonumber),
     log_repair: {dropped_log_lines: $dropped_log, dropped_revert_rate_lines: $dropped_rr},
     pager: $pager,
-    fleet: {nodes: $fleet_nodes, flags: $fleet_flags, claims: ($gh[0].claims // [])}}')"
+    fleet: {nodes: $fleet_nodes, flags: $fleet_flags, peers: $fleet_peers, claims: ($gh[0].claims // [])}}')"
 else
 # A fast build emits only the keys it actually recomputed and merges them over
 # the last full payload, rather than reassembling the whole object from
@@ -3910,6 +3927,7 @@ fresh_json="$(jq -n \
   --argjson cron_tail "$cron_tail_json" \
   --argjson fleet_nodes "$fleet_nodes_json" \
   --argjson fleet_flags "$fleet_flags_json" \
+  --argjson fleet_peers "$fleet_peers_json" \
   --arg max_prs "$max_open_agent_prs" \
   --argjson dropped_log "$dropped_log_lines" \
   --argjson dropped_rr "$dropped_revert_rate_lines" \
@@ -3920,7 +3938,7 @@ fresh_json="$(jq -n \
     revert_rate: $rr[0],
     cron_tail: $cron_tail, max_open_agent_prs: ($max_prs|tonumber),
     log_repair: {dropped_log_lines: $dropped_log, dropped_revert_rate_lines: $dropped_rr},
-    fleet: {nodes: $fleet_nodes, flags: $fleet_flags, claims: ($gh[0].claims // [])}}')"
+    fleet: {nodes: $fleet_nodes, flags: $fleet_flags, peers: $fleet_peers, claims: ($gh[0].claims // [])}}')"
 printf '%s' "$fresh_json" > "$work_tmp/fresh-payload.json"
 # `*` is jq's recursive merge: objects deepen, arrays and scalars are replaced
 # outright, so `cycles` and `fleet.nodes` are this tick's and `counts` is the

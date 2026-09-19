@@ -1635,6 +1635,13 @@ printf '{"resume_at":"2031-01-01T00:00:00Z","class":"monthly-spend","needs_human
 printf '{"ts":"%s","node":"nodeF-self","event":"review-stage-end","repo":"Poetic-Poems/poetic","model":"model-a","exit_code":0,"duration_ms":600000}\n' \
   "$(date -u -d '-1 hour' +%Y-%m-%dT%H:%M:%SZ)" \
   > "$f/.local/state/poetic-agents/review-log.jsonl"
+# The peers directory's own freshness marker (implementation spec 2.5/#990):
+# a real failure in force, with an older last-successful-fetch time carried
+# forward, so the payload's own peers.stale/ok/ts/last_ok_ts are exercised end
+# to end, not just at the shell-function level test/state-sync.test.sh covers.
+printf '{"ok":false,"ts":"%s","last_ok_ts":"%s"}' \
+  "$(date -u -d '-10 minutes' +%Y-%m-%dT%H:%M:%SZ)" "$(date -u -d '-90 minutes' +%Y-%m-%dT%H:%M:%SZ)" \
+  > "$f/.cache/poetic-agents/workspaces/.agent-ops-peers/.last-fetch.json"
 
 run_publish "$f" NODE_NAME=nodeF-self
 assert_eq "a fleet publish exits 0" "0" "$?"
@@ -1658,6 +1665,12 @@ assert_eq "the cached fleet limit flag is surfaced" "2031-01-01T00:00:00Z" \
   "$(jq -r '.fleet.flags.limit.resume_at' <<<"$fdata")"
 assert_eq "claims default to empty without a GitHub tick" "[]" \
   "$(jq -c '.fleet.claims' <<<"$fdata")"
+assert_eq "the peers directory's own freshness marker surfaces as fleet.peers.ok" "false" \
+  "$(jq -r '.fleet.peers.ok' <<<"$fdata")"
+assert_eq "  ... reading stale (fleet_peers_stale) when ok:false" "true" \
+  "$(jq -r '.fleet.peers.stale' <<<"$fdata")"
+assert_eq "  ... and carrying last_ok_ts through" "1" \
+  "$([[ "$(jq -r '.fleet.peers.last_ok_ts' <<<"$fdata")" != "null" ]] && echo 1 || echo 0)"
 raw_fleet="$(cat "$f/.local/state/poetic-agents/dashboard/data.js")"
 assert_lacks "a peer's token is redacted like our own" "ghp_9876543210abcdefXYZ9876" "$raw_fleet"
 assert_lacks "a peer's home path is redacted like our own" "/home/peeruser" "$raw_fleet"
