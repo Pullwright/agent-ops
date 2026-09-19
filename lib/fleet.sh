@@ -10,15 +10,16 @@ fleet_peers_dir() {  # <workspace_root>
   printf '%s/.agent-ops-peers' "$1"
 }
 
-# The peers directory's own freshness marker (requirement 2.5, #693):
+# The peers directory's own freshness marker (requirement 2.5, #693/#990):
 # `state-sync.sh fetch` writes it after every attempt —
-# `{"ok":true,"ts":…}` once the peer trees below it were just materialised
-# from a successful fetch, `{"ok":false,"ts":…}` while a real failure (bad
-# credentials, network outage, a corrupt mirror) is in force. A reader that
-# cares whether the peer copies it is about to union might be frozen reads
-# this rather than trusting a directory that looks populated either way — an
-# absent marker is the genuine bootstrap case: no fetch has ever succeeded,
-# because the state repository has no node branches yet.
+# `{"ok":bool,"ts":…,"last_ok_ts":…|null}`. `ts` is the attempt that
+# established the current `ok`; `last_ok_ts` is the last fetch that actually
+# succeeded, so a reader can tell a five-minute outage from a three-day one
+# even while `ok` stays `false` throughout. A reader that cares whether the
+# peer copies it is about to union might be frozen reads this rather than
+# trusting a directory that looks populated either way — an absent marker is
+# the genuine bootstrap case: no fetch has ever succeeded, because the state
+# repository has no node branches yet.
 fleet_peers_marker() {  # <peers_dir>
   printf '%s/.last-fetch.json' "$1"
 }
@@ -28,16 +29,102 @@ fleet_peers_marker() {  # <peers_dir>
 # plain `> marker` truncates the file at redirection and fills it a moment
 # later, so a read landing in that window sees an empty file rather than
 # either the old answer or the new one.
+#
+# The transition rule (owner decision, #990, escalation #1065):
+#
+#   success            — always rewrite: ok:true, ts = last_ok_ts = now.
+#   failure, was ok     — rewrite: ok:false, ts = now, last_ok_ts carried
+#                          forward from the previous marker's own
+#                          last_ok_ts (falling back to its ts when the
+#                          previous marker predates this field — a legacy
+#                          {ok:true, ts} marker's ts IS the last success).
+#   failure, no marker,
+#   or an unreadable/    — rewrite: ok:false, ts = now, last_ok_ts = null —
+#   zero-byte one          there is no prior success to carry forward.
+#   failure, was already — do not touch the file at all, not even with
+#   ok:false               identical content: its mtime feeds
+#                          scripts/publish-dashboard.sh's
+#                          local_state_fingerprint, and moving it every
+#                          fetch attempt would rebuild the dashboard once
+#                          per attempt for as long as the outage lasts.
 fleet_mark_peers() {  # <peers_dir> true|false
-  local dir="$1" ok="$2" marker
+  local dir="$1" ok="$2" marker now marker_json prev_ok prev_last_ok
   mkdir -p "$dir"
   marker="$(fleet_peers_marker "$dir")"
-  jq -nc --argjson ok "$ok" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    '{ok: $ok, ts: $ts}' > "$marker.tmp" \
-    && mv -f "$marker.tmp" "$marker"
+  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  if [[ "$ok" == "true" ]]; then
+    jq -nc --arg ts "$now" '{ok: true, ts: $ts, last_ok_ts: $ts}' > "$marker.tmp" \
+      && mv -f "$marker.tmp" "$marker"
+    return
+  fi
+
+  marker_json=""
+  [[ -s "$marker" ]] && marker_json="$(jq -c '.' "$marker" 2>/dev/null)"
+  if [[ -n "$marker_json" ]]; then
+    prev_ok="$(jq -r '.ok // false' <<<"$marker_json" 2>/dev/null)"
+    [[ "$prev_ok" == "true" ]] || return 0
+    prev_last_ok="$(jq -r '.last_ok_ts // empty' <<<"$marker_json" 2>/dev/null)"
+    [[ -n "$prev_last_ok" ]] || prev_last_ok="$(jq -r '.ts // empty' <<<"$marker_json" 2>/dev/null)"
+  else
+    prev_last_ok=""
+  fi
+
+  if [[ -n "$prev_last_ok" ]]; then
+    jq -nc --arg ts "$now" --arg last_ok "$prev_last_ok" \
+      '{ok: false, ts: $ts, last_ok_ts: $last_ok}' > "$marker.tmp" \
+      && mv -f "$marker.tmp" "$marker"
+  else
+    jq -nc --arg ts "$now" '{ok: false, ts: $ts, last_ok_ts: null}' > "$marker.tmp" \
+      && mv -f "$marker.tmp" "$marker"
+  fi
 }
 
-# fleet_logs_healthy <state_dir> <peers_dir> <union_log>
+# fleet_peers_stale <peers_dir> [fetch_minutes]
+# The one predicate for "is the peers directory's own freshness marker too
+# old to trust" (#990) — shared by requirement 38b's `fleet_logs_healthy`
+# below and the dashboard's fleet-strip badge, so the two can never disagree
+# about what counts as stale. Exit 0 (stale) when the marker says `ok:false`
+# (a real failure is in force, however long ago it started), or when it says
+# `ok:true` but `ts` is older than the threshold (the fetch cron itself has
+# stopped running, without ever logging a failure). Exit 1 (not stale) for a
+# fresh `ok:true` marker or an absent one — no marker at all is the bootstrap
+# case, not itself a failure, and the union's own emptiness already catches
+# that node (`fleet_logs_healthy`'s own header).
+#
+# FETCH_MINUTES defaults to `schedule.state_sync_fetch_minutes`'s own default
+# (7) — this library has no config reader of its own and should not grow one,
+# so a caller that already has config in hand (lib/candidate-gather.sh,
+# scripts/publish-dashboard.sh) passes the configured value instead. The
+# threshold is 3 fetch intervals, capped at LABEL_OWN_GRACE_SECONDS (#1053's
+# principle: a staleness bound must never exceed the fault threshold it
+# gates) — env-overridable as FLEET_PEERS_STALE_SECONDS, on the same
+# `${VAR:-default}` shape LABEL_OWN_GRACE_SECONDS itself uses
+# (lib/label-marker.sh), so a test can pin it.
+fleet_peers_stale() {  # <peers_dir> [fetch_minutes]
+  local dir="$1" fetch_minutes="${2:-7}" marker ok ts threshold cap now then_epoch age
+  marker="$(fleet_peers_marker "$dir")"
+  [[ -s "$marker" ]] || return 1
+  ok="$(jq -r '.ok // false' "$marker" 2>/dev/null)"
+  [[ "$ok" == "true" ]] || return 0
+
+  ts="$(jq -r '.ts // empty' "$marker" 2>/dev/null)"
+  [[ -n "$ts" ]] || return 0
+
+  threshold="${FLEET_PEERS_STALE_SECONDS:-}"
+  if [[ -z "$threshold" ]]; then
+    threshold=$(( fetch_minutes * 3 * 60 ))
+    cap="${LABEL_OWN_GRACE_SECONDS:-1800}"
+    (( threshold > cap )) && threshold="$cap"
+  fi
+
+  now="$(date -u +%s)"
+  then_epoch="$(date -u -d "$ts" +%s 2>/dev/null)" || return 0
+  age=$(( now - then_epoch ))
+  (( age > threshold ))
+}
+
+# fleet_logs_healthy <state_dir> <peers_dir> <union_log> [fetch_minutes]
 # True when UNION_LOG — the snapshot `fleet_logs` above just wrote — is fit to
 # read a *negative* off: "no open block exists," not merely "no open block is
 # visible from here" (agent-ops#816 review, requirement 38b). `fleet_logs`
@@ -48,18 +135,16 @@ fleet_mark_peers() {  # <peers_dir> true|false
 # empty union is indistinguishable from "the fleet genuinely has no blocks" to
 # a reader that only ever acts on positive log evidence until now. Unhealthy
 # in either of two ways this checks in order: the union itself came back
-# empty, or PEERS_DIR's own freshness marker (`fleet_mark_peers`, above) says
-# the last fetch attempt failed — a marker no reader consulted before this.
-# A marker that does not exist yet (no `state-sync.sh fetch` has ever run) is
-# not itself a failure — the union's own emptiness already catches that
-# node — so it is read as healthy here.
-fleet_logs_healthy() {  # <state_dir> <peers_dir> <union_log>
-  local peers="$2" union_log="$3" marker
+# empty, or `fleet_peers_stale` (above) says the peers directory is stale —
+# a real failure in force, or an `ok:true` marker the fetch cron has stopped
+# refreshing (#990; a dead cron used to read healthy here as long as it had
+# died on a success). FETCH_MINUTES is passed straight through to
+# `fleet_peers_stale`; its own default applies when the caller has none to
+# give.
+fleet_logs_healthy() {  # <state_dir> <peers_dir> <union_log> [fetch_minutes]
+  local peers="$2" union_log="$3" fetch_minutes="${4:-7}"
   [[ -s "$union_log" ]] || return 1
-  marker="$(fleet_peers_marker "$peers")"
-  if [[ -s "$marker" ]]; then
-    [[ "$(jq -r '.ok // false' "$marker" 2>/dev/null)" == "true" ]] || return 1
-  fi
+  fleet_peers_stale "$peers" "$fetch_minutes" && return 1
   return 0
 }
 

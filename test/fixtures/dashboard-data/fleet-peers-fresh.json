@@ -1,0 +1,48 @@
+{
+  "generated_at": "@now",
+  "node": "poetic-1",
+  "status": {
+    "running": false
+  },
+  "config": {
+    "node_stale_after_minutes": 30
+  },
+  "fleet": {
+    "flags": {
+      "disabled": null,
+      "limit": null
+    },
+    "nodes": [
+      {
+        "node": "poetic-1",
+        "self": true,
+        "stale": false,
+        "role": "active",
+        "heartbeat_ts": "@ago:1m",
+        "heartbeat_age_s": 60,
+        "last_cycle": null,
+        "live": null
+      },
+      {
+        "node": "poetic-2",
+        "self": false,
+        "stale": false,
+        "role": "active",
+        "heartbeat_ts": "@ago:2m",
+        "heartbeat_age_s": 120,
+        "last_cycle": null,
+        "live": null
+      }
+    ],
+    "peers": {
+      "stale": false,
+      "ok": true,
+      "ts": "@ago:1m",
+      "last_ok_ts": "@ago:1m"
+    }
+  },
+  "cycles": [],
+  "log_tail": [],
+  "blocked": [],
+  "void": []
+}
