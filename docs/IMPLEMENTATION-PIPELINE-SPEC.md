@@ -2475,7 +2475,20 @@ implements.
       way an unbounded parent `memory.max` is, because the kernel's reclaim
       under `memory.high` throttles severely enough near a shared ceiling
       that the workload never makes enough progress to reach either kill
-      point. `doctor.sh` additionally reads the parent's `memory.events`
+      point. Nor is a `memory.max` strictly above the child's own enough by
+      itself: agent-ops#1643 measured the same node livelocked again with the
+      parent's `memory.max` (3072 MiB) genuinely above the child's own (1536
+      MiB), because the parent's `memory.high` (768 MiB) sat far enough below
+      the child's own `memory.max` — more than ~25% — that the kernel's
+      reclaim under `memory.high` throttled too severely across that wide a
+      band for the workload ever to make progress toward either kill point.
+      The live discriminator `parented` needs is therefore the throttle
+      band's *width* (the parent's `memory.high` against the child's own
+      `memory.max`), not merely whether the parent's `memory.max` sits above
+      the child's — a narrow band, such as the interim `ockham-container`
+      remedy's own (parent `memory.high` 1400 MiB against a `memory.max` of
+      1536 MiB, an ~8.9% gap), still reads `parented`. `doctor.sh`
+      additionally reads the parent's `memory.events`
       `high` counter every run, persists one sample to `state_dir`, and warns
       on any rising delta since the last one — a signal that needs no ceiling
       to be correctly configured first, so it still fires on a `livelocked`
@@ -23502,17 +23515,27 @@ oblige anyone to edit a test.
    parent's *own* `memory.max` (agent-ops#1305, read via the
    `AGENT_OPS_SCHEDULER_CGROUP_MAX` mount, `MEMORY_CGROUP_PARENT_MAX`):
    `parented` when the parent's own `memory.max` is a real ceiling **strictly
-   above** this cgroup's own `memory.max` (a hard wall exists somewhere with
-   actual headroom to reclaim into, so `memory.high`'s throttling eventually
-   disengages); `livelocked` when the parent's own `memory.max` is `max` (no
-   wall anywhere) **or** a real number that is no higher than this cgroup's
-   own `memory.max` (agent-ops#1620: a wall exists but adds no headroom
-   beyond one this cgroup already has, so reaching it is not something the
-   child can do any more than reaching an absent one is) — either shape
-   throttles without ever disengaging, the exact band that wedged
-   `ockham-container` for 75 minutes with 2,788,595 throttle events on
-   2026-09-09 (`memory.max` `max`) and again for most of 2026-09-16 (a real,
-   coincident `memory.max`); `unconfirmed` when the parent's own `memory.max`
+   above** this cgroup's own `memory.max` **and** the parent's own
+   `memory.high` sits no more than ~25% below this cgroup's own `memory.max`
+   (a hard wall exists somewhere with actual headroom to reclaim into, and
+   the throttle band between the parent's `memory.high` and this cgroup's
+   own `memory.max` is narrow enough for the workload to cross it, so
+   `memory.high`'s throttling eventually disengages); `livelocked` when the
+   parent's own `memory.max` is `max` (no wall anywhere), a real number that
+   is no higher than this cgroup's own `memory.max` (agent-ops#1620: a wall
+   exists but adds no headroom beyond one this cgroup already has, so
+   reaching it is not something the child can do any more than reaching an
+   absent one is), **or** a real number strictly above this cgroup's own
+   `memory.max` but with the parent's `memory.high` more than ~25% below it
+   (agent-ops#1643: a wall exists and does add headroom, but the band the
+   kernel's reclaim under `memory.high` has to throttle across before the
+   workload could ever reach it is too wide for that reclaim to disengage in
+   practice) — every shape throttles without ever disengaging, the exact
+   band that wedged `ockham-container` for 75 minutes with 2,788,595 throttle
+   events on 2026-09-09 (`memory.max` `max`), again for most of 2026-09-16 (a
+   real, coincident `memory.max`), and again afterward (a real `memory.max`
+   strictly above this cgroup's own, but a `memory.high` too far below it);
+   `unconfirmed` when the parent's own `memory.max`
    window cannot be read (an un-migrated `compose.yaml`, or a node that has
    not re-run `cgroup-parent-setup.sh` since it started mounting that window)
    — never reported `parented` on an unmeasured guess. `parented` is the only
