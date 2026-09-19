@@ -4601,12 +4601,26 @@ implements.
      "distinct" failures as it had status codes. See requirement 4i's own
      text on `stage_api_refusal` and `stage_api_refusal_class` for where
      the class comes from and why it travels beside `detail` rather than
-     inside it. `crash_loop_reverify`, the escalated/deferred/recurred-since
-     dedup checks, and the retirement's own success lookup
-     (`crash_loop_last_success_since`) are all matched on `repo` too, on
-     the same fallback terms, so two repositories that happen to share a
-     generic detail (e.g. both saying "coordinator exited 1") can never
-     dedup, defer or retire against each other's own run.
+     inside it. `crash_loop_reverify`, the escalated/deferred dedup checks,
+     the flap guard (`crash_loop_detail_recurred_since`) and the retirement's
+     own success lookup (`crash_loop_last_success_since`) are all matched on
+     `repo` too, so two repositories that happen to share a generic detail
+     (e.g. both saying "coordinator exited 1") can never dedup, defer or
+     retire against each other's own run. The two families differ in what an
+     *absent* `repo` means, because they read different things.
+     `crash_loop_escalated_since`, `crash_loop_deferred_since` and
+     `crash_loop_reverify` match a prior write of this pipeline's own, so an
+     absent `repo` matches only an equally repo-less one — a repo-less run
+     and a repository-scoped run are distinct runs and must not be confused
+     for each other. `crash_loop_last_success_since` and
+     `crash_loop_detail_recurred_since` read evidence about the Co-Ordinator
+     itself, so an absent `repo` imposes no constraint at all and they read
+     the whole fleet, exactly as they did before this grouping existed: an
+     escalation filed before agent-ops#1630 carries no `repo`, while every
+     Co-Ordinator event logged since issue #587 carries one, so the other
+     reading would leave every such issue permanently unretirable (the
+     success it needs to name could never again be found) with its flap
+     guard reading the empty set.
      `crash_loop_preselection_verdict` below stays fleet-wide, grouped only
      by `exit_code` — it fires before selection ever assigns a repository
      to anything, so it has no `repo` to group by.
@@ -4723,7 +4737,11 @@ implements.
    `ts` (carrying that repository's own `repo`, when the escalation was
    repository-scoped, agent-ops#1630) — a `crash_loop_reverify` finding the
    run broken *and* a `crash_loop_last_success_since`, scoped to that same
-   `repo`, naming the Co-Ordinator
+   `repo` where the escalation carries one and to the whole fleet where it
+   does not (an escalation filed before agent-ops#1630 carries none, while
+   every success logged since issue #587 carries one, so reading its absence
+   as "repo-less successes only" would leave those issues permanently
+   unretirable), naming the Co-Ordinator
    success that broke it close the issue with a comment naming that success,
    and log `crash-loop-retired`; a run still active leaves the issue
    untouched. Both conditions are required, and the second is the load-
@@ -4786,7 +4804,9 @@ implements.
 
    - **`crash_loop_detail_recurred_since`** (lib/crash-loop.sh) blocks
      retirement outright when the same `detail`, in that same repository
-     (agent-ops#1630), has already resumed failing,
+     (agent-ops#1630 — fleet-wide for an escalation that carries no `repo`,
+     on the same terms as `crash_loop_last_success_since` above), has already
+     resumed failing,
      anywhere in `$union_log`, at or after the clearing success — whether or
      not it has reached `crash_loop_after` again. Unconditional, not a
      tunable: closing the issue while the very log the decision is reading
@@ -23951,7 +23971,12 @@ oblige anyone to edit a test.
    repository A's own escalation is retired on repository A's own clearing
    success even while repository B, sharing the detail, is still actively
    failing under its own independent run; and repository B's own clearing
-   success never retires repository A's own still-open escalation.
+   success never retires repository A's own still-open escalation. And the
+   transition case the same grouping has to survive: an escalation carrying
+   no `repo` at all — one filed before agent-ops#1630 — is still retired by a
+   repository-scoped clearing success, which is named in the closing comment,
+   and its flap guard still sees a repository-scoped recurrence of its own
+   detail and blocks that retirement.
    back-pressure, and the logged reason states the count's composition
    (`N ready + N draft + N unraised claim(s)`).
 5b. **A personal access token's own expiry is read, recorded, and escalated

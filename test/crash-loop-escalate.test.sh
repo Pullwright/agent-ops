@@ -385,6 +385,45 @@ assert_eq "repo B's own success never retires repo A's own open escalation" \
   "0" "$STUB_GH_CLOSE_CALLS"
 assert_eq "and nothing is logged for it" "0" "$(events_of crash-loop-retired | wc -l | tr -d ' ')"
 
+# The transition case: an escalation filed before per-repository grouping
+# existed carries no `repo` at all, while every Co-Ordinator success logged
+# since issue #587 carries one. Its clearing success must still be nameable —
+# reading `repo: ""` as "repo-less successes only" would search the empty set
+# and strand every such issue open forever, `crash_loop_retire_resolved`'s
+# "positive evidence only" guard having nothing left to name.
+legacy_detail='coordinator exited 126'
+legacy_escalated="$(jq -nc --arg ts 2026-09-16T10:00:00Z --arg d "$legacy_detail" \
+  '{ts: $ts, node: "n1", event: "crash-loop-escalated", stage: "coordinator", detail: $d,
+    first_ts: $ts, issue_number: 701, issue_url: "https://github.com/o/r/issues/701"}')"
+union_log="$WORKDIR/union-legacy-repoless.jsonl"
+{
+  printf '%s\n' "$(fail_at 2026-09-16T10:00:00Z n1 "$legacy_detail")"
+  printf '%s\n' "$legacy_escalated"
+  success_repo_at 2026-09-16T12:00:00Z n1 A
+} > "$union_log"
+STUB_GH_CLOSE_MODE="success"; STUB_GH_CLOSE_CALLS=0; EVENTS=()
+crash_loop_retire_resolved 2026-09-16T12:00:00Z
+assert_eq "a pre-#1630 repo-less escalation is still retired by a repo-carrying success" \
+  "1" "$STUB_GH_CLOSE_CALLS"
+assert_eq "naming that success" "1" \
+  "$(grep -c '2026-09-16T12:00:00Z' <<<"$STUB_GH_CLOSE_LAST_BODY")"
+
+# ...and that entry's flap guard still reads the whole fleet for the same
+# reason: a repo-carrying failure of its own detail after the clearing
+# success blocks the retirement, exactly as a repo-less one always did.
+union_log="$WORKDIR/union-legacy-repoless-recurred.jsonl"
+{
+  printf '%s\n' "$(fail_at 2026-09-16T10:00:00Z n1 "$legacy_detail")"
+  printf '%s\n' "$legacy_escalated"
+  success_repo_at 2026-09-16T12:00:00Z n1 A
+  printf '%s\n' "$(fail_repo_at 2026-09-16T12:30:00Z n1 A "$legacy_detail")"
+} > "$union_log"
+STUB_GH_CLOSE_MODE="success"; STUB_GH_CLOSE_CALLS=0; EVENTS=()
+crash_loop_retire_resolved 2026-09-16T12:30:00Z
+assert_eq "and a repo-carrying recurrence of its own detail still blocks that retirement" \
+  "0" "$STUB_GH_CLOSE_CALLS"
+assert_eq "with no retirement logged for it" "0" "$(events_of crash-loop-retired | wc -l | tr -d ' ')"
+
 # --- The retirement hysteresis (2026-09-05 fleet flap) ----------------------
 #
 # Six enabler-escalation issues in four hours, every one the identical

@@ -329,17 +329,26 @@ crash_loop_reverify() {
 # `STAGE=coordinator`, the only class `crash_loop_reverify` can name a single
 # resetting stage-end for (pre-selection resets on either a clean cycle exit
 # or a selection-path stage-start, no single event answers "the" success).
-# REPO, on the same terms as `crash_loop_escalated_since` above, restricts
-# the match to that repository's own successes once the run this is naming
-# evidence for is itself repository-scoped (agent-ops#1630) — a sibling
-# repository's Co-Ordinator succeeding is not evidence this run broke.
+# A non-empty REPO restricts the match to that repository's own successes,
+# once the run this is naming evidence for is itself repository-scoped
+# (agent-ops#1630) — a sibling repository's Co-Ordinator succeeding is not
+# evidence this run broke. An *empty* REPO means no repository constraint at
+# all — any Co-Ordinator success counts, exactly as before #1630 — and not
+# "repo-less successes only", which is the one reading that would have
+# stranded every escalation filed before this grouping existed: those carry
+# no `repo`, while every success logged since issue #587 carries one, so a
+# repo-less-only lookup could never again name the success that broke such a
+# run, and `crash_loop_retire_resolved`'s "positive evidence only" guard
+# would leave the issue open forever. Safe in both directions, because
+# `crash_loop_reverify` has already had to find the run broken before this
+# is ever consulted: this names the evidence, it does not decide the fact.
 crash_loop_last_success_since() {
   local stage="$1" first_ts="$2" repo="${3:-}"
   jq -r -R -n --arg stage "$stage" --arg ts "$first_ts" --arg repo "$repo" '
     [ inputs | select(length > 0) | (fromjson? // empty)
       | select(.event == "stage-end" and (.stage // "") == $stage
                and ((.exit_code // 1) == 0) and (.ts // "") >= $ts
-               and ((.repo // "") == $repo)) ]
+               and ($repo == "" or (.repo // "") == $repo)) ]
     | sort_by(.ts) | first | .ts // empty
   ' 2>/dev/null || true
 }
@@ -357,17 +366,21 @@ crash_loop_last_success_since() {
 # recovery. This reads the failures themselves rather than waiting for
 # another verdict to fire, so a resolving success is never treated as the
 # end of the incident while its own detail is still visibly recurring in the
-# very log the retirement decision is reading. REPO, on the same terms as
-# `crash_loop_escalated_since` above, keeps two repositories that happen to
-# share a generic detail (agent-ops#1630) from reading each other's failures
-# as this run's own recurrence.
+# very log the retirement decision is reading. A non-empty REPO keeps two
+# repositories that happen to share a generic detail (agent-ops#1630) from
+# reading each other's failures as this run's own recurrence; an empty REPO
+# means no repository constraint at all, on the same terms — and for the same
+# reason — as `crash_loop_last_success_since` above, so a pre-#1630 repo-less
+# escalation still has its flap guard read the whole fleet's failures rather
+# than the empty set of repo-less ones. Unfiltered is the conservative
+# direction here: this guard only ever *blocks* a retirement.
 crash_loop_detail_recurred_since() {
   local detail="$1" since_ts="$2" repo="${3:-}" hits
   hits="$(jq -r -R -n --arg d "$detail" --arg ts "$since_ts" --arg repo "$repo" '
     [ inputs | select(length > 0) | (fromjson? // empty)
       | select(.event == "attempt-failed" and (.stage // "") == "coordinator"
                and (.detail // "") == $d and (.ts // "") >= $ts
-               and ((.repo // "") == $repo)) ]
+               and ($repo == "" or (.repo // "") == $repo)) ]
     | length
   ' 2>/dev/null || echo 0)"
   [[ "$hits" =~ ^[0-9]+$ ]] && (( hits > 0 ))
