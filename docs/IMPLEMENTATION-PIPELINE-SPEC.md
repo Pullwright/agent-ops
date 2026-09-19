@@ -3637,6 +3637,21 @@ implements.
    committed to the state repository's history before this pass existed —
    a one-off cleanup, not a push-time behaviour this requirement covers.
 
+   The pass is best-effort per file, not all-or-nothing (agent-ops#1679,
+   below): a `redact_file` call that fails on one file — `redact_file` is a
+   bare `sed -i`, so a directory the mirror copy cannot be rewritten in, a
+   full disk, a file removed between `find`'s stat and `sed`'s open — is
+   said as a `WARNING: could not redact … — committing it unredacted` line
+   and skipped, and that one file reaches the branch as it stands while
+   every other file is redacted normally. It is deliberately the weaker of
+   the two guarantees: making the failure fatal instead is what deadlocked a
+   whole push against its own unread process substitution for almost seven
+   hours, and the run not reaching the branch at all costs a node its
+   publication rather than saving anything (#1679's own section sets out
+   both sides). So the backstop above holds for every file the pass can
+   rewrite, and the warning line is the only notice that it did not hold for
+   one that it could not.
+
    That one-off cleanup was decided, not left open: content pushed to
    `agent-ops-state` before this pass landed (2026-09-08T17:55Z) went up
    unredacted. What it carried was home paths, with no token-shaped string
@@ -22397,11 +22412,15 @@ oblige anyone to edit a test.
    pruned to the newest `state_local_cycles_retained` by the same push,
    newest always kept, and `log.jsonl` is byte-for-byte untouched by that
    same local prune regardless of how many cycle/review directories it
-   removes (requirement 2.6d); everything the push commits is redacted first
+   removes (requirement 2.6d); every file the push commits that `redact_file`
+   can rewrite is redacted first
    (requirement 2.5, `lib/redact.sh`) — a token- and home-path-shaped
    fixture planted in `cron.log` and in a cycle transcript reaches the
    branch as `[REDACTED-TOKEN]` and `~`, neither raw form survives, and the
-   redacted transcript still parses as JSON; a fetch materialises a peer whole
+   redacted transcript still parses as JSON, while a file the pass cannot
+   rewrite at all is warned about and committed as it stands rather than
+   ending the run (requirement 2.5's best-effort clause, agent-ops#1679);
+   a fetch materialises a peer whole
    under the peers directory, leaves the node's own `state_dir` alone, never
    includes the node itself, and prunes a peer whose branch is gone; the
    union read (`lib/fleet.sh`) carries both nodes' events in time order; and
