@@ -52,6 +52,22 @@ live_pr_refs_json="$(jq -c \
   '[.[] | .slug as $s | ((.merge_conflicts // []) + (.dequeued // []) + (.abandoned_drafts // []))[] | ($s + "#" + .ref)]' \
   <<<"$ordered_repos_json" 2>/dev/null || true)"
 
+# Same snapshot, for the one other ref shape a blocked marker can be keyed to
+# that has its own re-detectable "current" state: a retired pre-migration
+# tech-debt register ref, `TD-<scope>-<id>` (issue #1699). Unlike the PR-ref
+# family above, this test can never find a match — `gather_tech_debt`
+# (lib/candidate-select.sh) has emitted only bare issue numbers as `.ref`
+# since D15 as revised (#875) moved the band onto `pw::type:tech-debt`
+# issues, and TECH-DEBT.md declares `tech-debt/` a frozen archive nothing
+# gathers any more, so a `TD-<scope>-<id>` ref is provably absent from every
+# cycle's own `tech_debt` gather, forever. Framed as a live-set membership
+# test, the same shape as `live_pr_refs_json` above, rather than a hardcoded
+# "always stale" rule, so a future change to `gather_tech_debt`'s own ref
+# shape would not need this filter rewritten to notice it.
+live_td_refs_json="$(jq -c \
+  '[.[] | .slug as $s | (.tech_debt // [])[] | ($s + "#" + .ref)]' \
+  <<<"$ordered_repos_json" 2>/dev/null || true)"
+
 # --- 3c/3u. Pre-fetched-band eligibility, decided (requirement 3t, issue ---
 # --- #310; extended to every other pre-fetched band by requirement 3u, ---
 # --- issue #320) ---
@@ -208,11 +224,33 @@ enabler_eligible_json="$(enabler_eligible_items "$union_log" \
 # stale landing-refusal ref pays for a full Enabler re-check rather than
 # being pre-filtered; tracked alongside this source's other deferred parity
 # questions (issue #1481).
+#
+# A `TD-<scope>-<id>` ref is tested the identical way, against
+# `live_td_refs_json` above (issue #1699): a *live* tech-debt id — an ordinary
+# issue number, gathered fresh into the `tech_debt` band every cycle — is not
+# this shape at all and so never matches the pattern below, and stays exempt
+# for the same reason an issue number or a review-feedback round does, below.
+# A *retired pre-migration register ref* is this shape, and unlike those, it
+# does have a re-detectable "current" state to compare against: "absent from
+# every live band", the fact `live_td_refs_json`'s own comment establishes.
+# That is the whole distinction — a live tech-debt id's ref shape simply never
+# reaches this filter, while a retired ref's shape always does and always
+# resolves the same way, forever, until a human clears the marker itself.
+#
+# Every other blocked item kind — a plain issue number, a review-feedback
+# round — still has no such re-detectable "current" state to compare against,
+# and `test` on either simply never matches either pattern below.
 stale_enabler_refs_json='[]'
-[[ -z "$live_pr_refs_json" ]] || { stale_enabler_refs_json="$(jq -c --argjson live "$live_pr_refs_json" '
+[[ -z "$live_pr_refs_json" || -z "$live_td_refs_json" ]] || { stale_enabler_refs_json="$(jq -c \
+  --argjson live_pr "$live_pr_refs_json" --argjson live_td "$live_td_refs_json" '
   [ .[] | (.repo // "") as $repo | (.item // "") as $item
-        | select(($item | test("^pr-[0-9]+-(conflict|superseded|dequeued|abandoned)-[0-9a-f]+$"))
-                 and (($live | index($repo + "#" + $item)) == null)) ]
+        | select(
+            (($item | test("^pr-[0-9]+-(conflict|superseded|dequeued|abandoned)-[0-9a-f]+$"))
+             and (($live_pr | index($repo + "#" + $item)) == null))
+            or
+            (($item | test("^TD-[A-Za-z0-9]+-[0-9]+$"))
+             and (($live_td | index($repo + "#" + $item)) == null))
+          ) ]
   ' <<<"$enabler_eligible_json" 2>&1)" \
   || { guard_warn "stale_enabler_refs_json" "$stale_enabler_refs_json"; stale_enabler_refs_json='[]'; }; }
 stale_enabler_refs_n="$(jq 'length' <<<"$stale_enabler_refs_json" 2>&1)" \

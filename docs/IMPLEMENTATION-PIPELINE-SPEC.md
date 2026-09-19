@@ -14616,8 +14616,9 @@ implements.
     engagement that spent itself on old vagueness would make the pipeline slower
     at exactly the thing the Enabler exists for. Items over the cap are not lost:
     they are blocked, and they arrive at a later engagement.
-35e. **A stale merge-conflict or abandoned-draft ref is dropped before it
-    reaches eligibility (issue #238).** `merge-conflicts` and `abandoned-drafts`
+35e. **A stale merge-conflict/abandoned-draft ref, or a retired tech-debt
+    register ref, is dropped before it reaches eligibility (issue #238; widened
+    by issue #1699).** `merge-conflicts` and `abandoned-drafts`
     ids are scoped to the head SHA they were detected at (requirements 3e, 3g)
     precisely so a later push mints a fresh ref that no old block covers — but
     the old ref itself is never cleared, only superseded, so left alone it would
@@ -14625,6 +14626,15 @@ implements.
     round, examined, and voided as stale, at full engagement price, on a repeat
     schedule. (`pr-205-conflict-305ca060016d` did exactly this — claimed and
     voided three minutes later, after the PR's head had already moved twice.)
+    A `TD-<scope>-<id>` ref — a pre-migration `tech-debt/<id>.md` register id —
+    fails the identical way for a different reason: since D15 as revised
+    (#875) moved the tech-debt band onto `pw::type:tech-debt` issues and
+    `TECH-DEBT.md` declared `tech-debt/` a frozen archive nothing gathers any
+    more, such a ref can never again appear in any live band, so a marker
+    keyed to one sits `enabler_eligible` forever with no push, resolution or
+    supersession ever able to clear it (`TD-PPagop-26082416` did exactly this —
+    nine engagements over 2026-08-28 through 2026-09-19, each reaching the
+    same "deliberately parked" verdict).
 
     Before `enabler_allowed` is set, every eligible entry whose `item` matches
     `pr-<n>-conflict-<sha>`, `pr-<n>-superseded-<sha>`,
@@ -14632,13 +14642,17 @@ implements.
     `pr-<n>-abandoned-<sha>` is tested against this
     cycle's own freshly gathered
     `merge_conflicts`/`dequeued`/`abandoned_drafts` arrays
-    (requirements 3g, 3z), snapshotted before `ordered_repos_json`'s own copies of
+    (requirements 3g, 3z), and every eligible entry whose `item` matches
+    `TD-<scope>-<id>` is tested against this cycle's own freshly gathered
+    `tech_debt` array, both snapshotted before `ordered_repos_json`'s own copies of
     those same bands lose every blocked entry to requirements 3t/3u's
     blocked/void subtraction — the Enabler is eligible only for items that are
     blocked, so testing against the post-subtraction bands would find every one
     of them missing and mark it stale forever (issue #1119): if the ref is
-    absent from the pre-subtraction snapshot — the head moved again, or the PR
-    resolved outright — the entry is dropped, and the drop is logged
+    absent from the pre-subtraction snapshot — the head moved again, the PR
+    resolved outright, or (for a `TD-<scope>-<id>` ref) the tech-debt band
+    simply never emits that shape any more — the entry is dropped, and the
+    drop is logged
     (`enabler-stale-refs-skipped`, an object payload `{skipped: [{repo,
     item}…]}` — log_event's envelope merge can only add objects, and the
     bare-array form of this exact payload crash-looped the fleet
@@ -14649,10 +14663,13 @@ implements.
     blocked under it (requirement 32a) exactly as a refused conflict void is
     under `-conflict-`. `pr-<n>-dequeued-<sha>` (requirement 3z) is tested for
     the identical reason — same head-SHA scoping, and its own gather is the
-    live set that decides it. No other blocked item kind
-    is touched: a tech-debt id, an issue number, or a review-feedback round has
-    no such re-detectable "current" state to compare against, and none of their
-    refs match the pattern. A jq failure leaves the eligible set unfiltered — this
+    live set that decides it. A *live* tech-debt id — an ordinary issue number,
+    the shape `gather_tech_debt` has emitted since #875 — is not `TD-<scope>-
+    <id>` shaped and so never matches this test, and stays exempt for the same
+    reason a plain issue number or a review-feedback round does: none of the
+    three has any re-detectable "current" state to compare against, and `test`
+    on any of them simply never matches either pattern. A jq failure leaves
+    the eligible set unfiltered — this
     is a cost saving, never the correctness gate; the Enabler still voids a stale
     item it does reach, exactly as it always has.
 36. **The Enabler's powers.** It may read anything through `gh` — issues, PRs,
@@ -19106,13 +19123,15 @@ What exists, and the requirements each part answers to:
    through `exclude_blocked_or_void_items` (`issues` has its own narrower
    pass through `exclude_blocked_or_void_issues`) and settles
    `refinements_json`; before that subtraction it snapshots
-   `live_pr_refs_json` — requirement 35e's live set — from the untouched
+   `live_pr_refs_json` and `live_td_refs_json` — requirement 35e's two live
+   sets — from the untouched
    gather, because the entries the subtraction removes are exactly the ones
-   that filter is asked about (issue #1119).
+   that filter is asked about (issue #1119; `live_td_refs_json` widened this
+   the same way by issue #1699).
    `compute_enabler_eligible_set` derives
    `enabler_eligible_json` from the source-state digests of the repositories
    that sampled cleanly — how "is that escalation issue still open?" is
-   answered without a `gh` call per escalation — consumes that snapshot for
+   answered without a `gh` call per escalation — consumes both snapshots for
    requirement 35e's filter, and ends by setting
    `enabler_allowed`. `prefetch_refiner_sources` fetches the Refiner's own
    two extra sources into `refiner_repos_json`, which `ordered_repos_json`
