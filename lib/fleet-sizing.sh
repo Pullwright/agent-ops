@@ -120,10 +120,17 @@ fleet_sizing_contention_by_node() {
 
 # --- Pure: exclusive landings per node ---------------------------------------
 #
-# "No peer would have taken it": a landed item whose only `selection` events
-# (there can be more than one — an abandoned draft resumed by a later cycle
-# reselects the same item) all belong to the same node, and no *other* node
-# ever logged a `claim-lost` for that same {repo, item}. The landing node
+# "No peer would have taken it": a landed item for which no node other than
+# its own landing node ever logged a `claim-lost` on that same {repo, item}.
+# A peer's `claim-lost` is the evidence, rather than a peer's `selection`,
+# because selecting an item is not yet wanting it enough to race for it: a
+# node that selected and then lost the claim logs both, so the claim-lost
+# population already contains every peer that actually contended, and a peer
+# that selected without ever reaching a claim took no work away from anyone.
+# Every cause counts here, not just the contended `held`/`pr-held` the
+# fleet-wide ratio above filters to — a peer whose claim died on an
+# unreachable forge still wanted this item, which is exactly the question
+# "would a peer have taken it" asks. The landing node
 # itself is read from the last `selection` chronologically — the one that
 # actually carried the item through to the merge this fold's own caller
 # already confirmed (`fate == "landed"`) — never the first, which a resumed

@@ -619,13 +619,16 @@ So a tick has two kinds, and `--fast` chooses:
   `cycles`, `log_tail`, `cron_tail`, `fleet`, `revert_rate`, `log_repair` —
   and merges those keys over the last full payload. The history roll-ups
   (`counts` and its actor-scorecard and classifier-escape enrichments,
-  `blocked`, `void`, `landings`, `github_budget`, `rework`, `constraint`, and
+  `blocked`, `void`, `landings`, `github_budget`, `rework`, `constraint`,
+  `fleet_sizing`, `spend_fate`, `turns_per_landed_item`, and
   the stage budgets inside `config`) are not computed at all: they read the
   fleet's whole history and change on the scale of cycles, not ticks.
   `constraint` is the one whose skipping is worth its own sentence: it is what
   needs a *second* fleet-wide log union (`review-log.jsonl` beside
   `log.jsonl`), so computing it on a fast tick would double that read on the
-  per-tick path for a value the fast payload does not carry. The stage
+  per-tick path for a value the fast payload does not carry. `fleet_sizing`
+  reads the node time-state account that union produces rather than fetching
+  it again, so it is gated for the same reason at no further cost. The stage
   budgets read that same union a second time (issue #1586, so that
   `config.stage_backstops` can carry a `project-reviewer` entry) rather than
   fetching it again, so this stays a single extra read shared by two
@@ -1982,7 +1985,12 @@ windowed**: which rung eventually caught a given defect is a permanent fact
 about it, on the same argument `escape_audits`' own paragraph above makes for
 never letting an escape age out of a 24 h window. A payload the Publisher
 could not assemble sets every top-level field to `null`
-(`{how_much: null, whose: null, escape_ladder: null, clean_count: null}`),
+(`{how_much: null, whose: null, escape_ladder: null, clean_count: null,
+rework_cycles: null}` — the last of those is not a fourth question but the
+cycle-id set this fold's own cost join already computed, lifted to the top
+level so the Spend by fate panel below can classify a `cost_rows[]` row as
+rework by the identical membership test rather than re-deriving it, issue
+#612),
 the same "outage, not a quiet log" distinction every other roll-up on this
 page makes — and so does a fold that aborted part-way, which
 `rework_panel_build` reports with that same shape rather than with the
@@ -2422,10 +2430,29 @@ summary a reader of the page needs):
 | 4 | `discarded` | that terminal fate is `voided`, `superseded` or `abandoned` |
 | 4 | `unaccounted` | anything else — `blocked`, `open`, an item lifecycle itself reports `unaccounted`, or an item this fold's population never saw: not yet resolved, never a forced guess between delivered and discarded |
 
+**The `rework` bucket and the Rework panel's own `cost_usd.rework` are not
+the same figure, and are not meant to reconcile against each other.** They
+share issue #611's cycle-membership test and nothing else: the Rework panel
+sums `stage-end` cost per cycle, over every row of a rework-bearing cycle,
+while this account sums `cost_rows[]` (transcript × model) and sends a
+rework-bearing cycle's *unattributed* rows — an Enabler, a Refiner, a
+limit probe sharing that cycle id — to `overhead` instead, because rule 1
+outranks rule 2. The bucket is therefore the narrower of the two by
+construction. Each answers its own question against its own source; a reader
+comparing them is comparing "what did rework-bearing cycles cost" with "what
+did rework cost the work that was attributable to an item."
+
 **Reconciliation is checked, not asserted**: `spend_fate.reconciled` is
-`true` iff the six buckets' own `usd` sum, rounded to the cent, equals
-`spend_fate.total_usd` rounded the same way — the identical rounding issue
-#536 already uses to reconcile `cost_rows[]` against `total_cost_usd`. A
+`true` iff the six buckets' own *unrounded* sums add to
+`spend_fate.total_usd`, both sides rounded to the cent exactly once at the
+end — the identical rounding issue #536 already uses to reconcile
+`cost_rows[]` against `total_cost_usd`. Rounding each bucket first and then
+summing the six would be a different and wrong check: a `cost_rows[]` row is
+one model's share of one transcript and routinely costs a fraction of a
+cent, so six half-cent roundings accumulate into a mismatch over an account
+whose rows are partitioned perfectly. The per-bucket `usd` the page renders
+is rounded from those same unrounded sums afterwards, so a reader still sees
+figures that add to within a cent of the total. A
 `false` here is a bug in the fold, not a rounding note, and the panel says so
 in words rather than rendering a silently-wrong table. Each bucket's own
 `usd`/`n` and the decision it informs (the lever rule, D21) render together
@@ -2444,8 +2471,10 @@ renders `turns_per_landed_item`, assembled by `lib/fleet-pricing.sh`'s
 `fleet_pricing_turns_per_landed_item` over `item_lifecycle_fold`'s own
 records — every landed item's own `stage-end` instants, `num_turns` and
 `stage`/`model` read directly off them, never a second raw scan. Grouped by
-`(stage, model)`, each row states `n` (landed items sampled), `mean_turns`
-and `median_turns`. `n_landed_with_turns` — landed items carrying at least
+`(stage, model)`, each row states `n` — the stage-ends sampled, not the
+landed items behind them, since a landed item whose stage ran twice
+contributes both of its stage-ends and each is its own turn count — plus
+`mean_turns` and `median_turns` over exactly that sample. `n_landed_with_turns` — landed items carrying at least
 one stage-end with a measured `num_turns` — is reported beside
 `n_landed_total` rather than folded into it, so a landed item predating this
 record (or whose stage-end predates `num_turns` being recorded at all) never

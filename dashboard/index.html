@@ -3466,7 +3466,7 @@
       "least one measured stage-end this window (the rest landed before this record existed, or their " +
       "stage-end predates num_turns being recorded). " + (tpl.lever || "")}));
     body.push((tpl.by_stage_model || []).length
-      ? tableOf(["Stage", "Model", "Landed items", "Mean turns", "Median turns"],
+      ? tableOf(["Stage", "Model", "Stage-ends sampled", "Mean turns", "Median turns"],
                 (tpl.by_stage_model || []).map(turnsPerLandedRow))
       : el("div", {class:"empty", text:"No landed item carried a measured num_turns yet."}));
     return el("div", {}, body);

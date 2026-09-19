@@ -124,6 +124,25 @@ assert_eq "unaccounted: item 7, still open in the lifecycle fold" \
 assert_eq "every bucket names the decision it informs (the lever rule, D21)" \
   "6" "$(jq -r '[.lever[] | select(type == "string" and length > 0)] | length' <<<"$out")"
 
+# Sub-cent rows are the common case, not an edge one: a cost_rows[] row is
+# one model's share of one transcript, and three of them at half a cent each
+# is enough to break a reconciliation that rounds every bucket before summing
+# the six (each rounds up to a full cent, so the buckets read 0.03 against a
+# 0.015 total). The invariant must be judged on the unrounded arithmetic and
+# rounded exactly once, or the panel calls a perfectly partitioned account a
+# bug.
+subcent_rows="$tmp_dir/subcent-rows.json"
+cat > "$subcent_rows" <<'EOF'
+[
+  {"cycle":"c1","repo":"r","item":"1","outcome":"pr-ready","attributed":true, "usd":0.005},
+  {"cycle":"c6","repo":null,"item":null,"outcome":null,   "attributed":false,"usd":0.005},
+  {"cycle":"c3","repo":"r","item":"3","outcome":"failed",  "attributed":true, "usd":0.005}
+]
+EOF
+subcent_out="$(fleet_pricing_spend_fate "$subcent_rows" '[]' "$lifecycle_file")"
+assert_eq "sub-cent rows spread over three buckets still reconcile (rounded once, at the end)" \
+  "true" "$(jq -r '.reconciled' <<<"$subcent_out")"
+
 assert_eq "an empty cost_rows file reconciles trivially (0 == 0)" \
   "true" "$(jq -r '.reconciled' <<<"$(fleet_pricing_spend_fate "$(printf '%s' '[]' > "$tmp_dir/empty-rows.json"; echo "$tmp_dir/empty-rows.json")" '[]' "$lifecycle_file")")"
 

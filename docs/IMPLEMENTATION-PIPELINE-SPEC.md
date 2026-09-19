@@ -21444,7 +21444,15 @@ What exists, and the requirements each part answers to:
     different real times per node, so only a node's own evidence that it
     exercised finish-then-continue marks its own adoption; a node with no
     `chained` event in the window is entirely "before"). Prints both eras'
-    `selection` and contended-`claim-lost` counts and each ratio.
+    `selection` and contended-`claim-lost` counts and each ratio, and beside
+    them `contention_by_node` — the identical population grouped by node
+    instead of by era (`.fleet`, and `.by_node`'s `selections`,
+    `contended_losses` and `ratio` per node), computed by
+    `lib/fleet-sizing.sh`'s `fleet_sizing_contention_by_node` rather than by a
+    fold of this script's own, so that the per-node duplicate-work input the
+    dashboard's fleet-sizing figure reads (`docs/DASHBOARD-SPEC.md`, issue
+    #612) and the figure this report prints can never be two independently
+    maintained counts of the same events.
 
     Acceptance 4 (median pickup latency, TD-PPagop-26081405): pairs each
     `first-seen` (requirement 33) with the `selection` that later claims the

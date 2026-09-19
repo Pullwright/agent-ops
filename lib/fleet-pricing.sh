@@ -70,10 +70,19 @@
 #                       guess between delivered and discarded.
 #
 # Reconciliation (D21's own invariant) is checked, not merely asserted:
-# `reconciled` is true iff the sum of every bucket's `usd`, rounded to the
-# cent, equals the sum of every row's own `usd` rounded the same way — the
-# identical rounding #536 already uses when it reconciles `cost_rows[]`
-# against `total_cost_usd`.
+# `reconciled` is true iff the sum of every bucket's own *unrounded* total,
+# rounded to the cent, equals the sum of every row's own `usd` rounded the
+# same way — the identical rounding #536 already uses when it reconciles
+# `cost_rows[]` against `total_cost_usd`. Both sides of that comparison are
+# rounded exactly once, at the end, and this is load-bearing rather than
+# incidental: a `cost_rows[]` row routinely costs a fraction of a cent (one
+# model's share of one transcript), so rounding each bucket *first* and then
+# summing the six would accumulate up to six half-cent errors and report
+# `reconciled: false` — which the panel states as "a bug, not a rounding
+# note" — over an account that partitions its rows perfectly. The rounded
+# per-bucket figures the page renders are derived from the same unrounded
+# sums afterwards, so what a reader sees still adds up to within a cent of
+# the total while the invariant itself is judged on the exact arithmetic.
 #
 # Sourced, never executed: no shell options are set here, matching every
 # other lib/*.sh — the caller owns those.
@@ -107,13 +116,14 @@ FLEET_PRICING_SPEND_FATE_JQ='
   | ($buckets | map(. as $b | {
         key: $b,
         value: {
-          usd: round2([$fated[] | select(.fate == $b) | .usd] | add // 0),
+          usd_raw: ([$fated[] | select(.fate == $b) | .usd] | add // 0),
           n: ([$fated[] | select(.fate == $b)] | length)
         }
-      }) | from_entries) as $by_fate
+      }) | from_entries) as $raw_by_fate
+  | ($raw_by_fate | map_values({usd: round2(.usd_raw), n: .n})) as $by_fate
 
   | ($rows | map(.usd // 0) | add // 0) as $total_usd
-  | ($by_fate | [.[].usd] | add // 0) as $bucketed_usd
+  | ($raw_by_fate | [.[].usd_raw] | add // 0) as $bucketed_usd
   | ((($total_usd * 100) | round) == (($bucketed_usd * 100) | round)) as $reconciled
 
   | {
@@ -204,7 +214,10 @@ FLEET_PRICING_TURNS_PER_LANDED_ITEM_JQ='
 # Only a landed item with at least one stage-end whose `num_turns` was
 # actually measured contributes a row — `n_landed_with_turns` reports that
 # population separately from `n_landed_total` so a low sample never reads as
-# a low landing count.
+# a low landing count. Each group's own `n` counts the stage-ends sampled,
+# not the landed items behind them: an item whose stage ran twice contributes
+# both stage-ends, and each is a turn count in its own right, so averaging
+# over items instead would silently weight a retried stage as one attempt.
 #
 # The Co-Ordinator's own stage-end typically carries no {repo, item} of its
 # own (its stage spans selecting, not one item's work), so its turns are not
