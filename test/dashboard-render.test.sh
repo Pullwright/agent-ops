@@ -1349,6 +1349,26 @@ assert_contains "a peer with no publication read back at all says so, rather tha
 assert_not_contains "  ... and never quotes a push age it does not have" \
   "STALE — last push" "$out"
 
+# --- fleet-peers-*.json: the peers-directory freshness badge (implementation
+# spec 2.5/#990) ---------------------------------------------------------
+# A frozen or dead fetch cron makes every peer card go stale at once; this
+# badge is what tells an operator the cause is "this node cannot see the
+# fleet" rather than "the fleet is down". One badge on the whole strip, not
+# per card, sourced from fleet.peers.stale — fleet_peers_stale's own verdict
+# (lib/fleet.sh), so the page can never disagree with requirement 38b's live
+# reconciliation about what counts as stale.
+out="$(render fleet-peers-ok-false.json)" || { printf 'FAIL - fleet-peers-ok-false.json did not render:\n%s\n' "$out"; exit 1; }
+assert_contains "a real fetch failure (ok:false) badges the whole fleet strip, naming the last success and when it started failing" \
+  "peer view stale — last successful fetch 40m ago, failing since 10m ago" "$out"
+
+out="$(render fleet-peers-stale-ok-true.json)" || { printf 'FAIL - fleet-peers-stale-ok-true.json did not render:\n%s\n' "$out"; exit 1; }
+assert_contains "an ok:true marker whose fetch cron has stopped running badges the strip too, worded differently" \
+  "peer view stale — fetch not running since 40m ago" "$out"
+
+out="$(render fleet-peers-fresh.json)" || { printf 'FAIL - fleet-peers-fresh.json did not render:\n%s\n' "$out"; exit 1; }
+assert_not_contains "a fresh peers marker renders no badge at all" \
+  "peer view stale" "$out"
+
 # --- rework.json / rework-outage.json: the rework panel (D23, issue #611) --
 # lib/rework-panel.sh's own fold is unit-tested directly in
 # test/rework-panel.test.sh; this only checks that `D.rework` renders as the
