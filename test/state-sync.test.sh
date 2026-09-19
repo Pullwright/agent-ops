@@ -1161,6 +1161,26 @@ fleet_mark_peers "$mark_legacy_dir" false
 assert_eq "a legacy {ok:true,ts} marker with no last_ok_ts field yields last_ok_ts = that marker's own ts on failure" \
   "$legacy_ts" "$(jq -r '.last_ok_ts' "$mark_legacy_dir/.last-fetch.json")"
 
+# The "unreadable marker → rewrite" branch, exercised the way its only caller
+# actually reaches it: scripts/state-sync.sh runs `set -euo pipefail` and
+# calls fleet_mark_peers bare, so a `x="$(jq …)"` that fails over a truncated
+# marker aborts the whole fetch at the read rather than falling through — the
+# marker then stays corrupt for every subsequent failure, and the caller's own
+# `return 1` and the warning after it never run. A plain call from this
+# script's own `set -uo pipefail` would not catch that, so the subshell below
+# reproduces the caller's flags and its bare-call position deliberately.
+mark_corrupt_dir="$tmp_dir/mark-corrupt"
+mkdir -p "$mark_corrupt_dir"
+printf '{"ok":true,"ts":"2026-01-0' > "$mark_corrupt_dir/.last-fetch.json"
+corrupt_rc=0
+( set -euo pipefail; . "$SCRIPT_DIR/lib/fleet.sh"; fleet_mark_peers "$mark_corrupt_dir" false ) \
+  >/dev/null 2>&1 || corrupt_rc=$?
+assert_eq "a failure over a truncated marker does not abort a set -e caller" "0" "$corrupt_rc"
+assert_eq "  ... and rewrites it, an unreadable marker reading the same as an absent one" "false" \
+  "$(jq -r '.ok' "$mark_corrupt_dir/.last-fetch.json")"
+assert_eq "  ... with last_ok_ts:null, nothing readable having survived to carry forward" "null" \
+  "$(jq -r '.last_ok_ts' "$mark_corrupt_dir/.last-fetch.json")"
+
 # ==============================================================================
 # fleet_peers_stale — the one staleness predicate (#990), shared by
 # fleet_logs_healthy below and the dashboard's fleet-strip badge
@@ -1190,6 +1210,12 @@ stale_dir_none="$tmp_dir/stale-no-marker"
 mkdir -p "$stale_dir_none"
 assert_eq "no marker at all reads not stale — the bootstrap case, caught by the union's own emptiness instead" "1" \
   "$(fleet_peers_stale "$stale_dir_none" >/dev/null 2>&1; echo $?)"
+
+stale_dir_corrupt="$tmp_dir/stale-corrupt"
+mkdir -p "$stale_dir_corrupt"
+printf '{"ok":true,"ts":"2026-01-0' > "$stale_dir_corrupt/.last-fetch.json"
+assert_eq "a marker that will not parse reads stale, rather than aborting a set -e caller at the read" "0" \
+  "$( ( set -euo pipefail; . "$SCRIPT_DIR/lib/fleet.sh"; fleet_peers_stale "$stale_dir_corrupt" ) >/dev/null 2>&1; echo $?)"
 
 stale_dir_cap="$tmp_dir/stale-cap"
 mkdir -p "$stale_dir_cap"
