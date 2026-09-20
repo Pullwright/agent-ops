@@ -138,6 +138,7 @@ cycles_retained="$(cfg '.cycles_retained')"
 local_retained="${STATE_SYNC_LOCAL_RETAINED:-$(cfg '.state_local_cycles_retained')}"
 streams_retained="${STATE_SYNC_STREAMS_RETAINED:-$(cfg '.state_local_streams_retained')}"
 min_free_workspace_bytes="${STATE_SYNC_MIN_FREE_WORKSPACE_BYTES:-$(cfg '.min_free_workspace_bytes')}"
+[[ "$min_free_workspace_bytes" =~ ^[0-9]+$ ]] || min_free_workspace_bytes=0
 
 # A bearer secret carried in a webhook URL's own path (agent-ops#1721) — none
 # of REDACT_SED_ARGS' shape rules match it — registered once, before any

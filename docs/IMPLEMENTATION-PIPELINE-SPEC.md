@@ -4061,7 +4061,14 @@ implements.
    what a free-space shortfall makes unsafe to keep regardless of that
    count. A `0` floor (`min_free_workspace_bytes` disabled) makes this prune
    a no-op too, the same as it does the pre-clone gate — one setting, one
-   meaning of "off", for both. `STATE_SYNC_MIN_FREE_WORKSPACE_BYTES` and
+   meaning of "off", for both. The floor is read defensively, not merely
+   trusted: `min_free_workspace_bytes` falls back to `0` — the same "off" —
+   when the value read from `config.json` or from
+   `STATE_SYNC_MIN_FREE_WORKSPACE_BYTES` is not numeric (agent-ops#1729), so
+   a hand-edited config carrying something like `"2GiB"` cannot abort the
+   push at the arithmetic test that follows, matching the tolerance
+   `disk_space_verdict` already gives a non-numeric floor argument.
+   `STATE_SYNC_MIN_FREE_WORKSPACE_BYTES` and
    `STATE_SYNC_FREE_KB` override the floor and the free-space reading
    respectively, both test-only, the same shape `STATE_SYNC_STREAMS_RETAINED`
    already uses to bypass its own derivation for `test/state-sync.test.sh`.
@@ -4073,7 +4080,9 @@ implements.
    files rather than the cycle directories themselves or the records inside
    them; and an injected floor of `0` leaves the count-based prune as the
    whole of what runs, however low the injected free-space reading, mirroring
-   `disk_space_verdict`'s own `0`-disables contract.
+   `disk_space_verdict`'s own `0`-disables contract. A non-numeric floor read
+   from `config.json` itself behaves exactly like an injected `0`: the
+   count-based prune still runs, and the pressure prune never engages.
 
    **A push that cannot write says so, and an orphaned index lock does not
    stop it (agent-ops#1377).** The `flock` above is state-sync's own;
