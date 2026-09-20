@@ -158,6 +158,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and both the losing side of a lock contention and `--status`'s
   `published:` line now name how long the current holder has been running,
   calling out a hold older than one push interval as a possible wedge.
+
 - **A dead peers-fetch cron, and a fetch outage's own length, are now
   visible instead of silently trusted** (issues #990, #1001). The peers
   directory's freshness marker (`fleet_mark_peers`, #693) now carries a
