@@ -247,12 +247,13 @@ assert_eq "a parent max below this container's own is livelocked too" \
 #     parent's own max exists above it (agent-ops#1643) ----------------------
 #
 # A real parent memory.max strictly above this container's own is necessary
-# but not sufficient: agent-ops#1643 wedged again with the parent's memory.max
-# a real ceiling above the child's own (3072 MiB against 1536 MiB, see above),
-# because the parent's memory.high (768 MiB) sat more than 25% below this
-# container's own memory.max — the kernel's reclaim under memory.high
-# throttles too severely across that wide a band for the workload to ever
-# reach either kill point. The discriminator is the band's width, so a narrow
+# but not sufficient: agent-ops#1643 extrapolated from the 2026-09-09 and
+# 2026-09-16 incidents that a parent memory.max genuinely above the child's
+# own (say 3072 MiB against 1536 MiB) still livelocks when the parent's
+# memory.high sits more than 25% below this container's own memory.max — the
+# kernel's reclaim under memory.high throttles too severely across that wide
+# a band for the workload to ever reach either kill point. The discriminator
+# is the band's width, so a narrow
 # band must keep reading `parented`: the interim ockham remedy (parent
 # memory.high 1400 MiB, parent memory.max 2048 MiB, this container's own
 # memory.max 1536 MiB — an ~8.9% gap) is exactly this shape, and a naive "any
