@@ -3,7 +3,7 @@
 # test/state-sync.test.sh — regression test for scripts/state-sync.sh under
 # the multi-active fleet model (per-node branches, no lease).
 #
-# Seven things here are worth a test rather than a careful reading:
+# Eight things here are worth a test rather than a careful reading:
 #
 #   what replicates   the exclude list is the difference between a fleet that
 #                     shares its memory and one that shares its locks.
@@ -34,6 +34,16 @@
 #   raw                agent-ops#966) — a token or a home path that reaches a
 #                     published file must not survive the commit this push
 #                     makes to a repository that is never rotated.
+#   what unwedges it   a redaction that fails on one file warns and moves on
+#                     rather than abandoning the loop mid-stream (the shape
+#                     that deadlocked a whole push against `find`'s own
+#                     process substitution for almost seven hours, holding
+#                     the mirror lock throughout), a step that still runs
+#                     long past a push interval is killed and the lock
+#                     released regardless of cause, and the losing side of a
+#                     lock contention says how long the current hold has run
+#                     rather than reporting every wait as equally ordinary
+#                     (agent-ops#1679).
 #
 # No network and no GitHub: the remote is a local bare repository
 # (STATE_SYNC_REMOTE). No test framework is used (none exists elsewhere in
@@ -54,6 +64,8 @@ SYNC="$SCRIPT_DIR/scripts/state-sync.sh"
 . "$SCRIPT_DIR/lib/config-schema.sh"
 # shellcheck source=lib/mirror-integrity.sh
 . "$SCRIPT_DIR/lib/mirror-integrity.sh"
+# shellcheck source=lib/mirror-lock.sh
+. "$SCRIPT_DIR/lib/mirror-lock.sh"
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
@@ -1277,6 +1289,189 @@ big_rc=$?
 assert_eq "a push over a large cycles/ survives the newest-cycle scan" "0" "$big_rc"
 assert_contains "and reports what it pushed, rather than dying silently" \
   "state-sync(push): pushed" "$big_out"
+
+# ==============================================================================
+# a wedged step is killed and the lock it holds is released (agent-ops#1679)
+# ==============================================================================
+# The fault this reproduces: on 2026-09-18 a push on ockham-2 wedged inside
+# the redaction loop for almost seven hours, holding `mirror_lock` the whole
+# time. "another state-sync holds the mirror" is documented as self-clearing
+# (an ordinary slow fetch), so nothing distinguished the wedge from a slow
+# push, and the node read as dead for the whole seven hours.
+
+# --- mirror_run_with_deadline / mirror_kill_tree, in isolation -----------------
+# A step that would run to completion well inside the deadline is untouched:
+# its own exit status passes through, and it is not made to wait for the
+# deadline to elapse.
+dl_start="$(date +%s)"
+mirror_run_with_deadline 5 bash -c 'exit 3'
+dl_rc=$?
+dl_elapsed=$(( $(date +%s) - dl_start ))
+assert_eq "a step that finishes well inside the deadline keeps its own exit code" "3" "$dl_rc"
+assert_eq "…and returns immediately, not after waiting out the deadline" "1" \
+  "$(( dl_elapsed < 3 ? 1 : 0 ))"
+
+# The simulated wedge: a step that would otherwise run far longer than the
+# deadline is killed, and the deadline itself — not the step's own runtime —
+# is what bounds how long the caller waits.
+dl_start="$(date +%s)"
+mirror_run_with_deadline 1 sleep 30
+dl_rc=$?
+dl_elapsed=$(( $(date +%s) - dl_start ))
+assert_eq "a step wedged past its deadline is reported as 124, the same code timeout(1) uses" \
+  "124" "$dl_rc"
+assert_eq "…and the caller is freed at the deadline, not after the full 30s" "1" \
+  "$(( dl_elapsed < 10 ? 1 : 0 ))"
+sleep 0.3
+assert_eq "…and the wedged process itself is actually gone, not merely abandoned" \
+  "0" "$(pgrep -f 'sleep 30' | wc -l)"
+
+# A step that forks its own children (the redaction loop's own shape: a shell
+# with `find` as a live child) has all of them killed, not just the shell —
+# the same /proc walk scripts/state-sync.sh's own `mirror_git_busy` already
+# reads, generalised here to any process tree.
+dl_start="$(date +%s)"
+mirror_run_with_deadline 1 bash -c 'sleep 30 & wait'
+dl_rc=$?
+dl_elapsed=$(( $(date +%s) - dl_start ))
+assert_eq "a wedged shell with its own child is also reported as 124" "124" "$dl_rc"
+assert_eq "…freed at the deadline" "1" "$(( dl_elapsed < 10 ? 1 : 0 ))"
+sleep 0.3
+assert_eq "…and the grandchild sleep is gone too, not left as an orphan" \
+  "0" "$(pgrep -f 'sleep 30' | wc -l)"
+
+# --- the lock holder marker, in isolation ---------------------------------------
+ml_dir="$tmp_dir/mirror-lock-unit"
+mkdir -p "$ml_dir"
+ml_mirror="$ml_dir/.agent-ops-state"
+assert_eq "no marker yet reads as no age to report" "" "$(mirror_lock_holder_age_s "$ml_mirror")"
+mirror_lock_mark_started "$ml_mirror" push
+assert_eq "a marker just written reads back as this process' own pid" \
+  "$$" "$(jq -r '.pid' "$(mirror_lock_holder_marker "$ml_mirror")")"
+assert_eq "…and an age of (about) zero" "0" "$(mirror_lock_holder_age_s "$ml_mirror")"
+mirror_lock_clear_started "$ml_mirror"
+assert_eq "clearing it removes the marker" "0" \
+  "$(test -e "$(mirror_lock_holder_marker "$ml_mirror")" && echo 1 || echo 0)"
+assert_eq "…so age reads back to nothing again" "" "$(mirror_lock_holder_age_s "$ml_mirror")"
+
+# mirror_lock_probe, the read-only side lib/manage.sh's --status calls: no
+# lock file at all reads as free, same as a genuinely uncontended one.
+assert_eq "a mirror with no lock file yet probes as not held" \
+  '{"held":false}' "$(mirror_lock_probe "$ml_mirror")"
+
+# --- the losing side of a real contention names the holder's own age -----------
+# `il_sleeper`'s own trick (above) fakes a live process; here the lock itself
+# has to be genuinely held, so a real `flock` does it — backgrounded directly
+# at the top level, never through a `$(...)` command substitution, which bash
+# would tear the job down along with once that subshell exits.
+wl_home="$(new_node wedge-loser-node)"
+wl_state="$wl_home/.local/state/poetic-agents"
+wl_mirror="$wl_home/.cache/poetic-agents/workspaces/.agent-ops-state"
+printf '{"ts":"2026-09-18T14:00:00Z","event":"cycle-start"}\n' > "$wl_state/log.jsonl"
+out="$(sync_as "$wl_home" active push)"
+assert_eq "the wedge-loser node's first push exits 0" "0" "$?"
+
+wl_push_s="$(config_defaults "$SCRIPT_DIR/config.json" "$SCRIPT_DIR/config.schema.json" \
+  | jq -r '.schedule.state_sync_push_minutes * 60 | floor')"
+jq -nc --arg started "$(date -u -d "@$(( $(date +%s) - wl_push_s * 3 ))" +%Y-%m-%dT%H:%M:%SZ)" \
+  '{started: $started, mode: "push", pid: 1}' > "$wl_mirror.lock.holder"
+flock "$wl_mirror.lock" sleep 5 &
+wl_holder_parent=$!
+sleep 0.2
+wl_holder_child="$(pgrep -P "$wl_holder_parent" | head -1)"
+
+out="$(sync_as "$wl_home" active fetch)"
+assert_eq "a fetch against a genuinely held lock still exits 0 — this stays self-clearing" "0" "$?"
+assert_contains "…but now names the holder's own age" \
+  "another state-sync holds the mirror — holding for" "$out"
+assert_contains "…past one push interval, said explicitly" \
+  "longer than one push interval — may be wedged" "$out"
+
+kill "$wl_holder_parent" "$wl_holder_child" 2>/dev/null; wait "$wl_holder_parent" 2>/dev/null
+
+# A young hold, by contrast, is reported as an age but never called a wedge —
+# an ordinary push in progress is not the fault this line exists to name.
+jq -nc --arg started "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  '{started: $started, mode: "push", pid: 1}' > "$wl_mirror.lock.holder"
+flock "$wl_mirror.lock" sleep 5 &
+wl_holder_parent=$!
+sleep 0.2
+wl_holder_child="$(pgrep -P "$wl_holder_parent" | head -1)"
+out="$(sync_as "$wl_home" active fetch)"
+assert_contains "a young hold still reports its age" \
+  "another state-sync holds the mirror — holding for" "$out"
+assert_lacks "…but is never called a wedge" "may be wedged" "$out"
+kill "$wl_holder_parent" "$wl_holder_child" 2>/dev/null; wait "$wl_holder_parent" 2>/dev/null
+
+# --- a single file's redaction failing does not wedge the whole push -----------
+# The root cause #1679 traced the incident to: a file `redact_file` cannot
+# rewrite used to abort the whole loop under `set -e`, abandoning `find`'s
+# process substitution before EOF and deadlocking the run against its own
+# unread pipe. A failed redaction is now a warning and a skip.
+rc_home="$(new_node redact-failure-node)"
+rc_state="$rc_home/.local/state/poetic-agents"
+printf '{"ts":"2026-07-20T00:00:00Z","event":"cycle-start"}\n' > "$rc_state/log.jsonl"
+printf 'a token ghp_1234567890abcdefXYZ1234 that must still be redacted\n' \
+  > "$rc_state/cron.log"
+# `sed -i` rewrites a file by creating a new temp file beside it and renaming
+# over the original, so it is the *directory's* write permission that has to
+# be denied, not the file's own — the file still has to be plainly readable
+# for rsync to mirror it there in the first place.
+mkdir -p "$rc_state/protected"
+printf 'this one cannot be rewritten\n' > "$rc_state/protected/unwritable.log"
+chmod 555 "$rc_state/protected"
+rc_out="$(sync_as "$rc_home" active push)"
+rc_rc=$?
+chmod 755 "$rc_state/protected"
+assert_eq "a push with one unredactable file still succeeds overall" "0" "$rc_rc"
+assert_contains "…warning about the one file it could not redact" \
+  "WARNING: could not redact" "$rc_out"
+assert_contains "…committing it unredacted" "committing it unredacted" "$rc_out"
+rc_pushed="$tmp_dir/rc-pushed"
+git clone --quiet --branch nodes/redact-failure-node "$remote" "$rc_pushed"
+assert_eq "…and every other file still got redacted normally" "1" \
+  "$(grep -c 'REDACTED-TOKEN' "$rc_pushed/cron.log")"
+# rsync's -a carried the source directory's own 555 into the mirror too; put
+# back so the whole-tmp_dir cleanup trap at the bottom of this file can
+# actually remove it.
+chmod -R u+w "$rc_home"
+
+# --- the deadline itself: a step that runs long is killed and the lock freed ---
+# Not a reproduction of the exact race above (which needed a real file
+# `redact_file` cannot rewrite, above) — a generically slow redaction pass,
+# thousands of trivial files, each costing its own `sed -i` process spawn, is
+# a real, deterministic way to make the same loop legitimately take longer
+# than a short deadline, which is exactly the safety net regardless of cause
+# this deadline exists to be.
+dd_home="$(new_node deadline-node)"
+dd_state="$dd_home/.local/state/poetic-agents"
+dd_mirror="$dd_home/.cache/poetic-agents/workspaces/.agent-ops-state"
+printf '{"ts":"2026-07-20T00:00:00Z","event":"cycle-start"}\n' > "$dd_state/log.jsonl"
+mkdir -p "$dd_state/wedge"
+touch "$dd_state"/wedge/file_{00001..08000}
+dd_start="$(date +%s)"
+dd_out="$(sync_as "$dd_home" active push STATE_SYNC_PUSH_DEADLINE_SECONDS=2)"
+dd_rc=$?
+dd_elapsed=$(( $(date +%s) - dd_start ))
+assert_eq "a push whose redaction pass runs long exits non-zero" "1" "$dd_rc"
+assert_eq "…well inside the deadline it was killed at, not after the full pass" "1" \
+  "$(( dd_elapsed < 15 ? 1 : 0 ))"
+assert_contains "…naming the deadline as the step that failed" \
+  "push failed at redaction-loop-deadline" "$dd_out"
+assert_eq "…logged as a state-sync-push-failed event naming the same step" "1" \
+  "$(jq -c 'select(.event == "state-sync-push-failed" and .step == "redaction-loop-deadline")' \
+       "$dd_state/log.jsonl" | wc -l)"
+assert_eq "…and the mirror lock's own holder marker is gone, not left behind" "0" \
+  "$(test -e "$dd_mirror.lock.holder" && echo 1 || echo 0)"
+# The killed push's own rsync had already staged the 8000 files into the
+# mirror before the redaction pass wedged; removing the source directory lets
+# the next push's `rsync --delete` clear them out again rather than redacting
+# the same slow pile a second time — what this asserts is that the lock is
+# free, not that a second giant redaction also finishes in 2s.
+rm -rf "$dd_state/wedge"
+dd_out2="$(sync_as "$dd_home" active push STATE_SYNC_PUSH_DEADLINE_SECONDS=2)"
+assert_eq "…so the very next push is not still shut out by the dead one's lock" "0" "$?"
+assert_contains "…and actually completes" "state-sync(push): pushed" "$dd_out2"
 
 printf '\n%s\n' "----------------------------------------"
 if (( failures == 0 )); then
