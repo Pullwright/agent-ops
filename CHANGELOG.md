@@ -172,6 +172,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   it as stale when absent, logged through the same
   `enabler-stale-refs-skipped` event.
 
+- **A file `redact_file` cannot rewrite no longer reaches the state
+  repository unredacted** (issue #1703, the owner's ruling on the question
+  issue #1698 left open). `redact_mirror_files` (`scripts/state-sync.sh`)
+  now cascades on a redaction failure instead of committing the file as it
+  stands: `rm -f` it out of the mirror first; where the file resists
+  removal too — typically a directory `sed -i`'s own rewrite could not
+  write into either — truncate it in place instead, which needs only the
+  file's own write permission; and only where the file resists redaction,
+  removal and truncation alike does the push abandon, through the same
+  `state_sync_push_failed` path a redaction-loop deadline (#1679) already
+  uses. A skipped or emptied file costs this node one push interval of its
+  own visibility in a peer's union or fleet strip; the alternative was a
+  `ghp_…`-shaped string reaching a private repository that is never
+  rotated.
+
 - **A `state-sync.sh push` wedged in the redaction loop no longer holds the
   mirror lock indefinitely, and a long hold is now named as a possible
   wedge rather than reported as an ordinary one** (issue #1679). On

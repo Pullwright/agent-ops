@@ -718,14 +718,47 @@ prune_derived() {
 # substitution deadlocking each other, the seven-hour wedge agent-ops#1679
 # reports (the exact trigger — which file, which error — was not recovered
 # from the incident; this closes the general hazard the loop's own shape
-# creates, whatever specific error trips it). A failed redaction is now a
-# warning and a skip instead: the file reaches the branch unredacted rather
-# than the run not reaching the branch at all, and the caller's own deadline
-# stands behind this as the safety net regardless of cause.
+# creates, whatever specific error trips it). A failed redaction no longer
+# unwinds the run where it happens, but nor does it let the file through as
+# it stands
+# (agent-ops#1703, the owner's ruling on agent-ops#1698's own open question):
+# a `redact_file` failure now cascades — `rm -f` the file out of the mirror
+# first, since a skipped file costs this node one push interval of its own
+# visibility while a secret-shaped string committed to a never-rotated
+# repository costs it forever (agent-ops#966). Where the mirror copy sits
+# under a directory `sed -i`'s own write-a-temp-file-and-rename could not
+# write into either — the removal `rm -f` needs is the same directory
+# permission — truncating the file in place is tried next, since that needs
+# only the file's own write permission, which `rsync -a` carried over
+# unchanged and unrelated to its directory's. Only a file that resists
+# every one of these — content survives redaction, removal and truncation
+# alike — abandons the push by returning non-zero, which the caller already
+# turns into a `state_sync_push_failed` event exactly as a deadline timeout
+# does (below): nothing this pass could not rewrite ever reaches the branch
+# with its content intact. That last step leaves `find` mid-stream, which
+# looks like the shape of the wedge above but is not its mechanism: that one
+# was an `errexit` unwind blocked waiting to reap `find` before it could
+# close the pipe, whereas a plain `return` lets the shell carry on and this
+# function's own subshell — the caller runs it as a background job — exit
+# immediately behind it, closing the read end so `find` dies on the broken
+# pipe instead of blocking on it. The caller's own deadline still stands
+# behind all of this as the safety net regardless of cause.
 redact_mirror_files() {
   local mirror="$1" f
   while IFS= read -r -d '' f; do
-    redact_file "$f" || say "WARNING: could not redact $f — committing it unredacted"
+    redact_file "$f" && continue
+    rm -f -- "$f" 2>/dev/null || true
+    if [[ ! -e "$f" ]]; then
+      say "WARNING: could not redact $f — dropped from this push rather than committed unredacted"
+      continue
+    fi
+    { : > "$f"; } 2>/dev/null || true
+    if [[ ! -s "$f" ]]; then
+      say "WARNING: could not redact or remove $f — emptied it rather than committed unredacted"
+      continue
+    fi
+    say "WARNING: could not redact, drop or empty $f — abandoning this push"
+    return 1
   done < <(find "$mirror" -mindepth 1 -type f -not -path "$mirror/.git/*" -print0)
 }
 
