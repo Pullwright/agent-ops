@@ -174,7 +174,7 @@ assert_eq "an unreadable cgroup is unknown, never a verdict" \
 # can act on, `parented` in the case below is a node quietly ratcheting while
 # doctor calls it healthy.
 
-stub_cgroup max 1610612736 805306368 2147483648
+stub_cgroup max 1610612736 1468006400 2147483648
 assert_eq "a ceiling on the parent, itself hard-ceilinged above this container's own, is parented" \
   "parented" "$(memory_cgroup_verdict)"
 
@@ -206,10 +206,11 @@ assert_eq "a missing parent window is unbounded, never parented" \
 # --- memory_cgroup_verdict: the livelock band (agent-ops#1305) ---------------
 #
 # A ceiling on the parent closes the band only if the parent itself has a
-# real memory.max somewhere above it. Without one, memory.high throttles
-# forever and nothing ever kills anything — the exact state that wedged
-# ockham-container for 75 minutes while doctor.sh reported this as `parented`
-# and `[ ok ]`.
+# real memory.max somewhere above it (and, per agent-ops#1643 below, a
+# memory.high close enough to this container's own memory.max). Without a
+# real memory.max at all, memory.high throttles forever and nothing ever
+# kills anything — the exact state that wedged ockham-container for 75
+# minutes while doctor.sh reported this as `parented` and `[ ok ]`.
 
 stub_cgroup max 1610612736 805306368 max
 assert_eq "a parent high with the parent's own max unbounded is livelocked" \
@@ -220,8 +221,8 @@ assert_eq "a parent high with the parent's own max unreadable is unconfirmed, no
   "unconfirmed" "$(memory_cgroup_verdict)"
 
 stub_cgroup max 1610612736 805306368 3221225472
-assert_eq "a parent high with a real parent max above it stays parented" \
-  "parented" "$(memory_cgroup_verdict)"
+assert_eq "a parent high with a real parent max above it, but too wide a band, is still livelocked" \
+  "livelocked" "$(memory_cgroup_verdict)"
 
 # --- memory_cgroup_verdict: a real parent max that adds no headroom
 #     (agent-ops#1620) --------------------------------------------------------
@@ -240,6 +241,32 @@ assert_eq "a parent max coincident with this container's own is livelocked, not 
 
 stub_cgroup max 1610612736 805306368 1073741824
 assert_eq "a parent max below this container's own is livelocked too" \
+  "livelocked" "$(memory_cgroup_verdict)"
+
+# --- memory_cgroup_verdict: the throttle band's width, not just whether the
+#     parent's own max exists above it (agent-ops#1643) ----------------------
+#
+# A real parent memory.max strictly above this container's own is necessary
+# but not sufficient: agent-ops#1643 extrapolated from the 2026-09-09 and
+# 2026-09-16 incidents that a parent memory.max genuinely above the child's
+# own (say 3072 MiB against 1536 MiB) still livelocks when the parent's
+# memory.high sits more than 25% below this container's own memory.max — the
+# kernel's reclaim under memory.high throttles too severely across that wide a
+# band for the workload to ever reach either kill point. The discriminator is
+# the band's width, so a narrow band must keep reading `parented`: the interim
+# ockham remedy (parent memory.high 1400 MiB, parent memory.max 2048 MiB, this
+# container's own memory.max 1536 MiB — an ~8.9% gap) is exactly this shape,
+# and a naive "any parent high below the child's own max is livelocked" rule
+# would wrongly condemn it. The narrow-band case itself is already covered
+# above (the "ceiling on the parent... is parented" case uses this exact
+# shape); what's new here is the boundary either side of the 25% threshold.
+
+stub_cgroup max 1610612736 1207959552 2147483648
+assert_eq "a band at exactly 25% (the threshold itself) stays parented" \
+  "parented" "$(memory_cgroup_verdict)"
+
+stub_cgroup max 1610612736 1207959551 2147483648
+assert_eq "a band one byte past 25%, with real headroom above, is livelocked" \
   "livelocked" "$(memory_cgroup_verdict)"
 
 # --- memory_cgroup_parent_max -------------------------------------------------
@@ -313,6 +340,19 @@ assert_contains "memory_cgroup_livelock_describe (coincident max) says it adds n
   "no headroom" "$desc"
 assert_contains "memory_cgroup_livelock_describe (coincident max) points at the fix" \
   "cgroup-parent-setup.sh" "$desc"
+
+stub_cgroup max 1610612736 805306368 3221225472
+desc="$(memory_cgroup_livelock_describe)"
+assert_contains "memory_cgroup_livelock_describe (wide band) names the parent's high" \
+  "768 MiB" "$desc"
+assert_contains "memory_cgroup_livelock_describe (wide band) names this container's own ceiling" \
+  "1536 MiB" "$desc"
+assert_contains "memory_cgroup_livelock_describe (wide band) names the parent's own max" \
+  "3072 MiB" "$desc"
+assert_contains "memory_cgroup_livelock_describe (wide band) says the band is too wide" \
+  "25%" "$desc"
+assert_contains "memory_cgroup_livelock_describe (wide band) points at raising memory.high" \
+  "--limit" "$desc"
 
 # --- memory_cgroup_unconfirmed_describe ---------------------------------------
 

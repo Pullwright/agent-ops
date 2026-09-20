@@ -222,6 +222,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   but the newest already exists purely for after-the-fact diagnosis.
   `state_local_streams_retained`'s own derivation and floor-never-ceiling
   contract are unchanged.
+- **`memory_cgroup_verdict` no longer reports a false `parented [ ok ]` for a
+  parent `memory.max` that sits above the child's own but too far above its
+  `memory.high`** (issue #1643). A parent's `memory.max` genuinely above this
+  cgroup's own `memory.max` is necessary but not sufficient: when the
+  parent's `memory.high` sits more than ~25% below this cgroup's own
+  `memory.max`, the kernel's reclaim under `memory.high` throttles too
+  severely across that wide a band for the workload ever to reach either
+  kill point — the same livelock `memory_cgroup_verdict` already caught for
+  a coincident or absent parent `memory.max` (issue #1620), extrapolated to
+  a parent `memory.max` that does add headroom on paper. A band narrower
+  than that threshold, such as the interim `ockham-container`
+  remedy's own (parent `memory.high` 1400 MiB against a `memory.max` of 1536
+  MiB), still reads `parented`.
 
 - **The stall profile's Decision cell no longer hides a near-backstop
   `worst_run_max` behind the minimum-sample gate** (issue #1590). The Stall

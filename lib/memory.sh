@@ -240,30 +240,50 @@ memory_cgroup_parent_events_high() {
 #   parented   this cgroup's own `memory.high` is `max`, but an ancestor
 #              carries a real `memory.high` **and** the parent's own
 #              `memory.max` is a real hard ceiling **strictly above** this
-#              cgroup's own — so the parent's ceiling actually adds headroom
-#              the kernel can reclaim into before something is killed — and
-#              unlike `bounded` it survives a roll, because the ceiling does
-#              not live on the container. Distinguished from `bounded` rather
-#              than folded into it because the two differ in exactly the
-#              property this check exists to report: whether the node will
-#              still be bounded tomorrow.
+#              cgroup's own **and** the parent's `memory.high` sits no more
+#              than ~25% below this cgroup's own `memory.max` — so the
+#              parent's ceiling actually adds headroom the kernel can reclaim
+#              into, and the throttle band between the parent's `memory.high`
+#              and this cgroup's own `memory.max` is narrow enough for the
+#              workload to cross it — and unlike `bounded` it survives a
+#              roll, because the ceiling does not live on the container.
+#              Distinguished from `bounded` rather than folded into it because
+#              the two differ in exactly the property this check exists to
+#              report: whether the node will still be bounded tomorrow.
 #   livelocked the parent carries a real `memory.high` below this cgroup's own
-#              `memory.max`, and the parent's own `memory.max` is either `max`
-#              (no hard ceiling anywhere) or a real number that is no higher
-#              than this cgroup's own `memory.max` (a hard ceiling exists, but
-#              coincides with or sits below the child's own, so it adds no
-#              kill point beyond one this cgroup already has on its own) —
-#              either way `memory.high` throttles the whole hierarchy without
-#              ever disengaging, because reaching the parent's own ceiling
-#              first is not something the child can do. agent-ops#1305:
-#              2,788,595 throttle events and a node wedged in `D` state for 75
-#              minutes, with `memory.high` `max` on the parent. agent-ops#1620:
-#              the same band reached with a *real* parent `memory.max` (1536
-#              MiB) coincident with the child's own — the kernel's reclaim
-#              under `memory.high` throttles severely enough near the child's
-#              own ceiling that the workload never makes enough progress to
-#              reach either kill point, so the coincident ceiling is inert in
-#              practice even though it is not `max`.
+#              `memory.max`, and either the parent's own `memory.max` adds no
+#              usable headroom, or it does but the band it opens is too wide
+#              for the workload to cross:
+#                - the parent's own `memory.max` is `max` (no hard ceiling
+#                  anywhere), or a real number that is no higher than this
+#                  cgroup's own `memory.max` (a hard ceiling exists, but
+#                  coincides with or sits below the child's own, so it adds no
+#                  kill point beyond one this cgroup already has on its own);
+#                - or the parent's own `memory.max` **is** a real ceiling
+#                  strictly above this cgroup's own, but the parent's
+#                  `memory.high` sits more than ~25% below this cgroup's own
+#                  `memory.max` — the kernel's reclaim under `memory.high`
+#                  throttles severely enough across that wide a band that the
+#                  workload never makes enough progress to reach either kill
+#                  point, so a headroom-adding ceiling still livelocks in
+#                  practice (agent-ops#1643).
+#              Either way `memory.high` throttles the whole hierarchy without
+#              ever disengaging in practice. agent-ops#1305: 2,788,595
+#              throttle events and a node wedged in `D` state for 75 minutes,
+#              with `memory.high` `max` on the parent. agent-ops#1620: the
+#              same band reached with a *real* parent `memory.max` (1536 MiB)
+#              coincident with the child's own. agent-ops#1643 extrapolated
+#              from both incidents: the band is reachable whatever the
+#              parent's `memory.max` is, so a parent `memory.max` (say 3072
+#              MiB) strictly above the child's own (1536 MiB) is not itself
+#              proof against livelock — it still livelocks if the parent's
+#              `memory.high` (say 768 MiB) sits far enough below the child's
+#              own `memory.max` — the live discriminator is the throttle
+#              band's *width*, not merely whether the parent's `memory.max`
+#              exists above it. A narrow band (parent `memory.high` 1400 MiB,
+#              parent `memory.max` 2048 MiB, this cgroup's own `memory.max`
+#              1536 MiB — under a 10% gap) keeps reading `parented`, which is
+#              what the 25% threshold is tuned to preserve.
 #   unconfirmed the parent carries a real `memory.high` below this cgroup's
 #              own `memory.max`, but the parent's own `memory.max` cannot be
 #              read — an un-migrated compose.yaml, or a node that has not
@@ -301,6 +321,16 @@ memory_cgroup_verdict() {
       # sits below this cgroup's own memory.max, so it is not a ceiling this
       # cgroup can reach before its own kill point — the parent adds no
       # headroom, and the same throttle-forever band applies (agent-ops#1620).
+      printf 'livelocked'
+    elif (( parent_high * 4 < max * 3 )); then
+      # The parent's own memory.max does add headroom above this cgroup's
+      # own, but the band between the parent's memory.high and this cgroup's
+      # own memory.max is still too wide for the workload to cross: the
+      # kernel's reclaim under memory.high throttles severely enough across
+      # more than a ~25% gap that the workload never makes enough progress to
+      # reach either kill point, exactly as if no headroom-adding ceiling
+      # existed at all (agent-ops#1643). Integer form of parent_high <
+      # 0.75 * max, to avoid floating point.
       printf 'livelocked'
     else
       printf 'parented'
@@ -347,9 +377,14 @@ memory_cgroup_parent_describe() {
 # agent-ops#1305 at ~96 events/second for 75 minutes before the node's
 # D-state processes could no longer make progress at all, with the parent's
 # own memory.max left at `max`. agent-ops#1620 measured the same band with a
-# *real* parent memory.max (1536 MiB) coincident with the child's own —
-# distinguished below because the fix differs: an unbounded parent needs a
-# memory.max at all, a coincident one needs a higher one.
+# *real* parent memory.max (1536 MiB) coincident with the child's own.
+# agent-ops#1643 extrapolated from both incidents to a parent memory.max
+# strictly above the child's own (say 3072 MiB against 1536 MiB) whose
+# memory.high still sits too far below the child's own memory.max (say 768
+# MiB, more than 25% below) to disengage — distinguished below because the
+# fix differs in each case: an unbounded parent needs a memory.max at all, a
+# coincident (or lower) one needs a higher one, and one that already clears
+# the child's own ceiling needs its memory.high raised instead.
 memory_cgroup_livelock_describe() {
   local current max parent_high parent_max
   current="$(memory_cgroup_field memory.current)"
@@ -362,6 +397,14 @@ memory_cgroup_livelock_describe() {
   if [[ "$parent_max" == "max" ]]; then
     printf 'this container'"'"'s parent cgroup has memory.high set to %d MiB but its own memory.max left unbounded, so nothing ever reclaims below the %d MiB ceiling this container relies on and nothing kills above it either — holding %d MiB now; re-run scripts/cgroup-parent-setup.sh to give the parent a memory.max' \
       $(( parent_high / 1048576 )) $(( max / 1048576 )) $(( current / 1048576 ))
+  elif [[ "$parent_max" =~ ^[0-9]+$ ]] && (( parent_max > max )); then
+    # A real ceiling above this cgroup's own does exist, but the band between
+    # the parent's memory.high and this cgroup's own memory.max is too wide
+    # (>~25%) for the workload to cross — raising the parent's memory.high
+    # closes this gap; raising its memory.max further would not, since the
+    # ceiling already clears this cgroup's own (agent-ops#1643).
+    printf 'this container'"'"'s parent cgroup has memory.high set to %d MiB, more than 25%% below this container'"'"'s own %d MiB ceiling — its own memory.max (%d MiB) does add headroom above that, but the kernel'"'"'s reclaim under memory.high throttles too severely across that wide a band for the workload to ever reach either kill point — holding %d MiB now; re-run scripts/cgroup-parent-setup.sh with a --limit closer to this container'"'"'s own memory_bytes' \
+      $(( parent_high / 1048576 )) $(( max / 1048576 )) $(( parent_max / 1048576 )) $(( current / 1048576 ))
   else
     local parent_max_mib=0
     [[ "$parent_max" =~ ^[0-9]+$ ]] && parent_max_mib=$(( parent_max / 1048576 ))
