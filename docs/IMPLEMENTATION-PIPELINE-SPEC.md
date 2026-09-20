@@ -4064,10 +4064,11 @@ implements.
    meaning of "off", for both. The floor is read defensively, not merely
    trusted: `min_free_workspace_bytes` falls back to `0` — the same "off" —
    when the value read from `config.json` or from
-   `STATE_SYNC_MIN_FREE_WORKSPACE_BYTES` is not numeric (agent-ops#1729), so
-   a hand-edited config carrying something like `"2GiB"` cannot abort the
-   push at the arithmetic test that follows, matching the tolerance
-   `disk_space_verdict` already gives a non-numeric floor argument.
+   `STATE_SYNC_MIN_FREE_WORKSPACE_BYTES` is not numeric (agent-ops#1729),
+   normalising a hand-edited config carrying something like `"2GiB"` to a
+   clean value before the arithmetic test that follows so no arithmetic-error
+   noise reaches stderr, matching the tolerance `disk_space_verdict` already
+   gives a non-numeric floor argument.
    `STATE_SYNC_MIN_FREE_WORKSPACE_BYTES` and
    `STATE_SYNC_FREE_KB` override the floor and the free-space reading
    respectively, both test-only, the same shape `STATE_SYNC_STREAMS_RETAINED`

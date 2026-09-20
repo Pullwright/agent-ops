@@ -751,6 +751,7 @@ out="$(env HOME="$dp_nonnumeric_home" AGENT_OPS_ROLE=active \
 rc=$?
 cp "$config_backup" "$SCRIPT_DIR/config.json"
 assert_eq "a non-numeric config-sourced floor doesn't crash the push" "0" "$rc"
+assert_lacks "…with no arithmetic error reaching stderr" "value too great for base" "$out"
 assert_contains "…and the ordinary count-based prune still runs" "pruned 2 derived file(s) from cycles" "$out"
 assert_lacks "…with the pressure prune treated as off (non-numeric floor -> 0)" "under disk pressure" "$out"
 assert_eq "cycles 1-3 keep their streams with a non-numeric floor" "1" \
