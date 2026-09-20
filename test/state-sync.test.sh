@@ -1685,6 +1685,46 @@ assert_eq "…the unwritable file reached the branch empty, not unredacted" "0" 
 # actually remove it.
 chmod -R u+w "$rc_home"
 
+# --- a file redaction fails on but removal succeeds on is dropped -------------
+# The cascade's first step, and the one the ruling is named for. It cannot be
+# staged with permissions the way the two scenarios either side of it are:
+# every permission that stops `sed -i` renaming its temp file over the
+# original stops `rm` unlinking it too, so a directory-denial always lands on
+# "emptied" instead. Its real triggers are a full disk and a file removed
+# between `find`'s stat and `sed -i`'s open — the failure comes from `sed`
+# itself while the directory stays perfectly writable. A shim on PATH is the
+# staged equivalent: it fails exactly this one file's rewrite and execs the
+# real `sed` for every other call, this script's own `sed -n` slices included.
+rd_home="$(new_node redact-drop-node)"
+rd_state="$rd_home/.local/state/poetic-agents"
+rd_bin="$tmp_dir/redact-drop-bin"
+mkdir -p "$rd_bin"
+cat > "$rd_bin/sed" <<SHIM
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  [[ "\$arg" == *doomed.log ]] && exit 1
+done
+exec "$(command -v sed)" "\$@"
+SHIM
+chmod +x "$rd_bin/sed"
+printf '{"ts":"2026-07-20T00:00:00Z","event":"cycle-start"}\n' > "$rd_state/log.jsonl"
+printf 'a token ghp_1234567890abcdefXYZ1234 that must still be redacted\n' \
+  > "$rd_state/cron.log"
+printf 'a token ghp_1234567890abcdefXYZ1234 nothing can rewrite\n' \
+  > "$rd_state/doomed.log"
+rd_out="$(sync_as "$rd_home" active push PATH="$rd_bin:$PATH")"
+rd_rc=$?
+assert_eq "a push whose redaction fails on one removable file still succeeds" "0" \
+  "$rd_rc"
+assert_contains "…warning that the file was dropped, not committed unredacted" \
+  "dropped from this push rather than committed unredacted" "$rd_out"
+rd_pushed="$tmp_dir/rd-pushed"
+git clone --quiet --branch nodes/redact-drop-node "$remote" "$rd_pushed"
+assert_eq "…the file it could not redact is absent from the branch entirely" "0" \
+  "$(test -e "$rd_pushed/doomed.log" && echo 1 || echo 0)"
+assert_eq "…and every other file still got redacted normally" "1" \
+  "$(grep -c 'REDACTED-TOKEN' "$rd_pushed/cron.log")"
+
 # --- a file that resists redaction, removal AND truncation abandons the push ---
 # The cascade's last resort: a file `redact_file` cannot rewrite, `rm -f`
 # cannot remove, and truncation cannot empty either. Deny write on the file

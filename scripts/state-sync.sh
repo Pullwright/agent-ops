@@ -719,7 +719,8 @@ prune_derived() {
 # reports (the exact trigger — which file, which error — was not recovered
 # from the incident; this closes the general hazard the loop's own shape
 # creates, whatever specific error trips it). A failed redaction no longer
-# ends the loop, but nor does it let the file through as it stands
+# unwinds the run where it happens, but nor does it let the file through as
+# it stands
 # (agent-ops#1703, the owner's ruling on agent-ops#1698's own open question):
 # a `redact_file` failure now cascades — `rm -f` the file out of the mirror
 # first, since a skipped file costs this node one push interval of its own
@@ -734,8 +735,14 @@ prune_derived() {
 # alike — abandons the push by returning non-zero, which the caller already
 # turns into a `state_sync_push_failed` event exactly as a deadline timeout
 # does (below): nothing this pass could not rewrite ever reaches the branch
-# with its content intact. The caller's own deadline still stands behind
-# all of this as the safety net regardless of cause.
+# with its content intact. That last step leaves `find` mid-stream, which
+# looks like the shape of the wedge above but is not its mechanism: that one
+# was an `errexit` unwind blocked waiting to reap `find` before it could
+# close the pipe, whereas a plain `return` lets the shell carry on and this
+# function's own subshell — the caller runs it as a background job — exit
+# immediately behind it, closing the read end so `find` dies on the broken
+# pipe instead of blocking on it. The caller's own deadline still stands
+# behind all of this as the safety net regardless of cause.
 redact_mirror_files() {
   local mirror="$1" f
   while IFS= read -r -d '' f; do

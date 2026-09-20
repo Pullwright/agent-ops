@@ -3642,14 +3642,14 @@ implements.
    committed to the state repository's history before this pass existed —
    a one-off cleanup, not a push-time behaviour this requirement covers.
 
-   The pass is best-effort per file, not all-or-nothing (agent-ops#1679,
-   below): a `redact_file` call that fails on one file — `redact_file` is a
-   bare `sed -i`, so a directory the mirror copy cannot be rewritten in, a
-   full disk, a file removed between `find`'s stat and `sed`'s open — never
-   aborts the loop or the push; making the failure fatal instead is what
-   deadlocked a whole push against its own unread process substitution for
-   almost seven hours (#1679's own section below). What happens to that one
-   file is a cascade, not a pass-through (the owner's ruling on #1698's own
+   The pass handles a failure per file rather than unwinding on it
+   (agent-ops#1679, below): a `redact_file` call that fails on one file —
+   `redact_file` is a bare `sed -i`, so a directory the mirror copy cannot
+   be rewritten in, a full disk, a file removed between `find`'s stat and
+   `sed`'s open — is never fatal where it happens, because making it so is
+   what deadlocked a whole push against its own unread process substitution
+   for almost seven hours (#1679's own section below). What happens to that
+   one file is a cascade, not a pass-through (the owner's ruling on #1698's own
    open question, agent-ops#1703): `redact_mirror_files` first `rm -f`s it
    out of the mirror, warning `WARNING: could not redact … — dropped from
    this push rather than committed unredacted`. Where the file resists
@@ -3659,8 +3659,11 @@ implements.
    rather than dropped: truncating an existing file needs only the file's
    own write permission, which `rsync -a` carries over unchanged and
    independently of its directory's. Only where the file resists redaction,
-   removal and truncation alike does this abandon the push, through the same
-   `state_sync_push_failed` path the deadline below already uses. Every file
+   removal and truncation alike does the pass give up — ending the loop
+   there and abandoning the push with nothing committed, through the same
+   `state_sync_push_failed` path the deadline below already uses, the run
+   ending non-zero and `mirror_lock`'s own exit trap releasing the lock
+   behind it. Every file
    the branch carries has therefore actually been through the pass: nothing
    `redact_file` could not rewrite ever reaches the branch with its content
    intact. The cost is larger than "one file is missing": `mirror_write`'s
@@ -4139,7 +4142,13 @@ implements.
    that line is built from. `test/state-sync.test.sh` covers the deadline in
    isolation (a simulated wedge via `sleep`, killed and reported `124`
    without waiting out its own runtime), a single unredactable file no
-   longer aborting the loop, a genuinely slow redaction pass (thousands of
+   longer aborting the loop and reaching the branch emptied rather than
+   unredacted, a file only `sed` itself fails on — a PATH shim standing in
+   for the full disk a test cannot stage, since any permission that stops
+   `sed -i` stops `rm` too — dropped from the branch outright, a file that
+   resists removal and truncation as well abandoning the push instead —
+   event logged, lock freed, no branch pushed for that
+   node at all — a genuinely slow redaction pass (thousands of
    trivial files) hitting the deadline end to end — event logged, lock
    freed, the very next push unobstructed — and both sides of a real lock
    contention naming the holder's age; `test/manage-status.test.sh` covers
@@ -22512,14 +22521,17 @@ oblige anyone to edit a test.
    pruned to the newest `state_local_cycles_retained` by the same push,
    newest always kept, and `log.jsonl` is byte-for-byte untouched by that
    same local prune regardless of how many cycle/review directories it
-   removes (requirement 2.6d); every file the push commits that `redact_file`
-   can rewrite is redacted first
+   removes (requirement 2.6d); every file the push commits has been through
+   `redact_file` first
    (requirement 2.5, `lib/redact.sh`) — a token- and home-path-shaped
    fixture planted in `cron.log` and in a cycle transcript reaches the
    branch as `[REDACTED-TOKEN]` and `~`, neither raw form survives, and the
    redacted transcript still parses as JSON, while a file the pass cannot
-   rewrite at all is warned about and committed as it stands rather than
-   ending the run (requirement 2.5's best-effort clause, agent-ops#1679);
+   rewrite at all is warned about and dropped or emptied rather than
+   committed as it stands, every other file in the same push still reaching
+   the branch redacted, and a file that resists removal and truncation too
+   abandons the push with a `state-sync-push-failed` event and no commit
+   (requirement 2.5's cascade, agent-ops#1679 and agent-ops#1703);
    a fetch materialises a peer whole
    under the peers directory, leaves the node's own `state_dir` alone, never
    includes the node itself, and prunes a peer whose branch is gone; the
