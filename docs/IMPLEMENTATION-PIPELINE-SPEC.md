@@ -3645,17 +3645,32 @@ implements.
    The pass is best-effort per file, not all-or-nothing (agent-ops#1679,
    below): a `redact_file` call that fails on one file — `redact_file` is a
    bare `sed -i`, so a directory the mirror copy cannot be rewritten in, a
-   full disk, a file removed between `find`'s stat and `sed`'s open — is
-   said as a `WARNING: could not redact … — committing it unredacted` line
-   and skipped, and that one file reaches the branch as it stands while
-   every other file is redacted normally. It is deliberately the weaker of
-   the two guarantees: making the failure fatal instead is what deadlocked a
-   whole push against its own unread process substitution for almost seven
-   hours, and the run not reaching the branch at all costs a node its
-   publication rather than saving anything (#1679's own section sets out
-   both sides). So the backstop above holds for every file the pass can
-   rewrite, and the warning line is the only notice that it did not hold for
-   one that it could not.
+   full disk, a file removed between `find`'s stat and `sed`'s open — never
+   aborts the loop or the push; making the failure fatal instead is what
+   deadlocked a whole push against its own unread process substitution for
+   almost seven hours (#1679's own section below). What happens to that one
+   file is a cascade, not a pass-through (the owner's ruling on #1698's own
+   open question, agent-ops#1703): `redact_mirror_files` first `rm -f`s it
+   out of the mirror, warning `WARNING: could not redact … — dropped from
+   this push rather than committed unredacted`. Where the file resists
+   removal too — typically because it sits under a directory `sed -i`'s own
+   write-a-temp-file-and-rename could not write into any more than `rm`
+   could — it is truncated in place instead, warning that it was emptied
+   rather than dropped: truncating an existing file needs only the file's
+   own write permission, which `rsync -a` carries over unchanged and
+   independently of its directory's. Only where the file resists redaction,
+   removal and truncation alike does this abandon the push, through the same
+   `state_sync_push_failed` path the deadline below already uses. Every file
+   the branch carries has therefore actually been through the pass: nothing
+   `redact_file` could not rewrite ever reaches the branch with its content
+   intact. The cost is larger than "one file is missing": `mirror_write`'s
+   own `add -A` stages a drop or an empty as a real change to the branch
+   tip, so a dropped or emptied `log.jsonl` disappears from every peer's
+   union, and a dropped or emptied `heartbeat.json` from a peer's own fleet
+   strip, until this node's next successful push restores it — one push
+   interval of reduced visibility, accepted in place of ever publishing a
+   secret-shaped string into a repository that is private but never rotated
+   (agent-ops#966).
 
    That one-off cleanup was decided, not left open: content pushed to
    `agent-ops-state` before this pass landed (2026-09-08T17:55Z) went up
@@ -4090,9 +4105,11 @@ implements.
    a file nothing surfaced, exactly as it did throughout #1377.
 
    Three changes, independent of each other: a failed `redact_file` call is
-   now a warning and a skip (`redact_mirror_files`, `scripts/state-sync.sh`)
-   rather than a loop-ending failure, closing the specific hazard this
-   incident traced to; the redaction pass runs under a deadline
+   now a warning and a cascade — drop, then (if the drop itself fails)
+   empty, then (only if neither succeeds) abandon the push
+   (`redact_mirror_files`, `scripts/state-sync.sh`, agent-ops#1703) — rather
+   than a loop-ending failure, closing the specific hazard this incident
+   traced to; the redaction pass runs under a deadline
    (`mirror_run_with_deadline`, `lib/mirror-lock.sh`) — one push interval by
    default, `STATE_SYNC_PUSH_DEADLINE_SECONDS` overriding it for tests —
    that backgrounds the pass and kills its whole process tree (a /proc walk

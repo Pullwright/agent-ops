@@ -1646,7 +1646,9 @@ kill "$wl_holder_parent" "$wl_holder_child" 2>/dev/null; wait "$wl_holder_parent
 # The root cause #1679 traced the incident to: a file `redact_file` cannot
 # rewrite used to abort the whole loop under `set -e`, abandoning `find`'s
 # process substitution before EOF and deadlocking the run against its own
-# unread pipe. A failed redaction is now a warning and a skip.
+# unread pipe. A failed redaction is now a warning and a cascade — drop,
+# then empty, then abandon the push (the owner's ruling, agent-ops#1703) —
+# never a plain skip that lets the file through as it stands.
 rc_home="$(new_node redact-failure-node)"
 rc_state="$rc_home/.local/state/poetic-agents"
 printf '{"ts":"2026-07-20T00:00:00Z","event":"cycle-start"}\n' > "$rc_state/log.jsonl"
@@ -1655,7 +1657,11 @@ printf 'a token ghp_1234567890abcdefXYZ1234 that must still be redacted\n' \
 # `sed -i` rewrites a file by creating a new temp file beside it and renaming
 # over the original, so it is the *directory's* write permission that has to
 # be denied, not the file's own — the file still has to be plainly readable
-# for rsync to mirror it there in the first place.
+# for rsync to mirror it there in the first place. `rm -f` needs that same
+# directory permission, so it fails here too; truncating the file in place
+# needs only the file's own write permission, which rsync carried over as
+# 644, so this is the scenario that lands on the "emptied" step, not the
+# "dropped" or "abandoned" ones.
 mkdir -p "$rc_state/protected"
 printf 'this one cannot be rewritten\n' > "$rc_state/protected/unwritable.log"
 chmod 555 "$rc_state/protected"
@@ -1665,15 +1671,52 @@ chmod 755 "$rc_state/protected"
 assert_eq "a push with one unredactable file still succeeds overall" "0" "$rc_rc"
 assert_contains "…warning about the one file it could not redact" \
   "WARNING: could not redact" "$rc_out"
-assert_contains "…committing it unredacted" "committing it unredacted" "$rc_out"
+assert_lacks "…never committing it unredacted" "committing it unredacted" "$rc_out"
+assert_contains "…emptied it instead, since only the directory was unwritable" \
+  "emptied it rather than committed unredacted" "$rc_out"
 rc_pushed="$tmp_dir/rc-pushed"
 git clone --quiet --branch nodes/redact-failure-node "$remote" "$rc_pushed"
 assert_eq "…and every other file still got redacted normally" "1" \
   "$(grep -c 'REDACTED-TOKEN' "$rc_pushed/cron.log")"
+assert_eq "…the unwritable file reached the branch empty, not unredacted" "0" \
+  "$(stat -c%s "$rc_pushed/protected/unwritable.log")"
 # rsync's -a carried the source directory's own 555 into the mirror too; put
 # back so the whole-tmp_dir cleanup trap at the bottom of this file can
 # actually remove it.
 chmod -R u+w "$rc_home"
+
+# --- a file that resists redaction, removal AND truncation abandons the push ---
+# The cascade's last resort: a file `redact_file` cannot rewrite, `rm -f`
+# cannot remove, and truncation cannot empty either. Deny write on the file
+# itself, not just its directory, so `: > "$f"` fails the same way `rm -f`
+# and `sed -i` already do above.
+rc2_home="$(new_node redact-stuck-node)"
+rc2_state="$rc2_home/.local/state/poetic-agents"
+rc2_mirror="$rc2_home/.cache/poetic-agents/workspaces/.agent-ops-state"
+printf '{"ts":"2026-07-20T00:00:00Z","event":"cycle-start"}\n' > "$rc2_state/log.jsonl"
+mkdir -p "$rc2_state/stuck"
+printf 'this one cannot be redacted, dropped or emptied\n' \
+  > "$rc2_state/stuck/wedged.log"
+chmod 444 "$rc2_state/stuck/wedged.log"
+chmod 555 "$rc2_state/stuck"
+rc2_out="$(sync_as "$rc2_home" active push)"
+rc2_rc=$?
+chmod 755 "$rc2_state/stuck"
+chmod 644 "$rc2_state/stuck/wedged.log"
+assert_eq "a file that resists drop and truncation both abandons the push" "1" \
+  "$rc2_rc"
+assert_contains "…warning naming the file as unresolvable, not just unredacted" \
+  "could not redact, drop or empty" "$rc2_out"
+assert_contains "…logged as a push failure at the redaction loop" \
+  "push failed at redaction-loop" "$rc2_out"
+assert_eq "…as a state-sync-push-failed event naming that step" "1" \
+  "$(jq -c 'select(.event == "state-sync-push-failed" and .step == "redaction-loop")' \
+       "$rc2_state/log.jsonl" | wc -l)"
+assert_eq "…and the mirror lock's own holder marker is gone, not left behind" "0" \
+  "$(test -e "$rc2_mirror.lock.holder" && echo 1 || echo 0)"
+assert_eq "…with no branch ever pushed for this node" "0" \
+  "$(git ls-remote "$remote" "nodes/redact-stuck-node" | wc -l)"
+chmod -R u+w "$rc2_home"
 
 # --- the deadline itself: a step that runs long is killed and the lock freed ---
 # Not a reproduction of the exact race above (which needed a real file
