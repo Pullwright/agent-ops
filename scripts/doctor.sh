@@ -98,9 +98,10 @@ source "$SCRIPT_DIR/lib/host-budget.sh"
 # shellcheck source=lib/resource-usage.sh
 source "$SCRIPT_DIR/lib/resource-usage.sh"
 # shellcheck source=lib/notify.sh
-# `notify_resolve_webhook_url` alone, to resolve notify_webhook_url the same
-# way agent-cycle.sh and scripts/publish-dashboard.sh do (issue #1279),
-# for this file's own alias warning and egress reachability check below.
+# `notify_resolve_webhook_url` and `notify_webhook_url_env_or_empty`, to
+# resolve notify_webhook_url the same way agent-cycle.sh and
+# scripts/publish-dashboard.sh do (issue #1279, issue #991), for this file's
+# own alias warning and egress reachability check below.
 source "$SCRIPT_DIR/lib/notify.sh"
 # doctor.sh has no other trap and exits from several points below (bad
 # arguments, an unusable config, the ordinary end of a clean pass) — a single
@@ -281,8 +282,19 @@ fi
 notify_webhook_url_env="${NOTIFY_WEBHOOK_URL:-}"
 if [[ -n "$notify_webhook_url_env" && ! "$notify_webhook_url_env" =~ ^https:// ]]; then
   fail "NOTIFY_WEBHOOK_URL is set but is not an https:// URL — agent-cycle.sh and scripts/publish-dashboard.sh both reject it and fall back to config.json's own notify_webhook_url/escalation_webhook_url, exactly as config.schema.json's pattern rejects a non-https value there"
-elif [[ -n "$notify_webhook_url_env" && -n "$notify_webhook_url_raw" ]]; then
-  warn "NOTIFY_WEBHOOK_URL is set and wins, but notify_webhook_url is also set in config.json — config.json is tracked in this public repository, so the value there is still exposed even though it is never used; clear notify_webhook_url in config.json and keep the secret in .env only"
+elif [[ -n "$notify_webhook_url_env" && ( -n "$notify_webhook_url_raw" || -n "$escalation_webhook_url_raw" ) ]]; then
+  # Either tracked key counts, not just the current one: the exposure this
+  # warns about is a live URL sitting in a public file, and the deprecated
+  # alias is exactly as public as its replacement. Naming the key(s) actually
+  # set is what makes the advice actionable.
+  if [[ -n "$notify_webhook_url_raw" && -n "$escalation_webhook_url_raw" ]]; then
+    notify_webhook_url_tracked="notify_webhook_url and escalation_webhook_url are"
+  elif [[ -n "$notify_webhook_url_raw" ]]; then
+    notify_webhook_url_tracked="notify_webhook_url is"
+  else
+    notify_webhook_url_tracked="escalation_webhook_url is"
+  fi
+  warn "NOTIFY_WEBHOOK_URL is set and wins, but $notify_webhook_url_tracked also set in config.json — config.json is tracked in this public repository, so the value there is still exposed even though it is never used; clear it in config.json and keep the secret in .env only"
 elif [[ -n "$notify_webhook_url_env" ]]; then
   ok "NOTIFY_WEBHOOK_URL is set in the environment (config.json's own notify_webhook_url/escalation_webhook_url stay empty, as intended)"
 fi

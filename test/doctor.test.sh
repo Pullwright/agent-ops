@@ -274,7 +274,7 @@ run_doctor() {
     if [[ "$1" == "--" ]]; then shift; extra_args=( "$@" ); break; fi
     env_pairs+=( "$1" ); shift
   done
-  out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH -u ANTHROPIC_API_KEY PATH="$stub_bin:$PATH" "${env_pairs[@]}" \
+  out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH -u ANTHROPIC_API_KEY -u NOTIFY_WEBHOOK_URL PATH="$stub_bin:$PATH" "${env_pairs[@]}" \
     bash "$DOCTOR" --config "$base_config" "${extra_args[@]}" 2>&1)"
   rc=$?
 }
@@ -1800,6 +1800,21 @@ rc=$?
 assert_contains "NOTIFY_WEBHOOK_URL winning over a still-set notify_webhook_url warns about the tracked copy" \
   "[warn] NOTIFY_WEBHOOK_URL is set and wins, but notify_webhook_url is also set in config.json" "$out"
 assert_eq "and this pairing alone does not fail the run" "0" "$rc"
+
+# The deprecated alias is exactly as public as its replacement, so it earns
+# the same warning: a node whose config.json carries only
+# escalation_webhook_url still has a live URL committed to this repository,
+# and must not be told its tracked keys "stay empty, as intended".
+notify_env_alias_config="$tmp/notify-env-alias-config.json"
+jq '.escalation_webhook_url = "https://escalation.example.test/hook"' "$base_config" > "$notify_env_alias_config"
+out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH -u ANTHROPIC_API_KEY PATH="$stub_bin:$PATH" NOTIFY_WEBHOOK_URL='https://env.example.test/hook' \
+  bash "$DOCTOR" --config "$notify_env_alias_config" 2>&1)"
+rc=$?
+assert_contains "NOTIFY_WEBHOOK_URL winning over a still-set escalation_webhook_url warns about the tracked copy too" \
+  "[warn] NOTIFY_WEBHOOK_URL is set and wins, but escalation_webhook_url is also set in config.json" "$out"
+assert_not_contains "and does not claim the tracked keys stay empty" \
+  "[ ok ] NOTIFY_WEBHOOK_URL is set in the environment" "$out"
+assert_eq "and this pairing alone does not fail the run either" "0" "$rc"
 
 run_doctor NOTIFY_WEBHOOK_URL='https://env.example.test/hook'
 assert_contains "NOTIFY_WEBHOOK_URL set alone (config.json empty) earns a positive ok" \

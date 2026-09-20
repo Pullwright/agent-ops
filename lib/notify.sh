@@ -151,8 +151,10 @@ _notify_suppressed_count_since() {
 # Requirement 2m's guarantees, unchanged from `escalation_webhook_notify`:
 # credential-independent (no `gh`/`GH_TOKEN` anywhere in this path),
 # best-effort (a POST failure logs one local `notify-failed` and never
-# propagates), `https://`-only by the schema's own pattern on
-# `notify_webhook_url`/`escalation_webhook_url`, and never blocks the cycle
+# propagates), `https://`-only — by the schema's own pattern on
+# `notify_webhook_url`/`escalation_webhook_url`, and by
+# `notify_webhook_url_env_or_empty` above on `NOTIFY_WEBHOOK_URL`, which has
+# no schema to be checked against — and never blocks the cycle
 # (a 10s `curl --max-time`, same as every other webhook call in this
 # codebase).
 notify_post() {

@@ -23347,9 +23347,12 @@ oblige anyone to edit a test.
    `notify_resolve_webhook_url` and POSTed to garbage, since this source has
    no schema to enforce the pattern for it. `scripts/doctor.sh` mirrors the
    same validation as a `fail`, and separately `warn`s when `NOTIFY_WEBHOOK_URL`
-   wins over a `notify_webhook_url` that is *also* set in `config.json` — the
+   wins over a `notify_webhook_url` or an `escalation_webhook_url` that is
+   *also* set in `config.json`, naming whichever of the two is — the
    environment value is used either way, but the tracked file still carries
-   the secret unless that key is cleared.
+   the secret unless that key is cleared, and the deprecated alias is exactly
+   as public as its replacement. Only when both tracked keys are empty does
+   the environment source earn doctor's positive `ok`.
 
    `test/notify.test.sh` passes against `notify_post` and its helpers lifted
    verbatim from `lib/notify.sh`: each of the three classes posts only when
