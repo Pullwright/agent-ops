@@ -4074,20 +4074,19 @@ implements.
    long hold is named as a possible wedge rather than reported as an
    ordinary one (agent-ops#1679).** On 2026-09-18 a push on `ockham-2`
    wedged for almost seven hours inside the redaction loop
-   (`lib/redact.sh`, above), holding `mirror_lock` throughout: bash does not
-   close a `< <(find …)` process substitution's read end when the loop
-   reading it exits early — only the shell's own exit does — so a
-   `redact_file` call failing on one file (a permission error, a file
-   removed between `find`'s stat and `sed -i`'s open) used to unwind the
-   whole run under `set -e` before `find` reached EOF, leaving `find`
-   blocked writing into a pipe nothing was reading any more and the
-   unwinding shell blocked in turn waiting to reap it — an `errexit` and an
-   unconsumed process substitution deadlocking each other. Meanwhile
-   "another state-sync holds the mirror — nothing to do" (`mirror_lock`,
-   above) is genuinely self-clearing only for an ordinary slow fetch, so
-   nothing told the two apart: the doctor's own publication check (this
-   same requirement, above) still caught the resulting silence hourly, into
-   a file nothing surfaced, exactly as it did throughout #1377.
+   (`lib/redact.sh`, above), holding `mirror_lock` throughout. A `redact_file`
+   call failing on one file (a permission error, a file removed between
+   `find`'s stat and `sed -i`'s open, disk full) could unwind the whole run
+   under `set -e` before `find` reached EOF, leaving `find` blocked writing
+   into a pipe nothing was reading any more — the general hazard a process
+   substitution read side left unconsumed by an `errexit` unwind creates.
+   The exact trigger — which file, which error — was not recovered from the
+   incident; this closes the general hazard regardless of cause.
+   Meanwhile "another state-sync holds the mirror — nothing to do"
+   (`mirror_lock`, above) is genuinely self-clearing only for an ordinary slow
+   fetch, so nothing told the two apart: the doctor's own publication check
+   (this same requirement, above) still caught the resulting silence hourly,
+   into a file nothing surfaced, exactly as it did throughout #1377.
 
    Three changes, independent of each other: a failed `redact_file` call is
    now a warning and a skip (`redact_mirror_files`, `scripts/state-sync.sh`)
