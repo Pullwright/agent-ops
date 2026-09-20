@@ -251,16 +251,15 @@ assert_eq "a parent max below this container's own is livelocked too" \
 # 2026-09-16 incidents that a parent memory.max genuinely above the child's
 # own (say 3072 MiB against 1536 MiB) still livelocks when the parent's
 # memory.high sits more than 25% below this container's own memory.max — the
-# kernel's reclaim under memory.high throttles too severely across that wide
-# a band for the workload to ever reach either kill point. The discriminator
-# is the band's width, so a narrow
-# band must keep reading `parented`: the interim ockham remedy (parent
-# memory.high 1400 MiB, parent memory.max 2048 MiB, this container's own
-# memory.max 1536 MiB — an ~8.9% gap) is exactly this shape, and a naive "any
-# parent high below the child's own max is livelocked" rule would wrongly
-# condemn it. The narrow-band case itself is already covered above (the
-# "ceiling on the parent... is parented" case uses this exact shape); what's
-# new here is the boundary either side of the 25% threshold.
+# kernel's reclaim under memory.high throttles too severely across that wide a
+# band for the workload to ever reach either kill point. The discriminator is
+# the band's width, so a narrow band must keep reading `parented`: the interim
+# ockham remedy (parent memory.high 1400 MiB, parent memory.max 2048 MiB, this
+# container's own memory.max 1536 MiB — an ~8.9% gap) is exactly this shape,
+# and a naive "any parent high below the child's own max is livelocked" rule
+# would wrongly condemn it. The narrow-band case itself is already covered
+# above (the "ceiling on the parent... is parented" case uses this exact
+# shape); what's new here is the boundary either side of the 25% threshold.
 
 stub_cgroup max 1610612736 1207959552 2147483648
 assert_eq "a band at exactly 25% (the threshold itself) stays parented" \
