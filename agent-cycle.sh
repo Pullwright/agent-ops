@@ -2805,14 +2805,6 @@ claim_skips=0
 # hours. A stand-down that names the wrong cause is worse than one that names
 # none: it sends the reader after a claim problem that was never there.
 trace_faults=0
-# fab_faults: candidates dropped by requirement 17g (issue #821) — a trimmed
-# candidate whose acceptance names a specific detail the live item text does
-# not support. Counted apart from trace_faults for the same reason issue
-# #767 already split trace_faults from race_losses: a fabrication is never
-# repaired (unlike a missing refinement), so a cycle that loses every
-# candidate this way must not fall through to `raced` or get folded into
-# `untraceable` — either would send the reader after the wrong defect.
-fab_faults=0
 for (( ci = 0; ci < n_cand; ci++ )); do
   cand="$(jq -c --argjson i "$ci" '.[$i]' <<<"$candidates_json")"
   c_repo="$(jq -r '.repo // ""' <<<"$cand")"
@@ -2831,8 +2823,8 @@ for (( ci = 0; ci < n_cand; ci++ )); do
   # (`project-review`, `failed-runs`, `implementation-plan`, which have no
   # band entry to compose from and were never subject to the trimming this
   # requirement exists to close) — `cand` is left exactly as selected for
-  # those, and requirement 17f/17g below still check the model's own text the
-  # way they always have. A compose failure (1: the item was not found in
+  # those, and requirement 17f below still checks the model's own text the
+  # way it always has. A compose failure (1: the item was not found in
   # this cycle's own gather, or the live fetch failed) is fail-closed, folded
   # into the same `untraceable` cause requirement 17f already uses for "a
   # construction-time check refused to hand this candidate on, no peer
@@ -2854,25 +2846,6 @@ for (( ci = 0; ci < n_cand; ci++ )); do
         '{repo: $r, item: $i, source: $s, cause: "untraceable", detail: $d}')"
       continue
     fi
-  fi
-  # Requirement 17g (issue #821): checked before requirement 17f below, and
-  # before the pre-claimed check further down — cheaper and unrelated to
-  # either. Guarded by `selected_by_fallback`/`c_composed` for the same
-  # reason 17f's own check is: a fallback pick's, or a requirement 17h
-  # compose's, `context` is Script-built from the entry's own record — never
-  # from prose a model wrote — so it cannot fabricate anything and this would
-  # only ever cost a wasted `gh` read there.
-  c_fab_fault=""
-  (( selected_by_fallback || c_composed )) \
-    || c_fab_fault="$(item_text_fault "$cand" "$coordinator_fit_trimmed_json" "$refinements_json")"
-  if [[ -n "$c_fab_fault" ]]; then
-    # Never repaired (requirement 17g): appending the real text alongside a
-    # false one does not make the false one true, so unlike requirement 17f's
-    # own fault this is always a hard skip.
-    fab_faults=$(( fab_faults + 1 ))
-    log_event "claim-skipped" "$(jq -nc --arg r "$c_repo" --arg i "$c_item" --arg s "$c_source" --arg d "$c_fab_fault" \
-      '{repo: $r, item: $i, source: $s, cause: "fabricated", detail: $d}')"
-    continue
   fi
   # Requirement 17f (issue #626): checked before the pre-claimed check below,
   # cheaper and unrelated to it — a candidate that fails traceability is
@@ -2921,19 +2894,6 @@ for (( ci = 0; ci < n_cand; ci++ )); do
     log_event "claim-skipped" "$(jq -nc --arg r "$c_repo" --arg i "$c_item" --arg s "$c_source" --arg d "$c_trace_fault" \
       '{repo: $r, item: $i, source: $s, cause: "untraceable", detail: $d}')"
     continue
-  fi
-  # Requirement 17g's other half: a trimmed candidate that cleared
-  # item_text_fault above wrote nothing false, but may still have written
-  # something incomplete. Supply the live text itself so the Implementer
-  # never starts from less than the item actually says — a no-op
-  # (prints nothing) when context already carries it in full.
-  if (( ! (selected_by_fallback || c_composed) )); then
-    c_supplied="$(item_text_supply "$cand" "$coordinator_fit_trimmed_json")"
-    if [[ -n "$c_supplied" ]]; then
-      cand="$c_supplied"
-      log_event "work-order-repaired" "$(jq -nc --arg r "$c_repo" --arg i "$c_item" --arg s "$c_source" \
-        '{repo: $r, item: $i, source: $s, cause: "trimmed"}')"
-    fi
   fi
   if candidate_preclaimed "$c_repo" "$c_item" "$claims_at_gather_json"; then
     claim_skips=$(( claim_skips + 1 ))
@@ -3068,14 +3028,6 @@ if [[ -z "$claimed_json" ]]; then
   elif (( claim_attempts == 0 && claim_skips > 0 )); then
     standdown_reason="every candidate was already claimed before this cycle's Co-Ordinator ran — skipped without an attempt"
     standdown_cause="pre-claimed"
-  elif (( claim_attempts == 0 && fab_faults > 0 )); then
-    # Requirement 17g (issue #821): every candidate's acceptance named a
-    # specific detail its own trimmed, live-checked item text does not
-    # support, and — unlike requirement 17f's own fault — that is never
-    # repaired. Named apart from `untraceable` so a reader can tell a
-    # copying failure from an invention.
-    standdown_reason="every candidate failed the trimmed-item fabrication check — no claim was attempted"
-    standdown_cause="fabricated"
   elif (( claim_attempts == 0 && trace_faults > 0 )); then
     # Requirement 17f dropped every candidate and the repair could not rescue
     # one (issue #767), or requirement 17h (agent-ops#769) could not compose
@@ -3097,15 +3049,15 @@ if [[ -z "$claimed_json" ]]; then
   # now in a way they were not when this cycle gathered, so the chained
   # cycle's own deterministic filters route it to the next-best item
   # instead of the same fight. The same bounded price (`max_chained_cycles`)
-  # a productive chain pays. The other four causes never chain: against an
+  # a productive chain pays. The other three causes never chain: against an
   # `unreachable` GitHub a fresh cycle buys a second Co-Ordinator engagement
   # and the same empty-handed ending; after a `pre-claimed` stand-down — a
   # selection defect, not contention — an identical re-run is more likely to
-  # repeat the defect than to route around it; and an `untraceable` or
-  # `fabricated` stand-down is the Script's own construction-time check
-  # refusing to hand a candidate on — no peer's claim or absence explains
-  # either fault, so a fresh cycle would spend its chain budget re-composing
-  # the same broken work order rather than routing around a peer.
+  # repeat the defect than to route around it; and an `untraceable`
+  # stand-down is the Script's own construction-time check refusing to hand a
+  # candidate on — no peer's claim or absence explains the fault, so a fresh
+  # cycle would spend its chain budget re-composing the same broken work
+  # order rather than routing around a peer.
   if [[ "$standdown_cause" == "raced" ]] \
       && ! (( ONCE )) \
       && chain_should_continue "$chain_count" "$max_chained_cycles" "$ordered_repos_json"; then
@@ -3113,14 +3065,13 @@ if [[ -z "$claimed_json" ]]; then
   fi
   log_event "stand-down" "$(jq -nc --argjson n "$n_cand" --arg r "$standdown_reason" --arg c "$standdown_cause" \
     --argjson rl "$race_losses" --argjson sk "$claim_skips" \
-    --argjson tf "$trace_faults" --argjson ff "$fab_faults" \
+    --argjson tf "$trace_faults" \
     '{reason: $r, candidates: $n, cause: $c, race_losses: $rl}
      + (if $sk > 0 then {claim_skips: $sk} else {} end)
-     + (if $tf > 0 then {trace_faults: $tf} else {} end)
-     + (if $ff > 0 then {fab_faults: $ff} else {} end)')"
+     + (if $tf > 0 then {trace_faults: $tf} else {} end)')"
   # node-state (docs/FLOW-SCHEMA.md, D21): translates this stand-down's own
   # (unchanged) cause vocabulary onto the six-state one — see
-  # node_time_state_for_cause's header for why raced/pre-claimed/fabricated/
+  # node_time_state_for_cause's header for why raced/pre-claimed/
   # untraceable are translated rather than renamed.
   nts_state=""; nts_cause=""
   IFS=$'\t' read -r nts_state nts_cause < <(node_time_state_for_cause "$standdown_cause")
