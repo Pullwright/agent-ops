@@ -2476,15 +2476,17 @@ implements.
       under `memory.high` throttles severely enough near a shared ceiling
       that the workload never makes enough progress to reach either kill
       point. Nor is a `memory.max` strictly above the child's own enough by
-      itself: agent-ops#1643 measured the same node livelocked again with the
-      parent's `memory.max` (3072 MiB) genuinely above the child's own (1536
-      MiB), because the parent's `memory.high` (768 MiB) sat far enough below
-      the child's own `memory.max` — more than ~25% — that the kernel's
-      reclaim under `memory.high` throttled too severely across that wide a
-      band for the workload ever to make progress toward either kill point.
-      The live discriminator `parented` needs is therefore the throttle
-      band's *width* (the parent's `memory.high` against the child's own
-      `memory.max`), not merely whether the parent's `memory.max` sits above
+      itself: agent-ops#1643 extrapolated from both incidents that the band
+      is reachable whatever the parent's `memory.max` is, so a parent
+      `memory.max` (say 3072 MiB) genuinely above the child's own (1536 MiB)
+      would still livelock if the parent's `memory.high` (say 768 MiB) sat
+      far enough below the child's own `memory.max` — more than ~25% — for
+      the kernel's reclaim under `memory.high` to throttle too severely
+      across that wide a band for the workload ever to make progress toward
+      either kill point. The live discriminator `parented` needs is therefore
+      the throttle band's *width* (the parent's `memory.high` against the
+      child's own `memory.max`), not merely whether the parent's `memory.max`
+      sits above
       the child's — a narrow band, such as the interim `ockham-container`
       remedy's own (parent `memory.high` 1400 MiB against a `memory.max` of
       1536 MiB, an ~8.9% gap), still reads `parented`. `doctor.sh`
@@ -23527,14 +23529,14 @@ oblige anyone to edit a test.
    reaching it is not something the child can do any more than reaching an
    absent one is), **or** a real number strictly above this cgroup's own
    `memory.max` but with the parent's `memory.high` more than ~25% below it
-   (agent-ops#1643: a wall exists and does add headroom, but the band the
+   (agent-ops#1643, extrapolated from the two incidents below rather than
+   itself measured: a wall exists and does add headroom, but the band the
    kernel's reclaim under `memory.high` has to throttle across before the
-   workload could ever reach it is too wide for that reclaim to disengage in
-   practice) — every shape throttles without ever disengaging, the exact
-   band that wedged `ockham-container` for 75 minutes with 2,788,595 throttle
-   events on 2026-09-09 (`memory.max` `max`), again for most of 2026-09-16 (a
-   real, coincident `memory.max`), and again afterward (a real `memory.max`
-   strictly above this cgroup's own, but a `memory.high` too far below it);
+   workload could ever reach it would be too wide for that reclaim to
+   disengage in practice) — every shape throttles without ever disengaging,
+   exactly like the band that wedged `ockham-container` for 75 minutes with
+   2,788,595 throttle events on 2026-09-09 (`memory.max` `max`) and again for
+   most of 2026-09-16 (a real, coincident `memory.max`);
    `unconfirmed` when the parent's own `memory.max`
    window cannot be read (an un-migrated `compose.yaml`, or a node that has
    not re-run `cgroup-parent-setup.sh` since it started mounting that window)

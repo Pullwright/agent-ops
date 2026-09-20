@@ -272,17 +272,18 @@ memory_cgroup_parent_events_high() {
 #              throttle events and a node wedged in `D` state for 75 minutes,
 #              with `memory.high` `max` on the parent. agent-ops#1620: the
 #              same band reached with a *real* parent `memory.max` (1536 MiB)
-#              coincident with the child's own. agent-ops#1643: the same band
-#              reached again with the parent's `memory.max` (3072 MiB)
-#              strictly above the child's own (1536 MiB), because the
-#              parent's `memory.high` (768 MiB) sat far enough below the
-#              child's own `memory.max` — the live discriminator is the
-#              throttle band's *width*, not merely whether the parent's
-#              `memory.max` exists above it. A narrow band (parent
-#              `memory.high` 1400 MiB, parent `memory.max` 2048 MiB, this
-#              cgroup's own `memory.max` 1536 MiB — under a 10% gap) keeps
-#              reading `parented`, which is what the 25% threshold is tuned
-#              to preserve.
+#              coincident with the child's own. agent-ops#1643 extrapolated
+#              from both incidents: the band is reachable whatever the
+#              parent's `memory.max` is, so a parent `memory.max` (say 3072
+#              MiB) strictly above the child's own (1536 MiB) is not itself
+#              proof against livelock — it still livelocks if the parent's
+#              `memory.high` (say 768 MiB) sits far enough below the child's
+#              own `memory.max` — the live discriminator is the throttle
+#              band's *width*, not merely whether the parent's `memory.max`
+#              exists above it. A narrow band (parent `memory.high` 1400 MiB,
+#              parent `memory.max` 2048 MiB, this cgroup's own `memory.max`
+#              1536 MiB — under a 10% gap) keeps reading `parented`, which is
+#              what the 25% threshold is tuned to preserve.
 #   unconfirmed the parent carries a real `memory.high` below this cgroup's
 #              own `memory.max`, but the parent's own `memory.max` cannot be
 #              read — an un-migrated compose.yaml, or a node that has not
@@ -377,11 +378,12 @@ memory_cgroup_parent_describe() {
 # D-state processes could no longer make progress at all, with the parent's
 # own memory.max left at `max`. agent-ops#1620 measured the same band with a
 # *real* parent memory.max (1536 MiB) coincident with the child's own.
-# agent-ops#1643 measured the same band again with a real parent memory.max
-# strictly above the child's own (3072 MiB against 1536 MiB) but the parent's
-# memory.high too far below the child's own memory.max (768 MiB, more than
-# 25% below) — distinguished below because the fix differs in each case: an
-# unbounded parent needs a memory.max at all, a coincident (or lower) one
+# agent-ops#1643 extrapolated from both incidents to a parent memory.max
+# strictly above the child's own (say 3072 MiB against 1536 MiB) whose
+# memory.high still sits too far below the child's own memory.max (say 768
+# MiB, more than 25% below) to disengage — distinguished below because the
+# fix differs in each case: an unbounded parent needs a memory.max at all, a
+# coincident (or lower) one
 # needs a higher one, and one that already clears the child's own ceiling
 # needs its memory.high raised instead.
 memory_cgroup_livelock_describe() {

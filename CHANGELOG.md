@@ -230,9 +230,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `memory.max`, the kernel's reclaim under `memory.high` throttles too
   severely across that wide a band for the workload ever to reach either
   kill point — the same livelock `memory_cgroup_verdict` already caught for
-  a coincident or absent parent `memory.max` (issue #1620), reached again
-  with a parent `memory.max` that does add headroom on paper. A band
-  narrower than that threshold, such as the interim `ockham-container`
+  a coincident or absent parent `memory.max` (issue #1620), extrapolated to
+  a parent `memory.max` that does add headroom on paper. A band narrower
+  than that threshold, such as the interim `ockham-container`
   remedy's own (parent `memory.high` 1400 MiB against a `memory.max` of 1536
   MiB), still reads `parented`.
 
