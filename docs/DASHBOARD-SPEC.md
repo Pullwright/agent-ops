@@ -1098,6 +1098,16 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                        merge_autonomy_kill: { state, record? } },
                                             // D18 issue #576; {state:"enabled"}
                                             //   when clear
+             peers:  { stale, ok, ts, last_ok_ts },      // the peers directory's own
+                                            //   freshness marker (implementation
+                                            //   spec 2.5/#990), read straight off
+                                            //   `<peers_dir>/.last-fetch.json`;
+                                            //   `stale` is `fleet_peers_stale`'s
+                                            //   own verdict (lib/fleet.sh), the
+                                            //   fleet-strip badge's one source of
+                                            //   truth; `ok`/`ts`/`last_ok_ts` are
+                                            //   the marker's own fields, all null
+                                            //   when no fetch has ever run
              claims: [ { repo, key, kind, node, cycle, item, source, ts, sha } ] },
   log_tail:  [ … ],                    // recent events, newest first, fleet-wide
                                        //   minus review-gate-checks-read: pure
@@ -1332,7 +1342,15 @@ and since when); any stale node — self included (agent-ops#602) — bordered
 red; a stale *peer* additionally reports its running/idle state as "state
 unknown", since only a peer's own liveness claim depends on a heartbeat that
 can go stale — self's is read straight from its own lock and log regardless
-of its publication verdict; click a card to
+of its publication verdict; one amber **peer view stale** badge across the
+whole strip, not per card, when `fleet.peers.stale` is set (implementation
+spec 2.5/#990) — a frozen or dead fetch cron makes every peer card go stale
+at once, and this badge is what says the cause is "this node cannot see the
+fleet" rather than "the fleet is down"; reads *"peer view stale — last
+successful fetch `<last_ok_ts>`, failing since `<ts>`"* for `ok: false`, or
+*"peer view stale — fetch not running since `<ts>`"* for a stale `ok: true`;
+self is definitionally fresh and unaffected, and nothing renders once the
+marker is fresh or for a node that has never fetched; click a card to
 filter the cycle list and the recent log to that node, click again to clear —
 the filter survives refreshes like every other UI state; **live claims** — the
 registry rows, i.e. work no other node will pick up. Both, plus the cycles

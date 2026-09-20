@@ -4106,16 +4106,58 @@ implements.
    handled identically, as a second, later real failure. Either kind of real
    failure also marks the peers directory stale: `fleet_mark_peers`
    (`lib/fleet.sh`) writes `<peers_dir>/.last-fetch.json`
-   (`{"ok": bool, "ts": …}`, `fleet_peers_marker`) after every fetch attempt
-   that gets past the bootstrap check — `true` once a fetch has just
-   materialised the peer trees successfully, `false` while a real failure is
-   in force — so a reader that cares whether the peer copies below it might
-   be frozen can tell without re-deriving the answer itself. The marker is
-   written whole and renamed into place, for the same reason the peer trees
-   beside it are: a reader that catches a plain truncate-then-fill mid-write
-   sees neither the old answer nor the new one. The marker is
-   absent only in the bootstrap case, where there has never been a real peer
-   to be stale about.
+   (`{"ok": bool, "ts": …, "last_ok_ts": …|null}`, `fleet_peers_marker`)
+   after every fetch attempt that gets past the bootstrap check. `ts` is the
+   attempt that established the current `ok`; `last_ok_ts` is the last fetch
+   that actually succeeded, so a reader can tell a five-minute outage from a
+   three-day one even while `ok` stays `false` throughout (owner decision,
+   #990, escalation #1065). The transition rule: a success always rewrites
+   (`ok: true`, `ts` = `last_ok_ts` = now); a failure rewrites only on the
+   `ok: true` → `false` transition (or an absent, unreadable or zero-byte
+   marker), carrying the previous marker's own `last_ok_ts` forward — falling
+   back to its `ts` for a legacy `{ok: true, ts}` marker with no `last_ok_ts`
+   field, and to `null` when there is no prior success to carry at all; a
+   failure after a failure does not touch the file at all, not even with
+   identical content, because its mtime feeds
+   `scripts/publish-dashboard.sh`'s `local_state_fingerprint` and moving it
+   on every attempt would rebuild the dashboard once per fetch attempt for as
+   long as the outage lasts. So a reader that cares whether the peer copies
+   below it might be frozen can tell without re-deriving the answer itself,
+   and the marker stops moving once an outage sets in rather than churning on
+   every attempt. The marker is written whole and renamed into place, for the
+   same reason the peer trees beside it are: a reader that catches a plain
+   truncate-then-fill mid-write sees neither the old answer nor the new one.
+   The marker is absent only in the bootstrap case, where there has never
+   been a real peer to be stale about.
+
+   **Staleness.** `fleet_peers_stale` (`lib/fleet.sh`) is the one predicate
+   for whether the marker is too old to trust, shared by `fleet_logs_healthy`
+   below and the dashboard's fleet-strip badge (`fleet.peers` in the
+   publisher's payload; DASHBOARD-SPEC.md) so the two can never disagree.
+   Stale ⇔ the marker says `ok: false` (a real failure is in force, however
+   long ago it started), or it says `ok: true` with `ts` older than the
+   threshold (the fetch cron itself has stopped running, without ever
+   logging a failure); an absent marker is not stale — the bootstrap case,
+   caught instead by the union's own emptiness — and a marker present but
+   unreadable *is* stale, the one case the two answers differ on, since a
+   marker that will not parse is evidence of a write that went wrong rather
+   than of a fetch that has never run. Neither that read nor
+   `fleet_mark_peers`' own may fail its caller: both run under
+   `set -euo pipefail` (`scripts/state-sync.sh`), where an unguarded
+   assignment from a `jq` that rejects the file would abort the fetch at the
+   read instead of reaching the rewrite. The threshold is
+   `min(3 × schedule.state_sync_fetch_minutes × 60, LABEL_OWN_GRACE_SECONDS)`
+   — 21 minutes at the shipped 7-minute cadence, capped at 1800s (#1053's
+   principle: a staleness bound must never exceed the fault threshold it
+   gates) — env-overridable as `FLEET_PEERS_STALE_SECONDS`, on the same
+   `${VAR:-default}` shape `LABEL_OWN_GRACE_SECONDS` itself uses
+   (`lib/label-marker.sh`), so a test can pin it. The dashboard's badge
+   reads: *"peer view stale — last successful fetch `<last_ok_ts>`, failing
+   since `<ts>`"* for `ok: false`, and *"peer view stale — fetch not running
+   since `<ts>`"* for a stale `ok: true`; self is definitionally fresh and
+   unaffected, and no badge renders at all once the marker is fresh again or
+   for a node that has never fetched (single-node operation, or before its
+   first state-sync).
 
    **Publication freshness** (agent-ops#602). A node's freshness is a fact
    about what it has *published*, never about its own clock: on 2026-08-08
@@ -4190,6 +4232,32 @@ implements.
    arbitration has no other mechanism: there is no lease and no leader, and
    `claims/` on the state repository's `main` branch — which per-node
    branches never touch — is owned exclusively by `lib/claim.sh`.
+
+   **The union readers' answer to a stale peers directory** (#990, escalation
+   #1065). Of the union's five consumers, four carry on regardless and one
+   degrades:
+
+   - the blocked and void extractions (requirements 34/34c) — **carry on**:
+     positive-evidence readers, for which a frozen peer copy is strictly more
+     information than no peer copy at all, and the log-independent locks
+     (the `blocked` label pair, requirement 17a's claims, just above) are
+     what actually keep two nodes off one item;
+   - the no-op fingerprint (3b) — **carry on**: its claim is "nothing the
+     Co-Ordinator reads has changed", and frozen peers genuinely have not
+     changed, so a skip is correct rather than merely safe, with
+     `none_selected_recheck_hours` bounding any stall;
+   - the usage-limit cooldown (2.1) — **carry on**: its evidence is positive
+     and self-expiring — a missed peer `limit-hit` costs one refused
+     engagement, after which `lib/limit-detect.sh` writes this node's own —
+     and widening the cooldown on stale peers is a certain fleet-wide
+     throughput loss traded against a self-correcting one;
+   - the fleet dashboard — **degrade: badge** (the peers-staleness paragraph
+     above; DASHBOARD-SPEC.md's `fleet.peers`).
+
+   No code and no new per-reader logging attaches to the first three: the
+   decision is prose, recorded here, not a code path — requirement 38b's own
+   once-per-cycle warning is already the record that the fifth reader,
+   `fleet_logs_healthy`, degraded the union for that cycle.
 2.5a. **Compose reconciliation.** A node's `compose.yaml` lives on that node's
    host, and no image roll can replace it: watchtower recreates a container
    from the *old* container's `Config`, so a label, a service's environment,
@@ -16079,11 +16147,13 @@ implements.
     corruption path), or a failing fetch cron all produce — into "no block
     exists" rather than "no block is visible from here", so it is the one
     reader such a silence actively misleads. `fleet_logs_healthy` refuses to
-    let it: an empty union, or a peers directory whose own `fleet_mark_peers`
-    freshness marker records the last fetch as failed, is unhealthy, and the
-    whole reconciliation for that cycle is skipped with one warning logged
-    (not one per repo, since every repo shares the one union and the one
-    peers directory). Second, a grace window against `union_log_horizon`
+    let it: an empty union, or a peers directory `fleet_peers_stale` (lib/fleet.sh,
+    #990) calls stale — its freshness marker records the last fetch as
+    failed, or an `ok: true` marker whose `ts` is older than the configured
+    threshold (a dead fetch cron that never logged a failure) — is unhealthy,
+    and the whole reconciliation for that cycle is skipped with one warning
+    logged (not one per repo, since every repo shares the one union and the
+    one peers directory). Second, a grace window against `union_log_horizon`
     (requirement 39f's own snapshot horizon): a peer node can apply this
     exact label pair within seconds of logging the block that justifies it,
     while that log line reaches this node only through the fleet's periodic

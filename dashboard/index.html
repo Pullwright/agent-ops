@@ -941,6 +941,7 @@
   function fleetNodes()  { return (D.fleet && D.fleet.nodes)  || []; }
   function fleetClaims() { return (D.fleet && D.fleet.claims) || []; }
   function fleetFlags()  { return (D.fleet && D.fleet.flags)  || {}; }
+  function fleetPeers()  { return (D.fleet && D.fleet.peers)  || {}; }
   // The fleet chrome appears only once there is a fleet: with a single node
   // every extra strip, column and panel is noise, so the page renders exactly
   // as it did single-node until a peer shows up (or a claim exists).
@@ -1813,8 +1814,30 @@
   // doing", so the question is answered per node here and only summarised up
   // top. Clicking a card filters the cycle list and the recent log to that
   // node; clicking it again clears the filter.
+  // The peers directory's own freshness marker (requirement 2.5/#990),
+  // surfaced as one badge on the strip rather than on every card: a frozen
+  // or dead fetch cron makes every peer card stale at once, which without
+  // this reads as "the fleet is down" when the truth is "this node cannot
+  // see the fleet". `D.fleet.peers.stale` is `fleet_peers_stale`'s own
+  // verdict (lib/fleet.sh), computed identically on the publisher, so this
+  // can never disagree with requirement 38b's live reconciliation about what
+  // counts as stale. Self is definitionally fresh and unaffected; no marker
+  // at all (single-node operation, or a node before its first state-sync)
+  // renders nothing, the same as a fresh one.
+  function fleetPeersBadge() {
+    var p = fleetPeers();
+    if (!p.stale) return null;
+    var text = p.ok === false
+      ? "peer view stale — last successful fetch " + (p.last_ok_ts ? fmtAgo(p.last_ok_ts) : "never") +
+        ", failing since " + fmtAgo(p.ts)
+      : "peer view stale — fetch not running since " + fmtAgo(p.ts);
+    return el("div", {style:"grid-column:1 / -1"}, el("span", {class:"badge b-amber", text: text}));
+  }
+
   function fleetStrip() {
     var wrap = el("div", {class:"cards fleet", id:"fleetstrip"});
+    var peersBadge = fleetPeersBadge();
+    if (peersBadge) wrap.appendChild(peersBadge);
     fleetNodes().forEach(function (n) { wrap.appendChild(nodeCard(n)); });
     return wrap;
   }

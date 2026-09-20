@@ -159,6 +159,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `published:` line now name how long the current holder has been running,
   calling out a hold older than one push interval as a possible wedge.
 
+- **A dead peers-fetch cron, and a fetch outage's own length, are now
+  visible instead of silently trusted** (issues #990, #1001). The peers
+  directory's freshness marker (`fleet_mark_peers`, #693) now carries a
+  `last_ok_ts` a failure preserves rather than overwrites — so a reader can
+  tell a five-minute outage from a three-day one — and stops rewriting the
+  file at all once it already reads `ok: false`, closing the once-per-fetch-
+  attempt dashboard-rebuild churn a sustained outage used to cost.
+  `fleet_logs_healthy` (requirement 38b's live blocked-label reconciliation)
+  now also treats a stale-but-`ok: true` marker as unhealthy, catching a
+  fetch cron that has stopped running altogether rather than only one that
+  runs and fails. The dashboard's fleet strip gains one amber badge across
+  the whole strip — *"peer view stale — last successful fetch `<time>`,
+  failing since `<time>`"*, or *"peer view stale — fetch not running since
+  `<time>`"* — naming the cause as "this node cannot see the fleet" rather
+  than "the fleet is down".
+
 - **The stall profile's Decision cell no longer hides a near-backstop
   `worst_run_max` behind the minimum-sample gate** (issue #1590). The Stall
   profile panel (D21, issue #594) checked `row.runs < TOKEN_MIN_SAMPLE`
