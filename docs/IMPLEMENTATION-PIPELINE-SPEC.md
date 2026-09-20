@@ -996,7 +996,7 @@ and the schema must carry every one of them.
 | `crash_loop_repo` | `Pullwright/agent-ops` | Where requirement 2.7's escalation issues are filed — the pipeline's own repository, because a cycle that cannot run belongs to no target repo's backlog. Empty disables both checks. This installation's own value, `Pullwright/agent-ops`, is documented below (and checked live by `scripts/doctor.sh`) because it differs from the empty product default — it names this installation's own repository, not a value to copy. |
 | `crash_loop_min_clear_minutes` | 30 min | Requirement 2.7's own retirement hysteresis: a Co-Ordinator-class escalation's clearing success must be at least this many minutes old, with the same detail never having resumed since in that run's own repository (agent-ops#1630), before `crash_loop_retire_resolved` closes the issue. `30` is two `schedule.cycle_interval_minutes`-default cycles, long enough for a same-detail recurrence to reach this node's own peer-synced union before the success is trusted. `0` disables the...[continued below](#extended-notes-crash_loop_min_clear_minutes) |
 | `escalation_webhook_url` | *(unset)* | An alias for `notify_webhook_url` (requirement 2m), accepted for one release when `notify_webhook_url` is itself empty. `scripts/doctor.sh` warns whenever this key is set. Empty contributes nothing. |
-| `notify_webhook_url` | *(unset)* | The URL every `notify_post` (`lib/notify.sh`) POST goes to (requirement 2m). `escalation_webhook_url` is accepted as an alias for one release when this is empty; `doctor.sh` warns on the old name. Empty (both) disables the channel: no POST is attempted, so an installation with none configured is unaffected. Must be `https://` when set. Fleet-wide like every key here, and inert on a node whose `EGRESS_EXTRA_ALLOW` does not name the webhook's host — `doctor.sh`'s own...[continued below](#extended-notes-notify_webhook_url) |
+| `notify_webhook_url` | *(unset)* | The URL every `notify_post` (`lib/notify.sh`) POST goes to (requirement 2m). `escalation_webhook_url` is accepted as an alias for one release when this is empty; `doctor.sh` warns on the old name. `NOTIFY_WEBHOOK_URL` (issue #991) wins over both config.json keys — the non-public, per-node source, read by `notify_resolve_webhook_url` (`lib/notify.sh`) and validated at read time (`notify_webhook_url_env_or_empty`), so a malformed value is rejected rather than POSTed to. Empty...[continued below](#extended-notes-notify_webhook_url) |
 | `notify_events` | `["escalation", "pager", "fleet-standdown"]` | Which of the three notify classes (requirement 2m) `notify_post` sends: `escalation`, `pager`, `fleet-standdown`. Default is all three. An event whose class is absent here is dropped before `notify_webhook_url` is read — never sent, never logged as suppressed. |
 | `notify_min_interval_seconds` | `600` | Minimum gap between two `notify_post` POSTs of the same event on the same key (requirement 2m) — a burst of one repeating fact coalesces into one send and a `count` field, read from `notify-suppressed` events logged in between, while the other half of a transition pair sharing that key (`fleet-standdown-end`, `pager-cleared`) still posts. `0` disables coalescing: every eligible event posts. |
 | `pager_enabled` | `true` | Requirement 51's own master switch. `false` skips evaluation outright — no claim, no invariant run, nothing logged — rather than evaluating with nowhere to file, which `pager_repo` empty already covers on its own. |
@@ -1270,7 +1270,7 @@ Requirement 2.7's own retirement hysteresis: a Co-Ordinator-class escalation's c
 
 ### Extended notes: `notify_webhook_url`
 
-The URL every `notify_post` (`lib/notify.sh`) POST goes to (requirement 2m). `escalation_webhook_url` is accepted as an alias for one release when this is empty; `doctor.sh` warns on the old name. Empty (both) disables the channel: no POST is attempted, so an installation with none configured is unaffected. Must be `https://` when set. Fleet-wide like every key here, and inert on a node whose `EGRESS_EXTRA_ALLOW` does not name the webhook's host — `doctor.sh`'s own reachability check reports this as a `warn`, not a silent gap.
+The URL every `notify_post` (`lib/notify.sh`) POST goes to (requirement 2m). `escalation_webhook_url` is accepted as an alias for one release when this is empty; `doctor.sh` warns on the old name. `NOTIFY_WEBHOOK_URL` (issue #991) wins over both config.json keys — the non-public, per-node source, read by `notify_resolve_webhook_url` (`lib/notify.sh`) and validated at read time (`notify_webhook_url_env_or_empty`), so a malformed value is rejected rather than POSTed to. Empty (all three sources) disables the channel: no POST is attempted, so an installation with none configured is unaffected. Must be `https://` when set, whichever source sets it. Fleet-wide like every key here, and inert on a node whose `EGRESS_EXTRA_ALLOW` does not name the webhook's host — `doctor.sh`'s own reachability check reports this as a `warn`, not a silent gap.
 
 ### Extended notes: `min_free_memory_bytes`
 
@@ -23262,10 +23262,11 @@ oblige anyone to edit a test.
    `notify_webhook_url` is even read — never sent, never logged. Every
    guarantee requirement 2m always made carries over unchanged: no `gh`/
    `GH_TOKEN` anywhere in this path, best-effort (a POST failure logs one
-   local `notify-failed` and never propagates), `https://`-only by the
-   schema's own pattern on both `notify_webhook_url` and
-   `escalation_webhook_url`, and never blocks the cycle (a 10s `curl
-   --max-time`).
+   local `notify-failed` and never propagates), `https://`-only on
+   `notify_webhook_url` and `escalation_webhook_url` (the schema's own
+   pattern) and on `NOTIFY_WEBHOOK_URL` (`notify_webhook_url_env_or_empty`,
+   `lib/notify.sh` — see below, since the environment has no schema to be
+   checked against), and never blocks the cycle (a 10s `curl --max-time`).
 
    **`notify_min_interval_seconds` (default 600) coalesces a burst per
    `(event, key)` pair**, event-sourced over the log rather than a cache: a
@@ -23327,12 +23328,39 @@ oblige anyone to edit a test.
    renders. The host is also all the message's own advice needs, since
    `EGRESS_EXTRA_ALLOW` is keyed on exactly that.
 
+   **`notify_webhook_url`'s value is a credential — possession of the URL is
+   authorisation to post to it — and `config.json` is both fleet-wide and
+   tracked in this public repository, so it is a poor place to keep one
+   (issue #991, TD-PPagop-26082516).** The `NOTIFY_WEBHOOK_URL` environment
+   variable is this channel's non-public, per-node source, read by
+   `agent-cycle.sh` and `scripts/publish-dashboard.sh` alike and resolved
+   ahead of both config.json keys by `notify_resolve_webhook_url`'s own
+   three-argument form (`lib/notify.sh`) — an installation that sets it can
+   leave `notify_webhook_url` empty in the tracked file entirely, the same
+   shape `GH_TOKEN` and `PULLWRIGHT_APPROVER_APP_ID` already use for every
+   other credential this system reads. Plumbed through
+   `deploy/docker/compose.yaml`'s shared `x-agent-ops-env` anchor exactly like
+   those two, so both the scheduler and the dashboard containers see it.
+   Validated at read time by `notify_webhook_url_env_or_empty` — empty or
+   `https://` passes through unchanged, anything else is rejected (logged to
+   fd 2) and treated as though the variable were unset, rather than handed to
+   `notify_resolve_webhook_url` and POSTed to garbage, since this source has
+   no schema to enforce the pattern for it. `scripts/doctor.sh` mirrors the
+   same validation as a `fail`, and separately `warn`s when `NOTIFY_WEBHOOK_URL`
+   wins over a `notify_webhook_url` that is *also* set in `config.json` — the
+   environment value is used either way, but the tracked file still carries
+   the secret unless that key is cleared.
+
    `test/notify.test.sh` passes against `notify_post` and its helpers lifted
    verbatim from `lib/notify.sh`: each of the three classes posts only when
    `notify_events` lists it and is silently dropped otherwise; the alias
    (`escalation_webhook_url` feeding `notify_webhook_url` only when the
    latter is empty, `notify_webhook_url` always winning when both are set);
-   the rate limit (a second POST of the same event on the same key inside
+   `NOTIFY_WEBHOOK_URL` winning over both when passed as
+   `notify_resolve_webhook_url`'s third argument, whatever the other two are
+   set to; `notify_webhook_url_env_or_empty` passing an empty or `https://`
+   candidate through unchanged and rejecting anything else to empty; the rate
+   limit (a second POST of the same event on the same key inside
    `notify_min_interval_seconds` logs `notify-suppressed` and sends nothing,
    and the next allowed send's payload carries the accumulated `count`, while
    an unrelated key and — on the same key — the *other* half of a transition

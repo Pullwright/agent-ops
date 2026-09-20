@@ -8,6 +8,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **A non-public, per-node source for the notify webhook credential**
+  (issue #991, TD-PPagop-26082516). `notify_webhook_url`'s value is a bearer
+  secret, and its only previous source, `config.json`, is both fleet-wide and
+  tracked in this public repository — so setting it as documented meant
+  committing a live secret to public history. The new `NOTIFY_WEBHOOK_URL`
+  environment variable wins over both `notify_webhook_url` and its deprecated
+  `escalation_webhook_url` alias whenever it is set (`lib/notify.sh`'s
+  `notify_resolve_webhook_url`), the same per-node, environment-sourced shape
+  every other credential in this system already uses (`GH_TOKEN`,
+  `PULLWRIGHT_APPROVER_APP_ID`). Plumbed through
+  `deploy/docker/compose.yaml`'s shared environment block; validated at read
+  time (`agent-cycle.sh`, `scripts/publish-dashboard.sh`) and by
+  `scripts/doctor.sh`, which rejects a non-`https://` value and warns when
+  `config.json` still carries a value the environment has overridden.
 - **Price the fleet and the tokens: a per-node fleet-sizing figure and a
   spend account split by fate** (D21/D14, issue #612). Two new dashboard
   panels, both stated per the lever rule (D21) — every figure names the

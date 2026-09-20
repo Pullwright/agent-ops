@@ -1775,6 +1775,40 @@ run_doctor
 assert_not_contains "with no env App id and none configured, doctor says nothing about the pair" \
   "PULLWRIGHT_APPROVER_APP_ID" "$out"
 
+# --- The notify webhook's own non-public, per-node source (issue #991,
+#     TD-PPagop-26082516) --------------------------------------------------
+# Unlike the Approver App id above, a set NOTIFY_WEBHOOK_URL differing from
+# config.json's own notify_webhook_url is not a fault — that is the point of
+# the environment source — so the check here is a `warn` about the tracked
+# file still carrying a value, never a `fail` about divergence. A malformed
+# value is the one thing that does fail, mirroring config.schema.json's own
+# pattern on the config.json keys, which this environment source has none of.
+run_doctor NOTIFY_WEBHOOK_URL='not-a-url'
+assert_contains "a non-https:// NOTIFY_WEBHOOK_URL fails" \
+  "[fail] NOTIFY_WEBHOOK_URL is set but is not an https:// URL" "$out"
+assert_eq "and doctor.sh exits 1" "1" "$rc"
+
+run_doctor NOTIFY_WEBHOOK_URL='http://insecure.example.test/hook'
+assert_contains "a plain http:// NOTIFY_WEBHOOK_URL fails too" \
+  "[fail] NOTIFY_WEBHOOK_URL is set but is not an https:// URL" "$out"
+
+notify_env_config="$tmp/notify-env-config.json"
+jq '.notify_webhook_url = "https://notify.example.test/hook"' "$base_config" > "$notify_env_config"
+out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH -u ANTHROPIC_API_KEY PATH="$stub_bin:$PATH" NOTIFY_WEBHOOK_URL='https://env.example.test/hook' \
+  bash "$DOCTOR" --config "$notify_env_config" 2>&1)"
+rc=$?
+assert_contains "NOTIFY_WEBHOOK_URL winning over a still-set notify_webhook_url warns about the tracked copy" \
+  "[warn] NOTIFY_WEBHOOK_URL is set and wins, but notify_webhook_url is also set in config.json" "$out"
+assert_eq "and this pairing alone does not fail the run" "0" "$rc"
+
+run_doctor NOTIFY_WEBHOOK_URL='https://env.example.test/hook'
+assert_contains "NOTIFY_WEBHOOK_URL set alone (config.json empty) earns a positive ok" \
+  "[ ok ] NOTIFY_WEBHOOK_URL is set in the environment" "$out"
+
+run_doctor
+assert_not_contains "with neither source set, doctor says nothing about NOTIFY_WEBHOOK_URL" \
+  "NOTIFY_WEBHOOK_URL" "$out"
+
 # A level above human whose environment carries no runtime credential is a
 # warn, not a fail: the wrapper fails closed (exit 2, gate unreadable) and
 # the Approver stage simply skips this pull request's App review rather than

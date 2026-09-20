@@ -85,6 +85,33 @@ assert_eq "escalation_webhook_url is used when notify_webhook_url is empty (the 
   "$(notify_resolve_webhook_url "" "https://escalation.example.test/hook")"
 assert_eq "both empty resolves to empty" "" "$(notify_resolve_webhook_url "" "")"
 
+# --- notify_resolve_webhook_url (NOTIFY_WEBHOOK_URL, issue #991) ------------
+
+assert_eq "NOTIFY_WEBHOOK_URL wins over notify_webhook_url and escalation_webhook_url alike" \
+  "https://env.example.test/hook" \
+  "$(notify_resolve_webhook_url "https://notify.example.test/hook" "https://escalation.example.test/hook" "https://env.example.test/hook")"
+assert_eq "NOTIFY_WEBHOOK_URL wins when both config.json keys are empty" \
+  "https://env.example.test/hook" \
+  "$(notify_resolve_webhook_url "" "" "https://env.example.test/hook")"
+assert_eq "an empty third argument falls back to the ordinary two-argument resolution" \
+  "https://notify.example.test/hook" \
+  "$(notify_resolve_webhook_url "https://notify.example.test/hook" "https://escalation.example.test/hook" "")"
+
+# --- notify_webhook_url_env_or_empty (issue #991) ---------------------------
+
+assert_eq "an https:// candidate passes through unchanged" \
+  "https://env.example.test/hook" \
+  "$(notify_webhook_url_env_or_empty "https://env.example.test/hook")"
+assert_eq "an empty candidate passes through unchanged" \
+  "" "$(notify_webhook_url_env_or_empty "")"
+assert_eq "a non-https:// candidate is rejected to empty" \
+  "" "$(notify_webhook_url_env_or_empty "not-a-url" 2>/dev/null)"
+assert_eq "a non-https:// candidate is rejected to empty (http://)" \
+  "" "$(notify_webhook_url_env_or_empty "http://insecure.example.test/hook" 2>/dev/null)"
+assert_contains "a rejected candidate logs a diagnostic to fd 2" \
+  "NOTIFY_WEBHOOK_URL" \
+  "$(notify_webhook_url_env_or_empty "not-a-url" 2>&1 >/dev/null)"
+
 # --- notify_post: no webhook configured — always a no-op --------------------
 
 reset_fixtures

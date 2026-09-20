@@ -258,7 +258,6 @@ fi
 # section's own reachability probe.
 notify_webhook_url_raw="$(cfg '.notify_webhook_url')"
 escalation_webhook_url_raw="$(cfg '.escalation_webhook_url')"
-notify_webhook_url_resolved="$(notify_resolve_webhook_url "$notify_webhook_url_raw" "$escalation_webhook_url_raw")"
 if [[ -n "$escalation_webhook_url_raw" ]]; then
   if [[ -n "$notify_webhook_url_raw" ]]; then
     warn "escalation_webhook_url is set but ignored — notify_webhook_url is also set and always wins; remove the old key"
@@ -268,6 +267,27 @@ if [[ -n "$escalation_webhook_url_raw" ]]; then
 elif [[ -n "$notify_webhook_url_raw" ]]; then
   ok "notify_webhook_url is set (no deprecated escalation_webhook_url alias in use)"
 fi
+
+# issue #991 (TD-PPagop-26082516): NOTIFY_WEBHOOK_URL is this channel's
+# non-public, per-node source, read from the environment the same way
+# PULLWRIGHT_APPROVER_APP_ID is above — but here the config-file value is not
+# wrong to differ from it (that is the whole point: config.json can stay
+# empty while the environment carries the secret), so a mismatch is a `warn`
+# about the still-public copy, never a `fail` about divergence. A malformed
+# value is the one thing worth failing on: agent-cycle.sh and
+# scripts/publish-dashboard.sh both reject it at read time and fall back as
+# if it were unset, but a node that never runs a cycle before this check
+# would otherwise not learn that until an escalation needed the channel.
+notify_webhook_url_env="${NOTIFY_WEBHOOK_URL:-}"
+if [[ -n "$notify_webhook_url_env" && ! "$notify_webhook_url_env" =~ ^https:// ]]; then
+  fail "NOTIFY_WEBHOOK_URL is set but is not an https:// URL — agent-cycle.sh and scripts/publish-dashboard.sh both reject it and fall back to config.json's own notify_webhook_url/escalation_webhook_url, exactly as config.schema.json's pattern rejects a non-https value there"
+elif [[ -n "$notify_webhook_url_env" && -n "$notify_webhook_url_raw" ]]; then
+  warn "NOTIFY_WEBHOOK_URL is set and wins, but notify_webhook_url is also set in config.json — config.json is tracked in this public repository, so the value there is still exposed even though it is never used; clear notify_webhook_url in config.json and keep the secret in .env only"
+elif [[ -n "$notify_webhook_url_env" ]]; then
+  ok "NOTIFY_WEBHOOK_URL is set in the environment (config.json's own notify_webhook_url/escalation_webhook_url stay empty, as intended)"
+fi
+notify_webhook_url_resolved="$(notify_resolve_webhook_url "$notify_webhook_url_raw" "$escalation_webhook_url_raw" \
+  "$(notify_webhook_url_env_or_empty "$notify_webhook_url_env")")"
 
 # The rules below are the ones the schema cannot state, because each holds
 # between two keys rather than about one. A `fail` here mirrors a startup guard
