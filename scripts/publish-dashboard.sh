@@ -280,7 +280,11 @@ enabler_escalation_label="$(cfg '.enabler_escalation_label')"
 escalation_webhook_url="$(cfg '.escalation_webhook_url')"
 # issue #1279: notify_webhook_url is the installation's one notify channel;
 # escalation_webhook_url is accepted as its alias for one release.
-notify_webhook_url="$(notify_resolve_webhook_url "$(cfg '.notify_webhook_url')" "$escalation_webhook_url")"
+# NOTIFY_WEBHOOK_URL (issue #991, TD-PPagop-26082516) is this channel's
+# non-public, per-node source and wins over both config.json keys — see
+# agent-cycle.sh's own read of the same variable for why.
+notify_webhook_url_env="$(notify_webhook_url_env_or_empty "${NOTIFY_WEBHOOK_URL:-}")"
+notify_webhook_url="$(notify_resolve_webhook_url "$(cfg '.notify_webhook_url')" "$escalation_webhook_url" "$notify_webhook_url_env")"
 notify_events_json="$(cfg_json '.notify_events')"
 notify_min_interval_seconds="$(cfg '.notify_min_interval_seconds')"
 [[ "$notify_min_interval_seconds" =~ ^[0-9]+$ ]] || notify_min_interval_seconds=600

@@ -60,6 +60,15 @@ x-agent-ops-env: &agent-ops-env
   # second buys the build log when a deployment failed.
   VERCEL_AUTOMATION_BYPASS_SECRET: ${VERCEL_AUTOMATION_BYPASS_SECRET:-}
   VERCEL_TOKEN: ${VERCEL_TOKEN:-}
+  # The non-public, per-node source for the notify channel's own credential
+  # (issue #991, TD-PPagop-26082516, lib/notify.sh): notify_webhook_url's
+  # value is a bearer secret, and config.json is fleet-wide and tracked in
+  # this public repository, so this is what lets an operator leave that key
+  # empty there. Wins over both config.json keys when set; left empty, every
+  # cycle runs exactly as it did before this variable existed. Named here for
+  # the same allowlist reason as every other credential in this block: a
+  # variable set in .env and not named here reaches no container.
+  NOTIFY_WEBHOOK_URL: ${NOTIFY_WEBHOOK_URL:-}
   # The Pullwright Approver App's identity (D18 §5.3, lib/approver-token.sh) —
   # what lets a `merge_autonomy` above `human` mint a review as a non-author.
   # All three are optional, and all three must arrive together:

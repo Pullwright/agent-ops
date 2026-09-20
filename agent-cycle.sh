@@ -647,19 +647,29 @@ crash_loop_pending_refile=()
 # requirement 2m) and separately because scripts/doctor.sh's own alias
 # warning reads the raw key, not the resolved one.
 escalation_webhook_url="$(cfg '.escalation_webhook_url')"
+# NOTIFY_WEBHOOK_URL — the non-public, per-node source for the same
+# credential (issue #991, TD-PPagop-26082516): config.json is fleet-wide and
+# tracked in this public repository, so an installation that would rather not
+# commit a live webhook URL there sets this in .env instead and leaves
+# notify_webhook_url empty. Validated here, at read time, rather than only by
+# scripts/doctor.sh — a malformed value is rejected and logged rather than
+# silently handed to curl, the same way an unset variable would resolve.
+notify_webhook_url_env="$(notify_webhook_url_env_or_empty "${NOTIFY_WEBHOOK_URL:-}")"
 # notify_webhook_url — the installation's one notify channel (requirement
 # 2m, lib/notify.sh, issue #1279): every escalation issue filed or
 # auto-closed, every pager-fired/pager-cleared (#1278), and every fleet-wide
-# stand-down beginning or ending, POSTed as one compact JSON body. Fleet-wide
-# like every other key in config.json, which ships in the image, and
-# credential-independent of GH_TOKEN by construction. Empty (the default,
-# once escalation_webhook_url — its alias for one release — is also empty)
-# means this installation has none configured, and notify_post is a no-op
-# throughout the cycle. A set value is still inert on a node whose
-# EGRESS_EXTRA_ALLOW does not name the webhook's host: the POST leaves
-# through the same default-deny egress fence every other outbound call does
-# (D24) — doctor.sh checks for this (requirement 2m).
-notify_webhook_url="$(notify_resolve_webhook_url "$(cfg '.notify_webhook_url')" "$escalation_webhook_url")"
+# stand-down beginning or ending, POSTed as one compact JSON body. Resolved
+# with NOTIFY_WEBHOOK_URL (the environment) ahead of both config.json keys
+# (issue #991) — config.json's own notify_webhook_url ships in the image and
+# is credential-independent of GH_TOKEN by construction, but fleet-wide and
+# tracked, which is exactly what the environment source exists to avoid.
+# Empty (the default, once every source above is also empty) means this
+# installation has none configured, and notify_post is a no-op throughout the
+# cycle. A set value is still inert on a node whose EGRESS_EXTRA_ALLOW does
+# not name the webhook's host: the POST leaves through the same default-deny
+# egress fence every other outbound call does (D24) — doctor.sh checks for
+# this (requirement 2m).
+notify_webhook_url="$(notify_resolve_webhook_url "$(cfg '.notify_webhook_url')" "$escalation_webhook_url" "$notify_webhook_url_env")"
 notify_events_json="$(cfg_json '.notify_events')"
 notify_min_interval_seconds="$(cfg '.notify_min_interval_seconds')"
 [[ "$notify_min_interval_seconds" =~ ^[0-9]+$ ]] || notify_min_interval_seconds=600

@@ -9,6 +9,15 @@
 # narrower job — a filing-failure fallback only — which is now the
 # `escalation-unfiled` event class alongside the others.
 #
+# `notify_webhook_url`'s own value is a credential — possession of the URL is
+# authorisation to post to it — so it also has a non-public, per-node source:
+# the `NOTIFY_WEBHOOK_URL` environment variable, read by each caller and
+# resolved ahead of both config.json keys by `notify_resolve_webhook_url`
+# below (issue #991, TD-PPagop-26082516). config.json's own `notify_webhook_url`
+# stays the fleet-wide, tracked-file default for an installation that accepts
+# that trade-off; the environment source is what lets one that does not
+# leave it empty there.
+#
 # Deliberately self-contained, the same reasoning lib/pager.sh's own header
 # gives for not depending on lib/enabler.sh: `notify_post` is called from
 # inside an active agent-cycle.sh process (cycle-scoped globals available:
@@ -27,16 +36,42 @@
 # racing the same key still coalesce; per node where one does not yet, see
 # notify_post_cycle below), not a cache.
 
-# notify_resolve_webhook_url NOTIFY_URL ESCALATION_URL
-# `notify_webhook_url` wins when both are set; `escalation_webhook_url` is
-# accepted as an alias for one release (issue #1279) when `notify_webhook_url`
-# is empty. Prints the resolved URL, or nothing.
+# notify_resolve_webhook_url NOTIFY_URL ESCALATION_URL [ENV_URL]
+# ENV_URL — the `NOTIFY_WEBHOOK_URL` environment variable (issue #991,
+# TD-PPagop-26082516) — wins whenever it is set, so an installation can keep
+# the secret out of config.json, which is fleet-wide and tracked in this
+# public repository, entirely. Otherwise `notify_webhook_url` wins when set;
+# `escalation_webhook_url` is accepted as an alias for one release (issue
+# #1279) when `notify_webhook_url` is empty. Prints the resolved URL, or
+# nothing. The caller is responsible for validating ENV_URL first
+# (`notify_webhook_url_env_or_empty` below) — this function trusts whatever
+# it is handed.
 notify_resolve_webhook_url() {
-  local notify_url="${1:-}" escalation_url="${2:-}"
-  if [[ -n "$notify_url" ]]; then
+  local notify_url="${1:-}" escalation_url="${2:-}" env_url="${3:-}"
+  if [[ -n "$env_url" ]]; then
+    printf '%s' "$env_url"
+  elif [[ -n "$notify_url" ]]; then
     printf '%s' "$notify_url"
   else
     printf '%s' "$escalation_url"
+  fi
+}
+
+# notify_webhook_url_env_or_empty CANDIDATE
+# `NOTIFY_WEBHOOK_URL`'s own gate (issue #991): empty or `https://` passes
+# through unchanged; anything else is rejected — printed as a warning to fd 2
+# and treated as though the variable were unset — rather than silently handed
+# to `notify_resolve_webhook_url` and POSTed to garbage. Mirrors
+# config.schema.json's own `^$|^https://` pattern on `notify_webhook_url`/
+# `escalation_webhook_url`, which this environment source has no schema to be
+# checked against.
+notify_webhook_url_env_or_empty() {
+  local candidate="${1:-}"
+  if [[ -z "$candidate" || "$candidate" =~ ^https:// ]]; then
+    printf '%s' "$candidate"
+  else
+    printf 'notify_webhook_url_env_or_empty: NOTIFY_WEBHOOK_URL is set but is not an https:// URL — ignoring it, exactly as an unset environment variable would\n' >&2
+    printf ''
   fi
 }
 
@@ -116,8 +151,10 @@ _notify_suppressed_count_since() {
 # Requirement 2m's guarantees, unchanged from `escalation_webhook_notify`:
 # credential-independent (no `gh`/`GH_TOKEN` anywhere in this path),
 # best-effort (a POST failure logs one local `notify-failed` and never
-# propagates), `https://`-only by the schema's own pattern on
-# `notify_webhook_url`/`escalation_webhook_url`, and never blocks the cycle
+# propagates), `https://`-only — by the schema's own pattern on
+# `notify_webhook_url`/`escalation_webhook_url`, and by
+# `notify_webhook_url_env_or_empty` above on `NOTIFY_WEBHOOK_URL`, which has
+# no schema to be checked against — and never blocks the cycle
 # (a 10s `curl --max-time`, same as every other webhook call in this
 # codebase).
 notify_post() {
