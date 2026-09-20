@@ -2486,11 +2486,10 @@ implements.
       either kill point. The live discriminator `parented` needs is therefore
       the throttle band's *width* (the parent's `memory.high` against the
       child's own `memory.max`), not merely whether the parent's `memory.max`
-      sits above
-      the child's — a narrow band, such as the interim `ockham-container`
-      remedy's own (parent `memory.high` 1400 MiB against a `memory.max` of
-      1536 MiB, an ~8.9% gap), still reads `parented`. `doctor.sh`
-      additionally reads the parent's `memory.events`
+      sits above the child's — a narrow band, such as the interim
+      `ockham-container` remedy's own (parent `memory.high` 1400 MiB against
+      a `memory.max` of 1536 MiB, an ~8.9% gap), still reads `parented`.
+      `doctor.sh` additionally reads the parent's `memory.events`
       `high` counter every run, persists one sample to `state_dir`, and warns
       on any rising delta since the last one — a signal that needs no ceiling
       to be correctly configured first, so it still fires on a `livelocked`

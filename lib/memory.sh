@@ -383,9 +383,8 @@ memory_cgroup_parent_describe() {
 # memory.high still sits too far below the child's own memory.max (say 768
 # MiB, more than 25% below) to disengage — distinguished below because the
 # fix differs in each case: an unbounded parent needs a memory.max at all, a
-# coincident (or lower) one
-# needs a higher one, and one that already clears the child's own ceiling
-# needs its memory.high raised instead.
+# coincident (or lower) one needs a higher one, and one that already clears
+# the child's own ceiling needs its memory.high raised instead.
 memory_cgroup_livelock_describe() {
   local current max parent_high parent_max
   current="$(memory_cgroup_field memory.current)"
