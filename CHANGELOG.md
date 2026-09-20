@@ -90,6 +90,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   — none of which yet has a per-invocation home to scope an override to) is
   a schema error at validation time, not a silently ignored key.
 
+### Removed
+
+- **Requirement 17g's trimmed-item fabrication check** (issue #1156,
+  resolving TD-PPagop-26090604), now that requirement 17h composes every
+  `issues`/`tech-debt` candidate's `context`/`acceptance`/`title` itself,
+  from a live read, before the claim loop ever sees a model's paste to
+  check. `item_text_fault`, `item_text_supply`, `item_live_text` and
+  `_span_is_quotable` (`lib/candidate-select.sh`), their call sites, the
+  `fab_faults` counter and the `cause: "fabricated"` stand-down branch
+  (`agent-cycle.sh`) are gone; `test/item-text-fabrication.test.sh` is
+  retired. A stand-down over every candidate's traceability now always
+  reads `untraceable`, whether requirement 17f's own check or requirement
+  17h's compose step produced the fault. Requirement 17f's and 17h's own
+  fail-closed refusals are unchanged.
+
 ### Fixed
 
 - **A single repository's own deterministic Co-Ordinator failure now

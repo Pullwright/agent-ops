@@ -14,9 +14,9 @@
 #   balances            the sum of every state plus `unaccounted`, asserted
 #                        on a fixture exercising every state at once.
 #   the cause           idle-with-demand seconds are split by the four D21
-#   translation         causes; the four pre-existing stand-down causes this
+#   translation         causes; the three pre-existing stand-down causes this
 #                        requirement does not rename (raced, pre-claimed,
-#                        fabricated, untraceable) translate to peer-claimed/
+#                        untraceable) translate to peer-claimed/
 #                        coordinator-declined via node_time_state_for_cause.
 #   absence is down     a node with zero events in the window, and a node
 #                        whose first event lands partway through it, both
@@ -108,8 +108,6 @@ assert_eq "raced translates to idle-with-demand/peer-claimed (never renamed on i
   "idle-with-demand	peer-claimed" "$(node_time_state_for_cause raced)"
 assert_eq "pre-claimed translates to idle-with-demand/peer-claimed" \
   "idle-with-demand	peer-claimed" "$(node_time_state_for_cause pre-claimed)"
-assert_eq "fabricated translates to idle-with-demand/coordinator-declined" \
-  "idle-with-demand	coordinator-declined" "$(node_time_state_for_cause fabricated)"
 assert_eq "untraceable translates to idle-with-demand/coordinator-declined" \
   "idle-with-demand	coordinator-declined" "$(node_time_state_for_cause untraceable)"
 assert_eq "no-demand maps to idle-without-demand" \

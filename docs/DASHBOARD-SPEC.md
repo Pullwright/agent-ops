@@ -937,7 +937,7 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                                              //   whether or not it recovered
                standdown_cause,             // "raced" | "unreachable" | "pre-claimed"
                                              //   | "unauthorized" | "disk-full"
-                                             //   | "disk-low" | "fabricated"
+                                             //   | "disk-low"
                                              //   | "untraceable" | null — only on
                                              //   an outcome of "stand-down"
                stages:{ coordinator|implementer|reviewer:
@@ -2937,15 +2937,15 @@ number's twins elsewhere on the page.
   contention, `"unreachable"` when every loss was a GitHub outage instead,
   `"pre-claimed"` when nothing was ever attempted because the cycle's own
   gather had already seen every candidate claimed (implementation spec 17a's
-  `claim-skipped`), `"fabricated"` when every candidate's `acceptance` named a
-  specific its own live item text does not support (implementation spec 17g),
-  and `"untraceable"` when every candidate failed the refinement-traceability
-  check and the repair could not rescue one (implementation spec 17f) — and
+  `claim-skipped`), and `"untraceable"` when every candidate failed the
+  refinement-traceability check and the repair could not rescue one, or the
+  Script's own compose step could not build a work order at all
+  (implementation spec 17f/17h) — and
   only a cycle with a `held` loss is marked `raced` at
   all: a GitHub outage names no peer to contend with, and a pre-claimed
   skip was never contention in the first place, so neither shape may wear
   contention's badge (implementation spec 17a, issue #245). The same is true
-  of the two selection-integrity causes: a work order the Script refused to
+  of the selection-integrity cause: a work order the Script refused to
   hand on names no peer either.
   An item that is blocked *and* void reaches `void[]` and not
   `blocked[]` (implementation spec 34h, acceptance check 8g), while an ordinary

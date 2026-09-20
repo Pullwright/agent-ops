@@ -31,14 +31,14 @@
 # in this file keeps that newline for the same reason, whether or not the
 # variables it fills are ever inspected by a caller that would notice.
 #
-# Three of the fifteen tokens are pre-existing `stand-down`/`claim-lost`
+# Two of the fifteen tokens are pre-existing `stand-down`/`claim-lost`
 # causes this requirement does not rename (agent-ops#598's join-key
 # precedent: an existing field's values are never renamed to satisfy a new
 # reader) — `raced`/`pre-claimed` (claim-race stand-downs, agent-cycle.sh)
-# and `fabricated`/`untraceable` (corroboration-gate stand-downs) keep their
-# own names on the `stand-down` event itself, and are translated here to the
-# canonical `peer-claimed`/`coordinator-declined` tokens only for the
-# `node-state` event this file emits alongside it.
+# and `untraceable` (a corroboration-gate stand-down) keep their own names on
+# the `stand-down` event itself, and are translated here to the canonical
+# `peer-claimed`/`coordinator-declined` tokens only for the `node-state`
+# event this file emits alongside it.
 node_time_state_for_cause() {  # CAUSE -> "STATE\tCAUSE\n"
   case "$1" in
     disabled-node)   printf 'down\tdisabled-node\n' ;;
@@ -54,7 +54,7 @@ node_time_state_for_cause() {  # CAUSE -> "STATE\tCAUSE\n"
     back-pressure)   printf 'idle-with-demand\tback-pressure\n' ;;
     awaiting-tick)   printf 'idle-with-demand\tawaiting-tick\n' ;;
     peer-claimed|raced|pre-claimed)         printf 'idle-with-demand\tpeer-claimed\n' ;;
-    coordinator-declined|fabricated|untraceable) printf 'idle-with-demand\tcoordinator-declined\n' ;;
+    coordinator-declined|untraceable) printf 'idle-with-demand\tcoordinator-declined\n' ;;
     no-demand)       printf 'idle-without-demand\tno-demand\n' ;;
     *)               printf '\t\n' ;;
   esac

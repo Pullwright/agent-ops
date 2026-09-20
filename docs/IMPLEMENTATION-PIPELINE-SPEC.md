@@ -9340,14 +9340,14 @@ implements.
     winners' claims, invisible when this cycle gathered, are exactly what
     the chained cycle's fresh gather and requirement 3q's filters see, so
     the continuation is routed to the next-best item instead of the same
-    fight. The other four causes never chain: an `unreachable` or
+    fight. The other three causes never chain: an `unreachable` or
     `pre-claimed` stand-down against a fresh cycle buys a second engagement
     into the same outage, or the same selection defect, and the same
-    empty-handed ending; an `untraceable` or `fabricated` stand-down (17f,
-    17g) is the Script's own construction-time check refusing to hand a
-    candidate on, which no peer's claim or absence had any part in, so a
-    fresh cycle would spend the same chain budget re-composing the same
-    broken work order rather than routing around anyone.
+    empty-handed ending; an `untraceable` stand-down (17f, 17h) is the
+    Script's own construction-time check refusing to hand a candidate on,
+    which no peer's claim or absence had any part in, so a fresh cycle
+    would spend the same chain budget re-composing the same broken work
+    order rather than routing around anyone.
     Nor does it chain over an untrapped crash or a signal: the gate
     is `chain_eligible` *and* this cycle's own `exit_code == 0`, checked in
     `cleanup` (11) after everything else there has already run — the lock
@@ -10536,165 +10536,48 @@ implements.
     fallback pick nor a requirement 17h compose can hold another item's
     refinement, because neither ever reads `refinements` for anything but the
     one item it is building.
-17g. **The Script verifies a trimmed candidate's `acceptance` against the
-    item's own live text, not only its recorded refinement (agent-ops#821,
-    shape decided agent-ops#830 option (c)).** Requirement 17f closes the
-    cross-item swap — whether the work order carries *this item's own
-    recorded refinement* — but answers nothing about whether the rest of
-    `acceptance` is real. Cycle 20260826T064910Z-poetic-1-186841 (issue
-    #815) showed the gap: a Co-Ordinator whose input had been trimmed to fit
-    its model's window invented an `acceptance` in full — prose no check
-    re-derived, so nothing caught it, and 17f's own repair (below) logged
-    the result a success. `item_text_fault` (`lib/candidate-select.sh`)
-    closes this the same way 17f closes its own gap: not by trusting the
-    model's account, but by re-deriving the truth and checking the work
-    order against it.
-    - **Scope.** Checked only for a candidate whose `{repo, item}` appears in
-      `coordinator_fit_trimmed_items`'s own output this cycle
-      (`lib/coordinator-input.sh`) — the same set requirement 34e's fourth
-      refusal already reads. An untrimmed candidate carries nothing elided to
-      fabricate about, so this costs nothing there, the same "nothing to
-      check" shape 17f already uses for an item with no recorded refinement.
-      Like 17f, it is scoped to a model-composed work order and guarded by
-      `selected_by_fallback` in the claim loop: `fallback_select_candidate`
-      builds `context`/`acceptance` out of the band entry's own record, in
-      jq, so it cannot fabricate anything a check would need to catch.
-    - **The live text.** `item_live_text` fetches it fresh for the one
-      candidate under test — never the pre-fit extract the model actually
-      saw, which is exactly what this exists to check the work order
-      *against*, not to trust: an issue's body plus every comment
-      (`gh issue view --json body,comments`), or a tech-debt item's register
-      file at the repo's default branch (`gh api .../contents/tech-debt/<id>.md`).
-      These are the only two sources `coordinator_fit_trimmed_items` ever
-      names, because the fit ladder only ever sheds prose from the `issues`
-      and `tech_debt` bands.
-    - **`context` is not checked.** `prompts/coordinator.md`'s work-order
-      schema requires `context` to carry the Co-Ordinator's own framing —
-      file paths, related conventions found while evaluating, why the item
-      is unblocked and in scope — alongside the entry's verbatim paste, and
-      nothing in the schema marks where the paste ends and the framing
-      begins. A `context` check faulting every paragraph it could not trace
-      to the live text therefore faulted that mandated framing by
-      construction, on ordinary honest work orders, at the fit rungs the
-      fleet normally runs at (issue #821's own figures: 90% of
-      `coordinator-input-fitted` events land at rungs 7–8) — reproduced by
-      two independent Reviewer rounds against this requirement's own PR
-      (#825), which is why agent-ops#830 dropped it rather than repair it in
-      place. TD-PPagop-26082801 tracks the deferred `context` detection gap
-      against #769, the issue asking whether the Co-Ordinator should be
-      pasting `context` at all — the schema question a narrower check would
-      need answered first. This requirement instead answers 17g's own scope
-      from the completeness direction: `item_text_supply`, below, ensures
-      the Implementer always receives the item's full live text regardless
-      of what `context` says.
-    - **`acceptance`'s backtick-quoted spans are checked, because
-      `prompts/coordinator.md` allows its prose to be a paraphrase but not
-      its specifics.** `acceptance` is explicitly allowed to be the
-      Co-Ordinator's own synthesis ("set `acceptance` from the current state
-      of the thread") — a faithful paraphrase is traceable and must never
-      fault, which is deliberately weaker than requiring an appropriate-tier
-      model to have authored it (that question belongs to agent-ops#822, out
-      of scope here). So only its backtick-quoted spans (`` `like this` ``)
-      — the concrete specifics (a file, a flag, an identifier) a paraphrase
-      preserves from its source and a fabrication is what actually invents —
-      are checked, after the same whitespace normalization requirement 17f's
-      own check applies, against the union of the live text and the item's
-      recorded refinement `spec`; free prose around them is never compared.
+17g. **No check verifies a trimmed candidate's `acceptance` against the
+    item's own live text — requirement 17h's compose step removed the
+    condition such a check would exist to catch.** Between agent-ops#821
+    (issue #815) and agent-ops#1156, this requirement specified
+    `item_text_fault`/`item_text_supply` (`lib/candidate-select.sh`, backed
+    by an `item_live_text` fetch and a `_span_is_quotable` shape test): a
+    trimmed `issues`/`tech-debt` candidate's `acceptance` was checked, its
+    backtick-quoted spans against a fresh live read, because a Co-Ordinator
+    running on the fleet's cheapest model against fit-ladder-trimmed input
+    could invent a specific an Implementer would then trust as the item's
+    own (cycle 20260826T064910Z-poetic-1-186841, issue #815's incident).
 
-      **A span that could not have been quoted is not checked**
-      (`_span_is_quotable`, agent-ops#1137). Backticks in Markdown mean code,
-      not quotation, and a work order uses them to name its own output as
-      well as its source: the file it will create, the glob it will walk, the
-      template an identifier follows. Two shapes are therefore exempt, both
-      because a verbatim match is *impossible* rather than merely unlikely —
-      which is what keeps this a narrowing of the check rather than a
-      weakening of it. A **pattern** — a span carrying `*`, `?` or `<…>` —
-      generalises the strings it stands for, so it cannot appear in the prose
-      it generalises: `scripts/gather-*` faults precisely *because* the item
-      says `scripts/gather-human-visibility-hygiene`. A **path** — a
-      separator with an extension on its final segment — is the file the work
-      order creates, absent from the item that asked for it by definition,
-      and absent from the repository too until the order is implemented.
+    Requirement 17h (agent-ops#769) removed the condition instead of leaving
+    a check to keep catching its failure: every `issues`/`tech-debt`
+    candidate's `context`/`acceptance`/`title` is now composed by the Script
+    itself, from a live read, immediately before the claim — never from the
+    model, and never from a trimmed extract. Nothing reaching the claim loop
+    from either source can any longer be a model's paste of a possibly-
+    trimmed extract, so there is nothing left for a check built to catch
+    exactly that failure mode to intercept:
+    `coordinator_fit_trimmed_items`'s own output — the scope both retired
+    checks were gated on — could no longer contain a candidate that reached
+    them un-composed (`c_composed` in the claim loop) from the moment
+    requirement 17h landed (`6a4eaa4`, 2026-09-06T03:45:52Z). TD-PPagop-26090604
+    is the record of that gap opening; agent-ops#1156 is where it closed,
+    once requirement 17h's own compose step had run in production long
+    enough to trust it was not itself regressing into the fabrication or
+    incompleteness failure modes this requirement used to catch (an owner
+    decision on agent-ops#1156, 2026-09-11, resolving escalation #1333: the
+    soak was judged over).
 
-      Every other shape stays checked, and that deliberately includes the
-      bare identifier: both fabrications on record — `_verify_stage_claims`
-      (#815) and `refinement_policy_matrix` (#821) — are bare `snake_case`
-      identifiers, so an exemption wide enough to admit those would disarm
-      this requirement altogether. The cost of drawing the line there is a
-      real identifier the item happens not to spell (`merge_conflicts`, a
-      `sourceToken` from this repo's own schema) still faulting: no rule over
-      a span's *shape* can separate an invented identifier from an inferred
-      one, and agent-ops#1138 is the open investigation into what can —
-      widening the corpus from the item to the repository, changing the
-      disposition below, or removing the trimming premise the whole
-      requirement rests on.
-
-      The narrowing was measured, not supposed: in the 24 h to
-      2026-08-31T11:35Z every one of the eight faults `ockham-container`
-      recorded was a false positive — four globs, one placeholder template, a
-      path twice, and `merge_conflicts` — while the fleet, its fit freed by
-      agent-ops#1128 to offer all 104 candidates, selected nothing at all.
-    - **Never repaired.** Unlike a missing refinement, appending the real
-      text alongside a false one does not make the false one true, so a
-      candidate `item_text_fault` faults is always a hard skip — no repair is
-      even attempted. Logged `claim-skipped` with its own `cause: "fabricated"`,
-      never folded into `cause: "untraceable"`; a cycle that loses every
-      candidate this way stands down with the same distinct cause
-      (`fab_faults`, mirroring `trace_faults`' own reason for existing:
-      issue #767's "a stand-down that names the wrong cause is worse than one
-      that names none").
-    - **The other half of "either the live read demonstrably happened, or
-      the Script supplies the full text itself": `item_text_supply`.** A
-      trimmed candidate that clears `item_text_fault` wrote nothing
-      fabricated in `acceptance`, but its `context` may still be incomplete —
-      an honest, faithfully scoped paraphrase of only the extract the model
-      actually saw, or (since `context` is not checked at all) a paraphrase
-      this requirement cannot distinguish from one that drifted further. That
-      candidate still should not reach the Implementer as the item's whole
-      text: the acceptance criterion or scope cut requirement 17b already
-      warns tends to live in exactly the bytes the fit ladder elided. So the
-      Script closes the gap unconditionally, for every trimmed candidate that
-      clears `item_text_fault`, the same "supply what is missing instead of
-      discarding the work" move `refinement_traceability_repair` already
-      makes for a recorded refinement: append the live text, verbatim, under
-      a heading naming it the Script's own insertion. A no-op when `context`
-      already contains the live text in full, so a candidate that really did
-      read live and paste faithfully is never churned — but that exemption is
-      effectively never taken, and the append should be read as
-      always-on for a trimmed candidate: it asks whether `context` carries the
-      whole live text as one contiguous run (body and every comment joined,
-      after the same normalization), and an honest `context` interleaves the
-      Co-Ordinator's own framing between those passages, so the run does not
-      match. It is kept rather than dropped only because taking it out would
-      append a second copy to the `context` that does carry one
-      (agent-ops#830's decision, item 2). Logged
-      `work-order-repaired` with `cause: "trimmed"`. Fails open on an
-      unreadable live text — this is a supplement, not the gate;
-      `item_text_fault` is what fails closed on the same read, and a
-      candidate only reaches this call once that gate has already passed.
-    - **A `gh` read that fails is a fault, not a pass** (TD-PPagop-26082307's
-      reasoning applies unchanged): this check exists to confirm the live
-      text really backs the work order, and assuming pass on a read it could
-      not complete would let a stale token or a narrowed scope disarm the
-      whole gate while it kept reading as green. Reported via `guard_warn`,
-      never swallowed.
-
-    **Since requirement 17h (agent-ops#769), this requirement's own scope —
-    `coordinator_fit_trimmed_items`' output — can no longer contain a
-    candidate that reaches this check un-composed.** The fit ladder only ever
-    trims the `issues`/`tech_debt` bands (the scope note above), and every
-    `issues`/`tech-debt` candidate is now composed by requirement 17h before
-    the claim loop ever calls `item_text_fault`/`item_text_supply`
-    (`c_composed` in the claim loop) — from a fresh live read, never the
-    trimmed extract this requirement exists to check a model's paste against.
-    `item_text_fault`/`item_text_supply` are therefore unreachable as written:
-    kept as a defence against a regression in requirement 17h's own compose
-    step rather than because either currently intercepts anything. Their
-    removal, and `cause: "fabricated"`'s retirement from the claim loop's own
-    stand-down ladder, is tracked as a follow-up
-    (TD-PPagop-26090604) rather than done in the same change that made them
-    unreachable, on the same "small, reviewable" discipline every Implementer
-    engagement already follows.
+    `item_text_fault`, `item_text_supply`, `item_live_text` and
+    `_span_is_quotable` no longer exist in `lib/candidate-select.sh`; the
+    claim loop no longer counts a `fab_faults` skip or stands down with
+    `cause: "fabricated"`. A cycle whose every candidate fails traceability
+    now stands down `untraceable` regardless of whether requirement 17f's own
+    check or requirement 17h's compose step produced the fault, since there
+    is no second, narrower cause left to distinguish one from the other.
+    Requirement 17f's fail-closed refusal on an unreachable `gh` read, and
+    requirement 17h's own fail-closed refusal on a failed live fetch at
+    composition (folded into `cause: "untraceable"`), are both unchanged by
+    this retirement — neither depended on the checks that were removed.
 17h. **The Script composes `context`/`acceptance`/`title` for a Co-Ordinator
     selection, from a live read or the pre-fetched band entry — never from
     the model, and never from a trimmed extract (agent-ops#769, resolving the
@@ -10927,18 +10810,16 @@ implements.
       with reason "every candidate was already claimed before this cycle's
       Co-Ordinator ran — skipped without an attempt". This `stand-down`
       event also carries the same distinction structured, as `cause` —
-      `raced`, `unreachable`, `pre-claimed`, `untraceable` or `fabricated`
-      (requirements 17f and 17g name the last two, with their own reasons
-      and their own counters) — so a reader (the dashboard included) does
-      not have to re-parse the reason text (issue #245), plus `claim_skips`
-      whenever any candidate was skipped, `trace_faults` whenever the
-      traceability check faulted one and `fab_faults` whenever the
-      fabrication check faulted one, whatever the cause. A `raced`
-      stand-down chains another selection cycle under requirement 39's
-      ordinary bounds; `unreachable`, `pre-claimed`, `untraceable` and
-      `fabricated` never chain — re-running into the same outage or the
-      same selection defect buys a second Co-Ordinator engagement and the
-      same ending.
+      `raced`, `unreachable`, `pre-claimed` or `untraceable` (requirement
+      17f, and requirement 17h's own fail-closed refusal, name the last one,
+      with its own reason and its own counter) — so a reader (the dashboard
+      included) does not have to re-parse the reason text (issue #245), plus
+      `claim_skips` whenever any candidate was skipped and `trace_faults`
+      whenever the traceability check faulted one, whatever the cause. A
+      `raced` stand-down chains another selection cycle under requirement
+      39's ordinary bounds; `unreachable`, `pre-claimed` and `untraceable`
+      never chain — re-running into the same outage or the same selection
+      defect buys a second Co-Ordinator engagement and the same ending.
       A win that followed one or more
       `held` losses is a *recovered* race, not an ordinary first-try
       selection: the `selection` event that names the winning candidate
@@ -18130,11 +18011,11 @@ with the Reviewer's own.
       (`usage-limit`), both in `lib/standdown.sh`. Four sites already carried
       a `cause` before this requirement (`unauthorized`, `disk-low`/
       `disk-full`, `memory-low`) and are unchanged; the claim-race
-      stand-down's own five causes (`raced`, `unreachable`, `pre-claimed`,
-      `fabricated`, `untraceable`) are unchanged too, since renaming an
+      stand-down's own four causes (`raced`, `unreachable`, `pre-claimed`,
+      `untraceable`) are unchanged too, since renaming an
       existing field's values is breaking (docs/FLOW-SCHEMA.md's stability
-      policy) — `node_time_state_for_cause` translates the four of those five
-      this requirement's own vocabulary does not already share
+      policy) — `node_time_state_for_cause` translates the three of those
+      four this requirement's own vocabulary does not already share
       (`unreachable` needed no translation) onto `peer-claimed`/
       `coordinator-declined` only on the `node-state` event beside it, never
       on the `stand-down` event itself.
@@ -24484,40 +24365,18 @@ oblige anyone to edit a test.
    does not satisfy the normalized check, and the claim loop's own call site
    guards the check with `selected_by_fallback` so that candidate is never
    faulted.
-7h. **A trimmed candidate's `acceptance` is checked against the item's own
-   live text, and never repaired on a genuine fault (requirement 17g,
-   agent-ops#821, shape decided agent-ops#830 option (c)).**
-   `test/item-text-fabrication.test.sh` passes, against `item_live_text`,
-   `item_text_fault` and `item_text_supply` lifted verbatim from
-   `lib/candidate-select.sh`: an untrimmed candidate is not checked and costs
-   no `gh` call; a `context` paragraph that never appeared in the live item
-   at all does **not** fault the candidate — `context` is not checked; a
-   faithful paraphrase in `acceptance`'s free prose is traceable and never
-   flagged, but an invented backtick-quoted specific in `acceptance` is
-   caught after exactly one `gh` read and named in the fault, while one that
-   really is in the live text (or the item's recorded refinement `spec`)
-   passes. `item_text_supply` is proven never to rescue an `acceptance`
-   fabrication fault — the invented span is still there after the live text
-   is appended, so the candidate still faults — and separately proven to
-   append the live text verbatim, without disturbing what the order already
-   said, for a candidate with an honestly incomplete `context` (never
-   fabricated), regardless of whether `item_text_fault` faulted it; to be a
-   no-op when `context` already carries the live text in full or when the
-   candidate was not trimmed this cycle (no `gh` call either); and to fail
-   open, not crash, on an unreachable read. `item_text_fault` itself is
-   proven to fail closed on that same read, with the failure reported
-   through `guard_warn`. The same test pins the claim loop's own wiring: the
-   check runs before requirement 17f's, is guarded by `selected_by_fallback`,
-   counts `fab_faults` under `cause: "fabricated"` on its own `claim-skipped`
-   line, is never handed to `refinement_traceability_repair`, and a cycle
-   that loses every candidate this way stands down with
-   `standdown_cause="fabricated"` — distinct from both `untraceable` and
-   `raced`. `test/finish-then-continue.test.sh` passes, against the real
-   stand-down block lifted out of `agent-cycle.sh`: a cycle whose every
-   candidate is fabricated stands down with `cause: "fabricated"`, its own
-   `fab_faults` count, and never chains; a genuine race loss alongside one
-   or more fabricated faults still reads `raced` and chains like any other
-   raced stand-down.
+7h. **Retired (requirement 17g, agent-ops#1156, resolving TD-PPagop-26090604).**
+   This check existed to verify a trimmed candidate's `acceptance` against
+   the item's own live text — `item_live_text`, `item_text_fault` and
+   `item_text_supply` in `lib/candidate-select.sh`, exercised by
+   `test/item-text-fabrication.test.sh`. Requirement 17h (agent-ops#769) made
+   every `issues`/`tech-debt` candidate's `context`/`acceptance` a Script
+   composition from a live read, which removed the condition — a model's
+   paste of a possibly-trimmed extract — this check existed to catch; once
+   nothing reaching the claim loop from either source could still be that,
+   agent-ops#1156 removed the checked functions and retired
+   `test/item-text-fabrication.test.sh` with them. There is nothing left
+   here to verify. See requirement 17g's as-built note for the history.
 8. **A no-op Implementer is recorded.** Drive one cycle in which the
    Implementer reports `blocked` without opening a PR: the cycle must exit 0
    having logged an `attempt-failed` carrying that item and the stage's own
@@ -27558,9 +27417,9 @@ oblige anyone to edit a test.
     transition reaches every site requirement 50 names, and the invariant
     balances (requirement 50).** `test/node-time-state.test.sh` drives
     `lib/node-time-state.sh` directly: `node_time_state_for_cause` against
-    every one of the fifteen closed-vocabulary tokens, including the four
+    every one of the fifteen closed-vocabulary tokens, including the three
     translated rather than renamed (`raced`/`pre-claimed` to `peer-claimed`,
-    `fabricated`/`untraceable` to `coordinator-declined`) and an unrecognised
+    `untraceable` to `coordinator-declined`) and an unrecognised
     cause (maps to nothing, never a guess); `node_time_state_idle_split`
     against a positive eligible count, a zero count and an unreadable one;
     `node_state_for_stage` against the Implementer and Reviewer (`producing`)
@@ -27584,9 +27443,9 @@ oblige anyone to edit a test.
     uncounted), and an event naming no node, or whose `ts` is present but
     fails `fromdateiso8601`, is excluded and counted under `skipped_events`
     rather than silently vanishing or aborting the whole fold to the
-    fallback all-empty shape. Each of the four
+    fallback all-empty shape. Each of the three
     translated-not-renamed causes' own assertions (`raced`/`pre-claimed` to
-    `peer-claimed`, `fabricated`/`untraceable` to `coordinator-declined`)
+    `peer-claimed`, `untraceable` to `coordinator-declined`)
     pins the translation's output distinctly from its input, which is what
     proves the original `stand-down`/`claim-lost` event's own field stays
     untouched — the translation happens only on the `node-state` event

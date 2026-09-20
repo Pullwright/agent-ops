@@ -18,9 +18,8 @@
 # band entry to compose from in the first place.
 #
 # The functions are lifted verbatim out of lib/candidate-select.sh, the way
-# test/item-text-fabrication.test.sh and test/refinement-traceability.test.sh
-# lift their own, so the assertions are about the shipped code rather than a
-# copy of its logic.
+# test/refinement-traceability.test.sh lifts its own, so the assertions are
+# about the shipped code rather than a copy of its logic.
 #
 # No test framework is used (none exists elsewhere in this repo). Run
 # directly: ./test/candidate-text-compose.test.sh — exit 0 iff all passed.
@@ -283,24 +282,16 @@ out_mc_ord="$(compose_selected_candidate_text "$cand_mc_ord" "$repos_mc_ord" "$r
 assert_eq "an ordinary (non-takeover) merge-conflicts candidate keeps the rebase acceptance" \
   "Rebase the existing pull request onto its base and resolve the conflict." "$(jq -r '.acceptance' <<<"$out_mc_ord")"
 
-# --- The claim loop wires this in before requirement 17f/17g, and folds a --
+# --- The claim loop wires this in before requirement 17f, and folds a ------
 # --- compose failure into the existing "untraceable" cause ------------------
 
-loop_src="$(extract_block '^  c_composed=0' '^  # Requirement 17g ' "$AGENT_CYCLE")"
+loop_src="$(extract_block '^  c_composed=0' '^  # Requirement 17f ' "$AGENT_CYCLE")"
 # shellcheck disable=SC2016  # the literal source text is what is being matched
 if [[ -n "$loop_src" && "$loop_src" == *'compose_selected_candidate_text'* \
       && "$loop_src" == *'cause: "untraceable"'* && "$loop_src" == *'trace_faults=$(( trace_faults + 1 ))'* ]]; then
   printf 'ok   - %s\n' "the claim loop calls compose_selected_candidate_text and folds a compose failure into the untraceable cause"
 else
   printf 'FAIL - %s\n' "the claim loop does not wire compose_selected_candidate_text the way this test expects — has it moved or changed shape?"
-  failures=$(( failures + 1 ))
-fi
-
-fab_block="$(extract_block '^  c_fab_fault=""' '^  # Requirement 17f ' "$AGENT_CYCLE")"
-if [[ -n "$fab_block" && "$fab_block" == *'c_composed'* ]]; then
-  printf 'ok   - %s\n' "requirement 17g's own fault check is exempted for a requirement 17h compose, same as a fallback pick"
-else
-  printf 'FAIL - %s\n' "requirement 17g's fault check no longer names c_composed — has the guard moved?"
   failures=$(( failures + 1 ))
 fi
 

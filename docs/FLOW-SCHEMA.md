@@ -599,7 +599,7 @@ revisable in this one place rather than scattered across every emission site:
   draining-with-live-claims stand-down) is `idle-with-demand`/
   `peer-claimed`: demand existed and someone else has it.
 - A cycle-ending `stand-down` that names a defect in the Co-Ordinator's own
-  candidate construction (`fabricated`, `untraceable`) is
+  candidate construction (`untraceable`) is
   `idle-with-demand`/`coordinator-declined`, the same cause a genuine decline
   against a non-empty eligible set earns: both are "the Co-Ordinator did not
   turn eligible work into a claim," whatever the reason.
@@ -634,15 +634,15 @@ firing, the back-pressure cap bound, every eligible item already claimed by
 a peer, and the Co-Ordinator declining to select against a non-empty
 eligible set, respectively.
 
-Four of these tokens are **not** new names on the events that already
+Three of these tokens are **not** new names on the events that already
 carried a `cause` — the pre-existing `stand-down`/`claim-lost` vocabulary is
 never renamed to satisfy this requirement (an existing field's values are a
 contract other readers, the dashboard included, already depend on). `raced`
 and `pre-claimed` (the claim-race stand-down, `agent-cycle.sh`) keep those
 names on the `stand-down` event itself and translate to `peer-claimed` only
-on the `node-state` event beside it; `fabricated` and `untraceable`
-(corroboration-gate stand-downs, same site) keep their names and translate
-to `coordinator-declined` the same way. Every other cause in the table above
+on the `node-state` event beside it; `untraceable` (a corroboration-gate
+stand-down, same site) keeps its name and translates to
+`coordinator-declined` the same way. Every other cause in the table above
 *is* the literal value logged on both the originating event and the
 `node-state` event beside it — there is only one vocabulary to remember for
 a newly-added site.
@@ -986,9 +986,9 @@ and dedicated assertions folded into `test/landing-wiring.test.sh`,
 
 **The node time-state record:** `test/node-time-state.test.sh` drives
 `lib/node-time-state.sh` directly: `node_time_state_for_cause` against every
-one of the fifteen closed-vocabulary tokens (including the four translated
+one of the fifteen closed-vocabulary tokens (including the three translated
 rather than renamed — `raced`/`pre-claimed` to `peer-claimed`,
-`fabricated`/`untraceable` to `coordinator-declined`) and an unrecognised
+`untraceable` to `coordinator-declined`) and an unrecognised
 one (maps to nothing); `node_time_state_idle_split` against a positive
 count, a zero count and an unreadable one; `node_state_for_stage` against
 the Implementer/Reviewer (`producing`) and every other actor (`overhead`);

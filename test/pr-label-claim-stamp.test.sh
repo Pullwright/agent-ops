@@ -16,10 +16,9 @@
 #
 # The stamp lives inline in agent-cycle.sh's claim loop, not as a standalone
 # function, so this test lifts the exact block whole (the same
-# extract-and-eval approach test/item-text-fabrication.test.sh and
-# test/refinement-traceability.test.sh use for their own inline blocks) and
-# runs it for real, rather than merely grepping for the expected jq
-# invocation.
+# extract-and-eval approach test/refinement-traceability.test.sh uses for its
+# own inline blocks) and runs it for real, rather than merely grepping for
+# the expected jq invocation.
 #
 # No test framework is used (none exists elsewhere in this repo). Run
 # directly: ./test/pr-label-claim-stamp.test.sh — exit 0 iff all passed.
