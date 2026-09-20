@@ -3664,7 +3664,10 @@ implements.
    and `scripts/publish-dashboard.sh` do (`notify_resolve_webhook_url`,
    `lib/notify.sh`) and registers it for masking with
    `redact_add_literal()` (`lib/redact.sh`) — additive to `REDACT_SED_ARGS`,
-   never touching the shape rules, and a no-op when the value is empty.
+   never touching the shape rules, and a no-op when the value is empty or
+   contains a newline: a single `sed` rule cannot span one, so registering
+   such a value would break every rule in `REDACT_SED_ARGS`, not just its
+   own, for the rest of the pass.
    `scripts/publish-dashboard.sh` registers the identical value the same
    way, right after it resolves it, before its own `redact()` pass
    (`docs/DASHBOARD-SPEC.md`). Registering the value itself, rather than
@@ -22566,7 +22569,10 @@ oblige anyone to edit a test.
    too — no shape rule matches a bearer secret carried in a URL path, so this
    asserts the runtime-literal registration (agent-ops#1721) instead — while
    an unrelated URL of similar shape is left untouched, and with the value
-   unset the existing shape-based redaction is unaffected;
+   unset the existing shape-based redaction is unaffected; a `notify_webhook_url`
+   (config-sourced or from `NOTIFY_WEBHOOK_URL`) containing a newline registers
+   as a no-op instead of poisoning the shared rule set — the existing
+   token-shape redaction still applies to the rest of the same push;
    a fetch materialises a peer whole
    under the peers directory, leaves the node's own `state_dir` alone, never
    includes the node itself, and prunes a peer whose branch is gone; the

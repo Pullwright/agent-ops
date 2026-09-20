@@ -1836,6 +1836,51 @@ git clone --quiet --branch nodes/webhook-env-node "$remote" "$wh3_pushed"
 assert_contains "…and NOTIFY_WEBHOOK_URL's own value is masked the same way" \
   "[REDACTED-WEBHOOK]" "$(cat "$wh3_pushed/cron.log")"
 
+# A newline embedded in the configured value cannot poison the shared rule
+# set (PR #1727 review): _redact_escape_literal escapes every ERE
+# metacharacter and `#`, but not an embedded newline, and a single
+# `-e "s#PATTERN#…#g"` sed argument cannot span one — before
+# redact_add_literal refused it, one such value broke REDACT_SED_ARGS
+# wholesale, disabling even the fixed token-shape rules for every other file
+# the same push still had to redact. A JSON `\n` escape in config.json's
+# notify_webhook_url survives `cfg` intact, so this is reachable through the
+# tracked config, not just an unvalidated environment variable.
+nl_app="$tmp_dir/webhook-newline-app"
+mkdir -p "$nl_app"
+tar -C "$SCRIPT_DIR" --exclude=.git -cf - . | tar -C "$nl_app" -xf -
+jq --arg url "$(printf 'https://hooks.slack.com/services/T333/B333/aaa\nbbb')" \
+  '.notify_webhook_url = $url' "$SCRIPT_DIR/config.json" > "$nl_app/config.json"
+
+nl_home="$(new_node webhook-newline-node)"
+nl_state="$nl_home/.local/state/poetic-agents"
+printf '{"ts":"2026-07-20T00:00:00Z","event":"cycle-start"}\n' > "$nl_state/log.jsonl"
+printf 'a token ghp_1234567890abcdefXYZ1234 that must still be redacted\n' \
+  > "$nl_state/cron.log"
+env HOME="$nl_home" AGENT_OPS_ROLE=active NODE_NAME="$(basename "$nl_home")" \
+  STATE_SYNC_REMOTE="$remote" "$nl_app/scripts/state-sync.sh" push >/dev/null 2>&1
+assert_eq "a push with a newline-embedded config notify_webhook_url still succeeds" "0" "$?"
+nl_pushed="$tmp_dir/webhook-newline-pushed"
+git clone --quiet --branch nodes/webhook-newline-node "$remote" "$nl_pushed"
+assert_contains "…and the existing shape-based token redaction is not poisoned by it" \
+  "[REDACTED-TOKEN]" "$(cat "$nl_pushed/cron.log")"
+
+# Same gap, reached through NOTIFY_WEBHOOK_URL instead: notify_webhook_url_env_or_empty's
+# `^https://` check only anchors the start, so an embedded newline passes it too.
+nl2_home="$(new_node webhook-newline-env-node)"
+nl2_state="$nl2_home/.local/state/poetic-agents"
+printf '{"ts":"2026-07-20T00:00:00Z","event":"cycle-start"}\n' > "$nl2_state/log.jsonl"
+printf 'a token ghp_1234567890abcdefXYZ1234 that must still be redacted\n' \
+  > "$nl2_state/cron.log"
+sync_as "$nl2_home" active push \
+  "NOTIFY_WEBHOOK_URL=$(printf 'https://hooks.slack.com/services/T444/B444/ccc\nddd')" \
+  >/dev/null
+nl2_rc=$?
+assert_eq "a push with a newline-embedded NOTIFY_WEBHOOK_URL still succeeds" "0" "$nl2_rc"
+nl2_pushed="$tmp_dir/webhook-newline-env-pushed"
+git clone --quiet --branch nodes/webhook-newline-env-node "$remote" "$nl2_pushed"
+assert_contains "…and the existing shape-based token redaction is not poisoned by it either" \
+  "[REDACTED-TOKEN]" "$(cat "$nl2_pushed/cron.log")"
+
 # --- the deadline itself: a step that runs long is killed and the lock freed ---
 # Not a reproduction of the exact race above (which needed a real file
 # `redact_file` cannot rewrite, above) — a generically slow redaction pass,

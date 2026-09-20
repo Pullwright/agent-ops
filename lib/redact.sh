@@ -54,10 +54,15 @@ _redact_escape_literal() {
 # `https://hooks.slack.com/services/T…/B…/…`, rather than as a `gh*_`/
 # `Bearer …`-shaped string. Additive to REDACT_SED_ARGS — the fixed shape
 # rules are never touched — and a no-op when VALUE is empty, so a caller can
-# register unconditionally without an `if`.
+# register unconditionally without an `if`. Also a no-op when VALUE contains
+# a newline: a single `-e "s#PATTERN#…#g"` rule cannot span one (sed reads
+# the embedded newline as ending the command mid-pattern, "unterminated `s'
+# command"), and REDACT_SED_ARGS is shared by every caller, so one such value
+# would break every fixed shape rule above too, not just its own — treated
+# like an empty value rather than risk that.
 redact_add_literal() {
   local value="$1" placeholder="${2:-[REDACTED-WEBHOOK]}"
-  [[ -n "$value" ]] || return 0
+  [[ -n "$value" && "$value" != *$'\n'* ]] || return 0
   local escaped
   escaped="$(_redact_escape_literal "$value")"
   REDACT_SED_ARGS+=(-e "s#${escaped}#${placeholder}#g")
