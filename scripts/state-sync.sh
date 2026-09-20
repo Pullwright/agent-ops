@@ -54,6 +54,8 @@ SCHEMA_FILE="$SCRIPT_DIR/config.schema.json"
 . "$SCRIPT_DIR/lib/redact.sh"
 # shellcheck source=lib/log-event.sh
 . "$SCRIPT_DIR/lib/log-event.sh"
+# shellcheck source=lib/disk-space.sh
+. "$SCRIPT_DIR/lib/disk-space.sh"
 
 usage() {
   cat <<'EOF'
@@ -85,6 +87,12 @@ Environment:
   STATE_SYNC_PUSH_DEADLINE_SECONDS
                         override the redaction loop's deadline, normally one
                         push interval (tests use a small value).
+  STATE_SYNC_MIN_FREE_WORKSPACE_BYTES
+                        override `min_free_workspace_bytes` (tests only).
+  STATE_SYNC_FREE_KB    override the free-space reading `push` takes of
+                        state_dir's filesystem for the disk-pressure prune
+                        below (tests only — a real push always reads it via
+                        lib/disk-space.sh).
 EOF
 }
 
@@ -123,6 +131,7 @@ workspace_root="$(expand_home "$(cfg '.workspace_root')")"
 cycles_retained="$(cfg '.cycles_retained')"
 local_retained="${STATE_SYNC_LOCAL_RETAINED:-$(cfg '.state_local_cycles_retained')}"
 streams_retained="${STATE_SYNC_STREAMS_RETAINED:-$(cfg '.state_local_streams_retained')}"
+min_free_workspace_bytes="${STATE_SYNC_MIN_FREE_WORKSPACE_BYTES:-$(cfg '.min_free_workspace_bytes')}"
 # Minutes → seconds: lib/updater-health.sh's own contract takes a threshold
 # in seconds, never a config key of its own (agent-ops#603, following
 # image_behind_grace_hours' shape — the judgement lives one layer up from
@@ -720,6 +729,56 @@ redact_mirror_files() {
   done < <(find "$mirror" -mindepth 1 -type f -not -path "$mirror/.git/*" -print0)
 }
 
+# `prune_derived` above bounds the derived files by a *count*
+# (`state_local_streams_retained`) that only ever rises — requirement 1d's own
+# floor-never-ceiling contract (#901/#918) — so a busy fleet can still grow
+# past whatever free space is actually left, exactly as it did on 2026-09-18
+# (agent-ops#1678): 200 retained fleet-log snapshots at 45 MB apiece filled
+# the host and stood both nodes down for disk before either ever pruned a
+# byte of them. `state_local_streams_retained`'s own count is unchanged by
+# this function and stays the operator's only lever for the *ordinary* case;
+# this is the backstop for the case that count cannot see, because a snapshot
+# is read only by the cycle that wrote it (the header above) — every one of
+# them but the newest already exists purely for after-the-fact diagnosis, so
+# deleting older ones under disk pressure costs a live node nothing.
+#
+# Reads free space through the same functions and against the same floor as
+# the pre-clone stand-down (`min_free_workspace_bytes`, requirement 2.0c,
+# `lib/disk-space.sh`) — one meaning of "low" for the whole cycle, never a
+# second one this function invents for itself — but of `state_dir`, not
+# `workspace_root`: `state_dir` is where the files this prunes actually live,
+# and on this installation the two share one filesystem in any case (the
+# 2026-09-18 incident's own host-usage table). A `0` floor (the check
+# disabled) makes `disk_space_verdict` return `ok` unconditionally, so this
+# is a no-op wherever 2.0c's own gate is a no-op too.
+#
+# Oldest-first, mirroring `prune_derived`'s own newest-first bias in reverse:
+# under pressure the newest cycle's derived files are what a live watchdog or
+# gate might still be reading, so they are the last thing this gives up, and
+# free space is re-read after every cycle's files come off so a node that
+# recovers stops as soon as it is back over the floor rather than stripping
+# further than the moment required.
+prune_derived_under_pressure() {
+  local dir="$1" doomed pruned=0 free_kb
+  [[ -d "$dir" ]] || return 0
+  (( min_free_workspace_bytes > 0 )) || return 0
+  free_kb="${STATE_SYNC_FREE_KB:-$(disk_space_free_kb "$state_dir")}"
+  [[ "$(disk_space_verdict "$free_kb" "$min_free_workspace_bytes")" == "low" ]] || return 0
+  while IFS= read -r doomed; do
+    [[ -n "$doomed" ]] || continue
+    free_kb="${STATE_SYNC_FREE_KB:-$(disk_space_free_kb "$state_dir")}"
+    [[ "$(disk_space_verdict "$free_kb" "$min_free_workspace_bytes")" == "low" ]] || break
+    while IFS= read -r -d '' f; do
+      rm -f -- "$f"
+      pruned=$(( pruned + 1 ))
+    done < <(find "${dir:?}/$doomed" -maxdepth 1 -type f \
+                  \( -name '*.stream.jsonl' -o -name '.fleet-log.jsonl' \) \
+                  -print0 2>/dev/null)
+  done < <(find "$dir" -mindepth 1 -maxdepth 1 -printf '%f\n' 2>/dev/null | sort | head -n -1)
+  (( pruned > 0 )) && say "pruned $pruned derived file(s) from $(basename "$dir") under disk pressure (state_dir below min_free_workspace_bytes), oldest cycles first"
+  return 0
+}
+
 do_push() {
   require rsync
   require git
@@ -735,6 +794,12 @@ do_push() {
   prune_local "$state_dir/reviews" "$local_retained"
   prune_derived "$state_dir/cycles"  "$streams_retained"
   prune_derived "$state_dir/reviews" "$streams_retained"
+
+  # The count-based prune above still leaves whatever it retained; if that is
+  # more than the host can spare, strip further before this push (or anything
+  # after it) tries to write into a full disk.
+  prune_derived_under_pressure "$state_dir/cycles"
+  prune_derived_under_pressure "$state_dir/reviews"
 
   # Start from the branch's current tip when there is one — the amend below
   # keeps history a single rolling commit per node.
