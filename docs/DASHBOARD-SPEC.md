@@ -690,7 +690,12 @@ itself is `lib/redact.sh`, shared with `scripts/state-sync.sh`, which
 applies the identical pass to what it pushes to the private state-mirror
 repository (`docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 2.5,
 agent-ops#966) — one place to add a pattern for a new secret shape, rather
-than two.
+than two. A bearer secret carried in a webhook URL's own path (the
+configured `notify_webhook_url`/`escalation_webhook_url`) has no such shape,
+so the Publisher registers that resolved value for masking
+(`redact_add_literal`, `lib/redact.sh`, agent-ops#1721) right after it
+resolves it, before this pass runs — the same registration
+`scripts/state-sync.sh` makes for its own push.
 
 The `DASHBOARD_DATA` shape (the contract the page renders):
 

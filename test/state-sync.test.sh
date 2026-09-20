@@ -1758,6 +1758,84 @@ assert_eq "…with no branch ever pushed for this node" "0" \
   "$(git ls-remote "$remote" "nodes/redact-stuck-node" | wc -l)"
 chmod -R u+w "$rc2_home"
 
+# --- a configured notify-webhook URL is masked too (agent-ops#1721) -----------
+# A bearer secret carried in a webhook URL's own *path*
+# (`https://hooks.slack.com/services/T…/B…/…`) has no shape any of
+# REDACT_SED_ARGS' fixed rules match, so state-sync.sh registers the
+# configured value itself (redact_add_literal) before its own redaction pass
+# runs — shape (a) from the issue, not a generic webhook-URL pattern (shape
+# (b), which the issue explicitly rejected as chasing an open-ended provider
+# list). `notify_webhook_url` is not overridable via env the way
+# STATE_SYNC_REMOTE etc. are above (CONFIG_FILE resolves relative to
+# state-sync.sh's own location with no override flag), so this runs against
+# a full copy of the checkout whose own config.json this test controls —
+# the same pattern test/publish-dashboard.test.sh's own overrides-app case
+# uses for the same reason.
+wh_app="$tmp_dir/webhook-app"
+mkdir -p "$wh_app"
+tar -C "$SCRIPT_DIR" --exclude=.git -cf - . | tar -C "$wh_app" -xf -
+jq '.notify_webhook_url = "https://hooks.slack.com/services/T000/B000/xxxxxxxxxxxxxxxxxxxxxxxx"' \
+  "$SCRIPT_DIR/config.json" > "$wh_app/config.json"
+
+wh_home="$(new_node webhook-node)"
+wh_state="$wh_home/.local/state/poetic-agents"
+printf '{"ts":"2026-07-20T00:00:00Z","event":"cycle-start"}\n' > "$wh_state/log.jsonl"
+printf 'posting to https://hooks.slack.com/services/T000/B000/xxxxxxxxxxxxxxxxxxxxxxxx failed: 403\n' \
+  > "$wh_state/cron.log"
+# An unrelated URL of similar shape, planted alongside it: proof this is
+# shape (a) — the one configured value — and not shape (b), a generic
+# webhook-URL pattern that would also catch a host this node never configured.
+printf 'an unrelated URL of similar shape: https://example.test/services/T111/B111/yyyyyyyyyyyyyyyyyyyyyyyy stays put\n' \
+  >> "$wh_state/cron.log"
+
+env HOME="$wh_home" AGENT_OPS_ROLE=active NODE_NAME="$(basename "$wh_home")" \
+  STATE_SYNC_REMOTE="$remote" "$wh_app/scripts/state-sync.sh" push >/dev/null 2>&1
+assert_eq "a push with a configured notify_webhook_url still succeeds" "0" "$?"
+
+wh_pushed="$tmp_dir/webhook-pushed"
+git clone --quiet --branch nodes/webhook-node "$remote" "$wh_pushed"
+wh_pushed_cron="$(cat "$wh_pushed/cron.log")"
+assert_contains "the configured webhook URL is masked" "[REDACTED-WEBHOOK]" "$wh_pushed_cron"
+assert_lacks "no raw webhook URL survives" \
+  "hooks.slack.com/services/T000/B000/xxxxxxxxxxxxxxxxxxxxxxxx" "$wh_pushed_cron"
+assert_contains "…while an unrelated URL of similar shape is left untouched" \
+  "https://example.test/services/T111/B111/yyyyyyyyyyyyyyyyyyyyyyyy" "$wh_pushed_cron"
+
+# With the value unset, behaviour is unchanged: no new rule, no regression to
+# the existing shape-based redaction (acceptance criterion 3).
+wh2_home="$(new_node webhook-unset-node)"
+wh2_state="$wh2_home/.local/state/poetic-agents"
+printf '{"ts":"2026-07-20T00:00:00Z","event":"cycle-start"}\n' > "$wh2_state/log.jsonl"
+printf 'a token ghp_1234567890abcdefXYZ1234 in /home/fixturenode2/secret, no webhook configured\n' \
+  > "$wh2_state/cron.log"
+wh2_rc="$(sync_as "$wh2_home" active push >/dev/null 2>&1; echo $?)"
+assert_eq "a push with no notify_webhook_url configured still succeeds" "0" "$wh2_rc"
+wh2_pushed="$tmp_dir/webhook-unset-pushed"
+git clone --quiet --branch nodes/webhook-unset-node "$remote" "$wh2_pushed"
+wh2_pushed_cron="$(cat "$wh2_pushed/cron.log")"
+assert_contains "…and the existing shape-based redaction still applies" \
+  "[REDACTED-TOKEN]" "$wh2_pushed_cron"
+assert_lacks "…with no [REDACTED-WEBHOOK] rule spuriously firing" \
+  "[REDACTED-WEBHOOK]" "$wh2_pushed_cron"
+
+# NOTIFY_WEBHOOK_URL (issue #991) is this credential's actual expected
+# source once an installation treats it as a real secret: an operator keeps
+# it in .env, never in the tracked config.json, so the redaction it needs
+# has to be exercised through that same environment variable, not only
+# through config.json's own key above.
+wh3_home="$(new_node webhook-env-node)"
+wh3_state="$wh3_home/.local/state/poetic-agents"
+printf '{"ts":"2026-07-20T00:00:00Z","event":"cycle-start"}\n' > "$wh3_state/log.jsonl"
+printf 'posting to https://hooks.slack.com/services/T222/B222/zzzzzzzzzzzzzzzzzzzzzzzz failed: 403\n' \
+  > "$wh3_state/cron.log"
+sync_as "$wh3_home" active push NOTIFY_WEBHOOK_URL=https://hooks.slack.com/services/T222/B222/zzzzzzzzzzzzzzzzzzzzzzzz >/dev/null
+wh3_rc=$?
+assert_eq "a push with NOTIFY_WEBHOOK_URL set still succeeds" "0" "$wh3_rc"
+wh3_pushed="$tmp_dir/webhook-env-pushed"
+git clone --quiet --branch nodes/webhook-env-node "$remote" "$wh3_pushed"
+assert_contains "…and NOTIFY_WEBHOOK_URL's own value is masked the same way" \
+  "[REDACTED-WEBHOOK]" "$(cat "$wh3_pushed/cron.log")"
+
 # --- the deadline itself: a step that runs long is killed and the lock freed ---
 # Not a reproduction of the exact race above (which needed a real file
 # `redact_file` cannot rewrite, above) — a generically slow redaction pass,

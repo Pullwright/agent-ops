@@ -285,6 +285,10 @@ escalation_webhook_url="$(cfg '.escalation_webhook_url')"
 # agent-cycle.sh's own read of the same variable for why.
 notify_webhook_url_env="$(notify_webhook_url_env_or_empty "${NOTIFY_WEBHOOK_URL:-}")"
 notify_webhook_url="$(notify_resolve_webhook_url "$(cfg '.notify_webhook_url')" "$escalation_webhook_url" "$notify_webhook_url_env")"
+# agent-ops#1721: a bearer secret carried in the webhook URL's own path has
+# no shape lib/redact.sh's fixed rules match — register it before the
+# defensive redact() pass below runs, same as scripts/state-sync.sh.
+redact_add_literal "$notify_webhook_url"
 notify_events_json="$(cfg_json '.notify_events')"
 notify_min_interval_seconds="$(cfg '.notify_min_interval_seconds')"
 [[ "$notify_min_interval_seconds" =~ ^[0-9]+$ ]] || notify_min_interval_seconds=600
