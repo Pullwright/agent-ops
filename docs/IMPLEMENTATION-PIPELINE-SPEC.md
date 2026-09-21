@@ -14870,7 +14870,26 @@ implements.
 
     **The issue contract.** Before filing, a duplicate guard: an open issue
     carrying `enabler_escalation_label` whose body already quotes the item's
-    reference *is* the escalation and is reused. Otherwise `gh issue create` in
+    reference **backtick-delimited** — the literal token `` `<item>` ``, never
+    the bare reference — *is* the escalation and is reused. The delimiters are
+    what make the match unambiguous where one item reference is a string
+    prefix of another, which `crash-loop:coordinator` is of every
+    `crash-loop:coordinator:<owner>/<name>` (agent-ops#1694): no item
+    reference this system mints contains a backtick, so the closing delimiter
+    can only fall at the reference's own end. Every body filed through this
+    route therefore carries its reference that way — the `` Item: `<item>` ``
+    footer of requirement 2.7's crash-loop body, of `lib/approver.sh`'s,
+    `lib/landing.sh`'s, `lib/standdown.sh`'s and
+    `lib/required-check-preflight.sh`'s, and of the Enabler's own template
+    (`prompts/enabler.md`, which states the footer is load-bearing and must
+    be kept in backticks) — and a body naming the reference undelimited would
+    dedup against nothing, re-filing on every later round.
+    `lib/merge-budget.sh`'s freeze escalation (requirement 2.3c) carries the
+    same footer but is not filed through this route: it cannot reach this
+    function from where it lives, so it inlines its own copy of the guard and
+    calls `gh issue create` itself, and that copy matches on the bare
+    reference rather than the delimited token. Otherwise
+    `gh issue create` in
     the item's own repo with that label **and** `--assignee` set to
     `enabler_assignee`, retried once without the label so a repo where the
     label has not been created still gets its issue. The assignment is the
@@ -18300,9 +18319,12 @@ with the Reviewer's own.
     carrying the fixed `pw::pager` label (`lib/labels.sh`'s `escalation` role
     catalogue, fixed for the identical reason `pw::decision` is: a renamed
     label would silently stop being found by this framework's own dedup and
-    auto-close search), deduped on the item reference `pager:<key>` exactly
-    as `create_escalation_issue` dedupes — a body-contains-item-ref search,
-    never a second index.
+    auto-close search), deduped on the item reference `pager:<key>` the way
+    `create_escalation_issue` dedupes — a body-contains-item-ref search,
+    never a second index — though on the bare reference rather than
+    requirement 36a's backtick-delimited token, these bodies carrying a
+    `ref: <item>` footer of their own rather than an `` Item: `<item>` ``
+    one.
 
     The label is *ensured* in `pager_repo` on the create path, and only
     there, exactly as `create_escalation_issue` does it (requirement 6a's
@@ -22081,8 +22103,10 @@ What exists, and the requirements each part answers to:
       [OWNER_DECISION]` — the same
       duplicate-guard shape `create_escalation_issue` (component 2) already
       uses (an open issue whose body already quotes `ITEM_REF` is returned
-      rather than filing a second one, `DEFAULT_FIX`/`OWNER_DECISION` untouched
-      on that path — a dedup hit never re-labels or re-bodies the existing
+      rather than filing a second one — matched on the bare reference, not
+      requirement 36a's backtick-delimited token — with
+      `DEFAULT_FIX`/`OWNER_DECISION` untouched on that path; a dedup hit
+      never re-labels or re-bodies the existing
       issue), but with no label and no assignee: this is not an escalation
       addressed at a specific human, and is legitimate autonomous work for the
       `issues` source to pick up later. A fresh issue's body is `BODY_FILE`'s

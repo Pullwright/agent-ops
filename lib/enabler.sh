@@ -107,7 +107,7 @@ create_escalation_issue() {
   existing="$(gh issue list -R "$repo" --label "$label" --state open --search "$item" \
                 --json number,url,body 2>/dev/null \
               | jq -r --arg it "$item" \
-                  'map(select(((.body // "") | contains($it)))) | first
+                  'map(select(((.body // "") | contains("`" + $it + "`")))) | first
                    | if . == null then empty else "\(.number)\t\(.url)" end' 2>/dev/null || true)"
   if [[ -n "$existing" ]]; then
     printf '%s' "$existing"
@@ -158,7 +158,7 @@ escalation_recent_close() {
   gh issue list -R "$repo" --label "$enabler_escalation_label" --state closed --search "$item_ref" \
       --json number,url,body,closedAt 2>/dev/null \
     | jq -r --arg it "$item_ref" \
-        'map(select(((.body // "") | contains($it)))) | sort_by(.closedAt) | last
+        'map(select(((.body // "") | contains("`" + $it + "`")))) | sort_by(.closedAt) | last
          | if . == null then empty else "\(.number)\t\(.url)\t\(.closedAt)" end' 2>/dev/null || true
 }
 
@@ -414,8 +414,9 @@ crash_loop_escalate() {
     return 0
   fi
   # The item ref itself stays untouched everywhere else — the dedup search,
-  # the `ref:` footer below, and `escalation_recent_close`'s body-contains
-  # match all key on it verbatim. Only this filesystem path needs the `/` a
+  # the `Item:` footer below, and `escalation_recent_close`'s body-contains
+  # match all key on it verbatim, backtick-wrapped, matching every other
+  # escalation body's own footer convention. Only this filesystem path needs the `/` a
   # real `owner/name` repo slug carries (config.schema.json's `repos[].slug`)
   # flattened out, the same way agent-cycle.sh's own `coord_repo_slug`
   # becomes `coordinator-${coord_repo_slug//\//-}.out` — a raw slug here
@@ -442,7 +443,7 @@ $evidence_line
 
 ---
 Filed automatically by agent-cycle.sh (requirement 2.7).
-ref: $item_ref
+Item: \`$item_ref\`
 CRASH_LOOP_BODY
   } > "$cl_body"
   if cl_created="$(create_escalation_issue "$crash_loop_repo" "$item_ref" \
