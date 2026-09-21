@@ -53,6 +53,7 @@ are binding on any agent working inside them).
   - [Extended notes: `crash_loop_after`](#extended-notes-crash_loop_after)
   - [Extended notes: `crash_loop_min_clear_minutes`](#extended-notes-crash_loop_min_clear_minutes)
   - [Extended notes: `notify_webhook_url`](#extended-notes-notify_webhook_url)
+  - [Extended notes: `min_free_workspace_bytes`](#extended-notes-min_free_workspace_bytes)
   - [Extended notes: `min_free_memory_bytes`](#extended-notes-min_free_memory_bytes)
   - [Extended notes: `host_budget_enforce`](#extended-notes-host_budget_enforce)
   - [Extended notes: `host_budget_reserved_memory_bytes`](#extended-notes-host_budget_reserved_memory_bytes)
@@ -1032,7 +1033,7 @@ and the schema must carry every one of them.
 | `github_min_core_budget` | 300 points | The `core` floor of the GitHub API budget check (requirement 2.0). Sized above one cycle's typical REST spend so the cycle that starts can finish, and read from the `x-ratelimit-*` headers of one metered call — not from `GET /rate_limit`, whose body read cold is an empty window rather than a reading (agent-ops#1087). `0` disables the floor. |
 | `github_min_graphql_budget` | 100 points | The `graphql` floor of the GitHub API budget check (requirement 2.0). Separate from `github_min_core_budget` because GitHub meters the two pools independently and either can be the binding one — on 2026-08-12 the fleet exhausted `graphql` with 96% of its `core` hour unspent. `0` disables the floor. |
 | `github_retry_max_wait_seconds` | 60 s | The per-call wait bound of the `gh` wrapper (requirement 2.0a). A secondary rate limit waits a fixed fallback, a primary one waits until GitHub's stated reset, and either is abandoned if it exceeds this — the cycle holds a lock and runs on a `cycle_interval_minutes` tick, so a wrapper that waited out a primary limit would collide with the next tick. `0` turns retrying off. |
-| `min_free_workspace_bytes` | 2 GiB | The free-space floor of the pre-clone stand-down (requirement 2.0c, agent-ops#756): below this, `workspace_root`'s filesystem is read via `lib/disk-space.sh` and the cycle stands down before the clone rather than cloning into whatever room is actually left. `scripts/doctor.sh` reads the same key for its own advisory warning, so the two cannot silently disagree about what "low" means. `0` turns the check off. |
+| `min_free_workspace_bytes` | 2 GiB | The free-space floor of the pre-clone stand-down (requirement 2.0c, agent-ops#756; both directories, agent-ops#992): below this, `state_dir`'s and `workspace_root`'s filesystems are read via `lib/disk-space.sh` — one `df` reading where the two share a filesystem, one each where they don't — and the cycle stands down before it writes rather than starting into whatever room is actually left on either. `scripts/doctor.sh` reads the same key for its own advisory warning, so the...[continued below](#extended-notes-min_free_workspace_bytes) |
 | `min_free_memory_bytes` | 512 MiB | The free-memory floor of the pre-cycle stand-down (requirement 2.0f): below this, the host's `MemAvailable` is read via `lib/memory.sh` and the cycle stands down before any stage runs rather than starting a model stage into a host with no headroom. The disk counterpart of this floor is `min_free_workspace_bytes` (requirement 2.0c), and the two are deliberately the same shape. `scripts/doctor.sh` reads the same key for its own advisory warning, so the two cannot silently...[continued below](#extended-notes-min_free_memory_bytes) |
 | `host_budget_enforce` | `false` | Whether requirement 2.0g's host-budget check refuses to start a cycle when the sum of every running container's declared memory/CPU ceiling on this host overcommits it (issue #757). `false` (the default): the check still runs every cycle and `lib/host-budget.sh`'s summary is still published in the host-facts record (docs/HOST-FACTS-SCHEMA.md's `budget` section), but nothing stands the cycle down on it — advisory-by-default, per the issue's own "an operator who knowingly...[continued below](#extended-notes-host_budget_enforce) |
 | `host_budget_reserved_memory_bytes` | 512 MiB | The memory margin requirement 2.0g's host-budget check reserves for the host/VM itself: an overcommit is declared when the sum of every running container's own `memory.max_bytes` (docs/HOST-FACTS-SCHEMA.md's `budget.mem_declared_bytes`) plus this margin exceeds `host.mem_total_bytes`. The same default as `min_free_memory_bytes` (512 MiB) because both describe the same kind of headroom, one against the live figure and one against the declared sum. Only consulted when...[continued below](#extended-notes-host_budget_reserved_memory_bytes) |
@@ -1271,6 +1272,10 @@ Requirement 2.7's own retirement hysteresis: a Co-Ordinator-class escalation's c
 ### Extended notes: `notify_webhook_url`
 
 The URL every `notify_post` (`lib/notify.sh`) POST goes to (requirement 2m). `escalation_webhook_url` is accepted as an alias for one release when this is empty; `doctor.sh` warns on the old name. `NOTIFY_WEBHOOK_URL` (issue #991) wins over both config.json keys — the non-public, per-node source, read by `notify_resolve_webhook_url` (`lib/notify.sh`) and validated at read time (`notify_webhook_url_env_or_empty`), so a malformed value is rejected rather than POSTed to. Empty (all three sources) disables the channel: no POST is attempted, so an installation with none configured is unaffected. Must be `https://` when set, whichever source sets it. Fleet-wide like every key here, and inert on a node whose `EGRESS_EXTRA_ALLOW` does not name the webhook's host — `doctor.sh`'s own reachability check reports this as a `warn`, not a silent gap.
+
+### Extended notes: `min_free_workspace_bytes`
+
+The free-space floor of the pre-clone stand-down (requirement 2.0c, agent-ops#756; both directories, agent-ops#992): below this, `state_dir`'s and `workspace_root`'s filesystems are read via `lib/disk-space.sh` — one `df` reading where the two share a filesystem, one each where they don't — and the cycle stands down before it writes rather than starting into whatever room is actually left on either. `scripts/doctor.sh` reads the same key for its own advisory warning, so the two cannot silently disagree about what "low" means, nor about which directories that covers. `0` turns the check off.
 
 ### Extended notes: `min_free_memory_bytes`
 
@@ -2213,34 +2218,50 @@ implements.
       `enabler_assignee` is unset, the same as 1c's freeze escalation — the
       stand-down itself is unconditional, only the filing is gated.
 
-   0c. *Free disk space* (requirement 2.0c, agent-ops#756): free like 0 and
-      0b — `df -Pk` touches no network and costs nothing, so it runs ahead of
-      every check below that can spend. `scripts/doctor.sh` (component 14)
-      has read `workspace_root`'s free space and warned below a fixed 2 GiB
-      since before this check existed, but that warning only ever reached a
-      human running `doctor.sh` by hand; the cycle itself cloned straight
-      into whatever room was actually left. On the ockham laptop that ran
-      short, a write truncated mid-flight left zero-length git objects in
-      both nodes' `state_dir` mirrors, permanently disabling `git gc` (#604)
-      and leaving 4.2 GB of orphaned clones behind it (#605) — starting work
-      the host cannot finish is what made both possible.
+   0c. *Free disk space* (requirement 2.0c, agent-ops#756; both directories,
+      agent-ops#992): free like 0 and 0b — `df -Pk` touches no network and
+      costs nothing, so it runs ahead of every check below that can spend.
+      `scripts/doctor.sh` (component 14) has read `state_dir`'s and
+      `workspace_root`'s free space and warned below a fixed 2 GiB since
+      before this check existed, but that warning only ever reached a human
+      running `doctor.sh` by hand; the cycle itself wrote straight into
+      whatever room was actually left. On the ockham laptop that ran short, a
+      write truncated mid-flight left zero-length git objects in both nodes'
+      `state_dir` mirrors, permanently disabling `git gc` (#604), and left
+      4.2 GB of orphaned clones in `workspace_root` behind it (#605) —
+      starting work the host cannot finish is what made both possible, and
+      this gate covers both directories the incident spanned.
 
       `lib/disk-space.sh` reads and judges free space the one way both
       `doctor.sh`'s advisory warning and this gate use, so the two cannot
-      silently disagree about what "low" means: `disk_space_free_kb` reads
-      `workspace_root`'s free KiB (empty, never `0`, when `df` cannot read
-      it — an unreadable meter is no evidence of a full disk, the same
-      reasoning 0's own `unknown` rests on), `disk_space_verdict` compares it
-      against `min_free_workspace_bytes` (converted to KiB), and
-      `disk_space_describe` renders the one-line explanation both the
-      stand-down event and the warning use verbatim.
+      silently disagree about what "low" means, nor about which directories
+      that covers: `disk_space_free_kb` reads a directory's free KiB (empty,
+      never `0`, when `df` cannot read it — an unreadable meter is no
+      evidence of a full disk, the same reasoning 0's own `unknown` rests
+      on), `disk_space_verdict` compares it against
+      `min_free_workspace_bytes` (converted to KiB), `disk_space_describe`
+      renders the one-line explanation both the stand-down event and the
+      warning use verbatim, and `disk_space_same_filesystem` reports whether
+      `state_dir` and `workspace_root` share a filesystem.
 
-      Below the floor, the `stand-down` event's `cause` is `disk-full` when
-      `workspace_root`'s filesystem reports exactly zero KiB free, or
-      `disk-low` for any smaller shortfall — both cover the same gate,
-      differing only in how far past the floor the shortfall runs.
-      `min_free_workspace_bytes` set to `0` turns the check off, the same
-      convention `github_min_core_budget`/`github_min_graphql_budget` use.
+      Where the two share a filesystem — the common case, one host directory
+      holding both — the gate takes exactly one `df` reading and judges it
+      once, precisely as it did before this covered two directories. Where
+      they differ — the shipped `deploy/docker/compose.yaml` mounts `state:`
+      and `workspaces:` as two separate named volumes — the gate reads and
+      judges each on its own floor and stands the cycle down when *either*
+      reads `low`; when both do, the `stand-down` event names the one with
+      less free space. An unreadable `df` is "no evidence", not a stand-down,
+      for either directory.
+
+      Below the floor, the `stand-down` event's `path` and `free_kb` name the
+      short directory (the shorter of the two when both are), and `cause` is
+      `disk-full` when that directory's filesystem reports exactly zero KiB
+      free, or `disk-low` for any smaller shortfall — both cover the same
+      gate, differing only in how far past the floor the shortfall runs.
+      `min_free_workspace_bytes` set to `0` turns the check off for both
+      directories, the same convention
+      `github_min_core_budget`/`github_min_graphql_budget` use.
 
    0d. *The budget is recorded* (agent-ops#1087). `github_budget_record`
       (`lib/github-limit.sh`) takes a snapshot and logs it as a
@@ -19898,12 +19919,14 @@ What exists, and the requirements each part answers to:
    reports an unbounded container with. Unit-tested, `test/memory.test.sh`
    and `test/memory-wiring.test.sh`),
    `lib/disk-space.sh` (requirement 2.0c's `disk_space_free_kb`,
-   `disk_space_verdict` and `disk_space_describe` — the one place free space
-   on a directory's filesystem is read and judged, sourced by both
-   `agent-cycle.sh`, whose pre-clone stand-down acts on the verdict, and
-   `scripts/doctor.sh`, whose advisory warning reads the same
-   `min_free_workspace_bytes` floor through the same three functions, so the
-   gate and the warning cannot silently disagree about what "low" means.
+   `disk_space_verdict`, `disk_space_describe` and `disk_space_same_filesystem`
+   — the one place free space on a directory's filesystem is read and judged,
+   sourced by both `agent-cycle.sh`, whose pre-clone stand-down acts on the
+   verdict for both `state_dir` and `workspace_root`, and `scripts/doctor.sh`,
+   whose advisory warning reads the same `min_free_workspace_bytes` floor
+   through the same functions for the same two directories, so the gate and
+   the warning cannot silently disagree about what "low" means, nor about
+   which directories that covers.
    Unit-tested, `test/disk-space.test.sh`),
    `lib/host-budget.sh` (requirement 2.0g's `host_budget_declared_mem_bytes`/
    `host_budget_declared_cpu_nanos` and their own unknown-container counts,
@@ -23531,26 +23554,35 @@ oblige anyone to edit a test.
    `notify-failed` naming the key while leaving the verdict on both paths
    exactly as it was — 1 for the failed filing, 0 and the issue URL for the
    successful one.
-2n. **A cycle does not start work the host has no room to finish (requirement
-   2.0c, agent-ops#756).** `test/disk-space.test.sh` passes:
-   `disk_space_free_kb` reads a directory's free KiB and is empty (never `0`)
-   for a path `df` cannot read; `disk_space_verdict` reads `low` only when
-   free KiB falls below `min_free_workspace_bytes` converted to KiB, and `ok`
-   for a `0` floor, an unreadable meter, or free space at or above it;
-   `disk_space_describe` names the directory, the free MiB and the floor.
+2n. **A cycle does not start work the host has no room to finish, on either
+   its clone or its writable state (requirement 2.0c, agent-ops#756 and
+   agent-ops#992).** `test/disk-space.test.sh` passes: `disk_space_free_kb`
+   reads a directory's free KiB and is empty (never `0`) for a path `df`
+   cannot read; `disk_space_verdict` reads `low` only when free KiB falls
+   below `min_free_workspace_bytes` converted to KiB, and `ok` for a `0`
+   floor, an unreadable meter, or free space at or above it;
+   `disk_space_describe` names the directory, the free MiB and the floor;
+   `disk_space_same_filesystem` reads true only when both paths' device ids
+   resolve and match, false when they differ or either is unreadable.
    `test/disk-space-wiring.test.sh` passes against the block lifted verbatim
-   from `agent-cycle.sh`: free space below the floor exits 0 without falling
-   through to the rest of the cycle, the logged `stand-down` event carries
-   `cause: "disk-full"` at exactly zero free KiB and `cause: "disk-low"` for
-   any smaller shortfall, and the reason names the directory and both
-   figures; free space at or above the floor, an unreadable `df`, and
-   `min_free_workspace_bytes: 0` all fall through untouched, standing nothing
-   down. `test/doctor.test.sh` passes: a `min_free_workspace_bytes` set above
-   this host's real free space (an exbibyte — no `df` stub needed, since no
-   real free space could ever meet it) warns on both `state_dir` and
-   `workspace_root`, naming the configured floor's own MiB figure, without
-   turning the pass into a failure; set to `0` it warns on neither, however
-   little free space actually remains.
+   from `agent-cycle.sh`: with `state_dir` and `workspace_root` on the same
+   filesystem, exactly one `df` reading is taken and free space below the
+   floor exits 0 without falling through to the rest of the cycle, the logged
+   `stand-down` event carrying `cause: "disk-full"` at exactly zero free KiB
+   and `cause: "disk-low"` for any smaller shortfall, and the reason naming
+   the directory and both figures — byte-for-byte what a single-directory
+   reading always produced. With the two on **different** filesystems: free
+   space below the floor on `state_dir` alone stands the cycle down and
+   names `state_dir` in `path`/`free_kb`; the same for `workspace_root`
+   alone; when both are short, the event names whichever has less free
+   space. Free space at or above the floor on both, an unreadable `df` on
+   either, and `min_free_workspace_bytes: 0` all fall through untouched,
+   standing nothing down. `test/doctor.test.sh` passes: a
+   `min_free_workspace_bytes` set above this host's real free space (an
+   exbibyte — no `df` stub needed, since no real free space could ever meet
+   it) warns on both `state_dir` and `workspace_root`, naming the configured
+   floor's own MiB figure, without turning the pass into a failure; set to
+   `0` it warns on neither, however little free space actually remains.
 2n-i. **A cycle does not start work the host has no memory to run (requirement
    2.0f).** `test/memory.test.sh` passes: `memory_available_kb` reads
    MemAvailable rather than MemFree and is empty (never `0`) when

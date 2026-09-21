@@ -31,6 +31,23 @@ disk_space_free_kb() {
   printf '%s' "$kb"
 }
 
+# disk_space_same_filesystem PATH1 PATH2
+# True (exit 0) iff PATH1 and PATH2 resolve to the same filesystem, in which
+# case a caller judging both against one floor only needs to take one `df`
+# reading — the common case, where `state_dir` and `workspace_root` sit under
+# one home directory. False (exit 1) if they differ, or if either path's
+# device id cannot be read: "cannot tell" is treated the same as "different",
+# never as "same" — the cost of a redundant second reading is one extra `df`,
+# the cost of wrongly treating two independent disks as one is a shortfall on
+# the unread one going unnoticed.
+disk_space_same_filesystem() {
+  local path1="${1:-}" path2="${2:-}" dev1 dev2
+  [[ -n "$path1" && -n "$path2" ]] || return 1
+  dev1="$(stat -c %d -- "$path1" 2>/dev/null)" || return 1
+  dev2="$(stat -c %d -- "$path2" 2>/dev/null)" || return 1
+  [[ -n "$dev1" && "$dev1" == "$dev2" ]]
+}
+
 # disk_space_verdict FREE_KB MIN_BYTES
 # "low" when FREE_KB (KiB) is below MIN_BYTES (bytes — the config unit) once
 # converted to the same one; "ok" otherwise, including when MIN_BYTES is `0`
@@ -59,6 +76,6 @@ disk_space_describe() {
   [[ "$free_kb" =~ ^[0-9]+$ ]] || free_kb=0
   [[ "$min_bytes" =~ ^[0-9]+$ ]] || min_bytes=0
   min_mib=$(( min_bytes / 1024 / 1024 ))
-  printf '%s has only %d MiB free, below the %d MiB this cycle needs — a cycle clones every repository it touches' \
+  printf '%s has only %d MiB free, below the %d MiB this cycle needs — a cycle writes its clone, its records and its state mirror before it can finish' \
     "$path" $(( free_kb / 1024 )) "$min_mib"
 }

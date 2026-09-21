@@ -172,36 +172,76 @@ if [[ "$gh_auth_verdict" == "unauthorized" ]]; then
   exit 0
 fi
 
-# 2.0c Free disk space (requirement 2.0c, agent-ops#756). Free, like 2.0 and
-# 2.0b: `df -Pk` costs nothing and touches no network, so it runs ahead of
-# every check below that can spend. `scripts/doctor.sh` has read
-# workspace_root's free space and warned below a fixed 2 GiB since before this
-# check existed — "a cycle clones every repository it touches" — but a
-# warning only a human reads by hand does nothing for the cycle that clones
-# into whatever room is actually left. On the ockham laptop that ran short, a
-# write truncated mid-flight left zero-length git objects in both nodes'
-# state mirrors, permanently disabling `git gc` (#604) and leaving 4.2 GB of
-# orphaned clones behind it (#605) — starting work the host cannot finish is
-# what made both possible, and this stands the cycle down before it tries.
+# 2.0c Free disk space (requirement 2.0c, agent-ops#756; both directories,
+# agent-ops#992). Free, like 2.0 and 2.0b: `df -Pk` costs nothing and touches
+# no network, so it runs ahead of every check below that can spend.
+# `scripts/doctor.sh` has read state_dir's and workspace_root's free space and
+# warned below a fixed 2 GiB since before this check existed, but a warning
+# only a human reads by hand does nothing for the cycle that writes into
+# whatever room is actually left. On the ockham laptop that ran short, a write
+# truncated mid-flight left zero-length git objects in both nodes' state
+# mirrors, permanently disabling `git gc` (#604) — that is state_dir — and
+# left 4.2 GB of orphaned clones behind it (#605) — that is workspace_root —
+# starting work the host cannot finish is what made both possible, and this
+# stands the cycle down before it tries, on either directory.
 #
-# `min_free_workspace_bytes` set to `0` turns the check off. `lib/disk-
-# space.sh` is the one place free space is read and judged, so doctor.sh's own
-# advisory warning and this gate cannot silently disagree about what "low"
-# means.
+# `min_free_workspace_bytes` set to `0` turns the check off, for both
+# directories. `lib/disk-space.sh` is the one place free space is read and
+# judged, so doctor.sh's own advisory warning and this gate cannot silently
+# disagree about what "low" means, nor about which directories that covers.
+# Where state_dir and workspace_root share a filesystem — the common case, one
+# home directory holding both — `disk_space_same_filesystem` collapses this to
+# the one `df` reading requirement 2.0c always took; a split deployment (the
+# shipped `deploy/docker/compose.yaml` mounts them as two separate volumes)
+# takes one reading per directory instead.
 #
 # An unreadable `df` is not a stand-down, the same "no evidence" reasoning
-# 2.0's own `unknown` rests on: `disk_space_verdict` reads it as `ok`.
+# 2.0's own `unknown` rests on, for either directory: `disk_space_verdict`
+# reads it as `ok`.
 if (( min_free_workspace_bytes > 0 )); then
-  disk_free_kb="$(disk_space_free_kb "$workspace_root")"
-  if [[ "$(disk_space_verdict "$disk_free_kb" "$min_free_workspace_bytes")" == "low" ]]; then
-    if [[ "$disk_free_kb" =~ ^[0-9]+$ ]] && (( disk_free_kb == 0 )); then
+  disk_standdown_path=""
+  disk_standdown_free_kb=""
+  if disk_space_same_filesystem "$state_dir" "$workspace_root"; then
+    disk_free_kb="$(disk_space_free_kb "$workspace_root")"
+    if [[ "$(disk_space_verdict "$disk_free_kb" "$min_free_workspace_bytes")" == "low" ]]; then
+      disk_standdown_path="$workspace_root"
+      disk_standdown_free_kb="$disk_free_kb"
+    fi
+  else
+    disk_state_dir_free_kb="$(disk_space_free_kb "$state_dir")"
+    disk_workspace_free_kb="$(disk_space_free_kb "$workspace_root")"
+    disk_state_dir_low="false"
+    disk_workspace_low="false"
+    [[ "$(disk_space_verdict "$disk_state_dir_free_kb" "$min_free_workspace_bytes")" == "low" ]] \
+      && disk_state_dir_low="true"
+    [[ "$(disk_space_verdict "$disk_workspace_free_kb" "$min_free_workspace_bytes")" == "low" ]] \
+      && disk_workspace_low="true"
+    if [[ "$disk_state_dir_low" == "true" && "$disk_workspace_low" == "true" ]]; then
+      # Both short: name the one with less free space.
+      if (( disk_state_dir_free_kb <= disk_workspace_free_kb )); then
+        disk_standdown_path="$state_dir"
+        disk_standdown_free_kb="$disk_state_dir_free_kb"
+      else
+        disk_standdown_path="$workspace_root"
+        disk_standdown_free_kb="$disk_workspace_free_kb"
+      fi
+    elif [[ "$disk_state_dir_low" == "true" ]]; then
+      disk_standdown_path="$state_dir"
+      disk_standdown_free_kb="$disk_state_dir_free_kb"
+    elif [[ "$disk_workspace_low" == "true" ]]; then
+      disk_standdown_path="$workspace_root"
+      disk_standdown_free_kb="$disk_workspace_free_kb"
+    fi
+  fi
+  if [[ -n "$disk_standdown_path" ]]; then
+    if [[ "$disk_standdown_free_kb" =~ ^[0-9]+$ ]] && (( disk_standdown_free_kb == 0 )); then
       disk_standdown_cause="disk-full"
     else
       disk_standdown_cause="disk-low"
     fi
     log_event "stand-down" "$(jq -nc \
-      --arg r "$(disk_space_describe "$workspace_root" "$disk_free_kb" "$min_free_workspace_bytes")" \
-      --arg cause "$disk_standdown_cause" --arg path "$workspace_root" --arg free_kb "$disk_free_kb" \
+      --arg r "$(disk_space_describe "$disk_standdown_path" "$disk_standdown_free_kb" "$min_free_workspace_bytes")" \
+      --arg cause "$disk_standdown_cause" --arg path "$disk_standdown_path" --arg free_kb "$disk_standdown_free_kb" \
       '{reason: $r, cause: $cause, path: $path, free_kb: $free_kb}')"
     set_node_state_terminal externally-blocked "$disk_standdown_cause"
     exit 0

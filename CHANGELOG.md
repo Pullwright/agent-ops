@@ -121,6 +121,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Requirement 2.0c's pre-clone stand-down now reads `state_dir` as well as
+  `workspace_root`, so a short `state_dir` stands the cycle down instead of
+  only ever warning in `doctor.sh`** (issue #992, TD-PPagop-26082517).
+  `scripts/doctor.sh`'s advisory warning has always looped over both
+  directories against `min_free_workspace_bytes`, but the gate itself
+  (`lib/standdown.sh`) read `workspace_root` alone — so a `state_dir` running
+  short, the half of the ockham incident (#604) that left zero-length git
+  objects and permanently disabled `git gc`, could still be started into.
+  `lib/disk-space.sh` gains `disk_space_same_filesystem`, so the gate takes
+  one `df` reading where the two directories share a filesystem (the common
+  case) and one reading per directory where they don't (the shipped
+  `deploy/docker/compose.yaml`, which mounts `state:` and `workspaces:` as
+  two separate volumes); it stands the cycle down when either reads below the
+  floor, naming whichever has less free space in the logged `stand-down`
+  event when both do. `scripts/doctor.sh`'s own warning is unchanged.
+
 - **A configured notify-webhook URL is now masked before it reaches the
   state-mirror repository or the dashboard, instead of passing every
   redaction pass unmatched** (issue #1721). `lib/redact.sh`'s pattern set
