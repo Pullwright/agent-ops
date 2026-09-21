@@ -180,11 +180,22 @@ assert_eq "a missing rework_cycles_file reports the outage shape too, never a qu
 # would have been a correctness/size concern (issue #1691, requirement 4g's
 # own class — the 2026-08-14 MAX_ARG_STRLEN outage): confirm the --slurpfile
 # path still classifies correctly at this size, and still reconciles.
+#
+# The cycle ids here are the shape a real one has (`<stamp>-<node>-<pid>`,
+# ~39 bytes), not a short synthetic one, because the size is the whole point:
+# execve's per-argument ceiling is MAX_ARG_STRLEN, 32 pages — 131072 bytes on
+# every Linux this runs on — and it is a cap on one argument's own length, so
+# ARG_MAX's much larger total says nothing about it. 5000 ids of this shape
+# serialise past that ceiling; 5000 short ones would not, and would leave this
+# case asserting a claim it never actually exercised. The guard below checks
+# that rather than trusting the arithmetic to stay true.
 large_rework_rows="$tmp_dir/large-rework-rows.json"
 large_rework_cycles="$tmp_dir/large-rework-cycles.json"
-jq -nc '[range(0; 5000) | {cycle: ("bulk-" + (. | tostring)), repo: "r", item: ("b" + (. | tostring)), outcome: "pr-ready", attributed: true, usd: 0.01}]' \
+jq -nc '[range(0; 5000) | {cycle: ("20260919T111823Z-ockham-container-" + (. | tostring)), repo: "r", item: ("b" + (. | tostring)), outcome: "pr-ready", attributed: true, usd: 0.01}]' \
   > "$large_rework_rows"
-jq -nc '[range(0; 5000) | ("bulk-" + (. | tostring))]' > "$large_rework_cycles"
+jq -nc '[range(0; 5000) | ("20260919T111823Z-ockham-container-" + (. | tostring))]' > "$large_rework_cycles"
+assert_eq "the fixture really is past execve's 131072-byte per-argument ceiling, so the old --argjson form could not have carried it" \
+  "1" "$(( $(wc -c < "$large_rework_cycles") > 131072 ))"
 large_out="$(fleet_pricing_spend_fate "$large_rework_rows" "$large_rework_cycles" "$lifecycle_file")"
 assert_eq "5000 rework-bearing cycles (well past the old argv-size concern) all classify as rework" \
   '{"n":5000,"usd":50}' "$(jq -Sc '.by_fate.rework' <<<"$large_out")"
