@@ -65,7 +65,7 @@ assert_eq() {
 }
 
 WORKDIR="$(mktemp -d)"
-trap 'rm -rf "$WORKDIR" "${STUB_CREATE_CALLS_FILE:-}"' EXIT
+trap 'rm -rf "$WORKDIR" "${STUB_CREATE_CALLS_FILE:-}" "${GH_CREATE_CALLS_FILE:-}"' EXIT
 
 # --- Test doubles ------------------------------------------------------------
 # log_event: replaces agent-cycle.sh's real one (which needs $log_file,
@@ -80,6 +80,13 @@ events_of() {  # events_of EVENT_NAME — one JSON object per line
     jq -e --arg n "$1" '.event == $n' <<<"$e" >/dev/null 2>&1 && printf '%s\n' "$e"
   done
 }
+
+# Snapshot the real create_escalation_issue before the stub below replaces
+# it, so the "Prefix-collision dedup filters" section further down can
+# exercise the genuine dedup jq filter directly, under its own `gh` stub,
+# without disturbing every other section in this file that relies on the
+# simple success/fail stub.
+eval "$(declare -f create_escalation_issue | sed '1s/^create_escalation_issue/real_create_escalation_issue/')"
 
 # create_escalation_issue: the real one needs `gh`/network; this stub is
 # driven by STUB_CREATE_MODE ("success" or "fail"). Every real call site
@@ -446,8 +453,9 @@ crash_loop_escalate "$slug_verdict" "crash-loop:coordinator:Poetic-Poems/poetic"
 slug_body="$cycle_dir/crash-loop-issue-coordinator:Poetic-Poems-poetic.md"
 assert_eq "a real owner/name slug's issue body is written flat under the cycle directory, never a nested path" \
   "1" "$( [[ -f "$slug_body" ]] && printf 1 || printf 0 )"
-assert_eq "the body's own ref: footer still carries the slug verbatim, unsanitized" \
-  "1" "$(grep -c '^ref: crash-loop:coordinator:Poetic-Poems/poetic$' "$slug_body" 2>/dev/null || printf 0)"
+# shellcheck disable=SC2016  # the backticks are literal Markdown, not command substitution
+assert_eq "the body's own Item: footer still carries the slug verbatim, unsanitized" \
+  "1" "$(grep -c '^Item: `crash-loop:coordinator:Poetic-Poems/poetic`$' "$slug_body" 2>/dev/null || printf 0)"
 assert_eq "the filing itself still succeeds (create_escalation_issue was reached)" "1" "$(stub_create_calls)"
 assert_eq "and it is logged crash-loop-escalated, not crash-loop-deferred" \
   "1" "$(events_of crash-loop-escalated | wc -l | tr -d ' ')"
@@ -552,6 +560,101 @@ STUB_GH_CLOSE_MODE="success"; STUB_GH_CLOSE_CALLS=0; EVENTS=()
 crash_loop_retire_resolved 2026-09-05T00:13:05Z
 assert_eq "crash_loop_min_clear_minutes 0 retires on the first nameable success, as before this key existed" \
   "1" "$STUB_GH_CLOSE_CALLS"
+
+# --- Prefix-collision dedup filters (agent-ops#1694) ------------------------
+#
+# PR #1687 introduced a per-repository crash-loop item ref
+# (`crash-loop:coordinator:<owner>/<name>`) alongside the surviving repo-less
+# fallback ref `crash-loop:coordinator`, which is now a strict string prefix
+# of every per-repository ref. `create_escalation_issue`'s open-issue dedup
+# and `escalation_recent_close`'s closed-issue search both matched with a
+# bare `contains($it)`, so a fallback-group search for `crash-loop:coordinator`
+# would spuriously match an issue whose body only ever named the longer
+# per-repository ref (and vice versa) — the fix anchors both filters to the
+# backtick-delimited `` `$it` `` token every escalation body's own `Item:`
+# footer already carries (see `crash_loop_escalate`'s body template above),
+# which cannot be fooled by one ref being a string-prefix of another.
+#
+# This exercises the real `create_escalation_issue` (snapshotted above, as
+# `real_create_escalation_issue`, before the success/fail stub replaced it)
+# and the real `escalation_recent_close` (never stubbed in this file), each
+# against a hand-rolled `gh` stub returning a fixed issue list regardless of
+# the `--search` term — the dedup filter, not GitHub's own search, is what is
+# under test here.
+
+# shellcheck disable=SC2016  # the backticks are literal Markdown, not command substitution
+open_per_repo_only='[{"number":601,"url":"https://github.com/o/r/issues/601","body":"---\nItem: `crash-loop:coordinator:Poetic-Poems/poetic-fiddle`\n"}]'
+# shellcheck disable=SC2016  # the backticks are literal Markdown, not command substitution
+open_fallback_only='[{"number":602,"url":"https://github.com/o/r/issues/602","body":"---\nItem: `crash-loop:coordinator`\n"}]'
+# shellcheck disable=SC2016  # the backticks are literal Markdown, not command substitution
+closed_per_repo_only='[{"number":701,"url":"https://github.com/o/r/issues/701","body":"---\nItem: `crash-loop:coordinator:Poetic-Poems/poetic-fiddle`\n","closedAt":"2026-09-18T00:00:00Z"}]'
+# shellcheck disable=SC2016  # the backticks are literal Markdown, not command substitution
+closed_fallback_only='[{"number":702,"url":"https://github.com/o/r/issues/702","body":"---\nItem: `crash-loop:coordinator`\n","closedAt":"2026-09-18T00:00:00Z"}]'
+
+GH_ISSUE_LIST_JSON=""
+# Command substitution (`result="$(real_create_escalation_issue ...)"`) runs
+# in a subshell, same as `STUB_CREATE_CALLS_FILE` above — a plain variable
+# `gh`'s own `issue create` branch set would vanish with that subshell, so
+# call counting goes through a file here too.
+GH_CREATE_CALLS_FILE="$(mktemp)"
+gh_create_calls_reset() { : > "$GH_CREATE_CALLS_FILE"; }
+gh_create_calls() { wc -l < "$GH_CREATE_CALLS_FILE" | tr -d ' '; }
+gh() {
+  if [[ "$1" == "issue" && "$2" == "list" ]]; then
+    printf '%s' "$GH_ISSUE_LIST_JSON"
+    return 0
+  elif [[ "$1" == "issue" && "$2" == "create" ]]; then
+    printf 'x\n' >> "$GH_CREATE_CALLS_FILE"
+    printf 'https://github.com/o/r/issues/999\n'
+    return 0
+  fi
+  return 1
+}
+CONFIG_FILE="/dev/null"
+SCHEMA_FILE="/dev/null"
+enabler_assignee="someone"
+dummy_body="$WORKDIR/dummy-escalation-body.md"
+printf 'body\n' > "$dummy_body"
+
+GH_ISSUE_LIST_JSON="$open_per_repo_only"; gh_create_calls_reset
+result="$(real_create_escalation_issue "o/r" "crash-loop:coordinator" "enabler-escalation" "title" "$dummy_body")"
+assert_eq "a fallback-ref dedup search does not match an open issue naming only the longer per-repository ref" \
+  "999" "$(cut -f1 <<<"$result")"
+assert_eq "...and actually attempts a fresh create rather than reusing it" "1" "$(gh_create_calls)"
+
+GH_ISSUE_LIST_JSON="$open_fallback_only"; gh_create_calls_reset
+result="$(real_create_escalation_issue "o/r" "crash-loop:coordinator:Poetic-Poems/poetic-fiddle" "enabler-escalation" "title" "$dummy_body")"
+assert_eq "a per-repository dedup search does not match an open issue naming only the shorter fallback ref" \
+  "999" "$(cut -f1 <<<"$result")"
+assert_eq "...and actually attempts a fresh create rather than reusing it" "1" "$(gh_create_calls)"
+
+GH_ISSUE_LIST_JSON="$open_fallback_only"; gh_create_calls_reset
+result="$(real_create_escalation_issue "o/r" "crash-loop:coordinator" "enabler-escalation" "title" "$dummy_body")"
+assert_eq "a fallback-ref dedup search still matches an open issue naming the same fallback ref" \
+  "602" "$(cut -f1 <<<"$result")"
+assert_eq "...without attempting a fresh create" "0" "$(gh_create_calls)"
+
+GH_ISSUE_LIST_JSON="$open_per_repo_only"; gh_create_calls_reset
+result="$(real_create_escalation_issue "o/r" "crash-loop:coordinator:Poetic-Poems/poetic-fiddle" "enabler-escalation" "title" "$dummy_body")"
+assert_eq "a per-repository dedup search still matches an open issue naming the same per-repository ref" \
+  "601" "$(cut -f1 <<<"$result")"
+assert_eq "...without attempting a fresh create" "0" "$(gh_create_calls)"
+
+GH_ISSUE_LIST_JSON="$closed_per_repo_only"
+assert_eq "a fallback-ref recent-close search does not match a closed issue naming only the longer per-repository ref" \
+  "" "$(escalation_recent_close "o/r" "crash-loop:coordinator")"
+
+GH_ISSUE_LIST_JSON="$closed_fallback_only"
+assert_eq "a per-repository recent-close search does not match a closed issue naming only the shorter fallback ref" \
+  "" "$(escalation_recent_close "o/r" "crash-loop:coordinator:Poetic-Poems/poetic-fiddle")"
+
+GH_ISSUE_LIST_JSON="$closed_fallback_only"
+assert_eq "a fallback-ref recent-close search still matches a closed issue naming the same fallback ref" \
+  "702" "$(cut -f1 <<<"$(escalation_recent_close "o/r" "crash-loop:coordinator")")"
+
+GH_ISSUE_LIST_JSON="$closed_per_repo_only"
+assert_eq "a per-repository recent-close search still matches a closed issue naming the same per-repository ref" \
+  "701" "$(cut -f1 <<<"$(escalation_recent_close "o/r" "crash-loop:coordinator:Poetic-Poems/poetic-fiddle")")"
 
 printf '\n'
 if (( failures )); then

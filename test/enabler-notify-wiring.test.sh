@@ -260,7 +260,8 @@ assert_eq "…carrying the new issue's own URL" \
 # --- the dedup guard finds an existing issue: no creation is attempted, and
 # nothing is POSTed — a fault already escalated is not a fresh page ---------
 
-existing_list='[{"number":77,"url":"https://github.com/acme/agent-ops/issues/77","body":"ref: auth-failure:test-node"}]'
+# shellcheck disable=SC2016  # the backticks are literal Markdown, not command substitution
+existing_list='[{"number":77,"url":"https://github.com/acme/agent-ops/issues/77","body":"---\nItem: `auth-failure:test-node` · raised by the Script · cycle `c1` · node `test-node`"}]'
 result="$(run_case "https://hooks.example.test/escalate" "$all_events" "$existing_list" fail succeed \
   "acme/agent-ops" "auth-failure:test-node" "escalation" \
   "GitHub credentials rejected" "detail")"
