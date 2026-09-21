@@ -2446,6 +2446,19 @@ time-frame selector: a row's fate is a permanent fact about it, the same
 "never windowed" argument the escape-ladder and rework panels above already
 make for a caught defect's own rung.
 
+Both `counts.cost_rows[]` and `rework_cycles` reach `fleet_pricing_spend_fate`
+spooled to a file in `$work_tmp` and read via `--slurpfile` (issue #1691),
+never as an `--argjson` value on `jq`'s own argv — the class requirement 4g
+exists for, since a fleet's rework-bearing-cycle count is unbounded by
+configuration and rides this join all-time. When `rework_panel_build` itself
+reports its outage shape (`rework_cycles: null` — a fold that aborted, the
+Rework panel's own paragraph above), that `null` is passed through verbatim,
+never coalesced to `[]`: `fleet_pricing_spend_fate` reports its own all-null
+outage shape in that case rather than computing a confident, reconciled
+account with every rework-bearing row silently reclassified into
+delivered/discarded/defect_driven — the same "an outage is not a quiet zero"
+discipline every other roll-up on this page keeps.
+
 **The fate mapping**, applied in this order, first match wins, so every row
 lands in exactly one of six buckets — never dropped, never double-counted
 (`lib/fleet-pricing.sh`'s own header carries the full reasoning; this is the

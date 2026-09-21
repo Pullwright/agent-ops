@@ -160,6 +160,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   carry the anchor the guard now needs. An escalation issue left open across
   this change still carries the old footer and is invisible to the narrowed
   guard until its footer is migrated (#1744).
+- **The dashboard's spend-by-fate account no longer computes a confident,
+  reconciled figure over a `rework_panel_build` outage, and `rework_cycles`
+  no longer rides `jq`'s argv unbounded into that account** (issue #1691).
+  `scripts/publish-dashboard.sh` used to coalesce `rework_panel_build`'s own
+  outage shape (`rework_cycles: null` — a fold that aborted) to `[]` before
+  handing it to `fleet_pricing_spend_fate`, so an upstream outage silently
+  reclassified every rework-bearing row into
+  delivered/discarded/defect_driven instead of propagating the outage the
+  Rework panel itself was already showing. `fleet_pricing_spend_fate`
+  (`lib/fleet-pricing.sh`) now takes `rework_cycles` as a spooled
+  `$work_tmp` file read via `--slurpfile` — the same convention
+  `counts.cost_rows[]` already uses in the same block, rather than an
+  `--argjson` value unbounded by configuration (requirement 4g's own class,
+  the 2026-08-14 `MAX_ARG_STRLEN` outage) — and passes a `null` file through
+  to its own all-null outage shape rather than computing against an empty
+  rework set.
 - **A single repository's own deterministic Co-Ordinator failure now
   reaches the crash-loop escalation rung instead of being reset every cycle
   by a sibling repository's success** (issue #1630). Since issue #587 split
