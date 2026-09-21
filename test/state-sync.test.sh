@@ -728,6 +728,35 @@ assert_lacks "…with the pressure prune off regardless of free-KB" "under disk 
 assert_eq "cycles 1-3 keep their streams with the floor off" "1" \
   "$(test -f "$dp_off_state/cycles/20260401T000001Z-1/coordinator.stream.jsonl" && echo 1 || echo 0)"
 
+# A non-numeric min_free_workspace_bytes read from config.json itself — a
+# hand-edited "2GiB" rather than a schema-valid number — must not crash the
+# `(( min_free_workspace_bytes > 0 ))` arithmetic test in
+# prune_derived_under_pressure under `set -e` (agent-ops#1729). The read at
+# scripts/state-sync.sh:141 normalises a non-numeric value to 0, the same
+# "floor off" disk_space_verdict already tolerates, so this behaves exactly
+# like the floor-off case above. Only config.json (not the
+# STATE_SYNC_MIN_FREE_WORKSPACE_BYTES override, already exercised above) can
+# carry a non-numeric value at all, so this mutates the real, shared
+# config.json for the one call and restores it immediately after.
+dp_nonnumeric_home="$(new_node disk-pressure-nonnumeric-node)"
+dp_nonnumeric_state="$dp_nonnumeric_home/.local/state/poetic-agents"
+dp_setup "$dp_nonnumeric_home"
+config_backup="$tmp_dir/config.json.bak"
+cp "$SCRIPT_DIR/config.json" "$config_backup"
+jq '.min_free_workspace_bytes = "2GiB"' "$config_backup" > "$SCRIPT_DIR/config.json"
+out="$(env HOME="$dp_nonnumeric_home" AGENT_OPS_ROLE=active \
+  NODE_NAME="$(basename "$dp_nonnumeric_home")" STATE_SYNC_REMOTE="$remote" \
+  STATE_SYNC_LOCAL_RETAINED=10 STATE_SYNC_STREAMS_RETAINED=3 \
+  STATE_SYNC_MIN_FREE_WORKSPACE_BYTES= STATE_SYNC_FREE_KB=1 "$SYNC" push 2>&1)"
+rc=$?
+cp "$config_backup" "$SCRIPT_DIR/config.json"
+assert_eq "a non-numeric config-sourced floor doesn't crash the push" "0" "$rc"
+assert_lacks "…with no arithmetic error reaching stderr" "value too great for base" "$out"
+assert_contains "…and the ordinary count-based prune still runs" "pruned 2 derived file(s) from cycles" "$out"
+assert_lacks "…with the pressure prune treated as off (non-numeric floor -> 0)" "under disk pressure" "$out"
+assert_eq "cycles 1-3 keep their streams with a non-numeric floor" "1" \
+  "$(test -f "$dp_nonnumeric_state/cycles/20260401T000001Z-1/coordinator.stream.jsonl" && echo 1 || echo 0)"
+
 # A derived file already in the mirror from before its exclusion existed is
 # deleted from it, not merely left behind: `--delete-excluded` is what makes
 # the rules retroactive, and without it every node's branch would keep whatever
