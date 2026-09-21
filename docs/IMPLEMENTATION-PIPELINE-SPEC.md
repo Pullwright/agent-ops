@@ -23565,7 +23565,7 @@ oblige anyone to edit a test.
    `disk_space_same_filesystem` reads true only when both paths' device ids
    resolve and match, false when they differ or either is unreadable.
    `test/disk-space-wiring.test.sh` passes against the block lifted verbatim
-   from `agent-cycle.sh`: with `state_dir` and `workspace_root` on the same
+   from `lib/standdown.sh`: with `state_dir` and `workspace_root` on the same
    filesystem, exactly one `df` reading is taken and free space below the
    floor exits 0 without falling through to the rest of the cycle, the logged
    `stand-down` event carrying `cause: "disk-full"` at exactly zero free KiB

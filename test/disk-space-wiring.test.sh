@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # test/disk-space-wiring.test.sh — regression test for requirement 2.0c's
-# free-disk-space check in agent-cycle.sh (agent-ops#756; both directories,
+# free-disk-space check in lib/standdown.sh (agent-ops#756; both directories,
 # agent-ops#992): not whether disk_space_verdict classifies a shortfall
 # correctly (test/disk-space.test.sh covers that in isolation) but whether the
 # cycle actually acts on it — standing down with the right cause, path and
@@ -16,7 +16,7 @@
 # nothing acted on either warning until this check, and until agent-ops#992
 # the check itself only ever acted on workspace_root's half.
 #
-# The block is lifted verbatim out of agent-cycle.sh, the way
+# The block is lifted verbatim out of lib/standdown.sh, the way
 # test/auth-failure-wiring.test.sh and test/backpressure-wiring.test.sh lift
 # their own, so the assertions are about the shipped code rather than a copy
 # of its logic.
@@ -68,7 +68,7 @@ extract_block() {
 # "never fell through".
 disk_block="$(extract_block '^# 2\.0c Free disk space' '^# 2\.0f Free host memory' "$AGENT_CYCLE")"
 if [[ -z "$disk_block" ]]; then
-  echo "FAIL - could not extract the free-disk-space check block from agent-cycle.sh — has it moved?" >&2
+  echo "FAIL - could not extract the free-disk-space check block from lib/standdown.sh — has it moved?" >&2
   exit 1
 fi
 if ! grep -q 'disk_space_verdict' <<<"$disk_block"; then
