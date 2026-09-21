@@ -1007,6 +1007,44 @@ def cycle_obj($cid; $ev; $manifest_idx; $cap):
     end;
 JQDEFS
 
+# --- Recent-cycle-rows cache key, stat'd before the fleet log read below -----
+# Snapshotted here, ahead of the fleet_logs read and the several whole-log jq
+# passes that follow it, rather than after them: a log append or a cycles/
+# directory change landing in that window would otherwise be baked into the
+# stored key while the cached rows it is meant to guard were still built from
+# the pre-append snapshot, so an unchanged tick after it would keep serving
+# rows missing whatever just landed (agent-ops#993 review). Stat before read,
+# always. The `cyclerows_cache`/`cyclerows_key`/`cyclerows_key_now` names and
+# the cache directory itself are used further down, by the recent-cycle-rows
+# cache hit/miss block; nothing here reads $cycles_dir/$state_dir/$peers_dir
+# any differently than that block always has, only earlier.
+cyclerows_cache="$state_dir/.dashboard-cyclerows-cache"
+mkdir -p "$cyclerows_cache" 2>/dev/null || true
+cyclerows_key_file="$cyclerows_cache/key"
+cyclerows_rows_file="$cyclerows_cache/rows"
+
+cyclerows_key() {
+  {
+    # %y (nanosecond-resolution mtime) rather than %Y: these two directory
+    # stats are the only signal covering an entry appearing or vanishing in
+    # cycles_dir, so a change landing in the same whole second as the stat
+    # must still move the key. log.jsonl below is protected by its own size
+    # field as well as mtime, so a same-second append still changes the key
+    # even at %Y.
+    stat -c '%n %y' "$cycles_dir" 2>/dev/null
+    stat -c '%n %s %Y' "$state_dir/log.jsonl" 2>/dev/null
+    local pd
+    for pd in "$peers_dir"/*/cycles; do
+      [[ -d "$pd" ]] && stat -c '%n %y' "$pd" 2>/dev/null
+    done
+    local pl
+    for pl in "$peers_dir"/*/log.jsonl; do
+      [[ -f "$pl" ]] && stat -c '%n %s %Y' "$pl" 2>/dev/null
+    done
+  } | LC_ALL=C sort
+}
+cyclerows_key_now="$(cyclerows_key)"
+
 # --- The union lands on disk once (shared by cycle_json and summaries) -------
 # Every full-build consumer below reads `$events_jsonl` directly, as a jq file
 # argument or through a library function's own LOG_FILE parameter, rather than
@@ -1154,31 +1192,20 @@ dir_rows() {  # dir_rows CYCLES_DIR
 # the union event log's own size and mtime (covers the E rows, known only
 # from the event stream). A plain stat rather than a content hash: the whole
 # point is not to have to read cycles_dir's own 1000 entries just to learn
-# whether it moved.
-cyclerows_cache="$state_dir/.dashboard-cyclerows-cache"
-mkdir -p "$cyclerows_cache" 2>/dev/null || true
-cyclerows_key_file="$cyclerows_cache/key"
-cyclerows_rows_file="$cyclerows_cache/rows"
-
-cyclerows_key() {
-  {
-    stat -c '%n %Y' "$cycles_dir" 2>/dev/null
-    stat -c '%n %s %Y' "$state_dir/log.jsonl" 2>/dev/null
-    local pd
-    for pd in "$peers_dir"/*/cycles; do
-      [[ -d "$pd" ]] && stat -c '%n %Y' "$pd" 2>/dev/null
-    done
-    local pl
-    for pl in "$peers_dir"/*/log.jsonl; do
-      [[ -f "$pl" ]] && stat -c '%n %s %Y' "$pl" 2>/dev/null
-    done
-  } | LC_ALL=C sort
-}
-cyclerows_key_now="$(cyclerows_key)"
-
+# whether it moved. `cyclerows_cache`/`cyclerows_key_file`/`cyclerows_rows_file`
+# and `cyclerows_key_now` itself are set further up, ahead of the fleet log
+# read, so the key reflects the state on disk before this tick read anything.
+#
+# A cache hit still has to fall through to a rebuild if the copy below fails
+# (the rows file removed or made unreadable between the -s test and the cp):
+# the alternative — the cp's own `|| : > "$cycle_rows"` swallowing the failure
+# and publishing an empty Recent-cycles window — would degrade a copy failure
+# into an incorrect result when the correct, already-available fallback is
+# the rebuild this same tick would have done on a cache miss.
 if [[ -s "$cyclerows_rows_file" && -f "$cyclerows_key_file" ]] \
-   && [[ "$cyclerows_key_now" == "$(cat "$cyclerows_key_file" 2>/dev/null)" ]]; then
-  cp "$cyclerows_rows_file" "$cycle_rows" 2>/dev/null || : > "$cycle_rows"
+   && [[ "$cyclerows_key_now" == "$(cat "$cyclerows_key_file" 2>/dev/null)" ]] \
+   && cp "$cyclerows_rows_file" "$cycle_rows" 2>/dev/null; then
+  :
 else
   {
     dir_rows "$cycles_dir"

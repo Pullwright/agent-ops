@@ -659,14 +659,22 @@ render — is cached too, under `<state_dir>/.dashboard-cyclerows-cache/`
 directory (bounded by `state_local_cycles_retained`, 1000 on every node) to
 produce a list bounded by the constant `MAX_CYCLES`, however few of those
 1000 entries actually moved since the last tick. The key is a stat, not a
-content hash: the local and each peer's `cycles/` directory mtime (which
-moves exactly when an entry is added or removed — the same signal a cache
-entry's own key uses for a stage file, never reused here as a *liveness*
-signal, which is the distinct use #803's cache key confused), plus the union
-event log's own size and mtime (covers the ids known only from the event
-stream). A tick whose key is unchanged copies the cached row list straight
-into place rather than re-running the glob/sort/interleave; a tick whose key
-moved rebuilds it and refreshes the cache.
+content hash: the local and each peer's `cycles/` directory mtime, at
+nanosecond resolution (which moves exactly when an entry is added or removed
+— the same signal a cache entry's own key uses for a stage file, never
+reused here as a *liveness* signal, which is the distinct use #803's cache
+key confused; nanosecond rather than whole-second resolution because the
+union log below is already protected against a same-second change by its
+own size field, but a `cycles/` directory has only its mtime to catch one),
+plus the union event log's own size and mtime (covers the ids known only
+from the event stream). The key is stat'd before the union log is read and
+built, not after: reading it first would let a log append or directory
+change that lands in the gap between the read and the stat get baked into a
+key that still matched the stale cache, serving rows missing whatever just
+landed until some later, unrelated tick moved the key. A tick whose key is
+unchanged copies the cached row list straight into place, falling through to
+a rebuild if the copy itself fails rather than publishing an empty window; a
+tick whose key moved rebuilds the row list and refreshes the cache.
 
 That render **excludes events belonging to no cycle before it groups the union
 by `.cycle`**, and reports its own success or failure as `cycle_render`. Both
