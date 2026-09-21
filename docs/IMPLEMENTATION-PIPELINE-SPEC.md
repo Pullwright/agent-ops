@@ -14869,11 +14869,16 @@ implements.
     can only fall at the reference's own end. Every body filed through this
     route therefore carries its reference that way — the `` Item: `<item>` ``
     footer of requirement 2.7's crash-loop body, of `lib/approver.sh`'s,
-    `lib/landing.sh`'s, `lib/merge-budget.sh`'s, `lib/standdown.sh`'s and
+    `lib/landing.sh`'s, `lib/standdown.sh`'s and
     `lib/required-check-preflight.sh`'s, and of the Enabler's own template
     (`prompts/enabler.md`, which states the footer is load-bearing and must
     be kept in backticks) — and a body naming the reference undelimited would
-    dedup against nothing, re-filing on every later round. Otherwise
+    dedup against nothing, re-filing on every later round.
+    `lib/merge-budget.sh`'s freeze escalation (requirement 2.3c) carries the
+    same footer but is not filed through this route: it cannot reach this
+    function from where it lives, so it inlines its own copy of the guard and
+    calls `gh issue create` itself, and that copy matches on the bare
+    reference rather than the delimited token. Otherwise
     `gh issue create` in
     the item's own repo with that label **and** `--assignee` set to
     `enabler_assignee`, retried once without the label so a repo where the
