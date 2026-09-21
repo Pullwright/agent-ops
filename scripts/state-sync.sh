@@ -359,6 +359,7 @@ EXCLUDES=(
   --exclude=.dashboard-tick-cost
   --exclude=.dashboard-payload
   --exclude=/.dashboard-cycle-cache/
+  --exclude=/.dashboard-cyclerows-cache/
   --exclude=.dashboard-claims.json
   --exclude=.image-drift-cache.json
   --exclude=.state-sync-published.json

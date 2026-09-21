@@ -584,6 +584,7 @@ local_state_fingerprint() {
       -name '.dashboard-tick-cost' -prune -o \
       -name '.dashboard-payload' -prune -o \
       -path "$state_dir/.dashboard-cycle-cache" -prune -o \
+      -path "$state_dir/.dashboard-cyclerows-cache" -prune -o \
       -path "$state_dir/state-sync.log" -prune -o \
       -path "$state_dir/doctor.log" -prune -o \
       -path "$state_dir/tech-debt-archive.log" -prune -o \
@@ -1141,17 +1142,58 @@ dir_rows() {  # dir_rows CYCLES_DIR
   done
 }
 
-{
-  dir_rows "$cycles_dir"
-  jq -r '.cycle // empty' "$events_jsonl" 2>/dev/null | sed "s|\$|\tE\t$cycles_dir|"
-  for pd in "$peers_dir"/*/cycles; do
-    [[ -d "$pd" ]] || continue
-    dir_rows "$pd"
-  done
-} | sort -t "$tab" -k1,1r -k2,2 | awk -F'\t' -v re="$cycle_id_re" -v noopfile="$noop_ids" \
-      'BEGIN { while ((getline id < noopfile) > 0) noop[id] = 1 }
-       $1 ~ re && !($1 in noop) && !seen[$1]++' | cut -f1,3 \
-  | head -n "$MAX_CYCLES" > "$cycle_rows"
+# $cycle_rows itself is a scan proportional to the *retained* history
+# (state_local_cycles_retained, 1000 on every node, times every peer) to
+# produce a list bounded by the constant MAX_CYCLES — and nothing about the
+# result changes between ticks except when a cycle is created, roughly
+# hourly (#993). So the D-row glob/sort/interleave above is cached, keyed on
+# the one thing that moves when the row set does: the local and each peer's
+# `cycles/` directory mtime (an entry appearing or vanishing is exactly what
+# moves it — TD26082601's own warning is not to reuse that same mtime as a
+# *liveness* signal, which #803 did and which this key never claims), plus
+# the union event log's own size and mtime (covers the E rows, known only
+# from the event stream). A plain stat rather than a content hash: the whole
+# point is not to have to read cycles_dir's own 1000 entries just to learn
+# whether it moved.
+cyclerows_cache="$state_dir/.dashboard-cyclerows-cache"
+mkdir -p "$cyclerows_cache" 2>/dev/null || true
+cyclerows_key_file="$cyclerows_cache/key"
+cyclerows_rows_file="$cyclerows_cache/rows"
+
+cyclerows_key() {
+  {
+    stat -c '%n %Y' "$cycles_dir" 2>/dev/null
+    stat -c '%n %s %Y' "$state_dir/log.jsonl" 2>/dev/null
+    local pd
+    for pd in "$peers_dir"/*/cycles; do
+      [[ -d "$pd" ]] && stat -c '%n %Y' "$pd" 2>/dev/null
+    done
+    local pl
+    for pl in "$peers_dir"/*/log.jsonl; do
+      [[ -f "$pl" ]] && stat -c '%n %s %Y' "$pl" 2>/dev/null
+    done
+  } | LC_ALL=C sort
+}
+cyclerows_key_now="$(cyclerows_key)"
+
+if [[ -s "$cyclerows_rows_file" && -f "$cyclerows_key_file" ]] \
+   && [[ "$cyclerows_key_now" == "$(cat "$cyclerows_key_file" 2>/dev/null)" ]]; then
+  cp "$cyclerows_rows_file" "$cycle_rows" 2>/dev/null || : > "$cycle_rows"
+else
+  {
+    dir_rows "$cycles_dir"
+    jq -r '.cycle // empty' "$events_jsonl" 2>/dev/null | sed "s|\$|\tE\t$cycles_dir|"
+    for pd in "$peers_dir"/*/cycles; do
+      [[ -d "$pd" ]] || continue
+      dir_rows "$pd"
+    done
+  } | sort -t "$tab" -k1,1r -k2,2 | awk -F'\t' -v re="$cycle_id_re" -v noopfile="$noop_ids" \
+        'BEGIN { while ((getline id < noopfile) > 0) noop[id] = 1 }
+         $1 ~ re && !($1 in noop) && !seen[$1]++' | cut -f1,3 \
+    | head -n "$MAX_CYCLES" > "$cycle_rows"
+  cp "$cycle_rows" "$cyclerows_rows_file" 2>/dev/null || true
+  printf '%s' "$cyclerows_key_now" > "$cyclerows_key_file" 2>/dev/null || true
+fi
 
 # Manifest of every existing stage file in the window, plus the window's own
 # order (newest first, matching cycle_rows) — the two inputs cycle_obj above

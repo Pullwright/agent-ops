@@ -3656,6 +3656,81 @@ printf '# tiered publish: full %s jq invocations, fast %s\n' "$_n_full" "$_n_fas
 assert_eq "a fast build costs materially less than a full one" "1" \
   "$(( _n_fast * 3 < _n_full * 2 ))"
 
+# --- The cycle-id window itself is cached too (#993) ------------------------
+# #798's per-cycle cache above still has to be told *which* ids belong in the
+# window before it renders anything; building that list used to cost a full
+# re-glob of cycles_dir (and every peer's) on every tick regardless of
+# whether anything in it had moved. `.dashboard-cyclerows-cache/` fixes that,
+# keyed on the local and each peer's `cycles/` directory mtime plus the union
+# log's own size and mtime.
+cr="$(new_home nodeCR)"
+cr_state="$cr/.local/state/poetic-agents"
+cr_rows="$cr_state/.dashboard-cyclerows-cache/rows"
+for _n in 1 2 3 4 5; do
+  make_cycle "$cr" "${today_day}T12000${_n}Z-cr$_n" "0.0$_n" model-cr
+done
+
+b_cr()      { rm -f "$cr_state/.dashboard-fingerprint"; run_publish      "$cr"; }
+b_cr_fast() { rm -f "$cr_state/.dashboard-fingerprint"; run_publish_fast "$cr"; }
+
+b_cr
+assert_eq "a full build leaves the row window cached" "1" \
+  "$(( $(wc -c < "$cr_rows" 2>/dev/null || echo 0) > 0 ))"
+assert_eq "and every cycle is in it" "5" \
+  "$(jq -r '.cycles | length' <<<"$(data_of "$cr")")"
+
+# Genuinely read, not merely written: drop one real cycle's row from the
+# cache by hand — nothing a fresh glob could ever produce, since that
+# cycle's directory is still on disk — and confirm an unchanged tick serves
+# the doctored list rather than rebuilding it from scratch.
+_cr3="${today_day}T120003Z-cr3"
+grep -v "^$_cr3"$'\t' "$cr_rows" > "$tmp_dir/cr-rows-trimmed"
+cp "$tmp_dir/cr-rows-trimmed" "$cr_rows"
+b_cr_fast
+assert_eq "an unchanged tick serves the row window from cache, not a fresh glob" "4" \
+  "$(jq -r '.cycles | length' <<<"$(data_of "$cr")")"
+
+# ...and a new local cycle directory invalidates it (acceptance criterion 2):
+# creating it moves cycles_dir's own mtime, which is exactly the signal the
+# cache key reads.
+make_cycle "$cr" "${today_day}T120009Z-cr9" 0.09 model-cr
+b_cr_fast
+assert_eq "a new local cycle directory invalidates the row cache" "1" \
+  "$(jq -r --arg id "$_cr3" '[.cycles[] | select(.id == $id)] | length' <<<"$(data_of "$cr")")"
+
+# ...and so does a peer's `cycles/` directory gaining an entry (acceptance
+# criterion 2's other half) — the same materialised-peer shape the fleet
+# view fixture above uses.
+b_cr >/dev/null   # re-prime the cache cleanly with today's six cycles
+_cr1="${today_day}T120001Z-cr1"
+grep -v "^$_cr1"$'\t' "$cr_rows" > "$tmp_dir/cr-rows-trimmed2"
+cp "$tmp_dir/cr-rows-trimmed2" "$cr_rows"
+cr_peer="$cr/.cache/poetic-agents/workspaces/.agent-ops-peers/peerCR"
+mkdir -p "$cr_peer/cycles/${today_day}T120099Z-peercr"
+printf '{"node":"peerCR","role":"active","ts":"%s"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  > "$cr_peer/heartbeat.json"
+: > "$cr_peer/log.jsonl"
+b_cr_fast
+assert_eq "a new peer cycle directory invalidates the row cache" "1" \
+  "$(jq -r --arg id "$_cr1" '[.cycles[] | select(.id == $id)] | length' <<<"$(data_of "$cr")")"
+
+# ...and so does the union log alone (acceptance criterion 3): a cycle id
+# known only from an event, with no cycles/ directory of its own, still has
+# to reach the window on the next tick.
+b_cr >/dev/null   # re-prime again, now with the peer's cycle counted too
+_cr2="${today_day}T120002Z-cr2"
+grep -v "^$_cr2"$'\t' "$cr_rows" > "$tmp_dir/cr-rows-trimmed3"
+cp "$tmp_dir/cr-rows-trimmed3" "$cr_rows"
+_cr_evonly="${today_day}T120098Z-evonly-cr"
+printf '{"ts":"%s","cycle":"%s","node":"nodeCR","event":"cycle-start"}\n' \
+  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$_cr_evonly" >> "$cr_state/log.jsonl"
+b_cr_fast
+cr_data="$(data_of "$cr")"
+assert_eq "a union-log-only cycle id reaches the window" "1" \
+  "$(jq -r --arg id "$_cr_evonly" '[.cycles[] | select(.id == $id)] | length' <<<"$cr_data")"
+assert_eq "  ... which also proves the log-only change invalidated the cache" "1" \
+  "$(jq -r --arg id "$_cr2" '[.cycles[] | select(.id == $id)] | length' <<<"$cr_data")"
+
 # --- --now pins every rolling window to a caller-chosen instant (agent-ops#957) --
 # Without it, day_cut/today/recent_cut and the landing digest's in_window/
 # stale() all read the real wall clock, so a test asserting against them has

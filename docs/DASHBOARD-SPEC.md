@@ -577,8 +577,9 @@ warns about, where a missed input stalls everything silently. It covers by
 exclusion rather than enumeration — everything under the state dir counts
 except what the Publisher and its heartbeat write themselves (the served
 directory, `dashboard.log*`, and the `.dashboard-fingerprint`,
-`.dashboard-skips`, `.dashboard-tick-cost`, `.dashboard-payload` and
-`.dashboard-cycle-cache/` bookkeeping beside it), what the
+`.dashboard-skips`, `.dashboard-tick-cost`, `.dashboard-payload`,
+`.dashboard-cycle-cache/` and `.dashboard-cyclerows-cache/` bookkeeping
+beside it), what the
 Publisher never reads (`state-sync.log`, `doctor.log`, `tech-debt-archive.log`, and the `*.err`
 sidecars), and the caches a timer rewrites with identical content — so an
 input a later panel adds is covered on the day it is added, and the failure
@@ -651,6 +652,21 @@ inputs would miss. A cycle that renders to nothing caches that verdict too, or
 it is recomputed on every tick for as long as it stays in the window. The cache
 is pruned to the window on each publish: entries are never touched on a hit, so
 an mtime sweep would evict exactly the cycles still in use.
+
+The window itself — which `MAX_CYCLES` ids the cache above even gets asked to
+render — is cached too, under `<state_dir>/.dashboard-cyclerows-cache/`
+(#993). Without it, every tick re-globs the local and every peer's `cycles/`
+directory (bounded by `state_local_cycles_retained`, 1000 on every node) to
+produce a list bounded by the constant `MAX_CYCLES`, however few of those
+1000 entries actually moved since the last tick. The key is a stat, not a
+content hash: the local and each peer's `cycles/` directory mtime (which
+moves exactly when an entry is added or removed — the same signal a cache
+entry's own key uses for a stage file, never reused here as a *liveness*
+signal, which is the distinct use #803's cache key confused), plus the union
+event log's own size and mtime (covers the ids known only from the event
+stream). A tick whose key is unchanged copies the cached row list straight
+into place rather than re-running the glob/sort/interleave; a tick whose key
+moved rebuilds it and refreshes the cache.
 
 That render **excludes events belonging to no cycle before it groups the union
 by `.cycle`**, and reports its own success or failure as `cycle_render`. Both
