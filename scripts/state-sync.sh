@@ -56,6 +56,12 @@ SCHEMA_FILE="$SCRIPT_DIR/config.schema.json"
 . "$SCRIPT_DIR/lib/log-event.sh"
 # shellcheck source=lib/disk-space.sh
 . "$SCRIPT_DIR/lib/disk-space.sh"
+# shellcheck source=lib/notify.sh
+# `notify_resolve_webhook_url` alone, to resolve the configured notify
+# webhook the same way agent-cycle.sh, scripts/publish-dashboard.sh and
+# scripts/doctor.sh do (issue #1279), so the value registered for redaction
+# below (agent-ops#1721) is the one this node would actually POST to.
+. "$SCRIPT_DIR/lib/notify.sh"
 
 usage() {
   cat <<'EOF'
@@ -132,6 +138,16 @@ cycles_retained="$(cfg '.cycles_retained')"
 local_retained="${STATE_SYNC_LOCAL_RETAINED:-$(cfg '.state_local_cycles_retained')}"
 streams_retained="${STATE_SYNC_STREAMS_RETAINED:-$(cfg '.state_local_streams_retained')}"
 min_free_workspace_bytes="${STATE_SYNC_MIN_FREE_WORKSPACE_BYTES:-$(cfg '.min_free_workspace_bytes')}"
+
+# A bearer secret carried in a webhook URL's own path (agent-ops#1721) — none
+# of REDACT_SED_ARGS' shape rules match it — registered once, before any
+# redaction pass below runs, so it is masked in whatever this push commits
+# exactly as a token or a home path already is. A no-op when unset. Resolved
+# the same way agent-cycle.sh and scripts/publish-dashboard.sh do, including
+# NOTIFY_WEBHOOK_URL's non-public, per-node source (issue #991).
+notify_webhook_url_env="$(notify_webhook_url_env_or_empty "${NOTIFY_WEBHOOK_URL:-}")"
+redact_add_literal "$(notify_resolve_webhook_url "$(cfg '.notify_webhook_url')" \
+  "$(cfg '.escalation_webhook_url')" "$notify_webhook_url_env")"
 # Minutes → seconds: lib/updater-health.sh's own contract takes a threshold
 # in seconds, never a config key of its own (agent-ops#603, following
 # image_behind_grace_hours' shape — the judgement lives one layer up from

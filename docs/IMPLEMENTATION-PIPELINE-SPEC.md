@@ -3656,6 +3656,26 @@ implements.
    committed to the state repository's history before this pass existed —
    a one-off cleanup, not a push-time behaviour this requirement covers.
 
+   A bearer secret carried in a webhook URL's own path
+   (`https://hooks.slack.com/services/T…/B…/…`, the configured
+   `notify_webhook_url`/`escalation_webhook_url`, requirement 2m) has no
+   shape the fixed rules above can match (agent-ops#1721). Before the pass
+   runs, `state-sync.sh` resolves that value the same way `agent-cycle.sh`
+   and `scripts/publish-dashboard.sh` do (`notify_resolve_webhook_url`,
+   `lib/notify.sh`) and registers it for masking with
+   `redact_add_literal()` (`lib/redact.sh`) — additive to `REDACT_SED_ARGS`,
+   never touching the shape rules, and a no-op when the value is empty or
+   contains a newline: a single `sed` rule cannot span one, so registering
+   such a value would break every rule in `REDACT_SED_ARGS`, not just its
+   own, for the rest of the pass.
+   `scripts/publish-dashboard.sh` registers the identical value the same
+   way, right after it resolves it, before its own `redact()` pass
+   (`docs/DASHBOARD-SPEC.md`). Registering the value itself, rather than
+   adding a generic webhook-URL shape pattern, is deliberate: it is exact,
+   costs no false positives, and covers whatever provider an installation
+   actually configures, where a shape pattern would either miss an
+   unlisted provider or chase an open-ended list of them.
+
    The pass handles a failure per file rather than unwinding on it
    (agent-ops#1679, below): a `redact_file` call that fails on one file —
    `redact_file` is a bare `sed -i`, so a directory the mirror copy cannot
@@ -22544,7 +22564,15 @@ oblige anyone to edit a test.
    committed as it stands, every other file in the same push still reaching
    the branch redacted, and a file that resists removal and truncation too
    abandons the push with a `state-sync-push-failed` event and no commit
-   (requirement 2.5's cascade, agent-ops#1679 and agent-ops#1703);
+   (requirement 2.5's cascade, agent-ops#1679 and agent-ops#1703); a
+   configured `notify_webhook_url` reaches the branch as `[REDACTED-WEBHOOK]`
+   too — no shape rule matches a bearer secret carried in a URL path, so this
+   asserts the runtime-literal registration (agent-ops#1721) instead — while
+   an unrelated URL of similar shape is left untouched, and with the value
+   unset the existing shape-based redaction is unaffected; a `notify_webhook_url`
+   (config-sourced or from `NOTIFY_WEBHOOK_URL`) containing a newline registers
+   as a no-op instead of poisoning the shared rule set — the existing
+   token-shape redaction still applies to the rest of the same push;
    a fetch materialises a peer whole
    under the peers directory, leaves the node's own `state_dir` alone, never
    includes the node itself, and prunes a peer whose branch is gone; the

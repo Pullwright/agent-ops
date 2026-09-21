@@ -121,6 +121,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A configured notify-webhook URL is now masked before it reaches the
+  state-mirror repository or the dashboard, instead of passing every
+  redaction pass unmatched** (issue #1721). `lib/redact.sh`'s pattern set
+  matches token *shapes* (`gh*_`, `github_pat_`, `sk-`, `Bearer …`), none of
+  which catch a bearer secret carried in a URL *path*, the shape a Slack/
+  Discord/Teams/PagerDuty webhook URL takes
+  (`https://hooks.slack.com/services/T…/B…/…`) — so once `notify_webhook_url`
+  became a genuine per-node secret (issue #991) rather than a value already
+  public in `config.json`, nothing stopped it from reaching either
+  destination unredacted the first time a future diagnostic printed the
+  resolved value. `lib/redact.sh` gains `redact_add_literal()`, additive to
+  the existing shape rules, for masking one runtime-supplied value exactly
+  rather than chasing an open-ended list of provider URL shapes;
+  `scripts/state-sync.sh` and `scripts/publish-dashboard.sh` both resolve
+  the configured value (`notify_resolve_webhook_url`, the same alias
+  resolution `agent-cycle.sh` uses) and register it before their own
+  redaction pass runs. With no webhook configured, behaviour is unchanged.
+
 - **A single repository's own deterministic Co-Ordinator failure now
   reaches the crash-loop escalation rung instead of being reset every cycle
   by a sibling repository's success** (issue #1630). Since issue #587 split
