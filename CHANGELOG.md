@@ -257,11 +257,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   contract are unchanged.
 - **`min_free_workspace_bytes` now normalises a non-numeric value to `0` at
   the read, before the disk-pressure prune's arithmetic test** (issue
-  #1729). The prune above (#1678) reads this key straight into `(( min_
-  free_workspace_bytes > 0 ))`, with no numeric guard; a schema-valid
-  config can't hit it, but a hand-edited `config.json` (or a bad
-  `STATE_SYNC_MIN_FREE_WORKSPACE_BYTES` override) carrying a non-numeric
-  value — `"2GiB"`, say — reached that test with the raw string. The read
+  #1729). The prune above (#1678) reads this key straight into
+  `(( min_free_workspace_bytes > 0 ))`, with no numeric guard; a
+  schema-valid config can't hit it, but a hand-edited `config.json` (or a
+  bad `STATE_SYNC_MIN_FREE_WORKSPACE_BYTES` override) carrying a
+  non-numeric value — `"2GiB"`, say — reached that test with the raw
+  string. The read
   now falls back to `0` — the same "floor off" `disk_space_verdict` already
   extends to a non-numeric floor argument — so every consumer of the
   variable sees a clean value and no arithmetic-error noise reaches

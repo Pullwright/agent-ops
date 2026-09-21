@@ -732,7 +732,7 @@ assert_eq "cycles 1-3 keep their streams with the floor off" "1" \
 # hand-edited "2GiB" rather than a schema-valid number — must not crash the
 # `(( min_free_workspace_bytes > 0 ))` arithmetic test in
 # prune_derived_under_pressure under `set -e` (agent-ops#1729). The read at
-# scripts/state-sync.sh:134 normalises a non-numeric value to 0, the same
+# scripts/state-sync.sh:141 normalises a non-numeric value to 0, the same
 # "floor off" disk_space_verdict already tolerates, so this behaves exactly
 # like the floor-off case above. Only config.json (not the
 # STATE_SYNC_MIN_FREE_WORKSPACE_BYTES override, already exercised above) can
