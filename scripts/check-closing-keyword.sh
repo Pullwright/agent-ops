@@ -264,7 +264,24 @@ if [[ -n "$repo_slug" && -n "$pr_number" ]]; then
     patch="$(jq -r --arg p "$record_path" \
       'map(select(.filename == $p)) | (.[0].patch // "")' <<<"$files_json" 2>/dev/null)"
 
+    # If the diff does not touch this file, check whether it is already
+    # resolved on the base branch (issue #1493). If it is, the record-flip
+    # requirement is already satisfied and we should not demand a no-op rewrite.
     if [[ -z "$patch" ]]; then
+      base_sha="$("$GH" api "repos/$repo_slug/pulls/$pr_number" --jq '.base.sha' 2>/dev/null)" || base_sha=""
+      if [[ -n "$base_sha" ]]; then
+        # Try to read the record file from the base ref to check its current status.
+        file_content="$("$GH" api "repos/$repo_slug/contents/${record_path}?ref=${base_sha}" --jq '.content' 2>/dev/null)" || file_content=""
+        if [[ -n "$file_content" ]]; then
+          # Decode the base64-encoded content and check for terminal status.
+          decoded="$(printf '%s' "$file_content" | base64 -d 2>/dev/null)" || decoded=""
+          if grep -qE '^status:[[:space:]]*(resolved|not-debt)[[:space:]]*$' <<<"$decoded"; then
+            # The record is already at a terminal status on the base branch,
+            # so the requirement is satisfied — skip the error.
+            continue
+          fi
+        fi
+      fi
       echo "::error::issue #${item} names ${record_path} (its body's \"Filed as\" line) but this pull request's diff does not touch that file — closing the issue must also flip its frontmatter to a terminal status: resolved or not-debt (TECH-DEBT.md \"Resolution and history\")" >&2
       status=1
     elif ! grep -qE '^\+status:[[:space:]]*(resolved|not-debt)[[:space:]]*$' <<<"$patch"; then
