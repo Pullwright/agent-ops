@@ -138,7 +138,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the configured value (`notify_resolve_webhook_url`, the same alias
   resolution `agent-cycle.sh` uses) and register it before their own
   redaction pass runs. With no webhook configured, behaviour is unchanged.
-
+- **An escalation's duplicate guard can no longer be fooled by one item
+  reference being a string prefix of another** (issue #1694). Since issue
+  #1630 gave the crash-loop detector per-repository item references
+  (`crash-loop:coordinator:<owner>/<name>`), the surviving repo-less
+  fallback reference `crash-loop:coordinator` has been a strict prefix of
+  every one of them — and `create_escalation_issue`'s open-issue dedup and
+  `escalation_recent_close`'s closed-issue search (both `lib/enabler.sh`)
+  matched with a bare `contains`, so a fallback-group filing could rebind
+  onto a per-repository issue that had never been about it, and the
+  per-close re-filing guard (`escalation_refile_after_hours`) could read a
+  per-repository issue's close as the fallback group's own. Both filters now
+  match the backtick-delimited token `` `<item>` `` instead: no item
+  reference this system mints contains a backtick, so the closing delimiter
+  can only fall at the reference's own end, and no prefix pair can collide.
+  `crash_loop_escalate`'s own body footer moves from its one-off
+  `ref: <item>` line to the `` Item: `<item>` `` form every other escalation
+  route — `lib/approver.sh`, `lib/landing.sh`, `lib/merge-budget.sh`,
+  `lib/standdown.sh`, `lib/required-check-preflight.sh` and the Enabler's
+  own template — already carried, it having been the only body that did not
+  carry the anchor the guard now needs. An escalation issue left open across
+  this change still carries the old footer and is invisible to the narrowed
+  guard until its footer is migrated (#1744).
 - **A single repository's own deterministic Co-Ordinator failure now
   reaches the crash-loop escalation rung instead of being reset every cycle
   by a sibling repository's success** (issue #1630). Since issue #587 split
