@@ -865,11 +865,15 @@ stage_budget_overrides() {
 #
 # ITEM (requirement 49, issue #595) is the item-lifecycle join key's other
 # half — REPO already is one, once it names a real repository rather than the
-# `*` a fleet-wide actor (Co-Ordinator, Enabler, Refiner) passes for its own
-# cell lookup. Both are omitted, never logged `null`, when there is none: `*`
-# for REPO (a stage that runs ahead of or across selection has no one repo to
-# name — see the coordinator/enabler/refiner call sites' own comments) or an
-# empty ITEM (every other caller passes `$selected_item`).
+# `*` a fleet-wide actor (the Enabler, the Refiner) passes for its own cell
+# lookup. The two are independent: the Co-Ordinator passes a real repository
+# (issue #1629 — each engagement has run for exactly one since the
+# per-repository split, agent-ops#1560/#587) while still passing no ITEM at
+# all, because it runs ahead of the selection that would name one. Both are
+# omitted, never logged `null`, when there is none: `*` for REPO (a stage
+# that runs across repositories has no one repo to name — see the
+# enabler/refiner call sites' own comments) or an empty ITEM (every other
+# caller passes `$selected_item`).
 stage_budget_apply() {
   local actor="$1" repo="${2:-*}" model="${3:-*}" extra="${4:-{\}}" item="${5:-}" budget
   budget="$(stage_budget_resolve "$stage_budget_json" "$actor" "$repo" "$model" \

@@ -363,9 +363,25 @@ fresh_repo="$(stage_budget_resolve "$t_legacy" coordinator acme/widgets claude-t
 assert_eq "a brand-new per-repo cell with zero runs of its own warm-starts from the * pool, not the prior" \
   "30" "$(jq -r '.backstop_min' <<<"$fresh_repo")"
 assert_eq "…and says so on the event, as leaning on the fleet-wide seed rather than its own evidence" \
-  "shrunk" "$(jq -r '.basis' <<<"$fresh_repo")"
+  "pooled" "$(jq -r '.basis' <<<"$fresh_repo")"
 assert_eq "…via the pooled tier, not a cell of its own — it has none yet" \
   "pooled" "$(jq -r '.source' <<<"$fresh_repo")"
+
+# …and it says `pooled` however much history the frozen cell itself has: a
+# `*` cell past `shrinkage_runs` reads `own` in the table, and copying that
+# through would announce a repo cell as running on evidence it does not have.
+mature_star="$tmp_dir/coord-mature-star.jsonl"
+: > "$mature_star"
+for i in $(seq 1 25); do
+  run_repo "2026-07-10T00:$(printf '%02d' "$i"):00Z" \
+    "wsm$i" 0 claude-test-model 300000 60 "" "" >> "$mature_star"
+done
+t_mature="$(table_for "$mature_star")"
+assert_eq "the frozen * cell speaks for itself once it is past shrinkage_runs" \
+  "own" "$(cell "$t_mature" "coordinator|*|claude-test-model" basis)"
+assert_eq "…but a repo cell warm-started from it still reports pooled, never own" \
+  "pooled" "$(jq -r '.basis' \
+    <<<"$(stage_budget_resolve "$t_mature" coordinator acme/widgets claude-test-model '{}')")"
 
 # Every other actor this warm start does not touch answers exactly as before:
 # from the shipped prior, cold.

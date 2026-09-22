@@ -7396,10 +7396,15 @@ implements.
    observed kill rate inside the objective, and a 95th percentile of
    *completed* runs still well clear of the reduced cap. A killed run
    contributes no duration at all — its recorded length is its cap, not its
-   length. Floors and ceilings bound the fold: never below the prior, never
-   below twice that percentile, never above a fixed multiple of the prior, and
-   when floor and ceiling disagree the floor wins, because throughput is a
-   preference and discarding a finished stage is not.
+   length. Floors and ceilings bound the fold: never below the value the fold
+   started from, never below twice that percentile, never above a fixed
+   multiple of that same starting value, and when floor and ceiling disagree
+   the floor wins, because throughput is a preference and discarding a
+   finished stage is not. That starting value is the shipped prior for every
+   cell but one — a warm-started `(coordinator, <repo>, model)` cell starts
+   from the frozen `(coordinator, *, model)` pool instead (below), so its
+   floor and its ceiling scale with the seed it inherited rather than with the
+   prior.
    **Cold start is hierarchical shrinkage, not a threshold.** A cell's
    estimate is `(n·own + n₀·prior) / (n + n₀)`, with the prior the pooled
    value one level up — the same actor and model across every repository,
@@ -7429,7 +7434,9 @@ implements.
    **Every value is announced.** The `stage-start` /
    `review-stage-start` event carries `backstop_min`, `inactivity_min`,
    `source` (`config`, `cell`, `pooled` or `prior`) and `basis` (`own`,
-   `shrunk` or `prior`), so a reader looking at a stage finds the numbers it
+   `shrunk`, `pooled` or `prior` — `pooled` wherever the value came from a
+   level above the cell, so a cell with no runs of its own can never announce
+   `own`), so a reader looking at a stage finds the numbers it
    was given and where each came from; `scripts/doctor.sh` reports the whole
    table; and the dashboard holds a live stage against the cap that stage was
    actually given rather than against a shared constant. A self-tuning number
@@ -23504,8 +23511,9 @@ oblige anyone to edit a test.
    post-split event is keyed to its own repository rather than falling to
    `*`, a brand-new `(coordinator, <repo>, model)` cell with no runs of its
    own resolves its backstop and watchdog from the frozen `(coordinator, *,
-   model)` pool rather than the shipped prior — reported `shrunk`, via the
-   pooled tier, never `cell` — and an unrelated actor (the Refiner, the
+   model)` pool rather than the shipped prior — reported `pooled`, via the
+   pooled tier, never `cell`, and never the frozen cell's own `own` however
+   many runs that cell has — and an unrelated actor (the Refiner, the
    Enabler) is untouched by any of it; once that repository cell has a run of
    its own its backstop continues from the same warm value rather than
    resetting to the prior, and a kill against the repository cell's own

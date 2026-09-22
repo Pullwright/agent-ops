@@ -223,9 +223,13 @@ stage_budget_observations() {
 #                             95th percentile that still sits well clear of
 #                             the reduced cap.
 #
-# Floors and ceilings bound the fold: never below the shipped prior, never
-# below twice the observed 95th percentile of *completed* runs, and never
-# above a fixed multiple of the prior. When the floor and the ceiling
+# Floors and ceilings bound the fold: never below the value the fold started
+# from, never below twice the observed 95th percentile of *completed* runs,
+# and never above a fixed multiple of that same starting value. That value is
+# the shipped prior for every cell but one — a warm-started Co-Ordinator
+# repository cell starts from the frozen `*` pool instead (see
+# `coordinator_pooled_backstop`), so its floor and ceiling scale with the
+# seed it inherited rather than with the prior. When the floor and the ceiling
 # disagree — a cell whose real durations have outgrown the ceiling — the floor
 # wins. Throughput is a preference; discarding a finished stage is not.
 stage_budget_table() {
@@ -329,18 +333,19 @@ stage_budget_table() {
     # The Co-Ordinator warm start (issue #1629): every `coordinator|*|<model>`
     # observation predates the repo split (agent-ops#1560) and stays that way
     # forever — every engagement since carries its own `repo`, so the `*`
-    # bucket for this one actor is a fixed, non-growing pool, never a repo
-    # cell own data seen twice. That makes it safe to replay through the
-    # `controller` fold as a fresh `coordinator|<repo>|<model>` cell seed, in
-    # place of the flat shipped prior every other actor starts from: a
-    # brand-new repo cell inherits what the fleet already knew about the
-    # Co-Ordinator on that model, rather than discarding it. This would be
-    # unsafe to do from `$by_actor`/`$by_actor_model` instead — those pool
-    # every repository own runs, which for any other actor cell overlap the
-    # cell own data, and replaying an already-controlled value back through
-    # the same runs kills and streaks double-counts them. The frozen `*` pool
-    # has no such overlap with a real repo cell, so this is the one place
-    # that replay is sound.
+    # bucket for this one actor is a fixed, non-growing pool that can never
+    # hold a run a repo cell also holds. That makes it safe to replay through
+    # the `controller` fold as the seed for a fresh
+    # `coordinator|<repo>|<model>` cell, in place of the flat shipped prior
+    # every other actor starts from: a brand-new repo cell inherits what the
+    # fleet already knew about the Co-Ordinator on that model, rather than
+    # discarding it. Seeding from `$by_actor`/`$by_actor_model` instead would
+    # be unsafe: those pool the runs of every repository, which for any other
+    # actor cell include the very runs that cell is about to fold in again,
+    # and replaying an already-controlled value back through those same runs
+    # counts each of their kills and streaks twice. The frozen `*` pool
+    # shares no run with a real repo cell, so this is the one place that
+    # replay is sound.
     def coordinator_pooled_backstop($model; $star_by_model):
       prior_of("coordinator"; "backstop") as $prior
       | ($star_by_model[$model] // stats([])) as $st
@@ -449,7 +454,12 @@ stage_budget_table() {
 #       than it needs to be (it folds every model together). This is what a
 #       brand-new `coordinator|<repo>|<model>` cell resolves against on its
 #       very first launch, before `stage_budget_table` has anything to put
-#       in `cells` for it at all.
+#       in `cells` for it at all. It reports `basis: "pooled"`, the same
+#       answer tier 4 gives for the same reason, and deliberately never the
+#       frozen cell's own basis: that cell may well have enough runs to read
+#       `own`, and announcing `own` for a repo cell with no runs at all would
+#       be exactly the untraceable number requirement 4f's `basis` exists to
+#       prevent.
 #   4. the shrunk pooled value for this actor
 #   5. the shipped prior                                   code
 #
@@ -469,7 +479,7 @@ stage_budget_resolve() {
     | (if $a == "coordinator" and $r != "*" then ($t.cells[$a + "|*|" + $m] // null) else null end) as $star
     | ($t.actors[$a] // null) as $pooled
     | (if $cell != null then {b: $cell.backstop_min, i: $cell.inactivity_min, src: "cell", basis: $cell.basis}
-       elif $star != null then {b: $star.backstop_min, i: $star.inactivity_min, src: "pooled", basis: $star.basis}
+       elif $star != null then {b: $star.backstop_min, i: $star.inactivity_min, src: "pooled", basis: "pooled"}
        elif $pooled != null then {b: $pooled.backstop_min, i: $pooled.inactivity_min, src: "pooled", basis: $pooled.basis}
        else {b: $prior.backstop, i: $prior.inactivity, src: "prior", basis: "prior"} end) as $d
     | {
