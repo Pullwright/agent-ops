@@ -221,6 +221,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the fact across the window and is filed as before. Demotion is the mirror
   image and is now documented as such: demoting a node the fleet was paging
   for closes its page as cleared, with the evidence kept in the closed issue.
+- **`check-closing-keyword.sh`'s "Filed as" record path is matched against
+  the register's own ID charset, not any run of non-backticks** (issue
+  #1764). `[A-Za-z0-9._-]+` is the grammar `docs/TECH-DEBT-REGISTER.md` in
+  `Poetic-Poems/poetic` defines and all 221 records in the frozen
+  `tech-debt/` archive already satisfy, so no real record path is newly
+  rejected; a path outside it now matches nothing and demands nothing,
+  exactly as an issue with no "Filed as" line does. This is hardening ahead
+  of the need rather than a live defect — the captured path's only uses here
+  are a `jq --arg` binding and the error messages, neither of which a `?` or
+  `&` can subvert — taken because the path is read from an issue body and
+  the register's own grammar is far narrower than the pattern was.
 - **Requirement 2.0c's pre-clone stand-down now reads `state_dir` as well as
   `workspace_root`, so a short `state_dir` stands the cycle down instead of
   only ever warning in `doctor.sh`** (issue #992, TD-PPagop-26082517).
