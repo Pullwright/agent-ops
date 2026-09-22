@@ -5287,6 +5287,21 @@ implements.
    heartbeat's `stage_health` field or reads null, never a verdict this node
    derives on that peer's behalf. `docs/DASHBOARD-SPEC.md` documents the
    page's own Stage health section and fleet-strip badge.
+
+   `stage_health_verdicts`/`stage_health_write_status` take the event pair
+   (default `stage-end`/`attempt-failed`) and the output filename (default
+   `.stage-health.json`) as parameters, generalized rather than hard-coded so
+   a second pipeline with its own event stream can reuse the identical
+   reduction over its own events (agent-ops#996): `docs/REVIEW-PIPELINE-SPEC.md`
+   requirement R19 is the repository-review pipeline's own symmetric verdict,
+   for its one real stage `project-reviewer`, computed from `review-log.jsonl`'s
+   `review-stage-end`/`review-attempt-failed` events into its own
+   `state_dir/.review-stage-health.json` and folded into the heartbeat as a
+   field of its own, `review_stage_health`, never merged into `stage_health` —
+   the two pipelines' event streams and cycle-id shapes differ enough (a
+   `review-cycle.sh` run's own id can cover several repositories) that R19
+   keeps them computed, written and rendered separately rather than implying
+   a shared computation that does not exist.
 2.9. **Drain at-rest detection and reporting** (agent-ops#865, `lib/drain.sh`).
    While `DRAINING` is set (requirement 2.3d), the site that applies
    requirement 2.2c's unconditional narrowing also decides whether the drain

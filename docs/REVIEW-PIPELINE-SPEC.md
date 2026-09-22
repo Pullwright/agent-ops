@@ -1006,24 +1006,103 @@ R16. **Streams.** Review *operational* events go to the review pipeline's own
    usage-limit stand-down is shared across both pipelines — it carries `node`
    too, so a fleet view can say which machine hit the limit.
 
+   `review-stage-end` and a genuine-failure `review-attempt-failed` (the one
+   `review_one` logs when the reviewer's own attempt failed, never the
+   workspace-clone failure logged before either exists) additionally carry
+   `stage: "project-reviewer"` and a `cycle` field, for R19's benefit alone —
+   nothing else on this stream reads either. `cycle` is a synthetic
+   `<review id>:<repo>` pair, not the bare `review` id every other event on
+   this stream carries: a single run can review several repositories under
+   one `review` id (R5's per-repo loop), so the bare id would let
+   `lib/stage-health.sh`'s own id-keyed join (requirement 2.8's
+   exit-0-but-failed reduction) attach one repository's genuine failure to
+   another's success. The genuine-failure `review-attempt-failed` also
+   carries `stage_failure: true`, on requirement 2.8's own convention — this
+   call only ever fires on a genuine attempt failure, never a truthful item
+   verdict a stage reached by running to completion (the repository-review
+   pipeline raises no such verdict: it either raises a pull request or it
+   does not).
+
 R17. The `review-log.jsonl` and the `state_dir/reviews/<review-id>/`
-   transcripts are the durable record. Surfacing them in the monitoring
-   dashboard is a worthwhile follow-on but is **out of scope** for this
-   document (the dashboard has its own spec, `docs/DASHBOARD-SPEC.md`);
-   note it there if you extend it.
+   transcripts are the durable record. Surfacing the transcripts themselves,
+   or the raw log, in the monitoring dashboard is a worthwhile follow-on but
+   is **out of scope** for this document (the dashboard has its own spec,
+   `docs/DASHBOARD-SPEC.md`); note it there if you extend it. R19 is the one
+   derived reading of `review-log.jsonl` that is in scope: a per-stage health
+   verdict, not the log itself.
+
+R19. **Per-stage health, mirrored (agent-ops#996).** The repository-review
+   pipeline's own symmetric reading of `docs/IMPLEMENTATION-PIPELINE-SPEC.md`
+   requirement 2.8: this pipeline runs one real stage, `project-reviewer`
+   (R9–R15, the Reviewer-Agent invocation `review_one` makes), and until this
+   requirement nothing read whether its most recent run of attempts on this
+   node was succeeding — the exact detection gap issue #662 closed for the
+   implementation pipeline's nine stages, left open here because #662's own
+   scope was `log.jsonl`'s `stage-end` records, never `review-log.jsonl`'s.
+
+   `lib/stage-health.sh`'s `stage_health_verdicts`/`stage_health_write_status`
+   (requirement 2.8) are generalized to take the stage-end/attempt-failed
+   event names and the output filename as parameters (default
+   `stage-end`/`attempt-failed`/`.stage-health.json`, unchanged for the
+   implementation pipeline's own callers). `review-cycle.sh`'s `cleanup()`
+   trap calls `stage_health_write_status` once every run, after `review-end`
+   is logged and before the state-sync push, narrowed to `["project-reviewer"]`
+   over `review-log.jsonl`'s own `review-stage-end`/`review-attempt-failed`
+   events (R16) rather than the shared `stage-end`/`attempt-failed`, and
+   writes to its own `state_dir/.review-stage-health.json` — never merged
+   into the implementation pipeline's `.stage-health.json`, whose "two
+   writers, one file" read-modify-write discipline (requirement 2.8) was
+   designed and tested for exactly the two writers it already has
+   (`agent-cycle.sh`, `monitor-cycle.sh`); a third writer sharing that file
+   would reopen the identical lost-update risk that discipline exists to
+   bound.
+
+   Unlike the implementation pipeline's per-stage streak — one attempt per
+   cycle, so a cycle id is never reused within one stage's own `stage-end`
+   list — a single `review-cycle.sh` run's `review` id can cover several
+   repositories (R5's per-repo loop), so the bare id would let the
+   exit-0-but-failed join (requirement 2.8's TD-PPagop-26082504 reduction)
+   attach one repository's genuine failure to another repository's success
+   within the same run. R16's `cycle` field (`<review id>:<repo>`) is what
+   keeps that join scoped correctly; `consecutive_failures` itself still
+   counts across every attempt this stage has logged, run after run,
+   regardless of which repository each one reviewed — the same single
+   streak requirement 2.8 already computes for `coordinator`/`implementer`/
+   etc., asking the identical question of `project-reviewer`: is this
+   pipeline's one real stage's most recent run of attempts on this node
+   succeeding?
+
+   The verdict is not local to the node that computed it, on requirement
+   2.8's identical precedent: `scripts/state-sync.sh`'s heartbeat folds it in
+   as `review_stage_health`, a field of its own beside `stage_health` rather
+   than merged into it, and `.review-stage-health.json` is excluded from
+   general state replication the same way `.stage-health.json` is, so its
+   content travels exactly once, through the heartbeat.
+   `scripts/publish-dashboard.sh` reads its own `.review-stage-health.json`
+   (rather than recomputing it) and surfaces it as
+   `status.review_stage_health`; a peer's verdict comes from its heartbeat's
+   `review_stage_health` field or reads null, never a verdict this node
+   derives on that peer's behalf. `docs/DASHBOARD-SPEC.md` documents the
+   page's own Review stage health section, its own page-top banner, and its
+   own fleet-strip badge — each independent of `stage_health`'s own, so a
+   node whose implementation-pipeline stages are all healthy while
+   `project-reviewer` fails reads as failing too, never masked by the other
+   panel's green verdict, or the reverse.
 
 ## Components
 
 What exists, and the requirements each part answers to:
 
-1. `review-cycle.sh` implementing R1–R8 and R16 (including the role guard,
+1. `review-cycle.sh` implementing R1–R8, R16 and R19 (including the role guard,
    R2b, through `lib/role.sh`, the union snapshot and state push of R2c, through
    `scripts/state-sync.sh`, the per-repository instructions and context of
    R1c and R5 step 2a through `lib/review-context.sh`, shared with
    `scripts/doctor.sh` so the cycle's own refusal and doctor's `fail` read
-   one implementation, and the metering record on `review-stage-end`
+   one implementation, the metering record on `review-stage-end`
    through `lib/metering.sh`, shared with `agent-cycle.sh` — see
-   `docs/METERING-SCHEMA.md`). `shellcheck`-clean; sets its own `PATH`.
+   `docs/METERING-SCHEMA.md` — and R19's own stage-health verdict through
+   `lib/stage-health.sh`, shared with `agent-cycle.sh`/`monitor-cycle.sh`).
+   `shellcheck`-clean; sets its own `PATH`.
 2. `prompts/project-reviewer.md` implementing R9–R15. It must embed the
    relevant shared-repo conventions (as the other operating prompts do) so the
    stage never depends on context it was not given.
@@ -1220,6 +1299,32 @@ edit a test.
    canonical block from IMPLEMENTATION-PIPELINE-SPEC.md requirement 45a and
    pins `prompts/project-reviewer.md`'s copy byte-identical alongside the
    implementation pipeline's own prompts.
+
+10. **A stage-health verdict for `project-reviewer` (R19, agent-ops#996).**
+   `test/stage-health.test.sh` passes: `stage_health_verdicts` told the
+   review pipeline's own event names reads a `review-log.jsonl`-shaped stream
+   correctly — including the exit-0-but-failed join over the synthetic
+   `(review id, repo)`-scoped `cycle` field, and that two repositories
+   reviewed under one `review` id do not cross-contaminate each other's
+   verdict — while the default event names stay blind to that same stream,
+   proving the parameter is load-bearing, not decorative; and a custom
+   `STATUS_FILENAME` writes its own file, leaving `.stage-health.json`
+   untouched. `test/review-stage-health-wiring.test.sh` passes: the shipped
+   `review-stage-end`/`review-attempt-failed` calls carry `stage`, the
+   synthetic `cycle`, and (the genuine-failure one) `stage_failure: true`;
+   `cleanup()` computes the verdict from `review_log_file` narrowed to
+   `["project-reviewer"]`, over this stream's own event names, into
+   `.review-stage-health.json`, before the state-sync push. `test/state-sync
+   .test.sh` passes: `.review-stage-health.json` does not replicate as a raw
+   file, and its content reaches the heartbeat as `review_stage_health`, a
+   field of its own alongside `stage_health`. `test/publish-dashboard.test.sh`
+   and `test/dashboard-render.test.sh` pass: `status.review_stage_health` and
+   `fleet.nodes[].review_stage_health` read verbatim from the written file and
+   a peer's heartbeat respectively, and the page's Review stage health
+   section, its own page-top banner and its own fleet-strip badge render
+   independently of `stage_health`'s own — a node whose implementation-
+   pipeline stages are all healthy while `project-reviewer` fails must read
+   as failing too, never masked by the other panel's green verdict.
 
 ## Host provisioning (human steps)
 
