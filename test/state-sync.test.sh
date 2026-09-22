@@ -222,6 +222,12 @@ jq -nc --arg long "$(printf 'x%.0s' $(seq 1 260))" '
 # heartbeat below rather than replicated verbatim.
 printf '{"computed_at":"2026-07-20T00:00:00Z","threshold":3,"idle_after_hours":48,"stages":{"coordinator":{"verdict":"failing","consecutive_failures":5,"last_success":null,"last_detail":"boom"}}}\n' \
   > "$state/.stage-health.json"
+# Its review-pipeline sibling (agent-ops#996, docs/REVIEW-PIPELINE-SPEC.md
+# R19): a file of its own, on the identical reasoning, folded into the
+# heartbeat as `review_stage_health` rather than `stage_health` — the two
+# pipelines' own verdicts must never be conflated on a node running both.
+printf '{"computed_at":"2026-07-20T00:00:00Z","threshold":3,"idle_after_hours":48,"stages":{"project-reviewer":{"verdict":"failing","consecutive_failures":4,"last_success":null,"last_detail":"reviewer exited 1"}}}\n' \
+  > "$state/.review-stage-health.json"
 # The compose reconciler's own verdict (lib/compose-reconcile.sh, requirement
 # 2.5a): written by a *different container* into this shared volume, and
 # local to this node as a raw file for the same reason .stage-health.json
@@ -299,6 +305,7 @@ assert_eq "the wake-poll cache does not replicate" "0" "$(test -e "$pushed/wake-
 assert_eq "the doctor log does not replicate" "0" "$(test -e "$pushed/doctor.log" && echo 1 || echo 0)"
 assert_eq "the doctor status cache does not replicate" "0" "$(test -e "$pushed/.doctor-status.json" && echo 1 || echo 0)"
 assert_eq "the stage-health cache does not replicate as a raw file" "0" "$(test -e "$pushed/.stage-health.json" && echo 1 || echo 0)"
+assert_eq "the review pipeline's own stage-health cache does not replicate as a raw file" "0" "$(test -e "$pushed/.review-stage-health.json" && echo 1 || echo 0)"
 assert_eq "the compose-reconcile verdict does not replicate as a raw file" "0" "$(test -e "$pushed/.compose-reconcile.json" && echo 1 || echo 0)"
 assert_eq "the revert-rate publish log does not replicate" "0" "$(test -e "$pushed/revert-rate.log" && echo 1 || echo 0)"
 assert_eq "the revert-rate cumulative-state cache does not replicate" "0" \
@@ -385,6 +392,10 @@ assert_eq "the heartbeat carries the stage-health verdict computed this cycle" "
   "$(jq -r '.stage_health.stages.coordinator.verdict' <<<"$hb")"
 assert_eq "with its consecutive-failure count intact" "5" \
   "$(jq -r '.stage_health.stages.coordinator.consecutive_failures' <<<"$hb")"
+assert_eq "the heartbeat carries the review pipeline's own verdict as a field of its own (agent-ops#996)" "failing" \
+  "$(jq -r '.review_stage_health.stages."project-reviewer".verdict' <<<"$hb")"
+assert_eq "  ... with its own consecutive-failure count, never conflated with stage_health's" "4" \
+  "$(jq -r '.review_stage_health.stages."project-reviewer".consecutive_failures' <<<"$hb")"
 
 # --- The heartbeat carries the doctor verdict (agent-ops#1278) and, bounded,
 #     the checks that failed (agent-ops#1397) --------------------------------
@@ -510,6 +521,8 @@ sb_pushed="$tmp_dir/pushed-standby"
 git clone --quiet --branch nodes/standby-node "$remote" "$sb_pushed"
 assert_eq "a node with no .stage-health.json yet publishes a null stage_health, not a guess" "null" \
   "$(jq -c '.stage_health' "$sb_pushed/heartbeat.json")"
+assert_eq "  ... and the same for .review-stage-health.json, a null review_stage_health" "null" \
+  "$(jq -c '.review_stage_health' "$sb_pushed/heartbeat.json")"
 assert_eq "a node with no reconciler publishes a null compose_reconcile, not a guess" "null" \
   "$(jq -c '.compose_reconcile' "$sb_pushed/heartbeat.json")"
 assert_eq "a node with no updater-ledger/ yet publishes a null updater, not a guess" "null" \
