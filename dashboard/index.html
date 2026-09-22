@@ -959,7 +959,7 @@
   // exactly as before.
   function racedMarkersPossible() {
     if (!fleetNodes().length) return true;
-    return fleetNodes().filter(function (n) { return n.role === "active"; }).length > 1;
+    return fleetNodes().filter(function (n) { return n.role === "active" && !n.stale; }).length > 1;
   }
 
   function nodeTag(n) {
