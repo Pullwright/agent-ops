@@ -98,7 +98,39 @@
 # excluding that issue for as long as the label stands. TD-PPagop-26082608
 # holds that residue.
 #
-# Usage: sweep-legacy-refinement-assignees.sh <owner/repo> [log-file]
+# **Projecting onto a block LOG_FILE does not yet know has cleared**
+# (agent-ops#994, TD-PPagop-26082602). `blocked_items` already excludes an
+# item the moment LOG_FILE itself carries a later `unblocked` event for it —
+# that half is a plain read, and no timestamp ordering in the file matters,
+# only the events' own `ts` fields — so this script can only ever act on
+# stale data by being handed a LOG_FILE that is itself stale: a union that
+# has not yet absorbed a peer's `unblocked` write. That is exactly what
+# happened to issue #602 in the 2026-08-21 migration run: its block cleared
+# at 07:52:09, and the sweep, fed a union that had not caught up, still
+# projected the pair onto it at 12:45. PEERS_DIR, when given, closes that gap
+# the same way requirement 38b's own live reconciliation does
+# (`fleet_logs_healthy`, lib/fleet.sh): refuse the whole run rather than act
+# on a union that is empty or sits behind a stale peers-fetch marker, since a
+# reconciliation this script cannot retry on its own (it logs no
+# `own-label-action` — see above) must not guess. This is a precondition, not
+# a cure — a union that is merely a little behind, inside the fetch-cron's
+# own interval, still reads healthy and can still miss a very recent clear —
+# but it is exactly the guard already trusted elsewhere in this pipeline for
+# the identical question, and it is what would have caught the #602 run: a
+# migration launched moments after a fetch failure, or against a peers
+# directory that had gone quiet, refuses instead of mis-projecting.
+#
+# Usage: sweep-legacy-refinement-assignees.sh <owner/repo> [log-file] [peers-dir] [fetch-minutes]
+#
+# PEERS_DIR is optional and defaults to unset, which skips the health gate
+# entirely (the pre-agent-ops#994 behaviour, and what every existing caller —
+# this script's own tests included — still gets without change). Passing it
+# only makes sense alongside a real LOG_FILE path (not "-"/stdin, which
+# `fleet_logs_healthy` cannot stat), and should always be the freshest
+# available fleet union — the caller's responsibility, the same as it always
+# was. FETCH_MINUTES defaults to `fleet_logs_healthy`'s own default (7
+# minutes, `schedule.state_sync_fetch_minutes`'s default) when PEERS_DIR is
+# given without it.
 #
 # Prints one line per issue actually touched, `<repo>#<number>: <what>`, to
 # stdout; failures (a `gh` call that did not take) go to stderr and do not
@@ -114,12 +146,23 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$SCRIPT_DIR/lib/void-guard.sh"
 # shellcheck source=lib/refinement.sh
 . "$SCRIPT_DIR/lib/refinement.sh"
+# shellcheck source=lib/fleet.sh
+. "$SCRIPT_DIR/lib/fleet.sh"
 
 repo="${1:-}"
 log_file="${2:--}"
+peers_dir="${3:-}"
+fetch_minutes="${4:-7}"
 if [[ -z "$repo" ]]; then
-  echo "usage: sweep-legacy-refinement-assignees.sh <owner/repo> [log-file]" >&2
+  echo "usage: sweep-legacy-refinement-assignees.sh <owner/repo> [log-file] [peers-dir] [fetch-minutes]" >&2
   exit 64
+fi
+
+if [[ -n "$peers_dir" && "$log_file" != "-" ]]; then
+  if ! fleet_logs_healthy "" "$peers_dir" "$log_file" "$fetch_minutes"; then
+    echo "sweep-legacy-refinement-assignees: $repo: fleet log union at $log_file is degraded (empty, or peers directory $peers_dir stale) — refusing to reconcile against a view that may be missing an unblock event; retry once state-sync catches up" >&2
+    exit 1
+  fi
 fi
 
 blocked_json="$(blocked_items "$log_file")"

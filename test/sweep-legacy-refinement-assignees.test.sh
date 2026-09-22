@@ -152,6 +152,72 @@ out3="$("$SWEEP" "o/other" "$tmp_dir/nonexistent-log")"
 assert_eq "a repo with no legacy blocks at all makes no gh calls" "" "$(calls)"
 assert_eq "  ... and prints nothing to stdout" "" "$out3"
 
+# ==============================================================================
+# agent-ops#994 / TD-PPagop-26082602: a block LOG_FILE already knows has
+# cleared is never projected onto, and PEERS_DIR (new) refuses the whole run
+# rather than act on a union that might be missing an unblock event.
+# ==============================================================================
+
+# --- A legacy block whose own unblocked event is already in LOG_FILE is left
+#     alone, regardless of where in the file that event falls — `blocked_items`
+#     matches on the events' own `ts`, never file order (the #602 case: the
+#     clear predates the sweep's own run, and here it predates the block's
+#     own event in the file too, which must not matter either) -------------
+cleared_log="$tmp_dir/log-cleared.jsonl"
+cat > "$cleared_log" <<'EOF'
+{"ts":"2026-08-21T07:52:09Z","cycle":"c1","event":"unblocked","repo":"o/r","item":"602","by":"enabler"}
+{"ts":"2026-07-01T09:00:00Z","cycle":"c0","event":"attempt-failed","stage":"coordinator","repo":"o/r","item":"602","kind":"needs-refinement","detail":"gated","unblock_condition":"x","needs_refinement_label":"needs-refinement","needs_refinement_assignee":"warwickallen"}
+EOF
+reset_calls
+reset_issue_labels
+out_cleared="$("$SWEEP" "o/r" "$cleared_log")"
+assert_eq "a block LOG_FILE already shows cleared makes no gh calls at all" "" "$(calls)"
+assert_eq "  ... and prints nothing to stdout" "" "$out_cleared"
+
+# --- PEERS_DIR, when given, gates the whole run on fleet_logs_healthy -------
+legacy_log="$tmp_dir/log-legacy-only.jsonl"
+cat > "$legacy_log" <<'EOF'
+{"ts":"2026-08-01T09:00:00Z","cycle":"c0","event":"attempt-failed","stage":"coordinator","repo":"o/r","item":"52","kind":"needs-refinement","detail":"gated","unblock_condition":"x","needs_refinement_label":"needs-refinement","needs_refinement_assignee":"warwickallen"}
+EOF
+
+no_marker_peers="$tmp_dir/peers-no-marker"
+mkdir -p "$no_marker_peers"
+reset_calls
+reset_issue_labels
+"$SWEEP" "o/r" "$legacy_log" "$no_marker_peers" >/dev/null
+assert_eq "no peers marker at all (bootstrap) reads healthy — the run proceeds" "1" \
+  "$(grep -cE '^unassign o/r 52 warwickallen$' <<<"$(calls)")"
+
+stale_peers="$tmp_dir/peers-stale"
+mkdir -p "$stale_peers"
+printf '{"ok":false,"ts":"%s","last_ok_ts":null}' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  > "$stale_peers/.last-fetch.json"
+reset_calls
+reset_issue_labels
+sweep_exit=0
+sweep_err="$("$SWEEP" "o/r" "$legacy_log" "$stale_peers" 2>&1 >/dev/null)" || sweep_exit=$?
+assert_eq "a stale (ok:false) peers marker refuses the run" "1" "$sweep_exit"
+assert_eq "  ... making no gh calls at all" "" "$(calls)"
+assert_eq "  ... and saying why on stderr" "1" \
+  "$(grep -cE 'degraded' <<<"$sweep_err")"
+
+fresh_peers="$tmp_dir/peers-fresh"
+mkdir -p "$fresh_peers"
+fresh_ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+printf '{"ok":true,"ts":"%s","last_ok_ts":"%s"}' "$fresh_ts" "$fresh_ts" \
+  > "$fresh_peers/.last-fetch.json"
+reset_calls
+reset_issue_labels
+"$SWEEP" "o/r" "$legacy_log" "$fresh_peers" >/dev/null
+assert_eq "a fresh (ok:true) peers marker reads healthy — the run proceeds" "1" \
+  "$(grep -cE '^unassign o/r 52 warwickallen$' <<<"$(calls)")"
+
+reset_calls
+reset_issue_labels
+"$SWEEP" "o/r" "-" "$stale_peers" < "$legacy_log" >/dev/null
+assert_eq "PEERS_DIR is a no-op against stdin (\"-\"), which the health gate cannot stat" "1" \
+  "$(grep -cE '^unassign o/r 52 warwickallen$' <<<"$(calls)")"
+
 # --- Usage ---------------------------------------------------------------
 assert_eq "no repo argument is a usage error" "64" \
   "$("$SWEEP" >/dev/null 2>&1; echo $?)"

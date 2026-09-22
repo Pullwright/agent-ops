@@ -16253,6 +16253,29 @@ implements.
     script's matching set can only ever be the pre-existing backlog, never a
     growing one.
 
+    **The migration script refuses a degraded union rather than project onto
+    one** (agent-ops#994, TD-PPagop-26082602). `blocked_items` already
+    excludes an item the moment its own LOG_FILE carries a later `unblocked`
+    event for it — a plain read, keyed on the events' own `ts`, immune to
+    file order — so this script can only ever act on stale data by being
+    handed a LOG_FILE that has not yet absorbed a peer's clearing write. That
+    is what happened to issue #597, #598 (`unblocked … by: label-removed`)
+    and, most visibly, #602 (`unblocked … by: enabler` at 07:52:09, the
+    script's own run at 12:45): the union fed to the 2026-08-21 migration run
+    had not caught up. `scripts/sweep-legacy-refinement-assignees.sh` takes
+    an optional PEERS-DIR (and FETCH-MINUTES) argument for exactly this: when
+    given, and LOG_FILE is a real path rather than stdin, the whole run is
+    gated on `fleet_logs_healthy` (`lib/fleet.sh`) — the identical guard
+    requirement 38b's own live reconciliation below trusts for the same
+    question — refusing outright (rather than reconciling partially) when the
+    union is empty or the peers directory's freshness marker reads stale.
+    This is a precondition, not a cure: a union inside the fetch cron's own
+    interval still reads healthy and can still be missing a clear from the
+    last few minutes, and PEERS-DIR is optional, so a caller that omits it
+    gets the unguarded pre-agent-ops#994 behaviour unchanged. What it does
+    catch is the shape #602 actually was — a run launched against a union
+    that was already known-degraded, not merely a little behind.
+
     **Only the reason label is released this way; the generic `blocked` is
     not** (agent-ops#651). The reason label needs no proof of provenance: no
     human reaches for `blocked:needs-refinement` on their own, so the sweep
