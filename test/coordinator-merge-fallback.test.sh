@@ -312,8 +312,8 @@ STUB_CALL_N=0
 STUB_QUEUE_RC_1=0
 STUB_QUEUE_JSON_1='{"selected":true}'
 run_coordinator_stage_attempt "$cycle_dir/a2.out" "prompt two" '{"repo": "acme/widgets"}'
-assert_contains "a per-repo call's stage_budget_apply still carries the fleet-wide budget key" \
-  'stage_budget_apply coordinator * claude-test-model {"repo": "acme/widgets"}' "$(cat "$calls_log")"
+assert_contains "a per-repo call's stage_budget_apply carries that repo as its own budget key (agent-ops#1629)" \
+  'stage_budget_apply coordinator acme/widgets claude-test-model {"repo": "acme/widgets"}' "$(cat "$calls_log")"
 se_evt="$(events_named "$(cat "$calls_log")" stage-end | head -n1)"
 assert_eq "its stage-end carries the repo tag" "acme/widgets" "$(jq -r '.repo' <<<"$se_evt")"
 assert_eq "…and this attempt's own cost fields" "0.05" "$(jq -r '.cost_usd' <<<"$se_evt")"

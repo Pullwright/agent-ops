@@ -330,6 +330,78 @@ tw="$(table_for "$tmp_dir/old.jsonl")"
 assert_eq "a kill from seven months ago is outside the window and moves nothing" \
   "0" "$(jq '(.cells // {}) | length' <<<"$tw")"
 
+# --- 12. The Co-Ordinator warm start (issue #1629) -------------------------------------
+# Since the per-repository split (agent-ops#1560/#587) each Co-Ordinator
+# engagement's own stage-end names its own repository directly, on the event
+# — never through the cycle's `selection` join every other actor uses, since
+# a per-repository cycle no longer resolves to one repository. A run from
+# before the split carries no such field and still falls back to `*`, so that
+# bucket is now a fixed, historical pool a fresh `coordinator|<repo>|<model>`
+# cell can warm-start from instead of jumping straight to the shipped prior.
+run_repo() {  # <ts> <cycle> <exit> <model> <duration_ms> <gap_max> <kill_reason> <repo>
+  jq -nc --arg ts "$1" --arg c "$2" --argjson x "$3" --arg m "$4" \
+    --argjson d "$5" --argjson g "$6" --arg kr "${7:-}" --arg repo "${8:-}" \
+    '{ts: $ts, cycle: $c, event: "stage-end", stage: "coordinator", exit_code: $x, model: $m,
+      duration_ms: $d, gaps: {n: 3, p50: 2, p95: $g, p99: $g, max: $g}}
+     + (if $kr == "" then {} else {kill_reason: $kr} end)
+     + (if $repo == "" then {} else {repo: $repo} end)'
+}
+
+# One backstop kill recorded before the split (no `repo` field at all):
+# 20 -> 30.
+run_repo 2026-08-01T00:00:00Z ws1 124 claude-test-model 1200000 60 backstop "" \
+  > "$tmp_dir/coord-legacy.jsonl"
+obs_legacy="$(stage_budget_observations < "$tmp_dir/coord-legacy.jsonl")"
+assert_eq "a pre-split Co-Ordinator run with no repo field on the event falls back to *" \
+  "*" "$(jq -r '.[0].repo' <<<"$obs_legacy")"
+
+t_legacy="$(table_for "$tmp_dir/coord-legacy.jsonl")"
+assert_eq "one kill against the frozen * pool: 20 -> 30" \
+  "30" "$(cell "$t_legacy" "coordinator|*|claude-test-model" backstop_min)"
+
+fresh_repo="$(stage_budget_resolve "$t_legacy" coordinator acme/widgets claude-test-model '{}')"
+assert_eq "a brand-new per-repo cell with zero runs of its own warm-starts from the * pool, not the prior" \
+  "30" "$(jq -r '.backstop_min' <<<"$fresh_repo")"
+assert_eq "…and says so on the event, as leaning on the fleet-wide seed rather than its own evidence" \
+  "shrunk" "$(jq -r '.basis' <<<"$fresh_repo")"
+assert_eq "…via the pooled tier, not a cell of its own — it has none yet" \
+  "pooled" "$(jq -r '.source' <<<"$fresh_repo")"
+
+# Every other actor this warm start does not touch answers exactly as before:
+# from the shipped prior, cold.
+unaffected_refiner="$(stage_budget_resolve "$t_legacy" refiner acme/widgets claude-test-model '{}')"
+assert_eq "an unrelated actor (refiner) is unaffected: still the shipped prior" \
+  "prior" "$(jq -r '.basis' <<<"$unaffected_refiner")"
+unaffected_enabler="$(stage_budget_resolve "$t_legacy" enabler '*' claude-test-model '{}')"
+assert_eq "the Enabler is unaffected too: still the shipped prior" \
+  "prior" "$(jq -r '.basis' <<<"$unaffected_enabler")"
+
+# A repo-tagged event, since the split, is keyed to its own repository, and
+# accumulates a cell of its own — disjoint from the frozen * pool, so it
+# never feeds back into it.
+{
+  cat "$tmp_dir/coord-legacy.jsonl"
+  run_repo 2026-08-05T00:00:00Z ws3 0 claude-test-model 120000 10 "" acme/widgets
+} > "$tmp_dir/coord-split.jsonl"
+t_split="$(table_for "$tmp_dir/coord-split.jsonl")"
+assert_eq "a post-split event is keyed to its own repository, not *" \
+  "acme/widgets" "$(cell "$t_split" "coordinator|acme/widgets|claude-test-model" repo)"
+assert_eq "its own cell continues from the warm seed (30), not a cold restart at the prior (20)" \
+  "30" "$(cell "$t_split" "coordinator|acme/widgets|claude-test-model" backstop_min)"
+assert_eq "the frozen * pool itself is untouched by the new repo cell's own run" \
+  "30" "$(cell "$t_split" "coordinator|*|claude-test-model" backstop_min)"
+
+# A kill against the repo cell's own history must multiply the warm seed
+# exactly once (30 -> 45) — not fold the frozen pool's own kill a second
+# time on top of it (which would read 67.5/ceil 68 here).
+{
+  cat "$tmp_dir/coord-legacy.jsonl"
+  run_repo 2026-08-05T00:00:00Z ws4 124 claude-test-model 2700000 60 backstop acme/widgets
+} > "$tmp_dir/coord-split-kill.jsonl"
+t_split_kill="$(table_for "$tmp_dir/coord-split-kill.jsonl")"
+assert_eq "a kill on the new cell multiplies its own warm seed once, not the frozen pool's history again" \
+  "45" "$(cell "$t_split_kill" "coordinator|acme/widgets|claude-test-model" backstop_min)"
+
 printf '\n'
 if (( failures )); then
   printf '%d assertion(s) failed\n' "$failures"
