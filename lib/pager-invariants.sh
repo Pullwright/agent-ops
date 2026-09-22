@@ -21,17 +21,24 @@
 # gap. All five are owner-only: none has an automatic fix a pipeline could
 # perform on its own behalf, unlike verdict-unanimous's tech-debt filing.
 #
-#   firing-missed          an active node whose newest `cycle-start` *or
-#                          `cycle-skipped`* (the implementation union log —
-#                          either one proves the scheduler fired) is older
-#                          than 2× `schedule.cycle_interval_minutes` while
-#                          its heartbeat is fresh and it holds no lock —
-#                          caught purely from the union log, since
-#                          `lock.json` is never published (scripts/state-
-#                          sync.sh excludes it) and
+#   firing-missed          an active node — its row's `role` is `active`
+#                          and its heartbeat is fresh — whose newest
+#                          `cycle-start` *or `cycle-skipped`* (the
+#                          implementation union log — either one proves
+#                          the scheduler fired) is older than 2×
+#                          `schedule.cycle_interval_minutes` while it holds
+#                          no lock — caught purely from the union log,
+#                          since `lock.json` is never published
+#                          (scripts/state-sync.sh excludes it) and
 #                          `schedule.cycle_interval_minutes` is fleet-wide
 #                          config, identical on every node that reads it,
-#                          including the evaluating node itself.
+#                          including the evaluating node itself. A standby
+#                          is exempt, not merely allowed a longer window:
+#                          requirement 2.4 makes its ticks leave no trace
+#                          in the union log at all, so there is nothing
+#                          there for this invariant to read, and its
+#                          liveness is node-stale's business (agent-
+#                          ops#1686).
 #   node-stale             a node's publication age past 2×
 #                          `node_stale_after_minutes` — files only after
 #                          `pager_stale_file_after_minutes` (default 180),
@@ -483,16 +490,35 @@ Retired automatically by lib/pager.sh (issue #1278)."
 # --- agent-ops#1282: fleet liveness from a peer's vantage --------------------
 
 # pager_eval_firing_missed FLEET_NODES_JSON UNION_LOG_FILE
-# Fires when an *active* node's (`.stale | not`) newest evidence of its
-# scheduler firing — a `cycle-start` or a `cycle-skipped` (agent-cycle.sh's
-# own `acquire_lock` logs `cycle-skipped` only when it found the lock held
-# by another live pid, which is proof the scheduler ticked on schedule and
-# deferred correctly, not proof of anything missing) — is older than 2×
+# Fires when an *active* node's newest evidence of its scheduler firing — a
+# `cycle-start` or a `cycle-skipped` (agent-cycle.sh's own `acquire_lock`
+# logs `cycle-skipped` only when it found the lock held by another live
+# pid, which is proof the scheduler ticked on schedule and deferred
+# correctly, not proof of anything missing) — is older than 2×
 # PAGER_EVAL_CYCLE_INTERVAL_MINUTES while it holds no lock — the signature
 # of supercronic dropping a firing outright (agent-ops#1287 records the gap
 # from the inside: no `cycle-start`, no `cycle-skipped`, nothing in
 # `log.jsonl` at all) as distinct from a cycle that is simply still running,
 # or a long cycle whose scheduler keeps ticking (and skipping) around it.
+#
+# "Active" is the row's own published `role` being `active` *and* its
+# heartbeat being fresh (`.stale | not`) — not freshness alone, which is
+# what this read until agent-ops#1686. Every row carries `role`: a peer's
+# from its heartbeat (scripts/state-sync.sh writes `AGENT_OPS_ROLE`, and
+# scripts/publish-dashboard.sh reads it back as `"unknown"` when absent),
+# the evaluating node's own from lib/role.sh's `role_current`. A standby is
+# exempt outright rather than given a wider window: requirement 2.4 makes a
+# standby tick exit before the lock, the log and the cycle directory, so
+# it never writes a `cycle-start` or a `cycle-skipped`, and the union log
+# holds no evidence of its scheduler for this invariant to read in either
+# direction — the newest cycle event it can find is from before the node
+# was demoted, and any finite multiple of the interval would eventually
+# page on it (ockham-2 sat at 7,970 minutes when #1768 fired). A standby
+# that is genuinely dead stops publishing its heartbeat, which is
+# node-stale's page, not this one. A role that is missing or not `active`
+# decides nothing here, the same fail-closed direction lib/role.sh's own
+# guard takes: only the literal `active` runs unattended cycles, so only
+# the literal `active` is expected to show them.
 # `lock.json` itself is never published (scripts/state-sync.sh excludes
 # it), so "holds no lock" is derived purely from the union log: a node's own
 # newest cycle-start/cycle-end/cycle-skipped event — whichever the union
@@ -515,7 +541,7 @@ pager_eval_firing_missed() {
   [[ -f "$union_log_file" ]] || { printf '{"firing":false}'; return 0; }
   jq -c -R -n --argjson nodes "$fleet_nodes_json" --argjson interval "$interval_min" \
     --argjson now "$(date -u +%s)" '
-    ($nodes | map(select(.stale | not)) | map(.node)) as $active
+    ($nodes | map(select((.stale | not) and (.role == "active"))) | map(.node)) as $active
     | [ inputs | select(length > 0) | (fromjson? // empty)
         | select(.event == "cycle-start" or .event == "cycle-end" or .event == "cycle-skipped")
         | select((.node // "") as $n | $active | index($n) != null) ] as $events
@@ -1522,7 +1548,7 @@ pager_register_builtin_invariants() {
   pager_register page-outlived-item pager_eval_page_outlived_item \
     pipeline-act pager_remedy_page_outlived_item
   pager_register firing-missed pager_eval_firing_missed owner-only \
-    "A node's scheduler appears to have dropped a firing outright (the union log carries neither a cycle-start nor a cycle-skipped recent enough, and this node's newest cycle event is not an unmatched cycle-start) rather than merely still running a long cycle — a cycle-skipped would itself have proved the scheduler ticked and deferred to a held lock. Check the node's own cron/supercronic logs and crontab directly — on Kubernetes, check for a concurrencyPolicy: Forbid skip. The evidence above carries this node's own recent cycle-duration histogram."
+    "An active node's scheduler appears to have dropped a firing outright (the union log carries neither a cycle-start nor a cycle-skipped recent enough, and this node's newest cycle event is not an unmatched cycle-start) rather than merely still running a long cycle — a cycle-skipped would itself have proved the scheduler ticked and deferred to a held lock. Check the node's own cron/supercronic logs and crontab directly — on Kubernetes, check for a concurrencyPolicy: Forbid skip. The evidence above carries this node's own recent cycle-duration histogram. A node whose published role is standby is never named here: its ticks write nothing to the union log by design (requirement 2.4), so its liveness is node-stale's page."
   pager_register node-stale pager_eval_node_stale owner-only \
     "This node has not confirmed a publication into the shared state for over twice node_stale_after_minutes. Confirm directly whether the node (container/host) is still running, and check its own state-sync push logs. Once agent-ops#1279's notification channel lands, this class of page reaches it automatically (notify_events' own default includes \"pager\") — today it is filed only." \
     "$stale_file_after_minutes"

@@ -353,6 +353,16 @@ write_log() { local path="$1"; shift; printf '%s\n' "$@" > "$path"; }
 # runs, not to a fixed calendar date.
 rel() { date -u -d "@$(( $(date -u +%s) + $1 ))" +%Y-%m-%dT%H:%M:%SZ; }
 
+# fm_row NAME STALE ROLE -> a fleet row as scripts/publish-dashboard.sh
+# builds one for this invariant's purposes: `role` is what the node
+# published in its heartbeat ("active"/"standby", or "unknown" when the
+# heartbeat carried none), and an empty ROLE here leaves the field out
+# altogether — a row shape no current producer emits, kept to pin the
+# fail-closed reading of a missing field.
+fm_row() {
+  jq -nc --arg n "$1" --argjson stale "$2" --arg role "$3" \
+    '{node: $n, stale: $stale} + (if $role == "" then {} else {role: $role} end)'
+}
 # n1: last cycle completed 3 minutes ago — well within the interval, never
 # fires. n2: last cycle-start 4 hours ago, cleanly completed (no lock held)
 # — fires, with a two-entry duration histogram. n3: last cycle-start equally
@@ -365,7 +375,14 @@ rel() { date -u -d "@$(( $(date -u +%s) + $1 ))" +%Y-%m-%dT%H:%M:%SZ; }
 # -10m proving the scheduler kept ticking and correctly deferred to the
 # still-running cycle — never fires, since a recent skip is itself evidence
 # the scheduler is alive (agent-ops#1312's own review of #1282: a trailing
-# skip must not invert "holds no lock" into "missed").
+# skip must not invert "holds no lock" into "missed"). n6: the agent-
+# ops#1686 shape — published role `standby`, heartbeat fresh, newest cycle
+# event a cleanly completed cycle-start five days old (from before the node
+# was demoted; requirement 2.4 means a standby tick writes nothing newer) —
+# never fires, however old, since a standby's scheduler leaves no evidence
+# in the union log either way. n7: identical history with no `role` field
+# at all — never fires either, since a role that is not the literal
+# `active` decides nothing (lib/role.sh's own fail-closed reading).
 fm_log="$WORKDIR/firing-missed.jsonl"
 write_log "$fm_log" \
   "$(cycle_ev "$(rel -300)" n1 c1 cycle-start)" \
@@ -379,11 +396,17 @@ write_log "$fm_log" \
   "$(cycle_ev "$(rel -14400)" n4 c1 cycle-start)" \
   "$(cycle_ev "$(rel -2400)" n5 c1 cycle-start)" \
   "$(cycle_ev "$(rel -1500)" n5 c2 cycle-skipped)" \
-  "$(cycle_ev "$(rel -600)" n5 c3 cycle-skipped)"
-fm_nodes="$(fleet3 "$(node_row n1 false "" "" "")" "$(node_row n2 false "" "" "")" \
-  "$(node_row n3 true "" "" "")")"
-fm_nodes="$(jq -c --argjson extra "$(node_row n4 false "" "" "")" '. + [$extra]' <<<"$fm_nodes")"
-fm_nodes="$(jq -c --argjson extra "$(node_row n5 false "" "" "")" '. + [$extra]' <<<"$fm_nodes")"
+  "$(cycle_ev "$(rel -600)" n5 c3 cycle-skipped)" \
+  "$(cycle_ev "$(rel -432000)" n6 c1 cycle-start)" \
+  "$(cycle_ev "$(rel -431900)" n6 c1 cycle-end '{"exit_code":0}')" \
+  "$(cycle_ev "$(rel -432000)" n7 c1 cycle-start)" \
+  "$(cycle_ev "$(rel -431900)" n7 c1 cycle-end '{"exit_code":0}')"
+fm_nodes="$(fleet3 "$(fm_row n1 false active)" "$(fm_row n2 false active)" \
+  "$(fm_row n3 true active)")"
+for extra in "$(fm_row n4 false active)" "$(fm_row n5 false active)" \
+             "$(fm_row n6 false standby)" "$(fm_row n7 false "")"; do
+  fm_nodes="$(jq -c --argjson extra "$extra" '. + [$extra]' <<<"$fm_nodes")"
+done
 
 PAGER_EVAL_CYCLE_INTERVAL_MINUTES=15
 verdict="$(pager_eval_firing_missed "$fm_nodes" "$fm_log")"
@@ -398,8 +421,29 @@ assert_eq "  ... n4 (still holds its lock) is never named, however old" "0" \
   "$(jq -r '.nodes | index("n4") != null' <<<"$verdict" | grep -c true)"
 assert_eq "  ... n5 (long cycle, but a recent trailing skip proves the scheduler is alive) is never named" "0" \
   "$(jq -r '.nodes | index("n5") != null' <<<"$verdict" | grep -c true)"
+assert_eq "  ... n6 (role standby, fresh heartbeat, cycle-start five days old) is never named" "0" \
+  "$(jq -r '.nodes | index("n6") != null' <<<"$verdict" | grep -c true)"
+assert_eq "  ... n7 (no role field at all, same history) is never named" "0" \
+  "$(jq -r '.nodes | index("n7") != null' <<<"$verdict" | grep -c true)"
 assert_eq "  ... evidence carries n2's own cycle-duration histogram" "1" \
   "$(grep -c 'cycle durations' <<<"$(jq -r '.evidence' <<<"$verdict")")"
+
+# The #1686/#1768 fleet as the evaluating node saw it: one standby whose
+# newest cycle event is days old beside actives that cycled minutes ago.
+# Nothing fires — the exemption is not merely "some other node was named
+# instead", it is the whole verdict.
+fm_nodes_standby_only="$(fleet3 "$(fm_row n1 false active)" "$(fm_row n5 false active)" \
+  "$(fm_row n6 false standby)")"
+assert_eq "a standby alone past the threshold, actives cycling: the verdict is not firing" "false" \
+  "$(jq -r '.firing' <<<"$(pager_eval_firing_missed "$fm_nodes_standby_only" "$fm_log")")"
+# And the same node with the same history, republished as active — a
+# promotion whose first tick has not come round — is exactly what the
+# invariant is for, so the exemption is by role, not by name or history.
+fm_nodes_promoted="$(fleet3 "$(fm_row n1 false active)" "$(fm_row n5 false active)" \
+  "$(fm_row n6 false active)")"
+verdict="$(pager_eval_firing_missed "$fm_nodes_promoted" "$fm_log")"
+assert_eq "the same node republished as active: fires" "true" "$(jq -r '.firing' <<<"$verdict")"
+assert_eq "  ... naming it" "n6" "$(jq -r '.nodes | join(",")' <<<"$verdict")"
 
 PAGER_EVAL_CYCLE_INTERVAL_MINUTES=""
 assert_eq "no configured interval: never fires" "false" \

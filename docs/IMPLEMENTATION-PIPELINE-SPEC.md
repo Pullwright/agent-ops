@@ -18477,7 +18477,24 @@ with the Reviewer's own.
       gap from the inside: no `cycle-start`, no `cycle-skipped`, nothing in
       `log.jsonl` at all), as distinct from a cycle that is simply still
       running, or a long cycle whose scheduler keeps ticking (and skipping)
-      around it. `lock.json` is never published (`scripts/state-sync.sh`
+      around it. *Active* here is the row's own published `role` being the
+      literal `active` (requirement 2.4's vocabulary — a peer's from its
+      heartbeat, the evaluating node's own from `role_current`) **and** its
+      heartbeat being fresh; freshness alone is not enough. A standby is
+      exempt outright, not given a wider window: requirement 2.4 makes a
+      standby tick exit before the lock, the log and the cycle directory, so
+      it writes neither a `cycle-start` nor a `cycle-skipped`, the union log
+      carries no evidence of its scheduler in either direction, and the
+      newest cycle event it holds for that node is from before the node was
+      demoted — any finite multiple of the interval would eventually page on
+      it (#1686: ockham-2, whose last cycle ran on 2026-09-16, was paged
+      repeatedly over the following days, #1768 at 7,970 minutes). A standby
+      that is genuinely dead stops publishing its
+      heartbeat, which is `node-stale`'s page. A row whose `role` is absent
+      or anything other than `active` decides nothing here, the same
+      fail-closed direction requirement 2.4 takes: only the literal `active`
+      runs unattended cycles, so only the literal `active` is expected to
+      show them. `lock.json` is never published (`scripts/state-sync.sh`
       excludes it), so "holds no lock" is derived purely from the union log:
       a node's own newest cycle-start/cycle-end/cycle-skipped event being a
       `cycle-start` means that cycle has not yet ended, so a long
@@ -27736,10 +27753,13 @@ oblige anyone to edit a test.
     `cycle-skipped` is past 2× a configured interval with no lock held, but
     not on a node that recently cycled, not on one whose heartbeat is itself
     stale, not on one whose own last event is an unmatched `cycle-start`
-    (still holds its lock) however old, and not on one whose long-running
+    (still holds its lock) however old, not on one whose long-running
     cycle-start is trailed by a recent `cycle-skipped` — proof its scheduler
     kept ticking and correctly deferred — even though that skip is not
-    itself a lock hold — with evidence carrying the firing node's own
+    itself a lock hold, and not on one whose published `role` is `standby`
+    (or absent) however old its newest cycle event, while the identical
+    history republished as `active` does fire — the exemption is by role,
+    not by name or history — with evidence carrying the firing node's own
     cycle-duration histogram; `node-stale` fires only on a row whose
     `heartbeat_age_s` exceeds 2× the configured threshold; `updater-stuck`
     fires only on an active row reporting `updater.status: "stuck"` past 2×

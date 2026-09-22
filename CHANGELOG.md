@@ -121,6 +121,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **The `firing-missed` pager invariant no longer pages on a standby node**
+  (issues #1686, #1708). It read "active" as "heartbeat fresh", so a node
+  demoted to standby — which keeps publishing its heartbeat but, by
+  requirement 2.4, never writes a `cycle-start` or a `cycle-skipped` again
+  — was measured against a cycle event from before its demotion and paged
+  repeatedly for as long as it stayed standby (ockham-2: #1674, #1676,
+  #1681, #1685, #1705, #1768 over five days, the last at 7,970 minutes).
+  `pager_eval_firing_missed` (`lib/pager-invariants.sh`) now requires the
+  row's published `role` to be the literal `active` as well as its heartbeat
+  to be fresh; a standby is exempt outright rather than given a wider
+  window, because its ticks leave nothing in the union log for the invariant
+  to read in either direction, and a standby that is genuinely dead is
+  `node-stale`'s page. A row whose `role` is absent decides nothing, the
+  same fail-closed reading `lib/role.sh` gives the variable itself. The
+  identical history republished as `active` — a promotion whose first tick
+  has not come round — still fires, so the exemption is by role, not by
+  name or history.
 - **Requirement 2.0c's pre-clone stand-down now reads `state_dir` as well as
   `workspace_root`, so a short `state_dir` stands the cycle down instead of
   only ever warning in `doctor.sh`** (issue #992, TD-PPagop-26082517).
