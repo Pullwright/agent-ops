@@ -288,6 +288,12 @@ notify_webhook_url="$(notify_resolve_webhook_url "$(cfg '.notify_webhook_url')" 
 # agent-ops#1721: a bearer secret carried in the webhook URL's own path has
 # no shape lib/redact.sh's fixed rules match — register it before the
 # defensive redact() pass below runs, same as scripts/state-sync.sh.
+# agent-ops#1730: redact_add_literal silently no-ops on a newline-bearing
+# value — correctly, since a single sed rule cannot span one — but that
+# leaves the value unredacted with nothing operator-visible saying so.
+if [[ -n "$notify_webhook_url" && "$notify_webhook_url" == *$'\n'* ]]; then
+  echo "publish-dashboard: notify_webhook_url contains a newline — leaving it unmasked this run; the existing token-shape redaction still applies" >&2
+fi
 redact_add_literal "$notify_webhook_url"
 notify_events_json="$(cfg_json '.notify_events')"
 notify_min_interval_seconds="$(cfg '.notify_min_interval_seconds')"

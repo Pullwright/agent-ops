@@ -719,7 +719,13 @@ configured `notify_webhook_url`/`escalation_webhook_url`) has no such shape,
 so the Publisher registers that resolved value for masking
 (`redact_add_literal`, `lib/redact.sh`, agent-ops#1721) right after it
 resolves it, before this pass runs — the same registration
-`scripts/state-sync.sh` makes for its own push.
+`scripts/state-sync.sh` makes for its own push. A value containing a
+newline registers as a no-op instead (a single `sed` rule cannot span one),
+so the Publisher checks the same condition itself immediately before the
+call and warns on stderr when it holds (agent-ops#1730) — the run still
+succeeds and the existing token-shape redaction is unaffected, but the value
+itself reaches the payload unmasked, and this is the one operator-visible
+signal that happened.
 
 The `DASHBOARD_DATA` shape (the contract the page renders):
 

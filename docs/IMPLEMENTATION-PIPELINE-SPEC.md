@@ -3688,10 +3688,17 @@ implements.
    never touching the shape rules, and a no-op when the value is empty or
    contains a newline: a single `sed` rule cannot span one, so registering
    such a value would break every rule in `REDACT_SED_ARGS`, not just its
-   own, for the rest of the pass.
+   own, for the rest of the pass. `redact_add_literal()` stays silent either
+   way, by design (`lib/redact.sh`'s own side-effect-free contract) — so
+   `state-sync.sh` checks the same newline condition itself immediately
+   before the call and warns on stderr when it holds (agent-ops#1730): the
+   push still succeeds, but an operator running it interactively, or reading
+   its captured log, is told the value is being left unmasked rather than
+   finding out only by reading `REDACT_SED_ARGS` or the pushed content.
    `scripts/publish-dashboard.sh` registers the identical value the same
    way, right after it resolves it, before its own `redact()` pass
-   (`docs/DASHBOARD-SPEC.md`). Registering the value itself, rather than
+   (`docs/DASHBOARD-SPEC.md`), with the identical stderr warning on the
+   identical newline check. Registering the value itself, rather than
    adding a generic webhook-URL shape pattern, is deliberate: it is exact,
    costs no false positives, and covers whatever provider an installation
    actually configures, where a shape pattern would either miss an
@@ -22629,7 +22636,9 @@ oblige anyone to edit a test.
    unset the existing shape-based redaction is unaffected; a `notify_webhook_url`
    (config-sourced or from `NOTIFY_WEBHOOK_URL`) containing a newline registers
    as a no-op instead of poisoning the shared rule set — the existing
-   token-shape redaction still applies to the rest of the same push;
+   token-shape redaction still applies to the rest of the same push, the raw
+   value itself reaches the branch unmasked, and `state-sync.sh` warns about
+   it on stderr rather than leaving the gap silent (agent-ops#1730);
    a fetch materialises a peer whole
    under the peers directory, leaves the node's own `state_dir` alone, never
    includes the node itself, and prunes a peer whose branch is gone; the

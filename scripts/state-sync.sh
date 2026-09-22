@@ -147,8 +147,16 @@ min_free_workspace_bytes="${STATE_SYNC_MIN_FREE_WORKSPACE_BYTES:-$(cfg '.min_fre
 # the same way agent-cycle.sh and scripts/publish-dashboard.sh do, including
 # NOTIFY_WEBHOOK_URL's non-public, per-node source (issue #991).
 notify_webhook_url_env="$(notify_webhook_url_env_or_empty "${NOTIFY_WEBHOOK_URL:-}")"
-redact_add_literal "$(notify_resolve_webhook_url "$(cfg '.notify_webhook_url')" \
+notify_webhook_url="$(notify_resolve_webhook_url "$(cfg '.notify_webhook_url')" \
   "$(cfg '.escalation_webhook_url')" "$notify_webhook_url_env")"
+# agent-ops#1730: redact_add_literal (below) silently no-ops on a
+# newline-bearing value — correctly, since a single sed rule cannot span one
+# — but that leaves the value unredacted with nothing operator-visible
+# saying so.
+if [[ -n "$notify_webhook_url" && "$notify_webhook_url" == *$'\n'* ]]; then
+  echo "state-sync: notify_webhook_url contains a newline — leaving it unmasked this push; the existing token-shape redaction still applies" >&2
+fi
+redact_add_literal "$notify_webhook_url"
 # Minutes → seconds: lib/updater-health.sh's own contract takes a threshold
 # in seconds, never a config key of its own (agent-ops#603, following
 # image_behind_grace_hours' shape — the judgement lives one layer up from
