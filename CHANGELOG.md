@@ -232,6 +232,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   are a `jq --arg` binding and the error messages, neither of which a `?` or
   `&` can subvert — taken because the path is read from an issue body and
   the register's own grammar is far narrower than the pattern was.
+
 - **Requirement 2.0c's pre-clone stand-down now reads `state_dir` as well as
   `workspace_root`, so a short `state_dir` stands the cycle down instead of
   only ever warning in `doctor.sh`** (issue #992, TD-PPagop-26082517).
