@@ -1885,13 +1885,25 @@ nl_state="$nl_home/.local/state/poetic-agents"
 printf '{"ts":"2026-07-20T00:00:00Z","event":"cycle-start"}\n' > "$nl_state/log.jsonl"
 printf 'a token ghp_1234567890abcdefXYZ1234 that must still be redacted\n' \
   > "$nl_state/cron.log"
-env HOME="$nl_home" AGENT_OPS_ROLE=active NODE_NAME="$(basename "$nl_home")" \
-  STATE_SYNC_REMOTE="$remote" "$nl_app/scripts/state-sync.sh" push >/dev/null 2>&1
+# The same host/path snippet the configured (refused) value carries — proof
+# criterion 3's "left unmasked" holds: with the value never registered,
+# nothing here should ever become [REDACTED-WEBHOOK].
+printf 'posting to https://hooks.slack.com/services/T333/B333/aaa failed too\n' \
+  >> "$nl_state/cron.log"
+nl_out="$(env HOME="$nl_home" AGENT_OPS_ROLE=active NODE_NAME="$(basename "$nl_home")" \
+  STATE_SYNC_REMOTE="$remote" "$nl_app/scripts/state-sync.sh" push 2>&1)"
 assert_eq "a push with a newline-embedded config notify_webhook_url still succeeds" "0" "$?"
+assert_contains "…and it says so on stderr (agent-ops#1730)" \
+  "state-sync: notify_webhook_url contains a newline" "$nl_out"
 nl_pushed="$tmp_dir/webhook-newline-pushed"
 git clone --quiet --branch nodes/webhook-newline-node "$remote" "$nl_pushed"
+nl_pushed_cron="$(cat "$nl_pushed/cron.log")"
 assert_contains "…and the existing shape-based token redaction is not poisoned by it" \
-  "[REDACTED-TOKEN]" "$(cat "$nl_pushed/cron.log")"
+  "[REDACTED-TOKEN]" "$nl_pushed_cron"
+assert_contains "…while the refused value itself is left unmasked, as documented" \
+  "https://hooks.slack.com/services/T333/B333/aaa" "$nl_pushed_cron"
+assert_lacks "…never registering a [REDACTED-WEBHOOK] rule for it" \
+  "[REDACTED-WEBHOOK]" "$nl_pushed_cron"
 
 # Same gap, reached through NOTIFY_WEBHOOK_URL instead: notify_webhook_url_env_or_empty's
 # `^https://` check only anchors the start, so an embedded newline passes it too.
@@ -1900,15 +1912,23 @@ nl2_state="$nl2_home/.local/state/poetic-agents"
 printf '{"ts":"2026-07-20T00:00:00Z","event":"cycle-start"}\n' > "$nl2_state/log.jsonl"
 printf 'a token ghp_1234567890abcdefXYZ1234 that must still be redacted\n' \
   > "$nl2_state/cron.log"
-sync_as "$nl2_home" active push \
-  "NOTIFY_WEBHOOK_URL=$(printf 'https://hooks.slack.com/services/T444/B444/ccc\nddd')" \
-  >/dev/null
+printf 'posting to https://hooks.slack.com/services/T444/B444/ccc failed too\n' \
+  >> "$nl2_state/cron.log"
+nl2_out="$(sync_as "$nl2_home" active push \
+  "NOTIFY_WEBHOOK_URL=$(printf 'https://hooks.slack.com/services/T444/B444/ccc\nddd')")"
 nl2_rc=$?
 assert_eq "a push with a newline-embedded NOTIFY_WEBHOOK_URL still succeeds" "0" "$nl2_rc"
+assert_contains "…and it says so on stderr (agent-ops#1730)" \
+  "state-sync: notify_webhook_url contains a newline" "$nl2_out"
 nl2_pushed="$tmp_dir/webhook-newline-env-pushed"
 git clone --quiet --branch nodes/webhook-newline-env-node "$remote" "$nl2_pushed"
+nl2_pushed_cron="$(cat "$nl2_pushed/cron.log")"
 assert_contains "…and the existing shape-based token redaction is not poisoned by it either" \
-  "[REDACTED-TOKEN]" "$(cat "$nl2_pushed/cron.log")"
+  "[REDACTED-TOKEN]" "$nl2_pushed_cron"
+assert_contains "…while the refused value itself is left unmasked, as documented" \
+  "https://hooks.slack.com/services/T444/B444/ccc" "$nl2_pushed_cron"
+assert_lacks "…never registering a [REDACTED-WEBHOOK] rule for it" \
+  "[REDACTED-WEBHOOK]" "$nl2_pushed_cron"
 
 # --- the deadline itself: a step that runs long is killed and the lock freed ---
 # Not a reproduction of the exact race above (which needed a real file

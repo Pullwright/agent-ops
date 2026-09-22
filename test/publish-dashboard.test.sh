@@ -3809,6 +3809,56 @@ assert_eq "  ... it is this tick's own timestamp instead, so a polling tab sees 
 assert_eq "  ... and data.js's own embedded fingerprint matches it, not a real hash either" \
   "$(jq -r '.fingerprint' <<<"$srsdata")" "$(jq -r '.fingerprint' <<<"$srdata")"
 
+# --- a configured notify-webhook URL is masked in the dashboard payload too
+# (agent-ops#1721) — the same defensive redact_add_literal registration
+# state-sync.test.sh exercises for scripts/state-sync.sh's own call site,
+# extended here to scripts/publish-dashboard.sh's. `notify_webhook_url` is
+# not overridable via env the way $PUBLISH's other fixtures are (CONFIG_FILE
+# resolves relative to publish-dashboard.sh's own location), so this runs
+# against a full copy of the checkout whose own config.json this test
+# controls — the same pattern test/state-sync.test.sh's own app-copy cases
+# use for the same reason.
+wd_app="$tmp_dir/webhook-dashboard-app"
+mkdir -p "$wd_app"
+tar -C "$SCRIPT_DIR" --exclude=.git -cf - . | tar -C "$wd_app" -xf -
+jq '.notify_webhook_url = "https://hooks.slack.com/services/T555/B555/xxxxxxxxxxxxxxxxxxxxxxxx"' \
+  "$SCRIPT_DIR/config.json" > "$wd_app/config.json"
+
+wd="$(new_home nodeWebhook)"
+make_cycle "$wd" "${today_day}T140000Z-1" 0.25 model-a \
+  "posting to https://hooks.slack.com/services/T555/B555/xxxxxxxxxxxxxxxxxxxxxxxx failed: 403"
+env HOME="$wd" "$wd_app/scripts/publish-dashboard.sh" --no-github >/dev/null 2>&1
+assert_eq "a publish with a configured notify_webhook_url still succeeds" "0" "$?"
+wd_raw="$(cat "$wd/.local/state/poetic-agents/dashboard/data.js")"
+assert_contains "the configured webhook URL is masked in the dashboard payload too" \
+  "[REDACTED-WEBHOOK]" "$wd_raw"
+assert_lacks "no raw webhook URL survives" \
+  "hooks.slack.com/services/T555/B555/xxxxxxxxxxxxxxxxxxxxxxxx" "$wd_raw"
+
+# A newline embedded in the configured value: redact_add_literal silently
+# refuses to register it (a single sed rule cannot span one), which agent-
+# ops#1730 makes operator-visible with a stderr warning from this call site
+# — mirroring the equivalent state-sync.test.sh case for scripts/state-
+# sync.sh.
+wdn_app="$tmp_dir/webhook-dashboard-newline-app"
+mkdir -p "$wdn_app"
+tar -C "$SCRIPT_DIR" --exclude=.git -cf - . | tar -C "$wdn_app" -xf -
+jq --arg url "$(printf 'https://hooks.slack.com/services/T666/B666/aaa\nbbb')" \
+  '.notify_webhook_url = $url' "$SCRIPT_DIR/config.json" > "$wdn_app/config.json"
+
+wdn="$(new_home nodeWebhookNewline)"
+make_cycle "$wdn" "${today_day}T150000Z-1" 0.25 model-a \
+  "posting to https://hooks.slack.com/services/T666/B666/aaa failed too"
+wdn_out="$(env HOME="$wdn" "$wdn_app/scripts/publish-dashboard.sh" --no-github 2>&1 >/dev/null)"
+assert_eq "a publish with a newline-embedded notify_webhook_url still succeeds" "0" "$?"
+assert_contains "…and it says so on stderr (agent-ops#1730)" \
+  "publish-dashboard: notify_webhook_url contains a newline" "$wdn_out"
+wdn_raw="$(cat "$wdn/.local/state/poetic-agents/dashboard/data.js")"
+assert_contains "…while the refused value itself is left unmasked in the dashboard payload" \
+  "https://hooks.slack.com/services/T666/B666/aaa" "$wdn_raw"
+assert_lacks "…never registering a [REDACTED-WEBHOOK] rule for it" \
+  "[REDACTED-WEBHOOK]" "$wdn_raw"
+
 # ---------------------------------------------------------------------------------
 if (( failures > 0 )); then
   printf '\n%d assertion(s) failed\n' "$failures"

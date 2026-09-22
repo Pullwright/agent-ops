@@ -138,6 +138,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the configured value (`notify_resolve_webhook_url`, the same alias
   resolution `agent-cycle.sh` uses) and register it before their own
   redaction pass runs. With no webhook configured, behaviour is unchanged.
+- **A newline-bearing `notify_webhook_url` now warns on stderr instead of
+  silently going unredacted** (issue #1730). `redact_add_literal` (issue
+  #1721, above) correctly refuses to register a value containing an
+  embedded newline — a single `sed` rule cannot span one, and registering it
+  anyway would break every rule in the shared pattern set for the whole
+  redaction pass — but the refusal was silent. `scripts/state-sync.sh` and
+  `scripts/publish-dashboard.sh` now print a warning naming the gap before
+  making the same call; `lib/redact.sh` itself is unchanged, so every other
+  caller's behaviour is unchanged too.
 - **An escalation's duplicate guard can no longer be fooled by one item
   reference being a string prefix of another** (issue #1694). Since issue
   #1630 gave the crash-loop detector per-repository item references
