@@ -3582,8 +3582,11 @@ rework_json="$(rework_panel_build "$events_jsonl" "" 2>/dev/null)"
 if ! jq -e 'type == "object" and has("escape_ladder")' <<<"$rework_json" >/dev/null 2>&1; then
   # Same explicit-failure discipline as escape_audits_json's own degrade path:
   # a payload this could not assemble must never render as "no rework this
-  # window" — every field null, not a real and reportable zero.
-  rework_json='{"how_much":null,"whose":null,"escape_ladder":null,"clean_count":null}'
+  # window" — every field null, not a real and reportable zero. Matches
+  # rework_panel_build's own outage shape exactly, `rework_cycles` included,
+  # so the Spend by fate join below (issue #1691) sees the same outage
+  # whether rework_panel_build reported it itself or never ran at all.
+  rework_json='{"how_much":null,"whose":null,"escape_ladder":null,"clean_count":null,"rework_cycles":null}'
 fi
 
 # --- Constraint statement (D21, docs/ROADMAP.md; issue #609) -----------------
@@ -3660,17 +3663,28 @@ if (( FULL )); then
   # --- Spend by fate, and turns per landed item (D21/D14, issue #612) -------
   # "Where do the tokens go?" — the other half of the same issue. Both fold
   # over `item_lifecycle_fold`'s own `$lifecycle_file`; the fate account
-  # additionally reads `counts.cost_rows[]` (spooled to its own file, the
-  # same `--slurpfile` convention `$lifecycle_file` itself already uses,
-  # rather than a second `--argjson` capture of a value this size) and
-  # `rework_json`'s own `rework_cycles` (issue #611's own cycle-membership
-  # test, never re-derived here).
+  # additionally reads `counts.cost_rows[]` and `rework_json`'s own
+  # `rework_cycles` (issue #611's own cycle-membership test, never re-derived
+  # here) — both spooled to their own file and read via the same
+  # `--slurpfile` convention `$lifecycle_file` itself already uses, rather
+  # than an `--argjson` capture of a value unbounded by configuration
+  # (issue #1691: a fleet's rework-bearing-cycle count rides this join
+  # all-time, so it belongs to the class requirement 4g exists for — the
+  # 2026-08-14 `MAX_ARG_STRLEN` outage). `rework_cycles` is passed through
+  # verbatim, `null` included: `rework_panel_build` reports `null` there
+  # only for its own outage shape (a fold that aborted), never for a real
+  # "no rework this window" (that is `[]`), and coalescing the former to the
+  # latter here would let `fleet_pricing_spend_fate` compute a confident,
+  # reconciled account with every rework-bearing row silently reclassified
+  # into delivered/discarded/defect_driven instead of propagating the
+  # outage (issue #1691).
   cost_rows_file="$work_tmp/cost-rows.json"
   jq -c '.cost_rows // []' <<<"$counts_json" > "$cost_rows_file" 2>/dev/null
   [[ -s "$cost_rows_file" ]] || printf '[]' > "$cost_rows_file"
-  rework_cycles_json="$(jq -c '.rework_cycles // []' <<<"$rework_json" 2>/dev/null)"
-  [[ -n "$rework_cycles_json" ]] || rework_cycles_json='[]'
-  spend_fate_json="$(fleet_pricing_spend_fate "$cost_rows_file" "$rework_cycles_json" "$lifecycle_file" 2>/dev/null)"
+  rework_cycles_file="$work_tmp/rework-cycles.json"
+  jq -c '.rework_cycles' <<<"$rework_json" > "$rework_cycles_file" 2>/dev/null
+  [[ -s "$rework_cycles_file" ]] || printf 'null' > "$rework_cycles_file"
+  spend_fate_json="$(fleet_pricing_spend_fate "$cost_rows_file" "$rework_cycles_file" "$lifecycle_file" 2>/dev/null)"
   [[ -n "$spend_fate_json" ]] || spend_fate_json='{"total_usd":null,"row_count":null,"by_fate":null,"reconciled":null,"lever":null}'
   turns_per_landed_json="$(fleet_pricing_turns_per_landed_item "$lifecycle_file" 2>/dev/null)"
   [[ -n "$turns_per_landed_json" ]] || turns_per_landed_json='{"n_landed_total":null,"n_landed_with_turns":null,"by_stage_model":null,"lever":null}'

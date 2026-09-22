@@ -13,7 +13,15 @@
 #                                    the priority order (rework beats
 #                                    outcome, outcome beats terminal fate) is
 #                                    exercised on a row that could otherwise
-#                                    read two different ways.
+#                                    read two different ways. REWORK_CYCLES_FILE
+#                                    holding JSON `null` (rework_panel_build's
+#                                    own outage shape) reports the outage
+#                                    shape rather than computing against an
+#                                    empty rework set (issue #1691), and a
+#                                    rework-bearing-cycles count large enough
+#                                    that the old `--argjson` form would have
+#                                    been a size concern still classifies
+#                                    correctly via `--slurpfile`.
 #   fleet_pricing_turns_per_landed_item
 #                                    num_turns averaged per (stage, model)
 #                                    over landed items only, with the
@@ -99,8 +107,9 @@ cat > "$cost_rows_file" <<'EOF'
 ]
 EOF
 
-rework_cycles='["c4"]'
-out="$(fleet_pricing_spend_fate "$cost_rows_file" "$rework_cycles" "$lifecycle_file")"
+rework_cycles_file="$tmp_dir/rework-cycles.json"
+printf '%s' '["c4"]' > "$rework_cycles_file"
+out="$(fleet_pricing_spend_fate "$cost_rows_file" "$rework_cycles_file" "$lifecycle_file")"
 
 assert_eq "total_usd is the sum of every row (10+5.25+3.10+7+0.40+1.85+2)" \
   "29.6" "$(jq -r '.total_usd' <<<"$out")"
@@ -139,15 +148,59 @@ cat > "$subcent_rows" <<'EOF'
   {"cycle":"c3","repo":"r","item":"3","outcome":"failed",  "attributed":true, "usd":0.005}
 ]
 EOF
-subcent_out="$(fleet_pricing_spend_fate "$subcent_rows" '[]' "$lifecycle_file")"
+empty_rework_file="$tmp_dir/empty-rework.json"
+printf '%s' '[]' > "$empty_rework_file"
+
+subcent_out="$(fleet_pricing_spend_fate "$subcent_rows" "$empty_rework_file" "$lifecycle_file")"
 assert_eq "sub-cent rows spread over three buckets still reconcile (rounded once, at the end)" \
   "true" "$(jq -r '.reconciled' <<<"$subcent_out")"
 
 assert_eq "an empty cost_rows file reconciles trivially (0 == 0)" \
-  "true" "$(jq -r '.reconciled' <<<"$(fleet_pricing_spend_fate "$(printf '%s' '[]' > "$tmp_dir/empty-rows.json"; echo "$tmp_dir/empty-rows.json")" '[]' "$lifecycle_file")")"
+  "true" "$(jq -r '.reconciled' <<<"$(fleet_pricing_spend_fate "$(printf '%s' '[]' > "$tmp_dir/empty-rows.json"; echo "$tmp_dir/empty-rows.json")" "$empty_rework_file" "$lifecycle_file")")"
 
 assert_eq "a missing cost_rows file reports the outage shape, never a quiet zero" \
-  "null" "$(jq -c '.reconciled' <<<"$(fleet_pricing_spend_fate "$tmp_dir/does-not-exist.json" '[]' "$lifecycle_file")")"
+  "null" "$(jq -c '.reconciled' <<<"$(fleet_pricing_spend_fate "$tmp_dir/does-not-exist.json" "$empty_rework_file" "$lifecycle_file")")"
+
+# A rework_panel_build outage (rework_cycles: null) must not coalesce to an
+# empty rework set and compute a confident, reconciled account — issue #1691.
+# Reuse the fate_log fixture above: without the outage, item 4's cycle (c4)
+# is claimed by rework; with a null rework_cycles_file, nothing should be
+# computed at all.
+null_rework_file="$tmp_dir/null-rework.json"
+printf 'null' > "$null_rework_file"
+outage_out="$(fleet_pricing_spend_fate "$cost_rows_file" "$null_rework_file" "$lifecycle_file")"
+assert_eq "a null rework_cycles_file (rework_panel_build's own outage shape) reports the spend-fate outage shape, never a computed account" \
+  '{"by_fate":null,"lever":null,"reconciled":null,"row_count":null,"total_usd":null}' \
+  "$(jq -Sc '.' <<<"$outage_out")"
+
+assert_eq "a missing rework_cycles_file reports the outage shape too, never a quiet []" \
+  "null" "$(jq -c '.reconciled' <<<"$(fleet_pricing_spend_fate "$cost_rows_file" "$tmp_dir/does-not-exist-rework.json" "$lifecycle_file")")"
+
+# A rework-bearing-cycles count large enough that the old `--argjson` form
+# would have been a correctness/size concern (issue #1691, requirement 4g's
+# own class — the 2026-08-14 MAX_ARG_STRLEN outage): confirm the --slurpfile
+# path still classifies correctly at this size, and still reconciles.
+#
+# The cycle ids here are the shape a real one has (`<stamp>-<node>-<pid>`,
+# ~39 bytes), not a short synthetic one, because the size is the whole point:
+# execve's per-argument ceiling is MAX_ARG_STRLEN, 32 pages — 131072 bytes on
+# every Linux this runs on — and it is a cap on one argument's own length, so
+# ARG_MAX's much larger total says nothing about it. 5000 ids of this shape
+# serialise past that ceiling; 5000 short ones would not, and would leave this
+# case asserting a claim it never actually exercised. The guard below checks
+# that rather than trusting the arithmetic to stay true.
+large_rework_rows="$tmp_dir/large-rework-rows.json"
+large_rework_cycles="$tmp_dir/large-rework-cycles.json"
+jq -nc '[range(0; 5000) | {cycle: ("20260919T111823Z-ockham-container-" + (. | tostring)), repo: "r", item: ("b" + (. | tostring)), outcome: "pr-ready", attributed: true, usd: 0.01}]' \
+  > "$large_rework_rows"
+jq -nc '[range(0; 5000) | ("20260919T111823Z-ockham-container-" + (. | tostring))]' > "$large_rework_cycles"
+assert_eq "the fixture really is past execve's 131072-byte per-argument ceiling, so the old --argjson form could not have carried it" \
+  "1" "$(( $(wc -c < "$large_rework_cycles") > 131072 ))"
+large_out="$(fleet_pricing_spend_fate "$large_rework_rows" "$large_rework_cycles" "$lifecycle_file")"
+assert_eq "5000 rework-bearing cycles (well past the old argv-size concern) all classify as rework" \
+  '{"n":5000,"usd":50}' "$(jq -Sc '.by_fate.rework' <<<"$large_out")"
+assert_eq "the large rework set still reconciles to the cent" \
+  "true" "$(jq -r '.reconciled' <<<"$large_out")"
 
 # =============================================================================
 # fleet_pricing_turns_per_landed_item

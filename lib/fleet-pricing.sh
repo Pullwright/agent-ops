@@ -142,26 +142,36 @@ FLEET_PRICING_SPEND_FATE_JQ='
     }
 '
 
-# fleet_pricing_spend_fate COST_ROWS_FILE REWORK_CYCLES_JSON LIFECYCLE_FILE
+# fleet_pricing_spend_fate COST_ROWS_FILE REWORK_CYCLES_FILE LIFECYCLE_FILE
 #
-# COST_ROWS_FILE holds `counts.cost_rows[]` verbatim; REWORK_CYCLES_JSON is a
-# small JSON array of cycle-id strings (`rework_panel_build`'s own
-# `rework_cycles` field); LIFECYCLE_FILE holds `item_lifecycle_fold`'s own
-# output. The two files are read via `--slurpfile`, never captured into a
+# COST_ROWS_FILE holds `counts.cost_rows[]` verbatim; REWORK_CYCLES_FILE holds
+# `rework_panel_build`'s own `rework_cycles` field verbatim — either a JSON
+# array of cycle-id strings, or JSON `null` when `rework_panel_build` itself
+# reported the outage shape (a fold that aborted, never a real "no rework"
+# zero, which is `[]`); LIFECYCLE_FILE holds `item_lifecycle_fold`'s own
+# output. All three files are read via `--slurpfile`, never captured into a
 # bash variable of their own beyond what the caller already holds.
 #
-# Always succeeds: a missing/empty/unreadable file on either side prints the
-# explicit outage shape below, never a confident "all zero" — the same
-# "an outage is not a quiet zero" discipline `rework_panel_build` documents.
+# Always succeeds: a missing/empty/unreadable file on any side, or a
+# REWORK_CYCLES_FILE holding `null`, prints the explicit outage shape below,
+# never a confident "all zero" — the same "an outage is not a quiet zero"
+# discipline `rework_panel_build` documents. Coalescing a `null`
+# REWORK_CYCLES_FILE to `[]` here would compute a confident, reconciled
+# account with every rework-bearing row silently reclassified into
+# delivered/discarded/defect_driven instead — exactly the violation this
+# guards against.
 fleet_pricing_spend_fate() {
-  local cost_rows_file="${1:-}" rework_cycles_json="${2:-}" lifecycle_file="${3:-}" out=""
-  [[ -n "$rework_cycles_json" ]] || rework_cycles_json='[]'
-  if [[ -n "$cost_rows_file" && -s "$cost_rows_file" && -n "$lifecycle_file" && -s "$lifecycle_file" ]]; then
-    out="$(jq -nc --slurpfile cr "$cost_rows_file" --slurpfile lc "$lifecycle_file" \
-      --argjson rework_cycles "$rework_cycles_json" \
-      '($cr[0]) as $cost_rows | ($lc[0]) as $lifecycle | ('"$FLEET_PRICING_SPEND_FATE_JQ"')' 2>/dev/null || true)"
+  local cost_rows_file="${1:-}" rework_cycles_file="${2:-}" lifecycle_file="${3:-}" out=""
+  if [[ -n "$cost_rows_file" && -s "$cost_rows_file" && -n "$rework_cycles_file" && -s "$rework_cycles_file" \
+        && -n "$lifecycle_file" && -s "$lifecycle_file" ]]; then
+    out="$(jq -nc --slurpfile cr "$cost_rows_file" --slurpfile rw "$rework_cycles_file" \
+      --slurpfile lc "$lifecycle_file" \
+      '($cr[0]) as $cost_rows | ($lc[0]) as $lifecycle | ($rw[0]) as $rework_cycles
+       | if $rework_cycles == null then null
+         else ('"$FLEET_PRICING_SPEND_FATE_JQ"')
+         end' 2>/dev/null || true)"
   fi
-  [[ -n "$out" ]] || out='{"total_usd":null,"row_count":null,"by_fate":null,"reconciled":null,"lever":null}'
+  [[ -n "$out" && "$out" != "null" ]] || out='{"total_usd":null,"row_count":null,"by_fate":null,"reconciled":null,"lever":null}'
   printf '%s' "$out"
 }
 
