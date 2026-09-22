@@ -526,7 +526,9 @@ Poetic-Poems, with no pipeline code in it.
       repository in place, and its `merge_autonomy` level, Approver and D18
       evidence move with it: Principle 8 met by construction rather than by
       re-provisioning. Prerequisites, order and owner acts:
-      `docs/PULLWRIGHT-REHOMING.md`, tracked by #912. *[interactive]*
+      `docs/PULLWRIGHT-REHOMING.md` (the re-homing runbook), tracked by #912;
+      [`docs/PRODUCT-SPLIT-PLAN.md`](PRODUCT-SPLIT-PLAN.md) (what moves where,
+      and in what order), tracked by #601. *[interactive]*
 - [ ] Extract Poetic's consumer configuration and deployment into a new
       repository in Poetic-Poems (a fresh name — the transfer retires the
       old one), leaving no pipeline code in it, and provision it per
