@@ -1251,6 +1251,25 @@ assert_doctor "doctor passes a required refinement source when refiner_model is 
 assert_doctor "doctor passes an exempt refinement_policy with no Refiner at all" \
   '.refiner_model = "" | .refinement_policy = {}' 0 \
   'every source whose refinement_policy is "required" has a Refiner configured'
+# --- requirement 1c's other two spellings (TD-PPagop-26082704/agent-ops#1003,
+#     agent-ops#924's decision): a "required" failed-runs source is refused
+#     outright, whatever refiner_model or refiner_max_per_engagement are — it
+#     has no candidate array for the Refiner to ever reach; a "required"
+#     source merely paused by refiner_max_per_engagement: 0 only warns, since
+#     that is a deliberate, temporary pause of a stage that still exists, not
+#     a configuration nobody could ever satisfy. ---
+assert_doctor "doctor fails a required failed-runs source regardless of refiner_model" \
+  '.refinement_policy["failed-runs"] = "required"' 1 \
+  'refinement_policy requires failed-runs but that source has no candidate array'
+assert_doctor "doctor fails a required failed-runs source regardless of refiner_max_per_engagement too" \
+  '.refinement_policy["failed-runs"] = "required" | .refiner_max_per_engagement = 0' 1 \
+  'refinement_policy requires failed-runs but that source has no candidate array'
+assert_doctor "doctor warns, never fails, a required source paused by a zero refiner_max_per_engagement cap" \
+  '.refiner_max_per_engagement = 0' 0 \
+  'refinement_policy requires [issues, tech-debt] but refiner_max_per_engagement is 0'
+assert_doctor "doctor reports no paused-by-cap warning once the cap is raised again" \
+  '.refiner_max_per_engagement = 1' 0 \
+  'every source whose refinement_policy is "required" has a Refiner configured'
 
 assert_doctor "doctor fails a label set to blocked, which would make its item unselectable" \
   '.unvoid_label = "blocked"' 1 'unvoid_label is "blocked"'
@@ -1662,6 +1681,52 @@ assert_contains "the refiner-required guard names the source(s) left unrefinable
   "refinement_policy requires [issues, tech-debt] but refiner_model is empty" "$guard_out"
 assert_not_contains "a config the schema accepts is not reported as a schema failure" \
   "does not match config.schema.json" "$guard_out"
+
+# requirement 1c's second refuse spelling (TD-PPagop-26082704/agent-ops#1003,
+# agent-ops#924's decision): a "required" failed-runs source exits 1
+# regardless of refiner_model — it has no candidate array for the Refiner to
+# ever reach, so it is unsatisfiable whatever else is configured.
+run_cycle_guard "$(jq -c '.refinement_policy["failed-runs"] = "required"' "$BASE_CONFIG")"
+assert_eq "a required failed-runs source still exits 1 with refiner_model set, past the schema gate" "1" "$guard_rc"
+assert_contains "the failed-runs guard names why the source can never be refined" \
+  "refinement_policy requires failed-runs but that source has no candidate array" "$guard_out"
+assert_not_contains "a config the schema accepts is not reported as a schema failure" \
+  "does not match config.schema.json" "$guard_out"
+
+# requirement 1c's third, *warn*-not-refuse spelling (same decision):
+# refiner_max_per_engagement: 0 with refiner_model set is a deliberate,
+# temporary pause of a stage that still exists, so agent-cycle.sh starts
+# rather than refusing — checked here via --status, which runs every startup
+# guard (this one sits ahead of management-command dispatch, at
+# run_manage_command) and exits immediately afterwards without ever reaching
+# `gh` or `claude`, so the warning event it logs can be read back from the
+# log file directly rather than guessed at from stdout/stderr (log_event
+# writes only to the log file, never the console, outside --status's own
+# unrelated report).
+run_cycle_guard_status() {  # run_cycle_guard_status CONFIG_JSON
+  printf '%s' "$1" > "$guard_app/config.json"
+  rm -rf "${guard_home:?}/.cache/agent-ops-test/state"
+  guard_out="$(env AGENT_OPS_ROLE=active HOME="$guard_home" "$guard_app/agent-cycle.sh" --status 2>&1)"
+  guard_rc=$?
+  guard_log_file="$guard_home/.cache/agent-ops-test/state/log.jsonl"
+}
+
+run_cycle_guard_status "$(jq -c '.refiner_max_per_engagement = 0' "$BASE_CONFIG")"
+assert_eq "--status still runs (and exits 0) with a required source paused by a zero cap" "0" "$guard_rc"
+assert_not_contains "…and this is never reported as a startup refusal" \
+  "refusing to start" "$guard_out"
+paused_warning="$(jq -c 'select(.event == "warning" and (.detail // "" | contains("refiner_max_per_engagement is 0")))' \
+  "$guard_log_file" 2>/dev/null | tail -n1)"
+assert_contains "…and logs a warning event naming the paused sources" \
+  "refinement_policy requires [issues, tech-debt] but refiner_max_per_engagement is 0" \
+  "$(jq -r '.detail // empty' <<<"$paused_warning" 2>/dev/null)"
+assert_eq "…carrying the resolved cap as its own field" "0" \
+  "$(jq -r '.refiner_max_per_engagement // empty' <<<"$paused_warning" 2>/dev/null)"
+
+run_cycle_guard_status "$(jq -c '.' "$BASE_CONFIG")"
+n_paused_warnings="$(jq -s '[.[] | select(.event == "warning" and (.detail // "" | contains("refiner_max_per_engagement is")))] | length' \
+  "$guard_log_file" 2>/dev/null)"
+assert_eq "a healthy (non-zero) cap logs no paused-by-cap warning" "0" "${n_paused_warnings:-0}"
 
 # review-cycle.sh's own cross-key guard: duplicate project_review.repos slugs
 # (requirement R1b), shared with doctor.sh's own `fail` above through the same
