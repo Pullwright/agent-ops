@@ -8,6 +8,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **A stage-health verdict for the repository-review pipeline** (issue #996,
+  the symmetric gap #662 left open for `review-cycle.sh`). `lib/stage-
+  health.sh`'s `stage_health_verdicts`/`stage_health_write_status` are
+  generalized to take the stage-end/attempt-failed event names and the
+  output filename as parameters, with no behaviour change for the
+  implementation pipeline's own callers. `review-cycle.sh` computes its own
+  `project-reviewer` verdict from `review-log.jsonl`'s `review-stage-end`/
+  `review-attempt-failed` events at the end of every run, into its own
+  `state_dir/.review-stage-health.json`, folded into the heartbeat as
+  `review_stage_health` — a field of its own beside `stage_health`, never
+  merged into it — and rendered as a new "Review stage health" dashboard
+  panel with its own page-top banner and fleet-strip badge, independent of
+  the implementation pipeline's.
 - **A non-public, per-node source for the notify webhook credential**
   (issue #991, TD-PPagop-26082516). `notify_webhook_url`'s value is a bearer
   secret, and its only previous source, `config.json`, is both fleet-wide and
