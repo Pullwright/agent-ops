@@ -169,6 +169,13 @@ principle it rests on.`
   early is harmless — a pull request that still carries the workflow keeps
   running it, only without gating — so the safe ordering never wedges the
   repository.
+- 2026-09-15 · #1531/#1512 · **The `Pullwright Author` App is granted
+  `actions: write`, accepted on the `Pullwright`, `Poetic-Poems` and
+  `Artist-OS` installations (option A).** Re-running or cancelling a workflow
+  run is the narrowest lever GitHub offers for a flaked required check —
+  there is no read-only re-run scope — and the residual it carries, an agent
+  able to delete workflow runs, logs and caches, is accepted. Answered by the
+  owner on #1531.
 - 2026-09-19 · #1605/#1602 · **Finishing-source pull requests land
   autonomously on agent-ops (option 1).** `Pullwright/agent-ops`'s
   `merge_autonomy_routine_sources` widens from `tech-debt` and `issues` to
@@ -178,10 +185,3 @@ principle it rests on.`
   `CHANGES_REQUESTED`, the merge budget — and no other source is added.
   Decided by the owner on 2026-09-19; the alternative, a surfaced
   human-merge queue, was declined.
-- 2026-09-15 · #1531/#1512 · **The `Pullwright Author` App is granted
-  `actions: write`, accepted on the `Pullwright`, `Poetic-Poems` and
-  `Artist-OS` installations (option A).** Re-running or cancelling a workflow
-  run is the narrowest lever GitHub offers for a flaked required check —
-  there is no read-only re-run scope — and the residual it carries, an agent
-  able to delete workflow runs, logs and caches, is accepted. Answered by the
-  owner on #1531.
