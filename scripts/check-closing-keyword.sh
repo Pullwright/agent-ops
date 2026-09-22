@@ -264,20 +264,24 @@ if [[ -n "$repo_slug" && -n "$pr_number" ]]; then
     patch="$(jq -r --arg p "$record_path" \
       'map(select(.filename == $p)) | (.[0].patch // "")' <<<"$files_json" 2>/dev/null)"
 
-    # If the diff does not touch this file, check whether it is already
-    # resolved on the base branch (issue #1493). If it is, the record-flip
-    # requirement is already satisfied and we should not demand a no-op rewrite.
+    # A diff that never touches the record is ordinarily the failure below —
+    # but issue #1493's case is a record already at a terminal status on the
+    # base branch, flipped by an earlier, unrelated pull request. Demanding a
+    # rewrite there would violate the register's own append-only convention
+    # (TECH-DEBT.md "Resolution and history": never flip a resolved item
+    # back), so check the base ref before treating an untouched file as a
+    # failure. A `gh` call that cannot be made is treated the same as a
+    # record that is not yet terminal — fall through to the failure below —
+    # for the same availability reason the changed-files read above does.
     if [[ -z "$patch" ]]; then
-      base_sha="$("$GH" api "repos/$repo_slug/pulls/$pr_number" --jq '.base.sha' 2>/dev/null)" || base_sha=""
+      base_json="$("$GH" api "repos/$repo_slug/pulls/$pr_number" 2>/dev/null)" || base_json=""
+      base_sha="$(jq -r '.base.sha // empty' <<<"$base_json" 2>/dev/null)"
       if [[ -n "$base_sha" ]]; then
-        # Try to read the record file from the base ref to check its current status.
-        file_content="$("$GH" api "repos/$repo_slug/contents/${record_path}?ref=${base_sha}" --jq '.content' 2>/dev/null)" || file_content=""
-        if [[ -n "$file_content" ]]; then
-          # Decode the base64-encoded content and check for terminal status.
-          decoded="$(printf '%s' "$file_content" | base64 -d 2>/dev/null)" || decoded=""
+        contents_json="$("$GH" api "repos/$repo_slug/contents/${record_path}?ref=${base_sha}" 2>/dev/null)" || contents_json=""
+        content_b64="$(jq -r '.content // empty' <<<"$contents_json" 2>/dev/null)"
+        if [[ -n "$content_b64" ]]; then
+          decoded="$(base64 -d <<<"$content_b64" 2>/dev/null)" || decoded=""
           if grep -qE '^status:[[:space:]]*(resolved|not-debt)[[:space:]]*$' <<<"$decoded"; then
-            # The record is already at a terminal status on the base branch,
-            # so the requirement is satisfied — skip the error.
             continue
           fi
         fi

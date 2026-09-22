@@ -206,6 +206,12 @@ assert_pass "no branch argument at all keeps the marker-only behaviour" \
 # $fixtures/issue-<n>.json  — `gh issue view <n> --json body,labels` reply
 # $fixtures/files.json      — `gh api …/pulls/<n>/files` reply (a JSON array
 #                             of pages, the `--slurp` shape)
+# $fixtures/pr.json         — `gh api …/pulls/<n>` reply (issue #1493's
+#                             base-sha read; `{"base":{"sha":"…"}}`)
+# $fixtures/contents.json   — `gh api …/contents/<path>?ref=<sha>` reply
+#                             (issue #1493's base-ref record read; the
+#                             contents API's own `{"content":"<base64>"}`
+#                             shape)
 # A missing fixture makes the stub exit non-zero, standing in for a `gh` call
 # that could not be made at all.
 tmp_dir="$(mktemp -d)"
@@ -223,6 +229,18 @@ if [[ "$1" == "api" ]]; then
   for a in "$@"; do
     if [[ "$a" == repos/*/pulls/*/files ]]; then
       f="$fixtures/files.json"
+      [[ -f "$f" ]] || exit 1
+      cat "$f"
+      exit 0
+    fi
+    if [[ "$a" == repos/*/contents/* ]]; then
+      f="$fixtures/contents.json"
+      [[ -f "$f" ]] || exit 1
+      cat "$f"
+      exit 0
+    fi
+    if [[ "$a" == repos/*/pulls/* ]]; then
+      f="$fixtures/pr.json"
       [[ -f "$f" ]] || exit 1
       cat "$f"
       exit 0
@@ -309,6 +327,35 @@ JSON
 # case below first went green against a malformed fixture.
 assert_fail_tdr "'Filed as' present, diff never touches the record: fail" \
   "$body_240" "agent/240" "acme/widgets" "9" "untouched" \
+  "does not touch that file"
+
+# A "Filed as" line, the diff never touches the record, but the record is
+# already at a terminal status on the base branch (issue #1493) — flipped by
+# an earlier, unrelated pull request. Demanding a rewrite here would violate
+# the register's own append-only convention (TECH-DEBT.md "Resolution and
+# history": never flip a resolved item back), so this passes without one.
+mkdir -p "$tmp_dir/already-resolved-on-base"
+cp "$tmp_dir/untouched/issue-240.json" "$tmp_dir/already-resolved-on-base/issue-240.json"
+cp "$tmp_dir/untouched/files.json" "$tmp_dir/already-resolved-on-base/files.json"
+printf '{"base": {"sha": "deadbeef"}}' > "$tmp_dir/already-resolved-on-base/pr.json"
+printf '{"content": "%s"}' \
+  "$(printf -- '---\nid: TD-1\nstatus: resolved\nresolved: 2026-08-25\nref: https://github.com/acme/widgets/pull/2\nfiled: 2026-08-01\n---' | base64 -w0)" \
+  > "$tmp_dir/already-resolved-on-base/contents.json"
+assert_pass_tdr "'Filed as' present, diff untouched, already resolved on base: pass" \
+  "$body_240" "agent/240" "acme/widgets" "9" "already-resolved-on-base"
+
+# Same shape, but the base-branch record is still open: issue #1493's fix
+# only skips the no-op-rewrite demand when the base is already terminal,
+# never as a general amnesty for a record the diff never touches.
+mkdir -p "$tmp_dir/still-open-on-base"
+cp "$tmp_dir/untouched/issue-240.json" "$tmp_dir/still-open-on-base/issue-240.json"
+cp "$tmp_dir/untouched/files.json" "$tmp_dir/still-open-on-base/files.json"
+printf '{"base": {"sha": "deadbeef"}}' > "$tmp_dir/still-open-on-base/pr.json"
+printf '{"content": "%s"}' \
+  "$(printf -- '---\nid: TD-1\nstatus: open\nfiled: 2026-08-01\n---' | base64 -w0)" \
+  > "$tmp_dir/still-open-on-base/contents.json"
+assert_fail_tdr "'Filed as' present, diff untouched, still open on base: fail" \
+  "$body_240" "agent/240" "acme/widgets" "9" "still-open-on-base" \
   "does not touch that file"
 
 # A "Filed as" line, and this PR's diff touches the file but never sets a
