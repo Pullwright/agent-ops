@@ -1680,18 +1680,31 @@ implements.
    (requirement 4a) are both fully expressible as `type`/`minimum`/
    `maximum`/`additionalProperties` on a single object, so neither has a
    hand-written check left in `agent-cycle.sh` or
-   `lib/prompt-overrides.sh`. Four guards stay in code rather than moving into
+   `lib/prompt-overrides.sh`. Five guards stay in code rather than moving into
    the schema, because each holds *between* two keys, which
    `additionalProperties`/`required`/etc. on one object cannot state: the
    Enabler's assignee (requirement 35), the implementation-plan path
-   (requirement 3k), and the two model-tier guards of requirement 1c below.
-   All four are shared, not duplicated, between `agent-cycle.sh` and
+   (requirement 3k), and the three guards of requirement 1c below — the
+   model-tier floor, a `"required"` refinement source with `refiner_model`
+   empty, and one left unrefinable by `refiner_max_per_engagement: 0`.
+   All five are shared, not duplicated, between `agent-cycle.sh` and
    `scripts/doctor.sh` — `lib/config-schema.sh`'s `config_enabler_assignee_ok`,
-   `config_missing_plan_path_repos`, `config_model_tier_floor_violations` and
-   `config_required_refinement_sources_without_refiner` are the one
-   implementation each script calls, so the Script's refusal and `doctor.sh`'s
-   `fail` can never drift on what counts as a fault. A fifth guard,
-   `config_duplicate_repos_slugs`, stays in code for the same reason one step
+   `config_missing_plan_path_repos`, `config_model_tier_floor_violations`,
+   `config_required_refinement_sources_without_refiner` and
+   `config_refinement_sources_paused_by_cap` are the one
+   implementation each script calls, so the Script's refusal (or, for the last
+   of them, its `warning`) and `doctor.sh`'s `fail`/`warn`
+   can never drift on what counts as a fault. Requirement 1c's sixth guard,
+   `config_required_failed_runs_source`, is the one exception to the division
+   above: it holds within a single key — `refinement_policy["failed-runs"]`
+   being `"required"` — and the schema could state it by giving that one
+   property its own enum in place of the shared `$defs/refinementPolicyValue`
+   `$ref`. It stays in code because agent-ops#924 requires the doctor's own
+   message to be the contract for it, and a schema violation reports the
+   schema's path rather than why `failed-runs` can never be refined; sharing
+   one implementation with `agent-cycle.sh` is what keeps that message from
+   drifting. A seventh guard, `config_duplicate_repos_slugs`, stays in code
+   for the same reason one step
    out: it holds between two *entries* of `repos[]` rather than between two
    keys of one object, which no array keyword the schema has can state
    either — `uniqueItems` rejects only byte-identical whole entries, and
@@ -1827,8 +1840,13 @@ implements.
       the condition holds, never only once, so it cannot age out of the
       dashboard's window the way a once-only warning would —
       `config_refinement_sources_paused_by_cap` computes the set warned
-      about. Auto-degrading the source's own policy to `"preferred"` was
-      considered and rejected: what runs must be what the config says.
+      about. The condition is read with the rest of the configuration, ahead
+      of the log existing at all, and the `warning` event is emitted once
+      logging is initialised; a management command (requirement 2.3's
+      `--status` and its siblings) runs no cycle and emits none, so no
+      operator poll can mint a cycle id carrying an event but no
+      `cycle-start`. Auto-degrading the source's own policy to `"preferred"`
+      was considered and rejected: what runs must be what the config says.
 
     `refiner_model` therefore stays optional in the schema (a fresh install
     with every default in force sets neither key, and clears every check
