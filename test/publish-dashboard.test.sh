@@ -1668,6 +1668,25 @@ assert_eq "fleet.nodes carries self and both peers" "3" "$(jq '.fleet.nodes | le
 assert_eq "self is listed first and marked" "true" "$(jq -r '.fleet.nodes[0].self' <<<"$fdata")"
 assert_eq "the peer's role comes from its heartbeat" "active" \
   "$(jq -r '.fleet.nodes[] | select(.node=="peer1") | .role' <<<"$fdata")"
+# The self row's role is evidence a peer acts on, not this process's answer
+# to "may I spend?": lib/pager-invariants.sh's firing-missed exempts a node
+# whose published role is a standby's, so a hand run of this script — which
+# has no AGENT_OPS_ROLE in scope, Compose handing it only to the scheduled
+# ones — must not claim the node is standing by (agent-ops#1686). It says
+# `unknown`, the same word a peer's row carries when its heartbeat has no
+# role, and the invariants read that as no evidence either way.
+assert_eq "a publisher handed no role publishes unknown, never a standby it made up" "unknown" \
+  "$(jq -r '.fleet.nodes[0].role' <<<"$fdata")"
+# …and one handed a capitalised, padded role publishes the normalised one,
+# since requirement 2.4's guard would cycle on that value. In a home of its
+# own: a second publish over the same state is the no-op short-circuit's own
+# case (the fingerprint covers the state, not this process's environment),
+# and what is being proved here is what the row says, not when it is rebuilt.
+role_home="$(new_home nodeRole)"
+run_publish "$role_home" NODE_NAME=nodeRole-self AGENT_OPS_ROLE="  Active
+"
+assert_eq "a declared role is published normalised, as requirement 2.4 reads it" "active" \
+  "$(jq -r '.fleet.nodes[0].role' <<<"$(data_of "$role_home")")"
 assert_eq "a fresh heartbeat is not stale" "false" \
   "$(jq -r '.fleet.nodes[] | select(.node=="peer1") | .stale' <<<"$fdata")"
 assert_eq "the peer's cycle merges into the fleet list" "1" \

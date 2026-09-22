@@ -957,6 +957,15 @@
   // data.js from before the fleet strip existed carries) says nothing about
   // how many nodes are active, so it is not treated as "one" and renders
   // exactly as before.
+  //
+  // The strict comparison is safe because the role arrives normalised:
+  // scripts/state-sync.sh and scripts/publish-dashboard.sh both publish
+  // lib/role.sh's `role_declared`, so `ROLE=Active` reaches this page as
+  // `active` (agent-ops#1686). This is the third reading of "an active
+  // node" in the system — lib/role.sh's guard decides it for a node about
+  // itself, lib/pager-invariants.sh's `pager_row_cycling` for a peer about
+  // another — and normalising at the source is what keeps all three
+  // agreeing.
   function racedMarkersPossible() {
     if (!fleetNodes().length) return true;
     return fleetNodes().filter(function (n) { return n.role === "active" && !n.stale; }).length > 1;

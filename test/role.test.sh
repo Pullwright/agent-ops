@@ -76,6 +76,26 @@ for bad in activ ACTIV3 "active,standby" primary leader true 1 yes; do
   assert_eq "'$bad' is not active" "no" "$(role_is_active && echo yes || echo no)"
 done
 
+# --- role_declared ---
+#
+# The same normalisation without the fail-closed default: what a publisher
+# of the fleet's own record needs (scripts/state-sync.sh's heartbeat,
+# scripts/publish-dashboard.sh's self row), because "this node is a standby"
+# and "this process was told nothing" are different claims, and a peer acts
+# on the first of them — lib/pager-invariants.sh's `firing-missed` exempts a
+# node whose published role is a standby's (agent-ops#1686).
+unset AGENT_OPS_ROLE
+assert_eq "unset declares no role at all" "" "$(role_declared)"
+export AGENT_OPS_ROLE=""
+assert_eq "empty declares no role either" "" "$(role_declared)"
+export AGENT_OPS_ROLE="  Active
+"
+assert_eq "a declared role is normalised, not merely repeated" "active" "$(role_declared)"
+export AGENT_OPS_ROLE="activ"
+assert_eq "a value that is nobody's role is still reported as itself" "activ" "$(role_declared)"
+assert_eq "  ... while the guard still stands the node down on it" "no" \
+  "$(role_is_active && echo yes || echo no)"
+
 export AGENT_OPS_ROLE="standby"
 assert_contains "standby skip message names the role" "this node is standby" "$(role_skip_message agent-cycle)"
 export AGENT_OPS_ROLE="activ"

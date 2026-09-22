@@ -4060,6 +4060,15 @@ number's twins elsewhere on the page.
   already gives for per-container memory/cpu; the full report is in
   `D.fleet[<node>].resources` for anyone reading it directly. No badge when
   the row carries no `resources` field at all.
+- **The role badge shows the role the node published**, green for `active`
+  and grey for anything else, and that is the published value rather than a
+  guess: both publishers normalise it (implementation spec 2.5,
+  `lib/role.sh`'s `role_declared`), so `ROLE=Active` reaches the page as
+  `active`, and a process that was handed no role at all publishes
+  `unknown`, which the badge shows as `unknown` rather than quietly reading
+  as `standby`. The page is not the only reader — requirement 51's
+  `firing-missed` exempts a node whose role is a standby's — so an invented
+  `standby` would be a claim with consequences.
 - **A node-scoped disable (implementation spec 2.3, `--disable --this-node`,
   issue #379) gets its own badge beside the role badge**, not just the
   page-top switch banner. The banner (above) is keyed to *this* node's own

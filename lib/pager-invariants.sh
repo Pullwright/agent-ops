@@ -21,14 +21,14 @@
 # gap. All five are owner-only: none has an automatic fix a pipeline could
 # perform on its own behalf, unlike verdict-unanimous's tech-debt filing.
 #
-#   firing-missed          an active node — its row's `role` is `active`
-#                          and its heartbeat is fresh — whose newest
-#                          `cycle-start` *or `cycle-skipped`* (the
-#                          implementation union log — either one proves
-#                          the scheduler fired) is older than 2×
-#                          `schedule.cycle_interval_minutes` while it holds
-#                          no lock — caught purely from the union log,
-#                          since `lock.json` is never published
+#   firing-missed          a *cycling* node — fresh heartbeat, published
+#                          role not a standby's (`pager_row_cycling`
+#                          below) — whose newest `cycle-start` *or
+#                          `cycle-skipped`* (the implementation union log
+#                          — either one proves the scheduler fired) is
+#                          older than 2× `schedule.cycle_interval_minutes`
+#                          while it holds no lock — caught purely from the
+#                          union log, since `lock.json` is never published
 #                          (scripts/state-sync.sh excludes it) and
 #                          `schedule.cycle_interval_minutes` is fleet-wide
 #                          config, identical on every node that reads it,
@@ -36,9 +36,15 @@
 #                          is exempt, not merely allowed a longer window:
 #                          requirement 2.4 makes its ticks leave no trace
 #                          in the union log at all, so there is nothing
-#                          there for this invariant to read, and its
-#                          liveness is node-stale's business (agent-
-#                          ops#1686).
+#                          there to judge it by in either direction
+#                          (agent-ops#1686), which also leaves its own
+#                          stopped scheduler invisible until it is
+#                          promoted — agent-ops#1788's gap, not one
+#                          node-stale covers, since a heartbeat is pushed
+#                          from a crontab line of its own. Filing waits
+#                          one interval plus a margin so that a promotion
+#                          — whose first tick is by definition not in the
+#                          log yet — never files a page of its own.
 #   node-stale             a node's publication age past 2×
 #                          `node_stale_after_minutes` — files only after
 #                          `pager_stale_file_after_minutes` (default 180),
@@ -48,7 +54,10 @@
 #                          OVERRIDE`), because a node gone dark deserves a
 #                          faster page than paperwork.
 #   updater-stuck          `updater.status == "stuck"` for over 2×
-#                          `updater_stuck_after_minutes` on any active node
+#                          `updater_stuck_after_minutes` on any live node
+#                          — every node runs its own updater, standby
+#                          included, and one whose image has stopped
+#                          rolling cannot safely be promoted
 #                          — `.updater.seconds` already carries the
 #                          streak's own elapsed time (lib/updater-health.sh),
 #                          so no new bookkeeping is needed to test it.
@@ -289,12 +298,65 @@
 # (`pager_register_builtin_invariants`), not top-level code, so a test can
 # source this file and register only what it means to exercise.
 
+# --- Shared row predicates ---------------------------------------------------
+#
+# Two different questions get asked of a fleet row, and this file spelled both
+# of them `.stale | not` until agent-ops#1686:
+#
+#   live       the node is publishing — its heartbeat is fresh. The question
+#              every invariant over a *published* fact wants: verdict-
+#              unanimous's stage_health and doctor verdicts, updater-stuck's
+#              own streak. Those are collected on every node whatever its
+#              role, so a standby's answer counts exactly as much as an
+#              active node's.
+#   cycling    the node is one the fleet expects to be *running cycles*: live,
+#              and its published role is not a standby's. The question every
+#              invariant over the union log's record of cycles wants —
+#              firing-missed, idle-with-demand — because requirement 2.4
+#              stops a standby's tick before the log, so its newest cycle
+#              event is whatever it left behind before it was demoted and
+#              only ever grows older.
+#
+# `PAGER_JQ_ROW_PREDICATES` is prepended to the jq programs that need the
+# second, so one definition serves them both rather than a copy each. The
+# dashboard's own reading (`dashboard/index.html`, `n.role === "active" &&
+# !n.stale`) is a third, in another language; what keeps the two honest is
+# that scripts/state-sync.sh and scripts/publish-dashboard.sh now publish the
+# role already normalised, so a strict comparison is a sound one.
+#
+# The role is compared normalised here too — lowercased, whitespace stripped,
+# lib/role.sh's own rule — because requirement 2.4's guard compares that way:
+# `AGENT_OPS_ROLE=Active` runs unattended cycles, so it must not read as a
+# standby here. A node running an image older than that normalisation can
+# still publish a raw `Active`, and this is what covers it.
+#
+# A row whose role is absent or `unknown` counts as cycling. The exemption
+# needs positive evidence that a node is standing by; no evidence means what
+# it meant before agent-ops#1686 was fixed — judge the node on its cycles.
+# `unknown` is what publish-dashboard.sh writes for a peer whose heartbeat
+# carries no role at all, and what both publishers write for a process that
+# was handed no role; neither is a node saying it is a standby.
+PAGER_JQ_ROW_PREDICATES='
+def pager_role_normalised: (.role // "" | ascii_downcase | gsub("\\s"; ""));
+def pager_row_live: (.stale | not);
+def pager_row_cycling:
+  pager_row_live
+  and (pager_role_normalised | . == "active" or . == "" or . == "unknown");
+'
+
 # pager_eval_verdict_unanimous FLEET_NODES_JSON UNION_LOG_FILE
-# Fires when every *active* node (`.stale | not`; fewer than two active nodes
+# Fires when every *live* node (`pager_row_live`; fewer than two live nodes
 # can never be "unanimous" about anything) reports the identical failing
 # verdict at once — the #1071 signature: all four nodes read `updater stuck`
 # because the *reader's* rule was wrong, not because every node had
-# independently failed the same way at the same instant. Checks, in order,
+# independently failed the same way at the same instant.
+#
+# Live, not cycling: stage_health, updater and doctor verdicts are collected
+# on a standby exactly as they are on an active node, so a standby's
+# agreement is evidence like any other. `$active` below is this invariant's
+# own older word for the same test, kept because its evidence line uses it.
+#
+# Checks, in order,
 # the first hit wins: a stage_health stage failing on every active node, the
 # updater stuck on every active node, the doctor verdict `fail` on every
 # active node.
@@ -312,8 +374,8 @@
 # carry no `detail`, keep their evidence byte-identical.
 pager_eval_verdict_unanimous() {
   local fleet_nodes_json="$1"
-  jq -c -n --argjson nodes "$fleet_nodes_json" '
-    ($nodes | map(select(.stale | not))) as $active
+  jq -c -n --argjson nodes "$fleet_nodes_json" "$PAGER_JQ_ROW_PREDICATES"'
+    ($nodes | map(select(pager_row_live))) as $active
     | if ($active | length) < 2 then {firing: false}
       else
         ( [$active[] | (.stage_health.stages // {}) | keys[]] | unique ) as $stages
@@ -501,24 +563,45 @@ Retired automatically by lib/pager.sh (issue #1278)."
 # `log.jsonl` at all) as distinct from a cycle that is simply still running,
 # or a long cycle whose scheduler keeps ticking (and skipping) around it.
 #
-# "Active" is the row's own published `role` being `active` *and* its
-# heartbeat being fresh (`.stale | not`) — not freshness alone, which is
-# what this read until agent-ops#1686. Every row carries `role`: a peer's
-# from its heartbeat (scripts/state-sync.sh writes `AGENT_OPS_ROLE`, and
-# scripts/publish-dashboard.sh reads it back as `"unknown"` when absent),
-# the evaluating node's own from lib/role.sh's `role_current`. A standby is
-# exempt outright rather than given a wider window: requirement 2.4 makes a
-# standby tick exit before the lock, the log and the cycle directory, so
-# it never writes a `cycle-start` or a `cycle-skipped`, and the union log
-# holds no evidence of its scheduler for this invariant to read in either
-# direction — the newest cycle event it can find is from before the node
-# was demoted, and any finite multiple of the interval would eventually
-# page on it (ockham-2 sat at 7,970 minutes when #1768 fired). A standby
-# that is genuinely dead stops publishing its heartbeat, which is
-# node-stale's page, not this one. A role that is missing or not `active`
-# decides nothing here, the same fail-closed direction lib/role.sh's own
-# guard takes: only the literal `active` runs unattended cycles, so only
-# the literal `active` is expected to show them.
+# The nodes judged are the *cycling* ones — `pager_row_cycling` above, a
+# fresh heartbeat and a published role that is not a standby's — not the
+# merely live ones, which is what this read until agent-ops#1686. A standby
+# is exempt outright rather than given a wider window, because requirement
+# 2.4 stops its tick before the lock, the log and the cycle directory: it
+# writes neither a `cycle-start` nor a `cycle-skipped`, so the newest cycle
+# event the union log holds for it is whatever it left behind before it was
+# demoted, and that age only grows. Any finite multiple of the interval
+# therefore pages on a perfectly healthy standby in the end — ockham-2 sat
+# at 7,970 minutes when #1768 fired, against the 150 minutes a 10× window
+# would have allowed it.
+#
+# What the exemption costs, stated because the alternative was weighed and
+# not taken: a standby whose scheduler has quietly stopped is invisible
+# here until it is promoted. node-stale is not the detector for it —
+# that reads the heartbeat, which state-sync.sh pushes from its own crontab
+# line, so a node that has lost its `agent-cycle.sh` line alone (agent-
+# ops#1287's own signature) keeps publishing and looks healthy. Closing
+# that gap means giving a standby tick one trace to be judged by rather
+# than widening a window that measures nothing, which moves requirement
+# 2.4's own ordering; it is filed as agent-ops#1788.
+#
+# Promotion is the edge a published role alone cannot see. The moment a
+# node's role turns `active` its newest cycle event is as old as its
+# demotion, so this invariant fires at once — correctly, in that the node
+# is not cycling, and uselessly, because its first tick has not come round
+# yet. Nothing is *filed* on that: `pager_register_builtin_invariants`
+# registers this key with a filing window of one whole scheduling interval
+# plus a margin for replication (`MIN_FIRING_MINUTES_OVERRIDE`,
+# lib/pager.sh), so the promoted node's first `cycle-start` clears the
+# candidate before any page is written, while a node that really is
+# dropping firings stays firing across the window and is filed exactly as
+# it always was.
+#
+# Demotion, symmetrically, clears an open page: an operator who demotes a
+# broken node to stop the noise gets its page closed as cleared rather than
+# left open, because the fleet has stopped expecting cycles from it. The
+# evidence stays in the closed issue, and agent-ops#1788 is what would let
+# the fault keep being noticed after the demotion.
 # `lock.json` itself is never published (scripts/state-sync.sh excludes
 # it), so "holds no lock" is derived purely from the union log: a node's own
 # newest cycle-start/cycle-end/cycle-skipped event — whichever the union
@@ -540,8 +623,8 @@ pager_eval_firing_missed() {
   [[ "$interval_min" =~ ^[0-9]+([.][0-9]+)?$ ]] || { printf '{"firing":false}'; return 0; }
   [[ -f "$union_log_file" ]] || { printf '{"firing":false}'; return 0; }
   jq -c -R -n --argjson nodes "$fleet_nodes_json" --argjson interval "$interval_min" \
-    --argjson now "$(date -u +%s)" '
-    ($nodes | map(select((.stale | not) and (.role == "active"))) | map(.node)) as $active
+    --argjson now "$(date -u +%s)" "$PAGER_JQ_ROW_PREDICATES"'
+    ($nodes | map(select(pager_row_cycling)) | map(.node)) as $active
     | [ inputs | select(length > 0) | (fromjson? // empty)
         | select(.event == "cycle-start" or .event == "cycle-end" or .event == "cycle-skipped")
         | select((.node // "") as $n | $active | index($n) != null) ] as $events
@@ -606,8 +689,13 @@ pager_eval_node_stale() {
 }
 
 # pager_eval_updater_stuck FLEET_NODES_JSON UNION_LOG_FILE
-# Fires when any *active* node's `.updater.status == "stuck"` for more than
-# 2× PAGER_EVAL_UPDATER_STUCK_AFTER_MINUTES. `.updater.seconds`
+# Fires when any *live* node's `.updater.status == "stuck"` for more than
+# 2× PAGER_EVAL_UPDATER_STUCK_AFTER_MINUTES — live, not cycling: the updater
+# is what keeps a node's image current, it runs from its own crontab line
+# whatever the node's role, and a standby whose image has stopped rolling is
+# a standby that cannot safely be promoted. The header said "active" until
+# agent-ops#1686 while the code said `.stale | not`; the code was right.
+# `.updater.seconds`
 # (lib/updater-health.sh's `updater_status`) already carries the streak's
 # own elapsed time, recomputed fresh on every heartbeat write, so this reads
 # it directly rather than re-deriving an age from the union log the way
@@ -616,9 +704,10 @@ pager_eval_updater_stuck() {
   local fleet_nodes_json="$1" _union_log_file="$2"
   local threshold_min="${PAGER_EVAL_UPDATER_STUCK_AFTER_MINUTES:-}"
   [[ "$threshold_min" =~ ^[0-9]+([.][0-9]+)?$ ]] || { printf '{"firing":false}'; return 0; }
-  jq -c -n --argjson nodes "$fleet_nodes_json" --argjson threshold_min "$threshold_min" '
+  jq -c -n --argjson nodes "$fleet_nodes_json" --argjson threshold_min "$threshold_min" \
+    "$PAGER_JQ_ROW_PREDICATES"'
     (2 * $threshold_min * 60) as $threshold_s
-    | ($nodes | map(select(.stale | not))
+    | ($nodes | map(select(pager_row_live))
        | map(select((.updater.status? == "stuck")
                     and ((.updater.seconds? // 0) > $threshold_s)))) as $hits
     | if ($hits | length) == 0 then {firing: false}
@@ -719,7 +808,7 @@ pager_eval_dashboard_unreadable() {
 # --- agent-ops#1281: selection and ledger -----------------------------------
 
 # pager_eval_idle_with_demand FLEET_NODES_JSON UNION_LOG_FILE
-# Fires when an *active* node's (`.stale | not`) last PAGER_EVAL_IDLE_CYCLES
+# Fires when a *cycling* node's (`pager_row_cycling`) last PAGER_EVAL_IDLE_CYCLES
 # *cycles* all ended in state `idle-with-demand` (lib/node-time-state.sh,
 # D21) with a cause other than `back-pressure` — a deliberate throttle, not a
 # symptom, and the one `idle-with-demand` cause the issue's own exclusion
@@ -730,6 +819,15 @@ pager_eval_dashboard_unreadable() {
 # PAGER_EVAL_IDLE_CYCLES cycles for a node decides nothing — "last N cycles"
 # cannot be confirmed from an incomplete window, the same direction every
 # other "unknown decides nothing" guard in this codebase takes.
+#
+# *Cycling*, not merely live, for the reason firing-missed is
+# (agent-ops#1686): a node demoted to standby keeps publishing a fresh
+# heartbeat while requirement 2.4 stops its ticks, so the window this reads
+# is frozen at whatever its last cycles before the demotion happened to be.
+# A fleet that demoted a node mid-streak would otherwise page on that streak
+# for as long as the node stood by, and unlike firing-missed's own version
+# of the fault it needs no passage of time to become wrong: there are no
+# further cycles to break the streak, ever.
 #
 # One cycle, not one event, and the distinction is the whole invariant:
 # `node-state` is emitted many times per cycle — `overhead` unconditionally
@@ -754,8 +852,9 @@ pager_eval_idle_with_demand() {
   local n="${PAGER_EVAL_IDLE_CYCLES:-}"
   if ! [[ "$n" =~ ^[0-9]+$ ]] || (( n <= 0 )); then printf '{"firing":false}'; return 0; fi
   [[ -f "$union_log_file" ]] || { printf '{"firing":false}'; return 0; }
-  jq -c -R -n --argjson nodes "$fleet_nodes_json" --argjson n "$n" '
-    ($nodes | map(select(.stale | not)) | map(.node)) as $active
+  jq -c -R -n --argjson nodes "$fleet_nodes_json" --argjson n "$n" \
+    "$PAGER_JQ_ROW_PREDICATES"'
+    ($nodes | map(select(pager_row_cycling)) | map(.node)) as $active
     | [ inputs | select(length > 0) | (fromjson? // empty) ] as $all
     | ($all | map(select(.event == "node-state"))) as $ns_all
     | ($all | map(select(.event == "none-selected"))) as $none_selected
@@ -1531,7 +1630,8 @@ pager_remedy_pr_unreviewed() {
   printf 'enqueued %d ready pull request(s) into requirement 46'\''s own retry/escalate memory (approver-unreviewed-engaged, result: unavailable)' "$engaged"
 }
 
-# pager_register_builtin_invariants [STALE_FILE_AFTER_MINUTES]
+# pager_register_builtin_invariants [STALE_FILE_AFTER_MINUTES] \
+#                                    [CYCLE_INTERVAL_MINUTES]
 # Register every built-in invariant above with lib/pager.sh's own registry.
 # Not top-level code (see this file's header). STALE_FILE_AFTER_MINUTES —
 # `pager_stale_file_after_minutes` (config.schema.json), default 180 when
@@ -1541,14 +1641,37 @@ pager_remedy_pr_unreviewed() {
 # (a publication age past 2× node_stale_after_minutes), so filing waits far
 # longer than the framework's own blip-sized default before opening a
 # tracking issue.
+#
+# CYCLE_INTERVAL_MINUTES — `schedule.cycle_interval_minutes`, omitted by a
+# caller that only wants the list of registered keys — sets firing-missed's
+# own override the same way, and for the opposite reason: its fact forms
+# *instantly* at a moment when it means nothing. A node promoted from
+# standby to active has a newest cycle event as old as its demotion, so the
+# invariant fires the instant the promotion is published, and keeps firing
+# until the node's first tick comes round — up to one whole interval away,
+# plus the time a peer needs to see that tick (state-sync fetches every 7
+# minutes). Filing waits that out: one interval plus fifteen minutes, so the
+# first `cycle-start` clears the candidate before any page is written, while
+# a scheduler that has genuinely dropped a firing keeps the fact true across
+# the window and is filed as before (agent-ops#1686's own second edge — the
+# exemption fixes the standby that never cycles, this fixes the standby that
+# has just been told to). Omitted, or not a number, falls through to the
+# framework's own `pager_min_firing_minutes` exactly as before.
 pager_register_builtin_invariants() {
-  local stale_file_after_minutes="${1:-180}"
+  local stale_file_after_minutes="${1:-180}" cycle_interval_minutes="${2:-}"
+  local firing_missed_file_after=""
+  if [[ "$cycle_interval_minutes" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+    # Rounded up: the window is a floor to clear a promotion, not a budget.
+    firing_missed_file_after="$(awk -v i="$cycle_interval_minutes" \
+      'BEGIN { v = i + 15; printf "%d", (v == int(v) ? v : int(v) + 1) }')"
+  fi
   pager_register verdict-unanimous pager_eval_verdict_unanimous \
     pipeline-act pager_remedy_verdict_unanimous
   pager_register page-outlived-item pager_eval_page_outlived_item \
     pipeline-act pager_remedy_page_outlived_item
   pager_register firing-missed pager_eval_firing_missed owner-only \
-    "An active node's scheduler appears to have dropped a firing outright (the union log carries neither a cycle-start nor a cycle-skipped recent enough, and this node's newest cycle event is not an unmatched cycle-start) rather than merely still running a long cycle — a cycle-skipped would itself have proved the scheduler ticked and deferred to a held lock. Check the node's own cron/supercronic logs and crontab directly — on Kubernetes, check for a concurrencyPolicy: Forbid skip. The evidence above carries this node's own recent cycle-duration histogram. A node whose published role is standby is never named here: its ticks write nothing to the union log by design (requirement 2.4), so its liveness is node-stale's page."
+    "A node the fleet expects to be cycling appears to have had a firing dropped outright (the union log carries neither a cycle-start nor a cycle-skipped recent enough, and this node's newest cycle event is not an unmatched cycle-start) rather than merely still running a long cycle — a cycle-skipped would itself have proved the scheduler ticked and deferred to a held lock. Check the node's own cron/supercronic logs and crontab directly — on Kubernetes, check for a concurrencyPolicy: Forbid skip. The evidence above carries this node's own recent cycle-duration histogram. A node whose published role is a standby's is never named here: requirement 2.4 stops its ticks before the log, so there is nothing in the union log to judge it by in either direction, and a standby whose scheduler has stopped is invisible until it is promoted (agent-ops#1788). If this page names a node you have just promoted, its first cycle will clear it; if it names one you then demote, the page is closed as cleared, because the fleet has stopped expecting cycles from it." \
+    "$firing_missed_file_after"
   pager_register node-stale pager_eval_node_stale owner-only \
     "This node has not confirmed a publication into the shared state for over twice node_stale_after_minutes. Confirm directly whether the node (container/host) is still running, and check its own state-sync push logs. Once agent-ops#1279's notification channel lands, this class of page reaches it automatically (notify_events' own default includes \"pager\") — today it is filed only." \
     "$stale_file_after_minutes"

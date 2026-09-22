@@ -56,6 +56,12 @@ SCHEMA_FILE="$SCRIPT_DIR/config.schema.json"
 . "$SCRIPT_DIR/lib/log-event.sh"
 # shellcheck source=lib/disk-space.sh
 . "$SCRIPT_DIR/lib/disk-space.sh"
+# shellcheck source=lib/role.sh
+# `role_declared` alone, for the heartbeat's own `role` field: one
+# normalisation of AGENT_OPS_ROLE, shared with the guard that acts on it
+# (requirement 2.4), so a peer reading this heartbeat and this node reading
+# its own environment reach the same verdict about the same value.
+. "$SCRIPT_DIR/lib/role.sh"
 # shellcheck source=lib/notify.sh
 # `notify_resolve_webhook_url` alone, to resolve the configured notify
 # webhook the same way agent-cycle.sh, scripts/publish-dashboard.sh and
@@ -82,7 +88,8 @@ Exit codes: 0 done or nothing to do · 1 failure.
 Environment:
   NODE_NAME             this node's name — the branch and heartbeat carry it
                         (defaults to the hostname).
-  AGENT_OPS_ROLE        recorded in the heartbeat; gates neither mode.
+  AGENT_OPS_ROLE        recorded in the heartbeat, normalised by lib/role.sh
+                        (`unknown` when unset); gates neither mode.
   STATE_SYNC_REMOTE     override the remote URL (tests point it at a bare repo).
   STATE_SYNC_MIRROR     override the local mirror checkout's location.
   STATE_SYNC_LOCAL_RETAINED
@@ -1007,9 +1014,21 @@ do_push() {
   heartbeat_resources_window_start="$(jq -nr --argjson secs "$(( heartbeat_resources_window_hours * 3600 ))" \
     '(now - $secs) | todateiso8601' 2>/dev/null)"
   heartbeat_resources_json="$(resource_budget_report "$heartbeat_resources_samples" "$heartbeat_resources_window_start" 2>/dev/null || echo null)"
+  # The heartbeat's `role` is the fleet's own record of what this node is
+  # running as, and other nodes act on it: `firing-missed`
+  # (lib/pager-invariants.sh) exempts a node whose role says `standby`,
+  # because a standby's scheduler leaves nothing in the union log to judge.
+  # So it is published normalised (`lib/role.sh`, which is the same
+  # normalisation requirement 2.4's guard applies before deciding whether to
+  # cycle — `ROLE=Active` runs cycles, so it must not read as a standby
+  # here), and an undeclared role is published as `unknown` rather than as
+  # the guard's fail-closed `standby`: every scheduled process on a node is
+  # handed the variable by Compose, so an empty value means a hand run,
+  # which knows nothing about the role and should claim nothing.
+  heartbeat_role="$(role_declared)"
   jq -nc \
     --arg node "$node_name" \
-    --arg role "${AGENT_OPS_ROLE:-standby}" \
+    --arg role "${heartbeat_role:-unknown}" \
     --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     --arg lc "${last_cycle:-}" \
     --argjson version "$version_json" \
