@@ -3746,6 +3746,38 @@ assert_eq "a union-log-only cycle id reaches the window" "1" \
 assert_eq "  ... which also proves the log-only change invalidated the cache" "1" \
   "$(jq -r --arg id "$_cr2" '[.cycles[] | select(.id == $id)] | length' <<<"$cr_data")"
 
+# --- A failed rows copy removes both cache files rather than leaving a key
+# that vouches for stale/partial rows (agent-ops#1760) ----------------------
+crf="$(new_home nodeCRFail)"
+crf_state="$crf/.local/state/poetic-agents"
+crf_rows="$crf_state/.dashboard-cyclerows-cache/rows"
+crf_key="$crf_state/.dashboard-cyclerows-cache/key"
+make_cycle "$crf" "${today_day}T140001Z-crf1" 0.11 model-crf
+
+rm -f "$crf_state/.dashboard-fingerprint"; run_publish "$crf" >/dev/null
+assert_eq "a full build leaves the row window cached (crf)" "1" \
+  "$(( $(wc -c < "$crf_rows" 2>/dev/null || echo 0) > 0 ))"
+
+# Make the rows file itself unwritable — its containing directory stays
+# writable, so the cleanup this forces still has permission to remove it —
+# and add a new cycle to move the key, so this tick's miss branch actually
+# runs and its own `cp` fails.
+chmod 000 "$crf_rows"
+make_cycle "$crf" "${today_day}T140002Z-crf2" 0.12 model-crf
+rm -f "$crf_state/.dashboard-fingerprint"; run_publish_fast "$crf" >/dev/null 2>&1
+
+assert_eq "a failed rows copy leaves no rows cache file behind" "0" \
+  "$( [[ -e "$crf_rows" ]] && echo 1 || echo 0 )"
+assert_eq "...nor a key file vouching for it" "0" \
+  "$( [[ -e "$crf_key" ]] && echo 1 || echo 0 )"
+
+# The following tick must rebuild from a fresh glob rather than ever serving
+# what was left behind — proven by both cycles reaching the window, which a
+# stale/partial cache (from before the fix, `crf1` alone) would have hidden.
+rm -f "$crf_state/.dashboard-fingerprint"; run_publish_fast "$crf" >/dev/null 2>&1
+assert_eq "the following tick rebuilds from a fresh glob" "2" \
+  "$(jq -r '.cycles | length' <<<"$(data_of "$crf")")"
+
 # --- --now pins every rolling window to a caller-chosen instant (agent-ops#957) --
 # Without it, day_cut/today/recent_cut and the landing digest's in_window/
 # stale() all read the real wall clock, so a test asserting against them has

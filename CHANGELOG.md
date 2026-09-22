@@ -148,6 +148,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   now filters on `role === "active" && !n.stale`, the same staleness check
   `nodeUnknown()` already applies. A fixture mirroring `raced-single-active-
   node.json` with one stale peer added confirms neither badge renders.
+- **The cyclerows-cache miss branch can no longer leave a key file vouching
+  for rows it failed to persist** (issue #1760). `scripts/publish-
+  dashboard.sh`'s cache-miss branch (added in #1751) wrote the rows copy and
+  the key file as two independent best-effort operations, so a `cp` that
+  failed or was truncated partway could still be followed by a successful
+  key write — leaving the key vouching for stale or partial rows, served on
+  every subsequent unchanged tick until some unrelated input moved the key.
+  The key is now written only when the rows copy succeeds; when it fails,
+  both cache files are removed so the next tick's `-s`/`-f` guard fails and
+  it rebuilds from a fresh glob instead.
 - **A configured notify-webhook URL is now masked before it reaches the
   state-mirror repository or the dashboard, instead of passing every
   redaction pass unmatched** (issue #1721). `lib/redact.sh`'s pattern set

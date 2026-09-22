@@ -674,7 +674,13 @@ key that still matched the stale cache, serving rows missing whatever just
 landed until some later, unrelated tick moved the key. A tick whose key is
 unchanged copies the cached row list straight into place, falling through to
 a rebuild if the copy itself fails rather than publishing an empty window; a
-tick whose key moved rebuilds the row list and refreshes the cache.
+tick whose key moved rebuilds the row list and refreshes the cache —
+but the key file is written only once the rebuilt rows have themselves
+been copied into the cache, never independently: a rebuild whose own rows
+copy fails removes both cache files instead of leaving a key that vouches
+for rows it never persisted, so the next tick's key comparison misses and
+rebuilds from a fresh glob rather than serving the stale or partial rows a
+lone surviving key would otherwise keep vouching for.
 
 That render **excludes events belonging to no cycle before it groups the union
 by `.cycle`**, and reports its own success or failure as `cycle_render`. Both

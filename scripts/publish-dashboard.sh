@@ -1224,8 +1224,11 @@ else
         'BEGIN { while ((getline id < noopfile) > 0) noop[id] = 1 }
          $1 ~ re && !($1 in noop) && !seen[$1]++' | cut -f1,3 \
     | head -n "$MAX_CYCLES" > "$cycle_rows"
-  cp "$cycle_rows" "$cyclerows_rows_file" 2>/dev/null || true
-  printf '%s' "$cyclerows_key_now" > "$cyclerows_key_file" 2>/dev/null || true
+  if cp "$cycle_rows" "$cyclerows_rows_file" 2>/dev/null; then
+    printf '%s' "$cyclerows_key_now" > "$cyclerows_key_file" 2>/dev/null || true
+  else
+    rm -f "$cyclerows_rows_file" "$cyclerows_key_file"
+  fi
 fi
 
 # Manifest of every existing stage file in the window, plus the window's own
