@@ -182,6 +182,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   The key is now written only when the rows copy succeeds; when it fails,
   both cache files are removed so the next tick's `-s`/`-f` guard fails and
   it rebuilds from a fresh glob instead.
+- **`scripts/check-closing-keyword.sh`'s tech-debt record-flip check no
+  longer demands a no-op rewrite of a record already resolved on the base
+  branch** (issue #1493). A `pw::type:tech-debt` issue naming a "Filed as"
+  register file requires the closing pull request's diff to flip that
+  file's frontmatter to a terminal status — but when an earlier, unrelated
+  pull request already did so, there is no truthful `+status:` line left to
+  add, and the register's own append-only convention (TECH-DEBT.md
+  "Resolution and history": never flip a resolved item back) forbids
+  rewriting it again just to satisfy the check. The check now reads the
+  named record from the pull request's base ref before failing either an
+  untouched file or one touched without a status line, and passes either
+  shape when the base copy is already `resolved` or `not-debt`.
 - **A configured notify-webhook URL is now masked before it reaches the
   state-mirror repository or the dashboard, instead of passing every
   redaction pass unmatched** (issue #1721). `lib/redact.sh`'s pattern set
