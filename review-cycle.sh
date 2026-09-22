@@ -78,6 +78,8 @@ SKILL_SRC="$SCRIPT_DIR/.claude/skills/project-review"
 . "$SCRIPT_DIR/lib/review-context.sh"
 # shellcheck source=lib/metering.sh
 . "$SCRIPT_DIR/lib/metering.sh"
+# shellcheck source=lib/stage-health.sh
+. "$SCRIPT_DIR/lib/stage-health.sh"
 # shellcheck source=lib/node-time-state.sh
 . "$SCRIPT_DIR/lib/node-time-state.sh"
 # shellcheck source=lib/stage-run.sh
@@ -476,6 +478,20 @@ cleanup() {
   if [[ "$lock_acquired" == "1" ]]; then
     rm -f "$lock_file"
   fi
+  # Per-stage health snapshot for this pipeline's one real stage (agent-ops#996,
+  # docs/REVIEW-PIPELINE-SPEC.md R19; the implementation pipeline's own
+  # equivalent is issue #662/lib/stage-health.sh, and agent-cycle.sh's own
+  # call beside its own state-sync push is the direct precedent for this
+  # one): recomputed from this run's own $review_log_file — which already
+  # carries every `review-stage-end`/`review-attempt-failed` event this run
+  # logged — into its own `.review-stage-health.json`, never the
+  # implementation pipeline's `.stage-health.json` (see
+  # stage_health_write_status's own STATUS_FILENAME comment for why). Written
+  # before the state-sync push below, so that push's own heartbeat carries
+  # this run's fresh verdict rather than the previous one's. Best-effort like
+  # the dashboard refresh beside it: never affects this run's own exit code.
+  stage_health_write_status "$state_dir" "$review_log_file" "" "" "" '["project-reviewer"]' \
+    review-stage-end review-attempt-failed .review-stage-health.json || true
   # Publish this node's state to the fleet, once the review is fully recorded
   # (R2c) — its own `nodes/<NODE_NAME>` branch, so there is nothing another
   # node's push could overwrite and nothing to gate.
@@ -1203,8 +1219,20 @@ $(jq . <<<"$reviewer_input")
   else
     rc=$?
   fi
+  # `stage: "project-reviewer"` and `cycle` are for lib/stage-health.sh's
+  # benefit alone (agent-ops#996) — nothing else reads either field on this
+  # event. `cycle` is a synthetic `<review id>:<repo>` pair, not the bare
+  # `review_id` every other event on this stream carries: a single
+  # review-cycle.sh run can review several repos under one `review_id` (the
+  # while-loop below), so the bare id would let one repo's genuine failure
+  # get joined onto another repo's success by lib/stage-health.sh's own
+  # cycle-keyed match — this pipeline's one stage, several attempts sharing
+  # an id, is exactly the case that join was never built for.
   log_event "review-stage-end" "$(jq -nc --arg r "$slug" --argjson rc "$rc" --arg kr "$stage_kill_reason" \
-    --argjson m "$(metering_fields "$model" "$out_file" "$stage_gaps_json")" '{repo: $r, exit_code: $rc} + (if $kr == "" then {} else {kill_reason: $kr} end) + $m')"
+    --arg cyc "$review_id:$slug" \
+    --argjson m "$(metering_fields "$model" "$out_file" "$stage_gaps_json")" \
+    '{repo: $r, exit_code: $rc, stage: "project-reviewer", cycle: $cyc}
+     + (if $kr == "" then {} else {kill_reason: $kr} end) + $m')"
   log_node_state_transition overhead
   # `if`, not `&&`: an empty warning is the common case, and a trailing
   # `&&` whose test fails is a non-zero status at exactly the place
@@ -1229,7 +1257,14 @@ $(jq . <<<"$reviewer_input")
     if (( rc == 124 )); then detail="reviewer timed out"
     elif (( rc != 0 )); then detail="reviewer exited $rc"
     else detail="reviewer returned no usable completion"; fi
-    log_event "review-attempt-failed" "$(jq -nc --arg r "$slug" --arg d "$detail" '{repo: $r, stage: "reviewer", detail: $d}')"
+    # `stage_failure: true` and the same synthetic `cycle` as the matching
+    # review-stage-end above (TD-PPagop-26082504's exit-0-can-still-fail
+    # join, agent-ops#996): this call only ever runs when the reviewer's
+    # attempt genuinely failed, never for a truthful item verdict the
+    # reviewer reached by running to completion — the repository-review
+    # pipeline raises no such verdict, it either raises a PR or it does not.
+    log_event "review-attempt-failed" "$(jq -nc --arg r "$slug" --arg d "$detail" --arg cyc "$review_id:$slug" \
+      '{repo: $r, stage: "project-reviewer", detail: $d, cycle: $cyc, stage_failure: true}')"
     if [[ -n "$pr_url" ]]; then
       gh pr comment "$pr_url" --body "$(pipeline_comment_header review-script "$node_name")
 
