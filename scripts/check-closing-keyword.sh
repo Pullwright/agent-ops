@@ -264,31 +264,41 @@ if [[ -n "$repo_slug" && -n "$pr_number" ]]; then
     patch="$(jq -r --arg p "$record_path" \
       'map(select(.filename == $p)) | (.[0].patch // "")' <<<"$files_json" 2>/dev/null)"
 
-    # A diff that never touches the record is ordinarily the failure below —
-    # but issue #1493's case is a record already at a terminal status on the
-    # base branch, flipped by an earlier, unrelated pull request. Demanding a
-    # rewrite there would violate the register's own append-only convention
-    # (TECH-DEBT.md "Resolution and history": never flip a resolved item
-    # back), so check the base ref before treating an untouched file as a
-    # failure. A `gh` call that cannot be made is treated the same as a
-    # record that is not yet terminal — fall through to the failure below —
-    # for the same availability reason the changed-files read above does.
-    if [[ -z "$patch" ]]; then
-      base_json="$("$GH" api "repos/$repo_slug/pulls/$pr_number" 2>/dev/null)" || base_json=""
-      base_sha="$(jq -r '.base.sha // empty' <<<"$base_json" 2>/dev/null)"
-      if [[ -n "$base_sha" ]]; then
-        contents_json="$("$GH" api "repos/$repo_slug/contents/${record_path}?ref=${base_sha}" 2>/dev/null)" || contents_json=""
-        content_b64="$(jq -r '.content // empty' <<<"$contents_json" 2>/dev/null)"
-        if [[ -n "$content_b64" ]]; then
-          decoded="$(base64 -d <<<"$content_b64" 2>/dev/null)" || decoded=""
-          if grep -qE '^status:[[:space:]]*(resolved|not-debt)[[:space:]]*$' <<<"$decoded"; then
-            continue
-          fi
+    if grep -qE '^\+status:[[:space:]]*(resolved|not-debt)[[:space:]]*$' <<<"$patch"; then
+      continue
+    fi
+
+    # Neither shape of failure below — an empty patch (the diff never touches
+    # the file) or one that touches it without a `+status:` line (issue
+    # #982/#1493's own PR: it appends a provenance note to the record's body
+    # without re-flipping a status already correct) — proves the record is
+    # unresolved: issue #1493's case is a record already at a terminal status
+    # on the base branch, flipped by an earlier, unrelated pull request.
+    # Demanding a rewrite there would violate the register's own append-only
+    # convention (TECH-DEBT.md "Resolution and history": never flip a
+    # resolved item back), so check the base ref before failing either shape.
+    # A `gh` call that cannot be made is treated the same as a record that is
+    # not yet terminal — fall through to the ordinary failure below — for the
+    # same availability reason the changed-files read above does.
+    already_resolved_on_base=""
+    base_json="$("$GH" api "repos/$repo_slug/pulls/$pr_number" 2>/dev/null)" || base_json=""
+    base_sha="$(jq -r '.base.sha // empty' <<<"$base_json" 2>/dev/null)"
+    if [[ -n "$base_sha" ]]; then
+      contents_json="$("$GH" api "repos/$repo_slug/contents/${record_path}?ref=${base_sha}" 2>/dev/null)" || contents_json=""
+      content_b64="$(jq -r '.content // empty' <<<"$contents_json" 2>/dev/null)"
+      if [[ -n "$content_b64" ]]; then
+        decoded="$(base64 -d <<<"$content_b64" 2>/dev/null)" || decoded=""
+        if grep -qE '^status:[[:space:]]*(resolved|not-debt)[[:space:]]*$' <<<"$decoded"; then
+          already_resolved_on_base=1
         fi
       fi
+    fi
+    [[ -z "$already_resolved_on_base" ]] || continue
+
+    if [[ -z "$patch" ]]; then
       echo "::error::issue #${item} names ${record_path} (its body's \"Filed as\" line) but this pull request's diff does not touch that file — closing the issue must also flip its frontmatter to a terminal status: resolved or not-debt (TECH-DEBT.md \"Resolution and history\")" >&2
       status=1
-    elif ! grep -qE '^\+status:[[:space:]]*(resolved|not-debt)[[:space:]]*$' <<<"$patch"; then
+    else
       echo "::error::issue #${item} names ${record_path} (its body's \"Filed as\" line) but this pull request's diff does not set its frontmatter status: to a terminal state (resolved, or not-debt for an item that turns out not to be debt)" >&2
       status=1
     fi

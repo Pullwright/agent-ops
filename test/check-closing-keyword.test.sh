@@ -370,6 +370,26 @@ assert_fail_tdr "'Filed as' present, diff leaves status unchanged: fail" \
   "$body_240" "agent/240" "acme/widgets" "9" "unflipped" \
   "does not set its frontmatter status: to a terminal state"
 
+# The same shape as "unflipped" — the diff touches the record but adds no
+# `+status:` line — but here because the status is already terminal on the
+# base branch (agent-ops PR #1492's own case: it appends a provenance note
+# to an already-`resolved` record's body). Append-only forbids re-flipping a
+# status that is already correct, so this must pass exactly as the
+# diff-never-touches-it case above does — a `+status:` line is only ever
+# demanded of a record that still needs flipping.
+mkdir -p "$tmp_dir/touched-already-resolved-on-base"
+cp "$tmp_dir/flipped/issue-240.json" "$tmp_dir/touched-already-resolved-on-base/issue-240.json"
+cat > "$tmp_dir/touched-already-resolved-on-base/files.json" <<'JSON'
+[[{"filename": "tech-debt/TD-1.md",
+  "patch": "@@ -10,3 +10,5 @@\n old line\n old line\n old line\n+\n+A provenance note appended below the frontmatter."}]]
+JSON
+printf '{"base": {"sha": "deadbeef"}}' > "$tmp_dir/touched-already-resolved-on-base/pr.json"
+printf '{"content": "%s"}' \
+  "$(printf -- '---\nid: TD-1\nstatus: resolved\nresolved: 2026-08-25\nref: https://github.com/acme/widgets/pull/2\nfiled: 2026-08-01\n---' | base64 -w0)" \
+  > "$tmp_dir/touched-already-resolved-on-base/contents.json"
+assert_pass_tdr "'Filed as' present, diff touches record without a status line, already resolved on base: pass" \
+  "$body_240" "agent/240" "acme/widgets" "9" "touched-already-resolved-on-base"
+
 # `not-debt` is the register's other terminal state (TECH-DEBT.md "Resolution
 # and history"; issue #1437): a resolving PR that correctly concludes the
 # item was never debt flips to `status: not-debt` with `ref:`, and must pass
