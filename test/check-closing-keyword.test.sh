@@ -304,6 +304,20 @@ JSON
 assert_pass_tdr "a 'Filed as'-shaped line on a non-tech-debt issue is ignored" \
   "$body_240" "agent/240" "acme/widgets" "9" "not-tech-debt"
 
+# A "Filed as" line whose record path carries an injected query string
+# (issue #1764): the path is interpolated unescaped into the contents-API
+# URL further down, so a `?`/`&` there could alter the query. The register's
+# own ID grammar never contains one, so the capture is narrowed to it — this
+# path must fail to match at all and fall through exactly like "no 'Filed
+# as' line", not be captured with the injected suffix intact.
+mkdir -p "$tmp_dir/filed-as-injected-query"
+cat > "$tmp_dir/filed-as-injected-query/issue-240.json" <<'JSON'
+{"body": "The debt itself, described here.\n\nFiled as `tech-debt/TD-1.md?x=y`, 2026-08-01.",
+ "labels": [{"name": "pw::type:tech-debt"}]}
+JSON
+assert_pass_tdr "a 'Filed as' record path with an injected query string is not captured" \
+  "$body_240" "agent/240" "acme/widgets" "9" "filed-as-injected-query"
+
 # A "Filed as" line, and this PR's diff flips the named record to resolved.
 mkdir -p "$tmp_dir/flipped"
 cat > "$tmp_dir/flipped/issue-240.json" <<'JSON'
