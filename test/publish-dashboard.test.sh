@@ -1417,7 +1417,22 @@ min_gap() {
 # plain "sleep longer" would break: the hand-applied mitigation this replaces
 # (LAUNCHER_WINDOW=15 on all four production nodes) bought its CPU back by
 # making the page five minutes stale even when a tick cost 0.4s.
-run_paced 20 0 9
+#
+# 40 seconds, not 20, for the same reason the next block below is 40 rather
+# than 30: every iteration pays a mandatory alignment sleep of up to 5s (the
+# loop's own `sleep $(( 5 - EPOCHSECONDS % 5 ))`, landing each tick on a
+# 5-second boundary) *before* the reserve that guards the second tick is
+# checked. Two of those in a row — one for tick one, one for tick two — can
+# cost 10s of wall clock on their own, worst case, before either tick's
+# measured cost or its backoff enters into it at all. Against a 20-second
+# window that collapses straight into the 10s `tick_margin` reserve
+# `lib`/`scripts/publish-dashboard-launcher.sh` holds back for a tick that
+# might not fit, and the second tick is deferred rather than started — this
+# raced and lost on CI's arm64 leg (agent-ops#1750) the same way the block
+# below did on #1383. Widening the window leaves the pair's own worst case
+# with room to spare while still measuring the same near-zero cost and
+# near-zero backoff.
+run_paced 40 0 9
 assert_eq "a window of cheap ticks still runs several" "1" "$(( $(grep -c . "$pace_log") >= 2 ))"
 assert_eq "and they stay on the 5-second cadence" "1" "$(( $(min_gap) <= 6 ))"
 

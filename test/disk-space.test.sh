@@ -92,6 +92,36 @@ assert_eq "verdict is ok when free KiB is non-numeric" \
 assert_eq "verdict is low at exactly zero free KiB with a floor set" \
   "low" "$(disk_space_verdict 0 2097152000)"
 
+# --- disk_space_same_filesystem ----------------------------------------------
+
+same_fs_dir_a="$(mktemp -d)"
+same_fs_dir_b="$(mktemp -d)"
+trap 'rm -rf "$stub_dir" "$same_fs_dir_a" "$same_fs_dir_b"' EXIT
+
+if disk_space_same_filesystem "$same_fs_dir_a" "$same_fs_dir_b"; then
+  assert_eq "same_filesystem is true for two directories on the host's own filesystem" "yes" "yes"
+else
+  assert_eq "same_filesystem is true for two directories on the host's own filesystem" "yes" "no"
+fi
+
+if disk_space_same_filesystem "$same_fs_dir_a" "$same_fs_dir_a"; then
+  assert_eq "same_filesystem is true for one path compared with itself" "yes" "yes"
+else
+  assert_eq "same_filesystem is true for one path compared with itself" "yes" "no"
+fi
+
+if disk_space_same_filesystem "$same_fs_dir_a" "/nonexistent-path-$$"; then
+  assert_eq "same_filesystem is false when a path's device id cannot be read" "no" "yes"
+else
+  assert_eq "same_filesystem is false when a path's device id cannot be read" "no" "no"
+fi
+
+if disk_space_same_filesystem '' "$same_fs_dir_a"; then
+  assert_eq "same_filesystem is false for an empty path" "no" "yes"
+else
+  assert_eq "same_filesystem is false for an empty path" "no" "no"
+fi
+
 # --- disk_space_describe -----------------------------------------------------
 
 desc="$(disk_space_describe /data/workspace 1024000 2147483648)"
@@ -101,6 +131,8 @@ assert_eq "describe states the free MiB (1024000 KiB = 1000 MiB)" \
   "yes" "$(if [[ "$desc" == *"1000 MiB free"* ]]; then echo yes; else echo no; fi)"
 assert_eq "describe states the floor in MiB (2147483648 bytes = 2048 MiB)" \
   "yes" "$(if [[ "$desc" == *"2048 MiB this cycle needs"* ]]; then echo yes; else echo no; fi)"
+assert_eq "describe's trailing clause serves both state_dir and workspace_root" \
+  "yes" "$(if [[ "$desc" == *"a cycle writes its clone, its records and its state mirror before it can finish" ]]; then echo yes; else echo no; fi)"
 
 echo
 if (( failures == 0 )); then

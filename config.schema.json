@@ -1621,13 +1621,13 @@
       }
     },
     "min_free_workspace_bytes": {
-      "description": "Free space `workspace_root`'s filesystem must have before a cycle is worth starting one (requirement 2.0c). Below this the Script stands the cycle down before the clone, rather than cloning into whatever room is actually left. `scripts/doctor.sh` reads the same key for its own advisory warning. `0` turns the check off.",
+      "description": "Free space `state_dir`'s and `workspace_root`'s filesystems must each have before a cycle is worth starting one (requirement 2.0c). Below this on either, the Script stands the cycle down before it writes, rather than writing into whatever room is actually left. `scripts/doctor.sh` reads the same key for its own advisory warning. `0` turns the check off.",
       "type": "integer",
       "minimum": 0,
       "default": 2147483648,
       "x-docs": {
-        "readme": "Bytes. Free space `workspace_root` must have before a cycle starts one; below it the cycle stands down before cloning. `scripts/doctor.sh` warns on the same floor. `0` turns the check off.",
-        "spec": "The free-space floor of the pre-clone stand-down (requirement 2.0c, agent-ops#756): below this, `workspace_root`'s filesystem is read via `lib/disk-space.sh` and the cycle stands down before the clone rather than cloning into whatever room is actually left. `scripts/doctor.sh` reads the same key for its own advisory warning, so the two cannot silently disagree about what \"low\" means. `0` turns the check off.",
+        "readme": "Bytes. Free space `state_dir` and `workspace_root` must each have before a cycle starts one; below it on either the cycle stands down first. `scripts/doctor.sh` warns on the same floor. `0` turns the check off.",
+        "spec": "The free-space floor of the pre-clone stand-down (requirement 2.0c, agent-ops#756; both directories, agent-ops#992): below this, `state_dir`'s and `workspace_root`'s filesystems are read via `lib/disk-space.sh` — one `df` reading where the two share a filesystem, one each where they don't — and the cycle stands down before it writes rather than starting into whatever room is actually left on either. `scripts/doctor.sh` reads the same key for its own advisory warning, so the two cannot silently disagree about what \"low\" means, nor about which directories that covers. `0` turns the check off.",
         "value": {
           "spec": "2 GiB"
         }
