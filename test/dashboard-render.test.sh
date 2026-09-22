@@ -1327,6 +1327,34 @@ assert_contains "  ... an idle stage never invoked reads idle, not ok" \
 assert_contains "  ... with no last success to report, rather than a blank cell" \
   "never" "$stage_health_section"
 
+# --- review-stage-health-failing.json: status.review_stage_health (#996) ---
+# status.review_stage_health is the review pipeline's own symmetric verdict
+# (agent-ops#996), read from state_dir/.review-stage-health.json — a field of
+# its own, never merged into status.stage_health, so it renders in its own
+# Review stage health section with its own page-top banner and its own
+# fleet-strip badge, independent of the implementation pipeline's.
+out="$(render switch-scope-node.json)" || { printf 'FAIL - switch-scope-node.json did not render:\n%s\n' "$out"; exit 1; }
+assert_contains "no review-cycle.sh run has completed since this check shipped says so, in the Review stage health section" \
+  "No review-cycle.sh run has completed on this node" "$out"
+assert_not_contains "and raises no banner about it" \
+  "review pipeline is failing on this node" "$out"
+
+out="$(render review-stage-health-failing.json)" || { printf 'FAIL - review-stage-health-failing.json did not render:\n%s\n' "$out"; exit 1; }
+assert_contains "a failing project-reviewer raises its own red banner" \
+  "The review pipeline is failing on this node: project-reviewer" "$out"
+assert_contains "the fleet-strip card badges the same node, independent of the implementation pipeline's own badge" \
+  "review pipeline failing" "$out"
+
+review_stage_health_section="$(awk '$0 == "  <section>" { on = 0 } on { print } $0 == "      Review stage health" { on = 1 }' <<<"$out")"
+assert_contains "the Review stage health section lists project-reviewer with a red verdict badge" \
+  '<td class="mono">
+              project-reviewer
+            <td>
+              <span class="badge b-red">
+                failing' "$review_stage_health_section"
+assert_contains "  ... and its consecutive-failure count alongside its own detail" \
+  "4 consecutive: reviewer returned no usable completion" "$review_stage_health_section"
+
 # --- node-stale-self.json: self can read stale too (agent-ops#602) ---------
 # Self's row is judged by the same fleet_publication_status verdict a peer's
 # is — read back from what the shared state actually holds, never from this
