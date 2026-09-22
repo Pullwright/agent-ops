@@ -316,18 +316,36 @@ else
   ok "the Enabler is disabled (enabler_model is empty)"
 fi
 
-# Requirement 1c (agent-ops#822): a source whose refinement_policy resolves to
-# "required" is never selected unrefined (prompts/coordinator.md's "Per-source
-# refinement policy"), so with no Refiner ever engaging to refine one
-# (requirement 39's own gate on refiner_model being set), its items wait
-# forever — a configuration nobody can act on, the same shape as the
-# enabler_assignee pairing just above.
+# Requirement 1c (agent-ops#822, extended by agent-ops#924's decision on
+# TD-PPagop-26082704/agent-ops#1003): a source whose refinement_policy
+# resolves to "required" is never selected unrefined (prompts/coordinator.md's
+# "Per-source refinement policy"), so a source nothing can ever refine leaves
+# its items waiting forever — a configuration nobody can act on, the same
+# shape as the enabler_assignee pairing just above. Three spellings reach that
+# state: an empty refiner_model (refuse), a "required" failed-runs — the one
+# source with no candidate array at all (refuse, whatever refiner_model or the
+# cap are) — and refiner_max_per_engagement: 0 with refiner_model set, which
+# is instead an operator's deliberate, temporary pause of a stage that still
+# exists (warn, never refuse; #924's own wording).
 refiner_model="$(cfg '.refiner_model')"
+refiner_max_per_engagement="$(cfg '.refiner_max_per_engagement')"
+[[ "$refiner_max_per_engagement" =~ ^[0-9]+$ ]] || refiner_max_per_engagement=5
+refinement_policy_json="$(cfg_json '.refinement_policy')"
 required_sources_without_refiner="$(config_required_refinement_sources_without_refiner \
-  "$(cfg_json '.refinement_policy')" "$refiner_model")"
+  "$refinement_policy_json" "$refiner_model")"
+required_failed_runs_source="$(config_required_failed_runs_source "$refinement_policy_json")"
+refinement_paused_sources="$(config_refinement_sources_paused_by_cap \
+  "$refinement_policy_json" "$refiner_model" "$refiner_max_per_engagement")"
 if [[ -n "$required_sources_without_refiner" ]]; then
   fail "refinement_policy requires [$required_sources_without_refiner] but refiner_model is empty — agent-cycle.sh refuses to start rather than let a source's unrefined items wait forever with nothing ever refining one"
-else
+fi
+if [[ -n "$required_failed_runs_source" ]]; then
+  fail "refinement_policy requires failed-runs but that source has no candidate array for the Refiner's own candidate gathering to ever reach — agent-cycle.sh refuses to start rather than let its items wait forever with nothing ever refining one"
+fi
+if [[ -n "$refinement_paused_sources" ]]; then
+  warn "refinement_policy requires [$refinement_paused_sources] but refiner_max_per_engagement is 0 — refiner_engagement_set slices every engagement's candidates to none, so nothing is ever refined; these sources' unrefined items wait, unlabelled, until the cap is raised above 0"
+fi
+if [[ -z "$required_sources_without_refiner" && -z "$required_failed_runs_source" && -z "$refinement_paused_sources" ]]; then
   ok "every source whose refinement_policy is \"required\" has a Refiner configured to refine it"
 fi
 

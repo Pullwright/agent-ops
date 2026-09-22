@@ -121,6 +121,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Requirement 1c's "required refinement source with nothing to refine it"
+  guard now covers all three spellings of that configuration, not just an
+  empty `refiner_model`** (issue #1003, TD-PPagop-26082704; the split follows
+  the owner's decision on #924). Two configurations reached the same
+  unrefinable state and passed the guard, then stalled in the quietest way
+  this pipeline has — a source that simply stops producing work, with no
+  label, no block record and nothing on the dashboard to say why.
+  `lib/config-schema.sh` now answers them separately, because they are not
+  the same kind of fault: `config_required_failed_runs_source` **refuses** a
+  `"required"` `failed-runs` policy outright, whatever else is set, since
+  that source has no candidate array at all for the Refiner's own candidate
+  gathering to ever reach; `config_refinement_sources_paused_by_cap`
+  **warns**, every cycle the condition holds, when `refiner_max_per_engagement`
+  is `0` with `refiner_model` set — `0` is documented as a deliberate,
+  temporary pause of a stage that still exists, so refusing to start would
+  force an operator pausing refinement to flip every `"required"` policy back
+  as well. Both are shared between `agent-cycle.sh`'s startup guard and
+  `scripts/doctor.sh` (which gains the `refiner_max_per_engagement` read it
+  never had), so the refusal, the `warning` event and the doctor's
+  `fail`/`warn` cannot drift. The standing principle the decision states for
+  future cases: a configuration contradictory by construction is refused at
+  startup; one merely idle by an operator's temporary choice is warned about,
+  every cycle, and never refused.
+
 - **Requirement 2.0c's pre-clone stand-down now reads `state_dir` as well as
   `workspace_root`, so a short `state_dir` stands the cycle down instead of
   only ever warning in `doctor.sh`** (issue #992, TD-PPagop-26082517).
