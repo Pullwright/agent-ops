@@ -28,8 +28,9 @@
 # `config_required_failed_runs_source`,
 # `config_refinement_sources_paused_by_cap` and
 # `config_duplicate_repos_slugs` are `agent-cycle.sh`'s
-# own startup guards (the first two `fail`/refuse, the third `warn`s, never
-# refuses — see each function's own comment); `config_duplicate_project_review_slugs`
+# own startup guards (all `fail`/refuse except
+# `config_refinement_sources_paused_by_cap`, which `warn`s, never refuses —
+# see each function's own comment); `config_duplicate_project_review_slugs`
 # is `review-cycle.sh`'s. `scripts/doctor.sh` calls every one of them so no
 # pipeline's refusal or warning can ever drift from what `doctor.sh` reports.
 #
