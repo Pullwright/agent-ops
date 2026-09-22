@@ -18116,7 +18116,10 @@ with the Reviewer's own.
     `totals.balanced` states, and is asserted on a fixture exercising every
     fate at once, that `entered` equals `landed + voided + superseded +
     abandoned` (`leaving`) plus `blocked + open` (`in_progress`) plus
-    `unaccounted`, which holds by construction.
+    `unaccounted`, which holds by construction. Voided-after-landed is
+    deliberately the only contradiction detected this way for now —
+    `docs/FLOW-SCHEMA.md`'s `unaccounted` section names the candidate
+    siblings considered and deferred, and the rule for reactivating one.
 
     `scripts/pickup-metrics.sh`'s own first-seen/selection pairing
     (TD-PPagop-26081405, issue #248 acceptance 4) is generalised onto this
