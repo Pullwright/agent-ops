@@ -754,13 +754,24 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                                     //   GitHub states no expiry for)
              stage_health:{computed_at,threshold,idle_after_hours,
                            stages:{<stage>:{verdict,consecutive_failures,
-                                             last_success,last_detail}}} | null },
+                                             last_success,last_detail}}} | null,
                                     //   THIS node's most recent per-stage
                                     //   verdict (agent-ops#662), read from
                                     //   state_dir/.stage-health.json —
                                     //   null until this node's first cycle
                                     //   since this check shipped has
                                     //   completed
+             review_stage_health:{computed_at,threshold,idle_after_hours,
+                           stages:{<stage>:{verdict,consecutive_failures,
+                                             last_success,last_detail}}} | null },
+                                    //   THIS node's most recent
+                                    //   `project-reviewer` verdict
+                                    //   (agent-ops#996), the review
+                                    //   pipeline's own symmetric shape, read
+                                    //   from state_dir/.review-stage-health.json
+                                    //   — null until this node's first
+                                    //   review-cycle.sh run since this check
+                                    //   shipped has completed
   counts:  { cycles_shown, failures_shown, prs_reached_ready,   // fleet-wide
              spend_today_usd, spend_total_usd,
              by_day[], by_model[], by_actor[],   // both pipelines' actors;
@@ -1091,6 +1102,19 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                                             //   a peer, or this node's own
                                             //   .stage-health.json for self;
                                             //   null if unreported
+                                          stages: { "<stage>": {
+                                            verdict, consecutive_failures,
+                                            last_success, last_detail } } },
+                         review_stage_health: { computed_at, threshold,
+                                          idle_after_hours,           // the
+                                            //   node's own `project-reviewer`
+                                            //   verdict (#996), the review
+                                            //   pipeline's symmetric shape,
+                                            //   from its heartbeat's own
+                                            //   `review_stage_health` field
+                                            //   for a peer, or this node's
+                                            //   own .review-stage-health.json
+                                            //   for self; null if unreported
                                           stages: { "<stage>": {
                                             verdict, consecutive_failures,
                                             last_success, last_detail } } },
@@ -2289,6 +2313,36 @@ page's own node — a peer's badge comes from its heartbeat's `stage_health`
 field or renders nothing at all, never a verdict this page derives for that
 peer.
 
+The **Review stage health** panel (agent-ops#996) is `Stage health`'s
+equivalent for the repository-review pipeline's own one real stage,
+`project-reviewer`: it renders `status.review_stage_health`, read from
+`state_dir/.review-stage-health.json` (written by `lib/stage-health.sh`'s
+`stage_health_write_status` at the end of every `review-cycle.sh` run that
+reviewed at least one repository, `docs/REVIEW-PIPELINE-SPEC.md` R19) rather
+than recomputed, on the Stage health panel's own precedent just above. One
+row — `project-reviewer` — badged and detailed exactly the same way (`failing`
+red, `idle` grey, `ok` green; a `failing` row's consecutive-failure count and
+last-attempt detail); no run having completed since this check shipped says
+so, rather than rendering an empty table. A `failing` row raises its own
+page-top banner, the same as `Stage health`'s own — this is the reading R17
+of `docs/REVIEW-PIPELINE-SPEC.md` deferred as a follow-on, closed here: the
+`review-stage-end`/`review-attempt-failed` detection this panel reads
+already existed, but until #996 nothing read it, the exact gap #662 closed
+for the implementation pipeline's own nine stages.
+
+A separate panel and a separate `review_stage_health` field, not a
+`project-reviewer` row folded into `Stage health` itself: the two pipelines'
+event streams (`log.jsonl` vs `review-log.jsonl`) and cycle-id shapes differ
+(a `review-cycle.sh` run's own `cycle` id, unlike `agent-cycle.sh`'s, can
+cover several repositories, `docs/REVIEW-PIPELINE-SPEC.md` R19), so their
+verdicts are computed, written and travel separately, and this page renders
+them separately rather than implying a shared computation that does not
+exist. Unlike `status.doctor`, this verdict is not local to the node that
+computed it either: the heartbeat carries it as `review_stage_health`, on the
+identical terms as `stage_health` — a peer's own panel data and fleet-strip
+badge come from its heartbeat's `review_stage_health` field or render
+nothing at all, never a verdict this page derives for that peer.
+
 The **Actor and model scorecards** panel renders `counts.actor_scorecards`
 (issue #610, D22) — one card per actor with a model choice (D12), one row per
 model and tier, graded on **outcome**: what a stage-end's own attempts
@@ -3197,6 +3251,14 @@ number's twins elsewhere on the page.
   independent of that card's running/idle state, which is the property this
   check exists for: a node whose cycles are completing normally while a
   stage keeps failing must not read as plain "running" or "idle".
+  A fixture with no `status.review_stage_health` renders the same "no run
+  has completed" empty state in the Review stage health section, separately
+  from Stage health's own (agent-ops#996); one carrying a `failing`
+  `project-reviewer` raises its own red banner and badges the fleet strip
+  independently of `stage_health`'s own failing count — a node whose
+  implementation-pipeline stages are all healthy while `project-reviewer`
+  fails must read as failing too, not masked by the other panel's own green
+  verdict.
 - The back-pressure card agrees with the gate it depicts, in both directions,
   from two fixtures of its own. `backpressure-claims.json` (issue #427) holds
   a changes-requested PR, a draft, an approved PR waiting on a human, one
