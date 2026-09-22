@@ -25430,7 +25430,7 @@ oblige anyone to edit a test.
    extra arguments; a "Filed as" line whose record path falls outside the
    register's own ID charset matches nothing and demands nothing (issue
    #1764), asserted on the shape that distinguishes the narrowed capture
-   from the `[^`]+` it replaced — the query injected *before* the extension
+   from the ``[^`]+`` it replaced — the query injected *before* the extension
    (`tech-debt/TD-1?x=y.md`), which the old pattern captured whole, with a
    `files.json` supplied so that capture reached a real "does not touch that
    file" failure rather than a warn-and-skip on an unstubbed `gh` call; the
