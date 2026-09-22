@@ -1695,38 +1695,68 @@ assert_not_contains "a config the schema accepts is not reported as a schema fai
 
 # requirement 1c's third, *warn*-not-refuse spelling (same decision):
 # refiner_max_per_engagement: 0 with refiner_model set is a deliberate,
-# temporary pause of a stage that still exists, so agent-cycle.sh starts
-# rather than refusing — checked here via --status, which runs every startup
-# guard (this one sits ahead of management-command dispatch, at
-# run_manage_command) and exits immediately afterwards without ever reaching
-# `gh` or `claude`, so the warning event it logs can be read back from the
-# log file directly rather than guessed at from stdout/stderr (log_event
-# writes only to the log file, never the console, outside --status's own
-# unrelated report).
-run_cycle_guard_status() {  # run_cycle_guard_status CONFIG_JSON
-  printf '%s' "$1" > "$guard_app/config.json"
-  rm -rf "${guard_home:?}/.cache/agent-ops-test/state"
-  guard_out="$(env AGENT_OPS_ROLE=active HOME="$guard_home" "$guard_app/agent-cycle.sh" --status 2>&1)"
+# temporary pause of a stage that still exists, so agent-cycle.sh starts and
+# logs a `warning` rather than refusing.
+#
+# Driven through a real cycle, not a management command: the switch
+# (requirement 2.3) is what stops the tick, so every startup guard and the
+# `warning` itself run while `gh` and `claude` are never reached — the same
+# route test/role.test.sh uses to prove a guard let a run past without
+# spending. A management command must emit nothing at all (its cycle id has
+# no `cycle-start` and no `cycle-end`, which the dashboard would render as a
+# cycle that can never end), so `--status` is the negative case here rather
+# than the positive one. Its own HOME, so the disabled switch this writes
+# cannot reach the review-cycle assertions below, which share the file.
+paused_home="$tmp/paused-home"
+mkdir -p "$paused_home/.local/bin" "$paused_home/.cache/agent-ops-test/state"
+cp "$guard_home/.local/bin/claude" "$guard_home/.local/bin/gh" "$paused_home/.local/bin/"
+printf '%s\n' '{"reason":"config-schema.test.sh","disabled_at":"2026-07-20T00:00:00Z","expires_at":"forever","by":"test"}' \
+  > "$paused_home/.cache/agent-ops-test/state/disabled.json"
+paused_log_file="$paused_home/.cache/agent-ops-test/state/log.jsonl"
+
+run_paused_cycle() {  # run_paused_cycle CONFIG_JSON [ARGS…]
+  printf '%s' "$1" > "$guard_app/config.json"; shift
+  guard_out="$(env AGENT_OPS_ROLE=active HOME="$paused_home" "$guard_app/agent-cycle.sh" "$@" 2>&1)"
   guard_rc=$?
-  guard_log_file="$guard_home/.cache/agent-ops-test/state/log.jsonl"
+}
+paused_warnings() {  # paused_warnings — every paused-by-cap warning logged so far
+  jq -c 'select(.event == "warning"
+                and (.detail // "" | contains("refiner_max_per_engagement is 0")))' \
+    "$paused_log_file" 2>/dev/null
 }
 
-run_cycle_guard_status "$(jq -c '.refiner_max_per_engagement = 0' "$BASE_CONFIG")"
-assert_eq "--status still runs (and exits 0) with a required source paused by a zero cap" "0" "$guard_rc"
+run_paused_cycle "$(jq -c '.refiner_max_per_engagement = 0' "$BASE_CONFIG")" --once
+assert_eq "a cycle still runs (and exits 0) with a required source paused by a zero cap" "0" "$guard_rc"
 assert_not_contains "…and this is never reported as a startup refusal" \
   "refusing to start" "$guard_out"
-paused_warning="$(jq -c 'select(.event == "warning" and (.detail // "" | contains("refiner_max_per_engagement is 0")))' \
-  "$guard_log_file" 2>/dev/null | tail -n1)"
+assert_contains "…the tick got as far as the switch, so nothing before it refused" \
+  "the pipeline is disabled" "$guard_out"
+paused_warning="$(paused_warnings | tail -n1)"
 assert_contains "…and logs a warning event naming the paused sources" \
   "refinement_policy requires [issues, tech-debt] but refiner_max_per_engagement is 0" \
   "$(jq -r '.detail // empty' <<<"$paused_warning" 2>/dev/null)"
-assert_eq "…carrying the resolved cap as its own field" "0" \
-  "$(jq -r '.refiner_max_per_engagement // empty' <<<"$paused_warning" 2>/dev/null)"
+assert_eq "…carrying the resolved cap as its own field, as a number" "0" \
+  "$(jq -c '.refiner_max_per_engagement // empty' <<<"$paused_warning" 2>/dev/null)"
+assert_eq "…and the sources as their own array" '["issues","tech-debt"]' \
+  "$(jq -c '.sources // empty' <<<"$paused_warning" 2>/dev/null)"
+# "Every cycle the condition holds" is load-bearing in agent-ops#924's own
+# wording: a once-only warning would age out of the dashboard's window, which
+# is the silent-stall complaint this guard exists about.
+run_paused_cycle "$(jq -c '.refiner_max_per_engagement = 0' "$BASE_CONFIG")" --once
+assert_eq "a second cycle warns again, rather than the warning being once-only" "2" \
+  "$(paused_warnings | wc -l | tr -d ' ')"
 
-run_cycle_guard_status "$(jq -c '.' "$BASE_CONFIG")"
-n_paused_warnings="$(jq -s '[.[] | select(.event == "warning" and (.detail // "" | contains("refiner_max_per_engagement is")))] | length' \
-  "$guard_log_file" 2>/dev/null)"
-assert_eq "a healthy (non-zero) cap logs no paused-by-cap warning" "0" "${n_paused_warnings:-0}"
+# A management command runs no cycle, so it emits no event at all — it would
+# otherwise mint a cycle id carrying a warning but no cycle-start, the shape
+# scripts/publish-dashboard.sh renders as a cycle that began and can never end.
+run_paused_cycle "$(jq -c '.refiner_max_per_engagement = 0' "$BASE_CONFIG")" --status
+assert_eq "--status still exits 0 under the same configuration" "0" "$guard_rc"
+assert_eq "…and logs no paused-by-cap warning, having run no cycle" "2" \
+  "$(paused_warnings | wc -l | tr -d ' ')"
+
+run_paused_cycle "$(jq -c '.' "$BASE_CONFIG")" --once
+assert_eq "a healthy (non-zero) cap adds no paused-by-cap warning (still the 2 above)" "2" \
+  "$(paused_warnings | wc -l | tr -d ' ')"
 
 # review-cycle.sh's own cross-key guard: duplicate project_review.repos slugs
 # (requirement R1b), shared with doctor.sh's own `fail` above through the same

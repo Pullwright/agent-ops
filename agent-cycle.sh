@@ -1052,10 +1052,18 @@ log_event() { log_event_append "$log_file" cycle "$cycle_id" "$node_name" "$@"; 
 # here because logging was not yet initialised at that point in the script.
 # Emitted on every cycle the condition holds, never once, so it cannot age out
 # of the dashboard's window the way a once-only warning would.
-if [[ -n "$refinement_paused_sources" ]]; then
+#
+# Gated on MANAGE_ACTION for the same reason the cycle directory just above
+# is: a management command runs no cycle, and every event it wrote would land
+# under a cycle id that has no `cycle-start`, no `cycle-end` and no transcript
+# directory — the shape scripts/publish-dashboard.sh renders as a cycle that
+# began and can never end, holding a MAX_CYCLES slot for good. `--status` is
+# the command an operator is told to poll (README's drain and stand-down
+# sections), so this would be an unbounded row source, not a rare one.
+if [[ -z "$MANAGE_ACTION" && -n "$refinement_paused_sources" ]]; then
   log_event "warning" "$(jq -nc \
     --arg d "refinement_policy requires [$refinement_paused_sources] but refiner_max_per_engagement is $refiner_max_per_engagement — refiner_engagement_set slices every engagement's candidates to none, so nothing is ever refined; these sources' unrefined items wait, unlabelled, until the cap is raised above 0" \
-    --arg cap "$refiner_max_per_engagement" \
+    --argjson cap "$refiner_max_per_engagement" \
     --argjson sources "$(jq -Rc 'split(", ")' <<<"$refinement_paused_sources")" \
     '{detail: $d, refiner_max_per_engagement: $cap, sources: $sources}')"
 fi
