@@ -484,12 +484,14 @@ assert_eq "  ... the evidence counts runs, not the events within them" "1" \
   "$(grep -c 'n1 (3 runs)' <<<"$(jq -r '.evidence' <<<"$verdict")")"
 assert_eq "  ... a run that completed a review resets: n2's own 2-run tail does not fire" "0" \
   "$(jq -r '.nodes | index("n2") != null' <<<"$verdict" | grep -c true)"
-assert_eq "  ... notes #996 as the interim's own proper fix" "1" "$(grep -c '#996' <<<"$(jq -r '.evidence' <<<"$verdict")")"
+assert_eq "  ... names agent-ops#996's own project-reviewer verdict, the per-node reading this is the alarm for" "1" \
+  "$(grep -c '#996' <<<"$(jq -r '.evidence' <<<"$verdict")")"
 
 # A run that stood down, was skipped, or had no repository due writes neither
 # a `review-attempt-failed` nor a `review-stage-end`: it says nothing about
 # whether the pipeline works, so it must neither raise the streak nor silence
-# it — the very indistinguishability #996 names, refused rather than guessed.
+# it — the very indistinguishability agent-ops#996 names, refused rather than
+# guessed at here (R19's own heartbeat verdict is what answers it positively).
 rv_log_idle="$WORKDIR/review-log-idle.jsonl"
 write_log "$rv_log_idle" \
   "$(review_ev 2026-09-09T09:00:00Z n1 r1 review-attempt-failed)" \

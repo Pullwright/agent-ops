@@ -18557,20 +18557,20 @@ with the Reviewer's own.
       resets; neither — a stand-down, a skip, nothing due — leaves the streak
       untouched, since such a run carries no information about the pipeline's
       health in either direction. That last case is the indistinguishability
-      #996 names, refused here rather than resolved. 3 is not schema-backed,
+      agent-ops#996 names, refused here rather than guessed at. 3 is not schema-backed,
       mirroring `lib/stage-health.sh`'s own un-schema-backed `THRESHOLD`
       default for the identical reason it states: this class has not yet
       seen a real incident to tune the number against. (`stage_health_
       verdicts` itself counts non-zero `stage-end` events and never counts
       `attempt-failed` toward its streak — the threshold is shared, the
       reduction is this invariant's own, because the two pipelines record
-      a failed attempt differently.) **This invariant is the interim reader: #996 stays the
-      proper fix, a verdict folded directly into the heartbeat the way
-      `stage_health`/`updater`/`doctor` already are** — without it, a
-      review pipeline stalled or failing on every attempt looks identical,
-      from `--status`, the dashboard, and every heartbeat, to one that
-      simply has no repository due; this invariant closes that gap only
-      from a peer's own union-log vantage, not by adding the verdict itself.
+      a failed attempt differently.) **This invariant is the fleet-vantage
+      reader of the same fact `docs/REVIEW-PIPELINE-SPEC.md` R19 publishes
+      per node as `review_stage_health` (agent-ops#996): R19 states the
+      verdict where a human or the dashboard can read it, this invariant
+      reduces the fleet's replicated `review-log.jsonl` union and files a
+      page when nobody is reading** — the two are complementary rather than
+      redundant, and its evidence names the verdict it is the alarm for.
     - **`dashboard-unreadable`** (owner-only). Fires when a row's
       `dashboard_fetch: {seconds, parsed}` field — a fact no node can
       observe about itself — names a fetch slower than
@@ -27767,7 +27767,9 @@ oblige anyone to edit a test.
     `review-cycle.sh` actually writes, and the one a reader reducing over
     raw events would silence itself on — resets on a run that completed a
     review, is left untouched by a stood-down run between two failures, and
-    its evidence names #996 and counts runs rather than events;
+    its evidence names agent-ops#996's own `project-reviewer` verdict — the
+    per-node reading this invariant is the fleet-vantage alarm for — and
+    counts runs rather than events;
     `dashboard-unreadable` fires
     on a row whose `dashboard_fetch` names a slow fetch or a failed parse,
     never on a row carrying no probe result at all. Each of the five also

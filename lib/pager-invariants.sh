@@ -54,10 +54,11 @@
 #                          it against) with no completed review between —
 #                          a run, not an event, because `review-end` is
 #                          written on every run whatever happened (see the
-#                          function's own header). The interim reader: #996
-#                          stays the proper fix, a verdict folded directly
-#                          into the heartbeat the way `stage_health`/
-#                          `updater`/`doctor` already are.
+#                          function's own header). The fleet-vantage reader
+#                          of the same fact `docs/REVIEW-PIPELINE-SPEC.md`
+#                          R19 publishes per node as `review_stage_health`
+#                          (agent-ops#996): R19 states the verdict, this
+#                          files a page on it.
 #   dashboard-unreadable   a node's `data.js` took longer than
 #                          `pager_dashboard_fetch_seconds` to fetch, or
 #                          failed to parse, from a *viewer's* vantage — a
@@ -610,8 +611,12 @@ pager_eval_updater_stuck() {
 # it) reaches 3 with no successful run between. 3 mirrors
 # lib/stage-health.sh's own un-schema-backed `THRESHOLD` default for the
 # identical reason that file states: this class has not yet seen a real
-# incident to tune the number against. The interim reader — #996 stays the
-# proper fix, a verdict folded directly into the heartbeat. Reads
+# incident to tune the number against. The fleet-vantage reader of the same
+# fact `docs/REVIEW-PIPELINE-SPEC.md` R19's own `project-reviewer` verdict
+# (agent-ops#996) carries in the heartbeat: R19 computes and publishes a
+# node's verdict for a human or the dashboard to look at, this invariant
+# reduces the fleet's own replicated `review-log.jsonl` union and *files a
+# page* when no one is looking. Reads
 # PAGER_EVAL_REVIEW_UNION_LOG_FILE (lib/pager.sh's own documented exception
 # — see this file's header) rather than either of its own two arguments,
 # since review-log.jsonl's union is not the implementation union log.
@@ -624,8 +629,8 @@ pager_eval_updater_stuck() {
 # completion) `return 0`, so the run itself still exits 0. Reducing over raw
 # events and resetting on `review-end`'s own `exit_code == 0` therefore
 # resets the streak on the very run that just failed, and the streak can
-# never reach 3 at one repository per run — inert for exactly the case #996
-# describes and this invariant exists to read. So, per run:
+# never reach 3 at one repository per run — inert for exactly the case
+# agent-ops#996 describes and this invariant exists to read. So, per run:
 #
 #   any `review-attempt-failed`               the run failed          streak + 1
 #   none, and a `review-stage-end`            a review completed      streak → 0
@@ -634,8 +639,9 @@ pager_eval_updater_stuck() {
 # The third line is the whole point of grouping: a run that stood down or
 # had no repository due says nothing about whether the pipeline works, so it
 # must neither raise the alarm nor silence one — which is the very
-# indistinguishability #996 names, refused here rather than resolved (only
-# a verdict in the heartbeat can resolve it).
+# indistinguishability agent-ops#996 names, refused here rather than
+# answered: this invariant declines to guess, and R19's own heartbeat
+# verdict is what answers the question positively.
 pager_eval_review_pipeline_failing() {
   local _fleet_nodes_json="$1" _union_log_file="$2"
   local review_union_file="${PAGER_EVAL_REVIEW_UNION_LOG_FILE:-}"
@@ -657,7 +663,7 @@ pager_eval_review_pipeline_failing() {
     | if ($hits | length) == 0 then {firing: false}
       else {firing: true, nodes: ($hits | map(.node)),
             evidence: ("failed review runs at/above " + ($threshold | tostring)
-              + " consecutively, with no completed review between (the interim reader pending #996), on "
+              + " consecutively, with no completed review between (the fleet-vantage reader of the project-reviewer verdict agent-ops#996 publishes per node), on "
               + (($hits | map("\(.node) (\(.streak) runs)")) | join(", ")))}
       end
   ' < "$review_union_file" 2>/dev/null || printf '{"firing":false}'
@@ -1529,7 +1535,7 @@ pager_register_builtin_invariants() {
   pager_register updater-stuck pager_eval_updater_stuck owner-only \
     "A container this node's own updater told to roll has been \"stuck\" for over twice updater_stuck_after_minutes. Check watchtower / the deploy pipeline on this node directly — this may be agent-ops#603's container-name collision, or, on Kubernetes, an ImagePullBackOff or a rollout stuck past progressDeadlineSeconds."
   pager_register review-pipeline-failing pager_eval_review_pipeline_failing owner-only \
-    "The repository-review pipeline (review-cycle.sh) has failed its last several attempts on this node with no successful review-end between. This is the interim reader pending agent-ops#996, which folds a review-pipeline verdict directly into the heartbeat; for now, check review-log.jsonl and the Reviewer stage's own logs on this node directly."
+    "The repository-review pipeline (review-cycle.sh) has failed its last several attempts on this node with no successful review-end between. Start with that node's own project-reviewer verdict (agent-ops#996): the dashboard's Review stage health panel, or the review_stage_health field of its heartbeat, which carries the consecutive-failure count and the last attempt's own detail. Then check review-log.jsonl and the Reviewer stage's own logs on this node directly."
   pager_register dashboard-unreadable pager_eval_dashboard_unreadable owner-only \
     "A viewer fetching this node's data.js (agent-ops#1283's own probe) found it slower than pager_dashboard_fetch_seconds or unparseable — a fact this node cannot observe about itself. Check network/tailnet conditions to this node and the size of its data.js directly."
   # agent-ops#1281: the selection and ledger class.
