@@ -317,7 +317,18 @@ if [[ -n "$repo_slug" && -n "$pr_number" ]]; then
         # other reader of this endpoint in the repository uses
         # (`lib/void-guard.sh`, `lib/toggle.sh`, `lib/claim.sh`).
         decoded="$(tr -d '\n' <<<"$content_b64" | base64 -d 2>/dev/null)" || decoded=""
-        if grep -qE '^status:[[:space:]]*(resolved|not-debt)[[:space:]]*$' <<<"$decoded"; then
+        # Bounded to the frontmatter block alone — the same
+        # `gather-register-status.sh`'s `item_frontmatter()` shape — so a
+        # still-`open` record whose *body* quotes another record's `status:
+        # resolved` line at column 0 (a fenced code block, a "Resolution and
+        # history" note pasting another item's frontmatter) is not mistaken
+        # for a terminal record of its own (issue #1764).
+        status_line="$(awk '
+          NR == 1 { if ($0 !~ /^---[ \t\r]*$/) exit; next }
+          /^---[ \t\r]*$/ { exit }
+          /^status:/ { print; exit }
+        ' <<<"$decoded")"
+        if [[ "$status_line" =~ ^status:[[:space:]]*(resolved|not-debt)[[:space:]]*$ ]]; then
           already_resolved_on_base=1
         fi
       fi

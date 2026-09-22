@@ -200,7 +200,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   base-branch read that cannot be made leaves the ordinary failure
   standing, rather than warning and skipping as the issue and changed-files
   reads do: it decides whether to excuse a pull request, not whether to
-  accuse one.
+  accuse one. That base-branch `status:` read is bounded to the record's own
+  frontmatter block (issue #1764), so a still-`open` record whose body later
+  quotes another record's `status: resolved` line at column 0 — a fenced
+  code block, a "Resolution and history" note pasting another item's
+  frontmatter — is not mistaken for a terminal record of its own.
 - **A configured notify-webhook URL is now masked before it reaches the
   state-mirror repository or the dashboard, instead of passing every
   redaction pass unmatched** (issue #1721). `lib/redact.sh`'s pattern set
