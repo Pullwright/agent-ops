@@ -378,6 +378,7 @@ mkdir -p "$tmp_dir/still-open-body-quotes-resolved"
 cp "$tmp_dir/untouched/issue-240.json" "$tmp_dir/still-open-body-quotes-resolved/issue-240.json"
 cp "$tmp_dir/untouched/files.json" "$tmp_dir/still-open-body-quotes-resolved/files.json"
 printf '{"base": {"ref": "main", "sha": "deadbeef"}}' > "$tmp_dir/still-open-body-quotes-resolved/pr.json"
+# shellcheck disable=SC2016  # the backticks are literal Markdown fence, not command substitution
 write_contents_fixture "$tmp_dir/still-open-body-quotes-resolved" \
   "$(printf -- '---\nid: TD-1\nstatus: open\nfiled: 2026-08-01\n---\n\nA later note, quoting another record for context:\n\n```\nstatus: resolved\n```')"
 assert_fail_tdr "'Filed as' present, diff untouched, body quotes 'status: resolved' outside frontmatter: fail" \
