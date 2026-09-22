@@ -191,9 +191,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   add, and the register's own append-only convention (TECH-DEBT.md
   "Resolution and history": never flip a resolved item back) forbids
   rewriting it again just to satisfy the check. The check now reads the
-  named record from the pull request's base ref before failing either an
+  named record from the pull request's base *branch* (`.base.ref`, with
+  `.base.sha` only as a fallback — the commit is the base's head at the
+  pull request's last sync, not its head now, so a long-lived branch would
+  read a base from before the flip and fail again) before failing either an
   untouched file or one touched without a status line, and passes either
-  shape when the base copy is already `resolved` or `not-debt`.
+  shape when the base copy is already `resolved` or `not-debt`. A
+  base-branch read that cannot be made leaves the ordinary failure
+  standing, rather than warning and skipping as the issue and changed-files
+  reads do: it decides whether to excuse a pull request, not whether to
+  accuse one.
 - **A configured notify-webhook URL is now masked before it reaches the
   state-mirror repository or the dashboard, instead of passing every
   redaction pass unmatched** (issue #1721). `lib/redact.sh`'s pattern set

@@ -63,12 +63,25 @@
 # and `lib/candidate-gather.sh`, and `TECH-DEBT.md` requires a `not-debt` row
 # to carry its `ref:` too (issue #1437).
 #
+# That demand lapses where the record already carries a terminal `status:` on
+# the pull request's base branch (issue #1493) — flipped by an earlier,
+# unrelated pull request, as issue #982's own record was by PR #1150 before
+# the pull request closing #982 reached it. There is no truthful
+# `+status:` line left to add there, and the register is append-only
+# (`TECH-DEBT.md` "Resolution and history"), so this reads the record from
+# the base branch before failing either shape of miss.
+#
 # A `gh` call that fails outright (the token, a transient outage) is not
 # turned into a failure of this check — the existing marker/keyword logic
 # above never depended on the network, and making the record-flip half do so
 # risks failing a PR over GitHub's own availability rather than over anything
-# it did wrong. It warns to stderr and moves on; only a positive reading of
-# the issue and the diff decides pass or fail here.
+# it did wrong. The issue read and the changed-files read each warn to stderr
+# and move on; only a positive reading of the issue and the diff decides pass
+# or fail. The base-branch read above is the one call that cannot take that
+# shape, because it is the *amnesty* rather than the accusation: an outage
+# there leaves the ordinary failure below standing, exactly as before issue
+# #1493 — skipping on it instead would turn every unreadable base into a
+# record-flip check nothing has to satisfy.
 #
 # Usage: check-closing-keyword.sh <pr-body-text> [<head-branch>] [<repo-slug>] [<pr-number>]
 # Exit 0: nothing claims an issue, or every claim has its closing keyword and
@@ -278,16 +291,32 @@ if [[ -n "$repo_slug" && -n "$pr_number" ]]; then
     # convention (TECH-DEBT.md "Resolution and history": never flip a
     # resolved item back), so check the base ref before failing either shape.
     # A `gh` call that cannot be made is treated the same as a record that is
-    # not yet terminal — fall through to the ordinary failure below — for the
-    # same availability reason the changed-files read above does.
+    # not yet terminal — fall through to the ordinary failure below. This is
+    # deliberately the opposite of the changed-files read above, which warns
+    # and skips: that call decides whether to *accuse*, so an outage must not
+    # invent a failure, whereas this one decides whether to *excuse*, so an
+    # outage must not invent an amnesty. Either way the unreadable case lands
+    # where it did before the call existed.
+    #
+    # `.base.ref` (the branch) is read in preference to `.base.sha` (a
+    # commit): GitHub reports the latter as the base branch's head at this
+    # pull request's last sync, not its head now, so a long-lived branch
+    # reads a base from before the flip and fails again for precisely the
+    # reason #1493 exists — while the question this asks, "is the record
+    # terminal on the branch we are merging into", is about the branch as it
+    # stands. The `.base.sha` fallback covers a payload without a `ref`.
     already_resolved_on_base=""
     base_json="$("$GH" api "repos/$repo_slug/pulls/$pr_number" 2>/dev/null)" || base_json=""
-    base_sha="$(jq -r '.base.sha // empty' <<<"$base_json" 2>/dev/null)"
-    if [[ -n "$base_sha" ]]; then
-      contents_json="$("$GH" api "repos/$repo_slug/contents/${record_path}?ref=${base_sha}" 2>/dev/null)" || contents_json=""
+    base_ref="$(jq -r '.base.ref // .base.sha // empty' <<<"$base_json" 2>/dev/null)"
+    if [[ -n "$base_ref" ]]; then
+      contents_json="$("$GH" api "repos/$repo_slug/contents/${record_path}?ref=${base_ref}" 2>/dev/null)" || contents_json=""
       content_b64="$(jq -r '.content // empty' <<<"$contents_json" 2>/dev/null)"
       if [[ -n "$content_b64" ]]; then
-        decoded="$(base64 -d <<<"$content_b64" 2>/dev/null)" || decoded=""
+        # The contents API wraps its base64 at 60 columns, so the newlines
+        # come out first — the same `tr -d '\n' | base64 -d` spelling every
+        # other reader of this endpoint in the repository uses
+        # (`lib/void-guard.sh`, `lib/toggle.sh`, `lib/claim.sh`).
+        decoded="$(tr -d '\n' <<<"$content_b64" | base64 -d 2>/dev/null)" || decoded=""
         if grep -qE '^status:[[:space:]]*(resolved|not-debt)[[:space:]]*$' <<<"$decoded"; then
           already_resolved_on_base=1
         fi
