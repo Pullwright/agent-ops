@@ -11774,7 +11774,13 @@ implements.
     from the base branch (`gh api …/pulls/<n>` for `.base.ref`, falling back
     to `.base.sha` where a payload carries no branch, then `gh api
     …/contents/<path>?ref=<that>`) and passes when that copy is already
-    `resolved` or `not-debt`. An earlier, unrelated pull request may have
+    `resolved` or `not-debt`. That reading is bounded to the record's own
+    frontmatter block — the leading `---`-delimited block alone, the same
+    shape `scripts/gather-register-status.sh`'s `item_frontmatter()` takes —
+    so a still-`open` record whose *body* quotes another record's `status:
+    resolved` line at column 0, in a fenced code block or a "Resolution and
+    history" note pasting another item's frontmatter verbatim, is not read as
+    terminal (issue #1764). An earlier, unrelated pull request may have
     flipped it — issue #982's own record was flipped by PR #1150, the
     2026-08-31 repository review, before the pull request closing #982
     reached it — leaving no truthful
@@ -21533,7 +21539,10 @@ What exists, and the requirements each part answers to:
     copy already carries a terminal `status:` — an earlier, unrelated pull
     request having flipped it, leaving no truthful `+status:` line to add
     and an append-only register that forbids inventing one (issue #1493).
-    Either `gh`
+    That `status:` is read from the record's leading `---`-delimited
+    frontmatter block alone, so a still-`open` record whose body quotes
+    another record's `status: resolved` line at column 0 is not read as
+    terminal (issue #1764). Either `gh`
     call that fails outright (the token, a transient outage) warns rather
     than failing the check, the issue read and the changed-files read alike:
     the marker/keyword half above never depended on the network, and this
@@ -25313,7 +25322,12 @@ oblige anyone to edit a test.
    failing shapes instead pass when the base-branch copy of the record
    already carries a terminal `status:` (issue #1493), while the untouched
    one still fails when that copy reads `status: open` — so the lapse is the
-   base's own terminal state and not a general amnesty — the `contents`
+   base's own terminal state and not a general amnesty — and the untouched
+   one fails too where that copy's frontmatter reads `status: open` but its
+   *body*, after the closing `---`, quotes another record's `status:
+   resolved` line at column 0 inside a fenced block, so the frontmatter
+   bounding is asserted and not just the terminal state (issue #1764) — the
+   `contents`
    fixture newline-wrapping its base64 as that API really does, and the
    touched-but-unflipped fixture omitting `.base.ref` so the `.base.sha`
    fallback is exercised alongside it; a markerless bare closing keyword on a branch
