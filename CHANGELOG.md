@@ -136,7 +136,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   two separate volumes); it stands the cycle down when either reads below the
   floor, naming whichever has less free space in the logged `stand-down`
   event when both do. `scripts/doctor.sh`'s own warning is unchanged.
-
+- **`racedMarkersPossible()` no longer counts a stale peer's last-known
+  `role: "active"` toward the dashboard's "more than one active node" gate**
+  (issue #1005). Both race badges (issue #829) already withhold `↻ raced`
+  and "recovered race ×N" when at most one node currently carries
+  `role: "active"`, but the count itself read `role` alone, so a peer that
+  had gone dark for longer than the staleness threshold (`heartbeat_age_s >
+  1800s`) still counted on the strength of a heartbeat it stopped sending —
+  a node that stale could not have contended for the claim any more than one
+  correctly excluded already. `racedMarkersPossible()` (`dashboard/index.html`)
+  now filters on `role === "active" && !n.stale`, the same staleness check
+  `nodeUnknown()` already applies. A fixture mirroring `raced-single-active-
+  node.json` with one stale peer added confirms neither badge renders.
 - **A configured notify-webhook URL is now masked before it reaches the
   state-mirror repository or the dashboard, instead of passing every
   redaction pass unmatched** (issue #1721). `lib/redact.sh`'s pattern set

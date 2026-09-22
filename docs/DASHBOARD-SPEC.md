@@ -3086,8 +3086,15 @@ number's twins elsewhere on the page.
   `role: "active"` renders neither `↻ raced` nor "recovered race ×N" for a
   recovered cycle or a lost-every-candidate one, even though both still carry
   `raced: true`/`race_losses` — while a fixture naming two active nodes
-  renders both badges exactly as the fleet-less fixtures above do. A
-  fixture whose `noop_ticks` counts more filtered ticks than the forty slots
+  renders both badges exactly as the fleet-less fixtures above do. A peer
+  whose last-known `role` is `"active"` but which is itself stale
+  (`heartbeat_age_s` past the staleness threshold) does not count toward
+  that active-node total either (issue #1005): a fixture naming one
+  genuinely active node and one stale peer with a stale `role: "active"`
+  renders neither badge for a recovered cycle, the same as the single-node
+  fixture above — a peer that has gone dark that long could not have
+  contended for the claim any more than one correctly excluded on `role`
+  alone. A fixture whose `noop_ticks` counts more filtered ticks than the forty slots
   hold (issue #271) renders its substantive cycles as ordinary rows plus the
   one summary line — the total, the stood-down/lock-held-skip split and the
   newest tick's age — while a fixture with a zero aggregate (and one with no
@@ -3607,14 +3614,19 @@ number's twins elsewhere on the page.
   (`role_current`, `lib/role.sh`) — a standby fetches its peers and serves
   its own dashboard but runs no cycles, so it can never be the peer a claim
   was lost to. With `fleet.nodes` present and at most one node carrying
-  `role: "active"`, no peer could have contended for anything, so `↻ raced`
-  and "recovered race ×N" render nothing for that cycle even though its
-  `raced`/`race_losses` fields are unchanged — the row still reads its plain
-  outcome, "Stood down" or otherwise, exactly as if the fields were absent.
+  `role: "active"` and not itself stale, no peer could have contended for
+  anything, so `↻ raced` and "recovered race ×N" render nothing for that
+  cycle even though its `raced`/`race_losses` fields are unchanged — the row
+  still reads its plain outcome, "Stood down" or otherwise, exactly as if
+  the fields were absent. A peer's last-known `role: "active"` from before it
+  went stale (issue #1005) does not count toward that total either: a
+  heartbeat old enough to be stale (`heartbeat_age_s` past the same threshold
+  `nodeUnknown()` reads) cannot vouch for what the peer is doing now, and a
+  node that has stopped heartbeating at all cannot be contending for a claim.
   Fleet-less data (no `fleet` key at all) says nothing about how many nodes
   are active, so it is not read as "one" and renders as it always has, and
-  fleet data naming two or more active nodes renders both badges exactly as
-  before this distinction existed.
+  fleet data naming two or more genuinely active nodes renders both badges
+  exactly as before this distinction existed.
 - **An overrun-slot count is not a no-op tick, and must not share its gate**
   (implementation spec 11a, agent-ops#1287). `noop_ticks.overlap` counts
   `cycle-skipped {reason: "overlap"}` events — schedule slots supercronic

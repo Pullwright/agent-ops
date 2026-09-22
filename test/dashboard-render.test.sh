@@ -450,6 +450,24 @@ assert_contains "with two active nodes, a recovered race still carries its marke
 assert_contains "and its recovered-race count" \
   "recovered race ×2" "$rmn"
 
+# --- raced-stale-active-peer.json: a stale peer cannot have contended (#1005) ---
+# The same recovered-race cycle again, but this time the second `fleet.nodes`
+# entry carries its last-known `role: "active"` alongside `stale: true` — a
+# peer that has gone dark for longer than the staleness threshold, the same
+# `n.stale` `nodeUnknown()` already reads. A peer that could not answer for
+# itself could not have contended for the claim either, so with only one
+# genuinely active node left, neither badge may appear, exactly as
+# raced-single-active-node.json above.
+rsp="$(render raced-stale-active-peer.json)" || { printf 'FAIL - raced-stale-active-peer.json did not render:\n%s\n' "$rsp"; exit 1; }
+assert_contains "a recovered cycle still reads its outcome" \
+  "Ready for review" "$rsp"
+assert_contains "and a lost-every-candidate cycle still reads stood down" \
+  "Stood down" "$rsp"
+assert_not_contains "but a stale peer's last-known active role does not count toward contention" \
+  "↻ raced" "$rsp"
+assert_not_contains "nor the recovered-race badge" \
+  "recovered race" "$rsp"
+
 # --- noop-aggregate.json: no-op ticks summarised, never listed (issue #271) ------
 # The Publisher holds the */15 cadence's stand-down short-circuits and
 # lock-held skips out of the MAX_CYCLES detail list and ships the single O(1)
