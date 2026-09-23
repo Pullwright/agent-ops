@@ -12194,6 +12194,87 @@ implements.
     The workflow guards only the repository that ships it; the Script-side
     gate that extends the check to every target repository, on
     `lib/closing-keyword-gate.sh`'s pattern, is agent-ops#1808.
+25d. **`CHANGELOG.md` is assembled from merged pull-request descriptions,
+    never hand-edited by the change itself (roadmap decision D27,
+    agent-ops#1807).** `scripts/assemble-changelog.sh [--check]
+    [--since <ref>] [<path>]` is the one place requirement 25c's descriptions
+    become the file, run by the release pull request in a repository that
+    cuts releases or a scheduled roll in one that does not (this
+    repository's own roll is agent-ops#1809) — never by any other pull
+    request, which is the property that lets two pull requests stop
+    conflicting over the file in the first place. `<path>` defaults to
+    `CHANGELOG.md` at the script's own repository root, wherever it has been
+    synced.
+
+    The file carries its own progress marker near its top,
+    `<!-- changelog:assembled-through sha=<full sha> -->`; every first-parent
+    commit on the current branch strictly after that commit
+    (`git log --first-parent --reverse <sha>..HEAD`) is a candidate.
+    `--since <ref>` overrides the marker as the range's start — required on a
+    file that carries neither a marker nor a prior `--since`, which is an
+    error rather than a guessed starting point. Each candidate's body is
+    parsed by the exact grammar requirement 25c states, shared rather than
+    duplicated: `lib/changelog-grammar.sh`'s `changelog_grammar_walk` runs
+    the fence/HTML-comment/heading state machine and None/category/bullet
+    classification once, emitting one tab-separated event per line, and both
+    `scripts/check-changelog-section.sh` (validates) and
+    `scripts/assemble-changelog.sh` (extracts) read the same event stream. A
+    body with no `## Changelog` section, or whose section says `None.`,
+    contributes nothing. A body whose one section fails the grammar
+    anywhere — every fault the checker itself would raise, not merely the
+    ones that resemble a missing bullet — contributes nothing at all, rather
+    than the bullets read before the fault: every bullet a commit's body
+    yields is staged locally and merged into the running per-category result
+    only once that commit's whole section is confirmed clean, because a
+    truncated bullet shipped silently into `CHANGELOG.md` is worse than a
+    dropped one. This is not a hypothetical: a real, merged commit in this
+    repository's own history (agent-ops#1819, predating the `changelog-
+    section` check's own wiring into the ruleset, agent-ops#1808) carries an
+    unindented paragraph continuation the grammar reads as loose prose
+    mid-bullet, and the assembler drops that commit's section whole rather
+    than truncating it there.
+
+    Under a (created, if absent, below the preamble) `## [Unreleased]`
+    heading, one `### <Category>` per category present, in Keep a Changelog
+    order (Added, Changed, Deprecated, Removed, Fixed, Security), newest
+    commit first within a category. Each bullet ends with ` (#N)`, `N` the
+    squash title's own trailing `(#N)` GitHub appends on merge, unless the
+    bullet already cites that number somewhere in its own text. Existing
+    bullets already under `[Unreleased]`, and every released section, are
+    left untouched; new bullets are inserted above the existing ones of
+    their category, and a wholly new category heading takes its Keep a
+    Changelog place among whatever categories are already there — read via
+    the same shared grammar, wrapping the section's existing inner text in a
+    synthetic `## Changelog` heading, so byte-for-byte preservation and
+    extraction are the same mechanism rather than two. The marker is
+    rewritten to `HEAD` whether or not any commit in range carried a bullet,
+    since it tracks how far the file has been read, not how far it has
+    changed — the property `--check` relies on: it computes what a normal
+    run would write and compares it to the file's current content, exiting
+    non-zero without writing when they differ, so a release workflow can
+    refuse to tag a stale file, and exiting 0 on a second run with no new
+    commits (idempotence).
+
+    Requires a checkout with real commit history reachable from `HEAD` back
+    past the marker (or `--since`) commit — a blobless clone
+    (`--filter=blob:none`) is enough, since only commit metadata is read,
+    never blob content, but a shallow one (`--depth`) is not: a consumer's
+    CI must check out with `fetch-depth: 0`. Distributed to `poetic` and
+    `poetic-fiddle` through the `.agent` sync manifests as a `file` entry —
+    each repository's own adoption issue adds that manifest line, not this
+    one — so there is one implementation and one test suite:
+    `test/assemble-changelog.test.sh`, against a fixture git repository of
+    squash-shaped commits, covering the marker, `--since`, `None.`, a body
+    without a section, a fenced example of the heading, a malformed section
+    contributing nothing rather than a truncated bullet, category ordering,
+    the `(#N)` suffix (including a bullet that already cites its own
+    number), merging into a pre-existing `[Unreleased]` section, idempotence
+    and `--check`. `poetic`'s `changelog-check` and `poetic-fiddle`'s
+    `changelog-rename` release jobs, and `poetic-fiddle`'s
+    `scripts/extract-changelog-notes.mjs`, all read the file's own
+    `## [<version>]` headings and stay valid, because the release pull
+    request that runs this script assembles first and renames
+    `[Unreleased]` second — this script never touches a released section.
 26. Verifies the PR via `gh pr view --json mergeable,mergeStateStatus`
     (against GitHub's view, not inferred locally) and resolves any conflict
     with the current default branch. Leaves the PR as a **draft** — the
@@ -21922,8 +22003,38 @@ What exists, and the requirements each part answers to:
     before parsing, since a description saved through GitHub's editor
     arrives CRLF. The workflow runs on every `pull_request` event including
     `edited`, passes the title and the body through `env:`, and reports
-    skipped on `merge_group`. Unit-tested
+    skipped on `merge_group`. Both this script and component 17c below read the
+    `## Changelog` grammar off `lib/changelog-grammar.sh`'s
+    `changelog_grammar_walk` rather than each parsing it independently — one
+    fence/HTML-comment/heading state machine, and one None/category/bullet
+    classification, driving both a validator and an extractor from the same
+    tab-separated event stream. Unit-tested
     (`test/check-changelog-section.test.sh`); must pass `shellcheck`.
+17c. `scripts/assemble-changelog.sh` implementing requirement 25d: given
+    `[--check] [--since <ref>] [<path>]`, resolves the commit range from
+    `<path>`'s own `<!-- changelog:assembled-through sha=… -->` marker (or
+    `--since`, required when the file carries neither), walks each
+    `git log --first-parent --reverse` candidate's body through
+    `changelog_grammar_walk`, and stages its bullets locally — merged into
+    the running per-category result only once that commit's one section is
+    confirmed fault-free, so a malformed body (a real, merged example
+    predating the `changelog-section` check's own ruleset wiring is
+    agent-ops#1819) contributes nothing rather than a truncated bullet.
+    Renders `## [Unreleased]` (created below the preamble if absent) with
+    one `### <Category>` per category present in Keep a Changelog order,
+    newest commit first, each bullet suffixed ` (#N)` from the squash
+    title's own trailing `(#N)` unless already cited; merges into an
+    existing section the same way, via the same grammar wrapping its inner
+    text in a synthetic `## Changelog` heading, leaving every existing
+    bullet and every released section untouched. `--check` computes what a
+    normal run would write and diffs it against the file's current content,
+    exiting non-zero without writing when they differ. Requires real commit
+    history reachable from `HEAD` (a blobless clone is enough; a shallow one
+    is not — a consumer's CI needs `fetch-depth: 0`). Canonical here (D20)
+    and distributed to `poetic`/`poetic-fiddle` via the `.agent` sync
+    manifests, each repository's own adoption issue adding the manifest
+    line. Unit-tested against a fixture git repository of squash-shaped
+    commits (`test/assemble-changelog.test.sh`); must pass `shellcheck`.
 18. `scripts/sweep-closed-issues.sh` implementing requirement 17c's sweep:
     given a repo slug, a node name and a cycle id, lists that repo's merged
     `pr_label`-labelled pull requests (bounded to the most recently updated),
