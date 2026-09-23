@@ -914,11 +914,13 @@ Conventions shared by all configured repos (agents must honour all of these):
 - CI runs on every PR (build/lint/test workflows plus CodeQL and
   commit-format checks). A PR is not finished until its checks pass and
   `gh pr view --json mergeable,mergeStateStatus` reports it mergeable.
-- A notable change's changelog entry is a `## Changelog` section of its
-  pull-request description, which the squash merge carries onto `main`;
-  `CHANGELOG.md` is assembled from those descriptions by the release pull
-  request and edited by nothing else (requirement 25c, roadmap decision
-  D27). Other docs are as-built (no historical phrasing).
+- A notable change's changelog entry goes where the repository's own
+  `AGENTS.md` says: under D27, a `## Changelog` section of its pull-request
+  description, which the squash merge carries onto `main`, with
+  `CHANGELOG.md` assembled from those descriptions by the release pull
+  request and edited by nothing else (requirement 25c); in a repository yet
+  to adopt D27, an `[Unreleased]` entry in `CHANGELOG.md`. Other docs are
+  as-built (no historical phrasing).
 
 ## Configuration
 
@@ -11988,8 +11990,16 @@ implements.
     request only — the release pull request in a repository that cuts
     releases, a scheduled roll in one that does not — which assembles every
     entry merged since the commit its own marker names (the assembler is
-    agent-ops#1807; this repository's roll is agent-ops#1809). No stage
-    edits `CHANGELOG.md`. The finishing sources (`review-feedback`,
+    agent-ops#1807; this repository's roll is agent-ops#1809). A repository
+    is under this requirement from the commit that stamps the
+    `documentation-principles` fragment from `Pullwright/.agent` into its
+    `AGENTS.md`, which is how it adopts D27, and the stage prompts defer to
+    that file for which regime applies, never to their own summary: in a
+    repository so stamped no stage edits `CHANGELOG.md`; in one whose
+    `AGENTS.md` still states the file rule, a stage adds the `[Unreleased]`
+    entry that file asks for and writes no section, so a stage and the
+    repository it works never say different things during the adoption
+    window (PR #1810 review). The finishing sources (`review-feedback`,
     `merge-conflicts`, `dequeued`, `landing-refusals`) add nothing to a
     description that already carries its section, as they never wrote a file
     entry; `abandoned-drafts` writes the section on completion, as it wrote

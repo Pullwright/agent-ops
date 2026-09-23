@@ -220,6 +220,38 @@ really is about the shipped file reads its values back through
 `config_defaults`, the same resolution the code uses, rather than repeating
 them. A routine configuration change must not break a test.
 
+<!-- agent-info:start fragment=documentation-principles source=Pullwright/.agent@d60a598 sha256=6dee7c641ca9 -->
+<!-- Stamped by Pullwright/.agent scripts/sync.sh from Pullwright/.agent:fragments/documentation-principles.md - a hand edit inside this region is overwritten at the next sync; edit the source instead. -->
+
+## Documentation principles
+
+- **The changelog entry lives in the pull request, not in a file the change
+  edits.** A notable change (one an operator of the pipeline would notice) records itself under a
+  `## Changelog` heading in the pull request's description: one or more of
+  the six Keep a Changelog category sub-headings — `### Added`,
+  `### Changed`, `### Deprecated`, `### Removed`, `### Fixed`,
+  `### Security` — each followed by bullet points written for that audience.
+  A change that is not notable — a patch-level fix, a routine documentation
+  update — says so with the single line `None.` under the same heading, so
+  the omission is visibly deliberate rather than forgotten. A pull request
+  whose title's type is `feat`, `fix` or `perf`, or which carries the `!`
+  breaking-change marker, must carry the section, even if only to say
+  `None.`; other types may omit it. The squash merge carries the
+  description onto `main` as the commit message, and `CHANGELOG.md` (Keep a
+  Changelog format) is assembled from those commit messages by the release
+  pull request — or, in a repository that does not cut releases, by the
+  scheduled roll — which is the only pull request that edits the file. Two
+  pull requests therefore never conflict over the changelog.
+- **All other docs are as-built.** Write them to describe the current state
+  only — no "previously", "used to be", "now uses", "migration completed", or
+  "old format (deprecated)" phrasing. Git log already records history; docs
+  that repeat it become misleading as the codebase evolves.
+- If you encounter historical language in an existing doc, remove it and
+  move the substance into your pull request's `## Changelog` section if it
+  is significant.
+
+<!-- agent-info:end fragment=documentation-principles -->
+
 ## Tech debt
 
 When you defer work, take a shortcut, or notice a known gap, record it —

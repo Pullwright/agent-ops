@@ -20,7 +20,8 @@
 #
 # The grammar, applied outside fenced code blocks and HTML comments (a
 # fenced example of the heading — this very file's own tests carry one — is
-# not a section, and a `<!-- -->` note inside one is not content):
+# not a section, a `<!-- -->` note inside one is not content, and each of
+# the two is literal text inside the other):
 #
 #   ## Changelog
 #
@@ -114,6 +115,7 @@ fi
 # first line (`bad`, which swallows the rest so one mistake reports once).
 sections=0
 in_fence=0
+fence_char=""
 in_comment=0
 in_section=0
 mode=""
@@ -151,16 +153,27 @@ close_section() {
 while IFS= read -r line || [[ -n "$line" ]]; do
   line="${line%$'\r'}"
 
-  # Fenced code: nothing inside it is a heading, content or a fault.
-  if [[ "$line" =~ ^[[:space:]]{0,3}(\`\`\`|~~~) ]]; then
-    if (( in_fence )); then in_fence=0; else in_fence=1; fi
+  # Fenced code and HTML comments are mutually exclusive states, each
+  # literal inside the other: a `<!--` inside a fence is text, and a fence
+  # marker inside a comment is text. So whichever is open is asked first
+  # whether this line closes it, and only when neither is open can a line
+  # open one — asking the fence first regardless let a fence marker inside
+  # a comment flip the fence state and hide the rest of the body (PR #1810
+  # review). A fence closes only on its own marker character: a tilde fence
+  # is not closed by backticks, nor the reverse.
+  if (( in_fence )); then
+    if [[ "$line" =~ ^[[:space:]]{0,3}(\`{3,}|~{3,}) ]]; then
+      [[ "${BASH_REMATCH[1]:0:1}" == "$fence_char" ]] && in_fence=0
+    fi
     continue
   fi
-  (( in_fence )) && continue
-
-  # HTML comments, single- or multi-line: skipped the same way.
   if (( in_comment )); then
     [[ "$line" == *'-->'* ]] && in_comment=0
+    continue
+  fi
+  if [[ "$line" =~ ^[[:space:]]{0,3}(\`{3,}|~{3,}) ]]; then
+    in_fence=1
+    fence_char="${BASH_REMATCH[1]:0:1}"
     continue
   fi
   if [[ "$line" =~ ^[[:space:]]*\<!-- ]]; then
@@ -240,7 +253,14 @@ close_section
 
 # --- The title rule ----------------------------------------------------------
 if (( owes )) && (( sections == 0 )); then
-  fault "a \`feat\`, \`fix\` or \`perf\` title, or a breaking change, owes a \`## Changelog\` section in the pull-request description — add one with \`### Added\`/\`### Changed\`/\`### Deprecated\`/\`### Removed\`/\`### Fixed\`/\`### Security\` bullets, or the single line \`None.\` if the change is not notable"
+  # A body that ends inside an unclosed fence or comment has hidden
+  # everything after the opener from this parser, exactly as GitHub's own
+  # rendering hides it; say so, or the author goes looking for a section
+  # that is right there.
+  hint=""
+  (( in_fence )) && hint=" (the description ends inside an unclosed code fence, which hides everything after it — close the fence)"
+  (( in_comment )) && hint=" (the description ends inside an unclosed <!-- comment, which hides everything after it — close the comment)"
+  fault "a \`feat\`, \`fix\` or \`perf\` title, or a breaking change, owes a \`## Changelog\` section in the pull-request description — add one with \`### Added\`/\`### Changed\`/\`### Deprecated\`/\`### Removed\`/\`### Fixed\`/\`### Security\` bullets, or the single line \`None.\` if the change is not notable${hint}"
 fi
 
 exit "$status"

@@ -111,6 +111,20 @@ assert_pass "the section heading inside a fenced block is not a section (chore t
 assert_pass "the section heading inside a tilde fence is not a section either" \
   "~~~${NL}## Changelog${NL}~~~${NL}" "docs: show it"
 
+# --- Fences and comments are literal inside each other (PR #1810 review) --------
+assert_pass "a fence marker inside an HTML comment does not open a fence (the review's reproduction)" \
+  "<!-- Reviewer note:${NL}\`\`\`${NL}sample${NL}-->${NL}${NL}## Changelog${NL}${NL}### Fixed${NL}${NL}- A real entry.${NL}" "fix: x"
+assert_pass "a comment opener inside a fence does not open a comment" \
+  "\`\`\`${NL}<!-- not a comment${NL}\`\`\`${NL}## Changelog${NL}### Fixed${NL}- X.${NL}" "fix: y"
+assert_pass "a longer backtick fence closes a backtick fence" \
+  "\`\`\`\`${NL}## Changelog (inside)${NL}\`\`\`\`${NL}## Changelog${NL}### Fixed${NL}- X.${NL}" "fix: z"
+assert_fail "an unclosed fence hides the section, and the fault says so" \
+  "\`\`\`${NL}## Changelog${NL}### Fixed${NL}- X.${NL}" "unclosed code fence" "fix: unclosed"
+assert_fail "a tilde fence is not closed by a backtick fence" \
+  "~~~${NL}code${NL}\`\`\`${NL}## Changelog${NL}### Fixed${NL}- X.${NL}" "unclosed code fence" "fix: mismatched"
+assert_fail "an unclosed comment hides the section, and the fault says so" \
+  "<!-- oops${NL}## Changelog${NL}### Fixed${NL}- X.${NL}" "unclosed <!-- comment" "fix: unclosed comment"
+
 # --- Malformed sections --------------------------------------------------------
 assert_fail "the fenced example does not satisfy a fix title" \
   "\`\`\`${NL}## Changelog${NL}### Fixed${NL}- X.${NL}\`\`\`${NL}" "owes a" "fix: fenced only"
