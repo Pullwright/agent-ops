@@ -143,6 +143,30 @@ out="$(publication_status_report)"
 assert_contains "a lock held past one push interval is named as a possible wedge" \
   "holding the mirror lock for 1h, longer than one push interval" "$out"
 assert_contains "…citing the issue that explains it" "agent-ops#1679" "$out"
+assert_contains "…and a push-held marker names it as a push (agent-ops#1715)" \
+  "a push has been holding the mirror lock" "$out"
+kill "$holder_parent" "$holder_child" 2>/dev/null; wait "$holder_parent" 2>/dev/null
+
+# A wedged fetch is named as a fetch, not misreported as a push
+# (agent-ops#1715) — do_fetch takes the same mirror_lock as do_push, and the
+# marker's own stamped mode is what tells them apart.
+jq -nc --arg started "$(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ)" \
+  '{started: $started, mode: "fetch", pid: 1}' > "$mirror.lock.holder"
+hold_mirror_lock
+out="$(publication_status_report)"
+assert_contains "a wedged fetch is named as a fetch, not a push" \
+  "a fetch has been holding the mirror lock for 1h, longer than one push interval" "$out"
+kill "$holder_parent" "$holder_child" 2>/dev/null; wait "$holder_parent" 2>/dev/null
+
+# A marker with no readable mode (agent-ops#1715's mode-absent case, Option
+# (b)'s wording) falls back to the mode-neutral noun rather than defaulting
+# to "a push".
+jq -nc --arg started "$(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ)" \
+  '{started: $started, pid: 1}' > "$mirror.lock.holder"
+hold_mirror_lock
+out="$(publication_status_report)"
+assert_contains "a mode-absent marker falls back to the mode-neutral noun" \
+  "a state-sync has been holding the mirror lock for 1h, longer than one push interval" "$out"
 kill "$holder_parent" "$holder_child" 2>/dev/null; wait "$holder_parent" 2>/dev/null
 
 # Once nothing holds the lock, the note is gone regardless of what the stale

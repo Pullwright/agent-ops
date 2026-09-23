@@ -4274,7 +4274,14 @@ implements.
    the lock itself) and appends the same "may be wedged" note once a live
    hold outruns one push interval — read live, since a wedge's whole defect
    is that it never reaches the confirmed-publication read-back the rest of
-   that line is built from. `test/state-sync.test.sh` covers the deadline in
+   that line is built from. `do_fetch` takes the same `mirror_lock` as
+   `do_push`, so `mirror_lock_probe` also surfaces the marker's own `mode`
+   ("push" or "fetch", stamped by `mirror_lock_mark_started`) and the note
+   names the actual operation that is wedged — "a push has been holding …",
+   "a fetch has been holding …" — falling back to the mode-neutral "a
+   state-sync has been holding …" whenever the probe could not read a `mode`
+   at all, rather than always saying "a push" regardless of which side
+   wedged (agent-ops#1715). `test/state-sync.test.sh` covers the deadline in
    isolation (a simulated wedge via `sleep`, killed and reported `124`
    without waiting out its own runtime), a single unredactable file no
    longer aborting the loop and reaching the branch emptied rather than
@@ -4285,9 +4292,12 @@ implements.
    event logged, lock freed, no branch pushed for that
    node at all — a genuinely slow redaction pass (thousands of
    trivial files) hitting the deadline end to end — event logged, lock
-   freed, the very next push unobstructed — and both sides of a real lock
-   contention naming the holder's age; `test/manage-status.test.sh` covers
-   the `published:` line's own note, on and off the wedge threshold.
+   freed, the very next push unobstructed — both sides of a real lock
+   contention naming the holder's age — and `mirror_lock_probe`'s own `mode`
+   field for a push-held marker, a fetch-held marker, and a marker with no
+   readable mode; `test/manage-status.test.sh` covers the `published:`
+   line's own note, on and off the wedge threshold, and under each of the
+   same three mode cases.
 
    **Fetch.** Every node materialises every *other* node's branch, whole,
    under the peers directory (`lib/fleet.sh`, `<workspace_root>/

@@ -159,6 +159,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   setting a non-terminal value; the untouched-record (empty-patch) amnesty is
   unchanged.
 
+- **`--status`'s wedge note no longer misnames a wedged fetch as "a push"
+  holding the mirror lock** (issue #1715). `do_fetch`
+  (`scripts/state-sync.sh`) takes the same `mirror_lock` as `do_push`, but
+  `publication_status_report`'s (`lib/manage.sh`) note hardcoded "a push has
+  been holding the mirror lock for …" regardless of which side was actually
+  wedged. `mirror_lock_probe` (`lib/mirror-lock.sh`) now surfaces the
+  holder marker's own stamped `mode` ("push" or "fetch"), and the note
+  interpolates it — falling back to the mode-neutral "a state-sync has been
+  holding …" whenever the marker's `mode` cannot be read.
+
 - **A retried `escalate` verdict with no filable title or body no longer
   piles up identical "no escalation issue was filed" comments on a
   needs-refinement item's own thread** (issue #998, TD-PPagop-26082607).
