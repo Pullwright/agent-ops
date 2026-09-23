@@ -102,20 +102,30 @@ stage_budget_settings() {
 #
 # Three joins and one exclusion are worth naming:
 #
-#   the repository comes from the cycle, not the event. A `stage-end` names
-#     only its stage; the cycle it belongs to named its repository in the
-#     `selection` event. `review-stage-end` carries its own.
-#   the Co-Ordinator, the Enabler and its `enabler-adjudicate`/`enabler-decide`
-#     passes are keyed `*`. None has a repository naturally — the Co-Ordinator
-#     runs *before* selection, and the Enabler (and the adjudication or decide
-#     pass it runs, requirements 36b/36d) spans repositories — so pretending
-#     otherwise would fragment their samples for no gain. The Monitor
-#     (`monitor-cycle.sh`, agent-ops#1284) is keyed `*` by its caller for the
-#     same reason: it reads the fleet, not a repository. Its own `stage-end`
-#     events live in `monitor-log.jsonl`, so the Monitor concatenates that
-#     stream onto the shared one before taking these observations — nothing
-#     here needs to know about the third stream, only that the caller supplies
-#     it.
+#   the repository comes from the cycle, not the event, for most actors. A
+#     `stage-end` names only its stage; the cycle it belongs to named its
+#     repository in the `selection` event. `review-stage-end` carries its own.
+#   the Enabler and its `enabler-adjudicate`/`enabler-decide` passes are keyed
+#     `*` unconditionally. Neither has a repository naturally — the Enabler
+#     (and the adjudication or decide pass it runs, requirements 36b/36d)
+#     spans repositories — so pretending otherwise would fragment their
+#     samples for no gain. The Monitor (`monitor-cycle.sh`, agent-ops#1284) is
+#     keyed `*` by its caller for the same reason: it reads the fleet, not a
+#     repository. Its own `stage-end` events live in `monitor-log.jsonl`, so
+#     the Monitor concatenates that stream onto the shared one before taking
+#     these observations — nothing here needs to know about the third stream,
+#     only that the caller supplies it.
+#   the Co-Ordinator is keyed by its own event's `repo` field when the event
+#     carries one, and `*` otherwise (agent-ops#1629). Since the per-repository
+#     split (agent-ops#1560/#587) each per-repository engagement's own
+#     `stage-end` already names the repository it ran for (`extra.repo`,
+#     threaded through `stage_budget_apply`), so its own field — never the
+#     cycle-level `selection` join every other actor uses, which a
+#     per-repository cycle no longer resolves to one repository — is what
+#     names the cell. A Co-Ordinator event with none (every run before this
+#     split shipped) still falls back to `*`; that `*` bucket is therefore a
+#     fixed, historical pool from here on; see `stage_budget_table`'s own
+#     `coordinator_pooled_backstop` for what it warm-starts.
 #   a killed run contributes no duration. Its recorded length is its cap, not
 #     its length: that is the censoring that makes fitting a cap to durations
 #     self-defeating, and the fix begins with not pretending the observation
@@ -137,8 +147,9 @@ stage_budget_observations() {
              else "" end) as $killed
           | {
               actor: $actor,
-              repo: (if $actor == "coordinator" or $actor == "enabler"
-                        or $actor == "enabler-adjudicate" or $actor == "enabler-decide" then "*"
+              repo: (if $actor == "enabler" or $actor == "enabler-adjudicate" or $actor == "enabler-decide"
+                     then "*"
+                     elif $actor == "coordinator" then (.repo // "*")
                      else (.repo // $repo_of[(.cycle // "")] // "*") end),
               model: (.model // "*"),
               ts: (.ts // ""),
@@ -212,9 +223,13 @@ stage_budget_observations() {
 #                             95th percentile that still sits well clear of
 #                             the reduced cap.
 #
-# Floors and ceilings bound the fold: never below the shipped prior, never
-# below twice the observed 95th percentile of *completed* runs, and never
-# above a fixed multiple of the prior. When the floor and the ceiling
+# Floors and ceilings bound the fold: never below the value the fold started
+# from, never below twice the observed 95th percentile of *completed* runs,
+# and never above a fixed multiple of that same starting value. That value is
+# the shipped prior for every cell but one — a warm-started Co-Ordinator
+# repository cell starts from the frozen `*` pool instead (see
+# `coordinator_pooled_backstop`), so its floor and ceiling scale with the
+# seed it inherited rather than with the prior. When the floor and the ceiling
 # disagree — a cell whose real durations have outgrown the ceiling — the floor
 # wins. Throughput is a preference; discarding a finished stage is not.
 stage_budget_table() {
@@ -315,6 +330,27 @@ stage_budget_table() {
       | shrink((if $st.gap_max == null then null else ($s.gap_multiplier * $st.gap_max / 60) end);
                $up; $st.n);
 
+    # The Co-Ordinator warm start (issue #1629): every `coordinator|*|<model>`
+    # observation predates the repo split (agent-ops#1560) and stays that way
+    # forever — every engagement since carries its own `repo`, so the `*`
+    # bucket for this one actor is a fixed, non-growing pool that can never
+    # hold a run a repo cell also holds. That makes it safe to replay through
+    # the `controller` fold as the seed for a fresh
+    # `coordinator|<repo>|<model>` cell, in place of the flat shipped prior
+    # every other actor starts from: a brand-new repo cell inherits what the
+    # fleet already knew about the Co-Ordinator on that model, rather than
+    # discarding it. Seeding from `$by_actor`/`$by_actor_model` instead would
+    # be unsafe: those pool the runs of every repository, which for any other
+    # actor cell include the very runs that cell is about to fold in again,
+    # and replaying an already-controlled value back through those same runs
+    # counts each of their kills and streaks twice. The frozen `*` pool
+    # shares no run with a real repo cell, so this is the one place that
+    # replay is sound.
+    def coordinator_pooled_backstop($model; $star_by_model):
+      prior_of("coordinator"; "backstop") as $prior
+      | ($star_by_model[$model] // stats([])) as $st
+      | controller($st; $prior);
+
     ($now | fromdateiso8601) as $now_epoch
     | ($now_epoch - ($s.window_days * 86400)) as $cut_epoch
     | ($cut_epoch | todateiso8601) as $cutoff
@@ -323,6 +359,9 @@ stage_budget_table() {
        | map({key: .[0].actor, value: stats(.)}) | from_entries) as $by_actor
     | ($recent | group_by([.actor, .model])
        | map({key: (.[0].actor + "|" + .[0].model), value: stats(.)}) | from_entries) as $by_actor_model
+    | ($recent | map(select(.actor == "coordinator" and .repo == "*"))
+       | group_by(.model)
+       | map({key: .[0].model, value: stats(.)}) | from_entries) as $coordinator_star_by_model
     | {
         settings: $s,
         cutoff: $cutoff,
@@ -354,7 +393,11 @@ stage_budget_table() {
           | map(
               .[0].actor as $a | .[0].repo as $r | .[0].model as $m
               | stats(.) as $st
-              | controller($st; prior_of($a; "backstop")) as $b
+              | (($a == "coordinator" and $r != "*") as $warm_started
+                 | if $warm_started
+                   then coordinator_pooled_backstop($m; $coordinator_star_by_model)
+                   else prior_of($a; "backstop") end) as $backstop_seed
+              | controller($st; $backstop_seed) as $b
               | ($b | ceil) as $bmin
               | shrink((if $st.gap_max == null then null else ($s.gap_multiplier * $st.gap_max / 60) end);
                        model_inactivity($a; $m; $by_actor; $by_actor_model); $st.n) as $inact
@@ -375,7 +418,13 @@ stage_budget_table() {
                     inactivity_min: (if $imin > $bmin then $bmin else $imin end),
                     # Requirement 4f: a cell running on the prior rather than
                     # on its own evidence says so, because a self-tuning
-                    # number that cannot be traced is a mystery number.
+                    # number that cannot be traced is a mystery number. A
+                    # Co-Ordinator repo cell warm-started from the frozen `*`
+                    # pool (above) still reaches this map only once it has a
+                    # first run of its own — the zero-run case is answered by
+                    # the fallback tier `stage_budget_resolve` adds below
+                    # instead, never by a `cells` entry — so it is `shrunk`
+                    # here exactly as any other young cell is, never `prior`.
                     basis: (if $st.n >= $s.shrinkage_runs then "own"
                             elif $st.n > 0 then "shrunk"
                             else "prior" end)
@@ -399,6 +448,18 @@ stage_budget_table() {
 #   1. an explicit override for this (actor, repository)   config.json
 #   2. an explicit override for this actor                 config.json
 #   3. the adaptive value for this (actor, repository, model)
+#   3a. for the Co-Ordinator only: the frozen `coordinator|*|<model>` cell
+#       (issue #1629) — its own repo cell has not run even once yet, so
+#       tier 3 has nothing, and the generic tier-4 pool below is coarser
+#       than it needs to be (it folds every model together). This is what a
+#       brand-new `coordinator|<repo>|<model>` cell resolves against on its
+#       very first launch, before `stage_budget_table` has anything to put
+#       in `cells` for it at all. It reports `basis: "pooled"`, the same
+#       answer tier 4 gives for the same reason, and deliberately never the
+#       frozen cell's own basis: that cell may well have enough runs to read
+#       `own`, and announcing `own` for a repo cell with no runs at all would
+#       be exactly the untraceable number requirement 4f's `basis` exists to
+#       prevent.
 #   4. the shrunk pooled value for this actor
 #   5. the shipped prior                                   code
 #
@@ -415,8 +476,10 @@ stage_budget_resolve() {
       --arg a "$actor" --arg r "$repo" --arg m "$model" '
     ($priors[$a] // $priors.implementer) as $prior
     | ($t.cells[$a + "|" + $r + "|" + $m] // null) as $cell
+    | (if $a == "coordinator" and $r != "*" then ($t.cells[$a + "|*|" + $m] // null) else null end) as $star
     | ($t.actors[$a] // null) as $pooled
     | (if $cell != null then {b: $cell.backstop_min, i: $cell.inactivity_min, src: "cell", basis: $cell.basis}
+       elif $star != null then {b: $star.backstop_min, i: $star.inactivity_min, src: "pooled", basis: "pooled"}
        elif $pooled != null then {b: $pooled.backstop_min, i: $pooled.inactivity_min, src: "pooled", basis: $pooled.basis}
        else {b: $prior.backstop, i: $prior.inactivity, src: "prior", basis: "prior"} end) as $d
     | {

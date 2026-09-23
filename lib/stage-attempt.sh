@@ -386,15 +386,22 @@ run_coordinator_stage_attempt() {  # <attempt-out-file> <prompt> [extra-budget-j
   local out_file="$1" prompt="$2" extra="${3:-{\}}" rc=0 watchdog_warning result
   jq -e 'type == "object"' <<<"$extra" >/dev/null 2>&1 || extra='{}'
 
-  # The budget key stays the fleet-wide "*", not the repo `extra` carries:
-  # `lib/stage-budget.sh`'s per-actor/per-repo/per-model self-tuning has no
-  # history for a repo-scoped Co-Ordinator cell yet, and starting one cold on
-  # the day this ships would derive a backstop from zero history rather than
-  # the fleet-wide history already accumulated under "*". Keying it per repo
-  # is a genuine future improvement (each repo's own backlog could earn its
-  # own tuned backstop) but is not something this change preserves, so it is
-  # left for a follow-up rather than bundled in here.
-  stage_budget_apply coordinator "*" "$coordinator_model" "$extra"
+  # The budget key follows the repo `extra` carries, once there is one
+  # (agent-ops#1629): each per-repository engagement since the split
+  # (agent-ops#1560/#587) gets its own `coordinator|<repo>|<model>` cell
+  # rather than pooling into the fleet-wide "*" cell every engagement shared
+  # before it. A fresh repo cell is not starting cold — `lib/stage-budget.sh`'s
+  # `stage_budget_table` warm-starts it from the "*" cell's own accumulated
+  # history (`coordinator_pooled_backstop`, and the ordinary pooled-inactivity
+  # chain every actor already gets) rather than from `STAGE_BUDGET_PRIORS`
+  # directly. A call with no `repo` in `extra` — none from this call site
+  # since #1560 merged, but still reachable from anything that calls this
+  # function without a per-repository `extra` — falls back to "*" exactly as
+  # every call did before this.
+  local coord_budget_repo
+  coord_budget_repo="$(jq -r '.repo // "*"' <<<"$extra" 2>/dev/null || printf '*')"
+  [[ -n "$coord_budget_repo" && "$coord_budget_repo" != "null" ]] || coord_budget_repo="*"
+  stage_budget_apply coordinator "$coord_budget_repo" "$coordinator_model" "$extra"
   if run_claude_stage coordinator "$(( stage_backstop_min * 60 ))" "$coordinator_model" "$prompt" "$out_file" "$cycle_dir" "$(( stage_inactivity_min * 60 ))"; then
     rc=0
   else

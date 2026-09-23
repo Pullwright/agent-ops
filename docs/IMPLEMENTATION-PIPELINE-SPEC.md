@@ -7335,10 +7335,35 @@ implements.
    dimension, though nodes differ in speed: it would cut the largest cell to
    about eleven runs and the interesting one to about five, and no estimator
    recovers a distribution's tail from five observations — while the tail is
-   the entire quantity of interest. The Co-Ordinator, the Enabler and its
-   `enabler-adjudicate` pass (requirement 36b) are keyed `(actor, *, model)`:
-   the first runs before selection, and the other two span repositories, so
-   none of them has one.
+   the entire quantity of interest. The Enabler and its
+   `enabler-adjudicate`/`enabler-decide` passes (requirements 36b/36d) are
+   keyed `(actor, *, model)`, spanning repositories, so none of them has one.
+   The Co-Ordinator is keyed `(actor, repository, model)` like every other
+   implementation actor (issue #1629): since the per-repository split
+   (requirement 15z, agent-ops#1560/#587) each engagement already runs for
+   exactly one repository, and its own `stage-end` carries that repository
+   directly rather than through the cycle-level `selection` join every other
+   actor uses — a per-repository cycle no longer resolves to one repository,
+   so that join is not available to it. A run from before the split carries
+   no repository at all and is still read as `(coordinator, *, model)`, a
+   pool that is fixed from the moment this shipped: every engagement since
+   carries its own repository, so nothing new is added to it. A brand-new
+   `(coordinator, <repo>, model)` cell — no runs of its own yet — resolves
+   against that frozen pool instead of the shipped prior directly, exactly
+   as `stage_budget_resolve`'s own precedence tier 3a does for it alone; once
+   it has a run of its own, `stage_budget_table` seeds its backstop
+   controller from the frozen pool's own value rather than the shipped prior
+   too, so the two do not disagree at the boundary where a cell first gets an
+   entry of its own. This is deliberately not folded into the ordinary
+   `pooled_inactivity`/`model_inactivity` shrinkage chain every actor already
+   gets for its watchdog threshold: that chain blends a *statistic* (a
+   weighted average of gap maxima), which tolerates a repository's own data
+   also sitting inside the coarser pool above it; the backstop is a
+   *stateful* replay of kills and streaks, where the same run folded in twice
+   — once directly, once already baked into a pooled seed computed from it —
+   would double the effect of every kill it carried. The frozen `*` pool has
+   no such overlap with a real repository cell, which is what makes this one
+   case safe to seed this way at all.
    **The watchdog threshold is estimated; the backstop is controlled.** They
    are different quantities and deserve different instruments, and splitting
    them is also what removes any wait for data. The threshold's sample is
@@ -7371,10 +7396,15 @@ implements.
    observed kill rate inside the objective, and a 95th percentile of
    *completed* runs still well clear of the reduced cap. A killed run
    contributes no duration at all — its recorded length is its cap, not its
-   length. Floors and ceilings bound the fold: never below the prior, never
-   below twice that percentile, never above a fixed multiple of the prior, and
-   when floor and ceiling disagree the floor wins, because throughput is a
-   preference and discarding a finished stage is not.
+   length. Floors and ceilings bound the fold: never below the value the fold
+   started from, never below twice that percentile, never above a fixed
+   multiple of that same starting value, and when floor and ceiling disagree
+   the floor wins, because throughput is a preference and discarding a
+   finished stage is not. That starting value is the shipped prior for every
+   cell but one — a warm-started `(coordinator, <repo>, model)` cell starts
+   from the frozen `(coordinator, *, model)` pool instead (below), so its
+   floor and its ceiling scale with the seed it inherited rather than with the
+   prior.
    **Cold start is hierarchical shrinkage, not a threshold.** A cell's
    estimate is `(n·own + n₀·prior) / (n + n₀)`, with the prior the pooled
    value one level up — the same actor and model across every repository,
@@ -7404,7 +7434,9 @@ implements.
    **Every value is announced.** The `stage-start` /
    `review-stage-start` event carries `backstop_min`, `inactivity_min`,
    `source` (`config`, `cell`, `pooled` or `prior`) and `basis` (`own`,
-   `shrunk` or `prior`), so a reader looking at a stage finds the numbers it
+   `shrunk`, `pooled` or `prior` — `pooled` wherever the value came from a
+   level above the cell, so a cell with no runs of its own can never announce
+   `own`), so a reader looking at a stage finds the numbers it
    was given and where each came from; `scripts/doctor.sh` reports the whole
    table; and the dashboard holds a live stage against the cap that stage was
    actually given rather than against a shared constant. A self-tuning number
@@ -18273,8 +18305,13 @@ with the Reviewer's own.
       (`agent-cycle.sh`'s `stage_budget_apply`, an optional fifth ITEM
       argument threaded from every item-scoped caller — `$selected_item` on
       the Implementer/Reviewer/Approver/`approver-adjudicate-open-question`
-      sites, omitted where REPO itself is the fleet-wide `*` the
-      Co-Ordinator/Enabler/Refiner top-level engagements pass), `stage-end`
+      sites, omitted on the Co-Ordinator/Enabler/Refiner top-level
+      engagements, which run ahead of or across selection and so never have
+      an item to carry — REPO itself is the fleet-wide `*` those pass for the
+      Enabler and the Refiner, which span repositories, but not always for
+      the Co-Ordinator, which since its own per-repository split (issue
+      #1629) passes a real repository once selection has one to give it;
+      REPO and ITEM are independent here), `stage-end`
       (the same four sites, plus `lib/enabler.sh`'s two per-item adjudication
       sites — `enabler-adjudicate`/`enabler-decide` — and
       `lib/landing.sh`'s `approver-adjudicate-open-question`), `pr-raised`,
@@ -23477,8 +23514,9 @@ oblige anyone to edit a test.
 1k4. **Both stage caps derive themselves, and in the safe direction
    (requirement 4f).** `test/stage-budget.test.sh` passes against fixture
    logs with absolute dates: a stage is keyed to the repository its cycle
-   selected and to the model it ran, two repositories are two cells, and the
-   Co-Ordinator has no repository axis; an unseen cell answers from the
+   selected and to the model it ran, two repositories are two cells, and a
+   Co-Ordinator run from before the per-repository split (with no repository
+   on its own event) has no repository axis; an unseen cell answers from the
    shipped prior, as does an empty table, so a first cycle needs no
    configuration; one backstop kill multiplies the cap and repeated kills are
    bounded by the ceiling, while three clean runs move it not at all; a killed
@@ -23492,7 +23530,19 @@ oblige anyone to edit a test.
    derives from the priors alone against an empty table; and a malformed log,
    a `stage-end` predating `kill_reason`, one predating the gap statistics and
    a malformed `stage_budget` object each yield a usable answer rather than
-   none. `test/stage-overrun.test.sh` passes: the dashboard holds a live stage
+   none. The same file passes the Co-Ordinator warm start (issue #1629): a
+   post-split event is keyed to its own repository rather than falling to
+   `*`, a brand-new `(coordinator, <repo>, model)` cell with no runs of its
+   own resolves its backstop and watchdog from the frozen `(coordinator, *,
+   model)` pool rather than the shipped prior — reported `pooled`, via the
+   pooled tier, never `cell`, and never the frozen cell's own `own` however
+   many runs that cell has — and an unrelated actor (the Refiner, the
+   Enabler) is untouched by any of it; once that repository cell has a run of
+   its own its backstop continues from the same warm value rather than
+   resetting to the prior, and a kill against the repository cell's own
+   history multiplies that warm seed exactly once rather than replaying the
+   frozen pool's own kills a second time on top of it.
+   `test/stage-overrun.test.sh` passes: the dashboard holds a live stage
    against the cap announced on its own `stage-start`, falling back to the
    fleet-wide widest for that actor and then to the shipped prior, and makes
    no claim at all about a stage none of those names.
