@@ -11765,13 +11765,43 @@ implements.
     `status: open` on `main` until a later round caught it by hand — nothing
     before this checked the flip mechanically, only the prose
     (`CLAUDE.md`, `TECH-DEBT.md`, `prompts/implementer.md`,
-    `prompts/reviewer.md`) agreeing. Either `gh` call that fails outright
+    `prompts/reviewer.md`) agreeing.
+
+    The demand lapses for a record that already carries a terminal `status:`
+    on the base branch (issue #1493). Before failing either shape of miss —
+    a diff that never touches the file, or one that touches it without
+    adding a terminal `+status:` line — the check reads the named record
+    from the base branch (`gh api …/pulls/<n>` for `.base.ref`, falling back
+    to `.base.sha` where a payload carries no branch, then `gh api
+    …/contents/<path>?ref=<that>`) and passes when that copy is already
+    `resolved` or `not-debt`. That reading is bounded to the record's own
+    frontmatter block — the leading `---`-delimited block alone, the same
+    shape `scripts/gather-register-status.sh`'s `item_frontmatter()` takes —
+    so a still-`open` record whose *body* quotes another record's `status:
+    resolved` line at column 0, in a fenced code block or a "Resolution and
+    history" note pasting another item's frontmatter verbatim, is not read as
+    terminal (issue #1764). An earlier, unrelated pull request may have
+    flipped it — issue #982's own record was flipped by PR #1150, the
+    2026-08-31 repository review, before the pull request closing #982
+    reached it — leaving no truthful
+    `+status:` line for the closing pull request to add, and the register is
+    append-only (`TECH-DEBT.md` "Resolution and history"), so demanding one
+    would be demanding a false rewrite. The *branch* is read in preference
+    to the commit because `.base.sha` is the base branch's head at the pull
+    request's last sync rather than its head now, which would re-fail a
+    long-lived branch for the very reason this lapse exists.
+
+    Either `gh` call that fails outright
     (the token, a transient outage) warns rather than failing the check —
     the issue read and the changed-files read alike — the same
     "could not ask" reasoning as `unknown` below, applied inline rather than
     as a separate verdict, since the marker/keyword half never depended on
     the network and this half must not fail a pull request over GitHub's own
-    availability. This half runs only through the workflow, where the repo
+    availability. The base-branch read is deliberately the exception: it
+    decides whether to *excuse* rather than whether to *accuse*, so a failed
+    read falls through to the ordinary failure instead of warning and
+    skipping — an unreadable base must not become an amnesty no record-flip
+    has to satisfy. This half runs only through the workflow, where the repo
     slug and pull request number are available to pass — `lib/closing-
     keyword-gate.sh` (below) re-derives only the body and head branch from
     `gh pr view`, so `poetic` and `poetic-fiddle`, neither of which carries a
@@ -21501,14 +21531,28 @@ What exists, and the requirements each part answers to:
     line setting its `status:` to a terminal state — `resolved` or
     `not-debt` (issue #1437). This is the CI-side check for the miss PR
     #1355's first round made by hand — issue closed, `tech-debt/TD-PPagop-
-    26082412.md` left at `status: open` until a later round. Either `gh`
+    26082412.md` left at `status: open` until a later round. Before either
+    failure fires, it reads the named record from the base branch (`gh api
+    repos/<slug>/pulls/<n>` for `.base.ref`, `.base.sha` only as a fallback,
+    then `gh api repos/<slug>/contents/<path>?ref=<that>`, whose
+    newline-wrapped base64 it strips before decoding) and passes where that
+    copy already carries a terminal `status:` — an earlier, unrelated pull
+    request having flipped it, leaving no truthful `+status:` line to add
+    and an append-only register that forbids inventing one (issue #1493).
+    That `status:` is read from the record's leading `---`-delimited
+    frontmatter block alone, so a still-`open` record whose body quotes
+    another record's `status: resolved` line at column 0 is not read as
+    terminal (issue #1764). Either `gh`
     call that fails outright (the token, a transient outage) warns rather
     than failing the check, the issue read and the changed-files read alike:
     the marker/keyword half above never depended on the network, and this
     half must not fail a pull request over GitHub's own availability — a
     changed-files listing that could not be fetched is indistinguishable
     from an empty one, so the failed call is read as "could not ask" rather
-    than as a pull request that touched nothing. The workflow passes
+    than as a pull request that touched nothing. The base-branch read is the
+    one exception, and in the safe direction: it can only excuse a pull
+    request, so a failed read falls through to the ordinary failure rather
+    than warning and skipping. The workflow passes
     `github.repository` and
     `github.event.pull_request.number` alongside the body and head branch,
     and carries `issues: read` and `pull-requests: read` (`GH_TOKEN:
@@ -25274,7 +25318,19 @@ oblige anyone to edit a test.
    touches that file fails naming that, and one whose diff touches it
    without adding a terminal `status:` line (left as it was, or flipped to
    the non-terminal `in-progress`) fails naming *that* — each asserted on
-   its own message, never on the record path both carry; a markerless bare closing keyword on a branch
+   its own message, never on the record path both carry; both of those
+   failing shapes instead pass when the base-branch copy of the record
+   already carries a terminal `status:` (issue #1493), while the untouched
+   one still fails when that copy reads `status: open` — so the lapse is the
+   base's own terminal state and not a general amnesty — and the
+   `still-open-body-quotes-resolved` fixture fails too where that copy's
+   frontmatter reads `status: open` but its *body*, after the closing
+   `---`, quotes another record's `status: resolved` line at column 0
+   inside a fenced block, so the frontmatter bounding is asserted and not
+   just the terminal state (issue #1764) — the `contents`
+   fixture newline-wrapping its base64 as that API really does, and the
+   touched-but-unflipped fixture omitting `.base.ref` so the `.base.sha`
+   fallback is exercised alongside it; a markerless bare closing keyword on a branch
    that is neither `agent/<N>` nor otherwise anchored — the exact shape the
    marker/keyword half's first clause above passes unconditionally — is
    still pulled into this half once a repo slug and pull request number are
@@ -25292,7 +25348,10 @@ oblige anyone to edit a test.
    carrying digits of its own (`acme/widgets2`) contributes none of them as an
    issue number; neither a failed `gh issue view` nor a failed
    changed-files read (an unreadable issue, a token without access, a
-   transient outage) ever fails the check itself; and, against the same
+   transient outage) ever fails the check itself, while an unreadable base
+   branch leaves the ordinary failure standing instead — every fixture that
+   supplies no `pr.json`/`contents.json` asserting the pre-#1493 verdict
+   unchanged; and, against the same
    unflipped-record fixture, a keyword written inside a fenced code block, an
    inline code span (the PR #1396 shape), or a line beginning with `>` demands
    no record flip at all, while an ordinary unquoted keyword outside all

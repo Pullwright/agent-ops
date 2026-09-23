@@ -206,6 +206,15 @@ assert_pass "no branch argument at all keeps the marker-only behaviour" \
 # $fixtures/issue-<n>.json  — `gh issue view <n> --json body,labels` reply
 # $fixtures/files.json      — `gh api …/pulls/<n>/files` reply (a JSON array
 #                             of pages, the `--slurp` shape)
+# $fixtures/pr.json         — `gh api …/pulls/<n>` reply (issue #1493's
+#                             base-branch read; `{"base":{"ref":"…","sha":
+#                             "…"}}`, the `ref` preferred and the `sha` a
+#                             fallback one fixture below omits `ref` to prove)
+# $fixtures/contents.json   — `gh api …/contents/<path>?ref=<branch>` reply
+#                             (issue #1493's base-ref record read; the
+#                             contents API's own `{"content":"<base64>"}`
+#                             shape, the base64 newline-wrapped as that API
+#                             really returns it)
 # A missing fixture makes the stub exit non-zero, standing in for a `gh` call
 # that could not be made at all.
 tmp_dir="$(mktemp -d)"
@@ -223,6 +232,18 @@ if [[ "$1" == "api" ]]; then
   for a in "$@"; do
     if [[ "$a" == repos/*/pulls/*/files ]]; then
       f="$fixtures/files.json"
+      [[ -f "$f" ]] || exit 1
+      cat "$f"
+      exit 0
+    fi
+    if [[ "$a" == repos/*/contents/* ]]; then
+      f="$fixtures/contents.json"
+      [[ -f "$f" ]] || exit 1
+      cat "$f"
+      exit 0
+    fi
+    if [[ "$a" == repos/*/pulls/* ]]; then
+      f="$fixtures/pr.json"
       [[ -f "$f" ]] || exit 1
       cat "$f"
       exit 0
@@ -311,6 +332,59 @@ assert_fail_tdr "'Filed as' present, diff never touches the record: fail" \
   "$body_240" "agent/240" "acme/widgets" "9" "untouched" \
   "does not touch that file"
 
+# The contents API wraps its base64 at 60 columns and escapes the newlines
+# into the JSON string, so the fixtures are written that way rather than in
+# the tidier `base64 -w0` shape: a reader that never strips those newlines
+# would pass a single-line fixture and fail against GitHub itself.
+write_contents_fixture() {  # write_contents_fixture DIR RECORD_TEXT
+  jq -n --arg c "$(printf -- '%s' "$2" | base64 -w60)" '{content: $c}' > "$1/contents.json"
+}
+record_resolved="$(printf -- '---\nid: TD-1\nstatus: resolved\nresolved: 2026-08-25\nref: https://github.com/acme/widgets/pull/2\nfiled: 2026-08-01\n---')"
+
+# A "Filed as" line, the diff never touches the record, but the record is
+# already at a terminal status on the base branch (issue #1493) — flipped by
+# an earlier, unrelated pull request. Demanding a rewrite here would violate
+# the register's own append-only convention (TECH-DEBT.md "Resolution and
+# history": never flip a resolved item back), so this passes without one.
+mkdir -p "$tmp_dir/already-resolved-on-base"
+cp "$tmp_dir/untouched/issue-240.json" "$tmp_dir/already-resolved-on-base/issue-240.json"
+cp "$tmp_dir/untouched/files.json" "$tmp_dir/already-resolved-on-base/files.json"
+printf '{"base": {"ref": "main", "sha": "deadbeef"}}' > "$tmp_dir/already-resolved-on-base/pr.json"
+write_contents_fixture "$tmp_dir/already-resolved-on-base" "$record_resolved"
+assert_pass_tdr "'Filed as' present, diff untouched, already resolved on base: pass" \
+  "$body_240" "agent/240" "acme/widgets" "9" "already-resolved-on-base"
+
+# Same shape, but the base-branch record is still open: issue #1493's fix
+# only skips the no-op-rewrite demand when the base is already terminal,
+# never as a general amnesty for a record the diff never touches.
+mkdir -p "$tmp_dir/still-open-on-base"
+cp "$tmp_dir/untouched/issue-240.json" "$tmp_dir/still-open-on-base/issue-240.json"
+cp "$tmp_dir/untouched/files.json" "$tmp_dir/still-open-on-base/files.json"
+printf '{"base": {"ref": "main", "sha": "deadbeef"}}' > "$tmp_dir/still-open-on-base/pr.json"
+write_contents_fixture "$tmp_dir/still-open-on-base" \
+  "$(printf -- '---\nid: TD-1\nstatus: open\nfiled: 2026-08-01\n---')"
+assert_fail_tdr "'Filed as' present, diff untouched, still open on base: fail" \
+  "$body_240" "agent/240" "acme/widgets" "9" "still-open-on-base" \
+  "does not touch that file"
+
+# The base-branch amnesty is bounded to the record's own frontmatter (issue
+# #1764): a record whose frontmatter `status:` is genuinely `open`, but whose
+# *body* — after the closing `---` — happens to quote another record's
+# `status: resolved` line at column 0 (a fenced code block, a "Resolution and
+# history" note pasting another item's frontmatter verbatim), must not be
+# mistaken for a terminal record of its own. This must still fail exactly as
+# "still open on base" does, not be excused by the body's stray line.
+mkdir -p "$tmp_dir/still-open-body-quotes-resolved"
+cp "$tmp_dir/untouched/issue-240.json" "$tmp_dir/still-open-body-quotes-resolved/issue-240.json"
+cp "$tmp_dir/untouched/files.json" "$tmp_dir/still-open-body-quotes-resolved/files.json"
+printf '{"base": {"ref": "main", "sha": "deadbeef"}}' > "$tmp_dir/still-open-body-quotes-resolved/pr.json"
+# shellcheck disable=SC2016  # the backticks are literal Markdown fence, not command substitution
+write_contents_fixture "$tmp_dir/still-open-body-quotes-resolved" \
+  "$(printf -- '---\nid: TD-1\nstatus: open\nfiled: 2026-08-01\n---\n\nA later note, quoting another record for context:\n\n```\nstatus: resolved\n```')"
+assert_fail_tdr "'Filed as' present, diff untouched, body quotes 'status: resolved' outside frontmatter: fail" \
+  "$body_240" "agent/240" "acme/widgets" "9" "still-open-body-quotes-resolved" \
+  "does not touch that file"
+
 # A "Filed as" line, and this PR's diff touches the file but never sets a
 # terminal status (left open here; flipped to a non-terminal state below).
 mkdir -p "$tmp_dir/unflipped"
@@ -322,6 +396,26 @@ JSON
 assert_fail_tdr "'Filed as' present, diff leaves status unchanged: fail" \
   "$body_240" "agent/240" "acme/widgets" "9" "unflipped" \
   "does not set its frontmatter status: to a terminal state"
+
+# The same shape as "unflipped" — the diff touches the record but adds no
+# `+status:` line — but here because the status is already terminal on the
+# base branch (agent-ops PR #1492's own case: it appends a provenance note
+# to an already-`resolved` record's body). Append-only forbids re-flipping a
+# status that is already correct, so this must pass exactly as the
+# diff-never-touches-it case above does — a `+status:` line is only ever
+# demanded of a record that still needs flipping. This fixture's `pr.json`
+# carries no `base.ref`, so it is also what proves the `.base.sha` fallback
+# still reaches a record the branch read would have.
+mkdir -p "$tmp_dir/touched-already-resolved-on-base"
+cp "$tmp_dir/flipped/issue-240.json" "$tmp_dir/touched-already-resolved-on-base/issue-240.json"
+cat > "$tmp_dir/touched-already-resolved-on-base/files.json" <<'JSON'
+[[{"filename": "tech-debt/TD-1.md",
+  "patch": "@@ -10,3 +10,5 @@\n old line\n old line\n old line\n+\n+A provenance note appended below the frontmatter."}]]
+JSON
+printf '{"base": {"sha": "deadbeef"}}' > "$tmp_dir/touched-already-resolved-on-base/pr.json"
+write_contents_fixture "$tmp_dir/touched-already-resolved-on-base" "$record_resolved"
+assert_pass_tdr "'Filed as' present, diff touches record without a status line, already resolved on base: pass" \
+  "$body_240" "agent/240" "acme/widgets" "9" "touched-already-resolved-on-base"
 
 # `not-debt` is the register's other terminal state (TECH-DEBT.md "Resolution
 # and history"; issue #1437): a resolving PR that correctly concludes the

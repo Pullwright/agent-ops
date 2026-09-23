@@ -63,12 +63,25 @@
 # and `lib/candidate-gather.sh`, and `TECH-DEBT.md` requires a `not-debt` row
 # to carry its `ref:` too (issue #1437).
 #
+# That demand lapses where the record already carries a terminal `status:` on
+# the pull request's base branch (issue #1493) — flipped by an earlier,
+# unrelated pull request, as issue #982's own record was by PR #1150 before
+# the pull request closing #982 reached it. There is no truthful
+# `+status:` line left to add there, and the register is append-only
+# (`TECH-DEBT.md` "Resolution and history"), so this reads the record from
+# the base branch before failing either shape of miss.
+#
 # A `gh` call that fails outright (the token, a transient outage) is not
 # turned into a failure of this check — the existing marker/keyword logic
 # above never depended on the network, and making the record-flip half do so
 # risks failing a PR over GitHub's own availability rather than over anything
-# it did wrong. It warns to stderr and moves on; only a positive reading of
-# the issue and the diff decides pass or fail here.
+# it did wrong. The issue read and the changed-files read each warn to stderr
+# and move on; only a positive reading of the issue and the diff decides pass
+# or fail. The base-branch read above is the one call that cannot take that
+# shape, because it is the *amnesty* rather than the accusation: an outage
+# there leaves the ordinary failure below standing, exactly as before issue
+# #1493 — skipping on it instead would turn every unreadable base into a
+# record-flip check nothing has to satisfy.
 #
 # Usage: check-closing-keyword.sh <pr-body-text> [<head-branch>] [<repo-slug>] [<pr-number>]
 # Exit 0: nothing claims an issue, or every claim has its closing keyword and
@@ -264,10 +277,68 @@ if [[ -n "$repo_slug" && -n "$pr_number" ]]; then
     patch="$(jq -r --arg p "$record_path" \
       'map(select(.filename == $p)) | (.[0].patch // "")' <<<"$files_json" 2>/dev/null)"
 
+    if grep -qE '^\+status:[[:space:]]*(resolved|not-debt)[[:space:]]*$' <<<"$patch"; then
+      continue
+    fi
+
+    # Neither shape of failure below — an empty patch (the diff never touches
+    # the file) or one that touches it without a `+status:` line (issue
+    # #982/#1493's own PR: it appends a provenance note to the record's body
+    # without re-flipping a status already correct) — proves the record is
+    # unresolved: issue #1493's case is a record already at a terminal status
+    # on the base branch, flipped by an earlier, unrelated pull request.
+    # Demanding a rewrite there would violate the register's own append-only
+    # convention (TECH-DEBT.md "Resolution and history": never flip a
+    # resolved item back), so check the base ref before failing either shape.
+    # A `gh` call that cannot be made is treated the same as a record that is
+    # not yet terminal — fall through to the ordinary failure below. This is
+    # deliberately the opposite of the changed-files read above, which warns
+    # and skips: that call decides whether to *accuse*, so an outage must not
+    # invent a failure, whereas this one decides whether to *excuse*, so an
+    # outage must not invent an amnesty. Either way the unreadable case lands
+    # where it did before the call existed.
+    #
+    # `.base.ref` (the branch) is read in preference to `.base.sha` (a
+    # commit): GitHub reports the latter as the base branch's head at this
+    # pull request's last sync, not its head now, so a long-lived branch
+    # reads a base from before the flip and fails again for precisely the
+    # reason #1493 exists — while the question this asks, "is the record
+    # terminal on the branch we are merging into", is about the branch as it
+    # stands. The `.base.sha` fallback covers a payload without a `ref`.
+    already_resolved_on_base=""
+    base_json="$("$GH" api "repos/$repo_slug/pulls/$pr_number" 2>/dev/null)" || base_json=""
+    base_ref="$(jq -r '.base.ref // .base.sha // empty' <<<"$base_json" 2>/dev/null)"
+    if [[ -n "$base_ref" ]]; then
+      contents_json="$("$GH" api "repos/$repo_slug/contents/${record_path}?ref=${base_ref}" 2>/dev/null)" || contents_json=""
+      content_b64="$(jq -r '.content // empty' <<<"$contents_json" 2>/dev/null)"
+      if [[ -n "$content_b64" ]]; then
+        # The contents API wraps its base64 at 60 columns, so the newlines
+        # come out first — the same `tr -d '\n' | base64 -d` spelling every
+        # other reader of this endpoint in the repository uses
+        # (`lib/void-guard.sh`, `lib/toggle.sh`, `lib/claim.sh`).
+        decoded="$(tr -d '\n' <<<"$content_b64" | base64 -d 2>/dev/null)" || decoded=""
+        # Bounded to the frontmatter block alone — the same
+        # `gather-register-status.sh`'s `item_frontmatter()` shape — so a
+        # still-`open` record whose *body* quotes another record's `status:
+        # resolved` line at column 0 (a fenced code block, a "Resolution and
+        # history" note pasting another item's frontmatter) is not mistaken
+        # for a terminal record of its own (issue #1764).
+        status_line="$(awk '
+          NR == 1 { if ($0 !~ /^---[ \t\r]*$/) exit; next }
+          /^---[ \t\r]*$/ { exit }
+          /^status:/ { print; exit }
+        ' <<<"$decoded")"
+        if [[ "$status_line" =~ ^status:[[:space:]]*(resolved|not-debt)[[:space:]]*$ ]]; then
+          already_resolved_on_base=1
+        fi
+      fi
+    fi
+    [[ -z "$already_resolved_on_base" ]] || continue
+
     if [[ -z "$patch" ]]; then
       echo "::error::issue #${item} names ${record_path} (its body's \"Filed as\" line) but this pull request's diff does not touch that file — closing the issue must also flip its frontmatter to a terminal status: resolved or not-debt (TECH-DEBT.md \"Resolution and history\")" >&2
       status=1
-    elif ! grep -qE '^\+status:[[:space:]]*(resolved|not-debt)[[:space:]]*$' <<<"$patch"; then
+    else
       echo "::error::issue #${item} names ${record_path} (its body's \"Filed as\" line) but this pull request's diff does not set its frontmatter status: to a terminal state (resolved, or not-debt for an item that turns out not to be debt)" >&2
       status=1
     fi
