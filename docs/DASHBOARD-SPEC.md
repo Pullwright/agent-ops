@@ -1124,6 +1124,17 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                                           stages: { "<stage>": {
                                             verdict, consecutive_failures,
                                             last_success, last_detail } } },
+                         mirror: { status, count, last_rebuilt_at },  // the
+                                            //   node's own state-sync
+                                            //   mirror-rebuild verdict
+                                            //   (#604), from its heartbeat's
+                                            //   own `mirror` field for a
+                                            //   peer, or this node's own
+                                            //   .mirror-rebuild-state.json
+                                            //   for self; `status` is always
+                                            //   "rebuilt" when present; null
+                                            //   if this node has never had to
+                                            //   rebuild, or is unreported
                          updater: { status, at, seconds, reason },  // the
                                             //   node's own watchtower
                                             //   pre-update hook verdict
@@ -4137,6 +4148,25 @@ number's twins elsewhere on the page.
   as `standby`. The page is not the only reader — requirement 51's
   `firing-missed` exempts a node whose role is a standby's — so an invented
   `standby` would be a claim with consequences.
+- **A seventh badge, `mirror rebuilt`, surfaces the heartbeat's mirror-rebuild
+  verdict (implementation spec 2.5, `lib/mirror-integrity.sh`,
+  agent-ops#604/#997)** — a fact that reached every node's own heartbeat from
+  the day #604 shipped, but reached no dashboard until now: a human learned
+  their disk had quietly damaged a state-sync mirror only by running `jq`
+  over a peer's `heartbeat.json` directly, having first thought to suspect
+  it. The row's `mirror` field (self: read from this node's own
+  `.mirror-rebuild-state.json`; a peer: carried in its heartbeat, `null`
+  when the peer predates this field or has never had to rebuild) is `null`
+  until this node's state-sync push has had to discard and rebuild its
+  mirror at least once, else `{status: "rebuilt", count, last_rebuilt_at}`.
+  Amber, `compose`'s colour for a fault worth a human's attention — a
+  rebuild does not clear itself the way a deferring updater does — titled
+  with `count` and, where known, how long ago the most recent rebuild was:
+  a single rebuild is a transient a git fetch/prune already recovered from,
+  but `count` climbing on one node is the failing-disk pattern the verdict
+  exists to catch, which is only useful to whoever sees it. No badge when
+  the row carries no `mirror` field, or the field is `null` — the same
+  absent-means-unknown rule the compose and image badges already follow.
 - **A node-scoped disable (implementation spec 2.3, `--disable --this-node`,
   issue #379) gets its own badge beside the role badge**, not just the
   page-top switch banner. The banner (above) is keyed to *this* node's own

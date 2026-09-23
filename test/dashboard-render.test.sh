@@ -211,6 +211,17 @@ assert_eq "and only the one stuck container gets the badge — never a rolled or
 assert_eq "and only the one deferring container gets its badge — never a rolled or pre-field one" \
   "1" "$(grep -o 'updater deferring' <<<"$out" | wc -l | tr -d ' ')"
 
+# --- The mirror-rebuild badge on the fleet strip (agent-ops#604/#997) -------
+# poetic-3 has had to discard and rebuild its state-sync mirror four times;
+# poetic-1, poetic-2 and poetic-4 carry no `mirror` field (self never
+# rebuilt, the other two predate it) and get no badge.
+assert_contains "a node that has rebuilt its mirror is flagged, naming the count" \
+  "mirror rebuilt" "$out"
+assert_contains "  ... and the count reaches the badge's own title" \
+  "discarded and rebuilt 4 times" "$out"
+assert_eq "and only the one node with a rebuilt verdict gets the badge" \
+  "1" "$(grep -o 'mirror rebuilt' <<<"$out" | wc -l | tr -d ' ')"
+
 # --- The provider-unreachable badge on the fleet strip (issue #1073) --------
 # poetic-3 carries a `provider_unreachable` verdict (the transient class
 # lib/crash-loop.sh's `crash_loop_verdict` now emits instead of a crash-loop

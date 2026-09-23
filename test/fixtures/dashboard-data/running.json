@@ -106,7 +106,8 @@
         "updater": {"status": "stuck", "at": "@ago:45m", "seconds": 2700, "reason": "allow"},
         "provider_unreachable": {"stage": "coordinator", "detail": "api_error",
           "count": 6, "first_ts": "@ago:40m", "last_ts": "@ago:2m",
-          "nodes": ["poetic-3", "poetic-4"], "escalate": false}
+          "nodes": ["poetic-3", "poetic-4"], "escalate": false},
+        "mirror": {"status": "rebuilt", "count": 4, "last_rebuilt_at": "@ago:6h"}
       },
       {
         "node": "poetic-4", "role": "standby", "heartbeat_ts": "@ago:1m", "heartbeat_age_s": 60,

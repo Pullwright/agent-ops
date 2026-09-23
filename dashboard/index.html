@@ -1452,6 +1452,29 @@
     return null;
   }
 
+  // Whether this node has ever had to discard and rebuild its state-sync
+  // mirror (lib/mirror-integrity.sh, agent-ops#604) — a fact the heartbeat's
+  // `mirror` field has carried since #604 shipped, but which, until now, no
+  // dashboard read: a human learned of it only by running jq over a peer's
+  // heartbeat.json directly, having first thought to suspect it
+  // (agent-ops#997). `count` is the part with the most to say: once is a
+  // transient a git fetch/prune already recovered from, but repeated on one
+  // node is a failing-disk symptom, which is why the badge names it rather
+  // than rendering a bare "mirror rebuilt". Amber, composeLine's colour for
+  // "this wants a human" — a rebuild does not clear itself the way a
+  // deferring updater does. Renders nothing when `mirror` is null (this
+  // node, or peer, has never had to rebuild), the same "nothing to say"
+  // precedent every verdict above follows.
+  function mirrorLine(n) {
+    var m = n.mirror;
+    if (!m || m.status !== "rebuilt") return null;
+    var title = "this node's state-sync mirror has been discarded and rebuilt " +
+      m.count + " time" + (m.count === 1 ? "" : "s") +
+      (m.last_rebuilt_at ? ", most recently " + fmtAgo(m.last_rebuilt_at) : "") +
+      " — a repeat rebuild on one node is a failing-disk symptom, not a transient (agent-ops#604)";
+    return el("div", {class:"ver"}, el("span", {class:"badge b-amber", text:"mirror rebuilt", title: title}));
+  }
+
   // Whether this node is caught up in a sustained run of Co-Ordinator
   // failures the Script has classified `transient` — the API itself
   // unreachable (a 5xx, a dropped connection), not refusing a considered
@@ -1993,6 +2016,8 @@
     if (hostFacts) card.appendChild(hostFacts);
     var resources = resourcesLine(n);
     if (resources) card.appendChild(resources);
+    var mirror = mirrorLine(n);
+    if (mirror) card.appendChild(mirror);
 
     // This line is about the freshness of the VERSION/compose/image info above
     // it, which for self is always read live regardless of n.stale (self's own
