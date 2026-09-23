@@ -599,7 +599,8 @@ fallback_select_candidate() {  # <ordered-repos-json> <default-model> <refinemen
       | (((.bot // false) and (.rebase_requested // false)) as $takeover
          | mk($r; $db; "merge-conflicts"; .ref; .title; (.body // "");
              "Rebase the existing pull request onto its base and resolve the conflict.";
-             ({pr_url: .pr_url, pr_number: .pr_number} + (if $takeover then {takeover: true} else {branch: .branch} end))))];
+             ({pr_url: .pr_url, pr_number: .pr_number, conflicted_paths: (.conflicted_paths // null)}
+              + (if $takeover then {takeover: true} else {branch: .branch} end))))];
 
     def dq_cands: [.[] | select(lists("dequeued")) | .slug as $r | .default_branch as $db | (.dequeued // [])[]
       | mk($r; $db; "dequeued"; .ref; .title; (.body // "");

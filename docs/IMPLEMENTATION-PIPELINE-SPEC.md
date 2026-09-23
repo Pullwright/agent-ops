@@ -5741,8 +5741,8 @@ implements.
    ready but conflict with their base*: open, **non-draft**, carrying `pr_label`,
    head branch under `branch_prefix`, and with `mergeable` exactly
    `CONFLICTING`. Each entry carries a head-SHA-scoped ref, the PR number and URL,
-   the existing branch, its `base`, the head SHA, the `updatedAt`, and the PR's
-   own body verbatim.
+   the existing branch, its `base`, the head SHA, the `updatedAt`, the PR's
+   own body verbatim, and `conflicted_paths`.
 
    - **Only *ready* PRs, and only *definite* conflicts.** A draft's conflict is
      abandoned-drafts' to resolve (as part of finishing the draft); this source is
@@ -5785,6 +5785,40 @@ implements.
      definition (requirement 34a).
    - Fails safe to `[]` (exit 0), with the same stderr discipline as requirement
      3c. `shellcheck`-clean.
+   - **`conflicted_paths` names which files conflicted (issue #1805).**
+     Establishing which lever actually causes a repo's conflicts used to mean
+     replaying every claim's head against its base by hand; this answers it
+     from the record itself. For every admitted candidate,
+     `gather-merge-conflicts.sh` runs a dry-run merge — `git merge-tree
+     --write-tree --name-only --no-messages <base> <head>` (git ≥2.38),
+     which touches no ref, no working tree and no index — against a blobless
+     bare clone (`git clone --filter=blob:none --bare`) of the repository,
+     fetched at most once per script invocation and reused across every
+     candidate that invocation admits: the script is itself already called
+     at most once per repository per cycle (requirement 48's expensive-gather
+     cache, above), so this is the "one bare blobless clone per repository
+     per cycle" bound, not a further cache of its own. Each candidate's own
+     dry run fetches only the two refs — its base and its own head — it
+     needs into that shared clone. `conflicted_paths` is the literal JSON
+     `null`, never `[]`, whenever the dry run cannot be computed — the clone
+     failed, the fetch failed, or `git merge-tree` exited with anything other
+     than 0 (clean) or 1 (conflicts) — since an empty array would assert
+     "this merge is clean", which contradicts the candidate rule above (the
+     PR is already known `CONFLICTING`). A clean result (exit 0) is reported
+     as `[]` honestly, on the rare chance the base or head moved between
+     GitHub's own mergeability computation and this dry run. A failed dry run
+     is silent on stderr — it degrades one optional field on one candidate,
+     never the candidate itself, so it does not count against this
+     requirement's own liveness marker (`lib/candidate-select.sh`'s
+     `gather_merge_conflicts`, which watches stderr to distinguish "empty
+     because there is nothing" from "empty because it could not look").
+     `conflicted_paths` flows onward exactly as `base`/`pr_url`/`pr_number`
+     already do: into the rework record's `evidence` at selection
+     (`lib/rework.sh`'s `rework_selection_fields`) and into the
+     `merge-conflicts` work order the Implementer receives
+     (`prompts/coordinator.md`, `lib/stage-attempt.sh`'s deterministic
+     fallback) — so the Implementer knows what it is resolving before it
+     even clones.
 3s. **Dependabot conflicts: nudge, then take over (issue #250).** Requirement
    3g's `merge_conflicts` array also carries Dependabot's own conflicted PRs —
    open, non-draft, `mergeable` exactly `CONFLICTING`, authored by

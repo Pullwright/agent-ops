@@ -44,6 +44,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 failures=0
 
+# Every real invocation of the script below that reaches `emit()` now tries a
+# dry-run merge (issue #1805), which means a real `git clone` unless pointed
+# elsewhere. Pinned here, for the whole file, to a local path that does not
+# exist: the clone fails fast, locally, with no network involved — the same
+# "a test that reaches the network passes only when the runner happens to be
+# online" bug lib/repo-clone.sh's own header names test/review-claim.test.sh
+# hitting in CI. The dedicated `conflicted_paths` block further down
+# overrides this with a real local fixture repository for the one assertion
+# that needs an actual dry-run answer.
+export MERGE_CONFLICTS_CLONE_URL="$SCRIPT_DIR/no-such-fixture-repo.git"
+
 assert_eq() {
   local desc="$1" expected="$2" actual="$3"
   if [[ "$expected" == "$actual" ]]; then
@@ -289,6 +300,113 @@ JSON
 out="$(MERGE_CONFLICTS_GH="$tmp_dir/gh" "$SCRIPT_DIR/scripts/gather-merge-conflicts.sh" o/r autonomous-agent agent/ 2>/dev/null)"
 assert_eq "a marker scoped to a stale head does not satisfy rebase_requested for the current one" \
   "false" "$(jq -r '.[0].rebase_requested' <<<"$out")"
+
+# --- conflicted_paths: a dry-run merge against a real local fixture
+#     repository (issue #1805) ---
+#
+# The dry run (`mc_conflicted_paths` in the script) is exercised for real
+# here, against an actual local git repository — no stub, no network —
+# proving the whole path end to end: the blobless bare clone, the
+# per-candidate fetch of base and head, and `git merge-tree --write-tree
+# --name-only`'s own output parsed into a JSON array. `MERGE_CONFLICTS_CLONE_URL`
+# names a local path, keeping this hermetic exactly as every other fixture
+# in this file already is (the file-wide default set above points at a path
+# that does not exist, so every *other* candidate's dry run degrades to
+# `null` without ever touching the network).
+fixture_src="$tmp_dir/fixture-src"
+git init -q -b main "$fixture_src"
+git -C "$fixture_src" config user.email test@example.com
+git -C "$fixture_src" config user.name test
+printf 'base\n' > "$fixture_src/CHANGELOG.md"
+git -C "$fixture_src" add CHANGELOG.md
+git -C "$fixture_src" commit -q -m base
+git -C "$fixture_src" checkout -q -b agent/conflicting-feature
+printf 'base\nfeature change\n' > "$fixture_src/CHANGELOG.md"
+git -C "$fixture_src" commit -q -am feature
+git -C "$fixture_src" checkout -q main
+printf 'base\nmain change\n' > "$fixture_src/CHANGELOG.md"
+git -C "$fixture_src" commit -q -am main-change
+git clone -q --bare "$fixture_src" "$tmp_dir/fixture-src.git"
+
+cat > "$tmp_dir/ours.json" <<'JSON'
+[
+  {"number": 200, "title": "fix: conflicting change", "headRefName": "agent/conflicting-feature",
+   "baseRefName": "main", "headRefOid": "000000000000000000000000000000000000ff",
+   "isDraft": false, "mergeable": "CONFLICTING", "updatedAt": "2026-08-14T00:00:00Z",
+   "url": "https://github.com/o/r/pull/200", "body": "conflict test"}
+]
+JSON
+printf '[]\n' > "$tmp_dir/dependabot.json"
+
+out="$(MERGE_CONFLICTS_GH="$tmp_dir/gh" MERGE_CONFLICTS_CLONE_URL="$tmp_dir/fixture-src.git" \
+  "$SCRIPT_DIR/scripts/gather-merge-conflicts.sh" o/r autonomous-agent agent/ 2>/dev/null)"
+assert_eq "a real dry-run merge against a fixture repository finds the conflicting file" \
+  '["CHANGELOG.md"]' "$(jq -c '.[0].conflicted_paths' <<<"$out")"
+
+out_no_clone="$(MERGE_CONFLICTS_GH="$tmp_dir/gh" MERGE_CONFLICTS_CLONE_URL="$SCRIPT_DIR/no-such-fixture-repo.git" \
+  "$SCRIPT_DIR/scripts/gather-merge-conflicts.sh" o/r autonomous-agent agent/ 2>/dev/null)"
+assert_eq "conflicted_paths is null, never [], when the dry run cannot be computed" \
+  "null" "$(jq -c '.[0].conflicted_paths' <<<"$out_no_clone")"
+
+# --- clone-once reuse and cleanup across multiple candidates in one run
+#     (review on PR #1819, issue #1805) ---
+#
+# mc_conflicted_paths used to be called only from inside a `$(…)` command
+# substitution, which bash always runs in its own subshell — so
+# mc_ensure_bare_clone's assignments to mc_bare_dir/mc_bare_ready/
+# mc_clone_attempted never reached the parent shell. Every candidate reran
+# the clone from scratch, and the EXIT trap's mc_bare_dir stayed empty
+# forever, leaking each clone's temp directory. A single-candidate run (the
+# block above) cannot catch either defect — one candidate reclones "for the
+# first time" whether or not reuse works, and the temp directory would look
+# cleaned up by coincidence if the trap simply never removed anything wrong
+# in a directory nobody checked. This block adds a second candidate and
+# actually inspects the clone count and the temp directory afterwards.
+git -C "$fixture_src" checkout -q -b agent/conflicting-feature-2 main~1
+printf 'base\nfeature change 2\n' > "$fixture_src/CHANGELOG.md"
+git -C "$fixture_src" commit -q -am feature-2
+git -C "$fixture_src" checkout -q main
+rm -rf "$tmp_dir/fixture-src.git"
+git clone -q --bare "$fixture_src" "$tmp_dir/fixture-src.git"
+
+cat > "$tmp_dir/ours.json" <<'JSON'
+[
+  {"number": 200, "title": "fix: conflicting change", "headRefName": "agent/conflicting-feature",
+   "baseRefName": "main", "headRefOid": "000000000000000000000000000000000000ff",
+   "isDraft": false, "mergeable": "CONFLICTING", "updatedAt": "2026-08-14T00:00:00Z",
+   "url": "https://github.com/o/r/pull/200", "body": "conflict test"},
+  {"number": 201, "title": "fix: another conflicting change", "headRefName": "agent/conflicting-feature-2",
+   "baseRefName": "main", "headRefOid": "0000000000000000000000000000000000fefe",
+   "isDraft": false, "mergeable": "CONFLICTING", "updatedAt": "2026-08-15T00:00:00Z",
+   "url": "https://github.com/o/r/pull/201", "body": "conflict test 2"}
+]
+JSON
+
+cat > "$tmp_dir/git-logger" <<'STUB'
+#!/usr/bin/env bash
+d="$(dirname "$0")"
+printf '%s\n' "$*" >> "$d/git-calls.log"
+exec git "$@"
+STUB
+chmod +x "$tmp_dir/git-logger"
+
+out_two="$(MERGE_CONFLICTS_GH="$tmp_dir/gh" MERGE_CONFLICTS_GIT="$tmp_dir/git-logger" \
+  MERGE_CONFLICTS_CLONE_URL="$tmp_dir/fixture-src.git" \
+  "$SCRIPT_DIR/scripts/gather-merge-conflicts.sh" o/r autonomous-agent agent/ 2>/dev/null)"
+
+assert_eq "two candidates in one run still both get a computed conflicted_paths" \
+  "2" "$(jq 'length' <<<"$out_two")"
+assert_eq "  ... the first" '["CHANGELOG.md"]' "$(jq -c '.[0].conflicted_paths' <<<"$out_two")"
+assert_eq "  ... and the second" '["CHANGELOG.md"]' "$(jq -c '.[1].conflicted_paths' <<<"$out_two")"
+assert_eq "exactly one bare clone is made across two candidates in the same run, not one per candidate" \
+  "1" "$(grep -c '^clone ' "$tmp_dir/git-calls.log")"
+
+leaked="no"
+while IFS= read -r clone_dir; do
+  [[ -n "$clone_dir" && -d "$clone_dir" ]] && leaked="yes"
+done < <(grep '^clone ' "$tmp_dir/git-calls.log" | awk '{print $NF}')
+assert_eq "every bare clone's temp directory is removed when the script exits, not leaked" \
+  "no" "$leaked"
 
 rm -rf "$tmp_dir"
 trap - EXIT

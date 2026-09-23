@@ -18,6 +18,16 @@
 #               passed that rung and the measured cost of catching one at
 #               the next.
 #
+# Plus one further breakdown, scoped to a single class rather than the whole
+# stream (issue #1805): `merge_conflict_paths` reads `merge-conflict`'s own
+# `evidence.conflicted_paths` (docs/FLOW-SCHEMA.md's own notes on that
+# class) for which files conflict most often, and what share of that class
+# conflicts on `CHANGELOG.md` alone. Not a fourth question this module
+# answers about rework in general — the other three read every class alike —
+# but the same "answer it from the record, not a manual replay" reasoning
+# that produced `conflicted_paths` in the first place extends naturally to
+# the one place already folding this stream.
+#
 # D23 is emphatic that rework is never a target of zero: a Reviewer catching
 # a defect is the system working, not failing. This module never collapses
 # "how much" and "how far" into one score for exactly that reason — a naive
@@ -146,6 +156,10 @@ REWORK_PANEL_KEY_JQ='
 # cycle is derivable here. That makes `rework_share` an upper bound rather than
 # a measured split — stated in those words on the panel's own face, and in
 # docs/DASHBOARD-SPEC.md.
+# No apostrophes anywhere below, comments included: the whole program is one
+# single-quoted shell string, and an apostrophe ends it — breaking the file's
+# own bash syntax, not merely this jq program, which is why `shellcheck` does
+# not catch it and `test/rework-panel.test.sh` does. Reword the possessive.
 # shellcheck disable=SC2016  # jq's own $all/$lifecycle/etc, not the shell's.
 REWORK_PANEL_JQ='
   '"$REWORK_PANEL_KEY_JQ"'
@@ -282,11 +296,38 @@ REWORK_PANEL_JQ='
         cost_to_catch_at_next_note: "terminal rung: nothing further to escape to" }
     ]) as $escape_ladder
 
+  # --- Merge-conflict class: which files conflicted (issue #1805) ---------
+  # `conflicted_paths` rides in `evidence` only when the dry-run merge on the
+  # candidate could compute one (see the merge-conflict notes in
+  # docs/FLOW-SCHEMA.md) — an item whose dry run failed carries no such key
+  # at all (filtered out of evidence by the null filter in
+  # rework_selection_fields, not stored as a JSON `null`), and is counted in
+  # `total` but not `known`, the same "an outage is not a quiet zero"
+  # distinction every other figure on this panel keeps. `top_paths` is
+  # frequency across the conflicted_paths array of every known entry — an
+  # item with three conflicting files contributes to all three counts —
+  # capped at the ten most frequent, ties broken by path ascending for a
+  # stable, reproducible order.
+  | ($rew | map(select(.class == "merge-conflict"))) as $mc_rew
+  | ($mc_rew | map(select(.evidence.conflicted_paths != null))) as $mc_known
+  | ($mc_known | map(.evidence.conflicted_paths[])) as $mc_all_paths
+  | ($mc_all_paths | group_by(.) | map({path: .[0], count: length})
+     | sort_by(-.count, .path) | .[0:10]) as $mc_top_paths
+  | ($mc_known | map(select(.evidence.conflicted_paths == ["CHANGELOG.md"])) | length) as $mc_changelog_only_n
+  | ({
+      total: ($mc_rew | length),
+      known: ($mc_known | length),
+      top_paths: $mc_top_paths,
+      changelog_only: { count: $mc_changelog_only_n,
+                         share: share($mc_known | length; $mc_changelog_only_n) }
+    }) as $merge_conflict_paths
+
   | {
       how_much: ($tokens_time + { first_pass_yield: $first_pass_yield, rework_count: ($rew | length) }),
       whose: $whose,
       escape_ladder: $escape_ladder,
       clean_count: $n_clean,
+      merge_conflict_paths: $merge_conflict_paths,
       # Additive (issue #612): the same cycle-id set the how_much cost join
       # already computed above, lifted to the top level so a caller pricing
       # the spend account by fate (lib/fleet-pricing.sh) can classify a
@@ -300,8 +341,8 @@ REWORK_PANEL_JQ='
 '
 
 # rework_panel_build LOG_FILE [SINCE]
-# Print the rework panel — `how_much`, `whose`, `escape_ladder`, `clean_count`
-# — folded from LOG_FILE, or stdin if it is "-". Requires lib/cycle-state.sh
+# Print the rework panel — `how_much`, `whose`, `escape_ladder`, `clean_count`,
+# `merge_conflict_paths` — folded from LOG_FILE, or stdin if it is "-". Requires lib/cycle-state.sh
 # and lib/item-lifecycle.sh already sourced (item_lifecycle_fold supplies the
 # landed population first-pass yield and the escape ladder both read).
 #
@@ -328,8 +369,8 @@ REWORK_PANEL_JQ='
 #   nothing partial survives that — so the all-zero shape would be a
 #   confidently-stated falsehood, indistinguishable on the page from a fleet
 #   that genuinely repeated no work. This reports the outage shape instead
-#   (`{how_much: null, whose: null, escape_ladder: null, clean_count: null}`,
-#   docs/DASHBOARD-SPEC.md), the same "an outage is not a quiet zero"
+#   (`{how_much: null, whose: null, escape_ladder: null, clean_count: null,
+#   merge_conflict_paths: null}`, docs/DASHBOARD-SPEC.md), the same "an outage is not a quiet zero"
 #   distinction every other roll-up on the page makes, and the same shape
 #   scripts/publish-dashboard.sh substitutes when it cannot assemble the
 #   payload at all. Guarding each individual index against every shape a
@@ -374,6 +415,6 @@ rework_panel_build() {
   fi
   rm -f "$tmp_log" "$all_json_file" "$lifecycle_file" 2>/dev/null
 
-  [[ -n "$out" ]] || out='{"how_much":null,"whose":null,"escape_ladder":null,"clean_count":null,"rework_cycles":null}'
+  [[ -n "$out" ]] || out='{"how_much":null,"whose":null,"escape_ladder":null,"clean_count":null,"rework_cycles":null,"merge_conflict_paths":null}'
   printf '%s' "$out"
 }

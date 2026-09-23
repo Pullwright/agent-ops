@@ -1697,9 +1697,13 @@ the problem this change exists to close never applied to them.
   `branch`, and the work order must also carry `"pr_url"` and `"pr_number"`
   from the entry — the Implementer pushes to that PR instead of opening one.
 - For a `merge-conflicts` entry, `item` is its `ref`, `branch` is its existing
-  `branch`, and the work order must also carry `"pr_url"` and `"pr_number"` from
-  the entry — the Implementer rebases that existing PR onto its base and resolves
-  the conflict instead of opening one. **Exception:** a Dependabot takeover (the
+  `branch`, and the work order must also carry `"pr_url"`, `"pr_number"` and
+  `"conflicted_paths"` from the entry — the Implementer rebases that existing
+  PR onto its base and resolves the conflict instead of opening one, and
+  `conflicted_paths` (the paths the entry's own dry-run merge found
+  conflicting — an array, or `null` when that dry run could not be computed;
+  never omit it, copy it exactly as the entry carries it) is what lets it
+  know what it is resolving before it even clones. **Exception:** a Dependabot takeover (the
   entry carries `bot: true` and `rebase_requested: true`, and no
   `superseded_by`) instead carries `"takeover": true` and omits `branch`
   entirely — see "Merge conflicts" above. A superseded Dependabot entry

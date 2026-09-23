@@ -69,6 +69,15 @@
         "cost_to_catch_at_next_note": "terminal rung: nothing further to escape to"
       }
     ],
-    "clean_count": 1
+    "clean_count": 1,
+    "merge_conflict_paths": {
+      "total": 4,
+      "known": 3,
+      "top_paths": [
+        {"path": "CHANGELOG.md", "count": 3},
+        {"path": "scripts/state-sync.sh", "count": 1}
+      ],
+      "changelog_only": {"count": 2, "share": 0.6666666666666666}
+    }
   }
 }

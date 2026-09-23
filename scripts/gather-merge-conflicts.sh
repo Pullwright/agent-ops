@@ -34,7 +34,10 @@
 #     "head_sha": "1a2b3c4d5e6f…",
 #     "updated_at": "2026-07-24T03:00:00Z",
 #     "body": "…the PR's own description, verbatim…",
-#     "bot": false
+#     "bot": false,
+#     "conflicted_paths": ["CHANGELOG.md", "scripts/state-sync.sh"] // or null
+#                                             // (see "Which files conflicted"
+#                                             // below), never []
 #   }
 #
 # A Dependabot candidate carries the same shape plus three fields
@@ -176,6 +179,39 @@
 # too (the source simply does not fire this cycle) — but note gather-source-state.sh
 # must NOT be so relaxed about the same PRs, for the reason it documents.
 #
+# ## Which files conflicted (issue #1805)
+#
+# Establishing which lever actually causes a repo's conflicts (D23's own
+# question for this class) used to mean replaying every claim's head against
+# `main` at claim time by hand. `conflicted_paths` answers it from the record
+# itself: for every admitted candidate, `mc_conflicted_paths` runs a dry-run
+# merge of its head into its base with `git merge-tree --write-tree
+# --name-only --no-messages <base> <head>` (git ≥2.38) — a real merge
+# computation that writes no ref, no working tree and no index, so it is safe
+# to run against a clone this script does not own outright. That clone is a
+# blobless bare one
+# (`git clone --filter=blob:none --bare`), fetched at most once per script
+# invocation — which is already at most once per repository per cycle, since
+# `lib/expensive-gather-cache.sh` (requirement 48) calls this script for at
+# most one configured repository per cycle — and reused across every
+# candidate this run admits: `mc_ensure_bare_clone` clones lazily, on the
+# first candidate that needs it, and every later candidate's dry run fetches
+# only the two refs (its base and its own head) it needs into the same clone.
+#
+# `conflicted_paths` is the literal JSON `null`, never `[]`, whenever the dry
+# run cannot be computed — the clone failed, the fetch failed, or `git
+# merge-tree` exited with anything other than 0 (clean) or 1 (conflicts): an
+# empty array would assert "this merge is clean", which is never true of a
+# candidate this script already knows GitHub reports as `CONFLICTING`. A
+# clean result (exit 0) is a genuine, if rare, live answer — the base or head
+# moved between GitHub's own mergeability computation and this dry run — and
+# is reported as `[]` honestly rather than forced to `null`.
+#
+# `MERGE_CONFLICTS_GIT` overrides `git` and `MERGE_CONFLICTS_CLONE_URL`
+# overrides the clone source (`https://github.com/<slug>.git` by default) —
+# both seams for tests, the same idiom as `MERGE_CONFLICTS_GH` below: a test
+# points the clone at a local fixture repository instead of the network.
+#
 # Environment: MERGE_CONFLICTS_GH overrides `gh` (tests stub it).
 
 set -uo pipefail
@@ -212,6 +248,59 @@ fi
 # message on stderr goes with it rather than into `2>/dev/null`.
 warn() {
   echo "gather-merge-conflicts: $slug: $*" >&2
+}
+
+# --- Which files conflicted (issue #1805) — see the header. ---
+
+MC_GIT="${MERGE_CONFLICTS_GIT:-git}"
+mc_bare_dir=""
+mc_bare_ready=0
+mc_clone_attempted=0
+trap '[[ -n "$mc_bare_dir" ]] && rm -rf "$mc_bare_dir"' EXIT
+
+# mc_ensure_bare_clone
+# Clone this repo's blobless bare clone into a scratch directory, once —
+# every later call is a no-op, whether the first attempt succeeded or not.
+# Silent either way: a clone failure here is not this gather's failure, only
+# this optional field's (see mc_conflicted_paths).
+mc_ensure_bare_clone() {
+  (( mc_clone_attempted )) && return 0
+  mc_clone_attempted=1
+  local url="${MERGE_CONFLICTS_CLONE_URL:-https://github.com/$slug.git}"
+  mc_bare_dir="$(mktemp -d 2>/dev/null)" || { mc_bare_dir=""; return 1; }
+  if "$MC_GIT" clone --quiet --filter=blob:none --bare "$url" "$mc_bare_dir" \
+      >/dev/null 2>&1; then
+    mc_bare_ready=1
+  fi
+}
+
+# mc_conflicted_paths BASE HEAD_BRANCH
+# Print the JSON array of paths a merge of HEAD_BRANCH into BASE conflicts
+# on, or the literal `null` when the dry run could not be computed. Never
+# touches a ref, the working tree or the index — `git merge-tree
+# --write-tree` computes the merge in memory. `--name-only --no-messages`
+# keeps the output to one file path per line and nothing else: the first
+# line is the resulting tree's own OID (present whether or not there were
+# conflicts) and is discarded; every line after it is one conflicted path,
+# already deduplicated by git itself. Newline-delimited, not `-z`: bash
+# command substitution truncates at the first embedded NUL byte, which would
+# silently corrupt a `-z`-delimited capture — the same reason every other
+# `$(…)` capture in this codebase reads line-oriented tool output.
+mc_conflicted_paths() {
+  local base="$1" head_branch="$2"
+  mc_ensure_bare_clone
+  (( mc_bare_ready )) || { printf 'null'; return; }
+  "$MC_GIT" -C "$mc_bare_dir" fetch --quiet --force origin \
+      "refs/heads/${base}:refs/heads/${base}" \
+      "refs/heads/${head_branch}:refs/heads/${head_branch}" \
+    >/dev/null 2>&1 || { printf 'null'; return; }
+  local mt_out rc
+  mt_out="$("$MC_GIT" -C "$mc_bare_dir" merge-tree --write-tree \
+      --name-only --no-messages \
+      "refs/heads/${base}" "refs/heads/${head_branch}" 2>/dev/null)"
+  rc=$?
+  (( rc == 0 || rc == 1 )) || { printf 'null'; return; }
+  tail -n +2 <<<"$mt_out" | sed '/^$/d' | sort -u | jq -R . | jq -sc .
 }
 
 # The open, agent-raised PRs, fetched raw — the filter runs afterwards, so the
@@ -308,6 +397,21 @@ emit() {  # <pr-json> <bot: true|false>
   local ref_kind="conflict"
   [[ -n "$superseded_by" ]] && ref_kind="superseded"
 
+  # Called as a plain statement, never inside a `$(…)` — mc_ensure_bare_clone
+  # mutates mc_bare_dir/mc_bare_ready/mc_clone_attempted, and bash gives a
+  # command substitution its own subshell, so those assignments would
+  # otherwise evaporate the moment it exits: every candidate would reclone
+  # (defeating the "once per repo" promise above) and the EXIT trap's
+  # mc_bare_dir would stay empty forever, leaking the clone's temp directory
+  # on every candidate, success or failure alike. Calling it here, directly
+  # in emit() (itself never subshelled — the while loops below invoke it
+  # plainly, fed by process substitution), fixes the state in this shell
+  # before mc_conflicted_paths's own internal call becomes a harmless no-op.
+  mc_ensure_bare_clone
+  local conflicted_paths
+  conflicted_paths="$(mc_conflicted_paths "$(jq -r '.baseRefName' <<<"$pr")" "$(jq -r '.headRefName' <<<"$pr")")"
+  jq -e . <<<"$conflicted_paths" >/dev/null 2>&1 || conflicted_paths="null"
+
   # requirement 4g: $pr carries a whole pull-request body (TD-PPagop-26081401),
   # unbounded by anything in this system, so it travels to jq on stdin — a
   # here-string, not a pipe, for requirement 4c's reason: under pipefail a
@@ -325,6 +429,7 @@ emit() {  # <pr-json> <bot: true|false>
     --argjson rebase_requested "$rebase_requested" \
     --arg superseded_by "$superseded_by" \
     --arg superseded_evidence "$superseded_evidence" \
+    --argjson conflicted_paths "$conflicted_paths" \
     'input as $pr | {source: "merge-conflicts",
       ref: $ref,
       number: $pr.number,
@@ -338,7 +443,8 @@ emit() {  # <pr-json> <bot: true|false>
       head_sha: $head_sha,
       updated_at: $pr.updatedAt,
       body: ($pr.body // ""),
-      bot: $bot}
+      bot: $bot,
+      conflicted_paths: $conflicted_paths}
       + (if $bot then {
            rebase_requested: $rebase_requested,
            superseded_by: (if $superseded_by == "" then null else ($superseded_by | tonumber) end),

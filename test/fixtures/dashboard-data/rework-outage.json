@@ -29,5 +29,5 @@
   "log_tail": [],
   "cron_tail": ["30 * * * *  /app/agent-cycle.sh"],
   "max_open_agent_prs": 3,
-  "rework": {"how_much": null, "whose": null, "escape_ladder": null, "clean_count": null}
+  "rework": {"how_much": null, "whose": null, "escape_ladder": null, "clean_count": null, "merge_conflict_paths": null}
 }

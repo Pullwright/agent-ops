@@ -1463,12 +1463,25 @@ assert_contains "the never-a-target-of-zero framing is stated on the panel's own
 assert_contains "the human-gate coverage gap is stated on the panel's own face" \
   "Coverage gap: the human-gate rung only catches a change request the reconciliation gate itself sees" \
   "$rework_section"
+assert_contains "merge_conflict_paths (issue #1805): known-vs-total and the CHANGELOG.md-only share" \
+  "Merge-conflict class: 3 of 4 conflicted pull requests have a computed conflicting-path list" \
+  "$rework_section"
+assert_contains "  ... CHANGELOG.md-only share stated with its own count and denominator" \
+  "CHANGELOG.md was the only conflicting file in 2 of 3 known cases (66.7%)" \
+  "$rework_section"
+assert_contains "  ... and the most frequent conflicting paths render as a table, most frequent first" \
+  '<td class="mono">
+                  CHANGELOG.md
+                <td class="mono">
+                  3' "$rework_section"
 
 out="$(render rework-outage.json)" || { printf 'FAIL - rework-outage.json did not render:\n%s\n' "$out"; exit 1; }
 assert_contains "a rework payload the Publisher could not assemble reads as an outage" \
   "The rework panel could not be assembled this tick." "$out"
 assert_not_contains "  ... never as a quiet zero-rework tick" \
   "Rework share:" "$out"
+assert_not_contains "  ... and never the merge-conflict-paths breakdown either" \
+  "Merge-conflict class:" "$out"
 
 # --- constraint.json / constraint-outage.json: the constraint statement
 #     (D21, docs/ROADMAP.md; issue #609) ------------------------------------

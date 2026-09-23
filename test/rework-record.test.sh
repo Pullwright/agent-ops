@@ -103,6 +103,18 @@ conflict_wo='{"source":"merge-conflicts","repo":"o/r","item":"TD2","pr_url":"htt
 assert_eq "merge-conflicts selection earns class merge-conflict" \
   '"merge-conflict"' "$(rework_selection_fields "$conflict_wo" | jq -c '.class')"
 
+# issue #1805: which files conflicted rides along in evidence like every
+# other candidate-carried field.
+conflict_paths_wo='{"source":"merge-conflicts","repo":"o/r","item":"TD2","pr_url":"https://github.com/o/r/pull/10",
+  "ref":"pr-10-conflict-abc","base":"main","conflicted_paths":["CHANGELOG.md","scripts/state-sync.sh"]}'
+assert_eq "merge-conflicts selection: evidence carries conflicted_paths when the candidate has it" \
+  '["CHANGELOG.md","scripts/state-sync.sh"]' \
+  "$(rework_selection_fields "$conflict_paths_wo" | jq -c '.evidence.conflicted_paths')"
+conflict_null_paths_wo='{"source":"merge-conflicts","repo":"o/r","item":"TD2","pr_url":"https://github.com/o/r/pull/10",
+  "ref":"pr-10-conflict-abc","base":"main","conflicted_paths":null}'
+assert_eq "  ... and a null dry run (never computed) is simply absent from evidence, not a false []" \
+  "false" "$(rework_selection_fields "$conflict_null_paths_wo" | jq -c '.evidence | has("conflicted_paths")')"
+
 draft_wo='{"source":"abandoned-drafts","repo":"o/r","item":"TD3","pr_url":"https://github.com/o/r/pull/11",
   "ref":"pr-11-abandoned-abc","updated_at":"2026-08-01T00:00:00Z"}'
 assert_eq "abandoned-drafts selection earns class abandoned-draft-resumed" \
