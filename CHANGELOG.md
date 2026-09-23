@@ -134,6 +134,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A retried `escalate` verdict with no filable title or body no longer
+  piles up identical "no escalation issue was filed" comments on a
+  needs-refinement item's own thread** (issue #998, TD-PPagop-26082607).
+  `escalation_thread_reconcile`'s `escalation-failed` arm (`lib/enabler.sh`,
+  agent-ops#815) now checks, via the new
+  `escalation_thread_failed_already_posted`, whether this same correcting
+  comment is already the thread's single most recent comment — matched on
+  the fixed prose plus the pipeline marker's `actor=script`/`actor=enabler`
+  field, ignoring its `cycle=` id — and skips posting when it is, since
+  requirement 35a deliberately does not count `escalation-failed` as an
+  examination and every retry until the item clears used to post another
+  identical comment. Checking only the literal most recent comment keeps
+  this conservative: any other comment landing on the thread since — human
+  or Script — breaks the streak, so a genuinely new failure still posts.
+
 - **Requirement 1c's "required refinement source with nothing to refine it"
   guard now covers all three spellings of that configuration, not just an
   empty `refiner_model`** (issue #1003, TD-PPagop-26082704; the split follows

@@ -15266,7 +15266,18 @@ implements.
         basis instead;
       - **`create_escalation_issue` itself fails** — a correcting comment
         stating that the escalation attempt failed and a later
-        re-examination will retry it.
+        re-examination will retry it. Skipped entirely — nothing posted —
+        when this exact comment is already the thread's single most recent
+        comment (`escalation_thread_failed_already_posted`, agent-ops#998):
+        matched on the fixed prose plus the pipeline marker's `actor=script`/
+        `actor=enabler` field, ignoring the marker's own `cycle=` id, so a
+        retry whose `gh` calls stay healthy but whose verdict still carries
+        no filable title/body does not repeat this comment on every retry
+        until the item clears. Checking only the literal most recent comment
+        — never "any prior `escalation-failed` reconcile since `blocked_ts`"
+        — keeps this conservative: once any other comment (human or Script)
+        lands on the thread after the last one, the dedup no longer applies
+        and the next `escalation-failed` outcome posts a fresh notice.
 
       Three items escalated in the same cycle (#604, #613, #640) each
       carried this false claim — "an escalation issue was raised" —
@@ -25793,6 +25804,16 @@ oblige anyone to edit a test.
     outcome this function does not recognise: the failure this requirement
     exists to end is a comment asserting an escalation that does not exist,
     so silence is the only safe answer to an outcome it cannot describe.
+    **A repeated `escalation-failed` outcome does not repeat the comment
+    (agent-ops#998).** `test/enabler-verdicts.test.sh` passes: with
+    `escalation_thread_failed_already_posted` stubbed to return the thread's
+    literal most recent comment (via a fake `gh api … issues/…/comments`
+    read), an identical prior `escalation-failed` reconcile — posted under a
+    different cycle id and a different pipeline actor — is recognised as
+    such and the second call posts nothing at all, with no `gh` write of any
+    kind; and a human comment landing on the thread after that same prior
+    reconcile breaks the streak, so the next `escalation-failed` outcome
+    posts a fresh correcting comment rather than staying silent.
 11e. **A human's own label is read back, and only where this mechanism put it
     (requirement 34g).** `test/needs-refinement.test.sh` passes:
     `refinement_hand_flag_new` turns a labelled, open issue with no existing

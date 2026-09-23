@@ -164,6 +164,10 @@ escalation_autonomy_decide_pass_available_fn="$(extract_fn 'escalation_autonomy_
 # scenario before it wants the recording stub in its place, not the real
 # `gh`-writing function.
 escalation_thread_reconcile_fn="$(extract_fn 'escalation_thread_reconcile() {' "$SCRIPT_DIR/lib/enabler.sh")"
+# agent-ops#998: the dedup `escalation_thread_reconcile`'s `escalation-failed`
+# arm calls before posting — lifted and eval'd alongside it, in the same
+# final section, for the same reason.
+escalation_thread_failed_already_posted_fn="$(extract_fn 'escalation_thread_failed_already_posted() {' "$SCRIPT_DIR/lib/enabler.sh")"
 # PR #1389: requirement 36f's act gate lives inside `run_enabler_decide`
 # itself — which act survives a pass at all, before the Script ever sees the
 # verdict. Lifted here with the rest, while `SCRIPT_DIR` still points at the
@@ -198,6 +202,10 @@ if [[ "$escalation_autonomy_decide_pass_available_fn" != *"escalation_autonomy_d
 fi
 if [[ "$escalation_thread_reconcile_fn" != *"Blocked-by:"* ]]; then
   printf 'FAIL - escalation_thread_reconcile could not be found in lib/enabler.sh (renamed or moved?)\n'
+  exit 1
+fi
+if [[ "$escalation_thread_failed_already_posted_fn" != *"marker"* ]]; then
+  printf 'FAIL - escalation_thread_failed_already_posted could not be found in lib/enabler.sh (renamed or moved?)\n'
   exit 1
 fi
 if [[ "$run_enabler_decide_fn" != *"corroborate-void"* ]]; then
@@ -1819,10 +1827,15 @@ assert_eq "gate-clean: enabler-examined records the flip word" \
 # would re-assert the very block it exists to withdraw, and would read as a
 # live dependency to the next gather.
 # ============================================================================
+eval "$escalation_thread_failed_already_posted_fn"
 eval "$escalation_thread_reconcile_fn"
 
 # The cycle globals the real function reads, and a `gh` that records the one
 # write it makes: its argv (without the body) and the body itself, separately.
+# `gh api …` — `escalation_thread_failed_already_posted`'s own read — answers
+# instead from `FAKE_THREAD_COMMENTS_JSON`, a caller-set stream of compact
+# `{"body": "…"}` lines shaped exactly like the real `--jq` filter's output
+# (agent-ops#998), empty by default (no prior comments — never a duplicate).
 cycle_dir="$tmp_dir"
 # shellcheck disable=SC2034  # read only by the eval'd escalation_thread_reconcile
 node_name="test-node"
@@ -1830,8 +1843,13 @@ node_name="test-node"
 cycle_id="20260826T000000Z-test-1"
 reconcile_argv="$tmp_dir/reconcile-argv"
 reconcile_body="$tmp_dir/reconcile-body"
-# shellcheck disable=SC2317  # invoked only by the eval'd escalation_thread_reconcile
+FAKE_THREAD_COMMENTS_JSON=""
+# shellcheck disable=SC2317  # invoked only by the eval'd escalation_thread_reconcile / escalation_thread_failed_already_posted
 gh() {
+  if [[ "${1:-}" == "api" ]]; then
+    printf '%s' "$FAKE_THREAD_COMMENTS_JSON"
+    return 0
+  fi
   local arg prev=""
   printf '%s %s %s %s %s\n' "${1:-}" "${2:-}" "${3:-}" "${4:-}" "${5:-}" > "$reconcile_argv"
   for arg in "$@"; do
@@ -1882,6 +1900,40 @@ assert_contains "reconcile body, filing failed: says a later cycle retries" \
   "retry" "$body"
 assert_eq "reconcile body, filing failed: no Blocked-by reference either" \
   '[]' "$(dependency_refs "$body")"
+
+# --- agent-ops#998: escalation-failed dedups against an identical prior
+# reconcile comment, but only when it is the thread's literal most recent
+# comment — a different comment landing since (human or otherwise) must not
+# suppress a fresh, distinct notice. ---
+
+# A prior escalation-failed reconcile, posted under a different cycle id and
+# actor=enabler, is still recognised: the marker's cycle= id is ignored, and
+# both actor=script and actor=enabler count.
+prior_failed_body="$(pipeline_comment_header script "test-node")
+
+No escalation issue was filed for this item: the attempt itself failed. A later cycle will retry once this item is re-examined.
+
+$(pipeline_comment_marker "20260101T000000Z-earlier-cycle" enabler)"
+FAKE_THREAD_COMMENTS_JSON="$(jq -nc --arg b "$prior_failed_body" '{body: $b}')"
+
+body="$(reconcile_case escalation-failed)"
+assert_eq "reconcile, escalation-failed dedup: identical prior reconcile as the last comment posts nothing" \
+  "" "$body"
+assert_eq "reconcile, escalation-failed dedup: no gh write happens either" \
+  "" "$([[ -e "$reconcile_argv" ]] && cat "$reconcile_argv")"
+
+# A human comment landing after that same prior reconcile breaks the streak:
+# the literal most recent comment no longer matches, so a fresh one posts.
+human_body="Any update on this?"
+FAKE_THREAD_COMMENTS_JSON="$(printf '%s\n%s\n' \
+  "$(jq -nc --arg b "$prior_failed_body" '{body: $b}')" \
+  "$(jq -nc --arg b "$human_body" '{body: $b}')")"
+
+body="$(reconcile_case escalation-failed)"
+assert_contains "reconcile, escalation-failed dedup: a human comment since the last reconcile does not suppress a fresh one" \
+  "No escalation issue was filed for this item" "$body"
+
+FAKE_THREAD_COMMENTS_JSON=""
 
 # --- nothing is ever posted without something true to say ---
 assert_eq "reconcile: an 'escalated' outcome with no number posts nothing at all" \
