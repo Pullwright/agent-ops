@@ -383,6 +383,14 @@ self_resources_json="$(resource_budget_report "$self_resources_samples" "$self_r
 # cycle since upgrading has completed.
 stage_health_file="$state_dir/.stage-health.json"
 stage_health_json="$(jq -c '.' "$stage_health_file" 2>/dev/null || echo null)"
+# The review pipeline's own symmetric verdict (agent-ops#996,
+# docs/REVIEW-PIPELINE-SPEC.md R19), read the identical way from its own
+# file — `review-cycle.sh`'s own cleanup writes it, over `review-log.jsonl`
+# rather than `log.jsonl` — and carried as `review_stage_health`, a field of
+# its own beside `stage_health` rather than merged into it, so a node running
+# only one of the two pipelines reports `null` for the other truthfully.
+review_stage_health_file="$state_dir/.review-stage-health.json"
+review_stage_health_json="$(jq -c '.' "$review_stage_health_file" 2>/dev/null || echo null)"
 # This node's own compose-reconciliation verdict (lib/compose-reconcile.sh,
 # the `reconciler` service) — read rather than recomputed, the same precedent
 # stage_health_json above sets, and here the file is not merely the single
@@ -1582,6 +1590,7 @@ status_json="$(jq -n \
   --argjson switch "$switch_json" \
   --argjson doctor "$doctor_status_json" \
   --argjson stage_health "$stage_health_json" \
+  --argjson review_stage_health "$review_stage_health_json" \
   --slurpfile cyc "$cycles_file" '
   ($cyc[0] | map(select(.dry_run|not))) as $real
   # (Comments in this program carry no apostrophes: it is a single-quoted shell
@@ -1640,7 +1649,8 @@ status_json="$(jq -n \
       limit: {active: $limit_active, note: $limit_note},
       switch: $switch,
       doctor: $doctor,
-      stage_health: $stage_health
+      stage_health: $stage_health,
+      review_stage_health: $review_stage_health
     }')"
 
 if (( FULL )); then
@@ -2545,6 +2555,7 @@ jq -nc --arg n "$self_node" --arg r "${self_role_declared:-unknown}" --arg lc "$
   --argjson image "$(image_drift_status "$self_version_json" "$image_cache")" \
   --argjson switch "$switch_json" \
   --argjson stage_health "$stage_health_json" \
+  --argjson review_stage_health "$review_stage_health_json" \
   --argjson updater "$updater_json" \
   --argjson doctor "$doctor_heartbeat_json" \
   --argjson resources "$self_resources_json" \
@@ -2556,7 +2567,8 @@ jq -nc --arg n "$self_node" --arg r "${self_role_declared:-unknown}" --arg lc "$
     stale: ($pub.verdict != "fresh"),
     live: $live, version: $version, compose: $compose,
     compose_reconcile: $compose_reconcile, image: $image, switch: $switch,
-    stage_health: $stage_health, updater: $updater, doctor: $doctor,
+    stage_health: $stage_health, review_stage_health: $review_stage_health,
+    updater: $updater, doctor: $doctor,
     resources: $resources, host: $host,
     provider_unreachable: (if $pu != null and (($pu.nodes // []) | index($n) != null) then $pu else null end)}' > "$nodes_rows"
 for hb in "$peers_dir"/*/heartbeat.json; do
@@ -2617,6 +2629,13 @@ for hb in "$peers_dir"/*/heartbeat.json; do
        # log.jsonl, so a heartbeat built before this check existed yields
        # null rather than this node deriving a verdict for that peer.
        stage_health: ($h.stage_health // null),
+       # And for the review pipeline own symmetric verdict (agent-ops#996):
+       # only the peer itself computed it, over its own review-log.jsonl, so
+       # a heartbeat built before this feature existed — or a peer that has
+       # never run the review pipeline — yields null the same way. (No
+       # apostrophes in this block: it is inside the single-quoted jq
+       # program, where one would end the string.)
+       review_stage_health: ($h.review_stage_health // null),
        # And for the updater verdict (lib/updater-health.sh, agent-ops#603):
        # only the peer itself can read the ledger for its own container, so
        # a heartbeat built before this check existed — or from before that

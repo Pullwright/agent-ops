@@ -1,0 +1,62 @@
+{
+  "generated_at": "@now",
+  "node": "poetic-1",
+  "status": {
+    "running": false,
+    "review_stage_health": {
+      "computed_at": "@ago:5m",
+      "threshold": 3,
+      "idle_after_hours": 48,
+      "stages": {
+        "project-reviewer": {
+          "verdict": "failing",
+          "consecutive_failures": 4,
+          "last_success": "@ago:8h",
+          "last_detail": "reviewer returned no usable completion"
+        }
+      }
+    }
+  },
+  "fleet": {
+    "flags": {
+      "disabled": null,
+      "limit": null
+    },
+    "nodes": [
+      {
+        "node": "poetic-1",
+        "self": true,
+        "stale": false,
+        "role": "active",
+        "heartbeat_ts": "@now",
+        "heartbeat_age_s": 0,
+        "last_cycle": null,
+        "live": null,
+        "review_stage_health": {
+          "stages": {
+            "project-reviewer": {
+              "verdict": "failing",
+              "consecutive_failures": 4,
+              "last_success": "@ago:8h",
+              "last_detail": "reviewer returned no usable completion"
+            }
+          }
+        }
+      },
+      {
+        "node": "poetic-2",
+        "self": false,
+        "stale": false,
+        "role": "active",
+        "heartbeat_ts": "@now",
+        "heartbeat_age_s": 0,
+        "last_cycle": null,
+        "live": null
+      }
+    ]
+  },
+  "cycles": [],
+  "log_tail": [],
+  "blocked": [],
+  "void": []
+}

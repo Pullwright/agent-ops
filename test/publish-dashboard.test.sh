@@ -1989,7 +1989,7 @@ vh="$(new_home nodeV)"
 vpeer="$vh/.cache/poetic-agents/workspaces/.agent-ops-peers/peerV"
 vold="$vh/.cache/poetic-agents/workspaces/.agent-ops-peers/peerOld"
 mkdir -p "$vpeer" "$vold"
-printf '{"node":"peerV","role":"active","ts":"%s","last_cycle":"","version":{"pr":88,"commit":"aa53d62f1b0c4e9a7d2839fbc5104e6a8d7b3f21","short":"aa53d62","built_at":"2026-07-26T11:21:00Z","repo":"Pullwright/agent-ops","source":"image","dirty":false},"compose":{"status":"drifted","diff_lines":3},"image":{"status":"behind","registry_commit":"bb64d73a2c1d","registry_created_at":"2026-07-26T12:00:00Z","checked_at":"2026-07-26T12:05:00Z"},"stage_health":{"computed_at":"2026-07-26T12:00:00Z","threshold":3,"idle_after_hours":48,"stages":{"coordinator":{"verdict":"failing","consecutive_failures":4,"last_success":null,"last_detail":"coordinator exited 1"}}},"updater":{"status":"stuck","at":"2026-07-26T11:30:00Z","seconds":1800}}\n' \
+printf '{"node":"peerV","role":"active","ts":"%s","last_cycle":"","version":{"pr":88,"commit":"aa53d62f1b0c4e9a7d2839fbc5104e6a8d7b3f21","short":"aa53d62","built_at":"2026-07-26T11:21:00Z","repo":"Pullwright/agent-ops","source":"image","dirty":false},"compose":{"status":"drifted","diff_lines":3},"image":{"status":"behind","registry_commit":"bb64d73a2c1d","registry_created_at":"2026-07-26T12:00:00Z","checked_at":"2026-07-26T12:05:00Z"},"stage_health":{"computed_at":"2026-07-26T12:00:00Z","threshold":3,"idle_after_hours":48,"stages":{"coordinator":{"verdict":"failing","consecutive_failures":4,"last_success":null,"last_detail":"coordinator exited 1"}}},"review_stage_health":{"computed_at":"2026-07-26T12:00:00Z","threshold":3,"idle_after_hours":48,"stages":{"project-reviewer":{"verdict":"failing","consecutive_failures":5,"last_success":null,"last_detail":"reviewer exited 1"}}},"updater":{"status":"stuck","at":"2026-07-26T11:30:00Z","seconds":1800}}\n' \
   "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$vpeer/heartbeat.json"
 printf '{"node":"peerOld","role":"standby","ts":"%s","last_cycle":""}\n' \
   "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$vold/heartbeat.json"
@@ -2044,6 +2044,21 @@ assert_eq "a peer that publishes none reads null, never a locally computed one" 
   "$(jq -r '.fleet.nodes[] | select(.node=="peerOld") | .stage_health' <<<"$vdata")"
 assert_eq "and this node answers for its own stage-health too" "1" \
   "$(jq '[.fleet.nodes[] | select(.self) | has("stage_health")] | length' <<<"$vdata")"
+
+# The review pipeline's own symmetric verdict (agent-ops#996) rides the same
+# rules once more, as a field of its own alongside stage_health rather than
+# merged into it: only the node that computed it — over its own
+# review-log.jsonl, at review-cycle.sh's own cleanup — can answer for it.
+assert_eq "a peer's review-stage-health verdict comes from its heartbeat" "failing" \
+  "$(jq -r '.fleet.nodes[] | select(.node=="peerV") | .review_stage_health.stages["project-reviewer"].verdict' <<<"$vdata")"
+assert_eq "with its consecutive-failure count intact" "5" \
+  "$(jq -r '.fleet.nodes[] | select(.node=="peerV") | .review_stage_health.stages["project-reviewer"].consecutive_failures' <<<"$vdata")"
+assert_eq "a peer that publishes none reads null, never a locally computed one" "null" \
+  "$(jq -r '.fleet.nodes[] | select(.node=="peerOld") | .review_stage_health' <<<"$vdata")"
+assert_eq "and this node answers for its own review-stage-health too" "1" \
+  "$(jq '[.fleet.nodes[] | select(.self) | has("review_stage_health")] | length' <<<"$vdata")"
+assert_eq "  ... and it stays a separate field, never merged into stage_health" "false" \
+  "$(jq -r '.fleet.nodes[] | select(.node=="peerV") | .stage_health.stages | has("project-reviewer")' <<<"$vdata")"
 
 # The updater verdict (lib/updater-health.sh, agent-ops#603) rides the same
 # rules once more: only the node that can read its own ledger can answer for
@@ -3256,6 +3271,30 @@ assert_eq "its consecutive-failure count reaches the page" "11" \
   "$(jq -r '.status.stage_health.stages.coordinator.consecutive_failures' <<<"$shdata")"
 assert_eq "and its last_detail" "coordinator was refused by the API before it could run" \
   "$(jq -r '.status.stage_health.stages.coordinator.last_detail' <<<"$shdata")"
+
+# --- The review pipeline's own symmetric verdict (agent-ops#996) -----------
+# review-cycle.sh's own cleanup writes state_dir/.review-stage-health.json,
+# on the identical shape and precedent as .stage-health.json above; this
+# Publisher reads it rather than recomputing it and surfaces it as its own
+# status.review_stage_health field — never merged into status.stage_health,
+# so a node running only one of the two pipelines reports null for the
+# other truthfully.
+assert_eq "with no review-stage-health file yet, status.review_stage_health is null" "null" \
+  "$(jq -c '.status.review_stage_health' <<<"$shdata")"
+
+cat > "$sh_home/.local/state/poetic-agents/.review-stage-health.json" <<'JSON'
+{"computed_at":"2026-08-21T09:00:00Z","threshold":3,"idle_after_hours":48,"stages":{"project-reviewer":{"verdict":"failing","consecutive_failures":4,"last_success":"2026-08-20T09:00:00Z","last_detail":"reviewer exited 1"}}}
+JSON
+run_publish "$sh_home" NODE_NAME=nodeStageHealth
+shdata="$(data_of "$sh_home")"
+assert_eq "a written review-stage-health file is read verbatim into status.review_stage_health" "failing" \
+  "$(jq -r '.status.review_stage_health.stages."project-reviewer".verdict' <<<"$shdata")"
+assert_eq "its consecutive-failure count reaches the page" "4" \
+  "$(jq -r '.status.review_stage_health.stages."project-reviewer".consecutive_failures' <<<"$shdata")"
+assert_eq "and its last_detail" "reviewer exited 1" \
+  "$(jq -r '.status.review_stage_health.stages."project-reviewer".last_detail' <<<"$shdata")"
+assert_eq "  ... never conflated with status.stage_health, still present alongside it" "failing" \
+  "$(jq -r '.status.stage_health.stages.coordinator.verdict' <<<"$shdata")"
 
 # --- The merge-budget row (D18 issue #574, PR #671 review) ------------------
 # landings.budget is sourced from the event log's own landing-armed/

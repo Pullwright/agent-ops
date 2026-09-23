@@ -637,9 +637,12 @@ M17. **A stage-health verdict, from day one.** The Monitor logs `stage-end`
    stages and carries every other entry forward, so neither files the other's
    stages as `idle`. The dashboard's stage-health panel, its fleet-strip badge
    and its red banner all iterate the `stages` object rather than a fixed
-   list, so the monitor row appears wherever the review pipeline's verdict
-   would (`docs/DASHBOARD-SPEC.md`). This closes for this pipeline, at its
-   first release, the gap agent-ops#996 records for the review pipeline.
+   list, so the monitor row appears wherever the implementation pipeline's own
+   stages do (`docs/DASHBOARD-SPEC.md`). This closes for this pipeline, at
+   its first release, the detection gap agent-ops#996 recorded for the
+   repository-review pipeline — which that pipeline closes for itself, over
+   its own stream and into its own file, in `docs/REVIEW-PIPELINE-SPEC.md`
+   R19.
 
 ### Logging and state
 

@@ -273,6 +273,13 @@ peers_dir="$(fleet_peers_dir "$workspace_root")"
 #                   nothing off-node reads them — and so does `token_expiry`,
 #                   because a credential's expiry date has no reader off the
 #                   node that holds the credential.
+#   the review       `.review-stage-health.json` (agent-ops#996,
+#   pipeline's own    `docs/REVIEW-PIPELINE-SPEC.md` R19) is `.stage-health.
+#   stage-health      json`'s sibling for the review pipeline's own
+#   snapshot          `project-reviewer` stage, excluded as a raw file for the
+#                   identical reason — a peer's copy would answer for a
+#                   computation nobody there ran — with its verdict folded
+#                   into `heartbeat.json` as `review_stage_health` instead.
 #   the stage       `*.stream.jsonl` is a stage's whole event stream, every
 #   streams          message and every tool result (lib/stage-run.sh). It is
 #                   local forensics and, while the stage runs, its liveness
@@ -329,6 +336,7 @@ EXCLUDES=(
   --exclude=doctor.log
   --exclude=.doctor-status.json
   --exclude=.stage-health.json
+  --exclude=.review-stage-health.json
   # .compose-reconcile.json (lib/compose-reconcile.sh, the `reconciler`
   # service): this node's own record of what its compose reconciler last did
   # to its own compose.yaml — a fact about one host's deployment file, which
@@ -945,6 +953,16 @@ do_push() {
   # upgrading, which the dashboard already renders as no data rather than as
   # healthy.
   #
+  # And the review pipeline's own symmetric verdict (agent-ops#996,
+  # `docs/REVIEW-PIPELINE-SPEC.md` R19), read from `.review-stage-health.json`
+  # exactly as `stage_health` is read from `.stage-health.json` just above —
+  # `review-cycle.sh`'s own cleanup writes it, over `review-log.jsonl` rather
+  # than `log.jsonl`, so it travels as its own `review_stage_health` field
+  # rather than merged into `stage_health`: a node running only the
+  # implementation pipeline (or only the review pipeline) carries one of the
+  # two as `null`, which is the true state of that node's own stages, not an
+  # artefact of folding two pipelines' verdicts into one field.
+  #
   # And the mirror-rebuild verdict (lib/mirror-integrity.sh's
   # `mirror_rebuild_verdict`, issue #604): `null` until `mirror_init` above
   # has ever had to discard and rebuild this checkout, else
@@ -1036,6 +1054,7 @@ do_push() {
     --argjson image "$(image_drift_status "$version_json" "$state_dir/.image-drift-cache.json")" \
     --argjson switch "$heartbeat_switch_json" \
     --argjson stage_health "$(jq -c '.' "$state_dir/.stage-health.json" 2>/dev/null || echo null)" \
+    --argjson review_stage_health "$(jq -c '.' "$state_dir/.review-stage-health.json" 2>/dev/null || echo null)" \
     --argjson compose_reconcile "$(jq -c '.' "$state_dir/.compose-reconcile.json" 2>/dev/null || echo null)" \
     --argjson mirror_rebuild "$(mirror_rebuild_verdict "$state_dir")" \
     --argjson updater "$(updater_status "$state_dir/updater-ledger" "$updater_stuck_after_seconds" \
@@ -1047,7 +1066,8 @@ do_push() {
     '{node: $node, role: $role, ts: $ts, last_cycle: $lc, version: $version,
       compose: $compose, compose_reconcile: $compose_reconcile,
       image: $image, switch: $switch,
-      stage_health: $stage_health, mirror: $mirror_rebuild, updater: $updater,
+      stage_health: $stage_health, review_stage_health: $review_stage_health,
+      mirror: $mirror_rebuild, updater: $updater,
       doctor: $doctor, resources: $resources}' > "$mirror/heartbeat.json"
 
   # Redact before committing (agent-ops#966): nothing above stops a token or

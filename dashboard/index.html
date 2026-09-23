@@ -1722,20 +1722,20 @@
     ]);
   }
 
-  // ---------- Stage health panel (agent-ops#662) ----------
+  // ---------- Stage health panels (agent-ops#662, review pipeline #996) ----
   // Per-stage verdicts for this node, computed by lib/stage-health.sh at the
   // end of every cycle and read from D.status.stage_health exactly as the
   // Doctor panel above reads D.status.doctor. This is the reading that
   // stayed silent for 10.5 hours during the 2026-08-21 incident (issue
   // #662): `cycle: RUNNING` and a clean Doctor pass both stayed true while
   // every stage failed, because neither reads a stage's own exit code.
-  function stageHealthPanel() {
-    var sh = (D.status && D.status.stage_health) || null;
-    var stages = sh && sh.stages ? sh.stages : null;
-    if (!stages || !Object.keys(stages).length) {
-      return el("div", {class:"panel"}, el("div", {class:"empty",
-        text: "No cycle has completed on this node since this check was added."}));
-    }
+  //
+  // The review pipeline's own `project-reviewer` verdict (agent-ops#996)
+  // reads D.status.review_stage_health the identical way, through this same
+  // table renderer — a field of its own, never merged into stage_health, so
+  // the two pipelines' verdicts render as two panels rather than one table
+  // implying a shared computation that does not exist.
+  function stageHealthTable(stages) {
     var rows = Object.keys(stages).map(function (name) {
       var v = stages[name] || {};
       var badgeClass = v.verdict === "failing" ? "b-red" : v.verdict === "idle" ? "b-grey" : "b-green";
@@ -1757,18 +1757,42 @@
       ])
     ]);
   }
+  function stageHealthPanel() {
+    var sh = (D.status && D.status.stage_health) || null;
+    var stages = sh && sh.stages ? sh.stages : null;
+    if (!stages || !Object.keys(stages).length) {
+      return el("div", {class:"panel"}, el("div", {class:"empty",
+        text: "No cycle has completed on this node since this check was added."}));
+    }
+    return stageHealthTable(stages);
+  }
+  function reviewStageHealthPanel() {
+    var sh = (D.status && D.status.review_stage_health) || null;
+    var stages = sh && sh.stages ? sh.stages : null;
+    if (!stages || !Object.keys(stages).length) {
+      return el("div", {class:"panel"}, el("div", {class:"empty",
+        text: "No review-cycle.sh run has completed on this node since this check was added."}));
+    }
+    return stageHealthTable(stages);
+  }
 
-  // The stage names a node's own or a peer's `stage_health.stages` reports
-  // as `failing` right now — [] when there is no stage-health data yet
-  // (an unrecognised or absent field reads as "nothing to say", never as a
-  // failure) or nothing is. Shared by the fleet-strip badge and any future
-  // reader that only needs the summary, not the whole table `stageHealthPanel`
-  // renders for this node alone.
-  function stageHealthFailingStages(n) {
-    var stages = n && n.stage_health && n.stage_health.stages;
+  // The stage names a node's own or a peer's `stage_health.stages` (or, for
+  // the review pipeline, `review_stage_health.stages`) reports as `failing`
+  // right now — [] when there is no stage-health data yet (an unrecognised
+  // or absent field reads as "nothing to say", never as a failure) or
+  // nothing is. Shared by the fleet-strip badge and any future reader that
+  // only needs the summary, not the whole table `stageHealthPanel` renders
+  // for this node alone. FIELD names which of the two heartbeat fields to
+  // read, so the two pipelines' failing-stage badges never conflate a node
+  // whose implementation-pipeline stages are all healthy with one whose
+  // `project-reviewer` is failing, or vice versa.
+  function stageHealthFailingStagesField(n, field) {
+    var stages = n && n[field] && n[field].stages;
     if (!stages) return [];
     return Object.keys(stages).filter(function (k) { return stages[k] && stages[k].verdict === "failing"; });
   }
+  function stageHealthFailingStages(n) { return stageHealthFailingStagesField(n, "stage_health"); }
+  function reviewStageHealthFailingStages(n) { return stageHealthFailingStagesField(n, "review_stage_health"); }
 
   // ---------- PRs panel ----------
   // State-cell badges (agent-ops#375, D17): `queued`/`dequeued` ride in on
@@ -1900,6 +1924,16 @@
       state.appendChild(el("span", {class:"badge b-red", style:"margin-left:6px",
         title: failingStages.join(", ") + " — see Stage health below",
         text: failingStages.length + (failingStages.length === 1 ? " stage failing" : " stages failing")}));
+    }
+    // The review pipeline's own symmetric badge (agent-ops#996), independent
+    // of the one above: a node whose implementation-pipeline stages are all
+    // healthy while `project-reviewer` fails must not be masked by
+    // stage_health's own green verdict, or vice versa.
+    var failingReviewStages = reviewStageHealthFailingStages(n);
+    if (failingReviewStages.length) {
+      state.appendChild(el("span", {class:"badge b-red", style:"margin-left:6px",
+        title: failingReviewStages.join(", ") + " — see Review stage health below",
+        text: "review pipeline failing"}));
     }
     // Fleet-level invariants naming this node (agent-ops#1278): a
     // verdict-unanimous page names every active node, so every one of their
@@ -3865,6 +3899,17 @@
         el("span", {class:"sub", text: "See Stage health below."})
       ]));
     }
+    // The review pipeline's own symmetric banner (agent-ops#996), on the
+    // identical reasoning — a node whose implementation-pipeline stages are
+    // all healthy while `project-reviewer` fails must raise its own banner,
+    // not be masked by the clean verdict above.
+    var failingReviewHere = reviewStageHealthFailingStages({review_stage_health: st.review_stage_health});
+    if (failingReviewHere.length) {
+      banners.appendChild(el("div", {class:"banner red"}, [
+        el("span", {text: "✗ The review pipeline is failing on this node: " + failingReviewHere.join(", ") + "."}),
+        el("span", {class:"sub", text: "See Review stage health below."})
+      ]));
+    }
 
     // Fleet-level invariants (agent-ops#1278): one banner per firing key,
     // naming its evidence and linking the tracking issue when one exists —
@@ -3929,6 +3974,9 @@
 
     // ---------- stage health (agent-ops#662) ----------
     app.appendChild(sectionOf("Stage health", "Stage health", stageHealthPanel()));
+
+    // ---------- review stage health (agent-ops#996) ----------
+    app.appendChild(sectionOf("Review stage health", "Review stage health", reviewStageHealthPanel()));
 
     // ---------- metric cards ----------
     var c = D.counts || {};

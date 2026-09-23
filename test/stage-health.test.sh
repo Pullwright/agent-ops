@@ -473,6 +473,83 @@ assert_eq "and the implementation pipeline's own write carries the monitor verdi
 assert_eq "while refreshing its own" "failing" \
   "$(jq -r '.stages.coordinator.verdict' "$status_file")"
 
+# --- a third stream, its own event names, its own file (agent-ops#996) -----
+#
+# review-cycle.sh's review-log.jsonl carries `review-stage-end`/
+# `review-attempt-failed`, not the shared `stage-end`/`attempt-failed` the
+# implementation and monitor pipelines write — so both `stage_health_verdicts`
+# and `stage_health_write_status` take the event pair as parameters, and the
+# write goes to its own status file rather than sharing `.stage-health.json`
+# with those two (its own "two writers, one file" merge discipline above was
+# designed and tested for exactly two writers, and a third would silently
+# invite the same lost-update risk on a file nothing here re-tests for three).
+
+review_stage_end_at() {  # review_stage_end_at TS EXIT_CODE CYCLE
+  jq -nc --arg ts "$1" --argjson rc "$2" --arg cycle "$3" \
+    '{ts: $ts, node: "n1", review: "r1", event: "review-stage-end",
+      stage: "project-reviewer", exit_code: $rc, cycle: $cycle}'
+}
+review_attempt_failed_at() {  # review_attempt_failed_at TS DETAIL CYCLE
+  jq -nc --arg ts "$1" --arg d "$2" --arg cycle "$3" \
+    '{ts: $ts, node: "n1", review: "r1", event: "review-attempt-failed",
+      stage: "project-reviewer", detail: $d, cycle: $cycle, stage_failure: true}'
+}
+
+# Default event names (stage-end/attempt-failed) must never match a
+# review-log-shaped stream: without the event-name parameter, a caller
+# passing the default would see review-log's own events silently ignored
+# (an idle project-reviewer forever), never the wrong count — the shape
+# guard `stage_health_verdicts` already gives an unrelated event type.
+review_only_stream="$(review_stage_end_at 2026-08-21T09:00:00Z 1 r1:o/repo
+  review_attempt_failed_at 2026-08-21T09:00:00Z 'reviewer exited 1' r1:o/repo)"
+default_event_verdict="$(stage_health_verdicts 3 48 "$NOW_EPOCH" '["project-reviewer"]' \
+  <<<"$review_only_stream")"
+assert_eq "review-log events are invisible to the default stage-end/attempt-failed names" \
+  "idle" "$(jq -r '."project-reviewer".verdict' <<<"$default_event_verdict")"
+
+# Naming the review pipeline's own event pair reads the identical stream
+# correctly, including the exit-0-but-failed join TD-PPagop-26082504 added —
+# now proven over a `cycle` field that is not literally named `cycle` on
+# review-cycle.sh's own events by convention alone, but by the same key this
+# reader has always joined on.
+review_named_verdict="$(stage_health_verdicts 3 48 "$NOW_EPOCH" '["project-reviewer"]' \
+  review-stage-end review-attempt-failed <<<"$review_only_stream")"
+assert_eq "the same stream, told the review pipeline's own event names, reads its failure" \
+  "1" "$(jq -r '."project-reviewer".consecutive_failures' <<<"$review_named_verdict")"
+assert_eq "  ... with the matching attempt-failed's own detail" \
+  "reviewer exited 1" "$(jq -r '."project-reviewer".last_detail' <<<"$review_named_verdict")"
+
+# A `cycle` scoped to (review id, repo) keeps two repos reviewed under one
+# review_id from cross-contaminating each other's verdict — the collision
+# review-cycle.sh's own comment on the log_event call names: without a
+# per-repo cycle, this repo's clean exit would be joined to the other repo's
+# failure purely because both attempts shared one review_id.
+two_repos_one_review_id="$(review_stage_end_at 2026-08-21T09:00:00Z 0 r1:o/clean
+  review_stage_end_at 2026-08-21T09:05:00Z 1 r1:o/broken
+  review_attempt_failed_at 2026-08-21T09:05:00Z 'reviewer exited 1' r1:o/broken)"
+two_repo_verdict="$(stage_health_verdicts 3 48 "$NOW_EPOCH" '["project-reviewer"]' \
+  review-stage-end review-attempt-failed <<<"$two_repos_one_review_id")"
+assert_eq "the broken repo's failure does not roll back a clean repo's earlier success" \
+  "1" "$(jq -r '."project-reviewer".consecutive_failures' <<<"$two_repo_verdict")"
+
+# stage_health_write_status: a custom STATUS_FILENAME writes its own file,
+# leaving the implementation pipeline's untouched, and both live in the same
+# state_dir side by side.
+stage_health_write_status "$scratch" "$log_file" 3 48 "$NOW_EPOCH"
+review_log_file="$scratch/review-log.jsonl"
+printf '%s\n' "$review_only_stream" > "$review_log_file"
+stage_health_write_status "$scratch" "$review_log_file" 3 48 "$NOW_EPOCH" '["project-reviewer"]' \
+  review-stage-end review-attempt-failed .review-stage-health.json
+review_status_file="$scratch/.review-stage-health.json"
+assert_eq "a custom STATUS_FILENAME writes its own file" "1" \
+  "$( [[ -f "$review_status_file" ]] && echo 1 || echo 0 )"
+assert_eq "  ... carrying the review pipeline's own verdict" "1" \
+  "$(jq -r '.stages."project-reviewer".consecutive_failures' "$review_status_file")"
+assert_eq "  ... and leaves the implementation pipeline's own file exactly as it was" "failing" \
+  "$(jq -r '.stages.coordinator.verdict' "$status_file")"
+assert_eq "  ... which carries no project-reviewer entry at all — the two files stay separate" \
+  "null" "$(jq -c '.stages."project-reviewer" // null' "$status_file")"
+
 # --- stage_health_status_lines: the --status `stages:` block's own body ----
 
 lines="$(stage_health_status_lines "$status_file" "$NOW_EPOCH")"
