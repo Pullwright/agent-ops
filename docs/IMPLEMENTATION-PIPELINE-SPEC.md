@@ -16352,47 +16352,67 @@ implements.
     catch is the shape #602 actually was — a run launched against a union
     that was already known-degraded, not merely a little behind.
 
-    **Only the reason label is released this way; the generic `blocked` is
-    not** (agent-ops#651). The reason label needs no proof of provenance: no
-    human reaches for `blocked:needs-refinement` on their own, so the sweep
-    can only ever have applied it, unconditionally, and the record alone —
-    `needs_refinement_assignee` present, neither blocked-label field set — is
-    enough for `refinement_blocked_label_targets` to offer it up wherever it
-    would otherwise be left on the issue forever once the block cleared.
-    `blocked` is different: it *is* a name a human reaches for
+    **The reason label is released at block-clear time regardless; the
+    generic `blocked` needs the sweep's own log to be released the same way**
+    (agent-ops#651, agent-ops#999). The reason label needs no proof of
+    provenance: no human reaches for `blocked:needs-refinement` on their own,
+    so the sweep can only ever have applied it, unconditionally, and the
+    record alone — `needs_refinement_assignee` present, neither blocked-label
+    field set — is enough for `refinement_blocked_label_targets` to offer it
+    up wherever it would otherwise be left on the issue forever once the
+    block cleared. `blocked` is different: it *is* a name a human reaches for
     (`lib/labels.sh`'s own catalogue), which is exactly why the sweep projects
     it through the read-before-write above rather than an unconditional add.
-    But the sweep has nowhere to record which of `added`/`present` a given
-    run actually saw — it does not rewrite the block's own event, and, unlike
-    `record_needs_refinement_block`, has no cycle log of its own to append an
-    `own-label-action` to — so a legacy block's `blocked_label` field can
-    never be filled the way a fresh block's is. Inferring the fixed pair for
-    every legacy block regardless — which is what this once did — would let
+
+    Which of `added`/`present` a given run actually saw is recorded the same
+    way `record_needs_refinement_block`'s own `added` result is —
+    `own-label-action add` (`label_own_action_fields`, `lib/label-marker.sh`)
+    — when the caller passes `scripts/sweep-legacy-refinement-assignees.sh`
+    its optional fifth argument, OWN-LOG-FILE: this node's own persistent log
+    (`state_dir/log.jsonl`, never LOG_FILE itself, which may be a synthesized
+    fleet union this node cannot usefully write to). Neither call rewrites
+    the block's own historical `attempt-failed` event — nothing rewrites
+    history — so a legacy block's `blocked_label` field is never filled the
+    way a fresh block's is; the provenance instead lives in OWN-LOG-FILE's own
+    `own-label-action` history, which `refinement_blocked_label_stale`
+    (agent-ops#651's own log-keyed reconciliation, described below) already
+    reads for exactly this question. Once that record exists, `blocked`
+    reaches the same retry path the reason label always has: the moment the
+    block clears — the reason label released, successfully or not —
+    `blocked`'s own logged `add` with no later `remove` makes it eligible, and
+    `lib/candidate-gather.sh`'s unconditional per-cycle sweep removes it
+    within one cycle.
+
+    A run made without OWN-LOG-FILE has nowhere to write that record, so
+    `added` and `present` stay indistinguishable to every later reader, the
+    same as before agent-ops#999: `refinement_blocked_label_targets` never
+    offers a legacy block's generic `blocked` for removal at *the moment its
+    block clears* — over-held rather than guessed at, the same trade-off
+    `refinement_label_project` already makes for an unreadable label list —
+    and `refinement_blocked_label_stale` has no history to retry it from
+    either. Inferring the fixed pair for every legacy block regardless of
+    provenance — which is what this requirement once did — would let
     `release_refinement_label` remove a `blocked` a human applied for their
     own reasons on any issue that also happens to carry a still-open
     pre-agent-ops#639 block: the exact defect `refinement_label_project`
-    exists to prevent, reappearing on the one path that cannot prove its own
-    history. `refinement_blocked_label_targets` therefore never offers a
-    legacy block's generic `blocked` for removal at *the moment its block
-    clears* — over-held rather than guessed at, the same trade-off
-    `refinement_label_project` already makes for an unreadable label list. A
-    *fresh* block landing on the same issue later does not release it either,
-    because `refinement_label_project` finds the label already `present` and
-    so records nothing for that block to give back. A legacy block the sweep
-    has not reached yet costs one `gh` call that finds nothing to remove,
-    best-effort like every other call on that path.
+    exists to prevent. A *fresh* block landing on the same issue later does
+    not release an over-held `blocked` either, because `refinement_label_project`
+    finds the label already `present` and so records nothing for that block
+    to give back. A legacy block the sweep has not reached yet costs one `gh`
+    call that finds nothing to remove, best-effort like every other call on
+    that path.
 
-    The live reconciliation below lifts this over-hold for one case and one
-    only: an issue still carrying its `blocked:<reason>` label at the moment
-    that reconciliation next runs, since that label is the whole of what puts
-    an issue in front of it. That is the case agent-ops#816 found — the reason
-    label's own removal never happened either, so the pair is still standing
-    and comes off together. Where the reason label *did* come off when the
-    block cleared, the issue carries a bare `blocked` and nothing reads it
-    again: the generic label stays until a human takes it off, and
-    `scripts/gather-issues.sh` goes on excluding the issue for as long as it
-    does. Bounding that residue is TD-PPagop-26082608's, not this
-    requirement's.
+    The live reconciliation below lifts a no-OWN-LOG-FILE run's over-hold for
+    one case and one only: an issue still carrying its `blocked:<reason>`
+    label at the moment that reconciliation next runs, since that label is
+    the whole of what puts an issue in front of it. That is the case
+    agent-ops#816 found — the reason label's own removal never happened
+    either, so the pair is still standing and comes off together. Where the
+    reason label *did* come off when the block cleared, the issue carries a
+    bare `blocked` and nothing reads it again: the generic label stays until
+    a human takes it off, and `scripts/gather-issues.sh` goes on excluding
+    the issue for as long as it does (TD-PPagop-26082608, resolved by
+    agent-ops#999's OWN-LOG-FILE argument for every run that passes it).
 
     **The reconciliation sweep for a removal that silently failed**
     (agent-ops#651). Unlike `needs_refinement_label`'s hand-flag path
@@ -16421,14 +16441,15 @@ implements.
     **The live reconciliation for a label history cannot see**
     (agent-ops#816, TD-PPagop-26082602). The sweep just above is blind to two
     cases, both real: a `blocked:<reason>` applied by
-    `scripts/sweep-legacy-refinement-assignees.sh`, which logs no
-    `own-label-action` of its own (it runs outside a cycle, with nothing to
-    log to), and one whose block cleared before agent-ops#651's
-    `own-label-action` logging existed to record the add at all. Both leave a
-    label standing with no `add` in the log for the sweep to key on, so
-    `scripts/gather-issues.sh` excludes the issue forever, invisibly — the
-    same class of failure the log-based sweep exists to end, reopened on the
-    one path that cannot prove its own history.
+    `scripts/sweep-legacy-refinement-assignees.sh` run without its own
+    OWN-LOG-FILE argument (see below — with it, the sweep's own `added`
+    result is logged exactly as `record_needs_refinement_block`'s is, and
+    this cohort does not arise), and one whose block cleared before
+    agent-ops#651's `own-label-action` logging existed to record the add at
+    all. Both leave a label standing with no `add` in the log for the sweep
+    to key on, so `scripts/gather-issues.sh` excludes the issue forever,
+    invisibly — the same class of failure the log-based sweep exists to end,
+    reopened on the one path that cannot prove its own history.
 
     `lib/refinement.sh`'s `refinement_blocked_label_orphaned` closes it a
     different way, needing no history for the *reason* label at all:
