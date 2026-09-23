@@ -25322,12 +25322,12 @@ oblige anyone to edit a test.
    failing shapes instead pass when the base-branch copy of the record
    already carries a terminal `status:` (issue #1493), while the untouched
    one still fails when that copy reads `status: open` — so the lapse is the
-   base's own terminal state and not a general amnesty — and the untouched
-   one fails too where that copy's frontmatter reads `status: open` but its
-   *body*, after the closing `---`, quotes another record's `status:
-   resolved` line at column 0 inside a fenced block, so the frontmatter
-   bounding is asserted and not just the terminal state (issue #1764) — the
-   `contents`
+   base's own terminal state and not a general amnesty — and the
+   `still-open-body-quotes-resolved` fixture fails too where that copy's
+   frontmatter reads `status: open` but its *body*, after the closing
+   `---`, quotes another record's `status: resolved` line at column 0
+   inside a fenced block, so the frontmatter bounding is asserted and not
+   just the terminal state (issue #1764) — the `contents`
    fixture newline-wrapping its base64 as that API really does, and the
    touched-but-unflipped fixture omitting `.base.ref` so the `.base.sha`
    fallback is exercised alongside it; a markerless bare closing keyword on a branch
