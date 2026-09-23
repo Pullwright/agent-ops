@@ -11825,6 +11825,18 @@ implements.
     request's last sync rather than its head now, which would re-fail a
     long-lived branch for the very reason this lapse exists.
 
+    A terminal base copy grants this amnesty only when the record's own patch
+    is a pure append: no `-` deletion line against it, and no `+status:` line
+    setting a non-terminal value (issue #1795). The append-only convention
+    that justifies the amnesty is exactly what a patch of either shape
+    violates: deleting or rewriting the record's frozen lines, or de-flipping
+    its status back to a non-terminal one, is not the harmless
+    provenance-note append (PR #1492's own case) this lapse exists for, and
+    the base copy's status alone cannot tell the two apart. Such a patch
+    therefore still fails the ordinary record-flip demand even though the
+    base copy is terminal. An empty patch — the record untouched — cannot be
+    destructive and keeps the amnesty on the base's terminal status alone.
+
     Either `gh` call that fails outright
     (the token, a transient outage) warns rather than failing the check —
     the issue read and the changed-files read alike — the same
@@ -25549,7 +25561,14 @@ oblige anyone to edit a test.
    failing shapes instead pass when the base-branch copy of the record
    already carries a terminal `status:` (issue #1493), while the untouched
    one still fails when that copy reads `status: open` — so the lapse is the
-   base's own terminal state and not a general amnesty — and the
+   base's own terminal state and not a general amnesty, but only for a pure
+   append: given a terminal base copy, a patch that also carries a `-`
+   deletion line against the record, or a `+status:` line setting a
+   non-terminal value (a de-flip such as `+status: in-progress`), still
+   fails naming the record-flip message even though the base is terminal,
+   while a pure-append patch (`+` lines only, no non-terminal `+status:`)
+   passes, and an untouched record (an empty patch) passes on the base's
+   terminal status alone (issue #1795) — and the
    `still-open-body-quotes-resolved` fixture fails too where that copy's
    frontmatter reads `status: open` but its *body*, after the closing
    `---`, quotes another record's `status: resolved` line at column 0

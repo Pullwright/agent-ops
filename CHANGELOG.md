@@ -146,6 +146,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`check-closing-keyword.sh`'s already-resolved-on-base amnesty no longer
+  excuses a destructive edit to a frozen tech-debt record** (issue #1795,
+  noticed while approving PR #1492). The amnesty (issue #1493) skips the
+  record-flip demand when a named register file already carries a terminal
+  `status:` on the pull request's base branch — meant to cover a pure body
+  append, PR #1492's own case — but it read only the base copy's status and
+  never the shape of the patch, so it passed a diff that deleted or rewrote
+  the record's frozen lines, or de-flipped its status back to a non-terminal
+  value, identically to a harmless append. It now grants the amnesty only for
+  a patch with no `-` deletion line against the record and no `+status:` line
+  setting a non-terminal value; the untouched-record (empty-patch) amnesty is
+  unchanged.
+
 - **A retried `escalate` verdict with no filable title or body no longer
   piles up identical "no escalation issue was filed" comments on a
   needs-refinement item's own thread** (issue #998, TD-PPagop-26082607).

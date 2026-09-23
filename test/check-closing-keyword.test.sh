@@ -456,6 +456,83 @@ write_contents_fixture "$tmp_dir/touched-already-resolved-on-base" "$record_reso
 assert_pass_tdr "'Filed as' present, diff touches record without a status line, already resolved on base: pass" \
   "$body_240" "agent/240" "acme/widgets" "9" "touched-already-resolved-on-base"
 
+# --- The base-terminal amnesty excuses only a pure append (issue #1795) -----
+# Before #1795, the amnesty above read only the base's own status and never
+# the shape of the patch, so it excused a destructive edit to an
+# already-resolved record identically to a harmless append — exactly the gap
+# PR #1492's own review caught. Each case below pairs an already-terminal
+# base (the same $record_resolved fixture the "touched-already-resolved-
+# on-base" pass case above uses) with a patch that is not a pure append, and
+# must still fail despite the terminal base.
+
+# A pure append — only `+` lines, no `-` lines, no non-terminal `+status:` —
+# still passes (acceptance criterion 1): the same shape as
+# "touched-already-resolved-on-base" above, named here explicitly for #1795.
+mkdir -p "$tmp_dir/pure-append-already-resolved-on-base"
+cp "$tmp_dir/flipped/issue-240.json" "$tmp_dir/pure-append-already-resolved-on-base/issue-240.json"
+cat > "$tmp_dir/pure-append-already-resolved-on-base/files.json" <<'JSON'
+[[{"filename": "tech-debt/TD-1.md",
+  "patch": "@@ -10,3 +10,5 @@\n old line\n old line\n old line\n+\n+Another provenance note appended below the frontmatter."}]]
+JSON
+printf '{"base": {"sha": "deadbeef"}}' > "$tmp_dir/pure-append-already-resolved-on-base/pr.json"
+write_contents_fixture "$tmp_dir/pure-append-already-resolved-on-base" "$record_resolved"
+assert_pass_tdr "'Filed as' present, pure-append diff, already resolved on base: pass (issue #1795 criterion 1)" \
+  "$body_240" "agent/240" "acme/widgets" "9" "pure-append-already-resolved-on-base"
+
+# A `-` deletion line against the record's own body/frozen lines, even though
+# the base copy is terminal, must fail (acceptance criterion 2) — the
+# amnesty's whole justification is the register's append-only convention,
+# which a deletion line violates directly.
+mkdir -p "$tmp_dir/destructive-deletion-already-resolved-on-base"
+cp "$tmp_dir/flipped/issue-240.json" "$tmp_dir/destructive-deletion-already-resolved-on-base/issue-240.json"
+cat > "$tmp_dir/destructive-deletion-already-resolved-on-base/files.json" <<'JSON'
+[[{"filename": "tech-debt/TD-1.md",
+  "patch": "@@ -10,3 +10,2 @@\n old line\n-A frozen line the archive says must never be removed.\n old line"}]]
+JSON
+printf '{"base": {"sha": "deadbeef"}}' > "$tmp_dir/destructive-deletion-already-resolved-on-base/pr.json"
+write_contents_fixture "$tmp_dir/destructive-deletion-already-resolved-on-base" "$record_resolved"
+assert_fail_tdr "'Filed as' present, diff deletes a frozen line, already resolved on base: fail (issue #1795 criterion 2)" \
+  "$body_240" "agent/240" "acme/widgets" "9" "destructive-deletion-already-resolved-on-base" \
+  "does not set its frontmatter status: to a terminal state"
+
+# A status de-flip back to a non-terminal value, even though the base copy is
+# terminal, must fail (acceptance criterion 3) — this diff both deletes the
+# old `status: resolved` line and adds the non-terminal replacement, so it
+# also exercises the deletion-line branch of the check above.
+mkdir -p "$tmp_dir/destructive-deflip-already-resolved-on-base"
+cp "$tmp_dir/flipped/issue-240.json" "$tmp_dir/destructive-deflip-already-resolved-on-base/issue-240.json"
+cat > "$tmp_dir/destructive-deflip-already-resolved-on-base/files.json" <<'JSON'
+[[{"filename": "tech-debt/TD-1.md",
+  "patch": "@@ -1,5 +1,5 @@\n ---\n id: TD-1\n-status: resolved\n+status: in-progress\n filed: 2026-08-01\n ---"}]]
+JSON
+printf '{"base": {"sha": "deadbeef"}}' > "$tmp_dir/destructive-deflip-already-resolved-on-base/pr.json"
+write_contents_fixture "$tmp_dir/destructive-deflip-already-resolved-on-base" "$record_resolved"
+assert_fail_tdr "'Filed as' present, diff de-flips status to non-terminal, already resolved on base: fail (issue #1795 criterion 3)" \
+  "$body_240" "agent/240" "acme/widgets" "9" "destructive-deflip-already-resolved-on-base" \
+  "does not set its frontmatter status: to a terminal state"
+
+# The non-terminal `+status:` branch of the check is independent of the
+# deletion-line branch: a patch that adds a non-terminal status line without
+# any `-` line at all must still fail. Note what this fixture's hunk header
+# actually says — the added line lands at line 13, in the record's *body*,
+# not in its frontmatter — because the branch scans the whole patch rather
+# than the frontmatter block the base-copy read bounds itself to (issue
+# #1764's shape, inverted). So this asserts a body line beginning `status:`
+# at column 0 reads as a de-flip, which is the over-broad half issue #1812
+# tracks; the assertion is the check's behaviour as it stands, not a claim
+# that a quoted status line in an appended note deserves to fail.
+mkdir -p "$tmp_dir/destructive-status-added-no-deletion"
+cp "$tmp_dir/flipped/issue-240.json" "$tmp_dir/destructive-status-added-no-deletion/issue-240.json"
+cat > "$tmp_dir/destructive-status-added-no-deletion/files.json" <<'JSON'
+[[{"filename": "tech-debt/TD-1.md",
+  "patch": "@@ -10,3 +10,4 @@\n old line\n old line\n old line\n+status: in-progress"}]]
+JSON
+printf '{"base": {"sha": "deadbeef"}}' > "$tmp_dir/destructive-status-added-no-deletion/pr.json"
+write_contents_fixture "$tmp_dir/destructive-status-added-no-deletion" "$record_resolved"
+assert_fail_tdr "'Filed as' present, diff adds a non-terminal status line with no deletion, already resolved on base: fail (issue #1795)" \
+  "$body_240" "agent/240" "acme/widgets" "9" "destructive-status-added-no-deletion" \
+  "does not set its frontmatter status: to a terminal state"
+
 # `not-debt` is the register's other terminal state (TECH-DEBT.md "Resolution
 # and history"; issue #1437): a resolving PR that correctly concludes the
 # item was never debt flips to `status: not-debt` with `ref:`, and must pass

@@ -69,7 +69,11 @@
 # the pull request closing #982 reached it. There is no truthful
 # `+status:` line left to add there, and the register is append-only
 # (`TECH-DEBT.md` "Resolution and history"), so this reads the record from
-# the base branch before failing either shape of miss.
+# the base branch before failing either shape of miss — but only excuses a
+# pure append against it: a patch carrying a `-` deletion line against the
+# record, or a `+status:` line that de-flips it to a non-terminal value, still
+# fails even with a terminal base (issue #1795), since the append-only
+# convention that grants this amnesty is exactly what such a patch violates.
 #
 # A `gh` call that fails outright (the token, a transient outage) is not
 # turned into a failure of this check — the existing marker/keyword logic
@@ -332,6 +336,27 @@ if [[ -n "$repo_slug" && -n "$pr_number" ]]; then
           already_resolved_on_base=1
         fi
       fi
+    fi
+    # The base-terminal amnesty above answers only "is the base copy already
+    # resolved", never "what does this patch actually do to it" — so a diff
+    # that deletes or rewrites the record's frozen lines, or de-flips its
+    # status back to a non-terminal value (`+status: in-progress`), passed
+    # identically to a pure append (PR #1492's own provenance-note case),
+    # even though the register's own append-only convention (TECH-DEBT.md
+    # "Resolution and history") forbids both (issue #1795). Narrow the
+    # amnesty to a pure append: no `-` deletion line against the record, and
+    # no non-terminal `+status:` line. An empty patch — the diff never
+    # touches the record at all — cannot be destructive, so it always keeps
+    # the amnesty without this check.
+    if [[ -n "$already_resolved_on_base" && -n "$patch" ]]; then
+      destructive=""
+      if grep -qE '^-' <<<"$patch"; then
+        destructive=1
+      elif grep -E '^\+status:' <<<"$patch" \
+        | grep -qvE '^\+status:[[:space:]]*(resolved|not-debt)[[:space:]]*$'; then
+        destructive=1
+      fi
+      [[ -n "$destructive" ]] && already_resolved_on_base=""
     fi
     [[ -z "$already_resolved_on_base" ]] || continue
 
