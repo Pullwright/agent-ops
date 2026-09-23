@@ -1,5 +1,17 @@
 ## What does this change do, and why?
 
+## Changelog
+
+<!-- Delete this section for a type that does not owe one (chore, docs,
+     refactor, test, build, ci, style, revert). A feat, fix or perf title,
+     or a breaking change, must keep it: one or more of `### Added`,
+     `### Changed`, `### Deprecated`, `### Removed`, `### Fixed` and
+     `### Security`, each with `- ` bullets written for this repository's
+     changelog audience, or the single line `None.` if the change is not
+     notable. The squash merge carries it onto main; the release pull
+     request assembles CHANGELOG.md from it, so do not edit that file
+     (requirement 25c, D27). -->
+
 ## Checklist
 
 - [ ] The PR title follows [Conventional Commits](https://www.conventionalcommits.org/)

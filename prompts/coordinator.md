@@ -505,8 +505,11 @@ selectable item:
   is not yours to guard against: queue-membership checks belong entirely to
   the Implementer and Reviewer prompts, which push to branches directly and
   probe the queue immediately before every push.
-- `CHANGELOG.md` gets an entry for notable, user-visible changes; routine
-  or doc-only changes don't need one.
+- A notable, user-visible change records its changelog entry under a
+  `## Changelog` heading in its pull-request description (requirement 25c),
+  never in `CHANGELOG.md`, which the release pull request assembles from
+  those descriptions; a routine or doc-only change says `None.` there, or
+  omits the section where its title's type does not owe one.
 
 ## Target repositories and work sources
 

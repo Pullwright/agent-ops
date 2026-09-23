@@ -1,0 +1,57 @@
+name: Changelog section check
+
+# Gates requirement 25c (roadmap decision D27): a change's changelog entry
+# is a `## Changelog` section of its own pull-request description, which the
+# squash merge writes onto `main`, and `CHANGELOG.md` is assembled from those
+# descriptions by the release pull request alone. Between 2026-09-13 and
+# 2026-09-23 the file was the sole conflicting path in 16 of the 22 merge
+# conflicts the pipeline repaired here, each repair re-running the
+# Implementer, the Reviewer and the Approver (agent-ops#1804).
+#
+# `scripts/check-changelog-section.sh` decides two things from the title
+# and the body: whether the title's Conventional Commits type (`feat`, `fix`,
+# `perf`, or any type with the `!` breaking marker) owes a section at all,
+# and whether a section that is present has the shape an assembler can read
+# — Keep a Changelog's six category sub-headings with `- ` bullets, or the
+# single line `None.`. Prompt instruction alone was asked for the closing
+# keyword and silently skipped once (issue #240); this is the same kind of
+# fact, so it is checked the same way.
+#
+# Deliberately `pull_request` (not `pull_request_target`), so a fork PR never
+# runs with write-scoped secrets, and ungated by `paths:` — the body and the
+# title can be edited without touching any file, and `edited` is in the
+# trigger list for exactly that reason. The body and the title reach the
+# script through `env:`, never interpolated into the step, so an
+# attacker-controlled title or body from a fork PR cannot inject shell.
+#
+# The `changelog-section` context must also be listed in the repository
+# ruleset's required status checks, pinned to the GitHub Actions app
+# (`integration_id` 15368), so red blocks the merge rather than merely
+# reporting — a repo setting, not a workflow file; `scripts/doctor.sh`
+# warns when it drifts (acceptance check 8m).
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  changelog-section:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # A merge-group candidate carries no pull request body or title to check,
+    # and nothing here changes between the pull_request run that already
+    # validated it and the queue picking it up, so this reports skipped
+    # rather than re-running with nothing to check — a skipped conclusion
+    # still satisfies a required status check.
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check the changelog section
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: scripts/check-changelog-section.sh "$PR_BODY" "$PR_TITLE"

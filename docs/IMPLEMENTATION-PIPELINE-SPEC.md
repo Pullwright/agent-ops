@@ -914,8 +914,11 @@ Conventions shared by all configured repos (agents must honour all of these):
 - CI runs on every PR (build/lint/test workflows plus CodeQL and
   commit-format checks). A PR is not finished until its checks pass and
   `gh pr view --json mergeable,mergeStateStatus` reports it mergeable.
-- `CHANGELOG.md` gets an entry for notable changes; other docs are as-built
-  (no historical phrasing).
+- A notable change's changelog entry is a `## Changelog` section of its
+  pull-request description, which the squash merge carries onto `main`;
+  `CHANGELOG.md` is assembled from those descriptions by the release pull
+  request and edited by nothing else (requirement 25c, roadmap decision
+  D27). Other docs are as-built (no historical phrasing).
 
 ## Configuration
 
@@ -11682,8 +11685,10 @@ implements.
     names the ref
     (`review-<date>-R-NN`) so its eventual merge marks the recommendation done;
     a later review re-evaluates the code and simply omits anything now fixed.
-    Adds a `CHANGELOG.md` entry when the change is notable by that repo's
-    definition (a security fix usually is).
+    Writes the changelog entry into the pull-request description's
+    `## Changelog` section when the change is notable by that repo's
+    definition (a security fix usually is, under `### Security`), or `None.`
+    when it is not — never into `CHANGELOG.md` (requirement 25c).
 
 25a. **The closing keyword requirement 25 asks for is enforced deterministically
     — by CI and by the Script — not by trusting the prompt.**
@@ -11966,6 +11971,69 @@ implements.
     doing the ruleset edit early is harmless — a pull request that still
     carries the workflow keeps running it, only without gating — so the safe
     ordering (edit the ruleset, then merge) never wedges the repository.
+25c. **The changelog entry is a section of the pull-request description, and
+    its shape is checked deterministically (roadmap decision D27,
+    agent-ops#1804).** A change records its changelog entry under a
+    `## Changelog` heading in its own pull-request description: one or more
+    of Keep a Changelog's six category sub-headings — `### Added`,
+    `### Changed`, `### Deprecated`, `### Removed`, `### Fixed`,
+    `### Security`, spelt exactly — each followed by at least one `- ` bullet
+    written for that repository's changelog audience, or the single line
+    `None.` where the change is not notable, so an omission is deliberate
+    rather than forgotten. The squash merge writes the description onto
+    `main` (`squash_merge_commit_message: PR_BODY`, the same store
+    requirement 25's `td-record` block relies on), so the entry reaches
+    `main`'s history without the pull request touching `CHANGELOG.md`; that
+    file stays in Keep a Changelog format and is written by one kind of pull
+    request only — the release pull request in a repository that cuts
+    releases, a scheduled roll in one that does not — which assembles every
+    entry merged since the commit its own marker names (the assembler is
+    agent-ops#1807; this repository's roll is agent-ops#1809). No stage
+    edits `CHANGELOG.md`. The finishing sources (`review-feedback`,
+    `merge-conflicts`, `dequeued`, `landing-refusals`) add nothing to a
+    description that already carries its section, as they never wrote a file
+    entry; `abandoned-drafts` writes the section on completion, as it wrote
+    the entry before.
+
+    Which descriptions owe a section is decided by the title, the one anchor
+    no description edit moves: a Conventional Commits type of `feat`, `fix`
+    or `perf`, or the `!` breaking-change marker on any type, requires the
+    section, even if only to say `None.`; every other type may omit it, and
+    a section that is present is checked for shape whatever the type.
+    `.github/workflows/changelog-section.yml` runs
+    `scripts/check-changelog-section.sh` against the title and the body on
+    every `pull_request` event (`opened`, `edited`, `reopened`,
+    `synchronize` — `edited` because the description can change without a
+    push), passing both through `env:` so a fork's title or body cannot
+    inject shell, and reporting skipped on `merge_group`, where there is no
+    description to check and a skipped conclusion satisfies a required
+    check. The check reads the description outside fenced code blocks and
+    HTML comments — a fenced example of the heading is not a section — and
+    fails, one `::error::` annotation per fault, on: a title that owes a
+    section with no `## Changelog` heading; more than one such heading; an
+    empty section; a first content line that is neither a category heading
+    nor `None`; a sub-heading that is not one of the six categories, spelt
+    exactly; a category with no bullet, or listed twice; a line under a
+    category that is neither a bullet, an indented continuation of one, nor
+    a comment; and a `None` section that also lists a category or a bullet.
+    The Reviewer's fix for any of these is a description edit
+    (`gh pr edit --body-file`), which moves no head, evicts no queued branch
+    and stales no approval — the property that makes the trade worth
+    making, since a hand-added entry in `CHANGELOG.md` was the sole
+    conflicting path in 16 of the 22 merge conflicts the pipeline repaired
+    in this repository between 2026-09-13 and 2026-09-23, each repair
+    re-running the Implementer, the Reviewer and the Approver.
+
+    The `changelog-section` context must be listed in the repository
+    ruleset's required status checks, pinned to the GitHub Actions app
+    (`integration_id` 15368), for the same reason and on the same terms as
+    requirement 25a's `closing-keyword`; `scripts/doctor.sh` reads both
+    contexts in one pass and warns for whichever is missing or unpinned
+    (acceptance check 8m). Doing the ruleset edit ahead of the merge is
+    harmless (`docs/STANDING-DECISIONS.md`, 2026-08-22 · #648's converse).
+    The workflow guards only the repository that ships it; the Script-side
+    gate that extends the check to every target repository, on
+    `lib/closing-keyword-gate.sh`'s pattern, is agent-ops#1808.
 26. Verifies the PR via `gh pr view --json mergeable,mergeStateStatus`
     (against GitHub's view, not inferred locally) and resolves any conflict
     with the current default branch. Leaves the PR as a **draft** — the
@@ -21547,6 +21615,22 @@ What exists, and the requirements each part answers to:
     uses there). `CLOSING_KEYWORD_GATE_GH` stubs `gh` for tests, and
     `CLOSING_KEYWORD_GATE_CHECK` the checker's path. Unit-tested
     (`test/closing-keyword-gate.test.sh`); must pass `shellcheck`.
+17b. `scripts/check-changelog-section.sh` and
+    `.github/workflows/changelog-section.yml` implementing requirement 25c:
+    given a pull request's description and title, decides from the title
+    whether a `## Changelog` section is owed (`feat`, `fix`, `perf`, or any
+    type carrying `!`, on `.githooks/check-commit-format.sh`'s own pattern)
+    and checks any section present against the grammar requirement 25c
+    states — outside fenced code and HTML comments, the six categories spelt
+    exactly, at least one bullet each, no duplicate category, no loose
+    prose, or the single line `None.` — writing one `::error::` line per
+    fault to stderr and exiting 1, or exiting 0 with no output when the
+    description is in order; exit 2 is a usage error. `\r` is stripped
+    before parsing, since a description saved through GitHub's editor
+    arrives CRLF. The workflow runs on every `pull_request` event including
+    `edited`, passes the title and the body through `env:`, and reports
+    skipped on `merge_group`. Unit-tested
+    (`test/check-changelog-section.test.sh`); must pass `shellcheck`.
 18. `scripts/sweep-closed-issues.sh` implementing requirement 17c's sweep:
     given a repo slug, a node name and a cycle id, lists that repo's merged
     `pr_label`-labelled pull requests (bounded to the most recently updated),
@@ -25309,17 +25393,20 @@ oblige anyone to edit a test.
    issue GitHub reports `state_reason: "reopened"` is left alone and the
    skip reported, so a human's re-open is never undone on the hour; and the
    per-call action cap defers rather than floods.
-8m. **The closing-keyword check blocks, not just reports (requirement
-   25a).** The one piece of requirement 25a that no file in this repository
-   carries is the repo setting that makes a red check a blocked merge, so
+8m. **The closing-keyword and changelog-section checks block, not just
+   report (requirements 25a and 25c).** The one piece of requirements 25a
+   and 25c that no file in this repository carries is the repo setting that
+   makes a red check a blocked merge, so
    `scripts/doctor.sh` verifies it against GitHub directly, in its GitHub
    section: it resolves this checkout's own slug (`lib/version.sh`'s
    `agent_ops_version`), reads `gh api repos/<slug>/rulesets`, and for every
    active branch ruleset whose `conditions.ref_name.include` names
    `~DEFAULT_BRANCH` (the active `default` ruleset targeting the default
-   branch), warns unless its `required_status_checks` carries an entry with
-   `context: closing-keyword` and `integration_id: 15368` — the GitHub
-   Actions app every other required context is pinned to. A missing entry
+   branch), warns — once per context, in one pass — unless its
+   `required_status_checks` carries an entry with `context: closing-keyword`
+   and another with `context: changelog-section`, each with
+   `integration_id: 15368` — the GitHub Actions app every other required
+   context is pinned to. A missing entry
    warns that the check reports without blocking, the exact gap PR #256's
    review caught by hand; an entry present without the `integration_id` pin
    warns that any GitHub App reporting a check of that name could satisfy
@@ -25484,6 +25571,31 @@ oblige anyone to edit a test.
    path through the script exits 0 except that last usage failure — asserted
    directly, since a red run here must mean the guard could not operate, not
    that a close was irregular.
+25c. **A changelog section is enforced, not requested (requirement 25c,
+   D27).** `test/check-changelog-section.test.sh` passes: with no
+   `## Changelog` section, a `chore`, `docs`, `refactor` or Dependabot
+   `build(deps)`/`chore(deps)` title passes and a `feat`, `fix` or `perf`
+   title, or any type carrying `!`, fails naming what is owed, an empty
+   title skipping the rule; a section of one or more categories with
+   bullets passes, as do `None.`, `None` and `None.` followed by a reason,
+   asterisk bullets, indented continuations and nested bullets, CRLF line
+   endings, a section that ends at the next level-one or level-two heading,
+   HTML comments inside it, and a fenced block (a `td-record`, or an example
+   of the heading itself) anywhere in the description; and it fails, each
+   with a `::error::` line, on an empty section (a chore title included,
+   since a present section is checked whatever the type), a section holding
+   only a comment, a lower-case heading whose content is empty (proving the
+   heading is detected case-insensitively), an unknown or mis-cased
+   category, a category with no bullet, a duplicated category, loose prose
+   or a deeper heading under a category, an indented line before any
+   bullet, prose or a bullet as the first line, `Nonetheless` mistaken for
+   `None`, `None` alongside a category or a bullet, two section headings,
+   and a fenced example standing in for a real section on a `fix` title.
+   A fault on the section's first line reports once, without a cascade;
+   distinct faults each report on their own line. No arguments at all is a
+   usage error (exit 2). Separately, `test/doctor.test.sh`'s ruleset cases
+   (acceptance check 8m) cover the `changelog-section` context beside
+   `closing-keyword`.
 8q. **A void shape with no closed-object or register-resolved signal still
    retires, once its source stops yielding it (requirement 34n's liveness
    rule, TD-PPagop-26081303).** `test/cycle-state.test.sh`'s

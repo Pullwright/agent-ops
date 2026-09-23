@@ -174,7 +174,7 @@ of the "branch and PR already exist" instructions below apply to it.
   resolving a conflict does **not** complete the underlying work — the item is
   done when the PR *merges*, which is still the human's or Reviewer's call. So do
   **not** add a `Fixes #…`/`td-record` block, a `Closes #…`, or a
-  `CHANGELOG.md` entry here; those already happened (or will happen) on the PR's
+  `## Changelog` section here; those already happened (or will happen) on the PR's
   own terms. Touch only what resolving the conflict requires.
 - **Verify like CI does, then confirm the conflict is gone** (Procedure steps 3–4
   and 6). Run the repo's lint/typecheck/format/test/build — a rebase can
@@ -310,7 +310,7 @@ yourself.
   fixing a merge-group failure does **not** complete the underlying work — the
   item is done when the pull request *merges*, which is still the human's
   click. So do **not** add a `Fixes #…`/`td-record` block, a
-  `Closes #…`, or write a `CHANGELOG.md` entry here; those already happened
+  `Closes #…`, or write a `## Changelog` section here; those already happened
   (or will happen) on the pull request's own terms. Touch only what fixing the
   merge-group failure requires.
 - **Verify like CI does** (Procedure step 4). The repo's own
@@ -390,9 +390,9 @@ it.
   was originally raised for — that was already closed (or will be) by
   whatever round first landed the substance of this PR. So do **not** add a
   fresh `Fixes #…`/`td-record` block, a `Closes #…`, or a new
-  `CHANGELOG.md` entry here on the strength of this round alone; touch only
+  `## Changelog` bullet here on the strength of this round alone; touch only
   what answering the comment requires. If the fix itself is substantial
-  enough to warrant its own changelog line, that is an ordinary editorial
+  enough to warrant its own changelog bullet, that is an ordinary editorial
   judgement like any other commit, not something this source specially asks
   for.
 - **There is no review to re-request, and nothing to notify.** Unlike
@@ -440,7 +440,7 @@ usual fields, and `branch` names the existing branch. Your job is to *finish* it
   that opened it — do not redo that. You still **close the loop** on
   completion (Procedure step 5): add the `Fixes #…` keyword and `td-record`
   block (tech-debt), the `Closes #…` reference (an ordinary issue), or the
-  `CHANGELOG.md` entry, exactly as for a normal item.
+  `## Changelog` section, exactly as for a normal item.
 - **Finish to the work order's `acceptance`, and verify like CI does** (Procedure
   steps 3–4). Keep it scoped to what the draft set out to do; if the draft's whole
   approach turns out to be wrong, that is grounds for `blocked` (explain on the
@@ -648,9 +648,19 @@ All target repos follow these rules:
   workflow, CodeQL, and a commit-format check. Read `.github/workflows/` to
   see exactly what each workflow runs, and run the same commands locally
   before you consider the item done.
-- `CHANGELOG.md` (Keep a Changelog format, `[Unreleased]` section) gets an
-  entry for notable, user-visible changes; routine or doc-only changes don't
-  need one — match the repo's existing entries for what counts.
+- The changelog entry goes in the pull-request description, never in
+  `CHANGELOG.md` (requirement 25c): a `## Changelog` heading, then one or
+  more of `### Added` / `### Changed` / `### Deprecated` / `### Removed` /
+  `### Fixed` / `### Security`, each with `- ` bullets written for the
+  repo's changelog audience — match the repo's existing `CHANGELOG.md`
+  entries for what counts as notable and how a bullet reads. A change that
+  is not notable (routine, doc-only) says `None.` under the same heading.
+  A `feat`, `fix` or `perf` title, or a breaking change, must carry the
+  section; the `changelog-section` check fails the pull request without
+  it, and a malformed section fails whatever the title. Do not edit
+  `CHANGELOG.md`: the release pull request assembles it from merged
+  descriptions, and a hand-added entry there is what made the file this
+  fleet's main source of merge conflicts.
 - Other docs are as-built: describe current state only, no "previously" /
   "used to" / "now uses" phrasing. If your change makes existing prose
   historical, rewrite it as current fact rather than layering a note on
@@ -904,8 +914,9 @@ see "Dependabot takeover" above.)*
      on — the violation itself is the item. Once your fix (or your diagnosis
      that the cause lies outside the repository) lands, there is nothing
      further to close.
-   - Add a `CHANGELOG.md` entry if the change is notable by the repo's own
-     definition of that (a security fix usually is).
+   - Write the `## Changelog` section of the pull-request description if
+     the change is notable by the repo's own definition of that (a security
+     fix usually is, under `### Security`), or `None.` if it is not.
 6. **Verify the PR itself**, against GitHub's view, not your local guess:
    `gh pr view --json mergeable,mergeStateStatus`. If it's not mergeable —
    most likely `default_branch` moved since you branched — rebase (or

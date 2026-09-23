@@ -185,3 +185,14 @@ principle it rests on.`
   `CHANGES_REQUESTED`, the merge budget — and no other source is added.
   Decided by the owner on 2026-09-19; the alternative, a surfaced
   human-merge queue, was declined.
+- 2026-09-23 · #1804 · **A change's changelog entry is a `## Changelog`
+  section of its own pull-request description, and `CHANGELOG.md` is
+  assembled from those descriptions by the release pull request alone
+  (D27).** `CHANGELOG.md` was the sole conflicting path in 16 of the 22
+  merge conflicts the pipeline repaired here between 2026-09-13 and
+  2026-09-23, each repair re-running three stages; the description is the
+  store the squash merge already writes onto `main`, so the entry moves
+  there and no other pull request edits the file. Decided by the owner on
+  2026-09-23. A just-in-time branch update at the landing gate was
+  considered and withdrawn: it does nothing under a merge queue, and each
+  of its pushes would dismiss the standing approval.
