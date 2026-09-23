@@ -394,6 +394,25 @@ and the later merge is the stronger evidence, so `landed` wins outright. An
 exactly as every other item does; `unaccounted[]` is a convenience projection
 of the same records carrying the reason, never a second population.
 
+Voided-after-landed is deliberately the *only* contradiction this fold
+detects for now (agent-ops#1182, settling the question the Reviewer raised
+on agent-ops#1177). Three siblings were considered and deferred: merge
+evidence on an item whose branch was also released via
+`orphan-branch-released {reason: "superseded"}` (silent today, since
+`landed` outranks `superseded` in the priority order above); a standing
+block (`blocked_items`) on an item that also carries landing evidence
+(silent today, since `landed` outranks `blocked` under rule 1); and a
+`selection` event with no `first-seen` anywhere for that `{repo, item}`
+(visible today only via `item_lifecycle_pickup_pairs`'s
+`coverage.selection_only`, never surfaced in the lifecycle record itself).
+The reactivation rule: add detection for one of these — or another not yet
+foreseen — only once it is actually observed in a real fleet log, and add
+it as a new `reason` string under this same `unaccounted` fate. Widening
+`unaccounted` this way is additive under the Stability policy below;
+changing an existing fate's own assignment rule or the fate priority order
+to do it instead would not be, so the reactivation path is always a new
+reason string, never a rule change.
+
 ### The flow invariant
 
 `totals.balanced` states, and `test/item-lifecycle.test.sh` asserts on a

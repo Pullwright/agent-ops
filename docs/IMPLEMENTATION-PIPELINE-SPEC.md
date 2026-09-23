@@ -969,7 +969,7 @@ and the schema must carry every one of them.
 | `refinement_max_per_engagement` | `3` | How many refinement-class items one Enabler engagement takes on (requirement 35d); ordinary blocked items are uncapped and are never displaced by them. The cap exists because the backlog of items silently skipped before requirement 16a existed is unbounded, and an engagement spent entirely on old vagueness would delay the pull request nobody can see. `0` removes the class from engagements entirely — blocks are still recorded, and the items wait. |
 | `refiner_model` | `claude-sonnet-5` | The Refiner (requirement 39). Unlike the Enabler, eligibility carries no threshold, so it runs as often as there is unrefined work, and its frequency has to be weighed against the fact that what it produces is a specification rather than a ranking. Empty disables the stage. |
 | `refined_label` | `refined` | The label the Script projects onto an issue-type item once the Refiner records it `refined` (requirement 39c). One-way and never read back — unlike `needs_refinement_label`'s hand-flag path, there is no hand-applied form of this label: the shared log is the sole record of whether an item is refined, exactly as requirement 34e already establishes for the negative marker. Empty disables the projection only: the `item-refined` event is still logged and the Co-Ordinator still...[continued below](#extended-notes-refined_label) |
-| `refiner_max_per_engagement` | `5` | How many unrefined items one Refiner engagement takes on (requirement 39b), chosen oldest-seen first so every node in the fleet reduces to the same set. `0` removes the class from engagements entirely. |
+| `refiner_max_per_engagement` | `5` | How many unrefined items one Refiner engagement takes on (requirement 39b), chosen oldest-seen first so every node in the fleet reduces to the same set. `0` removes the class from engagements entirely — a `refinement_policy` source resolved to `required` then has its items wait, unlabelled, until the cap is raised (requirement 1c); `agent-cycle.sh` logs a `warning` event and `scripts/doctor.sh` `warn`s every cycle the condition holds, rather than refusing to start. |
 | `refinement_policy` | `{"issues": "required", "tech-debt": "required"}` | Per-source refinement policy (requirement 39a): `required`, `preferred` or `exempt`, read by the Co-Ordinator alongside `refinements` (requirement 3h) to decide whether an unrefined item may be ranked at all. A source absent from this object is `exempt`. Shipped default: `issues` and `tech-debt` both `preferred` — of every source this key can name, these two are the ones whose items can otherwise reach an Implementer carrying a specification `coordinator_model` composed...[continued below](#extended-notes-refinement_policy) |
 | `unvoid_label` | `unvoided` | The label a human applies on GitHub to ask for a void to be reopened (requirement 34f). No stage here ever applies it, so requirement 34c's "only a human may clear a void" is unchanged; what it adds is a way to say so from the issue itself. It must not be `blocked`, for the reason given against `enabler_escalation_label`. Nor `obsolete`: the label a human applied to ask for a voided pull request to be reopened would itself corroborate requirement 34k closing it. |
 | `labels_ensure_interval_hours` | `24` | How often, at most, the Script re-lists a repository's labels to create any absent ones (requirement 6a), keyed per repository via a stamp file under `state_dir` rather than a single fleet-wide clock — so one repository's interval elapsing says nothing about another's. `0` disables the stamp check, so it ensures on every cycle regardless. |
@@ -1201,7 +1201,7 @@ It must not be `blocked` nor `obsolete`, for the reasons given against `enabler_
 
 ### Extended notes: `refinement_policy`
 
-Per-source refinement policy (requirement 39a): `required`, `preferred` or `exempt`, read by the Co-Ordinator alongside `refinements` (requirement 3h) to decide whether an unrefined item may be ranked at all. A source absent from this object is `exempt`. Shipped default: `issues` and `tech-debt` both `preferred` — of every source this key can name, these two are the ones whose items can otherwise reach an Implementer carrying a specification `coordinator_model` composed itself rather than one already written elsewhere, so the invariant of requirement 1c names them explicitly rather than leaving the object's absence do it implicitly. Bounded by what requirement 39's candidate gathering reads — the `findings`, `review_feedback`, `abandoned_drafts`, `merge_conflicts`, `dequeued`, `landing_refusals`, `issues` and `tech_debt` arrays every repo's `ordered_repos_json` entry carries, plus `project_review` and `implementation_plan`, read only into the Refiner-only copy of the repos array (`refiner_repos_json`, requirement 3y) and only where `refiner_model` is set — with no Refiner to launch, neither is read at all — and the repo's own `sources` lists the source and its policy for it is not itself `exempt`. `failed-runs` is the one source with no array at all, so a policy set for it shapes selection only. A `required` source with `refiner_model` empty is refused at startup — `config_required_refinement_sources_without_refiner` (requirement 1c) — since nothing would ever refine its items and they would wait forever.
+Per-source refinement policy (requirement 39a): `required`, `preferred` or `exempt`, read by the Co-Ordinator alongside `refinements` (requirement 3h) to decide whether an unrefined item may be ranked at all. A source absent from this object is `exempt`. Shipped default: `issues` and `tech-debt` both `preferred` — of every source this key can name, these two are the ones whose items can otherwise reach an Implementer carrying a specification `coordinator_model` composed itself rather than one already written elsewhere, so the invariant of requirement 1c names them explicitly rather than leaving the object's absence do it implicitly. Bounded by what requirement 39's candidate gathering reads — the `findings`, `review_feedback`, `abandoned_drafts`, `merge_conflicts`, `dequeued`, `landing_refusals`, `issues` and `tech_debt` arrays every repo's `ordered_repos_json` entry carries, plus `project_review` and `implementation_plan`, read only into the Refiner-only copy of the repos array (`refiner_repos_json`, requirement 3y) and only where `refiner_model` is set — with no Refiner to launch, neither is read at all — and the repo's own `sources` lists the source and its policy for it is not itself `exempt`. `failed-runs` is the one source with no array at all, so a policy set for it shapes selection only — it is refused at startup whenever `required`, regardless of `refiner_model` or `refiner_max_per_engagement` (`config_required_failed_runs_source`). Every other source resolved to `required` is refused at startup with `refiner_model` empty (`config_required_refinement_sources_without_refiner`) but only warned about, every cycle, with `refiner_model` set and `refiner_max_per_engagement: 0` (`config_refinement_sources_paused_by_cap`) — the cap is a deliberate, temporary pause rather than a configuration nobody could ever satisfy, so its items simply wait, unlabelled, until the cap is raised (requirement 1c; agent-ops#924's decision on TD-PPagop-26082704/agent-ops#1003).
 
 ### Extended notes: `label_prefix`
 
@@ -1680,18 +1680,31 @@ implements.
    (requirement 4a) are both fully expressible as `type`/`minimum`/
    `maximum`/`additionalProperties` on a single object, so neither has a
    hand-written check left in `agent-cycle.sh` or
-   `lib/prompt-overrides.sh`. Four guards stay in code rather than moving into
+   `lib/prompt-overrides.sh`. Five guards stay in code rather than moving into
    the schema, because each holds *between* two keys, which
    `additionalProperties`/`required`/etc. on one object cannot state: the
    Enabler's assignee (requirement 35), the implementation-plan path
-   (requirement 3k), and the two model-tier guards of requirement 1c below.
-   All four are shared, not duplicated, between `agent-cycle.sh` and
+   (requirement 3k), and the three guards of requirement 1c below — the
+   model-tier floor, a `"required"` refinement source with `refiner_model`
+   empty, and one left unrefinable by `refiner_max_per_engagement: 0`.
+   All five are shared, not duplicated, between `agent-cycle.sh` and
    `scripts/doctor.sh` — `lib/config-schema.sh`'s `config_enabler_assignee_ok`,
-   `config_missing_plan_path_repos`, `config_model_tier_floor_violations` and
-   `config_required_refinement_sources_without_refiner` are the one
-   implementation each script calls, so the Script's refusal and `doctor.sh`'s
-   `fail` can never drift on what counts as a fault. A fifth guard,
-   `config_duplicate_repos_slugs`, stays in code for the same reason one step
+   `config_missing_plan_path_repos`, `config_model_tier_floor_violations`,
+   `config_required_refinement_sources_without_refiner` and
+   `config_refinement_sources_paused_by_cap` are the one
+   implementation each script calls, so the Script's refusal (or, for the last
+   of them, its `warning`) and `doctor.sh`'s `fail`/`warn`
+   can never drift on what counts as a fault. Requirement 1c's sixth guard,
+   `config_required_failed_runs_source`, is the one exception to the division
+   above: it holds within a single key — `refinement_policy["failed-runs"]`
+   being `"required"` — and the schema could state it by giving that one
+   property its own enum in place of the shared `$defs/refinementPolicyValue`
+   `$ref`. It stays in code because agent-ops#924 requires the doctor's own
+   message to be the contract for it, and a schema violation reports the
+   schema's path rather than why `failed-runs` can never be refined; sharing
+   one implementation with `agent-cycle.sh` is what keeps that message from
+   drifting. A seventh guard, `config_duplicate_repos_slugs`, stays in code
+   for the same reason one step
    out: it holds between two *entries* of `repos[]` rather than between two
    keys of one object, which no array keyword the schema has can state
    either — `uniqueItems` rejects only byte-identical whole entries, and
@@ -1799,17 +1812,51 @@ implements.
     `prompts/coordinator.md`'s "Per-source refinement policy" never selects
     an unrefined item from a `"required"` source, and requirement 39's own
     gate on `refiner_model` being set means nothing ever refines one either —
-    the source's items would simply wait forever.
-    `config_required_refinement_sources_without_refiner`
-    (`lib/config-schema.sh`) rejects exactly this: any source resolved to
-    `"required"` while `refiner_model` is empty, checked by the same two
-    callers as the floor above. `refiner_model` therefore stays optional in
-    the schema (a fresh install with every default in force sets neither key,
-    and clears this check trivially — `refinement_policy` defaults to
-    `"preferred"` on the two sources that carry one at all), but an
-    installation that opts a source into `"required"` — as this one has for
-    `issues` and `tech-debt` — is rejected outright unless it also runs a
-    Refiner.
+    the source's items would simply wait forever. Three spellings reach that
+    state, and the fleet's own decision on the first tech-debt item this
+    invariant's own gap was filed against (TD-PPagop-26082704, agent-ops#1003)
+    splits them into two consequences:
+
+    - An empty `refiner_model` with any source resolved to `"required"` —
+      `config_required_refinement_sources_without_refiner`
+      (`lib/config-schema.sh`) rejects this outright, checked by the same two
+      callers as the floor above.
+    - `failed-runs` resolved to `"required"`, whatever `refiner_model` or
+      `refiner_max_per_engagement` are — it is the one source with no
+      candidate array at all for the Refiner's own candidate gathering to
+      ever reach (`prompts/coordinator.md`'s "Per-source refinement policy"),
+      so a `"required"` policy on it is unsatisfiable by construction.
+      `config_required_failed_runs_source` rejects this outright too, the
+      same refuse class as the case above.
+    - `refiner_max_per_engagement: 0` with `refiner_model` set and a source
+      resolved to `"required"` — `refiner_engagement_set`
+      (`lib/refinement.sh`) slices every engagement's candidates to none, so
+      nothing is ever refined even though the Refiner itself is configured.
+      Unlike the two cases above, this is not a configuration nobody could
+      ever satisfy: `0` is documented behaviour, a deliberate and temporary
+      pause of a stage that still exists, and working down an already-refined
+      backlog before specifying more is coherent. `agent-cycle.sh` and
+      `scripts/doctor.sh` therefore *warn* rather than refuse — every cycle
+      the condition holds, never only once, so it cannot age out of the
+      dashboard's window the way a once-only warning would —
+      `config_refinement_sources_paused_by_cap` computes the set warned
+      about. The condition is read with the rest of the configuration, ahead
+      of the log existing at all, and the `warning` event is emitted once
+      logging is initialised; a management command (requirement 2.3's
+      `--status` and its siblings) runs no cycle and emits none, so no
+      operator poll can mint a cycle id carrying an event but no
+      `cycle-start`. Auto-degrading the source's own policy to `"preferred"`
+      was considered and rejected: what runs must be what the config says.
+
+    `refiner_model` therefore stays optional in the schema (a fresh install
+    with every default in force sets neither key, and clears every check
+    above trivially — `refinement_policy` defaults to `"preferred"` on the
+    two sources that carry one at all), but an installation that opts a
+    source into `"required"` — as this one has for `issues` and `tech-debt`
+    — is rejected outright unless it also runs a Refiner, and unless that
+    source is not `failed-runs`; setting `refiner_max_per_engagement: 0`
+    afterwards does not then need every `"required"` policy flipped back too
+    — it only warns.
 
     **Escalating a wrong-but-implementable specification does not need a
     fresh mechanism.** A Refiner-authored (or Enabler-authored) specification
@@ -18128,7 +18175,10 @@ with the Reviewer's own.
     `totals.balanced` states, and is asserted on a fixture exercising every
     fate at once, that `entered` equals `landed + voided + superseded +
     abandoned` (`leaving`) plus `blocked + open` (`in_progress`) plus
-    `unaccounted`, which holds by construction.
+    `unaccounted`, which holds by construction. Voided-after-landed is
+    deliberately the only contradiction detected this way for now —
+    `docs/FLOW-SCHEMA.md`'s `unaccounted` section names the candidate
+    siblings considered and deferred, and the rule for reactivating one.
 
     `scripts/pickup-metrics.sh`'s own first-seen/selection pairing
     (TD-PPagop-26081405, issue #248 acceptance 4) is generalised onto this

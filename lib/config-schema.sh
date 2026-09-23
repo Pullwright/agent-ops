@@ -24,11 +24,15 @@
 # outside what `additionalProperties`/`required`/etc. on a single object can
 # express. `config_enabler_assignee_ok`, `config_missing_plan_path_repos`,
 # `config_model_tier_floor_violations`,
-# `config_required_refinement_sources_without_refiner` and
+# `config_required_refinement_sources_without_refiner`,
+# `config_required_failed_runs_source`,
+# `config_refinement_sources_paused_by_cap` and
 # `config_duplicate_repos_slugs` are `agent-cycle.sh`'s
-# own startup guards; `config_duplicate_project_review_slugs` is
-# `review-cycle.sh`'s. `scripts/doctor.sh` calls all six so no pipeline's
-# refusal can ever drift from what `doctor.sh` reports.
+# own startup guards (all `fail`/refuse except
+# `config_refinement_sources_paused_by_cap`, which `warn`s, never refuses —
+# see each function's own comment); `config_duplicate_project_review_slugs`
+# is `review-cycle.sh`'s. `scripts/doctor.sh` calls every one of them so no
+# pipeline's refusal or warning can ever drift from what `doctor.sh` reports.
 #
 # `config_model_tier_floor_violations` reads `lib/model-id.sh`'s
 # `MODEL_TIER_RANK` table, through `model_tier_below`; both scripts that
@@ -657,11 +661,60 @@ config_model_tier_floor_violations() {
 # set) nothing ever refines one either: the source's items wait forever
 # (requirement 1c; agent-ops#822, resolving `refiner_model`'s optionality).
 # Empty when REFINER_MODEL is set, or no source resolves to `"required"`.
+#
+# This is the *refuse* class of requirement 1c's invariant — the other two
+# spellings TD-PPagop-26082704/agent-ops#1003 found are
+# `config_required_failed_runs_source` (also refuse: `failed-runs` is
+# unrefinable regardless of REFINER_MODEL) and
+# `config_refinement_sources_paused_by_cap` (warn, not refuse:
+# `refiner_max_per_engagement: 0` with REFINER_MODEL set).
 config_required_refinement_sources_without_refiner() {
   local policy_json="${1:-{\}}" refiner_model="$2"
   [[ -z "$refiner_model" ]] || { printf ''; return; }
   jq -r '(. // {}) | to_entries | map(select(.value == "required") | .key) | join(", ")' \
     <<<"$policy_json" 2>/dev/null || true
+}
+
+# config_required_failed_runs_source REFINEMENT_POLICY_JSON
+# Prints "failed-runs" when its effective `refinement_policy` is `"required"`,
+# else empty. Unlike every other source, `failed-runs` has no candidate array
+# at all — `prompts/coordinator.md`'s "Per-source refinement policy" notes the
+# Refiner's own candidate gathering can never reach it — so a `"required"`
+# policy on it is unsatisfiable whatever REFINER_MODEL or
+# `refiner_max_per_engagement` are: it belongs to the same *refuse* class as
+# `config_required_refinement_sources_without_refiner` above, not the *warn*
+# class below (agent-ops#924's decision on TD-PPagop-26082704/agent-ops#1003).
+config_required_failed_runs_source() {
+  local policy_json="${1:-{\}}"
+  jq -r '(. // {}) | if .["failed-runs"] == "required" then "failed-runs" else "" end' \
+    <<<"$policy_json" 2>/dev/null || true
+}
+
+# config_refinement_sources_paused_by_cap REFINEMENT_POLICY_JSON REFINER_MODEL REFINER_MAX_PER_ENGAGEMENT
+# Prints the comma-joined source names whose effective `refinement_policy` is
+# `"required"` while REFINER_MODEL is set but REFINER_MAX_PER_ENGAGEMENT is
+# `0` — `refiner_engagement_set` (`lib/refinement.sh`) slices every
+# engagement's candidate set to `.[0:0]`, so nothing is ever refined even
+# though the Refiner itself is configured. Unlike an empty REFINER_MODEL or a
+# `"required"` `failed-runs`, this is not a configuration nobody could ever
+# satisfy — `0` is documented as a deliberate, temporary pause of a stage that
+# still exists (agent-ops#924's decision on TD-PPagop-26082704/agent-ops#1003:
+# "a configuration that is contradictory by construction is refused at
+# startup; one that is merely idle by an operator's temporary choice is
+# warned about, every cycle, and never refused"). `failed-runs` is never
+# reported here even when `"required"` — it has no candidate array to pause in
+# the first place, and is refused outright by
+# `config_required_failed_runs_source` instead. Empty when REFINER_MODEL is
+# empty (the refuse-class function above already covers that case),
+# REFINER_MAX_PER_ENGAGEMENT is not `0`, or no other source resolves to
+# `"required"`.
+config_refinement_sources_paused_by_cap() {
+  local policy_json="${1:-{\}}" refiner_model="$2" cap="$3"
+  [[ -n "$refiner_model" ]] || { printf ''; return; }
+  [[ "$cap" == "0" ]] || { printf ''; return; }
+  jq -r '(. // {}) | to_entries
+    | map(select(.value == "required" and .key != "failed-runs") | .key)
+    | join(", ")' <<<"$policy_json" 2>/dev/null || true
 }
 
 # config_duplicate_project_review_slugs PROJECT_REVIEW_REPOS_JSON

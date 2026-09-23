@@ -746,6 +746,29 @@ if [[ -n "$required_sources_without_refiner" ]]; then
   echo "agent-cycle: refinement_policy requires [$required_sources_without_refiner] but refiner_model is empty — refusing to start rather than let a source's unrefined items wait forever with nothing ever refining one" >&2
   exit 1
 fi
+# Requirement 1c's second refuse spelling (agent-ops#924's decision on
+# TD-PPagop-26082704/agent-ops#1003): "failed-runs" has no candidate array at
+# all for the Refiner's own candidate gathering to ever reach
+# (prompts/coordinator.md's "Per-source refinement policy"), so a "required"
+# policy on it is unsatisfiable whatever refiner_model or
+# refiner_max_per_engagement are — refused outright, the same as an empty
+# refiner_model above.
+required_failed_runs_source="$(config_required_failed_runs_source "$refinement_policy_json")"
+if [[ -n "$required_failed_runs_source" ]]; then
+  echo "agent-cycle: refinement_policy requires failed-runs but that source has no candidate array for the Refiner's own candidate gathering to ever reach — refusing to start rather than let its items wait forever with nothing ever refining one" >&2
+  exit 1
+fi
+# Requirement 1c's *warn*, not refuse, spelling (agent-ops#924's decision on
+# TD-PPagop-26082704/agent-ops#1003): refiner_max_per_engagement: 0 with
+# refiner_model set is a deliberate, temporary pause of a stage that still
+# exists, not a configuration nobody could ever satisfy — so a "required"
+# source left unrefinable by the cap alone only warns, and only after logging
+# is initialised below (log_event/log_file are not defined yet at this point
+# in the script), every cycle the condition holds so it cannot age out of the
+# dashboard's window. Carried forward in this variable rather than logged
+# here.
+refinement_paused_sources="$(config_refinement_sources_paused_by_cap \
+  "$refinement_policy_json" "$refiner_model" "$refiner_max_per_engagement")"
 # Requirement 1c, "the floor" (agent-ops#822): refiner_model and enabler_model
 # are the two stages that can author a work order's context/acceptance
 # directly (requirements 39 and 36b); either ranking below an implementer
@@ -1023,6 +1046,27 @@ cycle_dir="$state_dir/cycles/$cycle_id"
 # lib/log-event.sh's log_event_append, shared with review-cycle.sh; `cycle`
 # is this pipeline's own id field.
 log_event() { log_event_append "$log_file" cycle "$cycle_id" "$node_name" "$@"; }
+
+# Requirement 1c's warn spelling (agent-ops#924's decision on
+# TD-PPagop-26082704/agent-ops#1003), computed above and carried forward to
+# here because logging was not yet initialised at that point in the script.
+# Emitted on every cycle the condition holds, never once, so it cannot age out
+# of the dashboard's window the way a once-only warning would.
+#
+# Gated on MANAGE_ACTION for the same reason the cycle directory just above
+# is: a management command runs no cycle, and every event it wrote would land
+# under a cycle id that has no `cycle-start`, no `cycle-end` and no transcript
+# directory — the shape scripts/publish-dashboard.sh renders as a cycle that
+# began and can never end, holding a MAX_CYCLES slot for good. `--status` is
+# the command an operator is told to poll (README's drain and stand-down
+# sections), so this would be an unbounded row source, not a rare one.
+if [[ -z "$MANAGE_ACTION" && -n "$refinement_paused_sources" ]]; then
+  log_event "warning" "$(jq -nc \
+    --arg d "refinement_policy requires [$refinement_paused_sources] but refiner_max_per_engagement is $refiner_max_per_engagement — refiner_engagement_set slices every engagement's candidates to none, so nothing is ever refined; these sources' unrefined items wait, unlabelled, until the cap is raised above 0" \
+    --argjson cap "$refiner_max_per_engagement" \
+    --argjson sources "$(jq -Rc 'split(", ")' <<<"$refinement_paused_sources")" \
+    '{detail: $d, refiner_max_per_engagement: $cap, sources: $sources}')"
+fi
 
 # void_obsolete_ctx_json REPO_SLUG [FLAGS_JSON]
 # What every `void_guard_reason` call site (the Co-Ordinator, the Enabler, the

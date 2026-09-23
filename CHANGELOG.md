@@ -121,6 +121,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Requirement 1c's "required refinement source with nothing to refine it"
+  guard now covers all three spellings of that configuration, not just an
+  empty `refiner_model`** (issue #1003, TD-PPagop-26082704; the split follows
+  the owner's decision on #924). Two configurations reached the same
+  unrefinable state and passed the guard, then stalled in the quietest way
+  this pipeline has — a source that simply stops producing work, with no
+  label, no block record and nothing on the dashboard to say why.
+  `lib/config-schema.sh` now answers them separately, because they are not
+  the same kind of fault: `config_required_failed_runs_source` **refuses** a
+  `"required"` `failed-runs` policy outright, whatever else is set, since
+  that source has no candidate array at all for the Refiner's own candidate
+  gathering to ever reach; `config_refinement_sources_paused_by_cap`
+  **warns**, every cycle the condition holds, when `refiner_max_per_engagement`
+  is `0` with `refiner_model` set — `0` is documented as a deliberate,
+  temporary pause of a stage that still exists, so refusing to start would
+  force an operator pausing refinement to flip every `"required"` policy back
+  as well. Both are shared between `agent-cycle.sh`'s startup guard and
+  `scripts/doctor.sh` (which gains the `refiner_max_per_engagement` read it
+  never had), so the refusal, the `warning` event and the doctor's
+  `fail`/`warn` cannot drift. The standing principle the decision states for
+  future cases: a configuration contradictory by construction is refused at
+  startup; one merely idle by an operator's temporary choice is warned about,
+  every cycle, and never refused.
+
 - **The `firing-missed` and `idle-with-demand` pager invariants no longer
   page on a standby node** (issues #1686, #1708). Both read "active" as
   "heartbeat fresh", so a node demoted to standby — which keeps publishing
@@ -196,6 +220,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   now filters on `role === "active" && !n.stale`, the same staleness check
   `nodeUnknown()` already applies. A fixture mirroring `raced-single-active-
   node.json` with one stale peer added confirms neither badge renders.
+- **The cyclerows-cache miss branch can no longer leave a key file vouching
+  for rows it failed to persist** (issue #1760). `scripts/publish-
+  dashboard.sh`'s cache-miss branch (added in #1751) wrote the rows copy and
+  the key file as two independent best-effort operations, so a `cp` that
+  failed or was truncated partway could still be followed by a successful
+  key write — leaving the key vouching for stale or partial rows, served on
+  every subsequent unchanged tick until some unrelated input moved the key.
+  The key is now written only when the rows copy succeeds; when it fails,
+  both cache files are removed so the next tick's `-s`/`-f` guard fails and
+  it rebuilds from a fresh glob instead.
 - **A configured notify-webhook URL is now masked before it reaches the
   state-mirror repository or the dashboard, instead of passing every
   redaction pass unmatched** (issue #1721). `lib/redact.sh`'s pattern set

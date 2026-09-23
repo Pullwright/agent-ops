@@ -1577,8 +1577,9 @@ Script pre-fetches as structured data — `issues`, `security`, `code-quality`,
 `implementation-plan`, read only for a repo whose `sources` lists them and
 whose policy for them is not itself `exempt`. `failed-runs` is the one source
 with no array at all, so a policy set for it shapes selection only — nothing
-ever refines an unrefined item there, and an installation setting `"required"`
-on it should know its items will simply wait.
+ever refines an unrefined item there, and `agent-cycle.sh`/`scripts/doctor.sh`
+refuse to start a configuration that sets it to `"required"` (requirement 1c)
+rather than let its items wait forever with nothing ever refining one.
 
 ## Choosing the Implementer's model
 
