@@ -3905,7 +3905,19 @@ implements.
    compose_reconcile, image, switch, stage_health, mirror, updater}`)
    into the branch root — on a standby, which has no cycles to publish, the
    heartbeat is the entire point, and it is what lets the fleet dashboard
-   tell a quiet node from a dead one. `version` is `lib/version.sh`'s answer
+   tell a quiet node from a dead one. `role` is `lib/role.sh`'s
+   `role_declared` — requirement 2.4's own normalisation, lowercased and
+   stripped of whitespace, and `unknown` when the pushing process was handed
+   no role at all. Normalised because a peer acts on it and must reach the
+   same verdict the node's own guard would: `AGENT_OPS_ROLE=Active` runs
+   unattended cycles, so it cannot be allowed to read as a standby.
+   `unknown` rather than the guard's fail-closed `standby` because this
+   field is a record, not a decision — every scheduled process is handed the
+   variable by Compose, so an empty one means a hand run, and requirement
+   51's `firing-missed` retires an open page for a node it believes has
+   stopped being asked to cycle. `scripts/publish-dashboard.sh` builds its
+   own row's `role` the same way, and reads a peer's from this field,
+   writing `unknown` when a heartbeat carries none. `version` is `lib/version.sh`'s answer
    — what code the node is running, knowable to the fleet only because the
    node says so itself, since a peer publishes no container. `compose` is
    `lib/compose-drift.sh`'s, on the same reasoning one layer down: whether
@@ -18557,7 +18569,61 @@ with the Reviewer's own.
       gap from the inside: no `cycle-start`, no `cycle-skipped`, nothing in
       `log.jsonl` at all), as distinct from a cycle that is simply still
       running, or a long cycle whose scheduler keeps ticking (and skipping)
-      around it. `lock.json` is never published (`scripts/state-sync.sh`
+      around it. The nodes judged are the *cycling* ones: the row's
+      heartbeat is fresh **and** its published `role` is not a standby's.
+      Freshness alone is not enough, and the role is compared normalised —
+      lowercased, whitespace stripped, requirement 2.4's own reading, since
+      `AGENT_OPS_ROLE=Active` runs unattended cycles and must not read as a
+      standby to a peer. Both publishers of that field normalise it before
+      it travels (requirement 2.5), so the comparison is over a value the
+      fleet agrees on; a node running an image older than that still has its
+      raw value read the same way here. A standby is exempt outright, not
+      given a wider window: requirement 2.4 makes a standby tick exit before
+      the lock, the log and the cycle directory, so it writes neither a
+      `cycle-start` nor a `cycle-skipped`, the union log carries no evidence
+      of its scheduler in either direction, and the newest cycle event it
+      holds for that node is from before the node was demoted — any finite
+      multiple of the interval would eventually page on it (#1686: ockham-2,
+      whose last cycle ran on 2026-09-16, was paged repeatedly over the
+      following days, #1768 at 7,970 minutes).
+
+      The exemption's cost is stated rather than hidden: a standby whose
+      scheduler alone has stopped is invisible to this invariant until it is
+      promoted, and `node-stale` does not cover it — that reads the
+      heartbeat, which `scripts/state-sync.sh push` writes from its own
+      crontab line, so a node that has lost its `agent-cycle.sh` line and
+      nothing else keeps publishing and looks healthy. Closing that gap
+      means giving a standby tick a trace to be judged by, which moves
+      requirement 2.4's own ordering; #1788 carries it.
+
+      A row whose `role` is absent, empty or `unknown` is judged exactly as
+      it was before #1686: the exemption asks for positive evidence that a
+      node is standing by, and `unknown` — what `scripts/publish-dashboard.sh`
+      writes for a peer whose heartbeat carries no role, and what either
+      publisher writes for a process that was handed none — is not a node
+      saying so. This is the one place the fleet's record and requirement
+      2.4's guard resolve silence in opposite directions, and deliberately:
+      the guard answers "may this node spend?", where silence must mean no;
+      the record answers "what is this node running as?", where silence must
+      mean nothing at all, because a `standby` invented from an unset
+      variable would retire a real page (requirement 2.5).
+
+      Promotion is the edge a role alone cannot see. A node whose role turns
+      `active` has a newest cycle event as old as its demotion, so the fact
+      is true the instant the promotion publishes and stays true until the
+      node's first tick, which is up to a whole interval away. Nothing is
+      *filed* on it: this key registers a per-key filing window of
+      `schedule.cycle_interval_minutes` plus fifteen minutes for
+      replication (`MIN_FIRING_MINUTES_OVERRIDE`, the same mechanism
+      `node-stale` uses), so the promoted node's first `cycle-start` clears
+      the candidate before a page is written, while a scheduler that has
+      really dropped a firing holds the fact across the window and is filed
+      as before. Demotion is the mirror image: demoting a node the fleet was
+      paging for closes its page as cleared, because the fleet has stopped
+      expecting cycles from it — the evidence stays in the closed issue, and
+      #1788 is what would let the fault go on being noticed.
+
+      `lock.json` is never published (`scripts/state-sync.sh`
       excludes it), so "holds no lock" is derived purely from the union log:
       a node's own newest cycle-start/cycle-end/cycle-skipped event being a
       `cycle-start` means that cycle has not yet ended, so a long
@@ -18597,8 +18663,12 @@ with the Reviewer's own.
       channel lands, this class of page reaches it automatically
       (`notify_events`' own default already names `pager`) — today it is
       filed only.
-    - **`updater-stuck`** (owner-only). Fires when any active node's
-      `updater.status == "stuck"` for over 2× `updater_stuck_after_minutes`.
+    - **`updater-stuck`** (owner-only). Fires when any *live* node's
+      `updater.status == "stuck"` for over 2× `updater_stuck_after_minutes`
+      — live, meaning a fresh heartbeat, whatever the node's role: the
+      updater runs from a crontab line of its own on every node, and a
+      standby whose image has stopped rolling is a standby that cannot
+      safely be promoted.
       `.updater.seconds` (`lib/updater-health.sh`'s `updater_status`) already
       carries the streak's own elapsed time, recomputed fresh on every
       heartbeat write, so this reads it directly rather than re-deriving an
@@ -18671,8 +18741,10 @@ with the Reviewer's own.
     union log or log a new union-log event of their own, neither of which
     `REMEDY_ARG KEY EVIDENCE`'s own two-argument contract carries.
 
-    - **`idle-with-demand`** (owner-only). Fires when an *active* node's
-      last `pager_idle_cycles` (default 6) *cycles* all ended in state
+    - **`idle-with-demand`** (owner-only). Fires when a *cycling* node's
+      (`firing-missed`'s own reading: a fresh heartbeat and a published
+      `role` that is not a standby's) last `pager_idle_cycles` (default 6)
+      *cycles* all ended in state
       `idle-with-demand` (D21, `lib/node-time-state.sh`) with a cause other
       than `back-pressure` — a deliberate throttle, not a
       symptom, and the one exclusion the issue's own list (usage-limit,
@@ -18691,7 +18763,13 @@ with the Reviewer's own.
       fire at all. A tick that skipped contributes nothing (a
       `cycle-skipped` calls `suppress_node_state_transitions` and logs no
       `node-state`), which is the wanted answer: deferring to a cycle already
-      running is not a cycle that ended idle. Fewer than `pager_idle_cycles`
+      running is not a cycle that ended idle. The role test is #1686's, for
+      the same fault one invariant along and in a sharper form: a node
+      demoted mid-streak keeps publishing a fresh heartbeat while
+      requirement 2.4 stops its ticks, and where `firing-missed` needs time
+      to pass before its window is wrong, this one needs none — no further
+      cycle will ever break the streak its last cycles left behind.
+      Fewer than `pager_idle_cycles`
       cycles for a node
       decides nothing — "last N cycles" cannot be confirmed from an
       incomplete window. Caught: the 2026-09-04 fleet-wide stand-down
@@ -27845,13 +27923,26 @@ oblige anyone to edit a test.
     `cycle-skipped` is past 2× a configured interval with no lock held, but
     not on a node that recently cycled, not on one whose heartbeat is itself
     stale, not on one whose own last event is an unmatched `cycle-start`
-    (still holds its lock) however old, and not on one whose long-running
+    (still holds its lock) however old, not on one whose long-running
     cycle-start is trailed by a recent `cycle-skipped` — proof its scheduler
     kept ticking and correctly deferred — even though that skip is not
-    itself a lock hold — with evidence carrying the firing node's own
-    cycle-duration histogram; `node-stale` fires only on a row whose
+    itself a lock hold, and not on one whose published `role` is a
+    standby's however old its newest cycle event — including a raw
+    `"STANDBY "`, since the role is read normalised. Five nodes sharing
+    that one ancient history and differing only in the role their row
+    publishes pin the rest of the matrix: `"Active"` is named (requirement
+    2.4 runs cycles on it, so a peer must not read it as a standby),
+    `"unknown"` and a row carrying no `role` field at all are named too (no
+    evidence of a standby is not evidence of one), and the same node
+    republished as `active` fires — the exemption is by role, not by name
+    or history. The registration case beside them pins the filing window
+    that keeps that last case from paging an ordinary promotion:
+    `schedule.cycle_interval_minutes` plus fifteen minutes, derived from
+    the configured interval rather than fixed, and absent altogether when
+    no interval is passed, leaving `node-stale`'s own override untouched.
+    Evidence carries the firing node's own cycle-duration histogram; `node-stale` fires only on a row whose
     `heartbeat_age_s` exceeds 2× the configured threshold; `updater-stuck`
-    fires only on an active row reporting `updater.status: "stuck"` past 2×
+    fires only on a live row reporting `updater.status: "stuck"` past 2×
     the configured threshold, never a stale row's; `review-pipeline-failing`
     fires on a per-node streak of 3 or more failed review runs *each of
     which ends in a `review-end` reporting `exit_code: 0`* — the shape
@@ -27883,8 +27974,9 @@ oblige anyone to edit a test.
     here while never firing in production — excludes a node whose own streak
     is `back-pressure` throughout, excludes a node whose streak is broken by
     a cycle that ended `idle-without-demand`, decides nothing from fewer
-    than `pager_idle_cycles` cycles however many events they carry, and
-    never fires with `pager_idle_cycles`
+    than `pager_idle_cycles` cycles however many events they carry, stops
+    firing on that same streak the moment the node's row publishes a
+    standby's role, and never fires with `pager_idle_cycles`
     unconfigured, with its evidence carrying the node's own `none-selected`
     reason and `coordinator-input-fitted` detail; `fit-ladder-pinned` fires
     on a node whose every `coordinator-input-fitted` event in the trailing

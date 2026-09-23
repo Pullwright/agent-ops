@@ -2527,7 +2527,17 @@ if [[ -n "$state_repo" ]]; then
 else
   self_pub_json="$(jq -nc --arg ts "$now_iso" '{ts: $ts, age_s: 0, verdict: "fresh"}')"
 fi
-jq -nc --arg n "$self_node" --arg r "$(role_current)" --arg lc "$last_local_cycle" \
+# Our own row's `role`, like a peer's, is the fleet's record of what this
+# node is running as rather than an answer to "may this process spend?", so
+# it is `role_declared` and not `role_current`: a hand run of this script on
+# the host has no AGENT_OPS_ROLE in scope (Compose hands it to every
+# scheduled process, nothing hands it to a terminal), and `role_current`
+# would resolve that silence to `standby` — a claim this row would then make
+# to the pager, which exempts a standby from `firing-missed`. `unknown` is
+# what an undeclared role publishes, and the invariants read it as no
+# evidence either way (agent-ops#1686).
+self_role_declared="$(role_declared)"
+jq -nc --arg n "$self_node" --arg r "${self_role_declared:-unknown}" --arg lc "$last_local_cycle" \
   --argjson live "$self_live_json" \
   --argjson version "$self_version_json" \
   --argjson compose "$(compose_drift_status)" \
@@ -2756,7 +2766,12 @@ if (( WITH_GITHUB )); then
   # WITH_GITHUB-gated, not merely FULL: firing/clearing may create or close a
   # GitHub issue, which a --no-github (test or local-only) tick must never do.
   if [[ "$pager_enabled" == "true" ]]; then
-    pager_register_builtin_invariants "$pager_stale_file_after_minutes"
+    # The cycle interval is firing-missed's own filing window (one interval
+    # plus a margin, lib/pager-invariants.sh): long enough that a node
+    # promoted out of standby cycles once before any page about it is
+    # written.
+    pager_register_builtin_invariants "$pager_stale_file_after_minutes" \
+      "$github_budget_cycle_interval_minutes"
     export CLAIM_GH="$DASHBOARD_GH_CMD"
     export PAGER_GH="$DASHBOARD_GH_CMD"
     # review-log.jsonl's own fleet union, for `review-pipeline-failing`

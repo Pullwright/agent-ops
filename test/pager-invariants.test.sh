@@ -65,56 +65,64 @@ trap 'rm -rf "$WORKDIR"' EXIT
 # leaves the `doctor` object exactly the `{timestamp, verdict}` shape every
 # peer published before that, which is what keeps the no-detail cases below
 # honest about an older peer rather than merely about an empty array.
-node_row() {  # node_row NAME STALE STAGE_VERDICT UPDATER_STATUS DOCTOR_VERDICT [DOCTOR_FAILS]
-  jq -nc --arg n "$1" --argjson stale "$2" --arg sv "$3" --arg us "$4" --arg dv "$5" \
-         --argjson df "${6:-null}" '
-    {node: $n, stale: $stale,
-     stage_health: (if $sv == "" then null else {stages: {coordinator: {verdict: $sv}}} end),
-     updater: (if $us == "" then null else {status: $us} end),
-     doctor: (if $dv == "" then null
-              else ({verdict: $dv} + (if $df == null then {} else {fails: $df} end))
-              end)}'
+# ROLE is the row's published `role` — `active`, a standby's, or `unknown`
+# (scripts/publish-dashboard.sh's own value for a peer whose heartbeat
+# carries none). An empty ROLE leaves the field out altogether, which is the
+# shape a row built before the field existed has. One builder for every
+# invariant's rows, so a fixture cannot drift from what
+# scripts/publish-dashboard.sh actually assembles.
+node_row() {  # node_row NAME STALE ROLE STAGE_VERDICT UPDATER_STATUS DOCTOR_VERDICT [DOCTOR_FAILS]
+  jq -nc --arg n "$1" --argjson stale "$2" --arg role "$3" \
+         --arg sv "$4" --arg us "$5" --arg dv "$6" \
+         --argjson df "${7:-null}" '
+    {node: $n, stale: $stale}
+    + (if $role == "" then {} else {role: $role} end)
+    + {stage_health: (if $sv == "" then null else {stages: {coordinator: {verdict: $sv}}} end),
+       updater: (if $us == "" then null else {status: $us} end),
+       doctor: (if $dv == "" then null
+                else ({verdict: $dv} + (if $df == null then {} else {fails: $df} end))
+                end)}'
 }
-# fleet3 ROW1 ROW2 ROW3 -> a 3-element JSON array. Built by feeding each row
-# to `jq -s` on stdin rather than process substitution (`<(...)`): this
-# sandbox's /dev/fd entries are not always openable by a second process, so
-# `<(...)` is avoided throughout this file.
-fleet3() { printf '%s\n%s\n%s\n' "$1" "$2" "$3" | jq -sc '.'; }
+# fleet_rows ROW... -> a JSON array of however many rows it was given. Built
+# by feeding each row to `jq -s` on stdin rather than process substitution
+# (`<(...)`): this sandbox's /dev/fd entries are not always openable by a
+# second process, so `<(...)` is avoided throughout this file.
+fleet_rows() { printf '%s\n' "$@" | jq -sc '.'; }
 
-fleet3_all_failing="$(fleet3 "$(node_row n1 false failing "" "")" \
-  "$(node_row n2 false failing "" "")" "$(node_row n3 false failing "" "")")"
+fleet3_all_failing="$(fleet_rows "$(node_row n1 false active failing "" "")" \
+  "$(node_row n2 false active failing "" "")" "$(node_row n3 false active failing "" "")")"
 verdict="$(pager_eval_verdict_unanimous "$fleet3_all_failing" /dev/null)"
 assert_eq "three active nodes, the same stage failing on all: fires" "true" "$(jq -r '.firing' <<<"$verdict")"
 assert_eq "  ... evidence names the #1071 signature" "1" "$(grep -c '#1071' <<<"$(jq -r '.evidence' <<<"$verdict")")"
 
-fleet3_split="$(fleet3 "$(node_row n1 false failing "" "")" \
-  "$(node_row n2 false ok "" "")" "$(node_row n3 false failing "" "")")"
+fleet3_split="$(fleet_rows "$(node_row n1 false active failing "" "")" \
+  "$(node_row n2 false active ok "" "")" "$(node_row n3 false active failing "" "")")"
 verdict="$(pager_eval_verdict_unanimous "$fleet3_split" /dev/null)"
 assert_eq "three active nodes, only two agree: does not fire" "false" "$(jq -r '.firing' <<<"$verdict")"
 
-fleet_one_active="$(fleet3 "$(node_row n1 false failing "" "")" \
-  "$(node_row n2 true failing "" "")" "$(node_row n3 true failing "" "")")"
+fleet_one_active="$(fleet_rows "$(node_row n1 false active failing "" "")" \
+  "$(node_row n2 true active failing "" "")" "$(node_row n3 true active failing "" "")")"
 verdict="$(pager_eval_verdict_unanimous "$fleet_one_active" /dev/null)"
 assert_eq "fewer than two active nodes: never unanimous, even if all named nodes agree" \
   "false" "$(jq -r '.firing' <<<"$verdict")"
 
-fleet_stale_disagrees="$(fleet3 "$(node_row n1 false failing "" "")" \
-  "$(node_row n2 false failing "" "")" "$(node_row n3 true ok "" "")")"
+fleet_stale_disagrees="$(fleet_rows "$(node_row n1 false active failing "" "")" \
+  "$(node_row n2 false active failing "" "")" "$(node_row n3 true active ok "" "")")"
 verdict="$(pager_eval_verdict_unanimous "$fleet_stale_disagrees" /dev/null)"
 assert_eq "a stale node's own disagreement does not break the active nodes' unanimity" \
   "true" "$(jq -r '.firing' <<<"$verdict")"
 
-fleet3_updater_stuck="$(fleet3 "$(node_row n1 false "" stuck "")" \
-  "$(node_row n2 false "" stuck "")" "$(node_row n3 false "" stuck "")")"
+fleet3_updater_stuck="$(fleet_rows "$(node_row n1 false active "" stuck "")" \
+  "$(node_row n2 false active "" stuck "")" "$(node_row n3 false active "" stuck "")")"
 verdict="$(pager_eval_verdict_unanimous "$fleet3_updater_stuck" /dev/null)"
 assert_eq "updater.status stuck on every active node: fires" "true" "$(jq -r '.firing' <<<"$verdict")"
-fleet3_updater_split="$(fleet3 "$(node_row n1 false "" stuck "")" \
-  "$(node_row n2 false "" stuck "")" "$(node_row n3 false "" running "")")"
+fleet3_updater_split="$(fleet_rows "$(node_row n1 false active "" stuck "")" \
+  "$(node_row n2 false active "" stuck "")" "$(node_row n3 false active "" running "")")"
 assert_eq "  ... two active nodes stuck, one running: does not fire" "false" \
   "$(jq -r '.firing' <<<"$(pager_eval_verdict_unanimous "$fleet3_updater_split" /dev/null)")"
 
-fleet3_doctor_fail="$(fleet3 "$(node_row n1 false "" "" fail)" \
-  "$(node_row n2 false "" "" fail)" "$(node_row n3 false "" "" fail)")"
+fleet3_doctor_fail="$(fleet_rows "$(node_row n1 false active "" "" fail)" \
+  "$(node_row n2 false active "" "" fail)" "$(node_row n3 false active "" "" fail)")"
 verdict="$(pager_eval_verdict_unanimous "$fleet3_doctor_fail" /dev/null)"
 assert_eq "doctor.verdict fail on every active node: fires" "true" "$(jq -r '.firing' <<<"$verdict")"
 assert_eq "  ... a peer publishing no fails at all names no check, rather than an empty one" \
@@ -126,9 +134,9 @@ assert_eq "  ... a peer publishing no fails at all names no check, rather than a
 d_write='Poetic-Poems/poetic is readable but not writable with this token — a cycle would claim work here and lose it at push'
 d_state='Poetic-Poems/agent-ops-state is readable but not writable with this token — this node could fetch fleet state and never publish its own'
 shared_fails="$(jq -nc --arg a "$d_write" --arg b "$d_state" '[$a, $b]')"
-fleet3_doctor_named="$(fleet3 "$(node_row n1 false "" "" fail "$shared_fails")" \
-  "$(node_row n2 false "" "" fail "$shared_fails")" \
-  "$(node_row n3 false "" "" fail "$shared_fails")")"
+fleet3_doctor_named="$(fleet_rows "$(node_row n1 false active "" "" fail "$shared_fails")" \
+  "$(node_row n2 false active "" "" fail "$shared_fails")" \
+  "$(node_row n3 false active "" "" fail "$shared_fails")")"
 verdict="$(pager_eval_verdict_unanimous "$fleet3_doctor_named" /dev/null)"
 evidence="$(jq -r '.evidence' <<<"$verdict")"
 assert_eq "a fail every node shares still fires" "true" "$(jq -r '.firing' <<<"$verdict")"
@@ -142,9 +150,9 @@ assert_eq "  ... and still carries the #1071 signature it always did" \
 # Only the intersection: a check one node alone reports is not what the
 # unanimity is about, and naming it would point the reader at the wrong node.
 odd_fails="$(jq -nc --arg a "$d_write" '[$a, "n2 alone says this"]')"
-fleet3_doctor_partial="$(fleet3 "$(node_row n1 false "" "" fail "$shared_fails")" \
-  "$(node_row n2 false "" "" fail "$odd_fails")" \
-  "$(node_row n3 false "" "" fail "$shared_fails")")"
+fleet3_doctor_partial="$(fleet_rows "$(node_row n1 false active "" "" fail "$shared_fails")" \
+  "$(node_row n2 false active "" "" fail "$odd_fails")" \
+  "$(node_row n3 false active "" "" fail "$shared_fails")")"
 evidence="$(jq -r '.evidence' <<<"$(pager_eval_verdict_unanimous "$fleet3_doctor_partial" /dev/null)")"
 assert_eq "a check every node shares is named" "1" "$(grep -cF "$d_write" <<<"$evidence")"
 assert_eq "  ... while one node's own extra fail is not" \
@@ -157,9 +165,9 @@ assert_eq "  ... and neither is a check the other two share but n2 does not" \
 # would be worse than the bare verdict.
 disjoint_a="$(jq -nc '["only n1 and n3 say this"]')"
 disjoint_b="$(jq -nc '["only n2 says this"]')"
-fleet3_doctor_disjoint="$(fleet3 "$(node_row n1 false "" "" fail "$disjoint_a")" \
-  "$(node_row n2 false "" "" fail "$disjoint_b")" \
-  "$(node_row n3 false "" "" fail "$disjoint_a")")"
+fleet3_doctor_disjoint="$(fleet_rows "$(node_row n1 false active "" "" fail "$disjoint_a")" \
+  "$(node_row n2 false active "" "" fail "$disjoint_b")" \
+  "$(node_row n3 false active "" "" fail "$disjoint_a")")"
 verdict="$(pager_eval_verdict_unanimous "$fleet3_doctor_disjoint" /dev/null)"
 assert_eq "nodes failing different checks still fire on the unanimous verdict" \
   "true" "$(jq -r '.firing' <<<"$verdict")"
@@ -169,9 +177,9 @@ assert_eq "  ... but no check is named, rather than the wrong one" \
 # At most two, however many they share: this is a page title's worth of
 # evidence, not the whole array.
 many_fails="$(jq -nc '["check one","check two","check three","check four"]')"
-fleet3_doctor_many="$(fleet3 "$(node_row n1 false "" "" fail "$many_fails")" \
-  "$(node_row n2 false "" "" fail "$many_fails")" \
-  "$(node_row n3 false "" "" fail "$many_fails")")"
+fleet3_doctor_many="$(fleet_rows "$(node_row n1 false active "" "" fail "$many_fails")" \
+  "$(node_row n2 false active "" "" fail "$many_fails")" \
+  "$(node_row n3 false active "" "" fail "$many_fails")")"
 evidence="$(jq -r '.evidence' <<<"$(pager_eval_verdict_unanimous "$fleet3_doctor_many" /dev/null)")"
 assert_eq "four shared fails name the first two" "1" "$(grep -c 'check one' <<<"$evidence")"
 assert_eq "  ... and stop there" "0" "$(grep -c 'check three' <<<"$evidence")"
@@ -184,8 +192,8 @@ assert_eq "the stage_health branch's evidence is untouched" \
   "stage_health[coordinator] on every active node (n1, n2, n3) — the #1071 signature: a uniform fleet-wide failure is almost always the reader being wrong, not every node failing alike at once" \
   "$(jq -r '.evidence' <<<"$verdict")"
 
-fleet3_healthy="$(fleet3 "$(node_row n1 false ok stuck fail)" \
-  "$(node_row n2 false ok running ok)" "$(node_row n3 false failing running ok)")"
+fleet3_healthy="$(fleet_rows "$(node_row n1 false active ok stuck fail)" \
+  "$(node_row n2 false active ok running ok)" "$(node_row n3 false active failing running ok)")"
 verdict="$(pager_eval_verdict_unanimous "$fleet3_healthy" /dev/null)"
 assert_eq "no single signal is unanimous across all three: does not fire" \
   "false" "$(jq -r '.firing' <<<"$verdict")"
@@ -353,11 +361,14 @@ write_log() { local path="$1"; shift; printf '%s\n' "$@" > "$path"; }
 # runs, not to a fixed calendar date.
 rel() { date -u -d "@$(( $(date -u +%s) + $1 ))" +%Y-%m-%dT%H:%M:%SZ; }
 
+# fm_row NAME STALE ROLE -> node_row with the three fields this invariant
+# reads and nothing else, so the fixtures below stay legible.
+fm_row() { node_row "$1" "$2" "$3" "" "" ""; }
 # n1: last cycle completed 3 minutes ago — well within the interval, never
 # fires. n2: last cycle-start 4 hours ago, cleanly completed (no lock held)
 # — fires, with a two-entry duration histogram. n3: last cycle-start equally
 # ancient, but its heartbeat itself is stale — excluded regardless. n4:
-# active, but its last event is an unmatched cycle-start (still running) —
+# cycling, but its last event is an unmatched cycle-start (still running) —
 # never fires, however old that start was. n5: cycle-start 40 minutes ago,
 # still unmatched (a cycle genuinely still running, past 2x the 15-minute
 # interval), with two later cycle-skipped events (own, distinct cycle ids,
@@ -366,40 +377,106 @@ rel() { date -u -d "@$(( $(date -u +%s) + $1 ))" +%Y-%m-%dT%H:%M:%SZ; }
 # still-running cycle — never fires, since a recent skip is itself evidence
 # the scheduler is alive (agent-ops#1312's own review of #1282: a trailing
 # skip must not invert "holds no lock" into "missed").
+#
+# n6 to n10 share one history — a cleanly completed cycle five days old,
+# and nothing since, which is the agent-ops#1686 shape (requirement 2.4
+# means a standby tick writes nothing newer) — and differ only in the role
+# their row publishes, because that is the whole of what decides them:
+#
+#   n6  standby     exempt.
+#   n7  "STANDBY "  exempt too: the role is compared normalised, lib/role.sh's
+#                   own rule.
+#   n8  "Active"    judged, and named. requirement 2.4 runs cycles on this
+#                   node — it compares case-insensitively — so a raw
+#                   capitalised value must not read as a standby here. Live
+#                   until scripts/state-sync.sh began publishing the role
+#                   normalised, and still live for a node running an older
+#                   image.
+#   n9  unknown     judged, and named: `unknown` is what a peer's row carries
+#                   when its heartbeat has no role at all, and what a
+#                   publisher with no role in its environment writes about
+#                   itself. Neither is a node saying it is standing by, and
+#                   an exemption wants positive evidence.
+#   n10 (no field)  judged, and named, for the same reason.
 fm_log="$WORKDIR/firing-missed.jsonl"
-write_log "$fm_log" \
-  "$(cycle_ev "$(rel -300)" n1 c1 cycle-start)" \
-  "$(cycle_ev "$(rel -180)" n1 c1 cycle-end '{"exit_code":0}')" \
-  "$(cycle_ev "$(rel -14400)" n2 c1 cycle-start)" \
-  "$(cycle_ev "$(rel -14300)" n2 c1 cycle-end '{"exit_code":0}')" \
-  "$(cycle_ev "$(rel -7200)" n2 c2 cycle-start)" \
-  "$(cycle_ev "$(rel -7100)" n2 c2 cycle-end '{"exit_code":0}')" \
-  "$(cycle_ev "$(rel -14400)" n3 c1 cycle-start)" \
-  "$(cycle_ev "$(rel -14300)" n3 c1 cycle-end '{"exit_code":0}')" \
-  "$(cycle_ev "$(rel -14400)" n4 c1 cycle-start)" \
-  "$(cycle_ev "$(rel -2400)" n5 c1 cycle-start)" \
-  "$(cycle_ev "$(rel -1500)" n5 c2 cycle-skipped)" \
+fm_events=(
+  "$(cycle_ev "$(rel -300)" n1 c1 cycle-start)"
+  "$(cycle_ev "$(rel -180)" n1 c1 cycle-end '{"exit_code":0}')"
+  "$(cycle_ev "$(rel -14400)" n2 c1 cycle-start)"
+  "$(cycle_ev "$(rel -14300)" n2 c1 cycle-end '{"exit_code":0}')"
+  "$(cycle_ev "$(rel -7200)" n2 c2 cycle-start)"
+  "$(cycle_ev "$(rel -7100)" n2 c2 cycle-end '{"exit_code":0}')"
+  "$(cycle_ev "$(rel -14400)" n3 c1 cycle-start)"
+  "$(cycle_ev "$(rel -14300)" n3 c1 cycle-end '{"exit_code":0}')"
+  "$(cycle_ev "$(rel -14400)" n4 c1 cycle-start)"
+  "$(cycle_ev "$(rel -2400)" n5 c1 cycle-start)"
+  "$(cycle_ev "$(rel -1500)" n5 c2 cycle-skipped)"
   "$(cycle_ev "$(rel -600)" n5 c3 cycle-skipped)"
-fm_nodes="$(fleet3 "$(node_row n1 false "" "" "")" "$(node_row n2 false "" "" "")" \
-  "$(node_row n3 true "" "" "")")"
-fm_nodes="$(jq -c --argjson extra "$(node_row n4 false "" "" "")" '. + [$extra]' <<<"$fm_nodes")"
-fm_nodes="$(jq -c --argjson extra "$(node_row n5 false "" "" "")" '. + [$extra]' <<<"$fm_nodes")"
+)
+for demoted in n6 n7 n8 n9 n10; do
+  fm_events+=(
+    "$(cycle_ev "$(rel -432000)" "$demoted" c1 cycle-start)"
+    "$(cycle_ev "$(rel -431900)" "$demoted" c1 cycle-end '{"exit_code":0}')"
+  )
+done
+write_log "$fm_log" "${fm_events[@]}"
+fm_nodes="$(fleet_rows "$(fm_row n1 false active)" "$(fm_row n2 false active)" \
+  "$(fm_row n3 true active)" "$(fm_row n4 false active)" "$(fm_row n5 false active)" \
+  "$(fm_row n6 false standby)" "$(fm_row n7 false "STANDBY ")" \
+  "$(fm_row n8 false Active)" "$(fm_row n9 false unknown)" "$(fm_row n10 false "")")"
 
 PAGER_EVAL_CYCLE_INTERVAL_MINUTES=15
 verdict="$(pager_eval_firing_missed "$fm_nodes" "$fm_log")"
-assert_eq "an active node past 2x the interval, no lock held: fires" "true" "$(jq -r '.firing' <<<"$verdict")"
-assert_eq "  ... n1 (recently cycled) is not named" "0" \
-  "$(jq -r '.nodes | index("n1") != null' <<<"$verdict" | grep -c true)"
-assert_eq "  ... n2 (stale cycle-start, no lock held) is named" "1" \
-  "$(jq -r '.nodes | index("n2") != null' <<<"$verdict" | grep -c true)"
-assert_eq "  ... n3 (stale heartbeat) is excluded even though equally ancient" "0" \
-  "$(jq -r '.nodes | index("n3") != null' <<<"$verdict" | grep -c true)"
-assert_eq "  ... n4 (still holds its lock) is never named, however old" "0" \
-  "$(jq -r '.nodes | index("n4") != null' <<<"$verdict" | grep -c true)"
+named() { jq -r --arg n "$1" '.nodes | index($n) != null' <<<"$verdict" | grep -c true; }
+assert_eq "a cycling node past 2x the interval, no lock held: fires" "true" "$(jq -r '.firing' <<<"$verdict")"
+assert_eq "  ... n1 (recently cycled) is not named" "0" "$(named n1)"
+assert_eq "  ... n2 (stale cycle-start, no lock held) is named" "1" "$(named n2)"
+assert_eq "  ... n3 (stale heartbeat) is excluded even though equally ancient" "0" "$(named n3)"
+assert_eq "  ... n4 (still holds its lock) is never named, however old" "0" "$(named n4)"
 assert_eq "  ... n5 (long cycle, but a recent trailing skip proves the scheduler is alive) is never named" "0" \
-  "$(jq -r '.nodes | index("n5") != null' <<<"$verdict" | grep -c true)"
+  "$(named n5)"
+assert_eq "  ... n6 (role standby, fresh heartbeat, cycle-start five days old) is never named" "0" "$(named n6)"
+assert_eq "  ... n7 (the same role capitalised and padded) is never named either" "0" "$(named n7)"
+assert_eq "  ... n8 (role \"Active\", which requirement 2.4 cycles on) is named" "1" "$(named n8)"
+assert_eq "  ... n9 (role \"unknown\": no evidence of a standby) is named" "1" "$(named n9)"
+assert_eq "  ... n10 (no role field at all) is named for the same reason" "1" "$(named n10)"
 assert_eq "  ... evidence carries n2's own cycle-duration histogram" "1" \
   "$(grep -c 'cycle durations' <<<"$(jq -r '.evidence' <<<"$verdict")")"
+
+# The #1686/#1768 fleet as the evaluating node saw it: one standby whose
+# newest cycle event is days old beside actives that cycled minutes ago.
+# Nothing fires — the exemption is not merely "some other node was named
+# instead", it is the whole verdict.
+fm_nodes_standby_only="$(fleet_rows "$(fm_row n1 false active)" "$(fm_row n5 false active)" \
+  "$(fm_row n6 false standby)")"
+assert_eq "a standby alone past the threshold, actives cycling: the verdict is not firing" "false" \
+  "$(jq -r '.firing' <<<"$(pager_eval_firing_missed "$fm_nodes_standby_only" "$fm_log")")"
+# The same node with the same history, republished as active — a promotion
+# whose first tick has not come round — does fire: the exemption is by role,
+# not by name or history, and this node is one the fleet now expects to be
+# cycling. What keeps a promotion from being *paged* for it is the filing
+# window registered below, not this verdict.
+fm_nodes_promoted="$(fleet_rows "$(fm_row n1 false active)" "$(fm_row n5 false active)" \
+  "$(fm_row n6 false active)")"
+verdict="$(pager_eval_firing_missed "$fm_nodes_promoted" "$fm_log")"
+assert_eq "the same node republished as active: fires" "true" "$(jq -r '.firing' <<<"$verdict")"
+assert_eq "  ... naming it" "n6" "$(jq -r '.nodes | join(",")' <<<"$verdict")"
+
+# The filing window that makes the promotion above harmless: one whole
+# scheduling interval, so the promoted node's first cycle-start clears the
+# candidate, plus fifteen minutes for a peer's state-sync fetch to carry
+# that cycle-start to whichever node evaluates the next window.
+pager_register_builtin_invariants 180 15 >/dev/null 2>&1
+assert_eq "firing-missed files only after one interval plus a replication margin" "30" \
+  "${PAGER_MIN_FIRING_MINUTES_OVERRIDE[firing-missed]}"
+pager_register_builtin_invariants 180 60 >/dev/null 2>&1
+assert_eq "  ... measured from the configured interval, not a constant" "75" \
+  "${PAGER_MIN_FIRING_MINUTES_OVERRIDE[firing-missed]}"
+pager_register_builtin_invariants 180 >/dev/null 2>&1
+assert_eq "  ... and with no interval to read, the framework's own hysteresis decides" "" \
+  "${PAGER_MIN_FIRING_MINUTES_OVERRIDE[firing-missed]}"
+assert_eq "  ... node-stale's own override is untouched by any of it" "180" \
+  "${PAGER_MIN_FIRING_MINUTES_OVERRIDE[node-stale]}"
 
 PAGER_EVAL_CYCLE_INTERVAL_MINUTES=""
 assert_eq "no configured interval: never fires" "false" \
@@ -573,8 +650,8 @@ write_log "$idle_log" \
   "$(ns_ev "$(rel -600)" n3 c2 idle-without-demand no-demand)" \
   "$(ns_ev "$(rel -320)" n3 c3 overhead "")" \
   "$(ns_ev "$(rel -300)" n3 c3 idle-with-demand awaiting-tick)"
-idle_nodes="$(fleet3 "$(node_row n1 false "" "" "")" "$(node_row n2 false "" "" "")" \
-  "$(node_row n3 false "" "" "")")"
+idle_nodes="$(fleet_rows "$(node_row n1 false active "" "" "")" "$(node_row n2 false active "" "" "")" \
+  "$(node_row n3 false active "" "" "")")"
 PAGER_EVAL_IDLE_CYCLES=3
 verdict="$(pager_eval_idle_with_demand "$idle_nodes" "$idle_log")"
 assert_eq "last 3 cycles all ended idle-with-demand (excluding back-pressure): fires" "true" \
@@ -586,6 +663,15 @@ assert_eq "  ... n2's own back-pressure cycles are excluded" "0" \
   "$(jq -r '.nodes | index("n2") != null' <<<"$verdict" | grep -c true)"
 assert_eq "  ... n3's one cycle that ended without demand breaks the streak" "0" \
   "$(jq -r '.nodes | index("n3") != null' <<<"$verdict" | grep -c true)"
+
+# The fault firing-missed had, one invariant along (agent-ops#1686): a node
+# demoted mid-streak keeps publishing a fresh heartbeat while requirement
+# 2.4 stops its ticks, so nothing can ever break the streak its last cycles
+# left behind. n1's own history, unchanged; only its published role moves.
+idle_nodes_demoted="$(fleet_rows "$(node_row n1 false standby "" "" "")" \
+  "$(node_row n2 false active "" "" "")" "$(node_row n3 false active "" "" "")")"
+assert_eq "the node whose streak fires, republished as standby: the verdict is not firing" "false" \
+  "$(jq -r '.firing' <<<"$(pager_eval_idle_with_demand "$idle_nodes_demoted" "$idle_log")")"
 
 idle_log_short="$WORKDIR/idle-short.jsonl"
 write_log "$idle_log_short" \

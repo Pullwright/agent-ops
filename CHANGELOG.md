@@ -145,6 +145,54 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   startup; one merely idle by an operator's temporary choice is warned about,
   every cycle, and never refused.
 
+- **The `firing-missed` and `idle-with-demand` pager invariants no longer
+  page on a standby node** (issues #1686, #1708). Both read "active" as
+  "heartbeat fresh", so a node demoted to standby — which keeps publishing
+  its heartbeat but, by requirement 2.4, never writes a `cycle-start` or a
+  `cycle-skipped` again — was measured against events from before its
+  demotion. `firing-missed` paged on ockham-2 repeatedly for as long as it
+  stayed standby (#1674, #1676, #1681, #1685, #1705, #1768 over five days,
+  the last at 7,970 minutes); `idle-with-demand` carried the same fault in a
+  sharper form, since no later cycle can ever break a frozen streak. Both
+  now judge only the nodes the fleet expects to be cycling — a fresh
+  heartbeat *and* a published role that is not a standby's — through one
+  shared predicate rather than a copy each, and `updater-stuck`'s header,
+  which claimed the same test while its code tested freshness alone, now
+  says what it does and why that is right: every node runs its own updater.
+  A standby is exempt outright rather than given a wider window, because its
+  ticks leave nothing in the union log to judge it by in either direction.
+  What that costs is now stated rather than assumed: a standby whose
+  scheduler alone has stopped keeps publishing its heartbeat, so it is
+  invisible to the pager until it is promoted, which is #1788.
+- **A node's published role is now normalised, and an undeclared one is
+  published as `unknown` rather than as `standby`** (issue #1686). The role
+  the fleet acts on has to mean what requirement 2.4's guard means:
+  `AGENT_OPS_ROLE=Active` runs unattended cycles, but `scripts/state-sync.sh`
+  published the raw string, so a peer comparing it against `active` would
+  have exempted a node that was cycling — and, because each node evaluates
+  alternate five-minute windows, the node's own row and its peers' would
+  have disagreed and cleared each other's candidate, filing nothing at all.
+  Both publishers now use `lib/role.sh`'s new `role_declared`, which
+  normalises without the guard's fail-closed default. A process handed no
+  role publishes `unknown`: Compose hands the variable to every scheduled
+  process, so an empty one is a hand run of `publish-dashboard.sh` or
+  `state-sync.sh` on the host, and `standby` inferred from that silence
+  would have been a claim nobody made — one that, now that a standby is
+  exempt, would have closed a real open page. The invariants read `unknown`,
+  an absent field and an empty one alike as no evidence either way, and
+  judge the node exactly as they did before this release.
+- **A promotion out of standby no longer files a `firing-missed` page**
+  (issue #1686). A node whose role turns `active` has a newest cycle event
+  as old as its demotion, so the invariant fires the instant the promotion
+  publishes and goes on firing until the node's first tick, which is up to
+  a whole `schedule.cycle_interval_minutes` away. `firing-missed` is now
+  registered with a filing window of that interval plus fifteen minutes for
+  replication (`MIN_FIRING_MINUTES_OVERRIDE`, the mechanism `node-stale`
+  already used), so the first `cycle-start` clears the candidate before a
+  page is written, while a scheduler that has really dropped a firing holds
+  the fact across the window and is filed as before. Demotion is the mirror
+  image and is now documented as such: demoting a node the fleet was paging
+  for closes its page as cleared, with the evidence kept in the closed issue.
 - **Requirement 2.0c's pre-clone stand-down now reads `state_dir` as well as
   `workspace_root`, so a short `state_dir` stands the cycle down instead of
   only ever warning in `doctor.sh`** (issue #992, TD-PPagop-26082517).

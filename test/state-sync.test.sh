@@ -514,6 +514,31 @@ assert_eq "a node with no reconciler publishes a null compose_reconcile, not a g
   "$(jq -c '.compose_reconcile' "$sb_pushed/heartbeat.json")"
 assert_eq "a node with no updater-ledger/ yet publishes a null updater, not a guess" "null" \
   "$(jq -c '.updater' "$sb_pushed/heartbeat.json")"
+assert_eq "a standby's heartbeat says so" "standby" "$(jq -r '.role' "$sb_pushed/heartbeat.json")"
+
+# --- The published role is normalised, and silence is published as silence --
+# The heartbeat's `role` is the fleet's record of what this node is running
+# as, and lib/pager-invariants.sh's firing-missed acts on it: it exempts a
+# standby, because requirement 2.4 leaves a standby's scheduler no trace in
+# the union log to be judged by. So the value has to mean here exactly what
+# it means to the guard (`ROLE=Active` runs unattended cycles, so it must
+# not read as a standby to a peer — agent-ops#1686), and an undeclared role
+# has to publish as `unknown` rather than as the guard's fail-closed
+# `standby`, which would be a claim about the node that nobody made.
+raw_role_home="$(new_node raw-role-node)"
+sync_as "$raw_role_home" "  Active
+" push >/dev/null
+raw_role_pushed="$tmp_dir/pushed-raw-role"
+git clone --quiet --branch nodes/raw-role-node "$remote" "$raw_role_pushed"
+assert_eq "a capitalised, padded role publishes as the normalised one" "active" \
+  "$(jq -r '.role' "$raw_role_pushed/heartbeat.json")"
+
+no_role_home="$(new_node no-role-node)"
+sync_as "$no_role_home" "" push >/dev/null
+no_role_pushed="$tmp_dir/pushed-no-role"
+git clone --quiet --branch nodes/no-role-node "$remote" "$no_role_pushed"
+assert_eq "a push with no role in its environment publishes unknown, not standby" "unknown" \
+  "$(jq -r '.role' "$no_role_pushed/heartbeat.json")"
 
 # --- Mirror retention ---
 # One more cycle directory than the configured retention, so the oldest must

@@ -17,11 +17,33 @@
 # Shared by agent-cycle.sh and review-cycle.sh so there is one definition of
 # "active", the same way lib/toggle.sh is the one definition of the switch.
 
-# The current role, normalised: lowercased, whitespace stripped, defaulting to
-# `standby` when the variable is unset or empty.
+# The role this process was told, normalised — lowercased and stripped of
+# whitespace — and empty when the variable is unset or empty. The one place
+# the normalisation lives, so `role_current` below and every publisher of the
+# fleet's own record agree on what a value means.
+role_declared() {
+  printf '%s' "${AGENT_OPS_ROLE:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]'
+}
+
+# The current role, normalised, defaulting to `standby` when the variable is
+# unset or empty.
+#
+# `role_current` and `role_declared` answer two different questions, and the
+# difference matters wherever one node's answer is evidence another node acts
+# on. "May this process spend?" is `role_current`, and silence resolves to
+# `standby` because the failure modes are not symmetric. "What role is this
+# node running as?" is `role_declared`, and the honest answer to silence is
+# none at all — which is what `scripts/state-sync.sh` and
+# `scripts/publish-dashboard.sh` publish as `unknown` (agent-ops#1686). Every
+# scheduled process on a node is handed the variable by Compose
+# (`deploy/docker/compose.yaml` sets `AGENT_OPS_ROLE: ${ROLE:-standby}`), so
+# an empty answer means the process is not one of them — a hand run on the
+# host — and a `standby` inferred from that silence would be a claim about
+# the node that nobody made. The pager acts on the published role
+# (`lib/pager-invariants.sh`'s `firing-missed`), so the claim has to be real.
 role_current() {
-  local r="${AGENT_OPS_ROLE:-}"
-  r="$(printf '%s' "$r" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+  local r
+  r="$(role_declared)"
   printf '%s' "${r:-standby}"
 }
 
