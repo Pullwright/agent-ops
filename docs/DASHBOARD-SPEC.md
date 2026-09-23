@@ -2223,6 +2223,26 @@ Phase 2 attribution question, not a gap this panel closes). The page states
 this immediately beneath the escape ladder, in the same words, so a reader
 never mistakes the `human-gate` row's own count for a complete one.
 
+**Which files conflict most often** (issue #1805) is a further breakdown
+beneath the coverage-gap paragraph above, scoped to the `merge-conflict`
+class alone rather than one of the panel's own three fleet-wide questions:
+`rework.merge_conflict_paths`, read verbatim from `lib/rework-panel.sh`'s own
+fold (never recomputed by the Publisher or the page), reports `total` (every
+`merge-conflict` rework record) against `known` (the subset whose own
+candidate carried a computed `evidence.conflicted_paths` — an item whose
+dry-run merge could not be computed is counted in the former, never the
+latter, the same "an outage is not a quiet zero" distinction every other
+figure on this page keeps), the ten most frequent conflicting paths across
+every known entry (`top_paths`, `{path, count}`, ties broken by path
+ascending), and the share of known entries whose *only* conflicting path was
+`CHANGELOG.md` (`changelog_only`, `{count, share}`) — the figure D27 (moving
+the changelog entry out of the pull-request body, issue #1804) exists to
+drive toward zero. `total == 0` (no `merge-conflict` rework recorded yet)
+renders a plain "no conflicted-path data recorded yet" line rather than an
+empty table; this is distinct from the panel's own top-level outage
+(`rework: null`), which still shows the ordinary "could not be assembled"
+message and never reaches this section at all.
+
 The **Doctor** panel (agent-ops#543) renders `status.doctor`: the most recent
 hourly `scripts/doctor.sh --unattended` pass on *this* node, read from
 `state_dir/.doctor-status.json` rather than recomputed — its GitHub section is

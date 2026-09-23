@@ -2586,6 +2586,31 @@
     return tableOf(["Detection stage", "Population", "Caught here (furthest rung)", "Escaped", "Escape rate",
       "Cost to catch at next rung"], rows);
   }
+  // `D.rework.merge_conflict_paths` (issue #1805): which files conflict most
+  // often within the merge-conflict class alone, and what share of it is
+  // CHANGELOG.md and nothing else — read straight from lib/rework-panel.sh's
+  // own fold, not recomputed here. `total` can be 0 (no merge-conflict rework
+  // recorded this fleet's history) without that meaning an outage — only a
+  // top-level `null` `D.rework` does, handled by reworkPanel() itself before
+  // this is ever called.
+  function reworkMergeConflictPathsTable(mcp) {
+    if (!mcp || !mcp.total) {
+      return el("div", {class:"panel muted", text:
+        "Merge-conflict class: no conflicted-path data recorded yet."});
+    }
+    var rows = (mcp.top_paths || []).map(function (p) {
+      return el("tr", {}, [el("td", {class:"mono", text: p.path}), el("td", {class:"mono", text: p.count})]);
+    });
+    var co = mcp.changelog_only || {count: 0, share: null};
+    return el("div", {}, [
+      el("div", {class:"panel muted", text:
+        "Merge-conflict class: " + num(mcp.known) + " of " + num(mcp.total) +
+        " conflicted pull requests have a computed conflicting-path list, from a dry-run merge — the " +
+        "rest could not be computed. CHANGELOG.md was the only conflicting file in " + num(co.count) +
+        " of " + num(mcp.known) + " known cases (" + pct(co.share) + ")."}),
+      tableOf(["Most frequent conflicting path", "Occurrences"], rows)
+    ]);
+  }
   function reworkPanel() {
     var r = D.rework;
     if (!r || r.how_much == null) {
@@ -2609,6 +2634,7 @@
       num(r.clean_count) + " landed item(s) carried zero rework records of any class — excluded from " +
       "the escape ladder above, since a clean pass and a defect nothing here ever caught look identical " +
       "from this record alone."}));
+    body.push(reworkMergeConflictPathsTable(r.merge_conflict_paths));
     // D23's own framing, restated on the panel's face rather than left to a
     // reader's memory: rework is never a target of zero, and a falling catch
     // count alongside a rising escape rate at the same rung is a Reviewer

@@ -121,6 +121,17 @@ or the Co-Ordinator that picked an unworkable item is not determinable from
 this evidence alone, so `attributed_stage` is `null` — see "Attribution"
 below.
 
+`merge-conflict`'s own `evidence` additionally carries `conflicted_paths`
+(issue #1805) whenever the candidate's own dry-run merge
+(`scripts/gather-merge-conflicts.sh`) could compute one: the array of paths
+that merge conflicted on, or absent (never a stored `null`, per the
+`with_entries` filter every key in this evidence object passes through)
+when the dry run itself could not be computed. This is the one piece of
+`evidence` across all nine classes that is not merely "whatever the detector
+saw" but a live recomputation at selection time — still never re-derived by
+`rework_fields` itself, only carried through from the candidate the way
+`ref`/`head_sha`/`base` already are.
+
 **human-change-request.** Before requirement 31c's reconciliation gate
 existed (2026-08-20), a human change request arriving as a plain pull request
 comment — rather than a formal `REQUEST_CHANGES` review, which GitHub refuses

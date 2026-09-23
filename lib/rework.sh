@@ -84,14 +84,19 @@ rework_selection_class() {
 # rework_selection_fields WORK_ORDER_JSON
 # Print the rework fields for a selected finishing-source work order, or
 # nothing when its `.source` earns no class (`rework_selection_class`).
-# EVIDENCE is whatever of `ref`/`head_sha`/`reviewed_at`/`updated_at`/`base`
-# the candidate itself carries — never re-fetched.
+# EVIDENCE is whatever of `ref`/`head_sha`/`reviewed_at`/`updated_at`/`base`/
+# `conflicted_paths` the candidate itself carries — never re-fetched.
+# `conflicted_paths` (issue #1805) rides along like every other key here: a
+# `merge-conflicts` work order whose own dry run came back `null` (the
+# gatherer could not compute it) drops out of `with_entries`' null filter the
+# same as any other absent field, rather than a distinguishable "we tried and
+# failed" mark — evidence records what is known, not why something is not.
 rework_selection_fields() {
   local work_order="${1:-{\}}" source class evidence repo item pr_url
   source="$(jq -r '.source // ""' <<<"$work_order" 2>/dev/null)"
   class="$(rework_selection_class "$source")"
   [[ -n "$class" ]] || return 0
-  evidence="$(jq -c '{ref, head_sha, reviewed_at, updated_at, base}
+  evidence="$(jq -c '{ref, head_sha, reviewed_at, updated_at, base, conflicted_paths}
     | with_entries(select(.value != null))' <<<"$work_order" 2>/dev/null || printf 'null')"
   repo="$(jq -r '.repo // ""' <<<"$work_order" 2>/dev/null)"
   item="$(jq -r '.item // ""' <<<"$work_order" 2>/dev/null)"

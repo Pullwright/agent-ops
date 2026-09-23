@@ -3698,7 +3698,7 @@ if ! jq -e 'type == "object" and has("escape_ladder")' <<<"$rework_json" >/dev/n
   # rework_panel_build's own outage shape exactly, `rework_cycles` included,
   # so the Spend by fate join below (issue #1691) sees the same outage
   # whether rework_panel_build reported it itself or never ran at all.
-  rework_json='{"how_much":null,"whose":null,"escape_ladder":null,"clean_count":null,"rework_cycles":null}'
+  rework_json='{"how_much":null,"whose":null,"escape_ladder":null,"clean_count":null,"rework_cycles":null,"merge_conflict_paths":null}'
 fi
 
 # --- Constraint statement (D21, docs/ROADMAP.md; issue #609) -----------------

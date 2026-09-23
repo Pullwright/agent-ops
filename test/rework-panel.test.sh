@@ -366,6 +366,35 @@ else
 fi
 
 # =====================================================================
+# merge_conflict_paths: which files conflicted (issue #1805)
+# =====================================================================
+# Four merge-conflict rework records: two name CHANGELOG.md alone, one
+# names CHANGELOG.md plus scripts/state-sync.sh, and one carries no
+# conflicted_paths at all (its own dry run could not be computed) — proving
+# `known` undercounts `total` correctly, `top_paths` tallies frequency
+# across every known entry's own array, and `changelog_only` reads only the
+# entries whose conflicting file was CHANGELOG.md and nothing else.
+mc_paths="$tmp_dir/merge-conflict-paths.jsonl"
+cat > "$mc_paths" <<'EOF'
+{"ts":"2026-07-01T00:00:00Z","node":"n1","cycle":"c10","event":"rework","class":"merge-conflict","detector":"d","evidence":{"ref":"pr-1-conflict-aaa","conflicted_paths":["CHANGELOG.md"]},"attributed_stage":null,"repo":"o/r","item":"1"}
+{"ts":"2026-07-01T00:00:01Z","node":"n1","cycle":"c11","event":"rework","class":"merge-conflict","detector":"d","evidence":{"ref":"pr-2-conflict-bbb","conflicted_paths":["CHANGELOG.md"]},"attributed_stage":null,"repo":"o/r","item":"2"}
+{"ts":"2026-07-01T00:00:02Z","node":"n1","cycle":"c12","event":"rework","class":"merge-conflict","detector":"d","evidence":{"ref":"pr-3-conflict-ccc","conflicted_paths":["CHANGELOG.md","scripts/state-sync.sh"]},"attributed_stage":null,"repo":"o/r","item":"3"}
+{"ts":"2026-07-01T00:00:03Z","node":"n1","cycle":"c13","event":"rework","class":"merge-conflict","detector":"d","evidence":{"ref":"pr-4-conflict-ddd"},"attributed_stage":null,"repo":"o/r","item":"4"}
+EOF
+mc_report="$(panel_of "$mc_paths")"
+assert_eq "total counts every merge-conflict rework record" \
+  "4" "$(jq -r '.merge_conflict_paths.total' <<<"$mc_report")"
+assert_eq "known excludes the one entry whose own dry run could not be computed" \
+  "3" "$(jq -r '.merge_conflict_paths.known' <<<"$mc_report")"
+assert_eq "top_paths tallies CHANGELOG.md across every known entry (3), state-sync.sh once" \
+  '[{"path":"CHANGELOG.md","count":3},{"path":"scripts/state-sync.sh","count":1}]' \
+  "$(jq -c '.merge_conflict_paths.top_paths' <<<"$mc_report")"
+assert_eq "changelog_only counts only the entries whose sole conflicting file is CHANGELOG.md (items 1, 2 — not 3, which also touches state-sync.sh)" \
+  "2" "$(jq -r '.merge_conflict_paths.changelog_only.count' <<<"$mc_report")"
+assert_eq "  ... as a share of the known population (2 of 3), not the unknown-included total" \
+  "0.6666666666666666" "$(jq -r '.merge_conflict_paths.changelog_only.share' <<<"$mc_report")"
+
+# =====================================================================
 # Degradation: a malformed line, a missing log
 # =====================================================================
 
@@ -401,7 +430,7 @@ cat > "$internal_err" <<'EOF'
 EOF
 internal_err_report="$(panel_of "$internal_err")"
 assert_eq "a fold that aborts internally reports the outage shape, never a quiet zero-rework fleet" \
-  '{"clean_count":null,"escape_ladder":null,"how_much":null,"rework_cycles":null,"whose":null}' \
+  '{"clean_count":null,"escape_ladder":null,"how_much":null,"merge_conflict_paths":null,"rework_cycles":null,"whose":null}' \
   "$(jq -Sc '.' <<<"$internal_err_report")"
 
 if (( failures > 0 )); then
