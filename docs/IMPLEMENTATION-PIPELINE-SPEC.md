@@ -12212,7 +12212,12 @@ implements.
     (`git log --first-parent --reverse <sha>..HEAD`) is a candidate.
     `--since <ref>` overrides the marker as the range's start — required on a
     file that carries neither a marker nor a prior `--since`, which is an
-    error rather than a guessed starting point. Each candidate's body is
+    error rather than a guessed starting point. So is a range that cannot be
+    read: a starting commit this checkout does not carry — a shallow clone, a
+    marker naming a commit of another repository — exits non-zero, naming the
+    missing history, and writes nothing. It is never treated as an empty
+    range, which would let the marker advance past commits that were never
+    read and lose their entries permanently and silently. Each candidate's body is
     parsed by the exact grammar requirement 25c states, shared rather than
     duplicated: `lib/changelog-grammar.sh`'s `changelog_grammar_walk` runs
     the fence/HTML-comment/heading state machine and None/category/bullet
@@ -12237,16 +12242,26 @@ implements.
     Under a (created, if absent, below the preamble) `## [Unreleased]`
     heading, one `### <Category>` per category present, in Keep a Changelog
     order (Added, Changed, Deprecated, Removed, Fixed, Security), newest
-    commit first within a category. Each bullet ends with ` (#N)`, `N` the
+    commit first within a category and, within one commit, in the order its
+    author wrote them. Each bullet ends with ` (#N)`, `N` the
     squash title's own trailing `(#N)` GitHub appends on merge, unless the
-    bullet already cites that number somewhere in its own text. Existing
-    bullets already under `[Unreleased]`, and every released section, are
-    left untouched; new bullets are inserted above the existing ones of
-    their category, and a wholly new category heading takes its Keep a
-    Changelog place among whatever categories are already there — read via
-    the same shared grammar, wrapping the section's existing inner text in a
-    synthetic `## Changelog` heading, so byte-for-byte preservation and
-    extraction are the same mechanism rather than two. The marker is
+    bullet already cites that number somewhere in its own text.
+
+    An existing `[Unreleased]` section is **spliced, never re-rendered**: its
+    lines are carried across one for one and new bullets inserted above the
+    existing ones of their category, a wholly new category heading taking its
+    Keep a Changelog place among whatever headings are already there. Existing
+    bullets, and every released section, are therefore left byte-for-byte
+    unchanged. The shared grammar is deliberately *not* used to read the
+    existing section back: it is a validator for one pull-request
+    description, and a long-lived `CHANGELOG.md` legitimately carries things
+    it faults — a category heading appearing more than once (this
+    repository's own file has thirteen headings for six names), a heading
+    outside the six, prose before the first one, a blank line between two
+    bullets. Reconstructing the section from a parse that is allowed to fail
+    means every such file loses its whole `[Unreleased]` section on the first
+    run, silently and with exit 0; splicing cannot lose what it never
+    re-renders. The marker is
     rewritten to `HEAD` whether or not any commit in range carried a bullet,
     since it tracks how far the file has been read, not how far it has
     changed — the property `--check` relies on: it computes what a normal
@@ -12268,7 +12283,11 @@ implements.
     without a section, a fenced example of the heading, a malformed section
     contributing nothing rather than a truncated bullet, category ordering,
     the `(#N)` suffix (including a bullet that already cites its own
-    number), merging into a pre-existing `[Unreleased]` section, idempotence
+    number), merging into a pre-existing `[Unreleased]` section, an existing
+    section the description grammar would fault surviving intact (duplicate
+    and non-standard headings, prose, blank lines between bullets), two
+    bullets from one commit keeping their written order, an unreadable range
+    refusing rather than advancing the marker, idempotence
     and `--check`. `poetic`'s `changelog-check` and `poetic-fiddle`'s
     `changelog-rename` release jobs, and `poetic-fiddle`'s
     `scripts/extract-changelog-notes.mjs`, all read the file's own
@@ -22024,13 +22043,16 @@ What exists, and the requirements each part answers to:
     one `### <Category>` per category present in Keep a Changelog order,
     newest commit first, each bullet suffixed ` (#N)` from the squash
     title's own trailing `(#N)` unless already cited; merges into an
-    existing section the same way, via the same grammar wrapping its inner
-    text in a synthetic `## Changelog` heading, leaving every existing
-    bullet and every released section untouched. `--check` computes what a
+    existing section by splicing into its lines rather than re-rendering it
+    from the grammar, so every existing bullet and every released section is
+    left byte-for-byte unchanged even where the file carries what the
+    description grammar would fault. `--check` computes what a
     normal run would write and diffs it against the file's current content,
     exiting non-zero without writing when they differ. Requires real commit
     history reachable from `HEAD` (a blobless clone is enough; a shallow one
-    is not — a consumer's CI needs `fetch-depth: 0`). Canonical here (D20)
+    is not — a consumer's CI needs `fetch-depth: 0`); a range it cannot read
+    is an error that writes nothing, never an empty range that would carry
+    the marker past unread commits. Canonical here (D20)
     and distributed to `poetic`/`poetic-fiddle` via the `.agent` sync
     manifests, each repository's own adoption issue adding the manifest
     line. Unit-tested against a fixture git repository of squash-shaped

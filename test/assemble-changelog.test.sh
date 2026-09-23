@@ -273,6 +273,128 @@ assert_eq "the merged file is idempotent on a second run" "$before2" "$after2"
 
 rm -rf "$repo2"
 
+# --- An existing section the description grammar would fault is still kept ---
+# The `## Changelog` grammar is a validator for one pull-request description,
+# and a long-lived CHANGELOG.md legitimately carries things it faults: a
+# category heading appearing more than once (this repository's own file has
+# thirteen headings for six names), a heading outside the six, prose before the
+# first heading, a blank line between two bullets. Re-rendering the section from
+# that parse deletes all of it — silently, with exit 0 — so the section is
+# spliced instead, never re-rendered.
+repo3="$(mktemp -d)"
+mkdir -p "$repo3/scripts" "$repo3/lib"
+cp "$SCRIPT_DIR/scripts/assemble-changelog.sh" "$repo3/scripts/assemble-changelog.sh"
+cp "$SCRIPT_DIR/lib/changelog-grammar.sh" "$repo3/lib/changelog-grammar.sh"
+chmod +x "$repo3/scripts/assemble-changelog.sh"
+git -C "$repo3" init -q -b main
+git -C "$repo3" config user.email test@example.com
+git -C "$repo3" config user.name test
+
+cat > "$repo3/CHANGELOG.md" <<'MD'
+# Changelog
+
+## [Unreleased]
+
+Some prose the grammar would fault before the first heading.
+
+### Added
+
+- First Added bullet. (#10)
+
+- A second one, separated by a blank line. (#11)
+
+### Notes
+
+- A heading outside the six. (#12)
+
+### Added
+
+- A second Added block entirely. (#13)
+MD
+git -C "$repo3" add -A
+git -C "$repo3" commit -q -m "chore: seed an awkward but real changelog"
+base3="$(git -C "$repo3" rev-parse HEAD)"
+kept3="$(cat "$repo3/CHANGELOG.md")"
+
+echo "x" > "$repo3/h1.txt"
+git -C "$repo3" add h1.txt
+git -C "$repo3" commit -q -m "$(printf 'feat: a thing (#300)\n\n## Changelog\n\n### Added\n\n- The newest thing.\n')"
+
+(cd "$repo3" && ./scripts/assemble-changelog.sh --since "$base3")
+content3="$(cat "$repo3/CHANGELOG.md")"
+for kept in \
+  "Some prose the grammar would fault before the first heading." \
+  "- First Added bullet. (#10)" \
+  "- A second one, separated by a blank line. (#11)" \
+  "### Notes" \
+  "- A heading outside the six. (#12)" \
+  "- A second Added block entirely. (#13)"; do
+  assert_contains "an existing section the grammar faults keeps: $kept" "$content3" "$kept"
+done
+assert_contains "  ... and still gains the new bullet" "$content3" "- The newest thing. (#300)"
+assert_contains "  ... with the blank line between two bullets preserved" \
+  "$content3" "$(printf -- '- First Added bullet. (#10)\n\n- A second one')"
+new3="$(printf '%s\n' "$content3" | grep -n "The newest thing" | cut -d: -f1)"
+old3="$(printf '%s\n' "$content3" | grep -n "First Added bullet" | cut -d: -f1)"
+if [[ -n "$new3" && -n "$old3" && "$new3" -lt "$old3" ]]; then
+  pass "  ... inserted above the first Added block, not the second"
+else
+  fail "  ... inserted above the first Added block, not the second (new=$new3 old=$old3)"
+fi
+before3="$(cat "$repo3/CHANGELOG.md")"
+(cd "$repo3" && ./scripts/assemble-changelog.sh)
+assert_eq "  ... and is idempotent on a second run" "$before3" "$(cat "$repo3/CHANGELOG.md")"
+# Everything the seed file held is still present, byte for byte.
+missing3=0
+while IFS= read -r seeded; do
+  [[ -n "$seeded" ]] || continue
+  [[ "$content3" == *"$seeded"* ]] || missing3=$(( missing3 + 1 ))
+done <<<"$kept3"
+assert_eq "  ... losing no line of the original file" "0" "$missing3"
+
+# --- Multiple bullets from one commit keep the order their author wrote them -
+echo "y" > "$repo3/h2.txt"
+git -C "$repo3" add h2.txt
+git -C "$repo3" commit -q -m "$(printf 'feat: two at once (#301)\n\n## Changelog\n\n### Changed\n\n- Alpha, written first.\n- Beta, written second.\n')"
+(cd "$repo3" && ./scripts/assemble-changelog.sh)
+content3="$(cat "$repo3/CHANGELOG.md")"
+a_pos="$(printf '%s\n' "$content3" | grep -n "Alpha, written first" | cut -d: -f1)"
+b_pos="$(printf '%s\n' "$content3" | grep -n "Beta, written second" | cut -d: -f1)"
+if [[ -n "$a_pos" && -n "$b_pos" && "$a_pos" -lt "$b_pos" ]]; then
+  pass "two bullets from one commit keep their written order"
+else
+  fail "two bullets from one commit keep their written order (alpha=$a_pos beta=$b_pos)"
+fi
+
+rm -rf "$repo3"
+
+# --- A commit range that cannot be read is an error, never an empty range ----
+# `set -euo pipefail` does not observe a process substitution's exit status, so
+# reading `git log` through one turns a shallow checkout into an empty range —
+# and the marker would then advance past every commit that was never read,
+# losing their entries permanently and silently.
+repo4="$(mktemp -d)"
+mkdir -p "$repo4/scripts" "$repo4/lib"
+cp "$SCRIPT_DIR/scripts/assemble-changelog.sh" "$repo4/scripts/assemble-changelog.sh"
+cp "$SCRIPT_DIR/lib/changelog-grammar.sh" "$repo4/lib/changelog-grammar.sh"
+chmod +x "$repo4/scripts/assemble-changelog.sh"
+git -C "$repo4" init -q -b main
+git -C "$repo4" config user.email test@example.com
+git -C "$repo4" config user.name test
+echo "seed" > "$repo4/s.txt"
+git -C "$repo4" add -A
+git -C "$repo4" commit -q -m "chore: seed"
+absent="0000000000000000000000000000000000000001"
+printf '# Changelog\n\n<!-- changelog:assembled-through sha=%s -->\n\n## [Unreleased]\n\n### Added\n\n- Must survive. (#1)\n' "$absent" > "$repo4/CHANGELOG.md"
+kept4="$(cat "$repo4/CHANGELOG.md")"
+out4="$( (cd "$repo4" && ./scripts/assemble-changelog.sh) 2>&1 )" && rc4=0 || rc4=$?
+assert_eq "a marker sha this checkout does not carry exits non-zero" "1" "$rc4"
+assert_contains "  ... and says the history is not there" "$out4" "is not a commit in this checkout"
+assert_eq "  ... without advancing the marker over unread commits" "$kept4" "$(cat "$repo4/CHANGELOG.md")"
+out4="$( (cd "$repo4" && ./scripts/assemble-changelog.sh --check) 2>&1 )" && rc4=0 || rc4=$?
+assert_eq "  ... and --check refuses the same way rather than reporting fresh" "1" "$rc4"
+rm -rf "$repo4"
+
 echo
 if (( failures > 0 )); then
   echo "$failures assertion(s) failed"

@@ -58,16 +58,28 @@
 # existing `## ` heading, or at the end of the file if there is none — when
 # absent), one `### <Category>` per category present, in Keep a Changelog
 # order (Added, Changed, Deprecated, Removed, Fixed, Security), newest
-# commit first within a category. Each bullet ends with ` (#N)`, `N` the
-# squash title's own trailing `(#N)` GitHub appends on merge, unless the
-# bullet already cites that number somewhere in its own text. Existing
-# bullets already under `[Unreleased]`, and every released section, are
-# left byte-for-byte unchanged; new bullets are inserted above the existing
-# ones of their category, and a wholly new category heading takes its
-# Keep a Changelog place among whatever categories are already there. The
-# marker is rewritten to `HEAD` whether or not any commit in range carried
-# a bullet — the marker tracks how far the file has been read, not how far
-# it has changed.
+# commit first within a category and, within one commit, in the order its
+# author wrote them. Each bullet ends with ` (#N)`, `N` the squash title's
+# own trailing `(#N)` GitHub appends on merge, unless the bullet already
+# cites that number somewhere in its own text.
+#
+# An existing `[Unreleased]` section is *spliced*, never re-rendered: its
+# lines are carried across one for one and the new bullets inserted above
+# the existing ones of their category, a wholly new category heading taking
+# its Keep a Changelog place among whatever headings are already there. So
+# existing bullets, and every released section, are left byte-for-byte
+# unchanged — including the things the pull-request-description grammar
+# would fault but a real changelog legitimately carries (a category heading
+# appearing twice, a heading outside the six, prose, blank lines between
+# bullets). Re-rendering the section from that grammar's parse instead would
+# delete every such file's whole `[Unreleased]` section on the first run.
+#
+# The marker is rewritten to `HEAD` whether or not any commit in range
+# carried a bullet — the marker tracks how far the file has been read, not
+# how far it has changed. It only ever advances over a range that was
+# actually read: a `git log` that fails (a shallow checkout, a marker sha
+# this repository does not carry) is an error that exits non-zero, never an
+# empty range that would carry the marker silently past unread commits.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -136,17 +148,21 @@ else
   exit 1
 fi
 
+if ! git -C "$repo_root" rev-parse --verify --quiet "${since_sha}^{commit}" >/dev/null; then
+  echo "assemble-changelog: $since_sha is not a commit in this checkout — a shallow clone (--depth) does not carry enough history; CI must check out with fetch-depth: 0" >&2
+  exit 1
+fi
+
 head_sha="$(git -C "$repo_root" rev-parse HEAD)"
 
 # --- Extraction: walk a body via the shared grammar into CATEGORY -> blocks -
-# Shared by both a candidate commit's body (a fresh block per bullet, with
-# the `(#N)` suffix) and the existing `[Unreleased]` section's own inner text
-# (wrapped in a synthetic `## Changelog` heading so the same grammar applies,
-# no `(#N)` suffix since a prior run already added one) — one state machine,
-# a target associative-array name (`declare -n`) telling it where to file
-# what it finds. Only the body's first content-bearing section is read (a
-# second one is itself a fault scripts/check-changelog-section.sh would have
-# already caught before this commit could ever merge).
+# Applied to a candidate commit's body — a fresh block per bullet, with the
+# `(#N)` suffix — and to nothing else. The existing `[Unreleased]` section is
+# deliberately not run through it; see the render section below for why a
+# validator's verdict must not decide what an existing file gets to keep.
+# Only the body's first section is read (a second one is itself a fault
+# scripts/check-changelog-section.sh would have already caught before this
+# commit could ever merge).
 #
 # Every bullet this call finds is staged locally first and only merged into
 # the target once the whole section is confirmed clean — never written
@@ -258,15 +274,34 @@ changelog_collect() {  # changelog_collect BODY PR_N TARGET_ARRAY_NAME
     local -n _cc_target="$_cc_target_name"
     local cat
     for cat in "${!_cc_staged[@]}"; do
+      # Prepended, not appended: the log is walked oldest-first (`--reverse`),
+      # so putting each commit's whole staged group in front of what is already
+      # there leaves the newest commit's group first, as requirement 25d asks,
+      # while keeping the bullets *within* one commit's own section in the order
+      # its author wrote them. Reversing the flat bullet list at render time
+      # instead would also have flipped those.
       # shellcheck disable=SC2004  # associative via nameref, see above
       if [[ -n "${_cc_target[$cat]+x}" ]]; then
-        _cc_target[$cat]+=$'\x1e'"${_cc_staged[$cat]}"
+        _cc_target[$cat]="${_cc_staged[$cat]}"$'\x1e'"${_cc_target[$cat]}"
       else
         _cc_target[$cat]="${_cc_staged[$cat]}"
       fi
     done
   fi
 }
+
+# `git log` is read into a file first, and its exit status checked, rather than
+# piped straight in from a process substitution: `set -euo pipefail` does not
+# observe a process substitution's status, so a git failure there would read as
+# an empty range — and the marker would then advance to HEAD past every commit
+# that was never read, losing their entries permanently and silently.
+commits_file="$(mktemp)"
+trap 'rm -f "$commits_file"' EXIT
+if ! git -C "$repo_root" log --first-parent --reverse -z \
+     --format='%H%x1f%s%x1f%b' "${since_sha}..HEAD" -- >"$commits_file"; then
+  echo "assemble-changelog: cannot read the commit range ${since_sha}..HEAD" >&2
+  exit 1
+fi
 
 declare -A AC_CAT_BLOCKS=()
 while IFS= read -r -d '' rec; do
@@ -283,14 +318,28 @@ while IFS= read -r -d '' rec; do
     n="${BASH_REMATCH[1]}"
   fi
   changelog_collect "$body" "$n" AC_CAT_BLOCKS
-done < <(git -C "$repo_root" log --first-parent --reverse -z --format='%H%x1f%s%x1f%b' "${since_sha}..HEAD" --)
+done <"$commits_file"
 
-# --- Render: assembled as an array of lines throughout, never a string ------
-# routed back through a `$(...)` command substitution — command substitution
-# unconditionally strips trailing newlines, which is exactly what silently
-# ate the blank line meant to separate the marker from the next heading in
-# an earlier version of this script. Lines only, end to end; joined once, at
-# the very end.
+# --- Render: splice into the existing file; never re-render it ----------------
+# Assembled as an array of lines throughout, never a string routed back through
+# a `$(...)` command substitution — command substitution unconditionally strips
+# trailing newlines, which is exactly what silently ate the blank line meant to
+# separate the marker from the next heading in an earlier version of this
+# script. Lines only, end to end; joined once, at the very end.
+#
+# Whatever is already under `## [Unreleased]` is carried across line by line
+# and new bullets are spliced in around it. The existing section is
+# deliberately *not* re-parsed through the shared grammar and re-rendered from
+# the result: that grammar is a validator for one pull-request description, and
+# a long-lived CHANGELOG.md legitimately holds things it faults — a category
+# heading appearing more than once (this repository's own file has thirteen
+# headings for six names), a heading outside the six, a line of prose before
+# the first one, a blank line between two bullets. A validator's verdict is the
+# wrong instrument for deciding what to keep: reconstructing the section from a
+# parse that is allowed to fail means a file like that loses its entire
+# `[Unreleased]` section, silently and with exit 0, on the very first run.
+# Splicing cannot lose what it never re-renders, which is what makes
+# requirement 25d's "left byte-for-byte unchanged" true rather than aspirational.
 trim_trailing_blank() {  # trim_trailing_blank ARRAY_NAME
   local -n _ttb="$1"
   while (( ${#_ttb[@]} > 0 )) && [[ -z "${_ttb[-1]}" ]]; do
@@ -298,48 +347,51 @@ trim_trailing_blank() {  # trim_trailing_blank ARRAY_NAME
   done
 }
 
-append_category_block() {  # append_category_block CATEGORY TARGET_ARRAY_NAME
-  local cat="$1"
-  local -n _acb_tgt="$2"
-  local new_raw="${AC_CAT_BLOCKS[$cat]:-}" existing_raw="${EXISTING_CAT_BLOCKS[$cat]:-}"
-  [[ -n "$new_raw" || -n "$existing_raw" ]] || return 0
-
-  local -a blocks=()
-  if [[ -n "$new_raw" ]]; then
-    # Newest first: AC_CAT_BLOCKS accumulated oldest-to-newest (--reverse
-    # log order), so reverse it back on the way out.
-    local -a nb=()
-    local remaining="$new_raw"
-    while [[ "$remaining" == *$'\x1e'* ]]; do
-      nb+=("${remaining%%$'\x1e'*}")
+# new_bullet_lines CATEGORY ARRAY_NAME — the new bullets for CATEGORY, newest
+# commit first (changelog_collect already prepends each commit's group), each
+# block exploded back into its own lines.
+new_bullet_lines() {
+  local raw="${AC_CAT_BLOCKS[$1]:-}"
+  local -n _nbl="$2"
+  _nbl=()
+  [[ -n "$raw" ]] || return 0
+  local block remaining="$raw" bl
+  while :; do
+    if [[ "$remaining" == *$'\x1e'* ]]; then
+      block="${remaining%%$'\x1e'*}"
       remaining="${remaining#*$'\x1e'}"
-    done
-    nb+=("$remaining")
-    local i
-    for (( i = ${#nb[@]} - 1; i >= 0; i-- )); do
-      blocks+=("${nb[$i]}")
-    done
-  fi
-  if [[ -n "$existing_raw" ]]; then
-    # Already newest-first on disk; append in the order found, unreversed.
-    local remaining="$existing_raw"
-    while [[ "$remaining" == *$'\x1e'* ]]; do
-      blocks+=("${remaining%%$'\x1e'*}")
-      remaining="${remaining#*$'\x1e'}"
-    done
-    blocks+=("$remaining")
-  fi
-
-  (( ${#_acb_tgt[@]} > 0 )) && _acb_tgt+=("")
-  _acb_tgt+=("### $cat" "")
-  local b
-  for b in "${blocks[@]}"; do
-    local bl="$b"
+    else
+      block="$remaining"
+      remaining=""
+    fi
+    bl="$block"
     while [[ "$bl" == *$'\n'* ]]; do
-      _acb_tgt+=("${bl%%$'\n'*}")
+      _nbl+=("${bl%%$'\n'*}")
       bl="${bl#*$'\n'}"
     done
-    _acb_tgt+=("$bl")
+    _nbl+=("$bl")
+    [[ -n "$remaining" ]] || break
+  done
+}
+
+# category_rank NAME — its index in Keep a Changelog order, or one past the end
+# for a heading the file carries that is not one of the six.
+category_rank() {
+  local name="$1" i
+  for i in "${!CATEGORY_ORDER[@]}"; do
+    [[ "${CATEGORY_ORDER[$i]}" == "$name" ]] && { printf '%s\n' "$i"; return 0; }
+  done
+  printf '%s\n' "${#CATEGORY_ORDER[@]}"
+}
+
+# emit_joined VALUE ARRAY_NAME — append the newline-terminated lines held in
+# VALUE to ARRAY_NAME, blank ones included.
+emit_joined() {
+  local v="$1"
+  local -n _ej="$2"
+  while [[ -n "$v" ]]; do
+    _ej+=("${v%%$'\n'*}")
+    v="${v#*$'\n'}"
   done
 }
 
@@ -369,15 +421,6 @@ if (( unreleased_start >= 0 )); then
   done
 fi
 
-declare -A EXISTING_CAT_BLOCKS=()
-if (( unreleased_start >= 0 )); then
-  existing_inner="## Changelog"$'\n\n'
-  for (( i = unreleased_start + 1; i < unreleased_end; i++ )); do
-    existing_inner+="${lines[$i]}"$'\n'
-  done
-  changelog_collect "$existing_inner" "" EXISTING_CAT_BLOCKS
-fi
-
 any_new=0
 for cat in "${CATEGORY_ORDER[@]}"; do
   [[ -n "${AC_CAT_BLOCKS[$cat]:-}" ]] && any_new=1
@@ -386,10 +429,102 @@ need_unreleased=0
 (( unreleased_start >= 0 || any_new )) && need_unreleased=1
 
 unreleased_block_lines=()
-if (( need_unreleased )); then
+if (( unreleased_start >= 0 )); then
+  # The existing section, verbatim, trailing blank lines trimmed (the final
+  # assembly puts exactly one back).
+  region=()
+  for (( i = unreleased_start; i < unreleased_end; i++ )); do region+=("${lines[$i]}"); done
+  trim_trailing_blank region
+
+  if (( any_new )); then
+    # Where each category's heading already is, skipping any inside a fenced
+    # block. The *first* occurrence wins: new bullets go above the existing
+    # ones of their category, and a file with the same heading more than once
+    # (which this repository's own has) is spliced, not rejected.
+    declare -A region_head=()
+    region_head_names=()
+    region_head_idx=()
+    in_fence=0
+    fence_char=""
+    for (( j = 1; j < ${#region[@]}; j++ )); do
+      if [[ "${region[$j]}" =~ ^[[:space:]]{0,3}(\`{3,}|~{3,}) ]]; then
+        if (( in_fence )); then
+          [[ "${BASH_REMATCH[1]:0:1}" == "$fence_char" ]] && in_fence=0
+        else
+          in_fence=1
+          fence_char="${BASH_REMATCH[1]:0:1}"
+        fi
+        continue
+      fi
+      (( in_fence )) && continue
+      if [[ "${region[$j]}" =~ ^###[[:space:]]+(.+[^[:space:]])[[:space:]]*$ ]]; then
+        hname="${BASH_REMATCH[1]}"
+        [[ -n "${region_head[$hname]+x}" ]] || region_head[$hname]=$j
+        region_head_names+=("$hname")
+        region_head_idx+=("$j")
+      fi
+    done
+
+    # One insertion plan, keyed by the region index the lines go *before*, so
+    # the splice is a single forward pass and no index ever has to be adjusted
+    # for an earlier insertion.
+    declare -A ins_at=()
+    for cat in "${CATEGORY_ORDER[@]}"; do
+      nb=()
+      new_bullet_lines "$cat" nb
+      (( ${#nb[@]} > 0 )) || continue
+      ins=()
+      if [[ -n "${region_head[$cat]+x}" ]]; then
+        at=$(( region_head[$cat] + 1 ))
+        if (( at >= ${#region[@]} )); then
+          ins=("" "${nb[@]}")                     # heading is the last line
+        else
+          if [[ -z "${region[$at]}" ]]; then
+            at=$(( at + 1 ))                      # past the heading's own blank line
+          fi
+          ins=("${nb[@]}")
+          if (( at < ${#region[@]} )) && [[ "${region[$at]}" =~ ^#{1,6}[[:space:]] ]]; then
+            ins+=("")                             # keep a blank before the next heading
+          fi
+        fi
+      else
+        # A wholly new category heading takes its Keep a Changelog place among
+        # whatever headings are already there.
+        rank="$(category_rank "$cat")"
+        at=${#region[@]}
+        for k in "${!region_head_idx[@]}"; do
+          if (( $(category_rank "${region_head_names[$k]}") > rank )); then
+            at=${region_head_idx[$k]}
+            break
+          fi
+        done
+        if (( at >= ${#region[@]} )); then
+          ins=("" "### $cat" "" "${nb[@]}")
+        else
+          ins=("### $cat" "" "${nb[@]}" "")
+        fi
+      fi
+      joined=""
+      for l in "${ins[@]}"; do joined+="$l"$'\n'; done
+      if [[ -n "${ins_at[$at]+x}" ]]; then ins_at[$at]+="$joined"; else ins_at[$at]="$joined"; fi
+    done
+
+    for (( j = 0; j < ${#region[@]}; j++ )); do
+      if [[ -n "${ins_at[$j]+x}" ]]; then emit_joined "${ins_at[$j]}" unreleased_block_lines; fi
+      unreleased_block_lines+=("${region[$j]}")
+    done
+    j=${#region[@]}
+    if [[ -n "${ins_at[$j]+x}" ]]; then emit_joined "${ins_at[$j]}" unreleased_block_lines; fi
+  else
+    unreleased_block_lines=("${region[@]}")
+  fi
+elif (( any_new )); then
   unreleased_block_lines=("## [Unreleased]")
   for cat in "${CATEGORY_ORDER[@]}"; do
-    append_category_block "$cat" unreleased_block_lines
+    nb=()
+    new_bullet_lines "$cat" nb
+    (( ${#nb[@]} > 0 )) || continue
+    unreleased_block_lines+=("" "### $cat" "" "${nb[@]}")
   done
 fi
 
