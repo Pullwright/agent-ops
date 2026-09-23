@@ -1989,7 +1989,7 @@ vh="$(new_home nodeV)"
 vpeer="$vh/.cache/poetic-agents/workspaces/.agent-ops-peers/peerV"
 vold="$vh/.cache/poetic-agents/workspaces/.agent-ops-peers/peerOld"
 mkdir -p "$vpeer" "$vold"
-printf '{"node":"peerV","role":"active","ts":"%s","last_cycle":"","version":{"pr":88,"commit":"aa53d62f1b0c4e9a7d2839fbc5104e6a8d7b3f21","short":"aa53d62","built_at":"2026-07-26T11:21:00Z","repo":"Pullwright/agent-ops","source":"image","dirty":false},"compose":{"status":"drifted","diff_lines":3},"image":{"status":"behind","registry_commit":"bb64d73a2c1d","registry_created_at":"2026-07-26T12:00:00Z","checked_at":"2026-07-26T12:05:00Z"},"stage_health":{"computed_at":"2026-07-26T12:00:00Z","threshold":3,"idle_after_hours":48,"stages":{"coordinator":{"verdict":"failing","consecutive_failures":4,"last_success":null,"last_detail":"coordinator exited 1"}}},"review_stage_health":{"computed_at":"2026-07-26T12:00:00Z","threshold":3,"idle_after_hours":48,"stages":{"project-reviewer":{"verdict":"failing","consecutive_failures":5,"last_success":null,"last_detail":"reviewer exited 1"}}},"updater":{"status":"stuck","at":"2026-07-26T11:30:00Z","seconds":1800}}\n' \
+printf '{"node":"peerV","role":"active","ts":"%s","last_cycle":"","version":{"pr":88,"commit":"aa53d62f1b0c4e9a7d2839fbc5104e6a8d7b3f21","short":"aa53d62","built_at":"2026-07-26T11:21:00Z","repo":"Pullwright/agent-ops","source":"image","dirty":false},"compose":{"status":"drifted","diff_lines":3},"image":{"status":"behind","registry_commit":"bb64d73a2c1d","registry_created_at":"2026-07-26T12:00:00Z","checked_at":"2026-07-26T12:05:00Z"},"stage_health":{"computed_at":"2026-07-26T12:00:00Z","threshold":3,"idle_after_hours":48,"stages":{"coordinator":{"verdict":"failing","consecutive_failures":4,"last_success":null,"last_detail":"coordinator exited 1"}}},"review_stage_health":{"computed_at":"2026-07-26T12:00:00Z","threshold":3,"idle_after_hours":48,"stages":{"project-reviewer":{"verdict":"failing","consecutive_failures":5,"last_success":null,"last_detail":"reviewer exited 1"}}},"mirror":{"status":"rebuilt","count":3,"last_rebuilt_at":"2026-07-26T10:00:00Z"},"updater":{"status":"stuck","at":"2026-07-26T11:30:00Z","seconds":1800}}\n' \
   "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$vpeer/heartbeat.json"
 printf '{"node":"peerOld","role":"standby","ts":"%s","last_cycle":""}\n' \
   "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$vold/heartbeat.json"
@@ -2059,6 +2059,39 @@ assert_eq "and this node answers for its own review-stage-health too" "1" \
   "$(jq '[.fleet.nodes[] | select(.self) | has("review_stage_health")] | length' <<<"$vdata")"
 assert_eq "  ... and it stays a separate field, never merged into stage_health" "false" \
   "$(jq -r '.fleet.nodes[] | select(.node=="peerV") | .stage_health.stages | has("project-reviewer")' <<<"$vdata")"
+
+# The mirror-rebuild verdict (lib/mirror-integrity.sh, agent-ops#604/#997)
+# rides the same rules once more: only the node whose state-sync push
+# actually discarded and rebuilt its mirror can answer for it, so a peer's
+# verdict comes from its heartbeat or not at all, and this node answers for
+# itself from its own .mirror-rebuild-state.json (null here: this suite
+# never triggers a mirror rebuild, so no such file exists).
+assert_eq "a peer's mirror-rebuild verdict comes from its heartbeat" "rebuilt" \
+  "$(jq -r '.fleet.nodes[] | select(.node=="peerV") | .mirror.status' <<<"$vdata")"
+assert_eq "carrying its rebuild count" "3" \
+  "$(jq -r '.fleet.nodes[] | select(.node=="peerV") | .mirror.count' <<<"$vdata")"
+assert_eq "a peer that publishes none reads null, never a locally computed one" "null" \
+  "$(jq -r '.fleet.nodes[] | select(.node=="peerOld") | .mirror' <<<"$vdata")"
+assert_eq "and this node answers for its own mirror status too" "1" \
+  "$(jq '[.fleet.nodes[] | select(.self) | has("mirror")] | length' <<<"$vdata")"
+
+# This node's own record (state-sync.sh's mirror_record_rebuild) is read
+# rather than recomputed, on the identical precedent doctor/stage-health
+# already set: it holds `{count, last_rebuilt_at}`, and this Publisher must
+# reshape it into the same `{status, count, last_rebuilt_at}` a peer's
+# heartbeat already carries, so the two can never disagree about what a
+# rebuild verdict looks like.
+cat > "$vh/.local/state/poetic-agents/.mirror-rebuild-state.json" <<'JSON'
+{"count":5,"last_rebuilt_at":"2026-08-01T04:00:00Z"}
+JSON
+run_publish "$vh" NODE_NAME=nodeV-self
+vdata="$(data_of "$vh")"
+assert_eq "a written mirror-rebuild-state file reads as status rebuilt" "rebuilt" \
+  "$(jq -r '.fleet.nodes[] | select(.self) | .mirror.status' <<<"$vdata")"
+assert_eq "carrying its own count" "5" \
+  "$(jq -r '.fleet.nodes[] | select(.self) | .mirror.count' <<<"$vdata")"
+assert_eq "and its own last_rebuilt_at" "2026-08-01T04:00:00Z" \
+  "$(jq -r '.fleet.nodes[] | select(.self) | .mirror.last_rebuilt_at' <<<"$vdata")"
 
 # The updater verdict (lib/updater-health.sh, agent-ops#603) rides the same
 # rules once more: only the node that can read its own ledger can answer for

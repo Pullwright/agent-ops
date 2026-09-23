@@ -414,6 +414,20 @@ compose_reconcile_json="$(jq -c '.' "$compose_reconcile_file" 2>/dev/null || ech
 # this node.
 self_host_facts_file="$state_dir/host-facts/$self_node.json"
 self_host_facts_json="$(jq -c '.' "$self_host_facts_file" 2>/dev/null || echo null)"
+# This node's own mirror-rebuild verdict (lib/mirror-integrity.sh,
+# agent-ops#604) — read rather than recomputed, the same stage_health_json/
+# compose_reconcile_json precedent above sets: the record is written
+# whenever scripts/state-sync.sh's own push has had to discard and rebuild
+# the mirror, not on this script's own tick, so reading the same file
+# state-sync.sh already folds into heartbeat.json is what keeps this node's
+# own row and the fleet heartbeat from ever disagreeing. lib/mirror-
+# integrity.sh documents itself as sourced by scripts/state-sync.sh only —
+# unlike compose/image/switch, no other script reads it — so this reproduces
+# `mirror_rebuild_verdict`'s own shape via jq rather than sourcing it. `null`
+# until this node has had to rebuild its mirror at least once (agent-ops#997).
+mirror_rebuild_file="$state_dir/.mirror-rebuild-state.json"
+mirror_json="$(jq -c '{status: "rebuilt", count: (.count // 1), last_rebuilt_at: (.last_rebuilt_at // "")}' \
+  "$mirror_rebuild_file" 2>/dev/null || echo null)"
 # This node's own updater verdict (lib/updater-health.sh, agent-ops#603),
 # recomputed here on the identical precedent compose_drift_status above
 # already sets: cheap (a directory of small local files, no network), so
@@ -2556,6 +2570,7 @@ jq -nc --arg n "$self_node" --arg r "${self_role_declared:-unknown}" --arg lc "$
   --argjson switch "$switch_json" \
   --argjson stage_health "$stage_health_json" \
   --argjson review_stage_health "$review_stage_health_json" \
+  --argjson mirror "$mirror_json" \
   --argjson updater "$updater_json" \
   --argjson doctor "$doctor_heartbeat_json" \
   --argjson resources "$self_resources_json" \
@@ -2568,7 +2583,7 @@ jq -nc --arg n "$self_node" --arg r "${self_role_declared:-unknown}" --arg lc "$
     live: $live, version: $version, compose: $compose,
     compose_reconcile: $compose_reconcile, image: $image, switch: $switch,
     stage_health: $stage_health, review_stage_health: $review_stage_health,
-    updater: $updater, doctor: $doctor,
+    mirror: $mirror, updater: $updater, doctor: $doctor,
     resources: $resources, host: $host,
     provider_unreachable: (if $pu != null and (($pu.nodes // []) | index($n) != null) then $pu else null end)}' > "$nodes_rows"
 for hb in "$peers_dir"/*/heartbeat.json; do
@@ -2636,6 +2651,13 @@ for hb in "$peers_dir"/*/heartbeat.json; do
        # apostrophes in this block: it is inside the single-quoted jq
        # program, where one would end the string.)
        review_stage_health: ($h.review_stage_health // null),
+       # And for the mirror-rebuild verdict (lib/mirror-integrity.sh,
+       # agent-ops#604): only that peers own state-sync push ever discards
+       # and rebuilds its mirror, so a heartbeat built before this field
+       # existed, or from a peer that has never had to rebuild, yields null
+       # rather than this node guessing at a rebuild it never saw
+       # (agent-ops#997).
+       mirror: ($h.mirror // null),
        # And for the updater verdict (lib/updater-health.sh, agent-ops#603):
        # only the peer itself can read the ledger for its own container, so
        # a heartbeat built before this check existed — or from before that

@@ -21,6 +21,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   merged into it — and rendered as a new "Review stage health" dashboard
   panel with its own page-top banner and fleet-strip badge, independent of
   the implementation pipeline's.
+- **The heartbeat's mirror-rebuild verdict on the dashboard** (issue #997,
+  TD-PPagop-26082606). `scripts/state-sync.sh` has stamped `heartbeat.json`
+  with a `mirror` field since #604 — `null` until a node's state-sync push
+  has had to discard and rebuild its mirror, else `{status, count,
+  last_rebuilt_at}` — but nothing carried it onto the page anyone actually
+  reads: a repeat rebuild on one node is a failing-disk symptom, and a human
+  learned of it only by running `jq` over a peer's `heartbeat.json`
+  directly, having first thought to suspect it. `scripts/publish-dashboard.sh`
+  now carries `mirror` into `fleet.nodes[]` alongside `compose`/`image`/
+  `switch`/`stage_health`, and `dashboard/index.html` renders it as an amber
+  **mirror rebuilt** badge naming the count and, where known, how long ago
+  the most recent rebuild was — nothing when the verdict is `null`.
 - **A non-public, per-node source for the notify webhook credential**
   (issue #991, TD-PPagop-26082516). `notify_webhook_url`'s value is a bearer
   secret, and its only previous source, `config.json`, is both fleet-wide and
