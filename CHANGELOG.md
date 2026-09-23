@@ -227,11 +227,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `Poetic-Poems/poetic` defines and all 221 records in the frozen
   `tech-debt/` archive already satisfy, so no real record path is newly
   rejected; a path outside it now matches nothing and demands nothing,
-  exactly as an issue with no "Filed as" line does. This is hardening ahead
-  of the need rather than a live defect — the captured path's only uses here
-  are a `jq --arg` binding and the error messages, neither of which a `?` or
-  `&` can subvert — taken because the path is read from an issue body and
-  the register's own grammar is far narrower than the pattern was.
+  exactly as an issue with no "Filed as" line does. This is the live guard
+  on a real interpolation, not hardening ahead of the need — besides the
+  `jq --arg` binding and the error messages, the captured path is
+  interpolated unescaped into the contents-API URL that reads the record
+  from the base branch (`contents/<path>?ref=<that>`), where an injected
+  `?` or `&` would alter the query string — taken because the path is read
+  from an issue body and the register's own grammar is far narrower than
+  the pattern was.
 
 - **Requirement 2.0c's pre-clone stand-down now reads `state_dir` as well as
   `workspace_root`, so a short `state_dir` stands the cycle down instead of
