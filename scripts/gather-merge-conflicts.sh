@@ -397,6 +397,17 @@ emit() {  # <pr-json> <bot: true|false>
   local ref_kind="conflict"
   [[ -n "$superseded_by" ]] && ref_kind="superseded"
 
+  # Called as a plain statement, never inside a `$(…)` — mc_ensure_bare_clone
+  # mutates mc_bare_dir/mc_bare_ready/mc_clone_attempted, and bash gives a
+  # command substitution its own subshell, so those assignments would
+  # otherwise evaporate the moment it exits: every candidate would reclone
+  # (defeating the "once per repo" promise above) and the EXIT trap's
+  # mc_bare_dir would stay empty forever, leaking the clone's temp directory
+  # on every candidate, success or failure alike. Calling it here, directly
+  # in emit() (itself never subshelled — the while loops below invoke it
+  # plainly, fed by process substitution), fixes the state in this shell
+  # before mc_conflicted_paths's own internal call becomes a harmless no-op.
+  mc_ensure_bare_clone
   local conflicted_paths
   conflicted_paths="$(mc_conflicted_paths "$(jq -r '.baseRefName' <<<"$pr")" "$(jq -r '.headRefName' <<<"$pr")")"
   jq -e . <<<"$conflicted_paths" >/dev/null 2>&1 || conflicted_paths="null"
