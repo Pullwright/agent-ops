@@ -395,6 +395,64 @@ out4="$( (cd "$repo4" && ./scripts/assemble-changelog.sh --check) 2>&1 )" && rc4
 assert_eq "  ... and --check refuses the same way rather than reporting fresh" "1" "$rc4"
 rm -rf "$repo4"
 
+# --- An empty first `## Changelog` section does not shadow a later real one --
+# The collector locks onto the *first* `## Changelog` heading's section
+# number; if that section turns out to carry no content (blank lines/HTML
+# comments only — which the checker treats as absent, not as a fault), a
+# real section later in the same body must still be read.
+repo5="$(mktemp -d)"
+mkdir -p "$repo5/scripts" "$repo5/lib"
+cp "$SCRIPT_DIR/scripts/assemble-changelog.sh" "$repo5/scripts/assemble-changelog.sh"
+cp "$SCRIPT_DIR/lib/changelog-grammar.sh" "$repo5/lib/changelog-grammar.sh"
+chmod +x "$repo5/scripts/assemble-changelog.sh"
+git -C "$repo5" init -q -b main
+git -C "$repo5" config user.email test@example.com
+git -C "$repo5" config user.name test
+echo seed > "$repo5/seed.txt"
+git -C "$repo5" add -A
+git -C "$repo5" commit -q -m "chore: seed"
+root5="$(git -C "$repo5" rev-parse HEAD)"
+
+echo x > "$repo5/i1.txt"
+git -C "$repo5" add i1.txt
+git -C "$repo5" commit -q -m "$(printf 'feat: empty section then a real one (#500)\n\n## Changelog\n\n<!-- TODO -->\n\n## Notes\n\n## Changelog\n\n### Added\n\n- The real entry.\n')"
+(cd "$repo5" && ./scripts/assemble-changelog.sh --since "$root5")
+content5="$(cat "$repo5/CHANGELOG.md")"
+assert_contains "an empty first Changelog section does not shadow the real one that follows" \
+  "$content5" "- The real entry. (#500)"
+rm -rf "$repo5"
+
+# --- A tab-indented continuation keeps its leading tab -----------------------
+# `IFS=$'\t' read` collapses a run of adjacent tab delimiters into one, so a
+# multi-variable (or a final 2-variable) `read` across a CONTINUATION record
+# eats a tab-indented continuation's own leading tab — indistinguishable from
+# the field separator right in front of it. A space-indented continuation
+# (exercised above, via repo2) cannot catch this: only a literal tab collides
+# with IFS.
+repo6="$(mktemp -d)"
+mkdir -p "$repo6/scripts" "$repo6/lib"
+cp "$SCRIPT_DIR/scripts/assemble-changelog.sh" "$repo6/scripts/assemble-changelog.sh"
+cp "$SCRIPT_DIR/lib/changelog-grammar.sh" "$repo6/lib/changelog-grammar.sh"
+chmod +x "$repo6/scripts/assemble-changelog.sh"
+git -C "$repo6" init -q -b main
+git -C "$repo6" config user.email test@example.com
+git -C "$repo6" config user.name test
+echo seed > "$repo6/seed.txt"
+git -C "$repo6" add -A
+git -C "$repo6" commit -q -m "chore: seed"
+root6="$(git -C "$repo6" rev-parse HEAD)"
+
+echo x > "$repo6/j1.txt"
+git -C "$repo6" add j1.txt
+git -C "$repo6" commit -q -m "$(printf 'fix: tab-indented continuation (#501)\n\n## Changelog\n\n### Fixed\n\n- A bullet.\n\tA tab-indented continuation.\n')"
+(cd "$repo6" && ./scripts/assemble-changelog.sh --since "$root6")
+content6="$(cat "$repo6/CHANGELOG.md")"
+assert_contains "a bullet keeps its indented continuation lines" "$content6" "- A bullet."
+assert_contains "  ... and a tab-indented continuation keeps its leading tab" \
+  "$content6" "$(printf '\tA tab-indented continuation. (#501)')"
+assert_not_contains "  ... never flush-left" "$content6" "$(printf '\nA tab-indented continuation.')"
+rm -rf "$repo6"
+
 echo
 if (( failures > 0 )); then
   echo "$failures assertion(s) failed"

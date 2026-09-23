@@ -225,6 +225,20 @@ changelog_collect() {  # changelog_collect BODY PR_N TARGET_ARRAY_NAME
           IFS=$'\t' read -r _cc_section_n <<<"$rest"
         fi
         ;;
+      SECTION-END)
+        # A section with zero content lines (blank lines/HTML comments only) is
+        # absent, not content-bearing — scripts/check-changelog-section.sh
+        # treats it the same way (its own "sections" count skips it). Release
+        # the lock so a later section can still be read: without this, a body
+        # whose *first* `## Changelog` heading is empty and whose real section
+        # comes later would stay locked onto the empty one and contribute
+        # nothing, even though the checker passed the body.
+        local sn content_lines
+        IFS=$'\t' read -r sn content_lines <<<"$rest"
+        if [[ "$sn" == "$_cc_section_n" ]] && (( content_lines == 0 )); then
+          _cc_section_n=""
+        fi
+        ;;
       CATEGORY)
         local sn name valid dup
         IFS=$'\t' read -r sn name valid dup <<<"$rest"
@@ -248,8 +262,20 @@ changelog_collect() {  # changelog_collect BODY PR_N TARGET_ARRAY_NAME
         _cc_block=("$line")
         ;;
       CONTINUATION)
-        local sn open line
-        IFS=$'\t' read -r sn _ open line <<<"$rest"
+        # Peeled with parameter expansion, not `read`, for the last two
+        # fields: `read`'s IFS-whitespace splitting collapses a run of
+        # adjacent tab delimiters into one, so a real multi-variable (or even
+        # a final 2-variable) `read` here silently eats a tab-indented
+        # continuation's own leading tab — the very delimiter tab right in
+        # front of it looks identical to bash. `${var#*$'\t'}` only ever
+        # consumes the single separator tab it names, leaving any tab that is
+        # part of the line's own content untouched. (lib/changelog-grammar.sh
+        # ll. 33-41.)
+        local sn open line _cc_cont_rest
+        IFS=$'\t' read -r sn _cc_cont_rest <<<"$rest"
+        _cc_cont_rest="${_cc_cont_rest#*$'\t'}"
+        open="${_cc_cont_rest%%$'\t'*}"
+        line="${_cc_cont_rest#*$'\t'}"
         [[ "$sn" == "$_cc_section_n" ]] || continue
         if (( open )); then
           _cc_block+=("$line")
