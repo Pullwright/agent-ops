@@ -185,10 +185,11 @@
 # question for this class) used to mean replaying every claim's head against
 # `main` at claim time by hand. `conflicted_paths` answers it from the record
 # itself: for every admitted candidate, `mc_conflicted_paths` runs a dry-run
-# merge of its base into its head with `git merge-tree --write-tree
-# --name-only --no-messages` (git ≥2.38) — a real merge computation that
-# writes no ref, no working tree and no index, so it is safe to run against a
-# clone this script does not own outright. That clone is a blobless bare one
+# merge of its head into its base with `git merge-tree --write-tree
+# --name-only --no-messages <base> <head>` (git ≥2.38) — a real merge
+# computation that writes no ref, no working tree and no index, so it is safe
+# to run against a clone this script does not own outright. That clone is a
+# blobless bare one
 # (`git clone --filter=blob:none --bare`), fetched at most once per script
 # invocation — which is already at most once per repository per cycle, since
 # `lib/expensive-gather-cache.sh` (requirement 48) calls this script for at

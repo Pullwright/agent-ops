@@ -156,6 +156,10 @@ REWORK_PANEL_KEY_JQ='
 # cycle is derivable here. That makes `rework_share` an upper bound rather than
 # a measured split — stated in those words on the panel's own face, and in
 # docs/DASHBOARD-SPEC.md.
+# No apostrophes anywhere below, comments included: the whole program is one
+# single-quoted shell string, and an apostrophe ends it — breaking the file's
+# own bash syntax, not merely this jq program, which is why `shellcheck` does
+# not catch it and `test/rework-panel.test.sh` does. Reword the possessive.
 # shellcheck disable=SC2016  # jq's own $all/$lifecycle/etc, not the shell's.
 REWORK_PANEL_JQ='
   '"$REWORK_PANEL_KEY_JQ"'
@@ -293,17 +297,17 @@ REWORK_PANEL_JQ='
     ]) as $escape_ladder
 
   # --- Merge-conflict class: which files conflicted (issue #1805) ---------
-  # `conflicted_paths` rides in `evidence` only when the candidate own
-  # dry-run merge could compute one (see the merge-conflict notes in
+  # `conflicted_paths` rides in `evidence` only when the dry-run merge on the
+  # candidate could compute one (see the merge-conflict notes in
   # docs/FLOW-SCHEMA.md) — an item whose dry run failed carries no such key
   # at all (filtered out of evidence by the null filter in
   # rework_selection_fields, not stored as a JSON `null`), and is counted in
   # `total` but not `known`, the same "an outage is not a quiet zero"
   # distinction every other figure on this panel keeps. `top_paths` is
-  # frequency across every known entry own conflicted_paths array — an item
-  # with three conflicting files contributes to all three counts — capped at
-  # the ten most frequent, ties broken by path ascending for a stable,
-  # reproducible order.
+  # frequency across the conflicted_paths array of every known entry — an
+  # item with three conflicting files contributes to all three counts —
+  # capped at the ten most frequent, ties broken by path ascending for a
+  # stable, reproducible order.
   | ($rew | map(select(.class == "merge-conflict"))) as $mc_rew
   | ($mc_rew | map(select(.evidence.conflicted_paths != null))) as $mc_known
   | ($mc_known | map(.evidence.conflicted_paths[])) as $mc_all_paths
