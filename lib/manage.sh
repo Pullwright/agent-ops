@@ -233,7 +233,7 @@ manage_age_phrase() {
 # poetic-2 published nothing for three days while its every stage read `ok`
 # and the doctor failed this same check hourly into a file nothing surfaced.
 publication_status_report() {
-  local ts json verdict age threshold mirror push_interval lock_json lock_age note=""
+  local ts json verdict age threshold mirror push_interval lock_json lock_age lock_mode holder_noun note=""
   if [[ -z "${state_repo:-}" ]]; then
     printf 'published: not configured (no state_repo)\n'
     return 0
@@ -258,7 +258,17 @@ publication_status_report() {
   if [[ "$(jq -r '.held // false' <<<"$lock_json" 2>/dev/null)" == "true" ]]; then
     lock_age="$(jq -r '.age_s // empty' <<<"$lock_json" 2>/dev/null)"
     if [[ -n "$lock_age" ]] && (( lock_age > push_interval )); then
-      note=" — a push has been holding the mirror lock for $(manage_age_phrase "$lock_age"), longer than one push interval; it may be wedged (agent-ops#1679)"
+      # Named from the marker's own stamped mode (lib/mirror-lock.sh's
+      # `mirror_lock_probe`) so a wedged fetch is not misreported as a wedged
+      # push (agent-ops#1715) — mode-neutral whenever the probe could not
+      # report one at all.
+      lock_mode="$(jq -r '.mode // empty' <<<"$lock_json" 2>/dev/null)"
+      case "$lock_mode" in
+        push) holder_noun="a push" ;;
+        fetch) holder_noun="a fetch" ;;
+        *) holder_noun="a state-sync" ;;
+      esac
+      note=" — $holder_noun has been holding the mirror lock for $(manage_age_phrase "$lock_age"), longer than one push interval; it may be wedged (agent-ops#1679)"
     fi
   fi
   case "$verdict" in

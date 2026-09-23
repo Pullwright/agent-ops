@@ -1665,6 +1665,31 @@ assert_eq "…so age reads back to nothing again" "" "$(mirror_lock_holder_age_s
 assert_eq "a mirror with no lock file yet probes as not held" \
   '{"held":false}' "$(mirror_lock_probe "$ml_mirror")"
 
+# …and, once genuinely held, the marker's own stamped mode (agent-ops#1715)
+# passes through — push and fetch each read back as themselves, and a marker
+# with no readable mode omits the key rather than fabricating one, the same
+# degrade-quietly shape age_s already has.
+flock "$ml_mirror.lock" sleep 5 &
+ml_probe_parent=$!
+sleep 0.2
+ml_probe_child="$(pgrep -P "$ml_probe_parent" | head -1)"
+
+mirror_lock_mark_started "$ml_mirror" push
+assert_eq "a push-held marker probes with mode:push" "push" \
+  "$(mirror_lock_probe "$ml_mirror" | jq -r '.mode // empty')"
+
+mirror_lock_mark_started "$ml_mirror" fetch
+assert_eq "a fetch-held marker probes with mode:fetch" "fetch" \
+  "$(mirror_lock_probe "$ml_mirror" | jq -r '.mode // empty')"
+
+jq -nc --arg started "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --argjson pid "$$" \
+  '{started: $started, pid: $pid}' > "$(mirror_lock_holder_marker "$ml_mirror")"
+assert_eq "a marker with no mode field omits mode, never fabricating one" "" \
+  "$(mirror_lock_probe "$ml_mirror" | jq -r '.mode // empty')"
+
+kill "$ml_probe_parent" "$ml_probe_child" 2>/dev/null; wait "$ml_probe_parent" 2>/dev/null
+mirror_lock_clear_started "$ml_mirror"
+
 # --- the losing side of a real contention names the holder's own age -----------
 # `il_sleeper`'s own trick (above) fakes a live process; here the lock itself
 # has to be genuinely held, so a real `flock` does it — backgrounded directly

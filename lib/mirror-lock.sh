@@ -91,11 +91,28 @@ mirror_lock_holder_age_s() {
   printf '%s\n' "$(( now_s - started_s ))"
 }
 
+# mirror_lock_holder_mode MIRROR
+# The current holder's own stamped mode ("push" or "fetch"), per its marker
+# (mirror_lock_mark_started's own `$MODE` argument) — empty if there is no
+# marker, it cannot be read, or its `mode` is absent or not one of those two
+# recognized values. Never fails, never fabricates a mode.
+mirror_lock_holder_mode() {
+  local marker mode
+  marker="$(mirror_lock_holder_marker "$1")"
+  [[ -s "$marker" ]] || return 0
+  mode="$(jq -r '.mode // empty' "$marker" 2>/dev/null)" || return 0
+  case "$mode" in
+    push|fetch) printf '%s\n' "$mode" ;;
+  esac
+  return 0
+}
+
 # mirror_lock_probe MIRROR
 # For a read-only caller that never calls `mirror_lock` itself
 # (lib/manage.sh's `--status`): `{"held":false}` when nobody currently holds
-# `$MIRROR.lock`, else `{"held":true,"age_s":N}` (age_s omitted if the marker
-# cannot be read). Takes and instantly releases the same lock
+# `$MIRROR.lock`, else `{"held":true,"age_s":N,"mode":"push"|"fetch"}` (age_s
+# and/or mode omitted if the marker cannot be read, or its mode is absent or
+# unrecognized). Takes and instantly releases the same lock
 # scripts/state-sync.sh contends for, via `flock`(1) against the lock file
 # directly rather than a bash-builtin fd — this call owns no fd of its own
 # to test with, only the path — which is exactly the "is anyone holding this
@@ -103,7 +120,7 @@ mirror_lock_holder_age_s() {
 # not exist yet (single-node install, or before the first push) reads as not
 # held, same as a genuinely free one.
 mirror_lock_probe() {
-  local mirror="$1" lock age
+  local mirror="$1" lock age mode
   lock="$mirror.lock"
   [[ -e "$lock" ]] || { printf '{"held":false}\n'; return 0; }
   if flock -n "$lock" -c true >/dev/null 2>&1; then
@@ -111,8 +128,13 @@ mirror_lock_probe() {
     return 0
   fi
   age="$(mirror_lock_holder_age_s "$mirror")"
-  if [[ -n "$age" ]]; then
+  mode="$(mirror_lock_holder_mode "$mirror")"
+  if [[ -n "$age" && -n "$mode" ]]; then
+    jq -nc --argjson age "$age" --arg mode "$mode" '{held:true, age_s:$age, mode:$mode}'
+  elif [[ -n "$age" ]]; then
     jq -nc --argjson age "$age" '{held:true, age_s:$age}'
+  elif [[ -n "$mode" ]]; then
+    jq -nc --arg mode "$mode" '{held:true, mode:$mode}'
   else
     printf '{"held":true}\n'
   fi
