@@ -474,9 +474,14 @@ assert_fail_tdr "'Filed as' present, diff de-flips status to non-terminal, alrea
 
 # The non-terminal `+status:` branch of the check is independent of the
 # deletion-line branch: a patch that adds a non-terminal status line without
-# any `-` line at all (an unusual shape a real diff would rarely take, since
-# YAML disallows a duplicate key, but the check inspects each branch on its
-# own) must still fail.
+# any `-` line at all must still fail. Note what this fixture's hunk header
+# actually says — the added line lands at line 13, in the record's *body*,
+# not in its frontmatter — because the branch scans the whole patch rather
+# than the frontmatter block the base-copy read bounds itself to (issue
+# #1764's shape, inverted). So this asserts a body line beginning `status:`
+# at column 0 reads as a de-flip, which is the over-broad half issue #1812
+# tracks; the assertion is the check's behaviour as it stands, not a claim
+# that a quoted status line in an appended note deserves to fail.
 mkdir -p "$tmp_dir/destructive-status-added-no-deletion"
 cp "$tmp_dir/flipped/issue-240.json" "$tmp_dir/destructive-status-added-no-deletion/issue-240.json"
 cat > "$tmp_dir/destructive-status-added-no-deletion/files.json" <<'JSON'
