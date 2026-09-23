@@ -554,47 +554,61 @@ run_doctor
 assert_not_contains "with no state_repo configured, publication freshness is not even asked about" \
   "node_stale_after_minutes" "$out"
 
-# --- closing-keyword ruleset drift (requirement 25a, TD-PPagop-26080802) ---
+# --- closing-keyword and changelog-section ruleset drift (requirements 25a
+# and 25c, TD-PPagop-26080802, agent-ops#1804) ---
 # doctor.sh resolves its own repository's slug via lib/version.sh, not from
 # config.repos, so every case below fires regardless of what $base_config
 # names — hence no per-case config file, just run_doctor with the ruleset
 # stubs set. A non-branch or non-active ruleset in the list is included in
-# every fixture to confirm it is filtered out rather than merely absent.
+# every fixture to confirm it is filtered out rather than merely absent. The
+# two contexts are read in one pass, so each fixture is asserted for both.
 noise_ruleset='{"id":1,"target":"tag","enforcement":"active"},{"id":2,"target":"branch","enforcement":"disabled"}'
+both_pinned='{"name":"default","conditions":{"ref_name":{"include":["~DEFAULT_BRANCH"]}},"rules":[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"closing-keyword","integration_id":15368},{"context":"changelog-section","integration_id":15368}]}}]}'
 
 if [[ -z "$self_repo" ]]; then
-  printf 'skip - closing-keyword ruleset drift cases (could not resolve this checkout'\''s own repo slug)\n'
+  printf 'skip - closing-keyword/changelog-section ruleset drift cases (could not resolve this checkout'"'"'s own repo slug)\n'
 else
   run_doctor \
     STUB_RULESETS_JSON="[$noise_ruleset,{\"id\":3,\"target\":\"branch\",\"enforcement\":\"active\"}]" \
-    STUB_RULESET_DETAIL_JSON='{"name":"default","conditions":{"ref_name":{"include":["~DEFAULT_BRANCH"]}},"rules":[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"closing-keyword","integration_id":15368}]}}]}'
+    STUB_RULESET_DETAIL_JSON="$both_pinned"
   assert_contains "closing-keyword required and pinned to 15368 is ok" \
-    "[ ok ] $self_repo's \"default\" branch ruleset requires \"closing-keyword\", pinned to integration_id 15368" "$out"
+    "[ ok ] $self_repo's \"default\" branch ruleset requires \"closing-keyword\", pinned to integration_id 15368 (requirement 25a)" "$out"
+  assert_contains "changelog-section required and pinned to 15368 is ok" \
+    "[ ok ] $self_repo's \"default\" branch ruleset requires \"changelog-section\", pinned to integration_id 15368 (requirement 25c)" "$out"
+  assert_eq "and a fully-enforced ruleset does not fail doctor.sh" "0" "$rc"
 
   run_doctor \
     STUB_RULESETS_JSON="[$noise_ruleset,{\"id\":3,\"target\":\"branch\",\"enforcement\":\"active\"}]" \
     STUB_RULESET_DETAIL_JSON='{"name":"default","conditions":{"ref_name":{"include":["~DEFAULT_BRANCH"]}},"rules":[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"shellcheck","integration_id":15368}]}}]}'
   assert_contains "closing-keyword absent from required_status_checks is a warn, naming requirement 25a's gap" \
-    "[warn] $self_repo's \"default\" branch ruleset does not require \"closing-keyword\" — the check reports without blocking the merge" "$out"
-
-  run_doctor \
-    STUB_RULESETS_JSON="[$noise_ruleset,{\"id\":3,\"target\":\"branch\",\"enforcement\":\"active\"}]" \
-    STUB_RULESET_DETAIL_JSON='{"name":"default","conditions":{"ref_name":{"include":["~DEFAULT_BRANCH"]}},"rules":[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"closing-keyword","integration_id":99999}]}}]}'
-  assert_contains "closing-keyword required but unpinned is a warn — any app of that name could satisfy it" \
-    "[warn] $self_repo's \"default\" branch ruleset requires \"closing-keyword\" without pinning integration_id 15368" "$out"
-
-  run_doctor STUB_RULESETS_JSON="[$noise_ruleset]"
-  assert_contains "no active branch ruleset targets the default branch — a warn, not a fail" \
-    "[warn] $self_repo has no active branch ruleset targeting the default branch" "$out"
-
-  run_doctor STUB_RULESETS_FAIL=1
-  assert_contains "the rulesets endpoint being unreachable is a skip, not a fail" \
-    "[skip] closing-keyword ruleset enforcement — repos/$self_repo/rulesets is not reachable with this token" "$out"
+    "[warn] $self_repo's \"default\" branch ruleset does not require \"closing-keyword\" — the check reports without blocking the merge, the exact gap requirement 25a exists to close (issue #240)" "$out"
+  assert_contains "changelog-section absent from required_status_checks is a warn, naming requirement 25c's gap" \
+    "[warn] $self_repo's \"default\" branch ruleset does not require \"changelog-section\" — the check reports without blocking the merge, the gap requirement 25c names (agent-ops#1804)" "$out"
+  assert_eq "a report-only ruleset warns and does not fail doctor.sh" "0" "$rc"
 
   run_doctor \
     STUB_RULESETS_JSON="[$noise_ruleset,{\"id\":3,\"target\":\"branch\",\"enforcement\":\"active\"}]" \
     STUB_RULESET_DETAIL_JSON='{"name":"default","conditions":{"ref_name":{"include":["~DEFAULT_BRANCH"]}},"rules":[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"closing-keyword","integration_id":15368}]}}]}'
-  assert_eq "and a fully-enforced ruleset does not fail doctor.sh" "0" "$rc"
+  assert_contains "one context required and the other not says which is which (ok)" \
+    "[ ok ] $self_repo's \"default\" branch ruleset requires \"closing-keyword\", pinned to integration_id 15368" "$out"
+  assert_contains "one context required and the other not says which is which (warn)" \
+    "[warn] $self_repo's \"default\" branch ruleset does not require \"changelog-section\"" "$out"
+
+  run_doctor \
+    STUB_RULESETS_JSON="[$noise_ruleset,{\"id\":3,\"target\":\"branch\",\"enforcement\":\"active\"}]" \
+    STUB_RULESET_DETAIL_JSON='{"name":"default","conditions":{"ref_name":{"include":["~DEFAULT_BRANCH"]}},"rules":[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"closing-keyword","integration_id":99999},{"context":"changelog-section","integration_id":99999}]}}]}'
+  assert_contains "closing-keyword required but unpinned is a warn — any app of that name could satisfy it" \
+    "[warn] $self_repo's \"default\" branch ruleset requires \"closing-keyword\" without pinning integration_id 15368" "$out"
+  assert_contains "changelog-section required but unpinned is a warn too" \
+    "[warn] $self_repo's \"default\" branch ruleset requires \"changelog-section\" without pinning integration_id 15368" "$out"
+
+  run_doctor STUB_RULESETS_JSON="[$noise_ruleset]"
+  assert_contains "no active branch ruleset targets the default branch — a warn, not a fail, naming both contexts" \
+    "[warn] $self_repo has no active branch ruleset targeting the default branch — closing-keyword (requirement 25a) and changelog-section (requirement 25c) are not enforced by any ruleset" "$out"
+
+  run_doctor STUB_RULESETS_FAIL=1
+  assert_contains "the rulesets endpoint being unreachable is a skip, not a fail" \
+    "[skip] closing-keyword and changelog-section ruleset enforcement — repos/$self_repo/rulesets is not reachable with this token" "$out"
 fi
 
 # --- Requirement 38's ruleset dependency (agent-ops#391) --------------------

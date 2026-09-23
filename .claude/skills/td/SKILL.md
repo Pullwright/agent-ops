@@ -75,7 +75,9 @@ the full description and the suggested fix, and instruct it to:
    and work only in that clone — never in a checkout shared with the user or
    another agent. Then read that repo's `AGENTS.md` first (its `CLAUDE.md`
    imports it) and follow its conventions (Conventional Commits, the
-   CHANGELOG/as-built-docs policy, and the tech-debt policy).
+   changelog rule — D27's `## Changelog` section of the pull-request
+   description, or the file's `[Unreleased]` entry where that file still
+   says so — the as-built-docs policy, and the tech-debt policy).
 2. Before doing anything else, check the issue isn't already being worked:
    skim open pull requests for its number (e.g. `gh pr list --repo
    <owner>/<repo> --search "Fixes #<n>" --state open`). If it looks already
@@ -89,9 +91,14 @@ the full description and the suggested fix, and instruct it to:
 4. Run the relevant checks for the area it touched, as that repo's
    `AGENTS.md` lists them (for agent-ops: `./scripts/run-tests.sh`, and
    `scripts/lint-shell.sh` for any `*.sh` touched).
-5. Add an `[Unreleased]` `CHANGELOG.md` entry if the change is notable under
-   that repo's documentation principles (skip it for routine/patch-level
-   fixes, per that file's own header).
+5. Record the changelog entry as that repo's documentation principles
+   direct. Under D27 (the file says the entry lives in the pull-request
+   description): a `## Changelog` section in the PR body — Keep a Changelog
+   category sub-headings with bullets, or `None.` for a routine/patch-level
+   fix, which a `fix:` title must still say — and no edit to `CHANGELOG.md`.
+   Where the file still says to add an `[Unreleased]` entry to
+   `CHANGELOG.md`, do that instead (skipping routine/patch-level fixes, per
+   that file's own header).
 6. On success, close the loop per `AGENTS.md`'s "Tech debt" section: the PR
    body carries a real GitHub closing keyword (e.g. `Fixes #<n>`) naming the
    resolved issue, plus a fenced `td-record` block —

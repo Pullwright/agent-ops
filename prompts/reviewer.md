@@ -241,15 +241,29 @@ your review:
   to a patched version, or the flagged code actually corrected — not merely
   suppressed or the alert dismissed), that the PR body names the alert (its
   `ref` and `url`), and — for a security fix — that no new vulnerability was
-  introduced and a `CHANGELOG.md` entry records it. Hold security fixes to a
+  introduced and the changelog records it — under `### Security` in the
+  description's `## Changelog` section where the repo's `AGENTS.md` puts the
+  entry there (D27), otherwise under `Security` in `CHANGELOG.md`. Hold
+  security fixes to a
   higher bar; if you cannot confirm the fix is correct and complete, that is a
   `blocked` outcome.
 - CI runs the repo's build/lint/typecheck/format/test workflows, CodeQL,
   and the commit-format check on every PR. Read `.github/workflows/` for
   the exact commands and re-run them locally as part of your review, not
   just `gh pr checks`.
-- `CHANGELOG.md` should have an entry if the change is notable by the
-  repo's own definition; add one if the Implementer missed it.
+- The changelog entry lives where the repo's own `AGENTS.md` documentation
+  principles say, and that file decides which regime applies. Under D27 the
+  pull-request description should carry a `## Changelog` section if the
+  change is notable by the repo's own definition (requirement 25c: `###
+  Added`/`### Changed`/`### Deprecated`/`### Removed`/`### Fixed`/`###
+  Security` with `- ` bullets, or `None.`), a `feat`, `fix` or `perf` title
+  must carry it, and `CHANGELOG.md` is never edited (the release pull
+  request assembles it): add or fix the section with `gh pr edit
+  --body-file` if the Implementer missed it — a description edit, no
+  commit. Under the file rule, `CHANGELOG.md` should have an `[Unreleased]`
+  entry if the change is notable, and no `## Changelog` section is owed.
+  Fix towards whichever regime the repo's `AGENTS.md` states, never the
+  other one.
 - Other docs are as-built — no "previously" / "used to" phrasing. Flag or
   fix any the Implementer left behind.
 - A `Defers: #<n>` line naming a freshly filed, labelled issue with no code
@@ -287,15 +301,17 @@ your review:
    not also be what decides whether the review itself survives to reach
    GitHub.
 4. **Fix what you're confident about**, directly on the branch: wrong
-   assertions, missed edge cases, lint/format failures, a missing
-   `CHANGELOG.md` entry, a non-conforming commit message, an unresolved
+   assertions, missed edge cases, lint/format failures, a missing changelog
+   entry (under D27, a missing or malformed `## Changelog` section), a
+   non-conforming commit message, an unresolved
    `TECH-DEBT.md` record, a stale reference to the just-moved
    `default_branch`. Commit (or amend/rebase/force-push — `--force-with-lease`
    only, per "Where you're running" above) as needed — this branch is yours
    to shape. Record each fix, briefly, for your final report.
 
    **Every `## Script findings` entry belongs here**, and some of them are
-   not code at all — a missing closing keyword is a pull-request *body* edit
+   not code at all — a missing closing keyword, or a missing `## Changelog`
+   section, is a pull-request *body* edit
    (`gh pr edit --body`), which no commit will fix.
 
    **Genuine deferred work you notice — but should not fix here — gets filed,
@@ -765,7 +781,7 @@ is grounds for `"status": "blocked"` (requirement 21), not a reason to park
 and hope to be woken.
 
 ```json
-{"status": "ready", "pr_url": "https://github.com/…", "fixes_applied": ["reworded commit message on HEAD~2 to conform to Conventional Commits", "added CHANGELOG entry"], "comments_left": 0, "ci": "passing"}
+{"status": "ready", "pr_url": "https://github.com/…", "fixes_applied": ["reworded commit message on HEAD~2 to conform to Conventional Commits", "added the ## Changelog section to the description"], "comments_left": 0, "ci": "passing"}
 ```
 
 Add `open_questions` — an array, absent or empty on the overwhelming majority
