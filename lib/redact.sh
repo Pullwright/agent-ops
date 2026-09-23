@@ -48,6 +48,17 @@ _redact_escape_literal() {
   printf '%s' "$1" | sed -e 's/[][\.^$*+?(){}|#]/\\&/g'
 }
 
+# _redact_escape_replacement PLACEHOLDER — PLACEHOLDER with every character
+# special to the *replacement* side of an `s#PATTERN#PLACEHOLDER#g` rule
+# (backslash, `&`, and the `#` delimiter) backslash-escaped, so it is spliced
+# in as a literal string rather than a sed replacement expression. This is
+# deliberately not `_redact_escape_literal`: that escapes ERE metacharacters
+# like `.`, `*`, `[` and `]` that carry no meaning on the replacement side,
+# and would corrupt an ordinary placeholder there.
+_redact_escape_replacement() {
+  printf '%s' "$1" | sed -e 's/[\&#]/\\&/g'
+}
+
 # redact_add_literal VALUE [PLACEHOLDER] — mask one runtime-supplied secret
 # that has no fixed shape the patterns above can match (agent-ops#1721): a
 # bearer token carried in a webhook URL's *path*, e.g.
@@ -59,11 +70,16 @@ _redact_escape_literal() {
 # the embedded newline as ending the command mid-pattern, "unterminated `s'
 # command"), and REDACT_SED_ARGS is shared by every caller, so one such value
 # would break every fixed shape rule above too, not just its own — treated
-# like an empty value rather than risk that.
+# like an empty value rather than risk that. PLACEHOLDER is escaped for the
+# replacement side (agent-ops#1741) before being spliced in, so a placeholder
+# containing `&`, `\` or `#` is used literally rather than expanding as a sed
+# replacement (`&` would otherwise re-insert the matched secret it is meant
+# to mask).
 redact_add_literal() {
   local value="$1" placeholder="${2:-[REDACTED-WEBHOOK]}"
   [[ -n "$value" && "$value" != *$'\n'* ]] || return 0
-  local escaped
+  local escaped escaped_placeholder
   escaped="$(_redact_escape_literal "$value")"
-  REDACT_SED_ARGS+=(-e "s#${escaped}#${placeholder}#g")
+  escaped_placeholder="$(_redact_escape_replacement "$placeholder")"
+  REDACT_SED_ARGS+=(-e "s#${escaped}#${escaped_placeholder}#g")
 }
