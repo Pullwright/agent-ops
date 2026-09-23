@@ -2264,14 +2264,15 @@ coordinator_fit_report_json='{}'
 # computed once, here, and spent unchanged by both the overhead measurement
 # below and the input assembly under "--- 4. Co-Ordinator stage ---".
 # `blocked` can afford to call its own view at both places because
-# `coordinator_blocked_view` reads nothing but the array it trims; this one is
-# scoped against `ordered_repos_json`, which the fit below reassigns, so
+# `coordinator_blocked_view` reads nothing of the repo array but its slugs,
+# which no rung of the fit changes; this one is scoped against the
+# candidates in `ordered_repos_json`, which the fit below reassigns, so
 # calling it twice would measure the overhead against the unfitted candidate
 # set and spend it against the fitted one — an error in the safe direction and
 # still a measurement that is not of the thing it claims to be. Scoped against
 # the unfitted array on purpose, for the same reason the overhead is measured
 # against an empty `repos`: the fit only ever removes candidates, so this stays
-# independent of the rung, and a spec kept for a candidate the ladder later
+# independent of the rung, and an entry kept for a candidate the ladder later
 # sheds is a handful of bytes already accounted for.
 #
 # Unconditional, outside the bound's own guard: `coordinator_prompt_max_bytes`
@@ -2279,7 +2280,7 @@ coordinator_fit_report_json='{}'
 # assembly below reads this variable on every path.
 coordinator_refinements_json="$(coordinator_refinements_view "$refinements_json" "$ordered_repos_json")"
 if (( coordinator_prompt_max_bytes > 0 )); then
-  coordinator_fit_blocked_json="$(coordinator_blocked_view "$blocked_json")"
+  coordinator_fit_blocked_json="$(coordinator_blocked_view "$blocked_json" "$ordered_repos_json")"
   coordinator_fit_overhead_json="$(jq -nc \
     --argjson blocked "$coordinator_fit_blocked_json" \
     --arg model_default "$implementer_model_default" \
@@ -2596,12 +2597,12 @@ fi
 #
 # `blocked` stays, but trimmed by coordinator_blocked_view (above) to the
 # fields "Re-checking blocked items" and "A blocked issue with fresh evidence
-# must be re-read" actually read. Every other pre-fetched band's own blocked
-# entries never reach the Co-Ordinator either (the loop above already
-# excluded them), so what remains of this list's purpose is `issues`' live
-# re-check duty and the three Co-Ordinator-derived sources' own exclusion-1
-# check.
-coordinator_blocked_json="$(coordinator_blocked_view "$blocked_json")"
+# must be re-read" actually read, a one-line `detail`, and the repositories
+# this cycle engages. Every other pre-fetched band's own blocked entries
+# never reach the Co-Ordinator either (the loop above already excluded
+# them), so what remains of this list's purpose is `issues`' live re-check
+# duty and the three Co-Ordinator-derived sources' own exclusion-1 check.
+coordinator_blocked_json="$(coordinator_blocked_view "$blocked_json" "$ordered_repos_json")"
 
 # --- 4. Co-Ordinator stage — one invocation per repository (issue #587) ---
 # `coordinator_base_prompt` is rendered further up, ahead of requirement 4i's

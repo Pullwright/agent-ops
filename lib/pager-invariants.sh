@@ -129,10 +129,11 @@
 #                           starts from, but there is no fix a pipeline
 #                           could perform on the owner's behalf.
 #   fit-ladder-pinned       `coordinator-input-fitted` pinned in the
-#                           ladder's own entry-dropping segment — rung 9 or
+#                           ladder's own entry-dropping segment — rung 11 or
 #                           tighter, the first of the 7 entry caps that
-#                           follow lib/coordinator-input.sh's 8 prose tiers,
-#                           which is the rung #1281's own evidence sat at —
+#                           follow lib/coordinator-input.sh's 10 prose tiers
+#                           (the first entry cap, which #1281's own evidence
+#                           sat at when it was rung 9 of an 8-tier ladder) —
 #                           with `entries_dropped > 0` in every fitted
 #                           cycle a node logged in the trailing 24h.
 #                           owner-only: raising `coordinator_prompt_max_
@@ -896,8 +897,8 @@ pager_eval_idle_with_demand() {
 # pager_eval_fit_ladder_pinned FLEET_NODES_JSON UNION_LOG_FILE
 # Fires when a node's `coordinator-input-fitted` events (agent-cycle.sh,
 # lib/coordinator-input.sh) in the trailing 24h have *all* run out of prose
-# to shed and started dropping whole entries — rung 9 or tighter (the first
-# of the 7 entry-cap rungs that follow the 8 prose tiers:
+# to shed and started dropping whole entries — rung 11 or tighter (the first
+# of the 7 entry-cap rungs that follow the 10 prose tiers:
 # `COORDINATOR_INPUT_TIERS` + 1, a fixed constant of the ladder rather than a
 # field either array carries) with `entries_dropped > 0` — a node whose
 # eligible backlog has outgrown `coordinator_prompt_max_bytes` on every
@@ -906,19 +907,21 @@ pager_eval_idle_with_demand() {
 # silence).
 #
 # The entry-dropping segment, not its last notch: #1281's own evidence for
-# this invariant is `poetic-1` sitting at *rung 9* — the loosest entry cap,
-# 64 per band per repo — dropping 48–68 entries in 149 of the 150 fitted
-# cycles from 2026-09-04, and the ladder has not moved since (2ab6125,
-# 2026-08-21), so a test for rung 15 alone would miss the very incident
-# (#1128, #1136) this invariant is built from. The two clauses are close to
-# one clause by construction: `coordinator_apply_rung`'s own `cap($max; …)`
-# is a no-op while `$emax` is null, which is every prose rung, so
-# `entries_dropped > 0` is unreachable above rung 9 anyway — the rung floor
-# says the same thing in the ladder's own vocabulary rather than leaving it
-# implied by a derived count.
+# this invariant is `poetic-1` sitting at the *loosest* entry cap — 64 per
+# band per repo, rung 9 of the eight-tier ladder of the day — dropping 48–68
+# entries in 149 of the 150 fitted cycles from 2026-09-04, so a test for the
+# last notch alone would miss the very incident (#1128, #1136) this invariant
+# is built from. The two clauses are close to one clause by construction:
+# `coordinator_apply_rung`'s own `cap($max; …)` is a no-op while `$emax` is
+# null, which is every prose rung, so `entries_dropped > 0` is unreachable
+# above the first entry cap anyway — the rung floor says the same thing in
+# the ladder's own vocabulary rather than leaving it implied by a derived
+# count. agent-ops#1379 added two prose tiers (`0:0:300`, `0:0:0`) beneath
+# `0:0:1000`, which moved the first entry cap from rung 9 to rung 11; the
+# floor moved with it.
 pager_eval_fit_ladder_pinned() {
   local _fleet_nodes_json="$1" union_log_file="$2"
-  local entry_cap_rung=9
+  local entry_cap_rung=11
   [[ -f "$union_log_file" ]] || { printf '{"firing":false}'; return 0; }
   jq -c -R -n --argjson floor "$entry_cap_rung" --argjson now "$(date -u +%s)" '
     86400 as $window_s

@@ -701,32 +701,40 @@ fit_ev() {  # fit_ev TS NODE CYCLE RUNG DROPPED
     '{ts: $ts, node: $n, cycle: $c, event: "coordinator-input-fitted", rung: $rung, entries_dropped: $dropped}'
 }
 fit_log="$WORKDIR/fit.jsonl"
-# n1 sits at the ladder's very last notch; n2 sits at rung 9, the *first* of
-# the entry caps and the rung agent-ops#1281's own evidence records
-# (`poetic-1`, 48–68 entries dropped in 149 of 150 fitted cycles from
-# 2026-09-04) — both are the ladder out of prose to shed and dropping whole
-# entries, which is what this invariant is about. n3 comes back up to a prose
-# rung, dropping nothing, within the window.
+# n1 sits at the ladder's very last notch (rung 17: ten prose tiers and seven
+# entry caps, agent-ops#1379); n2 sits at rung 11, the *first* of the entry
+# caps — the notch agent-ops#1281's own evidence records (`poetic-1`, 48–68
+# entries dropped in 149 of 150 fitted cycles from 2026-09-04, rung 9 of the
+# eight-tier ladder of the day) — both are the ladder out of prose to shed and
+# dropping whole entries, which is what this invariant is about. n3 comes back
+# up to a prose rung, dropping nothing, within the window; n4 sits on the
+# identity-only rung 10, the tightest *trim*, dropping nothing on every cycle,
+# which is the ordinary shape agent-ops#1379 made of a ~300-entry backlog and
+# must never read as pinned.
 write_log "$fit_log" \
-  "$(fit_ev "$(rel -7200)" n1 c1 15 12)" \
-  "$(fit_ev "$(rel -3600)" n1 c2 15 30)" \
-  "$(fit_ev "$(rel -7200)" n2 c1 9 48)" \
-  "$(fit_ev "$(rel -3600)" n2 c2 9 68)" \
-  "$(fit_ev "$(rel -900)" n3 c1 9 8)" \
-  "$(fit_ev "$(rel -300)" n3 c2 6 0)"
+  "$(fit_ev "$(rel -7200)" n1 c1 17 12)" \
+  "$(fit_ev "$(rel -3600)" n1 c2 17 30)" \
+  "$(fit_ev "$(rel -7200)" n2 c1 11 48)" \
+  "$(fit_ev "$(rel -3600)" n2 c2 11 68)" \
+  "$(fit_ev "$(rel -900)" n3 c1 11 8)" \
+  "$(fit_ev "$(rel -300)" n3 c2 6 0)" \
+  "$(fit_ev "$(rel -7000)" n4 c1 10 0)" \
+  "$(fit_ev "$(rel -3000)" n4 c2 10 0)"
 verdict="$(pager_eval_fit_ladder_pinned "[]" "$fit_log")"
 assert_eq "every fitted cycle in the entry-dropping segment: fires" "true" "$(jq -r '.firing' <<<"$verdict")"
 assert_eq "  ... names n1, pinned at the ladder's last notch" "1" \
   "$(jq -r '.nodes | index("n1") != null' <<<"$verdict" | grep -c true)"
-assert_eq "  ... names n2 too, pinned at rung 9 — agent-ops#1128's own shape" "1" \
+assert_eq "  ... names n2 too, pinned at rung 11 — agent-ops#1128's own shape, renumbered" "1" \
   "$(jq -r '.nodes | index("n2") != null' <<<"$verdict" | grep -c true)"
 assert_eq "  ... evidence carries n2's own rung and drop range" "1" \
-  "$(grep -c 'n2 (2 cycle(s) at rung 9-9, 48-68 entries dropped)' <<<"$(jq -r '.evidence' <<<"$verdict")")"
+  "$(grep -c 'n2 (2 cycle(s) at rung 11-11, 48-68 entries dropped)' <<<"$(jq -r '.evidence' <<<"$verdict")")"
 assert_eq "  ... n3 (one cycle back up to a prose rung, dropping nothing) is excluded" "0" \
   "$(jq -r '.nodes | index("n3") != null' <<<"$verdict" | grep -c true)"
+assert_eq "  ... n4 (every cycle on the identity-only rung 10, dropping nothing) is excluded" "0" \
+  "$(jq -r '.nodes | index("n4") != null' <<<"$verdict" | grep -c true)"
 
 fit_log_none="$WORKDIR/fit-none.jsonl"
-write_log "$fit_log_none" "$(fit_ev "$(rel -100000)" n1 c1 15 12)"
+write_log "$fit_log_none" "$(fit_ev "$(rel -100000)" n1 c1 17 12)"
 assert_eq "the only fitted cycle is outside the trailing 24h: does not fire" "false" \
   "$(jq -r '.firing' <<<"$(pager_eval_fit_ladder_pinned "[]" "$fit_log_none")")"
 

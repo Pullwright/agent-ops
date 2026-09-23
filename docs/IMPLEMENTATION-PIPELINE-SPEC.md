@@ -6520,7 +6520,21 @@ implements.
    reads — `repo`, `item`, `ts`, `detail` and `recheck_clean_ts` where
    present — dropping `stage`, `cycle`, `event` and an Implementer's
    `unblock_condition`, none of which `prompts/coordinator.md` ever reads off
-   a `blocked` entry.
+   a `blocked` entry. `detail` itself is one line (agent-ops#1379): its first
+   line, and at most 200 bytes of that, ending in `…` where it was cut,
+   because what either duty reads off it is *what is in the way*, and the
+   Implementer's whole needs-refinement report or a void-corroboration
+   transcript is not that — on 2026-09-23 the fleet's 110 recorded blocks
+   carried 51 KB of `detail` (median 381 bytes, longest 2,478) into the band
+   requirement 4i's ladder cannot shed. And, given the cycle's repo array,
+   `coordinator_blocked_view` keeps only an entry for a repository that array
+   names, or for no repository at all — the same filter "4. Co-Ordinator
+   stage" applies to each engagement's own list, so an entry for a repository
+   no engagement runs for is never sent and requirement 4i's overhead
+   measures what will be spent (37 of those 110 blocks named a slug the fleet
+   no longer configures). The view reads nothing of the repo array but its
+   slugs, which no rung of the fit changes, so the measurement and the
+   assembly may each call it against the array as they find it.
 
    The no-op fingerprint (requirement 3b) is unaffected by any of this: its
    own input still hashes the full, untrimmed `blocked_json` and `void_json`
@@ -7785,7 +7799,7 @@ implements.
    bodies pasted *verbatim* into the work order and together they were 34 KB
    of the 354 KB that overflowed.
 
-   **Prose is shed; candidacy is not.** The fit walks a ladder of eight
+   **Prose is shed; candidacy is not.** The fit walks a ladder of ten
    rungs — `{newest comments kept, bytes per comment, bytes per body}`,
    generous first — stopping at the first that fits, so an input a little over
    the allowance loses a little prose. Every rung leaves the entry's `ref`,
@@ -7804,9 +7818,12 @@ implements.
    **Dropping entries is the last rung, and it is loud.** Once the tightest
    tier is applied there is nothing left but entries, and those are capped per
    band per repo (halving: 64, 32, … 1), keeping the highest `Priority` band
-   first and the freshest thread within a band, the lowest-numbered tech-debt
-   issue — the one that has waited longest —
-   first. The count is recorded as `issues_elided`/`tech_debt_elided` on the
+   first and the freshest thread within a band for `issues`, and the freshest
+   thread first for `tech_debt`, which carries no band (agent-ops#1379: the
+   ascending-by-number order the cap once kept meant that, pinned at 64 for
+   weeks, the ~90 newest `pw::type:tech-debt` issues — the fresh defects —
+   were the ones dropped on every cycle, and nothing but a fallback pick could
+   ever reach them). The count is recorded as `issues_elided`/`tech_debt_elided` on the
    repo entry the Co-Ordinator reads, and the whole fit is applied *before*
    `coordinator_eligible_items` — beside requirement 2.2a's own emptying of
    these two bands, and for its stated reason: requirement 3x's corroboration
@@ -7829,9 +7846,9 @@ implements.
    subtracted, not a fifth independent measurement, which keeps the five
    terms summing to the existing overhead total exactly.
 
-   **The bottom rung (`0:0:1000`) stays a trim, not a drop, and requirement
+   **The tail of the ladder is three trims, not a drop, and requirement
    34e's fourth refusal (agent-ops#683) is the decision, reasoned.** Before
-   that refusal existed, reaching this rung meant every candidate's body was
+   that refusal existed, reaching `0:0:1000` meant every candidate's body was
    pared to a title-level fragment and its comments emptied — exactly the
    shape that compelled the mass-flagging incident 34e's fourth bullet
    describes — which made "drop entries here instead of trimming them" a real
@@ -7843,8 +7860,23 @@ implements.
    `labels`, `updated_at`) — enough to rank it, and enough to select and
    live-read it should its title alone look worth the fetch. Dropping it
    instead would remove that option for no remaining harm left to trade it
-   against, so the ladder is unchanged: eight rungs, generous first, `0:0:1000`
-   last, no floor added below it.
+   against. The same reasoning licenses the two rungs beneath `0:0:1000`
+   (agent-ops#1379): `0:0:300`, a short opening, and `0:0:0`, the identity
+   fields alone with every comment gone and the body replaced by its own
+   elision marker — an entry reduced to exactly what #683 established the
+   Co-Ordinator can still rank, select and live-read. They exist because
+   `0:0:1000` still renders at about 1,900 bytes an entry, and from
+   2026-09-04 to 2026-09-23 every fitted cycle on every node ran past it into
+   the entry caps, dropping 74–246 entries a cycle: the caps had become the
+   ordinary case, and an entry the Co-Ordinator never sees is not a
+   candidate at all. On the fleet's 2026-09-23 input (317 entries, 251 of
+   them tech-debt in one repository) the three tail rungs render at about
+   1,900, 1,190 and 875 bytes an entry, so the identity-only rung holds the
+   whole backlog inside a ~280 KB allowance and the caps are reached only
+   once identities alone outgrow the window. Requirement 34e's refusal and
+   requirement 3x's exemption reach the two new rungs exactly as they reach
+   `0:0:1000`, since both read the elision marker the rungs leave, not the
+   rung number.
 
    **Every degradation here is toward the unbounded input, never toward an
    empty one.** A budget of `0`, a non-numeric budget, a stdin document that
@@ -7973,32 +8005,56 @@ implements.
    existed are still read, and those are the ones a fixed writer alone would
    never reach.
 
-   So the Script scopes it. `coordinator_refinements_view` keeps every entry's
-   `ts`, `cycle` and `comment_url` for every item, and keeps a `spec` only for
-   an item some band of this cycle actually offers. The rule falls out of what
-   `prompts/coordinator.md` does with a spec: "Items that have been refined"
-   gives it exactly one use — an item about to go into a work order must have
-   its spec pasted verbatim into `context`, because it exists nowhere else —
-   and that use is reachable only for a candidate. A spec for an item no band
-   offers is bytes the Co-Ordinator is told to read and can never act on, so
-   dropping it removes no judgement. That is the same test
-   `coordinator_blocked_view` is trimmed against, applied to the other half of
-   the same document; what stays is presence, which is what "look the item up
-   here before you decide it is under-specified" and the `refinement_policy`
-   gate both actually read.
+   So the Script scopes it, to what a selection this cycle could actually
+   read (agent-ops#1379 narrowed the rule agent-ops#643 introduced). The rule
+   falls out of what `prompts/coordinator.md` does with the band. "Look the
+   item up here before you decide it is under-specified" and the
+   `refinement_policy` gate both read an entry's *presence*, for an item the
+   Co-Ordinator is weighing; a `comment_url` is the pointer requirement 17h's
+   Script-side composition follows once the item is selected; and a `spec`
+   is pasted by the Co-Ordinator itself only for an item from a source it
+   derives live (`project-review`, `implementation-plan`), because for every
+   pre-fetched band the Script splices the recorded refinement in at
+   composition (`refinement_traceability_repair`) from the full ledger, never
+   from this view. Nothing reads `ts` or `cycle`. By 2026-09-23 no spec
+   survived the candidacy rule and the ledger itself was the weight: 848
+   entries, 384 of them under a slug the fleet no longer configures,
+   rendering at 167 KB of `ts`, `cycle` and `comment_url` in the unsheddable
+   band on every cycle, of which 308 entries named an item the Co-Ordinator
+   could select. `coordinator_refinements_view` therefore keeps a repository
+   only when the cycle's repo array names it; within it, an entry only when
+   some pre-fetched band of that repository offers the item this cycle, or
+   when the item's ref is one no pre-fetched band ever constructs — an issue
+   number (`issues`, `tech-debt`), a `pr-<n>-…` pull-request ref, a
+   `dependabot-alert-<n>`/`code-scanning-alert-<n>` finding, a
+   `human-visibility-…` violation or a frozen `TD-…` register id — since a
+   ref of one of those shapes is selectable only from the band that offers
+   it, whereas any other ref may be an item the Co-Ordinator derives itself
+   and must still find here; and per entry `{comment_url}` where the pointer
+   exists (a `spec` beside it is shed whatever the candidacy, agent-ops#1128's
+   rule read from the ledger's side), `{spec}` only for a self-derived item,
+   and otherwise `{}` — presence, which is all the prompt reads for a refined
+   item the Script will compose for. On that day's ledger and input the
+   view is 37 KB. A refinement for an item no engagement could select is
+   bytes the Co-Ordinator is told to read and can never act on, so dropping
+   it removes no judgement — the same test `coordinator_blocked_view` is
+   trimmed against, applied to the other half of the same document.
 
    **The view is computed once and spent unchanged.** `blocked` can afford to
    call its own view at both the measurement and the assembly, because that
-   view reads nothing but the array it trims. This one is scoped against
+   view reads nothing of the repo array but its slugs, which no rung of the
+   fit changes. This one is scoped against the candidates in
    `ordered_repos_json`, which requirement 4i's fit reassigns — calling it
    twice would measure the overhead against the unfitted candidate set and
    spend it against the fitted one, an error in the safe direction and still a
    measurement that is not of the thing it claims to be. It is scoped against
    the *unfitted* array on purpose, for the same reason 4i measures its
    overhead against an empty `repos`: the fit only ever removes candidates, so
-   the scoping stays independent of the rung the ladder settles on, and a spec
-   kept for a candidate the ladder later sheds is a handful of bytes already
-   accounted for.
+   the scoping stays independent of the rung the ladder settles on, and an
+   entry kept for a candidate the ladder later sheds is a handful of bytes
+   already accounted for. "4. Co-Ordinator stage" calls the view again per
+   engagement against that repository's own entry, so each engagement carries
+   only its own repository's refinements.
 
    **A hopeless allowance sheds everything it can rather than nothing at
    all.** The negative-allowance branch requirement 4i introduced warned and
@@ -19006,19 +19062,23 @@ with the Reviewer's own.
     - **`fit-ladder-pinned`** (owner-only). Fires when a node's
       `coordinator-input-fitted` events (`lib/coordinator-input.sh`,
       `agent-cycle.sh`) in the trailing 24h have all run out of prose to shed
-      and are dropping whole entries — rung 9 or tighter, the first of the 7
-      entry caps that follow the 8 prose tiers (`COORDINATOR_INPUT_TIERS` +
+      and are dropping whole entries — rung 11 or tighter, the first of the 7
+      entry caps that follow the 10 prose tiers (`COORDINATOR_INPUT_TIERS` +
       1, a fixed constant of the ladder rather than a field either array
       carries) — with `entries_dropped > 0`. A node with no fitted cycle at
       all in the window contributes nothing. The segment, not its last
-      notch: #1128/#1136's own evidence is `poetic-1` pinned at *rung 9* —
-      the loosest entry cap — dropping 48–68 entries in 149 of 150 fitted
-      cycles since 2026-09-04, so a test for rung 15 alone would miss the
-      incident this invariant is built from. The two clauses nearly coincide
-      by construction: `coordinator_apply_rung`'s own entry cap is a no-op
+      notch: #1128/#1136's own evidence is `poetic-1` pinned at the
+      *loosest* entry cap (rung 9 of the eight-tier ladder of the day)
+      dropping 48–68 entries in 149 of 150 fitted cycles since 2026-09-04,
+      so a test for the last notch alone would miss the incident this
+      invariant is built from. The two clauses nearly coincide by
+      construction: `coordinator_apply_rung`'s own entry cap is a no-op
       while it is null, which is every prose rung, so `entries_dropped > 0`
-      is unreachable above rung 9 — the rung floor states in the ladder's own
-      vocabulary what the drop count would otherwise leave implied.
+      is unreachable above rung 11 — the rung floor states in the ladder's
+      own vocabulary what the drop count would otherwise leave implied. A
+      node whose every fitted cycle sits on the identity-only rung 10
+      dropping nothing — the ordinary shape agent-ops#1379 made of a
+      ~300-entry backlog — is not pinned.
     - **`work-order-repaired-rate`** (owner-only). Fires when the fleet-wide
       count of `work-order-repaired` events (`agent-cycle.sh`, #821 — a work
       order composed from trimmed input) in the trailing 24h exceeds
@@ -20518,7 +20578,7 @@ What exists, and the requirements each part answers to:
    `shellcheck`.
 4i. `lib/coordinator-input.sh` implementing requirement 4i:
    `coordinator_fit_bands`, given a byte allowance on argv and the cycle's
-   repo array on stdin, walks the eight-rung prose ladder and then the
+   repo array on stdin, walks the ten-rung prose ladder and then the
    per-band entry caps until the array renders inside that allowance, and
    prints `{repos, fit}` — the trimmed array and a record of which rung was
    reached, what it capped, the byte counts before and after, and whether it
@@ -20529,10 +20589,13 @@ What exists, and the requirements each part answers to:
    Unit-tested (`test/coordinator-input.test.sh`) for the untouched
    already-fits case, the three fail-open degradations, prose shed without
    candidacy, identity fields preserved, the elision markers and their URLs,
-   newest-comments-kept, entry dropping in the stated keep-order, entry order
-   left alone when nothing is dropped, the unfittable case, the two
-   whole-document bands trimmed and the other bands not, the rendered detail
-   line, and — pinning requirement 4g — an array genuinely past
+   newest-comments-kept, entry dropping in the stated keep-order (tech-debt
+   freshest-first), entry order left alone when nothing is dropped, the two
+   trim rungs beneath `0:0:1000` and the first entry cap's position beyond
+   them, the fleet's 2026-09-23 shape settling on a trim rung, the
+   unfittable case, the two whole-document bands trimmed and the other bands
+   not, the rendered detail line, and — pinning requirement 4g — an array
+   genuinely past
    `MAX_ARG_STRLEN` through both the fits and the trims paths.
    `test/coordinator-input-wiring.test.sh` covers the seam separately, over
    the `agent-cycle.sh` block lifted verbatim: the allowance arithmetic,
@@ -23440,9 +23503,16 @@ oblige anyone to edit a test.
    candidate still present, every identity field intact and the gatherer's own
    entry order undisturbed; each truncated body or comment ends in an elision
    marker naming its byte counts and its `url`; dropped comments are counted
-   in `comments_elided` and the newest are the ones kept; an allowance no
+   in `comments_elided` and the newest are the ones kept; the ladder's ninth
+   and tenth rungs are `0:0:300` and `0:0:0`, an allowance only the
+   identities fit lands on the tenth with nothing dropped and the first
+   entry cap is the eleventh, while a fixture of the fleet's 2026-09-23 shape
+   (317 entries, 251 of them tech-debt in one repository) settles on the
+   identity-only rung inside the allowance that day's terms leave and its
+   ~200-entry counterpart on the short-opening rung; an allowance no
    amount of prose-shedding can meet drops entries highest-`Priority`-and-
-   freshest first, counted in `issues_elided`; an allowance one entry cannot
+   freshest first, counted in `issues_elided`, and tech-debt entries
+   freshest first, so the highest-numbered survive a cap; an allowance one entry cannot
    meet reports `fits: false` and still returns a usable array; `tech_debt` is
    trimmed on the same terms and `review_feedback`/`merge_conflicts` are not
    trimmed at all; and the rendered detail line names the allowance and spells
@@ -28307,11 +28377,12 @@ oblige anyone to edit a test.
     unconfigured, with its evidence carrying the node's own `none-selected`
     reason and `coordinator-input-fitted` detail; `fit-ladder-pinned` fires
     on a node whose every `coordinator-input-fitted` event in the trailing
-    24h sits at rung 15 with entries dropped *and* on one pinned at rung 9,
-    #1128's own shape, with its evidence naming that node's rung and drop
-    range, not on a node that came back up to a prose rung within the
-    window, and not on a fitted event outside the
-    trailing 24h; `work-order-repaired-rate` fires when the fleet-wide ratio
+    24h sits at rung 17 with entries dropped *and* on one pinned at rung 11
+    (the first entry cap, #1128's own shape renumbered), with its evidence
+    naming that node's rung and drop range, not on a node that came back up
+    to a prose rung within the window, not on a node whose every cycle sits
+    on the identity-only rung 10 dropping nothing, and not on a fitted event
+    outside the trailing 24h; `work-order-repaired-rate` fires when the fleet-wide ratio
     of `work-order-repaired` to `selection` events in the trailing 24h
     exceeds `pager_repair_rate_percent`, not below it, and never on a window
     with zero selections; `blocked-label-orphaned` fires on an

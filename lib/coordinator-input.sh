@@ -64,7 +64,7 @@
 #
 # A per-entry allowance divided out of the budget punishes small entries for
 # their neighbours' size and needs a second pass to redistribute the slack. The
-# ladder instead states six shapes of input, generous first, and walks only as
+# ladder instead states ten shapes of input, generous first, and walks only as
 # far as the budget requires: an ordinary cycle stops at the first rung having
 # trimmed nothing at all, and each rung a cycle does reach is a sentence a
 # human can read off the log ("newest 3 comments, 1500 bytes each"). Every rung
@@ -97,14 +97,22 @@
 
 # The ladder: `comments_kept:comment_bytes:body_bytes`, generous first. The
 # first rung trims only pathological outliers — a 20 KB body or a 12 KB
-# comment is already past what any reader needs to rank an item — and the last
-# leaves a title, the identity fields and an opening paragraph. The steps
+# comment is already past what any reader needs to rank an item. The steps
 # between are deliberately close together: a coarse ladder overshoots, and an
 # input a few kilobytes over the allowance should lose a few kilobytes of
 # prose, not half the thread it happened to sit above. Byte caps, not
 # character caps, because bytes are what the window is spent in: JSON-escaped
 # Markdown runs about 2.35 bytes per token, roughly half the ~4 of the prose it
 # encodes, because every newline and quote in it becomes an escape.
+#
+# The tail is three rungs, each a trim and none a drop: `0:0:1000` leaves a
+# title-level paragraph, `0:0:300` a short opening, and `0:0:0` the identity
+# fields alone — every comment gone and the body replaced by its own elision
+# marker. Measured on the fleet's 2026-09-23 input (317 entries, agent-ops
+# #1379), the three render at about 1900, 1190 and 875 bytes per entry, so
+# the identity-only rung is what lets the whole of a ~300-entry backlog stay
+# selectable inside a ~280 KB allowance; the entry caps below it are reached
+# only once identities alone outgrow the window.
 COORDINATOR_INPUT_TIERS=(
   "20:12000:20000"
   "10:6000:12000"
@@ -114,18 +122,21 @@ COORDINATOR_INPUT_TIERS=(
   "2:1200:3000"
   "1:800:2000"
   "0:0:1000"
+  "0:0:300"
+  "0:0:0"
 )
 
-# Decision (agent-ops#683): the bottom rung above stays a trim, not a drop.
-# Reaching it used to mean every candidate's body was cut to a title-level
-# fragment, comments emptied outright, and the Co-Ordinator — correctly
-# following its own prompt's "if you cannot tell what done would mean, report
-# needs_refinement" — dutifully reported exactly that for its whole visible
-# backlog, which requirement 3x's completeness bar then compelled the Script
-# to record as blocks (nine items in 68 seconds, 2026-08-21). That made
-# "drop entries here instead of trimming them" a real candidate fix: an entry
-# this small could not be judged either way, so keeping it costs a candidate
-# slot for something the Co-Ordinator cannot use.
+# Decision (agent-ops#683): the tail of the ladder is a trim, not a drop.
+# Reaching `0:0:1000` used to mean every candidate's body was cut to a
+# title-level fragment, comments emptied outright, and the Co-Ordinator —
+# correctly following its own prompt's "if you cannot tell what done would
+# mean, report needs_refinement" — dutifully reported exactly that for its
+# whole visible backlog, which requirement 3x's completeness bar then
+# compelled the Script to record as blocks (nine items in 68 seconds,
+# 2026-08-21). That made "drop entries here instead of trimming them" a real
+# candidate fix: an entry this small could not be judged either way, so
+# keeping it costs a candidate slot for something the Co-Ordinator cannot
+# use.
 #
 # `coordinator_fit_trim_refusal_reason` above removes that harm at its
 # source: a trimmed entry can no longer force a block, so all a bottom-rung
@@ -133,12 +144,19 @@ COORDINATOR_INPUT_TIERS=(
 # `priority`, `labels`, `updated_at`) — enough to rank it, and enough to
 # select and live-read it should its title alone look worth the fetch.
 # Dropping it instead would remove that option for no remaining harm left to
-# trade it against, so the ladder is unchanged: eight rungs, generous first,
-# `0:0:1000` last.
+# trade it against. Decision (agent-ops#1379): the same reasoning is what
+# licenses the two rungs below `0:0:1000` — `0:0:300` and `0:0:0` — since an
+# entry reduced to its identity is exactly what #683 established the
+# Co-Ordinator can still rank, select and live-read. From 2026-09-04 to
+# 2026-09-23 every fitted cycle on every node landed in the entry caps, with
+# 74–246 entries dropped outright, because `0:0:1000` still costs ~1900 bytes
+# an entry and nothing tighter existed: the caps were the ordinary case, and
+# an entry the Co-Ordinator never sees is not a candidate at all. With the two
+# rungs, the caps are reserved for an input whose identities alone do not fit.
 
-# The per-band, per-repo entry caps the last rung walks once the tightest tier
-# above still does not fit — halving, so a wildly oversized input converges in
-# a handful of measurements rather than one per entry.
+# The per-band, per-repo entry caps walked once the tightest tier above — the
+# identity-only rung — still does not fit: halving, so a wildly oversized
+# input converges in a handful of measurements rather than one per entry.
 COORDINATOR_INPUT_ENTRY_CAPS=(64 32 16 8 4 2 1)
 
 # The jq program every rung runs. Bound as a shell variable rather than
@@ -184,17 +202,22 @@ def fit_entry($cb; $bb; $keep):
                           else {} end)))}
        else {} end);
 
-# The order the last rung keeps entries in — most worth the Co-Ordinator's
+# The order the entry caps keep entries in — most worth the Co-Ordinator's
 # attention first, so a cap takes from the bottom. Issues rank by the same
-# four Priority bands requirement 15e ranks on, then by the freshest thread;
-# tech-debt has no band, so the oldest item — the one that has waited longest —
-# is kept first.
+# four Priority bands requirement 15e ranks on, then by the freshest thread.
+# Tech-debt carries no band (`scripts/gather-issues.sh` reads the Priority
+# field for `issues` only, and no tech-debt convention sets one), so it ranks
+# by the freshest thread alone (agent-ops#1379): the ascending-by-number order
+# this used to keep meant that, under a cap pinned at 64 for weeks, the ~90
+# *newest* `pw::type:tech-debt` issues — the fresh defects — were the ones
+# dropped on every cycle, and nothing but a fallback pick could ever reach
+# them.
 def issue_rank: {Urgent: 4, High: 3, Medium: 2, Low: 1}[(.priority // "Medium") | tostring] // 2;
 # Ascending on [band, thread freshness] and then reversed, which is one total
 # order rather than two sorts relying on jq's tie-breaking: highest band first,
 # and freshest thread first within a band.
 def keep_order_issues: sort_by([issue_rank, ((.updated_at // "") | tostring)]) | reverse;
-def keep_order_tech_debt: sort_by(.number // 0);
+def keep_order_tech_debt: sort_by((.updated_at // "") | tostring) | reverse;
 
 # Reordering and capping are one step, applied only when there is a cap to
 # apply: with no entries to drop the order the gatherer produced is the order

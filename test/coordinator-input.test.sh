@@ -131,6 +131,29 @@ assert_true "within a band the freshest thread is kept first" \
 assert_eq "dropped entries are counted on the repo entry" \
   "12" "$(jq -r '(.repos[0].issues | length) + .repos[0].issues_elided' <<<"$out")"
 
+# --- Tech-debt is kept freshest-first when capped (agent-ops#1379). The band
+#     carries no Priority field, and the ascending-by-number order the cap
+#     used to keep meant the ~90 newest `pw::type:tech-debt` issues — the
+#     fresh defects — were the ones dropped on every capped cycle. The fixture
+#     is built so that number order and freshness order disagree: the
+#     lowest-numbered issues are the stalest. ---
+td_many="$(python3 -c '
+import json
+td = [{"source": "tech-debt", "ref": str(i), "number": i,
+       "url": "https://github.com/o/r/issues/%d" % i, "title": "td %d" % i,
+       "labels": ["pw::type:tech-debt"],
+       "updated_at": "2026-09-%02dT00:00:00Z" % (12 + i),
+       "body": "B" * 100, "comments": []} for i in range(1, 13)]
+print(json.dumps([{"slug": "o/r", "sources": ["tech-debt"], "issues": [], "tech_debt": td}]))')"
+out="$(fit 1500 <<<"$td_many")"
+assert_true "a capped tech-debt band drops entries" "$(jq '.fit.entries_dropped > 0' <<<"$out")"
+assert_true "the tech-debt entries kept are the freshest threads, not the lowest-numbered" \
+  "$(jq '[.repos[0].tech_debt[].updated_at] | . == (sort | reverse) and (.[0] == "2026-09-24T00:00:00Z")' <<<"$out")"
+assert_eq "…which here means the highest-numbered issues survive the cap" \
+  "12" "$(jq -r '[.repos[0].tech_debt[].number] | max' <<<"$out")"
+assert_eq "dropped tech-debt entries are counted on the repo entry" \
+  "12" "$(jq -r '(.repos[0].tech_debt | length) + .repos[0].tech_debt_elided' <<<"$out")"
+
 # --- Order is only ever disturbed when entries are actually dropped: a
 #     trimmed cycle must differ from an untrimmed one in prose and nothing
 #     else, or a reader comparing two cycles' inputs cannot tell what moved. ---
@@ -138,6 +161,100 @@ out="$(fit 60000 <<<"$big")"
 assert_eq "a prose-only trim leaves the gatherer's own entry order alone" \
   "$(jq -c '[.[0].issues[].ref]' <<<"$big")" \
   "$(jq -c '[.repos[0].issues[].ref]' <<<"$out")"
+
+# --- The tail of the prose ladder (agent-ops#1379): beneath `0:0:1000` sit a
+#     short-opening rung (`0:0:300`) and an identity-only rung (`0:0:0`), and
+#     the entry caps begin only past them — so a backlog whose identities fit
+#     is never capped. Pinned by position, because `lib/pager-invariants.sh`
+#     hard-codes the first cap's rung (11) as a constant of this ladder. ---
+assert_eq "the ladder has ten prose rungs" "10" "${#COORDINATOR_INPUT_TIERS[@]}"
+assert_eq "rung 9 is the short-opening rung" "0:0:300" "${COORDINATOR_INPUT_TIERS[8]}"
+assert_eq "rung 10 is the identity-only rung" "0:0:0" "${COORDINATOR_INPUT_TIERS[9]}"
+# 12 entries of 400-byte bodies: rung 8 leaves the bodies whole, rung 9 keeps
+# 300 bytes of each, and only rung 10 replaces each body with its own marker —
+# so an allowance only the identities fit lands exactly on rung 10 with
+# nothing dropped, where the old ladder would have gone straight to a cap.
+# (A body shorter than the ~120-byte marker is *not* made smaller by the
+# marker, which is why the bodies here are longer than one: the ladder is
+# re-measured at every rung, so that edge costs a tiny-body input nothing
+# but a rung it would not have fitted on anyway.)
+bodies="$(mk_repos 12 400 0 0)"
+r8="$(coordinator_apply_rung 0 0 1000 <<<"$bodies" | coordinator_rendered_bytes)"
+r10="$(coordinator_apply_rung 0 0 0 <<<"$bodies" | coordinator_rendered_bytes)"
+assert_true "the identity-only rung renders smaller than the title-paragraph rung" \
+  "$( (( r10 < r8 )) && echo true || echo false )"
+out="$(fit "$(( r10 + 10 ))" <<<"$bodies")"
+assert_eq "an allowance only identities fit lands on rung 10, dropping nothing" \
+  "10 0 null" "$(jq -r '"\(.fit.rung) \(.fit.entries_dropped) \(.fit.entries_max)"' <<<"$out")"
+assert_eq "every entry survives the identity-only rung" "12" "$(jq -r '.repos[0].issues | length' <<<"$out")"
+assert_true "an identity-only entry's body is its own elision marker naming its url" \
+  "$(jq -r '.repos[0].issues[0].body | test("^…\\[Script: elided all [0-9]+ bytes .* read it whole at https://github.com/o/r/issues/1\\]$")' <<<"$out")"
+assert_eq "…and its identity fields are intact" \
+  "1 1 https://github.com/o/r/issues/1 issue 1 Medium 2026-08-02T00:00:00Z" \
+  "$(jq -r '.repos[0].issues[0] | "\(.ref) \(.number) \(.url) \(.title) \(.priority) \(.updated_at)"' <<<"$out")"
+# More entries than the loosest cap keeps, so that the cap actually removes
+# some and the first rung past the trims is the one that fits.
+crowd="$(mk_repos 70 400 0 0)"
+r10="$(coordinator_apply_rung 0 0 0 <<<"$crowd" | coordinator_rendered_bytes)"
+out="$(fit "$(( r10 - 10 ))" <<<"$crowd")"
+assert_eq "a few bytes short of the identities is the first entry cap, rung 11, and it drops" \
+  "11 64 6" "$(jq -r '"\(.fit.rung) \(.fit.entries_max) \(.fit.entries_dropped)"' <<<"$out")"
+opening="$(python3 -c '
+import json
+issues = [{"source": "issues", "ref": "1", "number": 1, "url": "https://github.com/o/r/issues/1",
+           "title": "t", "priority": "Medium", "updated_at": "2026-08-01T00:00:00Z",
+           "body": "O" * 2000, "comments": []}]
+print(json.dumps([{"slug": "o/r", "sources": ["issues"], "issues": issues, "tech_debt": []}]))')"
+r9="$(coordinator_apply_rung 0 0 300 <<<"$opening" | coordinator_rendered_bytes)"
+out="$(fit "$r9" <<<"$opening")"
+assert_eq "an allowance a 300-byte opening fits lands on rung 9" "9 300" \
+  "$(jq -r '"\(.fit.rung) \(.fit.body_bytes)"' <<<"$out")"
+assert_true "…and the body keeps a 300-byte opening ahead of its marker" \
+  "$(jq -r '.repos[0].issues[0].body | startswith("O" * 300) and (startswith("O" * 301) | not)' <<<"$out")"
+
+# --- The fleet's own 2026-09-23 shape (agent-ops#1379): 317 entries — 310 in
+#     one repo, 251 of them tech-debt — with the titles, labels, bodies and
+#     threads the gather actually carried, against the allowance the fitted
+#     terms leave once the refinements and blocked bands are identities. The
+#     old ladder landed at rung 10–11 dropping 246–278 entries every cycle.
+#     Built as a fixture rather than replayed, so the test needs no live
+#     data; its per-entry byte cost matches the measured ~875 bytes at
+#     identity and ~1190 at a 300-byte opening. ---
+live_shape="$(python3 -c '
+import json
+def entry(src, i, nc):
+    return {"source": src, "ref": str(i), "number": i,
+            "url": "https://github.com/Pullwright/agent-ops/issues/%d" % i,
+            "title": ("issue %d: " % i) + "a title of the length the fleet actually files, naming the defect and its symptom",
+            "labels": (["pw::type:tech-debt", "refined"] if src == "tech-debt" else ["refined"]),
+            "author": "pullwright-author", "created_at": "2026-09-%02dT00:00:00Z" % (i % 23 + 1),
+            "updated_at": "2026-09-%02dT%02d:00:00Z" % (i % 23 + 1, i % 24),
+            "body": ("B" * 80 + "\n") * 40,
+            "comments": [{"author": "warwickallen", "created_at": "2026-09-11T00:00:00Z", "body": ("C" * 80 + "\n") * 30} for _ in range(nc)],
+            "expensive_gather": {"fresh": True, "gathered_at": "2026-09-23T17:19:25Z"}}
+agent_ops = {"slug": "Pullwright/agent-ops", "sources": ["issues", "tech-debt"],
+             "issues": [dict(entry("issues", i, 2), priority=["Low", "Medium", "High"][i % 3], priority_set=True) for i in range(1000, 1059)],
+             "tech_debt": [entry("tech-debt", i, 1) for i in range(1100, 1351)]}
+poetic = {"slug": "Poetic-Poems/poetic", "sources": ["issues", "tech-debt"],
+          "issues": [dict(entry("issues", i, 1), priority="Medium", priority_set=False) for i in range(200, 202)],
+          "tech_debt": [entry("tech-debt", i, 1) for i in range(300, 305)]}
+print(json.dumps([agent_ops, poetic]))')"
+assert_eq "the fixture is the fleet's 317-entry shape" "317" \
+  "$(jq '[.[] | (.issues | length) + (.tech_debt | length)] | add' <<<"$live_shape")"
+# 500,000 less the fitted event's own prompt (119,483), scaffold (9,920) and
+# claimed (3) terms, less the two bands as this change leaves them on that
+# day's ledger (refinements 37,025; blocked 22,936).
+live_allowance=$(( 500000 - 119483 - 9920 - 3 - 37025 - 22936 ))
+out="$(fit "$live_allowance" <<<"$live_shape")"
+assert_eq "the 2026-09-23 shape settles on a trim rung, not a cap" "10 0 null" \
+  "$(jq -r '"\(.fit.rung) \(.fit.entries_dropped) \(.fit.entries_max)"' <<<"$out")"
+assert_true "…inside its allowance" "$(jq '.fit.bytes_after <= .fit.budget' <<<"$out")"
+assert_eq "…with every one of the 251 tech-debt issues still a candidate" "251" \
+  "$(jq '.repos[0].tech_debt | length' <<<"$out")"
+two_hundred="$(jq -c '.[0].tech_debt |= .[0:140]' <<<"$live_shape")"
+out="$(fit "$live_allowance" <<<"$two_hundred")"
+assert_eq "the issue's own ~200-entry shape settles on the short-opening rung" "9 0" \
+  "$(jq -r '"\(.fit.rung) \(.fit.entries_dropped)"' <<<"$out")"
 
 # --- An allowance even one entry cannot meet is reported, not hidden. The
 #     stage will be refused by the API this cycle; the union log has to carry
@@ -234,17 +351,21 @@ assert_true "a cycle that could not be fitted says so in the detail" \
 #     (agent-ops#683): the exemption set behind requirement 34e's fourth
 #     refusal and requirement 3x's matching completeness exception. ---
 
-# The mass-flag shape: the bottom rung cuts every candidate's body to a
-# title-level fragment, and every one of them is now trimmed — with every
+# The mass-flag shape: the title-paragraph rung cuts every candidate's body to
+# a title-level fragment, and every one of them is now trimmed — with every
 # entry still present (budget 5000 lands on rung 8, `0:0:1000`, without
-# forcing the entry-cap rungs below it, which would drop candidates rather
-# than merely trim their prose).
+# forcing the rungs below it, none of which drops a candidate either).
 many_small="$(mk_repos 3 5000 2 5000)"
 bottom="$(fit 5000 <<<"$many_small")"
-assert_eq "the fixture actually reaches the bottom rung with no entries dropped" \
+assert_eq "the fixture actually reaches the title-paragraph rung with no entries dropped" \
   "8 0" "$(jq -r '"\(.fit.rung) \(.fit.entries_dropped)"' <<<"$bottom")"
 trimmed="$(coordinator_fit_trimmed_items <<<"$(jq -c '.repos' <<<"$bottom")")"
-assert_eq "the bottom rung marks every candidate trimmed" "3" "$(jq 'length' <<<"$trimmed")"
+assert_eq "the title-paragraph rung marks every candidate trimmed" "3" "$(jq 'length' <<<"$trimmed")"
+identity="$(fit "$(( $(coordinator_apply_rung 0 0 0 <<<"$many_small" | coordinator_rendered_bytes) + 5 ))" <<<"$many_small")"
+assert_eq "the identity-only rung is reached with no entries dropped either" \
+  "10 0" "$(jq -r '"\(.fit.rung) \(.fit.entries_dropped)"' <<<"$identity")"
+assert_eq "…and it too marks every candidate trimmed, so 34e's refusal still covers it" "3" \
+  "$(jq 'length' <<<"$(coordinator_fit_trimmed_items <<<"$(jq -c '.repos' <<<"$identity")")")"
 assert_eq "each mark carries the item's own repo, ref and source" \
   "$(jq -cS 'sort_by(.item)' <<<'[{"repo":"o/r","item":"1","source":"issues"},{"repo":"o/r","item":"2","source":"issues"},{"repo":"o/r","item":"3","source":"issues"}]')" \
   "$(jq -cS 'sort_by(.item)' <<<"$trimmed")"

@@ -2949,8 +2949,8 @@ if (( WITH_GITHUB )); then
     # back the page of results and the true `.total_count` behind it in the
     # same call, so — unlike the open-issues total above — nothing further is
     # needed to know whether the top-40 cap has clipped anything. Sorted
-    # oldest first, matching scripts/gather-tech-debt.sh's own "the item that
-    # has waited longest is kept first" convention. This replaced a listing
+    # oldest first, matching scripts/gather-tech-debt.sh's own
+    # ascending-by-number order. This replaced a listing
     # read of `contents/tech-debt`: that register is now a frozen archive
     # (#880 and its sibling issues), so reading it no longer answers what the
     # Co-Ordinator would actually pick up.
