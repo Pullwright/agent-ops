@@ -39,9 +39,15 @@
 #
 #   None. (Optionally, why.)
 #
-# Exactly one `## Changelog` heading (case-insensitive) is allowed. Its
-# content runs to the next level-one or level-two heading or to the end of
-# the body. The first non-blank line of the content is either a line
+# A heading's content runs to the next level-one or level-two heading or
+# to the end of the body. A heading whose content is nothing but blank
+# lines and HTML comments — the pull-request template's own untouched
+# state — is treated as absent, not as empty: a type that owes nothing
+# passes it as it stands, and a type that owes a section gets the same
+# fault as for no heading at all, never one it could only clear by deleting
+# a heading the template gave it (PR #1810 review). Exactly one heading
+# with content is allowed (case-insensitive). The first non-blank line of
+# the content is either a line
 # starting with `None` or a `### <Category>` heading, where `<Category>` is
 # one of Keep a Changelog's six, spelt exactly: Added, Changed, Deprecated,
 # Removed, Fixed, Security. Every category heading is followed by at least
@@ -106,7 +112,7 @@ fi
 # States: outside the section, inside it before any content, inside it in
 # `None` mode, inside it in category mode, or inside it after a fault on its
 # first line (`bad`, which swallows the rest so one mistake reports once).
-headings=0
+sections=0
 in_fence=0
 in_comment=0
 in_section=0
@@ -126,10 +132,17 @@ close_category() {
 
 close_section() {
   (( in_section )) || return 0
-  if (( content_lines == 0 )); then
-    fault "the \`## Changelog\` section is empty — write \`### Added\`/\`### Changed\`/\`### Deprecated\`/\`### Removed\`/\`### Fixed\`/\`### Security\` sub-headings with \`- \` bullets, or the single line \`None.\`"
-  elif [[ "$mode" == "categories" ]]; then
-    close_category
+  # No content but blank lines and comments is an absent section, not an
+  # empty one — see the header. Only a section with content counts towards
+  # "exactly one".
+  if (( content_lines > 0 )); then
+    sections=$(( sections + 1 ))
+    if (( sections > 1 )); then
+      fault "more than one \`## Changelog\` section with content — keep exactly one"
+    fi
+    if [[ "$mode" == "categories" ]]; then
+      close_category
+    fi
   fi
   in_section=0
   mode=""
@@ -158,14 +171,6 @@ while IFS= read -r line || [[ -n "$line" ]]; do
   # A level-one or level-two heading: the section's own, or the end of it.
   if [[ "$line" =~ ^##[[:space:]]+[Cc][Hh][Aa][Nn][Gg][Ee][Ll][Oo][Gg][[:space:]]*$ ]]; then
     close_section
-    headings=$(( headings + 1 ))
-    if (( headings > 1 )); then
-      fault "more than one \`## Changelog\` heading — keep exactly one"
-      mode="bad"
-      in_section=1
-      content_lines=1
-      continue
-    fi
     in_section=1
     mode=""
     content_lines=0
@@ -234,7 +239,7 @@ done <<<"$body"
 close_section
 
 # --- The title rule ----------------------------------------------------------
-if (( owes )) && (( headings == 0 )); then
+if (( owes )) && (( sections == 0 )); then
   fault "a \`feat\`, \`fix\` or \`perf\` title, or a breaking change, owes a \`## Changelog\` section in the pull-request description — add one with \`### Added\`/\`### Changed\`/\`### Deprecated\`/\`### Removed\`/\`### Fixed\`/\`### Security\` bullets, or the single line \`None.\` if the change is not notable"
 fi
 

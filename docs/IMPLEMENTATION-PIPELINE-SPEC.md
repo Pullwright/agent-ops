@@ -12010,8 +12010,13 @@ implements.
     check. The check reads the description outside fenced code blocks and
     HTML comments — a fenced example of the heading is not a section — and
     fails, one `::error::` annotation per fault, on: a title that owes a
-    section with no `## Changelog` heading; more than one such heading; an
-    empty section; a first content line that is neither a category heading
+    section with no `## Changelog` section carrying content — a heading
+    whose content is nothing but blank lines and HTML comments, which is
+    the pull-request template's own untouched state, is treated as absent,
+    so a type that owes nothing passes it as it stands and a type that owes
+    one gets this same fault rather than one it could only clear by
+    deleting a heading the template gave it; more than one such section
+    with content; a first content line that is neither a category heading
     nor `None`; a sub-heading that is not one of the six categories, spelt
     exactly; a category with no bullet, or listed twice; a line under a
     category that is neither a bullet, an indented continuation of one, nor
@@ -21625,7 +21630,9 @@ What exists, and the requirements each part answers to:
     exactly, at least one bullet each, no duplicate category, no loose
     prose, or the single line `None.` — writing one `::error::` line per
     fault to stderr and exiting 1, or exiting 0 with no output when the
-    description is in order; exit 2 is a usage error. `\r` is stripped
+    description is in order (a heading with no content but blank lines and
+    comments counts as absent, so the template's untouched section is never
+    itself a fault); exit 2 is a usage error. `\r` is stripped
     before parsing, since a description saved through GitHub's editor
     arrives CRLF. The workflow runs on every `pull_request` event including
     `edited`, passes the title and the body through `env:`, and reports
@@ -25582,15 +25589,17 @@ oblige anyone to edit a test.
    endings, a section that ends at the next level-one or level-two heading,
    HTML comments inside it, and a fenced block (a `td-record`, or an example
    of the heading itself) anywhere in the description; and it fails, each
-   with a `::error::` line, on an empty section (a chore title included,
-   since a present section is checked whatever the type), a section holding
-   only a comment, a lower-case heading whose content is empty (proving the
-   heading is detected case-insensitively), an unknown or mis-cased
+   with a `::error::` line, on an owing title whose only `## Changelog`
+   heading is empty or holds nothing but a comment — the template's
+   untouched state, which a non-owing title passes, the shipped template
+   file itself being asserted both ways — a lower-case heading holding an
+   unknown category (proving the heading is detected case-insensitively), an unknown or mis-cased
    category, a category with no bullet, a duplicated category, loose prose
    or a deeper heading under a category, an indented line before any
    bullet, prose or a bullet as the first line, `Nonetheless` mistaken for
-   `None`, `None` alongside a category or a bullet, two section headings,
-   and a fenced example standing in for a real section on a `fix` title.
+   `None`, `None` alongside a category or a bullet, two section headings
+   with content (a comment-only heading beside a real one passes), and a
+   fenced example standing in for a real section on a `fix` title.
    A fault on the section's first line reports once, without a cascade;
    distinct faults each report on their own line. No arguments at all is a
    usage error (exit 2). Separately, `test/doctor.test.sh`'s ruleset cases

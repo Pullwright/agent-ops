@@ -2,9 +2,10 @@
 
 ## Changelog
 
-<!-- Delete this section for a type that does not owe one (chore, docs,
-     refactor, test, build, ci, style, revert). A feat, fix or perf title,
-     or a breaking change, must keep it: one or more of `### Added`,
+<!-- For a type that owes no entry (chore, docs, refactor, test, build, ci,
+     style, revert), leave this section as it is or delete it: a section
+     holding only this comment counts as absent. A feat, fix or perf title,
+     or a breaking change, must fill it: one or more of `### Added`,
      `### Changed`, `### Deprecated`, `### Removed`, `### Fixed` and
      `### Security`, each with `- ` bullets written for this repository's
      changelog audience, or the single line `None.` if the change is not

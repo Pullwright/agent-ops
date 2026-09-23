@@ -114,10 +114,12 @@ assert_pass "the section heading inside a tilde fence is not a section either" \
 # --- Malformed sections --------------------------------------------------------
 assert_fail "the fenced example does not satisfy a fix title" \
   "\`\`\`${NL}## Changelog${NL}### Fixed${NL}- X.${NL}\`\`\`${NL}" "owes a" "fix: fenced only"
-assert_fail "an empty section" "## Changelog${NL}${NL}" "is empty" "fix: empty"
-assert_fail "an empty section with a chore title is still a fault (present, so checked)" "## Changelog${NL}" "is empty" "chore: left the template heading"
-assert_fail "a section holding only a comment is empty" "## Changelog${NL}<!-- fill me in -->${NL}" "is empty" "fix: template"
-assert_fail "lowercase heading is detected, so its empty content is a fault" "## changelog${NL}" "is empty" "chore: case"
+assert_fail "an empty section on an owing title is the ordinary owes fault" "## Changelog${NL}${NL}" "owes a" "fix: empty"
+assert_pass "an empty section on a chore title counts as absent" "## Changelog${NL}" "chore: left the template heading"
+assert_fail "a section holding only a comment, on an owing title, is the ordinary owes fault" "## Changelog${NL}<!-- fill me in -->${NL}" "owes a" "fix: template"
+assert_pass "a section holding only a comment, on a chore title, counts as absent" "## Changelog${NL}<!-- fill me in -->${NL}" "chore: template"
+assert_pass "a comment-only heading beside a real section is not a second section" "## Changelog${NL}<!-- template -->${NL}${NL}## Changelog${NL}### Fixed${NL}- X.${NL}" "fix: template kept"
+assert_fail "lowercase heading is detected, so its unknown category is a fault" "## changelog${NL}### Fixes${NL}- X.${NL}" "not a Keep a Changelog category" "chore: case"
 assert_fail "an unknown category" "## Changelog${NL}### Fixes${NL}- X.${NL}" "not a Keep a Changelog category" "fix: plural"
 assert_fail "a lowercase category is not the exact spelling" "## Changelog${NL}### fixed${NL}- X.${NL}" "not a Keep a Changelog category" "fix: case"
 assert_fail "a category with no bullet" "## Changelog${NL}### Fixed${NL}${NL}### Added${NL}- X.${NL}" "\`### Fixed\` in the \`## Changelog\` section has no bullet" "fix: hollow"
@@ -131,7 +133,17 @@ assert_fail "a bullet as the first line, without a category" "## Changelog${NL}-
 assert_fail "Nonetheless is not None" "## Changelog${NL}Nonetheless, a fix.${NL}" "must be a" "fix: nonetheless"
 assert_fail "None plus a category" "## Changelog${NL}None.${NL}### Added${NL}- X.${NL}" "says \`None\` but also carries" "fix: both"
 assert_fail "None plus a bullet" "## Changelog${NL}None.${NL}- X.${NL}" "says \`None\` but also carries a bullet" "fix: both bullet"
-assert_fail "two section headings" "## Changelog${NL}### Fixed${NL}- X.${NL}## Changelog${NL}None.${NL}" "more than one" "fix: twice over"
+assert_fail "two section headings with content" "## Changelog${NL}### Fixed${NL}- X.${NL}## Changelog${NL}None.${NL}" "more than one" "fix: twice over"
+
+# --- The shipped template, untouched (PR #1810 review) -------------------------
+# The template ships the heading with nothing under it but a comment. A type
+# that owes nothing must be able to open a pull request from it and leave the
+# part that does not apply, and a type that owes a section gets the ordinary
+# fault, never one it could only clear by deleting the template's heading.
+template="$(cat "$SCRIPT_DIR/.github/PULL_REQUEST_TEMPLATE.md")"
+assert_pass "the shipped template, untouched, passes a chore title" "$template" "chore: tidy things"
+assert_pass "the shipped template, untouched, passes a docs title" "$template" "docs: reword"
+assert_fail "the shipped template, untouched, owes a section on a feat title" "$template" "owes a" "feat: add a thing"
 
 # --- One fault reports once; several distinct faults each report ---------------
 err="$("$CHECK" "## Changelog${NL}### Fixes${NL}### Nope${NL}" "fix: many" 2>&1 >/dev/null)"
