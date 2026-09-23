@@ -305,16 +305,14 @@ assert_pass_tdr "a 'Filed as'-shaped line on a non-tech-debt issue is ignored" \
   "$body_240" "agent/240" "acme/widgets" "9" "not-tech-debt"
 
 # A "Filed as" line whose record path carries an injected query string
-# (issue #1764): on `main` today, record_path only reaches a `jq --arg`
-# binding and two error messages — neither is a URL, so a `?`/`&` here is
-# already inert. The register's own ID grammar never contains one either,
-# so the capture is narrowed to it now, ahead of the need: PR #1492's
-# branch (`agent/982`) adds a contents-API read that interpolates
-# record_path unescaped into a URL, where such a character would actually
-# reach GitHub. Narrowing here means a path this loose can never surface
-# there either — such a path must fail to match at all and fall through
-# exactly like "no 'Filed as' line", not be captured with the injected
-# suffix intact.
+# (issue #1764's second, smaller half): on `main`, record_path reaches a
+# `jq --arg` binding, two error messages, and — since PR #1492 — the
+# base-branch-amnesty contents-API URL too, unescaped, where a `?`/`&`
+# would actually reach GitHub and alter the query. The register's own ID
+# grammar never contains one either, so the capture is narrowed to it: a
+# path this loose can never reach that URL — such a path must fail to
+# match at all and fall through exactly like "no 'Filed as' line", not be
+# captured with the injected suffix intact.
 #
 # Two shapes, and only the second of them distinguishes the narrowed capture
 # from the `[^`]+` it replaced. The suffix form below puts the query *after*
@@ -334,12 +332,11 @@ assert_pass_tdr "a 'Filed as' record path with a query string after the .md is n
 # `tech-debt/TD-1 ?x=y.md` would have reached the `jq --arg` changed-files
 # match as a filename no diff can carry, failing this pull request with
 # "does not touch that file" even though the diff does touch
-# `tech-debt/TD-1.md` (on PR #1492's branch, the same loose capture would
-# also reach a live `?` in the contents-API URL that branch's own fix adds).
-# `files.json` is supplied precisely so that failure is what the old capture
-# reached: without it the stubbed `gh` exits non-zero, the check warns and
-# skips, and the assertion would pass on either pattern for the wrong
-# reason.
+# `tech-debt/TD-1.md` (the same loose capture would also reach a live `?`
+# in the contents-API URL PR #1492 added). `files.json` is supplied
+# precisely so that failure is what the old capture reached: without it
+# the stubbed `gh` exits non-zero, the check warns and skips, and the
+# assertion would pass on either pattern for the wrong reason.
 mkdir -p "$tmp_dir/filed-as-injected-query-before-ext"
 cat > "$tmp_dir/filed-as-injected-query-before-ext/issue-240.json" <<'JSON'
 {"body": "The debt itself, described here.\n\nFiled as `tech-debt/TD-1?x=y.md`, 2026-08-01.",

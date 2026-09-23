@@ -149,6 +149,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   this conservative: any other comment landing on the thread since — human
   or Script — breaks the streak, so a genuinely new failure still posts.
 
+- **`check-closing-keyword.sh`'s "Filed as" record path is matched against
+  the register's own ID charset, not any run of non-backticks** (issue
+  #1764's second, smaller half). `[A-Za-z0-9._-]+` is the grammar
+  `docs/TECH-DEBT-REGISTER.md` in `Poetic-Poems/poetic` defines and all
+  records in the frozen `tech-debt/` archive already satisfy, so no real
+  record path is newly rejected; a path outside it now matches nothing and
+  demands nothing, exactly as an issue with no "Filed as" line does. Taken
+  because the path is read from an issue body and interpolated unescaped
+  into the base-branch-amnesty contents-API URL (PR #1492), where a `?` or
+  `&` would alter the query — the register's own grammar is far narrower
+  than the pattern this replaces, so no real record path is affected.
+
 - **Requirement 1c's "required refinement source with nothing to refine it"
   guard now covers all three spellings of that configuration, not just an
   empty `refiner_model`** (issue #1003, TD-PPagop-26082704; the split follows

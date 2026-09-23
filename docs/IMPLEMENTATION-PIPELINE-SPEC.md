@@ -21646,7 +21646,15 @@ What exists, and the requirements each part answers to:
     That `status:` is read from the record's leading `---`-delimited
     frontmatter block alone, so a still-`open` record whose body quotes
     another record's `status: resolved` line at column 0 is not read as
-    terminal (issue #1764). Either `gh`
+    terminal — issue #1764's frontmatter-bounding half. `<id>` in the "Filed
+    as" line is matched against the register's own ID charset instead —
+    `[A-Za-z0-9._-]+`, the grammar `docs/TECH-DEBT-REGISTER.md` in
+    `Poetic-Poems/poetic` defines and every record in `tech-debt/`
+    satisfies — rather than any run of non-backticks, so that a path read
+    out of an issue body cannot carry a `?` or `&` into the contents-API URL
+    above, where either would alter the query: issue #1764's second, smaller
+    half. A path outside that charset matches nothing and demands nothing,
+    the same as an issue with no "Filed as" line at all. Either `gh`
     call that fails outright (the token, a transient outage) warns rather
     than failing the check, the issue read and the changed-files read alike:
     the marker/keyword half above never depended on the network, and this
@@ -25416,7 +25424,17 @@ oblige anyone to edit a test.
    stubbed `gh`, issue #1363), the same suite passes for the tech-debt
    record-flip half: an issue with no "Filed as" line, or one carrying it
    but not `pw::type:tech-debt`-labelled, passes exactly as without the two
-   extra arguments; a "Filed as"-line issue whose named record file's diff
+   extra arguments; a "Filed as" line whose record path falls outside the
+   register's own ID charset matches nothing and demands nothing (issue
+   #1764), asserted on the shape that distinguishes the narrowed capture
+   from the ``[^`]+`` it replaced — the query injected *before* the extension
+   (`tech-debt/TD-1?x=y.md`), which the old pattern captured whole, with a
+   `files.json` supplied so that capture reached a real "does not touch that
+   file" failure rather than a warn-and-skip on an unstubbed `gh` call; the
+   suffix shape (`tech-debt/TD-1.md?x=y`) is asserted alongside it for the
+   form the issue names, but pins nothing on its own, neither pattern ever
+   having matched a segment not ending in `.md`; a "Filed as"-line issue
+   whose named record file's diff
    adds `status: resolved` — or `status: not-debt`, the register's other
    terminal state (issue #1437) — passes; the same issue whose diff never
    touches that file fails naming that, and one whose diff touches it

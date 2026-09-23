@@ -260,7 +260,7 @@ if [[ -n "$repo_slug" && -n "$pr_number" ]]; then
     # The last non-blank line, ignoring any trailing blank lines the body ends
     # with — the same "final line" #1039's migration and TECH-DEBT.md mean.
     last_line="$(awk 'NF{line=$0} END{print line}' <<<"$issue_body")"
-    [[ "$last_line" =~ ^Filed\ as\ \`(tech-debt/[a-zA-Z0-9_-]+\.md)\`,\  ]] || continue
+    [[ "$last_line" =~ ^Filed\ as\ \`(tech-debt/[A-Za-z0-9._-]+\.md)\`,\  ]] || continue
     record_path="${BASH_REMATCH[1]}"
 
     # The call's own exit status has to be read separately from the `jq` that
