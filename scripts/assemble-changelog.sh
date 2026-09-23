@@ -87,7 +87,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$SCRIPT_DIR/lib/changelog-grammar.sh"
 
 usage() {
-  awk 'NR >= 3 { if ($0 !~ /^#/) exit; sub(/^# ?/, ""); print }' "${BASH_SOURCE[0]}"
+  # The header's opening summary and its usage block, stopping at the first
+  # `# --- ` divider: everything past that is design commentary for a reader of
+  # the source, not for someone who typed --help.
+  awk 'NR >= 2 { if ($0 !~ /^#/ || $0 ~ /^# --- /) exit; sub(/^# ?/, ""); print }' "${BASH_SOURCE[0]}"
   exit "${1:-0}"
 }
 
