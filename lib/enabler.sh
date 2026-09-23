@@ -303,6 +303,36 @@ Decided by the pipeline (decide-tactical) · cycle \`$cycle\`"
   printf '%s' "$body"
 }
 
+# escalation_thread_failed_already_posted REPO ITEM
+# True (exit 0) exactly when ITEM's thread on REPO already carries this same
+# `escalation-failed` reconcile comment as its single most recent comment —
+# matched on the fixed prose below plus the pipeline marker's `actor=script`/
+# `actor=enabler` field, ignoring the `cycle=` id (agent-ops#998). Checks
+# only the *literal* most recent comment, not "any escalation-failed
+# reconcile since blocked_ts": the latter would also suppress a legitimate
+# new notice once some other comment (human or Script) has landed on the
+# thread since the last one — exactly the case where a fresh notice is
+# wanted. Matching only the most recent comment keeps this conservative: it
+# can only ever be dropped when nothing has happened on the thread since the
+# last identical one, never mask a distinct new failure.
+#
+# Fails open (returns 1 — "not a duplicate", post it) on any read failure,
+# so a `gh` hiccup here costs at most one extra comment, never a silently
+# swallowed one.
+escalation_thread_failed_already_posted() {
+  local repo="$1" item="$2"
+  local marker="${PIPELINE_COMMENT_MARKER_PREFIX:-<!-- agent-ops:pipeline-comment}"
+  local prose="No escalation issue was filed for this item: the attempt itself failed."
+  local lines last
+  lines="$(gh api "repos/$repo/issues/$item/comments" --paginate \
+             --jq '.[] | {body: (.body // "")}' 2>/dev/null)" || return 1
+  last="$(jq -s -r '.[-1].body // empty' <<<"$lines" 2>/dev/null)"
+  [[ -n "$last" ]] || return 1
+  [[ "$last" == *"$marker"* ]] || return 1
+  [[ "$last" == *"actor=script"* || "$last" == *"actor=enabler"* ]] || return 1
+  [[ "$last" == *"$prose"* ]]
+}
+
 # escalation_thread_reconcile REPO ITEM OUTCOME NUMBER URL
 # The Script's own completing or correcting comment on a `needs-refinement`
 # item that is itself a GitHub issue, once this engagement has established
@@ -346,7 +376,14 @@ Decided by the pipeline (decide-tactical) · cycle \`$cycle\`"
 #                           plainly that no escalation was filed.
 #   escalation-failed        a correcting comment: the escalation attempt
 #                           itself failed; a later re-examination will retry
-#                           it.
+#                           it. Skipped — nothing posted — when this same
+#                           comment is already the thread's most recent one
+#                           (`escalation_thread_failed_already_posted`,
+#                           agent-ops#998), so a retry whose `gh` calls stay
+#                           healthy but whose verdict still carries no
+#                           filable title/body does not pile up identical
+#                           correcting comments on a thread a human is
+#                           expected to read.
 #
 # Best-effort like every other `gh` write in this file (requirement 37): a
 # failure here is logged as a `warning`, never a reason to unwind the verdict
@@ -369,6 +406,7 @@ Blocked-by: #$number"
       prose="No escalation issue was filed for this item: a \`decide-tactical\` pass settled it directly, and the item was unblocked on that basis instead."
       ;;
     escalation-failed)
+      escalation_thread_failed_already_posted "$repo" "$item" && return 0
       prose="No escalation issue was filed for this item: the attempt itself failed. A later cycle will retry once this item is re-examined."
       ;;
     *)
