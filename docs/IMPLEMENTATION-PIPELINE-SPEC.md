@@ -21645,8 +21645,8 @@ What exists, and the requirements each part answers to:
     #1764). A path outside that charset matches nothing and demands nothing,
     the same as an issue with no "Filed as" line at all. This is the live
     guard on a real interpolation, not narrowing ahead of the need: besides
-    the `jq --arg` binding and the two error messages, the captured path is
-    interpolated unescaped into the contents-API URL below, where an
+    the `jq --arg` binding and the three messages naming it, the captured
+    path is interpolated unescaped into the contents-API URL below, where an
     injected `?` or `&` would alter the query string. Before either failure
     fires, it reads the named record from the base branch (`gh api
     repos/<slug>/pulls/<n>` for `.base.ref`, `.base.sha` only as a fallback,

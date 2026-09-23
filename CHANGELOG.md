@@ -229,7 +229,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   rejected; a path outside it now matches nothing and demands nothing,
   exactly as an issue with no "Filed as" line does. This is the live guard
   on a real interpolation, not hardening ahead of the need — besides the
-  `jq --arg` binding and the error messages, the captured path is
+  `jq --arg` binding and the three messages naming it, the captured path is
   interpolated unescaped into the contents-API URL that reads the record
   from the base branch (`contents/<path>?ref=<that>`), where an injected
   `?` or `&` would alter the query string — taken because the path is read
