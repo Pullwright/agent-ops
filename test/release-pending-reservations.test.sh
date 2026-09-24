@@ -21,6 +21,12 @@
 #   - **An empty `reservation-releases/` tree is a silent no-op.**
 #   - **One invocation covers markers naming different target repositories**,
 #     each independently.
+#   - **A `td-record/<id>` marker's release always completes before its
+#     sibling `td/<id>` marker's, even when the directory listing names the
+#     `td/<id>` one first** (TD-PPagop-26082805) — matching
+#     `_techdebt_unfile`'s own record-branch-before-reservation ordering
+#     regardless of what order GitHub's own listing returns the two markers
+#     in.
 #
 # `gh` is stubbed through RELEASE_PENDING_GH, the technique
 # test/sweep-orphan-branches.test.sh's own SWEEP_GH already uses to bypass
@@ -226,6 +232,37 @@ assert_eq "  ... both reported released" "released
 released" "$(jq -r '.action' <<<"$out")"
 assert_eq "  ... both repos named" "acme/widgets
 o/r" "$(jq -r '.repo' <<<"$out" | sort)"
+
+# --- Two markers for one id, listed reservation-first -> the record-branch
+# marker's own release still completes before the reservation-branch
+# marker's does (TD-PPagop-26082805): `td__<id>.json` sorts ahead of
+# `td-record__<id>.json` in a plain byte-collation listing, the hazard shape
+# component 23d and `_techdebt_unfile`'s own ordering (releasing
+# `td-record/<id>` before `td/<id>`) exist to prevent regardless of listing
+# order. -----------------------------------------------------------------
+reset_stub
+echo "o__r" > "$tmp_dir/dirs.json"
+printf 'td__TD-PPagop-26082805.json\ntd-record__TD-PPagop-26082805.json\n' \
+  > "$tmp_dir/files-o__r.json"
+marker "o__r" "td__TD-PPagop-26082805.json" "o/r" "td/TD-PPagop-26082805"
+marker "o__r" "td-record__TD-PPagop-26082805.json" "o/r" "td-record/TD-PPagop-26082805"
+out="$(run "$config")"; rc=$?
+n="$(jq -s 'length' <<<"$out")"
+assert_eq "record-before-reservation: exit 0" "0" "$rc"
+assert_eq "  ... two lines emitted" "2" "$n"
+assert_eq "  ... both reported released" "released
+released" "$(jq -r '.action' <<<"$out")"
+record_line="$(grep -n 'api -X DELETE repos/o/r/git/refs/heads/td-record/TD-PPagop-26082805' \
+  "$tmp_dir/calls" | head -n1 | cut -d: -f1)"
+reservation_line="$(grep -n 'api -X DELETE repos/o/r/git/refs/heads/td/TD-PPagop-26082805' \
+  "$tmp_dir/calls" | head -n1 | cut -d: -f1)"
+if [[ -n "$record_line" && -n "$reservation_line" ]] && (( record_line < reservation_line )); then
+  ordering="record-first"
+else
+  ordering="reservation-first"
+fi
+assert_eq "  ... td-record/<id> branch deleted before td/<id> branch, despite reservation-first listing" \
+  "record-first" "$ordering"
 
 echo
 if [[ "$failures" -eq 0 ]]; then

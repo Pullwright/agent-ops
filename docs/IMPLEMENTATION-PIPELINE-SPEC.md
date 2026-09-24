@@ -11325,7 +11325,16 @@ implements.
     costs no more than time — the marker survives until the transient
     GitHub failure that first defeated `_techdebt_unfile` finally clears, or
     until a human deletes the branch by hand and lets this sweep notice and
-    clear the stale marker on its next pass. Logged as
+    clear the stale marker on its next pass. Where a `td-record/<id>` marker
+    and its sibling `td/<id>` marker for the same `id` both sit in the same
+    repo's directory under `reservation-releases/` — the shape a window that
+    failed both of `_techdebt_unfile`'s own deletes leaves behind — this
+    sweep fetches and classifies every marker in that directory before
+    acting on any of them, then releases every `td-record/<id>`-branch
+    marker before any `td/<id>`-branch marker, matching `_techdebt_unfile`'s
+    own record-before-reservation ordering regardless of what order the
+    state repository's own directory listing names the two files in
+    (TD-PPagop-26082805). Logged as
     `reservation-release-retried` (`outcome: "released"|"absent"`), or a
     `warning` naming the repo and branch a delete or a marker-clear failed
     again on. Every node may run it concurrently: a second delete of an
