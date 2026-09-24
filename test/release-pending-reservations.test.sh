@@ -15,6 +15,21 @@
 #   - **A marker whose delete fails again reports "warning"**, and is left in
 #     place — checked by asserting no DELETE of the marker file itself is
 #     attempted.
+#   - **A marker younger than `reservation_release_stuck_after_days` still
+#     reports "warning"**, however many times it has already failed
+#     (TD-PPagop-26082806, agent-ops#1011).
+#   - **A marker at/past that threshold escalates exactly once**: it reports
+#     `"reservation-release-stuck"` instead of `"warning"`, and gains its own
+#     `escalated_at` field via a `contents` API `PUT` against the marker.
+#   - **A marker already carrying `escalated_at` reports nothing at all** on a
+#     further failed delete — no repeated escalation, no fallback `warning` —
+#     while the delete itself is still retried every pass.
+#   - **`reservation_release_stuck_after_days: 0` disables escalation**,
+#     restoring the unconditional retry-and-warn-forever behaviour regardless
+#     of the marker's own age.
+#   - **A marker whose `escalated_at` write itself fails falls back to an
+#     ordinary `"warning"`**, rather than claiming an escalation that did not
+#     persist.
 #   - **A malformed marker (missing repo or branch) reports "warning"** and is
 #     left in place rather than acted on.
 #   - **No `state_repo` configured is a silent no-op** — no `gh` call at all.
@@ -65,6 +80,14 @@ jq -n '{}' > "$config_no_state"
 config="$tmp_dir/config.json"
 jq -n '{state_repo: "o/state"}' > "$config"
 
+# Explicit rather than relying on the schema default, so this test does not
+# silently drift if that default ever changes.
+config_stuck14="$tmp_dir/config-stuck14.json"
+jq -n '{state_repo: "o/state", reservation_release_stuck_after_days: 14}' > "$config_stuck14"
+
+config_stuck_disabled="$tmp_dir/config-stuck-disabled.json"
+jq -n '{state_repo: "o/state", reservation_release_stuck_after_days: 0}' > "$config_stuck_disabled"
+
 # --- The stub gh ---------------------------------------------------------------
 # $tmp_dir/dirs.json            newline-separated dir names under reservation-releases/,
 #                                one per line -- matching what `gh --jq '[...] | .[]'`
@@ -110,6 +133,22 @@ if [[ "$1" == "api" && "$2" == "-X" && "$3" == "DELETE" && "$4" == repos/o/state
   exit 0
 fi
 
+# repos/<state_repo>/contents/reservation-releases/<dir>/<file>  (rewrite a marker,
+# e.g. to write escalated_at back onto it) -- records the decoded new body under
+# put-content-<dir>__<file> so a test can assert what was written.
+if [[ "$1" == "api" && "$2" == "-X" && "$3" == "PUT" && "$4" == repos/o/state/contents/reservation-releases/* ]]; then
+  path="${4#repos/o/state/contents/reservation-releases/}"
+  grep -qxF "$path" "$d/marker-put-fails" 2>/dev/null && exit 1
+  content=""
+  for arg in "$@"; do
+    case "$arg" in
+      content=*) content="${arg#content=}" ;;
+    esac
+  done
+  printf '%s' "$content" | base64 -d > "$d/put-content-${path//\//__}" 2>/dev/null || true
+  exit 0
+fi
+
 if [[ "$1" == "api" && "$2" == "-X" && "$3" == "DELETE" && "$4" == *"/git/refs/heads/"* ]]; then
   repo="$(sed -E 's#repos/([^/]+/[^/]+)/git/refs/heads/.*#\1#' <<<"$4")"
   branch="${4##*/git/refs/heads/}"
@@ -134,24 +173,46 @@ chmod +x "$stub"
 
 reset_stub() {
   : > "$tmp_dir/calls"
-  rm -f "$tmp_dir"/marker-*.json "$tmp_dir"/files-*.json
+  rm -f "$tmp_dir"/marker-*.json "$tmp_dir"/files-*.json "$tmp_dir"/put-content-*
   : > "$tmp_dir/delete-fails"
   : > "$tmp_dir/absent-branches"
   : > "$tmp_dir/marker-delete-fails"
+  : > "$tmp_dir/marker-put-fails"
   : > "$tmp_dir/dirs.json"
 }
 
-# marker DIR FILE REPO BRANCH SHA -- writes the fixture files a listing of
-# DIR would report FILE under, and the base64-content response for that
-# path exactly as GitHub's contents API shapes it.
+# "Now" for every run() below: the same instant the default marker `ts`
+# (DEFAULT_TS) already names, so an ordinary marker using that default is
+# always exactly 0 days old and never crosses reservation_release_stuck_after_days
+# on its own -- only a test that deliberately backdates ts (age_days below)
+# exercises the stuck-marker path.
+NOW_EPOCH="$(date -u -d "2026-08-23T16:23:03Z" +%s)"
+DEFAULT_TS="2026-08-23T16:23:03Z"
+
+# age_days N -- an RFC3339 timestamp N days before NOW_EPOCH.
+age_days() { date -u -d "@$(( NOW_EPOCH - ${1} * 86400 ))" +%Y-%m-%dT%H:%M:%SZ; }
+
+# marker DIR FILE REPO BRANCH [SHA] [TS] [ESCALATED_AT] -- writes the fixture
+# files a listing of DIR would report FILE under, and the base64-content
+# response for that path exactly as GitHub's contents API shapes it.
 marker() {
-  local dir="$1" file="$2" repo="$3" branch="$4" sha="${5:-abc123}"
-  jq -nc --arg repo "$repo" --arg branch "$branch" --arg sha "$sha" \
-    '{sha: $sha, content: (({repo: $repo, branch: $branch, ts: "2026-08-23T16:23:03Z"} | tojson) | @base64)}' \
+  local dir="$1" file="$2" repo="$3" branch="$4" sha="${5:-abc123}" \
+        ts="${6:-$DEFAULT_TS}" escalated_at="${7:-}" body
+  if [[ -n "$escalated_at" ]]; then
+    body="$(jq -nc --arg repo "$repo" --arg branch "$branch" --arg ts "$ts" --arg esc "$escalated_at" \
+      '{repo: $repo, branch: $branch, ts: $ts, escalated_at: $esc}')"
+  else
+    body="$(jq -nc --arg repo "$repo" --arg branch "$branch" --arg ts "$ts" \
+      '{repo: $repo, branch: $branch, ts: $ts}')"
+  fi
+  jq -nc --arg sha "$sha" --arg body "$body" '{sha: $sha, content: ($body | @base64)}' \
     > "$tmp_dir/marker-${dir}__${file}"
 }
 
-run() { RELEASE_PENDING_GH="$stub" RELEASE_STUB_DIR="$tmp_dir" AGENT_OPS_CONFIG="$1" "$RELEASE"; }
+run() {
+  RELEASE_PENDING_GH="$stub" RELEASE_STUB_DIR="$tmp_dir" RELEASE_PENDING_NOW_EPOCH="$NOW_EPOCH" \
+    AGENT_OPS_CONFIG="$1" "$RELEASE"
+}
 
 # --- No state_repo configured -> silent no-op, gh never called -------------
 reset_stub
@@ -205,6 +266,78 @@ assert_eq "delete fails again: exit 0" "0" "$rc"
 assert_eq "  ... action warning" "warning" "$(jq -r '.action' <<<"$out")"
 assert_eq "  ... the marker itself was NOT cleared" "0" \
   "$(grep -c 'api -X DELETE repos/o/state/contents/reservation-releases/o__r/td__TD-PPagop-26082409.json' "$tmp_dir/calls")"
+
+# --- A marker just below the stuck threshold -> still an ordinary warning --
+reset_stub
+echo "o__r" > "$tmp_dir/dirs.json"
+echo "td__TD-PPagop-26082412.json" > "$tmp_dir/files-o__r.json"
+marker "o__r" "td__TD-PPagop-26082412.json" "o/r" "td/TD-PPagop-26082412" "abc123" "$(age_days 13)"
+echo "o/r td/TD-PPagop-26082412" > "$tmp_dir/delete-fails"
+out="$(run "$config_stuck14")"; rc=$?
+assert_eq "13d old, 14d threshold: exit 0" "0" "$rc"
+assert_eq "  ... still an ordinary warning" "warning" "$(jq -r '.action' <<<"$out")"
+assert_eq "  ... the marker itself was NOT rewritten" "0" \
+  "$(grep -c 'api -X PUT repos/o/state/contents/reservation-releases/o__r/td__TD-PPagop-26082412.json' "$tmp_dir/calls")"
+
+# --- A marker at/past the stuck threshold -> escalates once, marker flagged
+reset_stub
+echo "o__r" > "$tmp_dir/dirs.json"
+echo "td__TD-PPagop-26082413.json" > "$tmp_dir/files-o__r.json"
+marker "o__r" "td__TD-PPagop-26082413.json" "o/r" "td/TD-PPagop-26082413" "abc123" "$(age_days 14)"
+echo "o/r td/TD-PPagop-26082413" > "$tmp_dir/delete-fails"
+out="$(run "$config_stuck14")"; rc=$?
+assert_eq "14d old, 14d threshold: exit 0" "0" "$rc"
+assert_eq "  ... action reservation-release-stuck" "reservation-release-stuck" "$(jq -r '.action' <<<"$out")"
+assert_eq "  ... repo/branch reported" "o/r td/TD-PPagop-26082413" \
+  "$(jq -r '"\(.repo) \(.branch)"' <<<"$out")"
+assert_eq "  ... the marker itself was rewritten with escalated_at" "1" \
+  "$(grep -c 'api -X PUT repos/o/state/contents/reservation-releases/o__r/td__TD-PPagop-26082413.json' "$tmp_dir/calls")"
+assert_eq "  ... escalated_at was actually written" "true" \
+  "$(jq -r 'has("escalated_at")' "$tmp_dir/put-content-o__r__td__TD-PPagop-26082413.json")"
+assert_eq "  ... the marker itself was NOT cleared" "0" \
+  "$(grep -c 'api -X DELETE repos/o/state/contents/reservation-releases/o__r/td__TD-PPagop-26082413.json' "$tmp_dir/calls")"
+
+# --- A marker already escalated -> retried silently, no event, no re-write -
+reset_stub
+echo "o__r" > "$tmp_dir/dirs.json"
+echo "td__TD-PPagop-26082414.json" > "$tmp_dir/files-o__r.json"
+marker "o__r" "td__TD-PPagop-26082414.json" "o/r" "td/TD-PPagop-26082414" "abc123" \
+  "$(age_days 30)" "$(age_days 10)"
+echo "o/r td/TD-PPagop-26082414" > "$tmp_dir/delete-fails"
+out="$(run "$config_stuck14")"; rc=$?
+assert_eq "already escalated: exit 0" "0" "$rc"
+assert_eq "  ... nothing printed at all" "" "$out"
+assert_eq "  ... the branch delete was still retried" "1" \
+  "$(grep -c 'api -X DELETE repos/o/r/git/refs/heads/td/TD-PPagop-26082414' "$tmp_dir/calls")"
+assert_eq "  ... the marker was NOT rewritten again" "0" \
+  "$(grep -c 'api -X PUT repos/o/state/contents/reservation-releases/o__r/td__TD-PPagop-26082414.json' "$tmp_dir/calls")"
+assert_eq "  ... the marker itself was NOT cleared" "0" \
+  "$(grep -c 'api -X DELETE repos/o/state/contents/reservation-releases/o__r/td__TD-PPagop-26082414.json' "$tmp_dir/calls")"
+
+# --- Escalation disabled (reservation_release_stuck_after_days: 0) ---------
+reset_stub
+echo "o__r" > "$tmp_dir/dirs.json"
+echo "td__TD-PPagop-26082415.json" > "$tmp_dir/files-o__r.json"
+marker "o__r" "td__TD-PPagop-26082415.json" "o/r" "td/TD-PPagop-26082415" "abc123" "$(age_days 90)"
+echo "o/r td/TD-PPagop-26082415" > "$tmp_dir/delete-fails"
+out="$(run "$config_stuck_disabled")"; rc=$?
+assert_eq "escalation disabled: exit 0" "0" "$rc"
+assert_eq "  ... still an ordinary warning, however old" "warning" "$(jq -r '.action' <<<"$out")"
+assert_eq "  ... the marker itself was NOT rewritten" "0" \
+  "$(grep -c 'api -X PUT repos/o/state/contents/reservation-releases/o__r/td__TD-PPagop-26082415.json' "$tmp_dir/calls")"
+
+# --- The escalated_at write itself fails -> falls back to an ordinary warning
+reset_stub
+echo "o__r" > "$tmp_dir/dirs.json"
+echo "td__TD-PPagop-26082416.json" > "$tmp_dir/files-o__r.json"
+marker "o__r" "td__TD-PPagop-26082416.json" "o/r" "td/TD-PPagop-26082416" "abc123" "$(age_days 14)"
+echo "o/r td/TD-PPagop-26082416" > "$tmp_dir/delete-fails"
+echo "o__r/td__TD-PPagop-26082416.json" > "$tmp_dir/marker-put-fails"
+out="$(run "$config_stuck14")"; rc=$?
+assert_eq "escalated_at write fails: exit 0" "0" "$rc"
+assert_eq "  ... falls back to an ordinary warning" "warning" "$(jq -r '.action' <<<"$out")"
+assert_eq "  ... the marker itself was NOT cleared" "0" \
+  "$(grep -c 'api -X DELETE repos/o/state/contents/reservation-releases/o__r/td__TD-PPagop-26082416.json' "$tmp_dir/calls")"
 
 # --- A malformed marker (no repo/branch) -> warning, left in place ---------
 reset_stub

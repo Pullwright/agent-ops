@@ -24,6 +24,7 @@ A self-hosted, unattended pipeline that automatically selects, implements, and r
   - [Extended notes: `refined_label`](#extended-notes-refined_label)
   - [Extended notes: `refinement_policy`](#extended-notes-refinement_policy)
   - [Extended notes: `unvoid_label`](#extended-notes-unvoid_label)
+  - [Extended notes: `reservation_release_stuck_after_days`](#extended-notes-reservation_release_stuck_after_days)
   - [Extended notes: `coordinator_prompt_max_bytes`](#extended-notes-coordinator_prompt_max_bytes)
   - [Extended notes: `merge_autonomy`](#extended-notes-merge_autonomy)
   - [Extended notes: `merge_autonomy_routine_sources`](#extended-notes-merge_autonomy_routine_sources)

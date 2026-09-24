@@ -37,6 +37,7 @@ are binding on any agent working inside them).
   - [Extended notes: `refined_label`](#extended-notes-refined_label)
   - [Extended notes: `refinement_policy`](#extended-notes-refinement_policy)
   - [Extended notes: `label_prefix`](#extended-notes-label_prefix)
+  - [Extended notes: `reservation_release_stuck_after_days`](#extended-notes-reservation_release_stuck_after_days)
   - [Extended notes: `prompt_overrides`](#extended-notes-prompt_overrides)
   - [Extended notes: `pr_label`](#extended-notes-pr_label)
   - [Extended notes: `coordinator_prompt_max_bytes`](#extended-notes-coordinator_prompt_max_bytes)
@@ -11395,16 +11396,38 @@ implements.
     marker before any `td/<id>`-branch marker, matching `_techdebt_unfile`'s
     own record-before-reservation ordering regardless of what order the
     state repository's own directory listing names the two files in
-    (TD-PPagop-26082805). Logged as
+    (TD-PPagop-26082805). A delete that keeps failing is
+    not retried and warned about identically forever, though: once the
+    marker's own `ts` is at least `reservation_release_stuck_after_days` old
+    (TD-PPagop-26082806, agent-ops#1011; `0` restores the old unconditional
+    retry-forever behaviour) and it has not already been flagged, this sweep
+    treats it as stuck rather than merely transient — an archived target
+    repository, a protected branch, a login that lost push access — and
+    escalates exactly once: it writes `escalated_at` back onto the marker
+    itself (a CAS `PUT` against the same `sha` this pass already read) and
+    reports it, rather than the usual `warning`. The branch delete is still
+    retried every pass after that, same as before — it is cheap, and it is
+    what lets a belated fix on the target-repo side self-heal via the
+    ordinary released/absent path above — but a marker already carrying
+    `escalated_at` reports nothing further on a delete that keeps failing:
+    the one-time escalation already told a human, and repeating it, or
+    falling back to `warning`, would be exactly the identical-every-cycle
+    noise this behaviour exists to stop. A marker whose `escalated_at` write
+    itself fails is treated as not yet escalated and reported as an ordinary
+    `warning` instead, so the next pass gets another chance to persist it
+    rather than silently losing the escalation. Logged as
     `reservation-release-retried` (`outcome: "released"|"absent"`), or a
     `warning` naming the repo and branch a delete or a marker-clear failed
-    again on. Every node may run it concurrently: a second delete of an
-    already-gone branch is a no-op and a second clear of an already-cleared
-    marker 404s, which this sweep already treats as nothing to report — the
-    same race tolerance 17b/17c already rely on. Skipped on `--dry-run`: it
-    deletes refs and state-repo markers. A no-op — logged as nothing, since
-    there is nothing to warn about — where `state_repo` is unset, the same
-    single-node reading `lib/claim.sh`'s own claim registry gives it.
+    again on, or — the once-only stuck case above —
+    `reservation-release-stuck` naming the repo, branch and how long the
+    delete has been failing. Every node may run it concurrently: a second
+    delete of an already-gone branch is a no-op and a second clear of an
+    already-cleared marker 404s, which this sweep already treats as nothing
+    to report — the same race tolerance 17b/17c already rely on. Skipped on
+    `--dry-run`: it deletes refs and state-repo markers. A no-op — logged as
+    nothing, since there is nothing to warn about — where `state_repo` is
+    unset, the same single-node reading `lib/claim.sh`'s own claim registry
+    gives it.
 18. When it skips a blocked item, it may cheaply verify whether the recorded
     blocker still holds; if the blocker is demonstrably gone, it reports
     that in its final message so the Script can append an `unblocked` event,
@@ -23034,25 +23057,41 @@ What exists, and the requirements each part answers to:
     call at all) where `state_repo` is unset. Otherwise: lists every
     directory under `reservation-releases/` in `state_repo` (one per target
     repository, sanitized `owner__name`) and every marker file beneath each,
-    reads each marker's `{repo, branch}` body, and for each attempts `gh api
-    -X DELETE repos/<repo>/git/refs/heads/<branch>`. A `malformed` marker —
-    missing `repo` or `branch` — is reported as a `warning` and left in
-    place rather than acted on. On success, or on a delete that fails but a
-    follow-up `git/ref/heads/<branch>` read confirms the branch is already
-    gone (a peer node's own concurrent retry — since a marker is only ever
-    cleared once, never renewed), the marker itself is deleted from
-    `state_repo` and the outcome (`"released"`/`"absent"`) is printed; a
-    delete that fails again — or whose follow-up confirmation itself cannot
-    be trusted — leaves the marker in place for the next cycle's pass and
-    prints a `warning` naming the repo and branch. One invocation covers
-    every repository with a pending marker, never a per-repo loop: each
-    marker already names its own target repo, the same shape
-    `lib/claim.sh gc` already uses for its own state-repo-wide sweep. Always
-    exits 0. Regression-tested in `test/release-pending-reservations.test.sh`
-    (no `state_repo` configured, an empty tree, a delete that now succeeds,
-    a delete that fails against an already-absent branch, a delete that
-    fails again, a malformed marker, and two markers naming different
-    target repositories each handled independently); must pass
+    reads each marker's `{repo, branch, ts}` body, and for each attempts `gh
+    api -X DELETE repos/<repo>/git/refs/heads/<branch>`. A `malformed`
+    marker — missing `repo` or `branch` — is reported as a `warning` and
+    left in place rather than acted on. On success, or on a delete that
+    fails but a follow-up `git/ref/heads/<branch>` read confirms the branch
+    is already gone (a peer node's own concurrent retry — since a marker is
+    only ever cleared once, never renewed), the marker itself is deleted
+    from `state_repo` and the outcome (`"released"`/`"absent"`) is printed.
+    A delete that fails again — or whose follow-up confirmation itself
+    cannot be trusted — leaves the marker in place for the next cycle's
+    pass; what it prints depends on the marker's own age and history
+    (`reservation_release_stuck_after_days`, `0` restoring the unconditional
+    behaviour this component had before agent-ops#1011): a marker already
+    carrying `escalated_at` prints nothing at all; a marker at least that
+    many days past its own `ts` and not yet carrying `escalated_at` writes
+    `escalated_at` back onto itself (`gh api -X PUT` against the `sha` this
+    pass already read for it) and prints `reservation-release-stuck`
+    (`repo`, `branch`, a `detail` naming how long the delete has been
+    failing) instead of the usual `warning` — once only, since every later
+    pass sees `escalated_at` already set; every other case (below the
+    threshold, `ts` missing or unparseable, disabled, or the `escalated_at`
+    write itself failing) prints the ordinary `warning` naming the repo and
+    branch. One invocation covers every repository with a pending marker,
+    never a per-repo loop: each marker already names its own target repo,
+    the same shape `lib/claim.sh gc` already uses for its own
+    state-repo-wide sweep. Always exits 0. Regression-tested in
+    `test/release-pending-reservations.test.sh` (no `state_repo` configured,
+    an empty tree, a delete that now succeeds, a delete that fails against
+    an already-absent branch, a delete that fails again while still under
+    the stuck threshold, a delete on a marker at/past the stuck threshold —
+    asserting the escalation fires and `escalated_at` is written — a delete
+    on a marker already carrying `escalated_at` — asserting silence, not a
+    repeated `warning` or a repeated escalation — a malformed marker, and
+    two markers naming different target repositories each handled
+    independently); must pass
     `shellcheck`.
 23g. `.github/workflows/tech-debt-close-guard.yml` and
     `scripts/tech-debt-close-guard.sh` implement requirement 25b's advisory
