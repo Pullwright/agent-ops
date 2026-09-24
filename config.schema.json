@@ -812,6 +812,20 @@
         }
       }
     },
+    "reservation_release_stuck_after_days": {
+      "description": "How old a reservation-release marker (`reservation-releases/` in `state_repo`) whose branch delete keeps failing may get, past its own `ts`, before `scripts/release-pending-reservations.sh` treats it as permanently stuck rather than merely retrying. 0 disables escalation, restoring the old retry-and-warn-forever behaviour. Independent of `schedule.cycle_interval_minutes` (requirement 1d), the same reasoning `void_retire_after_days` already gives: it measures how long a human should go unwarned about a stuck marker, not how often the pipeline happens to check.",
+      "type": "integer",
+      "minimum": 0,
+      "default": 14,
+      "x-docs": {
+        "readme": "Days a reservation-release marker (a `td/<id>`/`td-record/<id>` branch delete a cleanup could not land) may keep failing its retried delete before the sweep treats it as permanently stuck — an archived target repository, a protected branch, a login that lost push access — rather than retrying and warning identically forever. Past this age, the marker escalates exactly once, as a distinct `reservation-release-stuck` event rather than the recurring `warning`, and keeps retrying silently after that. `0` disables escalation.",
+        "spec": "How old a delete-failed-again marker's own `ts` may get, in days, before `release_one`'s delete-failed-again path (requirement 17g) escalates it — once, via a `reservation-release-stuck` action distinct from `warning` — instead of retrying and warning on every pass. `0` disables escalation, the safe fallback for an unparseable value, the same shape `void_retire_after_days` already uses: never escalating costs a human noticing late, wrongly escalating costs nothing observable beyond one extra event.",
+        "value": {
+          "readme": "`14` days",
+          "spec": "14 d"
+        }
+      }
+    },
     "prompt_overrides": {
       "description": "Per-installation prompt extension or replacement, so house rules survive an update instead of forking prompts/. A relative path resolves against `state_dir`. Absent, or a stage absent from it, reproduces the shipped prompt byte for byte. `implementer` and `reviewer` additionally take a per-repository override on `repos[].prompt_overrides` (requirement 4a): that repository's own stage entry wins when present, this installation-wide entry for the same stage otherwise.",
       "type": "object",
