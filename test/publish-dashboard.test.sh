@@ -4072,6 +4072,42 @@ assert_contains "…while the refused value itself is left unmasked in the dashb
 assert_lacks "…never registering a [REDACTED-WEBHOOK] rule for it" \
   "[REDACTED-WEBHOOK]" "$wdn_raw"
 
+# --- The rework-panel outage passthrough has its own coverage (issue #1748) ------
+# PR #1746 (issue #1691) made the publisher spool rework_json's own
+# .rework_cycles verbatim (null included) into fleet_pricing_spend_fate,
+# rather than coalescing with `// []` — but only fleet-pricing.test.sh's
+# own boundary test covered that join; the two publisher lines that changed
+# (the degrade literal's rework_cycles:null key, and the coalesce-free spool
+# line itself) had no test of their own. rework_panel_build degrades a
+# missing/unreadable events log to its own all-zero *success* shape by
+# design (a real, reportable zero), so there is no legitimate input through
+# publish-dashboard.sh's ordinary events_jsonl argument that reaches the
+# outage branch (invalid JSON / missing escape_ladder) instead — only
+# overriding rework_panel_build itself does, the same app-copy pattern the
+# webhook cases above use for their own reason. Bash keeps the last
+# definition sourced from a file, so appending an override to the copy's own
+# lib/rework-panel.sh (never the real one) is enough: publish-dashboard.sh's
+# `. "$SCRIPT_DIR/lib/rework-panel.sh"` resolves to the copy's own
+# $SCRIPT_DIR.
+oa_app="$tmp_dir/nodeOutage-rework-app"
+mkdir -p "$oa_app"
+tar -C "$SCRIPT_DIR" --exclude=.git -cf - . | tar -C "$oa_app" -xf -
+cat >> "$oa_app/lib/rework-panel.sh" <<'EOF'
+rework_panel_build() { printf 'null'; }
+EOF
+
+oa="$(new_home nodeOutageRework)"
+make_cycle "$oa" "${today_day}T160000Z-1" 0.10 model-a
+env HOME="$oa" NODE_NAME=nodeOutageRework-self "$oa_app/scripts/publish-dashboard.sh" --no-github >/dev/null 2>&1
+assert_eq "a publish still succeeds when rework_panel_build itself reports the outage shape" \
+  "0" "$?"
+oadata="$(data_of "$oa")"
+assert_eq "the degrade literal's rework_cycles key stays null, never coalesced to []" \
+  "null" "$(jq -r '.rework.rework_cycles' <<<"$oadata")"
+assert_eq "…and the verbatim spool carries that outage into every spend_fate field — a future '// []' regression there would instead compute a confident, reconciled account" \
+  "$(jq -Sc -n '{"total_usd":null,"row_count":null,"by_fate":null,"reconciled":null,"lever":null}')" \
+  "$(jq -Sc '.spend_fate' <<<"$oadata")"
+
 # ---------------------------------------------------------------------------------
 if (( failures > 0 )); then
   printf '\n%d assertion(s) failed\n' "$failures"
