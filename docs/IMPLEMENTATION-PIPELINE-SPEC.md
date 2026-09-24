@@ -12942,11 +12942,10 @@ implements.
     replaces the improvisation: no replacement pull request, ever.
 
 31e. **A `merge-conflicts` item's rebase-only push carries the standing
-    Reviewer and Approver verdicts forward instead of paying for both stages
-    again (agent-ops#1806).** Resolving a conflict costs three stage runs in
-    the ordinary path — Implementer, Reviewer, Approver — because the push
-    moves the head, and a moved head is what the Reviewer stage and the
-    Approver's own engagement below (requirement 8b) both key on
+    Reviewer verdict forward instead of paying for the engagement again
+    (agent-ops#1806).** Resolving a conflict costs three stage runs in the
+    ordinary path — Implementer, Reviewer, Approver — because the push moves
+    the head, and a moved head is what the Reviewer stage keys on
     unconditionally. Most of those pushes change nothing about the pull
     request's own diff: a clean rebase, or a conflict resolved by keeping
     both sides of a hunk, reproduces the same net content on the moved base.
@@ -12968,23 +12967,57 @@ implements.
     existing merge-state advisory read (requirement 31d) and before the
     reviewer tier is computed: `rebase_only_push` (`lib/rebase-only.sh`)
     diffs the pre-push head against the pre-push base and the post-push head
-    (`git -C "$clone_dir" rev-parse HEAD`, since the Implementer stage has
-    since checked the branch out there) against the base's current tip, and
-    reports whether the two diffs are `git patch-id --stable`-identical —
-    never authored dates, which a conflict-resolution commit moves just like
-    any other. Advisory exactly like requirement 31d's own read: an
-    unreadable ref at either point (the fetch of the pre-push SHAs failed,
-    the post-push head could not be resolved) runs the Reviewer stage as
-    normal, never guessed at as rebase-only.
+    against the base's current tip, and reports whether the two diffs are
+    `git patch-id --stable`-identical — never authored dates, which a
+    conflict-resolution commit moves just like any other. Both heads are
+    read from `origin` with `git ls-remote`, symmetrically: the question is
+    whether the *push* changed the diff, and the clone's own working tree
+    would instead answer whether the Implementer's edits did — true even of
+    an Implementer that reported `complete` having pushed nothing. A head
+    that did not move at all is therefore not a rebase-only push but no push,
+    and takes the full path. Advisory exactly like requirement 31d's own
+    read: an unreadable ref at either point (the fetch of the pre-push SHAs
+    failed, either head could not be resolved) runs the Reviewer engagement
+    as normal, never guessed at as rebase-only.
 
-    A confirmed rebase-only push skips the Reviewer stage and the Approver
-    engagement below it entirely for this cycle — GitHub's own standing
-    review and approval are untouched by a push that changed no content, so
-    there is nothing to carry forward beyond leaving them alone — and logs
-    `reviewer-approver-carried-forward` (`repo`, `item`, `pr_url`,
-    `old_head`, `new_head`, `rebase_only: true`) for D23's cost accounting to
-    read. Anything else — a resolution that changed the diff, a follow-up
-    fix — takes the full path below unchanged.
+    A confirmed rebase-only push skips the Reviewer **engagement** —
+    `stage_budget_apply` and the `run_claude_stage` call alone — and logs
+    `reviewer-carried-forward` (`repo`, `item`, `pr_url`, `old_head`,
+    `new_head`, `rebase_only: true`) for D23's cost accounting to read, in
+    place of the `stage-end` event no stage run produced. The cycle then
+    continues through the `ready` path below under a synthesised Reviewer
+    verdict (`status: "ready"`, `fixes_applied: []`, `comments_left: 0`, `ci`
+    naming this requirement) exactly as a real `ready` would: requirement
+    31c's handoff gate, the Approver engagement (requirement 8b) and the
+    arming step (requirement 8d) all run unchanged.
+
+    The asymmetry is deliberate, and is the whole of what may be carried
+    forward. The Reviewer's verdict is this pipeline's own state, so a push
+    that changed no net content leaves it as true as it was. The Approver's
+    verdict is a GitHub artefact, and every repository this pipeline may act
+    on is required to set `dismiss_stale_reviews_on_push: true` (D18 Stage 3
+    below, `docs/PULLWRIGHT-DAY-ONE-AUTONOMY.md` §1a) — a rule that keys on
+    the head SHA moving and knows nothing of patch-id identity, so a
+    `merge-conflicts` push, necessarily a force-push, dismisses the standing
+    approval whether or not the diff changed. `run_approver_stage` is the
+    only thing that mints a replacement, and the requirement 8u landing-retry
+    sweep cannot recover one it never finds: `_landing_retry_sweep_repo`
+    requires a currently standing approval and excludes `complexity:high`
+    outright. Ending the cycle at this point would therefore leave the pull
+    request un-approved and un-armed until requirement 46's unreviewed
+    trigger reached it hours later — a larger cost than the engagement it
+    saved, not a smaller one.
+
+    Falling through also satisfies agent-ops#1806's own "provided the
+    required checks pass on the new head" proviso without a check of its
+    own: `handoff_complete_review` calls `review_gate_verdict`, which reads
+    the required checks fresh at the current head, so a diff that is
+    patch-id-identical against a base that *moved* — a semantic conflict, the
+    default branch renaming something the unchanged diff still calls — is
+    caught there rather than carried forward.
+
+    Anything else — a resolution that changed the diff, a follow-up fix — runs
+    the engagement below unchanged.
 
 55. **`review_gate_required_checks` also compares the base branch's own
     ruleset against what actually ran, so a required context with no run at
@@ -25896,9 +25929,10 @@ oblige anyone to edit a test.
    report `failed` and exit non-zero — never `open`, since a caller that read
    an unreadable pull request as still open would run the very handoff a
    genuine merge invalidates.
-8e-iv. **A `merge-conflicts` item's rebase-only push skips the Reviewer and
-   Approver stages for the cycle that just ran the Implementer (requirement
-   31e, agent-ops#1806).** `test/rebase-only-wiring.test.sh` extracts both
+8e-iv. **A `merge-conflicts` item's rebase-only push skips the Reviewer
+   engagement, and only the engagement, for the cycle that just ran the
+   Implementer (requirement 31e, agent-ops#1806).**
+   `test/rebase-only-wiring.test.sh` extracts both
    dispatch blocks out of `agent-cycle.sh` the same way
    `test/reviewer-merge-observed-wiring.test.sh` extracts its own, and pins:
    the pre-capture block (step 6b) records the pre-push head and base SHAs
@@ -25906,14 +25940,20 @@ oblige anyone to edit a test.
    true` and whose own `base` resolves to a real ref, and leaves both empty
    for a takeover, for any other source, or for an unresolvable base; the
    stage-start advisory block, given a stubbed `rebase_only_push` reporting
-   the pre-push and post-push diffs identical, logs
-   `reviewer-approver-carried-forward` (naming `pr_url`/`old_head`/`new_head`
-   and `rebase_only: true`), echoes the pull request's URL and ends the cycle
-   there — never reaching the reviewer-tier computation below it; the same
-   block, with `rebase_only_push` reporting the diffs different, falls
-   through to that computation logging nothing; and with no pre-capture at
-   all (not a `merge-conflicts` item), the block falls through without
-   calling `rebase_only_push` even once. `test/rebase-only.test.sh` pins
+   the pre-push and post-push diffs identical, reports `rebase_only` true and
+   reads both heads from `origin` rather than the clone's own `HEAD`; the
+   same block reports false — without calling `rebase_only_push` at all —
+   when the post-push head equals the pre-push one, since no push happened;
+   the same block, with `rebase_only_push` reporting the diffs different,
+   reports false; and with no pre-capture at all (not a `merge-conflicts`
+   item), it reports false without calling `rebase_only_push` even once.
+   The engagement block pins the consequence: a true `rebase_only` logs
+   `reviewer-carried-forward` (naming `pr_url`/`old_head`/`new_head` and
+   `rebase_only: true`), never calls `run_claude_stage` or
+   `stage_budget_apply`, and leaves a synthesised `status: "ready"` verdict
+   for the handoff path below — so the Approver engagement and the arming
+   step still run; a false one runs the engagement and logs a `stage-end`
+   instead. `test/rebase-only.test.sh` pins
    `rebase_only_push`/`diff_patch_id` themselves — see requirement 46a's own
    acceptance check.
 8f. **A human can reopen a void from where they actually are (requirement

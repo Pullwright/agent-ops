@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 #
-# test/rebase-only-wiring.test.sh — regression test for the two blocks
+# test/rebase-only-wiring.test.sh — regression test for the three blocks
 # agent-cycle.sh adds for requirement 31e (agent-ops#1806): a `merge-conflicts`
-# item's rebase-only push must skip the Reviewer/Approver stages for this
-# cycle, carrying the pull request's standing verdicts forward instead of
-# re-running either.
+# item's rebase-only push must skip the Reviewer *engagement* for this cycle —
+# and only the engagement, since the Approver round and the arming step below
+# it still have to run, GitHub having dismissed the standing approval on the
+# push whatever the patch-id said.
 #
 #   - **The pre-capture block** (step 6b, just ahead of "--- 7. Implementer
 #     stage ---"): `premerge_rebase_only_capture` records the pull request's
@@ -13,12 +14,14 @@
 #     own `base` resolves to a real ref.
 #   - **The stage-start advisory block** (just inside "--- 8. Reviewer stage
 #     ---", right after the existing #916 merge-state check): compares the
-#     pre-push diff against the post-push one by patch-id and, when they
-#     match, logs the carry-forward event and ends the cycle at zero further
-#     stage cost — exactly as the existing merge-state block already does for
-#     a confirmed merge, immediately above it.
+#     pre-push diff against the post-push one by patch-id, reading both heads
+#     from `origin` so the question stays "did the push change the diff",
+#     and settles `$rebase_only`.
+#   - **The engagement block**: acts on `$rebase_only` — skipping
+#     `stage_budget_apply`/`run_claude_stage` and synthesising a `ready`
+#     verdict for the handoff path below, or running the engagement for real.
 #
-# Both blocks are lifted verbatim out of agent-cycle.sh, the same technique
+# All three blocks are lifted verbatim out of agent-cycle.sh, the same technique
 # test/reviewer-merge-observed-wiring.test.sh already uses: the assertions are
 # about the shipped code, not a copy of its logic. `rebase_only_push` and
 # `log_event` are stubbed as recorders — `rebase_only_push` itself is
@@ -100,12 +103,17 @@ capture_block="$(extract_to_call \
   '^premerge_rebase_only_capture$' \
   "$CYCLE")"
 
-advisory_block="$(extract_block \
+advisory_block="$(extract_to_call \
   '^rebase_only_new_head=""; rebase_only_new_base=""$' \
-  'reviewer-approver-carried-forward' \
+  '^rebase_only_advisory_check && rebase_only=' \
   "$CYCLE")"
 
-for pair in "capture:$capture_block" "advisory:$advisory_block"; do
+engagement_block="$(extract_block \
+  '^# Requirement 31e: the engagement itself is what a confirmed rebase-only push$' \
+  'reviewer-carried-forward' \
+  "$CYCLE")"
+
+for pair in "capture:$capture_block" "advisory:$advisory_block" "engagement:$engagement_block"; do
   if [[ -z "${pair#*:}" ]]; then
     echo "FAIL - could not extract the ${pair%%:*} block from agent-cycle.sh — has it moved?" >&2
     exit 1
@@ -156,25 +164,31 @@ out="$(run_capture "merge-conflicts" "false" "")"
 assert_eq "a merge-conflicts item with no base field captures nothing" \
   "head=	base=	base_name=" "$out"
 
-# --- The stage-start advisory block: stub rebase_only_push and log_event ----
+# --- The stage-start advisory block: stub rebase_only_push, record its args --
 
-run_advisory() {  # OLD_HEAD OLD_BASE IMPL_PR_URL PUSH_RESULT(true|false|unavailable)
-  local old_head="$1" old_base="$2" pr_url="$3" push_result="$4"
+run_advisory() {  # OLD_HEAD OLD_BASE IMPL_PR_URL PUSH_RESULT(true|false) NEW_HEAD
+  local old_head="$1" old_base="$2" pr_url="$3" push_result="$4" new_head="${5:-newheadsha}"
   cat >"$tmp_dir/advisory-harness.sh" <<HARNESS
 set -uo pipefail
 premerge_old_head="$old_head"
 premerge_old_base="$old_base"
 premerge_base_name="main"
+selected_branch="agent/td-42"
 impl_pr_url="$pr_url"
 selected_repo="acme/widgets"
 selected_item="42"
 clone_dir="/no/such/clone"
 git() {
   if [[ "\$1" == "-C" && "\$3" == "rev-parse" ]]; then
-    printf 'newheadsha\n'; return 0
+    printf 'worktreeheadsha\n' >>"$tmp_dir/rev-parse-calls"; printf 'worktreeheadsha\n'; return 0
   fi
   if [[ "\$1" == "-C" && "\$3" == "ls-remote" ]]; then
-    printf 'newbasesha\trefs/heads/main\n'; return 0
+    case "\$5" in
+      *"agent/td-42") printf '$new_head\trefs/heads/agent/td-42\n' ;;
+      *"main") printf 'newbasesha\trefs/heads/main\n' ;;
+      *) return 1 ;;
+    esac
+    return 0
   fi
   if [[ "\$1" == "-C" && "\$3" == "fetch" ]]; then
     return 0
@@ -182,47 +196,105 @@ git() {
   return 1
 }
 rebase_only_push() {
+  printf '%s\n' "\$*" >>"$tmp_dir/push-calls"
   case "$push_result" in
     true) return 0 ;;
-    false) return 1 ;;
-    unavailable) return 1 ;;
+    *) return 1 ;;
   esac
 }
-log_event() { printf '%s\t%s\n' "\$1" "\$2" >>"$tmp_dir/events"; }
 $advisory_block
-echo "fell through past the advisory block"
+printf 'rebase_only=%s\n' "\$rebase_only"
 HARNESS
   bash "$tmp_dir/advisory-harness.sh"
 }
 
-: >"$tmp_dir/events"
+: >"$tmp_dir/push-calls"; : >"$tmp_dir/rev-parse-calls"
 out="$(run_advisory "oldheadsha" "oldbasesha" "https://github.com/acme/widgets/pull/42" "true")"
-assert_eq "a confirmed rebase-only push echoes the PR url and ends the cycle there" \
-  "https://github.com/acme/widgets/pull/42" "$out"
-assert_contains "  ... never falling through to the reviewer tier" \
-  "https://github.com/acme/widgets/pull/42" "$out"
-if [[ "$out" == *"fell through"* ]]; then
-  assert_eq "  ... (never falls through)" "no fall-through" "fell through"
-else
-  assert_eq "  ... (never falls through)" "no fall-through" "no fall-through"
-fi
-assert_contains "  ... and logs reviewer-approver-carried-forward" \
-  "reviewer-approver-carried-forward" "$(cat "$tmp_dir/events")"
+assert_eq "a confirmed rebase-only push settles rebase_only=true" "rebase_only=true" "$out"
+assert_contains "  ... comparing the pre-push pair against the post-push pair" \
+  "oldbasesha oldheadsha newbasesha newheadsha" "$(cat "$tmp_dir/push-calls")"
+assert_eq "  ... reading the post-push head from origin, never the clone's own HEAD" \
+  "" "$(cat "$tmp_dir/rev-parse-calls")"
+
+: >"$tmp_dir/push-calls"
+out="$(run_advisory "oldheadsha" "oldbasesha" "https://github.com/acme/widgets/pull/42" "false")"
+assert_eq "a push whose diff genuinely changed settles rebase_only=false" "rebase_only=false" "$out"
+
+: >"$tmp_dir/push-calls"
+out="$(run_advisory "oldheadsha" "oldbasesha" "https://github.com/acme/widgets/pull/42" "true" "oldheadsha")"
+assert_eq "an unmoved head is no push at all, never a rebase-only one" "rebase_only=false" "$out"
+assert_eq "  ... and is not even asked about" "" "$(cat "$tmp_dir/push-calls")"
+
+: >"$tmp_dir/push-calls"
+out="$(run_advisory "" "" "https://github.com/acme/widgets/pull/42" "true")"
+assert_eq "no pre-capture (not a merge-conflicts item) settles false without even asking" \
+  "rebase_only=false" "$out"
+assert_eq "  ... and is not even asked about" "" "$(cat "$tmp_dir/push-calls")"
+
+# --- The engagement block: does $rebase_only actually skip the model call? ---
+
+run_engagement() {  # REBASE_ONLY(true|false)
+  local rebase_only="$1"
+  : >"$tmp_dir/events"; : >"$tmp_dir/calls"
+  cat >"$tmp_dir/engagement-harness.sh" <<HARNESS
+set -uo pipefail
+rebase_only="$rebase_only"
+selected_repo="acme/widgets"
+selected_item="42"
+impl_pr_url="https://github.com/acme/widgets/pull/42"
+premerge_old_head="oldheadsha"
+rebase_only_new_head="newheadsha"
+rev_complexity="medium"
+rev_model="a-model"
+reviewer_prompt="the reviewer prompt"
+rev_out="$tmp_dir/reviewer.out"
+clone_dir="/no/such/clone"
+stage_backstop_min=90
+stage_inactivity_min=15
+stage_kill_reason=""
+stage_gaps_json='{}'
+ONCE=0
+log_event() { printf '%s\t%s\n' "\$1" "\$2" >>"$tmp_dir/events"; }
+stage_budget_apply() { printf 'stage_budget_apply\n' >>"$tmp_dir/calls"; }
+run_claude_stage() { printf 'run_claude_stage\n' >>"$tmp_dir/calls"; return 0; }
+metering_fields() { printf '{}'; }
+rework_stage_rerun_maybe() { :; }
+log_node_state_transition() { :; }
+stage_watchdog_warning() { printf ''; }
+dump_stage_output() { :; }
+extract_json_result() { printf '{"status":"ready","ci":"from a real engagement"}'; }
+stage_salvage_result() { printf ''; }
+$engagement_block
+printf 'rc=%s json=%s\n' "\$rev_rc" "\$rev_status_json"
+HARNESS
+  bash "$tmp_dir/engagement-harness.sh"
+}
+
+out="$(run_engagement "true")"
+assert_eq "a rebase-only push never runs the Reviewer engagement" "" "$(cat "$tmp_dir/calls")"
+assert_contains "  ... logging reviewer-carried-forward instead" \
+  "reviewer-carried-forward" "$(cat "$tmp_dir/events")"
 assert_contains "  ... naming rebase_only: true" '"rebase_only":true' "$(cat "$tmp_dir/events")"
 assert_contains "  ... the pull request's own url" '"pr_url":"https://github.com/acme/widgets/pull/42"' \
   "$(cat "$tmp_dir/events")"
+assert_eq "  ... and no stage-end event, since no stage ran" \
+  "" "$(grep -c 'stage-end' "$tmp_dir/events" | sed 's/^0$//')"
+assert_contains "  ... synthesising a ready verdict for the handoff path below" \
+  '"status":"ready"' "$out"
+assert_contains "  ... whose ci field names the requirement it came from" \
+  "requirement 31e" "$out"
+assert_contains "  ... at exit code 0, so handle_stage_failure never fires" "rc=0" "$out"
 
-: >"$tmp_dir/events"
-out="$(run_advisory "oldheadsha" "oldbasesha" "https://github.com/acme/widgets/pull/42" "false")"
-assert_eq "a push whose diff genuinely changed falls through to the reviewer tier" \
-  "fell through past the advisory block" "$out"
-assert_eq "  ... and logs nothing" "" "$(cat "$tmp_dir/events")"
-
-: >"$tmp_dir/events"
-out="$(run_advisory "" "" "https://github.com/acme/widgets/pull/42" "true")"
-assert_eq "no pre-capture (not a merge-conflicts item) falls through without even asking" \
-  "fell through past the advisory block" "$out"
-assert_eq "  ... and logs nothing" "" "$(cat "$tmp_dir/events")"
+out="$(run_engagement "false")"
+assert_contains "a push whose diff changed runs the engagement for real" \
+  "run_claude_stage" "$(cat "$tmp_dir/calls")"
+assert_contains "  ... charging the stage budget for it" \
+  "stage_budget_apply" "$(cat "$tmp_dir/calls")"
+assert_contains "  ... logging stage-end" "stage-end" "$(cat "$tmp_dir/events")"
+assert_eq "  ... and never logging reviewer-carried-forward" \
+  "" "$(grep -c 'reviewer-carried-forward' "$tmp_dir/events" | sed 's/^0$//')"
+assert_contains "  ... taking its verdict from the stage's own output" \
+  "from a real engagement" "$out"
 
 printf '\n'
 if (( failures > 0 )); then
