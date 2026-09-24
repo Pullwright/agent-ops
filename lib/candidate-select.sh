@@ -306,54 +306,90 @@ exclude_blocked_or_void_items() {  # <candidates-json> <repo> <blocked-json> <vo
 # `issues`' live re-check duty and the exclusion-1 check on the three sources
 # it still derives itself — neither reads `stage`, `cycle`, `event`, or an
 # Implementer's `unblock_condition`, so there is nothing lost by leaving them
-# off a list the model pays token cost to read every cycle. Malformed input
-# degrades to the untrimmed array, on the same fail-open terms as
-# exclude_blocked_or_void_items: a parse failure here must not silently empty
-# the Co-Ordinator's only remaining view of blocked state.
-coordinator_blocked_view() {  # <blocked-json>
-  jq -c \
-    '[.[] | {item, ts, detail}
-            + (if has("repo") then {repo} else {} end)
-            + (if has("recheck_clean_ts") then {recheck_clean_ts} else {} end)]' \
-    <<<"$1" 2>/dev/null || printf '%s' "$1" # TD-PPagop-26081407: passes test 2 -- falls back to the unfiltered $1, a value the caller already accepted
+# off a list the model pays token cost to read every cycle.
+#
+# Two further cuts, agent-ops#1379. `detail` is kept as one line — its first
+# line, and at most 200 bytes of that, ending in `…` where it was cut — because
+# what either duty reads off it is *what is in the way*, and an Implementer's
+# whole needs-refinement report or a void-corroboration transcript is not
+# that: on 2026-09-23 the 110 recorded blocks carried 51 KB of `detail`
+# (median 381 bytes, longest 2,478) into a band requirement 4i's ladder cannot
+# shed. And, given the cycle's repo array as a second argument, only an entry
+# for a repository that array names — or for no repository at all — is kept:
+# "4. Co-Ordinator stage" already filters each engagement's list to its own
+# repository on exactly those terms, so an entry for a repository no
+# engagement runs for is never sent, and requirement 4i's overhead is meant to
+# measure what will be spent. 37 of those 110 blocks named a slug the fleet
+# no longer configures. The second argument is optional, and the repo array
+# only ever lends its slugs, which no rung of the ladder changes, so the view
+# reads the same whether it is given the unfitted or the fitted array.
+#
+# Malformed input degrades to the untrimmed array, on the same fail-open terms
+# as exclude_blocked_or_void_items: a parse failure here must not silently
+# empty the Co-Ordinator's only remaining view of blocked state — and a repo
+# array that will not parse scopes nothing rather than everything.
+coordinator_blocked_view() {  # <blocked-json> [<ordered-repos-json>]
+  local blocked="$1" repos="${2:-}" slugs='null'
+  if [[ -n "$repos" ]] && jq -e 'type == "array"' <<<"$repos" >/dev/null 2>&1; then
+    slugs="$(jq -c '[.[] | .slug? // empty | tostring]' <<<"$repos" 2>/dev/null)" || slugs='null'
+    [[ -n "$slugs" ]] || slugs='null'
+  fi
+  jq -c --argjson slugs "$slugs" '
+    def one_line($n):
+      (split("\n")[0]) as $l
+      | if ($l | utf8bytelength) <= $n then $l else ($l[0:$n] + "…") end;
+    [ .[]
+      | (.repo // "") as $r
+      | select($slugs == null or $r == "" or any($slugs[]; . == $r))
+      | {item, ts, detail: (.detail | if type == "string" then one_line(200) else . end)}
+        + (if has("repo") then {repo} else {} end)
+        + (if has("recheck_clean_ts") then {recheck_clean_ts} else {} end) ]' \
+    <<<"$blocked" 2>/dev/null || printf '%s' "$blocked" # TD-PPagop-26081407: passes test 2 -- falls back to the unfiltered $1, a value the caller already accepted
 }
 
-# Requirement 4j/issue #643: the `refinements` half of the Co-Ordinator's
-# unsheddable input, trimmed the way `coordinator_blocked_view` above trims the
-# other half.
+# Requirement 4j/issue #643, narrowed by agent-ops#1379: the `refinements`
+# half of the Co-Ordinator's unsheddable input, trimmed the way
+# `coordinator_blocked_view` above trims the other half — to what a selection
+# this cycle could actually read.
 #
-# A refinement entry is small — `ts`, `cycle`, and either a `comment_url` or a
-# `spec`. The `spec` is not: it is a whole work order in markdown, several
-# kilobytes of it, written for an item type with no thread to hold it
-# (tech-debt, a review recommendation, a plan task). The map is a ledger, never
-# retired, so every spec the Refiner has ever written is still in it — on
-# 2026-08-21 that was 24 specs totalling 219,175 bytes, of which 22 (203,645
-# bytes) belonged to items no band of this cycle still names as a candidate.
-# That is what took the assembled prompt past the model's window and had the
-# API refuse the stage on every node of the fleet, eleven consecutive cycles,
-# with no work selected anywhere while it lasted.
+# The map is a ledger, never retired: every refinement the Enabler or the
+# Refiner has ever settled, keyed by repo and item, each entry carrying `ts`,
+# `cycle` and either a `comment_url` or a `spec`. On 2026-08-21 the specs
+# alone — 24 of them, 219,175 bytes, 22 for items no band still offered —
+# took the assembled prompt past the model's window and had the API refuse
+# the stage on every node of the fleet for eleven cycles. By 2026-09-23 the
+# specs were gone from the view and the ledger itself was the weight: 848
+# entries, 384 of them under a slug the fleet no longer configures, rendering
+# at 167 KB of `ts`, `cycle` and `comment_url` for the Co-Ordinator to read on
+# every cycle, of which 308 entries were about an item it could select.
 #
-# The prompt's "Items that have been refined" gives the spec exactly one use:
-# an item the Co-Ordinator is about to put in a work order must have its spec
-# pasted verbatim into `context`, because it exists nowhere else. That use is
-# reachable only for an item that is a candidate this cycle. So the spec of an
-# item no band offers is bytes the Co-Ordinator is told to read and can never
-# act on, and dropping it removes no judgement — the same test
-# `coordinator_blocked_view` is trimmed against.
+# What the prompt actually reads off this band is small and candidate-scoped.
+# "Look the item up here before you decide it is under-specified" and the
+# `refinement_policy` gate both read an entry's *presence*, for an item the
+# Co-Ordinator is weighing; a `comment_url` is the pointer requirement 17h's
+# Script-side composition follows once the item is selected; and a `spec` is
+# pasted by the Co-Ordinator itself only for an item from a source it derives
+# live (`project-review`, `implementation-plan`), since for every pre-fetched
+# band the Script splices the recorded refinement in at composition
+# (`refinement_traceability_repair`) from the full ledger, never from this
+# view. Nothing reads `ts` or `cycle`. So the view is:
 #
-# What is *not* dropped is the entry: `ts`, `cycle` and `comment_url` stay for
-# every item, refined or not, because "Look the item up here before you decide
-# it is under-specified" and the `refinement_policy` gate both read the entry's
-# presence rather than its spec, and a `comment_url` is a pointer whose cost is
-# a line. Only the payload with a single, candidate-scoped use is shed.
-#
-# A spec sitting *beside* a `comment_url` is shed whatever its candidacy
-# (agent-ops#1128). `refinement_record_fields` no longer writes that pair, but
-# the ledger is never retired, so entries recorded before it stopped are still
-# read here for as long as their items live — and for those the pointer already
-# resolves to the same text the payload holds. This is the read side of the
-# same "one home per refinement" rule, and it is what lets a ledger written
-# under the old rule stop being charged for twice.
+#   - a repo only when the cycle's repo array names it — a refinement for a
+#     repository no engagement runs for is bytes every engagement pays for;
+#   - within it, an entry only when some pre-fetched band of that repo offers
+#     the item this cycle, or when the item's ref is one no pre-fetched band
+#     ever constructs — an issue number (`issues`, `tech-debt`), a
+#     `pr-<n>-…` pull-request ref, a `dependabot-alert-<n>`/
+#     `code-scanning-alert-<n>` finding, a `human-visibility-…` violation, or
+#     a frozen `TD-…` register id — because a ref of one of those shapes is
+#     selectable only from the band that offers it, and one no band offers
+#     is not selectable at all, whereas any other ref may be an item the
+#     Co-Ordinator derives itself and must still find here;
+#   - per entry, `{comment_url}` where the pointer exists (a `spec` beside it
+#     is shed whatever the candidacy, agent-ops#1128's "one home per
+#     refinement" read from the ledger's side), `{spec}` only for a
+#     self-derived item, and otherwise `{}` — presence, which is all the
+#     prompt reads for a refined item the Script will compose for.
 #
 # Both documents arrive on stdin, never in argv (requirement 4g): this map is
 # the value that crossed MAX_ARG_STRLEN, and an `--argjson` here would trade
@@ -365,11 +401,11 @@ coordinator_blocked_view() {  # <blocked-json>
 # guards take. Note which way that points for each document: a `repos` array
 # that will not parse, or is not an array, means candidacy cannot be decided at
 # all, so nothing may be shed on the strength of it. Coercing it to `[]` would
-# read as "no candidates" and strip every spec in the fleet — an un-refinement
-# of every item at once, dressed as a successful trim, and a far worse failure
-# than the overflow this function exists to prevent. An empty array is a
-# different fact and is honoured: a cycle really can offer no candidates, and
-# then no spec has a use.
+# read as "no candidates" and strip every entry in the fleet — an
+# un-refinement of every item at once, dressed as a successful trim, and a far
+# worse failure than the overflow this function exists to prevent. An empty
+# array is a different fact and is honoured: a cycle really can engage no
+# repository, and then no entry has a reader.
 coordinator_refinements_view() {  # <refinements-json> <ordered-repos-json>
   local refinements="${1:-{\}}" repos="${2:-[]}" docs
   jq -e 'type == "object"' <<<"$refinements" >/dev/null 2>&1 \
@@ -378,25 +414,30 @@ coordinator_refinements_view() {  # <refinements-json> <ordered-repos-json>
     || { printf '%s' "$refinements"; return 0; }
   docs="$(printf '%s\n' "$refinements" "$repos")"
   jq -cn '
+    def prefetched_ref:
+      test("^([0-9]+|TD-.*|pr-[0-9]+-.*|dependabot-alert-[0-9]+|code-scanning-alert-[0-9]+|human-visibility-.*)$");
     input as $refinements | input as $repos
     | ( [ $repos[]?
           | {key: (.slug // "" | tostring),
-             value: ( [ (.findings, .review_feedback, .issues,
-                         .human_visibility, .tech_debt, .plan_tasks)[]?
+             value: ( [ (.findings, .review_feedback, .merge_conflicts, .dequeued,
+                         .abandoned_drafts, .landing_refusals, .human_visibility,
+                         .issues, .tech_debt)[]?
                         | .ref? // empty | tostring ]
                       | map({key: ., value: true}) | from_entries )} ]
         | from_entries ) as $live
     | $refinements
     | with_entries(
         .key as $slug
+        | select($live | has($slug))
         | .value |= ( if type == "object"
                       then with_entries(
-                             if (.value | type) == "object" and (.value | has("spec"))
-                                and ((.value | has("comment_url"))
-                                     or (($live[$slug] // {})[.key] | not))
-                             then .value |= del(.spec)
-                             else . end)
-                      else . end))' <<<"$docs" 2>/dev/null || printf '%s' "$refinements"
+                             ((($live[$slug] // {})[.key]) // false) as $offered
+                             | select($offered or ((.key | prefetched_ref) | not))
+                             | .value |= ( if type != "object" then {}
+                                           elif has("comment_url") then {comment_url}
+                                           elif has("spec") and ($offered | not) then {spec}
+                                           else {} end))
+                      else {} end))' <<<"$docs" 2>/dev/null || printf '%s' "$refinements"
 }
 
 # Requirement 17f (issue #626): requirement 17b already obliges the

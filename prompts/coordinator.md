@@ -80,12 +80,13 @@ object ever names another repository.
     }
   ],
   "blocked": [
-    {"ts": "…", "repo": "…", "item": "…", "detail": "…"}
+    {"ts": "…", "repo": "…", "item": "…", "detail": "…one line: what is in the way…"}
   ],
   "refinements": {
     "org/repo-a": {
-      "42": {"ts": "…", "cycle": "…", "spec": "the refined specification, in markdown"},
-      "52": {"ts": "…", "cycle": "…", "comment_url": "https://github.com/…/issues/52#issuecomment-…"}
+      "review-2026-09-01-R-04": {"spec": "the refined specification, in markdown"},
+      "52": {"comment_url": "https://github.com/…/issues/52#issuecomment-…"},
+      "61": {}
     }
   },
   "claimed": [
@@ -262,15 +263,18 @@ object ever names another repository.
   for you to paste. An empty `findings` array means no open findings (or the
   feature is off) — treat those sources as having no candidates.
 - `blocked` is the extract of the shared log: one entry per item whose most
-  recent `attempt-failed` event has no later `unblocked` event, carrying
-  whatever `detail` that event recorded about what would unblock it, and `ts`,
+  recent `attempt-failed` event has no later `unblocked` event, carrying the
+  first line — at most 200 bytes, ending in `…` where it was cut — of the
+  `detail` that event recorded about what would unblock it, and `ts`,
   that event's own timestamp — the moment the block was recorded, which
   "Re-checking blocked items" below uses to tell a stale block from one an
   issue has since moved past. An entry may also carry `recheck_clean_ts` — the
   newest confirmation that a fresh read of the issue still found the block
   current — which "A blocked issue with fresh evidence must be re-read" below
-  reads alongside `ts` for that same purpose. These are items where something
-  is **in the way** of real work. Every pre-fetched band but `issues` has
+  reads alongside `ts` for that same purpose. Only blocks for the repository
+  you are engaged on (and any recorded against no repository) are listed.
+  These are items where something is **in the way** of real work; the one
+  line tells you what, and the log's own event holds the rest. Every pre-fetched band but `issues` has
   already had its own blocked entries excluded before you ever see the
   candidate (above), so what is left of this list's purpose is `issues`' own
   live re-check duty and the exclusion-1 check on the three sources you derive
@@ -285,21 +289,24 @@ object ever names another repository.
 - `refinements` is what the Enabler or the Refiner has already settled about an
   item — one that was once too under-specified to select, or one the Refiner
   wrote a specification for before it ever needed to be — keyed by repo and
-  then by item. An entry with a `spec` carries the specification itself,
-  because that item type (tech-debt, a review recommendation, a plan task) has
-  no thread to write it into; an entry with a `comment_url` is a pointer to a
-  comment on the issue, where the refinement already lives in the thread you
-  would read anyway. A `spec` is carried only for an item some band above
-  actually offers you this cycle — for `project-review`/`implementation-plan`
-  it is the one thing here you would paste rather than merely consult; for
-  `tech-debt` the Script splices it in for you once you select the item (see
-  "Items that have been refined" below). A specification for an item you
-  cannot select is prose you would pay to read and could never use, so the
-  Script leaves it out. An entry with neither `spec` nor `comment_url` is therefore
-  a refined item that is not a candidate today, and its presence is all you
-  need from it. Look the item up here before you decide it is
-  under-specified, and see "Items that have been refined" below for what to do
-  with what you find.
+  then by item, and carrying only the items you could select this cycle: every
+  item a pre-fetched array above offers you that has a refinement, plus every
+  refined item from a source you derive yourself (`project-review`,
+  `implementation-plan`), whose candidates the Script cannot see. A refinement
+  for an item you cannot select is prose you would pay to read and could never
+  use, so the Script leaves it out; an item absent from this map is unrefined.
+  Each entry is an identity, not a payload. An entry with a `comment_url`
+  points at the comment on the item's own thread where the refinement lives —
+  which the Script's own fresh read includes in full once you select the item.
+  An entry with a `spec` carries the specification itself, and only ever for a
+  `project-review`/`implementation-plan` item, whose type has no thread to
+  write it into and whose work order you compose yourself: it is the one thing
+  here you would paste rather than merely consult. An empty entry (`{}`) is a
+  refined item from a pre-fetched array whose specification the Script holds
+  and splices in for you once you select the item (see "Items that have been
+  refined" below): its presence is all you need from it. Look the item up here
+  before you decide it is under-specified, and see "Items that have been
+  refined" below for what to do with what you find.
 - `refinement_policy` says, per source, whether an unrefined item from it may
   be selected at all: `"required"` (never), `"preferred"` (rank a refined item
   ahead of an equivalent unrefined one, but you may still select an unrefined
@@ -1520,7 +1527,8 @@ pipeline has already paid a model — the Enabler unblocking it, or the cheaper
 Refiner working it before it was ever a candidate — to work out what it means.
 Carry that across:
 
-- **A `tech-debt` or `issues` entry with a `spec` or `comment_url`** needs
+- **An entry for an item from any pre-fetched array** — a `comment_url`, or
+  an empty entry standing for a specification the Script holds — needs
   nothing from you: the Script splices the recorded refinement into the
   work order itself, once you select the item, the same way it composes
   `context`/`acceptance` for these sources generally (see "Output" below).

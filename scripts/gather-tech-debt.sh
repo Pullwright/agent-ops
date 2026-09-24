@@ -22,11 +22,12 @@
 #     "comments": [{"author": "…", "created_at": "…", "body": "…verbatim…"}]
 #   }
 #
-# Sorted by issue number ascending — "the oldest item, the one that has
-# waited longest, is kept first" (lib/coordinator-input.sh's own
-# `keep_order_tech_debt`), the same "lowest-id-first" rule the register-backed
-# gatherer this replaces always applied, restated over issue numbers instead
-# of register ids.
+# Sorted by issue number ascending — the same "lowest-id-first" rule the
+# register-backed gatherer this replaces always applied, restated over issue
+# numbers instead of register ids. That is the gatherer's order only, and a
+# prose-only fit leaves it alone; when requirement 4i's entry caps do drop
+# entries, `keep_order_tech_debt` (lib/coordinator-input.sh) keeps the
+# freshest thread first, not the lowest number (agent-ops#1379).
 #
 # ## The store moved from the register to labelled issues (D15 as revised, #869)
 #

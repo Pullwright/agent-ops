@@ -1058,6 +1058,35 @@ assert_eq "an entry with no repo/recheck_clean_ts carries neither key" \
 assert_eq "malformed input degrades to the untrimmed array" "not an array" \
   "$(coordinator_blocked_view "not an array")"
 
+# --- coordinator_blocked_view: `detail` is one line, and the list is scoped to
+# --- the repositories the cycle engages (agent-ops#1379) ------------------------
+long_line="$(head -c 260 /dev/zero | tr '\0' 'L')"
+wordy_blocked="$(jq -nc --arg l "$long_line" '[
+  {"repo":"o/r","item":"52","ts":"t","detail":("first line of the reason\nsecond line the model never needs\nthird")},
+  {"repo":"o/r","item":"53","ts":"t","detail":$l},
+  {"repo":"o/r","item":"54","ts":"t","detail":("exactly two hundred bytes " * 8 | .[0:200])},
+  {"repo":"o/r","item":"55","ts":"t","detail":null},
+  {"repo":"o/r","item":"56","ts":"t"},
+  {"repo":"o/gone","item":"57","ts":"t","detail":"a repo the cycle does not engage"},
+  {"item":"58","ts":"t","detail":"a fleet-wide block naming no repo"}]')"
+out="$(coordinator_blocked_view "$wordy_blocked")"
+assert_eq "a multi-line detail keeps its first line only" \
+  "first line of the reason" "$(jq -r '.[0].detail' <<<"$out")"
+assert_eq "a long line is cut to 200 bytes and marked" \
+  "$(head -c 200 <<<"$long_line")…" "$(jq -r '.[1].detail' <<<"$out")"
+assert_eq "a line of exactly 200 bytes is kept whole and unmarked" \
+  "200 false" "$(jq -r '.[2].detail | "\(utf8bytelength) \(endswith("…"))"' <<<"$out")"
+assert_eq "a null detail stays null rather than becoming a string" "null" "$(jq -c '.[3].detail' <<<"$out")"
+assert_eq "an entry with no detail at all still carries the key, as before" "null" "$(jq -c '.[4].detail' <<<"$out")"
+assert_eq "with no repo array the list is not scoped" "7" "$(jq 'length' <<<"$out")"
+scoped="$(coordinator_blocked_view "$wordy_blocked" '[{"slug":"o/r","issues":[]},{"slug":"o/other"}]')"
+assert_eq "given the cycle's repo array, only engaged repos' blocks and fleet-wide ones survive" \
+  '["52","53","54","55","56","58"]' "$(jq -c '[.[].item]' <<<"$scoped")"
+assert_eq "a repo array that will not parse scopes nothing rather than everything" "7" \
+  "$(jq 'length' <<<"$(coordinator_blocked_view "$wordy_blocked" 'not json')")"
+assert_eq "an empty repo array — a cycle engaging nothing — keeps only fleet-wide blocks" \
+  '["58"]' "$(jq -c '[.[].item]' <<<"$(coordinator_blocked_view "$wordy_blocked" '[]')")"
+
 # --- the generic pass covers every pre-fetched band but `issues` -------------
 # The band list is inline shell, not a function, so this is the one assertion
 # that can hold it to the repo entry it filters. `human_visibility` is the band
