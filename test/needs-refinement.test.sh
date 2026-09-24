@@ -613,73 +613,109 @@ assert_eq "passing LOG_FILE changes nothing for issues with no history to consul
 # --- above can reach --------------------------------------------------------
 # #201/#202 above are still findable because `blocked:needs-refinement` is
 # still live on GitHub; this cohort has already lost that label, so the fifth
-# argument, STRANDED_JSON, carries `{number, labelled_at}` for a live read of
-# issues holding a bare `blocked` alone, and the function compares each one's
-# own `labelled_at` against its matching legacy record's own `ts` instead.
-cat > "$log" <<'EOF'
+# argument, STRANDED_JSON, carries `{number, labelled_at, reason_labelled_at}`
+# — when each of the issue's own two labels was last *applied*, read off a
+# timeline that keeps a `labeled` event long after the label itself has gone —
+# and the function compares the two stamps against each other.
+#
+# The timings below are the cohort's real ones, which is the whole point of
+# the case: `needs_refinement_assignee` stopped being written, and
+# `scripts/sweep-legacy-refinement-assignees.sh` came into existence, in the
+# same commit (`1d67429`, 2026-08-22). So every one of these records predates
+# every one of these label applications by weeks, and no comparison against a
+# record's own `ts` could ever place them in one invocation.
+stranded_log="$tmp_dir/stranded-log.jsonl"
+cat > "$stranded_log" <<'EOF'
 {"ts":"2026-08-01T09:00:00Z","cycle":"c0","event":"attempt-failed","stage":"coordinator","repo":"o/r","item":"300","kind":"needs-refinement","detail":"gated","unblock_condition":"x","needs_refinement_assignee":"octocat"}
 {"ts":"2026-08-01T10:00:00Z","cycle":"c1","event":"unblocked","repo":"o/r","item":"300"}
 {"ts":"2026-08-01T09:00:00Z","cycle":"c0","event":"attempt-failed","stage":"coordinator","repo":"o/r","item":"301","kind":"needs-refinement","detail":"gated","unblock_condition":"y","needs_refinement_assignee":"octocat"}
 {"ts":"2026-08-01T10:00:00Z","cycle":"c1","event":"unblocked","repo":"o/r","item":"301"}
 {"ts":"2026-08-01T09:00:00Z","cycle":"c0","event":"attempt-failed","stage":"coordinator","repo":"o/r","item":"302","kind":"needs-refinement","detail":"gated","unblock_condition":"z","blocked_label":"blocked","blocked_reason_label":"blocked:needs-refinement"}
 {"ts":"2026-08-01T10:00:00Z","cycle":"c1","event":"unblocked","repo":"o/r","item":"302"}
+{"ts":"2026-08-01T09:00:00Z","cycle":"c0","event":"attempt-failed","stage":"coordinator","repo":"o/r","item":"303","kind":"needs-refinement","detail":"gated","unblock_condition":"w","needs_refinement_assignee":"octocat"}
 EOF
-stranded_blocked_only="$(blocked_items "$log")"
-assert_eq "every one of 300/301/302's blocks has cleared" "" "$(jq -r '.[].item' <<<"$stranded_blocked_only")"
+stranded_blocked_only="$(blocked_items "$stranded_log")"
+assert_eq "300/301/302's blocks have cleared; 303's has not" "303" \
+  "$(jq -r '.[].item' <<<"$stranded_blocked_only")"
 
-# 300: `blocked` applied within skew of the legacy block's own `ts` — the same
-# sweep run's own application, proof enough without any own-label-action record.
-stranded_300="$(jq -c -n '[{number: 300, labelled_at: "2026-08-01T09:00:45Z"}]')"
-assert_eq "a legacy block's blocked, applied within skew of its own record, is stranded no longer" \
+# 300: the sweep applied `blocked:needs-refinement` and `blocked` in the one
+# invocation, seconds apart — weeks after the record that sent it there. That
+# adjacency is the proof, and it needs no own-label-action record.
+stranded_300="$(jq -c -n '[{number: 300,
+  labelled_at: "2026-08-22T11:03:12Z", reason_labelled_at: "2026-08-22T11:03:14Z"}]')"
+assert_eq "a legacy block's blocked, applied alongside the reason label weeks after the record, is stranded no longer" \
   "o/r	300	blocked" \
-  "$(refinement_blocked_label_orphaned '[]' '[]' "o/r" "$log" "$stranded_300")"
+  "$(refinement_blocked_label_orphaned '[]' '[]' "o/r" "$stranded_log" "$stranded_300")"
 
-# 301: `blocked` applied a month later — a human's own hand, coincidentally on
-# an issue that also carries an old, long-cleared legacy record. Left alone,
-# the same over-hold direction every unprovable case in this function takes.
-stranded_301="$(jq -c -n '[{number: 301, labelled_at: "2026-09-05T12:00:00Z"}]')"
+# 301: the sweep found `blocked` already there — a human's, applied on their
+# own account a fortnight later — so it applied only the reason label, and the
+# two stamps are nowhere near each other. Left alone, the same over-hold
+# direction every unprovable case in this function takes.
+stranded_301="$(jq -c -n '[{number: 301,
+  labelled_at: "2026-09-05T12:00:00Z", reason_labelled_at: "2026-08-22T11:03:14Z"}]')"
 assert_eq "a human's own blocked, merely coincident with an old legacy record, is left alone" \
   "" \
-  "$(refinement_blocked_label_orphaned '[]' '[]' "o/r" "$log" "$stranded_301")"
+  "$(refinement_blocked_label_orphaned '[]' '[]' "o/r" "$stranded_log" "$stranded_301")"
 
 # 302: a *modern* record (carries blocked_label — this pipeline's own fresh
 # path, not the legacy sweep) is already reachable via `refinement_blocked_label_stale`'s
-# own-label-action history; this path never claims it, timestamp or not.
-stranded_302="$(jq -c -n '[{number: 302, labelled_at: "2026-08-01T09:00:05Z"}]')"
+# own-label-action history; this path never claims it, timestamps or not.
+stranded_302="$(jq -c -n '[{number: 302,
+  labelled_at: "2026-08-22T11:03:12Z", reason_labelled_at: "2026-08-22T11:03:14Z"}]')"
 assert_eq "a modern record is never claimed by the stranded-legacy path" \
   "" \
-  "$(refinement_blocked_label_orphaned '[]' '[]' "o/r" "$log" "$stranded_302")"
+  "$(refinement_blocked_label_orphaned '[]' '[]' "o/r" "$stranded_log" "$stranded_302")"
 
-# An issue with no attempt-failed history at all — no legacy record to compare
-# against — must never be claimed on timing alone: unlike the live-reason-label
+# An issue with no attempt-failed history at all — no legacy record behind it —
+# must never be claimed on adjacency alone: unlike the live-reason-label
 # cohort, there is no independent proof here that this issue was ever this
 # pipeline's block to begin with.
-stranded_no_history="$(jq -c -n '[{number: 999, labelled_at: "2026-08-01T09:00:05Z"}]')"
+stranded_no_history="$(jq -c -n '[{number: 999,
+  labelled_at: "2026-08-22T11:03:12Z", reason_labelled_at: "2026-08-22T11:03:14Z"}]')"
 assert_eq "no history at all is never claimed by the stranded-legacy path" \
   "" \
-  "$(refinement_blocked_label_orphaned '[]' '[]' "o/r" "$log" "$stranded_no_history")"
+  "$(refinement_blocked_label_orphaned '[]' '[]' "o/r" "$stranded_log" "$stranded_no_history")"
 
-# A block still open is untouched regardless of how closely `labelled_at`
-# matches — clearing is a precondition, not merely a tiebreaker.
-open_blocked_300_only="$(jq -c -n '[{repo: "o/r", item: "300", kind: "needs-refinement"}]')"
+# A block still open is untouched however closely the two stamps sit —
+# clearing is a precondition, not merely a tiebreaker.
+stranded_303="$(jq -c -n '[{number: 303,
+  labelled_at: "2026-08-22T11:03:12Z", reason_labelled_at: "2026-08-22T11:03:14Z"}]')"
 assert_eq "a still-open legacy block is untouched by the stranded-legacy path" \
   "" \
-  "$(refinement_blocked_label_orphaned "$open_blocked_300_only" '[]' "o/r" "$log" "$stranded_300")"
+  "$(refinement_blocked_label_orphaned "$stranded_blocked_only" '[]' "o/r" "$stranded_log" "$stranded_303")"
 
-# An unresolvable labelled_at (a failed timeline call) is over-held, the same
+# Either stamp unresolvable — a failed timeline call, or a reason label whose
+# own `labeled` event this read could not find — is over-held, the same
 # fail-safe direction as everything else unprovable here.
-stranded_unresolvable="$(jq -c -n '[{number: 300, labelled_at: ""}]')"
-assert_eq "an unresolvable labelled_at is over-held, not claimed" \
+assert_eq "an unresolvable blocked labelled_at is over-held, not claimed" \
   "" \
-  "$(refinement_blocked_label_orphaned '[]' '[]' "o/r" "$log" "$stranded_unresolvable")"
+  "$(refinement_blocked_label_orphaned '[]' '[]' "o/r" "$stranded_log" \
+       '[{"number": 300, "labelled_at": "", "reason_labelled_at": "2026-08-22T11:03:14Z"}]')"
+assert_eq "an unresolvable reason labelled_at is over-held, not claimed" \
+  "" \
+  "$(refinement_blocked_label_orphaned '[]' '[]' "o/r" "$stranded_log" \
+       '[{"number": 300, "labelled_at": "2026-08-22T11:03:12Z", "reason_labelled_at": ""}]')"
 
 reset_calls
 while IFS=$'\t' read -r t_repo t_item t_label; do
   refinement_label_remove "$t_repo" "$t_item" "$t_label"
-done < <(refinement_blocked_label_orphaned '[]' '[]' "o/r" "$log" "$stranded_300")
+done < <(refinement_blocked_label_orphaned '[]' '[]' "o/r" "$stranded_log" "$stranded_300")
 assert_eq "the stranded-legacy retry removes exactly the one proven label" \
   "remove o/r 300 blocked" \
   "$(label_calls)"
+
+# `refinement_blocked_label_stranded_candidates` is what keeps the caller from
+# paying a paginated timeline read for an issue this path could never claim:
+# it names the cohort from the log alone, before any GitHub call.
+assert_eq "the candidate set is the cleared legacy records, and only those" \
+  "$(printf '300\n301')" \
+  "$(refinement_blocked_label_stranded_candidates "$stranded_blocked_only" "o/r" "$stranded_log")"
+assert_eq "another repo's issues are never named" "" \
+  "$(refinement_blocked_label_stranded_candidates "$stranded_blocked_only" "o/other" "$stranded_log")"
+assert_eq "with no log there is no candidate, so no timeline is ever read" "" \
+  "$(refinement_blocked_label_stranded_candidates "$stranded_blocked_only" "o/r")"
+assert_eq "a repo argument is required" "" \
+  "$(refinement_blocked_label_stranded_candidates "$stranded_blocked_only" "" "$stranded_log")"
 
 # STRANDED_JSON is additive: omitting it, or passing an explicit empty array
 # (the pre-#1832 call shape either way), changes nothing for the
@@ -1385,6 +1421,8 @@ rm -rf "$hf_tmp"
   refinement_blocked_label_orphaned 'not json' 'not json' "o/r" >/dev/null
   refinement_blocked_label_orphaned 'not json' 'not json' "o/r" "/nonexistent/log.jsonl" >/dev/null
   refinement_blocked_label_orphaned 'not json' 'not json' "o/r" "/nonexistent/log.jsonl" 'not json' >/dev/null
+  refinement_blocked_label_stranded_candidates 'not json' "o/r" "/nonexistent/log.jsonl" >/dev/null
+  refinement_blocked_label_stranded_candidates '[]' "o/r" >/dev/null
   exit 0
 ) >/dev/null 2>&1
 assert_eq "the real call-site shapes survive set -e and unparseable input" "0" "$?"

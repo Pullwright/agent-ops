@@ -99,19 +99,27 @@
 # front of that read at all); its second live reconciliation (agent-ops#1832)
 # for the case that leaves neither history nor a live reason label behind — a
 # legacy-swept issue whose reason label already released normally, no
-# OWN-LOG-FILE history because this run predates that argument — comparing the
-# bare `blocked` label's own live `labelled_at` against the legacy block's own
-# recorded event timestamp, within `LABEL_OWN_SKEW_TOLERANCE_SECONDS`, in place
-# of the `own-label-action` history this run never had anywhere to write; and,
-# for a `blocked` this script itself adds *from here on*, OWN-LOG-FILE's own
-# `own-label-action` record once the caller starts passing it. Passing
-# OWN-LOG-FILE does not reach back: a `blocked` a pre-agent-ops#999 run already
-# applied reads `present`, not `added`, on every later run —
-# `refinement_label_project`'s read-before-write guard logs nothing for a
-# label it finds already there, correctly, since it cannot tell this run's own
-# prior application from a human's — but that no longer matters for release,
-# since agent-ops#1832's timestamp comparison needs no such history to begin
-# with.
+# OWN-LOG-FILE history because this run predates that argument — which reads
+# this script's own two label applications back off the issue's GitHub
+# timeline, where a `labeled` event outlives the label it records, and treats
+# them as one invocation's work when they fall within
+# `LABEL_OWN_SKEW_TOLERANCE_SECONDS` of each other, in place of the
+# `own-label-action` history this run never had anywhere to write; and, for a
+# `blocked` this script itself adds *from here on*, OWN-LOG-FILE's own
+# `own-label-action` record once the caller starts passing it. That second
+# reconciliation rests on the pairing this loop below makes — the reason label
+# added unconditionally and `blocked` projected, one after the other, for the
+# same issue in the same pass — so the two applications must stay together in
+# one invocation for it to keep working. Passing OWN-LOG-FILE does not reach
+# back: a `blocked` a pre-agent-ops#999 run already applied reads `present`,
+# not `added`, on every later run — `refinement_label_project`'s
+# read-before-write guard logs nothing for a label it finds already there,
+# correctly, since it cannot tell this run's own prior application from a
+# human's — but that no longer matters for release, since agent-ops#1832's
+# comparison needs no such history to begin with. It also needs no `added`
+# result: where this run found `blocked` already present, it applied only the
+# reason label, so there is no application of its own beside it and the issue
+# is correctly left alone as a human's.
 #
 # **Projecting onto a block LOG_FILE does not yet know has cleared**
 # (agent-ops#994, TD-PPagop-26082602). `blocked_items` already excludes an

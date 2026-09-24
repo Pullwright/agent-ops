@@ -16647,34 +16647,53 @@ implements.
     all** (agent-ops#1832). The reconciliation above is fed by
     `gh issue list --label blocked:<reason>`, so an issue whose reason label
     already released normally when its legacy block cleared never reaches it —
-    the reason label is exactly what is missing. `lib/candidate-gather.sh`
-    runs a second `gh issue list --label blocked` in the same per-repo turn,
-    excludes anything still carrying the reason label live at that moment
-    (already the first reconciliation's own to reach, whether or not it
-    already has this same cycle), and reads each survivor's own `blocked`
-    label's `labelled_at` off its GitHub timeline, the same endpoint the first
-    reconciliation reads the reason label's from. `lib/refinement.sh`'s
-    `refinement_blocked_label_orphaned` takes this as a fifth, optional
-    argument (`STRANDED_JSON`, `[{"number": …, "labelled_at": …}]`) and, for
-    each entry whose matching `attempt-failed` record is the legacy shape (the
-    same `needs_refinement_assignee`-present, neither-blocked-label-field test
-    the first reconciliation already uses), compares that `labelled_at`
-    against the record's own `ts` within `LABEL_OWN_SKEW_TOLERANCE_SECONDS`
-    (`lib/label-marker.sh`, requirement 39f's own clock-skew tolerance, reused
-    rather than duplicated) in either direction — the sweep applies `blocked`
-    and records the block in the same invocation, so a genuine legacy
-    application's `labelled_at` sits within that skew of the block's own `ts`.
-    A candidate whose `labelled_at` falls outside that window (a human's own,
-    later `blocked` that happens to land on an issue which also carries an
-    old, long-cleared legacy record), whose matching record is modern rather
-    than legacy, that carries no matching record at all, or whose
-    `labelled_at` cannot be resolved, is left alone — over-held, the same
-    direction every other unprovable case in this reconciliation already
-    takes; unlike the reason label, a bare `blocked` has no live-state proof
-    of its own to fall back on, so absence of proof here is never read as
-    proof of absence. `refinement_label_remove` retries a proven survivor the
-    same way the first reconciliation's does, logging its own
-    `own-label-action remove`.
+    the reason label is exactly what is missing. It is missing from the
+    issue's *live* labels, though, not from its history: GitHub keeps a
+    `labeled` event for a label since removed, so the sweep's own application
+    of `blocked:<reason>` stays readable on the timeline long after the label
+    itself came off. That event is this cohort's proof.
+
+    `lib/refinement.sh`'s `refinement_blocked_label_stranded_candidates` names
+    the cohort from the log alone — every item in the repo whose most recent
+    `attempt-failed` record has the legacy shape and whose block has since
+    cleared — and `lib/candidate-gather.sh` runs a second `gh issue list
+    --label blocked` in the same per-repo turn, excluding anything still
+    carrying the reason label live at that moment (already the first
+    reconciliation's own to reach, whether or not it already has this same
+    cycle). Only an issue in both sets costs a timeline read: `blocked` is a
+    hand-applied human control, so most issues carrying one can never be this
+    path's to claim, and reading their timelines first would spend a paginated
+    fetch on each of them every cycle for good. Each survivor's timeline is
+    read once per (repo, item) per process, the same memoisation the first
+    reconciliation makes, and yields both of that issue's own stamps: when its
+    `blocked` and its `blocked:<reason>` were each last applied.
+
+    `refinement_blocked_label_orphaned` takes these as a fifth, optional
+    argument (`STRANDED_JSON`, `[{"number": …, "labelled_at": …,
+    "reason_labelled_at": …}]`) and, for each entry whose matching
+    `attempt-failed` record is the legacy shape (the same
+    `needs_refinement_assignee`-present, neither-blocked-label-field test the
+    first reconciliation already uses), compares the two stamps against *each
+    other* within `LABEL_OWN_SKEW_TOLERANCE_SECONDS` (`lib/label-marker.sh`,
+    requirement 39f's own clock-skew tolerance, reused rather than
+    duplicated) in either direction. The sweep applies the reason label
+    (unconditionally) and `blocked` (projected, read-before-write) in one
+    invocation, seconds apart, so a `blocked` the sweep applied itself sits
+    within that tolerance of the reason label beside it; a `blocked` it found
+    already present it never applied at all, so that issue's stamp is the
+    human's own and falls outside. The record's own `ts` is deliberately not
+    what either stamp is measured against: this cohort's block was recorded
+    before agent-ops#639, while the sweep that labelled it first existed in
+    that same commit, so record and application are weeks apart by
+    construction. A candidate whose two stamps are far apart, whose matching
+    record is modern rather than legacy, that carries no matching record at
+    all, or either of whose stamps cannot be resolved, is left alone —
+    over-held, the same direction every other unprovable case in this
+    reconciliation already takes; unlike the reason label, a bare `blocked`
+    has no live-state proof of its own to fall back on, so absence of proof
+    here is never read as proof of absence. `refinement_label_remove` retries
+    a proven survivor the same way the first reconciliation's does, logging
+    its own `own-label-action remove`.
 
 38c. **An idle, approved pull request is nudged, not left silent.** For every
     open, non-draft, `pr_label`-carrying pull request in every configured

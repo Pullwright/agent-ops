@@ -361,6 +361,49 @@ refinement_blocked_label_stale() {
     | "\(.repo)\t\(.item)\t\(.label)"' <<<"$docs" 2>/dev/null || true
 }
 
+# _refinement_log_array [LOG_SRC]
+# Print LOG_SRC's JSONL as one compact JSON array — `[]` for an omitted,
+# empty, missing or unparseable source, and `-` for stdin, the same convention
+# `lib/cycle-state.sh`'s `blocked_items` uses. Shared by the two readers below
+# so a malformed log degrades to the same empty history for both.
+_refinement_log_array() {
+  local log_src="${1:-}" out='[]'
+  if [[ -n "$log_src" ]]; then
+    if [[ "$log_src" == "-" ]]; then
+      out="$(jq -c -R 'fromjson? // empty' 2>/dev/null | jq -sc '.' 2>/dev/null || true)"
+    elif [[ -s "$log_src" ]]; then
+      out="$(jq -c -R 'fromjson? // empty' "$log_src" 2>/dev/null | jq -sc '.' 2>/dev/null || true)"
+    fi
+    [[ -n "$out" ]] || out='[]'
+  fi
+  printf '%s' "$out"
+}
+
+# The two jq definitions the readers below share verbatim — the same device
+# `lib/label-marker.sh`'s `_label_own_class_jq_def` uses, and for the same
+# reason: which `attempt-failed` record speaks for an item, and which record
+# shape counts as *legacy* (recorded before agent-ops#639: it carries
+# `needs_refinement_assignee` and neither blocked-label field), are decisions
+# two functions must never drift into disagreeing about.
+# shellcheck disable=SC2016  # jq's own $rec/$log/$kind/…, not the shell's.
+_REFINEMENT_LEGACY_JQ_DEF='
+  def legacy_rec($rec):
+    $rec != null
+    and (($rec.blocked_label // "") == "")
+    and (($rec.blocked_reason_label // "") == "")
+    and (($rec.needs_refinement_assignee // "") != "");
+  def latest_attempt_failed($log; $kind; $repo):
+    [ $log[]?
+      | select((.event // "") == "attempt-failed")
+      | select((.kind // "") == $kind)
+      | select((.repo // "") == $repo)
+      | select((.item // "") != "") ]
+    | group_by((.item // "") | tostring)
+    | map(sort_by(.ts // "") | last)
+    | map({key: ((.item // "") | tostring), value: .})
+    | from_entries;
+'
+
 # refinement_blocked_label_orphaned OPEN_BLOCKED_JSON LIVE_JSON REPO [LOG_FILE] [STRANDED_JSON]
 # Print, one per line as `<repo>\t<item>\t<label>`, every `blocked:<reason>`/
 # `blocked` label a *live* GitHub read shows still standing on an open issue in
@@ -424,24 +467,42 @@ refinement_blocked_label_stale() {
 # blocked-label field) whose reason label already released normally, leaving
 # a bare `blocked` with no reason label alongside it to make the issue show up
 # in a `--label blocked:<reason>` listing at all. The reason label's own
-# no-human-reaches-for-it proof is exactly what is missing here, so a second
-# proof takes its place: `[{"number": …, "labelled_at": …}]`, the live GitHub
-# timestamp of when *that issue's own* `blocked` label was last applied — the
-# same per-label timeline read `scripts/gather-hand-flagged-refinements.sh`
-# already does for `needs_refinement_label` — compared against the matching
-# legacy record's own `ts` within `LABEL_OWN_SKEW_TOLERANCE_SECONDS`
-# (`lib/label-marker.sh`, requirement 39f's own tolerance, reused rather than
-# duplicated) in either direction. A sweep run applies `blocked` and records
-# the block in the same invocation, so a genuine legacy application's
-# `labelled_at` sits within that skew of the block's own `ts`; a human's
-# later, unrelated `blocked` on an issue that happens to also carry an old,
-# long-cleared legacy record does not, and is left alone — over-held, the
-# same direction every other unprovable case in this function already
-# defaults to. A candidate with no legacy record at all, a modern record, or
-# an unresolvable `labelled_at` is skipped outright: unlike the reason-label
-# cohort, there is no live-state proof to fall back on here, so "no proof"
-# never rides along on absence alone. Optional and additive — omitted or
-# empty, existing callers and the LIVE_JSON cohort above are unaffected.
+# no-human-reaches-for-it proof is what is missing from that issue's *live*
+# labels — but not from its history: GitHub keeps a `labeled` event for a
+# label since removed, so the sweep's own application of `blocked:<reason>`
+# is still readable on the issue's timeline long after the label itself came
+# off. That event is this cohort's proof.
+# `[{"number": …, "labelled_at": …, "reason_labelled_at": …}]` carries, per
+# candidate, when that issue's own `blocked` and `blocked:<reason>` labels
+# were each last applied — both read from the one timeline fetch, the same
+# per-label read `scripts/gather-hand-flagged-refinements.sh` already does for
+# `needs_refinement_label` — and the two stamps are compared against *each
+# other* within `LABEL_OWN_SKEW_TOLERANCE_SECONDS` (`lib/label-marker.sh`,
+# requirement 39f's own tolerance, reused rather than duplicated) in either
+# direction.
+#
+# The sweep applies `blocked:<reason>` (unconditional add) and `blocked`
+# (projected through `refinement_label_project`'s read-before-write) in the
+# same invocation, seconds apart, so a `blocked` that sweep applied itself
+# sits within that tolerance of the reason label it applied alongside. A
+# `blocked` it found already present — a human's own — it never applied at
+# all, so that issue's `blocked` carries the human's own unrelated timestamp,
+# falls outside the tolerance, and is left alone: over-held, the same
+# direction every other unprovable case in this function already defaults to.
+# The block record's own `ts` is deliberately not what either stamp is
+# measured against. This cohort's block was recorded before agent-ops#639,
+# while the sweep that applied its labels first existed in that same commit,
+# so the record and the application it explains are days to weeks apart by
+# construction — a window narrow enough to mean "one invocation" could never
+# hold them both.
+#
+# A candidate with no legacy record at all, a modern record, or either stamp
+# unresolvable is skipped outright: unlike the reason-label cohort, there is
+# no live-state proof to fall back on here, so "no proof" never rides along on
+# absence alone. Optional and additive — omitted or empty, existing callers
+# and the LIVE_JSON cohort above are unaffected.
+# `refinement_blocked_label_stranded_candidates` below is how a caller names
+# the handful of issues worth reading a timeline for in the first place.
 refinement_blocked_label_orphaned() {
   local open_blocked="${1:-[]}" live="${2:-[]}" repo="${3:-}" log_src="${4:-}" stranded="${5:-[]}" \
     reason_label log_json tol
@@ -450,42 +511,22 @@ refinement_blocked_label_orphaned() {
   [[ -n "$stranded" ]] || stranded='[]'
   reason_label="$(refinement_blocked_reason_label "$REFINEMENT_BLOCK_KIND")"
   [[ -n "$reason_label" && -n "$repo" ]] || return 0
-  log_json='[]'
-  if [[ -n "$log_src" ]]; then
-    if [[ "$log_src" == "-" ]]; then
-      log_json="$(jq -c -R 'fromjson? // empty' 2>/dev/null | jq -sc '.' 2>/dev/null || true)"
-    elif [[ -s "$log_src" ]]; then
-      log_json="$(jq -c -R 'fromjson? // empty' "$log_src" 2>/dev/null | jq -sc '.' 2>/dev/null || true)"
-    fi
-    [[ -n "$log_json" ]] || log_json='[]'
-  fi
+  log_json="$(_refinement_log_array "$log_src")"
   tol="${LABEL_OWN_SKEW_TOLERANCE_SECONDS:-120}"
   jq -nr --arg repo "$repo" --arg kind "$REFINEMENT_BLOCK_KIND" --arg reason "$reason_label" \
-      --argjson tol "$tol" '
+      --argjson tol "$tol" "$_REFINEMENT_LEGACY_JQ_DEF"'
     def own_epoch($s): (try ($s | fromdateiso8601) catch null);
     input as $live | input as $open | input as $log | input as $stranded |
     ($open
      | map(select((.kind // "") == $kind and (.repo // "") == $repo))
      | map((.item // "") | tostring)) as $open_items |
-    ( [ $log[]?
-        | select((.event // "") == "attempt-failed")
-        | select((.kind // "") == $kind)
-        | select((.repo // "") == $repo)
-        | select((.item // "") != "") ]
-      | group_by((.item // "") | tostring)
-      | map(sort_by(.ts // "") | last)
-      | map({key: ((.item // "") | tostring), value: .})
-      | from_entries
-    ) as $history |
+    latest_attempt_failed($log; $kind; $repo) as $history |
     ( [ $live[]?
         | . as $issue
         | ($issue.number | tostring) as $num
         | select(($open_items | index($num)) == null)
         | ($history[$num]) as $rec
-        | ( $rec != null
-            and (($rec.blocked_label // "") == "")
-            and (($rec.blocked_reason_label // "") == "")
-            and (($rec.needs_refinement_assignee // "") != "") ) as $legacy
+        | legacy_rec($rec) as $legacy
         | ( $rec == null or $legacy or (($rec.blocked_label // "") != "") ) as $blocked_provable
         | ([$reason]
            + (if ([$issue.labels[]?] | index("blocked")) and $blocked_provable
@@ -495,17 +536,52 @@ refinement_blocked_label_orphaned() {
           | . as $s
           | ($s.number | tostring) as $num
           | select(($open_items | index($num)) == null)
-          | ($history[$num]) as $rec
-          | select($rec != null
-                   and (($rec.blocked_label // "") == "")
-                   and (($rec.blocked_reason_label // "") == "")
-                   and (($rec.needs_refinement_assignee // "") != ""))
+          | select(legacy_rec($history[$num]))
           | (own_epoch($s.labelled_at // "")) as $at
-          | (own_epoch($rec.ts // "")) as $bt
-          | select($at != null and $bt != null
-                   and (($at - $bt) | if . < 0 then -. else . end) <= $tol)
+          | (own_epoch($s.reason_labelled_at // "")) as $rt
+          | select($at != null and $rt != null
+                   and (($at - $rt) | if . < 0 then -. else . end) <= $tol)
           | "\($repo)\t\($s.number)\tblocked" ]
     )[]' <<<"$live"$'\n'"$open_blocked"$'\n'"$log_json"$'\n'"$stranded" 2>/dev/null || true
+}
+
+# refinement_blocked_label_stranded_candidates OPEN_BLOCKED_JSON REPO [LOG_FILE]
+# Print, one item number per line, every issue in REPO whose most recent
+# `attempt-failed` record of this KIND has the legacy shape and whose block is
+# no longer open — exactly the set `refinement_blocked_label_orphaned`'s
+# STRANDED_JSON branch above can ever act on, named from the log alone.
+#
+# A caller uses this to decide which issues are worth a per-issue timeline
+# read at all (agent-ops#1832 review concern 2). Without it, every open issue
+# carrying a hand-applied `blocked` — the `blocked` label is a human's own
+# control, so most of them are — costs a paginated timeline fetch every cycle,
+# forever, to reach a branch that was never going to claim it. The cohort this
+# narrows to is bounded and shrinking: nothing has written
+# `needs_refinement_assignee` since agent-ops#639.
+#
+# Arguments are the same two the function above takes, read the same way, so
+# the two can only ever agree about which record is legacy and which block is
+# still open.
+refinement_blocked_label_stranded_candidates() {
+  local open_blocked="${1:-[]}" repo="${2:-}" log_src="${3:-}" log_json
+  [[ -n "$open_blocked" ]] || open_blocked='[]'
+  [[ -n "$repo" ]] || return 0
+  log_json="$(_refinement_log_array "$log_src")"
+  jq -nr --arg repo "$repo" --arg kind "$REFINEMENT_BLOCK_KIND" \
+      "$_REFINEMENT_LEGACY_JQ_DEF"'
+    input as $open | input as $log |
+    ($open
+     | map(select((.kind // "") == $kind and (.repo // "") == $repo))
+     | map((.item // "") | tostring)) as $open_items |
+    latest_attempt_failed($log; $kind; $repo) as $history |
+    [ $history | to_entries[]
+      | . as $e
+      | ($e.key) as $num
+      | select(($open_items | index($num)) == null)
+      | select($num | test("^[0-9]+$"))
+      | select(legacy_rec($e.value))
+      | $num ]
+    | unique | .[]' <<<"$open_blocked"$'\n'"$log_json" 2>/dev/null || true
 }
 
 # Memoised per (repo, label): a token that cannot create labels must cost one
