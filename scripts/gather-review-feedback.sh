@@ -233,9 +233,9 @@ if github_pr_list_truncated "$(jq 'length' <<<"$all_prs")"; then
   echo "gather-review-feedback: $slug: the pull-request listing came back at its ${GITHUB_PR_LIST_LIMIT}-item cap; a review round beyond it is not offered this cycle" >&2
 fi
 
-prs="$(jq -c "[.[] | select(.isDraft | not)
-                   | select(.reviewDecision == \"CHANGES_REQUESTED\")
-                   | select(.headRefName | startswith(\"$branch_prefix\"))]" <<<"$all_prs" 2>/dev/null || true)"
+prs="$(jq -c --arg bp "$branch_prefix" '[.[] | select(.isDraft | not)
+                   | select(.reviewDecision == "CHANGES_REQUESTED")
+                   | select(.headRefName | startswith($bp))]' <<<"$all_prs" 2>/dev/null || true)"
 if [[ -z "$prs" ]] || ! jq -e 'type == "array"' <<<"$prs" >/dev/null 2>&1; then
   printf '[]'
   exit 0

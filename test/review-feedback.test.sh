@@ -520,6 +520,30 @@ assert_eq "an oversized single review body no longer kills handoff_answer_events
 assert_eq "  ... and the ref still pins to the blocking review (oversized review body)" \
   "pr-301-review-2" "$(jq -r '.[0].ref' <<<"$out")"
 
+# A branch_prefix carrying a double quote (issue #1006): before the fix, the
+# prefix was spliced straight into the jq program text, so a `"` in it broke
+# the program's syntax and the `2>/dev/null || true` guard turned that into a
+# silent [] — indistinguishable from "no work to do". Passed as --arg data
+# instead, the same value is just a string to match against, not program text.
+cat > "$tmp_dir/prs.json" <<'JSON'
+[
+  {"number": 302, "title": "fix(quoted-prefix): survive a quote in branch_prefix",
+   "headRefName": "agent/\"td-quoted", "headRefOid": "abc302def456",
+   "isDraft": false, "reviewDecision": "CHANGES_REQUESTED", "url": "https://github.com/o/r/pull/302", "body": ""}
+]
+JSON
+printf '[{"id": 3, "state": "CHANGES_REQUESTED", "submitted_at": "2026-08-01T00:05:00Z", "user": {"login": "Warwick-Allen"}, "body": "Please fix it."}]' \
+  > "$tmp_dir/reviews.json"
+printf '[]' > "$tmp_dir/issue-comments.json"
+printf '[]' > "$tmp_dir/timeline.json"
+printf '[]' > "$tmp_dir/pr-comments.json"
+
+out="$(REVIEW_FEEDBACK_GH="$tmp_dir/gh" "$SCRIPT_DIR/scripts/gather-review-feedback.sh" o/r autonomous-agent 'agent/"' 2>/dev/null)"
+assert_eq "a double quote in branch_prefix does not break the jq program into a silent []" "1" \
+  "$(jq 'length' <<<"$out")"
+assert_eq "  ... and still finds the matching PR rather than swallowing it" \
+  "pr-302-review-3" "$(jq -r '.[0].ref' <<<"$out")"
+
 # The review-body assembly and the per-candidate array append are inline, not
 # functions, so each is lifted by its own literal start/end lines — the same
 # technique test/pr-claim-exclusion.test.sh's `extract_claims_fold` uses —

@@ -331,9 +331,9 @@ fi
 # `mergeable` is selected against `== "CONFLICTING"` exactly (never UNKNOWN —
 # see the header). The label filter is the primary "ours" signal; the head
 # also carries `branch_prefix`, every claim branch's own prefix.
-ours="$(jq -c "[.[] | select(.isDraft | not)
-                    | select(.mergeable == \"CONFLICTING\")
-                    | select(.headRefName | startswith(\"$branch_prefix\"))]" \
+ours="$(jq -c --arg bp "$branch_prefix" '[.[] | select(.isDraft | not)
+                    | select(.mergeable == "CONFLICTING")
+                    | select(.headRefName | startswith($bp))]' \
         <<<"$ours_all" 2>/dev/null || echo '[]')"
 jq -e 'type == "array"' <<<"$ours" >/dev/null 2>&1 || ours='[]'
 
