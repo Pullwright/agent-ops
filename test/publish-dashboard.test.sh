@@ -2011,8 +2011,8 @@ assert_eq "a peer's compose verdict comes from its heartbeat" "drifted" \
   "$(jq -r '.fleet.nodes[] | select(.node=="peerV") | .compose.status' <<<"$vdata")"
 assert_eq "a peer that publishes none reads null, never a locally computed one" "null" \
   "$(jq -r '.fleet.nodes[] | select(.node=="peerOld") | .compose' <<<"$vdata")"
-assert_eq "and this node answers for its own compose file too" "1" \
-  "$(jq '[.fleet.nodes[] | select(.self) | has("compose")] | length' <<<"$vdata")"
+assert_eq "and this node answers for its own compose file too" "[true]" \
+  "$(jq -c '[.fleet.nodes[] | select(.self) | has("compose")]' <<<"$vdata")"
 
 # The image-drift verdict (#155) rides the same rules once more: only the
 # node itself can query the registry on its own behalf, so a peer's verdict
@@ -2027,8 +2027,8 @@ assert_eq "with the registry commit it named" "bb64d73a2c1d" \
   "$(jq -r '.fleet.nodes[] | select(.node=="peerV") | .image.registry_commit' <<<"$vdata")"
 assert_eq "a peer that publishes none reads null, never a locally computed one" "null" \
   "$(jq -r '.fleet.nodes[] | select(.node=="peerOld") | .image' <<<"$vdata")"
-assert_eq "and this node answers for its own image too" "1" \
-  "$(jq '[.fleet.nodes[] | select(.self) | has("image")] | length' <<<"$vdata")"
+assert_eq "and this node answers for its own image too" "[true]" \
+  "$(jq -c '[.fleet.nodes[] | select(.self) | has("image")]' <<<"$vdata")"
 
 # The per-stage health verdict (lib/stage-health.sh, agent-ops#662) rides the
 # same rules once more: only the node that computed it — over its own
@@ -2042,8 +2042,8 @@ assert_eq "with its consecutive-failure count intact" "4" \
   "$(jq -r '.fleet.nodes[] | select(.node=="peerV") | .stage_health.stages.coordinator.consecutive_failures' <<<"$vdata")"
 assert_eq "a peer that publishes none reads null, never a locally computed one" "null" \
   "$(jq -r '.fleet.nodes[] | select(.node=="peerOld") | .stage_health' <<<"$vdata")"
-assert_eq "and this node answers for its own stage-health too" "1" \
-  "$(jq '[.fleet.nodes[] | select(.self) | has("stage_health")] | length' <<<"$vdata")"
+assert_eq "and this node answers for its own stage-health too" "[true]" \
+  "$(jq -c '[.fleet.nodes[] | select(.self) | has("stage_health")]' <<<"$vdata")"
 
 # The review pipeline's own symmetric verdict (agent-ops#996) rides the same
 # rules once more, as a field of its own alongside stage_health rather than
@@ -2055,8 +2055,8 @@ assert_eq "with its consecutive-failure count intact" "5" \
   "$(jq -r '.fleet.nodes[] | select(.node=="peerV") | .review_stage_health.stages["project-reviewer"].consecutive_failures' <<<"$vdata")"
 assert_eq "a peer that publishes none reads null, never a locally computed one" "null" \
   "$(jq -r '.fleet.nodes[] | select(.node=="peerOld") | .review_stage_health' <<<"$vdata")"
-assert_eq "and this node answers for its own review-stage-health too" "1" \
-  "$(jq '[.fleet.nodes[] | select(.self) | has("review_stage_health")] | length' <<<"$vdata")"
+assert_eq "and this node answers for its own review-stage-health too" "[true]" \
+  "$(jq -c '[.fleet.nodes[] | select(.self) | has("review_stage_health")]' <<<"$vdata")"
 assert_eq "  ... and it stays a separate field, never merged into stage_health" "false" \
   "$(jq -r '.fleet.nodes[] | select(.node=="peerV") | .stage_health.stages | has("project-reviewer")' <<<"$vdata")"
 
@@ -2072,8 +2072,8 @@ assert_eq "carrying its rebuild count" "3" \
   "$(jq -r '.fleet.nodes[] | select(.node=="peerV") | .mirror.count' <<<"$vdata")"
 assert_eq "a peer that publishes none reads null, never a locally computed one" "null" \
   "$(jq -r '.fleet.nodes[] | select(.node=="peerOld") | .mirror' <<<"$vdata")"
-assert_eq "and this node answers for its own mirror status too" "1" \
-  "$(jq '[.fleet.nodes[] | select(.self) | has("mirror")] | length' <<<"$vdata")"
+assert_eq "and this node answers for its own mirror status too" "[true]" \
+  "$(jq -c '[.fleet.nodes[] | select(.self) | has("mirror")]' <<<"$vdata")"
 
 # This node's own record (state-sync.sh's mirror_record_rebuild) is read
 # rather than recomputed, on the identical precedent doctor/stage-health
@@ -2104,8 +2104,8 @@ assert_eq "carrying when it was allowed" "2026-07-26T11:30:00Z" \
   "$(jq -r '.fleet.nodes[] | select(.node=="peerV") | .updater.at' <<<"$vdata")"
 assert_eq "a peer that publishes none reads null, never a locally computed one" "null" \
   "$(jq -r '.fleet.nodes[] | select(.node=="peerOld") | .updater' <<<"$vdata")"
-assert_eq "and this node answers for its own updater status too" "1" \
-  "$(jq '[.fleet.nodes[] | select(.self) | has("updater")] | length' <<<"$vdata")"
+assert_eq "and this node answers for its own updater status too" "[true]" \
+  "$(jq -c '[.fleet.nodes[] | select(.self) | has("updater")]' <<<"$vdata")"
 
 # --- provider_unreachable: a sustained run of Co-Ordinator failures the
 #     Script classified `transient` — the API unreachable, not refusing a
