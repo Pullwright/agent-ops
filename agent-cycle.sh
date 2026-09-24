@@ -189,6 +189,8 @@ export AGENT_OPS_ROOT="$SCRIPT_DIR"
 . "$SCRIPT_DIR/lib/review-gate.sh"
 # shellcheck source=lib/closing-keyword-gate.sh
 . "$SCRIPT_DIR/lib/closing-keyword-gate.sh"
+# shellcheck source=lib/changelog-section-gate.sh
+. "$SCRIPT_DIR/lib/changelog-section-gate.sh"
 # shellcheck source=lib/required-check-preflight.sh
 . "$SCRIPT_DIR/lib/required-check-preflight.sh"
 # shellcheck source=lib/reconciliation-gate.sh
@@ -3486,11 +3488,13 @@ if (( impl_rc != 0 )) || [[ -z "$impl_status_json" ]] || [[ "$impl_status" != "c
   exit 0
 fi
 
-# Requirement 25a's finding from the Implementer-side gate below, empty when
-# it found nothing — handed to the Reviewer as a `## Script findings` section
-# rather than acted on here. Declared before the gate can set it, since the
-# prompt that reads it is built unconditionally under `set -u`.
+# Requirement 25a's and requirement 25c's findings from the Implementer-side
+# gates below, empty when they found nothing — handed to the Reviewer as
+# `## Script findings` entries rather than acted on here. Declared before the
+# gates can set them, since the prompt that reads them is built
+# unconditionally under `set -u`.
 closing_keyword_finding=""
+changelog_section_finding=""
 
 if [[ -n "$impl_pr_url" ]]; then
   log_event "pr-raised" "$(jq -nc --arg u "$impl_pr_url" --arg r "$repo_slug" --arg i "$selected_item" \
@@ -3535,6 +3539,29 @@ if [[ -n "$impl_pr_url" ]]; then
     unknown)
       log_event "warning" "$(jq -nc --arg u "$impl_pr_url" --arg d "$ck_reason" \
         '{detail: ("could not check whether " + $u + " carries its closing keyword: " + $d), pr_url: $u}')"
+      ;;
+  esac
+
+  # Requirement 25c, agent-ops#1808: the same script-side extension applied to
+  # `.github/workflows/changelog-section.yml`, on the closing-keyword gate's
+  # own pattern just above — a workflow file guards agent-ops alone, so
+  # poetic and poetic-fiddle need the same deterministic check run here
+  # instead. A dirty verdict is feedback, not a refusal, for the identical
+  # reason: what it finds is a pull-request body edit the Reviewer's own step
+  # 4 already fixes, and the enforcing call is the one at the Reviewer's
+  # `ready` handoff (lib/handoff.sh's `handoff_complete_review`), not this one.
+  cs_result="$(changelog_section_gate "$impl_pr_url")" || true
+  cs_word=""; cs_reason=""
+  IFS=$'\t' read -r cs_word cs_reason <<<"$cs_result" || true
+  case "$cs_word" in
+    dirty)
+      changelog_section_finding="$cs_reason"
+      log_event "warning" "$(jq -nc --arg u "$impl_pr_url" --arg d "$cs_reason" \
+        '{detail: ($u + " fails the changelog-section check as raised: " + $d + " — handed to the Reviewer to fix"), pr_url: $u}')"
+      ;;
+    unknown)
+      log_event "warning" "$(jq -nc --arg u "$impl_pr_url" --arg d "$cs_reason" \
+        '{detail: ("could not check whether " + $u + " carries its owed changelog section: " + $d), pr_url: $u}')"
       ;;
   esac
 
@@ -3631,13 +3658,23 @@ rev_model="$reviewer_model_default"
 
 # The `## Script findings` section, present only when a script-side check has
 # something the Reviewer needs to act on — carrying its own leading newline so
-# an empty one leaves the surrounding sections spaced exactly as before.
+# an empty one leaves the surrounding sections spaced exactly as before. Each
+# finding is its own bullet, so either, both, or neither of the two checks
+# can contribute without the other's absence changing the section's shape.
 script_findings_section=""
-if [[ -n "$closing_keyword_finding" ]]; then
+if [[ -n "$closing_keyword_finding" || -n "$changelog_section_finding" ]]; then
   script_findings_section="
 ## Script findings
-
-- **Closing keyword (requirement 25a):** $closing_keyword_finding
+"
+  if [[ -n "$closing_keyword_finding" ]]; then
+    script_findings_section="$script_findings_section
+- **Closing keyword (requirement 25a):** $closing_keyword_finding"
+  fi
+  if [[ -n "$changelog_section_finding" ]]; then
+    script_findings_section="$script_findings_section
+- **Changelog section (requirement 25c):** $changelog_section_finding"
+  fi
+  script_findings_section="$script_findings_section
 "
 fi
 
@@ -3765,6 +3802,8 @@ if [[ "$rev_status" == "ready" ]]; then
     '{pr_url: $u} + (if $r == "" then {} else {repo: $r} end) + (if $i == "" then {} else {item: $i} end)')"
   ck_word="$(jq -r '.closing_keyword.word // ""' <<<"$review_json")"
   ck_reason="$(jq -r '.closing_keyword.reason // ""' <<<"$review_json")"
+  cs_word="$(jq -r '.changelog_section.word // ""' <<<"$review_json")"
+  cs_reason="$(jq -r '.changelog_section.reason // ""' <<<"$review_json")"
   rc_word="$(jq -r '.reconciliation.word // ""' <<<"$review_json")"
   rc_reason="$(jq -r '.reconciliation.reason // ""' <<<"$review_json")"
   rc_revert="$(jq -r '.revert // ""' <<<"$review_json")"
@@ -3841,6 +3880,12 @@ if [[ "$rev_status" == "ready" ]]; then
         "$impl_pr_url" "Add the missing closing keyword (Closes/Fixes/Resolves #N) for the issue this PR claims to close, then let the Reviewer re-examine it."
       exit 0
     fi
+    if [[ "$cs_word" == "dirty" ]]; then
+      log_reviewer_handback \
+        "the Reviewer reported ready, but $impl_pr_url is not safe to hand off: $cs_reason" \
+        "$impl_pr_url" "Add or fix the pull request description's ## Changelog section (requirement 25c) with a gh pr edit --body-file, then let the Reviewer re-examine it."
+      exit 0
+    fi
     if [[ "$rc_word" == "dirty" ]]; then
       # Requirement 31c's reconciliation gate (agent-ops#533): a human posted
       # a general PR comment since this pull request last left draft, and no
@@ -3894,6 +3939,11 @@ if [[ "$rev_status" == "ready" ]]; then
   if [[ "$ck_word" == "unknown" ]]; then
     log_event "warning" "$(jq -nc --arg u "$impl_pr_url" --arg d "$ck_reason" \
       '{detail: ("could not confirm " + $u + " carries its closing keyword: " + $d), pr_url: $u}')"
+  fi
+
+  if [[ "$cs_word" == "unknown" ]]; then
+    log_event "warning" "$(jq -nc --arg u "$impl_pr_url" --arg d "$cs_reason" \
+      '{detail: ("could not confirm " + $u + " carries its owed changelog section: " + $d), pr_url: $u}')"
   fi
 
   if [[ "$rc_word" == "unknown" ]]; then
