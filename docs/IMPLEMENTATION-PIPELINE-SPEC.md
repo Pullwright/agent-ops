@@ -12444,9 +12444,9 @@ implements.
     the merge queue — the same "never push under a queued pull request"
     rule every other pushing stage in this pipeline already observes, an
     unreadable queue state treated the same as "queued" (skip), never as
-    "safe to push". That pull request carries this repository's own
-    `pr_label` (resolved the same way `scripts/publish-revert-rate.sh`
-    resolves it, per-repository with a global fallback) and lands through
+    "safe to push". That pull request carries the config's own `pr_label`
+    (`.pr_label // "autonomous-agent"`, the same global fallback
+    `scripts/publish-revert-rate.sh` falls back to) and lands through
     the ordinary Reviewer/Approver/queue path like any other — it is the
     one pull request D27 (requirement 25c) permits to edit `CHANGELOG.md`.
 

@@ -228,9 +228,7 @@ if [[ -n "$existing_pr_number" ]]; then
   say "updated $repo_slug#$existing_pr_number"
 else
   defaulted_config="$(config_defaults "$SCRIPT_DIR/config.json" "$SCRIPT_DIR/config.schema.json" 2>/dev/null || echo '{}')"
-  pr_label="$(jq -r --arg slug "$repo_slug" \
-    '((.repos[]? | select(.slug == $slug) | .pr_label) // .pr_label // "autonomous-agent")' \
-    <<<"$defaulted_config")"
+  pr_label="$(jq -r '.pr_label // "autonomous-agent"' <<<"$defaulted_config")"
   # shellcheck disable=SC2016  # markdown backticks in the format string, not command substitution
   pr_body="$(printf 'Rolls the `[Unreleased]` CHANGELOG.md section to `## [%s]` and opens a fresh, empty `[Unreleased]` above it (agent-ops#1809).\n' "$roll_date")"
   pr_url="$("$ROLL_GH" pr create -R "$repo_slug" --base "$default_branch" --head "$BRANCH" \
