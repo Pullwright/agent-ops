@@ -12226,7 +12226,7 @@ implements.
     So every target repository gets the same deterministic gate: agent-ops
     from its own CI workflow *and* the script-side gate that also covers it a
     second time, `poetic` and `poetic-fiddle` from the script-side gate
-    alone. Acceptance check 8s is how the gate itself is verified.
+    alone. Acceptance check 8k is how the gate itself is verified.
 25d. **`CHANGELOG.md` is assembled from merged pull-request descriptions,
     never hand-edited by the change itself (roadmap decision D27,
     agent-ops#1807).** `scripts/assemble-changelog.sh [--check]
@@ -26210,7 +26210,7 @@ oblige anyone to edit a test.
    dropped, an actioned-but-young one is kept — and, in `agent-cycle.sh`, that
    the array read is `all_repos_json` rather than the `--repo`-filtered
    `repos_json` or the back-pressure-narrowed `ordered_repos_json`.
-8s. **The changelog-section gate applies to every target repository, not only
+8k. **The changelog-section gate applies to every target repository, not only
    the one carrying the workflow (requirement 25c, agent-ops#1808).**
    `test/changelog-section-gate.test.sh` passes against a stubbed `gh`, on
    acceptance check 8p's own pattern: `changelog_section_gate` reads a pull
