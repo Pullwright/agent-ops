@@ -31,11 +31,29 @@
 #   UNCLOSED-COMMENT
 #
 # A `<line>` field is always the last field of its record, carrying the
-# source line verbatim, tabs and all — a caller peels the fields ahead of it
-# one at a time with a 2-variable `read` (`IFS=$'\t' read -r field rest`),
-# never a single multi-variable `read` across the whole record, so an
-# embedded tab inside the line itself (real tab indentation, pasted content)
-# lands in `rest` intact rather than being mistaken for a field boundary.
+# source line verbatim, tabs and all. `read` cannot be trusted to hand it
+# back that way: with a tab-only `IFS` every delimiter is IFS *whitespace*,
+# and `read` strips leading and trailing runs of IFS whitespace from the
+# field it assigns last — so a `<line>` carrying its own tab indentation
+# loses exactly that indentation, which is indistinguishable to bash from
+# the separator tab sitting in front of it. A 2-variable `read` is no safer
+# here than a multi-variable one: whichever field is assigned last is the
+# one that gets stripped. A caller that needs `<line>` intact therefore
+# peels the fields ahead of it with parameter expansion, which only ever
+# removes the single separator it names:
+#
+#   IFS=$'\t' read -r n rest <<<"$record_after_event"  # leading fields are
+#   rest="${rest#*$'\t'}"                              # safe to read: none
+#   open="${rest%%$'\t'*}"                             # can begin with a tab
+#   line="${rest#*$'\t'}"                              # <- verbatim
+#
+# Tabs *inside* a line, as opposed to in front of or behind it, survive
+# `read` either way; only the leading and trailing runs are at risk, which
+# is why `BULLET` (whose line cannot begin with whitespace) is safe to read
+# straight and `CONTINUATION` (whose line is indented by definition) is not.
+# A caller that only echoes `<line>` back in a diagnostic, as
+# scripts/check-changelog-section.sh does, may read it straight regardless,
+# at the cost of an error message showing an indented line flush-left.
 # `<name>`/`<category>` (heading text) is not given the same protection —
 # a literal tab inside a `### <Category>` heading is accepted as a known,
 # vanishingly rare edge case rather than engineered around.

@@ -269,8 +269,8 @@ changelog_collect() {  # changelog_collect BODY PR_N TARGET_ARRAY_NAME
         # continuation's own leading tab — the very delimiter tab right in
         # front of it looks identical to bash. `${var#*$'\t'}` only ever
         # consumes the single separator tab it names, leaving any tab that is
-        # part of the line's own content untouched. (lib/changelog-grammar.sh
-        # ll. 33-41.)
+        # part of the line's own content untouched. (See the `<line>` field's
+        # own contract in lib/changelog-grammar.sh's header.)
         local sn open line _cc_cont_rest
         IFS=$'\t' read -r sn _cc_cont_rest <<<"$rest"
         _cc_cont_rest="${_cc_cont_rest#*$'\t'}"
