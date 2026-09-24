@@ -28353,9 +28353,19 @@ oblige anyone to edit a test.
     reported `"released"` and its own marker file is cleared; a marker whose
     branch delete fails but a follow-up read confirms the branch already
     gone is reported `"absent"` and its marker is cleared the same way; a
-    marker whose delete fails again is reported as a `warning` and left in
-    place, unlike the two outcomes above, neither of which leaves a marker
-    behind; a malformed marker (missing `repo` or `branch`) is reported as a
+    marker whose delete fails again, while still younger than
+    `reservation_release_stuck_after_days`, is reported as a `warning` and
+    left in place, unlike the two outcomes above, neither of which leaves a
+    marker behind; a marker at least that many days past its own `ts` is
+    reported as `reservation-release-stuck` instead, exactly once, with
+    `escalated_at` written back onto the marker itself, and a marker already
+    carrying `escalated_at` reports nothing at all on a further failed
+    delete while the delete is still retried — the escalation fires past the
+    threshold and not before, and never twice; with `0` the escalation is
+    disabled and however old a marker gets it still reports the ordinary
+    `warning`, as does one whose own `escalated_at` write fails, so a
+    failed write never claims an escalation that did not persist; a
+    malformed marker (missing `repo` or `branch`) is reported as a
     `warning` and left untouched rather than acted on; and two markers
     naming different target repositories, in one invocation, are each
     handled independently.

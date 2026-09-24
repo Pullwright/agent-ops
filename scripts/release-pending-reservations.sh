@@ -38,7 +38,14 @@
 # A delete that fails again leaves the marker in place for the next cycle's
 # pass, so recovery costs no more than time: the marker survives until a
 # transient GitHub failure finally clears, or a human deletes the branch by
-# hand and lets this script notice on its next pass.
+# hand and lets this script notice on its next pass. A failure that is not
+# transient at all — an archived target repository, a branch protected
+# against deletion, a login that lost push access — would otherwise be
+# retried and warned about identically for ever, so once a marker's own `ts`
+# is `reservation_release_stuck_after_days` old it is escalated exactly once
+# (`escalated_at` written back onto the marker itself, so no later pass
+# repeats it) and thereafter retried in silence (TD-PPagop-26082806,
+# agent-ops#1011).
 #
 # Where a `td-record/<id>` marker and its sibling `td/<id>` marker both sit
 # under the same repo directory — the shape a window that failed both of
@@ -66,7 +73,9 @@
 #   {"action":"released","repo":…,"branch":…}
 #   {"action":"absent","repo":…,"branch":…}
 #   {"action":"warning","repo":…,"branch":…,"detail":…}
-# The caller logs them; this script logs nothing itself. Always exits 0 — a
+#   {"action":"reservation-release-stuck","repo":…,"branch":…,"detail":…}
+# — and nothing at all for a marker already carrying `escalated_at`, whose
+# delete failed again. The caller logs them; this script logs nothing itself. Always exits 0 — a
 # branch this script fails to delete must not fail the cycle it runs inside;
 # the marker it leaves behind is what stands behind it.
 #
