@@ -352,9 +352,12 @@ if [[ -n "$repo_slug" && -n "$pr_number" ]]; then
       destructive=""
       if grep -qE '^-' <<<"$patch"; then
         destructive=1
-      elif grep -E '^\+status:' <<<"$patch" \
-        | grep -qvE '^\+status:[[:space:]]*(resolved|not-debt)[[:space:]]*$'; then
-        destructive=1
+      else
+        status_lines="$(grep -E '^\+status:' <<<"$patch" || true)"
+        if [[ -n "$status_lines" ]] \
+          && grep -qvE '^\+status:[[:space:]]*(resolved|not-debt)[[:space:]]*$' <<<"$status_lines"; then
+          destructive=1
+        fi
       fi
       [[ -n "$destructive" ]] && already_resolved_on_base=""
     fi
