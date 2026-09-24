@@ -287,9 +287,11 @@ while IFS=$'\t' read -r _ slug default_branch; do
     # frees becomes a candidate in the same cycle rather than the next one
     # (acceptance 3): `refinement_blocked_label_stale` above can only retry a
     # removal its own history already proves is ours, which is exactly what a
-    # label `scripts/sweep-legacy-refinement-assignees.sh` applied (it logs no
-    # `own-label-action` of its own) or one whose block cleared before that
-    # event existed to log never has. One `gh` call per repo per cycle —
+    # label `scripts/sweep-legacy-refinement-assignees.sh` applied without its
+    # own OWN-LOG-FILE argument (with it, the sweep's own `added` result is
+    # logged exactly as `record_needs_refinement_block`'s is, and this cohort
+    # does not arise) or one whose block cleared before that event existed to
+    # log never has. One `gh` call per repo per cycle —
     # `refinement_blocked_reason_label` is empty for no configured kind today,
     # so this never runs for nothing. Gated on `union_log_healthy` (computed
     # once, above the per-repo loop): a degraded union cannot prove a block is

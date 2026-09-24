@@ -101,7 +101,14 @@
 # OWN-LOG-FILE history and no live reason label alongside it stays invisible
 # to both, and `scripts/gather-issues.sh`'s own `blocked`-label filter goes on
 # excluding that issue for as long as the label stands. Passing OWN-LOG-FILE
-# on every run is what closes that residue for good.
+# on every run closes that residue for a `blocked` this script itself adds
+# from here on. It does not reach back: a `blocked` a pre-agent-ops#999 run
+# already applied reads `present`, not `added`, on every later run —
+# `refinement_label_project`'s read-before-write guard logs nothing for a
+# label it finds already there, correctly, since it cannot tell this run's
+# own prior application from a human's — so an already-swept, still-open
+# legacy block can still strand a bare `blocked` when it clears. That
+# structural remainder is a separate tech-debt item, not this one's to close.
 #
 # **Projecting onto a block LOG_FILE does not yet know has cleared**
 # (agent-ops#994, TD-PPagop-26082602). `blocked_items` already excludes an

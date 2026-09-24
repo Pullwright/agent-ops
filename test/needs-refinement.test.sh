@@ -517,9 +517,11 @@ assert_eq "the retry removes exactly the stale labels, nothing else" \
 # `refinement_blocked_label_stale` above can only offer a removal its own
 # history proves is ours — a logged `own-label-action add` with no later
 # `remove`. This cohort has neither: the label was applied by
-# `scripts/sweep-legacy-refinement-assignees.sh` (which logs nothing of its
-# own) or the block cleared before that logging existed at all, so no `add`
-# ever entered the log. `refinement_blocked_label_orphaned` proves it a
+# `scripts/sweep-legacy-refinement-assignees.sh` run without its own
+# OWN-LOG-FILE argument (with it, the sweep's own `added` result is logged
+# exactly as `record_needs_refinement_block`'s is, and this cohort does not
+# arise), or the block cleared before that logging existed at all, so no
+# `add` ever entered the log. `refinement_blocked_label_orphaned` proves it a
 # different way — a *live* GitHub read against the currently-open block set —
 # so it needs no history.
 cat > "$log" <<'EOF'
