@@ -51,6 +51,22 @@
 # exit status, and a repository whose label search or archive write failed
 # this run is simply retried on the next one, not a crashed script.
 #
+# @CHANGELOG_ROLL_MINUTE@ @CHANGELOG_ROLL_HOUR@ @CHANGELOG_ROLL_DOW@ is
+# schedule.changelog_roll_offset_minutes past the node's own base minute (mod
+# 60), the same jitter shape the tech-debt-archive line above uses, but
+# weekly rather than daily: @CHANGELOG_ROLL_DOW@ is cron's own day-of-week
+# field (schedule.changelog_roll_day_of_week, `0`-`6`, Sunday is `0`), so —
+# unlike the Pipeline Monitor's own daily-within-an-hourly-line cadence below —
+# the crontab line itself only ever fires on that one day and no "is this
+# due" check runs at all. One node's own `scripts/roll-changelog.sh` pass
+# (agent-ops#1809) runs `scripts/assemble-changelog.sh`, renames the
+# resulting `## [Unreleased]` heading to today's date and opens a fresh one,
+# then opens or updates the one pull request D27 (agent-ops#1804) permits to
+# edit `CHANGELOG.md`. It ends `|| true` for the same reason the revert-rate
+# line does: nothing on this image reads a cron job's exit status, and a
+# week with nothing merged since the last roll is a no-op, not a crashed
+# script.
+#
 # @MONITOR_MINUTE@ is schedule.monitor_offset_minutes past the node's own base
 # minute (mod 60), the same jitter the doctor line above uses, and — unlike
 # the review and publish lines — it fires *every* hour rather than at one.
@@ -122,6 +138,7 @@ LOGDIR=/home/agent/.local/state/poetic-agents
 @MONITOR_MINUTE@ * * * *  /app/monitor-cycle.sh >> $LOGDIR/monitor-cron.log 2>&1 || true
 @REVERT_RATE_MINUTE@ @REVERT_RATE_HOUR@ * * *  /app/scripts/publish-revert-rate.sh >> $LOGDIR/revert-rate.log 2>&1 || true
 @TECH_DEBT_ARCHIVE_MINUTE@ @TECH_DEBT_ARCHIVE_HOUR@ * * *  /app/scripts/publish-tech-debt-archive.sh >> $LOGDIR/tech-debt-archive.log 2>&1 || true
+@CHANGELOG_ROLL_MINUTE@ @CHANGELOG_ROLL_HOUR@ * * @CHANGELOG_ROLL_DOW@  /app/scripts/roll-changelog.sh >> $LOGDIR/changelog-roll.log 2>&1 || true
 
 */@STATE_SYNC_PUSH_MINUTES@ * * * *  /app/scripts/state-sync.sh push  >> $LOGDIR/state-sync.log 2>&1
 */@STATE_SYNC_FETCH_MINUTES@ * * * *  /app/scripts/state-sync.sh fetch >> $LOGDIR/state-sync.log 2>&1
