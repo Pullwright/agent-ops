@@ -40,6 +40,22 @@
 # transient GitHub failure finally clears, or a human deletes the branch by
 # hand and lets this script notice on its next pass.
 #
+# Where a `td-record/<id>` marker and its sibling `td/<id>` marker both sit
+# under the same repo directory — the shape a window that failed both of
+# `_techdebt_unfile`'s own deletes leaves behind — this script always acts on
+# the `td-record/<id>` one first, matching `_techdebt_unfile`'s own ordering
+# (TD-PPagop-26082805): that ordering existed because releasing `td/<id>`
+# while `td-record/<id>` still exists let `reserve-tech-debt-id.pl` hand the
+# id out again into a ref this script had not yet cleared. #882 has since
+# retired that minting tool along with it, so no marker minted after #874
+# will ever exist to test this — but a pre-#874 pair, if one is ever still
+# being drained, keeps the same ordering this script has always promised.
+# Each repo directory is fetched and classified by branch prefix in full
+# before anything is deleted, so the ordering holds regardless of what order
+# GitHub's own directory listing happens to name the two files in — not, as
+# before, by the accident that `-` (0x2D) sorts below `_` (0x5F) in every
+# marker filename this script has ever seen.
+#
 # Requires no repository argument: every marker names its own target repo,
 # so one invocation walks every pending release in the state repository
 # regardless of which repositories this installation is configured against.
@@ -72,6 +88,12 @@ GH="${RELEASE_PENDING_GH:-gh}"
 
 # shellcheck source=lib/config-schema.sh
 . "$SCRIPT_DIR/lib/config-schema.sh"
+# TECHDEBT_RECORD_BRANCH_PREFIX (td-record/) alone, the fixed prefix a
+# record-branch marker's own `branch` field always starts with — sourced
+# rather than typed a second time, the same reasoning
+# scripts/sweep-orphan-branches.sh's own sourcing of this file already gives.
+# shellcheck source=lib/tech-debt-file.sh
+. "$SCRIPT_DIR/lib/tech-debt-file.sh"
 
 # config_defaults (issue #197) is the only place a default is written: every
 # key config.schema.json declares a `default` for reads as fully populated
@@ -87,22 +109,13 @@ warn() {  # warn REPO BRANCH DETAIL
     '{action: "warning", repo: $r, branch: $b, detail: $d}'
 }
 
-# One marker: retry its delete, then clear the marker on any outcome that
-# leaves nothing further to retry.
-release_one() {  # <dir> <file>
-  local dir="$1" f="$2" resp file_sha entry e_repo e_branch get_err get_rc action
-
-  resp="$("$GH" api "repos/$state_repo/contents/reservation-releases/$dir/$f" 2>/dev/null)" || return 0
-  file_sha="$(jq -r '.sha // empty' <<<"$resp" 2>/dev/null)"
-  entry="$(jq -r '.content // empty' <<<"$resp" 2>/dev/null | tr -d '\n' | base64 -d 2>/dev/null)"
-  [[ -n "$file_sha" && -n "$entry" ]] || return 0
-
-  e_repo="$(jq -r '.repo // empty' <<<"$entry" 2>/dev/null)"
-  e_branch="$(jq -r '.branch // empty' <<<"$entry" 2>/dev/null)"
-  if [[ -z "$e_repo" || -z "$e_branch" ]]; then
-    warn "" "reservation-releases/$dir/$f" "malformed marker — leaving it in place"
-    return 0
-  fi
+# One already-fetched marker: retry its branch's delete, then clear the
+# marker on any outcome that leaves nothing further to retry. Split out from
+# the old single `release_one` (which also fetched the marker) so
+# release_dir below can fetch and classify every marker in a directory
+# before acting on any of them — see release_dir's own comment for why.
+_release_marker() {  # <dir> <file> <repo> <branch> <file_sha>
+  local dir="$1" f="$2" e_repo="$3" e_branch="$4" file_sha="$5" get_err get_rc action
 
   if "$GH" api -X DELETE "repos/$e_repo/git/refs/heads/$e_branch" >/dev/null 2>&1; then
     action="released"
@@ -135,17 +148,57 @@ release_one() {  # <dir> <file>
   fi
 }
 
+# One repo directory's markers: fetch and classify every one under DIR
+# before acting on any of them, then act in two ordered passes —
+# TECHDEBT_RECORD_BRANCH_PREFIX-branch markers first, everything else
+# after — the record-before-reservation ordering this file's own header
+# comment explains.
+release_dir() {  # <dir>
+  local dir="$1" files f resp file_sha entry e_repo e_branch item
+  local record_first=() others=()
+
+  files="$("$GH" api "repos/$state_repo/contents/reservation-releases/$dir" \
+    --jq '[.[] | select(.type == "file") | .name] | .[]' 2>/dev/null)" || return 0
+
+  while IFS= read -r f; do
+    [[ -n "$f" ]] || continue
+    resp="$("$GH" api "repos/$state_repo/contents/reservation-releases/$dir/$f" 2>/dev/null)" || continue
+    file_sha="$(jq -r '.sha // empty' <<<"$resp" 2>/dev/null)"
+    entry="$(jq -r '.content // empty' <<<"$resp" 2>/dev/null | tr -d '\n' | base64 -d 2>/dev/null)"
+    [[ -n "$file_sha" && -n "$entry" ]] || continue
+
+    e_repo="$(jq -r '.repo // empty' <<<"$entry" 2>/dev/null)"
+    e_branch="$(jq -r '.branch // empty' <<<"$entry" 2>/dev/null)"
+    if [[ -z "$e_repo" || -z "$e_branch" ]]; then
+      warn "" "reservation-releases/$dir/$f" "malformed marker — leaving it in place"
+      continue
+    fi
+
+    if [[ "$e_branch" == "${TECHDEBT_RECORD_BRANCH_PREFIX}"* ]]; then
+      record_first+=("$f"$'\t'"$e_repo"$'\t'"$e_branch"$'\t'"$file_sha")
+    else
+      others+=("$f"$'\t'"$e_repo"$'\t'"$e_branch"$'\t'"$file_sha")
+    fi
+  done <<<"$files"
+
+  for item in "${record_first[@]:-}"; do
+    [[ -n "$item" ]] || continue
+    IFS=$'\t' read -r f e_repo e_branch file_sha <<<"$item"
+    _release_marker "$dir" "$f" "$e_repo" "$e_branch" "$file_sha"
+  done
+  for item in "${others[@]:-}"; do
+    [[ -n "$item" ]] || continue
+    IFS=$'\t' read -r f e_repo e_branch file_sha <<<"$item"
+    _release_marker "$dir" "$f" "$e_repo" "$e_branch" "$file_sha"
+  done
+}
+
 dirs="$("$GH" api "repos/$state_repo/contents/reservation-releases" \
   --jq '[.[] | select(.type == "dir") | .name] | .[]' 2>/dev/null)" || exit 0
 
 while IFS= read -r dir; do
   [[ -n "$dir" ]] || continue
-  files="$("$GH" api "repos/$state_repo/contents/reservation-releases/$dir" \
-    --jq '[.[] | select(.type == "file") | .name] | .[]' 2>/dev/null)" || continue
-  while IFS= read -r f; do
-    [[ -n "$f" ]] || continue
-    release_one "$dir" "$f"
-  done <<<"$files"
+  release_dir "$dir"
 done <<<"$dirs"
 
 exit 0
