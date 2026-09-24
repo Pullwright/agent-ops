@@ -12940,6 +12940,52 @@ implements.
     by the Script — and `prompts/reviewer.md`'s own "When this pull request
     merges while you are still reviewing it" is the instruction that
     replaces the improvisation: no replacement pull request, ever.
+
+31e. **A `merge-conflicts` item's rebase-only push carries the standing
+    Reviewer and Approver verdicts forward instead of paying for both stages
+    again (agent-ops#1806).** Resolving a conflict costs three stage runs in
+    the ordinary path — Implementer, Reviewer, Approver — because the push
+    moves the head, and a moved head is what the Reviewer stage and the
+    Approver's own engagement below (requirement 8b) both key on
+    unconditionally. Most of those pushes change nothing about the pull
+    request's own diff: a clean rebase, or a conflict resolved by keeping
+    both sides of a hunk, reproduces the same net content on the moved base.
+    Requirement 46a's restale sweep already answers this question for its
+    own, independent recovery path; this requirement is the same answer
+    applied where the cost is actually paid — inside the cycle that just ran
+    the Implementer.
+
+    Captured just ahead of the Implementer stage (step 6b), while
+    `$selected_branch` still names the pull request's pre-push head: for a
+    `merge-conflicts` work order that does not carry `"takeover": true` (a
+    takeover names Dependabot's own pull request, ordinary fresh work
+    requirement 3s already excludes from this treatment), the branch's and
+    the work order's own `base`'s current tip SHAs, read with `git
+    ls-remote` — no clone of their own, since the cycle's own clone has not
+    yet been pointed at the pull request's branch at this point.
+
+    Compared at the Reviewer stage's own start, immediately after the
+    existing merge-state advisory read (requirement 31d) and before the
+    reviewer tier is computed: `rebase_only_push` (`lib/rebase-only.sh`)
+    diffs the pre-push head against the pre-push base and the post-push head
+    (`git -C "$clone_dir" rev-parse HEAD`, since the Implementer stage has
+    since checked the branch out there) against the base's current tip, and
+    reports whether the two diffs are `git patch-id --stable`-identical —
+    never authored dates, which a conflict-resolution commit moves just like
+    any other. Advisory exactly like requirement 31d's own read: an
+    unreadable ref at either point (the fetch of the pre-push SHAs failed,
+    the post-push head could not be resolved) runs the Reviewer stage as
+    normal, never guessed at as rebase-only.
+
+    A confirmed rebase-only push skips the Reviewer stage and the Approver
+    engagement below it entirely for this cycle — GitHub's own standing
+    review and approval are untouched by a push that changed no content, so
+    there is nothing to carry forward beyond leaving them alone — and logs
+    `reviewer-approver-carried-forward` (`repo`, `item`, `pr_url`,
+    `old_head`, `new_head`, `rebase_only: true`) for D23's cost accounting to
+    read. Anything else — a resolution that changed the diff, a follow-up
+    fix — takes the full path below unchanged.
+
 55. **`review_gate_required_checks` also compares the base branch's own
     ruleset against what actually ran, so a required context with no run at
     all is caught, not read as a vacuous pass (issue #1543).** `gh pr checks
@@ -18370,6 +18416,51 @@ with the Reviewer's own.
     propagation interval; the worst transient outcome is a doubled
     engagement whose second review lands under the same App identity, which
     GitHub folds into one standing position.
+
+46a. **The stale trigger's own "genuine progress" test also asks whether the
+    diff actually changed, not only whether a commit's authored date is
+    newer than the review (agent-ops#1806).** `approver_newest_commit_
+    authored_at` tells a real commit from a bare rebase, never from a
+    conflict-resolution commit: resolving a merge conflict authors a
+    genuinely fresh commit — its own authored date, newer than the standing
+    review's `submitted_at` — even when the tree it produces is identical in
+    net content to what the review already judged, a clean rebase or a
+    both-sides-kept resolution reproduced on the moved base. Authored-date
+    alone reads that as genuine progress and spends a full re-review
+    (`_approver_restale_review`) on content nobody actually changed.
+
+    `_approver_restale_diff_unchanged` (`lib/approver.sh`) closes that gap:
+    once `approver_newest_commit_authored_at` reports a newer date, this
+    additionally asks whether the pull request's current head, diffed
+    against its own base, is `git patch-id --stable`-identical
+    (`rebase_only_push`, `lib/rebase-only.sh`) to the standing review's own
+    pinned `commit_id`, diffed against that same base. A fresh, throwaway
+    clone (its own — the standing review's pinned commit is not necessarily
+    reachable from any live ref once the pull request has moved past it, so
+    a shallow fetch of the branch alone would not resolve it) fetches only
+    the three refs this needs: the pinned commit, the branch, and the base.
+    Fails closed on any read failure — an unresolvable base, a failed clone,
+    an unresolvable head — read as "the diff changed", never as "unchanged",
+    since a false "unchanged" would silently retire a review nobody has
+    confirmed still applies.
+
+    A diff reported unchanged joins the **No commit authored since the
+    review** branch above — left exactly as it stands, re-reviewed only past
+    `approver_restale_escalate_after_hours` — rather than the genuine-progress
+    branch: the same treatment a bare rebase already gets, for the same
+    reason, whether or not this particular push happened to author a commit.
+    A diff that genuinely changed — including a same-region conflict
+    resolved by keeping both sides, whose own diff necessarily differs from
+    either side's alone, since the surviving content and its surrounding
+    context are not what either commit introduced on its own — takes the
+    **genuine progress** branch above exactly as before this requirement
+    existed.
+
+    This requirement is the restale sweep's own half of the same mechanism
+    requirement 31e applies inside the cycle that just ran the Implementer;
+    the two share `lib/rebase-only.sh`'s `rebase_only_push` and
+    `diff_patch_id` rather than each defining their own, so the definition of
+    "the diff did not change" cannot drift between the two call sites.
 
 47. **Rework record.** D23 of `docs/ROADMAP.md` names nine classes of
     repetition, the pipeline's only honest quality signal, and this
@@ -25805,6 +25896,26 @@ oblige anyone to edit a test.
    report `failed` and exit non-zero — never `open`, since a caller that read
    an unreadable pull request as still open would run the very handoff a
    genuine merge invalidates.
+8e-iv. **A `merge-conflicts` item's rebase-only push skips the Reviewer and
+   Approver stages for the cycle that just ran the Implementer (requirement
+   31e, agent-ops#1806).** `test/rebase-only-wiring.test.sh` extracts both
+   dispatch blocks out of `agent-cycle.sh` the same way
+   `test/reviewer-merge-observed-wiring.test.sh` extracts its own, and pins:
+   the pre-capture block (step 6b) records the pre-push head and base SHAs
+   only for a `merge-conflicts` work order that does not carry `"takeover":
+   true` and whose own `base` resolves to a real ref, and leaves both empty
+   for a takeover, for any other source, or for an unresolvable base; the
+   stage-start advisory block, given a stubbed `rebase_only_push` reporting
+   the pre-push and post-push diffs identical, logs
+   `reviewer-approver-carried-forward` (naming `pr_url`/`old_head`/`new_head`
+   and `rebase_only: true`), echoes the pull request's URL and ends the cycle
+   there — never reaching the reviewer-tier computation below it; the same
+   block, with `rebase_only_push` reporting the diffs different, falls
+   through to that computation logging nothing; and with no pre-capture at
+   all (not a `merge-conflicts` item), the block falls through without
+   calling `rebase_only_push` even once. `test/rebase-only.test.sh` pins
+   `rebase_only_push`/`diff_patch_id` themselves — see requirement 46a's own
+   acceptance check.
 8f. **A human can reopen a void from where they actually are (requirement
    34f).** `test/unvoid-label.test.sh` passes: a request clears a void recorded
    before the label; a void recorded after it, or at the same instant, stands; a
@@ -28066,6 +28177,34 @@ oblige anyone to edit a test.
     clone down; called again in `unreviewed` mode it engages the stage under
     a synthetic work order naming `pr-<n>-approver-unreviewed` instead,
     reporting its outcome through the same global.
+
+46a. **A newer authored commit whose diff is unchanged is not genuine
+    progress (requirement 46a, agent-ops#1806).** `test/rebase-only.test.sh`
+    exercises `lib/rebase-only.sh`'s `diff_patch_id`/`rebase_only_push`
+    against a real, local, throwaway git fixture repository — no stubs, since
+    this is pure git plumbing: a clean rebase (the same change replayed onto
+    a base that moved somewhere the change never touches) reports
+    rebase-only; a manually-authored commit that reproduces the pre-conflict
+    diff byte-for-byte on the moved base — a different commit entirely, no
+    rebase ancestry — also reports rebase-only, pinning that the check is
+    about diff content, never commit ancestry; a resolution that changes the
+    diff reports not-rebase-only; and an unresolvable ref (a bogus SHA)
+    reports not-rebase-only too, with `diff_patch_id` printing nothing for
+    it, never guessed at as "unchanged".
+
+    `test/approver-restale-sweep.test.sh` extends its own
+    `_approver_restale_sweep_repo` harness (above) with a stubbed
+    `_approver_restale_diff_unchanged`, steerable per candidate, and pins: a
+    candidate with a commit authored after the standing review but a
+    diff the stub reports unchanged reaches neither `_approver_restale_review`
+    nor `_approver_restale_dismiss`, and, past `approver_restale_escalate_
+    after_hours`, escalates under the same `rebase-only` cause and
+    review-scoped item ref the no-progress branch already uses — the
+    identical treatment a bare rebase gets, confirming the new gate folds
+    into that branch rather than growing a third one; the control case,
+    identical except the stub reports the diff changed, still reaches a real
+    re-review exactly as every pre-#1806 case in the file does, confirming
+    the new gate narrows nothing it should not.
 8v. **A D18 rollout stage's own exit criteria are measured, not recalled
     (component 22).** `test/autonomy-stage-report.test.sh` passes: a
     repository at `human` (Stage 0) verdicts `met` once a baseline file

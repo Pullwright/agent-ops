@@ -138,6 +138,10 @@ export AGENT_OPS_ROOT="$SCRIPT_DIR"
 . "$SCRIPT_DIR/lib/github-app-token.sh"
 # shellcheck source=lib/approver-token.sh
 . "$SCRIPT_DIR/lib/approver-token.sh"
+# shellcheck source=lib/rebase-only.sh
+# Ahead of approver.sh, whose restale sweep (requirement 46a) calls
+# rebase_only_push to sharpen its own genuine-progress test.
+. "$SCRIPT_DIR/lib/rebase-only.sh"
 # shellcheck source=lib/approver.sh
 . "$SCRIPT_DIR/lib/approver.sh"
 # shellcheck source=lib/author-token.sh
@@ -3317,6 +3321,27 @@ ensure_labels_for() {
 }
 ensure_labels_for "$repo_slug" target
 
+# --- 6b. Rebase-only pre-capture (requirement 31e, agent-ops#1806) ---
+# The Reviewer-stage-start check below (requirement 31e) needs to know what
+# this pull request's diff looked like *before* the Implementer stage moves
+# it, so it is captured here, ahead of that stage, while `$selected_branch`
+# still names the pre-push head. A `merge-conflicts` item carrying
+# `takeover: true` names Dependabot's own pull request, not one of ours —
+# ordinary fresh work (requirement 3s) the Implementer's own procedure
+# excludes from this treatment, so it is excluded here too. Best-effort: an
+# unreadable ref here simply leaves both empty, and the check below then
+# runs the Reviewer stage as normal rather than guessing.
+premerge_old_head=""; premerge_old_base=""; premerge_base_name=""
+premerge_rebase_only_capture() {
+  [[ "$selected_source" == "merge-conflicts" ]] || return 0
+  [[ "$(jq -r '.takeover // false' <<<"$work_order_json")" != "true" ]] || return 0
+  premerge_base_name="$(jq -r '.base // empty' <<<"$work_order_json")"
+  [[ -n "$premerge_base_name" ]] || return 0
+  premerge_old_head="$(git -C "$clone_dir" ls-remote origin "refs/heads/$selected_branch" 2>/dev/null | awk '{print $1; exit}')"
+  premerge_old_base="$(git -C "$clone_dir" ls-remote origin "refs/heads/$premerge_base_name" 2>/dev/null | awk '{print $1; exit}')"
+}
+premerge_rebase_only_capture
+
 # --- 7. Implementer stage ---
 # implementer is one of the two stages requirement 4a's per-repository layer
 # covers (agent-ops#588): $repo_slug's own repos[].prompt_overrides.implementer
@@ -3634,6 +3659,38 @@ if [[ -n "$impl_pr_url" ]]; then
 fi
 if [[ "$pre_reviewer_merge_state" == "merged" ]]; then
   reviewer_merge_observed "$impl_pr_url" "$pre_reviewer_merge_sha" '{}' "reviewer-stage-start"
+  echo "$impl_pr_url"
+  exit 0
+fi
+
+# Requirement 31e (agent-ops#1806): a merge-conflicts item's Implementer push
+# resolves a conflict — a real commit, authored fresh, unlike a bare rebase —
+# but frequently changes nothing about the pull request's own net content: a
+# clean rebase, or a both-sides-kept resolution reproduced on the moved base.
+# `premerge_old_head`/`premerge_old_base` were captured before the
+# Implementer stage ran (step 6b); comparing the diff they name against the
+# diff the pushed head now carries, by patch-id rather than by authored date
+# (which a conflict-resolution commit moves just like any other), is what
+# tells that apart from a rebase whose diff genuinely changed, which still
+# takes the full Reviewer/Approver path below. Advisory exactly like the
+# merge-state read above it: an unreadable comparison just runs the stage as
+# normal, never guessed at as rebase-only.
+rebase_only_new_head=""; rebase_only_new_base=""
+rebase_only_advisory_check() {
+  [[ -n "$premerge_old_head" && -n "$premerge_old_base" && -n "$impl_pr_url" ]] || return 1
+  rebase_only_new_head="$(git -C "$clone_dir" rev-parse HEAD 2>/dev/null || true)"
+  rebase_only_new_base="$(git -C "$clone_dir" ls-remote origin "refs/heads/$premerge_base_name" 2>/dev/null | awk '{print $1; exit}')"
+  [[ -n "$rebase_only_new_head" && -n "$rebase_only_new_base" ]] || return 1
+  git -C "$clone_dir" fetch --quiet origin "$premerge_old_head" "$premerge_old_base" "$rebase_only_new_base" >/dev/null 2>&1 || true
+  rebase_only_push "$clone_dir" "$premerge_old_base" "$premerge_old_head" \
+    "$rebase_only_new_base" "$rebase_only_new_head"
+}
+rebase_only="false"
+rebase_only_advisory_check && rebase_only="true"
+if [[ "$rebase_only" == "true" ]]; then
+  log_event "reviewer-approver-carried-forward" "$(jq -nc --arg r "$selected_repo" --arg i "$selected_item" \
+    --arg u "$impl_pr_url" --arg oh "$premerge_old_head" --arg nh "$rebase_only_new_head" \
+    '{repo: $r, item: $i, pr_url: $u, old_head: $oh, new_head: $nh, rebase_only: true}')"
   echo "$impl_pr_url"
   exit 0
 fi

@@ -150,6 +150,18 @@ approver_newest_commit_authored_at() {
   printf '%s' "${!var}"
 }
 
+# Requirement 46a (agent-ops#1806): stubbed as a recorder, steered per pull
+# request via DIFF_UNCHANGED_<number> — "1" reports the diff unchanged (the
+# rebase-only shape a conflict-resolution commit can still produce), unset or
+# anything else reports it changed (genuine progress, the pre-#1806 default
+# every other case in this file already exercises).
+_approver_restale_diff_unchanged() {
+  printf 'slug=%s\tnumber=%s\tbase=%s\told_commit=%s\tbranch=%s\n' "$1" "$2" "$3" "$4" "$5" >>"$T/diff-unchanged-calls"
+  local var
+  var="DIFF_UNCHANGED_$2"
+  [[ "${!var:-}" == "1" ]]
+}
+
 _approver_restale_review() {
   printf 'slug=%s\tpr_url=%s\tnumber=%s\tbranch=%s\tcomplexity=%s\ttitle=%s\tmode=%s\n' \
     "$1" "$2" "$3" "$4" "$5" "$6" "${7:-restale}" >>"$T/review-calls"
@@ -213,8 +225,8 @@ fi
 pr_row() {  # number url branch head draft reviewDecision title complexity_label [createdAt]
   jq -nc --argjson n "$1" --arg u "$2" --arg b "$3" --arg h "$4" --argjson d "$5" \
     --arg rd "$6" --arg t "$7" --arg c "$8" --arg ca "${9:-}" \
-    '{number: $n, url: $u, headRefName: $b, headRefOid: $h, isDraft: $d, reviewDecision: $rd,
-      title: $t, labels: (if $c == "" then [] else [{name: $c}] end)}
+    '{number: $n, url: $u, headRefName: $b, headRefOid: $h, baseRefName: "main", isDraft: $d,
+      reviewDecision: $rd, title: $t, labels: (if $c == "" then [] else [{name: $c}] end)}
      + (if $ca == "" then {} else {createdAt: $ca} end)'
 }
 
@@ -224,7 +236,7 @@ review_row() {  # id login at
 
 run_case() {  # PR_LIST_JSON=... plus any stub-steering env
   : >"$tmp_dir/events"; : >"$tmp_dir/review-calls"; : >"$tmp_dir/dismiss-calls"; : >"$tmp_dir/escalate-calls"
-  : >"$tmp_dir/unreviewed-escalate-calls"; : >"$tmp_dir/claimed-pr-calls"
+  : >"$tmp_dir/unreviewed-escalate-calls"; : >"$tmp_dir/claimed-pr-calls"; : >"$tmp_dir/diff-unchanged-calls"
   env -i PATH="$PATH" HOME="$HOME" \
     T="$tmp_dir" SCRIPT_DIR="$SCRIPT_DIR" \
     LEVEL="agent-merges-routine" \
@@ -234,6 +246,7 @@ run_case() {  # PR_LIST_JSON=... plus any stub-steering env
 }
 
 review_calls() { cat "$tmp_dir/review-calls" 2>/dev/null || true; }
+diff_unchanged_calls() { cat "$tmp_dir/diff-unchanged-calls" 2>/dev/null || true; }
 dismiss_calls() { cat "$tmp_dir/dismiss-calls" 2>/dev/null || true; }
 escalate_calls() { cat "$tmp_dir/escalate-calls" 2>/dev/null || true; }
 unreviewed_escalate_calls() { cat "$tmp_dir/unreviewed-escalate-calls" 2>/dev/null || true; }
@@ -384,6 +397,50 @@ assert_eq "a fractional escalation threshold (1.5h) still escalates a review 30h
   "1" "$(count "$tmp_dir/escalate-calls")"
 assert_contains "  ... naming the same review-scoped item ref as the integer-hours case" \
   "item_ref=pr-8-approver-restale-556" "$(escalate_calls)"
+
+# --- Requirement 46a (agent-ops#1806): a newer authored commit is not
+#     genuine progress when its diff is unchanged — a merge-conflicts
+#     resolution that reproduces the pre-conflict diff on the moved base
+#     takes the same no-progress path a bare rebase already does, rather
+#     than spending a real re-review on content nobody actually changed. ----
+
+diff_unchanged_list="$(jq -sc '.' <(
+  pr_row 9 "https://github.com/acme/widgets/pull/9" "agent/td-9" "newsha9" false "CHANGES_REQUESTED" "fix: conflict resolution" "complexity:low"
+))"
+
+rc="$(run_case PR_LIST_JSON="$diff_unchanged_list" \
+  STANDING_STATE_9="CHANGES_REQUESTED" STANDING_AT_9="$recent_at" STANDING_COMMIT_9="oldsha9" \
+  REVIEWS_9="[$(review_row 557 "pullwright-approver[bot]" "$recent_at")]" \
+  NEWEST_9="$progressed_at" DIFF_UNCHANGED_9="1")"
+assert_eq "a newer authored commit whose diff is unchanged reaches no re-review" \
+  "0" "$(count "$tmp_dir/review-calls")"
+assert_eq "  ... and, under the threshold, no escalation either" "0" "$(count "$tmp_dir/escalate-calls")"
+assert_eq "  ... and no dismissal — nothing has actually changed to judge" "0" "$(count "$tmp_dir/dismiss-calls")"
+assert_contains "  ... having actually asked whether the diff changed, naming this pull request's own base" \
+  "base=main" "$(diff_unchanged_calls)"
+assert_contains "  ... and the standing review's own pinned commit" \
+  "old_commit=oldsha9" "$(diff_unchanged_calls)"
+
+rc="$(run_case PR_LIST_JSON="$diff_unchanged_list" \
+  STANDING_STATE_9="CHANGES_REQUESTED" STANDING_AT_9="$old_at" STANDING_COMMIT_9="oldsha9" \
+  REVIEWS_9="[$(review_row 557 "pullwright-approver[bot]" "$old_at")]" \
+  NEWEST_9="$older_at" DIFF_UNCHANGED_9="1")"
+assert_eq "…and past the escalation threshold it escalates exactly like a bare rebase" \
+  "1" "$(count "$tmp_dir/escalate-calls")"
+assert_contains "  ... under the rebase-only cause" "cause=rebase-only" "$(escalate_calls)"
+assert_eq "  ... never a re-review" "0" "$(count "$tmp_dir/review-calls")"
+
+# The control: the identical setup, but the diff genuinely changed — this
+# must still reach a real re-review, exactly as every case above #1806 did,
+# so the new gate narrows nothing it should not.
+rc="$(run_case PR_LIST_JSON="$diff_unchanged_list" \
+  STANDING_STATE_9="CHANGES_REQUESTED" STANDING_AT_9="$recent_at" STANDING_COMMIT_9="oldsha9" \
+  REVIEWS_9="[$(review_row 557 "pullwright-approver[bot]" "$recent_at")]" \
+  NEWEST_9="$progressed_at" REVIEW_ACTION_9="posted")"
+assert_eq "a newer authored commit whose diff genuinely changed still reaches a real re-review" \
+  "1" "$(count "$tmp_dir/review-calls")"
+assert_eq "  ... never escalated" "0" "$(count "$tmp_dir/escalate-calls")"
+assert_eq "  ... never dismissed" "0" "$(count "$tmp_dir/dismiss-calls")"
 
 # --- Non-stale and non-candidate pull requests are skipped up front -----------
 
