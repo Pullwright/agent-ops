@@ -82,6 +82,10 @@
 # anything — the workflow passes both through `env:` for the same reason.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=lib/changelog-grammar.sh
+. "$SCRIPT_DIR/lib/changelog-grammar.sh"
+
 if (( $# < 1 )); then
   printf 'usage: %s <pr-body> [<pr-title>]\n' "${0##*/}" >&2
   exit 2
@@ -90,7 +94,6 @@ fi
 body="$1"
 title="${2:-}"
 
-CATEGORIES='Added|Changed|Deprecated|Removed|Fixed|Security'
 COMMIT_TYPES='build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test'
 status=0
 
@@ -109,147 +112,71 @@ if [[ -n "$title" ]]; then
   fi
 fi
 
-# --- Walk the body once ------------------------------------------------------
-# States: outside the section, inside it before any content, inside it in
-# `None` mode, inside it in category mode, or inside it after a fault on its
-# first line (`bad`, which swallows the rest so one mistake reports once).
+# --- Walk the body once, via the shared grammar ------------------------------
+# `lib/changelog-grammar.sh`'s `changelog_grammar_walk` runs the same
+# fence/HTML-comment/heading state machine and None/category/bullet
+# classification `scripts/assemble-changelog.sh` reads too; this loop turns
+# each of its events into the same faults this check has always raised.
 sections=0
 in_fence=0
-fence_char=""
 in_comment=0
-in_section=0
-mode=""
-category=""
-bullets=0
-seen_categories=""
-content_lines=0
 
-close_category() {
-  if [[ -n "$category" ]] && (( bullets == 0 )); then
-    fault "\`### $category\` in the \`## Changelog\` section has no bullet under it — add at least one \`- \` bullet, or remove the heading"
-  fi
-  category=""
-  bullets=0
-}
-
-close_section() {
-  (( in_section )) || return 0
-  # No content but blank lines and comments is an absent section, not an
-  # empty one — see the header. Only a section with content counts towards
-  # "exactly one".
-  if (( content_lines > 0 )); then
-    sections=$(( sections + 1 ))
-    if (( sections > 1 )); then
-      fault "more than one \`## Changelog\` section with content — keep exactly one"
-    fi
-    if [[ "$mode" == "categories" ]]; then
-      close_category
-    fi
-  fi
-  in_section=0
-  mode=""
-}
-
-while IFS= read -r line || [[ -n "$line" ]]; do
-  line="${line%$'\r'}"
-
-  # Fenced code and HTML comments are mutually exclusive states, each
-  # literal inside the other: a `<!--` inside a fence is text, and a fence
-  # marker inside a comment is text. So whichever is open is asked first
-  # whether this line closes it, and only when neither is open can a line
-  # open one — asking the fence first regardless let a fence marker inside
-  # a comment flip the fence state and hide the rest of the body (PR #1810
-  # review). A fence closes only on its own marker character: a tilde fence
-  # is not closed by backticks, nor the reverse.
-  if (( in_fence )); then
-    if [[ "$line" =~ ^[[:space:]]{0,3}(\`{3,}|~{3,}) ]]; then
-      [[ "${BASH_REMATCH[1]:0:1}" == "$fence_char" ]] && in_fence=0
-    fi
-    continue
-  fi
-  if (( in_comment )); then
-    [[ "$line" == *'-->'* ]] && in_comment=0
-    continue
-  fi
-  if [[ "$line" =~ ^[[:space:]]{0,3}(\`{3,}|~{3,}) ]]; then
-    in_fence=1
-    fence_char="${BASH_REMATCH[1]:0:1}"
-    continue
-  fi
-  if [[ "$line" =~ ^[[:space:]]*\<!-- ]]; then
-    [[ "$line" == *'-->'* ]] || in_comment=1
-    continue
-  fi
-
-  # A level-one or level-two heading: the section's own, or the end of it.
-  if [[ "$line" =~ ^##[[:space:]]+[Cc][Hh][Aa][Nn][Gg][Ee][Ll][Oo][Gg][[:space:]]*$ ]]; then
-    close_section
-    in_section=1
-    mode=""
-    content_lines=0
-    continue
-  fi
-  if [[ "$line" =~ ^#[[:space:]] || "$line" =~ ^##[[:space:]]+[^#[:space:]] ]]; then
-    close_section
-    continue
-  fi
-
-  (( in_section )) || continue
-  [[ "$mode" == "bad" ]] && continue
-  [[ -z "${line//[[:space:]]/}" ]] && continue
-  content_lines=$(( content_lines + 1 ))
-
-  case "$mode" in
-    "")
-      if [[ "$line" =~ ^None([[:space:][:punct:]]|$) ]]; then
-        mode="none"
-      elif [[ "$line" =~ ^###[[:space:]]+(.+[^[:space:]])[[:space:]]*$ ]]; then
-        mode="categories"
-        category="${BASH_REMATCH[1]}"
-        bullets=0
-        if [[ ! "$category" =~ ^(${CATEGORIES})$ ]]; then
-          fault "\`### $category\` is not a Keep a Changelog category — use exactly one of Added, Changed, Deprecated, Removed, Fixed, Security"
+while IFS=$'\t' read -r event rest; do
+  case "$event" in
+    SECTION-END)
+      IFS=$'\t' read -r _n content_lines <<<"$rest"
+      # No content but blank lines and comments is an absent section, not an
+      # empty one — see the header. Only a section with content counts
+      # towards "exactly one".
+      if (( content_lines > 0 )); then
+        sections=$(( sections + 1 ))
+        if (( sections > 1 )); then
+          fault "more than one \`## Changelog\` section with content — keep exactly one"
         fi
-        seen_categories=" $category "
-      else
-        fault "the first line under \`## Changelog\` must be a \`### <Category>\` heading or the line \`None.\`, not: $line"
-        mode="bad"
       fi
       ;;
-    none)
-      if [[ "$line" =~ ^###[[:space:]] ]]; then
+    NONE-BAD)
+      IFS=$'\t' read -r _n kind line <<<"$rest"
+      if [[ "$kind" == "category" ]]; then
         fault "the \`## Changelog\` section says \`None\` but also carries \`$line\` — either list the change under a category or say \`None.\` alone"
-        mode="bad"
-      elif [[ "$line" =~ ^[[:space:]]*[-*][[:space:]]+[^[:space:]] ]]; then
-        fault "the \`## Changelog\` section says \`None\` but also carries a bullet: $line — either list the change under a category or say \`None.\` alone"
-        mode="bad"
-      fi
-      ;;
-    categories)
-      if [[ "$line" =~ ^###[[:space:]]+(.+[^[:space:]])[[:space:]]*$ ]]; then
-        close_category
-        category="${BASH_REMATCH[1]}"
-        bullets=0
-        if [[ ! "$category" =~ ^(${CATEGORIES})$ ]]; then
-          fault "\`### $category\` is not a Keep a Changelog category — use exactly one of Added, Changed, Deprecated, Removed, Fixed, Security"
-        elif [[ "$seen_categories" == *" $category "* ]]; then
-          fault "\`### $category\` appears more than once in the \`## Changelog\` section — merge the bullets under one heading"
-        fi
-        seen_categories="$seen_categories $category "
-      elif [[ "$line" =~ ^[-*][[:space:]]+[^[:space:]] ]]; then
-        bullets=$(( bullets + 1 ))
-      elif [[ "$line" =~ ^[[:space:]]+[^[:space:]] ]]; then
-        # An indented line continues the bullet above it (or is a nested
-        # bullet, which the assembler keeps with its parent). Counts as
-        # a bullet only if one is already open.
-        (( bullets > 0 )) || fault "a line under \`### $category\` is indented but no bullet precedes it: $line"
       else
-        fault "a line under \`### $category\` is neither a \`- \` bullet nor an indented continuation of one: $line"
+        fault "the \`## Changelog\` section says \`None\` but also carries a bullet: $line — either list the change under a category or say \`None.\` alone"
       fi
       ;;
+    BAD-FIRST)
+      IFS=$'\t' read -r _n line <<<"$rest"
+      fault "the first line under \`## Changelog\` must be a \`### <Category>\` heading or the line \`None.\`, not: $line"
+      ;;
+    CATEGORY)
+      IFS=$'\t' read -r _n name valid dup <<<"$rest"
+      if (( ! valid )); then
+        fault "\`### $name\` is not a Keep a Changelog category — use exactly one of Added, Changed, Deprecated, Removed, Fixed, Security"
+      elif (( dup )); then
+        fault "\`### $name\` appears more than once in the \`## Changelog\` section — merge the bullets under one heading"
+      fi
+      ;;
+    CATEGORY-END)
+      IFS=$'\t' read -r _n name bullets <<<"$rest"
+      if (( bullets == 0 )); then
+        fault "\`### $name\` in the \`## Changelog\` section has no bullet under it — add at least one \`- \` bullet, or remove the heading"
+      fi
+      ;;
+    CONTINUATION)
+      IFS=$'\t' read -r _n category open line <<<"$rest"
+      # An indented line continues the bullet above it (or is a nested
+      # bullet, which the assembler keeps with its parent). Counts as
+      # a bullet only if one is already open.
+      (( open )) || fault "a line under \`### $category\` is indented but no bullet precedes it: $line"
+      ;;
+    LOOSE)
+      IFS=$'\t' read -r _n category line <<<"$rest"
+      fault "a line under \`### $category\` is neither a \`- \` bullet nor an indented continuation of one: $line"
+      ;;
+    UNCLOSED-FENCE) in_fence=1 ;;
+    UNCLOSED-COMMENT) in_comment=1 ;;
+    SECTION-START | NONE | BULLET) ;;
   esac
-done <<<"$body"
-close_section
+done < <(changelog_grammar_walk "$body")
 
 # --- The title rule ----------------------------------------------------------
 if (( owes )) && (( sections == 0 )); then
