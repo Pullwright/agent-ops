@@ -111,6 +111,49 @@ assert_eq "exactly three calls were made in total" "3" \
 assert_eq "the sweep names what it did, on stdout" "3" \
   "$(grep -cE '^o/r#52: ' <<<"$out")"
 
+# --- OWN-LOG-FILE (5th arg, agent-ops#999/TD-PPagop-26082608): a genuine ----
+# `added` result for either label is logged as an `own-label-action add`,
+# giving `refinement_blocked_label_stale` (lib/refinement.sh) the history it
+# needs to retry the generic `blocked` once the block later clears — the
+# residue this item exists to close. No own-log-file at all (every call
+# above) must keep logging nothing, which the calls-only assertions above
+# already prove indirectly; this section asserts the positive log content
+# directly.
+own_log="$tmp_dir/own-log.jsonl"
+cat >> "$log" <<'EOF'
+{"ts":"2026-08-01T09:00:05Z","cycle":"c0","event":"attempt-failed","stage":"coordinator","repo":"o/r","item":"63","kind":"needs-refinement","detail":"gated","unblock_condition":"v","needs_refinement_label":"needs-refinement","needs_refinement_assignee":"warwickallen"}
+EOF
+reset_calls
+reset_issue_labels
+: > "$own_log"
+"$SWEEP" "o/r" "$log" "" "" "$own_log" >/dev/null
+assert_eq "a genuinely added blocked label is logged as own-label-action add" "1" \
+  "$(jq -c 'select(.event=="own-label-action" and .repo=="o/r" and .item=="63" and .label=="blocked" and .action=="add")' "$own_log" | grep -c .)"
+assert_eq "the reason label's add is logged too" "1" \
+  "$(jq -c 'select(.event=="own-label-action" and .repo=="o/r" and .item=="63" and .label=="blocked:needs-refinement" and .action=="add")' "$own_log" | grep -c .)"
+assert_eq "exactly two own-label-action events were logged for item 63" "2" \
+  "$(jq -c 'select(.item=="63")' "$own_log" | grep -c .)"
+
+# A pre-existing `blocked` (a human's own) is never logged as this run's own
+# `add`, even with OWN-LOG-FILE given — only the reason label's unconditional
+# add is.
+reset_calls
+issue_labels "blocked"
+: > "$own_log"
+"$SWEEP" "o/r" "$log" "" "" "$own_log" >/dev/null
+assert_eq "a pre-existing blocked label is never logged as this run's own add" "0" \
+  "$(jq -c 'select(.event=="own-label-action" and .item=="63" and .label=="blocked")' "$own_log" | grep -c .)"
+assert_eq "  ... while the reason label's add is still logged" "1" \
+  "$(jq -c 'select(.event=="own-label-action" and .item=="63" and .label=="blocked:needs-refinement" and .action=="add")' "$own_log" | grep -c .)"
+reset_issue_labels
+
+# No OWN-LOG-FILE argument at all (the default, every call above it) touches
+# no file and does not error.
+reset_calls
+reset_issue_labels
+assert_eq "omitting own-log-file entirely still succeeds" "0" \
+  "$("$SWEEP" "o/r" "$log" >/dev/null 2>&1; echo $?)"
+
 # --- Idempotency: a repeat run over the same log is a no-op in outcome -------
 # (the calls are re-issued — every primitive here is a no-op-on-repeat `gh`
 # call by construction, per lib/refinement.sh's own contract — but nothing

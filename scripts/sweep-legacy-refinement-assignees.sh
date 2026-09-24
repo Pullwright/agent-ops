@@ -48,55 +48,67 @@
 # block's does — safe because the name is fixed and no human ever applies it
 # themselves, so this script can only ever be the one that did.
 #
-# The generic `blocked` label does not get the same treatment, and that is
-# deliberate (agent-ops#651). `blocked` *is* a name a human reaches for on
-# their own (`lib/labels.sh`'s own catalogue documents it as their hand-applied
-# control), so this script projects it through `refinement_label_project`
-# instead of an unconditional add — a pre-existing `blocked` is left exactly
-# as found, the same read-before-write guard the fresh path
-# (`record_needs_refinement_block`) uses. But this script has nowhere to
-# record which of `added`/`present` actually happened — it does not rewrite
-# the block's own event, and, unlike the fresh path, has no cycle log of its
-# own to append an `own-label-action` to — so a legacy block's `blocked_label`
-# field can never be filled the way a fresh block's is.
-# `refinement_blocked_label_targets` therefore never treats a legacy block's
-# generic `blocked` as this pipeline's to remove, whether this run actually
-# added it or found it already there: doing so regardless, the way this once
-# read, would let a later block-clearing remove a `blocked` a human applied
-# for their own reasons on any issue that also happens to carry a still-open
-# pre-agent-ops#639 block — the exact defect `refinement_label_project` exists
-# to prevent, reappearing on the one path that cannot prove its own history.
+# The generic `blocked` label does not get the unconditional-add treatment,
+# and that is deliberate (agent-ops#651). `blocked` *is* a name a human
+# reaches for on their own (`lib/labels.sh`'s own catalogue documents it as
+# their hand-applied control), so this script projects it through
+# `refinement_label_project` instead of an unconditional add — a pre-existing
+# `blocked` is left exactly as found, the same read-before-write guard the
+# fresh path (`record_needs_refinement_block`) uses.
 #
-# **What the provenance-keyed path does and does not release for a
-# legacy-swept issue**, stated plainly: `refinement_blocked_label_targets`
-# offers the *reason* label up when the block clears — a legacy block's
-# `needs_refinement_assignee`, with neither blocked-label field set, is enough
-# to name it — but never the generic `blocked` (this paragraph's over-hold,
-# unchanged). And if that reason-label removal silently fails, nothing retries
-# it: this script logs no `own-label-action` of its own (it runs outside a
-# cycle, with nothing to log to), so `refinement_blocked_label_stale`
-# (requirement 38b's log-keyed reconciliation sweep, agent-ops#651), which
-# offers up only a label whose logged history says `add`, never sees a
-# legacy-swept label's application at all.
+# Which of `added`/`present` actually happened is recorded two ways, neither
+# of which rewrites the block's own historical event (nothing rewrites
+# history): when the caller passes OWN-LOG-FILE (below), an `added` result —
+# for `blocked` and, unconditionally, for the reason label — is logged there
+# as an `own-label-action add` (`label_own_action_fields`,
+# `lib/label-marker.sh`), exactly the record the fresh path's own cycle log
+# gets for free. Without OWN-LOG-FILE, this run has nowhere to write that
+# record, so `added` and `present` are indistinguishable to every later
+# reader: a legacy block's `blocked_label` field on its own `attempt-failed`
+# event can never be filled either way, and `refinement_blocked_label_targets`
+# never treats a legacy block's generic `blocked` as this pipeline's to
+# remove — over-held rather than guessed at, the same trade-off
+# `refinement_label_project` already makes for an unreadable label list. Both
+# branches share one guarantee: nothing here ever lets a later block-clearing
+# remove a `blocked` a human applied for their own reasons on an issue that
+# also happens to carry a still-open pre-agent-ops#639 block — the exact
+# defect `refinement_label_project` exists to prevent.
 #
-# Requirement 38b's *live* reconciliation closes that retry gap
-# (agent-ops#816, TD-PPagop-26082602): `refinement_blocked_label_orphaned`
-# needs no `own-label-action` history and no provenance field, only a live
-# GitHub read — a `blocked:<reason>` label is never a human's own, so its
-# presence on an open issue with no open block behind it is proof enough on
-# its own, and `blocked` rides along whenever that same issue's live labels
-# carry both. `lib/candidate-gather.sh`'s per-repo gather loop runs it every
-# cycle a repo's `sources` configures the `issues` band, so a pair still
-# standing when its block clears comes off within one cycle, whether or not
-# this script (or `record_needs_refinement_block`) ever logged a thing about
-# it.
+# **What each path releases for a legacy-swept issue**, stated plainly.
+# `refinement_blocked_label_targets` offers the *reason* label up when the
+# block clears — a legacy block's `needs_refinement_assignee`, with neither
+# blocked-label field set, is enough to name it — regardless of OWN-LOG-FILE.
+# If that reason-label removal silently fails, `refinement_blocked_label_stale`
+# (requirement 38b's log-keyed reconciliation sweep, agent-ops#651) retries
+# it, but only when this run's own `add` reached OWN-LOG-FILE: that function
+# offers up only a label whose logged history says `add`, so a run with no
+# OWN-LOG-FILE leaves a failed reason-label removal unretried, the same as the
+# generic `blocked` below.
 #
-# What that live read does not reach is the issue whose reason-label removal
-# *did* take: the reason label is the whole of what puts an issue in front of
-# it, so a legacy-swept issue left carrying a bare `blocked` is invisible to
-# it, and `scripts/gather-issues.sh`'s own `blocked`-label filter goes on
-# excluding that issue for as long as the label stands. TD-PPagop-26082608
-# holds that residue.
+# The generic `blocked` label reaches `refinement_blocked_label_stale` the
+# same way, once OWN-LOG-FILE has recorded its `add`: the moment the block
+# clears — the reason label released, successfully or not — `blocked`'s own
+# add-with-no-later-remove history makes it eligible for retry there too, and
+# `lib/candidate-gather.sh`'s unconditional per-cycle sweep removes it within
+# one cycle of the block clearing (TD-PPagop-26082608). Without OWN-LOG-FILE,
+# `blocked` has no such history anywhere, and two narrower mechanisms are all
+# that can still reach it: requirement 38b's *live* reconciliation
+# (agent-ops#816, TD-PPagop-26082602) — `refinement_blocked_label_orphaned`
+# needs no `own-label-action` history, only a live GitHub read, but only while
+# the issue still carries the reason label live (it is what puts the issue in
+# front of that read at all) — and, once the reason label has itself come
+# off, nothing: a legacy-swept issue left carrying a bare `blocked` with no
+# OWN-LOG-FILE history and no live reason label alongside it stays invisible
+# to both, and `scripts/gather-issues.sh`'s own `blocked`-label filter goes on
+# excluding that issue for as long as the label stands. Passing OWN-LOG-FILE
+# on every run closes that residue for a `blocked` this script itself adds
+# from here on. It does not reach back: a `blocked` a pre-agent-ops#999 run
+# already applied reads `present`, not `added`, on every later run —
+# `refinement_label_project`'s read-before-write guard logs nothing for a
+# label it finds already there, correctly, since it cannot tell this run's
+# own prior application from a human's — so an already-swept, still-open
+# legacy block can still strand a bare `blocked` when it clears. That
+# structural remainder is a separate tech-debt item, not this one's to close.
 #
 # **Projecting onto a block LOG_FILE does not yet know has cleared**
 # (agent-ops#994, TD-PPagop-26082602). `blocked_items` already excludes an
@@ -111,16 +123,16 @@
 # the same way requirement 38b's own live reconciliation does
 # (`fleet_logs_healthy`, lib/fleet.sh): refuse the whole run rather than act
 # on a union that is empty or sits behind a stale peers-fetch marker, since a
-# reconciliation this script cannot retry on its own (it logs no
-# `own-label-action` — see above) must not guess. This is a precondition, not
-# a cure — a union that is merely a little behind, inside the fetch-cron's
-# own interval, still reads healthy and can still miss a very recent clear —
-# but it is exactly the guard already trusted elsewhere in this pipeline for
-# the identical question, and it is what would have caught the #602 run: a
-# migration launched moments after a fetch failure, or against a peers
-# directory that had gone quiet, refuses instead of mis-projecting.
+# projection onto a block LOG_FILE has not yet caught up to clearing must not
+# guess. This is a precondition, not a cure — a union that is merely a little
+# behind, inside the fetch-cron's own interval, still reads healthy and can
+# still miss a very recent clear — but it is exactly the guard already
+# trusted elsewhere in this pipeline for the identical question, and it is
+# what would have caught the #602 run: a migration launched moments after a
+# fetch failure, or against a peers directory that had gone quiet, refuses
+# instead of mis-projecting.
 #
-# Usage: sweep-legacy-refinement-assignees.sh <owner/repo> [log-file] [peers-dir] [fetch-minutes]
+# Usage: sweep-legacy-refinement-assignees.sh <owner/repo> [log-file] [peers-dir] [fetch-minutes] [own-log-file]
 #
 # PEERS_DIR is optional and defaults to unset, which skips the health gate
 # entirely (the pre-agent-ops#994 behaviour, and what every existing caller —
@@ -131,6 +143,17 @@
 # was. FETCH_MINUTES defaults to `fleet_logs_healthy`'s own default (7
 # minutes, `schedule.state_sync_fetch_minutes`'s default) when PEERS_DIR is
 # given without it.
+#
+# OWN-LOG-FILE is optional and defaults to unset, which skips the
+# `own-label-action` logging entirely — the pre-agent-ops#999 behaviour, and
+# what every caller that omits it still gets without change. When given, it
+# must be this node's own persistent log (`state_dir/log.jsonl`, never
+# LOG_FILE itself: LOG_FILE is read-only state, often a synthesized fleet
+# union rather than a file this node can usefully append to and have a peer
+# ever see) — the file `state-sync.sh` publishes to the fleet, so a
+# reconciliation keyed on this run's own `own-label-action add` (requirement
+# 38b's log-keyed sweep, agent-ops#651) reaches every peer on its own next
+# state-sync, not only this node.
 #
 # Prints one line per issue actually touched, `<repo>#<number>: <what>`, to
 # stdout; failures (a `gh` call that did not take) go to stderr and do not
@@ -148,15 +171,36 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$SCRIPT_DIR/lib/refinement.sh"
 # shellcheck source=lib/fleet.sh
 . "$SCRIPT_DIR/lib/fleet.sh"
+# shellcheck source=lib/log-event.sh
+. "$SCRIPT_DIR/lib/log-event.sh"
+# shellcheck source=lib/label-marker.sh
+. "$SCRIPT_DIR/lib/label-marker.sh"
 
 repo="${1:-}"
 log_file="${2:--}"
 peers_dir="${3:-}"
 fetch_minutes="${4:-7}"
+own_log_file="${5:-}"
+node_name="${NODE_NAME:-$(hostname 2>/dev/null || printf 'unknown')}"
+node_name="${node_name//[^A-Za-z0-9._-]/-}"
 if [[ -z "$repo" ]]; then
-  echo "usage: sweep-legacy-refinement-assignees.sh <owner/repo> [log-file] [peers-dir] [fetch-minutes]" >&2
+  echo "usage: sweep-legacy-refinement-assignees.sh <owner/repo> [log-file] [peers-dir] [fetch-minutes] [own-log-file]" >&2
   exit 64
 fi
+
+# sweep_log_own_add REPO NUMBER LABEL
+# Record this run's own `add` in OWN_LOG_FILE, when the caller gave one — the
+# provenance a fresh block's own cycle gets for free (`record_needs_refinement_block`
+# logs the same event, to the cycle's own log) and this script, run outside any
+# cycle, has never had anywhere to write until now (agent-ops#999,
+# TD-PPagop-26082608). Silently a no-op with no OWN_LOG_FILE, preserving every
+# existing caller's behaviour unchanged.
+sweep_log_own_add() {
+  local repo="$1" number="$2" label="$3"
+  [[ -n "$own_log_file" ]] || return 0
+  log_event_append "$own_log_file" cycle "" "$node_name" "own-label-action" \
+    "$(label_own_action_fields "$repo" "$number" "$label" "add")"
+}
 
 if [[ -n "$peers_dir" && "$log_file" != "-" ]]; then
   if ! fleet_logs_healthy "" "$peers_dir" "$log_file" "$fetch_minutes"; then
@@ -192,16 +236,14 @@ while IFS=$'\t' read -r number assignee; do
   # catalogue), so this reads before it writes — `refinement_label_project`,
   # the same guard the fresh path (`record_needs_refinement_block`) uses —
   # rather than an unconditional `refinement_label_add`: a pre-existing
-  # `blocked` is left exactly as found. Unlike the fresh path, this script has
-  # no event of its own to record whether the label was actually `added` or
-  # already `present`, so `refinement_blocked_label_targets` never treats a
-  # legacy block's generic `blocked` as this pipeline's to remove either way
-  # (lib/refinement.sh) — this read stops a needless re-add and a
-  # misleading "applied" line, not a later false removal, which the targets
-  # change already prevents on its own.
+  # `blocked` is left exactly as found, and only a genuine `added` result is
+  # logged (`sweep_log_own_add`, above) — this read is what tells the two
+  # apart, stopping both a needless re-add and a false `own-label-action add`
+  # for a label this run never actually applied.
   case "$(refinement_label_project "$repo" "$number" "$REFINEMENT_BLOCKED_LABEL")" in
     added)
       printf '%s#%s: applied %s\n' "$repo" "$number" "$REFINEMENT_BLOCKED_LABEL"
+      sweep_log_own_add "$repo" "$number" "$REFINEMENT_BLOCKED_LABEL"
       ;;
     present)
       printf '%s#%s: %s already present — left as is\n' "$repo" "$number" "$REFINEMENT_BLOCKED_LABEL"
@@ -217,6 +259,7 @@ while IFS=$'\t' read -r number assignee; do
   if [[ -n "$reason_label" ]]; then
     if refinement_label_add "$repo" "$number" "$reason_label"; then
       printf '%s#%s: applied %s\n' "$repo" "$number" "$reason_label"
+      sweep_log_own_add "$repo" "$number" "$reason_label"
     else
       echo "sweep-legacy-refinement-assignees: $repo#$number: could not apply the $reason_label label" >&2
     fi
