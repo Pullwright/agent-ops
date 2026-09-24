@@ -560,10 +560,11 @@ your review:
    "ready"`, it independently confirms every required check is green at the
    pull request's current head commit, that no code-scanning alert carrying
    a security severity exists on the branch that the default branch does not
-   also carry, and — for an issue-sourced PR, on every target repo, whether
-   or not that repo's own CI checks it — that the body carries a real
-   closing keyword for the issue it claims to close. If that confirmation
-   disagrees with you, the Script
+   also carry, and — on every target repo, whether or not that repo's own CI
+   checks either — that the body carries a real closing keyword for the
+   issue it claims to close if it is issue-sourced, and that the description
+   carries the `## Changelog` section requirement 25c owes if the title owes
+   one. If that confirmation disagrees with you, the Script
    never runs `gh pr ready` at all: it records the same outcome as if you had
    reported `blocked`, naming what it found, and the PR stays a draft. This
    is not a step to perform — you cannot see its verdict from inside this

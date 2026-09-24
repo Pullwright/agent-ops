@@ -1430,6 +1430,8 @@ $(jq . <<<"$input")
                 '{pr_url: $u} + (if $r == "" then {} else {repo: $r} end) + (if $i == "" then {} else {item: $i} end)')"
               e_ck_word="$(jq -r '.closing_keyword.word // ""' <<<"$e_review_json")"
               e_ck_reason="$(jq -r '.closing_keyword.reason // ""' <<<"$e_review_json")"
+              e_cs_word="$(jq -r '.changelog_section.word // ""' <<<"$e_review_json")"
+              e_cs_reason="$(jq -r '.changelog_section.reason // ""' <<<"$e_review_json")"
               e_rc_word="$(jq -r '.reconciliation.word // ""' <<<"$e_review_json")"
               e_rc_reason="$(jq -r '.reconciliation.reason // ""' <<<"$e_review_json")"
               e_rc_revert="$(jq -r '.revert // ""' <<<"$e_review_json")"
@@ -1455,6 +1457,8 @@ $(jq . <<<"$input")
                   review_gate_escalate_unreadable_streak >/dev/null
                 elif [[ "$e_ck_word" == "dirty" ]]; then
                   e_finding="$e_ck_reason"
+                elif [[ "$e_cs_word" == "dirty" ]]; then
+                  e_finding="$e_cs_reason"
                 elif [[ "$e_rc_word" == "dirty" ]]; then
                   e_finding="$e_rc_reason"
                 else
@@ -1481,6 +1485,10 @@ $(jq . <<<"$input")
                 if [[ "$e_ck_word" == "unknown" ]]; then
                   log_event "warning" "$(jq -nc --arg u "$e_pr_url" --arg d "$e_ck_reason" \
                     '{detail: ("could not confirm " + $u + " carries its closing keyword: " + $d), pr_url: $u}')"
+                fi
+                if [[ "$e_cs_word" == "unknown" ]]; then
+                  log_event "warning" "$(jq -nc --arg u "$e_pr_url" --arg d "$e_cs_reason" \
+                    '{detail: ("could not confirm " + $u + " carries its owed changelog section: " + $d), pr_url: $u}')"
                 fi
                 if [[ "$e_rc_word" == "unknown" ]]; then
                   log_event "warning" "$(jq -nc --arg u "$e_pr_url" --arg d "$e_rc_reason" \

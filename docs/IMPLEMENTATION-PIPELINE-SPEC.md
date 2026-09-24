@@ -12247,9 +12247,42 @@ implements.
     contexts in one pass and warns for whichever is missing or unpinned
     (acceptance check 8m). Doing the ruleset edit ahead of the merge is
     harmless (`docs/STANDING-DECISIONS.md`, 2026-08-22 · #648's converse).
-    The workflow guards only the repository that ships it; the Script-side
-    gate that extends the check to every target repository, on
-    `lib/closing-keyword-gate.sh`'s pattern, is agent-ops#1808.
+    That workflow file guards only agent-ops, the repository that carries
+    it — a workflow guards the repository it ships in, not every repository
+    the pipeline raises pull requests in. `poetic` and `poetic-fiddle` carry
+    no `changelog-section` workflow of their own, so enforcement there is
+    script-side instead, on requirement 25a's own `lib/closing-keyword-
+    gate.sh` pattern (agent-ops#1808): `lib/changelog-section-gate.sh`'s
+    `changelog_section_gate` re-reads a pull request's current body and title
+    with `gh pr view --json body,title` and runs them through the same
+    `scripts/check-changelog-section.sh`, at the same two points in
+    `agent-cycle.sh` the closing-keyword gate already stands between the
+    pull request and a human, asked for the same reasons and answered the
+    same way:
+
+    - **Right after the Implementer's PR is raised**, this is *feedback*, not
+      a gate — a second `## Script findings` entry
+      ("**Changelog section (requirement 25c):**") alongside the
+      closing-keyword one where both fire, since both are pull-request body
+      edits the Reviewer's own step 4 already fixes.
+    - **At the Reviewer's own `ready` handoff**, inside `handoff_complete_
+      review` (`lib/handoff.sh`) right after the closing-keyword gate and
+      before the reconciliation gate, this is the gate: a `dirty` verdict
+      hands back through `log_reviewer_handback`, the same shape a dirty
+      closing-keyword verdict already uses, and the handoff JSON carries a
+      `changelog_section: {word, reason}` key beside `closing_keyword`.
+
+    A verdict of `unknown` — `gh pr view` failed past `lib/github-limit.sh`'s
+    retry, its answer carried no title, or the checker could not be run — is
+    a fact about the node, not the pull request, and warns at both points
+    rather than blocking either, on the same reasoning requirement 25a's own
+    `unknown` carries. `CHANGELOG_SECTION_GATE_GH` stubs `gh` for tests, and
+    `CHANGELOG_SECTION_GATE_CHECK` the checker's path.
+
+    So every target repository gets the same deterministic gate: agent-ops
+    from its own CI workflow *and* the script-side gate that also covers it a
+    second time, `poetic` and `poetic-fiddle` from the script-side gate
+    alone. Acceptance check 8k is how the gate itself is verified.
 25d. **`CHANGELOG.md` is assembled from merged pull-request descriptions,
     never hand-edited by the change itself (roadmap decision D27,
     agent-ops#1807).** `scripts/assemble-changelog.sh [--check]
@@ -22106,7 +22139,10 @@ What exists, and the requirements each part answers to:
     before parsing, since a description saved through GitHub's editor
     arrives CRLF. The workflow runs on every `pull_request` event including
     `edited`, passes the title and the body through `env:`, and reports
-    skipped on `merge_group`. Both this script and component 17c below read the
+    skipped on `merge_group`. `lib/changelog-section-gate.sh` (17d below)
+    calls this script unmodified against a pull request's current body and
+    title, re-read with `gh pr view`, for the two target repositories this
+    workflow does not cover. Both this script and component 17c below read the
     `## Changelog` grammar off `lib/changelog-grammar.sh`'s
     `changelog_grammar_walk` rather than each parsing it independently — one
     fence/HTML-comment/heading state machine, and one None/category/bullet
@@ -22141,6 +22177,34 @@ What exists, and the requirements each part answers to:
     manifests, each repository's own adoption issue adding the manifest
     line. Unit-tested against a fixture git repository of squash-shaped
     commits (`test/assemble-changelog.test.sh`); must pass `shellcheck`.
+17d. `lib/changelog-section-gate.sh` implementing requirement 25c's other
+    layer, on `lib/closing-keyword-gate.sh`'s own pattern (17a above,
+    agent-ops#1808): given a pull request URL, `changelog_section_gate` reads
+    its current body and title with `gh pr view --json body,title` and runs
+    both through `scripts/check-changelog-section.sh` unmodified, printing
+    `clean`, `dirty<TAB>reason` or `unknown<TAB>reason` — the same shape
+    `closing_keyword_gate` reports, so a caller folds both into one handoff
+    gate. The reason is always a single line, flattened and stripped of the
+    checker's `::error::` workflow-command prefix the same way 17a's own
+    reason is. `dirty` is reserved for a fault in the pull request itself;
+    "could not ask" — `gh pr view` failing, answering without a title, or the
+    checker exiting 126 or higher — is `unknown`, never a crash and never a
+    fault attributed to the pull request. An empty title is the signal an
+    unreadable answer leaves here, since every real pull request carries one
+    and the checker itself reads an empty title as "owes nothing" — the same
+    hazard 17a's own empty-head-branch check guards against. An empty URL is
+    the one exception, `dirty` because it is a bug in the caller rather than
+    a degraded node. `agent-cycle.sh` calls it at the same two points it
+    calls `closing_keyword_gate`: right after the Implementer's PR is raised
+    (a dirty verdict there becomes a second `## Script findings` entry
+    beside a closing-keyword one where both fire, not a refusal) and again
+    inside `lib/handoff.sh`'s `handoff_complete_review`, right after the
+    closing-keyword gate, which is the enforcing call (handing back through
+    `log_reviewer_handback` on a dirty verdict, the same shape a dirty
+    closing-keyword verdict already uses there). `CHANGELOG_SECTION_GATE_GH`
+    stubs `gh` for tests, and `CHANGELOG_SECTION_GATE_CHECK` the checker's
+    path. Unit-tested (`test/changelog-section-gate.test.sh`); must pass
+    `shellcheck`.
 18. `scripts/sweep-closed-issues.sh` implementing requirement 17c's sweep:
     given a repo slug, a node name and a cycle id, lists that repo's merged
     `pr_label`-labelled pull requests (bounded to the most recently updated),
@@ -26216,6 +26280,35 @@ oblige anyone to edit a test.
    dropped, an actioned-but-young one is kept — and, in `agent-cycle.sh`, that
    the array read is `all_repos_json` rather than the `--repo`-filtered
    `repos_json` or the back-pressure-narrowed `ordered_repos_json`.
+8k. **The changelog-section gate applies to every target repository, not only
+   the one carrying the workflow (requirement 25c, agent-ops#1808).**
+   `test/changelog-section-gate.test.sh` passes against a stubbed `gh`, on
+   acceptance check 8p's own pattern: `changelog_section_gate` reads a pull
+   request's body and title and reports the checker's own verdict as `clean`
+   or `dirty<TAB>reason` — a `chore`/`docs`/`refactor` title with no
+   `## Changelog` section is clean, a `feat`/`fix`/`perf` title (or any type
+   carrying `!`) with a well-formed section or `None.` is clean, and the
+   same title with no section, or a malformed one, is dirty naming the
+   fault. Separately, the cases where the question could not be put report
+   `unknown` and exit 0: an unreadable pull request, an answer carrying no
+   title (which must never read as clean — an empty title reads to the
+   checker as "owes nothing", the shape of a *passing* pull request), and a
+   checker that cannot be run. An empty URL remains `dirty`, and none of
+   these is a crash.
+
+   What `agent-cycle.sh` and `lib/handoff.sh` then *do* with each verdict is
+   asserted separately: `test/closing-keyword-wiring.test.sh`, extended
+   alongside its existing closing-keyword assertions, covers the
+   Implementer-side call — a `dirty` verdict carries on into the Reviewer
+   stage holding the fault and reaches the Reviewer as a second
+   `## Script findings` entry beside a closing-keyword one where both fire;
+   an `unknown` one warns and hands the Reviewer nothing; a clean one does
+   neither. `test/handoff.test.sh`'s `handoff_complete_review` section,
+   extended with a `changelog_section_gate` stub beside its existing
+   `closing_keyword_gate` one, covers the Reviewer's-handoff call: a `dirty`
+   verdict (with the closing-keyword gate clean) makes `safe` false without
+   running the reconciliation gate or the draft flip, and an `unknown`
+   verdict does not.
 9. A cron-style invocation from a minimal environment can resolve `claude`
    and run `claude -V` (or a tiny `claude -p` smoke test) successfully.
 10. One supervised full cycle (`--once`) against whichever repo the ordering
