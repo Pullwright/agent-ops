@@ -12444,11 +12444,26 @@ implements.
     the merge queue — the same "never push under a queued pull request"
     rule every other pushing stage in this pipeline already observes, an
     unreadable queue state treated the same as "queued" (skip), never as
-    "safe to push". That pull request carries the config's own `pr_label`
-    (`.pr_label // "autonomous-agent"`, the same global fallback
-    `scripts/publish-revert-rate.sh` falls back to) and lands through
-    the ordinary Reviewer/Approver/queue path like any other — it is the
-    one pull request D27 (requirement 25c) permits to edit `CHANGELOG.md`.
+    "safe to push". A first run opens that pull request ready for review,
+    not draft, carrying the config's own `pr_label` (`.pr_label //
+    "autonomous-agent"`, the same global fallback
+    `scripts/publish-revert-rate.sh` falls back to) and a `complexity:low`
+    label (created first if the repository lacks it, best-effort, the same
+    colour and description `lib/labels.sh`'s own catalogue gives it) — it is
+    the one pull request D27 (requirement 25c) permits to edit
+    `CHANGELOG.md`. This branch's fixed name is never `branch_prefix`-
+    prefixed and this pull request carries no cycle-authored `selection`
+    event in the fleet log, so it is invisible to every mechanism that reads
+    either of those: the automatic landing-retry sweep (`lib/landing.sh`)
+    can never arm it, and `gather-review-feedback.sh`/`gather-dequeued.sh`/
+    `gather-landing-refusals.sh` can never turn a human's follow-up comment
+    on it into a work order. Being ready and non-draft is what puts it in
+    the ordinary open-pull-request list a human already watches for every
+    other `pr_label`-carrying pull request, and what the unreviewed trigger
+    (agent-ops#890, requirement 46) reads once `merge_autonomy` is raised
+    above `human` — but landing it, on the first run and every force-pushed
+    update after, is always a human's own review and merge, never something
+    this pipeline arms on its own.
 
     Cadence: `schedule.changelog_roll_hour`/`_offset_minutes` (the same
     per-node jitter every other daily publish tick uses) and

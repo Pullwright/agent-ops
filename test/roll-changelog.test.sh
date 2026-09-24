@@ -110,6 +110,8 @@ case "\$1 \$2" in
     echo 999 > "$work/existing-pr-number"
     echo "https://github.com/test-owner/test-repo/pull/999"
     exit 0 ;;
+  "label create")
+    exit 0 ;;
   "pr edit")
     exit 0 ;;
   "api graphql")
@@ -163,8 +165,12 @@ assert_contains "  ... and opens a fresh, empty Unreleased above it" "$content" 
 assert_contains "  ... and sets the marker to #1810's own squash-merge commit" "$content" \
   "<!-- changelog:assembled-through sha=5e78f991c282a0f858942fcd10066a39c102e365 -->"
 assert_contains "a pull request is opened, carrying the migration date" "$(cat "$gh_calls")" "pr create"
-assert_contains "  ... as a draft" "$(cat "$gh_calls")" "--draft"
+assert_not_contains "  ... ready for review, not a draft" "$(cat "$gh_calls")" "--draft"
 assert_contains "  ... labelled" "$(cat "$gh_calls")" "--label autonomous-agent"
+assert_contains "  ... graded complexity:low, so it is visible to the ordinary open-PR queue" \
+  "$(cat "$gh_calls")" "--label complexity:low"
+assert_contains "  ... the complexity:low label is ensured first, best-effort" \
+  "$(cat "$gh_calls")" "label create complexity:low"
 
 # --- Ordinary roll: a marker exists, real commits sit ahead of it -------------
 

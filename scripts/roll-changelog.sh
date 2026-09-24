@@ -51,10 +51,22 @@
 # pull request is not currently in the merge queue, the same "never push
 # under a queued pull request" rule every other pushing stage in this
 # pipeline already observes; an unreadable queue state is treated the same
-# as "queued" (skip), never as "safe to push". That pull request carries
-# this repository's own `pr_label` and lands through the ordinary
-# Reviewer/Approver/queue path like any other — it is the one pull request
-# D27 (requirement 25c) permits to edit `CHANGELOG.md`.
+# as "queued" (skip), never as "safe to push". A fresh pull request is opened
+# ready for review, not draft, carrying this repository's own `pr_label` and
+# a `complexity:low` label (created first if the repository lacks it,
+# best-effort) — the same pair every other stage's autonomous-agent pull
+# request needs to sit in the ordinary open-pull-request queue a human
+# already watches, since this branch's fixed name (`changelog-roll`, never
+# `branch_prefix`-prefixed) is invisible to every gathering script that reads
+# a cycle's own claim on a branch: it carries no `selection` event in the
+# fleet log, so the automatic landing-retry sweep (`lib/landing.sh`) can
+# never arm it, and `gather-review-feedback.sh`/`gather-dequeued.sh`/
+# `gather-landing-refusals.sh` can never hand a human's follow-up comment on
+# it back to an Implementer. Landing this pull request — the first run and
+# every force-pushed update after it — is always a human's own review and
+# merge, the same as this repository's every other pull request at
+# `merge_autonomy: human`; it is the one pull request D27 (requirement 25c)
+# permits to edit `CHANGELOG.md`.
 #
 # `git`/`gh` credentials resolve through the same on-demand shim
 # (`lib/gh-shim.sh`) every other Script-side duty already uses, so no
@@ -229,9 +241,16 @@ if [[ -n "$existing_pr_number" ]]; then
 else
   defaulted_config="$(config_defaults "$SCRIPT_DIR/config.json" "$SCRIPT_DIR/config.schema.json" 2>/dev/null || echo '{}')"
   pr_label="$(jq -r '.pr_label // "autonomous-agent"' <<<"$defaulted_config")"
+  # Best-effort: a repository already worked by the ordinary pipeline has
+  # this label already (lib/labels.sh's own periodic ensure); a fresh
+  # installation may not, and this pull request opens ready rather than
+  # draft, so it needs one now rather than waiting for that ensure to run.
+  "$ROLL_GH" label create "complexity:low" -R "$repo_slug" --color c2e0c6 \
+    --description "Graded by the Implementer; picks the Reviewer tier" >/dev/null 2>&1 || true
   # shellcheck disable=SC2016  # markdown backticks in the format string, not command substitution
   pr_body="$(printf 'Rolls the `[Unreleased]` CHANGELOG.md section to `## [%s]` and opens a fresh, empty `[Unreleased]` above it (agent-ops#1809).\n' "$roll_date")"
   pr_url="$("$ROLL_GH" pr create -R "$repo_slug" --base "$default_branch" --head "$BRANCH" \
-    --draft --title "docs(changelog): roll ${roll_date}" --body "$pr_body" --label "$pr_label")"
+    --title "docs(changelog): roll ${roll_date}" --body "$pr_body" \
+    --label "$pr_label" --label "complexity:low")"
   say "opened $pr_url"
 fi
