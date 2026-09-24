@@ -231,9 +231,9 @@ fi
 # `mergeable` selected against `== "MERGEABLE"` exactly — never `CONFLICTING`
 # (that PR belongs to gather-merge-conflicts.sh alone, see the header) and
 # never `UNKNOWN`. The label filter is the primary "ours" signal.
-ours="$(jq -c "[.[] | select(.isDraft | not)
-                    | select(.mergeable == \"MERGEABLE\")
-                    | select(.headRefName | startswith(\"$branch_prefix\"))]" \
+ours="$(jq -c --arg bp "$branch_prefix" '[.[] | select(.isDraft | not)
+                    | select(.mergeable == "MERGEABLE")
+                    | select(.headRefName | startswith($bp))]' \
         <<<"$ours_all" 2>/dev/null || echo '[]')"
 jq -e 'type == "array"' <<<"$ours" >/dev/null 2>&1 || ours='[]'
 

@@ -345,6 +345,26 @@ empty_out="$(DEQUEUED_GH="$tmp_dir/gh-missing" "$SCRIPT_DIR/scripts/gather-deque
 assert_eq "an unreachable gh degrades to an empty array, exit 0" \
   "[]" "$empty_out"
 
+# --- A branch_prefix carrying a double quote (issue #1006) ------------------
+#
+# Before the fix, the prefix was spliced straight into the jq program text, so
+# a `"` in it broke the program's syntax and the `2>/dev/null || echo '[]'`
+# guard turned that into a silent [] — indistinguishable from "nothing
+# dequeued". Passed as --arg data instead, the same value is just a string to
+# match against, not program text.
+jq -nc --argjson p110 "$(pr_entry 110 'agent/"td110' MERGEABLE false)" \
+  '[$p110]' > "$tmp_dir/prlist.json"
+jq -nc '{"110": {queued: false, dequeued_at: "2026-08-14T01:00:00Z", dequeue_reason: "failed_checks"}}' \
+  > "$tmp_dir/probes.json"
+jq -nc '{"110": []}' > "$tmp_dir/reviews.json"
+jq -nc '{"110": []}' > "$tmp_dir/comments.json"
+
+quoted_out="$(DEQUEUED_GH="$tmp_dir/gh" "$SCRIPT_DIR/scripts/gather-dequeued.sh" "o/r" "autonomous-agent" 'agent/"')"
+assert_eq "a double quote in branch_prefix does not break the jq program into a silent []" \
+  "1" "$(jq 'length' <<<"$quoted_out")"
+assert_eq "  ... and still finds the matching PR rather than swallowing it" \
+  "110" "$(jq -r '.[0].number' <<<"$quoted_out")"
+
 if (( failures > 0 )); then
   printf '\n%d assertion(s) FAILED\n' "$failures"
   exit 1

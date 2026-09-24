@@ -246,6 +246,54 @@ assert_eq "  ... and never writes #135's URL either (issue #300: the guard now r
 assert_contains_json "  ... naming #135 by its branch name instead, which the guard's extractors do not match" \
   "dependabot/npm_and_yarn/eslint-10.9.0" "$(jq -r '.[0].superseded_evidence' <<<"$out")"
 
+# --- A branch_prefix carrying a double quote (issue #1006) ---
+#
+# Before the fix, the prefix was spliced straight into the jq program text, so
+# a `"` in it broke the program's syntax and the `2>/dev/null || echo '[]'`
+# guard turned that into a silent [] — indistinguishable from "nothing
+# conflicted". Passed as --arg data instead, the same value is just a string
+# to match against, not program text.
+cat > "$tmp_dir/ours.json" <<'JSON'
+[
+  {"number": 210, "title": "fix: conflicting change under a quoted prefix", "headRefName": "agent/\"td-quoted",
+   "baseRefName": "main", "headRefOid": "1111111111111111111111111111111111ffff",
+   "isDraft": false, "mergeable": "CONFLICTING", "updatedAt": "2026-08-14T00:00:00Z",
+   "url": "https://github.com/o/r/pull/210", "body": "conflict test"}
+]
+JSON
+printf '[]\n' > "$tmp_dir/dependabot.json"
+
+out="$(MERGE_CONFLICTS_GH="$tmp_dir/gh" "$SCRIPT_DIR/scripts/gather-merge-conflicts.sh" o/r autonomous-agent 'agent/"' 2>/dev/null)"
+assert_eq "a double quote in branch_prefix does not break the jq program into a silent []" \
+  "1" "$(jq 'length' <<<"$out")"
+assert_eq "  ... and still finds the matching PR rather than swallowing it" \
+  "210" "$(jq -r '.[0].number' <<<"$out")"
+
+# Restore the fixtures the next section (the cap/truncation test) still relies
+# on — this block borrowed ours.json/dependabot.json for its own candidate.
+printf '[]\n' > "$tmp_dir/ours.json"
+cat > "$tmp_dir/dependabot.json" <<'JSON'
+[
+  {"number": 129, "title": "chore(deps-dev): Bump eslint from 9.39.5 to 10.8.0",
+   "headRefName": "dependabot/npm_and_yarn/eslint-10.8.0", "baseRefName": "main",
+   "headRefOid": "c96c8ef9d31a8928b39d963f1de3b92dbea256c4",
+   "isDraft": false, "mergeable": "CONFLICTING", "updatedAt": "2026-08-03T00:48:14Z",
+   "url": "https://github.com/o/r/pull/129", "body": "Bumps eslint from 9.39.5 to 10.8.0.",
+   "comments": []},
+  {"number": 135, "title": "chore(deps-dev): Bump eslint from 9.39.5 to 10.9.0",
+   "headRefName": "dependabot/npm_and_yarn/eslint-10.9.0", "baseRefName": "main",
+   "headRefOid": "deadbeefcafebabe0000000000000000000000",
+   "isDraft": false, "mergeable": "MERGEABLE", "updatedAt": "2026-08-05T00:00:00Z",
+   "url": "https://github.com/o/r/pull/135", "body": "Bumps eslint from 9.39.5 to 10.9.0.",
+   "comments": []},
+  {"number": 170, "title": "chore(ci): bump codeql-action",
+   "headRefName": "dependabot/github_actions/github/codeql-action-4.37.3", "baseRefName": "main",
+   "headRefOid": "1111111111111111111111111111111111111",
+   "isDraft": false, "mergeable": "UNKNOWN", "updatedAt": "2026-08-01T00:00:00Z",
+   "url": "https://github.com/o/r/pull/170", "body": "", "comments": []}
+]
+JSON
+
 # --- The listings state their cap and notice truncation (PR #352) ---
 #
 # Both `gh pr list` calls must ask for GITHUB_PR_LIST_LIMIT slots rather than
