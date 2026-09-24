@@ -819,7 +819,7 @@
       "default": 14,
       "x-docs": {
         "readme": "Days a reservation-release marker (a `td/<id>`/`td-record/<id>` branch delete a cleanup could not land) may keep failing its retried delete before the sweep treats it as permanently stuck — an archived target repository, a protected branch, a login that lost push access — rather than retrying and warning identically forever. Past this age, the marker escalates exactly once, as a distinct `reservation-release-stuck` event rather than the recurring `warning`, and keeps retrying silently after that. `0` disables escalation.",
-        "spec": "How old a delete-failed-again marker's own `ts` may get, in days, before `release_one`'s delete-failed-again path (requirement 17g) escalates it — once, via a `reservation-release-stuck` action distinct from `warning` — instead of retrying and warning on every pass. `0` disables escalation, the safe fallback for an unparseable value, the same shape `void_retire_after_days` already uses: never escalating costs a human noticing late, wrongly escalating costs nothing observable beyond one extra event.",
+        "spec": "How old a delete-failed-again marker's own `ts` may get, in days, before `_release_marker`'s delete-failed-again path (requirement 17g) escalates it — once, via a `reservation-release-stuck` action distinct from `warning` — instead of retrying and warning on every pass. `0` disables escalation, the safe fallback for an unparseable value, the same shape `void_retire_after_days` already uses: never escalating costs a human noticing late, wrongly escalating costs nothing observable beyond one extra event.",
         "value": {
           "readme": "`14` days",
           "spec": "14 d"
