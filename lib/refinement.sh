@@ -361,7 +361,7 @@ refinement_blocked_label_stale() {
     | "\(.repo)\t\(.item)\t\(.label)"' <<<"$docs" 2>/dev/null || true
 }
 
-# refinement_blocked_label_orphaned OPEN_BLOCKED_JSON LIVE_JSON REPO [LOG_FILE]
+# refinement_blocked_label_orphaned OPEN_BLOCKED_JSON LIVE_JSON REPO [LOG_FILE] [STRANDED_JSON]
 # Print, one per line as `<repo>\t<item>\t<label>`, every `blocked:<reason>`/
 # `blocked` label a *live* GitHub read shows still standing on an open issue in
 # REPO with no open block behind it — the class `refinement_blocked_label_stale`
@@ -417,10 +417,37 @@ refinement_blocked_label_stale() {
 # An issue LIVE_JSON does not name — because it never carried the reason
 # label, live or in the fetch — never reaches this function at all, so a
 # standalone hand-applied `blocked` is never touched by it.
+#
+# STRANDED_JSON (agent-ops#1832) closes the one cohort LIVE_JSON's own
+# reason-label read structurally cannot reach: a legacy block (the same
+# `$legacy` test above — `needs_refinement_assignee` set, neither
+# blocked-label field) whose reason label already released normally, leaving
+# a bare `blocked` with no reason label alongside it to make the issue show up
+# in a `--label blocked:<reason>` listing at all. The reason label's own
+# no-human-reaches-for-it proof is exactly what is missing here, so a second
+# proof takes its place: `[{"number": …, "labelled_at": …}]`, the live GitHub
+# timestamp of when *that issue's own* `blocked` label was last applied — the
+# same per-label timeline read `scripts/gather-hand-flagged-refinements.sh`
+# already does for `needs_refinement_label` — compared against the matching
+# legacy record's own `ts` within `LABEL_OWN_SKEW_TOLERANCE_SECONDS`
+# (`lib/label-marker.sh`, requirement 39f's own tolerance, reused rather than
+# duplicated) in either direction. A sweep run applies `blocked` and records
+# the block in the same invocation, so a genuine legacy application's
+# `labelled_at` sits within that skew of the block's own `ts`; a human's
+# later, unrelated `blocked` on an issue that happens to also carry an old,
+# long-cleared legacy record does not, and is left alone — over-held, the
+# same direction every other unprovable case in this function already
+# defaults to. A candidate with no legacy record at all, a modern record, or
+# an unresolvable `labelled_at` is skipped outright: unlike the reason-label
+# cohort, there is no live-state proof to fall back on here, so "no proof"
+# never rides along on absence alone. Optional and additive — omitted or
+# empty, existing callers and the LIVE_JSON cohort above are unaffected.
 refinement_blocked_label_orphaned() {
-  local open_blocked="${1:-[]}" live="${2:-[]}" repo="${3:-}" log_src="${4:-}" reason_label log_json
+  local open_blocked="${1:-[]}" live="${2:-[]}" repo="${3:-}" log_src="${4:-}" stranded="${5:-[]}" \
+    reason_label log_json tol
   [[ -n "$open_blocked" ]] || open_blocked='[]'
   [[ -n "$live" ]] || live='[]'
+  [[ -n "$stranded" ]] || stranded='[]'
   reason_label="$(refinement_blocked_reason_label "$REFINEMENT_BLOCK_KIND")"
   [[ -n "$reason_label" && -n "$repo" ]] || return 0
   log_json='[]'
@@ -432,8 +459,11 @@ refinement_blocked_label_orphaned() {
     fi
     [[ -n "$log_json" ]] || log_json='[]'
   fi
-  jq -nr --arg repo "$repo" --arg kind "$REFINEMENT_BLOCK_KIND" --arg reason "$reason_label" '
-    input as $live | input as $open | input as $log |
+  tol="${LABEL_OWN_SKEW_TOLERANCE_SECONDS:-120}"
+  jq -nr --arg repo "$repo" --arg kind "$REFINEMENT_BLOCK_KIND" --arg reason "$reason_label" \
+      --argjson tol "$tol" '
+    def own_epoch($s): (try ($s | fromdateiso8601) catch null);
+    input as $live | input as $open | input as $log | input as $stranded |
     ($open
      | map(select((.kind // "") == $kind and (.repo // "") == $repo))
      | map((.item // "") | tostring)) as $open_items |
@@ -447,21 +477,35 @@ refinement_blocked_label_orphaned() {
       | map({key: ((.item // "") | tostring), value: .})
       | from_entries
     ) as $history |
-    [ $live[]?
-      | . as $issue
-      | ($issue.number | tostring) as $num
-      | select(($open_items | index($num)) == null)
-      | ($history[$num]) as $rec
-      | ( $rec != null
-          and (($rec.blocked_label // "") == "")
-          and (($rec.blocked_reason_label // "") == "")
-          and (($rec.needs_refinement_assignee // "") != "") ) as $legacy
-      | ( $rec == null or $legacy or (($rec.blocked_label // "") != "") ) as $blocked_provable
-      | ([$reason]
-         + (if ([$issue.labels[]?] | index("blocked")) and $blocked_provable
-            then ["blocked"] else [] end))[]
-      | "\($repo)\t\($issue.number)\t\(.)" ]
-    | .[]' <<<"$live"$'\n'"$open_blocked"$'\n'"$log_json" 2>/dev/null || true
+    ( [ $live[]?
+        | . as $issue
+        | ($issue.number | tostring) as $num
+        | select(($open_items | index($num)) == null)
+        | ($history[$num]) as $rec
+        | ( $rec != null
+            and (($rec.blocked_label // "") == "")
+            and (($rec.blocked_reason_label // "") == "")
+            and (($rec.needs_refinement_assignee // "") != "") ) as $legacy
+        | ( $rec == null or $legacy or (($rec.blocked_label // "") != "") ) as $blocked_provable
+        | ([$reason]
+           + (if ([$issue.labels[]?] | index("blocked")) and $blocked_provable
+              then ["blocked"] else [] end))[]
+        | "\($repo)\t\($issue.number)\t\(.)" ]
+      + [ $stranded[]?
+          | . as $s
+          | ($s.number | tostring) as $num
+          | select(($open_items | index($num)) == null)
+          | ($history[$num]) as $rec
+          | select($rec != null
+                   and (($rec.blocked_label // "") == "")
+                   and (($rec.blocked_reason_label // "") == "")
+                   and (($rec.needs_refinement_assignee // "") != ""))
+          | (own_epoch($s.labelled_at // "")) as $at
+          | (own_epoch($rec.ts // "")) as $bt
+          | select($at != null and $bt != null
+                   and (($at - $bt) | if . < 0 then -. else . end) <= $tol)
+          | "\($repo)\t\($s.number)\tblocked" ]
+    )[]' <<<"$live"$'\n'"$open_blocked"$'\n'"$log_json"$'\n'"$stranded" 2>/dev/null || true
 }
 
 # Memoised per (repo, label): a token that cannot create labels must cost one

@@ -380,6 +380,64 @@ while IFS=$'\t' read -r _ slug default_branch; do
         fi
       done < <(refinement_blocked_label_orphaned "$(blocked_items "$union_log")" \
                  "$live_reason_issues_json" "$slug" "$union_log")
+
+      # Requirement 38b's Route 2 (agent-ops#1832): the reconciliation above
+      # only ever sees an issue that still carries `blocked:<reason>` live —
+      # by construction, since `live_reason_issues_json` is fetched by that
+      # very label. A legacy block (`sweep-legacy-refinement-assignees.sh` run
+      # before agent-ops#999's OWN-LOG-FILE argument existed) whose reason
+      # label already released normally when its block cleared drops off that
+      # listing for good, stranding its bare `blocked` with nothing left to
+      # bring the issue back in front of either reconciliation
+      # (TD-PPagop-26082608's residue). A second live read closes it: every
+      # open issue in $slug carrying `blocked` with no reason label alongside
+      # it — the cohort the first read cannot name — each with its own
+      # `blocked` label's own live `labelled_at`, the same per-label timeline
+      # endpoint used above, so `refinement_blocked_label_orphaned`'s
+      # STRANDED_JSON parameter can compare it against the matching legacy
+      # `attempt-failed` record's own `ts` and decide whether the two are
+      # close enough (`LABEL_OWN_SKEW_TOLERANCE_SECONDS`) to be the same
+      # sweep run's own application, not a human's independent one.
+      live_bare_blocked_json="$(gh issue list -R "$slug" --label blocked \
+          --state open --limit "$GITHUB_PR_LIST_LIMIT" --json number,labels 2>/dev/null \
+        | jq -c --arg reason "$refinement_reason_label" \
+            '[.[] | select(([.labels[].name] | index($reason)) == null)
+              | {number: .number}]' 2>/dev/null)" || true
+      jq -e 'type == "array"' <<<"$live_bare_blocked_json" >/dev/null 2>&1 \
+        || live_bare_blocked_json='[]'
+      live_bare_blocked_n="$(jq 'length' <<<"$live_bare_blocked_json" 2>/dev/null)" \
+        || live_bare_blocked_n=0
+      if github_pr_list_truncated "$live_bare_blocked_n"; then
+        log_event "warning" "$(jq -nc \
+          --arg d "the blocked listing for $slug came back at the $GITHUB_PR_LIST_LIMIT cap — a stranded legacy label past it is not reconciled this cycle" \
+          '{detail: $d}')"
+      fi
+      stranded_json='[]'
+      if (( live_bare_blocked_n > 0 )); then
+        stranded_entries=()
+        while IFS= read -r bare_num; do
+          [[ -n "$bare_num" ]] || continue
+          bare_labelled_at="$(gh api --paginate "repos/$slug/issues/$bare_num/timeline" \
+              --jq '.[] | select(.event == "labeled" and .label.name == "blocked")
+                    | .created_at // empty' 2>/dev/null | sort | tail -1)" || bare_labelled_at=""
+          stranded_entries+=("$(jq -nc --argjson n "$bare_num" --arg at "$bare_labelled_at" \
+              '{number: $n, labelled_at: $at}')")
+        done < <(jq -r '.[].number' <<<"$live_bare_blocked_json" 2>/dev/null)
+        if (( ${#stranded_entries[@]} > 0 )); then
+          stranded_json="$(printf '%s\n' "${stranded_entries[@]}" | jq -sc '.')"
+        fi
+      fi
+      while IFS=$'\t' read -r strand_repo strand_item strand_label; do
+        [[ -n "$strand_repo" && -n "$strand_item" && -n "$strand_label" ]] || continue
+        if refinement_label_remove "$strand_repo" "$strand_item" "$strand_label"; then
+          log_event "own-label-action" \
+            "$(label_own_action_fields "$strand_repo" "$strand_item" "$strand_label" "remove")"
+        else
+          log_event "warning" "$(jq -nc --arg d "could not remove the stranded legacy $strand_label label from $strand_repo#$strand_item" \
+             '{detail: $d}')"
+        fi
+      done < <(refinement_blocked_label_orphaned "$(blocked_items "$union_log")" \
+                 '[]' "$slug" "$union_log" "$stranded_json")
     fi
     issues_raw="$(gather_issues "$slug")"
     emit_first_seen "$slug" issues "$issues_raw"

@@ -91,24 +91,27 @@
 # add-with-no-later-remove history makes it eligible for retry there too, and
 # `lib/candidate-gather.sh`'s unconditional per-cycle sweep removes it within
 # one cycle of the block clearing (TD-PPagop-26082608). Without OWN-LOG-FILE,
-# `blocked` has no such history anywhere, and two narrower mechanisms are all
-# that can still reach it: requirement 38b's *live* reconciliation
-# (agent-ops#816, TD-PPagop-26082602) — `refinement_blocked_label_orphaned`
-# needs no `own-label-action` history, only a live GitHub read, but only while
-# the issue still carries the reason label live (it is what puts the issue in
-# front of that read at all) — and, once the reason label has itself come
-# off, nothing: a legacy-swept issue left carrying a bare `blocked` with no
-# OWN-LOG-FILE history and no live reason label alongside it stays invisible
-# to both, and `scripts/gather-issues.sh`'s own `blocked`-label filter goes on
-# excluding that issue for as long as the label stands. Passing OWN-LOG-FILE
-# on every run closes that residue for a `blocked` this script itself adds
-# from here on. It does not reach back: a `blocked` a pre-agent-ops#999 run
-# already applied reads `present`, not `added`, on every later run —
+# `blocked` has no such history anywhere, and three mechanisms can still reach
+# it: requirement 38b's first *live* reconciliation (agent-ops#816,
+# TD-PPagop-26082602) — `refinement_blocked_label_orphaned` needs no
+# `own-label-action` history, only a live GitHub read, but only while the
+# issue still carries the reason label live (it is what puts the issue in
+# front of that read at all); its second live reconciliation (agent-ops#1832)
+# for the case that leaves neither history nor a live reason label behind — a
+# legacy-swept issue whose reason label already released normally, no
+# OWN-LOG-FILE history because this run predates that argument — comparing the
+# bare `blocked` label's own live `labelled_at` against the legacy block's own
+# recorded event timestamp, within `LABEL_OWN_SKEW_TOLERANCE_SECONDS`, in place
+# of the `own-label-action` history this run never had anywhere to write; and,
+# for a `blocked` this script itself adds *from here on*, OWN-LOG-FILE's own
+# `own-label-action` record once the caller starts passing it. Passing
+# OWN-LOG-FILE does not reach back: a `blocked` a pre-agent-ops#999 run already
+# applied reads `present`, not `added`, on every later run —
 # `refinement_label_project`'s read-before-write guard logs nothing for a
-# label it finds already there, correctly, since it cannot tell this run's
-# own prior application from a human's — so an already-swept, still-open
-# legacy block can still strand a bare `blocked` when it clears. That
-# structural remainder is a separate tech-debt item, not this one's to close.
+# label it finds already there, correctly, since it cannot tell this run's own
+# prior application from a human's — but that no longer matters for release,
+# since agent-ops#1832's timestamp comparison needs no such history to begin
+# with.
 #
 # **Projecting onto a block LOG_FILE does not yet know has cleared**
 # (agent-ops#994, TD-PPagop-26082602). `blocked_items` already excludes an
