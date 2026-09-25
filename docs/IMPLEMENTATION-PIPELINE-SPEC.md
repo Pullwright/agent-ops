@@ -10957,11 +10957,21 @@ implements.
 
     - **A live read for the only two trimmed bands, the pre-fetched entry for
       the rest.** `issues` and `tech-debt` are the only bands the fit ladder
-      (requirement 4i) ever trims, so these two are rebuilt from a fresh `gh
-      issue view` (`item_live_entry`) every time they are selected, whether or
+      (requirement 4i) ever trims, so these two are rebuilt from a fresh live
+      read (`item_live_entry`) every time they are selected, whether or
       not this particular cycle actually trimmed them — a work order's
       `context` must never depend on the band entry's freshness at all, not
-      merely recover when it happened to be visibly short. Tech-debt has been
+      merely recover when it happened to be visibly short. That read is two
+      calls, and the split is load-bearing: `gh issue view --json title,body`
+      for the title and body, and the **paginated** REST comments endpoint
+      (`gh api repos/<slug>/issues/<n>/comments --paginate`) for the thread,
+      never `gh issue view`'s own `--json comments` — that GraphQL field
+      returns only the first ~100 comments and does not paginate, so composing
+      from it would have capped this requirement's "body and every comment"
+      guarantee at a ceiling it never declares and a longer thread would lose
+      its tail silently, exactly where a clarification or a scope cut tends to
+      sit (agent-ops#1012). The composed `context` therefore carries the whole
+      thread at any length. Tech-debt has been
       a GitHub issue carrying `pw::type:tech-debt` since the register's D15
       migration, so it is fetched identically to an `issues` entry. The other
       eight sources' band entries are never trimmed at all (the fit ladder's
