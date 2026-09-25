@@ -51,7 +51,7 @@ assert_eq() {
 extract() {  # <rc-variable-name>
   local needle='--argjson rc "$'"$1"'"'
   awk -v rc="$needle" '
-    index($0, rc) && /^log_event "stage-end"/ { on = 1 }
+    index($0, rc) && /^[[:space:]]*log_event "stage-end"/ { on = 1 }
     on { print }
     on && /end\)\047\)"$/ { exit }
   ' "$CYCLE"
