@@ -950,7 +950,7 @@ Five things are worth knowing:
   rebuild with `--build-arg PUID=…` to match a host directory).
 - **Give this node model credentials** (primary: BYO API key; alternative:
   subscription OAuth): The primary path (D4) is to set `ANTHROPIC_API_KEY` in
-  `.env` (step 2) and `docker compose up -d` to pick it up — nothing further to
+  `.env` and `docker compose up -d` to pick it up — nothing further to
   do, no interactive step, and any number of nodes can share the same key. Or,
   if you have a Claude subscription, authenticate once per node with `docker
   compose exec scheduler claude` and complete the interactive login. This
@@ -2589,7 +2589,7 @@ step 5 deletes it from there. Two things are worth a moment first:
 The `claude-config` volume stores the OAuth credentials from an interactive
 subscription login. It is not worth preserving if your node used the BYO
 API-key path (the primary, first-class configuration — set `ANTHROPIC_API_KEY`
-in `.env`, step 2), since `claude` reads the API key from the environment on
+in `.env`), since `claude` reads the API key from the environment on
 every invocation and there is nothing stored in this volume. If your node used
 the alternative OAuth subscription path, the credentials in it are per node;
 a replacement node logs in once if configured for the OAuth path, or simply
