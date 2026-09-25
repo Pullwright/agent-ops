@@ -873,7 +873,18 @@ while IFS=$'\t' read -r key value; do
   else
     fail "$resolved"
   fi
+# Read against the raw config file, as every model key in this list is — so
+# the review pipeline's own model has to be looked up under either spelling
+# of its block: project_review is still accepted as a deprecated alias for
+# repository_review (agent-ops#592, D7), and reading only the current
+# spelling here would drop the review model out of this check entirely for
+# an installation that has not renamed its config.json yet, which is exactly
+# the quiet failure the check exists to catch. The reported key name follows
+# whichever spelling config.json actually uses, so a `fail` names a key the
+# operator can find in their own file.
 done < <(jq -r '
+  (if .repository_review != null then "repository_review" else "project_review" end) as $rr_key |
+  (.repository_review // .project_review // {}) as $rr |
   [ {k: "coordinator_model",          v: .coordinator_model},
     {k: "implementer_model_default",  v: .implementer_model_default},
     {k: "implementer_model_trivial",  v: .implementer_model_trivial},
@@ -885,10 +896,10 @@ done < <(jq -r '
     {k: "enabler_model",              v: .enabler_model},
     {k: "refiner_model",              v: .refiner_model},
     {k: "monitor_model",              v: .monitor_model},
-    {k: "repository_review.defaults.model", v: .repository_review.defaults.model}
+    {k: "\($rr_key).defaults.model", v: $rr.defaults.model}
   ]
-  + [ (.repository_review.repos // [])[] | select(has("model"))
-      | {k: (.slug + "'"'"'s repository_review.model override"), v: .model} ]
+  + [ ($rr.repos // [])[] | select(has("model"))
+      | {k: (.slug + "'"'"'s \($rr_key).model override"), v: .model} ]
   | .[] | select((.v // "") != "") | [.k, .v] | @tsv' "$config_file")
 
 # Requirement 1c, "the floor" (agent-ops#822): refiner_model and enabler_model

@@ -60,7 +60,7 @@ A self-hosted, unattended pipeline that automatically selects, implements, and r
   - [Why a stage was stopped](#why-a-stage-was-stopped)
   - [See the security & code-quality findings](#see-the-security--code-quality-findings)
 - [Repository review](#repository-review)
-  - [Configuration (`project_review` block in `config.json`)](#configuration-project_review-block-in-configjson)
+  - [Configuration (`repository_review` block in `config.json`)](#configuration-repository_review-block-in-configjson)
   - [Review instructions and context](#review-instructions-and-context)
   - [Install](#install)
   - [Operate](#operate)
@@ -622,7 +622,7 @@ Keys:
 | `resources` | see `config.json` | Per-container and per-volume budgets D14 compares measured actuals against (`scripts/doctor.sh` warns on a breach; the dashboard renders the comparison per node). `memory_bytes`/`cpu_cores` mirror `deploy/docker/compose.yaml`'s own `mem_limit`/`cpus`, which remain the enforcement mechanism; `bandwidth_bytes_per_hour` and every `disk_bytes` are provisional, set before any real fleet window existed. |
 <!-- config-table:end -->
 
-Every `*_model` key above, plus `project_review.defaults.model` (or a repo's
+Every `*_model` key above, plus `repository_review.defaults.model` (or a repo's
 own override) below, also accepts a
 provider-qualified id — `anthropic/claude-sonnet-5` alongside the bare
 `claude-sonnet-5` — with identical behaviour; the qualifier is optional
@@ -630,7 +630,7 @@ because Anthropic is the only executable provider today. A qualifier naming
 any other provider is rejected at cycle start with an error naming the key,
 not passed to the `claude` CLI. No existing config needs to change.
 
-The `project_review` object configures the separate repository-review pipeline — see [Repository review](#repository-review).
+The `repository_review` object configures the separate repository-review pipeline — see [Repository review](#repository-review).
 
 <!-- config-table:notes id=main — GENERATED from config.schema.json by scripts/render-config-table.sh; edit the schema, not this section -->
 
@@ -1985,7 +1985,7 @@ A second, independent pipeline — the **repository-review** pipeline, named
 because each run takes one target repo, on its own, with its own clone,
 branch, report set and pull request — runs a full **project review** of that
 repo on a configured cadence
-(`project_review.defaults.min_days_between_reviews`) and opens a pull
+(`repository_review.defaults.min_days_between_reviews`) and opens a pull
 request with the results — a set of Markdown reports (summary, findings,
 prioritised recommendations, ready-to-use improvement prompts). Debt the
 review surfaces is filed straight to GitHub as `pw::type:tech-debt`-labelled
@@ -2003,7 +2003,7 @@ the two never spend quota at the same moment. The `project-review` skill it
 runs is vendored at `.claude/skills/project-review/` and staged into each
 ephemeral clone at run time (never committed to the repo under review).
 
-### Configuration (`project_review` block in `config.json`)
+### Configuration (`repository_review` block in `config.json`)
 
 <!-- config-table:start id=review — GENERATED from config.schema.json by scripts/render-config-table.sh; edit the schema, not these rows -->
 | Key | Default | Notes |
@@ -2049,7 +2049,7 @@ and `repo_context_file` let you tell a review what to weigh in *this*
 repository and what it is for, without forking the skill.
 
 ```json
-"project_review": {
+"repository_review": {
   "defaults": {
     "review_instructions": ["review-instructions/poetic-fiddle.md"],
     "review_context": ["review-context/poetic-suite.md"],
@@ -2087,7 +2087,7 @@ resolved source labelled with its own origin — `"source": "config"` or
 command. `review-stage-start` records every resolved source and a sha256 of
 its text, so a past review's inputs are reconstructable without the log
 carrying arbitrary file content. All three keys resolve per repository on
-the same `defaults`/`repos[]` rule as the rest of `project_review`.
+the same `defaults`/`repos[]` rule as the rest of `repository_review`.
 
 ### Install
 

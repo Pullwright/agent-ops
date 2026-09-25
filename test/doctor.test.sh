@@ -1879,12 +1879,21 @@ rc=$?
 assert_contains "project_review set alone warns, naming repository_review as the replacement" \
   "[warn] project_review is set — it is accepted as a deprecated alias for repository_review" "$out"
 assert_eq "and this alone does not fail the run" "0" "$rc"
+# The "Models" section reads its keys against the raw config file, not the
+# config_defaults merge, so it has to look the review block up under either
+# spelling: an installation still on the deprecated one must not quietly lose
+# the model-id check on its review model. The reported key name follows the
+# spelling actually in use, so the line names a key the operator can find.
+assert_contains "the review model is still resolved under the deprecated spelling" \
+  "[ ok ] project_review.defaults.model → claude-sonnet-5" "$out"
 
 out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH -u ANTHROPIC_API_KEY -u NOTIFY_WEBHOOK_URL PATH="$stub_bin:$PATH" \
   bash "$DOCTOR" --config "$base_config" 2>&1)"
 rc=$?
 assert_contains "repository_review set alone (the shipped spelling) earns a positive ok, no alias warning" \
   "[ ok ] repository_review is set (no deprecated project_review alias in use)" "$out"
+assert_contains "and the review model resolves under the current spelling's own key name" \
+  "[ ok ] repository_review.defaults.model → claude-sonnet-5" "$out"
 
 both_review_spellings_config="$tmp/both-review-spellings-config.json"
 jq '.project_review = .repository_review' "$base_config" > "$both_review_spellings_config"
