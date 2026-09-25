@@ -1559,6 +1559,49 @@ UNREVIEWED_ESC_BODY
 # across nodes for one propagation interval; the worst transient outcome is
 # a doubled engagement whose second review lands under the same App
 # identity, which GitHub folds into one standing position.
+
+# _approver_restale_diff_unchanged SLUG NUMBER BASE OLD_COMMIT BRANCH
+# Requirement 46a (agent-ops#1806): sharpens the stale trigger's own
+# "genuine progress" test. `approver_newest_commit_authored_at` alone
+# cannot distinguish a real fix from a merge-conflicts resolution commit
+# that authors fresh (so its date is genuinely newer than the review) but
+# introduces no net change — a clean rebase, or a both-sides-kept
+# resolution reproduced on the moved base. This asks the diff itself: is
+# BRANCH's current head, diffed against BASE, patch-id-identical
+# (`rebase_only_push`, `lib/rebase-only.sh`) to OLD_COMMIT — the standing
+# review's own pinned commit — diffed against the same BASE? True only when
+# it is; a real content change (including a same-region conflict resolved
+# by keeping both sides, whose diff necessarily differs from either side's
+# own) reports false and takes the ordinary re-review path below.
+#
+# Needs a fresh, throwaway clone, the same shape and cost as the sweep's own
+# `_approver_restale_review` clone below (`$workspace_root/${cycle_id}-…`,
+# `assert_in_workspace`, `clone_repo`) — one clone per candidate this branch
+# actually reaches, never per candidate the sweep merely lists: OLD_COMMIT
+# is not necessarily reachable from any live ref once the pull request has
+# moved past it, so a shallow fetch of BRANCH alone would not resolve it.
+# Fails closed on any read failure: "could not tell" is never "unchanged",
+# since that would silently retire a review nobody has confirmed still
+# applies.
+_approver_restale_diff_unchanged() {
+  local slug="$1" number="$2" base="$3" old_commit="$4" branch="$5"
+  local diff_clone_dir new_head result=1
+  [[ -n "$base" && -n "$old_commit" && -n "$branch" ]] || return 1
+  diff_clone_dir="$workspace_root/${cycle_id}-diff-unchanged-${number}"
+  assert_in_workspace "$diff_clone_dir"
+  if clone_repo "$slug" "$diff_clone_dir" 2>"$cycle_dir/diff-unchanged-clone-${number}.err" \
+     && git -C "$diff_clone_dir" fetch --quiet origin "$old_commit" "$branch" "$base" \
+          2>>"$cycle_dir/diff-unchanged-clone-${number}.err"; then
+    new_head="$(git -C "$diff_clone_dir" rev-parse "origin/$branch" 2>/dev/null)"
+    if [[ -n "$new_head" ]] \
+       && rebase_only_push "$diff_clone_dir" "origin/$base" "$old_commit" "origin/$base" "$new_head"; then
+      result=0
+    fi
+  fi
+  [[ -d "$diff_clone_dir" ]] && rm -rf -- "$diff_clone_dir"
+  return "$result"
+}
+
 _approver_restale_sweep_repo() {
   local slug="$1" login="$2"
   local level open
@@ -1567,7 +1610,7 @@ _approver_restale_sweep_repo() {
   [[ "$level" != "human" ]] || return 0
 
   open="$(gh pr list -R "$slug" --state open --label "$pr_label" \
-    --json number,url,headRefName,headRefOid,isDraft,reviewDecision,title,labels,createdAt \
+    --json number,url,headRefName,headRefOid,baseRefName,isDraft,reviewDecision,title,labels,createdAt \
     --limit "$GITHUB_PR_LIST_LIMIT" 2>/dev/null || true)"
   jq -e 'type == "array"' <<<"$open" >/dev/null 2>&1 || open='[]'
   if github_pr_list_truncated "$(jq 'length' <<<"$open")"; then
@@ -1579,9 +1622,9 @@ _approver_restale_sweep_repo() {
   local candidates
   candidates="$(jq -c '[.[] | select(.isDraft | not) | select(.reviewDecision == "CHANGES_REQUESTED")
     | . + {complexity: ((.labels // []) | map(.name) | map(select(startswith("complexity:"))) | first // "" | sub("^complexity:";""))}
-    | {number, url, branch: .headRefName, head: (.headRefOid // ""), title, complexity}]' <<<"$open" 2>/dev/null || echo '[]')"
+    | {number, url, branch: .headRefName, head: (.headRefOid // ""), base: .baseRefName, title, complexity}]' <<<"$open" 2>/dev/null || echo '[]')"
 
-  local cand pr_url branch number head title complexity standing state commit review_at
+  local cand pr_url branch base number head title complexity standing state commit review_at
   local reviews_raw review_id item_ref newest cutoff unposted_first_at
   # Issue #987: fetched once, lazily, for the whole pass — shared with the
   # unreviewed trigger further down rather than asked for twice — and only
@@ -1597,6 +1640,7 @@ _approver_restale_sweep_repo() {
     branch="$(jq -r '.branch' <<<"$cand")"
     number="$(jq -r '.number' <<<"$cand")"
     head="$(jq -r '.head' <<<"$cand")"
+    base="$(jq -r '.base' <<<"$cand")"
     title="$(jq -r '.title' <<<"$cand")"
     complexity="$(jq -r '.complexity' <<<"$cand")"
     [[ -n "$head" ]] || continue
@@ -1631,7 +1675,8 @@ _approver_restale_sweep_repo() {
     item_ref="pr-${number}-approver-restale-${review_id}"
 
     if newest="$(approver_newest_commit_authored_at "$pr_url" 2>/dev/null)" && [[ -n "$newest" ]] \
-       && [[ "$newest" > "$review_at" ]]; then
+       && [[ "$newest" > "$review_at" ]] \
+       && ! _approver_restale_diff_unchanged "$slug" "$number" "$base" "$commit" "$branch"; then
       # agent-ops#988: a prior engagement on this exact standing review
       # already reached a verdict that wrote nothing to GitHub (an
       # adjudication `escalate`) — nothing here has changed since, so a

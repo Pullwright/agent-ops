@@ -138,6 +138,10 @@ export AGENT_OPS_ROOT="$SCRIPT_DIR"
 . "$SCRIPT_DIR/lib/github-app-token.sh"
 # shellcheck source=lib/approver-token.sh
 . "$SCRIPT_DIR/lib/approver-token.sh"
+# shellcheck source=lib/rebase-only.sh
+# Ahead of approver.sh, whose restale sweep (requirement 46a) calls
+# rebase_only_push to sharpen its own genuine-progress test.
+. "$SCRIPT_DIR/lib/rebase-only.sh"
 # shellcheck source=lib/approver.sh
 . "$SCRIPT_DIR/lib/approver.sh"
 # shellcheck source=lib/author-token.sh
@@ -3317,6 +3321,27 @@ ensure_labels_for() {
 }
 ensure_labels_for "$repo_slug" target
 
+# --- 6b. Rebase-only pre-capture (requirement 31e, agent-ops#1806) ---
+# The Reviewer-stage-start check below (requirement 31e) needs to know what
+# this pull request's diff looked like *before* the Implementer stage moves
+# it, so it is captured here, ahead of that stage, while `$selected_branch`
+# still names the pre-push head. A `merge-conflicts` item carrying
+# `takeover: true` names Dependabot's own pull request, not one of ours —
+# ordinary fresh work (requirement 3s) the Implementer's own procedure
+# excludes from this treatment, so it is excluded here too. Best-effort: an
+# unreadable ref here simply leaves both empty, and the check below then
+# runs the Reviewer stage as normal rather than guessing.
+premerge_old_head=""; premerge_old_base=""; premerge_base_name=""
+premerge_rebase_only_capture() {
+  [[ "$selected_source" == "merge-conflicts" ]] || return 0
+  [[ "$(jq -r '.takeover // false' <<<"$work_order_json")" != "true" ]] || return 0
+  premerge_base_name="$(jq -r '.base // empty' <<<"$work_order_json")"
+  [[ -n "$premerge_base_name" ]] || return 0
+  premerge_old_head="$(git -C "$clone_dir" ls-remote origin "refs/heads/$selected_branch" 2>/dev/null | awk '{print $1; exit}')"
+  premerge_old_base="$(git -C "$clone_dir" ls-remote origin "refs/heads/$premerge_base_name" 2>/dev/null | awk '{print $1; exit}')"
+}
+premerge_rebase_only_capture
+
 # --- 7. Implementer stage ---
 # implementer is one of the two stages requirement 4a's per-repository layer
 # covers (agent-ops#588): $repo_slug's own repos[].prompt_overrides.implementer
@@ -3638,6 +3663,41 @@ if [[ "$pre_reviewer_merge_state" == "merged" ]]; then
   exit 0
 fi
 
+# Requirement 31e (agent-ops#1806): a merge-conflicts item's Implementer push
+# resolves a conflict — a real commit, authored fresh, unlike a bare rebase —
+# but frequently changes nothing about the pull request's own net content: a
+# clean rebase, or a both-sides-kept resolution reproduced on the moved base.
+# `premerge_old_head`/`premerge_old_base` were captured before the
+# Implementer stage ran (step 6b); comparing the diff they name against the
+# diff the pushed head now carries, by patch-id rather than by authored date
+# (which a conflict-resolution commit moves just like any other), is what
+# tells that apart from a rebase whose diff genuinely changed, which still
+# takes the full Reviewer engagement below. Advisory exactly like the
+# merge-state read above it: an unreadable comparison just runs the stage as
+# normal, never guessed at as rebase-only.
+#
+# Both heads are read from `origin`, not from the clone's own working tree:
+# the question this answers is "did the *push* change the diff", and
+# `git -C "$clone_dir" rev-parse HEAD` would instead answer "did the
+# Implementer's working tree change it" — true even of an Implementer that
+# reported `complete` having pushed nothing at all. An unmoved head is
+# caught explicitly for the same reason: no push happened, which is not the
+# same thing as a push that changed no content, and must take the full path.
+rebase_only_new_head=""; rebase_only_new_base=""
+rebase_only_advisory_check() {
+  [[ -n "$premerge_old_head" && -n "$premerge_old_base" && -n "$impl_pr_url" ]] || return 1
+  rebase_only_new_head="$(git -C "$clone_dir" ls-remote origin "refs/heads/$selected_branch" 2>/dev/null | awk '{print $1; exit}')"
+  rebase_only_new_base="$(git -C "$clone_dir" ls-remote origin "refs/heads/$premerge_base_name" 2>/dev/null | awk '{print $1; exit}')"
+  [[ -n "$rebase_only_new_head" && -n "$rebase_only_new_base" ]] || return 1
+  [[ "$rebase_only_new_head" != "$premerge_old_head" ]] || return 1
+  git -C "$clone_dir" fetch --quiet origin "$premerge_old_head" "$premerge_old_base" \
+    "$rebase_only_new_head" "$rebase_only_new_base" >/dev/null 2>&1 || true
+  rebase_only_push "$clone_dir" "$premerge_old_base" "$premerge_old_head" \
+    "$rebase_only_new_base" "$rebase_only_new_head"
+}
+rebase_only="false"
+rebase_only_advisory_check && rebase_only="true"
+
 # Requirement 8a: the reviewer tier follows the item's complexity — the
 # highest of the Implementer's ex-post grade (its summary's `complexity`) and
 # the PR's raise-never-lower `complexity:*` label, falling back to the
@@ -3705,34 +3765,63 @@ $node_name
 "
 rev_out="$cycle_dir/reviewer.out"
 
-stage_budget_apply reviewer "$selected_repo" "$rev_model" \
-  "$(jq -nc --arg c "$rev_complexity" '{complexity: $c}')" "$selected_item"
-if run_claude_stage reviewer "$(( stage_backstop_min * 60 ))" "$rev_model" "$reviewer_prompt" "$rev_out" "$clone_dir" "$(( stage_inactivity_min * 60 ))"; then
+# Requirement 31e: the engagement itself is what a confirmed rebase-only push
+# skips — never the handoff, the Approver round or the arming step below it,
+# all of which this branch falls straight through to with a synthesised
+# `ready`. The Reviewer's verdict is this pipeline's own state, so carrying it
+# across a push that changed no content costs nothing; the Approver's verdict
+# is a GitHub artefact, and every repository this pipeline may act on mandates
+# `dismiss_stale_reviews_on_push: true` (D18 Stage 3,
+# `docs/PULLWRIGHT-DAY-ONE-AUTONOMY.md` §1a), so that push dismissed the
+# standing approval whatever its patch-id said. `run_approver_stage` below is
+# the only thing that mints a replacement, and `_landing_retry_sweep_repo`'s
+# own recovery cannot reach a pull request with no standing approval left to
+# find — so ending the cycle here would strand it, not save it. Falling
+# through also puts `handoff_complete_review`'s fresh required-checks read
+# (`review_gate_verdict`) at the post-push head, which is #1806's own
+# "provided the required checks pass on the new head" proviso: a diff that is
+# patch-id-identical on a base that *moved* can still go red.
+# `$reviewer_prompt` above is built either way — a local file read, not a
+# model call — so that its embedded work-order text stays outside this
+# branch's indentation.
+if [[ "$rebase_only" == "true" ]]; then
+  log_event "reviewer-carried-forward" "$(jq -nc --arg r "$selected_repo" --arg i "$selected_item" \
+    --arg u "$impl_pr_url" --arg oh "$premerge_old_head" --arg nh "$rebase_only_new_head" \
+    '{repo: $r, item: $i, pr_url: $u, old_head: $oh, new_head: $nh, rebase_only: true}')"
   rev_rc=0
+  rev_status_json="$(jq -nc --arg u "$impl_pr_url" \
+    '{status: "ready", pr_url: $u, fixes_applied: [], comments_left: 0,
+      ci: "carried forward: the Implementer push changed no net content (requirement 31e)"}')"
 else
-  rev_rc=$?
-fi
-# shellcheck disable=SC2154  # stage_kill_reason/stage_gaps_json: run_claude_stage (lib/stage-run.sh) assigns both.
-log_event "stage-end" "$(jq -nc --argjson rc "$rev_rc" --arg kr "$stage_kill_reason" --argjson m "$(metering_fields "$rev_model" "$rev_out" "$stage_gaps_json")" \
-  --arg r "$selected_repo" --arg i "$selected_item" \
-  '{stage: "reviewer", exit_code: $rc} + (if $kr == "" then {} else {kill_reason: $kr} end) + $m
-   + (if $r == "" then {} else {repo: $r} end) + (if $i == "" then {} else {item: $i} end)')"
-rework_stage_rerun_maybe "reviewer" "$stage_kill_reason" "$selected_repo" "$selected_item" "$impl_pr_url"
-log_node_state_transition overhead
-# `if`, not `&&`: an empty warning is the common case, and a trailing
-# `&&` whose test fails is a non-zero status at exactly the place
-# `set -e` acts on — the same trap that cost a --once cycle its
-# failure handling at dump_stage_output.
-watchdog_warning="$(stage_watchdog_warning reviewer || true)"
-if [[ -n "$watchdog_warning" ]]; then
-  log_event "warning" "$watchdog_warning"
-fi
-(( ONCE )) && dump_stage_output "$rev_out"
+  stage_budget_apply reviewer "$selected_repo" "$rev_model" \
+    "$(jq -nc --arg c "$rev_complexity" '{complexity: $c}')" "$selected_item"
+  if run_claude_stage reviewer "$(( stage_backstop_min * 60 ))" "$rev_model" "$reviewer_prompt" "$rev_out" "$clone_dir" "$(( stage_inactivity_min * 60 ))"; then
+    rev_rc=0
+  else
+    rev_rc=$?
+  fi
+  # shellcheck disable=SC2154  # stage_kill_reason/stage_gaps_json: run_claude_stage (lib/stage-run.sh) assigns both.
+  log_event "stage-end" "$(jq -nc --argjson rc "$rev_rc" --arg kr "$stage_kill_reason" --argjson m "$(metering_fields "$rev_model" "$rev_out" "$stage_gaps_json")" \
+    --arg r "$selected_repo" --arg i "$selected_item" \
+    '{stage: "reviewer", exit_code: $rc} + (if $kr == "" then {} else {kill_reason: $kr} end) + $m
+     + (if $r == "" then {} else {repo: $r} end) + (if $i == "" then {} else {item: $i} end)')"
+  rework_stage_rerun_maybe "reviewer" "$stage_kill_reason" "$selected_repo" "$selected_item" "$impl_pr_url"
+  log_node_state_transition overhead
+  # `if`, not `&&`: an empty warning is the common case, and a trailing
+  # `&&` whose test fails is a non-zero status at exactly the place
+  # `set -e` acts on — the same trap that cost a --once cycle its
+  # failure handling at dump_stage_output.
+  watchdog_warning="$(stage_watchdog_warning reviewer || true)"
+  if [[ -n "$watchdog_warning" ]]; then
+    log_event "warning" "$watchdog_warning"
+  fi
+  (( ONCE )) && dump_stage_output "$rev_out"
 
-rev_result="$(jq -r '.result // empty' "$rev_out" 2>/dev/null || true)"
-rev_status_json="$(extract_json_result "$rev_result" 2>/dev/null || true)"
-if (( rev_rc == 0 )) && [[ -z "$rev_status_json" ]]; then
-  rev_status_json="$(stage_salvage_result reviewer "$rev_out" "$rev_model" "$clone_dir" || true)"
+  rev_result="$(jq -r '.result // empty' "$rev_out" 2>/dev/null || true)"
+  rev_status_json="$(extract_json_result "$rev_result" 2>/dev/null || true)"
+  if (( rev_rc == 0 )) && [[ -z "$rev_status_json" ]]; then
+    rev_status_json="$(stage_salvage_result reviewer "$rev_out" "$rev_model" "$clone_dir" || true)"
+  fi
 fi
 
 if (( rev_rc != 0 )) || [[ -z "$rev_status_json" ]]; then
