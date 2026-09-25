@@ -13,7 +13,7 @@
 # lib/merge-queue.sh), logging every call and serving fixed answers; no
 # network.
 #
-# The "0 commits merged since the marker" no-op path (component 17d) is not
+# The "0 commits merged since the marker" no-op path (component 17e) is not
 # reachable through any real commit history: the marker's own value is
 # necessarily the hash of a strict ancestor of whatever commit first carries
 # it (a commit cannot embed its own hash — that would need a SHA-1
