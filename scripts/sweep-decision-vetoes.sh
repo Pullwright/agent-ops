@@ -226,8 +226,23 @@ $(pipeline_comment_marker "$cycle_id" script)"
       fi
     fi
   else
-    veto_comment="$("$GH" issue view "$number" -R "$slug" --json comments \
-      --jq '.comments[-1].body // ""' 2>/dev/null || true)"
+    # The veto's own comment is the true *last* comment on the log issue's
+    # thread, not merely the last of a `gh issue view --json comments`
+    # read — that GraphQL field fetches only the first ~100 comments and does
+    # not paginate, so past that ceiling its "last" is the ~100th, not the
+    # actual last (agent-ops#1858). Fetched instead via the paginated REST
+    # endpoint, following the idiom `lib/reconciliation-gate.sh`'s
+    # `_reconciliation_gate_comments` already uses: `--paginate` re-runs
+    # `--jq` once per page and prints each page's own filtered elements one
+    # per line, so the combining `jq -s` slurps rather than aggregating
+    # inside the filter itself, then picks the comment with the latest
+    # `created_at` rather than trusting page order.
+    veto_comment_lines="$("$GH" api "repos/$slug/issues/$number/comments" --paginate \
+      --jq '.[] | {at: .created_at, body: (.body // "")}' 2>/dev/null || true)"
+    veto_comment=""
+    if [[ -n "$veto_comment_lines" ]]; then
+      veto_comment="$(jq -s -r 'sort_by(.at) | last | .body // ""' <<<"$veto_comment_lines" 2>/dev/null || true)"
+    fi
     [[ -n "$veto_comment" ]] || veto_comment="(no comment was given when this issue was reopened)"
 
     revisit_title="revisit: $title"

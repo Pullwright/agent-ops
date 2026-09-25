@@ -375,7 +375,7 @@ while IFS= read -r pr_url; do
   # One read serves both checks below: the self-heal (unconditional) and the
   # idle nudge (gated on `idle_hours`).
   if ! pr_json="$("$GH" pr view "$pr_url" \
-        --json reviewDecision,mergeable,mergeStateStatus,statusCheckRollup,reviews,comments 2>/dev/null)" \
+        --json reviewDecision,mergeable,mergeStateStatus,statusCheckRollup,reviews 2>/dev/null)" \
       || [[ -z "$pr_json" ]]; then
     warn "$pr_url" "could not read the pull request's state — skipping its review-state checks"
     continue
@@ -387,6 +387,30 @@ while IFS= read -r pr_url; do
   mq_owner="" mq_repo="" mq_number=""
   if [[ "$pr_url" =~ ^https?://[^/]+/([^/]+)/([^/]+)/pull/([0-9]+) ]]; then
     mq_owner="${BASH_REMATCH[1]}" mq_repo="${BASH_REMATCH[2]}" mq_number="${BASH_REMATCH[3]}"
+  fi
+
+  # The idempotency checks below (the merge-queue-dequeued marker and the
+  # human-nudge marker) used to read `.comments` off the `pr view` call
+  # above, but that GraphQL field fetches only the first ~100 comments and
+  # does not paginate — past that ceiling a marker posted later in the
+  # thread would be invisible, and a duplicate notice would follow
+  # (agent-ops#1858). Fetched instead via the paginated REST endpoint,
+  # following the idiom `_sweep_round_answered` above and
+  # `lib/reconciliation-gate.sh`'s `_reconciliation_gate_comments` already
+  # use: `--paginate` re-runs `--jq` once per page and prints each page's own
+  # filtered elements one per line, so the combining `jq -s` slurps rather
+  # than aggregating inside the filter itself (a `gh api --jq` aggregate would
+  # disagree with itself past one page). Only `body` is needed here, unlike
+  # `_sweep_round_answered`'s `at`-keyed read. Empty (never trusted absent) on
+  # a read failure or an unparsed pull request URL — the same fail-safe
+  # default `mq_number`'s other dependents already fall back to.
+  pr_comments_json='[]'
+  if [[ -n "$mq_owner" && -n "$mq_number" ]]; then
+    pr_comments_lines="$("$GH" api "repos/$mq_owner/$mq_repo/issues/$mq_number/comments" --paginate \
+                            --jq '.[] | {body: (.body // "")}' 2>/dev/null)" || true
+    if [[ -n "$pr_comments_lines" ]]; then
+      pr_comments_json="$(jq -s -c '.' <<<"$pr_comments_lines" 2>/dev/null)" || pr_comments_json='[]'
+    fi
   fi
 
   # Merge-queue awareness (requirement 38f, D17, agent-ops#374): one
@@ -449,8 +473,8 @@ while IFS= read -r pr_url; do
       && merge_queue_dequeue_actionable "$mq_dequeue_reason" \
       && (( mq_recent )); then
     mq_marker="<!-- agent-ops:merge-queue-dequeued:${mq_dequeued_at} -->"
-    if ! jq -e --arg m "$mq_marker" '(.comments // []) | any((.body // "") | contains($m))' \
-        <<<"$pr_json" >/dev/null 2>&1; then
+    if ! jq -e --arg m "$mq_marker" 'any(.[]; (.body // "") | contains($m))' \
+        <<<"$pr_comments_json" >/dev/null 2>&1; then
       mq_reason_clause=""
       [[ -n "$mq_dequeue_reason" ]] && mq_reason_clause=" (reason: ${mq_dequeue_reason})"
       mq_body="$(pipeline_comment_header script "$node_name")
@@ -575,9 +599,9 @@ $mq_marker"
   # pipeline comment, including an ordinary Reviewer summary — so both must
   # hold on the one comment that is the real nudge.
   jq -e --arg mark "$PIPELINE_COMMENT_MARKER_PREFIX" \
-    '(.comments // []) | any(((.body // "") | contains("<!-- agent-ops:human-nudge -->"))
-                              and ((.body // "") | contains($mark)))' \
-    <<<"$pr_json" >/dev/null 2>&1 && continue
+    'any(.[]; ((.body // "") | contains("<!-- agent-ops:human-nudge -->"))
+                and ((.body // "") | contains($mark)))' \
+    <<<"$pr_comments_json" >/dev/null 2>&1 && continue
 
   approved_at="$(jq -r '[(.reviews // [])[] | select(.state == "APPROVED") | .submittedAt] | max // empty' \
     <<<"$pr_json" 2>/dev/null)"

@@ -140,8 +140,9 @@
 #                             readable `$json` here proved nothing about it,
 #                             and this class re-ran `_handoff_pr_approved`
 #                             itself to find out.
-#   could_not_post_nudge   — did the nudge comment land after all: `gh pr
-#                             view --json comments`, searched for a comment
+#   could_not_post_nudge   — did the nudge comment land after all: the
+#                             paginated `gh api …/issues/<n>/comments
+#                             --paginate` read, searched for a comment
 #                             carrying both the exact `<!-- agent-ops:human-
 #                             nudge -->` HTML-comment form and `lib/
 #                             pipeline-marker.sh`'s own
@@ -153,9 +154,13 @@
 #                             discussing the marker (a Reviewer summarising a
 #                             change to this very check, say), and the prefix
 #                             alone is stamped on every pipeline comment,
-#                             nudge or not.
-#   dequeue_notice          — did the dequeue notice land after all: `gh pr
-#                             view --json comments`, searched for the
+#                             nudge or not. The paginated read, rather than
+#                             `gh pr view --json comments`, is what keeps this
+#                             search from missing a marker posted past that
+#                             GraphQL field's unpaginated ~100-comment ceiling
+#                             (agent-ops#1858).
+#   dequeue_notice          — did the dequeue notice land after all: the same
+#                             paginated comments read, searched for the
 #                             `<!-- agent-ops:merge-queue-dequeued:` marker
 #                             `sweep-human-visibility.sh` itself posts and
 #                             checks for idempotency (TD-PPagop-26081504) —
@@ -185,11 +190,11 @@
 #                             makes for a pull request (`sweep-human-
 #                             visibility.sh`'s own broad `gh pr view --json
 #                             reviewDecision,mergeable,mergeStateStatus,
-#                             statusCheckRollup,reviews,comments` call). Like
+#                             statusCheckRollup,reviews` call). Like
 #                             `could_not_read_reviews`, the read failing was
 #                             the whole violation, and the narrower `gh pr
 #                             view --json state,isDraft,reviewRequests,
-#                             comments,author,reviews` this function already
+#                             author,reviews` this function already
 #                             opened with above proves nothing about it —
 #                             `statusCheckRollup` alone is not in that field
 #                             list, and a broader query is its own
@@ -272,13 +277,39 @@ _warning_class() {
 _pr_violation_survives() {
   local pr_url="$1" detail="$2" class json state draft reviewed requests has_marker
   local assignee author_login known_other
+  local pr_owner pr_repo pr_number comments_json comments_lines
   class="$(_warning_class "$detail")"
 
   json="$(gh pr view "$pr_url" \
-            --json state,isDraft,reviewRequests,comments,author,reviews 2>/dev/null)" || true
+            --json state,isDraft,reviewRequests,author,reviews 2>/dev/null)" || true
   if [[ -z "$json" ]]; then
     printf 'keep'
     return
+  fi
+
+  # `could_not_post_nudge`/`dequeue_notice` below search the pull request's
+  # comments for a marker; used to read `.comments` off the `gh pr view` call
+  # above, but that GraphQL field fetches only the first ~100 comments and
+  # does not paginate — past that ceiling a marker posted later in the
+  # thread would be invisible and its warning misclassified (agent-ops#1858).
+  # Fetched instead via the paginated REST endpoint, following the idiom
+  # `lib/reconciliation-gate.sh`'s `_reconciliation_gate_comments` already
+  # uses: `--paginate` re-runs `--jq` once per page and prints each page's
+  # own filtered elements one per line, so the combining `jq -s` slurps
+  # rather than aggregating inside the filter itself. Empty (never trusted
+  # absent) on a read failure or an unparsed pull request URL, the same
+  # fail-safe default this function's own header describes.
+  comments_json='[]'
+  pr_owner="" pr_repo="" pr_number=""
+  if [[ "$pr_url" =~ ^https?://[^/]+/([^/]+)/([^/]+)/pull/([0-9]+) ]]; then
+    pr_owner="${BASH_REMATCH[1]}" pr_repo="${BASH_REMATCH[2]}" pr_number="${BASH_REMATCH[3]}"
+  fi
+  if [[ -n "$pr_owner" && -n "$pr_number" ]]; then
+    comments_lines="$(gh api "repos/$pr_owner/$pr_repo/issues/$pr_number/comments" --paginate \
+                         --jq '.[] | {body: (.body // "")}' 2>/dev/null)" || true
+    if [[ -n "$comments_lines" ]]; then
+      comments_json="$(jq -s -c '.' <<<"$comments_lines" 2>/dev/null)" || comments_json='[]'
+    fi
   fi
 
   state="$(jq -r '.state // ""' <<<"$json" 2>/dev/null || true)"
@@ -339,7 +370,7 @@ _pr_violation_survives() {
     could_not_read_state)
       # No follow-up *action* outcome to inspect either — the read failing
       # was the whole violation — but the narrower `gh pr view --json
-      # state,isDraft,reviewRequests,comments,author,reviews` this function
+      # state,isDraft,reviewRequests,author,reviews` this function
       # already opened with above proves nothing about it: it omits
       # `statusCheckRollup` entirely, and a broader query is its own
       # opportunity to fail even when a narrower one succeeds. Re-run the
@@ -368,9 +399,9 @@ _pr_violation_survives() {
       # pipeline comment, including an ordinary Reviewer summary — so both
       # must hold on the one comment that is the real nudge.
       has_marker="$(jq -r --arg mark "$PIPELINE_COMMENT_MARKER_PREFIX" \
-                     '(.comments // []) | any(((.body // "") | contains("<!-- agent-ops:human-nudge -->"))
-                                               and ((.body // "") | contains($mark)))' \
-                     <<<"$json" 2>/dev/null || echo false)"
+                     'any(.[]; ((.body // "") | contains("<!-- agent-ops:human-nudge -->"))
+                                and ((.body // "") | contains($mark)))' \
+                     <<<"$comments_json" 2>/dev/null || echo false)"
       if [[ "$has_marker" == "true" ]]; then
         printf 'drop'
       else
@@ -417,8 +448,8 @@ _pr_violation_survives() {
       fi
       ;;
     dequeue_notice)
-      has_marker="$(jq -r '(.comments // []) | any((.body // "") | contains("<!-- agent-ops:merge-queue-dequeued:"))' \
-                     <<<"$json" 2>/dev/null || echo false)"
+      has_marker="$(jq -r 'any(.[]; (.body // "") | contains("<!-- agent-ops:merge-queue-dequeued:"))' \
+                     <<<"$comments_json" 2>/dev/null || echo false)"
       if [[ "$has_marker" == "true" ]]; then
         printf 'drop'
       else
