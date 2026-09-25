@@ -116,6 +116,23 @@
 # invariant's own tracking issue, in `pager_repo`, so a renamed label would
 # silently stop being found — the same failure mode a renamed `pw::decision`
 # would have on `scripts/sweep-decision-vetoes.sh`.
+#
+# **`target`'s catalogue is a superset of `escalation`'s, and must stay one.**
+# `labels_reconcile_role` reconciles `target` under MODE `full`, which deletes
+# every `label_prefix`-named label in the repository that `target`'s own
+# catalogue does not name — so any prefixed label another role wants in a
+# repository that is *also* a target has to appear in `target`'s arm too, or
+# the two roles fight over it: `escalation` creates it, `target` deletes it on
+# the next cycle, and GitHub's own DELETE detaches it from every issue already
+# carrying it. This is not hypothetical for `pw::pager`: `pager_repo` falls
+# back to `crash_loop_repo`, and an installation that points that at a
+# repository it also works — Poetic's own does — would have had every open
+# page's label stripped, leaving lib/pager.sh's dedup search and
+# monitor-cycle.sh's own `--label pw::pager` listing finding nothing.
+# `pw::decision` and `enabler_escalation_label` were already in both arms for
+# their own reasons; `pw::pager` is in both for this one.
+# `test/labels.test.sh` pins the superset relation directly, so a future
+# `escalation`-only entry fails there rather than in production.
 
 # labels_catalogue CONFIG_FILE SCHEMA_FILE ROLE [REVIEW_PR_LABEL]
 # Print the labels a repository in ROLE needs, one per line, as
@@ -169,6 +186,8 @@ labels_catalogue() {
                "Filed with an owner-only choice still open; the Refiner escalates rather than guessing"),
          entry("pw::decision"; "5319e7";
                "A tactical decision the pipeline took under decide-tactical; reopen to veto"),
+         entry("pw::pager"; "b60205";
+               "Raised by lib/pager.sh: a fleet-level invariant is firing"),
          entry("open-question"; "d4c5f9";
                "Reviewer-projected: an open scope question blocks unattended landing until adjudicated (D18 #668)"),
          entry("complexity:low"; "c2e0c6";

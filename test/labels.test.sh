@@ -210,7 +210,7 @@ config() { jq "${1:-.}" "$SCRIPT_DIR/config.json" > "$tmp/config.json"; }
 #     rather than from this library. ---
 config
 assert_eq "the target role wants every label the pipeline applies" \
-  "autonomous-agent enabler-escalation needs-refinement refined unvoided blocked blocked:needs-refinement obsolete pw::type:tech-debt pw::owner-decision pw::decision open-question complexity:low complexity:medium complexity:high" \
+  "autonomous-agent enabler-escalation needs-refinement refined unvoided blocked blocked:needs-refinement obsolete pw::type:tech-debt pw::owner-decision pw::decision pw::pager open-question complexity:low complexity:medium complexity:high" \
   "$(labels_catalogue "$tmp/config.json" "$SCHEMA" target | cut -f1 | tr '\n' ' ' | sed 's/ $//')"
 assert_eq "the review role wants only the caller's resolved review pull request label" \
   "project-review" \
@@ -226,6 +226,23 @@ assert_eq "the escalation role wants the escalation label, the decision-log labe
   "$(labels_catalogue "$tmp/config.json" "$SCHEMA" escalation | cut -f1 | tr '\n' ' ' | sed 's/ $//')"
 assert_eq "an unknown role wants nothing" "" \
   "$(labels_catalogue "$tmp/config.json" "$SCHEMA" nonsense)"
+
+# `target` is the only role labels_reconcile_role reconciles under MODE
+# `full`, and that mode deletes every label_prefix-named label in the
+# repository target's own catalogue does not name. So any prefixed label the
+# `escalation` role wants must appear in `target`'s arm too, or the two fight
+# over a repository that is both — which `pager_repo`'s fallback to
+# `crash_loop_repo` makes the ordinary case, not an exotic one: escalation
+# creates the label, target deletes it next cycle, and GitHub's DELETE
+# detaches it from every page already carrying it. Pinned as a relation
+# rather than as a second literal list, so an escalation-only entry added
+# later fails here regardless of what it is called.
+missing_from_target="$(comm -23 \
+  <(labels_catalogue "$tmp/config.json" "$SCHEMA" escalation | cut -f1 | grep '^pw::' | sort) \
+  <(labels_catalogue "$tmp/config.json" "$SCHEMA" target | cut -f1 | grep '^pw::' | sort) \
+  | tr '\n' ' ' | sed 's/ $//')"
+assert_eq "every prefixed label the escalation role wants is in target's catalogue too, or target's MODE full deletes it" \
+  "" "$missing_from_target"
 
 # TD-PPagop-26082809: an installation that does not override
 # enabler_escalation_label/needs_refinement_label/refined_label/unvoid_label
@@ -247,7 +264,7 @@ assert_eq "a renamed label is created under the name the config gives it" \
 # anyway would put a label in the repository that nothing will ever apply.
 config '.needs_refinement_label = "" | .unvoid_label = "" | .refined_label = ""'
 assert_eq "a label switched off by an empty value is not created" \
-  "autonomous-agent enabler-escalation blocked blocked:needs-refinement obsolete pw::type:tech-debt pw::owner-decision pw::decision open-question complexity:low complexity:medium complexity:high" \
+  "autonomous-agent enabler-escalation blocked blocked:needs-refinement obsolete pw::type:tech-debt pw::owner-decision pw::decision pw::pager open-question complexity:low complexity:medium complexity:high" \
   "$(labels_catalogue "$tmp/config.json" "$SCHEMA" target | cut -f1 | tr '\n' ' ' | sed 's/ $//')"
 
 # Every catalogue entry must be complete: a create with an empty colour is
@@ -278,7 +295,7 @@ config
 reset_stub
 out="$(labels_catalogue "$tmp/config.json" "$SCHEMA" target | labels_ensure "Owner/repo")"
 assert_eq "an empty repository gets every label, each reported created" \
-  "autonomous-agent enabler-escalation needs-refinement refined unvoided blocked blocked:needs-refinement obsolete pw::type:tech-debt pw::owner-decision pw::decision open-question complexity:low complexity:medium complexity:high" \
+  "autonomous-agent enabler-escalation needs-refinement refined unvoided blocked blocked:needs-refinement obsolete pw::type:tech-debt pw::owner-decision pw::decision pw::pager open-question complexity:low complexity:medium complexity:high" \
   "$(cut -f2 <<<"$out" | tr '\n' ' ' | sed 's/ $//')"
 assert_eq "and every line reports a creation" "" \
   "$(grep -v '^created' <<<"$out")"
@@ -290,7 +307,7 @@ assert_eq "a second pass over the same repository reports nothing" "" "$out"
 reset_stub autonomous-agent blocked obsolete complexity:low complexity:medium complexity:high
 out="$(labels_catalogue "$tmp/config.json" "$SCHEMA" target | labels_ensure "Owner/repo")"
 assert_eq "a partly-labelled repository gets only what it is missing" \
-  "enabler-escalation needs-refinement refined unvoided blocked:needs-refinement pw::type:tech-debt pw::owner-decision pw::decision open-question" \
+  "enabler-escalation needs-refinement refined unvoided blocked:needs-refinement pw::type:tech-debt pw::owner-decision pw::decision pw::pager open-question" \
   "$(cut -f2 <<<"$out" | tr '\n' ' ' | sed 's/ $//')"
 
 # GitHub compares label names case-insensitively, so a differently-cased match
@@ -317,7 +334,7 @@ rc=$?
 assert_eq "a label the token may not create is reported failed" \
   "failed	unvoided" "$(grep '^failed' <<<"$out")"
 assert_eq "and the labels either side of it are still created" \
-  "autonomous-agent enabler-escalation needs-refinement refined blocked blocked:needs-refinement obsolete pw::type:tech-debt pw::owner-decision pw::decision open-question complexity:low complexity:medium complexity:high" \
+  "autonomous-agent enabler-escalation needs-refinement refined blocked blocked:needs-refinement obsolete pw::type:tech-debt pw::owner-decision pw::decision pw::pager open-question complexity:low complexity:medium complexity:high" \
   "$(grep '^created' <<<"$out" | cut -f2 | tr '\n' ' ' | sed 's/ $//')"
 assert_eq "and one refused create does not fail the pass" "0" "$rc"
 
@@ -586,7 +603,7 @@ config
 reset_stub
 out="$(labels_reconcile_role "$tmp/config.json" "$SCHEMA" "Owner/repo" target)"
 assert_eq "the target role reconciles against an empty repository the same as labels_ensure would (nothing to reconcile or delete yet)" \
-  "autonomous-agent enabler-escalation needs-refinement refined unvoided blocked blocked:needs-refinement obsolete pw::type:tech-debt pw::owner-decision pw::decision open-question complexity:low complexity:medium complexity:high" \
+  "autonomous-agent enabler-escalation needs-refinement refined unvoided blocked blocked:needs-refinement obsolete pw::type:tech-debt pw::owner-decision pw::decision pw::pager open-question complexity:low complexity:medium complexity:high" \
   "$(cut -f2 <<<"$out" | tr '\n' ' ' | sed 's/ $//')"
 
 reset_stub $'pw::stale-target\t1d76db\tstale\npw::wanted\t1d76db\told desc'

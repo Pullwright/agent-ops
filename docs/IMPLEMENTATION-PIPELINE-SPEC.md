@@ -8308,7 +8308,26 @@ implements.
    label set — because `review` and `escalation` are each a partial subset of
    `target`'s own catalogue, and a delete scoped to a subset would remove
    labels the other role still wants; both reconcile colour/description drift
-   under MODE `additive` without ever deleting. Every call site —
+   under MODE `additive` without ever deleting.
+
+   That "partial subset" is a standing constraint on the catalogue, not an
+   observation about it: every `label_prefix`-named label the `escalation`
+   role wants appears in `target`'s arm of `labels_catalogue` as well, and a
+   future entry added to one must be added to the other in the same change.
+   A repository may hold both roles at once — `pager_repo` is empty by
+   default and falls back to `crash_loop_repo`, which an installation
+   routinely also configures in `repos[]` — and an escalation-only prefixed
+   entry in such a repository is created by the `escalation` reconcile and
+   deleted by the `target` one on the next cycle, each undoing the other,
+   with GitHub's own `DELETE` detaching the label from every issue already
+   carrying it on every lap. `pw::decision` and `enabler_escalation_label`
+   are in both arms already; `pw::pager` is in both for this reason, so
+   lib/pager.sh's dedup search and `monitor-cycle.sh`'s own
+   `--label pw::pager` page listing keep finding the issues they filed.
+   `test/labels.test.sh` pins the relation itself rather than a second
+   literal list.
+
+   Every call site —
    `agent-cycle.sh`'s `ensure_labels_for`, `review-cycle.sh`'s own review-role
    ensure, `lib/enabler.sh`'s `create_escalation_issue`/
    `create_decision_log_issue`, and `lib/candidate-gather.sh`'s
@@ -19217,8 +19236,12 @@ with the Reviewer's own.
     still logs `pager-fired`, with `issue_number`/`issue_url` null, so the
     transition still reaches the dashboard and the key can still return to
     `clear` later; nothing is filed on GitHub and nothing is assigned),
-    carrying the fixed `pw::pager` label (`lib/labels.sh`'s `escalation` role
-    catalogue, fixed for the identical reason `pw::decision` is: a renamed
+    carrying the fixed `pw::pager` label (`lib/labels.sh`'s `escalation`
+    *and* `target` role catalogues — both, so that `target`'s own MODE `full`
+    reconcile does not delete it out from under this framework in a
+    repository holding both roles, which `pager_repo`'s fallback to
+    `crash_loop_repo` makes ordinary; see requirement 6a — fixed for the
+    identical reason `pw::decision` is: a renamed
     label would silently stop being found by this framework's own dedup and
     auto-close search), deduped on the item reference `pager:<key>` the way
     `create_escalation_issue` dedupes — a body-contains-item-ref search,
