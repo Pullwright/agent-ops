@@ -61,7 +61,10 @@ if [[ ! -e "$CLAUDE_CONFIG_DIR/settings.json" ]]; then
   cp "$APP_DIR/deploy/docker/claude-settings.json" "$CLAUDE_CONFIG_DIR/settings.json"
   say "seeded $CLAUDE_CONFIG_DIR/settings.json"
 fi
-if [[ ! -e "$CLAUDE_CONFIG_DIR/.credentials.json" ]]; then
+# The warning below is scoped to the OAuth path: a node with ANTHROPIC_API_KEY
+# set (D4's primary path, agent-ops#684/#856) needs no .credentials.json and
+# runs cycles fine without it, so warning here would be false on that path.
+if [[ ! -e "$CLAUDE_CONFIG_DIR/.credentials.json" && -z "${ANTHROPIC_API_KEY:-}" ]]; then
   say "WARNING: $CLAUDE_CONFIG_DIR/.credentials.json is absent — no cycle can run until this node is"
   say "         authenticated once: docker compose exec scheduler claude"
 fi
