@@ -12961,7 +12961,16 @@ implements.
     requirement 3s already excludes from this treatment), the branch's and
     the work order's own `base`'s current tip SHAs, read with `git
     ls-remote` — no clone of their own, since the cycle's own clone has not
-    yet been pointed at the pull request's branch at this point.
+    yet been pointed at the pull request's branch at this point. `base` is
+    the gathered entry's own `baseRefName` (`scripts/gather-merge-conflicts.sh`),
+    carried onto the work order by both producers exactly as a `dequeued`
+    entry's `base` already is — `mk`'s `mc_cands` composition
+    (`lib/stage-attempt.sh`) for the deterministic fallback, and the
+    Co-Ordinator's own "For a `merge-conflicts` entry" instruction
+    (`prompts/coordinator.md`) for a model-selected one — so the capture's
+    guard above (an absent `base` skipping the capture) is never live in
+    practice for an ordinary rebase case; only a takeover, which never
+    reaches this capture at all, goes without one.
 
     Compared at the Reviewer stage's own start, immediately after the
     existing merge-state advisory read (requirement 31d) and before the
@@ -25929,6 +25938,17 @@ oblige anyone to edit a test.
    report `failed` and exit non-zero — never `open`, since a caller that read
    an unreadable pull request as still open would run the very handoff a
    genuine merge invalidates.
+8e-iiiA. **A `merge-conflicts` work order carries `base` from both producers
+   (requirement 31e, agent-ops#1806).** `test/candidate-text-compose.test.sh`
+   passes: the deterministic fallback's `mc_cands` composition carries the
+   gathered entry's own `base` onto both an ordinary and a takeover
+   candidate, exactly as `dq_cands` already carries a `dequeued` entry's
+   `base`. `prompts/coordinator.md`'s "For a `merge-conflicts` entry"
+   instruction names `"base"` alongside `"pr_url"`/`"pr_number"`/
+   `"conflicted_paths"` as a field the work order must carry from the entry.
+   Without both, requirement 31e's own capture guard (an absent `base`
+   skipping the capture) is always live, and `rebase_only` never fires on a
+   real cycle regardless of how correct `rebase_only_push` itself is.
 8e-iv. **A `merge-conflicts` item's rebase-only push skips the Reviewer
    engagement, and only the engagement, for the cycle that just ran the
    Implementer (requirement 31e, agent-ops#1806).**

@@ -271,6 +271,32 @@ lr_pick="$(fallback_select_candidate "$lr_repos" "m")"
 assert_eq "landing-refusals outranks tech-debt in the mechanical walk" "landing-refusals" "$(jq -r '.source' <<<"$lr_pick")"
 assert_eq "…and names the entry's own ref" "pr-61-landing-refusal-4718691960" "$(jq -r '.item' <<<"$lr_pick")"
 
+# --- mc_cands carries the gathered entry's own `base`, mirroring dq_cands ---
+# --- (agent-ops#1806): without it, requirement 31e's rebase-only capture ---
+# --- never has a base ref to compare against and never fires. --------------
+mc_repos='[{"slug":"acme/widgets","default_branch":"main",
+  "sources":["security","issues:urgent","review-feedback","merge-conflicts","dequeued","landing-refusals","human-visibility","abandoned-drafts","issues:high","tech-debt","issues:medium","issues:low","code-quality"],
+  "findings":[],"review_feedback":[],
+  "merge_conflicts":[{"ref":"pr-57-conflict-abc","title":"fix(x): y","branch":"agent/57","base":"main","pr_url":"https://x/pull/57","pr_number":57,"body":"conflict body"}],
+  "dequeued":[],"landing_refusals":[],"abandoned_drafts":[],"human_visibility":[],"issues":[],
+  "tech_debt":[{"source":"tech-debt","ref":"TD1","id":"TD1","title":"fix TD1","filed":"2026-08-01","url":"https://x/TD1.md","body":"TD1 body"}]}]'
+mc_pick="$(fallback_select_candidate "$mc_repos" "m")"
+assert_eq "merge-conflicts outranks tech-debt in the mechanical walk" "merge-conflicts" "$(jq -r '.source' <<<"$mc_pick")"
+assert_eq "…and carries the gathered entry's own base, exactly like a dequeued candidate's" \
+  "main" "$(jq -r '.base' <<<"$mc_pick")"
+assert_eq "…branch/pr_url/pr_number survive unchanged" "agent/57 https://x/pull/57 57" \
+  "$(jq -r '[.branch, .pr_url, (.pr_number|tostring)] | join(" ")' <<<"$mc_pick")"
+
+mc_takeover_repos='[{"slug":"acme/widgets","default_branch":"main",
+  "sources":["security","issues:urgent","review-feedback","merge-conflicts","dequeued","landing-refusals","human-visibility","abandoned-drafts","issues:high","tech-debt","issues:medium","issues:low","code-quality"],
+  "findings":[],"review_feedback":[],
+  "merge_conflicts":[{"ref":"pr-9-conflict-abc","title":"bump foo","base":"main","pr_url":"https://x/pull/9","pr_number":9,"body":"Bumps foo","bot":true,"rebase_requested":true,"superseded_by":null}],
+  "dequeued":[],"landing_refusals":[],"abandoned_drafts":[],"human_visibility":[],"issues":[],"tech_debt":[]}]'
+mc_takeover_pick="$(fallback_select_candidate "$mc_takeover_repos" "m")"
+assert_eq "a Dependabot takeover candidate also carries base" "main" "$(jq -r '.base' <<<"$mc_takeover_pick")"
+assert_eq "…and takeover true, branch omitted" "true null" \
+  "$(jq -r '[(.takeover|tostring), (.branch // "null")] | join(" ")' <<<"$mc_takeover_pick")"
+
 empty_repos='[{"slug":"acme/widgets","default_branch":"main",
   "sources":["security","issues:urgent","review-feedback","merge-conflicts","human-visibility","abandoned-drafts","issues:high","tech-debt","issues:medium","issues:low","code-quality"],"findings":[],"review_feedback":[],"merge_conflicts":[],"abandoned_drafts":[],"human_visibility":[],"issues":[],"tech_debt":[]}]'
 assert_eq "every band empty prints null, not a crash" "null" "$(fallback_select_candidate "$empty_repos" "m")"
