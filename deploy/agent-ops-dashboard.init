@@ -15,26 +15,29 @@
 #
 # Serves scripts/serve-dashboard.sh's loopback-only web server (127.0.0.1
 # only, never the network) so the dashboard loads over http:// when a
-# browser refuses data.js over a file:// URL. Runs as the unprivileged
-# `wallen` user (never root) via start-stop-daemon --chuid. HOME and PATH
+# browser refuses data.js over a file:// URL. Runs as the unprivileged user
+# named by RUNAS (never root) via start-stop-daemon --chuid. HOME and PATH
 # are set explicitly because this script itself runs as root (via WSL's
 # [boot] command) — left alone, $HOME would stay /root through the chuid
 # and break config.json's ~-expansion and the dashboard's state-dir lookup,
 # and a bare boot PATH may not include jq/python3.
 #
-# Every setting below is a default that /etc/default/agent-ops-dashboard may
-# override, so a host with a different user, home or checkout path needs no
-# edit to this file. This is the legacy single-laptop path; a containerised
-# node runs serve-dashboard.sh directly and lets the container runtime
-# capture its output (see deploy/docker/).
+# RUNAS and APPDIR carry no default and must be set in
+# /etc/default/agent-ops-dashboard before this script will start the
+# service — there is no generic user or checkout path to fall back to.
+# Every other setting below is a default that same file may override, so a
+# host with a different port, pidfile or log location needs no edit to this
+# file. This is the legacy single-laptop path; a containerised node runs
+# serve-dashboard.sh directly and lets the container runtime capture its
+# output (see deploy/docker/).
 
 # shellcheck disable=SC1091  # optional host-local override file
 [ -r /etc/default/agent-ops-dashboard ] && . /etc/default/agent-ops-dashboard
 
 NAME=agent-ops-dashboard
-RUNAS=${RUNAS:-wallen}
+: "${RUNAS:?RUNAS is required -- set it in /etc/default/agent-ops-dashboard}"
 RUNHOME=${RUNHOME:-/home/$RUNAS}
-APPDIR=${APPDIR:-$RUNHOME/Code/Poetic-Poems/agent-ops}
+: "${APPDIR:?APPDIR is required -- set it in /etc/default/agent-ops-dashboard}"
 PORT=${PORT:-8787}
 PIDFILE=${PIDFILE:-/var/run/$NAME.pid}
 PATH_ENV=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$RUNHOME/.local/bin
