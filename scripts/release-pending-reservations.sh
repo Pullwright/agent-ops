@@ -38,7 +38,14 @@
 # A delete that fails again leaves the marker in place for the next cycle's
 # pass, so recovery costs no more than time: the marker survives until a
 # transient GitHub failure finally clears, or a human deletes the branch by
-# hand and lets this script notice on its next pass.
+# hand and lets this script notice on its next pass. A failure that is not
+# transient at all — an archived target repository, a branch protected
+# against deletion, a login that lost push access — would otherwise be
+# retried and warned about identically for ever, so once a marker's own `ts`
+# is `reservation_release_stuck_after_days` old it is escalated exactly once
+# (`escalated_at` written back onto the marker itself, so no later pass
+# repeats it) and thereafter retried in silence (TD-PPagop-26082806,
+# agent-ops#1011).
 #
 # Where a `td-record/<id>` marker and its sibling `td/<id>` marker both sit
 # under the same repo directory — the shape a window that failed both of
@@ -66,13 +73,18 @@
 #   {"action":"released","repo":…,"branch":…}
 #   {"action":"absent","repo":…,"branch":…}
 #   {"action":"warning","repo":…,"branch":…,"detail":…}
-# The caller logs them; this script logs nothing itself. Always exits 0 — a
+#   {"action":"reservation-release-stuck","repo":…,"branch":…,"detail":…}
+# — and nothing at all for a marker already carrying `escalated_at`, whose
+# delete failed again. The caller logs them; this script logs nothing itself. Always exits 0 — a
 # branch this script fails to delete must not fail the cycle it runs inside;
 # the marker it leaves behind is what stands behind it.
 #
 # Usage: release-pending-reservations.sh
 # Environment: RELEASE_PENDING_GH overrides `gh` (tests stub it);
-# AGENT_OPS_CONFIG overrides the config path, as review-cycle.sh accepts it.
+# AGENT_OPS_CONFIG overrides the config path, as review-cycle.sh accepts it;
+# RELEASE_PENDING_NOW_EPOCH overrides "now" for the stuck-marker age check
+# (tests stub it), the same seam TOGGLE_NOW_EPOCH (lib/toggle.sh) already
+# uses for this repo's other age-since-a-timestamp checks.
 
 set -uo pipefail
 
@@ -104,9 +116,18 @@ cfg() { jq -r "$1" <<<"$DEFAULTED_CONFIG" 2>/dev/null; }
 state_repo="$(cfg '.state_repo')"
 [[ -n "$state_repo" ]] || exit 0
 
+stuck_after_days="$(cfg '.reservation_release_stuck_after_days')"
+[[ "$stuck_after_days" =~ ^[0-9]+$ ]] || stuck_after_days=0
+now_epoch="${RELEASE_PENDING_NOW_EPOCH:-$(date -u +%s)}"
+
 warn() {  # warn REPO BRANCH DETAIL
   jq -nc --arg r "$1" --arg b "$2" --arg d "$3" \
     '{action: "warning", repo: $r, branch: $b, detail: $d}'
+}
+
+stuck() {  # stuck REPO BRANCH DETAIL
+  jq -nc --arg r "$1" --arg b "$2" --arg d "$3" \
+    '{action: "reservation-release-stuck", repo: $r, branch: $b, detail: $d}'
 }
 
 # One already-fetched marker: retry its branch's delete, then clear the
@@ -114,8 +135,12 @@ warn() {  # warn REPO BRANCH DETAIL
 # the old single `release_one` (which also fetched the marker) so
 # release_dir below can fetch and classify every marker in a directory
 # before acting on any of them — see release_dir's own comment for why.
-_release_marker() {  # <dir> <file> <repo> <branch> <file_sha>
-  local dir="$1" f="$2" e_repo="$3" e_branch="$4" file_sha="$5" get_err get_rc action
+_release_marker() {  # <dir> <file> <repo> <branch> <file_sha> <entry>
+  local dir="$1" f="$2" e_repo="$3" e_branch="$4" file_sha="$5" entry="$6"
+  local get_err get_rc action e_ts escalated_at ts_epoch age_days new_entry payload
+
+  e_ts="$(jq -r '.ts // empty' <<<"$entry" 2>/dev/null)"
+  escalated_at="$(jq -r '.escalated_at // empty' <<<"$entry" 2>/dev/null)"
 
   if "$GH" api -X DELETE "repos/$e_repo/git/refs/heads/$e_branch" >/dev/null 2>&1; then
     action="released"
@@ -132,6 +157,41 @@ _release_marker() {  # <dir> <file> <repo> <branch> <file_sha>
     get_err="$("$GH" api "repos/$e_repo/git/ref/heads/$e_branch" 2>&1 >/dev/null)"
     get_rc=$?
     if (( get_rc == 0 )) || [[ "$get_err" != *"HTTP 404"* ]]; then
+      # Already escalated (a prior pass wrote escalated_at back onto this
+      # marker): keep retrying the delete above every pass — cheap, and it
+      # is what lets a belated fix on the target-repo side self-heal on the
+      # very next pass, via the ordinary released/absent path below — but
+      # say nothing further. The one-time reservation-release-stuck event
+      # already told a human; repeating it, or falling back to `warning`,
+      # is exactly the identical-every-cycle noise this exists to stop.
+      if [[ -n "$escalated_at" ]]; then
+        return 0
+      fi
+      # Not yet escalated: past reservation_release_stuck_after_days since
+      # this marker's own first-seen `ts`, escalate once instead of warning
+      # — a distinct action a human (or the dashboard) can act on, rather
+      # than a `warning` indistinguishable from every other pass's. An
+      # unparseable or missing `ts`, or stuck_after_days disabled (0), falls
+      # through to the ordinary warning unchanged.
+      if (( stuck_after_days > 0 )) && [[ -n "$e_ts" ]] \
+         && ts_epoch="$(date -u -d "$e_ts" +%s 2>/dev/null)"; then
+        age_days=$(( (now_epoch - ts_epoch) / 86400 ))
+        if (( age_days >= stuck_after_days )); then
+          new_entry="$(jq -c --arg esc "$(date -u -d "@$now_epoch" +%Y-%m-%dT%H:%M:%SZ)" \
+            '. + {escalated_at: $esc}' <<<"$entry" 2>/dev/null)"
+          payload="$(printf '%s' "$new_entry" | base64 -w0)"
+          if "$GH" api -X PUT "repos/$state_repo/contents/reservation-releases/$dir/$f" \
+               -f "message=reservation release stuck: $e_branch" -f "content=$payload" \
+               -f "sha=$file_sha" >/dev/null 2>&1; then
+            stuck "$e_repo" "$e_branch" \
+              "delete failing since $e_ts (${age_days}d) — escalated once, marker left in place"
+            return 0
+          fi
+          # Could not persist escalated_at: fall through to the ordinary
+          # warning rather than claim an escalation that did not stick —
+          # the next pass gets another chance to persist it.
+        fi
+      fi
       warn "$e_repo" "$e_branch" "delete failed again — marker left in place"
       return 0
     fi
@@ -154,7 +214,7 @@ _release_marker() {  # <dir> <file> <repo> <branch> <file_sha>
 # after — the record-before-reservation ordering this file's own header
 # comment explains.
 release_dir() {  # <dir>
-  local dir="$1" files f resp file_sha entry e_repo e_branch item
+  local dir="$1" files f resp file_sha entry entry_compact e_repo e_branch item
   local record_first=() others=()
 
   files="$("$GH" api "repos/$state_repo/contents/reservation-releases/$dir" \
@@ -174,22 +234,28 @@ release_dir() {  # <dir>
       continue
     fi
 
+    # Compacted to a single line (jq -c) before it rides through the
+    # tab-delimited tuple below — record_first/others are read back with
+    # `read -r`, which is line-based, and the pretty-printed marker this
+    # was decoded from may itself contain literal newlines.
+    entry_compact="$(jq -c '.' <<<"$entry" 2>/dev/null)"
+
     if [[ "$e_branch" == "${TECHDEBT_RECORD_BRANCH_PREFIX}"* ]]; then
-      record_first+=("$f"$'\t'"$e_repo"$'\t'"$e_branch"$'\t'"$file_sha")
+      record_first+=("$f"$'\t'"$e_repo"$'\t'"$e_branch"$'\t'"$file_sha"$'\t'"$entry_compact")
     else
-      others+=("$f"$'\t'"$e_repo"$'\t'"$e_branch"$'\t'"$file_sha")
+      others+=("$f"$'\t'"$e_repo"$'\t'"$e_branch"$'\t'"$file_sha"$'\t'"$entry_compact")
     fi
   done <<<"$files"
 
   for item in "${record_first[@]:-}"; do
     [[ -n "$item" ]] || continue
-    IFS=$'\t' read -r f e_repo e_branch file_sha <<<"$item"
-    _release_marker "$dir" "$f" "$e_repo" "$e_branch" "$file_sha"
+    IFS=$'\t' read -r f e_repo e_branch file_sha entry <<<"$item"
+    _release_marker "$dir" "$f" "$e_repo" "$e_branch" "$file_sha" "$entry"
   done
   for item in "${others[@]:-}"; do
     [[ -n "$item" ]] || continue
-    IFS=$'\t' read -r f e_repo e_branch file_sha <<<"$item"
-    _release_marker "$dir" "$f" "$e_repo" "$e_branch" "$file_sha"
+    IFS=$'\t' read -r f e_repo e_branch file_sha entry <<<"$item"
+    _release_marker "$dir" "$f" "$e_repo" "$e_branch" "$file_sha" "$entry"
   done
 }
 

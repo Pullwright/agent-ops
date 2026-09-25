@@ -766,6 +766,8 @@ if ! (( DRY_RUN )); then
       warning) log_event "warning" "$(jq -c \
         '{detail: ("reservation-release retry: " + (.repo // "") + " " + (.branch // "") + ": " + (.detail // ""))}' \
         <<<"$pending_action")" ;;
+      reservation-release-stuck) log_event "reservation-release-stuck" \
+        "$(jq -c 'del(.action)' <<<"$pending_action")" ;;
     esac
   done < <(timeout 120 "$SCRIPT_DIR/scripts/release-pending-reservations.sh" \
              2>>"$cycle_dir/reservation-release-sweep.err" || true)
