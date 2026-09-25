@@ -948,17 +948,26 @@ Five things are worth knowing:
   entrypoint seeds `settings.json` only when it is absent, and refuses to start
   if `state_dir` is not writable by the container user (uid 1000 by default;
   rebuild with `--build-arg PUID=…` to match a host directory).
-- **Authenticate once per node**: `docker compose exec scheduler claude` and
-  complete the login. Until then every cycle fails at its first stage; the
-  entrypoint warns about it on each start. This is the one interactive step in
-  an otherwise non-interactive bring-up (D4) — every other credential,
-  including GitHub's, arrives as a plain `.env` value read at container start,
-  never by `exec`-ing into a running one. GitHub's own identity can be
-  upgraded the same way, entirely optionally: the forge authoring App (D18
-  decision 1, `.env.example`'s "Forge authoring App" section) mints
-  short-lived tokens in place of the `GH_TOKEN` PAT once an owner provisions
-  it; unset, a node just keeps authenticating with `GH_TOKEN`, exactly as
-  before this existed.
+- **Give this node model credentials** (primary: BYO API key; alternative:
+  subscription OAuth): The primary path (D4) is to set `ANTHROPIC_API_KEY` in
+  `.env` and `docker compose up -d` to pick it up — nothing further to
+  do, no interactive step, and any number of nodes can share the same key. Or,
+  if you have a Claude subscription, authenticate once per node with `docker
+  compose exec scheduler claude` and complete the interactive login. This
+  subscription OAuth path is a supported self-hosted configuration, but it
+  comes with two constraints: the login is interactive per node (no way to
+  script it, so it does not scale past a handful of nodes), and the
+  subscription's terms limit it to your own use, not a service you operate for
+  others. Until one of these is configured, every cycle fails at its first
+  stage, and the entrypoint warns about it on each start. This is the sole
+  exception to this stack's otherwise non-interactive bring-up — every other
+  credential, including GitHub's, arrives as a plain `.env` value read at
+  container start, never by `exec`-ing into a running one. GitHub's own
+  identity can be upgraded the same way, entirely optionally: the forge
+  authoring App (D18 decision 1, `.env.example`'s "Forge authoring App"
+  section) mints short-lived tokens in place of the `GH_TOKEN` PAT once an
+  owner provisions it; unset, a node just keeps authenticating with `GH_TOKEN`,
+  exactly as before this existed.
 - **The dashboard is never reachable from a network.** The `tailnet` profile
   puts the server in the Tailscale sidecar's network namespace, so Serve can
   proxy to its loopback and nothing else can; the `local` profile publishes it
@@ -2577,9 +2586,14 @@ step 5 deletes it from there. Two things are worth a moment first:
   tried once more by a peer. That is a re-tried cycle, not a fault — but it is
   the reason to do this deliberately rather than by letting a branch rot.
 
-The `claude-config` volume is not worth preserving: the OAuth credentials in
-it are per node, and a replacement node logs in once (`deploy/docker/README.md`
-step 4).
+The `claude-config` volume stores the OAuth credentials from an interactive
+subscription login. It is not worth preserving if your node used the BYO
+API-key path (the primary, first-class configuration — set `ANTHROPIC_API_KEY`
+in `.env`), since `claude` reads the API key from the environment on
+every invocation and there is nothing stored in this volume. If your node used
+the alternative OAuth subscription path, the credentials in it are per node;
+a replacement node logs in once if configured for the OAuth path, or simply
+sets the API key if using the primary path.
 
 ### 4. Destroy the stack, its volumes, and its tailnet identity
 
