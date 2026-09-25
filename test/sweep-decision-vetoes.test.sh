@@ -67,9 +67,14 @@ case "$args" in
   "issue view "*" -R acme/widgets --json state --jq .state")
     n="${args#issue view }"; n="${n%% -R*}"
     [[ -f "$S/item-state-$n" ]] && cat "$S/item-state-$n" || echo "OPEN" ;;
-  "issue view "*" -R acme/widgets --json comments --jq"*)
-    n="${args#issue view }"; n="${n%% -R*}"
-    [[ -f "$S/log-comments-$n.json" ]] && jq -r '.comments[-1].body // ""' "$S/log-comments-$n.json" ;;
+  "api repos/acme/widgets/issues/"*"/comments --paginate --jq "*)
+    # $2 is "repos/acme/widgets/issues/<n>/comments"; $5 is the literal --jq
+    # filter argument, applied to the fixture's raw REST comment array the
+    # same way `gh api --paginate --jq` applies it to each page it fetches.
+    n="${2#repos/acme/widgets/issues/}"; n="${n%/comments}"
+    if [[ -f "$S/log-comments-$n.json" ]]; then
+      jq -c "$5" "$S/log-comments-$n.json" 2>/dev/null
+    fi ;;
   "pr list -R acme/widgets --state open --json number,url,body,headRefName")
     [[ -f "$S/open-prs.json" ]] && cat "$S/open-prs.json" || echo '[]' ;;
   "pr list -R acme/widgets --state merged --json number,url,body,headRefName --limit 30")
@@ -154,7 +159,8 @@ jq -n --arg body "$(marker 44)" \
 jq -n '[{"actor": {"login": "warwickallen"}, "event": "reopened"}]' > "$c/events-503.json"
 printf 'CLOSED' > "$c/item-state-44"
 echo '[]' > "$c/open-prs.json"
-jq -n '{comments: [{body: "I disagree with this decision after all."}]}' > "$c/log-comments-503.json"
+jq -n '[{created_at: "2026-09-01T00:00:00Z", body: "I disagree with this decision after all."}]' \
+  > "$c/log-comments-503.json"
 
 out="$(run_sweep "$c")"
 calls="$(cat "$c/calls.log")"
@@ -257,6 +263,31 @@ out="$(run_sweep "$c")"
 vetoed="$(jq -c 'select(.action == "vetoed")' <<<"$out")"
 assert_eq "a reason_key-bearing marker still names the right item" "47" "$(jq -r '.item' <<<"$vetoed")"
 assert_eq "...and the right log issue" "507" "$(jq -r '.issue_number' <<<"$vetoed")"
+
+# --- Case 8 (agent-ops#1858): the veto's own comment is picked by the
+# *latest* created_at across the paginated REST read, not by array position —
+# the fix for `.comments[-1]`'s truncation past `gh`'s unpaginated ~100-
+# comment `--json comments` ceiling, where the true last comment could sort
+# anywhere in what the API actually returns -----------------------------------
+c="$tmp_dir/case8"; mkdir -p "$c"
+jq -n --arg body "$(marker 48)" \
+  '[{number: 508, url: "https://github.com/acme/widgets/issues/508",
+     title: "widgets: decision", body: $body}]' > "$c/decision-issues.json"
+jq -n '[{"actor": {"login": "warwickallen"}, "event": "reopened"}]' > "$c/events-508.json"
+printf 'CLOSED' > "$c/item-state-48"
+echo '[]' > "$c/open-prs.json"
+jq -n '[{created_at: "2026-09-02T00:00:00Z", body: "this is the true last comment"},
+        {created_at: "2026-09-01T00:00:00Z", body: "an earlier comment, listed last"}]' \
+  > "$c/log-comments-508.json"
+
+out="$(run_sweep "$c")"
+calls="$(cat "$c/calls.log")"
+assert_contains "the comments read is the paginated REST endpoint, not gh issue view --json comments" \
+  "api repos/acme/widgets/issues/508/comments --paginate" "$calls"
+assert_contains "the revisit issue quotes the comment with the latest created_at, not the last array element" \
+  "this is the true last comment" "$calls"
+assert_not_contains "...and not the one merely listed last" \
+  "an earlier comment, listed last" "$calls"
 
 if (( failures > 0 )); then
   echo "$failures failure(s)"

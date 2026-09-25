@@ -113,7 +113,12 @@ assert_eq() {
 # form quoted in a fenced code block, with no stamp — a bystander write), or
 # `prefixed-only` (the stamp on an ordinary pipeline comment carrying no
 # nudge marker at all); `$STUB_DEQUEUE_MARKER` (`yes`/`no`) steers whether the
-# merge-queue-dequeued marker comment is present instead; `$STUB_AUTHOR`
+# merge-queue-dequeued marker comment is present instead. Both are served by
+# the `api repos/o/a/issues/9/comments` branch below (the paginated REST read
+# `could_not_post_nudge`/`dequeue_notice` now use, agent-ops#1858), not `pr
+# view`: `$STUB_COMMENTS_RC` set nonzero fails that read; `$STUB_COMMENTS_PAGES`
+# (default 1) prepends that many filler pages ahead of the real one, proving a
+# marker on a later page of a paginated thread is still found. `$STUB_AUTHOR`
 # (default `author`) and `$STUB_REVIEWS` also steer the no-candidate-class
 # check; `$STUB_VIEW_RC` set nonzero makes the opening `pr view` re-check
 # itself unreadable, the fail-safe case — including for the
@@ -143,6 +148,28 @@ case "${1:-} ${2:-}" in
     reqs="[]"
     [[ "${STUB_REVIEW_REQUESTS:-0}" == "0" ]] || reqs='[{"login":"reviewer"}]'
     [[ -z "${STUB_REVIEW_REQUESTS_JSON:-}" ]] || reqs="$STUB_REVIEW_REQUESTS_JSON"
+    printf '{"state":"%s","isDraft":%s,"reviewDecision":"%s","reviewRequests":%s,"author":{"login":"%s"},"reviews":%s}\n' \
+      "${STUB_PR_STATE:-OPEN}" "${STUB_PR_DRAFT:-false}" "${STUB_REVIEW_DECISION:-}" "$reqs" \
+      "${STUB_AUTHOR:-author}" "${STUB_REVIEWS:-[]}"
+    ;;
+  "api repos/o/a/issues/9/comments")
+    # The `could_not_post_nudge`/`dequeue_notice` re-checks used to read the
+    # nudge/dequeue marker off `pr view`'s own unpaginated `comments` field;
+    # they now read this paginated REST endpoint instead (agent-ops#1858), so
+    # the same `$STUB_NUDGE_COMMENT`/`$STUB_DEQUEUE_MARKER` fixtures are
+    # served from here, with the caller's own `--jq` filter (the literal `$5`
+    # argument, `gh api`'s own single `--jq` value) applied for real — the
+    # same technique test/sweep-human-visibility.test.sh's stub uses.
+    (( "${STUB_COMMENTS_RC:-0}" == 0 )) || exit "$STUB_COMMENTS_RC"
+    # `$STUB_COMMENTS_PAGES` (default 1) emits that many filler pages ahead of
+    # the real one, each a separate `--jq`-filtered document exactly as
+    # `gh api --paginate` prints one per page — proving a marker on a later
+    # page of a long thread is still found, past where a single unpaginated
+    # ~100-comment fetch would have truncated it.
+    fill_pages="${STUB_COMMENTS_PAGES:-1}"
+    for (( p = 1; p < fill_pages; p++ )); do
+      jq -c "$5" <<<'[{"body":"filler comment on an earlier page"}]'
+    done
     comments="[]"
     case "${STUB_NUDGE_COMMENT:-none}" in
       real)
@@ -159,9 +186,7 @@ case "${1:-} ${2:-}" in
         ;;
     esac
     [[ "${STUB_DEQUEUE_MARKER:-no}" != "yes" ]] || comments='[{"body":"<!-- agent-ops:merge-queue-dequeued:2026-08-08T02:00:00Z -->"}]'
-    printf '{"state":"%s","isDraft":%s,"reviewDecision":"%s","reviewRequests":%s,"comments":%s,"author":{"login":"%s"},"reviews":%s}\n' \
-      "${STUB_PR_STATE:-OPEN}" "${STUB_PR_DRAFT:-false}" "${STUB_REVIEW_DECISION:-}" "$reqs" "$comments" \
-      "${STUB_AUTHOR:-author}" "${STUB_REVIEWS:-[]}"
+    jq -c "$5" <<<"$comments"
     ;;
   *)
     echo "stub gh: unexpected call: $*" >&2
@@ -407,6 +432,13 @@ out="$(STUB_PR_STATE=OPEN STUB_PR_DRAFT=false STUB_REVIEW_DECISION=APPROVED STUB
         STUB_NUDGE_COMMENT=real "$GATHER" "o/a" <<<"$nudge_level")"
 assert_eq "a nudge-class violation is dropped once the real marker comment appears" "[]" "$out"
 
+# --- could_not_post_nudge: the marker still clears it past a paginated read
+# --- (agent-ops#1858) — the marker comment lands on the read's second page,
+# --- past where an unpaginated ~100-comment fetch would have truncated -----
+out="$(STUB_PR_STATE=OPEN STUB_PR_DRAFT=false STUB_REVIEW_DECISION=APPROVED STUB_REVIEW_REQUESTS=0 \
+        STUB_NUDGE_COMMENT=real STUB_COMMENTS_PAGES=2 "$GATHER" "o/a" <<<"$nudge_level")"
+assert_eq "a nudge-class violation is dropped by a marker comment on a later page" "[]" "$out"
+
 # --- could_not_read_reviews: a successful `pr view` re-check is the whole
 # --- answer, since agent-ops#1085 — the read that failed (`_handoff_pr_
 # --- approved`, via `_handoff_pr_query`) is now the same GraphQL surface,
@@ -477,6 +509,12 @@ assert_eq "a dequeue-notice violation with no marker comment survives" \
 out="$(STUB_PR_STATE=OPEN STUB_PR_DRAFT=false STUB_DEQUEUE_MARKER=yes \
         "$GATHER" "o/a" <<<"$dequeue_level")"
 assert_eq "a dequeue-notice violation is dropped once the marker comment appears" "[]" "$out"
+
+# --- dequeue_notice: the marker still clears it past a paginated read
+# --- (agent-ops#1858) --------------------------------------------------------
+out="$(STUB_PR_STATE=OPEN STUB_PR_DRAFT=false STUB_DEQUEUE_MARKER=yes STUB_COMMENTS_PAGES=2 \
+        "$GATHER" "o/a" <<<"$dequeue_level")"
+assert_eq "a dequeue-notice violation is dropped by a marker comment on a later page" "[]" "$out"
 
 # --- An unrecognised warning shape survives while open and not draft -------
 out="$(STUB_PR_STATE=OPEN STUB_PR_DRAFT=false "$GATHER" "o/a" <<<"$unknown_level")"
