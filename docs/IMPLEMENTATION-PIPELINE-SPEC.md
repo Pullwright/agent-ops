@@ -1068,6 +1068,9 @@ and the schema must carry every one of them.
 | `schedule.revert_rate_offset_minutes` | `51` | Minutes past `CYCLE_MINUTE` (mod 60) the daily revert-rate publishing tick's minute is set to, jittering it across the fleet the same way `doctor_offset_minutes` jitters the unattended doctor pass. |
 | `schedule.tech_debt_archive_hour` | `4` | The hour the daily tech-debt archive publishing tick fires. |
 | `schedule.tech_debt_archive_offset_minutes` | `37` | Minutes past `CYCLE_MINUTE` (mod 60) the daily tech-debt archive publishing tick's minute is set to, jittering it across the fleet the same way `revert_rate_offset_minutes` jitters the revert-rate publish. |
+| `schedule.changelog_roll_hour` | `6` | The hour the weekly CHANGELOG.md roll fires. |
+| `schedule.changelog_roll_offset_minutes` | `13` | Minutes past `CYCLE_MINUTE` (mod 60) the weekly CHANGELOG.md roll's minute is set to, jittering it across the fleet the same way `tech_debt_archive_offset_minutes` jitters the tech-debt archive publish. |
+| `schedule.changelog_roll_day_of_week` | `1` | The day of week the weekly CHANGELOG.md roll fires, cron's own convention (`0`-`6`, Sunday is `0`). |
 | `schedule.monitor_hour` | `5` | The hour the daily monitor run is due (`docs/MONITOR-PIPELINE-SPEC.md` M4). The crontab line itself is hourly, so a node asleep at this hour still picks the day's run up at its next firing. |
 | `schedule.monitor_offset_minutes` | `19` | Minutes past `CYCLE_MINUTE` (mod 60) the hourly monitor tick's minute is set to, jittering it across the fleet the same way `doctor_offset_minutes` jitters the unattended doctor pass. |
 | `revert_rate_baseline` | `{"source": "docs/reviews/2026-08-15-merge-autonomy-baseline.md", "generated": "2026-08-15", "repos": [{"slug": "Poetic-Poems/poetic", "count": 84, "reverts": 0, "follow_up_fixes": 31}, {"slug": "Poetic-Poems/poetic-fiddle", "count": 119, "reverts": 0, "follow_up_fixes": 44}, {"slug": "Pullwright/agent-ops", "count": 120, "reverts": 0, "follow_up_fixes": 106}]}` | The D18 Stage 0 merge-autonomy baseline (docs/reviews/2026-08-15-merge-autonomy-baseline.md §6), copied here once as a fixed reference rather than re-derived at runtime (issue #579): `scripts/publish-revert-rate.sh` compares every window's revert-or-follow-up rate against these figures. A repository absent from `repos` reports its baseline comparison `unavailable` rather than failing. |
@@ -12392,6 +12395,89 @@ implements.
     `## [<version>]` headings and stay valid, because the release pull
     request that runs this script assembles first and renames
     `[Unreleased]` second — this script never touches a released section.
+25e. **A repository that cuts no releases still gets its `[Unreleased]`
+    section rolled, on a schedule (agent-ops#1809).**
+    `scripts/roll-changelog.sh [<owner/repo>]` is the scheduled roll
+    requirement 25d's own text names for this repository: run weekly, plus
+    on demand (a plain manual invocation — a Script-side duty needs no
+    separate dispatch mechanism the way a GitHub Actions workflow's
+    `workflow_dispatch` would), it runs `scripts/assemble-changelog.sh`
+    against `<owner/repo>`'s own `CHANGELOG.md` (`<owner/repo>` defaults to
+    wherever this script itself is checked out, resolved from `git remote
+    get-url origin`, mirroring requirement 25d's own "wherever it has been
+    synced" default), renames the resulting `## [Unreleased]` heading to
+    `## [<today's UTC date>]` (Keep a Changelog's version slot; this
+    repository carries no version numbers) and opens a fresh, empty
+    `## [Unreleased]` above it. `git`/`gh` credentials resolve through the
+    same on-demand shim (`lib/gh-shim.sh`) every other Script-side duty
+    already uses, so no separate authoring identity needs wiring up here.
+
+    A `CHANGELOG.md` carrying no `<!-- changelog:assembled-through -->`
+    marker at all is the one-time migration this repository's own file
+    needed at adoption: rather than running the assembler over the
+    5,150-line hand-written `[Unreleased]` section that predates the D27
+    convention (agent-ops#1804, #1810), the script renames that section,
+    unchanged, to a fixed `## [2026-09-23]` heading — #1810's own merge
+    date — opens a fresh empty `[Unreleased]` above it, and sets the marker
+    to #1810's own squash-merge commit
+    (`5e78f991c282a0f858942fcd10066a39c102e365`), so only a description
+    merged after D27 landed is ever assembled. This path runs exactly once,
+    the run after which the marker exists; every later run takes the
+    ordinary path below.
+
+    A run against a marker that already exists first counts the
+    first-parent commits since it (`git log --first-parent
+    <marker>..HEAD`); zero means nothing has merged since the last roll,
+    and the run is a no-op — no commit, no branch push, no pull request.
+    Otherwise it runs the assembler (which may still find no bullet-bearing
+    description among the commits in range, e.g. a run of `chore`/`test`-
+    only merges — the marker still advances and the section is still
+    rolled, empty, exactly as the assembler's own idempotence contract
+    already allows), renames the assembled `[Unreleased]` to today, opens a
+    fresh one, commits `CHANGELOG.md` and opens or updates one
+    `docs(changelog): roll <date>` pull request on the fixed
+    `changelog-roll` branch — a second run while the first's pull request
+    is still open force-pushes the same transform, freshly re-applied over
+    the current default branch, over that branch rather than opening a
+    second one, first checking (`lib/merge-queue.sh`'s
+    `merge_queue_probe`) that the existing pull request is not currently in
+    the merge queue — the same "never push under a queued pull request"
+    rule every other pushing stage in this pipeline already observes, an
+    unreadable queue state treated the same as "queued" (skip), never as
+    "safe to push". A first run opens that pull request ready for review,
+    not draft, carrying the config's own `pr_label` (`.pr_label //
+    "autonomous-agent"`, the same global fallback
+    `scripts/publish-revert-rate.sh` falls back to) and a `complexity:low`
+    label (created first if the repository lacks it, best-effort, the same
+    colour and description `lib/labels.sh`'s own catalogue gives it) — it is
+    the one pull request D27 (requirement 25c) permits to edit
+    `CHANGELOG.md`. This branch's fixed name is never `branch_prefix`-
+    prefixed and this pull request carries no cycle-authored `selection`
+    event in the fleet log, so it is invisible to every mechanism that reads
+    either of those: the automatic landing-retry sweep (`lib/landing.sh`)
+    can never arm it, and `gather-review-feedback.sh`/`gather-dequeued.sh`/
+    `gather-landing-refusals.sh` can never turn a human's follow-up comment
+    on it into a work order. Being ready and non-draft is what puts it in
+    the ordinary open-pull-request list a human already watches for every
+    other `pr_label`-carrying pull request, and what the unreviewed trigger
+    (agent-ops#890, requirement 46) reads once `merge_autonomy` is raised
+    above `human` — but landing it, on the first run and every force-pushed
+    update after, is always a human's own review and merge, never something
+    this pipeline arms on its own.
+
+    Cadence: `schedule.changelog_roll_hour`/`_offset_minutes` (the same
+    per-node jitter every other daily publish tick uses) and
+    `schedule.changelog_roll_day_of_week` (`0`-`6`, cron's own Sunday-is-`0`
+    convention) together render one weekly crontab line
+    (`deploy/docker/render-crontab.sh`, `deploy/docker/crontab.tmpl`) —
+    unlike the Pipeline Monitor's own daily-within-an-hourly-line cadence,
+    cron's own day-of-week field means the line itself only ever fires on
+    that one day, so no run-time "is this due" check is needed. Unit-tested
+    against a fixture git repository and a stubbed `gh`
+    (`test/roll-changelog.test.sh`), covering the migration rename, the
+    ordinary roll's assemble-then-rename and marker advance, the fixed
+    branch being updated rather than duplicated while its pull request is
+    still open, and the merge-queue skip; must pass `shellcheck`.
 26. Verifies the PR via `gh pr view --json mergeable,mergeStateStatus`
     (against GitHub's view, not inferred locally) and resolves any conflict
     with the current default branch. Leaves the PR as a **draft** — the
@@ -22266,6 +22352,27 @@ What exists, and the requirements each part answers to:
     closing-keyword verdict already uses there). `CHANGELOG_SECTION_GATE_GH`
     stubs `gh` for tests, and `CHANGELOG_SECTION_GATE_CHECK` the checker's
     path. Unit-tested (`test/changelog-section-gate.test.sh`); must pass
+    `shellcheck`.
+17e. `scripts/roll-changelog.sh` implementing requirement 25e: with no
+    marker present, renames the file's whole `[Unreleased]` section
+    unchanged to the fixed migration heading and sets the marker to the
+    fixed migration commit, running the assembler not at all; otherwise
+    counts first-parent commits since the marker and, finding none, exits 0
+    without touching the file, a branch or a pull request; otherwise runs
+    `scripts/assemble-changelog.sh`, renames the result to today's UTC
+    date, opens a fresh `[Unreleased]`, and pushes a commit to the fixed
+    `changelog-roll` branch — force-pushed (`--force-with-lease`) over a
+    prior run's own commit rather than opening a second pull request, first
+    checking via `lib/merge-queue.sh`'s `merge_queue_probe` that an
+    existing pull request, if any, is not currently queued.
+    `<owner/repo>` defaults to the script's own `git remote get-url
+    origin`; `gh`/`git` credentials resolve through the same on-demand shim
+    (`lib/gh-shim.sh`) every other Script-side duty already uses, needing
+    no separate wiring. Cadence is
+    `schedule.changelog_roll_hour`/`_offset_minutes`/`_day_of_week`,
+    rendered into one weekly crontab line by
+    `deploy/docker/render-crontab.sh`; unit-tested against a fixture git
+    repository and a stubbed `gh` (`test/roll-changelog.test.sh`); must pass
     `shellcheck`.
 18. `scripts/sweep-closed-issues.sh` implementing requirement 17c's sweep:
     given a repo slug, a node name and a cycle id, lists that repo's merged

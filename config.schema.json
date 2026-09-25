@@ -1984,6 +1984,39 @@
             "spec": "Minutes past `CYCLE_MINUTE` (mod 60) the daily tech-debt archive publishing tick's minute is set to, jittering it across the fleet the same way `revert_rate_offset_minutes` jitters the revert-rate publish."
           }
         },
+        "changelog_roll_hour": {
+          "description": "The hour the weekly CHANGELOG.md roll (scripts/roll-changelog.sh) fires.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 23,
+          "default": 6,
+          "x-docs": {
+            "readme": "The hour the containerised node's weekly CHANGELOG.md roll (`scripts/roll-changelog.sh`, agent-ops#1809) fires.",
+            "spec": "The hour the weekly CHANGELOG.md roll fires."
+          }
+        },
+        "changelog_roll_offset_minutes": {
+          "description": "Minutes past the node's cycle minute (mod 60) the weekly CHANGELOG.md roll's minute is set to, jittering it across the fleet the same way tech_debt_archive_offset_minutes jitters the tech-debt archive publish.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 59,
+          "default": 13,
+          "x-docs": {
+            "readme": "Minutes past `CYCLE_MINUTE` (mod 60) the weekly CHANGELOG.md roll's minute is set to (agent-ops#1809), on the same per-node jitter `tech_debt_archive_offset_minutes` uses.",
+            "spec": "Minutes past `CYCLE_MINUTE` (mod 60) the weekly CHANGELOG.md roll's minute is set to, jittering it across the fleet the same way `tech_debt_archive_offset_minutes` jitters the tech-debt archive publish."
+          }
+        },
+        "changelog_roll_day_of_week": {
+          "description": "The day of week the weekly CHANGELOG.md roll (scripts/roll-changelog.sh) fires, cron's own convention (0-6, Sunday is 0).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 6,
+          "default": 1,
+          "x-docs": {
+            "readme": "The day of week the containerised node's weekly CHANGELOG.md roll fires, cron's own convention (`0`-`6`, Sunday is `0`); the product default (`1`) is Monday.",
+            "spec": "The day of week the weekly CHANGELOG.md roll fires, cron's own convention (`0`-`6`, Sunday is `0`)."
+          }
+        },
         "monitor_hour": {
           "description": "The hour the Pipeline Monitor's daily run is due. The Monitor's own crontab line fires hourly (monitor_offset_minutes) and stands itself down unless the run is due: this hour, once per UTC day, or within the hour after any pager-fired event.",
           "type": "integer",

@@ -27,6 +27,15 @@
 # inside `monitor-cycle.sh`, because the second of the two needs the fleet's
 # own log and no crontab can read it.
 #
+# The CHANGELOG.md roll (agent-ops#1809) is weekly, unlike every other publish
+# line above: `schedule.changelog_roll_day_of_week` (cron's own convention,
+# `0`-`6`, Sunday is `0`) is cron's own day-of-week field, so — unlike the
+# Pipeline Monitor's daily-inside-an-hourly-line cadence above — no run-time
+# "is this due" check is needed; the crontab line itself only ever fires on
+# that one day. Its minute is jittered past CYCLE_MINUTE the same way every
+# other daily publish line's is (`schedule.changelog_roll_offset_minutes`,
+# past `schedule.changelog_roll_hour`).
+#
 # Failure never breaks the schedule: the output is written to a temp file
 # and moved into place only when it rendered completely; on any failure the
 # baked crontab — a valid, working schedule — stays, and the caller
@@ -78,6 +87,9 @@ revert_rate_hour="$(cfg '.schedule.revert_rate_hour')"
 revert_rate_offset="$(cfg '.schedule.revert_rate_offset_minutes')"
 tech_debt_archive_hour="$(cfg '.schedule.tech_debt_archive_hour')"
 tech_debt_archive_offset="$(cfg '.schedule.tech_debt_archive_offset_minutes')"
+changelog_roll_hour="$(cfg '.schedule.changelog_roll_hour')"
+changelog_roll_offset="$(cfg '.schedule.changelog_roll_offset_minutes')"
+changelog_roll_dow="$(cfg '.schedule.changelog_roll_day_of_week')"
 cycle_hours="$(cfg '.schedule.cycle_hours')"
 cycle_interval="$(cfg '.schedule.cycle_interval_minutes')"
 heartbeat_minutes="$(cfg '.schedule.heartbeat_minutes')"
@@ -150,6 +162,11 @@ revert_rate_minute=$(( (cycle_minute + revert_rate_offset) % 60 ))
 # The daily tech-debt archive publishing tick (agent-ops#878): jittered the
 # same way, past schedule.tech_debt_archive_hour, another once-a-day publish.
 tech_debt_archive_minute=$(( (cycle_minute + tech_debt_archive_offset) % 60 ))
+# The weekly CHANGELOG.md roll (agent-ops#1809): jittered the same way, past
+# schedule.changelog_roll_hour; its crontab line carries
+# schedule.changelog_roll_day_of_week in cron's own day-of-week field rather
+# than firing daily, so there is no "is this due" check to make at run time.
+changelog_roll_minute=$(( (cycle_minute + changelog_roll_offset) % 60 ))
 
 # The implementation cycle fires every schedule.cycle_interval_minutes past
 # cycle_minute within an allowed hour (issue #248, "faster heartbeat"):
@@ -190,6 +207,9 @@ if ! sed \
       -e "s#@REVERT_RATE_HOUR@#$revert_rate_hour#g" \
       -e "s#@TECH_DEBT_ARCHIVE_MINUTE@#$tech_debt_archive_minute#g" \
       -e "s#@TECH_DEBT_ARCHIVE_HOUR@#$tech_debt_archive_hour#g" \
+      -e "s#@CHANGELOG_ROLL_MINUTE@#$changelog_roll_minute#g" \
+      -e "s#@CHANGELOG_ROLL_HOUR@#$changelog_roll_hour#g" \
+      -e "s#@CHANGELOG_ROLL_DOW@#$changelog_roll_dow#g" \
       "$tmpl" > "$tmp"; then
   rm -f "$tmp"
   say "ERROR: rendering $tmpl failed — the baked schedule stays"
@@ -201,5 +221,5 @@ if grep -q '@[A-Z_]\{1,\}@' "$tmp"; then
   exit 1
 fi
 mv -f "$tmp" "$out"
-say "node $node: cycle at minute(s) $cycle_minutes past $cycle_hours (every ${cycle_interval}m), review at $review_minute past $review_hour:00, unattended doctor at :$doctor_minute hourly, monitor tick at :$monitor_minute hourly (due daily at $monitor_hour:00, or after a page fires), revert-rate publish at $revert_rate_minute past $revert_rate_hour:00, tech-debt archive publish at $tech_debt_archive_minute past $tech_debt_archive_hour:00, wake-poll every ${wake_poll_minutes}m, resource sampling every ${resource_sample_minutes}m"
+say "node $node: cycle at minute(s) $cycle_minutes past $cycle_hours (every ${cycle_interval}m), review at $review_minute past $review_hour:00, unattended doctor at :$doctor_minute hourly, monitor tick at :$monitor_minute hourly (due daily at $monitor_hour:00, or after a page fires), revert-rate publish at $revert_rate_minute past $revert_rate_hour:00, tech-debt archive publish at $tech_debt_archive_minute past $tech_debt_archive_hour:00, changelog roll at $changelog_roll_minute past $changelog_roll_hour:00 on day $changelog_roll_dow, wake-poll every ${wake_poll_minutes}m, resource sampling every ${resource_sample_minutes}m"
 exit 0
