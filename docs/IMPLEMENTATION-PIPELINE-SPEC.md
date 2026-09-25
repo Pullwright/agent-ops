@@ -12969,8 +12969,8 @@ implements.
     Co-Ordinator's own "For a `merge-conflicts` entry" instruction
     (`prompts/coordinator.md`) for a model-selected one — so the capture's
     guard above (an absent `base` skipping the capture) is never live in
-    practice for an ordinary rebase case; only a takeover, which never
-    reaches this capture at all, goes without one.
+    practice; a takeover carries the field too, and is turned away by the
+    takeover test above before its `base` is ever read.
 
     Compared at the Reviewer stage's own start, immediately after the
     existing merge-state advisory read (requirement 31d) and before the
@@ -25939,7 +25939,7 @@ oblige anyone to edit a test.
    an unreadable pull request as still open would run the very handoff a
    genuine merge invalidates.
 8e-iiiA. **A `merge-conflicts` work order carries `base` from both producers
-   (requirement 31e, agent-ops#1806).** `test/candidate-text-compose.test.sh`
+   (requirement 31e, agent-ops#1806).** `test/coordinator-merge-fallback.test.sh`
    passes: the deterministic fallback's `mc_cands` composition carries the
    gathered entry's own `base` onto both an ordinary and a takeover
    candidate, exactly as `dq_cands` already carries a `dequeued` entry's
