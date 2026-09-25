@@ -663,13 +663,20 @@ R5. **Per non-skipped repo** (processed **sequentially**, so a failure of one
       are never gated on this.
    0b. *Labels.* At the same point, and for the same reason it is that point —
       this repo is now certainly going to be worked — ensure its own resolved
-      `project_review` pr_label exists in it, creating it only if absent, via
-      `labels_ensure_role` (`lib/labels.sh`), unconditionally and unstamped:
-      the same shape `docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 6a
+      `project_review` pr_label exists in it, via `labels_reconcile_role`
+      (`lib/labels.sh`), unconditionally and unstamped: the same shape
+      `docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 6a
       uses for its own selected repository, immediately before the stage that
       needs the label to exist, rather than the rate-limited
-      `labels_ensure_stamped` requirement 6a's per-gathered-repository ensure
-      uses. A repository is selected for review at most once per
+      `labels_reconcile_stamped` requirement 6a's per-gathered-repository
+      ensure uses. The `review` role reconciles under MODE `additive`, so a
+      label outside `label_prefix`'s namespace — which every shipped
+      `project_review` pr_label is — is still created only if absent and
+      otherwise left exactly as the operator has it, and nothing is ever
+      deleted here: only a pr_label the operator has named inside that
+      namespace additionally has its colour and description reconciled
+      against the catalogue's (requirement 6a). A repository is selected for
+      review at most once per
       `min_days_between_reviews` days (R4), longer in every shipped
       configuration than `labels_ensure_interval_hours` (default 24h), so a
       stamp here would always have gone stale between one review of a
@@ -680,7 +687,10 @@ R5. **Per non-skipped repo** (processed **sequentially**, so a failure of one
       --label` fails the create outright, discarding a review that cost up to
       `timeout_review` minutes. Never fatal: a repository whose labels cannot
       be listed, or a token that may not create them, logs `labels-ensured`
-      with what failed and the review proceeds.
+      with what failed and the review proceeds. The event carries `created`,
+      `updated`, `deleted` and `failed`, the four `labels_reconcile`'s own
+      report can hold; at this call site `deleted` is always empty, MODE
+      `additive` having no delete pass.
    1. *Workspace.* Create `workspace_root/<review-id>-<repo-slug-safe>/` and
       clone the repo fresh from GitHub — the multi-agent ways-of-working rule
       shared by all Poetic repositories: every agent works in its own

@@ -393,7 +393,7 @@ EXCLUDES=(
   # published to peers only as the heartbeat's `mirror` verdict below, never
   # as this raw file.
   --exclude=.mirror-rebuild-state.json
-  # labels-ensured/ (lib/labels.sh's labels_ensure_stamped, agent-ops#687):
+  # labels-ensured/ (lib/labels.sh's _labels_stamped, agent-ops#687):
   # per-(repo, role) rate-limit stamp files, local to this node on the same
   # reasoning as .image-drift-cache.json above — no peer reads another
   # node's stamps, and a stamp restored from the fleet state branch would
