@@ -455,11 +455,10 @@ file and carries placeholders only; `.env` itself is never committed.
   once against the `claude-config` volume, which the entrypoint warns is
   absent on every start until that login exists — a warning scoped to this
   path alone, since it would be false on the API-key path above. This path
-  carries D4's
-  stated constraints — interactive per node, so it does not scale the way
-  the API-key path does, and limited by the subscription's own terms to your
-  own use. `scripts/doctor.sh`'s Claude section reports on whichever path
-  this node carries.
+  carries D4's stated constraints — interactive per node, so it does not
+  scale the way the API-key path does, and limited by the subscription's own
+  terms to your own use. `scripts/doctor.sh`'s Claude section reports on
+  whichever path this node carries.
 - **`tailscale`** (profile `tailnet`) — the sidecar whose network namespace
   `dashboard` shares. Refuses to start when `TS_AUTHKEY` is empty: its
   `entrypoint` checks the variable itself, before the image's own
