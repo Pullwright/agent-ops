@@ -713,14 +713,27 @@ refinement_traceability_repair() {  # <candidate-json> <refinements-json>
 # template below reads either one identically. A non-zero exit leaves stdout
 # whatever `gh` already wrote to it: the caller reads the exit code, never
 # emptiness.
+#
+# Comments are fetched separately from title/body, via the paginated REST
+# comments endpoint rather than `gh issue view --json comments` — that
+# GraphQL field fetches only the first ~100 comments and does not paginate,
+# so a thread past that ceiling would be silently truncated (TD-PPagop-26082808,
+# agent-ops#1012). `gh api --paginate` re-runs its `--jq` filter once per
+# page and prints each page's own filtered elements one per line, which is
+# why the result is slurped into one array afterwards rather than aggregated
+# inside `--jq` itself — the same split every other paginated `gh api` read
+# in this codebase uses (see lib/reconciliation-gate.sh's own header for why).
 item_live_entry() {  # <repo> <source> <item>
-  local repo="$1" source="$2" item="$3"
+  local repo="$1" source="$2" item="$3" meta comments
   case "$source" in
     issues|tech-debt)
-      gh issue view "$item" --repo "$repo" --json title,body,comments \
-        --jq '{title: (.title // ""), body: (.body // ""),
-               comments: [(.comments // [])[]
-                 | {author: (.author.login // ""), created_at: .createdAt, body: (.body // "")}]}'
+      meta="$(gh issue view "$item" --repo "$repo" --json title,body \
+        --jq '{title: (.title // ""), body: (.body // "")}')" || return 1
+      comments="$(gh api "repos/$repo/issues/$item/comments" --paginate \
+        --jq '.[] | {author: (.user.login // ""), created_at: (.created_at // ""), body: (.body // "")}')" \
+        || return 1
+      comments="$(jq -s -c '.' <<<"$comments")" || return 1
+      jq -c --argjson comments "$comments" '. + {comments: $comments}' <<<"$meta"
       ;;
     *)
       return 1

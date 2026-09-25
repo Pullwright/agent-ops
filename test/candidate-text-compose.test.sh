@@ -94,16 +94,30 @@ T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
 
 GH_CALLS_FILE="$T/gh_calls"
-GH_LIVE_JSON=""
+GH_API_ARGS_FILE="$T/gh_api_args"
+# item_live_entry now makes two gh calls: `gh issue view --json title,body`
+# for GH_META_JSON, and `gh api …/comments --paginate --jq …` (streamed, one
+# object per line) for GH_COMMENTS_JSONL — mirroring the real shape after
+# agent-ops#1012, which moved comments off the unpaginated
+# `gh issue view --json comments` field onto the paginated REST endpoint.
+GH_META_JSON=""
+GH_COMMENTS_JSONL=""
 GH_RC=0
 # shellcheck disable=SC2317  # reached only from the lifted item_live_entry block.
 gh() {
   printf 'x' >>"$GH_CALLS_FILE"
+  if [[ "$1" == "api" ]]; then
+    printf '%s\n' "$*" >>"$GH_API_ARGS_FILE"
+    [[ "$GH_RC" == "0" ]] || return "$GH_RC"
+    printf '%s' "$GH_COMMENTS_JSONL"
+    return 0
+  fi
   [[ "$GH_RC" == "0" ]] || return "$GH_RC"
-  printf '%s' "$GH_LIVE_JSON"
+  printf '%s' "$GH_META_JSON"
 }
 gh_calls() { [[ -f "$GH_CALLS_FILE" ]] && wc -c <"$GH_CALLS_FILE" | tr -d ' ' || printf '0'; }
-reset_gh_calls() { rm -f "$GH_CALLS_FILE"; }
+reset_gh_calls() { rm -f "$GH_CALLS_FILE" "$GH_API_ARGS_FILE"; }
+gh_api_args() { [[ -f "$GH_API_ARGS_FILE" ]] || return 0; cat "$GH_API_ARGS_FILE"; }
 
 GUARD_WARN_CALLS_FILE="$T/guard_warn_calls"
 # shellcheck disable=SC2317  # reached only from the lifted compose block.
@@ -114,12 +128,16 @@ guard_warn_calls() { [[ -f "$GUARD_WARN_CALLS_FILE" ]] && wc -l <"$GUARD_WARN_CA
 
 reset_gh_calls
 GH_RC=0
-GH_LIVE_JSON='{"title":"Live title","body":"Live body, fetched fresh","comments":[{"author":"alice","created_at":"2026-08-01T00:00:00Z","body":"first comment"}]}'
+GH_META_JSON='{"title":"Live title","body":"Live body, fetched fresh"}'
+GH_COMMENTS_JSONL='{"author":"alice","created_at":"2026-08-01T00:00:00Z","body":"first comment"}'
 live_out="$(item_live_entry "o/r" "issues" "42")"
 assert_eq "item_live_entry (issues) prints the fetched title" "Live title" "$(jq -r '.title' <<<"$live_out")"
 assert_eq "…and body" "Live body, fetched fresh" "$(jq -r '.body' <<<"$live_out")"
 assert_eq "…and each comment's author/body" "alice/first comment" \
   "$(jq -r '.comments[0].author + "/" + .comments[0].body' <<<"$live_out")"
+assert_eq "…exactly two gh calls: gh issue view (title/body), gh api …/comments (paginated)" "2" "$(gh_calls)"
+assert_contains "…the comments call is the paginated REST endpoint, not gh issue view --json comments" \
+  "$(gh_api_args)" "repos/o/r/issues/42/comments --paginate"
 
 live_out_td="$(item_live_entry "o/r" "tech-debt" "42")"
 assert_eq "item_live_entry (tech-debt) fetches identically to issues — both are GitHub issues since D15" \
@@ -127,6 +145,24 @@ assert_eq "item_live_entry (tech-debt) fetches identically to issues — both ar
 
 assert_eq "item_live_entry refuses an unrecognised source" "1" \
   "$(item_live_entry "o/r" "review-feedback" "42" >/dev/null 2>&1; echo $?)"
+
+# --- item_live_entry: a thread past gh's ~100-comment --json ceiling is not --
+# --- silently truncated (agent-ops#1012, TD-PPagop-26082808) ----------------
+#
+# `gh issue view --json comments` fetches only the first ~100 comments via
+# GraphQL and does not paginate; the paginated REST endpoint this function
+# now uses has no such ceiling. 150 mocked comments stands in for "more than
+# the old ceiling" without needing a real >100-comment thread.
+
+reset_gh_calls
+GH_RC=0
+GH_META_JSON='{"title":"Long-running thread","body":"Original body"}'
+GH_COMMENTS_JSONL="$(jq -nc 'range(150) | {author: "bot", created_at: "2026-01-01T00:00:00Z", body: ("comment " + (. | tostring))}')"
+live_out_long="$(item_live_entry "o/r" "issues" "99")"
+assert_eq "item_live_entry returns every comment past the old ~100-comment ceiling" "150" \
+  "$(jq -r '.comments | length' <<<"$live_out_long")"
+assert_eq "…including the last one, which a truncated fetch would have dropped" "comment 149" \
+  "$(jq -r '.comments[-1].body' <<<"$live_out_long")"
 
 # --- compose_selected_candidate_text: the three self-derived sources are a --
 # --- deliberate no-op, never a fault -----------------------------------------
@@ -148,11 +184,12 @@ cand='{"repo":"o/r","default_branch":"main","pr_label":"autonomous-agent","sourc
 
 reset_gh_calls
 GH_RC=0
-GH_LIVE_JSON='{"title":"The real, untrimmed title","body":"The real, untrimmed body","comments":[{"author":"bob","created_at":"2026-08-02T00:00:00Z","body":"a real comment"}]}'
+GH_META_JSON='{"title":"The real, untrimmed title","body":"The real, untrimmed body"}'
+GH_COMMENTS_JSONL='{"author":"bob","created_at":"2026-08-02T00:00:00Z","body":"a real comment"}'
 out="$(compose_selected_candidate_text "$cand" "$repos" "$refinements")"
 rc=$?
 assert_eq "compose_selected_candidate_text (issues) succeeds" "0" "$rc"
-assert_eq "…exactly one gh call (the live fetch)" "1" "$(gh_calls)"
+assert_eq "…exactly two gh calls (the live fetch: title/body, then paginated comments)" "2" "$(gh_calls)"
 assert_contains "…context carries the live, untrimmed body" "$(jq -r '.context' <<<"$out")" "The real, untrimmed body"
 assert_contains "…and the live comment, attributed" "$(jq -r '.context' <<<"$out")" "bob (2026-08-02T00:00:00Z):
 a real comment"
@@ -188,11 +225,12 @@ cand_td='{"repo":"o/r","default_branch":"main","pr_label":"autonomous-agent","so
 
 reset_gh_calls
 GH_RC=0
-GH_LIVE_JSON='{"title":"The real record title","body":"The real record body","comments":[{"author":"carol","created_at":"2026-08-03T00:00:00Z","body":"on reflection, only fix the first half"}]}'
+GH_META_JSON='{"title":"The real record title","body":"The real record body"}'
+GH_COMMENTS_JSONL='{"author":"carol","created_at":"2026-08-03T00:00:00Z","body":"on reflection, only fix the first half"}'
 out_td="$(compose_selected_candidate_text "$cand_td" "$repos_td" "$refinements")"
 rc=$?
 assert_eq "compose_selected_candidate_text (tech-debt) succeeds" "0" "$rc"
-assert_eq "…exactly one gh call (the live fetch)" "1" "$(gh_calls)"
+assert_eq "…exactly two gh calls (the live fetch: title/body, then paginated comments)" "2" "$(gh_calls)"
 assert_contains "…context carries the live, untrimmed body" "$(jq -r '.context' <<<"$out_td")" "The real record body"
 assert_contains "…and every comment, attributed — a scope cut left in one is not dropped" \
   "$(jq -r '.context' <<<"$out_td")" "carol (2026-08-03T00:00:00Z):
