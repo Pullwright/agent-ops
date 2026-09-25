@@ -1052,7 +1052,7 @@ while IFS= read -r finding; do
       printf '## What to build\n\nAdd a new invariant to `lib/pager-invariants.sh` for the fact described above, and register it in `pager_register_builtin_invariants`, so the fleet catches this automatically instead of depending on the Pipeline Monitor noticing it again.\n\n'
       printf -- '---\n%s\nmonitor-finding-key: %s\n' "$(monitor_provenance "$finding_index")" "$f_key"
     } > "$body_file"
-    labels_ensure_role "$CONFIG_FILE" "$SCHEMA_FILE" "$pager_repo" target >/dev/null 2>&1 || true
+    labels_reconcile_role "$CONFIG_FILE" "$SCHEMA_FILE" "$pager_repo" target >/dev/null 2>&1 || true
     promoted_created="$(monitor_create_issue "$pager_repo" "pager: add invariant $f_key" \
       "$body_file" "pw::type:tech-debt" "" || true)"
     if [[ -n "$promoted_created" ]]; then
@@ -1126,7 +1126,7 @@ while IFS= read -r finding; do
         printf '%s\n\n' "$f_body"
         printf -- '---\n%s\nmonitor-finding-key: %s\n' "$(monitor_provenance "$finding_index")" "$f_key"
       } > "$body_file"
-      labels_ensure_role "$CONFIG_FILE" "$SCHEMA_FILE" "$f_repo" target >/dev/null 2>&1 || true
+      labels_reconcile_role "$CONFIG_FILE" "$SCHEMA_FILE" "$f_repo" target >/dev/null 2>&1 || true
       created="$(monitor_create_issue "$f_repo" "$f_title" "$body_file" "pw::type:tech-debt" "" || true)"
       ;;
     tactical)
@@ -1149,7 +1149,7 @@ while IFS= read -r finding; do
         printf -- '---\n%s\nmonitor-finding-key: %s\nreason_key=monitor-%s\n' \
           "$(monitor_provenance "$finding_index")" "$f_key" "$f_key"
       } > "$body_file"
-      labels_ensure_role "$CONFIG_FILE" "$SCHEMA_FILE" "$escalation_repo" escalation >/dev/null 2>&1 || true
+      labels_reconcile_role "$CONFIG_FILE" "$SCHEMA_FILE" "$escalation_repo" escalation >/dev/null 2>&1 || true
       created="$(monitor_create_issue "$escalation_repo" "Monitor decision: $f_title" \
         "$body_file" "pw::decision" "" || true)"
       if [[ -n "$created" ]]; then
@@ -1169,7 +1169,7 @@ while IFS= read -r finding; do
         printf '## Options\n\n%s\n\n' "${f_options:-_the Monitor stated no options; treat this as a question, not a proposal._}"
         printf -- '---\n%s\nmonitor-finding-key: %s\n' "$(monitor_provenance "$finding_index")" "$f_key"
       } > "$body_file"
-      labels_ensure_role "$CONFIG_FILE" "$SCHEMA_FILE" "$escalation_repo" escalation >/dev/null 2>&1 || true
+      labels_reconcile_role "$CONFIG_FILE" "$SCHEMA_FILE" "$escalation_repo" escalation >/dev/null 2>&1 || true
       created="$(monitor_create_issue "$escalation_repo" "$f_title" "$body_file" \
         "$enabler_escalation_label" "$enabler_assignee" || true)"
       ;;

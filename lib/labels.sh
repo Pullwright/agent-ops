@@ -50,9 +50,24 @@
 # up for any label named under `label_prefix` (config.schema.json, default
 # `pw::`): create, reconcile colour/description drift, and delete once no
 # longer catalogued — full ownership of that namespace, never touching a
-# label outside it. No call site uses them yet; renaming the catalogue below
-# to `pw::`-prefixed names and wiring `labels_ensure_role`'s own call sites
-# onto `labels_reconcile_role` is TD-PPagop-26082809.
+# label outside it. TD-PPagop-26082809 wired every call site in
+# agent-cycle.sh, review-cycle.sh, lib/enabler.sh and lib/candidate-gather.sh
+# onto `labels_reconcile_role`/`labels_reconcile_stamped` and moved the four
+# genuinely per-installation-configurable defaults below
+# (`enabler_escalation_label`, `needs_refinement_label`, `refined_label`,
+# `unvoid_label`; `pr_label` has no product default to move) under that
+# namespace. `blocked`, `blocked:needs-refinement`, `obsolete`,
+# `open-question` and `complexity:low|medium|high` stay unprefixed
+# deliberately, not as work left undone: each is documented fixed and
+# non-configurable elsewhere in this codebase for a reason that renaming
+# would defeat rather than honour — `obsolete` in particular
+# (`lib/void-guard.sh`) is hand-applied by a human from memory, and a rename
+# would desync the label the pipeline reads from the one a human actually
+# types, silently disabling requirement 34k's own corroboration. Read
+# `lib/landing.sh`'s `LANDING_OPEN_QUESTION_LABEL` comment for `open-question`'s
+# own version of the same argument. Moving these five is out of scope for
+# this change; see agent-ops#1013's own thread for the open question this
+# left for a maintainer.
 #
 # Sourced by agent-cycle.sh and review-cycle.sh.
 
@@ -430,6 +445,19 @@ labels_reconcile() {
 # cannot be read leaves PREFIX empty, the same safe fallback
 # labels_reconcile's own empty-PREFIX path gives every other caller: nothing
 # is reconciled or deleted, only ever created.
+#
+# The catalogue is captured into a variable rather than piped straight
+# through, and MODE is downgraded to `additive` when that capture is empty —
+# `target`'s own catalogue can never legitimately be empty (`pr_label` alone
+# is required and non-empty), so an empty capture here means
+# `labels_catalogue`'s own `jq` failed after `config_defaults` succeeded, the
+# one failure its exit status cannot distinguish from "genuinely nothing to
+# catalogue". `labels_reconcile`'s delete pass does not look at the catalogue
+# for what to keep beyond the (in this case empty) prefixed names it parsed
+# from stdin, so an empty catalogue reaching MODE `full` would delete every
+# `label_prefix`-named label in REPO outright. Downgrading leaves that case as
+# inert as the already-safe config-unreadable one above (empty PREFIX,
+# nothing to reconcile or delete) rather than catastrophic.
 labels_reconcile_role() {
   local config_file="$1" schema_file="$2" repo="$3" role="$4" review_pr_label="${5:-}"
   local defaulted prefix=""
@@ -437,15 +465,22 @@ labels_reconcile_role() {
     && prefix="$(jq -r '.label_prefix // ""' <<<"$defaulted" 2>/dev/null)"
   local mode="additive"
   [[ "$role" == "target" ]] && mode="full"
-  labels_catalogue "$config_file" "$schema_file" "$role" "$review_pr_label" \
-    | labels_reconcile "$repo" "$prefix" "$mode"
+  local catalogue
+  catalogue="$(labels_catalogue "$config_file" "$schema_file" "$role" "$review_pr_label")"
+  [[ -z "$catalogue" ]] && mode="additive"
+  printf '%s' "$catalogue" | labels_reconcile "$repo" "$prefix" "$mode"
 }
 
-# labels_ensure_stamped STATE_DIR CONFIG_FILE SCHEMA_FILE REPO ROLE \
-#                       INTERVAL_HOURS [REVIEW_PR_LABEL]
-# The rate-limited wrapper around labels_ensure_role (requirement 6a,
-# agent-ops#687): ensures ROLE's catalogue in REPO at most once per
-# INTERVAL_HOURS, so a repository this system has already labelled costs
+# _labels_stamped STAGE_FN STATE_DIR CONFIG_FILE SCHEMA_FILE REPO ROLE \
+#                  INTERVAL_HOURS [REVIEW_PR_LABEL]
+# Internal: the rate-limited wrapper labels_ensure_stamped/
+# labels_reconcile_stamped both are, parameterized on STAGE_FN — the
+# labels_ensure_role/labels_reconcile_role-shaped function that actually
+# ensures — so the two public wrappers below cannot drift apart on the
+# stamp-file logic itself.
+#
+# Ensures ROLE's catalogue in REPO at most once per INTERVAL_HOURS (requirement
+# 6a, agent-ops#687), so a repository this system has already labelled costs
 # nothing beyond a stat(2) once the first listing has run. Keyed per
 # (REPO, ROLE) via its own stamp file under STATE_DIR/labels-ensured/, so one
 # repository's — or one role's — interval elapsing says nothing about
@@ -454,20 +489,19 @@ labels_reconcile_role() {
 # only stays true if the check repeats.
 #
 # The stamp is touched only after a listing actually succeeds: a repository
-# whose labels could not be listed (labels_ensure_role's own advisory
-# failure, propagated here) leaves no stamp, so the very next cycle tries
-# again rather than waiting out a whole interval on a failure this never
-# actually paid for.
+# whose labels could not be listed (STAGE_FN's own advisory failure,
+# propagated here) leaves no stamp, so the very next cycle tries again rather
+# than waiting out a whole interval on a failure this never actually paid for.
 #
 # INTERVAL_HOURS <= 0, or unset/non-numeric, disables the stamp check
 # entirely: every call ensures. It is read as whole hours, from the value's
 # integer part — see the truncation below for why a decimal reaches here at
-# all. Prints labels_ensure_role's own report
-# (nothing, on a skipped call) and returns its exit status (0 on a skipped
-# call — a rate-limited repeat is success, not a failure to check).
-labels_ensure_stamped() {
-  local state_dir="$1" config_file="$2" schema_file="$3" repo="$4" role="$5" \
-    interval_hours="${6:-24}" review_pr_label="${7:-}"
+# all. Prints STAGE_FN's own report (nothing, on a skipped call) and returns
+# its exit status (0 on a skipped call — a rate-limited repeat is success, not
+# a failure to check).
+_labels_stamped() {
+  local stage_fn="$1" state_dir="$2" config_file="$3" schema_file="$4" repo="$5" role="$6" \
+    interval_hours="${7:-24}" review_pr_label="${8:-}"
   [[ -n "$state_dir" && -n "$repo" && -n "$role" ]] || return 1
 
   local stamp_dir="$state_dir/labels-ensured" safe="${repo//\//_}"
@@ -490,7 +524,7 @@ labels_ensure_stamped() {
   fi
 
   local report rc=0
-  report="$(labels_ensure_role "$config_file" "$schema_file" "$repo" "$role" "$review_pr_label")" \
+  report="$("$stage_fn" "$config_file" "$schema_file" "$repo" "$role" "$review_pr_label")" \
     || rc=$?
   if (( rc == 0 )); then
     mkdir -p "$stamp_dir" 2>/dev/null \
@@ -499,6 +533,22 @@ labels_ensure_stamped() {
   fi
   printf '%s' "$report"
   return "$rc"
+}
+
+# labels_ensure_stamped STATE_DIR CONFIG_FILE SCHEMA_FILE REPO ROLE \
+#                       INTERVAL_HOURS [REVIEW_PR_LABEL]
+# _labels_stamped through labels_ensure_role — create-only, never-touch.
+labels_ensure_stamped() {
+  _labels_stamped labels_ensure_role "$@"
+}
+
+# labels_reconcile_stamped STATE_DIR CONFIG_FILE SCHEMA_FILE REPO ROLE \
+#                       INTERVAL_HOURS [REVIEW_PR_LABEL]
+# labels_ensure_stamped's own shape, but through labels_reconcile_role: full
+# CRUD for whatever the resolved `label_prefix` owns, the same stamp file and
+# interval semantics otherwise.
+labels_reconcile_stamped() {
+  _labels_stamped labels_reconcile_role "$@"
 }
 
 # labels_reserved_names CONFIG_FILE SCHEMA_FILE

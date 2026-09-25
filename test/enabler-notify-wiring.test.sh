@@ -97,7 +97,7 @@ fi
 # GH_CREATE_MODE is "succeed" (both attempts print a URL) or "fail" (both
 # attempts print nothing, as a real 401'd `gh issue create` would). Writes the
 # body to a fresh file, sources lib/notify.sh and evals the two extracted
-# functions with `gh`/`curl`/`labels_ensure_role`/`log_event` stubbed, calls
+# functions with `gh`/`curl`/`labels_reconcile_role`/`log_event` stubbed, calls
 # create_escalation_issue, and prints "<rc>\t<stdout>".
 #
 # Every case gets a fresh `log_file`: notify_post's own rate limit is
@@ -137,7 +137,7 @@ run_case() {
     SCHEMA_FILE=""
 
     # shellcheck disable=SC2317  # called from the extracted sources below
-    labels_ensure_role() { return 0; }
+    labels_reconcile_role() { return 0; }
 
     # shellcheck disable=SC2317  # called from the extracted sources below
     log_event() { printf '%s\t%s\n' "$1" "${2:-{\}}" >> "$tmp_dir/events"; }

@@ -119,7 +119,7 @@ create_escalation_issue() {
   # path above, which is the common one. The retry-without-label below stays
   # regardless — this makes the label likely, not certain, and an escalation
   # must be raised either way.
-  labels_ensure_role "$CONFIG_FILE" "$SCHEMA_FILE" "$repo" escalation >/dev/null 2>&1 || true
+  labels_reconcile_role "$CONFIG_FILE" "$SCHEMA_FILE" "$repo" escalation >/dev/null 2>&1 || true
   raw="$(gh issue create -R "$repo" --title "$title" --body-file "$body_file" \
            --assignee "$enabler_assignee" --label "$label" \
            2>>"$cycle_dir/enabler-issue.err" || true)"
@@ -211,7 +211,7 @@ escalation_recent_close() {
 #     above searches the same label — an issue filed without it is invisible
 #     to both, a veto lever dead from the moment it is filed, and a later
 #     `decide-tactical` pass for the same item would file a second log issue
-#     never knowing this one existed (agent-ops#1198). `labels_ensure_role`
+#     never knowing this one existed (agent-ops#1198). `labels_reconcile_role`
 #     just above already makes the label likely before the one create attempt
 #     this function makes; a create that still fails is a genuine failure,
 #     reported by the caller's own warning (see requirement 37) exactly as a
@@ -231,7 +231,7 @@ create_decision_log_issue() {
     printf '%s' "$existing"
     return 0
   fi
-  labels_ensure_role "$CONFIG_FILE" "$SCHEMA_FILE" "$repo" escalation >/dev/null 2>&1 || true
+  labels_reconcile_role "$CONFIG_FILE" "$SCHEMA_FILE" "$repo" escalation >/dev/null 2>&1 || true
   raw="$(gh issue create -R "$repo" --title "$title" --body-file "$body_file" \
            --label "$label" 2>>"$cycle_dir/enabler-decision-issue.err" || true)"
   url="$(grep -oE 'https://github\.com/[A-Za-z0-9_./-]+/issues/[0-9]+' <<<"$raw" | tail -n1 || true)"

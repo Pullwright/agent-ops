@@ -1485,11 +1485,45 @@ if ((gh_ready)); then
     if ! repo_labels="$(gh api "repos/$slug/labels" --paginate --jq '.[].name' 2>/dev/null)"; then
       return 1
     fi
+    local catalogued=()
     while IFS=$'\t' read -r label _ _; do
       [[ -n "$label" ]] || continue
+      catalogued+=("${label,,}")
       grep -qixF -- "$label" <<<"$repo_labels" \
         || warn "$slug has no \"$label\" label — $creates; if it is still absent after that has passed, this token may not create labels"
     done < <(labels_catalogue "$config_file" "$schema_file" "$role" "$review_pr_label")
+
+    # `label_prefix` (default `pw::`) is what target's own MODE full grants
+    # full CRUD, deletion included: `labels_reconcile_role` deletes any
+    # existing PREFIX-named label the catalogue above does not name
+    # (lib/labels.sh). Checked only for role "target" — the one catalogue call
+    # that reconciles with MODE full at all; "review"/"escalation" reconcile
+    # colour/description drift but never delete (lib/labels.sh's own comment
+    # on `labels_reconcile`), so a stray prefixed label there is inert. TD-
+    # PPagop-26082809's own hazard: a short or generic `label_prefix` (e.g.
+    # `"b"`) would silently pull an unrelated, uncatalogued human label (e.g.
+    # `bug`) into the delete scope the next time this repository is
+    # reconciled — checked live, against this repository's actual labels,
+    # since no static constraint on `label_prefix` alone can know what a
+    # given repository already has.
+    if [[ "$role" == "target" ]]; then
+      local prefix
+      prefix="$(cfg '.label_prefix // ""')"
+      if [[ -n "$prefix" ]]; then
+        local existing matched c
+        while IFS= read -r existing; do
+          [[ -n "$existing" ]] || continue
+          [[ "${existing,,}" == "${prefix,,}"* ]] || continue
+          matched=0
+          for c in ${catalogued[@]+"${catalogued[@]}"}; do
+            [[ "$c" == "${existing,,}" ]] && { matched=1; break; }
+          done
+          if (( ! matched )); then
+            fail "$slug already has a \"$existing\" label matching label_prefix (\"$prefix\") that no catalogued label names — labels_reconcile_role's MODE full delete pass (requirement 6a) would remove it, and every issue/PR carrying it, the next time this repository is reconciled"
+          fi
+        done <<<"$repo_labels"
+      fi
+    fi
     return 0
   }
 

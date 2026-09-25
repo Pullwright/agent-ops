@@ -226,13 +226,13 @@ _pager_webhook_notify() {
 }
 
 # _pager_ensure_label_role REPO ROLE
-# Ensure ROLE's label catalogue exists in REPO, on the create path only —
-# lib/enabler.sh's create_escalation_issue does exactly this, for exactly the
-# reason it states: an escalation repository "is often not one the cycle
-# otherwise touches (`crash_loop_repo` by construction is not), so its label
-# has nowhere else to be ensured". `pager_repo` falls back to
-# `crash_loop_repo`, so by that same construction nothing else would ever
-# create `pw::pager`.
+# Ensure ROLE's label catalogue exists in REPO — lib/enabler.sh's
+# create_escalation_issue does exactly this, through the same
+# labels_reconcile_role, for exactly the reason it states: an escalation
+# repository "is often not one the cycle otherwise touches (`crash_loop_repo`
+# by construction is not), so its label has nowhere else to be ensured".
+# `pager_repo` falls back to `crash_loop_repo`, so by that same construction
+# nothing else would ever create `pw::pager`.
 #
 # Here the label is load-bearing rather than cosmetic, which is why this is
 # not merely a nicety: both _pager_create_issue's own dedup and
@@ -249,8 +249,8 @@ _pager_webhook_notify() {
 _pager_ensure_label_role() {
   local repo="$1" role="${2:-}"
   [[ -n "$repo" && -n "$role" ]] || return 0
-  declare -F labels_ensure_role >/dev/null 2>&1 || return 0
-  labels_ensure_role "${CONFIG_FILE:-}" "${SCHEMA_FILE:-}" "$repo" "$role" >/dev/null 2>&1 || true
+  declare -F labels_reconcile_role >/dev/null 2>&1 || return 0
+  labels_reconcile_role "${CONFIG_FILE:-}" "${SCHEMA_FILE:-}" "$repo" "$role" >/dev/null 2>&1 || true
   return 0
 }
 

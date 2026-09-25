@@ -121,8 +121,8 @@ TEMPLATE="$SCRIPT_DIR/dashboard/index.html"
 # against the bare id every stage-end's own `model` field already carries.
 . "$SCRIPT_DIR/lib/model-id.sh"
 # shellcheck source=lib/labels.sh
-# `labels_ensure_role` alone: lib/pager.sh's `_pager_ensure_label_role` calls
-# it — only on the path that actually creates an issue — before filing a
+# `labels_reconcile_role` alone: lib/pager.sh's `_pager_ensure_label_role`
+# calls it — only on the path that actually creates an issue — before filing a
 # `pw::pager`/`pw::decision` issue, on the identical precedent
 # lib/enabler.sh's create_escalation_issue already sets. It is a `declare -F`
 # probe there, so sourcing this here is what turns it on; without it the
