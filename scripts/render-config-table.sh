@@ -234,7 +234,27 @@ def truncated_prefix:
   | sub("[ \t]+$"; "")
   | if test("[,;:]$") then .[0:-1] else . end;
 
+    # One-hop $ref resolution (agent-ops#592, D7): repository_review'"'"'s own
+    # shape lives in $defs.reviewPipelineConfig, shared by $ref with the
+    # deprecated project_review alias, rather than a literal
+    # .properties.repository_review.properties — this script otherwise never
+    # resolves $ref (every other property'"'"'s $ref stays opaque; only its
+    # sibling keywords like x-docs/default/description are ever read), so
+    # this is the one place, and one hop is all it needs: production'"'"'s
+    # reviewPipelineConfig carries no further $ref of its own at this level.
+    # A node with a literal .properties already (the test fixture'"'"'s own
+    # synthetic "repository_review", which predates $ref entirely) passes
+    # through unchanged. Takes $root explicitly (rather than a global) because
+    # getpath must resolve against the *document* root, not whatever `.` the
+    # pipe has narrowed to by the time this runs.
+    def deref1($root):
+      if has("$ref") then
+        (.["$ref"]) as $ref_path
+        | ($root | getpath($ref_path | ltrimstr("#/") | split("/")))
+      else . end;
+
 def flatten_region($region):
+  . as $root |
   if $region == "main" then
     # repository_review and its deprecated alias project_review (agent-ops#592,
     # D7) are both excluded here: repository_review'"'"'s detail rows, and
@@ -249,21 +269,21 @@ def flatten_region($region):
       {key: $e.key, node: $e.value}
     end
   else
-    # repository_review'"'"'s own shape is $defs.reviewPipelineConfig (shared by
-    # $ref with the deprecated project_review alias below), not a literal
-    # .properties.repository_review.properties — this script does not resolve
-    # $ref generically, so the one nesting it needs to walk is named directly
-    # here. project_review itself renders as a single opaque summary row
-    # (like escalation_webhook_url'"'"'s, in the "main" region) rather than
-    # expanded: it has no rows of its own beyond what repository_review
-    # already lists above it.
-    (.["$defs"].reviewPipelineConfig.properties | to_entries[] |
+    # project_review itself renders as a single opaque summary row (like
+    # escalation_webhook_url'"'"'s, in the "main" region) rather than expanded:
+    # it has no rows of its own beyond what repository_review already lists
+    # above it. select()ed out entirely when the schema does not define it at
+    # all — a schema (the test fixture'"'"'s own, in particular) is not required
+    # to carry a deprecated alias for a block it does not carry the current
+    # spelling of either; without this a schema-only reader here would try to
+    # notes_for() a null node and blow up on an "unrecognised note block".
+    ((.properties.repository_review | deref1($root)).properties | to_entries[] |
       if .key == "defaults" then
         (.value.properties | to_entries[] | {key: ("repository_review.defaults." + .key), node: .value})
       else
         {key: ("repository_review." + .key), node: .value}
       end),
-    {key: "project_review", node: .properties.project_review}
+    ((.properties.project_review) as $pr | select($pr != null) | {key: "project_review", node: $pr})
   end;
 
 # A note block flattened to the one line a table cell can hold: a paragraph
