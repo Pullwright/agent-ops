@@ -270,7 +270,9 @@ record_verdict() {
 }
 
 cycle_stale_after="$(jq -r '.lock_stale_after // 4' "$CONFIG_FILE")"
-review_stale_after="$(jq -r '.project_review.lock_stale_after // 6' "$CONFIG_FILE")"
+# repository_review is the current spelling; project_review is still
+# accepted as a deprecated alias (agent-ops#592, D7).
+review_stale_after="$(jq -r '.repository_review.lock_stale_after // .project_review.lock_stale_after // 6' "$CONFIG_FILE")"
 [[ "$cycle_stale_after"  =~ ^[0-9]+$ ]] || cycle_stale_after=4
 [[ "$review_stale_after" =~ ^[0-9]+$ ]] || review_stale_after=6
 

@@ -60,12 +60,12 @@
 #
 # Row order is the schema's own property order (`jq`'s `keys_unsorted`), so
 # reordering a table means reordering the schema. `schedule` and
-# `project_review` are the two top-level object-valued properties whose own
+# `repository_review` are the two top-level object-valued properties whose own
 # children are rendered instead of themselves, one level deep, as dotted keys
-# (`schedule.review_hour`, `project_review.lock_stale_after`) in the parent's
-# position; `project_review.defaults` nests one level deeper still, so its own
-# children render as `project_review.defaults.model` and so on, on the same
-# principle. Everything else (`repos`, `project_review.repos`,
+# (`schedule.review_hour`, `repository_review.lock_stale_after`) in the parent's
+# position; `repository_review.defaults` nests one level deeper still, so its own
+# children render as `repository_review.defaults.model` and so on, on the same
+# principle. Everything else (`repos`, `repository_review.repos`,
 # `prompt_overrides`) renders as a single row.
 #
 # Four marked regions hold the whole table — header row, `|---|---|---|`
@@ -236,19 +236,34 @@ def truncated_prefix:
 
 def flatten_region($region):
   if $region == "main" then
-    (.properties | to_entries[] | select(.key != "project_review")) as $e |
+    # repository_review and its deprecated alias project_review (agent-ops#592,
+    # D7) are both excluded here: repository_review'"'"'s detail rows, and
+    # project_review'"'"'s own single summary row, belong to the "review" region
+    # below instead — that is where a reader documenting the review pipeline
+    # looks, not the general implementation-pipeline table.
+    (.properties | to_entries[]
+      | select(.key != "repository_review" and .key != "project_review")) as $e |
     if $e.key == "schedule" then
       ($e.value.properties | to_entries[] | {key: ("schedule." + .key), node: .value})
     else
       {key: $e.key, node: $e.value}
     end
   else
-    (.properties.project_review.properties | to_entries[] |
+    # repository_review'"'"'s own shape is $defs.reviewPipelineConfig (shared by
+    # $ref with the deprecated project_review alias below), not a literal
+    # .properties.repository_review.properties — this script does not resolve
+    # $ref generically, so the one nesting it needs to walk is named directly
+    # here. project_review itself renders as a single opaque summary row
+    # (like escalation_webhook_url'"'"'s, in the "main" region) rather than
+    # expanded: it has no rows of its own beyond what repository_review
+    # already lists above it.
+    (.["$defs"].reviewPipelineConfig.properties | to_entries[] |
       if .key == "defaults" then
-        (.value.properties | to_entries[] | {key: ("project_review.defaults." + .key), node: .value})
+        (.value.properties | to_entries[] | {key: ("repository_review.defaults." + .key), node: .value})
       else
-        {key: ("project_review." + .key), node: .value}
-      end)
+        {key: ("repository_review." + .key), node: .value}
+      end),
+    {key: "project_review", node: .properties.project_review}
   end;
 
 # A note block flattened to the one line a table cell can hold: a paragraph

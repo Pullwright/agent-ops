@@ -341,7 +341,7 @@ cat > "$d/stub/result.json" <<'EOF'
 {"status":"complete",
  "report_markdown":"### What is broken now\n\nnothing\n\n### What limited throughput\n\na cadence\n\n### What is new\n\nnothing\n\n### Pages\n\nnone",
  "findings":[
-   {"key":"review-cadence-slow","class":"tactical","title":"The review cadence is too slow","body":"evidence","config_key":"project_review.defaults.min_days_between_reviews"}],
+   {"key":"review-cadence-slow","class":"tactical","title":"The review cadence is too slow","body":"evidence","config_key":"repository_review.defaults.min_days_between_reviews"}],
  "page_triage":[]}
 EOF
 out="$(run_monitor "$d" --once)"
@@ -349,17 +349,17 @@ assert_eq "a tactical finding with an empty allow-list creates no issue at all" 
 report="$(report_of "$d")"
 assert_contains "it is recorded as proposed" "proposed" "$report"
 assert_contains "and the report names the key that was not delegated" \
-  "project_review.defaults.min_days_between_reviews" "$report"
+  "repository_review.defaults.min_days_between_reviews" "$report"
 assert_lacks "no pw::decision is filed" "pw::decision" "$(cat "$d/stub/calls.log")"
 
 # --- and the same finding with the key delegated does move ------------------
 d="$(make_node tactical-open \
-  "$BASE | .monitor_tactical_keys = [\"project_review.defaults.min_days_between_reviews\"]")"
+  "$BASE | .monitor_tactical_keys = [\"repository_review.defaults.min_days_between_reviews\"]")"
 cat > "$d/stub/result.json" <<'EOF'
 {"status":"complete",
  "report_markdown":"### What is broken now\n\nnothing\n\n### What limited throughput\n\na cadence\n\n### What is new\n\nnothing\n\n### Pages\n\nnone",
  "findings":[
-   {"key":"review-cadence-slow","class":"tactical","title":"The review cadence is too slow","body":"evidence","config_key":"project_review.defaults.min_days_between_reviews"}],
+   {"key":"review-cadence-slow","class":"tactical","title":"The review cadence is too slow","body":"evidence","config_key":"repository_review.defaults.min_days_between_reviews"}],
  "page_triage":[]}
 EOF
 out="$(run_monitor "$d" --once)"

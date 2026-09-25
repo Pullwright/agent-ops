@@ -6,7 +6,7 @@
 # The decision recorded on that issue, restated here because it is what this
 # file implements: **both layered, configuration winning** — a repository's
 # own resolved `review_instructions`/`review_context` (its override, or
-# `project_review.defaults`', requirement 342) hold installation-supplied
+# `repository_review.defaults`', requirement 342) hold installation-supplied
 # text; `repo_context_file` additionally admits one file read from the
 # repository under review's own clone, but *only* as context, never as
 # instruction. The reasoning is D19's: text a reviewed repository's
@@ -55,9 +55,9 @@ review_context_resolve_path() {
   printf '%s\n' "$p"
 }
 
-# review_context_missing_configured STATE_DIR PROJECT_REVIEW_REPOS_JSON
+# review_context_missing_configured STATE_DIR REPOSITORY_REVIEW_REPOS_JSON
 # Prints one `slug<TAB>field<TAB>configured<TAB>resolved` line per configured
-# review_instructions/review_context entry (from config_project_review_repos'
+# review_instructions/review_context entry (from config_repository_review_repos'
 # already-resolved, requirement-342-applied output) that does not resolve to
 # a readable *regular file* — a directory is readable and contributes nothing
 # but an empty entry, which is exactly the silent shortfall R1c exists to
@@ -123,7 +123,7 @@ _review_context_within_clone() {
 }
 
 # review_context_build_json STATE_DIR CLONE_DIR ENTRY_JSON
-# ENTRY_JSON is one config_project_review_repos() entry (already resolved
+# ENTRY_JSON is one config_repository_review_repos() entry (already resolved
 # per requirement 342). Prints `{"instructions": [...], "context": [...]}`:
 # every configured review_instructions path becomes one `instructions`
 # entry (source "config"); every configured review_context path, plus

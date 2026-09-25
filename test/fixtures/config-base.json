@@ -32,7 +32,7 @@
     "cycle_interval_minutes": 15,
     "excluded_minutes": [0]
   },
-  "project_review": {
+  "repository_review": {
     "defaults": {
       "model": "claude-sonnet-5",
       "pr_label": "test-project-review",

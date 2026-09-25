@@ -412,7 +412,7 @@ assert_eq "  ... and there is at least one such site, so the scan is not vacuous
   "6" "$(awk '/^if impl_cycle_running; then/ { exit } /^[[:space:]]*suppress_node_state_if_peer_owns_node$/ { n++ } END { print n + 0 }' "$review_cycle")"
 
 # Then behaviourally, end to end, against the real script — the routine case,
-# since `project_review.defaults.not_before` in force is a steady state rather
+# since `repository_review.defaults.not_before` in force is a steady state rather
 # than a race: on an installation using it *every* review tick reaches this
 # ending, including the ones landing inside a live Implementer stage.
 
@@ -430,8 +430,8 @@ shim_node() {  # shim_node <name> -> prints its directory
   done
   # `repos: []` and `state_repo: ""` keep the run offline; the stand-down
   # under test fires long before either would matter anyway.
-  jq '.project_review.repos = [] | .state_repo = ""
-      | .project_review.defaults.not_before = "2099-01-01T00:00:00Z"' \
+  jq '.repository_review.repos = [] | .state_repo = ""
+      | .repository_review.defaults.not_before = "2099-01-01T00:00:00Z"' \
     "$SCRIPT_DIR/config.json" > "$dir/config.json"
   printf '%s' "$dir"
 }
@@ -511,7 +511,7 @@ assert_eq "a review-lock.json naming a pid that is gone does not suppress the tr
 # and put a limit-hit whose `resume_at` is in the future into the node's own
 # log.jsonl, which `fleet_logs` unions into the stream 3.1 reads.
 d="$(shim_node usage-limit-own-lock)"
-jq 'del(.project_review.defaults.not_before)' "$d/config.json" > "$d/config.json.tmp"
+jq 'del(.repository_review.defaults.not_before)' "$d/config.json" > "$d/config.json.tmp"
 mv "$d/config.json.tmp" "$d/config.json"
 jq -nc --arg r "$(date -u -d '+3 hours' +%Y-%m-%dT%H:%M:%SZ)" \
   '{event: "limit-hit", ts: "2000-01-01T00:00:00Z", resume_at: $r, class: "other"}' \

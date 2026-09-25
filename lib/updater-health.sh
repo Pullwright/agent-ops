@@ -130,7 +130,7 @@
 # file carries no config-reading of its own and no default that could drift
 # from the schema's. <defer-stuck-after-seconds> is the caller's on the same
 # terms: the natural bound on a legitimate defer streak is the longer of
-# `lock_stale_after` and `project_review.lock_stale_after`, since past that
+# `lock_stale_after` and `repository_review.lock_stale_after`, since past that
 # point watchtower-pre-update.sh's own `held_by()` would no longer honour
 # either lock — the caller derives it, this file only applies it.
 #

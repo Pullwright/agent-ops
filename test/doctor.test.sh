@@ -250,7 +250,7 @@ slug="acme-org/target-repo"
 base_config="$tmp/base-config.json"
 jq --arg slug "$slug" '
   .repos = [{slug: $slug, sources: ["security", "abandoned-drafts"]}]
-  | .project_review.repos = []
+  | .repository_review.repos = []
   | .state_repo = ""
   | .enabler_model = ""
   | .enabler_assignee = ""
@@ -301,25 +301,25 @@ assert_contains "an archived repo fails even though the token could otherwise pu
   "[fail] $slug is archived" "$out"
 assert_eq "and doctor.sh exits 1" "1" "$rc"
 
-# project_review.repos gets the same write-access check as repos[] — the
+# repository_review.repos gets the same write-access check as repos[] — the
 # Reviewer stage pushes a branch and opens a PR against them exactly as an
 # Implementer does against a target repo, so a review repo the token can read
 # but not push to loses the review the same way a target repo loses an item.
 review_config="$tmp/review-config.json"
-jq --arg slug "$slug" '.repos = [] | .project_review.repos = [{slug: $slug}]' "$base_config" > "$review_config"
+jq --arg slug "$slug" '.repos = [] | .repository_review.repos = [{slug: $slug}]' "$base_config" > "$review_config"
 out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH PATH="$stub_bin:$PATH" STUB_REPO_JSON='{"permissions":{"push":false},"archived":false}' \
   bash "$DOCTOR" --config "$review_config" 2>&1)"
 rc=$?
-assert_contains "project_review.repos names a repo the token cannot push to" \
+assert_contains "repository_review.repos names a repo the token cannot push to" \
   "[fail] $slug is readable but not writable with this token" "$out"
 assert_eq "and doctor.sh exits 1" "1" "$rc"
 
-# state_repo shares check_repo_access with repos[] and project_review.repos — this is
+# state_repo shares check_repo_access with repos[] and repository_review.repos — this is
 # what catches the two verdicts drifting apart, the way a hand-rolled
 # state_repo check once folded an absent `.permissions` into `fail` rather
 # than `skip` (it cannot be asked, which is not evidence it cannot push).
 state_repo_config="$tmp/state-repo-config.json"
-jq --arg slug "$slug" '.repos = [] | .project_review.repos = [] | .state_repo = $slug' "$base_config" > "$state_repo_config"
+jq --arg slug "$slug" '.repos = [] | .repository_review.repos = [] | .state_repo = $slug' "$base_config" > "$state_repo_config"
 out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH PATH="$stub_bin:$PATH" STUB_REPO_JSON='{"archived":false}' \
   bash "$DOCTOR" --config "$state_repo_config" 2>&1)"
 assert_contains "state_repo with no visible .permissions is a skip, not a fail" \
@@ -1863,6 +1863,37 @@ assert_contains "NOTIFY_WEBHOOK_URL set alone (config.json empty) earns a positi
 run_doctor
 assert_not_contains "with neither source set, doctor says nothing about NOTIFY_WEBHOOK_URL" \
   "NOTIFY_WEBHOOK_URL" "$out"
+
+# agent-ops#592 (D7): repository_review is the current spelling of the review
+# pipeline's config block; project_review is still accepted as a deprecated
+# alias, on the same "warn while only the old name is set" shape
+# escalation_webhook_url already uses above — but unlike that alias, both
+# spellings set together is a schema *failure*, not a silent precedence, so
+# there is no third warning to test here: the schema check above already
+# reports it.
+project_review_alias_config="$tmp/project-review-alias-config.json"
+jq '.project_review = .repository_review | del(.repository_review)' "$base_config" > "$project_review_alias_config"
+out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH -u ANTHROPIC_API_KEY -u NOTIFY_WEBHOOK_URL PATH="$stub_bin:$PATH" \
+  bash "$DOCTOR" --config "$project_review_alias_config" 2>&1)"
+rc=$?
+assert_contains "project_review set alone warns, naming repository_review as the replacement" \
+  "[warn] project_review is set — it is accepted as a deprecated alias for repository_review" "$out"
+assert_eq "and this alone does not fail the run" "0" "$rc"
+
+out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH -u ANTHROPIC_API_KEY -u NOTIFY_WEBHOOK_URL PATH="$stub_bin:$PATH" \
+  bash "$DOCTOR" --config "$base_config" 2>&1)"
+rc=$?
+assert_contains "repository_review set alone (the shipped spelling) earns a positive ok, no alias warning" \
+  "[ ok ] repository_review is set (no deprecated project_review alias in use)" "$out"
+
+both_review_spellings_config="$tmp/both-review-spellings-config.json"
+jq '.project_review = .repository_review' "$base_config" > "$both_review_spellings_config"
+out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH -u ANTHROPIC_API_KEY -u NOTIFY_WEBHOOK_URL PATH="$stub_bin:$PATH" \
+  bash "$DOCTOR" --config "$both_review_spellings_config" 2>&1)"
+rc=$?
+assert_contains "both spellings set fails the schema check, naming both" \
+  "[fail] config: both project_review and repository_review are set" "$out"
+assert_eq "and doctor.sh exits 1" "1" "$rc"
 
 # A level above human whose environment carries no runtime credential is a
 # warn, not a fail: the wrapper fails closed (exit 2, gate unreadable) and

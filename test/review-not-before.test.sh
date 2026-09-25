@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# test/review-not-before.test.sh — `project_review.defaults.not_before` holds the review
+# test/review-not-before.test.sh — `repository_review.defaults.not_before` holds the review
 # pipeline off until a date, and nothing else off at all.
 #
 # The requirement it serves (R3.3) is one the switch cannot express. `--disable`
@@ -22,7 +22,7 @@
 #   unparseable   stands down rather than running. The operator plainly meant
 #                 to hold reviews off; running through a value we could not
 #                 read would spend exactly the quota they were protecting
-#   tier two      `project_review.defaults.not_before` is only the
+#   tier two      `repository_review.defaults.not_before` is only the
 #                 installation-wide half (requirement 342); when it is itself
 #                 unset but every configured repository's own override still
 #                 holds it off, the whole cycle stands down before the lock
@@ -37,7 +37,7 @@
 # Each case runs the real `review-cycle.sh` against a shim node: a directory of
 # symlinks back into the tree with its own `config.json`, which works because
 # the script takes SCRIPT_DIR from its own path and reads config from there.
-# `project_review.repos` is emptied so a run that is *not* stood down still finishes
+# `repository_review.repos` is emptied so a run that is *not* stood down still finishes
 # without reaching for the network — except the last two cases, which need real
 # entries to exercise the per-repository resolution: the tier-two case relies on
 # the stand-down itself firing before any repository is touched, and the mixed
@@ -117,7 +117,7 @@ run_review() {  # run_review <dir> -> prints stdout+stderr, sets RC
 
 # The mixed case below is the one that must survive the stand-down checks and
 # run on into the per-repository skip-guard, so it cannot rely on an empty
-# `project_review.repos` to keep it offline the way every other case here does.
+# `repository_review.repos` to keep it offline the way every other case here does.
 # Fail-fast shims stand in the way of every reach for the network instead, on
 # the same reasoning test/review-claim.test.sh gives at its own copy: a test
 # that needs a step not to happen must be the thing that stops it, rather than
@@ -152,15 +152,15 @@ stand_down_reason() {  # stand_down_reason <dir>
 
 # `repos: []` keeps a non-stood-down run offline; `state_repo: ""` keeps the
 # fleet switch from reaching for one.
-BASE='.project_review.repos = [] | .state_repo = ""'
+BASE='.repository_review.repos = [] | .state_repo = ""'
 
 # --- In force --------------------------------------------------------------------
-d="$(make_node in-force "$BASE | .project_review.defaults.not_before = \"2099-01-01T00:00:00Z\"")"
+d="$(make_node in-force "$BASE | .repository_review.defaults.not_before = \"2099-01-01T00:00:00Z\"")"
 out="$(run_review "$d")"
 assert_contains "a future not_before stands the review down" \
   "standing down until 2099-01-01T00:00:00Z" "$out"
 assert_contains "and the log says which rule did it" \
-  "project_review.defaults.not_before: no review before 2099-01-01T00:00:00Z" "$(stand_down_reason "$d")"
+  "repository_review.defaults.not_before: no review before 2099-01-01T00:00:00Z" "$(stand_down_reason "$d")"
 assert_eq "with the date on the event, for the dashboard to read" "2099-01-01T00:00:00Z" \
   "$(events_of "$d" | jq -r 'select(.event == "review-stand-down") | .not_before' 2>/dev/null)"
 assert_eq "and the tick still ends 0, so cron does not call it a failure" "0" "$RC"
@@ -168,37 +168,37 @@ assert_eq "and the tick still ends 0, so cron does not call it a failure" "0" "$
 # --- Expired ---------------------------------------------------------------------
 # The property that distinguishes this from raising min_days_between_reviews:
 # nothing has to be put back by hand once the date passes.
-d="$(make_node expired "$BASE | .project_review.defaults.not_before = \"2000-01-01T00:00:00Z\"")"
+d="$(make_node expired "$BASE | .repository_review.defaults.not_before = \"2000-01-01T00:00:00Z\"")"
 out="$(run_review "$d")"
 assert_lacks "a past not_before does not stand the review down" "standing down until" "$out"
 assert_lacks "and leaves no stand-down of its own in the log" \
-  "project_review.defaults.not_before" "$(stand_down_reason "$d")"
-assert_lacks "nor does tier two fire — an empty project_review.repos has nothing to hold back" \
+  "repository_review.defaults.not_before" "$(stand_down_reason "$d")"
+assert_lacks "nor does tier two fire — an empty repository_review.repos has nothing to hold back" \
   "every configured repository's own not_before" "$out"
 
 # --- Absent ----------------------------------------------------------------------
-d="$(make_node absent "$BASE | del(.project_review.defaults.not_before)")"
+d="$(make_node absent "$BASE | del(.repository_review.defaults.not_before)")"
 out="$(run_review "$d")"
 assert_lacks "an absent key is not a stand-down" "standing down until" "$out"
-assert_lacks "nor is it reported as one" "project_review.defaults.not_before" "$(stand_down_reason "$d")"
-assert_lacks "and tier two is vacuously false, not true, on an empty project_review.repos" \
+assert_lacks "nor is it reported as one" "repository_review.defaults.not_before" "$(stand_down_reason "$d")"
+assert_lacks "and tier two is vacuously false, not true, on an empty repository_review.repos" \
   "every configured repository's own not_before" "$out"
 
-d="$(make_node empty "$BASE | .project_review.defaults.not_before = \"\"")"
+d="$(make_node empty "$BASE | .repository_review.defaults.not_before = \"\"")"
 out="$(run_review "$d")"
 assert_lacks "and neither is an empty one" "standing down until" "$out"
 
 # --- Tier two: every configured repo held on its own override, with
-#     project_review.defaults.not_before itself left unset --------------------------
+#     repository_review.defaults.not_before itself left unset --------------------------
 # Tier one alone reads only the installation-wide key, so it would let this
 # straight through to the lock even though every configured repository is
 # individually held. `repos` carries two real entries here (rather than the
 # empty array every other case above uses) precisely to exercise that: tier
 # two must resolve each entry's own `not_before` override from
-# project_review_repos_json and stand the whole cycle down before ever
+# repository_review_repos_json and stand the whole cycle down before ever
 # reaching a repository's own skip-guard or the network.
-d="$(make_node tier-two-all-held ".project_review.defaults.not_before = \"\" \
-  | .project_review.repos = [ {slug: \"Poetic-Poems/poetic\", not_before: \"2099-01-01T00:00:00Z\"}, \
+d="$(make_node tier-two-all-held ".repository_review.defaults.not_before = \"\" \
+  | .repository_review.repos = [ {slug: \"Poetic-Poems/poetic\", not_before: \"2099-01-01T00:00:00Z\"}, \
                                {slug: \"Poetic-Poems/poetic-fiddle\", not_before: \"2099-06-01T00:00:00Z\"} ] \
   | .state_repo = \"\"")"
 out="$(run_review "$d")"
@@ -216,8 +216,8 @@ assert_eq "and the tick still ends 0" "0" "$RC"
 # away by R4's per-repository skip-guard instead, once the cycle is under way.
 # A `not_before` check that only ever ran cycle-wide would pass every assertion
 # in this file except these.
-d="$(make_node mixed-one-held ".project_review.defaults.not_before = \"\" \
-  | .project_review.repos = [ {slug: \"Poetic-Poems/poetic\", not_before: \"2099-01-01T00:00:00Z\"}, \
+d="$(make_node mixed-one-held ".repository_review.defaults.not_before = \"\" \
+  | .repository_review.repos = [ {slug: \"Poetic-Poems/poetic\", not_before: \"2099-01-01T00:00:00Z\"}, \
                                {slug: \"Poetic-Poems/poetic-fiddle\"} ] \
   | .state_repo = \"\"")"
 out="$(run_review_offline "$d")"
@@ -280,8 +280,8 @@ exit 1
 STUB
 chmod +x "$gh_bin/gh"
 
-d="$(make_node merged-pr-guard ".project_review.defaults.not_before = \"\" \
-  | .project_review.repos = [ {slug: \"o/merged-pr-guard\", min_prs_between_reviews: 10} ] \
+d="$(make_node merged-pr-guard ".repository_review.defaults.not_before = \"\" \
+  | .repository_review.repos = [ {slug: \"o/merged-pr-guard\", min_prs_between_reviews: 10} ] \
   | .state_repo = \"\"")"
 out="$(env HOME="$d/home" AGENT_OPS_ROLE=active PATH="$gh_bin:$PATH" \
   timeout 60 "$d/review-cycle.sh" --once 2>&1)"
@@ -294,7 +294,7 @@ assert_eq "and the tick still ends 0" "0" "$rc"
 
 # --- Unparseable -----------------------------------------------------------------
 # Fails towards the operator's evident intent, not through it.
-d="$(make_node unparseable "$BASE | .project_review.defaults.not_before = \"next Thursday-ish\"")"
+d="$(make_node unparseable "$BASE | .repository_review.defaults.not_before = \"next Thursday-ish\"")"
 out="$(run_review "$d")"
 assert_contains "an unparseable not_before stands down rather than running" \
   "not a date this system can parse" "$out"

@@ -27,7 +27,7 @@ not migrated — remain binding on any agent working inside them.
 
 A second, independent pipeline that runs alongside the implementation
 pipeline, on its own configured cadence
-(`project_review.defaults.min_days_between_reviews`). For each run it takes
+(`repository_review.defaults.min_days_between_reviews`). For each run it takes
 one target repository and produces a full project review — via the vendored
 `project-review` skill — against a fresh ephemeral clone, and leaves **one**
 mergeable pull request carrying the review reports. Debt the review surfaces
@@ -39,7 +39,7 @@ pipeline (and/or the `project-remediation` skill). The only human
 involvement is merging the review pull request.
 
 ```
-cron (project_review.defaults.min_days_between_reviews; a daily tick with a
+cron (repository_review.defaults.min_days_between_reviews; a daily tick with a
        skip-guard is recommended — see R4)
   └─ review-cycle.sh                  ← the Review Script: lock, stand-down, per-repo skip-guard
        └─ for each target repo, sequentially:
@@ -79,7 +79,7 @@ cron (project_review.defaults.min_days_between_reviews; a daily tick with a
 1. The **Review Cronjob** — the crontab entry that fires the Review Script.
 2. The **Review Script** (`review-cycle.sh`) — a bash script that orchestrates
    one run across the target repositories, on its own configured cadence
-   (`project_review.defaults.min_days_between_reviews`). It launches the
+   (`repository_review.defaults.min_days_between_reviews`). It launches the
    Reviewer-Agent; agents never launch the Script.
 3. The **Reviewer-Agent** — a headless Claude Code invocation that runs the
    `project-review` skill against one ephemeral clone and raises one review
@@ -145,7 +145,7 @@ Two decisions are deliberate:
 
 ## Configuration
 
-One `project_review` object in the existing `config.json` (one config file —
+One `repository_review` object in the existing `config.json` (one config file —
 never a second one) holds every tunable for this pipeline, in two parts
 (requirement 342): `defaults` — every tunable set once, installation-wide —
 and `repos` — the repositories to review, each a `{"slug": "owner/name"}`
@@ -156,6 +156,23 @@ non-null on *r*'s own entry, and `defaults[k]` otherwise; an entry carrying
 only `slug` inherits every default. `lock_stale_after` sits outside `defaults`
 — it bounds the shared review lock, which covers whichever repositories a run
 touches, not any one repository, so it has no per-repo override.
+
+**`project_review` is a deprecated alias for `repository_review`**
+(agent-ops#592, D7): the two are the identical shape, and `config_defaults`
+resolves either spelling into `.repository_review` before any stage reads it,
+so nothing downstream of that merge ever has to know the old spelling exists.
+Setting both in the same `config.json` is a configuration error —
+`config_schema_errors` refuses it, naming both keys — rather than a silent
+precedence, since resolving one of two present keys by precedence is exactly
+the quiet failure `config.schema.json`'s own validator exists to catch.
+`scripts/doctor.sh` warns when `project_review` is the only one set, naming
+`repository_review` as the replacement. There is no calendar-based
+deprecation window for the old spelling: this installation has no release
+train to express one in (`config.json` ships inside the image, so a node
+never runs new code against an old config file of its own), and the only
+compatibility window that genuinely exists is the fleet roll — **the old
+spelling stops being accepted once every node in the fleet reports an image
+containing the rename.**
 
 ### Review instructions and context
 
@@ -196,7 +213,7 @@ repository that has not opted in, so a missing file there is simply absent,
 never a fault.
 
 ```json
-"project_review": {
+"repository_review": {
   "defaults": {
     "review_instructions": ["review-instructions/poetic-fiddle.md"],
     "review_context": ["review-context/poetic-suite.md"],
@@ -227,10 +244,14 @@ whole is optional there: an installation that does not run reviews simply
 leaves it out. `review-cycle.sh` therefore tests for the block against
 `config.json` itself rather than against the merge `config_defaults` returns
 (`docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 1b): that merge
-synthesises a `project_review` object from the defaults of the leaves under
+synthesises a `repository_review` object from the defaults of the leaves under
 it, so it can never report the block absent, and this one check must read
-absence as absence. Every key *within* the block is read from the merge as
-everywhere else.
+absence as absence — against either spelling (`has("repository_review") or
+has("project_review")`), since the deprecated alias above counts as
+configuring the pipeline exactly as the current spelling does. Every key
+*within* the block is read from the merge as everywhere else, which is what
+lets it use `repository_review` unconditionally: `config_defaults` has
+already folded whichever spelling `config.json` set into that key.
 
 The body rows of the table below are generated from that schema — each key's
 `x-docs.spec` prose and `x-docs.value` cell — by
@@ -242,7 +263,7 @@ over 500 characters is capped, with its full text deferred to this document's
 the one long enough for that today.
 
 ```json
-"project_review": {
+"repository_review": {
   "defaults": {
     "model": "claude-sonnet-5",
     "pr_label": "project-review",
@@ -260,27 +281,28 @@ the one long enough for that today.
 <!-- config-table:start id=review — GENERATED from config.schema.json by scripts/render-config-table.sh; edit the schema, not these rows -->
 | Key | Value | Notes |
 |---|---|---|
-| `project_review.lock_stale_after` | *(unset)* | A floor under the derived value, on the same terms as the implementation pipeline's `lock_stale_after` (requirement 4f). The derivation multiplies the widest Reviewer-Agent backstop by the number of repositories configured for review (floored at one, so a single-repository installation is unaffected), because one lock can span all of them reviewed back to back, and adds the same slack. |
-| `project_review.defaults.model` | `claude-sonnet-5` | The Reviewer-Agent's model — the lead that drives the skill. The skill itself delegates well-scoped sub-tasks to lower-cost subagents, so this is the only model to pin here. A deeper review can be dialled up to a higher-capability model without other changes. |
-| `project_review.defaults.pr_label` | `project-review` | Applied to every review PR. **Distinct** from the implementation pipeline's `autonomous-agent`, so review PRs never count against `max_open_agent_prs` and are trivially filterable. It must not be `obsolete`, for the reason given against the implementation `pr_label`. |
-| `project_review.defaults.branch_prefix` | `review/` | Branch name `review/<date>`, e.g. `review/2026-07-20`. A branch is already scoped to its repository, so no slug is needed. |
-| `project_review.defaults.timeout_review` | *(unset)* | An override for the Reviewer-Agent's backstop, on the same terms as `timeout_coordinator` and through the same derivation (requirement 4f). Absent is the normal case. |
-| `project_review.defaults.inactivity_review` | *(unset)* | An override for the watchdog threshold of requirement 4e, taking precedence over the derivation of requirement 4f. Absent is the normal case; `0` disables the watchdog and leaves the backstop as the only cap. |
-| `project_review.defaults.min_days_between_reviews` | `6` | The skip-guard threshold (R4). A repo reviewed within this many days is skipped. Six (not seven) leaves a day of slack, so a review that lands late one week is not pushed a full extra week the next. |
-| `project_review.defaults.min_prs_between_reviews` | `5` | The other half of the skip-guard threshold (R4). A repo with fewer than this many PRs merged into its default branch since its last review is skipped, independent of `min_days_between_reviews`. Absent everywhere, 5 is used — the fallback lives in code, not this default. |
-| `project_review.defaults.not_before` | *(unset)* | Optional. A timestamp before which no review may start (R3.3). Absent or empty means no stand-down; a value `date -d` cannot read stands the pipeline down rather than running through it. Expires by itself, which is why it exists rather than raising `min_days_between_reviews`: a threshold has to be put back by hand, and a cadence left quietly throttled is not noticed for weeks. As `defaults.not_before` it gates the whole cycle before the lock, exactly as a single...[continued below](#extended-notes-project_reviewdefaultsnot_before) |
-| `project_review.defaults.report_directory` | *(unset)* | Optional. The report directory, as a GNU `date`(1) format string resolved with `date -u +"<format>"` relative to the repository root, for the run's own `review_date` (R4a). Absent, and absent on a repository's own override too, `reviews/project-review-%Y-%m-%d` is used — today's layout, unchanged; the fallback lives in code, not this default, so a schema-only reader sees it as genuinely unset. Must be day-granular (R4a): a format carrying `%H`, `%M` or `%S` resolves...[continued below](#extended-notes-project_reviewdefaultsreport_directory) |
-| `project_review.defaults.review_instructions` | *(unset)* | Optional. Installation-held instructions (R5 step 2a), resolved against `state_dir` on the same terms as `prompt_overrides`' `extend` (requirement 4a). A configured path that does not resolve is a fail-fast config error (R1c) — never tolerated the way a `prompt_overrides` path is, because this text changes how strictly a review judges. The only instruction channel D7 admits; a repository under review has none. |
-| `project_review.defaults.review_context` | *(unset)* | Optional. Installation-held context (R5 step 2a), resolved exactly as `review_instructions` and equally fail-fast on a missing configured path (R1c). Layered with `repo_context_file` below rather than replacing it — both reach the Reviewer-Agent as `context`, each with its own origin stated. |
-| `project_review.defaults.repo_context_file` | *(unset)* | Optional. A repository-relative path read from the ephemeral clone (R5 step 2a) and added as `context`, attributed `source: "repository"`. Never treated as instruction (D7). Unset by default; absent from the clone is simply absent — never a fail-fast error, unlike `review_instructions`/`review_context`. |
-| `project_review.repos` | `[{"slug": "Poetic-Poems/poetic"}, {"slug": "Poetic-Poems/poetic-fiddle"}]` | The repositories to review. Each entry's `slug` is required; every other key overrides the same-named key in `defaults` for that repository alone (requirement 342), and an entry carrying only `slug` inherits every default. A review has no per-repo work-source structure beyond these overrides. Adding a repo is a config-only change. |
+| `repository_review.lock_stale_after` | *(unset)* | A floor under the derived value, on the same terms as the implementation pipeline's `lock_stale_after` (requirement 4f). The derivation multiplies the widest Reviewer-Agent backstop by the number of repositories configured for review (floored at one, so a single-repository installation is unaffected), because one lock can span all of them reviewed back to back, and adds the same slack. |
+| `repository_review.defaults.model` | `claude-sonnet-5` | The Reviewer-Agent's model — the lead that drives the skill. The skill itself delegates well-scoped sub-tasks to lower-cost subagents, so this is the only model to pin here. A deeper review can be dialled up to a higher-capability model without other changes. |
+| `repository_review.defaults.pr_label` | `project-review` | Applied to every review PR. **Distinct** from the implementation pipeline's `autonomous-agent`, so review PRs never count against `max_open_agent_prs` and are trivially filterable. It must not be `obsolete`, for the reason given against the implementation `pr_label`. |
+| `repository_review.defaults.branch_prefix` | `review/` | Branch name `review/<date>`, e.g. `review/2026-07-20`. A branch is already scoped to its repository, so no slug is needed. |
+| `repository_review.defaults.timeout_review` | *(unset)* | An override for the Reviewer-Agent's backstop, on the same terms as `timeout_coordinator` and through the same derivation (requirement 4f). Absent is the normal case. |
+| `repository_review.defaults.inactivity_review` | *(unset)* | An override for the watchdog threshold of requirement 4e, taking precedence over the derivation of requirement 4f. Absent is the normal case; `0` disables the watchdog and leaves the backstop as the only cap. |
+| `repository_review.defaults.min_days_between_reviews` | `6` | The skip-guard threshold (R4). A repo reviewed within this many days is skipped. Six (not seven) leaves a day of slack, so a review that lands late one week is not pushed a full extra week the next. |
+| `repository_review.defaults.min_prs_between_reviews` | `5` | The other half of the skip-guard threshold (R4). A repo with fewer than this many PRs merged into its default branch since its last review is skipped, independent of `min_days_between_reviews`. Absent everywhere, 5 is used — the fallback lives in code, not this default. |
+| `repository_review.defaults.not_before` | *(unset)* | Optional. A timestamp before which no review may start (R3.3). Absent or empty means no stand-down; a value `date -d` cannot read stands the pipeline down rather than running through it. Expires by itself, which is why it exists rather than raising `min_days_between_reviews`: a threshold has to be put back by hand, and a cadence left quietly throttled is not noticed for weeks. As `defaults.not_before` it gates the whole cycle before the lock, exactly as a single...[continued below](#extended-notes-repository_reviewdefaultsnot_before) |
+| `repository_review.defaults.report_directory` | *(unset)* | Optional. The report directory, as a GNU `date`(1) format string resolved with `date -u +"<format>"` relative to the repository root, for the run's own `review_date` (R4a). Absent, and absent on a repository's own override too, `reviews/project-review-%Y-%m-%d` is used — today's layout, unchanged; the fallback lives in code, not this default, so a schema-only reader sees it as genuinely unset. Must be day-granular (R4a): a format carrying `%H`, `%M` or `%S` resolves...[continued below](#extended-notes-repository_reviewdefaultsreport_directory) |
+| `repository_review.defaults.review_instructions` | *(unset)* | Optional. Installation-held instructions (R5 step 2a), resolved against `state_dir` on the same terms as `prompt_overrides`' `extend` (requirement 4a). A configured path that does not resolve is a fail-fast config error (R1c) — never tolerated the way a `prompt_overrides` path is, because this text changes how strictly a review judges. The only instruction channel D7 admits; a repository under review has none. |
+| `repository_review.defaults.review_context` | *(unset)* | Optional. Installation-held context (R5 step 2a), resolved exactly as `review_instructions` and equally fail-fast on a missing configured path (R1c). Layered with `repo_context_file` below rather than replacing it — both reach the Reviewer-Agent as `context`, each with its own origin stated. |
+| `repository_review.defaults.repo_context_file` | *(unset)* | Optional. A repository-relative path read from the ephemeral clone (R5 step 2a) and added as `context`, attributed `source: "repository"`. Never treated as instruction (D7). Unset by default; absent from the clone is simply absent — never a fail-fast error, unlike `review_instructions`/`review_context`. |
+| `repository_review.repos` | `[{"slug": "Poetic-Poems/poetic"}, {"slug": "Poetic-Poems/poetic-fiddle"}]` | The repositories to review. Each entry's `slug` is required; every other key overrides the same-named key in `defaults` for that repository alone (requirement 342), and an entry carrying only `slug` inherits every default. A review has no per-repo work-source structure beyond these overrides. Adding a repo is a config-only change. |
+| `project_review` | *(unset)* | Deprecated alias for `repository_review` (agent-ops#592, D7): accepted with the identical shape while the fleet rolls onto an image containing the rename. `scripts/doctor.sh` warns when this is the only one set, naming `repository_review` as the replacement. Setting both is a configuration error (`config_schema_errors` refuses it, naming both keys) rather than a silent precedence, since resolving one of two present keys is exactly the quiet failure this schema exists to...[continued below](#extended-notes-project_review) |
 <!-- config-table:end -->
 
 Model IDs are pinned in config (one place to update); do not use floating
 aliases in the launch command.
 
-`project_review.defaults.model` (or a repository's own override in
-`project_review.repos`, requirement 342) accepts a bare id
+`repository_review.defaults.model` (or a repository's own override in
+`repository_review.repos`, requirement 342) accepts a bare id
 (`claude-sonnet-5`) or a provider-qualified one (`anthropic/claude-sonnet-5`),
 resolved by the same `resolve_model_id` (`lib/model-id.sh`) the implementation
 pipeline uses — see
@@ -291,13 +313,17 @@ provider is a fail-fast config error at cycle start, not a value passed to
 
 <!-- config-table:notes id=review — GENERATED from config.schema.json by scripts/render-config-table.sh; edit the schema, not this section -->
 
-#### Extended notes: `project_review.defaults.not_before`
+#### Extended notes: `repository_review.defaults.not_before`
 
 Optional. A timestamp before which no review may start (R3.3). Absent or empty means no stand-down; a value `date -d` cannot read stands the pipeline down rather than running through it. Expires by itself, which is why it exists rather than raising `min_days_between_reviews`: a threshold has to be put back by hand, and a cadence left quietly throttled is not noticed for weeks. As `defaults.not_before` it gates the whole cycle before the lock, exactly as a single installation-wide value always has; a repository's own override on `repos[]` is resolved separately, per repository, once the cycle is under way (requirement 3.3).
 
-#### Extended notes: `project_review.defaults.report_directory`
+#### Extended notes: `repository_review.defaults.report_directory`
 
 Optional. The report directory, as a GNU `date`(1) format string resolved with `date -u +"<format>"` relative to the repository root, for the run's own `review_date` (R4a). Absent, and absent on a repository's own override too, `reviews/project-review-%Y-%m-%d` is used — today's layout, unchanged; the fallback lives in code, not this default, so a schema-only reader sees it as genuinely unset. Must be day-granular (R4a): a format carrying `%H`, `%M` or `%S` resolves differently at discovery time than it did at write time, and discovery silently finds nothing.
+
+#### Extended notes: `project_review`
+
+Deprecated alias for `repository_review` (agent-ops#592, D7): accepted with the identical shape while the fleet rolls onto an image containing the rename. `scripts/doctor.sh` warns when this is the only one set, naming `repository_review` as the replacement. Setting both is a configuration error (`config_schema_errors` refuses it, naming both keys) rather than a silent precedence, since resolving one of two present keys is exactly the quiet failure this schema exists to catch. The old spelling stops being accepted once every node in the fleet reports an image containing the rename (`repository_review`) — there is no calendar-based deprecation window: this installation has no release train to express one in, config.json ships inside the image (so a node never runs new code against an old config file of its own), and the fleet roll is the only compatibility window that genuinely exists.
 
 <!-- config-table:notes-end -->
 
@@ -306,8 +332,8 @@ Optional. The report directory, as a GNU `date`(1) format string resolved with `
 The review pipeline raises **one pull request per repository, ready for
 review** (not draft — the review *is* the deliverable, and there is no second
 review stage to flip it). The PR is labelled with the repository's own
-resolved `project_review` pr_label (its override, or
-`project_review.defaults.pr_label`, requirement 342), titled in
+resolved `repository_review` pr_label (its override, or
+`repository_review.defaults.pr_label`, requirement 342), titled in
 Conventional Commits form (e.g. `docs(review): repository review 2026-07-20`),
 and its body summarises the verdict and links the review index. A human
 approves and merges it, at every `merge_autonomy` level: `review-cycle.sh`
@@ -342,34 +368,34 @@ R1. **Bootstrap.** Reuse the `PATH` bootstrap and binary checks of
    `shellcheck`.
 
 R1a. **Model id resolution (D12 groundwork).** Every configured repository's
-   own resolved model (`project_review.defaults.model`, or its own override in
-   `project_review.repos`, requirement 342) is resolved through
-   `lib/model-id.sh`'s `resolve_model_id` immediately after `project_review`'s
+   own resolved model (`repository_review.defaults.model`, or its own override in
+   `repository_review.repos`, requirement 342) is resolved through
+   `lib/model-id.sh`'s `resolve_model_id` immediately after `repository_review`'s
    settings are read and resolved, before the lock — the same helper and the
    same rule `agent-cycle.sh` applies to its own model keys
    (`docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 1a): a bare id means
    `anthropic/`, an `anthropic/`-qualified id has the qualifier stripped, and
    any other qualifier is a fail-fast config error naming the precise key the
-   value came from — `project_review.repos[i].model` for a repository's own
-   override, `project_review.defaults.model` when it does not have one — never
-   the generic `project_review.model`, so the error points at the exact key to
-   fix (`lib/config-schema.sh`'s `config_project_review_repos` resolves each
+   value came from — `repository_review.repos[i].model` for a repository's own
+   override, `repository_review.defaults.model` when it does not have one — never
+   the generic `repository_review.model`, so the error points at the exact key to
+   fix (`lib/config-schema.sh`'s `config_repository_review_repos` resolves each
    repository's `model_key` alongside its `model` for this). Every configured
    repository's model is validated in this one sweep, before any repository is
    worked, so a bad model on one repository is never discovered only after
    others have already been reviewed.
 
 R1b. **Duplicate-slug refusal.** Requirement 342's resolution rule assumes
-   exactly one `project_review.repos` entry per repository; two entries naming
+   exactly one `repository_review.repos` entry per repository; two entries naming
    the same `slug` leave no way to say which one's overrides apply. Checked
-   immediately after `project_review_repos_json` is resolved, before the model
-   sweep above: `lib/config-schema.sh`'s `config_duplicate_project_review_slugs`
+   immediately after `repository_review_repos_json` is resolved, before the model
+   sweep above: `lib/config-schema.sh`'s `config_duplicate_repository_review_slugs`
    — a third cross-key rule the schema itself cannot state, alongside
    `agent-cycle.sh`'s own two (`docs/IMPLEMENTATION-PIPELINE-SPEC.md`
    requirement 1b) — names every slug appearing more than once, and the Script
    refuses to start naming them, exactly as `scripts/doctor.sh`'s own `fail`
    does against the same function, so the two can never drift on what counts
-   as a fault. An empty `project_review.repos` has nothing to duplicate and is
+   as a fault. An empty `repository_review.repos` has nothing to duplicate and is
    not a fault.
 
 R1c. **Review-instructions/context path validation (issue #589, D7).** Every
@@ -398,7 +424,7 @@ R2. **Lock.** Acquire `review-lock.json` in `state_dir` recording PID, start
    time, and the writer's hostname (`host`, as the implementation pipeline's
    requirement 1 records it; its own lock, *not* the implementation
    `lock.json`). Apply the same held/stale/dead logic as requirement 1, using
-   `project_review.lock_stale_after`: skip cleanly if a live review is younger
+   `repository_review.lock_stale_after`: skip cleanly if a live review is younger
    than the threshold; take over a stale or dead lock — TERM, a polled grace of
    up to 20 seconds so the holder's own signal handler (R7a) can write its
    record and release its claim, then KILL — logging a `warning`. Installation-
@@ -408,7 +434,7 @@ R2. **Lock.** Acquire `review-lock.json` in `state_dir` recording PID, start
    own override), not any one repository's own. The lock has a second reader
    on a containerised node:
    `deploy/docker/watchtower-pre-update.sh` consults it, on the same
-   `project_review.lock_stale_after` bound, to defer an image roll that would
+   `repository_review.lock_stale_after` bound, to defer an image roll that would
    otherwise kill a review mid-flight — judging liveness only when the lock's
    `host` is its own container, and honouring a lock written elsewhere until
    released or stale, since a pid means nothing outside the PID namespace
@@ -428,7 +454,7 @@ R3. **Stand-down checks.** Each logs its reason and exits 0:
    2. *Implementation pipeline busy* — if `lock.json` is held by a live
       process, stand down and wait for the next tick (defer to it, per
       "Relationship to the existing pipelines").
-   3. *A dated stand-down, tier one* — if `project_review.defaults.not_before`
+   3. *A dated stand-down, tier one* — if `repository_review.defaults.not_before`
       is set and now is before it, stand down the whole cycle, logging the
       timestamp on the event so an operator can tell this apart from a
       switch. Checked before the lock, like R2a, so a review that must not
@@ -448,17 +474,17 @@ R3. **Stand-down checks.** Each logs its reason and exits 0:
       threshold has to be put back by hand, and one left raised throttles
       every repo indefinitely without anyone noticing.
    4. *A dated stand-down, tier two* — checked immediately after tier one,
-      also before the lock: even where `project_review.defaults.not_before`
+      also before the lock: even where `repository_review.defaults.not_before`
       itself does not trip tier one — absent, or already past — the whole
       cycle still stands down when *every* configured repository's own
       resolved `not_before` (its override, or the inherited default,
-      already resolved into `project_review_repos_json`) is future or
+      already resolved into `repository_review_repos_json`) is future or
       unparseable. This is the case tier one alone misses: a
-      `project_review.defaults.not_before` left unset while every
+      `repository_review.defaults.not_before` left unset while every
       repository overrides its own, which tier one — reading only the
       installation-wide key — would let straight through to the lock, for a
       cycle certain to have R4's skip-guard skip every repository anyway.
-      Vacuously false, not true, on an empty `project_review.repos`: nothing
+      Vacuously false, not true, on an empty `repository_review.repos`: nothing
       configured means nothing this tier could ever hold back, not that
       everything is held.
 
@@ -495,7 +521,7 @@ R2a. **The switch.** Before the lock, read the shared switch
    writer and one record. Reject those flags here with a pointer rather than
    implementing a second way to write the same file. Leave an *expired* switch
    for `agent-cycle.sh` to clear and log, too: this pipeline runs on its own
-   configured cadence (`project_review.defaults.min_days_between_reviews`), so
+   configured cadence (`repository_review.defaults.min_days_between_reviews`), so
    letting it clear one would mean the `enabled` event explaining why cycles
    resumed could land days after they did.
 
@@ -552,11 +578,11 @@ R4. **Per-repo skip-guard (idempotency; this is how "once a week" is
    enforced).** For each configured repo, skip it *this run* when **any** of
    these independent conditions holds (an OR across the three):
    - its own resolved `not_before` (its override, or
-     `project_review.defaults.not_before`, requirement 342) is set and now is
+     `repository_review.defaults.not_before`, requirement 342) is set and now is
      before it — the same rule R3's cycle-wide check applies, checked again
      here per repository so a repository's own override can hold it off
      *longer* than the installation-wide value; **or**
-   - an open pull request labelled with its own resolved `project_review`
+   - an open pull request labelled with its own resolved `repository_review`
      pr_label already exists for it (a review is in-flight or awaiting
      merge); **or**
    - its default branch already contains a report directory (R4a) dated
@@ -578,7 +604,7 @@ R4. **Per-repo skip-guard (idempotency; this is how "once a week" is
    the next day instead of losing a whole week (compare requirement note that
    "a missed cycle simply waits for the next tick"). `min_prs_between_reviews`
    defaults to 5 in code (`review-cycle.sh`) when neither
-   `project_review.defaults.min_prs_between_reviews` nor a repository's own
+   `repository_review.defaults.min_prs_between_reviews` nor a repository's own
    override is set.
 
 R4a. **Report directory (issue #761).** Where a report set (R11) is written,
@@ -587,8 +613,8 @@ R4a. **Report directory (issue #761).** Where a report set (R11) is written,
    requirement 3y) look for the most recent one, is a GNU `date`(1) format
    string, resolved with `date -u +"<format>"` relative to the repository
    root — never a fixed path. Resolution, per repository (requirement 342's
-   rule): its own `project_review.repos[].report_directory` override when
-   set, else `project_review.defaults.report_directory`, else
+   rule): its own `repository_review.repos[].report_directory` override when
+   set, else `repository_review.defaults.report_directory`, else
    `reviews/project-review-%Y-%m-%d` — today's layout, fixed in code
    (`REPORT_DIRECTORY_DEFAULT` in `lib/report-directory.sh`) rather than the
    schema, so a repository configuring neither key is byte-for-byte
@@ -663,7 +689,7 @@ R5. **Per non-skipped repo** (processed **sequentially**, so a failure of one
       are never gated on this.
    0b. *Labels.* At the same point, and for the same reason it is that point —
       this repo is now certainly going to be worked — ensure its own resolved
-      `project_review` pr_label exists in it, via `labels_reconcile_role`
+      `repository_review` pr_label exists in it, via `labels_reconcile_role`
       (`lib/labels.sh`), unconditionally and unstamped: the same shape
       `docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 6a
       uses for its own selected repository, immediately before the stage that
@@ -671,7 +697,7 @@ R5. **Per non-skipped repo** (processed **sequentially**, so a failure of one
       `labels_reconcile_stamped` requirement 6a's per-gathered-repository
       ensure uses. The `review` role reconciles under MODE `additive`, so a
       label outside `label_prefix`'s namespace — which every shipped
-      `project_review` pr_label is — is still created only if absent and
+      `repository_review` pr_label is — is still created only if absent and
       otherwise left exactly as the operator has it, and nothing is ever
       deleted here: only a pr_label the operator has named inside that
       namespace additionally has its colour and description reconciled
@@ -844,11 +870,11 @@ R7b. **One stage launcher, shared.** `run_claude_stage` is sourced from
    through the same `lib/stage-budget.sh` the implementation pipeline uses:
    the Reviewer-Agent is the cell `(project-reviewer, <repo>, <model>)`, and
    a repository's own resolved `timeout_review` / `inactivity_review` (its
-   override, or `project_review.defaults`') are overrides that win when
+   override, or `repository_review.defaults`') are overrides that win when
    present. `review-stage-start` announces what this run was given and where
    each number came from, plus (R5 step 2a) `review_context_sources`: every
    resolved instructions/context source and a digest of its text.
-   `project_review.lock_stale_after` becomes a floor
+   `repository_review.lock_stale_after` becomes a floor
    under a derived threshold, which takes the *widest* `timeout_review` /
    `inactivity_review` configured across every repository this run might
    touch — not any one repository's own — and multiplies it by the number of
@@ -949,7 +975,7 @@ R13. **Raise one pull request.** Create the branch
    resolved-item bookkeeping touched an existing register, that edit
    alongside it, never a *new* `tech-debt/` file; open **one**
    pull request, **ready for review** (not draft),
-   labelled with this repository's own resolved `project_review` pr_label,
+   labelled with this repository's own resolved `repository_review` pr_label,
    with a Conventional-Commits title
    (`docs(review): repository review <date>` — it becomes the squash commit
    on `main`) and a body that summarises the verdict, links the review
@@ -1118,9 +1144,9 @@ What exists, and the requirements each part answers to:
    stage never depends on context it was not given.
 3. `.claude/skills/project-review/` — the vendored skill (pinned; re-sync
    from upstream deliberately).
-4. `config.json` — the `project_review` block.
+4. `config.json` — the `repository_review` block.
 5. `README.md` — a "Repository review" section: what it does and why (the
-   loop it closes), every `project_review.*` config key, how to install the
+   loop it closes), every `repository_review.*` config key, how to install the
    cron entry,
    how to operate it (`--dry-run`, `--once`, `--repo`, reading
    `review-log.jsonl` and the transcripts), how the outputs feed the
@@ -1135,7 +1161,7 @@ a pull request, run the ones the change touches and any it could regress.
 The implementation pipeline's *Acceptance checks* preamble carries one rule
 that applies here unchanged: **no check may expect a particular value from
 `config.json`.** The shipped file is asserted to be valid; every fixture
-supplies its own `project_review` block, or mutates
+supplies its own `repository_review` block, or mutates
 `test/fixtures/config-base.json`. Changing a threshold, a cadence or a
 reviewed repository is a configuration change, and must not oblige anyone to
 edit a test.
@@ -1182,8 +1208,8 @@ edit a test.
    the leak the implementation pipeline fixed in its own workspace path
    (#55) must not be reintroduced here.
 4e. **Per-repository resolution, and duplicate slugs refused (R1b).**
-   `test/config-schema.test.sh` passes: `config_project_review_repos` resolves
-   an entry carrying only `slug` to every one of `project_review.defaults`'
+   `test/config-schema.test.sh` passes: `config_repository_review_repos` resolves
+   an entry carrying only `slug` to every one of `repository_review.defaults`'
    values, an entry setting a key to its own value for that key alone, and an
    explicit `null` back to the default — including the `model_key` each
    resolution names, which is what an unsupported provider is reported
@@ -1201,11 +1227,11 @@ edit a test.
    repository from whichever entry it happened to read last.
 4f. **The dated stand-down is two-tier (R3.3).**
    `test/review-not-before.test.sh` passes: a future
-   `project_review.defaults.not_before` stands the whole cycle down before the
+   `repository_review.defaults.not_before` stands the whole cycle down before the
    lock, with the date on the event; and with that key empty while *every*
    configured repository's own `not_before` override is still in the future,
    the cycle stands down before the lock too, logging one `review-stand-down`
-   naming requirement 342. An empty `project_review.repos` is vacuously *not*
+   naming requirement 342. An empty `repository_review.repos` is vacuously *not*
    a stand-down. And the converse, which is what proves the two tiers are
    really two: with one repository held on its own override while another is
    free, neither tier fires, the cycle runs, and R4's skip-guard turns the
@@ -1225,7 +1251,7 @@ edit a test.
    literal regex metacharacters in a format's surrounding text and degrades
    an unrecognised specifier to a wildcard rather than failing.
    `test/config-schema.test.sh` covers the resolution: a repository's own
-   `report_directory` wins over `project_review.defaults`', absent it
+   `report_directory` wins over `repository_review.defaults`', absent it
    inherits, and absent from both it resolves empty rather than fabricated —
    which is what leaves `REPORT_DIRECTORY_DEFAULT` the single fallback.
    Check the unset case against a test that names no directory of its own:
@@ -1343,7 +1369,7 @@ standing the pipeline up on a new machine.
 
 1. Create the review label in each configured repo:
    `gh api -X POST repos/Poetic-Poems/<repo>/labels -f name='project-review' -f color='5319e7' -f description='Raised by the project-review pipeline'`
-   (for each repository in `project_review.repos`).
+   (for each repository in `repository_review.repos`).
 2. Install the cron entry. **Recommended — a daily tick guarded by
    `min_days_between_reviews`**, which is robust to a machine that sleeps:
    ```

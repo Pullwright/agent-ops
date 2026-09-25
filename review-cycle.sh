@@ -8,7 +8,7 @@
 # ready-for-review PR), then cleans up.
 #
 # Full specification: docs/REVIEW-PIPELINE-SPEC.md. Config: config.json
-# (.project_review).
+# (.repository_review).
 # This is a sibling of agent-cycle.sh and deliberately reuses its machinery
 # (PATH bootstrap, lock discipline, run_claude_stage, result parsing,
 # usage-limit detection). Where this script is silent, agent-cycle.sh /
@@ -44,7 +44,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # watchtower-pre-update.sh; cron and the container invoke this bare and get the
 # config beside the script. A test that drives the real script needs to vary one
 # key without editing the shipped file — and without that, adding any key here
-# silently reaches into every such test: `project_review.defaults.not_before`
+# silently reaches into every such test: `repository_review.defaults.not_before`
 # stood test/review-claim.test.sh down before it reached the claim it was
 # asserting on.
 CONFIG_FILE="${AGENT_OPS_CONFIG:-$SCRIPT_DIR/config.json}"
@@ -176,12 +176,16 @@ elif ((schema_status == 1)); then
 fi
 
 # Read against the raw file, deliberately: config_defaults (below) would
-# synthesise a `.project_review` object from `not_before`'s own default even
+# synthesise a `.repository_review` object from `not_before`'s own default even
 # when the key is entirely absent from config.json, and this is the one check
 # that must not be fooled by that (docs/REVIEW-PIPELINE-SPEC.md — the review
-# pipeline is optional, and absence must mean absence).
-if [[ "$(jq -r 'has("project_review")' "$CONFIG_FILE")" != "true" ]]; then
-  echo "review-cycle: config.json has no .project_review block (see docs/REVIEW-PIPELINE-SPEC.md)" >&2
+# pipeline is optional, and absence must mean absence). Either spelling
+# counts: `project_review` is still accepted as a deprecated alias
+# (agent-ops#592, D7; config_defaults folds it into `.repository_review`
+# below), so an installation that has not yet renamed its own config.json is
+# not treated as having no review pipeline configured at all.
+if [[ "$(jq -r '(has("repository_review") or has("project_review"))' "$CONFIG_FILE")" != "true" ]]; then
+  echo "review-cycle: config.json has no .repository_review block (see docs/REVIEW-PIPELINE-SPEC.md)" >&2
   exit 1
 fi
 
@@ -200,36 +204,36 @@ export PW_GH_STATE_DIR="$state_dir"
 # Every per-repository tunable (model, pr_label, branch_prefix,
 # min_days_between_reviews, min_prs_between_reviews, not_before,
 # report_directory, timeout_review, inactivity_review) is resolved once
-# here, against project_review.defaults
+# here, against repository_review.defaults
 # and each repository's
-# own override in project_review.repos — lib/config-schema.sh's
-# config_project_review_repos is the one implementation, shared with
+# own override in repository_review.repos — lib/config-schema.sh's
+# config_repository_review_repos is the one implementation, shared with
 # scripts/doctor.sh, so the two scripts cannot resolve the same repository two
 # different ways (requirement 342).
-project_review_repos_json="$(config_project_review_repos "$DEFAULTED_CONFIG")"
+repository_review_repos_json="$(config_repository_review_repos "$DEFAULTED_CONFIG")"
 # Requirement 342's resolution rule assumes exactly one entry per repository;
 # two entries for the same slug leave no way to say which one's overrides
 # apply, so this refuses to start rather than silently letting the later
-# entry win (lib/config-schema.sh's config_duplicate_project_review_slugs,
+# entry win (lib/config-schema.sh's config_duplicate_repository_review_slugs,
 # shared with scripts/doctor.sh's own `fail` so the two can never drift,
 # docs/REVIEW-PIPELINE-SPEC.md requirement R1b).
-duplicate_review_slugs="$(config_duplicate_project_review_slugs "$project_review_repos_json")"
+duplicate_review_slugs="$(config_duplicate_repository_review_slugs "$repository_review_repos_json")"
 if [[ -n "$duplicate_review_slugs" ]]; then
-  echo "review-cycle: project_review.repos lists [$duplicate_review_slugs] more than once — refusing to start rather than guess which entry's overrides apply" >&2
+  echo "review-cycle: repository_review.repos lists [$duplicate_review_slugs] more than once — refusing to start rather than guess which entry's overrides apply" >&2
   exit 1
 fi
 # Every configured repository's own resolved model is validated up front, at
 # the same fail-fast position the single installation-wide value used to
 # occupy (D12, requirement 1a) — a bad model on any one repository must not be
 # discovered only after other repositories have already been reviewed. Each
-# is validated against its own `model_key` (`project_review.repos[i].model`,
-# or `project_review.defaults.model` when the repository does not override
-# it), not a generic `project_review.model`, so a resolution error names the
+# is validated against its own `model_key` (`repository_review.repos[i].model`,
+# or `repository_review.defaults.model` when the repository does not override
+# it), not a generic `repository_review.model`, so a resolution error names the
 # exact key to fix.
 while IFS=$'\t' read -r configured_model_key configured_model; do
   [[ -n "$configured_model" ]] || continue
   resolve_model_id "$configured_model_key" "$configured_model" >/dev/null
-done < <(jq -r '[.[] | [.model_key, .model]] | unique | .[] | @tsv' <<<"$project_review_repos_json")
+done < <(jq -r '[.[] | [.model_key, .model]] | unique | .[] | @tsv' <<<"$repository_review_repos_json")
 # Every configured review_instructions/review_context path is validated up
 # front too, at the same fail-fast position and for the same reason as the
 # model sweep above (R1c, issue #589/D7): unlike a `prompt_overrides` path,
@@ -241,7 +245,7 @@ done < <(jq -r '[.[] | [.model_key, .model]] | unique | .[] | @tsv' <<<"$project
 # counts as broken. `repo_context_file` is deliberately absent from this
 # sweep: it names a file inside the repository under review, which legitimately
 # comes and goes with that repository's own history (D7).
-missing_review_context_paths="$(review_context_missing_configured "$state_dir" "$project_review_repos_json")"
+missing_review_context_paths="$(review_context_missing_configured "$state_dir" "$repository_review_repos_json")"
 if [[ -n "$missing_review_context_paths" ]]; then
   echo "review-cycle: configured review instructions/context paths do not resolve to a readable file — refusing to start:" >&2
   while IFS=$'\t' read -r mrc_slug mrc_field mrc_configured mrc_resolved; do
@@ -250,21 +254,21 @@ if [[ -n "$missing_review_context_paths" ]]; then
   done <<<"$missing_review_context_paths"
   exit 1
 fi
-# A stand-down with a date on it (R3.3), read from project_review.defaults
-# directly rather than from project_review_repos_json above: this is the
+# A stand-down with a date on it (R3.3), read from repository_review.defaults
+# directly rather than from repository_review_repos_json above: this is the
 # installation-wide gate, checked once before the lock is even taken, exactly
 # as a single value always has been. A repository's own `not_before` override
-# — already folded into project_review_repos_json — is checked again per
+# — already folded into repository_review_repos_json — is checked again per
 # repository inside skip_reason (R4) once the cycle is under way, so an
 # override can hold one repository off *longer* than this value, but cannot
 # escape it while it is in force.
-review_not_before="$(cfg '.project_review.defaults.not_before')"
+review_not_before="$(cfg '.repository_review.defaults.not_before')"
 # Both of this stage's caps are derived per (actor, repository, model) from
 # the fleet's own record of itself (requirement 4f, shared with the
 # implementation pipeline through lib/stage-budget.sh). What is read here is
 # only what this installation has explicitly overridden — absent, the
 # derivation answers, and with no history the shipped prior does.
-lock_stale_configured_hours="$(cfg '.project_review.lock_stale_after // 0')"
+lock_stale_configured_hours="$(cfg '.repository_review.lock_stale_after // 0')"
 # Initialised before anything can exit through a trap, for the reason
 # agent-cycle.sh gives at its copy: an unset variable read under `set -u` from
 # inside a trap abandons the trap part-way. An empty table resolves to the
@@ -294,7 +298,7 @@ impl_lock_file="$state_dir/lock.json"           # the implementation pipeline's 
 # ones exit before that check is ever reached, and each records a terminal
 # state, so without this they would write the competing idle/`down` transition
 # the same section calls actively wrong — over a timeline `agent-cycle.sh` is
-# writing `producing` onto. `project_review.defaults.not_before` in force is a
+# writing `producing` onto. `repository_review.defaults.not_before` in force is a
 # steady state, not a race: on an installation using it, every review tick
 # would do this, including the ones landing inside a live Implementer stage.
 #
@@ -582,7 +586,7 @@ log_event "review-start" "$(jq -nc --argjson once "$([[ $ONCE == 1 ]] && echo tr
 #
 # The expired case is left for agent-cycle.sh to clear and log. This pipeline
 # runs on its own configured cadence
-# (`project_review.defaults.min_days_between_reviews`); letting it clear a
+# (`repository_review.defaults.min_days_between_reviews`); letting it clear a
 # switch would mean the event that explains why cycles resumed could land
 # days after they did.
 #
@@ -627,7 +631,7 @@ if [[ "$(jq -r '.state' <<<"$fleet_review_switch")" == "disabled" ]]; then
 fi
 
 # --- The dated stand-down (R3.3) ---
-# `project_review.defaults.not_before` holds a timestamp before which no
+# `repository_review.defaults.not_before` holds a timestamp before which no
 # review may start. It exists for the case the switch above cannot express:
 # the operator wants the review pipeline held off until a date, and wants the
 # implementation pipeline to carry on meanwhile. The switch is deliberately
@@ -639,7 +643,7 @@ fi
 # that must not start should not take a lock, however briefly, that a roll would
 # then defer for. This is the installation-wide value only — a repository's own
 # `not_before` override (requirement 342) is resolved separately, per
-# repository, into project_review_repos_json above, and is checked again
+# repository, into repository_review_repos_json above, and is checked again
 # inside skip_reason (R4) once the cycle is under way; that lets an override
 # hold one repository off *longer* than this value, but not escape it while it
 # is in force.
@@ -655,28 +659,28 @@ if [[ -n "$review_not_before" ]]; then
   now_epoch="$(date +%s)"
   if [[ -z "$not_before_epoch" ]]; then
     log_event "review-stand-down" "$(jq -nc --arg r \
-      "project_review.defaults.not_before is set to an unparseable value ($review_not_before) — standing down rather than guessing" \
+      "repository_review.defaults.not_before is set to an unparseable value ($review_not_before) — standing down rather than guessing" \
       '{reason: $r, cause: "no-demand"}')"
     set_node_state_terminal idle-without-demand no-demand
     suppress_node_state_if_peer_owns_node
-    (( ONCE )) && echo "review-cycle: project_review.defaults.not_before ($review_not_before) is not a date this system can parse" >&2
+    (( ONCE )) && echo "review-cycle: repository_review.defaults.not_before ($review_not_before) is not a date this system can parse" >&2
     exit 0
   fi
   if (( now_epoch < not_before_epoch )); then
-    log_event "review-stand-down" "$(jq -nc --arg r "project_review.defaults.not_before: no review before $review_not_before" \
+    log_event "review-stand-down" "$(jq -nc --arg r "repository_review.defaults.not_before: no review before $review_not_before" \
       --arg nb "$review_not_before" '{reason: $r, not_before: $nb, cause: "no-demand"}')"
     set_node_state_terminal idle-without-demand no-demand
     suppress_node_state_if_peer_owns_node
-    (( ONCE )) && echo "review-cycle: standing down until $review_not_before (project_review.defaults.not_before)" >&2
+    (( ONCE )) && echo "review-cycle: standing down until $review_not_before (repository_review.defaults.not_before)" >&2
     exit 0
   fi
 fi
 
 # --- The dated stand-down, tier two: every configured repo held (R3.3) ---
-# The check above reads only `project_review.defaults.not_before` — the
+# The check above reads only `repository_review.defaults.not_before` — the
 # installation-wide gate a repository with no override inherits. A
 # repository can also be held individually, on its own `not_before` override
-# (requirement 342), already resolved into project_review_repos_json above.
+# (requirement 342), already resolved into repository_review_repos_json above.
 # When `defaults.not_before` itself does not trip the check above — absent,
 # or already past — but *every* configured repository is still individually
 # held (each one's own resolved not_before, override or inherited default,
@@ -685,8 +689,8 @@ fi
 # cycle is under way would hold it for nothing. Vacuous only in the direction
 # that cannot false-positive: no repository configured at all means nothing
 # for this gate to ever hold back, not that everything is held, so it does
-# not stand the run down on an empty project_review.repos.
-if [[ "$(jq 'length' <<<"$project_review_repos_json")" != "0" ]]; then
+# not stand the run down on an empty repository_review.repos.
+if [[ "$(jq 'length' <<<"$repository_review_repos_json")" != "0" ]]; then
   now_epoch="$(date +%s)"
   all_repos_held=1
   while IFS= read -r held_not_before; do
@@ -699,10 +703,10 @@ if [[ "$(jq 'length' <<<"$project_review_repos_json")" != "0" ]]; then
       all_repos_held=0
       break
     fi
-  done < <(jq -r '.[].not_before' <<<"$project_review_repos_json")
+  done < <(jq -r '.[].not_before' <<<"$repository_review_repos_json")
   if (( all_repos_held )); then
     log_event "review-stand-down" "$(jq -nc --argjson repos \
-      "$(jq -c '[.[] | {slug, not_before}]' <<<"$project_review_repos_json")" \
+      "$(jq -c '[.[] | {slug, not_before}]' <<<"$repository_review_repos_json")" \
       '{reason: "every configured repository'"'"'s own not_before holds it off (requirement 342)", repos: $repos, cause: "no-demand"}')"
     set_node_state_terminal idle-without-demand no-demand
     suppress_node_state_if_peer_owns_node
@@ -801,14 +805,14 @@ stage_budget_json="$(stage_budget_table \
 # derivation takes the *widest* override configured across all of them — the
 # per-repository override used for a single repository's own stage_budget_resolve
 # call (inside review_one, below) is resolved separately, from that
-# repository's own entry in project_review_repos_json.
-lock_budget_overrides="$(jq -nc --argjson repos "$project_review_repos_json" '
+# repository's own entry in repository_review_repos_json.
+lock_budget_overrides="$(jq -nc --argjson repos "$repository_review_repos_json" '
   { backstop:    ([$repos[] | .timeout_review    | select(. != null)] | if length > 0 then max else null end),
     inactivity:  ([$repos[] | .inactivity_review | select(. != null)] | if length > 0 then max else null end) }')"
 lock_stale_after_sec="$(jq -nr --argjson t "$stage_budget_json" \
   --argjson o "$lock_budget_overrides" --argjson priors "$STAGE_BUDGET_PRIORS" \
   --argjson configured "$lock_stale_configured_hours" \
-  --argjson repos "$project_review_repos_json" '
+  --argjson repos "$repository_review_repos_json" '
     ([ ($priors["project-reviewer"].backstop // 0),
        ($o.backstop // empty),
        ((($t.cells // {}) | to_entries[]
@@ -886,26 +890,26 @@ log_node_state_transition overhead
 # --- Repo selection (--repo filter) ---
 if [[ -n "$REPO_FILTER" ]]; then
   repos_json="$(jq -c --arg f "$REPO_FILTER" \
-    '[.[] | select(.slug == $f or (.slug | endswith("/" + $f)))]' <<<"$project_review_repos_json")"
+    '[.[] | select(.slug == $f or (.slug | endswith("/" + $f)))]' <<<"$repository_review_repos_json")"
   if [[ "$(jq 'length' <<<"$repos_json")" == "0" ]]; then
     echo "review-cycle: --repo '$REPO_FILTER' matches no configured review repo" >&2
     exit 64
   fi
 else
-  repos_json="$project_review_repos_json"
+  repos_json="$repository_review_repos_json"
 fi
 
 # --- Per-repo skip-guard (R4) ---
 # Echoes the reason to skip (a non-empty string) or nothing (proceed). Every
 # tunable this reads is that repository's own resolved value — its override in
-# project_review.repos, or project_review.defaults otherwise (requirement 342)
+# repository_review.repos, or repository_review.defaults otherwise (requirement 342)
 # — passed in rather than read off a global, since none of them is
 # installation-wide any more.
 skip_reason() {
   local slug="$1" default_branch="$2" pr_label="$3" min_days="$4" not_before="$5" report_directory="$6" \
         min_prs="$7" \
         open_prs recent_date days not_before_epoch now_epoch merged_prs
-  # A repository's own `not_before` (its override, or project_review.defaults'
+  # A repository's own `not_before` (its override, or repository_review.defaults'
   # own value — the same one already checked once, cycle-wide, before the lock
   # above) is checked again here so an override can hold this one repository
   # off for longer than the installation-wide value.
@@ -952,7 +956,7 @@ skip_reason() {
 # Most recent report directory's own date on the default branch, as a bare
 # YYYY-MM-DD (or empty) — REPORT_DIRECTORY (this repository's own resolved
 # report_directory, or REPORT_DIRECTORY_DEFAULT when neither it nor
-# project_review.defaults.report_directory is configured) is a GNU date(1)
+# repository_review.defaults.report_directory is configured) is a GNU date(1)
 # format string; lib/report-directory.sh resolves which of its past instances
 # exist on the default branch. Degrades to empty on any discovery failure
 # (no report directory ever written, an unreadable repository), the same as
@@ -992,7 +996,7 @@ days_since() {
 # already carries this repository's own resolved model, pr_label,
 # branch_prefix, min_days_between_reviews, min_prs_between_reviews,
 # not_before, report_directory, timeout_review and inactivity_review
-# (project_review_repos_json above) — review_one reads them straight off
+# (repository_review_repos_json above) — review_one reads them straight off
 # `to_review_json` rather than re-deriving anything.
 to_review_json="[]"
 while IFS= read -r entry; do
@@ -1056,7 +1060,7 @@ review_one() {
   slug="$(jq -r '.slug' <<<"$entry")"
   default_branch="$(jq -r '.default_branch' <<<"$entry")"
   # This repository's own resolved settings (requirement 342) — its override
-  # in project_review.repos, or project_review.defaults otherwise. Already
+  # in repository_review.repos, or repository_review.defaults otherwise. Already
   # validated (the model-id sweep before the lock, above), so this is a
   # straight re-derivation rather than a fresh check.
   model="$(resolve_model_id "$(jq -r '.model_key' <<<"$entry")" "$(jq -r '.model' <<<"$entry")")"
@@ -1189,7 +1193,7 @@ $(jq . <<<"$reviewer_input")
   out_file="$review_dir/reviewer-$safe.out"
 
   # This repository's own timeout_review/inactivity_review override (its own,
-  # or project_review.defaults' — already folded into $entry) — distinct from
+  # or repository_review.defaults' — already folded into $entry) — distinct from
   # lock_budget_overrides above, which took the widest across every configured
   # repository purely to size the shared lock.
   local review_budget_overrides review_budget review_backstop_min review_inactivity_min

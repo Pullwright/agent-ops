@@ -244,11 +244,11 @@ fi
 #     against a message that never names it. ---
 if [[ "$(jq -r '.repos[0].slug' "$BASE_CONFIG")" == "$BASE_REPO_1"
    && "$(jq -r '.repos[1].slug' "$BASE_CONFIG")" == "$BASE_REPO_2"
-   && "$(jq -r '.project_review.repos[0].slug' "$BASE_CONFIG")" == "$BASE_REPO_1"
-   && "$(jq -r '.project_review.repos[1].slug' "$BASE_CONFIG")" == "$BASE_REPO_2" ]]; then
+   && "$(jq -r '.repository_review.repos[0].slug' "$BASE_CONFIG")" == "$BASE_REPO_1"
+   && "$(jq -r '.repository_review.repos[1].slug' "$BASE_CONFIG")" == "$BASE_REPO_2" ]]; then
   pass "the base fixture names the repositories these assertions mutate"
 else
-  printf 'FAIL - the base fixture names the repositories these assertions mutate\n     expected %s and %s, under both repos and project_review.repos\n' \
+  printf 'FAIL - the base fixture names the repositories these assertions mutate\n     expected %s and %s, under both repos and repository_review.repos\n' \
     "$BASE_REPO_1" "$BASE_REPO_2"
   failures=$(( failures + 1 ))
 fi
@@ -391,16 +391,28 @@ assert_valid "a repo with no prompt_overrides override is accepted (inherits the
 #     that. ---
 assert_rejected "a required key cannot be dropped" \
   'del(.branch_prefix)' 'config: missing required key "branch_prefix"'
-assert_rejected "a required project_review.defaults key cannot be dropped while project_review is configured" \
-  'del(.project_review.defaults.model)' 'config.project_review.defaults: missing required key "model"'
-assert_rejected "project_review.defaults cannot be dropped while project_review is configured" \
-  'del(.project_review.defaults)' 'config.project_review: missing required key "defaults"'
-assert_rejected "project_review.repos cannot be dropped while project_review is configured" \
-  'del(.project_review.repos)' 'config.project_review: missing required key "repos"'
-assert_valid "the whole project_review block may be dropped (the review pipeline is optional)" \
-  'del(.project_review)'
+assert_rejected "a required repository_review.defaults key cannot be dropped while repository_review is configured" \
+  'del(.repository_review.defaults.model)' 'config.repository_review.defaults: missing required key "model"'
+assert_rejected "repository_review.defaults cannot be dropped while repository_review is configured" \
+  'del(.repository_review.defaults)' 'config.repository_review: missing required key "defaults"'
+assert_rejected "repository_review.repos cannot be dropped while repository_review is configured" \
+  'del(.repository_review.repos)' 'config.repository_review: missing required key "repos"'
+assert_valid "the whole repository_review block may be dropped (the review pipeline is optional)" \
+  'del(.repository_review)'
 assert_valid "an optional key may be absent" \
   'del(.state_repo, .schedule, .crash_loop_after)'
+
+# --- agent-ops#592 (D7): repository_review is the current spelling of the
+#     block; project_review is still accepted as a deprecated alias, with the
+#     identical required shape, but the two must never both be set. ---
+assert_valid "project_review (the deprecated alias) validates on its own, with the same required shape as repository_review" \
+  '.project_review = .repository_review | del(.repository_review)'
+assert_rejected "a required project_review.defaults key cannot be dropped while project_review is configured" \
+  '.project_review = .repository_review | del(.repository_review) | del(.project_review.defaults.model)' \
+  'config.project_review.defaults: missing required key "model"'
+assert_rejected "setting both repository_review and project_review is refused, naming both" \
+  '.project_review = .repository_review' \
+  'config: both project_review and repository_review are set (config.project_review, config.repository_review)'
 
 # --- config_defaults: the schema's `default` is the only place a default is
 #     written (issue #197), so this is what every reader now relies on
@@ -439,21 +451,32 @@ assert_defaults "an array item's own default is filled per item" \
   '.repos[0].nice = 7 | del(.repos[1].nice)' \
   '.repos[0].nice == 7 and .repos[1].nice == 0'
 assert_defaults "a required key with no schema default anywhere passes through untouched" \
-  '.project_review.defaults.model = "custom-model"' '.project_review.defaults.model == "custom-model"'
+  '.repository_review.defaults.model = "custom-model"' '.repository_review.defaults.model == "custom-model"'
 assert_defaults "a nested object's non-defaultable properties are not fabricated when absent" \
-  'del(.project_review)' '(.project_review | has("repos")) | not'
+  'del(.repository_review)' '(.repository_review | has("repos")) | not'
 # config_defaults fills schema defaults into array items too (the assertion two
-# above), which is exactly why no per-repo project_review override may declare
+# above), which is exactly why no per-repo repository_review override may declare
 # one: an entry would be materialised carrying the key, so it would always
-# "set" it and project_review.defaults could never apply to that repository
+# "set" it and repository_review.defaults could never apply to that repository
 # again. Exact equality, so adding a `default` to any of the eight overridable
-# keys under `project_review.repos[]` fails here rather than silently in a
+# keys under `repository_review.repos[]` fails here rather than silently in a
 # review a week later.
-assert_defaults "no project_review per-repo override is fabricated into a repos entry" \
-  '.project_review.repos = [{slug: "Test-Org/first-repo"}]' \
-  '.project_review.repos[0] == {slug: "Test-Org/first-repo"}'
+assert_defaults "no repository_review per-repo override is fabricated into a repos entry" \
+  '.repository_review.repos = [{slug: "Test-Org/first-repo"}]' \
+  '.repository_review.repos[0] == {slug: "Test-Org/first-repo"}'
 assert_defaults "config_defaults performs no schema validation of its own" \
   '.pr_labell = "x"' '.pr_labell == "x"'
+
+# --- agent-ops#592 (D7): config_defaults folds the deprecated project_review
+#     alias into .repository_review, so every downstream reader can read the
+#     current spelling unconditionally, regardless of which one config.json
+#     actually set. ---
+assert_defaults "project_review (old spelling only) resolves into .repository_review, identically to the current spelling" \
+  '.project_review = .repository_review | del(.repository_review)' \
+  '.repository_review == {defaults: {model: "claude-sonnet-5", pr_label: "test-project-review", branch_prefix: "test-review/", min_days_between_reviews: 13, not_before: "", repo_context_file: ""}, repos: [{slug: "Test-Org/first-repo"}, {slug: "Test-Org/second-repo"}]}'
+assert_defaults "repository_review (current spelling only) is left exactly as config.json wrote it" \
+  '.repository_review.defaults.model = "repo-spelling-model"' \
+  '.repository_review.defaults.model == "repo-spelling-model"'
 
 # --- Requirement 1d: cadence-derived timings ---
 #
@@ -853,8 +876,8 @@ else
 fi
 
 # --- #483: `branch_prefix`, `min_days_between_reviews` and `not_before`
-#     under `project_review.repos[]` now `$ref` the same `$defs` entry as the
-#     matching key under `project_review.defaults`, so a constraint tightened
+#     under `repository_review.repos[]` now `$ref` the same `$defs` entry as the
+#     matching key under `repository_review.defaults`, so a constraint tightened
 #     on one is enforced on the other without a second edit. Demonstrated by
 #     tightening the shared `branchPrefix` $def with a `pattern` and
 #     confirming a `repos[]` override the new pattern forbids is rejected too
@@ -865,18 +888,18 @@ tightened_schema="$tmp/tightened-schema.json"
 # only thing it rejects is the repos[] override below — a hand-written pattern
 # would have to be kept agreeing with the fixture, and a disagreement would
 # report a second error that could mask the one under test.
-jq --arg prefix "$(jq -r '.project_review.defaults.branch_prefix' "$BASE_CONFIG")" \
+jq --arg prefix "$(jq -r '.repository_review.defaults.branch_prefix' "$BASE_CONFIG")" \
   '.["$defs"].branchPrefix.pattern = "^" + $prefix' "$SCHEMA" > "$tightened_schema"
-jq '.project_review.repos[0].branch_prefix = "not-the-configured-prefix/"' "$BASE_CONFIG" > "$tmp/c.json"
+jq '.repository_review.repos[0].branch_prefix = "not-the-configured-prefix/"' "$BASE_CONFIG" > "$tmp/c.json"
 desc="a constraint tightened on the shared branchPrefix \$def is enforced against a repos[] override"
 if out="$(config_schema_errors "$tmp/c.json" "$tightened_schema")"; then
   printf 'FAIL - %s\n     expected a rejection, got none\n' "$desc"
   failures=$(( failures + 1 ))
-elif [[ "$out" == *"config.project_review.repos[0].branch_prefix"* ]]; then
+elif [[ "$out" == *"config.repository_review.repos[0].branch_prefix"* ]]; then
   pass "$desc"
 else
   printf 'FAIL - %s\n     expected message containing: %s\n     actual: %s\n' \
-    "$desc" "config.project_review.repos[0].branch_prefix" "$out"
+    "$desc" "config.repository_review.repos[0].branch_prefix" "$out"
   failures=$(( failures + 1 ))
 fi
 
@@ -914,10 +937,10 @@ assert_rejected "an empty branch_prefix is rejected" \
 # as its own, in every repository it is configured for at once.
 assert_rejected "an empty pr_label is rejected" \
   '.pr_label = ""' 'config.pr_label: must not be empty'
-assert_rejected "an empty project_review.defaults.pr_label is rejected" \
-  '.project_review.defaults.pr_label = ""' 'config.project_review.defaults.pr_label: must not be empty'
-assert_rejected "an empty project_review repo pr_label override is rejected" \
-  '.project_review.repos[0].pr_label = ""' 'config.project_review.repos[0].pr_label: must not be empty'
+assert_rejected "an empty repository_review.defaults.pr_label is rejected" \
+  '.repository_review.defaults.pr_label = ""' 'config.repository_review.defaults.pr_label: must not be empty'
+assert_rejected "an empty repository_review repo pr_label override is rejected" \
+  '.repository_review.repos[0].pr_label = ""' 'config.repository_review.repos[0].pr_label: must not be empty'
 # The labels that *do* switch a projection off when empty must keep doing so:
 # tightening the two above must not tighten these by association.
 assert_valid "the optional labels may still be empty (each switches its projection off)" \
@@ -943,59 +966,59 @@ assert_valid "abandoned-drafts may sit at any rank in sources" \
   '.repos[0].sources |= (["abandoned-drafts"] + (. - ["abandoned-drafts"]))'
 assert_rejected "a repo slug that is not owner/name is rejected" \
   '.repos[0].slug = "poetic"' 'config.repos[0].slug: "poetic" does not match'
-assert_rejected "a project_review repo slug that is not owner/name is rejected" \
-  '.project_review.repos = [{slug: "poetic"}]' 'config.project_review.repos[0].slug: "poetic" does not match'
-assert_rejected "a project_review repo entry with no slug is rejected" \
-  '.project_review.repos = [{model: "claude-sonnet-5"}]' \
-  'config.project_review.repos[0]: missing required key "slug"'
-assert_rejected "a misspelt key inside a project_review repo entry is rejected" \
-  '.project_review.repos[0].sluggg = "a/b"' \
-  'config.project_review.repos[0]: unknown key "sluggg"'
-assert_valid "a project_review repo entry may override any of defaults' own keys" \
-  '.project_review.repos[0] += {model: "claude-opus-5", pr_label: "custom-review", branch_prefix: "custom/", timeout_review: 30, inactivity_review: 5, min_days_between_reviews: 1, min_prs_between_reviews: 10, not_before: "2026-01-01T00:00:00Z", report_directory: "docs/reviews/project-review-%Y-%m-%d"}'
-assert_valid "a project_review repo entry carrying only slug inherits every default" \
-  '.project_review.repos = [{slug: "Test-Org/first-repo"}]'
+assert_rejected "a repository_review repo slug that is not owner/name is rejected" \
+  '.repository_review.repos = [{slug: "poetic"}]' 'config.repository_review.repos[0].slug: "poetic" does not match'
+assert_rejected "a repository_review repo entry with no slug is rejected" \
+  '.repository_review.repos = [{model: "claude-sonnet-5"}]' \
+  'config.repository_review.repos[0]: missing required key "slug"'
+assert_rejected "a misspelt key inside a repository_review repo entry is rejected" \
+  '.repository_review.repos[0].sluggg = "a/b"' \
+  'config.repository_review.repos[0]: unknown key "sluggg"'
+assert_valid "a repository_review repo entry may override any of defaults' own keys" \
+  '.repository_review.repos[0] += {model: "claude-opus-5", pr_label: "custom-review", branch_prefix: "custom/", timeout_review: 30, inactivity_review: 5, min_days_between_reviews: 1, min_prs_between_reviews: 10, not_before: "2026-01-01T00:00:00Z", report_directory: "docs/reviews/project-review-%Y-%m-%d"}'
+assert_valid "a repository_review repo entry carrying only slug inherits every default" \
+  '.repository_review.repos = [{slug: "Test-Org/first-repo"}]'
 assert_valid "review_instructions/review_context accept an array of strings, in defaults and per-repo" \
-  '.project_review.defaults.review_context = ["a.md", "b.md"] |
-   .project_review.repos[0].review_instructions = ["c.md", "d.md"]'
+  '.repository_review.defaults.review_context = ["a.md", "b.md"] |
+   .repository_review.repos[0].review_instructions = ["c.md", "d.md"]'
 assert_rejected "a bare-string review_instructions is rejected — always an array, like prompt_overrides' extend" \
-  '.project_review.defaults.review_instructions = "instructions.md"' \
-  'config.project_review.defaults.review_instructions: expected array, got string'
+  '.repository_review.defaults.review_instructions = "instructions.md"' \
+  'config.repository_review.defaults.review_instructions: expected array, got string'
 assert_rejected "an empty review_instructions array is rejected (an absent key already says nothing configured)" \
-  '.project_review.defaults.review_instructions = []' \
-  'config.project_review.defaults.review_instructions'
+  '.repository_review.defaults.review_instructions = []' \
+  'config.repository_review.defaults.review_instructions'
 assert_rejected "an empty string inside a review_context array is rejected" \
-  '.project_review.defaults.review_context = [""]' \
-  'config.project_review.defaults.review_context'
+  '.repository_review.defaults.review_context = [""]' \
+  'config.repository_review.defaults.review_context'
 assert_rejected "a non-string, non-array review_instructions is rejected" \
-  '.project_review.defaults.review_instructions = 5' \
-  'config.project_review.defaults.review_instructions'
+  '.repository_review.defaults.review_instructions = 5' \
+  'config.repository_review.defaults.review_instructions'
 assert_valid "repo_context_file accepts a bare string, in defaults and per-repo" \
-  '.project_review.defaults.repo_context_file = ".github/REVIEW-CONTEXT.md" |
-   .project_review.repos[0].repo_context_file = "docs/review-context.md"'
+  '.repository_review.defaults.repo_context_file = ".github/REVIEW-CONTEXT.md" |
+   .repository_review.repos[0].repo_context_file = "docs/review-context.md"'
 assert_rejected "a non-string repo_context_file is rejected" \
-  '.project_review.defaults.repo_context_file = 5' \
-  'config.project_review.defaults.repo_context_file: expected string, got number'
+  '.repository_review.defaults.repo_context_file = 5' \
+  'config.repository_review.defaults.repo_context_file: expected string, got number'
 assert_rejected "a non-string report_directory is rejected" \
-  '.project_review.defaults.report_directory = 5' \
-  'config.project_review.defaults.report_directory: expected string, got number'
+  '.repository_review.defaults.report_directory = 5' \
+  'config.repository_review.defaults.report_directory: expected string, got number'
 assert_rejected "a non-string per-repo report_directory override is rejected" \
-  '.project_review.repos[0].report_directory = 5' \
-  'config.project_review.repos[0].report_directory: expected string, got number'
+  '.repository_review.repos[0].report_directory = 5' \
+  'config.repository_review.repos[0].report_directory: expected string, got number'
 assert_valid "report_directory may be dropped from defaults (it is optional, not required)" \
-  '.project_review.defaults.report_directory = "docs/reviews/project-review-%Y-%m-%d" | del(.project_review.defaults.report_directory)'
+  '.repository_review.defaults.report_directory = "docs/reviews/project-review-%Y-%m-%d" | del(.repository_review.defaults.report_directory)'
 assert_valid "report_directory may be dropped from a repo override too" \
-  '.project_review.repos[0].report_directory = "reviews/%Y-%m-%d" | del(.project_review.repos[0].report_directory)'
-assert_rejected "a negative project_review.defaults.min_prs_between_reviews is rejected" \
-  '.project_review.defaults.min_prs_between_reviews = -1' \
-  'config.project_review.defaults.min_prs_between_reviews: -1 is below the minimum 0'
+  '.repository_review.repos[0].report_directory = "reviews/%Y-%m-%d" | del(.repository_review.repos[0].report_directory)'
+assert_rejected "a negative repository_review.defaults.min_prs_between_reviews is rejected" \
+  '.repository_review.defaults.min_prs_between_reviews = -1' \
+  'config.repository_review.defaults.min_prs_between_reviews: -1 is below the minimum 0'
 assert_rejected "a negative per-repo min_prs_between_reviews override is rejected" \
-  '.project_review.repos[0].min_prs_between_reviews = -1' \
-  'config.project_review.repos[0].min_prs_between_reviews: -1 is below the minimum 0'
+  '.repository_review.repos[0].min_prs_between_reviews = -1' \
+  'config.repository_review.repos[0].min_prs_between_reviews: -1 is below the minimum 0'
 assert_valid "min_prs_between_reviews may be dropped from defaults (it is optional, not required)" \
-  '.project_review.defaults.min_prs_between_reviews = 5 | del(.project_review.defaults.min_prs_between_reviews)'
+  '.repository_review.defaults.min_prs_between_reviews = 5 | del(.repository_review.defaults.min_prs_between_reviews)'
 assert_valid "min_prs_between_reviews may be dropped from a repo override too" \
-  '.project_review.repos[0].min_prs_between_reviews = 5 | del(.project_review.repos[0].min_prs_between_reviews)'
+  '.repository_review.repos[0].min_prs_between_reviews = 5 | del(.repository_review.repos[0].min_prs_between_reviews)'
 assert_rejected "a state_repo that is not owner/name is rejected" \
   '.state_repo = "agent-ops-state"' 'config.state_repo: "agent-ops-state" does not match'
 assert_valid "an empty state_repo is accepted (single-node operation)" \
@@ -1034,14 +1057,14 @@ assert_valid "merge_budget_per_day 0 (unlimited), top-level and per-repo, is acc
 assert_valid "a repo with no merge_budget_per_day override is accepted (inherits the top-level key)" \
   '.merge_budget_per_day = 5'
 
-# --- config_project_review_repos: the resolution rule (issue #342/requirement
+# --- config_repository_review_repos: the resolution rule (issue #342/requirement
 #     342) — a repo's own override wins when present and non-null, defaults[key]
 #     otherwise, and a repo carrying only `slug` inherits every default. ---
-assert_project_review() {
+assert_repository_review() {
   local desc="$1" mutation="$2" jq_check="$3" out
   jq "$mutation" "$BASE_CONFIG" > "$tmp/c.json" || { bad "$desc (mutation did not apply)"; return; }
   out="$(config_defaults "$tmp/c.json" "$SCHEMA")" || { bad "$desc (config_defaults failed)"; return; }
-  out="$(config_project_review_repos "$out")" || { bad "$desc (config_project_review_repos failed)"; return; }
+  out="$(config_repository_review_repos "$out")" || { bad "$desc (config_repository_review_repos failed)"; return; }
   if jq -e "$jq_check" <<<"$out" >/dev/null 2>&1; then
     pass "$desc"
   else
@@ -1050,27 +1073,27 @@ assert_project_review() {
   fi
 }
 
-assert_project_review "a repo entry with no overrides resolves to every default" \
-  '.project_review.defaults = {model: "test-model-1", pr_label: "test-label-1", branch_prefix: "test-prefix/", min_days_between_reviews: 99, not_before: "2025-01-01T00:00:00Z", timeout_review: 60, inactivity_review: 7} |
-   .project_review.repos = [{slug: "Test-Org/first-repo"}]' \
+assert_repository_review "a repo entry with no overrides resolves to every default" \
+  '.repository_review.defaults = {model: "test-model-1", pr_label: "test-label-1", branch_prefix: "test-prefix/", min_days_between_reviews: 99, not_before: "2025-01-01T00:00:00Z", timeout_review: 60, inactivity_review: 7} |
+   .repository_review.repos = [{slug: "Test-Org/first-repo"}]' \
   '.[0].model == "test-model-1" and .[0].pr_label == "test-label-1"
    and .[0].branch_prefix == "test-prefix/" and .[0].min_days_between_reviews == 99
    and .[0].not_before == "2025-01-01T00:00:00Z"
-   and .[0].model_key == "project_review.defaults.model"'
-assert_project_review "a repo's own override wins over the default, for that key alone" \
-  '.project_review.defaults = {model: "test-model-1", pr_label: "test-label-1", branch_prefix: "test-prefix/", min_days_between_reviews: 99, not_before: "2025-01-01T00:00:00Z", timeout_review: 60, inactivity_review: 7} |
-   .project_review.repos = [{slug: "Test-Org/first-repo", model: "claude-opus-5"}]' \
+   and .[0].model_key == "repository_review.defaults.model"'
+assert_repository_review "a repo's own override wins over the default, for that key alone" \
+  '.repository_review.defaults = {model: "test-model-1", pr_label: "test-label-1", branch_prefix: "test-prefix/", min_days_between_reviews: 99, not_before: "2025-01-01T00:00:00Z", timeout_review: 60, inactivity_review: 7} |
+   .repository_review.repos = [{slug: "Test-Org/first-repo", model: "claude-opus-5"}]' \
   '.[0].model == "claude-opus-5" and .[0].pr_label == "test-label-1"
-   and .[0].model_key == "project_review.repos[0].model"'
-assert_project_review "a repo may override every key defaults carries" \
-  '.project_review.repos = [{slug: "Test-Org/first-repo", model: "claude-opus-5",
+   and .[0].model_key == "repository_review.repos[0].model"'
+assert_repository_review "a repo may override every key defaults carries" \
+  '.repository_review.repos = [{slug: "Test-Org/first-repo", model: "claude-opus-5",
      pr_label: "custom-review", branch_prefix: "custom/", min_days_between_reviews: 1,
      min_prs_between_reviews: 2,
      not_before: "2026-01-01T00:00:00Z", report_directory: "docs/reviews/project-review-%Y-%m-%d",
      timeout_review: 30, inactivity_review: 5,
      review_instructions: ["custom-instructions.md"], review_context: ["a.md", "b.md"],
      repo_context_file: ".github/REVIEW-CONTEXT.md"}]' \
-  '.[0] == {slug: "Test-Org/first-repo", model: "claude-opus-5", model_key: "project_review.repos[0].model",
+  '.[0] == {slug: "Test-Org/first-repo", model: "claude-opus-5", model_key: "repository_review.repos[0].model",
      pr_label: "custom-review", branch_prefix: "custom/", min_days_between_reviews: 1, min_prs_between_reviews: 2,
      not_before: "2026-01-01T00:00:00Z",
      report_directory: "docs/reviews/project-review-%Y-%m-%d", timeout_review: 30, inactivity_review: 5,
@@ -1080,34 +1103,34 @@ assert_project_review "a repo may override every key defaults carries" \
 # --- review_instructions/review_context/repo_context_file: requirement 342's
 #     resolution rule applied to issue #589/D7's own keys. review_instructions/
 #     review_context are always arrays (never a bare string, like
-#     prompt_overrides' extend) — config_project_review_repos only needs to
+#     prompt_overrides' extend) — config_repository_review_repos only needs to
 #     turn an absent key into `[]`, never a scalar into a one-element list. ---
-assert_project_review "review_instructions/review_context/repo_context_file absent everywhere resolve to empty" \
-  '.project_review.repos = [{slug: "Test-Org/first-repo"}]' \
+assert_repository_review "review_instructions/review_context/repo_context_file absent everywhere resolve to empty" \
+  '.repository_review.repos = [{slug: "Test-Org/first-repo"}]' \
   '.[0].review_instructions == [] and .[0].review_context == [] and .[0].repo_context_file == ""'
-assert_project_review "an array review_instructions in defaults is inherited in order" \
-  '.project_review.defaults.review_instructions = ["a.md", "b.md"] |
-   .project_review.repos = [{slug: "Test-Org/first-repo"}]' \
+assert_repository_review "an array review_instructions in defaults is inherited in order" \
+  '.repository_review.defaults.review_instructions = ["a.md", "b.md"] |
+   .repository_review.repos = [{slug: "Test-Org/first-repo"}]' \
   '.[0].review_instructions == ["a.md", "b.md"]'
-assert_project_review "an array review_context in defaults is passed through in order" \
-  '.project_review.defaults.review_context = ["a.md", "b.md"] |
-   .project_review.repos = [{slug: "Test-Org/first-repo"}]' \
+assert_repository_review "an array review_context in defaults is passed through in order" \
+  '.repository_review.defaults.review_context = ["a.md", "b.md"] |
+   .repository_review.repos = [{slug: "Test-Org/first-repo"}]' \
   '.[0].review_context == ["a.md", "b.md"]'
-assert_project_review "a repo's own review_instructions overrides defaults' entirely, not merged" \
-  '.project_review.defaults.review_instructions = ["a.md", "b.md"] |
-   .project_review.repos = [{slug: "Test-Org/first-repo", review_instructions: ["c.md"]}]' \
+assert_repository_review "a repo's own review_instructions overrides defaults' entirely, not merged" \
+  '.repository_review.defaults.review_instructions = ["a.md", "b.md"] |
+   .repository_review.repos = [{slug: "Test-Org/first-repo", review_instructions: ["c.md"]}]' \
   '.[0].review_instructions == ["c.md"]'
-assert_project_review "an explicit null review_context falls through to defaults" \
-  '.project_review.defaults.review_context = ["a.md"] |
-   .project_review.repos = [{slug: "Test-Org/first-repo", review_context: null}]' \
+assert_repository_review "an explicit null review_context falls through to defaults" \
+  '.repository_review.defaults.review_context = ["a.md"] |
+   .repository_review.repos = [{slug: "Test-Org/first-repo", review_context: null}]' \
   '.[0].review_context == ["a.md"]'
-assert_project_review "a repo's own repo_context_file overrides defaults'" \
-  '.project_review.defaults.repo_context_file = ".github/REVIEW-CONTEXT.md" |
-   .project_review.repos = [{slug: "Test-Org/first-repo", repo_context_file: "docs/review-context.md"}]' \
+assert_repository_review "a repo's own repo_context_file overrides defaults'" \
+  '.repository_review.defaults.repo_context_file = ".github/REVIEW-CONTEXT.md" |
+   .repository_review.repos = [{slug: "Test-Org/first-repo", repo_context_file: "docs/review-context.md"}]' \
   '.[0].repo_context_file == "docs/review-context.md"'
-assert_project_review "a repo with no repo_context_file override inherits defaults'" \
-  '.project_review.defaults.repo_context_file = ".github/REVIEW-CONTEXT.md" |
-   .project_review.repos = [{slug: "Test-Org/first-repo"}]' \
+assert_repository_review "a repo with no repo_context_file override inherits defaults'" \
+  '.repository_review.defaults.repo_context_file = ".github/REVIEW-CONTEXT.md" |
+   .repository_review.repos = [{slug: "Test-Org/first-repo"}]' \
   '.[0].repo_context_file == ".github/REVIEW-CONTEXT.md"'
 
 # --- min_prs_between_reviews: absent → 5, defaults-only, per-repo override,
@@ -1115,52 +1138,52 @@ assert_project_review "a repo with no repo_context_file override inherits defaul
 #     already has above, but with a code-level fallback rather than a schema
 #     `default`, since the key is deliberately not in `defaults`' `required`
 #     array (issue #1079). ---
-assert_project_review "min_prs_between_reviews absent everywhere resolves to the code default of 5" \
-  'del(.project_review.defaults.min_prs_between_reviews)
-   | .project_review.repos = [{slug: "Test-Org/first-repo"}]' \
+assert_repository_review "min_prs_between_reviews absent everywhere resolves to the code default of 5" \
+  'del(.repository_review.defaults.min_prs_between_reviews)
+   | .repository_review.repos = [{slug: "Test-Org/first-repo"}]' \
   '.[0].min_prs_between_reviews == 5'
-assert_project_review "min_prs_between_reviews resolves from defaults when set there" \
-  '.project_review.defaults.min_prs_between_reviews = 25 |
-   .project_review.repos = [{slug: "Test-Org/first-repo"}]' \
+assert_repository_review "min_prs_between_reviews resolves from defaults when set there" \
+  '.repository_review.defaults.min_prs_between_reviews = 25 |
+   .repository_review.repos = [{slug: "Test-Org/first-repo"}]' \
   '.[0].min_prs_between_reviews == 25'
-assert_project_review "a repo's own min_prs_between_reviews override wins over defaults" \
-  '.project_review.defaults.min_prs_between_reviews = 25 |
-   .project_review.repos = [{slug: "Test-Org/first-repo", min_prs_between_reviews: 10}]' \
+assert_repository_review "a repo's own min_prs_between_reviews override wins over defaults" \
+  '.repository_review.defaults.min_prs_between_reviews = 25 |
+   .repository_review.repos = [{slug: "Test-Org/first-repo", min_prs_between_reviews: 10}]' \
   '.[0].min_prs_between_reviews == 10'
-assert_project_review "an explicit null min_prs_between_reviews falls through to defaults" \
-  '.project_review.defaults.min_prs_between_reviews = 25 |
-   .project_review.repos = [{slug: "Test-Org/first-repo", min_prs_between_reviews: null}]' \
+assert_repository_review "an explicit null min_prs_between_reviews falls through to defaults" \
+  '.repository_review.defaults.min_prs_between_reviews = 25 |
+   .repository_review.repos = [{slug: "Test-Org/first-repo", min_prs_between_reviews: null}]' \
   '.[0].min_prs_between_reviews == 25'
-assert_project_review "an explicit null min_prs_between_reviews falls all the way through to 5 when defaults is also unset" \
-  'del(.project_review.defaults.min_prs_between_reviews)
-   | .project_review.repos = [{slug: "Test-Org/first-repo", min_prs_between_reviews: null}]' \
+assert_repository_review "an explicit null min_prs_between_reviews falls all the way through to 5 when defaults is also unset" \
+  'del(.repository_review.defaults.min_prs_between_reviews)
+   | .repository_review.repos = [{slug: "Test-Org/first-repo", min_prs_between_reviews: null}]' \
   '.[0].min_prs_between_reviews == 5'
-assert_project_review "a per-repo report_directory overrides defaults.report_directory" \
-  '.project_review.defaults.report_directory = "reviews/project-review-%Y-%m-%d" |
-   .project_review.repos = [{slug: "Test-Org/first-repo", report_directory: "docs/reviews/project-review-%Y-%m-%d"}]' \
+assert_repository_review "a per-repo report_directory overrides defaults.report_directory" \
+  '.repository_review.defaults.report_directory = "reviews/project-review-%Y-%m-%d" |
+   .repository_review.repos = [{slug: "Test-Org/first-repo", report_directory: "docs/reviews/project-review-%Y-%m-%d"}]' \
   '.[0].report_directory == "docs/reviews/project-review-%Y-%m-%d"'
-assert_project_review "a repo with no report_directory override inherits defaults.report_directory" \
-  '.project_review.defaults.report_directory = "reviews/project-review-%Y-%m-%d" |
-   .project_review.repos = [{slug: "Test-Org/first-repo"}]' \
+assert_repository_review "a repo with no report_directory override inherits defaults.report_directory" \
+  '.repository_review.defaults.report_directory = "reviews/project-review-%Y-%m-%d" |
+   .repository_review.repos = [{slug: "Test-Org/first-repo"}]' \
   '.[0].report_directory == "reviews/project-review-%Y-%m-%d"'
-assert_project_review "report_directory absent everywhere resolves to empty, never fabricated" \
-  'del(.project_review.defaults.report_directory)
-   | .project_review.repos = [{slug: "Test-Org/first-repo"}]' \
+assert_repository_review "report_directory absent everywhere resolves to empty, never fabricated" \
+  'del(.repository_review.defaults.report_directory)
+   | .repository_review.repos = [{slug: "Test-Org/first-repo"}]' \
   '.[0].report_directory == ""'
-assert_project_review "an explicit null inherits, exactly as an absent key does" \
-  '.project_review.defaults = {model: "test-model-1", pr_label: "test-label-1", branch_prefix: "test-prefix/", min_days_between_reviews: 99, not_before: "2025-01-01T00:00:00Z", timeout_review: 60, inactivity_review: 7} |
-   .project_review.repos = [{slug: "Test-Org/first-repo", model: null, min_days_between_reviews: null}]' \
+assert_repository_review "an explicit null inherits, exactly as an absent key does" \
+  '.repository_review.defaults = {model: "test-model-1", pr_label: "test-label-1", branch_prefix: "test-prefix/", min_days_between_reviews: 99, not_before: "2025-01-01T00:00:00Z", timeout_review: 60, inactivity_review: 7} |
+   .repository_review.repos = [{slug: "Test-Org/first-repo", model: null, min_days_between_reviews: null}]' \
   '.[0].model == "test-model-1" and .[0].min_days_between_reviews == 99
-   and .[0].model_key == "project_review.defaults.model"'
-assert_project_review "two repos resolve independently — one overriding, one inheriting" \
-  '.project_review.defaults = {model: "test-model-1", pr_label: "test-label-1", branch_prefix: "test-prefix/", min_days_between_reviews: 99, not_before: "2025-01-01T00:00:00Z", timeout_review: 60, inactivity_review: 7} |
-   .project_review.repos = [{slug: "Test-Org/first-repo", model: "claude-opus-5"},
+   and .[0].model_key == "repository_review.defaults.model"'
+assert_repository_review "two repos resolve independently — one overriding, one inheriting" \
+  '.repository_review.defaults = {model: "test-model-1", pr_label: "test-label-1", branch_prefix: "test-prefix/", min_days_between_reviews: 99, not_before: "2025-01-01T00:00:00Z", timeout_review: 60, inactivity_review: 7} |
+   .repository_review.repos = [{slug: "Test-Org/first-repo", model: "claude-opus-5"},
      {slug: "Test-Org/second-repo"}]' \
   '.[0].model == "claude-opus-5" and .[1].model == "test-model-1"
-   and .[0].model_key == "project_review.repos[0].model"
-   and .[1].model_key == "project_review.defaults.model"'
-assert_project_review "an absent project_review resolves to no repos, never an error" \
-  'del(.project_review)' '. == []'
+   and .[0].model_key == "repository_review.repos[0].model"
+   and .[1].model_key == "repository_review.defaults.model"'
+assert_repository_review "an absent repository_review resolves to no repos, never an error" \
+  'del(.repository_review)' '. == []'
 
 # --- Model identifiers. D12's whole point is that the qualifier is checked
 #     before it reaches `claude --model`, and the schema is the earlier of the
@@ -1187,16 +1210,16 @@ assert_doctor "doctor passes an Enabler disabled outright" \
   '.enabler_model = "" | .enabler_assignee = ""' 0 'the Enabler is disabled'
 assert_doctor "doctor fails an implementation-plan source with no path, as agent-cycle.sh would" \
   '.repos[0].sources += ["implementation-plan"]' 1 'list the implementation-plan source with no implementation_plan_path'
-assert_doctor "doctor fails duplicate slugs in project_review.repos, as review-cycle.sh would" \
-  '.project_review.repos[1].slug = .project_review.repos[0].slug' 1 \
-  "project_review.repos lists [$BASE_REPO_1] more than once"
+assert_doctor "doctor fails duplicate slugs in repository_review.repos, as review-cycle.sh would" \
+  '.repository_review.repos[1].slug = .repository_review.repos[0].slug' 1 \
+  "repository_review.repos lists [$BASE_REPO_1] more than once"
 # issue #1570: the top-level repos[] array has the same duplicate-slug gap
-# project_review.repos already had (requirement R1b) — config.schema.json
+# repository_review.repos already had (requirement R1b) — config.schema.json
 # states no uniqueness constraint on repos at all, and a uniqueItems there
 # would reject only byte-identical whole entries, so nothing before this
 # check caught two repos[] entries sharing a slug while differing elsewhere. Issue #1576 (below) makes agent-cycle.sh refuse at startup on
-# the same condition too, the same as config_duplicate_project_review_slugs
-# already does for project_review.repos.
+# the same condition too, the same as config_duplicate_repository_review_slugs
+# already does for repository_review.repos.
 assert_doctor "doctor fails duplicate slugs in repos[]" \
   '.repos[1].slug = .repos[0].slug' 1 \
   "repos lists [$BASE_REPO_1] more than once"
@@ -1210,20 +1233,20 @@ assert_doctor "doctor warns, never fails, a vercel-configured repo whose named c
 assert_doctor "doctor degrades a schema-invalid bypass_secret_env into a [warn], not a raw shell error" \
   '.repos[0].preview = {"provider": "vercel", "vercel": {"bypass_secret_env": "not a valid name"}}' \
   1 "$BASE_REPO_1's preview.vercel.bypass_secret_env (\"not a valid name\") is not a valid environment variable name"
-assert_doctor_shipped "doctor passes distinct project_review.repos slugs" \
-  '.' 0 'every project_review.repos entry names a distinct repository'
+assert_doctor_shipped "doctor passes distinct repository_review.repos slugs" \
+  '.' 0 'every repository_review.repos entry names a distinct repository'
 # --- issue #589/D7: a configured review_instructions/review_context path
 #     that does not resolve is a `fail`, not the `warn` a prompt_overrides
 #     path earns — this text changes how strictly a review judges. ---
 printf 'weigh security first\n' > "$tmp/review-instructions.md"
 assert_doctor "doctor fails a review_instructions path that does not resolve" \
-  '.project_review.defaults.review_instructions = ["'"$tmp"'/nope-instructions.md"]' 1 \
+  '.repository_review.defaults.review_instructions = ["'"$tmp"'/nope-instructions.md"]' 1 \
   "review_instructions names \"$tmp/nope-instructions.md\""
 assert_doctor "doctor fails a per-repo review_context override that does not resolve" \
-  '.project_review.repos[0].review_context = ["'"$tmp"'/nope-context.md"]' 1 \
+  '.repository_review.repos[0].review_context = ["'"$tmp"'/nope-context.md"]' 1 \
   "review_context names \"$tmp/nope-context.md\""
 assert_doctor "doctor passes a review_instructions path that does resolve" \
-  '.project_review.defaults.review_instructions = ["'"$tmp"'/review-instructions.md"]' 0 \
+  '.repository_review.defaults.review_instructions = ["'"$tmp"'/review-instructions.md"]' 0 \
   "every configured review_instructions/review_context path resolves"
 assert_doctor_shipped "doctor passes with no review_instructions/review_context configured at all" \
   '.' 0 'every configured review_instructions/review_context path resolves'
@@ -1278,9 +1301,9 @@ assert_doctor "doctor fails the refined label set to blocked — the projection 
 assert_doctor "doctor fails a PR label named obsolete, which every draft would then carry as its own close corroboration" \
   '.pr_label = "obsolete"' 1 'pr_label is "obsolete"'
 assert_doctor "doctor fails a label named Obsolete case-insensitively, as the void guard reads it" \
-  '.project_review.defaults.pr_label = "Obsolete"' 1 'project_review pr_label is "Obsolete"'
-assert_doctor "doctor fails an obsolete label on a repo's own project_review override too" \
-  '.project_review.repos[0].pr_label = "Obsolete"' 1 'project_review pr_label is "Obsolete"'
+  '.repository_review.defaults.pr_label = "Obsolete"' 1 'repository_review pr_label is "Obsolete"'
+assert_doctor "doctor fails an obsolete label on a repo's own repository_review override too" \
+  '.repository_review.repos[0].pr_label = "Obsolete"' 1 'repository_review pr_label is "Obsolete"'
 # --- issue #714: the exact-"blocked" check above extends to the whole
 #     blocked:* reason-label namespace requirement 38b's own
 #     blocked:needs-refinement lives in, so a configured label cannot claim a
@@ -1327,9 +1350,9 @@ WIDE_OVERRIDE_LOCK_MIN=$(( $(stage_budget_lock_seconds '{}' \
 assert_doctor "a per-repo override wider than every prior widens the reported lock, matching what agent-cycle.sh derives" \
   '.repos[0].stage_timeouts = {"implementer": 300}' 0 \
   "the cycle lock is derived at $WIDE_OVERRIDE_LOCK_MIN min"
-assert_doctor "doctor warns when a repo's project_review label collides with the implementation one" \
-  '.project_review.repos[0].pr_label = .pr_label' 0 \
-  "$BASE_REPO_1's project_review pr_label ($(jq -r '.pr_label' "$BASE_CONFIG")) equals pr_label"
+assert_doctor "doctor warns when a repo's repository_review label collides with the implementation one" \
+  '.repository_review.repos[0].pr_label = .pr_label' 0 \
+  "$BASE_REPO_1's repository_review pr_label ($(jq -r '.pr_label' "$BASE_CONFIG")) equals pr_label"
 assert_doctor "doctor warns when the mirror would outlive the node that writes it" \
   '.cycles_retained = 5000 | .state_local_cycles_retained = 10' 0 'is below cycles_retained'
 assert_doctor "doctor warns when crash-loop escalation is configured with nowhere to file" \
@@ -1758,13 +1781,13 @@ run_paused_cycle "$(jq -c '.' "$BASE_CONFIG")" --once
 assert_eq "a healthy (non-zero) cap adds no paused-by-cap warning (still the 2 above)" "2" \
   "$(paused_warnings | wc -l | tr -d ' ')"
 
-# review-cycle.sh's own cross-key guard: duplicate project_review.repos slugs
+# review-cycle.sh's own cross-key guard: duplicate repository_review.repos slugs
 # (requirement R1b), shared with doctor.sh's own `fail` above through the same
 # lib/config-schema.sh function.
-run_review_guard "$(jq -c '.project_review.repos[1].slug = .project_review.repos[0].slug' "$BASE_CONFIG")"
-assert_eq "duplicate project_review.repos slugs exit 1, past the schema gate" "1" "$guard_rc"
+run_review_guard "$(jq -c '.repository_review.repos[1].slug = .repository_review.repos[0].slug' "$BASE_CONFIG")"
+assert_eq "duplicate repository_review.repos slugs exit 1, past the schema gate" "1" "$guard_rc"
 assert_contains "the duplicate-slug guard names the repeated slug" \
-  "project_review.repos lists [$BASE_REPO_1] more than once" "$guard_out"
+  "repository_review.repos lists [$BASE_REPO_1] more than once" "$guard_out"
 assert_not_contains "a config the schema accepts is not reported as a schema failure" \
   "does not match config.schema.json" "$guard_out"
 

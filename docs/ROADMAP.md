@@ -422,10 +422,19 @@ Poetic-Poems, with no pipeline code in it.
       rename does not wait on them. **Done:** the prose sweep (#590) — spec
       titles, documentation, prompts and code comments no longer present
       "hourly" or "weekly" as identity, and the review pipeline is the
-      repository-review pipeline throughout. **Remaining:** every
+      repository-review pipeline throughout; and #592's own breaking half —
+      the `project_review` config block is `repository_review`, with
+      `project_review` accepted as a deprecated alias (dual acceptance, a
+      `scripts/doctor.sh` warning, and a "the old spelling stops being
+      accepted once every node in the fleet reports an image containing the
+      rename" removal condition — there is no calendar-based deprecation
+      window this installation could express one in). **Remaining:** every
       cadence-derived timing's actual behaviour still assumes an hour rather
-      than reading the configured interval (#591), and the identifiers still
-      carry the old names (#592). *[fleet]*
+      than reading the configured interval (#591), and the `project-review`
+      pull-request label, work source, vendored skill name and review-folder
+      prefix still carry the old names (#1871, split off #592 as the
+      higher-risk half: relabeling live pull requests and renaming a
+      work-source string written permanently into `log.jsonl`). *[fleet]*
 - [ ] First-class non-interactive auth: Anthropic API key, Bedrock, and
       Vertex as the primary path; subscription OAuth documented as the
       supported self-hosted alternative (D4). *[interactive]*

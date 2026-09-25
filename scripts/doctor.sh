@@ -222,11 +222,11 @@ DEFAULTED_CONFIG="$(config_defaults "$config_file" "$schema_file" 2>/dev/null)"
 cfg() { jq -r "$1" <<<"$DEFAULTED_CONFIG"; }
 cfg_json() { jq -c "$1" <<<"$DEFAULTED_CONFIG"; }
 
-# project_review.repos, each resolved against project_review.defaults
+# repository_review.repos, each resolved against repository_review.defaults
 # (requirement 342) — the same lib/config-schema.sh helper review-cycle.sh
 # uses, so the two scripts cannot resolve the same repository two different
-# ways. `[]` when project_review is absent or malformed.
-project_review_repos_json="$(config_project_review_repos "$DEFAULTED_CONFIG")"
+# ways. `[]` when repository_review is absent or malformed.
+repository_review_repos_json="$(config_repository_review_repos "$DEFAULTED_CONFIG")"
 
 schema_errors="$(config_schema_errors "$config_file" "$schema_file")"
 case "$?" in
@@ -234,6 +234,22 @@ case "$?" in
   1) while IFS= read -r line; do fail "$line"; done <<<"$schema_errors" ;;
   *) warn "$schema_errors — the schema check did not run" ;;
 esac
+
+# agent-ops#592 (D7): project_review is accepted as a deprecated alias for
+# repository_review while the fleet rolls onto an image containing the
+# rename — a `warn`, not a `fail`, since the alias still works (config_defaults
+# folds it into repository_review). Read against the raw file, not
+# DEFAULTED_CONFIG: config_defaults's own fold would make repository_review
+# non-null even when the operator never wrote it, which is exactly the
+# ambiguity this check exists to resolve. Both-set is not reported again here
+# — the schema check above already fails it, naming both keys.
+repository_review_raw_has="$(jq -e '.repository_review != null' "$config_file" >/dev/null 2>&1 && echo 1 || echo 0)"
+project_review_raw_has="$(jq -e '.project_review != null' "$config_file" >/dev/null 2>&1 && echo 1 || echo 0)"
+if [[ "$project_review_raw_has" == "1" && "$repository_review_raw_has" == "0" ]]; then
+  warn "project_review is set — it is accepted as a deprecated alias for repository_review while any node in the fleet still runs an image without this rename; rename it once every node reports an image containing repository_review (config.schema.json's repository_review key states the removal condition)"
+elif [[ "$repository_review_raw_has" == "1" && "$project_review_raw_has" == "0" ]]; then
+  ok "repository_review is set (no deprecated project_review alias in use)"
+fi
 
 # issue #567: a key whose `x-docs.value` documents a specific installation's
 # choice — differing from that key's own schema `default` — is itself a claim
@@ -400,17 +416,17 @@ else
   ok "every repos entry names a distinct repository"
 fi
 
-# Requirement 342's resolution rule assumes exactly one project_review.repos
+# Requirement 342's resolution rule assumes exactly one repository_review.repos
 # entry per repository; two entries for the same slug leave no way to say
 # which one's overrides apply, so review-cycle.sh refuses to start rather
 # than silently letting the later entry win (lib/config-schema.sh's
-# config_duplicate_project_review_slugs, docs/REVIEW-PIPELINE-SPEC.md
+# config_duplicate_repository_review_slugs, docs/REVIEW-PIPELINE-SPEC.md
 # requirement R1b).
-duplicate_review_slugs="$(config_duplicate_project_review_slugs "$project_review_repos_json")"
+duplicate_review_slugs="$(config_duplicate_repository_review_slugs "$repository_review_repos_json")"
 if [[ -n "$duplicate_review_slugs" ]]; then
-  fail "project_review.repos lists [$duplicate_review_slugs] more than once — review-cycle.sh refuses to start, since requirement 342's resolution rule cannot tell which entry's overrides should apply"
+  fail "repository_review.repos lists [$duplicate_review_slugs] more than once — review-cycle.sh refuses to start, since requirement 342's resolution rule cannot tell which entry's overrides should apply"
 else
-  ok "every project_review.repos entry names a distinct repository"
+  ok "every repository_review.repos entry names a distinct repository"
 fi
 
 # D18 (docs/reviews/2026-08-14-autonomy-investigation.md §5.3, requirement
@@ -791,16 +807,16 @@ for key in pr_label enabler_escalation_label needs_refinement_label refined_labe
   fi
 done
 
-# project_review's pr_label is resolved per repository (requirement 342), so
-# every distinct value in force — project_review.defaults.pr_label, plus any
+# repository_review's pr_label is resolved per repository (requirement 342), so
+# every distinct value in force — repository_review.defaults.pr_label, plus any
 # repository's own override — is checked here rather than one global key.
 while IFS= read -r review_label; do
   [[ -n "$review_label" ]] || continue
   if [[ "${review_label,,}" == "obsolete" ]]; then
-    fail "project_review pr_label is \"$review_label\" — the obsolete label is a human's own corroboration for closing a draft pull request (requirement 34k), and a stage projecting it as a configured label would corroborate the pipeline's own voids"
+    fail "repository_review pr_label is \"$review_label\" — the obsolete label is a human's own corroboration for closing a draft pull request (requirement 34k), and a stage projecting it as a configured label would corroborate the pipeline's own voids"
   fi
-done < <(jq -r '[(.project_review.defaults.pr_label // ""),
-                 ((.project_review.repos // [])[] | .pr_label // empty)]
+done < <(jq -r '[(.repository_review.defaults.pr_label // ""),
+                 ((.repository_review.repos // [])[] | .pr_label // empty)]
                 | unique | .[]' <<<"$DEFAULTED_CONFIG" 2>/dev/null)
 
 excluded_count="$(cfg_json '.schedule.excluded_minutes' \
@@ -811,15 +827,15 @@ elif ((excluded_count > 0)); then
   ok "schedule.excluded_minutes leaves $((60 - excluded_count)) minute(s) for this node's cycle"
 fi
 
-# Checked per configured repository, since project_review's pr_label is
+# Checked per configured repository, since repository_review's pr_label is
 # resolved per repository (requirement 342) and may no longer be the same
 # value everywhere.
 while IFS=$'\t' read -r review_slug review_label; do
   [[ -n "$review_slug" ]] || continue
   if [[ "$review_label" == "$(cfg '.pr_label // ""')" ]]; then
-    warn "$review_slug's project_review pr_label ($review_label) equals pr_label — its review pull requests would count against max_open_agent_prs and be indistinguishable from implementation ones"
+    warn "$review_slug's repository_review pr_label ($review_label) equals pr_label — its review pull requests would count against max_open_agent_prs and be indistinguishable from implementation ones"
   fi
-done < <(jq -r '.[] | [.slug, (.pr_label // "")] | @tsv' <<<"$project_review_repos_json")
+done < <(jq -r '.[] | [.slug, (.pr_label // "")] | @tsv' <<<"$repository_review_repos_json")
 
 # cycles_retained and state_local_cycles_retained are both resolved by
 # config_defaults — derived from the cadence when absent, floored by whatever
@@ -869,10 +885,10 @@ done < <(jq -r '
     {k: "enabler_model",              v: .enabler_model},
     {k: "refiner_model",              v: .refiner_model},
     {k: "monitor_model",              v: .monitor_model},
-    {k: "project_review.defaults.model", v: .project_review.defaults.model}
+    {k: "repository_review.defaults.model", v: .repository_review.defaults.model}
   ]
-  + [ (.project_review.repos // [])[] | select(has("model"))
-      | {k: (.slug + "'"'"'s project_review.model override"), v: .model} ]
+  + [ (.repository_review.repos // [])[] | select(has("model"))
+      | {k: (.slug + "'"'"'s repository_review.model override"), v: .model} ]
   | .[] | select((.v // "") != "") | [.k, .v] | @tsv' "$config_file")
 
 # Requirement 1c, "the floor" (agent-ops#822): refiner_model and enabler_model
@@ -967,7 +983,7 @@ section "Review instructions & context"
 # the operator configured. review_context_missing_configured is the same
 # function review-cycle.sh calls before its own lock (R1c), so the two can
 # never disagree about what counts as broken.
-missing_review_context_paths="$(review_context_missing_configured "$state_dir" "$project_review_repos_json")"
+missing_review_context_paths="$(review_context_missing_configured "$state_dir" "$repository_review_repos_json")"
 if [[ -n "$missing_review_context_paths" ]]; then
   while IFS=$'\t' read -r mrc_slug mrc_field mrc_configured mrc_resolved; do
     [[ -n "$mrc_slug" ]] || continue
@@ -1462,7 +1478,7 @@ if ((gh_ready)); then
   # run (`docs/REVIEW-PIPELINE-SPEC.md` R5.0b), so there is no interval to
   # quote there — the next review of that repository is the whole answer.
   # REVIEW_PR_LABEL (optional) is this repository's own resolved
-  # project_review pr_label (requirement 342) — only ROLE "review" needs it;
+  # repository_review pr_label (requirement 342) — only ROLE "review" needs it;
   # see lib/labels.sh's labels_catalogue for why it can no longer be derived
   # from the config alone.
   check_repo_labels() {
@@ -2219,9 +2235,9 @@ if ((gh_ready)); then
   while IFS=$'\t' read -r slug review_label; do
     [[ -n "$slug" ]] || continue
     check_repo_labels "$slug" review "$review_label" \
-      || fail "project_review.repos names $slug, which is unreachable with this token"
+      || fail "repository_review.repos names $slug, which is unreachable with this token"
     check_repo_access "$slug"
-  done < <(jq -r '.[] | [.slug, (.pr_label // "")] | @tsv' <<<"$project_review_repos_json")
+  done < <(jq -r '.[] | [.slug, (.pr_label // "")] | @tsv' <<<"$repository_review_repos_json")
 
   state_repo="$(cfg '.state_repo')"
   if [[ -z "$state_repo" ]]; then

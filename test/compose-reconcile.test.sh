@@ -79,7 +79,7 @@ mkdir -p "$project" "$state" "$bin"
 
 config="$tmp_dir/config.json"
 cat > "$config" <<'EOF'
-{"lock_stale_after": 4, "project_review": {"lock_stale_after": 6}}
+{"lock_stale_after": 4, "repository_review": {"lock_stale_after": 6}}
 EOF
 
 export DOCKER_STUB_LOG="$tmp_dir/docker-calls.log"

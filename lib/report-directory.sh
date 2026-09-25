@@ -35,8 +35,8 @@
 
 # The report directory's own ultimate fallback (issue #761): used by both
 # pipelines wherever a repository configures neither its own
-# `project_review.repos[].report_directory` nor
-# `project_review.defaults.report_directory` — today's layout, unchanged. Not
+# `repository_review.repos[].report_directory` nor
+# `repository_review.defaults.report_directory` — today's layout, unchanged. Not
 # a schema `default` (config.schema.json's `reportDirectory` $def
 # deliberately carries none): a schema-level default would be injected by
 # config_defaults and read as a configured override, permanently hiding the

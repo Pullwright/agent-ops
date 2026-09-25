@@ -30,7 +30,7 @@
 # `config_duplicate_repos_slugs` are `agent-cycle.sh`'s
 # own startup guards (all `fail`/refuse except
 # `config_refinement_sources_paused_by_cap`, which `warn`s, never refuses —
-# see each function's own comment); `config_duplicate_project_review_slugs`
+# see each function's own comment); `config_duplicate_repository_review_slugs`
 # is `review-cycle.sh`'s. `scripts/doctor.sh` calls every one of them so no
 # pipeline's refusal or warning can ever drift from what `doctor.sh` reports.
 #
@@ -243,7 +243,20 @@ config_schema_errors() {
               end
           end;
 
-    (schema_faults($root; "") + errs($root; .; "config"))[]
+    # agent-ops#592 (D7): repository_review is the current spelling of the
+    # block project_review used to be; project_review is still accepted as a
+    # deprecated alias (config_defaults resolves either spelling), but the
+    # two must never both be set — resolving one of two present keys by
+    # precedence is exactly the quiet failure this schema exists to catch
+    # (the issue'\''s own Pitfalls section), so this is an error, not a warn.
+    # Expressed here rather than as a schema keyword because the minimal
+    # validator above has no way to say "not both of two sibling properties".
+    def dual_spelling_errors:
+      if (.project_review != null) and (.repository_review != null)
+      then ["config: both project_review and repository_review are set (config.project_review, config.repository_review) — repository_review is the current spelling; remove project_review"]
+      else [] end;
+
+    (schema_faults($root; "") + errs($root; .; "config") + dual_spelling_errors)[]
   ' "$config_file" 2>&1)"
 
   if [[ -n "$errors" ]]; then
@@ -264,7 +277,7 @@ config_schema_errors() {
 # own but whose properties do — `schedule` is the case in point — is still
 # synthesised whole when absent, so every leaf under it reads its default too;
 # a key with no schema default anywhere on its path (a required field with
-# nothing to fall back to, `project_review.defaults.model` for instance)
+# nothing to fall back to, `repository_review.defaults.model` for instance)
 # passes through unchanged. This performs no validation of its own — a config invalid against
 # the schema is still merged, defaults and all, since a caller that wants the
 # gate calls config_schema_errors first.
@@ -516,7 +529,26 @@ config_defaults() {
             mean: (1440 / firings_per_day($allowed; $interval; $excluded))
           };
 
-    fill($root; .) as $filled
+    . as $raw
+    | fill($root; .) as $filled0
+
+    # agent-ops#592 (D7): repository_review is canonicalised here, once, so
+    # every reader downstream of config_defaults can read `.repository_review`
+    # unconditionally and never has to know project_review, the deprecated
+    # alias, exists. Tested against $raw, not $filled0 — every leaf inside the
+    # reviewPipelineConfig shape that does carry its own schema default (e.g.
+    # `defaults.not_before`) is already synthesised by `fill` above even when
+    # the operator set neither spelling, so `$filled0.repository_review` is
+    # never actually `null`, just an object of nothing but such leaves; only
+    # $raw can say whether the operator wrote repository_review at all. A
+    # config carrying both is refused by config_schema_errors before it ever
+    # reaches a running stage; here (this function validates nothing — see its
+    # own header) repository_review simply wins if both are somehow present,
+    # the same "new spelling wins" precedence notify_resolve_webhook_url
+    # already uses for escalation_webhook_url.
+    | (if (($raw.repository_review // null) == null) and (($raw.project_review // null) != null)
+       then $filled0 + {repository_review: $filled0.project_review}
+       else $filled0 end) as $filled
     | cadence_gaps($filled.schedule) as $gaps
     | $gaps.worst as $gap_min
     | $gaps.mean as $mean_gap_min
@@ -717,16 +749,16 @@ config_refinement_sources_paused_by_cap() {
     | join(", ")' <<<"$policy_json" 2>/dev/null || true
 }
 
-# config_duplicate_project_review_slugs PROJECT_REVIEW_REPOS_JSON
+# config_duplicate_repository_review_slugs REPOSITORY_REVIEW_REPOS_JSON
 # Given an array of objects each carrying a `slug` — config.json's
-# `project_review.repos` itself, or config_project_review_repos's resolved
-# output, both shaped alike — prints the comma-joined slugs that name more
-# than one entry. Requirement 342's resolution rule assumes exactly one entry
-# per repository; two entries for the same slug leave no way to say which
-# one's overrides apply, so review-cycle.sh refuses to start rather than
+# `repository_review.repos` itself, or config_repository_review_repos's
+# resolved output, both shaped alike — prints the comma-joined slugs that name
+# more than one entry. Requirement 342's resolution rule assumes exactly one
+# entry per repository; two entries for the same slug leave no way to say
+# which one's overrides apply, so review-cycle.sh refuses to start rather than
 # silently letting the later entry win. Empty when every slug is unique
 # (including the vacuous case of an empty array).
-config_duplicate_project_review_slugs() {
+config_duplicate_repository_review_slugs() {
   local repos_json="$1"
   jq -r '[.[].slug] | group_by(.) | map(select(length > 1) | .[0]) | join(", ")' <<<"$repos_json"
 }
@@ -741,8 +773,8 @@ config_duplicate_project_review_slugs() {
 # `lib/escalation-autonomy.sh`, `lib/preview-config.sh`) return every match,
 # while others (`agent-cycle.sh`'s `merge_autonomy` lookup) take only the
 # first. `agent-cycle.sh` refuses to start on a duplicate slug (issue #1576),
-# the same as `config_duplicate_project_review_slugs` already does for
-# `project_review.repos`, and `scripts/doctor.sh` reports the identical
+# the same as `config_duplicate_repository_review_slugs` already does for
+# `repository_review.repos`, and `scripts/doctor.sh` reports the identical
 # condition as a `fail` through this same function, so the two can never
 # drift. Empty when every slug is unique (including the vacuous case of an
 # empty array).
@@ -828,7 +860,7 @@ config_documented_value_mismatches() {
           end;
 
     # Every leaf under `.properties`, one level of `properties` at a time —
-    # `schedule` and `project_review` (and its own `defaults`) recurse the
+    # `schedule` and `repository_review` (and its own `defaults`) recurse the
     # same way render-config-table.sh'\''s `flatten_region` does; anything
     # without its own `properties` (after `$ref` resolution) is a leaf.
     def leaf_paths($node0; $path):
@@ -856,21 +888,24 @@ config_documented_value_mismatches() {
   ' 2>/dev/null || true
 }
 
-# config_project_review_repos DEFAULTED_CONFIG_JSON
-# `project_review.repos`, each entry resolved against `project_review.defaults`
-# per requirement 342's rule: a key present and non-null on the repo's own
-# entry wins, `defaults[key]` otherwise; `slug` is never defaulted. One
-# implementation shared by every reader (review-cycle.sh, scripts/doctor.sh,
-# lib/labels.sh's caller) so they cannot resolve the same repository two
-# different ways. Takes the already-`config_defaults`-merged config, as every
-# caller already has one; prints `[]` (never fails) when `project_review` is
-# absent or malformed, so a caller need not special-case the optional block.
+# config_repository_review_repos DEFAULTED_CONFIG_JSON
+# `repository_review.repos`, each entry resolved against
+# `repository_review.defaults` per requirement 342's rule: a key present and
+# non-null on the repo's own entry wins, `defaults[key]` otherwise; `slug` is
+# never defaulted. One implementation shared by every reader (review-cycle.sh,
+# scripts/doctor.sh, lib/labels.sh's caller) so they cannot resolve the same
+# repository two different ways. Takes the already-`config_defaults`-merged
+# config, as every caller already has one — `config_defaults` has already
+# folded the deprecated `project_review` alias into `.repository_review`
+# (agent-ops#592, D7), so this reads the current spelling only; prints `[]`
+# (never fails) when `repository_review` is absent or malformed, so a caller
+# need not special-case the optional block.
 #
 # Each entry also carries `model_key`: the precise config path `model`'s
-# value was resolved from — `project_review.repos[<i>].model` when this
-# repository overrides it, `project_review.defaults.model` otherwise — so a
+# value was resolved from — `repository_review.repos[<i>].model` when this
+# repository overrides it, `repository_review.defaults.model` otherwise — so a
 # caller passing `model` to `resolve_model_id` can name that path rather than
-# the generic `project_review.model` in a resolution error.
+# the generic `repository_review.model` in a resolution error.
 #
 # `review_instructions`/`review_context` (issue #589, D7) are arrays of
 # paths, always — never a bare string, the same convention `prompt_overrides`'
@@ -879,18 +914,18 @@ config_documented_value_mismatches() {
 # resolves to `[]`, never `null`, so every reader can iterate it unconditionally.
 # `repo_context_file` stays a bare string: it names one file inside the
 # repository under review, never a list.
-config_project_review_repos() {
+config_repository_review_repos() {
   local defaulted_config="$1"
   jq -c '
     def to_path_array: if . == null then [] else . end;
-    (.project_review.defaults // {}) as $d |
-    [ range(0; (.project_review.repos // []) | length) as $i |
-      (.project_review.repos[$i]) as $r |
+    (.repository_review.defaults // {}) as $d |
+    [ range(0; (.repository_review.repos // []) | length) as $i |
+      (.repository_review.repos[$i]) as $r |
       { slug: $r.slug,
         model: ($r.model // $d.model),
         model_key: (if ($r.model != null)
-                     then "project_review.repos[\($i)].model"
-                     else "project_review.defaults.model" end),
+                     then "repository_review.repos[\($i)].model"
+                     else "repository_review.defaults.model" end),
         pr_label: ($r.pr_label // $d.pr_label),
         branch_prefix: ($r.branch_prefix // $d.branch_prefix),
         min_days_between_reviews: ($r.min_days_between_reviews // $d.min_days_between_reviews),

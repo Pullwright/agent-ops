@@ -1083,7 +1083,7 @@ and the schema must carry every one of them.
 Model IDs are pinned in config (one place to update); do not use floating
 aliases in the launch commands.
 
-Every `*_model` key above (and `project_review.defaults.model`, or a repo's own
+Every `*_model` key above (and `repository_review.defaults.model`, or a repo's own
 override, in `docs/REVIEW-PIPELINE-SPEC.md`) accepts a bare id
 (`claude-sonnet-5`) or a provider-qualified one
 (`anthropic/claude-sonnet-5`), resolved per requirement 1a. Anthropic is the
@@ -1566,8 +1566,8 @@ implements.
    value (the "disable this stage" convention `reviewer_model_complex` and
    `enabler_model` both use) passes through unresolved. `review-cycle.sh`
    applies the same resolution to every repository's own resolved
-   `project_review.defaults.model` (or its own override in
-   `project_review.repos`, requirement 342) (`docs/REVIEW-PIPELINE-SPEC.md`).
+   `repository_review.defaults.model` (or its own override in
+   `repository_review.repos`, requirement 342) (`docs/REVIEW-PIPELINE-SPEC.md`).
    Both scripts share one implementation,
    `lib/model-id.sh`'s `resolve_model_id`, so the two pipelines can never
    drift on what counts as a supported provider.
@@ -1575,7 +1575,7 @@ implements.
    gate both pipelines run on.** `config.schema.json` states the shape of
    `config.json` — every key an installation may set, its type, its
    constraints, and the value the code falls back to when it is absent. It
-   covers both pipelines' keys, including the `project_review` object of
+   covers both pipelines' keys, including the `repository_review` object of
    `docs/REVIEW-PIPELINE-SPEC.md`, because there is one configuration file
    and a schema that described half of it would licence the other half to
    drift. Every object in it is closed (`additionalProperties: false`), which
@@ -1671,7 +1671,7 @@ implements.
    readers that must depend on nothing but bash, `jq` and `config.json` by
    design, so that what they read cannot drift from what is actually
    deployed — `deploy/docker/watchtower-pre-update.sh`, reading three keys
-   (`state_dir`, `lock_stale_after`, `project_review.lock_stale_after`) that
+   (`state_dir`, `lock_stale_after`, `repository_review.lock_stale_after`) that
    carry no schema `default` to take, and `scripts/check-node-image.sh`'s in-container
    grace read, which runs inside whatever image the node is currently running
    and so must stay correct against an image that predates `config_defaults`
@@ -1681,8 +1681,8 @@ implements.
    (requirement 4f), which live in `lib/stage-budget.sh`'s
    `STAGE_BUDGET_PRIORS`. The last is the one case where a `default` here would
    be actively wrong rather than merely redundant: the `timeout_*`,
-   `inactivity_*` and `project_review.defaults.timeout_review` /
-   `project_review.defaults.inactivity_review` (and their per-repo overrides)
+   `inactivity_*` and `repository_review.defaults.timeout_review` /
+   `repository_review.defaults.inactivity_review` (and their per-repo overrides)
    keys are *overrides*, and a reader distinguishes "configured" from "absent" only
    by the key's absence. A `default` on `$defs/inactivityMinutes` or
    `$defs/timeoutMinutes` would be merged in by `config_defaults`, read as an
@@ -1728,8 +1728,8 @@ implements.
    one's overrides apply. `agent-cycle.sh` refuses to start on it,
    naming the duplicated slug(s), and `scripts/doctor.sh` reports the same
    condition as a `fail` through that one implementation, so those two cannot
-   drift either (component 14 below; `config_duplicate_project_review_slugs`
-   is the same rule for `project_review.repos`, shared with `review-cycle.sh`
+   drift either (component 14 below; `config_duplicate_repository_review_slugs`
+   is the same rule for `repository_review.repos`, shared with `review-cycle.sh`
    instead — `docs/REVIEW-PIPELINE-SPEC.md` requirement R1b).
 
 1c. **The model-tier floor (agent-ops#822).** Nothing before this requirement
@@ -2067,7 +2067,7 @@ implements.
    self-tuning `$defs` carry none.
 
    **Already independent, confirmed rather than changed.** `lock_stale_after`
-   and `project_review.lock_stale_after` are each already a floor under a
+   and `repository_review.lock_stale_after` are each already a floor under a
    value derived from the stage backstops in force (requirement 4f) — a
    cycle's own worst-case runtime, not the scheduling interval between cycle
    starts, is what a stuck lock has to outlast, and the two quantities are
@@ -4099,7 +4099,7 @@ implements.
    `lib/image-drift.sh`, travelling as a parameter, never a literal inside
    the library. `updater_defer_stuck_after_seconds` is derived rather than
    configured: the longer of `lock_stale_after` and
-   `project_review.lock_stale_after` (in hours, read with the hook's own
+   `repository_review.lock_stale_after` (in hours, read with the hook's own
    simple `// 4`/`// 6` defaults, not `acquire_lock`'s fuller derivation),
    converted to seconds — the same two values `watchtower-pre-update.sh`'s
    `held_by()` already bounds a deferral by, so a defer streak this function
@@ -4520,7 +4520,7 @@ implements.
      everything after the `=`.
    - **`lock.json` and `review-lock.json` defer it, exactly as they defer a
      roll** (`deploy/docker/watchtower-pre-update.sh`), bounded by the same
-     `lock_stale_after` and `project_review.lock_stale_after`, and judged by
+     `lock_stale_after` and `repository_review.lock_stale_after`, and judged by
      that hook's *foreign* rule alone: this container writes neither lock and
      shares no PID namespace with whatever did, so every lock is honoured
      without a liveness check until it is released or goes stale.
@@ -8207,8 +8207,8 @@ implements.
    silently until some later cycle happens to select work in it
    (agent-ops#687). `review-cycle.sh` calls the plain, unstamped
    `labels_reconcile_role` (`lib/labels.sh`) for each repository's own resolved
-   `project_review` pr_label (its override, or
-   `project_review.defaults.pr_label`, requirement 342) in each repository it
+   `repository_review` pr_label (its override, or
+   `repository_review.defaults.pr_label`, requirement 342) in each repository it
    is about to review — the same shape as the selected repository's own
    unconditional listing below, not the rate-limited helper, because a
    repository is selected for review at most once per
@@ -8398,7 +8398,7 @@ implements.
    hold, requirement 8f), and every non-empty configured label name —
    `pr_label`, `enabler_escalation_label`, `needs_refinement_label`,
    `refined_label`, `unvoid_label`, and every project-review pull-request
-   label in force (`project_review.defaults.pr_label` and each repository's
+   label in force (`repository_review.defaults.pr_label` and each repository's
    own override of it, requirement 342: `review-cycle.sh` skips a
    repository's whole review while an open pull request carries that label,
    so a minted one claiming the name would be read to decide something).
@@ -20605,7 +20605,7 @@ What exists, and the requirements each part answers to:
    so this gatherer and `review-cycle.sh`'s own skip-guard cannot answer
    "which review is current" two different ways for the same repository. The
    resolved directory is what `lib/eligibility.sh`'s Refiner pre-fetch passes
-   (per repository, resolved by `config_project_review_repos`). Prints the
+   (per repository, resolved by `config_repository_review_repos`). Prints the
    JSON array of that review's recommendations, one per
    `## R-NN` section of `03-recommendations.md`, each carrying
    `review-<date>-R-NN` as `ref`, its `id`, `review_date`, `title`, `url`,
@@ -21402,8 +21402,8 @@ What exists, and the requirements each part answers to:
     `config_missing_plan_path_repos`, two cross-key rules the schema itself
     cannot state — each holds *between* two keys — shared the same way, so
     `agent-cycle.sh`'s startup refusal and `doctor.sh`'s `fail` can never
-    drift on either. A third, `config_duplicate_project_review_slugs`, holds
-    between two *entries* of `project_review.repos` rather than between two
+    drift on either. A third, `config_duplicate_repository_review_slugs`, holds
+    between two *entries* of `repository_review.repos` rather than between two
     keys of one object — two entries naming the same repository leave
     requirement 342's resolution rule (`docs/REVIEW-PIPELINE-SPEC.md`) with no
     way to say which one's overrides apply — and is shared the same way
@@ -21466,7 +21466,7 @@ What exists, and the requirements each part answers to:
     those names — then the combinations that
     work but would silently surprise an operator later (a `warn`, not a
     `fail`: the stage timeouts outrunning `lock_stale_after`, a repository's own
-    resolved `project_review` pr_label colliding with `pr_label`, and the
+    resolved `repository_review` pr_label colliding with `pr_label`, and the
     rest), then the model ids through
     `resolve_model_id`, the shipped and overridden prompts, the toolchain,
     the state and workspace directories, the rendered crontab and the
@@ -22281,13 +22281,18 @@ What exists, and the requirements each part answers to:
     table property: renders the Markdown table body rows of the three prose
     configuration tables (this document's, `docs/REVIEW-PIPELINE-SPEC.md`'s,
     and the two in `README.md`) from `config.schema.json`'s leaf keys, in the
-    schema's own property order — `schedule` and `project_review` flatten one
+    schema's own property order — `schedule` and `repository_review` flatten one
     level into dotted keys (`schedule.review_hour`,
-    `project_review.lock_stale_after`) in the parent's position, and
-    `project_review.defaults` flattens one level further still
-    (`project_review.defaults.model`); every other object- or array-valued key
-    (`repos`, `project_review.repos`, `prompt_overrides`) renders as a single
-    row. Each key's value cell is,
+    `repository_review.lock_stale_after`) in the parent's position, and
+    `repository_review.defaults` flattens one level further still
+    (`repository_review.defaults.model`); every other object- or array-valued key
+    (`repos`, `repository_review.repos`, `prompt_overrides`) renders as a single
+    row — including `project_review` itself (agent-ops#592, D7): the
+    deprecated alias shares `repository_review`'s shape by `$ref` rather than
+    carrying its own `properties`, so it is never flattened, and renders as
+    one opaque summary row from its own `description`, the same way
+    `escalation_webhook_url` does for `notify_webhook_url`. Each key's value
+    cell is,
     in order, its `x-docs.value` verbatim — one string for both documents,
     or an object keyed `readme`/`spec` for the keys whose two tables say
     different things there, the spec's `Value` column carrying the unit
@@ -29010,7 +29015,7 @@ oblige anyone to edit a test.
     the real `review-cycle.sh` against a shim node (symlinks back into the
     tree with a `config.json` of its own, the harness
     `test/review-not-before.test.sh` established) held off by
-    `project_review.defaults.not_before`, and asserts all three readings:
+    `repository_review.defaults.not_before`, and asserts all three readings:
     with a live process named in `lock.json` the stand-down logs its own
     event and **no** `node-state` transition at all; with no `lock.json` it
     logs `idle-without-demand`/`no-demand` as before; and with a `lock.json`

@@ -142,9 +142,9 @@
 #   escalation  — where escalation issues are filed (crash_loop_repo,
 #                 pager_repo)
 #
-# REVIEW_PR_LABEL is used only for ROLE "review": project_review's pr_label is
-# resolved per repository (requirement 342 — an entry in `project_review.repos`
-# may override `project_review.defaults.pr_label`), so there is no longer one
+# REVIEW_PR_LABEL is used only for ROLE "review": repository_review's pr_label is
+# resolved per repository (requirement 342 — an entry in `repository_review.repos`
+# may override `repository_review.defaults.pr_label`), so there is no longer one
 # global value this function could read out of the config itself. The caller
 # already knows the specific repository's effective label — review-cycle.sh
 # resolves it once per repo, scripts/doctor.sh once per configured entry — and
@@ -592,7 +592,7 @@ labels_reconcile_stamped() {
 # way `labels_catalogue` reads them, from `config_defaults`'s merge rather
 # than CONFIG_FILE directly, so a renamed key is covered without repeating
 # its default here, plus every project-review pull-request label in force:
-# `project_review.defaults.pr_label` and each repository's own override of
+# `repository_review.defaults.pr_label` and each repository's own override of
 # it. That last one is resolved per repository rather than globally, so
 # `labels_catalogue` deliberately takes it as an argument instead — but the
 # reserved set is a superset by design, the union of every value in force
@@ -610,8 +610,8 @@ labels_reserved_names() {
   defaulted="$(config_defaults "$config_file" "$schema_file" 2>/dev/null)" || return 0
   jq -r '[.pr_label, .enabler_escalation_label, .needs_refinement_label,
           .refined_label, .unvoid_label,
-          (.project_review.defaults.pr_label // ""),
-          ((.project_review.repos // [])[] | .pr_label // "")]
+          (.repository_review.defaults.pr_label // ""),
+          ((.repository_review.repos // [])[] | .pr_label // "")]
          | .[] | select(. != "")' \
     <<<"$defaulted" 2>/dev/null
 }

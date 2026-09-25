@@ -181,7 +181,7 @@ updater_stuck_after_seconds="$(cfg '.updater_stuck_after_minutes * 60 | floor')"
 # directly there, not the derived value acquire_lock uses) rather than
 # re-deriving them, since this is bounding the same hook's own behaviour.
 updater_defer_stuck_after_seconds="$(cfg \
-  '([.lock_stale_after // 4, .project_review.lock_stale_after // 6] | max) * 3600 | floor')"
+  '([.lock_stale_after // 4, .repository_review.lock_stale_after // 6] | max) * 3600 | floor')"
 
 # One push interval in seconds (agent-ops#1377): the age past which an
 # `index.lock` in the mirror can no longer belong to a live git — this script
