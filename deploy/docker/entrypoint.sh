@@ -153,6 +153,23 @@ fi
 # --- State and workspace ---
 # Created here so a fresh volume is usable before the first cycle, and so the
 # dashboard has somewhere to serve from on a node that has never run one.
+#
+# Checked by JSON type, not by the string jq -r would produce: a missing key
+# and an explicit `null` both stringify to the literal "null", but a number
+# or array key stringifies to its own value (e.g. "5", "[]") — a plain
+# -z/"null" string check would silently accept either of those and mkdir a
+# directory literally named after the number, exactly the failure mode this
+# guard exists to catch.
+require_string_config() {
+  local key="$1"
+  if ! jq -e --arg k "$key" '(.[$k] | type) == "string" and (.[$k] | length) > 0' \
+        "$CONFIG_FILE" >/dev/null 2>&1; then
+    say "ERROR: $CONFIG_FILE's $key is missing or not a string"
+    exit 1
+  fi
+}
+require_string_config state_dir
+require_string_config workspace_root
 state_dir="$(expand_home "$(jq -r '.state_dir' "$CONFIG_FILE")")"
 workspace_root="$(expand_home "$(jq -r '.workspace_root' "$CONFIG_FILE")")"
 mkdir -p "$state_dir" "$workspace_root"
