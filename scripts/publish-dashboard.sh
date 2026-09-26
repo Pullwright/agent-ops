@@ -3555,7 +3555,8 @@ landings_json="$(jq -c -s \
           adjudication: ($ar.approver.adjudication // $v.adjudication // null),
           anomaly: ($ar == null) } + audit_for($u) ],
     refused: [ $refused[] | { ts: (.ts // ""), repo: (.repo // ""),
-                              pr_url: (.pr_url // ""), reason: (.reason // "") } ],
+                              pr_url: (.pr_url // ""), reason: (.reason // ""),
+                              class: (.class // null) } ],
     budget: ( ([ ($latest_budget[] | .repo // ""), ($caps | keys[]) ] | unique
                 | map(select(. != ""))) as $repos
       | [ $repos[] | . as $r

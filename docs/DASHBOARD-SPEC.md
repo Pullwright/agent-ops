@@ -1705,36 +1705,34 @@ Three things it will not hide, each a way a digest could mislead by omission:
   landings beside forty refusals is a classifier holding the line; two beside
   none may be a gate that is not running at all. A panel showing only successes
   could not tell those apart, and the second is the one worth waking for. The
-  class is the `reason` text before its first `:` (`byReason`,
-  `dashboard/index.html`) — `landing_autonomy_refusal_reason`
-  (`lib/landing.sh`, D18 issue #576) is what prefixes a `kill-switch:` tag onto
-  a refusal only when a second, independent read of the fleet-wide kill
-  switch confirms it is the actual cause of the effective level not
-  qualifying, so an engaged switch groups on its own rather than folding into
-  (or being indistinguishable from) the full-sentence group a level simply
-  never raised forms. An open question the Reviewer could not settle
-  (requirement 8f, agent-ops#668) groups the same way, on an `open-question:`
-  prefix `_landing_stage_attempt`'s own new gate produces directly. Every
-  refusal `_landing_stage_attempt` (`lib/landing.sh`) can produce that
-  carries a `:` at all carries that `:` behind a class word of its own —
-  `landing_eligible`'s and `landing_protected_path_controls_ok`'s
-  `ineligible:`/`unknown:`, gate 3's `review gate:`, and the gate-by-gate
-  `malformed-pr-url:`, `open-question-unreadable:`,
-  `approver-review-unreadable:`, `approver-review-not-approved:`,
-  `human-veto-unreadable:`, `human-changes-requested:`,
-  `reconciliation-unanswered:`, `reconciliation-unreadable:`,
-  `merge-queue-unreadable:`, `dequeued-actionable:`, `dequeued-manual:` and
-  `arm-failed:` (TD-PPagop-26082502) — so a caller never reaches the generic
-  split-on-first-`:` rule with a reason whose own varying content supplies
-  the first `:` the rule ever sees. Chief among that varying content is
+  class is the `landing-refused` event's own `class` field (`byReason`,
+  `dashboard/index.html`) — one of `lib/landing.sh`'s own
+  `_LANDING_REFUSAL_CLASSES` (TD-PPagop-26082823), naming the gate that
+  refused (`kill-switch`/`autonomy-level` for gate 1, `ineligible`/`unknown`
+  for gate 2's `landing_eligible` and gate 4.5's
+  `landing_protected_path_controls_ok` alike, `open-question`/
+  `open-question-unreadable`, `review-gate`, and a class per remaining gate:
+  `malformed-pr-url`, `approver-login-unreadable`,
+  `approver-review-unreadable`, `approver-review-not-approved`,
+  `human-veto-unreadable`, `human-changes-requested`,
+  `reconciliation-unanswered`, `reconciliation-unreadable`,
+  `merge-queue-unreadable`, `merge-queue-occupied`, `dequeued-actionable`,
+  `dequeued-manual`, `approver-token-unmintable`, `arm-failed`) — set as a
+  literal at every `_landing_refuse` call site in `_landing_stage_attempt`
+  and `_landing_open_question_resolve`, never derived from the
+  human-readable `reason` string beside it, so a reader grouping on it never
+  has to parse prose that might embed varying content of its own (chiefly
   `$pr_url` — itself a `https://…` string carrying its own scheme colon —
-  which garbled a whole family of sentence-form refusals into one-off groups
-  keyed on a URL fragment rather than on the gate that actually failed; a
-  parenthetical such as `(state: …)` cut the same reason off mid-sentence for
-  the same reason. A reason carrying no `:` at all — "could not read the
-  Approver App's own login", "already in the merge queue" — needs no prefix:
-  the whole string is already one stable group, exactly the "full-sentence
-  group" a level simply never raised forms above.
+  which is exactly what garbled a whole family of sentence-form refusals
+  into one-off groups keyed on a URL fragment before this field existed,
+  TD-PPagop-26082502). An event logged before this field existed carries no
+  `class` key at all, which the Publisher's own `refused` projection — the
+  one thing that carries the field off the raw event and into `landings`,
+  and so the one place dropping it would silently cost the grouping
+  altogether — normalises to `class: null`. `byReason` therefore keys its
+  fallback on the *value*, not the key: a `class` that is absent, `null` or
+  empty reads the same, and each falls back to that superseded
+  text-before-its-first-`:` split — never an event that names a class.
 - **The merge budget** (D18 issue #574), per repository: `merge_budget_per_day`'s
   effective cap against consumption, its status (`ok`/`held`/`frozen`), and,
   when held or frozen, the oldest waiting pull request and its age. An

@@ -247,6 +247,20 @@
         "repo": "Poetic-Poems/agent-ops",
         "pr_url": "https://github.com/Poetic-Poems/agent-ops/pull/607",
         "reason": "approver-review-unreadable:could not read https://github.com/Poetic-Poems/agent-ops/pull/607's own review list to confirm the Approver's review actually landed"
+      },
+      {
+        "ts": "@ago:11h",
+        "repo": "Poetic-Poems/agent-ops",
+        "pr_url": "https://github.com/Poetic-Poems/agent-ops/pull/608",
+        "class": "autonomy-level",
+        "reason": "merge_autonomy effective level is human, not agent-merges-routine or agent-merges-all"
+      },
+      {
+        "ts": "@ago:12h",
+        "repo": "Poetic-Poems/agent-ops",
+        "pr_url": "https://github.com/Poetic-Poems/agent-ops/pull/609",
+        "class": "autonomy-level",
+        "reason": "merge_autonomy effective level is agent-approves, not agent-merges-routine or agent-merges-all"
       }
     ],
     "budget": [
