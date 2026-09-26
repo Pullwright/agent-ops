@@ -130,7 +130,7 @@ x-agent-ops-env: &agent-ops-env
   # roughly ≤700 MiB to keep steering the largest unions off `-x`, and one knob
   # holding both is what livelocked both ockham nodes on 2026-09-16.
   LINT_SHELL_BUDGET_MIB: ${LINT_SHELL_BUDGET_MIB:-}
-  TZ: ${TZ:-Pacific/Auckland}
+  TZ: ${TZ:-UTC}
 
 x-agent-ops: &agent-ops
   # The registry image is the deployment artefact, and there is deliberately no
@@ -562,7 +562,7 @@ services:
       # because this block is an allowlist, like the scheduler's own: a
       # variable set in .env and not named here reaches nothing.
       EGRESS_EXTRA_ALLOW: ${EGRESS_EXTRA_ALLOW:-}
-      TZ: ${TZ:-Pacific/Auckland}
+      TZ: ${TZ:-UTC}
     networks: [default, egress]
     volumes:
       - state:/home/agent/.local/state/poetic-agents:ro
@@ -1077,7 +1077,7 @@ services:
       # use, and the reconciler records `refused` in its verdict rather than
       # guessing at a path.
       AGENT_OPS_PROJECT_DIR: ${AGENT_OPS_PROJECT_DIR:-}
-      TZ: ${TZ:-Pacific/Auckland}
+      TZ: ${TZ:-UTC}
     # No network of any kind. The Docker socket is a unix socket and
     # `docker compose up -d` needs nothing else — the daemon does any pull, on
     # the host's own network, not this container's. A container holding the

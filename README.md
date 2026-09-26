@@ -2295,17 +2295,25 @@ once, as root, at startup. The server still binds `127.0.0.1` only — it opens
 a loopback port, never a network one.
 
 1. **Install the init script** — [`deploy/agent-ops-dashboard.init`](deploy/agent-ops-dashboard.init)
-   drops to the `wallen` user (never root) via `start-stop-daemon --chuid`
-   and serves `scripts/serve-dashboard.sh` on port 8787:
+   drops to the user named by `RUNAS` (never root) via `start-stop-daemon
+   --chuid` and serves `scripts/serve-dashboard.sh` on port 8787:
 
    ```sh
    sudo install -m 755 deploy/agent-ops-dashboard.init /etc/init.d/agent-ops-dashboard
    ```
 
-   Its `RUNAS`, `RUNHOME`, `APPDIR`, `PORT`, `PIDFILE` and `LOGFILE` settings
-   are defaults; a host that differs (another user, another checkout path)
-   overrides them in `/etc/default/agent-ops-dashboard` rather than editing
-   the installed script.
+   `RUNAS` and `APPDIR` carry no default and must be set in
+   `/etc/default/agent-ops-dashboard` before the service will start, for
+   example:
+
+   ```sh
+   printf 'RUNAS=youruser\nAPPDIR=/home/youruser/Code/agent-ops\n' | sudo tee /etc/default/agent-ops-dashboard
+   ```
+
+   Its `RUNHOME`, `PORT`, `PIDFILE` and `LOGFILE` settings are ordinary
+   defaults; a host that differs overrides them the same way, in
+   `/etc/default/agent-ops-dashboard`, rather than editing the installed
+   script.
 
 2. **Start it at WSL boot** — add it to `/etc/wsl.conf`'s existing boot
    command, alongside cron:

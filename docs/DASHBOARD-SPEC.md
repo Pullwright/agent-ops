@@ -2960,10 +2960,11 @@ number's twins elsewhere on the page.
   reach the page. `deploy/agent-ops-dashboard.init` (the legacy WSL SysV path)
   sends the server's output to `<state_dir>/dashboard-server.log`, so every
   artefact the dashboard produces lands under `state_dir` and nothing is
-  written beside the checkout. All of its settings (`RUNAS`, `RUNHOME`, `APPDIR`, `PORT`,
-  `PIDFILE`, `LOGFILE`) are defaults overridable from
-  `/etc/default/agent-ops-dashboard`, so the script carries no host-specific
-  path that must be edited in place.
+  written beside the checkout. `RUNAS` and `APPDIR` carry no default and must be
+  set in `/etc/default/agent-ops-dashboard` before the script will start; its
+  remaining settings (`RUNHOME`, `PORT`, `PIDFILE`, `LOGFILE`) are defaults
+  overridable from the same file, so a host that differs needs no edit to the
+  installed script beyond the two required settings.
 - The version stamp: `ARG`s and the `build-info.json` write at the foot of
   `deploy/docker/Dockerfile`, and the "Work out the version stamp" step of
   `.github/workflows/build-image.yml` that supplies them (with a check that the
