@@ -381,8 +381,11 @@ a node updates by pulling a new image rather than by pulling a branch.
   named volume from the image's mount point — ownership included — and creates
   it as root when the image has nothing there. `state_dir`/`workspace_root`
   are read out of the image's own copy of `config.json` at build time, not
-  hardcoded, so an installation whose `config.json` names different paths
-  gets them pre-created and owned correctly by its own ordinary build.
+  hardcoded, so an installation whose `config.json` names different paths —
+  including one outside `/home/agent` — gets them pre-created and owned
+  correctly by its own ordinary build; the build fails outright if either key
+  is missing or not a string, rather than creating a mount point under a
+  literal `null` path.
 - The image builds for both `linux/amd64` and `linux/arm64`: `supercronic` is
   the one binary not coming from a signed, multi-architecture apt repository,
   so the Dockerfile selects its release asset and pinned checksum from

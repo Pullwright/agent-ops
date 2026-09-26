@@ -273,16 +273,32 @@ COPY --chown=agent:agent . /app
 # the same substitution every script that reads these two keys applies,
 # since `jq -r` does not expand paths — written with `case`/`#`, not bash's
 # `${var/pattern/replacement}`, because a Dockerfile `RUN` executes under the
-# image's default shell (`/bin/sh`, dash on this base image), not bash.
+# image's default shell (`/bin/sh`, dash on this base image), not bash. A
+# missing or non-string key reads back as the literal string "null" from
+# `jq -r`, so both are rejected outright (the build fails loudly) rather than
+# silently mkdir'ing a `/null` tree while the real mount points go
+# un-created — the same strictness `render-crontab.sh` already applies to
+# `state_dir` for the same reason. The final `chown` covers `$state_dir` and
+# `$workspace_root` explicitly, not just `/home/agent`: either key can name a
+# path outside it (this installation's own values do not, but the schema
+# allows any non-empty string), and a fresh named volume seeds root-owned
+# from whatever the image left un-chowned at its mount point, which is
+# exactly the restart-loop this whole block exists to prevent.
 RUN state_dir="$(jq -r '.state_dir' /app/config.json)" \
     && workspace_root="$(jq -r '.workspace_root' /app/config.json)" \
+    && if [ -z "$state_dir" ] || [ "$state_dir" = "null" ]; then \
+         echo "config.json's state_dir is missing or not a string" >&2; exit 1; \
+       fi \
+    && if [ -z "$workspace_root" ] || [ "$workspace_root" = "null" ]; then \
+         echo "config.json's workspace_root is missing or not a string" >&2; exit 1; \
+       fi \
     && case "$state_dir" in "~"*) state_dir="$HOME${state_dir#\~}" ;; esac \
     && case "$workspace_root" in "~"*) workspace_root="$HOME${workspace_root#\~}" ;; esac \
     && mkdir -p /home/agent/.claude \
                 "$state_dir/cycles" \
                 "$state_dir/reviews" \
                 "$workspace_root" \
-    && chown -R "$PUID:$PGID" /home/agent
+    && chown -R "$PUID:$PGID" /home/agent "$state_dir" "$workspace_root"
 
 # The `gh` transport shim (requirement 2.0e, agent-ops#1084): a symlink ahead
 # of apt's own /usr/bin/gh on PATH, so every `gh` call this image ever makes —
