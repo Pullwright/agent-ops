@@ -710,17 +710,33 @@ refinement_traceability_repair() {  # <candidate-json> <refinements-json>
 #
 # Prints `{title, body, comments: [{author, created_at, body}]}` on success —
 # the same field names scripts/gather-issues.sh's own band entry uses, so the
-# template below reads either one identically. A non-zero exit leaves stdout
-# whatever `gh` already wrote to it: the caller reads the exit code, never
-# emptiness.
+# template below reads either one identically. A non-zero exit prints nothing
+# on stdout — each `gh` read is captured and only combined once both have
+# succeeded — so the caller reads the exit code over a document it never has
+# to check for completeness.
+#
+# Comments are fetched separately from title/body, via the paginated REST
+# comments endpoint rather than `gh issue view --json comments` — that
+# GraphQL field fetches only the first ~100 comments and does not paginate,
+# so a thread past that ceiling would be silently truncated (TD-PPagop-26082808,
+# agent-ops#1012). `gh api --paginate` re-runs its `--jq` filter once per
+# page and prints each page's own filtered elements one per line rather than
+# aggregating them, which is why the combining `jq` slurps (`-s`) its stdin
+# into the `comments` array — the same split every other paginated `gh api`
+# read in this codebase uses (see lib/reconciliation-gate.sh's own header for
+# why). The thread goes through that `jq`'s *stdin*, never `--argjson`: it is
+# the one input here with no bound on its size, and argv has one.
 item_live_entry() {  # <repo> <source> <item>
-  local repo="$1" source="$2" item="$3"
+  local repo="$1" source="$2" item="$3" meta comments
   case "$source" in
     issues|tech-debt)
-      gh issue view "$item" --repo "$repo" --json title,body,comments \
-        --jq '{title: (.title // ""), body: (.body // ""),
-               comments: [(.comments // [])[]
-                 | {author: (.author.login // ""), created_at: .createdAt, body: (.body // "")}]}'
+      meta="$(gh issue view "$item" --repo "$repo" --json title,body \
+        --jq '{title: (.title // ""), body: (.body // "")}')" || return 1
+      comments="$(gh api "repos/$repo/issues/$item/comments" --paginate \
+        --jq '.[] | {author: (.user.login // ""), created_at: (.created_at // ""), body: (.body // "")}')" \
+        || return 1
+      jq -s -c --argjson meta "$meta" \
+        '{title: $meta.title, body: $meta.body, comments: .}' <<<"$comments"
       ;;
     *)
       return 1
