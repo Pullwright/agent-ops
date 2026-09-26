@@ -385,17 +385,14 @@ _landing_routine_complexity() {
 # visible in the very refusal it causes, not the next cycle's) is threaded
 # straight through to `merge_autonomy_kill_state`.
 #
-# Named the same "ineligible:$reason" convention `landing_eligible` below and
-# `_landing_arm_failure_reason` both, so every refusal this file's callers can
-# produce reads the same way in the fleet log: this is never a pass, no
-# caller need treat it as anything other than the reason a refusal names. The
-# kill-switch branch carries its own `kill-switch:` tag ahead of the colon —
-# scripts/publish-dashboard.sh's landings digest groups `landing-refused`
-# reasons by the text before the first `:` (dashboard/index.html's
-# `byReason`), so this is also what makes the switch its own, single-word
-# group there rather than folding into (or being confused with) the
-# full-sentence group the plain "effective level is …" wording below forms
-# (acceptance criterion 4).
+# This is never a pass, no caller need treat it as anything other than the
+# reason a refusal names. The kill-switch branch's own text still carries a
+# `kill-switch:` prefix for a human reading the raw string, but gate 1's own
+# `_landing_refuse` call site (below) is what actually tells the two causes
+# apart for grouping purposes: it inspects this function's return for that
+# same prefix and passes CLASS `kill-switch` or `autonomy-level` accordingly
+# — the two literal `_LANDING_REFUSAL_CLASSES` members for gate 1 — rather
+# than this function returning a class of its own (acceptance criterion 4).
 landing_autonomy_refusal_reason() {
   local state_repo="$1" state_dir="$2" level="$3" fresh="${4:-}"
   local kill_state
@@ -1076,22 +1073,60 @@ landing_approver_adjudication_history() {
 # they did inline; `landing_armed_by_repo` itself stays declared in
 # agent-cycle.sh, ahead of both this file's functions and the Enabler/Refiner
 # state beside it, so nothing here reads it unset under `set -u`.
-# _landing_refuse PR_URL REPO REASON [RETRY [ITEM]]
+
+# _LANDING_REFUSAL_CLASSES — the closed set of every value `_landing_refuse`'s
+# CLASS argument may carry (TD-PPagop-26082823, issue #1017). One word per
+# gate this file's own refusal paths can fail on, logged as its own `class`
+# field on the `landing-refused` event (requirement 33) so a reader — the
+# dashboard's `byReason` (`dashboard/index.html`) included — groups on the
+# gate that refused, never on whatever the human-readable `reason` string
+# happens to contain (TD-PPagop-26082502's own defect: a `reason` embedding
+# `$pr_url` carries the URL's own scheme colon, which a split-on-first-`:`
+# rule cannot tell apart from a class prefix). Every call site below passes
+# its CLASS as a literal string, even the three gates (autonomy, eligibility,
+# protected-path controls) whose underlying helper can return one of two or
+# three shapes — each shape gets its own literal call site rather than a
+# class computed from the helper's own text, so this list stays a plain,
+# grep-able enumeration and never has to parse prose to verify itself.
+# `test/landing-wiring.test.sh` extracts this constant and every literal
+# third argument `_landing_refuse` is called with in this file, and asserts
+# the two sets are equal — a call site added with a class outside this list,
+# or with no literal class argument at all, fails that test.
+_LANDING_REFUSAL_CLASSES="approver-login-unreadable approver-review-not-approved approver-review-unreadable approver-token-unmintable arm-failed autonomy-level dequeued-actionable dequeued-manual human-changes-requested human-veto-unreadable ineligible kill-switch malformed-pr-url merge-queue-occupied merge-queue-unreadable open-question open-question-unreadable reconciliation-unanswered reconciliation-unreadable review-gate unknown"
+
+# _landing_refuse PR_URL REPO CLASS REASON [RETRY [ITEM]]
 # Log `landing-refused` (requirement 8d, requirement 33). The one write
 # every refusal path in `_landing_stage_attempt` makes — never a blocked pull
 # request, never a withheld claim, exactly as an Approver refusal (8b/8c)
-# costs a missing review and nothing else. RETRY, when non-empty, marks the
-# event `retry: true` (TD-PPagop-26081701) — a fact worth keeping distinct in
-# the log, since it means the refusal happened outside the round that first
-# approved this pull request. ITEM (requirement 49, issue #595) is omitted,
-# never logged `null`, when the caller could not resolve one — see
-# `_landing_stage_attempt`'s own header for where it comes from on each path.
+# costs a missing review and nothing else. CLASS is the mechanically
+# enforced field above — never derived from REASON's own text — and is
+# always logged, `null` only when a caller passes an empty string (never
+# omitted, unlike ITEM below: an omitted `class` key must mean "this event
+# predates the field", which a caller-supplied empty string is not). A CLASS
+# outside `_LANDING_REFUSAL_CLASSES` is still logged verbatim — a refusal
+# must never be dropped over its own diagnostic metadata being wrong — but
+# also costs a `warning` event naming the offending value, so a call site
+# that slips past the static enumeration test above is still a visible,
+# investigable defect rather than a silent one. RETRY, when non-empty, marks
+# the event `retry: true` (TD-PPagop-26081701) — a fact worth keeping
+# distinct in the log, since it means the refusal happened outside the round
+# that first approved this pull request. ITEM (requirement 49, issue #595)
+# is omitted, never logged `null`, when the caller could not resolve one —
+# see `_landing_stage_attempt`'s own header for where it comes from on each
+# path.
 _landing_refuse() {
-  local retry_bool="false" item="${5:-}"
-  [[ -z "${4:-}" ]] || retry_bool="true"
-  log_event "landing-refused" "$(jq -nc --arg u "$1" --arg r "$2" --arg reason "$3" --argjson retry "$retry_bool" \
-    --arg i "$item" \
-    '{pr_url: $u, repo: $r, reason: $reason} + (if $retry then {retry: true} else {} end)
+  local pr_url="$1" repo="$2" class="$3" reason="$4" retry="${5:-}" item="${6:-}"
+  local retry_bool="false"
+  [[ -z "$retry" ]] || retry_bool="true"
+  if [[ -n "$class" ]] && [[ " $_LANDING_REFUSAL_CLASSES " != *" $class "* ]]; then
+    log_event "warning" "$(jq -nc --arg u "$pr_url" --arg c "$class" \
+      --arg d "_landing_refuse was called with class '$class', outside the enumerated _LANDING_REFUSAL_CLASSES set (lib/landing.sh) — the landing-refused event still logged this class verbatim" \
+      '{detail: $d, pr_url: $u, class: $c}')"
+  fi
+  log_event "landing-refused" "$(jq -nc --arg u "$pr_url" --arg r "$repo" --arg cls "$class" \
+    --arg reason "$reason" --argjson retry "$retry_bool" --arg i "$item" \
+    '{pr_url: $u, repo: $r, class: (if $cls == "" then null else $cls end), reason: $reason}
+     + (if $retry then {retry: true} else {} end)
      + (if $i == "" then {} else {item: $i} end)')"
 }
 
@@ -1268,27 +1303,28 @@ run_landing_stage() {
 #      or dequeued", so it refuses too.
 #
 # Any read above that cannot be answered is a refusal (`_landing_refuse`,
-# `landing-refused`), never a pass. Every REASON this function or its own
-# helpers hand to `_landing_refuse` carries a short, GitHub-URL-free class
-# word ahead of its own first `:` — `landing_eligible`'s and
-# `landing_protected_path_controls_ok`'s `ineligible:`/`unknown:`,
-# `landing_autonomy_refusal_reason`'s `kill-switch:`, gate 3's own
-# `review gate:`, this function's own `malformed-pr-url:`/
-# `open-question-unreadable:`/`approver-review-unreadable:`/
-# `approver-review-not-approved:`/`human-veto-unreadable:`/
-# `human-changes-requested:`/`reconciliation-unanswered:`/
-# `reconciliation-unreadable:`/`merge-queue-unreadable:`/
-# `dequeued-actionable:`/`dequeued-manual:`/`arm-failed:` — so
-# `scripts/publish-dashboard.sh`'s landings digest (`byReason`,
-# `dashboard/index.html`) groups by that word rather than by the text before
-# whatever colon happens to occur first, which for a sentence-form refusal
-# embedding `$pr_url` (itself a `https://…` string) is the URL's own scheme
-# colon (TD-PPagop-26082502). A message carrying no colon at all, and so no
-# varying content a split could cut it off at — "could not read the Approver
-# App's own login", "already in the merge queue", "could not mint the
-# Approver's installation token", `landing_autonomy_refusal_reason`'s plain
-# "effective level is …" — needs no prefix: the whole string is already a
-# stable, single group. A successful arm logs `landing-armed`
+# `landing-refused`), never a pass. Every call this function or
+# `_landing_open_question_resolve` makes to `_landing_refuse` passes a
+# literal CLASS — one of `_LANDING_REFUSAL_CLASSES`' own members, defined
+# beside that function — naming the gate that refused: `malformed-pr-url`,
+# `kill-switch`/`autonomy-level` (gate 1, the two shapes
+# `landing_autonomy_refusal_reason` can return), `ineligible`/`unknown`
+# (gate 2's `landing_eligible` and gate 4.5's
+# `landing_protected_path_controls_ok` alike — both already collapse a wider
+# set of causes to these two words), `open-question`/`open-question-unreadable`,
+# `review-gate`, `approver-login-unreadable`, `approver-review-unreadable`,
+# `approver-review-not-approved`, `human-veto-unreadable`,
+# `human-changes-requested`, `reconciliation-unanswered`,
+# `reconciliation-unreadable`, `merge-queue-unreadable`,
+# `merge-queue-occupied`, `dequeued-actionable`, `dequeued-manual`,
+# `approver-token-unmintable`, `arm-failed`. `scripts/publish-dashboard.sh`'s
+# landings digest (`byReason`, `dashboard/index.html`) groups on this `class`
+# field directly, never on the human-readable REASON text beside it — REASON
+# still carries a `$pr_url` (itself a `https://…` string) or other varying
+# content in many of these, but a reader grouping mechanically no longer has
+# to parse it, which is what TD-PPagop-26082502 previously worked around by
+# giving REASON its own class-word-ahead-of-a-colon prefix instead (a
+# convention this field retires). A successful arm logs `landing-armed`
 # exactly once, naming the method (`enqueued`/`auto-merge`) `landing_arm`
 # actually used, and never withholds anything requirement 8b already did —
 # the *first* attempt (RETRY empty) runs strictly after the `pr-ready` log
@@ -1345,7 +1381,7 @@ _landing_stage_attempt() {
   if [[ "$pr_url" =~ /pull/([0-9]+)$ ]]; then
     number="${BASH_REMATCH[1]}"
   else
-    _landing_refuse "$pr_url" "$slug" "malformed-pr-url:could not parse a pull request number from $pr_url" "$retry" "$item"
+    _landing_refuse "$pr_url" "$slug" "malformed-pr-url" "malformed-pr-url:could not parse a pull request number from $pr_url" "$retry" "$item"
     return 0
   fi
 
@@ -1358,7 +1394,12 @@ _landing_stage_attempt() {
   case "$level" in
     agent-merges-routine|agent-merges-all) ;;
     *)
-      _landing_refuse "$pr_url" "$slug" "$(landing_autonomy_refusal_reason "$state_repo" "$state_dir" "$level" fresh)" "$retry" "$item"
+      local autonomy_reason
+      autonomy_reason="$(landing_autonomy_refusal_reason "$state_repo" "$state_dir" "$level" fresh)"
+      case "$autonomy_reason" in
+        kill-switch:*) _landing_refuse "$pr_url" "$slug" "kill-switch" "$autonomy_reason" "$retry" "$item" ;;
+        *) _landing_refuse "$pr_url" "$slug" "autonomy-level" "$autonomy_reason" "$retry" "$item" ;;
+      esac
       return 0
       ;;
   esac
@@ -1366,7 +1407,10 @@ _landing_stage_attempt() {
   local elig
   elig="$(landing_eligible "$DEFAULTED_CONFIG" "$slug" "$number" "$complexity" "$source" "$level")"
   if [[ "$elig" != "eligible" ]]; then
-    _landing_refuse "$pr_url" "$slug" "$elig" "$retry" "$item"
+    case "$elig" in
+      ineligible:*) _landing_refuse "$pr_url" "$slug" "ineligible" "$elig" "$retry" "$item" ;;
+      *) _landing_refuse "$pr_url" "$slug" "unknown" "$elig" "$retry" "$item" ;;
+    esac
     return 0
   fi
 
@@ -1390,7 +1434,7 @@ _landing_stage_attempt() {
   case "$oq_hit_rc" in
     1) ;; # clear — no open question stands.
     2)
-      _landing_refuse "$pr_url" "$slug" "open-question-unreadable:could not read $pr_url's own labels to confirm no open question stands" "$retry" "$item"
+      _landing_refuse "$pr_url" "$slug" "open-question-unreadable" "open-question-unreadable:could not read $pr_url's own labels to confirm no open question stands" "$retry" "$item"
       return 0
       ;;
     0)
@@ -1416,14 +1460,14 @@ _landing_stage_attempt() {
   gate_word="${gate_combined%%$'\t'*}"
   gate_reason="${gate_combined#*$'\t'}"
   if [[ "$gate_word" != "clean" || "$gate_rc" != "0" ]]; then
-    _landing_refuse "$pr_url" "$slug" \
+    _landing_refuse "$pr_url" "$slug" "review-gate" \
       "review gate: ${gate_reason:-${gate_word:-unreadable (review_gate_verdict exited $gate_rc)}}" "$retry" "$item"
     return 0
   fi
 
   local login
   if ! login="$(approver_token_identity_login "")" || [[ -z "$login" ]]; then
-    _landing_refuse "$pr_url" "$slug" "could not read the Approver App's own login" "$retry" "$item"
+    _landing_refuse "$pr_url" "$slug" "approver-login-unreadable" "could not read the Approver App's own login" "$retry" "$item"
     return 0
   fi
 
@@ -1434,7 +1478,7 @@ _landing_stage_attempt() {
   # own header).
   local standing_at standing submitted_at review_commit rest
   if ! standing_at="$(landing_approver_standing_review_at "$slug" "$number" "$login")"; then
-    _landing_refuse "$pr_url" "$slug" "approver-review-unreadable:could not read $pr_url's own review list to confirm the Approver's review actually landed" "$retry" "$item"
+    _landing_refuse "$pr_url" "$slug" "approver-review-unreadable" "approver-review-unreadable:could not read $pr_url's own review list to confirm the Approver's review actually landed" "$retry" "$item"
     return 0
   fi
   standing="${standing_at%%$'\t'*}"
@@ -1442,17 +1486,17 @@ _landing_stage_attempt() {
   submitted_at="${rest%%$'\t'*}"
   review_commit="${rest#*$'\t'}"
   if [[ "$standing" != "APPROVED" ]]; then
-    _landing_refuse "$pr_url" "$slug" "approver-review-not-approved:the Approver's own review is not standing APPROVED on GitHub (state: ${standing:-none})" "$retry" "$item"
+    _landing_refuse "$pr_url" "$slug" "approver-review-not-approved" "approver-review-not-approved:the Approver's own review is not standing APPROVED on GitHub (state: ${standing:-none})" "$retry" "$item"
     return 0
   fi
 
   local blocking
   if ! blocking="$(_handoff_blocking_reviewers "$slug" "$number")"; then
-    _landing_refuse "$pr_url" "$slug" "human-veto-unreadable:could not read $pr_url's own review list to confirm no human CHANGES_REQUESTED stands" "$retry" "$item"
+    _landing_refuse "$pr_url" "$slug" "human-veto-unreadable" "human-veto-unreadable:could not read $pr_url's own review list to confirm no human CHANGES_REQUESTED stands" "$retry" "$item"
     return 0
   fi
   if [[ -n "$blocking" ]]; then
-    _landing_refuse "$pr_url" "$slug" "human-changes-requested:a human CHANGES_REQUESTED stands ($(paste -sd, - <<<"$blocking"))" "$retry" "$item"
+    _landing_refuse "$pr_url" "$slug" "human-changes-requested" "human-changes-requested:a human CHANGES_REQUESTED stands ($(paste -sd, - <<<"$blocking"))" "$retry" "$item"
     return 0
   fi
 
@@ -1468,7 +1512,7 @@ _landing_stage_attempt() {
   rc_combined="$(reconciliation_gate "$pr_url")" || true
   IFS=$'\t' read -r rc_word rc_reason <<<"$rc_combined"
   if [[ "$rc_word" == "dirty" ]]; then
-    _landing_refuse "$pr_url" "$slug" "reconciliation-unanswered:$rc_reason" "$retry" "$item"
+    _landing_refuse "$pr_url" "$slug" "reconciliation-unanswered" "reconciliation-unanswered:$rc_reason" "$retry" "$item"
     return 0
   fi
   # Anything that is not `clean` refuses arming outright, never falls through
@@ -1484,7 +1528,7 @@ _landing_stage_attempt() {
   # which does tolerate `unknown` as a warning, because arming an automatic
   # merge is not that.
   if [[ "$rc_word" != "clean" ]]; then
-    _landing_refuse "$pr_url" "$slug" \
+    _landing_refuse "$pr_url" "$slug" "reconciliation-unreadable" \
       "reconciliation-unreadable:could not confirm every human comment on $pr_url since it last left draft is reconciled: ${rc_reason:-reconciliation_gate answered ${rc_word:-nothing at all}}" "$retry" "$item"
     return 0
   fi
@@ -1512,7 +1556,10 @@ _landing_stage_attempt() {
     fi
     pp_ctl="$(landing_protected_path_controls_ok "$DEFAULTED_CONFIG" "$slug" "$number" "$pp_tier" "$submitted_at" "$review_commit")"
     if [[ "$pp_ctl" != "ok" ]]; then
-      _landing_refuse "$pr_url" "$slug" "$pp_ctl" "$retry" "$item"
+      case "$pp_ctl" in
+        ineligible:*) _landing_refuse "$pr_url" "$slug" "ineligible" "$pp_ctl" "$retry" "$item" ;;
+        *) _landing_refuse "$pr_url" "$slug" "unknown" "$pp_ctl" "$retry" "$item" ;;
+      esac
       return 0
     fi
   fi
@@ -1527,12 +1574,12 @@ _landing_stage_attempt() {
 
   local queue_json queued dequeue_reason
   if ! queue_json="$(merge_queue_probe "$slug" "$number")"; then
-    _landing_refuse "$pr_url" "$slug" "merge-queue-unreadable:could not read $pr_url's merge-queue status" "$retry" "$item"
+    _landing_refuse "$pr_url" "$slug" "merge-queue-unreadable" "merge-queue-unreadable:could not read $pr_url's merge-queue status" "$retry" "$item"
     return 0
   fi
   queued="$(jq -r '.queued' <<<"$queue_json" 2>/dev/null)"
   if [[ "$queued" != "false" ]]; then
-    _landing_refuse "$pr_url" "$slug" "already in the merge queue" "$retry" "$item"
+    _landing_refuse "$pr_url" "$slug" "merge-queue-occupied" "already in the merge queue" "$retry" "$item"
     return 0
   fi
   # A dequeue is otherwise invisible on an open pull request (PR #557 review
@@ -1554,10 +1601,10 @@ _landing_stage_attempt() {
   dequeue_reason="$(jq -r '.dequeue_reason // empty' <<<"$queue_json" 2>/dev/null)"
   if [[ -n "$dequeue_reason" ]]; then
     if merge_queue_dequeue_actionable "$dequeue_reason"; then
-      _landing_refuse "$pr_url" "$slug" \
+      _landing_refuse "$pr_url" "$slug" "dequeued-actionable" \
         "dequeued-actionable:GitHub's merge queue removed $pr_url over a $dequeue_reason failure — the dequeued source's own diagnose-and-fix path and a fresh human 'Merge when ready' click land this, never a blind re-arm here" "$retry" "$item"
     else
-      _landing_refuse "$pr_url" "$slug" \
+      _landing_refuse "$pr_url" "$slug" "dequeued-manual" \
         "dequeued-manual:GitHub's merge queue removed $pr_url (reason: $dequeue_reason) — a deliberate removal, so this stage never re-enqueues it" "$retry" "$item"
     fi
     return 0
@@ -1565,7 +1612,7 @@ _landing_stage_attempt() {
 
   local token method arm_rc=0
   if ! token="$(approver_token_get "$slug")"; then
-    _landing_refuse "$pr_url" "$slug" "could not mint the Approver's installation token" "$retry" "$item"
+    _landing_refuse "$pr_url" "$slug" "approver-token-unmintable" "could not mint the Approver's installation token" "$retry" "$item"
     return 0
   fi
   # Captured with `|| arm_rc=$?` rather than a bare `if ! …; then`, matching
@@ -1575,12 +1622,12 @@ _landing_stage_attempt() {
   # `_landing_arm_failure_reason` needs to say which step failed.
   method="$(landing_arm "$slug" "$number" "$token")" || arm_rc=$?
   if (( arm_rc != 0 )); then
-    _landing_refuse "$pr_url" "$slug" \
+    _landing_refuse "$pr_url" "$slug" "arm-failed" \
       "arm-failed:landing_arm could not enqueue or auto-merge $pr_url: $(_landing_arm_failure_reason "$arm_rc")" "$retry" "$item"
     return 0
   fi
   if [[ -z "$method" ]]; then
-    _landing_refuse "$pr_url" "$slug" "arm-failed:landing_arm could not enqueue or auto-merge $pr_url: printed no method despite exiting 0" "$retry" "$item"
+    _landing_refuse "$pr_url" "$slug" "arm-failed" "arm-failed:landing_arm could not enqueue or auto-merge $pr_url: printed no method despite exiting 0" "$retry" "$item"
     return 0
   fi
 
@@ -1772,13 +1819,13 @@ $(pipeline_comment_marker "$cycle_id" approver-adjudicate-open-question)" >/dev/
     fi
     open_question_escalate "$slug" "$pr_url" "$item_ref" \
       "$(landing_open_question_latest "$pr_url" "${union_log:-$log_file}")" "$adjudication"
-    _landing_refuse "$pr_url" "$slug" "open-question:$pr_url carries an unresolved open question the adjudication pass could not settle — see the escalation issue" "$retry" "$item"
+    _landing_refuse "$pr_url" "$slug" "open-question" "open-question:$pr_url carries an unresolved open question the adjudication pass could not settle — see the escalation issue" "$retry" "$item"
     return 1
   fi
 
   open_question_escalate "$slug" "$pr_url" "$item_ref" \
     "$(landing_open_question_latest "$pr_url" "${union_log:-$log_file}")"
-  _landing_refuse "$pr_url" "$slug" "open-question:$pr_url carries an unresolved open question — see the escalation issue" "$retry" "$item"
+  _landing_refuse "$pr_url" "$slug" "open-question" "open-question:$pr_url carries an unresolved open question — see the escalation issue" "$retry" "$item"
   return 1
 }
 

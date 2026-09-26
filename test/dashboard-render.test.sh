@@ -1095,29 +1095,37 @@ assert_contains "refusals in the same window are reported, grouped by reason" \
 assert_contains "  ... naming each refusal class and its count" \
   "ineligible ×2" "$out"
 # D18 issue #576: a kill-switch refusal groups under its own tag, distinct
-# from an ordinary ineligible/unknown refusal (acceptance criterion 4) —
-# `kill-switch:` is the tag `landing_autonomy_refusal_reason`
-# (lib/landing.sh) prefixes onto the reason so this grouping (byReason,
-# dashboard/index.html) picks it out cleanly rather than folding it into a
-# one-off full-sentence group.
+# from an ordinary ineligible/unknown refusal (acceptance criterion 4). The
+# fixture's own `pull/605` entry carries no `class` field (it predates
+# TD-PPagop-26082823), so this exercises `byReason`'s (`dashboard/index.html`)
+# fallback: text before the reason's first `:`, `kill-switch:` being the tag
+# `landing_autonomy_refusal_reason` (lib/landing.sh) prefixes for exactly
+# this case.
 assert_contains "  ... and a kill-switch refusal groups under its own tag" \
   "kill-switch ×1" "$out"
 # Requirement 8f (D18, agent-ops#668): an open-question refusal groups under
-# its own tag too, with no dashboard code change — `open-question:` is
-# produced directly by `_landing_stage_attempt`'s own new gate, and the
-# generic split-on-first-`:` grouping (byReason, dashboard/index.html) gives
-# it its own group beside `ineligible`/`kill-switch` for free.
+# its own tag too, via the same class-less fallback above — `open-question:`
+# is the prefix `_landing_stage_attempt`'s own gate produces directly.
 assert_contains "  ... and an open-question refusal groups under its own tag" \
   "open-question ×1" "$out"
 # TD-PPagop-26082502: two refusals whose reason text embeds a *different*
 # `$pr_url` each (pull/606 and pull/607) — a `https://…` string that carries
 # its own scheme colon — must still accumulate under one group, not garble
 # into two one-off groups keyed on "approver-review-unreadable...https"
-# fragments cut off by the URL's own colon. The class-prefixed shape every
-# `_landing_stage_attempt` refusal now carries (`lib/landing.sh`) is what
-# keeps this repeated failure mode visible as a repeated failure mode.
+# fragments cut off by the URL's own colon. Neither fixture entry carries a
+# `class` either, so this too exercises the fallback's own class-word-ahead-
+# of-a-colon convention, kept working for events that predate the field.
 assert_contains "  ... and two refusals differing only by pull request URL still group together" \
   "approver-review-unreadable ×2" "$out"
+# TD-PPagop-26082823 (issue #1017): two refusals (pull/608, pull/609) that
+# both carry the mechanically assigned `class: "autonomy-level"` field, with
+# reason text that varies (a different `level` named in each, no colon at
+# all) — the exact shape the fallback above cannot group, since a colon-free
+# reason with varying content is, to that rule, one full-sentence group per
+# distinct value. `byReason` reads the `class` field first and groups them
+# together regardless.
+assert_contains "  ... and a class field folds two colon-free, varying reasons into one group" \
+  "autonomy-level ×2" "$out"
 assert_contains "the merge budget shows consumed against the cap" \
   "agent-ops 2/8" "$out"
 assert_contains "  ... and an unlimited repository reads as unlimited, never as 0" \

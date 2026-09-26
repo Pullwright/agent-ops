@@ -13714,36 +13714,36 @@ implements.
     arm came from the landing-retry sweep
     rather than the round that first approved the pull request (requirement
     8u); the field is absent, never `false`, on that original round. A
-    `landing-refused` carries `pr_url`, `repo` and `reason` — a plain
-    string, one per refusal path in `_landing_stage_attempt`, naming the gate
-    that failed (an ineligible or unreadable classifier verdict, a dirty or
-    unreadable review gate, a standing human `CHANGES_REQUESTED`, D18 WI-12's
-    own gate 4.5 refusing a protected-path pull request at `agent-merges-all`
-    whose approving engagement did not run at the critical tier or whose
-    `landing_cool_off_hours` wait has not yet elapsed (naming the remaining
-    time), an unreadable merge budget or App login, an already-queued or
-    unreadable merge-queue probe, an unreadable token mint, or `landing_arm`
-    itself refusing) — and, on the same terms as `landing-armed` above, `retry:
-    true` when the refusal came from the landing-retry sweep. Gate 1's own
-    refusal (`landing_autonomy_refusal_reason`, `lib/landing.sh`, D18 issue
-    #576) is the one `reason` carrying a `kill-switch:` tag ahead of its
-    text, and only when a second, independent read of
+    `landing-refused` carries `pr_url`, `repo`, `class` and `reason` —
+    `reason` a plain string, one per refusal path in `_landing_stage_attempt`,
+    naming the gate that failed (an ineligible or unreadable classifier
+    verdict, a dirty or unreadable review gate, a standing human
+    `CHANGES_REQUESTED`, D18 WI-12's own gate 4.5 refusing a protected-path
+    pull request at `agent-merges-all` whose approving engagement did not run
+    at the critical tier or whose `landing_cool_off_hours` wait has not yet
+    elapsed (naming the remaining time), an unreadable merge budget or App
+    login, an already-queued or unreadable merge-queue probe, an unreadable
+    token mint, or `landing_arm` itself refusing) — and, on the same terms as
+    `landing-armed` above, `retry: true` when the refusal came from the
+    landing-retry sweep. `class` (TD-PPagop-26082823, issue #1017) is the
+    mechanically enforced field a human — or `scripts/publish-dashboard.sh`'s
+    landings digest — reads to tell every refusal path apart: one of
+    `lib/landing.sh`'s own `_LANDING_REFUSAL_CLASSES`, a closed set
+    `test/landing-wiring.test.sh` enumerates against every literal `CLASS`
+    argument `_landing_refuse` is called with in that file, set at the call
+    site rather than derived from `reason`'s own text. Gate 1's own refusal
+    (`landing_autonomy_refusal_reason`, `lib/landing.sh`, D18 issue #576)
+    carries class `kill-switch` only when a second, independent read of
     `merge_autonomy_kill_state` confirms the fleet-wide kill switch is the
     actual cause of LEVEL not qualifying — never when a repository has
-    simply not had its level raised, which keeps the plain "effective level
-    is …" wording instead. This is what a human — or
-    `scripts/publish-dashboard.sh`'s landings digest, which groups
-    `landing-refused` reasons by the text before the first `:` — reads to
-    tell the two refusal classes apart. Every `reason` this step produces
-    that carries a `:` at all carries that `:` behind a class word of its
-    own, so that grouping rule always keys on the gate that refused rather
-    than on whatever colon happens to fall first — chiefly the scheme colon
-    of an embedded `$pr_url`, which garbled a whole family of sentence-form
-    refusals into one one-off group per pull request until every such call
-    site was given a prefix (TD-PPagop-26082502, `docs/DASHBOARD-SPEC.md`'s
-    own refusal-grouping note). A reason carrying no `:` at all — the plain
-    "effective level is …" above among them — needs none: the whole string
-    is already one stable group.
+    simply not had its level raised, which carries class `autonomy-level`
+    instead. `class` is never omitted on an event this pipeline logs today;
+    an event logged before this field existed carries no `class` key at all,
+    which `byReason` (`dashboard/index.html`) reads as licence to fall back
+    to the superseded text-before-first-`:` split described in
+    `docs/DASHBOARD-SPEC.md`'s own refusal-grouping note — never for an event
+    that does carry the field, however its own varying content (chiefly an
+    embedded `$pr_url`'s scheme colon, TD-PPagop-26082502) reads.
     `landing_arm`'s own refusal names which of its steps failed —
     the pull request read, the merge-queue read, the enqueue mutation (a
     transport failure or a partial write reporting no queue entry), or the

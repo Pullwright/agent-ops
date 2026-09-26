@@ -2316,11 +2316,17 @@
     }
 
     // Refusals: the count always, and the reasons grouped, because "what the
-    // classifier turned down" is the other half of what it did.
+    // classifier turned down" is the other half of what it did. Grouped on
+    // the event's own `class` field (lib/landing.sh's `_LANDING_REFUSAL_
+    // CLASSES`) when present — every event logged after TD-PPagop-26082823 —
+    // falling back to the pre-existing text-before-first-`:` split only for
+    // an event logged before that field existed; a `class` of `null` (never
+    // omitted, unlike a missing key) is treated the same as missing, since
+    // both mean "this event carries no mechanically-assigned class".
     if (refused.length) {
       var byReason = {};
       refused.forEach(function (r) {
-        var key = String(r.reason || "unknown").split(":")[0] || "unknown";
+        var key = r.class || String(r.reason || "unknown").split(":")[0] || "unknown";
         byReason[key] = (byReason[key] || 0) + 1;
       });
       var rparts = Object.keys(byReason).sort().map(function (k) { return k + " ×" + byReason[k]; });
