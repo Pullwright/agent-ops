@@ -1304,6 +1304,21 @@ assert_doctor "doctor fails a label named Obsolete case-insensitively, as the vo
   '.repository_review.defaults.pr_label = "Obsolete"' 1 'repository_review pr_label is "Obsolete"'
 assert_doctor "doctor fails an obsolete label on a repo's own repository_review override too" \
   '.repository_review.repos[0].pr_label = "Obsolete"' 1 'repository_review pr_label is "Obsolete"'
+# --- issue #1019: pw::type:tech-debt is reserved the same way obsolete is —
+#     D24's trust anchor for tech debt filed as a GitHub issue, which only a
+#     collaborator with triage rights may apply. ---
+assert_doctor "doctor fails a PR label named pw::type:tech-debt, D24's own trust anchor" \
+  '.pr_label = "pw::type:tech-debt"' 1 'pr_label is "pw::type:tech-debt"'
+assert_doctor "doctor fails the unvoid label set to pw::type:tech-debt too" \
+  '.unvoid_label = "pw::type:tech-debt"' 1 'unvoid_label is "pw::type:tech-debt"'
+assert_doctor "doctor fails a label named PW::TYPE:TECH-DEBT case-insensitively" \
+  '.refined_label = "PW::TYPE:TECH-DEBT"' 1 'refined_label is "PW::TYPE:TECH-DEBT"'
+assert_doctor "doctor fails a repository_review pr_label set to pw::type:tech-debt" \
+  '.repository_review.defaults.pr_label = "pw::type:tech-debt"' 1 \
+  'repository_review pr_label is "pw::type:tech-debt"'
+assert_doctor "doctor fails pw::type:tech-debt on a repo's own repository_review override too" \
+  '.repository_review.repos[0].pr_label = "pw::type:tech-debt"' 1 \
+  'repository_review pr_label is "pw::type:tech-debt"'
 # --- issue #714: the exact-"blocked" check above extends to the whole
 #     blocked:* reason-label namespace requirement 38b's own
 #     blocked:needs-refinement lives in, so a configured label cannot claim a
