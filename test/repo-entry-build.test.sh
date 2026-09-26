@@ -59,24 +59,29 @@ if [[ "$entry_build_block" != *'entry_docs'* || "$entry_build_block" != *'human_
 fi
 
 run_entry_build() {  # run_entry_build <slug> <default_branch> <sources-json> <ipp>
+  #                     <report_directory>
   #                     <findings> <review_feedback> <abandoned_drafts>
   #                     <merge_conflicts> <dequeued> <landing_refusals>
   #                     <issues>
   #                     <tech_debt> [issues_excluded]
   # Every one of these is consumed only by the eval'd entry_build_block,
   # invisible to shellcheck, including the `entry` it assigns.
-  # shellcheck disable=SC2034
+  # `report_directory` is set again, unrelated, by run_report_directory_resolve
+  # below; shellcheck's SC2030/SC2031 pairing conflates the two subshells as
+  # one variable leaking, which it is not — each is local to its own.
+  # shellcheck disable=SC2034,SC2030
   ( slug="$1" default_branch="$2" sources="$3" implementation_plan_path="$4" \
-    findings="$5" review_feedback="$6" abandoned_drafts="$7" merge_conflicts="$8" \
-    dequeued="$9" landing_refusals="${10}" issues="${11}" tech_debt="${12}" \
-    issues_excluded="${13:-[]}"
+    report_directory="$5" \
+    findings="$6" review_feedback="$7" abandoned_drafts="$8" merge_conflicts="$9" \
+    dequeued="${10}" landing_refusals="${11}" issues="${12}" tech_debt="${13}" \
+    issues_excluded="${14:-[]}"
     eval "$entry_build_block"
     # shellcheck disable=SC2154
     printf '%s' "$entry" )
 }
 
 # --- The ordinary case: every band present, one item apiece -----------------
-out="$(run_entry_build "o/r" "main" '["tech-debt"]' "" \
+out="$(run_entry_build "o/r" "main" '["tech-debt"]' "" "" \
   '[{"source":"security","ref":"dependabot-alert-1"}]' \
   '[{"source":"review-feedback","ref":"pr-1-review-1"}]' \
   '[{"source":"abandoned-drafts","ref":"pr-2-abandoned-aa"}]' \
@@ -103,11 +108,73 @@ assert_eq "tech_debt carries through" "TD1" "$(jq -r '.tech_debt[0].ref' <<<"$ou
 assert_eq "human_visibility starts empty — always filled in later" "[]" "$(jq -c '.human_visibility' <<<"$out")"
 assert_eq "no implementation_plan_path key when the source isn't configured" "false" \
   "$(jq 'has("implementation_plan_path")' <<<"$out")"
+assert_eq "no report_directory key when the source isn't configured" "false" \
+  "$(jq 'has("report_directory")' <<<"$out")"
 
-out_ipp="$(run_entry_build "o/r" "main" '["implementation-plan"]' "W10-breach-handling" \
+out_ipp="$(run_entry_build "o/r" "main" '["implementation-plan"]' "W10-breach-handling" "" \
   '[]' '[]' '[]' '[]' '[]' '[]' '[]' '[]')"
 assert_eq "implementation_plan_path is added when the source is configured" "W10-breach-handling" \
   "$(jq -r '.implementation_plan_path' <<<"$out_ipp")"
+assert_eq "  ... and report_directory stays absent, since project-review isn't configured" "false" \
+  "$(jq 'has("report_directory")' <<<"$out_ipp")"
+
+out_rd="$(run_entry_build "o/r" "main" '["project-review"]' "" "custom/%Y-review" \
+  '[]' '[]' '[]' '[]' '[]' '[]' '[]' '[]')"
+assert_eq "report_directory is added when the source is configured" "custom/%Y-review" \
+  "$(jq -r '.report_directory' <<<"$out_rd")"
+assert_eq "  ... and implementation_plan_path stays absent, since implementation-plan isn't configured" "false" \
+  "$(jq 'has("implementation_plan_path")' <<<"$out_rd")"
+
+# --- report_directory resolution (issue #1018) ------------------------------
+# The passthrough assertions above set `report_directory` as a given input,
+# the same way `implementation_plan_path` already is — proving only that the
+# entry build carries an already-resolved value through. This section instead
+# lifts the resolution itself: the block that decides *what* value a repo's
+# `report_directory` takes, against a fixture `report_directory_repos_json`
+# standing in for `config_repository_review_repos`'s own output (that
+# function's resolution rule — a repo's own key wins, `defaults`' otherwise,
+# absent both resolves empty — is `test/config-schema.test.sh`'s to cover;
+# this only proves the gather loop reads that output correctly and applies
+# the shipped fallback).
+# shellcheck source=lib/report-directory.sh
+. "$SCRIPT_DIR/lib/report-directory.sh"
+
+report_directory_block="$(awk '
+  index($0, "  report_directory=\"\"") == 1 { on = 1 }
+  on                                        { print }
+  on && $0 == "  fi" { exit }
+' "$SCRIPT_DIR/lib/candidate-gather.sh")"
+if [[ "$report_directory_block" != *'report_directory_repos_json'* \
+   || "$report_directory_block" != *'REPORT_DIRECTORY_DEFAULT'* ]]; then
+  printf 'FAIL - could not extract the report_directory resolution from lib/candidate-gather.sh (moved or reworded?)\n'
+  exit 1
+fi
+
+run_report_directory_resolve() {  # run_report_directory_resolve <slug> <sources-json> <report_directory_repos_json>
+  # shellcheck disable=SC2034
+  ( slug="$1" sources="$2" report_directory_repos_json="$3"
+    eval "$report_directory_block"
+    # `report_directory` here is this subshell's own copy, assigned by the
+    # eval'd block above — not the unrelated one run_entry_build sets in its
+    # own subshell (SC2154/SC2031 both false positives from the same
+    # cross-subshell name conflation noted there).
+    # shellcheck disable=SC2154,SC2031
+    printf '%s' "$report_directory" )
+}
+
+assert_eq "a repo with its own configured report_directory resolves to it" "custom/%Y-review" \
+  "$(run_report_directory_resolve "o/r" '["project-review"]' \
+     '[{"slug":"o/r","report_directory":"custom/%Y-review"}]')"
+assert_eq "a repo with none configured (empty string from config_repository_review_repos) falls back to the shipped default" \
+  "$REPORT_DIRECTORY_DEFAULT" \
+  "$(run_report_directory_resolve "o/r" '["project-review"]' \
+     '[{"slug":"o/r","report_directory":""}]')"
+assert_eq "a repo absent from report_directory_repos_json entirely also falls back to the shipped default" \
+  "$REPORT_DIRECTORY_DEFAULT" \
+  "$(run_report_directory_resolve "o/r" '["project-review"]' '[]')"
+assert_eq "a repo that doesn't list project-review resolves to nothing at all, configured or not" "" \
+  "$(run_report_directory_resolve "o/r" '["tech-debt"]' \
+     '[{"slug":"o/r","report_directory":"custom/%Y-review"}]')"
 
 # --- The argv cap (requirement 4g, TD-PPagop-26081406) ---------------------
 # One band alone (issues, carrying a whole pre-fetched thread) pushed past
@@ -118,7 +185,7 @@ big_issues="$(printf '[{"source": "issues", "ref": "99", "body": "%s"}]' "$overs
 assert_eq "the oversized issues-band fixture really is past MAX_ARG_STRLEN" "1" \
   "$(( ${#big_issues} > 131072 ))"
 
-out_big="$(run_entry_build "o/r" "main" '["issues"]' "" \
+out_big="$(run_entry_build "o/r" "main" '["issues"]' "" "" \
   '[]' '[]' '[]' '[]' '[]' '[]' "$big_issues" '[]')"
 assert_eq "an oversized issues band still produces the entry" "o/r" "$(jq -r '.slug' <<<"$out_big")"
 # Bash string matching, not grep -F with the oversized string as an

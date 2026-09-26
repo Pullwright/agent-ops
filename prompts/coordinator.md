@@ -55,6 +55,7 @@ object ever names another repository.
       "default_branch": "main",
       "sources": ["security", "failed-runs", "tech-debt", "issues", "implementation-plan", "project-review", "code-quality"],
       "implementation_plan_path": "docs/IMPLEMENTATION-PLAN.md",
+      "report_directory": "reviews/project-review-%Y-%m-%d",
       "findings": [
         {"source": "security", "kind": "dependabot", "security": true, "severity": "high", "number": 1, "ref": "dependabot-alert-1", "title": "postcss: …", "package": "postcss", "url": "https://github.com/…/security/dependabot/1", "state": "open"},
         {"source": "code-quality", "kind": "code-scanning", "security": false, "severity": "warning", "number": 4, "ref": "code-scanning-alert-4", "rule": "js/unused-local-variable", "title": "Unused variable", "location": "src/x.js:12", "url": "https://github.com/…/security/code-scanning/4", "state": "open"}
@@ -172,6 +173,14 @@ object ever names another repository.
   differently named or located plan needs no prompt change, only its own
   `implementation_plan_path`. Absent (not empty) for a repo that doesn't list
   the source.
+- Each entry's `report_directory` is present only for a repo whose `sources`
+  lists `project-review`: that repo's own resolved report-directory format
+  string — its override in `repository_review.repos[]`/`.defaults`, or
+  `reviews/project-review-%Y-%m-%d` where it configures neither. This is the
+  only place the resolved value comes from; nothing about it is fixed by this
+  prompt, so a repo overriding `report_directory` needs no prompt change. See
+  "Project-review recommendations" below for how to read it. Absent (not
+  empty) for a repo that doesn't list the source.
 - Each entry's `tech_debt` is the repo's own open GitHub issues labelled
   `pw::type:tech-debt`, whole thread included — **already fetched, already
   filtered on the same deterministic terms as `issues` (assigned/
@@ -567,13 +576,18 @@ source priority, with no edit to this file:
   source without configuring `implementation_plan_path` never reaches you —
   the Script refuses to run rather than guess.
 - **project-review** — the prioritised recommendations from the **most recent**
-  repository review, which lives on the default branch under
-  `reviews/project-review-YYYY-MM-DD/`. Read that folder's
+  repository review, which lives on the default branch under this repo's own
+  `report_directory` (see "What you receive" above — `reviews/project-review-
+  %Y-%m-%d/` where the repo configures neither
+  `repository_review.repos[].report_directory` nor
+  `repository_review.defaults.report_directory`). Read that folder's
   `03-recommendations.md` (the `R-NN` table and per-recommendation detail) and
   `04-improvement-prompts.md` (a ready-to-run prompt per recommendation) with
-  `gh api repos/<slug>/contents/reviews/…`. Each recommendation is a candidate;
-  its stable ref is `review-<review-date>-R-NN`. See "Project-review
-  recommendations" below for how to pick one and dedup against tech-debt.
+  `gh api repos/<slug>/contents/<that folder's own path>/…`. Each
+  recommendation is a candidate; its stable ref is
+  `review-<review-date>-R-NN`. See "Project-review recommendations" below for
+  how to find the latest folder, pick a recommendation and dedup against
+  tech-debt.
 - **review-feedback** — pull requests this system raised where a human has
   reviewed and asked for changes that we have not answered yet, handed to you
   **pre-fetched** in each repo's `review_feedback` array. Second only to
@@ -1107,10 +1121,33 @@ mention the band in the work order, and never let a `Low` band lower the
 standard of the work itself — it decides *when* an issue is picked up, not how
 well it is done.
 
-**Project-review recommendations.** Read only the **most recent**
-`reviews/project-review-YYYY-MM-DD/` folder (list `reviews/` via `gh api
-repos/<slug>/contents/reviews` and take the latest date). A recommendation
-`R-NN` from that folder is a candidate unless:
+**Project-review recommendations.** This repo's own `report_directory` (see
+"What you receive" above) names where its review folders live — a GNU
+`date`(1) format string, e.g. the shipped default
+`reviews/project-review-%Y-%m-%d` (applying wherever the repo configures
+neither `repository_review.repos[].report_directory` nor
+`repository_review.defaults.report_directory`), or a repository's own
+override. Find the review folders it has already produced the same way
+`lib/report-directory.sh` does, because the dynamic part is not always the
+final path segment:
+
+1. Split `report_directory` on `/` and fold every **leading** segment that
+   carries no `%` into one static prefix — `reviews` for the shipped default,
+   `docs/reviews` for `docs/reviews/project-review-%Y-%m-%d`, and nothing at
+   all for a format whose very first segment is dynamic (`%Y/repo-review`).
+2. List that prefix with `gh api repos/<slug>/contents/<prefix>` — the repo
+   root, `gh api repos/<slug>/contents`, where the prefix is empty — and keep
+   each returned entry of type `dir` whose name matches the next segment's own
+   dynamic shape (each `%Y`/`%m`/`%d`/… standing for exactly the digit count
+   it specifies, every other character literal).
+3. Where a further dynamic segment follows that one, list each kept directory
+   in turn and repeat step 2 for it, so what you end with is a set of whole
+   paths rather than bare names.
+
+Read only the **most recent** of those paths: the one whose resolved date is
+latest. For the shipped default the three steps above are exactly "list
+`reviews/` and take the latest `reviews/project-review-YYYY-MM-DD/`". A
+recommendation `R-NN` from that folder is a candidate unless:
 
 - the review already filed it as a `pw::type:tech-debt`-labelled issue (or, in
   a repository whose own register still carries one, mirrored it there) — that
