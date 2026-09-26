@@ -13737,13 +13737,18 @@ implements.
     `merge_autonomy_kill_state` confirms the fleet-wide kill switch is the
     actual cause of LEVEL not qualifying — never when a repository has
     simply not had its level raised, which carries class `autonomy-level`
-    instead. `class` is never omitted on an event this pipeline logs today;
-    an event logged before this field existed carries no `class` key at all,
-    which `byReason` (`dashboard/index.html`) reads as licence to fall back
-    to the superseded text-before-first-`:` split described in
-    `docs/DASHBOARD-SPEC.md`'s own refusal-grouping note — never for an event
-    that does carry the field, however its own varying content (chiefly an
-    embedded `$pr_url`'s scheme colon, TD-PPagop-26082502) reads.
+    instead. `class` is never omitted on an event this pipeline logs today:
+    a `CLASS` outside the closed set is logged verbatim, never coerced to
+    look legitimate, and costs a `warning` event naming the offending value
+    so a call site that slipped past the enumeration test stays visible
+    rather than silent; a caller passing an empty `CLASS` logs `class: null`,
+    still never an absent key. An event logged before this field existed is
+    the only one carrying no `class` value at all, which `byReason`
+    (`dashboard/index.html`) reads as licence to fall back to the superseded
+    text-before-first-`:` split described in `docs/DASHBOARD-SPEC.md`'s own
+    refusal-grouping note — never for an event that names a class, however
+    its own varying content (chiefly an embedded `$pr_url`'s scheme colon,
+    TD-PPagop-26082502) reads.
     `landing_arm`'s own refusal names which of its steps failed —
     the pull request read, the merge-queue read, the enqueue mutation (a
     transport failure or a partial write reporting no queue entry), or the

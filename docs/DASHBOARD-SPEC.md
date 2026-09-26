@@ -1726,9 +1726,13 @@ Three things it will not hide, each a way a digest could mislead by omission:
   which is exactly what garbled a whole family of sentence-form refusals
   into one-off groups keyed on a URL fragment before this field existed,
   TD-PPagop-26082502). An event logged before this field existed carries no
-  `class` key at all; `byReason` falls back to that superseded
-  text-before-its-first-`:` split for exactly those events, never for one
-  that carries the field.
+  `class` key at all, which the Publisher's own `refused` projection — the
+  one thing that carries the field off the raw event and into `landings`,
+  and so the one place dropping it would silently cost the grouping
+  altogether — normalises to `class: null`. `byReason` therefore keys its
+  fallback on the *value*, not the key: a `class` that is absent, `null` or
+  empty reads the same, and each falls back to that superseded
+  text-before-its-first-`:` split — never an event that names a class.
 - **The merge budget** (D18 issue #574), per repository: `merge_budget_per_day`'s
   effective cap against consumption, its status (`ok`/`held`/`frozen`), and,
   when held or frozen, the oldest waiting pull request and its age. An
