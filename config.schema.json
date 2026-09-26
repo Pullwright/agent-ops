@@ -2055,8 +2055,180 @@
         }
       }
     },
+    "repository_review": {
+      "$ref": "#/$defs/reviewPipelineConfig",
+      "description": "The repository-review pipeline's tunables. Absent, the implementation pipeline runs exactly as it does now and review-cycle.sh has nothing to run."
+    },
     "project_review": {
-      "description": "The project-review pipeline's tunables. Absent, the implementation pipeline runs exactly as it does now and review-cycle.sh has nothing to run.",
+      "$ref": "#/$defs/reviewPipelineConfig",
+      "description": "Deprecated alias for `repository_review` (agent-ops#592, D7): accepted with the identical shape while the fleet rolls onto an image containing the rename. `scripts/doctor.sh` warns when this is the only one set, naming `repository_review` as the replacement. Setting both is a configuration error (`config_schema_errors` refuses it, naming both keys) rather than a silent precedence, since resolving one of two present keys is exactly the quiet failure this schema exists to catch. The old spelling stops being accepted once every node in the fleet reports an image containing the rename (`repository_review`) — there is no calendar-based deprecation window: this installation has no release train to express one in, config.json ships inside the image (so a node never runs new code against an old config file of its own), and the fleet roll is the only compatibility window that genuinely exists.",
+      "x-docs": {
+        "value": "*(unset)*"
+      }
+    },
+    "revert_rate_baseline": {
+      "description": "The D18 Stage 0 merge-autonomy baseline (docs/reviews/2026-08-15-merge-autonomy-baseline.md), copied here once as a fixed reference rather than re-derived at runtime: scripts/publish-revert-rate.sh compares every window's revert-or-follow-up rate against these figures. Absent or empty, a repository with no entry here reports its baseline comparison unavailable rather than failing.",
+      "type": "object",
+      "additionalProperties": false,
+      "default": {},
+      "properties": {
+        "source": {
+          "description": "The docs/reviews/*-merge-autonomy-baseline.md this was copied from.",
+          "type": "string"
+        },
+        "generated": {
+          "description": "The baseline file's own generation date (its filename's date) — the earliest merged_at scripts/publish-revert-rate.sh's cumulative-since-baseline window starts from.",
+          "type": "string"
+        },
+        "repos": {
+          "description": "One entry per repository the baseline covers, each the miner's own post_merge {count, reverts, follow_up_fixes} at generation time.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "slug",
+              "count",
+              "reverts",
+              "follow_up_fixes"
+            ],
+            "properties": {
+              "slug": {
+                "description": "The repository, as `owner/name`.",
+                "type": "string",
+                "pattern": "^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$"
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "reverts": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "follow_up_fixes": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      },
+      "x-docs": {
+        "readme": "The D18 Stage 0 merge-autonomy baseline, copied once from `docs/reviews/2026-08-15-merge-autonomy-baseline.md` rather than re-derived — `scripts/publish-revert-rate.sh` compares every window's rate against it. A fresh install ships no baseline until Stage 0 records one.",
+        "spec": "The D18 Stage 0 merge-autonomy baseline (docs/reviews/2026-08-15-merge-autonomy-baseline.md §6), copied here once as a fixed reference rather than re-derived at runtime (issue #579): `scripts/publish-revert-rate.sh` compares every window's revert-or-follow-up rate against these figures. A repository absent from `repos` reports its baseline comparison `unavailable` rather than failing.",
+        "value": "`{\"source\": \"docs/reviews/2026-08-15-merge-autonomy-baseline.md\", \"generated\": \"2026-08-15\", \"repos\": [{\"slug\": \"Poetic-Poems/poetic\", \"count\": 84, \"reverts\": 0, \"follow_up_fixes\": 31}, {\"slug\": \"Poetic-Poems/poetic-fiddle\", \"count\": 119, \"reverts\": 0, \"follow_up_fixes\": 44}, {\"slug\": \"Pullwright/agent-ops\", \"count\": 120, \"reverts\": 0, \"follow_up_fixes\": 106}]}`"
+      }
+    },
+    "resources": {
+      "description": "Per-container and per-volume resource budgets requirement 55 (D14, issue #606) compares measured actuals against: scripts/doctor.sh warns when scripts/resource-budget-report.sh's windowed figure for a container or volume exceeds its own budget here, and scripts/publish-dashboard.sh renders the same comparison per node (folded into heartbeat.json by scripts/state-sync.sh). Covers exactly the three containers that run this image and can self-measure their own cgroup and /proc/net/dev from the inside (`scheduler`, `dashboard`, `dashboard-local` — scripts/collect-resource-usage.sh) plus the two volumes they mount (`workspace_root`, `state_dir`); `tailscale`/`watchtower` and this project's other agent-ops services (`egress-proxy`, `collector`, `reconciler`, `node-health`) are not measured here — reaching them needs the collector's own Docker-socket vantage or a host-side collector, deferred as tech debt (agent-ops#1563). `containers.*.memory_bytes`/`containers.*.cpu_cores` mirror deploy/docker/compose.yaml's own `mem_limit`/`cpus` defaults, which remain the enforcement mechanism (D14) — this object is the read side scripts/doctor.sh and the dashboard compare actuals against, not a second enforcement path, and keeping the two in step across an edit is a human responsibility today (D16's own control-plane migration is what eventually removes the duplication). `containers.*.bandwidth_bytes_per_hour` and every `volumes.*.disk_bytes` are provisional: neither resource had ever been measured before this key existed, so both are set generously above what a quiet node is expected to use, meant to be tightened once scripts/resource-budget-report.sh has real fleet windows to set them from — a config edit, not a re-implementation.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sample_retention_hours": {
+          "description": "How long scripts/collect-resource-usage.sh keeps a raw sample in state_dir/.resource-samples.jsonl before pruning it on a later tick — long enough that report_window_hours' own window always has data. Never replicated (scripts/state-sync.sh's EXCLUDES): a raw sample is this node's own forensics, not a fact a peer would read.",
+          "type": "integer",
+          "minimum": 1,
+          "default": 48,
+          "x-docs": {
+            "readme": "Hours scripts/collect-resource-usage.sh keeps a raw local sample before pruning it — long enough that the report window below always has data.",
+            "spec": "Hours scripts/collect-resource-usage.sh keeps a raw sample in state_dir/.resource-samples.jsonl (never replicated) before pruning it on a later tick — long enough that resources.report_window_hours' own window always has data.",
+            "value": "`48`"
+          }
+        },
+        "report_window_hours": {
+          "description": "The window scripts/resource-budget-report.sh derives latest/median/p95 over — read by scripts/doctor.sh's over-budget check and folded into heartbeat.json by scripts/state-sync.sh.",
+          "type": "integer",
+          "minimum": 1,
+          "default": 24,
+          "x-docs": {
+            "readme": "Hours scripts/resource-budget-report.sh derives its latest/median/p95 figures over.",
+            "spec": "The window, in hours, scripts/resource-budget-report.sh derives latest/median/p95 over — read by requirement 55's over-budget check (scripts/doctor.sh) and folded into heartbeat.json by scripts/state-sync.sh.",
+            "value": "`24`"
+          }
+        },
+        "disk_sample_interval_minutes": {
+          "description": "How often scripts/collect-resource-usage.sh samples a volume's own disk usage (a `du -sb`, expensive enough on a multi-GB tree to throttle separately from the cgroup/proc reads it takes every tick).",
+          "type": "integer",
+          "minimum": 1,
+          "default": 60,
+          "x-docs": {
+            "readme": "Minutes between scripts/collect-resource-usage.sh's own `du -sb` disk samples — throttled separately from its cheap, every-tick cgroup/proc reads.",
+            "spec": "Minutes between scripts/collect-resource-usage.sh's own disk samples (`du -sb` on workspace_root/state_dir), throttled separately from the cgroup/proc reads it takes every tick because `du` on a multi-GB tree is not cheap.",
+            "value": "`60`"
+          }
+        },
+        "containers": {
+          "description": "Budgets keyed by AGENT_OPS_SERVICE (deploy/docker/compose.yaml) — the same name scripts/collect-resource-usage.sh tags every sample with. Each entry's `cpu_cores`/`memory_bytes`/`bandwidth_bytes_per_hour` is what scripts/doctor.sh compares scripts/resource-budget-report.sh's windowed p95 against; `cpu_cores`/`memory_bytes` mirror this container's own deploy/docker/compose.yaml `cpus`/`mem_limit` default, `bandwidth_bytes_per_hour` is provisional (Compose has no per-container egress cap at all, and no fleet bandwidth had been measured before this key existed).",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "scheduler": {
+              "description": "Measured 2026-08-24/2026-09-04 (deploy/docker/compose.yaml's own D14 comment): 190-450 MiB resident, 1.0-1.3 cores; bandwidth is provisional.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cpu_cores": { "type": "number", "exclusiveMinimum": 0, "default": 2.0 },
+                "memory_bytes": { "type": "integer", "exclusiveMinimum": 0, "default": 1610612736 },
+                "bandwidth_bytes_per_hour": { "type": "integer", "exclusiveMinimum": 0, "default": 2147483648 }
+              }
+            },
+            "dashboard": {
+              "description": "Measured 2026-08-24 (deploy/docker/compose.yaml's own D14 comment): 11-54 MiB resident, negligible CPU; bandwidth is provisional.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cpu_cores": { "type": "number", "exclusiveMinimum": 0, "default": 1.0 },
+                "memory_bytes": { "type": "integer", "exclusiveMinimum": 0, "default": 536870912 },
+                "bandwidth_bytes_per_hour": { "type": "integer", "exclusiveMinimum": 0, "default": 268435456 }
+              }
+            },
+            "dashboard-local": {
+              "description": "Shares deploy/docker/compose.yaml's own AGENT_OPS_DASHBOARD_MEMORY/AGENT_OPS_DASHBOARD_CPUS defaults with `dashboard` above — the two profiles run the identical image and entrypoint.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cpu_cores": { "type": "number", "exclusiveMinimum": 0, "default": 1.0 },
+                "memory_bytes": { "type": "integer", "exclusiveMinimum": 0, "default": 536870912 },
+                "bandwidth_bytes_per_hour": { "type": "integer", "exclusiveMinimum": 0, "default": 268435456 }
+              }
+            }
+          }
+        },
+        "volumes": {
+          "description": "Disk budgets keyed by volume name — the same name scripts/collect-resource-usage.sh tags a disk sample with. Each entry's `disk_bytes` is what scripts/doctor.sh compares scripts/resource-budget-report.sh's own latest disk_bytes reading against; provisional throughout — WSL2 has no blkio throttling to enforce it, and neither volume's growth had been sampled over time before this key existed.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "workspace_root": {
+              "description": "Measured at 6.0 GB on the ockham node 2026-08-21 (issue #606), of which 1.3 GB was orphaned clones (issue #605) — this budget sits well above that, pending a real growth-rate window.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "disk_bytes": { "type": "integer", "exclusiveMinimum": 0, "default": 10737418240 }
+              }
+            },
+            "state_dir": {
+              "description": "Never measured before this key existed. Holds every peer's state mirror plus this node's own logs and cycle history, so it grows with fleet size, not just with this node's own activity.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "disk_bytes": { "type": "integer", "exclusiveMinimum": 0, "default": 5368709120 }
+              }
+            }
+          }
+        }
+      },
+      "x-docs": {
+        "readme": "Per-container and per-volume budgets D14 compares measured actuals against (`scripts/doctor.sh` warns on a breach; the dashboard renders the comparison per node). `memory_bytes`/`cpu_cores` mirror `deploy/docker/compose.yaml`'s own `mem_limit`/`cpus`, which remain the enforcement mechanism; `bandwidth_bytes_per_hour` and every `disk_bytes` are provisional, set before any real fleet window existed.",
+        "spec": "Per-container (`resources.containers.<AGENT_OPS_SERVICE>`) and per-volume (`resources.volumes.<name>`) budgets requirement 55 (D14, issue #606) compares `scripts/resource-budget-report.sh`'s windowed actuals against. Covers only the three containers that run this image and self-measure (`scripts/collect-resource-usage.sh`) — `scheduler`, `dashboard`, `dashboard-local` — plus the two volumes they mount; `tailscale`/`watchtower`/`egress-proxy`/`collector`/`reconciler`/`node-health` are out of scope (deferred; see requirement 55). `containers.*.memory_bytes`/`containers.*.cpu_cores` mirror `deploy/docker/compose.yaml`'s own `mem_limit`/`cpus` defaults, the enforcement side D14 already ships; `containers.*.bandwidth_bytes_per_hour` and every `volumes.*.disk_bytes` are provisional pending a real fleet window.",
+        "value": "see `config.json`"
+      }
+    }
+  },
+  "$defs": {
+    "reviewPipelineConfig": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -2275,168 +2447,6 @@
         }
       }
     },
-    "revert_rate_baseline": {
-      "description": "The D18 Stage 0 merge-autonomy baseline (docs/reviews/2026-08-15-merge-autonomy-baseline.md), copied here once as a fixed reference rather than re-derived at runtime: scripts/publish-revert-rate.sh compares every window's revert-or-follow-up rate against these figures. Absent or empty, a repository with no entry here reports its baseline comparison unavailable rather than failing.",
-      "type": "object",
-      "additionalProperties": false,
-      "default": {},
-      "properties": {
-        "source": {
-          "description": "The docs/reviews/*-merge-autonomy-baseline.md this was copied from.",
-          "type": "string"
-        },
-        "generated": {
-          "description": "The baseline file's own generation date (its filename's date) — the earliest merged_at scripts/publish-revert-rate.sh's cumulative-since-baseline window starts from.",
-          "type": "string"
-        },
-        "repos": {
-          "description": "One entry per repository the baseline covers, each the miner's own post_merge {count, reverts, follow_up_fixes} at generation time.",
-          "type": "array",
-          "uniqueItems": true,
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "slug",
-              "count",
-              "reverts",
-              "follow_up_fixes"
-            ],
-            "properties": {
-              "slug": {
-                "description": "The repository, as `owner/name`.",
-                "type": "string",
-                "pattern": "^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$"
-              },
-              "count": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "reverts": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "follow_up_fixes": {
-                "type": "integer",
-                "minimum": 0
-              }
-            }
-          }
-        }
-      },
-      "x-docs": {
-        "readme": "The D18 Stage 0 merge-autonomy baseline, copied once from `docs/reviews/2026-08-15-merge-autonomy-baseline.md` rather than re-derived — `scripts/publish-revert-rate.sh` compares every window's rate against it. A fresh install ships no baseline until Stage 0 records one.",
-        "spec": "The D18 Stage 0 merge-autonomy baseline (docs/reviews/2026-08-15-merge-autonomy-baseline.md §6), copied here once as a fixed reference rather than re-derived at runtime (issue #579): `scripts/publish-revert-rate.sh` compares every window's revert-or-follow-up rate against these figures. A repository absent from `repos` reports its baseline comparison `unavailable` rather than failing.",
-        "value": "`{\"source\": \"docs/reviews/2026-08-15-merge-autonomy-baseline.md\", \"generated\": \"2026-08-15\", \"repos\": [{\"slug\": \"Poetic-Poems/poetic\", \"count\": 84, \"reverts\": 0, \"follow_up_fixes\": 31}, {\"slug\": \"Poetic-Poems/poetic-fiddle\", \"count\": 119, \"reverts\": 0, \"follow_up_fixes\": 44}, {\"slug\": \"Pullwright/agent-ops\", \"count\": 120, \"reverts\": 0, \"follow_up_fixes\": 106}]}`"
-      }
-    },
-    "resources": {
-      "description": "Per-container and per-volume resource budgets requirement 55 (D14, issue #606) compares measured actuals against: scripts/doctor.sh warns when scripts/resource-budget-report.sh's windowed figure for a container or volume exceeds its own budget here, and scripts/publish-dashboard.sh renders the same comparison per node (folded into heartbeat.json by scripts/state-sync.sh). Covers exactly the three containers that run this image and can self-measure their own cgroup and /proc/net/dev from the inside (`scheduler`, `dashboard`, `dashboard-local` — scripts/collect-resource-usage.sh) plus the two volumes they mount (`workspace_root`, `state_dir`); `tailscale`/`watchtower` and this project's other agent-ops services (`egress-proxy`, `collector`, `reconciler`, `node-health`) are not measured here — reaching them needs the collector's own Docker-socket vantage or a host-side collector, deferred as tech debt (agent-ops#1563). `containers.*.memory_bytes`/`containers.*.cpu_cores` mirror deploy/docker/compose.yaml's own `mem_limit`/`cpus` defaults, which remain the enforcement mechanism (D14) — this object is the read side scripts/doctor.sh and the dashboard compare actuals against, not a second enforcement path, and keeping the two in step across an edit is a human responsibility today (D16's own control-plane migration is what eventually removes the duplication). `containers.*.bandwidth_bytes_per_hour` and every `volumes.*.disk_bytes` are provisional: neither resource had ever been measured before this key existed, so both are set generously above what a quiet node is expected to use, meant to be tightened once scripts/resource-budget-report.sh has real fleet windows to set them from — a config edit, not a re-implementation.",
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "sample_retention_hours": {
-          "description": "How long scripts/collect-resource-usage.sh keeps a raw sample in state_dir/.resource-samples.jsonl before pruning it on a later tick — long enough that report_window_hours' own window always has data. Never replicated (scripts/state-sync.sh's EXCLUDES): a raw sample is this node's own forensics, not a fact a peer would read.",
-          "type": "integer",
-          "minimum": 1,
-          "default": 48,
-          "x-docs": {
-            "readme": "Hours scripts/collect-resource-usage.sh keeps a raw local sample before pruning it — long enough that the report window below always has data.",
-            "spec": "Hours scripts/collect-resource-usage.sh keeps a raw sample in state_dir/.resource-samples.jsonl (never replicated) before pruning it on a later tick — long enough that resources.report_window_hours' own window always has data.",
-            "value": "`48`"
-          }
-        },
-        "report_window_hours": {
-          "description": "The window scripts/resource-budget-report.sh derives latest/median/p95 over — read by scripts/doctor.sh's over-budget check and folded into heartbeat.json by scripts/state-sync.sh.",
-          "type": "integer",
-          "minimum": 1,
-          "default": 24,
-          "x-docs": {
-            "readme": "Hours scripts/resource-budget-report.sh derives its latest/median/p95 figures over.",
-            "spec": "The window, in hours, scripts/resource-budget-report.sh derives latest/median/p95 over — read by requirement 55's over-budget check (scripts/doctor.sh) and folded into heartbeat.json by scripts/state-sync.sh.",
-            "value": "`24`"
-          }
-        },
-        "disk_sample_interval_minutes": {
-          "description": "How often scripts/collect-resource-usage.sh samples a volume's own disk usage (a `du -sb`, expensive enough on a multi-GB tree to throttle separately from the cgroup/proc reads it takes every tick).",
-          "type": "integer",
-          "minimum": 1,
-          "default": 60,
-          "x-docs": {
-            "readme": "Minutes between scripts/collect-resource-usage.sh's own `du -sb` disk samples — throttled separately from its cheap, every-tick cgroup/proc reads.",
-            "spec": "Minutes between scripts/collect-resource-usage.sh's own disk samples (`du -sb` on workspace_root/state_dir), throttled separately from the cgroup/proc reads it takes every tick because `du` on a multi-GB tree is not cheap.",
-            "value": "`60`"
-          }
-        },
-        "containers": {
-          "description": "Budgets keyed by AGENT_OPS_SERVICE (deploy/docker/compose.yaml) — the same name scripts/collect-resource-usage.sh tags every sample with. Each entry's `cpu_cores`/`memory_bytes`/`bandwidth_bytes_per_hour` is what scripts/doctor.sh compares scripts/resource-budget-report.sh's windowed p95 against; `cpu_cores`/`memory_bytes` mirror this container's own deploy/docker/compose.yaml `cpus`/`mem_limit` default, `bandwidth_bytes_per_hour` is provisional (Compose has no per-container egress cap at all, and no fleet bandwidth had been measured before this key existed).",
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "scheduler": {
-              "description": "Measured 2026-08-24/2026-09-04 (deploy/docker/compose.yaml's own D14 comment): 190-450 MiB resident, 1.0-1.3 cores; bandwidth is provisional.",
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "cpu_cores": { "type": "number", "exclusiveMinimum": 0, "default": 2.0 },
-                "memory_bytes": { "type": "integer", "exclusiveMinimum": 0, "default": 1610612736 },
-                "bandwidth_bytes_per_hour": { "type": "integer", "exclusiveMinimum": 0, "default": 2147483648 }
-              }
-            },
-            "dashboard": {
-              "description": "Measured 2026-08-24 (deploy/docker/compose.yaml's own D14 comment): 11-54 MiB resident, negligible CPU; bandwidth is provisional.",
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "cpu_cores": { "type": "number", "exclusiveMinimum": 0, "default": 1.0 },
-                "memory_bytes": { "type": "integer", "exclusiveMinimum": 0, "default": 536870912 },
-                "bandwidth_bytes_per_hour": { "type": "integer", "exclusiveMinimum": 0, "default": 268435456 }
-              }
-            },
-            "dashboard-local": {
-              "description": "Shares deploy/docker/compose.yaml's own AGENT_OPS_DASHBOARD_MEMORY/AGENT_OPS_DASHBOARD_CPUS defaults with `dashboard` above — the two profiles run the identical image and entrypoint.",
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "cpu_cores": { "type": "number", "exclusiveMinimum": 0, "default": 1.0 },
-                "memory_bytes": { "type": "integer", "exclusiveMinimum": 0, "default": 536870912 },
-                "bandwidth_bytes_per_hour": { "type": "integer", "exclusiveMinimum": 0, "default": 268435456 }
-              }
-            }
-          }
-        },
-        "volumes": {
-          "description": "Disk budgets keyed by volume name — the same name scripts/collect-resource-usage.sh tags a disk sample with. Each entry's `disk_bytes` is what scripts/doctor.sh compares scripts/resource-budget-report.sh's own latest disk_bytes reading against; provisional throughout — WSL2 has no blkio throttling to enforce it, and neither volume's growth had been sampled over time before this key existed.",
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "workspace_root": {
-              "description": "Measured at 6.0 GB on the ockham node 2026-08-21 (issue #606), of which 1.3 GB was orphaned clones (issue #605) — this budget sits well above that, pending a real growth-rate window.",
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "disk_bytes": { "type": "integer", "exclusiveMinimum": 0, "default": 10737418240 }
-              }
-            },
-            "state_dir": {
-              "description": "Never measured before this key existed. Holds every peer's state mirror plus this node's own logs and cycle history, so it grows with fleet size, not just with this node's own activity.",
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "disk_bytes": { "type": "integer", "exclusiveMinimum": 0, "default": 5368709120 }
-              }
-            }
-          }
-        }
-      },
-      "x-docs": {
-        "readme": "Per-container and per-volume budgets D14 compares measured actuals against (`scripts/doctor.sh` warns on a breach; the dashboard renders the comparison per node). `memory_bytes`/`cpu_cores` mirror `deploy/docker/compose.yaml`'s own `mem_limit`/`cpus`, which remain the enforcement mechanism; `bandwidth_bytes_per_hour` and every `disk_bytes` are provisional, set before any real fleet window existed.",
-        "spec": "Per-container (`resources.containers.<AGENT_OPS_SERVICE>`) and per-volume (`resources.volumes.<name>`) budgets requirement 55 (D14, issue #606) compares `scripts/resource-budget-report.sh`'s windowed actuals against. Covers only the three containers that run this image and self-measure (`scripts/collect-resource-usage.sh`) — `scheduler`, `dashboard`, `dashboard-local` — plus the two volumes they mount; `tailscale`/`watchtower`/`egress-proxy`/`collector`/`reconciler`/`node-health` are out of scope (deferred; see requirement 55). `containers.*.memory_bytes`/`containers.*.cpu_cores` mirror `deploy/docker/compose.yaml`'s own `mem_limit`/`cpus` defaults, the enforcement side D14 already ships; `containers.*.bandwidth_bytes_per_hour` and every `volumes.*.disk_bytes` are provisional pending a real fleet window.",
-        "value": "see `config.json`"
-      }
-    }
-  },
-  "$defs": {
     "modelId": {
       "description": "A model identifier: either bare (`claude-sonnet-5`) or provider-qualified (`anthropic/claude-sonnet-5`). Anthropic is the only executable provider today, so the two forms are the same value; a qualifier naming any other provider is rejected at cycle start.",
       "type": "string",

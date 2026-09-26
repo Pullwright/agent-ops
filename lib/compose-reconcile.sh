@@ -287,7 +287,11 @@ compose_reconcile_run() {
   # --- The cycle lock, and roll-pending ---------------------------------------
   local cycle_stale review_stale held
   cycle_stale="$(jq -r '.lock_stale_after // 4' "$config_file" 2>/dev/null || echo 4)"
-  review_stale="$(jq -r '.project_review.lock_stale_after // 6' "$config_file" 2>/dev/null || echo 6)"
+  # repository_review is the current spelling; project_review is still
+  # accepted as a deprecated alias (agent-ops#592, D7) — read directly against
+  # the raw file here, same as the rest of this function, so both spellings
+  # resolve without going through config_defaults.
+  review_stale="$(jq -r '.repository_review.lock_stale_after // .project_review.lock_stale_after // 6' "$config_file" 2>/dev/null || echo 6)"
   [[ "$cycle_stale"  =~ ^[0-9]+$ ]] || cycle_stale=4
   [[ "$review_stale" =~ ^[0-9]+$ ]] || review_stale=6
 

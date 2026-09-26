@@ -174,14 +174,14 @@ review_date="$(date -u +%Y-%m-%d)"
 
 # The shipped config with any dated stand-down removed (both the default and
 # any per-repo override — `not_before` (R3.3) is operational and must not
-# quietly decide whether this file tests anything), and `project_review.repos`
+# quietly decide whether this file tests anything), and `repository_review.repos`
 # replaced outright by the three synthetic entries above: an entry carrying
-# only `slug` inherits every other setting from `project_review.defaults`
+# only `slug` inherits every other setting from `repository_review.defaults`
 # (requirement 342), so nothing else needs restating per repository.
 claim_config="$tmp_dir/config.json"
 jq --arg lost "$slug_lost" --arg err "$slug_err" --arg won "$slug_won" \
-  'del(.project_review.defaults.not_before)
-   | .project_review.repos = [{slug: $lost}, {slug: $err}, {slug: $won}]' \
+  'del(.repository_review.defaults.not_before)
+   | .repository_review.repos = [{slug: $lost}, {slug: $err}, {slug: $won}]' \
   "$SCRIPT_DIR/config.json" > "$claim_config"
 
 export GH_STUB_DIR="$tmp_dir/gh-state"

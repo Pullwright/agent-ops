@@ -12,7 +12,7 @@
 # `fail`); a repository-held source (`repo_context_file`) is the opposite —
 # admissible as context only, and simply absent when the file is not there,
 # never a fault. So the assertions below are, in order: path resolution,
-# the missing-configured-path detector, config_project_review_repos'
+# the missing-configured-path detector, config_repository_review_repos'
 # resolution precedence (requirement 342) as read by this facility, building
 # the runtime-input JSON (instructions/context, in order, each attributed),
 # the absent-repo-file case, the size cap and its truncation flag, and that

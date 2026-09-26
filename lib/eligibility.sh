@@ -293,13 +293,13 @@ prefetch_refiner_sources() {
 refiner_repos_json="$ordered_repos_json"
 if [[ -n "$refiner_model" ]]; then
   # This repository's own resolved report_directory (its override in
-  # project_review.repos, or project_review.defaults' otherwise, requirement
-  # 342) — or, absent from project_review entirely (this repo may not even be
-  # one review-cycle.sh reviews), the same ultimate fallback review-cycle.sh
-  # itself falls back to (issue #761). Computed once, outside the loop: every
-  # repository's own resolved value is a lookup against this, not a fresh
-  # derivation.
-  refiner_project_review_repos_json="$(config_project_review_repos "$DEFAULTED_CONFIG")"
+  # repository_review.repos, or repository_review.defaults' otherwise,
+  # requirement 342) — or, absent from repository_review entirely (this repo
+  # may not even be one review-cycle.sh reviews), the same ultimate fallback
+  # review-cycle.sh itself falls back to (issue #761). Computed once, outside
+  # the loop: every repository's own resolved value is a lookup against this,
+  # not a fresh derivation.
+  refiner_repository_review_repos_json="$(config_repository_review_repos "$DEFAULTED_CONFIG")"
   while IFS=$'\t' read -r rp_slug rp_branch; do
     [[ -n "$rp_slug" ]] || continue
     rp_entry="$(jq -c --arg s "$rp_slug" 'map(select(.slug == $s)) | .[0] // {}' \
@@ -311,7 +311,7 @@ if [[ -n "$refiner_model" ]]; then
        && [[ "$(refiner_policy_value "project-review" "$refinement_policy_json")" != "exempt" ]]; then
       rp_report_directory="$(jq -r --arg s "$rp_slug" \
         'map(select(.slug == $s)) | .[0].report_directory // ""' \
-        <<<"$refiner_project_review_repos_json" 2>/dev/null || true)"
+        <<<"$refiner_repository_review_repos_json" 2>/dev/null || true)"
       [[ -n "$rp_report_directory" ]] || rp_report_directory="$REPORT_DIRECTORY_DEFAULT"
       rp_pr="$(gather_project_review_candidates "$rp_slug" "$rp_branch" "$rp_report_directory")"
     fi

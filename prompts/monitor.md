@@ -222,9 +222,9 @@ End your run with exactly one JSON object, and nothing after it:
     {
       "key": "review-cadence-too-slow",
       "class": "tactical",
-      "title": "project_review.defaults.min_days_between_reviews is holding reviews a week late",
+      "title": "repository_review.defaults.min_days_between_reviews is holding reviews a week late",
       "body": "The evidence, the current value, the value proposed, and why.",
-      "config_key": "project_review.defaults.min_days_between_reviews"
+      "config_key": "repository_review.defaults.min_days_between_reviews"
     },
     {
       "key": "fleet-single-account-limit",

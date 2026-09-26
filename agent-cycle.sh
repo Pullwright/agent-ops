@@ -78,7 +78,7 @@ export AGENT_OPS_ROOT="$SCRIPT_DIR"
 # shellcheck source=lib/report-directory.sh
 # REPORT_DIRECTORY_DEFAULT (the review pipeline's own ultimate report_directory
 # fallback, issue #761): lib/eligibility.sh's prefetch_refiner_sources reads it
-# for a repository project_review does not configure at all.
+# for a repository repository_review does not configure at all.
 . "$SCRIPT_DIR/lib/report-directory.sh"
 # shellcheck source=lib/metering.sh
 . "$SCRIPT_DIR/lib/metering.sh"
@@ -507,7 +507,7 @@ fi
 DEFAULTED_CONFIG="$(config_defaults "$CONFIG_FILE" "$SCHEMA_FILE")"
 
 # Requirement 1b's cross-key duplicate-slug guard for repos[] (issue #1576):
-# unlike project_review.repos (config_duplicate_project_review_slugs, shared
+# unlike repository_review.repos (config_duplicate_repository_review_slugs, shared
 # with review-cycle.sh's own startup refusal), nothing checked repos[] itself
 # for two entries naming the same slug. lib/prompt-overrides.sh's
 # prompt_overrides_json_for_repo has no head -1/first guard and would emit a

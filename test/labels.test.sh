@@ -215,10 +215,10 @@ assert_eq "the target role wants every label the pipeline applies" \
 assert_eq "the review role wants only the caller's resolved review pull request label" \
   "project-review" \
   "$(labels_catalogue "$tmp/config.json" "$SCHEMA" review "project-review" | cut -f1 | tr '\n' ' ' | sed 's/ $//')"
-assert_eq "the review role wants nothing when no label is passed (project_review's pr_label is resolved per repo, not read from config)" \
+assert_eq "the review role wants nothing when no label is passed (repository_review's pr_label is resolved per repo, not read from config)" \
   "" \
   "$(labels_catalogue "$tmp/config.json" "$SCHEMA" review | cut -f1 | tr '\n' ' ' | sed 's/ $//')"
-assert_eq "the review role reflects whatever resolved label the caller passes, e.g. a repo's own project_review override" \
+assert_eq "the review role reflects whatever resolved label the caller passes, e.g. a repo's own repository_review override" \
   "custom-review-label" \
   "$(labels_catalogue "$tmp/config.json" "$SCHEMA" review "custom-review-label" | cut -f1 | tr '\n' ' ' | sed 's/ $//')"
 assert_eq "the escalation role wants the escalation label, the decision-log label and the pager label" \
@@ -705,12 +705,12 @@ assert_eq "a configured label switched off by an empty value contributes nothing
   "autonomous-agent enabler-escalation refined unvoided project-review" \
   "$(tail -n +9 <<<"$(labels_reserved_names "$tmp/config.json" "$SCHEMA")" | tr '\n' ' ' | sed 's/ $//')"
 
-# A repository's own project_review override is reserved alongside the
+# A repository's own repository_review override is reserved alongside the
 # default: review-cycle.sh skips that repository's whole review while an open
 # pull request carries the label, so a minted one claiming the name would be
 # read to decide something.
-config '.project_review.repos[0].pr_label = "house-review"'
-assert_eq "a repository's own project_review pr_label override is reserved too" \
+config '.repository_review.repos[0].pr_label = "house-review"'
+assert_eq "a repository's own repository_review pr_label override is reserved too" \
   "autonomous-agent enabler-escalation needs-refinement refined unvoided project-review house-review" \
   "$(tail -n +9 <<<"$(labels_reserved_names "$tmp/config.json" "$SCHEMA")" | tr '\n' ' ' | sed 's/ $//')"
 

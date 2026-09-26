@@ -76,7 +76,7 @@
     "state_sync_fetch_minutes": 7,
     "log_rotation_minute": 19
   },
-  "project_review": {
+  "repository_review": {
     "defaults": {
       "model": "claude-sonnet-5",
       "pr_label": "project-review",

@@ -453,7 +453,7 @@ updater_stuck_after_minutes_raw="$(cfg '.updater_stuck_after_minutes')"
 # windows, read the same simple way watchtower-pre-update.sh's own held_by()
 # reads them.
 updater_defer_stuck_after_seconds="$(cfg \
-  '([.lock_stale_after // 4, .project_review.lock_stale_after // 6] | max) * 3600 | floor')"
+  '([.lock_stale_after // 4, .repository_review.lock_stale_after // 6] | max) * 3600 | floor')"
 # The fleet strip's publication-freshness tolerance (lib/fleet.sh's
 # fleet_publication_status, requirement 2.5, agent-ops#602), applied
 # identically to a peer's row and to this node's own below — minutes → seconds

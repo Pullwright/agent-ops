@@ -30,8 +30,8 @@
 # by this flag's presence.
 #
 # report-directory-format is the repository's own resolved
-# project_review.repos[].report_directory (or project_review.defaults', or
-# the pipeline's ultimate fallback) — a GNU date(1) format string, exactly as
+# repository_review.repos[].report_directory (or repository_review.defaults',
+# or the pipeline's ultimate fallback) — a GNU date(1) format string, exactly as
 # review-cycle.sh resolves and passes it. Defaults to the one shared
 # `REPORT_DIRECTORY_DEFAULT` (`reviews/project-review-%Y-%m-%d` — today's
 # layout), so an existing caller passing only the first two arguments — or an

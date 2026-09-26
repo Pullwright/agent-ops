@@ -34,7 +34,7 @@
 # under test is the shipped script rather than a re-statement of it.
 #
 # No network — the refusal happens before the lock and before any `gh` call,
-# and `project_review.repos` is otherwise emptied. Run directly:
+# and `repository_review.repos` is otherwise emptied. Run directly:
 # ./test/review-context-wiring.test.sh — exit 0 iff all passed.
 
 set -uo pipefail
@@ -111,10 +111,10 @@ run_review() {  # run_review <dir> -> writes $tmp_dir/out.txt, sets RC
 # `state_repo: ""` keeps the fleet switch from reaching for one; the repos
 # list stands in for a real installation's, since the sweep must see
 # requirement 342's per-repository view rather than `defaults` alone.
-BASE='.state_repo = "" | .project_review.repos = [{slug: "Test-Org/one"}, {slug: "Test-Org/two"}]'
+BASE='.state_repo = "" | .repository_review.repos = [{slug: "Test-Org/one"}, {slug: "Test-Org/two"}]'
 
 # --- A configured path that does not resolve refuses the whole cycle ---------
-d="$(make_node broken "$BASE | .project_review.defaults.review_instructions = [\"absent-instructions.md\"]")"
+d="$(make_node broken "$BASE | .repository_review.defaults.review_instructions = [\"absent-instructions.md\"]")"
 run_review "$d"; out="$(cat "$tmp_dir/out.txt")"
 assert_eq "a broken review_instructions path exits non-zero" "1" "$RC"
 assert_contains "the refusal says what it is refusing" \
@@ -130,7 +130,7 @@ assert_contains "and what it resolved to, which is where the typo shows" \
 # `defaults` is untouched here: a sweep reading it alone would find nothing
 # wrong and run the cycle against a repository whose own configured context
 # is missing.
-d="$(make_node per-repo "$BASE | .project_review.repos[1].review_context = [\"absent-context.md\"]")"
+d="$(make_node per-repo "$BASE | .repository_review.repos[1].review_context = [\"absent-context.md\"]")"
 run_review "$d"; out="$(cat "$tmp_dir/out.txt")"
 assert_eq "a broken per-repo review_context override exits non-zero too" "1" "$RC"
 assert_contains "naming the repository that carries the override" "Test-Org/two" "$out"
@@ -138,7 +138,7 @@ assert_contains "and its field" "review_context" "$out"
 assert_lacks "and not the repository that does not carry it" "Test-Org/one:" "$out"
 
 # --- A path that resolves is silently fine ----------------------------------
-d="$(make_node resolvable "$BASE | .project_review.repos = [] | .project_review.defaults.review_instructions = [\"present-instructions.md\"]")"
+d="$(make_node resolvable "$BASE | .repository_review.repos = [] | .repository_review.defaults.review_instructions = [\"present-instructions.md\"]")"
 printf 'weigh the documentation as strictly as the code\n' \
   > "$d/home/.local/state/poetic-agents/present-instructions.md"
 run_review "$d"; out="$(cat "$tmp_dir/out.txt")"
@@ -146,9 +146,9 @@ assert_lacks "a resolvable path raises no refusal" "do not resolve" "$out"
 assert_eq "and the tick ends 0" "0" "$RC"
 
 # --- Nothing configured at all is vacuously fine ----------------------------
-# `project_review` is optional and most installations will never set either
+# `repository_review` is optional and most installations will never set either
 # key; the sweep must not turn that into a fault.
-d="$(make_node unconfigured "$BASE | .project_review.repos = []")"
+d="$(make_node unconfigured "$BASE | .repository_review.repos = []")"
 run_review "$d"; out="$(cat "$tmp_dir/out.txt")"
 assert_lacks "an installation configuring neither key raises no refusal" "do not resolve" "$out"
 assert_eq "and its tick ends 0 as well" "0" "$RC"

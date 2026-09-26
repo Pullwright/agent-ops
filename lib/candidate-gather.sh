@@ -1324,13 +1324,13 @@ if (( void_retire_after_days > 0 )); then
   # blocked-set read of the same repo.
   #
   # This repo's own resolved report_directory (its override in
-  # project_review.repos, or project_review.defaults' otherwise, requirement
-  # 342) — or, absent from project_review entirely, the same ultimate
-  # fallback review-cycle.sh itself falls back to (issue #761). Computed once,
-  # outside the loop, the same way lib/eligibility.sh's own
-  # `refiner_project_review_repos_json` is: every repository's resolved value
-  # is a lookup against this, not a fresh derivation.
-  void_review_current_repos_json="$(config_project_review_repos "$DEFAULTED_CONFIG")"
+  # repository_review.repos, or repository_review.defaults' otherwise,
+  # requirement 342) — or, absent from repository_review entirely, the same
+  # ultimate fallback review-cycle.sh itself falls back to (issue #761).
+  # Computed once, outside the loop, the same way lib/eligibility.sh's own
+  # `refiner_repository_review_repos_json` is: every repository's resolved
+  # value is a lookup against this, not a fresh derivation.
+  void_review_current_repos_json="$(config_repository_review_repos "$DEFAULTED_CONFIG")"
   void_review_status_json='{}'
   void_review_current_json='{}'
   while IFS=$'\t' read -r vrv_slug vrv_refs; do
