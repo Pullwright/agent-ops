@@ -1394,8 +1394,19 @@ _landing_stage_attempt() {
   case "$level" in
     agent-merges-routine|agent-merges-all) ;;
     *)
-      local autonomy_reason
-      autonomy_reason="$(landing_autonomy_refusal_reason "$state_repo" "$state_dir" "$level" fresh)"
+      # `|| true`, matching `reconciliation_gate`'s own capture below, because
+      # this reason now has to be read into a variable (the CLASS the call
+      # sites below pass is chosen from its shape) rather than expanded
+      # straight into `_landing_refuse`'s argument list. Under the `errexit`
+      # this file runs with, a bare `var="$(helper)"` assignment does not
+      # merely discard a non-zero status the way a command substitution in an
+      # argument does — it aborts the cycle mid-stage, which for a *refusal*
+      # path would swallow the one `landing-refused` event requirement 8d
+      # promises ("every gate that cannot be read refuses too, never passes,
+      # and never a non-zero return"). An unreadable reason therefore still
+      # refuses, under the `autonomy-level` class its empty text falls to.
+      local autonomy_reason=""
+      autonomy_reason="$(landing_autonomy_refusal_reason "$state_repo" "$state_dir" "$level" fresh)" || true
       case "$autonomy_reason" in
         kill-switch:*) _landing_refuse "$pr_url" "$slug" "kill-switch" "$autonomy_reason" "$retry" "$item" ;;
         *) _landing_refuse "$pr_url" "$slug" "autonomy-level" "$autonomy_reason" "$retry" "$item" ;;
