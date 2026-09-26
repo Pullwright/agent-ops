@@ -3310,13 +3310,15 @@ fi
 # agent-ops#687, for the one repository where a miss is most expensive.
 ensure_labels_for() {
   local slug="$1" role="$2" report
-  report="$(labels_ensure_role "$CONFIG_FILE" "$SCHEMA_FILE" "$slug" "$role" 2>/dev/null || true)"
+  report="$(labels_reconcile_role "$CONFIG_FILE" "$SCHEMA_FILE" "$slug" "$role" 2>/dev/null || true)"
   [[ -n "$report" ]] || return 0
   log_event "labels-ensured" "$(jq -nc --arg repo "$slug" --arg role "$role" \
     --arg report "$report" '
     {repo: $repo, role: $role}
     + ($report | split("\n") | map(select(length > 0) | split("\t"))
        | {created: [.[] | select(.[0] == "created") | .[1]],
+          updated: [.[] | select(.[0] == "updated") | .[1]],
+          deleted: [.[] | select(.[0] == "deleted") | .[1]],
           failed:  [.[] | select(.[0] == "failed")  | .[1]]})')"
 }
 ensure_labels_for "$repo_slug" target

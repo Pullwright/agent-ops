@@ -2,12 +2,13 @@
 #
 # test/review-repo-labels-wiring.test.sh — regression test for the
 # per-repository label ensure review-cycle.sh's review_one function runs
-# (requirement R5.0b, agent-ops#685): not whether labels_ensure_role itself is
-# correct (test/labels.test.sh covers that) but whether review_one calls it
+# (requirement R5.0b, agent-ops#685): not whether labels_reconcile_role itself
+# is correct (test/labels.test.sh covers that) but whether review_one calls it
 # with the right arguments and logs `labels-ensured` only when there is
 # something to report. Also verifies that it calls the plain, unstamped
-# `labels_ensure_role` and not `labels_ensure_stamped` — a one-line distinction
-# that matters but is otherwise guarded only by a comment.
+# `labels_reconcile_role` and not the rate-limited `labels_ensure_stamped`/
+# `labels_reconcile_stamped` — a one-line distinction that matters but is
+# otherwise guarded only by a comment.
 #
 # The block is lifted verbatim out of review-cycle.sh, the way
 # test/gathered-repo-labels-wiring.test.sh and test/backpressure-wiring.test.sh
@@ -44,18 +45,21 @@ labels_block="$(awk '
   on                        { print }
   on && /^  fi$/            { exit }
 ' "$REVIEW_CYCLE")"
-if [[ "$labels_block" != *'labels_ensure_role'* || "$labels_block" != *'labels-ensured'* ]]; then
+if [[ "$labels_block" != *'labels_reconcile_role'* || "$labels_block" != *'labels-ensured'* ]]; then
   echo "FAIL - could not extract the review-one label ensure from review-cycle.sh (moved or reworded?)" >&2
   exit 1
 fi
 
-# --- Stub: labels_ensure_role and labels_ensure_stamped, fail if wrong one called ---
+# --- Stub: labels_reconcile_role, and both stamped wrappers, fail if the
+#     wrong one is called ---
 call_log="$(mktemp)"
 trap 'rm -f "$call_log"' EXIT
 # shellcheck disable=SC2317  # invoked only by the eval'd labels_block
-labels_ensure_role() { printf '%s\n' "$*" >> "$call_log"; printf '%s' "$stub_report"; }
+labels_reconcile_role() { printf '%s\n' "$*" >> "$call_log"; printf '%s' "$stub_report"; }
 # shellcheck disable=SC2317  # invoked only by the eval'd labels_block
-labels_ensure_stamped() { echo "FAIL: labels_ensure_stamped was called; review_one must call labels_ensure_role instead" >> "$call_log"; return 1; }
+labels_ensure_stamped() { echo "FAIL: labels_ensure_stamped was called; review_one must call labels_reconcile_role instead" >> "$call_log"; return 1; }
+# shellcheck disable=SC2317  # invoked only by the eval'd labels_block
+labels_reconcile_stamped() { echo "FAIL: labels_reconcile_stamped was called; review_one must call labels_reconcile_role instead" >> "$call_log"; return 1; }
 # shellcheck disable=SC2317  # invoked only by the eval'd labels_block
 log_event() { printf 'EVENT %s %s\n' "$1" "$2" >> "$call_log"; }
 
@@ -72,7 +76,7 @@ run_block() {  # <slug> <pr_label> <stub_report>
 
 : > "$call_log"
 run_block "o/r" "autonomous-agent" "created	autonomous-agent"
-assert_eq "labels_ensure_role is called with config, schema, the repo, review role, and pr_label" \
+assert_eq "labels_reconcile_role is called with config, schema, the repo, review role, and pr_label" \
   "/cfg.json /schema.json o/r review autonomous-agent" \
   "$(grep '^/cfg.json ' "$call_log")"
 assert_eq "a non-empty report logs labels-ensured" "1" \

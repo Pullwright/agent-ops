@@ -36,7 +36,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$SCRIPT_DIR/lib/escalation-autonomy.sh"
 # shellcheck source=lib/enabler.sh
 # create_decision_log_issue lives here (agent-ops#937); its own tests below
-# stub `gh`, `labels_ensure_role` and `log_event` rather than write for real.
+# stub `gh`, `labels_reconcile_role` and `log_event` rather than write for real.
 . "$SCRIPT_DIR/lib/enabler.sh"
 
 failures=0
@@ -373,7 +373,7 @@ assert_logged_since "an open-question-escalated event does not count toward appr
 # (agent-ops#1198). `gh` is stubbed to a small case dispatch over its own
 # argv, in the style test/sweep-closed-issues.test.sh uses for the same
 # purpose; every call is appended to $gh_calls so a test can assert on
-# exactly what was sent without a real GitHub write. `labels_ensure_role` and
+# exactly what was sent without a real GitHub write. `labels_reconcile_role` and
 # `log_event` are stubbed too — this is a test of the issue-filing contract,
 # not of the label catalogue or the fleet log. ---
 cycle_dir="$(mktemp -d)"
@@ -384,7 +384,7 @@ CONFIG_FILE=""
 SCHEMA_FILE=""
 gh_calls="$cycle_dir/gh-calls.log"
 # shellcheck disable=SC2317  # invoked only by create_decision_log_issue
-labels_ensure_role() { :; }
+labels_reconcile_role() { :; }
 # shellcheck disable=SC2317  # invoked only by create_decision_log_issue on a close failure
 log_event() { printf 'event %s %s\n' "$1" "$2" >> "$gh_calls"; }
 

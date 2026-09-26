@@ -210,7 +210,7 @@ config() { jq "${1:-.}" "$SCRIPT_DIR/config.json" > "$tmp/config.json"; }
 #     rather than from this library. ---
 config
 assert_eq "the target role wants every label the pipeline applies" \
-  "autonomous-agent enabler-escalation needs-refinement refined unvoided blocked blocked:needs-refinement obsolete pw::type:tech-debt pw::owner-decision pw::decision open-question complexity:low complexity:medium complexity:high" \
+  "autonomous-agent enabler-escalation needs-refinement refined unvoided blocked blocked:needs-refinement obsolete pw::type:tech-debt pw::owner-decision pw::decision pw::pager open-question complexity:low complexity:medium complexity:high" \
   "$(labels_catalogue "$tmp/config.json" "$SCHEMA" target | cut -f1 | tr '\n' ' ' | sed 's/ $//')"
 assert_eq "the review role wants only the caller's resolved review pull request label" \
   "project-review" \
@@ -227,6 +227,34 @@ assert_eq "the escalation role wants the escalation label, the decision-log labe
 assert_eq "an unknown role wants nothing" "" \
   "$(labels_catalogue "$tmp/config.json" "$SCHEMA" nonsense)"
 
+# `target` is the only role labels_reconcile_role reconciles under MODE
+# `full`, and that mode deletes every label_prefix-named label in the
+# repository target's own catalogue does not name. So any prefixed label the
+# `escalation` role wants must appear in `target`'s arm too, or the two fight
+# over a repository that is both — which `pager_repo`'s fallback to
+# `crash_loop_repo` makes the ordinary case, not an exotic one: escalation
+# creates the label, target deletes it next cycle, and GitHub's DELETE
+# detaches it from every page already carrying it. Pinned as a relation
+# rather than as a second literal list, so an escalation-only entry added
+# later fails here regardless of what it is called.
+missing_from_target="$(comm -23 \
+  <(labels_catalogue "$tmp/config.json" "$SCHEMA" escalation | cut -f1 | grep '^pw::' | sort) \
+  <(labels_catalogue "$tmp/config.json" "$SCHEMA" target | cut -f1 | grep '^pw::' | sort) \
+  | tr '\n' ' ' | sed 's/ $//')"
+assert_eq "every prefixed label the escalation role wants is in target's catalogue too, or target's MODE full deletes it" \
+  "" "$missing_from_target"
+
+# TD-PPagop-26082809: an installation that does not override
+# enabler_escalation_label/needs_refinement_label/refined_label/unvoid_label
+# (this repo's own config.json pins all four to their pre-existing,
+# unprefixed names above, deliberately unaffected by this change) gets the
+# product's own pw::-prefixed defaults instead.
+config 'del(.enabler_escalation_label, .needs_refinement_label, .refined_label, .unvoid_label)'
+assert_eq "a fresh installation's own catalogue takes the pw::-prefixed product defaults" \
+  "pw::enabler-escalation pw::needs-refinement pw::refined pw::unvoided" \
+  "$(labels_catalogue "$tmp/config.json" "$SCHEMA" target | cut -f1 \
+     | grep -E '^pw::(enabler-escalation|needs-refinement|refined|unvoided)$' | tr '\n' ' ' | sed 's/ $//')"
+
 config '.pr_label = "house-agent" | .unvoid_label = "reopen-please"'
 assert_eq "a renamed label is created under the name the config gives it" \
   "house-agent reopen-please" \
@@ -236,7 +264,7 @@ assert_eq "a renamed label is created under the name the config gives it" \
 # anyway would put a label in the repository that nothing will ever apply.
 config '.needs_refinement_label = "" | .unvoid_label = "" | .refined_label = ""'
 assert_eq "a label switched off by an empty value is not created" \
-  "autonomous-agent enabler-escalation blocked blocked:needs-refinement obsolete pw::type:tech-debt pw::owner-decision pw::decision open-question complexity:low complexity:medium complexity:high" \
+  "autonomous-agent enabler-escalation blocked blocked:needs-refinement obsolete pw::type:tech-debt pw::owner-decision pw::decision pw::pager open-question complexity:low complexity:medium complexity:high" \
   "$(labels_catalogue "$tmp/config.json" "$SCHEMA" target | cut -f1 | tr '\n' ' ' | sed 's/ $//')"
 
 # Every catalogue entry must be complete: a create with an empty colour is
@@ -267,7 +295,7 @@ config
 reset_stub
 out="$(labels_catalogue "$tmp/config.json" "$SCHEMA" target | labels_ensure "Owner/repo")"
 assert_eq "an empty repository gets every label, each reported created" \
-  "autonomous-agent enabler-escalation needs-refinement refined unvoided blocked blocked:needs-refinement obsolete pw::type:tech-debt pw::owner-decision pw::decision open-question complexity:low complexity:medium complexity:high" \
+  "autonomous-agent enabler-escalation needs-refinement refined unvoided blocked blocked:needs-refinement obsolete pw::type:tech-debt pw::owner-decision pw::decision pw::pager open-question complexity:low complexity:medium complexity:high" \
   "$(cut -f2 <<<"$out" | tr '\n' ' ' | sed 's/ $//')"
 assert_eq "and every line reports a creation" "" \
   "$(grep -v '^created' <<<"$out")"
@@ -279,7 +307,7 @@ assert_eq "a second pass over the same repository reports nothing" "" "$out"
 reset_stub autonomous-agent blocked obsolete complexity:low complexity:medium complexity:high
 out="$(labels_catalogue "$tmp/config.json" "$SCHEMA" target | labels_ensure "Owner/repo")"
 assert_eq "a partly-labelled repository gets only what it is missing" \
-  "enabler-escalation needs-refinement refined unvoided blocked:needs-refinement pw::type:tech-debt pw::owner-decision pw::decision open-question" \
+  "enabler-escalation needs-refinement refined unvoided blocked:needs-refinement pw::type:tech-debt pw::owner-decision pw::decision pw::pager open-question" \
   "$(cut -f2 <<<"$out" | tr '\n' ' ' | sed 's/ $//')"
 
 # GitHub compares label names case-insensitively, so a differently-cased match
@@ -306,7 +334,7 @@ rc=$?
 assert_eq "a label the token may not create is reported failed" \
   "failed	unvoided" "$(grep '^failed' <<<"$out")"
 assert_eq "and the labels either side of it are still created" \
-  "autonomous-agent enabler-escalation needs-refinement refined blocked blocked:needs-refinement obsolete pw::type:tech-debt pw::owner-decision pw::decision open-question complexity:low complexity:medium complexity:high" \
+  "autonomous-agent enabler-escalation needs-refinement refined blocked blocked:needs-refinement obsolete pw::type:tech-debt pw::owner-decision pw::decision pw::pager open-question complexity:low complexity:medium complexity:high" \
   "$(grep '^created' <<<"$out" | cut -f2 | tr '\n' ' ' | sed 's/ $//')"
 assert_eq "and one refused create does not fail the pass" "0" "$rc"
 
@@ -575,7 +603,7 @@ config
 reset_stub
 out="$(labels_reconcile_role "$tmp/config.json" "$SCHEMA" "Owner/repo" target)"
 assert_eq "the target role reconciles against an empty repository the same as labels_ensure would (nothing to reconcile or delete yet)" \
-  "autonomous-agent enabler-escalation needs-refinement refined unvoided blocked blocked:needs-refinement obsolete pw::type:tech-debt pw::owner-decision pw::decision open-question complexity:low complexity:medium complexity:high" \
+  "autonomous-agent enabler-escalation needs-refinement refined unvoided blocked blocked:needs-refinement obsolete pw::type:tech-debt pw::owner-decision pw::decision pw::pager open-question complexity:low complexity:medium complexity:high" \
   "$(cut -f2 <<<"$out" | tr '\n' ' ' | sed 's/ $//')"
 
 reset_stub $'pw::stale-target\t1d76db\tstale\npw::wanted\t1d76db\told desc'
@@ -617,6 +645,48 @@ reset_stub $'pw::drift\t1d76db\told desc'
 out="$(labels_reconcile_role "$tmp/config.json" "$SCHEMA" "Owner/repo" target)"
 assert_eq "label_prefix set empty in config disables reconciliation even for a pw::-named label" \
   "" "$(grep -v '^created' <<<"$out")"
+
+# An empty catalogue *capture* reaching MODE full must never delete the whole
+# label_prefix namespace (distinct from the assertion pinning labels_reconcile's
+# own empty-catalogue-deletes-everything behaviour above, at "MODE full deletes
+# a prefixed label the catalogue no longer names" — that one is a caller
+# deliberately passing an empty catalogue on stdin; this is labels_catalogue's
+# own jq failing silently after config_defaults succeeded, a failure
+# labels_reconcile_role cannot tell apart from "genuinely nothing to
+# catalogue" except by capturing first). Simulated by shadowing
+# labels_catalogue inside the command substitution's own subshell, so the
+# override never leaks to any other assertion in this file.
+config
+reset_stub $'pw::would-be-deleted\t1d76db\tstill present, catalogue capture failed'
+out="$(
+  labels_catalogue() { :; }
+  labels_reconcile_role "$tmp/config.json" "$SCHEMA" "Owner/repo" target
+)"
+assert_eq "an empty catalogue capture downgrades target's own MODE full to additive rather than deleting the whole label_prefix namespace" \
+  "" "$out"
+assert_eq "  ... no DELETE is issued" "0" "$(grep -c '^api -X DELETE' "$tmp/log")"
+
+# --- labels_reconcile_stamped: labels_ensure_stamped's own stamp-file rate
+#     limit (test/labels.test.sh's "labels_ensure_stamped" section above),
+#     but dispatched through labels_reconcile_role — shared via _labels_stamped
+#     — so this only needs to prove the dispatch and the stamp file are both
+#     really shared, not re-prove every interval-truncation edge case above. ---
+
+config
+stamp_root="$tmp/state"
+rm -rf "$stamp_root"
+reset_stub $'pw::decision\t1d76db\tstale description'
+out="$(labels_reconcile_stamped "$stamp_root" "$tmp/config.json" "$SCHEMA" "Owner/repo" escalation 24)"
+assert_eq "labels_reconcile_stamped updates a drifted pw::-prefixed label, proving it dispatches through labels_reconcile_role rather than labels_ensure_role" \
+  "updated	pw::decision" "$(grep '^updated' <<<"$out")"
+assert_eq "  ... and leaves a stamp behind, the same rate-limit contract as labels_ensure_stamped" "1" \
+  "$([[ -f "$stamp_root/labels-ensured/Owner_repo.escalation" ]] && echo 1 || echo 0)"
+
+reset_stub $'pw::decision\t1d76db\tstale description'
+out="$(labels_reconcile_stamped "$stamp_root" "$tmp/config.json" "$SCHEMA" "Owner/repo" escalation 24)"
+assert_eq "a second call within the interval reconciles nothing, the same rate limit labels_ensure_stamped enforces" \
+  "" "$out"
+rm -rf "$stamp_root"
 
 # --- labels_reserved_names: the complete set nothing may read a minted label
 #     as (requirement 6c, issue #714) ---

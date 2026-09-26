@@ -965,25 +965,25 @@ and the schema must carry every one of them.
 | `enabler_after_coordinator_cycles` | `3` | How many distinct cycles that ran a Co-Ordinator to completion must follow a block before the item becomes Enabler-eligible (requirement 35a). Counted in cycles rather than hours because a fleet stood down on a usage limit or a switch has not "had a chance" at anything. |
 | `refinement_after_coordinator_cycles` | *(`enabler_after_coordinator_cycles`)* | The same threshold, applied instead of `enabler_after_coordinator_cycles` when the block's `kind` is `needs-refinement` (requirement 35a). Unset, it inherits `enabler_after_coordinator_cycles`'s value, which is what keeps the two classes aging identically until fleet behaviour justifies pulling them apart. |
 | `enabler_recheck_hours` | `72` | How long after an examination the Enabler may examine the same item again (requirement 35a). Requirement 18a catches most of the failure mode `TECH-DEBT.md` TD26072101 recorded — a GitHub issue gaining evidence after it was blocked — same-cycle, off the issue's own `updated_at`; this bound is the lever for everything that leaves no such signal: every non-issue blocked source, and a blocker that clears without a comment landing on the issue. `0` disables re-examination. |
-| `enabler_escalation_label` | `enabler-escalation` | Applied to every issue the Enabler raises, for the human's filter and for the duplicate guard of requirement 36a. It must not be `blocked`: that label is an exclusion criterion for the `issues` source (requirement 16.4) and would double-count with the assignment. Nor `obsolete`: that name is the human-only corroboration requirement 34k closes a draft pull request on, and no configured label may carry it — `scripts/doctor.sh` fails a config that does. |
+| `enabler_escalation_label` | `pw::enabler-escalation` | Applied to every issue the Enabler raises, for the human's filter and for the duplicate guard of requirement 36a. It must not be `blocked`: that label is an exclusion criterion for the `issues` source (requirement 16.4) and would double-count with the assignment. Nor `obsolete`: that name is the human-only corroboration requirement 34k closes a draft pull request on, and no configured label may carry it — `scripts/doctor.sh` fails a config that does. |
 | `escalation_autonomy` | `decide-with-veto` | The D18 escalation-autonomy ladder (agent-ops#627, agent-ops#936, PR #1389), fleet-wide default; a `repos[]` entry's own `escalation_autonomy` overrides it for that repository, the same precedence `stage_timeouts` uses (requirement 4f). At `adjudicate-first`, before the Script files the escalation issue for a refinement-disagreement item (requirement 36b: a `needs-refinement` block whose `refined_before` is set), one bounded adjudication pass runs at `enabler_model_critical`...[continued below](#extended-notes-escalation_autonomy) |
 | `escalation_adjudication_max_passes` | `3` | The cap half of `decide-tactical`'s per-reason bound (requirement 36d): `escalation_autonomy_decide_pass_available` (lib/enabler.sh) refuses a fresh pass once this many decide-tactical passes — `enabler-adjudication` events tagged `pass: "decide-tactical"` — have run for the item since its last human touch, regardless of reason key, or ever if it has had none (`escalation_autonomy_decide_pass_count`, lib/escalation-autonomy.sh). A human touch (eligibility...[continued below](#extended-notes-escalation_adjudication_max_passes) |
 | `standing_decisions_file` | `docs/STANDING-DECISIONS.md` | The path `enabler_decide_precedents` (`lib/escalation-autonomy.sh`) reads whole, cut at 32 KiB, into a decide-tactical pass's `precedents.standing_decisions` (requirement 36d): one dated line per owner answer the pipeline is to stay consistent with, the owner's own record or a delegate's on their behalf, changed only through the pull-request gate. Resolved against the directory holding `config.json` when relative (`agent-cycle.sh`); empty or `null` supplies none, and the pass...[continued below](#extended-notes-standing_decisions_file) |
 | `decision_veto_window_hours` | `24` | The veto window of requirement 36f, in hours: `act_after` on a `decision-taken` event is the event's own time plus this many hours, and `run_pending_decision_acts` (lib/decision-veto.sh) performs the act only once `act_after` has passed, no `decision-acted` or `decision-vetoed` has retired it, and a live re-read of the `pw::decision` log issue still reports it closed (an unreadable state refuses the act for that cycle — the act is irreversible and the window is not). `0`...[continued below](#extended-notes-decision_veto_window_hours) |
 | `escalation_refile_after_hours` | 24 h | The per-close re-filing rate limit (agent-ops#779, decided on #784 as behaviour (b)): a filing from `open_question_escalate` or `approver_escalate` is suppressed when a `closed` issue carrying `enabler_escalation_label` and this item's own reference exists (read live via `escalation_recent_close`, never from the log) and `now − closedAt` is less than this many hours (`escalation_refile_suppressed`, `lib/escalation-autonomy.sh`) — *unless* it is the first post-close...[continued below](#extended-notes-escalation_refile_after_hours) |
-| `needs_refinement_label` | `needs-refinement` | The label the Script projects onto an issue-type item while its refinement block is open (requirement 34e), and removes when the block clears. Also the label a human applies by hand to flag an item themselves, which the Script scans every repo's issues for and records as the same kind of block (requirement 34g) — removing it while that block is open clears it the same way. Empty disables both directions: the log is the record, so the mechanism is unaffected and the item still...[continued below](#extended-notes-needs_refinement_label) |
+| `needs_refinement_label` | `pw::needs-refinement` | The label the Script projects onto an issue-type item while its refinement block is open (requirement 34e), and removes when the block clears. Also the label a human applies by hand to flag an item themselves, which the Script scans every repo's issues for and records as the same kind of block (requirement 34g) — removing it while that block is open clears it the same way. Empty disables both directions: the log is the record, so the mechanism is unaffected and the item still...[continued below](#extended-notes-needs_refinement_label) |
 | `refinement_max_per_engagement` | `3` | How many refinement-class items one Enabler engagement takes on (requirement 35d); ordinary blocked items are uncapped and are never displaced by them. The cap exists because the backlog of items silently skipped before requirement 16a existed is unbounded, and an engagement spent entirely on old vagueness would delay the pull request nobody can see. `0` removes the class from engagements entirely — blocks are still recorded, and the items wait. |
 | `refiner_model` | `claude-sonnet-5` | The Refiner (requirement 39). Unlike the Enabler, eligibility carries no threshold, so it runs as often as there is unrefined work, and its frequency has to be weighed against the fact that what it produces is a specification rather than a ranking. Empty disables the stage. |
-| `refined_label` | `refined` | The label the Script projects onto an issue-type item once the Refiner records it `refined` (requirement 39c). One-way and never read back — unlike `needs_refinement_label`'s hand-flag path, there is no hand-applied form of this label: the shared log is the sole record of whether an item is refined, exactly as requirement 34e already establishes for the negative marker. Empty disables the projection only: the `item-refined` event is still logged and the Co-Ordinator still...[continued below](#extended-notes-refined_label) |
+| `refined_label` | `pw::refined` | The label the Script projects onto an issue-type item once the Refiner records it `refined` (requirement 39c). One-way and never read back — unlike `needs_refinement_label`'s hand-flag path, there is no hand-applied form of this label: the shared log is the sole record of whether an item is refined, exactly as requirement 34e already establishes for the negative marker. Empty disables the projection only: the `item-refined` event is still logged and the Co-Ordinator still...[continued below](#extended-notes-refined_label) |
 | `refiner_max_per_engagement` | `5` | How many unrefined items one Refiner engagement takes on (requirement 39b), chosen oldest-seen first so every node in the fleet reduces to the same set. `0` removes the class from engagements entirely — a `refinement_policy` source resolved to `required` then has its items wait, unlabelled, until the cap is raised (requirement 1c); `agent-cycle.sh` logs a `warning` event and `scripts/doctor.sh` `warn`s every cycle the condition holds, rather than refusing to start. |
 | `refinement_policy` | `{"issues": "required", "tech-debt": "required"}` | Per-source refinement policy (requirement 39a): `required`, `preferred` or `exempt`, read by the Co-Ordinator alongside `refinements` (requirement 3h) to decide whether an unrefined item may be ranked at all. A source absent from this object is `exempt`. Shipped default: `issues` and `tech-debt` both `preferred` — of every source this key can name, these two are the ones whose items can otherwise reach an Implementer carrying a specification `coordinator_model` composed...[continued below](#extended-notes-refinement_policy) |
-| `unvoid_label` | `unvoided` | The label a human applies on GitHub to ask for a void to be reopened (requirement 34f). No stage here ever applies it, so requirement 34c's "only a human may clear a void" is unchanged; what it adds is a way to say so from the issue itself. It must not be `blocked`, for the reason given against `enabler_escalation_label`. Nor `obsolete`: the label a human applied to ask for a voided pull request to be reopened would itself corroborate requirement 34k closing it. |
+| `unvoid_label` | `pw::unvoided` | The label a human applies on GitHub to ask for a void to be reopened (requirement 34f). No stage here ever applies it, so requirement 34c's "only a human may clear a void" is unchanged; what it adds is a way to say so from the issue itself. It must not be `blocked`, for the reason given against `enabler_escalation_label`. Nor `obsolete`: the label a human applied to ask for a voided pull request to be reopened would itself corroborate requirement 34k closing it. |
 | `labels_ensure_interval_hours` | `24` | How often, at most, the Script re-lists a repository's labels to create any absent ones (requirement 6a), keyed per repository via a stamp file under `state_dir` rather than a single fleet-wide clock — so one repository's interval elapsing says nothing about another's. `0` disables the stamp check, so it ensures on every cycle regardless. |
 | `label_prefix` | `pw::` | Namespace prefix `lib/labels.sh`'s `labels_reconcile` reconciles full CRUD for (create, PATCH colour/description on drift, DELETE once no longer catalogued) rather than `labels_ensure`'s own create-only treatment. `labels_reconcile_role`'s `target` role — the one catalogue call that is a repository's complete desired label set — reconciles with deletion; `review` and `escalation`, each a partial subset of `target`'s own catalogue, reconcile colour/description drift but never...[continued below](#extended-notes-label_prefix) |
 | `void_retire_after_days` | 30 d | How old a fully-actioned void must be, in days, before requirement 34n drops it from the extract. `0` disables retirement, which is also the safe fallback for an unparseable value — never retiring costs bytes, wrongly retiring costs nothing observable, so the failure mode this guards is silent growth, not a wrongly-reopened item. |
 | `reservation_release_stuck_after_days` | 14 d | How old a delete-failed-again marker's own `ts` may get, in days, before `_release_marker`'s delete-failed-again path (requirement 17g) escalates it — once, via a `reservation-release-stuck` action distinct from `warning` — instead of retrying and warning on every pass. `0` disables escalation, the safe fallback for an unparseable value, the same shape `void_retire_after_days` already uses: never escalating costs a human noticing late, wrongly escalating costs nothing...[continued below](#extended-notes-reservation_release_stuck_after_days) |
 | `prompt_overrides` | `{}` | Per-installation prompt extension/replacement (requirement 4a): an object keyed `coordinator`/`implementer`/`reviewer`/`enabler`/`refiner`/`monitor`, each holding `extend` (an array of file paths, appended in order) and/or `replace` (a file path substituted for that stage's shipped `prompts/<stage>.md`). A relative path resolves against `state_dir`. Empty or a stage absent from it changes nothing for that stage. `approver` is deliberately absent from the enumeration: the...[continued below](#extended-notes-prompt_overrides) |
-| `pr_label` | `autonomous-agent` | Applied to every PR this system raises. It must not be `obsolete`: the pipeline would then project requirement 34k's human-only corroboration onto every draft it raises, and the void guard would close live drafts on the pipeline's own say-so — `scripts/doctor.sh` fails the config. The claim loop (requirement 17a) stamps this value onto every claimed work order's own `pr_label` field unconditionally, the guaranteed source regardless of whether the Co-Ordinator's runtime input...[continued below](#extended-notes-pr_label) |
+| `pr_label` | `pw::agent` | Applied to every PR this system raises. It must not be `obsolete`: the pipeline would then project requirement 34k's human-only corroboration onto every draft it raises, and the void guard would close live drafts on the pipeline's own say-so — `scripts/doctor.sh` fails the config. The claim loop (requirement 17a) stamps this value onto every claimed work order's own `pr_label` field unconditionally, the guaranteed source regardless of whether the Co-Ordinator's runtime input...[continued below](#extended-notes-pr_label) |
 | `branch_prefix` | `agent/` | Branch name `agent/<item-slug>`, e.g. `agent/td26051201-fix-xyz`. |
 | `max_open_agent_prs` | `8` | Back-pressure: draft PRs, ready PRs still `CHANGES_REQUESTED`, and live claim-registry entries, carrying `pr_label` across all repositories — excludes ready PRs whose next action lies outside the pipeline (requirement 2.2). |
 | `candidates_max` | `3` | How many ranked candidates the Co-Ordinator returns; the Script claims down the list (requirement 17a), so alternates turn a lost race into the next-best item instead of a wasted cycle. |
@@ -8205,7 +8205,7 @@ implements.
    repository the moment either first fires there, rather than failing
    silently until some later cycle happens to select work in it
    (agent-ops#687). `review-cycle.sh` calls the plain, unstamped
-   `labels_ensure_role` (`lib/labels.sh`) for each repository's own resolved
+   `labels_reconcile_role` (`lib/labels.sh`) for each repository's own resolved
    `project_review` pr_label (its override, or
    `project_review.defaults.pr_label`, requirement 342) in each repository it
    is about to review — the same shape as the selected repository's own
@@ -8231,10 +8231,11 @@ implements.
    so a future entry that regresses past it fails there before it ever
    reaches GitHub.
 
-   Four properties are load-bearing. It **only ever creates**: an existing
-   label keeps whatever colour and description it has, because operators
-   recolour labels and a pipeline that reasserted its own idea of them every
-   cycle would undo that work on a schedule. It is **never fatal**: a
+   Four properties are load-bearing, for every catalogue entry outside
+   `label_prefix`'s own namespace (see below). It **only ever creates**: an
+   existing label keeps whatever colour and description it has, because
+   operators recolour labels and a pipeline that reasserted its own idea of
+   them every cycle would undo that work on a schedule. It is **never fatal**: a
    repository whose labels cannot be listed, or a token that may not create
    them, is reported and nothing more — the tolerances the callers already
    carry (`refinement_label_add`'s own retry below, requirement 36a's retry
@@ -8264,7 +8265,7 @@ implements.
 
    The selected repository gets one further, **unconditional** listing on top
    of the above: immediately before the Implementer stage, `agent-cycle.sh`
-   calls the plain, unstamped `labels_ensure_role` again for `$repo_slug`,
+   calls the plain, unstamped `labels_reconcile_role` again for `$repo_slug`,
    whatever the gathered-repository ensure's own stamp said. That stamp only
    guarantees `pr_label` existed at the gather loop's listing, not at this
    later point in the same cycle — and a stamp fresh enough to have skipped
@@ -8307,14 +8308,65 @@ implements.
    label set — because `review` and `escalation` are each a partial subset of
    `target`'s own catalogue, and a delete scoped to a subset would remove
    labels the other role still wants; both reconcile colour/description drift
-   under MODE `additive` without ever deleting. No call site uses either
-   function yet: `agent-cycle.sh`, `review-cycle.sh`, `lib/enabler.sh` and
-   `lib/candidate-gather.sh` still call `labels_ensure_role`/
-   `labels_ensure_stamped`, which is recorded as TD-PPagop-26082809 —
-   `pw::type:tech-debt` carries `label_prefix`'s own default namespace
-   already, but that is inert until that item wires a call site onto
-   `labels_reconcile_role`; until then it takes the create-only path every
-   other catalogue entry does.
+   under MODE `additive` without ever deleting.
+
+   That "partial subset" is a standing constraint on the catalogue, not an
+   observation about it: every `label_prefix`-named label the `escalation`
+   role wants appears in `target`'s arm of `labels_catalogue` as well, and a
+   future entry added to one must be added to the other in the same change.
+   A repository may hold both roles at once — `pager_repo` is empty by
+   default and falls back to `crash_loop_repo`, which an installation
+   routinely also configures in `repos[]` — and an escalation-only prefixed
+   entry in such a repository is created by the `escalation` reconcile and
+   deleted by the `target` one on the next cycle, each undoing the other,
+   with GitHub's own `DELETE` detaching the label from every issue already
+   carrying it on every lap. `pw::decision` and `enabler_escalation_label`
+   are in both arms already; `pw::pager` is in both for this reason, so
+   lib/pager.sh's dedup search and `monitor-cycle.sh`'s own
+   `--label pw::pager` page listing keep finding the issues they filed.
+   `test/labels.test.sh` pins the relation itself rather than a second
+   literal list.
+
+   Every call site —
+   `agent-cycle.sh`'s `ensure_labels_for`, `review-cycle.sh`'s own review-role
+   ensure, `lib/enabler.sh`'s `create_escalation_issue`/
+   `create_decision_log_issue`, and `lib/candidate-gather.sh`'s
+   gathered-repository ensure (through `labels_reconcile_stamped`,
+   `labels_ensure_stamped`'s own rate-limited shape but dispatched through
+   `labels_reconcile_role`) — calls `labels_reconcile_role` rather than
+   `labels_ensure_role` (TD-PPagop-26082809). The `labels-ensured` event
+   (2.6's own event catalogue) carries `updated`/`deleted` alongside
+   `created`/`failed` accordingly.
+
+   `labels_reconcile_role` guards two hazards TD-PPagop-26082809's own review
+   (PR #846) raised as latent for as long as nothing called it, both now live:
+   an empty *catalogue capture* — `labels_catalogue`'s own `jq` failing
+   silently after `config_defaults` succeeded, a failure its exit status
+   cannot distinguish from "genuinely nothing to catalogue" — downgrades
+   `target`'s own MODE `full` to `additive` rather than reaching
+   `labels_reconcile`'s delete pass with nothing to protect the whole
+   `label_prefix` namespace from (`target`'s own catalogue can never
+   legitimately be empty: `pr_label` alone is required and non-empty); and
+   `scripts/doctor.sh` fails a configured `label_prefix` that already matches
+   an existing, uncatalogued label in a configured repository, live against
+   that repository's own label listing — a short or generic prefix (e.g.
+   `"b"`) would otherwise silently pull an unrelated human label (e.g. `bug`)
+   into the next reconcile's delete scope.
+
+   Moving the four genuinely per-installation-configurable defaults
+   (`enabler_escalation_label`, `needs_refinement_label`, `refined_label`,
+   `unvoid_label`; `pr_label` has no product default to move) under
+   `label_prefix`'s namespace is also part of TD-PPagop-26082809 — a fresh
+   installation that does not override them gets the `pw::`-prefixed product
+   default. `blocked`, `blocked:needs-refinement`, `obsolete`,
+   `open-question` and `complexity:low|medium|high` stay unprefixed: each is
+   fixed and non-configurable for a reason a rename would defeat rather than
+   honour (this requirement's own text above) — `obsolete` most concretely,
+   since it is applied by a human from memory (requirement 34k), and a
+   renamed label the pipeline reads would silently stop matching the one a
+   human actually types. Whether these five should also move under
+   `label_prefix` despite that is an open question left for a maintainer,
+   not a gap this item closes.
 6c. **Labels a stage asks for (issue #714).** Beyond the catalogue above,
    which the Script alone decides, the Refiner and the Implementer may each
    *name* a small number of descriptive labels of their own on their final
@@ -13710,7 +13762,11 @@ implements.
     4e stopped the stage; its absence means the stage ended on its own,
     well or badly. `exit_code` is 124 for both kills and so cannot tell them
     apart, and they are different findings. A `labels-ensured` carries the `repo`, its `role`,
-    and the labels `created` and `failed` (requirement 6a) — it is written
+    and the labels `created`, `updated`, `deleted` and `failed` (requirement
+    6a) — `updated`/`deleted` are ever non-empty only for a `label_prefix`-named
+    label reconciled by `labels_reconcile_role`'s own full CRUD (`target`'s
+    MODE `full` for `deleted`; any role, colour/description drift, for
+    `updated`) — it is written
     only when there was something to report, so it appears the first cycle a
     repository is gathered and then not again until a full
     `labels_ensure_interval_hours` has elapsed, unless a label is deleted or
@@ -18777,7 +18833,7 @@ with the Reviewer's own.
     this pipeline has never gathered enough to select work in. Keying on
     this node's own cache age instead guarantees every configured repository
     eventually gets its own turn, regardless of commit activity, the same
-    way `labels_ensure_stamped`'s per-repo stamps already do.
+    way `labels_reconcile_stamped`'s per-repo stamps already do.
 
     A full tie among a node's own candidates — most often every configured
     repository uncached, on a node's first cycle, or after a fleet-wide
@@ -18828,7 +18884,7 @@ with the Reviewer's own.
     per-repository default-branch/commit-timestamp read that orders the
     gather walk (`lib/repo-order.sh`), `gather_source_state`'s own four-call
     sample (the no-op fingerprint's `state.*` fields and
-    `compute_enabler_eligible_set`'s input), `labels_ensure_stamped`'s
+    `compute_enabler_eligible_set`'s input), `labels_reconcile_stamped`'s
     already-rate-limited label listing, and the `unvoid`/hand-flagged-
     `needs_refinement` label scans all still run for every configured
     repository every cycle — restricting any of these would either reopen
@@ -19190,8 +19246,12 @@ with the Reviewer's own.
     still logs `pager-fired`, with `issue_number`/`issue_url` null, so the
     transition still reaches the dashboard and the key can still return to
     `clear` later; nothing is filed on GitHub and nothing is assigned),
-    carrying the fixed `pw::pager` label (`lib/labels.sh`'s `escalation` role
-    catalogue, fixed for the identical reason `pw::decision` is: a renamed
+    carrying the fixed `pw::pager` label (`lib/labels.sh`'s `escalation`
+    *and* `target` role catalogues — both, so that `target`'s own MODE `full`
+    reconcile does not delete it out from under this framework in a
+    repository holding both roles, which `pager_repo`'s fallback to
+    `crash_loop_repo` makes ordinary; see requirement 6a — fixed for the
+    identical reason `pw::decision` is: a renamed
     label would silently stop being found by this framework's own dedup and
     auto-close search), deduped on the item reference `pager:<key>` the way
     `create_escalation_issue` dedupes — a body-contains-item-ref search,
@@ -19202,7 +19262,7 @@ with the Reviewer's own.
 
     The label is *ensured* in `pager_repo` on the create path, and only
     there, exactly as `create_escalation_issue` does it (requirement 6a's
-    `labels_ensure_role`, the `escalation` role) and for the reason that
+    `labels_reconcile_role`, the `escalation` role) and for the reason that
     function states: an escalation repository is by construction not one any
     cycle otherwise touches, so its labels have nowhere else to be created.
     Here the label is load-bearing rather than cosmetic — both the dedup

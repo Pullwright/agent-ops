@@ -91,12 +91,14 @@ assert_not_contains() {
 # archived, this suite's STUB_REPO_JSON piped through the *real* jq — the
 # same filter doctor.sh passes to --jq — so what is under test is doctor.sh's
 # reaction to gh's shape, not a hand-rolled restatement of it), `repos/<slug>/
-# labels`, answered empty so the pre-existing label check neither fails nor
-# adds noise this suite has to filter around, and `repos/<slug>/rulesets` +
-# `repos/<slug>/rulesets/<id>` (STUB_RULESETS_JSON, STUB_RULESET_DETAIL_JSON —
-# the closing-keyword ruleset-drift check, TD-PPagop-26080802). `auth
-# status`, `api user` and `--version` are what the rest of doctor.sh's
-# GitHub/Toolchain sections call regardless of what this suite is testing.
+# labels`, answered from STUB_REPO_LABELS — newline-separated names, exactly
+# the shape `--jq '.[].name'` would print — defaulting to empty so the
+# pre-existing label check neither fails nor adds noise this suite has to
+# filter around, and `repos/<slug>/rulesets` + `repos/<slug>/rulesets/<id>`
+# (STUB_RULESETS_JSON, STUB_RULESET_DETAIL_JSON — the closing-keyword
+# ruleset-drift check, TD-PPagop-26080802). `auth status`, `api user` and
+# `--version` are what the rest of doctor.sh's GitHub/Toolchain sections call
+# regardless of what this suite is testing.
 stub_bin="$tmp/bin"
 mkdir -p "$stub_bin"
 cat > "$stub_bin/gh" <<'STUB'
@@ -150,7 +152,7 @@ case "$1" in
         printf '{"data":{"repository":{"mergeQueue":%s}}}' "${STUB_MERGE_QUEUE_JSON:-null}" \
           | jq -c "$jq_filter" ;;
       user) printf '"stub-user"\n' ;;
-      repos/*/labels) printf '' ;;
+      repos/*/labels) printf '%s' "${STUB_REPO_LABELS:-}" ;;
       repos/*/contents/*)
         # The fleet-flag read (merge_autonomy_kill_state's kill-switch fetch,
         # requirement 2.3b). STUB_FLEET_FLAG_JSON is the record the flag file
@@ -332,6 +334,30 @@ out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID 
   bash "$DOCTOR" --config "$state_repo_config" 2>&1)"
 assert_contains "state_repo unwritable is reported with its own wording" \
   "[fail] $slug is readable but not writable with this token" "$out"
+
+# --- label_prefix collision: an existing, uncatalogued label under the
+#     configured prefix would be silently deleted by target's own MODE full
+#     the next time this repository is reconciled (TD-PPagop-26082809's
+#     hazard (a); lib/labels.sh's labels_reconcile_role, requirement 6a) ---
+
+run_doctor STUB_REPO_JSON='{"permissions":{"push":true},"archived":false}' \
+  STUB_REPO_LABELS=$'pw::not-catalogued\npw::type:tech-debt'
+assert_contains "an existing pw::-prefixed label the catalogue does not name fails, naming the delete risk" \
+  "[fail] $slug already has a \"pw::not-catalogued\" label matching label_prefix (\"pw::\") that no catalogued label names" "$out"
+assert_eq "and doctor.sh exits 1" "1" "$rc"
+
+run_doctor STUB_REPO_JSON='{"permissions":{"push":true},"archived":false}' \
+  STUB_REPO_LABELS=$'pw::type:tech-debt'
+assert_not_contains "an existing pw::-prefixed label the catalogue does name is not a collision" \
+  "already has a" "$out"
+
+prefix_empty_config="$tmp/prefix-empty-config.json"
+jq '.label_prefix = ""' "$base_config" > "$prefix_empty_config"
+out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH PATH="$stub_bin:$PATH" \
+  STUB_REPO_JSON='{"permissions":{"push":true},"archived":false}' STUB_REPO_LABELS='pw::not-catalogued' \
+  bash "$DOCTOR" --config "$prefix_empty_config" 2>&1)"
+assert_not_contains "label_prefix set empty disables the collision check entirely, same as it disables reconciliation" \
+  "already has a" "$out"
 
 # --- Write access under the forge authoring App (agent-ops#1397) ----------
 # Since the Author App went live (#1396) the seam leaves GH_TOKEN empty in

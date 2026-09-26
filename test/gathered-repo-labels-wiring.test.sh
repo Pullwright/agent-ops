@@ -2,7 +2,7 @@
 #
 # test/gathered-repo-labels-wiring.test.sh — regression test for the
 # per-gathered-repository label ensure agent-cycle.sh's main gather loop runs
-# (requirement 6a, agent-ops#687): not whether labels_ensure_stamped itself is
+# (requirement 6a, agent-ops#687): not whether labels_reconcile_stamped itself is
 # correct (test/labels.test.sh covers that) but whether the loop calls it with
 # the right arguments, for every repository it gathers — not only the one the
 # Co-Ordinator later selects — and logs `labels-ensured` only when there is
@@ -56,16 +56,16 @@ labels_block="$(awk '
   on                           { print }
   on && /^  fi$/               { exit }
 ' "$CANDIDATE_GATHER")"
-if [[ "$labels_block" != *'labels_ensure_stamped'* || "$labels_block" != *'labels-ensured'* ]]; then
+if [[ "$labels_block" != *'labels_reconcile_stamped'* || "$labels_block" != *'labels-ensured'* ]]; then
   echo "FAIL - could not extract the gathered-repo label ensure from lib/candidate-gather.sh (moved or reworded?)" >&2
   exit 1
 fi
 
-# --- Stub: labels_ensure_stamped, recording every call's argv --------------
+# --- Stub: labels_reconcile_stamped, recording every call's argv --------------
 call_log="$(mktemp)"
 trap 'rm -f "$call_log"' EXIT
 # shellcheck disable=SC2317  # invoked only by the eval'd labels_block
-labels_ensure_stamped() { printf '%s\n' "$*" >> "$call_log"; printf '%s' "$stub_report"; }
+labels_reconcile_stamped() { printf '%s\n' "$*" >> "$call_log"; printf '%s' "$stub_report"; }
 # shellcheck disable=SC2317  # invoked only by the eval'd labels_block
 log_event() { printf 'EVENT %s %s\n' "$1" "$2" >> "$call_log"; }
 
@@ -82,7 +82,7 @@ run_block() {  # <slug> <state_dir> <config_file> <schema_file> <interval> <stub
 
 : > "$call_log"
 run_block "o/r" "/state" "/cfg.json" "/schema.json" 24 "created	needs-refinement"
-assert_eq "labels_ensure_stamped is called with state_dir, config, schema, the repo, role target and the interval" \
+assert_eq "labels_reconcile_stamped is called with state_dir, config, schema, the repo, role target and the interval" \
   "/state /cfg.json /schema.json o/r target 24" \
   "$(grep '^/state ' "$call_log")"
 assert_eq "a non-empty report logs labels-ensured" "1" \
@@ -107,6 +107,12 @@ assert_eq "every gathered repository gets its own call — a second, different s
   "$(grep '^/state ' "$call_log")"
 assert_eq "  ... and a failed create is logged too, not only created" "1" \
   "$(grep '^EVENT labels-ensured' "$call_log" | grep -c 'obsolete')"
+
+: > "$call_log"
+run_block "o/third-repo" "/state" "/cfg.json" "/schema.json" 24 \
+  "$(printf 'updated\tpw::refined\ndeleted\tpw::stale')"
+assert_eq "labels_reconcile_role's own updated/deleted lines reach the event too, not only created/failed" "1" \
+  "$(grep '^EVENT labels-ensured' "$call_log" | grep -c '"updated":\["pw::refined"\].*"deleted":\["pw::stale"\]')"
 
 # --- The self-heal hook agent-cycle.sh installs (requirement 6a, #687) ------
 # lib/refinement.sh calls "$REFINEMENT_LABEL_ENSURE" REPO LABEL when an add

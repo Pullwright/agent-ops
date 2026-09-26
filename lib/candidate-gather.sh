@@ -680,13 +680,15 @@ while IFS=$'\t' read -r _ slug default_branch; do
   # time either ran against a fresh repository. Rate-limited by a stamp under
   # `state_dir` (`labels_ensure_interval_hours`, default 24h) so the steady
   # state stays one listing per repository per interval and zero writes.
-  gathered_labels_report="$(labels_ensure_stamped "$state_dir" "$CONFIG_FILE" "$SCHEMA_FILE" \
+  gathered_labels_report="$(labels_reconcile_stamped "$state_dir" "$CONFIG_FILE" "$SCHEMA_FILE" \
     "$slug" target "$labels_ensure_interval_hours" 2>/dev/null || true)"
   if [[ -n "$gathered_labels_report" ]]; then
     log_event "labels-ensured" "$(jq -nc --arg repo "$slug" --arg report "$gathered_labels_report" '
       {repo: $repo, role: "target"}
       + ($report | split("\n") | map(select(length > 0) | split("\t"))
          | {created: [.[] | select(.[0] == "created") | .[1]],
+            updated: [.[] | select(.[0] == "updated") | .[1]],
+            deleted: [.[] | select(.[0] == "deleted") | .[1]],
             failed:  [.[] | select(.[0] == "failed")  | .[1]]})')"
   fi
   # Kept in a separate array, never folded into the entry above: this is the

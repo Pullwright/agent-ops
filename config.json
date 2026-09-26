@@ -55,6 +55,7 @@
   "crash_loop_repo": "Pullwright/agent-ops",
   "unvoid_label": "unvoided",
   "needs_refinement_label": "needs-refinement",
+  "refined_label": "refined",
   "refinement_max_per_engagement": 3,
   "refiner_model": "claude-sonnet-5",
   "refinement_policy": {"issues": "required", "tech-debt": "required"},

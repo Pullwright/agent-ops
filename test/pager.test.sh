@@ -327,11 +327,11 @@ STUB_REMEDY_FAIL=""
 # `pager_repo` is, by construction: it falls back to `crash_loop_repo`, which
 # no cycle otherwise touches — would be re-filed on every later fire and
 # never auto-closed. lib/enabler.sh's create_escalation_issue ensures the
-# catalogue on its own create path for exactly this reason; lib/pager.sh
-# probes for `labels_ensure_role` with `declare -F` so the rest of this file
-# still runs without lib/labels.sh sourced at all.
+# catalogue through labels_reconcile_role for exactly this reason;
+# lib/pager.sh probes for `labels_reconcile_role` with `declare -F` so the
+# rest of this file still runs without lib/labels.sh sourced at all.
 ENSURE_CALLS_FILE="$WORKDIR/ensure-calls"; : > "$ENSURE_CALLS_FILE"
-labels_ensure_role() { printf '%s\n' "$3 $4" >> "$ENSURE_CALLS_FILE"; }
+labels_reconcile_role() { printf '%s\n' "$3 $4" >> "$ENSURE_CALLS_FILE"; }
 ensure_calls() { wc -l < "$ENSURE_CALLS_FILE" | tr -d ' '; }
 
 PAGER_EVAL_FN=(); PAGER_REMEDY_CLASS=(); PAGER_REMEDY_ARG=(); PAGER_KEYS=()
@@ -345,7 +345,7 @@ pager_evaluate "$CLAIM_STUB" "o/r" "pw::pager" "enabler-escalation" \
   "the-owner" "" 0 "$union_log" "$union_log" '[]' n1 c1
 assert_eq "filing ensures the escalation label catalogue in pager_repo first" \
   "o/r escalation" "$(head -n1 "$ENSURE_CALLS_FILE")"
-assert_eq "  ... exactly once, on the create path" "1" "$(ensure_calls)"
+assert_eq "  ... exactly once, through labels_reconcile_role" "1" "$(ensure_calls)"
 
 # The page now exists on the fake GitHub, so the next fire dedups onto it —
 # and the ensure must not run again: it is a label listing per call, and the
@@ -363,7 +363,7 @@ pager_evaluate "$CLAIM_STUB" "o/r" "pw::pager" "enabler-escalation" \
   "the-owner" "" 0 "$union_log" "$union_log" '[]' n1 c1
 assert_eq "  ... and never on the dedup path, where the label already exists" \
   "0" "$(ensure_calls)"
-unset -f labels_ensure_role
+unset -f labels_reconcile_role
 
 # --- pager_repo empty: the transition is still logged, nothing is filed ------
 # This is the whole reason `pager_enabled` is a boolean rather than reusing

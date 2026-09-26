@@ -1130,13 +1130,15 @@ review_one() {
   # letting a pr_label deleted after the stamp cost a whole review before
   # `gh pr create --label` finally noticed. See lib/labels.sh; never fatal.
   local labels_report
-  labels_report="$(labels_ensure_role "$CONFIG_FILE" "$SCHEMA_FILE" \
+  labels_report="$(labels_reconcile_role "$CONFIG_FILE" "$SCHEMA_FILE" \
     "$slug" review "$pr_label" 2>/dev/null || true)"
   if [[ -n "$labels_report" ]]; then
     log_event "labels-ensured" "$(jq -nc --arg repo "$slug" --arg report "$labels_report" '
       {repo: $repo, role: "review"}
       + ($report | split("\n") | map(select(length > 0) | split("\t"))
          | {created: [.[] | select(.[0] == "created") | .[1]],
+            updated: [.[] | select(.[0] == "updated") | .[1]],
+            deleted: [.[] | select(.[0] == "deleted") | .[1]],
             failed:  [.[] | select(.[0] == "failed")  | .[1]]})')"
   fi
 
