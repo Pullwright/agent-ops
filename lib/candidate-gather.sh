@@ -149,6 +149,17 @@ if ! fleet_logs_healthy "$state_dir" "$peers_dir" "$union_log" "$(cfg '.schedule
     '{detail: $d}')"
 fi
 latest_issues_excluded_json="$(latest_issues_excluded "$union_log")"
+# This cycle's own resolved report_directory per repository (its override in
+# repository_review.repos, or repository_review.defaults' otherwise,
+# requirement 342) — or, absent from repository_review entirely, the same
+# ultimate fallback review-cycle.sh itself falls back to (issue #761).
+# Computed once, outside the per-repo loop below, the same way
+# lib/eligibility.sh's own refiner_repository_review_repos_json is: every
+# repository's resolved value is a lookup against this, not a fresh
+# derivation — so the Co-Ordinator's own live read (below) and the Refiner's
+# pre-fetch can never resolve the same repository two different ways
+# (issue #1018).
+report_directory_repos_json="$(config_repository_review_repos "$DEFAULTED_CONFIG")"
 repo_order_now="$(date +%s)"
 while IFS= read -r slug; do
   # TD-PPagop-26081407: gh api can fail (rate limit, auth, network -- test 1);
@@ -631,6 +642,24 @@ while IFS=$'\t' read -r _ slug default_branch; do
     implementation_plan_path="$(jq -r --arg s "$slug" \
       '.[] | select(.slug == $s) | .implementation_plan_path // ""' <<<"$repos_json")"
   fi
+  # The project-review source's resolved report_directory (issue #1018):
+  # prompts/coordinator.md's own live read of this source otherwise has no
+  # way to know a repository overrides
+  # `repository_review.repos[].report_directory`/`.defaults.report_directory`
+  # away from the shipped `reviews/project-review-%Y-%m-%d` layout, the same
+  # gap that already left the Refiner's own pre-fetch (lib/eligibility.sh) and
+  # the Reviewer-Agent's write path resolving a value the Co-Ordinator's live
+  # read could not see. Echoed into the runtime-input entry only when the
+  # repo actually lists the source, same as implementation_plan_path above —
+  # resolved once per repo against report_directory_repos_json (computed
+  # once, ahead of this loop), never re-derived here.
+  report_directory=""
+  if jq -e 'any(.[]; . == "project-review")' <<<"$sources" >/dev/null 2>&1; then
+    report_directory="$(jq -r --arg s "$slug" \
+      'map(select(.slug == $s)) | .[0].report_directory // ""' \
+      <<<"$report_directory_repos_json" 2>/dev/null || true)"
+    [[ -n "$report_directory" ]] || report_directory="$REPORT_DIRECTORY_DEFAULT"
+  fi
   # findings/review_feedback/abandoned_drafts/merge_conflicts/dequeued/
   # landing_refusals/issues/tech_debt are the pre-fetched bands themselves —
   # issue threads (requirement 3d/#118) and the open tech-debt band
@@ -647,11 +676,12 @@ while IFS=$'\t' read -r _ slug default_branch; do
   # 100-item page (scripts/gather-issues.sh) and each entry is a bare number
   # and a short reason, tens of bytes at most — nowhere near MAX_ARG_STRLEN.
   entry="$(jq -nc --arg slug "$slug" --arg db "$default_branch" --argjson sources "$sources" \
-    --arg ipp "$implementation_plan_path" --argjson ie "$issues_excluded" \
+    --arg ipp "$implementation_plan_path" --arg rd "$report_directory" --argjson ie "$issues_excluded" \
     'input as $findings | input as $rf | input as $ad | input as $mc | input as $dq | input as $lr
      | input as $issues | input as $td
      | {slug: $slug, default_branch: $db, sources: $sources, findings: $findings, review_feedback: $rf, abandoned_drafts: $ad, merge_conflicts: $mc, dequeued: $dq, landing_refusals: $lr, human_visibility: [], issues: $issues, issues_excluded: $ie, tech_debt: $td}
-     + (if $ipp == "" then {} else {implementation_plan_path: $ipp} end)' <<<"$entry_docs")"
+     + (if $ipp == "" then {} else {implementation_plan_path: $ipp} end)
+     + (if $rd == "" then {} else {report_directory: $rd} end)' <<<"$entry_docs")"
   # Requirement 48 (agent-ops#1086): whether the eight bands above came from
   # this cycle's own read of $slug or from this node's cache of an earlier
   # cycle's — lib/coordinator-input.sh documents what a reader (the

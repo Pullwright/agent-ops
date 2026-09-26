@@ -838,10 +838,13 @@ output (see `docs/REVIEW-PIPELINE-SPEC.md`), which lands in each repo via a
 merged PR:
 
 - **`project-review`** — the prioritised **recommendations** produced by the
-  most recent project review, which live on the default branch under
-  `reviews/project-review-YYYY-MM-DD/` as `03-recommendations.md` (the
-  recommendation table and per-`R-NN` detail) paired with
-  `04-improvement-prompts.md` (one ready-to-run agent prompt per
+  most recent project review, which live on the default branch under that
+  repository's own resolved report directory (`report_directory` in its
+  runtime-input entry, requirement 3k — `reviews/project-review-YYYY-MM-DD/`
+  where the repository configures neither `repository_review.repos[]`'s nor
+  `repository_review.defaults`' own `report_directory`) as
+  `03-recommendations.md` (the recommendation table and per-`R-NN` detail)
+  paired with `04-improvement-prompts.md` (one ready-to-run agent prompt per
   recommendation). The Co-Ordinator reads the **latest** review folder's two
   files directly (`gh api .../contents/...`, no pre-fetch needed) and treats
   each recommendation as a candidate. A recommendation's **stable ref** is
@@ -6170,18 +6173,36 @@ implements.
      page; each issue's own comment thread takes one 100-comment window, the
      newest 100 where a thread runs longer than that. Both bounds are stated
      in that function's own header rather than silently applied.
-3k. **Implementation-plan path passthrough.** The `implementation-plan` source
-   names no path of its own: for each configured repo whose `sources` include
-   it, attach that repo's `implementation_plan_path` (from its `config.json`
-   entry) to its runtime-input entry, so the Co-Ordinator knows where to read
-   that repo's plan document without any path fixed in the prompt or in code —
-   a repo with a differently named or located plan needs only its own
+3k. **Implementation-plan path and report-directory passthrough.** The
+   `implementation-plan` source names no path of its own: for each configured
+   repo whose `sources` include it, attach that repo's
+   `implementation_plan_path` (from its `config.json` entry) to its
+   runtime-input entry, so the Co-Ordinator knows where to read that repo's
+   plan document without any path fixed in the prompt or in code — a repo
+   with a differently named or located plan needs only its own
    `implementation_plan_path`, never a prompt change. A repo that lists the
    source without configuring the path is a startup misconfiguration: the
    Script exits with an error before any stage runs, the same guard as
    `enabler_assignee` (Configuration table). There is no gatherer script and no
    pre-fetch, as for `project-review`: the Co-Ordinator reads the file itself
    (`gh api repos/<slug>/contents/<path>`).
+
+   The `project-review` source's own live read has the identical gap
+   (issue #1018): for each configured repo whose `sources` include it, attach
+   that repo's resolved `report_directory` to its runtime-input entry —
+   `config_repository_review_repos`'s own resolution of
+   `repository_review.repos[].report_directory`/`repository_review.defaults`'s,
+   falling back to the shipped `reviews/project-review-%Y-%m-%d` where the
+   repo configures neither, the identical value the Refiner's own pre-fetch
+   (requirement 3y) and the Reviewer-Agent's write path
+   (`docs/REVIEW-PIPELINE-SPEC.md` R4a) already resolve to, read
+   from the same helper rather than re-derived — so a repo overriding
+   `report_directory` needs only its own config, never a prompt change.
+   Unlike `implementation_plan_path`, a repo listing `project-review` with no
+   `report_directory` configured is not a misconfiguration: the shipped
+   default is a valid resolution in its own right, so the field is simply
+   present with that value rather than the engagement being refused at
+   startup.
 3h. **Refinement carry-forward.** The Co-Ordinator's runtime input carries a
    `refinements` map — repo → item → the latest `item-refined` payload
    (requirement 33), for items that are not void — built from the fleet's log
@@ -6908,10 +6929,14 @@ implements.
 
 3y. **Refiner-only pre-fetch: `project-review` and `implementation-plan`.**
    These two sources have no array in `ordered_repos_json` and gain none: the
-   Co-Ordinator reads the latest `reviews/project-review-YYYY-MM-DD/` folder
-   and the repo's plan document live while it evaluates each candidate
-   (requirement 15, `prompts/coordinator.md`), and that live read is the
-   authority for selection. What requirement 39a's candidate set needs is a
+   Co-Ordinator reads the repository's latest review folder — under its own
+   resolved `report_directory` (requirement 3k;
+   `reviews/project-review-YYYY-MM-DD/` where the repository configures
+   neither `repository_review.repos[]`'s nor `repository_review.defaults`'
+   own `report_directory`) — and the repo's plan document live while it
+   evaluates each candidate (requirement 15, `prompts/coordinator.md`), and
+   that live read is the authority for selection. What requirement 39a's
+   candidate set needs is a
    *different* thing — a structured array it can name an item out of — so the
    Script builds one for the Refiner alone: `refiner_repos_json`, a copy of
    `ordered_repos_json` in which a repo entry may additionally carry
@@ -7807,7 +7832,12 @@ implements.
    reason, when it empties them on a restricted cycle. Every other pre-fetched
    band is left alone, because `prompts/coordinator.md` requires each of their
    bodies pasted *verbatim* into the work order and together they were 34 KB
-   of the 354 KB that overflowed.
+   of the 354 KB that overflowed. The small, per-repo scalar fields a repo
+   entry carries alongside its bands — `implementation_plan_path`,
+   `report_directory` (requirement 3k) — are not bands at all and are never
+   candidates for shedding: each is a short string, present only for a repo
+   whose `sources` configures the matching source, and negligible next to any
+   band this ladder trims.
 
    **Prose is shed; candidacy is not.** The fit walks a ladder of ten
    rungs — `{newest comments kept, bytes per comment, bytes per body}`,
@@ -10350,7 +10380,10 @@ implements.
     security-severity code-scanning alerts); the `code-quality` source's
     candidates are the `findings` with `source: "code-quality"`. The
     `project-review` source's candidates are the recommendations (`R-NN`) in
-    the **most recent** `reviews/project-review-YYYY-MM-DD/` folder on the
+    the **most recent** folder under that repository's own resolved
+    `report_directory` (requirement 3k; `reviews/project-review-YYYY-MM-DD/`
+    where the repository configures neither `repository_review.repos[]`'s nor
+    `repository_review.defaults`' own `report_directory`) on the
     default branch: read that folder's `03-recommendations.md` and
     `04-improvement-prompts.md` via `gh api .../contents/...` (no pre-fetch —
     these are ordinary tracked files, like `TECH-DEBT.md`). A
