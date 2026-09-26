@@ -23431,7 +23431,13 @@ What exists, and the requirements each part answers to:
     close guarded anyway, and a second comment on every workflow re-run.
     Always exits 0 except on malformed arguments (usage, exit 2, before any
     `gh` call): a comment-post failure is reported as a `warning`, never a
-    failure of the run.
+    failure of the run. The comments fetch's own exit status is captured
+    separately from the `jq` normalisation that follows it (issue #1240): a
+    failed fetch is reported as a `warning` ("cannot verify: comments fetch
+    failed") and posts nothing, rather than being read as "no comments at
+    all" — which would risk both a spurious comment on a compliantly-closed
+    issue and, on a workflow re-run during the same outage, a second comment
+    for the same close.
     Regression-tested in `test/tech-debt-close-guard.test.sh` (unlabelled
     issue skipped with no `gh` call at all; a linked pull request or commit,
     or an existing comment, each independently sufficient for `completed`; a
@@ -23444,8 +23450,9 @@ What exists, and the requirements each part answers to:
     past comment excluded
     from "a comment already present"; the same close's marker never posted
     twice while a different `closed_at` is judged fresh; a failed post
-    reported as a warning; malformed arguments exiting 2); must pass
-    `shellcheck`.
+    reported as a warning; a failed comments fetch reported as a warning with
+    no comment posted and no graphql call made; malformed arguments exiting
+    2); must pass `shellcheck`.
 24. `scripts/render-toc.sh` and `.github/workflows/toc.yml` implementing
    requirement 52's generated-table-of-contents property: before rendering
    either file, verifies it contains exactly one `<!-- toc:start -->` /
