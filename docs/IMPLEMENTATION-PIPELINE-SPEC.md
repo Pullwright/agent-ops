@@ -6187,9 +6187,9 @@ implements.
    pre-fetch, as for `project-review`: the Co-Ordinator reads the file itself
    (`gh api repos/<slug>/contents/<path>`).
 
-   The `project-review` source's own live read has the identical gap
-   (issue #1018): for each configured repo whose `sources` include it, attach
-   that repo's resolved `report_directory` to its runtime-input entry —
+   The `project-review` source's own live read names no directory of its own
+   either (issue #1018): for each configured repo whose `sources` include it,
+   attach that repo's resolved `report_directory` to its runtime-input entry —
    `config_repository_review_repos`'s own resolution of
    `repository_review.repos[].report_directory`/`repository_review.defaults`'s,
    falling back to the shipped `reviews/project-review-%Y-%m-%d` where the
@@ -15167,17 +15167,19 @@ implements.
         exactly the population that never gets voided. A recommendation
         lives in a point-in-time review document, and
         `scripts/gather-project-review.sh` (and the Co-Ordinator's own live
-        read) only ever reads the repository's *latest*
-        `reviews/project-review-YYYY-MM-DD/` folder, so a ref minted by a
+        read) only ever reads the *latest* review folder under the
+        repository's own resolved `report_directory` (requirement 3k), so a
+        ref minted by a
         superseded folder is never offered again by anything and retiring
         its void costs nothing — the same reasoning `void_config_actioned`'s
         `source-dropped` rule already rests on. `scripts/gather-project-
-        review.sh --current-date` reads only the `reviews/` listing (never
-        the recommendation/prompt files) and reports the current folder's own
+        review.sh --current-date` reads only that directory's own listing
+        (never the recommendation/prompt files) and reports the current folder's own
         date, one call per repo already walked for review-shaped void
         residue: `{"ok": true, "date": "2026-08-10"}` when a folder resolves,
         `{"ok": true, "date": ""}` when the listing succeeds and offers none
-        at all (including a clean 404 on `reviews/` itself — a definite
+        at all (including a clean 404 on that directory's own static prefix —
+        a definite
         fact), or `{"ok": false}` for any other failure, which decides
         nothing, the same "unknown is not gone" rule every liveness shape
         above observes. A ref's own embedded date (the `YYYY-MM-DD` between

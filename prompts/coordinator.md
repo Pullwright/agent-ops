@@ -583,8 +583,8 @@ source priority, with no edit to this file:
   `repository_review.defaults.report_directory`). Read that folder's
   `03-recommendations.md` (the `R-NN` table and per-recommendation detail) and
   `04-improvement-prompts.md` (a ready-to-run prompt per recommendation) with
-  `gh api repos/<slug>/contents/<report_directory's own leading, literal
-  segment>/…`. Each recommendation is a candidate; its stable ref is
+  `gh api repos/<slug>/contents/<that folder's own path>/…`. Each
+  recommendation is a candidate; its stable ref is
   `review-<review-date>-R-NN`. See "Project-review recommendations" below for
   how to find the latest folder, pick a recommendation and dedup against
   tech-debt.
@@ -1127,15 +1127,27 @@ well it is done.
 `reviews/project-review-%Y-%m-%d` (applying wherever the repo configures
 neither `repository_review.repos[].report_directory` nor
 `repository_review.defaults.report_directory`), or a repository's own
-override. List its literal, `%`-free leading path segment — `reviews` for the
-default — via `gh api repos/<slug>/contents/<that segment>`; that returns one
-folder per past review. Read only the **most recent** one: match each
-returned folder's name against `report_directory`'s own dynamic shape (each
-`%Y`/`%m`/`%d`/… rendered as the digit count it specifies) and take the
-folder whose resolved date is latest. For the shipped default this is exactly
-`reviews/project-review-YYYY-MM-DD/`, found by listing `reviews/` and taking
-the latest date — unchanged from before this field existed. A recommendation
-`R-NN` from that folder is a candidate unless:
+override. Find the review folders it has already produced the same way
+`lib/report-directory.sh` does, because the dynamic part is not always the
+final path segment:
+
+1. Split `report_directory` on `/` and fold every **leading** segment that
+   carries no `%` into one static prefix — `reviews` for the shipped default,
+   `docs/reviews` for `docs/reviews/project-review-%Y-%m-%d`, and nothing at
+   all for a format whose very first segment is dynamic (`%Y/repo-review`).
+2. List that prefix with `gh api repos/<slug>/contents/<prefix>` — the repo
+   root, `gh api repos/<slug>/contents`, where the prefix is empty — and keep
+   each returned entry of type `dir` whose name matches the next segment's own
+   dynamic shape (each `%Y`/`%m`/`%d`/… standing for exactly the digit count
+   it specifies, every other character literal).
+3. Where a further dynamic segment follows that one, list each kept directory
+   in turn and repeat step 2 for it, so what you end with is a set of whole
+   paths rather than bare names.
+
+Read only the **most recent** of those paths: the one whose resolved date is
+latest. For the shipped default the three steps above are exactly "list
+`reviews/` and take the latest `reviews/project-review-YYYY-MM-DD/`". A
+recommendation `R-NN` from that folder is a candidate unless:
 
 - the review already filed it as a `pw::type:tech-debt`-labelled issue (or, in
   a repository whose own register still carries one, mirrored it there) — that
