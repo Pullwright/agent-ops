@@ -1140,9 +1140,11 @@ final path segment:
    each returned entry of type `dir` whose name matches the next segment's own
    dynamic shape (each `%Y`/`%m`/`%d`/… standing for exactly the digit count
    it specifies, every other character literal).
-3. Where a further dynamic segment follows that one, list each kept directory
-   in turn and repeat step 2 for it, so what you end with is a set of whole
-   paths rather than bare names.
+3. Where a further segment follows that one — dynamic or static, matched
+   the same way step 2 already matches one (a static segment's characters are
+   all literal, with no `%` to stand for anything) — list each kept
+   directory in turn and repeat step 2 for it, so what you end with is a set
+   of whole paths rather than bare names.
 
 Read only the **most recent** of those paths: the one whose resolved date is
 latest. For the shipped default the three steps above are exactly "list
