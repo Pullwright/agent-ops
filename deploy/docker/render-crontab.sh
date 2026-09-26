@@ -108,6 +108,11 @@ rotation_minute="$(cfg '.schedule.log_rotation_minute')"
 logdir="$(cfg '.state_dir')"
 logdir="${logdir/#\~/$HOME}"
 
+if [[ -z "$logdir" || "$logdir" == "null" ]]; then
+  say "ERROR: $config's state_dir is missing or not a string — the baked schedule stays"
+  exit 1
+fi
+
 if ! jq -e 'type == "array" and all(.[]; type == "number")' <<<"$excluded_minutes" >/dev/null 2>&1; then
   say "ERROR: $config's schedule.excluded_minutes is not an array of numbers — the baked schedule stays"
   exit 1
