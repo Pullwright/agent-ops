@@ -342,7 +342,15 @@ idle_view() {
   # A `CheckRun` still running reports `status`, not `conclusion` — GitHub
   # leaves `conclusion` null until the run completes.
   [[ "$green" == "in_progress" ]] && rollup='[{"conclusion":"SUCCESS"},{"status":"IN_PROGRESS","conclusion":null}]'
-  local extra=() comments='[]'
+  # The nudge/dequeue marker comments used to ride `idle-view.json`'s own
+  # embedded `comments` field (`pr view`'s `--json`, no `--jq`) — but the real
+  # script now finds them via the paginated REST `.../comments` read instead
+  # (agent-ops#1858), the same endpoint `_sweep_round_answered` above already
+  # reads from `$tmp_dir/issue-comments.json`. So `extra` is appended there,
+  # never into `idle-view.json`, which carries no `comments` field at all any
+  # more — matching the real `pr view --json` call this fixture stands in for,
+  # which no longer asks for one either.
+  local extra=()
   case "$nudged" in
     yes)
       extra+=("$(jq -cn --arg m "$(pipeline_comment_marker c1 script)" \
@@ -364,13 +372,18 @@ idle_view() {
     extra+=("$(jq -cn --arg at "$dq_at" \
       '{body: ("already notified\n\n<!-- agent-ops:merge-queue-dequeued:" + $at + " -->")}')")
   fi
-  (( ${#extra[@]} )) && comments="$(printf '%s\n' "${extra[@]}" | jq -s -c '.')"
+  if (( ${#extra[@]} )); then
+    local existing added
+    existing="$(cat "$tmp_dir/issue-comments.json" 2>/dev/null || printf '[]')"
+    added="$(printf '%s\n' "${extra[@]}" | jq -s -c '.')"
+    jq -c --argjson add "$added" '. + $add' <<<"$existing" > "$tmp_dir/issue-comments.json"
+  fi
   jq -n --arg d "$decision" --arg m "$mergeable" --argjson rollup "$rollup" \
-    --arg at "$at" --argjson comments "$comments" --arg ms "$merge_state" \
+    --arg at "$at" --arg ms "$merge_state" \
     '{reviewDecision: $d, mergeable: $m, mergeStateStatus: $ms,
       statusCheckRollup: $rollup,
-      reviews: (if $at == "" then [] else [{state: "APPROVED", submittedAt: $at}] end),
-      comments: $comments}' > "$tmp_dir/idle-view.json"
+      reviews: (if $at == "" then [] else [{state: "APPROVED", submittedAt: $at}] end)}' \
+    > "$tmp_dir/idle-view.json"
 }
 
 # set_merge_queue QUEUED [DEQUEUED_AT] [REASON]
@@ -617,6 +630,20 @@ out="$(run_sweep)"
 assert_eq "a PR nudged once already is not nudged again" "" "$out"
 assert_eq "  ... and posts no comment" "0" "$(comment_count)"
 
+# --- The idempotency check survives a paginated comments read (agent-ops#1858) --
+# The nudge marker search used to ride `idle-view.json`'s own unpaginated
+# `comments` field; it now reads `.../comments --paginate` instead, so a
+# marker posted late in a thread spanning multiple pages must still be
+# found — not just one that happens to fit on the first page.
+reset_stub
+printf '2' > "$tmp_dir/pages"
+set_reviews "$(review Warwick-Allen APPROVED)"
+printf 'Warwick-Allen\n' > "$tmp_dir/pending"
+idle_view APPROVED MERGEABLE yes "2020-01-01T00:00:00Z" yes
+out="$(run_sweep)"
+assert_eq "a PR already nudged is not nudged again, even reading a paginated thread" "" "$out"
+assert_eq "  ... and posts no comment" "0" "$(comment_count)"
+
 # A genuine nudge-shaped comment authored under a different pipeline actor
 # (e.g. the Reviewer, not the Script) still counts — recognition keys off
 # `PIPELINE_COMMENT_MARKER_PREFIX` alone, never a specific actor= value
@@ -788,6 +815,21 @@ idle_view APPROVED MERGEABLE yes "" no "$dq_at"
 set_merge_queue false "$dq_at" "failed_checks"
 out="$(run_sweep)"
 assert_eq "an already-notified dequeue is not notified again" "" "$out"
+assert_eq "  ... no comment posted" "0" "$(comment_count)"
+
+# The same idempotency check, but reading a thread spanning multiple pages —
+# the dequeue marker search now reads `.../comments --paginate` instead of
+# `idle-view.json`'s own unpaginated `comments` field (agent-ops#1858), so a
+# marker on a later page must still be found.
+reset_stub
+printf '2' > "$tmp_dir/pages"
+set_reviews "$(review Warwick-Allen APPROVED)"
+printf 'Warwick-Allen\n' > "$tmp_dir/pending"
+dq_at="$(recent_dequeue_at 1)"
+idle_view APPROVED MERGEABLE yes "" no "$dq_at"
+set_merge_queue false "$dq_at" "failed_checks"
+out="$(run_sweep)"
+assert_eq "an already-notified dequeue is not notified again, even reading a paginated thread" "" "$out"
 assert_eq "  ... no comment posted" "0" "$(comment_count)"
 
 # A second, later dequeue (a fresh timestamp) gets its own notice even though
