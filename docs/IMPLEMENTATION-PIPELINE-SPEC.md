@@ -8218,11 +8218,13 @@ implements.
    `enabler_escalation_label` in the repository an escalation is filed in,
    which is often one no cycle otherwise touches. A label whose configured name is empty is switched off
    and is not created. And no configurable label may carry a reserved *name*:
-   `scripts/doctor.sh` fails a config that sets any label key to `obsolete`,
-   or an issue-side key to `blocked`, because a stage projecting a
-   configured label under a reserved name would apply the human-only control
-   itself — requirement 34k's corroboration, in `pr_label`'s case, onto
-   every draft the pipeline raises. Every description `labels_catalogue`
+   `scripts/doctor.sh` fails a config that sets any label key to `obsolete`
+   or `pw::type:tech-debt`, or an issue-side key to `blocked`, because a
+   stage projecting a configured label under a reserved name would apply the
+   human-only control itself — requirement 34k's corroboration, in
+   `pr_label`'s case, onto every draft the pipeline raises — or, for
+   `pw::type:tech-debt`, D24's own tech-debt trust anchor, onto whichever
+   configured key carries it. Every description `labels_catalogue`
    emits, for every role, is at most 100 characters — GitHub's own limit on a
    label's `description` field; a longer value is refused outright by the
    create call, so a catalogue entry past the limit could never be created in
