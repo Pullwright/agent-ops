@@ -99,6 +99,20 @@ wake_poll_minutes="$(cfg '.schedule.wake_poll_minutes')"
 resource_sample_minutes="$(cfg '.schedule.resource_sample_minutes')"
 rotation_minute="$(cfg '.schedule.log_rotation_minute')"
 
+# LOGDIR is config.json's own `state_dir`, not the image's baked default: an
+# installation whose config.json names a different path gets every log
+# redirection in the rendered crontab pointed at it too, with no separate key
+# to keep in step. `~` is expanded against `$HOME` by hand, the same
+# substitution every other script that reads this key applies, since `jq -r`
+# does not expand paths.
+logdir="$(cfg '.state_dir')"
+logdir="${logdir/#\~/$HOME}"
+
+if [[ -z "$logdir" || "$logdir" == "null" ]]; then
+  say "ERROR: $config's state_dir is missing or not a string — the baked schedule stays"
+  exit 1
+fi
+
 if ! jq -e 'type == "array" and all(.[]; type == "number")' <<<"$excluded_minutes" >/dev/null 2>&1; then
   say "ERROR: $config's schedule.excluded_minutes is not an array of numbers — the baked schedule stays"
   exit 1
@@ -191,6 +205,7 @@ fi
 
 tmp="$(mktemp "$out.XXXXXX" 2>/dev/null)" || { say "ERROR: cannot write beside $out — the baked schedule stays"; exit 1; }
 if ! sed \
+      -e "s#@LOGDIR@#$logdir#g" \
       -e "s#@CYCLE_MINUTE@#$cycle_minutes#g" \
       -e "s#@CYCLE_HOURS@#$cycle_hours#g" \
       -e "s#@REVIEW_MINUTE@#$review_minute#g" \

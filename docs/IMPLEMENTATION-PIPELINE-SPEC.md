@@ -314,8 +314,11 @@ a node updates by pulling a new image rather than by pulling a branch.
   `revert_rate_offset_minutes`, `tech_debt_archive_hour`,
   `tech_debt_archive_offset_minutes`; see Configuration), baked at 5, 5, 7,
   19, 44, 2, 51, 4 and 37 in the checked-in
-  config. The same redirections into `state_dir` apply, so the dashboard's log-derived
-  views work identically. It deliberately omits the laptop's personal
+  config. Every line's log redirection goes through `LOGDIR`, which
+  `render-crontab.sh` (below) sets from `config.json`'s own `state_dir` at
+  every container start rather than baking it in, so the dashboard's
+  log-derived views keep working against whichever path the installation
+  actually configured. It deliberately omits the laptop's personal
   `update-main-branches.sh` entry: that refreshes interactive checkouts, and
   a node has none.
 - **The cycle and review minutes are per-node** (design decision D5). At
@@ -376,7 +379,13 @@ a node updates by pulling a new image rather than by pulling a branch.
 - The image creates the volume mount points (`~/.claude`, `state_dir`,
   `workspace_root`) owned by `agent`, because a container runtime seeds a new
   named volume from the image's mount point — ownership included — and creates
-  it as root when the image has nothing there.
+  it as root when the image has nothing there. `state_dir`/`workspace_root`
+  are read out of the image's own copy of `config.json` at build time, not
+  hardcoded, so an installation whose `config.json` names different paths —
+  including one outside `/home/agent` — gets them pre-created and owned
+  correctly by its own ordinary build; the build fails outright if either key
+  is missing or not a string, rather than creating a mount point under a
+  literal `null` path.
 - The image builds for both `linux/amd64` and `linux/arm64`: `supercronic` is
   the one binary not coming from a signed, multi-architecture apt repository,
   so the Dockerfile selects its release asset and pinned checksum from

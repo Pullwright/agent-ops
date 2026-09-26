@@ -123,10 +123,15 @@
 # that could not read one counter this time is simply retried next tick,
 # not a crashed script.
 #
+# @LOGDIR@ is config.json's own `state_dir`, expanded (`~` against `$HOME`)
+# exactly as every other script that reads that key expands it: this file's
+# every log redirection resolves against whatever the operator actually
+# configured, never the baked default the image happens to ship.
+#
 # Everything not a placeholder is documented in the baked crontab, which is
 # also the fallback whenever this template cannot be rendered.
 
-LOGDIR=/home/agent/.local/state/poetic-agents
+LOGDIR=@LOGDIR@
 
 * * * * *  touch $LOGDIR/.node-alive 2>/dev/null || true
 */@HEARTBEAT_MINUTES@ * * * *  /app/scripts/publish-dashboard-launcher.sh
