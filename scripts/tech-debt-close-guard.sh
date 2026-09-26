@@ -62,6 +62,7 @@
 #   {"issue": N, "action": "commented", "reason": "<what was missing>"}
 #   {"issue": N, "action": "skipped", "reason": "guard already commented on this close"}
 #   {"issue": N, "action": "warning", "reason": "<what was missing> (comment post failed)"}
+#   {"issue": N, "action": "warning", "reason": "cannot verify: comments fetch failed"}
 # Exit 2 (usage) on missing/malformed arguments only.
 
 set -uo pipefail
@@ -109,8 +110,21 @@ owner="${slug%%/*}" repo_name="${slug#*/}"
 # guarantees at once: a close carrying a perfectly good resolution comment
 # would draw a guard comment anyway, and the idempotency check below, reading
 # the same empty list, would post a second one on every workflow re-run.
-comments_json="$("$GH" api "repos/$slug/issues/$number/comments" --paginate --slurp \
-  2>/dev/null | jq -c 'add // []' 2>/dev/null)"
+#
+# The fetch's own exit status is captured before piping into `jq`, and never
+# from the pipeline as a whole (issue #1240): a transient `gh`/API failure
+# must not be read as "no comments" either, which is exactly what a bare
+# `[]` fallback on empty stdout cannot tell apart from a genuinely empty
+# list. On a failed fetch this exits with `warning` and posts nothing — "cannot
+# verify" is not "unguarded" — rather than risking a spurious advisory comment,
+# or, on a re-run during the same outage, a second one for the same close.
+comments_raw="$("$GH" api "repos/$slug/issues/$number/comments" --paginate --slurp 2>/dev/null)"
+comments_fetch_status=$?
+if (( comments_fetch_status != 0 )); then
+  emit "warning" "cannot verify: comments fetch failed"
+  exit 0
+fi
+comments_json="$(jq -c 'add // []' <<<"$comments_raw" 2>/dev/null)"
 [[ -n "$comments_json" ]] || comments_json='[]'
 real_comment_count="$(jq --arg m "$MARKER_PREFIX" \
   '[.[] | select(((.body // "") | startswith($m)) | not)] | length' \

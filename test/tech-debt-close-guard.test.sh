@@ -28,6 +28,8 @@
 #   - **A guard comment already posted for this exact close (same
 #     `closed_at` marker) is not posted twice**; a *different* `closed_at`
 #     (a later close of the same issue) is judged fresh.
+#   - **A failed comments fetch draws a `warning`, not a comment** — a
+#     transient `gh`/API failure is never read as "no comments" (issue #1240).
 #   - **Malformed arguments exit 2 without calling `gh`.**
 #
 # `gh` is stubbed through GH, matching the technique
@@ -65,6 +67,7 @@ assert_eq() {
 # $tmp_dir/comments.json    JSON array of {"body": "..."} the GET call returns
 # $tmp_dir/graphql-answer   {"pr": N, "commit": bool} — the graphql call's answer
 # $tmp_dir/post-fails       present (any content) => the POST call fails
+# $tmp_dir/comments-fetch-fails  present (any content) => the comments GET fails
 # $tmp_dir/posted-bodies    every posted comment body, --- separated
 # $tmp_dir/calls            every invocation's argv, one per line
 cat > "$tmp_dir/gh" <<'STUB'
@@ -106,6 +109,7 @@ if [[ "$1" == "api" && "$2" == "graphql" ]]; then
 fi
 
 if [[ "$1" == "api" && "$2" == *"/comments" ]]; then
+  [[ -f "$d/comments-fetch-fails" ]] && exit 1
   # Answer in `--slurp`'s own shape — an array *of pages*, each itself the
   # array of that page's comments — not the flat array a caller ultimately
   # wants. A stub that flattened on the caller's behalf would hide whichever
@@ -120,7 +124,7 @@ chmod +x "$tmp_dir/gh"
 
 reset_stub() {
   : > "$tmp_dir/calls"
-  rm -f "$tmp_dir/post-fails" "$tmp_dir/posted-bodies"
+  rm -f "$tmp_dir/post-fails" "$tmp_dir/posted-bodies" "$tmp_dir/comments-fetch-fails"
   echo '[]' > "$tmp_dir/comments.json"
   echo '{"pr":0,"commit":false}' > "$tmp_dir/graphql-answer"
 }
@@ -253,6 +257,23 @@ reset_stub
 out="$(run "${DEFAULT_ARGS[@]}")"; rc=$?
 assert_eq "post fails: exit 0" "0" "$rc"
 assert_eq "  ... action warning" "warning" "$(jq -r '.action' <<<"$out")"
+
+# --- A failed comments fetch draws a warning, never a comment ------------------
+# Even with a linked closing PR on offer, the fetch failure must short-circuit
+# before that check ever runs — the guard cannot yet tell whether a comment
+# was already there, so it must not risk either a spurious comment or, on a
+# re-run during the same outage, a duplicate one.
+reset_stub
+: > "$tmp_dir/comments-fetch-fails"
+echo '{"pr":1,"commit":false}' > "$tmp_dir/graphql-answer"
+out="$(run "${DEFAULT_ARGS[@]}")"; rc=$?
+assert_eq "comments fetch fails: exit 0" "0" "$rc"
+assert_eq "  ... action warning" "warning" "$(jq -r '.action' <<<"$out")"
+assert_eq "  ... reason names the fetch failure" "cannot verify: comments fetch failed" \
+  "$(jq -r '.reason' <<<"$out")"
+assert_eq "  ... no comment posted" "" "$(cat "$tmp_dir/posted-bodies" 2>/dev/null || true)"
+assert_eq "  ... never asked graphql for a closing PR" "" \
+  "$(grep -F 'api graphql' "$tmp_dir/calls" || true)"
 
 # --- Malformed arguments: usage error, gh never called --------------------------
 reset_stub
