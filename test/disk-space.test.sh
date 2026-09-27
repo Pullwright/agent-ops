@@ -134,6 +134,82 @@ assert_eq "describe states the floor in MiB (2147483648 bytes = 2048 MiB)" \
 assert_eq "describe's trailing clause serves both state_dir and workspace_root" \
   "yes" "$(if [[ "$desc" == *"a cycle writes its clone, its records and its state mirror before it can finish" ]]; then echo yes; else echo no; fi)"
 
+# --- disk_space_describe naming which bound governed (agent-ops#904) --------
+
+desc_derived="$(disk_space_describe /data/workspace 1024000 4294967296 derived owner/big-repo 2147483648 2)"
+assert_eq "describe (derived): names the derived MiB figure" \
+  "yes" "$(if [[ "$desc_derived" == *"4096 MiB ("* ]]; then echo yes; else echo no; fi)"
+assert_eq "describe (derived): names the factor and repository" \
+  "yes" "$(if [[ "$desc_derived" == *"2x owner/big-repo's"* ]]; then echo yes; else echo no; fi)"
+assert_eq "describe (derived): names the footprint's own MiB figure (2147483648 bytes = 2048 MiB)" \
+  "yes" "$(if [[ "$desc_derived" == *"2048 MiB recorded clone"* ]]; then echo yes; else echo no; fi)"
+assert_eq "describe (derived): trailing clause is unchanged" \
+  "yes" "$(if [[ "$desc_derived" == *"a cycle writes its clone, its records and its state mirror before it can finish" ]]; then echo yes; else echo no; fi)"
+
+desc_floor_explicit="$(disk_space_describe /data/workspace 1024000 2147483648 floor)"
+assert_eq "describe (governed_by floor, explicit): byte-for-byte the plain-floor sentence" \
+  "$desc" "$desc_floor_explicit"
+
+# --- disk_space_clone_footprint_bytes ----------------------------------------
+
+footprint_dir="$(mktemp -d)"
+trap 'rm -rf "$stub_dir" "$same_fs_dir_a" "$same_fs_dir_b" "$footprint_dir"' EXIT
+printf '%s' "0123456789" > "$footprint_dir/file"
+assert_eq "clone_footprint_bytes reads a real directory's size in bytes" \
+  "yes" "$(if [[ "$(disk_space_clone_footprint_bytes "$footprint_dir")" =~ ^[0-9]+$ ]]; then echo yes; else echo no; fi)"
+assert_eq "clone_footprint_bytes is empty for a path that does not exist" \
+  "" "$(disk_space_clone_footprint_bytes "/nonexistent-path-$$")"
+assert_eq "clone_footprint_bytes is empty for an empty path" \
+  "" "$(disk_space_clone_footprint_bytes '')"
+
+# --- disk_space_largest_footprint --------------------------------------------
+
+footprint_line="$(printf '%s\n' \
+  '{"ts":"2026-01-01T00:00:00Z","event":"other-event","bytes":999999999}' \
+  '{"ts":"2026-01-01T00:00:01Z","event":"clone-footprint","repo":"owner/small","bytes":1000}' \
+  '{"ts":"2026-01-01T00:00:02Z","event":"clone-footprint","repo":"owner/big","bytes":5000000}' \
+  '{"ts":"2026-01-01T00:00:03Z","event":"clone-footprint","repo":"owner/mid","bytes":2000}' \
+  | disk_space_largest_footprint)"
+assert_eq "largest_footprint picks the biggest clone-footprint event, ignoring other events" \
+  "5000000	owner/big" "$footprint_line"
+
+assert_eq "largest_footprint is empty when the log has no clone-footprint event" \
+  "" "$(printf '%s\n' '{"event":"other-event"}' | disk_space_largest_footprint)"
+assert_eq "largest_footprint is empty for an empty log" \
+  "" "$(printf '' | disk_space_largest_footprint)"
+assert_eq "largest_footprint ignores a clone-footprint event with a non-numeric bytes field" \
+  "" "$(printf '%s\n' '{"event":"clone-footprint","repo":"owner/x","bytes":"oops"}' | disk_space_largest_footprint)"
+assert_eq "largest_footprint ignores a clone-footprint event with no repo" \
+  "" "$(printf '%s\n' '{"event":"clone-footprint","bytes":1000}' | disk_space_largest_footprint)"
+assert_eq "largest_footprint tolerates an unparseable line rather than failing the whole read" \
+  "1000	owner/x" "$(printf '%s\n' 'not json' '{"event":"clone-footprint","repo":"owner/x","bytes":1000}' | disk_space_largest_footprint)"
+
+# --- disk_space_effective_min_bytes ------------------------------------------
+
+assert_eq "effective_min_bytes: floor alone governs when no footprint is given" \
+  "2147483648" "$(disk_space_effective_min_bytes 2147483648 2 '')"
+assert_eq "effective_min_bytes: floor alone governs when the factor is 0" \
+  "2147483648" "$(disk_space_effective_min_bytes 2147483648 0 5000000000)"
+assert_eq "effective_min_bytes: floor alone governs when the derivation does not exceed it" \
+  "2147483648" "$(disk_space_effective_min_bytes 2147483648 2 1000)"
+assert_eq "effective_min_bytes: the derivation governs once it exceeds the floor" \
+  "4294967296" "$(disk_space_effective_min_bytes 2147483648 2 2147483648)"
+assert_eq "effective_min_bytes: exactly at the floor is still floor-governed (never below the floor)" \
+  "2147483648" "$(disk_space_effective_min_bytes 2147483648 1 2147483648)"
+assert_eq "effective_min_bytes: a non-numeric floor reads as 0" \
+  "10000" "$(disk_space_effective_min_bytes bogus 2 5000)"
+assert_eq "effective_min_bytes: a non-numeric largest derives nothing, the floor governs" \
+  "2147483648" "$(disk_space_effective_min_bytes 2147483648 2 bogus)"
+
+# --- disk_space_governed_by ---------------------------------------------------
+
+assert_eq "governed_by is \"floor\" when the effective threshold equals the floor" \
+  "floor" "$(disk_space_governed_by 2147483648 2147483648)"
+assert_eq "governed_by is \"derived\" when the effective threshold exceeds the floor" \
+  "derived" "$(disk_space_governed_by 2147483648 4294967296)"
+assert_eq "governed_by is \"floor\" for a non-numeric effective value (reads as 0, never above the floor)" \
+  "floor" "$(disk_space_governed_by 2147483648 bogus)"
+
 echo
 if (( failures == 0 )); then
   echo "All disk-space assertions passed."

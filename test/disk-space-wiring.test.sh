@@ -80,6 +80,7 @@ FAKE_STATE_DIR="/fake/state"
 FAKE_WORKSPACE_ROOT="/fake/workspace"
 
 # run_block SAME_FS STATE_FREE_KB WORKSPACE_FREE_KB MIN_BYTES EVENT_FILE
+#           [FOOTPRINT_BYTES] [FOOTPRINT_REPO] [FACTOR]
 # SAME_FS is "true"/"false", fed straight to the stubbed
 # disk_space_same_filesystem. STATE_FREE_KB/WORKSPACE_FREE_KB are what the
 # stubbed disk_space_free_kb reports for state_dir/workspace_root
@@ -87,12 +88,22 @@ FAKE_WORKSPACE_ROOT="/fake/workspace"
 # same-filesystem run that never reads state_dir's figure proves it by simply
 # never being given the chance to use it. MIN_BYTES seeds
 # min_free_workspace_bytes exactly as agent-cycle.sh's own cfg read would.
+# FOOTPRINT_BYTES/FOOTPRINT_REPO (agent-ops#904), both empty by default,
+# are what the stubbed disk_space_largest_footprint reports was read back
+# off the union log; FACTOR (default 2) seeds workspace_headroom_factor.
+# disk_space_effective_min_bytes and disk_space_governed_by are stubbed with
+# a plain reimplementation of the derivation `max(floor, factor × largest)`,
+# the same "duplicate the pure arithmetic here so the block's own wiring is
+# what is under test" convention the disk_space_verdict stub below already
+# uses — test/disk-space.test.sh is where the real lib/disk-space.sh
+# functions are proven correct.
 # Writes every log_event call, plus one "free_kb_call <path>" line per
 # disk_space_free_kb call, to EVENT_FILE, and prints the block's own exit
 # status followed by "FELL THROUGH" iff it ran off the end rather than
 # exiting.
 run_block() {
-  local same_fs="$1" state_free_kb="$2" workspace_free_kb="$3" min_bytes="$4" event_file="$5"
+  local same_fs="$1" state_free_kb="$2" workspace_free_kb="$3" min_bytes="$4" event_file="$5" \
+    footprint_bytes="${6:-}" footprint_repo="${7:-}" factor="${8:-2}"
   : > "$event_file"
   (
     # `-e`, matching agent-cycle.sh's own top-of-file flags exactly (not this
@@ -107,12 +118,22 @@ run_block() {
     workspace_root="$FAKE_WORKSPACE_ROOT"
     # shellcheck disable=SC2034  # consumed by $disk_block below, invisible to a static reader
     min_free_workspace_bytes="$min_bytes"
+    # shellcheck disable=SC2034  # consumed by $disk_block below, invisible to a static reader
+    workspace_headroom_factor="$factor"
+    # shellcheck disable=SC2034  # consumed by $disk_block below, invisible to a static reader
+    union_log="$tmp_dir/union-log-for-$(basename "$event_file")"
+    # The block only calls disk_space_largest_footprint when `-s "$union_log"`
+    # is true — a nonempty file is enough content for that test regardless of
+    # what it holds, since the stub below ignores it entirely.
+    printf 'x' > "$union_log"
 
     export EVENT_FILE="$event_file"
     export SAME_FS="$same_fs"
     export STATE_FREE_KB="$state_free_kb"
     export WORKSPACE_FREE_KB="$workspace_free_kb"
     export FAKE_STATE_DIR WORKSPACE_ROOT_PATH="$FAKE_WORKSPACE_ROOT"
+    export FOOTPRINT_BYTES="$footprint_bytes"
+    export FOOTPRINT_REPO="$footprint_repo"
 
     # shellcheck disable=SC2317  # called from $disk_block via eval, invisible to a static reader
     disk_space_same_filesystem() { [[ "$SAME_FS" == "true" ]]; }
@@ -134,7 +155,31 @@ run_block() {
       if (( free < min / 1024 )); then printf 'low'; else printf 'ok'; fi
     }
     # shellcheck disable=SC2317  # called from $disk_block via eval, invisible to a static reader
-    disk_space_describe() { printf '%s has only %s KiB free, below the %s bytes this cycle needs' "$1" "$2" "$3"; }
+    disk_space_describe() { printf '%s has only %s KiB free, below the %s bytes this cycle needs (governed_by=%s repo=%s)' "$1" "$2" "$3" "${4:-floor}" "${5:-}"; }
+    # shellcheck disable=SC2317  # called from $disk_block via eval, invisible to a static reader
+    disk_space_largest_footprint() {
+      printf 'largest_footprint_call\n' >> "$EVENT_FILE"
+      [[ -n "$FOOTPRINT_BYTES" ]] && printf '%s\t%s' "$FOOTPRINT_BYTES" "$FOOTPRINT_REPO"
+      return 0
+    }
+    # shellcheck disable=SC2317  # called from $disk_block via eval, invisible to a static reader
+    disk_space_effective_min_bytes() {
+      local floor="${1:-0}" fac="${2:-0}" largest="${3:-}"
+      [[ "$floor" =~ ^[0-9]+$ ]] || floor=0
+      [[ "$fac" =~ ^[0-9]+$ ]] || fac=0
+      if [[ "$largest" =~ ^[0-9]+$ ]] && (( fac > 0 )); then
+        local derived=$(( fac * largest ))
+        if (( derived > floor )); then printf '%s' "$derived"; return 0; fi
+      fi
+      printf '%s' "$floor"
+    }
+    # shellcheck disable=SC2317  # called from $disk_block via eval, invisible to a static reader
+    disk_space_governed_by() {
+      local floor="${1:-0}" effective="${2:-0}"
+      [[ "$floor" =~ ^[0-9]+$ ]] || floor=0
+      [[ "$effective" =~ ^[0-9]+$ ]] || effective=0
+      if (( effective > floor )); then printf 'derived'; else printf 'floor'; fi
+    }
 
     # shellcheck disable=SC2317  # called from $disk_block via eval, invisible to a static reader
     log_event() {
@@ -300,6 +345,74 @@ assert_eq "a 0 floor turns the check off on split filesystems too, however low f
   "yes" "$(if grep -q 'FELL THROUGH' "$evt_file"; then echo yes; else echo no; fi)"
 assert_eq "…and stands nothing down" \
   "no" "$(if grep -q '^stand-down' "$evt_file"; then echo yes; else echo no; fi)"
+
+# === Derived threshold (agent-ops#904, the residual of #756) ===============
+#
+# A recorded clone footprint can raise the effective floor above the plain
+# `min_free_workspace_bytes` configured — these prove the block reads it and
+# acts on it, not merely that lib/disk-space.sh's own arithmetic is correct
+# (test/disk-space.test.sh's subject).
+
+# --- a footprint big enough to double the floor stands the cycle down on
+#     free space the plain floor alone would have accepted ---
+
+evt_file="$tmp_dir/derived-low-events"
+block_rc="$(run_block true 9999999 3000000 2147483648 "$evt_file" 2147483648 "owner/big-repo" 2)"
+assert_eq "same-filesystem: a footprint big enough to double the floor stands the cycle down on free space the plain floor alone would have accepted" \
+  "0" "$block_rc"
+assert_eq "…taking exactly one disk_space_largest_footprint reading" \
+  "1" "$(grep -c '^largest_footprint_call' "$evt_file" || true)"
+standdown_line="$(grep '^stand-down' "$evt_file" || true)"
+assert_eq "…with governed_by \"derived\"" \
+  "yes" "$(if [[ "$standdown_line" == *'"governed_by":"derived"'* ]]; then echo yes; else echo no; fi)"
+assert_eq "…min_bytes is factor × the recorded footprint (2 × 2147483648)" \
+  "yes" "$(if [[ "$standdown_line" == *'"min_bytes":4294967296'* ]]; then echo yes; else echo no; fi)"
+assert_eq "…naming the repository the footprint was recorded against" \
+  "yes" "$(if [[ "$standdown_line" == *'"repo":"owner/big-repo"'* ]]; then echo yes; else echo no; fi)"
+assert_eq "…and the footprint's own byte figure" \
+  "yes" "$(if [[ "$standdown_line" == *'"footprint_bytes":2147483648'* ]]; then echo yes; else echo no; fi)"
+
+# --- the same free space, but no footprint ever recorded: the plain floor
+#     alone governs, and this free space falls through untouched ---
+
+evt_file="$tmp_dir/derived-no-footprint-events"
+block_rc="$(run_block true 9999999 3000000 2147483648 "$evt_file")"
+assert_eq "no footprint recorded: the same free space falls through under the plain floor alone" \
+  "yes" "$(if grep -q 'FELL THROUGH' "$evt_file"; then echo yes; else echo no; fi)"
+assert_eq "…and stands nothing down" \
+  "no" "$(if grep -q '^stand-down' "$evt_file"; then echo yes; else echo no; fi)"
+assert_eq "…still taking exactly one footprint reading" \
+  "1" "$(grep -c '^largest_footprint_call' "$evt_file" || true)"
+
+# --- a footprint too small to raise the threshold: the floor alone governs ---
+
+evt_file="$tmp_dir/derived-small-footprint-events"
+block_rc="$(run_block true 9999999 3000000 2147483648 "$evt_file" 100000 "owner/tiny-repo" 2)"
+assert_eq "a footprint too small to raise the threshold falls through under the plain floor" \
+  "yes" "$(if grep -q 'FELL THROUGH' "$evt_file"; then echo yes; else echo no; fi)"
+assert_eq "…and stands nothing down" \
+  "no" "$(if grep -q '^stand-down' "$evt_file"; then echo yes; else echo no; fi)"
+
+# --- split filesystems: the footprint reading is still taken exactly once,
+#     ahead of either directory's own disk_space_free_kb reading ---
+
+evt_file="$tmp_dir/derived-split-events"
+block_rc="$(run_block false 9999999 3000000 2147483648 "$evt_file" 2147483648 "owner/big-repo" 2)"
+standdown_line="$(grep '^stand-down' "$evt_file" || true)"
+assert_eq "split filesystems: a large footprint stands the cycle down on workspace_root, governed_by derived" \
+  "yes" "$(if [[ "$standdown_line" == *'"governed_by":"derived"'* && "$standdown_line" == *"\"path\":\"$FAKE_WORKSPACE_ROOT\""* ]]; then echo yes; else echo no; fi)"
+assert_eq "…taking exactly one footprint reading regardless of how many directories are judged" \
+  "1" "$(grep -c '^largest_footprint_call' "$evt_file" || true)"
+
+# --- min_free_workspace_bytes: 0 disables the check even with a large
+#     recorded footprint — the off switch is unconditional ---
+
+evt_file="$tmp_dir/derived-disabled-events"
+block_rc="$(run_block true 0 0 0 "$evt_file" 2147483648 "owner/big-repo" 2)"
+assert_eq "a 0 floor turns the check off even with a large recorded footprint" \
+  "yes" "$(if grep -q 'FELL THROUGH' "$evt_file"; then echo yes; else echo no; fi)"
+assert_eq "…never even reading the footprint" \
+  "0" "$(grep -c '^largest_footprint_call' "$evt_file" || true)"
 
 echo
 if (( failures == 0 )); then
