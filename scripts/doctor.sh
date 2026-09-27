@@ -800,10 +800,21 @@ done
 # name would have a pipeline stage apply the corroboration itself — pr_label
 # alone is projected onto every draft the Implementer raises. Case-insensitive,
 # as the guard reads labels.
+#
+# `pw::type:tech-debt` is reserved the same way, for a third reason
+# (lib/labels.sh's catalogue header): it is D24's trust anchor for tech debt
+# filed as a GitHub issue rather than an in-repo register record — only a
+# collaborator with triage rights can apply a label, so an issue's membership
+# of the `tech-debt` work band is trustable even though its body stays
+# untrusted data. A configured label key pointed at that exact name would
+# have the pipeline itself apply the anchor, defeating it.
 for key in pr_label enabler_escalation_label needs_refinement_label refined_label unvoid_label; do
   label_name="$(cfg ".$key // \"\"")"
   if [[ "${label_name,,}" == "obsolete" ]]; then
     fail "$key is \"$label_name\" — the obsolete label is a human's own corroboration for closing a draft pull request (requirement 34k), and a stage projecting it as a configured label would corroborate the pipeline's own voids"
+  fi
+  if [[ "${label_name,,}" == "pw::type:tech-debt" ]]; then
+    fail "$key is \"$label_name\" — pw::type:tech-debt is D24's trust anchor for tech debt filed as a GitHub issue, and a stage projecting it as a configured label would apply that anchor itself"
   fi
 done
 
@@ -814,6 +825,9 @@ while IFS= read -r review_label; do
   [[ -n "$review_label" ]] || continue
   if [[ "${review_label,,}" == "obsolete" ]]; then
     fail "repository_review pr_label is \"$review_label\" — the obsolete label is a human's own corroboration for closing a draft pull request (requirement 34k), and a stage projecting it as a configured label would corroborate the pipeline's own voids"
+  fi
+  if [[ "${review_label,,}" == "pw::type:tech-debt" ]]; then
+    fail "repository_review pr_label is \"$review_label\" — pw::type:tech-debt is D24's trust anchor for tech debt filed as a GitHub issue, and a stage projecting it as a configured label would apply that anchor itself"
   fi
 done < <(jq -r '[(.repository_review.defaults.pr_label // ""),
                  ((.repository_review.repos // [])[] | .pr_label // empty)]
