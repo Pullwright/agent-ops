@@ -124,9 +124,13 @@ heartbeat_line() { grep 'publish-dashboard-launcher.sh' "$1"; }
 push_line() { grep 'state-sync.sh push' "$1"; }
 fetch_line() { grep 'state-sync.sh fetch' "$1"; }
 rotate_line() { grep 'rotate-logs.sh' "$1"; }
+logdir_line() { grep '^LOGDIR=' "$1"; }
 
 write_config() {  # write_config <path> <schedule-json>
-  jq -n --argjson schedule "$2" '{schedule: $schedule}' > "$1"
+  # state_dir is required (no schema default) and, since this PR, feeds
+  # LOGDIR too — every case below that isn't itself testing state_dir/LOGDIR
+  # needs some valid value here so it isn't the thing that fails the render.
+  jq -n --argjson schedule "$2" '{state_dir: "~/.local/state/poetic-agents", schedule: $schedule}' > "$1"
 }
 
 # --- The shipped config.json renders the schedule it asks for ------------------
@@ -176,6 +180,8 @@ assert_contains "the heartbeat is every heartbeat_minutes" "*/$heartbeat * * * *
 assert_contains "state-sync push is every state_sync_push_minutes" "*/$push_every * * * *  /app/scripts/state-sync.sh push" "$(push_line "$out")"
 assert_contains "state-sync fetch is every state_sync_fetch_minutes" "*/$fetch_every * * * *  /app/scripts/state-sync.sh fetch" "$(fetch_line "$out")"
 assert_contains "log rotation is at log_rotation_minute" "$rotation * * * *  /app/scripts/rotate-logs.sh" "$(rotate_line "$out")"
+shipped_state_dir="$(config_defaults "$CONFIG" "$SCRIPT_DIR/config.schema.json" | jq -r '.state_dir')"
+assert_eq "LOGDIR follows the shipped config's own state_dir, ~ expanded" "LOGDIR=${shipped_state_dir/#\~/$HOME}" "$(logdir_line "$out")"
 assert_eq "no placeholder survives a render" "0" "$(grep -c '@' "$out")"
 
 out2="$tmp_dir/crontab2"
@@ -295,6 +301,23 @@ err="$(env NODE_NAME=poetic-1 CYCLE_MINUTE=30 "$RENDER" "$TMPL" "$out" "$custom_
 assert_contains "a config-excluded minute is rejected too" "WARNING" "$err"
 assert_contains "falling back to that config's own hash" "$cml */2 * * *" "$(cycle_line "$out")"
 
+# --- LOGDIR follows config.json's own state_dir, not the baked default ---------
+
+abs_state_dir_cfg="$tmp_dir/absolute-state-dir-config.json"
+jq -n '{state_dir: "/srv/poetic-agents", workspace_root: "/srv/poetic-agents-workspaces"}' > "$abs_state_dir_cfg"
+env NODE_NAME=poetic-1 "$RENDER" "$TMPL" "$out" "$abs_state_dir_cfg" 2>/dev/null
+assert_eq "an absolute state_dir renders LOGDIR verbatim" "LOGDIR=/srv/poetic-agents" "$(logdir_line "$out")"
+
+tilde_state_dir_cfg="$tmp_dir/tilde-state-dir-config.json"
+jq -n '{state_dir: "~/custom-state", workspace_root: "~/custom-workspaces"}' > "$tilde_state_dir_cfg"
+env NODE_NAME=poetic-1 "$RENDER" "$TMPL" "$out" "$tilde_state_dir_cfg" 2>/dev/null
+assert_eq "a ~-prefixed state_dir expands against \$HOME, same as every other reader of this key" "LOGDIR=$HOME/custom-state" "$(logdir_line "$out")"
+
+no_state_dir_cfg="$tmp_dir/no-state-dir-config.json"
+printf '{}\n' > "$no_state_dir_cfg"
+env NODE_NAME=poetic-1 "$RENDER" "$TMPL" "$out" "$no_state_dir_cfg" 2>/dev/null
+assert_eq "a config missing state_dir is an error, not a literal \"null\" LOGDIR" "1" "$?"
+
 # --- schedule.doctor_offset_minutes, set explicitly ------------------------
 
 doctor_offset_cfg="$tmp_dir/doctor-offset-config.json"
@@ -348,7 +371,7 @@ assert_contains "and the offset wraps mod 60 like every other offset does" \
 #     (config.schema.json's `schedule.*` defaults, via config_defaults) -------
 
 no_schedule_cfg="$tmp_dir/no-schedule-config.json"
-printf '{}\n' > "$no_schedule_cfg"
+printf '{"state_dir": "~/.local/state/poetic-agents"}\n' > "$no_schedule_cfg"
 nm="$(expected_minute poetic-1 '[]')"
 nr=$(( (nm + 29) % 60 ))
 ndm=$(( (nm + 44) % 60 ))
