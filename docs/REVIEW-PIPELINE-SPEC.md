@@ -99,8 +99,8 @@ cron (repository_review.defaults.min_days_between_reviews; a daily tick with a
 
 Identical to `docs/IMPLEMENTATION-PIPELINE-SPEC.md` ("Environment" and "Target
 repositories"); not repeated here. The target repositories are the same as
-that document's, currently `Poetic-Poems/poetic` and
-`Poetic-Poems/poetic-fiddle`, and their shared conventions (protected `main`,
+that document's, currently `Poetic-Poems/poetic`, `Poetic-Poems/poetic-fiddle`,
+and `Pullwright/agent-ops`, and their shared conventions (protected `main`,
 squash-merge so the PR title becomes the commit, Conventional Commits) bind
 the Reviewer-Agent exactly as they bind the Implementer. Where a configured
 repository still carries a per-item tech-debt register (`tech-debt/`), that

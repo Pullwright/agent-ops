@@ -770,9 +770,10 @@ file and carries placeholders only; `.env` itself is never committed.
 |---|---|---|
 | poetic (framework) | `Poetic-Poems/poetic` | 1. **security findings** · 2. **`issues:urgent`** · 3. **review-feedback** · 4. **merge-conflicts** · 5. **human-visibility** · 6. **abandoned-drafts** · 7. failed Actions runs on `main` · 8. `issues:high` · 9. `TECH-DEBT.md` · 10. `issues:medium` · 11. project-review recommendations · 12. `issues:low` · 13. code-quality findings |
 | poetic-fiddle (web app) | `Poetic-Poems/poetic-fiddle` | 1. **security findings** · 2. **`issues:urgent`** · 3. **review-feedback** · 4. **merge-conflicts** · 5. **human-visibility** · 6. **abandoned-drafts** · 7. failed Actions runs on `main` · 8. `issues:high` · 9. `TECH-DEBT.md` · 10. `issues:medium` · 11. `implementation-plan` (its configured plan document, `docs/IMPLEMENTATION-PLAN.md`; next milestone task) · 12. project-review recommendations · 13. `issues:low` · 14. code-quality findings |
+| agent-ops (pipeline itself) | `Pullwright/agent-ops` | 1. **security findings** · 2. **`issues:urgent`** · 3. **review-feedback** · 4. **merge-conflicts** · 5. **landing-refusals** · 6. **human-visibility** · 7. **abandoned-drafts** · 8. failed Actions runs on `main` · 9. `issues:high` · 10. `TECH-DEBT.md` · 11. `issues:medium` · 12. `issues:low` · 13. code-quality findings |
 
 This is this installation's current `config.json`: its `repos` array names
-these two repos and each one's `sources`, in this order. Unlike this document,
+these three repos and each one's `sources`, in this order. Unlike this document,
 `prompts/coordinator.md` names neither repo — the Co-Ordinator's own copy of
 this table is rendered from `config.json` at cycle time, not hand-written
 here twice (requirement 4b), so this table is the one place a config change
