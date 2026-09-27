@@ -82,6 +82,11 @@ extract() {  # <function name> [source file, default $CYCLE]
 
 resolve_block="$(extract _landing_open_question_resolve)"
 refuse_block="$(extract _landing_refuse)"
+# `_landing_refuse` (TD-PPagop-26082823) reads this plain variable, never a
+# function `extract` above can pull out — grepped for directly and pasted
+# ahead of `$refuse_block` in the harness below, the same "lift verbatim"
+# discipline every extracted block here already follows.
+refusal_classes_line="$(grep -E '^_LANDING_REFUSAL_CLASSES=' "$CYCLE")"
 pass_available_block="$(extract open_question_pass_available)"
 adjudicated_before_block="$(extract open_question_adjudicated_before)"
 escalate_block="$(extract open_question_escalate)"
@@ -94,6 +99,7 @@ refile_suppressed_block="$(extract escalation_refile_suppressed "$ESCALATION_AUT
 event_logged_since_block="$(extract escalation_event_logged_since "$ESCALATION_AUTONOMY")"
 
 for pair in "resolve_block:_landing_open_question_resolve" "refuse_block:_landing_refuse" \
+            "refusal_classes_line:_LANDING_REFUSAL_CLASSES" \
             "pass_available_block:open_question_pass_available" \
             "adjudicated_before_block:open_question_adjudicated_before" \
             "escalate_block:open_question_escalate" \
@@ -174,6 +180,7 @@ HARNESS
 URL="https://github.com/Poetic-Poems/agent-ops/pull/512"
 
 {
+  printf '%s\n' "$refusal_classes_line"
   printf '%s\n' "$refuse_block"
   printf '%s\n' "$resolve_block"
   printf '_landing_open_question_resolve "Poetic-Poems/agent-ops" "%s" "512" ""\n' "$URL"

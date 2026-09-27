@@ -235,7 +235,7 @@ landing_open_question_hit() {
 _landing_open_question_resolve() {
   printf '%s\n' "$*" >>"$T/oq_resolve_args"
   [[ "${OQ_RESOLVE_RC:-0}" != "0" ]] || return 0
-  _landing_refuse "$2" "$1" "${OQ_RESOLVE_REASON:-open-question:stubbed}" "$4"
+  _landing_refuse "$2" "$1" "open-question" "${OQ_RESOLVE_REASON:-open-question:stubbed}" "$4"
   return 1
 }
 
@@ -415,10 +415,11 @@ reached() { [[ -s "$tmp_dir/reached" ]] && printf 'yes' || printf 'no'; }
 count() { local f="$tmp_dir/$1"; [[ -s "$f" ]] && wc -l <"$f" | tr -d ' ' || printf '0'; }
 event_of() { grep -m1 "^$1"$'\t' "$tmp_dir/events" | cut -f2- || true; }
 refusal() { jq -r '.reason' <<<"$(event_of landing-refused)" 2>/dev/null || true; }
-# The class the dashboard's landings digest would group this refusal under:
-# the reason text before its first `:` (`byReason`, `dashboard/index.html`),
-# computed here exactly as that panel computes it (TD-PPagop-26082502).
-refusal_class() { local r; r="$(refusal)"; printf '%s' "${r%%:*}"; }
+# The mechanically assigned `class` field (TD-PPagop-26082823, issue #1017)
+# the dashboard's landings digest (`byReason`, `dashboard/index.html`) groups
+# this refusal under — `null` (a caller-supplied empty string) reads back as
+# empty, matching how `event_of`/`jq` render a JSON null through `-r`.
+refusal_class() { jq -r '.class // ""' <<<"$(event_of landing-refused)" 2>/dev/null || true; }
 budget_decide_args() { cat "$tmp_dir/budget_decide_args" 2>/dev/null || true; }
 armed_flag() { cat "$tmp_dir/armed_flag" 2>/dev/null || true; }
 armed_by_repo_flag() { cat "$tmp_dir/armed_by_repo_flag" 2>/dev/null || true; }
@@ -555,6 +556,8 @@ for level in human agent-approves; do
     "effective level is $level" "$(refusal)"
   assert_eq "  ... never mentions the kill switch (it is clear)" "" \
     "$(refusal | grep -o 'kill switch' || true)"
+  assert_eq "  ... and groups under the autonomy-level class (TD-PPagop-26082823)" \
+    "autonomy-level" "$(refusal_class)"
   assert_eq "  ... returning 0" "0" "$rc"
   assert_eq "  ... and the landing-refused event carries the item-lifecycle join key too (requirement 49)" \
     '"512"' "$(jq -c '.item' <<<"$(event_of landing-refused)")"
@@ -574,6 +577,8 @@ assert_contains "  ... and the refusal names the kill switch" \
   "merge_autonomy kill switch is engaged" "$(refusal)"
 assert_eq "  ... never falling back to the generic 'effective level is' wording" "" \
   "$(refusal | grep -o 'effective level is' || true)"
+assert_eq "  ... and groups under its own kill-switch class, distinct from autonomy-level" \
+  "kill-switch" "$(refusal_class)"
 assert_eq "  ... returning 0" "0" "$rc"
 assert_contains "  ... and asks merge_autonomy_kill_state for a FRESH read too (issue #513)" \
   "fresh" "$(kill_state_calls)"
@@ -595,6 +600,8 @@ assert_eq "  ... and the PR still arms (its own protected-path refusal, if any, 
 rc="$(run_case LEVEL="agent-merges-all" PP_CTL="ineligible:protected-path cool-off has 3.2h remaining (approved 2026-08-17T10:00:00Z, landing_cool_off_hours=24)")"
 assert_eq "gate 4.5 refusing a live cool-off arms nothing" "0" "$(count arms)"
 assert_contains "  ... naming the remaining time" "cool-off has 3.2h remaining" "$(refusal)"
+assert_eq "  ... and groups under the same ineligible class gate 2 uses" \
+  "ineligible" "$(refusal_class)"
 assert_eq "  ... returning 0" "0" "$rc"
 
 rc="$(run_case LEVEL="agent-merges-all" PP_CTL="ineligible:touches a protected path at agent-merges-all but the approving engagement did not run at the critical tier (tier: standard)")"
@@ -604,6 +611,8 @@ assert_eq "  ... returning 0" "0" "$rc"
 
 rc="$(run_case LEVEL="agent-merges-all" PP_CTL="unknown:could not re-establish acme/widgets#512's changed-file list for the protected-path controls")"
 assert_eq "gate 4.5's own unknown is never a pass" "0" "$(count arms)"
+assert_eq "  ... and groups under the same unknown class gate 2 uses" \
+  "unknown" "$(refusal_class)"
 assert_eq "  ... returning 0" "0" "$rc"
 
 rc="$(run_case LEVEL="agent-merges-all" PP_CTL="ok")"
@@ -632,12 +641,14 @@ rc="$(run_case ELIGIBLE="ineligible:touches protected path(s): lib/landing.sh")"
 assert_eq "a protected-path PR is never armed" "0" "$(count arms)"
 assert_contains "  ... and the classifier's reason is the refusal's" \
   "touches protected path(s): lib/landing.sh" "$(refusal)"
+assert_eq "  ... and groups under class ineligible" "ineligible" "$(refusal_class)"
 assert_eq "  ... returning 0" "0" "$rc"
 
 rc="$(run_case ELIGIBLE="unknown:could not establish the changed-file list")"
 assert_eq "an unreadable changed-file list is never a pass" "0" "$(count arms)"
 assert_contains "  ... and refuses with the classifier's own word" \
   "unknown:could not establish" "$(refusal)"
+assert_eq "  ... and groups under class unknown" "unknown" "$(refusal_class)"
 assert_eq "  ... returning 0" "0" "$rc"
 
 assert_contains "the classifier is asked about this round's own source" \
@@ -657,6 +668,8 @@ assert_contains "  ... refusing with the plain 'could not read' wording" \
 assert_contains "  ... naming the labels, not an escalation" \
   "confirm no open question stands" "$(refusal)"
 assert_eq "  ... never dispatching to the resolve ladder" "" "$(cat "$tmp_dir/oq_resolve_args")"
+assert_eq "  ... and groups under class open-question-unreadable" \
+  "open-question-unreadable" "$(refusal_class)"
 assert_eq "  ... returning 0" "0" "$rc"
 
 rc="$(run_case OQ_RC="0" OQ_RESOLVE_RC="1")"
@@ -664,6 +677,8 @@ assert_eq "a hit that the resolve ladder refuses is never armed" "0" "$(count ar
 assert_contains "  ... carrying the ladder's own reason" "open-question:stubbed" "$(refusal)"
 assert_eq "  ... having dispatched slug, pr_url, number, retry and item (requirement 49) in that order" \
   "Poetic-Poems/agent-ops $URL 512  512" "$(cat "$tmp_dir/oq_resolve_args")"
+assert_eq "  ... and groups under class open-question, distinct from open-question-unreadable" \
+  "open-question" "$(refusal_class)"
 assert_eq "  ... returning 0" "0" "$rc"
 
 rc="$(run_case OQ_RC="0" OQ_RESOLVE_RC="0")"
@@ -701,6 +716,8 @@ assert_eq "a dirty review gate refuses rather than aborting the cycle" "yes" "$(
 assert_eq "  ... returning 0" "0" "$rc"
 assert_eq "  ... arming nothing" "0" "$(count arms)"
 assert_contains "  ... and naming what is red" "Build and test" "$(refusal)"
+assert_eq "  ... and groups under class review-gate, not a fragment of the check name" \
+  "review-gate" "$(refusal_class)"
 
 rc="$(run_case GATE_WORD="unknown" GATE_REASON="could not read the required checks" GATE_RC="2")"
 assert_eq "an unreadable required-check list refuses rather than aborting" "yes" "$(reached)"
@@ -721,6 +738,8 @@ assert_eq "  ... returning 0" "0" "$rc"
 rc="$(run_case LOGIN_RC="2")"
 assert_eq "an unreadable Approver login arms nothing" "0" "$(count arms)"
 assert_contains "  ... refusing by name" "could not read the Approver App's own login" "$(refusal)"
+assert_eq "  ... and groups under class approver-login-unreadable" \
+  "approver-login-unreadable" "$(refusal_class)"
 assert_eq "  ... returning 0" "0" "$rc"
 
 rc="$(run_case STANDING="")"
@@ -742,6 +761,8 @@ assert_eq "  ... returning 0" "0" "$rc"
 rc="$(run_case STANDING_RC="1")"
 assert_eq "an unreadable reviews list is never a pass" "0" "$(count arms)"
 assert_contains "  ... refusing by name" "could not read" "$(refusal)"
+assert_eq "  ... and groups under class approver-review-unreadable" \
+  "approver-review-unreadable" "$(refusal_class)"
 assert_eq "  ... returning 0" "0" "$rc"
 
 assert_contains "the standing-review read is filtered to the App's own login" \
@@ -752,10 +773,14 @@ assert_contains "the standing-review read is filtered to the App's own login" \
 rc="$(run_case BLOCKING="warwickallen")"
 assert_eq "a human CHANGES_REQUESTED prevents arming" "0" "$(count arms)"
 assert_contains "  ... naming who" "warwickallen" "$(refusal)"
+assert_eq "  ... and groups under class human-changes-requested" \
+  "human-changes-requested" "$(refusal_class)"
 assert_eq "  ... returning 0" "0" "$rc"
 
 rc="$(run_case BLOCKING_RC="1")"
 assert_eq "a reviews list that could not be read prevents arming" "0" "$(count arms)"
+assert_eq "  ... and groups under class human-veto-unreadable" \
+  "human-veto-unreadable" "$(refusal_class)"
 assert_eq "  ... returning 0" "0" "$rc"
 
 # --- Gate 4 (human half, continued): an unreconciled plain comment posted
@@ -769,6 +794,8 @@ rc="$(run_case RC_WORD="dirty" RC_REASON="human comment(s) posted on $URL since 
 assert_eq "an unreconciled human comment since Ready prevents arming" "0" "$(count arms)"
 assert_contains "  ... naming the reason reconciliation_gate itself gave" \
   "carry no reconciles line" "$(refusal)"
+assert_eq "  ... and groups under class reconciliation-unanswered" \
+  "reconciliation-unanswered" "$(refusal_class)"
 assert_eq "  ... returning 0" "0" "$rc"
 assert_eq "  ... and never marks _landing_stage_attempt_armed" "0" "$(armed_flag)"
 
@@ -778,6 +805,8 @@ assert_eq "an unreadable reconciliation read refuses arming too (#753 on #746)" 
 assert_eq "  ... returning 0" "0" "$rc"
 assert_contains "  ... logging a landing-refused naming what could not be read" \
   "could not read $URL's comments" "$(refusal)"
+assert_eq "  ... and groups under class reconciliation-unreadable" \
+  "reconciliation-unreadable" "$(refusal_class)"
 assert_eq "  ... and never marks _landing_stage_attempt_armed" "0" "$(armed_flag)"
 
 # An answer that is neither word at all — what a call that never executed
@@ -809,12 +838,16 @@ done
 rc="$(run_case QUEUED="true")"
 assert_eq "an already-queued pull request is not re-armed" "0" "$(count arms)"
 assert_contains "  ... refusing by name" "already in the merge queue" "$(refusal)"
+assert_eq "  ... and groups under class merge-queue-occupied, not its colon-free full sentence" \
+  "merge-queue-occupied" "$(refusal_class)"
 assert_eq "  ... returning 0" "0" "$rc"
 
 rc="$(run_case QUEUE_RC="1")"
 assert_eq "a queue status that could not be read is possibly queued, so it refuses" \
   "0" "$(count arms)"
 assert_contains "  ... refusing by name" "could not read" "$(refusal)"
+assert_eq "  ... and groups under class merge-queue-unreadable" \
+  "merge-queue-unreadable" "$(refusal_class)"
 assert_eq "  ... returning 0" "0" "$rc"
 
 # --- Gate 6, continued: a pull request the merge queue already dequeued -----
@@ -829,12 +862,16 @@ rc="$(run_case QUEUED="false" DEQUEUE_REASON="manual")"
 assert_eq "a manually-dequeued pull request is never re-armed" "0" "$(count arms)"
 assert_contains "  ... refusing by name" "deliberate removal" "$(refusal)"
 assert_contains "  ... naming the reason" "manual" "$(refusal)"
+assert_eq "  ... and groups under class dequeued-manual" \
+  "dequeued-manual" "$(refusal_class)"
 assert_eq "  ... returning 0" "0" "$rc"
 
 rc="$(run_case QUEUED="false" DEQUEUE_REASON="failed_checks")"
 assert_eq "a checks-failure-dequeued pull request is never blindly re-armed" "0" "$(count arms)"
 assert_contains "  ... refusing by name" "dequeued source" "$(refusal)"
 assert_contains "  ... naming the reason" "failed_checks" "$(refusal)"
+assert_eq "  ... and groups under class dequeued-actionable, distinct from dequeued-manual" \
+  "dequeued-actionable" "$(refusal_class)"
 assert_eq "  ... returning 0" "0" "$rc"
 
 rc="$(run_case QUEUED="false" DEQUEUE_REASON="")"
@@ -845,11 +882,14 @@ assert_eq "a pull request never dequeued (empty reason) still arms normally" "1"
 rc="$(run_case TOKEN_RC="2")"
 assert_eq "a token that could not be minted arms nothing" "0" "$(count arms)"
 assert_contains "  ... refusing by name" "could not mint" "$(refusal)"
+assert_eq "  ... and groups under class approver-token-unmintable" \
+  "approver-token-unmintable" "$(refusal_class)"
 assert_eq "  ... returning 0" "0" "$rc"
 
 rc="$(run_case ARM_RC="1")"
 assert_eq "a refused enqueue logs no landing-armed" "" "$(event_of landing-armed)"
 assert_contains "  ... refusing by name" "could not enqueue or auto-merge" "$(refusal)"
+assert_eq "  ... and groups under class arm-failed" "arm-failed" "$(refusal_class)"
 assert_eq "  ... returning 0" "0" "$rc"
 
 # landing_arm's own exit status distinguishes which step failed
@@ -927,7 +967,7 @@ run_case_direct() {
       _landing_open_question_resolve() {
         printf "%s\n" "$*" >>"$T/oq_resolve_args"
         [[ "${OQ_RESOLVE_RC:-0}" != "0" ]] || return 0
-        _landing_refuse "$2" "$1" "${OQ_RESOLVE_REASON:-open-question:stubbed}" "$4"
+        _landing_refuse "$2" "$1" "open-question" "${OQ_RESOLVE_REASON:-open-question:stubbed}" "$4"
         return 1
       }
       review_gate_verdict() { printf "%s" "$GATE_WORD"; return "${GATE_RC:-0}"; }
@@ -1040,6 +1080,70 @@ assert_eq "a retry attempt gate 4.5 refuses is never armed" "0" "$(count arms)"
 assert_contains "  ... naming the reason" "did not run at the critical tier" "$(refusal)"
 assert_eq "  ... and marks the landing-refused event retry:true" \
   "true" "$(jq -c '.retry' <<<"$(event_of landing-refused)")"
+
+# --- The closed set of refusal classes (TD-PPagop-26082823, issue #1017) ----
+# `_LANDING_REFUSAL_CLASSES` (lib/landing.sh) is the closed set every literal
+# CLASS argument `_landing_refuse` is called with in that file must belong
+# to. Checked mechanically against the source text itself — every call site
+# above already pins its own class value against a live run, but that only
+# catches a call site this file happens to exercise; this catches one that
+# is merely present in the source, exactly the "added and never exercised"
+# gap acceptance criterion 3 asks for.
+
+defined_classes="$(grep -oE '^_LANDING_REFUSAL_CLASSES="[^"]*"' "$CYCLE" \
+  | sed -E 's/^_LANDING_REFUSAL_CLASSES="(.*)"$/\1/' | tr ' ' '\n' | sort -u)"
+assert_contains "_LANDING_REFUSAL_CLASSES is defined and non-empty" \
+  "approver-login-unreadable" "$defined_classes"
+
+# Every `_landing_refuse` call site in this file names PR_URL and REPO as the
+# literal `"$pr_url" "$slug"` (every call site above was written that way
+# deliberately, see `_LANDING_REFUSAL_CLASSES`'s own header comment) — so a
+# call site's CLASS is whatever literal string immediately follows, and a
+# call site passing a bare variable there instead (never a literal) simply
+# will not match this pattern at all.
+all_call_sites="$(grep -cE '_landing_refuse "\$pr_url" "\$slug"' "$CYCLE")"
+literal_call_sites="$(grep -oE '_landing_refuse "\$pr_url" "\$slug" "[a-z][a-z0-9-]*"' "$CYCLE" | sort)"
+assert_eq "every _landing_refuse call site names its class as a literal (none passes a bare variable)" \
+  "$all_call_sites" "$(wc -l <<<"$literal_call_sites" | tr -d ' ')"
+
+used_classes="$(sed -E 's/.*"([a-z][a-z0-9-]*)"$/\1/' <<<"$literal_call_sites" | sort -u)"
+unknown_classes="$(comm -23 <(printf '%s\n' "$used_classes") <(printf '%s\n' "$defined_classes"))"
+assert_eq "every literal class used at a call site is a member of _LANDING_REFUSAL_CLASSES" \
+  "" "$unknown_classes"
+
+unused_classes="$(comm -13 <(printf '%s\n' "$used_classes") <(printf '%s\n' "$defined_classes"))"
+assert_eq "every class in _LANDING_REFUSAL_CLASSES is actually used at a call site" \
+  "" "$unused_classes"
+
+# --- `_landing_refuse`'s own runtime guard on an out-of-set or missing class -
+# Belt-and-braces beside the static check above: a CLASS that slipped past
+# it anyway is still logged verbatim on the landing-refused event's own
+# `class` field — never silently coerced to look legitimate — and costs a
+# `warning` event naming it, so the defect stays visible rather than
+# invisible (the issue's own "a refusal logged with no class at all is a
+# detectable defect" acceptance bar).
+bad_class_events="$(env -i PATH="$PATH" T="$(mktemp -d)" SCRIPT_DIR="$SCRIPT_DIR" bash -c '
+  set -euo pipefail
+  source "$SCRIPT_DIR/lib/landing.sh"
+  log_event() { printf "%s\t%s\n" "$1" "$2" >>"$T/events"; }
+  _landing_refuse "https://github.com/acme/widgets/pull/1" "acme/widgets" "totally-made-up" "a made-up reason"
+  cat "$T/events"
+')"
+assert_contains "an out-of-set class still logs the landing-refused event, verbatim" \
+  '"class":"totally-made-up"' \
+  "$(grep -m1 '^landing-refused' <<<"$bad_class_events" | cut -f2-)"
+assert_contains "  ... and costs a warning event naming the offending class" \
+  "totally-made-up" "$(grep -m1 '^warning' <<<"$bad_class_events" | cut -f2-)"
+
+empty_class_events="$(env -i PATH="$PATH" T="$(mktemp -d)" SCRIPT_DIR="$SCRIPT_DIR" bash -c '
+  set -euo pipefail
+  source "$SCRIPT_DIR/lib/landing.sh"
+  log_event() { printf "%s\t%s\n" "$1" "$2" >>"$T/events"; }
+  _landing_refuse "https://github.com/acme/widgets/pull/1" "acme/widgets" "" "an empty-class reason"
+  cat "$T/events"
+')"
+assert_eq "an empty class logs null, never omitted (unlike a missing ITEM)" \
+  "null" "$(jq -c '.class' <<<"$(grep -m1 '^landing-refused' <<<"$empty_class_events" | cut -f2-)")"
 
 # --- Result -------------------------------------------------------------------
 
