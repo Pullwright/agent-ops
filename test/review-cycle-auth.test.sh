@@ -179,8 +179,16 @@ log_dir="$tmp_dir/logs-pat"
 mkdir -p "$log_dir"
 state_dir_pat="$tmp_dir/ghstate-pat"
 mkdir -p "$state_dir_pat"
+# Explicitly cleared, not merely never set: a node this test happens to run
+# on may carry its own real forge-App credentials ambiently (this is, after
+# all, an agent-ops node itself), and "no App configured" must hold on its
+# own terms rather than on the accident of an unset variable.
 run_review "$tmp_dir/node-pat" \
   GH_TOKEN=ghp_the_owner_pat \
+  PULLWRIGHT_AUTHOR_APP_ID= \
+  PULLWRIGHT_AUTHOR_INSTALLATION_ID= \
+  PULLWRIGHT_AUTHOR_INSTALLATION_IDS= \
+  PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH= \
   PW_GH_REAL_BIN="$real_gh_dir/gh" \
   PW_GH_STATE_DIR="$state_dir_pat"
 
