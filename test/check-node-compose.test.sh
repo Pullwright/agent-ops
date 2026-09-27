@@ -200,6 +200,16 @@ assert_eq "a bare .env.old sibling fails" "1" "$rc"
 assert_contains "naming the dotted backup too" ".env.old" "$out"
 rm -f "$stack/.env.old"
 
+rm -f "$stack/.env"
+touch "$stack/.env.bak-1"
+run_check
+assert_eq "no .env with a stale backup still checks the backup" "1" "$rc"
+assert_contains "info line says only permission check is skipped" "skipping its permission check" "$out"
+assert_contains "but the backup scan still runs and fails" "stale env backup beside the live file" "$out"
+rm -f "$stack/.env.bak-1"
+
+printf 'GH_TOKEN=x\n' > "$stack/.env"
+chmod 600 "$stack/.env"
 run_check
 assert_eq "a 0600 .env with no backups passes again" "0" "$rc"
 
