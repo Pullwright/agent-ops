@@ -267,7 +267,7 @@ assert_call_site_guarded() {  # assert_call_site_guarded FILE
   if [[ -n "$line" && "$line" == *'|| true'* ]]; then
     printf 'ok   - %s declines the degraded-read signal at its call site\n' "$file"
   else
-    printf 'FAIL - %s must decline the degraded-read signal (`|| true`) — it calls\n' "$file"
+    printf 'FAIL - %s must decline the degraded-read signal with a trailing "|| true" — it calls\n' "$file"
     printf '     report_directory_most_recent under set -euo pipefail from an errexit-live\n'
     printf '     context, where a failed walk would otherwise abort the cycle.\n'
     printf '     found: %s\n' "${line:-<no piped call site found>}"
