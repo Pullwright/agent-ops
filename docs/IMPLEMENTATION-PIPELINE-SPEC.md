@@ -6216,6 +6216,18 @@ implements.
    default is a valid resolution in its own right, so the field is simply
    present with that value rather than the engagement being refused at
    startup.
+
+   The runtime-input entry also carries `report_directory_resolved` (issue
+   #1891): the latest existing review folder's own path, resolved by calling
+   `report_directory_most_recent` (`lib/report-directory.sh`, the same helper
+   `scripts/gather-project-review.sh` and the Refiner's own pre-fetch already
+   call) against that repo's resolved `report_directory` — so the
+   Co-Ordinator's live read of this source (requirement 3y, requirement 15)
+   reads a Script-resolved path directly rather than walking the format
+   string by hand. Present alongside `report_directory` only where a folder
+   already exists to resolve to; a repo whose review has never run gets
+   `report_directory` with no `_resolved` field, and `prompts/coordinator.md`
+   falls back to the hand-rolled walk in that case.
 3h. **Refinement carry-forward.** The Co-Ordinator's runtime input carries a
    `refinements` map — repo → item → the latest `item-refined` payload
    (requirement 33), for items that are not void — built from the fleet's log
@@ -6942,14 +6954,19 @@ implements.
 
 3y. **Refiner-only pre-fetch: `project-review` and `implementation-plan`.**
    These two sources have no array in `ordered_repos_json` and gain none: the
-   Co-Ordinator reads the repository's latest review folder — under its own
-   resolved `report_directory` (requirement 3k;
-   `reviews/project-review-YYYY-MM-DD/` where the repository configures
-   neither `repository_review.repos[]`'s nor `repository_review.defaults`'
-   own `report_directory`) — and the repo's plan document live while it
-   evaluates each candidate (requirement 15, `prompts/coordinator.md`), and
-   that live read is the authority for selection. What requirement 39a's
-   candidate set needs is a
+   Co-Ordinator reads the repository's latest review folder — its own
+   `report_directory_resolved` where present (requirement 3k), the path
+   `report_directory_most_recent` already resolved deterministically, read
+   with no walk of its own; the hand-rolled fallback walk over `report_directory`
+   (requirement 3k; `reviews/project-review-YYYY-MM-DD/` where the repository
+   configures neither `repository_review.repos[]`'s nor
+   `repository_review.defaults`' own `report_directory`) only where
+   `report_directory_resolved` is absent — and the repo's plan document live
+   while it evaluates each candidate (requirement 15, `prompts/coordinator.md`),
+   and that live read is the authority for selection: it now reads a
+   Script-resolved field rather than deriving the path itself, but it still
+   reads the folder fresh every cycle rather than trusting a value computed
+   ahead of it. What requirement 39a's candidate set needs is a
    *different* thing — a structured array it can name an item out of — so the
    Script builds one for the Refiner alone: `refiner_repos_json`, a copy of
    `ordered_repos_json` in which a repo entry may additionally carry
