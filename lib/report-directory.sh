@@ -169,25 +169,38 @@ report_directory_find_dirs() {
 # time-of-day baked into an existing directory's name, and discovery
 # silently returns nothing.
 #
-# Exits nonzero, printing nothing, when report_directory_find_dirs's own
-# walk failed to determine the full set of candidates (issue #1024) — a
-# degraded read, distinguishable via `$?` from a confirmed "nothing exists"
-# (exit 0, no output). A caller that doesn't check the exit status is
-# unaffected: both cases print nothing, exactly as before this distinction
-# existed.
+# Exits nonzero when report_directory_find_dirs's own walk failed to
+# determine the full set of candidates (issue #1024) — a degraded read,
+# distinguishable via `$?` from a confirmed "nothing exists" (exit 0, no
+# output). The exit status is the *whole* of that signal: what this prints is
+# byte-for-byte what it would have printed without the distinction, in every
+# case — the most recent of whatever candidates the walk did find, degraded or
+# not, and nothing when it found none. A multi-segment format's walk can list
+# one level successfully and fail at the next, so "degraded" and "found
+# something" are not exclusive; a caller that ignores the exit status must
+# still get that something, exactly as it did before.
+#
+# A caller that ignores the status therefore sees no behaviour change at all
+# — but two of them ignore it under `set -euo pipefail`, where a nonzero
+# status is not ignorable by omission (`pipefail` carries it through their
+# `| cut -f<n>`, and `set -e` then acts on the assignment). Both say so
+# explicitly at their own call site — review-cycle.sh's
+# most_recent_review_date and lib/candidate-gather.sh's
+# report_directory_resolved — rather than relying on this function to never
+# fail, which is exactly what it no longer promises.
 report_directory_most_recent() {
   local slug="$1" branch="$2" format="$3" lookback="${4:-400}"
-  local candidates
-  if ! candidates="$(report_directory_find_dirs "$slug" "$branch" "$format")"; then
-    return 1
+  local candidates walk_rc=0
+  candidates="$(report_directory_find_dirs "$slug" "$branch" "$format")" || walk_rc=1
+  if [[ -n "$candidates" ]]; then
+    local d resolved
+    for (( d = 0; d <= lookback; d++ )); do
+      resolved="$(date -u -d "-$d day" +"$format")"
+      if grep -qxF "$resolved" <<<"$candidates"; then
+        printf '%s\t%s\n' "$(date -u -d "-$d day" +%Y-%m-%d)" "$resolved"
+        return "$walk_rc"
+      fi
+    done
   fi
-  [[ -n "$candidates" ]] || return 0
-  local d resolved
-  for (( d = 0; d <= lookback; d++ )); do
-    resolved="$(date -u -d "-$d day" +"$format")"
-    if grep -qxF "$resolved" <<<"$candidates"; then
-      printf '%s\t%s\n' "$(date -u -d "-$d day" +%Y-%m-%d)" "$resolved"
-      return 0
-    fi
-  done
+  return "$walk_rc"
 }

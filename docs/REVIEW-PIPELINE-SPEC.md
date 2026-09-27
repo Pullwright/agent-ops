@@ -659,6 +659,25 @@ R4a. **Report directory (issue #761).** Where a report set (R11) is written,
    argument) resolve through this one shared implementation, so the two
    pipelines cannot discover two different answers for the same repository.
 
+   A listing that *fails* is told apart from one that succeeds and matches
+   nothing (issue #1024), because a caller deciding something irreversible on
+   "no review folder exists" must not act on a rate limit: both
+   `report_directory_find_dirs` and `report_directory_most_recent` exit
+   nonzero when some listing inside the walk failed for a reason other than
+   the queried path not existing (a clean 404 *is* a definite "nothing here"),
+   and zero otherwise. The exit status is the whole of that signal — what they
+   print is byte-for-byte what they printed before the distinction existed,
+   including for a multi-segment format whose walk lists one level and fails
+   at the next, so degraded and found-something are not exclusive states.
+   `docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 3y's `--current-date`
+   mode is the caller that needs it. R4's own skip-guard
+   (`most_recent_review_date`) does not — a failed listing and an absent
+   folder both mean "no date to compare against", and the guard already
+   proceeds on an empty one — so it declines the signal explicitly, ending its
+   pipeline with `|| true`: under `set -o pipefail` the status would otherwise
+   reach `review-cycle.sh`'s own errexit through that function's return value,
+   turning a transient listing failure into a dead cycle.
+
 R5. **Per non-skipped repo** (processed **sequentially**, so a failure of one
    never blocks the other and only one heavy `claude` runs at a time):
    0. *Claim the review branch* (R5c; implementation spec requirement 17a).
@@ -1249,7 +1268,20 @@ edit a test.
    `report_directory_most_recent` names the latest of them with its own date,
    printing nothing where none exist. `report_directory_regex` escapes
    literal regex metacharacters in a format's surrounding text and degrades
-   an unrecognised specifier to a wildcard rather than failing.
+   an unrecognised specifier to a wildcard rather than failing. The
+   degraded-read signal is covered too: a stubbed listing that fails exits
+   nonzero from both functions, a clean 404 and a listing that matched nothing
+   exit zero, and a multi-segment format whose walk fails partway still prints
+   the candidates it did find — which is what proves the exit status is the
+   whole signal and the printed output unchanged. Check the caller side
+   specifically, because it is where getting this wrong costs a cycle rather
+   than a value: the same `… | cut -f<n>` shape both silent-degrade callers
+   use is driven as its own `bash` process (errexit is not honoured inside a
+   command substitution, so a probe wrapped in one reports every caller as
+   surviving), asserting that the unguarded form really is killed by errexit
+   on a failed walk while the guarded form degrades to empty, and that
+   `review-cycle.sh` and `lib/candidate-gather.sh` each carry the guard at
+   their own call site.
    `test/config-schema.test.sh` covers the resolution: a repository's own
    `report_directory` wins over `repository_review.defaults`', absent it
    inherits, and absent from both it resolves empty rather than fabricated —
