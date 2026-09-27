@@ -2339,17 +2339,18 @@ landing_open_question_label_release() {
 # before this mark existed. The union/dedup behaviour above stays exactly
 # as it was for whatever remains after that filter.
 #
-# SRC follows `landing_approver_adjudication_history`'s own convention:
-# `$log_file` on the round that first raises a question (this process's own
-# just-written `open-question-raised` event is already there) or
-# `$union_log` when read back later (a peer node's or an earlier cycle's
-# round), or stdin if omitted or "-". Malformed lines are skipped, not
-# fatal. This is read-only, supplementary content for prose a human or an
-# adjudication pass reads — never what the landing gate itself decides on,
-# which stays the label alone (requirement 8f's own "no log join" reasoning
-# for the gate proper), so a peer node's cycle racing to log its own
-# `open-question-raised` event costs this reader nothing but slightly stale
-# prose.
+# SRC is the value callers pass, never computed here: every caller passes
+# `${union_log:-$log_file}` (TD-PPagop-26082308) — `$union_log` when set,
+# falling back to `$log_file` alone otherwise — a single source, not a union
+# of the two the way `landing_approver_adjudication_history` above literally
+# unions SRC1 and SRC2. Or stdin if omitted or "-", or a path passed
+# directly (requirement 8x). Malformed lines are skipped, not fatal. This is
+# read-only, supplementary content for prose a human or an adjudication pass
+# reads — never what the landing gate itself decides on, which stays the
+# label alone (requirement 8f's own "no log join" reasoning for the gate
+# proper), so a peer node's cycle racing to log its
+# own `open-question-raised` event costs this reader nothing but slightly
+# stale prose.
 landing_open_question_latest() {
   local pr_url="$1" src="${2:--}" out=""
   # shellcheck disable=SC2016  # $pr_url is jq's own --arg variable, not the shell's.

@@ -116,8 +116,8 @@ mkdir -p "$state_dir"
 : > "$union_log"
 : > "$log_file"
 # A test that wants prior approver-verdict history writes it here before
-# calling run_case/run_case_retry — the same file _landing_stage_attempt
-# itself reads (non-retry) or $union_log (retry).
+# calling run_case/run_case_retry — both files are read as a deduplicated
+# union on every round (TD-PPagop-26082308).
 [[ -z "${LOG_SEED_FILE:-}" ]] || cat "$LOG_SEED_FILE" >> "$log_file"
 [[ -z "${UNION_SEED_FILE:-}" ]] || cat "$UNION_SEED_FILE" >> "$union_log"
 
