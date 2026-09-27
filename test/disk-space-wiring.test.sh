@@ -167,6 +167,7 @@ run_block() {
       local floor="${1:-0}" fac="${2:-0}" largest="${3:-}"
       [[ "$floor" =~ ^[0-9]+$ ]] || floor=0
       [[ "$fac" =~ ^[0-9]+$ ]] || fac=0
+      (( floor > 0 )) || { printf '0'; return 0; }
       if [[ "$largest" =~ ^[0-9]+$ ]] && (( fac > 0 )); then
         local derived=$(( fac * largest ))
         if (( derived > floor )); then printf '%s' "$derived"; return 0; fi
@@ -413,6 +414,90 @@ assert_eq "a 0 floor turns the check off even with a large recorded footprint" \
   "yes" "$(if grep -q 'FELL THROUGH' "$evt_file"; then echo yes; else echo no; fi)"
 assert_eq "…never even reading the footprint" \
   "0" "$(grep -c '^largest_footprint_call' "$evt_file" || true)"
+
+# === The measuring end: the two clones that feed the derivation ============
+#
+# The derivation above is only ever as good as the footprints it can read, and
+# `disk_space_largest_footprint` is fed the union of every node's *shared*
+# `log.jsonl` in both of its callers (lib/standdown.sh's own `union_log`, and
+# scripts/doctor.sh's `fleet_logs … log.jsonl`). review-cycle.sh's own
+# `log_event` is bound to `review-log.jsonl` instead — its separate operational
+# stream (REVIEW-PIPELINE-SPEC R16) — so a footprint logged through it would be
+# a measurement nothing can ever read, and no assertion about the derivation
+# itself would notice. These lift both cycles' measuring blocks and check which
+# stream each one actually writes to.
+#
+# lib/disk-space.sh and lib/log-event.sh are sourced inside a subshell here,
+# not at the top of this file: the stand-down assertions above depend on the
+# stubs run_block injects, and the real helpers must not reach them.
+
+footprint_blocks_rc="$(
+  cd "$SCRIPT_DIR" || exit 1
+  # shellcheck source=lib/disk-space.sh
+  . "$SCRIPT_DIR/lib/disk-space.sh"
+  # shellcheck source=lib/log-event.sh
+  . "$SCRIPT_DIR/lib/log-event.sh"
+
+  # The anchors spell the comment's opening backticks as `.`, so this line
+  # carries none of its own — shellcheck reads a backtick inside single quotes
+  # as a command substitution someone meant to expand (SC2016), and lint-shell
+  # runs at info severity.
+  review_block="$(extract_block '^  # .du -sb. of the clone just made' '^  fi$' "$SCRIPT_DIR/review-cycle.sh")"
+  cycle_block="$(extract_block '^# .du -sb. of the clone just made' '^fi$' "$SCRIPT_DIR/agent-cycle.sh")"
+  for pair in "review-cycle.sh:$review_block" "agent-cycle.sh:$cycle_block"; do
+    if [[ "${pair#*:}" != *'disk_space_clone_footprint_bytes'* || "${pair#*:}" != *'clone-footprint'* ]]; then
+      echo "FAIL - could not extract the clone-footprint block from ${pair%%:*} — has it moved?" >&2
+      exit 1
+    fi
+  done
+
+  # shellcheck disable=SC2317  # called from $review_block/$cycle_block via eval
+  disk_space_clone_footprint_bytes() { printf '4096000'; }
+
+  log_dir="$tmp_dir/footprint-logs"
+  mkdir -p "$log_dir"
+  log_file="$log_dir/log.jsonl"
+  review_log_file="$log_dir/review-log.jsonl"
+  : > "$log_file"
+  : > "$review_log_file"
+  # shellcheck disable=SC2034  # consumed by $review_block via eval
+  review_id="20260101T000000Z-testnode-1"
+  # shellcheck disable=SC2034  # consumed by $review_block via eval
+  node_name="testnode"
+  # shellcheck disable=SC2034  # consumed by both blocks via eval
+  clone_dir="$log_dir/clone"
+  # shellcheck disable=SC2034  # consumed by $review_block via eval
+  slug="owner/reviewed-repo"
+  eval "$review_block"
+
+  # agent-cycle.sh's own `log_event` is bound to the shared log.jsonl already,
+  # so what is worth pinning for that block is the event name and the two
+  # fields the derivation reads — recorded through a stub, since the real one
+  # needs the whole cycle's state around it.
+  cycle_events="$log_dir/cycle-events"
+  : > "$cycle_events"
+  # shellcheck disable=SC2317  # called from $cycle_block via eval
+  log_event() { printf '%s %s\n' "$1" "$2" >> "$cycle_events"; }
+  # shellcheck disable=SC2034  # consumed by $cycle_block via eval
+  repo_slug="owner/cloned-repo"
+  eval "$cycle_block"
+
+  printf '%s\n' \
+    "shared=$(wc -l < "$log_file" | tr -d ' ')" \
+    "review=$(wc -l < "$review_log_file" | tr -d ' ')" \
+    "readback=$(disk_space_largest_footprint < "$log_file")" \
+    "cycle=$(cat "$cycle_events")"
+)" || true
+
+assert_eq "review-cycle.sh's clone-footprint lands on the shared log.jsonl the derivation reads" \
+  "shared=1" "$(grep '^shared=' <<<"$footprint_blocks_rc" || true)"
+assert_eq "…and never on review-log.jsonl, which no caller of disk_space_largest_footprint reads" \
+  "review=0" "$(grep '^review=' <<<"$footprint_blocks_rc" || true)"
+assert_eq "…and the real disk_space_largest_footprint reads that write back whole" \
+  "readback=4096000	owner/reviewed-repo" "$(grep '^readback=' <<<"$footprint_blocks_rc" || true)"
+assert_eq "agent-cycle.sh logs the same event name and the two fields the derivation reads" \
+  'cycle=clone-footprint {"repo":"owner/cloned-repo","bytes":4096000}' \
+  "$(grep '^cycle=' <<<"$footprint_blocks_rc" || true)"
 
 echo
 if (( failures == 0 )); then

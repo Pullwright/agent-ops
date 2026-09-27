@@ -1168,10 +1168,19 @@ review_one() {
   # runs no gate of its own, but its clones are the same repositories', so
   # they feed the one shared measurement too. Best-effort, the same "no
   # evidence, no event" convention agent-cycle.sh's own reading uses.
+  #
+  # Written to the *shared* `log.jsonl` (`$log_file`), not this pipeline's own
+  # `review-log.jsonl` — the second of R16's two shared exceptions, for the
+  # same reason `limit-hit` is the first: the reader is in the other pipeline.
+  # `disk_space_largest_footprint` is fed `fleet_logs <state_dir> <peers>
+  # log.jsonl` in both of its callers (lib/standdown.sh and scripts/doctor.sh),
+  # so a footprint on `review-log.jsonl` would be a measurement nothing can
+  # ever read.
   clone_footprint_bytes="$(disk_space_clone_footprint_bytes "$clone_dir")"
   if [[ -n "$clone_footprint_bytes" ]]; then
-    log_event "clone-footprint" "$(jq -nc --arg repo "$slug" --argjson bytes "$clone_footprint_bytes" \
-      '{repo: $repo, bytes: $bytes}')"
+    log_event_append "$log_file" review "$review_id" "$node_name" "clone-footprint" \
+      "$(jq -nc --arg repo "$slug" --argjson bytes "$clone_footprint_bytes" \
+        '{repo: $repo, bytes: $bytes}')"
   fi
 
   # Stage the vendored skill into the clone, and git-exclude it so the agent can

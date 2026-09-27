@@ -2342,10 +2342,13 @@ implements.
       lib/workspace.sh, already takes) is measured once every successful
       `clone_repo` completes — agent-cycle.sh's own workspace step (6) and
       review-cycle.sh's own — and logged as a `clone-footprint` event,
-      `{repo, bytes}`, against the cloned repository's own slug; never from
-      GitHub's own reported repository size, which is the packed size, not
-      what a clone occupies, and never a network call this gate would have to
-      pay for. `disk_space_largest_footprint`, reading `union_log` the same
+      `{repo, bytes}`, against the cloned repository's own slug. The review
+      pipeline writes it to the *shared* `log.jsonl` rather than its own
+      `review-log.jsonl` (`docs/REVIEW-PIPELINE-SPEC.md` R16's second shared
+      exception, `limit-hit` being the first), because this is where its reader
+      is. The figure is never GitHub's own reported repository size, which is
+      the packed size, not what a clone occupies, and never a network call this
+      gate would have to pay for. `disk_space_largest_footprint`, reading `union_log` the same
       "governing record off the fleet's own union" shape requirement 2.1's
       `limit_union_record` already uses, returns the single largest
       `clone-footprint` ever recorded, fleet-wide, unfiltered by which
@@ -2384,7 +2387,12 @@ implements.
       whenever `governed_by` is `"derived"`. `min_free_workspace_bytes` set to
       `0` turns the check off entirely for both directories, *regardless of
       any footprint recorded* — the same unconditional-off convention
-      `github_min_core_budget`/`github_min_graphql_budget` use.
+      `github_min_core_budget`/`github_min_graphql_budget` use. That off switch
+      lives inside `disk_space_effective_min_bytes` itself — a `0` floor
+      derives `0`, whatever footprint it is handed — not only in this gate's
+      own short-circuit around the whole block, so `scripts/doctor.sh`, which
+      has no such short-circuit, cannot end up warning about a threshold
+      derived over a floor an operator has explicitly switched off.
 
    0d. *The budget is recorded* (agent-ops#1087). `github_budget_record`
       (`lib/github-limit.sh`) takes a snapshot and logs it as a
@@ -24912,8 +24920,12 @@ oblige anyone to edit a test.
    `disk_space_effective_min_bytes` returns
    `max(floor, factor × largest)`, the floor alone for a non-numeric or zero
    factor, a non-numeric largest, or a derivation that does not exceed the
-   floor, and never below the floor even when the factor is `1` and the
-   footprint equals it exactly; `disk_space_governed_by` reports `"derived"`
+   floor, never below the floor even when the factor is `1` and the
+   footprint equals it exactly, and `0` for a `0` or non-numeric floor
+   whatever footprint it is handed — the off switch living in this one
+   function rather than in each caller, so the caller that has no guard of
+   its own (`scripts/doctor.sh`) honours it too; `disk_space_governed_by`
+   reports `"derived"`
    only when the effective threshold exceeds the floor, `"floor"` otherwise
    (including for a non-numeric effective value, read as `0`).
    `test/disk-space-wiring.test.sh` passes against the block lifted verbatim
@@ -24940,12 +24952,26 @@ oblige anyone to edit a test.
    no footprint recorded, or with one too small to raise the threshold, falls
    through under the plain floor alone, `governed_by: "floor"`; exactly one
    `disk_space_largest_footprint` reading is taken regardless of how many
-   directories are judged. `test/doctor.test.sh` passes: a
-   `min_free_workspace_bytes` set above this host's real free space (an
-   exbibyte — no `df` stub needed, since no real free space could ever meet
+   directories are judged. The same file also passes against both cycles'
+   *measuring* blocks, lifted verbatim out of `review-cycle.sh` and
+   `agent-cycle.sh`: each logs one `clone-footprint` event carrying `{repo,
+   bytes}` for the repository it cloned, and `review-cycle.sh`'s lands on the
+   shared `log.jsonl` — never on its own `review-log.jsonl`, which no caller of
+   `disk_space_largest_footprint` reads — where the real
+   `disk_space_largest_footprint` reads it back whole. `test/doctor.test.sh`
+   passes: a `min_free_workspace_bytes` set above this host's real free space
+   (an exbibyte — no `df` stub needed, since no real free space could ever meet
    it) warns on both `state_dir` and `workspace_root`, naming the configured
-   floor's own MiB figure, without turning the pass into a failure; set to
-   `0` it warns on neither, however little free space actually remains.
+   floor's own MiB figure, without turning the pass into a failure; a recorded
+   `clone-footprint` large enough that `workspace_headroom_factor × footprint`
+   clears the same bar warns the same way, naming the derived MiB figure, the
+   factor, the repository and the footprint's own MiB figure; the same
+   footprint with `workspace_headroom_factor: 0` derives nothing, leaving the
+   plain floor's own sentence and never naming the repository; and
+   `min_free_workspace_bytes: 0` warns on neither directory, however little
+   free space actually remains and whatever footprint is recorded — the same
+   unconditional off switch the gate short-circuits on, so the two cannot
+   disagree about whether the check is on at all.
 2n-i. **A cycle does not start work the host has no memory to run (requirement
    2.0f).** `test/memory.test.sh` passes: `memory_available_kb` reads
    MemAvailable rather than MemFree and is empty (never `0`) when

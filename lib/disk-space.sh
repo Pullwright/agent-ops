@@ -162,10 +162,20 @@ disk_space_largest_footprint() {
 # ceiling. A non-numeric or absent FACTOR or LARGEST_BYTES — no footprint has
 # ever been recorded, or the factor is off — derives nothing, and the floor
 # alone governs, the same as a `0` FACTOR would.
+#
+# A `0` (or non-numeric) FLOOR_BYTES is the check's own off switch, and it is
+# unconditional: `0` in, `0` out, whatever footprint has been recorded, so
+# `disk_space_verdict`'s own "`0` reads as ok" carries the off switch the rest
+# of the way. Deliberately here rather than in each caller: `lib/standdown.sh`
+# short-circuits the whole block on `min_free_workspace_bytes > 0` and never
+# reaches this function, `scripts/doctor.sh` has no such guard, and a floor
+# honoured in one place and derived over in the other is precisely the
+# gate/diagnostic divergence this file exists to make impossible.
 disk_space_effective_min_bytes() {
   local floor="${1:-0}" factor="${2:-0}" largest="${3:-}" derived
   [[ "$floor" =~ ^[0-9]+$ ]] || floor=0
   [[ "$factor" =~ ^[0-9]+$ ]] || factor=0
+  (( floor > 0 )) || { printf '0'; return 0; }
   if [[ "$largest" =~ ^[0-9]+$ ]] && (( factor > 0 )); then
     derived=$(( factor * largest ))
     if (( derived > floor )); then

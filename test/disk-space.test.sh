@@ -196,8 +196,10 @@ assert_eq "effective_min_bytes: the derivation governs once it exceeds the floor
   "4294967296" "$(disk_space_effective_min_bytes 2147483648 2 2147483648)"
 assert_eq "effective_min_bytes: exactly at the floor is still floor-governed (never below the floor)" \
   "2147483648" "$(disk_space_effective_min_bytes 2147483648 1 2147483648)"
-assert_eq "effective_min_bytes: a non-numeric floor reads as 0" \
-  "10000" "$(disk_space_effective_min_bytes bogus 2 5000)"
+assert_eq "effective_min_bytes: a 0 floor is the off switch — 0 out, whatever footprint is recorded" \
+  "0" "$(disk_space_effective_min_bytes 0 2 5000000000)"
+assert_eq "effective_min_bytes: a non-numeric floor reads as 0, and so is off too" \
+  "0" "$(disk_space_effective_min_bytes bogus 2 5000)"
 assert_eq "effective_min_bytes: a non-numeric largest derives nothing, the floor governs" \
   "2147483648" "$(disk_space_effective_min_bytes 2147483648 2 bogus)"
 
@@ -209,6 +211,8 @@ assert_eq "governed_by is \"derived\" when the effective threshold exceeds the f
   "derived" "$(disk_space_governed_by 2147483648 4294967296)"
 assert_eq "governed_by is \"floor\" for a non-numeric effective value (reads as 0, never above the floor)" \
   "floor" "$(disk_space_governed_by 2147483648 bogus)"
+assert_eq "governed_by is \"floor\" when the check is off entirely (a 0 floor derives 0)" \
+  "floor" "$(disk_space_governed_by 0 "$(disk_space_effective_min_bytes 0 2 5000000000)")"
 
 echo
 if (( failures == 0 )); then
