@@ -20,6 +20,11 @@
 #   - `report_directory_most_recent` finds the latest existing instance and
 #     its own date, and prints nothing when none exist within the lookback
 #     window.
+#   - A listing that fails for a reason other than the queried path not
+#     existing (issue #1024) is signalled through `report_directory_find_dirs`'s
+#     and `report_directory_most_recent`'s own exit status — distinct from a
+#     genuinely empty listing (nothing matched, or a clean 404), which exits 0
+#     printing nothing, the same as before this distinction existed.
 #
 # `gh` is stubbed the same shape test/gather-project-review.test.sh uses.
 # Fixture dates are computed relative to the real clock at run time (10/20/45
@@ -104,6 +109,15 @@ case "\$path" in
   repos/o/empty/contents/reviews\\?ref=*)
     echo '[{"name":"README.md","type":"file"}]'
     ;;
+  repos/o/nodir/contents/reviews\\?ref=*)
+    echo '{"message":"Not Found","documentation_url":"https://docs.github.com/rest","status":"404"}'
+    echo "gh: Not Found (HTTP 404)" >&2
+    exit 1
+    ;;
+  repos/o/fail/contents/reviews\\?ref=*)
+    echo "gh: error connecting to api.github.com" >&2
+    exit 1
+    ;;
   *)
     echo "stub gh: unexpected call: \$*" >&2
     exit 1
@@ -143,6 +157,29 @@ assert_eq "a dynamic-middle format's own date and full path" \
 assert_eq "nothing to discover prints nothing" \
   "" \
   "$(report_directory_most_recent o/empty main 'reviews/project-review-%Y-%m-%d')"
+
+# --- A failed listing is signalled distinctly from a genuine empty (issue --
+# --- #1024) --------------------------------------------------------------
+
+out="$(report_directory_find_dirs o/fail main 'reviews/project-review-%Y-%m-%d' 2>/dev/null)"; rc=$?
+assert_eq "a failed listing prints nothing" "" "$out"
+assert_eq "  ...but exits nonzero, unlike a genuine empty" "1" "$rc"
+
+out="$(report_directory_find_dirs o/empty main 'reviews/project-review-%Y-%m-%d' 2>/dev/null)"; rc=$?
+assert_eq "a genuinely empty listing still prints nothing" "" "$out"
+assert_eq "  ...and exits 0" "0" "$rc"
+
+out="$(report_directory_find_dirs o/nodir main 'reviews/project-review-%Y-%m-%d' 2>/dev/null)"; rc=$?
+assert_eq "a clean 404 (no reviews/ directory at all) prints nothing" "" "$out"
+assert_eq "  ...and is a definite empty, not a failure" "0" "$rc"
+
+out="$(report_directory_most_recent o/fail main 'reviews/project-review-%Y-%m-%d' 2>/dev/null)"; rc=$?
+assert_eq "most_recent also prints nothing on a failed listing" "" "$out"
+assert_eq "  ...and exits nonzero, distinct from nothing-to-discover" "1" "$rc"
+
+out="$(report_directory_most_recent o/nodir main 'reviews/project-review-%Y-%m-%d' 2>/dev/null)"; rc=$?
+assert_eq "most_recent on a clean 404 still prints nothing" "" "$out"
+assert_eq "  ...but exits 0, the same as any other confirmed empty" "0" "$rc"
 
 printf '\n'
 if (( failures > 0 )); then

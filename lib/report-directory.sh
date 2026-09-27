@@ -93,13 +93,30 @@ report_directory_regex() {
 # it for the next one. Degrades to nothing wherever `gh api` fails (a missing
 # parent directory, an unreadable repository) — the same silent-empty
 # discovery result an absent `reviews/` folder already produced.
+#
+# A failure whose response body carries `"status":"404"` (PREFIX itself does
+# not exist — the same clean-404 shape scripts/gather-project-review.sh's own
+# top-level listing already special-cases) is exactly that silent-empty case:
+# nothing exists beneath a path that isn't there. Any other `gh api` failure
+# (a rate limit, a network error) instead sets `_report_directory_walk_failed`
+# — a variable global to this library, reset by report_directory_find_dirs
+# before each top-level call and read back by it afterwards (issue #1024) —
+# so a caller that needs to tell a degraded read from a definite empty can,
+# without re-listing to find out.
 _report_directory_walk() {
   local prefix="$1" slug="$2" branch="$3"; shift 3
   local seg="$1"; shift
-  local regex api_path listing name next_prefix
+  local regex api_path listing name next_prefix rc
   regex="^$(report_directory_regex "$seg")\$"
   if [[ -z "$prefix" ]]; then api_path="contents"; else api_path="contents/$prefix"; fi
-  listing="$(gh api "repos/$slug/$api_path?ref=$branch" 2>/dev/null)" || return 0
+  listing="$(gh api "repos/$slug/$api_path?ref=$branch" 2>/dev/null)"
+  rc=$?
+  if (( rc != 0 )); then
+    if [[ "$(jq -r '.status // ""' <<<"$listing" 2>/dev/null)" != "404" ]]; then
+      _report_directory_walk_failed=1
+    fi
+    return 0
+  fi
   while IFS= read -r name; do
     [[ -n "$name" ]] || continue
     if [[ -z "$prefix" ]]; then next_prefix="$name"; else next_prefix="$prefix/$name"; fi
@@ -115,6 +132,13 @@ _report_directory_walk() {
 # Every existing directory on BRANCH whose path matches FORMAT's resolved
 # shape, one per line (empty if none). See the file header for the folding
 # and listing strategy.
+#
+# Exits nonzero (printing exactly what a successful walk would have printed
+# up to the point of failure — typically nothing) when some listing inside
+# the walk failed for a reason other than the queried path not existing;
+# exits 0 otherwise, whether or not anything matched. A caller that doesn't
+# check the exit status — every caller before issue #1024 — is unaffected,
+# since the printed output is identical either way.
 report_directory_find_dirs() {
   local slug="$1" branch="$2" format="$3"
   local -a segments
@@ -126,7 +150,9 @@ report_directory_find_dirs() {
     i=$(( i + 1 ))
   done
   local -a remaining=("${segments[@]:$i}")
+  _report_directory_walk_failed=0
   _report_directory_walk "$static_prefix" "$slug" "$branch" "${remaining[@]}"
+  (( _report_directory_walk_failed == 0 ))
 }
 
 # report_directory_most_recent SLUG BRANCH FORMAT [LOOKBACK_DAYS]
@@ -142,10 +168,19 @@ report_directory_find_dirs() {
 # embedding a time-of-day specifier (%H/%M/%S) essentially never matches the
 # time-of-day baked into an existing directory's name, and discovery
 # silently returns nothing.
+#
+# Exits nonzero, printing nothing, when report_directory_find_dirs's own
+# walk failed to determine the full set of candidates (issue #1024) — a
+# degraded read, distinguishable via `$?` from a confirmed "nothing exists"
+# (exit 0, no output). A caller that doesn't check the exit status is
+# unaffected: both cases print nothing, exactly as before this distinction
+# existed.
 report_directory_most_recent() {
   local slug="$1" branch="$2" format="$3" lookback="${4:-400}"
   local candidates
-  candidates="$(report_directory_find_dirs "$slug" "$branch" "$format")"
+  if ! candidates="$(report_directory_find_dirs "$slug" "$branch" "$format")"; then
+    return 1
+  fi
   [[ -n "$candidates" ]] || return 0
   local d resolved
   for (( d = 0; d <= lookback; d++ )); do

@@ -20715,14 +20715,17 @@ What exists, and the requirements each part answers to:
    folder resolves, `{"ok": true, "date": ""}` when the listing succeeds and
    offers none at all (including a clean 404 on `reviews/` itself — a
    definite fact), or `{"ok": false}` for any other failure, which decides
-   nothing. The empty date is read off this script's own successful listing,
-   never off `report_directory_most_recent` coming back empty:
-   `lib/report-directory.sh`'s walk makes a *second* call over the same path
-   and degrades a failed one to the same silence an unmatched listing
-   produces, so a listing that shows a directory of the format's shape while
-   the walk yields nothing is `{"ok": false}` — the answer decides nothing
-   rather than retiring, on a rate limit, refs whose retirement nothing can
-   clear. This is requirement 34n's `review-superseded` signal
+   nothing. The empty date is read off `report_directory_most_recent`'s own
+   exit status, not merely its empty output: `lib/report-directory.sh`'s walk
+   (`_report_directory_walk`, via `report_directory_find_dirs`) exits nonzero
+   when one of its listings fails for a reason other than the queried path
+   not existing (a 404), distinct from exiting zero with no output when every
+   listing succeeded and simply matched nothing — so a rate limit landing
+   mid-walk is `{"ok": false}` rather than the empty date, without this
+   script re-implementing the walk's own listing/regex probe to tell the two
+   apart. The answer decides nothing rather than retiring, on a rate limit,
+   refs whose retirement nothing can clear. This is requirement 34n's
+   `review-superseded` signal
    (TD-PPagop-26082309): `lib/candidate-gather.sh` calls it once per repo
    already carrying unretired review-shaped void residue, and
    `void_review_plan_actioned` (`lib/void-liveness.sh`) reads the date back
