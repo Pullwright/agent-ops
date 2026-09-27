@@ -181,16 +181,21 @@ object ever names another repository.
   only place the resolved value comes from; nothing about it is fixed by this
   prompt, so a repo overriding `report_directory` needs no prompt change.
 - Each entry's `report_directory_resolved` — present alongside `report_directory`
-  whenever a review folder actually exists — is the **path** of the latest
+  whenever that resolution found a folder — is the **path** of the latest
   existing folder that format string names, already resolved by the Script
   (`report_directory_most_recent`, `lib/report-directory.sh`) the same
   deterministic way `scripts/gather-project-review.sh` and the Refiner's own
   pre-fetch already do: no hand-rolled walk of `report_directory` needed. Read
   it directly as the folder to open. Absent when `project-review` isn't
-  configured, or present as `report_directory` alone with no `_resolved`
-  field when no folder has ever been written yet (nothing to resolve to). See
+  configured at all, and present as `report_directory` alone with no
+  `_resolved` field wherever the Script's own resolution came back empty —
+  which means either that no folder has been written for this repo yet **or**
+  that the listing behind the resolution failed (a rate limit, a permission,
+  a transient error; the two are indistinguishable from here, by design). So
+  a missing `_resolved` field is never itself evidence that this repo has no
+  review to read: do the fallback walk below and let *that* decide. See
   "Project-review recommendations" below for how to read it, and the
-  three-step walk that remains as this field's own fallback.
+  three-step walk that serves as this field's own fallback.
 - Each entry's `tech_debt` is the repo's own open GitHub issues labelled
   `pw::type:tech-debt`, whole thread included — **already fetched, already
   filtered on the same deterministic terms as `issues` (assigned/
@@ -1141,9 +1146,11 @@ repo configures neither `repository_review.repos[].report_directory` nor
 `repository_review.defaults.report_directory`, or a repository's own
 override). Where it is present, read it directly — there is no walk to do.
 
-Where `report_directory_resolved` is **absent** (no review has ever been
-written for this repo, so nothing exists to resolve to) but `report_directory`
-is present, fall back to finding the latest folder yourself, the same way
+Where `report_directory_resolved` is **absent** but `report_directory` is
+present — the Script's own resolution came back empty, so either no review has
+been written for this repo yet or the listing behind it failed, and nothing
+here tells the two apart — fall back to finding the latest folder yourself,
+which is then the authority on which it was, the same way
 `lib/report-directory.sh` does, because the dynamic part is not always the
 final path segment:
 
