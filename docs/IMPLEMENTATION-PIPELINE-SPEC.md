@@ -246,8 +246,12 @@ a node updates by pulling a new image rather than by pulling a branch.
   every push and fetch would mint against the scalar default installation
   whatever organisation it was for; neither `git config` call is fatal — a
   node that could not write either still authenticates, just always as the
-  default identity — creates `state_dir` and
-  `workspace_root`, and then execs the service it was given. It refuses to
+  default identity — refuses to start, before creating either directory, if
+  `config.json`'s `state_dir` or `workspace_root` is missing, empty, or not a
+  string, checked by JSON type (so a number or array value is rejected too,
+  rather than stringified into a literal directory name); otherwise creates
+  `state_dir` and `workspace_root`, and then execs the service it was given.
+  It also refuses to
   start if `state_dir` is not writable, rather than
   letting a mis-owned volume become a silent failure to record anything. It
   does *not* set the git identity: every container this image runs — including
