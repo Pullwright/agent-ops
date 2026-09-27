@@ -653,12 +653,24 @@ while IFS=$'\t' read -r _ slug default_branch; do
   # repo actually lists the source, same as implementation_plan_path above —
   # resolved once per repo against report_directory_repos_json (computed
   # once, ahead of this loop), never re-derived here.
+  #
+  # `report_directory_resolved` (issue #1891) additionally names the latest
+  # existing folder that format string already names, by calling
+  # report_directory_most_recent (lib/report-directory.sh, already sourced by
+  # agent-cycle.sh) — the same deterministic resolution
+  # scripts/gather-project-review.sh and the Refiner's own pre-fetch already
+  # use — rather than leaving prompts/coordinator.md's own live read walk the
+  # format string by hand. Empty wherever nothing exists yet to resolve to
+  # (a repo whose review has never run), same as report_directory_most_recent
+  # itself prints nothing in that case.
   report_directory=""
+  report_directory_resolved=""
   if jq -e 'any(.[]; . == "project-review")' <<<"$sources" >/dev/null 2>&1; then
     report_directory="$(jq -r --arg s "$slug" \
       'map(select(.slug == $s)) | .[0].report_directory // ""' \
       <<<"$report_directory_repos_json" 2>/dev/null || true)"
     [[ -n "$report_directory" ]] || report_directory="$REPORT_DIRECTORY_DEFAULT"
+    report_directory_resolved="$(report_directory_most_recent "$slug" "$default_branch" "$report_directory" 2>/dev/null | cut -f2)"
   fi
   # findings/review_feedback/abandoned_drafts/merge_conflicts/dequeued/
   # landing_refusals/issues/tech_debt are the pre-fetched bands themselves —
@@ -676,12 +688,14 @@ while IFS=$'\t' read -r _ slug default_branch; do
   # 100-item page (scripts/gather-issues.sh) and each entry is a bare number
   # and a short reason, tens of bytes at most — nowhere near MAX_ARG_STRLEN.
   entry="$(jq -nc --arg slug "$slug" --arg db "$default_branch" --argjson sources "$sources" \
-    --arg ipp "$implementation_plan_path" --arg rd "$report_directory" --argjson ie "$issues_excluded" \
+    --arg ipp "$implementation_plan_path" --arg rd "$report_directory" --arg rdr "$report_directory_resolved" \
+    --argjson ie "$issues_excluded" \
     'input as $findings | input as $rf | input as $ad | input as $mc | input as $dq | input as $lr
      | input as $issues | input as $td
      | {slug: $slug, default_branch: $db, sources: $sources, findings: $findings, review_feedback: $rf, abandoned_drafts: $ad, merge_conflicts: $mc, dequeued: $dq, landing_refusals: $lr, human_visibility: [], issues: $issues, issues_excluded: $ie, tech_debt: $td}
      + (if $ipp == "" then {} else {implementation_plan_path: $ipp} end)
-     + (if $rd == "" then {} else {report_directory: $rd} end)' <<<"$entry_docs")"
+     + (if $rd == "" then {} else {report_directory: $rd} end)
+     + (if $rdr == "" then {} else {report_directory_resolved: $rdr} end)' <<<"$entry_docs")"
   # Requirement 48 (agent-ops#1086): whether the eight bands above came from
   # this cycle's own read of $slug or from this node's cache of an earlier
   # cycle's — lib/coordinator-input.sh documents what a reader (the

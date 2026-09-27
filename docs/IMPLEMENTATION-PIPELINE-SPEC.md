@@ -6216,6 +6216,31 @@ implements.
    default is a valid resolution in its own right, so the field is simply
    present with that value rather than the engagement being refused at
    startup.
+
+   The runtime-input entry also carries `report_directory_resolved` (issue
+   #1891): the latest existing review folder's own path, resolved by calling
+   `report_directory_most_recent` (`lib/report-directory.sh`, the same helper
+   `scripts/gather-project-review.sh` and the Refiner's own pre-fetch already
+   call) against that repo's resolved `report_directory` — so the
+   Co-Ordinator's live read of this source (requirement 3y, requirement 15)
+   reads a Script-resolved path directly rather than walking the format
+   string by hand. Present alongside `report_directory` wherever that
+   resolution returns a path; wherever it returns nothing the entry carries
+   `report_directory` with no `_resolved` field, and `prompts/coordinator.md`
+   falls back to the hand-rolled walk. An empty resolution does **not**
+   distinguish "no review folder exists yet" from "the listing behind the
+   resolution failed" — `lib/report-directory.sh`'s walk degrades a failed
+   `gh api` to the same silence an unmatched listing produces, the same
+   ambiguity requirement 3y's own `--current-date` mode exists to keep out of
+   a retirement decision — so the field's absence is never evidence that the
+   repository has no review to read, and `prompts/coordinator.md` says so
+   where it describes the fallback. Unlike the eight bands, this resolution
+   is not part of requirement 48's one-repository-per-cycle rotation: it is
+   one listing call for every repository whose `sources` lists
+   `project-review`, every cycle, because every entry the Co-Ordinator might
+   be handed needs the field and not only the one repository gathered freshly
+   — a cheap probe on the same footing as the ones requirement 48's own
+   closing paragraph leaves unrestricted.
 3h. **Refinement carry-forward.** The Co-Ordinator's runtime input carries a
    `refinements` map — repo → item → the latest `item-refined` payload
    (requirement 33), for items that are not void — built from the fleet's log
@@ -6942,14 +6967,19 @@ implements.
 
 3y. **Refiner-only pre-fetch: `project-review` and `implementation-plan`.**
    These two sources have no array in `ordered_repos_json` and gain none: the
-   Co-Ordinator reads the repository's latest review folder — under its own
-   resolved `report_directory` (requirement 3k;
-   `reviews/project-review-YYYY-MM-DD/` where the repository configures
-   neither `repository_review.repos[]`'s nor `repository_review.defaults`'
-   own `report_directory`) — and the repo's plan document live while it
-   evaluates each candidate (requirement 15, `prompts/coordinator.md`), and
-   that live read is the authority for selection. What requirement 39a's
-   candidate set needs is a
+   Co-Ordinator reads the repository's latest review folder — its own
+   `report_directory_resolved` where present (requirement 3k), the path
+   `report_directory_most_recent` already resolved deterministically, read
+   with no walk of its own; the hand-rolled fallback walk over `report_directory`
+   (requirement 3k; `reviews/project-review-YYYY-MM-DD/` where the repository
+   configures neither `repository_review.repos[]`'s nor
+   `repository_review.defaults`' own `report_directory`) only where
+   `report_directory_resolved` is absent — and the repo's plan document live
+   while it evaluates each candidate (requirement 15, `prompts/coordinator.md`),
+   and that live read is the authority for selection: it reads a
+   Script-resolved field rather than deriving the path itself, and it still
+   reads the folder's own contents fresh every cycle rather than trusting a
+   candidate set computed ahead of it. What requirement 39a's candidate set needs is a
    *different* thing — a structured array it can name an item out of — so the
    Script builds one for the Refiner alone: `refiner_repos_json`, a copy of
    `ordered_repos_json` in which a repo entry may additionally carry
@@ -7847,7 +7877,8 @@ implements.
    bodies pasted *verbatim* into the work order and together they were 34 KB
    of the 354 KB that overflowed. The small, per-repo scalar fields a repo
    entry carries alongside its bands — `implementation_plan_path`,
-   `report_directory` (requirement 3k) — are not bands at all and are never
+   `report_directory` and `report_directory_resolved` (requirement 3k) — are
+   not bands at all and are never
    candidates for shedding: each is a short string, present only for a repo
    whose `sources` configures the matching source, and negligible next to any
    band this ladder trims.
