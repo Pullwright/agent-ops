@@ -8,15 +8,16 @@
 #
 # ## --current-date (requirement 34n's review-superseded signal, TD-PPagop-26082309)
 #
-# With this flag first, the script performs only the `reviews/` listing —
-# never fetching `03-recommendations.md`/`04-improvement-prompts.md` — and
-# prints one JSON object instead of the candidate array, then exits 0:
+# With this flag first, the script performs only the report directory's own
+# listing — never fetching `03-recommendations.md`/`04-improvement-prompts.md`
+# — and prints one JSON object instead of the candidate array, then exits 0:
 #
 #   {"ok": true, "date": "2026-08-10"}   # a review folder was resolved
 #   {"ok": true, "date": ""}             # the listing succeeded and offered
-#                                         # no project-review-YYYY-MM-DD
-#                                         # folder at all, including a clean
-#                                         # 404 on reviews/ itself
+#                                         # no folder matching
+#                                         # report-directory-format at all,
+#                                         # including a clean 404 on that
+#                                         # format's own static prefix
 #   {"ok": false}                        # any other failure (API error,
 #                                         # unparseable listing) — decides
 #                                         # nothing
