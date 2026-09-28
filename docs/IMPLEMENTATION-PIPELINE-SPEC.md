@@ -60,6 +60,7 @@ are binding on any agent working inside them).
   - [Extended notes: `host_budget_enforce`](#extended-notes-host_budget_enforce)
   - [Extended notes: `host_budget_reserved_memory_bytes`](#extended-notes-host_budget_reserved_memory_bytes)
   - [Extended notes: `host_budget_reserved_cpus`](#extended-notes-host_budget_reserved_cpus)
+  - [Extended notes: `disable_default_ttl`](#extended-notes-disable_default_ttl)
   - [Extended notes: `none_selected_recheck_hours`](#extended-notes-none_selected_recheck_hours)
   - [Extended notes: `schedule.excluded_minutes`](#extended-notes-scheduleexcluded_minutes)
   - [Extended notes: `resources`](#extended-notes-resources)
@@ -1065,8 +1066,8 @@ and the schema must carry every one of them.
 | `host_budget_enforce` | `false` | Whether requirement 2.0g's host-budget check refuses to start a cycle when the sum of every running container's declared memory/CPU ceiling on this host overcommits it (issue #757). `false` (the default): the check still runs every cycle and `lib/host-budget.sh`'s summary is still published in the host-facts record (docs/HOST-FACTS-SCHEMA.md's `budget` section), but nothing stands the cycle down on it — advisory-by-default, per the issue's own "an operator who knowingly...[continued below](#extended-notes-host_budget_enforce) |
 | `host_budget_reserved_memory_bytes` | 512 MiB | The memory margin requirement 2.0g's host-budget check reserves for the host/VM itself: an overcommit is declared when the sum of every running container's own `memory.max_bytes` (docs/HOST-FACTS-SCHEMA.md's `budget.mem_declared_bytes`) plus this margin exceeds `host.mem_total_bytes`. The same default as `min_free_memory_bytes` (512 MiB) because both describe the same kind of headroom, one against the live figure and one against the declared sum. Only consulted when...[continued below](#extended-notes-host_budget_reserved_memory_bytes) |
 | `host_budget_reserved_cpus` | 0 | The CPU-core margin requirement 2.0g's host-budget check reserves for the host itself: an overcommit is declared when the sum of every running container's own `cpu.limit_nanos` (docs/HOST-FACTS-SCHEMA.md's `budget.cpu_declared_nanos`) plus this margin (converted to nanocpus) exceeds `host.cpu_count`. Defaults to `0`, not `min_free_memory_bytes`'s pattern of a real margin: CPU is time-sliced, so a host running more declared cores than it has is not automatically a fault the...[continued below](#extended-notes-host_budget_reserved_cpus) |
-| `disable_default_ttl` | *(unset)* | How long `--disable` lasts when neither `--for` nor `--until` says (requirement 2.3). Long enough to cover an editing session, short enough that a forgotten switch costs a few cycles rather than every future one. "A few cycles" means 4 cadence firings (requirement 1d), not a fixed 4 h: derived from the worst-case gap between cycles (`schedule.cycle_interval_minutes`, `cycle_hours`, `excluded_minutes`); a configured value floors the derivation rather than replacing it. |
-| `none_selected_recheck_hours` | *(unset)* | The no-op short-circuit's safety valve (requirement 3b): the Co-Ordinator is engaged regardless once the last `none-selected` is this old, even if nothing changed. Bounds how long a gap in fingerprint coverage can stall the pipeline. "This old" means 24 cadence firings (requirement 1d), not a fixed 24 h: derived from the worst-case gap between cycles (`schedule.cycle_interval_minutes`, `cycle_hours`, `excluded_minutes`); a configured non-zero value floors the derivation...[continued below](#extended-notes-none_selected_recheck_hours) |
+| `disable_default_ttl` | *(unset)* | How long `--disable` lasts when neither `--for` nor `--until` says (requirement 2.3). Short enough that a forgotten switch costs a few cycles rather than every future one. "A few cycles" means 4 cadence firings (requirement 1d), not a fixed 4 h: derived from the mean gap between cycles (`schedule.cycle_interval_minutes`, `cycle_hours`, `excluded_minutes`) — a count of firings elapsed, the same quantity a count-valued key expresses in cycle directories instead, so it follows...[continued below](#extended-notes-disable_default_ttl) |
+| `none_selected_recheck_hours` | *(unset)* | The no-op short-circuit's safety valve (requirement 3b): the Co-Ordinator is engaged regardless once the last `none-selected` is this old, even if nothing changed. Bounds how long a gap in fingerprint coverage can stall the pipeline. "This old" means 24 cadence firings (requirement 1d), not a fixed 24 h: derived from the mean gap between cycles (`schedule.cycle_interval_minutes`, `cycle_hours`, `excluded_minutes`) — a count of firings elapsed, the same quantity a count-valued...[continued below](#extended-notes-none_selected_recheck_hours) |
 | `image_behind_grace_hours` | 3 h | The dashboard badge's (and `scripts/check-node-image.sh`'s) tolerance for a node behind the registry's newest image (`lib/image-drift.sh`, requirement 2.5, #155) before it turns amber / fails: a roll defers while a cycle is in flight, so being behind an image published more recently than this is the ordinary mid-roll state, not a fault. |
 | `updater_stuck_after_minutes` | 20 min | The dashboard badge's tolerance for a container that was allowed to roll (`lib/updater-health.sh`'s `updater_status`, requirement 2.5, #603) before it turns amber: past this, the container the hook told to go ahead is still running, which a healthy roll never takes this long to resolve on its own — unlike `image_behind_grace_hours`, this is not an ordinary mid-roll wait. |
 | `node_health_live_stale_after_minutes` | 3 min | The liveness threshold `node_health_liveness` (`lib/node-health.sh`) applies to the marker's own mtime (requirement 57): comfortably above the one-minute crontab cadence that touches it, so an ordinary scheduling jitter never trips it, and far below any cycle's own worst-case runtime, so a genuinely wedged supercronic is caught within a few minutes rather than a whole cycle interval. |
@@ -1167,7 +1168,7 @@ The private repository through which `state_dir` replicates between nodes (requi
 
 ### Extended notes: `cycles_retained`
 
-Cycle directories kept in the replicated mirror — bounds a repository that is force-pushed after every cycle. A span of history, not a literal cycle count (requirement 1d): derived from the mean gap between cycles (`schedule.cycle_interval_minutes`, `cycle_hours`, `excluded_minutes`) to hold the ~8.3 days 200 cycles represented at the historical hourly cadence; a configured value floors the derivation rather than replacing it, the same shape `lock_stale_after` (requirement 4f) already uses. The mean gap, not the worst-case one the hour-valued keys take: a directory is written per firing, so a restricted `cycle_hours` must widen the four thresholds and leave this window alone rather than collapsing it. The node's own `state_dir` is bounded by `state_local_cycles_retained` instead. At the shipped 15-minute cadence this raises the derived count 200 → 800; see `state_local_streams_retained`'s own note for what that fourfold rise costs in practice. A configured value below the derivation is inert for the same reason `lock_stale_after`'s floor is: it preserves the span of history the base count was chosen to keep, at this installation's own cadence. Unlike `state_local_cycles_retained` and `state_local_streams_retained`, this key has no `STATE_SYNC_*` override, so a configured value is the only lever it has, and, being a floor, it can only raise the count. Disk is bounded separately, by requirement 2.0c's own free-space threshold — `min_free_workspace_bytes`'s floor, raised by `workspace_headroom_factor`'s derivation over the largest recorded clone (agent-ops#904) — not by this count.
+Cycle directories kept in the replicated mirror — bounds a repository that is force-pushed after every cycle. A span of history, not a literal cycle count (requirement 1d): derived from the mean gap between cycles (`schedule.cycle_interval_minutes`, `cycle_hours`, `excluded_minutes`) to hold the ~8.3 days 200 cycles represented at the historical hourly cadence; a configured value floors the derivation rather than replacing it, the same shape `lock_stale_after` (requirement 4f) already uses. The mean gap, not the worst-case one `claim_ttl_hours` and `abandoned_draft_after_hours` take: a directory is written per firing, so a restricted `cycle_hours` must widen those two thresholds and leave this window alone rather than collapsing it. The node's own `state_dir` is bounded by `state_local_cycles_retained` instead. At the shipped 15-minute cadence this raises the derived count 200 → 800; see `state_local_streams_retained`'s own note for what that fourfold rise costs in practice. A configured value below the derivation is inert for the same reason `lock_stale_after`'s floor is: it preserves the span of history the base count was chosen to keep, at this installation's own cadence. Unlike `state_local_cycles_retained` and `state_local_streams_retained`, this key has no `STATE_SYNC_*` override, so a configured value is the only lever it has, and, being a floor, it can only raise the count. Disk is bounded separately, by requirement 2.0c's own free-space threshold — `min_free_workspace_bytes`'s floor, raised by `workspace_headroom_factor`'s derivation over the largest recorded clone (agent-ops#904) — not by this count.
 
 ### Extended notes: `state_local_cycles_retained`
 
@@ -1331,9 +1332,13 @@ The memory margin requirement 2.0g's host-budget check reserves for the host/VM 
 
 The CPU-core margin requirement 2.0g's host-budget check reserves for the host itself: an overcommit is declared when the sum of every running container's own `cpu.limit_nanos` (docs/HOST-FACTS-SCHEMA.md's `budget.cpu_declared_nanos`) plus this margin (converted to nanocpus) exceeds `host.cpu_count`. Defaults to `0`, not `min_free_memory_bytes`'s pattern of a real margin: CPU is time-sliced, so a host running more declared cores than it has is not automatically a fault the way overcommitted memory is — enabling this check at all (`host_budget_enforce`) is already the operator's explicit choice; this key only widens or narrows it. Only consulted when `host_budget_enforce` is `true`.
 
+### Extended notes: `disable_default_ttl`
+
+How long `--disable` lasts when neither `--for` nor `--until` says (requirement 2.3). Short enough that a forgotten switch costs a few cycles rather than every future one. "A few cycles" means 4 cadence firings (requirement 1d), not a fixed 4 h: derived from the mean gap between cycles (`schedule.cycle_interval_minutes`, `cycle_hours`, `excluded_minutes`) — a count of firings elapsed, the same quantity a count-valued key expresses in cycle directories instead, so it follows how often the installation fires rather than how long its longest quiet stretch is; a configured value floors the derivation rather than replacing it. A human who wants a specific human-length window instead uses `--for 90m|4h|2d|forever`.
+
 ### Extended notes: `none_selected_recheck_hours`
 
-The no-op short-circuit's safety valve (requirement 3b): the Co-Ordinator is engaged regardless once the last `none-selected` is this old, even if nothing changed. Bounds how long a gap in fingerprint coverage can stall the pipeline. "This old" means 24 cadence firings (requirement 1d), not a fixed 24 h: derived from the worst-case gap between cycles (`schedule.cycle_interval_minutes`, `cycle_hours`, `excluded_minutes`); a configured non-zero value floors the derivation rather than replacing it. `0` disables the valve — don't — and, unlike a non-zero override, is never raised by the derivation: the valve stays off exactly as configured.
+The no-op short-circuit's safety valve (requirement 3b): the Co-Ordinator is engaged regardless once the last `none-selected` is this old, even if nothing changed. Bounds how long a gap in fingerprint coverage can stall the pipeline. "This old" means 24 cadence firings (requirement 1d), not a fixed 24 h: derived from the mean gap between cycles (`schedule.cycle_interval_minutes`, `cycle_hours`, `excluded_minutes`) — a count of firings elapsed, the same quantity a count-valued key expresses in cycle directories instead, so it follows how often the installation fires rather than how long its longest quiet stretch is; a configured non-zero value floors the derivation rather than replacing it. `0` disables the valve — don't — and, unlike a non-zero override, is never raised by the derivation: the valve stays off exactly as configured.
 
 ### Extended notes: `schedule.excluded_minutes`
 
@@ -1974,10 +1979,10 @@ implements.
    The derivation validates none of the three `schedule` leaves it reads,
    because `config_defaults` validates nothing (requirement 1b): a
    wrong-typed or unparseable one degrades to the historical hourly
-   assumption, under which both gaps are 60 minutes — the longest gap, so
-   the conservative answer for the four hour-valued keys, and the flat count
-   each of the three count-valued keys carried before this requirement —
-   rather than raising an error that would abandon the
+   assumption, under which both gaps are 60 minutes — so neither gap moves
+   any of the seven derived keys from the flat figure each already carried
+   before this requirement, whichever of the two it takes — rather than
+   raising an error that would abandon the
    merge and hand every caller an empty configuration. `scripts/doctor.sh` is
    why that distinction matters: the tool whose job is to report exactly such
    a violation reads a defaulted config to do it, so the derivation must
@@ -1985,22 +1990,47 @@ implements.
 
    Two shapes of key are re-expressed against these gaps, both keeping the
    key's *name*, *type* and *unit* unchanged — this is a derivation, not the
-   breaking rename a `claim_ttl_cycles` would be:
+   breaking rename a `claim_ttl_cycles` would be. Which shape a key takes
+   follows what it is actually sized against, not its unit: an hour-valued
+   key can take either gap, and two of the four do.
 
-   - **A span of cycles, expressed in hours**: `claim_ttl_hours` (6 cycles),
-     `abandoned_draft_after_hours` (4 cycles), `disable_default_ttl`
-     (4 cycles) and `none_selected_recheck_hours` (24 cycles) each carried an
-     hour figure that was really "N cycles" measured back when a cycle was an
-     hour. Absent, each is now `N * gap_minutes / 60`, rounded up to a whole
-     hour — every reader of these four keys is bash integer arithmetic
-     (`lib/claim.sh`'s `$(( claim_ttl_hours * 3600 ))`,
+   - **A stretch that must be outlasted, expressed in hours, against the
+     worst-case gap**: `claim_ttl_hours` (6 cycles) and
+     `abandoned_draft_after_hours` (4 cycles) each bound a live claim or a
+     draft still being worked, and outlasting the longest possible gap is
+     the whole of their intent — the worst-case gap is what a threshold
+     with that job is sized against (see above). Both also carry the second,
+     runtime floor described below.
+   - **A count of firings elapsed, expressed in hours, against the mean
+     gap**: `disable_default_ttl` (4 cycles) and `none_selected_recheck_hours`
+     (24 cycles) each carried an hour figure that was really "N cycles"
+     measured back when a cycle was an hour — but the cycles they count are
+     firings elapsed (a few cycles of `--disable`, a day's worth of skipped
+     `none-selected` runs), the same quantity a count-valued key below counts
+     in cycle directories, so each is sized against the mean gap for the
+     identical reason: a quantity that accrues at the installation's
+     throughput follows how often it fires, not how long its longest quiet
+     stretch is. Sizing either against the worst-case gap would starve its
+     own documented bound the same way the count-valued keys below would be
+     starved by it — see their own bullet for the "9-17" example, which
+     applies here unchanged: 36 firings a day derives 3 and 16 respectively,
+     where the worst-case gap's 915 minutes would derive 61 and 366 — a
+     `disable_default_ttl` outlasting the weekend, and a
+     `none_selected_recheck_hours` that can stall the pipeline for a
+     fortnight rather than the day requirement 3b documents.
+
+     All four keys across both bullets above are bash integer arithmetic on
+     the read side (`lib/claim.sh`'s `$(( claim_ttl_hours * 3600 ))`,
      `scripts/sweep-orphan-branches.sh`'s `^[0-9]+$` guard), never a float,
-     and widening that contract is outside this requirement's scope.
+     and widening that contract is outside this requirement's scope. Absent,
+     each is `N * gap_minutes / 60` against its own gap, rounded up to a
+     whole hour.
      `none_selected_recheck_hours` alone carries a "0 disables the valve"
      convention (`minimum: 0`, not `exclusiveMinimum`); an explicit 0 stays
      exactly 0, never raised by the derivation, or a deliberate "don't" would
      silently turn back on under a fast enough cadence.
-   - **A span of wall-clock history, expressed in cycle directories**:
+   - **A span of wall-clock history, expressed in cycle directories, against
+     the mean gap**:
      `cycles_retained` (200), `state_local_cycles_retained` (1000) and
      `state_local_streams_retained` (50) each bounded roughly how many
      *days* of history a fleet running hourly kept, not literally that many
@@ -2009,17 +2039,18 @@ implements.
      (~8.3 days, ~41.7 days and ~2.1 days respectively) as the gap between
      cycles moves, rather than letting a faster cadence quietly shrink the
      retained window fourfold the way a flat count already had. Against the
-     **mean** gap, not the worst-case one the four hour-valued keys take: a
-     cycle directory is written per firing, so how many of them a span holds
-     follows how often this installation fires, not how long its longest
-     quiet stretch is. The two coincide unless `cycle_hours` disallows an
-     hour or `excluded_minutes` drops a reachable occurrence, and where they
-     part company only the mean preserves the window: a `9-17` installation
-     firing every 15 minutes fires 36 times a day (a mean gap of 40 minutes)
-     and so keeps 300 cycle directories, where the worst-case gap of 915
-     minutes would keep 14 — about three hours of history in place of eight
-     days, and fewer than the flat 200 this derivation replaced.
-     `crash_loop_after` is the fourth key issue
+     **mean** gap, not the worst-case one `claim_ttl_hours` and
+     `abandoned_draft_after_hours` take: a cycle directory is written per
+     firing, so how many of them a span holds follows how often this
+     installation fires, not how long its longest quiet stretch is. The two
+     coincide unless `cycle_hours` disallows an hour or `excluded_minutes`
+     drops a reachable occurrence, and where they part company only the mean
+     preserves the window: a `9-17` installation firing every 15 minutes
+     fires 36 times a day (a mean gap of 40 minutes) and so keeps 300 cycle
+     directories, where the worst-case gap of 915 minutes would keep 14 —
+     about three hours of history in place of eight days, and fewer than the
+     flat 200 this derivation replaced.
+     `crash_loop_after` is the fifth key issue
      #591's audit considered under this same "counted in cycles already"
      heading and decided *against* deriving: its four carries the
      count of *consecutive failures* before a crash-loop escalation fires,
@@ -7209,9 +7240,11 @@ implements.
    - **The forced recheck is the safety valve, not a nicety.**
      `none_selected_recheck_hours` bounds how long a gap in coverage — or a
      Co-Ordinator that would have decided differently on a second look — can
-     hold the pipeline down. At 24 h an idle day costs one Co-Ordinator run
-     instead of 24, and any stall is capped at a day. Setting it to `0` makes
-     fingerprint coverage load-bearing forever.
+     hold the pipeline down. At 24 cadence firings (requirement 1d) an idle
+     day costs one Co-Ordinator run instead of 24, and any stall is capped at
+     24 skipped firings — a day at the historical hourly cadence, more or less
+     elsewhere depending on how fast the cadence actually is. Setting it to
+     `0` makes fingerprint coverage load-bearing forever.
    - `--dry-run` and `--once` bypass the skip (a human asking for a cycle wants
      an answer, not a cached verdict) but still *compute and record* the
      fingerprint, so a `--once` that finds nothing spares the next cron tick
@@ -30156,7 +30189,8 @@ requirements above, which state only what is.
   digest shape, a failed sample, a log the rule can't read — produces "no
   match", which costs one Co-Ordinator run. The rule can only be wrong by being
   *incomplete*, which is why requirement 3b's map of source-to-signal is
-  normative and `none_selected_recheck_hours` caps the damage at a day.
+  normative and `none_selected_recheck_hours` caps the damage at 24 skipped
+  firings — a day at the historical hourly cadence.
 
 - **Finish-then-continue chains to its cap after real work, and that cost is
   accepted** (requirement 39, issue #248; surfaced in the review of #268).
