@@ -1028,8 +1028,10 @@ services:
   # whole apply; `lock.json` and `review-lock.json` are honoured exactly as
   # `watchtower-pre-update.sh` honours them, so a compose recreate can no more
   # kill a cycle than a roll can, and a `roll-pending` marker defers the tick
-  # as well, so this and watchtower never recreate the same container at once;
-  # and only then is the file replaced and the project recreated. It never
+  # as well — for `lock_stale_after` at the outside, so a node whose roll
+  # cannot land goes on taking compose changes — so this and watchtower never
+  # recreate the same container at once; and only then is the file replaced
+  # and the project recreated. It never
   # writes `.env`: that file is the owner's, it is the one file that
   # legitimately differs between two nodes, and the variable check reads key
   # names only.
@@ -1040,11 +1042,14 @@ services:
   # `up -d` driven from in here stops the process driving it and leaves the
   # project part-applied, which took ockham-container's whole stack down on
   # 2026-09-28 (agent-ops#1913). The `up` is handed to a `docker run --rm` of
-  # this same image with the socket and the project directory mounted, which
+  # this same image, holding this service's own mounts by `--volumes-from` and
+  # its own memory, cpu and process ceilings read back from the daemon, which
   # is the shape watchtower uses to update itself. This container is still
-  # stopped and recreated by that `up`; what changed is that the apply
-  # finishes without it, and that the next tick — in the container it created
-  # — reads the `applying` marker its predecessor wrote and settles it.
+  # stopped and recreated by that `up`, and the apply finishes without it: the
+  # next tick — in the container it created — reads the `applying` marker its
+  # predecessor wrote and settles it. While the sibling is still running every
+  # tick rewrites that marker rather than any other verdict, because it is what
+  # keeps a watchtower roll off this project mid-recreate.
   #
   # In the `auto-update` profile, with watchtower and for the same reason: a
   # node that has opted out of taking new images has opted out of taking new
@@ -1061,10 +1066,11 @@ services:
   # carries no GH_TOKEN, no ANTHROPIC_API_KEY and neither App's private key —
   # the credentials a compromised stage would want are in a container that
   # cannot reach the socket, and the container that can reach the socket has
-  # no credentials. It is `network_mode: none`: it talks to a unix socket and
-  # needs no network at all, so there is no route out of it to carry anything
-  # anywhere. And it runs one fixed script from the image, on a schedule from
-  # the image, over a file from the image.
+  # no credentials, the sibling it starts inheriting these mounts and this
+  # containment rather than a wider grant. It is `network_mode: none`: it
+  # talks to a unix socket and needs no network at all, so there is no route
+  # out of it to carry anything anywhere. And it runs one fixed script from
+  # the image, on a schedule from the image, over a file from the image.
   reconciler:
     image: ${AGENT_OPS_IMAGE:-ghcr.io/pullwright/agent-ops:latest}
     profiles: [auto-update]

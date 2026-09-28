@@ -1367,13 +1367,21 @@
         title: "this node's compose reconciler is waiting: " + why +
                ". It retries on its own every few minutes; this is the mechanism working."}));
     } else if (r && r.status === "applying") {
+      // `since`, not `at`: every tick that finds the apply still running
+      // rewrites `at`, so it answers "when was this last confirmed" while what
+      // an operator reading a standing badge wants is how long it has been
+      // going on. Older verdicts carry no `since` at all.
+      var began = r.since || r.at;
       kids.push(el("span", {class:"badge b-grey", text:"reconcile applying",
         title: "this node is recreating its own stack from the merged compose.yaml, in a " +
-               "throwaway sibling container: " + why + ". The reconciler's own container is " +
+               "throwaway sibling container" + (began ? ", since " + began : "") + ": " + why +
+               ". The reconciler's own container is " +
                "replaced by that recreate, and the one it creates settles the verdict on its " +
                "next tick, so this clears within a few minutes without anyone acting. Standing " +
-               "for longer means the apply did not come back — docker compose logs reconciler " +
-               "and docker compose ps on that host, and docker compose up -d to finish it."}));
+               "for longer means the apply did not come back — the sibling's own output is in " +
+               "compose-apply.log in that node's state volume, then docker compose logs " +
+               "reconciler and docker compose ps on that host, and docker compose up -d to " +
+               "finish it."}));
     }
     if (!kids.length) return null;
     return el("div", {class:"ver"}, kids);

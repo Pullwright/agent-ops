@@ -1066,8 +1066,9 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                                             //   image's copy (#131); null if
                                             //   unreported
                          compose_reconcile: { status, at,   // what that
-                                              reason,       //   node's own
-                                              detail,       //   reconciler did
+                                              since,        //   node's own
+                                              reason,       //   reconciler did
+                                              detail,       //
                                               from, to,     //
                                               pending_apply },
                                             //   about that drift (2.5a):
@@ -1080,10 +1081,13 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                                             //   or "refused" (both carrying
                                             //   `reason`, and `detail` where
                                             //   a command's own output is
-                                            //   worth keeping);
+                                            //   worth keeping); `at` is when
+                                            //   the tick wrote it and `since`
+                                            //   when the node entered it;
                                             //   `pending_apply` rides every
-                                            //   verdict from the install
-                                            //   until a recreate returns;
+                                            //   verdict from before the
+                                            //   install until a recreate
+                                            //   returns;
                                             //   null on a node
                                             //   with no reconciler, which is
                                             //   every node until its owner's
@@ -3993,7 +3997,9 @@ number's twins elsewhere on the page.
   in when the apply's own container does not come back, and an apply that
   began with nothing anywhere saying so is what left `ockham-container`'s
   stack down for five hours (implementation spec 2.5a, agent-ops#1913). Its
-  title says what clears it and what to do if it does not. `reconciled` and
+  title says when the apply began — the verdict's `since`, since `at` is
+  rewritten by every tick that finds the apply still running — what clears it
+  and what to do if it does not. `reconciled` and
   `in-sync` render nothing,
   because a `reconciled` verdict has already cleared the drift badge beside
   it. Each badge's title carries the recorded reason verbatim. An absent

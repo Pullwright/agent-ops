@@ -311,10 +311,15 @@ assert_eq "and does not claim a roll-pending override it never had" "0" "$(grep 
 # deferring while `roll-pending` is in force is the other half (see
 # test/compose-reconcile.test.sh).
 
+# `reconcile_since` is left holding what was written, because a second call to
+# `date` at assertion time is a second later often enough to make a test that
+# recomputed it fail once in a while for no reason at all.
+reconcile_since=""
 write_reconcile_marker() {  # write_reconcile_marker STATUS AGE_SECONDS [SINCE_AGE_SECONDS]
+  reconcile_since="$(date -u -d "-${3:-$2} seconds" +%Y-%m-%dT%H:%M:%SZ)"
   jq -n --arg s "$1" \
         --arg at "$(date -u -d "-${2} seconds" +%Y-%m-%dT%H:%M:%SZ)" \
-        --arg since "$(date -u -d "-${3:-$2} seconds" +%Y-%m-%dT%H:%M:%SZ)" \
+        --arg since "$reconcile_since" \
         '{status: $s, at: $at, since: $since, pending_apply: true}' > "$state_dir/.compose-reconcile.json"
 }
 
@@ -331,7 +336,7 @@ write_reconcile_marker applying 30 5000
 run_hook
 assert_eq "a long apply still defers, however long it has been running" "75" "$rc"
 assert_contains "and dates itself from when it began, not from the tick that confirmed it" \
-  "$(date -u -d '-5000 seconds' +%Y-%m-%dT%H:%M:%SZ)" "$out"
+  "$reconcile_since" "$out"
 
 # Bounded at ten minutes, twice the reconciler's own tick. The reconciler
 # rewrites this marker on every tick that finds the apply's sibling container

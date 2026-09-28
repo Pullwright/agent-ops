@@ -4652,18 +4652,34 @@ implements.
      that hook's *foreign* rule alone: this container writes neither lock and
      shares no PID namespace with whatever did, so every lock is honoured
      without a liveness check until it is released or goes stale.
-     `roll-pending.json` (requirement 39c) defers it as well, and on its own:
-     the marker the pre-update hook reads as licence to destroy a container is
-     read here as a reason to wait, because watchtower and this actor recreate
-     the same containers and must never be doing so at once. The scope
-     question the hook has to answer — `lock.json` yes, `review-lock.json` no
-     — does not arise, since either lock defers this anyway. The wait is
-     bounded twice over: `chain_clear_landed_roll_pending` removes the marker
-     at the next cycle to reacquire the lock once the image is no longer
-     behind, and `until` (`schedule.cycle_interval_minutes`) expires it
-     regardless, so the apply lands on the first tick after the roll has, and
-     a cycle interval later at worst. An `until` that will not parse reads as
-     epoch 0, so a corrupt marker holds nothing back.
+     `roll-pending.json` (requirement 39c) defers it as well, and on its own,
+     and is read *before* either lock: the marker the pre-update hook reads as
+     licence to destroy a container is read here as a reason to wait, because
+     watchtower and this actor recreate the same containers and must never be
+     doing so at once. The scope question the hook has to answer — `lock.json`
+     yes, `review-lock.json` no — does not arise, since either lock defers
+     this anyway. An `until` that will not parse reads as epoch 0, so a
+     corrupt marker holds nothing back.
+
+     **That wait is bounded by this node's own patience and not by the
+     marker.** `chain_write_roll_pending` re-arms the marker at every cycle
+     boundary whose image still reads `behind`, and
+     `chain_clear_landed_roll_pending` leaves it alone while that is true
+     (requirement 39c), so a node whose roll cannot land — watchtower
+     crash-looping, a registry it cannot reach — carries a live marker for as
+     long as the condition lasts, and a deferral that followed the marker and
+     nothing else would leave that node running a `compose.yaml` none of its
+     containers came from for exactly as long, up to and including the merged
+     file that would end it. The deferral therefore holds only while it is
+     younger than `lock_stale_after`, measured from the verdict's own `since`
+     — the same bound a cycle lock gets and for the same reason: a signal this
+     pipeline would no longer honour about its own cycles is not one to honour
+     about a roll. Past it the apply goes ahead, and the sibling's name is what
+     keeps two recreates apart if the roll does land in the middle. The
+     marker's `until` moves forward with every re-arming, so it is recorded in
+     `detail` and never in `reason`, which would otherwise make each cycle
+     boundary a fresh transition and reset the very timestamp the bound is
+     measured from.
    - **Then the image's copy is written over the node's, in place, and
      `docker compose up -d --remove-orphans` is run for that project
      directory — from a transient sibling container, never from this one.**
@@ -4686,11 +4702,22 @@ implements.
      started has no restart to resume. That is what took `ockham-container`'s
      whole stack down on 2026-09-28, on the first real apply anywhere on the
      fleet (agent-ops#1913). The sibling is a `docker run --rm` of the image
-     *this container is running*, with the Docker socket and the project
-     directory bind-mounted at their own paths, `--network none`, and the
-     socket's own group added so a uid-1000 process can open it — the shape
-     watchtower uses to update itself. Its command is
-     `env -i PATH=… HOME=… docker compose …`, which steps over the image's
+     *this container is running*, `--network none`, `--sig-proxy=false` so a
+     signal delivered to the attached client cannot abort a recreate half-way,
+     and with the socket's own group added so a uid-1000 process can open it —
+     the shape watchtower uses to update itself. Its mounts are this
+     container's own, by `--volumes-from`: the three it needs are the three
+     this service already has and no others — the socket, the project
+     directory at the absolute path it has on the host, and the state volume —
+     and a named volume cannot be asked for by path from inside the container
+     holding it, the path being a mount destination and not a place on the
+     host at all. Its ceilings are this container's own too, read back from
+     the daemon rather than from `AGENT_OPS_RECONCILER_MEMORY` and its
+     siblings, which Compose interpolates at deploy time and which reach no
+     container's environment: every service in that file is bounded because an
+     unbounded container on a small host takes the host down, and a
+     `docker run` inherits none of it. Its command is
+     `env -i PATH=… HOME=… DOCKER_HOST=… docker compose …`, which steps over the image's
      own entrypoint (a node's state-volume preparation, irrelevant here) and,
      more importantly, **clears the environment Compose interpolates from**:
      Compose resolves a `${VAR}` from the process environment ahead of the
@@ -4705,29 +4732,53 @@ implements.
      in that directory reads — and any later collision between an image `ENV`
      and a compose variable is cleared with it. `PATH` and `HOME` are put back
      because they are the CLI's own needs and not configuration: one finds the
-     binary, the other is where it looks for `config.json`.
+     binary, the other is where it looks for `config.json`. `DOCKER_HOST` is
+     put back for the same reason and to close the same kind of gap: cleared,
+     the CLI inside falls back to `/var/run/docker.sock` however the socket
+     was actually mounted, so naming it is what keeps the mount and the client
+     from disagreeing about where the daemon is.
+
+     What the sibling prints is written to `$state_dir/compose-apply.log` from
+     inside it, through the state volume it inherits, and echoed to the
+     attached client. On the apply that replaces `reconciler` there is nowhere
+     else for it to go: the process capturing it is one of the ones the apply
+     stops, and `--rm` takes the sibling's own daemon-side log away with the
+     container. The file holds the most recent apply alone, opened by a header
+     line this side writes before the sibling starts — it is local diagnostics
+     on a node whose disk this must not fill, it is excluded from replication
+     for the same reason `.compose-reconcile.json` is, the event log already
+     records *that* an apply failed, and the failing run's last line rides in
+     the verdict's `detail`.
+
      It carries no Compose labels, so `--remove-orphans` cannot
      see it. **Its name is `agent-ops-compose-apply-<node>`, and that name is
      the mutex**: the `up` starts this container's replacement before the
      sibling has finished, that replacement's own first tick can fall due
      seconds later and will read `pending_apply` and want a recreate of its
      own, and two `docker compose up -d` runs against one project take no lock
-     against each other. A fixed name per node has the daemon refuse the second
-     (`name is already in use`), which lands as an ordinary `deferred` verdict
-     carrying that message and is retried on the tick after; `--rm` is what
-     keeps the name free, held for exactly as long as an apply runs. One left
-     behind would defer every apply with that same message until it was
-     removed — loud, and in the verdict, which is the failure to prefer. Per
+     against each other. The tick that finds the sibling still running settles
+     on `applying` and never asks for a second apply at all; a fixed name per
+     node is the backstop under that check, having the daemon refuse the
+     second (`name is already in use`) if one is ever asked for between the
+     two. `--rm` is what keeps the name free, held for exactly as long as an
+     apply runs. One left behind would defer every apply with that same
+     message until it was removed — loud, and in the verdict, which is the
+     failure to prefer. Per
      *node* rather than per host, so two stacks on one host neither collide nor
      serialise against each other. It is run attached: the tick whose own
      container the recreate does not replace reads the exit status directly,
      and the tick whose container it does replace dies there while the sibling
      runs to completion.
 
-     The image is asked of the daemon, by Compose's own
+     The container and its image are asked of the daemon, by Compose's own
      `com.docker.compose.project.working_dir` and
      `com.docker.compose.service` labels on this stack's project directory,
-     and taken as the image *id* rather than a reference. Nothing inside the
+     and the image is taken as an *id* rather than a reference. The directory
+     is matched as Compose cleaned it before writing it — `filepath.Abs`
+     collapses `//`, `/./` and `..` and drops a trailing slash — so a node
+     whose `.env` reads `AGENT_OPS_PROJECT_DIR=/srv/agent-ops/` runs and is
+     found, rather than deferring on every tick with a reason pointing at the
+     daemon instead of at one line of `.env`. Nothing inside the
      container can answer instead: `$HOSTNAME` is the container's short id at
      creation, but watchtower clones `Config.Hostname` forward when it
      recreates one (agent-ops#1072), so after a roll it names a container that
@@ -4736,32 +4787,57 @@ implements.
      the one thing that must not follow is running it here after all.
 
    The verdict is `$state_dir/.compose-reconcile.json`: `in-sync`,
-   `applying` (the file is installed and a sibling is recreating the project),
+   `applying` (an apply is in flight and a sibling is recreating the project),
    `reconciled` (carrying the SHA-256 of both files), `deferred` (a lock, a
    roll falling due, or a recreate that exited non-zero) or `refused` (no
-   project directory, or a missing `${VAR}`). It is local to the node and
-   excluded from replication like `.stage-health.json`, and the verdict alone
-   travels, folded into `heartbeat.json` as `compose_reconcile` beside the
-   `compose` drift verdict it acts on (requirement 2.5; rendered on every
-   dashboard's fleet strip, `DASHBOARD-SPEC.md`).
+   project directory, or a missing `${VAR}`). Every verdict carries `at`, the
+   time this tick wrote it, and `since`, the `at` of the last tick whose
+   `status` or `reason` differed from the tick before — when the node entered
+   the state rather than when it last confirmed it, which is what "how long
+   has this been going on" needs and what the roll-pending bound above is
+   measured from. It is local to the node and excluded from replication like
+   `.stage-health.json`, and the verdict alone travels, folded into
+   `heartbeat.json` as `compose_reconcile` beside the `compose` drift verdict
+   it acts on (requirement 2.5; rendered on every dashboard's fleet strip,
+   `DASHBOARD-SPEC.md`).
 
-   **`applying` is recorded before the recreate starts, and `pending_apply`
-   with it.** A verdict written only after `up` returned is one a tick that
-   dies mid-apply never writes, so the node went on publishing the verdict of
-   the tick before it and a peer reading the heartbeat saw a node merely
-   waiting rather than one stopped half-way through recreating itself. The
-   marker is written first instead, and it is also what the pre-update hook
-   above reads to keep a roll off a project mid-apply. `pending_apply` stays
-   on every verdict from that moment until a recreate actually returns 0 —
-   deferrals and refusals included — and is what makes the next tick retry the
-   recreate rather than the drift check: the file is installed before the
-   recreate runs, so from that moment drift alone would never ask again, and a
-   lock taken or a roll falling due in between must postpone that retry, never
-   discard it. Ordinarily the tick that retries is running in the container
-   the apply itself created.
+   **`applying` is recorded before the file is installed, carries
+   `pending_apply`, and stands for as long as the sibling runs.** A verdict
+   written only once `up` returns is one a tick that dies mid-apply never
+   writes, which leaves the verdict of the tick before it standing: a peer
+   reading the heartbeat sees a node merely waiting rather than one stopped
+   half-way through recreating itself. Before the *install*, because the gap
+   between installing the file and recording the intention is the one moment
+   in which drift reads in-sync and nothing is left asking for a recreate: a
+   tick killed in it leaves every container running a `compose.yaml` it was
+   not created from, with the marker saying the node is idle. A tick killed
+   the other side of that record simply installs on the next one.
+
+   For as long as the sibling runs, because this marker is also what the
+   pre-update hook above reads to keep a roll off a project mid-apply. A tick
+   that finds a container matching the apply's own name and label alive
+   rewrites `applying` with a fresh `at` and settles there, ahead of the locks,
+   the roll marker and the drift check alike — any other verdict would clear
+   that guard in the middle of the recreate it exists to protect, and
+   watchtower's next poll is five minutes away at most. The marker therefore
+   tracks the apply's real duration, and the hook's own ten-minute freshness
+   window is the backstop under a reconciler that never came back rather than
+   the mechanism itself.
+
+   `pending_apply` stays on every verdict from that moment until a recreate
+   actually returns 0 — deferrals and refusals included — and is what makes
+   the next tick retry the recreate rather than the drift check: the file is
+   installed before the recreate runs, so from that moment drift alone would
+   never ask again, and a lock taken or a roll falling due in between must
+   postpone that retry, never discard it. `from` and `to` are carried across
+   those deferrals with it, because once the file is installed the host copy no
+   longer holds the digest the apply replaced and the `reconciled` verdict that
+   finally closes the apply would otherwise name the installed file twice.
+   Ordinarily the tick that retries is running in the container the apply
+   itself created.
 
    Transitions — a status, or a reason, that differs from the one the marker
-   held **at the start of this tick** — append
+   held **at the start of this tick**, which is also what sets `since` — append
    `compose-reconcile-applying`, `compose-reconciled`,
    `compose-reconcile-deferred` or `compose-reconcile-refused` to `log.jsonl`
    through `lib/log-event.sh`'s envelope with `cycle: null`; an unchanged
@@ -23978,7 +24054,10 @@ oblige anyone to edit a test.
    compose-apply deferral (agent-ops#1913): a `$state_dir/.compose-reconcile.json`
    reading `applying` with a fresh `at` makes the hook exit 75 on an otherwise
    idle node, and keeps it at 75 even where `roll-pending` has just overridden
-   a live `lock.json`; the same marker past the ten-minute bound, one whose
+   a live `lock.json`; a marker whose `at` is fresh and whose `since` is hours
+   old still defers, and the line reports the `since`, because an apply still
+   running has its `at` rewritten every tick and what an operator needs is
+   when it began; and the same marker past the ten-minute bound, one whose
    `at` will not parse, one holding any other status, junk, and no marker at
    all each leave the hook exactly where it was.
 1c-ii. **The dashboard is published to the host's loopback and to no network.**
@@ -24087,25 +24166,37 @@ oblige anyone to edit a test.
    carrying both digests and `cycle: null`; the tick after it finds nothing to
    do. That recreate is asserted to run in a **transient sibling** — a
    `docker run --rm` of the image the stubbed daemon reports for this
-   container, with the socket and the project directory mounted, no network
-   and `docker` as its entrypoint — and never from inside the project, which
-   is the whole of agent-ops#1913. The stub models what each of the two shapes
-   leaves behind, so the property held to is the outcome and not the command
-   line: **a tick killed exactly where the recreate would kill it ends with
-   every service of the project running**, its marker reading `applying` with
-   `pending_apply` and its `to` digest, and the next tick retries the recreate
-   and settles it `reconciled` with the project still running and the retry
-   cleared. A container whose own image the stubbed daemon cannot name reads
-   `deferred`, installs nothing and recreates nothing at all.
+   container, taking this container's own mounts by `--volumes-from` and its
+   own memory, pids and cpu ceilings read back from the daemon, no network,
+   no signal proxying, no daemon-side log, `docker` as its entrypoint and the
+   socket it was given named in its `DOCKER_HOST` — and never from inside the
+   project, which is the whole of agent-ops#1913. The stub models what each of
+   the two shapes leaves behind, so the property held to is the outcome and
+   not the command line: **a tick killed exactly where the recreate would kill
+   it ends with every service of the project running**, its marker reading
+   `applying` with `pending_apply` and its `to` digest, and the next tick
+   retries the recreate and settles it `reconciled` — with the project still
+   running, the retry cleared, and a `from` that is the digest the apply
+   replaced rather than the one it installed. A container whose own id the
+   stubbed daemon cannot name reads `deferred`, installs nothing and recreates
+   nothing at all, while one whose project directory is spelt with a trailing
+   slash reconciles, the lookup asking for the path Compose would have cleaned
+   it to. While a container carrying the apply's own name and label is alive,
+   a tick reads `applying` with a fresh `at` and starts no second recreate,
+   although a held `lock.json` and a live `roll-pending.json` would each have
+   deferred it, and logs no further event.
    A `${VAR}` with no default that `.env` does not define reads `refused`,
    names the variable and changes nothing — while the same variable carrying
    a default does not, which is what distinguishes the check from a scan that
    would refuse every node. A held `lock.json` or `review-lock.json` reads
    `deferred` and applies nothing; the same lock past `lock_stale_after` does
    not defer; a live `roll-pending.json` reads `deferred` on its own, with no
-   lock held at all, while an expired one and one whose `until` will not parse
-   hold nothing back; and a second and third deferral for the same reason log
-   no further event. A recreate that exits non-zero reads
+   lock held at all and with the marker's own window in `detail` rather than
+   in `reason`, while an expired one and one whose `until` will not parse hold
+   nothing back; a marker re-armed under a wait already running is the same
+   wait, keeping its `since` and logging nothing further, and a wait longer
+   than `lock_stale_after` stops honouring the marker and applies; and a
+   second and third deferral for the same reason log no further event. A recreate that exits non-zero reads
    `deferred` with `pending_apply`, having already installed the file, and the
    next tick retries the recreate although no drift remains — and two further
    failed ticks whose stubbed `docker` prints a different last line each time
