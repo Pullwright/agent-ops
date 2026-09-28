@@ -382,8 +382,14 @@ assert_contains "under a cleared environment, so the node's own .env is the only
 assert_contains "with only the CLI's own two needs put back" "HOME=" "$sibling_cmd"
 assert_contains "and then the Compose CLI itself" \
   "docker compose --project-directory $project up -d --remove-orphans" "$sibling_cmd"
-assert_contains "named for this node, so an operator finding it knows what it is" \
-  "agent-ops-compose-apply-fixture-node-" "$sibling_cmd"
+# The name carries no timestamp on purpose: the `up` starts this container's
+# replacement before the sibling has finished, that replacement's own first
+# tick can fall due seconds later and will want a recreate of its own, and two
+# `docker compose up -d` runs against one project take no lock against each
+# other. A fixed name per node has the daemon refuse the second, which lands as
+# an ordinary deferral.
+assert_contains "named for this node alone, so the name is the mutex and not just a label" \
+  "--name agent-ops-compose-apply-fixture-node " "$sibling_cmd"
 assert_eq "the file keeps its inode — a bind-mounted file pins the inode it was created against" \
   "$before_inode" "$(stat -c %i "$host_file")"
 assert_eq ".env is never written" "$before_env" "$(sha256sum "$env_file" | cut -d' ' -f1)"

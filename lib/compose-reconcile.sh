@@ -510,16 +510,29 @@ _compose_reconcile_self_image() {  # <docker> <project-dir>
 # at all, like the service itself: the daemon performs any pull, on the host's
 # network. The socket's own group is what lets a uid-1000 sibling open it, read
 # off the mounted socket rather than from a variable, so it is this host's real
-# `DOCKER_GID` whatever `.env` says. The name is this node's and this moment's,
-# so an operator finding the container in `docker ps` knows what it is and two
-# stacks on one host cannot collide over it.
+# `DOCKER_GID` whatever `.env` says.
+#
+# **The name is the mutex, which is why it carries no timestamp.** The `up`
+# starts this container's replacement before the sibling has finished, and that
+# replacement's own first tick can fall due seconds later — it will read
+# `pending_apply` and want a recreate of its own, and two `docker compose up -d`
+# runs against one project take no lock against each other. A fixed name per
+# node makes the daemon refuse the second (`name is already in use`), which
+# lands as an ordinary deferral carrying that message and is retried on the
+# tick after. `--rm` is what keeps the name free: the daemon removes the
+# container when it exits, so the name is held for exactly as long as an apply
+# is running. Were one ever left behind, every apply would defer with that same
+# message until somebody removed it — loud, and in the verdict, which is the
+# failure to prefer. It is per *node*, not per host, so two stacks on one host
+# neither collide nor serialise against each other, and an operator finding it
+# in `docker ps` can see whose it is.
 _compose_reconcile_apply() {  # <docker> <socket> <project-dir> <image>
   local docker_cmd="$1" socket="$2" project_dir="$3" image="$4"
   local gid name
   local -a group_args=()
   gid="$(stat -c %g "$socket" 2>/dev/null || true)"
   [[ "$gid" =~ ^[0-9]+$ ]] && group_args=(--group-add "$gid")
-  name="agent-ops-compose-apply-$(printf '%s' "${NODE_NAME:-node}" | tr -c 'A-Za-z0-9_.-' '-')-$(date -u +%Y%m%dT%H%M%SZ)"
+  name="agent-ops-compose-apply-$(printf '%s' "${NODE_NAME:-node}" | tr -c 'A-Za-z0-9_.-' '-')"
   "$docker_cmd" run --rm \
     --name "$name" \
     --label com.pullwright.agent-ops.compose-apply=true \

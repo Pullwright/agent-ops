@@ -415,8 +415,11 @@ replacement, stopping the old one and only then starting anything — so an
 `up -d` run inside the reconciler stops the process running it and leaves the
 rest of the project stopped or created-but-never-started. So the `up` is run
 by a short-lived `docker run --rm` of the same image instead, named
-`agent-ops-compose-apply-<node>-<timestamp>`; it holds the socket and this
-directory and nothing else, and it removes itself when it is done. The
+`agent-ops-compose-apply-<node>`; it holds the socket and this directory and
+nothing else, not even an environment, and it removes itself when it is done.
+That fixed name is deliberate: it is what stops the container the recreate
+creates from starting a second, overlapping apply of its own, and a tick that
+finds the name taken defers and says so. The
 reconciler's own container is still replaced by that `up`, which is the point:
 the apply finishes without it, and the container it created picks the verdict
 up on its next tick. An apply in flight also holds a watchtower roll back

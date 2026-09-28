@@ -4707,9 +4707,19 @@ implements.
      because they are the CLI's own needs and not configuration: one finds the
      binary, the other is where it looks for `config.json`.
      It carries no Compose labels, so `--remove-orphans` cannot
-     see it, and it is named after this node and the moment, so an operator
-     finding it in `docker ps` knows what it is and two stacks on one host
-     cannot collide over the name. It is run attached: the tick whose own
+     see it. **Its name is `agent-ops-compose-apply-<node>`, and that name is
+     the mutex**: the `up` starts this container's replacement before the
+     sibling has finished, that replacement's own first tick can fall due
+     seconds later and will read `pending_apply` and want a recreate of its
+     own, and two `docker compose up -d` runs against one project take no lock
+     against each other. A fixed name per node has the daemon refuse the second
+     (`name is already in use`), which lands as an ordinary `deferred` verdict
+     carrying that message and is retried on the tick after; `--rm` is what
+     keeps the name free, held for exactly as long as an apply runs. One left
+     behind would defer every apply with that same message until it was
+     removed — loud, and in the verdict, which is the failure to prefer. Per
+     *node* rather than per host, so two stacks on one host neither collide nor
+     serialise against each other. It is run attached: the tick whose own
      container the recreate does not replace reads the exit status directly,
      and the tick whose container it does replace dies there while the sibling
      runs to completion.
