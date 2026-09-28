@@ -25,11 +25,15 @@
 #      so the actor and the alarm can never disagree about what drift is;
 #   2. check every `${VAR}` the *new* file requires against the keys in the
 #      node's `.env`, and refuse outright if one is missing;
-#   3. honour the cycle lock and the roll-pending marker exactly as
-#      deploy/docker/watchtower-pre-update.sh does, so a compose recreate can
-#      no more kill a running cycle than an image roll can;
+#   3. honour the two cycle locks exactly as
+#      deploy/docker/watchtower-pre-update.sh honours them, so a compose
+#      recreate can no more kill a running cycle than an image roll can, and
+#      stand back for as long as a `roll-pending` marker says a watchtower
+#      roll is due on this node, so the two updaters never recreate the same
+#      container at once;
 #   4. copy the image's copy over the node's, and run
-#      `docker compose up -d --remove-orphans` for that project.
+#      `docker compose up -d --remove-orphans` for that project — from a
+#      transient sibling container, never from this one.
 #
 # It never touches `.env`. That file holds the node's identity and its live
 # credentials, it is the one file that legitimately differs between two nodes,
@@ -51,17 +55,57 @@
 # staged beside the target and verified byte-for-byte first, so the
 # non-atomic step is a single local copy of an already-checked file.
 #
+# **The recreate runs in a sibling container, not in this one.** `reconciler`
+# is a service of the very project an apply recreates, and on a real apply it
+# is always one of the services that changed: the compose change that drifted
+# arrives on the same image roll that carries it. Both Compose versions in
+# play recreate a container by creating its replacement, stopping the old one,
+# removing it and renaming the new one, and only then starting everything in
+# dependency order — so an `up -d` run from inside this container reaches its
+# own service, stops the process running it, and dies there, leaving the
+# project stopped or created-but-never-started. `restart: unless-stopped` does
+# not help: an explicit stop cancels the restart, and a container that was
+# never started has no restart to resume. That is not a theoretical ordering.
+# It took `ockham-container`'s whole stack down on 2026-09-28, on the first
+# real apply anywhere on the fleet (agent-ops#1913).
+#
+# So the `up` is handed to a `docker run --rm` of this very image, with the
+# socket and the project directory mounted and `docker` as its entrypoint —
+# the shape watchtower already uses to update itself. Nothing that `up` stops
+# is then the process running it. This container is still stopped and
+# recreated, and is meant to be; what changes is that the apply finishes
+# without it. The sibling is run *attached*, so on the ordinary tick that does
+# not recreate this service its exit status is read here directly, and on the
+# one that does, the client dies with this container while the sibling — a
+# container of its own, carrying no compose labels and so invisible to
+# `--remove-orphans` — runs to completion.
+#
+# **`applying` is recorded before the sibling starts.** The verdict used to be
+# written only once `up` returned, so an apply that died mid-way left the
+# previous verdict standing: the heartbeat still said `deferred`, and a peer
+# reading it saw a node merely waiting rather than one stopped half-way
+# through recreating itself. The marker is written first instead, carrying
+# `pending_apply`, so the state is visible for as long as it lasts and the
+# next tick — ordinarily in the container the apply itself replaced — retries
+# the recreate and settles it.
+#
 # Verdicts, one compact JSON object, written to `$state_dir/.compose-
 # reconcile.json` and carried to every dashboard in this node's heartbeat
 # (IMPLEMENTATION-PIPELINE-SPEC requirement 2.5a):
 #
 #   {status:"in-sync", at}                  nothing to do
+#   {status:"applying", at, from, to,       the file is installed and a
+#    pending_apply:true}                    sibling container is recreating
+#                                           this project; whichever generation
+#                                           of this container ticks next
+#                                           finishes the verdict
 #   {status:"reconciled", at, from, to}     the file was replaced and the
 #                                           project recreated; `from`/`to` are
 #                                           the SHA-256 of the old and new file
-#   {status:"deferred", at, reason}         a cycle is in flight, or the
-#                                           recreate itself failed — retried on
-#                                           the next tick either way
+#   {status:"deferred", at, reason}         a cycle is in flight, a roll is
+#                                           due, or the recreate itself failed
+#                                           — retried on the next tick in every
+#                                           case
 #   {status:"refused", at, reason}          the node is not configured for
 #                                           reconciliation, or the new file
 #                                           needs a `${VAR}` its `.env` does
@@ -71,7 +115,10 @@
 # it is retried: the file has already been replaced by then, so drift alone
 # would never ask again — `pending_apply` on the marker is what makes the next
 # tick retry the recreate it could not finish, and it is the one piece of
-# state this library keeps across ticks.
+# state this library keeps across ticks. Once set it is carried onto every
+# later verdict until a recreate actually succeeds, deferrals and refusals
+# included: a lock taken, or a roll falling due, between the install and the
+# retry must postpone that retry, never discard it.
 #
 # Events reach `$state_dir/log.jsonl` through lib/log-event.sh's envelope, and
 # only on a *transition*: this runs every few minutes, and a node that defers
@@ -80,7 +127,8 @@
 # Every path override exists for the tests, which must control all of them and
 # must never reach a real Docker socket: COMPOSE_RECONCILE_PROJECT_DIR,
 # _IMAGE_FILE, _STATE_DIR, _CONFIG, _DOCKER (the `docker` command itself,
-# stubbed), _NOW.
+# stubbed), _DOCKER_SOCKET (what the sibling is given, and whose group the
+# sibling is added to) and _NOW.
 
 # shellcheck source=lib/compose-drift.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/compose-drift.sh"
@@ -185,11 +233,28 @@ compose_reconcile_lock_held() {  # <lock-file> <stale-after-hours>
 }
 
 # Print a reason and succeed iff `$state_dir/roll-pending.json` names an
-# `until` that has not passed — agent-ops#1096's marker, read here exactly as
-# the pre-update hook reads it, including its scope: it overrides `lock.json`
-# alone and never `review-lock.json`, because review-cycle.sh never wrote it
-# and never agreed to be destroyed (agent-ops#1102). An unparseable `until`
-# reads as epoch 0, so a corrupt marker never grants an allow it did not earn.
+# `until` that has not passed — agent-ops#1096's marker, read from the same
+# file the pre-update hook reads and meaning the same thing: this node's last
+# cycle boundary found its image behind and yielded, so watchtower is licensed
+# to roll this stack at any moment until `until`.
+#
+# **Read here as a deferral, not as the override it is there.** The hook's
+# question is "may this roll destroy a container", and the marker answers yes;
+# the question here is "may this tick recreate the whole project", and the
+# same marker answers no. Both updaters recreate the same containers, and on
+# `ockham-container` on 2026-09-28 they were racing to recreate the same five
+# within one second, with nothing surviving to say which stop was whose
+# (agent-ops#1913). So the reconciler stands back while a roll is due and
+# applies on the first tick after it has landed — `chain_clear_landed_roll_pending`
+# removes the marker at the next cycle to reacquire the lock once the image is
+# no longer behind, and `until` (`schedule.cycle_interval_minutes`) bounds it
+# whatever else happens, so the wait is a cycle interval at worst. The scope
+# question the hook has to answer — `lock.json` yes, `review-lock.json` no —
+# does not arise here: this defers for either lock anyway, so the marker
+# overrides nothing and only ever adds a reason to wait.
+#
+# An unparseable `until` reads as epoch 0, so a corrupt marker never holds a
+# reconciliation back on a window it cannot prove.
 compose_reconcile_roll_pending() {  # <state-dir>
   local f="$1/roll-pending.json" until_ts until_epoch now_epoch
   [[ -f "$f" ]] || return 1
@@ -217,7 +282,7 @@ compose_reconcile_roll_pending() {  # <state-dir>
 # every path: this runs from cron in a container whose only job it is, and no
 # verdict is worth a non-zero exit that nothing reads.
 compose_reconcile_run() {
-  local project_dir image_file state_dir config_file docker_cmd now
+  local project_dir image_file state_dir config_file docker_cmd docker_socket now
   project_dir="${COMPOSE_RECONCILE_PROJECT_DIR:-${AGENT_OPS_PROJECT_DIR:-}}"
   image_file="${COMPOSE_RECONCILE_IMAGE_FILE:-}"
   [[ -n "$image_file" ]] \
@@ -225,9 +290,17 @@ compose_reconcile_run() {
   state_dir="${COMPOSE_RECONCILE_STATE_DIR:-}"
   config_file="${COMPOSE_RECONCILE_CONFIG:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/config.json}"
   docker_cmd="${COMPOSE_RECONCILE_DOCKER:-docker}"
+  docker_socket="${COMPOSE_RECONCILE_DOCKER_SOCKET:-/var/run/docker.sock}"
   now="${COMPOSE_RECONCILE_NOW:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 
   local host_file="$project_dir/compose.yaml" env_file="$project_dir/.env"
+
+  _compose_reconcile_begin_tick "$state_dir"
+  # Carried onto every verdict below. It is the one piece of state this
+  # library keeps across ticks, and the one a tick must never drop: once the
+  # file is installed, drift reads in-sync from that moment on, so a verdict
+  # written without it is a recreate nothing will ever ask for again.
+  local pending_apply="$compose_reconcile_tick_pending"
 
   # --- Is this node configured for reconciliation at all? ---------------------
   # The project directory is bind-mounted at the *same absolute path* it has
@@ -238,17 +311,20 @@ compose_reconcile_run() {
   # against; that is a refusal, recorded once, not an error every tick.
   if [[ -z "$project_dir" || ! -d "$project_dir" ]]; then
     _compose_reconcile_settle "$state_dir" "$now" refused \
-      "the node's project directory is not bind-mounted into this container — set AGENT_OPS_PROJECT_DIR in .env to the directory holding compose.yaml, then run docker compose up -d once"
+      "the node's project directory is not bind-mounted into this container — set AGENT_OPS_PROJECT_DIR in .env to the directory holding compose.yaml, then run docker compose up -d once" \
+      "$pending_apply"
     return 0
   fi
   if [[ ! -f "$host_file" ]]; then
     _compose_reconcile_settle "$state_dir" "$now" refused \
-      "there is no compose.yaml in $project_dir — AGENT_OPS_PROJECT_DIR must name this stack's own directory, the one holding the compose.yaml this node runs"
+      "there is no compose.yaml in $project_dir — AGENT_OPS_PROJECT_DIR must name this stack's own directory, the one holding the compose.yaml this node runs" \
+      "$pending_apply"
     return 0
   fi
   if [[ ! -w "$host_file" ]]; then
     _compose_reconcile_settle "$state_dir" "$now" refused \
-      "$host_file is not writable from this container — the project directory must be bind-mounted read-write"
+      "$host_file is not writable from this container — the project directory must be bind-mounted read-write" \
+      "$pending_apply"
     return 0
   fi
 
@@ -258,18 +334,15 @@ compose_reconcile_run() {
   drift_status="$(jq -r '.status // "null"' <<<"$drift" 2>/dev/null || echo null)"
   if [[ "$drift_status" == "null" ]]; then
     _compose_reconcile_settle "$state_dir" "$now" refused \
-      "this image carries no copy of compose.yaml to reconcile against"
+      "this image carries no copy of compose.yaml to reconcile against" \
+      "$pending_apply"
     return 0
   fi
 
-  # A recreate that failed last tick is retried whatever drift now says: the
+  # A recreate that has not completed is retried whatever drift now says: the
   # file was already replaced before the recreate ran, so drift reads in-sync
   # from that moment on and would otherwise never ask again — the containers
   # staying stale in exactly the silence this whole mechanism exists to end.
-  local pending_apply=false
-  [[ "$(jq -r '.pending_apply // false' "$state_dir/.compose-reconcile.json" 2>/dev/null || echo false)" == "true" ]] \
-    && pending_apply=true
-
   if [[ "$drift_status" == "in-sync" && "$pending_apply" != "true" ]]; then
     _compose_reconcile_settle "$state_dir" "$now" in-sync ""
     return 0
@@ -280,11 +353,12 @@ compose_reconcile_run() {
   missing="$(compose_reconcile_missing_env "$image_file" "$env_file" | paste -sd, - 2>/dev/null || true)"
   if [[ -n "$missing" ]]; then
     _compose_reconcile_settle "$state_dir" "$now" refused \
-      "the merged compose.yaml requires ${missing}, which this node's .env does not define and the file itself gives no default for — add it to .env by hand; nothing was applied"
+      "the merged compose.yaml requires ${missing}, which this node's .env does not define and the file itself gives no default for — add it to .env by hand; nothing was applied" \
+      "$pending_apply"
     return 0
   fi
 
-  # --- The cycle lock, and roll-pending ---------------------------------------
+  # --- A roll falling due, and the two cycle locks -----------------------------
   local cycle_stale review_stale held
   cycle_stale="$(jq -r '.lock_stale_after // 4' "$config_file" 2>/dev/null || echo 4)"
   # repository_review is the current spelling; project_review is still
@@ -295,23 +369,50 @@ compose_reconcile_run() {
   [[ "$cycle_stale"  =~ ^[0-9]+$ ]] || cycle_stale=4
   [[ "$review_stale" =~ ^[0-9]+$ ]] || review_stale=6
 
-  # A held `lock.json` defers, unless the roll-pending marker overrides it —
-  # the hook's own rule, and its own scope: `review-lock.json` below is never
-  # overridden.
-  held="$(compose_reconcile_lock_held "$state_dir/lock.json" "$cycle_stale")"
-  if [[ -n "$held" ]] && ! compose_reconcile_roll_pending "$state_dir" >/dev/null; then
+  # A due roll defers, before either lock is even read: watchtower and this
+  # library recreate the same containers, and the marker is the one signal
+  # that says the other one is about to. See compose_reconcile_roll_pending
+  # for why the same marker the pre-update hook reads as an override is read
+  # here as a reason to wait.
+  local roll_due=""
+  roll_due="$(compose_reconcile_roll_pending "$state_dir" || true)"
+  if [[ -n "$roll_due" ]]; then
     _compose_reconcile_settle "$state_dir" "$now" deferred \
-      "an implementation cycle is in flight ($held) — retrying on the next tick"
+      "a watchtower roll is due on this node ($roll_due) — the recreate waits until it has landed" \
+      "$pending_apply"
+    return 0
+  fi
+
+  held="$(compose_reconcile_lock_held "$state_dir/lock.json" "$cycle_stale")"
+  if [[ -n "$held" ]]; then
+    _compose_reconcile_settle "$state_dir" "$now" deferred \
+      "an implementation cycle is in flight ($held) — retrying on the next tick" \
+      "$pending_apply"
     return 0
   fi
   held="$(compose_reconcile_lock_held "$state_dir/review-lock.json" "$review_stale")"
   if [[ -n "$held" ]]; then
     _compose_reconcile_settle "$state_dir" "$now" deferred \
-      "a project review is in flight ($held) — retrying on the next tick"
+      "a project review is in flight ($held) — retrying on the next tick" \
+      "$pending_apply"
     return 0
   fi
 
   # --- Apply ------------------------------------------------------------------
+  # The sibling's image is resolved before anything is written: it is the one
+  # precondition of the apply that can fail for a reason nothing here can put
+  # right, and installing a file this tick cannot then act on only widens the
+  # window in which the node runs a compose.yaml none of its containers came
+  # from.
+  local image=""
+  image="$(_compose_reconcile_self_image "$docker_cmd" "$project_dir")"
+  if [[ -z "$image" ]]; then
+    _compose_reconcile_settle "$state_dir" "$now" deferred \
+      "this container cannot identify its own image, so there is no sibling to hand the recreate to — retrying on the next tick" \
+      "$pending_apply"
+    return 0
+  fi
+
   local from_sha to_sha
   from_sha="$(compose_reconcile_sha "$host_file")"
   to_sha="$(compose_reconcile_sha "$image_file")"
@@ -319,14 +420,22 @@ compose_reconcile_run() {
   if [[ "$from_sha" != "$to_sha" ]]; then
     if ! _compose_reconcile_install "$image_file" "$host_file" "$to_sha"; then
       _compose_reconcile_settle "$state_dir" "$now" deferred \
-        "could not write $host_file — retrying on the next tick"
+        "could not write $host_file — retrying on the next tick" \
+        "$pending_apply"
       return 0
     fi
   fi
 
+  # Recorded, not settled: this tick may not live to write a second verdict,
+  # and what a reader must not find in that case is the verdict of the tick
+  # before it. `pending_apply` is true from here until a recreate returns 0,
+  # which is what has the successor finish what this one started.
+  _compose_reconcile_record "$state_dir" "$now" applying \
+    "a sibling container is recreating this project from the installed compose.yaml" \
+    true "$from_sha" "$to_sha"
+
   local up_log up_rc=0
-  up_log="$("$docker_cmd" compose --project-directory "$project_dir" \
-    up -d --remove-orphans 2>&1)" || up_rc=$?
+  up_log="$(_compose_reconcile_apply "$docker_cmd" "$docker_socket" "$project_dir" "$image" 2>&1)" || up_rc=$?
   if (( up_rc != 0 )); then
     # The file is installed and the containers are not yet created from it, so
     # the retry has to be driven by the marker rather than by drift.
@@ -336,13 +445,75 @@ compose_reconcile_run() {
     # `reason` it would make every retry a fresh transition and log one event
     # per tick, the same trap the lock description's age already sprang once.
     _compose_reconcile_settle "$state_dir" "$now" deferred \
-      "docker compose up -d exited $up_rc — the file is installed, retrying the recreate on the next tick" \
+      "the recreate exited $up_rc — the file is installed, retrying it on the next tick" \
       true "" "" "$(printf '%s' "$up_log" | tail -n 1)"
     return 0
   fi
 
+  # Reached only on a tick whose own container the recreate did not replace —
+  # the retry, ordinarily, since the apply that carries a `reconciler` change
+  # stops this process at its own service. The tick that does not get here
+  # leaves `applying` standing, and its successor settles it.
   _compose_reconcile_settle "$state_dir" "$now" reconciled "" false "$from_sha" "$to_sha"
   return 0
+}
+
+# The image this container is running, or the empty string.
+#
+# Asked of the daemon rather than of this container, because nothing inside a
+# container reliably names it: `$HOSTNAME` is the container's short id at
+# creation, but watchtower clones `Config.Hostname` forward when it recreates
+# one (agent-ops#1072), so after a roll it names a container that no longer
+# exists. Compose's own labels do survive that cloning, and the project
+# directory — unique to this stack on this host, and already the thing every
+# other path here is resolved against — is what picks this stack's reconciler
+# out from a neighbouring stack's. `AGENT_OPS_SERVICE` names the service in
+# the service's own definition, so the lookup follows a rename that keeps the
+# two in step.
+#
+# The image *id* rather than the reference: it pins the bytes this container
+# is actually running, which a moved `:latest` would not, and an image a
+# running container holds cannot be pruned out from under the `docker run`.
+_compose_reconcile_self_image() {  # <docker> <project-dir>
+  local docker_cmd="$1" project_dir="$2" id=""
+  id="$("$docker_cmd" ps --quiet --no-trunc \
+        --filter "label=com.docker.compose.project.working_dir=$project_dir" \
+        --filter "label=com.docker.compose.service=${AGENT_OPS_SERVICE:-reconciler}" \
+        2>/dev/null | head -n 1)"
+  [[ -n "$id" ]] || return 0
+  "$docker_cmd" inspect --format '{{.Image}}' "$id" 2>/dev/null | head -n 1
+}
+
+# Run the project's `docker compose up -d --remove-orphans` in a transient
+# sibling container. Prints whatever the sibling printed and returns its exit
+# status — or nothing at all, on the apply that stops this container: see the
+# header for why that is the expected path and not a failure.
+#
+# `--entrypoint docker` steps over the image's own entrypoint, which prepares
+# a node's state volumes and has nothing to do here. No network at all, like
+# the service itself: the daemon performs any pull, on the host's network.
+# The socket's own group is what lets a uid-1000 sibling open it, read off the
+# mounted socket rather than from a variable, so it is this host's real
+# `DOCKER_GID` whatever `.env` says. The name is this node's and this
+# moment's, so an operator finding the container in `docker ps` knows what it
+# is and two stacks on one host cannot collide over it.
+_compose_reconcile_apply() {  # <docker> <socket> <project-dir> <image>
+  local docker_cmd="$1" socket="$2" project_dir="$3" image="$4"
+  local gid name
+  local -a group_args=()
+  gid="$(stat -c %g "$socket" 2>/dev/null || true)"
+  [[ "$gid" =~ ^[0-9]+$ ]] && group_args=(--group-add "$gid")
+  name="agent-ops-compose-apply-$(printf '%s' "${NODE_NAME:-node}" | tr -c 'A-Za-z0-9_.-' '-')-$(date -u +%Y%m%dT%H%M%SZ)"
+  "$docker_cmd" run --rm \
+    --name "$name" \
+    --label com.pullwright.agent-ops.compose-apply=true \
+    --network none \
+    "${group_args[@]}" \
+    --entrypoint docker \
+    --volume "$socket:$socket" \
+    --volume "$project_dir:$project_dir" \
+    "$image" \
+    compose --project-directory "$project_dir" up -d --remove-orphans
 }
 
 # Stage the image's copy beside the target, prove it arrived intact, then
@@ -364,6 +535,29 @@ _compose_reconcile_install() {  # <image-file> <host-file> <expected-sha>
   return 0
 }
 
+# Read the marker once, at the top of a tick, into the three things the rest
+# of the tick judges itself against.
+#
+# The dedup baseline has to be taken here rather than re-read per verdict,
+# because one tick now writes two: `applying` before the recreate and the
+# recreate's own outcome after it. Re-reading would compare the second against
+# the first and find a transition every single time — a node whose recreate
+# keeps failing would log a pair of events every five minutes into a log
+# replicated to every peer, which is the exact trap the transition test exists
+# to avoid and which the lock description's own age sprang once already.
+# Against the tick's opening state instead, a repeated failure is one event and
+# a real change is still one event.
+_compose_reconcile_begin_tick() {  # <state-dir>
+  local previous=""
+  previous="$(cat "$1/.compose-reconcile.json" 2>/dev/null || true)"
+  compose_reconcile_tick_status="$(jq -r '.status // ""' <<<"$previous" 2>/dev/null || true)"
+  compose_reconcile_tick_reason="$(jq -r '.reason // ""' <<<"$previous" 2>/dev/null || true)"
+  compose_reconcile_tick_pending=false
+  [[ "$(jq -r '.pending_apply // false' <<<"$previous" 2>/dev/null || echo false)" == "true" ]] \
+    && compose_reconcile_tick_pending=true
+  return 0
+}
+
 # Record the verdict, and log it iff it is a *transition* — a different status,
 # or a different reason for the same status. A tick every few minutes must not
 # write eight identical deferrals through one long cycle; what a reader needs
@@ -372,10 +566,19 @@ _compose_reconcile_install() {  # <image-file> <host-file> <expected-sha>
 # `detail` is recorded but never compared: it is for whatever varies run to
 # run — a command's own last line of output — which in `reason` would defeat
 # the whole transition test.
-_compose_reconcile_settle() {  # <state-dir> <now> <status> <reason> [pending] [from] [to] [detail]
+#
+# Recording and printing are two functions because one tick can write two
+# verdicts and must print exactly one: `applying` is recorded before the
+# recreate starts, and whatever the recreate returns is what the caller of
+# `compose_reconcile_run` reads. The verdict just built is left in
+# `compose_reconcile_verdict`, which is the only thing `_compose_reconcile_settle`
+# below adds to this.
+_compose_reconcile_record() {  # <state-dir> <now> <status> <reason> [pending] [from] [to] [detail]
   local state_dir="$1" now="$2" status="$3" reason="$4" pending="${5:-false}" from="${6:-}" to="${7:-}" detail="${8:-}"
-  local marker="$state_dir/.compose-reconcile.json" previous="" prev_status="" prev_reason=""
+  local marker="$state_dir/.compose-reconcile.json"
+  local prev_status="${compose_reconcile_tick_status:-}" prev_reason="${compose_reconcile_tick_reason:-}"
   local verdict=""
+  compose_reconcile_verdict=""
 
   verdict="$(jq -nc --arg at "$now" --arg s "$status" --arg r "$reason" \
     --argjson p "${pending:-false}" --arg from "$from" --arg to "$to" --arg d "$detail" \
@@ -385,11 +588,9 @@ _compose_reconcile_settle() {  # <state-dir> <now> <status> <reason> [pending] [
      + (if $to == "" then {} else {from: (if $from == "" then null else $from end), to: $to} end)
      + (if $p then {pending_apply: true} else {} end)' 2>/dev/null)" || return 0
   [[ -n "$verdict" ]] || return 0
+  compose_reconcile_verdict="$verdict"
 
   if [[ -n "$state_dir" && -d "$state_dir" ]]; then
-    previous="$(cat "$marker" 2>/dev/null || true)"
-    prev_status="$(jq -r '.status // ""' <<<"$previous" 2>/dev/null || true)"
-    prev_reason="$(jq -r '.reason // ""' <<<"$previous" 2>/dev/null || true)"
     if printf '%s\n' "$verdict" > "$marker.tmp.$$" 2>/dev/null; then
       mv "$marker.tmp.$$" "$marker" 2>/dev/null || rm -f "$marker.tmp.$$" 2>/dev/null
     else
@@ -397,17 +598,22 @@ _compose_reconcile_settle() {  # <state-dir> <now> <status> <reason> [pending] [
     fi
   fi
 
-  printf '%s\n' "$verdict"
-
   # `in-sync` is the steady state and has no event: a node that is doing
   # nothing because there is nothing to do is not news, and log.jsonl is
   # replicated to every peer.
   [[ "$status" != "in-sync" ]] || return 0
   [[ "$status" != "$prev_status" || "$reason" != "$prev_reason" ]] || return 0
   [[ -n "$state_dir" && -d "$state_dir" ]] || return 0
+  # An `applying` the marker already carried into this tick is the same apply
+  # being retried, not a second one beginning. The marker says `applying` on
+  # every tick that runs a recreate — that is what the pre-update hook reads
+  # to keep a roll off a project mid-apply — but the event is the news that
+  # one started, and a retry is not news.
+  [[ "$status" != "applying" || "${compose_reconcile_tick_pending:-false}" != "true" ]] || return 0
 
   local event fields
   case "$status" in
+    applying)   event=compose-reconcile-applying ;;
     reconciled) event=compose-reconciled ;;
     deferred)   event=compose-reconcile-deferred ;;
     refused)    event=compose-reconcile-refused ;;
@@ -418,4 +624,12 @@ _compose_reconcile_settle() {  # <state-dir> <now> <status> <reason> [pending] [
   # fabricated one would be worse than an honest null — the same discipline
   # scripts/publish-revert-rate.sh's own out-of-cycle rows already keep.
   log_event_append "$state_dir/log.jsonl" cycle "" "${NODE_NAME:-${HOSTNAME:-unknown}}" "$event" "$fields"
+}
+
+# _compose_reconcile_record, and then print the verdict it built — what a tick
+# ends on, once, whatever path it took to get there.
+_compose_reconcile_settle() {  # <state-dir> <now> <status> <reason> [pending] [from] [to] [detail]
+  _compose_reconcile_record "$@"
+  [[ -n "${compose_reconcile_verdict:-}" ]] || return 0
+  printf '%s\n' "$compose_reconcile_verdict"
 }
