@@ -8371,8 +8371,13 @@ implements.
    (agent-ops#687). `review-cycle.sh` calls the plain, unstamped
    `labels_reconcile_role` (`lib/labels.sh`) for each repository's own resolved
    `repository_review` pr_label (its override, or
-   `repository_review.defaults.pr_label`, requirement 342) in each repository it
-   is about to review — the same shape as the selected repository's own
+   `repository_review.defaults.pr_label`, requirement 342) and
+   `pw::type:tech-debt` in each repository it
+   is about to review — so a repository in `repository_review.repos` but not
+   gathered as an implementation-pipeline target also has the label R12's own
+   `gh issue create --label pw::type:tech-debt` relies on, rather than only
+   the two ever coinciding by configuration accident — the same shape as the
+   selected repository's own
    unconditional listing below, not the rate-limited helper, because a
    repository is selected for review at most once per
    `min_days_between_reviews` days, longer than any interval a stamp there
