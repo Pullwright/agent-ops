@@ -4687,10 +4687,26 @@ implements.
      whole stack down on 2026-09-28, on the first real apply anywhere on the
      fleet (agent-ops#1913). The sibling is a `docker run --rm` of the image
      *this container is running*, with the Docker socket and the project
-     directory bind-mounted at their own paths, `--network none`, the socket's
-     own group added so a uid-1000 process can open it, and `docker` as its
-     entrypoint in place of the image's own — the shape watchtower uses to
-     update itself. It carries no Compose labels, so `--remove-orphans` cannot
+     directory bind-mounted at their own paths, `--network none`, and the
+     socket's own group added so a uid-1000 process can open it — the shape
+     watchtower uses to update itself. Its command is
+     `env -i PATH=… HOME=… docker compose …`, which steps over the image's
+     own entrypoint (a node's state-volume preparation, irrelevant here) and,
+     more importantly, **clears the environment Compose interpolates from**:
+     Compose resolves a `${VAR}` from the process environment ahead of the
+     project's `.env`, and this image's own `ENV` sets `TZ`, which
+     `compose.yaml` interpolates — so a sibling holding the image's
+     environment would deploy every service with the image's `TZ` however the
+     node's `.env` is written, moving the hour that node's cron fires, on an
+     apply whose whole claim is to install the merged file byte for byte. The
+     container this library runs in escapes that only because its own service
+     declares `TZ: ${TZ:-UTC}`. Cleared, the node's `.env` is the only input
+     interpolation has — the same input a human's own `docker compose up -d`
+     in that directory reads — and any later collision between an image `ENV`
+     and a compose variable is cleared with it. `PATH` and `HOME` are put back
+     because they are the CLI's own needs and not configuration: one finds the
+     binary, the other is where it looks for `config.json`.
+     It carries no Compose labels, so `--remove-orphans` cannot
      see it, and it is named after this node and the moment, so an operator
      finding it in `docker ps` knows what it is and two stacks on one host
      cannot collide over the name. It is run attached: the tick whose own

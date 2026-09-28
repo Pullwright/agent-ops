@@ -70,8 +70,9 @@
 # real apply anywhere on the fleet (agent-ops#1913).
 #
 # So the `up` is handed to a `docker run --rm` of this very image, with the
-# socket and the project directory mounted and `docker` as its entrypoint —
-# the shape watchtower already uses to update itself. Nothing that `up` stops
+# socket and the project directory mounted and `docker` as its command, under
+# a cleared environment (see `_compose_reconcile_apply` for why that matters)
+# — the shape watchtower already uses to update itself. Nothing that `up` stops
 # is then the process running it. This container is still stopped and
 # recreated, and is meant to be; what changes is that the apply finishes
 # without it. The sibling is run *attached*, so on the ordinary tick that does
@@ -489,14 +490,29 @@ _compose_reconcile_self_image() {  # <docker> <project-dir>
 # status — or nothing at all, on the apply that stops this container: see the
 # header for why that is the expected path and not a failure.
 #
-# `--entrypoint docker` steps over the image's own entrypoint, which prepares
-# a node's state volumes and has nothing to do here. No network at all, like
-# the service itself: the daemon performs any pull, on the host's network.
-# The socket's own group is what lets a uid-1000 sibling open it, read off the
-# mounted socket rather than from a variable, so it is this host's real
-# `DOCKER_GID` whatever `.env` says. The name is this node's and this
-# moment's, so an operator finding the container in `docker ps` knows what it
-# is and two stacks on one host cannot collide over it.
+# **Through `env -i`, and that is not tidiness.** Compose resolves a `${VAR}`
+# from the process environment first and the project's `.env` only after, and
+# this image sets `TZ=Etc/UTC` in its own `ENV` — the one name it defines that
+# `compose.yaml` also interpolates. A sibling started with the image's
+# environment would therefore deploy every service with `TZ: Etc/UTC` however
+# the node's `.env` is written, silently moving the hour a node's cron fires,
+# on an apply whose whole claim is to install the file byte for byte. The
+# container this runs in escapes that only because its own service declares
+# `TZ: ${TZ:-UTC}`, so a sibling is not free to inherit what a sibling has.
+# Cleared instead, so `.env` is the only thing that decides — the same input a
+# human's own `docker compose up -d` in that directory reads — and any future
+# collision is cleared with it. `PATH` and `HOME` are put back because the two
+# are the CLI's own needs, not configuration: one finds the binary, the other
+# is where it looks for `config.json`.
+#
+# `--entrypoint env` steps over the image's own entrypoint at the same time,
+# which prepares a node's state volumes and has nothing to do here. No network
+# at all, like the service itself: the daemon performs any pull, on the host's
+# network. The socket's own group is what lets a uid-1000 sibling open it, read
+# off the mounted socket rather than from a variable, so it is this host's real
+# `DOCKER_GID` whatever `.env` says. The name is this node's and this moment's,
+# so an operator finding the container in `docker ps` knows what it is and two
+# stacks on one host cannot collide over it.
 _compose_reconcile_apply() {  # <docker> <socket> <project-dir> <image>
   local docker_cmd="$1" socket="$2" project_dir="$3" image="$4"
   local gid name
@@ -509,11 +525,12 @@ _compose_reconcile_apply() {  # <docker> <socket> <project-dir> <image>
     --label com.pullwright.agent-ops.compose-apply=true \
     --network none \
     "${group_args[@]}" \
-    --entrypoint docker \
+    --entrypoint env \
     --volume "$socket:$socket" \
     --volume "$project_dir:$project_dir" \
     "$image" \
-    compose --project-directory "$project_dir" up -d --remove-orphans
+    -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/home/agent \
+    docker compose --project-directory "$project_dir" up -d --remove-orphans
 }
 
 # Stage the image's copy beside the target, prove it arrived intact, then

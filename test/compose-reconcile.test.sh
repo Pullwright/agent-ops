@@ -256,7 +256,10 @@ chmod +x "$tick_script"
 
 # Wrapped in a subshell whose stderr is discarded: a foreground command killed
 # by a signal makes the shell that reaped it announce the fact, and that notice
-# is this suite's own output, not a result.
+# is this suite's own output, not a result. The trailing `:` is what keeps the
+# subshell a shell — bash execs the last command of a subshell in place of it,
+# which would put the pid the stub kills back in the outer shell's hands and
+# the notice back on this suite's stderr.
 run_reconcile_killed() {
   : > "$tmp_dir/tick.pid"
   ( DOCKER_STUB_KILL_FILE="$tmp_dir/tick.pid" \
@@ -268,7 +271,7 @@ run_reconcile_killed() {
   COMPOSE_RECONCILE_DOCKER_SOCKET="$socket" \
   COMPOSE_RECONCILE_NOW=2026-09-11T00:00:00Z \
   NODE_NAME=fixture-node \
-    "$tick_script" >/dev/null 2>&1 ) 2>/dev/null
+    "$tick_script" >/dev/null 2>&1; : ) 2>/dev/null
 }
 
 docker_calls() { wc -l < "$DOCKER_STUB_LOG" | tr -d ' '; }
@@ -357,14 +360,28 @@ assert_eq "it is handed to a transient sibling container instead" "1" "$(sibling
 sibling_cmd="$(grep '^run --rm ' "$DOCKER_STUB_LOG" | tail -n 1)"
 assert_contains "which is this very container's own image, by id" \
   "$DOCKER_STUB_SELF_IMAGE" "$sibling_cmd"
+assert_contains "labelled for what it is" \
+  "com.pullwright.agent-ops.compose-apply" "$sibling_cmd"
 assert_contains "removing itself once the apply is done" "run --rm" "$sibling_cmd"
 assert_contains "holding the Docker socket" "--volume $socket:$socket" "$sibling_cmd"
 assert_contains "and the project directory at the same absolute path on both sides" \
   "--volume $project:$project" "$sibling_cmd"
 assert_contains "with no network of its own, like the service that launched it" \
   "--network none" "$sibling_cmd"
-assert_contains "and docker as its entrypoint, over the image's own" \
-  "--entrypoint docker" "$sibling_cmd"
+assert_contains "running the Compose CLI over the image's own entrypoint" \
+  "--entrypoint env" "$sibling_cmd"
+# Not tidiness. Compose resolves a `${VAR}` from the process environment ahead
+# of the project's `.env`, and this image's own `ENV` sets `TZ`, which
+# `compose.yaml` interpolates: a sibling holding the image's environment would
+# deploy every service with the image's `TZ` however the node's `.env` is
+# written, quietly moving the hour that node's cron fires — on an apply whose
+# whole claim is to install the merged file byte for byte. The container this
+# runs in escapes it only because its own service declares `TZ: ${TZ:-UTC}`.
+assert_contains "under a cleared environment, so the node's own .env is the only thing interpolation reads" \
+  "-i PATH=" "$sibling_cmd"
+assert_contains "with only the CLI's own two needs put back" "HOME=" "$sibling_cmd"
+assert_contains "and then the Compose CLI itself" \
+  "docker compose --project-directory $project up -d --remove-orphans" "$sibling_cmd"
 assert_contains "named for this node, so an operator finding it knows what it is" \
   "agent-ops-compose-apply-fixture-node-" "$sibling_cmd"
 assert_eq "the file keeps its inode — a bind-mounted file pins the inode it was created against" \
