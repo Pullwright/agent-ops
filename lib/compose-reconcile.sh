@@ -498,7 +498,7 @@ _compose_reconcile_self_image() {  # <docker> <project-dir>
 # the node's `.env` is written, silently moving the hour a node's cron fires,
 # on an apply whose whole claim is to install the file byte for byte. The
 # container this runs in escapes that only because its own service declares
-# `TZ: ${TZ:-UTC}`, so a sibling is not free to inherit what a sibling has.
+# `TZ: ${TZ:-UTC}`, which is a protection the sibling has no way to inherit.
 # Cleared instead, so `.env` is the only thing that decides — the same input a
 # human's own `docker compose up -d` in that directory reads — and any future
 # collision is cleared with it. `PATH` and `HOME` are put back because the two
