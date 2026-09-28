@@ -1313,7 +1313,7 @@ The floor under the free-space threshold of the pre-clone stand-down (requiremen
 
 ### Extended notes: `workspace_headroom_factor`
 
-The multiplier `lib/disk-space.sh`'s `disk_space_effective_min_bytes` applies to the largest `clone-footprint` event this fleet has recorded — logged once per successful `clone_repo` (agent-cycle.sh and review-cycle.sh both), read back from the union log the same way requirement 2.1's usage-limit cooldown already reads its own governing record — to derive requirement 2.0c's effective threshold above `min_free_workspace_bytes`'s own floor (agent-ops#904, the residual of #756). Twice the largest measured clone (the default) covers a clone's transient pack files during the fetch, its working tree on top of the objects, and the cycle's own stage streams and state writes, all landing on the same filesystem, without claiming more precision than a single `du -sb` measurement has. `0`, a non-numeric value, or no footprint ever recorded (a fleet's first cycle, or a union log this node cannot yet read) derives nothing, and `min_free_workspace_bytes` alone governs — the safe direction, the same "no evidence" reasoning `disk_space_verdict` itself already rests on.
+The multiplier `lib/disk-space.sh`'s `disk_space_effective_min_bytes` applies to the largest `clone-footprint` event this fleet has recorded — logged once per successful `clone_repo` (agent-cycle.sh and review-cycle.sh both), read back from the union log the same way requirement 2.1's usage-limit cooldown already reads its own governing record — to derive requirement 2.0c's effective threshold above `min_free_workspace_bytes`'s own floor (agent-ops#904, the residual of #756). Twice the largest measured clone (the default) covers a clone's transient pack files during the fetch, its working tree on top of the objects, and the cycle's own stage streams and state writes, all landing on the same filesystem, without claiming more precision than a single `du -sb` measurement has. `0`, a non-numeric value, or no footprint ever recorded (a fleet's first cycle, or a union log this node cannot yet read) derives nothing, and `min_free_workspace_bytes` alone governs — the safe direction, the same "no evidence" reasoning `disk_space_verdict` itself already rests on. That read is fleet-wide and unfiltered by which repositories are configured now, and it never ages: a footprint from a repository since dropped or shrunk only ever pushes the derived threshold higher, never lower, the same safe direction to err in. Where this proves too conservative on an installation whose repositories have shrunk since setting the fleet's largest recorded footprint, `0` here is the operator's own lever — distinct from `min_free_workspace_bytes`'s own `0`, it disables only this derivation, leaving the floor itself in force (agent-ops#1904, ratifying #904).
 
 ### Extended notes: `min_free_memory_bytes`
 
@@ -2354,7 +2354,15 @@ implements.
       `clone-footprint` ever recorded, fleet-wide, unfiltered by which
       repositories are configured *now* — a footprint from a repository since
       dropped only ever pushes the derived threshold higher, never lower, the
-      safe direction to err in. `disk_space_effective_min_bytes` then derives
+      safe direction to err in. Nor does it age: a footprint recorded long ago
+      and never bettered still governs today, with no expiry pruning it out.
+      Where this unfiltered, unaged read proves too conservative on an
+      installation whose repositories have shrunk since setting the fleet's
+      largest recorded footprint, `workspace_headroom_factor` set to `0` is
+      the operator's own lever — distinct from `min_free_workspace_bytes`'s
+      own `0` below, it disables only the derivation, leaving the floor
+      itself in force (agent-ops#1904, ratifying #904).
+      `disk_space_effective_min_bytes` then derives
       `max(min_free_workspace_bytes, workspace_headroom_factor × that
       footprint)`: `min_free_workspace_bytes` is the floor *under* the
       derivation, never a ceiling, the same shape `lock_stale_after`
