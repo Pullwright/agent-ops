@@ -311,10 +311,11 @@ assert_eq "and does not claim a roll-pending override it never had" "0" "$(grep 
 # deferring while `roll-pending` is in force is the other half (see
 # test/compose-reconcile.test.sh).
 
-write_reconcile_marker() {  # write_reconcile_marker STATUS AGE_SECONDS
+write_reconcile_marker() {  # write_reconcile_marker STATUS AGE_SECONDS [SINCE_AGE_SECONDS]
   jq -n --arg s "$1" \
         --arg at "$(date -u -d "-${2} seconds" +%Y-%m-%dT%H:%M:%SZ)" \
-        '{status: $s, at: $at, pending_apply: true}' > "$state_dir/.compose-reconcile.json"
+        --arg since "$(date -u -d "-${3:-$2} seconds" +%Y-%m-%dT%H:%M:%SZ)" \
+        '{status: $s, at: $at, since: $since, pending_apply: true}' > "$state_dir/.compose-reconcile.json"
 }
 
 rm -f "$state_dir/lock.json" "$state_dir/review-lock.json" "$state_dir/roll-pending.json"
@@ -323,12 +324,23 @@ run_hook
 assert_eq "an apply in flight defers the roll, on an otherwise idle node" "75" "$rc"
 assert_contains "and says what it is waiting for" "applying a merged compose.yaml" "$out"
 
-# Bounded at ten minutes, twice the reconciler's own tick: the one way this
-# marker outlives its apply is that apply's container dying part-way, and the
-# next tick settles it. Past the bound it holds nothing back.
+# `at` moves with every tick of an apply that is still running, so it answers
+# "when was this last confirmed" and not "how long has this been going on".
+# What an operator reading the line wants is the second.
+write_reconcile_marker applying 30 5000
+run_hook
+assert_eq "a long apply still defers, however long it has been running" "75" "$rc"
+assert_contains "and dates itself from when it began, not from the tick that confirmed it" \
+  "$(date -u -d '-5000 seconds' +%Y-%m-%dT%H:%M:%SZ)" "$out"
+
+# Bounded at ten minutes, twice the reconciler's own tick. The reconciler
+# rewrites this marker on every tick that finds the apply's sibling container
+# still alive, so a slow apply cannot age out here; what this bound covers is
+# the other case — a node whose reconciler is gone altogether, where an
+# `applying` nothing will ever replace would hold every roll off for ever.
 write_reconcile_marker applying 4000
 run_hook
-assert_eq "a marker older than the bound stops deferring — a node that never updates again is the worse failure" \
+assert_eq "a marker nothing has refreshed stops deferring — a node that never updates again is the worse failure" \
   "0" "$rc"
 
 write_reconcile_marker reconciled 30

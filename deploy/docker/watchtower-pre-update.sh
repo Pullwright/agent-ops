@@ -350,23 +350,34 @@ roll_pending_allow() {
 # reconciler is part-way through recreating this project (agent-ops#1913).
 #
 # The marker is read for its `status` and its `at` together: `applying` is
-# written immediately before the recreate starts and replaced by the recreate's
-# own verdict, so a fresh one means a Compose run is in flight right now, and a
-# stale one means the container that wrote it did not survive to replace it.
-# An unparseable `at` reads as epoch 0 — impossibly old, `held_by`'s own
-# convention for a timestamp it cannot trust — so a corrupt marker never
+# written immediately before the file is installed and rewritten with a fresh
+# `at` on every tick that finds the apply's sibling container still running,
+# so a fresh one means a Compose run is in flight right now, and a stale one
+# means no generation of that reconciler survived to replace it.
+#
+# The reconciler's own liveness check is the mechanism and this window is the
+# backstop under it: the marker tracks the sibling's real lifetime, so a slow
+# pull cannot age it out, and what the window bounds is the other case — a
+# node whose reconciler is gone altogether, where an `applying` nothing will
+# ever replace would otherwise hold every roll off this node for ever.
+#
+# `since` is what it reports, because `at` moves with every tick of an apply
+# that is still running and what an operator reading this line wants is when
+# it began. An unparseable `at` reads as epoch 0 — impossibly old, `held_by`'s
+# own convention for a timestamp it cannot trust — so a corrupt marker never
 # defers a roll on a window it cannot prove.
 COMPOSE_APPLY_FRESH_SECONDS=600
 compose_applying() {
-  local f="$state_dir/.compose-reconcile.json" status at at_epoch now_epoch
+  local f="$state_dir/.compose-reconcile.json" status at since at_epoch now_epoch
   [[ -f "$f" ]] || return 1
   status="$(jq -r '.status // empty' "$f" 2>/dev/null || true)"
   [[ "$status" == "applying" ]] || return 1
   at="$(jq -r '.at // empty' "$f" 2>/dev/null || true)"
+  since="$(jq -r '.since // .at // empty' "$f" 2>/dev/null || true)"
   at_epoch="$(date -d "$at" +%s 2>/dev/null || echo 0)"
   now_epoch="$(date +%s)"
   (( now_epoch - at_epoch < COMPOSE_APPLY_FRESH_SECONDS )) || return 1
-  printf 'this node is applying a merged compose.yaml (since %s)' "${at:-unknown}"
+  printf 'this node is applying a merged compose.yaml (since %s)' "${since:-unknown}"
 }
 
 defer=0
