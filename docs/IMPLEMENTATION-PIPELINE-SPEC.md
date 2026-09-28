@@ -1943,7 +1943,8 @@ implements.
    post-fill derivation over the same merged object every one of its
    callers already reads — no reader needed to change. It resolves **two
    gaps between cycles**, both in minutes, from the already-defaulted
-   `schedule` block, and the two shapes of key below take one each.
+   `schedule` block, and the three shapes of key below take one each — the
+   first the worst-case gap, the second and third the mean.
 
    The **worst-case gap** — the longest an installation can go between two
    firings, which is what a threshold that must outlast a quiet stretch is
@@ -1967,14 +1968,16 @@ implements.
    expiring a live node's claim overnight.
 
    The **mean gap** — a day divided by the number of firings in it, which is
-   what a *count* of retained cycle directories is sized against: every
+   what a *count of firings elapsed* is sized against, whether the key spells
+   that count as a number of retained cycle directories or as an hour figure
+   that is really "N firings" in disguise: every
    allowed hour repeats the identical kept-minute pattern, so the firings are
    the allowed hours times the kept minutes within one, and the mean gap is
    `1440 / firings_per_day`. It equals the worst-case gap for any
    installation that has restricted neither `cycle_hours` nor
    `excluded_minutes`, and only where they part company does the distinction
-   bite — see the count-valued keys below for why the worst-case gap is the
-   wrong denominator there.
+   bite — see the second and third shapes of key below for why the worst-case
+   gap is the wrong denominator there.
 
    The derivation validates none of the three `schedule` leaves it reads,
    because `config_defaults` validates nothing (requirement 1b): a
@@ -1988,7 +1991,7 @@ implements.
    a violation reads a defaulted config to do it, so the derivation must
    survive the configurations it is run to diagnose.
 
-   Two shapes of key are re-expressed against these gaps, both keeping the
+   Three shapes of key are re-expressed against these gaps, each keeping the
    key's *name*, *type* and *unit* unchanged — this is a derivation, not the
    breaking rename a `claim_ttl_cycles` would be. Which shape a key takes
    follows what it is actually sized against, not its unit: an hour-valued
@@ -2050,7 +2053,7 @@ implements.
      directories, where the worst-case gap of 915 minutes would keep 14 —
      about three hours of history in place of eight days, and fewer than the
      flat 200 this derivation replaced.
-     `crash_loop_after` is the fifth key issue
+     `crash_loop_after` is the fourth key issue
      #591's audit considered under this same "counted in cycles already"
      heading and decided *against* deriving: its four carries the
      count of *consecutive failures* before a crash-loop escalation fires,
