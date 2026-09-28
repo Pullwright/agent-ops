@@ -6239,8 +6239,9 @@ implements.
    field's absence is never evidence that the repository has no review to
    read, and `prompts/coordinator.md` says so where it describes the
    fallback — a caller that does need the distinction reads the exit status,
-   as requirement 3y's own `--current-date` mode does. Unlike the eight bands, this resolution
-   is not part of requirement 48's one-repository-per-cycle rotation: it is
+   as requirement 3y's own `--current-date` mode does. Unlike the eight
+   bands, this resolution is not part of requirement 48's
+   one-repository-per-cycle rotation: it is
    one listing call for every repository whose `sources` lists
    `project-review`, every cycle, because every entry the Co-Ordinator might
    be handed needs the field and not only the one repository gathered freshly
