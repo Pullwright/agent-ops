@@ -611,6 +611,27 @@ assert_cadence_cmp "...and abandoned_draft_after_hours too" \
   '.schedule.cycle_interval_minutes = 15 | .schedule.cycle_hours = "9-17"' \
   '$b.abandoned_draft_after_hours > $a.abandoned_draft_after_hours'
 
+# ...but disable_default_ttl and none_selected_recheck_hours each express a
+# *count of firings elapsed*, the same quantity a count-valued key expresses
+# in cycle directories rather than hours, so each is sized against the mean
+# gap instead: the same "9-17", 15-minute schedule fires 36 times a day (a
+# mean gap of 40 minutes), deriving 3 and 16 rather than the worst gap's 61
+# and 366 (a 915-minute worst gap: the 15-hour overnight run plus one
+# interval) — the worst gap would starve both thresholds' own documented
+# bound (requirement 3b's "capped at a day", 2.3's "a few cycles") by more
+# than a factor of ten.
+assert_defaults "a restricted schedule.cycle_hours derives disable_default_ttl and none_selected_recheck_hours against the mean gap, not the worst one" \
+  '.schedule.cycle_hours = "9-17" | .schedule.cycle_interval_minutes = 15 | .schedule.excluded_minutes = []
+   | del(.disable_default_ttl, .none_selected_recheck_hours)' \
+  '.disable_default_ttl == 3 and .none_selected_recheck_hours == 16'
+# ...and at cycle_hours: "*" with the same interval neither value moves off
+# what the bare interval alone implies, since the two gaps coincide whenever
+# nothing is restricted.
+assert_defaults "an unrestricted schedule.cycle_hours leaves disable_default_ttl and none_selected_recheck_hours exactly where the bare interval implies" \
+  '.schedule.cycle_hours = "*" | .schedule.cycle_interval_minutes = 15 | .schedule.excluded_minutes = []
+   | del(.disable_default_ttl, .none_selected_recheck_hours)' \
+  '.disable_default_ttl == 1 and .none_selected_recheck_hours == 6'
+
 # ...and the same restriction must *not* shrink the count-valued keys, which
 # are sized against the mean gap between firings rather than the worst one:
 # a cycle directory is written per firing, so the wall-clock span a count

@@ -490,18 +490,23 @@ config_defaults() {
     #     top of the ordinary per-hour gap, which already accounts for
     #     `excluded_minutes` dropping a would-be firing rather than shifting
     #     it. This is what a threshold that must outlast a quiet stretch is
-    #     sized against (`hour_key`).
+    #     sized against (`hour_key`): `claim_ttl_hours` and
+    #     `abandoned_draft_after_hours`, both additionally runtime-floored.
     #   `mean` — a day divided by the number of firings in it. This is what a
-    #     *count* of retained cycle directories is sized against
-    #     (`count_key`): directories accrue at the installation'\''s throughput,
-    #     so the wall-clock span a count covers follows the average gap, not
-    #     the longest one. Sizing a retention count against `worst` would
-    #     shrink the window exactly where `cycle_hours` is most restrictive —
-    #     a `9-17` installation firing every 15 minutes would keep 14 cycle
-    #     directories, some three hours of the eight days `cycles_retained`
-    #     means to hold. The two coincide whenever `cycle_hours` allows every
-    #     hour and `excluded_minutes` drops no reachable occurrence, which is
-    #     every installation that has not restricted its schedule.
+    #     *count* of firings elapsed is sized against, whether the key'\''s own
+    #     unit is a cycle directory (`count_key`: `cycles_retained`,
+    #     `state_local_cycles_retained`, `state_local_streams_retained`) or an
+    #     hour figure that is really "N firings" in disguise (`hour_key_mean`:
+    #     `disable_default_ttl`, `none_selected_recheck_hours`) — either way a
+    #     quantity that accrues at the installation'\''s throughput, so the
+    #     span it covers follows the average gap, not the longest one. Sizing
+    #     it against `worst` would shrink that span exactly where
+    #     `cycle_hours` is most restrictive — a `9-17` installation firing
+    #     every 15 minutes would keep 14 cycle directories, some three hours
+    #     of the eight days `cycles_retained` means to hold. The two coincide
+    #     whenever `cycle_hours` allows every hour and `excluded_minutes`
+    #     drops no reachable occurrence, which is every installation that has
+    #     not restricted its schedule.
     #
     # Each of the three inputs is taken only when it is the type this
     # arithmetic needs, for the reason the whole function already gives: this
@@ -513,8 +518,9 @@ config_defaults() {
     # wrong-typed field therefore degrades the same way an unparseable
     # `cycle_hours` token does: to the historical hourly assumption these
     # keys carried before this requirement, under which both gaps are 60
-    # minutes — the longest gap, and so the conservative answer for the four
-    # hour-valued keys.
+    # minutes — so neither gap moves any of the seven derived keys from the
+    # flat figure each already carried before this requirement, whichever of
+    # the two it takes.
     def cadence_gaps($sched):
         (if ($sched | type) == "object" then $sched else {} end) as $s
         | (if ($s.cycle_hours | type) == "string" then $s.cycle_hours else "*" end) as $hours
@@ -553,27 +559,43 @@ config_defaults() {
     | $gaps.worst as $gap_min
     | $gaps.mean as $mean_gap_min
 
-    # A hours-valued key'\''s intent, before this requirement, was always "N
+    # An hour-valued key'\''s intent, before this requirement, was always "N
     # cycles" expressed as though a cycle were an hour long; derived is that
-    # same N re-expressed against the actual worst-case gap, rounded up to a
-    # whole hour — every reader of these keys (`lib/claim.sh`'\''s
+    # same N re-expressed against a gap in minutes, rounded up to a whole
+    # hour — every reader of these keys (`lib/claim.sh`'\''s
     # `$(( claim_ttl_hours * 3600 ))`, `scripts/sweep-orphan-branches.sh`'\''s
     # `^[0-9]+$` guard) is bash integer arithmetic, never a float, and that is
     # a wider contract than this one derivation to take on reshaping. A
     # configured value is a floor under the derivation, never a ceiling —
     # `lock_stale_after`'\''s own shape (requirement 4f) — so an operator'\''s
     # explicit hours can still be *raised* by the derivation but never
-    # lowered by it: the implementation note this requirement is built from
-    # names exactly the failure a bare override would risk — a
-    # `claim_ttl_hours` set to cover the ordinary case, then a restrictive
-    # `cycle_hours` widening the true gap past what that number covers.
-    # Rounding applies to the derived term alone, never to an operator'\''s own
-    # floor, so an explicit fractional override still reads back exactly as
-    # configured.
-    | def hour_key($key; $base_cycles):
+    # lowered by it. Rounding applies to the derived term alone, never to an
+    # operator'\''s own floor, so an explicit fractional override still reads
+    # back exactly as configured. Takes the gap explicitly ($gap) rather than
+    # closing over `$gap_min`, because not every hour-valued key is sized
+    # against the same one — see `hour_key`/`hour_key_mean` below.
+    | def hour_key_against($key; $base_cycles; $gap):
         (getpath([$key])) as $cfg
         | (if ($cfg | type) == "number" then $cfg else 0 end) as $floor
-        | ([$floor, (($base_cycles * $gap_min / 60) | ceil)] | max);
+        | ([$floor, (($base_cycles * $gap / 60) | ceil)] | max);
+
+    # `claim_ttl_hours` and `abandoned_draft_after_hours`: each bounds a
+    # stretch that must be *outlasted* (a live claim, a draft still being
+    # worked), so each is sized against the worst-case gap — the
+    # implementation note this requirement is built from names exactly the
+    # failure a mean-gap floor would risk here: a `claim_ttl_hours` set to
+    # cover the ordinary case, then a restrictive `cycle_hours` widening the
+    # true worst gap past what that number covers.
+    def hour_key($key; $base_cycles): hour_key_against($key; $base_cycles; $gap_min);
+
+    # `disable_default_ttl` and `none_selected_recheck_hours`: each expresses
+    # a *count of firings elapsed* (a few cycles, a day'\''s worth of skipped
+    # runs) re-spelled in hours, the same quantity a count-valued key
+    # (`count_key` below) expresses in cycle directories instead — so each is
+    # sized against the mean gap, for the identical reason `count_key`
+    # already is: a quantity that accrues at the installation'\''s throughput
+    # follows how often it fires, not how long its longest quiet stretch is.
+    def hour_key_mean($key; $base_cycles): hour_key_against($key; $base_cycles; $mean_gap_min);
 
     # A count-valued key'\''s intent is a span of wall-clock history, not a
     # literal number of cycle directories; derived keeps that span constant
@@ -595,9 +617,9 @@ config_defaults() {
     # stay exactly 0, never raised by the derivation the way a genuine floor
     # would be, or an operator'\''s deliberate "don'\''t" turns back on by itself
     # under a fast enough cadence.
-    def hour_key_or_zero($key; $base_cycles):
+    def hour_key_mean_or_zero($key; $base_cycles):
         (getpath([$key])) as $cfg
-        | if $cfg == 0 then 0 else hour_key($key; $base_cycles) end;
+        | if $cfg == 0 then 0 else hour_key_mean($key; $base_cycles) end;
 
     # `claim_ttl_hours` and `abandoned_draft_after_hours` bound a cycle'\''s own
     # worst-case *runtime*, not only the gap between cycle starts (see this
@@ -615,8 +637,8 @@ config_defaults() {
     $filled
     | .claim_ttl_hours = hour_key_runtime_floored("claim_ttl_hours"; 6)
     | .abandoned_draft_after_hours = hour_key_runtime_floored("abandoned_draft_after_hours"; 4)
-    | .disable_default_ttl = hour_key("disable_default_ttl"; 4)
-    | .none_selected_recheck_hours = hour_key_or_zero("none_selected_recheck_hours"; 24)
+    | .disable_default_ttl = hour_key_mean("disable_default_ttl"; 4)
+    | .none_selected_recheck_hours = hour_key_mean_or_zero("none_selected_recheck_hours"; 24)
     | .cycles_retained = count_key("cycles_retained"; 200)
     | .state_local_cycles_retained = count_key("state_local_cycles_retained"; 1000)
     | .state_local_streams_retained = count_key("state_local_streams_retained"; 50)
