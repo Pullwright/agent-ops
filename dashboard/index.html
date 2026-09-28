@@ -1328,6 +1328,14 @@
   // acts, so only `refused` is amber. A node with no reconciler at all
   // carries no verdict and renders exactly what it always did: the drift
   // badge, and the manual ritual in its title.
+  //
+  // `applying` is grey for `deferred`'s reason and shown for one of its own:
+  // it means a sibling container is recreating that project right now, which
+  // resolves itself on the next tick, but it is also the state a node is left
+  // in when the apply's own container does not come back — and an apply that
+  // began with nothing yet saying so is what left ockham-container's stack
+  // down for five hours (agent-ops#1913). Grey and visible is the honest
+  // reading of both.
   function composeLine(n) {
     var c = n.compose, r = n.compose_reconcile, kids = [];
     // `reason` is the stable half of a verdict and `detail` the varying one
@@ -1358,6 +1366,14 @@
       kids.push(el("span", {class:"badge b-grey", text:"reconcile deferred",
         title: "this node's compose reconciler is waiting: " + why +
                ". It retries on its own every few minutes; this is the mechanism working."}));
+    } else if (r && r.status === "applying") {
+      kids.push(el("span", {class:"badge b-grey", text:"reconcile applying",
+        title: "this node is recreating its own stack from the merged compose.yaml, in a " +
+               "throwaway sibling container: " + why + ". The reconciler's own container is " +
+               "replaced by that recreate, and the one it creates settles the verdict on its " +
+               "next tick, so this clears within a few minutes without anyone acting. Standing " +
+               "for longer means the apply did not come back — docker compose logs reconciler " +
+               "and docker compose ps on that host, and docker compose up -d to finish it."}));
     }
     if (!kids.length) return null;
     return el("div", {class:"ver"}, kids);

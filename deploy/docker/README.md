@@ -397,12 +397,40 @@ the copy inside the image it is running, and when they differ it:
    reads a value out of it;
 2. waits while either pipeline holds its lock, exactly as the watchtower
    pre-update hook waits, and retries five minutes later;
-3. copies the image's file over this node's and runs
-   `docker compose up -d --remove-orphans` here.
+3. waits again while a watchtower roll is due on this node, so the two
+   updaters never recreate the same container at once (see below);
+4. copies the image's file over this node's, records that it is applying, and
+   runs `docker compose up -d --remove-orphans` for this project — from a
+   throwaway sibling container rather than from the reconciler itself.
 
 No model is involved at any point: the file it installs is the one the image
 shipped, byte for byte. `docker compose logs reconciler` is where it says what
 it decided — nothing at all on the ticks where there was nothing to do.
+
+**Why the recreate runs in a sibling, and what you will see.** `reconciler` is
+one of the services in the file it applies, and on a real apply it is always
+one of the ones that changed: the compose change arrives on the same image
+roll that carries it. Compose recreates a container by creating its
+replacement, stopping the old one and only then starting anything — so an
+`up -d` run inside the reconciler stops the process running it and leaves the
+rest of the project stopped or created-but-never-started. So the `up` is run
+by a short-lived `docker run --rm` of the same image instead, named
+`agent-ops-compose-apply-<node>-<timestamp>`; it holds the socket and this
+directory and nothing else, and it removes itself when it is done. The
+reconciler's own container is still replaced by that `up`, which is the point:
+the apply finishes without it, and the container it created picks the verdict
+up on its next tick. An apply in flight also holds a watchtower roll back
+(`docker compose logs watchtower` says "applying a merged compose.yaml"), and
+a roll falling due holds the apply back the same way, so the two never work on
+the same containers together.
+
+A node part-way through an apply says so on its own card and in its heartbeat:
+`.compose-reconcile.json` reads `{"status":"applying","pending_apply":true,…}`
+from before the recreate starts until one returns. If you ever find that
+standing for more than a few minutes, the tick that wrote it did not come back
+and its successor has not run yet; `docker compose logs reconciler` and
+`docker compose ps` are where to look, and `docker compose up -d` from this
+directory is the manual finish.
 
 **Turning it on costs one `docker compose up -d` per node, once.** The
 reconciler is itself compose-level, so it arrives the way everything
@@ -724,6 +752,7 @@ fleet across the hour](#spreading-the-fleet-across-the-hour).
 | `Bind for 127.0.0.1:8787 failed: port is already allocated` on the `local` profile | Something already holds that port on the host — a second node's stack, or on the laptop the legacy SysV dashboard | Set `DASHBOARD_PORT` in `.env` |
 | Nothing happens on any node | The shared switch is set | `--status` to see the reason, `--enable` to clear it |
 | A node's card shows `compose drifted` or `compose unverified` | Its `compose.yaml` has fallen behind the repository — a merged compose change was never applied there (`drifted`), or the file is too old even to carry the mount the check reads (`unverified`) | The ritual in [Keeping the compose file current](#keeping-the-compose-file-current): wait for idle, re-fetch `compose.yaml`, `docker compose up -d`; `./check-node-compose.sh` to verify, containers included |
+| A node's card shows `reconcile applying` for more than a few minutes | Its reconciler installed the merged `compose.yaml` and started the sibling container that recreates the project, and nothing has settled the verdict since. The reconciler's own container is replaced by that recreate, so the ordinary case clears on the next tick; a standing one means the successor never ran | `docker compose ps` and `docker compose logs reconciler` on that host; `docker compose up -d` from the stack directory finishes the apply by hand, and the next tick then records `reconciled` |
 | A node's card shows an amber `image behind` | The registry's newest image has existed longer than `image_behind_grace_hours` and this node still has not adopted it — a normal deferral has outlived the grace period this page gives it | See [Is this node on the newest image](#is-this-node-on-the-newest-image): `docker compose logs watchtower` for whether it is still polling, `./check-node-image.sh` to re-check directly |
 | A node's card shows `image unverified` | The registry could not be reached from inside the node, or (only right after this check first rolls out) its heartbeat predates it | Usually resolves on its own within a few heartbeats; `./check-node-image.sh` names the reason if it does not |
 | A container disappears and comes back, and `docker inspect --format '{{.State.ExitCode}}'` says **137** | The OOM killer took it: the service outgrew the `mem_limit` `compose.yaml` gives it. The ceilings carry roughly 5x headroom over measured usage, so this means either genuine growth in what a stage reads or a leak worth finding | Raise that service's `AGENT_OPS_*_MEMORY` in `.env` and `docker compose up -d`. Do not remove the limit — an unbounded container on a small host takes the *host* down instead, which is the failure the ceiling exists to convert into this one. `docker stats` shows current usage against the ceiling in force |
