@@ -186,9 +186,21 @@ fi
 # stands the cycle down before it tries, on either directory.
 #
 # `min_free_workspace_bytes` set to `0` turns the check off, for both
-# directories. `lib/disk-space.sh` is the one place free space is read and
-# judged, so doctor.sh's own advisory warning and this gate cannot silently
-# disagree about what "low" means, nor about which directories that covers.
+# directories, regardless of any footprint ever recorded — the same "0 is the
+# off switch, unconditionally" convention `github_min_core_budget`/
+# `github_min_graphql_budget` use. Otherwise the threshold this gate actually
+# reads is not `min_free_workspace_bytes` itself but
+# `disk_space_effective_min_bytes`'s derivation over it (agent-ops#904, the
+# residual of #756): `max(min_free_workspace_bytes, workspace_headroom_factor
+# × the largest clone-footprint this fleet has ever recorded)`, read back
+# from `union_log` — already a local, already-fetched read by the time this
+# runs, so deriving the threshold costs no network call of its own.
+# `min_free_workspace_bytes` is the floor *under* that derivation, never a
+# ceiling; with no footprint recorded (a fleet's first cycle, or a union log
+# this node cannot read) the floor alone governs. `lib/disk-space.sh` is the
+# one place free space is read and judged, so doctor.sh's own advisory
+# warning and this gate cannot silently disagree about what "low" means, nor
+# about which directories that covers, nor about which bound governed.
 # Where state_dir and workspace_root share a filesystem — the common case, one
 # home directory holding both — `disk_space_same_filesystem` collapses this to
 # the one `df` reading requirement 2.0c always took; a split deployment (the
@@ -199,11 +211,23 @@ fi
 # 2.0's own `unknown` rests on, for either directory: `disk_space_verdict`
 # reads it as `ok`.
 if (( min_free_workspace_bytes > 0 )); then
+  disk_footprint_line=""
+  [[ -s "$union_log" ]] && disk_footprint_line="$(disk_space_largest_footprint < "$union_log")"
+  if [[ "$disk_footprint_line" == *$'\t'* ]]; then
+    disk_footprint_bytes="${disk_footprint_line%%$'\t'*}"
+    disk_footprint_repo="${disk_footprint_line#*$'\t'}"
+  else
+    disk_footprint_bytes=""
+    disk_footprint_repo=""
+  fi
+  disk_effective_min_bytes="$(disk_space_effective_min_bytes \
+    "$min_free_workspace_bytes" "$workspace_headroom_factor" "$disk_footprint_bytes")"
+  disk_governed_by="$(disk_space_governed_by "$min_free_workspace_bytes" "$disk_effective_min_bytes")"
   disk_standdown_path=""
   disk_standdown_free_kb=""
   if disk_space_same_filesystem "$state_dir" "$workspace_root"; then
     disk_free_kb="$(disk_space_free_kb "$workspace_root")"
-    if [[ "$(disk_space_verdict "$disk_free_kb" "$min_free_workspace_bytes")" == "low" ]]; then
+    if [[ "$(disk_space_verdict "$disk_free_kb" "$disk_effective_min_bytes")" == "low" ]]; then
       disk_standdown_path="$workspace_root"
       disk_standdown_free_kb="$disk_free_kb"
     fi
@@ -212,9 +236,9 @@ if (( min_free_workspace_bytes > 0 )); then
     disk_workspace_free_kb="$(disk_space_free_kb "$workspace_root")"
     disk_state_dir_low="false"
     disk_workspace_low="false"
-    [[ "$(disk_space_verdict "$disk_state_dir_free_kb" "$min_free_workspace_bytes")" == "low" ]] \
+    [[ "$(disk_space_verdict "$disk_state_dir_free_kb" "$disk_effective_min_bytes")" == "low" ]] \
       && disk_state_dir_low="true"
-    [[ "$(disk_space_verdict "$disk_workspace_free_kb" "$min_free_workspace_bytes")" == "low" ]] \
+    [[ "$(disk_space_verdict "$disk_workspace_free_kb" "$disk_effective_min_bytes")" == "low" ]] \
       && disk_workspace_low="true"
     if [[ "$disk_state_dir_low" == "true" && "$disk_workspace_low" == "true" ]]; then
       # Both short: name the one with less free space.
@@ -240,9 +264,15 @@ if (( min_free_workspace_bytes > 0 )); then
       disk_standdown_cause="disk-low"
     fi
     log_event "stand-down" "$(jq -nc \
-      --arg r "$(disk_space_describe "$disk_standdown_path" "$disk_standdown_free_kb" "$min_free_workspace_bytes")" \
+      --arg r "$(disk_space_describe "$disk_standdown_path" "$disk_standdown_free_kb" \
+        "$disk_effective_min_bytes" "$disk_governed_by" "$disk_footprint_repo" \
+        "$disk_footprint_bytes" "$workspace_headroom_factor")" \
       --arg cause "$disk_standdown_cause" --arg path "$disk_standdown_path" --arg free_kb "$disk_standdown_free_kb" \
-      '{reason: $r, cause: $cause, path: $path, free_kb: $free_kb}')"
+      --arg governed_by "$disk_governed_by" --argjson min_bytes "$disk_effective_min_bytes" \
+      --arg repo "$disk_footprint_repo" --arg footprint_bytes "$disk_footprint_bytes" \
+      '{reason: $r, cause: $cause, path: $path, free_kb: $free_kb,
+         governed_by: $governed_by, min_bytes: $min_bytes}
+       + (if $governed_by == "derived" then {repo: $repo, footprint_bytes: ($footprint_bytes | tonumber)} else {} end)')"
     set_node_state_terminal externally-blocked "$disk_standdown_cause"
     exit 0
   fi

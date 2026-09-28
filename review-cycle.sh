@@ -60,6 +60,11 @@ SKILL_SRC="$SCRIPT_DIR/.claude/skills/project-review"
 . "$SCRIPT_DIR/lib/github-limit.sh"
 # shellcheck source=lib/repo-clone.sh
 . "$SCRIPT_DIR/lib/repo-clone.sh"
+# disk_space_clone_footprint_bytes — logging each clone's footprint against
+# its repository's slug (agent-ops#904), the same helper agent-cycle.sh uses,
+# so the two pipelines' clones feed one shared measurement rather than two.
+# shellcheck source=lib/disk-space.sh
+. "$SCRIPT_DIR/lib/disk-space.sh"
 # shellcheck source=lib/model-id.sh
 . "$SCRIPT_DIR/lib/model-id.sh"
 # shellcheck source=lib/config-schema.sh
@@ -1156,6 +1161,26 @@ review_one() {
     release_review_claim "$slug" "$branch" "$safe" no-pr
     rm -rf "$clone_dir"; clone_dir=""
     return 0
+  fi
+  # `du -sb` of the clone just made, logged against its own repository's slug
+  # (agent-ops#904, the residual of #756): requirement 2.0c's own derivation,
+  # in agent-cycle.sh, reads this back from the union log — this pipeline
+  # runs no gate of its own, but its clones are the same repositories', so
+  # they feed the one shared measurement too. Best-effort, the same "no
+  # evidence, no event" convention agent-cycle.sh's own reading uses.
+  #
+  # Written to the *shared* `log.jsonl` (`$log_file`), not this pipeline's own
+  # `review-log.jsonl` — the second of R16's two shared exceptions, for the
+  # same reason `limit-hit` is the first: the reader is in the other pipeline.
+  # `disk_space_largest_footprint` is fed `fleet_logs <state_dir> <peers>
+  # log.jsonl` in both of its callers (lib/standdown.sh and scripts/doctor.sh),
+  # so a footprint on `review-log.jsonl` would be a measurement nothing can
+  # ever read.
+  clone_footprint_bytes="$(disk_space_clone_footprint_bytes "$clone_dir")"
+  if [[ -n "$clone_footprint_bytes" ]]; then
+    log_event_append "$log_file" review "$review_id" "$node_name" "clone-footprint" \
+      "$(jq -nc --arg repo "$slug" --argjson bytes "$clone_footprint_bytes" \
+        '{repo: $repo, bytes: $bytes}')"
   fi
 
   # Stage the vendored skill into the clone, and git-exclude it so the agent can

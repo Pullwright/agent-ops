@@ -55,6 +55,7 @@ are binding on any agent working inside them).
   - [Extended notes: `crash_loop_min_clear_minutes`](#extended-notes-crash_loop_min_clear_minutes)
   - [Extended notes: `notify_webhook_url`](#extended-notes-notify_webhook_url)
   - [Extended notes: `min_free_workspace_bytes`](#extended-notes-min_free_workspace_bytes)
+  - [Extended notes: `workspace_headroom_factor`](#extended-notes-workspace_headroom_factor)
   - [Extended notes: `min_free_memory_bytes`](#extended-notes-min_free_memory_bytes)
   - [Extended notes: `host_budget_enforce`](#extended-notes-host_budget_enforce)
   - [Extended notes: `host_budget_reserved_memory_bytes`](#extended-notes-host_budget_reserved_memory_bytes)
@@ -1058,7 +1059,8 @@ and the schema must carry every one of them.
 | `github_min_core_budget` | 300 points | The `core` floor of the GitHub API budget check (requirement 2.0). Sized above one cycle's typical REST spend so the cycle that starts can finish, and read from the `x-ratelimit-*` headers of one metered call — not from `GET /rate_limit`, whose body read cold is an empty window rather than a reading (agent-ops#1087). `0` disables the floor. |
 | `github_min_graphql_budget` | 100 points | The `graphql` floor of the GitHub API budget check (requirement 2.0). Separate from `github_min_core_budget` because GitHub meters the two pools independently and either can be the binding one — on 2026-08-12 the fleet exhausted `graphql` with 96% of its `core` hour unspent. `0` disables the floor. |
 | `github_retry_max_wait_seconds` | 60 s | The per-call wait bound of the `gh` wrapper (requirement 2.0a). A secondary rate limit waits a fixed fallback, a primary one waits until GitHub's stated reset, and either is abandoned if it exceeds this — the cycle holds a lock and runs on a `cycle_interval_minutes` tick, so a wrapper that waited out a primary limit would collide with the next tick. `0` turns retrying off. |
-| `min_free_workspace_bytes` | 2 GiB | The free-space floor of the pre-clone stand-down (requirement 2.0c, agent-ops#756; both directories, agent-ops#992): below this, `state_dir`'s and `workspace_root`'s filesystems are read via `lib/disk-space.sh` — one `df` reading where the two share a filesystem, one each where they don't — and the cycle stands down before it writes rather than starting into whatever room is actually left on either. `scripts/doctor.sh` reads the same key for its own advisory warning, so the...[continued below](#extended-notes-min_free_workspace_bytes) |
+| `min_free_workspace_bytes` | 2 GiB | The floor under the free-space threshold of the pre-clone stand-down (requirement 2.0c, agent-ops#756; both directories, agent-ops#992; derived, agent-ops#904): below the *effective* threshold — `max(min_free_workspace_bytes, workspace_headroom_factor × the largest clone footprint this fleet has ever recorded)`, `lib/disk-space.sh`'s `disk_space_effective_min_bytes` — `state_dir`'s and `workspace_root`'s filesystems are read via the same file — one `df` reading where the two...[continued below](#extended-notes-min_free_workspace_bytes) |
+| `workspace_headroom_factor` | 2 | The multiplier `lib/disk-space.sh`'s `disk_space_effective_min_bytes` applies to the largest `clone-footprint` event this fleet has recorded — logged once per successful `clone_repo` (agent-cycle.sh and review-cycle.sh both), read back from the union log the same way requirement 2.1's usage-limit cooldown already reads its own governing record — to derive requirement 2.0c's effective threshold above `min_free_workspace_bytes`'s own floor (agent-ops#904, the residual of #756)....[continued below](#extended-notes-workspace_headroom_factor) |
 | `min_free_memory_bytes` | 512 MiB | The free-memory floor of the pre-cycle stand-down (requirement 2.0f): below this, the host's `MemAvailable` is read via `lib/memory.sh` and the cycle stands down before any stage runs rather than starting a model stage into a host with no headroom. The disk counterpart of this floor is `min_free_workspace_bytes` (requirement 2.0c), and the two are deliberately the same shape. `scripts/doctor.sh` reads the same key for its own advisory warning, so the two cannot silently...[continued below](#extended-notes-min_free_memory_bytes) |
 | `host_budget_enforce` | `false` | Whether requirement 2.0g's host-budget check refuses to start a cycle when the sum of every running container's declared memory/CPU ceiling on this host overcommits it (issue #757). `false` (the default): the check still runs every cycle and `lib/host-budget.sh`'s summary is still published in the host-facts record (docs/HOST-FACTS-SCHEMA.md's `budget` section), but nothing stands the cycle down on it — advisory-by-default, per the issue's own "an operator who knowingly...[continued below](#extended-notes-host_budget_enforce) |
 | `host_budget_reserved_memory_bytes` | 512 MiB | The memory margin requirement 2.0g's host-budget check reserves for the host/VM itself: an overcommit is declared when the sum of every running container's own `memory.max_bytes` (docs/HOST-FACTS-SCHEMA.md's `budget.mem_declared_bytes`) plus this margin exceeds `host.mem_total_bytes`. The same default as `min_free_memory_bytes` (512 MiB) because both describe the same kind of headroom, one against the live figure and one against the declared sum. Only consulted when...[continued below](#extended-notes-host_budget_reserved_memory_bytes) |
@@ -1165,15 +1167,15 @@ The private repository through which `state_dir` replicates between nodes (requi
 
 ### Extended notes: `cycles_retained`
 
-Cycle directories kept in the replicated mirror — bounds a repository that is force-pushed after every cycle. A span of history, not a literal cycle count (requirement 1d): derived from the mean gap between cycles (`schedule.cycle_interval_minutes`, `cycle_hours`, `excluded_minutes`) to hold the ~8.3 days 200 cycles represented at the historical hourly cadence; a configured value floors the derivation rather than replacing it, the same shape `lock_stale_after` (requirement 4f) already uses. The mean gap, not the worst-case one the hour-valued keys take: a directory is written per firing, so a restricted `cycle_hours` must widen the four thresholds and leave this window alone rather than collapsing it. The node's own `state_dir` is bounded by `state_local_cycles_retained` instead. At the shipped 15-minute cadence this raises the derived count 200 → 800; see `state_local_streams_retained`'s own note for what that fourfold rise costs in practice. A configured value below the derivation is inert for the same reason `lock_stale_after`'s floor is: it preserves the span of history the base count was chosen to keep, at this installation's own cadence. Unlike `state_local_cycles_retained` and `state_local_streams_retained`, this key has no `STATE_SYNC_*` override, so a configured value is the only lever it has, and, being a floor, it can only raise the count. Disk is bounded separately, by `min_free_workspace_bytes` (requirement 2.0c) and its own derivation (#904, still open), not by this count.
+Cycle directories kept in the replicated mirror — bounds a repository that is force-pushed after every cycle. A span of history, not a literal cycle count (requirement 1d): derived from the mean gap between cycles (`schedule.cycle_interval_minutes`, `cycle_hours`, `excluded_minutes`) to hold the ~8.3 days 200 cycles represented at the historical hourly cadence; a configured value floors the derivation rather than replacing it, the same shape `lock_stale_after` (requirement 4f) already uses. The mean gap, not the worst-case one the hour-valued keys take: a directory is written per firing, so a restricted `cycle_hours` must widen the four thresholds and leave this window alone rather than collapsing it. The node's own `state_dir` is bounded by `state_local_cycles_retained` instead. At the shipped 15-minute cadence this raises the derived count 200 → 800; see `state_local_streams_retained`'s own note for what that fourfold rise costs in practice. A configured value below the derivation is inert for the same reason `lock_stale_after`'s floor is: it preserves the span of history the base count was chosen to keep, at this installation's own cadence. Unlike `state_local_cycles_retained` and `state_local_streams_retained`, this key has no `STATE_SYNC_*` override, so a configured value is the only lever it has, and, being a floor, it can only raise the count. Disk is bounded separately, by requirement 2.0c's own free-space threshold — `min_free_workspace_bytes`'s floor, raised by `workspace_headroom_factor`'s derivation over the largest recorded clone (agent-ops#904) — not by this count.
 
 ### Extended notes: `state_local_cycles_retained`
 
-Cycle and review directories the node's *own* `state_dir` keeps; the same push that replicates prunes to it (requirement 2.5). Deliberately far above `cycles_retained`, so the local machine is always the longer record, with a floor of one protecting the cycle being recorded. A span of history, not a literal cycle count (requirement 1d): derived from the mean gap between cycles (`schedule.cycle_interval_minutes`, `cycle_hours`, `excluded_minutes`) to hold the ~41.7 days 1000 cycles represented at the historical hourly cadence; a configured value floors the derivation rather than replacing it. `STATE_SYNC_LOCAL_RETAINED` overrides it for tests. At the shipped 15-minute cadence this raises the derived count 1000 → 4000 — each retained cycle directory without its large derived files (`state_local_streams_retained` bounds those separately) is a handful of kilobytes of JSON, so the practical local-disk cost of this rise alone is on the order of tens of megabytes; see `state_local_streams_retained`'s own note for the one of these three keys whose volume is worth quantifying more precisely. A configured value below the derivation is inert for the same reason `lock_stale_after`'s floor is: it preserves the span of history the base count was chosen to keep, at this installation's own cadence. `STATE_SYNC_LOCAL_RETAINED` bypasses the derivation for tests only, not as an operator lever. Disk is bounded separately, by `min_free_workspace_bytes` (requirement 2.0c) and its own derivation (#904, still open), not by this count.
+Cycle and review directories the node's *own* `state_dir` keeps; the same push that replicates prunes to it (requirement 2.5). Deliberately far above `cycles_retained`, so the local machine is always the longer record, with a floor of one protecting the cycle being recorded. A span of history, not a literal cycle count (requirement 1d): derived from the mean gap between cycles (`schedule.cycle_interval_minutes`, `cycle_hours`, `excluded_minutes`) to hold the ~41.7 days 1000 cycles represented at the historical hourly cadence; a configured value floors the derivation rather than replacing it. `STATE_SYNC_LOCAL_RETAINED` overrides it for tests. At the shipped 15-minute cadence this raises the derived count 1000 → 4000 — each retained cycle directory without its large derived files (`state_local_streams_retained` bounds those separately) is a handful of kilobytes of JSON, so the practical local-disk cost of this rise alone is on the order of tens of megabytes; see `state_local_streams_retained`'s own note for the one of these three keys whose volume is worth quantifying more precisely. A configured value below the derivation is inert for the same reason `lock_stale_after`'s floor is: it preserves the span of history the base count was chosen to keep, at this installation's own cadence. `STATE_SYNC_LOCAL_RETAINED` bypasses the derivation for tests only, not as an operator lever. Disk is bounded separately, by requirement 2.0c's own free-space threshold — `min_free_workspace_bytes`'s floor, raised by `workspace_headroom_factor`'s derivation over the largest recorded clone (agent-ops#904) — not by this count.
 
 ### Extended notes: `state_local_streams_retained`
 
-Cycle and review directories whose derived files are kept — the stage event streams (`<stage>.stream.jsonl`, requirement 4d) and the fleet-log snapshot (`.fleet-log.jsonl`, requirement 2.5); the push that replicates prunes to it (requirement 2.5). Far below `state_local_cycles_retained` because each is a different order of size from the record holding it — a cycle directory without them is kilobytes, one Reviewer stream megabytes, one snapshot the whole fleet's history to that moment — so they go early and their records stay. Neither reaches the state repository. A span of history, not a literal cycle count (requirement 1d): derived from the mean gap between cycles (`schedule.cycle_interval_minutes`, `cycle_hours`, `excluded_minutes`) to hold the ~2.1 days 50 cycles represented at the historical hourly cadence; a configured value floors the derivation rather than replacing it. `STATE_SYNC_STREAMS_RETAINED` overrides it for tests. At the shipped 15-minute cadence this raises the derived count 50 → 200 (TD-PPagop-26082830) — the one of these three keys worth quantifying rather than only ratioed, since it alone bounds files this large: measured on both poetic nodes at 21:00Z on 2026-09-18 (agent-ops#1678, closing #1025's own ask for a real baseline in place of the order-of-magnitude estimate this note used to carry), 200 retained fleet-log snapshots alone ran 45.1–45.4 MB apiece, 7.3–7.4 GB per node, regrowing at roughly 4.3 GB/node/day — two orders of magnitude past that prior 'low hundreds of megabytes' estimate, and, at this cadence, past `min_free_workspace_bytes`'s 2 GiB pre-clone floor on its own within about a day and a half of a clean sweep, not comfortably inside it as the estimate had it. That gap is why `state-sync.sh push` additionally prunes derived files under active disk pressure (requirement 2.5) rather than relying on this count alone to stay inside the floor — the incident that supplied these figures is exactly the case the count could not see coming. A configured value below the derivation is inert for the same reason `lock_stale_after`'s floor is: it preserves the span of history the base count was chosen to keep, at this installation's own cadence. `STATE_SYNC_STREAMS_RETAINED` bypasses the derivation for tests only, not as an operator lever — the disk floor above is `min_free_workspace_bytes` (requirement 2.0c) and its own derivation (#904, still open), not this count.
+Cycle and review directories whose derived files are kept — the stage event streams (`<stage>.stream.jsonl`, requirement 4d) and the fleet-log snapshot (`.fleet-log.jsonl`, requirement 2.5); the push that replicates prunes to it (requirement 2.5). Far below `state_local_cycles_retained` because each is a different order of size from the record holding it — a cycle directory without them is kilobytes, one Reviewer stream megabytes, one snapshot the whole fleet's history to that moment — so they go early and their records stay. Neither reaches the state repository. A span of history, not a literal cycle count (requirement 1d): derived from the mean gap between cycles (`schedule.cycle_interval_minutes`, `cycle_hours`, `excluded_minutes`) to hold the ~2.1 days 50 cycles represented at the historical hourly cadence; a configured value floors the derivation rather than replacing it. `STATE_SYNC_STREAMS_RETAINED` overrides it for tests. At the shipped 15-minute cadence this raises the derived count 50 → 200 (TD-PPagop-26082830) — the one of these three keys worth quantifying rather than only ratioed, since it alone bounds files this large: measured on both poetic nodes at 21:00Z on 2026-09-18 (agent-ops#1678, closing #1025's own ask for a real baseline in place of the order-of-magnitude estimate this note used to carry), 200 retained fleet-log snapshots alone ran 45.1–45.4 MB apiece, 7.3–7.4 GB per node, regrowing at roughly 4.3 GB/node/day — two orders of magnitude past that prior 'low hundreds of megabytes' estimate, and, at this cadence, past `min_free_workspace_bytes`'s 2 GiB pre-clone floor on its own within about a day and a half of a clean sweep, not comfortably inside it as the estimate had it. That gap is why `state-sync.sh push` additionally prunes derived files under active disk pressure (requirement 2.5) rather than relying on this count alone to stay inside the floor — the incident that supplied these figures is exactly the case the count could not see coming. A configured value below the derivation is inert for the same reason `lock_stale_after`'s floor is: it preserves the span of history the base count was chosen to keep, at this installation's own cadence. `STATE_SYNC_STREAMS_RETAINED` bypasses the derivation for tests only, not as an operator lever — the disk floor above is requirement 2.0c's own free-space threshold — `min_free_workspace_bytes`'s floor, raised by `workspace_headroom_factor`'s derivation over the largest recorded clone (agent-ops#904) — not this count.
 
 ### Extended notes: `approver_restale_escalate_after_hours`
 
@@ -1307,7 +1309,11 @@ The URL every `notify_post` (`lib/notify.sh`) POST goes to (requirement 2m). `es
 
 ### Extended notes: `min_free_workspace_bytes`
 
-The free-space floor of the pre-clone stand-down (requirement 2.0c, agent-ops#756; both directories, agent-ops#992): below this, `state_dir`'s and `workspace_root`'s filesystems are read via `lib/disk-space.sh` — one `df` reading where the two share a filesystem, one each where they don't — and the cycle stands down before it writes rather than starting into whatever room is actually left on either. `scripts/doctor.sh` reads the same key for its own advisory warning, so the two cannot silently disagree about what "low" means, nor about which directories that covers. `0` turns the check off.
+The floor under the free-space threshold of the pre-clone stand-down (requirement 2.0c, agent-ops#756; both directories, agent-ops#992; derived, agent-ops#904): below the *effective* threshold — `max(min_free_workspace_bytes, workspace_headroom_factor × the largest clone footprint this fleet has ever recorded)`, `lib/disk-space.sh`'s `disk_space_effective_min_bytes` — `state_dir`'s and `workspace_root`'s filesystems are read via the same file — one `df` reading where the two share a filesystem, one each where they don't — and the cycle stands down before it writes rather than starting into whatever room is actually left on either. With no footprint ever recorded, this key alone governs. `scripts/doctor.sh` reads the same key for its own advisory warning, so the two cannot silently disagree about what "low" means, nor about which directories that covers, nor about which bound governed. `0` turns the check off outright, regardless of any footprint recorded — the same unconditional-off convention `github_min_core_budget`/`github_min_graphql_budget` use.
+
+### Extended notes: `workspace_headroom_factor`
+
+The multiplier `lib/disk-space.sh`'s `disk_space_effective_min_bytes` applies to the largest `clone-footprint` event this fleet has recorded — logged once per successful `clone_repo` (agent-cycle.sh and review-cycle.sh both), read back from the union log the same way requirement 2.1's usage-limit cooldown already reads its own governing record — to derive requirement 2.0c's effective threshold above `min_free_workspace_bytes`'s own floor (agent-ops#904, the residual of #756). Twice the largest measured clone (the default) covers a clone's transient pack files during the fetch, its working tree on top of the objects, and the cycle's own stage streams and state writes, all landing on the same filesystem, without claiming more precision than a single `du -sb` measurement has. `0`, a non-numeric value, or no footprint ever recorded (a fleet's first cycle, or a union log this node cannot yet read) derives nothing, and `min_free_workspace_bytes` alone governs — the safe direction, the same "no evidence" reasoning `disk_space_verdict` itself already rests on.
 
 ### Extended notes: `min_free_memory_bytes`
 
@@ -2298,8 +2304,11 @@ implements.
       stand-down itself is unconditional, only the filing is gated.
 
    0c. *Free disk space* (requirement 2.0c, agent-ops#756; both directories,
-      agent-ops#992): free like 0 and 0b — `df -Pk` touches no network and
-      costs nothing, so it runs ahead of every check below that can spend.
+      agent-ops#992; the threshold derived, agent-ops#904): free like 0 and
+      0b — `df -Pk` touches no network and costs nothing, so it runs ahead of
+      every check below that can spend, and reading the fleet's own union log
+      for the derivation below costs nothing further either, since `union_log`
+      is already a local, already-fetched snapshot by the time this runs (1a).
       `scripts/doctor.sh` (component 14) has read `state_dir`'s and
       `workspace_root`'s free space and warned below a fixed 2 GiB since
       before this check existed, but that warning only ever reached a human
@@ -2314,33 +2323,76 @@ implements.
       `lib/disk-space.sh` reads and judges free space the one way both
       `doctor.sh`'s advisory warning and this gate use, so the two cannot
       silently disagree about what "low" means, nor about which directories
-      that covers: `disk_space_free_kb` reads a directory's free KiB (empty,
-      never `0`, when `df` cannot read it — an unreadable meter is no
-      evidence of a full disk, the same reasoning 0's own `unknown` rests
-      on), `disk_space_verdict` compares it against
-      `min_free_workspace_bytes` (converted to KiB), `disk_space_describe`
+      that covers, nor about which bound governed: `disk_space_free_kb` reads
+      a directory's free KiB (empty, never `0`, when `df` cannot read it — an
+      unreadable meter is no evidence of a full disk, the same reasoning 0's
+      own `unknown` rests on), `disk_space_verdict` compares it against the
+      *effective* threshold below (converted to KiB), `disk_space_describe`
       renders the one-line explanation both the stand-down event and the
       warning use verbatim, and `disk_space_same_filesystem` reports whether
       `state_dir` and `workspace_root` share a filesystem.
+
+      The threshold this gate actually reads is not `min_free_workspace_bytes`
+      alone but `disk_space_effective_min_bytes`'s derivation over it — a
+      flat floor protects a fleet whose repositories stay far below it, but
+      says nothing about one whose repository approaches or exceeds it, which
+      is exactly the gap agent-ops#902 raised against #756's own PR #782 and
+      #904 was filed to close. `disk_space_clone_footprint_bytes` (`du -sb`
+      the clone directory, the same reading `workspace_orphans`,
+      lib/workspace.sh, already takes) is measured once every successful
+      `clone_repo` completes — agent-cycle.sh's own workspace step (6) and
+      review-cycle.sh's own — and logged as a `clone-footprint` event,
+      `{repo, bytes}`, against the cloned repository's own slug. The review
+      pipeline writes it to the *shared* `log.jsonl` rather than its own
+      `review-log.jsonl` (`docs/REVIEW-PIPELINE-SPEC.md` R16's second shared
+      exception, `limit-hit` being the first), because this is where its reader
+      is. The figure is never GitHub's own reported repository size, which is
+      the packed size, not what a clone occupies, and never a network call this
+      gate would have to pay for. `disk_space_largest_footprint`, reading `union_log` the same
+      "governing record off the fleet's own union" shape requirement 2.1's
+      `limit_union_record` already uses, returns the single largest
+      `clone-footprint` ever recorded, fleet-wide, unfiltered by which
+      repositories are configured *now* — a footprint from a repository since
+      dropped only ever pushes the derived threshold higher, never lower, the
+      safe direction to err in. `disk_space_effective_min_bytes` then derives
+      `max(min_free_workspace_bytes, workspace_headroom_factor × that
+      footprint)`: `min_free_workspace_bytes` is the floor *under* the
+      derivation, never a ceiling, the same shape `lock_stale_after`
+      (requirement 4f) and the state-sync count keys (requirement 1d) already
+      use elsewhere. With no footprint ever recorded — a fleet's first cycle,
+      or a union log this node cannot read — the floor alone governs, failing
+      in the same safe direction `disk_space_verdict`'s own "unreadable is not
+      low" already does. `disk_space_governed_by` reports which bound actually
+      produced the effective threshold, `"floor"` or `"derived"`, so a
+      `stand-down` event or `doctor.sh` warning can say so rather than only
+      report a number a reader would have to re-derive to interpret.
 
       Where the two share a filesystem — the common case, one host directory
       holding both — the gate takes exactly one `df` reading and judges it
       once, precisely as it did before this covered two directories. Where
       they differ — the shipped `deploy/docker/compose.yaml` mounts `state:`
       and `workspaces:` as two separate named volumes — the gate reads and
-      judges each on its own floor and stands the cycle down when *either*
-      reads `low`; when both do, the `stand-down` event names the one with
-      less free space. An unreadable `df` is "no evidence", not a stand-down,
-      for either directory.
+      judges each on its own (shared) effective threshold and stands the
+      cycle down when *either* reads `low`; when both do, the `stand-down`
+      event names the one with less free space. An unreadable `df` is "no
+      evidence", not a stand-down, for either directory.
 
-      Below the floor, the `stand-down` event's `path` and `free_kb` name the
-      short directory (the shorter of the two when both are), and `cause` is
+      Below the threshold, the `stand-down` event's `path` and `free_kb` name
+      the short directory (the shorter of the two when both are), `cause` is
       `disk-full` when that directory's filesystem reports exactly zero KiB
       free, or `disk-low` for any smaller shortfall — both cover the same
-      gate, differing only in how far past the floor the shortfall runs.
-      `min_free_workspace_bytes` set to `0` turns the check off for both
-      directories, the same convention
-      `github_min_core_budget`/`github_min_graphql_budget` use.
+      gate, differing only in how far past the threshold the shortfall runs —
+      and `governed_by` and `min_bytes` name which bound produced the
+      threshold and what it was, with `repo` and `footprint_bytes` added
+      whenever `governed_by` is `"derived"`. `min_free_workspace_bytes` set to
+      `0` turns the check off entirely for both directories, *regardless of
+      any footprint recorded* — the same unconditional-off convention
+      `github_min_core_budget`/`github_min_graphql_budget` use. That off switch
+      lives inside `disk_space_effective_min_bytes` itself — a `0` floor
+      derives `0`, whatever footprint it is handed — not only in this gate's
+      own short-circuit around the whole block, so `scripts/doctor.sh`, which
+      has no such short-circuit, cannot end up warning about a threshold
+      derived over a floor an operator has explicitly switched off.
 
    0d. *The budget is recorded* (agent-ops#1087). `github_budget_record`
       (`lib/github-limit.sh`) takes a snapshot and logs it as a
@@ -24842,34 +24894,84 @@ oblige anyone to edit a test.
    exactly as it was — 1 for the failed filing, 0 and the issue URL for the
    successful one.
 2n. **A cycle does not start work the host has no room to finish, on either
-   its clone or its writable state (requirement 2.0c, agent-ops#756 and
-   agent-ops#992).** `test/disk-space.test.sh` passes: `disk_space_free_kb`
+   its clone or its writable state, and the threshold it is judged against is
+   derived from what the fleet's clones actually need rather than a fixed
+   constant alone (requirement 2.0c, agent-ops#756, agent-ops#992 and
+   agent-ops#904).** `test/disk-space.test.sh` passes: `disk_space_free_kb`
    reads a directory's free KiB and is empty (never `0`) for a path `df`
    cannot read; `disk_space_verdict` reads `low` only when free KiB falls
-   below `min_free_workspace_bytes` converted to KiB, and `ok` for a `0`
-   floor, an unreadable meter, or free space at or above it;
-   `disk_space_describe` names the directory, the free MiB and the floor;
+   below the threshold it is given, converted to KiB, and `ok` for a `0`
+   threshold, an unreadable meter, or free space at or above it;
+   `disk_space_describe` names the directory, the free MiB and the threshold,
+   and, given a `"derived"` fourth argument, additionally names the
+   repository, its recorded footprint's own MiB figure and the factor, while
+   a bare three-argument call (or an explicit `"floor"` fourth argument)
+   renders byte-for-byte the plain-floor sentence it always has;
    `disk_space_same_filesystem` reads true only when both paths' device ids
-   resolve and match, false when they differ or either is unreadable.
+   resolve and match, false when they differ or either is unreadable;
+   `disk_space_clone_footprint_bytes` reads a directory's `du -sb` size in
+   bytes and is empty (never `0`) for a path that does not exist or an
+   unreadable `du`; `disk_space_largest_footprint`, fed JSONL on stdin
+   (tolerant of an unparseable line, the same `fromjson? // empty` shape
+   `lib/fleet.sh`'s own log readers use, rather than failing the whole read),
+   returns the `<bytes>\t<repo>` of the single largest `clone-footprint` event
+   present, ignoring any other event and any `clone-footprint` event missing
+   a numeric `bytes` or a `repo`, and is empty for a log with none;
+   `disk_space_effective_min_bytes` returns
+   `max(floor, factor × largest)`, the floor alone for a non-numeric or zero
+   factor, a non-numeric largest, or a derivation that does not exceed the
+   floor, never below the floor even when the factor is `1` and the
+   footprint equals it exactly, and `0` for a `0` or non-numeric floor
+   whatever footprint it is handed — the off switch living in this one
+   function rather than in each caller, so the caller that has no guard of
+   its own (`scripts/doctor.sh`) honours it too; `disk_space_governed_by`
+   reports `"derived"`
+   only when the effective threshold exceeds the floor, `"floor"` otherwise
+   (including for a non-numeric effective value, read as `0`).
    `test/disk-space-wiring.test.sh` passes against the block lifted verbatim
    from `lib/standdown.sh`: with `state_dir` and `workspace_root` on the same
    filesystem, exactly one `df` reading is taken and free space below the
-   floor exits 0 without falling through to the rest of the cycle, the logged
-   `stand-down` event carrying `cause: "disk-full"` at exactly zero free KiB
-   and `cause: "disk-low"` for any smaller shortfall, and the reason naming
-   the directory and both figures — byte-for-byte what a single-directory
-   reading always produced. With the two on **different** filesystems: free
-   space below the floor on `state_dir` alone stands the cycle down and
-   names `state_dir` in `path`/`free_kb`; the same for `workspace_root`
-   alone; when both are short, the event names whichever has less free
-   space. Free space at or above the floor on both, an unreadable `df` on
-   either, and `min_free_workspace_bytes: 0` all fall through untouched,
-   standing nothing down. `test/doctor.test.sh` passes: a
-   `min_free_workspace_bytes` set above this host's real free space (an
-   exbibyte — no `df` stub needed, since no real free space could ever meet
+   effective threshold exits 0 without falling through to the rest of the
+   cycle, the logged `stand-down` event carrying `cause: "disk-full"` at
+   exactly zero free KiB and `cause: "disk-low"` for any smaller shortfall,
+   and the reason naming the directory and both figures — byte-for-byte what
+   a single-directory reading always produced when no footprint is recorded.
+   With the two on **different** filesystems: free space below the effective
+   threshold on `state_dir` alone stands the cycle down and names `state_dir`
+   in `path`/`free_kb`; the same for `workspace_root` alone; when both are
+   short, the event names whichever has less free space. Free space at or
+   above the threshold on both, an unreadable `df` on either, and
+   `min_free_workspace_bytes: 0` all fall through untouched, standing nothing
+   down — the `0` case falling through even with a large footprint recorded,
+   and never even reading one, since the off switch is unconditional. A
+   recorded footprint large enough that `workspace_headroom_factor × footprint`
+   exceeds `min_free_workspace_bytes` stands the cycle down on free space the
+   plain floor alone would have accepted, the logged event carrying
+   `governed_by: "derived"`, `min_bytes` at the derived figure, and `repo`/
+   `footprint_bytes` naming what it was derived from; the same free space with
+   no footprint recorded, or with one too small to raise the threshold, falls
+   through under the plain floor alone, `governed_by: "floor"`; exactly one
+   `disk_space_largest_footprint` reading is taken regardless of how many
+   directories are judged. The same file also passes against both cycles'
+   *measuring* blocks, lifted verbatim out of `review-cycle.sh` and
+   `agent-cycle.sh`: each logs one `clone-footprint` event carrying `{repo,
+   bytes}` for the repository it cloned, and `review-cycle.sh`'s lands on the
+   shared `log.jsonl` — never on its own `review-log.jsonl`, which no caller of
+   `disk_space_largest_footprint` reads — where the real
+   `disk_space_largest_footprint` reads it back whole. `test/doctor.test.sh`
+   passes: a `min_free_workspace_bytes` set above this host's real free space
+   (an exbibyte — no `df` stub needed, since no real free space could ever meet
    it) warns on both `state_dir` and `workspace_root`, naming the configured
-   floor's own MiB figure, without turning the pass into a failure; set to
-   `0` it warns on neither, however little free space actually remains.
+   floor's own MiB figure, without turning the pass into a failure; a recorded
+   `clone-footprint` large enough that `workspace_headroom_factor × footprint`
+   clears the same bar warns the same way, naming the derived MiB figure, the
+   factor, the repository and the footprint's own MiB figure; the same
+   footprint with `workspace_headroom_factor: 0` derives nothing, leaving the
+   plain floor's own sentence and never naming the repository; and
+   `min_free_workspace_bytes: 0` warns on neither directory, however little
+   free space actually remains and whatever footprint is recorded — the same
+   unconditional off switch the gate short-circuits on, so the two cannot
+   disagree about whether the check is on at all.
 2n-i. **A cycle does not start work the host has no memory to run (requirement
    2.0f).** `test/memory.test.sh` passes: `memory_available_kb` reads
    MemAvailable rather than MemFree and is empty (never `0`) when

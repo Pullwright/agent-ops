@@ -2406,6 +2406,67 @@ assert_contains "0 turns the warning off entirely, regardless of real free space
 assert_contains "…for workspace_root too" \
   "[ ok ] workspace_root" "$out"
 
+# --- Directories: the floor's threshold derives from a recorded clone -------
+# --- footprint (agent-ops#904, the residual of #756) ------------------------
+#
+# A recorded `clone-footprint` event big enough that `workspace_headroom_factor
+# × footprint` exceeds `min_free_workspace_bytes` forces the same warning
+# deterministically, with no need to fake `df` or real free space: 2 × 2^59
+# bytes (2^60, "1 EiB") is certainly below no host's real free space. Its own
+# dedicated state_dir keeps this log out of the real one `base_config` points
+# at (this suite's other doctor.sh runs never touch it).
+footprint_state_dir="$tmp/footprint-state-dir"
+mkdir -p "$footprint_state_dir"
+printf '%s\n' '{"ts":"2026-01-01T00:00:00Z","event":"clone-footprint","repo":"owner/big-repo","bytes":576460752303423488}' \
+  > "$footprint_state_dir/log.jsonl"
+derived_floor_config="$tmp/derived-floor-config.json"
+jq --arg sd "$footprint_state_dir" '.state_dir = $sd' "$base_config" > "$derived_floor_config"
+out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH PATH="$stub_bin:$PATH" bash "$DOCTOR" --config "$derived_floor_config" 2>&1)"
+rc=$?
+assert_contains "a recorded footprint big enough to raise the derived threshold warns on state_dir" \
+  "state_dir: " "$out"
+assert_contains "…and on workspace_root too" \
+  "workspace_root: " "$out"
+assert_contains "…stating the derived threshold in MiB (2 × 2^59 bytes = 1099511627776 MiB)" \
+  "1099511627776 MiB (" "$out"
+assert_contains "…naming the factor and the repository the footprint was recorded against" \
+  "2x owner/big-repo's" "$out"
+assert_contains "…and the footprint's own MiB figure (2^59 bytes = 549755813888 MiB)" \
+  "549755813888 MiB recorded clone" "$out"
+assert_eq "a warning alone (not a failure) still exits 0" "0" "$rc"
+
+# The same recorded footprint, but `workspace_headroom_factor: 0`: nothing is
+# derived from it, so only an explicitly huge floor (the same exbibyte trick
+# as the plain-floor case above) can force the warning — proving the factor,
+# not merely the footprint's presence, is what turns the derivation on.
+derived_off_config="$tmp/derived-floor-factor-off-config.json"
+jq --arg sd "$footprint_state_dir" \
+  '.state_dir = $sd | .min_free_workspace_bytes = 1152921504606846976 | .workspace_headroom_factor = 0' \
+  "$base_config" > "$derived_off_config"
+out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH PATH="$stub_bin:$PATH" bash "$DOCTOR" --config "$derived_off_config" 2>&1)"
+assert_contains "workspace_headroom_factor: 0 derives nothing even with a recorded footprint — the plain floor's own sentence, unchanged" \
+  "1099511627776 MiB this cycle needs" "$out"
+assert_not_contains "…never naming the repository the footprint was recorded against" \
+  "owner/big-repo" "$out"
+
+# And the same recorded footprint with `min_free_workspace_bytes: 0`: the off
+# switch is unconditional, so nothing is derived over it and this warning stays
+# silent — the `zero_floor_config` case above proves only that a `0` floor with
+# *no* footprint is off, which is the state every such config was in before the
+# derivation existed. This is the case where doctor.sh and requirement 2.0c's
+# own gate (which short-circuits the whole block on the same `0`) could
+# silently disagree about whether the check is on at all.
+derived_zero_floor_config="$tmp/derived-floor-zero-config.json"
+jq --arg sd "$footprint_state_dir" '.state_dir = $sd | .min_free_workspace_bytes = 0' \
+  "$base_config" > "$derived_zero_floor_config"
+out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH PATH="$stub_bin:$PATH" bash "$DOCTOR" --config "$derived_zero_floor_config" 2>&1)"
+assert_contains "min_free_workspace_bytes: 0 turns the warning off even with a large recorded footprint — state_dir" \
+  "[ ok ] state_dir" "$out"
+assert_contains "…for workspace_root too" \
+  "[ ok ] workspace_root" "$out"
+assert_not_contains "…never naming the repository a footprint was recorded against" \
+  "owner/big-repo" "$out"
+
 # --- Memory: the free-memory floor is configurable (requirement 2.0f) -------
 #
 # The same trick as the free-space floor immediately above, for the same

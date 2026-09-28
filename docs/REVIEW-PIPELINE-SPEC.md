@@ -70,9 +70,12 @@ cron (repository_review.defaults.min_days_between_reviews; a daily tick with a
   review side.
 - **One shared quota signal.** A `limit-hit` event (requirement 10) is written
   to the *shared* `log.jsonl` with the *same* shape, so a usage-limit hit in
-  either pipeline stands **both** down, and the dashboard shows it. All other
-  review events go to the review pipeline's own stream (R16), so the
-  dashboard's existing `log.jsonl` parser is unaffected.
+  either pipeline stands **both** down, and the dashboard shows it. The one
+  other event that crosses over is `clone-footprint`, which the implementation
+  pipeline's own pre-clone free-space gate reads back (requirement 2.0c of
+  `docs/IMPLEMENTATION-PIPELINE-SPEC.md`). Every other review event goes to the
+  review pipeline's own stream (R16), so the dashboard's existing `log.jsonl`
+  parser is unaffected.
 
 ## Actors
 
@@ -736,6 +739,14 @@ R5. **Per non-skipped repo** (processed **sequentially**, so a failure of one
       the working
       directory is under `workspace_root` before launching any stage
       (requirement 6). The user's own clones under `~/Code` are never touched.
+      Once the clone succeeds, measure it — `lib/disk-space.sh`'s
+      `disk_space_clone_footprint_bytes`, a `du -sb` of the clone directory —
+      and log a `clone-footprint` event carrying `{repo, bytes}` against the
+      cloned repository's own slug, to the *shared* `log.jsonl` (R16), which is
+      where requirement 2.0c of `docs/IMPLEMENTATION-PIPELINE-SPEC.md` reads it
+      back from to derive its pre-clone free-space threshold. Best-effort: a
+      `du` that cannot be read logs no event rather than a fabricated size, and
+      nothing about the review depends on it.
    2. *Inject the skill.* Copy this repository's
       `.claude/skills/project-review/` into
       `<clone>/.claude/skills/project-review/`, then append
@@ -1037,10 +1048,18 @@ R16. **Streams.** Review *operational* events go to the review pipeline's own
    record of requirement 33a — `model`, `cost_usd`, `duration_ms`,
    `num_turns`, `is_error`, `tokens` — via the same `lib/metering.sh` helper
    `agent-cycle.sh` uses, so a review's stage costs exactly the same shape as
-   a cycle's (`docs/METERING-SCHEMA.md`). The one exception is the shared
-   `limit-hit` event, which is written to `log.jsonl` (R6), because
-   usage-limit stand-down is shared across both pipelines — it carries `node`
-   too, so a fleet view can say which machine hit the limit.
+   a cycle's (`docs/METERING-SCHEMA.md`). Two events are written to the shared
+   `log.jsonl` instead, both because their reader is in the *other* pipeline:
+   `limit-hit` (R6), because usage-limit stand-down is shared across both
+   pipelines — it carries `node` too, so a fleet view can say which machine hit
+   the limit — and `clone-footprint` (`{repo, bytes}`, one per successful
+   `clone_repo`, R5 step 1), which requirement 2.0c of
+   `docs/IMPLEMENTATION-PIPELINE-SPEC.md` reads back off the union of every
+   node's `log.jsonl` to derive its pre-clone free-space threshold. Both are
+   written through `log_event_append "$log_file"` rather than this pipeline's
+   own `log_event`, since the latter is bound to `review-log.jsonl`; a
+   `clone-footprint` on that stream would be a measurement nothing can ever
+   read.
 
    `review-stage-end` and a genuine-failure `review-attempt-failed` (the one
    `review_one` logs when the reviewer's own attempt failed, never the

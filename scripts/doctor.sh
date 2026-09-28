@@ -1059,6 +1059,25 @@ workspace_root="$(cfg '.workspace_root')"
 # "low" means.
 min_free_workspace_bytes="$(cfg '.min_free_workspace_bytes')"
 [[ "$min_free_workspace_bytes" =~ ^[0-9]+$ ]] || min_free_workspace_bytes=$(( 2 * 1024 * 1024 * 1024 ))
+# The same derivation requirement 2.0c's own gate applies over that floor
+# (agent-ops#904): `workspace_headroom_factor` × the largest `clone-footprint`
+# this fleet has recorded, read back from the same union-of-nodes log the
+# gate reads, so this warning and that gate cannot silently disagree about
+# which bound governs either.
+workspace_headroom_factor="$(cfg '.workspace_headroom_factor')"
+[[ "$workspace_headroom_factor" =~ ^[0-9]+$ ]] || workspace_headroom_factor=2
+doctor_footprint_line="$(fleet_logs "$state_dir" "$(fleet_peers_dir "$workspace_root")" log.jsonl \
+  | disk_space_largest_footprint)"
+if [[ "$doctor_footprint_line" == *$'\t'* ]]; then
+  doctor_footprint_bytes="${doctor_footprint_line%%$'\t'*}"
+  doctor_footprint_repo="${doctor_footprint_line#*$'\t'}"
+else
+  doctor_footprint_bytes=""
+  doctor_footprint_repo=""
+fi
+doctor_effective_min_bytes="$(disk_space_effective_min_bytes \
+  "$min_free_workspace_bytes" "$workspace_headroom_factor" "$doctor_footprint_bytes")"
+doctor_governed_by="$(disk_space_governed_by "$min_free_workspace_bytes" "$doctor_effective_min_bytes")"
 for entry in "state_dir=$state_dir" "workspace_root=$workspace_root"; do
   key="${entry%%=*}"
   dir="${entry#*=}"
@@ -1066,8 +1085,9 @@ for entry in "state_dir=$state_dir" "workspace_root=$workspace_root"; do
     fail "$key is not set"
   elif mkdir -p "$dir" 2>/dev/null && [[ -w "$dir" ]]; then
     avail_kb="$(disk_space_free_kb "$dir")"
-    if [[ "$(disk_space_verdict "$avail_kb" "$min_free_workspace_bytes")" == "low" ]]; then
-      warn "$key: $(disk_space_describe "$dir" "$avail_kb" "$min_free_workspace_bytes")"
+    if [[ "$(disk_space_verdict "$avail_kb" "$doctor_effective_min_bytes")" == "low" ]]; then
+      warn "$key: $(disk_space_describe "$dir" "$avail_kb" "$doctor_effective_min_bytes" \
+        "$doctor_governed_by" "$doctor_footprint_repo" "$doctor_footprint_bytes" "$workspace_headroom_factor")"
     else
       ok "$key ($dir) is writable"
     fi

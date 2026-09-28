@@ -944,6 +944,15 @@ export GITHUB_LIMIT_MAX_WAIT_SECONDS GITHUB_LIMIT_TOTAL_WAIT_SECONDS
 # 4.2 GB of orphaned clones (#605). `0` turns the check off.
 min_free_workspace_bytes="$(cfg '.min_free_workspace_bytes')"
 [[ "$min_free_workspace_bytes" =~ ^[0-9]+$ ]] || min_free_workspace_bytes=0
+# The headroom the 2.0c threshold derives over the largest clone this fleet
+# has actually measured (agent-ops#904, the residual of #756):
+# `min_free_workspace_bytes` is the floor *under* `factor × largest recorded
+# footprint`, never a ceiling — see lib/disk-space.sh's
+# `disk_space_effective_min_bytes`. Non-numeric or absent reads as the
+# schema's default of 2 rather than 0, so a misread here cannot silently
+# turn the derivation off the way a real `0` legitimately can.
+workspace_headroom_factor="$(cfg '.workspace_headroom_factor')"
+[[ "$workspace_headroom_factor" =~ ^[0-9]+$ ]] || workspace_headroom_factor=2
 # The free-memory floor the host must clear before a cycle is worth starting
 # one (requirement 2.0f): a cycle runs a model stage whose working set the
 # host has to hold alongside every other node sharing it, and on the ockham
@@ -3293,6 +3302,18 @@ if ! clone_repo "$repo_slug" "$clone_dir" 2>"$cycle_dir/clone.err"; then
   # keep holding the item (requirement 17a's release rules).
   release_claim no-pr
   exit 0
+fi
+# `du -sb` of the clone just made, logged against its own repository's slug
+# (agent-ops#904, the residual of #756): requirement 2.0c's own derivation
+# reads this back from the union log on a later cycle, on any node, so a
+# repository's clone size only ever has to be measured once for the whole
+# fleet to learn it. Best-effort — an unreadable `du` logs nothing rather
+# than a fabricated size, the same "no evidence" convention
+# `disk_space_free_kb` already uses.
+clone_footprint_bytes="$(disk_space_clone_footprint_bytes "$clone_dir")"
+if [[ -n "$clone_footprint_bytes" ]]; then
+  log_event "clone-footprint" "$(jq -nc --arg repo "$repo_slug" --argjson bytes "$clone_footprint_bytes" \
+    '{repo: $repo, bytes: $bytes}')"
 fi
 
 # --- 6a. Labels (requirement 6a) ---
