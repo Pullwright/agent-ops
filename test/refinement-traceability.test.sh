@@ -211,6 +211,21 @@ else
 fi
 assert_eq "…still no gh call — this is a purely textual check" "0" "$(gh_calls)"
 
+# The comparison only means anything where `item` is itself an issue ref. The
+# three sources this check is reachable for (project-review, failed-runs,
+# implementation-plan — the call site guards it for every other) all key their
+# items on a composite ref instead, so a scan scoped to nothing would declare
+# every citation they carry a mismatch by construction, on work orders whose
+# `context` the Co-Ordinator is told to make self-contained by pasting related
+# text verbatim.
+reset_gh_calls
+cand_prose_nonnumeric='{"repo":"o/r","item":"review-2026-09-01-R-07",
+  "context":"R-07, pasted verbatim: the retry policy was settled in https://github.com/o/r/issues/911#issuecomment-5452331924.",
+  "acceptance":"done when retries back off"}'
+assert_empty "an item whose ref is not an issue number is not compared against a cited issue at all" \
+  "$(refinement_traceability_fault "$cand_prose_nonnumeric" "{}")"
+assert_eq "…and needs no gh call either" "0" "$(gh_calls)"
+
 # --- TD-PPagop-26082603: a comment_url in the REST API shape ------------------
 # The old `sed`-only extraction recognised only the HTML permalink form
 # (…/issues/<n>#issuecomment-<id>); a `comment_url` recorded in the REST API
@@ -425,6 +440,21 @@ cand_spec_bare='{"repo":"o/r","item":"TD1","context":"the tech-debt record body 
 repaired_spec="$(refinement_traceability_repair "$cand_spec_bare" "$refinements_spec")"
 assert_nonempty "a work order missing its recorded spec is repaired" "$repaired_spec"
 assert_eq "…and then passes" "" "$(refinement_traceability_fault "$repaired_spec" "$refinements_spec")"
+
+#    …including a spec that cites the comment it was settled in. A `spec` entry
+#    is only ever recorded for a project-review/implementation-plan item, whose
+#    ref is never an issue number, so the #1027 prose scan must not read the
+#    Script's own append as a cross-item citation — that would make requirement
+#    17f's repair half unable to rescue the very items a human just refined.
+reset_gh_calls
+refinements_spec_citing='{"o/r": {"review-2026-09-01-R-07": {"ts": "t", "cycle": "c",
+  "spec": "Apply the retry policy settled in https://github.com/o/r/issues/911#issuecomment-5452331924."}}}'
+cand_spec_citing='{"repo":"o/r","item":"review-2026-09-01-R-07",
+  "context":"R-07: harden the retry path.","acceptance":"done when retries back off"}'
+repaired_spec_citing="$(refinement_traceability_repair "$cand_spec_citing" "$refinements_spec_citing")"
+assert_nonempty "a spec citing another issue's comment is still repaired" "$repaired_spec_citing"
+assert_eq "…and the repaired order passes, rather than faulting on the Script's own append" "" \
+  "$(refinement_traceability_fault "$repaired_spec_citing" "$refinements_spec_citing")"
 
 # 4. An order that already carries its refinement is left completely alone —
 #    the repair must never churn a candidate that was fine.

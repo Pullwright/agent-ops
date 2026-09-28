@@ -11024,6 +11024,21 @@ implements.
     only ever appends text, so a wrong citation the model already wrote stays
     in `context`/`acceptance` verbatim after repair and this check faults it
     again — a hard skip, not a repair candidate.
+    It is, however, scoped to an `item` that is itself an issue ref (a bare
+    number): "this citation names a different issue than the item" is a
+    comparison that means something only when the item *is* an issue. Every
+    other item ref a candidate can carry is a source's own composite key — a
+    `project-review` recommendation's `review-<date>-R-NN`, a `failed-runs`
+    workflow's `failed-run-<basename>`, an `implementation-plan` task — so
+    without that scope the check would report a mismatch for every citation
+    those sources' work orders carry, by construction rather than by fault:
+    they are the three sources this function is reachable for at all (the 17h
+    note below), the three whose `context` requirement 17b has the
+    Co-Ordinator make self-contained by pasting related text verbatim, and the
+    only ones a recorded `spec` is ever written for — which the repair half
+    below appends to `context` itself, so an unscoped check would fault the
+    Script's own append and leave a freshly refined item permanently
+    unclaimable.
     **A failed check is repaired, not discarded (agent-ops#767).** The
     requirement is that the work order *carry* the item's refinement — not
     that the model be the one who carried it — and the Script is holding the
@@ -11098,8 +11113,13 @@ implements.
     is exempted for the identical reason — a requirement 17h compose replaces
     `context`/`acceptance` with a live read before this function ever sees
     the candidate, discarding whatever prose citation the model wrote along
-    with everything else it authored. Every other source's candidate is
-    composed by
+    with everything else it authored. Read with that check's own
+    issue-ref scope above, this leaves it a latent guard rather than one the
+    ordinary cycle exercises: none of those three sources keys its items on an
+    issue number, so the citation comparison is live only for a candidate that
+    reaches the claim loop naming no `source` at all — the one shape a
+    requirement 17h compose is not attempted for. Every other source's
+    candidate is composed by
     requirement 17h before it ever reaches this check (`c_composed` in the
     claim loop), which calls `refinement_traceability_repair` unconditionally
     as part of composing — so the splice this requirement exists to verify
