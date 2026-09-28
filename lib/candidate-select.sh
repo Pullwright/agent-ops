@@ -506,11 +506,41 @@ _traceability_normalize() {  # <text>
 refinement_traceability_fault() {  # <candidate-json> <refinements-json>
   local cand="$1" refinements="${2:-{\}}" repo item entry spec comment_url \
     url_issue comment_id body norm_context norm_acceptance norm_needle \
-    body_fetch_failed=0
+    body_fetch_failed=0 prose_haystack prose_match prose_issue
   jq -e 'type == "object"' <<<"$refinements" >/dev/null 2>&1 || refinements='{}'
   repo="$(jq -r '.repo // ""' <<<"$cand" 2>/dev/null || true)"
   item="$(jq -r '.item // ""' <<<"$cand" 2>/dev/null || true)"
   [[ -n "$repo" && -n "$item" ]] || return 0
+
+  # Requirement 17f extension (issue #1027): a model-typed `Refinement:`-style
+  # citation embedded in the candidate's own `context`/`acceptance` names a
+  # specific issue comment, but nothing above ever reads that URL — only the
+  # *recorded* `refinements[repo][item].comment_url` is checked below, and
+  # only when an entry exists at all. That citation is prose the model wrote,
+  # not anything on record, so it is checked independent of whether
+  # `refinements` carries an entry for this item: a candidate can cite the
+  # wrong issue's comment even when the ledger holds no entry for it, or the
+  # right one (agent-ops#876's work order did exactly this — a live comment,
+  # real and well-formed, but posted on a different issue). Every
+  # `issues/<n>#issuecomment-<id>` URL found — any repo-qualified or bare
+  # form, the same shape the structural `comment_url` check below already
+  # extracts — is compared against this candidate's own `item`; a single
+  # mismatch is a fault. It is never repaired: `refinement_traceability_repair`
+  # only ever appends text, so a wrong citation the model already wrote stays
+  # in `context`/`acceptance` verbatim after repair and this check faults it
+  # again, the same hard skip the structural `comment_url` mismatch below
+  # gets.
+  prose_haystack="$(jq -r '(.context // "") + "\n" + (.acceptance // "")' <<<"$cand" 2>/dev/null)"
+  while IFS= read -r prose_match; do
+    [[ -n "$prose_match" ]] || continue
+    prose_issue="$(sed -E 's/^issues\/([0-9]+)#issuecomment-[0-9]+$/\1/' <<<"$prose_match")"
+    if [[ -n "$prose_issue" && "$prose_issue" != "$item" ]]; then
+      printf '%s %s: work order context/acceptance cites .../%s, naming issue #%s, not #%s — a model-typed citation cannot be trusted where it disagrees with the item it is attached to' \
+        "$repo" "$item" "$prose_match" "$prose_issue" "$item"
+      return 0
+    fi
+  done < <(grep -oE 'issues/[0-9]+#issuecomment-[0-9]+' <<<"$prose_haystack")
+
   entry="$(jq -c --arg r "$repo" --arg i "$item" \
     '((.[$r] // {})[$i]) // {}' <<<"$refinements" 2>/dev/null || printf '{}')"
 

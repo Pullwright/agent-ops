@@ -11004,6 +11004,26 @@ implements.
       check above is, rather than the pre-fix behaviour of a bare `sed`
       extraction that recognised only the HTML form and silently returned "no
       fault" for anything else, having tested nothing at all.
+    **A model-typed prose citation is checked too, independent of what is on
+    record (agent-ops#1027).** The two checks above validate the *recorded*
+    `refinements[repo][item]` entry; neither reads the `Refinement:`-style
+    citation requirement 17b has the Co-Ordinator paste into the work order's
+    own `context`/`acceptance` prose. That citation is text the model wrote,
+    not anything the Script maintains, so it can name the wrong issue's
+    comment even when the recorded refinement is correct, or when there is no
+    recorded refinement for the item at all — agent-ops#876's work order cited
+    agent-ops#911's own comment 5452331924 this way: a real, well-formed
+    comment, just posted on a different issue. `refinement_traceability_fault`
+    scans `context` and `acceptance` for every `issues/<n>#issuecomment-<id>`
+    URL they contain — any repo-qualified or bare form, the same shape the
+    structural `comment_url` check above already extracts — and faults the
+    candidate the moment one names an issue other than its own `item`. This
+    needs no `gh` call, runs before either check above, and is not scoped to
+    an entry existing in `refinements` at all. Like the structural
+    `comment_url` mismatch above, it is never repaired: `refinement_traceability_repair`
+    only ever appends text, so a wrong citation the model already wrote stays
+    in `context`/`acceptance` verbatim after repair and this check faults it
+    again — a hard skip, not a repair candidate.
     **A failed check is repaired, not discarded (agent-ops#767).** The
     requirement is that the work order *carry* the item's refinement — not
     that the model be the one who carried it — and the Script is holding the
@@ -11024,12 +11044,14 @@ implements.
     was given. The fleet selected no issue-sourced work for fifteen hours. A
     gate with no observed passes is not a gate.
 
-    **One fault is never repaired**: a `comment_url` whose embedded issue
-    number disagrees with the candidate's `item`. That is a corrupt ledger
-    entry rather than a copying failure, and appending another issue's
-    refinement to this item's order is precisely the cross-item swap this
-    requirement exists to prevent. It stays a hard skip, and no `gh` read is
-    spent on it.
+    **Two faults are never repaired**: a `comment_url` whose embedded issue
+    number disagrees with the candidate's `item`, and a model-typed prose
+    citation (agent-ops#1027, above) that names a different issue. Both are
+    a corrupt record or a copying failure the model already committed to
+    text, not something appending a correct refinement alongside can fix,
+    and appending another issue's refinement to this item's order is
+    precisely the cross-item swap this requirement exists to prevent. Both
+    stay a hard skip, and neither spends a `gh` read to reach that verdict.
 
     A candidate whose fault the repair cannot answer is skipped without a
     claim attempt — logged as `claim-skipped` with `cause: "untraceable"` and
@@ -11070,7 +11092,14 @@ implements.
     **Since requirement 17h (agent-ops#769), this check's own reachable scope
     has narrowed to the three sources whose `context`/`acceptance` the
     Co-Ordinator still authors itself** — `project-review`, `failed-runs`,
-    `implementation-plan`. Every other source's candidate is composed by
+    `implementation-plan` — and this includes the model-typed prose-citation
+    check above (agent-ops#1027): it is folded into the same
+    `refinement_traceability_fault`, called at the same guarded site, so it
+    is exempted for the identical reason — a requirement 17h compose replaces
+    `context`/`acceptance` with a live read before this function ever sees
+    the candidate, discarding whatever prose citation the model wrote along
+    with everything else it authored. Every other source's candidate is
+    composed by
     requirement 17h before it ever reaches this check (`c_composed` in the
     claim loop), which calls `refinement_traceability_repair` unconditionally
     as part of composing — so the splice this requirement exists to verify

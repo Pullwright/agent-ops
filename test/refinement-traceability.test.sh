@@ -180,6 +180,37 @@ assert_nonempty "a comment_url naming a different issue than item is a fault" \
   "$fault_structural"
 assert_eq "the structural check needs no gh call at all" "0" "$(gh_calls)"
 
+# --- issue #1027: a model-typed prose citation, not the recorded comment_url --
+# The check above validates the *recorded* refinements[repo][item].comment_url.
+# It never looks at a `Refinement:`-style URL the model itself typed into the
+# work order's own context/acceptance — agent-ops#876's work order cited
+# agent-ops#911's own comment 5452331924 this way, and nothing caught it. This
+# runs independent of whether `refinements` carries any entry for the item at
+# all — it is about what the model wrote, not what is on record.
+
+reset_gh_calls
+cand_prose_own='{"repo":"o/r","item":"1027",
+  "context":"**Refinement:** https://github.com/o/r/issues/1027#issuecomment-42",
+  "acceptance":"resolve per the comment above"}'
+assert_empty "a prose citation naming the candidate's own item passes" \
+  "$(refinement_traceability_fault "$cand_prose_own" "{}")"
+assert_eq "…and needs no gh call" "0" "$(gh_calls)"
+
+reset_gh_calls
+cand_prose_cross='{"repo":"o/r","item":"1027",
+  "context":"**Refinement:** https://github.com/o/r/issues/876#issuecomment-5452331924",
+  "acceptance":"resolve per the comment above"}'
+fault_prose_cross="$(refinement_traceability_fault "$cand_prose_cross" "{}")"
+assert_nonempty "a prose citation naming a different issue's comment is a fault, even with no refinements entry at all" \
+  "$fault_prose_cross"
+if [[ "$fault_prose_cross" == *"876"* && "$fault_prose_cross" == *"1027"* ]]; then
+  printf 'ok   - %s\n' "…and the fault names both the found and expected issue numbers"
+else
+  printf 'FAIL - %s\n     actual: %s\n' "…and the fault names both the found and expected issue numbers" "$fault_prose_cross"
+  failures=$(( failures + 1 ))
+fi
+assert_eq "…still no gh call — this is a purely textual check" "0" "$(gh_calls)"
+
 # --- TD-PPagop-26082603: a comment_url in the REST API shape ------------------
 # The old `sed`-only extraction recognised only the HTML permalink form
 # (…/issues/<n>#issuecomment-<id>); a `comment_url` recorded in the REST API
