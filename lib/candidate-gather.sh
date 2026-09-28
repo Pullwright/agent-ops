@@ -663,6 +663,17 @@ while IFS=$'\t' read -r _ slug default_branch; do
   # format string by hand. Empty wherever nothing exists yet to resolve to
   # (a repo whose review has never run), same as report_directory_most_recent
   # itself prints nothing in that case.
+  #
+  # The trailing `|| true` declines that call's degraded-read signal (issue
+  # #1024) on purpose, and is load-bearing rather than defensive: this whole
+  # gather runs from a bare `gather_ordered_repos` under agent-cycle.sh's
+  # `set -euo pipefail`, so without it a rate limit inside the walk would
+  # carry a nonzero status through `cut` (pipefail), onto this assignment, and
+  # into errexit — killing the Co-Ordinator cycle over a value the prompt
+  # treats as optional. A hint the Co-Ordinator can re-derive from its own
+  # live read is worth no more than that; a caller that does need "failed" told
+  # apart from "nothing exists" reads the exit status instead, as
+  # scripts/gather-project-review.sh's --current-date mode does.
   report_directory=""
   report_directory_resolved=""
   if jq -e 'any(.[]; . == "project-review")' <<<"$sources" >/dev/null 2>&1; then
@@ -670,7 +681,7 @@ while IFS=$'\t' read -r _ slug default_branch; do
       'map(select(.slug == $s)) | .[0].report_directory // ""' \
       <<<"$report_directory_repos_json" 2>/dev/null || true)"
     [[ -n "$report_directory" ]] || report_directory="$REPORT_DIRECTORY_DEFAULT"
-    report_directory_resolved="$(report_directory_most_recent "$slug" "$default_branch" "$report_directory" 2>/dev/null | cut -f2)"
+    report_directory_resolved="$(report_directory_most_recent "$slug" "$default_branch" "$report_directory" 2>/dev/null | cut -f2 || true)"
   fi
   # findings/review_feedback/abandoned_drafts/merge_conflicts/dequeued/
   # landing_refusals/issues/tech_debt are the pre-fetched bands themselves —

@@ -6316,13 +6316,18 @@ implements.
    `report_directory` with no `_resolved` field, and `prompts/coordinator.md`
    falls back to the hand-rolled walk. An empty resolution does **not**
    distinguish "no review folder exists yet" from "the listing behind the
-   resolution failed" — `lib/report-directory.sh`'s walk degrades a failed
-   `gh api` to the same silence an unmatched listing produces, the same
-   ambiguity requirement 3y's own `--current-date` mode exists to keep out of
-   a retirement decision — so the field's absence is never evidence that the
-   repository has no review to read, and `prompts/coordinator.md` says so
-   where it describes the fallback. Unlike the eight bands, this resolution
-   is not part of requirement 48's one-repository-per-cycle rotation: it is
+   resolution failed": this call site declines the degraded-read signal
+   `report_directory_most_recent` offers (requirement 3y, issue #1024) with an
+   explicit `|| true`, because the Co-Ordinator's own fallback walk re-derives
+   the value anyway, and because this gather runs bare under `agent-cycle.sh`'s
+   `set -euo pipefail`, where letting a rate limit inside the walk reach
+   errexit would cost the whole cycle rather than one optional field. So the
+   field's absence is never evidence that the repository has no review to
+   read, and `prompts/coordinator.md` says so where it describes the
+   fallback — a caller that does need the distinction reads the exit status,
+   as requirement 3y's own `--current-date` mode does. Unlike the eight
+   bands, this resolution is not part of requirement 48's
+   one-repository-per-cycle rotation: it is
    one listing call for every repository whose `sources` lists
    `project-review`, every cycle, because every entry the Co-Ordinator might
    be handed needs the field and not only the one repository gathered freshly
@@ -20852,14 +20857,29 @@ What exists, and the requirements each part answers to:
    folder resolves, `{"ok": true, "date": ""}` when the listing succeeds and
    offers none at all (including a clean 404 on `reviews/` itself — a
    definite fact), or `{"ok": false}` for any other failure, which decides
-   nothing. The empty date is read off this script's own successful listing,
-   never off `report_directory_most_recent` coming back empty:
-   `lib/report-directory.sh`'s walk makes a *second* call over the same path
-   and degrades a failed one to the same silence an unmatched listing
-   produces, so a listing that shows a directory of the format's shape while
-   the walk yields nothing is `{"ok": false}` — the answer decides nothing
-   rather than retiring, on a rate limit, refs whose retirement nothing can
-   clear. This is requirement 34n's `review-superseded` signal
+   nothing. The empty date is read off `report_directory_most_recent`'s own
+   exit status, not merely its empty output: `lib/report-directory.sh`'s walk
+   (`_report_directory_walk`, via `report_directory_find_dirs`) exits nonzero
+   when one of its listings fails for a reason other than the queried path
+   not existing (a 404), distinct from exiting zero when every listing
+   succeeded and simply matched nothing — so a rate limit landing mid-walk is
+   `{"ok": false}` rather than the empty date, without this script
+   re-implementing the walk's own listing/regex probe to tell the two apart.
+   The exit status is the *whole* of that signal: what both functions print is
+   byte-for-byte what they printed before the distinction existed, in every
+   case, including a multi-segment format's walk that lists one level
+   successfully and fails at the next — degraded and found-something are not
+   exclusive, and a caller ignoring the status still gets the something. Two
+   callers ignore it deliberately, and have to say so rather than say nothing:
+   `review-cycle.sh`'s `most_recent_review_date` (R4's skip-guard) and
+   `lib/candidate-gather.sh`'s `report_directory_resolved` (requirement 3k)
+   each pipe the result through `cut` under `set -euo pipefail` from an
+   errexit-live context, where `pipefail` would otherwise carry the walk's
+   nonzero status onto their own assignment and take the cycle down over a
+   transient listing failure; both end that pipeline with `|| true`. The
+   answer decides nothing rather than retiring, on a rate limit,
+   refs whose retirement nothing can clear. This is requirement 34n's
+   `review-superseded` signal
    (TD-PPagop-26082309): `lib/candidate-gather.sh` calls it once per repo
    already carrying unretired review-shaped void residue, and
    `void_review_plan_actioned` (`lib/void-liveness.sh`) reads the date back

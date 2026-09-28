@@ -966,10 +966,20 @@ skip_reason() {
 # exist on the default branch. Degrades to empty on any discovery failure
 # (no report directory ever written, an unreadable repository), the same as
 # the fixed-layout lookup this generalises.
+#
+# This guard deliberately declines the degraded-read signal
+# `report_directory_most_recent` offers (issue #1024): a listing that failed
+# and one that found nothing both mean "no date to compare against", and the
+# checks below already treat an empty date as "nothing known, proceed". The
+# trailing `|| true` is what *declines* it rather than inheriting it — under
+# `set -o pipefail` the walk's nonzero status would otherwise reach the
+# pipeline and, through this function's own return value, whatever errexit
+# context the caller is in. A caller that wants the distinction must ask
+# report_directory_most_recent for it directly.
 most_recent_review_date() {
   local slug="$1" default_branch="$2" report_directory="${3:-$REPORT_DIRECTORY_DEFAULT}"
   [[ -n "$report_directory" ]] || report_directory="$REPORT_DIRECTORY_DEFAULT"
-  report_directory_most_recent "$slug" "$default_branch" "$report_directory" | cut -f1
+  report_directory_most_recent "$slug" "$default_branch" "$report_directory" | cut -f1 || true
 }
 
 # Count of pull requests merged into default_branch on or after since_date —
