@@ -791,7 +791,7 @@ see "Dependabot takeover" above.)*
    pushing, and fix whatever it surfaces.
 
    **When the repo under work is this one** (agent-ops), `test/*.test.sh`
-   is 140-odd files and too large to trust to a single invocation — see
+   is well over a hundred files and too large to trust to a single invocation — see
    "Long-running commands" above. Run it through `scripts/run-tests.sh`,
    never a hand-rolled loop, and never as one unbatched call over the whole
    suite: list what you've selected first (`scripts/run-tests.sh --list

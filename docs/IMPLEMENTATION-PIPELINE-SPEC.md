@@ -12115,7 +12115,7 @@ implements.
     Implementer's own checks are this repo's suite too (agent-ops#962,
     extending 29a's fix to this stage).** Requirement 21's ceiling binds the
     Implementer exactly as it binds the Reviewer, and requirement 24's own
-    verification step runs the identical 140-file `test/*.test.sh` suite,
+    verification step runs the identical well-over-a-hundred-file `test/*.test.sh` suite,
     through the identical `scripts/run-tests.sh`, whenever the repo under
     work is agent-ops itself — so a single unbatched invocation risks the
     same silent loss of test evidence requirement 29a exists to prevent.
@@ -12874,7 +12874,7 @@ implements.
     running there is killed and returns no output at all, not even what had
     already completed, so a suite that mostly passed behind a slow batch is
     indistinguishable, from the outside, from one that never ran. This
-    repo's own `test/` suite (140 files) run through a single
+    repo's own `test/` suite (well over a hundred files) run through a single
     `scripts/run-tests.sh` invocation risks exactly that wall, so requirement
     29's re-run lists the selected tests first (`scripts/run-tests.sh
     --list`, host-side, no Docker, returns instantly), splits that list into
