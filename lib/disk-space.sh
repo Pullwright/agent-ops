@@ -142,6 +142,15 @@ disk_space_clone_footprint_bytes() {
 # mirroring (in the opposite direction) the "no evidence reads as ok"
 # reasoning `disk_space_verdict` already rests on.
 #
+# Nor does it age: a footprint recorded long ago and never bettered still
+# governs today, with nothing pruning it out on elapsed time. Where this
+# unfiltered, unaged read proves too conservative — an installation whose
+# configured repositories have shrunk since setting the fleet's largest
+# recorded footprint — `workspace_headroom_factor` set to `0` is the
+# operator's own lever: it disables only this derivation, and
+# `disk_space_effective_min_bytes` falls back to `min_free_workspace_bytes`'s
+# own floor, ratified rather than changed by agent-ops#1904 (#904).
+#
 # Reads line-by-line through `fromjson? // empty` (`jq -Rc`) before slurping,
 # the same NUL/truncation-tolerant shape `lib/fleet.sh`'s own readers use,
 # rather than `jq -s` straight over the file: a union log a peer's node ran
