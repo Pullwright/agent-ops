@@ -23,7 +23,14 @@
 #     healthy node running long or chained cycles relies on to actually get a
 #     roll, rather than merely being bounded by `lock_stale_after` the way a
 #     wedged one is. It never extends to review-lock.json (agent-ops#1102):
-#     a project review never wrote the marker and never yielded anything.
+#     a project review never wrote the marker and never yielded anything;
+#   - a compose apply in flight defers the roll (agent-ops#1913). The
+#     `reconciler` service recreates this whole project when a merged
+#     compose.yaml reaches the node, and a roll landing in the middle of that
+#     has watchtower and Compose stopping the same containers at once. The
+#     marker is bounded: one left behind by an apply whose container died
+#     mid-way stops deferring anything, because a node that quietly stops
+#     updating is the worse failure.
 #
 # Run directly: ./test/watchtower-pre-update.test.sh — exit 0 iff all passed.
 
@@ -295,6 +302,80 @@ rm -f "$state_dir/lock.json" "$state_dir/review-lock.json"
 run_hook
 assert_eq "no marker at all: an idle node behaves exactly as before" "0" "$rc"
 assert_eq "and does not claim a roll-pending override it never had" "0" "$(grep -c 'roll-pending' <<<"$out")"
+
+# --- A compose apply in flight (agent-ops#1913) --------------------------------
+# lib/compose-reconcile.sh records `applying` in this same state directory
+# immediately before it hands the recreate to a sibling container, and clears
+# it to the recreate's own verdict afterwards. This is the half of the
+# serialisation that keeps a roll off a project mid-apply; the reconciler
+# deferring while `roll-pending` is in force is the other half (see
+# test/compose-reconcile.test.sh).
+
+# `reconcile_since` is left holding what was written, because a second call to
+# `date` at assertion time is a second later often enough to make a test that
+# recomputed it fail once in a while for no reason at all.
+reconcile_since=""
+write_reconcile_marker() {  # write_reconcile_marker STATUS AGE_SECONDS [SINCE_AGE_SECONDS]
+  reconcile_since="$(date -u -d "-${3:-$2} seconds" +%Y-%m-%dT%H:%M:%SZ)"
+  jq -n --arg s "$1" \
+        --arg at "$(date -u -d "-${2} seconds" +%Y-%m-%dT%H:%M:%SZ)" \
+        --arg since "$reconcile_since" \
+        '{status: $s, at: $at, since: $since, pending_apply: true}' > "$state_dir/.compose-reconcile.json"
+}
+
+rm -f "$state_dir/lock.json" "$state_dir/review-lock.json" "$state_dir/roll-pending.json"
+write_reconcile_marker applying 30
+run_hook
+assert_eq "an apply in flight defers the roll, on an otherwise idle node" "75" "$rc"
+assert_contains "and says what it is waiting for" "applying a merged compose.yaml" "$out"
+
+# `at` moves with every tick of an apply that is still running, so it answers
+# "when was this last confirmed" and not "how long has this been going on".
+# What an operator reading the line wants is the second.
+write_reconcile_marker applying 30 5000
+run_hook
+assert_eq "a long apply still defers, however long it has been running" "75" "$rc"
+assert_contains "and dates itself from when it began, not from the tick that confirmed it" \
+  "$reconcile_since" "$out"
+
+# Bounded at ten minutes, twice the reconciler's own tick. The reconciler
+# rewrites this marker on every tick that finds the apply's sibling container
+# still alive, so a slow apply cannot age out here; what this bound covers is
+# the other case — a node whose reconciler is gone altogether, where an
+# `applying` nothing will ever replace would hold every roll off for ever.
+write_reconcile_marker applying 4000
+run_hook
+assert_eq "a marker nothing has refreshed stops deferring — a node that never updates again is the worse failure" \
+  "0" "$rc"
+
+write_reconcile_marker reconciled 30
+run_hook
+assert_eq "a settled verdict defers nothing, however fresh" "0" "$rc"
+write_reconcile_marker deferred 30
+run_hook
+assert_eq "and neither does a deferral" "0" "$rc"
+
+jq -n '{status: "applying", at: "not a date"}' > "$state_dir/.compose-reconcile.json"
+run_hook
+assert_eq "an 'at' that will not parse reads as impossibly old, not as forever" "0" "$rc"
+
+printf 'not json at all\n' > "$state_dir/.compose-reconcile.json"
+run_hook
+assert_eq "and junk in the marker defers nothing at all" "0" "$rc"
+
+# The marker is not overridable by roll-pending: that one is about a cycle
+# agreeing to be destroyed, and a half-applied project agreed to nothing.
+write_reconcile_marker applying 30
+start_sleeper
+write_lock "$state_dir/lock.json" "$sleeper_pid" 0
+write_roll_pending 15
+run_hook
+assert_eq "roll-pending overrides the cycle lock and still does not override this" "75" "$rc"
+stop_sleeper
+rm -f "$state_dir/lock.json" "$state_dir/roll-pending.json" "$state_dir/.compose-reconcile.json"
+
+run_hook
+assert_eq "with no marker at all an idle node updates exactly as before" "0" "$rc"
 
 # --- Junk in the lock ---------------------------------------------------------
 
