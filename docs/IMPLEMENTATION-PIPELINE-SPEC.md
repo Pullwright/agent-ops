@@ -4679,7 +4679,12 @@ implements.
      marker's `until` moves forward with every re-arming, so it is recorded in
      `detail` and never in `reason`, which would otherwise make each cycle
      boundary a fresh transition and reset the very timestamp the bound is
-     measured from.
+     measured from. What that timestamp measures is a *continuous* roll
+     deferral: a lock taken in between has the tick report the lock instead,
+     which resets `since` and restarts this clock. That costs nothing, because
+     a tick that finds a lock held defers whatever the roll marker says — the
+     marker is not what holds the apply back in that window, and this bound is
+     only ever about the marker.
    - **Then the image's copy is written over the node's, in place, and
      `docker compose up -d --remove-orphans` is run for that project
      directory — from a transient sibling container, never from this one.**

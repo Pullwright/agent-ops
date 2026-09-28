@@ -332,6 +332,13 @@ compose_reconcile_roll_pending() {  # <state-dir>
 # to honour about a roll. Past it the apply goes ahead, and the sibling's name
 # is what keeps two recreates apart if the roll does land in the middle.
 #
+# What it measures is a *continuous* roll deferral: a lock taken in between
+# makes the tick report that lock instead, which resets `since` and so restarts
+# this clock. That is deliberate, and it costs nothing, because in that window
+# the tick has to defer whatever the roll marker says — a recreate may no more
+# kill a running cycle than a roll may. The marker is not what is holding the
+# apply back there, and this bound is only ever about the marker.
+#
 # A `since` that will not parse reads as epoch 0 and so as long past the
 # bound, the same convention `compose_reconcile_lock_held` keeps: a wait whose
 # age cannot be established is not one to go on serving.
