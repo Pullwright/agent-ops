@@ -8303,12 +8303,15 @@ implements.
    Every cut names itself: a truncated body or comment ends in
    `…[Script: elided N of M bytes to fit the context window — read it whole at
    <url>]`, and dropped comments are counted in `comments_elided` on the entry.
-   `prompts/coordinator.md` obliges a live read of that URL before an entry
-   carrying any such mark may be *selected*, since the work order must paste
-   the document verbatim — one fetch for the one item picked, rather than a
-   thread's worth of tokens for every item considered. A prose-only trim also
-   leaves the gatherer's own entry order alone, so a trimmed cycle differs
-   from an untrimmed one in prose and in nothing else.
+   Per requirement 17h, an entry carrying any such mark needs no live read
+   before it may be *selected*: once picked, the Script itself composes
+   `context`/`acceptance` from a fresh live read of the whole thread, never
+   from the trimmed extract — see `prompts/coordinator.md`'s "Trimmed entries
+   need no live read before you select them" bullet — one fetch for the one
+   item picked, rather than a thread's worth of tokens for every item
+   considered. A prose-only trim also leaves the gatherer's own entry order
+   alone, so a trimmed cycle differs from an untrimmed one in prose and in
+   nothing else.
 
    **Dropping entries is the last rung, and it is loud.** Once the tightest
    tier is applied there is nothing left but entries, and those are capped per
