@@ -4200,21 +4200,24 @@ assert_eq "…and nothing is left when it ends" "" "$(ls -A "$cn_tmp")"
 # publish that overruns is ended by the TERM `timeout` sends to the process
 # and to its process group; bash handles an untrapped fatal signal by running
 # the EXIT trap and exiting, and this case holds that trap to what it must
-# leave behind: nothing the trap's own scope covers. (It passes against a
-# Publisher with no signal traps — bash's own behaviour is the mechanism —
-# so what it guards is the trap's arming, before the directory exists, and
-# its scope.) The Publisher rebuilds its own PATH at startup, so no stub on
-# PATH can stall it from outside; instead a publish is started under
-# `timeout` itself over a fixture wide enough to take a while, a file inside
-# its working set is waited for — one the publish writes only once the
-# directory is made, the trap armed and the name assigned — and `timeout` is
-# sent the TERM, which it forwards to the publish exactly as its own expiry
-# would. The publish must not have finished on its own.
+# leave behind: nothing, once the trap fires where it can and the sweep
+# below reclaims what it cannot. (It exercises a Publisher with no signal
+# traps — bash's own behaviour is the mechanism that runs the EXIT trap on
+# an untrapped fatal signal — but the assertion no longer isolates the
+# trap's own scope on its own, since the sweep added below would also clean
+# up a working set the trap never touched.) The Publisher rebuilds its own
+# PATH at startup, so no stub on PATH can stall it from outside; instead a
+# publish is started under `timeout` itself over a fixture wide enough to
+# take a while, a file inside its working set is waited for — one the
+# publish writes only once the directory is made, the trap armed and the
+# name assigned — and `timeout` is sent the TERM, which it forwards to the
+# publish exactly as its own expiry would. The publish must not have
+# finished on its own.
 #
-# lib/scratch.sh documents one gap the trap itself cannot close: a TERM
-# landing between scratch_enter's `mktemp` and its SCRATCH_DIR assignment
-# finds SCRATCH_DIR still empty, so scratch_release has nothing to remove —
-# the directory is real on disk, but the trap never learns its name. That is
+# A TERM can land in a signal-delivery window the trap's own arming does not
+# cover — scripts/publish-dashboard.sh documents one, the process and its
+# process group each being signalled a moment apart — leaving the working
+# set real on disk with the trap never having reached its removal. That is
 # not left forever: it is what scratch_sweep_dead_owners (called at the top
 # of every launcher window and every cycle, never by a bare publish-dashboard.sh
 # invocation like this one) reclaims from a dead pid. So this case runs that
