@@ -857,6 +857,27 @@ decisions_map() {
 #                     prior refinement is outside this on purpose: the thrash
 #                     guard does not bite without one, so `threshold` already
 #                     delivers that item its first refinement.
+#
+#                     "No examination has followed it" tests examination, not
+#                     release: an item can leave its block through four other
+#                     paths that log no `enabler-examined` —
+#                     lib/candidate-gather.sh's `unblocked {by:
+#                     "label-removed"}`/`{by: "work-gone"}`/`{by:
+#                     "dependency-resolved"}`, and lib/candidate-select.sh's
+#                     bare `unblocked` (item only, no repo — the one path
+#                     same_item's "empty repo matches any repo" clause exists
+#                     for). A close already acted on through one of those
+#                     still reads as unconsumed and can grant a fresh
+#                     issue-closed engagement on a long-settled close
+#                     (TD-PPagop-26082918). Bounded, not a gap: the engagement
+#                     it grants logs the enabler-examined that retires the
+#                     exemption for good, verifying the closed issue's claim
+#                     against reality before releasing anything
+#                     (prompts/enabler.md) — one Opus pass per closed
+#                     escalation, not a loop. Distinguishing this from a
+#                     genuinely stale re-flag needs a key this rule does not
+#                     have; agent-ops#936 is where that containment is being
+#                     built.
 #      recheck      — the newest examination of it is older than RECHECK_HOURS
 #                     (0 disables). This is the path by which evidence that
 #                     arrived after an examination — a diagnosis posted into

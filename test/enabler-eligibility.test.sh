@@ -388,6 +388,42 @@ EOF
 assert_eq "a needs-refinement re-flag with no prior item-refined event gets no exemption" \
   "" "$(reason_for TD1 3 0 "$open_none")"
 
+# --- Disclosed boundary: a non-examination unblock does not retire the
+# exemption (TD-PPagop-26082918, agent-ops#936 §5) ---
+#
+# `$examined_since_escalation` counts `enabler-examined` events only. Four
+# other paths release an item from its block without logging one —
+# lib/candidate-gather.sh's `unblocked {by: "label-removed"}` (a human takes
+# the `blocked` label off), `{by: "work-gone"}`, `{by: "dependency-resolved"}`,
+# and lib/candidate-select.sh's bare `unblocked` (item only, no repo) — so a
+# close the human already acted on through one of those still reads as "no
+# examination has followed it". This is a disclosed boundary, not a bug fixed
+# here: there is no evidence-only key that tells this case apart from the #706
+# sequence the exemption exists to rescue (agent-ops#936 §5 is where that
+# containment is being built). Pinned so a later change to this rule changes
+# this outcome on purpose, not by surprise.
+
+label_removed_release_log() {  # escalation raised, closed, released by label-removed, re-flagged later
+  cat > "$log" <<'EOF'
+{"ts":"2026-07-20T08:00:00Z","cycle":"c-1","event":"item-refined","repo":"o/r","item":"TD1","spec":"original spec"}
+{"ts":"2026-07-22T09:00:00Z","cycle":"c0","event":"attempt-failed","stage":"implementer","repo":"o/r","item":"TD1","detail":"needs repo secrets","unblock_condition":"a human adds SENTRY_DSN"}
+EOF
+  coord_cycles 3 >> "$log"
+  cat >> "$log" <<'EOF'
+{"ts":"2026-07-23T09:00:00Z","cycle":"c4","event":"enabler-examined","repo":"o/r","item":"TD1","blocked_ts":"2026-07-22T09:00:00Z","outcome":"escalate","detail":"needs a human decision"}
+{"ts":"2026-07-23T09:00:01Z","cycle":"c4","event":"escalated","repo":"o/r","item":"TD1","issue_number":52,"issue_url":"https://github.com/o/r/issues/52","blocked_ts":"2026-07-22T09:00:00Z"}
+{"ts":"2026-07-23T10:00:00Z","cycle":"c5","event":"unblocked","item":"TD1","by":"label-removed"}
+{"ts":"2026-07-23T12:18:06Z","cycle":"c6","event":"attempt-failed","stage":"coordinator","repo":"o/r","item":"TD1","kind":"needs-refinement","detail":"re-flagged after the label-removed release","unblock_condition":"a human clarifies again"}
+EOF
+}
+
+label_removed_release_log
+assert_eq "a needs-refinement re-flag after a label-removed release of an already-closed escalation is still issue-closed (disclosed boundary)" \
+  "issue-closed" "$(reason_for TD1 3 0 "$open_none")"
+assert_eq "the entry still carries the needs-refinement kind and the prior refinement" \
+  "needs-refinement|2026-07-20T08:00:00Z" \
+  "$(eligible 3 0 "$open_none" | jq -r '.[0] | [.kind, .refined_before.ts] | join("|")')"
+
 # --- TD-PPagop-26082819: a phantom item-refined event sets no refined_before ---
 # #818's and #874's own item-refined events were both logged with a bare
 # issue URL in comment_url — no #issuecomment- anchor, so it could never name
