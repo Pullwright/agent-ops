@@ -349,6 +349,14 @@ EXCLUDES=(
   # reach peers: folded into heartbeat.json's `compose_reconcile` below,
   # beside the `compose` drift verdict it acts on.
   --exclude=.compose-reconcile.json
+  # compose-apply.log (the same library): what the sibling container that runs
+  # an apply printed, kept on the node because on the apply that replaces the
+  # reconciler itself there is nowhere else for it to go — the client capturing
+  # it dies with that container. It is one host's Compose output about one
+  # host's deployment file, so a peer holding it would be holding a diagnosis
+  # of a machine it cannot see; the *fact* of a failed apply already travels,
+  # in the `compose-reconcile-deferred` event and the verdict's own `detail`.
+  --exclude=compose-apply.log
   # revert-rate.log (scripts/publish-revert-rate.sh, agent-ops#579): the
   # daily pass's own text output, local to this node on the same reasoning
   # as doctor.log above. Its structured sibling, revert-rate.jsonl, is

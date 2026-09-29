@@ -81,8 +81,8 @@
       "model": "claude-sonnet-5",
       "pr_label": "project-review",
       "branch_prefix": "review/",
-      "min_days_between_reviews": 13,
-      "min_prs_between_reviews": 10,
+      "min_days_between_reviews": 20,
+      "min_prs_between_reviews": 15,
       "not_before": "2026-09-19T12:00:00Z"
     },
     "repos": [
@@ -91,12 +91,12 @@
       },
       {
         "slug": "Poetic-Poems/poetic-fiddle",
-        "min_days_between_reviews": 15,
+        "min_days_between_reviews": 27,
         "not_before": "2026-09-22T12:00:00Z"
       },
       {
         "slug": "Pullwright/agent-ops",
-        "min_days_between_reviews": 6,
+        "min_days_between_reviews": 13,
         "report_directory": "docs/reviews/project-review-%Y-%m-%d"
       }
     ]

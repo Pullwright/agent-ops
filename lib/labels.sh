@@ -198,7 +198,9 @@ labels_catalogue() {
                "Graded by the Implementer; picks the higher Reviewer tier") ]
      elif $role == "review" then
        [ entry($review_pr_label; "5319e7";
-               "Raised by the project-review pipeline") ]
+               "Raised by the project-review pipeline"),
+         entry("pw::type:tech-debt"; "5319e7";
+               "Tech debt: a known gap or shortcut with a knowable fix. Managed by Pullwright.") ]
      elif $role == "escalation" then
        [ entry(.enabler_escalation_label; "b60205";
                "Raised by the Enabler: a blocked item that escalates"),

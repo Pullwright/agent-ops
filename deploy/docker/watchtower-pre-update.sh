@@ -67,6 +67,21 @@
 # its own stages, so a marker written for one roll cannot linger to authorise
 # a later, unrelated one across the cycle boundary it was never asked about.
 #
+# **A compose apply in flight defers too** (agent-ops#1913). The `reconciler`
+# service recreates this very project when a merged `compose.yaml` reaches the
+# node (lib/compose-reconcile.sh), and a roll landing in the middle of that has
+# watchtower and Compose stopping and creating the same containers at once,
+# with nothing in the daemon's log afterwards able to say which stop was
+# whose. So the reconciler records `applying` in
+# `$state_dir/.compose-reconcile.json` before it starts, and this defers while
+# that marker is fresh — the counterpart to the reconciler standing back while
+# `roll-pending` says a roll is due, which is what serialises the two updaters
+# from the other side. Bounded at ten minutes, twice the reconciler's own tick,
+# because the one way this marker outlives its apply is the apply's container
+# dying mid-way — which the next tick, five minutes later, settles. Past that
+# bound it grants no deferral at all: a node that quietly stops updating is
+# the worse failure, here as everywhere else in this script.
+#
 # **Scope.** Only `lock.json`'s own deferral is overridden. `review-lock.json`
 # defers exactly as before, marker or not (agent-ops#1102): review-cycle.sh
 # never wrote this marker and never decided to yield anything, so a project
@@ -331,8 +346,47 @@ roll_pending_allow() {
   printf 'a roll-pending marker from the last cycle boundary is in force until %s' "$until_ts"
 }
 
+# compose_applying — print a one-line reason and succeed iff this node's
+# reconciler is part-way through recreating this project (agent-ops#1913).
+#
+# The marker is read for its `status` and its `at` together: `applying` is
+# written immediately before the file is installed and rewritten with a fresh
+# `at` on every tick that finds the apply's sibling container still running,
+# so a fresh one means a Compose run is in flight right now, and a stale one
+# means no generation of that reconciler survived to replace it.
+#
+# The reconciler's own liveness check is the mechanism and this window is the
+# backstop under it: the marker tracks the sibling's real lifetime, so a slow
+# pull cannot age it out, and what the window bounds is the other case — a
+# node whose reconciler is gone altogether, where an `applying` nothing will
+# ever replace would otherwise hold every roll off this node for ever.
+#
+# `since` is what it reports, because `at` moves with every tick of an apply
+# that is still running and what an operator reading this line wants is when
+# it began. An unparseable `at` reads as epoch 0 — impossibly old, `held_by`'s
+# own convention for a timestamp it cannot trust — so a corrupt marker never
+# defers a roll on a window it cannot prove.
+COMPOSE_APPLY_FRESH_SECONDS=600
+compose_applying() {
+  local f="$state_dir/.compose-reconcile.json" status at since at_epoch now_epoch
+  [[ -f "$f" ]] || return 1
+  status="$(jq -r '.status // empty' "$f" 2>/dev/null || true)"
+  [[ "$status" == "applying" ]] || return 1
+  at="$(jq -r '.at // empty' "$f" 2>/dev/null || true)"
+  since="$(jq -r '.since // .at // empty' "$f" 2>/dev/null || true)"
+  at_epoch="$(date -d "$at" +%s 2>/dev/null || echo 0)"
+  now_epoch="$(date +%s)"
+  (( now_epoch - at_epoch < COMPOSE_APPLY_FRESH_SECONDS )) || return 1
+  printf 'this node is applying a merged compose.yaml (since %s)' "${since:-unknown}"
+}
+
 defer=0
 overrode=0
+
+if applying="$(compose_applying)" && [[ -n "$applying" ]]; then
+  say "$applying — deferring this update rather than recreating the same containers twice over"
+  defer=1
+fi
 
 held="$(held_by "$state_dir/lock.json" "$cycle_stale_after")"
 if [[ -n "$held" ]]; then
