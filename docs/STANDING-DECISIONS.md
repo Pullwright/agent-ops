@@ -104,7 +104,11 @@ principle it rests on.`
   released by a human-voice comment on the item, a top-of-body note and the
   escalation's close — never by hand-clearing the block labels.**
 - 2026-08-29 · #918/#901 · **Retention count keys keep floor-never-ceiling
-  (option a)**: `max(configured, derived)`.
+  (option a)**: `max(configured, derived)`. Amended 2026-09-29 (#1826, the
+  review of #1932): `state_local_streams_retained` alone takes a configured
+  value as configured — a cap as well as a floor — and its
+  `STATE_SYNC_STREAMS_RETAINED` is a per-node operator lever, not a test
+  bypass; `cycles_retained` and `state_local_cycles_retained` keep option a.
 - 2026-08-29 · #921/#913 · **Per-owner Approver installations = one JSON
   map `PULLWRIGHT_APPROVER_INSTALLATION_IDS`**; the single id stays the
   default; the check runs from `agent-approves` upward (#1064).

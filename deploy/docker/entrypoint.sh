@@ -12,8 +12,11 @@ set -euo pipefail
 
 say() { printf 'entrypoint: %s\n' "$*"; }
 
-APP_DIR=/app
-CONFIG_FILE="$APP_DIR/config.json"
+# Overridable so test/entrypoint.test.sh can point this script at a fixture
+# without touching a real /app; every real container leaves both unset, so
+# the resolved values are unchanged.
+: "${APP_DIR:=/app}"
+: "${CONFIG_FILE:=$APP_DIR/config.json}"
 
 expand_home() {
   local p="$1"

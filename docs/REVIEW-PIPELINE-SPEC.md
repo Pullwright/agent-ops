@@ -70,9 +70,12 @@ cron (repository_review.defaults.min_days_between_reviews; a daily tick with a
   review side.
 - **One shared quota signal.** A `limit-hit` event (requirement 10) is written
   to the *shared* `log.jsonl` with the *same* shape, so a usage-limit hit in
-  either pipeline stands **both** down, and the dashboard shows it. All other
-  review events go to the review pipeline's own stream (R16), so the
-  dashboard's existing `log.jsonl` parser is unaffected.
+  either pipeline stands **both** down, and the dashboard shows it. The one
+  other event that crosses over is `clone-footprint`, which the implementation
+  pipeline's own pre-clone free-space gate reads back (requirement 2.0c of
+  `docs/IMPLEMENTATION-PIPELINE-SPEC.md`). Every other review event goes to the
+  review pipeline's own stream (R16), so the dashboard's existing `log.jsonl`
+  parser is unaffected.
 
 ## Actors
 
@@ -99,8 +102,8 @@ cron (repository_review.defaults.min_days_between_reviews; a daily tick with a
 
 Identical to `docs/IMPLEMENTATION-PIPELINE-SPEC.md` ("Environment" and "Target
 repositories"); not repeated here. The target repositories are the same as
-that document's, currently `Poetic-Poems/poetic` and
-`Poetic-Poems/poetic-fiddle`, and their shared conventions (protected `main`,
+that document's, currently `Poetic-Poems/poetic`, `Poetic-Poems/poetic-fiddle`,
+and `Pullwright/agent-ops`, and their shared conventions (protected `main`,
 squash-merge so the PR title becomes the commit, Conventional Commits) bind
 the Reviewer-Agent exactly as they bind the Implementer. Where a configured
 repository still carries a per-item tech-debt register (`tech-debt/`), that
@@ -425,7 +428,10 @@ R2. **Lock.** Acquire `review-lock.json` in `state_dir` recording PID, start
    requirement 1 records it; its own lock, *not* the implementation
    `lock.json`). Apply the same held/stale/dead logic as requirement 1, using
    `repository_review.lock_stale_after`: skip cleanly if a live review is younger
-   than the threshold; take over a stale or dead lock — TERM, a polled grace of
+   than the threshold, removing the record directory this run made (its only
+   content is R2c's snapshot, and a run that reviewed nothing must not take
+   one of `state_local_streams_retained`'s slots from one that did —
+   implementation spec requirement 2.5); take over a stale or dead lock — TERM, a polled grace of
    up to 20 seconds so the holder's own signal handler (R7a) can write its
    record and release its claim, then KILL — logging a `warning`. Installation-
    wide only, not per repository — the lock covers whichever repositories a
@@ -453,7 +459,8 @@ R3. **Stand-down checks.** Each logs its reason and exits 0:
       union carries the signal instead).
    2. *Implementation pipeline busy* — if `lock.json` is held by a live
       process, stand down and wait for the next tick (defer to it, per
-      "Relationship to the existing pipelines").
+      "Relationship to the existing pipelines"), removing the record
+      directory for the same reason as R2's lock skip.
    3. *A dated stand-down, tier one* — if `repository_review.defaults.not_before`
       is set and now is before it, stand down the whole cycle, logging the
       timestamp on the event so an operator can tell this apart from a
@@ -551,6 +558,9 @@ R2c. **The fleet's memory and state publication.** After the lock and before
    re-snapshotted between repos, and each snapshot is repaired on the terms of
    that same requirement before anything reads it — a peer's NUL-holed line
    costs this pipeline the records around it exactly as it costs a cycle's.
+   The run's cleanup removes the snapshot, as a cycle's does: it is scratch
+   with the run's lifetime, and a count of retained snapshots bounds how many
+   are kept, never how large they are (that requirement's own terms).
    There is no lease: per-item claims
    (requirement 17a of the implementation spec) arbitrate work.
 
@@ -659,6 +669,25 @@ R4a. **Report directory (issue #761).** Where a report set (R11) is written,
    argument) resolve through this one shared implementation, so the two
    pipelines cannot discover two different answers for the same repository.
 
+   A listing that *fails* is told apart from one that succeeds and matches
+   nothing (issue #1024), because a caller deciding something irreversible on
+   "no review folder exists" must not act on a rate limit: both
+   `report_directory_find_dirs` and `report_directory_most_recent` exit
+   nonzero when some listing inside the walk failed for a reason other than
+   the queried path not existing (a clean 404 *is* a definite "nothing here"),
+   and zero otherwise. The exit status is the whole of that signal — what they
+   print is byte-for-byte what they printed before the distinction existed,
+   including for a multi-segment format whose walk lists one level and fails
+   at the next, so degraded and found-something are not exclusive states.
+   `docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 3y's `--current-date`
+   mode is the caller that needs it. R4's own skip-guard
+   (`most_recent_review_date`) does not — a failed listing and an absent
+   folder both mean "no date to compare against", and the guard already
+   proceeds on an empty one — so it declines the signal explicitly, ending its
+   pipeline with `|| true`: under `set -o pipefail` the status would otherwise
+   reach `review-cycle.sh`'s own errexit through that function's return value,
+   turning a transient listing failure into a dead cycle.
+
 R5. **Per non-skipped repo** (processed **sequentially**, so a failure of one
    never blocks the other and only one heavy `claude` runs at a time):
    0. *Claim the review branch* (R5c; implementation spec requirement 17a).
@@ -736,6 +765,14 @@ R5. **Per non-skipped repo** (processed **sequentially**, so a failure of one
       the working
       directory is under `workspace_root` before launching any stage
       (requirement 6). The user's own clones under `~/Code` are never touched.
+      Once the clone succeeds, measure it — `lib/disk-space.sh`'s
+      `disk_space_clone_footprint_bytes`, a `du -sb` of the clone directory —
+      and log a `clone-footprint` event carrying `{repo, bytes}` against the
+      cloned repository's own slug, to the *shared* `log.jsonl` (R16), which is
+      where requirement 2.0c of `docs/IMPLEMENTATION-PIPELINE-SPEC.md` reads it
+      back from to derive its pre-clone free-space threshold. Best-effort: a
+      `du` that cannot be read logs no event rather than a fabricated size, and
+      nothing about the review depends on it.
    2. *Inject the skill.* Copy this repository's
       `.claude/skills/project-review/` into
       `<clone>/.claude/skills/project-review/`, then append
@@ -1037,10 +1074,18 @@ R16. **Streams.** Review *operational* events go to the review pipeline's own
    record of requirement 33a — `model`, `cost_usd`, `duration_ms`,
    `num_turns`, `is_error`, `tokens` — via the same `lib/metering.sh` helper
    `agent-cycle.sh` uses, so a review's stage costs exactly the same shape as
-   a cycle's (`docs/METERING-SCHEMA.md`). The one exception is the shared
-   `limit-hit` event, which is written to `log.jsonl` (R6), because
-   usage-limit stand-down is shared across both pipelines — it carries `node`
-   too, so a fleet view can say which machine hit the limit.
+   a cycle's (`docs/METERING-SCHEMA.md`). Two events are written to the shared
+   `log.jsonl` instead, both because their reader is in the *other* pipeline:
+   `limit-hit` (R6), because usage-limit stand-down is shared across both
+   pipelines — it carries `node` too, so a fleet view can say which machine hit
+   the limit — and `clone-footprint` (`{repo, bytes}`, one per successful
+   `clone_repo`, R5 step 1), which requirement 2.0c of
+   `docs/IMPLEMENTATION-PIPELINE-SPEC.md` reads back off the union of every
+   node's `log.jsonl` to derive its pre-clone free-space threshold. Both are
+   written through `log_event_append "$log_file"` rather than this pipeline's
+   own `log_event`, since the latter is bound to `review-log.jsonl`; a
+   `clone-footprint` on that stream would be a measurement nothing can ever
+   read.
 
    `review-stage-end` and a genuine-failure `review-attempt-failed` (the one
    `review_one` logs when the reviewer's own attempt failed, never the
@@ -1249,7 +1294,20 @@ edit a test.
    `report_directory_most_recent` names the latest of them with its own date,
    printing nothing where none exist. `report_directory_regex` escapes
    literal regex metacharacters in a format's surrounding text and degrades
-   an unrecognised specifier to a wildcard rather than failing.
+   an unrecognised specifier to a wildcard rather than failing. The
+   degraded-read signal is covered too: a stubbed listing that fails exits
+   nonzero from both functions, a clean 404 and a listing that matched nothing
+   exit zero, and a multi-segment format whose walk fails partway still prints
+   the candidates it did find — which is what proves the exit status is the
+   whole signal and the printed output unchanged. Check the caller side
+   specifically, because it is where getting this wrong costs a cycle rather
+   than a value: the same `… | cut -f<n>` shape both silent-degrade callers
+   use is driven as its own `bash` process (errexit is not honoured inside a
+   command substitution, so a probe wrapped in one reports every caller as
+   surviving), asserting that the unguarded form really is killed by errexit
+   on a failed walk while the guarded form degrades to empty, and that
+   `review-cycle.sh` and `lib/candidate-gather.sh` each carry the guard at
+   their own call site.
    `test/config-schema.test.sh` covers the resolution: a repository's own
    `report_directory` wins over `repository_review.defaults`', absent it
    inherits, and absent from both it resolves empty rather than fabricated —

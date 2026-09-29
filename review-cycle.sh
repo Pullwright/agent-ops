@@ -60,6 +60,11 @@ SKILL_SRC="$SCRIPT_DIR/.claude/skills/project-review"
 . "$SCRIPT_DIR/lib/github-limit.sh"
 # shellcheck source=lib/repo-clone.sh
 . "$SCRIPT_DIR/lib/repo-clone.sh"
+# disk_space_clone_footprint_bytes — logging each clone's footprint against
+# its repository's slug (agent-ops#904), the same helper agent-cycle.sh uses,
+# so the two pipelines' clones feed one shared measurement rather than two.
+# shellcheck source=lib/disk-space.sh
+. "$SCRIPT_DIR/lib/disk-space.sh"
 # shellcheck source=lib/model-id.sh
 . "$SCRIPT_DIR/lib/model-id.sh"
 # shellcheck source=lib/config-schema.sh
@@ -473,6 +478,12 @@ cleanup() {
   if [[ -n "$clone_dir" && -d "$clone_dir" ]]; then
     rm -rf "$clone_dir"
   fi
+  # The fleet-log snapshot (`union_log`): scratch with this run's lifetime,
+  # read by nothing past this point, and removed by the run that wrote it
+  # rather than counted out later by `state_local_streams_retained` — see
+  # agent-cycle.sh's own cleanup (agent-ops#1826). Guarded because a run can
+  # end before the snapshot is taken.
+  [[ -z "${union_log:-}" ]] || rm -f -- "$union_log" || true
   # node-state (docs/FLOW-SCHEMA.md, D21): logged last, same reasoning as
   # agent-cycle.sh's own finalize_node_state_for_cycle — nothing in this
   # pipeline's own cleanup runs after this point, but the call is placed
@@ -743,6 +754,11 @@ acquire_lock() {
           # state — see agent-cycle.sh's own `cycle-skipped` site and
           # suppress_node_state_transitions' header.
           suppress_node_state_transitions
+          # Nor a record: the directory holds only the snapshot taken above,
+          # and it would take a `state_local_streams_retained` slot from a
+          # run that did something — see agent-cycle.sh's own skip site
+          # (agent-ops#1826).
+          rm -rf -- "$review_dir"
           exit 0
         fi
         if kill -0 "$pid" 2>/dev/null; then
@@ -879,6 +895,9 @@ if impl_cycle_running; then
   # and calls `suppress_node_state_if_peer_owns_node` for the same reason.
   log_event "review-stand-down" "$(jq -nc --arg r "implementation cycle running (pid $impl_pid)" '{reason: $r, cause: "peer-pipeline-busy"}')"
   suppress_node_state_transitions
+  # The same tick-that-did-nothing as the review-lock skip in `acquire_lock`,
+  # and the same reason its directory goes (agent-ops#1826).
+  rm -rf -- "$review_dir"
   exit 0
 fi
 
@@ -961,10 +980,20 @@ skip_reason() {
 # exist on the default branch. Degrades to empty on any discovery failure
 # (no report directory ever written, an unreadable repository), the same as
 # the fixed-layout lookup this generalises.
+#
+# This guard deliberately declines the degraded-read signal
+# `report_directory_most_recent` offers (issue #1024): a listing that failed
+# and one that found nothing both mean "no date to compare against", and the
+# checks below already treat an empty date as "nothing known, proceed". The
+# trailing `|| true` is what *declines* it rather than inheriting it — under
+# `set -o pipefail` the walk's nonzero status would otherwise reach the
+# pipeline and, through this function's own return value, whatever errexit
+# context the caller is in. A caller that wants the distinction must ask
+# report_directory_most_recent for it directly.
 most_recent_review_date() {
   local slug="$1" default_branch="$2" report_directory="${3:-$REPORT_DIRECTORY_DEFAULT}"
   [[ -n "$report_directory" ]] || report_directory="$REPORT_DIRECTORY_DEFAULT"
-  report_directory_most_recent "$slug" "$default_branch" "$report_directory" | cut -f1
+  report_directory_most_recent "$slug" "$default_branch" "$report_directory" | cut -f1 || true
 }
 
 # Count of pull requests merged into default_branch on or after since_date —
@@ -1156,6 +1185,26 @@ review_one() {
     release_review_claim "$slug" "$branch" "$safe" no-pr
     rm -rf "$clone_dir"; clone_dir=""
     return 0
+  fi
+  # `du -sb` of the clone just made, logged against its own repository's slug
+  # (agent-ops#904, the residual of #756): requirement 2.0c's own derivation,
+  # in agent-cycle.sh, reads this back from the union log — this pipeline
+  # runs no gate of its own, but its clones are the same repositories', so
+  # they feed the one shared measurement too. Best-effort, the same "no
+  # evidence, no event" convention agent-cycle.sh's own reading uses.
+  #
+  # Written to the *shared* `log.jsonl` (`$log_file`), not this pipeline's own
+  # `review-log.jsonl` — the second of R16's two shared exceptions, for the
+  # same reason `limit-hit` is the first: the reader is in the other pipeline.
+  # `disk_space_largest_footprint` is fed `fleet_logs <state_dir> <peers>
+  # log.jsonl` in both of its callers (lib/standdown.sh and scripts/doctor.sh),
+  # so a footprint on `review-log.jsonl` would be a measurement nothing can
+  # ever read.
+  clone_footprint_bytes="$(disk_space_clone_footprint_bytes "$clone_dir")"
+  if [[ -n "$clone_footprint_bytes" ]]; then
+    log_event_append "$log_file" review "$review_id" "$node_name" "clone-footprint" \
+      "$(jq -nc --arg repo "$slug" --argjson bytes "$clone_footprint_bytes" \
+        '{repo: $repo, bytes: $bytes}')"
   fi
 
   # Stage the vendored skill into the clone, and git-exclude it so the agent can

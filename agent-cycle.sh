@@ -944,6 +944,15 @@ export GITHUB_LIMIT_MAX_WAIT_SECONDS GITHUB_LIMIT_TOTAL_WAIT_SECONDS
 # 4.2 GB of orphaned clones (#605). `0` turns the check off.
 min_free_workspace_bytes="$(cfg '.min_free_workspace_bytes')"
 [[ "$min_free_workspace_bytes" =~ ^[0-9]+$ ]] || min_free_workspace_bytes=0
+# The headroom the 2.0c threshold derives over the largest clone this fleet
+# has actually measured (agent-ops#904, the residual of #756):
+# `min_free_workspace_bytes` is the floor *under* `factor × largest recorded
+# footprint`, never a ceiling — see lib/disk-space.sh's
+# `disk_space_effective_min_bytes`. Non-numeric or absent reads as the
+# schema's default of 2 rather than 0, so a misread here cannot silently
+# turn the derivation off the way a real `0` legitimately can.
+workspace_headroom_factor="$(cfg '.workspace_headroom_factor')"
+[[ "$workspace_headroom_factor" =~ ^[0-9]+$ ]] || workspace_headroom_factor=2
 # The free-memory floor the host must clear before a cycle is worth starting
 # one (requirement 2.0f): a cycle runs a model stage whose working set the
 # host has to hold alongside every other node sharing it, and on the ockham
@@ -1323,6 +1332,19 @@ cleanup() {
   # after the Refiner, since the Refiner's own priority-triage duty is that
   # cache's main consumer.
   issue_priority_cache_cleanup
+  # The fleet-log snapshot (`union_log`) goes with it (agent-ops#1826). It is
+  # scratch with this cycle's lifetime (requirement 2.5): read only through
+  # that variable and only by this process, whose last readers — the Enabler,
+  # the Refiner and the deferred crash-loop refile — have all just run, and
+  # nothing below reads it (the state-sync push and the dashboard build
+  # their own). It is the whole fleet's history to this moment, tens of
+  # megabytes and growing with that history, so it is removed by the cycle
+  # that wrote it rather than counted out later by
+  # `state_local_streams_retained`, which bounds how many snapshots are kept
+  # and never how large they are; the stage streams beside it stay for that
+  # prune, and so does the snapshot of a cycle killed before this line.
+  # Guarded because a cycle can end before the snapshot is taken.
+  [[ -z "${union_log:-}" ]] || rm -f -- "$union_log" || true
   # The closing GitHub budget reading (requirement 2.0d): after the Enabler
   # and the Refiner so their own calls fall inside it, before `cycle-end` so
   # it travels with this cycle. Only for a cycle that took the opening
@@ -1676,6 +1698,17 @@ acquire_lock() {
           # node-seconds, and its own transitions already say so — see
           # suppress_node_state_transitions' header.
           suppress_node_state_transitions
+          # Nor is it a record (agent-ops#1826): the directory made above
+          # holds nothing but the fleet-log snapshot taken before the lock —
+          # tens of megabytes a tick that ran no stage will never read — and
+          # every such directory takes one of `state_local_streams_retained`'s
+          # slots from a cycle that did run, until the cycle still holding
+          # this lock is pushed out of that window by the ticks that found it
+          # held. The `cycle-skipped` event is the tick's record, and the
+          # dashboard already renders a cycle id that has no directory.
+          # Nothing in `cleanup` needs it when the lock was not taken: the
+          # Enabler and the Refiner both gate on `lock_acquired`.
+          rm -rf -- "$cycle_dir"
           exit 0
         fi
         if kill -0 "$pid" 2>/dev/null; then
@@ -3293,6 +3326,18 @@ if ! clone_repo "$repo_slug" "$clone_dir" 2>"$cycle_dir/clone.err"; then
   # keep holding the item (requirement 17a's release rules).
   release_claim no-pr
   exit 0
+fi
+# `du -sb` of the clone just made, logged against its own repository's slug
+# (agent-ops#904, the residual of #756): requirement 2.0c's own derivation
+# reads this back from the union log on a later cycle, on any node, so a
+# repository's clone size only ever has to be measured once for the whole
+# fleet to learn it. Best-effort — an unreadable `du` logs nothing rather
+# than a fabricated size, the same "no evidence" convention
+# `disk_space_free_kb` already uses.
+clone_footprint_bytes="$(disk_space_clone_footprint_bytes "$clone_dir")"
+if [[ -n "$clone_footprint_bytes" ]]; then
+  log_event "clone-footprint" "$(jq -nc --arg repo "$repo_slug" --argjson bytes "$clone_footprint_bytes" \
+    '{repo: $repo, bytes: $bytes}')"
 fi
 
 # --- 6a. Labels (requirement 6a) ---

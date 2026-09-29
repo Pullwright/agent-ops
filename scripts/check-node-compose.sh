@@ -102,7 +102,7 @@ if [[ -e "$env_file" ]]; then
     bad ".env is mode 0${env_mode:-?} instead of 0600 — chmod 600 $env_file"
   fi
 else
-  info "no .env in $stack_dir — skipping its permission and backup checks"
+  info "no .env in $stack_dir — skipping its permission check"
 fi
 
 shopt -s nullglob dotglob

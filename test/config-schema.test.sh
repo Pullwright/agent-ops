@@ -591,6 +591,50 @@ assert_defaults "an explicitly configured value still wins over the derivation (
 assert_defaults "...and for a count-valued key too" \
   '.schedule.cycle_interval_minutes = 60 | .cycles_retained = 999' \
   '.cycles_retained == 999'
+
+# Acceptance 3a (agent-ops#1826): state_local_streams_retained alone is a cap
+# as well as a floor — a configured value below the derivation is taken as
+# configured, where its two siblings are raised to theirs — and absent it
+# still derives. Two fixtures per case: A pins the cadence and lets every
+# derived key derive, B is A plus the configured value, so each case checks
+# its own premise (that the value sits below, or above, what A derives)
+# rather than assuming it of a fixture whose schedule keys it inherited.
+# shellcheck disable=SC2016  # jq's $a/$b, not the shell's.
+assert_cadence_cmp "a configured state_local_streams_retained below the derivation caps it (10 stays 10 where the same cadence derives more)" \
+  '.schedule.cycle_interval_minutes = 15' \
+  '.schedule.cycle_interval_minutes = 15 | .state_local_streams_retained = 10' \
+  '$a.state_local_streams_retained > 10 and $b.state_local_streams_retained == 10'
+# shellcheck disable=SC2016  # jq's $a/$b, not the shell's.
+assert_cadence_cmp "...and one above the derivation still wins (the floor half of the contract)" \
+  '.schedule.cycle_interval_minutes = 15' \
+  '.schedule.cycle_interval_minutes = 15 | .state_local_streams_retained = 9999' \
+  '$a.state_local_streams_retained < 9999 and $b.state_local_streams_retained == 9999'
+# shellcheck disable=SC2016  # jq's $a/$b, not the shell's.
+assert_cadence_cmp "...while the sibling count key keeps the floor-only shape: a state_local_cycles_retained below the derivation is raised to it, unmoved by the cap beside it" \
+  '.schedule.cycle_interval_minutes = 15' \
+  '.schedule.cycle_interval_minutes = 15 | .state_local_streams_retained = 10 | .state_local_cycles_retained = 10' \
+  '$a.state_local_cycles_retained > 10 and $b.state_local_cycles_retained == $a.state_local_cycles_retained'
+assert_defaults "an absent state_local_streams_retained still derives from the cadence exactly (200 at 15 minutes, unrestricted)" \
+  "$CADENCE_BASE_MUTATION | .schedule.cycle_interval_minutes = 15" \
+  '.state_local_streams_retained == 200'
+# What reaches scripts/state-sync.sh is a whole number of at least 1: the
+# schema admits an integral float as an integer, jq 1.7 prints such a
+# literal as written, and `(( retained >= 1 ))` on `20.0` reads it as an
+# unbound variable and collapses the count to 1. Compared as text, because a
+# numeric `== 20` cannot tell 20 from 20.0 — and the container's jq is the
+# authority here, since jq 1.6 canonicalises the literal on the way in.
+assert_defaults "a schema-valid integral float (20.0) reaches the reader as the integer 20" \
+  "$CADENCE_BASE_MUTATION | .schedule.cycle_interval_minutes = 15 | .state_local_streams_retained = 20.0" \
+  '(.state_local_streams_retained | tostring) == "20"'
+assert_defaults "...and exponent notation (1e1) as the integer 10" \
+  "$CADENCE_BASE_MUTATION | .schedule.cycle_interval_minutes = 15 | .state_local_streams_retained = 1e1" \
+  '(.state_local_streams_retained | tostring) == "10"'
+assert_defaults "a configured 0 (schema-invalid; config_defaults validates nothing) falls through to the derivation rather than reaching the reader" \
+  "$CADENCE_BASE_MUTATION | .schedule.cycle_interval_minutes = 15 | .state_local_streams_retained = 0" \
+  '.state_local_streams_retained == 200'
+assert_defaults "...and so does a negative value" \
+  "$CADENCE_BASE_MUTATION | .schedule.cycle_interval_minutes = 15 | .state_local_streams_retained = -5" \
+  '.state_local_streams_retained == 200'
 assert_defaults "an explicit 0 for none_selected_recheck_hours stays 0, never raised by the derivation" \
   '.schedule.cycle_interval_minutes = 60 | .none_selected_recheck_hours = 0' \
   '.none_selected_recheck_hours == 0'
@@ -610,6 +654,27 @@ assert_cadence_cmp "...and abandoned_draft_after_hours too" \
   '.schedule.cycle_interval_minutes = 15' \
   '.schedule.cycle_interval_minutes = 15 | .schedule.cycle_hours = "9-17"' \
   '$b.abandoned_draft_after_hours > $a.abandoned_draft_after_hours'
+
+# ...but disable_default_ttl and none_selected_recheck_hours each express a
+# *count of firings elapsed*, the same quantity a count-valued key expresses
+# in cycle directories rather than hours, so each is sized against the mean
+# gap instead: the same "9-17", 15-minute schedule fires 36 times a day (a
+# mean gap of 40 minutes), deriving 3 and 16 rather than the worst gap's 61
+# and 366 (a 915-minute worst gap: the 15-hour overnight run plus one
+# interval) — the worst gap would starve both thresholds' own documented
+# bound (requirement 3b's "capped at a day", 2.3's "a few cycles") by more
+# than a factor of ten.
+assert_defaults "a restricted schedule.cycle_hours derives disable_default_ttl and none_selected_recheck_hours against the mean gap, not the worst one" \
+  '.schedule.cycle_hours = "9-17" | .schedule.cycle_interval_minutes = 15 | .schedule.excluded_minutes = []
+   | del(.disable_default_ttl, .none_selected_recheck_hours)' \
+  '.disable_default_ttl == 3 and .none_selected_recheck_hours == 16'
+# ...and at cycle_hours: "*" with the same interval neither value moves off
+# what the bare interval alone implies, since the two gaps coincide whenever
+# nothing is restricted.
+assert_defaults "an unrestricted schedule.cycle_hours leaves disable_default_ttl and none_selected_recheck_hours exactly where the bare interval implies" \
+  '.schedule.cycle_hours = "*" | .schedule.cycle_interval_minutes = 15 | .schedule.excluded_minutes = []
+   | del(.disable_default_ttl, .none_selected_recheck_hours)' \
+  '.disable_default_ttl == 1 and .none_selected_recheck_hours == 6'
 
 # ...and the same restriction must *not* shrink the count-valued keys, which
 # are sized against the mean gap between firings rather than the worst one:
@@ -1304,6 +1369,21 @@ assert_doctor "doctor fails a label named Obsolete case-insensitively, as the vo
   '.repository_review.defaults.pr_label = "Obsolete"' 1 'repository_review pr_label is "Obsolete"'
 assert_doctor "doctor fails an obsolete label on a repo's own repository_review override too" \
   '.repository_review.repos[0].pr_label = "Obsolete"' 1 'repository_review pr_label is "Obsolete"'
+# --- issue #1019: pw::type:tech-debt is reserved the same way obsolete is —
+#     D24's trust anchor for tech debt filed as a GitHub issue, which only a
+#     collaborator with triage rights may apply. ---
+assert_doctor "doctor fails a PR label named pw::type:tech-debt, D24's own trust anchor" \
+  '.pr_label = "pw::type:tech-debt"' 1 'pr_label is "pw::type:tech-debt"'
+assert_doctor "doctor fails the unvoid label set to pw::type:tech-debt too" \
+  '.unvoid_label = "pw::type:tech-debt"' 1 'unvoid_label is "pw::type:tech-debt"'
+assert_doctor "doctor fails a label named PW::TYPE:TECH-DEBT case-insensitively" \
+  '.refined_label = "PW::TYPE:TECH-DEBT"' 1 'refined_label is "PW::TYPE:TECH-DEBT"'
+assert_doctor "doctor fails a repository_review pr_label set to pw::type:tech-debt" \
+  '.repository_review.defaults.pr_label = "pw::type:tech-debt"' 1 \
+  'repository_review pr_label is "pw::type:tech-debt"'
+assert_doctor "doctor fails pw::type:tech-debt on a repo's own repository_review override too" \
+  '.repository_review.repos[0].pr_label = "pw::type:tech-debt"' 1 \
+  'repository_review pr_label is "pw::type:tech-debt"'
 # --- issue #714: the exact-"blocked" check above extends to the whole
 #     blocked:* reason-label namespace requirement 38b's own
 #     blocked:needs-refinement lives in, so a configured label cannot claim a

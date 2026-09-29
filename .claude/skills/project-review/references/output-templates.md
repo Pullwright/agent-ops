@@ -19,7 +19,7 @@ All outputs are Markdown. Follow these templates in structure; adapt headings on
 | [Findings](02-findings.md) | <One or two sentences, including the finding count by severity, e.g., "31 findings: 2 critical, 7 high, 14 medium, 8 low.".> |
 | [Recommendations](03-recommendations.md) | <One or two sentences, including the number of recommendations.> |
 | [Improvement prompts](04-improvement-prompts.md) | <One or two sentences.> |
-| [Tech debt filed](<the `pw::type:tech-debt` issue search URL for this repository, or the register's own path if the project still has one>) | <One or two sentences: how many new issues this review filed, and whether any existing register item was marked resolved.> |
+| [Tech debt filed](<the `pw::type:tech-debt` issue search URL for this repository, the register's own path if the project still has one, or — when nothing could be filed because no tracker was reachable — the "Unfiled tech debt" anchor in [Findings](02-findings.md#unfiled-tech-debt)>) | <One or two sentences: how many new issues this review filed (noting how many, if any, were filed unlabelled and why), whether any existing register item was marked resolved, and — when the tracker could not be reached at all — how many items are listed unfiled instead.> |
 ```
 
 Add rows for any supplementary annexes.
@@ -73,6 +73,12 @@ Add rows for any supplementary annexes.
 ```
 
 Repeat the finding block per finding and the dimension block per dimension, in the checklist's dimension order. Inapplicable dimensions still get their heading, with a one-line explanation.
+
+```markdown
+## Unfiled tech debt
+
+<Present only when the "Tech debt" section below could not file some or all new debt as GitHub issues at all — no GitHub remote, a forge that is not GitHub, no working `gh` credential, or the API call refused. One entry per item: title, body (as it would have been filed), and the recommendation it mirrors, if any, plus why it could not be filed. Omit this section entirely when every new item was filed, whether labelled or not.>
+```
 
 ## `03-recommendations.md` (prioritised recommendations)
 
@@ -138,10 +144,25 @@ The `Review:` line is the item's provenance, in the same place a register's
 `review:` frontmatter line or Ledger table would have carried it — write it
 whenever the item mirrors a recommendation's whole *Intended end state*
 (never for a partial match, which stays visible in the review channel
-instead). In the Claude.ai chat, where GitHub is not directly reachable,
-list each item that would be filed — title, body, and any recommendation it
-mirrors — in the summary presented to the user instead, and tell them where
-to file it.
+instead).
+
+**When the tracker cannot be reached at all** — no GitHub remote, a remote
+on a forge that is not GitHub, no working `gh` credential, or the API call
+itself refuses — do not file the item: list it, title, body, and any
+recommendation it mirrors, under "Unfiled tech debt" in `02-findings.md`
+instead, and say there why it could not be filed. The Claude.ai chat, where
+GitHub is never directly reachable, is one instance of this, not its only
+trigger — present the same list to the user there instead of filing it.
+
+**When the tracker is reachable but the repository has no
+`pw::type:tech-debt` label**, that is a separate failure from having no
+tracker at all: do not create the label yourself — creating a
+product-namespaced label mutates a repository the review was asked only to
+read. Where a user is present, ask once whether to create it. Where they
+decline, or no one is present to ask, file the issue **unlabelled**, name
+the intended label in its body, and note in the index row's own sentence
+(or, alongside any items also unfilable outright, in "Unfiled tech debt")
+that it was filed unlabelled and which label belongs on it.
 
 **An existing register is history, not a filing destination.** Registers
 come in two formats: **per-item** — a `tech-debt/` directory exists, or the

@@ -17,9 +17,32 @@
 #     shell fragment in a comment — a scan that cannot tell those apart
 #     refuses every node for ever;
 #   - a cycle in flight defers it, exactly as `watchtower-pre-update.sh`
-#     defers a roll, and the roll-pending marker overrides `lock.json` alone;
-#   - a recreate that failed is retried even though the file it installed has
-#     already cleared the drift that would otherwise be the only thing asking;
+#     defers a roll, and a `roll-pending` marker defers it too — the same
+#     marker the hook reads as licence to destroy a container is read here as
+#     a reason to wait, so the two updaters never recreate one at once — but
+#     only for as long as a cycle lock would be honoured, because that marker
+#     is re-armed at every cycle boundary whose image is still behind and a
+#     node whose roll cannot land must not stop reconciling for ever;
+#   - the recreate never runs inside the project it recreates. `reconciler` is
+#     one of the services an apply replaces, so an `up -d` driven from this
+#     container stops the process driving it and leaves the project
+#     part-applied; it is handed to a transient sibling instead, and the
+#     property the tests hold it to is that every service is running once the
+#     tick that asked for it has been killed part-way, exactly as a real apply
+#     kills it;
+#   - `applying` is on the marker before the file is installed, so a heartbeat
+#     from a node stopped mid-apply says so rather than repeating the verdict
+#     of the tick before, and the next tick retries and settles it — and while
+#     the sibling is still running, nothing writes any other verdict over it,
+#     because that marker is what keeps a watchtower roll off a project
+#     mid-recreate;
+#   - the digests an apply is carrying survive every deferral in between, so
+#     the verdict that finally closes it names the file it replaced and not
+#     the file it installed twice over;
+#   - a recreate that has not completed is retried even though the file it
+#     installed has already cleared the drift that would otherwise be the only
+#     thing asking — and a lock or a due roll arriving in between postpones
+#     that retry rather than discarding it;
 #   - the file is replaced *in place*, keeping its inode, because a bind mount
 #     of a file pins the inode it was created against;
 #   - `.env` is never written, and its values are never read;
@@ -84,9 +107,92 @@ EOF
 
 export DOCKER_STUB_LOG="$tmp_dir/docker-calls.log"
 : > "$DOCKER_STUB_LOG"
+
+# What this stack's own containers answer to. The library asks the daemon
+# which container it is running in — `$HOSTNAME` cannot say, since watchtower
+# clones it forward across a roll — and then which image that container
+# holds, so the stub has to answer both.
+export DOCKER_STUB_SELF_ID=b0a1c2d3e4f5
+export DOCKER_STUB_SELF_IMAGE=sha256:1111111111111111111111111111111111111111111111111111111111111111
+# And whether one of this node's own applies is running right now. Empty
+# throughout except in the block that asks what a tick does while one is.
+export DOCKER_STUB_SIBLING_ID=""
+
+# The project's services, and the file recording which of them are running.
+# The list is the stub's own, not read out of the fixture compose file: what
+# these assertions are about is what an `up -d` leaves behind, and the one
+# name that matters in it is `reconciler` — the service the process driving
+# that `up` is itself in.
+export DOCKER_STUB_SERVICES='scheduler
+collector
+egress-proxy
+dashboard
+reconciler'
+export DOCKER_STUB_RUNNING_FILE="$tmp_dir/running"
+
+# The socket the sibling is handed. A plain file is enough: the library only
+# ever mounts it by path and reads its group.
+socket="$tmp_dir/docker.sock"
+: > "$socket"
+
 cat > "$bin/docker" <<'EOF'
 #!/usr/bin/env bash
+#
+# The `docker` this suite gives the library. It records every call, answers
+# the two questions the library asks about this container, and models what an
+# `up -d` does to the project — including the part that is the whole point:
+# the process driving the `up` is stopped by it, and whether the rest of the
+# project ends up running depends on where that process was.
 printf '%s\n' "$*" >> "$DOCKER_STUB_LOG"
+
+# Two questions per verb, told apart by what they filter or format on. `ps`
+# asks either "which container am I" or "is an apply of mine already running";
+# `inspect` asks either for this container's image or for the ceilings the
+# sibling has to be given, which no node's `.env` reaches from in here.
+case "$1" in
+  ps)
+    if [[ "$*" == *compose-apply* ]]; then
+      printf '%s\n' "${DOCKER_STUB_SIBLING_ID:-}"
+    else
+      printf '%s\n' "$DOCKER_STUB_SELF_ID"
+    fi
+    exit 0 ;;
+  inspect)
+    if [[ "$*" == *HostConfig* ]]; then
+      printf '%s\t%s\t%s\n' "${DOCKER_STUB_MEMORY:-268435456}" \
+        "${DOCKER_STUB_PIDS:-256}" "${DOCKER_STUB_NANOCPUS:-500000000}"
+    else
+      printf '%s\n' "$DOCKER_STUB_SELF_IMAGE"
+    fi
+    exit 0 ;;
+esac
+
+# What is left running once this `up -d` has done what it can. From a sibling
+# container, all of it: nothing the `up` stops is the process running it. From
+# inside the project — `docker compose up -d` with no `run` in front of it —
+# nothing at all: Compose creates each replacement, stops the old container,
+# and reaches its own before it has started anything, so the project is left
+# stopped or created-but-never-started. That second branch is this stub's
+# whole reason for modelling the two shapes apart: it is what fails the
+# "every service running" assertions below if the recreate ever moves back
+# inside the project.
+if [[ "${DOCKER_STUB_RC:-0}" == "0" ]]; then
+  if [[ "$1" == run ]]; then
+    printf '%s\n' "$DOCKER_STUB_SERVICES" > "$DOCKER_STUB_RUNNING_FILE"
+  else
+    : > "$DOCKER_STUB_RUNNING_FILE"
+  fi
+fi
+
+# ... and the recreate stops the reconciler container itself, which is where
+# this tick is running. The suite asks for that explicitly, per tick, so that
+# the ticks modelling a container that survives its own apply — the retry,
+# above all — are not killed here too.
+if [[ -n "${DOCKER_STUB_KILL_FILE:-}" && -s "${DOCKER_STUB_KILL_FILE:-/dev/null}" ]]; then
+  kill -9 "$(cat "$DOCKER_STUB_KILL_FILE")" 2>/dev/null
+  sleep 1
+fi
+
 # Deliberately different on every call — compose's own last line carries
 # per-run timings, and a verdict that folded that into the field the
 # transition test compares would log one event per tick for ever.
@@ -145,7 +251,11 @@ reset_fixture() {
   sed 's/^name: agent-ops$/name: agent-ops-old/' "$image_file" > "$host_file"
   write_env NODE_NAME AGENT_OPS_IMAGE
   : > "$DOCKER_STUB_LOG"
+  # The previous generation of the project, running the file about to be
+  # replaced. Every apply below starts from here.
+  printf '%s\n' "$DOCKER_STUB_SERVICES" > "$DOCKER_STUB_RUNNING_FILE"
   unset DOCKER_STUB_RC
+  DOCKER_STUB_SIBLING_ID=""
 }
 
 run_reconcile() {  # [now]
@@ -154,13 +264,64 @@ run_reconcile() {  # [now]
   COMPOSE_RECONCILE_STATE_DIR="$state" \
   COMPOSE_RECONCILE_CONFIG="$config" \
   COMPOSE_RECONCILE_DOCKER="$bin/docker" \
+  COMPOSE_RECONCILE_DOCKER_SOCKET="$socket" \
   COMPOSE_RECONCILE_NOW="${1:-2026-09-11T00:00:00Z}" \
   NODE_NAME=fixture-node \
     compose_reconcile_run
 }
 
+# The same tick, in a child process of its own that the stub ends the moment
+# the recreate is asked for — which is what the recreate really does to the
+# container this runs in. It has to be a separate process, not a subshell:
+# what is being modelled is a tick that never returns to write a second
+# verdict, and the suite has to survive it.
+tick_script="$tmp_dir/tick.sh"
+cat > "$tick_script" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$\$" > "\$DOCKER_STUB_KILL_FILE"
+. "$SCRIPT_DIR/lib/compose-reconcile.sh"
+compose_reconcile_run
+EOF
+chmod +x "$tick_script"
+
+# Wrapped in a subshell whose stderr is discarded: a foreground command killed
+# by a signal makes the shell that reaped it announce the fact, and that notice
+# is this suite's own output, not a result. The trailing `:` is what keeps the
+# subshell a shell — bash execs the last command of a subshell in place of it,
+# which would put the pid the stub kills back in the outer shell's hands and
+# the notice back on this suite's stderr.
+run_reconcile_killed() {
+  : > "$tmp_dir/tick.pid"
+  ( DOCKER_STUB_KILL_FILE="$tmp_dir/tick.pid" \
+  COMPOSE_RECONCILE_PROJECT_DIR="$project" \
+  COMPOSE_RECONCILE_IMAGE_FILE="$image_file" \
+  COMPOSE_RECONCILE_STATE_DIR="$state" \
+  COMPOSE_RECONCILE_CONFIG="$config" \
+  COMPOSE_RECONCILE_DOCKER="$bin/docker" \
+  COMPOSE_RECONCILE_DOCKER_SOCKET="$socket" \
+  COMPOSE_RECONCILE_NOW=2026-09-11T00:00:00Z \
+  NODE_NAME=fixture-node \
+    "$tick_script" >/dev/null 2>&1; : ) 2>/dev/null
+}
+
 docker_calls() { wc -l < "$DOCKER_STUB_LOG" | tr -d ' '; }
-events_of()   { grep -c "\"event\":\"$1\"" "$log_file" 2>/dev/null || echo 0; }
+# `grep -c` exits 1 on no match having already printed `0`, so a bare
+# `|| echo 0` fallback prints it twice — which reads as `0` in an assertion
+# message and as a syntax error in arithmetic. One counter, used by all of
+# them, that answers a number on every path including a missing file.
+count_matching() {  # <pattern> <file>
+  local n
+  n="$(grep -c -- "$1" "$2" 2>/dev/null)" || n=0
+  [[ "$n" =~ ^[0-9]+$ ]] || n=0
+  printf '%s' "$n"
+}
+
+# The two shapes an `up -d` can take, counted apart: one of them is the bug.
+sibling_recreates()  { count_matching '^run --rm .* up -d --remove-orphans' "$DOCKER_STUB_LOG"; }
+in_place_recreates() { count_matching '^compose --project-directory' "$DOCKER_STUB_LOG"; }
+running_services()   { sort "$DOCKER_STUB_RUNNING_FILE" 2>/dev/null | paste -sd, -; }
+every_service()      { printf '%s\n' "$DOCKER_STUB_SERVICES" | sort | paste -sd, -; }
+events_of()   { count_matching "\"event\":\"$1\"" "$log_file"; }
 last_event()  { tail -n 1 "$log_file" 2>/dev/null; }
 
 # --- The variable scan ---------------------------------------------------------
@@ -216,8 +377,87 @@ assert_eq "the verdict names both digests" \
 assert_eq "and the digest it replaced" "1" \
   "$([[ "$(jq -r '.from' <<<"$verdict")" != "$(jq -r '.to' <<<"$verdict")" ]] && echo 1 || echo 0)"
 assert_eq "the project is recreated through the node's own project directory" \
-  "1" "$(grep -c -- "compose --project-directory $project up -d --remove-orphans" "$DOCKER_STUB_LOG")"
-assert_eq "exactly one docker command, never one per service" "1" "$(docker_calls)"
+  "1" "$(count_matching "up -d --remove-orphans.* compose-apply $project " "$DOCKER_STUB_LOG")"
+assert_eq "exactly one recreate, never one per service" "1" "$(sibling_recreates)"
+
+# The whole of agent-ops#1913, in one assertion: `reconciler` is a service of
+# the project this recreates, so an `up -d` run from inside this container
+# stops the process running it and leaves the project part-applied. It took
+# ockham-container's stack down on 2026-09-28.
+assert_eq "the recreate is never run from inside the project it recreates" \
+  "0" "$(in_place_recreates)"
+assert_eq "it is handed to a transient sibling container instead" "1" "$(sibling_recreates)"
+sibling_cmd="$(grep '^run --rm ' "$DOCKER_STUB_LOG" | tail -n 1)"
+assert_contains "which is this very container's own image, by id" \
+  "$DOCKER_STUB_SELF_IMAGE" "$sibling_cmd"
+assert_contains "labelled for what it is" \
+  "com.pullwright.agent-ops.compose-apply" "$sibling_cmd"
+assert_contains "removing itself once the apply is done" "run --rm" "$sibling_cmd"
+# By `--volumes-from`, not by path: the three mounts it needs are this
+# service's own three, and a named volume — which is what carries the state
+# directory — cannot be asked for by path from inside the container holding
+# it, because that path is a mount destination and not anywhere on the host.
+assert_contains "holding this container's own mounts, and only those" \
+  "--volumes-from $DOCKER_STUB_SELF_ID" "$sibling_cmd"
+assert_contains "with no network of its own, like the service that launched it" \
+  "--network none" "$sibling_cmd"
+# The client is attached and its own container is one this `up` stops. With
+# signal proxying left on, a SIGTERM arriving here would be forwarded into the
+# sibling and abort compose half-way through the recreate: agent-ops#1913's
+# own signature, by a different road.
+assert_contains "and no signal of this container's forwarded into it" \
+  "--sig-proxy=false" "$sibling_cmd"
+# Every service in compose.yaml is bounded because an unbounded container on a
+# small host takes the host down, and a `docker run` inherits none of that.
+# Read back from the daemon rather than from AGENT_OPS_RECONCILER_MEMORY and
+# its siblings, which compose interpolates at deploy time and which reach no
+# container's environment.
+assert_contains "under this container's own memory ceiling, read back from the daemon" \
+  "--memory 268435456" "$sibling_cmd"
+assert_contains "its own pids ceiling" "--pids-limit 256" "$sibling_cmd"
+assert_contains "and its own share of the cpu, as the quota that figure is shorthand for" \
+  "--cpu-period 100000 --cpu-quota 50000" "$sibling_cmd"
+assert_contains "writing no third copy of its output to the node's disk" \
+  "--log-driver none" "$sibling_cmd"
+assert_contains "running the Compose CLI over the image's own entrypoint" \
+  "--entrypoint env" "$sibling_cmd"
+# Not tidiness. Compose resolves a `${VAR}` from the process environment ahead
+# of the project's `.env`, and this image's own `ENV` sets `TZ`, which
+# `compose.yaml` interpolates: a sibling holding the image's environment would
+# deploy every service with the image's `TZ` however the node's `.env` is
+# written, quietly moving the hour that node's cron fires — on an apply whose
+# whole claim is to install the merged file byte for byte. The container this
+# runs in escapes it only because its own service declares `TZ: ${TZ:-UTC}`.
+assert_contains "under a cleared environment, so the node's own .env is the only thing interpolation reads" \
+  "-i PATH=" "$sibling_cmd"
+assert_contains "with only the CLI's own needs put back" "HOME=" "$sibling_cmd"
+# Cleared includes DOCKER_HOST, so the CLI inside would fall back to
+# /var/run/docker.sock however the socket was actually mounted. Named here, the
+# mount and the client cannot disagree about where the daemon is.
+assert_contains "the socket it was given among them, named rather than assumed" \
+  "DOCKER_HOST=unix://$socket" "$sibling_cmd"
+# The paths go in as the wrapper's own positional arguments rather than
+# interpolated into it, so nothing in a directory name can be read as shell.
+# shellcheck disable=SC2016  # the sibling's own shell expands the $1, not this one
+assert_contains "and then the Compose CLI itself" \
+  'docker compose --project-directory "$1" up -d --remove-orphans' "$sibling_cmd"
+assert_contains "handed this node's directory and this apply's log, as arguments and not as text" \
+  "compose-apply $project $state/compose-apply.log" "$sibling_cmd"
+# On the apply that matters there is nowhere else for compose's output to go:
+# the client capturing it dies with this container, and `--rm` takes the
+# sibling's own daemon-side log away with the container.
+assert_contains "keeping what compose says in a file that outlives the sibling" \
+  "$state/compose-apply.log" "$sibling_cmd"
+assert_eq "which the apply's own header line opens, so a tick that never came back still left a record" \
+  "1" "$(count_matching 'applying compose.yaml' "$state/compose-apply.log")"
+# The name carries no timestamp on purpose: the `up` starts this container's
+# replacement before the sibling has finished, that replacement's own first
+# tick can fall due seconds later and will want a recreate of its own, and two
+# `docker compose up -d` runs against one project take no lock against each
+# other. A fixed name per node has the daemon refuse the second, which lands as
+# an ordinary deferral.
+assert_contains "named for this node alone, so the name is the backstop mutex and not just a label" \
+  "--name agent-ops-compose-apply-fixture-node " "$sibling_cmd"
 assert_eq "the file keeps its inode — a bind-mounted file pins the inode it was created against" \
   "$before_inode" "$(stat -c %i "$host_file")"
 assert_eq ".env is never written" "$before_env" "$(sha256sum "$env_file" | cut -d' ' -f1)"
@@ -228,6 +468,16 @@ assert_eq "the event carries both digests" \
   "$(jq -r '.to' <<<"$verdict")" "$(jq -r '.to' <<<"$(last_event)")"
 assert_eq "and no fabricated cycle id" "null" "$(jq -r '.cycle' <<<"$(last_event)")"
 assert_eq "and this node's name" "fixture-node" "$(jq -r '.node' <<<"$(last_event)")"
+
+assert_eq "and every service of the project is left running" \
+  "$(every_service)" "$(running_services)"
+
+# An apply that began is a record of its own, ahead of its outcome: a node
+# whose apply dies mid-way must not go on publishing the verdict of the tick
+# before it (agent-ops#1913).
+assert_eq "an apply that began is logged before its outcome" "1" \
+  "$(events_of compose-reconcile-applying)"
+assert_eq "and the outcome after it" "1" "$(events_of compose-reconciled)"
 
 # --- Idempotence ---------------------------------------------------------------
 
@@ -288,27 +538,87 @@ printf '{"pid":1,"started_at":"%s","host":"agent-ops-scheduler"}\n' \
 verdict="$(run_reconcile 2026-09-11T00:15:00Z)"
 assert_eq "a stale lock defers nothing" "reconciled" "$(jq -r '.status' <<<"$verdict")"
 
-# --- roll-pending, and its scope ----------------------------------------------
+# --- A roll falling due -------------------------------------------------------
+# The marker deploy/docker/watchtower-pre-update.sh reads as "you may destroy
+# this container" is read here as "stand back": watchtower and this library
+# recreate the same containers, and on ockham-container on 2026-09-28 the two
+# were racing to recreate the same five within one second, with nothing
+# surviving to say which stop was whose (agent-ops#1913). What bounds the wait
+# is this node's own patience, not the marker: `chain_write_roll_pending`
+# re-arms it at every cycle boundary whose image still reads behind, so a node
+# whose roll cannot land carries a live marker for as long as that lasts.
+
+reset_fixture
+printf '{"until":"%s"}\n' "$(date -u -d '30 minutes' +%Y-%m-%dT%H:%M:%SZ)" > "$state/roll-pending.json"
+host_before="$(sha256sum "$host_file" | cut -d' ' -f1)"
+verdict="$(run_reconcile)"
+assert_eq "a live roll-pending marker defers, with no lock held at all" \
+  "deferred" "$(jq -r '.status' <<<"$verdict")"
+assert_contains "and says a roll is what it is waiting for" "roll" "$(jq -r '.reason' <<<"$verdict")"
+assert_eq "and nothing is applied" "$host_before" "$(sha256sum "$host_file" | cut -d' ' -f1)"
+assert_eq "and nothing is recreated" "0" "$(sibling_recreates)"
+# The window the marker names moves forward every time a cycle boundary
+# re-arms it. In `reason` it would make each of those a fresh transition in a
+# log replicated to every peer, and would reset the very timestamp the bound
+# below is measured from; `detail` is the field the transition test does not
+# compare, which is where anything that varies while the state does not
+# belongs.
+assert_eq "the reason names the state and nothing that moves under it" \
+  "$COMPOSE_RECONCILE_ROLL_REASON" "$(jq -r '.reason' <<<"$verdict")"
+assert_contains "and the window the marker actually names rides in detail" \
+  "in force until" "$(jq -r '.detail' <<<"$verdict")"
+assert_eq "the wait is timed from the tick it began on" \
+  "2026-09-11T00:00:00Z" "$(jq -r '.since' <<<"$verdict")"
+
+# Three hours in, inside this fixture's own `lock_stale_after` of four, and
+# with the marker re-armed in between exactly as a cycle boundary re-arms it.
+printf '{"until":"%s"}\n' "$(date -u -d '45 minutes' +%Y-%m-%dT%H:%M:%SZ)" > "$state/roll-pending.json"
+verdict="$(run_reconcile 2026-09-11T03:00:00Z)"
+assert_eq "a re-armed marker is the same wait, not a new one" \
+  "deferred" "$(jq -r '.status' <<<"$verdict")"
+assert_eq "still timed from the tick it began on" \
+  "2026-09-11T00:00:00Z" "$(jq -r '.since' <<<"$verdict")"
+assert_eq "and logged once, not once per cycle boundary" \
+  "1" "$(events_of compose-reconcile-deferred)"
+assert_eq "and still nothing applied" "$host_before" "$(sha256sum "$host_file" | cut -d' ' -f1)"
+
+# Past it. A marker that has been re-armed for longer than a cycle lock would
+# be honoured is not a roll that is coming, and a node that went on waiting on
+# it would run a compose.yaml none of its containers came from for as long as
+# whatever is stopping the roll lasts — up to and including the merged file
+# that would fix it.
+verdict="$(run_reconcile 2026-09-11T05:00:00Z)"
+assert_eq "a wait longer than lock_stale_after stops honouring the marker" \
+  "reconciled" "$(jq -r '.status' <<<"$verdict")"
+assert_eq "and every service of the project is running afterwards" \
+  "$(every_service)" "$(running_services)"
+rm -f "$state/roll-pending.json"
 
 reset_fixture
 lock_now > "$state/lock.json"
 printf '{"until":"%s"}\n' "$(date -u -d '30 minutes' +%Y-%m-%dT%H:%M:%SZ)" > "$state/roll-pending.json"
 verdict="$(run_reconcile)"
-assert_eq "a live roll-pending marker overrides lock.json, as it does for a roll" \
-  "reconciled" "$(jq -r '.status' <<<"$verdict")"
+assert_eq "and a held lock.json is one more reason to wait, never an override of one" \
+  "deferred" "$(jq -r '.status' <<<"$verdict")"
 
 reset_fixture
 lock_now > "$state/review-lock.json"
 printf '{"until":"%s"}\n' "$(date -u -d '30 minutes' +%Y-%m-%dT%H:%M:%SZ)" > "$state/roll-pending.json"
 verdict="$(run_reconcile)"
-assert_eq "it never overrides review-lock.json — review-cycle.sh never wrote it and never yielded anything" \
+assert_eq "review-lock.json defers regardless, as it always has" \
   "deferred" "$(jq -r '.status' <<<"$verdict")"
 
 reset_fixture
-lock_now > "$state/lock.json"
 printf '{"until":"%s"}\n' "$(date -u -d '30 minutes ago' +%Y-%m-%dT%H:%M:%SZ)" > "$state/roll-pending.json"
 verdict="$(run_reconcile)"
-assert_eq "an expired marker overrides nothing" "deferred" "$(jq -r '.status' <<<"$verdict")"
+assert_eq "an expired marker holds nothing back — the roll it named has landed" \
+  "reconciled" "$(jq -r '.status' <<<"$verdict")"
+
+reset_fixture
+printf '{"until":"not a date"}\n' > "$state/roll-pending.json"
+verdict="$(run_reconcile)"
+assert_eq "and neither does one whose 'until' will not parse" \
+  "reconciled" "$(jq -r '.status' <<<"$verdict")"
 
 # --- A recreate that failed ----------------------------------------------------
 # The file is installed before `up -d` runs, so drift reads in-sync from that
@@ -322,7 +632,7 @@ export DOCKER_STUB_RC
 verdict="$(run_reconcile)"
 assert_eq "a failed recreate defers rather than refusing — it is retried" \
   "deferred" "$(jq -r '.status' <<<"$verdict")"
-assert_contains "and says what docker exited with" "exited 1" "$(jq -r '.reason' <<<"$verdict")"
+assert_contains "and says what the recreate exited with" "exited 1" "$(jq -r '.reason' <<<"$verdict")"
 assert_contains "carrying docker's own last line as detail, not as the reason" \
   "Recreated" "$(jq -r '.detail' <<<"$verdict")"
 assert_eq "the file is installed regardless, so drift alone can no longer ask" \
@@ -335,13 +645,158 @@ run_reconcile 2026-09-11T00:10:00Z >/dev/null
 assert_eq "a repeated failure whose docker output differs is still one event" \
   "1" "$(events_of compose-reconcile-deferred)"
 
+# A lock taken, or a roll falling due, between the install and the retry
+# postpones that retry; it must never discard it. The file is already
+# installed by this point, so drift reads in-sync from here on and
+# `pending_apply` is the only thing left that can ask for the recreate — a
+# deferral that dropped it would leave the node running a compose.yaml none
+# of its containers came from, for ever, in silence.
+lock_now > "$state/lock.json"
+verdict="$(run_reconcile 2026-09-11T00:12:00Z)"
+assert_eq "a cycle starting mid-retry defers it" "deferred" "$(jq -r '.status' <<<"$verdict")"
+assert_contains "naming the cycle, not the recreate" "implementation cycle" "$(jq -r '.reason' <<<"$verdict")"
+assert_eq "and keeps the retry rather than dropping it" "true" "$(jq -r '.pending_apply' "$marker")"
+assert_eq "and the digests the apply is carrying with it" \
+  "$(sha256sum "$image_file" | cut -d' ' -f1)" "$(jq -r '.to' "$marker")"
+rm -f "$state/lock.json"
+
 unset DOCKER_STUB_RC
 : > "$DOCKER_STUB_LOG"
 verdict="$(run_reconcile 2026-09-11T00:15:00Z)"
 assert_eq "the next tick retries the recreate even though there is no drift left" \
   "reconciled" "$(jq -r '.status' <<<"$verdict")"
-assert_eq "and does recreate" "1" "$(docker_calls)"
+assert_eq "and does recreate" "1" "$(sibling_recreates)"
 assert_eq "and the retry state is cleared" "null" "$(jq -r '.pending_apply // null' "$marker")"
+
+# --- The apply that recreates this very container ------------------------------
+# The case agent-ops#1913 was filed over, and the one every real apply is:
+# the compose change that drifted arrives on the same image roll that carries
+# it, so `reconciler` is always among the services the apply recreates. The
+# `up` therefore stops the container the tick is running in — modelled here
+# exactly, by ending that tick where the recreate would — and what has to
+# survive it is the project, not the tick.
+
+reset_fixture
+run_reconcile_killed
+assert_eq "the tick that asked for the recreate does not live to settle it" \
+  "applying" "$(jq -r '.status' "$marker")"
+assert_eq "and says so before the recreate rather than after it, so no heartbeat reads the previous verdict through an apply" \
+  "true" "$(jq -r '.pending_apply' "$marker")"
+assert_eq "naming the file it installed" \
+  "$(sha256sum "$image_file" | cut -d' ' -f1)" "$(jq -r '.to' "$marker")"
+assert_eq "an apply that began is on the record even when nothing finished it" \
+  "1" "$(events_of compose-reconcile-applying)"
+assert_eq "and nothing claims it finished" "0" "$(events_of compose-reconciled)"
+assert_eq "the recreate was never run from inside the project" "0" "$(in_place_recreates)"
+
+# The acceptance criterion itself.
+assert_eq "and every service of the project is running when it is over" \
+  "$(every_service)" "$(running_services)"
+
+# The successor, in the container the recreate created. Its own drift check
+# reads in-sync — the file was installed before anything was recreated — so
+# the marker is the only thing left that can ask, which is why it is written
+# first.
+: > "$DOCKER_STUB_LOG"
+verdict="$(run_reconcile 2026-09-11T00:05:00Z)"
+assert_eq "the next tick finishes what its predecessor started" \
+  "reconciled" "$(jq -r '.status' <<<"$verdict")"
+# The file was installed before anything was recreated, so by now the host
+# copy holds the digest the apply arrived at, not the one it replaced. The
+# marker holds that one, which is why `from` is written to it before the
+# install: without it the verdict that closes every real apply names the same
+# file twice and the digest it replaced is gone.
+assert_eq "naming the digest the apply replaced, which the host file no longer holds" \
+  "1" "$([[ -n "$(jq -r '.from // ""' <<<"$verdict")" \
+           && "$(jq -r '.from' <<<"$verdict")" != "$(jq -r '.to' <<<"$verdict")" ]] && echo 1 || echo 0)"
+assert_eq "and the event with it" \
+  "1" "$([[ "$(jq -r '.from' <<<"$(last_event)")" != "$(jq -r '.to' <<<"$(last_event)")" ]] && echo 1 || echo 0)"
+assert_eq "retrying the recreate rather than trusting it" "1" "$(sibling_recreates)"
+assert_eq "and clearing the retry once it has actually returned" \
+  "null" "$(jq -r '.pending_apply // null' "$marker")"
+assert_eq "with the project still running" "$(every_service)" "$(running_services)"
+assert_eq "one applying event across the two ticks, not one per tick" \
+  "1" "$(events_of compose-reconcile-applying)"
+assert_eq "and one reconciled event to close it" "1" "$(events_of compose-reconciled)"
+
+# --- An apply of this node's already running -----------------------------------
+# The marker is what deploy/docker/watchtower-pre-update.sh reads to keep a
+# roll off a project mid-recreate, so while the sibling is alive nothing may
+# write any other verdict over it: not the `name is already in use` a second
+# `docker run` would earn, not a lock taken meanwhile, not a roll falling due.
+# Any of those would clear the guard in the middle of the recreate it exists to
+# protect, and watchtower's next poll is five minutes away at most.
+
+reset_fixture
+DOCKER_STUB_RC=1
+export DOCKER_STUB_RC
+run_reconcile >/dev/null                      # installs, the recreate fails, retry pending
+unset DOCKER_STUB_RC
+: > "$DOCKER_STUB_LOG"
+DOCKER_STUB_SIBLING_ID=f6e5d4c3b2a1
+lock_now > "$state/lock.json"
+printf '{"until":"%s"}\n' "$(date -u -d '30 minutes' +%Y-%m-%dT%H:%M:%SZ)" > "$state/roll-pending.json"
+verdict="$(run_reconcile 2026-09-11T00:05:00Z)"
+assert_eq "a tick that finds this node's own apply still running says applying" \
+  "applying" "$(jq -r '.status' <<<"$verdict")"
+assert_eq "although a lock and a due roll would each have deferred it otherwise" \
+  "true" "$(jq -r '.pending_apply' <<<"$verdict")"
+assert_eq "with a fresh timestamp, so the hook reads a live apply and not a stale one" \
+  "2026-09-11T00:05:00Z" "$(jq -r '.at' <<<"$verdict")"
+assert_eq "still carrying the digests the apply is applying" \
+  "$(sha256sum "$image_file" | cut -d' ' -f1)" "$(jq -r '.to' <<<"$verdict")"
+assert_eq "and starting no second recreate over the top of the first" \
+  "0" "$(sibling_recreates)"
+assert_eq "and logging nothing, because it is the same apply and not a new one" \
+  "1" "$(events_of compose-reconcile-applying)"
+DOCKER_STUB_SIBLING_ID=""
+rm -f "$state/lock.json" "$state/roll-pending.json"
+
+# And once it is over, the tick after settles it as it always would.
+: > "$DOCKER_STUB_LOG"
+verdict="$(run_reconcile 2026-09-11T00:10:00Z)"
+assert_eq "the tick after the sibling has gone finishes the apply" \
+  "reconciled" "$(jq -r '.status' <<<"$verdict")"
+
+# --- A project directory spelt with a trailing slash ---------------------------
+# Compose cleans the path with `filepath.Abs` before it writes it as a label,
+# so a node whose `.env` reads `AGENT_OPS_PROJECT_DIR=/srv/agent-ops/` runs
+# perfectly well and is labelled `/srv/agent-ops`. Matched raw, that node would
+# defer on every tick with "cannot identify itself", pointing an operator at
+# the daemon rather than at the spelling of one line of `.env`.
+
+reset_fixture
+verdict="$(COMPOSE_RECONCILE_PROJECT_DIR="$project/" \
+  COMPOSE_RECONCILE_IMAGE_FILE="$image_file" COMPOSE_RECONCILE_STATE_DIR="$state" \
+  COMPOSE_RECONCILE_CONFIG="$config" COMPOSE_RECONCILE_DOCKER="$bin/docker" \
+  COMPOSE_RECONCILE_DOCKER_SOCKET="$socket" COMPOSE_RECONCILE_NOW=2026-09-11T00:00:00Z \
+  NODE_NAME=fixture-node compose_reconcile_run)"
+assert_eq "a trailing slash is the same directory and reconciles" \
+  "reconciled" "$(jq -r '.status' <<<"$verdict")"
+assert_eq "because the lookup asks for the path compose would have cleaned it to" \
+  "1" "$(count_matching "working_dir=$project --filter" "$DOCKER_STUB_LOG")"
+
+# --- A container that cannot find itself --------------------------------------
+# The sibling runs this container's own image, and the only way to that image
+# is the daemon: `$HOSTNAME` is the container's short id at creation, but
+# watchtower clones `Config.Hostname` forward across a roll, so after one it
+# names a container that no longer exists. When the lookup comes up empty
+# there is no sibling to hand the recreate to — and the one thing that must
+# not happen then is running it here after all.
+
+reset_fixture
+host_before="$(sha256sum "$host_file" | cut -d' ' -f1)"
+saved_self_id="$DOCKER_STUB_SELF_ID"
+DOCKER_STUB_SELF_ID=""
+verdict="$(run_reconcile)"
+assert_eq "a container that cannot identify itself defers" \
+  "deferred" "$(jq -r '.status' <<<"$verdict")"
+assert_contains "and says why" "cannot identify itself" "$(jq -r '.reason' <<<"$verdict")"
+assert_eq "installing nothing it has no way to apply" \
+  "$host_before" "$(sha256sum "$host_file" | cut -d' ' -f1)"
+assert_eq "and falling back to no recreate at all, least of all one from in here" \
+  "0" "$(( $(sibling_recreates) + $(in_place_recreates) ))"
+DOCKER_STUB_SELF_ID="$saved_self_id"
 
 # --- A node that is not configured for this ------------------------------------
 

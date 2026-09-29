@@ -317,6 +317,26 @@ fi
 notify_webhook_url_resolved="$(notify_resolve_webhook_url "$notify_webhook_url_raw" "$escalation_webhook_url_raw" \
   "$(notify_webhook_url_env_or_empty "$notify_webhook_url_env")")"
 
+# STATE_SYNC_STREAMS_RETAINED (agent-ops#1826): the per-node form of
+# `state_local_streams_retained`, forwarded from `.env` by
+# deploy/docker/compose.yaml and read ahead of the key by scripts/state-sync.sh.
+# Reported whenever it is set, because config.json is built into the image
+# every node runs and a later fleet-wide change to the key silently misses
+# every node whose .env overrides it. A value state-sync.sh would ignore is a
+# `warn` — the node then keeps the configured count and says so nowhere but a
+# push's own output — and so is a value set where no push ever runs.
+state_sync_streams_retained_env="${STATE_SYNC_STREAMS_RETAINED:-}"
+if [[ -n "$state_sync_streams_retained_env" ]]; then
+  state_local_streams_retained_cfg="$(cfg '.state_local_streams_retained')"
+  if [[ ! "$state_sync_streams_retained_env" =~ ^[1-9][0-9]{0,8}$ ]]; then
+    warn "STATE_SYNC_STREAMS_RETAINED='$state_sync_streams_retained_env' is not a positive integer — scripts/state-sync.sh ignores it and config.json's state_local_streams_retained ($state_local_streams_retained_cfg) governs this node"
+  elif [[ -z "$(cfg '.state_repo')" ]]; then
+    warn "STATE_SYNC_STREAMS_RETAINED=$state_sync_streams_retained_env is set but state_repo is unset, so no push runs and neither it nor state_local_streams_retained prunes anything on this node (agent-ops#1936)"
+  else
+    ok "STATE_SYNC_STREAMS_RETAINED=$state_sync_streams_retained_env overrides config.json's state_local_streams_retained ($state_local_streams_retained_cfg) on this node — the derived files of the newest $state_sync_streams_retained_env cycles and the newest $state_sync_streams_retained_env reviews are kept"
+  fi
+fi
+
 # The rules below are the ones the schema cannot state, because each holds
 # between two keys rather than about one. A `fail` here mirrors a startup guard
 # in agent-cycle.sh — the cycle would refuse to run; a `warn` is a combination
@@ -800,10 +820,21 @@ done
 # name would have a pipeline stage apply the corroboration itself — pr_label
 # alone is projected onto every draft the Implementer raises. Case-insensitive,
 # as the guard reads labels.
+#
+# `pw::type:tech-debt` is reserved the same way, for a third reason
+# (lib/labels.sh's catalogue header): it is D24's trust anchor for tech debt
+# filed as a GitHub issue rather than an in-repo register record — only a
+# collaborator with triage rights can apply a label, so an issue's membership
+# of the `tech-debt` work band is trustable even though its body stays
+# untrusted data. A configured label key pointed at that exact name would
+# have the pipeline itself apply the anchor, defeating it.
 for key in pr_label enabler_escalation_label needs_refinement_label refined_label unvoid_label; do
   label_name="$(cfg ".$key // \"\"")"
   if [[ "${label_name,,}" == "obsolete" ]]; then
     fail "$key is \"$label_name\" — the obsolete label is a human's own corroboration for closing a draft pull request (requirement 34k), and a stage projecting it as a configured label would corroborate the pipeline's own voids"
+  fi
+  if [[ "${label_name,,}" == "pw::type:tech-debt" ]]; then
+    fail "$key is \"$label_name\" — pw::type:tech-debt is D24's trust anchor for tech debt filed as a GitHub issue, and a stage projecting it as a configured label would apply that anchor itself"
   fi
 done
 
@@ -814,6 +845,9 @@ while IFS= read -r review_label; do
   [[ -n "$review_label" ]] || continue
   if [[ "${review_label,,}" == "obsolete" ]]; then
     fail "repository_review pr_label is \"$review_label\" — the obsolete label is a human's own corroboration for closing a draft pull request (requirement 34k), and a stage projecting it as a configured label would corroborate the pipeline's own voids"
+  fi
+  if [[ "${review_label,,}" == "pw::type:tech-debt" ]]; then
+    fail "repository_review pr_label is \"$review_label\" — pw::type:tech-debt is D24's trust anchor for tech debt filed as a GitHub issue, and a stage projecting it as a configured label would apply that anchor itself"
   fi
 done < <(jq -r '[(.repository_review.defaults.pr_label // ""),
                  ((.repository_review.repos // [])[] | .pr_label // empty)]
@@ -1045,6 +1079,25 @@ workspace_root="$(cfg '.workspace_root')"
 # "low" means.
 min_free_workspace_bytes="$(cfg '.min_free_workspace_bytes')"
 [[ "$min_free_workspace_bytes" =~ ^[0-9]+$ ]] || min_free_workspace_bytes=$(( 2 * 1024 * 1024 * 1024 ))
+# The same derivation requirement 2.0c's own gate applies over that floor
+# (agent-ops#904): `workspace_headroom_factor` × the largest `clone-footprint`
+# this fleet has recorded, read back from the same union-of-nodes log the
+# gate reads, so this warning and that gate cannot silently disagree about
+# which bound governs either.
+workspace_headroom_factor="$(cfg '.workspace_headroom_factor')"
+[[ "$workspace_headroom_factor" =~ ^[0-9]+$ ]] || workspace_headroom_factor=2
+doctor_footprint_line="$(fleet_logs "$state_dir" "$(fleet_peers_dir "$workspace_root")" log.jsonl \
+  | disk_space_largest_footprint)"
+if [[ "$doctor_footprint_line" == *$'\t'* ]]; then
+  doctor_footprint_bytes="${doctor_footprint_line%%$'\t'*}"
+  doctor_footprint_repo="${doctor_footprint_line#*$'\t'}"
+else
+  doctor_footprint_bytes=""
+  doctor_footprint_repo=""
+fi
+doctor_effective_min_bytes="$(disk_space_effective_min_bytes \
+  "$min_free_workspace_bytes" "$workspace_headroom_factor" "$doctor_footprint_bytes")"
+doctor_governed_by="$(disk_space_governed_by "$min_free_workspace_bytes" "$doctor_effective_min_bytes")"
 for entry in "state_dir=$state_dir" "workspace_root=$workspace_root"; do
   key="${entry%%=*}"
   dir="${entry#*=}"
@@ -1052,8 +1105,9 @@ for entry in "state_dir=$state_dir" "workspace_root=$workspace_root"; do
     fail "$key is not set"
   elif mkdir -p "$dir" 2>/dev/null && [[ -w "$dir" ]]; then
     avail_kb="$(disk_space_free_kb "$dir")"
-    if [[ "$(disk_space_verdict "$avail_kb" "$min_free_workspace_bytes")" == "low" ]]; then
-      warn "$key: $(disk_space_describe "$dir" "$avail_kb" "$min_free_workspace_bytes")"
+    if [[ "$(disk_space_verdict "$avail_kb" "$doctor_effective_min_bytes")" == "low" ]]; then
+      warn "$key: $(disk_space_describe "$dir" "$avail_kb" "$doctor_effective_min_bytes" \
+        "$doctor_governed_by" "$doctor_footprint_repo" "$doctor_footprint_bytes" "$workspace_headroom_factor")"
     else
       ok "$key ($dir) is writable"
     fi

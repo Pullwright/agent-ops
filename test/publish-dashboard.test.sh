@@ -3926,6 +3926,25 @@ assert_eq "changing only --now still rebuilds, even though nothing on disk moved
 assert_eq "--now pins the landing digest: 2 days after the arm, it has aged out of the 24h window" \
   "0" "$(jq -r '.landings.armed | length' <<<"$ldata")"
 
+# --- The landing-refused digest carries the class field through (TD-PPagop-
+#     26082823, issue #1017) ------------------------------------------------
+# `dashboard/index.html`'s `byReason` groups on `.class`, but only if this
+# script's own `refused` projection actually forwards the field from the raw
+# `landing-refused` event into the digest — dropped silently here, the field
+# would never reach the page no matter how correctly lib/landing.sh logs it.
+now_lr="$(new_home nodeNowLandingRefused)"
+printf '{"ts":"2026-08-22T01:00:00Z","cycle":"c1","node":"nodeNowLandingRefused","event":"landing-refused","repo":"acme/widgets","pr_url":"https://github.com/acme/widgets/pull/2","class":"merge-queue-occupied","reason":"already in the merge queue"}\n{"ts":"2026-08-22T01:05:00Z","cycle":"c1","node":"nodeNowLandingRefused","event":"landing-refused","repo":"acme/widgets","pr_url":"https://github.com/acme/widgets/pull/3","reason":"kill-switch:merge_autonomy kill switch is engaged fleet-wide"}\n' \
+  > "$now_lr/.local/state/poetic-agents/log.jsonl"
+
+run_publish_now "$now_lr" "2026-08-22T05:00:00Z"
+lrdata="$(data_of "$now_lr")"
+assert_eq "the digest's own refused projection carries the class field through" \
+  '"merge-queue-occupied"' \
+  "$(jq -c '.landings.refused[] | select(.pr_url == "https://github.com/acme/widgets/pull/2") | .class' <<<"$lrdata")"
+assert_eq "  ... and reads null, never omitted, for a refusal logged before the field existed" \
+  "null" \
+  "$(jq -c '.landings.refused[] | select(.pr_url == "https://github.com/acme/widgets/pull/3") | .class' <<<"$lrdata")"
+
 # --- stamp.js: the client-visible fingerprint dashboard tabs poll (#1288) ------
 # Before this, every open tab re-downloaded the whole multi-MB data.js on
 # every refresh tick, unconditionally — roughly 45 GB/day per tab left open.

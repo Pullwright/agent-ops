@@ -59,24 +59,30 @@ if [[ "$entry_build_block" != *'entry_docs'* || "$entry_build_block" != *'human_
 fi
 
 run_entry_build() {  # run_entry_build <slug> <default_branch> <sources-json> <ipp>
+  #                     <report_directory> <report_directory_resolved>
   #                     <findings> <review_feedback> <abandoned_drafts>
   #                     <merge_conflicts> <dequeued> <landing_refusals>
   #                     <issues>
   #                     <tech_debt> [issues_excluded]
   # Every one of these is consumed only by the eval'd entry_build_block,
   # invisible to shellcheck, including the `entry` it assigns.
-  # shellcheck disable=SC2034
+  # `report_directory`/`report_directory_resolved` are set again, unrelated,
+  # by run_report_directory_resolve below; shellcheck's SC2030/SC2031 pairing
+  # conflates the two subshells as one variable leaking, which it is not —
+  # each is local to its own.
+  # shellcheck disable=SC2034,SC2030
   ( slug="$1" default_branch="$2" sources="$3" implementation_plan_path="$4" \
-    findings="$5" review_feedback="$6" abandoned_drafts="$7" merge_conflicts="$8" \
-    dequeued="$9" landing_refusals="${10}" issues="${11}" tech_debt="${12}" \
-    issues_excluded="${13:-[]}"
+    report_directory="$5" report_directory_resolved="$6" \
+    findings="$7" review_feedback="$8" abandoned_drafts="$9" merge_conflicts="${10}" \
+    dequeued="${11}" landing_refusals="${12}" issues="${13}" tech_debt="${14}" \
+    issues_excluded="${15:-[]}"
     eval "$entry_build_block"
     # shellcheck disable=SC2154
     printf '%s' "$entry" )
 }
 
 # --- The ordinary case: every band present, one item apiece -----------------
-out="$(run_entry_build "o/r" "main" '["tech-debt"]' "" \
+out="$(run_entry_build "o/r" "main" '["tech-debt"]' "" "" "" \
   '[{"source":"security","ref":"dependabot-alert-1"}]' \
   '[{"source":"review-feedback","ref":"pr-1-review-1"}]' \
   '[{"source":"abandoned-drafts","ref":"pr-2-abandoned-aa"}]' \
@@ -103,11 +109,123 @@ assert_eq "tech_debt carries through" "TD1" "$(jq -r '.tech_debt[0].ref' <<<"$ou
 assert_eq "human_visibility starts empty — always filled in later" "[]" "$(jq -c '.human_visibility' <<<"$out")"
 assert_eq "no implementation_plan_path key when the source isn't configured" "false" \
   "$(jq 'has("implementation_plan_path")' <<<"$out")"
+assert_eq "no report_directory key when the source isn't configured" "false" \
+  "$(jq 'has("report_directory")' <<<"$out")"
+assert_eq "no report_directory_resolved key when the source isn't configured" "false" \
+  "$(jq 'has("report_directory_resolved")' <<<"$out")"
 
-out_ipp="$(run_entry_build "o/r" "main" '["implementation-plan"]' "W10-breach-handling" \
+out_ipp="$(run_entry_build "o/r" "main" '["implementation-plan"]' "W10-breach-handling" "" "" \
   '[]' '[]' '[]' '[]' '[]' '[]' '[]' '[]')"
 assert_eq "implementation_plan_path is added when the source is configured" "W10-breach-handling" \
   "$(jq -r '.implementation_plan_path' <<<"$out_ipp")"
+assert_eq "  ... and report_directory stays absent, since project-review isn't configured" "false" \
+  "$(jq 'has("report_directory")' <<<"$out_ipp")"
+
+out_rd="$(run_entry_build "o/r" "main" '["project-review"]' "" "custom/%Y-review" "" \
+  '[]' '[]' '[]' '[]' '[]' '[]' '[]' '[]')"
+assert_eq "report_directory is added when the source is configured" "custom/%Y-review" \
+  "$(jq -r '.report_directory' <<<"$out_rd")"
+assert_eq "  ... and implementation_plan_path stays absent, since implementation-plan isn't configured" "false" \
+  "$(jq 'has("implementation_plan_path")' <<<"$out_rd")"
+assert_eq "  ... and report_directory_resolved stays absent when nothing resolved (the entry build's own passthrough, not the resolution itself)" "false" \
+  "$(jq 'has("report_directory_resolved")' <<<"$out_rd")"
+
+out_rdr="$(run_entry_build "o/r" "main" '["project-review"]' "" "custom/%Y-review" "custom/2026-review" \
+  '[]' '[]' '[]' '[]' '[]' '[]' '[]' '[]')"
+assert_eq "report_directory_resolved is added alongside report_directory when a resolved path is given" "custom/2026-review" \
+  "$(jq -r '.report_directory_resolved' <<<"$out_rdr")"
+
+# --- report_directory resolution (issue #1018), extended with the resolved-
+# --- path field it now also computes (issue #1891) --------------------------
+# The passthrough assertions above set `report_directory` as a given input,
+# the same way `implementation_plan_path` already is — proving only that the
+# entry build carries an already-resolved value through. This section instead
+# lifts the resolution itself: the block that decides *what* value a repo's
+# `report_directory` takes, against a fixture `report_directory_repos_json`
+# standing in for `config_repository_review_repos`'s own output (that
+# function's resolution rule — a repo's own key wins, `defaults`' otherwise,
+# absent both resolves empty — is `test/config-schema.test.sh`'s to cover;
+# this only proves the gather loop reads that output correctly and applies
+# the shipped fallback), plus the `report_directory_most_recent` call
+# (`lib/report-directory.sh`) that turns that format string into
+# `report_directory_resolved`, the latest existing folder's own path.
+# shellcheck source=lib/report-directory.sh
+. "$SCRIPT_DIR/lib/report-directory.sh"
+
+report_directory_block="$(awk '
+  index($0, "  report_directory=\"\"") == 1 { on = 1 }
+  on                                        { print }
+  on && $0 == "  fi" { exit }
+' "$SCRIPT_DIR/lib/candidate-gather.sh")"
+if [[ "$report_directory_block" != *'report_directory_repos_json'* \
+   || "$report_directory_block" != *'REPORT_DIRECTORY_DEFAULT'* \
+   || "$report_directory_block" != *'report_directory_most_recent'* ]]; then
+  printf 'FAIL - could not extract the report_directory resolution from lib/candidate-gather.sh (moved or reworded?)\n'
+  exit 1
+fi
+
+# --- A stub `gh`, the same shape test/report-directory.test.sh uses — only
+# --- for the one path this section's fixtures actually list (`custom/`,
+# --- against the current year, so the fixture never goes stale — see that
+# --- file's own header for why a hardcoded calendar year is never used here).
+rd_year="$(date -u +%Y)"
+rd_tmp_dir="$(mktemp -d)"
+trap 'rm -rf "$rd_tmp_dir"' EXIT
+mkdir -p "$rd_tmp_dir/bin"
+cat >"$rd_tmp_dir/bin/gh" <<STUB
+#!/usr/bin/env bash
+set -uo pipefail
+[[ "\${1:-}" == "api" ]] || { echo "stub gh: unexpected call: \$*" >&2; exit 1; }
+case "\${2:-}" in
+  repos/o/r/contents/custom\\?ref=main)
+    echo '[{"name":"$rd_year-review","type":"dir"}]'
+    ;;
+  *)
+    echo "stub gh: unexpected call: \$*" >&2
+    exit 1
+    ;;
+esac
+STUB
+chmod +x "$rd_tmp_dir/bin/gh"
+export PATH="$rd_tmp_dir/bin:$PATH"
+
+run_report_directory_resolve() {  # run_report_directory_resolve <slug> <default_branch>
+                                  #   <sources-json> <report_directory_repos_json>
+  # Prints "<report_directory>\t<report_directory_resolved>".
+  # shellcheck disable=SC2034
+  ( slug="$1" default_branch="$2" sources="$3" report_directory_repos_json="$4"
+    eval "$report_directory_block"
+    # `report_directory`/`report_directory_resolved` here are this subshell's
+    # own copies, assigned by the eval'd block above — not the unrelated ones
+    # run_entry_build sets in its own subshell (SC2154/SC2031 both false
+    # positives from the same cross-subshell name conflation noted there).
+    # shellcheck disable=SC2154,SC2031
+    printf '%s\t%s' "$report_directory" "$report_directory_resolved" )
+}
+
+assert_eq "a repo with its own configured report_directory resolves to it" "custom/%Y-review" \
+  "$(run_report_directory_resolve "o/r" "main" '["project-review"]' \
+     '[{"slug":"o/r","report_directory":"custom/%Y-review"}]' | cut -f1)"
+assert_eq "  ... and report_directory_resolved is the latest existing folder that format names" \
+  "custom/$rd_year-review" \
+  "$(run_report_directory_resolve "o/r" "main" '["project-review"]' \
+     '[{"slug":"o/r","report_directory":"custom/%Y-review"}]' | cut -f2)"
+assert_eq "a repo with none configured (empty string from config_repository_review_repos) falls back to the shipped default" \
+  "$REPORT_DIRECTORY_DEFAULT" \
+  "$(run_report_directory_resolve "o/r" "main" '["project-review"]' \
+     '[{"slug":"o/r","report_directory":""}]' | cut -f1)"
+assert_eq "a repo absent from report_directory_repos_json entirely also falls back to the shipped default" \
+  "$REPORT_DIRECTORY_DEFAULT" \
+  "$(run_report_directory_resolve "o/r" "main" '["project-review"]' '[]' | cut -f1)"
+assert_eq "  ... and report_directory_resolved stays empty when nothing exists yet to resolve to (no reviews/ stub)" \
+  "" \
+  "$(run_report_directory_resolve "o/r" "main" '["project-review"]' '[]' | cut -f2)"
+assert_eq "a repo that doesn't list project-review resolves to nothing at all, configured or not" "" \
+  "$(run_report_directory_resolve "o/r" "main" '["tech-debt"]' \
+     '[{"slug":"o/r","report_directory":"custom/%Y-review"}]' | cut -f1)"
+assert_eq "  ... and report_directory_resolved resolves to nothing either" "" \
+  "$(run_report_directory_resolve "o/r" "main" '["tech-debt"]' \
+     '[{"slug":"o/r","report_directory":"custom/%Y-review"}]' | cut -f2)"
 
 # --- The argv cap (requirement 4g, TD-PPagop-26081406) ---------------------
 # One band alone (issues, carrying a whole pre-fetched thread) pushed past
@@ -118,7 +236,7 @@ big_issues="$(printf '[{"source": "issues", "ref": "99", "body": "%s"}]' "$overs
 assert_eq "the oversized issues-band fixture really is past MAX_ARG_STRLEN" "1" \
   "$(( ${#big_issues} > 131072 ))"
 
-out_big="$(run_entry_build "o/r" "main" '["issues"]' "" \
+out_big="$(run_entry_build "o/r" "main" '["issues"]' "" "" "" \
   '[]' '[]' '[]' '[]' '[]' '[]' "$big_issues" '[]')"
 assert_eq "an oversized issues band still produces the entry" "o/r" "$(jq -r '.slug' <<<"$out_big")"
 # Bash string matching, not grep -F with the oversized string as an
@@ -193,7 +311,7 @@ run_cache_build() {  # run_cache_build <state_dir> <slug> <findings_raw>
 }
 
 cache_state="$(mktemp -d)"
-trap 'rm -rf "$cache_state"' EXIT
+trap 'rm -rf "$cache_state" "$rd_tmp_dir"' EXIT
 
 oversized_td_body="$(head -c 140000 < /dev/zero | tr '\0' 'x')"
 big_tech_debt="$(printf '[{"source": "tech-debt", "ref": "TD1", "body": "%s"}]' "$oversized_td_body")"

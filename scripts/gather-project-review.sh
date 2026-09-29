@@ -8,15 +8,16 @@
 #
 # ## --current-date (requirement 34n's review-superseded signal, TD-PPagop-26082309)
 #
-# With this flag first, the script performs only the `reviews/` listing —
-# never fetching `03-recommendations.md`/`04-improvement-prompts.md` — and
-# prints one JSON object instead of the candidate array, then exits 0:
+# With this flag first, the script performs only the report directory's own
+# listing — never fetching `03-recommendations.md`/`04-improvement-prompts.md`
+# — and prints one JSON object instead of the candidate array, then exits 0:
 #
 #   {"ok": true, "date": "2026-08-10"}   # a review folder was resolved
 #   {"ok": true, "date": ""}             # the listing succeeded and offered
-#                                         # no project-review-YYYY-MM-DD
-#                                         # folder at all, including a clean
-#                                         # 404 on reviews/ itself
+#                                         # no folder matching
+#                                         # report-directory-format at all,
+#                                         # including a clean 404 on that
+#                                         # format's own static prefix
 #   {"ok": false}                        # any other failure (API error,
 #                                         # unparseable listing) — decides
 #                                         # nothing
@@ -171,36 +172,22 @@ if (( rc != 0 )); then
 fi
 
 review_date_and_dir="$(report_directory_most_recent "$slug" "$default_branch" "$report_directory_format" 2>/dev/null)"
+_rd_walk_rc=$?
 if [[ -z "$review_date_and_dir" ]]; then
-  # An empty result here has two causes the library cannot tell apart, because
-  # `_report_directory_walk` degrades a failed `gh api` to the same silence a
-  # directory listing with no match produces — its own second call over the
-  # path the listing above already read. The default mode answers both with
-  # `[]` and loses nothing by it; --current-date must not, because its
+  # An empty result here has two causes: a genuinely empty listing (nothing
+  # matches the format's shape, including a clean 404 on it) and a listing
+  # inside the walk that failed for some other reason (a rate limit, a
+  # network error) — `report_directory_most_recent`'s own exit status tells
+  # them apart (issue #1024) without this script re-implementing the walk's
+  # listing/regex probe to do it. The default mode answers both with `[]`
+  # and loses nothing by it; --current-date must not, because its
   # `{"ok": true, "date": ""}` is a *definite* fact that retires every review
-  # ref in the repository, and requirement 34n's retirements are facts nothing
-  # clears. A rate limit landing between two back-to-back calls would
-  # otherwise mint a `review-superseded` that could never be taken back —
-  # the same shape of defect a shared-filename `.ok` marker can cause for any
-  # two-pass gatherer that shares one.
-  #
-  # The listing above succeeded, so it decides instead: no directory matching
-  # the format's first dynamic segment means nothing can exist beneath it, a
-  # definite `none`. One that does exist means the walk, not the repository,
-  # is why nothing came back — decide nothing. For a format whose dynamic
-  # part spans more than one segment this errs toward deciding nothing (an
-  # existing first segment says nothing about the rest), which is the safe
-  # direction; anything but a definite `false` — an unparseable listing
-  # included — is read the same way.
-  if [[ "$mode" == "current-date" ]]; then
-    _rd_candidate_exists="$(jq -r \
-      --arg re "^$(report_directory_regex "${_rd_segments[$_rd_i]}")\$" \
-      'any(.[]?; .type == "dir" and (.name | test($re)))' \
-      <<<"$listing_json" 2>/dev/null || true)"
-    if [[ "$_rd_candidate_exists" != "false" ]]; then
-      fail_out
-      exit 0
-    fi
+  # ref in the repository, and requirement 34n's retirements are facts
+  # nothing clears — a rate limit landing mid-walk must decide nothing rather
+  # than mint a `review-superseded` that could never be taken back.
+  if [[ "$mode" == "current-date" ]] && (( _rd_walk_rc != 0 )); then
+    fail_out
+    exit 0
   fi
   none_out
   exit 0

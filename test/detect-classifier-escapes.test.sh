@@ -169,6 +169,7 @@ done
 
 for cfg in '{"repos":[]}' \
            '{"repos":[{"slug":"acme/widgets","merge_autonomy_protected_paths":["scripts/*"]}]}' \
+           '{"repos":[{"slug":"acme/widgets","merge_autonomy_protected_paths":"lib/*"}]}' \
            '{"merge_autonomy_protected_paths":["lib/*","CODEOWNERS"]}' \
            '{}'; do
   landing_out="$(_landing_protected_paths "$cfg" "acme/widgets")"
@@ -206,6 +207,7 @@ assert_eq "  ... and so does the detector's own" \
 # doctor's own `// []` — that never happens there.
 for cfg in '{"repos":[]}' \
            '{"repos":[{"slug":"acme/widgets","merge_autonomy_protected_paths":["scripts/*"]}]}' \
+           '{"repos":[{"slug":"acme/widgets","merge_autonomy_protected_paths":"lib/*"}]}' \
            '{"merge_autonomy_protected_paths":["lib/*","CODEOWNERS"]}' \
            '{}'; do
   doctor_pp_cfg_file="$tmp_dir/doctor-pp-cfg.json"
