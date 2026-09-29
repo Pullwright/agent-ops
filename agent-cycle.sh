@@ -4007,7 +4007,7 @@ if [[ "$rev_status" == "ready" ]]; then
   # deliberately never counted here too: it is a summary of repetitions
   # already recorded at their own per-attempt site, not a fresh one.
   rework_check_failure_json="$(rework_check_failure_fields "$gate_checks_ok" "$gate_reason" \
-    "$selected_repo" "$selected_item" "$impl_pr_url")"
+    "agent-cycle.sh:review-gate-checks-read" "$selected_repo" "$selected_item" "$impl_pr_url")"
   [[ -n "$rework_check_failure_json" ]] && log_event "rework" "$rework_check_failure_json"
 
   if [[ "$review_safe" != "true" ]]; then

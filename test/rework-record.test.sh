@@ -132,9 +132,16 @@ assert_empty "an ordinary tech-debt selection earns no rework class" \
 
 assert_eq "check-failure fires when ok is false" \
   '"check-failure"' \
-  "$(rework_check_failure_fields "false" "checks unreadable" "o/r" "TD1" "https://github.com/o/r/pull/1" | jq -c '.class')"
+  "$(rework_check_failure_fields "false" "checks unreadable" "agent-cycle.sh:review-gate-checks-read" \
+     "o/r" "TD1" "https://github.com/o/r/pull/1" | jq -c '.class')"
 assert_empty "check-failure does not fire when ok is true (the ordinary case)" \
-  "$(rework_check_failure_fields "true" "" "o/r" "TD1")"
+  "$(rework_check_failure_fields "true" "" "agent-cycle.sh:review-gate-checks-read" "o/r" "TD1")"
+assert_eq "check-failure: detector is carried verbatim, not hardcoded — the Reviewer's own handoff site" \
+  '"agent-cycle.sh:review-gate-checks-read"' \
+  "$(rework_check_failure_fields "false" "reason" "agent-cycle.sh:review-gate-checks-read" "o/r" "TD1" | jq -c '.detector')"
+assert_eq "check-failure: ... and the Enabler's own handoff-recovery site (agent-ops#1032)" \
+  '"lib/enabler.sh:review-gate-checks-read"' \
+  "$(rework_check_failure_fields "false" "reason" "lib/enabler.sh:review-gate-checks-read" "o/r" "TD1" | jq -c '.detector')"
 # review-gate-checks-degraded is a different event with no call site into
 # lib/rework.sh at all — there is nothing to drive here beyond confirming
 # rework_check_failure_fields is the *only* function this class's detector

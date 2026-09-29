@@ -1123,7 +1123,7 @@ maybe_run_enabler() {
   local e_flag_evidence_field e_flag_resolvable e_flag_resolve_reason e_flag_pr_num
   local e_block_stage e_default_branch e_review_json e_gate_word e_gate_reason
   local e_gate_checks_unreadable e_ck_word e_ck_reason e_rc_word e_rc_reason e_rc_revert
-  local e_review_safe e_gate_checks_ok e_finding
+  local e_review_safe e_gate_checks_ok e_finding e_rework_check_failure_json
   local e_rereview_state e_rereview_who e_human_reviewer_state e_human_reviewer_who
   local e_human_rate_note
   local issue_title issue_body_file created number url missing
@@ -1448,6 +1448,15 @@ $(jq . <<<"$input")
               log_event "review-gate-checks-read" "$(jq -nc --argjson ok "$e_gate_checks_ok" \
                 --arg r "$e_repo" --arg i "$e_item" \
                 '{ok: $ok} + (if $r == "" then {} else {repo: $r} end) + (if $i == "" then {} else {item: $i} end)')"
+              # check-failure (docs/FLOW-SCHEMA.md, D23, agent-ops#1032): the
+              # same per-attempt fact as the Reviewer's own handoff site
+              # (agent-cycle.sh) records, since this is the same shared
+              # `handoff_complete_review` gate — the fresh-repetition ruling
+              # for a recovery pass re-observing a condition an earlier round
+              # already recorded (agent-ops#1262).
+              e_rework_check_failure_json="$(rework_check_failure_fields "$e_gate_checks_ok" "$e_gate_reason" \
+                "lib/enabler.sh:review-gate-checks-read" "$e_repo" "$e_item" "$e_pr_url")"
+              [[ -n "$e_rework_check_failure_json" ]] && log_event "rework" "$e_rework_check_failure_json"
 
               if [[ "$e_review_safe" != "true" ]]; then
                 if [[ "$e_gate_word" == "dirty" ]]; then
@@ -1461,6 +1470,15 @@ $(jq . <<<"$input")
                   e_finding="$e_cs_reason"
                 elif [[ "$e_rc_word" == "dirty" ]]; then
                   e_finding="$e_rc_reason"
+                  # human-change-request (docs/FLOW-SCHEMA.md, D23,
+                  # agent-ops#1032): attributed to the Reviewer, same as the
+                  # Reviewer's own handoff site — the recovery path only
+                  # reaches this branch for a pull request with a Reviewer
+                  # verdict already on record (e_block_stage == "reviewer"
+                  # above), so the request escaped the Reviewer whichever
+                  # site observed it.
+                  log_event "rework" "$(rework_human_change_request_fields "$e_rc_reason" \
+                    "$e_repo" "$e_item" "$e_pr_url")"
                 else
                   e_finding="it is still a draft after the attempt"
                 fi
