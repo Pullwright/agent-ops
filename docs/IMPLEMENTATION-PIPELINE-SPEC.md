@@ -15461,10 +15461,16 @@ implements.
     candidate alone: `source_states_json` (requirement 3, gathered for every
     repo the cycle walked, well before the claim) answers it for an `issues`
     item (closed) and for a finishing source's item (its pull request closed
-    or merged); a `tech-debt` item additionally costs one fresh
+    or merged). A register-shaped ref would additionally cost one fresh
     `gather-register-status.sh` read, scoped to the one item, because a
     freshly claimed item was never a member of the blocked set
-    `register_status_json` is otherwise scoped to. Every other source is left
+    `register_status_json` is otherwise scoped to — but no currently-live
+    source claims a register-shaped ref (the `tech-debt` band moved to
+    `pw::type:tech-debt`-labelled issues, agent-ops#875), so the Script passes
+    an empty register map for every source; `gather-register-status.sh` and
+    the register map parameter it feeds remain for a repository that has not
+    migrated off register-shaped refs, and for `register_status_json`'s own
+    blocked-set pass (requirement 34i). Every other source is left
     to the Implementer, exactly as before — this is the three done-signals
     34i already reads deterministically, reused, not a new one invented for
     the occasion.
@@ -27200,9 +27206,10 @@ oblige anyone to edit a test.
    would give the same item as a blocked entry — a closed issue, a finishing
    source's closed-or-merged pull request, a register row read `resolved` —
    and returns nothing for one still open, for a repo the digest never
-   sampled, and for a tech-debt item whose register row pre-flight never
-   fetched (the register map is fetched fresh, per item, only when the source
-   is `tech-debt`; passing none must decide nothing rather than assume open).
+   sampled, and for a register-shaped ref pre-flight never fetched a register
+   row for (no currently-live source claims one, so the Script always passes
+   an empty register map; passing none must decide nothing rather than assume
+   open).
    An ordinary issues/tech-debt item whose own claim branch already carries an
    open pull request in the pre-claim digest is reported by
    `preflight_defer_reason` — a defer, never part of `preflight_done_reason`'s

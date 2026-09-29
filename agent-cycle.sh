@@ -3295,18 +3295,16 @@ fi
 # because an open PR already carries the just-claimed branch (a non-terminal
 # signal; see below).
 # `source_states_json` already carries every repo this cycle walked, gathered
-# well before the claim, which is all an issue, a finishing source's PR or the
-# stale-open-PR check needs; a tech-debt item additionally needs its own
-# fresh register read, because a freshly claimed item was never a member of
-# the blocked set `register_status_json` is scoped to.
-preflight_register_json='{}'
-if [[ "$selected_source" == "tech-debt" ]]; then
-  preflight_register_json="$(jq -nc --arg s "$selected_repo" \
-    --argjson m "$(gather_register_status "$selected_repo" "$selected_default_branch" selected "$selected_item")" \
-    '{($s): $m}')"
-fi
+# well before the claim, which is all an issue or a finishing source's PR
+# needs. A register-shaped ref would additionally need its own fresh register
+# read here, because a freshly claimed item was never a member of the blocked
+# set `register_status_json` is scoped to — but no currently-live source
+# claims a register-shaped ref (the `tech-debt` band moved to
+# `pw::type:tech-debt`-labelled issues, agent-ops#875), so no source pays for
+# one; `preflight_done_reason` still accepts a register map for a repository
+# that has not migrated off register-shaped refs.
 preflight_reason="$(preflight_done_reason "$selected_repo" "$selected_item" "$selected_branch" \
-  "$source_states_json" "$preflight_register_json")"
+  "$source_states_json" '{}')"
 # The ancestry check is one of the two live `gh` calls in this section
 # (lib/preflight.sh's header explains why it is gated to the four sources
 # whose branch predates the claim), so it only runs when the cheaper, pure
