@@ -128,9 +128,13 @@ rework_check_failure_fields() {
 # rework_human_change_request_fields REASON REPO ITEM PR_URL
 # Print `human-change-request` fields, attributed to `reviewer` — the one
 # class whose evidence names its stage directly (docs/FLOW-SCHEMA.md). The
-# caller is `agent-cycle.sh`'s own `rc_word == "dirty"` branch, which already
-# established that the reconciliation gate refused this handoff; there is no
-# further predicate here to apply.
+# callers are the two `rc_word == "dirty"` branches that share requirement
+# 34a's one `handoff_complete_review` — `agent-cycle.sh`'s own Reviewer
+# handoff and `lib/enabler.sh`'s handoff-recovery path (agent-ops#1032) —
+# each of which has already established that the reconciliation gate refused
+# this handoff; there is no further predicate here to apply. `detector` is
+# hardcoded, unlike `rework_check_failure_fields`'s, because the gate
+# function itself is the detector and is the same one at both sites.
 rework_human_change_request_fields() {
   local reason="$1" repo="${2:-}" item="${3:-}" pr_url="${4:-}"
   rework_fields "human-change-request" "lib/reconciliation-gate.sh:reconciliation_gate" \

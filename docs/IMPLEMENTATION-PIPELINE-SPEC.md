@@ -19197,12 +19197,18 @@ with the Reviewer's own.
       the detector; the Script's selection event, where `{repo, item,
       pr_url}` are already in hand, is where the record is emitted).
     - **human-change-request** — requirement 31c's reconciliation gate going
-      `dirty` at the Reviewer's own handoff. Attributed to `reviewer`: this
-      is the one class whose evidence names its stage directly, since the
-      gate fires at that stage's own handoff and nowhere else.
+      `dirty`, at either of the two sites that share requirement 34a's one
+      `handoff_complete_review`: the Reviewer's own handoff and the
+      Enabler's handoff-recovery path. Attributed to `reviewer` from both:
+      this is the one class whose evidence names its stage directly, since
+      the recovery path reaches this verdict only for a pull request with a
+      Reviewer verdict already on record, so the request escaped the
+      Reviewer whichever site observed it.
     - **check-failure** — a `review-gate-checks-read` event carrying
       `ok: false` (the per-attempt read TD-PPagop-26081404's own streak
-      bookkeeping already counts). Its escalation, `review-gate-checks-
+      bookkeeping already counts), from either of that event's own two call
+      sites — the same two handoffs, each naming itself in `detector`. Its
+      escalation, `review-gate-checks-
       degraded`, is deliberately never counted a second time: it summarises
       repetitions already recorded at their own per-attempt site.
     - **merge-conflict** — a `merge-conflicts` candidate's own selection
@@ -19254,10 +19260,10 @@ with the Reviewer's own.
     Before requirement 31c's reconciliation gate existed (2026-08-20), a
     human change request arriving as a plain pull request comment was
     invisible to the review gate entirely — the blind spot agent-ops#533
-    named. That gate now catches it, at the Reviewer's own handoff, but only
+    named. That gate now catches it, at both handoffs above, but only
     there: a change request posted after a pull request is already ready, or
-    one a human acts on directly without a further Script handoff ever
-    running, is still outside what this class's detector can see.
+    one a human acts on directly without either handoff ever running, is
+    still outside what this class's detector can see.
     `docs/FLOW-SCHEMA.md` states that residual coverage plainly, rather than
     letting a later reader assume the class covers every human change
     request there is.

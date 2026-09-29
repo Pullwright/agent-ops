@@ -2165,7 +2165,8 @@ rework bad":
   the pipeline's own rising cost order — `agent-review` (every class but the
   two below: a Reviewer or an earlier stage catching something before a
   human ever looks), `human-gate` (`human-change-request` — the
-  reconciliation gate's own dirty verdict at the Reviewer's handoff),
+  reconciliation gate's own dirty verdict, at either of its two handoff
+  sites),
   `post-merge` (`post-merge-revert` — nothing caught it until a corrective
   pull request landed after merge). Each row is
   `{stage, population, caught, escaped, escape_rate, cost_to_catch_at_next,
