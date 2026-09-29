@@ -2751,7 +2751,7 @@ number's twins elsewhere on the page.
 ## Integration
 
 - **End-of-cycle hook** — `agent-cycle.sh`'s cleanup runs the Publisher as
-  `timeout 120 … >/dev/null 2>&1 || true`: failure-isolated and time-bounded,
+  `timeout -k 10 120 … >/dev/null 2>&1 || true`: failure-isolated and time-bounded,
   so it can never change the cycle's outcome, exit code, or timing. It is the
   only change to `agent-cycle.sh`. (Never edit `agent-cycle.sh` while a cycle
   is running — editing a running bash script shifts byte offsets and corrupts
@@ -2762,30 +2762,37 @@ number's twins elsewhere on the page.
   cycle is still running, because disabling stops the next cycle, not the one
   already in flight.)
 
-  The Publisher's working set is one directory under `$TMPDIR`, named
-  `publish-dashboard.<pid>.XXXXXX` after the process that owns it and removed
-  by an `EXIT` trap; for the publish's lifetime `TMPDIR` itself points inside
-  it, so every file the Publisher or a library it calls spools through
-  `mktemp` — the union files of `lib/item-lifecycle.sh` and
+  The Publisher's working set is its scratch directory (`lib/scratch.sh`,
+  `docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 2.5):
+  `agent-ops.publish-dashboard.<pid>.XXXXXX` under `$TMPDIR`, which `TMPDIR`
+  points inside for the publish's lifetime, so every file the Publisher or a
+  library it calls spools — the union files of `lib/item-lifecycle.sh` and
   `lib/node-time-state.sh`, `lib/gh-shim.sh`'s per-call directories,
-  `lib/toggle.sh`'s memos, `sort`'s spill files — goes with it. Three ways out
-  need more than that trap (agent-ops#1827). The `timeout` above ends an
-  overrunning publish with `TERM`, and bash does not reliably run the `EXIT`
-  trap on an untrapped fatal signal from wherever this script is when it
-  lands — a publish so ended on `poetic-1` left 307 MB of working set and
-  80 MB of library files in the container's writable layer, where the state
-  volumes' pressure valve cannot reach them — so `TERM`, `INT` and `HUP` are
-  each trapped to the `exit` the shell would have taken (143, 130 and 129),
-  which runs the `EXIT` trap on the ordinary path. The fast tick's full
-  rebuild replaces the process with `exec`, which runs no `EXIT` trap, so the
-  working set is removed and `TMPDIR` restored before it. And a `KILL` — the
-  OOM killer, a container stopped past its grace — runs nothing, so the next
-  cycle start removes any such directory whose pid is gone
-  (`lib/scratch-sweep.sh`, `docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement
-  2.5). `test/publish-dashboard.test.sh` passes: a publish ended by `TERM`
-  after its working set exists leaves nothing under `$TMPDIR`, and a fast
-  tick whose payload cache is not JSON rebuilds in full, exits 0 with a
-  parseable payload, and leaves nothing under `$TMPDIR` either.
+  `lib/toggle.sh`'s memos, `sort`'s spill files — lies inside it. The `EXIT`
+  trap, armed before the directory exists, removes it together with the
+  three files a publish stages outside it for an atomic rename — the
+  `.data.XXXXXX.js` and `.stamp.XXXXXX.js` beside `data.js` and `stamp.js`,
+  and `.dashboard-payload.tmp` — and a publish that cannot make its
+  directory exits 1 saying so. The `timeout` above ends an overrunning
+  publish with `TERM`, and with `KILL` ten seconds later should its exit
+  take longer than that; bash handles the `TERM` by running the `EXIT` trap,
+  and `TERM` is not trapped, because a trapped signal is handled only once
+  the foreground command returns, which would hold the hook past its bound
+  for as long as a `timeout 15` GitHub call takes. A fast tick whose
+  assemble fails runs its full rebuild as a child process, not in place of
+  itself: the child inherits the launcher's lock through the open
+  descriptor and makes its working set inside this one, and the parent's
+  trap removes both when the child returns. What a `KILL` leaves is removed
+  at the start of the next launcher window and the next cycle (requirement
+  2.5). An empty payload is refused by name as well as by `jq -e .`, which
+  exits 0 on empty input under jq 1.6. `test/publish-dashboard.test.sh`
+  passes: nothing but the working set ever appears at the top of `$TMPDIR`
+  during a publish, in a census read every few milliseconds for the
+  publish's whole run; a publish started under `timeout` and sent `TERM`
+  after a file exists inside its working set ends early and leaves nothing
+  under `$TMPDIR`; and a fast tick whose payload cache is not JSON rebuilds
+  in full, exits 0 with a non-empty payload the page can parse, and leaves
+  nothing under `$TMPDIR` either.
 - **Heartbeat** — an optional `*/5 * * * *` crontab entry keeps in-flight
   state, the lock, and GitHub current between cycles. cron can't fire
   more than once a minute, so the entry runs `publish-dashboard-launcher.sh`
@@ -4489,3 +4496,19 @@ number's twins elsewhere on the page.
   (`lib/candidate-select.sh`) that has nothing to do with this panel, and
   retiring it would have silently broken that caller's own legacy-reference
   clearance.
+- **The working set is the publish's `TMPDIR`, and the rebuild is a child,
+  not an `exec`** (agent-ops#1827, #1933). A publish spools through its own
+  `mktemp` calls and through those of a dozen libraries, and the 2026-09-28
+  incident (`docs/IMPLEMENTATION-PIPELINE-SPEC.md` §Design decisions) showed
+  what a working set removed by one trap and library files removed by none
+  leaves behind. Pointing `TMPDIR` inside the working set makes the one
+  removal cover every spool without a trap in every library, and naming the
+  set after the pid lets the sweep of requirement 2.5 tell a dead publish's
+  set from a live one's, which age cannot: a publish has run for hours on a
+  loaded node. The fast tick's `exec` into a full build was the one exit
+  that ran no trap by construction, and it leaked a set per rebuild; a
+  child costs the fast tick's set for the rebuild's duration and needs no
+  second place that must remember what the trap does. The signal traps the
+  issue proposed were not adopted: bash runs the `EXIT` trap on an untrapped
+  fatal signal, so they would have tested nothing, and a trapped signal
+  would have held the hook past its `timeout`.

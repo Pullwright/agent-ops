@@ -334,8 +334,12 @@ M7. **Bounded by `monitor_max_input_bytes`, on a stated ladder.** The digest
 M8. **Every exit leaves a record.** `cleanup()` runs on `EXIT` however the run
    ends: it removes the run's scratch directory under `workspace_root`, writes
    the stage-health verdict (M17) when a stage actually ran, logs
-   `monitor-end` with the exit code, releases the lock, and pushes this node's
-   state through `scripts/state-sync.sh`. A signal landing mid-cleanup must not
+   `monitor-end` with the exit code, releases the lock, pushes this node's
+   state through `scripts/state-sync.sh`, and last of all releases the tick's
+   own scratch directory — `agent-ops.monitor-cycle.<pid>.XXXXXX` under
+   `$TMPDIR`, entered before any library was sourced and holding every
+   `mktemp` of the tick (`lib/scratch.sh`, the implementation spec's
+   requirement 2.5). A signal landing mid-cleanup must not
    re-enter the handler over a run already writing its record, so the first
    thing both handlers do is `trap '' TERM INT HUP`.
 

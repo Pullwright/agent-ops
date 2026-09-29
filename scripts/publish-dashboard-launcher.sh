@@ -50,6 +50,8 @@ scriptdir="$(cd "$(dirname "$0")" && pwd)"
 appdir="$(dirname "$scriptdir")"
 # shellcheck source=lib/fleet.sh
 . "$appdir/lib/fleet.sh"
+# shellcheck source=lib/scratch.sh
+. "$appdir/lib/scratch.sh"
 # LAUNCHER_PUBLISH_CMD exists for the test suite, which must be able to watch
 # which mode each tick chose without a network call; cron always runs the
 # Publisher itself.
@@ -142,6 +144,21 @@ fleet_repair_log "$log" "$node_name"
 for f in "$logdir/log.jsonl" "$logdir/review-log.jsonl" "$logdir/revert-rate.jsonl"; do
   fleet_repair_log "$f" "$node_name"
 done
+
+# What a dead process left in $TMPDIR — a Publisher's working set from a
+# publish the OOM killer or a container stop ended, a cycle's scratch
+# directory from a stale-lock takeover's KILL (lib/scratch.sh,
+# implementation-pipeline-spec requirement 2.5). Once a window, here, because
+# this launcher runs on every node every five minutes whatever the node's
+# role, which no cycle does: a standby node's agent-cycle.sh exits at its
+# role guard, and its Publisher runs from this loop alone. Logged only when
+# something was removed, so an idle node's log stays quiet.
+# shellcheck disable=SC2119  # the default, ${TMPDIR:-/tmp}, is the one wanted here
+swept="$(scratch_sweep_dead_owners)"
+if [[ "$swept" =~ ^[0-9]+$ ]] && (( swept > 0 )); then
+  printf '%(%Y-%m-%dT%H:%M:%S%z)T swept: removed %s scratch director(ies) left by dead processes in %s\n' \
+    -1 "$swept" "${TMPDIR:-/tmp}" >>"$log"
+fi
 
 # EPOCHSECONDS is too coarse to pace with: it rounds a 0.4s no-op tick to 0 and
 # a 0.6s one to 1, and the backoff below multiplies whatever it is given, so

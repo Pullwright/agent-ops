@@ -165,6 +165,8 @@ TEMPLATE="$SCRIPT_DIR/dashboard/index.html"
 . "$SCRIPT_DIR/lib/pager.sh"
 # shellcheck source=lib/pager-invariants.sh
 . "$SCRIPT_DIR/lib/pager-invariants.sh"
+# shellcheck source=lib/scratch.sh
+. "$SCRIPT_DIR/lib/scratch.sh"
 
 MAX_CYCLES=40        # recent substantive cycles shown in detail (with
                      # transcripts); no-op ticks aggregate instead (#271)
@@ -499,38 +501,47 @@ mkdir -p "$out_dir"
 # through files, not argv: a single command-line argument is capped at 128 KB
 # (MAX_ARG_STRLEN), which big transcripts blow past. Temp files have no such limit.
 #
-# Named after this process rather than mktemp's anonymous `tmp.XXXXXXXXXX`, so
-# that a directory this process fails to remove can be told from a live
-# publish's by whether its pid still exists — the test `lib/scratch-sweep.sh`'s
-# `scratch_sweep_dead_owners` applies at every cycle start, and the only one
-# that cannot mistake a slow live publish for an orphan.
-work_tmp="$(mktemp -d "${TMPDIR:-/tmp}/publish-dashboard.$$.XXXXXX")"
-trap 'rm -rf "$work_tmp"' EXIT
-# Everything this publish spools through `mktemp` from here on — its own files
-# below, lib/item-lifecycle.sh's and lib/node-time-state.sh's union files (one
-# of them 69 MB on a month of log), lib/gh-shim.sh's per-call directories,
-# lib/toggle.sh's memos, `sort`'s spill files — lands inside this one
-# directory, so the one removal above covers all of it and nothing of a
-# publish outlives it anywhere else in $TMPDIR. What the process was given is
-# kept for the `exec` below, whose replacement makes a directory of its own.
-outer_tmpdir="${TMPDIR-}"
-outer_tmpdir_set="${TMPDIR+set}"
-export TMPDIR="$work_tmp"
-# The end-of-cycle hook runs this script under `timeout 120`, which ends an
-# overrunning publish with TERM. bash is meant to run the EXIT trap on a fatal
-# signal as well as on `exit`, and mostly does — but not always from where
-# this script is when the signal lands: reproduced on poetic-1 (agent-ops#1827),
-# a publish `timeout` ended at 120 s left its whole working set behind, 307 MB
-# of it plus 80 MB of the libraries' files beside it, in the container's
-# writable layer where the state volumes' pressure valve cannot reach it.
-# A *trapped* signal takes the ordinary path instead — handled once the
-# foreground command returns, as an `exit` — so each is trapped to the exit
-# the shell would have taken (128 plus the signal's number), which runs the
-# EXIT trap above. A KILL — the OOM killer, a container stopped past its grace
-# — runs neither, which is what lib/scratch-sweep.sh's cycle-start sweep is for.
-trap 'exit 143' TERM
-trap 'exit 130' INT
-trap 'exit 129' HUP
+# The working set is this process's scratch directory (lib/scratch.sh):
+# `agent-ops.publish-dashboard.<pid>.XXXXXX` under $TMPDIR, with TMPDIR itself
+# pointing inside it from here on, so every file this publish or a library it
+# calls spools through `mktemp` — lib/item-lifecycle.sh's and
+# lib/node-time-state.sh's union files (one of them 69 MB on a month of log),
+# lib/gh-shim.sh's per-call directories, lib/toggle.sh's memos, `sort`'s spill
+# files — lands inside it, and the one removal in the EXIT trap covers all of
+# it. The name carries the pid so that a directory a dead process left can be
+# told from a live publish's however long that publish has run (lib/scratch.sh's
+# sweep, run at the start of every launcher window and every cycle).
+#
+# The end-of-cycle hook runs this script under `timeout -k 10 120`. bash
+# handles the TERM that sends by running the EXIT trap and exiting, as it does
+# on `exit`; only a KILL — the hook's own ten seconds later, the OOM killer's
+# — skips the trap, and the sweep removes what a KILL leaves. TERM is
+# deliberately not trapped: a trapped signal is handled only once the
+# foreground command returns, which would hold the hook past its bound for as
+# long as a `timeout 15` GitHub call takes.
+#
+# The trap covers, besides the working set, the three files a publish stages
+# outside it — the `.data.XXXXXX.js` and `.stamp.XXXXXX.js` beside their
+# targets in $out_dir, and the payload cache's `.tmp` — each made where its
+# `mv` into place is atomic, and each otherwise left for good by a TERM during
+# the multi-megabyte redaction below. Armed before the directory exists, on
+# empty names, so no signal can land between the two; a TMPDIR nothing can be
+# made in ends the publish here, saying so, rather than aiming every later
+# write at the filesystem root.
+work_tmp=""
+data_tmp=""
+stamp_tmp=""
+publish_cleanup() {
+  local staged
+  for staged in "$data_tmp" "$stamp_tmp" "${payload_cache:+$payload_cache.tmp}"; do
+    [[ -n "$staged" && -e "$staged" ]] && rm -f -- "$staged"
+  done
+  scratch_release
+  return 0
+}
+trap publish_cleanup EXIT
+scratch_enter publish-dashboard || exit 1
+work_tmp="$SCRATCH_DIR"
 
 if [[ -n "$now_override" ]]; then
   now_iso="$now_override"
@@ -4149,23 +4160,24 @@ fi
 # never says why. Leaving the previous data.js in place is strictly better —
 # the page ages visibly against its own `generated_at`, which is the signal an
 # operator already reads — and the non-zero exit is what puts the reason in
-# cron.log instead of another line claiming a write.
-if ! jq -e . >/dev/null 2>&1 <<<"$data_json"; then
+# cron.log instead of another line claiming a write. Emptiness is tested by
+# name rather than left to jq: `jq -e .` on empty input exits 4 under the
+# image's jq 1.7 and 0 under 1.6, the legacy host install's, which would have
+# published `window.DASHBOARD_DATA = ;` there.
+if [[ -z "$data_json" ]] || ! jq -e . >/dev/null 2>&1 <<<"$data_json"; then
   # A fast build has one more move before giving up: everything it needed was
   # in the cache it could not use, so re-run as a full build rather than leave
-  # the page to age. `exec` keeps the flock the launcher took, and the retry
-  # cannot loop — it runs without --fast, so it takes the branch below.
+  # the page to age. The rebuild runs as a child of this process, not in its
+  # place: it inherits the flock the launcher took through the open
+  # descriptor, makes its own working set inside this one (TMPDIR points
+  # there), and this process's EXIT trap removes both once the child returns
+  # — an `exec` would run no EXIT trap at all. The retry cannot loop: it runs
+  # without --fast, so it takes the branch below.
   if (( ! FULL )); then
     echo "publish-dashboard: fast assemble failed; rebuilding in full" >&2
     rm -f "$payload_cache" 2>/dev/null || true
-    # `exec` replaces this process without running its EXIT trap, so the
-    # working set goes first — every re-exec used to leave one behind
-    # (agent-ops#1827) — and TMPDIR goes back to what this process was given,
-    # because the replacement makes a working set of its own and must not
-    # make it inside a directory that no longer exists.
-    rm -rf "$work_tmp"
-    if [[ -n "$outer_tmpdir_set" ]]; then export TMPDIR="$outer_tmpdir"; else unset TMPDIR; fi
-    exec "$0" --no-github "${NOW_ARGS[@]}"
+    "$0" --no-github "${NOW_ARGS[@]}"
+    exit $?
   fi
   echo "publish-dashboard: could not assemble the payload; $data_file left unchanged" >&2
   exit 1
@@ -4221,14 +4233,14 @@ data_json="$(jq --arg fingerprint "$public_fingerprint" '. + {fingerprint: $fing
 # --- Redact (defensive) & write atomically -----------------------------------
 # redact() itself is lib/redact.sh, shared with scripts/state-sync.sh's own
 # push (agent-ops#966).
-tmp="$(mktemp "$out_dir/.data.XXXXXX.js")"
+data_tmp="$(mktemp "$out_dir/.data.XXXXXX.js")"
 {
   printf '// Generated by publish-dashboard.sh at %s — do not edit. Regenerated each run.\n' "$now_iso"
   printf 'window.DASHBOARD_DATA = '
   printf '%s' "$data_json" | redact
   printf ';\n'
-} > "$tmp"
-mv -f "$tmp" "$data_file"
+} > "$data_tmp"
+mv -f "$data_tmp" "$data_file"
 
 # stamp.js (issue #1288): a client-visible companion to data.js, a few dozen
 # bytes, that dashboard tabs poll every refresh tick instead of the multi-MB

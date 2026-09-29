@@ -4369,36 +4369,63 @@ implements.
    from `config.json` itself behaves exactly like an injected `0`: the
    count-based prune still runs, and the pressure prune never engages.
 
-   **The container's writable layer is swept at cycle start
-   (agent-ops#1827).** The pressure prune above can shed only what lives in
-   `state_dir`; two things write per-process directories under `$TMPDIR`
-   instead — in the container's writable layer, on the same disk — and a
-   process replaced by `exec`, ended by `KILL`, or, as reproduced on
-   `poetic-1`, by an untrapped `TERM`, leaves its directory behind:
-   `scripts/publish-dashboard.sh`'s working set
-   (`publish-dashboard.<pid>.XXXXXX`, 300 MB and more, holding every file a
-   publish spools, and run by the end-of-cycle hook under `timeout 120` —
-   `docs/DASHBOARD-SPEC.md` §Integration, which is where the Publisher's own
-   traps and its pre-`exec` removal are specified) and
-   `lib/toggle.sh`'s flag memos (`agent-ops-fleet-flag-memo.<pid>`). Each
-   name carries its owner's pid, and before a cycle's free-space gate
-   (requirement 2.0c) reads the disk, `lib/scratch-sweep.sh`'s
-   `scratch_sweep_dead_owners` removes every such directory whose pid no
-   longer exists — `/proc/<pid>` consulted first and `kill -0` only to
-   confirm, so another user's live process reads as alive — and leaves every
-   other one alone however old it is: a live publish on a loaded node has run
-   for hours (agent-ops#1620), so age is not the test. A management command
-   (`--status`, `--disable`, `--enable`) sweeps nothing, as it runs no cycle.
-   The sweep never fails the cycle, and says on stderr what it removed only
-   when it removed something. `test/scratch-sweep.test.sh` passes: a
-   directory of either shape under a pid that does not exist is removed and
-   counted; one under the test's own live pid, one of any other name, one
-   whose pid field is not a number and a plain file are all kept; a second
-   sweep removes nothing further; without an argument the sweep reads
-   `$TMPDIR`; and a missing directory yields a count of zero and exit 0.
-   `test/publish-dashboard.test.sh` passes: a publish ended by `TERM` while
-   its working set exists leaves nothing under `$TMPDIR`, and a fast tick's
-   `exec` into a full rebuild leaves nothing either.
+   **Every process's scratch lies in one directory named after it, and
+   the ones dead processes leave are swept (agent-ops#1827).** The pressure
+   prune above can shed only what lives in `state_dir`; what a process
+   spools through `mktemp` lands under `$TMPDIR` instead — in the container's
+   writable layer, on the same disk. Each scheduled entry point
+   (`agent-cycle.sh`, `review-cycle.sh`, `monitor-cycle.sh`,
+   `scripts/doctor.sh`, `scripts/state-sync.sh`) and the dashboard Publisher
+   (`scripts/publish-dashboard.sh`, `docs/DASHBOARD-SPEC.md` §Integration)
+   therefore starts, before it sources any other library, by entering a
+   scratch directory of its own — `agent-ops.<name>.<pid>.XXXXXX` under
+   `$TMPDIR` — and points `TMPDIR` inside it for the rest of the process
+   (`lib/scratch.sh`), so that every file it or a library it calls spools —
+   `lib/gh-shim.sh`'s per-call directories, `lib/issue-priority.sh`'s cache,
+   `lib/toggle.sh`'s flag memos, the Publisher's union files, `sort`'s spill
+   files — lies inside it, and the process's `EXIT` trap releases the whole
+   of it with one removal and puts `TMPDIR` back, so that a process started
+   from that cleanup (the chained cycle of requirement 39) inherits a
+   directory that exists. The trap is armed, on an empty name, before the
+   directory is made; a process that cannot make one (a full or unwritable
+   `$TMPDIR`) says so on stderr and exits 1 rather than aim its writes
+   elsewhere. bash runs the `EXIT` trap on `exit`, on `set -e` and on an
+   untrapped fatal signal alike, so a process a `timeout` ends with `TERM`
+   releases its directory; what a `KILL` ends — the OOM killer, a container
+   stopped past its grace, requirement 1's stale-lock takeover reaching its
+   `KILL` — leaves the directory behind, and the sweep removes it:
+   `scratch_sweep_dead_owners` runs at the start of every
+   `scripts/publish-dashboard-launcher.sh` window, on every node whatever
+   its role, and again at every cycle start, before the free-space gate
+   (requirement 2.0c) reads the disk; a management command (`--status`,
+   `--disable`, `--enable`) sweeps nothing, as it runs no cycle. The sweep
+   removes every `agent-ops.<name>.<pid>.XXXXXX` and
+   `agent-ops-fleet-flag-memo.<pid>` directory at the top of the base
+   directory whose pid no longer exists, and every `.agent-ops-sweep.<pid>.…`
+   tombstone a sweep that died left; it reads a pid as dead only when
+   `/proc/<pid>` is absent *and* `kill -0` fails with ESRCH (EPERM is another
+   user's live process, as under a `hidepid` `/proc`); it renames a
+   directory to a tombstone and tests the pid again before removing it, and
+   a pid found alive at that second test has its directory renamed back; and
+   it leaves every other directory alone however old it is: a live publish
+   on a loaded node has run for hours (agent-ops#1620), so age is not the
+   test. The sweep never fails its caller, and says what it removed — in
+   `dashboard.log` from the launcher, on stderr from a cycle — only when it
+   removed something. `test/scratch.test.sh` passes: `scratch_enter` makes
+   the directory under the prior `TMPDIR`, records that base, exports
+   `TMPDIR` inside it, and `scratch_release` removes it and restores
+   `TMPDIR`, set or unset; a base that cannot be written into fails the call
+   with exit 1, a line on stderr and `TMPDIR` untouched; the sweep removes a
+   directory of either shape under a pid that does not exist and a tombstone
+   under a dead sweeper, counts them, and keeps one under the test's own
+   live pid, one whose `kill -0` answers EPERM, a live sweep's tombstone, one
+   of any other name, one whose pid field is not a number and a plain file;
+   a second sweep removes nothing further; without an argument the sweep
+   reads the base `scratch_enter` recorded, else `$TMPDIR`; and a missing
+   directory yields a count of zero and exit 0.
+   `test/publish-dashboard.test.sh` passes: a launcher window removes the
+   scratch directories under a dead pid, keeps a live process's, and logs
+   the count.
 
    **A push that cannot write says so, and an orphaned index lock does not
    stop it (agent-ops#1377).** The `flock` above is state-sync's own;
@@ -31258,6 +31285,40 @@ confirmed by the repo owner on 2026-07-13; no open questions remain.
   grow with history, and meets a snapshot only where a run died before its
   cleanup. The other two count keys keep the floor-only contract: a value
   below their derivation could only shorten the record they exist to keep.
+- **Every process's scratch is one pid-named directory, an orphan is told
+  by pid rather than age, and the sweep runs from the launcher
+  (agent-ops#1827, #1933).** The 2026-09-28 disk-full incident on the host of
+  `poetic-1` and `poetic-2` (agent-ops#1930) found the scheduler's writable
+  layer at 1 GB twenty-six minutes after a fresh start: two abandoned 307 MB
+  Publisher working sets and, beside them, the anonymous `tmp.*` files the
+  libraries spool, none of it within the disk-pressure valve's reach. The
+  issue's diagnosis — that bash runs no `EXIT` trap when an untrapped `TERM`
+  kills it, so every publish the hook's `timeout 120` ends leaks its set —
+  did not survive review: bash does run the trap (its `termsig_handler`
+  calls `run_exit_trap` before re-raising the signal), the pull request's
+  own `TERM` case passed forty-one times in a row with the proposed signal
+  traps deleted, and the one reproduction on the node had compared `/tmp`
+  before and after a publish while two other publishes were writing there,
+  so it could not say whose directories it was looking at. What the
+  incident did show is that a process's spools were scattered — the working
+  set in one anonymous `mktemp -d`, each library's files beside it — so any
+  exit that skipped one cleanup (the fast tick's `exec`, a `KILL`) or
+  reached one and not another left something, and nothing could tell an
+  orphan from a live publish's files, since neither carried its owner's
+  name. Hence one directory per process, entered at start with `TMPDIR`
+  pointed inside it, so that the process's own `EXIT` trap is the only
+  cleanup any of its spools needs; a name carrying the pid, so that
+  liveness — not age, which a publish that has run for hours (agent-ops#1620)
+  would fail — is the test; the rebuild as a child rather than an `exec`, so
+  the trap still runs; and the sweep in the launcher, which runs on every
+  node every five minutes whatever the node's role, where a sweep in
+  `agent-cycle.sh` alone never reached a standby node, although its launcher
+  published every five minutes. Signal traps that turn `TERM` into `exit`
+  were considered and rejected: they test nothing that fails without them,
+  and a trapped signal is handled only after the foreground command returns,
+  so a `timeout 15` GitHub call in its own process group would hold the hook
+  past its `timeout 120`; the hook carries `-k 10` instead, so a publish
+  whose exit outlasts ten seconds is killed and its directory swept.
 
 ## Gotchas
 
@@ -31310,3 +31371,4 @@ confident, recurring no-op.
 | A promise measured from the wrong event lets a later one silently outrun it | Requirement 35a's `issue-closed` reason compared the item's latest escalation against its latest block *B* (`$escalation.ts > $b.ts`) — the raise time, not the human's act. That held only as long as nothing re-blocked the item between the raise and the next Enabler pass; a Co-Ordinator `needs-refinement` re-flag is cheap and frequent (agent-ops#683, TD-PPagop-26082816) and moved *B* past the escalation on three items in one run on 2026-08-27 (#706, #779, #810). Each stranded close then satisfied neither `issue-closed` (keyed on the raise) nor `threshold` (requirement 36b's thrash guard refuses a second refinement without a human touch), so the only exit was a second escalation asking the human to say again what they had already said (#849→#905, #784→#906, #813→#910) plus an Opus engagement to establish that nothing had changed — the exact cost agent-ops#627 exists to remove (TD-PPagop-26082901). | When a rule promises to react to a human act (closing an issue, approving a review), key it on evidence of the act and what it answered, not on a timestamp from *before* the act that something else can silently move past. Where the something-else is itself cheap and frequent, assume it will race the human, and give the exemption a second, narrower path keyed on "this later event still refers to what the act already settled" (here: a `needs-refinement` re-flag with no `item-refined` since the escalation) rather than widening the original comparison until it drifts from what it was measuring. |
 | A bash default that only the empty case ever exercises | The fit-exemption gate read `${coordinator_fit_report_json:-{}}`. `${parameter:-word}` closes on the *first* unquoted `}`, so the default word was `{` and a literal `}` was appended straight after it — harmless on the one path nobody was watching (the variable unset or empty, composing exactly `{}`), and silently corrupting it into invalid JSON on every path that mattered (a real, non-empty fit report). `jq` failed to parse it, the guard read the failure as "fit did not run", and requirement 34e's fourth refusal, requirement 3x's trimmed exemption and requirement 17g's fabrication check were dead code on every fitted cycle from the day the guard shipped — the fleet fitted at rung 15 on 47 cycles in one day (2026-08-28) with none of the three ever firing (TD-PPagop-26082816, agent-ops#933). Every test that exercised the gate had only ever driven the empty case, which is precisely the one the bug leaves working. | A `${var:-word}` default containing an unescaped `{`/`[` is a trap in bash, not a style choice — the closing brace/bracket it needs is the *first* one bash finds, not the one the author meant. Prefer initialising the variable to a real value ahead of the guard (the `set -u`-driven convention this file already uses for `coordinator_fit_allowance`) over threading a brace-shaped default through a parameter expansion at all. And when a guard's fixture only ever sets its input to empty or unset, that fixture cannot tell "the gate is off" from "the gate is broken" — assert the non-empty case too, the one place this shape of bug hides. |
 | A per-entry scan that was "cheap at a handful-to-low-hundreds" | `gh_shim_cache_invalidate` found the entries a write invalidates by opening every file in `http-cache/` with a `jq` — two per entry. Nothing bounded the count, the prune ran at two days, and once the authoring App went live each hourly token was a new identity re-caching every path: 13,000–19,000 entries a node, 484 identities on one. Every registry `PUT`/`DELETE` — the pager's per-window claims, `claim.sh gc`'s ~90 deletes a cycle — then cost two to three and a half minutes of CPU, the pre-Co-Ordinator phase grew from 45 to 150 minutes on every node inside a day, and the fleet landed 8 PRs in 24 h with a healthy budget and a fast GitHub (agent-ops#1422). | Never let a write's cost be a function of the cache's size: lay the cache out so the thing a write invalidates is one directory it can name (`http-cache/<identity>/<path-hash>/`), and key identity on what the data is actually scoped by (the installation), not on a credential that rotates. When a comment sizes a loop by an assumed count, test the assumption at a hundred times that count. |
+| A fix that rests on a mechanism one uncontrolled observation named | agent-ops#1827 read two abandoned Publisher working sets as proof that bash skips the `EXIT` trap on an untrapped `TERM`, and the first fix trapped `TERM`, `INT` and `HUP` to an `exit`. Its own regression case passed forty-one times with those traps deleted, because bash runs the trap on a fatal signal; the reproduction that had "confirmed" the leak had diffed `/tmp` before and after a publish while two other publishes were writing there. A fix built on it would have shipped, tested, and changed nothing about the leak it named. | Before building on a mechanism, make it fail on demand in isolation — one process, one directory it alone writes, the signal sent the way production sends it — and attribute what is left to a process by a name that carries its pid, never by the difference between two listings of a shared directory. A fix whose test passes without it is a comment, not a fix: write the case that fails first, and if none can be written, the mechanism is not the one at work. |

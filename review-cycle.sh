@@ -51,6 +51,19 @@ CONFIG_FILE="${AGENT_OPS_CONFIG:-$SCRIPT_DIR/config.json}"
 PROMPTS_DIR="$SCRIPT_DIR/prompts"
 SKILL_SRC="$SCRIPT_DIR/.claude/skills/project-review"
 
+# shellcheck source=lib/scratch.sh
+. "$SCRIPT_DIR/lib/scratch.sh"
+# This run's scratch directory (lib/scratch.sh, implementation-pipeline-spec
+# requirement 2.5), entered before any other library is sourced so that
+# everything this process or a library it calls spools through `mktemp` lies
+# inside it, and released by `cleanup` at the very end. The trap is armed
+# first, on an empty name, so that an exit before `cleanup` is installed
+# releases it too, and a signal landing during the mktemp itself finds
+# nothing to release and leaves the directory to the sweep.
+SCRATCH_DIR=""
+trap scratch_release EXIT
+scratch_enter review-cycle || exit 1
+
 # shellcheck source=lib/limit-detect.sh
 . "$SCRIPT_DIR/lib/limit-detect.sh"
 # Rate-limit-aware `gh`: sourcing this wraps every `gh` call below so a refusal
@@ -514,8 +527,11 @@ cleanup() {
   # Refresh the local monitoring dashboard. Fully isolated and time-bounded: a
   # failure or slow gh call here must never affect this run's outcome.
   if [[ -x "$SCRIPT_DIR/scripts/publish-dashboard.sh" ]]; then
-    timeout 120 "$SCRIPT_DIR/scripts/publish-dashboard.sh" >/dev/null 2>&1 || true
+    timeout -k 10 120 "$SCRIPT_DIR/scripts/publish-dashboard.sh" >/dev/null 2>&1 || true
   fi
+  # This run's scratch directory (lib/scratch.sh) goes last: the state-sync
+  # push and the hook publish above made their own inside it.
+  scratch_release
   exit "$exit_code"
 }
 trap cleanup EXIT

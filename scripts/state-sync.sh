@@ -28,6 +28,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIG_FILE="$SCRIPT_DIR/config.json"
 SCHEMA_FILE="$SCRIPT_DIR/config.schema.json"
 
+# shellcheck source=lib/scratch.sh
+. "$SCRIPT_DIR/lib/scratch.sh"
+# This run's scratch directory (lib/scratch.sh, requirement 2.5), entered
+# before any other library is sourced so that every `mktemp` of this run lies
+# inside it; the mirror lock's own EXIT trap below releases it as well.
+SCRATCH_DIR=""
+trap scratch_release EXIT
+scratch_enter state-sync || exit 1
+
 # shellcheck source=lib/config-schema.sh
 . "$SCRIPT_DIR/lib/config-schema.sh"
 # shellcheck source=lib/fleet.sh
@@ -537,7 +546,7 @@ mirror_lock() {
     exit 0
   fi
   mirror_lock_mark_started "$mirror" "$MODE"
-  trap 'mirror_lock_clear_started "$mirror"' EXIT
+  trap 'mirror_lock_clear_started "$mirror"; scratch_release' EXIT
 }
 
 # --- The mirror's own index lock (agent-ops#1377) ------------------------------
