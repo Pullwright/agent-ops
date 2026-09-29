@@ -21,7 +21,7 @@ These matter more than any individual checklist item:
 
 - **Claude Code / Cowork.** Full shell and repository access; automated checks and subagents are available; write outputs directly into the repository.
 - **Claude.ai chat.** The project arrives as an upload; copy it out of `/mnt/user-data/uploads/` before working. Network access is restricted to package registries, so some audits work and others will not — record whatever could not be run. All outputs go to `/mnt/user-data/outputs/`. The container does not persist between sessions, so cross-session resumption depends on the user re-uploading a partial review folder — see the caveat in `references/resumability.md`.
-- **Anywhere.** Prefer static analysis over executing project code; running the project's own test suite is normal and acceptable, but ask before anything that installs heavyweight toolchains, needs credentials, or could mutate external state.
+- **Anywhere.** Prefer static analysis over executing project code; running the project's own test suite is normal and acceptable, but ask before anything that installs heavyweight toolchains, needs credentials, or could mutate external state. New tech debt (Step 4) is filed only as a labelled GitHub issue in the project under review — never a register file. Whenever the project's issue tracker cannot be reached that way — no GitHub remote, a forge that is not GitHub, no working `gh` credential, or (as in the Claude.ai chat, one instance of this rather than its only trigger) a restricted network — Step 4 lists the item in the review's own output instead of filing it; see Step 4 for that fallback and the separate case of a reachable tracker with no `pw::type:tech-debt` label.
 
 ## Workflow
 
@@ -104,10 +104,25 @@ place, in its own format** — a per-item register's frontmatter flip
 (`status: resolved`, `resolved:`, `ref:`), never its body, never delete or
 rename the file; a legacy register's own status update, in its established
 style — since register entries are history, never a second place new debt
-lands. In the Claude.ai chat, where neither GitHub nor the repository is
-directly writable, list each item that would be filed (title, body, and any
-recommendation it mirrors) in the summary presented to the user instead, and
-tell them where it belongs.
+lands.
+
+**When the tracker cannot be reached at all** — no GitHub remote, a remote
+on a forge that is not GitHub, no working `gh` credential, or the API call
+itself refuses — do not file the item: list every item that would have been
+filed (title, body, and any recommendation it mirrors) in the review's own
+output instead, and tell the user where it belongs. The Claude.ai chat,
+where GitHub is never directly reachable, is one instance of this rule, not
+its only trigger.
+
+**When the tracker is reachable but the repository has no
+`pw::type:tech-debt` label**, that is a separate failure from having no
+tracker at all: do not create the label yourself — creating a
+product-namespaced label mutates a repository the review was asked only to
+read, which the "Anywhere" operating condition above says to ask about
+first. Where a user is present, ask once whether to create it. Where they
+decline, or no one is present to ask, file the issue **unlabelled**, name
+the intended label in its body, and record in the review output that the
+item is unlabelled and which label belongs on it.
 
 **Language.** Match the spelling conventions of the project's existing documentation where they are evident; otherwise use British English.
 
