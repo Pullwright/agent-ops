@@ -591,6 +591,24 @@ assert_defaults "an explicitly configured value still wins over the derivation (
 assert_defaults "...and for a count-valued key too" \
   '.schedule.cycle_interval_minutes = 60 | .cycles_retained = 999' \
   '.cycles_retained == 999'
+
+# Acceptance 3a (agent-ops#1826): state_local_streams_retained alone is a cap
+# as well as a floor — a configured value below the derivation is taken as
+# configured, where its two siblings are raised to theirs — and absent it
+# still derives. The derived figures are read relationally rather than as
+# constants, because the fixture's own cadence keys decide them.
+assert_defaults "a configured state_local_streams_retained below the derivation caps it (10 at a 15-minute cadence stays 10)" \
+  '.schedule.cycle_interval_minutes = 15 | .state_local_streams_retained = 10' \
+  '.state_local_streams_retained == 10'
+assert_defaults "...and one above the derivation still wins (the floor half of the contract)" \
+  '.schedule.cycle_interval_minutes = 15 | .state_local_streams_retained = 9999' \
+  '.state_local_streams_retained == 9999'
+assert_defaults "...while an absent state_local_streams_retained still derives from the cadence (never below its hourly base of 50)" \
+  '.schedule.cycle_interval_minutes = 15 | del(.state_local_streams_retained)' \
+  '.state_local_streams_retained >= 50'
+assert_defaults "...and the sibling count keys keep the floor-only shape: a state_local_cycles_retained below the derivation is raised to it" \
+  '.schedule.cycle_interval_minutes = 15 | .state_local_cycles_retained = 10' \
+  '.state_local_cycles_retained > 10'
 assert_defaults "an explicit 0 for none_selected_recheck_hours stays 0, never raised by the derivation" \
   '.schedule.cycle_interval_minutes = 60 | .none_selected_recheck_hours = 0' \
   '.none_selected_recheck_hours == 0'

@@ -612,6 +612,21 @@ config_defaults() {
         | (if ($cfg | type) == "number" then $cfg else 0 end) as $floor
         | ([$floor, (($base_cycles * 60 / $mean_gap_min) | ceil)] | max);
 
+    # `state_local_streams_retained` alone takes a configured value as
+    # configured — a cap as well as a floor (agent-ops#1826). It is the one
+    # count key that bounds files of a different order of size from the
+    # records holding them (a fleet-log snapshot ran 45 MB apiece at this
+    # installation'\''s cadence, 200 of them 9 GB per node), and a host whose
+    # disk cannot hold the derived count has to be able to say so: under the
+    # floor-only contract the derived count held two nodes on one 38 GB disk
+    # at their disk-pressure floor with daily stand-downs, and the only way
+    # down was a test-only environment bypass. Absent, the derivation above
+    # applies unchanged; the other two count keys keep the floor-only shape,
+    # because a value below their derivation could only shorten the record.
+    def count_key_capped($key; $base_cycles):
+        (getpath([$key])) as $cfg
+        | if ($cfg | type) == "number" then $cfg else count_key($key; $base_cycles) end;
+
     # `none_selected_recheck_hours` alone carries a "0 disables the valve"
     # convention (`minimum: 0`, not `exclusiveMinimum`) — an explicit 0 must
     # stay exactly 0, never raised by the derivation the way a genuine floor
@@ -641,7 +656,7 @@ config_defaults() {
     | .none_selected_recheck_hours = hour_key_mean_or_zero("none_selected_recheck_hours"; 24)
     | .cycles_retained = count_key("cycles_retained"; 200)
     | .state_local_cycles_retained = count_key("state_local_cycles_retained"; 1000)
-    | .state_local_streams_retained = count_key("state_local_streams_retained"; 50)
+    | .state_local_streams_retained = count_key_capped("state_local_streams_retained"; 50)
   ' "$config_file"
 }
 

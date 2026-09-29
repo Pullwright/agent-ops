@@ -96,7 +96,11 @@ Environment:
                         override `state_local_cycles_retained` (tests use a
                         small value).
   STATE_SYNC_STREAMS_RETAINED
-                        override `state_local_streams_retained` (likewise).
+                        override `state_local_streams_retained` (likewise) —
+                        and, forwarded by deploy/docker/compose.yaml from a
+                        node's .env, the per-node operator lever for a host
+                        whose disk cannot hold the derived count
+                        (agent-ops#1826).
   STATE_SYNC_PUSH_DEADLINE_SECONDS
                         override the redaction loop's deadline, normally one
                         push interval (tests use a small value).
@@ -804,13 +808,15 @@ redact_mirror_files() {
 }
 
 # `prune_derived` above bounds the derived files by a *count*
-# (`state_local_streams_retained`) that only ever rises — requirement 1d's own
-# floor-never-ceiling contract (#901/#918) — so a busy fleet can still grow
+# (`state_local_streams_retained`) that, left unconfigured, only ever rises
+# with the cadence (requirement 1d) — a configured value or
+# STATE_SYNC_STREAMS_RETAINED caps it (agent-ops#1826), but a count chosen for
+# one disk says nothing about another — so a busy fleet can still grow
 # past whatever free space is actually left, exactly as it did on 2026-09-18
 # (agent-ops#1678): 200 retained fleet-log snapshots at 45 MB apiece filled
 # the host and stood both nodes down for disk before either ever pruned a
 # byte of them. `state_local_streams_retained`'s own count is unchanged by
-# this function and stays the operator's only lever for the *ordinary* case;
+# this function and stays the operator's lever for the *ordinary* case;
 # this is the backstop for the case that count cannot see, because a snapshot
 # is read only by the cycle that wrote it (the header above) — every one of
 # them but the newest already exists purely for after-the-fact diagnosis, so

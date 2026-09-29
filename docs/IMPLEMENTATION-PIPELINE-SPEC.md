@@ -1176,7 +1176,7 @@ Cycle and review directories the node's *own* `state_dir` keeps; the same push t
 
 ### Extended notes: `state_local_streams_retained`
 
-Cycle and review directories whose derived files are kept — the stage event streams (`<stage>.stream.jsonl`, requirement 4d) and the fleet-log snapshot (`.fleet-log.jsonl`, requirement 2.5); the push that replicates prunes to it (requirement 2.5). Far below `state_local_cycles_retained` because each is a different order of size from the record holding it — a cycle directory without them is kilobytes, one Reviewer stream megabytes, one snapshot the whole fleet's history to that moment — so they go early and their records stay. Neither reaches the state repository. A span of history, not a literal cycle count (requirement 1d): derived from the mean gap between cycles (`schedule.cycle_interval_minutes`, `cycle_hours`, `excluded_minutes`) to hold the ~2.1 days 50 cycles represented at the historical hourly cadence; a configured value floors the derivation rather than replacing it. `STATE_SYNC_STREAMS_RETAINED` overrides it for tests. At the shipped 15-minute cadence this raises the derived count 50 → 200 (TD-PPagop-26082830) — the one of these three keys worth quantifying rather than only ratioed, since it alone bounds files this large: measured on both poetic nodes at 21:00Z on 2026-09-18 (agent-ops#1678, closing #1025's own ask for a real baseline in place of the order-of-magnitude estimate this note used to carry), 200 retained fleet-log snapshots alone ran 45.1–45.4 MB apiece, 7.3–7.4 GB per node, regrowing at roughly 4.3 GB/node/day — two orders of magnitude past that prior 'low hundreds of megabytes' estimate, and, at this cadence, past `min_free_workspace_bytes`'s 2 GiB pre-clone floor on its own within about a day and a half of a clean sweep, not comfortably inside it as the estimate had it. That gap is why `state-sync.sh push` additionally prunes derived files under active disk pressure (requirement 2.5) rather than relying on this count alone to stay inside the floor — the incident that supplied these figures is exactly the case the count could not see coming. A configured value below the derivation is inert for the same reason `lock_stale_after`'s floor is: it preserves the span of history the base count was chosen to keep, at this installation's own cadence. `STATE_SYNC_STREAMS_RETAINED` bypasses the derivation for tests only, not as an operator lever — the disk floor above is requirement 2.0c's own free-space threshold — `min_free_workspace_bytes`'s floor, raised by `workspace_headroom_factor`'s derivation over the largest recorded clone (agent-ops#904) — not this count.
+Cycle and review directories whose derived files are kept — the stage event streams (`<stage>.stream.jsonl`, requirement 4d) and the fleet-log snapshot (`.fleet-log.jsonl`, requirement 2.5); the push that replicates prunes to it (requirement 2.5). Far below `state_local_cycles_retained` because each is a different order of size from the record holding it — a cycle directory without them is kilobytes, one Reviewer stream megabytes, one snapshot the whole fleet's history to that moment — so they go early and their records stay. Neither reaches the state repository. A span of history, not a literal cycle count (requirement 1d): derived from the mean gap between cycles (`schedule.cycle_interval_minutes`, `cycle_hours`, `excluded_minutes`) to hold the ~2.1 days 50 cycles represented at the historical hourly cadence; unlike the other two count keys, a configured value replaces the derivation rather than flooring it — a cap as well as a floor (agent-ops#1826) — and `STATE_SYNC_STREAMS_RETAINED`, forwarded to the scheduler by `deploy/docker/compose.yaml`, sets the same count per node ahead of it. At the shipped 15-minute cadence this raises the derived count 50 → 200 (TD-PPagop-26082830) — the one of these three keys worth quantifying rather than only ratioed, since it alone bounds files this large: measured on both poetic nodes at 21:00Z on 2026-09-18 (agent-ops#1678, closing #1025's own ask for a real baseline in place of the order-of-magnitude estimate this note used to carry), 200 retained fleet-log snapshots alone ran 45.1–45.4 MB apiece, 7.3–7.4 GB per node, regrowing at roughly 4.3 GB/node/day — two orders of magnitude past that prior 'low hundreds of megabytes' estimate, and, at this cadence, past `min_free_workspace_bytes`'s 2 GiB pre-clone floor on its own within about a day and a half of a clean sweep, not comfortably inside it as the estimate had it. That gap is why `state-sync.sh push` additionally prunes derived files under active disk pressure (requirement 2.5) rather than relying on this count alone to stay inside the floor — the incident that supplied these figures is exactly the case the count could not see coming, and why a configured value caps this key where it only floors the other two: on the 38 GB disk two nodes share, the derived 200 held both at that floor with daily `disk-low` stand-downs, and a host whose disk cannot hold the derived count has to be able to say so (agent-ops#1826). The disk floor above is requirement 2.0c's own free-space threshold — `min_free_workspace_bytes`'s floor, raised by `workspace_headroom_factor`'s derivation over the largest recorded clone (agent-ops#904) — not this count.
 
 ### Extended notes: `approver_restale_escalate_after_hours`
 
@@ -2053,6 +2053,20 @@ implements.
      directories, where the worst-case gap of 915 minutes would keep 14 —
      about three hours of history in place of eight days, and fewer than the
      flat 200 this derivation replaced.
+     `state_local_streams_retained` alone takes a configured value as
+     configured — a cap as well as a floor (agent-ops#1826). It is the one
+     key of the three that bounds files of a different order of size from
+     the records holding them (a fleet-log snapshot at 45 MB apiece, 200 of
+     them 9 GB per node at this cadence), and a host whose disk cannot hold
+     the derived count has to be able to say so: under a floor-only contract
+     the derived count held two nodes on one 38 GB disk at their
+     disk-pressure floor (requirement 2.5) with daily `disk-low` stand-downs,
+     and the only way down was a test-only environment bypass. The other two
+     keep the floor-only shape, because a value below their derivation could
+     only shorten the record. `STATE_SYNC_STREAMS_RETAINED`, which
+     `deploy/docker/compose.yaml` forwards to the scheduler from a node's
+     `.env`, sets the same count for that node ahead of the key, so an
+     installation whose nodes' disks differ can size each on its own.
      `crash_loop_after` is the fourth key issue
      #591's audit considered under this same "counted in cycles already"
      heading and decided *against* deriving: its four carries the
@@ -4248,10 +4262,11 @@ implements.
    cron push against the end-of-cycle push.
 
    **The count-based retention above is a backstop for a busy fleet, not for
-   a full disk (agent-ops#1678).** `state_local_streams_retained` only ever
-   rises — requirement 1d's own floor-never-ceiling contract (#901/#918) — so
-   nothing in the count itself stands between a fast cadence and a host with
-   no room left: on 2026-09-18 both poetic nodes' 200 retained fleet-log
+   a full disk (agent-ops#1678).** Left unconfigured,
+   `state_local_streams_retained` only ever rises with the cadence
+   (requirement 1d), and a count configured for one disk (agent-ops#1826)
+   says nothing about another, so nothing in the count itself stands between
+   a fast cadence and a host with no room left: on 2026-09-18 both poetic nodes' 200 retained fleet-log
    snapshots reached 45 MB apiece, filled the shared host to zero free bytes,
    and stood both nodes down for disk (`disk-full`, requirement 2.0c) without
    either node ever having pruned a byte of the roughly 7 GB each was
@@ -4268,11 +4283,11 @@ implements.
    cycle that wrote it (the header above), so every retained copy but the
    newest already exists purely for after-the-fact diagnosis, and deleting an
    older one under pressure costs a live node nothing a live gate or
-   watchdog still reads. `state_local_streams_retained`'s own derivation and
-   floor-never-ceiling contract are unchanged by this — it stays the
-   operator's lever for the ordinary case, and this prune only ever removes
-   what a free-space shortfall makes unsafe to keep regardless of that
-   count. A `0` floor (`min_free_workspace_bytes` disabled) makes this prune
+   watchdog still reads. `state_local_streams_retained`'s own derivation is
+   unchanged by this — the key, or a node's `STATE_SYNC_STREAMS_RETAINED`,
+   stays the operator's lever for the ordinary case, and this prune only
+   ever removes what a free-space shortfall makes unsafe to keep regardless
+   of that count. A `0` floor (`min_free_workspace_bytes` disabled) makes this prune
    a no-op too, the same as it does the pre-clone gate — one setting, one
    meaning of "off", for both. The floor is read defensively, not merely
    trusted: `min_free_workspace_bytes` falls back to `0` — the same "off" —
@@ -4284,8 +4299,10 @@ implements.
    gives a non-numeric floor argument.
    `STATE_SYNC_MIN_FREE_WORKSPACE_BYTES` and
    `STATE_SYNC_FREE_KB` override the floor and the free-space reading
-   respectively, both test-only, the same shape `STATE_SYNC_STREAMS_RETAINED`
-   already uses to bypass its own derivation for `test/state-sync.test.sh`.
+   respectively, both test-only — the shape `STATE_SYNC_STREAMS_RETAINED`
+   takes for `test/state-sync.test.sh` too, though that one is also a
+   per-node operator lever, forwarded by `deploy/docker/compose.yaml`
+   (agent-ops#1826).
    `test/state-sync.test.sh` passes: a push comfortably clear of an injected
    floor still runs the ordinary count-based prune and never engages this
    one; a push injected below the floor engages it after the count-based
