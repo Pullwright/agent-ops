@@ -46,6 +46,22 @@ PROMPTS_DIR="$SCRIPT_DIR/prompts"
 # it is in. See requirement 24a.
 export AGENT_OPS_ROOT="$SCRIPT_DIR"
 
+# shellcheck source=lib/scratch.sh
+. "$SCRIPT_DIR/lib/scratch.sh"
+# This cycle's scratch directory (lib/scratch.sh, requirement 2.5), entered
+# before any other library is sourced so that everything this process or a
+# library it calls spools through `mktemp` — lib/issue-priority.sh's cache,
+# made as that file is sourced; lib/gh-shim.sh's per-call directories; the
+# toggle memos; the end-of-cycle hook's own publish — lies inside it, and
+# `cleanup` releases it at the very end. The trap is armed first, on an empty
+# name, so that an exit anywhere before `cleanup` is installed — the role
+# guard, the schema gate, a management command — releases it too, and a
+# signal landing during the mktemp itself finds nothing to release and leaves
+# the directory to the sweep.
+SCRATCH_DIR=""
+trap scratch_release EXIT
+scratch_enter agent-cycle || exit 1
+
 # shellcheck source=lib/limit-detect.sh
 . "$SCRIPT_DIR/lib/limit-detect.sh"
 # GitHub's rate limits, which are a different system from the Claude usage
@@ -1060,6 +1076,23 @@ cycle_dir="$state_dir/cycles/$cycle_id"
 # ever ran.
 [[ -n "$MANAGE_ACTION" ]] || mkdir -p "$cycle_dir"
 
+# What a dead process left in the container's writable layer — a Publisher's
+# working set from a publish the OOM killer or a container stop ended, a
+# cycle's own scratch directory from a stale-lock takeover's KILL,
+# lib/toggle.sh's memos under a pid no longer alive (lib/scratch.sh,
+# agent-ops#1827). The launcher sweeps the same directory at the start of
+# every window, on every node whatever its role; this sweep runs before this
+# cycle's own free-space gate (requirement 2.0c) reads the disk, so what it
+# reclaims counts. Skipped by a management command for the same reason the
+# cycle directory above is, since it runs no cycle.
+if [[ -z "$MANAGE_ACTION" ]]; then
+  # shellcheck disable=SC2119  # the default — the base this cycle's own scratch directory was made in — is the one wanted here
+  swept_scratch="$(scratch_sweep_dead_owners)"
+  if [[ "$swept_scratch" =~ ^[0-9]+$ ]] && (( swept_scratch > 0 )); then
+    echo "agent-cycle: removed $swept_scratch scratch director(ies) left by dead processes in ${SCRATCH_BASE:-${TMPDIR:-/tmp}}" >&2
+  fi
+fi
+
 # --- Logging ---
 # The envelope logic (the FIELDS contract, issue #361/#458) lives in
 # lib/log-event.sh's log_event_append, shared with review-cycle.sh; `cycle`
@@ -1429,8 +1462,14 @@ cleanup() {
   # Refresh the local monitoring dashboard. Fully isolated: a failure or a slow
   # gh call here must never affect the cycle's outcome or exit code.
   if [[ -x "$SCRIPT_DIR/scripts/publish-dashboard.sh" ]]; then
-    timeout 120 "$SCRIPT_DIR/scripts/publish-dashboard.sh" >/dev/null 2>&1 || true
+    timeout -k 10 120 "$SCRIPT_DIR/scripts/publish-dashboard.sh" >/dev/null 2>&1 || true
   fi
+  # This cycle's scratch directory (lib/scratch.sh) goes here: after the
+  # state-sync push and the hook publish above, which made their own inside
+  # it, and before the chained cycle below is spawned, so that child inherits
+  # the TMPDIR this process was given rather than a directory that no longer
+  # exists. Nothing between spools anything.
+  scratch_release
   # Yield to a pending image roll (requirement 39, agent-ops#1096): a node
   # running long or chained cycles never presents watchtower's
   # deploy/docker/watchtower-pre-update.sh a gap to poll into, so a healthy,

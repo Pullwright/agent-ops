@@ -462,9 +462,11 @@ armed_file="$(mktemp)"
 # allocated out here, in the parent, rather than per call inside it.
 retry_buf="$(mktemp)"
 # INT/TERM/HUP alongside EXIT: `agent-cycle.sh` runs this script under
-# `timeout 120`, and on a timeout bash takes the default fatal action for
-# SIGTERM and never reaches an EXIT-only trap, leaking both temp files every
-# time the sweep actually times out — the normal case here, not an edge case.
+# `timeout 120`, whose expiry sends SIGTERM. bash runs an EXIT trap on an
+# untrapped fatal signal as well, so the temp files would go either way;
+# trapped, the signal is handled once the `gh` call in flight returns rather
+# than in the middle of it, and the handler's own `exit` gives the caller the
+# same 128+n an untrapped signal would.
 #
 # Each signal handler must *exit*, and that half is not decoration. A trapped
 # signal whose handler falls off its own end returns bash to what it was

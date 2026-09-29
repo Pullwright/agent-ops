@@ -2238,7 +2238,7 @@ no_tmpl_app="$tmp/no-tmpl-app"
 mkdir -p "$no_tmpl_app/scripts" "$no_tmpl_app/lib" "$no_tmpl_app/deploy/docker"
 cp "$SCRIPT_DIR/scripts/doctor.sh" "$no_tmpl_app/scripts/"
 cp "$SCRIPT_DIR/lib/config-schema.sh" "$SCRIPT_DIR/lib/model-id.sh" "$SCRIPT_DIR/lib/labels.sh" \
-  "$no_tmpl_app/lib/"
+  "$SCRIPT_DIR/lib/scratch.sh" "$no_tmpl_app/lib/"
 cp "$SCRIPT_DIR/config.schema.json" "$no_tmpl_app/"
 cp "$SCRIPT_DIR/deploy/docker/render-crontab.sh" "$no_tmpl_app/deploy/docker/"
 out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH PATH="$stub_bin:$PATH" bash "$no_tmpl_app/scripts/doctor.sh" --config "$base_config" 2>&1)"

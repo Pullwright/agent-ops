@@ -1238,6 +1238,27 @@ kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
 assert_eq "launcher exits 0 while another publish holds the lock" "0" "$rc"
 assert_contains "skipped ticks are logged" "skipped: publish already running" "$(cat "$log")"
 
+# --- The window-start sweep (agent-ops#1827) -------------------------------------------
+# Every window starts by removing the scratch directories at the top of
+# $TMPDIR whose owning pid is gone — a Publisher's working set a KILL ended, a
+# cycle's scratch from a stale-lock takeover — and leaves a live process's
+# alone (lib/scratch.sh). The launcher is the sweep that reaches a standby
+# node, whose agent-cycle.sh exits at its role guard before its own.
+sw_tmp="$tmp_dir/launcher-sweep-tmp"; mkdir -p "$sw_tmp"
+sw_dead="$(dead_pid)"
+mkdir -p "$sw_tmp/agent-ops.publish-dashboard.$sw_dead.AbC123" \
+         "$sw_tmp/agent-ops.agent-cycle.$sw_dead.DeF456" \
+         "$sw_tmp/agent-ops.publish-dashboard.$$.LiVe01"
+: > "$log"
+env HOME="$a" TMPDIR="$sw_tmp" LAUNCHER_WINDOW=15 DASHBOARD_GH_CMD="$launcher_gh_stub" "$LAUNCHER" >/dev/null 2>&1
+sw_left=""
+for sw_e in "$sw_tmp"/*."$sw_dead".*; do [[ -e "$sw_e" ]] && sw_left+="${sw_e##*/} "; done
+assert_eq "a window removes the scratch directories whose owning pid is dead" "" "$sw_left"
+assert_eq "…keeps a live process's" \
+  "yes" "$([[ -d "$sw_tmp/agent-ops.publish-dashboard.$$.LiVe01" ]] && echo yes || echo no)"
+assert_contains "…and logs what it removed" \
+  "swept: removed 2 scratch director(ies) left by dead processes in $sw_tmp" "$(cat "$log")"
+
 # --- The heartbeat's GitHub cadence -----------------------------------------------
 # The gate deciding which tick fetches from GitHub is the one thing on this page
 # that leaves no evidence when it breaks: a skipped fetch is designed to render
@@ -4126,6 +4147,123 @@ assert_eq "the degrade literal's rework_cycles key stays null, never coalesced t
 assert_eq "…and the verbatim spool carries that outage into every spend_fate field — a future '// []' regression there would instead compute a confident, reconciled account" \
   "$(jq -Sc -n '{"total_usd":null,"row_count":null,"by_fate":null,"reconciled":null,"lever":null}')" \
   "$(jq -Sc '.spend_fate' <<<"$oadata")"
+
+# --- Nothing a publish spools lies outside its working set (agent-ops#1827) --------
+# The Publisher's working set is its scratch directory (lib/scratch.sh), and
+# TMPDIR points inside it for the publish's lifetime, so a library's `mktemp`
+# — the union files of lib/item-lifecycle.sh and lib/node-time-state.sh live
+# a few milliseconds each — lands where the working set's own removal covers
+# it, never beside it, where nothing of this process would. That is a
+# property of where files go, not of how the publish ends, so it is watched
+# rather than provoked: a loop reads the top of $TMPDIR every few
+# milliseconds for the whole of a publish and records every name it ever
+# sees there. Two names are the publish's own: the working set, and the
+# tombstone its release renames the set to before removing it (same pid).
+# Against a Publisher whose libraries spool into $TMPDIR itself, the census
+# catches `tmp.*` entries on the first burst.
+cn="$(new_home nodeScratchCensus)"
+for (( cn_i = 1; cn_i <= 40; cn_i++ )); do
+  make_cycle "$cn" "$(printf '%sT%02d%02d00Z-%d' "$today_day" $(( cn_i % 24 )) $(( cn_i % 60 )) "$cn_i")" 0.10 model-a
+done
+cn_tmp="$tmp_dir/scratch-census-tmp"; mkdir -p "$cn_tmp"
+env HOME="$cn" TMPDIR="$cn_tmp" "$PUBLISH" --no-github >/dev/null 2>"$tmp_dir/scratch-census.err" &
+cn_pid=$!
+declare -A cn_seen=()
+while kill -0 "$cn_pid" 2>/dev/null; do
+  for cn_e in "$cn_tmp"/* "$cn_tmp"/.[!.]*; do
+    [[ -e "$cn_e" ]] && cn_seen["${cn_e##*/}"]=1
+  done
+  sleep 0.002
+done
+wait "$cn_pid"
+cn_rc=$?
+cn_sets=0; cn_outside=""
+for cn_e in "${!cn_seen[@]}"; do
+  case "$cn_e" in
+    agent-ops.publish-dashboard.*.*) cn_sets=$(( cn_sets + 1 )) ;;
+    .agent-ops-sweep.*.agent-ops.publish-dashboard.*.*) ;;    # the set's own tombstone, on its way out
+    *) cn_outside+="$cn_e " ;;
+  esac
+done
+assert_eq "the watched publish ran to completion (exit $cn_rc; stderr: $(tail -n 2 "$tmp_dir/scratch-census.err" | tr '\n' ' ' | cut -c1-200))" \
+  "0" "$cn_rc"
+assert_eq "…its working set, agent-ops.publish-dashboard.<pid>.XXXXXX, was seen at the top of \$TMPDIR (the census watched something)" \
+  "1" "$cn_sets"
+assert_eq "…and nothing else ever appeared there but the set's own tombstone: every file the publish or its libraries spooled lay inside the working set" \
+  "" "$cn_outside"
+assert_eq "…and nothing is left when it ends" "" "$(ls -A "$cn_tmp")"
+
+# --- The working set under the hook's TERM (agent-ops#1827) ------------------------
+# The end-of-cycle hook runs the Publisher under `timeout -k 10 120`, and a
+# publish that overruns is ended by the TERM `timeout` sends to the process
+# and to its process group; bash handles an untrapped fatal signal by running
+# the EXIT trap and exiting, and this case holds that trap to what it must
+# leave behind: nothing. (It passes against a Publisher with no signal traps
+# — bash's own behaviour is the mechanism — so what it guards is the trap's
+# arming, before the directory exists, and its scope.) The Publisher rebuilds
+# its own PATH at startup, so no stub on PATH can stall it from outside;
+# instead a publish is started under `timeout` itself over a fixture wide
+# enough to take a while, a file inside its working set is waited for — one
+# the publish writes only once the directory is made, the trap armed and the
+# name assigned — and `timeout` is sent the TERM, which it forwards to the
+# publish exactly as its own expiry would. The publish must not have finished
+# on its own.
+sk="$(new_home nodeScratchKill)"
+for (( sk_i = 1; sk_i <= 40; sk_i++ )); do
+  make_cycle "$sk" "$(printf '%sT%02d%02d00Z-%d' "$today_day" $(( sk_i % 24 )) $(( sk_i % 60 )) "$sk_i")" 0.10 model-a
+done
+sk_tmp="$tmp_dir/scratch-kill-tmp"; mkdir -p "$sk_tmp"
+env HOME="$sk" TMPDIR="$sk_tmp" timeout 600 "$PUBLISH" --no-github >/dev/null 2>"$tmp_dir/scratch-kill.err" &
+sk_pid=$!
+sk_seen=no
+for (( sk_i = 0; sk_i < 6000; sk_i++ )); do    # up to 60 s for a file inside the working set
+  if compgen -G "$sk_tmp/agent-ops.publish-dashboard.*/*" >/dev/null; then sk_seen=yes; break; fi
+  kill -0 "$sk_pid" 2>/dev/null || break
+  sleep 0.01
+done
+kill -TERM "$sk_pid" 2>/dev/null
+wait "$sk_pid"
+sk_rc=$?
+assert_eq "a file appeared inside the publish's working set before it was ended (the case is exercised)" \
+  "yes" "$sk_seen"
+# `timeout` reports the publish's own end: 143 for a TERM, or 1 where the
+# arm64 CI job's QEMU emulation has the assemble fail first. Either way the
+# publish did not run to completion, which is what matters here, and a
+# finished publish would have written the page.
+assert_eq "…and the TERM ended the publish rather than the publish finishing first (exit $sk_rc; stderr: $(tail -n 2 "$tmp_dir/scratch-kill.err" | tr '\n' ' ' | cut -c1-200))" \
+  "ended early" "$([[ "$sk_rc" -ne 0 && ! -e "$sk/.local/state/poetic-agents/dashboard/data.js" ]] && echo "ended early" || echo "ran to completion")"
+assert_eq "a publish ended by TERM leaves nothing at all under \$TMPDIR — its working set, and every file the libraries spooled inside it" \
+  "" "$(ls -A "$sk_tmp")"
+
+# --- The fast tick's full rebuild (agent-ops#1827) ------------------------------------
+# A fast tick whose assemble fails runs a full build in its place — as a
+# child process, inside its own working set, so that its own EXIT trap removes
+# both when the child returns; an `exec` would run no EXIT trap and leave one
+# working set per rebuild. A payload cache that is not JSON is what makes a
+# fast assemble fail. The payload is checked for content as well as shape:
+# `jq -e .` on empty input exits 0 under jq 1.6, so a page holding
+# `window.DASHBOARD_DATA = ;` would otherwise pass here on such a host.
+fx="$(new_home nodeFastExec)"
+make_cycle "$fx" "${today_day}T180000Z-1" 0.10 model-a
+fx_tmp="$tmp_dir/fast-exec-tmp"; mkdir -p "$fx_tmp"
+run_publish "$fx" TMPDIR="$fx_tmp"
+assert_eq "a full build first, to write the payload cache a fast tick reads" \
+  "yes" "$([[ -s "$fx/.local/state/poetic-agents/.dashboard-payload" ]] && echo yes || echo no)"
+printf '{' > "$fx/.local/state/poetic-agents/.dashboard-payload"
+# The cache is the Publisher's own output and so outside its no-op fingerprint
+# (#787): an input has to move, or the fast tick short-circuits before it
+# ever assembles. A second cycle is that input.
+make_cycle "$fx" "${today_day}T181500Z-2" 0.10 model-a
+env HOME="$fx" TMPDIR="$fx_tmp" "$PUBLISH" --no-github --fast >/dev/null 2>"$tmp_dir/fast-exec.err"
+fx_rc=$?
+assert_contains "a fast tick whose assemble fails says it is rebuilding in full" \
+  "fast assemble failed; rebuilding in full" "$(cat "$tmp_dir/fast-exec.err")"
+assert_eq "…and the rebuild exits 0" "0" "$fx_rc"
+fx_payload="$(data_of "$fx")"
+assert_eq "…with a payload that is there at all" "yes" "$([[ -n "$fx_payload" ]] && echo yes || echo no)"
+assert_eq "…and that the page can parse" "0" "$(jq -e . >/dev/null 2>&1 <<<"$fx_payload"; echo $?)"
+assert_eq "…and leaves nothing under \$TMPDIR — neither the fast tick's working set nor the rebuild's, which lay inside it" \
+  "" "$(ls -A "$fx_tmp")"
 
 # ---------------------------------------------------------------------------------
 if (( failures > 0 )); then

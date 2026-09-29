@@ -560,7 +560,12 @@ R2c. **The fleet's memory and state publication.** After the lock and before
    costs this pipeline the records around it exactly as it costs a cycle's.
    The run's cleanup removes the snapshot, as a cycle's does: it is scratch
    with the run's lifetime, and a count of retained snapshots bounds how many
-   are kept, never how large they are (that requirement's own terms).
+   are kept, never how large they are (that requirement's own terms). The
+   run's own scratch directory — `agent-ops.review-cycle.<pid>.XXXXXX` under
+   `$TMPDIR`, entered before any library is sourced and pointed to by
+   `TMPDIR` for the run's lifetime, so that every `mktemp` of the run lies
+   inside it (`lib/scratch.sh`, that requirement again) — is released by the
+   same cleanup, last of all.
    There is no lease: per-item claims
    (requirement 17a of the implementation spec) arbitrate work.
 

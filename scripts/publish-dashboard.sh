@@ -165,6 +165,8 @@ TEMPLATE="$SCRIPT_DIR/dashboard/index.html"
 . "$SCRIPT_DIR/lib/pager.sh"
 # shellcheck source=lib/pager-invariants.sh
 . "$SCRIPT_DIR/lib/pager-invariants.sh"
+# shellcheck source=lib/scratch.sh
+. "$SCRIPT_DIR/lib/scratch.sh"
 
 MAX_CYCLES=40        # recent substantive cycles shown in detail (with
                      # transcripts); no-op ticks aggregate instead (#271)
@@ -498,8 +500,55 @@ mkdir -p "$out_dir"
 # Large JSON blobs (the cycles array carries full transcripts) are handed to jq
 # through files, not argv: a single command-line argument is capped at 128 KB
 # (MAX_ARG_STRLEN), which big transcripts blow past. Temp files have no such limit.
-work_tmp="$(mktemp -d)"
-trap 'rm -rf "$work_tmp"' EXIT
+#
+# The working set is this process's scratch directory (lib/scratch.sh):
+# `agent-ops.publish-dashboard.<pid>.XXXXXX` under $TMPDIR, with TMPDIR itself
+# pointing inside it from here on, so every file this publish or a library it
+# calls spools through `mktemp` — lib/item-lifecycle.sh's and
+# lib/node-time-state.sh's union files (one of them 69 MB on a month of log),
+# lib/gh-shim.sh's per-call directories, lib/toggle.sh's memos, `sort`'s spill
+# files — lands inside it, and the one removal in the EXIT trap covers all of
+# it. The name carries the pid so that a directory a dead process left can be
+# told from a live publish's however long that publish has run (lib/scratch.sh's
+# sweep, run at the start of every launcher window and every cycle).
+#
+# The end-of-cycle hook runs this script under `timeout -k 10 120`. bash
+# handles the TERM that sends by running the EXIT trap and exiting, as it does
+# on `exit`; only a KILL — the hook's own ten seconds later, the OOM killer's
+# — skips the trap, and the sweep removes what a KILL leaves. TERM is
+# deliberately not trapped: a trapped signal is handled only once the
+# foreground command returns, which would hold the hook past its bound for as
+# long as a `timeout 15` GitHub call takes. `timeout` signals this process
+# first and its process group a moment later, and a command this script forked
+# in the instant between the two never receives the second and outlives it;
+# scratch_release renames the working set away before removing it, so such a
+# straggler has nowhere to recreate an entry under (measured: once in some
+# thirty TERMs, one file, before the rename).
+#
+# The trap covers, besides the working set, the three files a publish stages
+# outside it — the `.data.XXXXXX.js` and `.stamp.XXXXXX.js` beside their
+# targets in $out_dir, and the payload cache's `.tmp` — each made where its
+# `mv` into place is atomic, and each otherwise left for good by a TERM during
+# the multi-megabyte redaction below. Armed before the directory exists, on
+# empty names, so no signal can land between the two; a TMPDIR nothing can be
+# made in ends the publish here, saying so, rather than aiming every later
+# write at the filesystem root.
+work_tmp=""
+data_tmp=""
+stamp_tmp=""
+# shellcheck disable=SC2317  # invoked only through the EXIT trap below, which a static reader does not follow
+publish_cleanup() {
+  local staged
+  trap '' TERM INT HUP    # see scratch_release: the group-wide second signal must not land on the removal
+  for staged in "$data_tmp" "$stamp_tmp" "${payload_cache:+$payload_cache.tmp}"; do
+    [[ -n "$staged" && -e "$staged" ]] && rm -f -- "$staged"
+  done
+  scratch_release
+  return 0
+}
+trap publish_cleanup EXIT
+scratch_enter publish-dashboard || exit 1
+work_tmp="$SCRATCH_DIR"
 
 if [[ -n "$now_override" ]]; then
   now_iso="$now_override"
@@ -4118,16 +4167,24 @@ fi
 # never says why. Leaving the previous data.js in place is strictly better —
 # the page ages visibly against its own `generated_at`, which is the signal an
 # operator already reads — and the non-zero exit is what puts the reason in
-# cron.log instead of another line claiming a write.
-if ! jq -e . >/dev/null 2>&1 <<<"$data_json"; then
+# cron.log instead of another line claiming a write. Emptiness is tested by
+# name rather than left to jq: `jq -e .` on empty input exits 4 under the
+# image's jq 1.7 and 0 under 1.6, the legacy host install's, which would have
+# published `window.DASHBOARD_DATA = ;` there.
+if [[ -z "$data_json" ]] || ! jq -e . >/dev/null 2>&1 <<<"$data_json"; then
   # A fast build has one more move before giving up: everything it needed was
   # in the cache it could not use, so re-run as a full build rather than leave
-  # the page to age. `exec` keeps the flock the launcher took, and the retry
-  # cannot loop — it runs without --fast, so it takes the branch below.
+  # the page to age. The rebuild runs as a child of this process, not in its
+  # place: it inherits the flock the launcher took through the open
+  # descriptor, makes its own working set inside this one (TMPDIR points
+  # there), and this process's EXIT trap removes both once the child returns
+  # — an `exec` would run no EXIT trap at all. The retry cannot loop: it runs
+  # without --fast, so it takes the branch below.
   if (( ! FULL )); then
     echo "publish-dashboard: fast assemble failed; rebuilding in full" >&2
     rm -f "$payload_cache" 2>/dev/null || true
-    exec "$0" --no-github "${NOW_ARGS[@]}"
+    "$0" --no-github "${NOW_ARGS[@]}"
+    exit $?
   fi
   echo "publish-dashboard: could not assemble the payload; $data_file left unchanged" >&2
   exit 1
@@ -4183,14 +4240,14 @@ data_json="$(jq --arg fingerprint "$public_fingerprint" '. + {fingerprint: $fing
 # --- Redact (defensive) & write atomically -----------------------------------
 # redact() itself is lib/redact.sh, shared with scripts/state-sync.sh's own
 # push (agent-ops#966).
-tmp="$(mktemp "$out_dir/.data.XXXXXX.js")"
+data_tmp="$(mktemp "$out_dir/.data.XXXXXX.js")"
 {
   printf '// Generated by publish-dashboard.sh at %s — do not edit. Regenerated each run.\n' "$now_iso"
   printf 'window.DASHBOARD_DATA = '
   printf '%s' "$data_json" | redact
   printf ';\n'
-} > "$tmp"
-mv -f "$tmp" "$data_file"
+} > "$data_tmp"
+mv -f "$data_tmp" "$data_file"
 
 # stamp.js (issue #1288): a client-visible companion to data.js, a few dozen
 # bytes, that dashboard tabs poll every refresh tick instead of the multi-MB

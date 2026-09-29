@@ -3023,3 +3023,14 @@ What carries across every roll:
   to do anything: the change arrives with the next watchtower roll.
 - **The `state` and `workspaces` volumes** — the pipelines' memory and any
   in-progress clone.
+
+What does *not* carry across a roll is the container's writable layer, and
+nothing in it is meant to: it is where `$TMPDIR` lives, and it shares the
+host's disk with the volumes above, so anything left there is disk the state
+volumes' own pressure valve (requirement 2.5) cannot reclaim. Every scheduled
+entry point and the dashboard Publisher therefore keeps everything it spools
+inside one directory named after its own process
+(`agent-ops.<name>.<pid>.XXXXXX`, `lib/scratch.sh`) and removes it on exit,
+and the dashboard launcher's every window — and every cycle start — removes
+the directories whose owning process is gone, which is what a `KILL` leaves.
+`docker ps -s` shows the layer's size.

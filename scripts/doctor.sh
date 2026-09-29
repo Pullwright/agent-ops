@@ -53,6 +53,17 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=lib/scratch.sh
+source "$SCRIPT_DIR/lib/scratch.sh"
+# This run's scratch directory (lib/scratch.sh, implementation-pipeline-spec
+# requirement 2.5), entered before any other library is sourced so that
+# lib/issue-priority.sh's cache directory, made as that file is sourced, and
+# every later `mktemp` lie inside it. The trap below is replaced once that
+# library is sourced, by one that releases both.
+SCRATCH_DIR=""
+trap scratch_release EXIT
+scratch_enter doctor || exit 1
+
 # shellcheck source=lib/config-schema.sh
 source "$SCRIPT_DIR/lib/config-schema.sh"
 # shellcheck source=lib/review-context.sh
@@ -106,8 +117,9 @@ source "$SCRIPT_DIR/lib/notify.sh"
 # doctor.sh has no other trap and exits from several points below (bad
 # arguments, an unusable config, the ordinary end of a clean pass) — a single
 # EXIT trap, armed as soon as the library that owns the cache directory is
-# sourced, is what makes every one of those paths remove it (issue #510).
-trap 'issue_priority_cache_cleanup' EXIT
+# sourced, is what makes every one of those paths remove it (issue #510) and,
+# after it, release the scratch directory entered above.
+trap 'issue_priority_cache_cleanup; scratch_release' EXIT
 
 usage() {
   cat >&2 <<'USAGE'
