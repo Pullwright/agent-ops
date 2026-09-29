@@ -14187,9 +14187,10 @@ implements.
     Co-Ordinator's own runtime input is unaffected either way: a `null`
     current set still reaches it as `issues_excluded: []`, the same "nothing
     to report" reading an empty `candidates` already gets. Unlike
-    `first-seen` and `review-gate-checks-read`, this event **stays** in the
-    dashboard's log tail: every row reports a transition, which is precisely
-    the kind of fact an operator can act on, not bookkeeping to hide. A
+    `first-seen`, `review-gate-checks-read` and `rework`, this event
+    **stays** in the dashboard's log tail: every row reports a transition,
+    which is precisely the kind of fact an operator can act on, not
+    bookkeeping to hide. A
     `dependabot-rebase-requested` (requirement 3s)
     carries the `repo` and the `number` of the Dependabot pull request this
     cycle asked to rebase itself; a nudge that could not be posted is a
