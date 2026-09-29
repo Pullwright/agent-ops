@@ -2749,6 +2749,31 @@ number's twins elsewhere on the page.
   the lock to clear does not. `--status` reports both the switch and whether a
   cycle is still running, because disabling stops the next cycle, not the one
   already in flight.)
+
+  The Publisher's working set is one directory under `$TMPDIR`, named
+  `publish-dashboard.<pid>.XXXXXX` after the process that owns it and removed
+  by an `EXIT` trap; for the publish's lifetime `TMPDIR` itself points inside
+  it, so every file the Publisher or a library it calls spools through
+  `mktemp` — the union files of `lib/item-lifecycle.sh` and
+  `lib/node-time-state.sh`, `lib/gh-shim.sh`'s per-call directories,
+  `lib/toggle.sh`'s memos, `sort`'s spill files — goes with it. Three ways out
+  need more than that trap (agent-ops#1827). The `timeout` above ends an
+  overrunning publish with `TERM`, and bash does not reliably run the `EXIT`
+  trap on an untrapped fatal signal from wherever this script is when it
+  lands — a publish so ended on `poetic-1` left 307 MB of working set and
+  80 MB of library files in the container's writable layer, where the state
+  volumes' pressure valve cannot reach them — so `TERM`, `INT` and `HUP` are
+  each trapped to the `exit` the shell would have taken (143, 130 and 129),
+  which runs the `EXIT` trap on the ordinary path. The fast tick's full
+  rebuild replaces the process with `exec`, which runs no `EXIT` trap, so the
+  working set is removed and `TMPDIR` restored before it. And a `KILL` — the
+  OOM killer, a container stopped past its grace — runs nothing, so the next
+  cycle start removes any such directory whose pid is gone
+  (`lib/scratch-sweep.sh`, `docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement
+  2.5). `test/publish-dashboard.test.sh` passes: a publish ended by `TERM`
+  after its working set exists leaves nothing under `$TMPDIR`, and a fast
+  tick whose payload cache is not JSON rebuilds in full, exits 0 with a
+  parseable payload, and leaves nothing under `$TMPDIR` either.
 - **Heartbeat** — an optional `*/5 * * * *` crontab entry keeps in-flight
   state, the lock, and GitHub current between cycles. cron can't fire
   more than once a minute, so the entry runs `publish-dashboard-launcher.sh`

@@ -498,8 +498,39 @@ mkdir -p "$out_dir"
 # Large JSON blobs (the cycles array carries full transcripts) are handed to jq
 # through files, not argv: a single command-line argument is capped at 128 KB
 # (MAX_ARG_STRLEN), which big transcripts blow past. Temp files have no such limit.
-work_tmp="$(mktemp -d)"
+#
+# Named after this process rather than mktemp's anonymous `tmp.XXXXXXXXXX`, so
+# that a directory this process fails to remove can be told from a live
+# publish's by whether its pid still exists — the test `lib/scratch-sweep.sh`'s
+# `scratch_sweep_dead_owners` applies at every cycle start, and the only one
+# that cannot mistake a slow live publish for an orphan.
+work_tmp="$(mktemp -d "${TMPDIR:-/tmp}/publish-dashboard.$$.XXXXXX")"
 trap 'rm -rf "$work_tmp"' EXIT
+# Everything this publish spools through `mktemp` from here on — its own files
+# below, lib/item-lifecycle.sh's and lib/node-time-state.sh's union files (one
+# of them 69 MB on a month of log), lib/gh-shim.sh's per-call directories,
+# lib/toggle.sh's memos, `sort`'s spill files — lands inside this one
+# directory, so the one removal above covers all of it and nothing of a
+# publish outlives it anywhere else in $TMPDIR. What the process was given is
+# kept for the `exec` below, whose replacement makes a directory of its own.
+outer_tmpdir="${TMPDIR-}"
+outer_tmpdir_set="${TMPDIR+set}"
+export TMPDIR="$work_tmp"
+# The end-of-cycle hook runs this script under `timeout 120`, which ends an
+# overrunning publish with TERM. bash is meant to run the EXIT trap on a fatal
+# signal as well as on `exit`, and mostly does — but not always from where
+# this script is when the signal lands: reproduced on poetic-1 (agent-ops#1827),
+# a publish `timeout` ended at 120 s left its whole working set behind, 307 MB
+# of it plus 80 MB of the libraries' files beside it, in the container's
+# writable layer where the state volumes' pressure valve cannot reach it.
+# A *trapped* signal takes the ordinary path instead — handled once the
+# foreground command returns, as an `exit` — so each is trapped to the exit
+# the shell would have taken (128 plus the signal's number), which runs the
+# EXIT trap above. A KILL — the OOM killer, a container stopped past its grace
+# — runs neither, which is what lib/scratch-sweep.sh's cycle-start sweep is for.
+trap 'exit 143' TERM
+trap 'exit 130' INT
+trap 'exit 129' HUP
 
 if [[ -n "$now_override" ]]; then
   now_iso="$now_override"
@@ -4127,6 +4158,13 @@ if ! jq -e . >/dev/null 2>&1 <<<"$data_json"; then
   if (( ! FULL )); then
     echo "publish-dashboard: fast assemble failed; rebuilding in full" >&2
     rm -f "$payload_cache" 2>/dev/null || true
+    # `exec` replaces this process without running its EXIT trap, so the
+    # working set goes first — every re-exec used to leave one behind
+    # (agent-ops#1827) — and TMPDIR goes back to what this process was given,
+    # because the replacement makes a working set of its own and must not
+    # make it inside a directory that no longer exists.
+    rm -rf "$work_tmp"
+    if [[ -n "$outer_tmpdir_set" ]]; then export TMPDIR="$outer_tmpdir"; else unset TMPDIR; fi
     exec "$0" --no-github "${NOW_ARGS[@]}"
   fi
   echo "publish-dashboard: could not assemble the payload; $data_file left unchanged" >&2

@@ -614,8 +614,9 @@ _fleet_flag_memo_clear() {
 # process's. `$$` is unique among the processes running *now*, but $TMPDIR
 # outlives them all and PIDs are recycled, so a node chaining cycle after
 # cycle (requirement 39) eventually starts one whose PID a long-dead cycle's
-# memos are still filed under — and nothing else ever expires them, since
-# neither this file nor its callers own an exit trap to clean up with.
+# memos are still filed under — neither this file nor its callers own an exit
+# trap to clean up with; the cycle-start sweep (lib/scratch-sweep.sh) removes
+# a root whose PID is dead, but not one a new process has since inherited.
 # Serving one would hand this process an answer GitHub gave some other
 # process, for the whole of this run: on the kill switch that is an
 # operator's `disabled` served as `clear`, the one direction

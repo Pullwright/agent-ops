@@ -4127,6 +4127,59 @@ assert_eq "…and the verbatim spool carries that outage into every spend_fate f
   "$(jq -Sc -n '{"total_usd":null,"row_count":null,"by_fate":null,"reconciled":null,"lever":null}')" \
   "$(jq -Sc '.spend_fate' <<<"$oadata")"
 
+# --- The working set under a TERM (agent-ops#1827) ---------------------------------
+# The end-of-cycle hook runs the Publisher under `timeout 120`, and bash runs
+# no EXIT trap on an unhandled fatal signal, so every overrunning publish once
+# left its whole working set in the container's writable layer. The Publisher
+# rebuilds its own PATH at startup, so no stub on PATH can stall it from
+# outside; instead a publish is started over a fixture wide enough to take
+# seconds, its working set is waited for, and the process is sent the TERM
+# `timeout` sends (`timeout` also signals the process group, which only
+# shortens the wait for the foreground child before the trap runs). Nothing
+# may remain afterwards, and the publish must not have finished on its own.
+sk="$(new_home nodeScratchKill)"
+for (( sk_i = 1; sk_i <= 40; sk_i++ )); do
+  make_cycle "$sk" "$(printf '%sT%02d%02d00Z-%d' "$today_day" $(( sk_i % 24 )) $(( sk_i % 60 )) "$sk_i")" 0.10 model-a
+done
+sk_tmp="$tmp_dir/scratch-kill-tmp"; mkdir -p "$sk_tmp"
+env HOME="$sk" TMPDIR="$sk_tmp" "$PUBLISH" --no-github >/dev/null 2>&1 &
+sk_pid=$!
+sk_seen=no
+for (( sk_i = 0; sk_i < 1000; sk_i++ )); do    # up to 20 s for the working set to appear
+  if compgen -G "$sk_tmp/publish-dashboard.*" >/dev/null; then sk_seen=yes; break; fi
+  kill -0 "$sk_pid" 2>/dev/null || break
+  sleep 0.02
+done
+kill -TERM "$sk_pid" 2>/dev/null
+wait "$sk_pid"
+sk_rc=$?
+assert_eq "the publish's working set appeared under \$TMPDIR before it was ended (the case is exercised)" \
+  "yes" "$sk_seen"
+assert_eq "…and the TERM ended the publish rather than the publish finishing first" "143" "$sk_rc"
+assert_eq "a publish ended by TERM leaves nothing at all under \$TMPDIR — its working set, and every file the libraries spooled inside it" \
+  "" "$(ls -A "$sk_tmp")"
+
+# --- The fast tick's full rebuild (agent-ops#1827) ------------------------------------
+# A fast tick whose assemble fails re-executes itself as a full build, and
+# `exec` replaces the process without running its EXIT trap: the working set
+# has to go first, and the replacement must not inherit a TMPDIR inside it.
+# A payload cache that is not JSON is what makes a fast assemble fail.
+fx="$(new_home nodeFastExec)"
+make_cycle "$fx" "${today_day}T180000Z-1" 0.10 model-a
+fx_tmp="$tmp_dir/fast-exec-tmp"; mkdir -p "$fx_tmp"
+run_publish "$fx" TMPDIR="$fx_tmp"
+assert_eq "a full build first, to write the payload cache a fast tick reads" \
+  "yes" "$([[ -s "$fx/.local/state/poetic-agents/.dashboard-payload" ]] && echo yes || echo no)"
+printf '{' > "$fx/.local/state/poetic-agents/.dashboard-payload"
+env HOME="$fx" TMPDIR="$fx_tmp" "$PUBLISH" --no-github --fast >/dev/null 2>"$tmp_dir/fast-exec.err"
+fx_rc=$?
+assert_contains "a fast tick whose assemble fails says it is rebuilding in full" \
+  "fast assemble failed; rebuilding in full" "$(cat "$tmp_dir/fast-exec.err")"
+assert_eq "…and the rebuild exits 0" "0" "$fx_rc"
+assert_eq "…with a payload the page can parse" "0" "$(jq -e . >/dev/null 2>&1 <<<"$(data_of "$fx")"; echo $?)"
+assert_eq "…and nothing under \$TMPDIR: the working set goes before the exec, and the replacement made its own outside it" \
+  "" "$(ls -A "$fx_tmp")"
+
 # ---------------------------------------------------------------------------------
 if (( failures > 0 )); then
   printf '\n%d assertion(s) failed\n' "$failures"

@@ -4298,6 +4298,37 @@ implements.
    from `config.json` itself behaves exactly like an injected `0`: the
    count-based prune still runs, and the pressure prune never engages.
 
+   **The container's writable layer is swept at cycle start
+   (agent-ops#1827).** The pressure prune above can shed only what lives in
+   `state_dir`; two things write per-process directories under `$TMPDIR`
+   instead — in the container's writable layer, on the same disk — and a
+   process replaced by `exec`, ended by `KILL`, or, as reproduced on
+   `poetic-1`, by an untrapped `TERM`, leaves its directory behind:
+   `scripts/publish-dashboard.sh`'s working set
+   (`publish-dashboard.<pid>.XXXXXX`, 300 MB and more, holding every file a
+   publish spools, and run by the end-of-cycle hook under `timeout 120` —
+   `docs/DASHBOARD-SPEC.md` §Integration, which is where the Publisher's own
+   traps and its pre-`exec` removal are specified) and
+   `lib/toggle.sh`'s flag memos (`agent-ops-fleet-flag-memo.<pid>`). Each
+   name carries its owner's pid, and before a cycle's free-space gate
+   (requirement 2.0c) reads the disk, `lib/scratch-sweep.sh`'s
+   `scratch_sweep_dead_owners` removes every such directory whose pid no
+   longer exists — `/proc/<pid>` consulted first and `kill -0` only to
+   confirm, so another user's live process reads as alive — and leaves every
+   other one alone however old it is: a live publish on a loaded node has run
+   for hours (agent-ops#1620), so age is not the test. A management command
+   (`--status`, `--disable`, `--enable`) sweeps nothing, as it runs no cycle.
+   The sweep never fails the cycle, and says on stderr what it removed only
+   when it removed something. `test/scratch-sweep.test.sh` passes: a
+   directory of either shape under a pid that does not exist is removed and
+   counted; one under the test's own live pid, one of any other name, one
+   whose pid field is not a number and a plain file are all kept; a second
+   sweep removes nothing further; without an argument the sweep reads
+   `$TMPDIR`; and a missing directory yields a count of zero and exit 0.
+   `test/publish-dashboard.test.sh` passes: a publish ended by `TERM` while
+   its working set exists leaves nothing under `$TMPDIR`, and a fast tick's
+   `exec` into a full rebuild leaves nothing either.
+
    **A push that cannot write says so, and an orphaned index lock does not
    stop it (agent-ops#1377).** The `flock` above is state-sync's own;
    `.git/index.lock` in the mirror is git's, taken by every command that

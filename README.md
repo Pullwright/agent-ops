@@ -3023,3 +3023,14 @@ What carries across every roll:
   to do anything: the change arrives with the next watchtower roll.
 - **The `state` and `workspaces` volumes** — the pipelines' memory and any
   in-progress clone.
+
+What does *not* carry across a roll is the container's writable layer, and
+nothing in it is meant to: it is where `$TMPDIR` lives, and it shares the
+host's disk with the volumes above, so anything left there is disk the state
+volumes' own pressure valve (requirement 2.5) cannot reclaim. The two things
+that write per-process directories there — `scripts/publish-dashboard.sh`'s
+working set and `lib/toggle.sh`'s flag memos — name each after the process
+that owns it; the Publisher keeps every file it spools inside its own,
+removes it on exit, on the signals a `timeout` sends and before it
+re-executes itself, and every cycle start sweeps whatever a dead process
+left (`lib/scratch-sweep.sh`). `docker ps -s` shows the layer's size.

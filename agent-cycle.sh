@@ -252,6 +252,8 @@ export AGENT_OPS_ROOT="$SCRIPT_DIR"
 . "$SCRIPT_DIR/lib/version.sh"
 # shellcheck source=lib/image-drift.sh
 . "$SCRIPT_DIR/lib/image-drift.sh"
+# shellcheck source=lib/scratch-sweep.sh
+. "$SCRIPT_DIR/lib/scratch-sweep.sh"
 
 # lib/refinement.sh's self-heal hook (requirement 6a, agent-ops#687), installed
 # here because this is the one file that sources both it and lib/labels.sh: a
@@ -1059,6 +1061,20 @@ cycle_dir="$state_dir/cycles/$cycle_id"
 # cycle directory would leave an empty one behind for every --status anyone
 # ever ran.
 [[ -n "$MANAGE_ACTION" ]] || mkdir -p "$cycle_dir"
+
+# What a dead process left in the container's writable layer — the Publisher's
+# working set from a publish `timeout` killed before its traps could run, and
+# lib/toggle.sh's memos under a pid no longer alive (lib/scratch-sweep.sh,
+# agent-ops#1827). Before this cycle's own free-space gate (requirement 2.0c)
+# reads the disk, so what it reclaims counts; skipped by a management command
+# for the same reason the cycle directory above is, since it runs no cycle.
+if [[ -z "$MANAGE_ACTION" ]]; then
+  # shellcheck disable=SC2119  # the default, ${TMPDIR:-/tmp}, is the one wanted here
+  swept_scratch="$(scratch_sweep_dead_owners)"
+  if [[ "$swept_scratch" =~ ^[0-9]+$ ]] && (( swept_scratch > 0 )); then
+    echo "agent-cycle: removed $swept_scratch scratch director(ies) left by dead processes in ${TMPDIR:-/tmp}" >&2
+  fi
+fi
 
 # --- Logging ---
 # The envelope logic (the FIELDS contract, issue #361/#458) lives in
