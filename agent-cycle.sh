@@ -1348,6 +1348,19 @@ cleanup() {
   # after the Refiner, since the Refiner's own priority-triage duty is that
   # cache's main consumer.
   issue_priority_cache_cleanup
+  # The fleet-log snapshot (`union_log`) goes with it (agent-ops#1826). It is
+  # scratch with this cycle's lifetime (requirement 2.5): read only through
+  # that variable and only by this process, whose last readers — the Enabler,
+  # the Refiner and the deferred crash-loop refile — have all just run, and
+  # nothing below reads it (the state-sync push and the dashboard build
+  # their own). It is the whole fleet's history to this moment, tens of
+  # megabytes and growing with that history, so it is removed by the cycle
+  # that wrote it rather than counted out later by
+  # `state_local_streams_retained`, which bounds how many snapshots are kept
+  # and never how large they are; the stage streams beside it stay for that
+  # prune, and so does the snapshot of a cycle killed before this line.
+  # Guarded because a cycle can end before the snapshot is taken.
+  [[ -z "${union_log:-}" ]] || rm -f -- "$union_log" || true
   # The closing GitHub budget reading (requirement 2.0d): after the Enabler
   # and the Refiner so their own calls fall inside it, before `cycle-end` so
   # it travels with this cycle. Only for a cycle that took the opening
@@ -1701,6 +1714,17 @@ acquire_lock() {
           # node-seconds, and its own transitions already say so — see
           # suppress_node_state_transitions' header.
           suppress_node_state_transitions
+          # Nor is it a record (agent-ops#1826): the directory made above
+          # holds nothing but the fleet-log snapshot taken before the lock —
+          # tens of megabytes a tick that ran no stage will never read — and
+          # every such directory takes one of `state_local_streams_retained`'s
+          # slots from a cycle that did run, until the cycle still holding
+          # this lock is pushed out of that window by the ticks that found it
+          # held. The `cycle-skipped` event is the tick's record, and the
+          # dashboard already renders a cycle id that has no directory.
+          # Nothing in `cleanup` needs it when the lock was not taken: the
+          # Enabler and the Refiner both gate on `lock_acquired`.
+          rm -rf -- "$cycle_dir"
           exit 0
         fi
         if kill -0 "$pid" 2>/dev/null; then

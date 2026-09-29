@@ -669,11 +669,104 @@ assert_eq "…and keep their own records too" "1" \
 assert_eq "no cycle directory is removed by the derived prune" "4" \
   "$(find "$sr_state/cycles" -mindepth 1 -maxdepth 1 -type d | wc -l)"
 
+# --- The record a live lock names is spared (agent-ops#1826) ------------------
+# A configured count can fall below the derivation, and the newest N
+# directories need not include the one still being written: a cycle that
+# runs for hours is overtaken by every directory a later tick leaves. The
+# push therefore spares whatever `lock.json` and `review-lock.json` name, by
+# the pid suffix every record name carries — and only while that pid is
+# alive, since a stale lock protects nothing. The live holder here is this
+# test process; the dead one is a pid above any pid_max.
+lv_home="$(new_node live-record-node)"
+lv_state="$lv_home/.local/state/poetic-agents"
+printf '{"ts":"2026-07-22T00:00:00Z","event":"cycle-start"}\n' > "$lv_state/log.jsonl"
+lv_live="$lv_state/cycles/20260301T000000Z-live-record-node-$$"
+lv_dead="$lv_state/cycles/20260301T000001Z-live-record-node-2147483646"
+lv_new="$lv_state/cycles/20260301T000002Z-live-record-node-77"
+lv_rlive="$lv_state/reviews/20260301T000000Z-live-record-node-$$"
+lv_rnew="$lv_state/reviews/20260301T000001Z-live-record-node-78"
+lv_populate() {
+  local d
+  for d in "$lv_live" "$lv_dead" "$lv_new" "$lv_rlive" "$lv_rnew"; do
+    mkdir -p "$d"
+    printf '{"type":"system"}\n' > "$d/coordinator.stream.jsonl"
+    printf '{"type":"union"}\n' > "$d/.fleet-log.jsonl"
+  done
+}
+# First with lock.json naming a pid no process has and no review lock at
+# all: nothing is live, so the count of 1 keeps the newest of each and
+# strips the rest — including the record the dead lock names.
+lv_populate
+jq -nc '{pid: 2147483646, started_at: "2026-03-01T00:00:00Z"}' > "$lv_state/lock.json"
+out="$(sync_as "$lv_home" active push STATE_SYNC_LOCAL_RETAINED=10 STATE_SYNC_STREAMS_RETAINED=1)"
+assert_eq "the dead-lock push exits 0" "0" "$?"
+assert_eq "a lock.json naming a pid that is gone protects nothing: the record it names is pruned" "0" \
+  "$(test -e "$lv_dead/coordinator.stream.jsonl" && echo 1 || echo 0)"
+assert_eq "…and so is the record this test's own pid names, with no live lock naming it" "0" \
+  "$(test -e "$lv_live/coordinator.stream.jsonl" && echo 1 || echo 0)"
+assert_eq "…while the newest cycle keeps its stream, as the count says" "1" \
+  "$(test -f "$lv_new/coordinator.stream.jsonl" && echo 1 || echo 0)"
+# Then with both locks naming this live process: its two records — the
+# oldest of each tree, far outside a count of 1 — keep their derived files,
+# and only the dead-pid record is pruned.
+lv_populate
+jq -nc --argjson p "$$" '{pid: $p, started_at: "2026-03-01T00:00:00Z"}' > "$lv_state/lock.json"
+jq -nc --argjson p "$$" '{pid: $p, started_at: "2026-03-01T00:00:00Z"}' > "$lv_state/review-lock.json"
+out="$(sync_as "$lv_home" active push STATE_SYNC_LOCAL_RETAINED=10 STATE_SYNC_STREAMS_RETAINED=1)"
+assert_eq "the live-lock push exits 0" "0" "$?"
+assert_eq "the oldest cycle, named by lock.json's live pid, keeps its stream although the count is 1" "1" \
+  "$(test -f "$lv_live/coordinator.stream.jsonl" && echo 1 || echo 0)"
+assert_eq "…and its snapshot" "1" \
+  "$(test -f "$lv_live/.fleet-log.jsonl" && echo 1 || echo 0)"
+assert_eq "the record named by a pid no process has is pruned as usual" "0" \
+  "$(test -e "$lv_dead/coordinator.stream.jsonl" && echo 1 || echo 0)"
+assert_eq "the newest cycle keeps its stream too" "1" \
+  "$(test -f "$lv_new/coordinator.stream.jsonl" && echo 1 || echo 0)"
+assert_eq "the review named by review-lock.json's live pid is spared the same way" "1" \
+  "$(test -f "$lv_rlive/coordinator.stream.jsonl" && echo 1 || echo 0)"
+assert_contains "the push reports only the dead record's two files" "pruned 2 derived file(s) from cycles" "$out"
+assert_lacks "…and nothing from reviews, where the only candidate is the live one" "derived file(s) from reviews" "$out"
+
+# --- STATE_SYNC_STREAMS_RETAINED is checked before it reaches arithmetic ------
+# (agent-ops#1826) An operator sets this one from `.env`. A value bash
+# arithmetic cannot read used to end every push — `auto` is an unbound
+# variable under `set -u`, failing before the pressure valve and the
+# heartbeat — or to collapse the count to 1 (`08`, `20.5`, `2d`), stripping
+# every record but the newest. Either is now ignored with a warning and the
+# configured key governs: the shipped derivation, far above four cycles, so
+# nothing is pruned and the push completes.
+sv_home="$(new_node streams-validation-node)"
+sv_state="$sv_home/.local/state/poetic-agents"
+printf '{"ts":"2026-07-22T00:00:00Z","event":"cycle-start"}\n' > "$sv_state/log.jsonl"
+i=0
+while (( i < 4 )); do
+  d="$(printf '%s/cycles/20260301T%06dZ-%d' "$sv_state" "$i" "$i")"
+  mkdir -p "$d"
+  printf '{"type":"system"}\n' > "$d/coordinator.stream.jsonl"
+  i=$(( i + 1 ))
+done
+out="$(sync_as "$sv_home" active push STATE_SYNC_LOCAL_RETAINED=10 STATE_SYNC_STREAMS_RETAINED=auto)"
+assert_eq "a word in STATE_SYNC_STREAMS_RETAINED no longer ends the push" "0" "$?"
+assert_contains "…it is reported" \
+  "WARNING: STATE_SYNC_STREAMS_RETAINED='auto' is not a positive integer — ignoring it; state_local_streams_retained (" "$out"
+assert_eq "…and the configured count governs, so the oldest stream is still there" "1" \
+  "$(test -f "$sv_state/cycles/20260301T000000Z-0/coordinator.stream.jsonl" && echo 1 || echo 0)"
+out="$(sync_as "$sv_home" active push STATE_SYNC_LOCAL_RETAINED=10 STATE_SYNC_STREAMS_RETAINED=08)"
+assert_eq "a leading zero (08) is refused rather than read as a broken octal" "0" "$?"
+assert_contains "…and reported" "STATE_SYNC_STREAMS_RETAINED='08' is not a positive integer" "$out"
+assert_eq "…leaving every stream in place rather than collapsing the count to 1" "1" \
+  "$(test -f "$sv_state/cycles/20260301T000000Z-0/coordinator.stream.jsonl" && echo 1 || echo 0)"
+out="$(sync_as "$sv_home" active push STATE_SYNC_LOCAL_RETAINED=10 STATE_SYNC_STREAMS_RETAINED=2)"
+assert_eq "a positive integer still applies as before" "0" "$?"
+assert_lacks "…without a warning" "not a positive integer" "$out"
+assert_eq "…pruning to the newest two" "0" \
+  "$(test -e "$sv_state/cycles/20260301T000001Z-1/coordinator.stream.jsonl" && echo 1 || echo 0)"
+
 # --- Disk-pressure prune of the derived files (agent-ops#1678) ----------------
-# The count-based retention above only ever rises (requirement 1d's
-# floor-never-ceiling contract) — on 2026-09-18 that let 200 retained
-# fleet-log snapshots at 45 MB apiece fill the host before either node ever
-# pruned one of them. `min_free_workspace_bytes` is state-sync's own backstop:
+# The count-based retention above is sized by the schedule, never by free
+# space (requirement 1d) — on 2026-09-18 that let 200 retained fleet-log
+# snapshots at 45 MB apiece fill the host before either node ever pruned one
+# of them. `min_free_workspace_bytes` is state-sync's own backstop:
 # once `state_dir` reads below it, `push` strips derived files further than
 # `state_local_streams_retained` would alone, oldest cycle first, stopping the
 # moment it reads clear again (or at the newest cycle, whichever comes

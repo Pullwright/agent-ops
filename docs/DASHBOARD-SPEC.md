@@ -1066,17 +1066,29 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                                             //   image's copy (#131); null if
                                             //   unreported
                          compose_reconcile: { status, at,   // what that
-                                              reason,       //   node's own
-                                              detail,       //   reconciler did
-                                              from, to },   //
+                                              since,        //   node's own
+                                              reason,       //   reconciler did
+                                              detail,       //
+                                              from, to,     //
+                                              pending_apply },
                                             //   about that drift (2.5a):
-                                            //   "in-sync", "reconciled"
+                                            //   "in-sync", "applying" (a
+                                            //   recreate is under way in a
+                                            //   sibling container),
+                                            //   "reconciled"
                                             //   (carrying both files' SHA-256
                                             //   as `from`/`to`), "deferred"
                                             //   or "refused" (both carrying
                                             //   `reason`, and `detail` where
                                             //   a command's own output is
-                                            //   worth keeping); null on a node
+                                            //   worth keeping); `at` is when
+                                            //   the tick wrote it and `since`
+                                            //   when the node entered it;
+                                            //   `pending_apply` rides every
+                                            //   verdict from before the
+                                            //   install until a recreate
+                                            //   returns;
+                                            //   null on a node
                                             //   with no reconciler, which is
                                             //   every node until its owner's
                                             //   one enabling `up -d`
@@ -3996,14 +4008,24 @@ number's twins elsewhere on the page.
   did about the drift: the heartbeat's `compose_reconcile` verdict
   (implementation spec 2.5a, `lib/compose-reconcile.sh` — the actor the drift
   badge had no counterpart for until the `reconciler` service existed). It
-  renders on the same discipline as everything else here, which leaves only
-  one of its four states visible. **reconcile refused** is amber: the node
+  renders on the same discipline as everything else here, which leaves three
+  of its five states visible. **reconcile refused** is amber: the node
   will not apply the merged file — its project directory is not configured,
   or the new file needs a `${VAR}` this node's `.env` does not define — and
   nothing will change until a human acts, which is the one state that stays
   put. **reconcile deferred** is grey, `behind`'s colour and `behind`'s
-  reasoning: a cycle is in flight, or a recreate failed, and the next tick a
-  few minutes away retries it. `reconciled` and `in-sync` render nothing,
+  reasoning: a cycle is in flight, a watchtower roll is due, or a recreate
+  failed, and the next tick a few minutes away retries it. **reconcile
+  applying** is grey for that same reason and shown for one of its own: a
+  sibling container is recreating that node's stack at this moment, which
+  resolves itself on the next tick — but it is also the state a node is left
+  in when the apply's own container does not come back, and an apply that
+  began with nothing anywhere saying so is what left `ockham-container`'s
+  stack down for five hours (implementation spec 2.5a, agent-ops#1913). Its
+  title says when the apply began — the verdict's `since`, since `at` is
+  rewritten by every tick that finds the apply still running — what clears it
+  and what to do if it does not. `reconciled` and
+  `in-sync` render nothing,
   because a `reconciled` verdict has already cleared the drift badge beside
   it. Each badge's title carries the recorded reason verbatim. An absent
   verdict also renders nothing, and that is the common case rather than an

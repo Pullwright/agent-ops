@@ -478,6 +478,12 @@ cleanup() {
   if [[ -n "$clone_dir" && -d "$clone_dir" ]]; then
     rm -rf "$clone_dir"
   fi
+  # The fleet-log snapshot (`union_log`): scratch with this run's lifetime,
+  # read by nothing past this point, and removed by the run that wrote it
+  # rather than counted out later by `state_local_streams_retained` — see
+  # agent-cycle.sh's own cleanup (agent-ops#1826). Guarded because a run can
+  # end before the snapshot is taken.
+  [[ -z "${union_log:-}" ]] || rm -f -- "$union_log" || true
   # node-state (docs/FLOW-SCHEMA.md, D21): logged last, same reasoning as
   # agent-cycle.sh's own finalize_node_state_for_cycle — nothing in this
   # pipeline's own cleanup runs after this point, but the call is placed
@@ -748,6 +754,11 @@ acquire_lock() {
           # state — see agent-cycle.sh's own `cycle-skipped` site and
           # suppress_node_state_transitions' header.
           suppress_node_state_transitions
+          # Nor a record: the directory holds only the snapshot taken above,
+          # and it would take a `state_local_streams_retained` slot from a
+          # run that did something — see agent-cycle.sh's own skip site
+          # (agent-ops#1826).
+          rm -rf -- "$review_dir"
           exit 0
         fi
         if kill -0 "$pid" 2>/dev/null; then
@@ -884,6 +895,9 @@ if impl_cycle_running; then
   # and calls `suppress_node_state_if_peer_owns_node` for the same reason.
   log_event "review-stand-down" "$(jq -nc --arg r "implementation cycle running (pid $impl_pid)" '{reason: $r, cause: "peer-pipeline-busy"}')"
   suppress_node_state_transitions
+  # The same tick-that-did-nothing as the review-lock skip in `acquire_lock`,
+  # and the same reason its directory goes (agent-ops#1826).
+  rm -rf -- "$review_dir"
   exit 0
 fi
 

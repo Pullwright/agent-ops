@@ -597,7 +597,22 @@ file and carries placeholders only; `.env` itself is never committed.
   stages underneath a marker that still authorises overriding it). The bound
   today is therefore two-part: one cycle's length for a node that is merely
   busy, and `lock_stale_after` only for one that is actually wedged and so
-  never reaches that cycle-boundary check at all. The fail-closed side is
+  never reaches that cycle-boundary check at all. **A compose apply in flight
+  defers the roll too** (agent-ops#1913): the `reconciler` service below
+  recreates this whole project when a merged `compose.yaml` reaches the node,
+  and a roll landing part-way through has watchtower and Compose stopping and
+  creating the same containers at once, with nothing in the daemon's log
+  afterwards able to say which stop was whose. So the hook exits 75 while
+  `$state_dir/.compose-reconcile.json` reads `applying` and its `at` is less
+  than ten minutes old — twice the reconciler's own tick, because the one way
+  that marker outlives its apply is the apply's container dying part-way,
+  which the next tick settles. Past that bound, on an `at` that will not
+  parse, or on any other status, it defers nothing: this is the same
+  fail-open discipline as everything else here, and it is not overridable by
+  `roll-pending`, which is a decision a cycle took about itself and not one a
+  half-applied project ever took. The reconciler deferring while
+  `roll-pending` is in force (requirement 2.5a) is the same serialisation from
+  the other side. The fail-closed side is
   the cheap
   one — a leftover foreign lock is taken over or removed within the hour by
   the next cycle (requirement 1 precedes the stand-down checks, so standby
@@ -641,7 +656,9 @@ file and carries placeholders only; `.env` itself is never committed.
   minutes (`deploy/docker/reconcile-crontab`), which applies the image's own
   copy of this file when — and only when — the drift check below says the
   node's copy differs, the new file needs no `${VAR}` the node's `.env` lacks,
-  and neither pipeline holds its lock. Requirement 2.5a is the whole
+  neither pipeline holds its lock, and no image roll is due. The recreate
+  itself runs in a transient sibling container, because this service is one of
+  those the recreate replaces. Requirement 2.5a is the whole
   mechanism; its verdict rides the heartbeat beside the drift verdict.
 - **A node's copy of this file is watched for drift.** A node holds its own
   `compose.yaml`, which no image roll can update — labels, service
@@ -963,7 +980,7 @@ and the schema must carry every one of them.
 | `state_repo` | `Poetic-Poems/agent-ops-state` | The private repository through which `state_dir` replicates between nodes (requirement 2.5). Its `main` carries the small shared surface: the claim registry (requirement 17a) and the fleet flags `fleet/disabled.json` and `fleet/limit.json` (requirements 2.3a and 2.1). Unset means a single-node operation: every mode of `scripts/state-sync.sh` becomes a no-op, and the fleet-flag reads and writes quietly do nothing. This installation's own value, `Poetic-Poems/agent-ops-state`...[continued below](#extended-notes-state_repo) |
 | `cycles_retained` | *(unset)* | Cycle directories kept in the replicated mirror — bounds a repository that is force-pushed after every cycle. A span of history, not a literal cycle count (requirement 1d): derived from the mean gap between cycles (`schedule.cycle_interval_minutes`, `cycle_hours`, `excluded_minutes`) to hold the ~8.3 days 200 cycles represented at the historical hourly cadence; a configured value floors the derivation rather than replacing it, the same shape `lock_stale_after` (requirement...[continued below](#extended-notes-cycles_retained) |
 | `state_local_cycles_retained` | *(unset)* | Cycle and review directories the node's *own* `state_dir` keeps; the same push that replicates prunes to it (requirement 2.5). Deliberately far above `cycles_retained`, so the local machine is always the longer record, with a floor of one protecting the cycle being recorded. A span of history, not a literal cycle count (requirement 1d): derived from the mean gap between cycles (`schedule.cycle_interval_minutes`, `cycle_hours`, `excluded_minutes`) to hold the ~41.7 days 1000...[continued below](#extended-notes-state_local_cycles_retained) |
-| `state_local_streams_retained` | *(unset)* | Cycle and review directories whose derived files are kept — the stage event streams (`<stage>.stream.jsonl`, requirement 4d) and the fleet-log snapshot (`.fleet-log.jsonl`, requirement 2.5); the push that replicates prunes to it (requirement 2.5). Far below `state_local_cycles_retained` because each is a different order of size from the record holding it — a cycle directory without them is kilobytes, one Reviewer stream megabytes, one snapshot the whole fleet's history to...[continued below](#extended-notes-state_local_streams_retained) |
+| `state_local_streams_retained` | *(unset)* | Cycle and review directories whose derived files are kept — the stage event streams (`<stage>.stream.jsonl`, requirement 4d) and the fleet-log snapshot (`.fleet-log.jsonl`, requirement 2.5) of a run that died before its own cleanup, which otherwise removes the snapshot when the run ends; the push that replicates prunes to it (requirement 2.5). Far below `state_local_cycles_retained` because each is a different order of size from the record holding it — a cycle directory...[continued below](#extended-notes-state_local_streams_retained) |
 | `log_retained_bytes` | `2000000` | Size at which `scripts/rotate-logs.sh` rotates `dashboard.log`, `state-sync.log`, `doctor.log`, `revert-rate.log`, `tech-debt-archive.log`, `wake-poll.log`, `cron.log` and `review-cron.log` (requirement 2.6). `log.jsonl`, `review-log.jsonl` and `revert-rate.jsonl` are never rotated regardless of size. `ROTATE_LOGS_RETAINED_BYTES` overrides it for tests. |
 | `log_generations` | `3` | Rotated generations of each log kept beside the live file (`<name>.1` … `<name>.<log_generations>`), floored at one. `ROTATE_LOGS_GENERATIONS` overrides it for tests. |
 | `analytics_retained_days` | `0` | How long the analytics records `log.jsonl`/`review-log.jsonl` carry are retained (requirement 2.6d), independent of requirement 2.6's rotation and requirement 2.5's `cycles/`/`reviews/` pruning — neither ever reaches either file. `0` (the default) means retain indefinitely, preserving today's behaviour: this key states the policy, not an enforced expiry, which nothing yet implements. |
@@ -1176,7 +1193,7 @@ Cycle and review directories the node's *own* `state_dir` keeps; the same push t
 
 ### Extended notes: `state_local_streams_retained`
 
-Cycle and review directories whose derived files are kept — the stage event streams (`<stage>.stream.jsonl`, requirement 4d) and the fleet-log snapshot (`.fleet-log.jsonl`, requirement 2.5); the push that replicates prunes to it (requirement 2.5). Far below `state_local_cycles_retained` because each is a different order of size from the record holding it — a cycle directory without them is kilobytes, one Reviewer stream megabytes, one snapshot the whole fleet's history to that moment — so they go early and their records stay. Neither reaches the state repository. A span of history, not a literal cycle count (requirement 1d): derived from the mean gap between cycles (`schedule.cycle_interval_minutes`, `cycle_hours`, `excluded_minutes`) to hold the ~2.1 days 50 cycles represented at the historical hourly cadence; a configured value floors the derivation rather than replacing it. `STATE_SYNC_STREAMS_RETAINED` overrides it for tests. At the shipped 15-minute cadence this raises the derived count 50 → 200 (TD-PPagop-26082830) — the one of these three keys worth quantifying rather than only ratioed, since it alone bounds files this large: measured on both poetic nodes at 21:00Z on 2026-09-18 (agent-ops#1678, closing #1025's own ask for a real baseline in place of the order-of-magnitude estimate this note used to carry), 200 retained fleet-log snapshots alone ran 45.1–45.4 MB apiece, 7.3–7.4 GB per node, regrowing at roughly 4.3 GB/node/day — two orders of magnitude past that prior 'low hundreds of megabytes' estimate, and, at this cadence, past `min_free_workspace_bytes`'s 2 GiB pre-clone floor on its own within about a day and a half of a clean sweep, not comfortably inside it as the estimate had it. That gap is why `state-sync.sh push` additionally prunes derived files under active disk pressure (requirement 2.5) rather than relying on this count alone to stay inside the floor — the incident that supplied these figures is exactly the case the count could not see coming. A configured value below the derivation is inert for the same reason `lock_stale_after`'s floor is: it preserves the span of history the base count was chosen to keep, at this installation's own cadence. `STATE_SYNC_STREAMS_RETAINED` bypasses the derivation for tests only, not as an operator lever — the disk floor above is requirement 2.0c's own free-space threshold — `min_free_workspace_bytes`'s floor, raised by `workspace_headroom_factor`'s derivation over the largest recorded clone (agent-ops#904) — not this count.
+Cycle and review directories whose derived files are kept — the stage event streams (`<stage>.stream.jsonl`, requirement 4d) and the fleet-log snapshot (`.fleet-log.jsonl`, requirement 2.5) of a run that died before its own cleanup, which otherwise removes the snapshot when the run ends; the push that replicates prunes to it (requirement 2.5). Far below `state_local_cycles_retained` because each is a different order of size from the record holding it — a cycle directory without them is kilobytes, one Reviewer stream megabytes, one snapshot the whole fleet's history to that moment (45 MB apiece on both poetic nodes on 2026-09-18 and about 70 MB ten days later, agent-ops#1678: the union grows with `log.jsonl`, which nothing rotates) — so they go early and their records stay. Neither reaches the state repository. The count is applied to `cycles/` and to `reviews/` separately, so a node keeps up to twice it, and the record named by a live `lock.json` or `review-lock.json` is spared whatever the count says: a cycle that runs for hours is overtaken by the directories later ticks leave, and the newest N need not include it. A span of history, not a literal cycle count (requirement 1d): derived from the mean gap between cycles (`schedule.cycle_interval_minutes`, `cycle_hours`, `excluded_minutes`) to hold the ~2.1 days 50 cycles represented at the historical hourly cadence — 200 at the shipped 15-minute cadence (TD-PPagop-26082830). Unlike the other two count keys, a configured value replaces the derivation rather than flooring it — a cap as well as a floor (agent-ops#1826; the design decision of that name records why) — because this key alone bounds files this large and a host whose disk cannot hold the derived count has to be able to say so; and because `config.json` is built into the image every node runs, a configured value is fleet-wide. `STATE_SYNC_STREAMS_RETAINED`, forwarded to the scheduler by `deploy/docker/compose.yaml`, sets the count for one node ahead of this key, which is the lever for a fleet whose disks differ; a value that is not a positive decimal integer is ignored with a warning, and `scripts/doctor.sh` reports the variable while it is set. Both act only on a node with `state_repo` set, because the push is what prunes (agent-ops#1936). The disk floor is requirement 2.0c's own free-space threshold — `min_free_workspace_bytes`'s floor, raised by `workspace_headroom_factor`'s derivation over the largest recorded clone (agent-ops#904) — not this count, and under the floor the same push prunes further (requirement 2.5).
 
 ### Extended notes: `approver_restale_escalate_after_hours`
 
@@ -1569,7 +1586,11 @@ implements.
    over immediately — no liveness check, no process-group kill — logging the
    same `warning`. Only a lock whose `host` matches (or carries none, from
    before this stamp existed) is judged by liveness: if held by a live
-   process younger than `lock_stale_after`, log `cycle-skipped` and exit 0;
+   process younger than `lock_stale_after`, log `cycle-skipped`, remove the
+   record directory this tick made (its only content is the fleet-log
+   snapshot taken before the lock, and a directory that ran no stage would
+   otherwise take one of `state_local_streams_retained`'s slots from a cycle
+   that did — requirement 2.5) and exit 0;
    if the holder is dead or older than `lock_stale_after`, end its whole
    process group if still alive — TERM first, then a polled grace of up to
    20 seconds for the process to exit, then KILL — log a `warning` (a stale
@@ -2053,6 +2074,23 @@ implements.
      directories, where the worst-case gap of 915 minutes would keep 14 —
      about three hours of history in place of eight days, and fewer than the
      flat 200 this derivation replaced.
+     `state_local_streams_retained` alone takes a configured value as
+     configured — a cap as well as a floor (agent-ops#1826; the design
+     decision "A configured `state_local_streams_retained` is a cap as well
+     as a floor" records why). It is the one key of the three that bounds
+     files of a different order of size from the records holding them, and
+     a host whose disk cannot hold the derived count has to be able to say
+     so. The value passed on is a whole number of at least 1 — an integral
+     float the schema admits (`20.0`) is floored, and 0 or below falls
+     through to the derivation — so `scripts/state-sync.sh`'s integer
+     arithmetic never meets a literal it cannot read. The other two keep the
+     floor-only shape, because a value below their derivation could only
+     shorten the record. `config.json` is built into the image every node
+     runs, so a value configured here applies to the whole fleet;
+     `STATE_SYNC_STREAMS_RETAINED`, which `deploy/docker/compose.yaml`
+     forwards to the scheduler from a node's `.env`, sets the count for that
+     node ahead of the key, so an installation whose nodes' disks differ
+     sizes each on its own (requirement 2.5 has the variable's own rules).
      `crash_loop_after` is the fourth key issue
      #591's audit considered under this same "counted in cycles already"
      heading and decided *against* deriving: its four carries the
@@ -2097,24 +2135,28 @@ implements.
    50 → 200, all fourfold since `gap_minutes` falls from the historical 60
    to 15; TD-PPagop-26082830): `state_local_streams_retained` is the one
    worth quantifying rather than only ratioed, since it alone bounds files
-   large enough to matter — `scripts/state-sync.sh`'s own comment puts a
-   bare cycle directory at kilobytes and one Reviewer stream at megabytes,
-   so 200 retained cycles' worth of stream-plus-snapshot pairs is an
-   order-of-magnitude estimate of low hundreds of megabytes on a busy
-   repository, against `cycles_retained`'s and `state_local_cycles_retained`'s
-   tens of megabytes each. An estimate, not a measurement of any live node's
-   actual `state_dir` — a real baseline is exactly what a future cadence
-   change should measure instead of only ratioing again — but well inside
-   `min_free_workspace_bytes`'s 2 GiB pre-clone floor (2.0c) either way,
-   which is the one check any of these three keys' derivation could actually
-   trip.
+   large enough to matter. A cycle directory without its derived files is
+   kilobytes and a stage stream megabytes, so 200 retained cycles' streams
+   are low hundreds of megabytes on a busy repository, against
+   `cycles_retained`'s and `state_local_cycles_retained`'s tens of megabytes
+   each — inside `min_free_workspace_bytes`'s 2 GiB pre-clone floor (2.0c),
+   the one check any of these three keys' derivation could trip. The
+   fleet-log snapshot is the file of a different order: measured on both
+   poetic nodes on 2026-09-18 (agent-ops#1678), 200 retained snapshots ran
+   45 MB apiece and 7.3–7.4 GB per node, regrowing at about 4.3 GB per node
+   per day, and each is larger the longer the fleet's `log.jsonl` runs.
+   That is why a snapshot does not stay to be counted at all: the cycle or
+   review that wrote it removes it when it ends (requirement 2.5), and this
+   count meets a snapshot only where a run died before its own cleanup.
 
-   Both shapes share `lock_stale_after`'s own contract (requirement 4f): a
+   Both shapes share `lock_stale_after`'s own contract (requirement 4f),
+   with the one exception the count-valued bullet above names: a
    configured value is a **floor under the derivation, never a ceiling**. An
    operator's explicit hours or cycle count can still be *raised* by the
    derivation — the overnight-expiry failure above, guarded against even for
    a value someone set by hand — but the derivation can never lower what was
-   explicitly configured. Absent entirely, the derivation is the whole
+   explicitly configured; `state_local_streams_retained` alone is taken as
+   configured in both directions. Absent entirely, the derivation is the whole
    answer, which is why each of these seven keys now carries no schema
    `default` of its own (`x-docs.value` renders `*(unset)*`, the same
    convention `lock_stale_after` already uses) — a literal default here would
@@ -2400,8 +2442,9 @@ implements.
       `max(min_free_workspace_bytes, workspace_headroom_factor × that
       footprint)`: `min_free_workspace_bytes` is the floor *under* the
       derivation, never a ceiling, the same shape `lock_stale_after`
-      (requirement 4f) and the state-sync count keys (requirement 1d) already
-      use elsewhere. With no footprint ever recorded — a fleet's first cycle,
+      (requirement 4f) and two of the three state-sync count keys
+      (requirement 1d; `state_local_streams_retained` is the exception)
+      already use elsewhere. With no footprint ever recorded — a fleet's first cycle,
       or a union log this node cannot read — the floor alone governs, failing
       in the same safe direction `disk_space_verdict`'s own "unreadable is not
       low" already does. `disk_space_governed_by` reports which bound actually
@@ -4231,11 +4274,31 @@ implements.
    the cycle being recorded is always kept. The **derived** files inside
    those directories are bounded separately again, and far more tightly: the
    same push deletes every `*.stream.jsonl` and every `.fleet-log.jsonl`
-   outside the newest `state_local_streams_retained` directories, leaving the
-   directories themselves — and everything else in them — untouched. Two
-   retentions rather than one because the two are different orders of size:
-   keeping six weeks of cycle *records* costs megabytes, and keeping six
-   weeks of the derived files inside them would cost tens of gigabytes.
+   outside the newest `state_local_streams_retained` directories of
+   `cycles/` and, separately, of `reviews/`, leaving the directories
+   themselves — and everything else in them — untouched, and sparing
+   whatever the count says the directory named by a live `lock.json` or
+   `review-lock.json`: a cycle that runs for hours is overtaken by the
+   directories later ticks leave (a node disabled while it runs writes one
+   per firing), so the newest N need not include the one still being
+   written, and a stream pruned under a running stage is what its watchdog
+   reads as inactivity (`lib/stage-run.sh`). Two retentions rather than one
+   because the two are different orders of size: keeping six weeks of cycle
+   *records* costs megabytes, and keeping six weeks of the derived files
+   inside them would cost tens of gigabytes. A tick that ran nothing leaves
+   no record directory to count: the lock-held skip (requirement 1) and the
+   review pipeline's lock-held skip and busy-peer stand-down
+   (`docs/REVIEW-PIPELINE-SPEC.md` R2) each remove the directory they made,
+   whose only content is the snapshot taken before the lock.
+   `STATE_SYNC_STREAMS_RETAINED`, forwarded from a node's `.env` by
+   `deploy/docker/compose.yaml`, sets the count for that node ahead of the
+   key: a positive decimal integer, or ignored with a warning in favour of
+   the key (a word would end the push as an unbound variable, a malformed
+   number would collapse the count to 1, a leading zero would read as
+   octal); `scripts/doctor.sh` reports the variable while it is set, and
+   `deploy/docker/.env.example` describes it. Every prune here runs only on
+   a node with `state_repo` set, because the push is what prunes
+   (agent-ops#1936).
 
    What qualifies as derived is the **property, not the filename**: large,
    wholly reconstructible from what the record already holds, and read only
@@ -4248,31 +4311,37 @@ implements.
    cron push against the end-of-cycle push.
 
    **The count-based retention above is a backstop for a busy fleet, not for
-   a full disk (agent-ops#1678).** `state_local_streams_retained` only ever
-   rises — requirement 1d's own floor-never-ceiling contract (#901/#918) — so
-   nothing in the count itself stands between a fast cadence and a host with
-   no room left: on 2026-09-18 both poetic nodes' 200 retained fleet-log
+   a full disk (agent-ops#1678).** `state_local_streams_retained` is sized
+   by the schedule alone, never by free space (requirement 1d), and a count
+   configured for one disk (agent-ops#1826)
+   says nothing about another, so nothing in the count itself stands between
+   a fast cadence and a host with no room left: on 2026-09-18 both poetic nodes' 200 retained fleet-log
    snapshots reached 45 MB apiece, filled the shared host to zero free bytes,
    and stood both nodes down for disk (`disk-full`, requirement 2.0c) without
    either node ever having pruned a byte of the roughly 7 GB each was
    already holding — the count-based prune had already run and left exactly
    what it was configured to leave. So, immediately after that prune, `push`
-   reads `state_dir`'s own free space through the same functions and against
-   the same floor as the pre-clone stand-down (`min_free_workspace_bytes`,
-   requirement 2.0c, `lib/disk-space.sh`); once it reads below that floor,
+   reads `state_dir`'s own free space through the same functions as the
+   pre-clone stand-down (`lib/disk-space.sh`) and against
+   `min_free_workspace_bytes` itself — the floor, not the effective threshold
+   requirement 2.0c derives over it from the largest recorded clone, which
+   this push has no union to read a footprint from; between the two the gate
+   stands cycles down while this valve reads `ok` (agent-ops#1935); once it
+   reads below the floor,
    `prune_derived_under_pressure` strips further, one cycle's derived files
    at a time, oldest cycle first, re-reading free space after each and
    stopping the moment it clears the floor or only the newest cycle's
-   derived files remain — whichever comes first. This is safe regardless of
+   derived files remain — whichever comes first — and sparing the record a
+   live lock names exactly as the count-based prune does. This is safe regardless of
    how the count is configured: a fleet-log snapshot is read only by the
    cycle that wrote it (the header above), so every retained copy but the
    newest already exists purely for after-the-fact diagnosis, and deleting an
    older one under pressure costs a live node nothing a live gate or
-   watchdog still reads. `state_local_streams_retained`'s own derivation and
-   floor-never-ceiling contract are unchanged by this — it stays the
-   operator's lever for the ordinary case, and this prune only ever removes
-   what a free-space shortfall makes unsafe to keep regardless of that
-   count. A `0` floor (`min_free_workspace_bytes` disabled) makes this prune
+   watchdog still reads. `state_local_streams_retained`'s own derivation is
+   unchanged by this — the key, or a node's `STATE_SYNC_STREAMS_RETAINED`,
+   stays the operator's lever for the ordinary case, and this prune only
+   ever removes what a free-space shortfall makes unsafe to keep regardless
+   of that count. A `0` floor (`min_free_workspace_bytes` disabled) makes this prune
    a no-op too, the same as it does the pre-clone gate — one setting, one
    meaning of "off", for both. The floor is read defensively, not merely
    trusted: `min_free_workspace_bytes` falls back to `0` — the same "off" —
@@ -4284,8 +4353,10 @@ implements.
    gives a non-numeric floor argument.
    `STATE_SYNC_MIN_FREE_WORKSPACE_BYTES` and
    `STATE_SYNC_FREE_KB` override the floor and the free-space reading
-   respectively, both test-only, the same shape `STATE_SYNC_STREAMS_RETAINED`
-   already uses to bypass its own derivation for `test/state-sync.test.sh`.
+   respectively, both test-only — the shape `STATE_SYNC_STREAMS_RETAINED`
+   takes for `test/state-sync.test.sh` too, though that one is also a
+   per-node operator lever, forwarded by `deploy/docker/compose.yaml`
+   (agent-ops#1826).
    `test/state-sync.test.sh` passes: a push comfortably clear of an injected
    floor still runs the ordinary count-based prune and never engages this
    one; a push injected below the floor engages it after the count-based
@@ -4589,9 +4660,12 @@ implements.
    arise only on a snapshot that was already damaged. The snapshot is scratch with a cycle's
    lifetime: it is read only through that variable, by the script that just
    wrote it, and never by a peer or by a later cycle. That is why it neither
-   replicates nor outlives the derived-file retention above — it is a
-   *derivative* of the logs the fleet is already exchanging, and republishing
-   it would send every node N copies of what it already has. The union is advisory speed; the
+   replicates nor outlives the run that wrote it — the cycle's cleanup
+   removes it once the Enabler and the Refiner have read it, the review's
+   likewise, and only the snapshot of a run that died before its cleanup is
+   left to the derived-file retention above — it is a *derivative* of the
+   logs the fleet is already exchanging, and republishing it would send
+   every node N copies of what it already has. The union is advisory speed; the
    claims of requirement 17a are the lock underneath it. Cross-node work
    arbitration has no other mechanism: there is no lease and no leader, and
    `claims/` on the state repository's `main` branch — which per-node
@@ -4666,51 +4740,222 @@ implements.
      that hook's *foreign* rule alone: this container writes neither lock and
      shares no PID namespace with whatever did, so every lock is honoured
      without a liveness check until it is released or goes stale.
-     `roll-pending.json` (requirement 39c) overrides a held `lock.json` until
-     the time it names, and never `review-lock.json` — the same scope
-     agent-ops#1102 gave it, for the same reason.
+     `roll-pending.json` (requirement 39c) defers it as well, and on its own,
+     and is read *before* either lock: the marker the pre-update hook reads as
+     licence to destroy a container is read here as a reason to wait, because
+     watchtower and this actor recreate the same containers and must never be
+     doing so at once. The scope question the hook has to answer — `lock.json`
+     yes, `review-lock.json` no — does not arise, since either lock defers
+     this anyway. An `until` that will not parse reads as epoch 0, so a
+     corrupt marker holds nothing back.
+
+     **That wait is bounded by this node's own patience and not by the
+     marker.** `chain_write_roll_pending` re-arms the marker at every cycle
+     boundary whose image still reads `behind`, and
+     `chain_clear_landed_roll_pending` leaves it alone while that is true
+     (requirement 39c), so a node whose roll cannot land — watchtower
+     crash-looping, a registry it cannot reach — carries a live marker for as
+     long as the condition lasts, and a deferral that followed the marker and
+     nothing else would leave that node running a `compose.yaml` none of its
+     containers came from for exactly as long, up to and including the merged
+     file that would end it. The deferral therefore holds only while it is
+     younger than `lock_stale_after`, measured from the verdict's own `since`
+     — the same bound a cycle lock gets and for the same reason: a signal this
+     pipeline would no longer honour about its own cycles is not one to honour
+     about a roll. Past it the apply goes ahead, and the sibling's name is what
+     keeps two recreates apart if the roll does land in the middle. The
+     marker's `until` moves forward with every re-arming, so it is recorded in
+     `detail` and never in `reason`, which would otherwise make each cycle
+     boundary a fresh transition and reset the very timestamp the bound is
+     measured from. What that timestamp measures is a *continuous* roll
+     deferral: a lock taken in between has the tick report the lock instead,
+     which resets `since` and restarts this clock. That costs nothing, because
+     a tick that finds a lock held defers whatever the roll marker says — the
+     marker is not what holds the apply back in that window, and this bound is
+     only ever about the marker.
    - **Then the image's copy is written over the node's, in place, and
      `docker compose up -d --remove-orphans` is run for that project
-     directory.** In place — the existing inode truncated and rewritten from
+     directory — from a transient sibling container, never from this one.**
+     In place — the existing inode truncated and rewritten from
      a copy staged beside it and verified byte-for-byte first — because a
      bind mount of a *file* pins the inode it was created against: a rename
      would leave every container the recreate did not touch mounting the old
      content, reporting drift for ever with nothing left to reconcile.
 
-   The verdict is `$state_dir/.compose-reconcile.json`: `in-sync`,
-   `reconciled` (carrying the SHA-256 of both files), `deferred` (a lock, or
-   a `docker compose up -d` that exited non-zero) or `refused` (no project
-   directory, or a missing `${VAR}`). It is local to the node and excluded
-   from replication like `.stage-health.json`, and the verdict alone travels,
-   folded into `heartbeat.json` as `compose_reconcile` beside the `compose`
-   drift verdict it acts on (requirement 2.5; rendered on every dashboard's
-   fleet strip, `DASHBOARD-SPEC.md`). A `deferred` verdict from a failed
-   recreate also carries `pending_apply`, and that is what makes the next tick
-   retry the recreate rather than the drift check: the file is installed
-   before `up -d` runs, so from that moment drift alone would never ask again.
-   Transitions — a status, or a reason, that differs from the one already
-   recorded — append `compose-reconciled`, `compose-reconcile-deferred` or
-   `compose-reconcile-refused` to `log.jsonl` through `lib/log-event.sh`'s
-   envelope with `cycle: null`; an unchanged verdict appends nothing, and
-   `in-sync` never appends at all. **Only `status` and `reason` are compared**
-   for that test, and both are stable while the state is: a deferral's reason
-   names the lock, the container that wrote it and when, and carries no age,
-   and a failed recreate's reason names the exit status alone. Anything that
-   varies run to run — `docker compose`'s own last line of output — is
-   recorded beside them in `detail`, which is never compared, because in
-   `reason` it would make every tick of a long deferral a fresh transition.
+     From a sibling because `reconciler` is a service of the very project the
+     `up` recreates, and on a real apply it is always one of the services that
+     changed: the compose change that drifted arrives on the same image roll
+     that carries it. Compose recreates a container by creating its
+     replacement, stopping the old one, removing it and renaming the new one,
+     and only then starting everything in dependency order — so an `up` driven
+     from inside this container reaches its own service, stops the process
+     driving it and dies there, leaving the project stopped or
+     created-but-never-started, with `restart: unless-stopped` no help because
+     an explicit stop cancels the restart and a container that was never
+     started has no restart to resume. That is what took `ockham-container`'s
+     whole stack down on 2026-09-28, on the first real apply anywhere on the
+     fleet (agent-ops#1913). The sibling is a `docker run --rm` of the image
+     *this container is running*, `--network none`, `--sig-proxy=false` so a
+     signal delivered to the attached client cannot abort a recreate half-way,
+     and with the socket's own group added so a uid-1000 process can open it —
+     the shape watchtower uses to update itself. Its mounts are this
+     container's own, by `--volumes-from`: the three it needs are the three
+     this service already has and no others — the socket, the project
+     directory at the absolute path it has on the host, and the state volume —
+     and a named volume cannot be asked for by path from inside the container
+     holding it, the path being a mount destination and not a place on the
+     host at all. Its ceilings are this container's own too, read back from
+     the daemon rather than from `AGENT_OPS_RECONCILER_MEMORY` and its
+     siblings, which Compose interpolates at deploy time and which reach no
+     container's environment: every service in that file is bounded because an
+     unbounded container on a small host takes the host down, and a
+     `docker run` inherits none of it. Its command is
+     `env -i PATH=… HOME=… DOCKER_HOST=… docker compose …`, which steps over the image's
+     own entrypoint (a node's state-volume preparation, irrelevant here) and,
+     more importantly, **clears the environment Compose interpolates from**:
+     Compose resolves a `${VAR}` from the process environment ahead of the
+     project's `.env`, and this image's own `ENV` sets `TZ`, which
+     `compose.yaml` interpolates — so a sibling holding the image's
+     environment would deploy every service with the image's `TZ` however the
+     node's `.env` is written, moving the hour that node's cron fires, on an
+     apply whose whole claim is to install the merged file byte for byte. The
+     container this library runs in escapes that only because its own service
+     declares `TZ: ${TZ:-UTC}`. Cleared, the node's `.env` is the only input
+     interpolation has — the same input a human's own `docker compose up -d`
+     in that directory reads — and any later collision between an image `ENV`
+     and a compose variable is cleared with it. `PATH` and `HOME` are put back
+     because they are the CLI's own needs and not configuration: one finds the
+     binary, the other is where it looks for `config.json`. `DOCKER_HOST` is
+     put back for the same reason and to close the same kind of gap: cleared,
+     the CLI inside falls back to `/var/run/docker.sock` however the socket
+     was actually mounted, so naming it is what keeps the mount and the client
+     from disagreeing about where the daemon is.
 
-   **Two things it does not do.** It does not close the window between reading
+     What the sibling prints is written to `$state_dir/compose-apply.log` from
+     inside it, through the state volume it inherits, and echoed to the
+     attached client. On the apply that replaces `reconciler` there is nowhere
+     else for it to go: the process capturing it is one of the ones the apply
+     stops, and `--rm` takes the sibling's own daemon-side log away with the
+     container. The file holds the most recent apply alone, opened by a header
+     line this side writes before the sibling starts — it is local diagnostics
+     on a node whose disk this must not fill, it is excluded from replication
+     for the same reason `.compose-reconcile.json` is, the event log already
+     records *that* an apply failed, and the failing run's last line rides in
+     the verdict's `detail`.
+
+     It carries no Compose labels, so `--remove-orphans` cannot
+     see it. **Its name is `agent-ops-compose-apply-<node>`, and that name is
+     the mutex**: the `up` starts this container's replacement before the
+     sibling has finished, that replacement's own first tick can fall due
+     seconds later and will read `pending_apply` and want a recreate of its
+     own, and two `docker compose up -d` runs against one project take no lock
+     against each other. The tick that finds the sibling still running settles
+     on `applying` and never asks for a second apply at all; a fixed name per
+     node is the backstop under that check, having the daemon refuse the
+     second (`name is already in use`) if one is ever asked for between the
+     two. `--rm` is what keeps the name free, held for exactly as long as an
+     apply runs. One left behind would defer every apply with that same
+     message until it was removed — loud, and in the verdict, which is the
+     failure to prefer. Per
+     *node* rather than per host, so two stacks on one host neither collide nor
+     serialise against each other. It is run attached: the tick whose own
+     container the recreate does not replace reads the exit status directly,
+     and the tick whose container it does replace dies there while the sibling
+     runs to completion.
+
+     The container and its image are asked of the daemon, by Compose's own
+     `com.docker.compose.project.working_dir` and
+     `com.docker.compose.service` labels on this stack's project directory,
+     and the image is taken as an *id* rather than a reference. The directory
+     is matched as Compose cleaned it before writing it — `filepath.Abs`
+     collapses `//`, `/./` and `..` and drops a trailing slash — so a node
+     whose `.env` reads `AGENT_OPS_PROJECT_DIR=/srv/agent-ops/` runs and is
+     found, rather than deferring on every tick with a reason pointing at the
+     daemon instead of at one line of `.env`. Nothing inside the
+     container can answer instead: `$HOSTNAME` is the container's short id at
+     creation, but watchtower clones `Config.Hostname` forward when it
+     recreates one (agent-ops#1072), so after a roll it names a container that
+     no longer exists. A lookup that comes up empty is a `deferred` verdict
+     that installs nothing — there is no sibling to hand the recreate to, and
+     the one thing that must not follow is running it here after all.
+
+   The verdict is `$state_dir/.compose-reconcile.json`: `in-sync`,
+   `applying` (an apply is in flight and a sibling is recreating the project),
+   `reconciled` (carrying the SHA-256 of both files), `deferred` (a lock, a
+   roll falling due, or a recreate that exited non-zero) or `refused` (no
+   project directory, or a missing `${VAR}`). Every verdict carries `at`, the
+   time this tick wrote it, and `since`, the `at` of the last tick whose
+   `status` or `reason` differed from the tick before — when the node entered
+   the state rather than when it last confirmed it, which is what "how long
+   has this been going on" needs and what the roll-pending bound above is
+   measured from. It is local to the node and excluded from replication like
+   `.stage-health.json`, and the verdict alone travels, folded into
+   `heartbeat.json` as `compose_reconcile` beside the `compose` drift verdict
+   it acts on (requirement 2.5; rendered on every dashboard's fleet strip,
+   `DASHBOARD-SPEC.md`).
+
+   **`applying` is recorded before the file is installed, carries
+   `pending_apply`, and stands for as long as the sibling runs.** A verdict
+   written only once `up` returns is one a tick that dies mid-apply never
+   writes, which leaves the verdict of the tick before it standing: a peer
+   reading the heartbeat sees a node merely waiting rather than one stopped
+   half-way through recreating itself. Before the *install*, because the gap
+   between installing the file and recording the intention is the one moment
+   in which drift reads in-sync and nothing is left asking for a recreate: a
+   tick killed in it leaves every container running a `compose.yaml` it was
+   not created from, with the marker saying the node is idle. A tick killed
+   the other side of that record simply installs on the next one.
+
+   For as long as the sibling runs, because this marker is also what the
+   pre-update hook above reads to keep a roll off a project mid-apply. A tick
+   that finds a container matching the apply's own name and label alive
+   rewrites `applying` with a fresh `at` and settles there, ahead of the locks,
+   the roll marker and the drift check alike — any other verdict would clear
+   that guard in the middle of the recreate it exists to protect, and
+   watchtower's next poll is five minutes away at most. The marker therefore
+   tracks the apply's real duration, and the hook's own ten-minute freshness
+   window is the backstop under a reconciler that never came back rather than
+   the mechanism itself.
+
+   `pending_apply` stays on every verdict from that moment until a recreate
+   actually returns 0 — deferrals and refusals included — and is what makes
+   the next tick retry the recreate rather than the drift check: the file is
+   installed before the recreate runs, so from that moment drift alone would
+   never ask again, and a lock taken or a roll falling due in between must
+   postpone that retry, never discard it. `from` and `to` are carried across
+   those deferrals with it, because once the file is installed the host copy no
+   longer holds the digest the apply replaced and the `reconciled` verdict that
+   finally closes the apply would otherwise name the installed file twice.
+   Ordinarily the tick that retries is running in the container the apply
+   itself created.
+
+   Transitions — a status, or a reason, that differs from the one the marker
+   held **at the start of this tick**, which is also what sets `since` — append
+   `compose-reconcile-applying`, `compose-reconciled`,
+   `compose-reconcile-deferred` or `compose-reconcile-refused` to `log.jsonl`
+   through `lib/log-event.sh`'s envelope with `cycle: null`; an unchanged
+   verdict appends nothing, and `in-sync` never appends at all. At the start
+   of the tick, not re-read per verdict, because one tick writes two: comparing
+   the second against the first would find a transition every time, and a node
+   whose recreate kept failing would log a pair of events every five minutes
+   into a log replicated to every peer. For the same reason `applying` is
+   logged only when the tick began with no apply outstanding: the marker says
+   it on every tick that runs a recreate, because that is what the hook reads,
+   but a retry of an apply already pending is the same apply and is not news.
+   **Only `status` and `reason` are compared** for that test, and both are
+   stable while the state is: a deferral's reason names the lock, the container
+   that wrote it and when, and carries no age, and a failed recreate's reason
+   names the exit status alone. Anything that varies run to run — the
+   recreate's own last line of output — is recorded beside them in `detail`,
+   which is never compared, because in `reason` it would make every tick of a
+   long deferral a fresh transition.
+
+   **One thing it does not do.** It does not close the window between reading
    the lock and Compose stopping a container: a cycle that starts inside those
    few seconds dies with the recreate, exactly as it would under the manual
    ritual, and what makes that rare rather than routine is that this runs
    every five minutes and defers on every tick that finds the lock held, so it
-   lands in an idle window rather than a chosen one. And it does not survive
-   recreating *itself*: a merged change to the `reconciler` service's own
-   definition has Compose replace the container running the command, killing
-   it mid-`up -d`; the stack is left partly applied, and it is the next tick,
-   in the new container, that finishes — reading the same drift, or the same
-   `pending_apply`, and doing what its predecessor did not.
+   lands in an idle window rather than a chosen one.
 
    **Delivery.** The reconciler is itself compose-level, so it reaches an
    existing node the one way anything compose-level does: one last
@@ -8415,8 +8660,13 @@ implements.
    (agent-ops#687). `review-cycle.sh` calls the plain, unstamped
    `labels_reconcile_role` (`lib/labels.sh`) for each repository's own resolved
    `repository_review` pr_label (its override, or
-   `repository_review.defaults.pr_label`, requirement 342) in each repository it
-   is about to review — the same shape as the selected repository's own
+   `repository_review.defaults.pr_label`, requirement 342) and
+   `pw::type:tech-debt` in each repository it
+   is about to review — so a repository in `repository_review.repos` but not
+   gathered as an implementation-pipeline target also has the label R12's own
+   `gh issue create --label pw::type:tech-debt` relies on, rather than only
+   the two ever coinciding by configuration accident — the same shape as the
+   selected repository's own
    unconditional listing below, not the rate-limited helper, because a
    repository is selected for review at most once per
    `min_days_between_reviews` days, longer than any interval a stamp there
@@ -21628,15 +21878,19 @@ What exists, and the requirements each part answers to:
     implementing requirement 2.5a — the actor for the compose-drift verdict
     components 12 and `lib/compose-drift.sh` only ever reported. The library
     holds the decision (drift, through `lib/compose-drift.sh` itself; the
-    `${VAR}`-against-`.env`-keys check; the lock and roll-pending rules the
-    watchtower pre-update hook uses; the in-place install and the
-    `docker compose up -d --remove-orphans`), and the script is the crontab's
+    `${VAR}`-against-`.env`-keys check; the two cycle locks, read by the same
+    rules the watchtower pre-update hook reads them by, and a `roll-pending`
+    marker, read as a reason to wait rather than as that hook's own override;
+    the in-place install; and the `docker compose up -d --remove-orphans`,
+    which it runs in a transient sibling container rather than in its own),
+    and the script is the crontab's
     entry point, resolving `state_dir` from `config.json` and printing one
     line per tick — nothing at all on the steady state. It runs in the
     `reconciler` service (see "The node stack"), the only container given a
     read-write Docker socket and this node's own project directory; unlike
     components 12 and 12a it is not run by hand on a host, and unlike them it
-    writes. Exit status is 0 on every verdict including `refused`, since
+    writes — and, through that sibling, is the only one that creates a
+    container. Exit status is 0 on every verdict including `refused`, since
     nothing on this image reads a cron job's exit status and a refusal is a
     recorded state rather than a crashed script; 2 is a usage error alone.
     Unit-tested against a stubbed `docker` with every path overridden
@@ -23894,7 +24148,16 @@ oblige anyone to edit a test.
    above unchanged; and no marker at all behaves exactly as it did before the
    marker existed. The allow the override does grant says so in the hook's
    own output — it names the lock it overrode rather than the "no cycle in
-   flight" the marker-free allow reports.
+   flight" the marker-free allow reports. And the same suite pins the
+   compose-apply deferral (agent-ops#1913): a `$state_dir/.compose-reconcile.json`
+   reading `applying` with a fresh `at` makes the hook exit 75 on an otherwise
+   idle node, and keeps it at 75 even where `roll-pending` has just overridden
+   a live `lock.json`; a marker whose `at` is fresh and whose `since` is hours
+   old still defers, and the line reports the `since`, because an apply still
+   running has its `at` rewritten every tick and what an operator needs is
+   when it began; and the same marker past the ten-minute bound, one whose
+   `at` will not parse, one holding any other status, junk, and no marker at
+   all each leave the hook exactly where it was.
 1c-ii. **The dashboard is published to the host's loopback and to no network.**
    `test/dashboard-exposure.test.sh` passes: in `deploy/docker/compose.yaml`
    every port `dashboard-local` publishes is scoped to `127.0.0.1`, the mapping
@@ -23999,19 +24262,48 @@ oblige anyone to edit a test.
    the file's **inode** (a bind mount of a file pins the inode it was created
    against), leaves `.env` untouched, and logs one `compose-reconciled`
    carrying both digests and `cycle: null`; the tick after it finds nothing to
-   do. A `${VAR}` with no default that `.env` does not define reads `refused`,
+   do. That recreate is asserted to run in a **transient sibling** — a
+   `docker run --rm` of the image the stubbed daemon reports for this
+   container, taking this container's own mounts by `--volumes-from` and its
+   own memory, pids and cpu ceilings read back from the daemon, no network,
+   no signal proxying, no daemon-side log, `docker` as its entrypoint and the
+   socket it was given named in its `DOCKER_HOST` — and never from inside the
+   project, which is the whole of agent-ops#1913. The stub models what each of
+   the two shapes leaves behind, so the property held to is the outcome and
+   not the command line: **a tick killed exactly where the recreate would kill
+   it ends with every service of the project running**, its marker reading
+   `applying` with `pending_apply` and its `to` digest, and the next tick
+   retries the recreate and settles it `reconciled` — with the project still
+   running, the retry cleared, and a `from` that is the digest the apply
+   replaced rather than the one it installed. A container whose own id the
+   stubbed daemon cannot name reads `deferred`, installs nothing and recreates
+   nothing at all, while one whose project directory is spelt with a trailing
+   slash reconciles, the lookup asking for the path Compose would have cleaned
+   it to. While a container carrying the apply's own name and label is alive,
+   a tick reads `applying` with a fresh `at` and starts no second recreate,
+   although a held `lock.json` and a live `roll-pending.json` would each have
+   deferred it, and logs no further event.
+   A `${VAR}` with no default that `.env` does not define reads `refused`,
    names the variable and changes nothing — while the same variable carrying
    a default does not, which is what distinguishes the check from a scan that
    would refuse every node. A held `lock.json` or `review-lock.json` reads
    `deferred` and applies nothing; the same lock past `lock_stale_after` does
-   not defer; a live `roll-pending.json` overrides `lock.json` and never
-   `review-lock.json`; and a second and third deferral for the same reason log
-   no further event. A `docker compose up -d` that exits non-zero reads
+   not defer; a live `roll-pending.json` reads `deferred` on its own, with no
+   lock held at all and with the marker's own window in `detail` rather than
+   in `reason`, while an expired one and one whose `until` will not parse hold
+   nothing back; a marker re-armed under a wait already running is the same
+   wait, keeping its `since` and logging nothing further, and a wait longer
+   than `lock_stale_after` stops honouring the marker and applies; and a
+   second and third deferral for the same reason log no further event. A recreate that exits non-zero reads
    `deferred` with `pending_apply`, having already installed the file, and the
    next tick retries the recreate although no drift remains — and two further
    failed ticks whose stubbed `docker` prints a different last line each time
    still log one event between them, the stub varying deliberately because
-   that line lives in `detail` and only `reason` is compared. `compose.yaml`
+   that line lives in `detail` and only `reason` is compared. A cycle starting
+   between the install and the retry reads `deferred` naming that cycle and
+   **keeps** `pending_apply`, since a postponed retry that was discarded would
+   leave the node running a `compose.yaml` none of its containers came from.
+   `compose.yaml`
    declares the service in the `auto-update` profile with the socket, the
    same-absolute-path project mount, `network_mode: none`, neither shared
    anchor and no secret of its own — the lines through which the reconciler is
@@ -30934,6 +31226,38 @@ confirmed by the repo owner on 2026-07-13; no open questions remain.
   interval and suppressed the `end`, which is the half an operator is
   waiting on. "Began" and "ended" are two distinct facts, so by this entry's
   own rule they are two pages.
+- **A configured `state_local_streams_retained` is a cap as well as a
+  floor, and the fleet-log snapshot lives only as long as the run that
+  wrote it (agent-ops#1826, #1932).** The standing decision of 2026-08-29
+  (#918/#901) kept every retention count key floor-never-ceiling,
+  `max(configured, derived)`, and called `STATE_SYNC_STREAMS_RETAINED` a
+  test bypass rather than an operator lever; that line is amended in
+  `docs/STANDING-DECISIONS.md`, not deleted. What changed the answer for
+  this one key was measurement: at the shipped 15-minute cadence the
+  derivation is 200, a fleet-log snapshot ran 45 MB on 2026-09-18 and about
+  70 MB by 2026-09-28 (the union grows with `log.jsonl`, which nothing
+  rotates), so 200 of them were 7.3–7.4 GB per node, and the two poetic
+  nodes sharing one 38 GB disk lived at the disk-pressure valve's 2 GiB
+  floor (agent-ops#1678) with daily `disk-low` stand-downs until, on
+  2026-09-28, the other writers on that disk took the last 2 GiB and stood
+  both nodes down for four hours (agent-ops#1930). Under the floor-only
+  contract the only way down was a test-only variable compose did not
+  forward. The cap alone was not the fix, and its first form would have
+  done harm: a count below the derivation lets the directories later ticks
+  leave push a running cycle out of the retained window, at which point the
+  push deletes the stream its watchdog is reading and the stage is killed
+  as `inactivity` — the node logs of 2026-09-10 to 09-28 held 24 such
+  overtaken cycles on poetic-1 and 22 on poetic-2. Hence three changes that
+  travel together: the record a live lock names is spared whatever the
+  count; a tick that finds the lock held leaves no directory, since most
+  directories at this cadence were such ticks, each holding nothing but a
+  full snapshot; and the snapshot is removed by the cycle's own cleanup,
+  because a count bounds how many snapshots are kept and never how large
+  they are, and at any fixed count the retained bytes grow with the fleet's
+  history. The count now governs the stage streams, whose size does not
+  grow with history, and meets a snapshot only where a run died before its
+  cleanup. The other two count keys keep the floor-only contract: a value
+  below their derivation could only shorten the record they exist to keep.
 
 ## Gotchas
 
