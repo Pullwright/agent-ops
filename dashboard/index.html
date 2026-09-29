@@ -213,6 +213,12 @@
   .gauge { height: 10px; border-radius: 5px; background: var(--grey-bg); overflow: hidden; margin-top: 6px; }
   .gauge > span { display: block; height: 100%; }
   .empty { padding: 18px; color: var(--muted); font-style: italic; }
+  /* A panel whose whole content is one line of plain text (agent-ops#831) —
+     the autonomous-landings panel's classifier-escape-audit, merge-budget and
+     refused-landings summary lines — renders that text through this wrapper
+     rather than the panel's own `text` attribute, so it gets the same
+     off-the-border breathing room `.empty` already has. */
+  .panel > .text { padding: 0 0.4em 0.1em; }
   p.costnote { font-size: 12px; color: var(--muted); max-width: 78ch; }
   /* By-day runs to sixty rows and by-model/by-actor to five each, so a fixed
      two-column split under- or over-fills a side depending on the day. A
@@ -2282,13 +2288,13 @@
     // from a real, reportable zero the same way `armed === null` is above.
     var ea = (D.counts && D.counts.escape_audits) || null;
     if (!ea || ea.checked == null) {
-      body.push(el("div", {class:"panel muted", text:
-        "Classifier-escape audit: could not be assembled this tick."}));
+      body.push(el("div", {class:"panel muted"}, el("div", {class:"text",
+        text: "Classifier-escape audit: could not be assembled this tick."})));
     } else {
       var eaText = "Classifier-escape audit (all-time): " + ea.checked + " landing" +
         (ea.checked === 1 ? "" : "s") + " checked, " + ea.clean + " clean, " +
         ea.unverifiable + " unverifiable, " + ea.escapes + " escape" + (ea.escapes === 1 ? "" : "s") + ".";
-      body.push(el("div", {class: "panel " + (ea.escapes > 0 ? "" : "muted"), text: eaText}));
+      body.push(el("div", {class: "panel " + (ea.escapes > 0 ? "" : "muted")}, el("div", {class:"text", text: eaText})));
     }
 
     // The budget line, per repository that has either a cap or a landing —
@@ -2334,7 +2340,8 @@
         }
       });
       if (bparts.length) {
-        body.push(el("div", {class:"panel muted", text: "Merge budget, last " + hours + " h: " + bparts.join(" · ")}));
+        body.push(el("div", {class:"panel muted"}, el("div", {class:"text",
+          text: "Merge budget, last " + hours + " h: " + bparts.join(" · ")})));
       }
       flaggedRepos.forEach(function (row) { body.push(row); });
     }
@@ -2354,11 +2361,11 @@
         byReason[key] = (byReason[key] || 0) + 1;
       });
       var rparts = Object.keys(byReason).sort().map(function (k) { return k + " ×" + byReason[k]; });
-      body.push(el("div", {class:"panel muted", text:
-        refused.length + " landing" + (refused.length === 1 ? "" : "s") + " refused in the same window: " + rparts.join(" · ")}));
+      body.push(el("div", {class:"panel muted"}, el("div", {class:"text", text:
+        refused.length + " landing" + (refused.length === 1 ? "" : "s") + " refused in the same window: " + rparts.join(" · ")})));
     } else if (armed.length) {
-      body.push(el("div", {class:"panel muted", text:
-        "No landings were refused in this window — every pull request the Approver approved also cleared every arming gate."}));
+      body.push(el("div", {class:"panel muted"}, el("div", {class:"text", text:
+        "No landings were refused in this window — every pull request the Approver approved also cleared every arming gate."})));
     }
 
     return el("div", {}, body);
