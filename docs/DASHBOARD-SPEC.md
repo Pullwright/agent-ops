@@ -2789,9 +2789,9 @@ number's twins elsewhere on the page.
   at the start of the next launcher window and the next cycle (requirement
   2.5). An empty payload is refused by name as well as by `jq -e .`, which
   exits 0 on empty input under jq 1.6. `test/publish-dashboard.test.sh`
-  passes: nothing but the working set ever appears at the top of `$TMPDIR`
-  during a publish, in a census read every few milliseconds for the
-  publish's whole run; a publish started under `timeout` and sent `TERM`
+  passes: nothing but the working set, and the tombstone its release
+  renames it to, ever appears at the top of `$TMPDIR` during a publish, in a
+  census read every few milliseconds for the publish's whole run; a publish started under `timeout` and sent `TERM`
   after a file exists inside its working set ends early and leaves nothing
   under `$TMPDIR`; and a fast tick whose payload cache is not JSON rebuilds
   in full, exits 0 with a non-empty payload the page can parse, and leaves

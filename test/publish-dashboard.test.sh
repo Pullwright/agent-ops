@@ -4157,8 +4157,10 @@ assert_eq "…and the verbatim spool carries that outage into every spend_fate f
 # property of where files go, not of how the publish ends, so it is watched
 # rather than provoked: a loop reads the top of $TMPDIR every few
 # milliseconds for the whole of a publish and records every name it ever
-# sees there. Against a Publisher whose libraries spool into $TMPDIR itself,
-# the census catches `tmp.*` entries on the first burst.
+# sees there. Two names are the publish's own: the working set, and the
+# tombstone its release renames the set to before removing it (same pid).
+# Against a Publisher whose libraries spool into $TMPDIR itself, the census
+# catches `tmp.*` entries on the first burst.
 cn="$(new_home nodeScratchCensus)"
 for (( cn_i = 1; cn_i <= 40; cn_i++ )); do
   make_cycle "$cn" "$(printf '%sT%02d%02d00Z-%d' "$today_day" $(( cn_i % 24 )) $(( cn_i % 60 )) "$cn_i")" 0.10 model-a
@@ -4177,13 +4179,17 @@ wait "$cn_pid"
 cn_rc=$?
 cn_sets=0; cn_outside=""
 for cn_e in "${!cn_seen[@]}"; do
-  if [[ "$cn_e" == agent-ops.publish-dashboard.*.* ]]; then cn_sets=$(( cn_sets + 1 )); else cn_outside+="$cn_e "; fi
+  case "$cn_e" in
+    agent-ops.publish-dashboard.*.*) cn_sets=$(( cn_sets + 1 )) ;;
+    .agent-ops-sweep.*.agent-ops.publish-dashboard.*.*) ;;    # the set's own tombstone, on its way out
+    *) cn_outside+="$cn_e " ;;
+  esac
 done
 assert_eq "the watched publish ran to completion (exit $cn_rc; stderr: $(tail -n 2 "$tmp_dir/scratch-census.err" | tr '\n' ' ' | cut -c1-200))" \
   "0" "$cn_rc"
 assert_eq "…its working set, agent-ops.publish-dashboard.<pid>.XXXXXX, was seen at the top of \$TMPDIR (the census watched something)" \
   "1" "$cn_sets"
-assert_eq "…and nothing else ever appeared there: every file the publish or its libraries spooled lay inside the working set" \
+assert_eq "…and nothing else ever appeared there but the set's own tombstone: every file the publish or its libraries spooled lay inside the working set" \
   "" "$cn_outside"
 assert_eq "…and nothing is left when it ends" "" "$(ls -A "$cn_tmp")"
 
