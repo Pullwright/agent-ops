@@ -96,7 +96,15 @@ Environment:
                         override `state_local_cycles_retained` (tests use a
                         small value).
   STATE_SYNC_STREAMS_RETAINED
-                        override `state_local_streams_retained` (likewise).
+                        override `state_local_streams_retained` (likewise) —
+                        and, forwarded by deploy/docker/compose.yaml from a
+                        node's .env, the per-node operator lever for a host
+                        whose disk cannot hold the derived count
+                        (agent-ops#1826). A positive decimal integer; any
+                        other value is ignored with a WARNING and the
+                        configured key governs. Like every prune below it
+                        acts only where `state_repo` is set, because `push`
+                        is what prunes (agent-ops#1936).
   STATE_SYNC_PUSH_DEADLINE_SECONDS
                         override the redaction loop's deadline, normally one
                         push interval (tests use a small value).
@@ -143,7 +151,23 @@ state_dir="$(expand_home "$(cfg '.state_dir')")"
 workspace_root="$(expand_home "$(cfg '.workspace_root')")"
 cycles_retained="$(cfg '.cycles_retained')"
 local_retained="${STATE_SYNC_LOCAL_RETAINED:-$(cfg '.state_local_cycles_retained')}"
-streams_retained="${STATE_SYNC_STREAMS_RETAINED:-$(cfg '.state_local_streams_retained')}"
+# The one of these overrides an operator sets from `.env` (agent-ops#1826),
+# so the one checked before it reaches bash arithmetic: `(( retained >= 1 ))`
+# on a word such as `auto` fails as an unbound variable under `set -u` and
+# ends every push before the pressure valve and the heartbeat, a malformed
+# number (`20.5`, `08`, `2d`, `20# note`) collapses the count to 1, and a
+# leading zero is read as octal. A value that is not a positive decimal
+# integer is ignored, with a warning, in favour of the configured key — the
+# fall-back agent-cycle.sh already gives a malformed NOTIFY_WEBHOOK_URL.
+# `scripts/doctor.sh` reports the same verdict ahead of any push.
+streams_retained="$(cfg '.state_local_streams_retained')"
+if [[ -n "${STATE_SYNC_STREAMS_RETAINED:-}" ]]; then
+  if [[ "$STATE_SYNC_STREAMS_RETAINED" =~ ^[1-9][0-9]{0,8}$ ]]; then
+    streams_retained=$(( 10#$STATE_SYNC_STREAMS_RETAINED ))
+  else
+    say "WARNING: STATE_SYNC_STREAMS_RETAINED='$STATE_SYNC_STREAMS_RETAINED' is not a positive integer — ignoring it; state_local_streams_retained ($streams_retained) governs"
+  fi
+fi
 min_free_workspace_bytes="${STATE_SYNC_MIN_FREE_WORKSPACE_BYTES:-$(cfg '.min_free_workspace_bytes')}"
 [[ "$min_free_workspace_bytes" =~ ^[0-9]+$ ]] || min_free_workspace_bytes=0
 
@@ -702,6 +726,38 @@ prune_local() {
   return 0
 }
 
+# record_is_live NAME
+# True (exit 0) when the record directory NAME was written by this node's
+# running implementation cycle or review run: `lock.json` and
+# `review-lock.json` name their holders' pids, a record's name ends in the pid
+# that wrote it (`<ts>-<node>-<pid>`, agent-cycle.sh and review-cycle.sh), and
+# the two derived-file prunes below spare such a record whatever their count
+# says (agent-ops#1826). The lock files are read once per run, not once per
+# record. A lock naming a dead pid — a stale lock the next cycle takes over —
+# protects nothing: nothing is reading that record any more. `kill -0` is
+# meaningful because every writer of these locks runs in this container,
+# which is the PID namespace the recorded pid belongs to (the lock's own
+# `host` stamp, requirement 1).
+live_record_pids=()
+live_record_pids_read=0
+record_is_live() {
+  local name="$1" pid f
+  if (( ! live_record_pids_read )); then
+    live_record_pids_read=1
+    for f in "$state_dir/lock.json" "$state_dir/review-lock.json"; do
+      [[ -f "$f" ]] || continue
+      pid="$(jq -r '.pid // empty' "$f" 2>/dev/null || true)"
+      [[ "$pid" =~ ^[0-9]+$ ]] || continue
+      kill -0 "$pid" 2>/dev/null || continue
+      live_record_pids+=( "$pid" )
+    done
+  fi
+  for pid in "${live_record_pids[@]}"; do
+    [[ "$name" == *"-$pid" ]] && return 0
+  done
+  return 1
+}
+
 # A record directory's *derived* files are bounded far more tightly than the
 # record that holds them, and separately from it, because they are a different
 # order of size: a cycle directory without them is a handful of kilobytes of
@@ -726,15 +782,29 @@ prune_local() {
 # belongs in this list too; the disk is the only thing that reports its
 # absence, and only once it is already gone.
 #
-# Newest-first with a floor of 1, exactly as `prune_local`: the cycle running
-# right now must never lose the stream its own watchdog is reading, nor the
-# snapshot its own gates are still reading back.
+# The cycle or review that wrote a snapshot removes it in its own cleanup
+# once the Enabler and the Refiner have read it (agent-ops#1826): it is the
+# whole fleet's history to that moment, tens of megabytes and growing with
+# that history, and a count of them is a bound on how many are kept, never
+# on how large they are. What this prune meets is therefore the snapshot of
+# a run that died before its cleanup ran — a KILL, a container stop — which
+# is exactly the file this list exists for.
+#
+# Newest-first with a floor of 1, exactly as `prune_local`, and the record a
+# live `lock.json` or `review-lock.json` names is spared whatever the count
+# says (`record_is_live`): the cycle running right now must never lose the
+# stream its own watchdog is reading, nor the snapshot its own gates are
+# still reading back, and being the newest record is no guarantee of that
+# once a configured count can fall below the derivation (agent-ops#1826) —
+# a cycle that runs for hours is overtaken by every directory a later tick
+# leaves behind, one per firing on a node disabled while it runs.
 prune_derived() {
   local dir="$1" retained="$2" doomed pruned=0
   [[ -d "$dir" ]] || return 0
   (( retained >= 1 )) || retained=1
   while IFS= read -r doomed; do
     [[ -n "$doomed" ]] || continue
+    record_is_live "$doomed" && continue
     while IFS= read -r -d '' f; do
       rm -f -- "$f"
       pruned=$(( pruned + 1 ))
@@ -812,22 +882,27 @@ redact_mirror_files() {
 }
 
 # `prune_derived` above bounds the derived files by a *count*
-# (`state_local_streams_retained`) that only ever rises — requirement 1d's own
-# floor-never-ceiling contract (#901/#918) — so a busy fleet can still grow
+# (`state_local_streams_retained`) that is sized by the schedule alone, never
+# by free space (requirement 1d) — a configured value or
+# STATE_SYNC_STREAMS_RETAINED caps it (agent-ops#1826), but a count chosen for
+# one disk says nothing about another — so a busy fleet can still grow
 # past whatever free space is actually left, exactly as it did on 2026-09-18
 # (agent-ops#1678): 200 retained fleet-log snapshots at 45 MB apiece filled
 # the host and stood both nodes down for disk before either ever pruned a
 # byte of them. `state_local_streams_retained`'s own count is unchanged by
-# this function and stays the operator's only lever for the *ordinary* case;
+# this function and stays the operator's lever for the *ordinary* case;
 # this is the backstop for the case that count cannot see, because a snapshot
 # is read only by the cycle that wrote it (the header above) — every one of
 # them but the newest already exists purely for after-the-fact diagnosis, so
 # deleting older ones under disk pressure costs a live node nothing.
 #
-# Reads free space through the same functions and against the same floor as
-# the pre-clone stand-down (`min_free_workspace_bytes`, requirement 2.0c,
-# `lib/disk-space.sh`) — one meaning of "low" for the whole cycle, never a
-# second one this function invents for itself — but of `state_dir`, not
+# Reads free space through the same functions as the pre-clone stand-down
+# (requirement 2.0c, `lib/disk-space.sh`), and against `min_free_workspace_bytes`
+# itself — the floor, not the effective threshold that gate derives over it
+# from `workspace_headroom_factor` and the largest recorded clone
+# (`disk_space_effective_min_bytes`), which needs a union log this push does
+# not build. Where the two part company the gate stands cycles down while
+# this valve still reads `ok` (agent-ops#1935). Of `state_dir`, not
 # `workspace_root`: `state_dir` is where the files this prunes actually live,
 # and on this installation the two share one filesystem in any case (the
 # 2026-09-18 incident's own host-usage table). A `0` floor (the check
@@ -836,10 +911,11 @@ redact_mirror_files() {
 #
 # Oldest-first, mirroring `prune_derived`'s own newest-first bias in reverse:
 # under pressure the newest cycle's derived files are what a live watchdog or
-# gate might still be reading, so they are the last thing this gives up, and
-# free space is re-read after every cycle's files come off so a node that
-# recovers stops as soon as it is back over the floor rather than stripping
-# further than the moment required.
+# gate might still be reading, so they are the last thing this gives up —
+# and the record a live lock names is never given up at all, exactly as in
+# `prune_derived` — and free space is re-read after every cycle's files come
+# off so a node that recovers stops as soon as it is back over the floor
+# rather than stripping further than the moment required.
 prune_derived_under_pressure() {
   local dir="$1" doomed pruned=0 free_kb
   [[ -d "$dir" ]] || return 0
@@ -848,6 +924,7 @@ prune_derived_under_pressure() {
   [[ "$(disk_space_verdict "$free_kb" "$min_free_workspace_bytes")" == "low" ]] || return 0
   while IFS= read -r doomed; do
     [[ -n "$doomed" ]] || continue
+    record_is_live "$doomed" && continue
     free_kb="${STATE_SYNC_FREE_KB:-$(disk_space_free_kb "$state_dir")}"
     [[ "$(disk_space_verdict "$free_kb" "$min_free_workspace_bytes")" == "low" ]] || break
     while IFS= read -r -d '' f; do

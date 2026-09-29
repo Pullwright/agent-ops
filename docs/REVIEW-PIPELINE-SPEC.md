@@ -428,7 +428,10 @@ R2. **Lock.** Acquire `review-lock.json` in `state_dir` recording PID, start
    requirement 1 records it; its own lock, *not* the implementation
    `lock.json`). Apply the same held/stale/dead logic as requirement 1, using
    `repository_review.lock_stale_after`: skip cleanly if a live review is younger
-   than the threshold; take over a stale or dead lock — TERM, a polled grace of
+   than the threshold, removing the record directory this run made (its only
+   content is R2c's snapshot, and a run that reviewed nothing must not take
+   one of `state_local_streams_retained`'s slots from one that did —
+   implementation spec requirement 2.5); take over a stale or dead lock — TERM, a polled grace of
    up to 20 seconds so the holder's own signal handler (R7a) can write its
    record and release its claim, then KILL — logging a `warning`. Installation-
    wide only, not per repository — the lock covers whichever repositories a
@@ -456,7 +459,8 @@ R3. **Stand-down checks.** Each logs its reason and exits 0:
       union carries the signal instead).
    2. *Implementation pipeline busy* — if `lock.json` is held by a live
       process, stand down and wait for the next tick (defer to it, per
-      "Relationship to the existing pipelines").
+      "Relationship to the existing pipelines"), removing the record
+      directory for the same reason as R2's lock skip.
    3. *A dated stand-down, tier one* — if `repository_review.defaults.not_before`
       is set and now is before it, stand down the whole cycle, logging the
       timestamp on the event so an operator can tell this apart from a
@@ -554,6 +558,9 @@ R2c. **The fleet's memory and state publication.** After the lock and before
    re-snapshotted between repos, and each snapshot is repaired on the terms of
    that same requirement before anything reads it — a peer's NUL-holed line
    costs this pipeline the records around it exactly as it costs a cycle's.
+   The run's cleanup removes the snapshot, as a cycle's does: it is scratch
+   with the run's lifetime, and a count of retained snapshots bounds how many
+   are kept, never how large they are (that requirement's own terms).
    There is no lease: per-item claims
    (requirement 17a of the implementation spec) arbitrate work.
 

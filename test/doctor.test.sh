@@ -1864,6 +1864,29 @@ run_doctor
 assert_not_contains "with neither source set, doctor says nothing about NOTIFY_WEBHOOK_URL" \
   "NOTIFY_WEBHOOK_URL" "$out"
 
+# STATE_SYNC_STREAMS_RETAINED (agent-ops#1826): reported whenever set, since
+# config.json is baked into the image and a fleet-wide change to the key
+# misses every node whose .env overrides it; a value scripts/state-sync.sh
+# would ignore, or one set where no push runs, is a warn. The base fixture
+# has state_repo unset, so the ok case sets one.
+streams_repo_config="$tmp/streams-repo-config.json"
+jq '.state_repo = "acme-org/agent-ops-state"' "$base_config" > "$streams_repo_config"
+run_doctor STATE_SYNC_STREAMS_RETAINED=20 -- --config "$streams_repo_config"
+assert_contains "a positive STATE_SYNC_STREAMS_RETAINED with state_repo set is reported as the override it is" \
+  "[ ok ] STATE_SYNC_STREAMS_RETAINED=20 overrides config.json's state_local_streams_retained (" "$out"
+run_doctor STATE_SYNC_STREAMS_RETAINED=auto -- --config "$streams_repo_config"
+assert_contains "a value state-sync.sh would ignore is a warn naming the fall-back" \
+  "[warn] STATE_SYNC_STREAMS_RETAINED='auto' is not a positive integer — scripts/state-sync.sh ignores it" "$out"
+run_doctor STATE_SYNC_STREAMS_RETAINED=08 -- --config "$streams_repo_config"
+assert_contains "…and so is a leading zero" \
+  "[warn] STATE_SYNC_STREAMS_RETAINED='08' is not a positive integer" "$out"
+run_doctor STATE_SYNC_STREAMS_RETAINED=20
+assert_contains "a valid value where state_repo is unset warns that no push will ever apply it" \
+  "[warn] STATE_SYNC_STREAMS_RETAINED=20 is set but state_repo is unset" "$out"
+run_doctor
+assert_not_contains "unset, doctor says nothing about STATE_SYNC_STREAMS_RETAINED" \
+  "STATE_SYNC_STREAMS_RETAINED" "$out"
+
 # agent-ops#592 (D7): repository_review is the current spelling of the review
 # pipeline's config block; project_review is still accepted as a deprecated
 # alias, on the same "warn while only the old name is set" shape

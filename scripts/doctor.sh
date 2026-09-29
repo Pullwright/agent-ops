@@ -317,6 +317,26 @@ fi
 notify_webhook_url_resolved="$(notify_resolve_webhook_url "$notify_webhook_url_raw" "$escalation_webhook_url_raw" \
   "$(notify_webhook_url_env_or_empty "$notify_webhook_url_env")")"
 
+# STATE_SYNC_STREAMS_RETAINED (agent-ops#1826): the per-node form of
+# `state_local_streams_retained`, forwarded from `.env` by
+# deploy/docker/compose.yaml and read ahead of the key by scripts/state-sync.sh.
+# Reported whenever it is set, because config.json is built into the image
+# every node runs and a later fleet-wide change to the key silently misses
+# every node whose .env overrides it. A value state-sync.sh would ignore is a
+# `warn` — the node then keeps the configured count and says so nowhere but a
+# push's own output — and so is a value set where no push ever runs.
+state_sync_streams_retained_env="${STATE_SYNC_STREAMS_RETAINED:-}"
+if [[ -n "$state_sync_streams_retained_env" ]]; then
+  state_local_streams_retained_cfg="$(cfg '.state_local_streams_retained')"
+  if [[ ! "$state_sync_streams_retained_env" =~ ^[1-9][0-9]{0,8}$ ]]; then
+    warn "STATE_SYNC_STREAMS_RETAINED='$state_sync_streams_retained_env' is not a positive integer — scripts/state-sync.sh ignores it and config.json's state_local_streams_retained ($state_local_streams_retained_cfg) governs this node"
+  elif [[ -z "$(cfg '.state_repo')" ]]; then
+    warn "STATE_SYNC_STREAMS_RETAINED=$state_sync_streams_retained_env is set but state_repo is unset, so no push runs and neither it nor state_local_streams_retained prunes anything on this node (agent-ops#1936)"
+  else
+    ok "STATE_SYNC_STREAMS_RETAINED=$state_sync_streams_retained_env overrides config.json's state_local_streams_retained ($state_local_streams_retained_cfg) on this node — the derived files of the newest $state_sync_streams_retained_env cycles and the newest $state_sync_streams_retained_env reviews are kept"
+  fi
+fi
+
 # The rules below are the ones the schema cannot state, because each holds
 # between two keys rather than about one. A `fail` here mirrors a startup guard
 # in agent-cycle.sh — the cycle would refuse to run; a `warn` is a combination
