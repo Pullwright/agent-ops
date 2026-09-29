@@ -14128,7 +14128,17 @@ implements.
     median/p90 while still counting them, so the exclusion is visible rather
     than a silent drop. Kept out of the dashboard's log tail for the same
     reason `review-gate-checks-read` is: machine bookkeeping with nothing an
-    operator can act on, read only by `scripts/pickup-metrics.sh`. An
+    operator can act on, read only by `scripts/pickup-metrics.sh`. A `rework`
+    event (requirement 47, TD-PPagop-26082920) gets the same treatment for a
+    related reason, provisionally rather than permanently: its record carries
+    no `detail` for the dashboard's generic renderer to show, its only reader
+    today is the Phase 2 rework panel (D23, #611) that does not yet exist, and
+    `claim-race-duplicate`/`stage-rerun` fire often enough under healthy
+    fleet contention to displace rows that do have something to say — the
+    same "displace rows that have something to say" ground the two exclusions
+    above already state. Unlike them, this one is expected to be undone: once
+    #611's panel exists to consume the record, re-including `rework` in the
+    tail is a one-line reversal, not a rediscovery. An
     `issues-excluded` event (requirement 3j; agent-ops#447) carries `repo`,
     `count` and `excluded` — the same `{number, reason}` array
     `scripts/gather-issues.sh` reports as `issues_excluded` — plus a `detail`

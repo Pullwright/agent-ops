@@ -1207,7 +1207,12 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                                        //   to say — and minus first-seen for
                                        //   the same reason (spec 33), one per
                                        //   item a gather first reports, read
-                                       //   only by scripts/pickup-metrics.sh
+                                       //   only by scripts/pickup-metrics.sh —
+                                       //   and minus rework too (spec 33/47,
+                                       //   TD-PPagop-26082920), pending the
+                                       //   Phase 2 rework panel (#611): no
+                                       //   detail to show and no reader yet,
+                                       //   provisional rather than permanent
   cron_tail: [ "line", … ] }
 ```
 

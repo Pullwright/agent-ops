@@ -2464,8 +2464,16 @@ fi  # FULL
 # and stays. `first-seen` (requirement 33, TD-PPagop-26081405) gets the same
 # treatment for the same reason: one per item a gather first reports, read
 # only by scripts/pickup-metrics.sh, with nothing an operator can act on.
+# `rework` (requirement 47, TD-PPagop-26082920) gets the same treatment too,
+# pending the Phase 2 rework panel (#611): its own class/detector fields carry
+# no `detail` for the generic renderer to show, its only reader today is that
+# panel, which does not exist yet, and `claim-race-duplicate`/`stage-rerun`
+# fire often enough in healthy contention to push out rows that do have
+# something to say. This is provisional, not permanent — once #611's panel
+# exists to consume the record, re-including it here is a one-line reversal.
 log_tail_json="$(jq -sc --argjson n "$MAX_LOG_TAIL" '
-  map(select(.event != "review-gate-checks-read" and .event != "first-seen"))
+  map(select(.event != "review-gate-checks-read" and .event != "first-seen"
+             and .event != "rework"))
   | sort_by(.ts) | reverse | .[0:$n]' "$events_jsonl" 2>/dev/null)"
 [[ -z "$log_tail_json" ]] && log_tail_json='[]'
 
