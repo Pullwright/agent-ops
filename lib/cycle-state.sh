@@ -876,8 +876,18 @@ decisions_map() {
 #                     (prompts/enabler.md) — one Opus pass per closed
 #                     escalation, not a loop. Distinguishing this from a
 #                     genuinely stale re-flag needs a key this rule does not
-#                     have; agent-ops#936 is where that containment is being
-#                     built.
+#                     have on its own: the engagement's own enabler-examined
+#                     retires the exemption, and a re-escalation from there
+#                     records the re-flag's reason key, so agent-ops#936's
+#                     shipped per-reason bound (same reason since the last
+#                     human touch escalates to a human, plus the
+#                     escalation_adjudication_max_passes cap; PR #1049) is
+#                     what stops a settled question being re-asked from
+#                     there. The one issue-closed grant per human close is
+#                     itself uncapped by design (agent-ops#936 §5: "The
+#                     issue-closed exemption stays") — exactly the bounded,
+#                     disclosed cost the one-Opus-pass-per-closed-escalation
+#                     sentence above already states.
 #      recheck      — the newest examination of it is older than RECHECK_HOURS
 #                     (0 disables). This is the path by which evidence that
 #                     arrived after an examination — a diagnosis posted into

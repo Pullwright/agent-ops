@@ -15852,8 +15852,14 @@ implements.
          closed escalation, not a loop. There is no evidence-only key that
          separates this from the #706 sequence this exemption exists to
          rescue (both release the item after the human's close and re-flag it
-         afterward), so containing it is agent-ops#936 §5's job — a per-reason
-         cap, not a change to this rule.
+         afterward); the engagement this exemption grants is what retires it —
+         its own `enabler-examined`, above — and a further re-escalation from
+         there is what agent-ops#936's shipped per-reason bound (same reason
+         since the last human touch escalates to a human, plus the
+         `escalation_adjudication_max_passes` cap; PR #1049) catches. The one
+         `issue-closed` grant per human close is itself uncapped by design
+         (agent-ops#936 §5: "The issue-closed exemption stays") — this rule
+         is unchanged by that bound, not awaiting it.
        - **`recheck`** — the newest examination of the item is older than
          `enabler_recheck_hours` (`0` disables). For a GitHub issue,
          requirement 18a already catches new evidence posted into its own

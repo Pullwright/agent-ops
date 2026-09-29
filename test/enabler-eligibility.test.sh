@@ -399,9 +399,14 @@ assert_eq "a needs-refinement re-flag with no prior item-refined event gets no e
 # close the human already acted on through one of those still reads as "no
 # examination has followed it". This is a disclosed boundary, not a bug fixed
 # here: there is no evidence-only key that tells this case apart from the #706
-# sequence the exemption exists to rescue (agent-ops#936 §5 is where that
-# containment is being built). Pinned so a later change to this rule changes
-# this outcome on purpose, not by surprise.
+# sequence the exemption exists to rescue. The engagement this exemption
+# grants logs the enabler-examined that retires it, and a re-escalation from
+# there is what agent-ops#936's shipped per-reason bound (same reason since
+# the last human touch escalates to a human, plus the
+# escalation_adjudication_max_passes cap; PR #1049) catches — the one
+# issue-closed grant per human close is itself uncapped by design
+# (agent-ops#936 §5: "The issue-closed exemption stays"). Pinned so a later
+# change to this rule changes this outcome on purpose, not by surprise.
 
 label_removed_release_log() {  # escalation raised, closed, released by label-removed, re-flagged later
   cat > "$log" <<'EOF'
