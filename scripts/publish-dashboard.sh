@@ -518,7 +518,12 @@ mkdir -p "$out_dir"
 # — skips the trap, and the sweep removes what a KILL leaves. TERM is
 # deliberately not trapped: a trapped signal is handled only once the
 # foreground command returns, which would hold the hook past its bound for as
-# long as a `timeout 15` GitHub call takes.
+# long as a `timeout 15` GitHub call takes. `timeout` signals this process
+# first and its process group a moment later, and a command this script forked
+# in the instant between the two never receives the second and outlives it;
+# scratch_release renames the working set away before removing it, so such a
+# straggler has nowhere to recreate an entry under (measured: once in some
+# thirty TERMs, one file, before the rename).
 #
 # The trap covers, besides the working set, the three files a publish stages
 # outside it — the `.data.XXXXXX.js` and `.stamp.XXXXXX.js` beside their
@@ -533,6 +538,7 @@ data_tmp=""
 stamp_tmp=""
 publish_cleanup() {
   local staged
+  trap '' TERM INT HUP    # see scratch_release: the group-wide second signal must not land on the removal
   for staged in "$data_tmp" "$stamp_tmp" "${payload_cache:+$payload_cache.tmp}"; do
     [[ -n "$staged" && -e "$staged" ]] && rm -f -- "$staged"
   done

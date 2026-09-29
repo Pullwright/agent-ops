@@ -45,7 +45,16 @@
 #       Remove SCRATCH_DIR, if set, and put TMPDIR back as it was, so that a
 #       process this one starts from its own cleanup — agent-cycle.sh's
 #       chained cycle — inherits a TMPDIR that exists. Safe to call twice, or
-#       before scratch_enter.
+#       before scratch_enter. The directory is renamed to a tombstone
+#       (`.agent-ops-sweep.<pid>.<name>`, the shape the sweep below removes)
+#       before it is removed, with TERM, INT and HUP ignored for the
+#       duration: a `timeout` signals the process first and its whole process
+#       group a moment later, so the second signal must not land on the
+#       removal, and a command this shell forked in the instant between the
+#       first signal's arrival and its next check never receives the second
+#       and outlives the shell — renamed away, the directory gives such a
+#       straggler nowhere to recreate an entry under, which `rm -rf` would
+#       otherwise meet as a directory that is not empty.
 #
 #   scratch_sweep_dead_owners [DIR]
 #       Remove every scratch directory at the top of DIR whose owning pid no
@@ -112,8 +121,15 @@ scratch_enter() {
 }
 
 scratch_release() {
+  local tomb
   if [[ -n "${SCRATCH_DIR:-}" ]]; then
-    rm -rf -- "$SCRATCH_DIR" 2>/dev/null || true
+    trap '' TERM INT HUP
+    tomb="${SCRATCH_BASE:-${SCRATCH_DIR%/*}}/.agent-ops-sweep.$$.${SCRATCH_DIR##*/}"
+    if mv -T -- "$SCRATCH_DIR" "$tomb" 2>/dev/null; then
+      rm -rf -- "$tomb" 2>/dev/null || true
+    else
+      rm -rf -- "$SCRATCH_DIR" 2>/dev/null || true
+    fi
     SCRATCH_DIR=""
     if [[ -n "${SCRATCH_OUTER_TMPDIR_SET:-}" ]]; then
       export TMPDIR="${SCRATCH_OUTER_TMPDIR-}"

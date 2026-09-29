@@ -4384,14 +4384,20 @@ implements.
    `lib/gh-shim.sh`'s per-call directories, `lib/issue-priority.sh`'s cache,
    `lib/toggle.sh`'s flag memos, the Publisher's union files, `sort`'s spill
    files — lies inside it, and the process's `EXIT` trap releases the whole
-   of it with one removal and puts `TMPDIR` back, so that a process started
-   from that cleanup (the chained cycle of requirement 39) inherits a
-   directory that exists. The trap is armed, on an empty name, before the
+   of it — renamed first to a `.agent-ops-sweep.<pid>.<name>` tombstone,
+   with `TERM`, `INT` and `HUP` ignored for the duration, then removed — and
+   puts `TMPDIR` back, so that a process started from that cleanup (the
+   chained cycle of requirement 39) inherits a directory that exists. The trap is armed, on an empty name, before the
    directory is made; a process that cannot make one (a full or unwritable
    `$TMPDIR`) says so on stderr and exits 1 rather than aim its writes
    elsewhere. bash runs the `EXIT` trap on `exit`, on `set -e` and on an
    untrapped fatal signal alike, so a process a `timeout` ends with `TERM`
-   releases its directory; what a `KILL` ends — the OOM killer, a container
+   releases its directory, and the rename is what makes that release
+   complete: `timeout` signals the process first and its process group a
+   moment later, and a command the shell forked in the instant between the
+   first signal's arrival and its next check never receives the second,
+   outlives the shell, and would otherwise recreate an entry under a
+   directory `rm -rf` had already listed; what a `KILL` ends — the OOM killer, a container
    stopped past its grace, requirement 1's stale-lock takeover reaching its
    `KILL` — leaves the directory behind, and the sweep removes it:
    `scratch_sweep_dead_owners` runs at the start of every
@@ -31319,6 +31325,14 @@ confirmed by the repo owner on 2026-07-13; no open questions remain.
   so a `timeout 15` GitHub call in its own process group would hold the hook
   past its `timeout 120`; the hook carries `-k 10` instead, so a publish
   whose exit outlasts ten seconds is killed and its directory swept.
+  Reshaping the `TERM` case to start the publish under `timeout` itself, as
+  the review asked, found the one real leak on the signal path: a command
+  forked in the instant between `timeout`'s first signal and bash's next
+  check never receives the group-wide second, outlives its parent, and
+  recreates an entry after `rm -rf` has listed the directory — once in some
+  thirty runs under load, one file. The release therefore renames the
+  directory to a tombstone before removing it, with the signals ignored for
+  the duration; forty further runs under load left nothing.
 
 ## Gotchas
 

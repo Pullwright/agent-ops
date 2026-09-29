@@ -2769,7 +2769,10 @@ number's twins elsewhere on the page.
   library it calls spools — the union files of `lib/item-lifecycle.sh` and
   `lib/node-time-state.sh`, `lib/gh-shim.sh`'s per-call directories,
   `lib/toggle.sh`'s memos, `sort`'s spill files — lies inside it. The `EXIT`
-  trap, armed before the directory exists, removes it together with the
+  trap, armed before the directory exists, removes it — renamed to a
+  tombstone first, with the signals ignored, so that a command forked in the
+  instant a `timeout`'s first signal lands, which never receives its second,
+  group-wide one, has nowhere to recreate an entry — together with the
   three files a publish stages outside it for an atomic rename — the
   `.data.XXXXXX.js` and `.stamp.XXXXXX.js` beside `data.js` and `stamp.js`,
   and `.dashboard-payload.tmp` — and a publish that cannot make its
@@ -4511,4 +4514,8 @@ number's twins elsewhere on the page.
   second place that must remember what the trap does. The signal traps the
   issue proposed were not adopted: bash runs the `EXIT` trap on an untrapped
   fatal signal, so they would have tested nothing, and a trapped signal
-  would have held the hook past its `timeout`.
+  would have held the hook past its `timeout`. What the `TERM` case did
+  find, once it sent the signal the way `timeout` does, was a straggler: a
+  command forked between `timeout`'s first signal and bash's next check,
+  which never receives the second and recreates an entry after the removal
+  has listed the directory — hence the rename before the removal.
