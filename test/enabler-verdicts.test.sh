@@ -80,6 +80,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$SCRIPT_DIR/lib/pipeline-marker.sh"
 # shellcheck source=lib/dependency-gate.sh
 . "$SCRIPT_DIR/lib/dependency-gate.sh"
+# The rework record's `check-failure`/`human-change-request` classes
+# (agent-ops#1032): sourced for real, not stubbed, so the scenarios below
+# exercise the genuine field shape `rework_check_failure_fields`/`rework_
+# human_change_request_fields` produce at this recovery site.
+# shellcheck source=lib/rework.sh
+. "$SCRIPT_DIR/lib/rework.sh"
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
@@ -1645,6 +1651,11 @@ assert_contains "gate-refused: the warning names the gate's own finding" \
 xmn_evt="$(events_named "$calls" enabler-examined | head -n1)"
 assert_eq "gate-refused: enabler-examined records the flip as failed" \
   "failed" "$(jq -r '.complete_handoff' <<<"$xmn_evt")"
+# check-failure (agent-ops#1032) is `review-gate-checks-read`'s own `ok:
+# false` case — a dirty-but-readable gate is `ok: true`, so no check-failure
+# record here.
+assert_eq "gate-refused: a readable-but-dirty gate earns no check-failure rework record" "0" \
+  "$(events_named "$calls" rework | jq -c 'select(.class == "check-failure")' | wc -l | tr -d ' ')"
 
 # ============================================================================
 # complete_handoff: the gate cannot read required checks at all — a node
@@ -1678,6 +1689,21 @@ assert_eq "  ... below the streak threshold, no escalation event" "0" \
 xmn_evt="$(events_named "$calls" enabler-examined | head -n1)"
 assert_eq "  ... enabler-examined records the flip as failed" \
   "failed" "$(jq -r '.complete_handoff' <<<"$xmn_evt")"
+# check-failure (agent-ops#1032, D23): the Enabler's own handoff-recovery
+# site is a second detector for this class — see the Reviewer's own site in
+# test/rework-record.test.sh / agent-cycle.sh. `detector` names this site,
+# never the Reviewer's, and `attributed_stage` stays null (not determined
+# from this evidence).
+rw_evt="$(events_named "$calls" rework | jq -c 'select(.class == "check-failure")' | head -n1)"
+assert_eq "  ... and emits one check-failure rework record" \
+  "check-failure" "$(jq -r '.class' <<<"$rw_evt")"
+assert_eq "    ... naming the Enabler's own site as detector" \
+  "lib/enabler.sh:review-gate-checks-read" "$(jq -r '.detector' <<<"$rw_evt")"
+assert_eq "    ... attributed_stage is null, not guessed" \
+  "null" "$(jq -c '.attributed_stage' <<<"$rw_evt")"
+assert_eq "    ... carrying the item's repo/item/pr_url" \
+  '{"item":"PR435","pr_url":"https://github.com/acme/widgets/pull/435","repo":"acme/widgets"}' \
+  "$(jq -Sc '{repo, item, pr_url}' <<<"$rw_evt")"
 
 # --- The same gate, but this node's own streak has crossed the threshold ---
 # shellcheck disable=SC2317  # invoked only by the eval'd review_gate_escalate_unreadable_streak
@@ -1745,6 +1771,22 @@ assert_eq "reconciliation-refused: complete_handoff forwards the round-start bou
 xmn_evt="$(events_named "$calls" enabler-examined | head -n1)"
 assert_eq "reconciliation-refused: enabler-examined records the flip as failed" \
   "failed" "$(jq -r '.complete_handoff' <<<"$xmn_evt")"
+# human-change-request (agent-ops#1032, D23): the Enabler's own
+# handoff-recovery path is a second detector site for this class — see the
+# Reviewer's own site in test/rework-record.test.sh / agent-cycle.sh. Always
+# attributed to "reviewer" (docs/FLOW-SCHEMA.md): the recovery path only
+# reaches this branch for a pull request with a Reviewer verdict already on
+# record, so the request escaped the Reviewer whichever site observed it.
+rw_evt="$(events_named "$calls" rework | jq -c 'select(.class == "human-change-request")' | head -n1)"
+assert_eq "reconciliation-refused: emits one human-change-request rework record" \
+  "human-change-request" "$(jq -r '.class' <<<"$rw_evt")"
+assert_eq "  ... attributed to the reviewer" \
+  "reviewer" "$(jq -r '.attributed_stage' <<<"$rw_evt")"
+assert_eq "  ... detector names the reconciliation gate" \
+  "lib/reconciliation-gate.sh:reconciliation_gate" "$(jq -r '.detector' <<<"$rw_evt")"
+assert_eq "  ... carrying the item's repo/item/pr_url" \
+  '{"item":"PR435","pr_url":"https://github.com/acme/widgets/pull/435","repo":"acme/widgets"}' \
+  "$(jq -Sc '{repo, item, pr_url}' <<<"$rw_evt")"
 
 # --- complete_handoff: the reconciliation gate refuses, and the revert it
 #     tries also fails (agent-ops#539) ------------------------------------------

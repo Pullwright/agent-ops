@@ -2235,14 +2235,12 @@ every case at once.
 own correction to its original filing, which had named a different, already-
 resolved gap — agent-ops#533, `lib/reconciliation-gate.sh`, PR #539): the
 `human-gate` rung can only see what the reconciliation gate itself observes,
-at the Reviewer's own ready handoff. A human change request posted *after* a
-pull request is already ready, or acted on directly with no handoff ever
-running, is invisible to that detector, and the Enabler's own handoff-
-recovery path shares the identical check but emits only a `warning`, never a
-`rework` record, on a dirty verdict there (`TD-PPagop-26082919`, parked as a
-Phase 2 attribution question, not a gap this panel closes). The page states
-this immediately beneath the escape ladder, in the same words, so a reader
-never mistakes the `human-gate` row's own count for a complete one.
+at either of its two handoff sites (the Reviewer's own ready handoff and the
+Enabler's handoff-recovery path, agent-ops#1032). A human change request
+posted *after* a pull request is already ready, or acted on directly with no
+handoff ever running, is invisible to that detector. The page states this
+immediately beneath the escape ladder, in the same words, so a reader never
+mistakes the `human-gate` row's own count for a complete one.
 
 **Which files conflict most often** (issue #1805) is a further breakdown,
 rendered directly beneath the clean-count line and above the two interpretive

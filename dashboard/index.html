@@ -2706,10 +2706,10 @@
     // rung can only see what the reconciliation gate itself observes.
     body.push(el("div", {class:"panel muted", text:
       "Coverage gap: the human-gate rung only catches a change request the reconciliation gate itself " +
-      "sees at the Reviewer's own ready handoff — one posted after a pull request is already ready, or " +
-      "acted on directly with no handoff ever running, is invisible to it. The Enabler's own handoff-" +
-      "recovery path shares the same check but only warns, never records, on a dirty verdict there " +
-      "(TD-PPagop-26082919) — so this ladder's human-gate row understates that rung's true catch rate."}));
+      "sees, at either of its two handoff sites (the Reviewer's own ready handoff and the Enabler's " +
+      "handoff-recovery path) — one posted after a pull request is already ready, or acted on directly " +
+      "with no handoff ever running, is invisible to it, so this ladder's human-gate row understates " +
+      "that rung's true catch rate."}));
     return el("div", {}, body);
   }
 
