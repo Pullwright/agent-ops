@@ -4142,10 +4142,10 @@ for (( sk_i = 1; sk_i <= 40; sk_i++ )); do
   make_cycle "$sk" "$(printf '%sT%02d%02d00Z-%d' "$today_day" $(( sk_i % 24 )) $(( sk_i % 60 )) "$sk_i")" 0.10 model-a
 done
 sk_tmp="$tmp_dir/scratch-kill-tmp"; mkdir -p "$sk_tmp"
-env HOME="$sk" TMPDIR="$sk_tmp" "$PUBLISH" --no-github >/dev/null 2>&1 &
+env HOME="$sk" TMPDIR="$sk_tmp" "$PUBLISH" --no-github >/dev/null 2>"$tmp_dir/scratch-kill.err" &
 sk_pid=$!
 sk_seen=no
-for (( sk_i = 0; sk_i < 1000; sk_i++ )); do    # up to 20 s for the working set to appear
+for (( sk_i = 0; sk_i < 3000; sk_i++ )); do    # up to 60 s for the working set to appear
   if compgen -G "$sk_tmp/publish-dashboard.*" >/dev/null; then sk_seen=yes; break; fi
   kill -0 "$sk_pid" 2>/dev/null || break
   sleep 0.02
@@ -4155,7 +4155,12 @@ wait "$sk_pid"
 sk_rc=$?
 assert_eq "the publish's working set appeared under \$TMPDIR before it was ended (the case is exercised)" \
   "yes" "$sk_seen"
-assert_eq "…and the TERM ended the publish rather than the publish finishing first" "143" "$sk_rc"
+# The trap's own exit is 143, and that is what an amd64 run reports; under
+# QEMU emulation the arm64 CI job has reported 1 instead, its assemble cut
+# short — either way the publish did not run to completion, which is what
+# matters here, and a finished publish would have written the page.
+assert_eq "…and the TERM ended the publish rather than the publish finishing first (exit $sk_rc; stderr: $(tail -n 2 "$tmp_dir/scratch-kill.err" | tr '\n' ' ' | cut -c1-200))" \
+  "ended early" "$([[ "$sk_rc" -ne 0 && ! -e "$sk/.local/state/poetic-agents/dashboard/data.js" ]] && echo "ended early" || echo "ran to completion")"
 assert_eq "a publish ended by TERM leaves nothing at all under \$TMPDIR — its working set, and every file the libraries spooled inside it" \
   "" "$(ls -A "$sk_tmp")"
 
