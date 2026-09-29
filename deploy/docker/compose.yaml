@@ -130,13 +130,16 @@ x-agent-ops-env: &agent-ops-env
   # roughly ≤700 MiB to keep steering the largest unions off `-x`, and one knob
   # holding both is what livelocked both ockham nodes on 2026-09-16.
   LINT_SHELL_BUDGET_MIB: ${LINT_SHELL_BUDGET_MIB:-}
-  # How many cycles' derived files (`*.stream.jsonl`, `.fleet-log.jsonl`) this
+  # How many cycles' and how many reviews' derived files (`*.stream.jsonl`,
+  # and the `.fleet-log.jsonl` of a run that died before its cleanup) this
   # node keeps in its own state_dir — the per-node form of config.json's
   # `state_local_streams_retained`, read ahead of it by scripts/state-sync.sh
-  # (agent-ops#1826). For a host whose disk cannot hold the cadence-derived
-  # count: 200 fleet-log snapshots of 45 MB apiece, on a 38 GB disk two nodes
-  # share, is what filled poetic-vm-1. Left empty, config.json governs. Named
-  # here for the allowlist reason every other variable in this block is.
+  # (agent-ops#1826). config.json is built into the image every node runs, so
+  # that key is fleet-wide; this is the lever for a host whose disk cannot
+  # hold the count the fleet keeps. A positive integer, or ignored with a
+  # warning; inert without `state_repo` (agent-ops#1936). Left empty,
+  # config.json governs. Named here for the allowlist reason every other
+  # variable in this block is; .env.example describes it.
   STATE_SYNC_STREAMS_RETAINED: ${STATE_SYNC_STREAMS_RETAINED:-}
   TZ: ${TZ:-UTC}
 

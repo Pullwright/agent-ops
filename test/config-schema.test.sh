@@ -595,20 +595,46 @@ assert_defaults "...and for a count-valued key too" \
 # Acceptance 3a (agent-ops#1826): state_local_streams_retained alone is a cap
 # as well as a floor — a configured value below the derivation is taken as
 # configured, where its two siblings are raised to theirs — and absent it
-# still derives. The derived figures are read relationally rather than as
-# constants, because the fixture's own cadence keys decide them.
-assert_defaults "a configured state_local_streams_retained below the derivation caps it (10 at a 15-minute cadence stays 10)" \
+# still derives. Two fixtures per case: A pins the cadence and lets every
+# derived key derive, B is A plus the configured value, so each case checks
+# its own premise (that the value sits below, or above, what A derives)
+# rather than assuming it of a fixture whose schedule keys it inherited.
+# shellcheck disable=SC2016  # jq's $a/$b, not the shell's.
+assert_cadence_cmp "a configured state_local_streams_retained below the derivation caps it (10 stays 10 where the same cadence derives more)" \
+  '.schedule.cycle_interval_minutes = 15' \
   '.schedule.cycle_interval_minutes = 15 | .state_local_streams_retained = 10' \
-  '.state_local_streams_retained == 10'
-assert_defaults "...and one above the derivation still wins (the floor half of the contract)" \
+  '$a.state_local_streams_retained > 10 and $b.state_local_streams_retained == 10'
+# shellcheck disable=SC2016  # jq's $a/$b, not the shell's.
+assert_cadence_cmp "...and one above the derivation still wins (the floor half of the contract)" \
+  '.schedule.cycle_interval_minutes = 15' \
   '.schedule.cycle_interval_minutes = 15 | .state_local_streams_retained = 9999' \
-  '.state_local_streams_retained == 9999'
-assert_defaults "...while an absent state_local_streams_retained still derives from the cadence (never below its hourly base of 50)" \
-  '.schedule.cycle_interval_minutes = 15 | del(.state_local_streams_retained)' \
-  '.state_local_streams_retained >= 50'
-assert_defaults "...and the sibling count keys keep the floor-only shape: a state_local_cycles_retained below the derivation is raised to it" \
-  '.schedule.cycle_interval_minutes = 15 | .state_local_cycles_retained = 10' \
-  '.state_local_cycles_retained > 10'
+  '$a.state_local_streams_retained < 9999 and $b.state_local_streams_retained == 9999'
+# shellcheck disable=SC2016  # jq's $a/$b, not the shell's.
+assert_cadence_cmp "...while the sibling count key keeps the floor-only shape: a state_local_cycles_retained below the derivation is raised to it, unmoved by the cap beside it" \
+  '.schedule.cycle_interval_minutes = 15' \
+  '.schedule.cycle_interval_minutes = 15 | .state_local_streams_retained = 10 | .state_local_cycles_retained = 10' \
+  '$a.state_local_cycles_retained > 10 and $b.state_local_cycles_retained == $a.state_local_cycles_retained'
+assert_defaults "an absent state_local_streams_retained still derives from the cadence exactly (200 at 15 minutes, unrestricted)" \
+  "$CADENCE_BASE_MUTATION | .schedule.cycle_interval_minutes = 15" \
+  '.state_local_streams_retained == 200'
+# What reaches scripts/state-sync.sh is a whole number of at least 1: the
+# schema admits an integral float as an integer, jq 1.7 prints such a
+# literal as written, and `(( retained >= 1 ))` on `20.0` reads it as an
+# unbound variable and collapses the count to 1. Compared as text, because a
+# numeric `== 20` cannot tell 20 from 20.0 — and the container's jq is the
+# authority here, since jq 1.6 canonicalises the literal on the way in.
+assert_defaults "a schema-valid integral float (20.0) reaches the reader as the integer 20" \
+  "$CADENCE_BASE_MUTATION | .schedule.cycle_interval_minutes = 15 | .state_local_streams_retained = 20.0" \
+  '(.state_local_streams_retained | tostring) == "20"'
+assert_defaults "...and exponent notation (1e1) as the integer 10" \
+  "$CADENCE_BASE_MUTATION | .schedule.cycle_interval_minutes = 15 | .state_local_streams_retained = 1e1" \
+  '(.state_local_streams_retained | tostring) == "10"'
+assert_defaults "a configured 0 (schema-invalid; config_defaults validates nothing) falls through to the derivation rather than reaching the reader" \
+  "$CADENCE_BASE_MUTATION | .schedule.cycle_interval_minutes = 15 | .state_local_streams_retained = 0" \
+  '.state_local_streams_retained == 200'
+assert_defaults "...and so does a negative value" \
+  "$CADENCE_BASE_MUTATION | .schedule.cycle_interval_minutes = 15 | .state_local_streams_retained = -5" \
+  '.state_local_streams_retained == 200'
 assert_defaults "an explicit 0 for none_selected_recheck_hours stays 0, never raised by the derivation" \
   '.schedule.cycle_interval_minutes = 60 | .none_selected_recheck_hours = 0' \
   '.none_selected_recheck_hours == 0'

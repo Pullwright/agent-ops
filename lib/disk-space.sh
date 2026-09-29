@@ -31,8 +31,9 @@
 # actually uses: `max(min_free_workspace_bytes, workspace_headroom_factor ×
 # largest footprint)`. `min_free_workspace_bytes` is the floor *under* that
 # derivation, never a ceiling — the same shape `lock_stale_after`
-# (requirement 4f) and the state-sync count keys (requirement 1d) already
-# use elsewhere. With no footprint ever recorded — a fleet's first cycle, or
+# (requirement 4f) and two of the three state-sync count keys (requirement
+# 1d; `state_local_streams_retained` is the exception, agent-ops#1826)
+# already use elsewhere. With no footprint ever recorded — a fleet's first cycle, or
 # a union log this node cannot yet read — the floor alone governs, which
 # fails in the safe direction the same way `disk_space_verdict`'s own
 # "unreadable is not low" already does.

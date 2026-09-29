@@ -606,26 +606,30 @@ config_defaults() {
     # `worst` would make the window collapse under exactly the restricted
     # `cycle_hours` that widens it (see `cadence_gaps`). Same floor shape as
     # `hour_key`: a configured count can still be *raised* by the derivation,
-    # never lowered.
+    # never lowered — `count_key_capped` below is the one exception.
     def count_key($key; $base_cycles):
         (getpath([$key])) as $cfg
         | (if ($cfg | type) == "number" then $cfg else 0 end) as $floor
         | ([$floor, (($base_cycles * 60 / $mean_gap_min) | ceil)] | max);
 
     # `state_local_streams_retained` alone takes a configured value as
-    # configured — a cap as well as a floor (agent-ops#1826). It is the one
-    # count key that bounds files of a different order of size from the
-    # records holding them (a fleet-log snapshot ran 45 MB apiece at this
-    # installation'\''s cadence, 200 of them 9 GB per node), and a host whose
-    # disk cannot hold the derived count has to be able to say so: under the
-    # floor-only contract the derived count held two nodes on one 38 GB disk
-    # at their disk-pressure floor with daily stand-downs, and the only way
-    # down was a test-only environment bypass. Absent, the derivation above
-    # applies unchanged; the other two count keys keep the floor-only shape,
-    # because a value below their derivation could only shorten the record.
+    # configured — a cap as well as a floor (agent-ops#1826; the design
+    # decision in docs/IMPLEMENTATION-PIPELINE-SPEC.md records why). It is
+    # the one count key that bounds files of a different order of size from
+    # the records holding them, and a host whose disk cannot hold the derived
+    # count has to be able to say so. What it passes on is a whole number of
+    # at least 1: `config_schema_errors` admits an integral float (`20.0`,
+    # `1e1`) as an integer and jq 1.7 prints such a literal as written, where
+    # `scripts/state-sync.sh`'\''s `(( retained >= 1 ))` reads `20.0` as an
+    # unbound variable and collapses the count to 1. Anything else — absent,
+    # null, a string, 0 or below (schema-invalid, but this function validates
+    # nothing) — falls through to the derivation above. The other two count
+    # keys keep the floor-only shape, because a value below their derivation
+    # could only shorten the record.
     def count_key_capped($key; $base_cycles):
         (getpath([$key])) as $cfg
-        | if ($cfg | type) == "number" then $cfg else count_key($key; $base_cycles) end;
+        | if ($cfg | type) == "number" and $cfg >= 1 then ($cfg | floor)
+          else count_key($key; $base_cycles) end;
 
     # `none_selected_recheck_hours` alone carries a "0 disables the valve"
     # convention (`minimum: 0`, not `exclusiveMinimum`) — an explicit 0 must
