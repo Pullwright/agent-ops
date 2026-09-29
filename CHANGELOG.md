@@ -146,14 +146,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- **Coordinator prompt contradiction on trimmed-item reporting** (issue #777).
-  The "A this-cycle-trimmed entry is never worth reporting" bullet stated
-  correctly that the Script refuses such reports unconditionally, but then
-  closed by advising to read the item live and report it anyway. The trailing
-  sentence is removed in favour of directing toward the actual path the spec
-  provides: rank a trimmed entry during selection and read it whole as part
-  of selecting it, never as part of reporting.
-
 - **`check-closing-keyword.sh`'s already-resolved-on-base amnesty no longer
   excuses a destructive edit to a frozen tech-debt record** (issue #1795,
   noticed while approving PR #1492). The amnesty (issue #1493) skips the
