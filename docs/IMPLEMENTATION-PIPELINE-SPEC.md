@@ -18319,9 +18319,7 @@ implements.
       smaller one and says so. Only where the options genuinely differ in
       operator-visible behaviour, with no argued preference, does this reach
       `needs-refinement`, naming the fork in `missing` — the `decide-tactical`
-      rung (agent-ops#936) is the intended backstop for exactly this residue
-      once it lands; until then the ordinary `needs-refinement` route below
-      reaches a human the same way any other decline does.
+      rung (agent-ops#936, requirement 36d) is the backstop for exactly this residue.
 
     **The `needs-refinement` decline.** Where the Refiner cannot write an
     adequate specification — the gap is a decision, a credential, or
