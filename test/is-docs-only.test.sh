@@ -59,12 +59,13 @@ assert_docs_only "the roadmap is documentation" docs/ROADMAP.md
 assert_docs_only "anything nested under docs/ is documentation" docs/notes/adr/0001-thing.md
 assert_docs_only "the README is documentation" README.md
 assert_docs_only "CLAUDE.md is documentation" CLAUDE.md
+assert_docs_only "AGENTS.md is documentation" AGENTS.md
 assert_docs_only "TECH-DEBT.md is documentation" TECH-DEBT.md
 assert_docs_only "the licence is documentation" LICENCE
 assert_docs_only "the node runbook is documentation" deploy/docker/README.md
 assert_docs_only "the whole inert set at once is documentation" \
-  docs/ROADMAP.md docs/DASHBOARD-SPEC.md README.md CLAUDE.md TECH-DEBT.md \
-  LICENCE deploy/docker/README.md
+  docs/ROADMAP.md docs/DASHBOARD-SPEC.md README.md CLAUDE.md AGENTS.md \
+  TECH-DEBT.md LICENCE deploy/docker/README.md
 assert_not_docs_only "a frozen register item file is not documentation" \
   tech-debt/TD-PPagop-26073101.md
 
@@ -153,7 +154,7 @@ fi
 #     that moved it would then be classified by its new path alone. Checked
 #     against the filesystem, so it holds in a checkout and inside the image
 #     alike (both carry these files; only the checkout carries .git). ---
-for doc in README.md CLAUDE.md TECH-DEBT.md LICENCE deploy/docker/README.md docs; do
+for doc in README.md CLAUDE.md AGENTS.md TECH-DEBT.md LICENCE deploy/docker/README.md docs; do
   if [[ -e "$SCRIPT_DIR/$doc" ]]; then
     pass "the allowlist's $doc still exists"
   else

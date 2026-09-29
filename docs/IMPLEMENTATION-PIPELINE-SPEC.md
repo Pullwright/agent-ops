@@ -24141,24 +24141,25 @@ oblige anyone to edit a test.
    workflow publishes both architectures as one manifest list per tag.
 1b-i. **A documentation-only change builds nothing, and everything else
    builds.** `test/is-docs-only.test.sh` passes: `scripts/is-docs-only.sh`
-   calls a change documentation-only when every path in it is under `docs/`
-   or `tech-debt/`, or is `README.md`, `CLAUDE.md`, `TECH-DEBT.md`, `LICENCE`
-   or `deploy/docker/README.md`, and calls it code otherwise — `prompts/*.md`
-   included, since those are Markdown documents *and* the operating
-   instructions of requirement 1a's stages, so classifying by file extension
-   would let a change to a node's behaviour skip the build that deploys it. An
-   empty path list, or none, is code. The test the allowlist encodes is "the
-   image is not the delivery path for this file", which is weaker than "nothing
-   reads it" and has to be: a cycle working on this repository reads its own
-   `CLAUDE.md` and its tech-debt register, but from the `gh repo clone` in
-   `workspace_root` — both current the moment a
-   pull request merges, with no image involved. The copy at /app
+   calls a change documentation-only when every path in it is under `docs/` or
+   `tech-debt/`, or is `README.md`, `CLAUDE.md`, `AGENTS.md`, `TECH-DEBT.md`,
+   `LICENCE` or `deploy/docker/README.md`, and calls it code otherwise —
+   `prompts/*.md` included, since those are Markdown documents *and* the
+   operating instructions of requirement 1a's stages, so classifying by file
+   extension would let a change to a node's behaviour skip the build that
+   deploys it. An empty path list, or none, is code. The test the allowlist
+   encodes is "the image is not the delivery path for this file", which is
+   weaker than "nothing reads it" and has to be: a cycle working on this
+   repository reads its own `CLAUDE.md`, its `AGENTS.md` and its tech-debt
+   register, but from the `gh repo clone` in `workspace_root` — both current
+   the moment a pull request merges, with no image involved. The copy at /app
    is what nothing reads, because every stage's working directory is under
    `workspace_root` or `state_dir` (requirement 6's assertion pins the first),
    so /app is never a working directory nor an ancestor of one and its
-   `CLAUDE.md` is never loaded as project memory. `.github/workflows/build-image.yml`'s
-   `changes` job runs it over the change's own diff (three-dot, so a pull
-   request is judged on what its branch did and not on what `main` did
+   `CLAUDE.md` and `AGENTS.md` are never loaded as project memory.
+   `.github/workflows/build-image.yml`'s `changes` job runs it over the
+   change's own diff (three-dot, so a pull request is judged on what its
+   branch did and not on what `main` did
    meanwhile) and, when the answer is yes, skips every *step* of the `build`
    jobs and the whole of `publish`; a checked-out state it cannot diff builds.
    The skip is neither a `paths-ignore:` filter nor a job-level `if:` on

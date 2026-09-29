@@ -2894,11 +2894,11 @@ CI runs the same suite *inside* the freshly built image on every push that
 could change it — along with toolchain, crontab and role-guard checks (see
 `.github/workflows/build-image.yml`) — so an image that reaches `ghcr.io`
 has already passed everything above. A change confined to documentation
-(`docs/`, `tech-debt/`, `README.md`, `CLAUDE.md`, `TECH-DEBT.md`, `LICENCE`,
-`deploy/docker/README.md`) builds no image and so runs none of this; anything
-else does, `prompts/*.md` emphatically included, since those are what the
-pipeline feeds to `claude`. `scripts/is-docs-only.sh` holds the line, and
-running it by hand answers "will my branch build an image?":
+(`docs/`, `tech-debt/`, `README.md`, `CLAUDE.md`, `AGENTS.md`, `TECH-DEBT.md`,
+`LICENCE`, `deploy/docker/README.md`) builds no image and so runs none of
+this; anything else does, `prompts/*.md` emphatically included, since those
+are what the pipeline feeds to `claude`. `scripts/is-docs-only.sh` holds the
+line, and running it by hand answers "will my branch build an image?":
 
 ```bash
 git diff --no-renames --name-only main...HEAD | ./scripts/is-docs-only.sh
