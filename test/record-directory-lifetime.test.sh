@@ -42,9 +42,18 @@ shim_node() {  # shim_node <name> -> prints its directory
   local name="$1"
   local dir="$tmp_dir/$name"
   local item
-  mkdir -p "$dir" "$dir/home/.local/state/poetic-agents"
-  for item in lib prompts scripts .claude review-cycle.sh agent-cycle.sh config.schema.json; do
+  mkdir -p "$dir" "$dir/home/.local/state/poetic-agents" "$dir/scripts"
+  for item in lib prompts .claude review-cycle.sh agent-cycle.sh config.schema.json; do
     [[ -e "$SCRIPT_DIR/$item" ]] && ln -s "$SCRIPT_DIR/$item" "$dir/$item"
+  done
+  # `scripts/` is linked file by file so that the dashboard publisher can be
+  # left out: cleanup runs it only when it is executable, it spends its whole
+  # 120-second budget on GitHub in an offline container, and nothing here
+  # asserts on it. The state-sync push stays and exits at its `state_repo`
+  # guard.
+  for item in "$SCRIPT_DIR"/scripts/*; do
+    [[ "$(basename "$item")" == publish-dashboard.sh ]] && continue
+    ln -s "$item" "$dir/scripts/$(basename "$item")"
   done
   # No `not_before`: every ending exercised here lies past the lock, and
   # the dated stand-downs run before it.
@@ -55,7 +64,7 @@ shim_node() {  # shim_node <name> -> prints its directory
 }
 
 run_shim_review() {  # run_shim_review <dir>
-  env HOME="$1/home" AGENT_OPS_ROLE=active timeout 120 "$1/review-cycle.sh" --once >/dev/null 2>&1
+  env HOME="$1/home" AGENT_OPS_ROLE=active timeout 60 "$1/review-cycle.sh" --once >/dev/null 2>&1
 }
 
 review_dirs_of() {  # review_dirs_of <dir> -> how many record directories exist
@@ -68,13 +77,20 @@ events_of() {  # events_of <dir> -> "event/cause-or-detail" per line
     "$1/home/.local/state/poetic-agents/review-log.jsonl" 2>/dev/null || true
 }
 
+# A lock's holder must be alive *and* young, or R2 takes the lock over and
+# ends the holder's whole process group — which, for a `sleep` started here,
+# is this test. `started_at` is therefore now, not a fixed date.
+lock_json() {  # lock_json <pid> -> a live, young lock record
+  jq -nc --argjson p "$1" --arg h "${HOSTNAME:-}" \
+    --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    '{pid: $p, started_at: $at, host: $h}'
+}
+
 # --- The review lock held by a live peer: no directory ------------------------
 sleep 120 &
 live_pid=$!
 d="$(shim_node held-review-lock)"
-jq -nc --argjson p "$live_pid" --arg h "${HOSTNAME:-}" \
-  '{pid: $p, started_at: "2026-03-01T00:00:00Z", host: $h}' \
-  > "$d/home/.local/state/poetic-agents/review-lock.json"
+lock_json "$live_pid" > "$d/home/.local/state/poetic-agents/review-lock.json"
 run_shim_review "$d"
 assert_eq "a run that finds the review lock held by a live peer logs review-skipped" \
   "1" "$(events_of "$d" | grep -c '^review-skipped/review lock held by pid')"
@@ -88,9 +104,7 @@ wait "$live_pid" 2>/dev/null
 sleep 120 &
 live_pid=$!
 d="$(shim_node busy-implementation-peer)"
-jq -nc --argjson p "$live_pid" --arg h "${HOSTNAME:-}" \
-  '{pid: $p, started_at: "2026-03-01T00:00:00Z", host: $h}' \
-  > "$d/home/.local/state/poetic-agents/lock.json"
+lock_json "$live_pid" > "$d/home/.local/state/poetic-agents/lock.json"
 run_shim_review "$d"
 assert_eq "a run that stands down because agent-cycle.sh holds the node says so" \
   "1" "$(events_of "$d" | grep -c '^review-stand-down/peer-pipeline-busy$')"
