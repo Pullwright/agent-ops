@@ -4171,6 +4171,10 @@ run_publish "$fx" TMPDIR="$fx_tmp"
 assert_eq "a full build first, to write the payload cache a fast tick reads" \
   "yes" "$([[ -s "$fx/.local/state/poetic-agents/.dashboard-payload" ]] && echo yes || echo no)"
 printf '{' > "$fx/.local/state/poetic-agents/.dashboard-payload"
+# The cache is the Publisher's own output and so outside its no-op fingerprint
+# (#787): an input has to move, or the fast tick short-circuits before it
+# ever assembles. A second cycle is that input.
+make_cycle "$fx" "${today_day}T181500Z-2" 0.10 model-a
 env HOME="$fx" TMPDIR="$fx_tmp" "$PUBLISH" --no-github --fast >/dev/null 2>"$tmp_dir/fast-exec.err"
 fx_rc=$?
 assert_contains "a fast tick whose assemble fails says it is rebuilding in full" \
