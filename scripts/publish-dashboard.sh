@@ -536,6 +536,7 @@ mkdir -p "$out_dir"
 work_tmp=""
 data_tmp=""
 stamp_tmp=""
+# shellcheck disable=SC2317  # invoked only through the EXIT trap below, which a static reader does not follow
 publish_cleanup() {
   local staged
   trap '' TERM INT HUP    # see scratch_release: the group-wide second signal must not land on the removal
