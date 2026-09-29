@@ -2275,7 +2275,7 @@ The dashboard refreshes at the end of every cycle (a hook in `agent-cycle.sh`).
 To also keep it current between cycles — reflecting in-flight runs, the
 lock, and live GitHub status — add a heartbeat to your crontab:
 ```bash
-(crontab -l 2>/dev/null || true; echo "*/5 * * * * $HOME/Code/Poetic-Poems/Poetic-Poems/agent-ops/scripts/publish-dashboard.sh >> $HOME/.local/state/poetic-agents/dashboard.log 2>&1") | crontab -
+(crontab -l 2>/dev/null || true; echo "*/5 * * * * $HOME/Code/Poetic-Poems/agent-ops/scripts/publish-dashboard.sh >> $HOME/.local/state/poetic-agents/dashboard.log 2>&1") | crontab -
 ```
 
 The dashboard is a **reader**: it only ever reads the pipeline's state and
