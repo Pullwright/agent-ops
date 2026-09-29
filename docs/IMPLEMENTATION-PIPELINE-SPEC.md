@@ -63,6 +63,7 @@ are binding on any agent working inside them).
   - [Extended notes: `disable_default_ttl`](#extended-notes-disable_default_ttl)
   - [Extended notes: `none_selected_recheck_hours`](#extended-notes-none_selected_recheck_hours)
   - [Extended notes: `schedule.excluded_minutes`](#extended-notes-scheduleexcluded_minutes)
+  - [Extended notes: `revert_rate_baseline`](#extended-notes-revert_rate_baseline)
   - [Extended notes: `resources`](#extended-notes-resources)
 - [The Landing Gate](#the-landing-gate)
 - [Requirements](#requirements)
