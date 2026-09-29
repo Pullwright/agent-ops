@@ -12,6 +12,11 @@ name: Shell lint
 # same reason the Conventional Commits pattern lives in
 # .githooks/check-commit-format.sh rather than in commit-format.yml.
 #
+# This job also runs scripts/check-brace-default-trap.sh, a permanent grep
+# sweep for the bash `${var:-word}` brace-default trap (issue #1035,
+# agent-ops#933/TD-PPagop-26082816) — a shape shellcheck does not catch — as
+# an additional step alongside shellcheck, never in place of it.
+#
 # Deliberately not gated by `paths:`, as with commit-format: the linter reads
 # the whole tree in one invocation (that is what resolves `source` between the
 # pipelines and lib/), so "did this PR touch a .sh file" is the wrong question.
@@ -73,3 +78,6 @@ jobs:
         env:
           LINT_SHELL_FOLLOW_MIB: 0
         run: ./scripts/lint-shell.sh
+
+      - name: Guard the ${var:-word} brace-default trap
+        run: ./scripts/check-brace-default-trap.sh
