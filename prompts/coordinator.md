@@ -1567,10 +1567,7 @@ The rules:
   item outright and records nothing, whether or not you read it live first
   (agent-ops#683) — so there is nothing to gain by reporting one, and nothing
   lost by leaving it out: it no longer needs an account either (see "If you
-  found nothing selectable anywhere" below). If you genuinely believe a
-  trimmed item is under-specified, read it live first — `gh issue view <n>
-  --comments` — and report what that full read shows, never the elided
-  extract.
+  found nothing selectable anywhere" below). If a trimmed entry's title makes it look worth attention, rank it as you would any other and, if it wins selection, read it whole as part of selecting it — see "Trimmed entries must be read live before you select them" above. That is the route; a report is not, and reading it live first does not make one recordable.
 - **Reporting changes nothing about what you select.** It is side-work you do
   while walking, and it never promotes or demotes a candidate. On a cycle that
   selects, an empty array is the normal answer and reporting nothing is not a
