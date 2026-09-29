@@ -15952,6 +15952,35 @@ implements.
          guard of requirement 36b refuses a second refinement without a human
          touch), and the only way out was a second escalation asking the human
          to say again what they had already said.
+
+         "No examination has followed it" tests examination, not release:
+         four other paths let an item leave its block without logging an
+         `enabler-examined` — `lib/candidate-gather.sh`'s `unblocked {by:
+         "label-removed"}` (a human takes the `blocked` label off),
+         `{by: "work-gone"}`, `{by: "dependency-resolved"}`, and
+         `lib/candidate-select.sh`'s bare `unblocked` event, which carries
+         `item` only, no `repo` — the one unblock path that cannot be
+         attributed to a repository at all, and the one `same_item`'s "an
+         empty `repo` matches any repo" clause exists for. A close the human
+         already acted on through one of those four still reads as "not
+         consumed", so a later `needs-refinement` re-flag whose
+         `refined_before` predates the escalation can still grant a fresh
+         `issue-closed` engagement on a close already settled
+         (TD-PPagop-26082918). This is bounded, not a gap: the engagement it
+         grants logs the `enabler-examined` that retires the exemption for
+         good and verifies the closed issue's claim against reality
+         (`prompts/enabler.md`) before releasing anything — one Opus pass per
+         closed escalation, not a loop. There is no evidence-only key that
+         separates this from the #706 sequence this exemption exists to
+         rescue (both release the item after the human's close and re-flag it
+         afterward); the engagement this exemption grants is what retires it —
+         its own `enabler-examined`, above — and a further re-escalation from
+         there is what agent-ops#936's shipped per-reason bound (same reason
+         since the last human touch escalates to a human, plus the
+         `escalation_adjudication_max_passes` cap; PR #1049) catches. The one
+         `issue-closed` grant per human close is itself uncapped by design
+         (agent-ops#936 §5: "The issue-closed exemption stays") — this rule
+         is unchanged by that bound, not awaiting it.
        - **`recheck`** — the newest examination of the item is older than
          `enabler_recheck_hours` (`0` disables). For a GitHub issue,
          requirement 18a already catches new evidence posted into its own
