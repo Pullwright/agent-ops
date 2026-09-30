@@ -117,12 +117,29 @@ URL="https://github.com/Poetic-Poems/poetic-fiddle/pull/216"
 #                             them; "ERROR" makes the call fail (a fact about
 #                             this node or GitHub, not the pull request, so
 #                             the backstop must skip rather than block).
+#   $tmp_dir/rerun-ids        every run id `gh run rerun` was called with, one
+#                             per line — the issue #1978 repair's own record of
+#                             what it tried to fix.
+#   $tmp_dir/required-after-rerun.json  once `rerun-ids` exists (a rerun was
+#                             requested), the `pr checks` stub serves this
+#                             file instead of `required.json` — standing in
+#                             for the rerun actually completing before the
+#                             repair's own next poll.
 cat >"$tmp_dir/gh" <<'STUB'
 #!/usr/bin/env bash
 d="$(dirname "$0")"
 
 if [[ "$1 $2" == "pr checks" ]]; then
-  content="$(cat "$d/required.json" 2>/dev/null || echo '[]')"
+  # Once a rerun has been requested (agent-ops#1978's repair), a required
+  # check that later clears reports differently on the next read — exactly
+  # what a real `gh` would do once the rerun completes — so a test can arrange
+  # for the *second* `pr checks` read to answer something other than the
+  # first without needing to fake real asynchrony.
+  if [[ -f "$d/rerun-ids" && -f "$d/required-after-rerun.json" ]]; then
+    content="$(cat "$d/required-after-rerun.json" 2>/dev/null || echo '[]')"
+  else
+    content="$(cat "$d/required.json" 2>/dev/null || echo '[]')"
+  fi
   # Both diagnoses are `gh` 2.97's own, verbatim from
   # pkg/cmd/pr/checks/checks.go and pkg/cmdutil — the empty required-check
   # list is returned as an error before the `--json` exporter ever writes, so
@@ -130,6 +147,11 @@ if [[ "$1 $2" == "pr checks" ]]; then
   [[ "$content" == "NONE" ]] && { echo "no required checks reported on the 'agent/some-branch' branch" >&2; exit 1; }
   [[ "$content" == "ERROR" ]] && { echo "HTTP 502: Bad gateway (https://api.github.com/graphql)" >&2; exit 1; }
   printf '%s' "$content"
+  exit 0
+fi
+
+if [[ "$1 $2" == "run rerun" ]]; then
+  printf '%s\n' "$3" >>"$d/rerun-ids"
   exit 0
 fi
 
@@ -175,6 +197,12 @@ set_pr_alerts() { printf '%s' "$1" >"$tmp_dir/pr-alerts.tsv"; }
 set_base_alerts() { printf '%s' "$1" >"$tmp_dir/base-alerts.tsv"; }
 set_analyses() { printf '%s' "$1" >"$tmp_dir/analyses.count"; }
 set_rules_branches() { printf '%s' "$1" >"$tmp_dir/rules-branches.json"; }
+set_required_after_rerun() { printf '%s' "$1" >"$tmp_dir/required-after-rerun.json"; }
+clear_rerun_state() { rm -f "$tmp_dir/rerun-ids" "$tmp_dir/required-after-rerun.json"; }
+
+# The repair polls; a test must not spend real wall-clock waiting on it.
+export REVIEW_GATE_RERUN_ATTEMPTS=3
+export REVIEW_GATE_RERUN_INTERVAL=0
 
 set_required '[{"name":"CI","bucket":"pass"},{"name":"commit-format","bucket":"pass"}]'
 set_pr_alerts ''
@@ -283,6 +311,64 @@ assert_eq "  ... and exits 0" "0" "$rc"
 
 set_required '[{"name":"CI","bucket":"pass"}]'
 set_rules_branches ''
+
+# --- review_gate_required_checks: the issue #1978 duplicate-run repair -------
+# A duplicate `pull_request` delivery for one push starts every workflow
+# twice; a workflow that cancels a superseded run of itself leaves that run's
+# check runs `CANCELLED` beside the surviving run's own `SUCCESS` ones for the
+# same context names. `gh pr checks --required` reports both entries under
+# the same `name`, which is exactly what the fixtures below reproduce.
+
+# A required context reported twice — once cancelled, once passing on the
+# surviving run — repairs itself: the cancelled run is rerun, and the very
+# next read (arranged via required-after-rerun.json) comes back clean.
+set_required '[
+  {"name":"Work out what changed","bucket":"cancel","link":"https://github.com/o/r/actions/runs/111/job/1"},
+  {"name":"Work out what changed","bucket":"pass","link":"https://github.com/o/r/actions/runs/222/job/2"},
+  {"name":"commit-format","bucket":"pass","link":"https://github.com/o/r/actions/runs/333/job/3"}
+]'
+set_required_after_rerun '[
+  {"name":"Work out what changed","bucket":"pass","link":"https://github.com/o/r/actions/runs/111/job/1"},
+  {"name":"commit-format","bucket":"pass","link":"https://github.com/o/r/actions/runs/333/job/3"}
+]'
+out="$(review_gate_required_checks "$URL")"; rc=$?
+assert_eq "a cancelled duplicate with a passing sibling clears to clean" "clean" "$out"
+assert_eq "  ... and exits 0" "0" "$rc"
+assert_eq "  ... having rerun only the cancelled run's own id" "111" "$(cat "$tmp_dir/rerun-ids" 2>/dev/null)"
+clear_rerun_state
+
+# The same shape, but the rerun does not clear it — the second route this
+# issue's thread found, where a superseded run's own failure is intrinsic to
+# what triggered it (a stale event payload) rather than a passing sibling
+# proving the head commit fine. It must still reach `dirty`, not be believed
+# clean on the strength of the attempt alone.
+set_required '[
+  {"name":"changelog-section","bucket":"fail","link":"https://github.com/o/r/actions/runs/444/job/4"},
+  {"name":"changelog-section","bucket":"pass","link":"https://github.com/o/r/actions/runs/555/job/5"}
+]'
+set_required_after_rerun '[
+  {"name":"changelog-section","bucket":"fail","link":"https://github.com/o/r/actions/runs/444/job/4"},
+  {"name":"changelog-section","bucket":"pass","link":"https://github.com/o/r/actions/runs/555/job/5"}
+]'
+out="$(review_gate_required_checks "$URL")"; rc=$?
+assert_eq "a superseded run that does not clear on rerun still ends up dirty" "dirty" "${out%%$'\t'*}"
+assert_contains "  ... naming it" "changelog-section" "$out"
+assert_eq "  ... and exits 1" "1" "$rc"
+assert_eq "  ... having still attempted the rerun" "444" "$(cat "$tmp_dir/rerun-ids" 2>/dev/null)"
+clear_rerun_state
+
+# A genuine failure with no passing sibling of the same name is not a
+# duplicate at all — no rerun is attempted, and it stays dirty exactly as
+# before this repair existed.
+set_required '[{"name":"CI","bucket":"fail","link":"https://github.com/o/r/actions/runs/666/job/6"},{"name":"commit-format","bucket":"pass"}]'
+out="$(review_gate_required_checks "$URL")"; rc=$?
+assert_eq "a genuine failure with no passing sibling stays dirty" "dirty" "${out%%$'\t'*}"
+assert_contains "  ... naming it" "CI" "$out"
+assert_eq "  ... and exits 1" "1" "$rc"
+assert_eq "  ... with no rerun attempted at all" "" "$(cat "$tmp_dir/rerun-ids" 2>/dev/null)"
+clear_rerun_state
+
+set_required '[{"name":"CI","bucket":"pass"}]'
 
 # --- review_gate_security_alerts ----------------------------------------------
 

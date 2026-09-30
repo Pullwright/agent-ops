@@ -13801,6 +13801,67 @@ implements.
     This is the backstop half of a two-seam fix; requirement 56 is the
     earlier, deterministic half, run once at pull-request time rather than
     waiting for this backstop to catch it at handoff.
+61. **A required context reported more than once against the same head
+    commit, with at least one of those runs already green, is repaired
+    rather than read as a real failure (agent-ops#1978).** A duplicate
+    `pull_request` webhook delivery for one push starts every triggered
+    workflow twice against the same head commit. A workflow with no
+    concurrency group simply runs, and passes, twice — harmless, and
+    invisible to requirement 31c's `all(.bucket == "pass")` test either way.
+    One that cancels a superseded run of itself (`cancel-in-progress`, as
+    "Build the node image" does) leaves that run's check runs `CANCELLED`
+    beside the surviving run's own `SUCCESS` ones for the same context
+    names — `gh pr checks --required` reports both entries under the one
+    `name`, so requirement 31c's own all-`pass` test fails even though the
+    head commit is already proven fine. The live instance: `agent/1950`'s
+    push of `18a0e699b3` started every `pull_request` workflow on this
+    repository twice at 2026-09-29T17:04:1x, and "Build the node image"'s
+    concurrency group cancelled `Work out what changed` and `Work out the
+    version stamp` on the older of the two runs — both required contexts —
+    while every other workflow's duplicate ran harmlessly to completion.
+    GitHub's own rollup counted the cancellation; the pull request sat
+    `mergeStateStatus: BLOCKED` from 17:04 until a human pushed a new commit
+    at 08:30 the next day, despite a standing Approver approval reached at
+    17:44 on the strength of `review_gate_verdict` reading the same checks as
+    clean.
+
+    Before `review_gate_required_checks` (`lib/review-gate.sh`) settles on
+    `dirty` for a non-empty check-runs list that is not all `pass`, it calls
+    `_review_gate_repair_duplicate_runs`: for every entry whose `bucket` is
+    not `pass` but whose own `name` also carries a `pass` entry elsewhere in
+    the same read — a required context superseded by a passing sibling run —
+    it reruns the superseded run (`gh run rerun`, its id pulled from the
+    entry's own `link`, an Actions job URL) and re-reads the required checks,
+    up to `REVIEW_GATE_RERUN_ATTEMPTS` times (default 10)
+    `REVIEW_GATE_RERUN_INTERVAL` seconds apart (default 15), stopping the
+    moment a re-read comes back all-`pass`. `gh run rerun` replays the
+    original event without a new push, so a standing Approver approval is
+    never dismissed by the repair the way a corrective commit would dismiss
+    it. A context whose only non-`pass` entries have no passing sibling —
+    a genuine failure — is untouched by this and still reaches `dirty` from
+    requirement 31c exactly as before.
+
+    Not every superseded run clears on a rerun: a check that reads the pull
+    request's description (or any other mutable field) from the triggering
+    *event* rather than through the API replays that same stale value and
+    fails again — the shape a description edit produces on `#1981`, whose
+    `changelog-section` run failed against the old text and passed against
+    the new one at the same head commit, both counted by the rollup even
+    though `changelog-section` is not itself required. Where a repair
+    attempt exhausts every re-read still short of all-`pass`, the context
+    reaches `dirty` exactly as a genuine failure would — the ordinary repair
+    path (a human, or a future push) still owns it; this requirement's own
+    rerun is a best-effort clearing of a duplicate, not a guarantee.
+
+    No code change removes the duplicate delivery itself: this repository's
+    own trigger configuration (`.github/workflows/*.yml`) declares no
+    duplicate `pull_request` trigger, and every push this pipeline makes is a
+    single `git push`, so the doubled delivery in the live instance above
+    originated on GitHub's side, outside this repository's control — the
+    repair exists because a future duplicate delivery cannot be ruled out
+    either way, exactly as `review_gate_verdict`'s existing `unknown` already
+    treats a `gh` failure as a fact about the platform rather than the pull
+    request.
 32. Ends with a single JSON object:
     `{"status": "ready" | "blocked", "pr_url": …, "fixes_applied": […], "comments_left": n, "ci": "passing" | …}`,
     plus `reason` — one line naming what is wrong — on `blocked`, which becomes
