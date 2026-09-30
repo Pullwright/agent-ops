@@ -50,25 +50,26 @@
 # `landing_approver_standing_review` reads GitHub's own review list at all,
 # and only to confirm a write `agent-cycle.sh` already decided to make
 # actually landed (see that function's own header for why this round's
-# in-process verdict is not proof enough on its own). Ships dormant: this
-# file changes nothing about what a cycle does unless a caller reaches
-# `landing_arm`, and the only caller (`run_landing_stage`) only reaches it
-# once `merge_autonomy_effective_level` is `agent-merges-routine` or above —
-# unset in every installation's `config.json` today (`merge_autonomy`'s own
-# default is `human`), so this file is fully implemented and
-# regression-tested (test/landing.test.sh) but
-# otherwise inert until an operator raises the level (D16, §6).
+# in-process verdict is not proof enough on its own). This file changes
+# nothing about what a cycle does unless a caller reaches `landing_arm`, and
+# the only caller (`run_landing_stage`) only reaches it once
+# `merge_autonomy_effective_level` is `agent-merges-routine` or above.
+# `merge_autonomy`'s own default is `human`, so the file is inert in any
+# installation, or any repository, that has not raised the level (D16, §6);
+# it is regression-tested by test/landing.test.sh.
 #
 # ## The protected-path list (risk register item 1)
 #
-# `landing_protected_paths_hit` is the second fence around ground the
-# complexity grade already fences off once (`complexity:high` is forced for
-# anything touching concurrency, security, CI/workflow machinery or shared
-# library code — docs/IMPLEMENTATION-PIPELINE-SPEC.md requirement 26a, and
-# `landing_eligible` already refuses anything above `complexity:medium`) —
-# belt and braces against the deadliest class this design names: a pull
-# request that edits the gate it is riding through the gate it just
-# weakened. `merge_autonomy_protected_paths` (config, D18 Stage 3,
+# `landing_protected_paths_hit` fences the deadliest class this design
+# names: a pull request that edits the gate it is riding through the gate it
+# just weakened. The complexity grade fences part of that ground too:
+# requirement 26a (docs/IMPLEMENTATION-PIPELINE-SPEC.md) forces
+# `complexity:high` onto anything touching concurrency, security,
+# CI/workflow machinery or shared library code, and `landing_eligible`
+# refuses that grade wherever `merge_autonomy_routine_complexity` leaves it
+# out, as the schema default does. A repository whose routine complexity
+# admits `high` has no second fence, so its protected-path list must name
+# every gate-bearing path on its own. `merge_autonomy_protected_paths` (config, D18 Stage 3,
 # agent-ops#724) names the list — a `repos[]` entry's own value overrides the
 # top-level one, the same precedence `merge_autonomy_routine_sources` uses —
 # matched the same way `scripts/is-docs-only.sh` matches its own allowlist

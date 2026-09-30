@@ -373,9 +373,26 @@ default and the tech-debt register nearly empty, Stage 2 could not
 accumulate the exit evidence its own promotion depends on. Like the Stage 2
 waiver, it is explicitly non-precedent and scoped to one repository.
 
+**Third waiver.** [PR #1981](https://github.com/Pullwright/agent-ops/pull/1981)
+takes Stages 3 and 4 together, for all three repositories, without either
+stage's bar. agent-ops moves from `agent-merges-routine` to
+`agent-merges-all`, with `complexity:high` and every landing source it
+gathers except `dequeued`. poetic and poetic-fiddle move from
+`agent-approves` to `agent-merges-all` at `complexity:medium` and `high`,
+each with a protected-path list of its own. The owner decided it on
+2026-09-30, asking for "maximum autonomy and minimum human involvement".
+The evidence was the preceding fortnight: the owner merged 101 agent-ops
+pull requests by hand against 15 autonomous landings, and made every poetic
+and poetic-fiddle merge himself; most of those pull requests had been
+refused at landing only for a protected path, for `complexity:high` or for
+the level. It sets aside the Stage 2 waiver's expectation that Stages 3 and
+4 would meet the restated bars. What it rests on instead is the critical
+tier and the cool-off for protected paths, the Approver verdict, the merge
+budget and the kill switch.
+
 **Standing rule.** An evidence bar is lowered only by an explicit amendment
-that states why — never by a stage promoting itself. Both waivers above are
-such amendments, recorded here and in #402; neither licenses a future stage
+that states why — never by a stage promoting itself. The three waivers above
+are such amendments, recorded here and in #402; none licenses a future stage
 to waive its own bar without one.
 
 **Stage 3's own promotion is written out in advance** — the exact `config.json`
