@@ -413,8 +413,11 @@ calls_file_cr="$tmp_dir/claim-calls-cr"
 : > "$calls_file_cr"
 log_calls_cr="$tmp_dir/log-calls-cr"
 : > "$log_calls_cr"
+map_calls_cr="$tmp_dir/map-calls-cr"
+: > "$map_calls_cr"
 out_cr="$(PATH="$stub_bin:$PATH" \
         GH_STUB_LISTINGS="$listings" CLAIM_CALLS="$calls_file_cr" CLAIM_COUNTS="$counts_dir" \
+        MAP_BUILD_CALLS="$map_calls_cr" \
         UNION_LOG="$union_log_cr" LOG_EVENT_CALLS="$log_calls_cr" \
         REPOS_JSON='[{"slug":"Poetic-Poems/poetic-fiddle"}]' \
         CFG_JSON='{"repos":[{"slug":"Poetic-Poems/poetic-fiddle","merge_autonomy":"agent-merges-routine"}]}' \
@@ -428,6 +431,8 @@ assert_eq "…and counted_prs holds it, so its own claim does not double-count o
   "count|Poetic-Poems/poetic-fiddle|971" "$(sed -n '1p' "$calls_file_cr")"
 assert_eq "…and it is never offered to the eligibility predicate, so no source lookup warns about it" \
   "0" "$(wc -l < "$log_calls_cr" | tr -d ' ')"
+assert_eq "#1050: with no candidate to spend it on, the union log is not read at all — the map is built lazily, so an elevated repository with nothing to narrow costs no more than it did before the map existed" \
+  "0" "$(wc -c < "$map_calls_cr" | tr -d ' ')"
 
 calls_file_cr_h="$tmp_dir/claim-calls-cr-human"
 : > "$calls_file_cr_h"

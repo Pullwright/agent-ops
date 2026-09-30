@@ -3076,9 +3076,12 @@ implements.
       own `complexity:*` label); a pull request's source carries no field on
       GitHub at all and is read back from a single pass over the fleet's own
       union log instead (`landing_retry_source_map`, `lib/union-log-scan.sh`
-      — built once per repository per cycle and shared with the 2.1e
-      landing-retry sweep below, which uses the same map rather than
-      re-parsing the log once per candidate) — a candidate whose
+      — built once per repository per cycle, and only where that repository
+      has at least one candidate to spend it on, so a repository with none
+      reads the log no more often than it did before the map existed;
+      shared with the 2.1e landing-retry sweep below, which uses the same
+      map on the same terms rather than re-parsing the log once per
+      candidate) — a candidate whose
       source cannot be resolved this way counts toward the cap rather than
       being excluded from it (fail-closed: of the two ways to be wrong here,
       opening work past a full cap is the one that is not recoverable next

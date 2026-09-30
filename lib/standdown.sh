@@ -939,8 +939,11 @@ while IFS= read -r slug; do
   # source is fixed at claim time; `landing_retry_source_map`'s own header,
   # lib/union-log-scan.sh), so it is read back from one pass over the fleet's
   # union log — built once for this repository, below, shared across every
-  # candidate rather than re-parsed per candidate (#1050) — the same map the
-  # 2.1e landing-retry sweep now builds too (`_landing_retry_sweep_repo`); a
+  # candidate rather than re-parsed per candidate (#1050), and lazily, only
+  # when this repository has a candidate to spend it on, so a repository with
+  # none reads the log no more often than it did before the map existed — the
+  # same map the 2.1e landing-retry sweep now builds too, on the same terms
+  # (`_landing_retry_sweep_repo`); a
   # candidate whose source cannot be resolved this way counts toward the
   # cap rather than being excluded from it (fail-closed — of the two ways
   # to be wrong here, opening work past a full cap is the one that is not
@@ -948,7 +951,12 @@ while IFS= read -r slug; do
   # pull request so an operator can see why it was not narrowed.
   ineligible_prs_json='[]'
   if (( slug_level_rank >= backpressure_autonomous_rank )); then
-    cand_source_map="$(landing_retry_source_map "$slug" "$union_log")"
+    backpressure_candidates="$(jq -c '.[] | select(.isDraft | not)
+      | select(.reviewDecision != "CHANGES_REQUESTED")' <<<"$prs_json" 2>/dev/null)"
+    cand_source_map='{}'
+    if [[ -n "$backpressure_candidates" ]]; then
+      cand_source_map="$(landing_retry_source_map "$slug" "$union_log")"
+    fi
     while IFS= read -r cand; do
       [[ -n "$cand" ]] || continue
       cand_number="$(jq -r '.number' <<<"$cand")"
@@ -967,8 +975,7 @@ while IFS= read -r slug; do
         appended="$(jq -c --argjson n "$cand_number" '. + [$n]' <<<"$ineligible_prs_json" 2>/dev/null)"
         [[ -n "$appended" ]] && ineligible_prs_json="$appended"
       fi
-    done < <(jq -c '.[] | select(.isDraft | not)
-      | select(.reviewDecision != "CHANGES_REQUESTED")' <<<"$prs_json" 2>/dev/null)
+    done <<<"$backpressure_candidates"
     [[ -n "$ineligible_prs_json" ]] || ineligible_prs_json='[]'
     n_human="$(jq 'length' <<<"$ineligible_prs_json" 2>/dev/null)" || n_human=0
     [[ "$n_human" =~ ^[0-9]+$ ]] || n_human=0
