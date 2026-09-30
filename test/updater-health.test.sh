@@ -509,6 +509,43 @@ assert_eq "a sibling's allow inside the grace window contributes nothing" \
   "null" "$(updater_status "$ledger" "$STUCK_AFTER" "$DEFER_STUCK_AFTER" "host-b" "svc")"
 rm -f "$ledger/host-c.jsonl"
 
+# Two siblings at the same rank break on the older `at` — the one that has
+# been in that state longer — so two containers reading this directory at the
+# same moment select the same ledger.
+entry "$(ago '3 minutes')" defer "svc" > "$ledger/host-c.jsonl"
+entry "$(ago '12 minutes')" defer "svc" > "$ledger/host-d.jsonl"
+out="$(updater_status "$ledger" "$STUCK_AFTER" "$DEFER_STUCK_AFTER" "host-b" "svc")"
+assert_eq "two siblings at the same rank break on the older at, whatever the filename order" \
+  "host-d" "$(jq -r '.host' <<<"$out")"
+rm -f "$ledger/host-c.jsonl" "$ledger/host-d.jsonl"
+
+# …and a genuine tie on `at` breaks on hostname, so the fold is deterministic
+# even when two files agree to the second.
+tie_ts="$(ago '12 minutes')"
+entry "$tie_ts" defer "svc" > "$ledger/host-d.jsonl"
+entry "$tie_ts" defer "svc" > "$ledger/host-c.jsonl"
+out="$(updater_status "$ledger" "$STUCK_AFTER" "$DEFER_STUCK_AFTER" "host-b" "svc")"
+assert_eq "and a tie on at itself breaks on hostname" \
+  "host-c" "$(jq -r '.host' <<<"$out")"
+rm -f "$ledger/host-c.jsonl" "$ledger/host-d.jsonl"
+
+# A sibling that outranks us on rank alone wins even when its own streak
+# started *later* than ours — rank is read before `at`, never the other way
+# round, so the longer-running of the two states does not win on age.
+{
+  entry "$(ago '60 minutes')" defer "svc" "$OWN_STARTED"
+  entry "$(ago '1 minute')" defer "svc" "$OWN_STARTED"
+} > "$ledger/host-b.jsonl"
+{
+  entry "$(ago '25 minutes')" allow "svc" "$SIB_STARTED"
+  entry "$(ago '10 seconds')" allow "svc" "$SIB_STARTED"
+} > "$ledger/host-c.jsonl"
+out="$(updater_status "$ledger" "$STUCK_AFTER" "$DEFER_STUCK_AFTER" "host-b" "svc" "$OWN_STARTED")"
+assert_eq "a sibling's stuck outranks our older deferring — rank before at" \
+  "stuck" "$(jq -r '.status' <<<"$out")"
+assert_eq "and names that sibling" "host-c" "$(jq -r '.host' <<<"$out")"
+rm -f "$ledger/host-b.jsonl" "$ledger/host-c.jsonl"
+
 # --- Never a non-zero exit ----------------------------------------------------
 
 set -e
