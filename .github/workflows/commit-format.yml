@@ -18,6 +18,12 @@ name: Commit message format
 #
 # Both this job and the local hook call .githooks/check-commit-format.sh, so
 # the Conventional Commits pattern itself lives in exactly one place.
+#
+# The title is fetched live (`gh pr view --json title`), keyed on the
+# event's own immutable PR number, rather than read from
+# `github.event.pull_request.title`'s snapshot of the triggering event — so
+# a rerun of a stale run (no new push) picks up a since-edited title instead
+# of replaying the same text and failing again (issue #1991).
 
 on:
   pull_request:
@@ -26,6 +32,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   commit-format:
@@ -44,8 +51,12 @@ jobs:
 
       - name: Validate PR title against Conventional Commits
         env:
-          PR_TITLE: ${{ github.event.pull_request.title }}
-        run: bash .githooks/check-commit-format.sh "$PR_TITLE"
+          GH_TOKEN: ${{ github.token }}
+          PR_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          PR_TITLE="$(gh pr view "$PR_NUMBER" --repo "$PR_REPO" --json title -q .title)"
+          bash .githooks/check-commit-format.sh "$PR_TITLE"
 
       - name: Validate commit messages against Conventional Commits
         env:

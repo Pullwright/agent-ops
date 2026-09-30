@@ -24,6 +24,12 @@ name: Closing keyword check
 # grants nothing extra there — it only lifts the same-repo case from
 # `contents: read`'s implicit no-access default.
 #
+# The body is fetched live (`gh pr view --json body`), keyed on the event's
+# own immutable PR number, rather than read from `github.event.pull_request.
+# body`'s snapshot of the triggering event — so a rerun of a stale run (no
+# new push) picks up a since-edited body instead of replaying the same text
+# and failing again (issue #1991).
+#
 # A second, independent gap this also gates (issue #1363): a pull request
 # closing a `pw::type:tech-debt` issue whose body names a permanent register
 # file (a final "Filed as `tech-debt/<id>.md`, <date>." line — #1039's
@@ -61,8 +67,9 @@ jobs:
       - name: Check closing keyword
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_BODY: ${{ github.event.pull_request.body }}
           PR_HEAD_BRANCH: ${{ github.head_ref }}
           PR_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: scripts/check-closing-keyword.sh "$PR_BODY" "$PR_HEAD_BRANCH" "$PR_REPO" "$PR_NUMBER"
+        run: |
+          PR_BODY="$(gh pr view "$PR_NUMBER" --repo "$PR_REPO" --json body -q .body)"
+          scripts/check-closing-keyword.sh "$PR_BODY" "$PR_HEAD_BRANCH" "$PR_REPO" "$PR_NUMBER"
