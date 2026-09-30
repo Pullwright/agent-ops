@@ -4258,6 +4258,39 @@ implements.
    converted to seconds — the same two values `watchtower-pre-update.sh`'s
    `held_by()` already bounds a deferral by, so a defer streak this function
    calls `stuck` is one no held lock could still legitimately justify.
+   The published verdict is the worst *live* one across this node's own
+   ledger and every sibling's (agent-ops#1037): the shared `pre-update` label
+   sits on the compose block every service on this node runs under, so a
+   node's own `scheduler` and `dashboard`/`dashboard-local` containers can
+   each write a ledger file under a different `$HOSTNAME`, and a fault on one
+   is invisible to a heartbeat published only from another's own file.
+   `updater_status` folds in every other `<hostname>.jsonl` in the same
+   `updater-ledger` directory, applying liveness to each file's own newest
+   entry exactly as it does to its own (liveness is a property of a file,
+   not of the service that wrote it, per agent-ops#1053) — regardless of
+   `service`, unlike the `rolled` fallback scan, since the fold answers "is
+   any container on this node stuck", not "did a peer of my own service
+   roll". A sibling's `allow` streak has no PID 1 of this container's to
+   compare against, so its identity bound is that same file's own trailing
+   `started` — which still confines the streak to one generation exactly as
+   the own-file case does, and still yields no `stuck` reading at all from a
+   trailing entry with no `started` field. `stuck` outranks `deferring`,
+   which outranks everything else; ties break on the older `at` (the one
+   that has been in that state longer), then on hostname, so the fold is
+   deterministic across two containers reading the same directory at once.
+   `rolled` is never folded and a sibling never contributes one — it is
+   exempt from liveness because it is a claim about the past, not the
+   present, and folding it would attribute one container's own history to
+   another. The published object gains `host`, naming the ledger a foreign
+   verdict came from, only when a sibling's reading is worse than this
+   container's own; it is absent when this container's own verdict wins
+   outright, so the field never asserts about this container a fault that
+   belongs to another. `egress-proxy` carries the same `pre-update` label as
+   every other service on this shared block, but its `state` mount is
+   read-only, so it can never record a ledger entry at all and is never a
+   candidate the fold can find — an accepted blind spot, not a defect: a
+   stuck `egress-proxy` has no ledger of its own to be foreign to, on any
+   node, ever.
    Each branch is a single rolling commit — `commit
    --amend` plus a force-push — because the state files carry their own
    history (`log.jsonl` is append-only, every cycle keeps its own directory)

@@ -270,6 +270,86 @@ _updater_health_streak_start() {
   printf '%s\n' "$start"
 }
 
+# _updater_health_file_verdict FILE STUCK-AFTER-SECONDS DEFER-STUCK-AFTER-SECONDS
+#   NOW-EPOCH [WANT-STARTED]
+# — the `{status:"deferring",…}`/`{status:"stuck",…,reason}` object
+# `updater_status` would print for FILE's own trailing entry alone, on
+# stdout, or nothing at all (never the string "null" — this is a building
+# block, and an empty answer is the caller's to interpret) when liveness
+# fails, the entry is malformed, or an "allow" entry supports no identity
+# verdict. Never `rolled`: that status is a claim about the past this
+# function does not compute (see `updater_status` below and the header's
+# "The 'rolled' fallback scan").
+#
+# WANT-STARTED is the identity this file's trailing "allow" is judged
+# against (agent-ops#1072) — omit it (agent-ops#1037's sibling fold, which
+# has no PID 1 to read for a foreign container) and it defaults to that same
+# entry's own `started`, so the identity check trivially holds whenever the
+# entry carries one at all: a sibling's `allow` streak is still bounded to
+# one generation by `started` (see `_updater_health_streak_start`'s
+# WANT-STARTED), and a trailing entry with no `started` field supports no
+# stuck reading from that file, exactly as it would from our own. Pass it
+# explicitly (the own-file caller below does, even when empty) for a real
+# identity check against a *different* value — this container's own
+# `started`, never the entry's.
+_updater_health_file_verdict() {
+  local f="$1" stuck_after="$2" defer_stuck_after="$3" now_epoch="$4"
+  local has_want=0
+  (( $# >= 5 )) && has_want=1
+  local want_started="${5:-}"
+  local entry="" verdict="" ts="" entry_started=""
+  entry="$(_updater_health_last_entry "$f")"
+  [[ -n "$entry" ]] || return 0
+  IFS=$'\t' read -r verdict ts _ entry_started <<<"$entry"
+  (( has_want )) || want_started="$entry_started"
+
+  # Liveness first: a claim about the present needs this file's own newest
+  # entry recent enough to still describe it, before either streak below
+  # even runs (see the header's "Liveness first") — one property of a file,
+  # identical for our own ledger and any sibling's (agent-ops#1071,
+  # deciding agent-ops#1053).
+  _updater_health_live "$ts" "$stuck_after" "$now_epoch" || return 0
+
+  if [[ "$verdict" == "defer" ]]; then
+    local since="" start_epoch="" elapsed=0
+    since="$(_updater_health_streak_start "$f" defer "$ts")"
+    start_epoch="$(_updater_health_epoch "$since")" || return 0
+    elapsed=$(( now_epoch - start_epoch ))
+    (( elapsed >= 0 )) || elapsed=0
+    if [[ "$defer_stuck_after" =~ ^[0-9]+$ ]] && (( elapsed >= defer_stuck_after )); then
+      jq -nc --arg at "$since" --argjson s "$elapsed" \
+        '{status:"stuck", at:$at, seconds:$s, reason:"defer"}'
+    else
+      jq -nc --arg at "$since" --argjson s "$elapsed" '{status:"deferring", at:$at, seconds:$s}'
+    fi
+    return 0
+  fi
+
+  if [[ "$verdict" == "allow" ]]; then
+    # Identity, not just hostname/filename (agent-ops#1072): the trailing
+    # "allow" was not necessarily written by the generation this verdict is
+    # judged against. Only a `started` match proves it.
+    if [[ -n "$want_started" && -n "$entry_started" && "$entry_started" == "$want_started" ]]; then
+      local since="" ts_epoch="" elapsed=0
+      since="$(_updater_health_streak_start "$f" allow "$ts" "$want_started")"
+      ts_epoch="$(_updater_health_epoch "$since")" || return 0
+      elapsed=$(( now_epoch - ts_epoch ))
+      (( elapsed >= 0 )) || elapsed=0
+      (( elapsed >= stuck_after )) || return 0
+      jq -nc --arg at "$since" --argjson s "$elapsed" \
+        '{status:"stuck", at:$at, seconds:$s, reason:"allow"}'
+      return 0
+    fi
+    # Either the identity mismatches (own-file caller: provably a different
+    # generation, i.e. rolled — this function reports nothing and leaves
+    # that reading to `updater_status` itself) or one side is unreadable: no
+    # identity verdict is possible on the strength of this entry either way.
+    return 0
+  fi
+
+  return 0
+}
+
 # updater_status <ledger-dir> <stuck-after-seconds> <defer-stuck-after-seconds> [<hostname>] [<service>] [<started>]
 updater_status() {
   local ledger_dir="${1:-}" stuck_after="${2:-}" defer_stuck_after="${3:-}" \
@@ -283,108 +363,108 @@ updater_status() {
   now_epoch="$(date +%s)"
 
   local own_file="$ledger_dir/$host.jsonl"
-  local own_entry="" verdict="" ts="" entry_started=""
+  local own_entry="" own_json="null"
   own_entry="$(_updater_health_last_entry "$own_file")"
 
   if [[ -n "$own_entry" ]]; then
-    IFS=$'\t' read -r verdict ts _ entry_started <<<"$own_entry"
-
-    # Liveness first: a claim about the present needs an own-hostname entry
-    # recent enough to still describe it, before either streak below even
-    # runs (see the header's "Liveness first"). Covers an unusable
-    # `stuck_after` too — same as the old allow-only check this replaces,
-    # now applied ahead of both branches, since it is the one gate for both.
-    _updater_health_live "$ts" "$stuck_after" "$now_epoch" || { printf 'null'; return 0; }
-
-    if [[ "$verdict" == "defer" ]]; then
-      local since="" start_epoch="" elapsed=0
-      since="$(_updater_health_streak_start "$own_file" defer "$ts")"
-      start_epoch="$(_updater_health_epoch "$since")" || { printf 'null'; return 0; }
-      elapsed=$(( now_epoch - start_epoch ))
-      (( elapsed >= 0 )) || elapsed=0
-      if [[ "$defer_stuck_after" =~ ^[0-9]+$ ]] && (( elapsed >= defer_stuck_after )); then
-        jq -nc --arg at "$since" --argjson s "$elapsed" \
-          '{status:"stuck", at:$at, seconds:$s, reason:"defer"}' || printf 'null'
-      else
-        jq -nc --arg at "$since" --argjson s "$elapsed" '{status:"deferring", at:$at, seconds:$s}' \
-          || printf 'null'
-      fi
-      return 0
-    fi
-
-    if [[ "$verdict" == "allow" ]]; then
-      # Identity, not just hostname (agent-ops#1072): the trailing "allow"
-      # under our own hostname file was not necessarily written by us — a
-      # roll's replacement inherits its predecessor's hostname and keeps
-      # appending to the same file. Only a `started` match proves this
-      # container wrote it.
-      if [[ -n "$started" && -n "$entry_started" && "$entry_started" == "$started" ]]; then
-        local since="" ts_epoch="" elapsed=0
-        since="$(_updater_health_streak_start "$own_file" allow "$ts" "$started")"
-        ts_epoch="$(_updater_health_epoch "$since")" || { printf 'null'; return 0; }
-        elapsed=$(( now_epoch - ts_epoch ))
-        (( elapsed >= 0 )) || elapsed=0
-        if (( elapsed >= stuck_after )); then
-          jq -nc --arg at "$since" --argjson s "$elapsed" \
-            '{status:"stuck", at:$at, seconds:$s, reason:"allow"}' || printf 'null'
-        else
-          printf 'null'
-        fi
-        return 0
-      fi
-
-      if [[ -n "$started" && -n "$entry_started" ]]; then
-        # Both sides are known and they disagree: this is provably a
-        # different generation's entry — the roll that produced this
-        # container, not evidence that it never happened.
+    own_json="$(_updater_health_file_verdict "$own_file" "$stuck_after" "$defer_stuck_after" \
+      "$now_epoch" "$started")"
+    if [[ -z "$own_json" ]]; then
+      # Not stuck/deferring. An "allow" whose `started` disagrees with our
+      # own is provably a different generation's entry — the roll that
+      # produced this very container, not evidence that it never happened
+      # (agent-ops#1072) — everything else (liveness failed, a malformed
+      # entry, an own identity we could not establish) is truly unanswerable.
+      local verdict="" ts="" entry_started=""
+      IFS=$'\t' read -r verdict ts _ entry_started <<<"$own_entry"
+      if [[ "$verdict" == "allow" && -n "$started" && -n "$entry_started" \
+            && "$entry_started" != "$started" ]] \
+          && _updater_health_live "$ts" "$stuck_after" "$now_epoch"; then
         local ts_epoch="" elapsed=0
-        ts_epoch="$(_updater_health_epoch "$ts")" || { printf 'null'; return 0; }
+        ts_epoch="$(_updater_health_epoch "$ts")" && {
+          elapsed=$(( now_epoch - ts_epoch ))
+          (( elapsed >= 0 )) || elapsed=0
+          own_json="$(jq -nc --arg at "$ts" --argjson s "$elapsed" \
+            '{status:"rolled", at:$at, seconds:$s}')"
+        }
+      fi
+      [[ -n "$own_json" ]] || own_json="null"
+    fi
+  else
+    # No invocation recorded under our own name yet. If some other
+    # container of our own service ever recorded an "allow", the newest one
+    # is the roll that produced us (see the header on why this scan, unlike
+    # the fold below, is service-scoped).
+    local newest_ts="" f entry v t svc es
+    for f in "$ledger_dir"/*.jsonl; do
+      [[ -f "$f" ]] || continue
+      [[ "${f##*/}" == "$host.jsonl" ]] && continue
+      entry="$(_updater_health_last_entry "$f")"
+      [[ -n "$entry" ]] || continue
+      IFS=$'\t' read -r v t svc es <<<"$entry"
+      [[ "$v" == "allow" ]] || continue
+      [[ "$svc" == "$service" ]] || continue
+      [[ "$t" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || continue
+      if [[ -z "$newest_ts" || "$t" > "$newest_ts" ]]; then
+        newest_ts="$t"
+      fi
+    done
+    if [[ -n "$newest_ts" ]]; then
+      local ts_epoch="" elapsed=0
+      ts_epoch="$(_updater_health_epoch "$newest_ts")" && {
         elapsed=$(( now_epoch - ts_epoch ))
         (( elapsed >= 0 )) || elapsed=0
-        jq -nc --arg at "$ts" --argjson s "$elapsed" '{status:"rolled", at:$at, seconds:$s}' \
-          || printf 'null'
-        return 0
-      fi
-
-      # Either side's start time is unreadable: no identity verdict is
-      # possible on the strength of this entry, in either direction — never
-      # "stuck" on a hostname match alone (see the header).
-      printf 'null'
-      return 0
+        own_json="$(jq -nc --arg at "$newest_ts" --argjson s "$elapsed" \
+          '{status:"rolled", at:$at, seconds:$s}')"
+      }
+      [[ -n "$own_json" ]] || own_json="null"
     fi
-
-    printf 'null'
-    return 0
   fi
 
-  # No invocation recorded under our own name yet. If some other container of
-  # our own service ever recorded an "allow", the newest one is the roll that
-  # produced us (see the header on why the scan is service-scoped).
-  local newest_ts="" f entry v t svc entry_started
-  for f in "$ledger_dir"/*.jsonl; do
-    [[ -f "$f" ]] || continue
-    [[ "${f##*/}" == "$host.jsonl" ]] && continue
-    entry="$(_updater_health_last_entry "$f")"
-    [[ -n "$entry" ]] || continue
-    IFS=$'\t' read -r v t svc entry_started <<<"$entry"
-    [[ "$v" == "allow" ]] || continue
-    [[ "$svc" == "$service" ]] || continue
-    [[ "$t" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || continue
-    if [[ -z "$newest_ts" || "$t" > "$newest_ts" ]]; then
-      newest_ts="$t"
+  # The sibling fold (agent-ops#1037): every other ledger file in this same
+  # directory, any service (unlike the "rolled" fallback above — liveness is
+  # a property of a file, regardless of what wrote it, agent-ops#1053), is a
+  # container sharing this node's `pre-update` label. Publish the worst live
+  # verdict across our own and every one of them: `stuck` > `deferring` >
+  # everything else (`rolled`, `null` — neither is folded; see
+  # `_updater_health_file_verdict`'s own contract). Ties break on the older
+  # `at` — the one that has been in that state longer — then on hostname, so
+  # the result is deterministic across two containers reading the same
+  # directory. `host` names the ledger a foreign verdict came from; absent
+  # when our own verdict wins outright, so the field never asserts about
+  # this container a fault that belongs to another.
+  local best_json="$own_json" best_rank=0 best_at="" best_host="$host"
+  case "$(jq -r '.status // "null"' <<<"$own_json" 2>/dev/null)" in
+    stuck) best_rank=2; best_at="$(jq -r '.at' <<<"$own_json")" ;;
+    deferring) best_rank=1; best_at="$(jq -r '.at' <<<"$own_json")" ;;
+  esac
+
+  local sf sib_host sib_json sib_rank sib_at
+  for sf in "$ledger_dir"/*.jsonl; do
+    [[ -f "$sf" ]] || continue
+    [[ "${sf##*/}" == "$host.jsonl" ]] && continue
+    sib_host="${sf##*/}"; sib_host="${sib_host%.jsonl}"
+    sib_json="$(_updater_health_file_verdict "$sf" "$stuck_after" "$defer_stuck_after" "$now_epoch")"
+    [[ -n "$sib_json" ]] || continue
+    sib_rank=0
+    case "$(jq -r '.status // "null"' <<<"$sib_json" 2>/dev/null)" in
+      stuck) sib_rank=2 ;;
+      deferring) sib_rank=1 ;;
+    esac
+    (( sib_rank > 0 )) || continue
+    sib_at="$(jq -r '.at' <<<"$sib_json")"
+    if (( sib_rank > best_rank )) \
+        || { (( sib_rank == best_rank )) && [[ "$sib_at" < "$best_at" ]]; } \
+        || { (( sib_rank == best_rank )) && [[ "$sib_at" == "$best_at" ]] \
+             && [[ "$sib_host" < "$best_host" ]]; }; then
+      best_json="$sib_json"; best_rank=$sib_rank; best_at="$sib_at"; best_host="$sib_host"
     fi
   done
 
-  if [[ -n "$newest_ts" ]]; then
-    local ts_epoch="" elapsed=0
-    ts_epoch="$(_updater_health_epoch "$newest_ts")" || { printf 'null'; return 0; }
-    elapsed=$(( now_epoch - ts_epoch ))
-    (( elapsed >= 0 )) || elapsed=0
-    jq -nc --arg at "$newest_ts" --argjson s "$elapsed" '{status:"rolled", at:$at, seconds:$s}' \
-      || printf 'null'
-    return 0
+  if [[ "$best_host" != "$host" ]]; then
+    best_json="$(jq -c --arg host "$best_host" '. + {host: $host}' <<<"$best_json")" \
+      || best_json="$own_json"
   fi
-
-  printf 'null'
+  printf '%s' "$best_json"
   return 0
 }

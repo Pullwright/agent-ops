@@ -1147,17 +1147,25 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                                             //   "rebuilt" when present; null
                                             //   if this node has never had to
                                             //   rebuild, or is unreported
-                         updater: { status, at, seconds, reason },  // the
-                                            //   node's own watchtower
+                         updater: { status, at, seconds, reason, host },  // the
+                                            //   worst live watchtower
                                             //   pre-update hook verdict
-                                            //   (#603): "rolled",
+                                            //   across this node's own
+                                            //   ledger and every sibling
+                                            //   container's (#603,
+                                            //   agent-ops#1037): "rolled",
                                             //   "deferring" or "stuck"; null
                                             //   if unreported or not yet
                                             //   determinable. `reason`
                                             //   ("allow" or "defer") is
                                             //   present only on "stuck",
                                             //   naming which of the two
-                                            //   ways it got there
+                                            //   ways it got there. `host`
+                                            //   names the sibling ledger the
+                                            //   verdict came from; absent
+                                            //   when this node's own
+                                            //   container's verdict won
+                                            //   outright
                          provider_unreachable: { stage, detail, count,
                                           first_ts, last_ts, nodes,
                                           escalate, repo? },      // the
@@ -4086,7 +4094,12 @@ number's twins elsewhere on the page.
   them read the update mechanism's own verdict, only the staleness it
   eventually causes. The card renders the heartbeat's updater verdict
   (implementation spec 2.5, `lib/updater-health.sh`) as a third badge below
-  compose and image: **updater deferring**, grey, naming how long
+  compose and image. The verdict is this node's own worst *live* one across
+  every container sharing its `pre-update` label, not only the container
+  that published the heartbeat (agent-ops#1037) — `u.host`, when present,
+  names which sibling ledger it came from, and the badge's title says so
+  ("… on `<host>`"); absent, the verdict is this heartbeat's own container's.
+  **updater deferring**, grey, naming how long
   `deploy/docker/watchtower-pre-update.sh` has been holding this container's
   roll back for a cycle or review in flight — it resolves the moment that
   ends, the same colour and reasoning as `behind`, and only while that defer

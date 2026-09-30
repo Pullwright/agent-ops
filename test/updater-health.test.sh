@@ -77,11 +77,15 @@ assert_eq "the most recent allow across every retired hostname is the one report
 rm -f "$ledger/host-older.jsonl"
 
 # A retired hostname whose last word was "defer", with no allow anywhere,
-# gives no evidence of a roll at all.
+# gives no evidence of *our own* roll — but it is a live sibling ledger, and
+# the fold below (agent-ops#1037) folds in its own current state regardless,
+# which is a different question from "did this container roll".
 rm -f "$ledger/host-a.jsonl"
 entry "$(ago '5 minutes')" defer > "$ledger/host-a.jsonl"
-assert_eq "a foreign defer alone is not evidence of a roll" "null" \
-  "$(updater_status "$ledger" "$STUCK_AFTER" "$DEFER_STUCK_AFTER" "host-b" "svc")"
+out="$(updater_status "$ledger" "$STUCK_AFTER" "$DEFER_STUCK_AFTER" "host-b" "svc")"
+assert_eq "a foreign defer alone is not evidence of a roll, but is folded as a live sibling's own state" \
+  "deferring" "$(jq -r '.status' <<<"$out")"
+assert_eq "naming which sibling it came from" "host-a" "$(jq -r '.host' <<<"$out")"
 rm -f "$ledger/host-a.jsonl"
 
 # --- Rolled is scoped to our own service (finding: cross-service contamination) --
@@ -405,6 +409,105 @@ entry "$(ago '10 minutes')" allow > "$ledger/unknown.jsonl"
 assert_eq "an empty hostname argument falls back to 'unknown', matching the writer" \
   "null" "$(unset HOSTNAME; updater_status "$ledger" "$STUCK_AFTER" "$DEFER_STUCK_AFTER" "" "svc" | jq -r '.status')"
 rm -f "$ledger/unknown.jsonl"
+
+# --- The sibling fold (agent-ops#1037) ---------------------------------------
+# `updater_status` folds the worst *live* verdict across every other ledger
+# file sharing this directory into the published field — any service, since
+# they all share the `pre-update` label (#1053) — tagging the result with
+# `host` when a foreign ledger wins, and never with a folded `rolled` (that
+# status is a claim about the past, exempt from the fold entirely).
+
+SIB_STARTED=3000000000
+
+# A live sibling ending in a stuck allow streak outranks whatever our own
+# file reads (rolled, from host-c's own trailing "allow", or null) — the
+# fold looks past "rolled" the same way it looks past "null".
+streak_start="$(ago '40 minutes')"
+{
+  entry "$streak_start" allow "svc" "$SIB_STARTED"
+  entry "$(ago '10 seconds')" allow "svc" "$SIB_STARTED"
+} > "$ledger/host-c.jsonl"
+out="$(updater_status "$ledger" "$STUCK_AFTER" "$DEFER_STUCK_AFTER" "host-b" "svc")"
+assert_eq "a live sibling's own stuck allow streak outranks our rolled/null reading" \
+  "stuck" "$(jq -r '.status' <<<"$out")"
+assert_eq "naming the sibling it came from" "host-c" "$(jq -r '.host' <<<"$out")"
+rm -f "$ledger/host-c.jsonl"
+
+# The same streak, but this sibling's own newest entry has itself gone older
+# than STUCK_AFTER: not live, so it is not folded — the published verdict is
+# whatever our own reading is, unchanged, with no `host`.
+streak_start="$(ago '65 minutes')"
+{
+  entry "$streak_start" allow "svc" "$SIB_STARTED"
+  entry "$(ago '25 minutes')" allow "svc" "$SIB_STARTED"
+} > "$ledger/host-c.jsonl"
+out="$(updater_status "$ledger" "$STUCK_AFTER" "$DEFER_STUCK_AFTER" "host-b" "svc")"
+assert_eq "a sibling whose own newest entry is stale is not folded" \
+  "rolled" "$(jq -r '.status' <<<"$out")"
+assert_eq "and carries no host, since nothing foreign won" \
+  "null" "$(jq -r '.host' <<<"$out")"
+rm -f "$ledger/host-c.jsonl"
+
+# Own file reads pure null (a defer entry is never evidence of a roll, so the
+# rolled fallback above finds nothing); a live sibling deferring folds in,
+# carrying its own host.
+entry "$(ago '10 minutes')" defer "svc" > "$ledger/host-c.jsonl"
+out="$(updater_status "$ledger" "$STUCK_AFTER" "$DEFER_STUCK_AFTER" "host-b" "svc")"
+assert_eq "a live sibling deferring folds into an own-null reading" \
+  "deferring" "$(jq -r '.status' <<<"$out")"
+assert_eq "naming the sibling it came from" "host-c" "$(jq -r '.host' <<<"$out")"
+rm -f "$ledger/host-c.jsonl"
+
+# Our own stuck outranks a sibling merely deferring: worst-wins picks ours,
+# and a rank we already hold outright is never handed a foreign attribution.
+streak_start="$(ago '40 minutes')"
+{
+  entry "$streak_start" allow "svc" "$OWN_STARTED"
+  entry "$(ago '10 seconds')" allow "svc" "$OWN_STARTED"
+} > "$ledger/host-b.jsonl"
+entry "$(ago '10 minutes')" defer "svc" > "$ledger/host-c.jsonl"
+out="$(updater_status "$ledger" "$STUCK_AFTER" "$DEFER_STUCK_AFTER" "host-b" "svc" "$OWN_STARTED")"
+assert_eq "our own stuck reading outranks a merely-deferring sibling" \
+  "stuck" "$(jq -r '.status' <<<"$out")"
+assert_eq "and keeps no host — worst-wins picked ours" \
+  "null" "$(jq -r '.host' <<<"$out")"
+rm -f "$ledger/host-b.jsonl" "$ledger/host-c.jsonl"
+
+# Liveness is a property of a file, not of a service (#1053): a sibling
+# running a service of its own folds in exactly like one that predates the
+# `service` field (defaulting to "unknown") — the fold applies no service
+# scoping at all, unlike the rolled fallback above.
+streak_start="$(ago '40 minutes')"
+{
+  entry "$streak_start" allow "other-service" "$SIB_STARTED"
+  entry "$(ago '10 seconds')" allow "other-service" "$SIB_STARTED"
+} > "$ledger/host-c.jsonl"
+out="$(updater_status "$ledger" "$STUCK_AFTER" "$DEFER_STUCK_AFTER" "host-b" "svc")"
+assert_eq "a sibling running a different service still folds" \
+  "stuck" "$(jq -r '.status' <<<"$out")"
+rm -f "$ledger/host-c.jsonl"
+
+jq -nc --arg ts "$(ago '10 minutes')" '{ts:$ts, verdict:"defer"}' > "$ledger/host-d.jsonl"
+out="$(updater_status "$ledger" "$STUCK_AFTER" "$DEFER_STUCK_AFTER" "host-b" "svc")"
+assert_eq "and so does one whose lines predate the service field (defaults to unknown)" \
+  "deferring" "$(jq -r '.status' <<<"$out")"
+rm -f "$ledger/host-d.jsonl"
+
+# A live sibling's trailing "allow" with no `started` field at all supports
+# no identity verdict from that file, exactly as it would from our own —
+# contributes nothing, never a folded "rolled".
+entry "$(ago '5 minutes')" allow "other-service" > "$ledger/host-c.jsonl"
+assert_eq "a live sibling's allow with no started field contributes nothing" \
+  "null" "$(updater_status "$ledger" "$STUCK_AFTER" "$DEFER_STUCK_AFTER" "host-b" "svc")"
+rm -f "$ledger/host-c.jsonl"
+
+# A live sibling's trailing "allow" still inside STUCK_AFTER is too recent to
+# call either way — it contributes nothing, and (agent-ops#1037 item 3) a
+# sibling never contributes a folded "rolled" either.
+entry "$(ago '30 seconds')" allow "other-service" "$SIB_STARTED" > "$ledger/host-c.jsonl"
+assert_eq "a sibling's allow inside the grace window contributes nothing" \
+  "null" "$(updater_status "$ledger" "$STUCK_AFTER" "$DEFER_STUCK_AFTER" "host-b" "svc")"
+rm -f "$ledger/host-c.jsonl"
 
 # --- Never a non-zero exit ----------------------------------------------------
 
