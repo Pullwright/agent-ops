@@ -17747,7 +17747,7 @@ implements.
     events-not-timestamps fix), it would also drop the pull request out of
     the Implementer's own review-feedback selection while the human's
     `CHANGES_REQUESTED` sat unanswered — PR #205's silent-starvation failure,
-    reintroduced hourly and fleet-wide.
+    reintroduced cycle after cycle and fleet-wide.
 
     The discriminating judgement is `lib/handoff.sh`'s
     `handoff_round_answered` (requirement 34a) — the same predicate
