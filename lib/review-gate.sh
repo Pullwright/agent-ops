@@ -84,12 +84,28 @@
 # companion, answering "has this run already had its one loud event?" the
 # way `crash_loop_escalated_since` does for requirement 2.7's crash loop.
 #
+# A duplicate `pull_request` webhook delivery for one push (agent-ops#1978)
+# starts every `pull_request` workflow twice against the same head commit. A
+# workflow with no concurrency group just runs, and passes, twice — harmless.
+# One that cancels a superseded run of itself (`cancel-in-progress`, as
+# "Build the node image" does) leaves the cancelled run's check runs behind
+# as `CANCELLED`, beside the surviving run's own `SUCCESS` ones for the same
+# context names. `gh pr checks --required` lists both: `_review_gate_repair_duplicate_runs`
+# below is what keeps that from reading as a real failure — see its own
+# header for how it tells a superseded duplicate apart from a genuine one.
+#
 # Sourced, never executed: no shell options are set here, matching every
 # other lib/*.sh — the caller (agent-cycle.sh runs under `set -euo pipefail`;
 # a test, `set -uo pipefail`) owns those.
 #
 # Environment:
-#   REVIEW_GATE_GH  override `gh` (tests stub it).
+#   REVIEW_GATE_GH              override `gh` (tests stub it).
+#   REVIEW_GATE_RERUN_ATTEMPTS  how many times `_review_gate_repair_duplicate_runs`
+#                               re-reads required checks after rerunning a
+#                               superseded run before giving up (default 10;
+#                               a test sets this low to run instantly).
+#   REVIEW_GATE_RERUN_INTERVAL  seconds between those re-reads (default 15; a
+#                               test sets this to 0).
 
 # _review_gate_pr_parts PR_URL
 # Print `owner/repo<TAB>number`, or return non-zero printing nothing. The same
@@ -145,6 +161,88 @@ _review_gate_missing_required_contexts() {
   printf '%s' "$missing"
 }
 
+# _review_gate_superseded_run_ids RAW_JSON
+# Print, one per line and de-duplicated, the numeric GitHub Actions run id
+# embedded in the `link` of every entry in RAW_JSON (a `gh pr checks --json
+# name,bucket,link` payload) whose `bucket` is not `"pass"` but whose own
+# `name` also has at least one `bucket == "pass"` entry elsewhere in
+# RAW_JSON — a required context GitHub reported more than once against the
+# same head commit (agent-ops#1978: a duplicate `pull_request` delivery for
+# one push starts every workflow twice), with at least one of those runs
+# already green. Prints nothing when no entry qualifies — the ordinary case,
+# and the one every existing caller must see no new behaviour from.
+#
+# `gh pr checks --json` carries no run id field of its own; `link` is an
+# Actions job URL of the form `.../actions/runs/<run-id>/job/<job-id>` for a
+# workflow-run-backed check, so the id is pulled out of it instead. A check
+# with no such link (an external status, or one `gh` did not report a link
+# for) contributes nothing rather than being guessed at.
+_review_gate_superseded_run_ids() {
+  local raw="$1"
+  jq -r '
+      ( [.[] | select(.bucket == "pass") | .name] ) as $passing
+      | [.[] | select(.bucket != "pass" and (.name as $n | $passing | index($n) != null))
+             | (.link // "")]
+      | .[]' <<<"$raw" 2>/dev/null \
+    | grep -oE '/actions/runs/[0-9]+/' \
+    | grep -oE '[0-9]+' \
+    | sort -un
+}
+
+# _review_gate_repair_duplicate_runs GH_BIN SLUG NUMBER RAW_JSON
+# Where RAW_JSON carries at least one required context whose only non-`pass`
+# entries are superseded by a `pass` entry of the same name
+# (`_review_gate_superseded_run_ids` above), reruns each superseded run
+# (`gh run rerun`) and re-reads the required checks — up to
+# REVIEW_GATE_RERUN_ATTEMPTS times, REVIEW_GATE_RERUN_INTERVAL seconds apart
+# (see this file's header) — stopping the moment a re-read comes back
+# all-`pass`. This is the repair agent-ops#1978 asks for: a duplicate
+# `pull_request` delivery leaves a cancelled (or otherwise superseded) run's
+# check runs sitting `dirty` beside a passing sibling with nothing wrong to
+# fix, and a rerun clears the rollup without a new commit, so a standing
+# Approver approval is never dismissed by it (`gh run rerun` replays the
+# original event; it does not push).
+#
+# Prints the last JSON array read: RAW_JSON unchanged when there is nothing
+# to repair, the first re-read that comes back all-`pass`, or the final
+# re-read otherwise. A re-read that itself fails, or that answers something
+# other than a non-empty JSON array, is discarded rather than believed —
+# the previous good read (RAW_JSON, or an earlier successful re-read) is
+# kept and tried again next attempt, so a transient `gh` failure mid-poll
+# cannot be mistaken for the rollup itself going empty.
+#
+# Not every superseded run clears on a rerun: one that reads the pull
+# request's description from the *event* it was triggered by (rather than
+# through the API) replays that same stale text and fails again — the second
+# route issue #1978's own thread found, via a description edit rather than a
+# cancellation. That case exhausts every attempt still `dirty`, which the
+# caller reports exactly as any other genuine failure: the ordinary repair
+# path — a human, or a future push — still owns it.
+_review_gate_repair_duplicate_runs() {
+  local gh_bin="$1" slug="$2" number="$3" raw="$4"
+  local run_ids id attempts interval i current new
+
+  run_ids="$(_review_gate_superseded_run_ids "$raw")"
+  [[ -n "$run_ids" ]] || { printf '%s' "$raw"; return 0; }
+
+  while IFS= read -r id; do
+    [[ -n "$id" ]] || continue
+    "$gh_bin" run rerun "$id" -R "$slug" >/dev/null 2>&1 || true
+  done <<<"$run_ids"
+
+  attempts="${REVIEW_GATE_RERUN_ATTEMPTS:-10}"
+  interval="${REVIEW_GATE_RERUN_INTERVAL:-15}"
+  current="$raw"
+  for (( i = 0; i < attempts; i++ )); do
+    (( interval > 0 )) && sleep "$interval"
+    new="$("$gh_bin" pr checks "$number" -R "$slug" --required --json name,bucket,link 2>/dev/null)"
+    jq -e 'type == "array" and length > 0' <<<"$new" >/dev/null 2>&1 || continue
+    current="$new"
+    jq -e 'all(.[]; .bucket == "pass")' <<<"$current" >/dev/null 2>&1 && break
+  done
+  printf '%s' "$current"
+}
+
 # review_gate_required_checks PR_URL [BASE_BRANCH]
 # Print `clean`, `dirty<TAB>reason`, or `unknown<TAB>reason`. Exit 0 for
 # clean, 1 for dirty *or* unknown — both refuse the handoff. A pull request
@@ -167,6 +265,15 @@ _review_gate_missing_required_contexts() {
 # Omitting BASE_BRANCH (every existing caller that predates this) skips the
 # backstop exactly as if it had found nothing, so a required-checks read with
 # no base branch in hand behaves exactly as it always has.
+#
+# Before settling on `dirty` for a non-empty check-runs list that is not all
+# `pass`, a required context whose only non-`pass` entries are superseded by
+# a `pass` entry of the same name is given one chance to repair itself
+# (`_review_gate_repair_duplicate_runs`, agent-ops#1978) — a duplicate
+# `pull_request` delivery for one push started every workflow twice, and the
+# surviving run already proves the head commit is fine. A genuine failure, or
+# a superseded run that does not clear on rerun, still reaches `dirty` below
+# exactly as before.
 review_gate_required_checks() {
   local url="${1:-}" base_branch="${2:-}" gh_bin="${REVIEW_GATE_GH:-gh}" parts slug number raw failing
   local err_file diagnosis no_checks missing
@@ -183,7 +290,7 @@ review_gate_required_checks() {
   # diagnosis empty, which lands on `unknown`: the conservative word, and the
   # honest one, since nothing was read.
   err_file="$(mktemp 2>/dev/null || printf '/dev/null')"
-  raw="$("$gh_bin" pr checks "$number" -R "$slug" --required --json name,bucket 2>"$err_file")" || true
+  raw="$("$gh_bin" pr checks "$number" -R "$slug" --required --json name,bucket,link 2>"$err_file")" || true
   diagnosis="$(cat "$err_file" 2>/dev/null || true)"
   [[ "$err_file" == /dev/null ]] || rm -f "$err_file"
 
@@ -205,6 +312,11 @@ review_gate_required_checks() {
     printf '%s' "$no_checks"
     return 1
   fi
+
+  if ! jq -e 'all(.[]; .bucket == "pass")' <<<"$raw" >/dev/null 2>&1; then
+    raw="$(_review_gate_repair_duplicate_runs "$gh_bin" "$slug" "$number" "$raw")"
+  fi
+
   if jq -e 'all(.[]; .bucket == "pass")' <<<"$raw" >/dev/null 2>&1; then
     missing="$(_review_gate_missing_required_contexts "$slug" "$base_branch" "$raw")"
     if [[ -n "$missing" ]]; then
@@ -216,7 +328,7 @@ review_gate_required_checks() {
     return 0
   fi
 
-  failing="$(jq -r '[.[] | select(.bucket != "pass") | .name] | join(", ")' <<<"$raw" 2>/dev/null)"
+  failing="$(jq -r '[.[] | select(.bucket != "pass") | .name] | unique | join(", ")' <<<"$raw" 2>/dev/null)"
   printf 'dirty\trequired check(s) not green: %s' "${failing:-unreadable}"
   return 1
 }
