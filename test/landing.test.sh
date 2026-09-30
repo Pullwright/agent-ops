@@ -53,8 +53,10 @@
 #     repository — the most recent matching `selection` event per branch wins
 #     when a branch was claimed more than once, a malformed log line is
 #     skipped rather than aborting the read, another repository's events never
-#     leak in, an unmatched branch or an unreadable/repo-less log both print
-#     `{}`, and stdin works the same as a named LOG_FILE.
+#     leak in, `source` and `item` both come off that one winning event rather
+#     than a per-field reach-back, an unmatched branch or an unreadable/
+#     repo-less log both print `{}`, and stdin works the same as a named
+#     LOG_FILE.
 #
 # No test framework is used (none exists elsewhere in this repo). Run
 # directly:
@@ -840,7 +842,7 @@ assert_eq "an unrecognised code still names itself rather than nothing" \
 
 log_file="$tmp_dir/union-log.jsonl"
 cat > "$log_file" <<'LOG'
-{"ts":"2026-08-10T00:00:00Z","event":"selection","repo":"acme/widgets","item":"TD-1","source":"tech-debt","model":"m","title":"t","branch":"td/TD-1"}
+{"ts":"2026-08-10T00:00:00Z","event":"selection","repo":"acme/widgets","item":"9","source":"issues","model":"m","title":"t","branch":"td/TD-1"}
 this line is not json at all
 {"ts":"2026-08-12T00:00:00Z","event":"landing-refused","repo":"acme/widgets","pr_url":"https://github.com/acme/widgets/pull/1","reason":"a human CHANGES_REQUESTED stands (someone)"}
 {"ts":"2026-08-11T00:00:00Z","event":"selection","repo":"acme/widgets","item":"TD-1","source":"tech-debt","model":"m","title":"t","branch":"td/TD-1"}
@@ -849,9 +851,13 @@ this line is not json at all
 LOG
 
 map_out="$(landing_retry_source_map acme/widgets "$log_file")"
+# The branch claimed twice carries a *different* source and item on each of
+# its two events, so "most recent wins" is what these two assertions measure —
+# a fixture repeating one value on both would pass either way.
 assert_eq "the most recent matching selection's source wins, for a branch claimed twice" \
   "tech-debt" "$(jq -r '."td/TD-1".source // empty' <<<"$map_out")"
-assert_eq "  ... and its item" "TD-1" "$(jq -r '."td/TD-1".item // empty' <<<"$map_out")"
+assert_eq "  ... and its item, off that same event rather than the superseded one" \
+  "TD-1" "$(jq -r '."td/TD-1".item // empty' <<<"$map_out")"
 assert_eq "a different branch resolves independently, from the same one-pass map" \
   "issues" "$(jq -r '."agent/9".source // empty' <<<"$map_out")"
 assert_eq "an unmatched branch is simply absent from the map" \
@@ -860,6 +866,22 @@ assert_eq "a different repository's selection events never leak into this one's 
   "" "$(jq -r '."agent/3".source // empty' <<<"$map_out")"
 assert_eq "  ... even though acme/other's own selection event is the log's most recent line" \
   "true" "$(jq '."agent/3" == null' <<<"$map_out")"
+
+# One branch, one event: both fields come off the single most-recent
+# `selection`, never a per-field reach-back that would pair an older event's
+# source with a newer one's item. Neither `selection` call site writes a
+# branch-carrying event without a source, so this pins the rule rather than a
+# shape in the field — see lib/union-log-scan.sh's own header.
+pair_log="$tmp_dir/union-log-pairing.jsonl"
+cat > "$pair_log" <<'LOG'
+{"ts":"2026-08-10T00:00:00Z","event":"selection","repo":"acme/widgets","item":"7","source":"issues","model":"m","title":"t","branch":"agent/7"}
+{"ts":"2026-08-11T00:00:00Z","event":"selection","repo":"acme/widgets","item":"7","source":null,"model":"m","title":"t","branch":"agent/7"}
+LOG
+pair_out="$(landing_retry_source_map acme/widgets "$pair_log")"
+assert_eq "a newest selection with no source reads as unresolved, not as the older event's source" \
+  "" "$(jq -r '."agent/7".source' <<<"$pair_out")"
+assert_eq "  ... while its own item still resolves off that same newest event" \
+  "7" "$(jq -r '."agent/7".item' <<<"$pair_out")"
 
 out="$(landing_retry_source_map acme/widgets "$tmp_dir/does-not-exist.jsonl")"
 assert_eq "an unreadable log prints {} rather than guessing" "{}" "$out"

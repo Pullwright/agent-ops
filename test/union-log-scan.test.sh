@@ -3,6 +3,12 @@
 # test/union-log-scan.test.sh — the union event stream is read by streaming it,
 # never by slurping it into one string and regex-splitting that (#791).
 #
+# Despite the shared stem, this is not the unit test for `lib/union-log-scan.sh`
+# (#1050): this file is a fleet-wide guard over every union-log reader's
+# *shape*, whichever file it lives in, and predates that library. That
+# library's own `landing_retry_source_map` is pinned in `test/landing.test.sh`,
+# beside the two call sites it serves.
+#
 # What this guards: `jq -R -s '[ splits("\n") | ... ]'` is a regex match over
 # the *whole* input. It is super-linear, and the log it reads only ever grows.
 # On 2026-08-25 eight readers shared that shape; on `poetic-2`, one

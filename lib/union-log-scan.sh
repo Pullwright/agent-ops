@@ -42,6 +42,17 @@
 # simply absent from the returned object — a caller reads a missing key with
 # an ordinary `// empty` lookup.
 #
+# One branch resolves to exactly one event: `source` and `item` are both read
+# off that single most-recent `selection`, so a claim is answered as the whole
+# it was logged as. A branch whose most recent `selection` carries no `source`
+# therefore reads as `""` — a caller's `// empty` lookup treats that as "could
+# not be resolved" and skips the candidate — rather than reaching further back
+# for an older event that had one and pairing it with a newer event's `item`.
+# Both `selection` call sites (`lib/coordinator-phase.sh`) project the field
+# from the work order that drove the claim, so an event carrying a `branch` but
+# no `source` is not a shape this system writes; the rule is stated because it
+# is the one place a reader could expect a per-field reach-back and not get it.
+#
 # Prints `{}` — never a bare empty string — on a missing, empty or unreadable
 # LOG_FILE, or when REPO has no `selection` events in it at all, so a caller
 # can always pipe the result straight into a `jq` lookup with no fallback of

@@ -29191,11 +29191,14 @@ oblige anyone to edit a test.
     reading it back after. `lib/union-log-scan.sh`'s own
     `landing_retry_source_map` is pinned directly: the most recent matching
     `selection` event's `source`/`item` wins, per branch, when a branch was
-    claimed more than once, a different branch resolves independently from
-    the same one-pass map, a malformed log line is skipped rather than
-    aborting the read, another repository's events never leak into this
-    one's map, and an unmatched branch or an unreadable/repo-less log both
-    print `{}`.
+    claimed more than once (its two events carrying a different value for
+    each field, so the assertion measures which one won rather than passing
+    either way), both fields coming off that one winning event rather than
+    a per-field reach-back into a superseded one, a different branch
+    resolves independently from the same one-pass map, a malformed log line
+    is skipped rather than aborting the read, another repository's events
+    never leak into this one's map, and an unmatched branch or an
+    unreadable/repo-less log both print `{}`.
     `test/landing-retry-sweep.test.sh` lifts `_landing_retry_sweep_repo`
     (`lib/landing.sh`) verbatim — the candidate rule that decides which pull
     requests reach `_landing_stage_attempt` at all, with that function itself
