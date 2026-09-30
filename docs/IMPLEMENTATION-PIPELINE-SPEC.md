@@ -8289,10 +8289,11 @@ implements.
    number of open pull requests. That pairing is not new: requirement 2.2a's
    back-pressure block already singles out exactly those two, for exactly this
    reason, when it empties them on a restricted cycle. Every other pre-fetched
-   band is left alone, because `prompts/coordinator.md` requires each of their
-   bodies pasted *verbatim* into the work order and together they were 34 KB
-   of the 354 KB that overflowed. The small, per-repo scalar fields a repo
-   entry carries alongside its bands — `implementation_plan_path`,
+   band is left alone, because per requirement 17h the Script's own compose
+   step (`compose_selected_candidate_text` in `lib/candidate-select.sh`)
+   pastes each of their bodies *verbatim* into the work order, and together
+   they were 34 KB of the 354 KB that overflowed. The small, per-repo scalar
+   fields a repo entry carries alongside its bands — `implementation_plan_path`,
    `report_directory` and `report_directory_resolved` (requirement 3k) — are
    not bands at all and are never
    candidates for shedding: each is a short string, present only for a repo
