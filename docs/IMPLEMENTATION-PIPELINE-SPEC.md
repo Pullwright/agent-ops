@@ -23026,8 +23026,7 @@ What exists, and the requirements each part answers to:
     evaluates the body as it stands now rather than replaying whatever it
     said when the event fired (agent-ops#1991). It assigns the fetched body
     to a shell variable rather than interpolating it into the step directly,
-    so an attacker-controlled title or body from a fork PR still cannot
-    inject shell.
+    so an attacker-controlled body from a fork PR still cannot inject shell.
 
     Given a repo slug and this pull request's own number as two further,
     optional arguments (a caller that omits either — every caller that
