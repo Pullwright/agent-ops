@@ -2791,10 +2791,12 @@ number's twins elsewhere on the page.
   passes: nothing but the working set, and the tombstone its release
   renames it to, ever appears at the top of `$TMPDIR` during a publish, in a
   census read every few milliseconds for the publish's whole run; a publish started under `timeout` and sent `TERM`
-  after a file exists inside its working set ends early and leaves nothing
-  under `$TMPDIR`; and a fast tick whose payload cache is not JSON rebuilds
-  in full, exits 0 with a non-empty payload the page can parse, and leaves
-  nothing under `$TMPDIR` either.
+  after a file exists inside its working set ends early and — once the same
+  sweep that reclaims what a `KILL` leaves runs, closing a signal-delivery
+  window the trap's own arming cannot — leaves nothing under `$TMPDIR`; and a
+  fast tick whose payload cache is not JSON rebuilds in full, exits 0 with a
+  non-empty payload the page can parse, and leaves nothing under `$TMPDIR`
+  either.
 - **Heartbeat** — an optional `*/5 * * * *` crontab entry keeps in-flight
   state, the lock, and GitHub current between cycles. cron can't fire
   more than once a minute, so the entry runs `publish-dashboard-launcher.sh`
