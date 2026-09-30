@@ -1464,19 +1464,32 @@
   function updaterLine(n) {
     var u = n.updater;
     if (!u || !u.status) return null;
+    // `u.host` names the ledger the fold picked (agent-ops#1037) when a
+    // sibling container on this same node — sharing the `pre-update` label
+    // but not this container's own identity — read worse than we did;
+    // absent when our own verdict won outright, so the badge never asserts
+    // about this container a fault that belongs to another. Which is why it
+    // names the *subject* rather than being appended to the title: the badge
+    // sits on the node's card either way, so a reader who is not told whose
+    // roll this is reads a sibling's fault as the heartbeat publisher's own,
+    // and "investigate on that node's host" must stay about the node, not
+    // collect a container hostname after it.
+    var whose = u.host
+      ? "the roll of the sibling container on `" + u.host + "`"
+      : "this container's roll";
     if (u.status === "stuck") {
       var title = u.reason === "defer"
-        ? "the pre-update hook has been deferring this container's roll since " + fmtAgo(u.at) +
+        ? "the pre-update hook has been deferring " + whose + " since " + fmtAgo(u.at) +
           " — longer than any implementation cycle or review lock could still legitimately hold it, " +
           "so this is no longer a cycle in flight (agent-ops#603); investigate on that node's host"
-        : "the pre-update hook has been allowing this container's roll since " + fmtAgo(u.at) +
+        : "the pre-update hook has been allowing " + whose + " since " + fmtAgo(u.at) +
           ", every poll, and it is still the one running — the retry repeats the operation that " +
           "collided, so this will not clear on its own (agent-ops#603); investigate on that node's host";
       return el("div", {class:"ver"}, el("span", {class:"badge b-amber", text:"updater stuck", title: title}));
     }
     if (u.status === "deferring") {
       return el("div", {class:"ver"}, el("span", {class:"badge b-grey", text:"updater deferring",
-        title: "the pre-update hook has been deferring this container's roll since " + fmtAgo(u.at) +
+        title: "the pre-update hook has been deferring " + whose + " since " + fmtAgo(u.at) +
                " — an implementation cycle or review is in flight; it clears once that ends"}));
     }
     return null;

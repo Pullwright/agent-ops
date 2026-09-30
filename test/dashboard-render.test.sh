@@ -206,6 +206,12 @@ assert_contains "a container the hook allowed but that never rolled is flagged" 
   "updater stuck" "$out"
 assert_contains "a container the hook is still deferring is flagged too, distinctly" \
   "updater deferring" "$out"
+
+# poetic-3's `updater.host` came from the sibling fold (agent-ops#1037): the
+# verdict published is a container sharing poetic-3's own `pre-update` label,
+# not poetic-3's own ledger, and the badge's title says so.
+assert_contains "a folded verdict names which sibling it came from, in the badge title" \
+  "on \`poetic-3-dashboard\`" "$out"
 assert_eq "and only the one stuck container gets the badge — never a rolled or pre-field one" \
   "1" "$(grep -o 'updater stuck' <<<"$out" | wc -l | tr -d ' ')"
 assert_eq "and only the one deferring container gets its badge — never a rolled or pre-field one" \

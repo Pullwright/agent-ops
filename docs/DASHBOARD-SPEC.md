@@ -1147,17 +1147,25 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                                             //   "rebuilt" when present; null
                                             //   if this node has never had to
                                             //   rebuild, or is unreported
-                         updater: { status, at, seconds, reason },  // the
-                                            //   node's own watchtower
+                         updater: { status, at, seconds, reason, host },  // the
+                                            //   worst live watchtower
                                             //   pre-update hook verdict
-                                            //   (#603): "rolled",
+                                            //   across this node's own
+                                            //   ledger and every sibling
+                                            //   container's (#603,
+                                            //   agent-ops#1037): "rolled",
                                             //   "deferring" or "stuck"; null
                                             //   if unreported or not yet
                                             //   determinable. `reason`
                                             //   ("allow" or "defer") is
                                             //   present only on "stuck",
                                             //   naming which of the two
-                                            //   ways it got there
+                                            //   ways it got there. `host`
+                                            //   names the sibling ledger the
+                                            //   verdict came from; absent
+                                            //   when this node's own
+                                            //   container's verdict won
+                                            //   outright
                          provider_unreachable: { stage, detail, count,
                                           first_ts, last_ts, nodes,
                                           escalate, repo? },      // the
@@ -4097,9 +4105,16 @@ number's twins elsewhere on the page.
   them read the update mechanism's own verdict, only the staleness it
   eventually causes. The card renders the heartbeat's updater verdict
   (implementation spec 2.5, `lib/updater-health.sh`) as a third badge below
-  compose and image: **updater deferring**, grey, naming how long
-  `deploy/docker/watchtower-pre-update.sh` has been holding this container's
-  roll back for a cycle or review in flight — it resolves the moment that
+  compose and image. The verdict is this node's own worst *live* one across
+  every container sharing its `pre-update` label, not only the container
+  that published the heartbeat (agent-ops#1037) — `u.host`, when present,
+  names which sibling ledger it came from, and the badge's title makes that
+  sibling the roll's subject ("the roll of the sibling container on
+  `<host>`") rather than a suffix a reader could miss; absent, the subject is
+  "this container's roll" and the verdict is this heartbeat's own container's.
+  The badge itself reads: **updater deferring**, grey, naming how long
+  `deploy/docker/watchtower-pre-update.sh` has been holding that roll
+  back for a cycle or review in flight — it resolves the moment that
   ends, the same colour and reasoning as `behind`, and only while that defer
   streak stays inside `updater_defer_stuck_after_seconds`. **updater stuck**,
   amber, `compose`'s colour for a fault only a human clears, in either of two
@@ -4116,7 +4131,7 @@ number's twins elsewhere on the page.
   (implementation spec 2.5, agent-ops#1071), and a hostname whose own newest
   ledger entry has itself gone older than `updater_stuck_after_minutes`
   renders no badge at all rather than a permanent **updater stuck** — the
-  node's watchtower has stopped polling this container altogether (taken
+  node's watchtower has stopped polling that container altogether (taken
   down deliberately, or the container itself retired), which is a different
   fact from either amber shape above and not one this badge asserts.
   `rolled` (the ordinary case), an absent verdict — a peer whose heartbeat
