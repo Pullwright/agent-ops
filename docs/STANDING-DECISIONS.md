@@ -200,3 +200,22 @@ principle it rests on.`
   2026-09-23. A just-in-time branch update at the landing gate was
   considered and withdrawn: it does nothing under a merge queue, and each
   of its pushes would dismiss the standing approval.
+- 2026-09-30 · #402/#1981 · **Every Poetic installation repository lands at
+  `agent-merges-all` (D18 Stages 3 and 4), with every landing source it
+  gathers and every complexity grade.** `Pullwright/agent-ops`,
+  `Poetic-Poems/poetic` and `Poetic-Poems/poetic-fiddle` move to the top of
+  the ladder, and the owner's residual surface is the escalation taxonomy,
+  as #402's end state names it. Protected paths stay, and route a pull
+  request through the critical-tier review and the 24-hour
+  `landing_cool_off_hours` wait instead of to a human: agent-ops keeps its
+  own list, poetic protects its CI and code ownership, and poetic-fiddle
+  adds `supabase/*` and `vercel.json`, because its CI pushes merged
+  migrations to the live database. The Approver verdict, the review gate, a
+  human `CHANGES_REQUESTED`, the merge budget and the kill switch are
+  unchanged. This extends the 2026-09-19 line, which widened only the
+  sources, and waives #402's Stage 3 and 4 evidence bars: in the 14 days
+  before, the owner merged 101 agent-ops pull requests by hand against 15
+  autonomous landings, and made every poetic and poetic-fiddle merge
+  himself. Decided by the owner on 2026-09-30 ("maximum autonomy and
+  minimum human involvement"); visibility he need not act on is welcome,
+  and visibility that holds a landing for him is not.
