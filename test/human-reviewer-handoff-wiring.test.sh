@@ -55,7 +55,8 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CYCLE="$SCRIPT_DIR/agent-cycle.sh"
+# Moved to lib/coordinator-phase.sh (issue #1958's continuation of #771's split).
+CYCLE="$SCRIPT_DIR/lib/coordinator-phase.sh"
 # The Enabler's own copy of this same rereview block moved to lib/enabler.sh
 # (#771); the Reviewer's own handoff, extracted via $CYCLE above, did not.
 ENABLER_CYCLE="$SCRIPT_DIR/lib/enabler.sh"
@@ -118,7 +119,7 @@ enabler_block="$(awk '
 
 for pair in "reviewer:$reviewer_block" "enabler:$enabler_block"; do
   if [[ -z "${pair#*:}" ]]; then
-    echo "FAIL - could not extract the ${pair%%:*} handoff block from agent-cycle.sh — has it moved?" >&2
+    echo "FAIL - could not extract the ${pair%%:*} handoff block from lib/coordinator-phase.sh — has it moved?" >&2
     exit 1
   fi
 done

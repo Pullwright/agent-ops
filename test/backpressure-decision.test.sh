@@ -21,9 +21,10 @@
 # slot a human cannot clear, which opens a gate whose whole purpose is to
 # stay shut.
 #
-# Lifted verbatim out of agent-cycle.sh, the same way
-# test/backpressure-wiring.test.sh lifts its own block, so the assertions are
-# about the shipped code rather than a copy of its logic.
+# Lifted verbatim out of lib/gather-phase.sh (agent-cycle.sh's own body until
+# issue #1958), the same way test/backpressure-wiring.test.sh lifts its own
+# block, so the assertions are about the shipped code rather than a copy of
+# its logic.
 #
 # No test framework is used (none exists elsewhere in this repo). Run
 # directly: ./test/backpressure-decision.test.sh — exit 0 iff all passed.
@@ -31,7 +32,9 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-AGENT_CYCLE="$SCRIPT_DIR/agent-cycle.sh"
+# The fold-in block moved to lib/gather-phase.sh (issue #1958's continuation
+# of #771's split).
+GATHER_PHASE_LIB="$SCRIPT_DIR/lib/gather-phase.sh"
 
 failures=0
 
@@ -56,9 +59,9 @@ extract_block() {
   ' "$file"
 }
 
-fold_block="$(extract_block '^finishing_extra_prs_json=' '^fi$' "$AGENT_CYCLE")"
+fold_block="$(extract_block '^finishing_extra_prs_json=' '^fi$' "$GATHER_PHASE_LIB")"
 if [[ -z "$fold_block" ]]; then
-  echo "FAIL - could not extract the back-pressure decision fold-in block from agent-cycle.sh — has it moved?" >&2
+  echo "FAIL - could not extract the back-pressure decision fold-in block from lib/gather-phase.sh — has it moved?" >&2
   exit 1
 fi
 if [[ "$fold_block" != *'merge_conflicts'* || "$fold_block" != *'dequeued'* ]]; then

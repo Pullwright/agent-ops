@@ -50,7 +50,9 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CYCLE="$SCRIPT_DIR/agent-cycle.sh"
+# Both blocks below moved to lib/coordinator-phase.sh (issue #1958's
+# continuation of #771's split).
+CYCLE="$SCRIPT_DIR/lib/coordinator-phase.sh"
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
@@ -108,7 +110,7 @@ prompt_block="$(awk '
 
 for pair in "gate:$gate_block" "prompt:$prompt_block"; do
   if [[ -z "${pair#*:}" ]]; then
-    echo "FAIL - could not extract the ${pair%%:*} block from agent-cycle.sh — has it moved?" >&2
+    echo "FAIL - could not extract the ${pair%%:*} block from lib/coordinator-phase.sh — has it moved?" >&2
     exit 1
   fi
 done

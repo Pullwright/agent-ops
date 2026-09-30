@@ -1102,7 +1102,8 @@ assert_eq "every pre-fetched band but issues reaches exclude_blocked_or_void_ite
   "$band_list"
 
 # --- coord_repo_input itself: no `void` key, and a trimmed `blocked` --------
-# The build is lifted verbatim out of agent-cycle.sh, the same way the three
+# The build is lifted verbatim out of lib/coordinator-phase.sh (agent-
+# cycle.sh's own body until issue #1958), the same way the three
 # functions above are: what a repository's own Co-Ordinator engagement is
 # handed is the claim requirement 3u makes, and it is made by this block
 # rather than by any of them. Issue #587 split the single fleet-wide
@@ -1115,9 +1116,9 @@ ci_src="$(awk '
   /^  coord_repo_blocked_json="\$\(jq -c --arg r "\$coord_repo_slug" \\$/ { on = 1 }
   on                                                                     { print }
   on && /coord_repo_claimed_json"\)"\)"$/                                { exit }
-' "$SCRIPT_DIR/agent-cycle.sh")"
+' "$SCRIPT_DIR/lib/coordinator-phase.sh")"
 if [[ "$ci_src" != *coord_repo_input=* ]]; then
-  printf 'FAIL - could not extract the coord_repo_input build from agent-cycle.sh\n'
+  printf 'FAIL - could not extract the coord_repo_input build from lib/coordinator-phase.sh\n'
   exit 1
 fi
 # All are consumed by the eval'd block, which shellcheck cannot see into —

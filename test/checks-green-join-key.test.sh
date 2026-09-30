@@ -60,10 +60,10 @@ trap 'rm -f "$events_file"' EXIT
 log_event() { printf '%s\t%s\n' "$1" "$2" >> "$events_file"; }
 event_of() { grep -m1 "^$1"$'\t' "$events_file" | cut -f2- || true; }
 
-# --- The Reviewer's own handoff (agent-cycle.sh) -------------------------------
+# --- The Reviewer's own handoff (lib/coordinator-phase.sh) --------------------
 
 reviewer_block="$(extract 'gate_word="$(jq -r' \
-  '{ok: $ok} + (if $r == ""' "$SCRIPT_DIR/agent-cycle.sh")"
+  '{ok: $ok} + (if $r == ""' "$SCRIPT_DIR/lib/coordinator-phase.sh")"
 if [[ -z "$reviewer_block" || "$reviewer_block" != *"checks-green"* ]]; then
   echo "FAIL - could not extract the Reviewer's checks-green/review-gate-checks-read snippet — has it moved?" >&2
   exit 1

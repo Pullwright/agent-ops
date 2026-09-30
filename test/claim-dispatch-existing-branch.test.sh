@@ -31,6 +31,9 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# The claim loop moved to lib/coordinator-phase.sh (issue #1958's
+# continuation of #771's split).
+COORDINATOR_PHASE_LIB="$SCRIPT_DIR/lib/coordinator-phase.sh"
 
 failures=0
 
@@ -44,7 +47,7 @@ assert_eq() {
   fi
 }
 
-# --- Lift the dispatch condition verbatim out of agent-cycle.sh -------------
+# --- Lift the dispatch condition verbatim out of lib/coordinator-phase.sh --
 # The `if [[ … ]]; then` whose body opens with the "No new branch to create"
 # comment. Line continuations are folded so the condition can be eval'd as one
 # expression.
@@ -59,13 +62,13 @@ condition="$(awk '
     printf "%s ", line
     if ($0 ~ /; then$/) { exit }
   }
-' "$SCRIPT_DIR/agent-cycle.sh")"
+' "$COORDINATOR_PHASE_LIB")"
 
 # The lift must produce a complete, parseable `[[ … ]]` command, or every
 # assertion below would silently read "branch" off an eval that merely failed
 # to parse — the one way this file could pass while proving nothing.
 if [[ -z "$condition" ]]; then
-  printf 'FAIL - could not lift the claim dispatch condition out of agent-cycle.sh\n'
+  printf 'FAIL - could not lift the claim dispatch condition out of lib/coordinator-phase.sh\n'
   exit 1
 fi
 if ! bash -n <<<"c_source=x; c_takeover=x; $condition"; then

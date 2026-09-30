@@ -24,7 +24,9 @@
 #   - **`0` means the bound is off, and the input passes through untouched.**
 #   - **Trimming is recorded; failing to fit is recorded louder.**
 #
-# The block is lifted verbatim out of agent-cycle.sh, the way
+# The fit/prompt/trim blocks are lifted verbatim out of lib/gather-phase.sh,
+# and the per-repository assembly block out of lib/coordinator-phase.sh
+# (both agent-cycle.sh's own body until issue #1958), the way
 # test/backpressure-wiring.test.sh lifts its own, so the assertions are about
 # the shipped code rather than a copy of its logic.
 #
@@ -37,7 +39,11 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-AGENT_CYCLE="$SCRIPT_DIR/agent-cycle.sh"
+# The requirement-4i fit block and the base-prompt render both moved to
+# lib/gather-phase.sh; the per-repository prompt assembly moved to
+# lib/coordinator-phase.sh (issue #1958's continuation of #771's split).
+GATHER_PHASE_LIB="$SCRIPT_DIR/lib/gather-phase.sh"
+COORDINATOR_PHASE_LIB="$SCRIPT_DIR/lib/coordinator-phase.sh"
 
 # shellcheck source=lib/coordinator-input.sh
 . "$SCRIPT_DIR/lib/coordinator-input.sh"
@@ -72,18 +78,18 @@ extract_block() {
   ' "$file"
 }
 
-fit_block="$(extract_block '^coordinator_fit_allowance=0$' "^# --- end of requirement 4i's fit ---\$" "$AGENT_CYCLE")"
+fit_block="$(extract_block '^coordinator_fit_allowance=0$' "^# --- end of requirement 4i's fit ---\$" "$GATHER_PHASE_LIB")"
 if [[ -z "$fit_block" || "$fit_block" != *'coordinator_fit_bands'* ]]; then
-  echo "FAIL - could not extract requirement 4i's fit block from agent-cycle.sh — has it moved?" >&2
+  echo "FAIL - could not extract requirement 4i's fit block from lib/gather-phase.sh — has it moved?" >&2
   exit 1
 fi
 
 # The prompt the block renders is built one line above the block itself; lift
 # that too rather than restating it, so a change to the substitution is caught
 # here instead of silently making this test measure something else.
-prompt_block="$(extract_block '^coordinator_base_prompt="\$\(stage_prompt_text' '^coordinator_base_prompt="\$\{coordinator_base_prompt' "$AGENT_CYCLE")"
+prompt_block="$(extract_block '^coordinator_base_prompt="\$\(stage_prompt_text' '^coordinator_base_prompt="\$\{coordinator_base_prompt' "$GATHER_PHASE_LIB")"
 if [[ -z "$prompt_block" ]]; then
-  echo "FAIL - could not extract the base-prompt render from agent-cycle.sh" >&2
+  echo "FAIL - could not extract the base-prompt render from lib/gather-phase.sh" >&2
   exit 1
 fi
 
@@ -97,9 +103,9 @@ fi
 # lines are never touched by the assignment's own indentation — so only the
 # start anchor needs it.
 # shellcheck disable=SC2016  # The anchors are awk regexes matching agent-cycle.sh's own text, not expansions for this shell.
-assembly_block="$(extract_block '^  coordinator_prompt="\$coordinator_base_prompt$' '^"$' "$AGENT_CYCLE")"
+assembly_block="$(extract_block '^  coordinator_prompt="\$coordinator_base_prompt$' '^"$' "$COORDINATOR_PHASE_LIB")"
 if [[ -z "$assembly_block" || "$assembly_block" != *'Runtime input for this cycle'* ]]; then
-  echo "FAIL - could not extract the prompt assembly from agent-cycle.sh" >&2
+  echo "FAIL - could not extract the prompt assembly from lib/coordinator-phase.sh" >&2
   exit 1
 fi
 
@@ -110,9 +116,9 @@ fi
 # gate used to read `coordinator_fit_report_json` through a bash default that
 # silently corrupted every non-empty report, so it always read as "fit did not
 # run" and this block's `if` never took its true branch on a real cycle.
-trim_block="$(extract_block '^coordinator_fit_trimmed_json="\[\]"$' "^# --- 3b\\. No-op short-circuit" "$AGENT_CYCLE")"
+trim_block="$(extract_block '^coordinator_fit_trimmed_json="\[\]"$' "^# --- 3b\\. No-op short-circuit" "$GATHER_PHASE_LIB")"
 if [[ -z "$trim_block" || "$trim_block" != *'coordinator_fit_trimmed_items'* ]]; then
-  echo "FAIL - could not extract the fit-trim exemption block from agent-cycle.sh — has it moved?" >&2
+  echo "FAIL - could not extract the fit-trim exemption block from lib/gather-phase.sh — has it moved?" >&2
   exit 1
 fi
 

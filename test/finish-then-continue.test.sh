@@ -330,11 +330,11 @@ extract_standdown_block() {
     /^if \[\[ -z "\$claimed_json" \]\]; then$/ { on = 1 }
     on                                         { print }
     on && /^fi$/                               { exit }
-  ' "$SCRIPT_DIR/agent-cycle.sh"
+  ' "$SCRIPT_DIR/lib/coordinator-phase.sh"
 }
 standdown_block="$(extract_standdown_block)"
 if [[ "$standdown_block" != *"standdown_cause="* ]]; then
-  echo "FAIL - could not extract the stand-down block from agent-cycle.sh — has it moved?" >&2
+  echo "FAIL - could not extract the stand-down block from lib/coordinator-phase.sh — has it moved?" >&2
   exit 1
 fi
 

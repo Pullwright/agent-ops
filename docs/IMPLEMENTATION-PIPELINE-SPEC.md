@@ -8867,7 +8867,8 @@ implements.
    literal list.
 
    Every call site —
-   `agent-cycle.sh`'s `ensure_labels_for`, `review-cycle.sh`'s own review-role
+   `lib/coordinator-phase.sh`'s `ensure_labels_for`, `review-cycle.sh`'s own
+   review-role
    ensure, `lib/enabler.sh`'s `create_escalation_issue`/
    `create_decision_log_issue`, and `lib/candidate-gather.sh`'s
    gathered-repository ensure (through `labels_reconcile_stamped`,
@@ -11711,7 +11712,8 @@ implements.
       finish, rebase, or fix the same PR contend on the same file and one
       wins. This list is exactly `PREFLIGHT_EXISTING_BRANCH_SOURCES`
       (requirement 34m) plus the takeover carve-out above, and the two are
-      written down in two places (`agent-cycle.sh`'s claim dispatch and
+      written down in two places (`lib/coordinator-phase.sh`'s claim dispatch
+      and
       `lib/preflight.sh`) that must agree: a source preflight believes has a
       pre-existing branch, but the dispatch does not, gets a fresh branch
       minted for it off the default branch and the candidate's own `branch`
@@ -20877,16 +20879,22 @@ What exists, and the requirements each part answers to:
 1. `config.json` with the values above.
 2. `agent-cycle.sh` implementing requirements 1–13 (including the findings
    pre-fetch, requirement 3a; the switches, requirements 2.3, 2.3a and 2.3b;
-   the role guard, requirement 2.4; the no-op short-circuit, requirement 3b; the
+   the role guard, requirement 2.4; and the
    implementation-plan path passthrough and its startup validation,
-   requirement 3k; and the Refiner-only pre-fetch and its `refiner_repos_json`
-   copy, requirement 3y) — the cycle's own spine: argument handling, the
+   requirement 3k) — the cycle's own spine: argument handling, the
    lock, the management commands (`run_manage_command`, `lib/manage.sh`,
    #771), the eligibility pass (`lib/eligibility.sh`, #771), the stand-down
    reason ladder (`run_standdown_checks`, `lib/
    standdown.sh`, #771), the claim loop and candidate selection (`lib/
    candidate-select.sh`, #771), the ordered sequence of phases, and the exit
-   path. The Enabler's engagement, requirements 35–37 — `maybe_run_enabler`
+   path. Two of those phases are whole modules of their own: the gather-fit
+   phase (`run_gather_phase`, `lib/gather-phase.sh`, #1958) and the
+   Co-Ordinator-through-finishing sequence
+   (`run_coordinator_through_finishing_phase`, `lib/coordinator-phase.sh`,
+   #1958), which between them carry the no-op short-circuit (requirement 3b)
+   and the Refiner-only pre-fetch's `refiner_repos_json` copy (requirement
+   3y) this file calls through to. The Enabler's engagement, requirements
+   35–37 — `maybe_run_enabler`
    (the single call site in the cleanup, every guard, and the per-verdict
    actions), `enabler_claim_key` and `create_escalation_issue` — is
    `lib/enabler.sh` (#771), sourced and called from the cleanup trap exactly
@@ -21043,6 +21051,54 @@ What exists, and the requirements each part answers to:
    nothing, a corrupt cache file loading as empty rather than raising a
    parse error, and a configured set past one pipe buffer picking cleanly
    rather than 141.
+2h. `lib/gather-phase.sh` implementing the phase between the repo-ordering/
+   candidate-gathering loop and the Co-Ordinator stage itself (requirements
+   3b, 3y and 2.2a among them; #1958, continuing #771's split):
+   `run_gather_phase`, called once from `agent-cycle.sh` in place of the
+   inline block it replaces, runs — in this order — `gather_ordered_repos`/
+   `compute_skip_lists` (`lib/candidate-gather.sh`), the band eligibility and
+   Enabler/Refiner pre-fetch pass (`lib/eligibility.sh`), the decision-veto
+   sweep and pending decision acts (`lib/decision-veto.sh`), back-pressure's
+   narrowing of the finishing sources (requirement 2.2a), the requirement-4i
+   prompt-fit ladder (`lib/coordinator-input.sh`) and the no-op short-circuit
+   (requirement 3b, `lib/noop-skip.sh`). Several of its paths exit the cycle
+   outright — a stand-down, a back-pressure trip, a no-op — so the
+   Co-Ordinator stage below it is reached only when there is a prompt worth
+   sending. The requirement-4i machinery's *placement* in that order is
+   deliberate and unchanged by the move (`lib/coordinator-input.sh`'s own
+   header records why: the 2026-08-21 context-overflow outage). A pure move
+   out of `agent-cycle.sh`'s own top-level script body — never before
+   functions, so the body keeps the original top-level indentation, the same
+   way `lib/candidate-gather.sh`'s and `lib/eligibility.sh`'s do — reading
+   and writing the cycle's own globals exactly as it did inline. Sourced,
+   never executed. Must pass `shellcheck`.
+2i. `lib/coordinator-phase.sh` implementing the Co-Ordinator-through-
+   finishing phase sequence, the whole of the cycle from the Co-Ordinator
+   stage to the exit (requirements 4, 8b, 15, 17a and 31c among them; #1958,
+   continuing #771's split): `run_coordinator_through_finishing_phase`,
+   called once from `agent-cycle.sh` as that file's own final statement, runs
+   the Co-Ordinator stage itself (one invocation per configured repository,
+   issue #587, through `lib/stage-attempt.sh`), candidate selection and the
+   claim (`lib/candidate-select.sh`, `lib/claim.sh`), the workspace and
+   clone, the Implementer stage, the Reviewer stage and its handoff
+   (`lib/handoff.sh`, `lib/reconciliation-gate.sh`), the Approver stage
+   (`lib/approver.sh`) and the landing-arming step (`lib/landing.sh`).
+   Carries three functions of its own, defined and called within the one
+   invocation exactly as they were inline: `ensure_labels_for` (requirement
+   6a's per-repository label ensure), `premerge_rebase_only_capture` and
+   `rebase_only_advisory_check`. Its claim dispatch holds one of the two
+   copies of requirement 17a's existing-branch source list that must agree
+   with `PREFLIGHT_EXISTING_BRANCH_SOURCES` (`lib/preflight.sh`). The
+   `review-gate-checks-read` event it logs keeps its own
+   `agent-cycle.sh:review-gate-checks-read` detector string, which names the
+   Reviewer-handoff *site* as distinct from `lib/enabler.sh`'s
+   handoff-recovery one (`lib/rework.sh`) and is a value downstream readers
+   key on, not a file path. A pure move out of `agent-cycle.sh`'s own
+   top-level script body on the same terms as `lib/gather-phase.sh` above;
+   several `test/*.test.sh` files lift blocks out of it by literal pattern,
+   the same way they did out of `agent-cycle.sh` before the move. Sourced,
+   never executed, last of every `lib/*.sh` file its body calls into. Must
+   pass `shellcheck`.
 3. `scripts/gather-findings.sh` implementing requirement 3a: given a repo
    slug, prints a normalised JSON array of the repo's open Dependabot and
    code-scanning alerts, degrading to `[]` (exit 0) when a feature is

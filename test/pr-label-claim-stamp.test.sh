@@ -14,11 +14,12 @@
 # `scripts/sweep-closed-issues.sh`, `lib/merge-budget.sh`) could ever find
 # again.
 #
-# The stamp lives inline in agent-cycle.sh's claim loop, not as a standalone
-# function, so this test lifts the exact block whole (the same
-# extract-and-eval approach test/refinement-traceability.test.sh uses for its
-# own inline blocks) and runs it for real, rather than merely grepping for
-# the expected jq invocation.
+# The stamp lives inline in lib/coordinator-phase.sh's claim loop (agent-
+# cycle.sh's own body until issue #1958), not as a standalone function, so
+# this test lifts the exact block whole (the same extract-and-eval approach
+# test/refinement-traceability.test.sh uses for its own inline blocks) and
+# runs it for real, rather than merely grepping for the expected jq
+# invocation.
 #
 # No test framework is used (none exists elsewhere in this repo). Run
 # directly: ./test/pr-label-claim-stamp.test.sh — exit 0 iff all passed.
@@ -26,7 +27,9 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-AGENT_CYCLE="$SCRIPT_DIR/agent-cycle.sh"
+# The claim loop moved to lib/coordinator-phase.sh (issue #1958's
+# continuation of #771's split).
+COORDINATOR_PHASE_LIB="$SCRIPT_DIR/lib/coordinator-phase.sh"
 
 failures=0
 
@@ -52,9 +55,9 @@ extract_block() {
 # The claim loop's winning-candidate stamp: `if (( claim_rc == 0 )); then …
 # claimed_json=… ; break; fi`. Lifted whole so the assertions below are about
 # the shipped code, not a copy of its logic.
-stamp_block="$(extract_block '^  if \(\( claim_rc == 0 \)\); then$' '^  fi$' "$AGENT_CYCLE")"
+stamp_block="$(extract_block '^  if \(\( claim_rc == 0 \)\); then$' '^  fi$' "$COORDINATOR_PHASE_LIB")"
 if [[ -z "$stamp_block" || "$stamp_block" != *'claimed_json='* ]]; then
-  echo "FAIL - could not extract the claim loop's winning-candidate stamp from agent-cycle.sh — has it moved?" >&2
+  echo "FAIL - could not extract the claim loop's winning-candidate stamp from lib/coordinator-phase.sh — has it moved?" >&2
   exit 1
 fi
 if [[ "$stamp_block" != *'pr_label'* ]]; then

@@ -27,7 +27,9 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-AGENT_CYCLE="$SCRIPT_DIR/agent-cycle.sh"
+# The claim loop moved to lib/coordinator-phase.sh (issue #1958's
+# continuation of #771's split).
+COORDINATOR_PHASE_LIB="$SCRIPT_DIR/lib/coordinator-phase.sh"
 CANDIDATE_SELECT="$SCRIPT_DIR/lib/candidate-select.sh"
 
 failures=0
@@ -380,7 +382,7 @@ assert_eq "an ordinary (non-takeover) merge-conflicts candidate keeps the rebase
 # --- The claim loop wires this in before requirement 17f, and folds a ------
 # --- compose failure into the existing "untraceable" cause ------------------
 
-loop_src="$(extract_block '^  c_composed=0' '^  # Requirement 17f ' "$AGENT_CYCLE")"
+loop_src="$(extract_block '^  c_composed=0' '^  # Requirement 17f ' "$COORDINATOR_PHASE_LIB")"
 # shellcheck disable=SC2016  # the literal source text is what is being matched
 if [[ -n "$loop_src" && "$loop_src" == *'compose_selected_candidate_text'* \
       && "$loop_src" == *'cause: "untraceable"'* && "$loop_src" == *'trace_faults=$(( trace_faults + 1 ))'* ]]; then
@@ -390,7 +392,7 @@ else
   failures=$(( failures + 1 ))
 fi
 
-trace_block="$(extract_block '^  c_trace_fault=' '^  if \[\[ -n ' "$AGENT_CYCLE")"
+trace_block="$(extract_block '^  c_trace_fault=' '^  if \[\[ -n ' "$COORDINATOR_PHASE_LIB")"
 if [[ -n "$trace_block" && "$trace_block" == *'c_composed'* ]]; then
   printf 'ok   - %s\n' "requirement 17f's own fault check is exempted for a requirement 17h compose, same as a fallback pick"
 else
