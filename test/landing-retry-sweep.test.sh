@@ -9,8 +9,10 @@
 # direct call with RETRY set. This file covers what decides which pull
 # requests reach that call at all: the level pre-check, the open/non-draft/
 # complexity filter, the standing-Approver-review precondition, and the
-# `landing_retry_source` lookup that resolves the one gate this sweep cannot
-# re-read fresh from GitHub. `_landing_stage_attempt` itself is stubbed here
+# `landing_retry_source_map` lookup (lib/union-log-scan.sh, #1050) that
+# resolves the one gate this sweep cannot re-read fresh from GitHub — built
+# once for the whole pass, never once per candidate. `_landing_stage_attempt`
+# itself is stubbed here
 # — this file is about what is offered to it, never about what it does with
 # an offer — except for its own `_landing_stage_attempt_armed` global, which
 # the stub sets on cue so this file can also pin the per-pass merge-budget
@@ -136,20 +138,33 @@ landing_approver_standing_review() {
   printf '%s' "${!var:-}"
 }
 
-landing_retry_source() {
-  local slug="$1" branch="$2"
-  local key="SOURCE_${branch//[^A-Za-z0-9]/_}"
-  printf '%s' "${!key:-}"
-}
-
-# landing_retry_item, requirement 49 (issue #595): steered by ITEM_<branch,
-# sanitised>, mirroring landing_retry_source's own stub above — this file is
-# about what reaches _landing_stage_attempt, not the item-lifecycle join
-# key's own resolution, so a fixed-shape stub is enough.
-landing_retry_item() {
-  local slug="$1" branch="$2"
-  local key="ITEM_${branch//[^A-Za-z0-9]/_}"
-  printf '%s' "${!key:-}"
+# landing_retry_source_map (#1050): _landing_retry_sweep_repo now builds this
+# map once per pass (lazily, only when a candidate exists — mirroring
+# _approver_sweep_claimed_pr_numbers's own cost model below) instead of
+# calling landing_retry_source/landing_retry_item once per candidate. This
+# stub is steered the same way those two functions used to be —
+# SOURCE_<branch, sanitised> and ITEM_<branch, sanitised> — walking every
+# branch named in $PR_LIST_JSON (the fixture already in scope) so the map it
+# returns is keyed by the branch's own real name, not the sanitised env-var
+# form; a branch with no SOURCE_<…> set is simply left out of the map, the
+# same "cannot be resolved" case the per-branch stub used to answer with an
+# empty string. Counts its own calls so a test can pin the "built once for
+# the whole pass, not once per candidate" cost model (requirement 49, issue
+# #595, carried over from the superseded per-branch stubs).
+landing_retry_source_map() {
+  printf '.' >>"$T/retry-source-map-calls"
+  local branch key_s key_i src item out='{}'
+  while IFS= read -r branch; do
+    [[ -n "$branch" ]] || continue
+    key_s="SOURCE_${branch//[^A-Za-z0-9]/_}"
+    src="${!key_s:-}"
+    [[ -n "$src" ]] || continue
+    key_i="ITEM_${branch//[^A-Za-z0-9]/_}"
+    item="${!key_i:-}"
+    out="$(jq -c --arg b "$branch" --arg s "$src" --arg i "$item" \
+      '.[$b] = {source: $s, item: $i}' <<<"$out")"
+  done < <(jq -r '.[].headRefName' <<<"$PR_LIST_JSON" 2>/dev/null || true)
+  printf '%s' "$out"
 }
 
 # issue #987: the fleet-wide claim registry's view of held pull requests,
@@ -199,7 +214,8 @@ pr_open() {  # number url branch draft complexity_label
 }
 
 run_case() {  # PR_LIST_JSON=... plus any stub-steering env
-  : >"$tmp_dir/events"; : >"$tmp_dir/attempts"; : >"$tmp_dir/claimed-pr-calls"; rm -f "$tmp_dir/armed_by_repo_flag"
+  : >"$tmp_dir/events"; : >"$tmp_dir/attempts"; : >"$tmp_dir/claimed-pr-calls"
+  : >"$tmp_dir/retry-source-map-calls"; rm -f "$tmp_dir/armed_by_repo_flag"
   env -i PATH="$PATH" HOME="$HOME" \
     T="$tmp_dir" SCRIPT_DIR="$SCRIPT_DIR" \
     LEVEL="agent-merges-routine" \
@@ -213,6 +229,7 @@ count_attempts() { [[ -s "$tmp_dir/attempts" ]] && wc -l <"$tmp_dir/attempts" | 
 events() { cat "$tmp_dir/events" 2>/dev/null || true; }
 armed_by_repo_flag() { cat "$tmp_dir/armed_by_repo_flag" 2>/dev/null || true; }
 claimed_pr_call_count() { [[ -s "$tmp_dir/claimed-pr-calls" ]] && wc -c <"$tmp_dir/claimed-pr-calls" | tr -d ' ' || printf '0'; }
+retry_source_map_call_count() { [[ -s "$tmp_dir/retry-source-map-calls" ]] && wc -c <"$tmp_dir/retry-source-map-calls" | tr -d ' ' || printf '0'; }
 
 open_list="$(jq -sc '.' <(
   pr_open 1 "https://github.com/acme/widgets/pull/1" "td/TD-1" false "complexity:low"
@@ -230,8 +247,8 @@ assert_eq "exactly the one open, non-draft, low/medium, approved candidate is of
 assert_contains "  ... with its own slug" "slug=acme/widgets" "$(attempts)"
 assert_contains "  ... its own pull request url" "pr_url=https://github.com/acme/widgets/pull/1" "$(attempts)"
 assert_contains "  ... the complexity read off its own label" "complexity=low" "$(attempts)"
-assert_contains "  ... the source landing_retry_source resolved" "source=tech-debt" "$(attempts)"
-assert_contains "  ... and the item landing_retry_item resolved (requirement 49)" "item=42" "$(attempts)"
+assert_contains "  ... the source landing_retry_source_map resolved" "source=tech-debt" "$(attempts)"
+assert_contains "  ... and the item landing_retry_source_map resolved (requirement 49)" "item=42" "$(attempts)"
 assert_contains "  ... and RETRY set" "retry=retry" "$(attempts)"
 
 # --- Level pre-check: no candidate is even listed below agent-merges-routine -
@@ -240,6 +257,8 @@ for level in human agent-approves; do
   rc="$(run_case PR_LIST_JSON="$open_list" STANDING_1="APPROVED" SOURCE_td_TD_1="tech-debt" LEVEL="$level")"
   assert_eq "at $level nothing is offered" "0" "$(count_attempts)"
   assert_eq "  ... returning 0" "0" "$rc"
+  assert_eq "  ... and the retry-source map is never built — the level gate refuses first" \
+    "0" "$(retry_source_map_call_count)"
 done
 
 rc="$(run_case PR_LIST_JSON="$open_list" STANDING_1="APPROVED" SOURCE_td_TD_1="tech-debt" LEVEL="agent-merges-all")"
@@ -330,6 +349,8 @@ assert_eq "  ... and the tally grows by one after each arm: 0, then 1, then 2" \
   "0,1,2" "$(already_armed_seq)"
 assert_eq "  ... and landing_armed_by_repo[acme/widgets] ends the pass at 3" \
   "3" "$(armed_by_repo_flag)"
+assert_eq "#1050: the union log's retry-source map is built exactly once for the whole pass, not once per candidate" \
+  "1" "$(retry_source_map_call_count)"
 
 rc="$(run_case PR_LIST_JSON="$multi_list" \
   STANDING_11="APPROVED" STANDING_12="APPROVED" STANDING_13="APPROVED" \

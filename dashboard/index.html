@@ -4131,7 +4131,8 @@
     // card briefly optimistic; it never touches the pipeline's own arming
     // decision, which always reads the live level fresh. Complexity alone,
     // never source: a pull request's source has no field on GitHub and is
-    // resolved fleet-log-side (lib/landing.sh's own landing_retry_source),
+    // resolved fleet-log-side (lib/union-log-scan.sh's own
+    // landing_retry_source_map),
     // which is not data this page holds — the same "approximate on
     // complexity alone" choice issue #946's own refinement sanctioned.
     var MERGE_AUTONOMY_LEVELS = ["human", "agent-approves", "agent-merges-routine", "agent-merges-all"];

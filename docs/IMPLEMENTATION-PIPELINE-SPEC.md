@@ -1543,8 +1543,9 @@ route out of) — lands on this sweep's own pass rather than waiting for a human
 a fresh review round. The one gate the sweep answers differently from the
 original round is the pull request's own `source`: never re-derivable from
 GitHub (there is no field for it), so the sweep reads it back from the
-fleet's own union log instead (`landing_retry_source`, `lib/landing.sh`) and
-skips a pull request it cannot resolve one for, rather than guessing. A pull
+fleet's own union log instead (`landing_retry_source_map`,
+`lib/union-log-scan.sh`) and skips a pull request it cannot resolve one for,
+rather than guessing. A pull
 request a peer node's fleet-wide `pr-<n>` claim currently holds — under
 whatever item ref won it there, a `review-feedback` round most often — is
 excluded before any of that: this sweep and the requirement-46 restale
@@ -3073,9 +3074,14 @@ implements.
       pull request, only the pipeline from doing so automatically. Complexity
       comes from the same pull-request listing this count already took (its
       own `complexity:*` label); a pull request's source carries no field on
-      GitHub at all and is read back from the fleet's own union log instead
-      (`landing_retry_source`, the same primitive the 2.1e landing-retry
-      sweep already uses for the identical reason) — a candidate whose
+      GitHub at all and is read back from a single pass over the fleet's own
+      union log instead (`landing_retry_source_map`, `lib/union-log-scan.sh`
+      — built once per repository per cycle, and only where that repository
+      has at least one candidate to spend it on, so a repository with none
+      reads the log no more often than it did before the map existed;
+      shared with the 2.1e landing-retry sweep below, which uses the same
+      map on the same terms rather than re-parsing the log once per
+      candidate) — a candidate whose
       source cannot be resolved this way counts toward the cap rather than
       being excluded from it (fail-closed: of the two ways to be wrong here,
       opening work past a full cap is the one that is not recoverable next
@@ -19660,8 +19666,8 @@ with the Reviewer's own.
       Enabler's `complete_handoff` recovery path), `landing-armed`/
       `landing-refused` (threaded through `_landing_stage_attempt`'s own
       ITEM parameter — `$selected_item` on `run_landing_stage`'s direct
-      path, a new `landing_retry_item` fleet-log lookup, mirroring
-      `landing_retry_source`, on the 2.1e retry sweep's own candidates),
+      path, `landing_retry_source_map`'s (`lib/union-log-scan.sh`) own
+      `item` field on the 2.1e retry sweep's own candidates),
       `approver-verdict`, `review-gate-checks-read` (both call sites), and
       `issue-closed-post-merge` (`item`, alongside the existing `issue`
       field). `review-gate-checks-degraded` deliberately does not gain one:
@@ -28992,7 +28998,7 @@ oblige anyone to edit a test.
     `landing_retry_tier` reads the most recent matching `approver-verdict`
     event's own `tier` from the fleet log, the same "several events, keep
     the latest, skip malformed lines, stdin works like a named file" shape
-    `landing_retry_source` already has pinned. `test/landing-wiring.test.sh`
+    `landing_retry_source_map` already has pinned. `test/landing-wiring.test.sh`
     lifts the new gate 4.5 in place, stubbed as its own function: never
     consulted at all below `agent-merges-all` (confirmed by an empty call
     log) with the pull request still arming normally; at `agent-merges-all`
@@ -29108,11 +29114,13 @@ oblige anyone to edit a test.
     identically every cycle. The one gate this sweep answers differently
     from the original round is the pull request's own `source`: not
     re-derivable from GitHub (there is no field for it, and it is fixed at
-    claim time regardless), so `landing_retry_source` (`lib/landing.sh`)
-    reads it back from the fleet's own union log's `selection` event for
-    that repository and branch, keeping only the most recent when a branch
-    was reused; a pull request whose source cannot be resolved this cycle is
-    skipped, never guessed at. Every arm or refusal this sweep produces is
+    claim time regardless), so `landing_retry_source_map`
+    (`lib/union-log-scan.sh`) reads it back from the fleet's own union log's
+    `selection` events for that repository, one pass building a
+    `{branch: {source, item}}` map — built once for this sweep's whole pass,
+    never once per candidate (#1050) — keeping only the most recent event
+    when a branch was reused; a pull request whose source cannot be resolved
+    this cycle is skipped, never guessed at. Every arm or refusal this sweep produces is
     `landing-armed`/`landing-refused`, the same events requirement 8d's own
     gates always log, additionally carrying `retry: true` so the fleet log
     (and any reader of it) can tell a sweep-driven landing apart from the
@@ -29183,11 +29191,17 @@ oblige anyone to edit a test.
     empty `dequeue_reason` still arms normally, and gate 0 both reads
     `landing_armed_by_repo[selected_repo]` as ALREADY_ARMED and grows it by
     one after an arm — pinned directly by seeding the map before the call and
-    reading it back after. `lib/landing.sh`'s own `landing_retry_source` is
-    pinned directly: the most recent matching `selection` event's `source`
-    wins when a branch was claimed more than once, a malformed log line is
-    skipped rather than aborting the read, and an unmatched
-    repository/branch or an unreadable log both print nothing.
+    reading it back after. `lib/union-log-scan.sh`'s own
+    `landing_retry_source_map` is pinned directly: the most recent matching
+    `selection` event's `source`/`item` wins, per branch, when a branch was
+    claimed more than once (its two events carrying a different value for
+    each field, so the assertion measures which one won rather than passing
+    either way), both fields coming off that one winning event rather than
+    a per-field reach-back into a superseded one, a different branch
+    resolves independently from the same one-pass map, a malformed log line
+    is skipped rather than aborting the read, another repository's events
+    never leak into this one's map, and an unmatched branch or an
+    unreadable/repo-less log both print `{}`.
     `test/landing-retry-sweep.test.sh` lifts `_landing_retry_sweep_repo`
     (`lib/landing.sh`) verbatim — the candidate rule that decides which pull
     requests reach `_landing_stage_attempt` at all, with that function itself
@@ -29197,13 +29211,15 @@ oblige anyone to edit a test.
     at all are excluded before any per-candidate read; a pull request with no
     standing Approver `APPROVED` review is skipped silently, logging nothing
     (ordinary in-flight work, never a stall to report); a source
-    `landing_retry_source` cannot resolve drops the candidate the same way;
-    a pull request a peer node's fleet-wide `pr-<n>` claim currently holds
-    (issue #987) never reaches `_landing_stage_attempt` either, logging a
-    `landing-retry-sweep-skipped-claimed` event that names the pull request,
-    while a candidate the claim listing does not name is still offered, and
-    the stubbed `_approver_sweep_claimed_pr_numbers` is confirmed called at
-    most once across a pass regardless of how many candidates it holds;
+    `landing_retry_source_map` cannot resolve drops the candidate the same
+    way; a pull request a peer node's fleet-wide `pr-<n>` claim currently
+    holds (issue #987) never reaches `_landing_stage_attempt` either, logging
+    a `landing-retry-sweep-skipped-claimed` event that names the pull
+    request, while a candidate the claim listing does not name is still
+    offered, and the stubbed `_approver_sweep_claimed_pr_numbers` is
+    confirmed called at most once across a pass regardless of how many
+    candidates it holds; so is the stubbed `landing_retry_source_map` itself
+    (#1050) — built once for the whole pass, never once per candidate;
     a truncated pull-request listing (`github_pr_list_truncated`) logs one
     `warning` naming the repository; and an unreadable default branch falls
     back to `main` while a readable one is passed through unchanged. It also
@@ -29844,7 +29860,7 @@ oblige anyone to edit a test.
     `landing-refused`, and the new `merge-observed` at `lib/landing.sh`'s own
     arm site — fires only once `pr_merge_state` confirms a synchronous merge,
     never on an enqueued arm), `test/landing-retry-sweep.test.sh`
-    (`landing_retry_item`), `test/approver-wiring.test.sh`
+    (`landing_retry_source_map`'s own `item` field), `test/approver-wiring.test.sh`
     (`approver-verdict`), `test/human-reviewer-handoff-wiring.test.sh`
     (`pr-ready`, both call sites) and `test/sweep-closed-issues.test.sh`
     (the sweep's own `merge-observed` action, bounded by `pr_search_limit`

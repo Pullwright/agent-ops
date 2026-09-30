@@ -182,10 +182,24 @@ run_block() {
   . "$SCRIPT_DIR/lib/merge-budget.sh"
   # shellcheck source=lib/merge-autonomy.sh
   . "$SCRIPT_DIR/lib/merge-autonomy.sh"
+  # shellcheck source=lib/union-log-scan.sh
+  # Ahead of landing.sh: landing_retry_source_map (#1050), which the block
+  # now calls once per repository instead of landing_retry_source once per
+  # candidate.
+  . "$SCRIPT_DIR/lib/union-log-scan.sh"
   # shellcheck source=lib/landing.sh
   # D18 WI-6's own predicate — landing_routine_eligible and
-  # landing_retry_source — lives here, and the block now calls both.
+  # landing_retry_source_map — lives here, and the block now calls both.
   . "$SCRIPT_DIR/lib/landing.sh"
+  # #1050: wraps the real landing_retry_source_map to count its own calls,
+  # when MAP_BUILD_CALLS is set — the same "built once per repository, not
+  # once per candidate" cost model test/landing-retry-sweep.test.sh pins for
+  # the 2.1e sweep's own use of the same function.
+  if [[ -n "${MAP_BUILD_CALLS:-}" ]]; then
+    eval "$(declare -f landing_retry_source_map | sed '1s/.*/_orig_landing_retry_source_map()/')"
+    # shellcheck disable=SC2317  # Called from the lifted block, in place of the real function.
+    landing_retry_source_map() { printf '.' >> "$MAP_BUILD_CALLS"; _orig_landing_retry_source_map "$@"; }
+  fi
   # shellcheck disable=SC2317  # Called from the lifted block, on its truncation and guard paths.
   log_event() { [[ -z "${LOG_EVENT_CALLS:-}" ]] || printf '%s\t%s\n' "$1" "$2" >> "$LOG_EVENT_CALLS"; }
   # shellcheck disable=SC2317  # Likewise — the lifted block's guard_warn on a claim-count failure.
@@ -204,7 +218,7 @@ run_block() {
   state_repo="${STATE_REPO:-}"
   # shellcheck disable=SC2034
   state_dir="${STATE_DIR:-$tmp_dir/state}"
-  # shellcheck disable=SC2034  # Read by landing_retry_source, once per otherwise-eligible-level candidate.
+  # shellcheck disable=SC2034  # Read by landing_retry_source_map, once per repository (#1050).
   union_log="${UNION_LOG:-$tmp_dir/empty-union.jsonl}"
   [[ -f "$union_log" ]] || : > "$union_log"
   eval "$counting_block"
@@ -253,7 +267,7 @@ assert_eq "…while the raw total includes it" "7" "$raw"
 #     repo, configured at agent-merges-routine, with one approved (not
 #     CHANGES_REQUESTED) ready PR whose complexity:low label and whose
 #     source — resolved from the union log's own `selection` event, the way
-#     `landing_retry_source` already does for the 2.1e retry sweep — are
+#     `landing_retry_source_map` already does for the 2.1e retry sweep — are
 #     both in poetic-fiddle's configured routine lists: the plain rule above
 #     would exclude it, and above this level there is genuinely no human
 #     queue for an otherwise-eligible pull request to be parked in, so it
@@ -399,8 +413,11 @@ calls_file_cr="$tmp_dir/claim-calls-cr"
 : > "$calls_file_cr"
 log_calls_cr="$tmp_dir/log-calls-cr"
 : > "$log_calls_cr"
+map_calls_cr="$tmp_dir/map-calls-cr"
+: > "$map_calls_cr"
 out_cr="$(PATH="$stub_bin:$PATH" \
         GH_STUB_LISTINGS="$listings" CLAIM_CALLS="$calls_file_cr" CLAIM_COUNTS="$counts_dir" \
+        MAP_BUILD_CALLS="$map_calls_cr" \
         UNION_LOG="$union_log_cr" LOG_EVENT_CALLS="$log_calls_cr" \
         REPOS_JSON='[{"slug":"Poetic-Poems/poetic-fiddle"}]' \
         CFG_JSON='{"repos":[{"slug":"Poetic-Poems/poetic-fiddle","merge_autonomy":"agent-merges-routine"}]}' \
@@ -414,6 +431,8 @@ assert_eq "…and counted_prs holds it, so its own claim does not double-count o
   "count|Poetic-Poems/poetic-fiddle|971" "$(sed -n '1p' "$calls_file_cr")"
 assert_eq "…and it is never offered to the eligibility predicate, so no source lookup warns about it" \
   "0" "$(wc -l < "$log_calls_cr" | tr -d ' ')"
+assert_eq "#1050: with no candidate to spend it on, the union log is not read at all — the map is built lazily, so an elevated repository with nothing to narrow costs no more than it did before the map existed" \
+  "0" "$(wc -c < "$map_calls_cr" | tr -d ' ')"
 
 calls_file_cr_h="$tmp_dir/claim-calls-cr-human"
 : > "$calls_file_cr_h"
@@ -450,9 +469,11 @@ JSONL
 
 calls_file_mixed="$tmp_dir/claim-calls-mixed"
 : > "$calls_file_mixed"
+map_calls_mixed="$tmp_dir/map-calls-mixed"
+: > "$map_calls_mixed"
 out_mixed="$(PATH="$stub_bin:$PATH" \
         GH_STUB_LISTINGS="$listings" CLAIM_CALLS="$calls_file_mixed" CLAIM_COUNTS="$counts_dir" \
-        UNION_LOG="$union_log_mixed" \
+        UNION_LOG="$union_log_mixed" MAP_BUILD_CALLS="$map_calls_mixed" \
         REPOS_JSON='[{"slug":"Poetic-Poems/poetic-fiddle"}]' \
         CFG_JSON='{"repos":[{"slug":"Poetic-Poems/poetic-fiddle","merge_autonomy":"agent-merges-routine"}]}' \
         run_block 2>/dev/null)"
@@ -463,6 +484,8 @@ assert_eq "a mixed listing's composition counts only the otherwise-eligible PR t
 assert_eq "…so the trip figure is 1, not 0 or 2" "1" "$(sed -n '2p' <<<"$out_mixed")"
 assert_eq "…and counted_prs carries the eligible PR only — its ineligible neighbour is not folded in, nor dropped" \
   "count|Poetic-Poems/poetic-fiddle|980" "$(sed -n '1p' "$calls_file_mixed")"
+assert_eq "#1050: the union log's retry-source map is built once for this repository, not once per candidate" \
+  "1" "$(wc -c < "$map_calls_mixed" | tr -d ' ')"
 
 # --- Issue #946 review follow-up (PR #1048): AC2 as literally written asks
 #     for a scenario at agent-merges-all, and no test anywhere in this file

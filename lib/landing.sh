@@ -171,9 +171,10 @@
 # Sourced, never executed: no shell options are set here, matching every
 # other lib/*.sh — the caller (`agent-cycle.sh` runs under
 # `set -euo pipefail`; a test, `set -uo pipefail`) owns those. Depends on
-# `github_pr_list_truncated` (lib/github-limit.sh) and `merge_queue_for_branch`
-# (lib/merge-queue.sh), both already sourced ahead of this file by every
-# caller.
+# `github_pr_list_truncated` (lib/github-limit.sh), `merge_queue_for_branch`
+# (lib/merge-queue.sh) and `landing_retry_source_map`
+# (lib/union-log-scan.sh, #1050), all already sourced ahead of this file by
+# every caller.
 #
 # Environment:
 #   LANDING_GH  override `gh` (tests stub it), matching
@@ -181,6 +182,7 @@
 
 # shellcheck source=lib/github-limit.sh
 # shellcheck source=lib/merge-queue.sh
+# shellcheck source=lib/union-log-scan.sh
 # (Sourced by every caller of this file already — see the header above.)
 
 # GitHub documents a 3000-file ceiling on the pull-request files endpoint
@@ -868,86 +870,12 @@ _landing_arm_failure_reason() {
   esac
 }
 
-# landing_retry_source REPO BRANCH [LOG_FILE]
-# Print the `source` this pull request's claim was raised under — the
-# `selection` event `agent-cycle.sh` already logs once per work order,
-# `{repo, item, source, model, title, branch}`, verbatim regardless of which
-# source it came from (a fresh item or a finishing one). Read back here so the
-# 2.1e landing-retry sweep (TD-PPagop-26081701) can call `landing_eligible`
-# with the same fact the round that first approved this pull request used,
-# for a repository and branch its own process never claimed and so has no
-# `$selected_source` for.
-#
-# This is the one fact `_landing_stage_attempt`'s gates read from the fleet
-# log rather than fresh from GitHub, and deliberately so: unlike every other
-# gate (a review, a check, the budget, the queue), a pull request's source is
-# fixed at claim time and never mutates over its life — GitHub carries no
-# field for it at all — so the log's own append-only record of the one
-# `selection` event that raised this branch is exactly as current as a fresh
-# read would be, for a fact that cannot go stale.
-#
-# LOG_FILE is the fleet's own union log (`$union_log`, built once per cycle
-# from every node's synced log — see agent-cycle.sh's own "1a. The fleet's
-# memory"), or stdin if omitted or "-", matching every reader in
-# lib/cycle-state.sh. Malformed lines are skipped, not fatal (`fromjson? //
-# empty`, the same tolerant-line convention `blocked_items` uses); several
-# `selection` events for the same repo/branch keep only the most recent
-# (`sort_by(.ts) | last`) — a branch this system reuses (an item retried
-# under a fresh claim) still resolves to its current claim,
-# never a stale one. Empty on no match, an unreadable log, or nothing to
-# read — the sweep must skip a candidate it cannot classify, never guess at
-# a source that could put a non-routine pull request through the routine
-# gate.
-landing_retry_source() {
-  local repo="$1" branch="$2" src="${3:--}" out=""
-  # shellcheck disable=SC2016  # $repo/$branch are jq's own --arg variables, not the shell's.
-  local jq_prog='
-    [ .[] | select(.event == "selection" and (.repo // "") == $repo
-                   and (.branch // "") == $branch and (.source // "") != "") ]
-    | sort_by(.ts) | last | .source // empty'
-  if [[ "$src" == "-" ]]; then
-    out="$(jq -c -R 'fromjson? // empty' 2>/dev/null \
-      | jq -rs --arg repo "$repo" --arg branch "$branch" "$jq_prog" 2>/dev/null || true)"
-  elif [[ -s "$src" ]]; then
-    out="$(jq -c -R 'fromjson? // empty' "$src" 2>/dev/null \
-      | jq -rs --arg repo "$repo" --arg branch "$branch" "$jq_prog" 2>/dev/null || true)"
-  fi
-  printf '%s' "$out"
-}
-
-# landing_retry_item REPO BRANCH [LOG_FILE]
-# Print the `item` of the same `selection` event `landing_retry_source`
-# reads — the join key requirement 49 (issue #595) adds to `landing-armed`/
-# `landing-refused`, for the 2.1e retry sweep's own pull requests, which have
-# no `$selected_item` to read the way `run_landing_stage`'s own direct path
-# does. Same log, same key, same most-recent-wins-by-ts and empty-on-no-match
-# contract as `landing_retry_source` — kept as a sibling function rather than
-# folded into one call that returns both, since a caller wanting only the
-# source (there is one: the retry sweep itself, before it knows whether this
-# candidate is even eligible) should not pay for a second field it may never
-# use.
-landing_retry_item() {
-  local repo="$1" branch="$2" src="${3:--}" out=""
-  # shellcheck disable=SC2016  # $repo/$branch are jq's own --arg variables, not the shell's.
-  local jq_prog='
-    [ .[] | select(.event == "selection" and (.repo // "") == $repo
-                   and (.branch // "") == $branch and (.item // "") != "") ]
-    | sort_by(.ts) | last | .item // empty'
-  if [[ "$src" == "-" ]]; then
-    out="$(jq -c -R 'fromjson? // empty' 2>/dev/null \
-      | jq -rs --arg repo "$repo" --arg branch "$branch" "$jq_prog" 2>/dev/null || true)"
-  elif [[ -s "$src" ]]; then
-    out="$(jq -c -R 'fromjson? // empty' "$src" 2>/dev/null \
-      | jq -rs --arg repo "$repo" --arg branch "$branch" "$jq_prog" 2>/dev/null || true)"
-  fi
-  printf '%s' "$out"
-}
-
 # landing_retry_tier PR_URL [LOG_FILE]
 # Print the tier (`trivial`, `standard`, `high` or `critical`) of the most
 # recent `approver-verdict` event for PR_URL — the same "fixed at the
-# moment, read back from the fleet log" reasoning `landing_retry_source`
-# already applies to a work order's `source`, for the same reason: TIER is
+# moment, read back from the fleet log" reasoning `landing_retry_source_map`
+# (lib/union-log-scan.sh) already applies to a work order's `source`, for the
+# same reason: TIER is
 # `run_approver_stage`'s own in-process fact on the round that first
 # approved a pull request (D18 WI-12, agent-ops#415), and the 2.1e
 # landing-retry sweep re-arms a pull request on a later cycle, outside that
@@ -1368,10 +1296,11 @@ run_landing_stage() {
 # matching record as an anomaly in its own right.
 #
 # ITEM (requirement 49, issue #595) is `$selected_item` on `run_landing_stage`'s
-# own direct-path call, and `landing_retry_item`'s read of the fleet log on
-# the 2.1e retry sweep's call — the same split `source` already has between
-# its two callers, for the same reason (a repo/branch this process never
-# claimed has no in-process fact to read). Carried on `landing-armed` and
+# own direct-path call, and `landing_retry_source_map`'s (lib/union-log-scan.sh)
+# read of the fleet log on the 2.1e retry sweep's call — the same split
+# `source` already has between its two callers, for the same reason (a
+# repo/branch this process never claimed has no in-process fact to read).
+# Carried on `landing-armed` and
 # `landing-refused` via `_landing_refuse`; omitted, never logged `null`, on
 # the rare candidate neither path can resolve one for.
 _landing_stage_attempt() {
@@ -1557,8 +1486,8 @@ _landing_stage_attempt() {
   # (`run_approver_stage`'s `approver_stage_tier`), or read back from the
   # fleet log's `approver-verdict` event on a retry (`landing_retry_tier`) —
   # a retry attempt has no in-process fact for a pull request this process
-  # never claimed, the same reasoning `landing_retry_source` already applies
-  # to a work order's own source.
+  # never claimed, the same reasoning `landing_retry_source_map`
+  # (lib/union-log-scan.sh) already applies to a work order's own source.
   if [[ "$level" == "agent-merges-all" ]]; then
     local pp_tier pp_ctl
     if [[ -n "$retry" ]]; then
@@ -2114,13 +2043,15 @@ OQ_ESC_BODY
 #     reviewed (still mid-Reviewer, or `run_approver_stage` never ran for it)
 #     is not a stranded approval, it is ordinary in-flight work, and logging
 #     a `landing-refused` against it every cycle would be pure noise.
-#   - `landing_retry_source` (lib/landing.sh) resolves the pull request's
-#     originating `source` from the fleet's own union log (`$union_log`) —
-#     the one fact this sweep cannot re-read fresh from GitHub, because
-#     GitHub carries no field for it and a pull request's source is fixed at
-#     claim time regardless. A pull request whose source cannot be resolved
-#     this cycle (the claim predates this node's log window, or the union
-#     log itself could not be read) is skipped, never guessed at.
+#   - `landing_retry_source_map` (lib/union-log-scan.sh) resolves every
+#     candidate's originating `source`/`item` from one pass over the fleet's
+#     own union log (`$union_log`, built once for this whole pass rather than
+#     once per candidate — #1050) — the one fact this sweep cannot re-read
+#     fresh from GitHub, because GitHub carries no field for it and a pull
+#     request's source is fixed at claim time regardless. A pull request whose
+#     source cannot be resolved this cycle (the claim predates this node's log
+#     window, or the union log itself could not be read) is skipped, never
+#     guessed at.
 #   - A pull request a peer node's fleet-wide `pr-<n>` claim currently holds
 #     (issue #987, TD-PPagop-26082509) is never offered to
 #     `_landing_stage_attempt` at all — `_approver_sweep_claimed_pr_numbers`
@@ -2185,10 +2116,14 @@ _landing_retry_sweep_repo() {
   # Issue #987/TD-PPagop-26082509: fetched once per repository for this
   # pass, lazily — only when a candidate exists to spend it on, matching the
   # cost model `_approver_sweep_claimed_pr_numbers`'s own callers already
-  # hold — never per candidate.
-  local claimed_prs=""
+  # hold — never per candidate. #1050: `retry_source_map`
+  # (`landing_retry_source_map`, lib/union-log-scan.sh) is built the same
+  # way, one pass over the union log for this repository, looked up per
+  # candidate below rather than re-parsed per candidate.
+  local claimed_prs="" retry_source_map='{}'
   if [[ "$(jq 'length' <<<"$candidates" 2>/dev/null || echo 0)" != "0" ]]; then
     claimed_prs="$(_approver_sweep_claimed_pr_numbers "$slug")"
+    retry_source_map="$(landing_retry_source_map "$slug" "$union_log")"
   fi
 
   local cand pr_url branch number complexity standing source item
@@ -2212,9 +2147,9 @@ _landing_retry_sweep_repo() {
     standing="$(landing_approver_standing_review "$slug" "$number" "$login" 2>/dev/null)" || continue
     [[ "$standing" == "APPROVED" ]] || continue
 
-    source="$(landing_retry_source "$slug" "$branch" "$union_log")"
+    source="$(jq -r --arg b "$branch" '.[$b].source // empty' <<<"$retry_source_map" 2>/dev/null)"
     [[ -n "$source" ]] || continue
-    item="$(landing_retry_item "$slug" "$branch" "$union_log")"
+    item="$(jq -r --arg b "$branch" '.[$b].item // empty' <<<"$retry_source_map" 2>/dev/null)"
 
     _landing_stage_attempt "$slug" "$pr_url" "$complexity" "$source" "$default_branch" "retry" "$armed_this_pass" "$item"
     if (( _landing_stage_attempt_armed )); then
