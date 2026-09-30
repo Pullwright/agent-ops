@@ -32,8 +32,13 @@ the spec edit that keeps its document accurate — update the affected numbered
 requirement (and any acceptance check anchored to it), or add one for new
 behaviour. Requirements state only what is, never what used to be or what is
 planned; history and rationale belong in the specs' design-decision and
-gotcha sections. If you find a spec and the code disagreeing, that is a bug:
-fix whichever is wrong rather than working around the mismatch.
+gotcha sections. A parenthetical or subordinate aside inside a requirement
+may cite what used to be when that explains what is, provided deleting the
+aside leaves a complete and correct statement of the current system; an
+aside the requirement cannot stand without is history in the assertion, and
+belongs in the design-decision or gotcha section instead. If you find a spec
+and the code disagreeing, that is a bug: fix whichever is wrong rather than
+working around the mismatch.
 
 The specs outrank the operating prompts: `prompts/*.md` implement the specs'
 requirements, so bring the spec in line first, then the affected prompt(s).
