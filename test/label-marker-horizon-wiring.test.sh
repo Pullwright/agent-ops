@@ -33,10 +33,12 @@
 # the block verbatim (as the other `*-wiring` tests do) would lift the
 # ordering along with it and assert nothing. The horizon-before-append
 # ordering itself is no longer one line-number comparison in a single file —
-# the two live in different files now — so it is checked in two steps: the
-# horizon is captured before agent-cycle.sh hands off to
-# `gather_ordered_repos`, and the append/call sites are confirmed to exist in
-# lib/candidate-gather.sh, which nothing runs before that hand-off.
+# the three now live in different files — so it is checked in two steps: the
+# horizon is captured in agent-cycle.sh before it hands off to
+# `run_gather_phase` (lib/gather-phase.sh, issue #1958), whose own body calls
+# `gather_ordered_repos` as its first statement; and the append/call sites are
+# confirmed to exist in lib/candidate-gather.sh, which nothing runs before
+# that hand-off.
 #
 # No test framework is used (none exists elsewhere in this repo). Run directly:
 #
@@ -65,21 +67,25 @@ assert_eq() {
 # --- Where the horizon is captured -------------------------------------------
 # Four line numbers, in the order they must appear: the snapshot that
 # materialises `$union_log`, the horizon captured from it, the call into
-# lib/candidate-gather.sh (#771) that hands control to the code owning the
-# first of the appends that go on to mutate it, and that call itself.
+# lib/gather-phase.sh (issue #1958's continuation of #771's split) that hands
+# control to the code owning the first of the appends that go on to mutate
+# it, and that call itself. `run_gather_phase`'s own body calls
+# `gather_ordered_repos` (lib/candidate-gather.sh, #771) as its first
+# statement, unchanged from when that was the bare top-level call agent-
+# cycle.sh made directly — only the hand-off's own name changed.
 first_line_matching() { grep -n -m1 -- "$1" "$CYCLE" | cut -d: -f1; }
 
 # shellcheck disable=SC2016  # grep patterns: the `$` is agent-cycle.sh's own
 # variable reference, matched literally, not one to expand here.
 snapshot_line="$(first_line_matching 'fleet_logs .* > "\$union_log"')"
 horizon_line="$(first_line_matching '^union_log_horizon=')"
-gather_call_line="$(first_line_matching '^gather_ordered_repos$')"
+gather_call_line="$(first_line_matching '^run_gather_phase$')"
 
 assert_eq "the union-log snapshot is still where this test expects to find it" \
   "yes" "$([[ -n "$snapshot_line" ]] && echo yes || echo no)"
 assert_eq "the horizon is captured from the snapshot at all" \
   "yes" "$([[ -n "$horizon_line" ]] && echo yes || echo no)"
-assert_eq "agent-cycle.sh still hands off to the gather loop that appends into the snapshot" \
+assert_eq "agent-cycle.sh still hands off to the gather phase that appends into the snapshot" \
   "yes" "$([[ -n "$gather_call_line" ]] && echo yes || echo no)"
 
 if [[ -z "$snapshot_line" || -z "$horizon_line" || -z "$gather_call_line" ]]; then
