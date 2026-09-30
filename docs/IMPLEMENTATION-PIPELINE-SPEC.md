@@ -4259,11 +4259,14 @@ implements.
    `held_by()` already bounds a deferral by, so a defer streak this function
    calls `stuck` is one no held lock could still legitimately justify.
    The published verdict is the worst *live* one across this node's own
-   ledger and every sibling's (agent-ops#1037): the shared `pre-update` label
-   sits on the compose block every service on this node runs under, so a
-   node's own `scheduler` and `dashboard`/`dashboard-local` containers can
-   each write a ledger file under a different `$HOSTNAME`, and a fault on one
-   is invisible to a heartbeat published only from another's own file.
+   ledger and every sibling's (agent-ops#1037): every pipeline service on a
+   node carries the `pre-update` label — `scheduler`, `dashboard`,
+   `dashboard-local` and `node-health` inheriting it from the shared
+   `x-agent-ops` block, `egress-proxy`, `collector` and `reconciler`
+   declaring it on their own service (each deliberately skipping that anchor,
+   which carries credentials they do not need) — so any of them can write a
+   ledger file under a `$HOSTNAME` of its own, and a fault on one is
+   invisible to a heartbeat published only from another's own file.
    `updater_status` folds in every other `<hostname>.jsonl` in the same
    `updater-ledger` directory, applying liveness to each file's own newest
    entry exactly as it does to its own (liveness is a property of a file,
@@ -4285,12 +4288,13 @@ implements.
    verdict came from, only when a sibling's reading is worse than this
    container's own; it is absent when this container's own verdict wins
    outright, so the field never asserts about this container a fault that
-   belongs to another. `egress-proxy` carries the same `pre-update` label as
-   every other service on this shared block, but its `state` mount is
-   read-only, so it can never record a ledger entry at all and is never a
-   candidate the fold can find — an accepted blind spot, not a defect: a
-   stuck `egress-proxy` has no ledger of its own to be foreign to, on any
-   node, ever.
+   belongs to another. `egress-proxy` carries the `pre-update` label like
+   every other pipeline service, but it mounts `state` read-only — precisely
+   so the hook can read a running cycle's lock without the container needing
+   a writable volume — so it can never record a ledger entry at all and is
+   never a candidate the fold can find: an accepted blind spot, not a defect,
+   since a stuck `egress-proxy` has no ledger of its own to be foreign to, on
+   any node, ever.
    Each branch is a single rolling commit — `commit
    --amend` plus a force-push — because the state files carry their own
    history (`log.jsonl` is append-only, every cycle keeps its own directory)

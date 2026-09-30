@@ -33,7 +33,10 @@
 # reading this line write it?" Each line also carries
 # `service` — the compose service name (`AGENT_OPS_SERVICE`: `scheduler`,
 # `dashboard`, `dashboard-local`, `collector` or `reconciler`) the writing
-# container ran as, `"unknown"` when unset. `updater_status` reads that ledger back and answers one of:
+# container ran as, `"unknown"` when unset. `updater_status` reads that ledger
+# back — this container's own file and every sibling's in the same directory,
+# publishing the worst *live* verdict across all of them (see "The sibling
+# fold" below, and `host` in the answers) — and answers one of:
 #
 #   {status:"rolled", at, seconds}
 #     the newest "allow" invocation this ledger can show was *not* written by
@@ -82,6 +85,19 @@
 #     into a "stuck"/"deferring" alarm nothing could ever clear, since a
 #     corrupt line's own string timestamp can also defeat the hook's 48h
 #     trim. So a timestamp this file cannot parse supports no verdict at all.
+#
+# Each answer above describes what *one* ledger file reads. The published
+# answer is the worst of them (see "The sibling fold" below), and carries one
+# further field when the winner was not our own:
+#
+#   host
+#     the hostname of the sibling ledger the published verdict came from,
+#     present only on a folded "deferring"/"stuck" that outranked our own
+#     reading and absent whenever our own verdict won outright — so the field
+#     never asserts about this container a fault that belongs to another.
+#     Additive: every reader that keys on `status` alone
+#     (`node_health_updater_component`, `pager_eval_updater_stuck`,
+#     `dashboard/index.html`'s `updaterLine`) is unaffected by its presence.
 #
 # Both of the states this container can be in for itself are *streaks*, not
 # moments, and are measured from the streak's start. watchtower re-runs the
@@ -144,6 +160,32 @@
 # even though it has nothing to do with why this container exists. Two
 # containers of the *same* service never coexist (one replaces the other),
 # so same-service filtering is exactly the scope that fallback needs.
+#
+# The sibling fold (agent-ops#1037) is the one thing in this file that is
+# *not* scoped that way, and deliberately: every pipeline service on a node
+# carries the same `pre-update` label — `scheduler`, `dashboard`,
+# `dashboard-local` and `node-health` through compose's shared `x-agent-ops`
+# block, `egress-proxy`, `collector` and `reconciler` declaring it themselves
+# — so the hook runs, and writes a ledger file under its own `$HOSTNAME`, in
+# any of them. A verdict published from one container's own file alone leaves
+# a stuck sibling invisible fleet-wide, which is what #1037 filed. So after
+# computing our own verdict, `updater_status` takes every *other*
+# `<hostname>.jsonl` in this same directory through the identical per-file
+# reading (`_updater_health_file_verdict`) and publishes the worst: `stuck`
+# beats `deferring` beats everything else, ties breaking on the older `at` —
+# the one that has been in that state longer — then on hostname, so two
+# containers reading this directory at the same moment select the same
+# ledger. No service filter at all, unlike the scan above: liveness is a
+# property of a file, not of whatever wrote it (agent-ops#1053), and
+# `service` reads `"unknown"` on every line in this fleet anyway
+# (agent-ops#1072). `rolled` is never folded and a sibling never contributes
+# one — it is a claim about *this* container's own past, exempt from liveness
+# outright, and attributing one container's history to another would answer a
+# question nobody asked. A sibling has no PID 1 this container can read, so
+# its `allow` streak is bounded by that file's own trailing `started` instead;
+# see `_updater_health_file_verdict`'s WANT-STARTED. `egress-proxy` is an
+# accepted blind spot: it carries the label but mounts `state` read-only, so
+# it can never record a ledger entry to be folded in the first place.
 
 # _updater_health_epoch TS — epoch seconds for TS on stdout, or nothing with
 # a non-zero exit if TS cannot be parsed. The one place this file turns a
