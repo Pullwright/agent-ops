@@ -905,7 +905,7 @@ induced outage rather than only over a quiet afternoon.
       only (#1086). Then re-read `scripts/github-budget-report.sh` over a
       week and decide the per-node App D25 reserved on that arithmetic, not
       before. *[interactive]*
-- [ ] Climb the D18 merge-autonomy ladder on the Poetic fleet to
+- [x] Climb the D18 merge-autonomy ladder on the Poetic fleet to
       `agent-merges-all`: Stage 0 evidence baseline and kill switch, Stage 1
       agent approval under the Approver App (human still merges), Stage 2
       autonomous landing for the routine tier on agent-ops, Stage 3
@@ -917,10 +917,10 @@ induced outage rather than only over a quiet afternoon.
       item's Phase 2 placement is deliberately overtaken: per #628, all D18
       prerequisite and preparation work proceeds now, ahead of the Phase 1
       exit gate — WI-1..WI-11 already landed during Phase 1 and Stage 2 was
-      entered 2026-08-18 under a recorded waiver — and only the promotion
-      acts themselves (raising a repository to a higher rung) stay gated by
-      umbrella #402's own evidence bars, which is the ladder's own gating
-      rather than a phase boundary.
+      entered 2026-08-18 under a recorded waiver. Stages 3 and 4 were
+      entered together on 2026-09-30 under a third recorded waiver (#1981,
+      the investigation report's §6), which put all three repositories at
+      `agent-merges-all`.
 - [ ] Event-driven dispatch: GitHub webhooks, or a lightweight poller on the
       state repo, wake an idle node when a source-relevant event lands,
       instead of leaving it to wait for the next cron firing. Staged behind

@@ -200,3 +200,29 @@ principle it rests on.`
   2026-09-23. A just-in-time branch update at the landing gate was
   considered and withdrawn: it does nothing under a merge queue, and each
   of its pushes would dismiss the standing approval.
+- 2026-09-30 · #402/#1981 · **Every Poetic installation repository lands at
+  `agent-merges-all` (D18 Stages 3 and 4).** `Pullwright/agent-ops`,
+  `Poetic-Poems/poetic` and `Poetic-Poems/poetic-fiddle` move to the top of
+  the ladder, and the owner's residual surface is the escalation taxonomy,
+  as #402's end state names it. Each repository's routine sources are every
+  landing source it gathers except `dequeued`, which the landing stage
+  cannot yet re-arm. agent-ops admits every complexity grade; poetic and
+  poetic-fiddle admit `medium` and `high`, because a `low` grade is
+  approved without a model call and a merge in either reaches production.
+  Protected paths stay, and route a pull request through the critical-tier
+  review and the 24-hour `landing_cool_off_hours` wait instead of to a
+  human. Each list names the files that steer the pipeline's agents, the
+  code CI runs with a token, the dependency manifests, and what reaches
+  production: poetic's Blogger publishing, and poetic-fiddle's `supabase/*`
+  and `vercel.json` (its migration job, disabled today, pushes merged
+  migrations to the live database when it runs). The Approver verdict, the
+  review gate, the open-question gate, a human `CHANGES_REQUESTED`, the
+  merge budget and the kill switch are unchanged. This extends the
+  2026-09-19 line, which widened only the sources, and waives #402's Stage
+  3 and 4 evidence bars (the investigation report's §6, third waiver).
+  Decided by the owner on 2026-09-30 ("maximum autonomy and minimum human
+  involvement"), after a fortnight in which he merged 101 agent-ops pull
+  requests by hand against 15 autonomous landings. It settles the
+  merge-autonomy configuration and nothing else: it decides no open
+  question or escalation, and is no reason to land a pull request that any
+  gate holds.

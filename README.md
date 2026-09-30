@@ -376,14 +376,24 @@ requirements this section summarises:
 | `human` — **the product default** | You | You | Everything — the pipeline never approves or merges anything |
 | `agent-approves` | The Approver App | You | The merge (or enqueue) click |
 | `agent-merges-routine` | The Approver App | The Script — for a pull request graded within `merge_autonomy_routine_complexity` (`low`/`medium` by default) from a source in `merge_autonomy_routine_sources`, touching no protected path | The click for anything the classifier doesn't cover |
-| `agent-merges-all` | The Approver App | The Script — the same classifier as `agent-merges-routine`; nothing lands here that wouldn't already land there | The click for anything the classifier doesn't cover, same as `agent-merges-routine` |
+| `agent-merges-all` | The Approver App | The Script — everything `agent-merges-routine` lands, and a pull request touching a protected path too, once it has cleared the critical-tier review and the cool-off below | The click for anything outside `merge_autonomy_routine_complexity` or `merge_autonomy_routine_sources`, and for the three cases below |
 
-The top two rungs are configured and validated separately even though they
-land the same pull requests today: `agent-merges-all` is where a protected
-path (the pipeline's own gate code, its prompts, its CI) becomes eligible to
-land with no human click at all, once that class carries its own stronger
-review tier and a cool-off between approval and landing — controls not yet
-built, so a protected-path change needs your click at either level for now.
+The top two rungs differ only in what a protected path (the pipeline's own
+gate code, its prompts, its CI) does to a pull request that touches one.
+Below `agent-merges-all` it refuses the landing outright, so the change needs
+your click. At `agent-merges-all` it lands with no human click, behind two
+controls of its own: the Approver reviews it at the critical tier whatever
+its complexity grade, and the Script waits `landing_cool_off_hours` (24 by
+default) after that approval before arming the landing, restarting the wait
+if anything is pushed after the approval.
+
+At either merging level, three more cases need your click whatever their
+grade or source. The first is a pull request that the merge queue has ever
+removed for any reason other than merging it, because the landing stage
+never re-enqueues one. The second is a pull request whose latest round
+answered a comment through the `landing-refusals` source, which cannot be
+listed in `merge_autonomy_routine_sources`. The third is a pull request
+whose source the landing stage cannot read back from the fleet's log.
 
 **The invariants, at every level:**
 
