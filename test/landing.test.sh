@@ -48,11 +48,13 @@
 #     printing nothing, each with its own distinguishable exit status
 #     (agent-ops#532); bad arguments are rejected before any gh call.
 #     `_landing_arm_failure_reason` is pinned directly for every code it maps.
-#   - landing_retry_source (TD-PPagop-26081701): the most recent matching
-#     `selection` event's source wins when a branch was claimed more than
-#     once, a malformed log line is skipped rather than aborting the read,
-#     an unmatched repo/branch or an unreadable log both print nothing, and
-#     stdin works the same as a named LOG_FILE.
+#   - landing_retry_source_map (lib/union-log-scan.sh, #1050): one pass over
+#     the union log builds a {branch: {source, item}} map for a whole
+#     repository — the most recent matching `selection` event per branch wins
+#     when a branch was claimed more than once, a malformed log line is
+#     skipped rather than aborting the read, another repository's events never
+#     leak in, an unmatched branch or an unreadable/repo-less log both print
+#     `{}`, and stdin works the same as a named LOG_FILE.
 #
 # No test framework is used (none exists elsewhere in this repo). Run
 # directly:
@@ -69,6 +71,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$SCRIPT_DIR/lib/github-limit.sh"
 # shellcheck source=lib/merge-queue.sh
 . "$SCRIPT_DIR/lib/merge-queue.sh"
+# shellcheck source=lib/union-log-scan.sh
+. "$SCRIPT_DIR/lib/union-log-scan.sh"
 # shellcheck source=lib/landing.sh
 . "$SCRIPT_DIR/lib/landing.sh"
 
@@ -725,8 +729,8 @@ files "src/app.py"
 
 # --- landing_retry_tier (D18 WI-12, agent-ops#415) ---------------------------
 # The fleet's own union log stands in for `run_approver_stage`'s in-process
-# `approver_stage_tier` on a re-arm, exactly as `landing_retry_source` already
-# does for a work order's `source` — pinned against a hand-built log.
+# `approver_stage_tier` on a re-arm, exactly as `landing_retry_source_map`
+# already does for a work order's `source` — pinned against a hand-built log.
 
 tier_log="$tmp_dir/tier-union-log.jsonl"
 cat > "$tier_log" <<'LOG'
@@ -827,10 +831,12 @@ assert_eq "code 7 names the failed gh pr merge" \
 assert_eq "an unrecognised code still names itself rather than nothing" \
   "exited 99" "$(_landing_arm_failure_reason 99)"
 
-# --- landing_retry_source (TD-PPagop-26081701) -------------------------------
-# The one gate the 2.1e landing-retry sweep answers from the fleet's own
-# union log rather than fresh from GitHub — pinned directly against a
-# hand-built log file (LOG_FILE argument, and stdin).
+# --- landing_retry_source_map (#1050) ----------------------------------------
+# The one-pass, shared-across-candidates answer to the same question
+# landing_retry_source/landing_retry_item used to answer one branch (and one
+# re-parse of the whole log) at a time — pinned directly against a hand-built
+# log file (LOG_FILE argument, and stdin), same fixture shape as that
+# superseded test.
 
 log_file="$tmp_dir/union-log.jsonl"
 cat > "$log_file" <<'LOG'
@@ -839,22 +845,31 @@ this line is not json at all
 {"ts":"2026-08-12T00:00:00Z","event":"landing-refused","repo":"acme/widgets","pr_url":"https://github.com/acme/widgets/pull/1","reason":"a human CHANGES_REQUESTED stands (someone)"}
 {"ts":"2026-08-11T00:00:00Z","event":"selection","repo":"acme/widgets","item":"TD-1","source":"tech-debt","model":"m","title":"t","branch":"td/TD-1"}
 {"ts":"2026-08-09T23:00:00Z","event":"selection","repo":"acme/widgets","item":"9","source":"issues","model":"m","title":"t2","branch":"agent/9"}
+{"ts":"2026-08-09T23:00:00Z","event":"selection","repo":"acme/other","item":"3","source":"tech-debt","model":"m","title":"t3","branch":"agent/3"}
 LOG
 
-out="$(landing_retry_source acme/widgets td/TD-1 "$log_file")"
-assert_eq "the most recent matching selection's source wins" "tech-debt" "$out"
+map_out="$(landing_retry_source_map acme/widgets "$log_file")"
+assert_eq "the most recent matching selection's source wins, for a branch claimed twice" \
+  "tech-debt" "$(jq -r '."td/TD-1".source // empty' <<<"$map_out")"
+assert_eq "  ... and its item" "TD-1" "$(jq -r '."td/TD-1".item // empty' <<<"$map_out")"
+assert_eq "a different branch resolves independently, from the same one-pass map" \
+  "issues" "$(jq -r '."agent/9".source // empty' <<<"$map_out")"
+assert_eq "an unmatched branch is simply absent from the map" \
+  "" "$(jq -r '."no/such-branch".source // empty' <<<"$map_out")"
+assert_eq "a different repository's selection events never leak into this one's map" \
+  "" "$(jq -r '."agent/3".source // empty' <<<"$map_out")"
+assert_eq "  ... even though acme/other's own selection event is the log's most recent line" \
+  "true" "$(jq '."agent/3" == null' <<<"$map_out")"
 
-out="$(landing_retry_source acme/widgets agent/9 "$log_file")"
-assert_eq "a different branch resolves independently" "issues" "$out"
+out="$(landing_retry_source_map acme/widgets "$tmp_dir/does-not-exist.jsonl")"
+assert_eq "an unreadable log prints {} rather than guessing" "{}" "$out"
 
-out="$(landing_retry_source acme/widgets no/such-branch "$log_file")"
-assert_eq "an unmatched repo/branch prints nothing" "" "$out"
+out="$(landing_retry_source_map acme/nothing "$log_file")"
+assert_eq "a repo with no selection events in an otherwise-readable log prints {}" "{}" "$out"
 
-out="$(landing_retry_source acme/widgets td/TD-1 "$tmp_dir/does-not-exist.jsonl")"
-assert_eq "an unreadable log prints nothing rather than guessing" "" "$out"
-
-out="$(landing_retry_source acme/widgets td/TD-1 < "$log_file")"
-assert_eq "stdin works the same as a named file (LOG_FILE omitted/-)" "tech-debt" "$out"
+out="$(landing_retry_source_map acme/widgets < "$log_file")"
+assert_eq "stdin works the same as a named file (LOG_FILE omitted/-)" \
+  "tech-debt" "$(jq -r '."td/TD-1".source // empty' <<<"$out")"
 
 # --- landing_open_question_hit (requirement 8f, agent-ops#668) ---------------
 

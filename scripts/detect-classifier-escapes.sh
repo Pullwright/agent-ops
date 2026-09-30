@@ -69,8 +69,9 @@
 #     timeline (`gh api repos/SLUG/issues/N/events`) up to `merged_at`. A
 #     landing audited weeks later still reports the complexity it actually
 #     landed at.
-#   - **Source** — GitHub carries no field for this at all (`lib/landing.sh`'s
-#     own `landing_retry_source` header explains why), so it is read back
+#   - **Source** — GitHub carries no field for this at all
+#     (`landing_retry_source_map`'s own header, lib/union-log-scan.sh,
+#     explains why), so it is read back
 #     from the one place it is genuinely recorded: the fleet log's own
 #     `landing-armed` event for this `pr_url`, which itself only ever holds
 #     the value the round that armed the landing was given — never a value

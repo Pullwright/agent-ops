@@ -918,8 +918,9 @@ above — on the same terms:
   per-item adjudication sites) and its own copies of `pr-ready`/
   `review-gate-checks-read`, `lib/landing.sh`'s `landing-armed`/
   `landing-refused` (threaded through `_landing_stage_attempt`, resolved from
-  the fleet log via `landing_retry_item` on the 2.1e retry sweep's own
-  candidates, which have no in-process item to read) and its
+  the fleet log via `landing_retry_source_map`'s (`lib/union-log-scan.sh`)
+  own `item` field on the 2.1e retry sweep's own candidates, which have no
+  in-process item to read) and its
   `approver-adjudicate-open-question` `stage-end`, and
   `lib/standdown.sh`'s own `issue-closed-post-merge` wiring (`item`, alongside
   the existing `issue` field, derived from `scripts/sweep-closed-issues.sh`'s

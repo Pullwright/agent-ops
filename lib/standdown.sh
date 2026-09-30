@@ -936,9 +936,11 @@ while IFS= read -r slug; do
   # _landing_routine_complexity/_landing_routine_sources primitives
   # `landing_eligible` itself reads — answers this alone, at no extra
   # network cost. SOURCE has no field on GitHub at all (a pull request's
-  # source is fixed at claim time; `landing_retry_source`'s own header),
-  # so it is read back from the fleet's union log the same way the 2.1e
-  # landing-retry sweep already does (`_landing_retry_sweep_repo`); a
+  # source is fixed at claim time; `landing_retry_source_map`'s own header,
+  # lib/union-log-scan.sh), so it is read back from one pass over the fleet's
+  # union log — built once for this repository, below, shared across every
+  # candidate rather than re-parsed per candidate (#1050) — the same map the
+  # 2.1e landing-retry sweep now builds too (`_landing_retry_sweep_repo`); a
   # candidate whose source cannot be resolved this way counts toward the
   # cap rather than being excluded from it (fail-closed — of the two ways
   # to be wrong here, opening work past a full cap is the one that is not
@@ -946,13 +948,14 @@ while IFS= read -r slug; do
   # pull request so an operator can see why it was not narrowed.
   ineligible_prs_json='[]'
   if (( slug_level_rank >= backpressure_autonomous_rank )); then
+    cand_source_map="$(landing_retry_source_map "$slug" "$union_log")"
     while IFS= read -r cand; do
       [[ -n "$cand" ]] || continue
       cand_number="$(jq -r '.number' <<<"$cand")"
       cand_branch="$(jq -r '.headRefName' <<<"$cand")"
       cand_complexity="$(jq -r '((.labels // []) | map(.name)
         | map(select(startswith("complexity:"))) | first // "" | sub("^complexity:";""))' <<<"$cand")"
-      cand_source="$(landing_retry_source "$slug" "$cand_branch" "$union_log")"
+      cand_source="$(jq -r --arg b "$cand_branch" '.[$b].source // empty' <<<"$cand_source_map" 2>/dev/null)"
       if [[ -z "$cand_source" ]]; then
         log_event "warning" "$(jq -nc --arg r "$slug" --argjson n "$cand_number" \
           --arg d "back-pressure: $slug#$cand_number's originating source could not be resolved from the fleet log, so it is counted toward the cap rather than excluded from it (fail-closed)" \

@@ -168,9 +168,14 @@ scratch_enter agent-cycle || exit 1
 . "$SCRIPT_DIR/lib/forge-auth.sh"
 # shellcheck source=lib/merge-queue.sh
 . "$SCRIPT_DIR/lib/merge-queue.sh"
+# shellcheck source=lib/union-log-scan.sh
+# Ahead of landing.sh, whose _landing_retry_sweep_repo calls
+# landing_retry_source_map (#1050).
+. "$SCRIPT_DIR/lib/union-log-scan.sh"
 # shellcheck source=lib/landing.sh
-# Sourced after merge-queue.sh (landing_arm's own queue-detection read) and
-# github-limit.sh (github_pr_list_truncated, sourced above already).
+# Sourced after merge-queue.sh (landing_arm's own queue-detection read),
+# github-limit.sh (github_pr_list_truncated, sourced above already) and
+# union-log-scan.sh (landing_retry_source_map, above).
 . "$SCRIPT_DIR/lib/landing.sh"
 # shellcheck source=lib/noop-skip.sh
 . "$SCRIPT_DIR/lib/noop-skip.sh"
