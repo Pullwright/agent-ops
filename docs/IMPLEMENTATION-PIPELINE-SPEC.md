@@ -23080,9 +23080,14 @@ What exists, and the requirements each part answers to:
     nothing, exactly as they do to GitHub's own parser, in every
     spelling. A body
     with no marker passes trivially. The workflow runs on every
-    `pull_request` event, passing the body through `env:` rather than
-    interpolating it into the step directly, so an attacker-controlled title
-    or body from a fork PR cannot inject shell.
+    `pull_request` event, fetching the pull request's current body at run
+    time (`gh pr view --json body`, keyed on the event's own immutable PR
+    number) rather than reading `github.event.pull_request.body`'s snapshot
+    of the triggering event, so a rerun of a stale run — no new push —
+    evaluates the body as it stands now rather than replaying whatever it
+    said when the event fired (agent-ops#1991). It assigns the fetched body
+    to a shell variable rather than interpolating it into the step directly,
+    so an attacker-controlled body from a fork PR still cannot inject shell.
 
     Given a repo slug and this pull request's own number as two further,
     optional arguments (a caller that omits either — every caller that
