@@ -65,6 +65,8 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PUBLISH="$SCRIPT_DIR/scripts/publish-dashboard.sh"
 LAUNCHER="$SCRIPT_DIR/scripts/publish-dashboard-launcher.sh"
+# shellcheck source=lib/scratch.sh
+. "$SCRIPT_DIR/lib/scratch.sh"
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
@@ -4213,16 +4215,29 @@ assert_eq "…and nothing is left when it ends" "" "$(ls -A "$cn_tmp")"
 # publish that overruns is ended by the TERM `timeout` sends to the process
 # and to its process group; bash handles an untrapped fatal signal by running
 # the EXIT trap and exiting, and this case holds that trap to what it must
-# leave behind: nothing. (It passes against a Publisher with no signal traps
-# — bash's own behaviour is the mechanism — so what it guards is the trap's
-# arming, before the directory exists, and its scope.) The Publisher rebuilds
-# its own PATH at startup, so no stub on PATH can stall it from outside;
-# instead a publish is started under `timeout` itself over a fixture wide
-# enough to take a while, a file inside its working set is waited for — one
-# the publish writes only once the directory is made, the trap armed and the
+# leave behind: nothing, once the trap fires where it can and the sweep
+# below reclaims what it cannot. (It exercises a Publisher with no signal
+# traps — bash's own behaviour is the mechanism that runs the EXIT trap on
+# an untrapped fatal signal — but the assertion no longer isolates the
+# trap's own scope on its own, since the sweep added below would also clean
+# up a working set the trap never touched.) The Publisher rebuilds its own
+# PATH at startup, so no stub on PATH can stall it from outside; instead a
+# publish is started under `timeout` itself over a fixture wide enough to
+# take a while, a file inside its working set is waited for — one the
+# publish writes only once the directory is made, the trap armed and the
 # name assigned — and `timeout` is sent the TERM, which it forwards to the
-# publish exactly as its own expiry would. The publish must not have finished
-# on its own.
+# publish exactly as its own expiry would. The publish must not have
+# finished on its own.
+#
+# A TERM can land in a signal-delivery window the trap's own arming does not
+# cover — scripts/publish-dashboard.sh documents one, the process and its
+# process group each being signalled a moment apart — leaving the working
+# set real on disk with the trap never having reached its removal. That is
+# not left forever: it is what scratch_sweep_dead_owners (called at the top
+# of every launcher window and every cycle, never by a bare publish-dashboard.sh
+# invocation like this one) reclaims from a dead pid. So this case runs that
+# same sweep once the publish is confirmed dead, exactly as the next launcher
+# window would, before asserting nothing is left.
 sk="$(new_home nodeScratchKill)"
 for (( sk_i = 1; sk_i <= 40; sk_i++ )); do
   make_cycle "$sk" "$(printf '%sT%02d%02d00Z-%d' "$today_day" $(( sk_i % 24 )) $(( sk_i % 60 )) "$sk_i")" 0.10 model-a
@@ -4247,7 +4262,11 @@ assert_eq "a file appeared inside the publish's working set before it was ended 
 # finished publish would have written the page.
 assert_eq "…and the TERM ended the publish rather than the publish finishing first (exit $sk_rc; stderr: $(tail -n 2 "$tmp_dir/scratch-kill.err" | tr '\n' ' ' | cut -c1-200))" \
   "ended early" "$([[ "$sk_rc" -ne 0 && ! -e "$sk/.local/state/poetic-agents/dashboard/data.js" ]] && echo "ended early" || echo "ran to completion")"
-assert_eq "a publish ended by TERM leaves nothing at all under \$TMPDIR — its working set, and every file the libraries spooled inside it" \
+# The publish (and `timeout`, which waits for its child) is confirmed dead by
+# `wait` above, so the sweep a real launcher window would run next is safe to
+# run here too — it reclaims only a dead pid's own directory, never a live one.
+scratch_sweep_dead_owners "$sk_tmp" >/dev/null
+assert_eq "a publish ended by TERM leaves nothing at all under \$TMPDIR once the next sweep runs — its working set, and every file the libraries spooled inside it" \
   "" "$(ls -A "$sk_tmp")"
 
 # --- The fast tick's full rebuild (agent-ops#1827) ------------------------------------

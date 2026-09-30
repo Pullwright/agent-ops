@@ -184,8 +184,9 @@ case "$1" in
         printf '%s' "$rulesets_json" | jq -c "$jq_filter" ;;
       repos/*)
         [[ "${STUB_REPO_FAIL:-0}" != "1" ]] || exit 1
-        # Not `${STUB_REPO_JSON:-{}}` — bash's brace-matching for a `${VAR:-…}`
-        # default gets confused when the default text itself contains braces,
+        # Not a brace-default here (docs/IMPLEMENTATION-PIPELINE-SPEC.md's
+        # Gotchas table, agent-ops#933) — bash's `${VAR:-…}` parsing gets
+        # confused when the default text itself contains an unescaped brace,
         # and silently appends a stray one to the *set* value too.
         repo_json="${STUB_REPO_JSON:-}"
         [[ -n "$repo_json" ]] || repo_json='{}'

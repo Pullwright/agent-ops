@@ -15,17 +15,17 @@
 #
 # "Cannot reach a node through the image" is the exact test, and it is not the
 # same thing as "nobody reads it". A cycle working on *this* repository does
-# read its `CLAUDE.md` and its `TECH-DEBT.md` — but out of the fresh
-# `gh repo clone` in `workspace_root`, which arrives from GitHub
+# read its `CLAUDE.md`, its `AGENTS.md` and its `TECH-DEBT.md` — but out of the
+# fresh `gh repo clone` in `workspace_root`, which arrives from GitHub
 # the moment a pull request merges, with no image in the path, so no build can
 # make it arrive sooner and skipping one delays nothing.
 #
 # What is never read is the copy at /app. Every `claude -p` in agent-cycle.sh
 # and review-cycle.sh runs with its working directory under `workspace_root`
 # or `state_dir` (`assert_in_workspace` pins the first of those), so /app is
-# neither a working directory nor an ancestor of one, and /app/CLAUDE.md is
-# never loaded as project memory. Moving a stage's cwd would break that, which
-# is why it is written down here.
+# neither a working directory nor an ancestor of one, and /app/CLAUDE.md and
+# /app/AGENTS.md are never loaded as project memory. Moving a stage's cwd
+# would break that, which is why it is written down here.
 #
 # Paths on the command line, or one per line on stdin when there are none:
 #
@@ -56,6 +56,7 @@ is_inert() {
     docs/*) return 0 ;;                   # the as-built specs and the roadmap
     README.md) return 0 ;;
     CLAUDE.md) return 0 ;;                # a cycle reads the clone's copy, never /app's
+    AGENTS.md) return 0 ;;                # likewise
     TECH-DEBT.md) return 0 ;;             # likewise
     LICENCE) return 0 ;;
     deploy/docker/README.md) return 0 ;;  # the node runbook

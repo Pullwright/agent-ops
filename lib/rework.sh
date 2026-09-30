@@ -104,25 +104,37 @@ rework_selection_fields() {
   rework_fields "$class" "scripts/gather-${source}.sh" "$evidence" "" "$repo" "$item" "$pr_url"
 }
 
-# rework_check_failure_fields OK REASON [REPO [ITEM [PR_URL]]]
+# rework_check_failure_fields OK REASON DETECTOR [REPO [ITEM [PR_URL]]]
 # Print `check-failure` fields iff OK is not the literal string "true" — the
 # same test `agent-cycle.sh` already applies to decide `review-gate-checks-
 # read`'s own `ok` field. Never fires for `review-gate-checks-degraded`,
 # which is a different event entirely (the streak *escalation*, not a
 # per-attempt read) and has no call site here.
+#
+# DETECTOR is the call site that read the check list, not hardcoded, because
+# `review-gate-checks-read` fires from two sites that share nothing but this
+# one shaping function: `agent-cycle.sh`'s own Reviewer handoff passes
+# `agent-cycle.sh:review-gate-checks-read`, and `lib/enabler.sh`'s
+# handoff-recovery path passes `lib/enabler.sh:review-gate-checks-read`
+# (agent-ops#1032) — each name says which read this particular record is
+# accounting for.
 rework_check_failure_fields() {
-  local ok="$1" reason="${2:-}" repo="${3:-}" item="${4:-}" pr_url="${5:-}"
+  local ok="$1" reason="${2:-}" detector="${3:-}" repo="${4:-}" item="${5:-}" pr_url="${6:-}"
   [[ "$ok" == "true" ]] && return 0
-  rework_fields "check-failure" "agent-cycle.sh:review-gate-checks-read" \
+  rework_fields "check-failure" "$detector" \
     "$(jq -nc --arg r "$reason" '{ok: false, reason: $r}')" "" "$repo" "$item" "$pr_url"
 }
 
 # rework_human_change_request_fields REASON REPO ITEM PR_URL
 # Print `human-change-request` fields, attributed to `reviewer` — the one
 # class whose evidence names its stage directly (docs/FLOW-SCHEMA.md). The
-# caller is `agent-cycle.sh`'s own `rc_word == "dirty"` branch, which already
-# established that the reconciliation gate refused this handoff; there is no
-# further predicate here to apply.
+# callers are the two `rc_word == "dirty"` branches that share requirement
+# 34a's one `handoff_complete_review` — `agent-cycle.sh`'s own Reviewer
+# handoff and `lib/enabler.sh`'s handoff-recovery path (agent-ops#1032) —
+# each of which has already established that the reconciliation gate refused
+# this handoff; there is no further predicate here to apply. `detector` is
+# hardcoded, unlike `rework_check_failure_fields`'s, because the gate
+# function itself is the detector and is the same one at both sites.
 rework_human_change_request_fields() {
   local reason="$1" repo="${2:-}" item="${3:-}" pr_url="${4:-}"
   rework_fields "human-change-request" "lib/reconciliation-gate.sh:reconciliation_gate" \

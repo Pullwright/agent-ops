@@ -63,6 +63,7 @@ are binding on any agent working inside them).
   - [Extended notes: `disable_default_ttl`](#extended-notes-disable_default_ttl)
   - [Extended notes: `none_selected_recheck_hours`](#extended-notes-none_selected_recheck_hours)
   - [Extended notes: `schedule.excluded_minutes`](#extended-notes-scheduleexcluded_minutes)
+  - [Extended notes: `revert_rate_baseline`](#extended-notes-revert_rate_baseline)
   - [Extended notes: `resources`](#extended-notes-resources)
 - [The Landing Gate](#the-landing-gate)
 - [Requirements](#requirements)
@@ -1113,7 +1114,7 @@ and the schema must carry every one of them.
 | `schedule.changelog_roll_day_of_week` | `1` | The day of week the weekly CHANGELOG.md roll fires, cron's own convention (`0`-`6`, Sunday is `0`). |
 | `schedule.monitor_hour` | `5` | The hour the daily monitor run is due (`docs/MONITOR-PIPELINE-SPEC.md` M4). The crontab line itself is hourly, so a node asleep at this hour still picks the day's run up at its next firing. |
 | `schedule.monitor_offset_minutes` | `19` | Minutes past `CYCLE_MINUTE` (mod 60) the hourly monitor tick's minute is set to, jittering it across the fleet the same way `doctor_offset_minutes` jitters the unattended doctor pass. |
-| `revert_rate_baseline` | `{"source": "docs/reviews/2026-08-15-merge-autonomy-baseline.md", "generated": "2026-08-15", "repos": [{"slug": "Poetic-Poems/poetic", "count": 84, "reverts": 0, "follow_up_fixes": 31}, {"slug": "Poetic-Poems/poetic-fiddle", "count": 119, "reverts": 0, "follow_up_fixes": 44}, {"slug": "Pullwright/agent-ops", "count": 120, "reverts": 0, "follow_up_fixes": 106}]}` | The D18 Stage 0 merge-autonomy baseline (docs/reviews/2026-08-15-merge-autonomy-baseline.md §6), copied here once as a fixed reference rather than re-derived at runtime (issue #579): `scripts/publish-revert-rate.sh` compares every window's revert-or-follow-up rate against these figures. A repository absent from `repos` reports its baseline comparison `unavailable` rather than failing. |
+| `revert_rate_baseline` | `{"source": "docs/reviews/2026-08-15-merge-autonomy-baseline.md", "generated": "2026-08-15", "repos": [{"slug": "Poetic-Poems/poetic", "count": 84, "reverts": 0, "follow_up_fixes": 31}, {"slug": "Poetic-Poems/poetic-fiddle", "count": 119, "reverts": 0, "follow_up_fixes": 44}, {"slug": "Pullwright/agent-ops", "count": 120, "reverts": 0, "follow_up_fixes": 106}]}` | The D18 Stage 0 merge-autonomy baseline (docs/reviews/2026-08-15-merge-autonomy-baseline.md §6), copied here once as a fixed reference rather than re-derived at runtime (issue #579): `scripts/publish-revert-rate.sh` compares every window's revert-or-follow-up rate against these figures. A repository absent from `repos` reports its baseline comparison `unavailable` rather than failing. This installation's own value is documented below (and checked live by `scripts/doctor.sh`'s...[continued below](#extended-notes-revert_rate_baseline) |
 | `resources` | see `config.json` | Per-container (`resources.containers.<AGENT_OPS_SERVICE>`) and per-volume (`resources.volumes.<name>`) budgets requirement 55 (D14, issue #606) compares `scripts/resource-budget-report.sh`'s windowed actuals against. Covers only the three containers that run this image and self-measure (`scripts/collect-resource-usage.sh`) — `scheduler`, `dashboard`, `dashboard-local` — plus the two volumes they mount; `tailscale`...[continued below](#extended-notes-resources) |
 <!-- config-table:end -->
 
@@ -1360,6 +1361,10 @@ The no-op short-circuit's safety valve (requirement 3b): the Co-Ordinator is eng
 ### Extended notes: `schedule.excluded_minutes`
 
 Minutes `CYCLE_MINUTE` (env or the per-node hash) may never land on, rendered from `deploy/docker/crontab.tmpl`. Poetic's own value excludes `0` because its hourly sync workflow owns the top of the hour; a deployment with no such conflict ships `[]`. Excluding every minute of the hour is a misconfiguration the renderer refuses rather than spinning on. This governs only the *scheduled* `CYCLE_MINUTE`: a wake-poll-triggered invocation (requirement 54) does not consult this key at all and may start a cycle on a minute it excludes — see requirement 54's own note on why that is acceptable.
+
+### Extended notes: `revert_rate_baseline`
+
+The D18 Stage 0 merge-autonomy baseline (docs/reviews/2026-08-15-merge-autonomy-baseline.md §6), copied here once as a fixed reference rather than re-derived at runtime (issue #579): `scripts/publish-revert-rate.sh` compares every window's revert-or-follow-up rate against these figures. A repository absent from `repos` reports its baseline comparison `unavailable` rather than failing. This installation's own value is documented below (and checked live by `scripts/doctor.sh`'s `config_documented_value_mismatches`) because it differs from the empty product default — it is this installation's own baseline, not a value to copy.
 
 ### Extended notes: `resources`
 
@@ -8284,10 +8289,11 @@ implements.
    number of open pull requests. That pairing is not new: requirement 2.2a's
    back-pressure block already singles out exactly those two, for exactly this
    reason, when it empties them on a restricted cycle. Every other pre-fetched
-   band is left alone, because `prompts/coordinator.md` requires each of their
-   bodies pasted *verbatim* into the work order and together they were 34 KB
-   of the 354 KB that overflowed. The small, per-repo scalar fields a repo
-   entry carries alongside its bands — `implementation_plan_path`,
+   band is left alone, because per requirement 17h the Script's own compose
+   step (`compose_selected_candidate_text` in `lib/candidate-select.sh`)
+   pastes each of their bodies *verbatim* into the work order, and together
+   they were 34 KB of the 354 KB that overflowed. The small, per-repo scalar
+   fields a repo entry carries alongside its bands — `implementation_plan_path`,
    `report_directory` and `report_directory_resolved` (requirement 3k) — are
    not bands at all and are never
    candidates for shedding: each is a short string, present only for a repo
@@ -8303,12 +8309,15 @@ implements.
    Every cut names itself: a truncated body or comment ends in
    `…[Script: elided N of M bytes to fit the context window — read it whole at
    <url>]`, and dropped comments are counted in `comments_elided` on the entry.
-   `prompts/coordinator.md` obliges a live read of that URL before an entry
-   carrying any such mark may be *selected*, since the work order must paste
-   the document verbatim — one fetch for the one item picked, rather than a
-   thread's worth of tokens for every item considered. A prose-only trim also
-   leaves the gatherer's own entry order alone, so a trimmed cycle differs
-   from an untrimmed one in prose and in nothing else.
+   Per requirement 17h, an entry carrying any such mark needs no live read
+   before it may be *selected*: once picked, the Script itself composes
+   `context`/`acceptance` from a fresh live read of the whole thread, never
+   from the trimmed extract — see `prompts/coordinator.md`'s "Trimmed entries
+   need no live read before you select them" bullet — one fetch for the one
+   item picked, rather than a thread's worth of tokens for every item
+   considered. A prose-only trim also leaves the gatherer's own entry order
+   alone, so a trimmed cycle differs from an untrimmed one in prose and in
+   nothing else.
 
    **Dropping entries is the last rung, and it is loud.** Once the tightest
    tier is applied there is nothing left but entries, and those are capped per
@@ -15472,10 +15481,16 @@ implements.
     candidate alone: `source_states_json` (requirement 3, gathered for every
     repo the cycle walked, well before the claim) answers it for an `issues`
     item (closed) and for a finishing source's item (its pull request closed
-    or merged); a `tech-debt` item additionally costs one fresh
+    or merged). A register-shaped ref would additionally cost one fresh
     `gather-register-status.sh` read, scoped to the one item, because a
     freshly claimed item was never a member of the blocked set
-    `register_status_json` is otherwise scoped to. Every other source is left
+    `register_status_json` is otherwise scoped to — but no currently-live
+    source claims a register-shaped ref (the `tech-debt` band moved to
+    `pw::type:tech-debt`-labelled issues, agent-ops#875), so the Script passes
+    an empty register map for every source; `gather-register-status.sh` and
+    the register map parameter it feeds remain for a repository that has not
+    migrated off register-shaped refs, and for `register_status_json`'s own
+    blocked-set pass (requirement 34i). Every other source is left
     to the Implementer, exactly as before — this is the three done-signals
     34i already reads deterministically, reused, not a new one invented for
     the occasion.
@@ -17744,7 +17759,7 @@ implements.
     events-not-timestamps fix), it would also drop the pull request out of
     the Implementer's own review-feedback selection while the human's
     `CHANGES_REQUESTED` sat unanswered — PR #205's silent-starvation failure,
-    reintroduced hourly and fleet-wide.
+    reintroduced cycle after cycle and fleet-wide.
 
     The discriminating judgement is `lib/handoff.sh`'s
     `handoff_round_answered` (requirement 34a) — the same predicate
@@ -19301,12 +19316,18 @@ with the Reviewer's own.
       the detector; the Script's selection event, where `{repo, item,
       pr_url}` are already in hand, is where the record is emitted).
     - **human-change-request** — requirement 31c's reconciliation gate going
-      `dirty` at the Reviewer's own handoff. Attributed to `reviewer`: this
-      is the one class whose evidence names its stage directly, since the
-      gate fires at that stage's own handoff and nowhere else.
+      `dirty`, at either of the two sites that share requirement 34a's one
+      `handoff_complete_review`: the Reviewer's own handoff and the
+      Enabler's handoff-recovery path. Attributed to `reviewer` from both:
+      this is the one class whose evidence names its stage directly, since
+      the recovery path reaches this verdict only for a pull request with a
+      Reviewer verdict already on record, so the request escaped the
+      Reviewer whichever site observed it.
     - **check-failure** — a `review-gate-checks-read` event carrying
       `ok: false` (the per-attempt read TD-PPagop-26081404's own streak
-      bookkeeping already counts). Its escalation, `review-gate-checks-
+      bookkeeping already counts), from either of that event's own two call
+      sites — the same two handoffs, each naming itself in `detector`. Its
+      escalation, `review-gate-checks-
       degraded`, is deliberately never counted a second time: it summarises
       repetitions already recorded at their own per-attempt site.
     - **merge-conflict** — a `merge-conflicts` candidate's own selection
@@ -19358,10 +19379,10 @@ with the Reviewer's own.
     Before requirement 31c's reconciliation gate existed (2026-08-20), a
     human change request arriving as a plain pull request comment was
     invisible to the review gate entirely — the blind spot agent-ops#533
-    named. That gate now catches it, at the Reviewer's own handoff, but only
+    named. That gate now catches it, at both handoffs above, but only
     there: a change request posted after a pull request is already ready, or
-    one a human acts on directly without a further Script handoff ever
-    running, is still outside what this class's detector can see.
+    one a human acts on directly without either handoff ever running, is
+    still outside what this class's detector can see.
     `docs/FLOW-SCHEMA.md` states that residual coverage plainly, rather than
     letting a later reader assume the class covers every human change
     request there is.
@@ -24140,24 +24161,25 @@ oblige anyone to edit a test.
    workflow publishes both architectures as one manifest list per tag.
 1b-i. **A documentation-only change builds nothing, and everything else
    builds.** `test/is-docs-only.test.sh` passes: `scripts/is-docs-only.sh`
-   calls a change documentation-only when every path in it is under `docs/`
-   or `tech-debt/`, or is `README.md`, `CLAUDE.md`, `TECH-DEBT.md`, `LICENCE`
-   or `deploy/docker/README.md`, and calls it code otherwise — `prompts/*.md`
-   included, since those are Markdown documents *and* the operating
-   instructions of requirement 1a's stages, so classifying by file extension
-   would let a change to a node's behaviour skip the build that deploys it. An
-   empty path list, or none, is code. The test the allowlist encodes is "the
-   image is not the delivery path for this file", which is weaker than "nothing
-   reads it" and has to be: a cycle working on this repository reads its own
-   `CLAUDE.md` and its tech-debt register, but from the `gh repo clone` in
-   `workspace_root` — both current the moment a
-   pull request merges, with no image involved. The copy at /app
+   calls a change documentation-only when every path in it is under `docs/` or
+   `tech-debt/`, or is `README.md`, `CLAUDE.md`, `AGENTS.md`, `TECH-DEBT.md`,
+   `LICENCE` or `deploy/docker/README.md`, and calls it code otherwise —
+   `prompts/*.md` included, since those are Markdown documents *and* the
+   operating instructions of requirement 1a's stages, so classifying by file
+   extension would let a change to a node's behaviour skip the build that
+   deploys it. An empty path list, or none, is code. The test the allowlist
+   encodes is "the image is not the delivery path for this file", which is
+   weaker than "nothing reads it" and has to be: a cycle working on this
+   repository reads its own `CLAUDE.md`, its `AGENTS.md` and its tech-debt
+   register, but from the `gh repo clone` in `workspace_root` — both current
+   the moment a pull request merges, with no image involved. The copy at /app
    is what nothing reads, because every stage's working directory is under
    `workspace_root` or `state_dir` (requirement 6's assertion pins the first),
    so /app is never a working directory nor an ancestor of one and its
-   `CLAUDE.md` is never loaded as project memory. `.github/workflows/build-image.yml`'s
-   `changes` job runs it over the change's own diff (three-dot, so a pull
-   request is judged on what its branch did and not on what `main` did
+   `CLAUDE.md` and `AGENTS.md` are never loaded as project memory.
+   `.github/workflows/build-image.yml`'s `changes` job runs it over the
+   change's own diff (three-dot, so a pull request is judged on what its
+   branch did and not on what `main` did
    meanwhile) and, when the answer is yes, skips every *step* of the `build`
    jobs and the whole of `publish`; a checked-out state it cannot diff builds.
    The skip is neither a `paths-ignore:` filter nor a job-level `if:` on
@@ -27211,9 +27233,10 @@ oblige anyone to edit a test.
    would give the same item as a blocked entry — a closed issue, a finishing
    source's closed-or-merged pull request, a register row read `resolved` —
    and returns nothing for one still open, for a repo the digest never
-   sampled, and for a tech-debt item whose register row pre-flight never
-   fetched (the register map is fetched fresh, per item, only when the source
-   is `tech-debt`; passing none must decide nothing rather than assume open).
+   sampled, and for a register-shaped ref pre-flight never fetched a register
+   row for (no currently-live source claims one, so the Script always passes
+   an empty register map; passing none must decide nothing rather than assume
+   open).
    An ordinary issues/tech-debt item whose own claim branch already carries an
    open pull request in the pre-claim digest is reported by
    `preflight_defer_reason` — a defer, never part of `preflight_done_reason`'s

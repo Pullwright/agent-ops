@@ -213,6 +213,20 @@ assert_eq "  ... one review-round-trip (deduped from two nodes) and two post-mer
   '[{"class":"post-merge-revert","count":2},{"class":"review-round-trip","count":1}]' \
   "$(jq -Sc '[.whose.not_attributed.by_class[] | {class, count}]' <<<"$dup_report")"
 
+# A repetition two sites both logged — the Reviewer's own review-gate-checks-
+# read and the Enabler's handoff-recovery read of the same event — differs
+# only in .detector, not in {repo, item, class}. dedup_key's ordinary branch
+# never reads .detector, so this pair must still fold to one count, the same
+# as the same-detector case above (agent-ops#1949).
+cross_site="$tmp_dir/cross-site-detector.jsonl"
+cat > "$cross_site" <<'EOF'
+{"ts":"2026-03-01T00:00:00Z","node":"n1","cycle":"c11","event":"rework","class":"check-failure","detector":"agent-cycle.sh:review-gate-checks-read","evidence":{"ok":false,"reason":"required check missing"},"attributed_stage":null,"repo":"o/r","item":"11","pr_url":"https://github.com/o/r/pull/11"}
+{"ts":"2026-03-01T00:00:05Z","node":"n2","cycle":"c11","event":"rework","class":"check-failure","detector":"lib/enabler.sh:review-gate-checks-read","evidence":{"ok":false,"reason":"required check missing"},"attributed_stage":null,"repo":"o/r","item":"11","pr_url":"https://github.com/o/r/pull/11"}
+EOF
+cross_site_report="$(panel_of "$cross_site")"
+assert_eq "a check-failure caught by both sites' own detectors for the same {repo, item} folds to one count, even though .detector differs" \
+  "1" "$(jq -c '.how_much.rework_count' <<<"$cross_site_report")"
+
 # Which copy survives dedup is first-wins-by-ts, the reduction
 # docs/FLOW-SCHEMA.md's own "Do not double-count" states — visible in
 # rework_count and whose below, which read the deduped stream and so count

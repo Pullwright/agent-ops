@@ -619,7 +619,7 @@ Keys:
 | `schedule.changelog_roll_day_of_week` | `1` | The day of week the containerised node's weekly CHANGELOG.md roll fires, cron's own convention (`0`-`6`, Sunday is `0`); the product default (`1`) is Monday. |
 | `schedule.monitor_hour` | `5` | The hour the containerised node's daily Pipeline Monitor run is due (`monitor-cycle.sh`). Its crontab line fires hourly and stands down unless this hour's daily run is still owed, or a pager page fired since the last run. |
 | `schedule.monitor_offset_minutes` | `19` | Minutes past `CYCLE_MINUTE` (mod 60) the hourly Pipeline Monitor tick's minute is set to, on the same per-node jitter `doctor_offset_minutes` uses. |
-| `revert_rate_baseline` | `{"source": "docs/reviews/2026-08-15-merge-autonomy-baseline.md", "generated": "2026-08-15", "repos": [{"slug": "Poetic-Poems/poetic", "count": 84, "reverts": 0, "follow_up_fixes": 31}, {"slug": "Poetic-Poems/poetic-fiddle", "count": 119, "reverts": 0, "follow_up_fixes": 44}, {"slug": "Pullwright/agent-ops", "count": 120, "reverts": 0, "follow_up_fixes": 106}]}` | The D18 Stage 0 merge-autonomy baseline, copied once from `docs/reviews/2026-08-15-merge-autonomy-baseline.md` rather than re-derived — `scripts/publish-revert-rate.sh` compares every window's rate against it. A fresh install ships no baseline until Stage 0 records one. |
+| `revert_rate_baseline` | `{"source": "docs/reviews/2026-08-15-merge-autonomy-baseline.md", "generated": "2026-08-15", "repos": [{"slug": "Poetic-Poems/poetic", "count": 84, "reverts": 0, "follow_up_fixes": 31}, {"slug": "Poetic-Poems/poetic-fiddle", "count": 119, "reverts": 0, "follow_up_fixes": 44}, {"slug": "Pullwright/agent-ops", "count": 120, "reverts": 0, "follow_up_fixes": 106}]}` | The D18 Stage 0 merge-autonomy baseline, copied once from `docs/reviews/2026-08-15-merge-autonomy-baseline.md` rather than re-derived — `scripts/publish-revert-rate.sh` compares every window's rate against it. A fresh install ships no baseline until Stage 0 records one. The value shown is this installation's own baseline, not a generic default — a fresh install records its own at Stage 0. |
 | `resources` | see `config.json` | Per-container and per-volume budgets D14 compares measured actuals against (`scripts/doctor.sh` warns on a breach; the dashboard renders the comparison per node). `memory_bytes`/`cpu_cores` mirror `deploy/docker/compose.yaml`'s own `mem_limit`/`cpus`, which remain the enforcement mechanism; `bandwidth_bytes_per_hour` and every `disk_bytes` are provisional, set before any real fleet window existed. |
 <!-- config-table:end -->
 
@@ -2275,7 +2275,7 @@ The dashboard refreshes at the end of every cycle (a hook in `agent-cycle.sh`).
 To also keep it current between cycles — reflecting in-flight runs, the
 lock, and live GitHub status — add a heartbeat to your crontab:
 ```bash
-(crontab -l 2>/dev/null || true; echo "*/5 * * * * $HOME/Code/Poetic-Poems/Poetic-Poems/agent-ops/scripts/publish-dashboard.sh >> $HOME/.local/state/poetic-agents/dashboard.log 2>&1") | crontab -
+(crontab -l 2>/dev/null || true; echo "*/5 * * * * $HOME/Code/Poetic-Poems/agent-ops/scripts/publish-dashboard.sh >> $HOME/.local/state/poetic-agents/dashboard.log 2>&1") | crontab -
 ```
 
 The dashboard is a **reader**: it only ever reads the pipeline's state and
@@ -2894,11 +2894,11 @@ CI runs the same suite *inside* the freshly built image on every push that
 could change it — along with toolchain, crontab and role-guard checks (see
 `.github/workflows/build-image.yml`) — so an image that reaches `ghcr.io`
 has already passed everything above. A change confined to documentation
-(`docs/`, `tech-debt/`, `README.md`, `CLAUDE.md`, `TECH-DEBT.md`, `LICENCE`,
-`deploy/docker/README.md`) builds no image and so runs none of this; anything
-else does, `prompts/*.md` emphatically included, since those are what the
-pipeline feeds to `claude`. `scripts/is-docs-only.sh` holds the line, and
-running it by hand answers "will my branch build an image?":
+(`docs/`, `tech-debt/`, `README.md`, `CLAUDE.md`, `AGENTS.md`, `TECH-DEBT.md`,
+`LICENCE`, `deploy/docker/README.md`) builds no image and so runs none of
+this; anything else does, `prompts/*.md` emphatically included, since those
+are what the pipeline feeds to `claude`. `scripts/is-docs-only.sh` holds the
+line, and running it by hand answers "will my branch build an image?":
 
 ```bash
 git diff --no-renames --name-only main...HEAD | ./scripts/is-docs-only.sh

@@ -62,12 +62,12 @@ assert_eq "one still open is not" \
   "" "$(preflight_done_reason o/a pr-9-abandoned-abc123abc123 agent/245 "$states")"
 
 register='{"o/a":{"TD26072401":"resolved","TD-PPpoet-26072605":"open"}}'
-assert_eq "a tech-debt item the register already resolved is already done" \
+assert_eq "a register-shaped ref the register already resolved is already done" \
   "the tech-debt register records it resolved" \
   "$(preflight_done_reason o/a TD26072401 td/TD26072401 "$states" "$register")"
 assert_eq "one still open is not" \
   "" "$(preflight_done_reason o/a TD-PPpoet-26072605 td/TD-PPpoet-26072605 "$states" "$register")"
-assert_eq "and neither is a tech-debt item pre-flight never fetched a register row for" \
+assert_eq "and neither is a register-shaped ref a caller passed no register map for (the Script's own case now, since no live source claims one)" \
   "" "$(preflight_done_reason o/a TD26072401 td/TD26072401 "$states")"
 
 assert_eq "a repo pre-flight has no digest for decides nothing" \

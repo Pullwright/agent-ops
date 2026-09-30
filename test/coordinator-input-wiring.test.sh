@@ -294,9 +294,10 @@ assert_true "the event carries the per-band terms breakdown" \
 # Same fitted cycle as immediately above (`run_fit` left `ordered_repos_json`
 # and `coordinator_fit_report_json` — both globals, no `local` in `run_fit` —
 # set to a genuinely-trimmed array and a non-empty `{"applied":true,…}`
-# report). Before agent-ops#933's fix, the gate's own
-# `${coordinator_fit_report_json:-{}}` default silently corrupted that report
-# into invalid JSON and its `if` never took the true branch, so
+# report). Before agent-ops#933's fix, the gate's own brace-default guard
+# (docs/IMPLEMENTATION-PIPELINE-SPEC.md's Gotchas table has the exact
+# syntax) silently corrupted that report into invalid JSON and its `if`
+# never took the true branch, so
 # `coordinator_fit_trimmed_json` stayed `"[]"` and `coordinator_fit_rung`
 # stayed `0` on every cycle that actually trimmed — exactly the shape this
 # section asserts against.

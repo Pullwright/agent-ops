@@ -97,8 +97,8 @@ one of these fields should use `has("repo")`, not `.repo != null`.
 | Class | Detector | Attribution |
 | --- | --- | --- |
 | `review-round-trip` | `scripts/gather-review-feedback.sh`'s candidate rule, read at the Script's own selection of a `review-feedback` work order | `null` |
-| `human-change-request` | `lib/reconciliation-gate.sh`'s `reconciliation_gate` going `dirty`, at the Reviewer's own handoff (`agent-cycle.sh`) | `reviewer` |
-| `check-failure` | `agent-cycle.sh`'s `review-gate-checks-read` event carrying `ok: false` | `null` |
+| `human-change-request` | `lib/reconciliation-gate.sh`'s `reconciliation_gate` going `dirty`, at the Reviewer's own handoff (`agent-cycle.sh`) or the Enabler's handoff-recovery path (`lib/enabler.sh`) | `reviewer` |
+| `check-failure` | A `review-gate-checks-read` event carrying `ok: false`, from either of its two call sites — the Reviewer's own handoff (`agent-cycle.sh`) or the Enabler's handoff-recovery path (`lib/enabler.sh`) | `null` |
 | `merge-conflict` | `scripts/gather-merge-conflicts.sh`'s candidate rule, read at selection of a `merge-conflicts` work order | `null` |
 | `abandoned-draft-resumed` | `scripts/gather-abandoned-drafts.sh`'s candidate rule, read at selection of an `abandoned-drafts` work order | `null` |
 | `stage-rerun` | Either of two: a `stage-end` event carrying a non-empty `kill_reason` (requirement 4e's two backstop caps), or `lib/crash-loop.sh`'s verdict reaching `crash_loop_escalate` (requirement 2.7) | The killed/looping stage's own name, as its `stage-end` event spells it (`coordinator`, `implementer`, `reviewer`, `approver`, `approver-adjudicate-open-question`, `enabler`, `enabler-adjudicate`, `enabler-decide`, `refiner`), or `pre-selection` for a crash loop of cycles that died before any stage started |
@@ -139,26 +139,25 @@ from a pull request's own author, and every write and comment on this
 project's own pull requests lands under the same account — was invisible to
 the review gate entirely. That was agent-ops#533's blind spot, and this class
 used to inherit it. **It does not anymore**: the gate now refuses the
-Reviewer's own "ready" handoff, and reverts the pull request to draft, the
-moment it finds an unreconciled human comment, and that refusal is exactly
-where this class's record is emitted. But the gate runs at one point only —
-the Reviewer's own handoff — so its coverage is not total: a change request
-posted *after* a pull request is already ready (with no further handoff ever
-running to catch it), or one a human acts on directly without the Script's
-own handoff running at all, is still outside what this detector can see.
-Nothing in this codebase closes that residual gap today; a reader should not
-assume `human-change-request`'s absence from a given round means no human
-change request happened, only that the reconciliation gate did not catch one.
+"ready" handoff, and reverts the pull request to draft, the moment it finds
+an unreconciled human comment, and that refusal is exactly where this
+class's record is emitted — from either of the two sites that share
+`handoff_complete_review` (requirement 34a): the Reviewer's own handoff
+(`agent-cycle.sh`) and the Enabler's handoff-recovery path (`lib/enabler.sh`,
+agent-ops#1032). But the gate runs at these two points only, so its coverage
+is not total: a change request posted *after* a pull request is already
+ready (with no further handoff ever running to catch it), or one a human
+acts on directly without either handoff running at all, is still outside
+what this detector can see. Nothing in this codebase closes that residual
+gap today; a reader should not assume `human-change-request`'s absence from
+a given round means no human change request happened, only that the
+reconciliation gate did not catch one.
 
-One further narrowing, for the same reason: `handoff_complete_review` — the
-one gate implementation the Reviewer's handoff shares with the Enabler's
-handoff-recovery path (requirement 34a) — is also called from
-`lib/enabler.sh`, and a `dirty` reconciliation verdict there produces a
-`warning`, not a record. Only the Reviewer's own handoff site emits this
-class. A recovery pass re-observing a condition an earlier round already
-recorded is not obviously a fresh repetition, and deciding that is the
-attribution question D23 parks at Phase 2, so the narrower reading is the one
-this document states rather than one it guesses at (TD-PPagop-26082919).
+A recovery pass re-observing a condition an earlier round already recorded
+still emits its own record — the owner's ruling (2026-09-08, agent-ops#1262)
+is that a detector emits on every observation, never consulting history
+first, and the reader is what folds repeated observations of the same
+`{repo, item, class}` into one repetition (see "Do not double-count" below).
 
 **check-failure.** `ok: false` on `review-gate-checks-read` means this
 particular attempt to *read* the pull request's required-check list failed —
@@ -173,9 +172,11 @@ repetition it costs a cycle. The escalation of a run of these,
 a summary of repetitions already recorded at their own per-attempt site, and
 counting both would double the same population. `lib/enabler.sh`'s
 handoff-recovery path logs its own `review-gate-checks-read` from the same
-shared `handoff_complete_review` (requirement 34a) and emits no record, on
-the same terms — and for the same parked reason — as `human-change-request`
-above.
+shared `handoff_complete_review` (requirement 34a) and emits its own record
+too (agent-ops#1032), on the same fresh-repetition terms as
+`human-change-request` above — `detector` names whichever site fired
+(`agent-cycle.sh:review-gate-checks-read` or
+`lib/enabler.sh:review-gate-checks-read`).
 
 **stage-rerun.** Two different mechanisms share this one class, because both
 end the same way — a stage's work is discarded and has to run again — even

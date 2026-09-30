@@ -243,7 +243,8 @@ object ever names another repository.
   None of these is a judgement about the item and none of them makes it less
   of a candidate: rank a trimmed entry exactly as you would an untrimmed one.
   What they change is what you owe before you *select* it — see "Trimmed
-  entries must be read live before you select them" below. And a repo entry
+  entries need no live read before you select them" under "Tools and
+  constraints" below. And a repo entry
   carrying `issues_elided` is emphatically not a repo with no more issues: it
   is one whose backlog has outgrown a single cycle's window, which is a fact
   worth reporting, never one to reason from.
@@ -442,8 +443,12 @@ pastes it.
   before selecting. You may still want to read a trimmed entry live, on your
   own judgement, if the extract leaves you genuinely unsure whether the item
   is well-scoped enough to select at all — that is a ranking/selection
-  question this bullet does not change, and "Reporting an under-specified
-  item" below still applies if a live read leaves you unsure.
+  question this bullet does not change. It is not grounds to report the item
+  under "Reporting an under-specified item" below, either: that section's own
+  trimmed-entry bullet has the Script refuse any `needs_refinement` entry
+  naming a this-cycle-trimmed item outright, whether or not you read it live
+  first — so an unsure trimmed item is one to rank, and select or skip, never
+  one to report.
 - **A non-fresh `review-feedback`/`merge-conflicts`/`dequeued`/
   `landing-refusals`/`abandoned-drafts` entry must be read live before you select it.**
   `expensive_gather.fresh` (see "What you receive") is `false` on every
@@ -1567,10 +1572,11 @@ The rules:
   item outright and records nothing, whether or not you read it live first
   (agent-ops#683) — so there is nothing to gain by reporting one, and nothing
   lost by leaving it out: it no longer needs an account either (see "If you
-  found nothing selectable anywhere" below). If you genuinely believe a
-  trimmed item is under-specified, read it live first — `gh issue view <n>
-  --comments` — and report what that full read shows, never the elided
-  extract.
+  found nothing selectable anywhere" below). If a trimmed entry's title makes
+  it look worth attention, rank and consider it for selection like any other
+  candidate — see "Trimmed entries need no live read before you select them"
+  above, which already covers this. That is the route; a report is not, and
+  reading it live first does not make one recordable.
 - **Reporting changes nothing about what you select.** It is side-work you do
   while walking, and it never promotes or demotes a candidate. On a cycle that
   selects, an empty array is the normal answer and reporting nothing is not a
