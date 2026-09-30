@@ -24,9 +24,9 @@
 #   - **`0` means the bound is off, and the input passes through untouched.**
 #   - **Trimming is recorded; failing to fit is recorded louder.**
 #
-# The fit/prompt/trim blocks are lifted verbatim out of lib/gather-phase.sh
-# (agent-cycle.sh's own body until issue #1958); the per-repository assembly
-# block is lifted out of agent-cycle.sh itself, the way
+# The fit/prompt/trim blocks are lifted verbatim out of lib/gather-phase.sh,
+# and the per-repository assembly block out of lib/coordinator-phase.sh
+# (both agent-cycle.sh's own body until issue #1958), the way
 # test/backpressure-wiring.test.sh lifts its own, so the assertions are about
 # the shipped code rather than a copy of its logic.
 #
@@ -39,12 +39,11 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-AGENT_CYCLE="$SCRIPT_DIR/agent-cycle.sh"
 # The requirement-4i fit block and the base-prompt render both moved to
-# lib/gather-phase.sh (issue #1958's continuation of #771's split). Named
-# separately from AGENT_CYCLE so the extraction below stays a statement of
-# where each block actually lives now, not a guess.
+# lib/gather-phase.sh; the per-repository prompt assembly moved to
+# lib/coordinator-phase.sh (issue #1958's continuation of #771's split).
 GATHER_PHASE_LIB="$SCRIPT_DIR/lib/gather-phase.sh"
+COORDINATOR_PHASE_LIB="$SCRIPT_DIR/lib/coordinator-phase.sh"
 
 # shellcheck source=lib/coordinator-input.sh
 . "$SCRIPT_DIR/lib/coordinator-input.sh"
@@ -104,9 +103,9 @@ fi
 # lines are never touched by the assignment's own indentation — so only the
 # start anchor needs it.
 # shellcheck disable=SC2016  # The anchors are awk regexes matching agent-cycle.sh's own text, not expansions for this shell.
-assembly_block="$(extract_block '^  coordinator_prompt="\$coordinator_base_prompt$' '^"$' "$AGENT_CYCLE")"
+assembly_block="$(extract_block '^  coordinator_prompt="\$coordinator_base_prompt$' '^"$' "$COORDINATOR_PHASE_LIB")"
 if [[ -z "$assembly_block" || "$assembly_block" != *'Runtime input for this cycle'* ]]; then
-  echo "FAIL - could not extract the prompt assembly from agent-cycle.sh" >&2
+  echo "FAIL - could not extract the prompt assembly from lib/coordinator-phase.sh" >&2
   exit 1
 fi
 

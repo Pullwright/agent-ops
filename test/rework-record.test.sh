@@ -145,10 +145,10 @@ assert_eq "check-failure: ... and the Enabler's own handoff-recovery site (agent
 # review-gate-checks-degraded is a different event with no call site into
 # lib/rework.sh at all — there is nothing to drive here beyond confirming
 # rework_check_failure_fields is the *only* function this class's detector
-# calls, which the wiring above (agent-cycle.sh) rather than this pure
-# function establishes; asserted structurally by grep below instead.
-if grep -q 'rework_check_failure_fields' "$SCRIPT_DIR/agent-cycle.sh" \
-   && ! grep -B2 'review-gate-checks-degraded' "$SCRIPT_DIR/agent-cycle.sh" | grep -q 'rework_'; then
+# calls, which the wiring above (lib/coordinator-phase.sh) rather than this
+# pure function establishes; asserted structurally by grep below instead.
+if grep -q 'rework_check_failure_fields' "$SCRIPT_DIR/lib/coordinator-phase.sh" \
+   && ! grep -B2 'review-gate-checks-degraded' "$SCRIPT_DIR/lib/coordinator-phase.sh" | grep -q 'rework_'; then
   printf 'ok   - %s\n' "review-gate-checks-degraded's own log_event site calls no rework function"
 else
   printf 'FAIL - %s\n' "review-gate-checks-degraded's own log_event site calls no rework function"

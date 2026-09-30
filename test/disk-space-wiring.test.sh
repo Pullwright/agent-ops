@@ -443,8 +443,8 @@ footprint_blocks_rc="$(
   # as a command substitution someone meant to expand (SC2016), and lint-shell
   # runs at info severity.
   review_block="$(extract_block '^  # .du -sb. of the clone just made' '^  fi$' "$SCRIPT_DIR/review-cycle.sh")"
-  cycle_block="$(extract_block '^# .du -sb. of the clone just made' '^fi$' "$SCRIPT_DIR/agent-cycle.sh")"
-  for pair in "review-cycle.sh:$review_block" "agent-cycle.sh:$cycle_block"; do
+  cycle_block="$(extract_block '^# .du -sb. of the clone just made' '^fi$' "$SCRIPT_DIR/lib/coordinator-phase.sh")"
+  for pair in "review-cycle.sh:$review_block" "lib/coordinator-phase.sh:$cycle_block"; do
     if [[ "${pair#*:}" != *'disk_space_clone_footprint_bytes'* || "${pair#*:}" != *'clone-footprint'* ]]; then
       echo "FAIL - could not extract the clone-footprint block from ${pair%%:*} — has it moved?" >&2
       exit 1

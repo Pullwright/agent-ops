@@ -31,7 +31,8 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CYCLE="$SCRIPT_DIR/agent-cycle.sh"
+# Moved to lib/coordinator-phase.sh (issue #1958's continuation of #771's split).
+CYCLE="$SCRIPT_DIR/lib/coordinator-phase.sh"
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
@@ -71,7 +72,7 @@ block="$(awk '
 
 if [[ -z "$block" || "$block" != *"run_approver_stage"* || "$block" != *"run_landing_stage"* \
       || "$block" != *"landing_open_question_label_project"* ]]; then
-  echo "FAIL - could not extract the open-question block from agent-cycle.sh — has it moved?" >&2
+  echo "FAIL - could not extract the open-question block from lib/coordinator-phase.sh — has it moved?" >&2
   exit 1
 fi
 

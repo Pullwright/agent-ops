@@ -26,7 +26,9 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-AGENT_CYCLE="$SCRIPT_DIR/agent-cycle.sh"
+# The claim loop moved to lib/coordinator-phase.sh (issue #1958's
+# continuation of #771's split).
+COORDINATOR_PHASE_LIB="$SCRIPT_DIR/lib/coordinator-phase.sh"
 
 failures=0
 
@@ -386,7 +388,7 @@ fb_cand="$(fallback_select_candidate "$fb_repos" "a-model" "$refinements_spec" '
 assert_eq "the fallback really does pick the spec-refined item" "TD1"   "$(jq -r '.item // ""' <<<"$fb_cand")"
 assert_nonempty "…and its script-built context does not satisfy the verbatim spec check"   "$(refinement_traceability_fault "$fb_cand" "$refinements_spec")"
 
-claim_loop="$(extract_block '^  c_trace_fault=' '^  if \[\[ -n ' "$AGENT_CYCLE")"
+claim_loop="$(extract_block '^  c_trace_fault=' '^  if \[\[ -n ' "$COORDINATOR_PHASE_LIB")"
 if [[ "$claim_loop" == *'selected_by_fallback'* ]]; then
   printf 'ok   - %s\n' "the claim loop guards the check with selected_by_fallback, so a fallback pick is never faulted"
 else
@@ -477,7 +479,7 @@ GH_RC=0
 #    count what it could not rescue separately — a cycle that dropped every
 #    candidate on traceability reported `raced` for 15 hours because this
 #    counter did not exist (issue #767).
-loop_src="$(sed -n '/^  c_trace_fault=""/,/^  if candidate_preclaimed /p' "$AGENT_CYCLE")"
+loop_src="$(sed -n '/^  c_trace_fault=""/,/^  if candidate_preclaimed /p' "$COORDINATOR_PHASE_LIB")"
 # shellcheck disable=SC2016  # the literal source text is what is being matched
 if [[ "$loop_src" == *'refinement_traceability_repair'* && "$loop_src" == *'trace_faults=$(( trace_faults + 1 ))'* ]]; then
   printf 'ok   - %s\n' "the claim loop repairs before skipping, and counts an unrescued fault as its own kind"
@@ -485,7 +487,7 @@ else
   printf 'FAIL - %s\n' "the claim loop does not attempt a repair, or does not count trace faults separately"
   failures=$(( failures + 1 ))
 fi
-if grep -q 'standdown_cause="untraceable"' "$AGENT_CYCLE"; then
+if grep -q 'standdown_cause="untraceable"' "$COORDINATOR_PHASE_LIB"; then
   printf 'ok   - %s\n' "a traceability stand-down has its own cause, and is never reported as raced"
 else
   printf 'FAIL - %s\n' "a cycle whose candidates all failed traceability still falls through to the raced reason"

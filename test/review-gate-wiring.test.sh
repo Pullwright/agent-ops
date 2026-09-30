@@ -65,7 +65,8 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CYCLE="$SCRIPT_DIR/agent-cycle.sh"
+# Moved to lib/coordinator-phase.sh (issue #1958's continuation of #771's split).
+CYCLE="$SCRIPT_DIR/lib/coordinator-phase.sh"
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
@@ -116,7 +117,7 @@ gate_block="$(awk '
 ' "$CYCLE")"
 
 if [[ -z "$gate_block" ]]; then
-  echo "FAIL - could not extract the ready-gate block from agent-cycle.sh — has it moved?" >&2
+  echo "FAIL - could not extract the ready-gate block from lib/coordinator-phase.sh — has it moved?" >&2
   exit 1
 fi
 

@@ -32,7 +32,8 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CYCLE="$SCRIPT_DIR/agent-cycle.sh"
+# Moved to lib/coordinator-phase.sh (issue #1958's continuation of #771's split).
+CYCLE="$SCRIPT_DIR/lib/coordinator-phase.sh"
 
 failures=0
 
@@ -63,7 +64,7 @@ for pair in "implementer:$impl_block" "reviewer:$rev_block"; do
   name="${pair%%:*}"
   body="${pair#*:}"
   if [[ -z "$body" || "$body" != *"stage: \"$name\""* ]]; then
-    echo "FAIL - could not extract the $name stage-end from agent-cycle.sh — has it moved?" >&2
+    echo "FAIL - could not extract the $name stage-end from lib/coordinator-phase.sh — has it moved?" >&2
     exit 1
   fi
 done

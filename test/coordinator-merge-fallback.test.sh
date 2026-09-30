@@ -719,9 +719,9 @@ assert_eq "a non-numeric failure count degrades to zero, not a crash" "fp-abc123
 # backgrounded subshell would die before `claude` was ever exec'd — for every
 # repository, on every cycle, with CI green over it because no function-level
 # test builds this path.
-out_path_src="$(sed -n 's/^  \(coordinator_out=.*\)$/\1/p' "$SCRIPT_DIR/agent-cycle.sh")"
+out_path_src="$(sed -n 's/^  \(coordinator_out=.*\)$/\1/p' "$SCRIPT_DIR/lib/coordinator-phase.sh")"
 if [[ -z "$out_path_src" ]]; then
-  printf 'FAIL - could not extract the coordinator_out build from agent-cycle.sh\n'
+  printf 'FAIL - could not extract the coordinator_out build from lib/coordinator-phase.sh\n'
   failures=$(( failures + 1 ))
 else
   cycle_dir="$tmp_dir/cycle"
@@ -756,9 +756,9 @@ cands_src="$(awk '
   /^    coord_repo_cands="\$\(jq -c --argjson idx "\$coord_ri" \\$/ { on = 1 }
   on                                                                { print }
   on && /<<<"\$coord_repo_work_order_json" 2>\/dev\/null\)"$/       { exit }
-' "$SCRIPT_DIR/agent-cycle.sh")"
+' "$SCRIPT_DIR/lib/coordinator-phase.sh")"
 if [[ -z "$cands_src" ]]; then
-  printf 'FAIL - could not extract the coord_repo_cands lift from agent-cycle.sh\n'
+  printf 'FAIL - could not extract the coord_repo_cands lift from lib/coordinator-phase.sh\n'
   failures=$(( failures + 1 ))
 else
   # Both are read by the lifted block eval'd below, which shellcheck cannot
@@ -801,9 +801,9 @@ zerocands_src="$(awk '
   /^    if \[\[ "\$\(jq '"'"'length'"'"'/ { on = 1 }
   on                                     { print }
   on && /^    fi$/                       { exit }
-' "$SCRIPT_DIR/agent-cycle.sh")"
+' "$SCRIPT_DIR/lib/coordinator-phase.sh")"
 if [[ -z "$zerocands_src" ]]; then
-  printf 'FAIL - could not extract the zero-candidates guard from agent-cycle.sh\n'
+  printf 'FAIL - could not extract the zero-candidates guard from lib/coordinator-phase.sh\n'
   failures=$(( failures + 1 ))
 else
   # shellcheck disable=SC2034  # coord_repo_slug: read by the lifted block eval'd on the next line.
@@ -842,9 +842,9 @@ allfail_src="$(awk '
   /^if \(\( coord_n_repos > 0 && coord_n_failed >= coord_n_repos \)\); then$/ { on = 1 }
   on                                                                          { print }
   on && /^fi$/                                                                { exit }
-' "$SCRIPT_DIR/agent-cycle.sh")"
+' "$SCRIPT_DIR/lib/coordinator-phase.sh")"
 if [[ -z "$allfail_src" ]]; then
-  printf 'FAIL - could not extract the all-engagements-failed guard from agent-cycle.sh\n'
+  printf 'FAIL - could not extract the all-engagements-failed guard from lib/coordinator-phase.sh\n'
   failures=$(( failures + 1 ))
 else
   assert_eq "every engagement failing exits the cycle" "0" \
