@@ -395,13 +395,13 @@ updater_status() {
     # container of our own service ever recorded an "allow", the newest one
     # is the roll that produced us (see the header on why this scan, unlike
     # the fold below, is service-scoped).
-    local newest_ts="" f entry v t svc es
+    local newest_ts="" f entry v t svc entry_started
     for f in "$ledger_dir"/*.jsonl; do
       [[ -f "$f" ]] || continue
       [[ "${f##*/}" == "$host.jsonl" ]] && continue
       entry="$(_updater_health_last_entry "$f")"
       [[ -n "$entry" ]] || continue
-      IFS=$'\t' read -r v t svc es <<<"$entry"
+      IFS=$'\t' read -r v t svc entry_started <<<"$entry"
       [[ "$v" == "allow" ]] || continue
       [[ "$svc" == "$service" ]] || continue
       [[ "$t" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || continue
