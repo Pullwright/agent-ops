@@ -95,9 +95,12 @@
 #     present only on a folded "deferring"/"stuck" that outranked our own
 #     reading and absent whenever our own verdict won outright — so the field
 #     never asserts about this container a fault that belongs to another.
-#     Additive: every reader that keys on `status` alone
-#     (`node_health_updater_component`, `pager_eval_updater_stuck`,
-#     `dashboard/index.html`'s `updaterLine`) is unaffected by its presence.
+#     Additive: a reader that keys on `status` alone
+#     (`node_health_updater_component`, which passes the whole object
+#     through; `pager_eval_updater_stuck`, which pages on the node) is
+#     unaffected by its presence. `dashboard/index.html`'s `updaterLine` is
+#     the one reader that consumes it, making the named sibling the subject
+#     of the badge's title.
 #
 # Both of the states this container can be in for itself are *streaks*, not
 # moments, and are measured from the streak's start. watchtower re-runs the
