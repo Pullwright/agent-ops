@@ -742,11 +742,17 @@ assert_eq "while both hand-appended events stay in the log tail" "2" \
 # feeds, `review-gate-checks-degraded`, is exactly what the tail is for and
 # stays. `first-seen` (requirement 33, TD-PPagop-26081405) gets the same
 # treatment: one per item a gather first reports, read only by
-# scripts/pickup-metrics.sh.
+# scripts/pickup-metrics.sh. `rework` (requirement 47, TD-PPagop-26082920)
+# gets it too, pending the Phase 2 rework panel (#611): no `detail` for the
+# generic renderer to show and no reader yet. `issues-excluded` (requirement
+# 3j) is the counter-example — every row reports a transition an operator can
+# act on — and stays.
 {
   printf '{"ts":"2026-07-26T08:20:00Z","cycle":"%sT080000Z-31","node":"nodeC-self","event":"review-gate-checks-read","ok":false}\n' "$today_day"
   printf '{"ts":"2026-07-26T08:21:00Z","cycle":"%sT080000Z-31","node":"nodeC-self","event":"review-gate-checks-degraded","gate":"required-checks","count":3,"first_ts":"2026-07-26T06:20:00Z","last_ts":"2026-07-26T08:20:00Z"}\n' "$today_day"
   printf '{"ts":"2026-07-26T08:22:00Z","cycle":"%sT080000Z-31","node":"nodeC-self","event":"first-seen","repo":"o/r","item":"1","source":"tech-debt","basis":"poll","bootstrap":false}\n' "$today_day"
+  printf '{"ts":"2026-07-26T08:23:00Z","cycle":"%sT080000Z-31","node":"nodeC-self","event":"rework","class":"claim-race-duplicate","detector":"x","evidence":{},"repo":"o/r","item":"1"}\n' "$today_day"
+  printf '{"ts":"2026-07-26T08:24:00Z","cycle":"%sT080000Z-31","node":"nodeC-self","event":"issues-excluded","repo":"o/r","count":1,"excluded":[{"number":1,"reason":"assigned"}],"detail":"1 issue(s) excluded: #1 (assigned)"}\n' "$today_day"
 } >> "$c/.local/state/poetic-agents/log.jsonl"
 run_publish "$c" NODE_NAME=nodeC-self
 cdata="$(data_of "$c")"
@@ -756,6 +762,10 @@ assert_eq "while the escalation it feeds stays in it" "1" \
   "$(jq '[.log_tail[] | select(.event == "review-gate-checks-degraded")] | length' <<<"$cdata")"
 assert_eq "first-seen is kept out of the log tail too" "0" \
   "$(jq '[.log_tail[] | select(.event == "first-seen")] | length' <<<"$cdata")"
+assert_eq "rework is kept out of the log tail too" "0" \
+  "$(jq '[.log_tail[] | select(.event == "rework")] | length' <<<"$cdata")"
+assert_eq "while issues-excluded, which reports a transition, stays in it" "1" \
+  "$(jq '[.log_tail[] | select(.event == "issues-excluded")] | length' <<<"$cdata")"
 
 # --- A cycle-less event does not blank the window (the 2026-08-29 blackout) -------
 # Not every record in the union belongs to a cycle. `publish-revert-rate.sh`
@@ -770,6 +780,9 @@ assert_eq "first-seen is kept out of the log tail too" "0" \
 # fleet look identical from the page. Both shapes are asserted — an explicit
 # `"cycle": null` and the field absent altogether — since only the first is what
 # the emitter writes and the second is what a hand-edit or an older node yields.
+# The `rework` row here is filtered out of the log tail regardless of its
+# cycle (TD-PPagop-26082920, above) — a `cycle: null` row is not exempt from
+# that exclusion — so only `log-repaired` is expected to survive into it.
 n="$(new_home nodeNullCycle)"
 make_cycle "$n" "${today_day}T090000Z-61" 0.25 model-a
 {
@@ -793,8 +806,10 @@ assert_eq "the window reports itself rendered, not failed" "true" \
   "$(jq -r '.cycle_render.ok' <<<"$ndata")"
 assert_eq "  ... with no error to report" "null" \
   "$(jq -r '.cycle_render.error' <<<"$ndata")"
-assert_eq "and the cycle-less events stay in the log tail, where they belong" "2" \
+assert_eq "and the cycle-less log-repaired event stays in the log tail" "1" \
   "$(jq '[.log_tail[] | select(.cycle == null)] | length' <<<"$ndata")"
+assert_eq "  ... while the cycle-less rework event does not" "true" \
+  "$(jq -r '[.log_tail[] | select(.cycle == null)][0].event == "log-repaired"' <<<"$ndata")"
 
 # --- A window that failed to render says so, rather than reading as an idle fleet -
 # The whole window is one jq program, so whatever kills it empties `cycles[]`

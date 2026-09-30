@@ -14137,7 +14137,17 @@ implements.
     median/p90 while still counting them, so the exclusion is visible rather
     than a silent drop. Kept out of the dashboard's log tail for the same
     reason `review-gate-checks-read` is: machine bookkeeping with nothing an
-    operator can act on, read only by `scripts/pickup-metrics.sh`. An
+    operator can act on, read only by `scripts/pickup-metrics.sh`. A `rework`
+    event (requirement 47, TD-PPagop-26082920) gets the same treatment for a
+    related reason, provisionally rather than permanently: its record carries
+    no `detail` for the dashboard's generic renderer to show, its only reader
+    today is the Phase 2 rework panel (D23, #611) that does not yet exist, and
+    `claim-race-duplicate`/`stage-rerun` fire often enough under healthy
+    fleet contention to displace rows that do have something to say — the
+    same "displace rows that have something to say" ground the two exclusions
+    above already state. Unlike them, this one is expected to be undone: once
+    #611's panel exists to consume the record, re-including `rework` in the
+    tail is a one-line reversal, not a rediscovery. An
     `issues-excluded` event (requirement 3j; agent-ops#447) carries `repo`,
     `count` and `excluded` — the same `{number, reason}` array
     `scripts/gather-issues.sh` reports as `issues_excluded` — plus a `detail`
@@ -14186,9 +14196,10 @@ implements.
     Co-Ordinator's own runtime input is unaffected either way: a `null`
     current set still reaches it as `issues_excluded: []`, the same "nothing
     to report" reading an empty `candidates` already gets. Unlike
-    `first-seen` and `review-gate-checks-read`, this event **stays** in the
-    dashboard's log tail: every row reports a transition, which is precisely
-    the kind of fact an operator can act on, not bookkeeping to hide. A
+    `first-seen`, `review-gate-checks-read` and `rework`, this event
+    **stays** in the dashboard's log tail: every row reports a transition,
+    which is precisely the kind of fact an operator can act on, not
+    bookkeeping to hide. A
     `dependabot-rebase-requested` (requirement 3s)
     carries the `repo` and the `number` of the Dependabot pull request this
     cycle asked to rebase itself; a nudge that could not be posted is a

@@ -1207,7 +1207,12 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                                        //   to say — and minus first-seen for
                                        //   the same reason (spec 33), one per
                                        //   item a gather first reports, read
-                                       //   only by scripts/pickup-metrics.sh
+                                       //   only by scripts/pickup-metrics.sh —
+                                       //   and minus rework too (spec 33/47,
+                                       //   TD-PPagop-26082920), pending the
+                                       //   Phase 2 rework panel (#611): no
+                                       //   detail to show and no reader yet,
+                                       //   provisional rather than permanent
   cron_tail: [ "line", … ] }
 ```
 
@@ -3108,9 +3113,13 @@ number's twins elsewhere on the page.
   (issue #245's raced shape) keeps its row and stays out of the count, and so
   does one whose `cycle-end` never came. A union carrying events that belong
   to no cycle — one stamped `cycle: null`, as `publish-revert-rate.sh` writes
-  them, and one with no `cycle` field at all — leaves the window whole: the
-  real cycle renders with its stages and its own events, `cycle_render.ok` is
-  true, and both cycle-less events stay in the log tail. Conversely, a detail
+  its `rework` rows, and one with no `cycle` field at all (`log-repaired`) —
+  leaves the window whole: the real cycle renders with its stages and its own
+  events, `cycle_render.ok` is true, and the log tail excludes the cycle-less
+  `rework` row on its event type the same as any other (spec 33/47,
+  TD-PPagop-26082920) — a `cycle: null` row is not exempt from that exclusion
+  — so only the cycle-less `log-repaired` row stays in the log tail.
+  Conversely, a detail
   render that cannot run at all still publishes the rest of the page, but says
   so on stderr and sets `cycle_render.ok` false with `jq`'s reason attached,
   rather than serving the empty `cycles[]` as though the fleet had been idle.
