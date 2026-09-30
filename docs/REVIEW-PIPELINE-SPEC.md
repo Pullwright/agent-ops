@@ -959,6 +959,23 @@ R11. **Run the skill end-to-end.** Invoke the vendored `project-review` skill
    Complete the skill's own resumability book-keeping (delete `worknotes/` and
    `review-state.json`) so only the finished reports remain.
 
+R11a. **State a recommendation's default fix.** Where an `R-NN`
+   recommendation's *Approach* names more than one candidate fix, add a
+   `## Default: <fix>` heading (one sentence, the option the reviewer would
+   take) directly below it, and an `Owner decision: yes` line beside it when
+   that choice falls under `docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement
+   36a's owner-only boundary (a credential or secret, an account/settings/
+   permissions change, a licence/roadmap/product/architecture decision, an
+   external service the pipeline does not hold, or information that exists
+   only in someone's head) — the same convention `lib/tech-debt-file.sh`'s
+   `techdebt_default_section` gives a filed `file_debt`/`file_issue` body
+   (requirement 36c), so a recommendation mirrored into an issue under R12a
+   below reads identically to one of those. This is guidance to the
+   Reviewer-Agent layered on top of the vendored skill's own template
+   (`.claude/skills/project-review/references/output-templates.md`), never an
+   edit to that pinned copy — see "The `project-review` skill (vendored)"
+   above for why this repository does not own it.
+
 R12. **File review-sourced debt as labelled issues.** New debt this review
    surfaces does not go into the register: it is filed as a GitHub issue in
    the repository under review, labelled `pw::type:tech-debt` (the label the

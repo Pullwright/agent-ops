@@ -201,6 +201,21 @@ All target repos follow these rules:
    to parallelise the dimension reviews across subagents, as the skill
    describes; keep each subagent on the lowest-cost model tier likely to do
    its slice correctly.
+
+   **State a recommendation's default fix.** Where an `R-NN` recommendation's
+   *Approach* in `03-recommendations.md` names more than one candidate fix,
+   add a `## Default: <fix>` heading (one sentence, the option you would
+   take) directly below it, and an `Owner decision: yes` line beside it when
+   that choice falls under `docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement
+   36a's owner-only boundary (a credential or secret, an account/settings/
+   permissions change, a licence/roadmap/product/architecture decision, an
+   external service the pipeline does not hold, or information that exists
+   only in someone's head) — the same convention `lib/tech-debt-file.sh`'s
+   `techdebt_default_section` gives a filed `file_debt`/`file_issue` body
+   (requirement 36c), so a recommendation mirrored into an issue by step 2
+   below reads identically to one of those. This is guidance layered on top
+   of the vendored skill's own template: never edit the pinned copy at
+   `.claude/skills/project-review/references/output-templates.md` to add it.
 2. **File review-sourced debt as labelled issues.** Where the review surfaces
    debt, file it as a GitHub issue in the repository under review, labelled
    `pw::type:tech-debt` — never as a `tech-debt/<id>.md` file. Search first:
