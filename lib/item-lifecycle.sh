@@ -147,11 +147,18 @@ item_lifecycle_pickup_pairs() {
   printf '%s' "$out"
 }
 
-# The main fold (docs/FLOW-SCHEMA.md's "Item lifecycle record"). $all/$void/
-# $blocked/$obsolete arrive on stdin as four documents, bound positionally by
-# the caller (requirement 4g — big things travel on stdin, never argv):
+# The main fold (docs/FLOW-SCHEMA.md's "Item lifecycle record"). $all/$span/
+# $void/$blocked/$obsolete arrive as five documents, bound positionally by
+# the caller (requirement 4g — big things travel in files, never argv):
 #
-#   $all      every parsed event this run can see, unfiltered.
+#   $all      the item-scoped events this run can see — every object that
+#             names both a `repo` and an `item` once the `superseded` rekey
+#             below has run — as ITEM_LIFECYCLE_SPAN_JQ keeps them, in log
+#             order. Every event the fold reads names its item; nothing else
+#             is ever gathered (agent-ops#1649).
+#   $span     `{window_lo, window_hi}`: the least and greatest non-empty
+#             `.ts // ""` over *every* object at or after `$since`, item-scoped
+#             or not, folded by the same stream — the report's `window`.
 #   $void     `void_items`'s own output — the currently-void {repo, item}
 #             pairs, each carrying the winning item-void's own `ts`.
 #   $blocked  `blocked_items`'s own output — the currently-blocked pairs.
@@ -263,9 +270,7 @@ ITEM_LIFECYCLE_FOLD_JQ='
   | ($all2 | map(select(((.repo // "") | tostring) != "" and ((.item // "") | tostring) != ""))
      | group_by(item_key) | map({key: (.[0] | item_key), value: .}) | from_entries) as $full_by_key
   | ($all2 | map(select($since == "" or (.ts // "") >= $since))) as $ev
-  | ($ev | map(.ts // "") | map(select(. != "")) | sort) as $ts_all
-  | {from: (if ($ts_all | length) == 0 then null else $ts_all[0] end),
-     to:   (if ($ts_all | length) == 0 then null else $ts_all[-1] end)} as $window
+  | {from: $span.window_lo, to: $span.window_hi} as $window
 
   | ($ev | map(select(((.repo // "") | tostring) != "" and ((.item // "") | tostring) != "")))
   | group_by(item_key)
@@ -336,6 +341,36 @@ ITEM_LIFECYCLE_FOLD_JQ='
     }
 '
 
+# The streaming front half of the fold (agent-ops#1649): one pass over the
+# raw log, a line at a time through `fromjson? // empty` (so a torn or
+# spliced line is dropped rather than fatal), that keeps only the objects the
+# fold groups — those naming a `repo` and an `item` once the `superseded`
+# rekey has given an `agent/<N>` branch release its item — and folds the
+# window's span over every object at or after `$since` as it goes, ending
+# with that span as its own last line. Gathering the whole parsed log into
+# `$all` instead held every event of every kind in one `jq` process, when the
+# fold reads only the item-scoped ones; the rekey and the object guard are
+# repeated inside the fold, where they are no-ops on what this keeps.
+# shellcheck disable=SC2016  # jq's own $x/$t/$since, not the shell's.
+ITEM_LIFECYCLE_SPAN_JQ='
+  foreach ((inputs | fromjson? // empty | objects
+            | if (.event == "orphan-branch-released" and (.reason // "") == "superseded"
+                  and ((.item // "") == "") and ((.branch // "") | test("^agent/[0-9]+$")))
+              then . + {item: (.branch | capture("^agent/(?<n>[0-9]+)$").n)}
+              else . end
+            | {e: .}), {end: true}) as $x ({lo: null, hi: null};
+    if $x.end or ($since != "" and (($x.e.ts // "") >= $since | not)) then .
+    else ($x.e.ts // "") as $t
+      | if $t == "" then .
+        else .lo = (if .lo == null or $t < .lo then $t else .lo end)
+           | .hi = (if .hi == null or $t > .hi then $t else .hi end) end
+    end;
+    if $x.end then {window_lo: .lo, window_hi: .hi}
+    elif ((($x.e.repo // "") | tostring) != "" and (($x.e.item // "") | tostring) != "")
+    then $x.e
+    else empty end)
+'
+
 # item_lifecycle_fold LOG_FILE [SINCE]
 # Print the item-lifecycle report — `window`, `totals` (the flow invariant),
 # `fates`, `unaccounted[]` and `records[]` — folded from LOG_FILE, or stdin if
@@ -347,7 +382,7 @@ ITEM_LIFECYCLE_FOLD_JQ='
 # a caller running under `set -e` must not be killed by one, and a log that
 # cannot be read enters nothing.
 item_lifecycle_fold() {
-  local src="${1:--}" since="${2:-}" log_file="" tmp_log="" all_json_file="" \
+  local src="${1:--}" since="${2:-}" log_file="" tmp_log="" all_json_file="" kept_file="" \
         void_file="" blocked_file="" obsolete_file="" out_file="" f=""
   # Nothing that scales with the log is ever held in a bash variable
   # (agent-ops#1620): a variable that size is copied by every subshell forked
@@ -366,18 +401,30 @@ item_lifecycle_fold() {
   fi
 
   all_json_file="$(mktemp 2>/dev/null)" || true
+  kept_file="$(mktemp 2>/dev/null)" || true
   void_file="$(mktemp 2>/dev/null)" || true
   blocked_file="$(mktemp 2>/dev/null)" || true
   obsolete_file="$(mktemp 2>/dev/null)" || true
   out_file="$(mktemp 2>/dev/null)" || true
-  if [[ -n "$log_file" && -n "$all_json_file" && -n "$void_file" \
+  if [[ -n "$log_file" && -n "$all_json_file" && -n "$kept_file" && -n "$void_file" \
         && -n "$blocked_file" && -n "$obsolete_file" ]]; then
-    jq -c -R 'fromjson? // empty' "$log_file" 2>/dev/null | jq -sc '.' > "$all_json_file" 2>/dev/null
+    # The kept events, then the span as the last line; `$all` is everything
+    # but that line, and `$span` that line alone. A stream that did not run
+    # to its end (no span line) leaves `$all` and `$span` to their empty
+    # defaults below rather than folding a partial log as if it were whole.
+    if jq -n -R -c --arg since "$since" "$ITEM_LIFECYCLE_SPAN_JQ" "$log_file" \
+         > "$kept_file" 2>/dev/null; then
+      jq -s -c '.[:-1], (.[-1] // {window_lo: null, window_hi: null})' "$kept_file" \
+        > "$all_json_file" 2>/dev/null
+    fi
     void_items "$log_file" > "$void_file" 2>/dev/null || true
     blocked_items "$log_file" > "$blocked_file" 2>/dev/null || true
     draft_obsolete_flags "$log_file" > "$obsolete_file" 2>/dev/null || true
   fi
-  for f in "$all_json_file" "$void_file" "$blocked_file" "$obsolete_file"; do
+  [[ -n "$all_json_file" && -s "$all_json_file" ]] \
+    || { [[ -n "$all_json_file" ]] \
+           && printf '[]\n{"window_lo":null,"window_hi":null}\n' > "$all_json_file" 2>/dev/null; }
+  for f in "$void_file" "$blocked_file" "$obsolete_file"; do
     [[ -n "$f" && -s "$f" ]] || { [[ -n "$f" ]] && printf '[]' > "$f" 2>/dev/null; }
   done
 
@@ -387,7 +434,8 @@ item_lifecycle_fold() {
   if [[ -n "$all_json_file" && -n "$void_file" && -n "$blocked_file" \
         && -n "$obsolete_file" && -n "$out_file" ]]; then
     jq -n -j -c --arg since "$since" \
-        'input as $all | input as $void | input as $blocked | input as $obsolete | ('"$ITEM_LIFECYCLE_FOLD_JQ"')' \
+        'input as $all | input as $span | input as $void | input as $blocked | input as $obsolete
+         | ('"$ITEM_LIFECYCLE_FOLD_JQ"')' \
         "$all_json_file" "$void_file" "$blocked_file" "$obsolete_file" \
         > "$out_file" 2>/dev/null || true
   fi
@@ -397,5 +445,6 @@ item_lifecycle_fold() {
   else
     printf '%s' '{"window":{"from":null,"to":null},"totals":{"entered":0,"leaving":0,"in_progress":0,"unaccounted":0,"balanced":true},"fates":{"landed":0,"voided":0,"superseded":0,"abandoned":0,"blocked":0,"open":0},"unaccounted":[],"records":[]}'
   fi
-  rm -f "$tmp_log" "$all_json_file" "$void_file" "$blocked_file" "$obsolete_file" "$out_file" 2>/dev/null
+  rm -f "$tmp_log" "$all_json_file" "$kept_file" "$void_file" "$blocked_file" "$obsolete_file" \
+    "$out_file" 2>/dev/null
 }

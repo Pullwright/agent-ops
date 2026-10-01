@@ -63,19 +63,33 @@
 # as there), just grouped by node instead of split into an adoption-boundary
 # era: fleet sizing has no "before finish-then-continue" question to ask, so
 # there is nothing here for that boundary to answer.
-# shellcheck disable=SC2016  # jq's own $all/$since, not the shell's.
+#
+# Folded as a stream, one record at a time (`jq -nR` over `inputs`, each line
+# through `fromjson? // empty`, so a torn or spliced line is dropped rather
+# than fatal), never slurped (agent-ops#1649): the answer is two per-node
+# counts and the window's first and last `ts`, so nothing log-sized is ever
+# held — the whole parsed log, in one `jq` process and then again as a bash
+# string, is what this used to cost. The window is the least and greatest
+# non-empty `.ts // ""` over every object at or after SINCE, which is what
+# the first and last of their sorted list are.
+# shellcheck disable=SC2016  # jq's own $since/$e/$t, not the shell's.
 FLEET_SIZING_CONTENTION_BY_NODE_JQ='
   def ratio($c; $s): (if $s == 0 then null else ($c / $s) end);
 
-  ($all | map(select(type == "object"))) as $all2
-  | ($all2 | map(select($since == "" or (.ts // "") >= $since))) as $ev
-  | ($ev | map(.ts // "") | map(select(. != "")) | sort) as $ts_all
-  | ($ev | map(select(.event == "selection" and ((.node // "") != "")))) as $sel
-  | ($ev | map(select(.event == "claim-lost"
-      and ((.node // "") != "")
-      and (.cause == "held" or .cause == "pr-held")))) as $cont
-  | ($sel  | group_by(.node) | map({key: .[0].node, value: length}) | from_entries) as $sel_by_node
-  | ($cont | group_by(.node) | map({key: .[0].node, value: length}) | from_entries) as $cont_by_node
+  (reduce (inputs | fromjson? // empty | objects
+           | select($since == "" or (.ts // "") >= $since)) as $e
+     ({lo: null, hi: null, sel: {}, cont: {}, n_sel: 0, n_cont: 0};
+      (($e.ts // "") as $t
+       | if $t == "" then .
+         else .lo = (if .lo == null or $t < .lo then $t else .lo end)
+            | .hi = (if .hi == null or $t > .hi then $t else .hi end) end)
+      | (if $e.event == "selection" and (($e.node // "") != "")
+         then .sel[$e.node] += 1 | .n_sel += 1 else . end)
+      | (if $e.event == "claim-lost" and (($e.node // "") != "")
+            and ($e.cause == "held" or $e.cause == "pr-held")
+         then .cont[$e.node] += 1 | .n_cont += 1 else . end))) as $acc
+  | ($acc.sel)  as $sel_by_node
+  | ($acc.cont) as $cont_by_node
   | (($sel_by_node | keys) + ($cont_by_node | keys) | unique) as $nodes
   | ($nodes | map(. as $n | {
         key: $n,
@@ -86,14 +100,11 @@ FLEET_SIZING_CONTENTION_BY_NODE_JQ='
         }
       }) | from_entries) as $by_node
   | {
-      window: {
-        from: (if ($ts_all | length) == 0 then null else $ts_all[0] end),
-        to:   (if ($ts_all | length) == 0 then null else $ts_all[-1] end)
-      },
+      window: {from: $acc.lo, to: $acc.hi},
       fleet: {
-        selections: ($sel | length),
-        contended_losses: ($cont | length),
-        ratio: ratio(($cont | length); ($sel | length))
+        selections: $acc.n_sel,
+        contended_losses: $acc.n_cont,
+        ratio: ratio($acc.n_cont; $acc.n_sel)
       },
       by_node: $by_node
     }
@@ -105,15 +116,12 @@ FLEET_SIZING_CONTENTION_BY_NODE_JQ='
 # empty or unreadable log, on the same terms `item_lifecycle_pickup_pairs`
 # already does.
 fleet_sizing_contention_by_node() {
-  local src="${1:--}" since="${2:-}" all_json="" out=""
+  local src="${1:--}" since="${2:-}" out=""
   if [[ "$src" == "-" ]]; then
-    all_json="$(jq -c -R 'fromjson? // empty' 2>/dev/null | jq -sc '.' 2>/dev/null || true)"
+    out="$(jq -nRc --arg since "$since" "$FLEET_SIZING_CONTENTION_BY_NODE_JQ" 2>/dev/null || true)"
   elif [[ -s "$src" ]]; then
-    all_json="$(jq -c -R 'fromjson? // empty' "$src" 2>/dev/null | jq -sc '.' 2>/dev/null || true)"
+    out="$(jq -nRc --arg since "$since" "$FLEET_SIZING_CONTENTION_BY_NODE_JQ" "$src" 2>/dev/null || true)"
   fi
-  [[ -n "$all_json" ]] || all_json='[]'
-  out="$(jq -nc --arg since "$since" 'input as $all | ('"$FLEET_SIZING_CONTENTION_BY_NODE_JQ"')' \
-    <<<"$all_json" 2>/dev/null || true)"
   [[ -n "$out" ]] || out='{"window":{"from":null,"to":null},"fleet":{"selections":0,"contended_losses":0,"ratio":null},"by_node":{}}'
   printf '%s' "$out"
 }

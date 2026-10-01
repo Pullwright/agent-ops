@@ -363,9 +363,14 @@ node_time_state_fold() {
     log_file="$src"
   fi
 
+  # Only `node-state` events are gathered into `$all`, never the whole parsed
+  # log (agent-ops#1649): the fold's first step keeps the objects whose event
+  # is `node-state` and nothing else, so filtering the stream first hands it
+  # exactly those, in log order.
   all_json_file="$(mktemp 2>/dev/null)" || true
   if [[ -n "$log_file" && -n "$all_json_file" ]]; then
-    jq -c -R 'fromjson? // empty' "$log_file" 2>/dev/null | jq -sc '.' > "$all_json_file" 2>/dev/null
+    jq -c -R 'fromjson? // empty | objects | select(.event == "node-state")' \
+      "$log_file" 2>/dev/null | jq -sc '.' > "$all_json_file" 2>/dev/null
   fi
   [[ -n "$all_json_file" && -s "$all_json_file" ]] \
     || { [[ -n "$all_json_file" ]] && printf '[]' > "$all_json_file" 2>/dev/null; }

@@ -83,6 +83,29 @@ item_event_fields() {
      + $x'
 }
 
+# _log_events_named SRC EVENT...
+# Print the records of SRC (a log file, or stdin for "-") whose `event` is one
+# of EVENT..., one compact JSON value per line in log order, parsed line by
+# line with `fromjson? // empty` so a torn or spliced line is dropped rather
+# than fatal. The streaming front half of a reader that folds only a few event
+# types (agent-ops#1649): the `jq -sc` behind it then holds just those events
+# rather than the whole parsed log, which is otherwise a linear function of a
+# log that is never rotated. A parsed value that is not an object is passed
+# through untouched, so it still aborts the fold behind it exactly as it did
+# when every line was slurped; what the fold sees is otherwise exactly the
+# events it would have picked out of the whole log, in the same order.
+_log_events_named() {
+  local src="$1"; shift
+  # shellcheck disable=SC2016  # jq's own $e/$ARGS, not the shell's.
+  local prog='fromjson? // empty
+    | select(type != "object" or (.event as $e | any($ARGS.positional[]; . == $e)))'
+  if [[ "$src" == "-" ]]; then
+    jq -c -R "$prog" --args "$@"
+  else
+    jq -c -R "$prog" "$src" --args "$@"
+  fi
+}
+
 # The rule behind both extracts: an item is in a state iff its most recent
 # $set event has no later $clear event. `blocked` and `void` are the same shape
 # over different event pairs, so they share one program rather than two copies
@@ -128,11 +151,8 @@ LATEST_UNRESOLVED_JQ='
 # fatal, so one truncated append can't strand every item.
 _latest_unresolved() {
   local set_event="$1" clear_event="$2" src="${3:--}" out=""
-  if [[ "$src" == "-" ]]; then
-    out="$(jq -c -R 'fromjson? // empty' 2>/dev/null \
-      | jq -sc --arg set "$set_event" --arg clear "$clear_event" "$LATEST_UNRESOLVED_JQ" 2>/dev/null || true)"
-  elif [[ -s "$src" ]]; then
-    out="$(jq -c -R 'fromjson? // empty' "$src" 2>/dev/null \
+  if [[ "$src" == "-" || -s "$src" ]]; then
+    out="$(_log_events_named "$src" "$set_event" "$clear_event" 2>/dev/null \
       | jq -sc --arg set "$set_event" --arg clear "$clear_event" "$LATEST_UNRESOLVED_JQ" 2>/dev/null || true)"
   fi
   [[ -n "$out" ]] || out='[]'
@@ -188,11 +208,8 @@ BLOCKED_ITEMS_JQ='
 # own `ts`. Reads LOG_FILE, or stdin if it is omitted or "-".
 blocked_items() {
   local src="${1:--}" out=""
-  if [[ "$src" == "-" ]]; then
-    out="$(jq -c -R 'fromjson? // empty' 2>/dev/null \
-      | jq -sc "$BLOCKED_ITEMS_JQ" 2>/dev/null || true)"
-  elif [[ -s "$src" ]]; then
-    out="$(jq -c -R 'fromjson? // empty' "$src" 2>/dev/null \
+  if [[ "$src" == "-" || -s "$src" ]]; then
+    out="$(_log_events_named "$src" attempt-failed unblocked recheck-clean 2>/dev/null \
       | jq -sc "$BLOCKED_ITEMS_JQ" 2>/dev/null || true)"
   fi
   [[ -n "$out" ]] || out='[]'
@@ -423,11 +440,8 @@ draft_obsolete_flags() {
                    and (.repo // "") != "" and (.item // "") != "")
       | {repo, item, pr: (.pr // null), evidence: (.evidence // null),
          cycle: (.cycle // ""), node: (.node // ""), ts: (.ts // "")} ]'
-  if [[ "$src" == "-" ]]; then
-    out="$(jq -c -R 'fromjson? // empty' 2>/dev/null \
-      | jq -sc "$jq_prog" 2>/dev/null || true)"
-  elif [[ -s "$src" ]]; then
-    out="$(jq -c -R 'fromjson? // empty' "$src" 2>/dev/null \
+  if [[ "$src" == "-" || -s "$src" ]]; then
+    out="$(_log_events_named "$src" draft-obsolete-flagged 2>/dev/null \
       | jq -sc "$jq_prog" 2>/dev/null || true)"
   fi
   [[ -n "$out" ]] || out='[]'
@@ -611,11 +625,8 @@ OPEN_BLOCKED_JQ='
 # both, so nothing is subtracted there.
 open_blocked_items() {
   local src="${1:--}" out=""
-  if [[ "$src" == "-" ]]; then
-    out="$(jq -c -R 'fromjson? // empty' 2>/dev/null \
-      | jq -sc "$OPEN_BLOCKED_JQ" 2>/dev/null || true)"
-  elif [[ -s "$src" ]]; then
-    out="$(jq -c -R 'fromjson? // empty' "$src" 2>/dev/null \
+  if [[ "$src" == "-" || -s "$src" ]]; then
+    out="$(_log_events_named "$src" item-void unvoided attempt-failed unblocked recheck-clean 2>/dev/null \
       | jq -sc "$OPEN_BLOCKED_JQ" 2>/dev/null || true)"
   fi
   [[ -n "$out" ]] || out='[]'

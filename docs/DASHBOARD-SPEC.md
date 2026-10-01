@@ -517,9 +517,39 @@ the detail window (the `MAX_CYCLES`
 cycles shown with transcripts) is assembled in a single `jq` program over
 every stage file the window touches — handed in via `--rawfile`, so jq opens
 each one itself rather than a fork per cycle re-reading and re-parsing it —
-plus the fleet-wide event union slurped once, and every potentially large
-intermediate reaches `jq` as a file, never argv (a single argument caps at
-128 KB, which transcript-bearing JSON exceeds).
+plus the events of just the cycles being rebuilt, kept from the fleet-wide
+event union as it streams past, and every potentially large intermediate
+reaches `jq` as a file, never argv (a single argument caps at 128 KB, which
+transcript-bearing JSON exceeds).
+
+Apart from the readers the design decision "Union readers stream rather than
+slurp" names, no reader of the fleet-wide event union (`$events_jsonl`, and
+the `review-log.jsonl` union beside it) gathers the whole parsed log into one
+`jq` process (agent-ops#1649); each folds it as a stream — `jq -n` over
+`inputs`, with `reduce`/`foreach` for an aggregate — or keeps only the
+events it names before anything is gathered. What a reader holds is what
+its answer is about: one per-cycle summary entry (`cycle-summary.json` — a
+count, the newest `ts`, the distinct event types, the overlap count and the
+latest `repo`/`item`/selection `source` by `ts`), which the no-op tick
+classification, the overlap count, the detail cache's key and the cost
+join's cycle index are all read from; one latest `cycle-start` per node,
+then that cycle's events, for the per-node live state; the newest
+`MAX_LOG_TAIL` events, kept in a buffer trimmed as the log streams, for the
+log tail; and, for every other roll-up, only the event types it reads — the
+actor scorecards, the stage-gap series, the blocked-row enrichment, the
+landing and decision digests, the escape-audit roll-up, the GitHub budget
+card, and the `lib/` folds the Publisher calls (`open_blocked_items`,
+`void_items`, `blocked_items`, `draft_obsolete_flags`, `rework_panel_build`,
+`node_time_state_fold`, `stage_budget_observations`, `crash_loop_verdict`).
+`fleet_sizing_contention_by_node` holds only per-node counts. A roll-up
+that also reports the whole log's time span (`window_from`/`window_to` on
+the scorecards and the stage-gap series, `window` on the item lifecycle)
+folds the span over every event as the stream passes and gathers only its
+kept events. Every one of these produces the output its whole-log form did,
+byte for byte. The item-lifecycle fold still gathers every item-scoped
+event, because its `records[]` carries each item's whole history as
+`instants`; its output is itself log-scale, so the scorecards read a
+`{repo, item, fate}` projection of it rather than the whole of it.
 
 `data.js`'s size is dominated by capped transcripts, not by the small
 per-item records like `blocked[]`: one cycle at both caps (`TRANSCRIPT_CAP`
@@ -4524,6 +4554,38 @@ number's twins elsewhere on the page.
   (`lib/candidate-select.sh`) that has nothing to do with this panel, and
   retiring it would have silently broken that caller's own legacy-reference
   clearance.
+- **Union readers stream rather than slurp** (agent-ops#1649). A `jq -s` over
+  the fleet-wide event union materialises every parsed event in one process
+  — about five bytes of resident memory per byte of log: 396 MB on a
+  77.7 MB union under `jq` 1.6, 208 MB on a synthetic 42 MB one under
+  `jq` 1.7 — so a Publisher built from a dozen such readers has a working
+  set that is a linear function of a log `scripts/rotate-logs.sh` never
+  rotates, and any memory ceiling sized for it expires as the log grows.
+  The readers therefore fold the stream (the Publisher section above lists
+  what each one keeps).
+  Three things about the form are load-bearing. A `reduce` keeps its one
+  map at the top of the accumulator and updates an entry with `|=`, never
+  through an `as` binding of anything read from the accumulator: the
+  binding is a second reference to the map, so every update copies all of
+  it and a linear fold turns quadratic (measured: 20,000 updates of a
+  3,000-key map take about a second that way under `jq` 1.7, against about
+  an eighth of that with `|=`). A reader that needs a few event types
+  *and* the whole log's time span takes both from one stream
+  (`stream_keep_window`): the kept events, then the span as a closing line,
+  which the slurp behind it peels off; the slurp runs only when the stream
+  exited cleanly, so a stream that aborted part-way (a record that is not
+  an object) falls back exactly as the whole-array reader did rather than
+  being folded as though it were the whole log. And a union no
+  `read_events` has cleaned is read `-R` with `fromjson? // empty` per
+  line, because plain `inputs` aborts at the first spliced record. The
+  readers that still hold log-scale data do so by construction or are not
+  yet converted: the item-lifecycle fold gathers every item-scoped event
+  (`records[]` is each item's whole history), and the readers of its
+  output — the rework panel, spend by fate, turns per landed item and
+  exclusive landings — load that output whole; `limit_union_record`
+  (`lib/limit-detect.sh`, the stand-down banner's reading) slurps the union,
+  and four of the pager's invariants (`lib/pager-invariants.sh`, on a
+  GitHub tick) gather it unfiltered.
 - **The working set is the publish's `TMPDIR`, and the rebuild is a child,
   not an `exec`** (agent-ops#1827, #1933). A publish spools through its own
   `mktemp` calls and through those of a dozen libraries, and the 2026-09-28

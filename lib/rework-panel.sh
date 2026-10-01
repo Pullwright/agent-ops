@@ -402,9 +402,15 @@ rework_panel_build() {
   [[ -n "$lifecycle_file" && -s "$lifecycle_file" ]] \
     || { [[ -n "$lifecycle_file" ]] && printf '{"records":[]}' > "$lifecycle_file" 2>/dev/null; }
 
+  # Only the two event types the fold reads — `rework` and `stage-end` — are
+  # gathered into `$all`, never the whole parsed log (agent-ops#1649): the
+  # fold's first step drops every non-object and picks those two out of what
+  # is left, so filtering them out of the stream first hands it exactly the
+  # events it would have kept, in log order.
   all_json_file="$(mktemp 2>/dev/null)" || true
   if [[ -n "$log_file" && -n "$all_json_file" ]]; then
-    jq -c -R 'fromjson? // empty' "$log_file" 2>/dev/null | jq -sc '.' > "$all_json_file" 2>/dev/null
+    jq -c -R 'fromjson? // empty | objects | select(.event == "rework" or .event == "stage-end")' \
+      "$log_file" 2>/dev/null | jq -sc '.' > "$all_json_file" 2>/dev/null
   fi
   [[ -n "$all_json_file" && -s "$all_json_file" ]] \
     || { [[ -n "$all_json_file" ]] && printf '[]' > "$all_json_file" 2>/dev/null; }

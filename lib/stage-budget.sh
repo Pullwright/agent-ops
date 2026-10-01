@@ -133,7 +133,12 @@ stage_budget_settings() {
 #   an event predating `kill_reason` is read the way it was true at the time:
 #     exit 124 was a wall-clock kill and nothing else could produce it.
 stage_budget_observations() {
-  jq -c -R 'fromjson? // empty' 2>/dev/null \
+  # Only the three event types the observations read are gathered, never the
+  # whole parsed log (agent-ops#1649). A parsed value that is not an object is
+  # passed through, so it still aborts the fold exactly as it always has.
+  jq -c -R 'fromjson? // empty
+    | select(type != "object" or .event == "selection"
+             or .event == "stage-end" or .event == "review-stage-end")' 2>/dev/null \
   | jq -sc '
       (map(select(.event == "selection" and (.cycle // "") != "" and (.repo // "") != ""))
        | map({key: .cycle, value: .repo}) | from_entries) as $repo_of
