@@ -91,6 +91,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # decisions_map starts naming it.
 # shellcheck source=lib/candidate-select.sh
 . "$SCRIPT_DIR/lib/candidate-select.sh"
+# compute_band_eligibility/prefetch_refiner_sources, for the agent-ops#1057
+# real-sequence case below: the Reviewer's own confirmed defect on PR #2047
+# was only reachable by running these two functions back to back, in the
+# order lib/gather-phase.sh actually calls them, over one shared
+# ordered_repos_json.
+# shellcheck source=lib/eligibility.sh
+. "$SCRIPT_DIR/lib/eligibility.sh"
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
@@ -1147,6 +1154,48 @@ band_before="$(jq -c '.[0].tech_debt' <<<"$repos_for_candidates")"
 band_after="$(exclude_decision_pending_items "$band_before" "acme/widgets" "$dmap")"
 assert_eq "decide/TD-disagreement: ...and the item leaves the Co-Ordinator's own band" \
   "0" "$(jq 'length' <<<"$band_after")"
+
+# Both halves together, through the real sequence (agent-ops#1057, Reviewer
+# confirmation on PR #2047): the two assertions just above exercise
+# exclude_decision_pending_items and refiner_candidate_items against two
+# *different* inputs (repos_for_candidates untouched, band_before extracted
+# separately), so neither call ever sees the other's output — exactly why the
+# first attempt's own defect left this suite green. `compute_band_eligibility`
+# mutates `ordered_repos_json` in place; `prefetch_refiner_sources`, called
+# immediately after in the real pipeline (`lib/gather-phase.sh`), seeds
+# `refiner_repos_json` from it. Before the fix, that seed was
+# `ordered_repos_json` itself — already missing the withheld item — so
+# `refiner_candidate_items` never saw it either, and with no Refiner candidate
+# left to write the `item-refined` that supersedes the decision, the item was
+# invisible to both stages forever. Run both functions for real, sourced
+# whole rather than reimplemented, over one shared `ordered_repos_json`, the
+# same technique test/pr-claim-exclusion.test.sh's own requirement-35e
+# regression uses for the identical class of bug.
+# shellcheck disable=SC2317  # invoked only by the real compute_band_eligibility
+guard_warn() { :; }
+ordered_repos_json='[{"slug":"acme/widgets","tech_debt":[{"source":"tech_debt","ref":"TD26082901"}]}]'
+blocked_json='[]'
+void_json='[]'
+union_log="$recon_log"
+refiner_model=''
+compute_band_eligibility
+prefetch_refiner_sources
+assert_eq "decide/TD-disagreement real-sequence: the item leaves ordered_repos_json's own band too" \
+  "0" "$(jq '.[0].tech_debt | length' <<<"$ordered_repos_json")"
+refiner_candidates_real="$(refiner_candidate_items "$refiner_repos_json" '{"tech_debt":"required"}' \
+  "$rmap" '[]' '[]' '[]' "$decisions_json")"
+assert_eq "decide/TD-disagreement real-sequence: ...and still reaches the Refiner's own candidate set" \
+  "1" "$(jq 'length' <<<"$refiner_candidates_real")"
+assert_eq "decide/TD-disagreement real-sequence: ...carrying the same pending decision" "use option B" \
+  "$(jq -r '.[0].decision.decision' <<<"$refiner_candidates_real")"
+# `union_log` is unset again immediately: `escalation_autonomy_pass_available`
+# (lib/escalation-autonomy.sh) reads `${union_log:-$log_file}`, and every
+# decide-tactical case below this point relies on that fallback reaching the
+# harness's own `$log_file` — the comment at this file's "the harness never
+# sets union_log" fixture explains why. Leaving it set here would silently
+# redirect every such read at `$recon_log` for the rest of the file.
+unset union_log ordered_repos_json blocked_json void_json refiner_model \
+  refiner_repos_json refiner_prefetch_source_json refiner_candidates_real
 
 # --- decision-vetoed clears the decision (agent-ops#937, agent-ops#1198):
 # reopening the log issue withdraws the decision it logged, and a Refiner
