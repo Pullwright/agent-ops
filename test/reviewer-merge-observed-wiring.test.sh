@@ -4,18 +4,21 @@
 # dispatch blocks agent-cycle.sh's Reviewer stage adds for agent-ops#916
 # (requirements 31d/32c): a subject pull request that has already merged
 # must never reach `pr-ready`, an Approver engagement or a landing attempt,
-# whatever the Reviewer's own verdict says.
+# whatever the Reviewer's own verdict says — including when it never produced
+# one at all (agent-ops#1063).
 #
 #   - **The stage-start advisory block** (just inside "--- 8. Reviewer stage
 #     ---"): a merged `$impl_pr_url` skips the whole Reviewer engagement,
 #     reaching `reviewer_merge_observed` at zero stage cost.
-#   - **The handoff block** (right after `$rev_status` is parsed, ahead of
-#     the ready/blocked branch): a merged `$impl_pr_url` reaches the same
-#     completion whether the Reviewer's own verdict is "ready" (never
-#     noticed) or "blocked" (noticed and said so); an unreadable merge state
-#     on an otherwise-"ready" verdict refuses the handoff instead of running
-#     it; anything else — the ordinary "open" case — falls through to the
-#     pre-existing ready/blocked branch unchanged.
+#   - **The handoff block** (right after the Reviewer stage ends, ahead of
+#     the stage-failure exit and the ready/blocked branch alike): a merged
+#     `$impl_pr_url` reaches the same completion whether the Reviewer's own
+#     verdict is "ready" (never noticed), "blocked" (noticed and said so), or
+#     no parseable verdict at all — a crash, a timeout, an unparseable final
+#     message (agent-ops#1063); an unreadable merge state on an otherwise-
+#     "ready" verdict refuses the handoff instead of running it; anything
+#     else — the ordinary "open" case — falls through to the pre-existing
+#     stage-failure/ready/blocked branches unchanged.
 #
 # Both blocks are lifted verbatim out of agent-cycle.sh, the same technique
 # test/human-reviewer-handoff-wiring.test.sh already uses: the assertions are
@@ -103,9 +106,14 @@ stage_start_block="$(extract_block \
   'reviewer-stage-start' \
   "$CYCLE")"
 
-merged_block="$(extract_block \
+# Covers both the merged-subject completion and the stage-failure early exit
+# right after it (agent-ops#1063 moved the former ahead of the latter so a
+# Reviewer that never produced a parseable verdict is still checked for a
+# mid-pass merge) — the marker sits on the failure block's own
+# `handle_stage_failure` call so extraction runs through both `if`s.
+handoff_merge_block="$(extract_block \
   '^merge_state=""; merge_sha=""$' \
-  'reviewer_merge_observed "\$impl_pr_url" "\$merge_sha" "\$rev_status_json" "reviewer"' \
+  'handle_stage_failure "reviewer" "\$rev_rc" "\$rev_out" "\$impl_pr_url"' \
   "$CYCLE")"
 
 failed_ready_block="$(awk '
@@ -114,7 +122,7 @@ failed_ready_block="$(awk '
   on && /^fi$/ { exit }
 ' "$CYCLE")"
 
-for pair in "stage_start:$stage_start_block" "merged:$merged_block" "failed_ready:$failed_ready_block"; do
+for pair in "stage_start:$stage_start_block" "handoff_merge:$handoff_merge_block" "failed_ready:$failed_ready_block"; do
   if [[ -z "${pair#*:}" ]]; then
     echo "FAIL - could not extract the ${pair%%:*} block from lib/coordinator-phase.sh — has it moved?" >&2
     exit 1
@@ -136,8 +144,12 @@ run_block() {
     printf 'impl_pr_url=%q\n' "$pr_url"
     printf '%s\n' "$extra"
     printf '%s\n' 'pr_merge_state() { printf "%s\t%s\n" "pr_merge_state" "$*" >>'"$(printf '%q' "$tmp_dir/calls")"'; printf "%s" "$PR_MERGE_STATE_RESULT"; }'
-    printf '%s\n' 'reviewer_merge_observed() { printf "%s\t%s\n" "reviewer_merge_observed" "$*" >>'"$(printf '%q' "$tmp_dir/calls")"'; }'
+    # Mirrors the real function's own "${3:-{\}}" default (lib/merge-observed.sh)
+    # so a recorded call reads the way its callee actually sees it, empty
+    # rev_status_json included.
+    printf '%s\n' 'reviewer_merge_observed() { local rsj="${3:-{\}}"; printf "%s\t%s %s %s %s\n" "reviewer_merge_observed" "$1" "$2" "$rsj" "$4" >>'"$(printf '%q' "$tmp_dir/calls")"'; }'
     printf '%s\n' 'log_reviewer_handback() { printf "%s\t%s\n" "log_reviewer_handback" "$*" >>'"$(printf '%q' "$tmp_dir/calls")"'; }'
+    printf '%s\n' 'handle_stage_failure() { printf "%s\t%s\n" "handle_stage_failure" "$*" >>'"$(printf '%q' "$tmp_dir/calls")"'; }'
     printf '%s\n' "$block"
     printf '%s\n' 'echo "__fell_through__"'
   } > "$harness"
@@ -179,33 +191,58 @@ assert_eq "stage-start: an empty impl_pr_url skips the read entirely" \
 # === Handoff block ==============================================================
 
 # --- Merged, Reviewer said "ready" (never noticed) ----------------------------
-out="$(PR_MERGE_STATE_RESULT=$'merged\tb48eebf' run_block "$merged_block" "$URL" 'rev_status="ready"; rev_status_json="{\"status\":\"ready\"}"')"
+out="$(PR_MERGE_STATE_RESULT=$'merged\tb48eebf' run_block "$handoff_merge_block" "$URL" 'rev_rc=0; rev_status="ready"; rev_status_json="{\"status\":\"ready\"}"')"
 assert_contains "handoff: a merged subject completes via reviewer_merge_observed (ready verdict)" \
   "$URL b48eebf {\"status\":\"ready\"} reviewer" "$(calls_named reviewer_merge_observed)"
+assert_eq "  ... never reaching the stage-failure handling" "" "$(calls_named handle_stage_failure)"
 assert_lacks "  ... never reaching the ordinary ready/blocked branch" "__fell_through__" "$out"
 
 # --- Merged, Reviewer said "blocked" naming the merge (noticed) --------------
-out="$(PR_MERGE_STATE_RESULT=$'merged\tb48eebf' run_block "$merged_block" "$URL" 'rev_status="blocked"; rev_status_json="{\"status\":\"blocked\",\"reason\":\"merged mid-pass\"}"')"
+out="$(PR_MERGE_STATE_RESULT=$'merged\tb48eebf' run_block "$handoff_merge_block" "$URL" 'rev_rc=0; rev_status="blocked"; rev_status_json="{\"status\":\"blocked\",\"reason\":\"merged mid-pass\"}"')"
 assert_contains "handoff: a merged subject completes the same way for a blocked verdict too" \
   "$URL b48eebf {\"status\":\"blocked\",\"reason\":\"merged mid-pass\"} reviewer" \
   "$(calls_named reviewer_merge_observed)"
 assert_eq "  ... this is a completion, never an attempt-failed handback" \
   "" "$(calls_named log_reviewer_handback)"
 
+# --- Merged, but the Reviewer crashed outright (rev_rc != 0, no verdict) -----
+# agent-ops#1063: this is exactly the gap the merged check used to miss,
+# since it used to run after the stage-failure early exit.
+out="$(PR_MERGE_STATE_RESULT=$'merged\tb48eebf' run_block "$handoff_merge_block" "$URL" 'rev_rc=1; rev_status_json=""; rev_out=/tmp/rev.out')"
+assert_contains "handoff: a merged subject completes even when the Reviewer never parsed a verdict" \
+  "$URL b48eebf {} reviewer" "$(calls_named reviewer_merge_observed)"
+assert_eq "  ... never recorded as an attempt-failed stage crash" \
+  "" "$(calls_named handle_stage_failure)"
+assert_lacks "  ... and never falls through to any later branch" "__fell_through__" "$out"
+
+# --- Merged, Reviewer ended with an empty (unparseable) result, rev_rc == 0 --
+out="$(PR_MERGE_STATE_RESULT=$'merged\tb48eebf' run_block "$handoff_merge_block" "$URL" 'rev_rc=0; rev_status_json=""; rev_out=/tmp/rev.out')"
+assert_contains "handoff: a merged subject completes on an unparseable-but-zero-exit result too" \
+  "$URL b48eebf {} reviewer" "$(calls_named reviewer_merge_observed)"
+assert_eq "  ... never recorded as an attempt-failed stage crash either" \
+  "" "$(calls_named handle_stage_failure)"
+
+# --- Open, Reviewer crashed outright: the ordinary attempt-failed handling --
+out="$(PR_MERGE_STATE_RESULT=$'open\t' run_block "$handoff_merge_block" "$URL" 'rev_rc=1; rev_status_json=""; rev_out=/tmp/rev.out')"
+assert_contains "handoff: an open subject with no parseable verdict hits handle_stage_failure" \
+  "reviewer 1 /tmp/rev.out $URL" "$(calls_named handle_stage_failure)"
+assert_eq "  ... reviewer_merge_observed never fires" "" "$(calls_named reviewer_merge_observed)"
+assert_lacks "  ... and never falls through to the ready/blocked branch" "__fell_through__" "$out"
+
 # --- Open, Reviewer said "ready": falls through to the ordinary path ---------
-out="$(PR_MERGE_STATE_RESULT=$'open\t' run_block "$merged_block" "$URL" 'rev_status="ready"; rev_status_json="{\"status\":\"ready\"}"')"
+out="$(PR_MERGE_STATE_RESULT=$'open\t' run_block "$handoff_merge_block" "$URL" 'rev_rc=0; rev_status="ready"; rev_status_json="{\"status\":\"ready\"}"')"
 assert_eq "handoff: an open subject calls reviewer_merge_observed not at all" \
   "" "$(calls_named reviewer_merge_observed)"
 assert_contains "  ... and falls through to the ordinary ready/blocked branch" \
   "__fell_through__" "$out"
 
 # --- Open, Reviewer said "blocked" for an unrelated reason: unaffected -------
-out="$(PR_MERGE_STATE_RESULT=$'open\t' run_block "$merged_block" "$URL" 'rev_status="blocked"; rev_status_json="{\"status\":\"blocked\",\"reason\":\"lint failing\"}"')"
+out="$(PR_MERGE_STATE_RESULT=$'open\t' run_block "$handoff_merge_block" "$URL" 'rev_rc=0; rev_status="blocked"; rev_status_json="{\"status\":\"blocked\",\"reason\":\"lint failing\"}"')"
 assert_eq "handoff: an ordinary blocked verdict is untouched by this block" \
   "" "$(calls_named reviewer_merge_observed)"
 
 # --- A Reviewer claiming a merge GitHub denies: falls through as a model error
-out="$(PR_MERGE_STATE_RESULT=$'open\t' run_block "$merged_block" "$URL" 'rev_status="blocked"; rev_status_json="{\"status\":\"blocked\",\"reason\":\"the subject merged\"}"')"
+out="$(PR_MERGE_STATE_RESULT=$'open\t' run_block "$handoff_merge_block" "$URL" 'rev_rc=0; rev_status="blocked"; rev_status_json="{\"status\":\"blocked\",\"reason\":\"the subject merged\"}"')"
 assert_eq "handoff: a claimed merge the Script cannot confirm is not a completion" \
   "" "$(calls_named reviewer_merge_observed)"
 assert_contains "  ... it falls through to the ordinary attempt-failed handling" \

@@ -1283,24 +1283,19 @@ else
   fi
 fi
 
-if (( rev_rc != 0 )) || [[ -z "$rev_status_json" ]]; then
-  handle_stage_failure "reviewer" "$rev_rc" "$rev_out" "$impl_pr_url"
-  exit 0
-fi
-
-rev_status="$(jq -r '.status // empty' <<<"$rev_status_json")"
-
-# Requirement (agent-ops#916, escalation #922, decisions 2 and 3): the
-# handoff's own fail-closed read of whether $impl_pr_url has already
-# merged — ahead of confirm_pr_ready's isDraft read inside
-# handoff_complete_review below, and decisive over the Reviewer verdict's own
-# word, which is why this runs before branching on $rev_status at all. A
-# confirmed merge is a completion whether the Reviewer never noticed
-# ("ready") or noticed and said so ("blocked", naming the merge) — neither
-# reaches pr-ready, an Approver engagement or a landing attempt. A Reviewer
-# claiming a merge GitHub denies is a model error and falls through to the
-# ordinary attempt-failed handling below unchanged, since merge_state is
-# "open" (or "failed") in that case, not "merged".
+# Requirement 31d (agent-ops#916, escalation #922, decisions 2 and 3; moved
+# ahead of the stage-failure exit below by agent-ops#1063): the handoff's own
+# fail-closed read of whether $impl_pr_url has already merged — ahead of
+# confirm_pr_ready's isDraft read inside handoff_complete_review below, and
+# decisive over the Reviewer verdict's own word, which is why this runs before
+# $rev_status is even branched on, and before the stage-failure early exit
+# too. A confirmed merge is a completion whether the Reviewer never noticed
+# ("ready"), noticed and said so ("blocked", naming the merge), or never
+# produced a parseable verdict at all — a crash, a timeout, an unparseable
+# final message — none of those reach pr-ready, an Approver engagement or a
+# landing attempt. A Reviewer claiming a merge GitHub denies is a model error
+# and falls through to the ordinary attempt-failed handling below unchanged,
+# since merge_state is "open" (or "failed") in that case, not "merged".
 merge_state=""; merge_sha=""
 if [[ -n "$impl_pr_url" ]]; then
   merge_result="$(pr_merge_state "$impl_pr_url")" || true
@@ -1312,6 +1307,13 @@ if [[ "$merge_state" == "merged" ]]; then
   echo "$impl_pr_url"
   exit 0
 fi
+
+if (( rev_rc != 0 )) || [[ -z "$rev_status_json" ]]; then
+  handle_stage_failure "reviewer" "$rev_rc" "$rev_out" "$impl_pr_url"
+  exit 0
+fi
+
+rev_status="$(jq -r '.status // empty' <<<"$rev_status_json")"
 
 if [[ "$rev_status" == "ready" && "$merge_state" == "failed" ]]; then
   # Fail-closed exactly as `confirm_pr_ready` already is (see

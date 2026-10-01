@@ -27445,15 +27445,17 @@ oblige anyone to edit a test.
    whose Implementer helpfully left a breadcrumb passes without exercising
    anything.
 8e-ii. **A subject pull request that merges mid-stage is a completion, not an
-   attempt-failed (requirements 31d/32c, agent-ops#916).** Drive a cycle whose
-   `$impl_pr_url` is confirmed merged by `pr_merge_state` before the
-   Reviewer's own ready/blocked branch is read — both when the Reviewer's own
-   verdict is `"status": "ready"` (never noticed) and when it is
-   `"status": "blocked"` naming the merge (noticed): in either case the cycle
-   must log `merge-observed` for the item, never `pr-ready`, `attempt-failed`
-   or an Approver engagement, and must release the PR-keyed claim
+   attempt-failed (requirements 31d/32c, agent-ops#916, agent-ops#1063).**
+   Drive a cycle whose `$impl_pr_url` is confirmed merged by `pr_merge_state`
+   before the Reviewer's own stage-failure exit and its ready/blocked branch
+   are read — when the Reviewer's own verdict is `"status": "ready"` (never
+   noticed), when it is `"status": "blocked"` naming the merge (noticed), and
+   when the Reviewer stage produced no parseable verdict at all (a crash, a
+   timeout, an unparseable final message): in every case the cycle must log
+   `merge-observed` for the item, never `pr-ready`, `attempt-failed` or an
+   Approver engagement, and must release the PR-keyed claim
    (`test/reviewer-merge-observed-wiring.test.sh`, extracting the dispatch
-   block out of `agent-cycle.sh` the same way
+   block out of `lib/coordinator-phase.sh` the same way
    `test/human-reviewer-handoff-wiring.test.sh` extracts its own). Assert the
    same for the Reviewer's own stage-start advisory read: a merged
    `$impl_pr_url` skips the Reviewer stage entirely (no `stage-start`/
