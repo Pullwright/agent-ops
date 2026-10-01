@@ -1283,24 +1283,19 @@ else
   fi
 fi
 
-if (( rev_rc != 0 )) || [[ -z "$rev_status_json" ]]; then
-  handle_stage_failure "reviewer" "$rev_rc" "$rev_out" "$impl_pr_url"
-  exit 0
-fi
-
-rev_status="$(jq -r '.status // empty' <<<"$rev_status_json")"
-
-# Requirement (agent-ops#916, escalation #922, decisions 2 and 3): the
-# handoff's own fail-closed read of whether $impl_pr_url has already
-# merged — ahead of confirm_pr_ready's isDraft read inside
-# handoff_complete_review below, and decisive over the Reviewer verdict's own
-# word, which is why this runs before branching on $rev_status at all. A
-# confirmed merge is a completion whether the Reviewer never noticed
-# ("ready") or noticed and said so ("blocked", naming the merge) — neither
-# reaches pr-ready, an Approver engagement or a landing attempt. A Reviewer
-# claiming a merge GitHub denies is a model error and falls through to the
-# ordinary attempt-failed handling below unchanged, since merge_state is
-# "open" (or "failed") in that case, not "merged".
+# Requirement 31d (agent-ops#916, escalation #922, decisions 2 and 3; moved
+# ahead of the stage-failure exit below by agent-ops#1063): the handoff's own
+# fail-closed read of whether $impl_pr_url has already merged — ahead of
+# confirm_pr_ready's isDraft read inside handoff_complete_review below, and
+# decisive over the Reviewer verdict's own word, which is why this runs before
+# $rev_status is even branched on, and before the stage-failure early exit
+# too. A confirmed merge is a completion whether the Reviewer never noticed
+# ("ready"), noticed and said so ("blocked", naming the merge), or never
+# produced a parseable verdict at all — a crash, a timeout, an unparseable
+# final message — none of those reach pr-ready, an Approver engagement or a
+# landing attempt. A Reviewer claiming a merge GitHub denies is a model error
+# and falls through to the ordinary attempt-failed handling below unchanged,
+# since merge_state is "open" (or "failed") in that case, not "merged".
 merge_state=""; merge_sha=""
 if [[ -n "$impl_pr_url" ]]; then
   merge_result="$(pr_merge_state "$impl_pr_url")" || true
@@ -1308,10 +1303,31 @@ if [[ -n "$impl_pr_url" ]]; then
 fi
 
 if [[ "$merge_state" == "merged" ]]; then
+  # A merged subject retires the *item*; it says nothing about the *node*. So
+  # where the stage produced no parseable verdict — the one shape that would
+  # otherwise have gone through the stage-failure exit just below, which this
+  # read now precedes — take the usage-limit read that exit would have taken
+  # (`handle_stage_failure`'s own `detect_and_log_limit_hit`) before
+  # completing: a Reviewer stopped the moment the account refused is what
+  # requirement 35's Enabler guard and the fleet's own stand-down both key on
+  # (`limit_hit_this_cycle`, the `limit-hit` event), and engaging the fleet's
+  # most expensive model moments after a limit simply re-hits it. Guarded to
+  # the no-verdict shape, never taken on a verdict that parsed, so this reads
+  # exactly what the failure exit would have read and nothing more.
+  if (( rev_rc != 0 )) || [[ -z "$rev_status_json" ]]; then
+    detect_and_log_limit_hit "$rev_out" || true
+  fi
   reviewer_merge_observed "$impl_pr_url" "$merge_sha" "$rev_status_json" "reviewer"
   echo "$impl_pr_url"
   exit 0
 fi
+
+if (( rev_rc != 0 )) || [[ -z "$rev_status_json" ]]; then
+  handle_stage_failure "reviewer" "$rev_rc" "$rev_out" "$impl_pr_url"
+  exit 0
+fi
+
+rev_status="$(jq -r '.status // empty' <<<"$rev_status_json")"
 
 if [[ "$rev_status" == "ready" && "$merge_state" == "failed" ]]; then
   # Fail-closed exactly as `confirm_pr_ready` already is (see
