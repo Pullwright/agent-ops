@@ -3020,7 +3020,7 @@ implements.
       (requirements 3c, 3e, 3g, 3z and 53; see
       requirement 3p) key their items on — is dropped only when that PR is
       among the drafts and
-      changes-requested PRs actually counted, which is why the caller passes
+      pipeline-owed PRs actually counted, which is why the caller passes
       those numbers in per repo. A ready PR sitting in the human's queue is
       *not* among them (see below), so a conflicted or dequeued PR the
       pipeline is working keeps counting through its claim, which is then the
@@ -3100,19 +3100,24 @@ implements.
 
       The logged reason — of the stand-down here and of the restriction
       warning in 2.2a — states the count's full composition:
-      `(N changes-requested + N draft + N unraised claim(s) — plus N waiting
-      on human (N raw))`. A changes-requested PR is a human's review
-      answered and now the pipeline's turn; a draft is work in flight (the
-      Implementer's own claim marker, requirement 23); an unraised claim is
-      a registry entry whose PR does not yet exist; the human-queue count is
-      the ready PRs excluded from the trip, and the raw total is what the
-      count would have been before that exclusion. Whether the cap stood the
-      fleet down because the queue was genuinely full, or fired early on
-      in-flight work, or would have tripped only on PRs already waiting on a
-      human, is exactly what a cap-tuning decision needs — and it must be
-      readable from the log line alone, because the PRs behind a historical
-      count are merged or closed by the time anyone asks, leaving
-      cycle-record archaeology as the only other answer.
+      `(N pipeline-owed + N draft + N unraised claim(s) — plus N waiting
+      on human (N raw))`. The pipeline-owed figure is every ready pull
+      request the pipeline owes action on: a `CHANGES_REQUESTED` PR at any
+      level, plus, at `agent-merges-routine` and above, every
+      otherwise-eligible ready PR the pipeline is next in line to land,
+      `CHANGES_REQUESTED` or not — the exact set the level-aware paragraph
+      above defines, which is why the label names the bucket rather than any
+      one review state; a draft is work in
+      flight (the Implementer's own claim marker, requirement 23); an
+      unraised claim is a registry entry whose PR does not yet exist; the
+      human-queue count is the ready PRs excluded from the trip, and the raw
+      total is what the count would have been before that exclusion.
+      Whether the cap stood the fleet down because the queue was genuinely
+      full, or fired early on in-flight work, or would have tripped only on
+      PRs already waiting on a human, is exactly what a cap-tuning decision
+      needs — and it must be readable from the log line alone, because the
+      PRs behind a historical count are merged or closed by the time anyone
+      asks, leaving cycle-record archaeology as the only other answer.
 
       The listing behind the count asks for `GITHUB_PR_LIST_LIMIT` pull
       requests (`lib/github-limit.sh`) rather than inheriting `gh`'s
@@ -26736,7 +26741,7 @@ oblige anyone to edit a test.
    block lifted verbatim from `agent-cycle.sh` with a `gh` stub replaying a
    listing per repo and a `lib/claim.sh` stub recording its argv: each repo's
    claim count is asked for against that repo's own drafts and
-   changes-requested PRs and no others, so a claim on an approved PR waiting
+   pipeline-owed PRs and no others, so a claim on an approved PR waiting
    on a human keeps counting; a repo whose listing could not be read names no
    PRs at all, counting every claim, which is the fail-closed reading beside
    its own zeroed counts; and the composition line states the split the
@@ -26753,7 +26758,7 @@ oblige anyone to edit a test.
    repo with no `merge_conflicts`/`dequeued` candidates adds nothing and
    leaves `adjusted_open_count`, `open_composition` and `backpressure_tripped`
    untouched; a candidate PR already among `counted_prs_json`'s drafts and
-   changes-requested PRs (it happened to also be `CHANGES_REQUESTED`) is not
+   pipeline-owed PRs (it happened to also be `CHANGES_REQUESTED`) is not
    added again; a candidate PR that count did not hold is added exactly once,
    grows `adjusted_open_count` by it, and is named in `open_composition`; the
    same PR named by both `merge_conflicts` and `dequeued` is not

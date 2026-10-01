@@ -112,7 +112,7 @@ finishing_extra_count="$(jq 'length' <<<"$finishing_extra_prs_json" 2>/dev/null)
 [[ "$finishing_extra_count" =~ ^[0-9]+$ ]] || finishing_extra_count=0
 if (( finishing_extra_count > 0 )); then
   adjusted_open_count=$(( adjusted_open_count + finishing_extra_count ))
-  open_composition="$open_composition + $finishing_extra_count merge-conflict/dequeued PR(s) occupying a slot the changes-requested count above did not"
+  open_composition="$open_composition + $finishing_extra_count merge-conflict/dequeued PR(s) occupying a slot the pipeline-owed count above did not"
   if (( adjusted_open_count >= max_open_agent_prs )); then
     backpressure_tripped=1
   fi

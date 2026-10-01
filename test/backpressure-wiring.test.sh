@@ -19,7 +19,7 @@
 #     `claim.sh count` drops a claim that merely names a pull request already
 #     inside the sum, and it can only do that if it is told which those are —
 #     per repo, since PR numbers are unique only within one.
-#   - **"Already inside the sum" means drafts and changes-requested PRs, and
+#   - **"Already inside the sum" means drafts and pipeline-owed PRs, and
 #     nothing else.** A ready PR waiting on a human is deliberately excluded
 #     from the trip (agent-ops#246), so its claim must keep counting: it is
 #     then the only record that the work is in flight.
@@ -157,7 +157,7 @@ cat "$CLAIM_COUNTS/${2//\//__}" 2>/dev/null || echo 0
 STUB
 chmod +x "$fake_root/claim.sh"
 
-# agent-ops: one draft, one approved-and-so-human-queued, one changes-requested.
+# agent-ops: one draft, one approved-and-so-human-queued, one pipeline-owed.
 cat > "$listings/Poetic-Poems__agent-ops.json" <<'JSON'
 [{"number":700,"isDraft":true,"reviewDecision":""},
  {"number":701,"isDraft":false,"reviewDecision":"APPROVED"},
@@ -241,7 +241,7 @@ raw="$(sed -n '3p' <<<"$out")"
 
 assert_eq "the claim count is asked for once per configured repo" \
   "2" "$(wc -l < "$calls_file" | tr -d ' ')"
-assert_eq "a repo's claims are counted against that repo's own drafts and changes-requested PRs" \
+assert_eq "a repo's claims are counted against that repo's own drafts and pipeline-owed PRs" \
   "count|Poetic-Poems/agent-ops|700,702" "$(sed -n '1p' "$calls_file")"
 assert_eq "…so the approved PR waiting on a human is not among them, and its claim keeps counting" \
   "no" "$(if [[ "$(sed -n '1p' "$calls_file")" == *701* ]]; then echo yes; else echo no; fi)"
@@ -254,10 +254,10 @@ assert_eq "…and the argument is still passed, rather than the call falling bac
 #
 # agent-ops contributes 2 ready (1 of them the human's), 1 draft; poetic
 # contributes nothing but its unreachable listing's zeros. The stubs answer 3
-# and 1 claims. So the trip figure is 1 changes-requested + 1 draft + 4 claims
+# and 1 claims. So the trip figure is 1 pipeline-owed + 1 draft + 4 claims
 # = 6, and the raw total counts the human-queue PR the trip figure does not.
 assert_eq "the composition states the split the operator and the dashboard both read" \
-  "1 changes-requested + 1 draft + 4 unraised claim(s) — plus 1 waiting on human (7 raw)" \
+  "1 pipeline-owed + 1 draft + 4 unraised claim(s) — plus 1 waiting on human (7 raw)" \
   "$composition"
 assert_eq "the trip figure excludes the human-queue PR" "6" "$adjusted"
 assert_eq "…while the raw total includes it" "7" "$raw"
@@ -295,7 +295,7 @@ composition2="$(sed -n '1p' <<<"$out2")"
 adjusted2="$(sed -n '2p' <<<"$out2")"
 
 assert_eq "at agent-merges-routine, an otherwise-eligible approved ready PR counts toward the cap — no human queue to exclude it from" \
-  "1 changes-requested + 0 draft + 0 unraised claim(s) — plus 0 waiting on human (1 raw)" \
+  "1 pipeline-owed + 0 draft + 0 unraised claim(s) — plus 0 waiting on human (1 raw)" \
   "$composition2"
 assert_eq "…so the trip figure includes it" "1" "$adjusted2"
 assert_eq "…and its claim does not double-count on top of it — the PR itself is already in counted_prs" \
@@ -347,7 +347,7 @@ composition_high="$(sed -n '1p' <<<"$out_high")"
 adjusted_high="$(sed -n '2p' <<<"$out_high")"
 
 assert_eq "AC3: the exact composition string for a complexity:high PR at agent-merges-routine" \
-  "0 changes-requested + 0 draft + 0 unraised claim(s) — plus 1 waiting on human (1 raw)" \
+  "0 pipeline-owed + 0 draft + 0 unraised claim(s) — plus 1 waiting on human (1 raw)" \
   "$composition_high"
 assert_eq "AC1: a complexity:high pull request is excluded from the trip figure, not counted toward it" \
   "0" "$adjusted_high"
@@ -381,7 +381,7 @@ composition_unknown="$(sed -n '1p' <<<"$out_unknown")"
 adjusted_unknown="$(sed -n '2p' <<<"$out_unknown")"
 
 assert_eq "AC4: an unresolvable source counts the pull request toward the cap (fail-closed)" \
-  "1 changes-requested + 0 draft + 0 unraised claim(s) — plus 0 waiting on human (1 raw)" \
+  "1 pipeline-owed + 0 draft + 0 unraised claim(s) — plus 0 waiting on human (1 raw)" \
   "$composition_unknown"
 assert_eq "…so the trip figure includes it, same as a genuinely eligible pull request" "1" "$adjusted_unknown"
 assert_eq "…and a warning is logged" "1" "$(wc -l < "$log_calls_unknown" | tr -d ' ')"
@@ -424,7 +424,7 @@ out_cr="$(PATH="$stub_bin:$PATH" \
         run_block 2>/dev/null)"
 
 assert_eq "a CHANGES_REQUESTED complexity:high PR at agent-merges-routine is still pipeline-owed, not human-waiting" \
-  "1 changes-requested + 0 draft + 0 unraised claim(s) — plus 0 waiting on human (1 raw)" \
+  "1 pipeline-owed + 0 draft + 0 unraised claim(s) — plus 0 waiting on human (1 raw)" \
   "$(sed -n '1p' <<<"$out_cr")"
 assert_eq "…so the trip figure counts it" "1" "$(sed -n '2p' <<<"$out_cr")"
 assert_eq "…and counted_prs holds it, so its own claim does not double-count on top of it" \
@@ -479,7 +479,7 @@ out_mixed="$(PATH="$stub_bin:$PATH" \
         run_block 2>/dev/null)"
 
 assert_eq "a mixed listing's composition counts only the otherwise-eligible PR toward the trip, the other toward human" \
-  "1 changes-requested + 0 draft + 0 unraised claim(s) — plus 1 waiting on human (2 raw)" \
+  "1 pipeline-owed + 0 draft + 0 unraised claim(s) — plus 1 waiting on human (2 raw)" \
   "$(sed -n '1p' <<<"$out_mixed")"
 assert_eq "…so the trip figure is 1, not 0 or 2" "1" "$(sed -n '2p' <<<"$out_mixed")"
 assert_eq "…and counted_prs carries the eligible PR only — its ineligible neighbour is not folded in, nor dropped" \
@@ -521,7 +521,7 @@ out_all="$(PATH="$stub_bin:$PATH" \
         run_block 2>/dev/null)"
 
 assert_eq "at agent-merges-all, an otherwise-eligible ready PR still counts toward the cap" \
-  "1 changes-requested + 0 draft + 0 unraised claim(s) — plus 1 waiting on human (2 raw)" \
+  "1 pipeline-owed + 0 draft + 0 unraised claim(s) — plus 1 waiting on human (2 raw)" \
   "$(sed -n '1p' <<<"$out_all")"
 assert_eq "…so the trip figure is 1" "1" "$(sed -n '2p' <<<"$out_all")"
 assert_eq "…and a landing-ineligible ready PR is still narrowed into the human queue at this level too" \
