@@ -146,6 +146,35 @@ refinements_json="$(refinements_map "$union_log")"
 # one into the other, the same way it would turn a human's own answer on a
 # closed escalation into one.
 decisions_json="$(decisions_map "$union_log")"
+
+# A fifth pass, over what the eligibility_band loop above has already settled
+# (agent-ops#1057): decisions_json reaches the Refiner only (requirement
+# 36d) — the Co-Ordinator is never shown it — so without this, the
+# Co-Ordinator can still rank and dispatch an item whose decide-tactical
+# decision the Refiner has not yet turned into a specification, for the one
+# cycle between compute_refiner_candidates' own early snapshot of
+# decisions_json (below) and the Enabler/Refiner cleanup pass that acts on a
+# fresh decision. Every band but `issues` gets this: an issue's decision
+# travels in the thread the Co-Ordinator already re-reads live (requirement
+# 18a), so it can never dispatch a superseded specification the way a
+# non-issue item can. A different loop variable than eligibility_band above
+# — test/cycle-state.test.sh pins each loop's own band list by a `sed`
+# pattern keyed on the loop variable's name, and two loops sharing one name
+# would give that pattern two matches.
+for decision_band in findings review_feedback abandoned_drafts merge_conflicts dequeued landing_refusals human_visibility tech_debt; do
+  while IFS= read -r db_slug; do
+    [[ -n "$db_slug" ]] || continue
+    db_current="$(jq -c --arg s "$db_slug" --arg f "$decision_band" \
+      'map(select(.slug == $s)) | .[0][$f] // []' <<<"$ordered_repos_json" 2>&1)" \
+      || { guard_warn "db_current:$db_slug:$decision_band" "$db_current"; db_current='[]'; }
+    db_filtered="$(exclude_decision_pending_items "$db_current" "$db_slug" "$decisions_json")"
+    ordered_repos_json="$(jq -c --arg r "$db_slug" --arg f "$decision_band" --argjson v "$db_filtered" \
+      'map(if .slug == $r then .[$f] = $v else . end)' \
+      <<<"$ordered_repos_json" 2>/dev/null || printf '%s' "$ordered_repos_json")" # TD-PPagop-26081407: passes test 2 -- falls back to the unchanged prior aggregate, not a fabricated empty
+  done < <(jq -r --arg f "$decision_band" \
+           '[.[] | select(((.[$f] // []) | length) > 0) | .slug] | unique[]' \
+           <<<"$ordered_repos_json" 2>/dev/null || true)
+done
 }
 
 # compute_enabler_eligible_set — requirements 35a and 35b. Called once from

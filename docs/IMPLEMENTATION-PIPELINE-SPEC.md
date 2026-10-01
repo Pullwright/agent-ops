@@ -17187,7 +17187,22 @@ implements.
       `refiner_candidate_items` and appear, by its later `ts` alone, to have
       already superseded the decision in `decisions_map`. The Refiner turns a
       decision into the specification the way it would a human's own answer
-      on a closed escalation (`prompts/refiner.md`).
+      on a closed escalation (`prompts/refiner.md`). `decisions_json` reaches
+      the Refiner only — the Co-Ordinator model is never shown it — so a
+      non-issue item `decisions_json` still names a pending decision for is
+      withheld from Co-Ordinator ranking entirely (`exclude_decision_pending_items`,
+      `lib/candidate-select.sh`, called from `compute_band_eligibility` for
+      every pre-fetched band but `issues`) until an unmarked `item-refined`
+      supersedes the decision in `decisions_map`, exactly the same condition
+      that makes the item a full Refiner candidate above (agent-ops#1057).
+      This withholding is **not** `refinement_policy` (requirement 39a) and
+      binds at every policy, `exempt` included: it is not a question of
+      whether the item needs a specification before selection, but of never
+      dispatching one the pipeline has already ruled amended. An `issues`
+      item is never withheld this way — its decision travels as a comment in
+      the thread the Co-Ordinator already re-reads live (requirement 18a), so
+      it can never dispatch a specification the pipeline considers
+      superseded the way a non-issue item can.
     - **`escalate`** — anything else: any owner-only condition applies, the
       re-flag's own concern is real and unresolved beyond what the item's
       record supplies, or the pass could not read enough to tell. As
@@ -18692,7 +18707,12 @@ implements.
        bypass at once (an unbanded, already-refined issue a decide-tactical
        pass decided): 39g is the stronger constraint, since the Refiner may
        not write such an item a second specification at all, so it is handed
-       none to amend;
+       none to amend. The same `decisions_json` entry that makes the item a
+       candidate here is also what withholds it from the Co-Ordinator's own
+       ranking entirely, for every source regardless of policy (requirement
+       36d, agent-ops#1057) — so for as long as this clause holds an item a
+       candidate on these terms, no Co-Ordinator engagement can have
+       dispatched it meanwhile;
     4. it is not blocked (requirement 34), not void (requirement 34c), and not
        held by an ordinary implementation claim (the same `claimed` array the
        Co-Ordinator's own exclusion 3 reads).
@@ -18715,6 +18735,17 @@ implements.
     either policy on `failed-runs`, the one source clause 1 excludes, shapes
     the Co-Ordinator's ranking but starves it of anything to rank
     favourably.
+
+    A pending decision's withholding from the Co-Ordinator (clause 3,
+    requirement 36d) is a **separate mechanism from `refinement_policy`**, not
+    a value of it: it drops the item from the Script's own pre-fetched bands
+    before the Co-Ordinator ever ranks anything (`exclude_decision_pending_items`,
+    called from `compute_band_eligibility`, `lib/eligibility.sh`), the same
+    way requirement 3u's blocked/void exclusion does, rather than shaping how
+    the model ranks what it is shown — so it binds regardless of the source's
+    own `refinement_policy`, `"exempt"` included, where clause 2 above already
+    excludes an `"exempt"` source from Refiner candidacy entirely but not from
+    this withholding.
 
 39b. **Claims and the engagement cap.** Before claiming, the candidate set is
     reduced to at most `refiner_max_per_engagement` items, sorted by

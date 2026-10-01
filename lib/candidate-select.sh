@@ -295,6 +295,53 @@ exclude_blocked_or_void_items() {  # <candidates-json> <repo> <blocked-json> <vo
   ' <<<"$docs" 2>/dev/null || printf '%s' "$candidates"
 }
 
+# exclude_decision_pending_items CANDIDATES_JSON REPO DECISIONS_JSON
+# The Co-Ordinator-side half of agent-ops#1057: `decisions_json` (requirement
+# 36d) reaches the Refiner only — the Co-Ordinator model is never shown it —
+# so nothing before this function stops the Co-Ordinator ranking and
+# dispatching an item whose `decide-tactical` decision the Refiner has not yet
+# turned into a specification. `compute_refiner_candidates`
+# (lib/eligibility.sh) snapshots the Refiner's own candidate set early in the
+# cycle, before the Co-Ordinator runs, and the Enabler/Refiner cleanup pass
+# that would act on a fresh decision runs after — so a non-issue item decided
+# in one cycle's cleanup is a live Co-Ordinator candidate again for the one
+# cycle before the Refiner reaches it (agent-ops#1049's own fix closed the
+# wider "the decision reaches no actor at all" hole; this is the narrower
+# window left once that fix made the item reachable again). Called once per
+# repo per band from `compute_band_eligibility`, exactly as
+# `exclude_blocked_or_void_items` already is, dropping any entry DECISIONS_JSON
+# still names a pending decision for under this repo — refined or not: for a
+# non-issue item the decision exists nowhere the Co-Ordinator reads except
+# this array, so an unrefined-but-decided item is as reachable by this route
+# as a refined one. This withholding is not `refinement_policy` (requirement
+# 39a) and binds at every policy, `exempt` included — it is not about whether
+# an item needs a specification before selection, but about not dispatching
+# one the pipeline has already ruled superseded.
+#
+# `issues` never calls this: an issue's decision travels as a comment in the
+# thread the Co-Ordinator already re-reads live (requirement 18a), so it can
+# never dispatch a specification the pipeline considers superseded the way a
+# non-issue item can — there is nothing for this function to protect against
+# there.
+#
+# DECISIONS_JSON arrives on stdin, never argv, the same `decisions_map` output
+# `refiner_candidate_items`'s own `decision_for` reads — keyed repo → item,
+# item stringified, matched against each candidate's own `.ref` the same way
+# `decision_for` converts it. Malformed input degrades to the unfiltered
+# array, on the same fail-open terms as exclude_blocked_or_void_items.
+exclude_decision_pending_items() {  # <candidates-json> <repo> <decisions-json>
+  local candidates="$1" repo="$2" decisions="${3:-{\}}" docs
+  jq -e 'type == "object"' <<<"$decisions" >/dev/null 2>&1 || decisions='{}'
+  docs="$(printf '%s\n' "$candidates" "$decisions")"
+  jq -nc --arg repo "$repo" '
+    input as $candidates | input as $decisions
+    | (($decisions[$repo] // {})) as $repo_decisions
+    | [ $candidates[] | select(((.ref // null) as $r
+                     | $r != null
+                       and ($repo_decisions[($r | tostring)] // null) == null)) ]
+  ' <<<"$docs" 2>/dev/null || printf '%s' "$candidates"
+}
+
 # Requirement 3u/issue #320: the fields of a `blocked` entry
 # "Re-checking blocked items" and "A blocked issue with fresh evidence must be
 # re-read" (prompts/coordinator.md) actually read — `item`, `ts`, `detail`,

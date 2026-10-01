@@ -86,6 +86,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # human_change_request_fields` produce at this recovery site.
 # shellcheck source=lib/rework.sh
 . "$SCRIPT_DIR/lib/rework.sh"
+# exclude_decision_pending_items, for the agent-ops#1057 case below that
+# proves the Co-Ordinator's own band drops a pending decision the same cycle
+# decisions_map starts naming it.
+# shellcheck source=lib/candidate-select.sh
+. "$SCRIPT_DIR/lib/candidate-select.sh"
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
@@ -1131,6 +1136,17 @@ candidates_unrefined="$(refiner_candidate_items "$repos_unrefined" '{"tech_debt"
   '{}' '[]' '[]' '[]' '{}')"
 assert_eq "decide/never-refined: a never-refined thread-less candidate carries no refinement field" \
   "null" "$(jq -r '.[0].refinement // "null"' <<<"$candidates_unrefined")"
+
+# The other half of the same window (agent-ops#1057): decisions_json reaches
+# the Refiner only, so nothing stops the Co-Ordinator ranking and dispatching
+# this same item from its own band in the one cycle before the Refiner
+# rewrites its specification — unless compute_band_eligibility's own
+# subtraction pass (lib/eligibility.sh) drops it first, exactly as it does
+# here via exclude_decision_pending_items.
+band_before="$(jq -c '.[0].tech_debt' <<<"$repos_for_candidates")"
+band_after="$(exclude_decision_pending_items "$band_before" "acme/widgets" "$dmap")"
+assert_eq "decide/TD-disagreement: ...and the item leaves the Co-Ordinator's own band" \
+  "0" "$(jq 'length' <<<"$band_after")"
 
 # --- decision-vetoed clears the decision (agent-ops#937, agent-ops#1198):
 # reopening the log issue withdraws the decision it logged, and a Refiner

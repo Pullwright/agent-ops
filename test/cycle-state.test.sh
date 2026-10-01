@@ -982,7 +982,7 @@ extract_function() {  # extract_function <name>
   ' "$SCRIPT_DIR/lib/candidate-select.sh"
 }
 
-for fn in exclude_blocked_or_void_items exclude_blocked_or_void_issues coordinator_blocked_view coordinator_refinements_view; do
+for fn in exclude_blocked_or_void_items exclude_blocked_or_void_issues exclude_decision_pending_items coordinator_blocked_view coordinator_refinements_view; do
   fn_src="$(extract_function "$fn")"
   if [[ "$fn_src" != *"$fn()"* ]]; then
     printf 'FAIL - could not extract %s from agent-cycle.sh (renamed or moved?)\n' "$fn"
@@ -1006,6 +1006,39 @@ assert_eq "a blocked finding is dropped, the same as a blocked tech-debt item" \
 out="$(exclude_blocked_or_void_items "$finding_cands" "org/b" "$finding_blocked" "$finding_void")"
 assert_eq "the same block/void does not reach a different repo's findings" \
   "3" "$(jq 'length' <<<"$out")"
+
+# --- exclude_decision_pending_items: a pending decision withholds the item ---
+# --- from Co-Ordinator ranking entirely (requirement 36d, agent-ops#1057) ---
+decision_cands='[{"ref":"TD1"},{"ref":"TD2"}]'
+decisions_for_a='{"org/a":{"TD1":{"ts":"2026-09-01T00:00:00Z","decision":"use option B"}}}'
+out="$(exclude_decision_pending_items "$decision_cands" "org/a" "$decisions_for_a")"
+assert_eq "an item with a pending decision is withheld" \
+  '["TD2"]' "$(jq -c 'map(.ref)' <<<"$out")"
+out="$(exclude_decision_pending_items "$decision_cands" "org/b" "$decisions_for_a")"
+assert_eq "the same decision does not reach a different repo's band" \
+  "2" "$(jq 'length' <<<"$out")"
+assert_eq "an item with no pending decision is unaffected" \
+  '["TD1","TD2"]' "$(jq -c 'map(.ref)' <<<"$(exclude_decision_pending_items "$decision_cands" "org/a" '{}')")"
+assert_eq "malformed decisions degrades to unfiltered" "$decision_cands" \
+  "$(exclude_decision_pending_items "$decision_cands" "org/a" 'not json')"
+assert_eq "a candidate with no ref is dropped, not crashed on" "0" \
+  "$(jq 'length' <<<"$(exclude_decision_pending_items '[{"title":"no ref"}]' "org/a" "$decisions_for_a")")"
+
+# `issues` never calls this (the band pin below), because its decision
+# travels as a live-reread comment thread (requirement 18a) rather than
+# through decisions_json — but the function itself applies the same
+# exclusion regardless of what band shape is handed to it, proven here
+# against an issue-shaped `ref` so a future reader can see the restriction to
+# non-issue bands is the call site's choice, not a limitation of the function.
+iss_decision_cands='[{"ref":"210"},{"ref":"211"}]'
+iss_decisions='{"org/a":{"210":{"ts":"2026-09-01T00:00:00Z","decision":"use option B"}}}'
+assert_eq "the function itself does not special-case an issue-shaped ref" \
+  '["211"]' "$(jq -c 'map(.ref)' <<<"$(exclude_decision_pending_items "$iss_decision_cands" "org/a" "$iss_decisions")")"
+
+decision_band_list="$(sed -n 's/^for decision_band in \(.*\); do$/\1/p' "$SCRIPT_DIR/lib/eligibility.sh")"
+assert_eq "every pre-fetched band but issues reaches exclude_decision_pending_items" \
+  "findings review_feedback abandoned_drafts merge_conflicts dequeued landing_refusals human_visibility tech_debt" \
+  "$decision_band_list"
 
 # --- exclude_blocked_or_void_issues: void is dropped unconditionally ----------
 iss_cands='[{"ref":"52","updated_at":"2026-08-01T00:00:00Z"},{"ref":"53","updated_at":"2026-08-01T00:00:00Z"}]'
