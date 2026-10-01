@@ -148,8 +148,8 @@ item_lifecycle_pickup_pairs() {
 }
 
 # The main fold (docs/FLOW-SCHEMA.md's "Item lifecycle record"). $all/$span/
-# $void/$blocked/$obsolete arrive as five documents, bound positionally by
-# the caller (requirement 4g — big things travel in files, never argv):
+# $void/$blocked/$obsolete are bound by the caller from files (requirement 4g
+# — big things travel in files, never argv):
 #
 #   $all      the item-scoped events this run can see — every object that
 #             names both a `repo` and an `item` once the `superseded` rekey
@@ -382,12 +382,12 @@ ITEM_LIFECYCLE_SPAN_JQ='
 # a caller running under `set -e` must not be killed by one, and a log that
 # cannot be read enters nothing.
 item_lifecycle_fold() {
-  local src="${1:--}" since="${2:-}" log_file="" tmp_log="" all_json_file="" kept_file="" \
+  local src="${1:--}" since="${2:-}" log_file="" tmp_log="" kept_file="" \
         void_file="" blocked_file="" obsolete_file="" out_file="" f=""
   # Nothing that scales with the log is ever held in a bash variable
   # (agent-ops#1620): a variable that size is copied by every subshell forked
   # afterwards, which is what pushed the publisher over its cgroup ceiling.
-  # That rule covers this function's four jq inputs *and* its own output —
+  # That rule covers this function's jq inputs *and* its own output —
   # `records[]` carries one entry per item the log has ever seen, so the
   # result is itself log-scale (36 MB on a 43 MB log) and is streamed from a
   # temp file rather than captured. `void_items`/`blocked_items`/
@@ -400,43 +400,40 @@ item_lifecycle_fold() {
     log_file="$src"
   fi
 
-  all_json_file="$(mktemp 2>/dev/null)" || true
   kept_file="$(mktemp 2>/dev/null)" || true
   void_file="$(mktemp 2>/dev/null)" || true
   blocked_file="$(mktemp 2>/dev/null)" || true
   obsolete_file="$(mktemp 2>/dev/null)" || true
   out_file="$(mktemp 2>/dev/null)" || true
-  if [[ -n "$log_file" && -n "$all_json_file" && -n "$kept_file" && -n "$void_file" \
+  if [[ -n "$log_file" && -n "$kept_file" && -n "$void_file" \
         && -n "$blocked_file" && -n "$obsolete_file" ]]; then
-    # The kept events, then the span as the last line; `$all` is everything
-    # but that line, and `$span` that line alone. A stream that did not run
-    # to its end (no span line) leaves `$all` and `$span` to their empty
-    # defaults below rather than folding a partial log as if it were whole.
-    if jq -n -R -c --arg since "$since" "$ITEM_LIFECYCLE_SPAN_JQ" "$log_file" \
-         > "$kept_file" 2>/dev/null; then
-      jq -s -c '.[:-1], (.[-1] // {window_lo: null, window_hi: null})' "$kept_file" \
-        > "$all_json_file" 2>/dev/null
-    fi
+    # The kept events, then the span as the last line. A stream that did not
+    # run to its end leaves no span line, so it is discarded whole rather
+    # than folded as though it were the whole log.
+    jq -n -R -c --arg since "$since" "$ITEM_LIFECYCLE_SPAN_JQ" "$log_file" \
+      > "$kept_file" 2>/dev/null || : > "$kept_file"
     void_items "$log_file" > "$void_file" 2>/dev/null || true
     blocked_items "$log_file" > "$blocked_file" 2>/dev/null || true
     draft_obsolete_flags "$log_file" > "$obsolete_file" 2>/dev/null || true
   fi
-  [[ -n "$all_json_file" && -s "$all_json_file" ]] \
-    || { [[ -n "$all_json_file" ]] \
-           && printf '[]\n{"window_lo":null,"window_hi":null}\n' > "$all_json_file" 2>/dev/null; }
   for f in "$void_file" "$blocked_file" "$obsolete_file"; do
     [[ -n "$f" && -s "$f" ]] || { [[ -n "$f" ]] && printf '[]' > "$f" 2>/dev/null; }
   done
 
-  # `-j` (with `-n`) writes the compact object with no trailing newline, which
-  # is what the `printf '%s' "$(…)"` this replaced produced — callers compare
-  # this output byte for byte.
-  if [[ -n "$all_json_file" && -n "$void_file" && -n "$blocked_file" \
+  # The kept stream is read last, so `[inputs]` gathers exactly it: `$all`
+  # is every line but the last, `$span` the last — or, for a log that kept
+  # nothing at all, the empty window. `-j` (with `-n`) writes the compact
+  # object with no trailing newline, which is what the `printf '%s' "$(…)"`
+  # this replaced produced — callers compare this output byte for byte.
+  if [[ -n "$kept_file" && -n "$void_file" && -n "$blocked_file" \
         && -n "$obsolete_file" && -n "$out_file" ]]; then
     jq -n -j -c --arg since "$since" \
-        'input as $all | input as $span | input as $void | input as $blocked | input as $obsolete
+        'input as $void | input as $blocked | input as $obsolete
+         | [inputs] as $kept
+         | ($kept[-1] // {window_lo: null, window_hi: null}) as $span
+         | ($kept[:-1]) as $all
          | ('"$ITEM_LIFECYCLE_FOLD_JQ"')' \
-        "$all_json_file" "$void_file" "$blocked_file" "$obsolete_file" \
+        "$void_file" "$blocked_file" "$obsolete_file" "$kept_file" \
         > "$out_file" 2>/dev/null || true
   fi
 
@@ -445,6 +442,5 @@ item_lifecycle_fold() {
   else
     printf '%s' '{"window":{"from":null,"to":null},"totals":{"entered":0,"leaving":0,"in_progress":0,"unaccounted":0,"balanced":true},"fates":{"landed":0,"voided":0,"superseded":0,"abandoned":0,"blocked":0,"open":0},"unaccounted":[],"records":[]}'
   fi
-  rm -f "$tmp_log" "$all_json_file" "$kept_file" "$void_file" "$blocked_file" "$obsolete_file" \
-    "$out_file" 2>/dev/null
+  rm -f "$tmp_log" "$kept_file" "$void_file" "$blocked_file" "$obsolete_file" "$out_file" 2>/dev/null
 }

@@ -4579,13 +4579,13 @@ number's twins elsewhere on the page.
   `read_events` has cleaned is read `-R` with `fromjson? // empty` per
   line, because plain `inputs` aborts at the first spliced record. The
   readers that still hold log-scale data do so by construction or are not
-  yet converted: the item-lifecycle fold gathers every item-scoped event
-  (`records[]` is each item's whole history), and the readers of its
-  output — the rework panel, spend by fate, turns per landed item and
-  exclusive landings — load that output whole; `limit_union_record`
-  (`lib/limit-detect.sh`, the stand-down banner's reading) slurps the union,
-  and four of the pager's invariants (`lib/pager-invariants.sh`, on a
-  GitHub tick) gather it unfiltered.
+  yet converted (agent-ops#2042): the item-lifecycle fold gathers every
+  item-scoped event (`records[]` is each item's whole history), and the
+  readers of its output — the rework panel, spend by fate, turns per landed
+  item and exclusive landings — load that output whole; `limit_union_record`
+  (`lib/limit-detect.sh`, the stand-down banner's reading, agent-ops#2037)
+  slurps the union, and four of the pager's invariants
+  (`lib/pager-invariants.sh`, on a GitHub tick) gather it unfiltered.
 - **The working set is the publish's `TMPDIR`, and the rebuild is a child,
   not an `exec`** (agent-ops#1827, #1933). A publish spools through its own
   `mktemp` calls and through those of a dozen libraries, and the 2026-09-28
