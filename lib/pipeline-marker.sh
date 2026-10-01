@@ -108,3 +108,101 @@ PIPELINE_RECONCILES_MARKER_PREFIX='<!-- agent-ops:reconciles'
 pipeline_reconciles_marker() {
   printf '%s comment=%s -->' "$PIPELINE_RECONCILES_MARKER_PREFIX" "$1"
 }
+
+# The fixed, greppable prefix a landing-refusal notice comment carries
+# (issue #1979, requirement 62): the invisible stamp
+# `_landing_notice_upsert`/`_landing_notice_clear` (`lib/landing.sh`) use to
+# find their own prior notice on a pull request and edit it in place, rather
+# than matching on prose that is free to change between releases — the same
+# reason `PIPELINE_RECONCILES_MARKER_PREFIX` exists beside the plainer
+# `PIPELINE_COMMENT_MARKER_PREFIX` above. Match on this substring alone,
+# never on the whole `pipeline_landing_notice_marker` line.
+PIPELINE_LANDING_NOTICE_MARKER_PREFIX='<!-- agent-ops:landing-notice'
+
+# pipeline_landing_notice_marker
+# Print the invisible marker a landing-refusal notice comment carries,
+# alongside the ordinary `pipeline_comment_header`/`pipeline_comment_marker`
+# envelope every pipeline comment also carries. Takes no argument: unlike
+# `pipeline_comment_marker`, this marker's whole purpose is to be found again
+# regardless of which cycle or class last wrote it.
+pipeline_landing_notice_marker() {
+  printf '%s -->' "$PIPELINE_LANDING_NOTICE_MARKER_PREFIX"
+}
+
+# pipeline_find_marked_comment REPO NUMBER MARKER
+# Print `{"id": …, "body": …}` for the most recent comment on REPO's issue or
+# pull request NUMBER whose body contains the literal substring MARKER, or
+# nothing at all when none exists or the read fails. The one generic "find
+# the pipeline's own prior comment" primitive this system did not have before
+# issue #1979 — `lib/landing.sh`'s landing-refusal notice is its first
+# caller, but nothing here is landing-specific, so a later stage wanting the
+# same "post once, then edit in place" shape has this to call rather than a
+# second copy of the lookup.
+#
+# Fails open — prints nothing, non-zero exit — on any `gh` or `jq` failure, so
+# a forge hiccup costs the caller a possible duplicate comment, never a stuck
+# pipeline. Mirrors the exact `gh api … --paginate --jq '.[] | {…}'` then
+# `jq -s` idiom `lib/enabler.sh`'s `escalation_thread_failed_already_posted`
+# already uses to flatten a paginated comment list, so pagination here is
+# proven, not newly invented.
+pipeline_find_marked_comment() {
+  local repo="$1" number="$2" marker="$3"
+  local lines
+  lines="$(gh api "repos/$repo/issues/$number/comments" --paginate \
+             --jq '.[] | {id, body: (.body // "")}' 2>/dev/null)" || return 1
+  [[ -n "$lines" ]] || return 1
+  jq -s -c --arg m "$marker" \
+    '[.[] | select(.body | contains($m))] | last // empty' <<<"$lines" 2>/dev/null
+}
+
+# pipeline_comment_upsert REPO NUMBER MARKER BODY
+# Create the one comment on REPO's issue or pull request NUMBER carrying
+# MARKER, or edit it in place if one already stands — never a second comment
+# for the same MARKER. A no-op (exit 0, no write at all) when the standing
+# comment's body already equals BODY byte-for-byte, the same idempotent
+# convention this file's own header already documents for every comment this
+# system posts (the Vercel-bot comparison). Returns non-zero only when the
+# write itself (POST or PATCH) fails; a caller that wants to continue
+# regardless should treat that like any other best-effort `gh` write failure
+# in this system — a `warning` event, never an abort.
+pipeline_comment_upsert() {
+  local repo="$1" number="$2" marker="$3" body="$4"
+  local existing existing_id existing_body
+  # `|| existing=""`, never a bare assignment: a caller running under
+  # `errexit` (every production call site does) must not have
+  # `pipeline_find_marked_comment`'s own non-zero exit — an unreadable
+  # comment list, same as any other forge read in this system — abort the
+  # whole cycle. Treated as "no standing comment", which falls through to an
+  # ordinary POST; the worst case is one extra comment on a `gh` hiccup,
+  # never a stuck pipeline.
+  existing="$(pipeline_find_marked_comment "$repo" "$number" "$marker")" || existing=""
+  if [[ -n "$existing" ]]; then
+    existing_id="$(jq -r '.id' <<<"$existing" 2>/dev/null)"
+    existing_body="$(jq -r '.body' <<<"$existing" 2>/dev/null)"
+    [[ "$existing_body" == "$body" ]] && return 0
+    gh api -X PATCH "repos/$repo/issues/comments/$existing_id" -f body="$body" >/dev/null 2>&1
+    return $?
+  fi
+  gh api "repos/$repo/issues/$number/comments" -f body="$body" >/dev/null 2>&1
+}
+
+# pipeline_comment_edit_if_present REPO NUMBER MARKER BODY
+# Like `pipeline_comment_upsert`, but never creates a comment that does not
+# already exist — the "say a hold has cleared" half of a notice/clear pair,
+# where posting a brand-new comment announcing a hold that was never actually
+# posted would be announcing nothing. A no-op (exit 0) when no comment
+# carrying MARKER stands, or the standing one's body already equals BODY.
+pipeline_comment_edit_if_present() {
+  local repo="$1" number="$2" marker="$3" body="$4"
+  local existing existing_id existing_body
+  # `|| existing=""` — see `pipeline_comment_upsert`'s identical guard above.
+  # An unreadable comment list here falls through to "nothing to clear",
+  # never an abort: the standing notice (if any) simply waits for the next
+  # cycle's read to succeed.
+  existing="$(pipeline_find_marked_comment "$repo" "$number" "$marker")" || existing=""
+  [[ -n "$existing" ]] || return 0
+  existing_id="$(jq -r '.id' <<<"$existing" 2>/dev/null)"
+  existing_body="$(jq -r '.body' <<<"$existing" 2>/dev/null)"
+  [[ "$existing_body" == "$body" ]] && return 0
+  gh api -X PATCH "repos/$repo/issues/comments/$existing_id" -f body="$body" >/dev/null 2>&1
+}

@@ -9870,6 +9870,75 @@ implements.
     it again on every later round) exists by the same round the refusal is
     logged, giving it exactly the visibility requirement 36a's own
     escalations get (Assigned-to-me) with no gap for a sweep to close.
+62. **A persistent landing refusal says why, on the pull request itself, not
+   only in the node log (issue #1979).** Requirement 8d's own gates refuse to
+   arm a pull request for many reasons, logged as `landing-refused`
+   (requirement 33) and nothing else — the pull request itself still shows
+   only its ordinary approval and merge-box state, so a human reading it has
+   no way to tell a routine wait from a silent, repeating refusal.
+   `agent-ops#1950` is the live instance: `poetic-1` and `poetic-2` refused it
+   roughly 25 times over 2026-09-29/30 with `ineligible:touches protected
+   path(s): scripts/publish-dashboard.sh`, and the owner learned why only by
+   asking an interactive session to read the node logs.
+
+   `_landing_refuse` (`lib/landing.sh`) — the one function every refusal this
+   stage makes already calls — classifies its own `class` argument as
+   persistent or not (`_landing_refusal_persistent`,
+   `_LANDING_PERSISTENT_REFUSAL_CLASSES`: `ineligible`, `autonomy-level`,
+   `kill-switch`, `open-question`, `reconciliation-unanswered`,
+   `human-changes-requested` and `merge-queue-occupied` — a subset of
+   `_LANDING_REFUSAL_CLASSES`, `test/landing-wiring.test.sh` asserts — every
+   class whose cause will not change without a new push, a configuration
+   edit, a cool-off timer elapsing or a human act). A persistent refusal
+   posts or updates, in place, one pipeline-marked comment on the pull
+   request (`_landing_notice_upsert`) naming the class and the reason in
+   words; a refusal whose cause touches `landing_cool_off_hours` states the
+   absolute wall-clock time the pull request becomes eligible
+   (`_landing_notice_eligible_at`), computed from the standing review's own
+   `submitted_at` plus the configured cool-off, never the embedded "N hours
+   remaining" figure, which is already stale by the time anyone reads the
+   comment. A refusal outside this set (every `*-unreadable` class,
+   `unknown`, `malformed-pr-url`, `arm-failed`, `review-gate`,
+   `approver-review-not-approved`, and the two `dequeued-*` classes the
+   `dequeued` work-order source already announces on its own terms) is a
+   plain, retryable fact about the forge or this round's own mechanics, not
+   this requirement's business, and posts nothing. `merge_budget_decide`'s
+   own `hold`/`refuse` outcomes (`merge-budget-hold`/`merge-budget-frozen`,
+   requirement 33) are a distinct vocabulary `_landing_refuse` never sees —
+   out of scope here, the same vocabularies-never-overlap note requirement 33
+   itself makes.
+
+   The same comment is found and edited in place on every later cycle, never
+   re-posted: `pipeline_comment_upsert`/`pipeline_comment_edit_if_present`
+   (`lib/pipeline-marker.sh`) look up the pull request's own standing comment
+   by `pipeline_landing_notice_marker`'s invisible stamp (paired with the
+   ordinary `pipeline_comment_header`/`pipeline_comment_marker` envelope
+   every pipeline comment carries) via one paginated `gh api
+   .../issues/<n>/comments` read (`pipeline_find_marked_comment`), and PATCH
+   it (`repos/<slug>/issues/comments/<id>`) rather than post a second one — a
+   no-op, not a write, when the standing body already reads identically.
+   This is the generic "find and edit the pipeline's own prior comment on a
+   pull request" primitive this issue introduces; nothing before it existed
+   in this file. The 2.1e landing-retry sweep (`_landing_retry_sweep_repo`)
+   re-enters `_landing_stage_attempt`, and therefore `_landing_refuse`, for
+   the same still-open pull request every cycle it remains stranded, so a
+   standing refusal's comment is updated, never duplicated, across every one
+   of those retries — the `#1950` instance's roughly 25 refusals becomes one
+   comment, edited in place, not 25.
+
+   The notice is edited to say the hold has cleared — never left standing
+   once it no longer applies, and never silently deleted — in the two places
+   this stage itself can observe that: `_landing_refuse` itself, the moment
+   it is called with a class outside the persistent set for a pull request
+   that already carries a standing notice (`_landing_notice_clear`,
+   built on `pipeline_comment_edit_if_present`'s own no-create guarantee — a
+   pull request never notified in the first place gets no "cleared" comment
+   either); and `_landing_stage_attempt`'s own successful arm, which clears
+   the standing notice, naming the method (`enqueued`/`auto-merge`), before
+   logging `landing-armed`. Neither write touches a label, a gate verdict, or
+   the merge-queue/budget state the gates themselves already decided — the
+   notice is informational only, exactly as every other read in this
+   function already is.
 9. **Failure handling.** If any stage times out, exits non-zero, or returns
    an unparseable summary: kill that stage's process group, log
    `attempt-failed` with enough detail for a future cycle to know the item
@@ -25831,6 +25900,43 @@ oblige anyone to edit a test.
    dispatch and `PREFLIGHT_EXISTING_BRANCH_SOURCES` (requirement 34m) name the
    same set, since the two disagreeing is what mints a fresh branch for a
    source whose pull request already exists.
+62. **A persistent landing refusal posts, and a cleared one edits, the one
+   notice comment (requirement 62, issue #1979).** `test/landing.test.sh`
+   passes: `_landing_refusal_persistent` reads `ineligible`, `autonomy-level`,
+   `kill-switch`, `open-question`, `reconciliation-unanswered`,
+   `human-changes-requested` and `merge-queue-occupied` as persistent and
+   every other `_LANDING_REFUSAL_CLASSES` member (and an empty class) as not;
+   `_landing_notice_eligible_at` computes a cool-off reason's absolute
+   eligible-at as `approved + landing_cool_off_hours`, including a fractional
+   hours value, and prints nothing for a reason that names no cool-off.
+   Against a stubbed `gh` (the comments-list/create/PATCH endpoints added
+   beside the existing files/reviews/graphql ones): `_landing_notice_upsert`
+   with no standing notice posts exactly one comment naming the class and
+   reason, carrying both `pipeline_landing_notice_marker` and the ordinary
+   `pipeline_comment_header`/`pipeline_comment_marker` envelope; an unrelated
+   standing comment (no marker) is never mistaken for it, so a fresh notice
+   still posts rather than silently patching the wrong comment; called again
+   with an identical class and reason is a no-op (no write at all); called
+   with a changed class or reason PATCHes the same standing comment id rather
+   than posting a second one. `_landing_notice_clear` against a pull request
+   carrying no standing notice posts nothing at all (never announces a hold
+   that was never posted); against one that does, PATCHes it to say the hold
+   cleared, naming why. `_landing_refuse` itself routes a persistent class to
+   `_landing_notice_upsert` and every other class to `_landing_notice_clear`.
+   `test/landing-wiring.test.sh` extends its own `_LANDING_REFUSAL_CLASSES`
+   wiring assertion with the mirrored check that
+   `_LANDING_PERSISTENT_REFUSAL_CLASSES` is a subset of it, and exercises the
+   full `run_landing_stage`/`_landing_stage_attempt` sequence (stubbing
+   `pipeline_comment_upsert`/`pipeline_comment_edit_if_present` the way it
+   already stubs every other gate helper) to pin: the kill-switch, cool-off,
+   protected-path, human-`CHANGES_REQUESTED` and already-queued refusals each
+   post the notice; an unreadable human-veto read and both dequeue classes
+   never do, routing to the clearing path instead; and a successful arm
+   clears any standing notice, naming the arming method, before
+   `landing-armed` is logged. No test path here exercises
+   `merge_budget_decide`'s own `hold`/`refuse` — out of scope, per
+   requirement 62's own note that it is a distinct vocabulary `_landing_
+   refuse` never sees.
 2h. **Dependabot's own conflicted PRs are nudged, then — only after a full
    cycle at the same head — offered as a takeover (requirement 3s).**
    `lib/dependabot-bump.sh`'s family/version parsing and its

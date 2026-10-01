@@ -141,6 +141,14 @@ source "$SCRIPT_DIR/lib/merge-queue.sh"
 # own definitions.
 # shellcheck source=lib/merge-autonomy.sh
 source "$SCRIPT_DIR/lib/merge-autonomy.sh"
+# Issue #1979, requirement 62: `_landing_refuse`'s own notice-comment dispatch
+# (`_landing_notice_upsert`/`_landing_notice_clear`) calls
+# `pipeline_comment_header`/`pipeline_comment_marker`/`pipeline_landing_
+# notice_marker` for real (pure text, no `gh` call) — `pipeline_comment_
+# upsert`/`pipeline_comment_edit_if_present`, the two that do reach `gh`, are
+# stubbed below, overriding this file's own definitions.
+# shellcheck source=lib/pipeline-marker.sh
+source "$SCRIPT_DIR/lib/pipeline-marker.sh"
 
 # --- Cycle globals the block reads -------------------------------------------
 selected_repo="Poetic-Poems/agent-ops"
@@ -169,6 +177,13 @@ log_file="$T/state/log.jsonl"
 mkdir -p "$state_dir"
 : > "$union_log"
 : > "$log_file"
+# Issue #1979, requirement 62: `_landing_notice_upsert`/`_landing_notice_
+# clear` read these two directly (the same globals `_landing_open_question_
+# resolve`'s own real `gh pr comment` call already reads, in production),
+# via the real `pipeline_comment_header`/`pipeline_comment_marker` sourced
+# above.
+node_name="test-node"
+cycle_id="c1"
 
 # The cycle-scoped tally `run_landing_stage`'s own gate 0 now reads and grows
 # (PR #557 review round 2 of TD-PPagop-26081701) — declared here exactly as
@@ -357,6 +372,23 @@ landing_protected_paths_hit() {
   printf '%s' "${PP_HIT_PATHS:-}"
 }
 
+# Issue #1979, requirement 62: the two generic `lib/pipeline-marker.sh`
+# primitives `_landing_notice_upsert`/`_landing_notice_clear` call to post or
+# PATCH the landing-refusal notice comment — stubbed here, recording their
+# own argv (REPO, NUMBER, MARKER, BODY — BODY's own newlines flattened to a
+# literal `\n` so one call is always exactly one line, which is what this
+# file's own count()-based assertions need), since this harness never wants a
+# `gh api` write reaching outside the process. `pipeline_comment_upsert`'s
+# own POST/PATCH/no-op logic and `pipeline_comment_edit_if_present`'s own
+# no-create guarantee are regression-tested directly, against a stubbed `gh`,
+# in test/landing.test.sh.
+pipeline_comment_upsert() {
+  printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "${4//$'\n'/\\n}" >>"$T/notice_upserts"
+}
+pipeline_comment_edit_if_present() {
+  printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "${4//$'\n'/\\n}" >>"$T/notice_clears"
+}
+
 HARNESS
 
 {
@@ -396,6 +428,7 @@ run_case() {
   : >"$tmp_dir/pp_hit_args"; : >"$tmp_dir/reconciliation_args"
   : >"$tmp_dir/oq_hit_args"; : >"$tmp_dir/oq_resolve_args"
   : >"$tmp_dir/pr_merge_state_calls"
+  : >"$tmp_dir/notice_upserts"; : >"$tmp_dir/notice_clears"
   rm -rf "${tmp_dir:?}/state"
   env -i PATH="$PATH" HOME="$HOME" \
     T="$tmp_dir" SCRIPT_DIR="$SCRIPT_DIR" PR_URL="$URL" COMPLEXITY="medium" \
@@ -427,6 +460,8 @@ pp_ctl_args() { cat "$tmp_dir/pp_ctl_args" 2>/dev/null || true; }
 retry_tier_args() { cat "$tmp_dir/retry_tier_args" 2>/dev/null || true; }
 kill_state_calls() { cat "$tmp_dir/kill_state_calls" 2>/dev/null || true; }
 reconciliation_args() { cat "$tmp_dir/reconciliation_args" 2>/dev/null || true; }
+notice_upserts() { cat "$tmp_dir/notice_upserts" 2>/dev/null || true; }
+notice_clears() { cat "$tmp_dir/notice_clears" 2>/dev/null || true; }
 
 # --- The happy path: one landing-armed, naming the method --------------------
 
@@ -463,6 +498,16 @@ assert_eq "  ... and calls reconciliation_gate exactly once, unbounded" \
   "1" "$(count reconciliation_args)"
 assert_eq "  ... with only the pull request's own URL, no NOT_AFTER" \
   "$URL" "$(reconciliation_args)"
+# Issue #1979, requirement 62: a successful arm is the one place besides
+# `_landing_refuse` itself that can observe a standing persistent notice no
+# longer applying — cleared (never (re)posted) before `landing-armed` is
+# logged, naming the method this round actually used.
+assert_eq "  ... and clears any standing landing-refusal notice, never posts one" \
+  "0" "$(count notice_upserts)"
+assert_eq "  ... naming the method it was armed via" \
+  "1" "$(count notice_clears)"
+assert_contains "  ... in the cleared comment's own body" \
+  "it was armed to land via enqueued" "$(notice_clears)"
 
 # --- ... alongside one landing-audit-record (requirement 8x, agent-ops#578) --
 # Deep field-by-field coverage lives in test/landing-audit-record.test.sh;
@@ -582,6 +627,12 @@ assert_eq "  ... and groups under its own kill-switch class, distinct from auton
 assert_eq "  ... returning 0" "0" "$rc"
 assert_contains "  ... and asks merge_autonomy_kill_state for a FRESH read too (issue #513)" \
   "fresh" "$(kill_state_calls)"
+# Issue #1979, requirement 62: kill-switch is a persistent class — posts the
+# one informational notice naming it.
+assert_eq "  ... and posts the landing-refusal notice (kill-switch is persistent)" \
+  "1" "$(count notice_upserts)"
+assert_contains "  ... naming the class" "kill-switch" "$(notice_upserts)"
+assert_contains "  ... and the reason" "merge_autonomy kill switch is engaged" "$(notice_upserts)"
 
 rc="$(run_case LEVEL="agent-merges-all")"
 assert_eq "agent-merges-all arms on the same terms" "1" "$(count arms)"
@@ -603,6 +654,14 @@ assert_contains "  ... naming the remaining time" "cool-off has 3.2h remaining" 
 assert_eq "  ... and groups under the same ineligible class gate 2 uses" \
   "ineligible" "$(refusal_class)"
 assert_eq "  ... returning 0" "0" "$rc"
+# Issue #1979, requirement 62: a cool-off refusal's notice states the
+# absolute wall-clock eligibility time — approved (2026-08-17T10:00:00Z) plus
+# landing_cool_off_hours (24h) — never the embedded "3.2h remaining" figure,
+# which is already stale by the time anyone reads the comment.
+assert_eq "  ... and posts the notice with an absolute eligible-at time" \
+  "1" "$(count notice_upserts)"
+assert_contains "  ... computed as approved + landing_cool_off_hours" \
+  "Eligible to land at:** 2026-08-18T10:00:00Z" "$(notice_upserts)"
 
 rc="$(run_case LEVEL="agent-merges-all" PP_CTL="ineligible:touches a protected path at agent-merges-all but the approving engagement did not run at the critical tier (tier: standard)")"
 assert_eq "gate 4.5 refusing a non-critical-tier approval arms nothing" "0" "$(count arms)"
@@ -643,6 +702,14 @@ assert_contains "  ... and the classifier's reason is the refusal's" \
   "touches protected path(s): lib/landing.sh" "$(refusal)"
 assert_eq "  ... and groups under class ineligible" "ineligible" "$(refusal_class)"
 assert_eq "  ... returning 0" "0" "$rc"
+# Issue #1979, requirement 62: ineligible (the agent-ops#1950 live instance)
+# is persistent — posts the notice naming the protected path, with no
+# eligible-at time (this reason names no cool-off).
+assert_eq "  ... and posts the landing-refusal notice" "1" "$(count notice_upserts)"
+assert_contains "  ... naming the class and the protected path" \
+  "lib/landing.sh" "$(notice_upserts)"
+assert_eq "  ... with no eligible-at time (not a cool-off)" "" \
+  "$(notice_upserts | grep -o 'Eligible to land at' || true)"
 
 rc="$(run_case ELIGIBLE="unknown:could not establish the changed-file list")"
 assert_eq "an unreadable changed-file list is never a pass" "0" "$(count arms)"
@@ -776,12 +843,25 @@ assert_contains "  ... naming who" "warwickallen" "$(refusal)"
 assert_eq "  ... and groups under class human-changes-requested" \
   "human-changes-requested" "$(refusal_class)"
 assert_eq "  ... returning 0" "0" "$rc"
+# Issue #1979, requirement 62: human-changes-requested is persistent.
+assert_eq "  ... and posts the landing-refusal notice, naming who" \
+  "1" "$(count notice_upserts)"
+assert_contains "  ... in the notice body" "warwickallen" "$(notice_upserts)"
 
 rc="$(run_case BLOCKING_RC="1")"
 assert_eq "a reviews list that could not be read prevents arming" "0" "$(count arms)"
 assert_eq "  ... and groups under class human-veto-unreadable" \
   "human-veto-unreadable" "$(refusal_class)"
 assert_eq "  ... returning 0" "0" "$rc"
+# Issue #1979, requirement 62: human-veto-unreadable is a plain, retryable
+# read failure, not persistent — posts no notice, and clears any standing one
+# (there is none here, so pipeline_comment_edit_if_present's own no-create
+# guarantee means this is still a no-op in practice — covered directly in
+# test/landing.test.sh — but the wiring must still route here, never to
+# notice_upserts).
+assert_eq "  ... posts no landing-refusal notice (not persistent)" \
+  "0" "$(count notice_upserts)"
+assert_eq "  ... and routes to the clearing path instead" "1" "$(count notice_clears)"
 
 # --- Gate 4 (human half, continued): an unreconciled plain comment posted
 # after the pull request was already Ready blocks too (agent-ops#672) --------
@@ -841,6 +921,10 @@ assert_contains "  ... refusing by name" "already in the merge queue" "$(refusal
 assert_eq "  ... and groups under class merge-queue-occupied, not its colon-free full sentence" \
   "merge-queue-occupied" "$(refusal_class)"
 assert_eq "  ... returning 0" "0" "$rc"
+# Issue #1979, requirement 62: merge-queue-occupied is persistent — it will
+# not change without the queue itself resolving (a merge or a dequeue).
+assert_eq "  ... and posts the landing-refusal notice" "1" "$(count notice_upserts)"
+assert_contains "  ... naming the class" "merge-queue-occupied" "$(notice_upserts)"
 
 rc="$(run_case QUEUE_RC="1")"
 assert_eq "a queue status that could not be read is possibly queued, so it refuses" \
@@ -865,6 +949,11 @@ assert_contains "  ... naming the reason" "manual" "$(refusal)"
 assert_eq "  ... and groups under class dequeued-manual" \
   "dequeued-manual" "$(refusal_class)"
 assert_eq "  ... returning 0" "0" "$rc"
+# Issue #1979, requirement 62: a dequeue is never this notice's business —
+# the `dequeued` work-order source already announces it on its own terms —
+# so neither dequeue class posts one.
+assert_eq "  ... posts no landing-refusal notice (already announced elsewhere)" \
+  "0" "$(count notice_upserts)"
 
 rc="$(run_case QUEUED="false" DEQUEUE_REASON="failed_checks")"
 assert_eq "a checks-failure-dequeued pull request is never blindly re-armed" "0" "$(count arms)"
@@ -873,6 +962,8 @@ assert_contains "  ... naming the reason" "failed_checks" "$(refusal)"
 assert_eq "  ... and groups under class dequeued-actionable, distinct from dequeued-manual" \
   "dequeued-actionable" "$(refusal_class)"
 assert_eq "  ... returning 0" "0" "$rc"
+assert_eq "  ... posts no landing-refusal notice either" \
+  "0" "$(count notice_upserts)"
 
 rc="$(run_case QUEUED="false" DEQUEUE_REASON="")"
 assert_eq "a pull request never dequeued (empty reason) still arms normally" "1" "$(count arms)"
@@ -954,13 +1045,22 @@ run_case_direct() {
       set -euo pipefail
       source "$SCRIPT_DIR/lib/landing.sh"
       source "$SCRIPT_DIR/lib/merge-queue.sh"
+      source "$SCRIPT_DIR/lib/pipeline-marker.sh"
       selected_repo="Poetic-Poems/agent-ops"; selected_source="tech-debt"
       state_repo="Poetic-Poems/agent-ops"; state_dir="$T/state"
       DEFAULTED_CONFIG="{}"; gate_default_branch="main"; pr_label="autonomous-agent"
       enabler_escalation_label="agent-escalation"; enabler_assignee="warwickallen"
       union_log="$T/union.jsonl"
+      node_name="test-node"; cycle_id="c1"
       mkdir -p "$state_dir"; : > "$union_log"
       log_event() { printf "%s\t%s\n" "$1" "$2" >>"$T/events"; }
+      # Issue #1979, requirement 62: _landing_refuse (sourced for real above)
+      # now dispatches every refusal to one of these two — stubbed as plain
+      # no-ops, since no assertion in this retry-specific harness reads them;
+      # the dispatch itself is covered against run_case/run_landing_stage
+      # above, which exercises the identical _landing_refuse code path.
+      pipeline_comment_upsert() { :; }
+      pipeline_comment_edit_if_present() { :; }
       merge_autonomy_effective_level() { printf "%s" "$LEVEL"; }
       landing_eligible() { printf "%s" "$ELIGIBLE"; }
       landing_open_question_hit() { printf "%s\n" "$*" >>"$T/oq_hit_args"; return "${OQ_RC:-1}"; }
@@ -1115,6 +1215,19 @@ unused_classes="$(comm -13 <(printf '%s\n' "$used_classes") <(printf '%s\n' "$de
 assert_eq "every class in _LANDING_REFUSAL_CLASSES is actually used at a call site" \
   "" "$unused_classes"
 
+# --- The persistent subset (issue #1979, requirement 62) --------------------
+# `_LANDING_PERSISTENT_REFUSAL_CLASSES` must stay a subset of `_LANDING_
+# REFUSAL_CLASSES` — a class renamed or removed from the enumeration above
+# must not silently strand a persistence entry pointing at nothing.
+
+persistent_classes="$(grep -oE '^_LANDING_PERSISTENT_REFUSAL_CLASSES="[^"]*"' "$CYCLE" \
+  | sed -E 's/^_LANDING_PERSISTENT_REFUSAL_CLASSES="(.*)"$/\1/' | tr ' ' '\n' | sort -u)"
+assert_contains "_LANDING_PERSISTENT_REFUSAL_CLASSES is defined and non-empty" \
+  "ineligible" "$persistent_classes"
+stray_persistent_classes="$(comm -23 <(printf '%s\n' "$persistent_classes") <(printf '%s\n' "$defined_classes"))"
+assert_eq "every class in _LANDING_PERSISTENT_REFUSAL_CLASSES is a member of _LANDING_REFUSAL_CLASSES" \
+  "" "$stray_persistent_classes"
+
 # --- `_landing_refuse`'s own runtime guard on an out-of-set or missing class -
 # Belt-and-braces beside the static check above: a CLASS that slipped past
 # it anyway is still logged verbatim on the landing-refused event's own
@@ -1125,7 +1238,15 @@ assert_eq "every class in _LANDING_REFUSAL_CLASSES is actually used at a call si
 bad_class_events="$(env -i PATH="$PATH" T="$(mktemp -d)" SCRIPT_DIR="$SCRIPT_DIR" bash -c '
   set -euo pipefail
   source "$SCRIPT_DIR/lib/landing.sh"
+  source "$SCRIPT_DIR/lib/pipeline-marker.sh"
+  node_name="test-node"
+  cycle_id="c1"
   log_event() { printf "%s\t%s\n" "$1" "$2" >>"$T/events"; }
+  # Issue #1979, requirement 62: "totally-made-up" is outside
+  # _LANDING_PERSISTENT_REFUSAL_CLASSES too, so _landing_refuse routes to the
+  # clearing path — stubbed here, same as the main harness above, so this
+  # isolated case never reaches a real gh api call.
+  pipeline_comment_edit_if_present() { :; }
   _landing_refuse "https://github.com/acme/widgets/pull/1" "acme/widgets" "totally-made-up" "a made-up reason"
   cat "$T/events"
 ')"
@@ -1138,7 +1259,11 @@ assert_contains "  ... and costs a warning event naming the offending class" \
 empty_class_events="$(env -i PATH="$PATH" T="$(mktemp -d)" SCRIPT_DIR="$SCRIPT_DIR" bash -c '
   set -euo pipefail
   source "$SCRIPT_DIR/lib/landing.sh"
+  source "$SCRIPT_DIR/lib/pipeline-marker.sh"
+  node_name="test-node"
+  cycle_id="c1"
   log_event() { printf "%s\t%s\n" "$1" "$2" >>"$T/events"; }
+  pipeline_comment_edit_if_present() { :; }
   _landing_refuse "https://github.com/acme/widgets/pull/1" "acme/widgets" "" "an empty-class reason"
   cat "$T/events"
 ')"

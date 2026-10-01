@@ -1023,6 +1023,33 @@ landing_approver_adjudication_history() {
 # or with no literal class argument at all, fails that test.
 _LANDING_REFUSAL_CLASSES="approver-login-unreadable approver-review-not-approved approver-review-unreadable approver-token-unmintable arm-failed autonomy-level dequeued-actionable dequeued-manual human-changes-requested human-veto-unreadable ineligible kill-switch malformed-pr-url merge-queue-occupied merge-queue-unreadable open-question open-question-unreadable reconciliation-unanswered reconciliation-unreadable review-gate unknown"
 
+# _LANDING_PERSISTENT_REFUSAL_CLASSES — the subset of `_LANDING_REFUSAL_
+# CLASSES` whose cause will not change without a new push, a configuration
+# edit, a cool-off timer elapsing or a human act (issue #1979, requirement
+# 62) — the set `_landing_refuse` below posts or updates its one
+# informational PR notice for. Always a subset of `_LANDING_REFUSAL_CLASSES`
+# (`test/landing-wiring.test.sh` asserts it); every class left out is a
+# plain, retryable read failure (every `*-unreadable` class, plus
+# `malformed-pr-url` and `unknown`), a workflow-mechanical failure this stage
+# already retries on its own (`arm-failed`, `review-gate`,
+# `approver-review-not-approved`), or a dequeue — already announced on the
+# pull request by the `dequeued` work-order source's own comment
+# (`prompts/implementer.md`), never this notice's business to repeat.
+# `merge_budget_decide`'s own `hold`/`refuse` outcomes never reach
+# `_landing_refuse` at all (`merge-budget-hold`/`merge-budget-frozen`,
+# requirement 33, logged by `merge_budget_apply_decision` instead) — a
+# distinct vocabulary this set has no member for.
+_LANDING_PERSISTENT_REFUSAL_CLASSES="autonomy-level kill-switch ineligible open-question reconciliation-unanswered human-changes-requested merge-queue-occupied"
+
+# _landing_refusal_persistent CLASS
+# True (exit 0) iff CLASS is a member of `_LANDING_PERSISTENT_REFUSAL_
+# CLASSES` above. False (exit 1), never true, on an empty CLASS.
+_landing_refusal_persistent() {
+  local class="$1"
+  [[ -n "$class" ]] || return 1
+  [[ " $_LANDING_PERSISTENT_REFUSAL_CLASSES " == *" $class "* ]]
+}
+
 # _landing_refuse PR_URL REPO CLASS REASON [RETRY [ITEM]]
 # Log `landing-refused` (requirement 8d, requirement 33). The one write
 # every refusal path in `_landing_stage_attempt` makes — never a blocked pull
@@ -1057,6 +1084,131 @@ _landing_refuse() {
     '{pr_url: $u, repo: $r, class: (if $cls == "" then null else $cls end), reason: $reason}
      + (if $retry then {retry: true} else {} end)
      + (if $i == "" then {} else {item: $i} end)')"
+
+  # Issue #1979, requirement 62: a persistent refusal (one that will not
+  # change without a new push, a config edit, a cool-off timer elapsing or a
+  # human act) is also said on the pull request itself, not only here in the
+  # node log — see `_landing_notice_upsert`'s own header. Anything else
+  # (every plain read failure, and the two `dequeued-*` classes the
+  # `dequeued` work-order source already announces) instead clears whatever
+  # persistent notice may already be standing, since by definition it no
+  # longer names the live cause.
+  if _landing_refusal_persistent "$class"; then
+    _landing_notice_upsert "$pr_url" "$repo" "$class" "$reason"
+  else
+    _landing_notice_clear "$pr_url" "$repo" \
+      "no persistent gate is currently refusing to land it"
+  fi
+}
+
+# _landing_notice_body CLASS REASON NODE [ELIGIBLE_AT]
+# The body of the one informational PR comment a persistent `landing-refused`
+# posts or updates (issue #1979, requirement 62) — see `_landing_notice_
+# upsert`'s own header for the write side. Carries the ordinary
+# `pipeline_comment_header`/`pipeline_comment_marker` envelope every pipeline
+# comment does, plus `pipeline_landing_notice_marker` so a later cycle can
+# find this exact comment again regardless of which cycle or class last wrote
+# it.
+_landing_notice_body() {
+  local class="$1" reason="$2" node="$3" eligible_at="${4:-}"
+  local body
+  body="$(pipeline_comment_header script "$node")
+
+Landing is holding this pull request — approved, but not yet armed to merge — until this clears. This is informational only: it changes nothing about whether or when this pull request lands.
+
+- **Refusal class:** \`$class\`
+- **Reason:** $reason"
+  if [[ -n "$eligible_at" ]]; then
+    body="$body
+- **Eligible to land at:** $eligible_at"
+  fi
+  body="$body
+
+$(pipeline_landing_notice_marker)
+$(pipeline_comment_marker "$cycle_id" script)"
+  printf '%s' "$body"
+}
+
+# _landing_notice_cleared_body DETAIL NODE
+# The body of the same notice comment, edited in place once the persistent
+# refusal it named no longer stands (`_landing_notice_clear`, below). DETAIL
+# is a short clause completing "Landing is no longer holding this pull
+# request …".
+_landing_notice_cleared_body() {
+  local detail="$1" node="$2"
+  printf '%s\n\nLanding is no longer holding this pull request — %s.\n\n%s\n%s' \
+    "$(pipeline_comment_header script "$node")" "$detail" \
+    "$(pipeline_landing_notice_marker)" "$(pipeline_comment_marker "$cycle_id" script)"
+}
+
+# _landing_notice_eligible_at REASON [NOW_ISO]
+# Print the absolute wall-clock time named by a protected-path cool-off
+# REASON (`landing_protected_path_controls_ok`'s own `ineligible:protected-
+# path cool-off has <N>h remaining (approved <ISO>, landing_cool_off_
+# hours=<H>)` text), or nothing when REASON does not name one or the
+# timestamp cannot be parsed. Computed as `approved + landing_cool_off_hours`
+# — the review's own fixed anchor plus the configured wait — never from the
+# embedded "<N>h remaining" figure, which is already stale by the time this
+# runs. NOW_ISO exists only so a test can pin "now" the way `landing_cool_
+# off_remaining_hours` already does; this function does not otherwise use it.
+_landing_notice_eligible_at() {
+  local reason="$1"
+  [[ "$reason" =~ cool-off\ has\ [0-9.]+h\ remaining\ \(approved\ ([^,]+),\ landing_cool_off_hours=([0-9.]+)\) ]] || return 0
+  local approved_at="${BASH_REMATCH[1]}" cool_off_hours="${BASH_REMATCH[2]}"
+  jq -nr --arg at "$approved_at" --argjson h "$cool_off_hours" \
+    '(try ($at | fromdateiso8601) catch null) as $a
+     | if $a == null then empty else (($a + ($h * 3600)) | todateiso8601) end' 2>/dev/null
+}
+
+# _landing_notice_upsert PR_URL REPO CLASS REASON
+# Post or update, in place, the one informational pipeline comment on PR_URL
+# naming why the landing stage is holding it (issue #1979, requirement 62) —
+# the gap `agent-ops#1950` exposed, where `poetic-1`/`poetic-2` refused the
+# same pull request roughly 25 times over a day with no visibility anywhere
+# but the node's own `log.jsonl`. Called only for a CLASS `_landing_refusal_
+# persistent` reports true for; every other refusal clears instead
+# (`_landing_notice_clear`). Adds no label, gate or merge-eligibility change —
+# this is purely informational, exactly as every other read `_landing_stage_
+# attempt` makes already is. Best-effort: a write failure here costs a
+# `warning` event, never a refusal or an abort — the `landing-refused` event
+# this function is called from already logged the fact that matters.
+_landing_notice_upsert() {
+  local pr_url="$1" repo="$2" class="$3" reason="$4"
+  local number
+  [[ "$pr_url" =~ /pull/([0-9]+)$ ]] || return 0
+  number="${BASH_REMATCH[1]}"
+
+  local eligible_at=""
+  eligible_at="$(_landing_notice_eligible_at "$reason")"
+
+  local body
+  body="$(_landing_notice_body "$class" "$reason" "$node_name" "$eligible_at")"
+  pipeline_comment_upsert "$repo" "$number" "$PIPELINE_LANDING_NOTICE_MARKER_PREFIX" "$body" \
+    || log_event "warning" "$(jq -nc --arg u "$pr_url" --arg c "$class" \
+         --arg d "could not post or update the landing-refusal notice comment on $pr_url (class: $class)" \
+         '{detail: $d, pr_url: $u, class: $c}')"
+}
+
+# _landing_notice_clear PR_URL REPO DETAIL
+# Edit the standing landing-refusal notice on PR_URL, if any, to say the hold
+# has cleared (issue #1979, requirement 62) — never posts a fresh comment
+# when none already stands (`pipeline_comment_edit_if_present`'s own
+# no-create guarantee), since a pull request never notified of a hold needs
+# no comment saying one cleared. Called both from `_landing_refuse` (a
+# non-persistent class superseding a standing persistent one) and from
+# `_landing_stage_attempt`'s own successful arm. Best-effort, same as
+# `_landing_notice_upsert`.
+_landing_notice_clear() {
+  local pr_url="$1" repo="$2" detail="$3"
+  local number
+  [[ "$pr_url" =~ /pull/([0-9]+)$ ]] || return 0
+  number="${BASH_REMATCH[1]}"
+  local body
+  body="$(_landing_notice_cleared_body "$detail" "$node_name")"
+  pipeline_comment_edit_if_present "$repo" "$number" "$PIPELINE_LANDING_NOTICE_MARKER_PREFIX" "$body" \
+    || log_event "warning" "$(jq -nc --arg u "$pr_url" \
+         --arg d "could not clear the standing landing-refusal notice comment on $pr_url" \
+         '{detail: $d, pr_url: $u}')"
 }
 
 # run_landing_stage PR_URL COMPLEXITY
@@ -1571,6 +1723,12 @@ _landing_stage_attempt() {
     _landing_refuse "$pr_url" "$slug" "arm-failed" "arm-failed:landing_arm could not enqueue or auto-merge $pr_url: printed no method despite exiting 0" "$retry" "$item"
     return 0
   fi
+
+  # Issue #1979, requirement 62: a successful arm is the one place besides
+  # `_landing_refuse` itself that this function can observe a standing
+  # persistent refusal no longer applying — clear it before logging
+  # `landing-armed`, naming the method this round actually used.
+  _landing_notice_clear "$pr_url" "$slug" "it was armed to land via $method"
 
   local retry_bool="false"
   [[ -z "$retry" ]] || retry_bool="true"
