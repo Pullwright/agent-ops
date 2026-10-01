@@ -261,6 +261,32 @@ if PATH="$fake_jq_dir:$PATH" limit_standdown_since <<<"$spliced_hit" >/dev/null 
 else
   printf 'ok   - limit_standdown_since exits non-zero when its read fails outright\n'
 fi
+
+# limit_union_state gives the stand-down all three answers from one pass —
+# the governing hit, the freeze's start and the escalation memory — where it
+# read the union three times (#2037). The same fold backs the two readers
+# above, so the three can never disagree.
+state_union="$(printf '%s\n' \
+  '{"ts":"2026-09-16T00:00:00Z","event":"limit-hit","resume_at":"2099-01-01T00:00:00Z"}' \
+  "$spliced_line" \
+  '{"ts":"2026-09-17T00:00:00Z","event":"limit-freeze-escalated","since":"2026-09-16T00:00:00Z"}' \
+  '{"ts":"2026-09-18T00:00:00Z","event":"limit-hit","resume_at":"2099-02-01T00:00:00Z"}' \
+  '{"ts":"2026-09-19T00:00:00Z","event":"limit-freeze-escalated","since":7}')"
+assert_eq "limit_union_state answers the governing hit, the freeze's start and the escalations in one pass" \
+  '{"resume_at":"2099-02-01T00:00:00Z","since":"2026-09-16T00:00:00Z","escalated":["2026-09-16T00:00:00Z"]}' \
+  "$(limit_union_state <<<"$state_union" | jq -c '{resume_at: .record.resume_at, since, escalated}')"
+assert_eq "…and agrees with limit_union_record" "2099-02-01T00:00:00Z" \
+  "$(limit_union_record <<<"$state_union" | jq -r '.resume_at')"
+assert_eq "…and with limit_standdown_since" "2026-09-16T00:00:00Z" "$(limit_standdown_since <<<"$state_union")"
+assert_eq "limit_union_state over a stream with no limit events answers nothing for each" \
+  '{"record":null,"since":null,"escalated":[]}' \
+  "$(limit_union_state <<<'{"ts":"2026-01-01T00:00:00Z","event":"cycle-end"}')"
+if PATH="$fake_jq_dir:$PATH" limit_union_state <<<"$spliced_hit" >/dev/null 2>&1; then
+  printf 'FAIL - limit_union_state reports a failed read as success\n'
+  failures=$(( failures + 1 ))
+else
+  printf 'ok   - limit_union_state exits non-zero when its read fails outright\n'
+fi
 rm -rf "$fake_jq_dir"
 
 # --- limit_later_record: requirement 2.1's "later resume wins" -------------

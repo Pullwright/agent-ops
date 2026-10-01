@@ -24,6 +24,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # shellcheck source=lib/toggle.sh
 . "$SCRIPT_DIR/lib/toggle.sh"
+# `drain_event_logged` folds lib/union-stream.sh's `union_events`, which
+# agent-cycle.sh sources before lib/drain.sh.
+# shellcheck source=lib/union-stream.sh
+. "$SCRIPT_DIR/lib/union-stream.sh"
 # shellcheck source=lib/drain.sh
 . "$SCRIPT_DIR/lib/drain.sh"
 

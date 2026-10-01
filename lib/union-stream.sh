@@ -9,8 +9,9 @@
 # Three things live here, so each is written once:
 #
 #   UNION_STREAM_JQ      the jq definitions every streamed reader shares: the
-#                        span fold, the kept-events-then-span protocol, and
-#                        the consumer-side peel of that protocol.
+#                        tolerant raw-line event stream, the span fold, the
+#                        kept-events-then-span protocol, and the consumer-side
+#                        peel of that protocol.
 #   union_stream         one streamed pass over a union that keeps what a
 #                        reader declares and closes with the span.
 #   union_partition      one streamed pass that writes the kept events of
@@ -25,7 +26,33 @@
 # and report a quiet zero.
 #
 # Sourced, never executed: no shell options are set here, matching every
-# other lib/*.sh — the caller owns those.
+# other lib/*.sh — the caller owns those. Sourced by agent-cycle.sh,
+# review-cycle.sh, monitor-cycle.sh, scripts/node-health.sh and
+# scripts/publish-dashboard.sh, and by lib/limit-detect.sh, lib/fleet-sizing.sh
+# and lib/item-lifecycle.sh for their own readers; sourcing it twice is
+# harmless, since it only defines.
+
+# The tolerant raw-line event stream (#2037). The fleet union is every node's
+# log concatenated, and one line in it may not parse — a record cut off
+# part-way, a stump, a fragment a NUL run left — so a reader that must not go
+# blind on such a line reads the input as raw lines (`jq -nR`) and parses each
+# on its own:
+#
+#   union_raw_objects        every line that parses to an object, in order;
+#                            a line that does not parse, or parses to
+#                            anything else, is skipped. Plain `inputs` under
+#                            `jq -n` aborts at the first such line, and a
+#                            slurp (`jq -s`) aborts the whole read.
+#   union_event_in(NAMES)    whether the record's `event` is one of NAMES (an
+#                            array of strings); a record whose `event` is not
+#                            a string is never wanted.
+#   union_events(NAMES)      the objects whose `event` is one of NAMES: the
+#                            stream every tolerant reader folds, so no two of
+#                            them can skip a different set of lines.
+#
+# The membership test is a `reduce`, not `any`, `first` or `limit`: under jq
+# 1.6 a `try` — which `fromjson?` is — swallows the `break` those are built
+# on, so they do not stop where they should over a stream that holds one.
 
 # The span is the least and the greatest of the timestamps a reader counts,
 # folded as the stream passes. Two rules exist because the whole-array readers
@@ -53,6 +80,10 @@
 # rather than folding a truncated log as though it were whole.
 # shellcheck disable=SC2016  # jq's own $x/$t/$since, not the shell's.
 UNION_STREAM_JQ='
+  def union_raw_objects: inputs | fromjson? // empty | objects;
+  def union_event_in($names):
+    ((.event | strings) as $e | reduce $names[] as $n (false; . or $n == $e)) // false;
+  def union_events($names): union_raw_objects | select(union_event_in($names));
   def union_ts_any: .ts // empty;
   def union_ts_nonempty: (.ts // "") | select(. != "");
   def union_span_add($e; ts; $since):
@@ -74,11 +105,14 @@ UNION_STREAM_JQ='
 #
 #   --raw              read SOURCE as raw lines, each through `fromjson? //
 #                      empty`, for a union no `read_events` has cleaned: plain
-#                      `inputs` aborts at the first spliced record.
+#                      `inputs` aborts at the first spliced record. With
+#                      --objects as well, the stream is UNION_STREAM_JQ's own
+#                      `union_raw_objects`.
 #   --objects          drop every record that is not an object first.
 #   --events "A B …"   keep the records whose `event` is one of these — the
-#                      reader's declaration (`union_wanted` in a --keep filter
-#                      reads the same list).
+#                      reader's declaration, tested by `union_event_in`
+#                      (`union_wanted` in a --keep filter reads the same
+#                      list).
 #   --keep FILTER      keep what FILTER outputs for each record, instead of
 #                      every record --events names.
 #   --defs TEXT        jq definitions FILTER uses.
@@ -87,11 +121,11 @@ UNION_STREAM_JQ='
 #                      `$since` is also bound for a --keep filter to use.
 union_stream() {
   local src="$1"; shift
-  local stream='inputs' keep='' defs='' ts='any' since='' names='' objects=0
+  local stream='inputs' keep='' defs='' ts='any' since='' names='' objects=0 raw=0
   local -a opts=(-nc)
   while (( $# > 0 )); do
     case "$1" in
-      --raw)     opts=(-nRc); stream='inputs | fromjson? // empty'; shift ;;
+      --raw)     opts=(-nRc); raw=1; shift ;;
       --objects) objects=1; shift ;;
       --events)  names="$2"; shift 2 ;;
       --keep)    keep="$2"; shift 2 ;;
@@ -101,11 +135,17 @@ union_stream() {
       *) printf 'union_stream: unknown option %s\n' "$1" >&2; return 2 ;;
     esac
   done
-  (( objects )) && stream="$stream | objects"
+  if (( raw && objects )); then
+    stream='union_raw_objects'
+  elif (( raw )); then
+    stream='inputs | fromjson? // empty'
+  elif (( objects )); then
+    stream='inputs | objects'
+  fi
   [[ -n "$keep" ]] || keep='select(union_wanted)'
   # shellcheck disable=SC2086  # NAMES is a word list by design.
   jq "${opts[@]}" --arg since "$since" "$UNION_STREAM_JQ $defs"'
-    def union_wanted: .event as $e | any($ARGS.positional[]; . == $e);
+    def union_wanted: union_event_in($ARGS.positional);
     def union_keep: '"$keep"';
     union_kept_with_span('"$stream"'; union_keep; union_ts_'"$ts"'; $since)' \
     "$src" --args $names

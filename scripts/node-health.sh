@@ -31,6 +31,10 @@ SCHEMA_FILE="$SCRIPT_DIR/config.schema.json"
 . "$SCRIPT_DIR/lib/fleet.sh"
 # shellcheck source=lib/toggle.sh
 . "$SCRIPT_DIR/lib/toggle.sh"
+# The tolerant raw-line event stream `limit_union_record` folds (#2037);
+# lib/limit-detect.sh sources it too.
+# shellcheck source=lib/union-stream.sh
+. "$SCRIPT_DIR/lib/union-stream.sh"
 # shellcheck source=lib/limit-detect.sh
 . "$SCRIPT_DIR/lib/limit-detect.sh"
 # shellcheck source=lib/disk-space.sh

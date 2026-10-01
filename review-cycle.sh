@@ -64,6 +64,10 @@ SCRATCH_DIR=""
 trap scratch_release EXIT
 scratch_enter review-cycle || exit 1
 
+# The tolerant raw-line event stream the fleet-union readers fold
+# (`union_events`, #2037); lib/limit-detect.sh sources it too.
+# shellcheck source=lib/union-stream.sh
+. "$SCRIPT_DIR/lib/union-stream.sh"
 # shellcheck source=lib/limit-detect.sh
 . "$SCRIPT_DIR/lib/limit-detect.sh"
 # Rate-limit-aware `gh`: sourcing this wraps every `gh` call below so a refusal

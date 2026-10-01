@@ -26,7 +26,9 @@
 # `run_standdown_checks` (lib/standdown.sh) — deliberately declares nothing
 # `local`, so the call is indistinguishable, to the rest of the cycle, from
 # the inline block it replaces. `exit` inside it ends the process exactly as
-# it did inline: nothing here runs inside a subshell.
+# it did inline: nothing here runs inside a subshell. The log readers below
+# fold UNION_STREAM_JQ's tolerant event stream (`union_events`,
+# lib/union-stream.sh), which agent-cycle.sh sources before this file.
 refresh_dashboard() {
   if [[ -x "$SCRIPT_DIR/scripts/publish-dashboard.sh" ]]; then
     timeout 120 "$SCRIPT_DIR/scripts/publish-dashboard.sh" >/dev/null 2>&1 || true
@@ -174,20 +176,20 @@ stage_health_status_report() {
 # own list, alongside the dashboard's Decisions panel. Built the same way
 # `current_limit_record` above is: the management commands run long before
 # the cycle's own union log snapshot exists, so this reads the fleet log
-# fresh rather than reusing one — and reads it the same tolerant, streaming
-# way `limit_union_record` (lib/limit-detect.sh) does, for the same reason: a
-# slurp of the union aborts on its first unparseable line, and this line then
-# read 0 whatever the fleet had decided (#2037). A read that fails outright
-# says so instead of printing a zero nobody counted.
+# fresh rather than reusing one — and reads it through UNION_STREAM_JQ's
+# tolerant event stream (`union_events`, lib/union-stream.sh), as every union
+# reader does: a slurp of the union aborts on its first unparseable line, and
+# this line then read 0 whatever the fleet had decided (#2037). A read that
+# fails outright says so instead of printing a zero nobody counted.
 decisions_status_report() {
   local count now_iso
   now_iso="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  # shellcheck disable=SC2016  # jq's own $now/$now_s/$from_s/$e
   count="$(fleet_logs "$state_dir" "$(fleet_peers_dir "$workspace_root")" log.jsonl \
-    | jq -nR --arg now "$now_iso" '
+    | jq -nR --arg now "$now_iso" "$UNION_STREAM_JQ"'
         ($now | fromdateiso8601) as $now_s
         | ($now_s - 86400) as $from_s
-        | reduce (inputs | fromjson? // empty
-                  | select(type == "object" and .event == "decision-taken")
+        | reduce (union_events(["decision-taken"])
                   | select(((.ts // "") | length) > 0
                            and (try (.ts | fromdateiso8601) catch 0) >= $from_s)) as $e
             (0; . + 1)' 2>&1)" \
@@ -209,20 +211,20 @@ decisions_status_report() {
 # fleet-wide fact, and a peer's own overrun count belongs on its own
 # `--status`, not folded into this one's.
 #
-# Read the way `decisions_status_report` reads, line by line: a node's own log
-# can hold an unparseable line too (both VM nodes' do, #2037), and a slurp
-# that aborted on it read as zero overruns. A log not yet written is a plain
-# zero; a log that exists and cannot be read says so.
+# Read the way `decisions_status_report` reads, through `union_events`: a
+# node's own log can hold an unparseable line too (both VM nodes' did, #2037),
+# and a slurp that aborted on it read as zero overruns. A log not yet written
+# is a plain zero; a log that exists and cannot be read says so.
 overlap_status_report() {
   local count=0 now_iso
   now_iso="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   if [[ -e "$log_file" ]]; then
-    count="$(jq -nR --arg now "$now_iso" '
+    # shellcheck disable=SC2016  # jq's own $now/$now_s/$from_s/$e
+    count="$(jq -nR --arg now "$now_iso" "$UNION_STREAM_JQ"'
         ($now | fromdateiso8601) as $now_s
         | ($now_s - 86400) as $from_s
-        | reduce (inputs | fromjson? // empty
-                  | select(type == "object"
-                           and .event == "cycle-skipped" and .reason == "overlap")
+        | reduce (union_events(["cycle-skipped"])
+                  | select(.reason == "overlap")
                   | select(((.ts // "") | length) > 0
                            and (try (.ts | fromdateiso8601) catch 0) >= $from_s)) as $e
             (0; . + 1)' "$log_file" 2>&1)" \

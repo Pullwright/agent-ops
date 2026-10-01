@@ -62,6 +62,12 @@ SCRATCH_DIR=""
 trap scratch_release EXIT
 scratch_enter agent-cycle || exit 1
 
+# The tolerant raw-line event stream every fleet-union reader folds
+# (`union_events`, #2037), sourced here as well as by lib/limit-detect.sh so
+# that lib/manage.sh's and lib/drain.sh's readers never depend on the order
+# of the sources below.
+# shellcheck source=lib/union-stream.sh
+. "$SCRIPT_DIR/lib/union-stream.sh"
 # shellcheck source=lib/limit-detect.sh
 . "$SCRIPT_DIR/lib/limit-detect.sh"
 # GitHub's rate limits, which are a different system from the Claude usage

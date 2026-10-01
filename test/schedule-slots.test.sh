@@ -189,6 +189,10 @@ assert_eq "a --dry-run run logs nothing, for the same reason" "" "$out"
 
 # --- lib/manage.sh's overlap_status_report -------------------------------------
 
+# lib/manage.sh's readers fold lib/union-stream.sh's `union_events`, which
+# agent-cycle.sh sources before it.
+# shellcheck source=lib/union-stream.sh
+. "$SCRIPT_DIR/lib/union-stream.sh"
 # shellcheck source=lib/manage.sh
 . "$SCRIPT_DIR/lib/manage.sh"
 
