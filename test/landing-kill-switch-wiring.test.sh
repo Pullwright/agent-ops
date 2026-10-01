@@ -109,6 +109,12 @@ source "$SCRIPT_DIR/lib/merge-budget.sh"
 source "$SCRIPT_DIR/lib/merge-autonomy.sh"
 # shellcheck source=lib/landing.sh
 source "$SCRIPT_DIR/lib/landing.sh"
+# Issue #1979, requirement 62: _landing_refuse now dispatches every refusal
+# through this file's pipeline_comment_header/pipeline_comment_marker/
+# pipeline_landing_notice_marker (real, pure text) — pipeline_comment_upsert
+# itself is stubbed below, same as every other external write in this file.
+# shellcheck source=lib/pipeline-marker.sh
+source "$SCRIPT_DIR/lib/pipeline-marker.sh"
 
 # --- Cycle globals the block reads -------------------------------------------
 selected_repo="Poetic-Poems/agent-ops"
@@ -125,6 +131,8 @@ approver_stage_verdict="approve"
 approver_stage_adjudicating="0"
 approver_stage_tier="critical"
 union_log="$T/union.jsonl"
+node_name="test-node"
+cycle_id="c1"
 mkdir -p "$state_dir"
 : > "$union_log"
 
@@ -151,6 +159,12 @@ merge_autonomy_kill_state() {
 # engaged in every one of them), so nothing past it is ever reached: no other
 # gate helper — landing_eligible, review_gate_verdict, landing_arm, and so
 # on — needs a stub, or even a definition, here.
+
+# Issue #1979, requirement 62: kill-switch/autonomy-level are both persistent
+# classes, so every case here calls _landing_notice_upsert — stubbed, since
+# this file never wants a `gh api` write reaching outside the process.
+pipeline_comment_upsert() { :; }
+pipeline_comment_edit_if_present() { :; }
 
 HARNESS
 

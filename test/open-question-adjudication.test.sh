@@ -175,6 +175,16 @@ gh() {
   return 1
 }
 
+# Issue #1979, requirement 62: `_landing_refuse` (pasted below) now dispatches
+# every refusal through these three — not extracted here, since this file's
+# axis is the open-question ladder, never the notice comment's own content
+# (test/landing.test.sh and test/landing-wiring.test.sh cover that directly).
+# Stubbed as plain no-ops so a reference to any of the three never aborts
+# this harness the way an undefined top-level command would under `errexit`.
+_landing_refusal_persistent() { return 1; }
+_landing_notice_upsert() { :; }
+_landing_notice_clear() { :; }
+
 HARNESS
 
 URL="https://github.com/Poetic-Poems/agent-ops/pull/512"

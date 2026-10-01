@@ -94,6 +94,13 @@ source "$SCRIPT_DIR/lib/landing.sh"
 source "$SCRIPT_DIR/lib/merge-queue.sh"
 # shellcheck source=lib/merge-autonomy.sh
 source "$SCRIPT_DIR/lib/merge-autonomy.sh"
+# Issue #1979, requirement 62: _landing_refuse/a successful arm both dispatch
+# through this file's pipeline_comment_header/pipeline_comment_marker/
+# pipeline_landing_notice_marker (real) — pipeline_comment_upsert/pipeline_
+# comment_edit_if_present are stubbed below, same as every other external
+# write in this file.
+# shellcheck source=lib/pipeline-marker.sh
+source "$SCRIPT_DIR/lib/pipeline-marker.sh"
 
 selected_repo="Poetic-Poems/agent-ops"
 selected_source="tech-debt"
@@ -112,6 +119,8 @@ enabler_escalation_label="agent-escalation"
 enabler_assignee="warwickallen"
 union_log="$T/union.jsonl"
 log_file="$T/state/log.jsonl"
+node_name="test-node"
+cycle_id="c1"
 mkdir -p "$state_dir"
 : > "$union_log"
 : > "$log_file"
@@ -159,6 +168,11 @@ landing_protected_paths_hit() {
   [[ "${PP_HIT_RC:-1}" == "0" ]] || return "${PP_HIT_RC:-1}"
   printf '%s' "${PP_HIT_PATHS:-}"
 }
+# Issue #1979, requirement 62: this file's axis is the audit record's own
+# field content, not the notice comment — test/landing-wiring.test.sh covers
+# that directly — so both are stubbed as plain no-ops here.
+pipeline_comment_upsert() { :; }
+pipeline_comment_edit_if_present() { :; }
 
 HARNESS
 
