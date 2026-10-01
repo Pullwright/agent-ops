@@ -1583,13 +1583,13 @@
       }
     },
     "limit_escalate_after_hours": {
-      "description": "Hours an automatic usage-limit stand-down may run, aged from the first limit-hit of the current freeze, before the Script files an escalation issue (label `enabler_escalation_label`, assignee `enabler_assignee`, in `crash_loop_repo`). 0 turns the escalation off. Manual stand-downs never escalate. Independent of `schedule.cycle_interval_minutes` (requirement 1d): bounded by the account provider's own reset clock, not this installation's cadence.",
+      "description": "Hours an automatic usage-limit stand-down may run, aged from the first limit-hit of the current freeze (or, when the fleet log union holds none, from the time fleet/limit.json was last written), before the Script files an escalation issue (label `enabler_escalation_label`, assignee `enabler_assignee`, in `crash_loop_repo`). 0 turns the escalation off. Manual stand-downs never escalate. Independent of `schedule.cycle_interval_minutes` (requirement 1d): bounded by the account provider's own reset clock, not this installation's cadence.",
       "type": "number",
       "minimum": 0,
       "default": 24,
       "x-docs": {
         "readme": "Hours. How long an automatic usage-limit stand-down may run before an escalation issue is filed; `0` turns it off. A manual stand-down never escalates.",
-        "spec": "The automatic-freeze escalation threshold of requirement 2 (#244): aged from `limit_standdown_since` (the first `limit-hit` of the current freeze, not its latest extension), raised once per freeze via the `limit-freeze-escalated` event, filed in `crash_loop_repo` with `enabler_escalation_label` and `enabler_assignee`. `0` disables it. A manual stand-down never pages the person who set it.",
+        "spec": "The automatic-freeze escalation threshold of requirement 2 (#244): aged from the first `limit-hit` of the current freeze (`limit_union_state`'s `since`, not its latest extension) or, when the union holds no live hit, from `fleet/limit.json`'s own `ts` (its latest extension), raised once per freeze via the `limit-freeze-escalated` event, filed in `crash_loop_repo` with `enabler_escalation_label` and `enabler_assignee`. `0` disables it. A manual stand-down never pages the person who set it.",
         "value": {
           "spec": "24 h"
         }

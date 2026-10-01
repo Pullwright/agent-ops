@@ -71,17 +71,19 @@ All paths derive from `config.json` (tilde-expanded `state_dir` and
 
 - **`log.jsonl` — the FLEET's, not just ours** (requirements 33 and 2.5): this
   node's log unioned with every peer's fetched copy, via the same
-  `lib/fleet.sh` read the pipelines use. Parsed line-by-line
-  with `fromjson? // empty` so a half-written trailing line (the Script may be
-  appending) never aborts the parse — and, separately, so a line a NUL run
-  (an unclean stop, "Integration" below) has made unparseable is dropped
-  rather than aborting the whole read. What that drop costs is not left
-  invisible: the union lands raw on disk once and is parsed from there, so both
-  line counts describe the one snapshot rather than two reads a pipeline's own
-  appends can separate, and the difference rides the payload as
-  `log_repair.dropped_log_lines`
-  (agent-ops#794) — the log tail panel's own title names it whenever it is
-  non-zero, "The Site" below. `revert-rate.jsonl`'s own read (below) is
+  `lib/fleet.sh` read the pipelines use. That read takes a line a NUL run
+  (an unclean stop, "Integration" below) or a splice has damaged apart before
+  its sort, keeping the records it holds and dropping the rest (implementation
+  spec requirement 2.5). What survives is parsed line-by-line with
+  `fromjson? // empty`, so a half-written trailing line (the Script may be
+  appending), or any other malformed line, never aborts the parse. What those
+  drops cost is not left invisible: the union lands raw on disk once and is
+  parsed from there, so both line counts describe the one snapshot rather
+  than two reads a pipeline's own appends can separate, and the difference,
+  plus the damaged lines `fleet_logs` reports it took apart or dropped (its
+  damage file), rides the payload as `log_repair.dropped_log_lines`
+  (agent-ops#794, #2037) — the log tail panel's own title names it whenever
+  it is non-zero, "The Site" below. `revert-rate.jsonl`'s own read (below) is
   counted the identical way, into `log_repair.dropped_revert_rate_lines`,
   named the same way on the revert-rate panel's title. Blocked items use
   requirement 34's semantics (most recent `attempt-failed`/`unblocked` per
@@ -2956,35 +2958,47 @@ number's twins elsewhere on the page.
   `dashboard.log`, and, since a plain-text line appended to a JSONL file is
   exactly what every `fromjson? // empty` reader silently drops, a JSON line
   (`{"ts", "node", "event": "log-repaired", "dropped_nul_bytes",
-  "dropped_lines"}`) for the other three. For a JSONL target the bytes alone
-  are not enough: the run takes the newline separators inside it too, so
-  deleting just the NULs splices the head of one record onto the whole of a
-  later one and `jq -s` still refuses the file over the join — and a file whose
-  own tail was in flight ends mid-record, which would make the appended repair
-  record itself the unparseable line. So the run becomes the line break it
-  destroyed, and each line either side survives only if it parses: the
-  truncated stump goes and is counted in `dropped_lines`, the intact record the
-  run ran into is recovered, and `jq -s` reads the whole file afterwards.
-  The same splice arises with no NUL byte at all, from a write a full disk cut
-  short: the head of a record without its newline, completed by the next
-  append's whole record. A JSONL target with no NUL byte is checked for that
-  shape too — a `grep` under the C locale picks the candidate lines (a
-  `{"ts":"` anywhere but at a line's start, or a line that does not open an
-  object), and only those are parsed — and each candidate that does not parse
-  is replaced by the longest tail starting at a `{"ts":"` that does, or
-  dropped when none does, with a `log-repaired` record carrying
-  `dropped_nul_bytes: 0`, `dropped_lines` and `recovered_records`. A line that
-  parses is never touched, and a file whose last byte is not a newline is left
-  until a later window, since its final line may be an append still being
-  written. Either repair replaces the file by rename only if its size is
-  unchanged since the repair read it: a writer's append that landed meanwhile
-  would be on the file the rename discards, so the window gives up and the
-  next one retries.
-  `agent-cycle.sh` and `review-cycle.sh` apply the identical
-  repair to their own per-cycle/per-review `.fleet-log.jsonl` union snapshot,
-  immediately after building it and before anything reads it — a peer that
-  has not deployed this repair yet, or history replicated before it did, can
-  still hand a damaged line to a node whose own logs are already clean.
+  "dropped_lines", "recovered_records"}`) for the other three. For a JSONL
+  target the bytes alone are not enough: the run takes the newline
+  separators inside it too, so deleting just the NULs splices the head of one
+  record onto the whole of a later one and `jq -s` still refuses the file
+  over the join. So the run becomes the line break it destroyed, and every
+  line of the result goes through the one recovery `fleet_logs` also uses
+  (`FLEET_RECOVER_JQ`, `lib/fleet.sh`): a line that parses whole as an object
+  is kept as it is; any other is split at each `{"ts":"`, and, walking from
+  the left, the shortest run of pieces that parses as an object is kept each
+  time — so a truncated stump goes, the intact record the run ran into is
+  recovered, and a record that lost only its newline is kept together with
+  the one it ran into. `dropped_lines` counts the damaged lines taken out,
+  `recovered_records` the records put back in their place, and `jq -s`
+  reads the whole file afterwards. The same splice arises with no NUL byte at
+  all, from a write a full disk cut short: the head of a record without its
+  newline, completed by the next append's whole record. A JSONL target with
+  no NUL byte is checked for that shape too, more cheaply: one `awk` pass
+  under the C locale picks the candidate lines (one that does not open an
+  object, does not end in `}`, or holds `{"ts":"` anywhere past its start),
+  and only those reach the recovery, with `dropped_nul_bytes: 0` on the
+  record. A line that parses whole is never touched. On either path an
+  unterminated last line is left out of the repair, since it may be an
+  append still being written: it is copied back byte for byte, still without
+  a newline, after the `log-repaired` record, so the next append completes
+  it, and nothing else in the file waits on it. Every step of the repair is
+  guarded, so a step that fails leaves the file as it was and never ends a
+  caller running under `set -e`. Either repair replaces the file by rename
+  only if its size is unchanged since the repair read it: a writer's append
+  that landed meanwhile would be on the file the rename discards, so the
+  window gives up and the next one retries. `log.jsonl` is skipped while the
+  implementation cycle holds `lock.json` — by `acquire_lock`'s own test, a
+  pid `kill -0` finds in a lock that names this container or none — because
+  a running cycle copies its own new events into its union snapshot by line
+  number (`tail -n "+$(( log_lines_before + 1 ))"`), and a repair that took K
+  lines out and added one would move every later line up by K-1; nothing
+  reads the other files by offset, so they are repaired in every window. The
+  cycles' and the review's own union snapshots need no repair: `fleet_logs`
+  takes a peer's NUL-holed or spliced line apart before its sort
+  (implementation spec requirement 2.5), so a peer that has not repaired its
+  own log yet, or history replicated before it did, costs a reader nothing
+  more than the stumps it held.
 
 ## Components (as built)
 
@@ -3130,15 +3144,23 @@ number's twins elsewhere on the page.
   union from a stream reads only the event types it declares — the
   Publisher's own programs between their `# union-reader:` markers against
   `union_reader_events`, each library fold's `<NAME>_JQ` against its
-  `<NAME>_EVENTS` — and the checker itself catches a planted undeclared read;
-  `union_stream` keeps the declared events in log order and closes with the
+  `<NAME>_EVENTS`, the usage-limit fold `LIMIT_UNION_JQ` among them — and
+  the checker itself catches a planted undeclared read; `union_events`, the
+  tolerant raw-line event stream every such reader shares, keeps the named
+  events' objects past every line that is not one (a bare number or string,
+  a spliced line, a record whose `event` is not a string), and
+  `union_event_in` answers false rather than nothing for a non-string
+  `event`; `union_stream` keeps the declared events in log order and closes with the
   span under both timestamp rules and the SINCE gate, aborts on a record that
   is not an object without writing its span line (and drops it under
   `--objects`); and `union_partition` writes one file per reader, delivers an
   event two readers declare to both, and leaves no file behind when its pass
   fails.
 - `test/publish-dashboard.test.sh` passes: the launcher exits 0 on a healthy
-  (shortened) window and while another publish holds the lock; a cold window
+  (shortened) window and while another publish holds the lock; it leaves
+  `log.jsonl` untouched while `lock.json` names a live pid in this container,
+  repairing `review-log.jsonl` in the same window, and repairs `log.jsonl`
+  once that pid has gone; a cold window
   fetches from GitHub exactly once, a window following a fresh fetch not at
   all, and an aged stamp is refetched on the next tick; the batched cost scan
   matches the per-file semantics (day cut-off, torn-file tolerance, each row's
@@ -3154,8 +3176,10 @@ number's twins elsewhere on the page.
   small fixture never reaches — a log tail past the trim threshold is the
   newest `MAX_LOG_TAIL` rows newest first, ties by log position; the per-cycle
   summary and the node-latest pass take the later of two records at one `ts`;
-  a record that is not an object fails the detail render (`cycle_render.ok:
-  false`, nothing cached) and the scorecards' stream falls back; a node-latest
+  a line in the log that is not an object never reaches the readers, since
+  `fleet_logs` drops it before its sort, so the detail render stays whole,
+  the cycle beside it renders from its own events, the scorecards keep their
+  window, and the line is counted in `log_repair.dropped_log_lines`; a node-latest
   pass that produces nothing is reported and replaced by the empty map; and an
   empty item-lifecycle result falls back to the empty record set; and every
   node in a synthetic fleet answers for **itself** — a peer mid-cycle reports
