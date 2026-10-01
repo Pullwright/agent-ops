@@ -147,6 +147,13 @@ set -euo pipefail
 source "$SCRIPT_DIR/lib/landing.sh"
 # shellcheck source=lib/merge-queue.sh
 source "$SCRIPT_DIR/lib/merge-queue.sh"
+# Issue #1979, requirement 62: _landing_refuse dispatches every refusal
+# through this file's pipeline_comment_header/pipeline_comment_marker/
+# pipeline_landing_notice_marker (real) — pipeline_comment_upsert/pipeline_
+# comment_edit_if_present are stubbed below, same as every other external
+# write in this file.
+# shellcheck source=lib/pipeline-marker.sh
+source "$SCRIPT_DIR/lib/pipeline-marker.sh"
 
 # --- Cycle globals the block reads -------------------------------------------
 selected_repo="Poetic-Poems/agent-ops"
@@ -163,6 +170,8 @@ approver_stage_verdict="approve"
 approver_stage_adjudicating="0"
 approver_stage_tier="critical"
 union_log="$T/union.jsonl"
+node_name="test-node"
+cycle_id="c1"
 mkdir -p "$state_dir"
 : > "$union_log"
 declare -A landing_armed_by_repo=()
@@ -242,6 +251,12 @@ pr_merge_state() { printf 'open\t'; }
 merge_autonomy_resolution_source() { printf 'top-level-default'; }
 landing_protected_paths_hit() { return 1; }
 log_file="$T/state/log.jsonl"; : > "$log_file"
+
+# Issue #1979, requirement 62: this file's axis is the human veto, not the
+# notice comment's own content — test/landing-wiring.test.sh covers that
+# directly — so both are stubbed as plain no-ops here.
+pipeline_comment_upsert() { :; }
+pipeline_comment_edit_if_present() { :; }
 
 HARNESS
 

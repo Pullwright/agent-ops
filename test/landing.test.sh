@@ -77,6 +77,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$SCRIPT_DIR/lib/union-log-scan.sh"
 # shellcheck source=lib/landing.sh
 . "$SCRIPT_DIR/lib/landing.sh"
+# Issue #1979, requirement 62: `_landing_notice_upsert`/`_landing_notice_
+# clear` call `pipeline_comment_header`/`pipeline_comment_marker`/`pipeline_
+# landing_notice_marker`/`pipeline_comment_upsert`/`pipeline_comment_edit_if_
+# present` — the real definitions, exercised against the stubbed `gh` below
+# (prepended onto PATH, since these two reach `gh` directly rather than
+# through lib/landing.sh's own `${LANDING_GH:-gh}` indirection).
+# shellcheck source=lib/pipeline-marker.sh
+. "$SCRIPT_DIR/lib/pipeline-marker.sh"
+node_name="test-node"
+cycle_id="c1"
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
@@ -268,17 +278,62 @@ if [[ "${args[0]:-}" == "pr" && "${args[1]:-}" == "edit" ]]; then
   exit 0
 fi
 
+# --- gh api repos/SLUG/issues/NUMBER/comments (list, or create) -------------
+# (lib/pipeline-marker.sh's pipeline_find_marked_comment, listing — and
+# pipeline_comment_upsert, creating when no marked comment stands yet)
+if [[ "${args[0]:-}" == "api" && "$api_path" == repos/*/issues/*/comments ]]; then
+  if [[ "$api_method" == "GET" ]]; then
+    [[ -f "$f/comments-list-fail" ]] && exit 1
+    jqfilter="." have_jq=0
+    for ((_j = 0; _j < ${#args[@]}; _j++)); do
+      if [[ "${args[$_j]}" == "--jq" ]]; then jqfilter="${args[$((_j+1))]}"; have_jq=1; fi
+    done
+    gh_jq "$jqfilter" "$have_jq" "$f/comments.json"
+    exit 0
+  fi
+  [[ -f "$f/comments-create-fail" ]] && exit 1
+  body=""
+  for a in "${args[@]}"; do
+    [[ "$a" == body=* ]] && body="${a#body=}"
+  done
+  printf 'POST\t%s\n' "${body//$'\n'/\\n}" >> "$COMMENT_WRITE_CALLS"
+  echo '{"id":9999}'
+  exit 0
+fi
+
+# --- gh api -X PATCH repos/SLUG/issues/comments/ID (edit in place) ----------
+# (pipeline_comment_upsert/pipeline_comment_edit_if_present, once a marked
+# comment already stands)
+if [[ "${args[0]:-}" == "api" && "$api_path" == repos/*/issues/comments/* ]]; then
+  [[ -f "$f/comments-patch-fail" ]] && exit 1
+  body=""
+  for a in "${args[@]}"; do
+    [[ "$a" == body=* ]] && body="${a#body=}"
+  done
+  printf 'PATCH\t%s\t%s\n' "${api_path##*/}" "${body//$'\n'/\\n}" >> "$COMMENT_WRITE_CALLS"
+  exit 0
+fi
+
 echo "gh-stub: unhandled invocation: ${args[*]}" >&2
 exit 1
 STUB
 chmod +x "$stub_bin/gh"
 
 label_calls="$tmp_dir/label-calls"
+comment_write_calls="$tmp_dir/comment-write-calls"
 : > "$label_calls"
+: > "$comment_write_calls"
 export GH_FIXTURES="$fixtures" ENQUEUE_CALLS="$enqueue_calls" MERGE_CALLS="$merge_calls" \
-  LABEL_CALLS="$label_calls"
+  LABEL_CALLS="$label_calls" COMMENT_WRITE_CALLS="$comment_write_calls"
 LANDING_GH="$stub_bin/gh"; MERGE_QUEUE_GH="$stub_bin/gh"
 export LANDING_GH MERGE_QUEUE_GH
+# Issue #1979, requirement 62: lib/pipeline-marker.sh's own gh calls (no
+# ${LANDING_GH:-gh}-style override exists for them) go through PATH, so the
+# stub is prepended here — every lib/landing.sh call site above already
+# resolves the stub via LANDING_GH/MERGE_QUEUE_GH's explicit path, so this
+# never changes what any of them actually run.
+export PATH="$stub_bin:$PATH"
+printf '[]' > "$fixtures/comments.json"
 
 files() { printf '%s\n' "$@" > "$fixtures/files.txt"; }
 labels() { printf '%s\n' "$@" > "$fixtures/labels.txt"; }  # labels NAME...
@@ -296,6 +351,8 @@ review() {  # review LOGIN STATE AT [COMMIT]
     '{user: {login: $l}, submitted_at: $at, state: $s, commit_id: (if $c == "" then null else $c end)}'
 }
 set_reviews() { jq -sc '.' > "$fixtures/reviews.json"; }  # one `review …` per stdin line
+comment() { jq -nc --argjson id "$1" --arg b "$2" '{id: $id, body: $b}'; }  # comment ID BODY
+set_comments() { jq -sc '.' > "$fixtures/comments.json"; }  # one `comment …` per stdin line
 
 prd "PR_kwDOfake" "main"
 head_sha "sha-head-1"
@@ -1020,6 +1077,189 @@ assert_contains "  ... the never-settled first question still carries forward" \
   "Is CODEOWNERS in scope?" "$out"
 assert_contains "  ... alongside the later one" \
   "Is the second file also in scope?" "$out"
+
+# --- _landing_refusal_persistent (issue #1979, requirement 62) --------------
+
+for class in ineligible autonomy-level kill-switch open-question \
+             reconciliation-unanswered human-changes-requested merge-queue-occupied; do
+  _landing_refusal_persistent "$class"; rc=$?
+  assert_eq "_landing_refusal_persistent reads $class as persistent" "0" "$rc"
+done
+
+for class in approver-login-unreadable approver-review-not-approved \
+             approver-review-unreadable approver-token-unmintable arm-failed \
+             dequeued-actionable dequeued-manual human-veto-unreadable \
+             malformed-pr-url merge-queue-unreadable open-question-unreadable \
+             reconciliation-unreadable review-gate unknown totally-made-up; do
+  _landing_refusal_persistent "$class"; rc=$?
+  assert_eq "_landing_refusal_persistent reads $class as not persistent" "1" "$rc"
+done
+
+_landing_refusal_persistent ""; rc=$?
+assert_eq "_landing_refusal_persistent reads an empty class as not persistent" "1" "$rc"
+
+# --- _landing_notice_eligible_at (issue #1979, requirement 62) --------------
+# Computed as approved + landing_cool_off_hours — the review's own fixed
+# anchor plus the configured wait — never the embedded "<N>h remaining"
+# figure, which is already stale by the time anyone reads the comment.
+
+out="$(_landing_notice_eligible_at "ineligible:protected-path cool-off has 3.2h remaining (approved 2026-08-17T10:00:00Z, landing_cool_off_hours=24)")"
+assert_eq "a cool-off reason's eligible-at is approved + landing_cool_off_hours" \
+  "2026-08-18T10:00:00Z" "$out"
+
+out="$(_landing_notice_eligible_at "ineligible:protected-path cool-off has 0h remaining (approved 2026-08-17T10:00:00Z, landing_cool_off_hours=0.5)")"
+assert_eq "  ... fractional hours too" "2026-08-17T10:30:00Z" "$out"
+
+out="$(_landing_notice_eligible_at "ineligible:touches protected path(s): lib/landing.sh")"
+assert_eq "a non-cool-off ineligible reason has no eligible-at" "" "$out"
+
+out="$(_landing_notice_eligible_at "already in the merge queue")"
+assert_eq "an unrelated reason has no eligible-at" "" "$out"
+
+# --- _landing_notice_upsert / _landing_notice_clear (issue #1979, requirement
+# 62) — the generic lib/pipeline-marker.sh primitives, exercised against the
+# stubbed gh above. The pull request number is parsed off PR_URL, same as
+# every other _landing_notice_* caller.
+
+NOTICE_URL="https://github.com/acme/widgets/pull/12"
+
+: > "$comment_write_calls"
+set_comments
+_landing_notice_upsert "$NOTICE_URL" "acme/widgets" "ineligible" "ineligible:touches protected path(s): lib/landing.sh"
+assert_eq "no standing notice: upsert posts exactly one new comment" \
+  "1" "$(wc -l < "$comment_write_calls" | tr -d ' ')"
+assert_contains "  ... as a POST" "POST" "$(cat "$comment_write_calls")"
+assert_contains "  ... naming the class" "\`ineligible\`" "$(cat "$comment_write_calls")"
+assert_contains "  ... and the reason" "lib/landing.sh" "$(cat "$comment_write_calls")"
+assert_contains "  ... carrying the landing-notice marker" \
+  "$PIPELINE_LANDING_NOTICE_MARKER_PREFIX" "$(cat "$comment_write_calls")"
+assert_contains "  ... and the ordinary pipeline-comment marker" \
+  "actor=script" "$(cat "$comment_write_calls")"
+
+: > "$comment_write_calls"
+comment 501 "some unrelated comment, no marker at all" | set_comments
+_landing_notice_upsert "$NOTICE_URL" "acme/widgets" "kill-switch" "kill-switch:merge_autonomy kill switch is engaged fleet-wide"
+assert_eq "an unrelated standing comment is not mistaken for the notice: still posts fresh" \
+  "1" "$(wc -l < "$comment_write_calls" | tr -d ' ')"
+assert_contains "  ... as a POST, not a PATCH" "POST" "$(cat "$comment_write_calls")"
+
+existing_body="$(_landing_notice_body "autonomy-level" "merge_autonomy effective level is human, not agent-merges-routine or agent-merges-all" "test-node" "")"
+: > "$comment_write_calls"
+comment 777 "$existing_body" | set_comments
+_landing_notice_upsert "$NOTICE_URL" "acme/widgets" "autonomy-level" "merge_autonomy effective level is human, not agent-merges-routine or agent-merges-all"
+assert_eq "an identical standing notice is left alone (idempotent, no write at all)" \
+  "0" "$(wc -l < "$comment_write_calls" | tr -d ' ')"
+
+# ... and, the case that actually happens in production: the *same* standing
+# refusal re-checked on a later cycle, and by a different node. The notice's
+# own visible prose carries `cycle_id` and `node_name`, so the standing body
+# is never byte-equal to the one this pass would write — only the
+# `_landing_notice_stamp` comparison recognises it as unchanged. Without it
+# the 2.1e retry sweep would re-PATCH an unchanged notice once per cycle per
+# node (the ~25 refusals of agent-ops#1950), which is exactly what issue
+# #1601 is cited for in #1979's own Related section, and which would bust
+# `scripts/gather-source-state.sh`'s open-PR digest — and so the no-op-skip
+# fingerprint — every cycle a stranded pull request carried one.
+# A subshell, not a `VAR=x func` prefix: an assignment prefixing a *shell
+# function* outlives the call, which would leak this cycle id into every
+# assertion below.
+stale_cycle_body="$(
+  cycle_id="an-earlier-cycle"
+  _landing_notice_body "autonomy-level" "merge_autonomy effective level is human, not agent-merges-routine or agent-merges-all" "some-other-node" ""
+)"
+assert_eq "  ... and that standing body really is a different one, byte for byte" \
+  "no" "$([[ "$stale_cycle_body" == "$existing_body" ]] && echo yes || echo no)"
+: > "$comment_write_calls"
+comment 777 "$stale_cycle_body" | set_comments
+_landing_notice_upsert "$NOTICE_URL" "acme/widgets" "autonomy-level" "merge_autonomy effective level is human, not agent-merges-routine or agent-merges-all"
+assert_eq "an unchanged refusal written by an earlier cycle on another node is still no write" \
+  "0" "$(wc -l < "$comment_write_calls" | tr -d ' ')"
+
+: > "$comment_write_calls"
+comment 777 "$existing_body" | set_comments
+_landing_notice_upsert "$NOTICE_URL" "acme/widgets" "kill-switch" "kill-switch:merge_autonomy kill switch is engaged fleet-wide"
+assert_eq "a changed reason PATCHes the same standing comment, never posts a second one" \
+  "1" "$(wc -l < "$comment_write_calls" | tr -d ' ')"
+assert_contains "  ... as a PATCH" "PATCH" "$(cat "$comment_write_calls")"
+assert_contains "  ... naming the same comment id" $'\t'"777"$'\t' "$(cat "$comment_write_calls")"
+
+# Review follow-up on PR #2033: the protected-path cool-off's own reason
+# embeds a "<N>h remaining" figure that `landing_protected_path_controls_ok`
+# recomputes from wall-clock `now` on every pass (rounded to 0.1h) — moving
+# roughly every six minutes, faster than any cycle cadence, while the
+# standing refusal's own `approved`/`landing_cool_off_hours` pair, and so its
+# `eligible_at`, have not changed at all. Without `_landing_notice_
+# normalized_reason` this reason would never byte-match a prior pass's, and
+# the 2.1e retry sweep would re-PATCH this notice once per cycle per node for
+# the entire cool-off window — exactly the once-per-pass churn issue #1601
+# already fixed for every other persistent class.
+cool_off_reason_1="ineligible:protected-path cool-off has 23.9h remaining (approved 2026-08-17T10:00:00Z, landing_cool_off_hours=24)"
+cool_off_reason_2="ineligible:protected-path cool-off has 17.3h remaining (approved 2026-08-17T10:00:00Z, landing_cool_off_hours=24)"
+cool_off_body="$(_landing_notice_body "ineligible" "$cool_off_reason_1" "test-node" "$(_landing_notice_eligible_at "$cool_off_reason_1")")"
+: > "$comment_write_calls"
+comment 900 "$cool_off_body" | set_comments
+_landing_notice_upsert "$NOTICE_URL" "acme/widgets" "ineligible" "$cool_off_reason_2"
+assert_eq "a standing cool-off refusal with a moved countdown (same approved/hours) is still no write" \
+  "0" "$(wc -l < "$comment_write_calls" | tr -d ' ')"
+
+: > "$comment_write_calls"
+comment 900 "$cool_off_body" | set_comments
+_landing_notice_upsert "$NOTICE_URL" "acme/widgets" "ineligible" \
+  "ineligible:protected-path cool-off has 17.3h remaining (approved 2026-08-18T10:00:00Z, landing_cool_off_hours=24)"
+assert_eq "  ... but a genuinely later approval (a fresh push's restarted cool-off) still PATCHes" \
+  "1" "$(wc -l < "$comment_write_calls" | tr -d ' ')"
+
+: > "$comment_write_calls"
+set_comments
+_landing_notice_clear "$NOTICE_URL" "acme/widgets" "it was armed to land via enqueued"
+assert_eq "clearing with no standing notice posts nothing at all (never announces a hold that never existed)" \
+  "0" "$(wc -l < "$comment_write_calls" | tr -d ' ')"
+
+: > "$comment_write_calls"
+comment 888 "$existing_body" | set_comments
+_landing_notice_clear "$NOTICE_URL" "acme/widgets" "it was armed to land via enqueued"
+assert_eq "clearing a standing notice PATCHes it, never posts a new one" \
+  "1" "$(wc -l < "$comment_write_calls" | tr -d ' ')"
+assert_contains "  ... as a PATCH" "PATCH" "$(cat "$comment_write_calls")"
+assert_contains "  ... saying the hold has cleared" "no longer holding" "$(cat "$comment_write_calls")"
+assert_contains "  ... naming why" "armed to land via enqueued" "$(cat "$comment_write_calls")"
+
+# --- _landing_refuse routes to the right one of the two above ---------------
+
+: > "$comment_write_calls"
+set_comments
+log_calls="$tmp_dir/landing-refuse-events.jsonl"
+log_event() { jq -nc --arg e "$1" --argjson d "$2" '{event:$e} + $d' >> "$log_calls"; }
+: > "$log_calls"
+_landing_refuse "$NOTICE_URL" "acme/widgets" "ineligible" "ineligible:touches protected path(s): lib/landing.sh"
+assert_eq "a persistent class posts the notice via _landing_refuse" \
+  "1" "$(wc -l < "$comment_write_calls" | tr -d ' ')"
+assert_contains "  ... as a POST" "POST" "$(cat "$comment_write_calls")"
+
+: > "$comment_write_calls"
+set_comments
+_landing_refuse "$NOTICE_URL" "acme/widgets" "review-gate" "review gate: dirty"
+assert_eq "a non-persistent class never posts via _landing_refuse" \
+  "0" "$(grep -c '^POST' "$comment_write_calls" || true)"
+
+# ... and never PATCHes a standing notice to say the hold cleared either. A
+# refusal is still a refusal — landing *is* holding the pull request — and a
+# refusal at one gate establishes nothing about the gates after it, which were
+# never evaluated this pass. A `gh` hiccup on any of the seven read-failure
+# classes that precede the protected-path cool-off would otherwise replace an
+# accurate cool-off notice with "nothing is holding this", then put it back
+# next cycle. Only a successful arm clears (`_landing_stage_attempt`).
+refused_body="$(_landing_notice_body "ineligible" "ineligible:protected-path cool-off has 3.2h remaining (approved 2026-08-17T10:00:00Z, landing_cool_off_hours=24)" "test-node" "2026-08-18T10:00:00Z")"
+for transient_class in human-veto-unreadable merge-queue-unreadable \
+                       reconciliation-unreadable open-question-unreadable \
+                       approver-review-unreadable review-gate arm-failed \
+                       dequeued-manual dequeued-actionable unknown; do
+  : > "$comment_write_calls"
+  comment 777 "$refused_body" | set_comments
+  _landing_refuse "$NOTICE_URL" "acme/widgets" "$transient_class" "$transient_class:whatever this round could not establish"
+  assert_eq "  ... and $transient_class leaves a standing cool-off notice untouched" \
+    "0" "$(wc -l < "$comment_write_calls" | tr -d ' ')"
+done
 
 echo
 if (( failures == 0 )); then

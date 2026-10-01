@@ -9903,6 +9903,123 @@ implements.
     it again on every later round) exists by the same round the refusal is
     logged, giving it exactly the visibility requirement 36a's own
     escalations get (Assigned-to-me) with no gap for a sweep to close.
+62. **A persistent landing refusal says why, on the pull request itself, not
+   only in the node log (issue #1979).** Requirement 8d's own gates refuse to
+   arm a pull request for many reasons, logged as `landing-refused`
+   (requirement 33) and nothing else — the pull request itself still shows
+   only its ordinary approval and merge-box state, so a human reading it has
+   no way to tell a routine wait from a silent, repeating refusal.
+   `agent-ops#1950` is the live instance: `poetic-1` and `poetic-2` refused it
+   roughly 25 times over 2026-09-29/30 with `ineligible:touches protected
+   path(s): scripts/publish-dashboard.sh`, and the owner learned why only by
+   asking an interactive session to read the node logs.
+
+   `_landing_refuse` (`lib/landing.sh`) — the one function every refusal this
+   stage makes already calls — classifies its own `class` argument as
+   persistent or not (`_landing_refusal_persistent`,
+   `_LANDING_PERSISTENT_REFUSAL_CLASSES`: `ineligible`, `autonomy-level`,
+   `kill-switch`, `open-question`, `reconciliation-unanswered`,
+   `human-changes-requested` and `merge-queue-occupied` — a subset of
+   `_LANDING_REFUSAL_CLASSES`, `test/landing-wiring.test.sh` asserts — every
+   class whose cause will not change without a new push, a configuration
+   edit, a cool-off timer elapsing or a human act). A persistent refusal
+   posts or updates, in place, one pipeline-marked comment on the pull
+   request (`_landing_notice_upsert`) naming the class and the reason in
+   words; a refusal whose cause touches `landing_cool_off_hours` states the
+   absolute wall-clock time the pull request becomes eligible
+   (`_landing_notice_eligible_at`), computed from the standing review's own
+   `submitted_at` plus the configured cool-off, never the embedded "N hours
+   remaining" figure, which is already stale by the time anyone reads the
+   comment. A refusal outside this set (every `*-unreadable` class,
+   `unknown`, `malformed-pr-url`, `arm-failed`, `review-gate`,
+   `approver-review-not-approved`, and the two `dequeued-*` classes the
+   `dequeued` work-order source already announces on its own terms) is a
+   plain, retryable fact about the forge or this round's own mechanics, not
+   this requirement's business, and writes nothing on the pull request at all
+   — neither a notice of its own nor a "cleared" edit over a standing one (see
+   below for why a refusal never clears). `merge_budget_decide`'s
+   own `hold`/`refuse` outcomes (`merge-budget-hold`/`merge-budget-frozen`,
+   requirement 33) are a distinct vocabulary `_landing_refuse` never sees —
+   out of scope here, the same vocabularies-never-overlap note requirement 33
+   itself makes.
+
+   The same comment is found and edited in place on every later cycle, never
+   re-posted: `pipeline_comment_upsert`/`pipeline_comment_edit_if_present`
+   (`lib/pipeline-marker.sh`) look up the pull request's own standing comment
+   by `pipeline_landing_notice_marker`'s invisible stamp (paired with the
+   ordinary `pipeline_comment_header`/`pipeline_comment_marker` envelope
+   every pipeline comment carries) via one paginated `gh api
+   .../issues/<n>/comments` read (`pipeline_find_marked_comment`), matching on
+   `PIPELINE_LANDING_NOTICE_MARKER_PREFIX` alone, and PATCH it
+   (`repos/<slug>/issues/comments/<id>`) rather than post a second one.
+   This is the generic "find and edit the pipeline's own prior comment on a
+   pull request" primitive this issue introduces; nothing before it existed
+   in this file.
+
+   A write happens only on a change of what the notice says, never once per
+   pass (issue #1601). That marker carries a stamp of the notice's own facts
+   and nothing else — `_landing_notice_state`'s digest of the kind, class,
+   `_landing_notice_normalized_reason`'s normalized reason, and eligible-at
+   (`_landing_notice_stamp`) — which
+   `_landing_notice_upsert`/`_landing_notice_clear` hand to
+   `pipeline_comment_upsert`/`pipeline_comment_edit_if_present` as
+   `UNCHANGED_IF_CONTAINS`: a standing comment already carrying that stamp is
+   left alone, with no `gh` write at all.
+
+   The reason is normalized, not used verbatim, because one persistent
+   class's reason text is not actually stable: the protected-path cool-off's
+   own reason embeds a "<N>h remaining" figure that
+   `landing_protected_path_controls_ok` recomputes from wall-clock `now` on
+   every pass, rounded to 0.1h — moving roughly every six minutes, faster
+   than any cycle cadence, while nothing about the pull request's own
+   situation has changed. Left in the digest, a standing cool-off refusal
+   would mint a different stamp on essentially every retry, defeating the
+   once-per-change rule this paragraph states for exactly the one class whose
+   reason text was never actually stable. `_landing_notice_normalized_reason`
+   collapses that clause to a fixed placeholder before hashing; the stable
+   `(approved …, landing_cool_off_hours=…)` clause and the digest's own
+   separate `eligible_at` already carry everything about the cool-off that is
+   not purely a function of wall-clock read time, so nothing is lost. Every
+   other persistent class's reason text is already stable, so normalizing it
+   is a no-op. The body a human reads still shows the reason as given,
+   countdown included, and the comment's own embedded stamp line is built
+   from the same normalized reason so it matches what `_landing_notice_
+   upsert` computes to decide whether to write at all — only the
+   change-detection digest is normalized. Comparing the whole body cannot
+   serve here, because the notice's own visible prose carries
+   `pipeline_comment_header`'s node name and `pipeline_comment_marker`'s cycle
+   id, both of which move every cycle and between nodes while the refusal
+   stands unchanged. This matters because the 2.1e landing-retry sweep
+   (`_landing_retry_sweep_repo`) re-enters `_landing_stage_attempt`, and
+   therefore `_landing_refuse`, for the same still-open pull request every
+   cycle it remains stranded, on every node: the `#1950` instance's roughly 25
+   refusals becomes one comment and one write, not one comment and 25 edits —
+   which would also bust `scripts/gather-source-state.sh`'s own `updated_at`-
+   keyed open-PR digest, and so the no-op-skip fingerprint (`lib/noop-skip.sh`),
+   every cycle a stranded pull request carried a notice.
+
+   The notice is edited to say the hold has cleared — naming the arming method
+   (`enqueued`/`auto-merge`), never silently deleted — in the one place this
+   stage can soundly observe that: `_landing_stage_attempt`'s own successful
+   arm, immediately before `landing-armed` is logged (`_landing_notice_clear`,
+   built on `pipeline_comment_edit_if_present`'s own no-create guarantee — a
+   pull request never notified in the first place gets no "cleared" comment
+   either). A refusal never clears, whatever its class. A refusal is still a
+   refusal, so telling a reader the hold has lifted would be false; and a
+   refusal at one gate establishes only that the persistent gates *before* it
+   in `_landing_stage_attempt`'s order passed this round, never anything about
+   the gates after it, which were not evaluated — the protected-path cool-off
+   (gate 4.5) sits after seven classes that are plain read failures, so a `gh`
+   hiccup on any one of them would otherwise replace an accurate cool-off
+   notice with a claim that nothing is holding the pull request, and restore
+   it the next cycle. Arming is the one observation that establishes every
+   gate passed. A notice whose named class has since stopped applying on a
+   pull request that is still held is superseded by the next persistent
+   refusal's own upsert; one on a pull request that leaves by a path this
+   stage never revisits is #2034. Neither write touches a label, a gate
+   verdict, or the merge-queue/budget state the gates themselves already
+   decided — the notice is informational only, exactly as every other read in
+   this function already is.
 9. **Failure handling.** If any stage times out, exits non-zero, or returns
    an unparseable summary: kill that stage's process group, log
    `attempt-failed` with enough detail for a future cycle to know the item
@@ -14790,7 +14907,21 @@ implements.
       item the same way a cited PR does. A bare citation with no `repo` to
       resolve it against is refused naming the citation, exactly as before —
       a URL citation is unaffected, since it carries its own `owner/repo`
-      regardless of whether the entry names one. One item shape is decided by
+      regardless of whether the entry names one. A `review-<date>-R-<nn>`
+      recommendation ref gets one more chance before the body/branch test
+      above refuses it: the pull request implementing a recommendation is
+      opened against the tech-debt issue that recommendation designates,
+      never against the review ref itself, so a body/branch test that found
+      neither resolves the ref instead — `void_review_item_tech_debt_id`,
+      `lib/void-guard.sh`, reading the designated id off the recommendation's
+      own "Tech-debt item: `<id>`" line in
+      `reviews/project-review-<date>/03-recommendations.md` on the entry's
+      own repo's default branch — and re-runs the same body/branch test
+      against that id instead. Any failure along the way (the item is not
+      shaped like a recommendation ref, the entry names no repo, the
+      recommendations file cannot be fetched, or this recommendation carries
+      no such line) falls through to the ordinary refusal unchanged
+      (issue #2030). One item shape is decided by
       its id, rather than by the free-text body/branch test: a finishing-source
       item **is** a pull request — requirements 3e, 3g, 3z and 23 mint its id as
       `pr-<n>-abandoned-<head-sha>`, `pr-<n>-review-<review-id>`,
@@ -25901,6 +26032,54 @@ oblige anyone to edit a test.
    dispatch and `PREFLIGHT_EXISTING_BRANCH_SOURCES` (requirement 34m) name the
    same set, since the two disagreeing is what mints a fresh branch for a
    source whose pull request already exists.
+62. **A persistent landing refusal posts, and a cleared one edits, the one
+   notice comment (requirement 62, issue #1979).** `test/landing.test.sh`
+   passes: `_landing_refusal_persistent` reads `ineligible`, `autonomy-level`,
+   `kill-switch`, `open-question`, `reconciliation-unanswered`,
+   `human-changes-requested` and `merge-queue-occupied` as persistent and
+   every other `_LANDING_REFUSAL_CLASSES` member (and an empty class) as not;
+   `_landing_notice_eligible_at` computes a cool-off reason's absolute
+   eligible-at as `approved + landing_cool_off_hours`, including a fractional
+   hours value, and prints nothing for a reason that names no cool-off.
+   Against a stubbed `gh` (the comments-list/create/PATCH endpoints added
+   beside the existing files/reviews/graphql ones): `_landing_notice_upsert`
+   with no standing notice posts exactly one comment naming the class and
+   reason, carrying both `pipeline_landing_notice_marker` and the ordinary
+   `pipeline_comment_header`/`pipeline_comment_marker` envelope; an unrelated
+   standing comment (no marker) is never mistaken for it, so a fresh notice
+   still posts rather than silently patching the wrong comment; called again
+   with an identical class and reason is a no-op (no write at all), *including*
+   when the standing notice was written by an earlier cycle on another node, so
+   that its body carries a different cycle id and node name and only the
+   `_landing_notice_stamp` comparison can recognise it as unchanged; called
+   with a changed class or reason PATCHes the same standing comment id rather
+   than posting a second one; called again for the protected-path cool-off
+   with the same `approved`/`landing_cool_off_hours` but a different embedded
+   "<N>h remaining" figure — the live countdown
+   `landing_protected_path_controls_ok` recomputes every pass — is also a
+   no-op, since `_landing_notice_normalized_reason` collapses that figure
+   before either side of the comparison is hashed. `_landing_notice_clear`
+   against a pull request carrying no standing notice posts nothing at all
+   (never announces a hold that was never posted); against one that does,
+   PATCHes it to say the hold cleared, naming why. `_landing_refuse` itself
+   routes a persistent class to `_landing_notice_upsert`, and writes nothing
+   at all for every other class — each of the ten non-persistent classes,
+   given a pull request carrying a standing cool-off notice, leaves that
+   notice byte-for-byte untouched.
+   `test/landing-wiring.test.sh` extends its own `_LANDING_REFUSAL_CLASSES`
+   wiring assertion with the mirrored check that
+   `_LANDING_PERSISTENT_REFUSAL_CLASSES` is a subset of it, and exercises the
+   full `run_landing_stage`/`_landing_stage_attempt` sequence (stubbing
+   `pipeline_comment_upsert`/`pipeline_comment_edit_if_present` the way it
+   already stubs every other gate helper) to pin: the kill-switch, cool-off,
+   protected-path, human-`CHANGES_REQUESTED` and already-queued refusals each
+   post the notice; an unreadable human-veto read and both dequeue classes
+   neither post one nor clear one; and a successful arm
+   clears any standing notice, naming the arming method, before
+   `landing-armed` is logged. No test path here exercises
+   `merge_budget_decide`'s own `hold`/`refuse` — out of scope, per
+   requirement 62's own note that it is a distinct vocabulary `_landing_
+   refuse` never sees.
 2h. **Dependabot's own conflicted PRs are nudged, then — only after a full
    cycle at the same head — offered as a takeover (requirement 3s).**
    `lib/dependabot-bump.sh`'s family/version parsing and its
@@ -26780,7 +26959,14 @@ oblige anyone to edit a test.
    citation cannot express — a URL naming a *different* repository from the
    entry's own `repo` is resolved against the URL's own `owner/repo`, not the
    entry's, so a PR number that would match in the wrong repository is not
-   corroboration. Assert the finishing sources are not caught by it: an item
+   corroboration. Assert the review-ref resolver (issue #2030): a
+   `review-<date>-R-<nn>` item citing a pull request whose body and branch
+   name only the recommendation's own designated tech-debt id — never the
+   review ref itself — is allowed once that id is resolved off a
+   recommendations-file fixture; the identical citation is still refused when
+   the cited pull request names neither id; and the item falls through to the
+   ordinary refusal, rather than erroring, when the recommendations file
+   cannot be fetched at all. Assert the finishing sources are not caught by it: an item
    `pr-<n>-abandoned-…`, `pr-<n>-review-…`, `pr-<n>-conflict-…`,
    `pr-<n>-superseded-…` or `pr-<n>-dequeued-…`
    citing pull request `<n>` in the entry's own repo is
