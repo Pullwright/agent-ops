@@ -14870,7 +14870,21 @@ implements.
       item the same way a cited PR does. A bare citation with no `repo` to
       resolve it against is refused naming the citation, exactly as before —
       a URL citation is unaffected, since it carries its own `owner/repo`
-      regardless of whether the entry names one. One item shape is decided by
+      regardless of whether the entry names one. A `review-<date>-R-<nn>`
+      recommendation ref gets one more chance before the body/branch test
+      above refuses it: the pull request implementing a recommendation is
+      opened against the tech-debt issue that recommendation designates,
+      never against the review ref itself, so a body/branch test that found
+      neither resolves the ref instead — `void_review_item_tech_debt_id`,
+      `lib/void-guard.sh`, reading the designated id off the recommendation's
+      own "Tech-debt item: `<id>`" line in
+      `reviews/project-review-<date>/03-recommendations.md` on the entry's
+      own repo's default branch — and re-runs the same body/branch test
+      against that id instead. Any failure along the way (the item is not
+      shaped like a recommendation ref, the entry names no repo, the
+      recommendations file cannot be fetched, or this recommendation carries
+      no such line) falls through to the ordinary refusal unchanged
+      (issue #2030). One item shape is decided by
       its id, rather than by the free-text body/branch test: a finishing-source
       item **is** a pull request — requirements 3e, 3g, 3z and 23 mint its id as
       `pr-<n>-abandoned-<head-sha>`, `pr-<n>-review-<review-id>`,
@@ -26875,7 +26889,14 @@ oblige anyone to edit a test.
    citation cannot express — a URL naming a *different* repository from the
    entry's own `repo` is resolved against the URL's own `owner/repo`, not the
    entry's, so a PR number that would match in the wrong repository is not
-   corroboration. Assert the finishing sources are not caught by it: an item
+   corroboration. Assert the review-ref resolver (issue #2030): a
+   `review-<date>-R-<nn>` item citing a pull request whose body and branch
+   name only the recommendation's own designated tech-debt id — never the
+   review ref itself — is allowed once that id is resolved off a
+   recommendations-file fixture; the identical citation is still refused when
+   the cited pull request names neither id; and the item falls through to the
+   ordinary refusal, rather than erroring, when the recommendations file
+   cannot be fetched at all. Assert the finishing sources are not caught by it: an item
    `pr-<n>-abandoned-…`, `pr-<n>-review-…`, `pr-<n>-conflict-…`,
    `pr-<n>-superseded-…` or `pr-<n>-dequeued-…`
    citing pull request `<n>` in the entry's own repo is
