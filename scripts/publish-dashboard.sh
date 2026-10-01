@@ -903,8 +903,8 @@ epoch_of() { date -d "$1" +%s 2>/dev/null || echo 0; }
 # are already individual files on disk, so every existing one in the window
 # is now handed straight to a single jq invocation via --rawfile (jq opens
 # the file itself: no extra fork, and — like the window's own events file
-# below — no 128 KB argv cap either), and that one process does every parse, fenced-```json```
-# extraction, envelope-field pull and limit-phrase scan the two functions
+# below — no 128 KB argv cap either), and that one process does every parse,
+# fenced-```json``` extraction, envelope-field pull and limit-phrase scan the two functions
 # used to fork out for, for the whole window at once. The limit-phrase scan
 # this replaces was its own backstop for a cycle whose limit-hit never made
 # it into the log (e.g. the Script crashed before log_event ran, or the
@@ -1187,14 +1187,15 @@ fleet_logs "$state_dir" "$peers_dir" log.jsonl > "$raw_events_jsonl" 2>/dev/null
 read_events "$raw_events_jsonl" > "$events_jsonl" 2>/dev/null || : > "$events_jsonl"
 dropped_log_lines=$(( $(count_lines "$raw_events_jsonl") - $(count_lines "$events_jsonl") ))
 (( dropped_log_lines >= 0 )) || dropped_log_lines=0
-# --- Full-log readers stream; none slurps the whole log (agent-ops#1649) ------
+# --- Full-log readers stream rather than slurp (agent-ops#1649) --------------
 # Every reader of `$events_jsonl` below folds it as a stream — `jq -n` over
 # `inputs`, with `reduce`/`foreach` for an aggregate — or keeps only the events
-# it names before anything is gathered into an array, so no `jq` process holds
-# the whole parsed log at once. A `jq -s` over the union materialised every
-# event in one process (about five bytes of RSS per byte of log), and once per
-# reader, which kept the Publisher's working set a linear function of a log
-# `scripts/rotate-logs.sh` never rotates. What a reader still gathers is only
+# it names before anything is gathered into an array, so it never holds the
+# whole parsed log at once; `limit_union_record` (lib/limit-detect.sh) is the
+# one exception left (agent-ops#2037). A `jq -s` over the union materialises
+# every event in one process — about five bytes of RSS per byte of log — so a
+# dozen of them would keep the Publisher's working set a linear function of a
+# log `scripts/rotate-logs.sh` never rotates. What a reader gathers is only
 # what its answer is about: one small record per cycle or node, the events of
 # the few types it reads, or a bounded tail. Each `reduce` below keeps its one
 # map at the top of the accumulator and updates an entry with `|=`, never
@@ -1281,7 +1282,8 @@ jq -c --arg re "$cycle_id_re" '
   # The kind is named by the outcome value the detail ladder (cycle_obj)
   # would have given the row: "stand-down" or "skipped", or null for any
   # cycle that is not one of the two no-op shapes. Read off the per-cycle
-  # summary above, whose `types` is the cycle own distinct event types.
+  # summary above, whose `types` lists the distinct event types the cycle
+  # logged.
   def noop_kind:
     (.types | unique) as $t
     | if   (($t - ["cycle-start", "stand-down", "cycle-end"]) == [])
@@ -1506,11 +1508,10 @@ if (( ${#todo_items[@]} > 0 )); then
 
   # The events of the cycles being rebuilt, and only those: `cycle_obj` reads
   # one cycle's own events and nothing else, so a stream that keeps an event
-  # only when its cycle is one of `$order` gathers a few dozen events where
-  # the whole log used to be read in. A cycle's own events keep their log
-  # order, which is all `group_by(.cycle)` below needs to give each cycle the
-  # same list it always has. The ids travel in a file, not argv (requirement
-  # 4g).
+  # only when its cycle is one of `$order` gathers a few dozen events rather
+  # than the whole log. A cycle's own events keep their log order, which is
+  # all `group_by(.cycle)` below needs to give each cycle the same list the
+  # whole log would. The ids travel in a file, not argv (requirement 4g).
   detail_order_file="$work_tmp/detail-order.json"
   detail_events_file="$work_tmp/detail-events.json"
   printf '%s' "$order_json" > "$detail_order_file"
@@ -1944,10 +1945,10 @@ recent_cut="$(date -u -d "$now_iso -3 days" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || e
 # (60 days) by construction, retained per `analytics_retained_days`
 # (requirement 2.6d) rather than a size-based rotation. Each cycle's
 # `repo`/`item`/`source`/`outcome` is deliberately the same reading `cycle_obj`
-# (above) makes for its own per-cycle rendering — the latest `repo`, `item`
-# and `selection` source by `ts`, and the same outcome ladder over the event
-# types the cycle logged — one cycle's facts must read the same on both
-# surfaces — except `title` is dropped: no reader of `cost_rows` needs it, and
+# (above) makes for its own per-cycle rendering, since one cycle's facts must
+# read the same on both surfaces: the latest `repo`, `item` and `selection`
+# source by `ts`, and the same outcome ladder over the event types the cycle
+# logged. `title` alone is dropped: no reader of `cost_rows` needs it, and
 # carrying it here would just be one more field to keep in lock-step for
 # nothing. All four are read off the per-cycle summary above, one entry per
 # cycle, never off the whole union.
@@ -2541,11 +2542,11 @@ blocked_json="$(open_blocked_items "$events_jsonl" | jq -c \
 # from a panel that still rendered. `input` takes the rows, `inputs` the
 # event stream behind them; the order is the order the two files are named
 # in. Only the two event types the join reads are gathered from that stream,
-# never the whole log (agent-ops#1649). `blocked_json` itself is small — a filtered, already-deduplicated
-# extract, never the whole log — so writing it to a temp file ahead of
-# `$events_jsonl` costs nothing that the here-string this replaced did not
-# already cost, and stops the events half from ever passing through bash
-# (agent-ops#1620).
+# never the whole log (agent-ops#1649). `blocked_json` itself is small — a
+# filtered, already-deduplicated extract, never the whole log — so writing it
+# to a temp file ahead of `$events_jsonl` costs nothing that the here-string
+# this replaced did not already cost, and stops the events half from ever
+# passing through bash (agent-ops#1620).
 blocked_rows_file="$work_tmp/blocked-rows.json"
 printf '%s\n' "$blocked_json" > "$blocked_rows_file"
 # shellcheck disable=SC2016  # jq's $rows/$events/$r/$esc/$exam, not the shell's.
