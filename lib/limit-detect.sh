@@ -281,12 +281,6 @@ limit_union_record() {
            | if . == null or .event == "limit-cleared" then empty else . end'
 }
 
-# limit_union_resume_at  < JSONL on stdin
-# Just the governing `resume_at`, for the readers that need no more than that.
-limit_union_resume_at() {
-  limit_union_record | jq -r '.resume_at // empty' 2>/dev/null || true
-}
-
 # limit_standdown_since  < JSONL on stdin
 # The `ts` of the earliest `limit-hit` in the current uninterrupted stand-down
 # window — everything after the last `limit-cleared`, if any — or nothing when
