@@ -13925,6 +13925,43 @@ implements.
     Anything else — a resolution that changed the diff, a follow-up fix — runs
     the engagement below unchanged.
 
+31f. **The Implementer's own stage-start pays the same advisory merge check
+    requirement 31d already gives the Reviewer, for the same five finishing
+    sources whose work order hands it a subject pull request before it ever
+    runs (agent-ops#1062).** `review-feedback`, `merge-conflicts` (less a
+    `takeover`, whose `pr_url` names Dependabot's own pull request, not a
+    subject this stage can retire), `dequeued`, `landing-refusals` and
+    `abandoned-drafts` — `preflight_existing_branch_source`'s own set — each
+    claim a `pr_url` the Co-Ordinator never minted and the Implementer did not
+    just raise, so it can be stale the same way the Reviewer's own subject
+    can: merged in the gap between the cycle's gather and this stage's
+    launch. Requirement 5c's own pre-flight already asks a related question
+    earlier in the same cycle (`preflight_branch_merged_reason`, gated to the
+    same five sources), but against an ancestry compare and a `source_states_
+    json` digest both sampled before the Co-Ordinator engagement — exactly
+    the window a merge can land inside. This requirement is the live
+    counterpart, immediately ahead of the stage it would otherwise waste: one
+    `pr_merge_state` (requirement 31d) read against the work order's own
+    `pr_url`, run just ahead of step 7's own engagement (after step 6b's
+    rebase-only pre-capture, before `stage_budget_apply implementer` is ever
+    called).
+
+    `merged` reaches requirement 32c's completion exactly as the Reviewer's
+    own stage-start catch does — `reviewer_merge_observed` is the one
+    implementation all three call sites share, logging `stage:
+    "implementer-stage-start"` — and additionally releases the item-keyed
+    claim (`release_claim no-pr`), which the Reviewer's own two call sites
+    never have to: by the time either of those runs, the Implementer has
+    already raised `pr-raised` and dropped the item-keyed claim in its own
+    favour (step 7's "have-pr-pending"), but this read runs before the
+    Implementer stage exists to do that, so the item-keyed claim this cycle's
+    own claim loop won is still live and must be released here instead. Every
+    other result (`open`, or an unreadable `failed`) is advisory only and
+    simply runs the Implementer stage as normal — nothing about a merge
+    caught here is irreversible the way a draft flip, an Approver review or a
+    landing attempt is, and the Reviewer's own handoff-time read (requirement
+    31d) still guards whatever this stage goes on to produce regardless.
+
 55. **`review_gate_required_checks` also compares the base branch's own
     ruleset against what actually ran, so a required context with no run at
     all is caught, not read as a vacuous pass (issue #1543).** `gh pr checks
@@ -14177,12 +14214,18 @@ implements.
     nothing left for an Enabler to re-examine.
 
     `lib/merge-observed.sh`'s `reviewer_merge_observed` is the one
-    implementation both call sites run: the stage-start call passes it an
-    empty verdict (`{}` — the Reviewer never ran, so it never asked for
-    anything to be filed); the handoff call passes the Reviewer's own parsed
+    implementation all three call sites run: both stage-start calls pass it
+    an empty verdict (`{}` — no stage ran yet, so there is nothing to have
+    asked for filed); the handoff call passes the Reviewer's own parsed
     JSON, `file_debt`/`file_issue` included wherever its own
     `"status": "blocked"` ending set them (`prompts/reviewer.md`'s "When this
-    pull request merges while you are still reviewing it").
+    pull request merges while you are still reviewing it"). Requirement 31f's
+    own call — the Implementer's own stage-start, ahead of a finishing
+    source's pre-existing subject — is the third: it reaches this same
+    completion for an item the Implementer stage never even launched for,
+    additionally releasing the item-keyed claim its own header explains
+    (`release_claim no-pr`, since `reviewer_merge_observed` itself only ever
+    held the PR-keyed one).
 
 ### Logging and state
 
@@ -14240,12 +14283,14 @@ implements.
     omits `outcome` (the event name itself already says it), `landing-audit`
     keeps it so a reader of the log alone can tell `clean` from
     `unverifiable` without cross-referencing the event name.
-    `merge-observed` (requirements 31d/32c, `lib/merge-observed.sh`'s
-    `reviewer_merge_observed`, agent-ops#916) is the completion this pipeline
-    logs instead of `attempt-failed` when a subject pull request merges
-    mid-stage: `repo`, `item`, `pr_url`, `stage` (`"reviewer"` for the
-    handoff-time read, `"reviewer-stage-start"` for the advisory one), and
-    `merge_sha` when GitHub reported one.
+    `merge-observed` (requirements 31d/31f/32c, `lib/merge-observed.sh`'s
+    `reviewer_merge_observed`, agent-ops#916/#1062) is the completion this
+    pipeline logs instead of `attempt-failed` when a subject pull request
+    merges mid-stage: `repo`, `item`, `pr_url`, `stage` (`"reviewer"` for the
+    Reviewer's own handoff-time read, `"reviewer-stage-start"` for its
+    advisory stage-start one, `"implementer-stage-start"` for the
+    Implementer's own advisory stage-start read), and `merge_sha` when
+    GitHub reported one.
     `merge-budget-hold`, `merge-budget-frozen` and
     `merge-budget-freeze-escalated` (requirement 2.3c,
     `merge_budget_apply_decision`) are logged whenever gate 5 of
@@ -21922,9 +21967,10 @@ What exists, and the requirements each part answers to:
    the stage that opened it named nothing; `HANDOFF_GH` substitutes a stub for
    tests),
    `lib/merge-observed.sh` (requirement 32c's `reviewer_merge_observed`,
-   agent-ops#916: given a merged pull request's URL, its merge commit (when
-   known) and the Reviewer's own verdict JSON (`{}` at the advisory
-   stage-start call site), logs `merge-observed`, files whatever `file_debt`/
+   agent-ops#916/#1062: given a merged pull request's URL, its merge commit
+   (when known) and the Reviewer's own verdict JSON (`{}` at either advisory
+   stage-start call site — the Reviewer's own, or requirement 31f's
+   Implementer one), logs `merge-observed`, files whatever `file_debt`/
    `file_issue` the verdict carries — under the ordinary pipeline login,
    omitting `TOKEN` exactly as `lib/enabler.sh`'s own use of the two fields
    does — and releases the PR-keyed claim. Depends on `lib/handoff.sh`'s
@@ -27285,6 +27331,24 @@ oblige anyone to edit a test.
    instead. `test/rebase-only.test.sh` pins
    `rebase_only_push`/`diff_patch_id` themselves — see requirement 46a's own
    acceptance check.
+8e-v. **The Implementer's own stage-start pays the same advisory merge check
+   before it runs, for the five finishing sources whose work order already
+   names a subject pull request (requirement 31f, agent-ops#1062).**
+   `test/implementer-merge-observed-wiring.test.sh` extracts the step 6c
+   dispatch block out of `lib/coordinator-phase.sh` the same way
+   `test/reviewer-merge-observed-wiring.test.sh` extracts its own, and pins:
+   a `review-feedback`, `merge-conflicts` (without `"takeover": true`),
+   `dequeued`, `landing-refusals` or `abandoned-drafts` work order whose
+   `pr_url` is confirmed merged by `pr_merge_state` never reaches
+   `stage_budget_apply`/`run_claude_stage` for `implementer` at all, logs
+   `merge-observed` with `stage: "implementer-stage-start"` and an empty
+   verdict, and releases both the item-keyed and the PR-keyed claim; a
+   `merge-conflicts` work order carrying `"takeover": true`, or any source
+   outside `preflight_existing_branch_source`'s own five, never even calls
+   `pr_merge_state`, since its `pr_url` (where present at all) does not name
+   a subject this stage can retire; and an `open` or unreadable
+   (`failed`) `pr_merge_state` result runs the Implementer stage exactly as
+   an item with no pre-existing pull request would.
 8f. **A human can reopen a void from where they actually are (requirement
    34f).** `test/unvoid-label.test.sh` passes: a request clears a void recorded
    before the label; a void recorded after it, or at the same instant, stands; a
