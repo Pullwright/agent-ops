@@ -333,31 +333,34 @@ assert_eq "…and nothing is reported on the happy path" "0" "$(last_guard_event
 # =================================================================================
 # The union's usage-limit carrier and the automatic-freeze escalation (#2037),
 # lifted out of lib/standdown.sh by their own markers the same way. The union
-# read skips a line that does not parse and fails only when it cannot read at
-# all; the failure is reported, never taken for "no limit" or "no freeze". The
-# fixture line is the shape both VM nodes' logs carried: a record cut off
-# part-way and run into a whole later one.
+# is read once, by `limit_union_state`, for the governing hit, the freeze's
+# start and the escalation memory. The read skips a line that does not parse
+# and fails only when it cannot read at all; that failure, and a union the
+# snapshot could not build (`union_build_ok`), are reported and never taken
+# for "no limit" or "no freeze". The fixture line is the shape both VM nodes'
+# logs carried: a record cut off part-way and run into a whole later one.
 # =================================================================================
 
 # shellcheck source=lib/limit-detect.sh
 . "$SCRIPT_DIR/lib/limit-detect.sh"
 
+# From `union_state=` up to, and not including, the `governing=` line that
+# hands the union's record to `limit_later_record`.
 union_block_src="$(awk '
-    /^union_record=""$/ { on = 1 }
-    on                  { print }
-    on && /^fi$/        { exit }
+    /^union_state=/ { on = 1 }
+    /^governing=/   { exit }
+    on              { print }
   ' "$SCRIPT_DIR/lib/standdown.sh")"
-if [[ "$union_block_src" != *"limit_union_record"* ]]; then
-  printf 'FAIL - could not extract the union_record block from lib/standdown.sh (moved or reworded?)\n'
+if [[ "$union_block_src" != *"limit_union_state"* ]]; then
+  printf 'FAIL - could not extract the union_state block from lib/standdown.sh (moved or reworded?)\n'
   exit 1
 fi
-# From `freeze_since=""` to the second `fi` at its own indentation: the first
-# closes the gate that decides whether to read the freeze's start at all, the
-# second the block that ages it and files.
+# The escalation block, from the gate that decides whether to escalate at all
+# to the `fi` at its own indentation that closes it.
 freeze_block_src="$(awk '
-    /^      freeze_since=""$/ { on = 1 }
-    on                        { print }
-    on && /^      fi$/        { if (++closed == 2) exit }
+    /^      if \(\( limit_escalate_after_hours > 0 \)\)/ { on = 1 }
+    on                                                   { print }
+    on && /^      fi$/                                   { exit }
   ' "$SCRIPT_DIR/lib/standdown.sh")"
 if [[ "$freeze_block_src" != *"limit-freeze-escalated"* ]]; then
   printf 'FAIL - could not extract the freeze-escalation block from lib/standdown.sh (moved or reworded?)\n'
@@ -367,30 +370,47 @@ fi
 spliced_line='{"ts":"2026-09-18T00:00:00Z","event":"github-budget","core":{"limit":5000,"{"ts":"2026-09-18T00:05:00Z","event":"cycle-end","exit_code":0}'
 union_log="$tmp_dir/union.jsonl"
 
-run_union_block() {
-  # union_log is read, and union_record assigned, by the eval'd block.
+run_union_block() {  # run_union_block — prints union_record, then union_state_ok
+  # union_log and union_build_ok are read, and union_state, union_state_ok and
+  # union_record assigned, by the eval'd block.
   eval "$union_block_src"
   # shellcheck disable=SC2154
-  printf '%s' "$union_record"
+  printf '%s\n%s' "$union_record" "$union_state_ok"
 }
 
 printf '%s\n' '{"ts":"2026-09-17T06:54:54Z","event":"limit-hit","resume_at":"2099-01-01T00:00:00Z"}' \
   "$spliced_line" > "$union_log"
-: > "$log_file"
+: > "$log_file"; reset_guard_counts
+union_build_ok=1
 out="$(run_union_block)"
 assert_eq "the union carrier still reads the governing hit past a spliced line" \
-  "2099-01-01T00:00:00Z" "$(jq -r '.resume_at' <<<"$out" 2>/dev/null)"
+  "2099-01-01T00:00:00Z" "$(head -n1 <<<"$out" | jq -r '.resume_at' 2>/dev/null)"
 assert_eq "…and nothing is reported, because nothing failed" "0" "$(last_guard_events | jq -s 'length')"
 
-: > "$log_file"
+: > "$log_file"; reset_guard_counts
 # shellcheck disable=SC2317  # the stub is called from $union_block_src via eval, invisible to a static reader
-out="$(limit_union_record() { echo "jq: killed" >&2; return 137; }; run_union_block)"
-assert_eq "a union read that fails outright leaves the carrier empty" "" "$out"
+out="$(limit_union_state() { echo "jq: killed" >&2; return 137; }; run_union_block)"
+assert_eq "a union read that fails outright leaves the carrier empty" "" "$(head -n1 <<<"$out")"
+assert_eq "…marks the union's answers unknown, not empty" "0" "$(tail -n1 <<<"$out")"
 assert_eq "…and is reported, not read as no limit" "1" "$(last_guard_events | jq -s 'length')"
 assert_eq "…under the right site" "cycle:union_record" "$(last_guard_events | jq -r '.site')"
 
+# A union the snapshot could not build was reported where it was built
+# (`cycle:union_build`, agent-cycle.sh); here it is treated exactly as a failed
+# read, without reading what part of it was written.
+: > "$log_file"; reset_guard_counts
+union_build_ok=0
+union_reads="$tmp_dir/union-reads"
+: > "$union_reads"
+# shellcheck disable=SC2317  # the stub is called from $union_block_src via eval, invisible to a static reader
+out="$(limit_union_state() { echo read >> "$union_reads"; return 1; }; run_union_block)"
+assert_eq "a union that could not be built is not read" "" "$(cat "$union_reads")"
+assert_eq "…leaves the carrier empty, so the flag decides alone" "" "$(head -n1 <<<"$out")"
+assert_eq "…and marks the union's answers unknown" "0" "$(tail -n1 <<<"$out")"
+union_build_ok=1
+
 # The freeze block's own inputs, as lib/standdown.sh has them by this point.
-# shellcheck disable=SC2034  # all consumed by the eval'd block
+# shellcheck disable=SC2034  # all consumed by the eval'd blocks
 {
   limit_escalate_after_hours=24
   DRY_RUN=0
@@ -398,33 +418,43 @@ assert_eq "…under the right site" "cycle:union_record" "$(last_guard_events | 
   enabler_assignee="someone"
   enabler_escalation_label="escalation"
   cycle_dir="$tmp_dir"
-  governing='{"resume_at":"2099-01-01T00:00:00Z","kind":"auto"}'
 }
 filed="$tmp_dir/filed"
 # shellcheck disable=SC2317  # called from $freeze_block_src via eval, invisible to a static reader
 create_escalation_issue() { printf '%s\n' "$2" >> "$filed"; printf '42\thttps://example.invalid/o/ops/issues/42'; }
-run_freeze_block() {  # run_freeze_block <now_epoch>
-  # shellcheck disable=SC2034  # read by the eval'd block
+run_freeze_block() {  # run_freeze_block <now_epoch> <governing record>
+  # now_epoch and governing are read by the eval'd blocks; the union block
+  # runs first, as it does in lib/standdown.sh, to give the freeze block its
+  # union_state and union_state_ok.
+  # shellcheck disable=SC2034
   now_epoch="$1"
+  # shellcheck disable=SC2034
+  governing="$2"
   : > "$filed"
+  : > "$log_file"
+  reset_guard_counts
+  eval "$union_block_src"
   eval "$freeze_block_src"
 }
 freeze_events() { jq -c 'select(.event == "limit-freeze-escalated")' "$log_file"; }
+warning_events() { jq -c 'select(.event == "warning")' "$log_file"; }
 
 now_s="$(date -u +%s)"
 three_days_ago="$(date -u -d "@$(( now_s - 3 * 86400 ))" +%Y-%m-%dT%H:%M:%SZ)"
+an_hour_ago="$(date -u -d "@$(( now_s - 3600 ))" +%Y-%m-%dT%H:%M:%SZ)"
+auto_union='{"resume_at":"2099-01-01T00:00:00Z","kind":"auto"}'
 
 # A freeze three days old, with a spliced line after its first hit: the start
 # is still found, so the escalation files. Before #2037 the start read empty,
 # `date -d ""` answered midnight today, and the freeze never came of age.
 printf '%s\n' "{\"ts\":\"$three_days_ago\",\"event\":\"limit-hit\",\"resume_at\":\"2099-01-01T00:00:00Z\"}" \
   "$spliced_line" > "$union_log"
-: > "$log_file"
-run_freeze_block "$now_s"
+run_freeze_block "$now_s" "$auto_union"
 assert_eq "a three-day freeze past a spliced line escalates, keyed on its start" \
   "usage-limit-freeze:$three_days_ago" "$(cat "$filed")"
 assert_eq "…and records the escalation against that start" "$three_days_ago" \
   "$(freeze_events | jq -r '.since')"
+assert_eq "…aged from the union's own first hit" "union" "$(freeze_events | jq -r '.since_basis')"
 assert_eq "…with nothing reported" "0" "$(last_guard_events | jq -s 'length')"
 
 # The escalation already recorded past a spliced line is still found, so the
@@ -433,28 +463,58 @@ printf '%s\n' "{\"ts\":\"$three_days_ago\",\"event\":\"limit-hit\",\"resume_at\"
   "$spliced_line" \
   "{\"ts\":\"$three_days_ago\",\"event\":\"limit-freeze-escalated\",\"since\":\"$three_days_ago\",\"issue_number\":42}" \
   > "$union_log"
-: > "$log_file"
-run_freeze_block "$now_s"
+run_freeze_block "$now_s" "$auto_union"
 assert_eq "an escalation already in the union past a spliced line is not filed again" "" "$(cat "$filed")"
 
-# No live hit in the union (the stand-down rests on the flag carrier alone):
-# no start, so nothing to age — the test is skipped, never fed `date -d ""`,
-# whose midnight-today answer would file a keyless escalation once the clock
-# was a day past it.
-printf '%s\n' '{"ts":"2026-09-17T06:54:54Z","event":"cycle-end"}' > "$union_log"
-: > "$log_file"
-run_freeze_block "$(( now_s + 3 * 86400 ))"
-assert_eq "a freeze with no start in the union files nothing" "" "$(cat "$filed")"
+# A union that could not be read: whether this freeze was already escalated
+# cannot be told, so nothing is filed this cycle and a warning says why. Filing
+# anyway would rest on the open-issue guard alone, which a closed escalation
+# passes, so every such cycle would file it again.
+printf '%s\n' "{\"ts\":\"$three_days_ago\",\"event\":\"limit-hit\",\"resume_at\":\"2099-01-01T00:00:00Z\"}" > "$union_log"
+# shellcheck disable=SC2317  # the stub is called from $union_block_src via eval, invisible to a static reader
+(limit_union_state() { echo "jq: killed" >&2; return 137; }; run_freeze_block "$now_s" "$auto_union")
+assert_eq "a failed union read files no escalation" "" "$(cat "$filed")"
+assert_eq "…reports the read under its own site" "cycle:union_record" "$(last_guard_events | jq -r '.site')"
+assert_eq "…and says the escalation waits for the next cycle" "1" \
+  "$(warning_events | jq -s '[.[] | select(.detail | test("not filed this cycle"))] | length')"
+
+# The same for a union the snapshot could not build.
+union_build_ok=0
+run_freeze_block "$now_s" "$auto_union"
+assert_eq "a union that could not be built files no escalation" "" "$(cat "$filed")"
+assert_eq "…and says the escalation waits for the next cycle" "1" \
+  "$(warning_events | jq -s '[.[] | select(.detail | test("not filed this cycle"))] | length')"
+# shellcheck disable=SC2034  # read by the eval'd blocks, as above
+union_build_ok=1
+
+# No live hit in the union: the stand-down rests on fleet/limit.json alone,
+# so the freeze is aged from the flag record's own `ts` — the time the flag was
+# last written, its latest extension — which keys the escalation and is its
+# `since`. Before, the age test was skipped, and a flag-only freeze never
+# escalated however long it lasted.
+printf '%s\n' '{"ts":"2026-09-17T06:54:54Z","event":"cycle-end"}' "$spliced_line" > "$union_log"
+flag_record="{\"ts\":\"$three_days_ago\",\"resume_at\":\"2099-01-01T00:00:00Z\",\"kind\":\"auto\",\"class\":\"monthly\"}"
+run_freeze_block "$now_s" "$flag_record"
+assert_eq "a flag-only freeze three days old escalates, keyed on the flag record's time" \
+  "usage-limit-freeze:$three_days_ago" "$(cat "$filed")"
+assert_eq "…records that time as the escalation's since" "$three_days_ago" "$(freeze_events | jq -r '.since')"
+assert_eq "…and says it is the flag record's time" "flag" "$(freeze_events | jq -r '.since_basis')"
+assert_eq "…and so does the issue body" "1" \
+  "$(grep -c 'the time fleet/limit.json was last written' "$tmp_dir/limit-freeze-issue.md")"
+assert_eq "…with nothing reported" "0" "$(last_guard_events | jq -s 'length')"
+
+flag_fresh="{\"ts\":\"$an_hour_ago\",\"resume_at\":\"2099-01-01T00:00:00Z\",\"kind\":\"auto\"}"
+run_freeze_block "$now_s" "$flag_fresh"
+assert_eq "a flag-only freeze an hour old files nothing" "" "$(cat "$filed")"
 assert_eq "…and reports nothing, since nothing failed" "0" "$(last_guard_events | jq -s 'length')"
 
-# A read of the freeze's start that fails outright is reported, and files
-# nothing.
-printf '%s\n' "{\"ts\":\"$three_days_ago\",\"event\":\"limit-hit\",\"resume_at\":\"2099-01-01T00:00:00Z\"}" > "$union_log"
-: > "$log_file"
-# shellcheck disable=SC2317  # the stub is called from $freeze_block_src via eval, invisible to a static reader
-(limit_standdown_since() { echo "jq: killed" >&2; return 137; }; run_freeze_block "$now_s")
-assert_eq "a failed read of the freeze's start files nothing" "" "$(cat "$filed")"
-assert_eq "…and is reported under the right site" "freeze_since" "$(last_guard_events | jq -r '.site')"
+# A flag record with no `ts` cannot be aged. The age test is skipped — never
+# fed `date -d ""`, whose midnight-today answer would read the freeze as
+# under a day old — and the skip is reported.
+run_freeze_block "$(( now_s + 3 * 86400 ))" "$auto_union"
+assert_eq "a flag-only freeze with no ts files nothing" "" "$(cat "$filed")"
+assert_eq "…and reports that its age could not be told" "freeze_since:flag" \
+  "$(last_guard_events | jq -r '.site')"
 unset -f create_escalation_issue
 
 # =================================================================================
