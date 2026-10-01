@@ -872,7 +872,12 @@ void_review_item_tech_debt_id() {
 # citing PR is never expected to name the review ref itself, only the
 # recommendation's own designated tech-debt id (`void_review_item_tech_debt_id`,
 # issue #2030), so that id — resolved against ENTRY_REPO, where the
-# recommendation's file lives — is checked too.
+# recommendation's file lives — is checked too. Against ENTRY_REPO alone, never
+# SLUG: a review ref belongs to the repository whose review minted it, so a URL
+# citation into another repository must not have its own `owner/repo` searched
+# for a recommendation, and an entry naming no repo leaves nothing to resolve
+# the ref against at all — both fall through to the refusal below rather than
+# widening the test on a guess.
 #
 # One item shape is corroborated differently: a finishing-source item *is* a
 # pull request. The gatherers mint its id from the PR's own number —
@@ -935,7 +940,7 @@ $head_ref" "$item"; then
   fi
   if [[ "$item" =~ ^review-[0-9]{4}-[0-9]{2}-[0-9]{2}-R-[0-9]+$ ]]; then
     local td_id
-    if td_id="$(void_review_item_tech_debt_id "$item" "${entry_repo:-$slug}")" \
+    if td_id="$(void_review_item_tech_debt_id "$item" "$entry_repo")" \
       && void_text_names_item "$body
 $head_ref" "$td_id"; then
       return 0

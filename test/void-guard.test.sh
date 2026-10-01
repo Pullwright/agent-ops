@@ -1004,6 +1004,16 @@ assert_eq "a PR naming only the designated tech-debt id corroborates the review 
   "0" "$(void_pr_matches_item "Poetic-Poems/poetic-fiddle" "290" "review-2026-08-08-R-08" \
     "Poetic-Poems/poetic-fiddle"; echo $?)"
 
+# The ref is resolved against the entry's own repo and nothing else: an entry
+# naming no repo leaves nowhere to look for the recommendation, so the same
+# citation is refused rather than resolved against the cited PR's own slug. A
+# review ref belongs to the repository whose review minted it, and widening the
+# test to whatever repository a URL citation happens to name would accept a
+# cross-repository coincidence.
+out="$(void_pr_matches_item "Poetic-Poems/poetic-fiddle" "290" "review-2026-08-08-R-08" "")"; rc=$?
+assert_eq "an entry naming no repo resolves no recommendation" "1" "$rc"
+assert_contains "  ... and is refused as a fabrication" "fabricated citation" "$out"
+
 # The literal review ref in the PR's own body/branch still matches directly,
 # with no resolver call needed — unchanged behaviour.
 printf '{"body": "Implements review-2026-08-08-R-08.", "head": {"ref": "agent/review-2026-08-08-R-08"}}' \
