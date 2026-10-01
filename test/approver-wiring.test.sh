@@ -345,6 +345,12 @@ HARNESS
   printf '%s\n' '  printf '"'"'%s'"'"' "$KILL_CAUSE" >"$kill_errf"'
   printf '%s\n' 'fi'
   printf 'run_approver_stage "$PR_URL" "$resolved"\n'
+  # agent-ops#1066: the three `approver_stage_*` globals `run_landing_stage`
+  # reads to decide whether to arm a pull request for merge — dumped here,
+  # after the call, so a case can confirm the re-mint-failure early return
+  # leaves them at their entry-time reset rather than the tail's values.
+  printf '%s\n' 'jq -nc --arg v "$approver_stage_verdict" --argjson a "$approver_stage_adjudicating" --arg t "$approver_stage_tier" \
+    '"'"'{verdict: $v, adjudicating: $a, tier: $t}'"'"' >"$T/stage_globals"'
 } >>"$tmp_dir/harness.sh"
 
 URL="https://github.com/Poetic-Poems/agent-ops/pull/463"
@@ -364,7 +370,7 @@ run_case() {
   : >"$tmp_dir/resolved_complexity"; : >"$tmp_dir/prompt_override_args"
   : >"$tmp_dir/mal_calls"; : >"$tmp_dir/mks_calls"; : >"$tmp_dir/protected_calls"
   : >"$tmp_dir/token_calls"; rm -f "$tmp_dir/token_calls_count"
-  : >"$tmp_dir/token_call_args"
+  : >"$tmp_dir/token_call_args"; : >"$tmp_dir/stage_globals"
   rm -rf "${tmp_dir:?}/cycle" "${tmp_dir:?}/clone" "${tmp_dir:?}/state"
   env -i PATH="$PATH" HOME="$HOME" \
     T="$tmp_dir" SCRIPT_DIR="$SCRIPT_DIR" PR_URL="$URL" \
@@ -388,6 +394,7 @@ token_call_args() { cat "$tmp_dir/token_call_args"; }
 count() { local f="$tmp_dir/$1"; [[ -s "$f" ]] && wc -l <"$f" | tr -d ' ' || printf '0'; }
 verdict_event() { grep -m1 $'^approver-verdict\t' "$tmp_dir/events" | cut -f2-; }
 warnings() { grep $'^warning\t' "$tmp_dir/events" | cut -f2- || true; }
+stage_globals() { cat "$tmp_dir/stage_globals"; }
 
 # --- At `human`, nothing runs (requirement 8b) --------------------------------
 
@@ -712,6 +719,19 @@ assert_eq "  ... posts nothing" "0" "$(count posts)"
 assert_contains "  ... and warns distinguishing entry-mintable from now-unmintable" \
   "still mintable at stage entry" "$(warnings)"
 assert_eq "  ... without escalating — no adjudication was in progress" "0" "$(count escalations)"
+# agent-ops#1066: the verdict the engagement actually reached was paid for in
+# full, so it still gets a structured approver-verdict record, posted:false,
+# rather than only the warning above.
+assert_eq "  ... but still logs the paid-for verdict as an approver-verdict event" \
+  '"approve"' "$(jq -c '.verdict' <<<"$(verdict_event)")"
+assert_eq "  ... with posted:false, since nothing reached GitHub" \
+  'false' "$(jq -c '.posted' <<<"$(verdict_event)")"
+assert_eq "  ... and leaves approver_stage_verdict unset, so run_landing_stage arms nothing" \
+  '""' "$(jq -c '.verdict' <<<"$(stage_globals)")"
+assert_eq "  ... and approver_stage_adjudicating at its entry-time 0" \
+  '0' "$(jq -c '.adjudicating' <<<"$(stage_globals)")"
+assert_eq "  ... and approver_stage_tier unset too" \
+  '""' "$(jq -c '.tier' <<<"$(stage_globals)")"
 
 run_case agent-approves medium 2 '{"verdict":"refuse","reasons":["the same defect, moved"]}' \
   WRITE_TOKEN_RC=1 >/dev/null
@@ -721,6 +741,16 @@ assert_contains "  ... carrying the adjudication's own reasons, not a generic pl
   "the same defect, moved" "$(escalations)"
 assert_eq "  ... and posts no review, since no fresh token ever reached GitHub" \
   "0" "$(count posts)"
+assert_eq "  ... but still logs the adjudication's own verdict as an approver-verdict event" \
+  '"refuse"' "$(jq -c '.verdict' <<<"$(verdict_event)")"
+assert_eq "  ... with posted:false" \
+  'false' "$(jq -c '.posted' <<<"$(verdict_event)")"
+assert_eq "  ... and marked as an adjudication, same as the tail's own call would" \
+  'true' "$(jq -c '.adjudication' <<<"$(verdict_event)")"
+assert_eq "  ... yet still leaves approver_stage_verdict unset" \
+  '""' "$(jq -c '.verdict' <<<"$(stage_globals)")"
+assert_eq "  ... and approver_stage_adjudicating at its entry-time 0" \
+  '0' "$(jq -c '.adjudicating' <<<"$(stage_globals)")"
 
 echo
 if (( failures == 0 )); then

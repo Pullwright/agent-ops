@@ -824,6 +824,14 @@ run_approver_stage() {
     model="$(approver_model_for_tier "$tier" "$approver_model_default" "$approver_model_complex")"
   fi
 
+  # Computed once, here, rather than at each `approver-verdict` log site: by
+  # this point `adjudicating` is already final (it is set once, above, and
+  # never reassigned), so both the re-mint-failure early return
+  # (agent-ops#1066) and this function's own tail can share one copy instead
+  # of recomputing it twice from the same two lines.
+  adj_bool="false"
+  (( adjudicating )) && adj_bool="true"
+
   if [[ -n "$mode" ]]; then
     if [[ -z "$model" ]]; then
       log_event "warning" "$(jq -nc --arg u "$pr_url" \
@@ -929,6 +937,20 @@ $node_name
       log_event "warning" "$(jq -nc --arg u "$pr_url" \
         --arg d "the Approver's installation token could not be minted again once the model engagement returned (it was still mintable at stage entry) — no tech-debt filing or App review was attempted for $pr_url this round" \
         '{detail: $d, pr_url: $u}')"
+      # agent-ops#1066: the engagement above did reach a verdict, and it was
+      # paid for in full, so it still gets the same structured
+      # `approver-verdict` record the tail of this function writes for every
+      # other round — with `posted: false` (requirement 8c), since nothing
+      # was written to GitHub. `approver_stage_verdict`/`_adjudicating`/`_tier`
+      # deliberately stay unset here (their entry-time reset, above): a verdict
+      # this stage could not confirm it ever wrote down must never arm
+      # `run_landing_stage`'s merge gate.
+      log_event "approver-verdict" "$(jq -nc --arg u "$pr_url" --arg r "$selected_repo" --arg t "$tier" \
+        --arg m "$model" --arg v "${verdict:-none}" --argjson s "$streak" --argjson adj "$adj_bool" \
+        --argjson posted false --arg cr "$critical_reason" --arg i "$selected_item" \
+        '{pr_url: $u, repo: $r, tier: $t, model: $m, verdict: $v, refuse_streak: $s, adjudication: $adj, posted: $posted}
+         + (if $cr == "" then {} else {critical_reason: $cr} end)
+         + (if $i == "" then {} else {item: $i} end)')"
       if (( adjudicating )); then
         approver_escalate "$pr_url" "$reasons_json"
       fi
@@ -1098,8 +1120,6 @@ $node_name
   [[ -n "$posted_review" && "$approver_last_post_ok" == "1" ]] && posted_bool="true"
   approver_stage_posted="$posted_bool"
 
-  adj_bool="false"
-  (( adjudicating )) && adj_bool="true"
   log_event "approver-verdict" "$(jq -nc --arg u "$pr_url" --arg r "$selected_repo" --arg t "$tier" \
     --arg m "$model" --arg v "${verdict:-none}" --argjson s "$streak" --argjson adj "$adj_bool" \
     --argjson posted "$posted_bool" --arg cr "$critical_reason" --arg i "$selected_item" \
