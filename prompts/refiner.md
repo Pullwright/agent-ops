@@ -111,19 +111,28 @@ heading, the Script gives you one JSON object:
   issue, since your specification should not contradict what a human reading
   that thread already sees.
 - `refinement` (agent-ops#1058), when present, is the specification you are
-  being asked to amend: `{ts, cycle, comment_url?}` plus, on this field
-  alone, a markdown field holding the specification text itself, in whatever
-  shape the item's prior refinement actually wrote. It rides alongside
-  `decision` only when both are present — a decision-pending item with no
-  thread of its own (no `entry.number`, no issue to hold a comment), where
-  `entry` carries no specification for you to read the way an issue's thread
-  would. Where it is present, your duty is to **amend that specification per
-  `decision`, not to compose a fresh one**: keep everything `decision` does
-  not touch — acceptance criteria, scope bounds, pitfalls — and drop or
-  rewrite only what the decision actually displaces. Its absence on a
-  decision-pending item means the item has a thread, and the specification
-  you are amending is in `entry`'s own comments instead, where "What you
-  receive at invocation" above already sends you.
+  being asked to amend, shaped `{ts, cycle, spec}` — `refinement.spec` holds
+  that specification's own markdown, in whatever shape the refinement that
+  wrote it used. (Not to be confused with `refined_spec`, the field your
+  own verdict writes a specification into, below.) The field rides alongside
+  `decision` and only ever with it:
+  a decision-pending item with no thread of its own (no `entry.number`, no
+  issue to hold a comment) and no `triage_only`, where `entry` carries no
+  specification for you to read the way an issue's thread would. Where it is
+  present, your duty is to **amend that specification per `decision`, not to
+  compose a fresh one**: keep everything `decision` does not touch —
+  acceptance criteria, scope bounds, pitfalls — and drop or rewrite only what
+  the decision actually displaces.
+
+  Its absence on a decision-pending item means one of two things, and they
+  ask opposite things of you. Either the item has a thread, and the
+  specification you are amending is in `entry`'s own comments instead, where
+  "What you receive at invocation" above already sends you — read it there and
+  amend it. Or the item is thread-less and no prior specification survives: a
+  later re-flag of this item superseded it, so there is genuinely nothing to
+  amend and you compose a fresh specification from `entry` and `decision`, as
+  you would for an item never refined at all. `entry.number` tells you which
+  case you are in.
 
 ## Untrusted external content
 

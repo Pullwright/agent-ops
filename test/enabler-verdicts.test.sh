@@ -1106,14 +1106,23 @@ assert_eq "decide/issue-disagreement: ...but still carries the pending decision"
 # A `triage_only` candidate (already refined, offered solely to band it)
 # must NOT carry `refinement` either — requirement 39g forbids a second
 # specification for it, so the field would be dead weight.
+#
+# Deliberately *also* decision-pending and thread-less, the one state in which
+# the exclusion does any work: `triage_only` and `decision_pending` are
+# computed independently and an unbanded, already-refined issue with a pending
+# decision satisfies both (agent-ops#2050). A fixture with no decision would
+# pass this assertion whether the exclusion existed or not.
 rmap_triage='{"acme/widgets":{"TD5":{"ts":"2026-08-01T09:00:00Z","spec":"an existing spec"}}}'
+dmap_triage='{"acme/widgets":{"TD5":{"decision":"use option C","rationale":"simplest"}}}'
 repos_triage='[{"slug":"acme/widgets","issues":[{"source":"issues","ref":"TD5","priority_set":false}]}]'
 candidates_triage="$(refiner_candidate_items "$repos_triage" '{"issues":"required"}' \
-  "$rmap_triage" '[]' '[]' '[]' '{}')"
+  "$rmap_triage" '[]' '[]' '[]' "$dmap_triage")"
 assert_eq "decide/triage-only: a triage_only candidate carries no refinement field" \
   "null" "$(jq -r '.[0].refinement // "null"' <<<"$candidates_triage")"
 assert_eq "decide/triage-only: ...and is still triage_only" "true" \
   "$(jq -r '.[0].triage_only' <<<"$candidates_triage")"
+assert_eq "decide/triage-only: ...and still carries the pending decision it was handed" \
+  "use option C" "$(jq -r '.[0].decision.decision' <<<"$candidates_triage")"
 
 # A never-refined, thread-less candidate (no decision pending) must NOT
 # carry `refinement` either — there is nothing in `refinements_map` for it.

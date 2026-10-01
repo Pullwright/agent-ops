@@ -1052,12 +1052,14 @@ refiner_policy_value() {
 # decide-tactical pass already took in place of escalating, which the Refiner
 # turns into the actual specification the way it would a human's own answer
 # on a closed escalation. A `refinement` field (agent-ops#1058) rides
-# alongside `decision`, also never inside `entry`, on a decision-pending
-# candidate whose item has no thread (no `entry.number`, and no numeric
-# `item` standing in for one) — the specification the decision amends, since
-# a thread-less item's specification lives only in REFINEMENTS_JSON and
-# nowhere `entry` itself carries. A thread-backed candidate's specification
-# is already in `entry`'s own comments, so it never carries this field.
+# alongside `decision`, also never inside `entry`, on a decision-pending,
+# non-`triage_only` candidate whose item has no thread (no `entry.number`,
+# and no numeric `item` standing in for one) — the specification the decision
+# amends, since a thread-less item's specification lives only in
+# REFINEMENTS_JSON and nowhere `entry` itself carries. A thread-backed
+# candidate's specification is already in `entry`'s own comments, and a
+# `triage_only` one may not be written a second specification at all
+# (requirement 39g), so neither ever carries this field.
 #
 # The first nine arrays are the same per-repo arrays requirement 3 assembles
 # for the Co-Ordinator's own `ordered_repos_json`. `project_review` and
@@ -1086,8 +1088,7 @@ refiner_candidate_items() {
     | def decision_for($repo; $item): (($decisions // {})[$repo][($item | tostring)] // null);
     def refinement_for($repo; $item): (($refinements // {})[$repo][($item | tostring)] // null);
     def exempt($s): (($policy // {})[$s] // "exempt") == "exempt";
-    def is_refined($repo; $item):
-      (($refinements // {})[$repo][($item | tostring)] // null) != null;
+    def is_refined($repo; $item): refinement_for($repo; $item) != null;
     def is_blocked($repo; $item):
       $blocked | any(((.item // "") | tostring) == ($item | tostring)
                      and ((.repo // "") == "" or (.repo // "") == $repo));
@@ -1157,7 +1158,15 @@ refiner_candidate_items() {
       # candidate is being asked to amend — null whenever refinements_map
       # has already dropped it (a later needs-refinement re-flag postdates
       # it), which is legitimately absent, not a bug.
-      | (if $decision_pending and (has_thread($e; $item) | not)
+      #
+      # Never on a `triage_only` candidate, even where that candidate is also
+      # decision-pending (the two are computed independently and an unbanded,
+      # already-refined issue with a pending decision satisfies both —
+      # agent-ops#2050): requirement 39g forbids the Refiner a second
+      # specification for such an item, so a specification to amend is bytes
+      # it must not act on.
+      | (if $decision_pending and ($triage_only | not)
+             and (has_thread($e; $item) | not)
          then refinement_for($repo; $item) else null end) as $refinement
       | select($triage_only or $decision_pending or ($refined | not))
       | select(is_blocked($repo; $item) | not)
