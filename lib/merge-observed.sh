@@ -17,12 +17,7 @@
 #
 # Escalation #922 settled three points this file and its callers in
 # agent-cycle.sh (the Reviewer's own stage-start, advisory, and its handoff,
-# fail-closed) divide between them. Requirement 31f (agent-ops#1062) added a
-# third, equally advisory caller: the Implementer's own stage-start, ahead of
-# one of the five finishing sources whose work order already names a subject
-# pull request (`preflight_existing_branch_source`) — the same cost
-# optimisation the Reviewer's stage-start already pays for, generalised to
-# the call site that can waste a whole engagement on it too.
+# fail-closed) divide between them:
 #
 #   1. The Reviewer may not open a replacement pull request when its subject
 #      merges mid-pass. It stops — no further push anywhere, no replacement —
@@ -38,6 +33,13 @@
 #   3. One state-read helper (`pr_merge_state`), fail-closed at the handoff
 #      and advisory at each stage-start — the Reviewer's and, as of
 #      requirement 31f, the Implementer's.
+#
+# Requirement 31f (agent-ops#1062) is what makes decision 3's "each
+# stage-start" plural: a third, equally advisory caller at the Implementer's
+# own stage-start, ahead of one of the five finishing sources whose work order
+# already names a subject pull request (`preflight_existing_branch_source`) —
+# the same cost optimisation the Reviewer's stage-start already pays for,
+# generalised to the call site that can waste a whole engagement on it too.
 #
 # `reviewer_merge_observed` is decision 2 and the leftover-filing half of
 # decision 1: it logs `merge-observed`, files whatever the Reviewer's own
