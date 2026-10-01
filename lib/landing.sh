@@ -1118,10 +1118,15 @@ _landing_refuse() {
 # issue #1601's "written on a change of reason, not once per retry"). A digest
 # of exactly the facts the body is built from and nothing else — never
 # `cycle_id`, `node_name` or a clock, all of which move without the notice's
-# meaning moving, and all of which appear in the body's own visible prose. So
-# the same standing refusal, re-checked every cycle on every node for as long
-# as it stands, is recognised as unchanged and costs no write at all; a
-# changed class, reason or eligible-at mints a different token and PATCHes.
+# meaning moving, and all of which appear in the body's own visible prose —
+# and never a refusal's reason verbatim either: every caller hands this
+# `_landing_notice_normalized_reason`'s form of it instead, because the
+# protected-path cool-off's own reason text embeds a live countdown that moves
+# while the refusal itself stands unchanged (see that function's own header).
+# So the same standing refusal, re-checked every cycle on every node for as
+# long as it stands, is recognised as unchanged and costs no write at all; a
+# changed class, eligible-at or normalized reason mints a different token and
+# PATCHes.
 #
 # `sha256sum`, not a slug of the arguments: a reason is free prose (paths,
 # logins, parentheses, colons) and this token has to be safe inside an HTML
