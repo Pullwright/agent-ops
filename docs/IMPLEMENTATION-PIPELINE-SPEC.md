@@ -17020,7 +17020,17 @@ implements.
       never merged into — `refinements_json` (requirement 3h), supplied to
       the next Refiner engagement for that item as its runtime input's own
       `decision` field (`refiner_candidate_items`, `lib/refinement.sh`)
-      beside `entry`. Where a refinement already existed, `decisions_map`
+      beside `entry`. Where the item is also thread-less — no `entry.number`,
+      and no numeric `item` substituting for one, the same test requirement
+      36b's own carrier rule uses — `refiner_candidate_items` reads
+      `refinements_json` (requirement 3h) for the prior refinement itself and
+      supplies it too, as a `refinement` field beside `decision`, never
+      inside `entry` (agent-ops#1058): without it `entry` carries no
+      specification at all for a thread-less item, and the decision alone
+      would have the Refiner compose a fresh specification rather than amend
+      the existing one. A thread-backed item's specification is already in
+      `entry`'s own comments, so it never carries this field. Where a
+      refinement already existed, `decisions_map`
       does not treat the `unchanged: true` re-record above as having carried
       the decision forward — an unmarked `item-refined` is what supersedes a
       decision, since only that shape is the Refiner actually turning one
@@ -18517,7 +18527,15 @@ implements.
        36d) still names a pending decision for it: a `decide-tactical` pass
        never writes a specification of its own, so a refined item it decided
        still owes the Refiner the fresh spec the decision has to become
-       (agent-ops#1049);
+       (agent-ops#1049). In this second case, when the item is also
+       thread-less (no `entry.number`, and no numeric `item` substituting
+       for one, requirement 36b), the candidate additionally carries that
+       prior refinement itself, as a `refinement` field beside `decision` —
+       `entry` carries no specification of its own for a thread-less item,
+       so without it the Refiner would have nothing to amend and would
+       compose a fresh specification instead (agent-ops#1058). A
+       thread-backed item never carries this field: its specification is
+       already in `entry`'s own comments;
     4. it is not blocked (requirement 34), not void (requirement 34c), and not
        held by an ordinary implementation claim (the same `claimed` array the
        Co-Ordinator's own exclusion 3 reads).

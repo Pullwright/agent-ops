@@ -1051,7 +1051,13 @@ refiner_policy_value() {
 # when `decisions` names one for this repo+item: a tactical decision a
 # decide-tactical pass already took in place of escalating, which the Refiner
 # turns into the actual specification the way it would a human's own answer
-# on a closed escalation.
+# on a closed escalation. A `refinement` field (agent-ops#1058) rides
+# alongside `decision`, also never inside `entry`, on a decision-pending
+# candidate whose item has no thread (no `entry.number`, and no numeric
+# `item` standing in for one) — the specification the decision amends, since
+# a thread-less item's specification lives only in REFINEMENTS_JSON and
+# nowhere `entry` itself carries. A thread-backed candidate's specification
+# is already in `entry`'s own comments, so it never carries this field.
 #
 # The first nine arrays are the same per-repo arrays requirement 3 assembles
 # for the Co-Ordinator's own `ordered_repos_json`. `project_review` and
@@ -1078,6 +1084,7 @@ refiner_candidate_items() {
     input as $repos | input as $refinements | input as $blocked
     | input as $void | input as $claimed | input as $decisions
     | def decision_for($repo; $item): (($decisions // {})[$repo][($item | tostring)] // null);
+    def refinement_for($repo; $item): (($refinements // {})[$repo][($item | tostring)] // null);
     def exempt($s): (($policy // {})[$s] // "exempt") == "exempt";
     def is_refined($repo; $item):
       (($refinements // {})[$repo][($item | tostring)] // null) != null;
@@ -1106,6 +1113,18 @@ refiner_candidate_items() {
     # into `null` and never match.
     def is_unbanded_issue($source; $e):
       $source == "issues" and ($e | has("priority_set")) and ($e.priority_set == false);
+    # agent-ops#1058: for a decision-pending candidate with no thread (keyed
+    # the same way agent-ops#1128 keys the e_number derivation,
+    # lib/refinement.sh ~1552 — on `entry.number`, never on `source`, since
+    # the tech-debt band has been issue-backed since agent-ops#875), `entry`
+    # does not itself carry the specification the Refiner is being asked to
+    # amend: that specification lives only in `refinements_map`, so it must
+    # ride along as its own field. A thread-backed candidate has its
+    # specification in the comments `entry` already carries, where the
+    # prompt already sends the Refiner, so attaching the field there too
+    # would be dead weight.
+    def has_thread($e; $item):
+      (($e.number // null) != null) or ($item | test("^[0-9]+$"));
     [ $repos[] as $r
       | ($r.slug // "") as $repo
       | ( ($r.findings // [])[]?, ($r.review_feedback // [])[]?,
@@ -1134,13 +1153,20 @@ refiner_candidate_items() {
       # Deliberately *not* `triage_only`: unlike the priority-only case, this
       # candidate needs its full specification rewritten, not one field.
       | ($refined and ($decision != null)) as $decision_pending
+      # agent-ops#1058: the prior refinement a decision-pending, thread-less
+      # candidate is being asked to amend — null whenever refinements_map
+      # has already dropped it (a later needs-refinement re-flag postdates
+      # it), which is legitimately absent, not a bug.
+      | (if $decision_pending and (has_thread($e; $item) | not)
+         then refinement_for($repo; $item) else null end) as $refinement
       | select($triage_only or $decision_pending or ($refined | not))
       | select(is_blocked($repo; $item) | not)
       | select(is_void($repo; $item) | not)
       | select(is_claimed($repo; $item) | not)
       | {repo: $repo, source: $source, item: $item, entry: $e}
         + (if $triage_only then {triage_only: true} else {} end)
-        + (if $decision == null then {} else {decision: $decision} end) ]
+        + (if $decision == null then {} else {decision: $decision} end)
+        + (if $refinement == null then {} else {refinement: $refinement} end) ]
   ' <<<"$docs" 2>/dev/null || printf '[]'
 }
 
