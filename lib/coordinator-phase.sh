@@ -767,6 +767,42 @@ premerge_rebase_only_capture() {
 }
 premerge_rebase_only_capture
 
+# --- 6c. Implementer stage-start merge check (requirement 31f, agent-ops#1062) ---
+# Requirement 31d's read gave the Reviewer a cheap, advisory look at whether
+# its own subject had already merged before an engagement was spent on it
+# (escalation #922) — but the Implementer's own five finishing sources
+# (`preflight_existing_branch_source`: review-feedback, merge-conflicts,
+# dequeued, landing-refusals, abandoned-drafts, less a `merge-conflicts`
+# takeover, whose `pr_url` names Dependabot's own pull request rather than a
+# subject this stage can retire) hand it a work order whose `pr_url` can be
+# just as stale, and nothing asked GitHub about it before paying for the
+# stage. Requirement 5c's own pre-flight (`preflight_branch_merged_reason`)
+# already runs earlier this same cycle, but against `source_states_json` /
+# an ancestry compare sampled before the Co-Ordinator engagement — exactly
+# the gap a pull request can merge inside. This is the live read
+# `pr_merge_state` (`lib/handoff.sh`) gives instead, one call, immediately
+# ahead of the stage it would otherwise waste — advisory, like the
+# Reviewer's: an unreadable answer simply runs the stage, since nothing about
+# a merge caught here is irreversible the way a draft flip, an Approver
+# review or a landing attempt is, and the Reviewer's own handoff-time read
+# still guards whatever this stage produces regardless.
+pre_implementer_merge_state=""; pre_implementer_merge_sha=""
+implementer_subject_pr_url=""
+if preflight_existing_branch_source "$selected_source" \
+    && [[ "$(jq -r '.takeover // false' <<<"$work_order_json")" != "true" ]]; then
+  implementer_subject_pr_url="$(jq -r '.pr_url // empty' <<<"$work_order_json")"
+fi
+if [[ -n "$implementer_subject_pr_url" ]]; then
+  pre_implementer_merge_result="$(pr_merge_state "$implementer_subject_pr_url")" || true
+  IFS=$'\t' read -r pre_implementer_merge_state pre_implementer_merge_sha <<<"$pre_implementer_merge_result"
+fi
+if [[ "$pre_implementer_merge_state" == "merged" ]]; then
+  reviewer_merge_observed "$implementer_subject_pr_url" "$pre_implementer_merge_sha" '{}' "implementer-stage-start"
+  release_claim no-pr
+  echo "$implementer_subject_pr_url"
+  exit 0
+fi
+
 # --- 7. Implementer stage ---
 # implementer is one of the two stages requirement 4a's per-repository layer
 # covers (agent-ops#588): $repo_slug's own repos[].prompt_overrides.implementer

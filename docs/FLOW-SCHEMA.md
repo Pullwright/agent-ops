@@ -348,7 +348,9 @@ was narrower than that list suggests:
    untouched. A `merge-observed` event (`lib/merge-observed.sh`, requirement
    32c) now fires at every point this pipeline can observe a merge as it
    happens: the Reviewer's own mid-pass reads (`reviewer_merge_observed`, at
-   its stage-start and its handoff, agent-ops#916), `lib/landing.sh`'s own arm
+   its stage-start and its handoff, agent-ops#916), the Implementer's own
+   stage-start read for a finishing source's pre-existing subject
+   (requirement 31f, agent-ops#1062), `lib/landing.sh`'s own arm
    site (a synchronous merge the no-queue auto-merge fallback sometimes
    performs directly — see that file's own header on the distinction, and
    `pr_merge_state`'s read confirming which one just happened rather than
@@ -927,10 +929,12 @@ above — on the same terms:
   own already-resolved marker/branch). `checks-green`:
   `agent-cycle.sh`'s Reviewer handoff and `lib/enabler.sh`'s
   `complete_handoff` recovery path, both immediately after
-  `handoff_complete_review` returns. `merge-observed`: `lib/merge-observed.sh`
-  (unchanged since agent-ops#916), plus `lib/landing.sh`'s own arm site and
-  `scripts/sweep-closed-issues.sh`'s sweep (wired through
-  `lib/standdown.sh`), both new. The fold itself: `lib/item-lifecycle.sh`'s
+  `handoff_complete_review` returns. `merge-observed`: `lib/merge-observed.sh`,
+  called from the Reviewer's own two sites (agent-ops#916) and, since
+  agent-ops#1062, a third — the Implementer's own stage-start, ahead of a
+  finishing source's pre-existing subject — plus `lib/landing.sh`'s own arm
+  site and `scripts/sweep-closed-issues.sh`'s sweep (wired through
+  `lib/standdown.sh`). The fold itself: `lib/item-lifecycle.sh`'s
   `item_lifecycle_fold`, behind the read-only `scripts/item-lifecycle.sh`.
 - **Consumed:** `scripts/pickup-metrics.sh`, via `item_lifecycle_pickup_pairs`
   (see "Generalising, not duplicating" above) — the one existing reader this

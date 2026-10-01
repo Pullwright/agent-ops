@@ -15,7 +15,7 @@
 # `pr_merge_state` for the read that catches this; this file is what a
 # confirmed merge does once caught.
 #
-# Escalation #922 settled three points this file and its two callers in
+# Escalation #922 settled three points this file and its callers in
 # agent-cycle.sh (the Reviewer's own stage-start, advisory, and its handoff,
 # fail-closed) divide between them:
 #
@@ -31,7 +31,15 @@
 #      landing attempt; the item retires the way `lib/work-gone.sh` retires
 #      one whose issue closed underneath it, never as `attempt-failed`.
 #   3. One state-read helper (`pr_merge_state`), fail-closed at the handoff
-#      and advisory at each stage-start.
+#      and advisory at each stage-start — the Reviewer's and, as of
+#      requirement 31f, the Implementer's.
+#
+# Requirement 31f (agent-ops#1062) is what makes decision 3's "each
+# stage-start" plural: a third, equally advisory caller at the Implementer's
+# own stage-start, ahead of one of the five finishing sources whose work order
+# already names a subject pull request (`preflight_existing_branch_source`) —
+# the same cost optimisation the Reviewer's stage-start already pays for,
+# generalised to the call site that can waste a whole engagement on it too.
 #
 # `reviewer_merge_observed` is decision 2 and the leftover-filing half of
 # decision 1: it logs `merge-observed`, files whatever the Reviewer's own
@@ -43,16 +51,17 @@
 # agent-cycle.sh runs under `set -euo pipefail`. Depends on `log_event`,
 # `release_pr_claim` (lib/candidate-select.sh) and `techdebt_file_debt`/
 # `techdebt_file_issue` (lib/tech-debt-file.sh), all already sourced by the
-# time agent-cycle.sh can reach either call site.
+# time agent-cycle.sh can reach any of its three call sites.
 
 # reviewer_merge_observed PR_URL MERGE_SHA REV_STATUS_JSON STAGE
 #
 # PR_URL is the subject that merged. MERGE_SHA is `pr_merge_state`'s own
 # second field, logged when non-empty. REV_STATUS_JSON is the Reviewer's
-# parsed final JSON at the handoff call site, or `{}` at the stage-start
-# call site (the Reviewer never ran, so there is nothing to have asked it
-# for). STAGE is `"reviewer"` or `"reviewer-stage-start"`, carried on the
-# `merge-observed` event so a reader can tell which read caught it.
+# parsed final JSON at the Reviewer's own handoff call site, or `{}` at
+# either stage-start call site (no stage ran yet, so there is nothing to
+# have asked for). STAGE is `"reviewer"`, `"reviewer-stage-start"` or
+# `"implementer-stage-start"`, carried on the `merge-observed` event so a
+# reader can tell which read caught it.
 reviewer_merge_observed() {
   local pr_url="${1:-}" merge_sha="${2:-}" rev_status_json="${3:-{\}}" stage="${4:-reviewer}"
   local fd_json fd_title fd_body fd_result fd_number fd_url fd_default_fix fd_owner_decision
