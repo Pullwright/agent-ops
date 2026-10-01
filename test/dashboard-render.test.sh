@@ -281,7 +281,7 @@ assert_contains "coloured informational, not a warning — healthy contention, n
 # Back-pressure gauge (agent-ops#246): 3 open agent PRs, one of them
 # (#200) a ready PR with no reviewDecision — waiting on a human, not the
 # pipeline — so the gauge's own figure is 2 (the draft plus the
-# changes-requested PR) against max_open_agent_prs, with the raw open
+# pipeline-owed PR) against max_open_agent_prs, with the raw open
 # total and the human-queue count shown alongside it.
 assert_contains "the back-pressure gauge trips on the adjusted count, not the raw total" \
   "/ 3 max" "$out"
@@ -307,7 +307,7 @@ assert_contains "and trips red at the cap" \
 assert_contains "the raw open-PR total and human-queue count are unaffected by claims" \
   "3 open, 1 waiting on human" "$bp"
 assert_contains "the card's tooltip spells out the same composition the cycle logs" \
-  'title="1 changes-requested + 1 draft + 1 unraised claim(s) — plus 1 waiting on human (4 raw)"' \
+  'title="1 pipeline-owed + 1 draft + 1 unraised claim(s) — plus 1 waiting on human (4 raw)"' \
   "$bp"
 
 # --- backpressure-claim-scope.json: which registry rows are "unraised claims" ---
@@ -330,7 +330,7 @@ assert_contains "the card's tooltip spells out the same composition the cycle lo
 #                        the only record that the work is in flight. Kept.
 #   agent/342, td/TD-…   ordinary unraised claims, one per configured repo. Kept.
 #
-# So the gauge reads 0 changes-requested + 1 draft + 3 claims = 4 of 8, well
+# So the gauge reads 0 pipeline-owed + 1 draft + 3 claims = 4 of 8, well
 # short of the cap — where counting the registry raw would have read 7 and
 # tripped it.
 bps="$(render backpressure-claim-scope.json)" || { printf 'FAIL - backpressure-claim-scope.json did not render:\n%s\n' "$bps"; exit 1; }
@@ -340,7 +340,7 @@ assert_contains "the gauge counts only the claims the cycle's own gate would cou
 assert_contains "…so it does not trip a cap the pipeline is nowhere near" \
   "background:var(--accent)" "$bps"
 assert_contains "the tooltip names the same three-claim figure" \
-  'title="0 changes-requested + 1 draft + 3 unraised claim(s) — plus 1 waiting on human (5 raw)"' \
+  'title="0 pipeline-owed + 1 draft + 3 unraised claim(s) — plus 1 waiting on human (5 raw)"' \
   "$bps"
 assert_contains "the raw open-PR line still counts only pull requests" \
   "2 open, 1 waiting on human" "$bps"
@@ -362,10 +362,10 @@ assert_contains "the live-claims panel still shows the pseudo-slug rows in full"
 #     this fix. ---
 bpoe="$(render backpressure-otherwise-eligible.json)" || { printf 'FAIL - backpressure-otherwise-eligible.json did not render:\n%s\n' "$bpoe"; exit 1; }
 bpoeflat="$(tr '\n' ' ' <<<"$bpoe" | tr -s ' ')"
-assert_contains "a complexity:high PR at agent-merges-routine does not shrink the gauge — the routine and changes-requested ones still count" \
+assert_contains "a complexity:high PR at agent-merges-routine does not shrink the gauge — the routine and pipeline-owed ones still count" \
   '2 <small> / 3 max' "$bpoeflat"
 assert_contains "the tooltip's composition puts only the approved complexity:high PR in the human-waiting figure" \
-  'title="2 changes-requested + 0 draft + 0 unraised claim(s) — plus 1 waiting on human (3 raw)"' \
+  'title="2 pipeline-owed + 0 draft + 0 unraised claim(s) — plus 1 waiting on human (3 raw)"' \
   "$bpoe"
 assert_contains "and the raw open-PR line names the same human-queue count" \
   "3 open, 1 waiting on human" "$bpoe"

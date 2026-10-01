@@ -1505,10 +1505,10 @@ re-impose that scope itself or the gauge climbs with every item the Enabler
 examines and pins red against an open gate. Rows **naming a pull request
 already in the sum** are that PR a second time: the `pr-<n>` exclusion entry
 always, and a `pr-<n>-<kind>-<scope>` item ref when its PR is among the drafts
-or changes-requested PRs counted above — but not when that PR sits in the
+or pipeline-owed PRs counted above — but not when that PR sits in the
 human's queue (conflicted, dequeued), where the claim is the only record the
 work is in flight. The card's `title` tooltip spells out the same split the cycle logs,
-e.g. "1 changes-requested + 0 draft + 1 unraised claim(s) — plus 13 waiting
+e.g. "1 pipeline-owed + 0 draft + 1 unraised claim(s) — plus 13 waiting
 on human (14 raw)", with a line underneath naming the raw open-PR total and,
 when it differs, how many of those are sitting only in a human's queue
 (approved, or awaiting a review nothing is

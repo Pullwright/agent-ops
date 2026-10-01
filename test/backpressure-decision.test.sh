@@ -104,11 +104,11 @@ read_out() {
 # --- Nothing waiting: the fold-in is a no-op -----------------------------------
 
 out="$(run_block '[{"slug":"Poetic-Poems/agent-ops","merge_conflicts":[],"dequeued":[]}]' \
-  '{}' 5 8 0 "1 changes-requested + 0 draft + 0 unraised claim(s) — plus 0 waiting on human (1 raw)")"
+  '{}' 5 8 0 "1 pipeline-owed + 0 draft + 0 unraised claim(s) — plus 0 waiting on human (1 raw)")"
 assert_eq "no merge-conflict/dequeued candidates: nothing added" "0" "$(read_out "$out" extra)"
 assert_eq "…adjusted_open_count is untouched" "5" "$(read_out "$out" adjusted)"
 assert_eq "…and the composition line is untouched" \
-  "1 changes-requested + 0 draft + 0 unraised claim(s) — plus 0 waiting on human (1 raw)" "$(read_out "$out" composition)"
+  "1 pipeline-owed + 0 draft + 0 unraised claim(s) — plus 0 waiting on human (1 raw)" "$(read_out "$out" composition)"
 assert_eq "…and a cycle that had not tripped still has not" "0" "$(read_out "$out" tripped)"
 
 # --- A conflicted PR already counted (it happened to be CHANGES_REQUESTED) ----
@@ -121,12 +121,12 @@ assert_eq "…adjusted_open_count stays put" "5" "$(read_out "$out" adjusted)"
 # --- A conflicted PR requirement 2.2's count did not hold ----------------------
 
 out="$(run_block '[{"slug":"Poetic-Poems/agent-ops","merge_conflicts":[{"number":57}],"dequeued":[]}]' \
-  '{}' 5 8 0 "1 changes-requested + 0 draft + 0 unraised claim(s) — plus 4 waiting on human (5 raw)")"
+  '{}' 5 8 0 "1 pipeline-owed + 0 draft + 0 unraised claim(s) — plus 4 waiting on human (5 raw)")"
 assert_eq "a conflicted PR not already counted is folded in" "1" "$(read_out "$out" extra)"
 assert_eq "…and adjusted_open_count grows by it" "6" "$(read_out "$out" adjusted)"
 assert_eq "…without yet reaching the cap, the gate stays open" "0" "$(read_out "$out" tripped)"
 assert_eq "…and the composition states what was added" \
-  "1 changes-requested + 0 draft + 0 unraised claim(s) — plus 4 waiting on human (5 raw) + 1 merge-conflict/dequeued PR(s) occupying a slot the changes-requested count above did not" \
+  "1 pipeline-owed + 0 draft + 0 unraised claim(s) — plus 4 waiting on human (5 raw) + 1 merge-conflict/dequeued PR(s) occupying a slot the pipeline-owed count above did not" \
   "$(read_out "$out" composition)"
 
 # --- The fold-in alone tips the trip -------------------------------------------

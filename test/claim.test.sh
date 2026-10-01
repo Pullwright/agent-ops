@@ -257,7 +257,7 @@ assert_eq "…but not a pr-<n> entry surviving on its own" "1" "$count_pr_key_on
 # --- count excludes an item claim whose PR the caller has already counted ----------
 # The other half of the same double-count. A finishing source keys its item on
 # `pr-<n>-<kind>-<scope>`, so the item claim names a PR too — and when that PR is
-# one of the drafts or changes-requested PRs the caller has already put in its own
+# one of the drafts or pipeline-owed PRs the caller has already put in its own
 # sum, counting the claim as well charges a single unit of work twice against the
 # cap. The caller says which PRs those are; anything it does not name keeps
 # counting, because a conflicted or dequeued PR sitting in the human's queue is

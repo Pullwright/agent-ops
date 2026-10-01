@@ -4195,7 +4195,7 @@
     // second time. That is the `pr-<n>` exclusion entry (issue #238), dropped
     // unconditionally because it is only ever written for a PR that exists, and
     // the `pr-<n>-<kind>-<scope>` item ref the four finishing sources use,
-    // dropped only when its PR is in the draft or changes-requested sum. A
+    // dropped only when its PR is in the draft or pipeline-owed sum. A
     // conflicted or dequeued PR sits in the human's queue, is excluded from
     // that sum, and its claim is then the only record of the work in flight —
     // so that one keeps counting. Above agent-merges-routine, a pull request
@@ -4217,7 +4217,7 @@
     }).length;
     var adjN = pipelineReadyN + draftN + claimN;
     var rawOpenN = readyN + draftN + claimN;
-    var composition = pipelineReadyN + " changes-requested + " + draftN + " draft + " + claimN +
+    var composition = pipelineReadyN + " pipeline-owed + " + draftN + " draft + " + claimN +
       " unraised claim(s) — plus " + humanQueueN + " waiting on human (" + rawOpenN + " raw)";
     var gauge = el("div", {class:"gauge"}, el("span", {
       style: "width:" + (maxN ? Math.min(100, adjN/maxN*100) : 0) + "%;background:" + (adjN>=maxN && maxN ? "var(--red)" : "var(--accent)")
