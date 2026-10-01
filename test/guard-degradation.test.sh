@@ -331,6 +331,130 @@ assert_eq "a well-formed resume_at is parsed normally" "1786665600" "$out"
 assert_eq "…and nothing is reported on the happy path" "0" "$(last_guard_events | jq -s 'length')"
 
 # =================================================================================
+# The union's usage-limit carrier and the automatic-freeze escalation (#2037),
+# lifted out of lib/standdown.sh by their own markers the same way. The union
+# read skips a line that does not parse and fails only when it cannot read at
+# all; the failure is reported, never taken for "no limit" or "no freeze". The
+# fixture line is the shape both VM nodes' logs carried: a record cut off
+# part-way and run into a whole later one.
+# =================================================================================
+
+# shellcheck source=lib/limit-detect.sh
+. "$SCRIPT_DIR/lib/limit-detect.sh"
+
+union_block_src="$(awk '
+    /^union_record=""$/ { on = 1 }
+    on                  { print }
+    on && /^fi$/        { exit }
+  ' "$SCRIPT_DIR/lib/standdown.sh")"
+if [[ "$union_block_src" != *"limit_union_record"* ]]; then
+  printf 'FAIL - could not extract the union_record block from lib/standdown.sh (moved or reworded?)\n'
+  exit 1
+fi
+# From `freeze_since=""` to the second `fi` at its own indentation: the first
+# closes the gate that decides whether to read the freeze's start at all, the
+# second the block that ages it and files.
+freeze_block_src="$(awk '
+    /^      freeze_since=""$/ { on = 1 }
+    on                        { print }
+    on && /^      fi$/        { if (++closed == 2) exit }
+  ' "$SCRIPT_DIR/lib/standdown.sh")"
+if [[ "$freeze_block_src" != *"limit-freeze-escalated"* ]]; then
+  printf 'FAIL - could not extract the freeze-escalation block from lib/standdown.sh (moved or reworded?)\n'
+  exit 1
+fi
+
+spliced_line='{"ts":"2026-09-18T00:00:00Z","event":"github-budget","core":{"limit":5000,"{"ts":"2026-09-18T00:05:00Z","event":"cycle-end","exit_code":0}'
+union_log="$tmp_dir/union.jsonl"
+
+run_union_block() {
+  # union_log is read, and union_record assigned, by the eval'd block.
+  eval "$union_block_src"
+  # shellcheck disable=SC2154
+  printf '%s' "$union_record"
+}
+
+printf '%s\n' '{"ts":"2026-09-17T06:54:54Z","event":"limit-hit","resume_at":"2099-01-01T00:00:00Z"}' \
+  "$spliced_line" > "$union_log"
+: > "$log_file"
+out="$(run_union_block)"
+assert_eq "the union carrier still reads the governing hit past a spliced line" \
+  "2099-01-01T00:00:00Z" "$(jq -r '.resume_at' <<<"$out" 2>/dev/null)"
+assert_eq "…and nothing is reported, because nothing failed" "0" "$(last_guard_events | jq -s 'length')"
+
+: > "$log_file"
+out="$(limit_union_record() { echo "jq: killed" >&2; return 137; }; run_union_block)"
+assert_eq "a union read that fails outright leaves the carrier empty" "" "$out"
+assert_eq "…and is reported, not read as no limit" "1" "$(last_guard_events | jq -s 'length')"
+assert_eq "…under the right site" "cycle:union_record" "$(last_guard_events | jq -r '.site')"
+
+# The freeze block's own inputs, as lib/standdown.sh has them by this point.
+# shellcheck disable=SC2034  # all consumed by the eval'd block
+{
+  limit_escalate_after_hours=24
+  DRY_RUN=0
+  crash_loop_repo="o/ops"
+  enabler_assignee="someone"
+  enabler_escalation_label="escalation"
+  cycle_dir="$tmp_dir"
+  governing='{"resume_at":"2099-01-01T00:00:00Z","kind":"auto"}'
+}
+filed="$tmp_dir/filed"
+create_escalation_issue() { printf '%s\n' "$2" >> "$filed"; printf '42\thttps://example.invalid/o/ops/issues/42'; }
+run_freeze_block() {  # run_freeze_block <now_epoch>
+  # shellcheck disable=SC2034  # read by the eval'd block
+  now_epoch="$1"
+  : > "$filed"
+  eval "$freeze_block_src"
+}
+freeze_events() { jq -c 'select(.event == "limit-freeze-escalated")' "$log_file"; }
+
+now_s="$(date -u +%s)"
+three_days_ago="$(date -u -d "@$(( now_s - 3 * 86400 ))" +%Y-%m-%dT%H:%M:%SZ)"
+
+# A freeze three days old, with a spliced line after its first hit: the start
+# is still found, so the escalation files. Before #2037 the start read empty,
+# `date -d ""` answered midnight today, and the freeze never came of age.
+printf '%s\n' "{\"ts\":\"$three_days_ago\",\"event\":\"limit-hit\",\"resume_at\":\"2099-01-01T00:00:00Z\"}" \
+  "$spliced_line" > "$union_log"
+: > "$log_file"
+run_freeze_block "$now_s"
+assert_eq "a three-day freeze past a spliced line escalates, keyed on its start" \
+  "usage-limit-freeze:$three_days_ago" "$(cat "$filed")"
+assert_eq "…and records the escalation against that start" "$three_days_ago" \
+  "$(freeze_events | jq -r '.since')"
+assert_eq "…with nothing reported" "0" "$(last_guard_events | jq -s 'length')"
+
+# The escalation already recorded past a spliced line is still found, so the
+# freeze does not file twice.
+printf '%s\n' "{\"ts\":\"$three_days_ago\",\"event\":\"limit-hit\",\"resume_at\":\"2099-01-01T00:00:00Z\"}" \
+  "$spliced_line" \
+  "{\"ts\":\"$three_days_ago\",\"event\":\"limit-freeze-escalated\",\"since\":\"$three_days_ago\",\"issue_number\":42}" \
+  > "$union_log"
+: > "$log_file"
+run_freeze_block "$now_s"
+assert_eq "an escalation already in the union past a spliced line is not filed again" "" "$(cat "$filed")"
+
+# No live hit in the union (the stand-down rests on the flag carrier alone):
+# no start, so nothing to age — the test is skipped, never fed `date -d ""`,
+# whose midnight-today answer would file a keyless escalation once the clock
+# was a day past it.
+printf '%s\n' '{"ts":"2026-09-17T06:54:54Z","event":"cycle-end"}' > "$union_log"
+: > "$log_file"
+run_freeze_block "$(( now_s + 3 * 86400 ))"
+assert_eq "a freeze with no start in the union files nothing" "" "$(cat "$filed")"
+assert_eq "…and reports nothing, since nothing failed" "0" "$(last_guard_events | jq -s 'length')"
+
+# A read of the freeze's start that fails outright is reported, and files
+# nothing.
+printf '%s\n' "{\"ts\":\"$three_days_ago\",\"event\":\"limit-hit\",\"resume_at\":\"2099-01-01T00:00:00Z\"}" > "$union_log"
+: > "$log_file"
+(limit_standdown_since() { echo "jq: killed" >&2; return 137; }; run_freeze_block "$now_s")
+assert_eq "a failed read of the freeze's start files nothing" "" "$(cat "$filed")"
+assert_eq "…and is reported under the right site" "freeze_since" "$(last_guard_events | jq -r '.site')"
+unset -f create_escalation_issue
+
+# =================================================================================
 # Every guard site, structurally — the sweep the representative tests above
 # cannot be: 67 near-identical one-liners are exactly the shape a copy-paste
 # slip hides in, and the slip is invisible to the suite because the guarded

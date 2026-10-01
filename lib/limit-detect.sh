@@ -252,13 +252,33 @@ limit_probe_verdict() {
 # checked before any stage runs, so no cycle could ever succeed and clear it
 # from the inside. The stream is time-ordered by `fleet_logs`.
 #
-# One definition, because four readers need it — agent-cycle.sh's stand-down,
-# review-cycle.sh's two, and the dashboard — and a reader that missed
+# One definition, because every stand-down reader needs it — agent-cycle.sh's
+# stand-down, review-cycle.sh's two, the monitor's, `--status`,
+# scripts/node-health.sh and the dashboard — and a reader that missed
 # `limit-cleared` would keep standing its node down after the fleet resumed.
+#
+# Read as a stream of raw lines, each parsed on its own (`jq -nR` over
+# `inputs | fromjson? // empty`, folded with `reduce`), never slurped. The
+# union is every node's log concatenated, and one line that does not parse —
+# a record cut off part-way and run into a whole later one, which the VM
+# nodes' disk-pressure period left 33 of (#2037) — made a slurp abort, so
+# this returned nothing and the fleet read "no limit in force" while one was.
+# Plain `inputs` under `jq -n` aborts on the same line; only `-R` with a
+# per-line `fromjson?` skips it. The stream also holds one record at a time,
+# where the slurp held the whole union (#1649). `reduce` rather than
+# `first`/`limit`: under jq 1.6 a `try` (which `fromjson?` is) swallows the
+# `break` those are built on, so they would not stop at one.
+#
+# A line that does not parse is skipped; a read that fails outright (jq
+# killed, or its input unreadable) exits non-zero with jq's own error on
+# stderr, so each caller can tell "no limit" from "could not read" and report
+# the second (`guard_warn` in agent-cycle.sh) rather than act on it silently.
 limit_union_record() {
-  jq -cs '[.[] | select(.event == "limit-hit" or .event == "limit-cleared")] | last
-          | if . == null or .event == "limit-cleared" then empty else . end' \
-    2>/dev/null || true
+  jq -nRc 'reduce (inputs | fromjson? // empty
+                   | select(type == "object"
+                            and (.event == "limit-hit" or .event == "limit-cleared"))) as $e
+             (null; $e)
+           | if . == null or .event == "limit-cleared" then empty else . end'
 }
 
 # limit_union_resume_at  < JSONL on stdin
@@ -275,12 +295,16 @@ limit_union_resume_at() {
 # and is what the automatic-freeze escalation ages against (requirement 2;
 # #244): a freeze that keeps re-confirming itself must not keep resetting the
 # clock that decides when a human hears about it.
+#
+# Read the way `limit_union_record` reads, for the same reasons, with the same
+# exit status: the fold keeps the first `limit-hit` since the latest
+# `limit-cleared`, and a clear resets it.
 limit_standdown_since() {
-  jq -rs '[.[] | select(.event == "limit-hit" or .event == "limit-cleared")]
-          | (map(.event) | rindex("limit-cleared")) as $i
-          | (if $i == null then . else .[($i + 1):] end)
-          | map(select(.event == "limit-hit"))
-          | (first | .ts) // empty' 2>/dev/null || true
+  jq -nRr 'reduce (inputs | fromjson? // empty
+                   | select(type == "object"
+                            and (.event == "limit-hit" or .event == "limit-cleared"))) as $e
+             (null; if $e.event == "limit-cleared" then null elif . == null then $e else . end)
+           | .ts // empty'
 }
 
 # limit_later_record RECORD...

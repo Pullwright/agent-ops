@@ -167,6 +167,28 @@ assert_eq "a matching drained event from ANY node counts as logged" "1" \
 assert_eq "a drained event for a DIFFERENT disabled_at does not match" "0" \
   "$(drain_event_logged "$union_log_one" "2026-07-17T05:00:00Z")"
 
+# A union line that does not parse — a record cut off part-way and run into a
+# whole later one, the shape both VM nodes' logs carried (#2037) — is skipped
+# rather than aborting the read: a slurp that aborted answered "not logged"
+# every cycle, and each would log its own `drained` again.
+union_log_spliced="$union_log_one
+{\"ts\":\"2026-07-17T10:30:00Z\",\"event\":\"github-budget\",\"core\":{\"limit\":5000,\"{\"ts\":\"2026-07-17T10:35:00Z\",\"event\":\"cycle-end\"}"
+assert_eq "a spliced line in the union does not hide a matching drained event" "1" \
+  "$(drain_event_logged "$union_log_spliced" "2026-07-17T09:00:00Z")"
+# A read that fails outright still answers "not logged" (a second `drained`
+# is the cheaper mistake), but says so through `guard_warn`.
+guard_calls="$tmp_dir/guard-calls"
+: > "$guard_calls"
+guard_warn() { printf '%s\n' "$1" >> "$guard_calls"; }
+fake_jq_dir="$tmp_dir/fake-jq"
+mkdir -p "$fake_jq_dir"
+printf '#!/bin/sh\necho "jq: killed" >&2\nexit 137\n' > "$fake_jq_dir/jq"
+chmod +x "$fake_jq_dir/jq"
+assert_eq "a read that fails outright answers not-logged" "0" \
+  "$(PATH="$fake_jq_dir:$PATH" drain_event_logged "$union_log_one" "2026-07-17T09:00:00Z")"
+assert_eq "…and reports the failure under its own site" "drain_event_logged" "$(cat "$guard_calls")"
+unset -f guard_warn
+
 printf '\n'
 if (( failures > 0 )); then
   printf '%d assertion(s) failed\n' "$failures"

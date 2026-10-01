@@ -213,6 +213,37 @@ log_file="$tmp_dir/empty-log.jsonl"
 assert_eq "an empty log reads a plain zero, not an error" \
   "overrun:  0 firing(s) overrun in the last 24h" "$(overlap_status_report)"
 
+log_file="$tmp_dir/never-written.jsonl"
+assert_eq "a log not yet written reads a plain zero too" \
+  "overrun:  0 firing(s) overrun in the last 24h" "$(overlap_status_report)"
+
+# A line that does not parse — a record cut off part-way and run into a whole
+# later one, which both VM nodes' own logs carried (#2037) — costs that line
+# only. A slurp aborted on it, and the line read zero whatever had overrun.
+spliced_log="$tmp_dir/overlap-spliced-log.jsonl"
+{ cat "$fixture_log"
+  printf '{"ts":"%s","event":"github-budget","core":{"limit":5000,"{"ts":"%s","event":"wake-poll"}\n' \
+    "$now_iso" "$now_iso"
+  printf '{"ts":"%s","event":"cycle-skipped","reason":"overlap","slot_ts":"d"}\n' "$now_iso"
+} > "$spliced_log"
+log_file="$spliced_log"
+assert_eq "a spliced line does not zero the count: the overruns either side still count" \
+  "overrun:  3 firing(s) overrun in the last 24h" "$(overlap_status_report)"
+
+# A read that fails outright says so rather than printing a zero. A jq that
+# exits 137 stands in for one the memory cgroup killed.
+guard_warn() { printf '%s' "$1" > "$tmp_dir/guard-site"; }
+fake_jq_dir="$tmp_dir/fake-jq"
+mkdir -p "$fake_jq_dir"
+printf '#!/bin/sh\necho "jq: killed" >&2\nexit 137\n' > "$fake_jq_dir/jq"
+chmod +x "$fake_jq_dir/jq"
+assert_eq "a failed read is reported as unreadable, not as zero overruns" \
+  "overrun:  unreadable — this node's log could not be read" \
+  "$(PATH="$fake_jq_dir:$PATH" overlap_status_report)"
+assert_eq "…and through guard_warn, under its own site" \
+  "overlap_status_report:count" "$(cat "$tmp_dir/guard-site" 2>/dev/null)"
+unset -f guard_warn
+
 if (( failures > 0 )); then
   echo "$failures failure(s)"
   exit 1

@@ -510,9 +510,14 @@ acquire_lock
 # 3.1 Usage-limit cooldown, exactly as agent-cycle.sh 2.1 and review-cycle.sh
 #     R3.1: the log union (as fresh as the last fetch) and fleet/limit.json
 #     (read live), later resume wins.
+#     The union read skips a line that does not parse and fails only when it
+#     could not read at all; that is logged as a `warning`, leaving the flag
+#     carrier to decide alone (agent-ops#2037).
 union_record=""
 if [[ -s "$union_log" ]]; then
-  union_record="$(limit_union_record < "$union_log")"
+  union_record="$(limit_union_record < "$union_log" 2>&1)" \
+    || { log_event "warning" "$(jq -nc --arg d "the fleet log union could not be read for the usage-limit stand-down; fleet/limit.json decides alone: ${union_record:0:500}" '{detail: $d}')"
+         union_record=""; }
 fi
 governing="$(limit_later_record "$union_record" "$(fleet_flag_fetch "$state_repo" "$state_dir" limit)")"
 [[ -n "$governing" ]] || governing='{}'

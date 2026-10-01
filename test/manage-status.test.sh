@@ -200,6 +200,58 @@ printf 'not json\n' > "$state_dir/.doctor-status.json"
 assert_eq "an unreadable status file is reported, not an error" \
   "doctor:   unreadable .doctor-status.json" "$(doctor_status_report)"
 
+# --- the fleet-union readers: decisions_status_report, current_limit_record -----
+# Both read `fleet_logs` — this node's log and every peer copy — and both read
+# it line by line, so one line that does not parse costs that line and nothing
+# else (#2037). The shape below is the one both VM nodes' logs carried: a
+# record cut off part-way and run into a whole later record on one line. A
+# slurp of the union aborted on it, so `decisions:` read 0 whatever the fleet
+# had decided and the `limit:` line saw only the flag carrier.
+# shellcheck source=lib/limit-detect.sh
+. "$SCRIPT_DIR/lib/limit-detect.sh"
+guard_calls="$tmp_dir/guard-calls"
+: > "$guard_calls"
+guard_warn() { printf '%s\n' "$1" >> "$guard_calls"; }
+fleet_flag_fetch() { :; }   # the flag carrier is clear; only the union speaks
+peer_dir="$(fleet_peers_dir "$workspace_root")/poetic-2"
+mkdir -p "$peer_dir"
+recent_iso="$(date -u -d '2 hours ago' +%Y-%m-%dT%H:%M:%SZ)"
+old_iso="$(date -u -d '3 days ago' +%Y-%m-%dT%H:%M:%SZ)"
+spliced_line='{"ts":"2026-09-16T20:33:17Z","event":"github-budget","core":{"limit":5000,"{"ts":"2026-09-16T20:38:12Z","event":"wake-poll"}'
+{ printf '{"ts":"%s","node":"self","event":"decision-taken","repo":"o/r","item":"TD1"}\n' "$recent_iso"
+  printf '{"ts":"%s","node":"self","event":"decision-taken","repo":"o/r","item":"TD0"}\n' "$old_iso"
+} > "$state_dir/log.jsonl"
+{ printf '%s\n' "$spliced_line"
+  printf '{"ts":"%s","node":"poetic-2","event":"decision-taken","repo":"o/r","item":"TD2"}\n' "$recent_iso"
+  printf '{"ts":"%s","node":"poetic-2","event":"limit-hit","resume_at":"2099-01-01T00:00:00Z","class":"weekly","reset_known":true}\n' "$recent_iso"
+} > "$peer_dir/log.jsonl"
+assert_eq "decisions: a spliced peer line does not zero the fleet's count" \
+  "decisions: 2 taken in the last 24h" "$(decisions_status_report)"
+assert_eq "current_limit_record: a spliced peer line does not hide the governing hit" \
+  "2099-01-01T00:00:00Z" "$(current_limit_record | jq -r '.resume_at')"
+assert_eq "…and nothing was reported, because nothing failed" "" "$(cat "$guard_calls")"
+
+# A read that fails outright — jq killed, as the memory cgroup did to three of
+# them on 2026-10-01 — is said, not printed as a zero nobody counted, and the
+# limit read leaves the flag carrier to answer alone. A jq that exits 137
+# stands in for the killed one.
+fake_jq_dir="$tmp_dir/fake-jq"
+mkdir -p "$fake_jq_dir"
+printf '#!/bin/sh\necho "jq: killed" >&2\nexit 137\n' > "$fake_jq_dir/jq"
+chmod +x "$fake_jq_dir/jq"
+assert_eq "decisions: a failed read says unreadable rather than 0" \
+  "decisions: unreadable — the fleet log could not be read" \
+  "$(PATH="$fake_jq_dir:$PATH" decisions_status_report)"
+: > "$guard_calls"
+PATH="$fake_jq_dir:$PATH" current_limit_record >/dev/null 2>&1
+assert_eq "current_limit_record: a failed union read is reported under its own site" \
+  "current_limit_record:union" "$(cat "$guard_calls")"
+: > "$guard_calls"
+PATH="$fake_jq_dir:$PATH" decisions_status_report >/dev/null 2>&1
+assert_eq "decisions: the failed read is reported under its own site" \
+  "decisions_status_report:count" "$(cat "$guard_calls")"
+unset -f guard_warn fleet_flag_fetch
+
 if (( failures > 0 )); then
   echo "$failures failure(s)"
   exit 1

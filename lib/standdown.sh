@@ -383,9 +383,15 @@ fi
 # logged reason can say whether `resume_at` is a stated reset or this system's
 # own guess. Reporting a guess as a deadline is what let a stale stand-down
 # outlive the limit that caused it and go unquestioned.
+#
+# The union read skips a line that does not parse, so it fails only when it
+# could not read at all (jq killed, say). That is reported rather than taken
+# for "no limit in force" (#2037): the flag carrier still decides on its own,
+# as it does when the union simply holds no live hit.
 union_record=""
 if [[ -s "$union_log" ]]; then
-  union_record="$(limit_union_record < "$union_log")"
+  union_record="$(limit_union_record < "$union_log" 2>&1)" \
+    || { guard_warn "cycle:union_record" "$union_record"; union_record=""; }
 fi
 governing="$(limit_later_record "$union_record" "$(fleet_flag_fetch "$state_repo" "$state_dir" limit)")"
 [[ -n "$governing" ]] || governing='{}'
@@ -497,14 +503,30 @@ if (( resume_epoch > now_epoch )); then
       # `limit-freeze-escalated` event in the union is the memory, and
       # create_escalation_issue's open-issue guard catches the cross-node
       # race the union has not yet carried.
+      #
+      # No start means nothing to age: the union holds no live hit (the
+      # stand-down rests on the flag carrier alone) or could not be read,
+      # which is reported. The test is skipped rather than fed an empty
+      # string, because GNU `date -d ""` answers midnight today with status
+      # 0 — a freeze that would then always read under a day old and never
+      # escalate however long it lasted (#2037). Both union reads here skip
+      # a line that does not parse, as `limit_standdown_since` does.
+      freeze_since=""
       if (( limit_escalate_after_hours > 0 )) && ! (( DRY_RUN )) \
          && [[ -n "$crash_loop_repo" && -n "$enabler_assignee" ]]; then
-        freeze_since="$(limit_standdown_since < "$union_log")"
+        freeze_since="$(limit_standdown_since < "$union_log" 2>&1)" \
+          || { guard_warn "freeze_since" "$freeze_since"; freeze_since=""; }
+      fi
+      if [[ -n "$freeze_since" ]]; then
         freeze_epoch="$(date -d "$freeze_since" +%s 2>&1)" \
           || { guard_warn "freeze_epoch" "$freeze_epoch"; freeze_epoch=0; }
-        freeze_done="$(jq -c --arg s "$freeze_since" \
-          'select(.event == "limit-freeze-escalated" and .since == $s)' \
-          "$union_log" 2>/dev/null | head -n1 || true)"
+        freeze_done="$(jq -nRc --arg s "$freeze_since" '
+            reduce (inputs | fromjson? // empty
+                    | select(type == "object" and .event == "limit-freeze-escalated"
+                             and .since == $s)) as $e
+              (null; . // $e)
+            | values' "$union_log" 2>&1)" \
+          || { guard_warn "freeze_done" "$freeze_done"; freeze_done=""; }
         if [[ -z "$freeze_done" ]] && (( freeze_epoch > 0 )) \
            && (( now_epoch - freeze_epoch >= limit_escalate_after_hours * 3600 )); then
           freeze_body="$cycle_dir/limit-freeze-issue.md"

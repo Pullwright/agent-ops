@@ -206,6 +206,63 @@ assert_eq "a hit after a clear starts a new freeze at its own ts, not the old on
 assert_eq "limit_standdown_since is empty for a stream with no limit events" \
   "" "$(limit_standdown_since <<<'{"ts":"2026-01-01T00:00:00Z","event":"cycle-end"}')"
 
+# --- A union line that does not parse (#2037) ------------------------------
+# The shape both VM nodes' logs carried from their disk-pressure period: a
+# record cut off part-way, with no newline, run into a whole later record on
+# the same line. One such line anywhere in the union made a slurp abort, so
+# both readers printed nothing — a governing limit read as no limit, and the
+# freeze had no start to age from. The line is skipped; everything around it
+# still counts.
+spliced_hit='{"ts":"2026-09-17T06:54:54Z","event":"limit-hit","resume_at":"2099-01-01T00:00:00Z"}'
+spliced_line='{"ts":"2026-09-18T00:00:00Z","event":"github-budget","core":{"limit":5000,"{"ts":"2026-09-18T00:05:00Z","event":"cycle-end","exit_code":0}'
+assert_eq "limit_union_record still finds the governing hit past a spliced line" \
+  "2099-01-01T00:00:00Z" \
+  "$(printf '%s\n' "$spliced_hit" "$spliced_line" | limit_union_record | jq -r '.resume_at')"
+assert_eq "…and before one" \
+  "2099-01-01T00:00:00Z" \
+  "$(printf '%s\n' "$spliced_line" "$spliced_hit" | limit_union_record | jq -r '.resume_at')"
+assert_eq "limit_standdown_since still names the freeze's start past a spliced line" \
+  "2026-09-17T06:54:54Z" "$(printf '%s\n' "$spliced_hit" "$spliced_line" | limit_standdown_since)"
+# Most-recent-wins is unchanged by the skip: a clear after the bad line still
+# retires the hit before it, and a hit after the clear still starts a new
+# freeze at its own ts.
+spliced_cleared="$(printf '%s\n' "$spliced_hit" "$spliced_line" \
+  '{"ts":"2026-09-19T00:00:00Z","event":"limit-cleared"}')"
+assert_eq "a limit-cleared past a spliced line still supersedes the hit" \
+  "" "$(limit_union_record <<<"$spliced_cleared")"
+assert_eq "…and leaves no freeze to age" "" "$(limit_standdown_since <<<"$spliced_cleared")"
+spliced_rehit="$spliced_cleared"$'\n''{"ts":"2026-09-20T00:00:00Z","event":"limit-hit","resume_at":"2099-02-01T00:00:00Z"}'
+assert_eq "a hit after that clear governs again" \
+  "2099-02-01T00:00:00Z" "$(limit_union_record <<<"$spliced_rehit" | jq -r '.resume_at')"
+assert_eq "…and starts a new freeze at its own ts" \
+  "2026-09-20T00:00:00Z" "$(limit_standdown_since <<<"$spliced_rehit")"
+# A line that parses to something other than a record (a stump that happens
+# to be a bare number or string) is skipped too, rather than failing the
+# whole read on `.event`.
+assert_eq "a line that parses to a non-object is skipped, not fatal" \
+  "2099-01-01T00:00:00Z" \
+  "$(printf '%s\n' "$spliced_hit" '5000' '"text"' '[1]' | limit_union_record | jq -r '.resume_at')"
+# An unparseable line is the reader's to skip; a read that fails outright is
+# not, and must not pass for "no limit": the exit status carries it to the
+# caller, which reports it (`guard_warn` in agent-cycle.sh). A jq that dies —
+# the OOM kill of 2026-10-01 — is stood in for by one that exits 137.
+fake_jq_dir="$(mktemp -d)"
+printf '#!/bin/sh\necho "jq: killed" >&2\nexit 137\n' > "$fake_jq_dir/jq"
+chmod +x "$fake_jq_dir/jq"
+if PATH="$fake_jq_dir:$PATH" limit_union_record <<<"$spliced_hit" >/dev/null 2>&1; then
+  printf 'FAIL - limit_union_record reports a failed read as success\n'
+  failures=$(( failures + 1 ))
+else
+  printf 'ok   - limit_union_record exits non-zero when its read fails outright\n'
+fi
+if PATH="$fake_jq_dir:$PATH" limit_standdown_since <<<"$spliced_hit" >/dev/null 2>&1; then
+  printf 'FAIL - limit_standdown_since reports a failed read as success\n'
+  failures=$(( failures + 1 ))
+else
+  printf 'ok   - limit_standdown_since exits non-zero when its read fails outright\n'
+fi
+rm -rf "$fake_jq_dir"
+
 # --- limit_later_record: requirement 2.1's "later resume wins" -------------
 rec_early='{"resume_at":"2030-01-01T00:00:00Z","class":"weekly","reset_known":true}'
 rec_late='{"resume_at":"2031-01-01T00:00:00Z","class":"monthly","reset_known":false}'
