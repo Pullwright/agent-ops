@@ -54,6 +54,10 @@
 # Sourced, never executed: no shell options are set here, matching every
 # other lib/*.sh — the caller owns those.
 
+# The streamed read of the log and its span (agent-ops#1649).
+# shellcheck source=lib/union-stream.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/union-stream.sh"
+
 # --- Read: per-node selection/contended-claim-lost counts -------------------
 #
 # The identical event population `scripts/pickup-metrics.sh`'s own
@@ -63,15 +67,27 @@
 # as there), just grouped by node instead of split into an adoption-boundary
 # era: fleet sizing has no "before finish-then-continue" question to ask, so
 # there is nothing here for that boundary to answer.
-# shellcheck disable=SC2016  # jq's own $all/$since, not the shell's.
+#
+# Folded from a stream (agent-ops#1649), never a slurp of the whole log:
+# `union_stream` reads the log a line at a time through `fromjson? //
+# empty`, drops non-objects (the whole-log form dropped them too), keeps only
+# the objects at or after SINCE whose `event` FLEET_SIZING_CONTENTION_EVENTS
+# names, and folds the window's span — the least and greatest non-empty
+# `.ts // ""` over every object at or after SINCE, its `nonempty` rule — as
+# it goes. So the fold below holds a few events per cycle, never the whole
+# parsed log. A change to the fold that reads another event type must add it
+# to the declaration, or it sees none — `test/union-stream.test.sh` fails
+# when it does not.
+FLEET_SIZING_CONTENTION_EVENTS="selection claim-lost"
+# shellcheck disable=SC2016  # jq's own $since/$k/$sel, not the shell's.
+FLEET_SIZING_CONTENTION_KEEP_JQ='select($since == "" or ((.ts // "") >= $since)) | select(union_wanted)'
+# shellcheck disable=SC2016  # jq's own $k/$sel/$cont, not the shell's.
 FLEET_SIZING_CONTENTION_BY_NODE_JQ='
   def ratio($c; $s): (if $s == 0 then null else ($c / $s) end);
 
-  ($all | map(select(type == "object"))) as $all2
-  | ($all2 | map(select($since == "" or (.ts // "") >= $since))) as $ev
-  | ($ev | map(.ts // "") | map(select(. != "")) | sort) as $ts_all
-  | ($ev | map(select(.event == "selection" and ((.node // "") != "")))) as $sel
-  | ($ev | map(select(.event == "claim-lost"
+  union_split_span as $k
+  | ($k.events | map(select(.event == "selection" and ((.node // "") != "")))) as $sel
+  | ($k.events | map(select(.event == "claim-lost"
       and ((.node // "") != "")
       and (.cause == "held" or .cause == "pr-held")))) as $cont
   | ($sel  | group_by(.node) | map({key: .[0].node, value: length}) | from_entries) as $sel_by_node
@@ -86,10 +102,7 @@ FLEET_SIZING_CONTENTION_BY_NODE_JQ='
         }
       }) | from_entries) as $by_node
   | {
-      window: {
-        from: (if ($ts_all | length) == 0 then null else $ts_all[0] end),
-        to:   (if ($ts_all | length) == 0 then null else $ts_all[-1] end)
-      },
+      window: {from: $k.span.lo, to: $k.span.hi},
       fleet: {
         selections: ($sel | length),
         contended_losses: ($cont | length),
@@ -105,15 +118,18 @@ FLEET_SIZING_CONTENTION_BY_NODE_JQ='
 # empty or unreadable log, on the same terms `item_lifecycle_pickup_pairs`
 # already does.
 fleet_sizing_contention_by_node() {
-  local src="${1:--}" since="${2:-}" all_json="" out=""
-  if [[ "$src" == "-" ]]; then
-    all_json="$(jq -c -R 'fromjson? // empty' 2>/dev/null | jq -sc '.' 2>/dev/null || true)"
-  elif [[ -s "$src" ]]; then
-    all_json="$(jq -c -R 'fromjson? // empty' "$src" 2>/dev/null | jq -sc '.' 2>/dev/null || true)"
+  local src="${1:--}" since="${2:-}" out="" kept=""
+  # The kept events travel through a temp file, not a pipe, so the fold runs
+  # only on a stream that ran to its end (its exit status is the gate).
+  if [[ "$src" == "-" || -s "$src" ]] && kept="$(mktemp 2>/dev/null)"; then
+    [[ "$src" == "-" ]] && src=/dev/stdin
+    if union_stream "$src" --raw --objects --events "$FLEET_SIZING_CONTENTION_EVENTS" \
+         --keep "$FLEET_SIZING_CONTENTION_KEEP_JQ" --ts nonempty --since "$since" \
+         > "$kept" 2>/dev/null; then
+      out="$(jq -sc "$UNION_STREAM_JQ $FLEET_SIZING_CONTENTION_BY_NODE_JQ" "$kept" 2>/dev/null || true)"
+    fi
+    rm -f "$kept" 2>/dev/null
   fi
-  [[ -n "$all_json" ]] || all_json='[]'
-  out="$(jq -nc --arg since "$since" 'input as $all | ('"$FLEET_SIZING_CONTENTION_BY_NODE_JQ"')' \
-    <<<"$all_json" 2>/dev/null || true)"
   [[ -n "$out" ]] || out='{"window":{"from":null,"to":null},"fleet":{"selections":0,"contended_losses":0,"ratio":null},"by_node":{}}'
   printf '%s' "$out"
 }

@@ -132,34 +132,48 @@ stage_budget_settings() {
 #     is one. It still counts as a run, and as a kill.
 #   an event predating `kill_reason` is read the way it was true at the time:
 #     exit 124 was a wall-clock kill and nothing else could produce it.
+#
+# Only the event types STAGE_BUDGET_OBSERVATIONS_EVENTS names are gathered,
+# never the whole parsed log (agent-ops#1649), in the one jq process that runs
+# the fold; a change to the fold that reads another type must add it there —
+# `test/union-stream.test.sh` fails when it does not. A parsed value that is
+# not an object is gathered too, so it still aborts the fold exactly as it
+# always has.
+STAGE_BUDGET_OBSERVATIONS_EVENTS="selection stage-end review-stage-end"
+# shellcheck disable=SC2016  # jq's own $repo_of/$actor/$killed, not the shell's.
+STAGE_BUDGET_OBSERVATIONS_JQ='
+  (map(select(.event == "selection" and (.cycle // "") != "" and (.repo // "") != ""))
+   | map({key: .cycle, value: .repo}) | from_entries) as $repo_of
+  | [ .[]
+      | select((.event == "stage-end" or .event == "review-stage-end")
+               and (.exit_code | type) == "number")
+      | (if .event == "review-stage-end" then "project-reviewer" else (.stage // "") end) as $actor
+      | select($actor != "")
+      | (if (.kill_reason // "") != "" then .kill_reason
+         elif .exit_code == 124 then "backstop"
+         else "" end) as $killed
+      | {
+          actor: $actor,
+          repo: (if $actor == "enabler" or $actor == "enabler-adjudicate" or $actor == "enabler-decide"
+                 then "*"
+                 elif $actor == "coordinator" then (.repo // "*")
+                 else (.repo // $repo_of[(.cycle // "")] // "*") end),
+          model: (.model // "*"),
+          ts: (.ts // ""),
+          duration_min: (if $killed != "" or (.duration_ms | type) != "number"
+                         then null else (.duration_ms / 60000) end),
+          gap_max: (if (.gaps | type) == "object" and (.gaps.max | type) == "number"
+                    then .gaps.max else null end),
+          killed: $killed
+        } ]
+  | sort_by(.ts)'
 stage_budget_observations() {
-  jq -c -R 'fromjson? // empty' 2>/dev/null \
-  | jq -sc '
-      (map(select(.event == "selection" and (.cycle // "") != "" and (.repo // "") != ""))
-       | map({key: .cycle, value: .repo}) | from_entries) as $repo_of
-      | [ .[]
-          | select((.event == "stage-end" or .event == "review-stage-end")
-                   and (.exit_code | type) == "number")
-          | (if .event == "review-stage-end" then "project-reviewer" else (.stage // "") end) as $actor
-          | select($actor != "")
-          | (if (.kill_reason // "") != "" then .kill_reason
-             elif .exit_code == 124 then "backstop"
-             else "" end) as $killed
-          | {
-              actor: $actor,
-              repo: (if $actor == "enabler" or $actor == "enabler-adjudicate" or $actor == "enabler-decide"
-                     then "*"
-                     elif $actor == "coordinator" then (.repo // "*")
-                     else (.repo // $repo_of[(.cycle // "")] // "*") end),
-              model: (.model // "*"),
-              ts: (.ts // ""),
-              duration_min: (if $killed != "" or (.duration_ms | type) != "number"
-                             then null else (.duration_ms / 60000) end),
-              gap_max: (if (.gaps | type) == "object" and (.gaps.max | type) == "number"
-                        then .gaps.max else null end),
-              killed: $killed
-            } ]
-      | sort_by(.ts)' 2>/dev/null || printf '[]'
+  # shellcheck disable=SC2016,SC2086  # jq's own $e/$ARGS; a word list by design.
+  jq -nRc '
+    def wanted: .event as $e | any($ARGS.positional[]; . == $e);
+    [ inputs | fromjson? // empty | select(type != "object" or wanted) ]
+    | ('"$STAGE_BUDGET_OBSERVATIONS_JQ"')' --args $STAGE_BUDGET_OBSERVATIONS_EVENTS 2>/dev/null \
+    || printf '[]'
 }
 
 # stage_budget_table OBSERVATIONS_JSON SETTINGS_JSON NOW_ISO

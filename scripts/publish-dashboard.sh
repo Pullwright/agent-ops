@@ -53,6 +53,8 @@ TEMPLATE="$SCRIPT_DIR/dashboard/index.html"
 . "$SCRIPT_DIR/lib/limit-detect.sh"
 # shellcheck source=lib/cycle-state.sh
 . "$SCRIPT_DIR/lib/cycle-state.sh"
+# shellcheck source=lib/union-stream.sh
+. "$SCRIPT_DIR/lib/union-stream.sh"
 # shellcheck source=lib/item-lifecycle.sh
 . "$SCRIPT_DIR/lib/item-lifecycle.sh"
 # shellcheck source=lib/rework-panel.sh
@@ -867,9 +869,9 @@ epoch_of() { date -d "$1" +%s 2>/dev/null || echo 0; }
 # budget under WSL2, where each fork costs far more. The stage transcripts
 # are already individual files on disk, so every existing one in the window
 # is now handed straight to a single jq invocation via --rawfile (jq opens
-# the file itself: no extra fork, and — like events_file above — no 128 KB
-# argv cap either), and that one process does every parse, fenced-```json```
-# extraction, envelope-field pull and limit-phrase scan the two functions
+# the file itself: no extra fork, and — like the window's own events file
+# below — no 128 KB argv cap either), and that one process does every parse,
+# fenced-```json``` extraction, envelope-field pull and limit-phrase scan the two functions
 # used to fork out for, for the whole window at once. The limit-phrase scan
 # this replaces was its own backstop for a cycle whose limit-hit never made
 # it into the log (e.g. the Script crashed before log_event ran, or the
@@ -1152,12 +1154,68 @@ fleet_logs "$state_dir" "$peers_dir" log.jsonl > "$raw_events_jsonl" 2>/dev/null
 read_events "$raw_events_jsonl" > "$events_jsonl" 2>/dev/null || : > "$events_jsonl"
 dropped_log_lines=$(( $(count_lines "$raw_events_jsonl") - $(count_lines "$events_jsonl") ))
 (( dropped_log_lines >= 0 )) || dropped_log_lines=0
-# The same events as one JSON array on disk, for the per-cycle filters: a file
-# beats re-piping the whole stream once per cycle, and files (unlike argv) have
-# no 128 KB cap.
-events_file="$work_tmp/events.json"
-jq -sc '.' "$events_jsonl" > "$events_file" 2>/dev/null \
-  || printf '[]' > "$events_file"
+# --- Full-log readers stream rather than slurp (agent-ops#1649) --------------
+# The readers of `$events_jsonl` below fold it as a stream — `jq -n` over
+# `inputs`, with `reduce`/`foreach` for an aggregate — or keep only the events
+# they declare before anything is gathered into an array (lib/union-stream.sh),
+# so they never hold the whole parsed log at once. A `jq -s` over the union
+# materialises every event in one process — about five bytes of RSS per byte
+# of log — so a dozen of them would keep the Publisher's working set a linear
+# function of a log `scripts/rotate-logs.sh` never rotates. What a reader
+# gathers is only what its answer is about: one small record per cycle or
+# node, the events of the few types it reads, or a bounded tail. Three readers
+# on this path still gather log-scale data (agent-ops#2042): the item-
+# lifecycle fold, which gathers every item-scoped event because its records
+# carry each item's whole history; four of the pager's invariants
+# (lib/pager-invariants.sh, on a GitHub tick), which gather the union
+# unfiltered; and the stand-down banner's `limit_union_record`, which reads
+# through lib/limit-detect.sh's own reader (agent-ops#2037). Each `reduce` below keeps its one
+# map at the top of the accumulator and updates an entry with `|=`, never
+# through an `as` binding of anything read from the accumulator: a binding
+# holds a second reference to the map, so the update copies the whole of it
+# for every event, which turns a linear fold quadratic.
+#
+# The per-cycle summary is the one pass the cycle-keyed readers share — the
+# no-op tick classification, the overlap count, the detail cache's own key and
+# the cost join's cycle index — one entry per cycle id: how many events it has
+# (`n`), its newest `ts` (`last`, the max over `.ts // ""`), the distinct event
+# types it logged (`types`), its own `cycle-skipped {reason: "overlap"}` count
+# (`overlap`), and its latest `repo`/`item`/`selection.source` by `ts`, each as
+# a `[ts, value]` pair — the latest by `ts` with the later record winning a tie,
+# which is exactly the last element a stable `sort_by(.ts)` leaves. Only a
+# string, non-empty `cycle` is a cycle id here, as everywhere the pipelines
+# mint one.
+#
+# The summary is the detail window's cache key as well as its readers' input,
+# so a summary that could not be built — a record that is not an object aborts
+# it, exactly where the whole-array readers it replaces failed — fails the
+# detail window's render too (below), rather than leaving every cycle's key
+# without its event count and caching rows rendered against it.
+cycle_summary_file="$work_tmp/cycle-summary.json"
+cycle_summary_err="$work_tmp/cycle-summary.err"
+cycle_summary_error=""
+jq -nc '
+  reduce (inputs | select((.cycle | type) == "string" and .cycle != "")) as $e ({};
+    .[$e.cycle] |= (
+      (. // {n: 0, last: null, types: [], overlap: 0, repo: null, item: null, source: null})
+      | .n += 1
+      | .last = (($e.ts // "") as $t
+                 | if .last == null or $t > .last then $t else .last end)
+      | (if any(.types[]; . == $e.event) then . else .types += [$e.event] end)
+      | (if $e.event == "cycle-skipped" and $e.reason == "overlap"
+         then .overlap += 1 else . end)
+      | (if $e.repo and (.repo == null or $e.ts >= .repo[0])
+         then .repo = [$e.ts, $e.repo] else . end)
+      | (if $e.item and (.item == null or $e.ts >= .item[0])
+         then .item = [$e.ts, $e.item] else . end)
+      | (if $e.event == "selection" and (.source == null or $e.ts >= .source[0])
+         then .source = [$e.ts, $e.source] else . end)))' \
+  "$events_jsonl" > "$cycle_summary_file" 2>"$cycle_summary_err"
+if ! jq -e 'type == "object"' "$cycle_summary_file" >/dev/null 2>&1; then
+  printf '{}' > "$cycle_summary_file"
+  cycle_summary_error="$(head -n 1 "$cycle_summary_err" 2>/dev/null)"
+  [[ -n "$cycle_summary_error" ]] || cycle_summary_error="jq produced no summary"
+fi
 
 # --- Recent cycle ids, newest first, fleet-wide -------------------------------
 # One "<id>\t<cycles-dir>" line per known cycle: ours (from the local dir and
@@ -1207,18 +1265,20 @@ noop_cycles_file="$work_tmp/noop-cycles.json"
 jq -c --arg re "$cycle_id_re" '
   # The kind is named by the outcome value the detail ladder (cycle_obj)
   # would have given the row: "stand-down" or "skipped", or null for any
-  # cycle that is not one of the two no-op shapes.
+  # cycle that is not one of the two no-op shapes. Read off the per-cycle
+  # summary above, whose `types` lists the distinct event types the cycle
+  # logged.
   def noop_kind:
-    ([ .[].event ] | unique) as $t
+    (.types | unique) as $t
     | if   (($t - ["cycle-start", "stand-down", "cycle-end"]) == [])
            and ($t | contains(["stand-down", "cycle-end"]))    then "stand-down"
       elif (($t - ["cycle-start", "cycle-skipped", "cycle-end"]) == [])
            and ($t | contains(["cycle-skipped", "cycle-end"])) then "skipped"
       else null end;
-  [ .[] | select((.cycle // "") | test($re)) ]
-  | group_by(.cycle)
-  | map({id: .[0].cycle, kind: noop_kind, last_ts: ([ .[].ts // "" ] | max)})
-  | map(select(.kind != null))' "$events_file" > "$noop_cycles_file" 2>/dev/null
+  . as $summary
+  | [ keys[] | select(test($re))
+      | {id: ., kind: ($summary[.] | noop_kind), last_ts: $summary[.].last} ]
+  | map(select(.kind != null))' "$cycle_summary_file" > "$noop_cycles_file" 2>/dev/null
 jq -e 'type == "array"' "$noop_cycles_file" >/dev/null 2>&1 || printf '[]' > "$noop_cycles_file"
 noop_ids="$work_tmp/noop-ids"
 jq -r '.[].id' "$noop_cycles_file" > "$noop_ids" 2>/dev/null || : > "$noop_ids"
@@ -1237,9 +1297,8 @@ noop_json="$(jq -c '{total: length,
 # keeps its ordinary row regardless, and this count is additional information
 # about a row already shown, not a tick held out of the list.
 overlap_count="$(jq -c --arg re "$cycle_id_re" '
-  [ .[] | select((.cycle // "") | test($re))
-        | select(.event == "cycle-skipped" and .reason == "overlap") ]
-  | length' "$events_file" 2>/dev/null)"
+  [ to_entries[] | select(.key | test($re)) | .value.overlap ] | add // 0' \
+  "$cycle_summary_file" 2>/dev/null)"
 [[ "$overlap_count" =~ ^[0-9]+$ ]] || overlap_count=0
 noop_json="$(jq -c --argjson overlap "$overlap_count" '. + {overlap: $overlap}' <<<"$noop_json" 2>/dev/null)"
 [[ -n "$noop_json" ]] || noop_json="{\"total\":0,\"standdown\":0,\"skipped\":0,\"overlap\":$overlap_count,\"last_ts\":null}"
@@ -1329,16 +1388,15 @@ mkdir -p "$cycle_cache" 2>/dev/null || true
 detail_salt="$( { cat "$detail_defs" 2>/dev/null; printf '%s' "$TRANSCRIPT_CAP"; } \
   | sha256sum 2>/dev/null | cut -d' ' -f1)"
 
-# How far each cycle's events have got, in one pass. Events are append-only per
-# cycle, so a count and the newest timestamp settle whether anything moved
-# without hashing nine megabytes of union log on every tick.
+# How far each cycle's events have got, read off the per-cycle summary above.
+# Events are append-only per cycle, so a count and the newest timestamp settle
+# whether anything moved without hashing nine megabytes of union log on every
+# tick.
 declare -A ev_pos=()
 while IFS=$'\t' read -r _c _n _last; do
   [[ -n "$_c" ]] && ev_pos["$_c"]="$_n:$_last"
-done < <(jq -r 'group_by(.cycle)[]
-                | select(.[0].cycle != null and .[0].cycle != "")
-                | [.[0].cycle, length, ([.[].ts // ""] | max)] | @tsv' \
-           "$events_file" 2>/dev/null)
+done < <(jq -r 'to_entries[] | [.key, .value.n, .value.last] | @tsv' \
+           "$cycle_summary_file" 2>/dev/null)
 
 # Read the window, then stat every stage file it could hold in a single call.
 # Forty cycles is 240 paths, comfortably inside ARG_MAX, and one fork where a
@@ -1366,7 +1424,7 @@ if (( ${#stat_paths[@]} > 0 )); then
 fi
 
 manifest_items=()
-rawfile_args=(--rawfile events_raw "$events_file")
+rawfile_args=()
 order_items=()      # every cycle in the window, newest first — the page's order
 todo_items=()       # only those whose key moved, in the order jq will emit them
 todo_keys=()
@@ -1432,6 +1490,37 @@ if (( ${#todo_items[@]} > 0 )); then
   manifest_json="[$(IFS=,; echo "${manifest_items[*]}")]"
   order_json="[$(printf '"%s",' "${todo_items[@]}" | sed 's/,$//')]"
 
+  # The events of the cycles being rebuilt, and only those: `cycle_obj` reads
+  # one cycle's own events and nothing else, so a stream that keeps an event
+  # only when its cycle is one of `$order` gathers a few dozen events rather
+  # than the whole log. A cycle's own events keep their log order, which is
+  # all `group_by(.cycle)` below needs to give each cycle the same list the
+  # whole log would. The ids travel in a file, not argv (requirement 4g).
+  #
+  # Either read failing fails the render, exactly as the whole-array program
+  # failed when it could not read the events: a record that is not an object
+  # (`.cycle` cannot index it), or an `$order` jq cannot parse, takes the
+  # failure path below — `cycle_render.ok: false` with jq's own error, no
+  # cycle rebuilt and nothing cached — never a render against no events,
+  # which would show every rebuilt cycle hollow and cache it as current. A
+  # per-cycle summary that could not be built fails it the same way, since
+  # every cache key above was taken from it.
+  detail_order_file="$work_tmp/detail-order.json"
+  detail_events_file="$work_tmp/detail-events.json"
+  detail_err="$work_tmp/detail.err"
+  printf '%s' "$order_json" > "$detail_order_file"
+  detail_read_ok=true
+  if [[ -n "$cycle_summary_error" ]]; then
+    detail_read_ok=false
+    printf 'the per-cycle summary could not be built: %s\n' "$cycle_summary_error" > "$detail_err"
+  elif ! jq -nc --slurpfile order "$detail_order_file" '
+         ($order[0] | map({key: ., value: true}) | from_entries) as $want
+         | [ inputs | select((.cycle | type) == "string" and $want[.cycle] == true) ]' \
+         "$events_jsonl" > "$detail_events_file" 2>"$detail_err"; then
+    detail_read_ok=false
+  fi
+  rawfile_args+=(--rawfile events_raw "$detail_events_file")
+
   # The dynamic trailer that drives the static defs above: bound via plain
   # printf (never string-interpolated into the program text), so nothing in a
   # cycle id or transcript can be mistaken for jq syntax. The `$name`s below are
@@ -1461,10 +1550,15 @@ if (( ${#todo_items[@]} > 0 )); then
 
   fresh_file="$work_tmp/fresh-cycles.json"
   detail_prog="$work_tmp/detail.jq"
-  detail_err="$work_tmp/detail.err"
   cat "$detail_defs" "$detail_main" > "$detail_prog"
-  jq -n -f "$detail_prog" "${rawfile_args[@]}" --argjson cap "$TRANSCRIPT_CAP" \
-    > "$fresh_file" 2>"$detail_err"
+  # A read that failed above leaves nothing to render and its error in
+  # `$detail_err`, so the failure path below reports it.
+  if [[ "$detail_read_ok" == "true" ]]; then
+    jq -n -f "$detail_prog" "${rawfile_args[@]}" --argjson cap "$TRANSCRIPT_CAP" \
+      > "$fresh_file" 2>"$detail_err"
+  else
+    : > "$fresh_file"
+  fi
   # A hard failure (a bad program, a file that vanished between the stat above
   # and jq's own open) must not take down the whole publish — fall back to an
   # empty result exactly as the per-cycle loop this replaced did when nothing
@@ -1578,8 +1672,8 @@ fi
 # exactly those whose id ends in "-<lock_pid>".
 running_events='[]'
 if [[ "$lock_alive" == "true" && -n "$lock_pid" ]]; then
-  running_events="$(jq -sc --arg pid "$lock_pid" \
-    '[ .[] | select((.cycle // "") | endswith("-" + $pid)) ] | sort_by(.ts)' "$events_jsonl" 2>/dev/null)"
+  running_events="$(jq -nc --arg pid "$lock_pid" \
+    '[ inputs | select((.cycle // "") | endswith("-" + $pid)) ] | sort_by(.ts)' "$events_jsonl" 2>/dev/null)"
   [[ -z "$running_events" || "$running_events" == "null" ]] && running_events='[]'
 fi
 
@@ -1721,6 +1815,21 @@ if (( FULL )); then
 # the fleet's whole history, and a fast tick carries the last full answer
 # forward from the payload cache instead. Left unindented so the diff that
 # introduced the tier stays readable against the code it wraps (#798).
+# --- The union, partitioned once for the readers that declare event types ----
+# One streamed pass over `$events_jsonl` writes, for each of these readers,
+# `$union_kept_dir/<reader>.jsonl`: the events of the types
+# `union_reader_events` declares for it (lib/union-stream.sh), in log order,
+# closed by the whole log's span (agent-ops#1649). Each reader's program sits
+# between `# union-reader: <reader>` and `# union-reader-end: <reader>` below,
+# and `test/union-stream.test.sh` fails when one reads an event type its
+# declaration lacks. One parse of the union serves all of them where each used
+# to parse it for itself. A pass that fails — a record that is not an object
+# aborts it, as it aborted each whole-array reader — leaves no file behind, so
+# every one of these readers takes its own failure path.
+union_kept_dir="$work_tmp/union-kept"
+union_partition "$events_jsonl" "$union_kept_dir" \
+  scorecards blocked-enrichment landings decisions escape-audits github-budget \
+  open-blocked void 2>/dev/null || true
 # --- Counts / roll-ups (scan all recent transcripts for cost) ----------------
 # Envelopes are read in batches — one jq per 25 files, each row's day derived
 # from input_filename — rather than two jq forks per file plus a re-parse of a
@@ -1846,43 +1955,40 @@ today="$(date -u -d "$now_iso" +%Y%m%d)"
 # to the 60-day `by_day` window it rides alongside.
 recent_cut="$(date -u -d "$now_iso -3 days" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "1970-01-01T00:00:00Z")"
 # `cost_rows[]`'s join (issue #593, D21): which work item the money bought,
-# derived from the same fleet-wide event union `$events_file` already holds
-# (`$ev` below) rather than from `$cycles_file` — `$cycles_file` is capped at
+# derived from the same fleet-wide event union, through the per-cycle summary
+# above, rather than from `$cycles_file` — `$cycles_file` is capped at
 # MAX_CYCLES (40) so a fleet running several cycles an hour loses the join for
 # all but the newest few hours, while the event union is never rotated
 # (requirement 2.6 — `log.jsonl` is one of the two logs `scripts/rotate-
 # logs.sh` never touches) and outlives the cost scan's own COST_SCAN_DAYS
 # (60 days) by construction, retained per `analytics_retained_days`
-# (requirement 2.6d) rather than a size-based rotation. Grouping
-# the union by `.cycle` and re-deriving `repo`/`item`/`source`/`outcome` here
-# is deliberately the same expression `cycle_obj` (above) uses for its own
-# per-cycle rendering — one cycle's facts must read the same on both surfaces
-# — except `title` is dropped: no reader of `cost_rows` needs it, and carrying
-# it here would just be one more field to keep in lock-step for nothing.
+# (requirement 2.6d) rather than a size-based rotation. Each cycle's
+# `repo`/`item`/`source`/`outcome` is deliberately the same reading `cycle_obj`
+# (above) makes for its own per-cycle rendering, since one cycle's facts must
+# read the same on both surfaces: the latest `repo`, `item` and `selection`
+# source by `ts`, and the same outcome ladder over the event types the cycle
+# logged. `title` alone is dropped: no reader of `cost_rows` needs it, and
+# carrying it here would just be one more field to keep in lock-step for
+# nothing. All four are read off the per-cycle summary above, one entry per
+# cycle, never off the whole union.
 cycle_index_file="$work_tmp/cycle-index.json"
-jq -c --slurpfile ev "$events_file" -n '
-  ($ev[0] // [] | map(select((.cycle // "") != ""))) as $events
-  | ($events | group_by(.cycle) | map(
-      (.[0].cycle) as $cid
-      | (sort_by(.ts)) as $se
-      | ($se | map(.event)) as $types
-      | { ($cid): {
-            repo:   ([ $se[] | select(.repo)  | .repo ] | last),
-            item:   ([ $se[] | select(.item)  | .item ] | last),
-            source: ([ $se[] | select(.event=="selection") | .source ] | last),
-            outcome: (
-              if   ($types | any(. == "pr-ready"))       then "pr-ready"
-              elif ($types | any(. == "pr-raised"))      then "pr-raised"
-              elif ($types | any(. == "attempt-failed")) then "failed"
-              elif ($types | any(. == "none-selected"))  then "none-selected"
-              elif ($types | any(. == "stand-down"))     then "stand-down"
-              elif ($types | any(. == "cycle-skipped"))  then "skipped"
-              elif ($types | any(. == "selection"))      then "selected"
-              else "ended" end
-            )
-          }
-        }
-    ) | add // {})' > "$cycle_index_file" 2>/dev/null
+jq -c '
+  with_entries(.value |= (
+    (.types) as $types
+    | { repo:   (.repo   // [null, null])[1],
+        item:   (.item   // [null, null])[1],
+        source: (.source // [null, null])[1],
+        outcome: (
+          if   ($types | any(. == "pr-ready"))       then "pr-ready"
+          elif ($types | any(. == "pr-raised"))      then "pr-raised"
+          elif ($types | any(. == "attempt-failed")) then "failed"
+          elif ($types | any(. == "none-selected"))  then "none-selected"
+          elif ($types | any(. == "stand-down"))     then "stand-down"
+          elif ($types | any(. == "cycle-skipped"))  then "skipped"
+          elif ($types | any(. == "selection"))      then "selected"
+          else "ended" end
+        )
+      }))' "$cycle_summary_file" > "$cycle_index_file" 2>/dev/null
 jq -e 'type == "object"' "$cycle_index_file" >/dev/null 2>&1 || printf '{}' > "$cycle_index_file"
 counts_json="$(jq -n --slurpfile cyc "$cycles_file" --slurpfile costs_in "$costs_file" \
   --slurpfile cycle_index_in "$cycle_index_file" \
@@ -2035,16 +2141,41 @@ rev_tier_complex="$(resolve_model_id reviewer_model_complex "$rev_tier_complex_r
 # abandoned item's *fate* must read the same whether the evidence that settled
 # it sits inside or outside that window — the fold's own "fate is current
 # state; `--since` bounds only the population" rule (docs/FLOW-SCHEMA.md).
+#
+# The fold's `records[]` is itself log-scale (every item-scoped event, as each
+# record's `instants`), and the scorecards below read only each record's fate.
+# So the one pass that checks the fold printed an object also writes the
+# `{repo, item, fate}` projection the scorecards slurp, instead of their
+# loading every record's whole history alongside the events they read
+# (agent-ops#1649).
 lifecycle_file="$work_tmp/item-lifecycle.json"
+lifecycle_fates_file="$work_tmp/item-lifecycle-fates.json"
 item_lifecycle_fold "$events_jsonl" "" > "$lifecycle_file" 2>/dev/null
-jq -e 'type == "object"' "$lifecycle_file" >/dev/null 2>&1 || printf '{"records":[]}' > "$lifecycle_file"
+# An empty fold result (the function cut short, or its file gone under a
+# sweep) makes jq print nothing and succeed, so the projection's own
+# emptiness is tested too: either way both files fall back to the empty
+# record set, which every later reader of them expects.
+if ! jq -c 'if type == "object" then {records: [(.records // [])[] | {repo, item, fate}]}
+            else error("not an object") end' "$lifecycle_file" > "$lifecycle_fates_file" 2>/dev/null \
+   || [[ ! -s "$lifecycle_fates_file" ]]; then
+  printf '{"records":[]}' > "$lifecycle_file"
+  printf '{"records":[]}' > "$lifecycle_fates_file"
+fi
 
 scorecards_file="$work_tmp/actor-scorecards.json"
-jq -c --arg cut "$day_cut" --argjson min_sample "$SCORECARD_MIN_SAMPLE" \
+# Only the event types the cards declare are gathered, never the whole log: the
+# partition above hands them on with the whole log's span as the last line
+# (`window_from`/`window_to`), which `union_split_span` peels off before `$ev`
+# is bound (agent-ops#1649).
+# union-reader: scorecards
+jq -sc --arg cut "$day_cut" --argjson min_sample "$SCORECARD_MIN_SAMPLE" \
       --arg impl_default "$impl_tier_default" --arg impl_trivial "$impl_tier_trivial" \
       --arg rev_default "$rev_tier_default" --arg rev_complex "$rev_tier_complex" \
-      --slurpfile lc "$lifecycle_file" '
-  . as $ev
+      --slurpfile lc "$lifecycle_fates_file" "$UNION_STREAM_JQ"'
+  union_split_span as $kept
+  | $kept.span as $span
+  | $kept.events
+  | . as $ev
   | def day_of: ((.ts // "" | tostring)
                  | if test("^[0-9]{4}-[0-9]{2}-[0-9]{2}")
                    then (.[0:4] + .[5:7] + .[8:10]) else null end);
@@ -2294,9 +2425,9 @@ jq -c --arg cut "$day_cut" --argjson min_sample "$SCORECARD_MIN_SAMPLE" \
        . as $a | {actor: $a,
          rows: ([$rows[] | select(.actor == $a) | del(.actor)] | sort_by([.model, .tier]))}
      )) as $actors_out
-  | ([ $ev[] | .ts // empty ]) as $tss
-  | {window_from: ($tss | min), window_to: ($tss | max), min_sample: $min_sample, actors: $actors_out}
-' "$events_file" > "$scorecards_file" 2>/dev/null
+  | {window_from: $span.lo, window_to: $span.hi, min_sample: $min_sample, actors: $actors_out}
+' "$union_kept_dir/scorecards.jsonl" > "$scorecards_file" 2>/dev/null
+# union-reader-end: scorecards
 if ! jq -e 'type == "object"' "$scorecards_file" >/dev/null 2>&1; then
   printf '%s' '{"window_from":null,"window_to":null,"min_sample":5,"actors":[
     {"actor":"coordinator","rows":[]},{"actor":"implementer","rows":[]},{"actor":"reviewer","rows":[]},
@@ -2361,10 +2492,21 @@ stage_gaps_file="$work_tmp/stage-gaps.json"
 # peer's `fleet_repair_log` hasn't reached yet still reaches `$review_events_union`
 # raw, and one malformed line aborts `jq -s` outright (agent-ops#794) —
 # taking the already-clean half down with it. Sanitised here with
-# `read_events`'s own idiom before the slurp, same as every other consumer of
-# a fleet log union.
-jq -c -R 'fromjson? // empty' "$review_events_union" | jq -sc '
-  def pct_of($arr; $q):
+# `read_events`'s own idiom, `fromjson? // empty` per line, same as every other
+# consumer of a fleet log union — inside `union_stream`'s raw mode, which also
+# keeps only the event types `union_reader_events stage-gaps` declares and
+# folds the span over every event as it streams, so nothing here holds the
+# whole union (agent-ops#1649). The fold runs only on a stream that ran to its
+# end.
+stage_gaps_events="$work_tmp/stage-gaps-events.jsonl"
+# union-reader: stage-gaps
+if union_stream "$review_events_union" --raw \
+     --events "$(union_reader_events stage-gaps | tr '\n' ' ')" > "$stage_gaps_events" 2>/dev/null; then
+jq -sc "$UNION_STREAM_JQ"'
+  union_split_span as $kept
+  | $kept.span as $span
+  | $kept.events
+  | def pct_of($arr; $q):
     ($arr | sort) as $s | ($s | length) as $n
     | if $n == 0 then null
       else $s[ ((($n * $q) | ceil) - 1) | if . < 0 then 0 else . end ]
@@ -2373,7 +2515,6 @@ jq -c -R 'fromjson? // empty' "$review_events_union" | jq -sc '
          | {stage: .stage, gaps: .gaps} ]
    + [ .[] | select(.event == "review-stage-end")
            | {stage: "project-reviewer", gaps: .gaps} ]) as $carriers
-  | ([ .[] | .ts // empty ]) as $tss
   | ($carriers | map(select(.gaps != null))
      | group_by(.stage) | map(
          (.[0].stage) as $stage
@@ -2385,8 +2526,10 @@ jq -c -R 'fromjson? // empty' "$review_events_union" | jq -sc '
              worst_run_p95: ($p95s | max),
              worst_run_max: ($maxs | max) }
        ) | sort_by(-.runs)) as $by_stage
-  | {window_from: ($tss | min), window_to: ($tss | max), by_stage: $by_stage}
-' > "$stage_gaps_file" 2>/dev/null
+  | {window_from: $span.lo, window_to: $span.hi, by_stage: $by_stage}
+' "$stage_gaps_events" > "$stage_gaps_file" 2>/dev/null
+fi
+# union-reader-end: stage-gaps
 jq -e 'type == "object"' "$stage_gaps_file" >/dev/null 2>&1 \
   || printf '{"window_from":null,"window_to":null,"by_stage":[]}' > "$stage_gaps_file"
 counts_merged="$(jq -c --slurpfile v "$stage_gaps_file" \
@@ -2406,7 +2549,7 @@ counts_merged="$(jq -c --slurpfile v "$stage_gaps_file" \
 # standing — `item-void` clears nothing — so listing the raw blocked set here
 # put items in *both* tables, in the one panel whose whole purpose is to keep
 # the two apart, and left them there for as long as the log remembered them.
-blocked_json="$(open_blocked_items "$events_jsonl" | jq -c \
+blocked_json="$(open_blocked_items "$union_kept_dir/open-blocked.jsonl" | jq -c \
   'map({repo: (.repo // ""), item: .item, ts: .ts, detail: (.detail // ""), stage: (.stage // ""), kind: (.kind // "")})' 2>/dev/null)"
 [[ -z "$blocked_json" ]] && blocked_json='[]'
 
@@ -2424,17 +2567,20 @@ blocked_json="$(open_blocked_items "$events_jsonl" | jq -c \
 # empty enrichment — every escalation and Enabler verdict silently dropped
 # from a panel that still rendered. `input` takes the rows, `inputs` the
 # event stream behind them; the order is the order the two files are named
-# in. `blocked_json` itself is small — a filtered, already-deduplicated
-# extract, never the whole log — so writing it to a temp file ahead of
-# `$events_jsonl` costs nothing that the here-string this replaced did not
-# already cost, and stops the events half from ever passing through bash
-# (agent-ops#1620).
+# in. The events are the partition's `blocked-enrichment` file — the event
+# types the join declares, never the whole log (agent-ops#1649) — whose span
+# line `union_split_span` sets aside. `blocked_json` itself is small — a
+# filtered, already-deduplicated extract, never the whole log — so writing it
+# to a temp file ahead of the events costs nothing that the here-string this
+# replaced did not already cost, and stops the events half from ever passing
+# through bash (agent-ops#1620).
 blocked_rows_file="$work_tmp/blocked-rows.json"
 printf '%s\n' "$blocked_json" > "$blocked_rows_file"
 # shellcheck disable=SC2016  # jq's $rows/$events/$r/$esc/$exam, not the shell's.
-blocked_json="$(jq -nc '
+# union-reader: blocked-enrichment
+blocked_json="$(jq -nc "$UNION_STREAM_JQ"'
   input as $rows
-  | [ inputs ] as $events
+  | ([ inputs ] | union_split_span).events as $events
   | [ $rows[]
       | . as $r
       | ([ $events[] | select(.event == "escalated" and (.item // "") == $r.item
@@ -2447,10 +2593,11 @@ blocked_json="$(jq -nc '
                  escalation_url: ($esc.issue_url // "")} end)
         + (if $exam == null then {}
            else {enabler_outcome: ($exam.outcome // ""), enabler_ts: ($exam.ts // "")} end) ]' \
-  "$blocked_rows_file" "$events_jsonl" 2>/dev/null || true)"
+  "$blocked_rows_file" "$union_kept_dir/blocked-enrichment.jsonl" 2>/dev/null || true)"
+# union-reader-end: blocked-enrichment
 [[ -z "$blocked_json" ]] && blocked_json='[]'
 
-void_json="$(void_items "$events_jsonl" | jq -c \
+void_json="$(void_items "$union_kept_dir/void.jsonl" | jq -c \
   'map({repo: (.repo // ""), item: .item, ts: .ts, detail: (.detail // ""), stage: (.stage // ""), evidence: (.evidence // "")})' 2>/dev/null)"
 [[ -z "$void_json" ]] && void_json='[]'
 
@@ -2471,9 +2618,19 @@ fi  # FULL
 # fire often enough in healthy contention to push out rows that do have
 # something to say. This is provisional, not permanent — once #611's panel
 # exists to consume the record, re-including it here is a one-line reversal.
-log_tail_json="$(jq -sc --argjson n "$MAX_LOG_TAIL" '
-  map(select(.event != "review-gate-checks-read" and .event != "first-seen"
-             and .event != "rework"))
+#
+# The tail is kept as the log streams past rather than sorted out of the whole
+# log (agent-ops#1649): a buffer of at most 2n+1 events is trimmed back to the
+# newest n each time it fills. A stable `sort_by(.ts)` of the buffer orders it
+# by `ts` and then by log position — buffered events keep their log order
+# among equal timestamps, and later ones are appended behind them — so the n
+# it keeps are exactly the n the whole-log sort would have put last, and the
+# final sort over the buffer gives the same rows in the same order.
+log_tail_json="$(jq -nc --argjson n "$MAX_LOG_TAIL" '
+  reduce (inputs | select(.event != "review-gate-checks-read" and .event != "first-seen"
+                          and .event != "rework")) as $e ([];
+    . + [$e]
+    | if length > 2 * $n + 1 then (sort_by(.ts) | .[length - $n:]) else . end)
   | sort_by(.ts) | reverse | .[0:$n]' "$events_jsonl" 2>/dev/null)"
 [[ -z "$log_tail_json" ]] && log_tail_json='[]'
 
@@ -2503,7 +2660,33 @@ fi
 # looking busy for ever; the page bounds the claim with the heartbeat's
 # freshness and `lock_stale_after`, rather than the derivation asserting more
 # than the log supports.
-node_live_json="$(jq -c '
+#
+# Two streamed passes rather than one over the whole log (agent-ops#1649).
+# The first folds, per node, only its latest `cycle-start` by `ts` — the later
+# record winning a tie, which is the one a stable `sort_by(.ts) | last` picks —
+# as a `[ts, cycle]` pair, or null for a node that has logged events but never
+# a `cycle-start`. The second keeps only each node's events of that one cycle,
+# which is every event `live_of` reads: its `$start` is that same latest
+# `cycle-start` (the latest of the node's is the latest of the cycle's), and
+# its `$c` is the cycle's own events, which a stable sort leaves in the order
+# the whole node's sorted events would have.
+node_latest_file="$work_tmp/node-latest-start.json"
+jq -nc '
+  reduce (inputs | select((.node | type) == "string" and .node != "")) as $e ({};
+    if $e.event == "cycle-start"
+    then .[$e.node] |= (if . == null or $e.ts >= .[0] then [$e.ts, $e.cycle] else . end)
+    else .[$e.node] |= . end)' "$events_jsonl" > "$node_latest_file"
+# A first pass that failed or was cut short (a record that is not an object, a
+# full `$work_tmp`, a kill) leaves no object to read, and the second pass would
+# then die on a null map with an error that names the program rather than the
+# missing input. So it is replaced by the empty map, and said plainly: every
+# card then shows no live state, the same answer the whole-array reader gave
+# when it failed.
+if ! jq -e 'type == "object"' "$node_latest_file" >/dev/null 2>&1; then
+  echo "publish-dashboard: the per-node latest-cycle pass produced no result; no node's live state is derived this tick" >&2
+  printf '{}' > "$node_latest_file"
+fi
+node_live_json="$(jq -nc --slurpfile latest "$node_latest_file" '
   def live_of:
     sort_by(.ts)
     | . as $evs
@@ -2534,12 +2717,20 @@ node_live_json="$(jq -c '
             title:  ([ $c[] | select(.event == "selection") | .title ]  | last),
             race_losses: (([ $c[] | select(.event == "selection") | .race_losses ] | last) // 0) }
       end;
-  map(select((.node // "") != "")) | group_by(.node)
-  | map({key: .[0].node, value: live_of}) | from_entries' "$events_file")"
-# Deliberately *not* 2>/dev/null, unlike the best-effort reads above: this one
-# takes a file the Publisher has already guaranteed is valid JSON, so anything
-# jq says here is a fault in the program and not in the state. Silencing it
-# costs every card its live state and says nothing about why.
+  ($latest[0]) as $m
+  | [ inputs | select((.node | type) == "string" and .node != ""
+                      and $m[.node] != null and .cycle == $m[.node][1]) ] as $kept
+  | [ $m | keys[] as $n
+      | {key: $n,
+         value: (if $m[$n] == null then null
+                 else ([ $kept[] | select(.node == $n) ] | live_of) end)} ]
+  | from_entries' "$events_jsonl")"
+# Deliberately *not* 2>/dev/null, unlike the best-effort reads above: both
+# passes read `$events_jsonl`, which `read_events` has already guaranteed is
+# valid JSON, and the second reads a `$node_latest_file` guaranteed to hold an
+# object, so anything jq says here is a fault in the program or a record it
+# cannot index, not a missing input. Silencing it costs every card its live
+# state and says nothing about why.
 [[ -z "$node_live_json" ]] && node_live_json='{}'
 
 # Our own row is not derived: the lock is the authoritative answer for this
@@ -3482,12 +3673,19 @@ jq -c '(.merge_budget_per_day // 8) as $top
   || printf '{}' > "$work_tmp/landing-config.json"
 jq -e 'type == "object"' "$work_tmp/landing-config.json" >/dev/null 2>&1 \
   || printf '{}' > "$work_tmp/landing-config.json"
+#
+# Only the event types this digest declares are gathered — the partition's
+# `landings` file, never the whole log (agent-ops#1649): every join below
+# starts from one of them, so the array the program sees holds exactly the
+# events it reads, in log order.
+# union-reader: landings
 landings_json="$(jq -c -s \
   --arg now "$now_iso" \
   --argjson hours "${LANDING_DIGEST_WINDOW_HOURS:-24}" \
   --slurpfile ghf "$work_tmp/landing-github.json" \
-  --slurpfile cfgf "$work_tmp/landing-config.json" '
-  ($now | fromdateiso8601) as $now_s
+  --slurpfile cfgf "$work_tmp/landing-config.json" "$UNION_STREAM_JQ"'
+  union_split_span.events
+  | ($now | fromdateiso8601) as $now_s
   | ($now_s - ($hours * 3600)) as $from_s
   | def in_window: (.ts // "") as $t
       | ($t | length) > 0
@@ -3666,7 +3864,8 @@ landings_json="$(jq -c -s \
               status: $status, reason: $reason, oldest_waiting: $backlog,
               as_of: (if $lb and ($status == "held" or $status == "frozen")
                       then ($lb.ts // null) else null end) } ] )
-  }' "$events_jsonl" 2>/dev/null)"
+  }' "$union_kept_dir/landings.jsonl" 2>/dev/null)"
+# union-reader-end: landings
 if ! jq -e 'type == "object"' <<<"$landings_json" >/dev/null 2>&1; then
   # Same fail-visible-not-fail-silent rule the rest of this script follows: an
   # empty object renders as "nothing landed", which is a claim, so degrade to
@@ -3690,9 +3889,14 @@ fi
 # file (no `issue_number` at all) falls back to the repo+item+ts ordering
 # every other join in this file uses when there is nothing more specific to
 # key on.
+#
+# Only the decision event types this digest declares are gathered — the
+# partition's `decisions` file, never the whole log (agent-ops#1649).
+# union-reader: decisions
 decisions_json="$(jq -c -s \
-  --arg now "$now_iso" --argjson days "${DECISIONS_DIGEST_WINDOW_DAYS:-7}" '
-  ($now | fromdateiso8601) as $now_s
+  --arg now "$now_iso" --argjson days "${DECISIONS_DIGEST_WINDOW_DAYS:-7}" "$UNION_STREAM_JQ"'
+  union_split_span.events
+  | ($now | fromdateiso8601) as $now_s
   | ($now_s - ($days * 86400)) as $from_s
   | def in_window: (.ts // "") as $t
       | ($t | length) > 0
@@ -3719,7 +3923,8 @@ decisions_json="$(jq -c -s \
             act_after: ($d.act_after // ""),
             pending_act: $p,
             vetoed: $v } ]
-    }' "$events_jsonl" 2>/dev/null)"
+    }' "$union_kept_dir/decisions.jsonl" 2>/dev/null)"
+# union-reader-end: decisions
 if ! jq -e 'type == "object"' <<<"$decisions_json" >/dev/null 2>&1; then
   decisions_json="$(jq -nc --arg now "$now_iso" \
     '{window_days: null, generated_at: $now, decisions: null}')"
@@ -3732,9 +3937,13 @@ fi
 # reads" the detector exists to prevent. Folded from the fleet-wide event
 # union, the same `classifier-escape`/`landing-audit` events already joined
 # into `landings_json.armed` above by `audit_for`, so the two can never
-# disagree about which pull requests carry which outcome.
-escape_audits_json="$(jq -c -s '
-  ([ .[] | select(.event == "classifier-escape") | . + {outcome: "escape"} ]
+# disagree about which pull requests carry which outcome. Only the event types
+# this roll-up declares are gathered — the partition's `escape-audits` file,
+# never the whole log (agent-ops#1649).
+# union-reader: escape-audits
+escape_audits_json="$(jq -c -s "$UNION_STREAM_JQ"'
+  union_split_span.events
+  | ([ .[] | select(.event == "classifier-escape") | . + {outcome: "escape"} ]
     + [ .[] | select(.event == "landing-audit") ]) as $all
   | ($all | group_by(.pr_url // "") | map(sort_by(.ts // "") | last)) as $latest
   | { checked: ($latest | length),
@@ -3747,7 +3956,8 @@ escape_audits_json="$(jq -c -s '
       unverifiable_list: ([ $latest[] | select(.outcome == "unverifiable")
           | {ts: (.ts // ""), repo: (.repo // ""), pr_url: (.pr_url // ""),
              reason: (.reason // "")} ] | sort_by(.ts) | reverse) }
-' "$events_jsonl" 2>/dev/null)"
+' "$union_kept_dir/escape-audits.jsonl" 2>/dev/null)"
+# union-reader-end: escape-audits
 if ! jq -e 'type == "object"' <<<"$escape_audits_json" >/dev/null 2>&1; then
   # Same explicit-failure discipline as landings_json's own degrade path:
   # a payload this could not assemble must never render as "zero escapes".
@@ -3913,12 +4123,19 @@ fi
 #     empty state — no `github-budget` event anywhere in the log union — kept
 #     distinct from the degrade-to-null path below, which means the roll-up
 #     itself could not be assembled.
+#
+# Only the event types the card declares (`github-budget`, and the
+# `guard-degraded`/`stand-down` events `is_refusal`/`is_budget_standdown`
+# test) are gathered — the partition's `github-budget` file, never the whole
+# log (agent-ops#1649).
+# union-reader: github-budget
 github_budget_json="$(jq -c -s \
   --arg now "$now_iso" \
   --argjson min_core "${github_budget_min_core:-0}" \
   --argjson min_graphql "${github_budget_min_graphql:-0}" \
-  --argjson interval "${github_budget_cycle_interval_minutes:-15}" '
-  def hour: (.ts // "")[0:13];
+  --argjson interval "${github_budget_cycle_interval_minutes:-15}" "$UNION_STREAM_JQ"'
+  union_split_span.events
+  | def hour: (.ts // "")[0:13];
   def is_refusal: (.event == "guard-degraded")
     and ((.detail // "") | tostring | test("rate limit (already )?exceeded"; "i"));
   def is_budget_standdown: (.event == "stand-down") and (has("github_resource"));
@@ -3956,7 +4173,8 @@ github_budget_json="$(jq -c -s \
         ($lat == null or (($lat.ts // "" | length) == 0)
          or (try ($lat.ts | fromdateiso8601) catch 0) < ($now_s - ($interval * 2 * 60))) end)
     }
-' "$events_jsonl" 2>/dev/null)"
+' "$union_kept_dir/github-budget.jsonl" 2>/dev/null)"
+# union-reader-end: github-budget
 if ! jq -e 'type == "object"' <<<"$github_budget_json" >/dev/null 2>&1; then
   # Same explicit-failure discipline as landings_json/escape_audits_json's own
   # degrade paths: a payload this could not assemble must never render as "no

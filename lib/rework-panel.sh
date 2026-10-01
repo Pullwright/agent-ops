@@ -62,11 +62,17 @@ REWORK_PANEL_KEY_JQ='
   def rw_item_key: ((.repo // "") | tostring) + "|" + ((.item // "") | tostring);
 '
 
-# The main fold. $all (every parsed event this run can see) and $lifecycle
-# (item_lifecycle_fold's own report over the same log) arrive on stdin as two
-# documents, bound positionally by the caller — big-things-on-stdin,
-# requirement 4g, the same convention lib/item-lifecycle.sh's own
-# ITEM_LIFECYCLE_FOLD_JQ follows for $all/$void/$blocked/$obsolete.
+# The event types the fold reads, declared once (agent-ops#1649): the caller
+# gathers into `$all` only the objects whose `event` is one of these, so a
+# change to REWORK_PANEL_JQ that reads another type must add it here, or it
+# sees none of them — `test/union-stream.test.sh` fails when it does not.
+REWORK_PANEL_EVENTS="rework stage-end"
+
+# The main fold. $all is the log's objects whose `event` REWORK_PANEL_EVENTS
+# names — never the whole parsed log — gathered by `rework_panel_build` in the
+# same jq process that runs this fold, in log order; $lifecycle is
+# item_lifecycle_fold's own report over the same log, read from a file
+# (requirement 4g — big things travel in files, never argv).
 #
 # --- Deduping the rework stream (docs/FLOW-SCHEMA.md, "Do not double-count")
 # The union log carries every node's own copy of a repetition two or more
@@ -378,7 +384,7 @@ REWORK_PANEL_JQ='
 #   honest is not, and holds for the errors nobody anticipated as well as
 #   the ones they did.
 rework_panel_build() {
-  local src="${1:--}" since="${2:-}" log_file="" tmp_log="" all_json_file="" lifecycle_file="" out=""
+  local src="${1:--}" since="${2:-}" log_file="" tmp_log="" lifecycle_file="" out=""
   # Nothing that scales with the log is ever held in a bash variable
   # (agent-ops#1620): a variable that size is copied by every subshell forked
   # afterwards — measured on ockham at up to five nested copies, which is what
@@ -402,18 +408,21 @@ rework_panel_build() {
   [[ -n "$lifecycle_file" && -s "$lifecycle_file" ]] \
     || { [[ -n "$lifecycle_file" ]] && printf '{"records":[]}' > "$lifecycle_file" 2>/dev/null; }
 
-  all_json_file="$(mktemp 2>/dev/null)" || true
-  if [[ -n "$log_file" && -n "$all_json_file" ]]; then
-    jq -c -R 'fromjson? // empty' "$log_file" 2>/dev/null | jq -sc '.' > "$all_json_file" 2>/dev/null
+  # One jq process gathers `$all` and runs the fold (agent-ops#1649): each
+  # line through `fromjson? // empty`, non-objects dropped (the fold's own
+  # first step drops them too), and only the objects whose `event`
+  # REWORK_PANEL_EVENTS names kept, in log order. A missing or empty log folds
+  # an empty stream.
+  if [[ -n "$lifecycle_file" ]]; then
+    # shellcheck disable=SC2016,SC2086  # jq's own $e/$ARGS; a word list by design.
+    out="$(jq -nRc --slurpfile lc "$lifecycle_file" '
+        def wanted: .event as $e | any($ARGS.positional[]; . == $e);
+        [ inputs | fromjson? // empty | objects | select(wanted) ] as $all
+        | ($lc[0]) as $lifecycle
+        | ('"$REWORK_PANEL_JQ"')' "${log_file:-/dev/null}" --args $REWORK_PANEL_EVENTS \
+        2>/dev/null || true)"
   fi
-  [[ -n "$all_json_file" && -s "$all_json_file" ]] \
-    || { [[ -n "$all_json_file" ]] && printf '[]' > "$all_json_file" 2>/dev/null; }
-
-  if [[ -n "$all_json_file" && -n "$lifecycle_file" ]]; then
-    out="$(jq -nc 'input as $all | input as $lifecycle | ('"$REWORK_PANEL_JQ"')' \
-        "$all_json_file" "$lifecycle_file" 2>/dev/null || true)"
-  fi
-  rm -f "$tmp_log" "$all_json_file" "$lifecycle_file" 2>/dev/null
+  rm -f "$tmp_log" "$lifecycle_file" 2>/dev/null
 
   [[ -n "$out" ]] || out='{"how_much":null,"whose":null,"escape_ladder":null,"clean_count":null,"rework_cycles":null,"merge_conflict_paths":null}'
   printf '%s' "$out"

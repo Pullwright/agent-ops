@@ -304,6 +304,21 @@ EOF
 assert_eq "a malformed trailing line does not strand void items" \
   "R-02" "$(void_items "$log" | jq -r '.[].item')"
 
+# One jq process per reader (`_log_fold`, agent-ops#1649) gathers only the
+# event types the reader declares, and still parses each line on its own, so
+# the torn line above is dropped rather than fatal. A parsed record that is
+# not an object is gathered too and aborts the fold exactly as it did when
+# every line was slurped, from a file and from stdin alike.
+cat > "$log" <<'EOF'
+{"ts":"2026-07-16T09:00:00Z","event":"item-void","stage":"implementer","repo":"o/r","item":"R-02","detail":"already done"}
+{"ts":"2026-07-16T09:00:30Z","event":"wake-poll","repo":"o/r","item":"R-02"}
+EOF
+assert_eq "an undeclared event type is never gathered" "R-02" "$(void_items "$log" | jq -r '.[].item')"
+assert_eq "  ... from stdin either" "R-02" "$(void_items - < "$log" | jq -r '.[].item')"
+printf '7\n' >> "$log"
+assert_eq "a non-object record aborts the fold, as the whole-array read did" "[]" "$(void_items "$log")"
+assert_eq "  ... from stdin too" "[]" "$(void_items - < "$log")"
+
 # --- void_object_closed_items (requirement 34k) ---
 
 assert_eq "missing log yields no closed-void items" "[]" \

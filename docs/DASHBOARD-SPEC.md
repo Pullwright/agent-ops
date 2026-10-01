@@ -517,9 +517,57 @@ the detail window (the `MAX_CYCLES`
 cycles shown with transcripts) is assembled in a single `jq` program over
 every stage file the window touches — handed in via `--rawfile`, so jq opens
 each one itself rather than a fork per cycle re-reading and re-parsing it —
-plus the fleet-wide event union slurped once, and every potentially large
-intermediate reaches `jq` as a file, never argv (a single argument caps at
-128 KB, which transcript-bearing JSON exceeds).
+plus the events of just the cycles being rebuilt, kept from the fleet-wide
+event union as it streams past, and every potentially large intermediate
+reaches `jq` as a file, never argv (a single argument caps at 128 KB, which
+transcript-bearing JSON exceeds).
+
+The readers of the fleet-wide event union (`$events_jsonl`, and the
+`review-log.jsonl` union beside it) fold it as a stream — `jq -n` over
+`inputs`, with `reduce`/`foreach` for an aggregate — or keep only the event
+types they declare before anything is gathered (`lib/union-stream.sh`,
+agent-ops#1649). What a reader holds is what its answer is about:
+
+- **One per-cycle summary entry** (`cycle-summary.json` — a count, the newest
+  `ts`, the distinct event types, the overlap count, and the latest
+  `repo`/`item`/selection `source` by `ts`, the later record winning a tie).
+  The no-op tick classification, the overlap count, the detail cache's key and
+  the cost join's cycle index are all read from it. A summary that cannot be
+  built fails the detail window's render, since every cache key is taken from
+  it.
+- **One latest `cycle-start` per node** (the later of two at one `ts`), then
+  that cycle's own events, for the per-node live state. A first pass that
+  produces nothing is replaced by the empty map and reported on stderr.
+- **The newest `MAX_LOG_TAIL` events** for the log tail, kept in a buffer that
+  is trimmed back to that many whenever it passes twice that many plus one.
+- **The events of the rebuilt cycles** for the detail window. A read that
+  fails (a record that is not an object, an unreadable `$order`) fails the
+  render — `cycle_render.ok: false` with jq's own error, no cycle rebuilt and
+  nothing cached.
+- **Only the event types it declares**, for every other roll-up. One streamed
+  pass at the start of a full build (`union_partition`) writes one kept file
+  per reader — the actor scorecards, the blocked-row enrichment, the landing
+  and decision digests, the escape-audit roll-up, the GitHub budget card,
+  `open_blocked_items` and `void_items` — each closed by the whole log's span.
+  The stage-gap series takes its own stream over the review union, and the
+  `lib/` folds the Publisher calls (`rework_panel_build`,
+  `node_time_state_fold`, `stage_budget_observations`, `crash_loop_verdict`,
+  and `blocked_items`/`void_items`/`draft_obsolete_flags` inside the
+  item-lifecycle fold) each gather their declared types in the one `jq`
+  process that folds them. `fleet_sizing_contention_by_node` keeps its
+  selections and contended claim losses.
+
+A roll-up that reports the whole log's time span (`window_from`/`window_to`
+on the scorecards and the stage-gap series, `window` on the item lifecycle
+and the fleet-sizing contention) takes it from the span its stream folds
+over every event, not from the events it kept. Three readers on this path
+gather log-scale data. The item-lifecycle fold gathers every item-scoped
+event, because its `records[]` carries each item's whole history as
+`instants`; its output is itself log-scale, so the scorecards read a
+`{repo, item, fate}` projection of it. Four of the pager's invariants
+(`lib/pager-invariants.sh`, on a GitHub tick) gather the union unfiltered.
+The stand-down banner's `limit_union_record` reads through
+`lib/limit-detect.sh`'s own reader (agent-ops#2037).
 
 `data.js`'s size is dominated by capped transcripts, not by the small
 per-item records like `blocked[]`: one cycle at both caps (`TRANSCRIPT_CAP`
@@ -3063,6 +3111,17 @@ number's twins elsewhere on the page.
   `origin`, a stamp truncated mid-write — aborts a `set -e` caller, because
   `scripts/state-sync.sh` is one and a node that stops pushing is a node the
   fleet loses sight of.
+- `test/union-stream.test.sh` passes: every reader that folds the fleet
+  union from a stream reads only the event types it declares — the
+  Publisher's own programs between their `# union-reader:` markers against
+  `union_reader_events`, each library fold's `<NAME>_JQ` against its
+  `<NAME>_EVENTS` — and the checker itself catches a planted undeclared read;
+  `union_stream` keeps the declared events in log order and closes with the
+  span under both timestamp rules and the SINCE gate, aborts on a record that
+  is not an object without writing its span line (and drops it under
+  `--objects`); and `union_partition` writes one file per reader, delivers an
+  event two readers declare to both, and leaves no file behind when its pass
+  fails.
 - `test/publish-dashboard.test.sh` passes: the launcher exits 0 on a healthy
   (shortened) window and while another publish holds the lock; a cold window
   fetches from GitHub exactly once, a window following a fresh fetch not at
@@ -3075,7 +3134,15 @@ number's twins elsewhere on the page.
   whose envelope parses but whose `result` is empty or whitespace-only still
   renders its cycle, with that stage's status `null`, while a stage whose
   envelope itself does not parse (a torn, mid-write file) still drops the
-  whole cycle, exactly as before (TD26072802); and every
+  whole cycle, exactly as before (TD26072802); the streamed union readers
+  (agent-ops#1649) keep what their whole-array forms computed in the cases a
+  small fixture never reaches — a log tail past the trim threshold is the
+  newest `MAX_LOG_TAIL` rows newest first, ties by log position; the per-cycle
+  summary and the node-latest pass take the later of two records at one `ts`;
+  a record that is not an object fails the detail render (`cycle_render.ok:
+  false`, nothing cached) and the scorecards' stream falls back; a node-latest
+  pass that produces nothing is reported and replaced by the empty map; and an
+  empty item-lifecycle result falls back to the empty record set; and every
   node in a synthetic fleet answers for **itself** — a peer mid-cycle reports
   its own running stage, repo, source and item from its published log, a peer
   whose cycle ended reports idle and when, a node that has never run reports
@@ -4524,6 +4591,61 @@ number's twins elsewhere on the page.
   (`lib/candidate-select.sh`) that has nothing to do with this panel, and
   retiring it would have silently broken that caller's own legacy-reference
   clearance.
+- **Union readers stream rather than slurp** (agent-ops#1649). A `jq -s` over
+  the fleet-wide event union materialises every parsed event in one process
+  — about five bytes of resident memory per byte of log: 396 MB on a
+  77.7 MB union under `jq` 1.6, 208 MB on a synthetic 42 MB one under
+  `jq` 1.7 — so a Publisher built from a dozen such readers has a working
+  set that is a linear function of a log `scripts/rotate-logs.sh` never
+  rotates, and any memory ceiling sized for it expires as the log grows.
+  The readers therefore fold the stream (the Publisher section above lists
+  what each one keeps), and each computes what its whole-array form
+  computed over the same log, failing where that one failed: a record that
+  is not an object aborts a reader that indexed every record (and fails the
+  detail window's render) rather than being skipped, and is dropped by the
+  readers whose whole-array form dropped it. Five things about the form are
+  load-bearing.
+  - *One declaration per reader.* A reader gathers only the event types it
+    declares, so a program that reads a type its declaration lacks sees
+    none of them and reports a quiet zero. Each declaration is written once
+    — `union_reader_events` for the Publisher's own readers, a `<NAME>_EVENTS`
+    variable beside each library fold's `<NAME>_JQ` — and the gathering
+    step reads it; `test/union-stream.test.sh` fails when a program reads a
+    type its declaration does not name.
+  - *One pass for many readers.* `union_partition` writes every
+    declared reader's kept events in one parse of the union, rather than
+    each reader parsing the whole union for itself.
+  - *One span helper.* `union_stream` and `union_partition` close their
+    kept events with the span of every record (`{"span": {"lo", "hi"}}`), and
+    `union_split_span` parts that from the events on the consumer's side. The
+    span has two rules because the whole-array readers computed two things:
+    `any` (`.ts // empty`, the empty string counted) is what
+    `[ .[] | .ts // empty ] | min`/`max` gave the scorecards and the
+    stage-gap series, and `nonempty` (`.ts // ""` without the empty string,
+    gated by SINCE) is what the sorted non-empty timestamps gave the
+    item-lifecycle and fleet-sizing windows; each reader keeps its own rule,
+    so its output is unchanged. A stream that aborts writes no span line,
+    and the consumer slurps only a stream that exited cleanly, so a
+    truncated stream is never folded as though it were the whole log.
+  - *`|=`, never `as`, in a `reduce`.* A `reduce` keeps its one map at the
+    top of the accumulator and updates an entry with `|=`, never through an
+    `as` binding of anything read from the accumulator: the binding is a
+    second reference to the map, so every update copies all of it and a
+    linear fold turns quadratic (measured: 20,000 updates of a 3,000-key map
+    take about a second that way under `jq` 1.7, against about an eighth of
+    that with `|=`).
+  - *Raw lines for an uncleaned union.* A union no `read_events` has cleaned
+    is read `-R` with `fromjson? // empty` per line, because plain `inputs`
+    aborts at the first spliced record.
+
+  The readers that still hold log-scale data do so by construction or are
+  not yet converted (agent-ops#2042): the item-lifecycle fold gathers every
+  item-scoped event (`records[]` is each item's whole history), and the
+  readers of its output — the rework panel, spend by fate, turns per landed
+  item and exclusive landings — load that output whole; four of the pager's
+  invariants (`lib/pager-invariants.sh`, on a GitHub tick) gather the union
+  unfiltered; and `limit_union_record` reads through `lib/limit-detect.sh`'s
+  own reader (agent-ops#2037).
 - **The working set is the publish's `TMPDIR`, and the rebuild is a child,
   not an `exec`** (agent-ops#1827, #1933). A publish spools through its own
   `mktemp` calls and through those of a dozen libraries, and the 2026-09-28
