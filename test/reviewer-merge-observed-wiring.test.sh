@@ -150,6 +150,10 @@ run_block() {
     printf '%s\n' 'reviewer_merge_observed() { local rsj="${3:-{\}}"; printf "%s\t%s %s %s %s\n" "reviewer_merge_observed" "$1" "$2" "$rsj" "$4" >>'"$(printf '%q' "$tmp_dir/calls")"'; }'
     printf '%s\n' 'log_reviewer_handback() { printf "%s\t%s\n" "log_reviewer_handback" "$*" >>'"$(printf '%q' "$tmp_dir/calls")"'; }'
     printf '%s\n' 'handle_stage_failure() { printf "%s\t%s\n" "handle_stage_failure" "$*" >>'"$(printf '%q' "$tmp_dir/calls")"'; }'
+    # The real one lives in lib/candidate-select.sh and returns 1 when it finds
+    # no limit; recorded here only so the merged-but-no-verdict path can be
+    # asserted to take the read the stage-failure exit it now precedes takes.
+    printf '%s\n' 'detect_and_log_limit_hit() { printf "%s\t%s\n" "detect_and_log_limit_hit" "$*" >>'"$(printf '%q' "$tmp_dir/calls")"'; return 1; }'
     printf '%s\n' "$block"
     printf '%s\n' 'echo "__fell_through__"'
   } > "$harness"
@@ -195,6 +199,8 @@ out="$(PR_MERGE_STATE_RESULT=$'merged\tb48eebf' run_block "$handoff_merge_block"
 assert_contains "handoff: a merged subject completes via reviewer_merge_observed (ready verdict)" \
   "$URL b48eebf {\"status\":\"ready\"} reviewer" "$(calls_named reviewer_merge_observed)"
 assert_eq "  ... never reaching the stage-failure handling" "" "$(calls_named handle_stage_failure)"
+assert_eq "  ... and never taking the usage-limit read, which a parsed verdict rules out" \
+  "" "$(calls_named detect_and_log_limit_hit)"
 assert_lacks "  ... never reaching the ordinary ready/blocked branch" "__fell_through__" "$out"
 
 # --- Merged, Reviewer said "blocked" naming the merge (noticed) --------------
@@ -213,6 +219,11 @@ assert_contains "handoff: a merged subject completes even when the Reviewer neve
   "$URL b48eebf {} reviewer" "$(calls_named reviewer_merge_observed)"
 assert_eq "  ... never recorded as an attempt-failed stage crash" \
   "" "$(calls_named handle_stage_failure)"
+# The merge retires the item; a usage limit is a fact about the node, and the
+# stage-failure exit this read now precedes is the only other thing that takes
+# it (requirement 35's guard, the fleet stand-down).
+assert_contains "  ... but still takes the usage-limit read that exit would have taken" \
+  "/tmp/rev.out" "$(calls_named detect_and_log_limit_hit)"
 assert_lacks "  ... and never falls through to any later branch" "__fell_through__" "$out"
 
 # --- Merged, Reviewer ended with an empty (unparseable) result, rev_rc == 0 --
@@ -227,6 +238,8 @@ out="$(PR_MERGE_STATE_RESULT=$'open\t' run_block "$handoff_merge_block" "$URL" '
 assert_contains "handoff: an open subject with no parseable verdict hits handle_stage_failure" \
   "reviewer 1 /tmp/rev.out $URL" "$(calls_named handle_stage_failure)"
 assert_eq "  ... reviewer_merge_observed never fires" "" "$(calls_named reviewer_merge_observed)"
+assert_eq "  ... and this block takes no usage-limit read of its own — handle_stage_failure owns it" \
+  "" "$(calls_named detect_and_log_limit_hit)"
 assert_lacks "  ... and never falls through to the ready/blocked branch" "__fell_through__" "$out"
 
 # --- Open, Reviewer said "ready": falls through to the ordinary path ---------

@@ -1303,6 +1303,20 @@ if [[ -n "$impl_pr_url" ]]; then
 fi
 
 if [[ "$merge_state" == "merged" ]]; then
+  # A merged subject retires the *item*; it says nothing about the *node*. So
+  # where the stage produced no parseable verdict — the one shape that would
+  # otherwise have gone through the stage-failure exit just below, which this
+  # read now precedes — take the usage-limit read that exit would have taken
+  # (`handle_stage_failure`'s own `detect_and_log_limit_hit`) before
+  # completing: a Reviewer stopped the moment the account refused is what
+  # requirement 35's Enabler guard and the fleet's own stand-down both key on
+  # (`limit_hit_this_cycle`, the `limit-hit` event), and engaging the fleet's
+  # most expensive model moments after a limit simply re-hits it. Guarded to
+  # the no-verdict shape, never taken on a verdict that parsed, so this reads
+  # exactly what the failure exit would have read and nothing more.
+  if (( rev_rc != 0 )) || [[ -z "$rev_status_json" ]]; then
+    detect_and_log_limit_hit "$rev_out" || true
+  fi
   reviewer_merge_observed "$impl_pr_url" "$merge_sha" "$rev_status_json" "reviewer"
   echo "$impl_pr_url"
   exit 0

@@ -13911,9 +13911,12 @@ implements.
     never the Reviewer verdict's word (agent-ops#916, escalation #922).**
     `lib/handoff.sh`'s `pr_merge_state` is the one helper both reads share:
     fail-closed at the handoff — ahead of `confirm_pr_ready`'s own isDraft
-    read, and before `$rev_status` is even branched on, so a Reviewer that
-    never noticed the merge (`"status": "ready"`) and one that did
-    (`"status": "blocked"`, naming it) are caught the same way — and advisory
+    read, ahead of the Reviewer stage's own failure exit, and before
+    `$rev_status` is even parsed, so a Reviewer that never noticed the merge
+    (`"status": "ready"`), one that did (`"status": "blocked"`, naming it),
+    and one that produced no parseable verdict at all — a crash, a timeout,
+    an API refusal, an unparseable final message (agent-ops#1063) — are all
+    caught the same way — and advisory
     at the Reviewer's own stage-start, so a whole engagement is never spent
     on a pull request already gone (an unreadable answer there simply runs
     the stage, since the fail-closed read afterward still guards whatever it
@@ -14294,7 +14297,8 @@ implements.
 32c. **A subject that merges mid-stage is a completion, not a hand-back
     (agent-ops#916, escalation #922).** Requirement 31d's `pr_merge_state`
     read confirming `merged` — at the Reviewer's own stage-start or at the
-    handoff, ahead of `$rev_status`'s own branch — ends the cycle here
+    handoff, ahead of the stage-failure exit and `$rev_status`'s own branch
+    alike — ends the cycle here
     instead: `merge-observed` is logged (repo, item, `pr_url`, the merge
     commit when GitHub reports one, and which of the two reads caught it),
     whatever the Reviewer's own verdict asked to be filed under `file_debt`/
@@ -14315,13 +14319,25 @@ implements.
     asked for filed); the handoff call passes the Reviewer's own parsed
     JSON, `file_debt`/`file_issue` included wherever its own
     `"status": "blocked"` ending set them (`prompts/reviewer.md`'s "When this
-    pull request merges while you are still reviewing it"). Requirement 31f's
-    own call — the Implementer's own stage-start, ahead of a finishing
-    source's pre-existing subject — is the third: it reaches this same
-    completion for an item the Implementer stage never even launched for,
-    additionally releasing the item-keyed claim its own header explains
-    (`release_claim no-pr`, since `reviewer_merge_observed` itself only ever
-    held the PR-keyed one).
+    pull request merges while you are still reviewing it"), or that same
+    empty verdict where the stage produced no parseable JSON to carry them.
+    Requirement 31f's own call — the Implementer's own stage-start, ahead of
+    a finishing source's pre-existing subject — is the third: it reaches
+    this same completion for an item the Implementer stage never even
+    launched for, additionally releasing the item-keyed claim its own header
+    explains (`release_claim no-pr`, since `reviewer_merge_observed` itself
+    only ever held the PR-keyed one).
+
+    A merged subject retires the *item*; it says nothing about the *node*. So
+    on that no-parseable-verdict path the handoff call site still takes the
+    usage-limit read the stage-failure exit it now precedes would have taken
+    (`detect_and_log_limit_hit`, requirement 32a's own
+    `handle_stage_failure`), and takes it nowhere else: a Reviewer stopped the
+    moment the account refused is the fact requirement 35's Enabler guard and
+    the fleet's own stand-down (requirement 2.1b) both key on, so a usage
+    limit that happened to coincide with a merge would otherwise go
+    unrecorded — and the Enabler, the fleet's most expensive model, would
+    engage moments after it and simply re-hit it.
 
 ### Logging and state
 
@@ -27456,7 +27472,12 @@ oblige anyone to edit a test.
    Approver engagement, and must release the PR-keyed claim
    (`test/reviewer-merge-observed-wiring.test.sh`, extracting the dispatch
    block out of `lib/coordinator-phase.sh` the same way
-   `test/human-reviewer-handoff-wiring.test.sh` extracts its own). Assert the
+   `test/human-reviewer-handoff-wiring.test.sh` extracts its own). Assert that
+   the no-parseable-verdict case alone still takes the usage-limit read the
+   stage-failure exit would have taken (`detect_and_log_limit_hit` against the
+   stage's own output file), and that a verdict which parsed takes it neither
+   there nor on the fall-through, where `handle_stage_failure` owns it — one
+   read per ending, never two and never none. Assert the
    same for the Reviewer's own stage-start advisory read: a merged
    `$impl_pr_url` skips the Reviewer stage entirely (no `stage-start`/
    `stage-end` for `reviewer`), reaching the same `merge-observed` completion
