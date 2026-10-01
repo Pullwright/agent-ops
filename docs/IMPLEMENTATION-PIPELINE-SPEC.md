@@ -7533,6 +7533,23 @@ implements.
    and `ordered_repos_json` itself is passed on untouched, so the Co-Ordinator
    cannot be handed a stale array in place of its own live read.
 
+   The copy is taken from the snapshot `compute_band_eligibility` sets aside
+   (`refiner_prefetch_source_json`, `lib/eligibility.sh`) before its own
+   decision-pending withholding runs, never from `ordered_repos_json` as the
+   Co-Ordinator finally sees it — the same reason requirement 35e's
+   `live_pr_refs_json`/`live_td_refs_json` snapshots are taken before the
+   blocked/void subtraction. An item a pending `decide-tactical` decision
+   withholds from Co-Ordinator ranking (requirement 36d) must stay a full
+   Refiner candidate, because a Refiner engagement writing the unmarked
+   `item-refined` that supersedes the decision in `decisions_map` is the only
+   thing that ever frees it: deriving this copy from the post-withholding
+   aggregate would withhold the item from both stages at once, leaving no
+   actor able to supersede the decision and so no cycle in which the item
+   could ever become selectable again. Every *other* subtraction the band
+   pass makes — requirements 3t/3u's blocked and void exclusions — is already
+   applied by the time the snapshot is taken, so a blocked or void entry is
+   absent from the Refiner's bands exactly as it is from the Co-Ordinator's.
+
    Each array is filled by its own gatherer — `scripts/gather-project-review.sh`
    and `scripts/gather-implementation-plan.sh` (Components) — called for a repo
    only where the read can be acted on: `refiner_model` is set, since
@@ -21277,6 +21294,7 @@ What exists, and the requirements each part answers to:
    the claim exclusion and
    blocked/void filters (`exclude_claimed_prs`, `exclude_claimed_items`,
    `exclude_blocked_or_void_items`, `exclude_blocked_or_void_issues`,
+   `exclude_decision_pending_items`,
    `candidate_preclaimed`, `pr_number_for_candidate`), `emit_first_seen`,
    `coordinator_blocked_view`/`coordinator_refinements_view`, the
    refinement-traceability check and repair from #768
@@ -21353,14 +21371,25 @@ What exists, and the requirements each part answers to:
    sets — from the untouched
    gather, because the entries the subtraction removes are exactly the ones
    that filter is asked about (issue #1119; `live_td_refs_json` widened this
-   the same way by issue #1699).
+   the same way by issue #1699). It settles `decisions_json` alongside
+   `refinements_json` and then makes a further subtraction of its own, over
+   the same bands: `exclude_decision_pending_items` withholds every item that
+   map still names a pending `decide-tactical` decision for (requirement 36d,
+   agent-ops#1057), under a loop variable deliberately distinct from the
+   generic pass's so each list stays separately pinnable. Immediately before
+   that pass — and so after the blocked/void subtraction, never before it — it
+   snapshots `refiner_prefetch_source_json` for `prefetch_refiner_sources` to
+   seed from, for the mirror of the reason `live_pr_refs_json` is snapshotted
+   above: the item this pass withholds from the Co-Ordinator is exactly the
+   one the Refiner must still see (requirement 3y).
    `compute_enabler_eligible_set` derives
    `enabler_eligible_json` from the source-state digests of the repositories
    that sampled cleanly — how "is that escalation issue still open?" is
    answered without a `gh` call per escalation — consumes both snapshots for
    requirement 35e's filter, and ends by setting
-   `enabler_allowed`. `prefetch_refiner_sources` fetches the Refiner's own
-   two extra sources into `refiner_repos_json`, which `ordered_repos_json`
+   `enabler_allowed`. `prefetch_refiner_sources` seeds `refiner_repos_json`
+   from that snapshot and fetches the Refiner's own
+   two extra sources into it, which `ordered_repos_json`
    deliberately never gains. `compute_refiner_candidates` derives
    `refiner_candidates_json` from the same extracts the Enabler set just
    used — so a Refiner and an Enabler engagement in the same cycle can never
@@ -26383,7 +26412,24 @@ oblige anyone to edit a test.
    every pre-fetched band but `issues` — because it is inline shell rather
    than a function, and a band added to a repo entry but not to it would keep
    handing the Co-Ordinator blocked and void candidates it has no `void` list
-   left to check them against. Separately, `agent-cycle.sh`'s own
+   left to check them against.
+
+   The same file covers the sibling subtraction requirement 36d adds for a
+   pending `decide-tactical` decision (agent-ops#1057), lifted and asserted
+   the identical way: `exclude_decision_pending_items` withholds a candidate
+   `decisions_map` names a decision for under that candidate's own repo,
+   leaves the same decision's item untouched under a *different* repo, leaves
+   every candidate untouched when the map is empty, drops a candidate with no
+   `ref` rather than crashing on it, degrades to the unfiltered array on
+   malformed input, and applies to an issue-shaped `ref` exactly as to any
+   other — proving the restriction to non-issue bands is the call site's
+   choice rather than the function's. That pass's own band list is pinned
+   separately from the generic one above, by a `sed` pattern keyed on its own
+   loop variable, for the same reason: a band added to a repo entry but not
+   to it would keep handing the Co-Ordinator a specification the pipeline has
+   already ruled superseded.
+
+   Separately, `agent-cycle.sh`'s own
    `coordinator_input` build carries no `void` key at all, and its `blocked`
    entries carry only `repo`, `item`, `ts`, `detail` and `recheck_clean_ts` —
    asserted by lifting that build verbatim the same way and running it over a
@@ -28282,7 +28328,20 @@ oblige anyone to edit a test.
     decision after that re-record, and `refiner_candidate_items` still offers
     the item — carrying `decision`, and carrying no `triage_only`, since this
     candidate owes a whole specification rather than one field
-    (agent-ops#1049).
+    (agent-ops#1049). The same file covers that decision's other half
+    (requirement 36d, agent-ops#1057) against the *real* call sequence rather
+    than the two functions in isolation: driving `compute_band_eligibility`
+    and then `prefetch_refiner_sources`, sourced whole and run back to back in
+    the order `lib/gather-phase.sh` calls them, over one shared
+    `ordered_repos_json`, the decided item leaves that aggregate's own
+    `tech_debt` band — so no Co-Ordinator engagement can rank it — while
+    `refiner_candidate_items`, fed the resulting `refiner_repos_json`, still
+    offers it carrying the same pending decision. Both halves are asserted
+    together over the one aggregate because either alone is the bug: asserting
+    them against separately-constructed inputs leaves a `refiner_repos_json`
+    derived from the post-withholding aggregate undetected, withholding the
+    item from the Refiner too and so from the only actor whose `item-refined`
+    could ever free it (requirement 3y).
 3y. **The two Refiner-only gatherers read what requirement 3y says
     (requirement 3y).** `test/gather-project-review.test.sh` and
     `test/gather-implementation-plan.test.sh` pass, each driving its script
