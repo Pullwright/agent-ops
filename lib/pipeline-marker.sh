@@ -119,13 +119,30 @@ pipeline_reconciles_marker() {
 # never on the whole `pipeline_landing_notice_marker` line.
 PIPELINE_LANDING_NOTICE_MARKER_PREFIX='<!-- agent-ops:landing-notice'
 
-# pipeline_landing_notice_marker
+# pipeline_landing_notice_marker [STATE]
 # Print the invisible marker a landing-refusal notice comment carries,
 # alongside the ordinary `pipeline_comment_header`/`pipeline_comment_marker`
-# envelope every pipeline comment also carries. Takes no argument: unlike
-# `pipeline_comment_marker`, this marker's whole purpose is to be found again
-# regardless of which cycle or class last wrote it.
+# envelope every pipeline comment also carries. Found again by its *prefix*
+# alone, never by the whole line: unlike `pipeline_comment_marker`, this
+# marker's whole purpose is to be matched regardless of which cycle, node or
+# class last wrote it.
+#
+# STATE, when given, is a short stable token naming *what the notice currently
+# says* — the caller's own digest of the facts the body is built from, never a
+# cycle id, a node name or a timestamp. It is what lets a caller tell "this
+# notice already says exactly this" from "this notice is out of date" without
+# comparing bodies: a notice's visible prose carries `cycle_id` and
+# `node_name`, both of which differ on every cycle and between nodes, so a
+# byte-equality check over the whole body can essentially never match in
+# production and would re-PATCH an unchanged notice once per cycle per node
+# (issue #1601's "written on a change of reason, not once per retry"). Pass
+# the same token to `pipeline_comment_upsert`'s own UNCHANGED_IF_CONTAINS.
 pipeline_landing_notice_marker() {
+  local state="${1:-}"
+  if [[ -n "$state" ]]; then
+    printf '%s state=%s -->' "$PIPELINE_LANDING_NOTICE_MARKER_PREFIX" "$state"
+    return 0
+  fi
   printf '%s -->' "$PIPELINE_LANDING_NOTICE_MARKER_PREFIX"
 }
 
@@ -155,7 +172,7 @@ pipeline_find_marked_comment() {
     '[.[] | select(.body | contains($m))] | last // empty' <<<"$lines" 2>/dev/null
 }
 
-# pipeline_comment_upsert REPO NUMBER MARKER BODY
+# pipeline_comment_upsert REPO NUMBER MARKER BODY [UNCHANGED_IF_CONTAINS]
 # Create the one comment on REPO's issue or pull request NUMBER carrying
 # MARKER, or edit it in place if one already stands — never a second comment
 # for the same MARKER. A no-op (exit 0, no write at all) when the standing
@@ -165,8 +182,17 @@ pipeline_find_marked_comment() {
 # write itself (POST or PATCH) fails; a caller that wants to continue
 # regardless should treat that like any other best-effort `gh` write failure
 # in this system — a `warning` event, never an abort.
+#
+# UNCHANGED_IF_CONTAINS widens that no-op to the case byte-equality cannot
+# reach: a body whose prose legitimately varies run to run — `cycle_id`,
+# `node_name`, anything else that moves without the *meaning* moving — is
+# never byte-equal to the standing one, so without this a caller re-PATCHing
+# an unchanged notice would write on every single pass. Give it a substring
+# that is present in BODY and encodes only the facts worth a write (see
+# `pipeline_landing_notice_marker`'s own STATE argument): a standing body
+# already containing it is treated as already saying this, and left alone.
 pipeline_comment_upsert() {
-  local repo="$1" number="$2" marker="$3" body="$4"
+  local repo="$1" number="$2" marker="$3" body="$4" unchanged_if="${5:-}"
   local existing existing_id existing_body
   # `|| existing=""`, never a bare assignment: a caller running under
   # `errexit` (every production call site does) must not have
@@ -179,21 +205,38 @@ pipeline_comment_upsert() {
   if [[ -n "$existing" ]]; then
     existing_id="$(jq -r '.id' <<<"$existing" 2>/dev/null)"
     existing_body="$(jq -r '.body' <<<"$existing" 2>/dev/null)"
-    [[ "$existing_body" == "$body" ]] && return 0
+    if _pipeline_comment_already_says "$existing_body" "$body" "$unchanged_if"; then
+      return 0
+    fi
     gh api -X PATCH "repos/$repo/issues/comments/$existing_id" -f body="$body" >/dev/null 2>&1
     return $?
   fi
   gh api "repos/$repo/issues/$number/comments" -f body="$body" >/dev/null 2>&1
 }
 
-# pipeline_comment_edit_if_present REPO NUMBER MARKER BODY
+# _pipeline_comment_already_says EXISTING_BODY BODY [UNCHANGED_IF_CONTAINS]
+# True (exit 0) iff a write of BODY over EXISTING_BODY would say nothing new:
+# the two are byte-equal, or UNCHANGED_IF_CONTAINS is given and EXISTING_BODY
+# already contains it. Private to this file — the one place
+# `pipeline_comment_upsert` and `pipeline_comment_edit_if_present` share their
+# no-op rule, so the two can never drift into disagreeing about what counts as
+# an unchanged comment.
+_pipeline_comment_already_says() {
+  local existing_body="$1" body="$2" unchanged_if="${3:-}"
+  [[ "$existing_body" == "$body" ]] && return 0
+  [[ -n "$unchanged_if" && "$existing_body" == *"$unchanged_if"* ]]
+}
+
+# pipeline_comment_edit_if_present REPO NUMBER MARKER BODY [UNCHANGED_IF_CONTAINS]
 # Like `pipeline_comment_upsert`, but never creates a comment that does not
 # already exist — the "say a hold has cleared" half of a notice/clear pair,
 # where posting a brand-new comment announcing a hold that was never actually
 # posted would be announcing nothing. A no-op (exit 0) when no comment
-# carrying MARKER stands, or the standing one's body already equals BODY.
+# carrying MARKER stands, or the standing one already says this —
+# UNCHANGED_IF_CONTAINS means here exactly what it means for
+# `pipeline_comment_upsert` above.
 pipeline_comment_edit_if_present() {
-  local repo="$1" number="$2" marker="$3" body="$4"
+  local repo="$1" number="$2" marker="$3" body="$4" unchanged_if="${5:-}"
   local existing existing_id existing_body
   # `|| existing=""` — see `pipeline_comment_upsert`'s identical guard above.
   # An unreadable comment list here falls through to "nothing to clear",
@@ -203,6 +246,8 @@ pipeline_comment_edit_if_present() {
   [[ -n "$existing" ]] || return 0
   existing_id="$(jq -r '.id' <<<"$existing" 2>/dev/null)"
   existing_body="$(jq -r '.body' <<<"$existing" 2>/dev/null)"
-  [[ "$existing_body" == "$body" ]] && return 0
+  if _pipeline_comment_already_says "$existing_body" "$body" "$unchanged_if"; then
+    return 0
+  fi
   gh api -X PATCH "repos/$repo/issues/comments/$existing_id" -f body="$body" >/dev/null 2>&1
 }

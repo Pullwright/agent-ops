@@ -1150,6 +1150,31 @@ _landing_notice_upsert "$NOTICE_URL" "acme/widgets" "autonomy-level" "merge_auto
 assert_eq "an identical standing notice is left alone (idempotent, no write at all)" \
   "0" "$(wc -l < "$comment_write_calls" | tr -d ' ')"
 
+# ... and, the case that actually happens in production: the *same* standing
+# refusal re-checked on a later cycle, and by a different node. The notice's
+# own visible prose carries `cycle_id` and `node_name`, so the standing body
+# is never byte-equal to the one this pass would write — only the
+# `_landing_notice_stamp` comparison recognises it as unchanged. Without it
+# the 2.1e retry sweep would re-PATCH an unchanged notice once per cycle per
+# node (the ~25 refusals of agent-ops#1950), which is exactly what issue
+# #1601 is cited for in #1979's own Related section, and which would bust
+# `scripts/gather-source-state.sh`'s open-PR digest — and so the no-op-skip
+# fingerprint — every cycle a stranded pull request carried one.
+# A subshell, not a `VAR=x func` prefix: an assignment prefixing a *shell
+# function* outlives the call, which would leak this cycle id into every
+# assertion below.
+stale_cycle_body="$(
+  cycle_id="an-earlier-cycle"
+  _landing_notice_body "autonomy-level" "merge_autonomy effective level is human, not agent-merges-routine or agent-merges-all" "some-other-node" ""
+)"
+assert_eq "  ... and that standing body really is a different one, byte for byte" \
+  "no" "$([[ "$stale_cycle_body" == "$existing_body" ]] && echo yes || echo no)"
+: > "$comment_write_calls"
+comment 777 "$stale_cycle_body" | set_comments
+_landing_notice_upsert "$NOTICE_URL" "acme/widgets" "autonomy-level" "merge_autonomy effective level is human, not agent-merges-routine or agent-merges-all"
+assert_eq "an unchanged refusal written by an earlier cycle on another node is still no write" \
+  "0" "$(wc -l < "$comment_write_calls" | tr -d ' ')"
+
 : > "$comment_write_calls"
 comment 777 "$existing_body" | set_comments
 _landing_notice_upsert "$NOTICE_URL" "acme/widgets" "kill-switch" "kill-switch:merge_autonomy kill switch is engaged fleet-wide"
@@ -1186,9 +1211,29 @@ assert_eq "a persistent class posts the notice via _landing_refuse" \
 assert_contains "  ... as a POST" "POST" "$(cat "$comment_write_calls")"
 
 : > "$comment_write_calls"
+set_comments
 _landing_refuse "$NOTICE_URL" "acme/widgets" "review-gate" "review gate: dirty"
 assert_eq "a non-persistent class never posts via _landing_refuse" \
   "0" "$(grep -c '^POST' "$comment_write_calls" || true)"
+
+# ... and never PATCHes a standing notice to say the hold cleared either. A
+# refusal is still a refusal — landing *is* holding the pull request — and a
+# refusal at one gate establishes nothing about the gates after it, which were
+# never evaluated this pass. A `gh` hiccup on any of the seven read-failure
+# classes that precede the protected-path cool-off would otherwise replace an
+# accurate cool-off notice with "nothing is holding this", then put it back
+# next cycle. Only a successful arm clears (`_landing_stage_attempt`).
+refused_body="$(_landing_notice_body "ineligible" "ineligible:protected-path cool-off has 3.2h remaining (approved 2026-08-17T10:00:00Z, landing_cool_off_hours=24)" "test-node" "2026-08-18T10:00:00Z")"
+for transient_class in human-veto-unreadable merge-queue-unreadable \
+                       reconciliation-unreadable open-question-unreadable \
+                       approver-review-unreadable review-gate arm-failed \
+                       dequeued-manual dequeued-actionable unknown; do
+  : > "$comment_write_calls"
+  comment 777 "$refused_body" | set_comments
+  _landing_refuse "$NOTICE_URL" "acme/widgets" "$transient_class" "$transient_class:whatever this round could not establish"
+  assert_eq "  ... and $transient_class leaves a standing cool-off notice untouched" \
+    "0" "$(wc -l < "$comment_write_calls" | tr -d ' ')"
+done
 
 echo
 if (( failures == 0 )); then

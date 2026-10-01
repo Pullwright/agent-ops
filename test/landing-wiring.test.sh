@@ -854,14 +854,15 @@ assert_eq "  ... and groups under class human-veto-unreadable" \
   "human-veto-unreadable" "$(refusal_class)"
 assert_eq "  ... returning 0" "0" "$rc"
 # Issue #1979, requirement 62: human-veto-unreadable is a plain, retryable
-# read failure, not persistent — posts no notice, and clears any standing one
-# (there is none here, so pipeline_comment_edit_if_present's own no-create
-# guarantee means this is still a no-op in practice — covered directly in
-# test/landing.test.sh — but the wiring must still route here, never to
-# notice_upserts).
+# read failure, not persistent — so this refusal writes nothing on the pull
+# request at all. Not a notice, and not a "cleared" edit over a standing one
+# either: this gate precedes the protected-path cool-off, so an unreadable
+# reviews list here establishes nothing about the gates after it, and saying
+# the hold cleared would be false on a pull request landing is still holding.
 assert_eq "  ... posts no landing-refusal notice (not persistent)" \
   "0" "$(count notice_upserts)"
-assert_eq "  ... and routes to the clearing path instead" "1" "$(count notice_clears)"
+assert_eq "  ... and clears nothing either — a refusal never clears" \
+  "0" "$(count notice_clears)"
 
 # --- Gate 4 (human half, continued): an unreconciled plain comment posted
 # after the pull request was already Ready blocks too (agent-ops#672) --------
@@ -951,9 +952,10 @@ assert_eq "  ... and groups under class dequeued-manual" \
 assert_eq "  ... returning 0" "0" "$rc"
 # Issue #1979, requirement 62: a dequeue is never this notice's business —
 # the `dequeued` work-order source already announces it on its own terms —
-# so neither dequeue class posts one.
+# so neither dequeue class posts one, or clears one.
 assert_eq "  ... posts no landing-refusal notice (already announced elsewhere)" \
   "0" "$(count notice_upserts)"
+assert_eq "  ... and clears none either" "0" "$(count notice_clears)"
 
 rc="$(run_case QUEUED="false" DEQUEUE_REASON="failed_checks")"
 assert_eq "a checks-failure-dequeued pull request is never blindly re-armed" "0" "$(count arms)"
@@ -964,6 +966,7 @@ assert_eq "  ... and groups under class dequeued-actionable, distinct from deque
 assert_eq "  ... returning 0" "0" "$rc"
 assert_eq "  ... posts no landing-refusal notice either" \
   "0" "$(count notice_upserts)"
+assert_eq "  ... and clears none either" "0" "$(count notice_clears)"
 
 rc="$(run_case QUEUED="false" DEQUEUE_REASON="")"
 assert_eq "a pull request never dequeued (empty reason) still arms normally" "1" "$(count arms)"
@@ -1055,10 +1058,11 @@ run_case_direct() {
       mkdir -p "$state_dir"; : > "$union_log"
       log_event() { printf "%s\t%s\n" "$1" "$2" >>"$T/events"; }
       # Issue #1979, requirement 62: _landing_refuse (sourced for real above)
-      # now dispatches every refusal to one of these two — stubbed as plain
-      # no-ops, since no assertion in this retry-specific harness reads them;
-      # the dispatch itself is covered against run_case/run_landing_stage
-      # above, which exercises the identical _landing_refuse code path.
+      # dispatches a persistent refusal to the first of these, and a
+      # successful arm in _landing_stage_attempt to the second — stubbed as
+      # plain no-ops, since no assertion in this retry-specific harness reads
+      # them; the dispatch itself is covered against run_case/
+      # run_landing_stage above, which exercises the identical code path.
       pipeline_comment_upsert() { :; }
       pipeline_comment_edit_if_present() { :; }
       merge_autonomy_effective_level() { printf "%s" "$LEVEL"; }
@@ -1243,9 +1247,11 @@ bad_class_events="$(env -i PATH="$PATH" T="$(mktemp -d)" SCRIPT_DIR="$SCRIPT_DIR
   cycle_id="c1"
   log_event() { printf "%s\t%s\n" "$1" "$2" >>"$T/events"; }
   # Issue #1979, requirement 62: "totally-made-up" is outside
-  # _LANDING_PERSISTENT_REFUSAL_CLASSES too, so _landing_refuse routes to the
-  # clearing path — stubbed here, same as the main harness above, so this
-  # isolated case never reaches a real gh api call.
+  # _LANDING_PERSISTENT_REFUSAL_CLASSES too, so _landing_refuse writes nothing
+  # on the pull request at all — both notice primitives are stubbed anyway,
+  # same as the main harness above, so this isolated case can never reach a
+  # real gh api call however the dispatch is later changed.
+  pipeline_comment_upsert() { :; }
   pipeline_comment_edit_if_present() { :; }
   _landing_refuse "https://github.com/acme/widgets/pull/1" "acme/widgets" "totally-made-up" "a made-up reason"
   cat "$T/events"
@@ -1263,6 +1269,7 @@ empty_class_events="$(env -i PATH="$PATH" T="$(mktemp -d)" SCRIPT_DIR="$SCRIPT_D
   node_name="test-node"
   cycle_id="c1"
   log_event() { printf "%s\t%s\n" "$1" "$2" >>"$T/events"; }
+  pipeline_comment_upsert() { :; }
   pipeline_comment_edit_if_present() { :; }
   _landing_refuse "https://github.com/acme/widgets/pull/1" "acme/widgets" "" "an empty-class reason"
   cat "$T/events"

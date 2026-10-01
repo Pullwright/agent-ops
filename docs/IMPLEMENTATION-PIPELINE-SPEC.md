@@ -9902,7 +9902,9 @@ implements.
    `approver-review-not-approved`, and the two `dequeued-*` classes the
    `dequeued` work-order source already announces on its own terms) is a
    plain, retryable fact about the forge or this round's own mechanics, not
-   this requirement's business, and posts nothing. `merge_budget_decide`'s
+   this requirement's business, and writes nothing on the pull request at all
+   — neither a notice of its own nor a "cleared" edit over a standing one (see
+   below for why a refusal never clears). `merge_budget_decide`'s
    own `hold`/`refuse` outcomes (`merge-budget-hold`/`merge-budget-frozen`,
    requirement 33) are a distinct vocabulary `_landing_refuse` never sees —
    out of scope here, the same vocabularies-never-overlap note requirement 33
@@ -9914,31 +9916,55 @@ implements.
    by `pipeline_landing_notice_marker`'s invisible stamp (paired with the
    ordinary `pipeline_comment_header`/`pipeline_comment_marker` envelope
    every pipeline comment carries) via one paginated `gh api
-   .../issues/<n>/comments` read (`pipeline_find_marked_comment`), and PATCH
-   it (`repos/<slug>/issues/comments/<id>`) rather than post a second one — a
-   no-op, not a write, when the standing body already reads identically.
+   .../issues/<n>/comments` read (`pipeline_find_marked_comment`), matching on
+   `PIPELINE_LANDING_NOTICE_MARKER_PREFIX` alone, and PATCH it
+   (`repos/<slug>/issues/comments/<id>`) rather than post a second one.
    This is the generic "find and edit the pipeline's own prior comment on a
    pull request" primitive this issue introduces; nothing before it existed
-   in this file. The 2.1e landing-retry sweep (`_landing_retry_sweep_repo`)
-   re-enters `_landing_stage_attempt`, and therefore `_landing_refuse`, for
-   the same still-open pull request every cycle it remains stranded, so a
-   standing refusal's comment is updated, never duplicated, across every one
-   of those retries — the `#1950` instance's roughly 25 refusals becomes one
-   comment, edited in place, not 25.
+   in this file.
 
-   The notice is edited to say the hold has cleared — never left standing
-   once it no longer applies, and never silently deleted — in the two places
-   this stage itself can observe that: `_landing_refuse` itself, the moment
-   it is called with a class outside the persistent set for a pull request
-   that already carries a standing notice (`_landing_notice_clear`,
+   A write happens only on a change of what the notice says, never once per
+   pass (issue #1601). That marker carries a stamp of the notice's own facts
+   and nothing else — `_landing_notice_state`'s digest of the kind, class,
+   reason and eligible-at (`_landing_notice_stamp`) — which
+   `_landing_notice_upsert`/`_landing_notice_clear` hand to
+   `pipeline_comment_upsert`/`pipeline_comment_edit_if_present` as
+   `UNCHANGED_IF_CONTAINS`: a standing comment already carrying that stamp is
+   left alone, with no `gh` write at all. Comparing the whole body cannot
+   serve here, because the notice's own visible prose carries
+   `pipeline_comment_header`'s node name and `pipeline_comment_marker`'s cycle
+   id, both of which move every cycle and between nodes while the refusal
+   stands unchanged. This matters because the 2.1e landing-retry sweep
+   (`_landing_retry_sweep_repo`) re-enters `_landing_stage_attempt`, and
+   therefore `_landing_refuse`, for the same still-open pull request every
+   cycle it remains stranded, on every node: the `#1950` instance's roughly 25
+   refusals becomes one comment and one write, not one comment and 25 edits —
+   which would also bust `scripts/gather-source-state.sh`'s own `updated_at`-
+   keyed open-PR digest, and so the no-op-skip fingerprint (`lib/noop-skip.sh`),
+   every cycle a stranded pull request carried a notice.
+
+   The notice is edited to say the hold has cleared — naming the arming method
+   (`enqueued`/`auto-merge`), never silently deleted — in the one place this
+   stage can soundly observe that: `_landing_stage_attempt`'s own successful
+   arm, immediately before `landing-armed` is logged (`_landing_notice_clear`,
    built on `pipeline_comment_edit_if_present`'s own no-create guarantee — a
    pull request never notified in the first place gets no "cleared" comment
-   either); and `_landing_stage_attempt`'s own successful arm, which clears
-   the standing notice, naming the method (`enqueued`/`auto-merge`), before
-   logging `landing-armed`. Neither write touches a label, a gate verdict, or
-   the merge-queue/budget state the gates themselves already decided — the
-   notice is informational only, exactly as every other read in this
-   function already is.
+   either). A refusal never clears, whatever its class. A refusal is still a
+   refusal, so telling a reader the hold has lifted would be false; and a
+   refusal at one gate establishes only that the persistent gates *before* it
+   in `_landing_stage_attempt`'s order passed this round, never anything about
+   the gates after it, which were not evaluated — the protected-path cool-off
+   (gate 4.5) sits after seven classes that are plain read failures, so a `gh`
+   hiccup on any one of them would otherwise replace an accurate cool-off
+   notice with a claim that nothing is holding the pull request, and restore
+   it the next cycle. Arming is the one observation that establishes every
+   gate passed. A notice whose named class has since stopped applying on a
+   pull request that is still held is superseded by the next persistent
+   refusal's own upsert; one on a pull request that leaves by a path this
+   stage never revisits is #2034. Neither write touches a label, a gate
+   verdict, or the merge-queue/budget state the gates themselves already
+   decided — the notice is informational only, exactly as every other read in
+   this function already is.
 9. **Failure handling.** If any stage times out, exits non-zero, or returns
    an unparseable summary: kill that stage's process group, log
    `attempt-failed` with enough detail for a future cycle to know the item
@@ -25916,13 +25942,18 @@ oblige anyone to edit a test.
    `pipeline_comment_header`/`pipeline_comment_marker` envelope; an unrelated
    standing comment (no marker) is never mistaken for it, so a fresh notice
    still posts rather than silently patching the wrong comment; called again
-   with an identical class and reason is a no-op (no write at all); called
+   with an identical class and reason is a no-op (no write at all), *including*
+   when the standing notice was written by an earlier cycle on another node, so
+   that its body carries a different cycle id and node name and only the
+   `_landing_notice_stamp` comparison can recognise it as unchanged; called
    with a changed class or reason PATCHes the same standing comment id rather
    than posting a second one. `_landing_notice_clear` against a pull request
    carrying no standing notice posts nothing at all (never announces a hold
    that was never posted); against one that does, PATCHes it to say the hold
    cleared, naming why. `_landing_refuse` itself routes a persistent class to
-   `_landing_notice_upsert` and every other class to `_landing_notice_clear`.
+   `_landing_notice_upsert`, and writes nothing at all for every other class —
+   each of the ten non-persistent classes, given a pull request carrying a
+   standing cool-off notice, leaves that notice byte-for-byte untouched.
    `test/landing-wiring.test.sh` extends its own `_LANDING_REFUSAL_CLASSES`
    wiring assertion with the mirrored check that
    `_LANDING_PERSISTENT_REFUSAL_CLASSES` is a subset of it, and exercises the
@@ -25931,7 +25962,7 @@ oblige anyone to edit a test.
    already stubs every other gate helper) to pin: the kill-switch, cool-off,
    protected-path, human-`CHANGES_REQUESTED` and already-queued refusals each
    post the notice; an unreadable human-veto read and both dequeue classes
-   never do, routing to the clearing path instead; and a successful arm
+   neither post one nor clear one; and a successful arm
    clears any standing notice, naming the arming method, before
    `landing-armed` is logged. No test path here exercises
    `merge_budget_decide`'s own `hold`/`refuse` — out of scope, per
