@@ -9926,11 +9926,33 @@ implements.
    A write happens only on a change of what the notice says, never once per
    pass (issue #1601). That marker carries a stamp of the notice's own facts
    and nothing else — `_landing_notice_state`'s digest of the kind, class,
-   reason and eligible-at (`_landing_notice_stamp`) — which
+   `_landing_notice_normalized_reason`'s normalized reason, and eligible-at
+   (`_landing_notice_stamp`) — which
    `_landing_notice_upsert`/`_landing_notice_clear` hand to
    `pipeline_comment_upsert`/`pipeline_comment_edit_if_present` as
    `UNCHANGED_IF_CONTAINS`: a standing comment already carrying that stamp is
-   left alone, with no `gh` write at all. Comparing the whole body cannot
+   left alone, with no `gh` write at all.
+
+   The reason is normalized, not used verbatim, because one persistent
+   class's reason text is not actually stable: the protected-path cool-off's
+   own reason embeds a "<N>h remaining" figure that
+   `landing_protected_path_controls_ok` recomputes from wall-clock `now` on
+   every pass, rounded to 0.1h — moving roughly every six minutes, faster
+   than any cycle cadence, while nothing about the pull request's own
+   situation has changed. Left in the digest, a standing cool-off refusal
+   would mint a different stamp on essentially every retry, defeating the
+   once-per-change rule this paragraph states for exactly the one class whose
+   reason text was never actually stable. `_landing_notice_normalized_reason`
+   collapses that clause to a fixed placeholder before hashing; the stable
+   `(approved …, landing_cool_off_hours=…)` clause and the digest's own
+   separate `eligible_at` already carry everything about the cool-off that is
+   not purely a function of wall-clock read time, so nothing is lost. Every
+   other persistent class's reason text is already stable, so normalizing it
+   is a no-op. The body a human reads still shows the reason as given,
+   countdown included, and the comment's own embedded stamp line is built
+   from the same normalized reason so it matches what `_landing_notice_
+   upsert` computes to decide whether to write at all — only the
+   change-detection digest is normalized. Comparing the whole body cannot
    serve here, because the notice's own visible prose carries
    `pipeline_comment_header`'s node name and `pipeline_comment_marker`'s cycle
    id, both of which move every cycle and between nodes while the refusal
@@ -25947,7 +25969,12 @@ oblige anyone to edit a test.
    that its body carries a different cycle id and node name and only the
    `_landing_notice_stamp` comparison can recognise it as unchanged; called
    with a changed class or reason PATCHes the same standing comment id rather
-   than posting a second one. `_landing_notice_clear` against a pull request
+   than posting a second one; called again for the protected-path cool-off
+   with the same `approved`/`landing_cool_off_hours` but a different embedded
+   "<N>h remaining" figure — the live countdown
+   `landing_protected_path_controls_ok` recomputes every pass — is also a
+   no-op, since `_landing_notice_normalized_reason` collapses that figure
+   before either side of the comparison is hashed. `_landing_notice_clear` against a pull request
    carrying no standing notice posts nothing at all (never announces a hold
    that was never posted); against one that does, PATCHes it to say the hold
    cleared, naming why. `_landing_refuse` itself routes a persistent class to

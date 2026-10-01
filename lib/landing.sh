@@ -1150,7 +1150,10 @@ _landing_notice_stamp() {
 # comment does, plus `pipeline_landing_notice_marker` — stamped with
 # `_landing_notice_state`'s digest of this notice's own facts — so a later
 # cycle can both find this exact comment again, by the marker's prefix, and
-# tell whether it already says this, by the stamp.
+# tell whether it already says this, by the stamp. The embedded stamp digests
+# `_landing_notice_normalized_reason`'s REASON, not REASON itself — it has to
+# match the stamp `_landing_notice_upsert` computes to decide whether to
+# write at all, which digests the same normalized form.
 _landing_notice_body() {
   local class="$1" reason="$2" node="$3" eligible_at="${4:-}"
   local body
@@ -1166,7 +1169,7 @@ Landing is holding this pull request — approved, but not yet armed to merge �
   fi
   body="$body
 
-$(_landing_notice_stamp refused "$class" "$reason" "$eligible_at")
+$(_landing_notice_stamp refused "$class" "$(_landing_notice_normalized_reason "$reason")" "$eligible_at")
 $(pipeline_comment_marker "$cycle_id" script)"
   printf '%s' "$body"
 }
@@ -1205,6 +1208,29 @@ _landing_notice_eligible_at() {
      | if $a == null then empty else (($a + ($h * 3600)) | todateiso8601) end' 2>/dev/null
 }
 
+# _landing_notice_normalized_reason REASON
+# REASON with a protected-path cool-off's own "<N>h remaining" clause
+# collapsed to a fixed placeholder, for use in `_landing_notice_state`'s own
+# digest — never in the body a human reads, which still shows REASON as
+# given. `landing_protected_path_controls_ok` recomputes the remaining figure
+# from wall-clock `now` on every pass (rounded to 0.1h), so it moves roughly
+# every six minutes while nothing about the pull request's own situation has
+# changed; left in the digest, that would mint a different `_landing_notice_
+# state` stamp on essentially every retry and re-PATCH the notice once per
+# cycle per node for the whole cool-off window — the exact once-per-pass
+# churn issue #1601 named, busting `scripts/gather-source-state.sh`'s
+# updated_at-keyed digest right along with it. Safe to collapse: the stable
+# `(approved …, landing_cool_off_hours=…)` clause survives untouched, and
+# `_landing_notice_upsert` already folds that pair into a fixed `eligible_at`
+# of its own, which is in the digest already — the live figure this strips
+# is the only part of the reason that was ever going to move on its own. A
+# no-op for every other persistent class: the pattern only ever matches the
+# protected-path cool-off's own wording.
+_landing_notice_normalized_reason() {
+  local reason="$1"
+  printf '%s' "$reason" | sed -E 's/cool-off has [0-9]+(\.[0-9]+)?h remaining/cool-off has Nh remaining/'
+}
+
 # _landing_notice_upsert PR_URL REPO CLASS REASON
 # Post or update, in place, the one informational pipeline comment on PR_URL
 # naming why the landing stage is holding it (issue #1979, requirement 62) —
@@ -1224,7 +1250,11 @@ _landing_notice_eligible_at() {
 # `pipeline_comment_upsert`'s own UNCHANGED_IF_CONTAINS is what makes that
 # cost one write rather than one per pass, since the body's own visible prose
 # carries this cycle's id and this node's name and so is never byte-equal to
-# the standing one.
+# the standing one. The stamp itself is built from `_landing_notice_
+# normalized_reason`'s REASON, not REASON verbatim — see that function's own
+# header for why: a plain refusal's REASON is textually stable pass to pass,
+# but a protected-path cool-off's is not, and the stamp has to recognise that
+# one as unchanged too.
 _landing_notice_upsert() {
   local pr_url="$1" repo="$2" class="$3" reason="$4"
   local number
@@ -1236,7 +1266,7 @@ _landing_notice_upsert() {
 
   local body stamp
   body="$(_landing_notice_body "$class" "$reason" "$node_name" "$eligible_at")"
-  stamp="$(_landing_notice_stamp refused "$class" "$reason" "$eligible_at")"
+  stamp="$(_landing_notice_stamp refused "$class" "$(_landing_notice_normalized_reason "$reason")" "$eligible_at")"
   pipeline_comment_upsert "$repo" "$number" "$PIPELINE_LANDING_NOTICE_MARKER_PREFIX" "$body" "$stamp" \
     || log_event "warning" "$(jq -nc --arg u "$pr_url" --arg c "$class" \
          --arg d "could not post or update the landing-refusal notice comment on $pr_url (class: $class)" \

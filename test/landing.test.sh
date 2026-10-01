@@ -1183,6 +1183,32 @@ assert_eq "a changed reason PATCHes the same standing comment, never posts a sec
 assert_contains "  ... as a PATCH" "PATCH" "$(cat "$comment_write_calls")"
 assert_contains "  ... naming the same comment id" $'\t'"777"$'\t' "$(cat "$comment_write_calls")"
 
+# Review follow-up on PR #2033: the protected-path cool-off's own reason
+# embeds a "<N>h remaining" figure that `landing_protected_path_controls_ok`
+# recomputes from wall-clock `now` on every pass (rounded to 0.1h) — moving
+# roughly every six minutes, faster than any cycle cadence, while the
+# standing refusal's own `approved`/`landing_cool_off_hours` pair, and so its
+# `eligible_at`, have not changed at all. Without `_landing_notice_
+# normalized_reason` this reason would never byte-match a prior pass's, and
+# the 2.1e retry sweep would re-PATCH this notice once per cycle per node for
+# the entire cool-off window — exactly the once-per-pass churn issue #1601
+# already fixed for every other persistent class.
+cool_off_reason_1="ineligible:protected-path cool-off has 23.9h remaining (approved 2026-08-17T10:00:00Z, landing_cool_off_hours=24)"
+cool_off_reason_2="ineligible:protected-path cool-off has 17.3h remaining (approved 2026-08-17T10:00:00Z, landing_cool_off_hours=24)"
+cool_off_body="$(_landing_notice_body "ineligible" "$cool_off_reason_1" "test-node" "$(_landing_notice_eligible_at "$cool_off_reason_1")")"
+: > "$comment_write_calls"
+comment 900 "$cool_off_body" | set_comments
+_landing_notice_upsert "$NOTICE_URL" "acme/widgets" "ineligible" "$cool_off_reason_2"
+assert_eq "a standing cool-off refusal with a moved countdown (same approved/hours) is still no write" \
+  "0" "$(wc -l < "$comment_write_calls" | tr -d ' ')"
+
+: > "$comment_write_calls"
+comment 900 "$cool_off_body" | set_comments
+_landing_notice_upsert "$NOTICE_URL" "acme/widgets" "ineligible" \
+  "ineligible:protected-path cool-off has 17.3h remaining (approved 2026-08-18T10:00:00Z, landing_cool_off_hours=24)"
+assert_eq "  ... but a genuinely later approval (a fresh push's restarted cool-off) still PATCHes" \
+  "1" "$(wc -l < "$comment_write_calls" | tr -d ' ')"
+
 : > "$comment_write_calls"
 set_comments
 _landing_notice_clear "$NOTICE_URL" "acme/widgets" "it was armed to land via enqueued"
