@@ -948,6 +948,88 @@ assert_eq "  ... comparing the slugs case-insensitively, as GitHub does" \
   "0" "$(void_pr_matches_item "poetic-poems/AGENT-OPS" "281" "pr-281-abandoned-deadbee1" \
     "Poetic-Poems/agent-ops"; echo $?)"
 
+# --- void_review_item_tech_debt_id: resolving a review ref's designated --------
+# --- tech-debt id (issue #2030) -------------------------------------------------
+# The real incident the issue reports: a recommendation's own id is never what
+# the pull request implementing it names — only the tech-debt id the
+# recommendation itself designates, on its "Tech-debt item: `<id>`" line.
+printf 'main' >"$tmp_dir/repo-Poetic-Poems_poetic-fiddle"
+# shellcheck disable=SC2016  # the backticks are literal Markdown, not command substitution.
+recs_fixture='## R-07 — Something else entirely
+
+**Approach:** Not this one. Tech-debt item: `TD-PPpfid-26080906`.
+
+## R-08 — Add a unit test for `sync-poetic-css.mjs`
+
+Some detail paragraph about the gap.
+
+**Approach:** Mirror the test structure of a sibling script. Tech-debt item: `TD-PPpfid-26080907`.
+
+## R-09 — Extract a shared page-heading component
+
+**Approach:** Small, mechanical extraction. Tech-debt item: `TD-PPpfid-26080908`.
+'
+printf '{"content":"%s"}' "$(printf '%s' "$recs_fixture" | base64 -w0)" \
+  >"$tmp_dir/contents-main-reviews_project-review-2026-08-08_03-recommendations.md"
+
+assert_eq "resolves the recommendation's own designated tech-debt id" \
+  "TD-PPpfid-26080907" \
+  "$(void_review_item_tech_debt_id "review-2026-08-08-R-08" "Poetic-Poems/poetic-fiddle")"
+assert_eq "  ... a neighbouring recommendation's id does not bleed over" \
+  "TD-PPpfid-26080908" \
+  "$(void_review_item_tech_debt_id "review-2026-08-08-R-09" "Poetic-Poems/poetic-fiddle")"
+
+out="$(void_review_item_tech_debt_id "review-2026-08-08-R-99" "Poetic-Poems/poetic-fiddle")"; rc=$?
+assert_eq "an unknown recommendation number resolves to nothing" "1" "$rc"
+assert_eq "  ... and prints nothing" "" "$out"
+
+out="$(void_review_item_tech_debt_id "TD26051201" "Poetic-Poems/poetic-fiddle")"; rc=$?
+assert_eq "a non-review item shape is not even attempted" "1" "$rc"
+
+out="$(void_review_item_tech_debt_id "review-2026-08-08-R-08" "")"; rc=$?
+assert_eq "an empty slug resolves to nothing" "1" "$rc"
+
+# No fixture at all for this review date — the real gap the issue reports when
+# the recommendations file cannot be fetched.
+out="$(void_review_item_tech_debt_id "review-2026-09-09-R-01" "Poetic-Poems/poetic-fiddle")"; rc=$?
+assert_eq "an unreadable recommendations file resolves to nothing" "1" "$rc"
+
+# --- void_pr_matches_item: the review-ref resolver fallback (issue #2030) ------
+# The exact shape of the incident: PRs #290/#312/#313/#325 each implemented a
+# recommendation, naming only its designated tech-debt id — never the literal
+# review ref — in their body and branch.
+printf '{"body": "## Item\\n\\nTD-PPpfid-26080907", "head": {"ref": "td/TD-PPpfid-26080907"}}' \
+  >"$tmp_dir/pr-Poetic-Poems_poetic-fiddle-290.json"
+assert_eq "a PR naming only the designated tech-debt id corroborates the review ref" \
+  "0" "$(void_pr_matches_item "Poetic-Poems/poetic-fiddle" "290" "review-2026-08-08-R-08" \
+    "Poetic-Poems/poetic-fiddle"; echo $?)"
+
+# The literal review ref in the PR's own body/branch still matches directly,
+# with no resolver call needed — unchanged behaviour.
+printf '{"body": "Implements review-2026-08-08-R-08.", "head": {"ref": "agent/review-2026-08-08-R-08"}}' \
+  >"$tmp_dir/pr-Poetic-Poems_poetic-fiddle-291.json"
+assert_eq "a PR naming the literal review ref still matches directly" \
+  "0" "$(void_pr_matches_item "Poetic-Poems/poetic-fiddle" "291" "review-2026-08-08-R-08" \
+    "Poetic-Poems/poetic-fiddle"; echo $?)"
+
+# A PR naming neither the review ref nor the resolved tech-debt id is still
+# refused, exactly as before this fallback existed.
+printf '{"body": "Some unrelated change.", "head": {"ref": "agent/unrelated"}}' \
+  >"$tmp_dir/pr-Poetic-Poems_poetic-fiddle-292.json"
+out="$(void_pr_matches_item "Poetic-Poems/poetic-fiddle" "292" "review-2026-08-08-R-08" \
+  "Poetic-Poems/poetic-fiddle")"; rc=$?
+assert_eq "a PR naming neither id is still refused" "1" "$rc"
+assert_contains "  ... as a fabrication" "fabricated citation" "$out"
+
+# When the recommendations file cannot be fetched, the fallback fails closed
+# and the ordinary refusal still fires rather than crashing or passing silently.
+printf '{"body": "Some unrelated change.", "head": {"ref": "agent/unrelated"}}' \
+  >"$tmp_dir/pr-Poetic-Poems_poetic-fiddle-293.json"
+out="$(void_pr_matches_item "Poetic-Poems/poetic-fiddle" "293" "review-2026-09-09-R-01" \
+  "Poetic-Poems/poetic-fiddle")"; rc=$?
+assert_eq "an unreadable recommendations file falls through to the ordinary refusal" "1" "$rc"
+assert_contains "  ... as a fabrication" "fabricated citation" "$out"
+
 # --- void_commit_matches_item ---------------------------------------------------
 printf 'main' >"$tmp_dir/repo-Poetic-Poems_poetic"
 

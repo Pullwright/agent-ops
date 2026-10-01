@@ -800,6 +800,64 @@ void_finishing_pr_reason() {
   return 0
 }
 
+# void_review_item_tech_debt_id ITEM SLUG
+# Resolve a `review-<date>-R-<nn>` recommendation ref (the id
+# `scripts/gather-project-review.sh` mints, e.g. `review-2026-08-08-R-08`) to
+# the tech-debt id its own recommendation designates — the id on its own
+# "Tech-debt item: `<id>`" line in `reviews/project-review-<date>/
+# 03-recommendations.md`, read from SLUG's default branch. A pull request
+# implementing a recommendation is opened against that tech-debt issue, so it
+# names that id in its body and branch — never the review ref itself, which
+# appears nowhere in the repository's own convention for raising the PR
+# (issue #2030). `void_pr_matches_item` calls this to resolve what a
+# review-shaped item's citation should actually be checked against, before
+# falling through to its ordinary refusal.
+#
+# Prints the resolved id and returns 0 on success. Prints nothing and returns
+# 1 the moment anything is not exactly as expected — ITEM is not shaped like a
+# recommendation ref, SLUG is empty, the recommendations file cannot be
+# fetched, or no "Tech-debt item: `…`" line is found inside this
+# recommendation's own section — so the caller falls through to today's
+# existing refusal rather than this resolver fabricating a pass from a
+# half-read file.
+void_review_item_tech_debt_id() {
+  local item="$1" slug="$2" gh_bin="${VOID_GUARD_GH:-gh}"
+  local date rec_id default_branch path api_out content section td_id
+
+  [[ "$item" =~ ^review-([0-9]{4}-[0-9]{2}-[0-9]{2})-(R-[0-9]+)$ ]] || return 1
+  date="${BASH_REMATCH[1]}"
+  rec_id="${BASH_REMATCH[2]}"
+  [[ -n "$slug" ]] || return 1
+
+  default_branch="$("$gh_bin" api "repos/$slug" --jq '.default_branch' 2>/dev/null)" || default_branch=""
+  [[ -n "$default_branch" ]] || default_branch="main"
+
+  path="reviews/project-review-$date/03-recommendations.md"
+  api_out="$("$gh_bin" api "repos/$slug/contents/$path?ref=$default_branch" 2>/dev/null)" || return 1
+  [[ -n "$api_out" ]] || return 1
+  content="$(jq -r '.content // empty' <<<"$api_out" 2>/dev/null | tr -d '\n' | base64 -d 2>/dev/null)"
+  [[ -n "$content" ]] || return 1
+
+  # Isolate the recommendation's own section — from its `## R-<nn> — …`
+  # heading up to (not including) the next `## ` heading or end of file — the
+  # same split `scripts/gather-project-review.sh` performs, so a "Tech-debt
+  # item:" line belonging to a *different* recommendation can never be picked
+  # up by accident.
+  section="$(awk -v id="$rec_id" '
+    $0 ~ ("^## " id "([ \t]|$)") { capture = 1; print; next }
+    capture && /^## / { exit }
+    capture { print }
+  ' <<<"$content")"
+  [[ -n "$section" ]] || return 1
+
+  # shellcheck disable=SC2016  # the backticks are literal Markdown, not command substitution.
+  td_id="$(grep -oE 'Tech-debt item: `[^`]+`' <<<"$section" | head -n1 \
+    | sed -E 's/Tech-debt item: `([^`]+)`/\1/')"
+  [[ -n "$td_id" ]] || return 1
+
+  printf '%s' "$td_id"
+}
+
 # void_pr_matches_item SLUG NUM ITEM ENTRY_REPO [CTX_JSON]
 # Test one cited PR against the item it is supposed to corroborate: fetched
 # live from the API — never from a gathered candidate list, so this works
@@ -809,6 +867,12 @@ void_finishing_pr_reason() {
 # first place. Prints nothing and returns 0 on a match; prints a one-line
 # reason and returns 1 otherwise, including when the PR cannot be read at all
 # — an unreadable citation corroborates nothing.
+#
+# A `review-<date>-R-<nn>` item gets one more chance before being refused: its
+# citing PR is never expected to name the review ref itself, only the
+# recommendation's own designated tech-debt id (`void_review_item_tech_debt_id`,
+# issue #2030), so that id — resolved against ENTRY_REPO, where the
+# recommendation's file lives — is checked too.
 #
 # One item shape is corroborated differently: a finishing-source item *is* a
 # pull request. The gatherers mint its id from the PR's own number —
@@ -868,6 +932,14 @@ void_pr_matches_item() {
   if void_text_names_item "$body
 $head_ref" "$item"; then
     return 0
+  fi
+  if [[ "$item" =~ ^review-[0-9]{4}-[0-9]{2}-[0-9]{2}-R-[0-9]+$ ]]; then
+    local td_id
+    if td_id="$(void_review_item_tech_debt_id "$item" "${entry_repo:-$slug}")" \
+      && void_text_names_item "$body
+$head_ref" "$td_id"; then
+      return 0
+    fi
   fi
   printf 'fabricated citation: PR #%s in %s (branch %s) references neither its body nor its branch name with item %s' \
     "$num" "$slug" "${head_ref:-?}" "$item"
