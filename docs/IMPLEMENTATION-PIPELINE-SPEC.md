@@ -9384,7 +9384,14 @@ implements.
    not after") from the pre-engagement gate's own failure text, escalates if
    an adjudication was in progress (the same "cannot settle" treatment an
    unparseable verdict already gets), and otherwise costs a missing review
-   this round, never a stranded PR.
+   this round, never a stranded PR. The verdict the engagement actually
+   reached was still paid for in full, so this path also logs its own
+   `approver-verdict` event — `posted: false`, the verdict and the rest of
+   this requirement's own fields populated exactly as the ordinary path at
+   the tail of this stage populates them (agent-ops#1066) — without setting
+   `approver_stage_verdict`/`approver_stage_adjudicating`/`approver_stage_tier`,
+   which stay at this stage's own entry-time reset so that requirement 8d's
+   landing gate never arms a pull request that carries no App review at all.
 
    A review GitHub itself refused — an installation that lost review rights
    mid-round, an API outage — is logged as a `warning` naming the pull
