@@ -17929,7 +17929,9 @@ implements.
     #990) calls stale — its freshness marker records the last fetch as
     failed, or an `ok: true` marker whose `ts` is older than the configured
     threshold (a dead fetch cron that never logged a failure) — is unhealthy,
-    and the whole reconciliation for that cycle is skipped with one warning
+    and so is a union the snapshot could not build (requirement 2.5's
+    `union_build_ok`, #2037), whatever part of it was written; in each case
+    the whole reconciliation for that cycle is skipped with one warning
     logged (not one per repo, since every repo shares the one union and the
     one peers directory). Second, a grace window against `union_log_horizon`
     (requirement 39f's own snapshot horizon): a peer node can apply this
