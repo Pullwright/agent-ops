@@ -25974,13 +25974,14 @@ oblige anyone to edit a test.
    "<N>h remaining" figure — the live countdown
    `landing_protected_path_controls_ok` recomputes every pass — is also a
    no-op, since `_landing_notice_normalized_reason` collapses that figure
-   before either side of the comparison is hashed. `_landing_notice_clear` against a pull request
-   carrying no standing notice posts nothing at all (never announces a hold
-   that was never posted); against one that does, PATCHes it to say the hold
-   cleared, naming why. `_landing_refuse` itself routes a persistent class to
-   `_landing_notice_upsert`, and writes nothing at all for every other class —
-   each of the ten non-persistent classes, given a pull request carrying a
-   standing cool-off notice, leaves that notice byte-for-byte untouched.
+   before either side of the comparison is hashed. `_landing_notice_clear`
+   against a pull request carrying no standing notice posts nothing at all
+   (never announces a hold that was never posted); against one that does,
+   PATCHes it to say the hold cleared, naming why. `_landing_refuse` itself
+   routes a persistent class to `_landing_notice_upsert`, and writes nothing
+   at all for every other class — each of the ten non-persistent classes,
+   given a pull request carrying a standing cool-off notice, leaves that
+   notice byte-for-byte untouched.
    `test/landing-wiring.test.sh` extends its own `_LANDING_REFUSAL_CLASSES`
    wiring assertion with the mirrored check that
    `_LANDING_PERSISTENT_REFUSAL_CLASSES` is a subset of it, and exercises the
