@@ -383,6 +383,7 @@ assert_eq "the union carrier still reads the governing hit past a spliced line" 
 assert_eq "…and nothing is reported, because nothing failed" "0" "$(last_guard_events | jq -s 'length')"
 
 : > "$log_file"
+# shellcheck disable=SC2317  # the stub is called from $union_block_src via eval, invisible to a static reader
 out="$(limit_union_record() { echo "jq: killed" >&2; return 137; }; run_union_block)"
 assert_eq "a union read that fails outright leaves the carrier empty" "" "$out"
 assert_eq "…and is reported, not read as no limit" "1" "$(last_guard_events | jq -s 'length')"
@@ -400,6 +401,7 @@ assert_eq "…under the right site" "cycle:union_record" "$(last_guard_events | 
   governing='{"resume_at":"2099-01-01T00:00:00Z","kind":"auto"}'
 }
 filed="$tmp_dir/filed"
+# shellcheck disable=SC2317  # called from $freeze_block_src via eval, invisible to a static reader
 create_escalation_issue() { printf '%s\n' "$2" >> "$filed"; printf '42\thttps://example.invalid/o/ops/issues/42'; }
 run_freeze_block() {  # run_freeze_block <now_epoch>
   # shellcheck disable=SC2034  # read by the eval'd block
@@ -449,6 +451,7 @@ assert_eq "…and reports nothing, since nothing failed" "0" "$(last_guard_event
 # nothing.
 printf '%s\n' "{\"ts\":\"$three_days_ago\",\"event\":\"limit-hit\",\"resume_at\":\"2099-01-01T00:00:00Z\"}" > "$union_log"
 : > "$log_file"
+# shellcheck disable=SC2317  # the stub is called from $freeze_block_src via eval, invisible to a static reader
 (limit_standdown_since() { echo "jq: killed" >&2; return 137; }; run_freeze_block "$now_s")
 assert_eq "a failed read of the freeze's start files nothing" "" "$(cat "$filed")"
 assert_eq "…and is reported under the right site" "freeze_since" "$(last_guard_events | jq -r '.site')"
