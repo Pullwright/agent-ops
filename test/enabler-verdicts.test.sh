@@ -1083,6 +1083,55 @@ assert_eq "decide/TD-disagreement: ...carrying the pending decision" "use option
 assert_eq "decide/TD-disagreement: ...as a full candidate, not triage_only (it needs a real spec, not one field)" \
   "null" "$(jq -r '.[0].triage_only // "null"' <<<"$candidates")"
 
+# agent-ops#1058: the item above is thread-less (its gather entry carries no
+# `number`, and its ref `TD26082901` is not purely numeric), so the candidate
+# must also carry the prior refinement itself — the specification the
+# decision amends — since `entry` here has nothing for the Refiner to read.
+assert_eq "decide/TD-disagreement: ...and the prior refinement, since the item is thread-less" \
+  "the original spec" "$(jq -r '.[0].refinement.spec' <<<"$candidates")"
+
+# A thread-backed item (its gather entry carries `number`) in the same
+# decision-pending state must NOT carry `refinement`: its specification is
+# already in `entry`'s own comments, where the prompt sends the Refiner.
+rmap_issue='{"acme/widgets":{"301":{"ts":"2026-08-01T09:00:00Z","comment_url":"https://github.com/acme/widgets/issues/301#issuecomment-1"}}}'
+dmap_issue='{"acme/widgets":{"301":{"decision":"use option B","rationale":"cheaper"}}}'
+repos_issue='[{"slug":"acme/widgets","issues":[{"source":"issues","ref":"301","number":301}]}]'
+candidates_issue="$(refiner_candidate_items "$repos_issue" '{"issues":"required"}' \
+  "$rmap_issue" '[]' '[]' '[]' "$dmap_issue")"
+assert_eq "decide/issue-disagreement: a thread-backed decision-pending candidate carries no refinement field" \
+  "null" "$(jq -r '.[0].refinement // "null"' <<<"$candidates_issue")"
+assert_eq "decide/issue-disagreement: ...but still carries the pending decision" "use option B" \
+  "$(jq -r '.[0].decision.decision' <<<"$candidates_issue")"
+
+# A `triage_only` candidate (already refined, offered solely to band it)
+# must NOT carry `refinement` either — requirement 39g forbids a second
+# specification for it, so the field would be dead weight.
+#
+# Deliberately *also* decision-pending and thread-less, the one state in which
+# the exclusion does any work: `triage_only` and `decision_pending` are
+# computed independently and an unbanded, already-refined issue with a pending
+# decision satisfies both (agent-ops#2050). A fixture with no decision would
+# pass this assertion whether the exclusion existed or not.
+rmap_triage='{"acme/widgets":{"TD5":{"ts":"2026-08-01T09:00:00Z","spec":"an existing spec"}}}'
+dmap_triage='{"acme/widgets":{"TD5":{"decision":"use option C","rationale":"simplest"}}}'
+repos_triage='[{"slug":"acme/widgets","issues":[{"source":"issues","ref":"TD5","priority_set":false}]}]'
+candidates_triage="$(refiner_candidate_items "$repos_triage" '{"issues":"required"}' \
+  "$rmap_triage" '[]' '[]' '[]' "$dmap_triage")"
+assert_eq "decide/triage-only: a triage_only candidate carries no refinement field" \
+  "null" "$(jq -r '.[0].refinement // "null"' <<<"$candidates_triage")"
+assert_eq "decide/triage-only: ...and is still triage_only" "true" \
+  "$(jq -r '.[0].triage_only' <<<"$candidates_triage")"
+assert_eq "decide/triage-only: ...and still carries the pending decision it was handed" \
+  "use option C" "$(jq -r '.[0].decision.decision' <<<"$candidates_triage")"
+
+# A never-refined, thread-less candidate (no decision pending) must NOT
+# carry `refinement` either — there is nothing in `refinements_map` for it.
+repos_unrefined='[{"slug":"acme/widgets","tech_debt":[{"source":"tech_debt","ref":"TD6"}]}]'
+candidates_unrefined="$(refiner_candidate_items "$repos_unrefined" '{"tech_debt":"required"}' \
+  '{}' '[]' '[]' '[]' '{}')"
+assert_eq "decide/never-refined: a never-refined thread-less candidate carries no refinement field" \
+  "null" "$(jq -r '.[0].refinement // "null"' <<<"$candidates_unrefined")"
+
 # --- decision-vetoed clears the decision (agent-ops#937, agent-ops#1198):
 # reopening the log issue withdraws the decision it logged, and a Refiner
 # engagement afterwards must not be handed it as though it still stood. ---
