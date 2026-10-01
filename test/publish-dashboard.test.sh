@@ -1490,6 +1490,39 @@ for name in log.jsonl review-log.jsonl revert-rate.jsonl; do
     "$(jq -s 'length' < "$jsonl_dir/$name")"
 done
 
+# --- log.jsonl waits while the implementation cycle holds its lock (#2037) ----
+# A running cycle copies its own new events into its union snapshot by line
+# number — `tail -n "+$(( log_lines_before + 1 ))"`, with `log_lines_before`
+# from `wc -l` — so a repair that dropped K damaged lines under it and appended
+# one record would move every later line up by K-1, and the snapshot would
+# silently lose that many of the cycle's events. While `lock.json` names a live
+# pid in this container, the launcher leaves `log.jsonl` for a later window;
+# `review-log.jsonl`, which nothing reads by offset, is repaired as usual.
+for name in log.jsonl review-log.jsonl; do
+  printf '%s\n' '{"ts":"2026-09-16T20:30:00Z","event":"before"}' \
+    '{"ts":"2026-09-16T20:31:00Z","event":"x","core":{"limit":5000,{"ts":"2026-09-16T20:32:00Z","event":"y"}' \
+    '{"ts":"2026-09-16T20:33:00Z","event":"z","core":{"limit":5000,{"ts":"2026-09-16T20:34:00Z","event":"w","d":{' \
+    > "$jsonl_dir/$name"
+done
+offset_log_before="$(cat "$jsonl_dir/log.jsonl")"
+sleep 300 &
+cycle_pid=$!
+jq -nc --argjson pid "$cycle_pid" --arg host "$HOSTNAME" \
+  '{pid: $pid, started_at: "2026-09-16T20:00:00Z", host: $host}' > "$jsonl_dir/lock.json"
+env HOME="$l" LAUNCHER_WINDOW=1 LAUNCHER_PUBLISH_CMD="$stub" NODE_NAME=launcher-test-node \
+    TICK_LOG="$tick_log" GH_STAMP="$gh_stamp" "$LAUNCHER" >/dev/null 2>&1
+assert_eq "log.jsonl is not rewritten while the cycle holds its lock" \
+  "$offset_log_before" "$(cat "$jsonl_dir/log.jsonl")"
+assert_eq "  ... while review-log.jsonl, which nothing reads by offset, is repaired" "1" \
+  "$(grep -c '"event":"log-repaired"' "$jsonl_dir/review-log.jsonl")"
+kill "$cycle_pid" 2>/dev/null
+wait "$cycle_pid" 2>/dev/null
+env HOME="$l" LAUNCHER_WINDOW=1 LAUNCHER_PUBLISH_CMD="$stub" NODE_NAME=launcher-test-node \
+    TICK_LOG="$tick_log" GH_STAMP="$gh_stamp" "$LAUNCHER" >/dev/null 2>&1
+assert_eq "once the lock's pid has gone, log.jsonl is repaired too" "1" \
+  "$(grep -c '"event":"log-repaired"' "$jsonl_dir/log.jsonl")"
+rm -f "$jsonl_dir/lock.json"
+
 # --- The loop paces itself off what a tick actually costs (#799) ----------------
 # The loop used to sleep to the next 5-second boundary and no further, whatever
 # the tick before it had cost, on the assumption a tick fits in five seconds.

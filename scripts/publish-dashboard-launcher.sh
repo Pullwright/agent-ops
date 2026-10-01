@@ -140,8 +140,34 @@ mkdir -p "$logdir"
 # (`fleet_repair_log`, lib/fleet.sh). It hits the same hazard in `log.jsonl`,
 # `review-log.jsonl` and `revert-rate.jsonl` too, so repair those the same way
 # each window, alongside `dashboard.log`.
+#
+# Except `log.jsonl` while the implementation cycle holds its lock. A running
+# cycle copies its own new events into its union snapshot by line number —
+# `tail -n "+$(( log_lines_before + 1 ))"`, with `log_lines_before` taken from
+# `wc -l` (lib/candidate-gather.sh, lib/standdown.sh) — and a repair that
+# drops K damaged lines and appends one record of its own moves every later
+# line up by K-1, so the snapshot would silently lose that many of the cycle's
+# events. The size check in `fleet_repair_swap` does not catch it, because no
+# append needs to overlap the repair. The lock is live by `acquire_lock`'s own
+# test (agent-cycle.sh): a pid that `kill -0` finds, in a lock that names this
+# container or names none. The launcher and the cycle share a container, so a
+# lock naming another one is a dead container's, which the next cycle takes
+# over. Nothing takes line offsets into the other files, and the repair is
+# retried every window, so one skipped while a cycle runs costs nothing.
+cycle_lock_live() {  # <lock-file>
+  local f="$1" pid host
+  [[ -f "$f" ]] || return 1
+  pid="$(jq -r '.pid // empty' "$f" 2>/dev/null || true)"
+  host="$(jq -r '.host // empty' "$f" 2>/dev/null || true)"
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  [[ -z "$host" || "$host" == "${HOSTNAME:-}" ]] || return 1
+  kill -0 "$pid" 2>/dev/null
+}
 fleet_repair_log "$log" "$node_name"
 for f in "$logdir/log.jsonl" "$logdir/review-log.jsonl" "$logdir/revert-rate.jsonl"; do
+  if [[ "$f" == "$logdir/log.jsonl" ]] && cycle_lock_live "$logdir/lock.json"; then
+    continue
+  fi
   fleet_repair_log "$f" "$node_name"
 done
 
