@@ -246,6 +246,13 @@ finalize_node_state_for_review() {
 # own interval lands in `unaccounted_seconds` rather than being excluded,
 # since the instant it names is real even though the label on it is not one
 # the invariant recognises.
+#
+# `$all` is the log's objects whose `event` NODE_TIME_STATE_EVENTS names, never
+# the whole parsed log (agent-ops#1649): `node_time_state_fold` gathers them in
+# the same jq process that runs this fold, in log order. A change here that
+# reads another event type must add it to that declaration, or it sees none —
+# `test/union-stream.test.sh` fails when it does not.
+NODE_TIME_STATE_EVENTS="node-state"
 # shellcheck disable=SC2016  # jq's own $all/$since/$until, not the shell's.
 NODE_TIME_STATE_FOLD_JQ='
   def valid_states: ["producing","overhead","externally-blocked","idle-with-demand","idle-without-demand","down"];
@@ -352,34 +359,25 @@ NODE_TIME_STATE_FOLD_JQ='
 # or unreadable log, on the same terms `lib/item-lifecycle.sh`'s
 # `item_lifecycle_fold` already does.
 node_time_state_fold() {
-  local src="${1:--}" since="${2:-}" until="${3:-}" log_file="" tmp_log="" all_json_file="" out=""
+  local src="${1:--}" since="${2:-}" until="${3:-}" out=""
   # Never hold the log in a bash variable (agent-ops#1620): a variable the
-  # size of the log is copied by every subshell forked afterwards. stdin is
-  # spooled to a temp file so the parsed array below can be written straight
-  # from one file to another, with the log never passing through bash.
+  # size of the log is copied by every subshell forked afterwards. One jq
+  # process reads the log (or stdin) itself, keeps only the declared events
+  # and runs the fold (agent-ops#1649), so the log never passes through bash
+  # and the whole parsed log is never gathered. A missing or empty log folds
+  # an empty stream.
+  local -a files=(/dev/null)
   if [[ "$src" == "-" ]]; then
-    tmp_log="$(mktemp 2>/dev/null)" && { cat > "$tmp_log" 2>/dev/null; log_file="$tmp_log"; }
+    files=()
   elif [[ -s "$src" ]]; then
-    log_file="$src"
+    files=("$src")
   fi
-
-  # Only `node-state` events are gathered into `$all`, never the whole parsed
-  # log (agent-ops#1649): the fold's first step keeps the objects whose event
-  # is `node-state` and nothing else, so filtering the stream first hands it
-  # exactly those, in log order.
-  all_json_file="$(mktemp 2>/dev/null)" || true
-  if [[ -n "$log_file" && -n "$all_json_file" ]]; then
-    jq -c -R 'fromjson? // empty | objects | select(.event == "node-state")' \
-      "$log_file" 2>/dev/null | jq -sc '.' > "$all_json_file" 2>/dev/null
-  fi
-  [[ -n "$all_json_file" && -s "$all_json_file" ]] \
-    || { [[ -n "$all_json_file" ]] && printf '[]' > "$all_json_file" 2>/dev/null; }
-
-  if [[ -n "$all_json_file" ]]; then
-    out="$(jq -nc --arg since "$since" --arg until "$until" \
-        'input as $all | ('"$NODE_TIME_STATE_FOLD_JQ"')' "$all_json_file" 2>/dev/null || true)"
-  fi
-  rm -f "$tmp_log" "$all_json_file" 2>/dev/null
+  # shellcheck disable=SC2016,SC2086  # jq's own $e/$ARGS; a word list by design.
+  out="$(jq -nRc --arg since "$since" --arg until "$until" '
+      def wanted: .event as $e | any($ARGS.positional[]; . == $e);
+      [ inputs | fromjson? // empty | objects | select(wanted) ] as $all
+      | ('"$NODE_TIME_STATE_FOLD_JQ"')' "${files[@]}" --args $NODE_TIME_STATE_EVENTS \
+      2>/dev/null || true)"
 
   [[ -n "$out" ]] || out='{"window":{"from":null,"to":null,"seconds":0},"nodes":[],"skipped_events":0,"totals":{"producing":0,"overhead":0,"externally-blocked":0,"idle-with-demand":0,"idle-without-demand":0,"down":0,"unaccounted":0},"expected_total_seconds":0,"balanced":true,"idle_with_demand_by_cause":{"awaiting-tick":0,"back-pressure":0,"peer-claimed":0,"coordinator-declined":0,"unspecified":0},"externally_blocked_by_cause":{"usage-limit":0,"github-budget":0,"unreachable":0,"unauthorized":0,"disk-low":0,"disk-full":0,"memory-low":0,"host-overcommit":0,"unspecified":0},"by_node":{}}'
   printf '%s' "$out"

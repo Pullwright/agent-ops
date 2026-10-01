@@ -871,6 +871,84 @@ assert_eq "the next healthy tick clears the verdict" "true" \
 assert_eq "  ... and the window it could not render before is back" "1" \
   "$(jq -r '.cycles | length' <<<"$nfdata2")"
 
+# A record that is not an object fails the render the same way (agent-ops#1649).
+# `read_events` keeps any parseable line, `7` included, and every whole-array
+# reader failed on one; the streamed readers must fail on it too rather than
+# render the cycle beside it hollow — its repo, item and outcome read from no
+# events at all — and cache that as current under a key whose event count
+# is missing.
+no="$(new_home nodeNonObject)"
+no_cid="${today_day}T094500Z-nodeNO-71"
+make_cycle "$no" "$no_cid" 0.25 model-a
+{
+  printf '{"ts":"2026-01-01T09:45:00Z","cycle":"%s","node":"nodeNO","event":"cycle-start"}\n' "$no_cid"
+  printf '{"ts":"2026-01-01T09:45:01Z","cycle":"%s","node":"nodeNO","event":"selection","repo":"Poetic-Poems/poetic","item":"TD26071401","source":"tech-debt","title":"t"}\n' "$no_cid"
+  printf '7\n'
+  printf '{"ts":"2026-01-01T09:46:00Z","cycle":"%s","node":"nodeNO","event":"pr-raised","repo":"Poetic-Poems/poetic","item":"TD26071401","pr_url":"https://github.com/Poetic-Poems/poetic/pull/1"}\n' "$no_cid"
+} > "$no/.local/state/poetic-agents/log.jsonl"
+env HOME="$no" NODE_NAME=nodeNO "$PUBLISH" --no-github >/dev/null 2>"$tmp_dir/nonobject.err"
+assert_eq "a publish over a log holding a non-object record still exits 0" "0" "$?"
+nodata="$(data_of "$no")"
+assert_eq "a non-object record fails the detail render rather than rendering it hollow" "false" \
+  "$(jq -r '.cycle_render.ok' <<<"$nodata")"
+assert_contains "  ... with jq's own reason attached" "Cannot index number" \
+  "$(jq -r '.cycle_render.error // ""' <<<"$nodata")"
+assert_eq "  ... and no cycle rendered" "0" "$(jq -r '.cycles | length' <<<"$nodata")"
+assert_eq "  ... and nothing cached for the cycle it could not read" "none" \
+  "$(ls "$no/.local/state/poetic-agents/.dashboard-cycle-cache/$no_cid".* >/dev/null 2>&1 && echo cached || echo none)"
+assert_contains "  ... and stderr says the window failed to render" \
+  "the cycle detail window failed to render" "$(cat "$tmp_dir/nonobject.err")"
+# The scorecards' kept-events stream aborts on the same record, so the cards
+# take their own fallback — no window, no rows — never a partial fold.
+assert_eq "the actor scorecards fall back on an aborted stream: no window" "null" \
+  "$(jq -r '.counts.actor_scorecards.window_from' <<<"$nodata")"
+assert_eq "  ... and no rows" "0" "$(jq -r '[.counts.actor_scorecards.actors[].rows[]] | length' <<<"$nodata")"
+
+# The per-node latest-cycle pass is guarded like the cycle summary: a first
+# pass that produced nothing (here, failed outright) is replaced by the empty
+# map and said plainly, rather than leaving the second pass to die on a null
+# map with an error that names the program instead of the missing input.
+nl="$(new_home nodeLatestGuard)"
+nl_cid="${today_day}T095000Z-nodeNL-72"
+make_cycle "$nl" "$nl_cid" 0.25 model-a
+printf '{"ts":"2026-01-01T09:50:00Z","cycle":"%s","node":"nodeNL","event":"cycle-start"}\n' "$nl_cid" \
+  > "$nl/.local/state/poetic-agents/log.jsonl"
+(
+  jq() {
+    local _arg
+    # shellcheck disable=SC2016  # the jq text the stub matches, not a shell expansion.
+    for _arg in "$@"; do [[ "$_arg" == *'.[$e.node] |= . end'* ]] && return 5; done
+    command jq "$@"
+  }
+  export -f jq
+  env HOME="$nl" NODE_NAME=nodeNL "$PUBLISH" --no-github >/dev/null 2>"$tmp_dir/node-latest.err"
+)
+assert_eq "a publish whose node-latest pass fails still exits 0" "0" "$?"
+assert_contains "the failed node-latest pass is reported plainly" \
+  "the per-node latest-cycle pass produced no result" "$(cat "$tmp_dir/node-latest.err")"
+assert_lacks "  ... not as the second pass dying on a null map" \
+  "has no keys" "$(cat "$tmp_dir/node-latest.err")"
+assert_eq "  ... and the page still publishes" "nodeNL" "$(jq -r '.node' <<<"$(data_of "$nl")")"
+
+# An empty item-lifecycle result — the fold cut short, or its file gone under
+# a sweep — falls back to the empty record set, as a non-object one does, so
+# the readers of it compute over no records rather than reporting an outage.
+# `jq` prints nothing and succeeds on an empty file, which the guard has to
+# catch on its own. Seen through turns-per-landed-item, which reports its
+# outage shape (`n_landed_total: null`) for an empty file and a real zero for
+# the empty record set.
+le_app="$tmp_dir/lifecycle-empty-app"
+mkdir -p "$le_app"
+tar -C "$SCRIPT_DIR" --exclude=.git -cf - . | tar -C "$le_app" -xf -
+printf '\nitem_lifecycle_fold() { return 0; }\n' >> "$le_app/lib/item-lifecycle.sh"
+le="$(new_home nodeLifecycleEmpty)"
+make_cycle "$le" "${today_day}T095500Z-nodeLE-73" 0.25 model-a
+printf '{"ts":"2026-01-01T09:55:00Z","cycle":"%sT095500Z-nodeLE-73","node":"nodeLE","event":"cycle-start"}\n' "$today_day" \
+  > "$le/.local/state/poetic-agents/log.jsonl"
+env HOME="$le" NODE_NAME=nodeLE "$le_app/scripts/publish-dashboard.sh" --no-github >/dev/null 2>&1
+assert_eq "an empty lifecycle result falls back to the empty record set" "0" \
+  "$(jq -r '.turns_per_landed_item.n_landed_total' <<<"$(data_of "$le")")"
+
 # --- No-op ticks are counted, not listed (issue #271) -----------------------------
 # Under the */15 cadence most firings are the stand-down short-circuit
 # (`cycle-start` → `stand-down` → `cycle-end`) or the lock-held skip
@@ -4298,6 +4376,72 @@ assert_eq "…with a payload that is there at all" "yes" "$([[ -n "$fx_payload" 
 assert_eq "…and that the page can parse" "0" "$(jq -e . >/dev/null 2>&1 <<<"$fx_payload"; echo $?)"
 assert_eq "…and leaves nothing under \$TMPDIR — neither the fast tick's working set nor the rebuild's, which lay inside it" \
   "" "$(ls -A "$fx_tmp")"
+
+# --- Streamed union readers keep what the whole-log readers computed -------------
+# (agent-ops#1649.) Each case below is one a fixture of ordinary size never
+# reaches: the expected value is computed here the way the whole-array reader
+# computed it, over the same log.
+
+# The log tail keeps a buffer trimmed back to the newest MAX_LOG_TAIL (300)
+# events whenever it passes 2×300+1, so only a log of more than 601 kept
+# events exercises the trim; this one keeps 984, which trims twice. Timestamps repeat (each one twice) and arrive out
+# of order, so the order among equal timestamps — log position, newest first —
+# is tested as well as the cut; the excluded event types are interleaved and
+# must never displace a kept one.
+lt="$(new_home nodeLogTail)"
+lt_log="$lt/.local/state/poetic-agents/log.jsonl"
+for (( i = 0; i < 1200; i++ )); do
+  m=$(( (i * 37) % 600 ))
+  ts="$(printf '2026-01-01T%02d:%02d:%02dZ' $(( m / 3600 )) $(( (m / 60) % 60 )) $(( m % 60 )))"
+  ev="wake-poll"
+  (( i % 9 == 0 )) && ev="first-seen"
+  (( i % 13 == 0 )) && ev="review-gate-checks-read"
+  printf '{"ts":"%s","node":"nodeLT","event":"%s","seq":%d}\n' "$ts" "$ev" "$i"
+done > "$lt_log"
+run_publish "$lt" NODE_NAME=nodeLT
+assert_eq "the log tail past the trim threshold is the newest 300, newest first, ties by log position" \
+  "$(jq -sc 'map(select(.event != "review-gate-checks-read" and .event != "first-seen" and .event != "rework"))
+             | sort_by(.ts) | reverse | .[0:300] | map(.seq)' "$lt_log")" \
+  "$(jq -c '[.log_tail[].seq]' <<<"$(data_of "$lt")")"
+assert_eq "  ... which is 300 rows" "300" "$(jq -r '.log_tail | length' <<<"$(data_of "$lt")")"
+
+# The per-cycle summary keeps a cycle's latest `repo`/`item`/selection `source`
+# by `ts`, the later record winning a tie — what `sort_by(.ts) | last` picked.
+# Two selections share a timestamp here, and a record with an earlier one is
+# logged after both: the second selection must win, and the late record must
+# not. Seen through the cost join, which reads the summary.
+tie="$(new_home nodeTie)"
+tie_cid="${today_day}T100000Z-nodeTie-81"
+make_cycle "$tie" "$tie_cid" 0.40 model-a
+{
+  printf '{"ts":"2026-01-01T10:00:00Z","cycle":"%s","node":"nodeTie","event":"cycle-start"}\n' "$tie_cid"
+  printf '{"ts":"2026-01-01T10:00:05Z","cycle":"%s","node":"nodeTie","event":"selection","repo":"Poetic-Poems/poetic","item":"TIE-FIRST","source":"issues"}\n' "$tie_cid"
+  printf '{"ts":"2026-01-01T10:00:05Z","cycle":"%s","node":"nodeTie","event":"selection","repo":"Pullwright/agent-ops","item":"TIE-SECOND","source":"tech-debt"}\n' "$tie_cid"
+  printf '{"ts":"2026-01-01T10:00:01Z","cycle":"%s","node":"nodeTie","event":"stage-start","stage":"coordinator","repo":"Poetic-Poems/poetic-fiddle","item":"TIE-EARLIER"}\n' "$tie_cid"
+} > "$tie/.local/state/poetic-agents/log.jsonl"
+# A peer with two `cycle-start`s at one timestamp, and a third, logged last,
+# carrying an earlier one: the node-latest pass must take the second.
+tie_peer="$tie/.cache/poetic-agents/workspaces/.agent-ops-peers/peerTie"
+mkdir -p "$tie_peer"
+printf '{"node":"peerTie","role":"active","ts":"%s"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$tie_peer/heartbeat.json"
+{
+  printf '{"ts":"2026-01-01T11:00:00Z","cycle":"%sT110000Z-peerTie-1","node":"peerTie","event":"cycle-start"}\n' "$today_day"
+  printf '{"ts":"2026-01-01T11:00:00Z","cycle":"%sT110000Z-peerTie-2","node":"peerTie","event":"cycle-start"}\n' "$today_day"
+  printf '{"ts":"2026-01-01T11:00:01Z","cycle":"%sT110000Z-peerTie-2","node":"peerTie","event":"selection","repo":"Poetic-Poems/poetic","item":"PEER-TIE","source":"issues"}\n' "$today_day"
+  printf '{"ts":"2026-01-01T10:59:00Z","cycle":"%sT105900Z-peerTie-3","node":"peerTie","event":"cycle-start"}\n' "$today_day"
+} > "$tie_peer/log.jsonl"
+run_publish "$tie" NODE_NAME=nodeTie
+tiedata="$(data_of "$tie")"
+tie_row() { jq -r --arg c "$tie_cid" --arg k "$1" '[.counts.cost_rows[] | select(.cycle == $c)][0][$k]' <<<"$tiedata"; }
+assert_eq "the cycle summary's latest repo by ts takes the later of two tied records" \
+  "Pullwright/agent-ops" "$(tie_row repo)"
+assert_eq "  ... and its item" "TIE-SECOND" "$(tie_row item)"
+assert_eq "  ... and its selection source" "tech-debt" "$(tie_row source)"
+assert_eq "the node-latest pass takes the later of two tied cycle-starts" \
+  "${today_day}T110000Z-peerTie-2" \
+  "$(jq -r '.fleet.nodes[] | select(.node == "peerTie") | .live.cycle' <<<"$tiedata")"
+assert_eq "  ... and reads that cycle's own events" "PEER-TIE" \
+  "$(jq -r '.fleet.nodes[] | select(.node == "peerTie") | .live.item' <<<"$tiedata")"
 
 # ---------------------------------------------------------------------------------
 if (( failures > 0 )); then

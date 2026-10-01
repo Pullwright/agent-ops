@@ -19,12 +19,28 @@
 # Sourced, never executed: no shell options are set here, matching every
 # other lib/*.sh — the caller owns those.
 
+# The streamed read of the log and its span (agent-ops#1649).
+# shellcheck source=lib/union-stream.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/union-stream.sh"
+
 # The {repo, item} join key, identical to every other reader of this log
 # (lib/cycle-state.sh, scripts/pickup-metrics.sh): item coerced with
 # `tostring` so a numeric and a string item id are the same key.
 # shellcheck disable=SC2016  # jq's own def, not the shell's.
 ITEM_LIFECYCLE_KEY_JQ='
   def item_key: ((.repo // "") | tostring) + "|" + ((.item // "") | tostring);
+'
+
+# `orphan-branch-released` carries no `item` of its own, so a `superseded`
+# release of an `agent/<N>` branch is given item N (see the main fold below).
+# Defined once, for the stream that keeps the fold's events and for the fold.
+# shellcheck disable=SC2016  # jq's own def, not the shell's.
+ITEM_LIFECYCLE_REKEY_JQ='
+  def item_lifecycle_rekey:
+    if (.event == "orphan-branch-released" and (.reason // "") == "superseded"
+        and ((.item // "") == "") and ((.branch // "") | test("^agent/[0-9]+$")))
+    then . + {item: (.branch | capture("^agent/(?<n>[0-9]+)$").n)}
+    else . end;
 '
 
 # The first-seen -> selection pairing `scripts/pickup-metrics.sh` originally
@@ -153,12 +169,13 @@ item_lifecycle_pickup_pairs() {
 #
 #   $all      the item-scoped events this run can see — every object that
 #             names both a `repo` and an `item` once the `superseded` rekey
-#             below has run — as ITEM_LIFECYCLE_SPAN_JQ keeps them, in log
-#             order. Every event the fold reads names its item; nothing else
-#             is ever gathered (agent-ops#1649).
-#   $span     `{window_lo, window_hi}`: the least and greatest non-empty
-#             `.ts // ""` over *every* object at or after `$since`, item-scoped
-#             or not, folded by the same stream — the report's `window`.
+#             below has run — as `item_lifecycle_fold`'s stream keeps them, in
+#             log order. Every event the fold reads names its item; nothing
+#             else is ever gathered (agent-ops#1649).
+#   $span     `{lo, hi}`: the least and greatest non-empty `.ts // ""` over
+#             *every* object at or after `$since`, item-scoped or not, folded
+#             by the same stream (`union_stream`'s `nonempty` rule) — the
+#             report's `window`.
 #   $void     `void_items`'s own output — the currently-void {repo, item}
 #             pairs, each carrying the winning item-void's own `ts`.
 #   $blocked  `blocked_items`'s own output — the currently-blocked pairs.
@@ -255,6 +272,7 @@ item_lifecycle_pickup_pairs() {
 # shellcheck disable=SC2016  # jq's own $all/$void/$blocked/$obsolete/etc, not the shell's.
 ITEM_LIFECYCLE_FOLD_JQ='
   '"$ITEM_LIFECYCLE_KEY_JQ"'
+  '"$ITEM_LIFECYCLE_REKEY_JQ"'
   def resolved($set_json; $r; $i):
     $set_json | any(.repo == $r and ((.item // "") | tostring) == $i);
   def resolved_ts($set_json; $r; $i):
@@ -262,15 +280,12 @@ ITEM_LIFECYCLE_FOLD_JQ='
 
   ($all
    | map(select(type == "object"))
-   | map(if (.event == "orphan-branch-released" and (.reason // "") == "superseded"
-             and ((.item // "") == "") and ((.branch // "") | test("^agent/[0-9]+$")))
-         then . + {item: (.branch | capture("^agent/(?<n>[0-9]+)$").n)}
-         else . end)
+   | map(item_lifecycle_rekey)
   ) as $all2
   | ($all2 | map(select(((.repo // "") | tostring) != "" and ((.item // "") | tostring) != ""))
      | group_by(item_key) | map({key: (.[0] | item_key), value: .}) | from_entries) as $full_by_key
   | ($all2 | map(select($since == "" or (.ts // "") >= $since))) as $ev
-  | {from: $span.window_lo, to: $span.window_hi} as $window
+  | {from: $span.lo, to: $span.hi} as $window
 
   | ($ev | map(select(((.repo // "") | tostring) != "" and ((.item // "") | tostring) != "")))
   | group_by(item_key)
@@ -341,35 +356,15 @@ ITEM_LIFECYCLE_FOLD_JQ='
     }
 '
 
-# The streaming front half of the fold (agent-ops#1649): one pass over the
-# raw log, a line at a time through `fromjson? // empty` (so a torn or
-# spliced line is dropped rather than fatal), that keeps only the objects the
-# fold groups — those naming a `repo` and an `item` once the `superseded`
-# rekey has given an `agent/<N>` branch release its item — and folds the
-# window's span over every object at or after `$since` as it goes, ending
-# with that span as its own last line. Gathering the whole parsed log into
-# `$all` instead held every event of every kind in one `jq` process, when the
-# fold reads only the item-scoped ones; the rekey and the object guard are
-# repeated inside the fold, where they are no-ops on what this keeps.
-# shellcheck disable=SC2016  # jq's own $x/$t/$since, not the shell's.
-ITEM_LIFECYCLE_SPAN_JQ='
-  foreach ((inputs | fromjson? // empty | objects
-            | if (.event == "orphan-branch-released" and (.reason // "") == "superseded"
-                  and ((.item // "") == "") and ((.branch // "") | test("^agent/[0-9]+$")))
-              then . + {item: (.branch | capture("^agent/(?<n>[0-9]+)$").n)}
-              else . end
-            | {e: .}), {end: true}) as $x ({lo: null, hi: null};
-    if $x.end or ($since != "" and (($x.e.ts // "") >= $since | not)) then .
-    else ($x.e.ts // "") as $t
-      | if $t == "" then .
-        else .lo = (if .lo == null or $t < .lo then $t else .lo end)
-           | .hi = (if .hi == null or $t > .hi then $t else .hi end) end
-    end;
-    if $x.end then {window_lo: .lo, window_hi: .hi}
-    elif ((($x.e.repo // "") | tostring) != "" and (($x.e.item // "") | tostring) != "")
-    then $x.e
-    else empty end)
-'
+# The streaming front half of the fold (agent-ops#1649), `union_stream`'s
+# kept-events-then-span protocol: one pass over the raw log, a line at a time
+# through `fromjson? // empty`, non-objects dropped (the fold drops them too),
+# keeping only the objects the fold groups — those naming a `repo` and an
+# `item` once the `superseded` rekey has run — and folding the window's span
+# over every object at or after SINCE as it goes.
+# shellcheck disable=SC2016  # jq's own expression, not the shell's.
+ITEM_LIFECYCLE_KEEP_JQ='item_lifecycle_rekey
+  | select(((.repo // "") | tostring) != "" and ((.item // "") | tostring) != "")'
 
 # item_lifecycle_fold LOG_FILE [SINCE]
 # Print the item-lifecycle report — `window`, `totals` (the flow invariant),
@@ -410,7 +405,8 @@ item_lifecycle_fold() {
     # The kept events, then the span as the last line. A stream that did not
     # run to its end leaves no span line, so it is discarded whole rather
     # than folded as though it were the whole log.
-    jq -n -R -c --arg since "$since" "$ITEM_LIFECYCLE_SPAN_JQ" "$log_file" \
+    union_stream "$log_file" --raw --objects --defs "$ITEM_LIFECYCLE_REKEY_JQ" \
+        --keep "$ITEM_LIFECYCLE_KEEP_JQ" --ts nonempty --since "$since" \
       > "$kept_file" 2>/dev/null || : > "$kept_file"
     void_items "$log_file" > "$void_file" 2>/dev/null || true
     blocked_items "$log_file" > "$blocked_file" 2>/dev/null || true
@@ -420,18 +416,19 @@ item_lifecycle_fold() {
     [[ -n "$f" && -s "$f" ]] || { [[ -n "$f" ]] && printf '[]' > "$f" 2>/dev/null; }
   done
 
-  # The kept stream is read last, so `[inputs]` gathers exactly it: `$all`
-  # is every line but the last, `$span` the last — or, for a log that kept
-  # nothing at all, the empty window. `-j` (with `-n`) writes the compact
-  # object with no trailing newline, which is what the `printf '%s' "$(…)"`
-  # this replaced produced — callers compare this output byte for byte.
+  # The kept stream is read last, so `[inputs]` gathers exactly it, and
+  # `union_split_span` parts it into `$all` and `$span` — for a stream that
+  # kept nothing, or was discarded, no events and an empty window. `-j` (with
+  # `-n`) writes the compact object with no trailing newline, which is what
+  # the `printf '%s' "$(…)"` this replaced produced — callers compare this
+  # output byte for byte.
   if [[ -n "$kept_file" && -n "$void_file" && -n "$blocked_file" \
         && -n "$obsolete_file" && -n "$out_file" ]]; then
-    jq -n -j -c --arg since "$since" \
-        'input as $void | input as $blocked | input as $obsolete
-         | [inputs] as $kept
-         | ($kept[-1] // {window_lo: null, window_hi: null}) as $span
-         | ($kept[:-1]) as $all
+    jq -n -j -c --arg since "$since" "$UNION_STREAM_JQ"'
+         input as $void | input as $blocked | input as $obsolete
+         | ([inputs] | union_split_span) as $kept
+         | $kept.span as $span
+         | $kept.events as $all
          | ('"$ITEM_LIFECYCLE_FOLD_JQ"')' \
         "$void_file" "$blocked_file" "$obsolete_file" "$kept_file" \
         > "$out_file" 2>/dev/null || true
