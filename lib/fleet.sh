@@ -413,6 +413,11 @@ fleet_logs() (  # <state_dir> <peers_dir> [log-basename] [damage-file]
 )
 
 # fleet_repair_log <path> <node>
+# Repair a node's own log at its source, so the damage stops replicating.
+# The launcher (`scripts/publish-dashboard-launcher.sh`) calls it once a window
+# on `dashboard.log` and the JSONL logs in `state_dir`; nothing else does, since
+# `fleet_logs` takes damaged lines apart as it reads a union.
+#
 # A container killed mid-append can leave a log's size recorded while the
 # data blocks behind the last few writes never reach disk: they read back as
 # NUL bytes. One NUL makes the whole file binary to grep, which then stops
@@ -426,130 +431,145 @@ fleet_logs() (  # <state_dir> <peers_dir> [log-basename] [damage-file]
 # gets the plain-text line that predates this generalisation. A plain-text
 # line appended to a `.jsonl` file would be exactly what those readers
 # silently drop, reproducing the same "loss recorded nowhere" failure this
-# exists to close.
-#
-# A JSONL target needs more than the NUL bytes gone, because the run eats
-# whatever those blocks held — the newline separators inside it included. Strip
-# the bytes alone and what is left is the head of one record spliced onto the
-# whole of a later one, on one line: `jq -s` still aborts over the join
-# (`Expected separator between values` — the same refusal agent-ops#794 opened
-# on, in different words), and every `fromjson? // empty` reader still drops the
-# line with nothing saying so. Worse, a file whose tail was in flight when the
-# stop came ends mid-record with no closing newline, so the repair record itself
-# gets appended onto that stump and becomes the unparseable line — the one line
-# whose whole job is to say something was lost.
-#
-# So for a JSONL target the run becomes a line break rather than nothing, and
-# each resulting line survives only if it parses: the truncated stump goes, the
-# intact record the run ran into is recovered whole, and the file is left
-# something `jq -s` and an operator's grep can both read end to end. What went
-# is counted (`dropped_lines`) beside the bytes.
-#
-# The same splice also arises with no NUL run at all: a write cut short by a
-# full disk leaves the head of a record with no newline, and the next append
-# completes the line with a whole later record. Both VM nodes' own logs
-# carried such lines from their disk-pressure period, 15 and 18 of them, and
-# every peer copy replicated them (#2037). A JSONL target with no NUL byte is
-# therefore also checked for that shape — `fleet_repair_spliced` below.
+# exists to close. The JSONL repair is `fleet_repair_jsonl` below.
 #
 # Cost when there is nothing to do (the normal case) is two reads of PATH —
-# the NUL count and the splice pre-check — and no write. The rewrite relies on
+# the NUL count and the candidate scan — and no write. The rewrite relies on
 # every writer reopening by name per append, so none holds a descriptor
 # across the rename; an append that lands between the read and the rename
 # would still go to the old file and be lost (#1196), so the swap is
-# abandoned when PATH has grown since it was read (`fleet_repair_swap`), and
-# the next call retries.
+# abandoned when PATH has changed size since it was read
+# (`fleet_repair_swap`), and the next call retries.
+#
+# Every step is guarded, and the JSONL repair is called in an `||` list as
+# well: a caller may run under `set -e`, and a step of this best-effort
+# repair that fails must leave the file as it was rather than end the caller.
 fleet_repair_log() {
-  local target="$1" node="$2" size clean tmp split dropped lines
+  local target="$1" node="$2" size clean tmp dropped
   [[ -s "$target" ]] || return 0
   size="$(stat -c %s "$target" 2>/dev/null)" || return 0
   clean="$(tr -d '\0' < "$target" 2>/dev/null | wc -c)" || return 0
-  if (( clean >= size )); then
-    [[ "$target" != *.jsonl ]] || fleet_repair_spliced "$target" "$node" "$size"
+  [[ "$size" =~ ^[0-9]+$ && "$clean" =~ ^[0-9]+$ ]] || return 0
+  dropped=$(( size - clean ))
+  if [[ "$target" == *.jsonl ]]; then
+    fleet_repair_jsonl "$target" "$node" "$size" "$dropped" || true
     return 0
   fi
-  dropped=$(( size - clean ))
+  (( dropped > 0 )) || return 0
   tmp="$target.repair.$$"
-  if [[ "$target" == *.jsonl ]]; then
-    split="$target.split.$$"
-    # `-s` squeezes the run — and a newline the run happens to abut — down to
-    # the single separator the records either side of it are missing.
-    tr -s '\0' '\n' < "$target" > "$split" 2>/dev/null || { rm -f "$split"; return 0; }
-    jq -R -r 'select(try (fromjson | true) catch false)' "$split" > "$tmp" 2>/dev/null \
-      || { rm -f "$split" "$tmp"; return 0; }
-    lines=$(( $(awk '$0 != "" {n++} END{print n+0}' "$split" 2>/dev/null || echo 0) \
-        - $(awk 'END{print NR}' "$tmp" 2>/dev/null || echo 0) ))
-    (( lines >= 0 )) || lines=0
-    rm -f "$split"
-    jq -nc --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg node "$node" \
-      --argjson dropped "$dropped" --argjson lines "$lines" \
-      '{ts: $ts, node: $node, event: "log-repaired", dropped_nul_bytes: $dropped,
-        dropped_lines: $lines}' >> "$tmp"
-  else
-    tr -d '\0' < "$target" > "$tmp" 2>/dev/null || { rm -f "$tmp"; return 0; }
-    printf '%(%Y-%m-%dT%H:%M:%S%z)T repaired: dropped %s NUL byte(s) — an unclean stop lost the log lines in flight\n' \
-      -1 "$dropped" >> "$tmp"
-  fi
+  tr -d '\0' < "$target" > "$tmp" 2>/dev/null || { rm -f "$tmp"; return 0; }
+  printf '%(%Y-%m-%dT%H:%M:%S%z)T repaired: dropped %s NUL byte(s) — an unclean stop lost the log lines in flight\n' \
+    -1 "$dropped" >> "$tmp" 2>/dev/null || { rm -f "$tmp"; return 0; }
   fleet_repair_swap "$target" "$tmp" "$size"
   return 0
 }
 
-# fleet_repair_spliced <path> <node> <size>
-# `fleet_repair_log`'s second case, for a JSONL target that holds no NUL
-# byte: a line that does not parse because a record cut off part-way runs
-# straight into a whole later one. Each such line is replaced by the intact
-# record that can be split out of it — the longest tail starting at a
-# `{"ts":"` that parses, since every writer opens a record with its `ts` —
-# or dropped when none can be, and a `log-repaired` record says how many of
-# each (`dropped_nul_bytes: 0`, `dropped_lines`, `recovered_records`). A line
-# that parses is never touched, whatever it holds.
+# fleet_repair_jsonl <path> <node> <size> <NUL bytes>
+# `fleet_repair_log`'s JSONL case. Each damaged line is replaced, in its place,
+# by the records FLEET_RECOVER_JQ's `fleet_recover` splits out of it — none,
+# one, or more — and a `log-repaired` record says what happened:
+# `dropped_nul_bytes`, `dropped_lines` (the damaged lines taken out) and
+# `recovered_records` (the records put back in their place). A line that
+# parses whole is never touched, whatever it holds.
 #
-# Kept cheap for the normal case, because the launcher runs it on every
-# window and every cycle runs it on its union snapshot: one `grep` under the C
-# locale picks the candidates — a line holding a `{"ts":"` anywhere but at its
-# start, which every splice does, or one not opening an object at all — and
-# only those reach `jq`. On a 25 MB node log that pre-check takes about
-# 0.04 s and finds a dozen candidates, the `landing-audit-record` events that
-# carry a nested record; they parse, so nothing is rewritten. A whole-file
-# `jq` parse would take about 0.8 s on every call.
+# With a NUL run (NUL BYTES above zero), the run eats whatever those blocks
+# held, the newline separators inside it included: strip the bytes alone and
+# what is left is the head of one record spliced onto the whole of a later
+# one. So the run becomes a line break (`tr -s '\0' '\n'`; `-s` squeezes the
+# run, and a newline it happens to abut, down to the one separator the records
+# either side are missing), and every line of the result goes through the
+# recovery. That path is rare, so parsing the whole file there is acceptable.
 #
-# A file whose last byte is not a newline is left for a later call: its final
-# line may be an append still being written, and rewriting under it would
-# lose the rest. A real stump left there is not lost either way — the next
-# append completes its line, and that line is then a splice this repairs.
-fleet_repair_spliced() {
-  local target="$1" node="$2" size="$3" plan tmp counts bad recovered
-  [[ -z "$(tail -c 1 "$target" 2>/dev/null)" ]] || return 0
-  # shellcheck disable=SC2016  # `$p`, `$k`, `$f` and `$line` are jq's own variables
-  plan="$(LC_ALL=C grep -nE '^[^{]|.\{"ts":"' "$target" 2>/dev/null \
-    | jq -nRr '
-        def mark: "{\"ts\":\"";
-        inputs
-        | split(":") as $f
-        | ($f[1:] | join(":")) as $line
-        | select((try ($line | fromjson | true) catch false) | not)
-        | ($line | split(mark)) as $p
-        | ([ range(1; $p | length) as $k
-             | (mark + ($p[$k:] | join(mark)))
-             | select(try (fromjson | true) catch false) ] | .[0] // "") as $rec
-        | "\($f[0])\t\($rec)"' 2>/dev/null)" || return 0
-  [[ -n "$plan" ]] || return 0
+# With no NUL byte, the same splice arises from a write a full disk cut short:
+# the head of a record with no newline, completed by the next append's whole
+# record. Both VM nodes' own logs carried 15 and 18 such lines, and every peer
+# copy replicated them (#2037). Only the candidate lines (FLEET_CANDIDATE_AWK)
+# reach `jq` there, which keeps the normal case — nothing damaged — to a
+# streaming scan: on a 25 MB log it takes about 0.04 s against about 0.8 s for
+# a whole-file parse.
+#
+# On either path, an unterminated last line is left out of the repair: it may
+# be an append still being written, and the next append completes it. It is
+# copied back byte for byte, without a newline added, after the `log-repaired`
+# record, so the file still ends with the line that append will complete; a
+# real stump left there becomes a splice that a later call repairs. Nothing
+# else in the file waits on it.
+fleet_repair_jsonl() {
+  local target="$1" node="$2" size="$3" nul="$4" src="$1" split="" all=0 unterm=0
+  local plan tmp counts bad recovered
+  if (( nul > 0 )); then
+    split="$target.split.$$"
+    tr -s '\0' '\n' < "$target" > "$split" 2>/dev/null || { rm -f "$split"; return 0; }
+    src="$split" all=1
+  fi
+  if [[ -n "$(tail -c 1 "$src" 2>/dev/null)" ]]; then
+    unterm=1
+  fi
+  # The plan: `<line number>\t<record>` for each record recovered from a
+  # damaged line, and `<line number>\t` for a damaged line that yields none.
+  # On the NUL path every non-empty line is a candidate. The candidate `awk`
+  # holds each candidate back one line, so the last line can be left out when
+  # it is unterminated.
+  # shellcheck disable=SC2016  # awk's and jq's own source, not the shell's
+  plan="$(set -o pipefail
+    LC_ALL=C awk -v all="$all" -v unterm="$unterm" "$FLEET_CANDIDATE_AWK"'
+        held != "" { print held; held = "" }
+        (all && $0 != "") || fleet_candidate($0) { held = FNR "\t" $0; heldn = FNR }
+        END { if (held != "" && !(unterm && heldn == NR)) print held }' "$src" 2>/dev/null \
+      | jq -nRr "$FLEET_RECOVER_JQ"'
+          inputs
+          | split("\t") as $f
+          | ($f[1:] | join("\t")) as $line
+          | select($line | fleet_is_record | not)
+          | [$line | fleet_recover] as $r
+          | if $r == [] then $f[0] + "\t" else $f[0] + "\t" + $r[] end' 2>/dev/null)" \
+    || { rm -f "$split"; return 0; }
+  if [[ -z "$plan" ]] && (( nul == 0 )); then
+    return 0
+  fi
   tmp="$target.repair.$$"
-  # The plan is `<line number>\t<recovered record, or nothing>`: split at the
-  # first tab only, since a record is free to hold one of its own.
-  LC_ALL=C awk 'NR == FNR { i = index($0, "\t"); fix[substr($0, 1, i - 1)] = substr($0, i + 1); next }
-       (FNR in fix) { if (fix[FNR] != "") print fix[FNR]; next }
-       { print }' - "$target" <<<"$plan" > "$tmp" 2>/dev/null \
-    || { rm -f "$tmp"; return 0; }
-  counts="$(LC_ALL=C awk '{ n++; if (substr($0, index($0, "\t") + 1) != "") r++ } END { print n + 0, r + 0 }' \
-    <<<"$plan")"
-  read -r bad recovered <<<"$counts"
+  # Apply the plan, splitting each plan line at its first tab only, since a
+  # record may hold one of its own; print every other line as it is (bar the
+  # empty lines a NUL run can leave), and leave out an unterminated last line.
+  # shellcheck disable=SC2016  # awk's own source
+  LC_ALL=C awk -v all="$all" -v unterm="$unterm" '
+      function out(n, l) {
+        if (n in fix) { if (fix[n] != "") print fix[n]; return }
+        if (all && l == "") return
+        print l
+      }
+      NR == FNR {
+        i = index($0, "\t"); n = substr($0, 1, i - 1); r = substr($0, i + 1)
+        if (!(n in fix)) fix[n] = ""
+        if (r != "") fix[n] = (fix[n] == "" ? r : fix[n] "\n" r)
+        next
+      }
+      FNR > 1 { out(FNR - 1, prev) }
+      { prev = $0 }
+      END { if (FNR > 0 && !unterm) out(FNR, prev) }' - "$src" <<<"$plan" > "$tmp" 2>/dev/null \
+    || { rm -f "$split" "$tmp"; return 0; }
+  # shellcheck disable=SC2016  # awk's own source
+  counts="$(LC_ALL=C awk '
+      $0 != "" {
+        i = index($0, "\t"); n = substr($0, 1, i - 1)
+        if (!(n in seen)) { seen[n] = 1; d++ }
+        if (substr($0, i + 1) != "") r++
+      }
+      END { print d + 0, r + 0 }' <<<"$plan" 2>/dev/null)" \
+    || { rm -f "$split" "$tmp"; return 0; }
+  bad="${counts% *}" recovered="${counts#* }"
+  [[ "$bad" =~ ^[0-9]+$ && "$recovered" =~ ^[0-9]+$ ]] || { rm -f "$split" "$tmp"; return 0; }
   jq -nc --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg node "$node" \
-    --argjson lines "${bad:-0}" --argjson recovered "${recovered:-0}" \
-    '{ts: $ts, node: $node, event: "log-repaired", dropped_nul_bytes: 0,
-      dropped_lines: $lines, recovered_records: $recovered}' >> "$tmp" \
-    || { rm -f "$tmp"; return 0; }
+    --argjson nul "$nul" --argjson lines "$bad" --argjson recovered "$recovered" \
+    '{ts: $ts, node: $node, event: "log-repaired", dropped_nul_bytes: $nul,
+      dropped_lines: $lines, recovered_records: $recovered}' >> "$tmp" 2>/dev/null \
+    || { rm -f "$split" "$tmp"; return 0; }
+  if (( unterm )); then
+    tail -n 1 "$src" >> "$tmp" 2>/dev/null || { rm -f "$split" "$tmp"; return 0; }
+  fi
+  rm -f "$split"
   fleet_repair_swap "$target" "$tmp" "$size"
+  return 0
 }
 
 # fleet_repair_swap <path> <repaired copy> <size when read>
@@ -564,9 +584,9 @@ fleet_repair_swap() {
   local target="$1" tmp="$2" size="$3" now
   now="$(stat -c %s "$target" 2>/dev/null)" || now=""
   if [[ "$now" != "$size" ]]; then
-    rm -f "$tmp"
+    rm -f "$tmp" 2>/dev/null || true
     return 0
   fi
-  mv -f "$tmp" "$target" 2>/dev/null || rm -f "$tmp"
+  mv -f "$tmp" "$target" 2>/dev/null || rm -f "$tmp" 2>/dev/null || true
   return 0
 }
