@@ -2,9 +2,14 @@
 #
 # lib/limit-detect.sh — shared usage-limit / spend-cap detection.
 #
-# Sourced by both agent-cycle.sh and scripts/publish-dashboard.sh so the
-# phrase pattern and reset-time parsing live in exactly one place and the two
-# detectors can't drift apart again (see TD26071401).
+# Sourced by agent-cycle.sh, review-cycle.sh, monitor-cycle.sh,
+# scripts/node-health.sh and scripts/publish-dashboard.sh so the phrase
+# pattern, the reset-time parsing and the union's limit reduction live in
+# exactly one place and the detectors can't drift apart again (see
+# TD26071401). The union readers below fold UNION_STREAM_JQ's tolerant event
+# stream, so this file sources lib/union-stream.sh itself, as
+# lib/fleet-sizing.sh does: a test or script that sources this file alone
+# still gets readers that work.
 #
 # Claude emits (at least) two distinct "you've hit a limit" messages, and they
 # need different downstream handling:
@@ -18,6 +23,10 @@
 # Both share the stem "You've hit your ... limit", so a single case-insensitive
 # `hit your .* limit` term catches every observed variant, alongside the
 # original terms this project has looked for from the start.
+
+# The tolerant raw-line event stream the union readers fold (#2037).
+# shellcheck source=lib/union-stream.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/union-stream.sh"
 
 # Case-insensitive ERE fed to `grep -E`. This is the one place either script's
 # limit-phrase pattern comes from — do not inline a copy elsewhere.
@@ -242,45 +251,86 @@ limit_probe_verdict() {
   printf 'inconclusive'
 }
 
-# limit_union_record  < JSONL on stdin
-# The usage-limit stand-down the fleet's event stream currently implies: print
-# the governing `limit-hit` record, or nothing when none is in force.
+# The usage-limit reduction of the fleet's event stream (requirement 2.1),
+# defined once and read four ways below, so the stand-down check, its freeze
+# escalation, `--status`, scripts/node-health.sh and the dashboard can never
+# reduce the union differently.
 #
-# The reduction is most-recent-wins over *both* limit events, so a
-# `limit-cleared` written after a `limit-hit` supersedes it. Without that, an
-# operator who resolved the limit had no way to say so: the stand-down is
-# checked before any stage runs, so no cycle could ever succeed and clear it
-# from the inside. The stream is time-ordered by `fleet_logs`.
+# `limit_union_fold(NAMES)` folds UNION_STREAM_JQ's `union_events` over the
+# events LIMIT_UNION_EVENTS declares, and answers three things at once:
 #
-# One definition, because four readers need it — agent-cycle.sh's stand-down,
-# review-cycle.sh's two, and the dashboard — and a reader that missed
-# `limit-cleared` would keep standing its node down after the fleet resumed.
-limit_union_record() {
-  jq -cs '[.[] | select(.event == "limit-hit" or .event == "limit-cleared")] | last
-          | if . == null or .event == "limit-cleared" then empty else . end' \
-    2>/dev/null || true
-}
+#   record      the governing `limit-hit`, or null. Most-recent-wins over
+#               *both* limit events, so a `limit-cleared` written after a
+#               `limit-hit` supersedes it. Without that, an operator who
+#               resolved the limit had no way to say so: the stand-down is
+#               checked before any stage runs, so no cycle could ever succeed
+#               and clear it from the inside.
+#   since       the `ts` of the earliest `limit-hit` in the current
+#               uninterrupted window — everything after the last
+#               `limit-cleared` — or null. This is how long the fleet has been
+#               frozen, as distinct from when the freeze was last *extended*
+#               (the governing record's own `ts`), and is what the
+#               automatic-freeze escalation ages against (requirement 2;
+#               #244): a freeze that keeps re-confirming itself must not keep
+#               resetting the clock that decides when a human hears about it.
+#   escalated   the `since` of every `limit-freeze-escalated` event, the
+#               escalation's once-per-freeze memory. There are few, so all are
+#               kept.
+#
+# The stream is time-ordered by `fleet_logs`, which takes a damaged line apart
+# before its sort, so each record the fold sees sits at its own timestamp's
+# place. It is read as raw lines, each parsed on its own, never slurped: one
+# line that does not parse made a slurp abort, so the reduction returned
+# nothing and the fleet read "no limit in force" while one was (#2037). The
+# stream also holds one record at a time, where the slurp held the whole
+# union (#1649).
+#
+# A line that does not parse is skipped; a read that fails outright (jq
+# killed, or its input unreadable) exits non-zero with jq's own error on
+# stderr, so each caller can tell "no limit" from "could not read" and report
+# the second (`guard_warn` in agent-cycle.sh, a `warning` event in the review
+# and monitor cycles) rather than act on it silently.
+LIMIT_UNION_EVENTS='limit-hit limit-cleared limit-freeze-escalated'
+# shellcheck disable=SC2016  # jq's own $names/$e
+LIMIT_UNION_JQ='
+  def limit_union_fold($names):
+    reduce union_events($names) as $e ({record: null, first: null, escalated: []};
+      if $e.event == "limit-hit" then .record = $e | .first = (.first // $e)
+      elif $e.event == "limit-cleared" then .record = null | .first = null
+      elif $e.event == "limit-freeze-escalated" then .escalated += [$e.since | strings]
+      else . end)
+    | {record, since: (.first.ts // null), escalated};
+'
 
-# limit_union_resume_at  < JSONL on stdin
-# Just the governing `resume_at`, for the readers that need no more than that.
-limit_union_resume_at() {
-  limit_union_record | jq -r '.resume_at // empty' 2>/dev/null || true
+# limit_union_record  < JSONL on stdin
+# The governing `limit-hit` record the stream implies, or nothing when none is
+# in force. The reader for everything but the stand-down's own freeze
+# escalation, which takes `limit_union_state` instead.
+limit_union_record() {
+  # shellcheck disable=SC2086  # a word list by design
+  jq -nRc "$UNION_STREAM_JQ $LIMIT_UNION_JQ"' limit_union_fold($ARGS.positional) | .record | values' \
+    --args $LIMIT_UNION_EVENTS
 }
 
 # limit_standdown_since  < JSONL on stdin
 # The `ts` of the earliest `limit-hit` in the current uninterrupted stand-down
-# window — everything after the last `limit-cleared`, if any — or nothing when
-# no live hit exists. This is how long the fleet has been frozen, as distinct
-# from when the freeze was last *extended* (the governing record's own `ts`),
-# and is what the automatic-freeze escalation ages against (requirement 2;
-# #244): a freeze that keeps re-confirming itself must not keep resetting the
-# clock that decides when a human hears about it.
+# window, or nothing when no live hit exists.
 limit_standdown_since() {
-  jq -rs '[.[] | select(.event == "limit-hit" or .event == "limit-cleared")]
-          | (map(.event) | rindex("limit-cleared")) as $i
-          | (if $i == null then . else .[($i + 1):] end)
-          | map(select(.event == "limit-hit"))
-          | (first | .ts) // empty' 2>/dev/null || true
+  # shellcheck disable=SC2086  # a word list by design
+  jq -nRr "$UNION_STREAM_JQ $LIMIT_UNION_JQ"' limit_union_fold($ARGS.positional) | .since | values' \
+    --args $LIMIT_UNION_EVENTS
+}
+
+# limit_union_state  < JSONL on stdin
+# All three answers in one pass, as one compact object —
+# `{"record": {…}|null, "since": "…"|null, "escalated": ["…", …]}` — for the
+# stand-down (lib/standdown.sh), which needs the governing record, the freeze's
+# start and the escalation memory together and reads the union once for them
+# rather than three times.
+limit_union_state() {
+  # shellcheck disable=SC2086  # a word list by design
+  jq -nRc "$UNION_STREAM_JQ $LIMIT_UNION_JQ"' limit_union_fold($ARGS.positional)' \
+    --args $LIMIT_UNION_EVENTS
 }
 
 # limit_later_record RECORD...

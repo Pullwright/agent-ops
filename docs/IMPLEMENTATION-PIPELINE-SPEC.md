@@ -1074,7 +1074,7 @@ and the schema must carry every one of them.
 | `lock_stale_after` | *(unset)* | A floor under the derived value of requirement 4f, not the value itself: the threshold is the sum, over the six actors, of the widest backstop each could draw this cycle, plus slack. Deriving it is the point — an assertion checked against fixed caps had to be re-derived by hand every time any of them moved, three times in two days. Erring long is close to free: a dead holder is taken over on its pid rather than its age, so this bounds only how long a live but hung cycle may hold on. |
 | `stage_budget` | *(unset)* | Tuning for the derivation of requirement 4f: `gap_multiplier` and `shrinkage_runs` shape the watchdog estimate, `increase_factor`, `decrease_after_runs`, `decrease_step_min`, `kill_rate_slo` and `ceiling_multiple` shape the backstop controller, and `window_days`/`window_runs` bound what either looks at. Defaults live in `lib/stage-budget.sh`, not here, on requirement 4e's reasoning: a value an installation must set is a value it can set wrongly. |
 | `limit_cooldown_default` | 3 h | Stand-down period after an ordinary/transient usage-limit error whose reset time cannot be parsed. A weekly/monthly match with no parseable reset time uses the longer `LIMIT_LONG_COOLDOWN_HOURS` fallback in `lib/limit-detect.sh` instead (see requirement 10) — not this key. |
-| `limit_escalate_after_hours` | 24 h | The automatic-freeze escalation threshold of requirement 2 (#244): aged from `limit_standdown_since` (the first `limit-hit` of the current freeze, not its latest extension), raised once per freeze via the `limit-freeze-escalated` event, filed in `crash_loop_repo` with `enabler_escalation_label` and `enabler_assignee`. `0` disables it. A manual stand-down never pages the person who set it. |
+| `limit_escalate_after_hours` | 24 h | The automatic-freeze escalation threshold of requirement 2 (#244): aged from the first `limit-hit` of the current freeze (`limit_union_state`'s `since`, not its latest extension) or, when the union holds no live hit, from `fleet/limit.json`'s own `ts` (its latest extension), raised once per freeze via the `limit-freeze-escalated` event, filed in `crash_loop_repo` with `enabler_escalation_label` and `enabler_assignee`. `0` disables it. A manual stand-down never pages the person who set it. |
 | `github_min_core_budget` | 300 points | The `core` floor of the GitHub API budget check (requirement 2.0). Sized above one cycle's typical REST spend so the cycle that starts can finish, and read from the `x-ratelimit-*` headers of one metered call — not from `GET /rate_limit`, whose body read cold is an empty window rather than a reading (agent-ops#1087). `0` disables the floor. |
 | `github_min_graphql_budget` | 100 points | The `graphql` floor of the GitHub API budget check (requirement 2.0). Separate from `github_min_core_budget` because GitHub meters the two pools independently and either can be the binding one — on 2026-08-12 the fleet exhausted `graphql` with 96% of its `core` hour unspent. `0` disables the floor. |
 | `github_retry_max_wait_seconds` | 60 s | The per-call wait bound of the `gh` wrapper (requirement 2.0a). A secondary rate limit waits a fixed fallback, a primary one waits until GitHub's stated reset, and either is abandoned if it exceeds this — the cycle holds a lock and runs on a `cycle_interval_minutes` tick, so a wrapper that waited out a primary limit would collide with the next tick. `0` turns retrying off. |
@@ -2897,10 +2897,29 @@ implements.
       `--clear-limit` (requirement 12) — and both retirements are the same
       write: delete `fleet/limit.json` and log a `limit-cleared` event, which
       the union's reduction — most-recent-wins over `limit-hit` **and**
-      `limit-cleared`, in `lib/limit-detect.sh` so all four readers share it
-      — treats as superseding every earlier hit. Deleting rather than
-      shortening the flag is what keeps extend-only intact for the
-      concurrent-hit case it exists for.
+      `limit-cleared`, defined once in `lib/limit-detect.sh`
+      (`LIMIT_UNION_JQ`'s `limit_union_fold`, read through
+      `limit_union_record`, `limit_standdown_since` and `limit_union_state`)
+      so every reader shares it — treats as superseding every earlier hit.
+      Deleting rather than shortening the flag is what keeps extend-only
+      intact for the concurrent-hit case it exists for.
+
+      The reduction folds the union with `reduce` over the tolerant raw-line
+      event stream every union reader shares (`union_events`,
+      `lib/union-stream.sh`: `jq -nR`, each line parsed on its own, the
+      objects kept), never as one slurped document: a line that does not
+      parse, or parses to something other than an object, is skipped and
+      every line around it still counts, and the reader holds one record at
+      a time rather than the whole union. The stand-down reads the union
+      once, with `limit_union_state`, which answers the governing hit, the
+      freeze's start and the `since` of every `limit-freeze-escalated` event
+      from one pass, for this check and for 1c alike. A read that fails
+      outright — `jq` killed, or its input unreadable — exits non-zero, and
+      the caller reports it rather than reading it as "no limit in force": a
+      `guard-degraded` event (site `cycle:union_record`) here, and the flag
+      carrier then decides alone, exactly as it does when the union holds no
+      live hit. A union the cycle could not build (requirement 2.5,
+      `union_build_ok`) is treated the same way without being read.
 
       A stand-down must have an exit that does not depend on a cycle running,
       because this check runs before any stage launches: while it holds, no
@@ -2972,24 +2991,40 @@ implements.
       deliberate human stand-down (#244).
    1c. *A long-running automatic freeze escalates; a manual stand-down never
       pages.* While an automatic stand-down holds, the Script ages it from
-      `limit_standdown_since` (`lib/limit-detect.sh`: the `ts` of the first
-      `limit-hit` after the last `limit-cleared` in the union — the start of
-      the current freeze, not its latest extension). Once that age reaches
+      the freeze's start as 1's union read gives it (`limit_union_state`'s
+      `since`: the `ts` of the first `limit-hit` after the last
+      `limit-cleared` in the union — the start of the current freeze, not its
+      latest extension). When the union was read but holds no live hit — the
+      stand-down rests on `fleet/limit.json` alone — it ages the freeze from
+      the governing record's own `ts` instead, which is the flag record's
+      time: when `fleet_limit_publish` (`lib/toggle.sh`) last wrote it, and,
+      since every extension rewrites it, the latest extension. Once that age reaches
       `limit_escalate_after_hours` (0 disables the check), it files an
       escalation issue in `crash_loop_repo` — label
       `enabler_escalation_label`, assignee `enabler_assignee`, body carrying
       the governing record and the item ref `usage-limit-freeze:<since>` —
       through the same duplicate-guarded `create_escalation_issue` the
       Enabler and the crash-loop check use, and logs
-      `limit-freeze-escalated` with the issue and the freeze's start. That
-      event in the union is what makes the escalation once-per-freeze: a
-      cycle that finds one for the current freeze's start does not file
-      again, and the open-issue guard catches the cross-node race the union
-      has not yet carried. A failed filing logs a `warning` and retries next
+      `limit-freeze-escalated` with the issue, the time it aged from
+      (`since`) and which time that is (`since_basis`: `union` for the first
+      hit, `flag` for the flag record's own `ts`, which the issue body names
+      as such). That event in the union is what makes the escalation
+      once-per-freeze: a cycle that finds one whose `since` is the time it
+      ages from does not file again, and the open-issue guard catches the
+      cross-node race the union has not yet carried. A flag-only freeze that
+      is extended gets a new `since`, and so is aged and escalated afresh
+      from that extension. A failed filing logs a `warning` and retries next
       cycle. Skipped on `--dry-run`, when `crash_loop_repo` or
       `enabler_assignee` is unset, and always for `kind: manual` — the
       operator who set a manual stand-down does not need to be paged about
-      their own decision.
+      their own decision. Skipped too, for that cycle, when the union could
+      not be built or read (1's `union_state_ok`): whether this freeze was
+      already escalated cannot then be told, so nothing is filed, a `warning`
+      says so, and the next cycle tries again — filing anyway would rest on
+      the open-issue guard alone, which a closed escalation passes. And when
+      the flag record carries no usable `ts`, the age test is skipped and
+      reported (`guard-degraded`, site `freeze_since:flag`); it never runs on
+      an empty time, since GNU `date -d ""` answers midnight today.
    1a. *Claim GC*: run `lib/claim.sh gc` (requirement 17a) — best-effort,
       skipped on `--dry-run` — so registry entries a dead node left behind
       are swept before back-pressure counts them. Every node runs it; no
@@ -4531,7 +4566,15 @@ implements.
    first of them (the same bounded `fails` the heartbeat carries, #1397), or
    a plain sentence when no pass has run. `test/state-sync.test.sh` drives
    the three lock cases (young, held by a live process, orphaned) and both
-   events; `test/manage-status.test.sh` the two lines.
+   events; `test/manage-status.test.sh` the two lines. The same file covers
+   the two `--status` readers of the fleet union: past a spliced peer line,
+   `decisions:` still counts the last day's `decision-taken` events across
+   the node and its peer, and `current_limit_record` still returns the
+   governing hit, with nothing reported; a read that fails outright prints
+   `decisions: unreadable` rather than 0, and each reader reports its own
+   site through `guard_warn`; and a union that could not be built (a `sort`
+   that exits 2 stands in for one a full disk stopped) does the same, with
+   `current_limit_record` leaving the flag carrier to answer alone.
 
    **A push that wedges holding `mirror_lock` releases it on its own, and a
    long hold is named as a possible wedge rather than reported as an
@@ -4735,15 +4778,50 @@ implements.
    union **once**, into `.fleet-log.jsonl` in its own record directory, so
    every reader downstream sees one consistent stream rather than a moving
    one; `union_log` names it, and requirement 39f's horizon is captured from
-   it immediately afterwards. The snapshot is repaired the moment it is built
-   and before either of those (`fleet_repair_log`, `lib/fleet.sh`;
-   agent-ops#794): a peer that has not deployed that repair, or history it
-   replicated before it did, can still hand a NUL-holed line to a node whose
-   own logs are clean, and one such line costs every reader below the record
-   it fell in and the file's readability to `jq -s` and to grep along with it.
-   The repair is a no-op on an intact snapshot — the ordinary case — so the
-   repaired-record line it appends, and the horizon that line would then set,
-   arise only on a snapshot that was already damaged. The snapshot is scratch with a cycle's
+   it immediately afterwards, with nothing written to it in between.
+
+   A peer that has not repaired its own log at source (`fleet_repair_log`,
+   which the dashboard launcher runs each window — `docs/DASHBOARD-SPEC.md`),
+   or history it replicated before it did, can still hand a node a
+   NUL-holed line, or a spliced one: the head of a record cut off part-way
+   with the whole of a later record on the same line, left by a write a full
+   disk cut short, or by the gather's own `cat` joining a peer file whose
+   last record lacks its newline (agent-ops#794, #2037). `fleet_logs` takes
+   such a line apart before its sort, because the sort places a line at its
+   first timestamp: a spliced line sits at its head's, and a record recovered
+   from it after the sort would sit ahead of records older than itself. A NUL
+   run becomes a line break (`tr -s '\0' '\n'`). One streaming `awk` pass
+   under the C locale sets aside the candidate lines (`FLEET_CANDIDATE_AWK`:
+   a line that does not open an object, does not end in `}`, or holds
+   `{"ts":"` anywhere past its start) in a small file under `TMPDIR`, and
+   passes every other line straight to the sort; one `jq` resolves the
+   candidates into the same sort with the shared recovery
+   (`FLEET_RECOVER_JQ`). A candidate that parses whole as an object passes
+   unchanged, byte for byte — the `landing-audit-record` events that carry a
+   nested record are exactly that; any other is split at each `{"ts":"`,
+   and, walking from the left, the shortest run of pieces that parses as an
+   object is kept each time, so a record that lost only its newline survives
+   with the one it ran into, a stump is dropped, and only objects are ever
+   emitted. Every recoverable record therefore sits at its own timestamp's
+   place, and the snapshot is never repaired after it is built. The bulk of
+   the union is never parsed or written to an extra file.
+
+   `fleet_logs` exits non-zero when a stage after the gather fails — `tr`,
+   `awk`, the candidate `jq` or the sort, which an OOM kill or a full disk
+   stops — so a union that could not be built is never taken for one that
+   holds nothing. A peer file that vanishes between the glob and its `cat`
+   is not a failure. The cycle reports a failed build (`guard-degraded`, site
+   `cycle:union_build`) and carries it as `union_build_ok` to the readers
+   that must tell "could not read" from "nothing there": requirement 2.1's
+   usage-limit read treats it exactly as a failed read, and its freeze
+   escalation (1c) files nothing that cycle. The review and monitor runs log
+   it as a `warning` and treat their usage-limit reads the same way, and
+   `--status`, the drained dedup (2.9) and `scripts/node-health.sh` treat a
+   failed build as a failed read of their own. The union's readers still
+   skip a line that does not parse (requirement 2.1's reduction shows the
+   form), for a malformed line the candidate test does not pick out.
+
+   The snapshot is scratch with a cycle's
    lifetime: it is read only through that variable, by the script that just
    wrote it, and never by a peer or by a later cycle. That is why it neither
    replicates nor outlives the run that wrote it — the cycle's cleanup
@@ -5902,7 +5980,13 @@ implements.
    `landing_approver_adjudication_history` already read for their own
    once-per-record dedup): before logging it, the cycle that just found rest
    scans the union for an existing `drained` event carrying the same
-   `disabled_at` and logs nothing if one is already there. This is the
+   `disabled_at` and logs nothing if one is already there. The scan
+   (`drain_event_logged`) reads the union through the tolerant event stream
+   requirement 2.1's reduction reads (`union_events`) and skips a line that
+   does not parse; a scan that fails outright reports a `guard-degraded`
+   event and answers "not yet logged", since a second `drained` event is the
+   cheaper mistake, and a union that could not be built (requirement 2.5) is
+   treated the same way, reported as a `warning`. This is the
    correctness property a fleet needs and a single node does not — two nodes
    can independently reach "at rest" for the same drain in the same window,
    and only one `drained` event may exist for it, or a reader counting drains
@@ -10340,7 +10424,12 @@ implements.
     (`overlap_status_report`, `lib/manage.sh`) — `check-nodes.sh` (external
     to this repository; not committed here) already prints `--status` per
     node and so inherits it for free, on the same terms requirement 2.8's
-    `stages:` section already does.
+    `stages:` section already does. The count reads the log through the
+    tolerant event stream requirement 2.1's reduction reads (`union_events`)
+    and skips a line that does not parse; a log not yet written counts zero, and
+    a read that fails outright prints `overrun:  unreadable — this node's log
+    could not be read` and reports a `guard-degraded` warning on stderr
+    rather than a zero nobody counted.
 12. **Flags.** `--dry-run` (run through step 5 then stop: prints the work
     order, launches no Implementer), `--once` (one verbose cycle in the
     foreground), `--repo <slug>` (restrict selection, for testing),
@@ -17236,7 +17325,12 @@ implements.
     taken-at, log-issue link, a `vetoed`/`stands` status — sourced from the
     fleet log the same way every other panel is. `agent-cycle.sh --status`
     carries a `decisions:` line counting `decision-taken` events in the last
-    24 h (`decisions_status_report`, `lib/manage.sh`).
+    24 h (`decisions_status_report`, `lib/manage.sh`), read from the fleet
+    union through the tolerant event stream requirement 2.1's reduction
+    reads (`union_events`), so an unparseable line costs that line only. A
+    union that could not be built (requirement 2.5), or a read that fails
+    outright, prints `decisions: unreadable — the fleet log could not be
+    read` and reports a `guard-degraded` warning on stderr, never a zero.
 36f. **The delegate mandate (D18, PR #1389, recommendation 3 of
     `docs/reviews/2026-09-11-escalation-autonomy-review.md`).** The fourth rung of
     `escalation_autonomy`, `decide-with-veto`, including everything
@@ -17835,7 +17929,9 @@ implements.
     #990) calls stale — its freshness marker records the last fetch as
     failed, or an `ok: true` marker whose `ts` is older than the configured
     threshold (a dead fetch cron that never logged a failure) — is unhealthy,
-    and the whole reconciliation for that cycle is skipped with one warning
+    and so is a union the snapshot could not build (requirement 2.5's
+    `union_build_ok`, #2037), whatever part of it was written; in each case
+    the whole reconciliation for that cycle is skipped with one warning
     logged (not one per repo, since every repo shares the one union and the
     one peers directory). Second, a grace window against `union_log_horizon`
     (requirement 39f's own snapshot horizon): a peer node can apply this
@@ -24750,7 +24846,34 @@ oblige anyone to edit a test.
    under the peers directory, leaves the node's own `state_dir` alone, never
    includes the node itself, and prunes a peer whose branch is gone; the
    union read (`lib/fleet.sh`) carries both nodes' events in time order; and
-   pipeline events written through `log_event` carry the node's name.
+   pipeline events written through `log_event` carry the node's name. Over a
+   union holding a spliced peer line whose head is older than the node's own
+   `limit-hit` and whose recovered `limit-hit` is newer, a whole record `cat`
+   joined to the next peer file's first record, and a NUL run in a third,
+   `fleet_logs` puts every record at its own timestamp's place, leaves every
+   line parseable with no NUL byte, passes a record that carries a nested
+   record through byte for byte, counts the three damaged lines in its
+   damage file and removes its candidate file; the freeze's start read off
+   that union is the node's hit and the governing hit the recovered one; a
+   `sort`, `awk`, candidate `jq` or `tr` that fails makes the build fail and
+   still leaves no candidate file; and a clean union builds with nothing
+   counted. The same file covers `fleet_repair_log`: a NUL run is cleared
+   from a plain-text and a JSONL target alike, with the stump it cut dropped,
+   the record it ran into recovered and the loss recorded; a spliced line
+   with no NUL byte is replaced by the record split out of it, in its place,
+   with a `log-repaired` record counting one line dropped and one record
+   recovered, and a second call adds nothing; a damaged line with no intact
+   record and a line that is not a record are both dropped and counted, with
+   none recovered; a record carrying a nested record is left exactly as it
+   is; a whole record that lost only its newline is kept with the one it ran
+   into; a spliced line before an unterminated last line is repaired, with
+   the last line kept byte for byte and unterminated after the repair
+   record, and a file whose only damage is that line is not rewritten; a
+   file holding a NUL run and a splice recovers the splice's record too; a
+   step that fails under `set -e` (the `awk` that counts the plan) ends the
+   repair rather than the caller, leaving the file and no working copy
+   behind; and the swap keeps a file that grew during the repair, discarding
+   the repaired copy, while replacing one whose size is unchanged.
 1e. **The fleet flags reach every node.** `test/toggle.test.sh` passes,
    including its fleet section against the contents-API stub (`TOGGLE_GH`):
    a flag one node writes reads as disabled on another; an unreachable
@@ -24869,7 +24992,10 @@ oblige anyone to edit a test.
    belongs to an older drain, and otherwise reports `DRAINING` with the
    remaining count or `DRAINED` with the check's own timestamp. The
    `drained` event's own dedup (`drain_event_logged`) is asserted against a
-   union log carrying a matching `disabled_at`, a differing one, and none.
+   union log carrying a matching `disabled_at`, a differing one, and none; a
+   spliced line in the union does not hide a matching event; and a read that
+   fails outright answers "not logged" and reports itself through
+   `guard_warn`.
 1f. **A provider-qualified model id resolves; an unsupported one fails fast
    (requirement 1a).** `test/model-id.test.sh` passes: a bare id and its
    `anthropic/`-qualified form resolve to the same value; an empty value (the
@@ -25240,6 +25366,17 @@ oblige anyone to edit a test.
    first hit of the current freeze — the earliest `limit-hit` with no later
    `limit-cleared` — printing nothing on an empty stream, on one whose last
    limit event is a `limit-cleared`, and never a hit from before that clear.
+   Both `limit_union_record` and `limit_standdown_since` read past a spliced
+   line — the head of a record run into a whole later one — before or after
+   the governing hit, with most-recent-wins intact across it (a clear past
+   the line still retires the hit, and a hit after that clear governs and
+   starts a new freeze); a line that parses to a non-object is skipped; and
+   each exits non-zero when its `jq` fails outright. `limit_union_state`
+   answers the governing hit, the freeze's start and the `since` of every
+   `limit-freeze-escalated` event (a non-string `since` left out) from one
+   pass past a spliced line, agrees with the two readers built on the same
+   fold, answers null, null and an empty list for a stream with no limit
+   events, and exits non-zero when its `jq` fails outright.
    `test/doctor.test.sh` passes: `--offline` reports the stream-flushing
    probe skipped rather than running it, so the suite never spends.
 1k4. **Both stage caps derive themselves, and in the safe direction
@@ -25342,7 +25479,23 @@ oblige anyone to edit a test.
    three distinct labels interleaved all report, so the cap is per label and
    not per cycle; a 4000-byte `detail` is stored at 500; and a guard raised
    under `MANAGE_ACTION` writes nothing to the log and names its site on
-   stderr, while the same site under a real cycle still logs.
+   stderr, while the same site under a real cycle still logs. The usage-limit
+   union read and the automatic-freeze escalation of requirement 2.1/1c are
+   lifted out of `lib/standdown.sh` by their own markers: the union carrier
+   reads the governing hit past a spliced line silently; a read that fails
+   outright leaves it empty, marks the union's answers unknown and reports
+   `cycle:union_record`; and a union the snapshot could not build is not
+   read at all and is treated the same way. A three-day freeze past a
+   spliced line files its escalation keyed on its start and logs
+   `limit-freeze-escalated` with `since_basis: union`, and does not file
+   again once that event sits in the union past a spliced line; a failed
+   union read, and a union that could not be built, each file nothing and
+   log a `warning` that the escalation waits for the next cycle; a flag-only
+   freeze three days old files its escalation keyed on the flag record's
+   `ts`, logs that time as `since` with `since_basis: flag`, and says in the
+   issue body that it is the time `fleet/limit.json` was last written, while
+   one an hour old files nothing; and a flag-only freeze whose record has no
+   `ts` files nothing and reports `freeze_since:flag`.
 2. `--dry-run` completes against the real repos: stand-down checks pass,
    ordering is computed, the findings pre-fetch runs, the Co-Ordinator selects
    an item or declines with a reason, the work order is printed, nothing
@@ -28125,7 +28278,10 @@ oblige anyone to edit a test.
     is pinned separately, by `test/label-marker-horizon-wiring.test.sh`:
     `union_log_horizon` is assigned after the `fleet_logs` snapshot that
     materialises `union_log` and textually before the first `>> "$union_log"`
-    append later in the cycle, and both read-back calls
+    append later in the cycle, nothing repairs the snapshot or otherwise
+    touches it in between (a repair's `log-repaired` record, stamped with
+    wall-clock time, once set the horizon on every cycle while a peer copy
+    stayed damaged), and both read-back calls
     (`label_filter_own_applications`, `label_own_stale_applications`) are
     handed it rather than falling back to the `date -u` default. That file
     asserts against the text of `agent-cycle.sh` rather than against a block
@@ -30423,7 +30579,9 @@ oblige anyone to edit a test.
     records; and `lib/manage.sh`'s
     `overlap_status_report` counts only this node's own last-24h
     `reason: "overlap"` events, ignoring the `reason`-less lock-contention
-    `cycle-skipped` shape. `test/publish-dashboard.test.sh`'s "Overrun-slot
+    `cycle-skipped` shape, counting the events either side of a spliced line,
+    reading zero for a log not yet written, and printing `unreadable` and
+    reporting through `guard_warn` when the read fails outright. `test/publish-dashboard.test.sh`'s "Overrun-slot
     skips are counted alongside, never folded into total" fixture confirms
     `noop_ticks.overlap` counts a working cycle's own overlap events without
     removing its row from `cycles[]` or inflating `noop_ticks.total`; and
@@ -31814,3 +31972,5 @@ confident, recurring no-op.
 | A bash default that only the empty case ever exercises | The fit-exemption gate read `${coordinator_fit_report_json:-{}}`. `${parameter:-word}` closes on the *first* unquoted `}`, so the default word was `{` and a literal `}` was appended straight after it — harmless on the one path nobody was watching (the variable unset or empty, composing exactly `{}`), and silently corrupting it into invalid JSON on every path that mattered (a real, non-empty fit report). `jq` failed to parse it, the guard read the failure as "fit did not run", and requirement 34e's fourth refusal, requirement 3x's trimmed exemption and requirement 17g's fabrication check were dead code on every fitted cycle from the day the guard shipped — the fleet fitted at rung 15 on 47 cycles in one day (2026-08-28) with none of the three ever firing (TD-PPagop-26082816, agent-ops#933). Every test that exercised the gate had only ever driven the empty case, which is precisely the one the bug leaves working. | A `${var:-word}` default containing an unescaped `{`/`[` is a trap in bash, not a style choice — the closing brace/bracket it needs is the *first* one bash finds, not the one the author meant. Prefer initialising the variable to a real value ahead of the guard (the `set -u`-driven convention this file already uses for `coordinator_fit_allowance`) over threading a brace-shaped default through a parameter expansion at all. And when a guard's fixture only ever sets its input to empty or unset, that fixture cannot tell "the gate is off" from "the gate is broken" — assert the non-empty case too, the one place this shape of bug hides. |
 | A per-entry scan that was "cheap at a handful-to-low-hundreds" | `gh_shim_cache_invalidate` found the entries a write invalidates by opening every file in `http-cache/` with a `jq` — two per entry. Nothing bounded the count, the prune ran at two days, and once the authoring App went live each hourly token was a new identity re-caching every path: 13,000–19,000 entries a node, 484 identities on one. Every registry `PUT`/`DELETE` — the pager's per-window claims, `claim.sh gc`'s ~90 deletes a cycle — then cost two to three and a half minutes of CPU, the pre-Co-Ordinator phase grew from 45 to 150 minutes on every node inside a day, and the fleet landed 8 PRs in 24 h with a healthy budget and a fast GitHub (agent-ops#1422). | Never let a write's cost be a function of the cache's size: lay the cache out so the thing a write invalidates is one directory it can name (`http-cache/<identity>/<path-hash>/`), and key identity on what the data is actually scoped by (the installation), not on a credential that rotates. When a comment sizes a loop by an assumed count, test the assumption at a hundred times that count. |
 | A fix that rests on a mechanism one uncontrolled observation named | agent-ops#1827 read two abandoned Publisher working sets as proof that bash skips the `EXIT` trap on an untrapped `TERM`, and the first fix trapped `TERM`, `INT` and `HUP` to an `exit`. Its own regression case passed forty-one times with those traps deleted, because bash runs the trap on a fatal signal; the reproduction that had "confirmed" the leak had diffed `/tmp` before and after a publish while two other publishes were writing there. A fix built on it would have shipped, tested, and changed nothing about the leak it named. | Before building on a mechanism, make it fail on demand in isolation — one process, one directory it alone writes, the signal sent the way production sends it — and attribute what is left to a process by a name that carries its pid, never by the difference between two listings of a shared directory. A fix whose test passes without it is a comment, not a fix: write the case that fails first, and if none can be written, the mechanism is not the one at work. |
+| A whole-document parse of a log that many writers append to, failing open | `limit_union_record`, `limit_standdown_since`, the `--status` decisions and overrun counts and the `drained` dedup each slurped a fleet log with `jq -s`, discarding its stderr and forcing its status true. From 2026-09-16 the union held 33 spliced lines — the head of one record run into the whole of a later one, left by writes a full disk cut short on both VM nodes — so every slurp aborted and every reader answered empty: no limit in force, no freeze start (and GNU `date -d ""` then answered midnight today, so a freeze could never come of age), zero decisions. Nothing looked wrong for two weeks, because "nothing found" and "could not read" came back identical (agent-ops#2037). | Read a log as raw lines and parse each on its own — `jq -nR` over `inputs` with a per-line `fromjson? // empty`, folded with `reduce` — so one bad line costs one line and the reader holds one record at a time; plain `inputs` under `jq -n` aborts on the same line. Let a read that fails outright exit non-zero, and have the caller report it (`guard_warn`) rather than read it as absence. Fold with `reduce`, not `first`, `limit` or `any`: under jq 1.6 a `try`, which `fromjson?` is, swallows the `break` those are built on, so over such a stream they do not stop. |
+| Repairing a stream after the sort that ordered it | The fleet union is sorted by line, and every line opens with its `ts`, so a spliced line — the head of one record run into the whole of a later one — sorts at its head's timestamp. The first repair of #2037 rewrote each cycle's sorted snapshot, putting the record it recovered in the spliced line's slot, ahead of records older than itself: with this node's `limit-hit` at 09-17 and a peer's recovered one at 09-18, the freeze's start read 09-18 and the governing hit came from the 09-17 record. Once the peer repaired its own copy and the sort placed the record properly, the start moved back to 09-17, the once-per-freeze dedup keyed on it found nothing, and a second escalation would have been filed. The repair also appended a wall-clock `log-repaired` record, which then set requirement 39f's horizon on every cycle while any peer copy stayed damaged. | Take a damaged line apart before the sort, so each record it holds enters the sort on its own: a record's place in an ordered stream belongs to the record, not to the line it arrived on. And never write into a snapshot a value — a repair record, a timestamp — that a later read of the snapshot takes for evidence about what the snapshot holds. |

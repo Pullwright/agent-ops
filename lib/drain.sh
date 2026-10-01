@@ -23,7 +23,9 @@
 # "we are done" for anyone watching the dashboard for it.
 #
 # Sourced by agent-cycle.sh, after lib/toggle.sh (for `_toggle_iso`) and
-# lib/claim.sh (for `do_claims`) and lib/fleet.sh (for `fleet_logs`) — none of
+# lib/claim.sh (for `do_claims`), lib/fleet.sh (for `fleet_logs`) and
+# lib/union-stream.sh (for `union_events`), and calling agent-cycle.sh's own
+# `guard_warn` from `drain_event_logged` — none of
 # which this file re-sources, since `#771`'s own convention is that
 # agent-cycle.sh sources every lib/*.sh once into one process and each file
 # documents what it needs rather than fetching it itself.
@@ -136,15 +138,19 @@ drain_status_line() {
 
 # drain_event_logged UNION_LOG_JSONL DISABLED_AT
 # "1" iff UNION_LOG_JSONL (fleet_logs' own output — one JSON object per line)
-# already carries a `drained` event keyed on DISABLED_AT, "0" otherwise. Slurp
-# rather than stream (`jq -s`): the union log this reads is the same one
-# `current_limit_record`/`landing_approver_adjudication_history` already
-# slurp for their own once-per-record dedup, and this is the same shape of
-# check.
+# already carries a `drained` event keyed on DISABLED_AT, "0" otherwise. Read
+# through UNION_STREAM_JQ's tolerant event stream (`union_events`), as every
+# union reader is: a slurp aborts on the first line that does not parse, and
+# the dedup then answered "not yet logged" every cycle (#2037). A read that
+# fails outright is reported and still answers "0" — a second `drained` event
+# is the cheaper mistake than never logging one. The caller treats a union it
+# could not build the same way (lib/gather-phase.sh).
 drain_event_logged() {
   local union="$1" disabled_at="$2" n
-  n="$(jq -s --arg d "$disabled_at" \
-    '[.[] | select(.event == "drained" and .disabled_at == $d)] | length' \
-    <<<"$union" 2>/dev/null)"
+  # shellcheck disable=SC2016  # jq's own $d/$e
+  n="$(jq -nR --arg d "$disabled_at" "$UNION_STREAM_JQ"'
+      reduce (union_events(["drained"]) | select(.disabled_at == $d)) as $e
+        (0; . + 1)' <<<"$union" 2>&1)" \
+    || { guard_warn "drain_event_logged" "$n"; n=""; }
   [[ "$n" =~ ^[0-9]+$ ]] && (( n > 0 )) && printf '1' || printf '0'
 }

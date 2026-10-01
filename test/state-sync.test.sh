@@ -1362,6 +1362,77 @@ assert_eq "the union is time-ordered" "1" \
   "$([[ "$(printf '%s\n' "$union" | head -1)" == *2026-07-20T00:00:00Z* ]] && echo 1 || echo 0)"
 
 # ==============================================================================
+# the union read takes a damaged line apart before its sort (#2037)
+# ==============================================================================
+# A peer copy not yet repaired at its source can carry a spliced line — the
+# head of a record cut off part-way with the whole of a later record on the
+# same line — or a NUL run, and `cat` joins a peer file that lacks its final
+# newline onto the next one. Sorted whole, a spliced line sits at its head's
+# timestamp, and a record recovered from it afterwards sat there too, ahead
+# of older records: the stand-down then read the freeze's start from the
+# recovered hit, a day late, and the governing hit from the older one.
+# `fleet_logs` splits each damaged line before the sort, so every record sits
+# at its own place, and none of this reaches a reader.
+dl_root="$tmp_dir/damaged-union"
+dl_state="$dl_root/state"
+dl_peers="$dl_root/peers"
+mkdir -p "$dl_state" "$dl_peers/peer-a" "$dl_peers/peer-b"
+dl_nested='{"ts":"2026-09-14T00:00:00Z","node":"self","event":"landing-audit-record","record":{"ts":"2026-09-13T00:00:00Z","event":"inner"}}'
+printf '%s\n' "$dl_nested" \
+  '{"ts":"2026-09-17T00:00:00Z","node":"self","event":"limit-hit","resume_at":"2099-01-17T00:00:00Z"}' \
+  > "$dl_state/log.jsonl"
+# peer-a: a spliced line whose head is older than the node's hit and whose
+# recovered record is newer, then a whole record that lacks its newline.
+{ printf '%s\n' '{"ts":"2026-09-16T00:00:00Z","node":"peer-a","event":"github-budget","core":{"limit":5000,{"ts":"2026-09-18T00:00:00Z","node":"peer-a","event":"limit-hit","resume_at":"2099-01-18T00:00:00Z"}'
+  printf '%s' '{"ts":"2026-09-19T00:00:00Z","node":"peer-a","event":"A"}'; } > "$dl_peers/peer-a/log.jsonl"
+# peer-b: its first record, which `cat` joins onto peer-a's last, then a
+# record a NUL run cut short, then the record the run ran into.
+{ printf '%s\n' '{"ts":"2026-09-15T00:00:00Z","node":"peer-b","event":"B"}'
+  printf '%s' '{"ts":"2026-09-20T00:00:00Z","node":"peer-b","event":"cut'
+  printf '\0%.0s' $(seq 12)
+  printf '%s\n' '{"ts":"2026-09-21T00:00:00Z","node":"peer-b","event":"C"}'; } > "$dl_peers/peer-b/log.jsonl"
+dl_tmp="$tmp_dir/damaged-union-tmp"
+mkdir -p "$dl_tmp"
+dl_union="$(TMPDIR="$dl_tmp" fleet_logs "$dl_state" "$dl_peers" log.jsonl "$dl_root/damage")"; rc=$?
+assert_eq "a damaged union still builds" "0" "$rc"
+assert_eq "every record a damaged line held sits at its own timestamp's place" \
+  "2026-09-14 2026-09-15 2026-09-17 2026-09-18 2026-09-19 2026-09-21" \
+  "$(jq -rR 'fromjson? | .ts[:10]' <<<"$dl_union" | tr '\n' ' ' | sed 's/ $//')"
+assert_eq "  ... and every line of the union parses, with no NUL byte left" "6 0" \
+  "$(jq -cR 'fromjson? // empty' <<<"$dl_union" | wc -l) $(printf '%s' "$dl_union" | tr -cd '\0' | wc -c)"
+assert_eq "  ... a record that carries a nested record passes unchanged, byte for byte" "1" \
+  "$(grep -cxF "$dl_nested" <<<"$dl_union")"
+assert_eq "  ... a whole record that lost only its newline keeps its place, and so does the one it ran into" \
+  "A B" "$(jq -rR 'fromjson? | select(.event == "A" or .event == "B") | .event' <<<"$dl_union" | sort | tr '\n' ' ' | sed 's/ $//')"
+assert_eq "  ... and the damaged lines it took apart or dropped are counted for a reader that wants them" \
+  "3" "$(cat "$dl_root/damage" 2>/dev/null)"
+assert_eq "  ... and the candidate file it set them aside in is gone" "" "$(ls -A "$dl_tmp")"
+# shellcheck source=lib/limit-detect.sh
+. "$SCRIPT_DIR/lib/limit-detect.sh"
+assert_eq "the freeze's start read from that union is the first hit, not the recovered later one" \
+  "2026-09-17T00:00:00Z" "$(limit_standdown_since <<<"$dl_union")"
+assert_eq "  ... and the governing hit is the later one" \
+  "2099-01-18T00:00:00Z" "$(limit_union_record <<<"$dl_union" | jq -r '.resume_at')"
+
+# A union that could not be built is not a union that holds nothing: a stage
+# after the gather that fails — the sort that the memory cgroup kills or a
+# full disk stops, or the `tr`, `awk` or candidate `jq` before it — makes
+# `fleet_logs` fail, so a caller can report it rather than read "no limit in
+# force" off an empty snapshot. The candidate file goes either way.
+for dl_tool in sort awk jq tr; do
+  dl_shim="$tmp_dir/failing-$dl_tool"
+  mkdir -p "$dl_shim"
+  printf '#!/bin/sh\necho "%s: write failed: No space left on device" >&2\nexit 2\n' "$dl_tool" > "$dl_shim/$dl_tool"
+  chmod +x "$dl_shim/$dl_tool"
+  PATH="$dl_shim:$PATH" TMPDIR="$dl_tmp" fleet_logs "$dl_state" "$dl_peers" log.jsonl >/dev/null 2>&1; rc=$?
+  assert_eq "the union build fails when its $dl_tool fails" "nonzero" \
+    "$( (( rc != 0 )) && echo nonzero || echo zero)"
+  assert_eq "  ... and leaves no candidate file behind" "" "$(ls -A "$dl_tmp")"
+done
+assert_eq "a clean union builds, with nothing counted as damaged" "0 0" \
+  "$(fleet_logs "$sb_state" "$sb_peers" log.jsonl "$dl_root/clean-damage" >/dev/null; echo "$? $(cat "$dl_root/clean-damage")")"
+
+# ==============================================================================
 # fleet_logs_healthy — the gate requirement 38b's live reconciliation reads
 # before drawing a negative from the union (agent-ops#816 review)
 # ==============================================================================
@@ -1623,6 +1694,164 @@ assert_eq "an intact jsonl target gets no repair record" "1" \
   "$(jq -s 'length' < "$intact_jsonl")"
 assert_eq "and no log-repaired event appears" "0" \
   "$(jq -s '[.[] | select(.event == "log-repaired")] | length' < "$intact_jsonl")"
+
+# The splice with no NUL run at all (#2037): a write cut short by a full disk
+# leaves the head of a record with no newline, and the next append completes
+# the line with a whole later record. Both VM nodes' own logs carried 15 and
+# 18 such lines, replicated into every peer copy, and nothing repaired them
+# because the file held no NUL byte. The stump goes; the record it ran into is
+# split out and kept in the stump's place.
+spliced_jsonl="$tmp_dir/repair-spliced.jsonl"
+{ printf '{"ts":"2026-09-16T20:30:00Z","event":"before"}\n'
+  printf '{"ts":"2026-09-16T20:33:17Z","event":"github-budget","core":{"limit":5000,'
+  printf '{"ts":"2026-09-16T20:38:12Z","event":"wake-poll","detail":"— recovered"}\n'
+  printf '{"ts":"2026-09-16T20:40:00Z","event":"after"}\n'; } > "$spliced_jsonl"
+assert_eq "jsonl target, spliced line: jq -s refuses the file before repair" "refused" \
+  "$(if jq -s 'length' < "$spliced_jsonl" >/dev/null 2>&1; then echo read; else echo refused; fi)"
+fleet_repair_log "$spliced_jsonl" "repair-node"
+assert_eq "  ... and reads it whole afterwards: three records and the repair record" "4" \
+  "$(jq -s 'length' < "$spliced_jsonl" 2>/dev/null)"
+assert_eq "  ... the truncated head is gone" "0" "$(grep -c 'github-budget' "$spliced_jsonl")"
+assert_eq "  ... the record it ran into is recovered whole, in its place" \
+  '{"ts":"2026-09-16T20:38:12Z","event":"wake-poll","detail":"— recovered"}' \
+  "$(sed -n 2p "$spliced_jsonl")"
+assert_eq "  ... and the records either side are untouched" \
+  "before after" "$(jq -rs '[.[0].event, .[2].event] | join(" ")' < "$spliced_jsonl")"
+spliced_record="$(tail -n1 "$spliced_jsonl")"
+assert_eq "  ... the repair record names the event" "log-repaired" "$(jq -r '.event' <<<"$spliced_record")"
+assert_eq "  ... says no NUL byte was involved" "0" "$(jq -r '.dropped_nul_bytes' <<<"$spliced_record")"
+assert_eq "  ... counts the damaged line it dropped" "1" "$(jq -r '.dropped_lines' <<<"$spliced_record")"
+assert_eq "  ... and the record it recovered from it" "1" "$(jq -r '.recovered_records' <<<"$spliced_record")"
+assert_eq "  ... and names the node" "repair-node" "$(jq -r '.node' <<<"$spliced_record")"
+fleet_repair_log "$spliced_jsonl" "repair-node"
+assert_eq "  ... a second call finds nothing to do and adds no second record" "1" \
+  "$(jq -s '[.[] | select(.event == "log-repaired")] | length' < "$spliced_jsonl")"
+
+# A damaged line with no intact record to split out, and a line that is not a
+# record at all, are both dropped — and counted, honestly, as nothing
+# recovered.
+unrecoverable_jsonl="$tmp_dir/repair-unrecoverable.jsonl"
+{ printf '{"ts":"2026-09-16T20:30:00Z","event":"before"}\n'
+  printf '{"ts":"2026-09-16T20:33:17Z","event":"x","d":{"ts":"2026-09-16T20:33:18Z","event":"tru\n'
+  printf 'plain text where a record belongs\n'
+  printf '{"ts":"2026-09-16T20:40:00Z","event":"after"}\n'; } > "$unrecoverable_jsonl"
+fleet_repair_log "$unrecoverable_jsonl" "repair-node"
+assert_eq "jsonl target, nothing recoverable: both damaged lines go" "before after log-repaired" \
+  "$(jq -rs 'map(.event) | join(" ")' < "$unrecoverable_jsonl" 2>/dev/null)"
+assert_eq "  ... counted as dropped" "2" "$(jq -r '.dropped_lines' <<<"$(tail -n1 "$unrecoverable_jsonl")")"
+assert_eq "  ... with none recovered" "0" "$(jq -r '.recovered_records' <<<"$(tail -n1 "$unrecoverable_jsonl")")"
+
+# A record that legitimately carries another record — the pre-check's own
+# false positive, `landing-audit-record`'s shape — parses, so it is never
+# touched and no repair is recorded.
+nested_jsonl="$tmp_dir/repair-nested.jsonl"
+printf '{"ts":"2026-09-16T20:30:00Z","event":"landing-audit-record","record":{"ts":"2026-09-16T20:29:00Z","event":"inner"}}\n' \
+  > "$nested_jsonl"
+nested_before="$(cat "$nested_jsonl")"
+fleet_repair_log "$nested_jsonl" "repair-node"
+assert_eq "a record carrying a nested record is left exactly as it is" "$nested_before" "$(cat "$nested_jsonl")"
+
+# A file whose last byte is not a newline may have an append still being
+# written into its final line, so that one line is left out of the repair and
+# copied back byte for byte, unterminated, after the repair record — the next
+# append completes it. Nothing else waits on it: a stump no append ever
+# completes (a writer that has stopped) must not block every other repair in
+# the file.
+inflight_jsonl="$tmp_dir/repair-inflight.jsonl"
+inflight_stump='{"ts":"2026-09-16T20:40:00Z","event":"in-fli'
+{ printf '{"ts":"2026-09-16T20:30:00Z","event":"before"}\n'
+  printf '{"ts":"2026-09-16T20:33:17Z","event":"x","core":{"limit":5000,{"ts":"2026-09-16T20:38:12Z","event":"y"}\n'
+  printf '%s' "$inflight_stump"; } > "$inflight_jsonl"
+fleet_repair_log "$inflight_jsonl" "repair-node"
+assert_eq "a spliced line before an unterminated last line is still repaired" \
+  '{"ts":"2026-09-16T20:38:12Z","event":"y"}' "$(sed -n 2p "$inflight_jsonl")"
+assert_eq "  ... the unterminated last line is kept, byte for byte" "$inflight_stump" "$(tail -n1 "$inflight_jsonl")"
+assert_eq "  ... still with no newline after it, so the next append completes it" "1" \
+  "$([[ -n "$(tail -c1 "$inflight_jsonl")" ]] && echo 1 || echo 0)"
+assert_eq "  ... and the repair record comes just before it" "log-repaired" \
+  "$(tail -n2 "$inflight_jsonl" | head -n1 | jq -r '.event')"
+assert_eq "  ... counting the spliced line, not the stump" "1 1" \
+  "$(tail -n2 "$inflight_jsonl" | head -n1 | jq -r '"\(.dropped_lines) \(.recovered_records)"')"
+inflight_after="$(cat "$inflight_jsonl")"
+fleet_repair_log "$inflight_jsonl" "repair-node"
+assert_eq "  ... and an unterminated line alone is no reason to rewrite the file" \
+  "$inflight_after" "$(cat "$inflight_jsonl")"
+
+# A whole record that lost only its newline, run into the next: a write cut
+# just before its newline leaves one. Both records parse on their own, so both
+# are kept, in their place; only the line is counted as damaged.
+headlost_jsonl="$tmp_dir/repair-head-lost.jsonl"
+printf '%s\n' '{"ts":"2026-09-16T20:30:00Z","event":"before"}' \
+  '{"ts":"2026-09-16T20:31:00Z","event":"A"}{"ts":"2026-09-16T20:32:00Z","event":"B"}' \
+  '{"ts":"2026-09-16T20:40:00Z","event":"after"}' > "$headlost_jsonl"
+fleet_repair_log "$headlost_jsonl" "repair-node"
+assert_eq "a record that lost only its newline is kept, with the one it ran into" \
+  "before A B after log-repaired" "$(jq -rs 'map(.event) | join(" ")' < "$headlost_jsonl" 2>/dev/null)"
+assert_eq "  ... one damaged line, two records recovered" "1 2" \
+  "$(tail -n1 "$headlost_jsonl" | jq -r '"\(.dropped_lines) \(.recovered_records)"')"
+
+# A file holding a NUL run and, elsewhere, a splice with no NUL byte in it —
+# the disk-pressure periods that leave one leave the other. Every line of the
+# NUL path's split goes through the same recovery, so the splice's intact
+# record is recovered there too rather than dropped with its stump.
+nulsplice_jsonl="$tmp_dir/repair-nul-and-splice.jsonl"
+{ printf '%s\n' '{"ts":"2026-09-16T20:30:00Z","event":"before"}'
+  printf '%s\n' '{"ts":"2026-09-16T20:31:00Z","event":"x","core":{"limit":5000,{"ts":"2026-09-16T20:32:00Z","event":"spliced-in"}'
+  printf '%s' '{"ts":"2026-09-16T20:33:00Z","event":"cut'
+  printf '\0%.0s' $(seq 9)
+  printf '%s\n' '{"ts":"2026-09-16T20:40:00Z","event":"after"}'; } > "$nulsplice_jsonl"
+fleet_repair_log "$nulsplice_jsonl" "repair-node"
+assert_eq "a NUL run and a splice in one file: the splice's record is recovered too" \
+  "before spliced-in after log-repaired" "$(jq -rs 'map(.event) | join(" ")' < "$nulsplice_jsonl" 2>/dev/null)"
+assert_eq "  ... with the bytes, both damaged lines and the one record counted" "9 2 1" \
+  "$(tail -n1 "$nulsplice_jsonl" | jq -r '"\(.dropped_nul_bytes) \(.dropped_lines) \(.recovered_records)"')"
+
+# Every step of the repair is guarded. A caller may run it under `set -e`, and
+# a step that fails — here the `awk` that counts the plan, as a full disk
+# would make it — must leave the file as it was and end the repair, never the
+# caller.
+guarded_jsonl="$tmp_dir/repair-guarded.jsonl"
+printf '%s\n' '{"ts":"2026-09-16T20:30:00Z","event":"before"}' \
+  '{"ts":"2026-09-16T20:31:00Z","event":"x","core":{"limit":5000,{"ts":"2026-09-16T20:32:00Z","event":"y"}' \
+  > "$guarded_jsonl"
+guarded_before="$(cat "$guarded_jsonl")"
+counts_awk_dir="$tmp_dir/counts-awk-fails"
+mkdir -p "$counts_awk_dir"
+real_awk="$(command -v awk)"
+cat > "$counts_awk_dir/awk" <<SHIM
+#!/usr/bin/env bash
+# Fails only the call that counts the repair plan, whose program ends by
+# printing its two totals; every other call is the real awk.
+for a in "\$@"; do
+  [[ "\$a" == *"r + 0 }"* ]] && { echo "awk: write failure: No space left on device" >&2; exit 2; }
+done
+exec "$real_awk" "\$@"
+SHIM
+chmod +x "$counts_awk_dir/awk"
+assert_eq "a failing step ends the repair, not a caller running under set -e" "survived" \
+  "$( ( set -e; PATH="$counts_awk_dir:$PATH" fleet_repair_log "$guarded_jsonl" "repair-node"; echo survived ) 2>/dev/null)"
+assert_eq "  ... the file is left as it was" "$guarded_before" "$(cat "$guarded_jsonl")"
+assert_eq "  ... and no working copy is left beside it" "" \
+  "$(find "$tmp_dir" -maxdepth 1 -name 'repair-guarded.jsonl.*')"
+
+# The swap refuses to replace a file that has grown since the repair read it:
+# an append that landed meanwhile went to the file the rename would discard
+# (#1196). The file stays as it is, the copy is removed, and the next call
+# retries.
+swap_target="$tmp_dir/swap-target.jsonl"
+swap_copy="$tmp_dir/swap-target.jsonl.repair.test"
+printf '{"ts":"2026-09-16T20:30:00Z","event":"original"}\n' > "$swap_target"
+swap_size="$(stat -c %s "$swap_target")"
+printf '{"ts":"2026-09-16T20:31:00Z","event":"appended-meanwhile"}\n' >> "$swap_target"
+printf '{"ts":"2026-09-16T20:30:00Z","event":"repaired"}\n' > "$swap_copy"
+fleet_repair_swap "$swap_target" "$swap_copy" "$swap_size"
+assert_eq "a file that grew during the repair keeps its append" "1" \
+  "$(grep -c 'appended-meanwhile' "$swap_target")"
+assert_eq "  ... and the repaired copy is discarded" "0" "$(test -e "$swap_copy" && echo 1 || echo 0)"
+printf '{"ts":"2026-09-16T20:30:00Z","event":"repaired"}\n' > "$swap_copy"
+fleet_repair_swap "$swap_target" "$swap_copy" "$(stat -c %s "$swap_target")"
+assert_eq "a file that has not changed size is replaced by its repaired copy" "repaired" \
+  "$(jq -r '.event' < "$swap_target")"
 
 # ==============================================================================
 # node identity in pipeline events (requirement 33, offline path)

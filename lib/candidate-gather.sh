@@ -140,12 +140,17 @@ first_seen_bootstrap="$(jq -c '(length == 0)' <<<"$(first_seen_known_items "$log
 # the per-repo loop below: every repo shares this cycle's one union log and
 # one peers directory, so a degraded read is degraded for all of them
 # together, and a once-per-cycle warning says so once rather than once per
-# repo.
+# repo. A union the snapshot could not build (`union_build_ok`, set where
+# agent-cycle.sh builds it, #2037) is unreliable in exactly this way — a
+# stage that fails part-way leaves the sort a truncated stream, which it then
+# writes out whole — so it counts as degraded too; a caller that never built
+# one is left to the health check.
 union_log_healthy=1
-if ! fleet_logs_healthy "$state_dir" "$peers_dir" "$union_log" "$(cfg '.schedule.state_sync_fetch_minutes')"; then
+if ! (( ${union_build_ok:-1} )) \
+   || ! fleet_logs_healthy "$state_dir" "$peers_dir" "$union_log" "$(cfg '.schedule.state_sync_fetch_minutes')"; then
   union_log_healthy=0
   log_event "warning" "$(jq -nc \
-    --arg d "this cycle's fleet-wide log looks degraded (an empty union, or the peers directory's own fetch marker reporting failure or age) — requirement 38b's live blocked-label reconciliation is skipped this cycle rather than risk reading a block's absence off an incomplete view of it" \
+    --arg d "this cycle's fleet-wide log looks degraded (an empty union, one that could not be built, or the peers directory's own fetch marker reporting failure or age) — requirement 38b's live blocked-label reconciliation is skipped this cycle rather than risk reading a block's absence off an incomplete view of it" \
     '{detail: $d}')"
 fi
 latest_issues_excluded_json="$(latest_issues_excluded "$union_log")"

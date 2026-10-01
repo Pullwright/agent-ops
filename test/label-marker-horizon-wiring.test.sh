@@ -99,24 +99,22 @@ assert_eq "the horizon is captured after the snapshot that materialises \$union_
 assert_eq "the horizon is captured before control passes to the gather loop that appends into \$union_log" \
   "yes" "$([[ "$horizon_line" -lt "$gather_call_line" ]] && echo yes || echo no)"
 
-# --- The one append that is allowed to precede the capture (agent-ops#794) ----
-# `fleet_repair_log` clears a NUL run a peer replicated into `log.jsonl` before
-# it had the repair, and it has to run *before* the snapshot is read at all —
-# implementation spec 2.5 — which puts it ahead of the capture above. It is the
-# single exception to this file's rule, and a narrow one: it is a no-op on an
-# intact snapshot, so the repaired-record line it can append (and the horizon
-# that line would then set, a moment after the snapshot rather than a cycle's
-# runtime after it) arises only where the snapshot was already damaged. Pinned
-# here so the ordering is a checked fact rather than an assumption, in both
-# directions: after the snapshot it repairs, before the horizon read.
+# --- Nothing rewrites the snapshot before the capture (#2037) -----------------
+# `fleet_logs` takes a NUL-holed or spliced peer line apart before its sort,
+# so the snapshot is never repaired after it is built. A repair there appended
+# a `log-repaired` record stamped with wall-clock time, and on every cycle
+# while any peer copy was still damaged the capture below took that record's
+# time for the newest logged event — the wall-clock tracking this file exists
+# to prevent. Pinned in both directions: no repair of `$union_log` anywhere in
+# agent-cycle.sh, and no line of code between the snapshot and the capture
+# that touches it.
 # shellcheck disable=SC2016  # ditto — agent-cycle.sh's own `$union_log`, literal.
 repair_line="$(first_line_matching 'fleet_repair_log "\$union_log"')"
-assert_eq "the snapshot is repaired before anything reads it" \
-  "yes" "$([[ -n "$repair_line" ]] && echo yes || echo no)"
-assert_eq "  ... after the snapshot that materialises it" \
-  "yes" "$([[ -n "$repair_line" && "$repair_line" -gt "$snapshot_line" ]] && echo yes || echo no)"
-assert_eq "  ... and before the horizon is captured from it" \
-  "yes" "$([[ -n "$repair_line" && "$repair_line" -lt "$horizon_line" ]] && echo yes || echo no)"
+assert_eq "the snapshot is not repaired after it is built" "" "$repair_line"
+# shellcheck disable=SC2016  # ditto
+between_refs="$(sed -n "$(( snapshot_line + 1 )),$(( horizon_line - 1 ))p" "$CYCLE" \
+  | grep -v '^[[:space:]]*#' | grep -c '\$union_log' || true)"
+assert_eq "  ... and no code between the snapshot and the capture touches it" "0" "$between_refs"
 
 # The append itself now lives in lib/candidate-gather.sh (#771's move of the
 # repo-ordering/candidate-gathering loop out of agent-cycle.sh) — checked

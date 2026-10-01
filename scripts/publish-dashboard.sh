@@ -468,33 +468,6 @@ node_stale_after_seconds="$(cfg '.node_stale_after_minutes * 60 | floor')"
 # many minutes, so it needs the unconverted value the same way `updater_
 # stuck_after_minutes_raw` above does for `updater-stuck`.
 node_stale_after_minutes_raw="$(cfg '.node_stale_after_minutes')"
-# The transient-refusal verdict (lib/crash-loop.sh, issue #1073): a
-# `crash_loop_verdict` run whose `escalate` is `false` — every failure it
-# counted was the API being unreachable, not refusing a request — never
-# reaches an escalation issue (requirement 2.7), so this is the only place
-# it is ever surfaced. Read straight from the same union `agent-cycle.sh`
-# itself scans (`fleet_logs`, never `read_events`'s already-`fromjson`'d
-# stream — `crash_loop_verdict` wants the same raw-lines-on-stdin shape the
-# Script's own `union_log` file is), so a sustained outage shows here without
-# needing this node to have run the cycle that would have escalated it.
-# `crash_loop_after` 0 (or absent) disables this the same way it disables the
-# escalation itself — a run this reads back is one whose threshold is off.
-#
-# `crash_loop_verdict` now prints one JSON-Lines object per independently
-# crash-looping repository (agent-ops#1630); `--argjson` below needs exactly
-# one JSON value, so only the first matching line is kept — a repository this
-# dashboard omits when more than one is transient at once is tracked
-# separately (agent-ops#1624), not a regression this defensive `head -n1`
-# introduces.
-crash_loop_after_dashboard="$(cfg '.crash_loop_after')"
-[[ "$crash_loop_after_dashboard" =~ ^[0-9]+$ ]] || crash_loop_after_dashboard=0
-provider_unreachable_json='null'
-if (( crash_loop_after_dashboard > 0 )); then
-  provider_unreachable_json="$(fleet_logs "$state_dir" "$peers_dir" log.jsonl \
-    | crash_loop_verdict "$crash_loop_after_dashboard" 2>/dev/null \
-    | jq -c 'select(.escalate == false)' 2>/dev/null | head -n1)"
-  [[ -z "$provider_unreachable_json" ]] && provider_unreachable_json='null'
-fi
 updater_json="$(updater_status "$state_dir/updater-ledger" "$updater_stuck_after_seconds" \
   "$updater_defer_stuck_after_seconds" "${HOSTNAME:-}" "${AGENT_OPS_SERVICE:-}" || echo null)"
 mkdir -p "$out_dir"
@@ -551,6 +524,37 @@ publish_cleanup() {
 trap publish_cleanup EXIT
 scratch_enter publish-dashboard || exit 1
 work_tmp="$SCRATCH_DIR"
+
+# The transient-refusal verdict (lib/crash-loop.sh, issue #1073): a
+# `crash_loop_verdict` run whose `escalate` is `false` — every failure it
+# counted was the API being unreachable, not refusing a request — never
+# reaches an escalation issue (requirement 2.7), so this is the only place
+# it is ever surfaced. Read straight from the same union `agent-cycle.sh`
+# itself scans (`fleet_logs`, never `read_events`'s already-`fromjson`'d
+# stream — `crash_loop_verdict` wants the same raw-lines-on-stdin shape the
+# Script's own `union_log` file is), so a sustained outage shows here without
+# needing this node to have run the cycle that would have escalated it.
+# `crash_loop_after` 0 (or absent) disables this the same way it disables the
+# escalation itself — a run this reads back is one whose threshold is off.
+# Read once the working set is entered, as every union read here is:
+# `fleet_logs` sets its candidate lines aside in TMPDIR, and its sort spools
+# there too (agent-ops#1827).
+#
+# `crash_loop_verdict` now prints one JSON-Lines object per independently
+# crash-looping repository (agent-ops#1630); `--argjson` below needs exactly
+# one JSON value, so only the first matching line is kept — a repository this
+# dashboard omits when more than one is transient at once is tracked
+# separately (agent-ops#1624), not a regression this defensive `head -n1`
+# introduces.
+crash_loop_after_dashboard="$(cfg '.crash_loop_after')"
+[[ "$crash_loop_after_dashboard" =~ ^[0-9]+$ ]] || crash_loop_after_dashboard=0
+provider_unreachable_json='null'
+if (( crash_loop_after_dashboard > 0 )); then
+  provider_unreachable_json="$(fleet_logs "$state_dir" "$peers_dir" log.jsonl \
+    | crash_loop_verdict "$crash_loop_after_dashboard" 2>/dev/null \
+    | jq -c 'select(.escalate == false)' 2>/dev/null | head -n1)"
+  [[ -z "$provider_unreachable_json" ]] && provider_unreachable_json='null'
+fi
 
 if [[ -n "$now_override" ]]; then
   now_iso="$now_override"
@@ -742,6 +746,16 @@ read_events() { jq -c -R 'fromjson? // empty' "$1" 2>/dev/null; }
 # would silently undercount that line, which is exactly the kind of loss
 # agent-ops#794 exists to stop hiding.
 count_lines() { awk 'END{print NR}' "$@" 2>/dev/null || printf '0\n'; }
+
+# union_damage_count FILE — the count `fleet_logs` wrote to its DAMAGE_FILE:
+# the damaged lines it took apart or dropped before its sort, which the raw
+# union therefore never shows. 0 when the file is absent, empty or not a
+# number (a union that could not be built writes none).
+union_damage_count() {
+  local n=""
+  [[ -s "$1" ]] && read -r n < "$1" 2>/dev/null
+  [[ "$n" =~ ^[0-9]+$ ]] && printf '%s' "$n" || printf '0'
+}
 
 gh_json() { timeout "$GH_TIMEOUT" "$DASHBOARD_GH_CMD" "$@" 2>/dev/null; }
 
@@ -1139,21 +1153,29 @@ events_jsonl="$work_tmp/events.jsonl"
 raw_events_jsonl="$work_tmp/raw-events.jsonl"
 # The union lands raw first and is parsed *from the file*, rather than
 # `read_events` piping it straight through, because what `fromjson? // empty`
-# drops is only knowable by counting both sides — a NUL-holed line
-# `fleet_repair_log` hasn't reached yet (a peer not yet upgraded, or a race
-# between its repair and this read), or any other line malformed for some other
-# reason. Counted rather than left invisible (agent-ops#794). Both counts come
+# drops is only knowable by counting both sides — a malformed line that
+# `fleet_logs`' candidate test does not pick out (it takes NUL runs and
+# splices apart itself, and reports those below). Counted rather than left
+# invisible (agent-ops#794). Both counts come
 # from the one snapshot, which is what makes the difference a fact about the
 # window rather than about how much the pipelines appended between two reads;
 # it also keeps this to a single `fleet_logs` — a second one is a whole extra
 # read-and-sort of the fleet's nine megabytes on the per-tick hot path, which
 # is the cost the file-not-a-pipe note above was written about in the first
 # place.
-fleet_logs "$state_dir" "$peers_dir" log.jsonl > "$raw_events_jsonl" 2>/dev/null \
+#
+# `fleet_logs` itself takes a NUL-holed or spliced line apart before its sort
+# (#2037), so such a line never reaches the raw file to be counted there; it
+# reports how many it took apart or dropped instead (its DAMAGE_FILE), and
+# that number is added to the difference. A union it could not build is
+# emptied rather than half-read, and writes no count.
+raw_events_damage="$work_tmp/raw-events.damage"
+fleet_logs "$state_dir" "$peers_dir" log.jsonl "$raw_events_damage" > "$raw_events_jsonl" 2>/dev/null \
   || : > "$raw_events_jsonl"
 read_events "$raw_events_jsonl" > "$events_jsonl" 2>/dev/null || : > "$events_jsonl"
 dropped_log_lines=$(( $(count_lines "$raw_events_jsonl") - $(count_lines "$events_jsonl") ))
 (( dropped_log_lines >= 0 )) || dropped_log_lines=0
+dropped_log_lines=$(( dropped_log_lines + $(union_damage_count "$raw_events_damage") ))
 # --- Full-log readers stream rather than slurp (agent-ops#1649) --------------
 # The readers of `$events_jsonl` below fold it as a stream — `jq -n` over
 # `inputs`, with `reduce`/`foreach` for an aggregate — or keep only the events
@@ -2488,9 +2510,10 @@ review_events_union="$work_tmp/review-events-union.jsonl"
 # as a silent run.
 stage_gaps_file="$work_tmp/stage-gaps.json"
 # `review_log_union` is a peer read straight off `fleet_logs`, unlike
-# `$events_jsonl` (already sanitised by `read_events`): a NUL-holed line a
-# peer's `fleet_repair_log` hasn't reached yet still reaches `$review_events_union`
-# raw, and one malformed line aborts `jq -s` outright (agent-ops#794) —
+# `$events_jsonl` (already sanitised by `read_events`): `fleet_logs` takes a
+# peer's NUL-holed or spliced line apart, but a malformed line its candidate
+# test does not pick out still reaches `$review_events_union` raw, and one
+# malformed line aborts `jq -s` outright (agent-ops#794) —
 # taking the already-clean half down with it. Sanitised here with
 # `read_events`'s own idiom, `fromjson? // empty` per line, same as every other
 # consumer of a fleet log union — inside `union_stream`'s raw mode, which also
@@ -4196,16 +4219,19 @@ fi  # FULL
 # panel.
 revert_rate_repos_json="$(jq -c '[.repos[].slug]' <<<"$DEFAULTED_CONFIG" 2>/dev/null || printf '[]')"
 raw_revert_rate_jsonl="$work_tmp/raw-revert-rate.jsonl"
-fleet_logs "$state_dir" "$peers_dir" revert-rate.jsonl > "$raw_revert_rate_jsonl" 2>/dev/null \
+raw_revert_rate_damage="$work_tmp/raw-revert-rate.damage"
+fleet_logs "$state_dir" "$peers_dir" revert-rate.jsonl "$raw_revert_rate_damage" \
+    > "$raw_revert_rate_jsonl" 2>/dev/null \
   || : > "$raw_revert_rate_jsonl"
 parsed_revert_rate_jsonl="$work_tmp/parsed-revert-rate.jsonl"
 jq -c -R 'fromjson? // empty' "$raw_revert_rate_jsonl" > "$parsed_revert_rate_jsonl" 2>/dev/null \
   || : > "$parsed_revert_rate_jsonl"
-# What `fromjson? // empty` above dropped, same accounting as the log.jsonl
-# read (agent-ops#794).
+# What `fromjson? // empty` above dropped, plus what `fleet_logs` took apart
+# before it, same accounting as the log.jsonl read (agent-ops#794, #2037).
 dropped_revert_rate_lines=$(( $(count_lines "$raw_revert_rate_jsonl") \
     - $(count_lines "$parsed_revert_rate_jsonl") ))
 (( dropped_revert_rate_lines >= 0 )) || dropped_revert_rate_lines=0
+dropped_revert_rate_lines=$(( dropped_revert_rate_lines + $(union_damage_count "$raw_revert_rate_damage") ))
 revert_rate_json="$(jq -s -c --argjson repos "$revert_rate_repos_json" '
       (group_by(.repo) | map(max_by(.ts))) as $latest
       | [ $repos[] as $slug | (($latest[] | select(.repo == $slug)) // {repo: $slug}) ]

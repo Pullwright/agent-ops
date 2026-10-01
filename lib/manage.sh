@@ -26,7 +26,9 @@
 # `run_standdown_checks` (lib/standdown.sh) — deliberately declares nothing
 # `local`, so the call is indistinguishable, to the rest of the cycle, from
 # the inline block it replaces. `exit` inside it ends the process exactly as
-# it did inline: nothing here runs inside a subshell.
+# it did inline: nothing here runs inside a subshell. The log readers below
+# fold UNION_STREAM_JQ's tolerant event stream (`union_events`,
+# lib/union-stream.sh), which agent-cycle.sh sources before this file.
 refresh_dashboard() {
   if [[ -x "$SCRIPT_DIR/scripts/publish-dashboard.sh" ]]; then
     timeout 120 "$SCRIPT_DIR/scripts/publish-dashboard.sh" >/dev/null 2>&1 || true
@@ -35,11 +37,19 @@ refresh_dashboard() {
 
 # The usage-limit stand-down in force right now (requirement 2.1), as its
 # governing record, or empty when there is none. The management commands run
-# long before the cycle's union snapshot exists, so they build their own.
+# long before the cycle's union snapshot exists, so they build their own. A
+# union that could not be built (`fleet_logs` failing) or read at all is
+# reported (on stderr, `--status` being a management command) and leaves the
+# flag carrier to answer alone; a line that merely does not parse is skipped
+# by the read itself (#2037). `pipefail` is set for the pipeline here rather
+# than left to the caller, so a failed build fails the assignment whatever the
+# caller's options.
 current_limit_record() {
   local union
-  union="$(fleet_logs "$state_dir" "$(fleet_peers_dir "$workspace_root")" log.jsonl \
-    | limit_union_record)"
+  union="$({ set -o pipefail
+             fleet_logs "$state_dir" "$(fleet_peers_dir "$workspace_root")" log.jsonl \
+               | limit_union_record; } 2>&1)" \
+    || { guard_warn "current_limit_record:union" "$union"; union=""; }
   limit_later_record "$union" "$(fleet_flag_fetch "$state_repo" "$state_dir" limit)"
 }
 
@@ -170,20 +180,32 @@ stage_health_status_report() {
 # own list, alongside the dashboard's Decisions panel. Built the same way
 # `current_limit_record` above is: the management commands run long before
 # the cycle's own union log snapshot exists, so this reads the fleet log
-# fresh rather than reusing one.
+# fresh rather than reusing one — and reads it through UNION_STREAM_JQ's
+# tolerant event stream (`union_events`, lib/union-stream.sh), as every union
+# reader does: a slurp of the union aborts on its first unparseable line, and
+# this line then read 0 whatever the fleet had decided (#2037). A union that
+# could not be built, or a read that fails outright, says so instead of
+# printing a zero nobody counted; `pipefail` is set here for the reason
+# `current_limit_record` above gives.
 decisions_status_report() {
   local count now_iso
   now_iso="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  count="$(fleet_logs "$state_dir" "$(fleet_peers_dir "$workspace_root")" log.jsonl \
-    | jq -sc --arg now "$now_iso" '
-        ($now | fromdateiso8601) as $now_s
-        | ($now_s - 86400) as $from_s
-        | [ .[] | select(.event == "decision-taken")
-                | select(((.ts // "") | length) > 0
-                         and (try (.ts | fromdateiso8601) catch 0) >= $from_s) ]
-        | length' 2>/dev/null)"
-  [[ "$count" =~ ^[0-9]+$ ]] || count=0
-  printf 'decisions: %s taken in the last 24h\n' "$count"
+  # shellcheck disable=SC2016  # jq's own $now/$now_s/$from_s/$e
+  count="$({ set -o pipefail
+             fleet_logs "$state_dir" "$(fleet_peers_dir "$workspace_root")" log.jsonl \
+               | jq -nR --arg now "$now_iso" "$UNION_STREAM_JQ"'
+                   ($now | fromdateiso8601) as $now_s
+                   | ($now_s - 86400) as $from_s
+                   | reduce (union_events(["decision-taken"])
+                             | select(((.ts // "") | length) > 0
+                                      and (try (.ts | fromdateiso8601) catch 0) >= $from_s)) as $e
+                       (0; . + 1)'; } 2>&1)" \
+    || { guard_warn "decisions_status_report:count" "$count"; count=""; }
+  if [[ "$count" =~ ^[0-9]+$ ]]; then
+    printf 'decisions: %s taken in the last 24h\n' "$count"
+  else
+    printf 'decisions: unreadable — the fleet log could not be read\n'
+  fi
 }
 
 # The `--status` line counting this node's own overrun-slot skips in the last
@@ -195,18 +217,31 @@ decisions_status_report() {
 # "overlap"}` event names the schedule this node's own cron fires, not a
 # fleet-wide fact, and a peer's own overrun count belongs on its own
 # `--status`, not folded into this one's.
+#
+# Read the way `decisions_status_report` reads, through `union_events`: a
+# node's own log can hold an unparseable line too (both VM nodes' did, #2037),
+# and a slurp that aborted on it read as zero overruns. A log not yet written
+# is a plain zero; a log that exists and cannot be read says so.
 overlap_status_report() {
-  local count now_iso
+  local count=0 now_iso
   now_iso="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  count="$(jq -sc --arg now "$now_iso" '
-      ($now | fromdateiso8601) as $now_s
-      | ($now_s - 86400) as $from_s
-      | [ .[] | select(.event == "cycle-skipped" and .reason == "overlap")
-              | select(((.ts // "") | length) > 0
-                       and (try (.ts | fromdateiso8601) catch 0) >= $from_s) ]
-      | length' "$log_file" 2>/dev/null)"
-  [[ "$count" =~ ^[0-9]+$ ]] || count=0
-  printf 'overrun:  %s firing(s) overrun in the last 24h\n' "$count"
+  if [[ -e "$log_file" ]]; then
+    # shellcheck disable=SC2016  # jq's own $now/$now_s/$from_s/$e
+    count="$(jq -nR --arg now "$now_iso" "$UNION_STREAM_JQ"'
+        ($now | fromdateiso8601) as $now_s
+        | ($now_s - 86400) as $from_s
+        | reduce (union_events(["cycle-skipped"])
+                  | select(.reason == "overlap")
+                  | select(((.ts // "") | length) > 0
+                           and (try (.ts | fromdateiso8601) catch 0) >= $from_s)) as $e
+            (0; . + 1)' "$log_file" 2>&1)" \
+      || { guard_warn "overlap_status_report:count" "$count"; count=""; }
+  fi
+  if [[ "$count" =~ ^[0-9]+$ ]]; then
+    printf 'overrun:  %s firing(s) overrun in the last 24h\n' "$count"
+  else
+    printf "overrun:  unreadable — this node's log could not be read\n"
+  fi
 }
 
 # manage_age_phrase SECONDS -> "42s" | "7m" | "3h" | "2d"

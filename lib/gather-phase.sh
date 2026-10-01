@@ -139,9 +139,19 @@ if (( backpressure_tripped )) || (( DRAINING )); then
       if (( drain_at_rest )); then
         # One `drained` event per disabled_at, deduplicated across the union
         # log (requirement 2.9): a peer node can reach "at rest" first, and
-        # this reads its event before deciding to log its own.
-        drain_union_log="$(fleet_logs "$state_dir" "$(fleet_peers_dir "$workspace_root")" log.jsonl 2>/dev/null || true)"
-        if [[ "$(drain_event_logged "$drain_union_log" "$DRAIN_DISABLED_AT")" != "1" ]]; then
+        # this reads its event before deciding to log its own. A union that
+        # could not be built is reported and treated as a dedup read that
+        # failed: the event is logged, a second `drained` being the cheaper
+        # mistake than none (`drain_event_logged`'s own rule).
+        drain_logged=0
+        if drain_union_log="$(fleet_logs "$state_dir" "$(fleet_peers_dir "$workspace_root")" log.jsonl 2>/dev/null)"; then
+          drain_logged="$(drain_event_logged "$drain_union_log" "$DRAIN_DISABLED_AT")"
+        else
+          log_event "warning" \
+            '{"detail": "the fleet log union could not be built, so the drained dedup could not read it; drained is logged, as when the dedup read fails"}'
+        fi
+        drain_union_log=""
+        if [[ "$drain_logged" != "1" ]]; then
           log_event "drained" "$(jq -nc --arg d "$DRAIN_DISABLED_AT" '{disabled_at: $d}')"
         fi
         log_event "stand-down" "$(jq -nc \

@@ -185,7 +185,14 @@ M3. **CronJob-shaped.** The Monitor uses no Docker socket, no `ssh`, no host
 M3.1. **The usage-limit cooldown.** Requirement 2.1's check, in full: the log
    union (as fresh as the last fetch) and `fleet/limit.json` (read live),
    later resume wins. A cooldown in force stands the run down before the
-   digest is built.
+   digest is built. The union is read with requirement 2.1's reduction,
+   which skips a line that does not parse; a read that fails outright, or a
+   union that could not be built (`fleet_logs` failing, requirement 2.5), is
+   logged as a `warning` and leaves the flag to decide alone. Both of the
+   run's snapshots, of `log.jsonl` and of `monitor-log.jsonl`, are built by
+   `fleet_logs`, which takes a peer's damaged line apart before its sort, so
+   neither is repaired afterwards; a `monitor-log.jsonl` snapshot that could
+   not be built is logged as a `warning` too.
 
 M3.2. **Deference to a live sibling.** If either `lock.json` (the
    implementation pipeline) or `review-lock.json` (the review pipeline) is

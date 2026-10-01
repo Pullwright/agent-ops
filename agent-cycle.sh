@@ -62,6 +62,12 @@ SCRATCH_DIR=""
 trap scratch_release EXIT
 scratch_enter agent-cycle || exit 1
 
+# The tolerant raw-line event stream every fleet-union reader folds
+# (`union_events`, #2037), sourced here as well as by lib/limit-detect.sh so
+# that lib/manage.sh's and lib/drain.sh's readers never depend on the order
+# of the sources below.
+# shellcheck source=lib/union-stream.sh
+. "$SCRIPT_DIR/lib/union-stream.sh"
 # shellcheck source=lib/limit-detect.sh
 . "$SCRIPT_DIR/lib/limit-detect.sh"
 # GitHub's rate limits, which are a different system from the Claude usage
@@ -1812,12 +1818,20 @@ acquire_lock() {
 # lock held is one read of a file it would have read anyway.
 peers_dir="$(fleet_peers_dir "$workspace_root")"
 union_log="$cycle_dir/.fleet-log.jsonl"
-fleet_logs "$state_dir" "$peers_dir" log.jsonl > "$union_log" || true
-# A peer that has not deployed the JSONL NUL repair yet — or history
-# replicated before it did — can still hand this node a NUL-holed line via
-# peers_dir/*/log.jsonl; repair the snapshot itself before anything below
-# reads it (agent-ops#794).
-fleet_repair_log "$union_log" "$node_name"
+# A peer that has not repaired its own log yet — or history replicated before
+# it did — can still hand this node a NUL-holed or spliced line via
+# peers_dir/*/log.jsonl. `fleet_logs` takes such a line apart before its sort
+# (lib/fleet.sh), so every record it holds sits at its own timestamp's place
+# and nothing below has to repair the snapshot (agent-ops#794, #2037).
+#
+# A union that could not be built (`tr`, `awk`, `jq` or the sort failing — an
+# OOM kill or a full disk, say) is reported here, and `union_build_ok` carries
+# it to the readers below that must tell "could not read" from "nothing
+# there": the usage-limit read treats it exactly as a failed read, and the
+# freeze escalation files nothing this cycle (lib/standdown.sh).
+union_build_ok=1
+union_build_err="$(fleet_logs "$state_dir" "$peers_dir" log.jsonl 2>&1 > "$union_log")" \
+  || { guard_warn "cycle:union_build" "$union_build_err"; union_build_err=""; union_build_ok=0; }
 # The snapshot's own horizon (requirement 39f, #670): the newest `.ts` the
 # union above reaches, not wall clock — in practice this cycle's own
 # `cycle-start` event, already in this node's log by the time `fleet_logs`

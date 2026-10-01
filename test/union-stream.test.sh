@@ -46,6 +46,8 @@ PUBLISH="$SCRIPT_DIR/scripts/publish-dashboard.sh"
 . "$SCRIPT_DIR/lib/stage-budget.sh"
 # shellcheck source=lib/fleet-sizing.sh
 . "$SCRIPT_DIR/lib/fleet-sizing.sh"
+# shellcheck source=lib/limit-detect.sh
+. "$SCRIPT_DIR/lib/limit-detect.sh"
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
@@ -134,10 +136,28 @@ lib_check REWORK_PANEL_JQ "$REWORK_PANEL_JQ" "$REWORK_PANEL_EVENTS"
 lib_check NODE_TIME_STATE_FOLD_JQ "$NODE_TIME_STATE_FOLD_JQ" "$NODE_TIME_STATE_EVENTS"
 lib_check STAGE_BUDGET_OBSERVATIONS_JQ "$STAGE_BUDGET_OBSERVATIONS_JQ" "$STAGE_BUDGET_OBSERVATIONS_EVENTS"
 lib_check FLEET_SIZING_CONTENTION_BY_NODE_JQ "$FLEET_SIZING_CONTENTION_BY_NODE_JQ" "$FLEET_SIZING_CONTENTION_EVENTS"
+lib_check LIMIT_UNION_JQ "$LIMIT_UNION_JQ" "$LIMIT_UNION_EVENTS"
 assert_eq "void_items declares exactly its set/clear pair" "item-void unvoided" "$VOID_ITEMS_EVENTS"
 # shellcheck disable=SC2086  # a word list by design.
 assert_eq "the partition's open-blocked declaration is cycle-state's own" \
   "$(printf '%s\n' $OPEN_BLOCKED_EVENTS | tr '\n' ' ')" "$(union_reader_events open-blocked | tr '\n' ' ')"
+
+# --- union_events: the tolerant raw-line event stream (#2037) ---------------------
+# Every reader that must not go blind on a line that does not parse folds this
+# one definition, so no two of them skip a different set of lines.
+raw="$tmp_dir/raw.jsonl"
+printf '%s\n' '{"ts":"1","event":"a","n":1}' '{"ts":"2","event":"b","n":2}' '5000' '"text"' \
+  '{"ts":"3","event":"a","core":{"limit":5000,{"ts":"4","event":"a","n":3}' \
+  '{"ts":"5","event":7,"n":4}' '{"ts":"6","event":"a","n":5}' > "$raw"
+# shellcheck disable=SC2016  # jq's own program
+assert_eq "union_events keeps the named events' objects, past every line that is not one" \
+  '[1,5]' "$(jq -nRc "$UNION_STREAM_JQ"' [union_events(["a"]) | .n]' "$raw")"
+# shellcheck disable=SC2016  # jq's own program
+assert_eq "…and takes several names" \
+  '[1,2,5]' "$(jq -nRc "$UNION_STREAM_JQ"' [union_events(["a", "b"]) | .n]' "$raw")"
+# shellcheck disable=SC2016  # jq's own program
+assert_eq "union_event_in answers false, not nothing, for an event that is not a string" \
+  'false' "$(jq -nc "$UNION_STREAM_JQ"' {event: 7} | union_event_in(["a"])')"
 
 # --- union_stream: the protocol, the two timestamp rules, the SINCE gate ----------
 log="$tmp_dir/log.jsonl"

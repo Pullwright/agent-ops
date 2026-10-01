@@ -383,9 +383,29 @@ fi
 # logged reason can say whether `resume_at` is a stated reset or this system's
 # own guess. Reporting a guess as a deadline is what let a stale stand-down
 # outlive the limit that caused it and go unquestioned.
+#
+# The union is read once, by `limit_union_state` (lib/limit-detect.sh), for
+# everything this check needs from it: the governing hit here, and the
+# freeze's start and escalation memory for the escalation below. The read
+# skips a line that does not parse, so it fails only when it could not read
+# at all (jq killed, say). That is reported rather than taken for "no limit
+# in force" (#2037), and a union the snapshot could not build
+# (`union_build_ok`, reported there) is treated exactly the same way without
+# being read: the flag carrier decides on its own, as it does when the union
+# simply holds no live hit, and `union_state_ok` tells the escalation that
+# the union's answers are unknown rather than empty.
+union_state='{"record":null,"since":null,"escalated":[]}'
+union_state_ok=1
+if ! (( union_build_ok )); then
+  union_state_ok=0
+elif [[ -s "$union_log" ]]; then
+  union_state="$(limit_union_state < "$union_log" 2>&1)" \
+    || { guard_warn "cycle:union_record" "$union_state"; union_state=""; union_state_ok=0; }
+fi
 union_record=""
-if [[ -s "$union_log" ]]; then
-  union_record="$(limit_union_record < "$union_log")"
+if (( union_state_ok )); then
+  union_record="$(jq -c '.record // empty' <<<"$union_state" 2>&1)" \
+    || { guard_warn "cycle:union_record" "$union_record"; union_record=""; union_state_ok=0; }
 fi
 governing="$(limit_later_record "$union_record" "$(fleet_flag_fetch "$state_repo" "$state_dir" limit)")"
 [[ -n "$governing" ]] || governing='{}'
@@ -492,42 +512,82 @@ if (( resume_epoch > now_epoch )); then
       # #244: a long-running *automatic* fleet-wide freeze is put in front of
       # a human — the operator did not choose it, so nobody is watching it —
       # while a manual stand-down never pages the person who set it. Aged
-      # from the start of the current freeze (limit_standdown_since), not
-      # from its latest extension, and raised once per freeze: the
-      # `limit-freeze-escalated` event in the union is the memory, and
-      # create_escalation_issue's open-issue guard catches the cross-node
-      # race the union has not yet carried.
+      # from the start of the current freeze (`since`, from the union read
+      # above), not from its latest extension, and raised once per freeze:
+      # the `limit-freeze-escalated` events in the union (`escalated`) are the
+      # memory, and create_escalation_issue's open-issue guard catches the
+      # cross-node race the union has not yet carried.
+      #
+      # When the union could not be built or read, whether this freeze was
+      # already escalated cannot be told, so nothing is filed this cycle and
+      # a `warning` says so; the next cycle tries again. Filing anyway would
+      # rest on the open-issue guard alone, which a closed escalation passes.
+      #
+      # When the union was read but holds no live hit — the stand-down rests
+      # on fleet/limit.json alone — the freeze is aged from the governing
+      # record's own `ts` instead, which is the flag record's time: when
+      # `fleet_limit_publish` (lib/toggle.sh) last wrote it, and since it
+      # rewrites `ts` on every extension, the latest extension rather than
+      # the freeze's start. That time is the escalation's key and its
+      # `since`. A record with no usable `ts` is reported, and the age test
+      # skipped, rather than fed to GNU `date -d ""`, which answers midnight
+      # today with status 0 — a freeze that would always read under a day
+      # old (#2037).
       if (( limit_escalate_after_hours > 0 )) && ! (( DRY_RUN )) \
          && [[ -n "$crash_loop_repo" && -n "$enabler_assignee" ]]; then
-        freeze_since="$(limit_standdown_since < "$union_log")"
-        freeze_epoch="$(date -d "$freeze_since" +%s 2>&1)" \
-          || { guard_warn "freeze_epoch" "$freeze_epoch"; freeze_epoch=0; }
-        freeze_done="$(jq -c --arg s "$freeze_since" \
-          'select(.event == "limit-freeze-escalated" and .since == $s)' \
-          "$union_log" 2>/dev/null | head -n1 || true)"
-        if [[ -z "$freeze_done" ]] && (( freeze_epoch > 0 )) \
-           && (( now_epoch - freeze_epoch >= limit_escalate_after_hours * 3600 )); then
-          freeze_body="$cycle_dir/limit-freeze-issue.md"
-          # shellcheck disable=SC2016  # the backticks are the issue body's Markdown, not expansions
-          {
-            printf '## The fleet has been standing down automatically since %s\n\n' "$freeze_since"
-            printf 'Every cycle since then has stood down on an automatic usage-limit record, and the freeze has now outlived `limit_escalate_after_hours` (%s h). The governing record:\n\n' "$limit_escalate_after_hours"
-            printf '```json\n%s\n```\n\n' "$governing"
-            printf 'If the limit is real, nothing is needed — the stand-down ends at its own resume time, and each cycle keeps probing an estimated one. If it has lapsed or was misread, `agent-cycle.sh --clear-limit <reason>` lifts it fleet-wide.\n\n'
-            printf -- '---\nItem: `usage-limit-freeze:%s` · raised by the Script · cycle `%s` · node `%s`\n' \
-              "$freeze_since" "$cycle_id" "$node_name"
-          } > "$freeze_body"
-          if freeze_created="$(create_escalation_issue "$crash_loop_repo" \
-               "usage-limit-freeze:$freeze_since" "$enabler_escalation_label" \
-               "Usage-limit freeze: the fleet has stood down automatically since $freeze_since" \
-               "$freeze_body")" && [[ -n "$freeze_created" ]]; then
-            log_event "limit-freeze-escalated" "$(jq -nc \
-              --argjson n "${freeze_created%%$'\t'*}" --arg u "${freeze_created#*$'\t'}" \
-              --arg s "$freeze_since" '{issue_number: $n, issue_url: $u, since: $s}')"
-          else
-            log_event "warning" "$(jq -nc \
-              --arg d "automatic usage-limit freeze since $freeze_since exceeds ${limit_escalate_after_hours}h but the escalation issue could not be filed — will retry next cycle" \
-              '{detail: $d}')"
+        freeze_since=""
+        freeze_basis="union"
+        if ! (( union_state_ok )); then
+          log_event "warning" "$(jq -nc \
+            --arg d "automatic usage-limit freeze: the fleet log union could not be built or read this cycle, so whether this freeze was already escalated cannot be told; the escalation is not filed this cycle, and the next cycle tries again" \
+            '{detail: $d}')"
+        else
+          freeze_since="$(jq -r '.since // empty' <<<"$union_state" 2>&1)" \
+            || { guard_warn "freeze_since" "$freeze_since"; freeze_since=""; union_state_ok=0; }
+          if (( union_state_ok )) && [[ -z "$freeze_since" ]]; then
+            freeze_basis="flag"
+            freeze_since="$(jq -r 'if (.ts | type) == "string" and .ts != "" then .ts
+                else error("fleet/limit.json governs this freeze but records no ts, so its age cannot be told; the age test is skipped this cycle") end' \
+                <<<"$governing" 2>&1)" \
+              || { guard_warn "freeze_since:flag" "$freeze_since"; freeze_since=""; }
+          fi
+        fi
+        if [[ -n "$freeze_since" ]]; then
+          freeze_epoch="$(date -d "$freeze_since" +%s 2>&1)" \
+            || { guard_warn "freeze_epoch" "$freeze_epoch"; freeze_epoch=0; }
+          freeze_done="$(jq -r --arg s "$freeze_since" \
+              'if ([.escalated[] | select(. == $s)] | length) > 0 then "escalated" else "" end' <<<"$union_state" 2>&1)" \
+            || { guard_warn "freeze_done" "$freeze_done"; freeze_done="unknown"; }
+          if [[ -z "$freeze_done" ]] && (( freeze_epoch > 0 )) \
+             && (( now_epoch - freeze_epoch >= limit_escalate_after_hours * 3600 )); then
+            freeze_body="$cycle_dir/limit-freeze-issue.md"
+            if [[ "$freeze_basis" == "flag" ]]; then
+              freeze_since_note="$freeze_since, the time fleet/limit.json was last written (it is rewritten on every extension, so this is the latest extension; the fleet log union holds no limit-hit for this freeze)"
+            else
+              freeze_since_note="$freeze_since"
+            fi
+            # shellcheck disable=SC2016  # the backticks are the issue body's Markdown, not expansions
+            {
+              printf '## The fleet has been standing down automatically since %s\n\n' "$freeze_since_note"
+              printf 'Every cycle since then has stood down on an automatic usage-limit record, and the freeze has now outlived `limit_escalate_after_hours` (%s h). The governing record:\n\n' "$limit_escalate_after_hours"
+              printf '```json\n%s\n```\n\n' "$governing"
+              printf 'If the limit is real, nothing is needed — the stand-down ends at its own resume time, and each cycle keeps probing an estimated one. If it has lapsed or was misread, `agent-cycle.sh --clear-limit <reason>` lifts it fleet-wide.\n\n'
+              printf -- '---\nItem: `usage-limit-freeze:%s` · raised by the Script · cycle `%s` · node `%s`\n' \
+                "$freeze_since" "$cycle_id" "$node_name"
+            } > "$freeze_body"
+            if freeze_created="$(create_escalation_issue "$crash_loop_repo" \
+                 "usage-limit-freeze:$freeze_since" "$enabler_escalation_label" \
+                 "Usage-limit freeze: the fleet has stood down automatically since $freeze_since" \
+                 "$freeze_body")" && [[ -n "$freeze_created" ]]; then
+              log_event "limit-freeze-escalated" "$(jq -nc \
+                --argjson n "${freeze_created%%$'\t'*}" --arg u "${freeze_created#*$'\t'}" \
+                --arg s "$freeze_since" --arg b "$freeze_basis" \
+                '{issue_number: $n, issue_url: $u, since: $s, since_basis: $b}')"
+            else
+              log_event "warning" "$(jq -nc \
+                --arg d "automatic usage-limit freeze since $freeze_since exceeds ${limit_escalate_after_hours}h but the escalation issue could not be filed — will retry next cycle" \
+                '{detail: $d}')"
+            fi
           fi
         fi
       fi
