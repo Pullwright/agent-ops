@@ -3102,9 +3102,12 @@ implements.
       warning in 2.2a — states the count's full composition:
       `(N pipeline-owed + N draft + N unraised claim(s) — plus N waiting
       on human (N raw))`. The pipeline-owed figure is every ready pull
-      request the pipeline owes action on: a changes-requested PR at any
-      level, plus, at agent-merges-routine and above, an approved
-      otherwise-eligible PR it still intends to land; a draft is work in
+      request the pipeline owes action on: a `CHANGES_REQUESTED` PR at any
+      level, plus, at `agent-merges-routine` and above, every
+      otherwise-eligible ready PR the pipeline is next in line to land,
+      `CHANGES_REQUESTED` or not — the exact set the level-aware paragraph
+      above defines, which is why the label names the bucket rather than any
+      one review state; a draft is work in
       flight (the Implementer's own claim marker, requirement 23); an
       unraised claim is a registry entry whose PR does not yet exist; the
       human-queue count is the ready PRs excluded from the trip, and the raw
@@ -26576,7 +26579,7 @@ oblige anyone to edit a test.
    repo with no `merge_conflicts`/`dequeued` candidates adds nothing and
    leaves `adjusted_open_count`, `open_composition` and `backpressure_tripped`
    untouched; a candidate PR already among `counted_prs_json`'s drafts and
-   changes-requested PRs (it happened to also be `CHANGES_REQUESTED`) is not
+   pipeline-owed PRs (it happened to also be `CHANGES_REQUESTED`) is not
    added again; a candidate PR that count did not hold is added exactly once,
    grows `adjusted_open_count` by it, and is named in `open_composition`; the
    same PR named by both `merge_conflicts` and `dequeued` is not
