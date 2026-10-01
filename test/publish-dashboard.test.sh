@@ -871,12 +871,16 @@ assert_eq "the next healthy tick clears the verdict" "true" \
 assert_eq "  ... and the window it could not render before is back" "1" \
   "$(jq -r '.cycles | length' <<<"$nfdata2")"
 
-# A record that is not an object fails the render the same way (agent-ops#1649).
-# `read_events` keeps any parseable line, `7` included, and every whole-array
-# reader failed on one; the streamed readers must fail on it too rather than
-# render the cycle beside it hollow — its repo, item and outcome read from no
-# events at all — and cache that as current under a key whose event count
-# is missing.
+# A line that is not an object never reaches the readers (#2037). `read_events`
+# keeps any parseable line, `7` included, and every whole-array reader failed
+# on one (agent-ops#1649), so the streamed readers were held to failing on it
+# too rather than rendering the cycle beside it hollow. `fleet_logs` now takes
+# every line that does not open an object apart before its sort and keeps only
+# the objects it holds — none, for a bare `7` — so the window renders whole,
+# with the cycle's repo, item and outcome read from its own events, and the
+# dropped line is counted in `log_repair` rather than lost without a trace.
+# The readers' own abort on a non-object stays covered where it can still be
+# fed one, by `test/union-stream.test.sh`.
 no="$(new_home nodeNonObject)"
 no_cid="${today_day}T094500Z-nodeNO-71"
 make_cycle "$no" "$no_cid" 0.25 model-a
@@ -887,22 +891,17 @@ make_cycle "$no" "$no_cid" 0.25 model-a
   printf '{"ts":"2026-01-01T09:46:00Z","cycle":"%s","node":"nodeNO","event":"pr-raised","repo":"Poetic-Poems/poetic","item":"TD26071401","pr_url":"https://github.com/Poetic-Poems/poetic/pull/1"}\n' "$no_cid"
 } > "$no/.local/state/poetic-agents/log.jsonl"
 env HOME="$no" NODE_NAME=nodeNO "$PUBLISH" --no-github >/dev/null 2>"$tmp_dir/nonobject.err"
-assert_eq "a publish over a log holding a non-object record still exits 0" "0" "$?"
+assert_eq "a publish over a log holding a non-object line still exits 0" "0" "$?"
 nodata="$(data_of "$no")"
-assert_eq "a non-object record fails the detail render rather than rendering it hollow" "false" \
+assert_eq "a non-object line no longer reaches the detail render, which renders whole" "true" \
   "$(jq -r '.cycle_render.ok' <<<"$nodata")"
-assert_contains "  ... with jq's own reason attached" "Cannot index number" \
-  "$(jq -r '.cycle_render.error // ""' <<<"$nodata")"
-assert_eq "  ... and no cycle rendered" "0" "$(jq -r '.cycles | length' <<<"$nodata")"
-assert_eq "  ... and nothing cached for the cycle it could not read" "none" \
-  "$(ls "$no/.local/state/poetic-agents/.dashboard-cycle-cache/$no_cid".* >/dev/null 2>&1 && echo cached || echo none)"
-assert_contains "  ... and stderr says the window failed to render" \
-  "the cycle detail window failed to render" "$(cat "$tmp_dir/nonobject.err")"
-# The scorecards' kept-events stream aborts on the same record, so the cards
-# take their own fallback — no window, no rows — never a partial fold.
-assert_eq "the actor scorecards fall back on an aborted stream: no window" "null" \
-  "$(jq -r '.counts.actor_scorecards.window_from' <<<"$nodata")"
-assert_eq "  ... and no rows" "0" "$(jq -r '[.counts.actor_scorecards.actors[].rows[]] | length' <<<"$nodata")"
+assert_eq "  ... the cycle beside it rendered, read from its own events, not hollow" \
+  "Poetic-Poems/poetic TD26071401" \
+  "$(jq -r --arg c "$no_cid" '.cycles[] | select(.id == $c) | "\(.repo) \(.item)"' <<<"$nodata")"
+assert_eq "  ... and the line is counted as dropped, not lost without a trace" "1" \
+  "$(jq -r '.log_repair.dropped_log_lines' <<<"$nodata")"
+assert_eq "the actor scorecards fold the whole stream: they have a window" "true" \
+  "$(jq -r '.counts.actor_scorecards.window_from != null' <<<"$nodata")"
 
 # The per-node latest-cycle pass is guarded like the cycle summary: a first
 # pass that produced nothing (here, failed outright) is replaced by the empty

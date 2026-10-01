@@ -38,13 +38,17 @@ refresh_dashboard() {
 # The usage-limit stand-down in force right now (requirement 2.1), as its
 # governing record, or empty when there is none. The management commands run
 # long before the cycle's union snapshot exists, so they build their own. A
-# union that could not be read at all is reported (on stderr, `--status`
-# being a management command) and leaves the flag carrier to answer alone;
-# a line that merely does not parse is skipped by the read itself (#2037).
+# union that could not be built (`fleet_logs` failing) or read at all is
+# reported (on stderr, `--status` being a management command) and leaves the
+# flag carrier to answer alone; a line that merely does not parse is skipped
+# by the read itself (#2037). `pipefail` is set for the pipeline here rather
+# than left to the caller, so a failed build fails the assignment whatever the
+# caller's options.
 current_limit_record() {
   local union
-  union="$(fleet_logs "$state_dir" "$(fleet_peers_dir "$workspace_root")" log.jsonl \
-    | limit_union_record 2>&1)" \
+  union="$({ set -o pipefail
+             fleet_logs "$state_dir" "$(fleet_peers_dir "$workspace_root")" log.jsonl \
+               | limit_union_record; } 2>&1)" \
     || { guard_warn "current_limit_record:union" "$union"; union=""; }
   limit_later_record "$union" "$(fleet_flag_fetch "$state_repo" "$state_dir" limit)"
 }
@@ -179,20 +183,23 @@ stage_health_status_report() {
 # fresh rather than reusing one — and reads it through UNION_STREAM_JQ's
 # tolerant event stream (`union_events`, lib/union-stream.sh), as every union
 # reader does: a slurp of the union aborts on its first unparseable line, and
-# this line then read 0 whatever the fleet had decided (#2037). A read that
-# fails outright says so instead of printing a zero nobody counted.
+# this line then read 0 whatever the fleet had decided (#2037). A union that
+# could not be built, or a read that fails outright, says so instead of
+# printing a zero nobody counted; `pipefail` is set here for the reason
+# `current_limit_record` above gives.
 decisions_status_report() {
   local count now_iso
   now_iso="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   # shellcheck disable=SC2016  # jq's own $now/$now_s/$from_s/$e
-  count="$(fleet_logs "$state_dir" "$(fleet_peers_dir "$workspace_root")" log.jsonl \
-    | jq -nR --arg now "$now_iso" "$UNION_STREAM_JQ"'
-        ($now | fromdateiso8601) as $now_s
-        | ($now_s - 86400) as $from_s
-        | reduce (union_events(["decision-taken"])
-                  | select(((.ts // "") | length) > 0
-                           and (try (.ts | fromdateiso8601) catch 0) >= $from_s)) as $e
-            (0; . + 1)' 2>&1)" \
+  count="$({ set -o pipefail
+             fleet_logs "$state_dir" "$(fleet_peers_dir "$workspace_root")" log.jsonl \
+               | jq -nR --arg now "$now_iso" "$UNION_STREAM_JQ"'
+                   ($now | fromdateiso8601) as $now_s
+                   | ($now_s - 86400) as $from_s
+                   | reduce (union_events(["decision-taken"])
+                             | select(((.ts // "") | length) > 0
+                                      and (try (.ts | fromdateiso8601) catch 0) >= $from_s)) as $e
+                       (0; . + 1)'; } 2>&1)" \
     || { guard_warn "decisions_status_report:count" "$count"; count=""; }
   if [[ "$count" =~ ^[0-9]+$ ]]; then
     printf 'decisions: %s taken in the last 24h\n' "$count"

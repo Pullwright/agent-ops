@@ -584,14 +584,17 @@ crash_loop_escalate_or_defer() {
 # `crash-loop-deferred`, exactly as a fresh failure does, and the run is
 # picked up again next cycle.
 #
-# A union log this function cannot read (`fleet_logs` producing nothing) is
-# never evidence of recovery: requirement 2.7's own rule, "silence must never
-# retire an alarm" — every still-queued attempt is filed on the strength of
-# its original (step-1b) verdict instead of being re-verified at all.
+# A union log this function cannot read (`fleet_logs` producing nothing, or
+# failing to build one at all) is never evidence of recovery: requirement
+# 2.7's own rule, "silence must never retire an alarm" — every still-queued
+# attempt is filed on the strength of its original (step-1b) verdict instead
+# of being re-verified at all. A failed build is emptied here rather than
+# re-verified against what part of it was written, and the `||` keeps it from
+# ending the cycle under `set -e`.
 crash_loop_refile_pending() {
   (( ${#crash_loop_pending_refile[@]} )) || return 0
   local fresh_union
-  fresh_union="$(fleet_logs "$state_dir" "$peers_dir" log.jsonl)"
+  fresh_union="$(fleet_logs "$state_dir" "$peers_dir" log.jsonl)" || fresh_union=""
   local entry item_ref kind_label title_prefix evidence_line verdict_json fresh
   for entry in "${crash_loop_pending_refile[@]}"; do
     item_ref="$(jq -r '.item_ref' <<<"$entry")"

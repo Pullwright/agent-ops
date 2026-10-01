@@ -250,6 +250,26 @@ assert_eq "current_limit_record: a failed union read is reported under its own s
 PATH="$fake_jq_dir:$PATH" decisions_status_report >/dev/null 2>&1
 assert_eq "decisions: the failed read is reported under its own site" \
   "decisions_status_report:count" "$(cat "$guard_calls")"
+
+# A union that could not be built at all — its sort killed, or unable to write
+# its temporary files on a full disk, the conditions behind #2037 — fails
+# `fleet_logs`, and both readers say so rather than reading the empty or
+# truncated stream as "no limit" and "0 decisions". A `sort` that exits 2
+# stands in for the one that failed.
+fake_sort_dir="$tmp_dir/fake-sort"
+mkdir -p "$fake_sort_dir"
+printf '#!/bin/sh\necho "sort: write failed: /tmp/sortXXXX: No space left on device" >&2\nexit 2\n' > "$fake_sort_dir/sort"
+chmod +x "$fake_sort_dir/sort"
+assert_eq "decisions: a union that could not be built says unreadable rather than 0" \
+  "decisions: unreadable — the fleet log could not be read" \
+  "$(PATH="$fake_sort_dir:$PATH" decisions_status_report 2>/dev/null)"
+: > "$guard_calls"
+PATH="$fake_sort_dir:$PATH" decisions_status_report >/dev/null 2>&1
+assert_eq "…and reports it under its own site" "decisions_status_report:count" "$(cat "$guard_calls")"
+: > "$guard_calls"
+assert_eq "current_limit_record: a union that could not be built leaves the flag carrier to answer alone" \
+  "" "$(PATH="$fake_sort_dir:$PATH" current_limit_record 2>/dev/null)"
+assert_eq "…and reports it under its own site" "current_limit_record:union" "$(cat "$guard_calls")"
 unset -f guard_warn fleet_flag_fetch
 
 if (( failures > 0 )); then

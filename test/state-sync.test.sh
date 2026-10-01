@@ -1362,6 +1362,77 @@ assert_eq "the union is time-ordered" "1" \
   "$([[ "$(printf '%s\n' "$union" | head -1)" == *2026-07-20T00:00:00Z* ]] && echo 1 || echo 0)"
 
 # ==============================================================================
+# the union read takes a damaged line apart before its sort (#2037)
+# ==============================================================================
+# A peer copy not yet repaired at its source can carry a spliced line — the
+# head of a record cut off part-way with the whole of a later record on the
+# same line — or a NUL run, and `cat` joins a peer file that lacks its final
+# newline onto the next one. Sorted whole, a spliced line sits at its head's
+# timestamp, and a record recovered from it afterwards sat there too, ahead
+# of older records: the stand-down then read the freeze's start from the
+# recovered hit, a day late, and the governing hit from the older one.
+# `fleet_logs` splits each damaged line before the sort, so every record sits
+# at its own place, and none of this reaches a reader.
+dl_root="$tmp_dir/damaged-union"
+dl_state="$dl_root/state"
+dl_peers="$dl_root/peers"
+mkdir -p "$dl_state" "$dl_peers/peer-a" "$dl_peers/peer-b"
+dl_nested='{"ts":"2026-09-14T00:00:00Z","node":"self","event":"landing-audit-record","record":{"ts":"2026-09-13T00:00:00Z","event":"inner"}}'
+printf '%s\n' "$dl_nested" \
+  '{"ts":"2026-09-17T00:00:00Z","node":"self","event":"limit-hit","resume_at":"2099-01-17T00:00:00Z"}' \
+  > "$dl_state/log.jsonl"
+# peer-a: a spliced line whose head is older than the node's hit and whose
+# recovered record is newer, then a whole record that lacks its newline.
+{ printf '%s\n' '{"ts":"2026-09-16T00:00:00Z","node":"peer-a","event":"github-budget","core":{"limit":5000,{"ts":"2026-09-18T00:00:00Z","node":"peer-a","event":"limit-hit","resume_at":"2099-01-18T00:00:00Z"}'
+  printf '%s' '{"ts":"2026-09-19T00:00:00Z","node":"peer-a","event":"A"}'; } > "$dl_peers/peer-a/log.jsonl"
+# peer-b: its first record, which `cat` joins onto peer-a's last, then a
+# record a NUL run cut short, then the record the run ran into.
+{ printf '%s\n' '{"ts":"2026-09-15T00:00:00Z","node":"peer-b","event":"B"}'
+  printf '%s' '{"ts":"2026-09-20T00:00:00Z","node":"peer-b","event":"cut'
+  printf '\0%.0s' $(seq 12)
+  printf '%s\n' '{"ts":"2026-09-21T00:00:00Z","node":"peer-b","event":"C"}'; } > "$dl_peers/peer-b/log.jsonl"
+dl_tmp="$tmp_dir/damaged-union-tmp"
+mkdir -p "$dl_tmp"
+dl_union="$(TMPDIR="$dl_tmp" fleet_logs "$dl_state" "$dl_peers" log.jsonl "$dl_root/damage")"; rc=$?
+assert_eq "a damaged union still builds" "0" "$rc"
+assert_eq "every record a damaged line held sits at its own timestamp's place" \
+  "2026-09-14 2026-09-15 2026-09-17 2026-09-18 2026-09-19 2026-09-21" \
+  "$(jq -rR 'fromjson? | .ts[:10]' <<<"$dl_union" | tr '\n' ' ' | sed 's/ $//')"
+assert_eq "  ... and every line of the union parses, with no NUL byte left" "6 0" \
+  "$(jq -cR 'fromjson? // empty' <<<"$dl_union" | wc -l) $(printf '%s' "$dl_union" | tr -cd '\0' | wc -c)"
+assert_eq "  ... a record that carries a nested record passes unchanged, byte for byte" "1" \
+  "$(grep -cxF "$dl_nested" <<<"$dl_union")"
+assert_eq "  ... a whole record that lost only its newline keeps its place, and so does the one it ran into" \
+  "A B" "$(jq -rR 'fromjson? | select(.event == "A" or .event == "B") | .event' <<<"$dl_union" | sort | tr '\n' ' ' | sed 's/ $//')"
+assert_eq "  ... and the damaged lines it took apart or dropped are counted for a reader that wants them" \
+  "3" "$(cat "$dl_root/damage" 2>/dev/null)"
+assert_eq "  ... and the candidate file it set them aside in is gone" "" "$(ls -A "$dl_tmp")"
+# shellcheck source=lib/limit-detect.sh
+. "$SCRIPT_DIR/lib/limit-detect.sh"
+assert_eq "the freeze's start read from that union is the first hit, not the recovered later one" \
+  "2026-09-17T00:00:00Z" "$(limit_standdown_since <<<"$dl_union")"
+assert_eq "  ... and the governing hit is the later one" \
+  "2099-01-18T00:00:00Z" "$(limit_union_record <<<"$dl_union" | jq -r '.resume_at')"
+
+# A union that could not be built is not a union that holds nothing: a stage
+# after the gather that fails — the sort that the memory cgroup kills or a
+# full disk stops, or the `tr`, `awk` or candidate `jq` before it — makes
+# `fleet_logs` fail, so a caller can report it rather than read "no limit in
+# force" off an empty snapshot. The candidate file goes either way.
+for dl_tool in sort awk jq tr; do
+  dl_shim="$tmp_dir/failing-$dl_tool"
+  mkdir -p "$dl_shim"
+  printf '#!/bin/sh\necho "%s: write failed: No space left on device" >&2\nexit 2\n' "$dl_tool" > "$dl_shim/$dl_tool"
+  chmod +x "$dl_shim/$dl_tool"
+  PATH="$dl_shim:$PATH" TMPDIR="$dl_tmp" fleet_logs "$dl_state" "$dl_peers" log.jsonl >/dev/null 2>&1; rc=$?
+  assert_eq "the union build fails when its $dl_tool fails" "nonzero" \
+    "$( (( rc != 0 )) && echo nonzero || echo zero)"
+  assert_eq "  ... and leaves no candidate file behind" "" "$(ls -A "$dl_tmp")"
+done
+assert_eq "a clean union builds, with nothing counted as damaged" "0 0" \
+  "$(fleet_logs "$sb_state" "$sb_peers" log.jsonl "$dl_root/clean-damage" >/dev/null; echo "$? $(cat "$dl_root/clean-damage")")"
+
+# ==============================================================================
 # fleet_logs_healthy — the gate requirement 38b's live reconciliation reads
 # before drawing a negative from the union (agent-ops#816 review)
 # ==============================================================================

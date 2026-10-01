@@ -433,14 +433,21 @@ monitor_model="$(resolve_model_id monitor_model "$monitor_model_raw")"
 # checks below need a limit *any* node hit (they all spend one Claude
 # account), the digest is built from it, and the stage budgets are derived
 # from it. Taken before the lock, as both siblings do and for the same reason.
+#
+# `fleet_logs` takes a peer's NUL-holed or spliced line apart before its sort,
+# so neither snapshot needs repairing afterwards (agent-ops#794, #2037). A
+# union that could not be built is logged as a `warning`; for the shared log,
+# the usage-limit read below then treats it exactly as a read that failed.
 peers_dir="$(fleet_peers_dir "$workspace_root")"
 mkdir -p "$run_dir"
 union_log="$run_dir/.fleet-log.jsonl"
 monitor_union_log="$run_dir/.fleet-monitor-log.jsonl"
-fleet_logs "$state_dir" "$peers_dir" log.jsonl > "$union_log" || true
-fleet_repair_log "$union_log" "$node_name"
-fleet_logs "$state_dir" "$peers_dir" monitor-log.jsonl > "$monitor_union_log" || true
-fleet_repair_log "$monitor_union_log" "$node_name"
+union_build_ok=1
+union_build_err="$(fleet_logs "$state_dir" "$peers_dir" log.jsonl 2>&1 > "$union_log")" \
+  || { log_event "warning" "$(jq -nc --arg d "the fleet log union could not be built; the usage-limit stand-down reads fleet/limit.json alone: ${union_build_err:0:500}" '{detail: $d}')"
+       union_build_ok=0; }
+union_build_err="$(fleet_logs "$state_dir" "$peers_dir" monitor-log.jsonl 2>&1 > "$monitor_union_log")" \
+  || log_event "warning" "$(jq -nc --arg d "the fleet monitor-log union could not be built; the stage budgets read what of it was written: ${union_build_err:0:500}" '{detail: $d}')"
 
 # What the Monitor stage is allowed this run (requirement 4f), derived from
 # the fleet's own record of itself exactly as both siblings' stages are. The
@@ -516,9 +523,10 @@ acquire_lock
 #     (read live), later resume wins.
 #     The union read skips a line that does not parse and fails only when it
 #     could not read at all; that is logged as a `warning`, leaving the flag
-#     carrier to decide alone (agent-ops#2037).
+#     carrier to decide alone (agent-ops#2037). A union that could not be built
+#     (`union_build_ok`, reported where it was built) is not read at all.
 union_record=""
-if [[ -s "$union_log" ]]; then
+if (( union_build_ok )) && [[ -s "$union_log" ]]; then
   union_record="$(limit_union_record < "$union_log" 2>&1)" \
     || { log_event "warning" "$(jq -nc --arg d "the fleet log union could not be read for the usage-limit stand-down; fleet/limit.json decides alone: ${union_record:0:500}" '{detail: $d}')"
          union_record=""; }

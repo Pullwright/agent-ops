@@ -823,12 +823,16 @@ acquire_lock() {
 # derived from this stream (requirement 4f).
 peers_dir="$(fleet_peers_dir "$workspace_root")"
 union_log="$review_dir/.fleet-log.jsonl"
-fleet_logs "$state_dir" "$peers_dir" log.jsonl > "$union_log" || true
-# A peer that has not deployed the JSONL NUL repair yet — or history
-# replicated before it did — can still hand this node a NUL-holed line via
-# peers_dir/*/log.jsonl; repair the snapshot itself before anything below
-# reads it (agent-ops#794).
-fleet_repair_log "$union_log" "$node_name"
+# A peer that has not repaired its own log yet — or history replicated before
+# it did — can still hand this node a NUL-holed or spliced line;
+# `fleet_logs` takes it apart before its sort, so nothing below repairs the
+# snapshot (agent-ops#794, #2037). A union that could not be built is logged
+# as a `warning`, and the usage-limit read below treats it exactly as a read
+# that failed: fleet/limit.json decides alone.
+union_build_ok=1
+union_build_err="$(fleet_logs "$state_dir" "$peers_dir" log.jsonl 2>&1 > "$union_log")" \
+  || { log_event "warning" "$(jq -nc --arg d "the fleet log union could not be built; the usage-limit stand-down reads fleet/limit.json alone: ${union_build_err:0:500}" '{detail: $d}')"
+       union_build_ok=0; }
 
 # What the Reviewer-Agent is allowed this run (requirement 4f), and — derived
 # from it — how long this pipeline's own lock may be held. The review lock has
@@ -884,9 +888,11 @@ acquire_lock
 # The union read skips a line that does not parse and fails only when it
 # could not read at all; that is logged as a `warning` and leaves the flag
 # carrier to decide alone, rather than ending the run under `set -e` or
-# passing for "no limit in force" unremarked (agent-ops#2037).
+# passing for "no limit in force" unremarked (agent-ops#2037). A union that
+# could not be built (`union_build_ok`, reported where it was built) is not
+# read at all, for the same reason.
 union_record=""
-if [[ -s "$union_log" ]]; then
+if (( union_build_ok )) && [[ -s "$union_log" ]]; then
   union_record="$(limit_union_record < "$union_log" 2>&1)" \
     || { log_event "warning" "$(jq -nc --arg d "the fleet log union could not be read for the usage-limit stand-down; fleet/limit.json decides alone: ${union_record:0:500}" '{detail: $d}')"
          union_record=""; }
@@ -1375,10 +1381,12 @@ while IFS= read -r entry; do
   # The union is re-snapshotted here — this node's own hit lands in its log
   # immediately — and fleet/limit.json is re-read live, which is how a hit a
   # *peer* took during our first review reaches us before their branch does.
-  fleet_logs "$state_dir" "$peers_dir" log.jsonl > "$union_log" || true
-  fleet_repair_log "$union_log" "$node_name"
+  union_build_ok=1
+  union_build_err="$(fleet_logs "$state_dir" "$peers_dir" log.jsonl 2>&1 > "$union_log")" \
+    || { log_event "warning" "$(jq -nc --arg d "the fleet log union could not be built for the between-repository usage-limit re-check; fleet/limit.json decides alone: ${union_build_err:0:500}" '{detail: $d}')"
+         union_build_ok=0; }
   union_record=""
-  if [[ -s "$union_log" ]]; then
+  if (( union_build_ok )) && [[ -s "$union_log" ]]; then
     union_record="$(limit_union_record < "$union_log" 2>&1)" \
       || { log_event "warning" "$(jq -nc --arg d "the fleet log union could not be read for the between-repository usage-limit re-check; fleet/limit.json decides alone: ${union_record:0:500}" '{detail: $d}')"
            union_record=""; }

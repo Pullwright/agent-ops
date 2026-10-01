@@ -256,6 +256,77 @@ fleet_publication_status() {
   printf '{"ts":"%s","age_s":%s,"verdict":"%s"}' "$ts" "$age" "$verdict"
 }
 
+# FLEET_CANDIDATE_AWK — the cheap test, shared by `fleet_logs` and
+# `fleet_repair_log` below, for a line that may not be one whole record:
+# `fleet_candidate(LINE)` is true for a line that does not open an object, one
+# that does not end in `}`, or one that holds `{"ts":"` anywhere past its
+# start. Every writer of every log these read (`log.jsonl`, `review-log.jsonl`,
+# `monitor-log.jsonl`, `revert-rate.jsonl`, `gh-shim/ledger.ndjson`) appends
+# one compact `jq -nc` object per line, opened with its `ts`; so a whole record
+# opens with `{` and ends with `}`, a line that does not is a fragment or a
+# stump, and a second `{"ts":"` is where a later record was joined on. An
+# empty line is not a candidate: it holds nothing to recover. Run under the C
+# locale, the test is a byte scan of each line, and on a node's own 25 MB log
+# it picks out a dozen or so lines — every damaged one, and the
+# `landing-audit-record` events that carry a nested record and parse whole.
+# shellcheck disable=SC2016  # awk's own source, not the shell's
+FLEET_CANDIDATE_AWK='
+  function fleet_candidate(s) {
+    if (s == "") return 0
+    if (substr(s, 1, 1) != "{" || substr(s, length(s)) != "}") return 1
+    return index(substr(s, 2), "{\"ts\":\"") > 0
+  }'
+
+# FLEET_RECOVER_JQ — the one recovery of a damaged line, shared by
+# `fleet_logs` and both of `fleet_repair_log`'s paths so the union and the
+# repaired files can never disagree about what a line held (#2037):
+#
+#   fleet_is_record   whether the line parses whole as an object.
+#   fleet_recover     the records the line holds, each as its own raw text.
+#                     The line is split at each `{"ts":"` into pieces — the
+#                     piece before the first mark may be empty and is then
+#                     left out — and walked from the left: at each piece, the
+#                     shortest run of consecutive pieces that, joined, parses
+#                     as an object is emitted, and the walk resumes after it;
+#                     a piece no run starting there parses from is dropped.
+#                     `{"ts":"A",…}{"ts":"B",…}` (a cut just before the
+#                     newline, or `cat` joining a peer file that lacks its
+#                     final newline) yields both A and B; a stump before a
+#                     whole record is dropped and the record kept. Only
+#                     objects count, so a bare number left in a fragment is
+#                     never emitted.
+#   fleet_resolve     the line itself when it is a record, and otherwise what
+#                     `fleet_recover` makes of it.
+#
+# The shortest run is the right one: a record's own text is balanced, so a run
+# that starts with a stump (an object opened and not closed) cannot balance
+# however much of the record after it joins, and a run that is a record cannot
+# be cut short at a later mark, which falls inside it. Folded with `reduce`
+# rather than `first` or `limit`: under jq 1.6 a `try` swallows the `break`
+# those are built on.
+# shellcheck disable=SC2016  # jq's own $m/$p/$pc/$n/$i/$j/$s/$hit
+FLEET_RECOVER_JQ='
+  def fleet_is_record: try (fromjson | type == "object") catch false;
+  def fleet_recover:
+    "{\"ts\":\"" as $m
+    | split($m) as $p
+    | ((if $p[0] == "" then [] else [$p[0]] end) + [$p[1:][] | $m + .]) as $pc
+    | ($pc | length) as $n
+    | def fleet_recover_from($i):
+        if $i >= $n then empty
+        else
+          (reduce range($i; $n) as $j (null;
+             if . != null then .
+             else ($pc[$i:$j + 1] | join("")) as $s
+               | if ($s | fleet_is_record) then {j: $j, s: $s} else null end
+             end)) as $hit
+          | if $hit == null then fleet_recover_from($i + 1)
+            else $hit.s, fleet_recover_from($hit.j + 1) end
+        end;
+      fleet_recover_from(0);
+  def fleet_resolve: if fleet_is_record then . else fleet_recover end;
+'
+
 # The fleet's event stream: this node's own log followed by every peer's,
 # sorted into time order (each line begins {"ts":"…", so a plain byte sort is
 # a time sort). The consumers that reduce by most-recent-event-wins — the
@@ -264,16 +335,82 @@ fleet_publication_status() {
 # requirement 33 stamps `node` on every event for anything that does. The
 # union is advisory speed — a lesson one node learned sparing the rest — and
 # the claims of requirement 17a are the lock underneath it.
-fleet_logs() {  # <state_dir> <peers_dir> [log-basename]
-  local state_dir="$1" peers="$2" name="${3:-log.jsonl}" f
+#
+# The sort places a line at its first timestamp, so a damaged line is taken
+# apart before the sort, or what it holds lands out of order. A peer copy not
+# yet repaired at its source (`fleet_repair_log` below), or history replicated
+# before it was, can carry two kinds:
+#
+#   - a NUL run, where an unclean stop lost the data blocks behind the last few
+#     writes. The run ate the newlines inside it too, so it becomes one line
+#     break here (`tr -s '\0' '\n'`); a NUL never belongs in JSONL text.
+#   - a splice: the head of a record cut off part-way, with no newline, and the
+#     whole of a later record on the same line (#2037). A write cut short by a
+#     full disk leaves one, and so does the `cat` below when a peer file's last
+#     record lacks its newline.
+#
+# Sorted whole, a spliced line sits at its head's timestamp, and a record
+# recovered from it afterwards would sit there too, ahead of records older
+# than itself; a reader that takes the most recent event, or the first since a
+# clear, would then answer from the wrong one. So each damaged line is split
+# here and each record it holds enters the sort on its own: the union holds
+# every recoverable record at its own timestamp's place, and no reader repairs
+# a snapshot afterwards.
+#
+# The bulk of the union is never parsed or written anywhere extra. One
+# streaming `awk` pass under the C locale sets the candidate lines
+# (FLEET_CANDIDATE_AWK) aside in a small file under TMPDIR and passes every
+# other line straight to the sort; one `jq` then resolves the candidates
+# (FLEET_RECOVER_JQ's `fleet_resolve`) into the same sort. A candidate that
+# parses whole passes unchanged, byte for byte.
+#
+# DAMAGE_FILE, when given, receives the number of candidates that were not
+# whole records — the lines this read took apart or dropped. A reader that
+# counts what its own parse drops (the dashboard's `log_repair`) adds it,
+# since those lines never reach that parse.
+#
+# Returns non-zero when a stage after the gather fails — `tr`, `awk`, the
+# candidate `jq`, or the sort — so that a caller can tell a union that could
+# not be built from one that holds nothing, and report it (#2037): an OOM kill
+# or a full disk, the conditions that damaged the logs in the first place, are
+# exactly what makes a sort fail. A peer file that vanishes between the glob
+# and its `cat` is not a failure; the fetch replaces peer trees whole, and the
+# next read sees the new one. The body is a subshell so that its `set +e`, its
+# variables and its clean-up trap stay its own: the candidate file is removed
+# however it ends.
+fleet_logs() (  # <state_dir> <peers_dir> [log-basename] [damage-file]
+  set +e
+  state_dir="$1" peers="$2" name="${3:-log.jsonl}" damage="${4:-}"
+  side="$(mktemp "${TMPDIR:-/tmp}/fleet-logs.XXXXXX" 2>/dev/null)" || exit 1
+  trap 'rm -f "$side"' EXIT
   {
-    [[ -f "$state_dir/$name" ]] && cat "$state_dir/$name"
-    for f in "$peers"/*/"$name"; do
-      [[ -f "$f" ]] && cat "$f"
-    done
-  } 2>/dev/null | sort
-  return 0
-}
+    {
+      [[ -f "$state_dir/$name" ]] && cat "$state_dir/$name"
+      for f in "$peers"/*/"$name"; do
+        [[ -f "$f" ]] && cat "$f"
+      done
+    } 2>/dev/null | tr -s '\0' '\n' \
+      | LC_ALL=C awk -v side="$side" "$FLEET_CANDIDATE_AWK"'
+          fleet_candidate($0) { print > side; next }
+          { print }'
+    st=("${PIPESTATUS[@]}")
+    (( st[1] == 0 && st[2] == 0 )) || exit 1
+    if [[ -s "$side" ]]; then
+      jq -nRr "$FLEET_RECOVER_JQ"' inputs | fleet_resolve' "$side" || exit 1
+    fi
+  } | sort
+  st=("${PIPESTATUS[@]}")
+  (( st[0] == 0 && st[1] == 0 )) || exit 1
+  if [[ -n "$damage" ]]; then
+    if [[ -s "$side" ]]; then
+      jq -nR "$FLEET_RECOVER_JQ"' reduce (inputs | select(fleet_is_record | not)) as $l (0; . + 1)' \
+        "$side" > "$damage" 2>/dev/null || : > "$damage"
+    else
+      printf '0\n' > "$damage"
+    fi
+  fi
+  exit 0
+)
 
 # fleet_repair_log <path> <node>
 # A container killed mid-append can leave a log's size recorded while the

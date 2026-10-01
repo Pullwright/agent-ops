@@ -262,7 +262,11 @@ cmd_ready() {
   fi
 
   local limit_freeze=false governing resume_at resume_epoch=0
-  governing="$(fleet_logs "$state_dir" "$peers_dir" | limit_union_record)"
+  # A union that could not be built or read leaves the flag cache to answer
+  # alone, as a stand-down check does; this script is read-only and writes no
+  # event, so the failure is left to the cycles to report (`pipefail` is set
+  # above, so a failed build fails the pipeline).
+  governing="$(fleet_logs "$state_dir" "$peers_dir" | limit_union_record)" || governing=""
   governing="$(limit_later_record "$governing" \
     "$(cat "$(fleet_cache_file "$state_dir" limit)" 2>/dev/null || true)")"
   if [[ -n "$governing" ]]; then
