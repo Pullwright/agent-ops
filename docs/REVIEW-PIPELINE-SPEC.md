@@ -456,7 +456,10 @@ R3. **Stand-down checks.** Each logs its reason and exits 0:
       the same two carriers the implementation cycle does — the `limit-hit`
       event to the shared `log.jsonl`, and the fleet flag, extend-only,
       best-effort (a `warning` is logged when the flag write fails and the
-      union carries the signal instead).
+      union carries the signal instead). The union is read with requirement
+      2.1's reduction, which skips a line that does not parse; a read that
+      fails outright is logged as a `warning` and leaves the flag to decide
+      alone, here and at the re-check between repositories alike.
    2. *Implementation pipeline busy* — if `lock.json` is held by a live
       process, stand down and wait for the next tick (defer to it, per
       "Relationship to the existing pipelines"), removing the record
@@ -556,8 +559,9 @@ R2c. **The fleet's memory and state publication.** After the lock and before
    (`docs/IMPLEMENTATION-PIPELINE-SPEC.md`, requirement 2.5) — so the
    usage-limit checks below see a limit *any* node hit; the union is
    re-snapshotted between repos, and each snapshot is repaired on the terms of
-   that same requirement before anything reads it — a peer's NUL-holed line
-   costs this pipeline the records around it exactly as it costs a cycle's.
+   that same requirement before anything reads it — a peer's NUL-holed or
+   spliced line costs this pipeline the records around it exactly as it costs
+   a cycle's.
    The run's cleanup removes the snapshot, as a cycle's does: it is scratch
    with the run's lifetime, and a count of retained snapshots bounds how many
    are kept, never how large they are (that requirement's own terms). The

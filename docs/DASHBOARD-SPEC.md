@@ -2917,11 +2917,26 @@ number's twins elsewhere on the page.
   destroyed, and each line either side survives only if it parses: the
   truncated stump goes and is counted in `dropped_lines`, the intact record the
   run ran into is recovered, and `jq -s` reads the whole file afterwards.
+  The same splice arises with no NUL byte at all, from a write a full disk cut
+  short: the head of a record without its newline, completed by the next
+  append's whole record. A JSONL target with no NUL byte is checked for that
+  shape too — a `grep` under the C locale picks the candidate lines (a
+  `{"ts":"` anywhere but at a line's start, or a line that does not open an
+  object), and only those are parsed — and each candidate that does not parse
+  is replaced by the longest tail starting at a `{"ts":"` that does, or
+  dropped when none does, with a `log-repaired` record carrying
+  `dropped_nul_bytes: 0`, `dropped_lines` and `recovered_records`. A line that
+  parses is never touched, and a file whose last byte is not a newline is left
+  until a later window, since its final line may be an append still being
+  written. Either repair replaces the file by rename only if its size is
+  unchanged since the repair read it: a writer's append that landed meanwhile
+  would be on the file the rename discards, so the window gives up and the
+  next one retries.
   `agent-cycle.sh` and `review-cycle.sh` apply the identical
   repair to their own per-cycle/per-review `.fleet-log.jsonl` union snapshot,
   immediately after building it and before anything reads it — a peer that
   has not deployed this repair yet, or history replicated before it did, can
-  still hand a NUL-holed line to a node whose own logs are already clean.
+  still hand a damaged line to a node whose own logs are already clean.
 
 ## Components (as built)
 

@@ -2897,10 +2897,21 @@ implements.
       `--clear-limit` (requirement 12) — and both retirements are the same
       write: delete `fleet/limit.json` and log a `limit-cleared` event, which
       the union's reduction — most-recent-wins over `limit-hit` **and**
-      `limit-cleared`, in `lib/limit-detect.sh` so all four readers share it
-      — treats as superseding every earlier hit. Deleting rather than
-      shortening the flag is what keeps extend-only intact for the
-      concurrent-hit case it exists for.
+      `limit-cleared`, in `lib/limit-detect.sh` (`limit_union_record`) so
+      every reader shares it — treats as superseding every earlier hit.
+      Deleting rather than shortening the flag is what keeps extend-only
+      intact for the concurrent-hit case it exists for.
+
+      The reduction reads the union as a stream of raw lines, parsing each on
+      its own and folding with `reduce` (`jq -nR` over `inputs | fromjson? //
+      empty`), never as one slurped document: a line that does not parse, or
+      parses to something other than an object, is skipped and every line
+      around it still counts, and the reader holds one record at a time
+      rather than the whole union. A read that fails outright — `jq` killed,
+      or its input unreadable — exits non-zero, and the caller reports it
+      rather than reading it as "no limit in force": a `guard-degraded` event
+      (site `cycle:union_record`) here, and the flag carrier then decides
+      alone, exactly as it does when the union holds no live hit.
 
       A stand-down must have an exit that does not depend on a cycle running,
       because this check runs before any stage launches: while it holds, no
@@ -2989,7 +3000,13 @@ implements.
       cycle. Skipped on `--dry-run`, when `crash_loop_repo` or
       `enabler_assignee` is unset, and always for `kind: manual` — the
       operator who set a manual stand-down does not need to be paged about
-      their own decision.
+      their own decision. Skipped too, for that cycle, when the freeze has no
+      start to age from: the union holds no live hit (the stand-down rests on
+      `fleet/limit.json` alone) or its read failed, which is reported as a
+      `guard-degraded` event (site `freeze_since`). The age test never runs on
+      an empty start. Both union reads here — the start and the
+      once-per-freeze `limit-freeze-escalated` lookup — skip an unparseable
+      line the way the reduction of 1 does.
    1a. *Claim GC*: run `lib/claim.sh gc` (requirement 17a) — best-effort,
       skipped on `--dry-run` — so registry entries a dead node left behind
       are swept before back-pressure counts them. Every node runs it; no
@@ -4526,7 +4543,13 @@ implements.
    first of them (the same bounded `fails` the heartbeat carries, #1397), or
    a plain sentence when no pass has run. `test/state-sync.test.sh` drives
    the three lock cases (young, held by a live process, orphaned) and both
-   events; `test/manage-status.test.sh` the two lines.
+   events; `test/manage-status.test.sh` the two lines. The same file covers
+   the two `--status` readers of the fleet union: past a spliced peer line,
+   `decisions:` still counts the last day's `decision-taken` events across
+   the node and its peer, and `current_limit_record` still returns the
+   governing hit, with nothing reported; a read that fails outright prints
+   `decisions: unreadable` rather than 0, and each reader reports its own
+   site through `guard_warn`.
 
    **A push that wedges holding `mirror_lock` releases it on its own, and a
    long hold is named as a possible wedge rather than reported as an
@@ -4736,6 +4759,12 @@ implements.
    replicated before it did, can still hand a NUL-holed line to a node whose
    own logs are clean, and one such line costs every reader below the record
    it fell in and the file's readability to `jq -s` and to grep along with it.
+   The same repair handles a spliced line that holds no NUL byte — the head of
+   a record cut off part-way with the whole of a later record on the same
+   line, left by a write a full disk cut short — by putting the intact later
+   record in its place and dropping the stump. The union's readers do not
+   depend on the repair for correctness: each skips a line that does not
+   parse (requirement 2.1's reduction shows the form).
    The repair is a no-op on an intact snapshot — the ordinary case — so the
    repaired-record line it appends, and the horizon that line would then set,
    arise only on a snapshot that was already damaged. The snapshot is scratch with a cycle's
@@ -5897,7 +5926,11 @@ implements.
    `landing_approver_adjudication_history` already read for their own
    once-per-record dedup): before logging it, the cycle that just found rest
    scans the union for an existing `drained` event carrying the same
-   `disabled_at` and logs nothing if one is already there. This is the
+   `disabled_at` and logs nothing if one is already there. The scan
+   (`drain_event_logged`) reads the union line by line and skips a line that
+   does not parse, the way requirement 2.1's reduction does; a scan that
+   fails outright reports a `guard-degraded` event and answers "not yet
+   logged", since a second `drained` event is the cheaper mistake. This is the
    correctness property a fleet needs and a single node does not — two nodes
    can independently reach "at rest" for the same drain in the same window,
    and only one `drained` event may exist for it, or a reader counting drains
@@ -10218,7 +10251,11 @@ implements.
     (`overlap_status_report`, `lib/manage.sh`) — `check-nodes.sh` (external
     to this repository; not committed here) already prints `--status` per
     node and so inherits it for free, on the same terms requirement 2.8's
-    `stages:` section already does.
+    `stages:` section already does. The count reads the log line by line and
+    skips a line that does not parse; a log not yet written counts zero, and
+    a read that fails outright prints `overrun:  unreadable — this node's log
+    could not be read` and reports a `guard-degraded` warning on stderr
+    rather than a zero nobody counted.
 12. **Flags.** `--dry-run` (run through step 5 then stop: prints the work
     order, launches no Implementer), `--once` (one verbose cycle in the
     foreground), `--repo <slug>` (restrict selection, for testing),
@@ -17100,7 +17137,11 @@ implements.
     taken-at, log-issue link, a `vetoed`/`stands` status — sourced from the
     fleet log the same way every other panel is. `agent-cycle.sh --status`
     carries a `decisions:` line counting `decision-taken` events in the last
-    24 h (`decisions_status_report`, `lib/manage.sh`).
+    24 h (`decisions_status_report`, `lib/manage.sh`), read from the fleet
+    union line by line the way requirement 2.1's reduction reads it, so an
+    unparseable line costs that line only. A read that fails outright prints
+    `decisions: unreadable — the fleet log could not be read` and reports a
+    `guard-degraded` warning on stderr, never a zero.
 36f. **The delegate mandate (D18, PR #1389, recommendation 3 of
     `docs/reviews/2026-09-11-escalation-autonomy-review.md`).** The fourth rung of
     `escalation_autonomy`, `decide-with-veto`, including everything
@@ -24614,7 +24655,18 @@ oblige anyone to edit a test.
    under the peers directory, leaves the node's own `state_dir` alone, never
    includes the node itself, and prunes a peer whose branch is gone; the
    union read (`lib/fleet.sh`) carries both nodes' events in time order; and
-   pipeline events written through `log_event` carry the node's name.
+   pipeline events written through `log_event` carry the node's name. The
+   same file covers `fleet_repair_log`: a NUL run is cleared from a
+   plain-text and a JSONL target alike, with the stump it cut dropped, the
+   record it ran into recovered and the loss recorded; a spliced line with no
+   NUL byte is replaced by the record split out of it, in its place, with a
+   `log-repaired` record counting one line dropped and one record recovered,
+   and a second call adds nothing; a damaged line with no intact record and a
+   line that is not a record are both dropped and counted, with none
+   recovered; a record carrying a nested record, and a file whose last byte
+   is not a newline, are left exactly as they are; and the swap keeps a file
+   that grew during the repair, discarding the repaired copy, while
+   replacing one whose size is unchanged.
 1e. **The fleet flags reach every node.** `test/toggle.test.sh` passes,
    including its fleet section against the contents-API stub (`TOGGLE_GH`):
    a flag one node writes reads as disabled on another; an unreachable
@@ -24733,7 +24785,10 @@ oblige anyone to edit a test.
    belongs to an older drain, and otherwise reports `DRAINING` with the
    remaining count or `DRAINED` with the check's own timestamp. The
    `drained` event's own dedup (`drain_event_logged`) is asserted against a
-   union log carrying a matching `disabled_at`, a differing one, and none.
+   union log carrying a matching `disabled_at`, a differing one, and none; a
+   spliced line in the union does not hide a matching event; and a read that
+   fails outright answers "not logged" and reports itself through
+   `guard_warn`.
 1f. **A provider-qualified model id resolves; an unsupported one fails fast
    (requirement 1a).** `test/model-id.test.sh` passes: a bare id and its
    `anthropic/`-qualified form resolve to the same value; an empty value (the
@@ -25104,6 +25159,12 @@ oblige anyone to edit a test.
    first hit of the current freeze — the earliest `limit-hit` with no later
    `limit-cleared` — printing nothing on an empty stream, on one whose last
    limit event is a `limit-cleared`, and never a hit from before that clear.
+   Both `limit_union_record` and `limit_standdown_since` read past a spliced
+   line — the head of a record run into a whole later one — before or after
+   the governing hit, with most-recent-wins intact across it (a clear past
+   the line still retires the hit, and a hit after that clear governs and
+   starts a new freeze); a line that parses to a non-object is skipped; and
+   each exits non-zero when its `jq` fails outright.
    `test/doctor.test.sh` passes: `--offline` reports the stream-flushing
    probe skipped rather than running it, so the suite never spends.
 1k4. **Both stage caps derive themselves, and in the safe direction
@@ -25206,7 +25267,16 @@ oblige anyone to edit a test.
    three distinct labels interleaved all report, so the cap is per label and
    not per cycle; a 4000-byte `detail` is stored at 500; and a guard raised
    under `MANAGE_ACTION` writes nothing to the log and names its site on
-   stderr, while the same site under a real cycle still logs.
+   stderr, while the same site under a real cycle still logs. The usage-limit
+   union read and the automatic-freeze escalation of requirement 2.1/1c are
+   lifted out of `lib/standdown.sh` by their own markers: the union carrier
+   reads the governing hit past a spliced line silently, and a read that
+   fails outright leaves it empty and reports `cycle:union_record`; a
+   three-day freeze past a spliced line files its escalation keyed on its
+   start and logs `limit-freeze-escalated`, and does not file again once that
+   event sits in the union past a spliced line; a freeze with no start in the
+   union files nothing and reports nothing even with the clock days ahead;
+   and a failed read of the start files nothing and reports `freeze_since`.
 2. `--dry-run` completes against the real repos: stand-down checks pass,
    ordering is computed, the findings pre-fetch runs, the Co-Ordinator selects
    an item or declines with a reason, the work order is printed, nothing
@@ -30232,7 +30302,9 @@ oblige anyone to edit a test.
     records; and `lib/manage.sh`'s
     `overlap_status_report` counts only this node's own last-24h
     `reason: "overlap"` events, ignoring the `reason`-less lock-contention
-    `cycle-skipped` shape. `test/publish-dashboard.test.sh`'s "Overrun-slot
+    `cycle-skipped` shape, counting the events either side of a spliced line,
+    reading zero for a log not yet written, and printing `unreadable` and
+    reporting through `guard_warn` when the read fails outright. `test/publish-dashboard.test.sh`'s "Overrun-slot
     skips are counted alongside, never folded into total" fixture confirms
     `noop_ticks.overlap` counts a working cycle's own overlap events without
     removing its row from `cycles[]` or inflating `noop_ticks.total`; and
@@ -31623,3 +31695,4 @@ confident, recurring no-op.
 | A bash default that only the empty case ever exercises | The fit-exemption gate read `${coordinator_fit_report_json:-{}}`. `${parameter:-word}` closes on the *first* unquoted `}`, so the default word was `{` and a literal `}` was appended straight after it — harmless on the one path nobody was watching (the variable unset or empty, composing exactly `{}`), and silently corrupting it into invalid JSON on every path that mattered (a real, non-empty fit report). `jq` failed to parse it, the guard read the failure as "fit did not run", and requirement 34e's fourth refusal, requirement 3x's trimmed exemption and requirement 17g's fabrication check were dead code on every fitted cycle from the day the guard shipped — the fleet fitted at rung 15 on 47 cycles in one day (2026-08-28) with none of the three ever firing (TD-PPagop-26082816, agent-ops#933). Every test that exercised the gate had only ever driven the empty case, which is precisely the one the bug leaves working. | A `${var:-word}` default containing an unescaped `{`/`[` is a trap in bash, not a style choice — the closing brace/bracket it needs is the *first* one bash finds, not the one the author meant. Prefer initialising the variable to a real value ahead of the guard (the `set -u`-driven convention this file already uses for `coordinator_fit_allowance`) over threading a brace-shaped default through a parameter expansion at all. And when a guard's fixture only ever sets its input to empty or unset, that fixture cannot tell "the gate is off" from "the gate is broken" — assert the non-empty case too, the one place this shape of bug hides. |
 | A per-entry scan that was "cheap at a handful-to-low-hundreds" | `gh_shim_cache_invalidate` found the entries a write invalidates by opening every file in `http-cache/` with a `jq` — two per entry. Nothing bounded the count, the prune ran at two days, and once the authoring App went live each hourly token was a new identity re-caching every path: 13,000–19,000 entries a node, 484 identities on one. Every registry `PUT`/`DELETE` — the pager's per-window claims, `claim.sh gc`'s ~90 deletes a cycle — then cost two to three and a half minutes of CPU, the pre-Co-Ordinator phase grew from 45 to 150 minutes on every node inside a day, and the fleet landed 8 PRs in 24 h with a healthy budget and a fast GitHub (agent-ops#1422). | Never let a write's cost be a function of the cache's size: lay the cache out so the thing a write invalidates is one directory it can name (`http-cache/<identity>/<path-hash>/`), and key identity on what the data is actually scoped by (the installation), not on a credential that rotates. When a comment sizes a loop by an assumed count, test the assumption at a hundred times that count. |
 | A fix that rests on a mechanism one uncontrolled observation named | agent-ops#1827 read two abandoned Publisher working sets as proof that bash skips the `EXIT` trap on an untrapped `TERM`, and the first fix trapped `TERM`, `INT` and `HUP` to an `exit`. Its own regression case passed forty-one times with those traps deleted, because bash runs the trap on a fatal signal; the reproduction that had "confirmed" the leak had diffed `/tmp` before and after a publish while two other publishes were writing there. A fix built on it would have shipped, tested, and changed nothing about the leak it named. | Before building on a mechanism, make it fail on demand in isolation — one process, one directory it alone writes, the signal sent the way production sends it — and attribute what is left to a process by a name that carries its pid, never by the difference between two listings of a shared directory. A fix whose test passes without it is a comment, not a fix: write the case that fails first, and if none can be written, the mechanism is not the one at work. |
+| A whole-document parse of a log that many writers append to, failing open | `limit_union_record`, `limit_standdown_since`, the `--status` decisions and overrun counts and the `drained` dedup each slurped a fleet log with `jq -s`, discarding its stderr and forcing its status true. From 2026-09-16 the union held 33 spliced lines — the head of one record run into the whole of a later one, left by writes a full disk cut short on both VM nodes — so every slurp aborted and every reader answered empty: no limit in force, no freeze start (and GNU `date -d ""` then answered midnight today, so a freeze could never come of age), zero decisions. Nothing looked wrong for two weeks, because "nothing found" and "could not read" came back identical (agent-ops#2037). | Read a log as raw lines and parse each on its own — `jq -nR` over `inputs` with a per-line `fromjson? // empty`, folded with `reduce` — so one bad line costs one line and the reader holds one record at a time; plain `inputs` under `jq -n` aborts on the same line. Let a read that fails outright exit non-zero, and have the caller report it (`guard_warn`) rather than read it as absence. Fold with `reduce`, not `first`, `limit` or `any`: under jq 1.6 a `try`, which `fromjson?` is, swallows the `break` those are built on, so over such a stream they do not stop. |
