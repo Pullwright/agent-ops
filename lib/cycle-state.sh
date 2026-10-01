@@ -83,6 +83,31 @@ item_event_fields() {
      + $x'
 }
 
+# _log_fold SRC PROGRAM EVENTS [JQ_OPTION...]
+# Run the jq PROGRAM over the records of SRC (a log file, or stdin for "-")
+# whose `event` is one of the words in EVENTS — the reader's declaration,
+# written once beside its program — gathered into one array in log order, and
+# print what PROGRAM prints. One process (agent-ops#1649): each line is parsed
+# with `fromjson? // empty`, so a torn or spliced line is dropped rather than
+# fatal, and only the declared events are ever gathered, so the process holds
+# them rather than the whole parsed log, which is otherwise a linear function
+# of a log that is never rotated. A parsed value that is not an object is
+# gathered too, so it still aborts PROGRAM exactly as it did when every line
+# was slurped. JQ_OPTIONs (`--arg …`) are passed to jq ahead of the program.
+# `test/union-stream.test.sh` fails when a program reads an event type its
+# declaration lacks.
+_log_fold() {
+  local src="$1" prog="$2" events="$3"
+  shift 3
+  local -a files=()
+  [[ "$src" == "-" ]] || files=("$src")
+  # shellcheck disable=SC2016,SC2086  # jq's own $e/$ARGS; EVENTS is a word list by design.
+  jq -nRc "$@" '
+    def wanted: .event as $e | any($ARGS.positional[]; . == $e);
+    [ inputs | fromjson? // empty | select(type != "object" or wanted) ]
+    | ('"$prog"')' "${files[@]}" --args $events
+}
+
 # The rule behind both extracts: an item is in a state iff its most recent
 # $set event has no later $clear event. `blocked` and `void` are the same shape
 # over different event pairs, so they share one program rather than two copies
@@ -128,12 +153,9 @@ LATEST_UNRESOLVED_JQ='
 # fatal, so one truncated append can't strand every item.
 _latest_unresolved() {
   local set_event="$1" clear_event="$2" src="${3:--}" out=""
-  if [[ "$src" == "-" ]]; then
-    out="$(jq -c -R 'fromjson? // empty' 2>/dev/null \
-      | jq -sc --arg set "$set_event" --arg clear "$clear_event" "$LATEST_UNRESOLVED_JQ" 2>/dev/null || true)"
-  elif [[ -s "$src" ]]; then
-    out="$(jq -c -R 'fromjson? // empty' "$src" 2>/dev/null \
-      | jq -sc --arg set "$set_event" --arg clear "$clear_event" "$LATEST_UNRESOLVED_JQ" 2>/dev/null || true)"
+  if [[ "$src" == "-" || -s "$src" ]]; then
+    out="$(_log_fold "$src" "$LATEST_UNRESOLVED_JQ" "$set_event $clear_event" \
+      --arg set "$set_event" --arg clear "$clear_event" 2>/dev/null || true)"
   fi
   [[ -n "$out" ]] || out='[]'
   printf '%s' "$out"
@@ -162,6 +184,9 @@ _latest_unresolved() {
 # The residual case either way — a blocked issue no marker covers — is
 # caught by requirement 35a, whose clocks are measured from the block's own
 # `ts` and which this marker deliberately never touches.
+# The event types BLOCKED_ITEMS_JQ reads — the set/clear pair and the marker —
+# its declaration (`_log_fold`).
+BLOCKED_ITEMS_EVENTS="attempt-failed unblocked recheck-clean"
 # shellcheck disable=SC2016  # jq's $b/$rechecks, not the shell's.
 BLOCKED_ITEMS_JQ='
   def latest_unresolved($set; $clear): '"$LATEST_UNRESOLVED_JQ"';
@@ -188,16 +213,16 @@ BLOCKED_ITEMS_JQ='
 # own `ts`. Reads LOG_FILE, or stdin if it is omitted or "-".
 blocked_items() {
   local src="${1:--}" out=""
-  if [[ "$src" == "-" ]]; then
-    out="$(jq -c -R 'fromjson? // empty' 2>/dev/null \
-      | jq -sc "$BLOCKED_ITEMS_JQ" 2>/dev/null || true)"
-  elif [[ -s "$src" ]]; then
-    out="$(jq -c -R 'fromjson? // empty' "$src" 2>/dev/null \
-      | jq -sc "$BLOCKED_ITEMS_JQ" 2>/dev/null || true)"
+  if [[ "$src" == "-" || -s "$src" ]]; then
+    out="$(_log_fold "$src" "$BLOCKED_ITEMS_JQ" "$BLOCKED_ITEMS_EVENTS" 2>/dev/null || true)"
   fi
   [[ -n "$out" ]] || out='[]'
   printf '%s' "$out"
 }
+
+# The set/clear pair void_items folds, in that order — its declaration
+# (`_log_fold`).
+VOID_ITEMS_EVENTS="item-void unvoided"
 
 # void_items [LOG_FILE]
 # Print, as a JSON array, the most recent item-void event for every item with no
@@ -210,7 +235,9 @@ blocked_items() {
 # which no void covers. Voiding R-02 today cannot silence a genuine regression a
 # later review finds.
 void_items() {
-  _latest_unresolved "item-void" "unvoided" "${1:--}"
+  # shellcheck disable=SC2086  # a word list by design.
+  set -- "${1:--}" $VOID_ITEMS_EVENTS
+  _latest_unresolved "$2" "$3" "$1"
 }
 
 # void_object_closed_items [LOG_FILE]
@@ -399,6 +426,14 @@ first_seen_known_items() {
   printf '%s' "$out"
 }
 
+# draft_obsolete_flags' program and its declaration (`_log_fold`).
+DRAFT_OBSOLETE_FLAGS_EVENTS="draft-obsolete-flagged"
+DRAFT_OBSOLETE_FLAGS_JQ='
+  [ .[] | select(.event == "draft-obsolete-flagged"
+                 and (.repo // "") != "" and (.item // "") != "")
+    | {repo, item, pr: (.pr // null), evidence: (.evidence // null),
+       cycle: (.cycle // ""), node: (.node // ""), ts: (.ts // "")} ]'
+
 # draft_obsolete_flags [LOG_FILE]
 # Print, as a JSON array, every `draft-obsolete-flagged` event ever logged —
 # `{repo, item, pr, evidence, cycle, node, ts}`, written by the Script
@@ -418,17 +453,8 @@ first_seen_known_items() {
 # items` already keep.
 draft_obsolete_flags() {
   local src="${1:--}" out=""
-  local jq_prog='
-    [ .[] | select(.event == "draft-obsolete-flagged"
-                   and (.repo // "") != "" and (.item // "") != "")
-      | {repo, item, pr: (.pr // null), evidence: (.evidence // null),
-         cycle: (.cycle // ""), node: (.node // ""), ts: (.ts // "")} ]'
-  if [[ "$src" == "-" ]]; then
-    out="$(jq -c -R 'fromjson? // empty' 2>/dev/null \
-      | jq -sc "$jq_prog" 2>/dev/null || true)"
-  elif [[ -s "$src" ]]; then
-    out="$(jq -c -R 'fromjson? // empty' "$src" 2>/dev/null \
-      | jq -sc "$jq_prog" 2>/dev/null || true)"
+  if [[ "$src" == "-" || -s "$src" ]]; then
+    out="$(_log_fold "$src" "$DRAFT_OBSOLETE_FLAGS_JQ" "$DRAFT_OBSOLETE_FLAGS_EVENTS" 2>/dev/null || true)"
   fi
   [[ -n "$out" ]] || out='[]'
   printf '%s' "$out"
@@ -585,6 +611,9 @@ retire_void_items() {
 # The match is requirement 34's, not a stricter one: a void naming no repo
 # covers the item in every repo, for the reason 34c gives — both an `item-void`
 # and its `unvoided` may be hand-appended by a human, who has no repo to hand.
+# The event types OPEN_BLOCKED_JQ reads — the void pair and BLOCKED_ITEMS_JQ's —
+# its declaration (`_log_fold`).
+OPEN_BLOCKED_EVENTS="$VOID_ITEMS_EVENTS $BLOCKED_ITEMS_EVENTS"
 # shellcheck disable=SC2016  # jq's $all/$void/$b, not the shell's.
 OPEN_BLOCKED_JQ='
   def latest_unresolved($set; $clear): '"$LATEST_UNRESOLVED_JQ"';
@@ -611,12 +640,8 @@ OPEN_BLOCKED_JQ='
 # both, so nothing is subtracted there.
 open_blocked_items() {
   local src="${1:--}" out=""
-  if [[ "$src" == "-" ]]; then
-    out="$(jq -c -R 'fromjson? // empty' 2>/dev/null \
-      | jq -sc "$OPEN_BLOCKED_JQ" 2>/dev/null || true)"
-  elif [[ -s "$src" ]]; then
-    out="$(jq -c -R 'fromjson? // empty' "$src" 2>/dev/null \
-      | jq -sc "$OPEN_BLOCKED_JQ" 2>/dev/null || true)"
+  if [[ "$src" == "-" || -s "$src" ]]; then
+    out="$(_log_fold "$src" "$OPEN_BLOCKED_JQ" "$OPEN_BLOCKED_EVENTS" 2>/dev/null || true)"
   fi
   [[ -n "$out" ]] || out='[]'
   printf '%s' "$out"

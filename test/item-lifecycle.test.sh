@@ -362,6 +362,26 @@ merged_records="$(jq -c -n --argjson a "$(jq -c '.records' <<<"$report_a")" \
 assert_eq "merging both nodes' outputs still yields exactly one record for the item" \
   "1" "$(jq 'length' <<<"$merged_records")"
 
+# --- The window's span, folded from the stream (agent-ops#1649) -------------------
+# The least and greatest non-empty `.ts // ""` over every object at or after
+# SINCE, item-scoped or not (union_stream's `nonempty` rule): an empty-string
+# timestamp never opens the window, a record before SINCE never widens it,
+# and a record that is not an object is dropped, as the fold drops it.
+cat > "$tmp_dir/span.jsonl" <<'EOF'
+{"ts":"","event":"wake-poll"}
+{"ts":"2026-05-01T00:00:00Z","event":"wake-poll"}
+{"ts":"2026-05-03T00:00:00Z","event":"selection","repo":"o/r","item":"1","source":"issues"}
+7
+{"ts":"2026-05-05T00:00:00Z","event":"github-budget"}
+EOF
+out="$(item_lifecycle_fold "$tmp_dir/span.jsonl")"
+assert_eq "the window spans every object's non-empty ts, not only the item-scoped ones" \
+  '{"from":"2026-05-01T00:00:00Z","to":"2026-05-05T00:00:00Z"}' "$(jq -c '.window' <<<"$out")"
+assert_eq "  ... and the population is the item-scoped events alone" "1" "$(jq -r '.totals.entered' <<<"$out")"
+out="$(item_lifecycle_fold "$tmp_dir/span.jsonl" "2026-05-02T00:00:00Z")"
+assert_eq "SINCE narrows the window to the records at or after it" \
+  '{"from":"2026-05-03T00:00:00Z","to":"2026-05-05T00:00:00Z"}' "$(jq -c '.window' <<<"$out")"
+
 if (( failures > 0 )); then
   echo "$failures failure(s)"
   exit 1

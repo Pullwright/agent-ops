@@ -1043,7 +1043,7 @@ done < <(jq -r '.[].slug' <<<"$all_repos_json")
 pipeline_ready_count=$(( ready_count - human_queue_count ))
 raw_open_count=$(( ready_count + draft_count + claim_count ))
 adjusted_open_count=$(( pipeline_ready_count + draft_count + claim_count ))
-open_composition="$pipeline_ready_count changes-requested + $draft_count draft + $claim_count unraised claim(s) — plus $human_queue_count waiting on human ($raw_open_count raw)"
+open_composition="$pipeline_ready_count pipeline-owed + $draft_count draft + $claim_count unraised claim(s) — plus $human_queue_count waiting on human ($raw_open_count raw)"
 
 backpressure_tripped=0
 if (( adjusted_open_count >= max_open_agent_prs )); then

@@ -90,12 +90,15 @@ crash_loop_verdict() {
     return 0
   fi
   jq -c -R -n --argjson threshold "$threshold" '
-    [ inputs | select(length > 0) | (fromjson? // empty) ]
-    | map(select(
-        (.event == "attempt-failed" and (.stage // "") == "coordinator")
-        or ((.event == "stage-end") and ((.stage // "") == "coordinator")
-            and ((.exit_code // 1) == 0))
-      ))
+    # Only the Co-Ordinator failures and successes this verdict reads are
+    # gathered, filtered as the stream passes rather than out of the whole
+    # parsed log (agent-ops#1649): the same events, in the same order.
+    [ inputs | select(length > 0) | (fromjson? // empty)
+      | select(
+          (.event == "attempt-failed" and (.stage // "") == "coordinator")
+          or ((.event == "stage-end") and ((.stage // "") == "coordinator")
+              and ((.exit_code // 1) == 0))
+        ) ]
     # group_by sorts by key with a stable sort, so each group keeps the same
     # relative (time) order fleet_logs produced for that subsequence — the
     # property the reduction below depends on. Grouping by .repo // "" folds
