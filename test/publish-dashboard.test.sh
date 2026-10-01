@@ -4384,10 +4384,11 @@ assert_eq "…and leaves nothing under \$TMPDIR — neither the fast tick's work
 
 # The log tail keeps a buffer trimmed back to the newest MAX_LOG_TAIL (300)
 # events whenever it passes 2×300+1, so only a log of more than 601 kept
-# events exercises the trim; this one keeps 984, which trims twice. Timestamps repeat (each one twice) and arrive out
-# of order, so the order among equal timestamps — log position, newest first —
-# is tested as well as the cut; the excluded event types are interleaved and
-# must never displace a kept one.
+# events exercises the trim; this one keeps 984, which trims it twice.
+# Timestamps repeat (each one twice) and arrive out of order, so the order
+# among equal timestamps — log position, newest first — is tested as well as
+# the cut; the excluded event types are interleaved and must never displace
+# a kept one.
 lt="$(new_home nodeLogTail)"
 lt_log="$lt/.local/state/poetic-agents/log.jsonl"
 for (( i = 0; i < 1200; i++ )); do
@@ -4399,9 +4400,12 @@ for (( i = 0; i < 1200; i++ )); do
   printf '{"ts":"%s","node":"nodeLT","event":"%s","seq":%d}\n' "$ts" "$ev" "$i"
 done > "$lt_log"
 run_publish "$lt" NODE_NAME=nodeLT
+# The expected tail is the whole-array reader's, over the union exactly as the
+# Publisher reads it: `fleet_logs` hands over the union sorted line by line, so
+# that order — not the file's — is the log position ties fall back on.
 assert_eq "the log tail past the trim threshold is the newest 300, newest first, ties by log position" \
-  "$(jq -sc 'map(select(.event != "review-gate-checks-read" and .event != "first-seen" and .event != "rework"))
-             | sort_by(.ts) | reverse | .[0:300] | map(.seq)' "$lt_log")" \
+  "$(sort "$lt_log" | jq -sc 'map(select(.event != "review-gate-checks-read" and .event != "first-seen" and .event != "rework"))
+                             | sort_by(.ts) | reverse | .[0:300] | map(.seq)')" \
   "$(jq -c '[.log_tail[].seq]' <<<"$(data_of "$lt")")"
 assert_eq "  ... which is 300 rows" "300" "$(jq -r '.log_tail | length' <<<"$(data_of "$lt")")"
 
