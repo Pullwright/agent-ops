@@ -132,7 +132,9 @@ principle it rests on.`
   older than 3 × the fetch interval, capped at `LABEL_OWN_GRACE_SECONDS`;
   union readers carry on, the dashboard shows one badge.
 - 2026-09-04 · #1153/#1144 · **`config-table` becomes a required check**
-  only after `merge_group:` lands on its workflow (owner act pending).
+  only after `merge_group:` lands on its workflow. (2026-10-03: #2116
+  added the trigger, and the owner added the check to the `default`
+  ruleset.)
 - 2026-09-04 · #1155/#1154 · **Historical asides inside a requirement stay
   where the deletion test passes**: legal iff deleting the aside leaves the
   requirement complete and correct.
@@ -236,3 +238,12 @@ principle it rests on.`
   layers between the images on a node, and a routine roll moves about
   4 MiB. Decided by the owner on 2026-10-02 on the investigation's
   findings (#1125).
+- 2026-10-03 · #2086/#2083 · **`docs-benchmark sources` becomes a required
+  check at once** — without first running green for a while, as #2088 asks
+  of its own check, because the pipeline lands past any check that is not
+  required and the moves this check guards come next. #2090 and #2094 move
+  the README and the implementation specification, which hold 135 of the
+  150 sources the benchmark's questions cite. The check is deterministic,
+  reports on every pull request and merge group, and fails only when a
+  cited source no longer resolves. Decided by the owner on 2026-10-03, in
+  the same ruleset edit as `config-table`.
