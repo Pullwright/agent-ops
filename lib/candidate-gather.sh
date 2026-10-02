@@ -248,6 +248,18 @@ while IFS=$'\t' read -r _ slug default_branch; do
   # already produces, until its own first turn arrives — which
   # `expensive_gather_pick_repo`'s epoch-0 default guarantees happens before
   # any repository already cached once does.
+  #
+  # agent-ops#1095: hoisted ahead of this fresh/cached branch — it used to be
+  # read only after a repo's whole entry, issues band included, was already
+  # built below — so the cached branch's own issues reapplication (further
+  # down) can re-apply requirement 16.4's assigned/blocked-label drops from
+  # this same sample, at no extra GitHub read: `gather_source_state` already
+  # runs unconditionally for every configured repository every cycle, fresh
+  # or cached alike (requirement 48's own "cheap fleet-wide probes …
+  # unaffected"). The digest-truncation-veto adjustment and the
+  # `source_states_json` append stay where they were, further down, still
+  # operating on this same `$state`.
+  state="$(gather_source_state "$slug" "$default_branch")"
   if [[ "$slug" == "$expensive_gather_slug" ]]; then
   # Pre-fetch security/code-quality findings only when this repo lists either
   # source, so a repo that opts out of them costs no gh calls. first-seen is
@@ -629,6 +641,17 @@ while IFS=$'\t' read -r _ slug default_branch; do
   fi
   issues="[]"; issues_excluded="[]"
   if jq -e 'any(.[]; startswith("issues"))' <<<"$sources" >/dev/null 2>&1; then
+    # agent-ops#1095: requirement 16.4's assigned/blocked-label drops (3j),
+    # re-applied to this replayed band from this cycle's own hoisted $state
+    # sample — fail open (skip the reapplication, leaving the band exactly as
+    # it replayed before this fix) when that sample itself did not succeed,
+    # since "unknown decides nothing" here too.
+    if [[ "$(jq -r '.ok // false' <<<"$state" 2>/dev/null)" == "true" ]]; then
+      issue_state_reapplied="$(issue_state_reapply "$issues_raw" \
+        "$(jq -c '.issues // []' <<<"$state" 2>/dev/null || echo '[]')" "$issues_excluded_raw")"
+      issues_raw="$(jq -c '.candidates' <<<"$issue_state_reapplied" 2>/dev/null || printf '%s' "$issues_raw")"
+      issues_excluded_raw="$(jq -c '.excluded' <<<"$issue_state_reapplied" 2>/dev/null || printf '%s' "$issues_excluded_raw")"
+    fi
     issues="$(exclude_claimed_items "$issues_raw" "$claimed_item_refs_json")"
     [[ "$issues_excluded_raw" != "null" ]] && issues_excluded="$issues_excluded_raw"
   fi
@@ -754,8 +777,9 @@ while IFS=$'\t' read -r _ slug default_branch; do
   # Kept in a separate array, never folded into the entry above: this is the
   # Script's own bookkeeping, and every byte added to `ordered_repos_json` is a
   # byte the Co-Ordinator pays to read. A cost-control feature that grows the
-  # prompt it is meant to avoid buying has not saved anything.
-  state="$(gather_source_state "$slug" "$default_branch")"
+  # prompt it is meant to avoid buying has not saved anything. `$state` itself
+  # was read hoisted, ahead of the requirement-48 branch above (agent-ops#1095) —
+  # nothing further to read here.
   # agent-ops#1281's digest-truncated pager invariant: a veto this repo's
   # digest earned in an earlier cycle (a fleet-level live paginated count
   # that disagreed with this digest's own already-fetched counts — cheaper
