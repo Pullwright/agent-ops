@@ -10,11 +10,16 @@ name: Config table check
 # runs with write-scoped secrets, and ungated by `paths:` — a schema edit
 # without a matching doc edit, or a doc edit without a matching schema edit,
 # both need catching, and either can touch files outside a narrow path filter.
+#
+# The `merge_group:` trigger is required for this context to report inside
+# the merge queue — without it, a required `config-table` would stall every
+# queue entry for the ruleset's 60-minute `check_response_timeout_minutes`.
 
 on:
   pull_request:
   push:
     branches: [main]
+  merge_group:
 
 permissions:
   contents: read
