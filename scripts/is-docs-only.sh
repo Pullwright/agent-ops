@@ -20,12 +20,20 @@
 # the moment a pull request merges, with no image in the path, so no build can
 # make it arrive sooner and skipping one delays nothing.
 #
-# What is never read is the copy at /app. Every `claude -p` in agent-cycle.sh
-# and review-cycle.sh runs with its working directory under `workspace_root`
-# or `state_dir` (`assert_in_workspace` pins the first of those), so /app is
-# neither a working directory nor an ancestor of one, and /app/CLAUDE.md and
-# /app/AGENTS.md are never loaded as project memory. Moving a stage's cwd
-# would break that, which is why it is written down here.
+# What is never read is *those files'* copy at /app. Every `claude -p` in
+# agent-cycle.sh and review-cycle.sh runs with its working directory under
+# `workspace_root` or `state_dir` (`assert_in_workspace` pins the first of
+# those), so /app is neither a working directory nor an ancestor of one, and
+# /app/CLAUDE.md and /app/AGENTS.md are never loaded as project memory.
+# Moving a stage's cwd would break that, which is why it is written down here.
+#
+# The test cuts the other way too, which is why two of the cases below carve
+# documents *out* of `docs/`. A file the pipeline opens by path, rather than
+# inheriting as project memory, is read from /app and from nowhere else:
+# `docs/STANDING-DECISIONS.md` (resolved against `$SCRIPT_DIR` and fed to the
+# decide-tactical pass) and each `docs/*-SPEC.md` (the Monitor's known
+# signatures). Only a build and an image roll deliver a change to either, so
+# they are code here however they read to a human.
 #
 # Paths on the command line, or one per line on stdin when there are none:
 #

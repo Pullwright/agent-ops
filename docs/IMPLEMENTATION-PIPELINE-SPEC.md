@@ -24735,11 +24735,14 @@ oblige anyone to edit a test.
    image *does* deliver to a running stage and so count as code — or is
    `README.md`, `CLAUDE.md`, `AGENTS.md`, `TECH-DEBT.md`, `LICENCE` or
    `deploy/docker/README.md`, and calls it code otherwise — `prompts/*.md`
-   and everything under `tech-debt/` included, since the former are Markdown
-   documents *and* the operating instructions of requirement 1a's stages and
-   the latter is a frozen register a pull request may still edit a file's
-   frontmatter in, so classifying either by file extension or by directory
-   alone would let a change that matters skip the build that deploys it. An
+   included, since those are Markdown documents *and* the operating
+   instructions of requirement 1a's stages, so classifying by file extension
+   would let a change to a node's behaviour skip the build that deploys it.
+   Everything under `tech-debt/` is code for the weaker reason that the
+   allowlist does not name it: nothing reads `/app/tech-debt/`, so an edit to
+   the frozen register costs a build nobody needed rather than reaching a
+   node, and that is the side of the mistake this classifier is built to
+   take. An
    empty path list, or none, is code. The test the allowlist encodes is "the
    image is not the delivery path for this file", which is weaker than
    "nothing reads it" and cuts both ways: a cycle working on this repository

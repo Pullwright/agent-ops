@@ -185,6 +185,7 @@ done
 #     under scripts/ that only a human or a schedule other than those three
 #     runs is out of scope here, the same way issue #2085 scoped it. ---
 derived_docs=()
+# shellcheck disable=SC2016  # the pattern and the substitution match a literal `$SCRIPT_DIR` in the source being grepped, not this shell's own.
 while IFS= read -r path; do
   [[ -n "$path" ]] && derived_docs+=( "$path" )
 done < <(
