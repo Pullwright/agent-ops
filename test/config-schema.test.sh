@@ -974,6 +974,10 @@ assert_rejected "a number written as a string is rejected" \
   '.max_open_agent_prs = "8"' 'config.max_open_agent_prs: expected integer, got string'
 assert_rejected "a fractional value is rejected where whole minutes are meant" \
   '.timeout_reviewer = 30.5' 'config.timeout_reviewer: expected integer, got number'
+assert_rejected "a decimal pager_min_firing_minutes is rejected rather than silently becoming 15" \
+  '.pager_min_firing_minutes = 7.5' 'config.pager_min_firing_minutes: expected integer, got number'
+assert_valid "an integer pager_min_firing_minutes, including 0, still validates" \
+  '.pager_min_firing_minutes = 0'
 assert_valid "a fractional value is accepted where hours are meant" \
   '.lock_stale_after = 4.5'
 assert_rejected "repos must be an array" \
