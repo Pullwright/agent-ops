@@ -308,6 +308,8 @@ assert_contains "every open page is flagged as owed a triage verdict" \
   "owed a triage verdict" "$rendered"
 assert_contains "the node table names a failing stage" "implementer" "$rendered"
 assert_contains "the gotcha sections are present at rung 0" "## Known signatures" "$rendered"
+assert_contains "a real row of the implementation spec's Gotchas table reaches the digest" \
+  "A \`--json\` field that is cheap to type and expensive to fetch" "$rendered"
 assert_contains "a promoted key is named, so the model does not restate it" \
   "coordinator-budget-negative" "$rendered"
 assert_contains "with its tracking issue" "https://github.com/o/r/issues/42" "$rendered"

@@ -54,7 +54,6 @@ assert_not_docs_only() {
 }
 
 # --- Prose: the whole inert set, each on its own, then together. ---
-assert_docs_only "a spec is documentation" docs/IMPLEMENTATION-PIPELINE-SPEC.md
 assert_docs_only "the roadmap is documentation" docs/ROADMAP.md
 assert_docs_only "anything nested under docs/ is documentation" docs/notes/adr/0001-thing.md
 assert_docs_only "the README is documentation" README.md
@@ -64,10 +63,26 @@ assert_docs_only "TECH-DEBT.md is documentation" TECH-DEBT.md
 assert_docs_only "the licence is documentation" LICENCE
 assert_docs_only "the node runbook is documentation" deploy/docker/README.md
 assert_docs_only "the whole inert set at once is documentation" \
-  docs/ROADMAP.md docs/DASHBOARD-SPEC.md README.md CLAUDE.md AGENTS.md \
+  docs/ROADMAP.md README.md CLAUDE.md AGENTS.md \
   TECH-DEBT.md LICENCE deploy/docker/README.md
 assert_not_docs_only "a frozen register item file is not documentation" \
   tech-debt/TD-PPagop-26073101.md
+
+# --- Documents under docs/ that the image delivers to a running stage are
+#     code, not prose, however they read to a human: a change to either kind
+#     below reaches a node through the image the moment it merges. ---
+assert_not_docs_only "the standing decisions file is read at /app by agent-cycle.sh" \
+  docs/STANDING-DECISIONS.md
+assert_not_docs_only "the implementation pipeline spec's Gotchas feed the Monitor" \
+  docs/IMPLEMENTATION-PIPELINE-SPEC.md
+assert_not_docs_only "the review pipeline spec's Gotchas feed the Monitor" \
+  docs/REVIEW-PIPELINE-SPEC.md
+assert_not_docs_only "the monitor pipeline spec's Gotchas feed the Monitor" \
+  docs/MONITOR-PIPELINE-SPEC.md
+assert_not_docs_only "the dashboard spec's Gotchas feed the Monitor" \
+  docs/DASHBOARD-SPEC.md
+assert_not_docs_only "a spec-named file nested under docs/ is still code" \
+  docs/notes/FOO-SPEC.md
 
 # --- Markdown that is not prose. These are the assertions that matter: each
 #     one is a file whose contents change what a node does. ---
@@ -160,6 +175,39 @@ for doc in README.md CLAUDE.md AGENTS.md TECH-DEBT.md LICENCE deploy/docker/READ
   else
     fail "the allowlist's $doc still exists" "it is gone — remove or repoint the entry"
   fi
+done
+
+# --- The set of documents the pipeline actually reads at run time, derived
+#     from the code rather than hand-maintained here, so the next machine-read
+#     document is caught the moment it is added without being classified.
+#     "The entry points" means the three top-level cycles the crontab invokes
+#     directly (agent-cycle.sh, review-cycle.sh, monitor-cycle.sh); a script
+#     under scripts/ that only a human or a schedule other than those three
+#     runs is out of scope here, the same way issue #2085 scoped it. ---
+derived_docs=()
+# shellcheck disable=SC2016  # the pattern and the substitution match a literal `$SCRIPT_DIR` in the source being grepped, not this shell's own.
+while IFS= read -r path; do
+  [[ -n "$path" ]] && derived_docs+=( "$path" )
+done < <(
+  grep -hoE '\$SCRIPT_DIR/docs/[A-Za-z0-9_./-]+' \
+    "$SCRIPT_DIR/agent-cycle.sh" "$SCRIPT_DIR/review-cycle.sh" "$SCRIPT_DIR/monitor-cycle.sh" \
+    "$SCRIPT_DIR"/lib/*.sh 2>/dev/null \
+    | sed 's#^\$SCRIPT_DIR/##' \
+    | sort -u
+)
+
+standing_decisions="$(jq -r '.standing_decisions_file // empty' "$SCRIPT_DIR/config.json" 2>/dev/null)"
+[[ -n "$standing_decisions" ]] && derived_docs+=( "$standing_decisions" )
+
+if (( ${#derived_docs[@]} == 0 )); then
+  fail "the derived set of run-time-read documents is non-empty" \
+    "found none — the grep/jq above no longer matches the code"
+else
+  pass "the derived set of run-time-read documents is non-empty (${#derived_docs[@]} found)"
+fi
+
+for doc in "${derived_docs[@]}"; do
+  assert_not_docs_only "the derived run-time document $doc is classified as code" "$doc"
 done
 
 echo
