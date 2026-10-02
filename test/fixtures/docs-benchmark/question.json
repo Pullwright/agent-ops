@@ -1,0 +1,22 @@
+{
+  "id": "target-user-02",
+  "reader": "target-user",
+  "question": "Issue 42 can't be started until issue 41 is merged. How do I make the bot wait for 41, and will I have to remember to undo that afterwards?",
+  "answer": "Put `Blocked-by: #41` on its own line in issue 42's body or in any comment on it; for an item in another repository the pipeline works, write it in full as `Blocked-by: owner/repo#41`, and several references can share one line separated by commas or spaces. Every cycle the pipeline checks the referenced item's live open or closed state in code, not by a model's reading, and keeps 42 out of its candidates while 41 is open. As soon as every referenced item is closed (closing or merging it is enough), 42 becomes selectable again, and if it had been recorded as blocked that block clears automatically, logged as `dependency-resolved`. You need not edit or remove the line afterwards: a `Blocked-by:` line naming a closed item is simply inert.",
+  "sources": [
+    {
+      "path": "README.md",
+      "heading": "Cross-item dependencies"
+    },
+    {
+      "path": "docs/IMPLEMENTATION-PIPELINE-SPEC.md",
+      "requirement": "34j"
+    }
+  ],
+  "must_mention": [
+    "a `Blocked-by: #41` line on its own line in the issue body or a comment",
+    "the `owner/repo#41` form for an item in another repository",
+    "released automatically once the referenced item closes",
+    "the line need not be removed afterwards"
+  ]
+}

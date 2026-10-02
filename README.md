@@ -90,6 +90,7 @@ A self-hosted, unattended pipeline that automatically selects, implements, and r
 - [Development](#development)
   - [Making a change when every instance is a container](#making-a-change-when-every-instance-is-a-container)
   - [Running the tests](#running-the-tests)
+  - [Measuring the documentation](#measuring-the-documentation)
   - [Trying a change on a real node before it merges](#trying-a-change-on-a-real-node-before-it-merges)
   - [Taking one node out while the rest keep working](#taking-one-node-out-while-the-rest-keep-working)
   - [How a change propagates — and what survives it](#how-a-change-propagates--and-what-survives-it)
@@ -2913,6 +2914,39 @@ line, and running it by hand answers "will my branch build an image?":
 ```bash
 git diff --no-renames --name-only main...HEAD | ./scripts/is-docs-only.sh
 ```
+
+### Measuring the documentation
+
+`scripts/docs-benchmark.sh` scores the documentation against a fixed set of
+real questions. `test/docs-benchmark/questions.jsonl` holds at least 48, each
+asked the way one of six readers would ask it (someone working in a target
+repository, an operator, an engineer evaluating the product, a contributor, an
+agent working a cycle here, and someone reading the fleet's own output), with a
+gold answer, the documents that state it and the facts a correct answer must
+contain. It exists so that a change to the documentation is measured rather
+than asserted: run it on `main` before a restructure and again afterwards, and
+compare how many questions each reader gets right and how many tool calls,
+tokens and seconds each answer took.
+
+```bash
+scripts/docs-benchmark.sh --dry-run            # list each question and its commands; launch nothing
+scripts/docs-benchmark.sh --only operator-01   # one question, against main
+scripts/docs-benchmark.sh main                 # every question, against main
+```
+
+Each question is answered by headless Claude Code in a fresh clone of the ref,
+with a fixed model and only the Read, Grep and Glob tools, and a second call
+grades the answer fact by fact. The report is written to
+`docs/reviews/<date>-docs-benchmark.md`, with the raw records beside it; its
+header carries two hashes, and two reports are comparable when both match.
+Every run spends tokens, so nothing runs it automatically — not CI, not the
+crontab, and never a pipeline stage, where launching `claude` would be an
+agent launching an agent. Run it by hand or from an interactive session.
+
+When a document moves, the benchmark's test fails until the questions'
+`sources` follow it. When the product changes so that a gold answer is no
+longer true, correct the question in the same pull request. Never edit a
+document to make a question easier to answer.
 
 ### Trying a change on a real node before it merges
 

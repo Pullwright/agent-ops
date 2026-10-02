@@ -24652,6 +24652,40 @@ What exists, and the requirements each part answers to:
    `scripts/render-config-table.sh` (component 16) follows. `.github/workflows/toc.yml`
    runs `--check` on every pull request and on push to `main`, modelled on
    `config-table.yml`. Must pass `shellcheck`.
+24a. `scripts/docs-benchmark.sh`, `lib/docs-benchmark.sh` and
+   `test/docs-benchmark/questions.jsonl` — the documentation benchmark
+   (agent-ops#2086), a developer tool that no pipeline runs. The questions
+   file holds at least 48 records, at least eight for each of six readers
+   (`target-user`, `operator`, `evaluator`, `contributor`, `cycle-agent` and
+   `output-reader`), and each record carries `id`, `reader`, `question`,
+   `answer` (the gold answer), `sources` (a path with the heading,
+   requirement label or acceptance-check label that states the answer) and
+   `must_mention` (the facts a correct answer must contain). Given a Git ref
+   (`main` by default), the runner clones this checkout's `origin` at that
+   ref into a temporary directory and removes every path named
+   `*docs-benchmark*` from the clone, so that no answer can be found by
+   searching for the benchmark itself. It then asks each question of
+   `claude -p` in the clone, with the fixed model, the Read, Grep and Glob
+   tools only, no MCP server and project settings only, and has a second,
+   separate `claude -p` with no tools grade the answer against the gold one
+   fact by fact, keeping the grader's reasoning. A grading reply that does
+   not judge every required fact with a boolean is recorded as ungraded,
+   never guessed at. For each question it records the answer, the grade,
+   the tool calls, the input and output tokens (`metering_fields`,
+   component 3a's `lib/metering.sh`) and the wall time, and it writes
+   `docs/reviews/<date>-docs-benchmark.md` with the raw records beside it
+   as `docs/reviews/<date>-docs-benchmark.jsonl`. `--dry-run` prints every
+   question and the two commands it would run, and launches nothing;
+   `--only <id>` runs one question. The models, the argument lists and the
+   prompts live in `lib/docs-benchmark.sh`, whose hash each report records
+   beside the questions file's, so two reports are comparable exactly when
+   both hashes match. No pipeline stage runs it, because a stage that
+   launched `claude` would be an agent launching an agent (see "Actors"),
+   and neither CI nor the crontab does, because every run spends tokens.
+   `test/docs-benchmark.test.sh` validates the questions and follows every
+   source to its file and locator, shows that the dry run launches nothing
+   and writes nothing, and reads the grader's verdict from a recorded
+   grading transcript and from variants of it. Must pass `shellcheck`.
 
 ## Acceptance checks
 
