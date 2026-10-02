@@ -10596,9 +10596,10 @@ implements.
     natural, possibly sub-second gap between this cycle's lock release and
     the next cron firing either. So immediately before the chain decision,
     inside the same `cleanup` (11), every cycle that ended cleanly
-    (`exit_code == 0`) and was not a `--once` run (a human or a test asking
-    for exactly one cycle must not arm an override on the node it ran on)
-    asks: is the image it is running behind the registry's newest
+    (`exit_code == 0`) and was neither a `--once` nor a `--dry-run` run (a
+    human or a test asking for exactly one cycle, real or dry, must not arm
+    an override on the node it ran on) asks: is the image it is running
+    behind the registry's newest
     (`lib/image-drift.sh`'s `image_drift_status`, read back through the
     identical cache the requirement-2.5 heartbeat push just above it already
     refreshed — no second registry round trip, no second signal)? If so,
