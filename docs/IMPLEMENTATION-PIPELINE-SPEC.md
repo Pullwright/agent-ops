@@ -10549,36 +10549,46 @@ implements.
     9c's handler exists to catch, and requirement 1's stale-lock takeover
     would reach it only through the `KILL` that follows its ignored `TERM`
     — no `attempt-failed`, no `cycle-end`, no claim released.
-39c. **A pending image roll overrides the chain** (agent-ops#1096). Both
-    conditions above, and the `exit_code == 0` gate, only ever decide whether
-    a chain is *available*; this one decides whether to take it anyway. A
-    node running long or chained cycles never leaves
-    `deploy/docker/watchtower-pre-update.sh` a gap its five-minute poll can
-    land in — every individual deferral stays correctly bounded by that
+39c. **A pending image roll overrides the chain, and widens the gap at every
+    clean cycle-end, not only a chaining one** (agent-ops#1096, widened by
+    agent-ops#1103). This covers two separable jobs, not one: cancelling a
+    chain this cycle would otherwise take, and widening the gap a poll needs
+    from whatever instant this cycle's own lock release happens to leave to
+    one the five-minute poll is guaranteed to land in. A node running long or
+    chained cycles never leaves `deploy/docker/watchtower-pre-update.sh` such
+    a gap — every individual deferral stays correctly bounded by that
     pipeline's `lock_stale_after`, and the node still never rolls, because the
     next chained cycle's own claim reacquires the lock before the lock-free
-    instant a poll would need. So immediately before the chain decision,
-    inside the same `cleanup` (11) that already checked `exit_code == 0`, a
-    chain-eligible cycle asks one more question: is the image it is running
-    behind the registry's newest (`lib/image-drift.sh`'s `image_drift_status`,
-    read back through the identical cache the requirement-2.5 heartbeat push
-    just above it already refreshed — no second registry round trip, no
-    second signal)? If so, `chain_image_behind` (`lib/chain.sh`) flips
-    `chain_eligible` back to false — overriding, never granting, since a
-    cycle that was not going to chain anyway has nothing to check this for —
-    and `chain_write_roll_pending` writes `$state_dir/roll-pending.json`
+    instant a poll would need — but the identical starvation reaches a node
+    that is merely busy and never chains at all: chaining disabled
+    (`max_chained_cycles: 1`), a chain that has exhausted `max_chained_cycles`,
+    or any other clean cycle-end, since none of those leave more than the
+    natural, possibly sub-second gap between this cycle's lock release and
+    the next cron firing either. So immediately before the chain decision,
+    inside the same `cleanup` (11), every cycle that ended cleanly
+    (`exit_code == 0`) and was not a `--once` run (a human or a test asking
+    for exactly one cycle must not arm an override on the node it ran on)
+    asks: is the image it is running behind the registry's newest
+    (`lib/image-drift.sh`'s `image_drift_status`, read back through the
+    identical cache the requirement-2.5 heartbeat push just above it already
+    refreshed — no second registry round trip, no second signal)? If so,
+    `chain_write_roll_pending` writes `$state_dir/roll-pending.json`
     (`{"until": <ISO8601>}`, `schedule.cycle_interval_minutes` from now,
-    requirement 2.5's own exclusion list). `deploy/docker/
-    watchtower-pre-update.sh` reads that marker back and honours it as an
-    unconditional allow against `lock.json` alone — overriding only that
-    pipeline's own ordinary in-flight-cycle deferral, never
-    `review-lock.json`'s (agent-ops#1102: `review-cycle.sh` never wrote the
-    marker and never decided to yield anything, so a project review beginning
-    just after a yielding implementation cycle must keep deferring on its own
-    ordinary judgement regardless) — until `until`: wide enough that the next
-    poll is guaranteed to land inside it, which the true gap a declined chain
-    leaves (the instant between this cycle's lock release and the next
-    cron-fired cycle's own claim) is not.
+    requirement 2.5's own exclusion list) regardless of `chain_eligible` —
+    and, separately, `chain_image_behind` (`lib/chain.sh`) flips
+    `chain_eligible` back to false wherever it was true — overriding, never
+    granting, and a no-op on a cycle that was never going to chain anyway.
+    `deploy/docker/watchtower-pre-update.sh` reads that marker back and
+    honours it as an unconditional allow against `lock.json` alone —
+    overriding only that pipeline's own ordinary in-flight-cycle deferral,
+    never `review-lock.json`'s (agent-ops#1102: `review-cycle.sh` never wrote
+    the marker and never decided to yield anything, so a project review
+    beginning just after a yielding implementation cycle must keep deferring
+    on its own ordinary judgement regardless) — until `until`: wide enough
+    that the next poll is guaranteed to land inside it, which the true gap a
+    declined chain (or a cycle with no chain to decline) leaves (the instant
+    between this cycle's lock release and the next cron-fired cycle's own
+    claim) is not.
 
     Because `until` is a fixed clock offset from this cycle's own end, not
     "the next cycle's own start", a cycle that reacquires `lock.json` before
@@ -29185,10 +29195,12 @@ oblige anyone to edit a test.
     passes: the crontab report names the full comma list, not just the
     first occurrence.
 39c. **A pending image roll overrides an otherwise-eligible chain, never
-    grants one, is honoured at the hook against `lock.json` alone, is cleared
-    once landed, and — while it is not — idles the next cycle at most once
-    rather than letting it run underneath the marker** (requirement 39c,
-    agent-ops#1096, amended by agent-ops#1102). `test/chain.test.sh` passes: `chain_image_behind` reads
+    grants one, widens the gap at every clean, non-`--once` cycle-end whether
+    or not there was a chain to give up, is honoured at the hook against
+    `lock.json` alone, is cleared once landed, and — while it is not — idles
+    the next cycle at most once rather than letting it run underneath the
+    marker** (requirement 39c, agent-ops#1096, amended by agent-ops#1102,
+    widened by agent-ops#1103). `test/chain.test.sh` passes: `chain_image_behind` reads
     true only for a `{"status":"behind",...}` verdict — "current",
     "unverified", the JSON literal `null` and malformed input all read false
     — and `chain_write_roll_pending` writes `$state_dir/roll-pending.json`
@@ -29203,8 +29215,12 @@ oblige anyone to edit a test.
     status`/`agent_ops_version`: a "behind" verdict cancels an otherwise
     chain-eligible, exit-0 cycle and writes the marker; a "current" verdict
     still chains and writes no marker; a cycle with no chain to give up
-    (`chain_eligible=0`) or that did not end cleanly (a non-zero exit) never
-    even reaches the check, marker included. `test/watchtower-pre-update.
+    (`chain_eligible=0`) still writes the marker on a "behind" verdict,
+    chaining nothing since there was nothing to cancel; a `--once` run never
+    writes the marker on a "behind" verdict either, the one case still gated
+    ahead of `chain_eligible` since a real `--once` run is never chain-eligible
+    to begin with; and a cycle that did not end cleanly (a non-zero exit)
+    never even reaches the check, marker included. `test/watchtower-pre-update.
     test.sh` passes: an unexpired `roll-pending.json` makes the hook exit 0
     despite a live lock naming a live process in the hook's own container,
     when that lock is `lock.json` — but never when it is `review-lock.json`,

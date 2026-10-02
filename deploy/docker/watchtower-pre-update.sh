@@ -44,10 +44,11 @@
 # repeated `Failed` is agent-ops#603; a *healthy* node that simply never gets
 # a gap is agent-ops#1096, fixed by the `roll-pending` marker below. The real
 # bound today is therefore two-part: one cycle's length for a healthy node
-# (agent-cycle.sh's own cleanup() yields its next chain and writes
-# `roll-pending` the moment `image_drift_status` reads "behind" — requirement
-# 39, requirement 2.5), and `lock_stale_after` hours only for a cycle that is
-# actually wedged, which never reaches that cleanup path at all.
+# (agent-cycle.sh's own cleanup() writes `roll-pending` at every clean,
+# non-`--once` cycle-end the moment `image_drift_status` reads "behind" —
+# chaining or not — and separately yields any chain it had — requirement 39,
+# requirement 2.5, agent-ops#1103), and `lock_stale_after` hours only for a
+# cycle that is actually wedged, which never reaches that cleanup path at all.
 #
 # **`roll-pending`** (`$state_dir/roll-pending.json`, `{"until": <ISO8601>}`)
 # is how the healthy-node bound is actually delivered rather than merely
