@@ -392,7 +392,7 @@ fi
 held="$(held_by "$state_dir/lock.json" "$cycle_stale_after")"
 if [[ -n "$held" ]]; then
   if pending="$(roll_pending_allow)"; then
-    say "an implementation cycle is in flight ($held), but $pending — allowing the update despite the lock"
+    say "an implementation cycle is in flight ($held), but $pending — this would allow the update despite the lock"
     overrode=1
   else
     say "an implementation cycle is in flight ($held) — deferring this update"

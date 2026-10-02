@@ -303,6 +303,25 @@ run_hook
 assert_eq "no marker at all: an idle node behaves exactly as before" "0" "$rc"
 assert_eq "and does not claim a roll-pending override it never had" "0" "$(grep -c 'roll-pending' <<<"$out")"
 
+# Both locks held at once (agent-ops#1108): an implementation cycle and a
+# project review can both be in flight on one node, since agent-cycle.sh has
+# no stand-down check against review-lock.json. The roll-pending marker only
+# ever overrides lock.json's own defer — review-lock.json's defer still
+# wins — so the run as a whole must still defer, and the lock.json arm's own
+# finding must read as a finding, not as a verdict a later arm overturns.
+start_sleeper
+write_lock "$state_dir/lock.json" "$sleeper_pid" 0
+write_lock "$state_dir/review-lock.json" "$sleeper_pid" 0
+write_roll_pending 15
+run_hook
+assert_eq "a live review still defers the roll even though the marker is in force" "75" "$rc"
+assert_contains "naming the overridden lock's own finding" "roll-pending marker" "$out"
+assert_contains "and the review's own deferral" "project review is in flight" "$out"
+assert_eq "and the hook never claims the update is allowed or may proceed" "0" \
+  "$(grep -c 'allowing the update\|may proceed' <<<"$out")"
+stop_sleeper
+rm -f "$state_dir/lock.json" "$state_dir/review-lock.json" "$state_dir/roll-pending.json"
+
 # --- A compose apply in flight (agent-ops#1913) --------------------------------
 # lib/compose-reconcile.sh records `applying` in this same state directory
 # immediately before it hands the recreate to a sibling container, and clears
