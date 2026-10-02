@@ -715,12 +715,12 @@ not — its interval lands in `unaccounted_seconds` instead, and an
 `idle-with-demand` event whose `cause` is missing or unrecognised still
 counts fully toward `idle-with-demand`'s own total, with the cause itself
 filed under `unspecified` rather than dropped. `externally-blocked` gets the
-identical per-cause treatment, over its own eight-token half of the table
+identical per-cause treatment, over its own nine-token half of the table
 above: `node_time_state_fold`'s `externally_blocked_by_cause` (fleet-wide)
 and each node's own copy under `by_node` (issue #609) — a missing or
 unrecognised cause files under `unspecified` there too, never dropped. This
-split exists because the eight causes are not interchangeable to a reader
-acting on them: `usage-limit` is model capacity, the other seven are a host
+split exists because the nine causes are not interchangeable to a reader
+acting on them: `usage-limit` is model capacity, the other eight are a host
 or GitHub fault, and a constraint statement that could not tell them apart
 would recommend the wrong lever with full confidence.
 
@@ -893,7 +893,7 @@ above — on the same terms:
   carries in a way an existing reader could misread as the old shape;
   changing an existing fate's own assignment rule; changing the fate
   priority order; renaming or removing one of the six states or one of the
-  fifteen causes; changing which state an existing cause maps to; changing
+  sixteen causes; changing which state an existing cause maps to; changing
   the definitional pin (which stages count as `producing`, what `down`
   covers).
 
@@ -1030,7 +1030,7 @@ and dedicated assertions folded into `test/landing-wiring.test.sh`,
 
 **The node time-state record:** `test/node-time-state.test.sh` drives
 `lib/node-time-state.sh` directly: `node_time_state_for_cause` against every
-one of the fifteen closed-vocabulary tokens (including the three translated
+one of the sixteen closed-vocabulary tokens (including the three translated
 rather than renamed — `raced`/`pre-claimed` to `peer-claimed`,
 `untraceable` to `coordinator-declined`) and an unrecognised
 one (maps to nothing); `node_time_state_idle_split` against a positive

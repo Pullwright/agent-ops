@@ -88,6 +88,12 @@ run_block() {
     capped) jq -nc '{count: 1, since: "2026-08-30T00:00:00Z"}' > "$run_dir/roll-standdown.json" ;;
     none)   : ;;
   esac
+  # Acceptance criterion 2's own evidence (agent-ops#1102 option 2): a copy of
+  # the marker exactly as seeded, so `marker_unchanged` below can assert the
+  # block left it byte-identical rather than merely still present. Kept outside
+  # state_dir's own two filenames so nothing under test can see it.
+  [[ -f "$run_dir/roll-pending.json" ]] \
+    && cp "$run_dir/roll-pending.json" "$tmp_dir/$desc.marker-orig"
 
   local script="$run_dir/run.sh"
   {
@@ -114,6 +120,16 @@ run_block() {
 }
 
 events_of() { grep -v '^END$' "$1/events.log" 2>/dev/null || true; }
+# marker_unchanged RUN_DIR -> yes|no — the marker is still there and still
+# byte-for-byte what was seeded (acceptance criterion 2).
+marker_unchanged() {
+  local orig="$tmp_dir/${1##*/}.marker-orig"
+  if [[ -f "$orig" ]] && cmp -s "$orig" "$1/roll-pending.json"; then
+    echo yes
+  else
+    echo no
+  fi
+}
 reached_end() { [[ -s "$1/events.log" ]] && tail -c3 "$1/events.log" 2>/dev/null | grep -q 'END' && echo yes || echo no; }
 
 behind='{"status":"behind","registry_commit":"abc1234","checked_at":"2026-08-30T00:00:00Z"}'
@@ -151,6 +167,8 @@ assert_eq "  ... and sets the node-state terminal to externally-blocked/roll-pen
   "TERMINAL	externally-blocked	roll-pending" "$(grep '^TERMINAL' "$run_dir/events.log")"
 assert_eq "  ... recording one stand-down against the cap" "1" \
   "$(jq -r '.count' "$run_dir/roll-standdown.json")"
+assert_eq "  ... leaving roll-pending.json byte-identical, writing no new one (criterion 2)" \
+  "yes" "$(marker_unchanged "$run_dir")"
 assert_eq "  ... and the block never reaches its own end (exit 0 fires first)" "no" "$(reached_end "$run_dir")"
 
 run_dir="$(run_block standdown-fires-stuck-defer "$behind" "$stuck_defer" live none)"

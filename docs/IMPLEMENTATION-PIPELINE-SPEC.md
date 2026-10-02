@@ -2861,7 +2861,7 @@ implements.
       development box should be able to say so once" is exactly what leaving
       `host_budget_enforce` at its default does, with no fight against this
       requirement required. On: an overcommit logs a `stand-down` event with
-      `cause: "host-overcommit"` (one of the fifteen tokens in the closed
+      `cause: "host-overcommit"` (one of the sixteen tokens in the closed
       cause vocabulary, `docs/FLOW-SCHEMA.md`) whose `reason` carries
       `lib/host-budget.sh`'s own `host_budget_describe` — both dimensions'
       arithmetic, the declared sum, the reserve, the host total, and the
@@ -20102,7 +20102,7 @@ with the Reviewer's own.
     node-count x window — and this requirement is where it is made
     checkable: a `node-state` transition event, logged the instant a node's
     own state changes, carrying the state it is entering, its cause (for the
-    four states that have one, from a closed fifteen-token vocabulary), and
+    four states that have one, from a closed sixteen-token vocabulary), and
     the state it was in a moment before; and a pure fold,
     `lib/node-time-state.sh`'s `node_time_state_fold` (behind the read-only
     `scripts/node-time-state.sh`), reconstructing seconds per state from
@@ -29214,7 +29214,8 @@ oblige anyone to edit a test.
     marker with an eligible updater verdict logs a `stand-down` naming `cause:
     "roll-pending"` and the marker's own `until`, sets the node-state terminal
     to `externally-blocked`/`roll-pending`, records one stand-down against the
-    cap, and exits before the block's own end; the same marker with a verdict
+    cap, leaves `roll-pending.json` byte-identical to what it found (writing
+    no new one), and exits before the block's own end; the same marker with a verdict
     idling cannot fix (`"rolled"`, `"stuck"`/`reason:"allow"`, or `null`) runs
     normally with nothing logged; an expired marker is left alone for its own
     clock; and a second eligible cycle under a marker whose cap is already
@@ -30392,7 +30393,7 @@ oblige anyone to edit a test.
     transition reaches every site requirement 50 names, and the invariant
     balances (requirement 50).** `test/node-time-state.test.sh` drives
     `lib/node-time-state.sh` directly: `node_time_state_for_cause` against
-    every one of the fifteen closed-vocabulary tokens, including the three
+    every one of the sixteen closed-vocabulary tokens, including the three
     translated rather than renamed (`raced`/`pre-claimed` to `peer-claimed`,
     `untraceable` to `coordinator-declined`) and an unrecognised
     cause (maps to nothing, never a guess); `node_time_state_idle_split`
