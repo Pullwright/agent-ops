@@ -6680,7 +6680,13 @@ implements.
      (requirement 3u), and even then only a *stale* block is dropped: a
      blocked issue carrying fresh evidence stays, because requirement 18a's
      mandatory re-check needs the thread and `updated_at` in front of the
-     Co-Ordinator to decide whether that evidence unblocks it.
+     Co-Ordinator to decide whether that evidence unblocks it. On a
+     repository whose `issues` band requirement 48 replays rather than reads
+     fresh, the assigned/`blocked`-label halves of this same drop are
+     re-applied every cycle from that cycle's own `gather_source_state`
+     sample instead (`issue_state_reapply`, lib/candidate-select.sh) — only
+     the `Blocked-by:` third stays as recent as the band's own last fresh
+     read (requirement 34j).
    - **A `pw::type:tech-debt`-labelled issue is dropped too, unreported** (D15
      as revised, #869; issue #875), on the same terms as the pull requests the
      issues endpoint interleaves: it belongs to the `tech-debt` band instead
@@ -15663,14 +15669,19 @@ implements.
       it before the pipeline's own notion of "blocked" is ever written, at
       zero cost beyond the one `gh` read per reference the candidate would
       otherwise have spent a full evaluation on anyway. That holding is as
-      recent as the band it filtered: requirement 48 runs this gatherer for
-      one repository per cycle per node, so a dependency (or an assignment,
-      or a `blocked` label) that a repository's thread gained *after* its
-      last turn does not hold its candidate out of that node's digest until
-      the repository's next turn comes round. agent-ops#1095 carries the
-      close — re-applying 3j's drops to a replayed band from
-      `gather_source_state`'s own already-sampled labels and assignee, which
-      costs no further GitHub read.
+      recent as the band it filtered only for the `Blocked-by:` reference
+      itself: requirement 48 runs this gatherer for one repository per cycle
+      per node, so a dependency that a repository's thread gained *after*
+      its last turn does not hold its candidate out of that node's digest
+      until the repository's next turn comes round — resolving it needs the
+      whole thread and a live per-reference check, the expensive work
+      requirement 48 exists to skip on a replayed repository's off cycles.
+      An assignment or a `blocked` label gained in that same window does not
+      wait that long: 3j's own assigned/`blocked`-label drops are re-applied
+      to a replayed band too, every cycle, from `gather_source_state`'s own
+      already-sampled labels and assignee (`issue_state_reapply`,
+      lib/candidate-select.sh), which costs no further GitHub read
+      (agent-ops#1095).
     - **Releasing.** Against the *open* blocked set (34h), in the same
       pre-extract window as 34f, 34g and 34i, the Script reshapes this
       cycle's own freshly gathered `issues` candidates to a `repo → item →
@@ -19846,7 +19857,17 @@ with the Reviewer's own.
     `sources` gating and claim exclusion (`exclude_claimed_items`/
     `exclude_claimed_prs`) are re-applied to it fresh every cycle regardless,
     so a claim a peer takes or a `sources` edit still takes effect without a
-    live read. `--repo` narrows the configured set to one repository, which
+    live read. The `issues` band additionally has requirement 16.4's
+    assigned/`blocked`-label drop (3j) re-applied fresh every cycle, from
+    this same cycle's own `gather_source_state` sample (`issue_state_reapply`,
+    lib/candidate-select.sh) rather than a live read — so an issue a human
+    assigns or labels `blocked` after this repository's last turn stops being
+    a candidate on every node within one cycle, at no further GitHub cost,
+    since that sample already runs for every configured repository every
+    cycle regardless. The `Blocked-by:` third of that same drop stays as
+    recent as the band's own last fresh read (34j), since resolving it needs
+    the whole thread and a live per-reference check this sample does not
+    carry. `--repo` narrows the configured set to one repository, which
     is then always the one picked, exactly as before this requirement
     existed.
 
@@ -30269,8 +30290,20 @@ oblige anyone to edit a test.
     band past `MAX_ARG_STRLEN` — agent-ops's own raw `tech_debt` band has
     reached 421,622 bytes — round-trips through the real save+load intact
     rather than the build dying silently at `execve` and leaving a 0-byte
-    cache (agent-ops#1107). `scripts/lint-shell.sh` is clean on every file
-    this requirement touches.
+    cache (agent-ops#1107). `test/issue-state-reapply.test.sh` passes:
+    `issue_state_reapply` (lib/candidate-select.sh) drops a candidate the
+    sampled source-state digest reports assigned or `blocked`-labelled,
+    reporting `"assigned"` or `"blocked-label"` and giving `"assigned"`
+    precedence when both apply; leaves an unsampled candidate untouched;
+    folds a fresh drop into a prior `issues_excluded` set — a fresh drop's
+    own reason winning a clash with a stale cached one for the same number,
+    and a `null` prior with no fresh drop staying `null` rather than a false
+    `[]` — without ever dropping a prior entry whose own issue is no longer a
+    candidate; and the cached-branch wiring in `gather_ordered_repos`
+    (lib/candidate-gather.sh) calls it only when this cycle's own
+    `gather_source_state` sample reports `ok == true`, otherwise leaving a
+    replayed band unfiltered by this reapplication. `scripts/lint-shell.sh`
+    is clean on every file this requirement touches.
 
 49. **The item lifecycle record matches `docs/FLOW-SCHEMA.md`, the join key
     reaches every site requirement 49 names, and the fold balances

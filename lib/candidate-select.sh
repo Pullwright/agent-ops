@@ -189,6 +189,87 @@ exclude_claimed_items() {  # <candidates-json> <claimed-item-refs-json>
     <<<"$docs" 2>/dev/null || printf '%s' "$candidates"
 }
 
+# agent-ops#1095: requirement 16.4's assigned/blocked-label drops (requirement
+# 3j's deterministic half, `ISSUE_DETERMINISTIC_FILTER_JQ` in
+# lib/issue-prefetch.sh), re-applied to a replayed `issues` band (requirement
+# 48) from gather_source_state's own already-sampled `a`/`l` fields rather
+# than a live re-read of each candidate's own thread — at zero further
+# GitHub cost, since that sample runs unconditionally for every configured
+# repository every cycle regardless. Only the `Blocked-by:` third of 16.4
+# stays as recent as the band's own last fresh read (requirement 34j): it
+# needs the whole thread and a live per-reference state read, the expensive
+# work requirement 48 exists to skip on a replayed repository's off cycles.
+#
+# Mirrors `issue_deterministic_ok`/`issue_exclude_reason`'s own
+# assigned-before-blocked-label order, so the two drops agree whichever one a
+# given candidate actually went through: `a` (a single login, mirroring
+# `.assignee.login`) is treated as the lone deterministic fact an empty
+# string decides, never an `assignees`-array count — the two sources agree in
+# practice (GitHub sets `assignee` to the first of `assignees`) but this
+# reads only the field the digest actually samples.
+#
+# Prints `{candidates, excluded}`, the same shape scripts/gather-issues.sh's
+# own output takes: `candidates` is CANDIDATES-JSON with every now-assigned or
+# now-`blocked`-labelled issue removed; `excluded` folds each fresh drop into
+# PRIOR-EXCLUDED-JSON — treated as `[]` for the fold when PRIOR-EXCLUDED-JSON
+# is JSON `null` (the cached gather degraded, not "found nothing"), but never
+# published as a false `[]` in place of a still-accurate `null`: a `null`
+# prior with no fresh drop to add stays `null` rather than becoming an empty
+# array that would claim more certainty than this call actually has — de-
+# duplicated and sorted by issue number, a fresh drop's own reason winning any
+# clash with a stale cached one for the same number.
+#
+# A candidate the sampled state no longer names (closed, or never sampled —
+# the digest's own page bound) is left exactly as it arrived: this is a
+# visibility layer over the gatherer's own deterministic filter, never a
+# second hard gate, so malformed input degrades to passing both inputs
+# through unchanged, the same fail-open direction exclude_claimed_items takes
+# above.
+#
+# CANDIDATES-JSON (an `issues` band, threads included), STATE-ISSUES-JSON and
+# PRIOR-EXCLUDED-JSON are each unbounded past this call — a repository's own
+# open-issue count sizes both the band and the digest alike, and
+# PRIOR-EXCLUDED-JSON came from the same cache document requirement 48 already
+# treats as unbounded — so, per requirement 4g, all three arrive on stdin, one
+# document per line, bound positionally with `input as $name` in the order
+# printed, never in argv.
+issue_state_reapply() {  # <candidates-json> <state-issues-json> <prior-excluded-json>
+  local candidates="$1" state_issues="${2:-[]}" prior="${3:-null}" docs
+  jq -e 'type == "array"' <<<"$state_issues" >/dev/null 2>&1 || state_issues='[]'
+  jq -e '. == null or type == "array"' <<<"$prior" >/dev/null 2>&1 || prior='null'
+  docs="$(printf '%s\n' "$candidates" "$state_issues" "$prior")"
+  # The `|| jq -nc …` fallback mirrors exclude_claimed_items' own fail-open
+  # direction above: on any failure, hand back the pre-filter candidates and
+  # prior exclusions exactly as they arrived, as two already-known-good
+  # documents off the same stdin stream rather than a re-parse of $candidates
+  # (which, past MAX_ARG_STRLEN, is exactly the value an argv fallback would
+  # silently truncate).
+  jq -nc '
+    input as $candidates | input as $state | input as $prior
+    | ($state | map({key: (.n | tostring), value: {a: (.a // ""), l: (.l // [])}}) | from_entries) as $byn
+    | ($candidates | map(
+        . as $c
+        | ($byn[($c.number | tostring)]) as $s
+        | if $s == null then {keep: true, item: $c}
+          elif ($s.a // "") != "" then {keep: false, item: $c, reason: "assigned"}
+          elif (($s.l // []) | map(ascii_downcase) | index("blocked")) != null
+            then {keep: false, item: $c, reason: "blocked-label"}
+          else {keep: true, item: $c}
+          end)) as $tagged
+    | ($tagged | map(select(.keep) | .item)) as $kept
+    | ($tagged | map(select(.keep | not) | {number: .item.number, reason})) as $fresh
+    | {
+        candidates: $kept,
+        excluded: (
+          if ($prior == null and ($fresh | length) == 0) then null
+          else (($fresh + ($prior // [])) | unique_by(.number) | sort_by(.number))
+          end
+        )
+      }' <<<"$docs" 2>/dev/null || jq -nc \
+    'input as $candidates | input as $state | input as $prior | {candidates: $candidates, excluded: $prior}' \
+    <<<"$docs"
+}
+
 # Issue #248 acceptance 4 (TD-PPagop-26081405): log one `first-seen` per item
 # the very first time any node's gather ever reports it, so a later report can
 # subtract it from the `selection` that eventually claims it. Called on each
