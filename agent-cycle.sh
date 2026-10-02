@@ -1499,18 +1499,26 @@ cleanup() {
   # the TMPDIR this process was given rather than a directory that no longer
   # exists. Nothing between spools anything.
   scratch_release
-  # Yield to a pending image roll (requirement 39, agent-ops#1096): a node
-  # running long or chained cycles never presents watchtower's
-  # deploy/docker/watchtower-pre-update.sh a gap to poll into, so a healthy,
-  # merely-busy node could stay behind the registry's newest image
-  # indefinitely — the bound `lock_stale_after` gives a wedged cycle never
-  # applied to one that is simply busy. Only worth asking when there is a
-  # chain to give up: a cycle already not chaining, or one that failed
-  # outright, has nothing here to yield. Reads the same `image_drift_status`
-  # verdict the heartbeat's `image` field publishes (requirement 2.5) — no
-  # second signal — through the identical cache file the state-sync push just
-  # above refreshed, so this costs no second registry round trip.
-  if (( chain_eligible )) && (( exit_code == 0 )); then
+  # Yield to a pending image roll (requirement 39, agent-ops#1096, widened by
+  # agent-ops#1103): a node running long or chained cycles never presents
+  # watchtower's deploy/docker/watchtower-pre-update.sh a gap to poll into,
+  # so a healthy, merely-busy node could stay behind the registry's newest
+  # image indefinitely — the bound `lock_stale_after` gives a wedged cycle
+  # never applied to one that is simply busy. This has two separable jobs:
+  # cancelling a chain this cycle would otherwise take (nothing to cancel on
+  # a cycle that was never going to chain), and widening the gap itself from
+  # whatever instant this cycle's own lock release happens to leave to a
+  # window the five-minute poll is guaranteed to land in (needed at every
+  # clean cycle-end, chain or no chain). So the marker is written whenever
+  # this cycle ended cleanly, whether or not it had a chain to give up —
+  # `chain_eligible` only gates the cancellation, which is a no-op where
+  # there was nothing eligible to begin with. `--once` is excluded outright:
+  # a human or a test asking for exactly one cycle must not arm an override
+  # on the node it ran on. Reads the same `image_drift_status` verdict the
+  # heartbeat's `image` field publishes (requirement 2.5) — no second signal
+  # — through the identical cache file the state-sync push just above
+  # refreshed, so this costs no second registry round trip.
+  if (( exit_code == 0 )) && ! (( ONCE )); then
     local image_status_json=""
     image_status_json="$(image_drift_status "$(agent_ops_version "$SCRIPT_DIR")" \
       "$state_dir/.image-drift-cache.json" 2>/dev/null || echo null)"
