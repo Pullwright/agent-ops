@@ -33,6 +33,10 @@
 # see each function's own comment); `config_duplicate_repository_review_slugs`
 # is `review-cycle.sh`'s. `scripts/doctor.sh` calls every one of them so no
 # pipeline's refusal or warning can ever drift from what `doctor.sh` reports.
+# `config_repo_slug_aliases` is not one of these guards — it is a plain
+# derivation, called by `lib/candidate-gather.sh` and `lib/eligibility.sh` to
+# build the alias map `work_gone_clearances` and `enabler_eligible_items`
+# resolve a blocked item's `repo` through.
 #
 # `config_model_tier_floor_violations` reads `lib/model-id.sh`'s
 # `MODEL_TIER_RANK` table, through `model_tier_below`; both scripts that
@@ -822,6 +826,28 @@ config_duplicate_repository_review_slugs() {
 config_duplicate_repos_slugs() {
   local repos_json="$1"
   jq -r '[.[].slug] | group_by(.) | map(select(length > 1) | .[0]) | join(", ")' <<<"$repos_json"
+}
+
+# config_repo_slug_aliases REPOS_JSON
+# Given config.json's top-level `repos` array, prints a flat JSON object
+# mapping every configured repo's optional `previous_slugs` entries to that
+# repo's own `slug` — `{"old/name": "owner/name", …}` — or `{}` when no
+# configured repo carries `previous_slugs` at all. This is what lets a
+# digest-keyed reader (`work_gone_clearances`, `enabler_eligible_items`)
+# resolve a blocked item's `repo` to the slug its own source-state digest is
+# actually keyed by, when that item was recorded before a rename (issue
+# #2064): the digest is always built from the *current* configured slugs, so
+# a block still naming the old one would otherwise never be found in it.
+#
+# Where two repos' `previous_slugs` name the same old slug, the later entry
+# in `repos_json` wins (plain `from_entries` semantics) — config.schema.json
+# does not reject this, and it is not expected to happen in practice, since
+# the whole point of a previous slug is that exactly one repo used to be
+# known by it.
+config_repo_slug_aliases() {
+  local repos_json="$1"
+  jq -c '[ .[] | . as $r | ($r.previous_slugs // [])[] | {key: ., value: $r.slug} ] | from_entries' \
+    <<<"$repos_json"
 }
 
 # config_documented_value_mismatches DEFAULTED_CONFIG_JSON SCHEMA_FILE

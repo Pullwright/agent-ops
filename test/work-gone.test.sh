@@ -136,6 +136,26 @@ assert_eq "an empty review map clears no review recommendation" \
 assert_eq "an empty plan map clears no plan task" \
   "0" "$(work_gone_clearances "$(blocked_of W10-breach-handling)" "$states" '{}' '{}' '{}' | jq 'length')"
 
+# --- A blocked item recorded under a renamed repo's old slug (issue #2064) ------
+# SOURCE_STATES_JSON is always keyed by the repository's *current* configured
+# slug, so a block that still names the slug it was recorded under before a
+# rename — "o/old" here, standing in for the real case's
+# `Poetic-Poems/agent-ops` — would otherwise never find "o/a"'s digest at all,
+# leaving it `unknown` (and so blocked) forever rather than merely delayed.
+aliases='{"o/old":"o/a"}'
+assert_eq "a closed issue clears its block when recorded under an aliased slug" \
+  "issue #125 is closed" \
+  "$(reason_of "$(work_gone_clearances "$(blocked_of 125 o/old)" "$states" '{}' '{}' '{}' "$aliases")")"
+assert_eq "an open issue under the same aliased slug does not" \
+  "" "$(reason_of "$(work_gone_clearances "$(blocked_of 126 o/old)" "$states" '{}' '{}' '{}' "$aliases")")"
+assert_eq "a merged pull request clears its block when recorded under an aliased slug" \
+  "pull request #146 is closed or merged" \
+  "$(reason_of "$(work_gone_clearances "$(blocked_of pr-146-abandoned-719c4c5d6aa1 o/old)" "$states" '{}' '{}' '{}' "$aliases")")"
+assert_eq "the same block, read with no aliases map at all, stays exactly where it was" \
+  "0" "$(work_gone_clearances "$(blocked_of 125 o/old)" "$states" | jq 'length')"
+assert_eq "an aliased slug the digest still does not cover clears nothing" \
+  "0" "$(work_gone_clearances "$(blocked_of 125 o/old)" "$states" '{}' '{}' '{}' '{"o/old":"o/z"}' | jq 'length')"
+
 # --- The argv cap (requirement 4g) ----------------------------------------------
 # The open blocked set grows with the fleet's history — block entries carry
 # their evidence payloads — and so does the source-states array with the repo

@@ -75,15 +75,15 @@ log_event_calls() { [[ -f "$LOG_EVENT_CALLS_FILE" ]] && wc -l < "$LOG_EVENT_CALL
 log_event_last_fields() { [[ -f "$LOG_EVENT_CALLS_FILE" ]] && tail -n1 "$LOG_EVENT_CALLS_FILE" | cut -f2- || printf ''; }
 reset_log_event_calls() { rm -f "$LOG_EVENT_CALLS_FILE"; }
 
-# eligible [MIN] [RECHECK] [OPEN_ISSUES] [REFINEMENT_MIN] — the rule over
-# $log, at a fixed now.
+# eligible [MIN] [RECHECK] [OPEN_ISSUES] [REFINEMENT_MIN] [ALIASES] — the
+# rule over $log, at a fixed now.
 eligible() {
-  enabler_eligible_items "$log" "${1:-3}" "${2:-0}" "${3:-$open_none}" "$now" "${4:-}"
+  enabler_eligible_items "$log" "${1:-3}" "${2:-0}" "${3:-$open_none}" "$now" "${4:-}" "${5:-{\}}"
 }
-# reason_for ITEM [MIN] [RECHECK] [OPEN_ISSUES] [REFINEMENT_MIN] — the
-# eligibility reason for one item, or "" if ineligible.
+# reason_for ITEM [MIN] [RECHECK] [OPEN_ISSUES] [REFINEMENT_MIN] [ALIASES] —
+# the eligibility reason for one item, or "" if ineligible.
 reason_for() {
-  eligible "${2:-3}" "${3:-0}" "${4:-$open_none}" "${5:-}" \
+  eligible "${2:-3}" "${3:-0}" "${4:-$open_none}" "${5:-}" "${6:-{\}}" \
     | jq -r --arg i "$1" '[.[] | select(.item == $i)] | first | .reason // ""'
 }
 
@@ -537,6 +537,32 @@ printf '%s\n' "$blocked_line" > "$log"
 coord_cycles 3 >> "$log"
 assert_eq "an item with no escalation needs no digest" "threshold" \
   "$(reason_for TD1 3 0 '{"o/other":[]}')"
+
+# --- The slug-rename alias map (issue #2064) ---
+#
+# open_issues_json (built by lib/eligibility.sh from the source-state digest)
+# is always keyed by a repo's *current* configured slug. A block recorded
+# under the slug the repo had before a rename — "o/old" here, standing in
+# for the real case's `Poetic-Poems/agent-ops` — would otherwise read exactly
+# like the "missing repo digest" case above: a repo this cycle "could not
+# sample", possibly-open forever, never merely delayed.
+escalated_log_aliased_repo() {  # like escalated_log, but recorded under o/old, not o/r
+  printf '%s\n' '{"ts":"2026-07-22T09:00:00Z","cycle":"c0","event":"attempt-failed","stage":"implementer","repo":"o/old","item":"TD1","detail":"needs repo secrets","unblock_condition":"a human adds SENTRY_DSN"}' > "$log"
+  coord_cycles 3 >> "$log"
+  cat >> "$log" <<'EOF'
+{"ts":"2026-07-23T09:00:00Z","cycle":"c4","event":"enabler-examined","repo":"o/old","item":"TD1","blocked_ts":"2026-07-22T09:00:00Z","outcome":"escalate","detail":"needs repo secrets set by a human"}
+{"ts":"2026-07-23T09:00:01Z","cycle":"c4","event":"escalated","repo":"o/old","item":"TD1","issue_number":52,"issue_url":"https://github.com/o/r/issues/52","blocked_ts":"2026-07-22T09:00:00Z"}
+EOF
+}
+escalated_log_aliased_repo
+assert_eq "with no aliases map, a block under the old slug reads as an unreadable digest" "" \
+  "$(reason_for TD1 3 0 "$open_none")"
+escalated_log_aliased_repo
+assert_eq "resolved through the alias map, the closed issue makes it eligible to verify" \
+  "issue-closed" "$(reason_for TD1 3 0 "$open_none" "" '{"o/old":"o/r"}')"
+escalated_log_aliased_repo
+assert_eq "...and an open issue under the resolved slug still keeps it ineligible" "" \
+  "$(reason_for TD1 3 0 "$open_52" "" '{"o/old":"o/r"}')"
 
 # An escalated event with no usable issue number cannot be checked against the
 # digest at all; it must not read as "closed" and hand the item a free
