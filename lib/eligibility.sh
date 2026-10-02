@@ -22,9 +22,10 @@
 # place, from where this text used to sit. Like `run_standdown_checks`
 # (lib/standdown.sh) they declare nothing `local` and read and write the
 # cycle's own globals directly — `refinements_json`, `decisions_json`,
-# `enabler_eligible_json`, `enabler_allowed`, `refiner_repos_json`,
-# `refiner_candidates_json`, `refiner_allowed`, `open_issues_json`,
-# `live_pr_refs_json`, `stale_enabler_refs_json`/`_n` — so each call is
+# `enabler_eligible_json`, `enabler_allowed`, `refiner_prefetch_source_json`,
+# `refiner_repos_json`, `refiner_candidates_json`, `refiner_allowed`,
+# `open_issues_json`, `live_pr_refs_json`, `stale_enabler_refs_json`/`_n` —
+# so each call is
 # indistinguishable, to the
 # rest of the cycle, from the inline block it replaces. Their bodies keep the
 # original top-level indentation for the same reason `lib/candidate-gather.sh`
@@ -147,6 +148,69 @@ refinements_json="$(refinements_map "$union_log")"
 # one into the other, the same way it would turn a human's own answer on a
 # closed escalation into one.
 decisions_json="$(decisions_map "$union_log")"
+
+# A snapshot for `prefetch_refiner_sources` below, taken before the fifth
+# pass's own subtraction — the same reason 35e's `live_pr_refs_json` snapshot
+# above is taken before `exclude_blocked_or_void_items`'s (agent-ops#1057,
+# confirmed by the Reviewer on PR #2047 after the first attempt skipped this
+# snapshot entirely). The Refiner must still see an item `decisions_json`
+# names a pending decision for: `compute_refiner_candidates` reaching it is
+# the only path that can ever write the unmarked `item-refined` that
+# supersedes the decision in `decisions_map`. `prefetch_refiner_sources`
+# itself cannot derive `refiner_repos_json` from `ordered_repos_json` after
+# the fifth pass below runs — that would withhold the item from the Refiner
+# as well as the Co-Ordinator, and with no actor left able to produce the
+# `item-refined` that frees it, the item would stay invisible to both
+# forever, reopening the "decision reaches no actor at all" hole agent-ops#1049
+# closed. Taken here, after the eligibility_band loop above but before this
+# pass's own subtraction, so a blocked/void entry is excluded from the
+# Refiner's own bands exactly as it already is from the Co-Ordinator's — only
+# the decision-pending exclusion itself must not reach this copy.
+refiner_prefetch_source_json="$ordered_repos_json"
+
+# A fifth pass, over what the eligibility_band loop above has already settled
+# (agent-ops#1057): decisions_json reaches the Refiner only (requirement
+# 36d) — the Co-Ordinator is never shown it — so without this, the
+# Co-Ordinator can still rank and dispatch an item whose decide-tactical
+# decision the Refiner has not yet turned into a specification, for the one
+# cycle between compute_refiner_candidates' own early snapshot of
+# decisions_json (below) and the Enabler/Refiner cleanup pass that acts on a
+# fresh decision. Every band but `issues` gets this: an issue's decision
+# travels in the thread the Co-Ordinator already re-reads live (requirement
+# 18a), so it can never dispatch a superseded specification the way a
+# non-issue item can. A different loop variable than eligibility_band above
+# — test/cycle-state.test.sh pins each loop's own band list by a `sed`
+# pattern keyed on the loop variable's name, and two loops sharing one name
+# would give that pattern two matches.
+#
+# Gated on `refiner_model` being set at all (the Reviewer's and Enabler's
+# finding on PR #2047, after a first version of this pass ran unconditionally):
+# only the Refiner ever writes the unmarked `item-refined` that supersedes a
+# decision in `decisions_map`, so with no Refiner configured nothing could
+# ever lift a withholding this pass applied — permanently, not for one cycle.
+# `exclude_decision_pending_items` itself applies the matching per-entry gate
+# on the source's own `refinement_policy` (an `exempt` source is never a
+# Refiner candidate either, `select(exempt($source) | not)` in
+# `refiner_candidate_items`, lib/refinement.sh), so between the two gates this
+# pass only ever withholds an entry some actor can later restore — mirroring
+# the same two facts `prefetch_refiner_sources`' own Refiner-only pre-fetch
+# below already gates its reads on, in this same function.
+if [[ -n "${refiner_model:-}" ]]; then
+for decision_band in findings review_feedback abandoned_drafts merge_conflicts dequeued landing_refusals human_visibility tech_debt; do
+  while IFS= read -r db_slug; do
+    [[ -n "$db_slug" ]] || continue
+    db_current="$(jq -c --arg s "$db_slug" --arg f "$decision_band" \
+      'map(select(.slug == $s)) | .[0][$f] // []' <<<"$ordered_repos_json" 2>&1)" \
+      || { guard_warn "db_current:$db_slug:$decision_band" "$db_current"; db_current='[]'; }
+    db_filtered="$(exclude_decision_pending_items "$db_current" "$db_slug" "$decisions_json" "$refinement_policy_json")"
+    ordered_repos_json="$(jq -c --arg r "$db_slug" --arg f "$decision_band" --argjson v "$db_filtered" \
+      'map(if .slug == $r then .[$f] = $v else . end)' \
+      <<<"$ordered_repos_json" 2>/dev/null || printf '%s' "$ordered_repos_json")" # TD-PPagop-26081407: passes test 2 -- falls back to the unchanged prior aggregate, not a fabricated empty
+  done < <(jq -r --arg f "$decision_band" \
+           '[.[] | select(((.[$f] // []) | length) > 0) | .slug] | unique[]' \
+           <<<"$ordered_repos_json" 2>/dev/null || true)
+done
+fi
 }
 
 # compute_enabler_eligible_set — requirements 35a and 35b. Called once from
@@ -291,7 +355,17 @@ prefetch_refiner_sources() {
 # not exempt (nothing would ever read an exempt source's candidates), and for
 # `implementation-plan`, only where `implementation_plan_path` is configured
 # (the same startup guard that requires it already refused to run otherwise).
-refiner_repos_json="$ordered_repos_json"
+#
+# Seeded from `refiner_prefetch_source_json` (`compute_band_eligibility`
+# above), never from `ordered_repos_json` directly: by the time this function
+# runs, `ordered_repos_json` has already had `compute_band_eligibility`'s own
+# fifth pass applied, withholding every item `decisions_json` names a pending
+# decision for (agent-ops#1057) — exactly the items `compute_refiner_candidates`
+# below must still be able to see, since reaching the Refiner is the only way
+# such an item's decision is ever superseded. Reading `ordered_repos_json`
+# here would withhold the item from the Refiner too, the defect the Reviewer
+# confirmed on PR #2047.
+refiner_repos_json="$refiner_prefetch_source_json"
 if [[ -n "$refiner_model" ]]; then
   # This repository's own resolved report_directory (its override in
   # repository_review.repos, or repository_review.defaults' otherwise,

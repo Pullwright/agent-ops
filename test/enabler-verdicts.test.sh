@@ -86,6 +86,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # human_change_request_fields` produce at this recovery site.
 # shellcheck source=lib/rework.sh
 . "$SCRIPT_DIR/lib/rework.sh"
+# exclude_decision_pending_items, for the agent-ops#1057 case below that
+# proves the Co-Ordinator's own band drops a pending decision the same cycle
+# decisions_map starts naming it.
+# shellcheck source=lib/candidate-select.sh
+. "$SCRIPT_DIR/lib/candidate-select.sh"
+# compute_band_eligibility/prefetch_refiner_sources, for the agent-ops#1057
+# real-sequence case below: the Reviewer's own confirmed defect on PR #2047
+# was only reachable by running these two functions back to back, in the
+# order lib/gather-phase.sh actually calls them, over one shared
+# ordered_repos_json.
+# shellcheck source=lib/eligibility.sh
+. "$SCRIPT_DIR/lib/eligibility.sh"
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
@@ -1073,8 +1085,8 @@ assert_eq "decide/TD-disagreement: decisions_map still carries the decision afte
 # item — despite refinements_map showing it refined — because decisions_map
 # (built above) still carries a decision for it.
 rmap='{"acme/widgets":{"TD26082901":{"ts":"2026-08-01T09:00:00Z","spec":"the original spec"}}}'
-repos_for_candidates='[{"slug":"acme/widgets","tech_debt":[{"source":"tech_debt","ref":"TD26082901"}]}]'
-candidates="$(refiner_candidate_items "$repos_for_candidates" '{"tech_debt":"required"}' \
+repos_for_candidates='[{"slug":"acme/widgets","tech_debt":[{"source":"tech-debt","ref":"TD26082901"}]}]'
+candidates="$(refiner_candidate_items "$repos_for_candidates" '{"tech-debt":"required"}' \
   "$rmap" '[]' '[]' '[]' "$dmap")"
 assert_eq "decide/TD-disagreement: the refined item is still a Refiner candidate" "1" \
   "$(jq 'length' <<<"$candidates")"
@@ -1126,11 +1138,118 @@ assert_eq "decide/triage-only: ...and still carries the pending decision it was 
 
 # A never-refined, thread-less candidate (no decision pending) must NOT
 # carry `refinement` either — there is nothing in `refinements_map` for it.
-repos_unrefined='[{"slug":"acme/widgets","tech_debt":[{"source":"tech_debt","ref":"TD6"}]}]'
-candidates_unrefined="$(refiner_candidate_items "$repos_unrefined" '{"tech_debt":"required"}' \
+repos_unrefined='[{"slug":"acme/widgets","tech_debt":[{"source":"tech-debt","ref":"TD6"}]}]'
+candidates_unrefined="$(refiner_candidate_items "$repos_unrefined" '{"tech-debt":"required"}' \
   '{}' '[]' '[]' '[]' '{}')"
 assert_eq "decide/never-refined: a never-refined thread-less candidate carries no refinement field" \
   "null" "$(jq -r '.[0].refinement // "null"' <<<"$candidates_unrefined")"
+
+# The other half of the same window (agent-ops#1057): decisions_json reaches
+# the Refiner only, so nothing stops the Co-Ordinator ranking and dispatching
+# this same item from its own band in the one cycle before the Refiner
+# rewrites its specification — unless compute_band_eligibility's own
+# subtraction pass (lib/eligibility.sh) drops it first, exactly as it does
+# here via exclude_decision_pending_items — but only where the item's own
+# source is not refinement_policy-exempt, since an exempt source is never a
+# Refiner candidate either and withholding it here too would leave no actor
+# able to ever supersede the decision (the Reviewer's and the Enabler's
+# finding on PR #2047, second round).
+#
+# Every `source` and `refinement_policy` key in these fixtures is the
+# hyphenated name the real data carries — `tech-debt`, `merge-conflicts`, the
+# value `scripts/gather-tech-debt.sh` and `lib/candidate-gather.sh` actually
+# write into a band entry — never the underscored *band field* name beside it
+# (`tech_debt`, `merge_conflicts`). The two must not be conflated here: the
+# reachability gate resolves `refinement_policy` from each entry's own
+# `.source` rather than from the band being walked, precisely because the
+# `findings` band carries both `security` and `code-quality` sources, and
+# `refinement_policy`'s schema (`config.schema.json`,
+# `additionalProperties: false`) admits only the hyphenated keys. An
+# underscored fixture is self-consistent enough to go green while asserting
+# the opposite of what production does — under the only schema-valid key
+# (`tech-debt`), an entry sourced `tech_debt` resolves *exempt* and is never
+# withheld at all — so it would hide exactly the band-name-for-source
+# substitution this pass must never make.
+band_before="$(jq -c '.[0].tech_debt' <<<"$repos_for_candidates")"
+td_required='{"tech-debt":"required"}'
+band_after="$(exclude_decision_pending_items "$band_before" "acme/widgets" "$dmap" "$td_required")"
+assert_eq "decide/TD-disagreement: ...and the item leaves the Co-Ordinator's own band" \
+  "0" "$(jq 'length' <<<"$band_after")"
+
+# Both halves together, through the real sequence (agent-ops#1057, Reviewer
+# confirmation on PR #2047): the two assertions just above exercise
+# exclude_decision_pending_items and refiner_candidate_items against two
+# *different* inputs (repos_for_candidates untouched, band_before extracted
+# separately), so neither call ever sees the other's output — exactly why the
+# first attempt's own defect left this suite green. `compute_band_eligibility`
+# mutates `ordered_repos_json` in place; `prefetch_refiner_sources`, called
+# immediately after in the real pipeline (`lib/gather-phase.sh`), seeds
+# `refiner_repos_json` from it. Before the fix, that seed was
+# `ordered_repos_json` itself — already missing the withheld item — so
+# `refiner_candidate_items` never saw it either, and with no Refiner candidate
+# left to write the `item-refined` that supersedes the decision, the item was
+# invisible to both stages forever. Run both functions for real, sourced
+# whole rather than reimplemented, over one shared `ordered_repos_json`, the
+# same technique test/pr-claim-exclusion.test.sh's own requirement-35e
+# regression uses for the identical class of bug.
+# shellcheck disable=SC2317  # invoked only by the real compute_band_eligibility
+guard_warn() { :; }
+ordered_repos_json='[{"slug":"acme/widgets","tech_debt":[{"source":"tech-debt","ref":"TD26082901"}]}]'
+blocked_json='[]'
+void_json='[]'
+union_log="$recon_log"
+refiner_model='claude-test-model'
+refinement_policy_json="$td_required"
+compute_band_eligibility
+prefetch_refiner_sources
+assert_eq "decide/TD-disagreement real-sequence: the item leaves ordered_repos_json's own band too" \
+  "0" "$(jq '.[0].tech_debt | length' <<<"$ordered_repos_json")"
+refiner_candidates_real="$(refiner_candidate_items "$refiner_repos_json" "$td_required" \
+  "$rmap" '[]' '[]' '[]' "$decisions_json")"
+assert_eq "decide/TD-disagreement real-sequence: ...and still reaches the Refiner's own candidate set" \
+  "1" "$(jq 'length' <<<"$refiner_candidates_real")"
+assert_eq "decide/TD-disagreement real-sequence: ...carrying the same pending decision" "use option B" \
+  "$(jq -r '.[0].decision.decision' <<<"$refiner_candidates_real")"
+
+# The reachability gate's first half, through the same real sequence
+# (agent-ops#1057, second round, PR #2047): a decision-pending item from a
+# band whose source `refinement_policy` leaves exempt — every source but
+# `issues`/`tech-debt` by this installation's shipped default — is not
+# withheld from `ordered_repos_json`. Same fixture shape as above but a
+# `merge_conflicts` band and an empty policy (so `merge_conflicts` resolves
+# exempt), proving the per-entry `.source` check, not the band name, decides.
+ordered_repos_json='[{"slug":"acme/widgets","merge_conflicts":[{"source":"merge-conflicts","ref":"pr-1-conflict-abc"}]}]'
+recon_log_mc="$tmp_dir/decide-disagreement-mc.jsonl"
+jq -nc '{event:"decision-taken", ts:"2026-09-01T00:00:00Z", repo:"acme/widgets", item:"pr-1-conflict-abc", decision:"rebase onto main", rationale:"r"}' \
+  > "$recon_log_mc"
+union_log="$recon_log_mc"
+refinement_policy_json='{}'
+compute_band_eligibility
+assert_eq "decide/exempt-source real-sequence: an exempt-source decision-pending item stays in the Co-Ordinator's own band" \
+  "1" "$(jq '.[0].merge_conflicts | length' <<<"$ordered_repos_json")"
+
+# The reachability gate's second half: with no Refiner configured at all
+# (`refiner_model` empty), the whole pass is skipped — the original
+# `tech_debt` fixture, with the same non-exempt `tech_debt: required` policy
+# that withheld it above, is left untouched, since nothing could ever
+# supersede the decision regardless of policy.
+ordered_repos_json='[{"slug":"acme/widgets","tech_debt":[{"source":"tech-debt","ref":"TD26082901"}]}]'
+union_log="$recon_log"
+refiner_model=''
+refinement_policy_json="$td_required"
+compute_band_eligibility
+assert_eq "decide/no-refiner real-sequence: with no refiner_model, the pass does not run at all" \
+  "1" "$(jq '.[0].tech_debt | length' <<<"$ordered_repos_json")"
+
+# `union_log` is unset again immediately: `escalation_autonomy_pass_available`
+# (lib/escalation-autonomy.sh) reads `${union_log:-$log_file}`, and every
+# decide-tactical case below this point relies on that fallback reaching the
+# harness's own `$log_file` — the comment at this file's "the harness never
+# sets union_log" fixture explains why. Leaving it set here would silently
+# redirect every such read at `$recon_log` for the rest of the file.
+unset union_log ordered_repos_json blocked_json void_json refiner_model \
+  refiner_repos_json refiner_prefetch_source_json refiner_candidates_real \
+  refinement_policy_json recon_log_mc
 
 # --- decision-vetoed clears the decision (agent-ops#937, agent-ops#1198):
 # reopening the log issue withdraws the decision it logged, and a Refiner
