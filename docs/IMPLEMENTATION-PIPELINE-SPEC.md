@@ -24730,22 +24730,34 @@ oblige anyone to edit a test.
    workflow publishes both architectures as one manifest list per tag.
 1b-i. **A documentation-only change builds nothing, and everything else
    builds.** `test/is-docs-only.test.sh` passes: `scripts/is-docs-only.sh`
-   calls a change documentation-only when every path in it is under `docs/` or
-   `tech-debt/`, or is `README.md`, `CLAUDE.md`, `AGENTS.md`, `TECH-DEBT.md`,
-   `LICENCE` or `deploy/docker/README.md`, and calls it code otherwise —
-   `prompts/*.md` included, since those are Markdown documents *and* the
-   operating instructions of requirement 1a's stages, so classifying by file
-   extension would let a change to a node's behaviour skip the build that
-   deploys it. An empty path list, or none, is code. The test the allowlist
-   encodes is "the image is not the delivery path for this file", which is
-   weaker than "nothing reads it" and has to be: a cycle working on this
-   repository reads its own `CLAUDE.md`, its `AGENTS.md` and its tech-debt
-   register, but from the `gh repo clone` in `workspace_root` — both current
-   the moment a pull request merges, with no image involved. The copy at /app
-   is what nothing reads, because every stage's working directory is under
-   `workspace_root` or `state_dir` (requirement 6's assertion pins the first),
-   so /app is never a working directory nor an ancestor of one and its
-   `CLAUDE.md` and `AGENTS.md` are never loaded as project memory.
+   calls a change documentation-only when every path in it is under `docs/`
+   — except `docs/STANDING-DECISIONS.md` and every `docs/*-SPEC.md`, which the
+   image *does* deliver to a running stage and so count as code — or is
+   `README.md`, `CLAUDE.md`, `AGENTS.md`, `TECH-DEBT.md`, `LICENCE` or
+   `deploy/docker/README.md`, and calls it code otherwise — `prompts/*.md`
+   and everything under `tech-debt/` included, since the former are Markdown
+   documents *and* the operating instructions of requirement 1a's stages and
+   the latter is a frozen register a pull request may still edit a file's
+   frontmatter in, so classifying either by file extension or by directory
+   alone would let a change that matters skip the build that deploys it. An
+   empty path list, or none, is code. The test the allowlist encodes is "the
+   image is not the delivery path for this file", which is weaker than
+   "nothing reads it" and cuts both ways: a cycle working on this repository
+   reads its own `CLAUDE.md` and its `AGENTS.md`, but from the `gh repo
+   clone` in `workspace_root` — current the moment a pull request merges,
+   with no image involved — so those stay documentation-only despite being
+   read. `docs/STANDING-DECISIONS.md` and the specifications' `## Gotchas`
+   sections are the opposite case: `agent-cycle.sh` resolves
+   `standing_decisions_file` against `$SCRIPT_DIR`, which is `/app` in the
+   image, and `lib/escalation-autonomy.sh` feeds the file to the
+   decide-tactical pass as its precedents; `monitor-cycle.sh` passes each
+   specification's `$SCRIPT_DIR/docs/*-SPEC.md` path to `monitor_digest_gotchas`
+   as the Monitor's known signatures — both reach a node only through the
+   image, so a change confined to either still needs one. Every other
+   stage's working directory is under `workspace_root` or `state_dir`
+   (requirement 6's assertion pins the first), so /app is never a working
+   directory nor an ancestor of one and its `CLAUDE.md` and `AGENTS.md` are
+   never loaded as project memory.
    `.github/workflows/build-image.yml`'s `changes` job runs it over the
    change's own diff (three-dot, so a pull request is judged on what its
    branch did and not on what `main` did

@@ -53,7 +53,9 @@ set -uo pipefail
 # Every pattern anchored whole, so `README.mdx` and `docsy/note.md` are code.
 is_inert() {
   case "$1" in
-    docs/*) return 0 ;;                   # the as-built specs and the roadmap
+    docs/STANDING-DECISIONS.md) return 1 ;;  # agent-cycle.sh resolves standing_decisions_file against $SCRIPT_DIR (/app in the image) and lib/escalation-autonomy.sh feeds it to decide-tactical as precedents
+    docs/*-SPEC.md) return 1 ;;              # monitor-cycle.sh reads each spec's Gotchas section from $SCRIPT_DIR/docs as the Monitor's known signatures
+    docs/*) return 0 ;;                   # the roadmap and the rest of docs/, read only from a fresh clone
     README.md) return 0 ;;
     CLAUDE.md) return 0 ;;                # a cycle reads the clone's copy, never /app's
     AGENTS.md) return 0 ;;                # likewise
