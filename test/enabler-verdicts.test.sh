@@ -1085,8 +1085,8 @@ assert_eq "decide/TD-disagreement: decisions_map still carries the decision afte
 # item — despite refinements_map showing it refined — because decisions_map
 # (built above) still carries a decision for it.
 rmap='{"acme/widgets":{"TD26082901":{"ts":"2026-08-01T09:00:00Z","spec":"the original spec"}}}'
-repos_for_candidates='[{"slug":"acme/widgets","tech_debt":[{"source":"tech_debt","ref":"TD26082901"}]}]'
-candidates="$(refiner_candidate_items "$repos_for_candidates" '{"tech_debt":"required"}' \
+repos_for_candidates='[{"slug":"acme/widgets","tech_debt":[{"source":"tech-debt","ref":"TD26082901"}]}]'
+candidates="$(refiner_candidate_items "$repos_for_candidates" '{"tech-debt":"required"}' \
   "$rmap" '[]' '[]' '[]' "$dmap")"
 assert_eq "decide/TD-disagreement: the refined item is still a Refiner candidate" "1" \
   "$(jq 'length' <<<"$candidates")"
@@ -1138,8 +1138,8 @@ assert_eq "decide/triage-only: ...and still carries the pending decision it was 
 
 # A never-refined, thread-less candidate (no decision pending) must NOT
 # carry `refinement` either — there is nothing in `refinements_map` for it.
-repos_unrefined='[{"slug":"acme/widgets","tech_debt":[{"source":"tech_debt","ref":"TD6"}]}]'
-candidates_unrefined="$(refiner_candidate_items "$repos_unrefined" '{"tech_debt":"required"}' \
+repos_unrefined='[{"slug":"acme/widgets","tech_debt":[{"source":"tech-debt","ref":"TD6"}]}]'
+candidates_unrefined="$(refiner_candidate_items "$repos_unrefined" '{"tech-debt":"required"}' \
   '{}' '[]' '[]' '[]' '{}')"
 assert_eq "decide/never-refined: a never-refined thread-less candidate carries no refinement field" \
   "null" "$(jq -r '.[0].refinement // "null"' <<<"$candidates_unrefined")"
@@ -1154,8 +1154,24 @@ assert_eq "decide/never-refined: a never-refined thread-less candidate carries n
 # Refiner candidate either and withholding it here too would leave no actor
 # able to ever supersede the decision (the Reviewer's and the Enabler's
 # finding on PR #2047, second round).
+#
+# Every `source` and `refinement_policy` key in these fixtures is the
+# hyphenated name the real data carries — `tech-debt`, `merge-conflicts`, the
+# value `scripts/gather-tech-debt.sh` and `lib/candidate-gather.sh` actually
+# write into a band entry — never the underscored *band field* name beside it
+# (`tech_debt`, `merge_conflicts`). The two must not be conflated here: the
+# reachability gate resolves `refinement_policy` from each entry's own
+# `.source` rather than from the band being walked, precisely because the
+# `findings` band carries both `security` and `code-quality` sources, and
+# `refinement_policy`'s schema (`config.schema.json`,
+# `additionalProperties: false`) admits only the hyphenated keys. An
+# underscored fixture is self-consistent enough to go green while asserting
+# the opposite of what production does — under the only schema-valid key
+# (`tech-debt`), an entry sourced `tech_debt` resolves *exempt* and is never
+# withheld at all — so it would hide exactly the band-name-for-source
+# substitution this pass must never make.
 band_before="$(jq -c '.[0].tech_debt' <<<"$repos_for_candidates")"
-td_required='{"tech_debt":"required"}'
+td_required='{"tech-debt":"required"}'
 band_after="$(exclude_decision_pending_items "$band_before" "acme/widgets" "$dmap" "$td_required")"
 assert_eq "decide/TD-disagreement: ...and the item leaves the Co-Ordinator's own band" \
   "0" "$(jq 'length' <<<"$band_after")"
@@ -1178,7 +1194,7 @@ assert_eq "decide/TD-disagreement: ...and the item leaves the Co-Ordinator's own
 # regression uses for the identical class of bug.
 # shellcheck disable=SC2317  # invoked only by the real compute_band_eligibility
 guard_warn() { :; }
-ordered_repos_json='[{"slug":"acme/widgets","tech_debt":[{"source":"tech_debt","ref":"TD26082901"}]}]'
+ordered_repos_json='[{"slug":"acme/widgets","tech_debt":[{"source":"tech-debt","ref":"TD26082901"}]}]'
 blocked_json='[]'
 void_json='[]'
 union_log="$recon_log"
@@ -1202,7 +1218,7 @@ assert_eq "decide/TD-disagreement real-sequence: ...carrying the same pending de
 # withheld from `ordered_repos_json`. Same fixture shape as above but a
 # `merge_conflicts` band and an empty policy (so `merge_conflicts` resolves
 # exempt), proving the per-entry `.source` check, not the band name, decides.
-ordered_repos_json='[{"slug":"acme/widgets","merge_conflicts":[{"source":"merge_conflicts","ref":"pr-1-conflict-abc"}]}]'
+ordered_repos_json='[{"slug":"acme/widgets","merge_conflicts":[{"source":"merge-conflicts","ref":"pr-1-conflict-abc"}]}]'
 recon_log_mc="$tmp_dir/decide-disagreement-mc.jsonl"
 jq -nc '{event:"decision-taken", ts:"2026-09-01T00:00:00Z", repo:"acme/widgets", item:"pr-1-conflict-abc", decision:"rebase onto main", rationale:"r"}' \
   > "$recon_log_mc"
@@ -1217,7 +1233,7 @@ assert_eq "decide/exempt-source real-sequence: an exempt-source decision-pending
 # `tech_debt` fixture, with the same non-exempt `tech_debt: required` policy
 # that withheld it above, is left untouched, since nothing could ever
 # supersede the decision regardless of policy.
-ordered_repos_json='[{"slug":"acme/widgets","tech_debt":[{"source":"tech_debt","ref":"TD26082901"}]}]'
+ordered_repos_json='[{"slug":"acme/widgets","tech_debt":[{"source":"tech-debt","ref":"TD26082901"}]}]'
 union_log="$recon_log"
 refiner_model=''
 refinement_policy_json="$td_required"
