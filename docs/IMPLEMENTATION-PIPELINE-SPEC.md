@@ -2225,7 +2225,8 @@ implements.
    regions" note states for the configuration tables (requirement 1b,
    component 16), for a second kind of region. `scripts/render-toc.sh`
    (component 24) renders it: extracting headings in document order while
-   skipping fenced code blocks, slugging each to GitHub's own heading-anchor
+   skipping fenced code blocks (`lib/markdown-scan.sh`, the one fence-aware
+   reading it shares with requirement 52a), slugging each to GitHub's own heading-anchor
    algorithm — lower-cased, stripped to `[a-z0-9_-]` and space, spaces to
    `-`, with no further collapsing of consecutive hyphens, since GitHub's
    own algorithm does not collapse them either — and de-duplicating repeated
@@ -2243,6 +2244,32 @@ implements.
    `scripts/render-toc.sh --check` on every pull request, failing it the
    moment a heading is added, removed or reworded without a matching
    regeneration, or a target file's marker pair is missing or malformed.
+52a. **The documentation is measured against a fixed benchmark of real
+   questions, not asserted to be good, and the benchmark is never run by the
+   pipeline.** `test/docs-benchmark/questions.jsonl` holds at least 48
+   questions, at least eight for each of six readers (`target-user`,
+   `operator`, `evaluator`, `contributor`, `cycle-agent` and
+   `output-reader`), each with a gold answer, the sources that state it and
+   the facts a correct answer must contain. Every source names a file and a
+   heading of it, a label inside its `## Requirements` section, or a label
+   inside its `## Acceptance checks` section, outside fenced code, and every
+   backticked token of a required fact appears in its gold answer. The
+   sources are checked on every pull request, because the change that moves
+   one is usually documentation-only. `scripts/docs-benchmark.sh` (component
+   24a) asks each question of `claude -p` in a plain directory holding a
+   ref's files, with no `.git` and no path named `*docs-benchmark*`, with a
+   fixed model at a fixed effort, only the Read, Grep and Glob tools, project
+   settings only and the environment variables that change the model's
+   behaviour cleared, and has a separate call grade each answer fact by
+   fact. It records the answer, the grade with the grader's reasoning, the
+   tool calls, the tokens and the wall time, and writes a dated report under
+   `docs/reviews/`. The definitions that decide what a run's figures mean
+   are named as the protocol in `lib/docs-benchmark.sh` and hashed; every
+   report records that hash, a hash of what a run reads of the questions,
+   and the Claude Code version, and two reports are comparable when all
+   three match. No stage, workflow or crontab entry runs the benchmark
+   itself: a stage that launched `claude` would be an agent launching an
+   agent (see "Actors"), and every run spends tokens.
 2. **Stand-down checks.** Each check logs its reason and exits cleanly:
 
    Before check 0 below, and before every other check in this list: which
@@ -24783,7 +24810,12 @@ What exists, and the requirements each part answers to:
    it. Once validated, with no
    arguments, extracts every `##`/`###` heading from `README.md` and
    `docs/IMPLEMENTATION-PIPELINE-SPEC.md` — skipping anything inside a
-   fenced (```` ``` ```` or `~~~`) code block — and rewrites each file's own
+   fenced (```` ``` ```` or `~~~`) code block, as `lib/markdown-scan.sh`'s
+   `markdown_unfenced` reads one for this and for component 24a alike (a
+   fence opens on a run of three or more of either character, however far
+   indented, and closes only on a run of the same character at least as
+   long, a carriage return that ends a line being ignored) — and rewrites
+   each file's own
    `<!-- toc:start -->` … `<!-- toc:end -->` region with a nested bullet
    list linking to GitHub's own heading-anchor slug (lower-cased, stripped
    to `[a-z0-9_-]` and space, spaces to `-`; GitHub does not collapse
@@ -24796,6 +24828,87 @@ What exists, and the requirements each part answers to:
    `scripts/render-config-table.sh` (component 16) follows. `.github/workflows/toc.yml`
    runs `--check` on every pull request and on push to `main`, modelled on
    `config-table.yml`. Must pass `shellcheck`.
+24a. `scripts/docs-benchmark.sh`, `lib/docs-benchmark.sh`,
+   `lib/docs-benchmark-report.sh`, `test/docs-benchmark/questions.jsonl` and
+   `.github/workflows/docs-benchmark.yml` implementing requirement 52a: the
+   documentation benchmark, a developer tool that no pipeline runs. Each
+   record of the questions file carries `id`, `reader`, `question`, `answer`
+   (the gold answer), `sources` (a path with one `heading`, `requirement` or
+   `check` locator) and `must_mention` (the facts a correct answer must
+   contain). `docs_benchmark_check_questions` validates every record, checks
+   that each backticked token of a required fact appears in its gold answer
+   and that no fact begins with a list number, and, given a root, follows
+   every source: reading each file once through `lib/markdown-scan.sh`
+   (component 24), it accepts a `heading` only as a heading of that file
+   word for word, backslashes included, a `requirement` only as a numbered
+   label inside `## Requirements`, and a `check` only as one inside
+   `## Acceptance checks`, so that a component, an actor or a line of fenced
+   code never passes for either. The runner's `--check` follows them against
+   its own checkout, and the workflow runs `--check` on every pull request,
+   merge group and push to `main`, ungated by paths, because the image's
+   test suite does not run for a documentation-only change.
+   Given a Git ref (`main` by default), the runner clones this checkout's
+   `origin` without checking it out, and `docs_benchmark_checkout` checks the
+   ref out sparsely, leaving out every path named `*docs-benchmark*`, then
+   removes `.git`; the answering run therefore sees neither the benchmark nor
+   a status or a history that names it, in a directory whose path does not
+   name it either. The runner asks each question of `claude -p` in that tree,
+   with the fixed model at a fixed effort, the Read, Grep and Glob tools only,
+   no MCP server and project settings only, in an environment from which every
+   `CLAUDE*`, `ANTHROPIC_*MODEL*`, `MAX_THINKING_TOKENS` and
+   `DISABLE_PROMPT_CACHING*` variable is cleared apart from those that
+   signing in and choosing a provider need, and has a second, separate
+   `claude -p` with no tools, launched from an empty directory, grade the
+   answer fact by fact. Each run is started in the background and waited
+   for, so that a Ctrl-C, TERM or HUP stops the run in flight by its process
+   group and then the runner, which exits 128 plus the signal's number.
+   The grader's reply is read whatever prose or braces surround it, in passes
+   linear in its length: the last object in it with a `facts` array is the
+   verdict. Each judgement is matched to its required fact by the fact's text
+   as the grader echoed it, ignoring case, spacing, punctuation and a leading
+   list number, so the order of the reply does not matter; a reply whose
+   echoed facts are not the question's, one each, or whose judgements are not
+   booleans, is recorded as ungraded, never guessed at. `passed` comes from
+   the per-fact judgements; the grader's own overall verdict is kept beside
+   it, and a contradiction between the two is flagged while an absent
+   overall verdict is not. For each question the runner records the answer,
+   the grade with the grader's reasoning, the tool calls, the input and
+   output tokens (`metering_fields`, component 3a's `lib/metering.sh`) and
+   the wall time (`$EPOCHREALTIME`, read with either decimal mark). An
+   answer or a grading stopped at its time cap, whether by TERM (exit 124)
+   or by KILL after it (exit 137 at or past the cap), is recorded as
+   ungraded and says so, and any other failure keeps its exit status. The
+   runner names its run directory when it starts and writes the run's
+   description before the first question, so a run stopped part-way can be
+   rendered, and its report says how far it got. A full run writes
+   `docs/reviews/<date>-docs-benchmark.md` with the raw records beside it as
+   `.jsonl`, a later full run on the same day takes the suffix `-2`, `-3`
+   and so on, and a `--only <id>` run writes
+   `<date>-docs-benchmark-only-<id>.md`, so that it never takes the day's
+   full-run name. The report is rendered by `docs_benchmark_render_report`
+   from the run's records and its description, which the run directory
+   keeps; a report that cannot be written exits 3, names both files, and can
+   be rendered from them again. `--dry-run` prints every question and the
+   commands it would run, and launches nothing. `--calibrate` grades each
+   question's own gold answer against its own required facts, clones
+   nothing, writes no report, and exits 1 when any gold answer fails. A run
+   that needs a tool that is not on `PATH` (`jq`, `claude`, `timeout`,
+   `sha256sum` or `git`) exits 2 before anything is cloned, asked or
+   written. The protocol (the models and their efforts, the argument lists
+   and the cleared environment, the prompts, the time caps, the checkout,
+   the reading of each run's stream, the classification of an unanswered
+   question and the record) is named by `DOCS_BENCHMARK_PROTOCOL_VARIABLES`
+   and `DOCS_BENCHMARK_PROTOCOL_FUNCTIONS`, `stage_result_line` and
+   `metering_fields` among them, and `docs_benchmark_protocol_hash` hashes
+   those definitions as Bash prints them, so that comments, layout, the
+   question check, the report and the rest of the two borrowed libraries
+   leave the hash alone. The questions hash covers each record's `id`,
+   `reader`, `question`, `answer` and `must_mention`, in id order, and not
+   its `sources`, which no run reads. Each report records both hashes and the
+   Claude Code version, and is comparable with another when all three match.
+   `DOCS_BENCHMARK_QUESTIONS`, `DOCS_BENCHMARK_REPORT_DIR` and
+   `DOCS_BENCHMARK_SOURCE` let the test run the whole script against a stub
+   `claude`. Acceptance check 52a. Must pass `shellcheck`.
 
 ## Acceptance checks
 
@@ -31035,6 +31148,64 @@ oblige anyone to edit a test.
     region that no longer exists (or, in the reversed case, silently
     corrupted); `test/render-toc.test.sh` exercises all of these
     marker-validation cases against the real script.
+52a. **The documentation benchmark's questions hold, and its runner
+    measures what it says without launching anything in the test
+    (requirement 52a, components 24 and 24a).**
+    `scripts/docs-benchmark.sh --check` exits 0 against this checkout, as
+    `.github/workflows/docs-benchmark.yml` runs it on every pull request,
+    and `test/docs-benchmark.test.sh` passes:
+    - `test/docs-benchmark/questions.jsonl` holds at least 48 records, at
+      least eight per reader, each well formed, with each fact's backticked
+      tokens in its gold answer. The validator rejects each defect it exists
+      for, against a fixture tree, including a component or actor cited as a
+      requirement, a label inside an indented fence, a fact that begins with
+      a list number and a locator holding a tab, and finds a heading that
+      holds a backslash; `--check` passes and fails against the same tree.
+    - The protocol hash moves when a time cap, an effort, the classification
+      of an unanswered question or the borrowed token count changes, and not
+      for a comment, a change to the question check or a change elsewhere in
+      a borrowed library. The protocol's lists hold every function and
+      variable that their functions use, and every function and variable of
+      the library is on them or deliberately off them. The questions hash
+      ignores sources and the order of the records.
+    - A checkout leaves out every benchmark path, naming each, and leaves no
+      `.git`; the runs lose every variable that changes the model's
+      behaviour and keep those that signing in needs.
+    - The grader's verdict is read from a recorded grading transcript and
+      from variants of it: prose with braces around the object, an unclosed
+      brace before it, a worked example before it, facts in another order
+      (matched by text, with the missing fact attributed correctly) or
+      echoed with list numbers, echoed facts that are not the question's
+      (ungraded), an absent overall verdict (not an inconsistency), a reply
+      with no JSON, a 48 KB reply full of braces (read within 30 seconds),
+      an error result and a torn stream. A run stopped at its cap by TERM,
+      or by KILL after it, is said to have been; one killed before its cap
+      is not.
+    - The report renders from canned records with each table row's column
+      count matching its header, a pass rate over graded questions only,
+      the comparability rule with the Claude Code version in it, and the
+      ungraded and inconsistency sections; the description of a run that
+      did not finish renders with how far it got.
+    - `--dry-run` lists every question and launches and writes nothing.
+    - The whole script, run against a stub `claude` and a local source,
+      asks nothing in a tree that holds a `*docs-benchmark*` path or a
+      `.git` or whose path names the benchmark, nor with a cleared variable
+      set; records a pass, a fail naming its missing fact, and an answer and
+      a grading each stopped at its cap; exits 1 for the questions it could
+      not grade; names a second full run `-2` and a one-question run
+      `-only-<id>`; exits 3 without claiming success when the report cannot
+      be written, naming files from which it renders again; on a Ctrl-C to
+      its process group exits 130 at once, stops the question in flight,
+      asks nothing more and leaves records that render as unfinished; exits
+      2 and writes nothing when `timeout`, `sha256sum` or `git` is missing;
+      and with `--calibrate` exits 1 naming the fact a gold answer lacks.
+
+    `test/markdown-scan.test.sh` passes: `markdown_unfenced` keeps a tilde
+    line inside a backtick fence (and the reverse) or a shorter run inside a
+    longer one as content, treats an indented fence as a fence and a
+    backtick run with another backtick on its line as inline code, runs an
+    unterminated fence to the end of the file, and closes a fence in a file
+    with CRLF line endings.
 
 57. **Node health, readiness and liveness (requirements 57-60, issue #608).**
     `test/node-health.test.sh` passes: `lib/node-health.sh`'s

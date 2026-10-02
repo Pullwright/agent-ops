@@ -46,39 +46,24 @@ gh_slug() {
   echo "$text"
 }
 
+# shellcheck source=lib/markdown-scan.sh
+. "$repo_root/lib/markdown-scan.sh"
+
 # Extract headings from a file: lines starting with ## or ###, skipping anything
-# inside fenced code blocks (``` or ~~~). Outputs "level heading_text" for each.
+# inside fenced code blocks, which lib/markdown-scan.sh's `markdown_unfenced`
+# recognises the same way for this and for the documentation benchmark.
+# Outputs "level heading_text" for each.
 extract_headings() {
-  local file="$1"
-  local in_code=0
-  local fence_marker=""
+  local file="$1" line
 
   while IFS= read -r line || [[ -n "$line" ]]; do
-    # Detect code fence start/end (``` or ~~~)
-    if [[ "$line" == \`\`\`* ]] || [[ "$line" == \~\~\~* ]]; then
-      if [[ -z "$fence_marker" ]]; then
-        fence_marker=$(echo "$line" | cut -c1-3)
-        in_code=1
-      elif [[ "$line" == "$fence_marker"* ]]; then
-        in_code=0
-        fence_marker=""
-      fi
-      continue
-    fi
-
-    if (( in_code )); then
-      continue
-    fi
-
     # Extract headings: ## (level 2) or ### (level 3), skip #
     if [[ "$line" == "### "* ]]; then
-      local heading="${line#\#\#\# }"
-      echo "3 $heading"
+      echo "3 ${line#\#\#\# }"
     elif [[ "$line" == "## "* ]]; then
-      local heading="${line#\#\# }"
-      echo "2 $heading"
+      echo "2 ${line#\#\# }"
     fi
-  done < "$file"
+  done < <(markdown_unfenced "$file")
 }
 
 # Generate ToC markdown from extracted headings. Anchors are de-duplicated

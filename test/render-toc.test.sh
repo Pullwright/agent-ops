@@ -44,8 +44,9 @@ assert_contains() {
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-mkdir -p "$tmp/scripts" "$tmp/docs"
+mkdir -p "$tmp/scripts" "$tmp/docs" "$tmp/lib"
 cp "$SCRIPT_DIR/scripts/render-toc.sh" "$tmp/scripts/render-toc.sh"
+cp "$SCRIPT_DIR/lib/markdown-scan.sh" "$tmp/lib/markdown-scan.sh"
 chmod +x "$tmp/scripts/render-toc.sh"
 
 # --- Fixture docs: README.md carries a deliberately stale ToC region (a
