@@ -1544,6 +1544,11 @@ _refiner_apply_priority() {
   fi
 }
 
+# _refiner_process_one_verdict VERDICT_JSON CLAIMED_JSON POOL_VAR_NAME
+# `POOL_VAR_NAME` is a variable *name*, not a value: requirement 6c's
+# per-engagement label pool, which `_refiner_apply_verdicts` owns and this
+# function only passes through to `_refiner_apply_labels` (agent-ops#1276).
+# See `_refiner_apply_labels`'s own header for the whole chain.
 _refiner_process_one_verdict() {
   local ex="$1" claimed_json="$2" labels_pool_name="$3"
   local e_repo e_item verdict e_reason claimed_entry e_source outcome extra

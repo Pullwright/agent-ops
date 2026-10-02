@@ -19343,14 +19343,17 @@ implements.
     `labels_mint`'s own; the per-*engagement* cap of 10 is enforced here,
     because only the Refiner processes more than one item per engagement — a
     `local` (`_refiner_labels_engagement_remaining`) `_refiner_apply_verdicts`
-    declares once before its verdict loop starts and every call updates by
-    dynamic scope, shared across every item the engagement claims rather than
-    reset per item. Once the pool is spent, a further item's own suggestions
-    are refused `engagement-cap` — a `labels-minted` event still fires for it,
-    `refused` naming every entry that reason, `created`/`applied` both
-    empty — without a `labels_mint` call even being attempted, since a call
-    given a zero-or-negative cap could only ever refuse everything it was
-    handed.
+    declares once before its verdict loop starts and threads by name through
+    `_refiner_process_one_verdict` to `_refiner_apply_labels`, which binds it
+    with a `local -n` nameref and updates it in place — the pool's name is an
+    explicit parameter of both functions rather than a dynamic-scope read
+    (agent-ops#1276) — shared across every item the engagement claims rather
+    than reset per item. Once the pool is spent, a further item's own
+    suggestions are refused `engagement-cap` — a `labels-minted` event still
+    fires for it, `refused` naming every entry that reason,
+    `created`/`applied` both empty — without a `labels_mint` call even being
+    attempted, since a call given a zero-or-negative cap could only ever
+    refuse everything it was handed.
 
 ### The Approver
 
