@@ -6,10 +6,13 @@
 #
 # Sourced by scripts/docs-benchmark.sh and by test/docs-benchmark.test.sh.
 # Everything that decides whether two runs are comparable lives in this file:
-# the two models, the two argument lists, and the two prompts. The runner
-# records this file's hash in every report, so two reports are comparable
-# exactly when that hash and the questions file's hash both match. Change any
-# of them only when you mean to start a new series of measurements.
+# the two models, the two argument lists, the two prompts, the two time caps,
+# the rule for what is removed from the clone before any question is asked,
+# and the reading of the grader's reply. The runner records this file's hash
+# in every report, so two reports are comparable exactly when that hash and
+# the questions file's hash both match. Change any of them only when you mean
+# to start a new series of measurements. The report's layout is not part of
+# the protocol, and lives apart in lib/docs-benchmark-report.sh.
 #
 # The benchmark is never run by a pipeline stage. A stage that launched
 # `claude` would be an agent launching an agent, which the specification's
@@ -21,6 +24,8 @@ DOCS_BENCHMARK_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$DOCS_BENCHMARK_LIB_DIR/stage-run.sh"
 # shellcheck source=lib/metering.sh
 . "$DOCS_BENCHMARK_LIB_DIR/metering.sh"
+# shellcheck source=lib/markdown-scan.sh
+. "$DOCS_BENCHMARK_LIB_DIR/markdown-scan.sh"
 
 # The answering model is a mid-tier one on purpose: a model strong enough to
 # find anything eventually would hide the difference between documents that
@@ -28,8 +33,57 @@ DOCS_BENCHMARK_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOCS_BENCHMARK_MODEL="claude-sonnet-5"
 DOCS_BENCHMARK_GRADER_MODEL="claude-opus-5"
 
+# How long an answering run and a grading run may take before `timeout` stops
+# them. A run stopped at its cap is recorded as ungraded, saying so, so a
+# lower cap would change the score without the documentation changing. (Read
+# by scripts/docs-benchmark.sh.)
+# shellcheck disable=SC2034
+DOCS_BENCHMARK_ANSWER_TIMEOUT_SEC=900
+# shellcheck disable=SC2034
+DOCS_BENCHMARK_GRADER_TIMEOUT_SEC=300
+
+# Every path in the clone whose name matches this is removed before the first
+# question: the questions with their gold answers, every earlier report, and
+# the runner, library and test that quote them. Without it an answer could be
+# found by grepping for the benchmark itself.
+DOCS_BENCHMARK_STRIP_PATTERN='*docs-benchmark*'
+
 # The six readers the questions are written for, in report order.
 DOCS_BENCHMARK_READERS=(target-user operator evaluator contributor cycle-agent output-reader)
+
+# docs_benchmark_readers_json
+# The readers as one JSON array, for the validator and the report.
+docs_benchmark_readers_json() {
+  printf '%s\n' "${DOCS_BENCHMARK_READERS[@]}" | jq -Rsc 'split("\n") | map(select(length > 0))'
+}
+
+# docs_benchmark_elapsed T0 T1
+# Print T1 - T0 in seconds, for two `$EPOCHREALTIME` readings. Bash renders
+# that variable with the locale's decimal mark, so in a comma-decimal locale it
+# reads `1790937521,381346`; put into a jq program as it stands, the comma is
+# jq's comma operator and the "difference" is three numbers. Normalised here,
+# as scripts/publish-dashboard-launcher.sh does for the same reason. Prints
+# `null` for a reading it cannot use.
+docs_benchmark_elapsed() {
+  jq -n --argjson a "${1/,/.}" --argjson b "${2/,/.}" '$b - $a' 2>/dev/null || printf 'null\n'
+}
+
+# docs_benchmark_strip_clone DIR
+# Remove from DIR every path whose name matches DOCS_BENCHMARK_STRIP_PATTERN,
+# outside `.git`, and print each one removed, relative to DIR. The matches are
+# listed in full before anything is removed, and a matching directory is not
+# descended into, so nothing is walked after it has gone.
+docs_benchmark_strip_clone() {
+  local dir="$1" path
+  local -a found=()
+  while IFS= read -r -d '' path; do
+    found+=("$path")
+  done < <(find "$dir" -path "$dir/.git" -prune -o -name "$DOCS_BENCHMARK_STRIP_PATTERN" -prune -print0)
+  for path in "${found[@]}"; do
+    rm -rf "$path"
+    printf '%s\n' "${path#"$dir"/}"
+  done
+}
 
 # The answering run. Reading, grep and glob are the only tools, and no
 # network: `--tools` removes every other built-in tool (Bash, WebFetch and
@@ -107,8 +161,9 @@ CANDIDATE>>>
 Reply with one JSON object and nothing else, in this shape:
 {"facts": [{"fact": "<the required fact, verbatim>", "present": true, "reasoning": "<one or two sentences>"}], "verdict": "pass", "reasoning": "<two or three sentences on the answer as a whole>"}
 
-List the facts in the order given above, one entry for each. "verdict" is
-"pass" when every fact is present and "fail" otherwise.
+List the facts in the order given above, one entry for each, and copy each
+fact's text exactly as it is given. "verdict" is "pass" when every fact is
+present and "fail" otherwise.
 EOF
 }
 
@@ -167,27 +222,44 @@ docs_benchmark_run_record() {
 #    grader_verdict, verdict_consistent, reasoning}
 #   {status: "ungraded", error, raw}
 #
-# `passed` is derived from the per-fact judgements, which are the grading;
-# the grader's own summary verdict is kept beside it, and
-# `verdict_consistent` says whether the two agree. The reply is accepted as
-# bare JSON, inside a fenced block, or with prose around it; anything that
-# does not give one boolean `present` for each required fact, in order, is
-# ungraded rather than guessed at, and `raw` keeps what the grader said.
+# The reply is accepted as bare JSON, inside a fenced block, or with prose
+# around it, braces in the prose included: every slice of the reply from an
+# opening brace to the furthest closing brace that still parses is a
+# candidate, and the last candidate carrying a `facts` array is the verdict,
+# so a worked example before it or a stray brace after it costs nothing.
+#
+# Each judgement is matched to its required fact by the text the grader
+# echoed, compared without case, spacing or punctuation, and not by position:
+# a reply that lists the facts in another order is still read correctly, and
+# one whose echoed facts are not exactly the question's, one each, is
+# ungraded rather than guessed at. So is any judgement without a boolean
+# `present`. `raw` keeps what the grader said.
+#
+# `passed` is derived from the per-fact judgements, which are the grading.
+# The grader's own overall verdict is kept beside it: `verdict_consistent` is
+# true or false when that verdict is "pass" or "fail", and null when the
+# grader gave none, which is not a disagreement.
 docs_benchmark_parse_verdict() {
   local stream_file="$1" must_mention="$2" line
   line="$(stage_result_line "$stream_file")" || line=""
   jq -nc --arg line "$line" --argjson must "$must_mention" '
     def ungraded($why; $raw): {status: "ungraded", error: $why, raw: $raw};
-    def extract:
+    def norm: ascii_downcase | gsub("[^a-z0-9]+"; " ") | sub("^ +"; "") | sub(" +$"; "");
+    # Every object some slice of the text parses to, by start position. The
+    # text is handled as code points, so offsets cannot drift on multi-byte
+    # characters whatever the jq version.
+    def objects_in:
+      explode as $c
+      | [range(0; $c | length) | select($c[.] == 125)] as $closes
+      | range(0; $c | length) | select($c[.] == 123) as $i
+      | first(($closes | reverse)[] | select(. > $i) as $j
+              | ($c[$i:$j + 1] | implode | try fromjson catch null)
+              | select(type == "object"));
+    def reply:
       (try fromjson catch null) as $whole
       | if ($whole | type) == "object" then $whole
-        else
-          # From the first brace to the last, by pattern rather than by
-          # offset, so text with multi-byte characters before the object
-          # cannot shift the slice. A reply with no brace at all matches
-          # nothing, and `first` of nothing is null rather than no output.
-          ([capture("(?<object>\\{[\\s\\S]*\\})")] | first) as $m
-          | if $m == null then null else ($m.object | try fromjson catch null) end
+        else [objects_in] as $all
+          | ([$all[] | select((.facts | type) == "array")] | last) // ($all | last)
         end;
     ($line | try fromjson catch null) as $e
     | if ($e | type) != "object" then ungraded("no result event in the grading stream"; null)
@@ -195,7 +267,7 @@ docs_benchmark_parse_verdict() {
       elif ($e.result | type) != "string" then ungraded("the grading run returned no text"; null)
       else
         ($e.result) as $text
-        | ($text | extract) as $v
+        | ($text | reply) as $v
         | if ($v | type) != "object" then ungraded("the grader did not reply with a JSON object"; $text)
           elif ($v.facts | type) != "array" then ungraded("the grader reply has no facts array"; $text)
           elif ($v.facts | length) != ($must | length) then
@@ -203,20 +275,28 @@ docs_benchmark_parse_verdict() {
           elif ([$v.facts[] | select((type != "object") or ((.present | type) != "boolean"))] | length) > 0 then
             ungraded("a fact in the grader reply has no boolean present"; $text)
           else
-            ([$v.facts[] | select(.present)] | length) as $present
-            | ($present == ($must | length)) as $passed
-            | {
-                status: "graded",
-                passed: $passed,
-                facts_present: $present,
-                facts_total: ($must | length),
-                facts: [range(0; $must | length) as $i
-                        | {fact: $must[$i], present: $v.facts[$i].present,
-                           reasoning: ($v.facts[$i].reasoning // null)}],
-                grader_verdict: ($v.verdict // null),
-                verdict_consistent: (($v.verdict == "pass") == $passed),
-                reasoning: ($v.reasoning // null)
-              }
+            ($must | map(norm)) as $want
+            | ([$v.facts[] | (.fact // "") | tostring | norm]) as $got
+            | if ($got | sort) != ($want | sort) then
+                ungraded("the facts the grader echoed are not the question'"'"'s required facts"; $text)
+              else
+                [range(0; $must | length) as $i
+                 | $v.facts[$got | index($want[$i])]
+                 | {fact: $must[$i], present: .present, reasoning: (.reasoning // null)}] as $facts
+                | ([$facts[] | select(.present)] | length) as $present
+                | ($present == ($must | length)) as $passed
+                | {
+                    status: "graded",
+                    passed: $passed,
+                    facts_present: $present,
+                    facts_total: ($must | length),
+                    facts: $facts,
+                    grader_verdict: ($v.verdict // null),
+                    verdict_consistent: (if ($v.verdict == "pass" or $v.verdict == "fail")
+                                         then (($v.verdict == "pass") == $passed) else null end),
+                    reasoning: ($v.reasoning // null)
+                  }
+              end
           end
       end'
 }
@@ -227,21 +307,32 @@ docs_benchmark_parse_verdict() {
 # fields (id, reader, question, answer, sources, must_mention); `id` is
 # `<reader>-NN` and unique; `reader` is one of DOCS_BENCHMARK_READERS; each
 # source is `{path}` plus exactly one of `heading`, `requirement` or `check`;
-# `must_mention` is a non-empty list of non-empty strings.
+# `must_mention` is a non-empty list of distinct, non-empty facts.
+#
+# The gold answer must also bear out its own required facts as far as can be
+# checked without a model: every backticked token in a fact (a label, a
+# command, a setting) must appear in the record's answer. A fact the gold
+# answer does not state makes the question one no candidate can pass, which
+# would lower every score for a reason that has nothing to do with the
+# documentation. The runner's `--calibrate` is the thorough form, grading
+# each gold answer against its own facts.
 #
 # Given ROOT, each source is also followed: its path must be a file under
 # ROOT, a `heading` must be a Markdown heading of that file word for word, a
-# `requirement` label must begin a list item outside the file's
-# `## Acceptance checks` section, and a `check` label one inside it. The
-# minimum counts (at least 48 records, at least eight per reader) are the
-# benchmark's own property and are asserted by its test, not here, so the
-# runner can still check a partial file.
+# `requirement` label must begin a numbered item inside the file's
+# `## Requirements` section, and a `check` label one inside its
+# `## Acceptance checks` section. Anything inside fenced code is not a heading
+# or a label (lib/markdown-scan.sh). Each file is read once, however many
+# sources name it. The minimum counts (at least 48 records, at least eight per
+# reader) are the benchmark's own property and are asserted by its test, not
+# here, so the runner can still check a partial file.
 docs_benchmark_check_questions() {
-  local file="$1" root="${2:-}" readers problems sources path kind value
+  local file="$1" root="${2:-}" problems sources path kind value id entry
   local -i bad=0
-  readers="$(printf '%s\n' "${DOCS_BENCHMARK_READERS[@]}" | jq -R . | jq -sc .)"
-  problems="$(jq -nr -R --argjson readers "$readers" '
+  local -A index=() indexed=()
+  problems="$(jq -nr -R --argjson readers "$(docs_benchmark_readers_json)" '
     def str: type == "string" and length > 0;
+    def norm: ascii_downcase | gsub("[^a-z0-9]+"; " ") | sub("^ +"; "") | sub(" +$"; "");
     [inputs] | to_entries | map(select(.value | test("\\S")))
     | (map((.key + 1) as $n
            | .value | (try fromjson catch null)
@@ -264,7 +355,15 @@ docs_benchmark_check_questions() {
               ( if (.answer | str | not) then "\($id): answer is empty or not a string" else empty end ),
               ( if (.must_mention | type) != "array" or (.must_mention | length) == 0 then "\($id): must_mention is not a non-empty list"
                 elif ([.must_mention[] | select(str | not)] | length) > 0 then "\($id): must_mention holds an empty or non-string fact"
-                else empty end ),
+                elif (.must_mention | map(norm) | unique | length) != (.must_mention | length) then "\($id): must_mention holds two facts that read the same"
+                elif (.answer | str | not) then empty
+                else
+                  .must_mention | to_entries[]
+                  | (.key + 1) as $n
+                  | [.value | scan("`([^`]+)`") | .[0]][]
+                  | select(. as $token | $r.answer | contains($token) | not)
+                  | "\($id): fact \($n) names `\(.)`, which the gold answer does not contain"
+                end ),
               ( if (.sources | type) != "array" or (.sources | length) == 0 then "\($id): sources is not a non-empty list"
                 else
                   .sources[]
@@ -277,7 +376,7 @@ docs_benchmark_check_questions() {
                     else empty end
                 end )
           end ),
-      ( [$records[] | select(type == "object") | .id | select(type == "string")]
+      ( [$records[] | .id | select(type == "string")]
         | group_by(.) | map(select(length > 1) | "\(.[0]): duplicate id")[] )' <"$file")" || {
     printf '%s: cannot be read as lines of JSON\n' "$file"
     return 1
@@ -304,22 +403,34 @@ docs_benchmark_check_questions() {
       bad=1
       continue
     fi
-    if ! DB_KIND="$kind" DB_VALUE="$value" awk '
-        BEGIN { kind = ENVIRON["DB_KIND"]; want = ENVIRON["DB_VALUE"] }
-        /^```|^~~~/ { fenced = !fenced; next }
-        fenced { next }
+    if [[ -z "${indexed[$path]:-}" ]]; then
+      # One line per heading and per numbered label, the label tagged with
+      # the `##` section it sits in.
+      while IFS= read -r entry; do
+        index["$path"$'\t'"$entry"]=1
+      done < <(markdown_unfenced "$root/$path" | awk '
         /^#+ / {
           heading = $0; sub(/^#+ +/, "", heading); sub(/[ \t]+$/, "", heading)
-          if (kind == "heading" && heading == want) { found = 1; exit }
-          if ($0 ~ /^## /) in_checks = (heading == "Acceptance checks")
+          print "heading\t" heading
+          if ($0 ~ /^## /) section = heading
           next
         }
-        kind != "heading" {
-          item = $0; sub(/^ */, "", item)
-          if (index(item, want ". ") == 1 && (kind == "check") == in_checks) { found = 1; exit }
-        }
-        END { exit !found }' "$root/$path"; then
-      printf '%s: %s %s not found in %s\n' "$id" "$kind" "$value" "$path"
+        {
+          item = $0; sub(/^ +/, "", item)
+          if (match(item, /^[A-Za-z]*[0-9][0-9A-Za-z.-]*\. /)) {
+            label = substr(item, 1, RLENGTH - 2)
+            if (section == "Requirements") print "requirement\t" label
+            else if (section == "Acceptance checks") print "check\t" label
+          }
+        }')
+      indexed[$path]=1
+    fi
+    if [[ -z "${index["$path"$'\t'"$kind"$'\t'"$value"]:-}" ]]; then
+      case "$kind" in
+        heading) printf '%s: heading %s not found in %s\n' "$id" "$value" "$path" ;;
+        requirement) printf '%s: requirement %s not found in the Requirements section of %s\n' "$id" "$value" "$path" ;;
+        check) printf '%s: check %s not found in the Acceptance checks section of %s\n' "$id" "$value" "$path" ;;
+      esac
       bad=1
     fi
   done <<<"$sources"

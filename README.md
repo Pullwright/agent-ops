@@ -2932,23 +2932,29 @@ tokens and seconds each answer took.
 
 ```bash
 scripts/docs-benchmark.sh --dry-run            # list each question and its commands; launch nothing
+scripts/docs-benchmark.sh --calibrate          # grade each gold answer against its own facts
 scripts/docs-benchmark.sh --only operator-01   # one question, against main
 scripts/docs-benchmark.sh main                 # every question, against main
 ```
 
 Each question is answered by headless Claude Code in a fresh clone of the ref,
 with a fixed model and only the Read, Grep and Glob tools, and a second call
-grades the answer fact by fact. The report is written to
-`docs/reviews/<date>-docs-benchmark.md`, with the raw records beside it; its
-header carries two hashes, and two reports are comparable when both match.
-Every run spends tokens, so nothing runs it automatically — not CI, not the
-crontab, and never a pipeline stage, where launching `claude` would be an
-agent launching an agent. Run it by hand or from an interactive session.
+grades the answer fact by fact. A full run's report is written to
+`docs/reviews/<date>-docs-benchmark.md`, with the raw records beside it (a
+second full run on the same day takes the suffix `-2`), and a one-question
+run's to `<date>-docs-benchmark-only-<id>.md`. The report's header carries two
+hashes, and two reports are comparable when both match. Every run spends
+tokens, so nothing runs it automatically — not CI, not the crontab, and never
+a pipeline stage, where launching `claude` would be an agent launching an
+agent. Run it by hand or from an interactive session.
 
 When a document moves, the benchmark's test fails until the questions'
 `sources` follow it. When the product changes so that a gold answer is no
-longer true, correct the question in the same pull request. Never edit a
-document to make a question easier to answer.
+longer true, correct the question in the same pull request, and run
+`--calibrate` after any edit to the questions: a question whose own gold
+answer fails it would lower every score for a reason that has nothing to do
+with the documentation. Never edit a document to make a question easier to
+answer.
 
 ### Trying a change on a real node before it merges
 
