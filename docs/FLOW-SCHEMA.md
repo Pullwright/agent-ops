@@ -626,7 +626,15 @@ revisable in this one place rather than scattered across every emission site:
   the other three in what it measures: not this node's own live free
   disk/memory, but the *declared* sum of every running container's own
   ceiling on the host it shares with its siblings — a structural check, only
-  ever raised when `host_budget_enforce` is configured on.
+  ever raised when `host_budget_enforce` is configured on. `roll-pending`
+  (agent-ops#1102 option 2) is the fifth: a cycle that reacquired `lock.json`
+  under a still-live `roll-pending.json` marker and found watchtower actually
+  polling and being turned away (`chain_updater_should_standdown`,
+  `lib/chain.sh`) idles rather than running its own stages underneath the
+  marker's unconditional override — the external fact stopping it is the
+  pending image roll itself, capped at one stand-down per marker
+  (`chain_roll_standdown_available`) so a wrong verdict cannot idle a node
+  indefinitely.
 - A cycle-ending `stand-down`/`none-selected` that a peer's own claim
   explains (`raced`, `pre-claimed`, and this pipeline's own
   draining-with-live-claims stand-down) is `idle-with-demand`/
@@ -651,13 +659,13 @@ this document.
 
 ### The closed cause vocabulary
 
-Fifteen tokens, each mapping to exactly one state — `lib/node-time-state.sh`'s
+Sixteen tokens, each mapping to exactly one state — `lib/node-time-state.sh`'s
 `node_time_state_for_cause` is the one function that knows the mapping:
 
 | Cause | State |
 | --- | --- |
 | `disabled-node`, `disabled-fleet` | `down` |
-| `usage-limit`, `github-budget`, `unreachable`, `unauthorized`, `disk-low`, `disk-full`, `memory-low`, `host-overcommit` | `externally-blocked` |
+| `usage-limit`, `github-budget`, `unreachable`, `unauthorized`, `disk-low`, `disk-full`, `memory-low`, `host-overcommit`, `roll-pending` | `externally-blocked` |
 | `back-pressure`, `awaiting-tick`, `peer-claimed`, `coordinator-declined` | `idle-with-demand` |
 | `no-demand` | `idle-without-demand` |
 

@@ -102,6 +102,8 @@ assert_eq "memory-low maps to externally-blocked" \
   "externally-blocked	memory-low" "$(node_time_state_for_cause memory-low)"
 assert_eq "host-overcommit maps to externally-blocked" \
   "externally-blocked	host-overcommit" "$(node_time_state_for_cause host-overcommit)"
+assert_eq "roll-pending maps to externally-blocked" \
+  "externally-blocked	roll-pending" "$(node_time_state_for_cause roll-pending)"
 assert_eq "back-pressure maps to idle-with-demand" \
   "idle-with-demand	back-pressure" "$(node_time_state_for_cause back-pressure)"
 assert_eq "raced translates to idle-with-demand/peer-claimed (never renamed on its own event)" \
@@ -309,15 +311,18 @@ cat > "$eb_fixture" <<'EOF'
 {"ts":"2026-05-02T00:00:00Z","node":"n1","event":"node-state","state":"externally-blocked","cause":"usage-limit"}
 {"ts":"2026-05-02T00:10:00Z","node":"n1","event":"node-state","state":"externally-blocked","cause":"disk-full"}
 {"ts":"2026-05-02T00:20:00Z","node":"n1","event":"node-state","state":"externally-blocked"}
-{"ts":"2026-05-02T00:30:00Z","node":"n1","event":"node-state","state":"overhead"}
+{"ts":"2026-05-02T00:30:00Z","node":"n1","event":"node-state","state":"externally-blocked","cause":"roll-pending"}
+{"ts":"2026-05-02T00:40:00Z","node":"n1","event":"node-state","state":"overhead"}
 EOF
 eb_report="$(fold_of "$eb_fixture")"
-assert_eq "externally-blocked sums all three stretches" \
-  "1800" "$(jq -c '.by_node.n1["externally-blocked"]' <<<"$eb_report")"
+assert_eq "externally-blocked sums all four stretches" \
+  "2400" "$(jq -c '.by_node.n1["externally-blocked"]' <<<"$eb_report")"
 assert_eq "usage-limit is isolated from the other externally-blocked causes" \
   "600" "$(jq -c '.externally_blocked_by_cause["usage-limit"]' <<<"$eb_report")"
 assert_eq "disk-full is counted separately from usage-limit" \
   "600" "$(jq -c '.externally_blocked_by_cause["disk-full"]' <<<"$eb_report")"
+assert_eq "roll-pending (agent-ops#1102 option 2) is counted separately too, not folded into unspecified" \
+  "600" "$(jq -c '.externally_blocked_by_cause["roll-pending"]' <<<"$eb_report")"
 assert_eq "a missing cause files under unspecified, never dropped or guessed at" \
   "600" "$(jq -c '.externally_blocked_by_cause.unspecified' <<<"$eb_report")"
 assert_eq "  ... and the per-node split agrees" \

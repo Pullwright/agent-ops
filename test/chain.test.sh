@@ -206,6 +206,93 @@ rm -f "$tmp_state/roll-pending.json"
 chain_clear_landed_roll_pending "$tmp_state" '{"status":"current"}'
 assert_eq "no marker to clear is not an error" "0" "$?"
 
+# --- chain_clear_landed_roll_pending also clears the stand-down counter
+#     (agent-ops#1102 option 2) once the roll has landed --------------------
+
+chain_write_roll_pending "$tmp_state" 15
+chain_roll_standdown_record "$tmp_state"
+chain_clear_landed_roll_pending "$tmp_state" '{"status":"behind","checked_at":"2026-08-30T00:00:00Z"}'
+assert_eq "a still-'behind' verdict leaves the stand-down counter in place too" "1" \
+  "$(test -f "$tmp_state/roll-standdown.json" && echo 1 || echo 0)"
+
+chain_clear_landed_roll_pending "$tmp_state" '{"status":"current","checked_at":"2026-08-30T00:00:00Z"}'
+assert_eq "a 'current' verdict clears the stand-down counter alongside the marker" "0" \
+  "$(test -f "$tmp_state/roll-standdown.json" && echo 1 || echo 0)"
+
+# --- chain_roll_pending_live (agent-ops#1102 option 2) -----------------------
+# The identical parse watchtower-pre-update.sh's own roll_pending_allow uses:
+# a live, unexpired `until` is the only thing that counts.
+
+rm -f "$tmp_state/roll-pending.json"
+assert_eq "no marker at all is not live" "1" \
+  "$(chain_roll_pending_live "$tmp_state" && echo 0 || echo 1)"
+
+jq -nc --arg u "$(date -u -d '+15 minutes' +%Y-%m-%dT%H:%M:%SZ)" '{until: $u}' > "$tmp_state/roll-pending.json"
+assert_eq "an 'until' 15 minutes out is live" "0" \
+  "$(chain_roll_pending_live "$tmp_state" && echo 0 || echo 1)"
+
+jq -nc --arg u "$(date -u -d '-1 minutes' +%Y-%m-%dT%H:%M:%SZ)" '{until: $u}' > "$tmp_state/roll-pending.json"
+assert_eq "an 'until' one minute in the past is not live" "1" \
+  "$(chain_roll_pending_live "$tmp_state" && echo 0 || echo 1)"
+
+jq -nc '{until: "not a timestamp"}' > "$tmp_state/roll-pending.json"
+assert_eq "an unparseable 'until' reads as epoch 0, i.e. not live" "1" \
+  "$(chain_roll_pending_live "$tmp_state" && echo 0 || echo 1)"
+
+rm -f "$tmp_state/roll-pending.json"
+
+# --- chain_updater_should_standdown (agent-ops#1102 option 2's Guard A) -----
+# Idling fixes only one condition: watchtower actually invoking the hook and
+# being turned away right now.
+
+assert_eq "a 'deferring' verdict says stand down" "0" \
+  "$(chain_updater_should_standdown '{"status":"deferring","at":"2026-08-30T00:00:00Z","seconds":60}' && echo 0 || echo 1)"
+assert_eq "a 'stuck' verdict with reason 'defer' says stand down" "0" \
+  "$(chain_updater_should_standdown '{"status":"stuck","at":"2026-08-30T00:00:00Z","seconds":3600,"reason":"defer"}' && echo 0 || echo 1)"
+assert_eq "a 'stuck' verdict with reason 'allow' does not — the roll itself is failing, not idling fixable" "1" \
+  "$(chain_updater_should_standdown '{"status":"stuck","at":"2026-08-30T00:00:00Z","seconds":3600,"reason":"allow"}' && echo 0 || echo 1)"
+assert_eq "a 'rolled' verdict does not" "1" \
+  "$(chain_updater_should_standdown '{"status":"rolled","at":"2026-08-30T00:00:00Z","seconds":60}' && echo 0 || echo 1)"
+assert_eq "the JSON literal null does not" "1" \
+  "$(chain_updater_should_standdown "null" && echo 0 || echo 1)"
+assert_eq "malformed JSON fails closed" "1" \
+  "$(chain_updater_should_standdown "not json" && echo 0 || echo 1)"
+
+# --- chain_roll_standdown_available / chain_roll_standdown_record -----------
+# The one-stand-down-per-pending-roll cap: available until the first record,
+# capped after it, and fails closed (not available) on anything unreadable
+# rather than idling a node a second time on a value that cannot be trusted.
+
+rm -f "$tmp_state/roll-standdown.json"
+assert_eq "no counter file at all is available" "0" \
+  "$(chain_roll_standdown_available "$tmp_state" && echo 0 || echo 1)"
+
+chain_roll_standdown_record "$tmp_state"
+assert_eq "the counter file is written on the first record" "1" \
+  "$(test -f "$tmp_state/roll-standdown.json" && echo 1 || echo 0)"
+assert_eq "  ... with count 1" "1" "$(jq -r '.count' "$tmp_state/roll-standdown.json")"
+first_since="$(jq -r '.since' "$tmp_state/roll-standdown.json")"
+assert_eq "  ... and a bare ISO-8601 'since'" "1" \
+  "$([[ "$first_since" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] && echo 1 || echo 0)"
+assert_eq "once recorded, the cap is no longer available" "1" \
+  "$(chain_roll_standdown_available "$tmp_state" && echo 0 || echo 1)"
+
+chain_roll_standdown_record "$tmp_state"
+assert_eq "a second record increments the count rather than resetting it" "2" \
+  "$(jq -r '.count' "$tmp_state/roll-standdown.json")"
+assert_eq "  ... and preserves the original 'since'" "$first_since" \
+  "$(jq -r '.since' "$tmp_state/roll-standdown.json")"
+
+jq -nc '{count: "banana"}' > "$tmp_state/roll-standdown.json"
+assert_eq "a non-numeric count fails closed (not available), never toward idling again" "1" \
+  "$(chain_roll_standdown_available "$tmp_state" && echo 0 || echo 1)"
+
+printf 'not json at all' > "$tmp_state/roll-standdown.json"
+assert_eq "an unreadable counter file fails closed the same way" "1" \
+  "$(chain_roll_standdown_available "$tmp_state" && echo 0 || echo 1)"
+
+rm -f "$tmp_state/roll-standdown.json"
+
 printf '\n'
 if (( failures > 0 )); then
   printf '%d assertion(s) failed\n' "$failures"
