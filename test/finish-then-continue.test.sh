@@ -112,7 +112,7 @@ STUB
     printf 'state_dir=%q\n' "$run_dir"
     printf 'log_file=%q\n' "$run_dir/log.jsonl"
     printf 'lock_acquired=0\nlock_file=%q\nclone_dir=""\n' "$run_dir/lock.json"
-    printf 'max_chained_cycles=%q\n' "$max"
+    printf 'max_chained_cycles=%q\nONCE=0\n' "$max"
     printf '%s\n' "$argv_decl"
     printf 'log_event() { printf "EVENT %%s %%s\\n" "$1" "$2" >> %q; }\n' "$run_dir/events.log"
     printf 'maybe_run_enabler() { :; }\n'
@@ -161,15 +161,20 @@ out="$(run_cycle eligible-handled-failure 1 3 1 0)"
 assert_eq "chain_eligible=1 after a *handled* stage failure (exit 0, like a stand-down) still chains" \
   "count=2 argv=" "$out"
 
-# --- Yielding to a pending image roll (requirement 39, agent-ops#1096) ----------
-# The image-behind check inside cleanup() only ever *cancels* a chain that was
-# otherwise eligible; it must never grant one, and — when there is nothing to
-# cancel — it must not run at all. Driven with the real chain_image_behind and
+# --- Yielding to a pending image roll (requirement 39, agent-ops#1096, widened
+# --- by agent-ops#1103) ----------------------------------------------------
+# The image-behind check inside cleanup() has two separable jobs: it only ever
+# *cancels* a chain that was otherwise eligible (never grants one), and it
+# writes the roll-pending marker at every clean, non-`--once` cycle-end that
+# is behind on its image — whether or not there was a chain to cancel, since a
+# node that is merely busy and never chains needs the same poll-sized gap a
+# chaining node's cancellation gives it. Only an unclean exit or a `--once` run
+# skips the check outright. Driven with the real chain_image_behind and
 # chain_write_roll_pending (lib/chain.sh) and a stubbed image_drift_status/
 # agent_ops_version, so no real registry call or build-info.json is needed.
 
-run_cycle_image() {  # run_cycle_image DESC CHAIN_ELIGIBLE EXIT_CODE IMAGE_STATUS_JSON
-  local desc="$1" eligible="$2" code="$3" image_json="$4"
+run_cycle_image() {  # run_cycle_image DESC CHAIN_ELIGIBLE EXIT_CODE IMAGE_STATUS_JSON [ONCE]
+  local desc="$1" eligible="$2" code="$3" image_json="$4" once="${5:-0}"
   local run_dir spawn_record script
   run_dir="$tmp_dir/img-$(printf '%s' "$desc" | tr -c 'A-Za-z0-9' '-')"
   mkdir -p "$run_dir/scripts"
@@ -189,7 +194,7 @@ STUB
     printf 'state_dir=%q\n' "$run_dir"
     printf 'log_file=%q\n' "$run_dir/log.jsonl"
     printf 'lock_acquired=0\nlock_file=%q\nclone_dir=""\n' "$run_dir/lock.json"
-    printf 'max_chained_cycles=3\ncycle_interval_minutes=15\nORIGINAL_ARGV=()\n'
+    printf 'max_chained_cycles=3\ncycle_interval_minutes=15\nORIGINAL_ARGV=()\nONCE=%q\n' "$once"
     printf 'log_event() { printf "EVENT %%s %%s\\n" "$1" "$2" >> %q; }\n' "$run_dir/events.log"
     printf 'maybe_run_enabler() { :; }\n'
     printf 'agent_ops_version() { printf null; }\n'
@@ -234,12 +239,23 @@ assert_eq "no pending image roll: the chain proceeds exactly as before this chec
 assert_eq "…and no marker is written" "0" \
   "$(test -f "$run_dir/roll-pending.json" && echo 1 || echo 0)"
 
-run_dir="$(run_cycle_image not-eligible-skips-the-check 0 0 "$behind")"
-assert_eq "a cycle with no chain to give up never even checks the image" "0" \
+run_dir="$(run_cycle_image not-eligible-still-writes-marker 0 0 "$behind")"
+assert_eq "a cycle with no chain to give up still writes the marker when behind (agent-ops#1103)" "1" \
   "$(test -f "$run_dir/roll-pending.json" && echo 1 || echo 0)"
+assert_eq "…and spawns nothing, since there was no chain to cancel" "0" \
+  "$(test -s "$run_dir/spawned.txt" && echo 1 || echo 0)"
 
 run_dir="$(run_cycle_image crashed-skips-the-check 1 1 "$behind")"
 assert_eq "an untrapped non-zero exit never checks the image either" "0" \
+  "$(test -f "$run_dir/roll-pending.json" && echo 1 || echo 0)"
+
+# `chain_eligible=0` here is the only reachable shape: a real `--once` run is
+# never chain-eligible in the first place (requirement 39's own "never chains
+# on --once", asserted separately below in the stand-down section and at the
+# finish-then-continue call site) — this isolates the marker-write guard from
+# that upstream gating rather than re-asserting it.
+run_dir="$(run_cycle_image once-never-writes-the-marker 0 0 "$behind" 1)"
+assert_eq "a --once run never writes the marker, even when behind (agent-ops#1103)" "0" \
   "$(test -f "$run_dir/roll-pending.json" && echo 1 || echo 0)"
 
 # --- The parent never waits on the child ----------------------------------------
@@ -258,7 +274,7 @@ slow_script="$slow_run_dir/run.sh"
   printf 'state_dir=%q\n' "$slow_run_dir"
   printf 'log_file=%q\n' "$slow_run_dir/log.jsonl"
   printf 'lock_acquired=0\nlock_file=%q\nclone_dir=""\n' "$slow_run_dir/lock.json"
-  printf 'max_chained_cycles=3\nORIGINAL_ARGV=()\n'
+  printf 'max_chained_cycles=3\nORIGINAL_ARGV=()\nONCE=0\n'
   printf 'log_event() { :; }\nmaybe_run_enabler() { :; }\n'
   printf '%s\n' "$block"
   printf 'chain_eligible=1\nchain_count=1\nexit 0\n'
@@ -300,7 +316,7 @@ sig_script="$sig_run_dir/run.sh"
   printf 'state_dir=%q\n' "$sig_run_dir"
   printf 'log_file=%q\n' "$sig_run_dir/log.jsonl"
   printf 'lock_acquired=0\nlock_file=%q\nclone_dir=""\n' "$sig_run_dir/lock.json"
-  printf 'max_chained_cycles=3\nORIGINAL_ARGV=()\n'
+  printf 'max_chained_cycles=3\nORIGINAL_ARGV=()\nONCE=0\n'
   printf 'log_event() { :; }\nmaybe_run_enabler() { :; }\n'
   printf '%s\n' "$block"
   printf 'chain_eligible=1\nchain_count=1\nexit 0\n'

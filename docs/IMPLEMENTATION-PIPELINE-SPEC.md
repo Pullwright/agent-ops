@@ -1140,6 +1140,8 @@ A repo entry may also carry `implementation_plan_path` — the path, relative to
 
 A repo entry may also carry `nice` — an optional integer from `-19` to `19` (absent means `0`). Inspired by Linux `nice`. Each repo's default-branch staleness age is multiplied by `2^(-nice/3)` (each three steps of `nice` is a 2x change in attention), so a negative value buys the repo earlier attention and a positive one later. It biases the walk but never starves a repo — the global tiers still outrank the walk, and a repo that alone has qualifying work is selected regardless of its `nice`. The Script refuses to start a cycle if `nice` is not an integer in that range.
 
+A repo entry may also carry `previous_slugs` — the slugs this repository was known as before a rename (e.g. an organisation move, agent-ops#2064), each as `owner/name`. `config_repo_slug_aliases` (`lib/config-schema.sh`) flattens every configured repo's own `previous_slugs` into one `{old_slug: current_slug}` map; requirement 34i's `work_gone_clearances` and requirement 35a's third eligibility clause both resolve a blocked item's `repo` through that map before keying the source-state digest lookup each already makes, since that digest is always built from the live configured `slug` and so is blind to a block still naming the slug the repository had before the rename. Resolution happens at read time only — a configured `previous_slugs` entry never rewrites a blocked item's own recorded `repo`, and this pipeline otherwise always acts against the current `slug`.
+
 A repo entry may also carry `stage_timeouts` and `stage_inactivity` — per-actor overrides in minutes, keyed `coordinator`, `implementer`, `reviewer`, `approver` and `enabler`, for that repository alone. They are the most specific level of requirement 4f's precedence, ahead of the plain `timeout_<actor>` / `inactivity_<actor>` key and ahead of the derivation; the Refiner, spanning repositories, has no per-repository form. Configuration is read, never written: requirement 4f's derivation never writes back to `config.json`.
 
 A repo entry may also carry `merge_autonomy` — the per-repository override of the top-level key of the same name (D18, requirement 2.3b), on the same precedence as `stage_timeouts`: this entry wins when present, the top-level key otherwise.
@@ -10549,36 +10551,46 @@ implements.
     9c's handler exists to catch, and requirement 1's stale-lock takeover
     would reach it only through the `KILL` that follows its ignored `TERM`
     — no `attempt-failed`, no `cycle-end`, no claim released.
-39c. **A pending image roll overrides the chain** (agent-ops#1096). Both
-    conditions above, and the `exit_code == 0` gate, only ever decide whether
-    a chain is *available*; this one decides whether to take it anyway. A
-    node running long or chained cycles never leaves
-    `deploy/docker/watchtower-pre-update.sh` a gap its five-minute poll can
-    land in — every individual deferral stays correctly bounded by that
+39c. **A pending image roll overrides the chain, and widens the gap at every
+    clean cycle-end, not only a chaining one** (agent-ops#1096, widened by
+    agent-ops#1103). This covers two separable jobs, not one: cancelling a
+    chain this cycle would otherwise take, and widening the gap a poll needs
+    from whatever instant this cycle's own lock release happens to leave to
+    one the five-minute poll is guaranteed to land in. A node running long or
+    chained cycles never leaves `deploy/docker/watchtower-pre-update.sh` such
+    a gap — every individual deferral stays correctly bounded by that
     pipeline's `lock_stale_after`, and the node still never rolls, because the
     next chained cycle's own claim reacquires the lock before the lock-free
-    instant a poll would need. So immediately before the chain decision,
-    inside the same `cleanup` (11) that already checked `exit_code == 0`, a
-    chain-eligible cycle asks one more question: is the image it is running
-    behind the registry's newest (`lib/image-drift.sh`'s `image_drift_status`,
-    read back through the identical cache the requirement-2.5 heartbeat push
-    just above it already refreshed — no second registry round trip, no
-    second signal)? If so, `chain_image_behind` (`lib/chain.sh`) flips
-    `chain_eligible` back to false — overriding, never granting, since a
-    cycle that was not going to chain anyway has nothing to check this for —
-    and `chain_write_roll_pending` writes `$state_dir/roll-pending.json`
+    instant a poll would need — but the identical starvation reaches a node
+    that is merely busy and never chains at all: chaining disabled
+    (`max_chained_cycles: 1`), a chain that has exhausted `max_chained_cycles`,
+    or any other clean cycle-end, since none of those leave more than the
+    natural, possibly sub-second gap between this cycle's lock release and
+    the next cron firing either. So immediately before the chain decision,
+    inside the same `cleanup` (11), every cycle that ended cleanly
+    (`exit_code == 0`) and was not a `--once` run (a human or a test asking
+    for exactly one cycle must not arm an override on the node it ran on)
+    asks: is the image it is running behind the registry's newest
+    (`lib/image-drift.sh`'s `image_drift_status`, read back through the
+    identical cache the requirement-2.5 heartbeat push just above it already
+    refreshed — no second registry round trip, no second signal)? If so,
+    `chain_write_roll_pending` writes `$state_dir/roll-pending.json`
     (`{"until": <ISO8601>}`, `schedule.cycle_interval_minutes` from now,
-    requirement 2.5's own exclusion list). `deploy/docker/
-    watchtower-pre-update.sh` reads that marker back and honours it as an
-    unconditional allow against `lock.json` alone — overriding only that
-    pipeline's own ordinary in-flight-cycle deferral, never
-    `review-lock.json`'s (agent-ops#1102: `review-cycle.sh` never wrote the
-    marker and never decided to yield anything, so a project review beginning
-    just after a yielding implementation cycle must keep deferring on its own
-    ordinary judgement regardless) — until `until`: wide enough that the next
-    poll is guaranteed to land inside it, which the true gap a declined chain
-    leaves (the instant between this cycle's lock release and the next
-    cron-fired cycle's own claim) is not.
+    requirement 2.5's own exclusion list) regardless of `chain_eligible` —
+    and, separately, `chain_image_behind` (`lib/chain.sh`) flips
+    `chain_eligible` back to false wherever it was true — overriding, never
+    granting, and a no-op on a cycle that was never going to chain anyway.
+    `deploy/docker/watchtower-pre-update.sh` reads that marker back and
+    honours it as an unconditional allow against `lock.json` alone —
+    overriding only that pipeline's own ordinary in-flight-cycle deferral,
+    never `review-lock.json`'s (agent-ops#1102: `review-cycle.sh` never wrote
+    the marker and never decided to yield anything, so a project review
+    beginning just after a yielding implementation cycle must keep deferring
+    on its own ordinary judgement regardless) — until `until`: wide enough
+    that the next poll is guaranteed to land inside it, which the true gap a
+    declined chain (or a cycle with no chain to decline) leaves (the instant
+    between this cycle's lock release and the next cron-fired cycle's own
+    claim) is not.
 
     Because `until` is a fixed clock offset from this cycle's own end, not
     "the next cycle's own start", a cycle that reacquires `lock.json` before
@@ -15627,7 +15639,7 @@ implements.
       is certain only when exactly one task-list line in the document names
       the id as a whole word; two such lines, or none, decide nothing.
 
-    Three properties make this safe enough to run unattended:
+    Four properties make this safe enough to run unattended:
 
     - **Unknown is never gone.** A repo missing from the digest, a digest
       carrying `ok: false`, an id no register file claims by `id` or
@@ -15637,6 +15649,18 @@ implements.
       which costs a cycle; the other direction clears a block out from under
       work that is still real, which costs a cycle an hour until someone
       notices.
+    - **A renamed repo's digest is still found.** For the issue and
+      pull-request classes above only, the block's `repo` is resolved through
+      `config_repo_slug_aliases`' `{old_slug: current_slug}` map (built from
+      every configured repo's own `previous_slugs`, agent-ops#2064) before the
+      digest lookup, since SOURCE_STATES_JSON is always keyed by a repo's
+      *current* configured `slug` — without this, a block recorded under a
+      slug the repository no longer has would read exactly like "a repo
+      missing from the digest" above, forever rather than merely until the
+      recheck window. The register/review/plan status maps are looked up by
+      the block's own `repo` unresolved, since each is already keyed by
+      whatever repo its own blocked-id grouping was given, not by this
+      digest.
     - **The findings sources are excluded, and that is not an oversight.**
       `gather-findings.sh` degrades to `[]` on an API error by design
       (requirement 3), because a Co-Ordinator that sees no findings declines and
@@ -16374,10 +16398,14 @@ implements.
        this stage's prices;
     3. **no escalation issue for it is still open** — the `issue_number` of the
        latest `escalated` event for that repo+item is not among the repo's open
-       issues in the source-state digest (requirement 3b). A repo missing from
-       that digest could not be sampled, so whether its escalation is open is
-       unknown, and unknown resolves to **ineligible**: a delayed engagement is
-       cheap, a duplicate issue in the human's inbox is not;
+       issues in the source-state digest (requirement 3b), the item's own
+       `repo` resolved through `config_repo_slug_aliases`' `{old_slug:
+       current_slug}` map first (agent-ops#2064), since that digest is always
+       keyed by the repo's *current* configured `slug`. A repo missing from
+       that digest (whether absent outright, or named only by a slug outside
+       the alias map too) could not be sampled, so whether its escalation is
+       open is unknown, and unknown resolves to **ineligible**: a delayed
+       engagement is cheap, a duplicate issue in the human's inbox is not;
     4. one of exactly three **reasons** applies, and that reason is recorded on
        the entry and passed to the model, because it decides where the model
        should look first:
@@ -29219,10 +29247,12 @@ oblige anyone to edit a test.
     passes: the crontab report names the full comma list, not just the
     first occurrence.
 39c. **A pending image roll overrides an otherwise-eligible chain, never
-    grants one, is honoured at the hook against `lock.json` alone, is cleared
-    once landed, and — while it is not — idles the next cycle at most once
-    rather than letting it run underneath the marker** (requirement 39c,
-    agent-ops#1096, amended by agent-ops#1102). `test/chain.test.sh` passes: `chain_image_behind` reads
+    grants one, widens the gap at every clean, non-`--once` cycle-end whether
+    or not there was a chain to give up, is honoured at the hook against
+    `lock.json` alone, is cleared once landed, and — while it is not — idles
+    the next cycle at most once rather than letting it run underneath the
+    marker** (requirement 39c, agent-ops#1096, amended by agent-ops#1102,
+    widened by agent-ops#1103). `test/chain.test.sh` passes: `chain_image_behind` reads
     true only for a `{"status":"behind",...}` verdict — "current",
     "unverified", the JSON literal `null` and malformed input all read false
     — and `chain_write_roll_pending` writes `$state_dir/roll-pending.json`
@@ -29237,8 +29267,12 @@ oblige anyone to edit a test.
     status`/`agent_ops_version`: a "behind" verdict cancels an otherwise
     chain-eligible, exit-0 cycle and writes the marker; a "current" verdict
     still chains and writes no marker; a cycle with no chain to give up
-    (`chain_eligible=0`) or that did not end cleanly (a non-zero exit) never
-    even reaches the check, marker included. `test/watchtower-pre-update.
+    (`chain_eligible=0`) still writes the marker on a "behind" verdict,
+    chaining nothing since there was nothing to cancel; a `--once` run never
+    writes the marker on a "behind" verdict either, the one case still gated
+    ahead of `chain_eligible` since a real `--once` run is never chain-eligible
+    to begin with; and a cycle that did not end cleanly (a non-zero exit)
+    never even reaches the check, marker included. `test/watchtower-pre-update.
     test.sh` passes: an unexpired `roll-pending.json` makes the hook exit 0
     despite a live lock naming a live process in the hook's own container,
     when that lock is `lock.json` — but never when it is `review-lock.json`,

@@ -992,6 +992,7 @@ decisions_map() {
 ENABLER_ELIGIBLE_JQ='
   def same_item($e): (.item // "") == ($e.item // "")
                      and ((.repo // "") == "" or (.repo // "") == ($e.repo // ""));
+  def canon_repo($r): ($aliases[$r] // $r);
   ($all | ('"$OPEN_BLOCKED_JQ"')) as $blocked
   | [ $blocked[]
       | . as $b
@@ -1025,9 +1026,10 @@ ENABLER_ELIGIBLE_JQ='
                     and (.cycle // "") != "" and .ts > $b.ts)
            | .cycle ]
          | unique | length) as $coord_cycles
+      | canon_repo($b.repo // "") as $crepo
       | (if $escalation == null then "none"
-         elif ($open | has($b.repo // "") | not) then "unknown"
-         elif (($open[$b.repo // ""] // []) | map(tostring)
+         elif ($open | has($crepo) | not) then "unknown"
+         elif (($open[$crepo] // []) | map(tostring)
                | index($escalation.issue_number | tostring)) != null then "open"
          else "closed"
          end) as $issue_state
@@ -1068,7 +1070,7 @@ ENABLER_ELIGIBLE_JQ='
     ]
 '
 
-# enabler_eligible_items [LOG_FILE] [MIN_COORD_CYCLES] [RECHECK_HOURS] [OPEN_ISSUES_JSON] [NOW_EPOCH] [REFINEMENT_MIN_COORD_CYCLES]
+# enabler_eligible_items [LOG_FILE] [MIN_COORD_CYCLES] [RECHECK_HOURS] [OPEN_ISSUES_JSON] [NOW_EPOCH] [REFINEMENT_MIN_COORD_CYCLES] [ALIASES_JSON]
 # Print, as a JSON array, the blocked items the Enabler may examine this cycle
 # (requirement 35a), each carrying the `reason` it became eligible. Reads
 # LOG_FILE, or stdin if it is omitted or "-".
@@ -1083,13 +1085,22 @@ ENABLER_ELIGIBLE_JQ='
 # when omitted or not a number — the two ages independently only when a
 # caller actually configures them apart (requirement 35a).
 #
+# ALIASES_JSON (issue #2064) maps a repo slug this pipeline used to be
+# configured under to the slug it is configured under now
+# (`config_repo_slug_aliases`). A block's `repo` is resolved through it before
+# the OPEN_ISSUES_JSON lookup above, since that map is always built from the
+# live configured slug — without this, a block recorded under a name the
+# repository no longer has reads as a repo this cycle "could not read",
+# which this function already treats as `unknown` and leaves ineligible
+# forever, not merely delayed.
+#
 # Always succeeds, printing [] for a missing, empty or unreadable log, exactly
 # as `_latest_unresolved` does and for the same reason: the caller runs under
 # `set -e` inside the exit trap, and a log it cannot parse must cost an
 # engagement, never a cycle. A threshold that is not a number prints [] too —
 # an unreadable setting is not a licence to spend.
 enabler_eligible_items() {
-  local src="${1:--}" min_coord="${2:-}" recheck_hours="${3:-0}" open_issues="${4:-{\}}" now="${5:-}" refinement_min_coord="${6:-}"
+  local src="${1:--}" min_coord="${2:-}" recheck_hours="${3:-0}" open_issues="${4:-{\}}" now="${5:-}" refinement_min_coord="${6:-}" aliases="${7:-{\}}"
   local out="" all_json="" docs
   local phantom_blocked="" phantom_json='[]' phantom_n=0
   # Falls back to a literal copy of lib/refinement.sh's own pattern rather
@@ -1104,6 +1115,7 @@ enabler_eligible_items() {
   [[ "$now" =~ ^[0-9]+$ ]] || now="$(date +%s)"
   [[ "$refinement_min_coord" =~ ^[0-9]+$ ]] || refinement_min_coord="$min_coord"
   jq -e 'type == "object"' <<<"$open_issues" >/dev/null 2>&1 || open_issues='{}'
+  jq -e 'type == "object"' <<<"$aliases" >/dev/null 2>&1 || aliases='{}'
   if [[ "$src" == "-" ]]; then
     all_json="$(jq -c -R 'fromjson? // empty' 2>/dev/null | jq -sc '.' 2>/dev/null || true)"
   elif [[ -s "$src" ]]; then
@@ -1143,16 +1155,16 @@ enabler_eligible_items() {
         '{detail: $d, phantom: $p}')"
     fi
     # $all (the log, arbitrary in length), $open (the open-issues map, one
-    # number per open issue per repo) and $phantom (TD-PPagop-26082819's
+    # number per open issue per repo), $phantom (TD-PPagop-26082819's
     # phantom events, computed above — the whole `{repo, item, ts}` triple,
     # since `ts` alone does not identify an event on a fleet-wide log stamped
-    # to the second) arrive on stdin, one document per line, bound
-    # positionally with `input as $name` in the order printed
-    # (requirement 4g) — never in argv.
-    docs="$all_json"$'\n'"$open_issues"$'\n'"$phantom_json"
+    # to the second) and $aliases (issue #2064's slug-rename map) arrive on
+    # stdin, one document per line, bound positionally with `input as $name`
+    # in the order printed (requirement 4g) — never in argv.
+    docs="$all_json"$'\n'"$open_issues"$'\n'"$phantom_json"$'\n'"$aliases"
     out="$(jq -nc --argjson min_coord "$min_coord" --argjson recheck_hours "$recheck_hours" \
         --argjson now "$now" --argjson refinement_min_coord "$refinement_min_coord" \
-        'input as $all | input as $open | input as $phantom | ('"$ENABLER_ELIGIBLE_JQ"')' \
+        'input as $all | input as $open | input as $phantom | input as $aliases | ('"$ENABLER_ELIGIBLE_JQ"')' \
         <<<"$docs" 2>/dev/null || true)"
   fi
   [[ -n "$out" ]] || out='[]'

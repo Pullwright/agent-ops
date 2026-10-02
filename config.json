@@ -21,6 +21,7 @@
     },
     {
       "slug": "Pullwright/agent-ops",
+      "previous_slugs": ["Poetic-Poems/agent-ops"],
       "merge_autonomy": "agent-merges-all",
       "merge_autonomy_routine_sources": ["tech-debt", "issues", "review-feedback", "merge-conflicts", "abandoned-drafts", "failed-runs", "security", "code-quality", "human-visibility"],
       "merge_autonomy_routine_complexity": ["low", "medium", "high"],

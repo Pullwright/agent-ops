@@ -129,7 +129,7 @@ work_gone_plan_ids() {
 }
 
 # work_gone_clearances BLOCKED_JSON SOURCE_STATES_JSON [REGISTER_STATUS_JSON]
-#                       [REVIEW_STATUS_JSON] [PLAN_STATUS_JSON]
+#                       [REVIEW_STATUS_JSON] [PLAN_STATUS_JSON] [ALIASES_JSON]
 # Print, as a JSON array, one entry per block whose work is demonstrably gone —
 # the input to the `unblocked` events the Script writes:
 #
@@ -160,12 +160,24 @@ work_gone_plan_ids() {
 # (`scripts/gather-plan-status.sh`); anything else absent or unreadable decides
 # nothing.
 #
+# ALIASES_JSON (issue #2064) maps a repo slug this pipeline used to be
+# configured under to the slug it is configured under now
+# (`config_repo_slug_aliases`, built from `config.json`'s `repos[].
+# previous_slugs`) — only the *issue*/*pull-request* classes resolve a
+# block's `repo` through it before keying `digest`, since SOURCE_STATES_JSON
+# is always built from the live configured slug and so would never otherwise
+# contain an entry for a block recorded under a name the repository no
+# longer has. The register/review/plan status maps are keyed by whatever
+# `repo` their own blocked-id grouping (`work_gone_register_ids` et al.) was
+# given, not by a digest, so they are looked up unresolved, by the block's
+# own `repo`, exactly as before.
+#
 # Always succeeds, printing [] for input it cannot read: the caller runs under
 # `set -e` mid-cycle, and a malformed digest must cost a clearance, never a
 # cycle.
 work_gone_clearances() {
   local blocked="${1:-[]}" states="${2:-[]}" register="${3:-{\}}" \
-        review="${4:-{\}}" plan="${5:-{\}}" out="" docs
+        review="${4:-{\}}" plan="${5:-{\}}" aliases="${6:-{\}}" out="" docs
   # The open blocked set and the source-states array arrive on stdin, one
   # document per line, never in argv (requirement 4g): both grow with the
   # fleet's history, and past MAX_ARG_STRLEN an `--argjson` delivery makes
@@ -174,19 +186,22 @@ work_gone_clearances() {
   # same stream: each grows with its own blocked class rather than with
   # configuration, so none of the three belongs in argv either, even though
   # each is individually the smallest thing on TD-PPagop-26081401's list.
-  docs="$(printf '%s\n' "$blocked" "$states" "$register" "$review" "$plan")"
+  # The aliases map is config-sized, never history-sized, but joins the same
+  # stream rather than argv anyway, for one mechanism rather than two.
+  docs="$(printf '%s\n' "$blocked" "$states" "$register" "$review" "$plan" "$aliases")"
   # shellcheck disable=SC2016  # every $ below is jq's.
   out="$(jq -nc \
     --arg issue_re "$WORK_GONE_ISSUE_RE" --arg pr_re "$WORK_GONE_PR_RE" \
     --arg review_re "$WORK_GONE_REVIEW_RE" --arg plan_re "$WORK_GONE_PLAN_RE" '
-    input as $blocked | input as $states | input as $register | input as $review | input as $plan |
+    input as $blocked | input as $states | input as $register | input as $review | input as $plan | input as $aliases |
     def digest($slug): [ $states[] | select((.slug // "") == $slug and .ok == true) ] | first;
+    def canon_repo($r): ($aliases[$r] // $r);
     [ $blocked[]
       | . as $b
       | ($b.repo // "") as $repo
       | ($b.item // "") as $item
       | select($item != "")
-      | digest($repo) as $st
+      | digest(canon_repo($repo)) as $st
       | (if ($item | test($issue_re)) then
            (if $st == null then null
             elif ([ $st.issues[]? | .n ] | index($item | tonumber)) != null then null
