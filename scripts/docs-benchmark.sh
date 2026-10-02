@@ -151,8 +151,9 @@ run_dir="$(mktemp -d "${TMPDIR:-/tmp}/docs-benchmark.XXXXXX")" || exit 2
 clone="$run_dir/clone"
 empty_dir="$run_dir/empty"
 mkdir -p "$empty_dir" "$run_dir/transcripts"
-cleanup() { rm -rf "$clone" "$empty_dir"; }
-trap cleanup EXIT
+# The clone goes; the transcripts stay, for whoever wants to see why an answer
+# failed.
+trap 'rm -rf "$clone" "$empty_dir"' EXIT
 
 if ! git clone --quiet --filter=blob:none --no-checkout "$source_url" "$clone"; then
   echo "docs-benchmark: could not clone $source_url" >&2

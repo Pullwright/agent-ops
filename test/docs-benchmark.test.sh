@@ -243,7 +243,7 @@ with_reply "$tmp_dir/fenced.jsonl" "Here is my grading.
 $object
 \`\`\`
 
-I hope this helps — “thanks”."
+I hope this helps."
 assert_eq "a reply fenced and wrapped in prose is still read" "graded:true" \
   "$(docs_benchmark_parse_verdict "$tmp_dir/fenced.jsonl" "$must" | jq -r '"\(.status):\(.passed)"')"
 
