@@ -22,21 +22,33 @@
 # second full run on the same day takes the suffix -2, then -3. A one-question
 # run is named <date>-docs-benchmark-only-<id>.md, so that it never takes the
 # day's full-run name. Each run's transcripts, its records and its run
-# description are kept in a temporary directory whose path the run prints at
-# the end.
+# description are kept in a temporary directory whose path the run prints
+# when it starts. The run description is written before the first question,
+# so a run that is stopped part-way can still be rendered.
 #
 # The questions come from this checkout and the documents from REF, so an
-# older ref can be measured with today's questions. Before the first question,
-# lib/docs-benchmark.sh's `docs_benchmark_strip_clone` removes every path named
-# `*docs-benchmark*` from the clone — this script, its libraries and test, the
-# questions with their gold answers, and every earlier report — so that no
-# answer can be found by grepping for the benchmark itself.
+# older ref can be measured with today's questions. The answering run sees a
+# plain directory of REF's files, with no `.git`, and without any path named
+# `*docs-benchmark*` — this script, its libraries, test, fixtures and
+# workflow, the questions with their gold answers, and every earlier report —
+# so that no answer can be found by searching for the benchmark itself.
+# lib/docs-benchmark.sh's `docs_benchmark_checkout` says why it is done that
+# way.
+#
+# Ctrl-C stops a run, and the question in flight with it; the run then says
+# where its records are and how to render them.
 #
 # `--calibrate` asks nothing of the documentation. It grades each question's
 # own gold answer against its own required facts, and reports any question
 # that its gold answer fails: a question no answer can pass would lower every
 # score for a reason unrelated to the documentation. It clones nothing and
 # writes no report. Run it after editing the questions, and before a baseline.
+#
+# `--check` asks nothing of a model either. It checks the questions file and
+# follows every source it cites in this checkout, and exits 1 if any of them
+# does not hold. .github/workflows/docs-benchmark.yml runs it on every pull
+# request, because a documentation-only change that moves a heading is exactly
+# the change that breaks one, and the image's test suite does not run for it.
 #
 # Never run this from a pipeline stage: a stage that launched `claude` would be
 # an agent launching an agent, which the specification's Actors section
@@ -47,6 +59,7 @@
 #   scripts/docs-benchmark.sh [REF]                 # every question; REF defaults to main
 #   scripts/docs-benchmark.sh --only operator-03 REF
 #   scripts/docs-benchmark.sh --calibrate           # grade the gold answers themselves
+#   scripts/docs-benchmark.sh --check               # check the questions and their sources
 #   scripts/docs-benchmark.sh --dry-run [REF]       # print what would run, launch nothing
 #
 # REF is anything `git rev-parse` resolves in a clone of this checkout's
@@ -60,12 +73,15 @@
 # place of `origin`).
 #
 # Exit status: 0 when every question was answered and graded, whatever the
-# score (with --calibrate: when every gold answer passed); 1 when at least one
-# was not (with --calibrate: when any gold answer failed or went ungraded); 2
-# when the run could not start (no `claude`, a questions file that fails
-# validation or holds no records, a ref that does not resolve); 3 when the
-# questions were run but the report could not be written, in which case the
-# message names the surviving records; 64 for a usage error.
+# score (with --calibrate: when every gold answer passed; with --check: when
+# every question and source holds); 1 when at least one was not (with
+# --calibrate: when any gold answer failed or went ungraded; with --check:
+# when anything does not hold); 2 when the run could not start (a tool it
+# needs is not on PATH, a questions file that fails validation or holds no
+# records, a ref that does not resolve, a tree that could not be made); 3 when
+# the questions were run but the report could not be written, in which case
+# the message names the surviving records; 64 for a usage error; and 128 plus
+# the signal's number when a signal stopped the run.
 
 set -uo pipefail
 
@@ -81,6 +97,7 @@ REPORT_DIR="${DOCS_BENCHMARK_REPORT_DIR:-$SCRIPT_DIR/docs/reviews}"
 usage() {
   cat <<'USAGE'
 usage: docs-benchmark.sh [--dry-run] [--only ID] [--calibrate] [REF]
+       docs-benchmark.sh --check
 
 Asks every question in test/docs-benchmark/questions.jsonl of headless Claude
 Code in a fresh clone of REF (default: main), grades each answer with a
@@ -93,17 +110,21 @@ records beside it.
   --calibrate  grade each question's own gold answer against its required
                facts instead, and report any that fail; clones nothing and
                writes no report
+  --check      check the questions and follow every source they cite in
+               this checkout; launches nothing
 USAGE
 }
 
 dry_run=0
 calibrate=0
+check=0
 only=""
 ref=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run) dry_run=1; shift ;;
     --calibrate) calibrate=1; shift ;;
+    --check) check=1; shift ;;
     --only)
       [[ $# -ge 2 && -n "$2" ]] || { usage >&2; exit 64; }
       only="$2"; shift 2 ;;
@@ -114,7 +135,37 @@ while [[ $# -gt 0 ]]; do
       ref="$1"; shift ;;
   esac
 done
+if (( check )) && { (( dry_run || calibrate )) || [[ -n "$only" || -n "$ref" ]]; }; then
+  usage >&2
+  exit 64
+fi
 ref="${ref:-main}"
+
+# require TOOL... — exit 2, naming every tool that is not on PATH, before
+# anything is cloned, asked or written. Without `timeout`, for one, every
+# question would be recorded as unanswered and a report of nothing written.
+require() {
+  local tool
+  local -a missing=()
+  for tool in "$@"; do
+    command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
+  done
+  (( ${#missing[@]} == 0 )) && return 0
+  printf 'docs-benchmark: not on PATH: %s\n' "${missing[*]}" >&2
+  exit 2
+}
+require jq
+
+if (( check )); then
+  require awk
+  if docs_benchmark_check_questions "$QUESTIONS_FILE" "$SCRIPT_DIR"; then
+    printf 'docs-benchmark: every question in %s is well formed, and every source it cites holds\n' \
+      "${QUESTIONS_FILE#"$SCRIPT_DIR"/}"
+    exit 0
+  fi
+  echo "docs-benchmark: when a document moves, move the sources of the questions that cite it" >&2
+  exit 1
+fi
 
 if ! docs_benchmark_check_questions "$QUESTIONS_FILE" >&2; then
   echo "docs-benchmark: $QUESTIONS_FILE fails validation" >&2
@@ -163,7 +214,7 @@ if (( dry_run )); then
     printf 'Would grade the gold answers of %d question(s) against their own required facts, each with this command:\n\n' \
       "${#RECORDS[@]}"
   else
-    printf 'Would clone %s at %s into a temporary directory, remove every %s path from it,\n' \
+    printf 'Would check %s out at %s into a temporary directory, with no .git and no %s path,\n' \
       "${source_url:-(this checkout has no origin)}" "$ref" "$DOCS_BENCHMARK_STRIP_PATTERN"
     printf 'and run %d question(s), each with these two commands:\n\n' "${#RECORDS[@]}"
   fi
@@ -172,7 +223,7 @@ if (( dry_run )); then
       "$(jq -r '.question' <<<"$record")"
     if (( ! calibrate )); then
       printf '  answer: '
-      command_line "<clone of $ref>" "${DOCS_BENCHMARK_ANSWER_ARGS[@]}"
+      command_line "<tree of $ref>" "${DOCS_BENCHMARK_ANSWER_ARGS[@]}"
     fi
     printf '  grade:  '
     command_line "<empty directory>" "${DOCS_BENCHMARK_GRADER_ARGS[@]}"
@@ -187,28 +238,67 @@ if (( dry_run )); then
   exit 0
 fi
 
-command -v claude >/dev/null 2>&1 || { echo "docs-benchmark: claude is not on PATH" >&2; exit 2; }
+if (( calibrate )); then
+  require claude timeout
+else
+  require claude timeout sha256sum git
+fi
 
 run_dir="$(mktemp -d "${TMPDIR:-/tmp}/docs-benchmark.XXXXXX")" || exit 2
-clone="$run_dir/clone"
 empty_dir="$run_dir/empty"
-mkdir -p "$empty_dir" "$run_dir/transcripts"
-# The clone goes; the transcripts, records and run description stay, for
-# whoever wants to see why an answer failed or to render the report again.
-trap 'rm -rf "$clone" "$empty_dir"' EXIT
+raw_records="$run_dir/records.jsonl"
+run_json="$run_dir/run.json"
+tree_dir=""
+mkdir -p "$empty_dir" "$run_dir/transcripts" || exit 2
+printf "docs-benchmark: this run's transcripts and records are in %s\n" "$run_dir" >&2
+# The tree and the empty directory go; the transcripts, records and run
+# description stay, for whoever wants to see why an answer failed or to render
+# the report again.
+trap 'rm -rf "$empty_dir" ${tree_dir:+"$tree_dir"}' EXIT
 
-# run_grader RECORD CANDIDATE STREAM — run the grader on one candidate answer, and
-# set `grade` (the parsed verdict), `grade_run` and `grade_wall`.
+# render_hint — say where the run's records are, and how to render them.
+render_hint() {
+  printf 'docs-benchmark: the records are in %s and the run description in %s;\n' "$raw_records" "$run_json" >&2
+  printf "docs-benchmark: render the report from this checkout with: . lib/docs-benchmark-report.sh && docs_benchmark_render_report %s %s\n" \
+    "$run_json" "$raw_records" >&2
+}
+
+# stop_run NAME NUMBER — the trap for INT, TERM and HUP. The question in
+# flight runs in a process group of its own (see docs_benchmark_launch), which
+# a Ctrl-C at the terminal never reaches, so it is stopped here, and waited
+# for so that its transcript is whole; then the run says what it leaves.
+# shellcheck disable=SC2317  # invoked only through the traps below, which a static reader does not follow
+stop_run() {
+  trap '' INT TERM HUP
+  local pid
+  for pid in $(jobs -p); do
+    kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null
+  done
+  wait
+  printf 'docs-benchmark: stopped by SIG%s\n' "$1" >&2
+  if [[ -s "$run_json" ]]; then
+    render_hint
+  else
+    printf 'docs-benchmark: transcripts are in %s\n' "$run_dir/transcripts" >&2
+  fi
+  exit $(( 128 + $2 ))
+}
+trap 'stop_run INT 2' INT
+trap 'stop_run TERM 15' TERM
+trap 'stop_run HUP 1' HUP
+
+# run_grader RECORD CANDIDATE STREAM — grade one candidate answer, and set
+# `grade` (the parsed verdict), `grade_run` and `grade_wall`.
 run_grader() {
-  local record="$1" candidate="$2" stream="$3" g0 g1
+  local record="$1" candidate="$2" stream="$3" g0 g1 rc
   g0="$EPOCHREALTIME"
-  ( cd "$empty_dir" && timeout -k 10 "$DOCS_BENCHMARK_GRADER_TIMEOUT_SEC" claude "${DOCS_BENCHMARK_GRADER_ARGS[@]}" \
-      <<<"$(docs_benchmark_grader_prompt "$record" "$candidate")" ) \
-    >"$stream" 2>"$stream.stderr"
+  docs_benchmark_launch "$DOCS_BENCHMARK_GRADER_TIMEOUT_SEC" "$empty_dir" "$stream" \
+    "$(docs_benchmark_grader_prompt "$record" "$candidate")" "${DOCS_BENCHMARK_GRADER_ARGS[@]}"
+  rc=$?
   g1="$EPOCHREALTIME"
-  grade="$(docs_benchmark_parse_verdict "$stream" "$(jq -c '.must_mention' <<<"$record")")"
-  grade_run="$(docs_benchmark_run_record "$DOCS_BENCHMARK_GRADER_MODEL" "$stream")"
   grade_wall="$(docs_benchmark_elapsed "$g0" "$g1")"
+  grade="$(docs_benchmark_grade "$stream" "$(jq -c '.must_mention' <<<"$record")" "$rc" "$grade_wall")"
+  grade_run="$(docs_benchmark_run_record "$DOCS_BENCHMARK_GRADER_MODEL" "$stream")"
 }
 
 if (( calibrate )); then
@@ -232,30 +322,56 @@ if (( calibrate )); then
 fi
 
 [[ -n "$source_url" ]] || { echo "docs-benchmark: this checkout has no origin to clone" >&2; exit 2; }
-if ! git clone --quiet --filter=blob:none --no-checkout "$source_url" "$clone"; then
+tree_dir="$(mktemp -d "${TMPDIR:-/tmp}/$DOCS_BENCHMARK_TREE_NAME.XXXXXX")" || exit 2
+tree="$tree_dir/$DOCS_BENCHMARK_TREE_NAME"
+if ! git clone --quiet --filter=blob:none --no-checkout "$source_url" "$tree"; then
   echo "docs-benchmark: could not clone $source_url" >&2
   exit 2
 fi
-commit="$(git -C "$clone" rev-parse --verify --quiet "origin/$ref^{commit}" \
-  || git -C "$clone" rev-parse --verify --quiet "$ref^{commit}")" || commit=""
-if [[ -z "$commit" ]] || ! git -C "$clone" checkout --quiet --detach "$commit"; then
+commit="$(git -C "$tree" rev-parse --verify --quiet "origin/$ref^{commit}" \
+  || git -C "$tree" rev-parse --verify --quiet "$ref^{commit}")" || commit=""
+if [[ -z "$commit" ]]; then
   echo "docs-benchmark: $ref does not resolve to a commit in $source_url" >&2
   exit 2
 fi
-while IFS= read -r removed; do
-  printf 'docs-benchmark: removed %s from the clone\n' "$removed" >&2
-done < <(docs_benchmark_strip_clone "$clone")
+if ! left_out="$(docs_benchmark_checkout "$tree" "$commit")"; then
+  echo "docs-benchmark: could not check $commit out without the benchmark" >&2
+  exit 2
+fi
+while IFS= read -r path; do
+  [[ -z "$path" ]] || printf 'docs-benchmark: left %s out of the tree\n' "$path" >&2
+done <<<"$left_out"
 
 started="$(date -u +%FT%TZ)"
 cli_version="$(claude --version 2>/dev/null | head -n 1)"
-questions_sha="$(sha256sum "$QUESTIONS_FILE" | cut -c1-12)"
-runner_sha="$(sha256sum "$SCRIPT_DIR/lib/docs-benchmark.sh" | cut -c1-12)"
-raw_records="$run_dir/records.jsonl"
-: >"$raw_records"
-incomplete=0
+questions_sha="$(docs_benchmark_questions_hash "$QUESTIONS_FILE")"
+protocol_sha="$(docs_benchmark_protocol_hash)"
 total=${#RECORDS[@]}
-n=0
 
+# write_run_json FINISHED RAW — the run's description, for the report. It is
+# written before the first question, with FINISHED and RAW empty, so that a
+# run stopped part-way can be rendered; and again at the end.
+write_run_json() {
+  jq -n --arg ref "$ref" --arg commit "$commit" --arg started "$started" --arg finished "$1" \
+    --arg cli "$cli_version" --arg questions_sha "$questions_sha" --arg protocol_sha "$protocol_sha" \
+    --arg model "$DOCS_BENCHMARK_MODEL" --arg effort "$DOCS_BENCHMARK_EFFORT" \
+    --arg grader_model "$DOCS_BENCHMARK_GRADER_MODEL" --arg grader_effort "$DOCS_BENCHMARK_GRADER_EFFORT" \
+    --argjson total "$total" --arg raw "$2" --arg only "$only" \
+    --argjson readers "$(docs_benchmark_readers_json)" '
+    {ref: $ref, commit: $commit, started: $started,
+     finished: (if $finished == "" then null else $finished end), cli: $cli,
+     questions_sha: $questions_sha, protocol_sha: $protocol_sha,
+     model: $model, effort: $effort, grader_model: $grader_model, grader_effort: $grader_effort,
+     questions_total: $total, raw: (if $raw == "" then null else $raw end),
+     only: $only, readers: $readers}' >"$run_json"
+}
+if ! { : >"$raw_records" && write_run_json "" ""; }; then
+  echo "docs-benchmark: could not write the run description in $run_dir" >&2
+  exit 2
+fi
+
+incomplete=0
+n=0
 for record in "${RECORDS[@]}"; do
   n=$(( n + 1 ))
   id="$(jq -r '.id' <<<"$record")"
@@ -263,59 +379,25 @@ for record in "${RECORDS[@]}"; do
   answer_stream="$run_dir/transcripts/$id.answer.stream.jsonl"
 
   t0="$EPOCHREALTIME"
-  ( cd "$clone" && timeout -k 10 "$DOCS_BENCHMARK_ANSWER_TIMEOUT_SEC" claude "${DOCS_BENCHMARK_ANSWER_ARGS[@]}" \
-      <<<"$(docs_benchmark_answer_prompt "$(jq -r '.question' <<<"$record")")" ) \
-    >"$answer_stream" 2>"$answer_stream.stderr"
+  docs_benchmark_launch "$DOCS_BENCHMARK_ANSWER_TIMEOUT_SEC" "$tree" "$answer_stream" \
+    "$(docs_benchmark_answer_prompt "$(jq -r '.question' <<<"$record")")" "${DOCS_BENCHMARK_ANSWER_ARGS[@]}"
   answer_rc=$?
   t1="$EPOCHREALTIME"
+  wall="$(docs_benchmark_elapsed "$t0" "$t1")"
   answer_run="$(docs_benchmark_run_record "$DOCS_BENCHMARK_MODEL" "$answer_stream")"
-  answer_text="$(jq -r 'select(.error == null) | .result // empty' <<<"$answer_run")"
+  answer_text="$(docs_benchmark_answer_text "$answer_run")"
 
   if [[ -n "$answer_text" ]]; then
     run_grader "$record" "$answer_text" "$run_dir/transcripts/$id.grade.stream.jsonl"
   else
-    # Why the question went unanswered, with the exit status kept: 124 is
-    # `timeout` stopping the run at its cap, which says to look at the cap,
-    # where anything else says to read the stderr file.
-    grade="$(jq -nc --argjson run "$answer_run" --argjson rc "$answer_rc" \
-      --argjson cap "$DOCS_BENCHMARK_ANSWER_TIMEOUT_SEC" '
-      {status: "ungraded",
-       error: (if $rc == 124 then "the answer was stopped at its \($cap)-second cap (exit 124)"
-               elif $rc != 0 then "\($run.error // "the question was not answered") (exit \($rc))"
-               else ($run.error // "the answer was empty") end),
-       raw: $run.result}')"
+    grade="$(docs_benchmark_unanswered "$answer_run" "$answer_rc" "$wall")"
     grade_run="null"
     grade_wall="null"
   fi
   [[ "$(jq -r '.status' <<<"$grade")" == "graded" ]] || incomplete=1
 
-  if ! jq -nc --argjson q "$record" --argjson answer "$answer_run" --argjson grade "$grade" \
-    --argjson grade_run "$grade_run" --argjson wall "$(docs_benchmark_elapsed "$t0" "$t1")" \
-    --argjson grade_wall "$grade_wall" --argjson rc "$answer_rc" \
-    --arg ref "$ref" --arg commit "$commit" --arg model "$DOCS_BENCHMARK_MODEL" \
-    --arg grader_model "$DOCS_BENCHMARK_GRADER_MODEL" '
-    ($answer.metering.tokens // {}) as $t
-    | {
-        id: $q.id, reader: $q.reader, question: $q.question,
-        ref: $ref, commit: $commit, model: $model,
-        answer: $answer.result,
-        answer_exit_code: $rc,
-        answer_error: $answer.error,
-        grade: $grade,
-        tool_calls: $answer.tool_calls,
-        tool_calls_by_tool: $answer.tool_calls_by_tool,
-        permission_denials: $answer.permission_denials,
-        num_turns: $answer.metering.num_turns,
-        input_tokens: (if $t == {} then null
-                       else (($t.input // 0) + ($t.cache_creation // 0) + ($t.cache_read // 0)) end),
-        output_tokens: ($t.output // null),
-        tokens: $answer.metering.tokens,
-        cost_usd: $answer.metering.cost_usd,
-        wall_seconds: $wall,
-        grader: {model: $grader_model, wall_seconds: $grade_wall,
-                 cost_usd: (if $grade_run == null then null else $grade_run.metering.cost_usd end),
-                 tokens: (if $grade_run == null then null else $grade_run.metering.tokens end)}
-      }' >>"$raw_records"; then
+  if ! docs_benchmark_record "$record" "$answer_run" "$answer_rc" "$wall" "$grade" "$grade_run" \
+    "$grade_wall" "$ref" "$commit" >>"$raw_records"; then
     # A record that cannot be written would otherwise vanish from both tables
     # while the run still read as complete.
     printf 'docs-benchmark: could not record %s; its transcripts are in %s\n' "$id" "$run_dir/transcripts" >&2
@@ -337,24 +419,14 @@ while [[ -e "$REPORT_DIR/$base.md" || -e "$REPORT_DIR/$base.jsonl" ]]; do
   base="$stem-$suffix"
 done
 
-run_json="$run_dir/run.json"
-jq -n --arg ref "$ref" --arg commit "$commit" --arg started "$started" --arg finished "$finished" \
-  --arg cli "$cli_version" --arg questions_sha "$questions_sha" --arg runner_sha "$runner_sha" \
-  --arg model "$DOCS_BENCHMARK_MODEL" --arg grader_model "$DOCS_BENCHMARK_GRADER_MODEL" \
-  --arg raw "$base.jsonl" --arg only "$only" --argjson readers "$(docs_benchmark_readers_json)" \
-  '{ref: $ref, commit: $commit, started: $started, finished: $finished, cli: $cli,
-    questions_sha: $questions_sha, runner_sha: $runner_sha, model: $model,
-    grader_model: $grader_model, raw: $raw, only: $only, readers: $readers}' >"$run_json"
-
 # Each step checked, because a run that has spent tokens on every question must
 # not report a report it did not write.
 report_failed() {
   printf 'docs-benchmark: could not write the report to %s: %s\n' "$REPORT_DIR" "$1" >&2
-  printf 'docs-benchmark: the records survive in %s and the run description in %s;\n' "$raw_records" "$run_json" >&2
-  printf "docs-benchmark: render the report again from this checkout with: . lib/docs-benchmark-report.sh && docs_benchmark_render_report %s %s\n" \
-    "$run_json" "$raw_records" >&2
+  render_hint
   exit 3
 }
+write_run_json "$finished" "$base.jsonl" || report_failed "the run description could not be updated"
 mkdir -p "$REPORT_DIR" 2>/dev/null || report_failed "the directory could not be created"
 report="$(docs_benchmark_render_report "$run_json" "$raw_records")" || report_failed "the report could not be rendered"
 cp "$raw_records" "$REPORT_DIR/$base.jsonl" 2>/dev/null || report_failed "the records could not be copied"

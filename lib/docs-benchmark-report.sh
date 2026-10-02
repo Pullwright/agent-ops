@@ -4,18 +4,21 @@
 # (component 24a of docs/IMPLEMENTATION-PIPELINE-SPEC.md).
 #
 # Sourced by scripts/docs-benchmark.sh and by test/docs-benchmark.test.sh. The
-# report's layout is kept apart from lib/docs-benchmark.sh on purpose: that
-# file's hash says whether two runs are comparable, and rewording a table
-# heading must not say they are not.
+# report's layout is not part of the benchmark's protocol (see the head of
+# lib/docs-benchmark.sh), so rewording a table heading leaves every report
+# comparable with the ones before it.
 
 # docs_benchmark_render_report RUN_JSON RECORDS_JSONL
 # Print the Markdown report for one run. A pure function of two files: RUN_JSON
-# describes the run (`ref`, `commit`, `started`, `finished`, `cli`,
-# `questions_sha`, `runner_sha`, `model`, `grader_model`, `raw` — the records'
-# file name as the report links it — `only`, and `readers`, the report order),
+# describes the run (`ref`, `commit`, `started`, `finished` — null while the
+# run is in progress or if it never finished — `cli`, `questions_sha`,
+# `protocol_sha`, `model`, `effort`, `grader_model`, `grader_effort`,
+# `questions_total`, `raw` — the records' file name as the report links it,
+# null until the report is written — `only`, and `readers`, the report order),
 # and RECORDS_JSONL holds one record per question as the runner writes them.
-# The runner keeps both in its run directory, so a report that could not be
-# written can be rendered again from them.
+# The runner keeps both in its run directory from the first question on, so a
+# report that could not be written, or a run that was stopped part-way, can be
+# rendered from them.
 #
 # A pass rate is over the questions that were graded, never over the ones
 # that were not, and a reader with none graded shows `–`. Medians are
@@ -47,15 +50,18 @@ docs_benchmark_render_report() {
         "This is a dated record of one run of `scripts/docs-benchmark.sh`. Each question was asked of headless Claude Code in a fresh clone of the ref below, and a separate call graded the answer against the gold answer in `test/docs-benchmark/questions.jsonl`. An answer passes when it contains every required fact.",
         "",
         (if ($r.only // "") != "" then "This was a partial run of one question, `\($r.only)`, and is not comparable with a full run.\n" else empty end),
+        (if $r.finished == null then "This run did not finish: it holds \($all | length) of the \($r.questions_total) questions it set out to ask, and is not comparable with a run that finished.\n" else empty end),
         "- **Ref:** `\($r.ref)` at `\($r.commit[0:12])`.",
-        "- **Questions:** \($all | length), from a questions file with SHA-256 `\($r.questions_sha)`.",
-        "- **Answering model:** `\($r.model)`, with only the Read, Grep and Glob tools, no MCP servers and project settings only.",
-        "- **Grading model:** `\($r.grader_model)`, with no tools.",
+        "- **Questions:** \($all | length), from a questions file whose ids, readers, questions, gold answers and required facts have SHA-256 `\($r.questions_sha)`.",
+        "- **Answering model:** `\($r.model)` at `\($r.effort)` effort, with only the Read, Grep and Glob tools, no MCP servers and project settings only.",
+        "- **Grading model:** `\($r.grader_model)` at `\($r.grader_effort)` effort, with no tools.",
         "- **Claude Code:** \($r.cli).",
-        "- **Protocol:** `lib/docs-benchmark.sh` with SHA-256 `\($r.runner_sha)`. Two runs are comparable when both hashes match.",
-        "- **Started and finished:** \($r.started) to \($r.finished).",
+        "- **Protocol:** SHA-256 `\($r.protocol_sha)` of the definitions that `lib/docs-benchmark.sh` names as the protocol.",
+        "- **Comparable with:** a run whose questions hash, protocol hash and Claude Code version all match these.",
+        "- **Started and finished:** \($r.started) to \($r.finished // "–, as the run did not finish").",
         "- **Cost:** about $\($cost * 100 | round / 100) for answering and grading together.",
-        "- **Raw records:** [`\($r.raw)`](\($r.raw)).",
+        (if $r.raw == null then "- **Raw records:** `records.jsonl` in the run directory."
+         else "- **Raw records:** [`\($r.raw)`](\($r.raw))." end),
         "",
         "## Summary",
         "",

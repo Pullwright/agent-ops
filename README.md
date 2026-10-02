@@ -2932,25 +2932,36 @@ tokens and seconds each answer took.
 
 ```bash
 scripts/docs-benchmark.sh --dry-run            # list each question and its commands; launch nothing
+scripts/docs-benchmark.sh --check              # check the questions and follow every source they cite
 scripts/docs-benchmark.sh --calibrate          # grade each gold answer against its own facts
 scripts/docs-benchmark.sh --only operator-01   # one question, against main
 scripts/docs-benchmark.sh main                 # every question, against main
 ```
 
-Each question is answered by headless Claude Code in a fresh clone of the ref,
-with a fixed model and only the Read, Grep and Glob tools, and a second call
-grades the answer fact by fact. A full run's report is written to
-`docs/reviews/<date>-docs-benchmark.md`, with the raw records beside it (a
-second full run on the same day takes the suffix `-2`), and a one-question
-run's to `<date>-docs-benchmark-only-<id>.md`. The report's header carries two
-hashes, and two reports are comparable when both match. Every run spends
-tokens, so nothing runs it automatically — not CI, not the crontab, and never
-a pipeline stage, where launching `claude` would be an agent launching an
-agent. Run it by hand or from an interactive session.
+Each question is answered by headless Claude Code in a plain directory
+holding the ref's files, without the benchmark's own files and without
+`.git`, with a fixed model at a fixed effort and only the Read, Grep and Glob
+tools; a second call grades the answer fact by fact. A full run's report is
+written to `docs/reviews/<date>-docs-benchmark.md`, with the raw records
+beside it (a second full run on the same day takes the suffix `-2`), and a
+one-question run's to `<date>-docs-benchmark-only-<id>.md`. The run prints
+its working directory when it starts, and Ctrl-C stops it, with the question
+in flight, saying how to render what it has recorded. Every run spends
+tokens, so nothing runs the benchmark automatically — not CI, not the
+crontab, and never a pipeline stage, where launching `claude` would be an
+agent launching an agent. Run it by hand or from an interactive session.
 
-When a document moves, the benchmark's test fails until the questions'
-`sources` follow it. When the product changes so that a gold answer is no
-longer true, correct the question in the same pull request, and run
+The report's header carries the hash of the protocol (the definitions that
+decide what the figures mean, which `lib/docs-benchmark.sh` names), the hash
+of what a run reads of the questions, and the Claude Code version, and two
+reports are comparable when all three match. A new Claude Code release does
+not strand a baseline: any ref can be measured with today's questions, so
+run the old ref again beside the new one.
+
+When a document moves, the `docs-benchmark sources` check fails on that pull
+request until the questions' `sources` follow it; moving a source does not
+change the questions' hash. When the product changes so that a gold answer
+is no longer true, correct the question in the same pull request, and run
 `--calibrate` after any edit to the questions: a question whose own gold
 answer fails it would lower every score for a reason that has nothing to do
 with the documentation. Never edit a document to make a question easier to

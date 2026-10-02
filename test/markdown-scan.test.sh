@@ -64,6 +64,8 @@ assert_eq "an unterminated fence runs to the end of the file" "a" \
   "$(unfenced $'a\n```\n## b\nc')"
 assert_eq "two backticks are not a fence" '``x``|b' \
   "$(unfenced $'``x``\nb')"
+assert_eq "a fence closes in a file with CRLF line endings, and no line keeps its CR" "a|## c" \
+  "$(unfenced $'a\r\n```\r\nb\r\n```\r\n## c\r')"
 
 if (( failures > 0 )); then
   printf '\n%d assertion(s) failed\n' "$failures"

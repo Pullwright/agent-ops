@@ -1,0 +1,34 @@
+name: Documentation benchmark sources
+
+# Follows every source that test/docs-benchmark/questions.jsonl cites to its
+# heading, requirement or acceptance check (`scripts/docs-benchmark.sh
+# --check`, requirement 52a). A question whose source has moved is one the
+# benchmark can no longer vouch for, and the change that moves a source is
+# nearly always a documentation-only one, for which build-image.yml skips the
+# image's test suite. So this runs on every pull request, every merge group
+# and every push to `main`, ungated by `paths:`, as toc.yml does for the
+# tables of contents; it fails on the pull request that moved the document,
+# not on the next one that touches code.
+#
+# Deliberately `pull_request` (not `pull_request_target`), so a fork's pull
+# request never runs with write-scoped secrets. It asks nothing of a model:
+# the benchmark itself is never run here, because every run spends tokens.
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  sources:
+    name: docs-benchmark sources
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Follow every source the benchmark's questions cite
+        run: scripts/docs-benchmark.sh --check

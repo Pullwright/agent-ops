@@ -22,6 +22,11 @@
 # shorter run, is content and leaves the fence open. As CommonMark has it, a
 # backtick run followed by another backtick on the same line is inline code,
 # not a fence. An unterminated fence runs to the end of the file.
+#
+# A carriage return at the end of a line is dropped before anything else, so
+# a file with CRLF line endings reads as its LF form does. Kept, it would
+# follow a closing fence and stop it closing, and every heading and label after
+# the first fence would vanish from both readers.
 markdown_unfenced() {
   awk '
     function run(s, c,    n) {
@@ -30,6 +35,7 @@ markdown_unfenced() {
       return n
     }
     {
+      sub(/\r$/, "")
       stripped = $0
       sub(/^[ \t]+/, "", stripped)
       c = substr(stripped, 1, 1)
