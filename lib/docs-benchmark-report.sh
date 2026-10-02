@@ -47,7 +47,7 @@ docs_benchmark_render_report() {
     | [
         "# Documentation benchmark, \($r.started[0:10])",
         "",
-        "This is a dated record of one run of `scripts/docs-benchmark.sh`. Each question was asked of headless Claude Code in a fresh clone of the ref below, and a separate call graded the answer against the gold answer in `test/docs-benchmark/questions.jsonl`. An answer passes when it contains every required fact.",
+        "This is a dated record of one run of `scripts/docs-benchmark.sh`. Each question was asked of headless Claude Code in a checkout of the ref below, without `.git` and without the files of the benchmark itself, and a separate call graded the answer against the gold answer in `test/docs-benchmark/questions.jsonl`. An answer passes when it contains every required fact.",
         "",
         (if ($r.only // "") != "" then "This was a partial run of one question, `\($r.only)`, and is not comparable with a full run.\n" else empty end),
         (if $r.finished == null then "This run did not finish: it holds \($all | length) of the \($r.questions_total) questions it set out to ask, and is not comparable with a run that finished.\n" else empty end),
