@@ -711,7 +711,7 @@
           "Do not set it to `blocked`, which is a label that excludes an issue from the pipeline's work source, nor to `obsolete`, which is reserved for a human to mark one of the pipeline's own draft pull requests as unwanted."
         ],
         "spec": [
-          "The label the Script projects onto an issue-type item once the Refiner records it `refined` (requirement 39c). One-way and never read back — unlike `needs_refinement_label`'s hand-flag path, there is no hand-applied form of this label: the shared log is the sole record of whether an item is refined, exactly as requirement 34e already establishes for the negative marker.",
+          "The label the Script projects onto an issue-type item once the Refiner records it `refined` (requirement 39c (The Refiner)). One-way and never read back — unlike `needs_refinement_label`'s hand-flag path, there is no hand-applied form of this label: the shared log is the sole record of whether an item is refined, exactly as requirement 34e already establishes for the negative marker.",
           "Empty disables the projection only: the `item-refined` event is still logged and the Co-Ordinator still reads it (requirement 3h).",
           "It must not be `blocked` nor `obsolete`, for the reasons given against `enabler_escalation_label`."
         ]

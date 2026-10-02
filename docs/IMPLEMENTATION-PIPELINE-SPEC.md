@@ -12,6 +12,12 @@ silent, follow the conventions of the two target repositories (their
 `AGENTS.md` files — or `CLAUDE.md`, for a repository that has not migrated —
 are binding on any agent working inside them).
 
+Requirement ids are unique within the `###` section that defines them, not
+document-wide — e.g., "requirement 39c (The Refiner)" and "requirement 39c
+(Finish-then-continue)" name two different requirements. Cross-references to
+an id are always qualified with its section name when they cite a requirement
+defined in a different section.
+
 <!-- toc:start -->
 - [About this document](#about-this-document)
 - [What it is](#what-it-is)
@@ -585,7 +591,7 @@ file and carries placeholders only; `.env` itself is never committed.
   nodes on that host catching a gap and rolling while its neighbour kept
   missing it and stayed ninety minutes behind, unreported. Surfacing that is
   #603's business, not this hook's. What was missing is agent-ops#1096's
-  `roll-pending` marker (requirement 39c): at its own cycle boundary, a node
+  `roll-pending` marker (requirement 39c (Finish-then-continue)): at its own cycle boundary, a node
   whose image has fallen behind the registry's newest declines the chain it
   would otherwise take and writes the marker instead, which the hook honours
   as an unconditional allow against `lock.json` alone — never
@@ -1012,7 +1018,7 @@ and the schema must carry every one of them.
 | `needs_refinement_label` | `pw::needs-refinement` | The label the Script projects onto an issue-type item while its refinement block is open (requirement 34e), and removes when the block clears. Also the label a human applies by hand to flag an item themselves, which the Script scans every repo's issues for and records as the same kind of block (requirement 34g) — removing it while that block is open clears it the same way. Empty disables both directions: the log is the record, so the mechanism is unaffected and the item still...[continued below](#extended-notes-needs_refinement_label) |
 | `refinement_max_per_engagement` | `3` | How many refinement-class items one Enabler engagement takes on (requirement 35d); ordinary blocked items are uncapped and are never displaced by them. The cap exists because the backlog of items silently skipped before requirement 16a existed is unbounded, and an engagement spent entirely on old vagueness would delay the pull request nobody can see. `0` removes the class from engagements entirely — blocks are still recorded, and the items wait. |
 | `refiner_model` | `claude-sonnet-5` | The Refiner (requirement 39). Unlike the Enabler, eligibility carries no threshold, so it runs as often as there is unrefined work, and its frequency has to be weighed against the fact that what it produces is a specification rather than a ranking. Empty disables the stage. |
-| `refined_label` | `pw::refined` | The label the Script projects onto an issue-type item once the Refiner records it `refined` (requirement 39c). One-way and never read back — unlike `needs_refinement_label`'s hand-flag path, there is no hand-applied form of this label: the shared log is the sole record of whether an item is refined, exactly as requirement 34e already establishes for the negative marker. Empty disables the projection only: the `item-refined` event is still logged and the Co-Ordinator still...[continued below](#extended-notes-refined_label) |
+| `refined_label` | `pw::refined` | The label the Script projects onto an issue-type item once the Refiner records it `refined` (requirement 39c (The Refiner)). One-way and never read back — unlike `needs_refinement_label`'s hand-flag path, there is no hand-applied form of this label: the shared log is the sole record of whether an item is refined, exactly as requirement 34e already establishes for the negative marker. Empty disables the projection only: the `item-refined` event is still logged and the...[continued below](#extended-notes-refined_label) |
 | `refiner_max_per_engagement` | `5` | How many unrefined items one Refiner engagement takes on (requirement 39b), chosen oldest-seen first so every node in the fleet reduces to the same set. `0` removes the class from engagements entirely — a `refinement_policy` source resolved to `required` then has its items wait, unlabelled, until the cap is raised (requirement 1c); `agent-cycle.sh` logs a `warning` event and `scripts/doctor.sh` `warn`s every cycle the condition holds, rather than refusing to start. |
 | `refinement_policy` | `{"issues": "required", "tech-debt": "required"}` | Per-source refinement policy (requirement 39a): `required`, `preferred` or `exempt`, read by the Co-Ordinator alongside `refinements` (requirement 3h) to decide whether an unrefined item may be ranked at all. A source absent from this object is `exempt`. Shipped default: `issues` and `tech-debt` both `preferred` — of every source this key can name, these two are the ones whose items can otherwise reach an Implementer carrying a specification `coordinator_model` composed...[continued below](#extended-notes-refinement_policy) |
 | `unvoid_label` | `pw::unvoided` | The label a human applies on GitHub to ask for a void to be reopened (requirement 34f). No stage here ever applies it, so requirement 34c's "only a human may clear a void" is unchanged; what it adds is a way to say so from the issue itself. It must not be `blocked`, for the reason given against `enabler_escalation_label`. Nor `obsolete`: the label a human applied to ask for a voided pull request to be reopened would itself corroborate requirement 34k closing it. |
@@ -1244,7 +1250,7 @@ It must not be `blocked` — that label is an exclusion criterion for the `issue
 
 ### Extended notes: `refined_label`
 
-The label the Script projects onto an issue-type item once the Refiner records it `refined` (requirement 39c). One-way and never read back — unlike `needs_refinement_label`'s hand-flag path, there is no hand-applied form of this label: the shared log is the sole record of whether an item is refined, exactly as requirement 34e already establishes for the negative marker.
+The label the Script projects onto an issue-type item once the Refiner records it `refined` (requirement 39c (The Refiner)). One-way and never read back — unlike `needs_refinement_label`'s hand-flag path, there is no hand-applied form of this label: the shared log is the sole record of whether an item is refined, exactly as requirement 34e already establishes for the negative marker.
 
 Empty disables the projection only: the `item-refined` event is still logged and the Co-Ordinator still reads it (requirement 3h).
 
@@ -3831,7 +3837,7 @@ implements.
 
    **What replicates.** Everything under `state_dir` except the live locks
    (`lock.json`, `review-lock.json`, `dashboard.lck`), the roll-pending
-   marker (`roll-pending.json`, requirement 39c, agent-ops#1096), the
+   marker (`roll-pending.json`, requirement 39c (Finish-then-continue), agent-ops#1096), the
    dashboard's own
    machinery (`dashboard/`, `dashboard.log`, `dashboard-server.log`,
    `.dashboard-github.json`, `.dashboard-claims.json`,
@@ -4906,7 +4912,7 @@ implements.
      that hook's *foreign* rule alone: this container writes neither lock and
      shares no PID namespace with whatever did, so every lock is honoured
      without a liveness check until it is released or goes stale.
-     `roll-pending.json` (requirement 39c) defers it as well, and on its own,
+     `roll-pending.json` (requirement 39c (Finish-then-continue)) defers it as well, and on its own,
      and is read *before* either lock: the marker the pre-update hook reads as
      licence to destroy a container is read here as a reason to wait, because
      watchtower and this actor recreate the same containers and must never be
@@ -4919,7 +4925,7 @@ implements.
      marker.** `chain_write_roll_pending` re-arms the marker at every cycle
      boundary whose image still reads `behind`, and
      `chain_clear_landed_roll_pending` leaves it alone while that is true
-     (requirement 39c), so a node whose roll cannot land — watchtower
+     (requirement 39c (Finish-then-continue)), so a node whose roll cannot land — watchtower
      crash-looping, a registry it cannot reach — carries a live marker for as
      long as the condition lasts, and a deferral that followed the marker and
      nothing else would leave that node running a `compose.yaml` none of its
@@ -8836,7 +8842,7 @@ implements.
    even though its body stays untrusted data. Ensuring against every gathered
    repository is also what lets the Co-Ordinator's own
    `needs_refinement`/`blocked` projection (requirement 34e) and the
-   Refiner's `refined_label` projection (requirement 39c) reach a fresh
+   Refiner's `refined_label` projection (requirement 39c (The Refiner)) reach a fresh
    repository the moment either first fires there, rather than failing
    silently until some later cycle happens to select work in it
    (agent-ops#687). `review-cycle.sh` calls the plain, unstamped
@@ -10289,7 +10295,7 @@ implements.
    entirely different attention and, per the reasoning below, different
    consequences for a `refined` mark the item might be carrying.
 
-   If the item carried a `refined` mark (requirement 39c) when the
+   If the item carried a `refined` mark (requirement 39c (The Refiner)) when the
    Implementer selected it, that mark no longer describes the item
    accurately — the specification it named was tried and found wanting — so
    recording the block also removes `refined_label` from the issue, if the
@@ -11671,7 +11677,7 @@ implements.
       way to know the comment's real text) — a fault if that text, normalized
       the same way, is present in neither `context` nor `acceptance`. The
       comment id itself is extracted by `refinement_comment_url_id`
-      (`lib/refinement.sh`, the same predicate requirement 39c's recording
+      (`lib/refinement.sh`, the same predicate requirement 39c (The Refiner)'s recording
       seam and requirement 35a's reading seam both test a comment URL's
       shape against), which recognises the HTML permalink anchor
       (`#issuecomment-<n>`) and the REST API form (`.../issues/comments/<n>`)
@@ -14830,7 +14836,7 @@ implements.
     `repo`, `item`, the
     `blocked_ts` it was examined against, an `outcome`, and the Enabler's own
     `detail`; a `refiner-examined` carries the same shape plus `source`
-    (requirement 39c) — `outcome` is `refined`, `refined-uncorroborated` (a
+    (requirement 39c (The Refiner)) — `outcome` is `refined`, `refined-uncorroborated` (a
     `refined` verdict naming neither a comment nor a `spec`, so nothing was
     recorded), `needs-refinement`, `needs-refinement-refused`, `triage-only`
     (a `triage_only` item's band-only verdict, requirement 39g),
@@ -19209,12 +19215,12 @@ implements.
     since `issue_priority_apply` runs for those regardless of band
     availability.
 
-    The Refiner's verdict (`parsed.refined[]`, requirement 39c) gains an
+    The Refiner's verdict (`parsed.refined[]`, requirement 39c (The Refiner)) gains an
     optional `priority` field, one of the four band names, independent of
     `verdict` itself: an ordinary item may carry both a specification and a
     band in the same verdict; a `triage_only` item carries `priority` alone
     and no `comments_posted`/`refined_spec` at all — its
-    `refined-uncorroborated` degradation (requirement 39c) does not apply to
+    `refined-uncorroborated` degradation (requirement 39c (The Refiner)) does not apply to
     it, since it was never asked for a specification, and its outcome is
     recorded as `triage-only` rather than `refined`; and a `needs-refinement`
     decline may still carry a band. `maybe_run_refiner` applies the priority
@@ -24801,7 +24807,7 @@ oblige anyone to edit a test.
    On a live node: `docker compose exec scheduler
    /app/deploy/docker/watchtower-pre-update.sh` echoes its finding and exits
    0 when idle, 75 during a cycle. The same suite also pins the
-   `roll-pending` override (requirement 39c, agent-ops#1096, scoped by
+   `roll-pending` override (requirement 39c (Finish-then-continue), agent-ops#1096, scoped by
    agent-ops#1102): a valid, unexpired `$state_dir/roll-pending.json` makes
    the hook exit 0 despite a live `lock.json` naming a live process in the
    hook's own container — but never despite a live `review-lock.json`, which
@@ -29217,7 +29223,7 @@ oblige anyone to edit a test.
     or not there was a chain to give up, is honoured at the hook against
     `lock.json` alone, is cleared once landed, and — while it is not — idles
     the next cycle at most once rather than letting it run underneath the
-    marker** (requirement 39c, agent-ops#1096, amended by agent-ops#1102,
+    marker** (requirement 39c (Finish-then-continue), agent-ops#1096, amended by agent-ops#1102,
     widened by agent-ops#1103). `test/chain.test.sh` passes: `chain_image_behind` reads
     true only for a `{"status":"behind",...}` verdict — "current",
     "unverified", the JSON literal `null` and malformed input all read false
@@ -31906,7 +31912,7 @@ requirements above, which state only what is.
   existed — took the narrower route instead: the item is not a new *kind* of
   outcome, it is the same outcome (`refined`) reached without writing
   anything new. Reusing `refined` means the Script's recording path needed no
-  structural change at all — `refinement_record_fields` (requirement 39c)
+  structural change at all — `refinement_record_fields` (requirement 39c (The Refiner))
   already accepts a `comment_url`/`spec` on its own terms, never asking
   whether it was this cycle's own write — so the whole fix is confined to
   what the Refiner is told to do with an existing, adequate specification,
