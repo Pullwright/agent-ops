@@ -1213,7 +1213,7 @@
     },
     "pager_min_firing_minutes": {
       "description": "Minutes an invariant must evaluate as firing, continuously, before lib/pager.sh files anything — hysteresis against a fact that clears on its own within one heartbeat interval or two (agent-ops#1278). 0 files on the very first firing evaluation.",
-      "type": "number",
+      "type": "integer",
       "minimum": 0,
       "default": 15,
       "x-docs": {
