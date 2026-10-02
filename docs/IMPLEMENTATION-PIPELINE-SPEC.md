@@ -17211,15 +17211,38 @@ implements.
       `lib/candidate-select.sh`, called from `compute_band_eligibility` for
       every pre-fetched band but `issues`) until an unmarked `item-refined`
       supersedes the decision in `decisions_map`, exactly the same condition
-      that makes the item a full Refiner candidate above (agent-ops#1057).
-      This withholding is **not** `refinement_policy` (requirement 39a) and
-      binds at every policy, `exempt` included: it is not a question of
-      whether the item needs a specification before selection, but of never
-      dispatching one the pipeline has already ruled amended. An `issues`
-      item is never withheld this way — its decision travels as a comment in
-      the thread the Co-Ordinator already re-reads live (requirement 18a), so
-      it can never dispatch a specification the pipeline considers
-      superseded the way a non-issue item can.
+      that makes the item a full Refiner candidate above (agent-ops#1057) —
+      **but only where some actor can later lift the withholding.** Only the
+      Refiner ever writes the superseding `item-refined`, so the withholding
+      binds only where the item's own source is not `refinement_policy`
+      (requirement 39a) `exempt` — an `exempt` source is never a Refiner
+      candidate at all (clause 2 of requirement 39a), so withholding it here
+      too would leave it permanently invisible to every automated actor, not
+      merely for the one cycle this mechanism exists to close — and only
+      where this installation has a Refiner configured at all (`refiner_model`
+      set), since with none, nothing of any source could ever be restored
+      either. Both gates are evaluated once per entry (the first) and once per
+      cycle (the second), never per band: the `findings` band, for one, carries
+      both `security`- and `code-quality`-sourced entries, which resolve
+      `refinement_policy` separately. `human-visibility` needs no separate
+      carve-out to be covered: its source is not among the keys
+      `refinement_policy`'s own schema allows (`config.schema.json`,
+      `additionalProperties: false`), so no installation can ever set it to
+      anything but the default, and the first gate resolves it `exempt` at
+      every valid configuration — permanently, not merely by the absence of a
+      source every other band could still name. This is still **not** `refinement_policy`
+      shaping how an item ranks — it is a reachability precondition on a
+      different mechanism entirely, stated once here rather than duplicated at
+      every call site (confirmed as a genuine specification defect, not merely
+      an implementation gap, by the Reviewer and the Enabler on PR #2047: the
+      original "binds at every policy, `exempt` included" wording and clause 2
+      of requirement 39a cannot both hold for an `exempt`-sourced item, since
+      the first withholds it from the Co-Ordinator and the second already
+      forecloses the only route back). An `issues` item is never withheld this
+      way regardless — its decision travels as a comment in the thread the
+      Co-Ordinator already re-reads live (requirement 18a), so it can never
+      dispatch a specification the pipeline considers superseded the way a
+      non-issue item can.
     - **`escalate`** — anything else: any owner-only condition applies, the
       re-flag's own concern is real and unresolved beyond what the item's
       record supplies, or the pass could not read enough to tell. As
@@ -18726,10 +18749,13 @@ implements.
        not write such an item a second specification at all, so it is handed
        none to amend. The same `decisions_json` entry that makes the item a
        candidate here is also what withholds it from the Co-Ordinator's own
-       ranking entirely, for every source regardless of policy (requirement
-       36d, agent-ops#1057) — so for as long as this clause holds an item a
-       candidate on these terms, no Co-Ordinator engagement can have
-       dispatched it meanwhile;
+       ranking entirely, for as long as some actor — in practice, a Refiner
+       engagement reaching this very candidate — can still lift the
+       withholding (requirement 36d, agent-ops#1057): every item satisfying
+       this clause already satisfied clause 2 (not `refinement_policy`-exempt)
+       to become a candidate at all, so for as long as this clause holds such
+       an item a candidate, no Co-Ordinator engagement can have dispatched it
+       meanwhile;
     4. it is not blocked (requirement 34), not void (requirement 34c), and not
        held by an ordinary implementation claim (the same `claimed` array the
        Co-Ordinator's own exclusion 3 reads).
@@ -18759,10 +18785,20 @@ implements.
     before the Co-Ordinator ever ranks anything (`exclude_decision_pending_items`,
     called from `compute_band_eligibility`, `lib/eligibility.sh`), the same
     way requirement 3u's blocked/void exclusion does, rather than shaping how
-    the model ranks what it is shown — so it binds regardless of the source's
-    own `refinement_policy`, `"exempt"` included, where clause 2 above already
-    excludes an `"exempt"` source from Refiner candidacy entirely but not from
-    this withholding.
+    the model ranks what it is shown. It reads `refinement_policy` only as a
+    **reachability precondition**, never as the value shaping the rank: an
+    item whose source clause 2 above resolves `exempt` is withheld from
+    Co-Ordinator ranking by nothing here, because such an item is never a
+    Refiner candidate either (clause 2), and the only actor that can ever
+    supersede a decision is a Refiner engagement reaching the candidate it
+    names. Withholding an `exempt`-sourced item here too would make it
+    permanently invisible to every automated actor rather than withheld for
+    one cycle, which is why clause 2's own exemption is the one case this
+    mechanism does not reach — the opposite of binding regardless of policy.
+    The same reachability reasoning gates the mechanism a second way, per
+    cycle rather than per item: it does not run at all when this installation
+    has no Refiner configured (`refiner_model` empty), since with none,
+    nothing of any source could ever be restored either.
 
 39b. **Claims and the engagement cap.** Before claiming, the candidate set is
     reduced to at most `refiner_max_per_engagement` items, sorted by
@@ -21372,16 +21408,24 @@ What exists, and the requirements each part answers to:
    gather, because the entries the subtraction removes are exactly the ones
    that filter is asked about (issue #1119; `live_td_refs_json` widened this
    the same way by issue #1699). It settles `decisions_json` alongside
-   `refinements_json` and then makes a further subtraction of its own, over
-   the same bands: `exclude_decision_pending_items` withholds every item that
-   map still names a pending `decide-tactical` decision for (requirement 36d,
-   agent-ops#1057), under a loop variable deliberately distinct from the
-   generic pass's so each list stays separately pinnable. Immediately before
-   that pass — and so after the blocked/void subtraction, never before it — it
-   snapshots `refiner_prefetch_source_json` for `prefetch_refiner_sources` to
-   seed from, for the mirror of the reason `live_pr_refs_json` is snapshotted
-   above: the item this pass withholds from the Co-Ordinator is exactly the
-   one the Refiner must still see (requirement 3y).
+   `refinements_json` and then, only where `refiner_model` is set, makes a
+   further subtraction of its own, over the same bands:
+   `exclude_decision_pending_items` withholds every item that map still names
+   a pending `decide-tactical` decision for, unless the item's own `.source`
+   resolves `refinement_policy`-exempt (requirement 36d, agent-ops#1057),
+   under a loop variable deliberately distinct from the generic pass's so
+   each list stays separately pinnable. Immediately before that pass — and so
+   after the blocked/void subtraction, never before it — it snapshots
+   `refiner_prefetch_source_json` for `prefetch_refiner_sources` to seed from,
+   for the mirror of the reason `live_pr_refs_json` is snapshotted above: an
+   item this pass withholds from the Co-Ordinator is exactly one the Refiner
+   must still see, since only a Refiner engagement reaching it can ever
+   supersede the decision and lift the withholding (requirement 3y). Both
+   gates — the per-entry policy check and the per-cycle `refiner_model`
+   check — exist for the same reason: withholding an item nothing could ever
+   restore would make it permanently invisible rather than withheld for one
+   cycle, reopening the hole agent-ops#1049 closed (the Reviewer's and the
+   Enabler's finding on PR #2047).
    `compute_enabler_eligible_set` derives
    `enabler_eligible_json` from the source-state digests of the repositories
    that sampled cleanly — how "is that escalation issue still open?" is
@@ -26417,17 +26461,22 @@ oblige anyone to edit a test.
    The same file covers the sibling subtraction requirement 36d adds for a
    pending `decide-tactical` decision (agent-ops#1057), lifted and asserted
    the identical way: `exclude_decision_pending_items` withholds a candidate
-   `decisions_map` names a decision for under that candidate's own repo,
-   leaves the same decision's item untouched under a *different* repo, leaves
-   every candidate untouched when the map is empty, drops a candidate with no
+   `decisions_map` names a decision for under that candidate's own repo —
+   proven against a non-exempt source and an explicit policy — leaves the
+   same decision's item untouched under a *different* repo, leaves every
+   candidate untouched when the map is empty, drops a candidate with no
    `ref` rather than crashing on it, degrades to the unfiltered array on
-   malformed input, and applies to an issue-shaped `ref` exactly as to any
-   other — proving the restriction to non-issue bands is the call site's
-   choice rather than the function's. That pass's own band list is pinned
-   separately from the generic one above, by a `sed` pattern keyed on its own
-   loop variable, for the same reason: a band added to a repo entry but not
-   to it would keep handing the Co-Ordinator a specification the pipeline has
-   already ruled superseded.
+   malformed decisions or policy input, and applies to an issue-shaped `ref`
+   exactly as to any other — proving the restriction to non-issue bands is
+   the call site's choice rather than the function's. A further case proves
+   the reachability gate itself (agent-ops#1057, the second round): a
+   decision-pending candidate whose source resolves `refinement_policy`-exempt
+   is left untouched despite the pending decision, since no Refiner
+   engagement could ever reach it to supersede one. That pass's own band list
+   is pinned separately from the generic one above, by a `sed` pattern keyed
+   on its own loop variable, for the same reason: a band added to a repo
+   entry but not to it would keep handing the Co-Ordinator a specification
+   the pipeline has already ruled superseded.
 
    Separately, `agent-cycle.sh`'s own
    `coordinator_input` build carries no `void` key at all, and its `blocked`
@@ -28330,18 +28379,32 @@ oblige anyone to edit a test.
     candidate owes a whole specification rather than one field
     (agent-ops#1049). The same file covers that decision's other half
     (requirement 36d, agent-ops#1057) against the *real* call sequence rather
-    than the two functions in isolation: driving `compute_band_eligibility`
-    and then `prefetch_refiner_sources`, sourced whole and run back to back in
-    the order `lib/gather-phase.sh` calls them, over one shared
-    `ordered_repos_json`, the decided item leaves that aggregate's own
-    `tech_debt` band — so no Co-Ordinator engagement can rank it — while
-    `refiner_candidate_items`, fed the resulting `refiner_repos_json`, still
-    offers it carrying the same pending decision. Both halves are asserted
-    together over the one aggregate because either alone is the bug: asserting
-    them against separately-constructed inputs leaves a `refiner_repos_json`
-    derived from the post-withholding aggregate undetected, withholding the
-    item from the Refiner too and so from the only actor whose `item-refined`
-    could ever free it (requirement 3y).
+    than the two functions in isolation: with `refiner_model` set and a
+    `tech-debt` policy of `"required"` (not exempt), driving
+    `compute_band_eligibility` and then `prefetch_refiner_sources`, sourced
+    whole and run back to back in the order `lib/gather-phase.sh` calls them,
+    over one shared `ordered_repos_json`, the decided item leaves that
+    aggregate's own `tech_debt` band — so no Co-Ordinator engagement can rank
+    it — while `refiner_candidate_items`, fed the resulting
+    `refiner_repos_json`, still offers it carrying the same pending decision.
+    Both halves are asserted together over the one aggregate because either
+    alone is the bug: asserting them against separately-constructed inputs
+    leaves a `refiner_repos_json` derived from the post-withholding aggregate
+    undetected, withholding the item from the Refiner too and so from the
+    only actor whose `item-refined` could ever free it (requirement 3y). A
+    second real-sequence case, over the identical pair of calls, proves the
+    reachability gate at the other end: a decision-pending candidate from a
+    band whose source `refinement_policy` leaves `exempt` (the installation's
+    default for every source but `issues` and `tech-debt`) is **not** withheld
+    from `ordered_repos_json` — since `refiner_candidate_items` would never
+    have offered it to the Refiner either way, withholding it from the
+    Co-Ordinator too would leave it permanently unreachable, the second defect
+    the Reviewer and the Enabler confirmed on PR #2047. A third drives the
+    same pair with `refiner_model` empty and the same `tech-debt: required`
+    policy: the pass does not run at all, so the decided item is **not**
+    withheld — with no Refiner configured, nothing could ever supersede the
+    decision regardless of policy, so no cycle limit on the withholding could
+    ever be realised.
 3y. **The two Refiner-only gatherers read what requirement 3y says
     (requirement 3y).** `test/gather-project-review.test.sh` and
     `test/gather-implementation-plan.test.sh` pass, each driving its script

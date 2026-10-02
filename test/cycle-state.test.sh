@@ -1008,21 +1008,44 @@ assert_eq "the same block/void does not reach a different repo's findings" \
   "3" "$(jq 'length' <<<"$out")"
 
 # --- exclude_decision_pending_items: a pending decision withholds the item ---
-# --- from Co-Ordinator ranking entirely (requirement 36d, agent-ops#1057) ---
-decision_cands='[{"ref":"TD1"},{"ref":"TD2"}]'
+# --- from Co-Ordinator ranking entirely, but only where some actor — a    ---
+# --- Refiner engagement — can later lift it (requirement 36d,            ---
+# --- agent-ops#1057, as narrowed by the Reviewer's and the Enabler's own ---
+# --- finding on PR #2047) ---
+decision_cands='[{"ref":"TD1","source":"tech-debt"},{"ref":"TD2","source":"tech-debt"}]'
 decisions_for_a='{"org/a":{"TD1":{"ts":"2026-09-01T00:00:00Z","decision":"use option B"}}}'
-out="$(exclude_decision_pending_items "$decision_cands" "org/a" "$decisions_for_a")"
-assert_eq "an item with a pending decision is withheld" \
+td_required='{"tech-debt":"required"}'
+out="$(exclude_decision_pending_items "$decision_cands" "org/a" "$decisions_for_a" "$td_required")"
+assert_eq "an item with a pending decision, from a non-exempt source, is withheld" \
   '["TD2"]' "$(jq -c 'map(.ref)' <<<"$out")"
-out="$(exclude_decision_pending_items "$decision_cands" "org/b" "$decisions_for_a")"
+out="$(exclude_decision_pending_items "$decision_cands" "org/b" "$decisions_for_a" "$td_required")"
 assert_eq "the same decision does not reach a different repo's band" \
   "2" "$(jq 'length' <<<"$out")"
 assert_eq "an item with no pending decision is unaffected" \
-  '["TD1","TD2"]' "$(jq -c 'map(.ref)' <<<"$(exclude_decision_pending_items "$decision_cands" "org/a" '{}')")"
+  '["TD1","TD2"]' "$(jq -c 'map(.ref)' <<<"$(exclude_decision_pending_items "$decision_cands" "org/a" '{}' "$td_required")")"
 assert_eq "malformed decisions degrades to unfiltered" "$decision_cands" \
-  "$(exclude_decision_pending_items "$decision_cands" "org/a" 'not json')"
+  "$(exclude_decision_pending_items "$decision_cands" "org/a" 'not json' "$td_required")"
+assert_eq "malformed policy degrades to unfiltered" "$decision_cands" \
+  "$(exclude_decision_pending_items "$decision_cands" "org/a" "$decisions_for_a" 'not json')"
 assert_eq "a candidate with no ref is dropped, not crashed on" "0" \
-  "$(jq 'length' <<<"$(exclude_decision_pending_items '[{"title":"no ref"}]' "org/a" "$decisions_for_a")")"
+  "$(jq 'length' <<<"$(exclude_decision_pending_items '[{"title":"no ref","source":"tech-debt"}]' "org/a" "$decisions_for_a" "$td_required")")"
+
+# The reachability gate itself (agent-ops#1057, the second round, PR #2047):
+# a decision-pending item whose own source resolves `refinement_policy`-exempt
+# is kept despite the pending decision — such an item is never a Refiner
+# candidate either (`refiner_candidate_items`'s own `exempt($source)` check),
+# so withholding it here too would leave no actor able to ever supersede the
+# decision, making the withholding permanent rather than one cycle wide.
+mc_cands='[{"ref":"pr-1-conflict-abc","source":"merge-conflicts"}]'
+mc_decisions='{"org/a":{"pr-1-conflict-abc":{"ts":"2026-09-01T00:00:00Z","decision":"rebase"}}}'
+assert_eq "an exempt-source item with a pending decision is kept, not withheld" \
+  '["pr-1-conflict-abc"]' \
+  "$(jq -c 'map(.ref)' <<<"$(exclude_decision_pending_items "$mc_cands" "org/a" "$mc_decisions" '{}')")"
+assert_eq "...also kept when the policy object names other sources but not this one" \
+  '["pr-1-conflict-abc"]' \
+  "$(jq -c 'map(.ref)' <<<"$(exclude_decision_pending_items "$mc_cands" "org/a" "$mc_decisions" "$td_required")")"
+assert_eq "...but withheld once this source's own policy is no longer exempt" \
+  "0" "$(jq 'length' <<<"$(exclude_decision_pending_items "$mc_cands" "org/a" "$mc_decisions" '{"merge-conflicts":"preferred"}')")"
 
 # `issues` never calls this (the band pin below), because its decision
 # travels as a live-reread comment thread (requirement 18a) rather than
@@ -1030,10 +1053,10 @@ assert_eq "a candidate with no ref is dropped, not crashed on" "0" \
 # exclusion regardless of what band shape is handed to it, proven here
 # against an issue-shaped `ref` so a future reader can see the restriction to
 # non-issue bands is the call site's choice, not a limitation of the function.
-iss_decision_cands='[{"ref":"210"},{"ref":"211"}]'
+iss_decision_cands='[{"ref":"210","source":"issues"},{"ref":"211","source":"issues"}]'
 iss_decisions='{"org/a":{"210":{"ts":"2026-09-01T00:00:00Z","decision":"use option B"}}}'
 assert_eq "the function itself does not special-case an issue-shaped ref" \
-  '["211"]' "$(jq -c 'map(.ref)' <<<"$(exclude_decision_pending_items "$iss_decision_cands" "org/a" "$iss_decisions")")"
+  '["211"]' "$(jq -c 'map(.ref)' <<<"$(exclude_decision_pending_items "$iss_decision_cands" "org/a" "$iss_decisions" '{"issues":"required"}')")"
 
 decision_band_list="$(sed -n 's/^for decision_band in \(.*\); do$/\1/p' "$SCRIPT_DIR/lib/eligibility.sh")"
 assert_eq "every pre-fetched band but issues reaches exclude_decision_pending_items" \

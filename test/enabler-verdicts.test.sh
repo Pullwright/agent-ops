@@ -1149,9 +1149,14 @@ assert_eq "decide/never-refined: a never-refined thread-less candidate carries n
 # this same item from its own band in the one cycle before the Refiner
 # rewrites its specification — unless compute_band_eligibility's own
 # subtraction pass (lib/eligibility.sh) drops it first, exactly as it does
-# here via exclude_decision_pending_items.
+# here via exclude_decision_pending_items — but only where the item's own
+# source is not refinement_policy-exempt, since an exempt source is never a
+# Refiner candidate either and withholding it here too would leave no actor
+# able to ever supersede the decision (the Reviewer's and the Enabler's
+# finding on PR #2047, second round).
 band_before="$(jq -c '.[0].tech_debt' <<<"$repos_for_candidates")"
-band_after="$(exclude_decision_pending_items "$band_before" "acme/widgets" "$dmap")"
+td_required='{"tech_debt":"required"}'
+band_after="$(exclude_decision_pending_items "$band_before" "acme/widgets" "$dmap" "$td_required")"
 assert_eq "decide/TD-disagreement: ...and the item leaves the Co-Ordinator's own band" \
   "0" "$(jq 'length' <<<"$band_after")"
 
@@ -1177,17 +1182,49 @@ ordered_repos_json='[{"slug":"acme/widgets","tech_debt":[{"source":"tech_debt","
 blocked_json='[]'
 void_json='[]'
 union_log="$recon_log"
-refiner_model=''
+refiner_model='claude-test-model'
+refinement_policy_json="$td_required"
 compute_band_eligibility
 prefetch_refiner_sources
 assert_eq "decide/TD-disagreement real-sequence: the item leaves ordered_repos_json's own band too" \
   "0" "$(jq '.[0].tech_debt | length' <<<"$ordered_repos_json")"
-refiner_candidates_real="$(refiner_candidate_items "$refiner_repos_json" '{"tech_debt":"required"}' \
+refiner_candidates_real="$(refiner_candidate_items "$refiner_repos_json" "$td_required" \
   "$rmap" '[]' '[]' '[]' "$decisions_json")"
 assert_eq "decide/TD-disagreement real-sequence: ...and still reaches the Refiner's own candidate set" \
   "1" "$(jq 'length' <<<"$refiner_candidates_real")"
 assert_eq "decide/TD-disagreement real-sequence: ...carrying the same pending decision" "use option B" \
   "$(jq -r '.[0].decision.decision' <<<"$refiner_candidates_real")"
+
+# The reachability gate's first half, through the same real sequence
+# (agent-ops#1057, second round, PR #2047): a decision-pending item from a
+# band whose source `refinement_policy` leaves exempt — every source but
+# `issues`/`tech-debt` by this installation's shipped default — is not
+# withheld from `ordered_repos_json`. Same fixture shape as above but a
+# `merge_conflicts` band and an empty policy (so `merge_conflicts` resolves
+# exempt), proving the per-entry `.source` check, not the band name, decides.
+ordered_repos_json='[{"slug":"acme/widgets","merge_conflicts":[{"source":"merge_conflicts","ref":"pr-1-conflict-abc"}]}]'
+recon_log_mc="$tmp_dir/decide-disagreement-mc.jsonl"
+jq -nc '{event:"decision-taken", ts:"2026-09-01T00:00:00Z", repo:"acme/widgets", item:"pr-1-conflict-abc", decision:"rebase onto main", rationale:"r"}' \
+  > "$recon_log_mc"
+union_log="$recon_log_mc"
+refinement_policy_json='{}'
+compute_band_eligibility
+assert_eq "decide/exempt-source real-sequence: an exempt-source decision-pending item stays in the Co-Ordinator's own band" \
+  "1" "$(jq '.[0].merge_conflicts | length' <<<"$ordered_repos_json")"
+
+# The reachability gate's second half: with no Refiner configured at all
+# (`refiner_model` empty), the whole pass is skipped — the original
+# `tech_debt` fixture, with the same non-exempt `tech_debt: required` policy
+# that withheld it above, is left untouched, since nothing could ever
+# supersede the decision regardless of policy.
+ordered_repos_json='[{"slug":"acme/widgets","tech_debt":[{"source":"tech_debt","ref":"TD26082901"}]}]'
+union_log="$recon_log"
+refiner_model=''
+refinement_policy_json="$td_required"
+compute_band_eligibility
+assert_eq "decide/no-refiner real-sequence: with no refiner_model, the pass does not run at all" \
+  "1" "$(jq '.[0].tech_debt | length' <<<"$ordered_repos_json")"
+
 # `union_log` is unset again immediately: `escalation_autonomy_pass_available`
 # (lib/escalation-autonomy.sh) reads `${union_log:-$log_file}`, and every
 # decide-tactical case below this point relies on that fallback reaching the
@@ -1195,7 +1232,8 @@ assert_eq "decide/TD-disagreement real-sequence: ...carrying the same pending de
 # sets union_log" fixture explains why. Leaving it set here would silently
 # redirect every such read at `$recon_log` for the rest of the file.
 unset union_log ordered_repos_json blocked_json void_json refiner_model \
-  refiner_repos_json refiner_prefetch_source_json refiner_candidates_real
+  refiner_repos_json refiner_prefetch_source_json refiner_candidates_real \
+  refinement_policy_json recon_log_mc
 
 # --- decision-vetoed clears the decision (agent-ops#937, agent-ops#1198):
 # reopening the log issue withdraws the decision it logged, and a Refiner

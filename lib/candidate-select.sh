@@ -295,7 +295,7 @@ exclude_blocked_or_void_items() {  # <candidates-json> <repo> <blocked-json> <vo
   ' <<<"$docs" 2>/dev/null || printf '%s' "$candidates"
 }
 
-# exclude_decision_pending_items CANDIDATES_JSON REPO DECISIONS_JSON
+# exclude_decision_pending_items CANDIDATES_JSON REPO DECISIONS_JSON POLICY_JSON
 # The Co-Ordinator-side half of agent-ops#1057: `decisions_json` (requirement
 # 36d) reaches the Refiner only — the Co-Ordinator model is never shown it —
 # so nothing before this function stops the Co-Ordinator ranking and
@@ -313,10 +313,35 @@ exclude_blocked_or_void_items() {  # <candidates-json> <repo> <blocked-json> <vo
 # still names a pending decision for under this repo — refined or not: for a
 # non-issue item the decision exists nowhere the Co-Ordinator reads except
 # this array, so an unrefined-but-decided item is as reachable by this route
-# as a refined one. This withholding is not `refinement_policy` (requirement
-# 39a) and binds at every policy, `exempt` included — it is not about whether
-# an item needs a specification before selection, but about not dispatching
-# one the pipeline has already ruled superseded.
+# as a refined one.
+#
+# **The withholding binds only where some actor can later lift it** (the
+# Reviewer's and Enabler's finding on PR #2047, after the first version of
+# this function bound unconditionally): only an unmarked `item-refined` ever
+# supersedes a decision in `decisions_map`, and only the Refiner ever writes
+# one. An entry whose `.source` resolves `exempt` under POLICY_JSON
+# (`refiner_policy_value`, lib/refinement.sh — the same predicate
+# `refiner_candidate_items` applies) is never offered to the Refiner
+# (`select(exempt($source) | not)`, lib/refinement.sh), so withholding it here
+# too would make it permanently invisible to every automated actor — worse
+# than the one-cycle race this function exists to close, and with no cycle
+# limit on it. Such an entry is therefore kept (never withheld) regardless of
+# any pending decision; this is not `refinement_policy` (requirement 39a)
+# shaping *how* the item ranks, it is this function declining to remove an
+# item nothing could ever restore. The caller (`compute_band_eligibility`)
+# additionally skips calling this function at all when no Refiner is
+# configured (`refiner_model` empty), for the identical reason applied one
+# level up: with no Refiner to ever write the superseding `item-refined`, no
+# entry of any source could be restored, so nothing from this band should be
+# withheld that cycle.
+#
+# `human-visibility` needs no separate carve-out here: `refiner_candidate_items`'s
+# own source walk (lib/refinement.sh) omits that band's array entirely, and
+# POLICY_JSON's schema (`config.schema.json`'s `refinement_policy`,
+# `additionalProperties: false`) has no `human-visibility` key for any
+# installation to ever set — so `exempt` is what it resolves to at every
+# valid configuration, and the per-entry check above already covers it
+# permanently, with nothing further to gate.
 #
 # `issues` never calls this: an issue's decision travels as a comment in the
 # thread the Co-Ordinator already re-reads live (requirement 18a), so it can
@@ -327,18 +352,24 @@ exclude_blocked_or_void_items() {  # <candidates-json> <repo> <blocked-json> <vo
 # DECISIONS_JSON arrives on stdin, never argv, the same `decisions_map` output
 # `refiner_candidate_items`'s own `decision_for` reads — keyed repo → item,
 # item stringified, matched against each candidate's own `.ref` the same way
-# `decision_for` converts it. Malformed input degrades to the unfiltered
-# array, on the same fail-open terms as exclude_blocked_or_void_items.
-exclude_decision_pending_items() {  # <candidates-json> <repo> <decisions-json>
-  local candidates="$1" repo="$2" decisions="${3:-{\}}" docs
+# `decision_for` converts it. POLICY_JSON stays in argv, the same convention
+# `refiner_candidate_items` uses for its own `$policy` — the installation's
+# own configuration, bounded by requirement 4g. Malformed decisions or policy
+# input degrades to the unfiltered array, on the same fail-open terms as
+# exclude_blocked_or_void_items.
+exclude_decision_pending_items() {  # <candidates-json> <repo> <decisions-json> <policy-json>
+  local candidates="$1" repo="$2" decisions="${3:-{\}}" policy="${4:-{\}}" docs
   jq -e 'type == "object"' <<<"$decisions" >/dev/null 2>&1 || decisions='{}'
+  jq -e 'type == "object"' <<<"$policy" >/dev/null 2>&1 || policy='{}'
   docs="$(printf '%s\n' "$candidates" "$decisions")"
-  jq -nc --arg repo "$repo" '
+  jq -nc --arg repo "$repo" --argjson policy "$policy" '
+    def exempt($s): (($policy // {})[$s] // "exempt") == "exempt";
     input as $candidates | input as $decisions
     | (($decisions[$repo] // {})) as $repo_decisions
     | [ $candidates[] | select(((.ref // null) as $r
                      | $r != null
-                       and ($repo_decisions[($r | tostring)] // null) == null)) ]
+                       and (($repo_decisions[($r | tostring)] // null) == null
+                            or exempt((.source // ""))))) ]
   ' <<<"$docs" 2>/dev/null || printf '%s' "$candidates"
 }
 

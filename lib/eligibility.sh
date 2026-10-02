@@ -181,13 +181,27 @@ refiner_prefetch_source_json="$ordered_repos_json"
 # — test/cycle-state.test.sh pins each loop's own band list by a `sed`
 # pattern keyed on the loop variable's name, and two loops sharing one name
 # would give that pattern two matches.
+#
+# Gated on `refiner_model` being set at all (the Reviewer's and Enabler's
+# finding on PR #2047, after a first version of this pass ran unconditionally):
+# only the Refiner ever writes the unmarked `item-refined` that supersedes a
+# decision in `decisions_map`, so with no Refiner configured nothing could
+# ever lift a withholding this pass applied — permanently, not for one cycle.
+# `exclude_decision_pending_items` itself applies the matching per-entry gate
+# on the source's own `refinement_policy` (an `exempt` source is never a
+# Refiner candidate either, `select(exempt($source) | not)` in
+# `refiner_candidate_items`, lib/refinement.sh), so between the two gates this
+# pass only ever withholds an entry some actor can later restore — mirroring
+# the same two facts `prefetch_refiner_sources`' own Refiner-only pre-fetch
+# below already gates its reads on, in this same function.
+if [[ -n "${refiner_model:-}" ]]; then
 for decision_band in findings review_feedback abandoned_drafts merge_conflicts dequeued landing_refusals human_visibility tech_debt; do
   while IFS= read -r db_slug; do
     [[ -n "$db_slug" ]] || continue
     db_current="$(jq -c --arg s "$db_slug" --arg f "$decision_band" \
       'map(select(.slug == $s)) | .[0][$f] // []' <<<"$ordered_repos_json" 2>&1)" \
       || { guard_warn "db_current:$db_slug:$decision_band" "$db_current"; db_current='[]'; }
-    db_filtered="$(exclude_decision_pending_items "$db_current" "$db_slug" "$decisions_json")"
+    db_filtered="$(exclude_decision_pending_items "$db_current" "$db_slug" "$decisions_json" "$refinement_policy_json")"
     ordered_repos_json="$(jq -c --arg r "$db_slug" --arg f "$decision_band" --argjson v "$db_filtered" \
       'map(if .slug == $r then .[$f] = $v else . end)' \
       <<<"$ordered_repos_json" 2>/dev/null || printf '%s' "$ordered_repos_json")" # TD-PPagop-26081407: passes test 2 -- falls back to the unchanged prior aggregate, not a fabricated empty
@@ -195,6 +209,7 @@ for decision_band in findings review_feedback abandoned_drafts merge_conflicts d
            '[.[] | select(((.[$f] // []) | length) > 0) | .slug] | unique[]' \
            <<<"$ordered_repos_json" 2>/dev/null || true)
 done
+fi
 }
 
 # compute_enabler_eligible_set — requirements 35a and 35b. Called once from
