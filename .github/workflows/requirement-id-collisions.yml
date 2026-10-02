@@ -1,0 +1,32 @@
+name: Requirement id collisions check
+
+# Permanent CI guard against a new duplicate requirement id across sections
+# in docs/IMPLEMENTATION-PIPELINE-SPEC.md (issue #1105) — see
+# scripts/check-requirement-id-collisions.sh's own header for what counts as
+# a collision and why the known pre-existing ones (39, 39c, 55, 17b, 17g) are
+# allowlisted rather than failing this check forever. Modelled on
+# config-table.yml/toc.yml: the test suite only runs the checker against a
+# synthetic fixture (test/check-requirement-id-collisions.test.sh), never
+# against the real spec file, so this job is what actually exercises it here.
+#
+# Deliberately `pull_request` (not `pull_request_target`), so a fork PR never
+# runs with write-scoped secrets, and ungated by `paths:` — the checker reads
+# the whole spec file in one pass, so "did this PR touch the spec" is the
+# wrong question.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  requirement-id-collisions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check for new requirement id collisions
+        run: scripts/check-requirement-id-collisions.sh

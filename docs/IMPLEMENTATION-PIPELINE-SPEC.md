@@ -12,11 +12,14 @@ silent, follow the conventions of the two target repositories (their
 `AGENTS.md` files — or `CLAUDE.md`, for a repository that has not migrated —
 are binding on any agent working inside them).
 
-Requirement ids are unique within the `###` section that defines them, not
-document-wide — e.g., "requirement 39c (The Refiner)" and "requirement 39c
-(Finish-then-continue)" name two different requirements. Cross-references to
-an id are always qualified with its section name when they cite a requirement
-defined in a different section.
+Requirement ids may recur across `###` sections — e.g., "requirement 39c
+(The Refiner)" and "requirement 39c (Finish-then-continue)" name two
+different requirements — and, for the two legacy ids 17b and 17g, even
+within the single section that defines both of each pair ("The Co-Ordinator
+(selection only)"). A citation of an id defined in more than one place is
+qualified with its owning section unless the surrounding clause already
+names the owner (e.g., "the Refiner's (requirement 39)"); a citation of an
+id defined in exactly one place may be left bare.
 
 <!-- toc:start -->
 - [About this document](#about-this-document)

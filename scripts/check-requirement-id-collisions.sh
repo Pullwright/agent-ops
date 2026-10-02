@@ -12,9 +12,10 @@
 # section names.
 #
 # This script fails (exit 1) if any bare requirement id heading appears under
-# more than one ### section. Otherwise it exits 0.
+# more than one ### section, unless that id is in the allowlist below.
+# Otherwise it exits 0.
 #
-# Exit 0 iff no collisions are found in the spec file.
+# Exit 0 iff no collision outside the allowlist is found in the spec file.
 
 set -uo pipefail
 
@@ -22,6 +23,17 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root" || exit 1
 
 spec_file="docs/IMPLEMENTATION-PIPELINE-SPEC.md"
+
+# Known pre-existing collisions, left unresolved by issue #1105's own scope
+# decision (qualify citations, don't renumber) and tracked individually:
+# 39/39c (issue #1105 itself; the two "The Script"/"The Refiner" pairs),
+# 55 (issue #1584), 17b and 17g (both within the single "The Co-Ordinator
+# (selection only)" section). This allowlist is also the collision inventory
+# issue #2095's own renumbering proposal would start from. Only a collision
+# outside this list fails the check; growing this list for a new collision
+# is itself a sign that id should be renumbered or qualified instead, not a
+# routine maintenance edit.
+allowlisted_ids=(39 39c 55 17b 17g)
 
 if [[ ! -f "$spec_file" ]]; then
   echo "check-requirement-id-collisions: $spec_file not found" >&2
@@ -85,6 +97,17 @@ for req_id in "${!requirement_sections[@]}"; do
   section_count=$((section_count + 1))
 
   if (( section_count > 1 )); then
+    is_allowlisted=0
+    for allowed in "${allowlisted_ids[@]}"; do
+      if [[ "$req_id" == "$allowed" ]]; then
+        is_allowlisted=1
+        break
+      fi
+    done
+    if (( is_allowlisted )); then
+      continue
+    fi
+
     echo "check-requirement-id-collisions: requirement id '$req_id' appears in multiple sections:" >&2
     IFS='|' read -ra section_array <<< "$sections"
     for sec in "${section_array[@]}"; do
