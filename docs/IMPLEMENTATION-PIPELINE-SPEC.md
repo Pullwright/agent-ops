@@ -23709,7 +23709,10 @@ What exists, and the requirements each part answers to:
     `--check` renders each region — table and notes alike — to a temporary
     file instead and exits non-zero, naming the file, the region and the
     first differing key, the moment any region is stale — what
-    `.github/workflows/config-table.yml` runs on every pull request.
+    `.github/workflows/config-table.yml` runs on every pull request, on push
+    to `main`, and on `merge_group`, so the `config-table` context reports
+    inside the merge queue rather than leaving every queue entry to wait out
+    the ruleset's `check_response_timeout_minutes`.
     Regression-tested end to end, against the shipped script copied into a
     scratch fixture repository rather than a reimplementation of its logic,
     in `test/render-config-table.test.sh`; must pass `shellcheck`.
