@@ -58,7 +58,6 @@ EOF
 # Create a wrapper script that uses the temp fixtures
 test_with_fixture() {
   local fixture="$1"
-  local name="$2"
 
   # Create a temporary script that checks the fixture instead of the real spec
   local temp_script="$tmpdir/check.sh"
@@ -68,7 +67,7 @@ test_with_fixture() {
 }
 
 echo "Test 1: Fixture with no collisions should pass..."
-if test_with_fixture "$tmpdir/no-collisions.md" "no-collisions"; then
+if test_with_fixture "$tmpdir/no-collisions.md"; then
   echo "✓ PASS: No collisions detected (as expected)"
 else
   echo "✗ FAIL: Expected no collisions but checker failed"
@@ -77,7 +76,7 @@ fi
 
 echo ""
 echo "Test 2: Fixture with collisions (39 and 39c in Script vs Refiner)..."
-if test_with_fixture "$tmpdir/with-collisions.md" "with-collisions"; then
+if test_with_fixture "$tmpdir/with-collisions.md"; then
   echo "✗ FAIL: Expected collisions to be detected but checker passed"
   exit 1
 else

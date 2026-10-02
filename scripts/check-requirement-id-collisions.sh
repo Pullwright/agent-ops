@@ -38,7 +38,6 @@ declare -A requirement_sections
 
 current_section=""
 in_requirements_section=0
-in_acceptance_section=0
 
 while IFS= read -r line; do
   # Detect top-level section headers (## ...)
@@ -46,13 +45,8 @@ while IFS= read -r line; do
     section_name="${BASH_REMATCH[1]}"
     if [[ "$section_name" == "Requirements" ]]; then
       in_requirements_section=1
-      in_acceptance_section=0
-    elif [[ "$section_name" == "Acceptance checks" ]]; then
-      in_requirements_section=0
-      in_acceptance_section=1
     else
       in_requirements_section=0
-      in_acceptance_section=0
     fi
   fi
 
