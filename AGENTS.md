@@ -9,6 +9,9 @@ monitor them; `docs/*-SPEC.md` are the as-built requirement specifications
 for each component; `prompts/` holds the runtime prompts the pipelines pass
 to their agents.
 
+For a map of all documentation and how to find answers to common questions,
+see `docs/README.md`.
+
 ## As-built specifications
 
 Each component has an as-built requirements specification in `docs/`:
@@ -45,7 +48,7 @@ requirements, so bring the spec in line first, then the affected prompt(s).
 
 ## Generated regions
 
-Two types of generated regions exist in this repository:
+Three types of generated regions exist in this repository:
 
 1. **Configuration tables** — `README.md`'s two configuration tables and each
    as-built spec's own (`docs/IMPLEMENTATION-PIPELINE-SPEC.md`'s,

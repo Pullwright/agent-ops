@@ -6,6 +6,9 @@ canonical, detailed reference — written for an operating AI agent, but
 every rule in it applies equally to a human contributor. This document is
 a short human-facing pointer into it, not a replacement for it.
 
+For an overview of all documentation and how to find answers to common
+questions, see `docs/README.md` — the documentation map.
+
 - **Every change lands via a pull request** that the repo owner reviews
   and squash-merges; there are no direct pushes to `main`.
 - **PR titles follow [Conventional
