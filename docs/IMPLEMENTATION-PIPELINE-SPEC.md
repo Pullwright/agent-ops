@@ -2861,7 +2861,7 @@ implements.
       development box should be able to say so once" is exactly what leaving
       `host_budget_enforce` at its default does, with no fight against this
       requirement required. On: an overcommit logs a `stand-down` event with
-      `cause: "host-overcommit"` (one of the fifteen tokens in the closed
+      `cause: "host-overcommit"` (one of the sixteen tokens in the closed
       cause vocabulary, `docs/FLOW-SCHEMA.md`) whose `reason` carries
       `lib/host-budget.sh`'s own `host_budget_describe` — both dimensions'
       arithmetic, the declared sum, the reserve, the host total, and the
@@ -10596,9 +10596,33 @@ implements.
     current image, and leaving it live either way would let a marker written
     for one roll authorise watchtower to destroy *this* cycle's own container
     for whatever publishes next. A verdict still reading "behind" leaves the
-    marker untouched — narrowing that window further is a larger design
-    change (agent-ops#1102's own option 2: standing the next cycle down while
-    a marker is in force and the image is still behind), not this one.
+    marker untouched, and the cycle that just reacquired `lock.json` asks one
+    further question before running its own stages under it (agent-ops#1102's
+    own option 2): is watchtower actually invoking the pre-update hook and
+    being turned away right now? `chain_updater_should_standdown`
+    (`lib/chain.sh`) answers this off `lib/updater-health.sh`'s own
+    `updater_status` verdict, read against the same `updater-ledger`
+    directory the state-sync heartbeat already reads (no second signal) —
+    "deferring", or "stuck" with `reason:"defer"`, both say watchtower is
+    there and being refused; "rolled", a bare "stuck"/`reason:"allow"` (the
+    roll is failing for reasons of its own, #1099's `Conflict` observation),
+    and `null` (no live ledger evidence at all) all say idling fixes nothing,
+    so the cycle runs normally. When it does say so, the cycle idles instead
+    of running: it logs a `stand-down` naming `cause: "roll-pending"` and the
+    marker's own `until`, settles into `externally-blocked`/`roll-pending`
+    (`set_node_state_terminal`, `docs/FLOW-SCHEMA.md`'s closed cause
+    vocabulary), and exits 0 without ever reaching the Co-Ordinator — `chain_
+    eligible` plays no part, since it is never raised this early in the
+    cycle. This is capped at one stand-down per pending marker (`chain_roll_
+    standdown_available`/`chain_roll_standdown_record`, `$state_dir/roll-
+    standdown.json`): even a verdict that stays wrong every cycle cannot idle
+    a node indefinitely, so a second cycle under the same still-live,
+    still-"behind" marker logs a `roll-standdown-capped` event naming the
+    marker and the spent count instead, and runs normally. The counter is
+    cleared alongside the marker itself, by the same `chain_clear_landed_
+    roll_pending` call above, once the verdict stops reading "behind" — so a
+    later, genuinely new pending roll earns its own fresh stand-down
+    allowance.
 
     The result is the bound the hook's own header now states: one cycle's
     length for a node that is merely busy, and `lock_stale_after` only for
@@ -20102,7 +20126,7 @@ with the Reviewer's own.
     node-count x window — and this requirement is where it is made
     checkable: a `node-state` transition event, logged the instant a node's
     own state changes, carrying the state it is entering, its cause (for the
-    four states that have one, from a closed fifteen-token vocabulary), and
+    four states that have one, from a closed sixteen-token vocabulary), and
     the state it was in a moment before; and a pure fold,
     `lib/node-time-state.sh`'s `node_time_state_fold` (behind the read-only
     `scripts/node-time-state.sh`), reconstructing seconds per state from
@@ -29161,9 +29185,10 @@ oblige anyone to edit a test.
     passes: the crontab report names the full comma list, not just the
     first occurrence.
 39c. **A pending image roll overrides an otherwise-eligible chain, never
-    grants one, is honoured at the hook against `lock.json` alone, and is
-    cleared once landed** (requirement 39c, agent-ops#1096, amended by
-    agent-ops#1102). `test/chain.test.sh` passes: `chain_image_behind` reads
+    grants one, is honoured at the hook against `lock.json` alone, is cleared
+    once landed, and — while it is not — idles the next cycle at most once
+    rather than letting it run underneath the marker** (requirement 39c,
+    agent-ops#1096, amended by agent-ops#1102). `test/chain.test.sh` passes: `chain_image_behind` reads
     true only for a `{"status":"behind",...}` verdict — "current",
     "unverified", the JSON literal `null` and malformed input all read false
     — and `chain_write_roll_pending` writes `$state_dir/roll-pending.json`
@@ -29193,6 +29218,33 @@ oblige anyone to edit a test.
     `test/state-sync.test.sh` passes:
     `roll-pending.json` does not replicate to a peer's branch, alongside the
     other live locks.
+
+    The one case `chain_clear_landed_roll_pending` leaves open — a verdict
+    still reading "behind" — is covered the same way (agent-ops#1102 option
+    2). `test/chain.test.sh` passes: `chain_roll_pending_live` reads true only
+    for a marker naming an `until` that has not yet passed, the identical
+    parse `roll_pending_allow` uses; `chain_updater_should_standdown` reads
+    true only for `updater_status`'s own `"deferring"` or `"stuck"`/`reason:
+    "defer"`, never `"rolled"`, a bare `"stuck"`/`reason:"allow"`, `null`, or
+    malformed input; `chain_roll_standdown_available` reads true only when
+    `$state_dir/roll-standdown.json` is absent or its `count` is exactly `0`,
+    failing closed (false) on an unreadable file or a non-numeric `count`;
+    `chain_roll_standdown_record` creates that file at `count: 1` with a fresh
+    `since` and increments an existing one while preserving its `since`; and
+    `chain_clear_landed_roll_pending` now also removes `roll-standdown.json`
+    alongside the marker once the verdict stops reading "behind", never while
+    it still does. `test/roll-standdown-wiring.test.sh` passes, against the
+    real post-`acquire_lock` block lifted out of `agent-cycle.sh`: a live
+    marker with an eligible updater verdict logs a `stand-down` naming `cause:
+    "roll-pending"` and the marker's own `until`, sets the node-state terminal
+    to `externally-blocked`/`roll-pending`, records one stand-down against the
+    cap, leaves `roll-pending.json` byte-identical to what it found (writing
+    no new one), and exits before the block's own end; the same marker with a verdict
+    idling cannot fix (`"rolled"`, `"stuck"`/`reason:"allow"`, or `null`) runs
+    normally with nothing logged; an expired marker is left alone for its own
+    clock; and a second eligible cycle under a marker whose cap is already
+    spent logs a `roll-standdown-capped` event naming the marker and the spent
+    count instead of standing down, then still reaches its own end.
 17e. **Contended-claim-loss reporting is correct per node and per era
     (component 21).** `test/pickup-metrics.test.sh` passes against a fixture
     union log: `selection` and `claim-lost` events split "before"/"after" at
@@ -30377,7 +30429,7 @@ oblige anyone to edit a test.
     transition reaches every site requirement 50 names, and the invariant
     balances (requirement 50).** `test/node-time-state.test.sh` drives
     `lib/node-time-state.sh` directly: `node_time_state_for_cause` against
-    every one of the fifteen closed-vocabulary tokens, including the three
+    every one of the sixteen closed-vocabulary tokens, including the three
     translated rather than renamed (`raced`/`pre-claimed` to `peer-claimed`,
     `untraceable` to `coordinator-declined`) and an unrecognised
     cause (maps to nothing, never a guess); `node_time_state_idle_split`

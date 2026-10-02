@@ -30,6 +30,20 @@
 # passes runs its own stages underneath it. `chain_clear_landed_roll_pending`
 # is how the next cycle sheds a marker that has already done its job — see
 # agent-cycle.sh's `acquire_lock` call site, its only caller.
+#
+# A fourth question, for the one case the third leaves deliberately open
+# (agent-ops#1102's own option 2): `chain_clear_landed_roll_pending` declines
+# to clear a marker whose verdict still reads "behind", so that cycle runs
+# its own stages underneath a marker that still authorises overriding
+# `lock.json`. `chain_roll_pending_live` and `chain_updater_should_standdown`
+# are the two guards agent-cycle.sh combines to decide whether that cycle
+# should idle instead of running — only when the marker has not yet expired
+# and watchtower is actually polling and being turned away (otherwise idling
+# fixes nothing, since nothing is waiting to take the gap). `chain_roll_
+# standdown_available`/`chain_roll_standdown_record` are the one-stand-down-
+# per-pending-roll cap that bounds it even against a wrong verdict from those
+# two guards, cleared by `chain_clear_landed_roll_pending` alongside the
+# marker itself once the roll has actually landed.
 
 # chain_sources_remain ORDERED_REPOS_JSON
 # Print the total count of configured, non-excluded sources across every
@@ -128,5 +142,93 @@ chain_write_roll_pending() {
 chain_clear_landed_roll_pending() {
   local state_dir="$1" status_json="${2:-null}"
   chain_image_behind "$status_json" && return 0
-  rm -f "$state_dir/roll-pending.json" 2>/dev/null || true
+  rm -f "$state_dir/roll-pending.json" "$state_dir/roll-standdown.json" 2>/dev/null || true
+}
+
+# chain_roll_pending_live STATE_DIR
+# Exit 0 iff STATE_DIR/roll-pending.json exists and names an `until` that has
+# not yet passed (agent-ops#1102 option 2) — the identical parse deploy/docker/
+# watchtower-pre-update.sh's own `roll_pending_allow` uses (an unparseable
+# `until`, or none at all, reads as epoch 0, i.e. not live), so the two never
+# disagree about whether the marker is still in force. A marker that has
+# merely expired is left for `chain_clear_landed_roll_pending`'s own clock-
+# driven caller to deal with rather than deleted here — this function only
+# answers the question, it never writes.
+chain_roll_pending_live() {
+  # Separate statements on purpose: `local a=… b="$a"` expands every argument
+  # before assigning any, so `f` would read an unset `state_dir` under `set -u`.
+  local state_dir="$1"
+  local f="$state_dir/roll-pending.json" until_ts="" until_epoch=0 now_epoch=0
+  [[ -f "$f" ]] || return 1
+  until_ts="$(jq -r '.until // empty' "$f" 2>/dev/null || true)"
+  [[ -n "$until_ts" ]] || return 1
+  until_epoch="$(date -d "$until_ts" +%s 2>/dev/null || echo 0)"
+  now_epoch="$(date +%s)"
+  (( until_epoch > now_epoch ))
+}
+
+# chain_updater_should_standdown UPDATER_STATUS_JSON
+# Exit 0 iff lib/updater-health.sh's own `updater_status` verdict means
+# watchtower is actually invoking the pre-update hook and being turned away
+# right now (agent-ops#1102 option 2's Guard A) — the only condition idling a
+# cycle can do anything about. "deferring" (our own invocation streak is
+# currently being refused) and "stuck" with `reason:"defer"` (the same streak,
+# grown stuck) both qualify; every other verdict — `null` (no live ledger
+# evidence: watchtower is not running, or not polling this container yet),
+# "rolled", and "stuck" with `reason:"allow"` (the roll itself is failing for
+# reasons of its own, #1099's `Conflict` observation) — does not, since idling
+# fixes none of them.
+chain_updater_should_standdown() {
+  local status_json="${1:-null}" status="" reason=""
+  status="$(jq -r '.status // "null"' <<<"$status_json" 2>/dev/null || echo null)"
+  case "$status" in
+    deferring) return 0 ;;
+    stuck)
+      reason="$(jq -r '.reason // empty' <<<"$status_json" 2>/dev/null || true)"
+      [[ "$reason" == "defer" ]]
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+# chain_roll_standdown_available STATE_DIR
+# Exit 0 iff STATE_DIR/roll-standdown.json is absent, or its `count` reads
+# exactly 0 — the one-stand-down-per-pending-roll cap (agent-ops#1102 option
+# 2): even a wrong verdict from chain_updater_should_standdown must not idle a
+# node indefinitely. An unreadable file or a non-numeric `count` fails closed
+# toward running the cycle (exit 1, "already stood down"), never toward
+# idling it a second time on a value that could not be trusted.
+chain_roll_standdown_available() {
+  # Separate statements on purpose (see chain_roll_pending_live's own note).
+  local state_dir="$1"
+  local f="$state_dir/roll-standdown.json" count=""
+  [[ -f "$f" ]] || return 0
+  count="$(jq -r '.count // 0' "$f" 2>/dev/null)" || return 1
+  [[ "$count" =~ ^[0-9]+$ ]] || return 1
+  (( count == 0 ))
+}
+
+# chain_roll_standdown_record STATE_DIR
+# Increment STATE_DIR/roll-standdown.json's `count` — creating it at 1 with
+# `since` the current time if absent, preserving the original `since` on a
+# second write — recording that this cycle idled rather than running its
+# stages under a live roll-pending marker (agent-ops#1102 option 2). Best-
+# effort like `chain_write_roll_pending`: a failure to write here must not
+# turn a real stand-down into a fatal error, and this cap existing to fail
+# safe is pointless if writing it can itself abort the cycle.
+chain_roll_standdown_record() {
+  # Separate statements on purpose (see chain_roll_pending_live's own note).
+  local state_dir="$1"
+  local f="$state_dir/roll-standdown.json" count=0 since=""
+  if [[ -f "$f" ]]; then
+    count="$(jq -r '.count // 0' "$f" 2>/dev/null)" || count=0
+    [[ "$count" =~ ^[0-9]+$ ]] || count=0
+    since="$(jq -r '.since // empty' "$f" 2>/dev/null || true)"
+  fi
+  [[ -n "$since" ]] || since="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)" || return 0
+  mkdir -p "$state_dir" 2>/dev/null || return 0
+  local tmp="$f.tmp.$$"
+  jq -nc --argjson c "$(( count + 1 ))" --arg s "$since" '{count: $c, since: $s}' > "$tmp" 2>/dev/null \
+    || { rm -f "$tmp" 2>/dev/null; return 0; }
+  mv "$tmp" "$f" 2>/dev/null || rm -f "$tmp" 2>/dev/null
 }

@@ -2027,8 +2027,8 @@ verdict of its own: the totals table (all six states plus `unaccounted`),
 then the idle-with-demand cause breakdown, then the externally-blocked cause
 breakdown. `externally_blocked_by_cause` (issue #609) is the one addition
 `node_time_state_fold` itself gained for this item — `externally-blocked`
-seconds split by its own eight causes, `usage-limit` isolated from the other
-seven so the account can tell "model capacity is the constraint" from "a
+seconds split by its own nine causes, `usage-limit` isolated from the other
+eight so the account can tell "model capacity is the constraint" from "a
 host or GitHub fault is," on the same terms `idle_with_demand_by_cause`
 already split idle-with-demand seconds by its own four causes. **The window
 is the retained log union and nothing more** — `log.jsonl` and

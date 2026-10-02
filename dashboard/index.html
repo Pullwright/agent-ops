@@ -2565,7 +2565,7 @@
       el("div", {class:"muted", style:"margin-top:8px", text:"Externally blocked, by cause"}),
       constraintCauseTable(acct.externally_blocked_by_cause,
         ["usage-limit", "github-budget", "unreachable", "unauthorized", "disk-low", "disk-full",
-         "memory-low", "host-overcommit", "unspecified"])
+         "memory-low", "host-overcommit", "roll-pending", "unspecified"])
     ]));
     return el("div", {}, body);
   }

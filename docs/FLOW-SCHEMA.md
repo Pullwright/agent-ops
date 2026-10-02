@@ -626,7 +626,15 @@ revisable in this one place rather than scattered across every emission site:
   the other three in what it measures: not this node's own live free
   disk/memory, but the *declared* sum of every running container's own
   ceiling on the host it shares with its siblings — a structural check, only
-  ever raised when `host_budget_enforce` is configured on.
+  ever raised when `host_budget_enforce` is configured on. `roll-pending`
+  (agent-ops#1102 option 2) is the fifth: a cycle that reacquired `lock.json`
+  under a still-live `roll-pending.json` marker and found watchtower actually
+  polling and being turned away (`chain_updater_should_standdown`,
+  `lib/chain.sh`) idles rather than running its own stages underneath the
+  marker's unconditional override — the external fact stopping it is the
+  pending image roll itself, capped at one stand-down per marker
+  (`chain_roll_standdown_available`) so a wrong verdict cannot idle a node
+  indefinitely.
 - A cycle-ending `stand-down`/`none-selected` that a peer's own claim
   explains (`raced`, `pre-claimed`, and this pipeline's own
   draining-with-live-claims stand-down) is `idle-with-demand`/
@@ -651,13 +659,13 @@ this document.
 
 ### The closed cause vocabulary
 
-Fifteen tokens, each mapping to exactly one state — `lib/node-time-state.sh`'s
+Sixteen tokens, each mapping to exactly one state — `lib/node-time-state.sh`'s
 `node_time_state_for_cause` is the one function that knows the mapping:
 
 | Cause | State |
 | --- | --- |
 | `disabled-node`, `disabled-fleet` | `down` |
-| `usage-limit`, `github-budget`, `unreachable`, `unauthorized`, `disk-low`, `disk-full`, `memory-low`, `host-overcommit` | `externally-blocked` |
+| `usage-limit`, `github-budget`, `unreachable`, `unauthorized`, `disk-low`, `disk-full`, `memory-low`, `host-overcommit`, `roll-pending` | `externally-blocked` |
 | `back-pressure`, `awaiting-tick`, `peer-claimed`, `coordinator-declined` | `idle-with-demand` |
 | `no-demand` | `idle-without-demand` |
 
@@ -707,12 +715,12 @@ not — its interval lands in `unaccounted_seconds` instead, and an
 `idle-with-demand` event whose `cause` is missing or unrecognised still
 counts fully toward `idle-with-demand`'s own total, with the cause itself
 filed under `unspecified` rather than dropped. `externally-blocked` gets the
-identical per-cause treatment, over its own eight-token half of the table
+identical per-cause treatment, over its own nine-token half of the table
 above: `node_time_state_fold`'s `externally_blocked_by_cause` (fleet-wide)
 and each node's own copy under `by_node` (issue #609) — a missing or
 unrecognised cause files under `unspecified` there too, never dropped. This
-split exists because the eight causes are not interchangeable to a reader
-acting on them: `usage-limit` is model capacity, the other seven are a host
+split exists because the nine causes are not interchangeable to a reader
+acting on them: `usage-limit` is model capacity, the other eight are a host
 or GitHub fault, and a constraint statement that could not tell them apart
 would recommend the wrong lever with full confidence.
 
@@ -885,7 +893,7 @@ above — on the same terms:
   carries in a way an existing reader could misread as the old shape;
   changing an existing fate's own assignment rule; changing the fate
   priority order; renaming or removing one of the six states or one of the
-  fifteen causes; changing which state an existing cause maps to; changing
+  sixteen causes; changing which state an existing cause maps to; changing
   the definitional pin (which stages count as `producing`, what `down`
   covers).
 
@@ -1022,7 +1030,7 @@ and dedicated assertions folded into `test/landing-wiring.test.sh`,
 
 **The node time-state record:** `test/node-time-state.test.sh` drives
 `lib/node-time-state.sh` directly: `node_time_state_for_cause` against every
-one of the fifteen closed-vocabulary tokens (including the three translated
+one of the sixteen closed-vocabulary tokens (including the three translated
 rather than renamed — `raced`/`pre-claimed` to `peer-claimed`,
 `untraceable` to `coordinator-declined`) and an unrecognised
 one (maps to nothing); `node_time_state_idle_split` against a positive

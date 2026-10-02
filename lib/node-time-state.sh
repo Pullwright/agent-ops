@@ -31,7 +31,7 @@
 # in this file keeps that newline for the same reason, whether or not the
 # variables it fills are ever inspected by a caller that would notice.
 #
-# Two of the fifteen tokens are pre-existing `stand-down`/`claim-lost`
+# Two of the sixteen tokens are pre-existing `stand-down`/`claim-lost`
 # causes this requirement does not rename (agent-ops#598's join-key
 # precedent: an existing field's values are never renamed to satisfy a new
 # reader) — `raced`/`pre-claimed` (claim-race stand-downs, agent-cycle.sh)
@@ -51,6 +51,7 @@ node_time_state_for_cause() {  # CAUSE -> "STATE\tCAUSE\n"
     disk-full)       printf 'externally-blocked\tdisk-full\n' ;;
     memory-low)      printf 'externally-blocked\tmemory-low\n' ;;
     host-overcommit) printf 'externally-blocked\thost-overcommit\n' ;;
+    roll-pending)    printf 'externally-blocked\troll-pending\n' ;;
     back-pressure)   printf 'idle-with-demand\tback-pressure\n' ;;
     awaiting-tick)   printf 'idle-with-demand\tawaiting-tick\n' ;;
     peer-claimed|raced|pre-claimed)         printf 'idle-with-demand\tpeer-claimed\n' ;;
@@ -257,7 +258,7 @@ NODE_TIME_STATE_EVENTS="node-state"
 NODE_TIME_STATE_FOLD_JQ='
   def valid_states: ["producing","overhead","externally-blocked","idle-with-demand","idle-without-demand","down"];
   def idle_causes: ["awaiting-tick","back-pressure","peer-claimed","coordinator-declined"];
-  def eb_causes: ["usage-limit","github-budget","unreachable","unauthorized","disk-low","disk-full","memory-low","host-overcommit"];
+  def eb_causes: ["usage-limit","github-budget","unreachable","unauthorized","disk-low","disk-full","memory-low","host-overcommit","roll-pending"];
   def ts_ok: (.ts // "") != "" and ((try (.ts | fromdateiso8601) catch null) != null);
 
   ($all | map(select(type == "object" and .event == "node-state"))) as $ns_candidates
@@ -351,9 +352,9 @@ NODE_TIME_STATE_FOLD_JQ='
 # Print the node time-state report — `window`, `totals` (the six states plus
 # `unaccounted`), `expected_total_seconds`/`balanced` (the invariant:
 # node-count x window seconds), `idle_with_demand_by_cause`,
-# `externally_blocked_by_cause` (the same per-cause split, over the eight
+# `externally_blocked_by_cause` (the same per-cause split, over the nine
 # `externally-blocked` causes — issue #609 needs `usage-limit` isolated from
-# the other seven to attribute idleness to model capacity rather than to a
+# the other eight to attribute idleness to model capacity rather than to a
 # host or GitHub fault), and `by_node` — folded from LOG_FILE, or stdin if it
 # is "-". Always succeeds, printing the all-empty shape for a missing, empty
 # or unreadable log, on the same terms `lib/item-lifecycle.sh`'s
@@ -379,6 +380,6 @@ node_time_state_fold() {
       | ('"$NODE_TIME_STATE_FOLD_JQ"')' "${files[@]}" --args $NODE_TIME_STATE_EVENTS \
       2>/dev/null || true)"
 
-  [[ -n "$out" ]] || out='{"window":{"from":null,"to":null,"seconds":0},"nodes":[],"skipped_events":0,"totals":{"producing":0,"overhead":0,"externally-blocked":0,"idle-with-demand":0,"idle-without-demand":0,"down":0,"unaccounted":0},"expected_total_seconds":0,"balanced":true,"idle_with_demand_by_cause":{"awaiting-tick":0,"back-pressure":0,"peer-claimed":0,"coordinator-declined":0,"unspecified":0},"externally_blocked_by_cause":{"usage-limit":0,"github-budget":0,"unreachable":0,"unauthorized":0,"disk-low":0,"disk-full":0,"memory-low":0,"host-overcommit":0,"unspecified":0},"by_node":{}}'
+  [[ -n "$out" ]] || out='{"window":{"from":null,"to":null,"seconds":0},"nodes":[],"skipped_events":0,"totals":{"producing":0,"overhead":0,"externally-blocked":0,"idle-with-demand":0,"idle-without-demand":0,"down":0,"unaccounted":0},"expected_total_seconds":0,"balanced":true,"idle_with_demand_by_cause":{"awaiting-tick":0,"back-pressure":0,"peer-claimed":0,"coordinator-declined":0,"unspecified":0},"externally_blocked_by_cause":{"usage-limit":0,"github-budget":0,"unreachable":0,"unauthorized":0,"disk-low":0,"disk-full":0,"memory-low":0,"host-overcommit":0,"roll-pending":0,"unspecified":0},"by_node":{}}'
   printf '%s' "$out"
 }

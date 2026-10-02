@@ -283,6 +283,8 @@ scratch_enter agent-cycle || exit 1
 . "$SCRIPT_DIR/lib/version.sh"
 # shellcheck source=lib/image-drift.sh
 . "$SCRIPT_DIR/lib/image-drift.sh"
+# shellcheck source=lib/updater-health.sh
+. "$SCRIPT_DIR/lib/updater-health.sh"
 # shellcheck source=lib/coordinator-phase.sh
 # Last of all: after every lib/*.sh file run_coordinator_through_finishing_
 # phase's body calls into.
@@ -1915,6 +1917,48 @@ if [[ -f "$state_dir/roll-pending.json" ]]; then
   chain_clear_landed_roll_pending "$state_dir" \
     "$(image_drift_status "$(agent_ops_version "$SCRIPT_DIR")" \
       "$state_dir/.image-drift-cache.json" 2>/dev/null || echo null)"
+fi
+
+# Stand down instead of running this cycle's own stages under a marker that
+# survived the clear above (requirement 39c amendment, agent-ops#1102's own
+# option 2): the block above declines to clear a marker whose verdict still
+# reads "behind", which is deliberate — the roll genuinely has not landed —
+# but leaves this cycle free to run every stage underneath an unconditional
+# override of `lock.json`, exactly the cost the hook exists to prevent. Idling
+# is worth it only when something is actually there to take the gap a
+# stand-down opens, so this asks one more question before giving up the
+# cycle: is watchtower actually invoking the hook and being turned away right
+# now (`chain_updater_should_standdown`, reusing `lib/updater-health.sh`'s own
+# `updater_status` verdict off the same ledger the heartbeat already reads —
+# no second signal)? `chain_eligible` is still 0 here regardless (it is only
+# ever raised inside the claim loop, well after this point), so there is no
+# chain to protect by standing down — this is purely about not running this
+# cycle's own stages under the marker.
+if chain_roll_pending_live "$state_dir"; then
+  updater_stuck_after_seconds="$(cfg '.updater_stuck_after_minutes * 60 | floor')"
+  updater_defer_stuck_after_seconds="$(cfg \
+    '([.lock_stale_after // 4, .repository_review.lock_stale_after // 6] | max) * 3600 | floor')"
+  updater_status_json="$(updater_status "$state_dir/updater-ledger" "$updater_stuck_after_seconds" \
+    "$updater_defer_stuck_after_seconds" "${HOSTNAME:-}" "${AGENT_OPS_SERVICE:-}" 2>/dev/null || echo null)"
+  if chain_updater_should_standdown "$updater_status_json"; then
+    roll_pending_until="$(jq -r '.until // empty' "$state_dir/roll-pending.json" 2>/dev/null || true)"
+    if chain_roll_standdown_available "$state_dir"; then
+      chain_roll_standdown_record "$state_dir"
+      log_event "stand-down" "$(jq -nc --arg u "$roll_pending_until" --argjson updater "$updater_status_json" \
+        --arg r "a live roll-pending marker is still in force and watchtower is being turned away rather than rolling the image (updater_status: $updater_status_json) — idling this cycle instead of running its stages underneath the marker's own override of lock.json" \
+        '{reason: $r, cause: "roll-pending", until: $u, updater: $updater}')"
+      set_node_state_terminal externally-blocked roll-pending
+      exit 0
+    fi
+    # Guard B's cap (agent-ops#1102 option 2): already spent on this pending
+    # roll. Log the decision not taken — the live marker and the count — so a
+    # node running under a marker it could not idle away a second time is
+    # visible rather than silent, then fall through and run this cycle
+    # normally.
+    log_event "roll-standdown-capped" "$(jq -nc --arg u "$roll_pending_until" \
+      --arg c "$(jq -r '.count // "unknown"' "$state_dir/roll-standdown.json" 2>/dev/null || echo unknown)" \
+      '{until: $u, count: $c}')"
+  fi
 fi
 
 # --- 1b. Crash-loop escalation (requirement 2.7) ---
