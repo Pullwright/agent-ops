@@ -1140,6 +1140,8 @@ A repo entry may also carry `implementation_plan_path` — the path, relative to
 
 A repo entry may also carry `nice` — an optional integer from `-19` to `19` (absent means `0`). Inspired by Linux `nice`. Each repo's default-branch staleness age is multiplied by `2^(-nice/3)` (each three steps of `nice` is a 2x change in attention), so a negative value buys the repo earlier attention and a positive one later. It biases the walk but never starves a repo — the global tiers still outrank the walk, and a repo that alone has qualifying work is selected regardless of its `nice`. The Script refuses to start a cycle if `nice` is not an integer in that range.
 
+A repo entry may also carry `previous_slugs` — the slugs this repository was known as before a rename (e.g. an organisation move, agent-ops#2064), each as `owner/name`. `config_repo_slug_aliases` (`lib/config-schema.sh`) flattens every configured repo's own `previous_slugs` into one `{old_slug: current_slug}` map; requirement 34i's `work_gone_clearances` and requirement 35a's third eligibility clause both resolve a blocked item's `repo` through that map before keying the source-state digest lookup each already makes, since that digest is always built from the live configured `slug` and so is blind to a block still naming the slug the repository had before the rename. Resolution happens at read time only — a configured `previous_slugs` entry never rewrites a blocked item's own recorded `repo`, and this pipeline otherwise always acts against the current `slug`.
+
 A repo entry may also carry `stage_timeouts` and `stage_inactivity` — per-actor overrides in minutes, keyed `coordinator`, `implementer`, `reviewer`, `approver` and `enabler`, for that repository alone. They are the most specific level of requirement 4f's precedence, ahead of the plain `timeout_<actor>` / `inactivity_<actor>` key and ahead of the derivation; the Refiner, spanning repositories, has no per-repository form. Configuration is read, never written: requirement 4f's derivation never writes back to `config.json`.
 
 A repo entry may also carry `merge_autonomy` — the per-repository override of the top-level key of the same name (D18, requirement 2.3b), on the same precedence as `stage_timeouts`: this entry wins when present, the top-level key otherwise.
@@ -15627,7 +15629,7 @@ implements.
       is certain only when exactly one task-list line in the document names
       the id as a whole word; two such lines, or none, decide nothing.
 
-    Three properties make this safe enough to run unattended:
+    Four properties make this safe enough to run unattended:
 
     - **Unknown is never gone.** A repo missing from the digest, a digest
       carrying `ok: false`, an id no register file claims by `id` or
@@ -15637,6 +15639,18 @@ implements.
       which costs a cycle; the other direction clears a block out from under
       work that is still real, which costs a cycle an hour until someone
       notices.
+    - **A renamed repo's digest is still found.** For the issue and
+      pull-request classes above only, the block's `repo` is resolved through
+      `config_repo_slug_aliases`' `{old_slug: current_slug}` map (built from
+      every configured repo's own `previous_slugs`, agent-ops#2064) before the
+      digest lookup, since SOURCE_STATES_JSON is always keyed by a repo's
+      *current* configured `slug` — without this, a block recorded under a
+      slug the repository no longer has would read exactly like "a repo
+      missing from the digest" above, forever rather than merely until the
+      recheck window. The register/review/plan status maps are looked up by
+      the block's own `repo` unresolved, since each is already keyed by
+      whatever repo its own blocked-id grouping was given, not by this
+      digest.
     - **The findings sources are excluded, and that is not an oversight.**
       `gather-findings.sh` degrades to `[]` on an API error by design
       (requirement 3), because a Co-Ordinator that sees no findings declines and
@@ -16374,10 +16388,14 @@ implements.
        this stage's prices;
     3. **no escalation issue for it is still open** — the `issue_number` of the
        latest `escalated` event for that repo+item is not among the repo's open
-       issues in the source-state digest (requirement 3b). A repo missing from
-       that digest could not be sampled, so whether its escalation is open is
-       unknown, and unknown resolves to **ineligible**: a delayed engagement is
-       cheap, a duplicate issue in the human's inbox is not;
+       issues in the source-state digest (requirement 3b), the item's own
+       `repo` resolved through `config_repo_slug_aliases`' `{old_slug:
+       current_slug}` map first (agent-ops#2064), since that digest is always
+       keyed by the repo's *current* configured `slug`. A repo missing from
+       that digest (whether absent outright, or named only by a slug outside
+       the alias map too) could not be sampled, so whether its escalation is
+       open is unknown, and unknown resolves to **ineligible**: a delayed
+       engagement is cheap, a duplicate issue in the human's inbox is not;
     4. one of exactly three **reasons** applies, and that reason is recorded on
        the entry and passed to the model, because it decides where the model
        should look first:

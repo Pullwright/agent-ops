@@ -11,11 +11,12 @@
 # Split out of agent-cycle.sh (#771). One seam rather than four files because
 # the four blocks answer one question between them — who is eligible for what
 # this cycle — over the same inputs (`ordered_repos_json`,
-# `source_states_json`, `blocked_json`/`void_json`, `claimed_json`), in an
-# order that matters: the Enabler's eligible set and the Refiner's candidate
-# set are both computed from the extracts the band pass has just settled, so
-# an Enabler engagement and a Refiner engagement in the same cycle can never
-# disagree about what is already spoken for.
+# `source_states_json`, `blocked_json`/`void_json`, `claimed_json`,
+# `repo_slug_aliases_json`), in an order that matters: the Enabler's eligible
+# set and the Refiner's candidate set are both computed from the extracts the
+# band pass has just settled, so an Enabler engagement and a Refiner
+# engagement in the same cycle can never disagree about what is already
+# spoken for.
 #
 # Sourced by agent-cycle.sh only, and its four functions called once each, in
 # place, from where this text used to sit. Like `run_standdown_checks`
@@ -169,7 +170,7 @@ open_issues_json="$(jq -c '[.[] | select(.ok == true)
 
 enabler_eligible_json="$(enabler_eligible_items "$union_log" \
   "$enabler_after_coordinator_cycles" "$enabler_recheck_hours" "$open_issues_json" \
-  "" "$refinement_after_coordinator_cycles")"
+  "" "$refinement_after_coordinator_cycles" "$repo_slug_aliases_json")"
 
 # Issue #238's third acceptance: a blocked `merge-conflicts`/`dequeued`/
 # `abandoned-drafts` item's ref is scoped to the head SHA it was detected at

@@ -1063,7 +1063,7 @@ done < <(jq -r 'to_entries[] | .key + "\t" + (.value | join(" "))' \
          <<<"$(work_gone_plan_ids "$open_blocked_now")" 2>/dev/null || true)
 
 work_gone_json="$(work_gone_clearances "$open_blocked_now" "$source_states_json" "$register_status_json" \
-                   "$review_status_json" "$plan_status_json")"
+                   "$review_status_json" "$plan_status_json" "$repo_slug_aliases_json")"
 work_gone_n="$(jq 'length' <<<"$work_gone_json" 2>&1)" \
   || { guard_warn "work_gone_n" "$work_gone_n"; work_gone_n=0; }
 if [[ "$work_gone_n" != "0" ]]; then

@@ -1057,6 +1057,14 @@ if [[ -n "$missing_plan_path" ]]; then
   echo "agent-cycle: repo(s) [$missing_plan_path] list the implementation-plan source but have no implementation_plan_path configured — set it in config.json's repos entry or drop the source" >&2
   exit 1
 fi
+# The slug-rename alias map (issue #2064): every configured repo's optional
+# `previous_slugs` flattened to `{old_slug: current_slug}`, computed once
+# here (rather than per call) since it depends only on `all_repos_json`.
+# `lib/candidate-gather.sh`'s `work_gone_clearances` call and
+# `lib/eligibility.sh`'s `enabler_eligible_items` call both read this same
+# global, so a block recorded under a repo's old slug resolves identically
+# in both places.
+repo_slug_aliases_json="$(config_repo_slug_aliases "$all_repos_json")"
 
 # Per-installation prompt overrides (requirement 4a, lib/prompt-overrides.sh):
 # config-pointed files, outside prompts/*.md, appended to (or, for `replace`,
