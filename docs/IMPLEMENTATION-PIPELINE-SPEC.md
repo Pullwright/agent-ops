@@ -12,6 +12,15 @@ silent, follow the conventions of the two target repositories (their
 `AGENTS.md` files — or `CLAUDE.md`, for a repository that has not migrated —
 are binding on any agent working inside them).
 
+Requirement ids may recur across `###` sections — e.g., "requirement 39c
+(The Refiner)" and "requirement 39c (Finish-then-continue)" name two
+different requirements — and, for the two legacy ids 17b and 17g, even
+within the single section that defines both of each pair ("The Co-Ordinator
+(selection only)"). A citation of an id defined in more than one place is
+qualified with its owning section unless the surrounding clause already
+names the owner (e.g., "the Refiner's (requirement 39)"); a citation of an
+id defined in exactly one place may be left bare.
+
 <!-- toc:start -->
 - [About this document](#about-this-document)
 - [What it is](#what-it-is)
@@ -147,11 +156,12 @@ cron (schedule.cycle_interval_minutes)
 8. The **Refiner** — a headless Claude Code invocation, engaged from the same
    end-of-cycle cleanup as the Enabler and immediately after it, that writes
    the specification an under-specified item lacks *before* the item has to be
-   blocked and wait for the Enabler to reach it (requirement 39). Every item
-   it takes ends `refined` — the specification posted as a comment on the
-   item's own issue, or returned as `refined_spec` where the source has no
-   thread to write into — or `needs-refinement`, where only a human can supply
-   what is missing (requirements 39c and 39d). It also bands every open issue
+   blocked and wait for the Enabler to reach it (requirement 39 (The
+   Refiner)). Every item it takes ends `refined` — the specification posted
+   as a comment on the item's own issue, or returned as `refined_spec` where
+   the source has no thread to write into — or `needs-refinement`, where
+   only a human can supply what is missing (requirements 39c (The Refiner)
+   and 39d). It also bands every open issue
    whose `Priority` is unset, a one-way ratchet the Script alone enforces
    (requirement 39g). Its powers are otherwise deliberately narrower than the
    Enabler's: it writes no code, raises no pull request, and can neither
@@ -585,7 +595,7 @@ file and carries placeholders only; `.env` itself is never committed.
   nodes on that host catching a gap and rolling while its neighbour kept
   missing it and stayed ninety minutes behind, unreported. Surfacing that is
   #603's business, not this hook's. What was missing is agent-ops#1096's
-  `roll-pending` marker (requirement 39c): at its own cycle boundary, a node
+  `roll-pending` marker (requirement 39c (Finish-then-continue)): at its own cycle boundary, a node
   whose image has fallen behind the registry's newest declines the chain it
   would otherwise take and writes the marker instead, which the hook honours
   as an unconditional allow against `lock.json` alone — never
@@ -1011,10 +1021,10 @@ and the schema must carry every one of them.
 | `escalation_refile_after_hours` | 24 h | The per-close re-filing rate limit (agent-ops#779, decided on #784 as behaviour (b)): a filing from `open_question_escalate` or `approver_escalate` is suppressed when a `closed` issue carrying `enabler_escalation_label` and this item's own reference exists (read live via `escalation_recent_close`, never from the log) and `now − closedAt` is less than this many hours (`escalation_refile_suppressed`, `lib/escalation-autonomy.sh`) — *unless* it is the first post-close...[continued below](#extended-notes-escalation_refile_after_hours) |
 | `needs_refinement_label` | `pw::needs-refinement` | The label the Script projects onto an issue-type item while its refinement block is open (requirement 34e), and removes when the block clears. Also the label a human applies by hand to flag an item themselves, which the Script scans every repo's issues for and records as the same kind of block (requirement 34g) — removing it while that block is open clears it the same way. Empty disables both directions: the log is the record, so the mechanism is unaffected and the item still...[continued below](#extended-notes-needs_refinement_label) |
 | `refinement_max_per_engagement` | `3` | How many refinement-class items one Enabler engagement takes on (requirement 35d); ordinary blocked items are uncapped and are never displaced by them. The cap exists because the backlog of items silently skipped before requirement 16a existed is unbounded, and an engagement spent entirely on old vagueness would delay the pull request nobody can see. `0` removes the class from engagements entirely — blocks are still recorded, and the items wait. |
-| `refiner_model` | `claude-sonnet-5` | The Refiner (requirement 39). Unlike the Enabler, eligibility carries no threshold, so it runs as often as there is unrefined work, and its frequency has to be weighed against the fact that what it produces is a specification rather than a ranking. Empty disables the stage. |
-| `refined_label` | `pw::refined` | The label the Script projects onto an issue-type item once the Refiner records it `refined` (requirement 39c). One-way and never read back — unlike `needs_refinement_label`'s hand-flag path, there is no hand-applied form of this label: the shared log is the sole record of whether an item is refined, exactly as requirement 34e already establishes for the negative marker. Empty disables the projection only: the `item-refined` event is still logged and the Co-Ordinator still...[continued below](#extended-notes-refined_label) |
+| `refiner_model` | `claude-sonnet-5` | The Refiner (requirement 39 (The Refiner)). Unlike the Enabler, eligibility carries no threshold, so it runs as often as there is unrefined work, and its frequency has to be weighed against the fact that what it produces is a specification rather than a ranking. Empty disables the stage. |
+| `refined_label` | `pw::refined` | The label the Script projects onto an issue-type item once the Refiner records it `refined` (requirement 39c (The Refiner)). One-way and never read back — unlike `needs_refinement_label`'s hand-flag path, there is no hand-applied form of this label: the shared log is the sole record of whether an item is refined, exactly as requirement 34e already establishes for the negative marker. Empty disables the projection only: the `item-refined` event is still logged and the...[continued below](#extended-notes-refined_label) |
 | `refiner_max_per_engagement` | `5` | How many unrefined items one Refiner engagement takes on (requirement 39b), chosen oldest-seen first so every node in the fleet reduces to the same set. `0` removes the class from engagements entirely — a `refinement_policy` source resolved to `required` then has its items wait, unlabelled, until the cap is raised (requirement 1c); `agent-cycle.sh` logs a `warning` event and `scripts/doctor.sh` `warn`s every cycle the condition holds, rather than refusing to start. |
-| `refinement_policy` | `{"issues": "required", "tech-debt": "required"}` | Per-source refinement policy (requirement 39a): `required`, `preferred` or `exempt`, read by the Co-Ordinator alongside `refinements` (requirement 3h) to decide whether an unrefined item may be ranked at all. A source absent from this object is `exempt`. Shipped default: `issues` and `tech-debt` both `preferred` — of every source this key can name, these two are the ones whose items can otherwise reach an Implementer carrying a specification `coordinator_model` composed...[continued below](#extended-notes-refinement_policy) |
+| `refinement_policy` | `{"issues": "required", "tech-debt": "required"}` | Per-source refinement policy (requirement 39a (The Refiner)): `required`, `preferred` or `exempt`, read by the Co-Ordinator alongside `refinements` (requirement 3h) to decide whether an unrefined item may be ranked at all. A source absent from this object is `exempt`. Shipped default: `issues` and `tech-debt` both `preferred` — of every source this key can name, these two are the ones whose items can otherwise reach an Implementer carrying a specification `coordinator_model`...[continued below](#extended-notes-refinement_policy) |
 | `unvoid_label` | `pw::unvoided` | The label a human applies on GitHub to ask for a void to be reopened (requirement 34f). No stage here ever applies it, so requirement 34c's "only a human may clear a void" is unchanged; what it adds is a way to say so from the issue itself. It must not be `blocked`, for the reason given against `enabler_escalation_label`. Nor `obsolete`: the label a human applied to ask for a voided pull request to be reopened would itself corroborate requirement 34k closing it. |
 | `labels_ensure_interval_hours` | `24` | How often, at most, the Script re-lists a repository's labels to create any absent ones (requirement 6a), keyed per repository via a stamp file under `state_dir` rather than a single fleet-wide clock — so one repository's interval elapsing says nothing about another's. `0` disables the stamp check, so it ensures on every cycle regardless. |
 | `label_prefix` | `pw::` | Namespace prefix `lib/labels.sh`'s `labels_reconcile` reconciles full CRUD for (create, PATCH colour/description on drift, DELETE once no longer catalogued) rather than `labels_ensure`'s own create-only treatment. `labels_reconcile_role`'s `target` role — the one catalogue call that is a repository's complete desired label set — reconciles with deletion; `review` and `escalation`, each a partial subset of `target`'s own catalogue, reconcile colour/description drift but never...[continued below](#extended-notes-label_prefix) |
@@ -1026,7 +1036,7 @@ and the schema must carry every one of them.
 | `max_open_agent_prs` | `8` | Back-pressure: draft PRs, ready PRs still `CHANGES_REQUESTED`, and live claim-registry entries, carrying `pr_label` across all repositories — excludes ready PRs whose next action lies outside the pipeline (requirement 2.2). |
 | `candidates_max` | `3` | How many ranked candidates the Co-Ordinator returns; the Script claims down the list (requirement 17a), so alternates turn a lost race into the next-best item instead of a wasted cycle. |
 | `coordinator_prompt_max_bytes` | `500000` | The largest assembled prompt the Script will hand the Co-Ordinator (requirement 4i). The default is derived from the 200000-token window of the Co-Ordinator model this installation runs, less the system prompt and tool definitions the Script neither assembles nor can measure, less a reserve for the verdict itself, at the bytes per token JSON-escaped Markdown actually costs. All three terms are measured rather than assumed, and all three moved between the key being added and...[continued below](#extended-notes-coordinator_prompt_max_bytes) |
-| `max_chained_cycles` | `3` | Finish-then-continue (requirement 39): the most cycles that may run back-to-back in one lineage — the cron-fired original plus its immediate chained continuations — bounded so a busy fleet still yields the lock periodically. `1` disables chaining. |
+| `max_chained_cycles` | `3` | Finish-then-continue (requirement 39 (Finish-then-continue)): the most cycles that may run back-to-back in one lineage — the cron-fired original plus its immediate chained continuations — bounded so a busy fleet still yields the lock periodically. `1` disables chaining. |
 | `claim_ttl_hours` | *(unset)* | Age beyond which `lib/claim.sh gc` sweeps a claim-registry entry — far beyond a whole cycle, so only a dead node's claim ever expires, and beyond the cycle's own worst-case runtime, so `do_gc` cannot sweep a claim (and delete its still-untouched, PR-less branch) out from under a cycle still holding it. "A whole cycle" means 6 cadence firings (requirement 1d), not a fixed 6 h: derived from the worst-case gap between cycles (`schedule.cycle_interval_minutes`, `cycle_hours`...[continued below](#extended-notes-claim_ttl_hours) |
 | `abandoned_draft_after_hours` | *(unset)* | How long a draft PR this system raised may sit without real activity (requirement 3e's clock, not GitHub's raw `updatedAt`) before it counts as abandoned and finishing it becomes selectable work (`abandoned-drafts` source, requirement 3e). Comfortably beyond a whole cycle, so a draft merely being worked never qualifies; short enough that a genuinely stalled draft is picked up the same day. "A whole cycle" means 4 cadence firings (requirement 1d), not a fixed number of hours...[continued below](#extended-notes-abandoned_draft_after_hours) |
 | `human_nudge_idle_hours` | 24 h | Hours an approved, mergeable, CI-green pull request this system raised may sit idle before `scripts/sweep-human-visibility.sh` posts a one-time nudge comment naming `enabler_assignee` (requirement 38c). `0` disables the nudge only — the sweep's self-healing review request (requirement 38a) is unconditional. This installation's own history is the motivating incident, not a target value: poetic-fiddle #170 sat approved and green for 6.8 days with nothing asking anyone to look...[continued below](#extended-notes-human_nudge_idle_hours) |
@@ -1244,7 +1254,7 @@ It must not be `blocked` — that label is an exclusion criterion for the `issue
 
 ### Extended notes: `refined_label`
 
-The label the Script projects onto an issue-type item once the Refiner records it `refined` (requirement 39c). One-way and never read back — unlike `needs_refinement_label`'s hand-flag path, there is no hand-applied form of this label: the shared log is the sole record of whether an item is refined, exactly as requirement 34e already establishes for the negative marker.
+The label the Script projects onto an issue-type item once the Refiner records it `refined` (requirement 39c (The Refiner)). One-way and never read back — unlike `needs_refinement_label`'s hand-flag path, there is no hand-applied form of this label: the shared log is the sole record of whether an item is refined, exactly as requirement 34e already establishes for the negative marker.
 
 Empty disables the projection only: the `item-refined` event is still logged and the Co-Ordinator still reads it (requirement 3h).
 
@@ -1252,7 +1262,7 @@ It must not be `blocked` nor `obsolete`, for the reasons given against `enabler_
 
 ### Extended notes: `refinement_policy`
 
-Per-source refinement policy (requirement 39a): `required`, `preferred` or `exempt`, read by the Co-Ordinator alongside `refinements` (requirement 3h) to decide whether an unrefined item may be ranked at all. A source absent from this object is `exempt`. Shipped default: `issues` and `tech-debt` both `preferred` — of every source this key can name, these two are the ones whose items can otherwise reach an Implementer carrying a specification `coordinator_model` composed itself rather than one already written elsewhere, so the invariant of requirement 1c names them explicitly rather than leaving the object's absence do it implicitly. Bounded by what requirement 39's candidate gathering reads — the `findings`, `review_feedback`, `abandoned_drafts`, `merge_conflicts`, `dequeued`, `landing_refusals`, `issues` and `tech_debt` arrays every repo's `ordered_repos_json` entry carries, plus `project_review` and `implementation_plan`, read only into the Refiner-only copy of the repos array (`refiner_repos_json`, requirement 3y) and only where `refiner_model` is set — with no Refiner to launch, neither is read at all — and the repo's own `sources` lists the source and its policy for it is not itself `exempt`. `failed-runs` is the one source with no array at all, so a policy set for it shapes selection only — it is refused at startup whenever `required`, regardless of `refiner_model` or `refiner_max_per_engagement` (`config_required_failed_runs_source`). Every other source resolved to `required` is refused at startup with `refiner_model` empty (`config_required_refinement_sources_without_refiner`) but only warned about, every cycle, with `refiner_model` set and `refiner_max_per_engagement: 0` (`config_refinement_sources_paused_by_cap`) — the cap is a deliberate, temporary pause rather than a configuration nobody could ever satisfy, so its items simply wait, unlabelled, until the cap is raised (requirement 1c; agent-ops#924's decision on TD-PPagop-26082704/agent-ops#1003).
+Per-source refinement policy (requirement 39a (The Refiner)): `required`, `preferred` or `exempt`, read by the Co-Ordinator alongside `refinements` (requirement 3h) to decide whether an unrefined item may be ranked at all. A source absent from this object is `exempt`. Shipped default: `issues` and `tech-debt` both `preferred` — of every source this key can name, these two are the ones whose items can otherwise reach an Implementer carrying a specification `coordinator_model` composed itself rather than one already written elsewhere, so the invariant of requirement 1c names them explicitly rather than leaving the object's absence do it implicitly. Bounded by what requirement 39 (The Refiner)'s candidate gathering reads — the `findings`, `review_feedback`, `abandoned_drafts`, `merge_conflicts`, `dequeued`, `landing_refusals`, `issues` and `tech_debt` arrays every repo's `ordered_repos_json` entry carries, plus `project_review` and `implementation_plan`, read only into the Refiner-only copy of the repos array (`refiner_repos_json`, requirement 3y) and only where `refiner_model` is set — with no Refiner to launch, neither is read at all — and the repo's own `sources` lists the source and its policy for it is not itself `exempt`. `failed-runs` is the one source with no array at all, so a policy set for it shapes selection only — it is refused at startup whenever `required`, regardless of `refiner_model` or `refiner_max_per_engagement` (`config_required_failed_runs_source`). Every other source resolved to `required` is refused at startup with `refiner_model` empty (`config_required_refinement_sources_without_refiner`) but only warned about, every cycle, with `refiner_model` set and `refiner_max_per_engagement: 0` (`config_refinement_sources_paused_by_cap`) — the cap is a deliberate, temporary pause rather than a configuration nobody could ever satisfy, so its items simply wait, unlabelled, until the cap is raised (requirement 1c; agent-ops#924's decision on TD-PPagop-26082704/agent-ops#1003).
 
 ### Extended notes: `label_prefix`
 
@@ -1812,7 +1822,8 @@ implements.
 
     Two authors can write a work order's `context`/`acceptance` directly
     rather than relay text a human, the Script, or a gatherer already wrote:
-    the Refiner, writing `refined_spec` or an issue comment (requirement 39),
+    the Refiner, writing `refined_spec` or an issue comment (requirement 39
+    (The Refiner)),
     and the Enabler, writing the same when it settles a `needs-refinement`
     block (requirement 36b). **The floor**: `config_model_tier_floor_violations`
     (`lib/config-schema.sh`) rejects a configuration where `refiner_model` or
@@ -1826,7 +1837,7 @@ implements.
     the table cannot rank — reported instead as `scripts/doctor.sh`'s
     unranked-model warning above, never silently treated as clearing the
     floor. `coordinator_model` is deliberately outside this comparison:
-    requirement 39a's "Per-source refinement policy" is what keeps it from
+    requirement 39a (The Refiner)'s "Per-source refinement policy" is what keeps it from
     authoring a specification for a source it must not — see the next
     paragraph — rather than a tier comparison the Co-Ordinator's whole
     reason for existing (cheap triage) would otherwise make impossible to
@@ -1843,7 +1854,7 @@ implements.
     refinement duty can involve.
 
     **Closing the gap on the sources that can still reach an Implementer
-    unrefined.** `refinement_policy` (requirement 39a) is what actually keeps
+    unrefined.** `refinement_policy` (requirement 39a (The Refiner)) is what actually keeps
     a cheap model's own composition out of a work order for a given source:
     `"required"` never selects an unrefined item from that source, so its
     `context`/`acceptance` can only ever have come from the Refiner or the
@@ -1876,14 +1887,14 @@ implements.
     all any more, whatever `refinement_policy` says about them.
     `refinement_policy`'s `"required"`/`"preferred"` distinction still governs
     whether an *unrefined* `issues`/`tech-debt` item may be selected in the
-    first place (requirement 39a) — that judgement is unchanged — but no
+    first place (requirement 39a (The Refiner)) — that judgement is unchanged — but no
     longer decides who authors its work order text once selected.
 
     **Resolving `refiner_model`'s optionality.** A `"required"` policy with no
     Refiner to ever refine anything is a configuration nobody can act on:
     `prompts/coordinator.md`'s "Per-source refinement policy" never selects
-    an unrefined item from a `"required"` source, and requirement 39's own
-    gate on `refiner_model` being set means nothing ever refines one either —
+    an unrefined item from a `"required"` source, and requirement 39 (The
+    Refiner)'s own gate on `refiner_model` being set means nothing ever refines one either —
     the source's items would simply wait forever. Three spellings reach that
     state, and the fleet's own decision on the first tech-debt item this
     invariant's own gap was filed against (TD-PPagop-26082704, agent-ops#1003)
@@ -3831,7 +3842,7 @@ implements.
 
    **What replicates.** Everything under `state_dir` except the live locks
    (`lock.json`, `review-lock.json`, `dashboard.lck`), the roll-pending
-   marker (`roll-pending.json`, requirement 39c, agent-ops#1096), the
+   marker (`roll-pending.json`, requirement 39c (Finish-then-continue), agent-ops#1096), the
    dashboard's own
    machinery (`dashboard/`, `dashboard.log`, `dashboard-server.log`,
    `.dashboard-github.json`, `.dashboard-claims.json`,
@@ -4906,7 +4917,7 @@ implements.
      that hook's *foreign* rule alone: this container writes neither lock and
      shares no PID namespace with whatever did, so every lock is honoured
      without a liveness check until it is released or goes stale.
-     `roll-pending.json` (requirement 39c) defers it as well, and on its own,
+     `roll-pending.json` (requirement 39c (Finish-then-continue)) defers it as well, and on its own,
      and is read *before* either lock: the marker the pre-update hook reads as
      licence to destroy a container is read here as a reason to wait, because
      watchtower and this actor recreate the same containers and must never be
@@ -4919,7 +4930,7 @@ implements.
      marker.** `chain_write_roll_pending` re-arms the marker at every cycle
      boundary whose image still reads `behind`, and
      `chain_clear_landed_roll_pending` leaves it alone while that is true
-     (requirement 39c), so a node whose roll cannot land — watchtower
+     (requirement 39c (Finish-then-continue)), so a node whose roll cannot land — watchtower
      crash-looping, a registry it cannot reach — carries a live marker for as
      long as the condition lasts, and a deferral that followed the marker and
      nothing else would leave that node running a `compose.yaml` none of its
@@ -6826,7 +6837,7 @@ implements.
    latest event that does pass the shape check is used instead; no entry if
    none does. The readers of this judgement must never disagree: this map
    decides both what the Co-Ordinator sees as refined and what
-   `refiner_candidate_items` (requirement 39a) excludes from a fresh
+   `refiner_candidate_items` (requirement 39a (The Refiner)) excludes from a fresh
    refinement, while requirement 17f's traceability gate resolves the recorded
    URL at claim time — so an entry only this map trusts is an item the
    Co-Ordinator keeps proposing, the Refiner never re-specifies, and the gate
@@ -6839,7 +6850,7 @@ implements.
    fleet the phantom idled. The same skip governs `decisions_map`'s
    superseded test (requirement 36d): a phantom wrote no specification, so it
    never retires a pending decision. The skip is silent here — requirement
-   39c's recording seam refuses the shape, so the phantom set cannot grow,
+   39c (The Refiner)'s recording seam refuses the shape, so the phantom set cannot grow,
    and requirement 35a's own warning still names any phantom standing behind
    an open block.
 3o. **Claim visibility (issue #175).** The Co-Ordinator's runtime input carries
@@ -7039,7 +7050,7 @@ implements.
    the only two
    ways a bar-clearing item may be declined without being selected — unless
    that source's `refinement_policy` is `"required"`, where an unrefined item is
-   silently skippable by design (requirement 39a) and needs no report. Once
+   silently skippable by design (requirement 39a (The Refiner)) and needs no report. Once
    the Co-Ordinator's final message is in hand, the Script tests every
    eligible entry against **what it recorded from those two arrays, never the
    arrays verbatim**: an account is the state the report left behind, not the
@@ -7264,7 +7275,7 @@ implements.
      does; a cycle whose only unaccounted item is one of those reaches the
      no-candidate branch below, which stands down rather than assuming the
      guarantee.
-     `refinement_policy` (requirement 39a) binds the mechanical pick exactly
+     `refinement_policy` (requirement 39a (The Refiner)) binds the mechanical pick exactly
      as it binds the Co-Ordinator: an unrefined item from a `"required"`
      source is never a fallback candidate, and a `"preferred"` source's
      refined items rank ahead of its unrefined ones within their own band
@@ -7274,7 +7285,7 @@ implements.
      not the trade it appears to be: a `"required"` source's unrefined item
      is one nobody has specified yet, so selecting it hands the Implementer
      the generic `acceptance` string above and nothing else, which is the
-     outcome requirement 39a exists to prevent, and it buys no liveness the
+     outcome requirement 39a (The Refiner) exists to prevent, and it buys no liveness the
      guarantee above does not already provide. Nor does it cost that
      guarantee anything, band by band: `unaccounted_items` drops an eligible
      entry whose own source is `"required"` before it can make the gate
@@ -7453,7 +7464,7 @@ implements.
    accounted for by a `needs_refinement` report the Script *recorded* under
    that entry's own `source`, or by a `voided` entry it disposed of, and by
    nothing else; an entry whose source's `refinement_policy` is `"required"`
-   is exempt (requirement 39a), per source rather than per call. Requirement
+   is exempt (requirement 39a (The Refiner)), per source rather than per call. Requirement
    3t's "count what was recorded, never what was claimed" property is
    preserved band by band rather than re-argued per band — the corroboration
    is fed `log_needs_refinement_items`' and `log_voided_items`' own
@@ -7533,7 +7544,7 @@ implements.
    and that live read is the authority for selection: it reads a
    Script-resolved field rather than deriving the path itself, and it still
    reads the folder's own contents fresh every cycle rather than trusting a
-   candidate set computed ahead of it. What requirement 39a's candidate set needs is a
+   candidate set computed ahead of it. What requirement 39a (The Refiner)'s candidate set needs is a
    *different* thing — a structured array it can name an item out of — so the
    Script builds one for the Refiner alone: `refiner_repos_json`, a copy of
    `ordered_repos_json` in which a repo entry may additionally carry
@@ -7561,10 +7572,10 @@ implements.
    Each array is filled by its own gatherer — `scripts/gather-project-review.sh`
    and `scripts/gather-implementation-plan.sh` (Components) — called for a repo
    only where the read can be acted on: `refiner_model` is set, since
-   requirement 39's own first guard returns without launching anything when it
+   requirement 39 (The Refiner)'s own first guard returns without launching anything when it
    is not, and every read paid for under an empty one buys an array no
    engagement can ever spend; the repo's own `sources` lists that source
-   **and** its `refinement_policy` (requirement 39a) is not `exempt`, since an
+   **and** its `refinement_policy` (requirement 39a (The Refiner)) is not `exempt`, since an
    exempt source's candidates would be discarded unread; and for
    `implementation-plan`, only where `implementation_plan_path` is configured
    (requirement 3k), the same value the startup guard already requires. A repo
@@ -7575,7 +7586,7 @@ implements.
    deduplicate against nothing, check for no existing pull request, and apply
    none of requirement 15's exclusions, because none of that is theirs to
    decide — the Co-Ordinator's live read still makes every selection judgement,
-   and requirement 39a's own clauses 2–4 (policy, already-refined, blocked/
+   and requirement 39a (The Refiner)'s own clauses 2–4 (policy, already-refined, blocked/
    void/claimed) reduce the candidate set. What they must carry is what the
    Refiner cannot write a specification without: a recommendation's own detail
    section and its ready-to-run improvement prompt, a plan task's whole
@@ -8853,7 +8864,7 @@ implements.
    even though its body stays untrusted data. Ensuring against every gathered
    repository is also what lets the Co-Ordinator's own
    `needs_refinement`/`blocked` projection (requirement 34e) and the
-   Refiner's `refined_label` projection (requirement 39c) reach a fresh
+   Refiner's `refined_label` projection (requirement 39c (The Refiner)) reach a fresh
    repository the moment either first fires there, rather than failing
    silently until some later cycle happens to select work in it
    (agent-ops#687). `review-cycle.sh` calls the plain, unstamped
@@ -10306,7 +10317,7 @@ implements.
    entirely different attention and, per the reasoning below, different
    consequences for a `refined` mark the item might be carrying.
 
-   If the item carried a `refined` mark (requirement 39c) when the
+   If the item carried a `refined` mark (requirement 39c (The Refiner)) when the
    Implementer selected it, that mark no longer describes the item
    accurately — the specification it named was tried and found wanting — so
    recording the block also removes `refined_label` from the issue, if the
@@ -11688,7 +11699,7 @@ implements.
       way to know the comment's real text) — a fault if that text, normalized
       the same way, is present in neither `context` nor `acceptance`. The
       comment id itself is extracted by `refinement_comment_url_id`
-      (`lib/refinement.sh`, the same predicate requirement 39c's recording
+      (`lib/refinement.sh`, the same predicate requirement 39c (The Refiner)'s recording
       seam and requirement 35a's reading seam both test a comment URL's
       shape against), which recognises the HTML permalink anchor
       (`#issuecomment-<n>`) and the REST API form (`.../issues/comments/<n>`)
@@ -12113,7 +12124,7 @@ implements.
       `claim_skips` whenever any candidate was skipped and `trace_faults`
       whenever the traceability check faulted one, whatever the cause. A
       `raced` stand-down chains another selection cycle under requirement
-      39's ordinary bounds; `unreachable`, `pre-claimed` and `untraceable`
+      39 (Finish-then-continue)'s ordinary bounds; `unreachable`, `pre-claimed` and `untraceable`
       never chain — re-running into the same outage or the same selection
       defect buys a second Co-Ordinator engagement and the same ending.
       A win that followed one or more
@@ -14831,9 +14842,10 @@ implements.
     `item-refined` carries `repo`, `item`, `by` (`"enabler"` or `"refiner"`,
     the stage that wrote it) and exactly one of the `spec` it wrote or the
     `comment_url` of the comment it posted — never both, and which one is
-    settled by whether the item has a thread (requirements 36b, 39c, 4j); the
+    settled by whether the item has a thread (requirements 36b, 39c (The
+    Refiner), 4j); the
     common `cycle` and `ts` are what requirement 3h reads it back by, and what
-    requirement 39a's own read compares against a fresher block's `ts` to
+    requirement 39a (The Refiner)'s own read compares against a fresher block's `ts` to
     decide whether the refinement still stands. A
     `stage-start`/`stage-end` pair's `stage` is `coordinator`,
     `implementer`, `reviewer`, `approver`, `enabler` or `refiner`; the last
@@ -14847,7 +14859,7 @@ implements.
     `repo`, `item`, the
     `blocked_ts` it was examined against, an `outcome`, and the Enabler's own
     `detail`; a `refiner-examined` carries the same shape plus `source`
-    (requirement 39c) — `outcome` is `refined`, `refined-uncorroborated` (a
+    (requirement 39c (The Refiner)) — `outcome` is `refined`, `refined-uncorroborated` (a
     `refined` verdict naming neither a comment nor a `spec`, so nothing was
     recorded), `needs-refinement`, `needs-refinement-refused`, `triage-only`
     (a `triage_only` item's band-only verdict, requirement 39g),
@@ -14933,7 +14945,7 @@ implements.
     local record, the fleet flag, or both — including a `--enable` run on a
     node with no local record of its own but a live fleet flag, which a
     `record`-only condition used to leave silently absent from the log. A
-    `chained` event (requirement 39) is logged by the parent cycle, from its
+    `chained` event (requirement 39 (Finish-then-continue)) is logged by the parent cycle, from its
     own cleanup, immediately before it launches its continuation: `depth` is
     the launching child's own place in the lineage (the parent's plus one) and
     `max_chained_cycles` is the cap in force, so a lineage's length is
@@ -15426,7 +15438,7 @@ implements.
     human must remove the hand-applied label — three seconds before the
     Script applied that very label as this requirement's own projection, a
     deadlock the pipeline had manufactured for itself and could not exit
-    under its own power. Requirement 39c's re-affirmation closes the
+    under its own power. Requirement 39c (The Refiner)'s re-affirmation closes the
     Refiner's own route to this shape: an item it judges already adequately
     specified is `refined`, not `needs-refinement`, so no block — and no
     unblock condition referencing a label not yet applied — is ever written
@@ -16519,7 +16531,7 @@ implements.
 
     **A phantom `item-refined` event is skipped, not trusted (TD-PPagop-
     26082819).** An event logged before the corroboration fix at requirement
-    39c — `comment_url` a bare issue URL, with no `#issuecomment-` anchor or
+    39c (The Refiner) — `comment_url` a bare issue URL, with no `#issuecomment-` anchor or
     REST API comment form, so it cannot name any comment at all — is excluded
     from the derivation above exactly as if it had never been logged, and the
     next-latest event that does pass the same shape check (`refinement_
@@ -19293,12 +19305,12 @@ implements.
     since `issue_priority_apply` runs for those regardless of band
     availability.
 
-    The Refiner's verdict (`parsed.refined[]`, requirement 39c) gains an
+    The Refiner's verdict (`parsed.refined[]`, requirement 39c (The Refiner)) gains an
     optional `priority` field, one of the four band names, independent of
     `verdict` itself: an ordinary item may carry both a specification and a
     band in the same verdict; a `triage_only` item carries `priority` alone
     and no `comments_posted`/`refined_spec` at all — its
-    `refined-uncorroborated` degradation (requirement 39c) does not apply to
+    `refined-uncorroborated` degradation (requirement 39c (The Refiner)) does not apply to
     it, since it was never asked for a specification, and its outcome is
     recorded as `triage-only` rather than `refined`; and a `needs-refinement`
     decline may still carry a band. `maybe_run_refiner` applies the priority
@@ -21489,7 +21501,7 @@ What exists, and the requirements each part answers to:
    through `agent-cycle.sh --disable`/`--enable`/`--status` in
    `test/toggle.test.sh`. Must pass `shellcheck`.
 2f. `lib/eligibility.sh` implementing requirements 3t/3u, 35a/35b, 3y and 39a
-   (#771): what this cycle is allowed to act on, once the gatherers have
+   (The Refiner) (#771): what this cycle is allowed to act on, once the gatherers have
    finished and before anything is offered to a model.
    `compute_band_eligibility` runs every pre-fetched band but `issues`
    through `exclude_blocked_or_void_items` (`issues` has its own narrower
@@ -24905,7 +24917,7 @@ oblige anyone to edit a test.
    On a live node: `docker compose exec scheduler
    /app/deploy/docker/watchtower-pre-update.sh` echoes its finding and exits
    0 when idle, 75 during a cycle. The same suite also pins the
-   `roll-pending` override (requirement 39c, agent-ops#1096, scoped by
+   `roll-pending` override (requirement 39c (Finish-then-continue), agent-ops#1096, scoped by
    agent-ops#1102): a valid, unexpired `$state_dir/roll-pending.json` makes
    the hook exit 0 despite a live `lock.json` naming a live process in the
    hook's own container — but never despite a live `review-lock.json`, which
@@ -28467,7 +28479,7 @@ oblige anyone to edit a test.
     `ordered_repos_json`, which never gains one — requirement 3y);
     `refiner_engagement_set` caps the result deterministically by
     `(repo, source, item)` and treats an unreadable `MAX` as `0`.
-    `test/enabler-verdicts.test.sh` covers requirement 39a's third clause's
+    `test/enabler-verdicts.test.sh` covers requirement 39a (The Refiner)'s third clause's
     other bypass of the already-refined exclusion, the one `triage_only` is
     not: driving `maybe_run_enabler` to a `decide` verdict on a register
     record that already carried a refinement, the resulting `decision-taken`
@@ -28647,7 +28659,7 @@ oblige anyone to edit a test.
     `refiner_candidate_items` admits an already-refined `issues` entry only
     when `priority_set` is literally `false`, marks it `triage_only: true`,
     excludes a banded or claimed/blocked/void/exempt one exactly as
-    requirement 39a already requires, and never admits an entry carrying no
+    requirement 39a (The Refiner) already requires, and never admits an entry carrying no
     `priority_set` key at all — the pre-existing shape every source but
     `issues` still carries. `lib/issue-priority.sh`'s ratchet, driven
     against a stubbed `gh`: `issue_priority_field_ids` resolves the field
@@ -29370,7 +29382,7 @@ oblige anyone to edit a test.
     or not there was a chain to give up, is honoured at the hook against
     `lock.json` alone, is cleared once landed, and — while it is not — idles
     the next cycle at most once rather than letting it run underneath the
-    marker** (requirement 39c, agent-ops#1096, amended by agent-ops#1102,
+    marker** (requirement 39c (Finish-then-continue), agent-ops#1096, amended by agent-ops#1102,
     widened by agent-ops#1103). `test/chain.test.sh` passes: `chain_image_behind` reads
     true only for a `{"status":"behind",...}` verdict — "current",
     "unverified", the JSON literal `null` and malformed input all read false
@@ -32051,7 +32063,7 @@ requirements above, which state only what is.
   what a reader tracing the pipeline's actual sequence finds first, and they
   point at "### The Approver" by name.
 
-- **Re-affirmation (39c) extends `refined` rather than adding a third
+- **Re-affirmation (39c (The Refiner)) extends `refined` rather than adding a third
   verdict.** The tech-debt item that carried agent-ops#670's Part 2 forward
   (TD-PPagop-26082305) suggested a new verdict, distinct from
   `needs-refinement`, for an item the Refiner judges already adequately
@@ -32059,7 +32071,7 @@ requirements above, which state only what is.
   existed — took the narrower route instead: the item is not a new *kind* of
   outcome, it is the same outcome (`refined`) reached without writing
   anything new. Reusing `refined` means the Script's recording path needed no
-  structural change at all — `refinement_record_fields` (requirement 39c)
+  structural change at all — `refinement_record_fields` (requirement 39c (The Refiner))
   already accepts a `comment_url`/`spec` on its own terms, never asking
   whether it was this cycle's own write — so the whole fix is confined to
   what the Refiner is told to do with an existing, adequate specification,
@@ -32068,7 +32080,7 @@ requirements above, which state only what is.
   bought nothing a re-affirmed `refined` does not already give: the item
   re-enters `refinements_map` (3h) and proceeds to selection either way.
 
-- **Re-affirmation's non-`issues` scope (39c) reads the candidate's own
+- **Re-affirmation's non-`issues` scope (39c (The Refiner)) reads the candidate's own
   gatherer `entry` as "an existing specification," gated by the same
   adequacy bar as a fresh one (agent-ops#810, resolving agent-ops#813).**
   #670's Part 2 design described re-affirmation only for the `issues` case,
@@ -32091,7 +32103,7 @@ requirements above, which state only what is.
   carrying a good human-written `entry` would have no honest `refined` to
   return and would fall to `needs-refinement`. Option 3 was rejected because
   a candidate carries no `refinements_map` entry by construction —
-  requirement 39a's already-refined exclusion is *why* it is a candidate at
+  requirement 39a (The Refiner)'s already-refined exclusion is *why* it is a candidate at
   all — so the fold would carry nothing in the incident's own shape (a block
   clearing what dropped the item from the map), and making it real would
   mean retaining cleared refinements as visible history when the commonest
