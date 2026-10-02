@@ -226,3 +226,13 @@ principle it rests on.`
   merge-autonomy configuration and nothing else: it decides no open
   question or escalation, and is no reason to land a pull request that any
   gate holds.
+- 2026-10-02 · #1125 · **One image, many containers (D28).** Every Actor,
+  every Compose service and every node runs the one node image; per-stage
+  tool scope and credentials come from the launch seam (#981), a per-stage
+  resource ceiling from a container per stage (on Kubernetes a Job per
+  stage, the Phase 2 deployment item), and toolchain variance from the
+  target repository (D20, #2069) — never from an image per Actor. Image
+  size reaches no D14 budget: a stage's cost is what it runs, Docker shares
+  layers between the images on a node, and a routine roll moves about
+  4 MiB. Decided by the owner on 2026-10-02 on the investigation's
+  findings (#1125).
