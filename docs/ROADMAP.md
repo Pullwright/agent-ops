@@ -445,6 +445,14 @@ Poetic-Poems, with no pipeline code in it.
 - [x] Provider-qualified model identifiers in the config schema, so models
       from other providers can arrive later without a breaking change
       (D12). *[fleet]*
+- [ ] Cut the provider seam in the right place (D12): every place the
+      pipeline assumes the Claude Code CLI is inventoried and classified —
+      [`docs/PROVIDER-SEAM-AUDIT.md`](PROVIDER-SEAM-AUDIT.md) names the
+      substrate contract any agentic CLI must satisfy, what is
+      provider-specific behind it, and Grok Build's own documented
+      equivalent (or gap) for each (#2130). Informs the `providers` config
+      block (#2131) and the substrate adapter behind the stage launcher
+      (#2133). *[fleet]*
 - [x] Make the spend data say *what* the money bought (D21). Three defects
       stood between the metering this pipeline already recorded and any
       productivity figure, and all three are now fixed. **The model
