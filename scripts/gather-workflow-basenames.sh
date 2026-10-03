@@ -54,10 +54,12 @@ fi
 # it, and degrade this whole read to `ok: false` — leaving every `failed-run-`
 # void in exactly the busiest repositories unretirable, which is the growth
 # this gatherer exists to stop. --slurp folds the pages into one array of
-# response objects, flattened by the filter below.
+# response objects, flattened by the filter below. `gh` rejects --slurp
+# paired with --jq, so the filter runs as a separate jq call piped from the
+# raw slurped output rather than inline.
 out=""
-if out="$(gh api --paginate --slurp "repos/$slug/actions/workflows" \
-          --jq '[.[].workflows[] | {id: (.id | tostring), path}]' 2>/dev/null)" \
+if out="$(gh api --paginate --slurp "repos/$slug/actions/workflows" 2>/dev/null \
+          | jq -c '[.[].workflows[] | {id: (.id | tostring), path}]' 2>/dev/null)" \
    && [[ -n "$out" ]] && jq -e 'type == "array"' <<<"$out" >/dev/null 2>&1; then
   jq -nc --argjson w "$out" \
     '{ok: true, basenames: (reduce $w[] as $e ({}; .[$e.id] = ($e.path | sub("^.*/"; "") | sub("\\.ya?ml$"; ""))))}'

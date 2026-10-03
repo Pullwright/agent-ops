@@ -48,24 +48,33 @@ cat >"$tmp_dir/bin/gh" <<'STUB'
 #!/usr/bin/env bash
 set -uo pipefail
 [[ "${1:-}" == "api" ]] || { echo "stub gh: unexpected call: $*" >&2; exit 1; }
-# The real `--jq` filter is applied here rather than short-circuited, so this
-# test covers the filter itself and not merely the wrapper around it. `--slurp`
-# is what the script passes, and its shape — one array holding every page's
-# response object — is what the pages below are folded into, so a filter that
-# only ever reads page one fails this test.
-filter=""
+# The real `gh` (2.98.0) rejects --slurp paired with --jq outright — empty
+# stdout, exit 1 — which is exactly the pairing the gatherer used to send it
+# (issue #1116), silently degrading every call to the `ok: false` fallback. A
+# stub that filtered anyway could never catch a call site that still paired
+# them, so this one rejects the pairing the same way and the gatherer itself
+# now applies the filter as a separate `jq` call over the raw, unfiltered
+# page array this stub answers with.
+slurp=0; jqf=""
+shift
 while (( $# )); do
-  [[ "$1" == "--jq" ]] && { filter="$2"; break; }
+  case "$1" in
+    --slurp) slurp=1 ;;
+    --jq) jqf="${2:-}"; shift ;;
+  esac
   shift
 done
+if (( slurp )) && [[ -n "$jqf" ]]; then
+  echo "the \`--slurp\` option is not supported with \`--jq\` or \`--template\`" >&2
+  exit 1
+fi
 case "${STUB_MODE:-hit}" in
   hit)
     # Two pages, as a repository with more workflows than one page holds
     # would answer.
     printf '%s\n' \
       '[{"total_count":3,"workflows":[{"id":123,"path":".github/workflows/ci.yml"},{"id":456,"path":".github/workflows/sync-framework.yaml"}]},
-        {"total_count":3,"workflows":[{"id":789,"path":".github/workflows/codeql.yml"}]}]' \
-      | jq -c "${filter:-.}"
+        {"total_count":3,"workflows":[{"id":789,"path":".github/workflows/codeql.yml"}]}]'
     ;;
   error)
     echo '{"message":"rate limit exceeded","status":"403"}'
