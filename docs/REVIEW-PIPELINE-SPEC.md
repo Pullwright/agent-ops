@@ -306,13 +306,16 @@ aliases in the launch command.
 
 `repository_review.defaults.model` (or a repository's own override in
 `repository_review.repos`, requirement 342) accepts a bare id
-(`claude-sonnet-5`) or a provider-qualified one (`anthropic/claude-sonnet-5`),
-resolved by the same `resolve_model_id` (`lib/model-id.sh`) the implementation
-pipeline uses — see
-`docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 1a. Anthropic is the only
-executable provider (D12, `docs/ROADMAP.md`); a qualifier naming any other
-provider is a fail-fast config error at cycle start, not a value passed to
-`claude --model`.
+(`claude-sonnet-5`, meaning `anthropic`) or a provider-qualified one
+(`anthropic/claude-sonnet-5`, or `<name>/<id>` for a provider the top-level
+`providers` object configures), resolved by the same `resolve_model_id`
+(`lib/model-id.sh`) the implementation pipeline uses — see
+`docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 1a. `anthropic` is always
+accepted, substrate `claude-code`, whether or not `providers` names it
+explicitly (D12, `docs/ROADMAP.md`); a qualifier naming a provider
+`providers` does not configure, or one configured with a substrate this
+image has no adapter for, is a fail-fast config error at cycle start, not a
+value passed to `claude --model`.
 
 <!-- config-table:notes id=review — GENERATED from config.schema.json by scripts/render-config-table.sh; edit the schema, not this section -->
 
@@ -370,15 +373,21 @@ R1. **Bootstrap.** Reuse the `PATH` bootstrap and binary checks of
    minimal environment). Source `lib/limit-detect.sh`. The script must pass
    `shellcheck`.
 
-R1a. **Model id resolution (D12 groundwork).** Every configured repository's
-   own resolved model (`repository_review.defaults.model`, or its own override in
-   `repository_review.repos`, requirement 342) is resolved through
+R1a. **Model id resolution, against a configured set of providers (D12,
+   issue #2131).** `lib/model-id.sh`'s `providers_load` loads the top-level
+   `providers` object into `PROVIDER_SUBSTRATE` once, at startup, before the
+   sweep below — the same call and the same startup position
+   `agent-cycle.sh` makes (`docs/IMPLEMENTATION-PIPELINE-SPEC.md`
+   requirement 1a). Every configured repository's own resolved model
+   (`repository_review.defaults.model`, or its own override in
+   `repository_review.repos`, requirement 342) is then resolved through
    `lib/model-id.sh`'s `resolve_model_id` immediately after `repository_review`'s
    settings are read and resolved, before the lock — the same helper and the
-   same rule `agent-cycle.sh` applies to its own model keys
-   (`docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 1a): a bare id means
-   `anthropic/`, an `anthropic/`-qualified id has the qualifier stripped, and
-   any other qualifier is a fail-fast config error naming the precise key the
+   same rule `agent-cycle.sh` applies to its own model keys: a bare id means
+   `anthropic`, a qualified id has the qualifier stripped once the named
+   provider is accepted, and a qualifier naming a provider `providers` does
+   not configure — or one configured with a substrate this image has no
+   adapter for — is a fail-fast config error naming the precise key the
    value came from — `repository_review.repos[i].model` for a repository's own
    override, `repository_review.defaults.model` when it does not have one — never
    the generic `repository_review.model`, so the error points at the exact key to

@@ -1255,12 +1255,15 @@ assert_repository_review "an absent repository_review resolves to no repos, neve
   'del(.repository_review)' '. == []'
 
 # --- Model identifiers. D12's whole point is that the qualifier is checked
-#     before it reaches `claude --model`, and the schema is the earlier of the
-#     two places that happens. ---
+#     before it reaches `claude --model`, but since issue #2131 the schema
+#     itself only checks the *shape* (`<name>/<id>`, any name) — whether
+#     `<name>` is actually configured in `providers` is
+#     `lib/model-id.sh`'s `resolve_model_id`'s own fail-fast check at cycle
+#     start (asserted below, via assert_doctor/run_cycle_guard, never here). ---
 assert_valid "a provider-qualified model id is accepted" \
   '.coordinator_model = "anthropic/claude-haiku-4-5-20251001"'
-assert_rejected "a model id qualified with an unsupported provider is rejected" \
-  '.coordinator_model = "openai/gpt-5"' 'config.coordinator_model: "openai/gpt-5" does not match'
+assert_valid "a model id qualified with a provider the schema does not know is still shape-valid" \
+  '.coordinator_model = "openai/gpt-5"'
 assert_rejected "a required model id cannot be empty" \
   '.reviewer_model_default = ""' 'config.reviewer_model_default: must not be empty'
 assert_valid "an optional model id may be empty (it switches its stage off)" \
@@ -1269,8 +1272,14 @@ assert_valid "the Approver's three tiers may all be empty (it switches the whole
   '.approver_model_default = "" | .approver_model_complex = "" | .approver_model_critical = ""'
 assert_valid "a provider-qualified Approver model id is accepted" \
   '.approver_model_default = "anthropic/claude-sonnet-5"'
-assert_rejected "an Approver model id qualified with an unsupported provider is rejected" \
-  '.approver_model_critical = "openai/gpt-5"' 'config.approver_model_critical: "openai/gpt-5" does not match'
+assert_valid "an Approver model id qualified with a provider the schema does not know is still shape-valid" \
+  '.approver_model_critical = "openai/gpt-5"'
+assert_doctor "doctor fails a model id qualified with a provider providers does not configure" \
+  '.coordinator_model = "openai/gpt-5"' 1 \
+  "model-id: coordinator_model: provider 'openai' is not configured"
+assert_doctor "doctor resolves a model id qualified with a provider providers does configure" \
+  '.providers = {"openai": {"substrate": "claude-code"}} | .coordinator_model = "openai/gpt-5"' 0 \
+  "coordinator_model → gpt-5"
 
 # --- doctor.sh's cross-key rules: what the schema cannot say. ---
 assert_doctor "doctor fails an enabled Enabler with no assignee, as agent-cycle.sh would" \
@@ -1324,15 +1333,15 @@ assert_doctor_shipped "doctor passes with no review_instructions/review_context 
 #     specification for. ---
 assert_doctor "doctor fails refiner_model ranked below implementer_model_default" \
   '.refiner_model = "claude-haiku-4-5-20251001"' 1 \
-  'refiner_model (claude-haiku-4-5-20251001) ranks below implementer_model_default (claude-sonnet-5)'
+  'refiner_model (anthropic/claude-haiku-4-5-20251001) ranks below implementer_model_default (anthropic/claude-sonnet-5)'
 assert_doctor "doctor fails enabler_model ranked below implementer_model_default" \
   '.enabler_model = "claude-haiku-4-5-20251001" | .enabler_assignee = "someone"' 1 \
-  'enabler_model (claude-haiku-4-5-20251001) ranks below implementer_model_default (claude-sonnet-5)'
+  'enabler_model (anthropic/claude-haiku-4-5-20251001) ranks below implementer_model_default (anthropic/claude-sonnet-5)'
 assert_doctor_shipped "doctor passes the shipped configuration's model-tier floor" \
   '.' 0 'refiner_model and enabler_model each rank at or above every implementer tier'
 assert_doctor "doctor warns about a model the tier ladder does not know, rather than silently passing it" \
   '.implementer_model_default = "claude-nonexistent-9"' 0 \
-  'implementer_model_default (claude-nonexistent-9) is not on the fleet'"'"'s model-tier ladder'
+  'implementer_model_default (anthropic/claude-nonexistent-9) is not on the fleet'"'"'s model-tier ladder'
 # --- requirement 1c: a "required" refinement_policy source with no Refiner
 #     to ever refine it would wait forever. ---
 assert_doctor "doctor fails a required refinement source with refiner_model empty" \
@@ -1776,7 +1785,7 @@ assert_not_contains "a config the schema accepts is not reported as a schema fai
 run_cycle_guard "$(jq -c '.refiner_model = "claude-haiku-4-5-20251001"' "$BASE_CONFIG")"
 assert_eq "refiner_model below implementer_model_default still exits 1, past the schema gate" "1" "$guard_rc"
 assert_contains "the model-tier floor guard names both sides of the violation" \
-  "refiner_model (claude-haiku-4-5-20251001) ranks below implementer_model_default (claude-sonnet-5)" "$guard_out"
+  "refiner_model (anthropic/claude-haiku-4-5-20251001) ranks below implementer_model_default (anthropic/claude-sonnet-5)" "$guard_out"
 assert_not_contains "a config the schema accepts is not reported as a schema failure" \
   "does not match config.schema.json" "$guard_out"
 
