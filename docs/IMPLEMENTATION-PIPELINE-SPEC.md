@@ -138,9 +138,12 @@ cron (schedule.cycle_interval_minutes)
    `REQUEST_CHANGES` — posted under a non-author GitHub App identity
    ("Pullwright Approver"), never under this system's own authoring account.
 6. The **Human Reviewer** — gives final approval (at `human`) or an
-   additional one alongside the Approver's own (above `human`), and performs
-   the merge on every pull request regardless of level, through the ordinary
-   GitHub process. Not launched by any part of this system.
+   additional one alongside the Approver's own (above `human`), through the
+   ordinary GitHub process. Merges the pull request directly at `human` and
+   `agent-approves`; at `agent-merges-routine` and `agent-merges-all`, the
+   arming step lands an eligible pull request itself (D18, "## The Landing
+   Gate"), and the Human Reviewer's own role narrows to whatever that
+   classifier did not cover. Not launched by any part of this system.
 7. The **Enabler** — a headless Claude Code invocation, engaged rarely and at
    the end of a cycle, that re-examines items recorded as blocked which the
    pipeline has not cleared by itself. It unblocks, voids, or leaves them

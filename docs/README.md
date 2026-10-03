@@ -61,6 +61,12 @@ set under `docs/reviews/` one entry for its directory.
 |------|----------|------|---------|
 | `docs/README.md` | operator, evaluator, contributor, agent, person working in repo, reader of fleet output | reference | This document: the map of every tracked document, with the conventions that govern them |
 
+#### Concepts (explanations)
+
+| File | Audience | Kind | Purpose |
+|------|----------|------|---------|
+| `docs/concepts/glossary.md` | evaluator, agent, contributor, operator, person working in repo | explanation | Glossary of every coined or repurposed term, each defined once with a stable anchor |
+
 #### Specifications (as-built)
 
 | File | Audience | Kind | Purpose |
