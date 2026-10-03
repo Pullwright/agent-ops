@@ -216,6 +216,21 @@ fi
 # below, with no `// literal` of its own to drift from the schema's.
 DEFAULTED_CONFIG="$(config_defaults "$CONFIG_FILE" "$SCHEMA_FILE")"
 
+# The provider seam (requirement 1a, issue #2131): config's own `providers`
+# block is loaded into lib/model-id.sh's PROVIDER_SUBSTRATE before the
+# model-id sweep below needs to see a provider beyond the implicit
+# `anthropic`, the same startup position agent-cycle.sh loads it at. Shared
+# with scripts/doctor.sh's own `fail` through the same lib/config-schema.sh
+# function, so the two scripts cannot disagree on what counts as a bad
+# `providers` block.
+providers_load "$(cfg_json '.providers')"
+provider_errors="$(config_provider_errors "$(cfg_json '.providers')")"
+if [[ -n "$provider_errors" ]]; then
+  echo "review-cycle: providers block is invalid:" >&2
+  while IFS= read -r line; do echo "review-cycle:   $line" >&2; done <<<"$provider_errors"
+  exit 1
+fi
+
 state_dir="$(expand_home "$(cfg '.state_dir')")"
 workspace_root="$(expand_home "$(cfg '.workspace_root')")"
 # Exported so the `gh` transport shim (requirement 2.0e, agent-ops#1084),

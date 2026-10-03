@@ -997,6 +997,7 @@ and the schema must carry every one of them.
 | `analytics_retained_days` | `0` | How long the analytics records `log.jsonl`/`review-log.jsonl` carry are retained (requirement 2.6d), independent of requirement 2.6's rotation and requirement 2.5's `cycles/`/`reviews/` pruning — neither ever reaches either file. `0` (the default) means retain indefinitely, preserving today's behaviour: this key states the policy, not an enforced expiry, which nothing yet implements. |
 | `constraint_min_share` | `0.3` | The minimum share of fleet node-time (0-1) a candidate must account for before the constraint statement (D21, issue #609) names it as the binding constraint; below it, `scripts/constraint.sh`/`lib/constraint.sh`'s `constraint_classify` reports `insufficient-evidence` rather than naming the largest bucket regardless of size. |
 | `constraint_min_sample_seconds` | `14400` | The minimum aggregate node-seconds (`expected_total_seconds`, node-count x window) the node time-state account must cover before the constraint statement (issue #609) states one at all; below it, `constraint_classify` reports `insufficient-evidence` with reason `window-below-minimum-sample` rather than trusting a share computed from too little data. |
+| `providers` | `{}` | Model providers beyond the implicit `anthropic` (requirement 1a), keyed by provider name, each entry's `substrate` naming the adapter that launches it (`claude-code` is the only one this image has) and optional `credential_env` naming the environment variable that adapter reads for an API key (defaulting by substrate — `ANTHROPIC_API_KEY` for `claude-code`). `anthropic` needs no entry: it is always accepted, substrate `claude-code`, whether or not this object names it explicitly. |
 | `coordinator_model` | `claude-haiku-4-5-20251001` | Selection is cheap triage. |
 | `implementer_model_default` | `claude-sonnet-5` | Any change that affects runtime behaviour. |
 | `implementer_model_trivial` | `claude-haiku-4-5-20251001` | Docs-, comment-, or register-only items. The Co-Ordinator classifies each item and records its reasoning in the work order. |
@@ -1133,10 +1134,13 @@ aliases in the launch commands.
 
 Every `*_model` key above (and `repository_review.defaults.model`, or a repo's own
 override, in `docs/REVIEW-PIPELINE-SPEC.md`) accepts a bare id
-(`claude-sonnet-5`) or a provider-qualified one
-(`anthropic/claude-sonnet-5`), resolved per requirement 1a. Anthropic is the
-only executable provider (D12, `docs/ROADMAP.md`), so the two forms are the
-same value; no other qualifier is accepted.
+(`claude-sonnet-5`, meaning `anthropic`) or a provider-qualified one
+(`anthropic/claude-sonnet-5`, or `<name>/<id>` for a provider `providers`
+above configures), resolved per requirement 1a. `anthropic` is always
+accepted, substrate `claude-code`, whether or not `providers` names it
+explicitly (D12, `docs/ROADMAP.md`); any other qualifier is accepted only
+once `providers` configures it with a substrate this image has an adapter
+for.
 
 <!-- config-table:notes id=main — GENERATED from config.schema.json by scripts/render-config-table.sh; edit the schema, not this section -->
 
@@ -1619,25 +1623,50 @@ implements.
    sized to that handler's worst case (one process-group kill, one log
    append, one 8-second-bounded claim release). Polled rather than slept, so
    a cycle that records and exits in one second costs one second.
-1a. **Model id resolution (D12 groundwork).** Every model key read from
-   config — `coordinator_model`, `implementer_model_default`,
+1a. **Model id resolution, against a configured set of providers (D12,
+   issue #2131).** `providers` states which providers beyond the implicit
+   `anthropic` a model key may qualify with — keyed by provider name, each
+   entry naming a `substrate` (the adapter that launches it; `claude-code`
+   is the only one this image has) and, optionally, a `credential_env`
+   (defaulting by substrate — `ANTHROPIC_API_KEY` for `claude-code`).
+   `lib/model-id.sh`'s `providers_load` loads it into `PROVIDER_SUBSTRATE`
+   (and `PROVIDER_CREDENTIAL_ENV`) once, at startup, before any model key is
+   resolved — synthesizing `anthropic` with substrate `claude-code` whether
+   or not `providers` names it explicitly, so no existing `config.json`
+   needs to change. Every model key read from config —
+   `coordinator_model`, `implementer_model_default`,
    `implementer_model_trivial`, `reviewer_model_default`,
    `reviewer_model_complex`, `enabler_model`, `enabler_model_critical`,
    `refiner_model`, `approver_model_default`, `approver_model_complex`,
    `approver_model_critical` — is resolved immediately after
    being read, before the lock and before any stage may launch: a bare id
-   (`claude-sonnet-5`) means `anthropic/claude-sonnet-5`; an
-   `anthropic/`-qualified id has the qualifier stripped to the same bare id;
-   a qualifier naming any other provider is a fail-fast config error naming
-   the offending key, not a value ever passed to `claude --model`. An empty
-   value (the "disable this stage" convention `reviewer_model_complex` and
-   `enabler_model` both use) passes through unresolved. `review-cycle.sh`
-   applies the same resolution to every repository's own resolved
-   `repository_review.defaults.model` (or its own override in
-   `repository_review.repos`, requirement 342) (`docs/REVIEW-PIPELINE-SPEC.md`).
-   Both scripts share one implementation,
-   `lib/model-id.sh`'s `resolve_model_id`, so the two pipelines can never
-   drift on what counts as a supported provider.
+   (`claude-sonnet-5`) means `anthropic/claude-sonnet-5`; a qualified id has
+   the qualifier stripped to the same bare id once the named provider is
+   accepted; a qualifier naming a provider absent from `providers` is a
+   fail-fast config error naming the offending key, not a value ever passed
+   to `claude --model`, and so is one naming a provider whose configured
+   `substrate` has no adapter in this codebase — named alongside the key, so
+   a `grok-4.3` qualifier can never reach `claude --model` because the
+   schema admitted it. An empty value (the "disable this stage" convention
+   `reviewer_model_complex` and `enabler_model` both use) passes through
+   unresolved. `review-cycle.sh` applies the same resolution to every
+   repository's own resolved `repository_review.defaults.model` (or its own
+   override in `repository_review.repos`, requirement 342)
+   (`docs/REVIEW-PIPELINE-SPEC.md`). Both scripts share one implementation,
+   `lib/model-id.sh`'s `resolve_model_id` (and its sibling
+   `resolve_model_provider`, which names the provider a key resolves to
+   rather than the bare id `claude --model` wants), so the two pipelines can
+   never drift on what counts as a supported provider. `providers`'s own
+   entries are each named by the installation, which is outside what the
+   declarative schema (requirement 1b) can shape-validate on its own — a
+   fourth cross-key guard alongside requirement 1c's three,
+   `lib/config-schema.sh`'s `config_provider_errors`, rejects an unknown key
+   inside an entry, a missing or unsupported `substrate`, or an explicit
+   empty `credential_env`, shared the same way between `agent-cycle.sh`,
+   `review-cycle.sh` and `scripts/doctor.sh`. Launching a stage on any
+   substrate but `claude-code` is out of this requirement's scope (#2133,
+   #2134): a provider configured with one resolves here, but no stage ever
+   launches on it yet.
 1b. **The configuration has a machine-readable schema, and it is the startup
    gate both pipelines run on.** `config.schema.json` states the shape of
    `config.json` — every key an installation may set, its type, its
@@ -1799,26 +1828,51 @@ implements.
    is the same rule for `repository_review.repos`, shared with `review-cycle.sh`
    instead — `docs/REVIEW-PIPELINE-SPEC.md` requirement R1b).
 
+   An eighth guard, `config_provider_errors` (issue #2131), stays in code for
+   a reason none of the first seven share: it holds *within* one key,
+   `providers`, but that key's own entries are each named by the
+   installation rather than drawn from a fixed set the schema's `properties`
+   could enumerate in advance — the same gap `additionalProperties: false`
+   exists to close everywhere else, with nothing here for it to close
+   against. `config_provider_errors` rejects an unknown key inside one
+   entry (only `substrate` and `credential_env` are read), a missing or
+   unsupported `substrate` — `lib/model-id.sh`'s `PROVIDER_SUBSTRATE_INSTALLED`
+   names the full enum, `claude-code` alone after this issue — and an
+   explicit empty `credential_env`. `agent-cycle.sh` and `review-cycle.sh`
+   both refuse to start on it, and `scripts/doctor.sh` reports the same
+   condition as a `fail` through that one implementation, so the three can
+   never drift.
+
 1c. **The model-tier floor (agent-ops#822).** Nothing before this requirement
     stopped the cheapest model in the fleet from authoring a work order
     specification (`context`/`acceptance`) that a more capable model then
     implemented — #815 (fixed by #819) and #821 both trace to exactly this
     gap. `lib/model-id.sh`'s `MODEL_TIER_RANK` is the ordering that makes
     "cheaper" and "more capable" checkable rather than conventional: the
-    fleet's four currently configured model ids, ranked by capability
+    fleet's four currently configured Claude model ids, ranked by capability
     (Anthropic's own relative pricing confirms the order) —
     `claude-haiku-4-5-20251001` below `claude-sonnet-5` below
-    `claude-opus-5` below `claude-fable-5`. `model_tier_rank`,
-    `model_tier_known` and `model_tier_below` read it; a model the table has
-    never heard of (a future release, or a typo the `modelId` pattern still
-    accepts) ranks unknown rather than lowest or highest, and every check
-    below treats "unknown" as "cannot verify" — never as "fails" or
-    "passes" — so a model newer than this table cannot itself be rejected by
-    it; `scripts/doctor.sh` warns separately (in its "Models" section) when
-    one of `coordinator_model`, `refiner_model`, `enabler_model`,
-    `implementer_model_default`, `implementer_model_trivial` or
-    `reviewer_model_default` is unranked, so an unranked model is never
-    silently invisible to the checks that use this table.
+    `claude-opus-5` below `claude-fable-5` — each keyed by its fully-qualified
+    id (`anthropic/claude-sonnet-5`, `resolve_model_qualified`'s own return
+    shape, issue #2131) rather than the bare one `resolve_model_id` returns.
+    `model_tier_rank`, `model_tier_known` and `model_tier_below` all take a
+    qualified id and read the table by it; a model the table has never heard
+    of (a future release, a typo the `modelId` pattern still accepts, or a
+    second provider's own model before its own tier is ever added here) ranks
+    unknown rather than lowest or highest, and every check below treats
+    "unknown" as "cannot verify" — never as "fails" or "passes" — so a model
+    newer than this table cannot itself be rejected by it. The qualified
+    keying is what makes a cross-provider pair rank unknown by construction
+    rather than by a separate check: two providers' own model ids are simply
+    two different keys here, neither of which the other's own tiers can ever
+    satisfy, so requirement 1c's checks below compare tiers only *within* one
+    provider, exactly as this requirement always intended, without needing to
+    say so as a rule of its own. `scripts/doctor.sh` warns separately (in its
+    "Models" section) when one of `coordinator_model`, `refiner_model`,
+    `enabler_model`, `implementer_model_default`, `implementer_model_trivial`
+    or `reviewer_model_default` is unranked, including every cross-provider
+    case, so an unranked model is never silently invisible to the checks that
+    use this table.
 
     Two authors can write a work order's `context`/`acceptance` directly
     rather than relay text a human, the Script, or a gatherer already wrote:

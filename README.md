@@ -503,6 +503,7 @@ Keys:
 | `analytics_retained_days` | `0` | How long the analytics records in `log.jsonl`/`review-log.jsonl` are retained, independent of `scripts/rotate-logs.sh`'s size-based rotation (neither file is ever in its rotation set) and of `scripts/state-sync.sh`'s pruning of `cycles/`/`reviews/` (neither reaches either file). `0` (the default) means retain indefinitely — today's behaviour, unaffected by this key: nothing yet enforces an expiry against it. |
 | `constraint_min_share` | `0.3` | The minimum share of fleet node-time a candidate must account for before the constraint statement names it as the binding constraint — below it, the statement reads "insufficient evidence" rather than naming the largest bucket regardless of size. |
 | `constraint_min_sample_seconds` | `14400` | The minimum aggregate node-seconds the time account must cover before the constraint statement states one at all — below it, the statement reads "insufficient evidence" rather than trusting a share computed from too little data. |
+| `providers` | `{}` | Model providers beyond the implicit `anthropic`, keyed by provider name — e.g. `{"xai": {"substrate": "claude-code", "credential_env": "XAI_API_KEY"}}`. `anthropic` needs no entry; it always resolves, substrate `claude-code`. Qualify any model key below with `<name>/<id>` to use a configured provider. |
 | `coordinator_model` | `claude-haiku-4-5-20251001` | Selection is cheap triage. |
 | `implementer_model_default` | `claude-sonnet-5` | For code changes. |
 | `implementer_model_trivial` | `claude-haiku-4-5-20251001` | For docs, comments, register entries only. |
@@ -637,10 +638,13 @@ Keys:
 Every `*_model` key above, plus `repository_review.defaults.model` (or a repo's
 own override) below, also accepts a
 provider-qualified id — `anthropic/claude-sonnet-5` alongside the bare
-`claude-sonnet-5` — with identical behaviour; the qualifier is optional
-because Anthropic is the only executable provider today. A qualifier naming
-any other provider is rejected at cycle start with an error naming the key,
-not passed to the `claude` CLI. No existing config needs to change.
+`claude-sonnet-5`, or `<name>/<id>` for a provider the `providers` key above
+configures — with identical behaviour; the qualifier is optional because
+`anthropic` is always accepted, substrate `claude-code`, whether or not
+`providers` names it explicitly. A qualifier naming a provider `providers`
+does not configure, or one configured with a substrate this image has no
+adapter for, is rejected at cycle start with an error naming the key, not
+passed to the `claude` CLI. No existing config needs to change.
 
 The `repository_review` object configures the separate repository-review pipeline — see [Repository review](#repository-review).
 
