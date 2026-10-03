@@ -34,7 +34,7 @@ path and the heading that answers it.
 | **I want to understand the landing gate and autonomy levels** | `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "The Landing Gate" |
 | **How does the Enabler stage work?** | `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "The Enabler" |
 | **Where can I see dated audits or investigations?** | `docs/reviews/` — each dated subdirectory |
-| **What's the history of decisions made?** | `docs/ROADMAP.md` § "Settled decisions" or `docs/STANDING-DECISIONS.md` for open decisions |
+| **What's the history of decisions made?** | `docs/ROADMAP.md` § "Settled decisions" or `docs/STANDING-DECISIONS.md` for settled owner answers |
 
 ## All documents
 
@@ -85,7 +85,7 @@ set under `docs/reviews/` one entry for its directory.
 | File | Audience | Kind | Purpose |
 |------|----------|------|---------|
 | `docs/ROADMAP.md` | operator, evaluator, person working in repo | decision log | Product roadmap and settled decisions; intent rather than as-built |
-| `docs/STANDING-DECISIONS.md` | contributor, agent, person working in repo | decision log | Standing decisions on open questions (updated as decisions are made) |
+| `docs/STANDING-DECISIONS.md` | contributor, agent, person working in repo | decision log | Settled owner answers on recurring questions (lines added or amended, never deleted) |
 
 #### Audits and investigations (records)
 
@@ -190,8 +190,9 @@ what you read.
 - **Decision log** — records open questions and the decisions made on them over
   time. `docs/ROADMAP.md` is a planning decision log (intent, open for revisions
   as decisions land). `docs/STANDING-DECISIONS.md` is an implementation
-  decision log (settled decisions on recurring questions — updated as new
-  decisions are made, not as decisions change). Neither is as-built: a decision
+  decision log (settled decisions on recurring questions — a line is added
+  when an escalation is answered and amended, dated, if the owner later
+  changes their mind, but never deleted). Neither is as-built: a decision
   log is prescriptive, not descriptive.
 
 ### Audiences
@@ -325,7 +326,7 @@ documentation sweep.
 
 Sections are cited using the format: path + heading.
 
-Example: "`README.md` § \"Installation\"" or "`docs/IMPLEMENTATION-PIPELINE-SPEC.md` § \"The five stages\"".
+Example: "`README.md` § \"Installation\"" or "`docs/IMPLEMENTATION-PIPELINE-SPEC.md` § \"What it is\"".
 
 This format is:
 - Machine-readable (path is filepath, heading is quoted)
