@@ -1512,13 +1512,14 @@ cleanup() {
   # clean cycle-end, chain or no chain). So the marker is written whenever
   # this cycle ended cleanly, whether or not it had a chain to give up —
   # `chain_eligible` only gates the cancellation, which is a no-op where
-  # there was nothing eligible to begin with. `--once` is excluded outright:
-  # a human or a test asking for exactly one cycle must not arm an override
-  # on the node it ran on. Reads the same `image_drift_status` verdict the
-  # heartbeat's `image` field publishes (requirement 2.5) — no second signal
-  # — through the identical cache file the state-sync push just above
-  # refreshed, so this costs no second registry round trip.
-  if (( exit_code == 0 )) && ! (( ONCE )); then
+  # there was nothing eligible to begin with. `--once` and `--dry-run` are
+  # both excluded outright: a human or a test asking for exactly one cycle,
+  # real or dry, must not arm an override on the node it ran on. Reads the
+  # same `image_drift_status` verdict the heartbeat's `image` field
+  # publishes (requirement 2.5) — no second signal — through the identical
+  # cache file the state-sync push just above refreshed, so this costs no
+  # second registry round trip.
+  if (( exit_code == 0 )) && ! (( ONCE || DRY_RUN )); then
     local image_status_json=""
     image_status_json="$(image_drift_status "$(agent_ops_version "$SCRIPT_DIR")" \
       "$state_dir/.image-drift-cache.json" 2>/dev/null || echo null)"
