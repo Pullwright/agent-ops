@@ -100,18 +100,18 @@ A self-hosted, unattended pipeline that automatically selects, implements, and r
 
 Once an hour:
 
-1. **Co-Ordinator** (Haiku) selects at most one well-scoped item of work (security findings, review feedback, merge conflicts on otherwise-ready PRs of ours, abandoned draft PRs of ours, failed CI runs, tech-debt, issues, fiddle's implementation plan, project-review recommendations, or code-quality findings). Security work — open Dependabot alerts and security code-scanning alerts — is always prioritised ahead of everything else; an issue you have marked `Urgent` comes second; answering your review feedback comes third, rebasing a ready PR of ours that has hit a merge conflict comes fourth, and finishing a draft PR this system started and then abandoned comes fifth. Issues rank by their **`Priority`** field — `Urgent`, `High`, `Medium` (also the default when the field is unset) and `Low` each sit at a different point in the order — so triaging an issue is how you move it up or down the queue.
-2. **Implementer** (Sonnet/Haiku) clones the repo, implements the item on a feature branch, and opens a draft pull request — or, for review feedback, pushes to the existing branch of the PR you commented on.
-3. **Reviewer** (Sonnet, or Opus when the Implementer graded the work `complexity:high`) checks and corrects the implementation, then marks the PR ready for review.
-4. **The Landing Gate** reviews and merges the pull request. At the default
-   `merge_autonomy` (`human`) a human does both; an opt-in trust ladder (see
+1. **[Co-Ordinator](docs/concepts/glossary.md#co-ordinator)** (Haiku) selects at most one well-scoped item of work (security findings, review feedback, merge conflicts on otherwise-ready PRs of ours, abandoned draft PRs of ours, failed CI runs, tech-debt, issues, fiddle's implementation plan, project-review recommendations, or code-quality findings). Security work — open Dependabot alerts and security code-scanning alerts — is always prioritised ahead of everything else; an issue you have marked `Urgent` comes second; answering your review feedback comes third, rebasing a ready PR of ours that has hit a merge conflict comes fourth, and finishing a draft PR this system started and then abandoned comes fifth. Issues rank by their **`Priority`** field — `Urgent`, `High`, `Medium` (also the default when the field is unset) and `Low` each sit at a different point in the order — so triaging an issue is how you move it up or down the queue.
+2. **[Implementer](docs/concepts/glossary.md#implementer)** (Sonnet/Haiku) clones the repo, implements the item on a feature branch, and opens a draft pull request — or, for review feedback, pushes to the existing branch of the PR you commented on.
+3. **[Reviewer](docs/concepts/glossary.md#reviewer)** (Sonnet, or Opus when the Implementer graded the work `complexity:high`) checks and corrects the implementation, then marks the PR ready for review.
+4. **[The Landing Gate](docs/concepts/glossary.md#landing-gate)** reviews and merges the pull request. At the default
+   [`merge_autonomy`](docs/concepts/glossary.md#merge-autonomy) (`human`) a human does both; an opt-in trust ladder (see
    [The Landing Gate](docs/IMPLEMENTATION-PIPELINE-SPEC.md#the-landing-gate))
-   can add an **Approver** App review and, at its top two rungs, have the
-   Script itself land an eligible pull request — a human's own role then
+   can add an **[Approver](docs/concepts/glossary.md#approver)** App review and, at its top two rungs, have the
+   [Script](docs/concepts/glossary.md#script) itself land an eligible pull request — a human's own role then
    narrows to whatever the classifier didn't cover, and a human
    `CHANGES_REQUESTED` blocks landing at every level regardless.
 
-And, at the end of a cycle, rarely: the **Enabler** (Opus) re-examines an item
+And, at the end of a cycle, rarely: the **[Enabler](docs/concepts/glossary.md#enabler)** (Opus) re-examines an item
 that has been blocked for several cycles, unblocks it if it can and raises an
 issue assigned to you if only you can — see
 [Blocked items and the Enabler](#blocked-items-and-the-enabler). It also writes
@@ -119,12 +119,12 @@ the specification for an item too vague to select, which is otherwise skipped
 in silence forever — see
 [Items nobody has specified](#items-nobody-has-specified).
 
-At the same end of the same cycle, and not rarely at all: the **Refiner**
+At the same end of the same cycle, and not rarely at all: the **[Refiner](docs/concepts/glossary.md#refiner)**
 (Haiku) writes that specification for an item nobody has scoped *before* it has
 to be blocked and wait for the Enabler at all — see
 [Refined items and the Refiner](#refined-items-and-the-refiner).
 
-If no suitable item exists, or if back-pressure shows open agent PRs, the cycle stands down — cheaply, without waking the Co-Ordinator, when nothing has changed since it last found nothing to do (see [Skipping no-op cycles](#skipping-no-op-cycles)).
+If no suitable item exists, or if [back-pressure](docs/concepts/glossary.md#back-pressure) shows open agent PRs, the cycle stands down — cheaply, without waking the Co-Ordinator, when nothing has changed since it last found nothing to do (see [Skipping no-op cycles](#skipping-no-op-cycles)).
 
 Once a day, a third pipeline reads the other two and reports on them: see
 [The Pipeline Monitor](#the-pipeline-monitor).
