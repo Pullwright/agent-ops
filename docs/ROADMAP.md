@@ -443,8 +443,8 @@ Poetic-Poems, with no pipeline code in it.
       self-hosted alternative, with its constraints (D4, D29). The Claude
       API-key half is in place (`ANTHROPIC_API_KEY`, and `scripts/doctor.sh`
       checks both of Claude's credential paths); Bedrock and Vertex are
-      undocumented and untested; Grok's two paths arrive with #2134.
-      *[interactive]*
+      undocumented and untested; Grok's API-key path arrives with #2134
+      and its subscription login with #2139. *[interactive]*
 - [x] Formalise the metering schema: per-cycle, per-stage token and cost
       accounting as a stable, documented format — `docs/METERING-SCHEMA.md`,
       the contract both pipelines and the dashboard are held to. *[fleet]*
@@ -463,14 +463,17 @@ Poetic-Poems, with no pipeline code in it.
       on the owner's xAI key (#2132); a substrate adapter behind the one
       stage launcher of requirement 4d, the Claude adapter extracted with
       its stream and envelope byte-for-byte unchanged and `provider` added
-      to the metering record (#2133); and the xAI adapter end to end — Grok
-      Build in the one image (D28), the API key and the subscription login,
-      its egress domains under D24's allowlist, `doctor`, limit detection,
-      metering and the operator documentation (#2134). A usage-limit
-      stand-down scoped to the provider that hit it (#2135) and the
-      repository-review pipeline's Reviewer-Agent on a non-Claude provider
-      (#2136) complete the set. The one owner decision is #2129. *[fleet,
-      with the owner decision flagged]*
+      to the metering record (#2133); and the xAI adapter — Grok Build in
+      the one image (D28), the API-key path first (#2134) and the
+      subscription login directly after it (#2139), each with its egress
+      domains under D24's allowlist, `doctor`, limit detection, metering and
+      the operator documentation. A usage-limit stand-down scoped to the
+      provider that hit it (#2135) and the repository-review pipeline's
+      Reviewer-Agent on a non-Claude provider (#2136) complete the set. The
+      owner decision #2129 was answered on 2026-10-03: the API key ships
+      first because the prospective customer is likely to want their
+      SuperGrok subscription next, and how its credential reaches the nodes
+      is negotiated with them. *[fleet, with the owner acts flagged]*
 - [x] Make the spend data say *what* the money bought (D21). Three defects
       stood between the metering this pipeline already recorded and any
       productivity figure, and all three are now fixed. **The model

@@ -259,5 +259,8 @@ principle it rests on.`
   subscription stance extends to every provider whose CLI offers a
   subscription login: the API key is primary, the subscription is the
   documented alternative with its constraints, and the provider's terms on
-  automated use are the subscriber's to satisfy. Decided by the owner on
-  2026-10-03.
+  automated use are the subscriber's to satisfy. The API-key path ships
+  first and the subscription path follows it directly: the prospective
+  customer is likely to want their SuperGrok subscription, and how its
+  credential reaches the nodes is negotiated with them. Decided by the
+  owner on 2026-10-03, on #2129.
