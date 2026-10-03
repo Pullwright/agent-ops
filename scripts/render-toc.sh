@@ -34,20 +34,10 @@ if (( $# > 0 )); then
   usage
 fi
 
-# GitHub's own heading-anchor slug: lower-case, strip anything that is not
-# alphanumeric/underscore/hyphen/space, spaces to hyphens. GitHub does not
-# collapse consecutive hyphens: a removed character leaves both its
-# neighbouring spaces behind, each becoming its own hyphen.
-gh_slug() {
-  local text="$1"
-  text=$(echo "$text" | tr '[:upper:]' '[:lower:]')
-  text="${text//[^a-z0-9 _-]/}"
-  text="${text// /-}"
-  echo "$text"
-}
-
 # shellcheck source=lib/markdown-scan.sh
 . "$repo_root/lib/markdown-scan.sh"
+# gh_slug is defined in lib/markdown-scan.sh, shared with scripts/check-docs.sh
+# so the two cannot disagree about what a heading's anchor is.
 
 # Extract headings from a file: lines starting with ## or ###, skipping anything
 # inside fenced code blocks, which lib/markdown-scan.sh's `markdown_unfenced`

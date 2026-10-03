@@ -7,7 +7,7 @@ pipeline: the numbered requirements the system satisfies, the components that
 satisfy them, the acceptance checks that prove it, and the reasoning behind
 them. It describes the system as it exists, and it must keep doing so — any
 change to the pipeline lands together with the edit that keeps this document
-accurate (see `CLAUDE.md`, "As-built specifications"). Where this document is
+accurate (see `AGENTS.md`, "As-built specifications"). Where this document is
 silent, follow the conventions of the two target repositories (their
 `AGENTS.md` files — or `CLAUDE.md`, for a repository that has not migrated —
 are binding on any agent working inside them).
@@ -2221,7 +2221,7 @@ implements.
    … `<!-- toc:end -->` region, placed immediately after the document's
    title (and any lead-in paragraph, before its first `##` heading), holding
    a nested bullet list of every `##`/`###` heading in the document — the
-   same "generated, never hand-edited" contract CLAUDE.md's "Generated
+   same "generated, never hand-edited" contract AGENTS.md's "Generated
    regions" note states for the configuration tables (requirement 1b,
    component 16), for a second kind of region. `scripts/render-toc.sh`
    (component 24) renders it: extracting headings in document order while
@@ -23655,7 +23655,7 @@ What exists, and the requirements each part answers to:
     Rewrites four marked regions (`<!-- config-table:start id=main -->` /
     `id=review` … `<!-- config-table:end -->`) in place with no arguments. A
     start marker's `id=<id>` token may be followed by further prose before
-    the closing `-->` — CLAUDE.md's "Generated regions" note and the
+    the closing `-->` — AGENTS.md's "Generated regions" note and the
     markers themselves carry the same generated-from-schema contract inline
     (#356), so an editor who reaches a row directly, without having read
     CLAUDE.md first, still sees it — and matching it is therefore a prefix

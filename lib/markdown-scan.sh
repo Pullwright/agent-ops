@@ -59,3 +59,58 @@ markdown_unfenced() {
       }
     }' "$1"
 }
+
+# gh_slug TEXT
+# GitHub's own heading-anchor slug: lower-case, strip anything that is not
+# alphanumeric/underscore/hyphen/space, spaces to hyphens. GitHub does not
+# collapse consecutive hyphens: a removed character leaves both its
+# neighbouring spaces behind, each becoming its own hyphen.
+#
+# Sourced by scripts/render-toc.sh (the table-of-contents anchors) and by
+# scripts/check-docs.sh (link-fragment and heading-citation checks), so the
+# two cannot disagree about what a heading's anchor is.
+gh_slug() {
+  local text="$1"
+  text=$(echo "$text" | tr '[:upper:]' '[:lower:]')
+  text="${text//[^a-z0-9 _-]/}"
+  text="${text// /-}"
+  echo "$text"
+}
+
+# markdown_heading_texts FILE
+# Print FILE's ## / ### heading text, verbatim, one per line, outside fenced
+# code and in document order. Used by scripts/check-docs.sh to check that a
+# quoted section citation (`path` § "heading") names a heading that exists.
+markdown_heading_texts() {
+  # mawk's `{m,n}` interval expressions are unreliable (observed matching
+  # only the minimum repeat count, silently dropping deeper headings), so
+  # the hash run is matched open-ended with `+` and bounded by checking
+  # RLENGTH instead — never with a `{2,6}` in the regex itself.
+  awk '
+    match($0, /^#+ /) {
+      hashes = RLENGTH - 1
+      if (hashes >= 2 && hashes <= 6) print substr($0, RLENGTH + 1)
+    }' < <(markdown_unfenced "$1")
+}
+
+# markdown_heading_slugs FILE
+# Print FILE's final GitHub anchor slug for every ## / ### heading, in
+# document order, outside fenced code — duplicate headings de-duplicated
+# the way GitHub's own renderer does: the first occurrence keeps its bare
+# slug, each later one gets -1, -2, ... appended. Used by
+# scripts/check-docs.sh to resolve a link's #fragment to a heading that
+# actually exists.
+markdown_heading_slugs() {
+  local anchor
+  local -A seen=()
+  while IFS= read -r anchor; do
+    anchor=$(gh_slug "$anchor")
+    if [[ -n "${seen[$anchor]+x}" ]]; then
+      seen[$anchor]=$(( seen[$anchor] + 1 ))
+      anchor="${anchor}-${seen[$anchor]}"
+    else
+      seen[$anchor]=0
+    fi
+    echo "$anchor"
+  done < <(markdown_heading_texts "$1")
+}

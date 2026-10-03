@@ -1,0 +1,11 @@
+# scripts/docs-size-ratchet.tsv — files over the 100,000-byte documentation
+# size budget (docs/README.md, "Size budget"), tracked by scripts/check-docs.sh.
+# Format: path<TAB>bytes<TAB>issue — `bytes` is the most this file may be;
+# `issue` is the GitHub issue (bare number) that will bring it under budget.
+# Entries may only shrink (a falling byte count, or a removed line); never
+# add slack by raising one.
+README.md	235937	2090
+docs/DASHBOARD-SPEC.md	329817	2094
+docs/IMPLEMENTATION-PIPELINE-SPEC.md	2400346	2094
+docs/REVIEW-PIPELINE-SPEC.md	105777	2094
+prompts/coordinator.md	124323	2144
