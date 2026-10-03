@@ -528,7 +528,10 @@ check_citations() {
   while IFS= read -r f; do
     is_frozen_record "$f" && continue
     check_citations_in_file "$f" || ok=0
-  done < <(git ls-files '*.md' '*.sh' '*.yml' '*.yaml' | grep -v '^test/fixtures/' | grep -v '^tech-debt/')
+  done < <(git ls-files '*.md' '*.sh' '*.yml' '*.yaml' \
+    | grep -v '^test/fixtures/' \
+    | grep -v '^tech-debt/' \
+    | grep -v '^test/.*\.test\.sh$')  # a test's own heredoc fixtures are synthetic, not prose to check
   (( ok )) && note "section citations: ok"
   return $(( ! ok ))
 }
