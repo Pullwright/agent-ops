@@ -26,9 +26,9 @@
 # `config_model_tier_floor_violations`,
 # `config_required_refinement_sources_without_refiner`,
 # `config_required_failed_runs_source`,
-# `config_refinement_sources_paused_by_cap` and
-# `config_duplicate_repos_slugs` are `agent-cycle.sh`'s
-# own startup guards (all `fail`/refuse except
+# `config_refinement_sources_paused_by_cap`,
+# `config_duplicate_repos_slugs` and `config_provider_errors` are
+# `agent-cycle.sh`'s own startup guards (all `fail`/refuse except
 # `config_refinement_sources_paused_by_cap`, which `warn`s, never refuses —
 # see each function's own comment); `config_duplicate_repository_review_slugs`
 # is `review-cycle.sh`'s. `scripts/doctor.sh` calls every one of them so no
@@ -38,10 +38,18 @@
 # build the alias map `work_gone_clearances` and `enabler_eligible_items`
 # resolve a blocked item's `repo` through.
 #
-# `config_model_tier_floor_violations` reads `lib/model-id.sh`'s
-# `MODEL_TIER_RANK` table, through `model_tier_below`; both scripts that
-# source this file also source that one, in whichever order, before either is
-# ever called.
+# `config_provider_errors` (issue #2131) is this file's own instance of the
+# same escape valve for a different reason than the other six: `providers` is
+# an object keyed by provider name, which the installation itself chooses, so
+# no fixed `properties` list can describe its entries the way every other
+# object in the schema is described — the closed-shape check
+# (`additionalProperties: false`) that makes a typo elsewhere in the schema
+# loud has nothing to anchor to for a key nobody but the installation named
+# in advance. `config_model_tier_floor_violations` reads `lib/model-id.sh`'s
+# `MODEL_TIER_RANK` table, through `model_tier_below`, and `config_provider_errors`
+# reads that same file's `PROVIDER_SUBSTRATE_INSTALLED`, through
+# `provider_substrate_installed`; both scripts that source this file also
+# source that one, in whichever order, before either is ever called.
 #
 # Sourced by agent-cycle.sh and scripts/doctor.sh. jq 1.6 compatible: nodes
 # carry 1.7, but a host running doctor.sh before installing anything may well
@@ -720,14 +728,17 @@ config_missing_plan_path_repos() {
 # the Script already wrote (docs/IMPLEMENTATION-PIPELINE-SPEC.md requirements
 # 39 and 36b) — ranks below an implementer tier it might write for
 # (requirement 1c, "the floor"; agent-ops#822). Empty when every rankable pair
-# clears it. Takes already-resolved bare model ids, as every caller has
-# already resolved them for its own purposes (requirement 1a); an empty value
-# on either side of a pair is skipped (an empty model means that stage is
-# disabled — a different check's business), and so is a pair `model_tier_below`
-# cannot rank on one side or the other — an unranked model is `scripts/doctor.sh`'s
-# own warning, not a floor violation, because this predicate cannot tell
-# "definitely clears it" from "cannot tell" and must never report the latter
-# as the former.
+# clears it. Takes already-resolved *qualified* model ids
+# (`resolve_model_qualified`'s own "<provider>/<bare-id>" shape, issue
+# #2131), as every caller has already resolved them for its own purposes
+# (requirement 1a); an empty value on either side of a pair is skipped (an
+# empty model means that stage is disabled — a different check's business),
+# and so is a pair `model_tier_below` cannot rank on one side or the other —
+# an unranked model, including a cross-provider pair (MODEL_TIER_RANK's own
+# qualified keying never matches one provider's id against another's), is
+# `scripts/doctor.sh`'s own warning, not a floor violation, because this
+# predicate cannot tell "definitely clears it" from "cannot tell" and must
+# never report the latter as the former.
 config_model_tier_floor_violations() {
   local refiner="$1" enabler="$2" impl_default="$3" impl_trivial="$4"
   local author author_key floor floor_key
@@ -748,6 +759,51 @@ config_model_tier_floor_violations() {
       fi
     done
   done
+}
+
+# config_provider_errors PROVIDERS_JSON
+# Prints one "providers.<name>: <message>" line per fault in PROVIDERS_JSON
+# (config's top-level `providers` object, or "{}"/"null" when absent) that
+# declarative schema validation cannot express (issue #2131) — see this
+# file's own header comment for why `providers` needs this escape valve at
+# all. Three faults, per entry: an unknown key (only `substrate` and
+# `credential_env` are read), a missing/empty `substrate`, or one naming a
+# substrate `lib/model-id.sh`'s `PROVIDER_SUBSTRATE_INSTALLED` does not list —
+# after this issue, `claude-code` alone, so this is also the full enum
+# `substrate` accepts (`provider_substrate_installed`, read by name rather
+# than by its own PROVIDERS_JSON argument, same as `config_model_tier_floor_violations`
+# reads `model_tier_below`'s table the same way). An explicit empty
+# `credential_env` is a fourth fault — a key present only to be switched off
+# is never a real intent, unlike an absent one, which `providers_load`
+# resolves to its substrate's own default. Empty when PROVIDERS_JSON is
+# absent/empty or every entry is clean.
+config_provider_errors() {
+  local providers_json="${1:-{\}}"
+  local installed_csv
+  installed_csv="$(IFS=,; printf '%s' "${PROVIDER_SUBSTRATE_INSTALLED[*]}")"
+  jq -r --arg installed "$installed_csv" '
+    ($installed | split(",")) as $known |
+    (. // {}) | to_entries[] | . as $e |
+    (
+      if ($e.value | type) != "object" then
+        ["providers.\($e.key): must be an object"]
+      else
+        ($e.value) as $v |
+        (
+          [$v | keys[] | select(. != "substrate" and . != "credential_env")
+           | "providers.\($e.key): unknown key \"\(.)\""],
+          (if (($v.substrate // "") == "")
+           then ["providers.\($e.key): substrate is required"]
+           elif ($known | index($v.substrate)) == null
+           then ["providers.\($e.key): substrate \"\($v.substrate)\" is not one this image has an adapter for (known: \($known | join(", ")))"]
+           else [] end),
+          (if ($v | has("credential_env")) and (($v.credential_env // "") == "")
+           then ["providers.\($e.key): credential_env, if set, must not be empty"]
+           else [] end)
+        )
+      end
+    )[]
+  ' <<<"$providers_json" 2>/dev/null || true
 }
 
 # config_required_refinement_sources_without_refiner REFINEMENT_POLICY_JSON REFINER_MODEL
