@@ -210,7 +210,7 @@ docker compose exec scheduler /app/agent-cycle.sh --once --repo poetic-fiddle
 Do this on a scratch stack or a standby node, never the fleet's workhorse. A
 second stack on the same host needs its own `COMPOSE_PROJECT_NAME`, node
 name and token (see
-[A second node on one host](deploy/docker/README.md#a-second-node-on-one-host));
+[A second node on one host](../../../deploy/docker/README.md#a-second-node-on-one-host));
 `--dry-run` and `--once` run regardless of role, so the guinea-pig node can
 stay `standby` throughout. To mock a usage-limit event for testing the
 cooldown, from a shell on that node (`docker compose exec scheduler bash`):

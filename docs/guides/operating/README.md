@@ -59,9 +59,9 @@
 toolchain and needs nothing on the host but Docker, and it is the deployment
 artefact: `/app` inside it *is* agent-ops, so a node updates by pulling a new
 image rather than by pulling a branch. The full runbook — bring-up, operations,
-the failover drill, troubleshooting — is **[deploy/docker/README.md](deploy/docker/README.md)**.
+the failover drill, troubleshooting — is **[deploy/docker/README.md](../../../deploy/docker/README.md)**.
 
-Before deploying to a new installation, see **[docs/DATA-HANDLING.md](docs/DATA-HANDLING.md)** to
+Before deploying to a new installation, see **[docs/DATA-HANDLING.md](../../DATA-HANDLING.md)** to
 understand what data the pipeline reads, stores, and retains.
 
 The **host install** further below is the laptop's old path, in which the
@@ -89,7 +89,7 @@ docker compose exec scheduler claude   # authenticate this node, once
 ```
 
 The node holds those four files and no clone. On a fresh cloud VM,
-[`deploy/docker/cloud-init.yaml`](deploy/docker/cloud-init.yaml) does all of
+[`deploy/docker/cloud-init.yaml`](../../../deploy/docker/cloud-init.yaml) does all of
 that unattended except the Claude login. `watch-node.sh` is how you follow its
 pipeline output afterwards — see [Watching a node's
 events](#watching-a-nodes-events).
@@ -168,7 +168,7 @@ Set `ROLE=active` in the `.env` of every node meant to spend — any number may
 be, since per-item claims keep them off each other's work (see
 [Which node runs the cycles](#which-node-runs-the-cycles)); the rest stay
 `standby`. Then read
-[deploy/docker/README.md](deploy/docker/README.md) for everything after that.
+[deploy/docker/README.md](../../../deploy/docker/README.md) for everything after that.
 
 ### The egress fence
 
@@ -189,7 +189,7 @@ image roll delivers it (the node's own heartbeat reports the compose drift
 until you act). On a node running the `reconciler` service, a compose-level
 change like this one now arrives on its own within a few minutes of the merge
 — see [Keeping the compose file
-current](deploy/docker/README.md#keeping-the-compose-file-current), including
+current](../../../deploy/docker/README.md#keeping-the-compose-file-current), including
 the one per-node step that enables it; the steps below are what a node without
 it still needs:
 
@@ -1440,7 +1440,7 @@ minimal built-in init, which runs the `[boot] command` from `/etc/wsl.conf`
 once, as root, at startup. The server still binds `127.0.0.1` only — it opens
 a loopback port, never a network one.
 
-1. **Install the init script** — [`deploy/agent-ops-dashboard.init`](deploy/agent-ops-dashboard.init)
+1. **Install the init script** — [`deploy/agent-ops-dashboard.init`](../../../deploy/agent-ops-dashboard.init)
    drops to the user named by `RUNAS` (never root) via `start-stop-daemon
    --chuid` and serves `scripts/serve-dashboard.sh` on port 8787:
 
@@ -1523,7 +1523,7 @@ service first (see [Run as a service](#run-as-a-service-legacy-wsl-path-decommis
    (The package ships only a systemd unit, which this WSL distro's init
    ignores — hence the init script in the next step.)
 
-2. **Install the init script** — [`deploy/tailscaled.init`](deploy/tailscaled.init)
+2. **Install the init script** — [`deploy/tailscaled.init`](../../../deploy/tailscaled.init)
    runs `tailscaled` at boot. Root this time, deliberately: it needs
    `/dev/net/tun` and `/var/lib/tailscale`; the dashboard server itself
    stays unprivileged and loopback-only.
@@ -1585,7 +1585,7 @@ point at a stack directory elsewhere. It wraps `docker compose exec -T
 scheduler tail` and nothing more, so it is the one path worth allow-listing
 for an interactive agent: one script instead of ad-hoc docker-exec commands
 that a permission classifier may deny. See
-[deploy/docker/README.md](deploy/docker/README.md#follow-a-nodes-events) for
+[deploy/docker/README.md](../../../deploy/docker/README.md#follow-a-nodes-events) for
 more.
 
 ### Push notifications
