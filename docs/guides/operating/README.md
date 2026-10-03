@@ -29,9 +29,9 @@
 - [Repository review](#repository-review)
   - [Review instructions and context](#review-instructions-and-context)
   - [Install](#install)
-  - [Operate](#operate)
+  - [Operate the repository review](#operate-the-repository-review)
 - [The Pipeline Monitor](#the-pipeline-monitor)
-  - [Operate](#operate-1)
+  - [Operate the Monitor](#operate-the-monitor)
 - [Monitoring](#monitoring)
   - [Dashboard](#dashboard)
   - [View it](#view-it)
@@ -1252,7 +1252,7 @@ The skip-guard ensures this actually reviews each repo only about once a week.
 For a strict weekly tick instead, use `30 3 * * 1` (Mondays 03:30) — simpler,
 but a missed Monday tick skips the whole week.
 
-### Operate
+### Operate the repository review
 
 ```bash
 ./review-cycle.sh --dry-run        # show which repos would be reviewed; launch nothing
@@ -1331,7 +1331,7 @@ node in the fleet takes it, through the same claim mechanism that keeps two
 nodes off one work item. It defers to a running implementation or review
 cycle, and shares the one usage-limit signal with both.
 
-### Operate
+### Operate the Monitor
 
 ```bash
 ./monitor-cycle.sh --dry-run   # build and print the digest; launch no model, file nothing
