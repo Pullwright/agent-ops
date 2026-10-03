@@ -167,8 +167,8 @@ host_facts_host_json() {
 # `<NODE_NAME>.jsonl` published `ledger_tail: []` on every compose node
 # while a populated ledger sat beside it in the same directory —
 # indistinguishable from a genuinely empty ledger, and exactly the
-# wrong-but-plausible fact `docs/HOST-FACTS-SCHEMA.md`'s "null, never
-# fabricated" contract exists to prevent. Reading the whole directory is
+# wrong-but-plausible fact `docs/HOST-FACTS-SCHEMA.md`'s "null, never a
+# fabricated number" contract exists to prevent. Reading the whole directory is
 # also what `lib/updater-health.sh`'s own cross-generation scan already
 # does for the same reason: a roll's replacement writes under a new
 # container ID, so one node's updater history is spread across files by

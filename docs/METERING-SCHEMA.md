@@ -149,8 +149,8 @@ if a future reader needs them, following the same null-as-zero rule.
 ## Roll-up records
 
 `counts.by_day` / `counts.by_model` / `counts.by_actor` /
-`counts.spend_total_usd` / `counts.spend_today_usd` (`docs/DASHBOARD-SPEC.md`,
-"Counts / roll-ups") are computed by the dashboard Publisher directly from the
+`counts.spend_total_usd` / `counts.spend_today_usd` are computed by
+`docs/DASHBOARD-SPEC.md`'s Publisher directly from the
 raw transcripts across both pipelines' history, not from the per-stage record
 above — a fleet-wide history spans more transcripts than any single node's
 recent `log.jsonl` retains. Their fields:
@@ -171,8 +171,8 @@ The prompt-cache ratio a reader computes from these four fields — `cache_read
 served from cache; output tokens are not in the denominator — is not itself a
 stored field: it is computed client-side, per stage and per model, over
 whatever `cost_rows[]` slice the page's own time-frame selector picks,
-exactly as the spend-by-model and spend-by-actor charts already re-aggregate
-that array (`docs/DASHBOARD-SPEC.md`, "spend charts").
+exactly as `docs/DASHBOARD-SPEC.md`'s spend-by-model and spend-by-actor
+charts already re-aggregate that array.
 
 ## `counts.stage_gaps` (D21)
 
