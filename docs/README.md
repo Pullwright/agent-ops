@@ -5,36 +5,35 @@ govern them, and a routing table to find answers to common questions.
 
 ## Quick routing
 
-Here are the answers to the 25 most common questions. Each entry names the file
-path and the heading that answers it.
+Where to start for common questions: each row names the file and the heading
+to read first.
 
-| Question | Where to find it |
-|----------|------------------|
-| **I want to set up this pipeline to run** | `README.md` § "Installation" |
-| **What does this pipeline actually do?** | `README.md` § "What it does" |
-| **How do I run the pipeline one cycle by hand?** | `README.md` § "Operation" |
-| **Where is the configuration schema documented?** | `README.md` § "Configuration" |
-| **How do I reserve an issue so the pipeline doesn't touch it?** | `README.md` § "Reserving an issue for yourself" |
-| **What does "merge autonomy" mean?** | `README.md` § "Merge autonomy" |
-| **I want to understand the Implementer stage** | `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "The Implementer" |
-| **I want to understand the Reviewer stage** | `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "The Reviewer" |
-| **What are the product decisions that shaped this?** | `docs/ROADMAP.md` § "Settled decisions" |
-| **Where are the standing decisions recorded?** | `docs/STANDING-DECISIONS.md` |
-| **What is the overall system architecture?** | `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "What it is" |
-| **How does the merge queue work?** | `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "The Landing Gate" |
-| **Where do I find the branch workflow for this repo?** | `AGENTS.md` § "Branch workflow" |
-| **How are tech-debt items tracked and resolved?** | `TECH-DEBT.md` |
-| **How do I contribute to this repository?** | `CONTRIBUTING.md` |
-| **What are the security considerations?** | `SECURITY.md` |
-| **How does the repository-review pipeline work?** | `docs/REVIEW-PIPELINE-SPEC.md` |
-| **What is the structure of a pipeline cycle?** | `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "What it is" |
-| **How do I look at the monitoring dashboard?** | `README.md` § "Monitoring" § "Dashboard" |
-| **What has changed in recent versions?** | `CHANGELOG.md` |
-| **Where are the generated configuration tables?** | `README.md` § "Configuration", `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "Configuration", `docs/REVIEW-PIPELINE-SPEC.md` § "Configuration" |
-| **I want to understand the landing gate and autonomy levels** | `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "The Landing Gate" |
-| **How does the Enabler stage work?** | `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "The Enabler" |
-| **Where can I see dated audits or investigations?** | `docs/reviews/` — each dated subdirectory |
-| **What's the history of decisions made?** | `docs/ROADMAP.md` § "Settled decisions" or `docs/STANDING-DECISIONS.md` for settled owner answers |
+| What you want to do | Where to find it |
+|----------------------|-------------------|
+| Reserve an issue so the pipeline doesn't pick it up while you work on it yourself | `README.md` § "Reserving an issue for yourself" |
+| Understand what a "refined" item is and what the Refiner does | `README.md` § "Refined items and the Refiner" |
+| Understand how the pipeline prioritizes which issue to work on next | `README.md` § "Issue priority" |
+| Understand what "blocked" and "void" mean, and what to do if you disagree with one | `README.md` § "Blocked and void items" |
+| Respond to review comments the pipeline left on your pull request | `README.md` § "Responding to your review comments" |
+| Pause the pipeline fleet without killing in-flight work | `README.md` § "Pausing the pipelines" |
+| Let one node reach an outside address without opening it up fleet-wide | `README.md` § "The egress fence" |
+| Check that a freshly brought-up node is configured correctly before it starts working | `README.md` § "Checking an installation" |
+| Get a node onto a newer image after merging a fix | `deploy/docker/README.md` § "Updating" |
+| Figure out why no node has opened a pull request in a while | `README.md` § "Troubleshooting" |
+| See what you need to provide to run an instance on your own infrastructure | `deploy/docker/README.md` § "What you need first" |
+| See which product decisions are still open | `docs/ROADMAP.md` § "Open questions" |
+| Understand which node in the fleet runs a given cycle | `README.md` § "Which node runs the cycles" |
+| Understand the levels of merge autonomy | `README.md` § "Merge autonomy" |
+| Run the test suite | `README.md` § "Running the tests" |
+| Understand which parts of the docs are generated and must not be hand-edited | `AGENTS.md` § "Generated regions" |
+| Understand where a changelog entry belongs | `AGENTS.md` § "Documentation principles" |
+| Try a change on a real node before it merges | `README.md` § "Trying a change on a real node before it merges" |
+| Find the requirement governing when a claim on an item expires | `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "Extended notes: `claim_ttl_hours`" |
+| Find the requirement governing the daily merge budget | `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "Extended notes: `merge_budget_per_day`" |
+| Understand how the as-built specifications relate to this repository | `README.md` § "For maintainers: the as-built specifications" |
+| Understand why a cycle produced no change | `README.md` § "Skipping no-op cycles" |
+| Understand how the pipeline avoids piling up unreviewed work | `README.md` § "Staying in front of you" |
+| View the monitoring dashboard | `README.md` § "Dashboard" |
 
 ## All documents
 
@@ -51,7 +50,7 @@ set under `docs/reviews/` one entry for its directory.
 | `AGENTS.md` | agent, person working in repo, contributor | reference, explanation | Conventions for the repository: branch workflow, commit messages, PR rules, tech-debt, generated regions, documentation principles |
 | `CLAUDE.md` | agent | reference | Pointer to AGENTS.md (AGENTS.md imports it) |
 | `TECH-DEBT.md` | person working in repo, contributor | reference | Tech-debt filing and resolution workflow |
-| `SECURITY.md` | evaluator, operator | reference | Security considerations and policies |
+| `SECURITY.md` | evaluator, operator | reference | How to report a security vulnerability privately; no bug-bounty programme |
 | `CHANGELOG.md` | operator, person working in repo | record | Dated history of changes (generated from PR descriptions) |
 
 ### Documentation directory: `docs/`
@@ -105,6 +104,11 @@ set under `docs/reviews/` one entry for its directory.
 | `docs/reviews/2026-08-15-merge-autonomy-baseline.md` | evaluator, person working in repo | record | Merge autonomy baseline review (generated report) |
 | `docs/reviews/2026-08-23-d18-stage-3-promotion.md` | evaluator, contributor | record | Review for D18 Stage 3 promotion (generated report) |
 | `docs/reviews/2026-09-11-escalation-autonomy-review.md` | evaluator, person working in repo | record | Escalation autonomy review (generated report) |
+| `docs/reviews/2026-10-02-docs-benchmark.md` | evaluator, person working in repo | record | Documentation benchmark run measuring answer accuracy against a question set (generated report) |
+| `docs/reviews/2026-10-02-docs-benchmark-2.md` | evaluator, person working in repo | record | Second documentation benchmark run against the same question set (generated report) |
+| `docs/reviews/2026-10-03-rest-budget-shim-baseline.md` | evaluator, operator | record | Before/after REST budget and refusal counts for the `gh` transport shim (generated report) |
+| `docs/reviews/2026-10-03-rest-budget-shim-baseline-pre.md` | evaluator, operator | record | Raw GitHub API budget report, pre-shim window (generated report) |
+| `docs/reviews/2026-10-03-rest-budget-shim-baseline-post.md` | evaluator, operator | record | Raw GitHub API budget report, post-shim window (generated report) |
 | `docs/reviews/project-review-2026-08-23/` | evaluator, person working in repo, contributor | record | Full project review with summary, findings, recommendations, and improvement prompts (generated) |
 | `docs/reviews/project-review-2026-08-31/` | evaluator, person working in repo, contributor | record | Full project review (generated) |
 | `docs/reviews/project-review-2026-09-05/` | evaluator, person working in repo, contributor | record | Full project review (generated) |
