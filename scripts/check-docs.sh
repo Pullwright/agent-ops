@@ -498,6 +498,7 @@ check_citations_in_file() {
   while IFS= read -r span; do
     [[ -n "$span" ]] || continue
     before="${span%%\"*}"
+    # shellcheck disable=SC2016  # \1 is sed's own backreference, not a shell expansion.
     path="$(printf '%s' "$before" | sed -E 's/^`?([A-Za-z0-9_.\/-]+)`?.*$/\1/')"
     heading="${span#*\"}"
     heading="${heading%\"}"
