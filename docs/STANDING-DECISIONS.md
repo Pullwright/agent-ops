@@ -247,3 +247,17 @@ principle it rests on.`
   reports on every pull request and merge group, and fails only when a
   cited source no longer resolves. Decided by the owner on 2026-10-03, in
   the same ruleset edit as `config-table`.
+- 2026-10-03 · #2128/#2129 · **Non-Claude providers are brought forward,
+  and run through each provider's own headless agentic CLI (D29).** A
+  prospective customer wants the pipeline on xAI's Grok models, so the
+  first non-Claude provider moves from Phase 3 into Phase 1, and the
+  substrate question the roadmap parked for Phase 2 closes: a stage runs
+  on the CLI its provider ships — Claude Code for Anthropic, Grok Build for
+  xAI — behind one adapter seam in the stage launcher, never by pointing
+  one vendor's CLI at another's endpoint (xAI has deprecated its
+  Anthropic-compatible one) and never through an API gateway. D4's
+  subscription stance extends to every provider whose CLI offers a
+  subscription login: the API key is primary, the subscription is the
+  documented alternative with its constraints, and the provider's terms on
+  automated use are the subscriber's to satisfy. Decided by the owner on
+  2026-10-03.
