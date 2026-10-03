@@ -1,0 +1,36 @@
+name: Documentation checks
+
+# Gates what toc.yml and config-table.yml don't: broken relative links and
+# anchors, a document missing from docs/README.md's map, a document over
+# the size budget docs/README.md's "Size budget" section fixed, a section
+# citation naming a heading that no longer exists, and a ratchet on
+# historical-sounding as-built phrasing (issue #2088). See
+# scripts/check-docs.sh's own header for what each of the five checks does.
+#
+# Deliberately `pull_request` (not `pull_request_target`), so a fork PR
+# never runs with write-scoped secrets, and ungated by `paths:` — any of
+# the five checks can be broken by a change outside a narrow path filter
+# (a renamed heading, a moved file, a new quoted citation anywhere in the
+# tree).
+#
+# The `merge_group:` trigger is required for this context to report inside
+# the merge queue — without it, a required `docs` would stall every queue
+# entry for the ruleset's 60-minute `check_response_timeout_minutes`.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check documentation links, map, size, citations and phrasing
+        run: scripts/check-docs.sh --check

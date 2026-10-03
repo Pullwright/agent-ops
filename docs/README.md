@@ -94,6 +94,7 @@ set under `docs/reviews/` one entry for its directory.
 | `docs/VOCABULARY-SWEEP-679-AUDIT.md` | evaluator, contributor | record | Audit and cleanup of vocabulary inconsistencies (dated 2026) |
 | `docs/PULLWRIGHT-DAY-ONE-AUTONOMY.md` | evaluator, contributor | record | Analysis of autonomy level on day one of product launch (dated 2026) |
 | `docs/PULLWRIGHT-REHOMING.md` | operator, contributor | record | Runbook for moving the repository to the Pullwright organisation |
+| `docs/PROVIDER-SEAM-AUDIT.md` | agent, contributor | record | Inventory of every place the code assumes the Claude Code CLI specifically, ahead of cutting the provider seam (dated 2026) |
 
 #### Dated reviews (generated records)
 
@@ -299,21 +300,10 @@ read the entire document in one API call without excessive context cost.
 - `docs/ROADMAP.md` (currently 118 KB) is also exempt as a decision log with
   historical weight.
 
-**Current status — files over budget:**
-
-- `docs/IMPLEMENTATION-PIPELINE-SPEC.md` — 2.4 MB (required by its nature as
-  the complete specification)
-- `docs/DASHBOARD-SPEC.md` — 329 KB (required)
-- `docs/REVIEW-PIPELINE-SPEC.md` — 105 KB (required)
-- `README.md` — 235 KB (required; includes extensive configuration and
-  operation guides)
-- `prompts/coordinator.md` — 124 KB (an operating prompt; over budget today,
-  with no exemption that covers it)
-
-Every file above except `prompts/coordinator.md` is a specification or
-generated content required to be complete, which outweighs the size budget.
-`prompts/coordinator.md` has no such exemption; trimming it is left for a
-future documentation sweep.
+**Current status — files over budget** are tracked in
+`scripts/docs-size-ratchet.tsv`, each entry naming the byte count it may not
+grow past and the issue that will bring it under budget — checked in CI; see
+"Checked in CI" below.
 
 ### Headings and anchors
 
@@ -340,6 +330,19 @@ This format is:
 
 Cited headings should remain stable over time. Where a heading must be
 reworded, update all citations together.
+
+### Checked in CI
+
+`scripts/check-docs.sh` (`.github/workflows/docs.yml`) checks five of the
+conventions above on every pull request: every relative link and `#fragment`
+resolves (including every `x-docs` link in `config.schema.json`); every
+in-scope document is named in this map, and every path this map names
+exists; no in-scope document exceeds the size budget without a
+`scripts/docs-size-ratchet.tsv` entry; a quoted section citation names a
+heading that exists; and a ratchet in `scripts/docs-phrasing-ratchet.tsv`
+holds historical-sounding as-built phrasing to its current count or lower.
+It does not check spelling, grammar, external links, or requirement-label
+citations.
 
 ### Line wrapping
 
