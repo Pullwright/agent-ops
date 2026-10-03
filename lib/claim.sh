@@ -354,10 +354,12 @@ do_branches() {  # <target-slug> -> JSON array of live <branch_prefix>* branch n
   # (stale squash-merged refs alone can get there) would silently hide the
   # overflow from every consumer of this listing — the Co-Ordinator's
   # `claimed` input and the Script's own candidate filters both go blind
-  # exactly where the contention is worst.
+  # exactly where the contention is worst. `gh` rejects --slurp paired with
+  # --jq, so the filter runs as a separate jq call over the slurped output
+  # rather than inline.
   local slug="$1" pfx_refs
-  pfx_refs="$("$GH" api --paginate --slurp "repos/$slug/git/matching-refs/heads/$branch_prefix" \
-    --jq '[.[][].ref | ltrimstr("refs/heads/")]' 2>/dev/null)"
+  pfx_refs="$("$GH" api --paginate --slurp "repos/$slug/git/matching-refs/heads/$branch_prefix" 2>/dev/null \
+    | jq -c '[.[][].ref | ltrimstr("refs/heads/")]' 2>/dev/null)"
   [[ -n "$pfx_refs" ]] && printf '%s' "$pfx_refs" || echo '[]'
 }
 

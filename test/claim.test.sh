@@ -73,6 +73,14 @@ emit() {  # apply --jq the way gh would
   if [[ -n "$jqf" ]]; then jq -r "$jqf" <<<"$1"; else printf '%s\n' "$1"; fi
 }
 
+# The real `gh` (2.98.0) rejects --slurp paired with --jq outright — empty
+# stdout, exit 1 — so a stub that filtered anyway could never catch a call
+# site that still paired them (issue #1116).
+if (( slurp )) && [[ -n "$jqf" ]]; then
+  echo "the \`--slurp\` option is not supported with \`--jq\` or \`--template\`" >&2
+  exit 1
+fi
+
 case "$method $path" in
   "POST "*/git/refs)
     slug="${path#repos/}"; slug="${slug%/git/refs}"
@@ -321,7 +329,20 @@ assert_eq "claims excludes an entry older than claim_ttl_hours (the staleness es
 # --- branches: live <branch_prefix>* refs on the target repo (issue #175) ------
 # The td/ namespace itself retired (#882): a live td/ branch is no longer
 # recognised here at all, regardless of its registry entry or age.
+#
+# do_branches' own `gh api --paginate --slurp` call used to be paired with
+# --jq, which the real `gh` rejects outright (issue #1116) — leaving this
+# whole function returning the fallback `[]` silently, on every real run.
+# The stub above now rejects that same pairing, so a fixture branch under the
+# real `branch_prefix` (read from this repo's own config.json, the same
+# source claim.sh itself resolves it from) has to actually come back for this
+# test to catch a regression back to the broken pairing.
+real_branch_prefix="$(jq -r '.branch_prefix' "$SCRIPT_DIR/config.json")"
+mkdir -p "$(dirname "$GH_STUB_DIR/refs/Poetic-Poems/poetic/${real_branch_prefix}TD-BRANCH-LIVE")"
+printf 'liveagentsha' > "$GH_STUB_DIR/refs/Poetic-Poems/poetic/${real_branch_prefix}TD-BRANCH-LIVE"
 branches_out="$(env CLAIM_GH="$stub_bin/gh" "$CLAIM" branches Poetic-Poems/poetic 2>/dev/null)"
+assert_eq "branches returns a live branch_prefix branch, not the silent [] a --slurp+--jq rejection leaves" "1" \
+  "$(jq --arg b "${real_branch_prefix}TD-BRANCH-LIVE" '[.[] | select(. == $b)] | length' <<<"$branches_out")"
 assert_eq "branches no longer recognises the td/ namespace" "0" \
   "$(jq '[.[] | select(. == "td/TD-CLAIMS-1")] | length' <<<"$branches_out")"
 assert_eq "  ... not even a long-lived one" "0" \
