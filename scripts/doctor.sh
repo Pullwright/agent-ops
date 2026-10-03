@@ -274,7 +274,7 @@ doc_value_mismatches="$(config_documented_value_mismatches "$DEFAULTED_CONFIG" "
 if [[ -n "$doc_value_mismatches" ]]; then
   while IFS=$'\t' read -r dvm_key dvm_doc dvm_resolved; do
     [[ -n "$dvm_key" ]] || continue
-    warn "$dvm_key is documented (README.md/docs/IMPLEMENTATION-PIPELINE-SPEC.md) as $dvm_doc but resolves to $dvm_resolved from $config_file — the documentation describes an installation that does not exist"
+    warn "$dvm_key is documented (docs/reference/configuration.md/docs/IMPLEMENTATION-PIPELINE-SPEC.md) as $dvm_doc but resolves to $dvm_resolved from $config_file — the documentation describes an installation that does not exist"
   done <<<"$doc_value_mismatches"
 else
   ok "every documented installation value (x-docs.value differing from its own default) matches config.json"

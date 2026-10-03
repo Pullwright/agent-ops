@@ -47,7 +47,7 @@ failures=0
 # assertions below, this runs whether or not node is installed here.
 INDEX_HTML="$SCRIPT_DIR/dashboard/index.html"
 for path in \
-  README.md \
+  docs/README.md \
   docs/IMPLEMENTATION-PIPELINE-SPEC.md \
   docs/REVIEW-PIPELINE-SPEC.md \
   docs/DASHBOARD-SPEC.md \

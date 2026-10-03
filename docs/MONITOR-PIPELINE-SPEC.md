@@ -118,7 +118,8 @@ narrowing that is a requirement rather than an accident: see M3.
 ## Configuration
 
 Every key this pipeline reads is a top-level key of `config.json` and is
-rendered into the `id=main` configuration tables of `README.md` and
+rendered into the `id=main` configuration tables of
+`docs/reference/configuration.md` and
 `docs/IMPLEMENTATION-PIPELINE-SPEC.md` from `config.schema.json`, like every
 other top-level key (`CLAUDE.md`, "Generated regions"). This document
 deliberately carries no fourth generated region: the keys are

@@ -7,7 +7,8 @@ labels: ""
 
 <!--
 After filing, set this issue's Priority from the issue page's own sidebar
-(Urgent / High / Medium / Low) — see README.md's "Issue priority" section
+(Urgent / High / Medium / Low) — see docs/guides/working-with-pullwright/README.md's
+"Issue priority" section
 for what each level means. Priority is a native GitHub issue field, not a
 label, and this template cannot set it for you.
 -->
