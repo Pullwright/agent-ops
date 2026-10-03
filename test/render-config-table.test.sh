@@ -238,7 +238,7 @@ JSON
 #
 #     The two specs' start markers, and README's "main" pair, carry trailing
 #     contract prose after `id=<id>` (#356) — the same annotation
-#     CLAUDE.md's "Generated regions" note and the real repository's own
+#     AGENTS.md's "Generated regions" note and the real repository's own
 #     markers carry — so every existing assertion against those regions
 #     doubles as coverage that the script matches an annotated marker by
 #     prefix rather than exact-line equality. README's "review" pair is left

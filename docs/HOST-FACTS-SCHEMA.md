@@ -202,7 +202,7 @@ the dashboard, a future pager invariant) will depend on.
   recognised in `node_conditions[]`; a new driver added alongside `compose`
   and `kubernetes`.
 - **Breaking, and must land in the same pull request as the code that makes
-  it (`CLAUDE.md`, "As-built specifications"):** renaming or removing a
+  it (`AGENTS.md`, "As-built specifications"):** renaming or removing a
   field; changing a field's type or unit; changing what `digest_match`/
   `mtu_match`/`stalled`/`stopped_scheduling` mean; changing the envelope's
   five top-level fields.

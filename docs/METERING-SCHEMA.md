@@ -236,7 +236,7 @@ it. Two classes of change:
   a future stage). A reader that ignores fields it doesn't recognise is
   unaffected.
 - **Breaking, and must land in the same pull request as the code that makes
-  it (`CLAUDE.md`, "As-built specifications"):** renaming or removing a
+  it (`AGENTS.md`, "As-built specifications"):** renaming or removing a
   field; changing a field's type or unit (e.g. milliseconds to seconds, or a
   string model id to a numeric one); changing what `tokens` sums (top-level
   `usage` instead of `modelUsage`, or vice versa); changing an aggregation

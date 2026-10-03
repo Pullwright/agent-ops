@@ -59,3 +59,20 @@ markdown_unfenced() {
       }
     }' "$1"
 }
+
+# gh_slug TEXT
+# GitHub's own heading-anchor slug: lower-case, strip anything that is not
+# alphanumeric/underscore/hyphen/space, spaces to hyphens. GitHub does not
+# collapse consecutive hyphens: a removed character leaves both its
+# neighbouring spaces behind, each becoming its own hyphen.
+#
+# Sourced by scripts/render-toc.sh (the table-of-contents anchors) and by
+# scripts/check-docs.sh (link-fragment and heading-citation checks), so the
+# two cannot disagree about what a heading's anchor is.
+gh_slug() {
+  local text="$1"
+  text=$(echo "$text" | tr '[:upper:]' '[:lower:]')
+  text="${text//[^a-z0-9 _-]/}"
+  text="${text// /-}"
+  echo "$text"
+}

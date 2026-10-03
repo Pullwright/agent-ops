@@ -887,7 +887,7 @@ above — on the same terms:
   emission site for an existing state; a new cause added to the closed
   vocabulary, so long as it maps to one of the six existing states.
 - **Breaking, and must land in the same pull request as the code that makes
-  it (`CLAUDE.md`, "As-built specifications"):** renaming or removing a
+  it (`AGENTS.md`, "As-built specifications"):** renaming or removing a
   field on any record; changing `class`'s or `attributed_stage`'s meaning
   for an existing rework value; changing what a rework class's `evidence`
   carries in a way an existing reader could misread as the old shape;
