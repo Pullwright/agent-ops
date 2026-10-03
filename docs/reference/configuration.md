@@ -200,7 +200,7 @@ Array of `{"slug": "...", "sources": [...]}`. `sources` is that repo's work sour
 - `abandoned-drafts` (draft PRs this system raised and then left untouched past `abandoned_draft_after_hours`) comes eighth for the same reason — finishing a stalled draft of ours turns a slot silted with a dead draft into a PR you can merge.
 - `project-review` (the latest repository review's recommendations that aren't already tech-debt or issues) sits just above `issues:low` and `code-quality` (non-security code-scanning findings), which are last.
 
-The four `issues:<band>` tokens are the *same* source at four ranks, banded by each issue's `Priority` field — see "Issue priority" below; list a subset to have the pipeline see only those bands, or none to turn issues off for that repo. Adding a repo or source is a config-only change.
+The four `issues:<band>` tokens are the *same* source at four ranks, banded by each issue's `Priority` field — see [Issue priority](../guides/working-with-pullwright/README.md#issue-priority); list a subset to have the pipeline see only those bands, or none to turn issues off for that repo. Adding a repo or source is a config-only change.
 
 At runtime, repos are ordered most-overdue first — each repo's default-branch staleness age scaled by `2^(-nice/3)` — ahead of this list order; with no `nice` set anywhere that is least-recently-updated first, exactly as before.
 
