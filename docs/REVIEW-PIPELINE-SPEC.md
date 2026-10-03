@@ -238,7 +238,8 @@ sha256 digest of the text actually sent — `lib/review-context.sh`'s
 `review_context_sources_digest` — so a past review's inputs are
 reconstructable without the log carrying arbitrary file content.
 
-The values below are the confirmed defaults; the README documents each key, and
+The values below are the confirmed defaults; `docs/reference/configuration.md`
+documents each key, and
 `config.schema.json` carries them alongside the implementation pipeline's
 (`docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 1b) — one file, one
 schema, so `scripts/doctor.sh` checks both pipelines' configuration in one

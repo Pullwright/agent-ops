@@ -41,8 +41,8 @@ used above.
 
 ## Guides
 
-Each guide below lists the sections moved into it, so a link into the old
-single-file README can still be found by name:
+Each guide below lists the sections it carries, so a `README.md#…` link can
+still be resolved by name:
 
 - **[Working with Pullwright from a target repository](docs/guides/working-with-pullwright/README.md)** —
   what it does, responding to your review comments, staying in front of you,

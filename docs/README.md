@@ -334,7 +334,7 @@ read the entire document in one API call without excessive context cost.
 Every file above except `docs/guides/operating/README.md` and
 `prompts/coordinator.md` is a specification or generated content required to
 be complete, which outweighs the size budget.
-`prompts/coordinator.md` has no such exemption; trimming it is left for a
+Neither of those two has such an exemption; trimming each is left for a
 future documentation sweep.
 
 ### Headings and anchors
