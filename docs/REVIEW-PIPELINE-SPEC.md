@@ -8,7 +8,7 @@ its own clone, branch, report set and pull request. It is a companion to
 `docs/IMPLEMENTATION-PIPELINE-SPEC.md` (the implementation pipeline)
 and `docs/DASHBOARD-SPEC.md` (the monitoring dashboard), and like them it
 describes the system as it exists — any change to this pipeline lands
-together with the edit that keeps this document accurate (see `CLAUDE.md`,
+together with the edit that keeps this document accurate (see `AGENTS.md`,
 "As-built specifications").
 
 **Where this document is silent, follow `docs/IMPLEMENTATION-PIPELINE-SPEC.md`.** The two

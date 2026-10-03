@@ -5,7 +5,7 @@ describes the local monitoring dashboard **as built**: what it is, the state
 it reads, how it is assembled, and the decisions behind it. Use it to
 understand, modify, or regenerate the dashboard — and keep it accurate: any
 change to the dashboard lands together with the edit that keeps this
-document describing what actually exists (see `CLAUDE.md`, "As-built
+document describing what actually exists (see `AGENTS.md`, "As-built
 specifications"). Where it says "requirement N", it means requirement N of
 `docs/IMPLEMENTATION-PIPELINE-SPEC.md`.
 
