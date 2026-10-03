@@ -384,6 +384,7 @@ run_case() {
 
 protected_calls() { cat "$tmp_dir/protected_calls"; }
 mks_calls() { cat "$tmp_dir/mks_calls"; }
+mal_calls() { cat "$tmp_dir/mal_calls"; }
 posts() { cat "$tmp_dir/posts"; }
 launches() { cat "$tmp_dir/launches"; }
 escalations() { cat "$tmp_dir/escalations"; }
@@ -459,6 +460,11 @@ assert_eq "  ... and not an adjudication" 'false' "$(jq -c '.adjudication' <<<"$
 assert_eq "  ... carrying the repo (agent-ops#573)" '"Poetic-Poems/agent-ops"' "$(jq -c '.repo' <<<"$(verdict_event)")"
 assert_eq "  ... with no model — the trivial tier never launches one" '""' "$(jq -c '.model' <<<"$(verdict_event)")"
 assert_eq "  ... and posted:true — the review really reached GitHub" 'true' "$(jq -c '.posted' <<<"$(verdict_event)")"
+assert_eq "  ... asking merge_autonomy_kill_state exactly once per engagement" "1" "$(count mks_calls)"
+assert_eq "  ... and merge_autonomy_effective_level exactly once too — never a second live kill read (agent-ops#1112)" \
+  "1" "$(count mal_calls)"
+assert_contains "  ... with its own already-fetched kill_json passed through, not re-fetched" \
+  '"state":"enabled"' "$(mal_calls)"
 
 # --- Standard and High tiers pick their own model (requirement 8b) ------------
 

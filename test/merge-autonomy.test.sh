@@ -269,6 +269,27 @@ assert_eq "with no state_repo the switch reads enabled" "enabled" \
 assert_eq "and merge_autonomy_effective_level falls through to the configured level" "agent-approves" \
   "$(merge_autonomy_effective_level "$top_level_cfg" "acme/widgets" "" "$tmp_dir/no-fleet")"
 
+# --- agent-ops#1112: a caller that has already fetched the kill switch's own
+#     document (run_approver_stage, ahead of this call, for its own
+#     fail-closed .record.kind check) can hand it over as KILL_JSON instead
+#     of making this function fetch it again. Proven with GH_STUB_MODE=down
+#     and a never-fetched state dir: if KILL_JSON were ignored and a live
+#     call made anyway, the fail-closed behaviour above would force `human`
+#     regardless of what KILL_JSON said. ---
+fs_kill_json="$tmp_dir/fleet-state-kill-json"
+mkdir -p "$fs_kill_json"
+kill_json_enabled="$(jq -nc '{state: "enabled", retried: false, record: {}}')"
+kill_json_disabled="$(jq -nc '{state: "disabled", retried: false, record: {kind: "manual"}}')"
+assert_eq "KILL_JSON state enabled resolves the configured level without any live fetch" \
+  "agent-approves" \
+  "$(GH_STUB_MODE=down merge_autonomy_effective_level "$top_level_cfg" "acme/widgets" "$slug" "$fs_kill_json" "" "" "$kill_json_enabled")"
+assert_eq "KILL_JSON state disabled resolves human, also without any live fetch" \
+  "human" \
+  "$(GH_STUB_MODE=down merge_autonomy_effective_level "$top_level_cfg" "acme/widgets" "$slug" "$fs_kill_json" "" "" "$kill_json_disabled")"
+assert_eq "an empty KILL_JSON still falls back to a live (here, failing) fetch — human, fail-closed" \
+  "human" \
+  "$(GH_STUB_MODE=down merge_autonomy_effective_level "$top_level_cfg" "acme/widgets" "$slug" "$fs_kill_json")"
+
 # --- TD-PPagop-26081507: an unreachable state repo with no cached copy of
 #     the kill switch must fail *closed*, unlike every other fleet flag —
 #     this one flag's risk profile inverts once something arms a landing
