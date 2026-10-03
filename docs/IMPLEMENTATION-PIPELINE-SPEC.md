@@ -29394,10 +29394,11 @@ oblige anyone to edit a test.
     passes: the crontab report names the full comma list, not just the
     first occurrence.
 39c. **A pending image roll overrides an otherwise-eligible chain, never
-    grants one, widens the gap at every clean, non-`--once` cycle-end whether
-    or not there was a chain to give up, is honoured at the hook against
-    `lock.json` alone, is cleared once landed, and — while it is not — idles
-    the next cycle at most once rather than letting it run underneath the
+    grants one, widens the gap at every clean, non-`--once`, non-`--dry-run`
+    cycle-end whether or not there was a chain to give up, is honoured at
+    the hook against `lock.json` alone, is cleared once landed, and — while
+    it is not — idles the next cycle at most once rather than letting it
+    run underneath the
     marker** (requirement 39c (Finish-then-continue), agent-ops#1096, amended by agent-ops#1102,
     widened by agent-ops#1103). `test/chain.test.sh` passes: `chain_image_behind` reads
     true only for a `{"status":"behind",...}` verdict — "current",
@@ -29416,8 +29417,9 @@ oblige anyone to edit a test.
     still chains and writes no marker; a cycle with no chain to give up
     (`chain_eligible=0`) still writes the marker on a "behind" verdict,
     chaining nothing since there was nothing to cancel; a `--once` run never
-    writes the marker on a "behind" verdict either, the one case still gated
-    ahead of `chain_eligible` since a real `--once` run is never chain-eligible
+    writes the marker on a "behind" verdict either, nor does a `--dry-run`
+    run (agent-ops#2103) — both cases still gated ahead of `chain_eligible`
+    since neither a real `--once` nor a `--dry-run` run is ever chain-eligible
     to begin with; and a cycle that did not end cleanly (a non-zero exit)
     never even reaches the check, marker included. `test/watchtower-pre-update.
     test.sh` passes: an unexpired `roll-pending.json` makes the hook exit 0
