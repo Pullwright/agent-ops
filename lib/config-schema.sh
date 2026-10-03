@@ -668,6 +668,27 @@ config_defaults() {
   ' "$config_file"
 }
 
+# cfg_int JQ_FILTER
+# Like a caller's own cfg(JQ_FILTER) — JQ_FILTER run against that caller's
+# $DEFAULTED_CONFIG — but floors a schema-valid integral float (`7.0`, `1e1`)
+# to a bare integer first, so a caller's own `[[ "$v" =~ ^[0-9]+$ ]]` fallback
+# guard sees "7" rather than "7.0" (jq 1.7 prints such a literal exactly as
+# written, where config_schema_errors' own `type_ok` already accepts it as an
+# integer per JSON Schema's definition — agent-ops#2113). Any other value —
+# string, null, missing, a genuine non-integral number — passes through
+# unchanged, so the caller's own guard still catches a truly invalid
+# configuration exactly as it does today; this function validates nothing
+# (same caveat as count_key_capped, above). Reads the caller's global
+# $DEFAULTED_CONFIG the same way that caller's own cfg() does, so no new
+# argument or source line is needed at any call site.
+cfg_int() {
+  # shellcheck disable=SC2153  # DEFAULTED_CONFIG is the caller's own global (every call site already assigns it before sourcing this file), not a misspelling of the local defaulted_config above.
+  jq -r "
+    ($1) as \$v
+    | if (\$v | type) == \"number\" and (\$v | floor) == \$v then (\$v | floor) else \$v end
+  " <<<"$DEFAULTED_CONFIG"
+}
+
 # config_enabler_assignee_ok ENABLER_MODEL ENABLER_ASSIGNEE
 # True (exit 0) unless ENABLER_MODEL is set and ENABLER_ASSIGNEE is not — the
 # one combination agent-cycle.sh refuses to start with, because an escalation

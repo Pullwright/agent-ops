@@ -238,12 +238,12 @@ cmd_ready() {
 
   local disk_free_kb min_free_bytes
   disk_free_kb="$(disk_space_free_kb "$state_dir")"
-  min_free_bytes="$(cfg '.min_free_workspace_bytes')"
+  min_free_bytes="$(cfg_int '.min_free_workspace_bytes')"
   [[ "$min_free_bytes" =~ ^[0-9]+$ ]] || min_free_bytes=$(( 2 * 1024 * 1024 * 1024 ))
 
   local core_floor graphql_floor
-  core_floor="$(cfg '.github_min_core_budget')"; [[ "$core_floor" =~ ^[0-9]+$ ]] || core_floor=0
-  graphql_floor="$(cfg '.github_min_graphql_budget')"; [[ "$graphql_floor" =~ ^[0-9]+$ ]] || graphql_floor=0
+  core_floor="$(cfg_int '.github_min_core_budget')"; [[ "$core_floor" =~ ^[0-9]+$ ]] || core_floor=0
+  graphql_floor="$(cfg_int '.github_min_graphql_budget')"; [[ "$graphql_floor" =~ ^[0-9]+$ ]] || graphql_floor=0
 
   # The node/fleet switches and the usage-limit freeze, all read from local
   # evidence only — never a live fetch (see the header). A stale local copy

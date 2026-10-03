@@ -376,7 +376,7 @@ fi
 # is instead an operator's deliberate, temporary pause of a stage that still
 # exists (warn, never refuse; #924's own wording).
 refiner_model="$(cfg '.refiner_model')"
-refiner_max_per_engagement="$(cfg '.refiner_max_per_engagement')"
+refiner_max_per_engagement="$(cfg_int '.refiner_max_per_engagement')"
 [[ "$refiner_max_per_engagement" =~ ^[0-9]+$ ]] || refiner_max_per_engagement=5
 refinement_policy_json="$(cfg_json '.refinement_policy')"
 required_sources_without_refiner="$(config_required_refinement_sources_without_refiner \

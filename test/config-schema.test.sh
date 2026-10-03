@@ -772,6 +772,56 @@ assert_defaults "...and a schedule.excluded_minutes carrying a non-numeric item"
   '.schedule.cycle_interval_minutes = 60 | .schedule.excluded_minutes = [0, "x"]' \
   ".claim_ttl_hours == $RUNTIME_FLOOR_HOURS and .cycles_retained == 200"
 
+# --- cfg_int (agent-ops#2113): config_schema_errors' own type_ok accepts an
+#     integral float (`7.0`, `1e1`) as an integer per JSON Schema's
+#     definition, and jq 1.7 prints such a literal exactly as written — so a
+#     caller whose own fallback guard is a strict `^[0-9]+$` silently discards
+#     it and falls back to its hardcoded default. cfg_int floors a
+#     schema-valid integral float before such a guard ever sees it, and
+#     passes everything else through unchanged so that guard still catches a
+#     genuinely invalid value exactly as it does today. ---
+assert_cfg_int() {
+  local desc="$1" defaulted_config="$2" filter="$3" expected="$4" actual
+  actual="$(DEFAULTED_CONFIG="$defaulted_config" cfg_int "$filter")"
+  if [[ "$actual" == "$expected" ]]; then
+    pass "$desc"
+  else
+    printf 'FAIL - %s\n     expected: %s\n     actual:   %s\n' "$desc" "$expected" "$actual"
+    failures=$(( failures + 1 ))
+  fi
+}
+
+assert_cfg_int "an integral float (7.0) floors to the bare integer" \
+  '{"k":7.0}' '.k' '7'
+assert_cfg_int "an integral float in exponent form (1e1) floors to the bare integer" \
+  '{"k":1e1}' '.k' '10'
+assert_cfg_int "a genuine integer passes through unchanged" \
+  '{"k":7}' '.k' '7'
+assert_cfg_int "a non-integral number passes through unchanged, for the caller's own guard to reject" \
+  '{"k":7.5}' '.k' '7.5'
+assert_cfg_int "a string passes through unchanged, for the caller's own guard to reject" \
+  '{"k":"nope"}' '.k' 'nope'
+assert_cfg_int "an explicit null passes through unchanged, for the caller's own guard to reject" \
+  '{"k":null}' '.k' 'null'
+assert_cfg_int "a missing key passes through unchanged, for the caller's own guard to reject" \
+  '{}' '.k' 'null'
+assert_cfg_int "a filter carrying a // fallback, as a raw jq call site uses, still floors an integral float" \
+  '{"k":7.0}' '.k // 24' '7'
+assert_cfg_int "...and still falls through to the fallback when the key is absent" \
+  '{}' '.k // 24' '24'
+
+# The reported repro (agent-ops#2113): scripts/publish-dashboard.sh resolves
+# pager_min_firing_minutes through cfg_int then the same
+# `^[0-9]+$`-else-default guard it always has; configured as 7.0 it must
+# resolve to 7, not silently revert to the hardcoded fallback of 15.
+pager_min_firing_minutes="$(DEFAULTED_CONFIG='{"pager_min_firing_minutes":7.0}' cfg_int '.pager_min_firing_minutes')"
+[[ "$pager_min_firing_minutes" =~ ^[0-9]+$ ]] || pager_min_firing_minutes=15
+if [[ "$pager_min_firing_minutes" == "7" ]]; then
+  pass "pager_min_firing_minutes configured as 7.0 resolves to 7, not the hardcoded fallback 15"
+else
+  bad "pager_min_firing_minutes configured as 7.0 resolves to 7, not the hardcoded fallback 15 (got $pager_min_firing_minutes)"
+fi
+
 # --- $ref resolution (issue #482): deref must resolve to a fixpoint, not one
 #     hop, and fail closed on a $ref that does not resolve. The shipped schema
 #     has no chained $def today (`pr_label` itself $refs `#/$defs/label` in one
