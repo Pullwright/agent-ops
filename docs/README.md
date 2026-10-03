@@ -16,23 +16,23 @@ path and the heading that answers it.
 | **Where is the configuration schema documented?** | `README.md` § "Configuration" |
 | **How do I reserve an issue so the pipeline doesn't touch it?** | `README.md` § "Reserving an issue for yourself" |
 | **What does "merge autonomy" mean?** | `README.md` § "Merge autonomy" |
-| **I want to understand the Implementer stage** | `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "Implementer" |
-| **I want to understand the Reviewer stage** | `docs/REVIEW-PIPELINE-SPEC.md` § "Reviewer" |
+| **I want to understand the Implementer stage** | `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "The Implementer" |
+| **I want to understand the Reviewer stage** | `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "The Reviewer" |
 | **What are the product decisions that shaped this?** | `docs/ROADMAP.md` § "Settled decisions" |
 | **Where are the standing decisions recorded?** | `docs/STANDING-DECISIONS.md` |
-| **What is the overall system architecture?** | `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "Architecture" |
-| **How does the merge queue work?** | `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "The landing gate" |
+| **What is the overall system architecture?** | `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "What it is" |
+| **How does the merge queue work?** | `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "The Landing Gate" |
 | **Where do I find the branch workflow for this repo?** | `AGENTS.md` § "Branch workflow" |
 | **How are tech-debt items tracked and resolved?** | `TECH-DEBT.md` |
 | **How do I contribute to this repository?** | `CONTRIBUTING.md` |
 | **What are the security considerations?** | `SECURITY.md` |
 | **How does the repository-review pipeline work?** | `docs/REVIEW-PIPELINE-SPEC.md` |
-| **What is the structure of a pipeline cycle?** | `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "The five stages" |
+| **What is the structure of a pipeline cycle?** | `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "What it is" |
 | **How do I look at the monitoring dashboard?** | `README.md` § "Monitoring" § "Dashboard" |
 | **What has changed in recent versions?** | `CHANGELOG.md` |
-| **Where are the generated configuration tables?** | `README.md` § "Configuration", `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "Configuration table", `docs/REVIEW-PIPELINE-SPEC.md` § "Configuration table" |
-| **I want to understand the landing gate and autonomy levels** | `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "The landing gate" |
-| **How does the Enabler stage work?** | `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "Enabler" |
+| **Where are the generated configuration tables?** | `README.md` § "Configuration", `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "Configuration", `docs/REVIEW-PIPELINE-SPEC.md` § "Configuration" |
+| **I want to understand the landing gate and autonomy levels** | `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "The Landing Gate" |
+| **How does the Enabler stage work?** | `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "The Enabler" |
 | **Where can I see dated audits or investigations?** | `docs/reviews/` — each dated subdirectory |
 | **What's the history of decisions made?** | `docs/ROADMAP.md` § "Settled decisions" or `docs/STANDING-DECISIONS.md` for open decisions |
 
@@ -55,6 +55,12 @@ set under `docs/reviews/` one entry for its directory.
 | `CHANGELOG.md` | operator, person working in repo | record | Dated history of changes (generated from PR descriptions) |
 
 ### Documentation directory: `docs/`
+
+#### This map
+
+| File | Audience | Kind | Purpose |
+|------|----------|------|---------|
+| `docs/README.md` | operator, evaluator, contributor, agent, person working in repo, reader of fleet output | reference | This document: the map of every tracked document, with the conventions that govern them |
 
 #### Specifications (as-built)
 
@@ -104,6 +110,51 @@ set under `docs/reviews/` one entry for its directory.
 | `docs/reviews/project-review-2026-09-05/` | evaluator, person working in repo, contributor | record | Full project review (generated) |
 | `docs/reviews/project-review-2026-09-21/` | evaluator, person working in repo, contributor | record | Full project review (generated) |
 | `docs/reviews/project-review-2026-09-28/` | evaluator, person working in repo, contributor | record | Full project review (generated) |
+
+### Pipeline prompts: `prompts/`
+
+Each file is the operating prompt a Script invocation hands to one headless
+agent for one pipeline stage; `docs/IMPLEMENTATION-PIPELINE-SPEC.md` and
+`docs/REVIEW-PIPELINE-SPEC.md` are the specifications these prompts
+implement.
+
+| File | Audience | Kind | Purpose |
+|------|----------|------|---------|
+| `prompts/coordinator.md` | agent, contributor | reference | Operating prompt for the Co-Ordinator stage: selects one item of work and emits a work order |
+| `prompts/implementer.md` | agent, contributor | reference | Operating prompt for the Implementer stage: carries out a work order on a branch and raises a draft pull request |
+| `prompts/reviewer.md` | agent, contributor | reference | Operating prompt for the Reviewer stage: checks the Implementer's pull request, fixes what it can, and hands off |
+| `prompts/enabler.md` | agent, contributor | reference | Operating prompt for the Enabler stage: re-examines items the pipeline recorded as blocked |
+| `prompts/enabler-decide.md` | agent, contributor | reference | Operating prompt for the Enabler's decide-tactical and decide-with-veto passes |
+| `prompts/enabler-adjudicate.md` | agent, contributor | reference | Operating prompt for the Enabler's adjudication pass under `escalation_autonomy: "adjudicate-first"` |
+| `prompts/approver.md` | agent, contributor | reference | Operating prompt for the Approver stage: an independent second look at a Reviewer-certified pull request |
+| `prompts/approver-adjudicate-open-question.md` | agent, contributor | reference | Operating prompt for the Approver's adjudication pass over an open question raised on a pull request |
+| `prompts/refiner.md` | agent, contributor | reference | Operating prompt for the Refiner stage: writes the specification an unscoped item lacks |
+| `prompts/monitor.md` | agent, operator | reference | Operating prompt for the Pipeline Monitor: a scheduled reading of the pipelines' own state |
+| `prompts/project-reviewer.md` | agent, contributor | reference | Operating prompt for the Reviewer-Agent stage of the repository-review pipeline |
+
+### Claude Code skills: `.claude/skills/`
+
+| File | Audience | Kind | Purpose |
+|------|----------|------|---------|
+| `.claude/skills/project-review/SKILL.md` | agent, contributor | how-to | Instructions an agent follows to run a full project review |
+| `.claude/skills/project-review/references/output-templates.md` | agent | reference | Templates for the project review's output documents |
+| `.claude/skills/project-review/references/prompt-writing.md` | agent | reference | How to write the improvement prompts a project review produces |
+| `.claude/skills/project-review/references/resumability.md` | agent | reference | How a project review checkpoints and resumes after an interruption |
+| `.claude/skills/project-review/references/review-checklist.md` | agent | reference | The review dimensions and checklist a project review works through |
+| `.claude/skills/td/SKILL.md` | agent, contributor | how-to | Instructions an agent follows to resolve a single tech-debt item via `/td <n>` |
+
+### GitHub templates: `.github/`
+
+| File | Audience | Kind | Purpose |
+|------|----------|------|---------|
+| `.github/ISSUE_TEMPLATE/issue.md` | contributor, person working in repo | reference | Template GitHub pre-fills for a new issue |
+| `.github/PULL_REQUEST_TEMPLATE.md` | contributor, person working in repo | reference | Template GitHub pre-fills for a new pull request description |
+
+### Node deployment: `deploy/docker/`
+
+| File | Audience | Kind | Purpose |
+|------|----------|------|---------|
+| `deploy/docker/README.md` | operator | how-to | How to run, update, and remove one node (a Docker Compose project) |
 
 ## Documentation conventions
 
@@ -251,9 +302,13 @@ read the entire document in one API call without excessive context cost.
 - `docs/REVIEW-PIPELINE-SPEC.md` — 105 KB (required)
 - `README.md` — 235 KB (required; includes extensive configuration and
   operation guides)
+- `prompts/coordinator.md` — 124 KB (an operating prompt; over budget today,
+  with no exemption that covers it)
 
-All of these are specifications or generated content required to be complete,
-which outweighs the size budget.
+Every file above except `prompts/coordinator.md` is a specification or
+generated content required to be complete, which outweighs the size budget.
+`prompts/coordinator.md` has no such exemption; trimming it is left for a
+future documentation sweep.
 
 ### Headings and anchors
 
