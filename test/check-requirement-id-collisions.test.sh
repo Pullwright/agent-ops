@@ -69,6 +69,65 @@ cat > "$tmpdir/allowlisted-collision.md" << 'EOF'
 39. **Finish-then-continue acceptance.** Test this.
 EOF
 
+# Test 4: Fixture with an unallowlisted collision only within the flat
+# Acceptance checks section (Requirements side has no collision at all) —
+# must fail, naming the id.
+cat > "$tmpdir/acceptance-collision.md" << 'EOF'
+# Test Document
+
+## Requirements
+
+### The Script
+1. **First requirement.** Something here.
+
+### The Refiner
+2. **Second requirement.** Something different here.
+
+## Acceptance checks
+
+77. **First acceptance check.** Test this.
+
+77. **A different, unrelated acceptance check.** Test something else.
+EOF
+
+# Test 5: Fixture whose only Acceptance-checks collision is on an
+# allowlisted id (39a) — must still pass.
+cat > "$tmpdir/acceptance-allowlisted-collision.md" << 'EOF'
+# Test Document
+
+## Requirements
+
+### The Script
+1. **First requirement.** Something here.
+
+## Acceptance checks
+
+39a. **First acceptance check.** Test this.
+
+39a. **A different, unrelated acceptance check.** Test something else.
+EOF
+
+# Test 6: Fixture with both a Requirements-region collision (unallowlisted)
+# and an Acceptance-checks-region collision (unallowlisted) at once — the
+# allowlisted-ness of one must not mask the other failing independently.
+cat > "$tmpdir/both-collisions.md" << 'EOF'
+# Test Document
+
+## Requirements
+
+### The Script
+88. **Something.** Something here.
+
+### The Refiner
+88. **Something else.** Something different here.
+
+## Acceptance checks
+
+77. **First acceptance check.** Test this.
+
+77. **A different, unrelated acceptance check.** Test something else.
+EOF
+
 # Create a wrapper script that uses the temp fixtures
 test_with_fixture() {
   local fixture="$1"
@@ -104,6 +163,50 @@ if test_with_fixture "$tmpdir/allowlisted-collision.md"; then
 else
   echo "✗ FAIL: Expected allowlisted collision to pass but checker failed"
   exit 1
+fi
+
+echo ""
+echo "Test 4: Fixture with a non-allowlisted Acceptance-checks collision (77)..."
+stderr_4="$(test_with_fixture "$tmpdir/acceptance-collision.md" 2>&1 1>/dev/null)"
+exit_4=$?
+if (( exit_4 == 0 )); then
+  echo "✗ FAIL: Expected Acceptance-checks collision to be detected but checker passed"
+  exit 1
+elif [[ "$stderr_4" != *"'77'"* ]]; then
+  echo "✗ FAIL: Checker failed but did not name id '77':"
+  echo "$stderr_4"
+  exit 1
+else
+  echo "✓ PASS: Acceptance-checks collision detected and id named (as expected)"
+fi
+
+echo ""
+echo "Test 5: Fixture whose only Acceptance-checks collision is allowlisted (39a)..."
+if test_with_fixture "$tmpdir/acceptance-allowlisted-collision.md"; then
+  echo "✓ PASS: Allowlisted Acceptance-checks collision did not fail the check (as expected)"
+else
+  echo "✗ FAIL: Expected allowlisted Acceptance-checks collision to pass but checker failed"
+  exit 1
+fi
+
+echo ""
+echo "Test 6: Fixture with independent Requirements (88) and Acceptance-checks (77)"
+echo "collisions at once — neither being allowlisted must mask the other failing..."
+stderr_6="$(test_with_fixture "$tmpdir/both-collisions.md" 2>&1 1>/dev/null)"
+exit_6=$?
+if (( exit_6 == 0 )); then
+  echo "✗ FAIL: Expected both collisions to be detected but checker passed"
+  exit 1
+elif [[ "$stderr_6" != *"'88'"* ]]; then
+  echo "✗ FAIL: Checker failed but did not name requirement id '88':"
+  echo "$stderr_6"
+  exit 1
+elif [[ "$stderr_6" != *"'77'"* ]]; then
+  echo "✗ FAIL: Checker failed but did not name acceptance-check id '77':"
+  echo "$stderr_6"
+  exit 1
+else
+  echo "✓ PASS: Both independent collisions detected (as expected)"
 fi
 
 echo ""
