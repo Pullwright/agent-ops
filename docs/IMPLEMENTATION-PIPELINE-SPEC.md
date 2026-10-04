@@ -193,10 +193,9 @@ has, whichever pipeline runs it (requirement 9d):
   repositories.
 - The standalone `claude` CLI is installed and resolvable from cron's
   minimal environment.
-- `cron` is running (started by WSL's `[boot]` command) with the crontab
-  entries installed: the implementation cycle
-  (`schedule.cycle_interval_minutes`), the review tick, and the dashboard
-  heartbeat (see `docs/guides/operating/README.md`, "Installation").
+- On a containerized node, cron runs inside the scheduler container under
+  supercronic, with the crontab rendered from `deploy/docker/crontab.tmpl`
+  (see `docs/guides/operating/install-a-node.md`).
 - Headless `claude -p` invocations authenticate with the user's existing
   Claude subscription login; `gh` uses its existing token. No new keys.
 

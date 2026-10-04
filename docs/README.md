@@ -11,11 +11,11 @@ to read first.
 | What you want to do | Where to find it |
 |----------------------|-------------------|
 | Reserve an issue so the pipeline doesn't pick it up while you work on it yourself | `docs/guides/working-with-pullwright/README.md` § "Reserving an issue for yourself" |
-| Understand what a "refined" item is and what the Refiner does | `docs/guides/operating/README.md` § "Refined items and the Refiner" |
+| Understand what a "refined" item is and what the Refiner does | `docs/guides/operating/watch.md` or `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "The Refiner" |
 | Understand how the pipeline prioritizes which issue to work on next | `docs/guides/working-with-pullwright/README.md` § "Issue priority" |
-| Understand what "blocked" and "void" mean, and what to do if you disagree with one | `docs/guides/operating/README.md` § "Blocked and void items" |
+| Understand what "blocked" and "void" mean, and what to do if you disagree with one | `docs/guides/operating/diagnose-by-symptom.md` § "An item is blocked or void" |
 | Respond to review comments the pipeline left on your pull request | `docs/guides/working-with-pullwright/README.md` § "Responding to your review comments" |
-| Pause the pipeline fleet without killing in-flight work | `docs/guides/operating/README.md` § "Pausing the pipelines" |
+| Pause the pipeline fleet without killing in-flight work | `docs/guides/operating/run-and-pause.md` § "Draining instead of stopping" |
 | Let one node reach an outside address without opening it up fleet-wide | `docs/guides/operating/README.md` § "The egress fence" |
 | Check that a freshly brought-up node is configured correctly before it starts working | `docs/guides/operating/README.md` § "Checking an installation" |
 | Get a node onto a newer image after merging a fix | `deploy/docker/README.md` § "Updating" |
@@ -67,7 +67,13 @@ set under `docs/reviews/` one entry for its directory.
 | File | Audience | Kind | Purpose |
 |------|----------|------|---------|
 | `docs/guides/working-with-pullwright/README.md` | person working in a target repository | how-to | How the pipeline selects, claims, and hands back work in a repository it works; review, merge autonomy, and dependencies |
-| `docs/guides/operating/README.md` | operator | how-to | Installation, operation, pausing, diagnosis, repository review, the Pipeline Monitor, monitoring, troubleshooting, and node lifecycle |
+| `docs/guides/operating/README.md` | operator | index | Entry point to the operating guides (see pages below) |
+| `docs/guides/operating/install-a-node.md` | operator | how-to | Bring up a container node with credentials and roles |
+| `docs/guides/operating/configure.md` | operator | how-to | Set up repositories, work sources, and configuration |
+| `docs/guides/operating/run-and-pause.md` | operator | how-to | Operate the disable switch, drain mode, and usage limits |
+| `docs/guides/operating/watch.md` | operator | how-to | Monitor dashboards, logs, and multi-node state sharing |
+| `docs/guides/operating/diagnose-by-symptom.md` | operator | how-to | Troubleshoot by symptom, with causes and fixes |
+| `docs/guides/operating/change-a-node.md` | operator | how-to | Roll images, update configuration, remove nodes |
 | `docs/guides/contributing/README.md` | contributor | how-to | For maintainers, branch workflow, and development |
 
 #### Reference: `docs/reference/`
