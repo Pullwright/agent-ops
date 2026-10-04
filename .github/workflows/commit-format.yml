@@ -1,6 +1,6 @@
 name: Commit message format
 
-# CI backstop for Conventional Commits (see README.md's "Commit messages"
+# CI backstop for Conventional Commits (see AGENTS.md's "Commit messages"
 # section). The local .githooks/commit-msg hook catches this too, but it is
 # opt-in per clone (`git config core.hooksPath .githooks`), so this job
 # re-checks every commit on the pull request regardless of whether the

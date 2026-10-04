@@ -19,7 +19,7 @@ questions, see `docs/README.md` — the documentation map.
   title as the commit message on `main`, and CI enforces this format on
   both the PR title and every individual commit on the branch.
 - **A change to pipeline behaviour must update the matching as-built spec
-  under `docs/` in the same pull request** — see `CLAUDE.md`'s "As-built
+  under `docs/` in the same pull request** — see `AGENTS.md`'s "As-built
   specifications" section for which spec covers which component.
 - **Tech debt is filed as a GitHub issue** labelled `pw::type:tech-debt`,
   never left only in a commit message or chat — see `TECH-DEBT.md` for the

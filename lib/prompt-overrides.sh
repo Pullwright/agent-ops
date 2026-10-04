@@ -111,11 +111,11 @@ stage_extend_files() {
 # location — the assembled text must be identical on every node serving the
 # same config and content, or the fleet-compared fingerprint below cannot
 # be), its content, plus a fixed disclaimer that it is guidance, not a
-# licence to skip a numbered requirement (CLAUDE.md, "As-built
+# licence to skip a numbered requirement (AGENTS.md, "As-built
 # specifications": specs outrank prompts).
 _prompt_override_fragment() {
   local configured="$1" file="$2"
-  printf '\n\n## Installation extension (%s)\n\n%s\n\n> This extension may add guidance for this installation. It does not\n> exempt this installation from any numbered requirement in this\n> repository'"'"'s specs (see CLAUDE.md, "As-built specifications") — the\n> specs outrank every prompt, this text included.\n' \
+  printf '\n\n## Installation extension (%s)\n\n%s\n\n> This extension may add guidance for this installation. It does not\n> exempt this installation from any numbered requirement in this\n> repository'"'"'s specs (see AGENTS.md, "As-built specifications") — the\n> specs outrank every prompt, this text included.\n' \
     "$configured" "$(cat "$file")"
 }
 

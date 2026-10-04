@@ -7,7 +7,7 @@ pipeline: the numbered requirements the system satisfies, the components that
 satisfy them, the acceptance checks that prove it, and the reasoning behind
 them. It describes the system as it exists, and it must keep doing so — any
 change to the pipeline lands together with the edit that keeps this document
-accurate (see `CLAUDE.md`, "As-built specifications"). Where this document is
+accurate (see `AGENTS.md`, "As-built specifications"). Where this document is
 silent, follow the conventions of the two target repositories (their
 `AGENTS.md` files — or `CLAUDE.md`, for a repository that has not migrated —
 are binding on any agent working inside them).
@@ -2224,7 +2224,7 @@ implements.
    … `<!-- toc:end -->` region, placed immediately after the document's
    title (and any lead-in paragraph, before its first `##` heading), holding
    a nested bullet list of every `##`/`###` heading in the document — the
-   same "generated, never hand-edited" contract CLAUDE.md's "Generated
+   same "generated, never hand-edited" contract AGENTS.md's "Generated
    regions" note states for the configuration tables (requirement 1b,
    component 16), for a second kind of region. `scripts/render-toc.sh`
    (component 24) renders it: extracting headings in document order while
@@ -2273,6 +2273,46 @@ implements.
    three match. No stage, workflow or crontab entry runs the benchmark
    itself: a stage that launched `claude` would be an agent launching an
    agent (see "Actors"), and every run spends tokens.
+52b. **The documentation's links, map, size budget, section citations and
+   as-built phrasing are checked offline on every pull request.**
+   `scripts/check-docs.sh` (component 24b) makes five checks over every
+   tracked Markdown file bar the fixtures `test/check-docs.test.sh` builds to
+   break them and the frozen `tech-debt/` archive, printing one line per
+   violation and exiting non-zero if any check failed. Every relative
+   Markdown link, and every `x-docs` link in `config.schema.json`, resolves
+   to a path that exists, and a `#fragment` on one matches either a heading
+   of the target — slugged by `lib/markdown-scan.sh`'s `gh_slug`, the one
+   GitHub anchor-slug formula shared with requirement 52's table of contents,
+   so the fragment this accepts and the anchor that generates cannot
+   disagree — or an explicit `<a id="…">`/`<a name="…">` anchor in it, which
+   GitHub resolves a fragment against just as readily and which a
+   heading-only reading would call broken. Every in-scope document is named
+   in `docs/README.md`'s "All documents" map, one row per file except a dated
+   `docs/reviews/project-review-*/` directory, which takes one entry for the
+   whole directory, and every path that map names exists. No in-scope
+   document exceeds the 100,000-byte budget `docs/README.md`'s "Size budget"
+   section fixed unless it is exempt there (`CHANGELOG.md`,
+   `docs/ROADMAP.md`, `docs/reviews/**`) or carries an entry in
+   `scripts/docs-size-ratchet.tsv` naming the byte count it may not grow past
+   and the issue that will bring it under budget. A quoted section citation,
+   in any of the three forms `docs/README.md`'s "How sections are cited"
+   section and this repository's prose use, names a heading of the file it
+   cites or text that still exists in it — checked in documents, prompts,
+   scripts and workflows alike, but never inside a frozen record, whose
+   citations were true when it was filed and which is never edited
+   afterwards. And the count of the five historical-sounding phrases
+   `scripts/docs-phrasing-ratchet.tsv`'s own header lists stays at or below
+   that file's entry for each as-built document: a ratchet, not a ban, since
+   the standing decision of 2026-09-04 (#1154) allows a historical aside that
+   passes the deletion test. Both ratchet files are inventories of what is
+   over the line today, never a place to buy slack by raising a limit.
+   The whole check runs offline, reading no network, so an external link is
+   out of scope by design — as are spelling, grammar and requirement-label
+   citations, which issue #2095 covers instead.
+   `.github/workflows/docs.yml` runs `scripts/check-docs.sh --check` on every
+   pull request, on `merge_group` and on push to `main`, ungated by `paths:`
+   — a renamed heading, a moved file or a new citation anywhere in the tree
+   can break any of the five.
 2. **Stand-down checks.** Each check logs its reason and exits cleanly:
 
    Before check 0 below, and before every other check in this list: which
@@ -23663,7 +23703,7 @@ What exists, and the requirements each part answers to:
     Rewrites four marked regions (`<!-- config-table:start id=main -->` /
     `id=review` … `<!-- config-table:end -->`) in place with no arguments. A
     start marker's `id=<id>` token may be followed by further prose before
-    the closing `-->` — CLAUDE.md's "Generated regions" note and the
+    the closing `-->` — AGENTS.md's "Generated regions" note and the
     markers themselves carry the same generated-from-schema contract inline
     (#356), so an editor who reaches a row directly, without having read
     CLAUDE.md first, still sees it — and matching it is therefore a prefix
@@ -24922,6 +24962,36 @@ What exists, and the requirements each part answers to:
    `DOCS_BENCHMARK_QUESTIONS`, `DOCS_BENCHMARK_REPORT_DIR` and
    `DOCS_BENCHMARK_SOURCE` let the test run the whole script against a stub
    `claude`. Acceptance check 52a. Must pass `shellcheck`.
+24b. `scripts/check-docs.sh`, `scripts/docs-size-ratchet.tsv`,
+   `scripts/docs-phrasing-ratchet.tsv` and `.github/workflows/docs.yml`
+   implementing requirement 52b: the five offline documentation checks
+   `toc.yml` and `config-table.yml` do not make. With no arguments or with
+   `--check` it runs all five and exits non-zero naming each violation — the
+   two forms do the same thing, unlike components 16 and 24, because there
+   is nothing here to render, and `--check` exists only so that every
+   documentation gate takes the same invocation. It reads each file through
+   `lib/markdown-scan.sh` (component 24), sharing that library's `gh_slug`
+   with `scripts/render-toc.sh` and adding `markdown_heading_texts` and
+   `markdown_heading_slugs` to it for the heading lookups the two citation
+   and fragment checks need. Headings, slugs and whole bodies are cached per
+   file, the body cache as a scratch file matched with `grep -F` rather than
+   a Bash string, because `docs/IMPLEMENTATION-PIPELINE-SPEC.md` alone
+   unfences to 2.3 MB and Bash's own glob matching has no fast substring
+   path; both cache helpers must be called as plain statements, never in
+   command substitution, which would fork the assignment into a subshell and
+   silently turn every call into a cache miss. Soft-wrapped paragraphs are
+   joined before citations are matched, so a citation split across a line
+   break still reads as one span, and a leading comment marker is stripped
+   first in a script or workflow, where each line of a comment block carries
+   its own. A citation matches a heading exactly, with the heading's leading
+   article dropped, or as a prefix of either (prose routinely stops before a
+   heading's parenthetical or em-dash suffix), and failing all three is
+   accepted if the quoted text still appears in the file at all, since this
+   repository's style quotes bullets and bold labels as well as headings.
+   `test/check-docs.test.sh` builds one scratch repository per scenario out
+   of fixture documents and runs the shipped script against it, so no
+   scenario's break leaks into another's baseline. Acceptance check 52b.
+   Must pass `shellcheck`.
 
 ## Acceptance checks
 
@@ -31330,6 +31400,23 @@ oblige anyone to edit a test.
     `--window-hours`/`--now` each override what `config.json` would
     otherwise supply — `test/resource-budget-report.test.sh` exercises all
     four.
+52b. **The documentation's links, map, size, citations and phrasing are
+    checked, and each check fails on a fixture built to break it
+    (requirement 52b, components 24 and 24b).** `scripts/check-docs.sh
+    --check` exits 0 against this checkout, as `.github/workflows/docs.yml`
+    runs it on every pull request, on `merge_group` and on push to `main`.
+    `test/check-docs.test.sh` passes: a clean fixture repository reports all
+    five checks ok and exits 0, and a fresh copy of that repository, broken
+    one way at a time, exits non-zero naming the defect — a relative link to
+    a file that does not exist, a document on disk the map never lists, a
+    document padded past 100,000 bytes with no size-ratchet entry, a
+    citation reworded to name a heading that is not there, and a sentence of
+    historical phrasing in a document with no phrasing-ratchet entry. A
+    `#fragment` that no heading slugs to, but an explicit `<a id="…">`
+    anchor in the target provides, passes — as `docs/concepts/glossary.md`'s
+    own `#human-level` and `#no-op-cycle` links do, both of which sit over a
+    heading that slugs to something else — while a fragment matching neither
+    a heading nor an anchor still fails.
 
 ## Host provisioning (human steps)
 
