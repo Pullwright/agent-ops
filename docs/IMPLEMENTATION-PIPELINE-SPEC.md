@@ -87,7 +87,6 @@ id defined in exactly one place may be left bare.
   - [The Approver](#the-approver)
 - [Components](#components)
 - [Acceptance checks](#acceptance-checks)
-- [Host provisioning (human steps)](#host-provisioning-human-steps)
 - [Cost profile](#cost-profile)
 - [Design decisions](#design-decisions)
 - [Gotchas](#gotchas)
@@ -31472,56 +31471,6 @@ oblige anyone to edit a test.
     own `#human-level` and `#no-op-cycle` links do, both of which sit over a
     heading that slugs to something else — while a fragment matching neither
     a heading nor an anchor still fails.
-
-## Host provisioning (human steps)
-
-All of this is in place on the current host; it is needed again only when
-standing the system up on a new machine.
-
-1. Install the standalone CLI: `curl -fsSL https://claude.ai/install.sh | bash`
-   (or `npm install -g @anthropic-ai/claude-code`). Verify headless auth
-   works: `claude -p "Reply with OK" --model claude-haiku-4-5-20251001`.
-   Then prove that cron can invoke Claude by running it in a minimal
-   environment with the same PATH shape cron will use, e.g.
-   `env -i HOME="$HOME" PATH="$HOME/.local/bin:$HOME/.claude/local:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" /bin/bash -lc 'command -v claude && claude -V'`.
-   If `command -v claude` fails, create a launcher in `~/.local/bin` or add
-   the correct PATH to the crontab before continuing.
-2. Enable cron in WSL: add to `/etc/wsl.conf`
-   `[boot]` / `command = "service cron start"` (requires sudo), then restart
-   WSL (`wsl --shutdown` from Windows). Alternative if preferred: a Windows
-   Task Scheduler job running
-   `wsl.exe -u wallen -e $HOME/Code/Poetic-Poems/agent-ops/agent-cycle.sh` on
-   the node's configured cadence (`schedule.cycle_interval_minutes`).
-   Either way, cycles only run while the machine is awake — a missed cycle
-   simply waits for the next tick, which is harmless.
-3. Create the label in each configured repo:
-   `gh api -X POST repos/Poetic-Poems/<repo>/labels -f name='autonomous-agent' -f color='ededed' -f description='PR raised by the autonomous agent system'`.
-   If your `gh` version already supports `gh label create`, that form also works; the API form above is the most compatible fallback.
-3c. Create the Enabler's escalation label in each configured repo, the same way:
-   `gh api -X POST repos/Poetic-Poems/<repo>/labels -f name='enabler-escalation' -f color='b60205' -f description='Raised by the Enabler: a blocked item that escalates'`
-   (`enabler_escalation_label`, requirement 36a). Without it an escalation is
-   still raised — the create is retried unlabelled — but it arrives with only
-   the assignment to distinguish it, so the human's filter and the duplicate
-   guard both lose their handle.
-3d. Create the refinement label in each configured repo, the same way:
-   `gh api -X POST repos/Poetic-Poems/<repo>/labels -f name='needs-refinement' -f color='fbca04' -f description='The autonomous pipeline cannot tell what done would mean for this item'`
-   (`needs_refinement_label`, requirement 34e). Without it the block is still
-   recorded and the item still reaches the Enabler — the projection is a
-   courtesy to whoever is browsing the issue list, not the record — but the
-   Script logs a warning each time it cannot apply it.
-3a. Enable the security work sources on each configured repo so the alerts the
-   `security`/`code-quality` sources read actually exist: turn on the
-   Dependabot alerts and code-scanning (CodeQL) features (Settings → Code
-   security, or the equivalent org policy — free for public repos; requires
-   GitHub Advanced Security for private ones). The `gh` token must be able to
-   read `repos/<slug>/dependabot/alerts` and
-   `repos/<slug>/code-scanning/alerts` (the `security_events` scope, or
-   `repo` on a classic token). If a feature stays off, `gather-findings.sh`
-   simply returns no findings for it and the rest of the pipeline is
-   unaffected.
-4. Create `Poetic-Poems/agent-ops` and clone it to
-   `~/Code/Poetic-Poems/agent-ops`.
-5. After the acceptance checks pass, install the crontab line.
 
 ## Cost profile
 
