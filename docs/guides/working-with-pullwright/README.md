@@ -137,8 +137,8 @@ every *other* kind of work the pipeline could pick instead:
 | Priority | Where the issue is picked up |
 |---|---|
 | `Urgent` | **Second overall, across all configured repositories** — ahead of everything except security work, including ahead of your review feedback and of finishing a stalled PR. |
-| `High` | After a red default branch, but ahead of [tech-debt items](../../concepts/glossary.md#tech-debt) (issues labelled `pw::type:tech-debt`). |
-| `Medium` | After tech-debt items, ahead of the implementation plan and the repository review's recommendations. |
+| `High` | After a red default branch, but ahead of [tech-debt source](../../concepts/glossary.md#source) (issues labelled `pw::type:tech-debt`). |
+| `Medium` | After tech-debt, ahead of the implementation plan and the repository review's recommendations. |
 | `Low` | After the review recommendations, ahead of only the automated code-quality findings. |
 
 **An issue with no `Priority` set counts as `Medium`**, which is exactly where
