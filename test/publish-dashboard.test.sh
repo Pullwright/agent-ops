@@ -1258,6 +1258,46 @@ assert_eq "one of which bounced back" "1" \
 assert_eq "and one of which landed" "1" \
   "$(jq -r '.rows[0].measure.landed' <<<"$fdata")"
 
+# --- A provider-qualified tier model resolves, not just the bare config value
+# (issue #2131) --------------------------------------------------------------
+# tier_of compares each stage-end's own recorded model (the bare id the
+# launcher actually passed to `claude --model`) against impl_tier_default,
+# which this script derives by calling resolve_model_id on the configured
+# implementer_model_default. Without providers_load run first, a
+# provider-qualified implementer_model_default (e.g. "acme/grok-4.3") fails
+# to resolve and falls through to the raw qualified string, so no stage-end's
+# bare model id can ever equal it and every row misclassifies as "unmapped" —
+# caught in review (PR #2158) alongside the equivalent monitor-cycle.sh gap
+# test/monitor-cycle.test.sh covers directly. CONFIG_FILE resolves relative to
+# publish-dashboard.sh's own location with no override flag, so — as with the
+# lock_stale_after override test above — this runs a full copy of the
+# checkout against a config.json this test controls, rather than mutating the
+# repository's own shared config.json.
+p_app="$tmp_dir/providers-app"
+mkdir -p "$p_app"
+tar -C "$SCRIPT_DIR" --exclude=.git -cf - . | tar -C "$p_app" -xf -
+jq '.providers = {acme: {substrate: "claude-code"}}
+    | .implementer_model_default = "acme/grok-4.3"' \
+  "$SCRIPT_DIR/config.json" > "$p_app/config.json"
+
+p="$(new_home nodeP)"
+p_today="$(date -u +%Y-%m-%d)"
+printf '{"ts":"%sT01:00:00Z","cycle":"c509","node":"nodeP","event":"stage-end","stage":"implementer","exit_code":0,"model":"grok-4.3","cost_usd":1.0,"duration_ms":100000,"repo":"%s","item":"509"}\n' \
+  "$p_today" "$o_repo" > "$p/.local/state/poetic-agents/log.jsonl"
+printf '{"ts":"%sT01:05:00Z","cycle":"c509","node":"nodeP","event":"pr-raised","pr_url":"https://github.com/%s/pull/209","repo":"%s","item":"509"}\n' \
+  "$p_today" "$o_repo" "$o_repo" >> "$p/.local/state/poetic-agents/log.jsonl"
+printf '{"ts":"%sT02:00:00Z","cycle":"c509","node":"nodeP","event":"merge-observed","repo":"%s","item":"509","pr_url":"https://github.com/%s/pull/209"}\n' \
+  "$p_today" "$o_repo" "$o_repo" >> "$p/.local/state/poetic-agents/log.jsonl"
+env HOME="$p" "$p_app/scripts/publish-dashboard.sh" --no-github >/dev/null 2>&1
+assert_eq "a publish against a configured provider still exits 0" "0" "$?"
+pdata="$(tail -n +2 "$p/.local/state/poetic-agents/dashboard/data.js" \
+  | sed -e '1s/^window\.DASHBOARD_DATA = //' -e '$ s/;$//')"
+pidata="$(jq -c '.counts.actor_scorecards.actors[] | select(.actor=="implementer")' <<<"$pdata")"
+assert_eq "a provider-qualified implementer_model_default resolves to its bare id, not left unmapped" \
+  "default" "$(jq -r '.rows[0].tier' <<<"$pidata")"
+assert_eq "...so the item attributed to that tier is counted" "1" \
+  "$(jq -r '.rows[] | select(.tier=="default") | .attempts' <<<"$pidata")"
+
 # --- The process budget on a long history ---------------------------------------
 # 300 single-stage cycles ≈ months of history. The per-file scan forked two jq
 # per envelope plus one re-parse per row (~900 forks before the detail loop
