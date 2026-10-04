@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 #
 # lib/markdown-scan.sh — the one fence-aware reading of a Markdown file
-# (requirements 52 and 52a, components 24 and 24a).
+# (requirements 52, 52a and 52b, components 24, 24a and 24b).
 #
 # Sourced by scripts/render-toc.sh, which takes the table of contents from the
-# headings outside fenced code, and by lib/docs-benchmark.sh, which follows
+# headings outside fenced code; by lib/docs-benchmark.sh, which follows
 # each benchmark question's sources to a heading or a label outside fenced
-# code. One reading serves both, so a fence one of them mistakes for prose
-# cannot make the other disagree with it.
+# code; and by scripts/check-docs.sh, which resolves a link's #fragment and a
+# quoted section citation to a heading. One reading serves all three, so a
+# fence one of them mistakes for prose cannot make the others disagree with
+# it.
 
 # markdown_unfenced FILE
 # Print FILE's lines that lie outside fenced code blocks, in order, leaving out
