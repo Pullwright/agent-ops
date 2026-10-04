@@ -80,26 +80,34 @@ gh_slug() {
 }
 
 # markdown_heading_texts FILE
-# Print FILE's ## / ### heading text, verbatim, one per line, outside fenced
-# code and in document order. Used by scripts/check-docs.sh to check that a
-# quoted section citation (`path` § "heading") names a heading that exists.
+# Print FILE's heading text, verbatim, one per line, outside fenced code and
+# in document order, for every level `#` through `######`. Used by
+# scripts/check-docs.sh to check that a quoted section citation
+# (`path` § "heading") names a heading that exists.
+#
+# Level 1 counts: GitHub anchors an `#` heading exactly as it does a `##`,
+# so a fragment or citation naming one (`docs/README.md#installation-guide`)
+# is a working reference, and leaving it out would report it broken.
+# scripts/render-toc.sh does not use this function — its table of contents is
+# deliberately `##`/`###` only, and it extracts those itself.
 markdown_heading_texts() {
   # mawk's `{m,n}` interval expressions are unreliable (observed matching
   # only the minimum repeat count, silently dropping deeper headings), so
   # the hash run is matched open-ended with `+` and bounded by checking
-  # RLENGTH instead — never with a `{2,6}` in the regex itself.
+  # RLENGTH instead — never with a `{1,6}` in the regex itself.
   awk '
     match($0, /^#+ /) {
       hashes = RLENGTH - 1
-      if (hashes >= 2 && hashes <= 6) print substr($0, RLENGTH + 1)
+      if (hashes >= 1 && hashes <= 6) print substr($0, RLENGTH + 1)
     }' < <(markdown_unfenced "$1")
 }
 
 # markdown_heading_slugs FILE
-# Print FILE's final GitHub anchor slug for every ## / ### heading, in
-# document order, outside fenced code — duplicate headings de-duplicated
+# Print FILE's final GitHub anchor slug for every heading, in document order,
+# outside fenced code — duplicate headings de-duplicated
 # the way GitHub's own renderer does: the first occurrence keeps its bare
-# slug, each later one gets -1, -2, ... appended. Used by
+# slug, each later one gets -1, -2, ... appended, counting across every
+# heading level together, as GitHub's own shared counter does. Used by
 # scripts/check-docs.sh to resolve a link's #fragment to a heading that
 # actually exists.
 markdown_heading_slugs() {
