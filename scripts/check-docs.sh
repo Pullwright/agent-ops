@@ -10,9 +10,11 @@
 # 1. Links and anchors — every relative Markdown link, and every x-docs
 #    link in config.schema.json, resolves to a file (or directory) that
 #    exists; where it carries a #fragment, the fragment matches a heading
-#    in the target, using the same GitHub anchor-slug formula
+#    in the target — using the same GitHub anchor-slug formula
 #    scripts/render-toc.sh uses (shared via lib/markdown-scan.sh's
-#    `gh_slug`, so the two cannot disagree). External links
+#    `gh_slug`, so the two cannot disagree) — or an explicit
+#    `<a id="…">`/`<a name="…">` anchor in it, which GitHub resolves a
+#    fragment against just as readily. External links
 #    (http:/https:/mailto:) are out of scope by design — this check runs
 #    offline, with no network.
 # 2. The map — every in-scope Markdown document (tracked, excluding
@@ -82,6 +84,28 @@ fail() { printf 'check-docs: %s\n' "$*" >&2; failed=1; }
 # Shared helpers
 # ---------------------------------------------------------------------------
 
+# explicit_anchor_ids FILE
+# Print the id of every explicit HTML anchor in FILE, one per line, outside
+# fenced code. A document whose heading slug is not the anchor it wants to be
+# linked by writes one immediately above the heading — `docs/concepts/
+# glossary.md` carries `<a id="human-level"></a>` over a heading that slugs to
+# `human-merge-autonomy-level` — and GitHub resolves a `#fragment` against it
+# exactly as it does against a heading slug. A fragment check that read only
+# headings would call those working links broken.
+explicit_anchor_ids() {
+  markdown_unfenced "$1" | awk '
+    {
+      line = $0
+      while (match(line, /<a[ \t]+(id|name)[ \t]*=[ \t]*"[^"]+"/)) {
+        span = substr(line, RSTART, RLENGTH)
+        sub(/^[^"]*"/, "", span)   # leading `<a id="`, up to the first quote
+        sub(/"$/, "", span)
+        print span
+        line = substr(line, RSTART + RLENGTH)
+      }
+    }'
+}
+
 # ensure_heading_cache FILE
 # Populates SLUG_CACHE[FILE] / HEADING_TEXT_CACHE[FILE] on first reference,
 # a file cited by dozens of links or citations (every key's README.md
@@ -98,7 +122,11 @@ ensure_heading_cache() {
   local file="$1"
   if [[ -z "${HEADING_TEXT_CACHE[$file]+x}" ]]; then
     HEADING_TEXT_CACHE["$file"]="$(markdown_heading_texts "$file")"
-    SLUG_CACHE["$file"]="$(markdown_heading_slugs "$file")"
+    # Heading slugs and explicit anchor ids together: both are things a
+    # `#fragment` legitimately resolves to on GitHub. Only SLUG_CACHE gets the
+    # anchors — HEADING_TEXT_CACHE feeds the citation check, which is about
+    # headings alone.
+    SLUG_CACHE["$file"]="$(markdown_heading_slugs "$file"; explicit_anchor_ids "$file")"
   fi
 }
 
@@ -201,7 +229,7 @@ check_link_target() {
     # `set -o pipefail`.
     ensure_heading_cache "$resolved"
     if ! grep -qxF "$frag" <<< "${SLUG_CACHE[$resolved]}"; then
-      fail "$citing_file: link '$target' fragment #$frag has no matching heading in $resolved"
+      fail "$citing_file: link '$target' fragment #$frag has no matching heading or anchor in $resolved"
       return 1
     fi
   fi
@@ -227,8 +255,11 @@ check_links_in_schema() {
   combined_slugs="$(mktemp)"
   {
     markdown_heading_slugs README.md
+    explicit_anchor_ids README.md
     markdown_heading_slugs docs/IMPLEMENTATION-PIPELINE-SPEC.md
+    explicit_anchor_ids docs/IMPLEMENTATION-PIPELINE-SPEC.md
     markdown_heading_slugs docs/REVIEW-PIPELINE-SPEC.md
+    explicit_anchor_ids docs/REVIEW-PIPELINE-SPEC.md
   } | sort -u > "$combined_slugs"
 
   while IFS= read -r link; do
@@ -238,7 +269,7 @@ check_links_in_schema() {
     if [[ "$target" == "#"* ]]; then
       frag="${target#\#}"
       if ! grep -qxF "$frag" "$combined_slugs"; then
-        fail "config.schema.json: x-docs link '$target' has no matching heading in README.md or the specs it renders into"
+        fail "config.schema.json: x-docs link '$target' has no matching heading or anchor in README.md or the specs it renders into"
         ok=0
       fi
     elif [[ -n "$target" ]]; then

@@ -152,6 +152,38 @@ fi
 assert_contains "check 1 fixture: names the unresolved target" "$links_out" "does not resolve"
 rm -rf "$links_repo"
 
+# --- Check 1, explicit anchors: a fragment that no heading slugs to, but an
+#     `<a id="…">` anchor in the target provides, is a working GitHub link and
+#     must pass — docs/concepts/glossary.md writes exactly this over a heading
+#     whose own slug differs. A fragment matching neither still fails. ---
+anchor_repo="$(new_repo)"
+cat >> "$anchor_repo/docs/IMPLEMENTATION-PIPELINE-SPEC.md" <<'MD'
+
+<a id="explicit-anchor"></a>
+## A heading whose slug is not the anchor
+
+Content.
+MD
+cat >> "$anchor_repo/README.md" <<'MD'
+
+See [the anchored section](docs/IMPLEMENTATION-PIPELINE-SPEC.md#explicit-anchor).
+MD
+anchor_out="$(run_script "$anchor_repo" 2>&1)"
+anchor_rc=$?
+assert_eq "explicit-anchor fixture: --check exits 0" "0" "$anchor_rc"
+assert_contains "explicit-anchor fixture: links and anchors ok" "$anchor_out" "links and anchors: ok"
+
+sed -i 's/#explicit-anchor/#no-such-anchor/' "$anchor_repo/README.md"
+anchor_bad_out="$(run_script "$anchor_repo" 2>&1)"
+anchor_bad_rc=$?
+if (( anchor_bad_rc != 0 )); then
+  pass "explicit-anchor fixture: a fragment matching neither heading nor anchor fails"
+else
+  fail "explicit-anchor fixture: a fragment matching neither heading nor anchor fails (got rc=0)"
+fi
+assert_contains "explicit-anchor fixture: names the missing fragment" "$anchor_bad_out" "has no matching heading"
+rm -rf "$anchor_repo"
+
 # --- Check 2: the map — an in-scope document that exists on disk but is
 #     never listed. ---
 map_repo="$(new_repo)"
