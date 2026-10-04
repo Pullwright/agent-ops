@@ -43,16 +43,12 @@ The dashboard is served over HTTPS to your tailnet at `https://<NODE_NAME>.<tail
 
 ## Keep the dashboard fresh
 
-The dashboard refreshes at the end of every cycle. To also keep it current between cycles — reflecting in-flight runs and live GitHub status — add a heartbeat to your crontab (host nodes only; container nodes refresh automatically through the scheduler's own cron):
+The dashboard refreshes at the end of every cycle. Keeping it current between cycles — reflecting in-flight runs and live GitHub status — needs no setup: the container's own crontab already runs `scripts/publish-dashboard-launcher.sh` every `schedule.heartbeat_minutes` (5 minutes by default), and that launcher self-loops sub-minute internally, regenerating the dashboard roughly every 5 seconds without hammering the GitHub API. To change the cadence, set `schedule.heartbeat_minutes` in `config.json`.
+
+To force an immediate refresh by hand:
 
 ```bash
-(crontab -l 2>/dev/null || true; echo "*/5 * * * * ~/poetic-node/scripts/watch-node.sh >> ~/.local/state/poetic-agents/dashboard.log 2>&1") | crontab -
-```
-
-Or run it by hand:
-
-```bash
-docker compose exec scheduler /app/scripts/watch-node.sh
+docker compose exec scheduler /app/scripts/publish-dashboard.sh
 ```
 
 ## Watch a node's events
@@ -63,18 +59,20 @@ The pipeline records every event — work selected, items blocked, cycles comple
 # Follow the log as it runs
 tail -f ~/.local/state/poetic-agents/log.jsonl
 
-# See what the last 10 cycles did
-jq -r 'select(.event == "cycle-complete") | "\(.ts)  \(.outcome)  cost: \(.cost)  duration: \(.duration_seconds)s"' \
+# See how the last 10 cycles ended
+jq -r 'select(.event == "cycle-end") | "\(.ts)  exit_code=\(.exit_code)"' \
   ~/.local/state/poetic-agents/log.jsonl | tail -10
 
 # Why did a cycle stand down?
 jq -r 'select(.event == "stand-down") | "\(.ts)  \(.reason)"' \
   ~/.local/state/poetic-agents/log.jsonl | tail -5
 
-# What items were blocked and why?
-jq -r 'select(.event == "blocked") | "\(.ts)  \(.item)  \(.reason)"' \
+# What items were marked void, and why?
+jq -r 'select(.event == "item-void") | "\(.ts)  \(.repo)#\(.item)  \(.detail)"' \
   ~/.local/state/poetic-agents/log.jsonl | tail -10
 ```
+
+An item that is *blocked* (as opposed to void) is not a `log.jsonl` event at all — it's a `blocked` (or `blocked:<reason>`) label on the GitHub issue or pull request itself; see [An item is blocked or void](diagnose-by-symptom.md#an-item-is-blocked-or-void).
 
 For a complete description of event types and fields, see `docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 33.
 
@@ -94,15 +92,15 @@ What stays local: live locks, the generated dashboard, sync logs.
 
 The pipeline reads the **union** of all logs — a blocked item discovered by one node prevents every node from re-trying it. The per-item claims are the lock underneath; there is no lease and no leader.
 
-To enable state sharing, set in `config.json`:
+To enable state sharing, set `state_repo` in `config.json`:
 
 ```json
 {
-  "state_repo": "Poetic-Poems/agent-ops-state",
-  "state_sync_push_minutes": 5,
-  "state_sync_fetch_minutes": 7
+  "state_repo": "Poetic-Poems/agent-ops-state"
 }
 ```
+
+The cadence shown in the table above — `push` every 5 minutes, `fetch` every 7 — comes from `schedule.state_sync_push_minutes`/`schedule.state_sync_fetch_minutes`; see [Configure](configure.md#scheduling).
 
 Every node needs a `GH_TOKEN` that can read and write to the state repository.
 

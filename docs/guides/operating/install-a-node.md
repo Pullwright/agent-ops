@@ -37,7 +37,7 @@ docker compose exec scheduler gh repo list --limit 1
 The scheduler runs Claude over text from GitHub, so every node needs model credentials. Two paths:
 
 **Primary: BYO API key**
-1. Get an Anthropic API key from [claude.ai/settings](https://claude.ai/settings)
+1. Get an Anthropic API key from [console.anthropic.com](https://console.anthropic.com)
 2. Set `ANTHROPIC_API_KEY=<key>` in `.env`
 3. `docker compose up -d` — the key is picked up at container start
 

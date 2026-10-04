@@ -4,24 +4,13 @@ A node's configuration tells it which repositories to scan, what work sources to
 
 ## Configuration reaches a node
 
-For a containerized node, configuration is **baked into the image or mounted as a volume**:
+`config.json` is not mounted or fetched at run time — it is committed to this repository, and the image's `COPY --chown=agent:agent . /app` (`deploy/docker/Dockerfile`) bakes it in at build time. A config change reaches a node the same way a code change does: edit `config.json`, open a pull request, get it merged to `main` (which publishes a new image to `ghcr.io/pullwright/agent-ops`), then let the node roll onto that image — automatically if the `auto-update` profile is enabled, or manually; see [Roll a new image](change-a-node.md#roll-a-new-image). There is no volume mount, build-arg, or URL for supplying a different `config.json` to a running container.
 
-1. **Via volume mount** (recommended for changing config without rebuilding):
-   ```bash
-   # In .env or docker-compose override
-   volumes:
-     - /path/to/config.json:/app/config.json:ro
-   ```
+Validate a changed `config.json` before it reaches a node:
 
-2. **Via image rebuild** (if you want config shipped with the image):
-   ```bash
-   docker build --build-arg CONFIG=/path/to/config.json deploy/docker
-   ```
-
-3. **Via entrypoint override** (if your orchestrator supplies it):
-   ```bash
-   AGENT_OPS_CONFIG_URL=https://your-config-server/config.json
-   ```
+```bash
+./scripts/doctor.sh --config /path/to/config.json
+```
 
 See the configuration reference for all keys and their meanings: [docs/reference/configuration.md](../../reference/configuration.md).
 
@@ -29,93 +18,101 @@ See the configuration reference for all keys and their meanings: [docs/reference
 
 ### Repositories
 
-Tell the pipeline which repositories to scan and how often:
+Tell the pipeline which repositories to work and in what priority order:
 
 ```json
 {
   "repos": [
     {
-      "name": "Poetic-Poems/poetic",
-      "pull_label": "autonomous-agent",
-      "branch_prefix": "agent/",
-      "work_sources": ["issues", "tech-debt", "code-quality", "security"]
-    },
-    {
-      "name": "Poetic-Poems/poetic-fiddle",
-      "pull_label": "autonomous-agent",
-      "branch_prefix": "agent/",
-      "work_sources": ["issues", "tech-debt"]
+      "slug": "Poetic-Poems/poetic",
+      "sources": [
+        "security",
+        "issues:urgent",
+        "review-feedback",
+        "merge-conflicts",
+        "dequeued",
+        "landing-refusals",
+        "abandoned-drafts",
+        "failed-runs",
+        "issues:high",
+        "tech-debt",
+        "issues:medium",
+        "issues:low",
+        "code-quality"
+      ]
     }
   ]
 }
 ```
 
-- `name` — `owner/repo` from GitHub
-- `pull_label` — label the pipeline applies to its PRs, for tracking autonomy; keep it unique per node
-- `branch_prefix` — branch prefix for new work (`agent/` for issue #123 becomes `agent/123`)
-- `work_sources` — which sources to scan:
-  - `issues` — GitHub issues (general work)
-  - `tech-debt` — GitHub issues labelled `pw::type:tech-debt`
-  - `code-quality` — Dependabot and CodeQL alerts
-  - `security` — GitHub security alerts
-  - `project-review` — recommendations from this repo's own reviews
+- `slug` — `owner/repo` from GitHub
+- `sources` — this repository's work sources, in priority order (earlier entries rank first). `issues` is really four rank tokens — `issues:urgent`, `issues:high`, `issues:medium`, `issues:low` — the same source banded by the issue's own Priority field. `abandoned-drafts` must appear somewhere in the array: it is the only route back to a draft this pipeline raised and then abandoned, so a repository cannot opt out of recovering its own stalled work. The full set of valid tokens — `security`, `tech-debt`, `code-quality`, `review-feedback`, `merge-conflicts`, `dequeued`, `landing-refusals`, `human-visibility`, `abandoned-drafts`, `failed-runs`, `project-review`, `implementation-plan`, plus the four `issues:<band>` tokens — is in [docs/reference/configuration.md](../../reference/configuration.md). A token simply absent from this array is off for this repository; there is no separate enable/disable switch.
+
+`pr_label` (the label stamped on every PR this pipeline raises) and `branch_prefix` (`agent/` by default — issue #123 becomes `agent/123`) are fleet-wide, top-level `config.json` keys, not per-repository.
 
 ### Scheduling
 
-Control how often cycles run and what happens when they do:
+`deploy/docker/render-crontab.sh` renders every cron line in a containerized node from the top-level `schedule` object, at container start:
 
 ```json
 {
   "schedule": {
+    "cycle_hours": "*",
     "cycle_interval_minutes": 15,
-    "cycle_minute": null,
-    "monitor_hour": 3
+    "excluded_minutes": [0],
+    "heartbeat_minutes": 5,
+    "state_sync_push_minutes": 5,
+    "state_sync_fetch_minutes": 7,
+    "monitor_hour": 5
   }
 }
 ```
 
-- `cycle_interval_minutes` — how often the coordinator picks work (default 15)
-- `cycle_minute` — which minute of the hour (null to hash from the node's name, to spread multiple nodes)
-- `monitor_hour` — which hour (UTC) the Monitor runs its digest
+- `cycle_hours`/`cycle_interval_minutes` — which hours, and how often within an allowed hour, the implementation cycle's crontab line fires. The *minute* itself is not a config key: it is `CYCLE_MINUTE` in a node's `.env`, or a stable hash of `NODE_NAME` when that's unset, so that multiple nodes on one account don't all fire at once.
+- `excluded_minutes` — minutes the per-node minute may never land on (e.g. to avoid colliding with another scheduled job on the host)
+- `heartbeat_minutes` — how often the dashboard-heartbeat cron line fires; see [Keep the dashboard fresh](watch.md#keep-the-dashboard-fresh)
+- `state_sync_push_minutes`/`state_sync_fetch_minutes` — how often this node publishes and fetches shared state; see [Keeping every node warm](watch.md#keeping-every-node-warm)
+- `monitor_hour` — the UTC hour the Pipeline Monitor's daily run is due (its own crontab line fires hourly and stands down until this hour, or until a pager alert fires)
+
+See [docs/reference/configuration.md](../../reference/configuration.md) for the rest of `schedule`'s keys.
 
 ### Work-source controls
 
-Enable or disable individual work sources globally:
+Control whether an item from a given source must be refined — given a written specification — before the Co-Ordinator may select it:
 
 ```json
 {
-  "coordinator": {
-    "enabled_sources": {
-      "issues": "preferred",
-      "tech-debt": "required",
-      "security": "preferred",
-      "code-quality": "preferred"
-    }
+  "refinement_policy": {
+    "issues": "required",
+    "tech-debt": "required",
+    "security": "preferred"
   }
 }
 ```
 
-- `required` — must be specified before selection (waits for the Refiner)
-- `preferred` — a specified item ranks higher, but unspecified items may still be picked
-- `exempt` — source carries its own spec (review feedback, merge conflicts, etc.)
+- `required` — the Co-Ordinator never selects an unrefined item from this source; it waits for the Refiner
+- `preferred` — a refined item ranks ahead of an otherwise-equal unrefined one, but the Co-Ordinator may still select an unrefined item on its own judgement
+- `exempt` (the default for any source not named here) — the source already carries its own specification (a merge conflict, a review comment, a security finding), so refinement doesn't apply
 
-### Usage limits and timeouts
+A source resolved to `required` needs `refiner_model` set — otherwise its items wait forever.
 
-Cap spending and set stage timeouts (which self-tune based on history):
+### Stage timeouts
+
+Override a stage's wall-clock backstop or liveness-watchdog threshold, in minutes (both self-tune from history when omitted):
 
 ```json
 {
-  "spend_cap_monthly_usd": 100,
-  "timeout_implementer_minutes": 90,
-  "timeout_reviewer_minutes": 90,
-  "inactivity_implementer_minutes": 30,
-  "inactivity_reviewer_minutes": 30
+  "timeout_implementer": 150,
+  "timeout_reviewer": 90,
+  "inactivity_implementer": 30,
+  "inactivity_reviewer": 30
 }
 ```
 
-- `timeout_*` — hard limit for a stage
-- `inactivity_*` — if the stage produces no output for this long, it's killed as wedged
-- `spend_cap_*` — refuse work once the cap is hit (probed every cycle)
+- `timeout_<actor>` — override for that stage's wall-clock backstop; omit it and the backstop is derived per (actor, repository, model) from history
+- `inactivity_<actor>` — override for that stage's liveness-watchdog threshold; `0` disables the watchdog for that actor
+
+Either can also be set per-repository, under that repository's own `stage_timeouts`/`stage_inactivity`. There is no monthly spend-cap key: a usage limit is Anthropic's own account limit, and the pipeline reacts to the error it gets back rather than probing a configured cap — see [Lifting a usage-limit stand-down](run-and-pause.md#lifting-a-usage-limit-stand-down).
 
 ### State sharing
 
@@ -123,13 +120,11 @@ If multiple nodes should share memory (blocked items, no-ops, cycles completed):
 
 ```json
 {
-  "state_repo": "Poetic-Poems/agent-ops-state",
-  "state_sync_push_minutes": 5,
-  "state_sync_fetch_minutes": 7
+  "state_repo": "Poetic-Poems/agent-ops-state"
 }
 ```
 
-Every node fetches peers' states every 7 minutes and pushes its own every 5, so fleet-wide decisions converge within a few minutes.
+The cadence this replicates on — `state_sync_push_minutes`/`state_sync_fetch_minutes` — lives under `schedule`, covered above.
 
 ## Verifying configuration
 

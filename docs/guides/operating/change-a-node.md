@@ -14,7 +14,7 @@ docker compose pull
 docker compose up -d
 
 # Verify the version
-docker compose exec scheduler cat /app/.image-info.json | jq .
+docker compose exec scheduler cat /app/build-info.json | jq .
 
 # Or check the dashboard — nodes show "behind" if an older image is running
 ```
@@ -47,29 +47,21 @@ If watchtower is enabled, it already does this — its pre-update hook reads the
 
 ## Update configuration
 
-Configuration is either baked into the image (rebuilt with `--build-arg`) or mounted as a volume. If mounted:
+`config.json` is committed to this repository and baked into the image at build time (`deploy/docker/Dockerfile`'s `COPY --chown=agent:agent . /app`) — there is no volume mount for it. A configuration change reaches a node the same way a code change does:
 
-1. **Edit the config file on the host:**
+1. **Edit the config file in a clone of this repository:**
    ```bash
-   $EDITOR /path/to/config.json
+   $EDITOR config.json
    ```
 
 2. **Validate it:**
    ```bash
-   docker compose exec scheduler /app/scripts/doctor.sh --config /path/to/config.json
+   ./scripts/doctor.sh --config config.json
    ```
 
-3. **Apply it** (no restart needed; the scheduler reads the volume):
-   ```bash
-   # The change takes effect at the next cycle
-   ```
+3. **Open a pull request and get it merged to `main`.** The merge publishes a new image to `ghcr.io/pullwright/agent-ops`.
 
-If config is baked into the image, rebuild and roll:
-
-```bash
-docker build --build-arg CONFIG=/path/to/config.json -t agent-ops:local deploy/docker
-docker compose up -d
-```
+4. **Roll the node onto that image** — automatically if the `auto-update` profile is enabled, or manually (see [Roll a new image](#roll-a-new-image) above). The change takes effect once the node is running the new image.
 
 ## Change the node's role
 
@@ -79,11 +71,11 @@ Promote a standby node to active, or demote an active node to standby:
 # Edit .env
 ROLE=active    # or standby
 
-# Apply the change (takes effect next cycle)
+# Recreate the scheduler so it picks up the new .env value
 docker compose up -d
 ```
 
-No restart needed; the role is checked at cycle start.
+`docker compose up -d` recreates the scheduler container with the new environment — a compose `environment:` entry is read once, at container start, not from the host's `.env` on every cycle. Once recreated, the role is checked at the start of every subsequent cycle, so no further action is needed.
 
 ## Allow an extra egress domain
 
@@ -176,7 +168,7 @@ To remove agent-ops entirely from a host:
 
 2. **Revoke credentials** (if the node had them):
    - GitHub PAT: [github.com/settings/tokens](https://github.com/settings/tokens)
-   - Anthropic API key: [claude.ai/settings](https://claude.ai/settings)
+   - Anthropic API key: [console.anthropic.com](https://console.anthropic.com)
    - Tailscale (if enabled): [app.tailscale.com/admin/machines](https://app.tailscale.com/admin/machines)
 
 3. **Remove from fleet** (if state repository is configured):

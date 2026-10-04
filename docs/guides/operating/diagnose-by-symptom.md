@@ -49,7 +49,7 @@ jq -r 'select(.event == "stand-down") | "\(.ts)  \(.reason)"' \
 **Fixes:**
 
 - **No work:** That's fine — the pipeline idles. Watch the dashboard to see if new issues appear.
-- **Configuration has no repos:** Add repositories to `config.json` and run `docker compose restart scheduler`
+- **Configuration has no repos:** Add repositories to `config.json` and get the change merged and rolled onto the node — see [Configuration reaches a node](configure.md#configuration-reaches-a-node)
 - **All items blocked:** See [An item is blocked or void](#an-item-is-blocked-or-void) — most blocks clear themselves once the blocker resolves
 - **No-op stand-down:** Nothing is wrong. The next cycle with actual changes will run.
 
@@ -94,7 +94,7 @@ gh pr view <number> --json state,reviewDecision,mergeStateStatus,isDraft
 gh issue list -R <repo> --label blocked
 
 # See void items on the dashboard or in the log
-jq -r 'select(.event == "void") | "\(.ts)  \(.item)  \(.reason)"' \
+jq -r 'select(.event == "item-void") | "\(.ts)  \(.repo)#\(.item)  \(.detail)"' \
   ~/.local/state/poetic-agents/log.jsonl | tail -5
 ```
 
@@ -120,7 +120,7 @@ jq -r 'select(.event == "void") | "\(.ts)  \(.item)  \(.reason)"' \
 **Check:**
 ```bash
 # See recent stage completions
-jq -r 'select(.event == "stage-end") | "\(.ts)  \(.actor)  \(.kill_reason // "completed")  duration: \(.duration_seconds)s"' \
+jq -r 'select(.event == "stage-end") | "\(.ts)  \(.stage)  \(.kill_reason // "completed")  \(.duration_ms // "?")ms"' \
   ~/.local/state/poetic-agents/log.jsonl | tail -10
 
 # Read the stage's transcript
@@ -142,8 +142,14 @@ The node hasn't pulled a new image since one was built.
 
 **Check:**
 ```bash
-# On the node
-docker compose exec scheduler cat /app/.image-info.json | jq .
+# On the node's host, from the stack directory — compares against the
+# newest published build and reports how far behind this node is
+curl -fsSLO https://raw.githubusercontent.com/Pullwright/agent-ops/main/scripts/check-node-image.sh
+chmod +x check-node-image.sh
+./check-node-image.sh
+
+# Or read the stamp this node's image was built with directly
+docker compose exec scheduler cat /app/build-info.json | jq .
 
 # On the dashboard
 # The node card shows "behind" if it's older than the latest published build
@@ -178,7 +184,7 @@ This checks:
 - Repositories are readable and writable
 - GitHub token has needed scopes
 - Model credentials are set
-- Cron schedule (for host nodes) is valid
+- The container's own rendered crontab (`deploy/docker/crontab.tmpl` via `render-crontab.sh`) is valid
 - Prompts and overrides exist
 - Egress fence is working
 
