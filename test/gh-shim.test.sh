@@ -561,6 +561,37 @@ p1key="$(gh_shim_cache_key "$idP" api "repos/o/r/labels?per_page=1")"
 assert_eq "…page 1's own cache entry now holds the new ETag, overwritten in place" \
   "e1b" "$(gh_shim_cache_read "$stP/gh-shim" "$idP" "repos/o/r/labels" "$p1key" | jq -r '.etag')"
 
+# --- "an empty page contributes no element, and above all no separator" ---
+#
+# The regression this pins: the comma belongs to the element that follows,
+# not to the page. GitHub serves an empty array for any `Link: rel="next"`
+# that outlived the items behind it — and this file replays a stored `next`
+# from a `304`, so a resource that shrank between two walks produces exactly
+# that. Splicing a page that contributes nothing anyway hands the caller
+# `[{…},]` or `[,{…}]`: exit 0, a `[`…`]` that passes every shape check here,
+# and not JSON.
+
+stP6="$tmp_dir/stateP6"; pdP6="$tmp_dir/planP6"; mkdir -p "$stP6" "$pdP6"
+plan "$pdP6" 1 200 '[{"id":1}]' 'z1' null 0 "<$p2url>; rel=\"next\""
+plan "$pdP6" 2 200 '[]' 'z2' null 0
+outP7="$(run_shim "$stP6" "$pdP6" tokP6 api "repos/o/r/commits?per_page=1" --paginate)"
+assert_eq "an empty trailing page leaves no trailing comma behind it" \
+  '[{"id":1}]' "$outP7"
+assert_eq "…and the merged document really does parse" \
+  "yes" "$(jq -e . <<<"$outP7" >/dev/null 2>&1 && echo yes || echo no)"
+
+stP7="$tmp_dir/stateP7"; pdP7="$tmp_dir/planP7"; mkdir -p "$stP7" "$pdP7"
+plan "$pdP7" 1 200 '[]' 'y1' null 0 "<$p2url>; rel=\"next\""
+plan "$pdP7" 2 200 '[{"id":2}]' 'y2' null 0
+outP8="$(run_shim "$stP7" "$pdP7" tokP7 api "repos/o/r/commits?per_page=1" --paginate)"
+assert_eq "an empty leading page leaves no leading comma either" \
+  '[{"id":2}]' "$outP8"
+
+stP8="$tmp_dir/stateP8"; pdP8="$tmp_dir/planP8"; mkdir -p "$stP8" "$pdP8"
+plan "$pdP8" 1 200 '[]' 'w1' null 0
+outP9="$(run_shim "$stP8" "$pdP8" tokP8 api "repos/o/r/commits?per_page=1" --paginate)"
+assert_eq "a walk whose only page is empty is still the empty array" '[]' "$outP9"
+
 # --- "a page that cannot be completed falls back to one whole-call request,
 # last-known-good included — never a partial document" ---
 

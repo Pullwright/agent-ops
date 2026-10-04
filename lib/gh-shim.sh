@@ -131,6 +131,8 @@
 #     merged into one by dropping each page's own outer `[`/`]` and joining
 #     with `,` — the splice is byte-exact, never a reparse, so field order,
 #     number formatting and escaping all survive exactly as GitHub sent them.
+#     A page that is itself an empty array contributes nothing and leaves no
+#     separator behind, the same as the real binary's own merge.
 #
 # A page that does not fit the active shape — a non-2xx/304 status, output
 # this file cannot split into one response, or (plain-array mode only) a
@@ -1213,6 +1215,11 @@ gh_shim_paginate_page_args() {
 #     merged into one by dropping each page's own outer `[`/`]` and joining
 #     with `,` — the splice is byte-exact, never a reparse, so field order,
 #     number formatting and escaping all survive exactly as GitHub sent them.
+#     A page that is itself an empty array contributes nothing and leaves no
+#     separator behind: GitHub serves one for any `Link: rel="next"` that
+#     outlived the items behind it — including a `next` this file stored on
+#     an earlier walk and replayed from a later `304` — and emitting its
+#     separator anyway would hand the caller `[a,]` rather than JSON.
 #
 # A page that does not fit the active shape — a status that is neither a
 # cache-backed `304` nor `2xx`, output that does not split into exactly one
@@ -1262,7 +1269,7 @@ gh_shim_handle_paginate() {
   : > "$merged_file"
 
   local now real; now="$(date -u +%s)"; real="$(gh_shim_real_bin)"
-  local page_endpoint="$GH_SHIM_ENDPOINT" first=1 ok=1 pages=0 any_fresh=0
+  local page_endpoint="$GH_SHIM_ENDPOINT" first=1 ok=1 pages=0 any_fresh=0 emitted=0
 
   while :; do
     pages=$(( pages + 1 ))
@@ -1314,11 +1321,23 @@ gh_shim_handle_paginate() {
 
     case "$mode" in
       array)
-        if [[ "$first" == 1 ]]; then
-          head -c -1 "$body_file" >> "$merged_file"
-        else
-          printf ',' >> "$merged_file"
-          tail -c +2 "$body_file" | head -c -1 >> "$merged_file"
+        # Every page contributes only the bytes between its own outer
+        # `[`/`]`, and the separator belongs to the *element* that follows,
+        # never to the page: a page that is an empty array contributes
+        # nothing at all and must leave no comma behind it, or the merged
+        # document is `[a,]` / `[,a]` rather than JSON. An empty page is not
+        # hypothetical — GitHub serves one for any `Link: rel="next"` that
+        # outlived the items behind it, which includes a `next` this file
+        # itself stored on an earlier walk (the cache's own `next` field) and
+        # replayed from a later `304` after the resource shrank.
+        local page_bytes inner_bytes
+        page_bytes="$(wc -c < "$body_file" 2>/dev/null | tr -d ' ')"
+        inner_bytes=$(( ${page_bytes:-2} - 2 ))
+        if [[ "$first" == 1 ]]; then printf '[' >> "$merged_file"; fi
+        if (( inner_bytes > 0 )); then
+          if [[ "$emitted" == 1 ]]; then printf ',' >> "$merged_file"; fi
+          tail -c +2 "$body_file" | head -c "$inner_bytes" >> "$merged_file"
+          emitted=1
         fi
         ;;
       slurp)

@@ -2649,7 +2649,12 @@ implements.
       filter once per page in the real binary too, so every page's own
       already-filtered body is concatenated in call order; otherwise every
       page's body is expected to be a top-level JSON array, merged by
-      splicing out each page's own outer `[`/`]` and joining with `,`. A page
+      splicing out each page's own outer `[`/`]` and joining with `,` — the
+      separator belonging to the element that follows, so a page that is
+      itself an empty array contributes neither an element nor a comma, as
+      GitHub serves one for any `Link: rel="next"` that outlived the items
+      behind it, a `next` the shim itself stored and replayed from a later
+      `304` included. A page
       that does not fit — a status other than a cache-backed `304` or `2xx`,
       unparseable output, or (plain-array mode) a body that is not itself an
       array — abandons the walk before printing anything partial and falls
@@ -26191,7 +26196,11 @@ oblige anyone to edit a test.
    mode is tried once (with `-i`) and then abandoned in favour of the same
    unconditioned whole-call fallback, which reaches the real binary with the
    caller's own argv and `--paginate`/`--slurp` both untouched, exactly this
-   pathway's own behaviour before agent-ops#1114.
+   pathway's own behaviour before agent-ops#1114. A page that is an empty
+   JSON array — leading, trailing, or the only page there is — contributes
+   neither an element nor a separator, so the merged document parses rather
+   than carrying the `[{…},]` or `[,{…}]` an unconditional splice would
+   leave.
    `lib/gh-shim.sh` and `scripts/gh-shim.sh` pass `shellcheck -x`.
 2q. **The on-demand credential seam mints a fresh token once the previous
    one is within `refresh_buffer` of expiry, never re-identifies an
