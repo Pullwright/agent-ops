@@ -45,7 +45,7 @@ the workflow in [Branch workflow](#branch-workflow) and `CLAUDE.md`. With the
 legacy host install cut over, a checkout is purely a development artefact: no
 cron entry and no pipeline runs out of it, so editing one cannot destabilise
 a running cycle. The rule in [Pausing the
-pipelines](../operating/README.md#pausing-the-pipelines) — disable before editing — protected the
+pipelines](../operating/run-and-pause.md) — disable before editing — protected the
 host install, where cron ran the very files being edited; on a fleet of
 containers, editing is always safe and the switch is about *rollout*, not
 editing.
@@ -272,7 +272,7 @@ anything it doesn't:
 All three, and a `--this-node` disable once its expiry passes or
 `--enable --this-node` runs, leave the node able to come back, which is what
 makes them the wrong answer when the machine is going away or its disk is
-wanted: see [Removing a node for good](../operating/README.md#removing-a-node-for-good) for the
+wanted: see [Remove a node for good](../operating/change-a-node.md#remove-a-node-for-good) for the
 departure that also releases the volumes, the state branch, and the
 credentials.
 
