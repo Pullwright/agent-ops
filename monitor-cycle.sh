@@ -166,6 +166,12 @@ fi
 
 DEFAULTED_CONFIG="$(config_defaults "$CONFIG_FILE" "$SCHEMA_FILE")"
 
+# The provider seam (requirement 1a, issue #2131): config's own `providers`
+# block is loaded into lib/model-id.sh's PROVIDER_SUBSTRATE before
+# `monitor_model` is resolved below (M9), the same startup position
+# agent-cycle.sh, review-cycle.sh and scripts/doctor.sh all load it at.
+providers_load "$(cfg_json '.providers')"
+
 state_dir="$(expand_home "$(cfg '.state_dir')")"
 workspace_root="$(expand_home "$(cfg '.workspace_root')")"
 # Exported so the `gh` transport shim (requirement 2.0e) finds this node's
