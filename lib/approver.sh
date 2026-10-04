@@ -705,13 +705,17 @@ run_approver_stage() {
   # tell the fail-closed case apart from a genuinely configured or manually
   # killed `human` — via `.record.kind` on the very document this call
   # returns, never a global a `$(...)` command substitution (needed here to
-  # capture that document at all) would silently drop.
+  # capture that document at all) would silently drop. The warning's own
+  # `cause` below reads `.cause` off the same document rather than reaching
+  # into lib/toggle.sh's private `$cache.err` itself (agent-ops#1118): that
+  # file is not always where the real diagnosis is — a repo-probe failure
+  # under `probe-404` mode leaves it in `$cache.repo-err` instead, and
+  # `merge_autonomy_kill_state` is what already resolves which one applies.
   kill_json="$(merge_autonomy_kill_state "$state_repo" "$state_dir" fresh retry)"
   if [[ "$(jq -r '.state' <<<"$kill_json" 2>/dev/null)" != "enabled" ]]; then
     if [[ "$(jq -r '.record.kind // ""' <<<"$kill_json" 2>/dev/null)" == "fail-closed" ]]; then
-      local kill_errf kill_cause kill_detail kill_retried_bool
-      kill_errf="$(fleet_cache_file "$state_dir" "$MERGE_AUTONOMY_KILL_FLAG").err"
-      kill_cause="$(cat "$kill_errf" 2>/dev/null || true)"
+      local kill_cause kill_detail kill_retried_bool
+      kill_cause="$(jq -r '.cause // ""' <<<"$kill_json" 2>/dev/null)"
       kill_retried_bool="$(jq -r 'if (.retried // false) == true then "true" else "false" end' <<<"$kill_json" 2>/dev/null)"
       if [[ "$kill_retried_bool" == "true" ]]; then
         kill_detail="could not read the $MERGE_AUTONOMY_KILL_FLAG flag for $selected_repo, even after one retry — failing closed to human this round, so no App review was posted on $pr_url ($kill_cause)"

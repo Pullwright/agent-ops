@@ -151,12 +151,14 @@ set -euo pipefail
 # also calls lib/node-time-state.sh's log_node_state_transition. Sourced for
 # real for the same reason as lib/rework.sh immediately above.
 . "$SCRIPT_DIR/lib/node-time-state.sh"
-# agent-ops#1081: run_approver_stage's own fail-closed warning reads
-# fleet_cache_file (lib/toggle.sh) and MERGE_AUTONOMY_KILL_FLAG
-# (lib/merge-autonomy.sh) directly — sourced for real, cheaply, purely for
-# those two definitions, while merge_autonomy_effective_level itself (below)
-# still stands in for the real lib/merge-autonomy.sh logic this file exists
-# to isolate from.
+# agent-ops#1081: run_approver_stage's own fail-closed warning names
+# MERGE_AUTONOMY_KILL_FLAG (lib/merge-autonomy.sh) directly — sourced for
+# real, cheaply, purely for that one definition, while
+# merge_autonomy_effective_level itself (below) still stands in for the real
+# lib/merge-autonomy.sh logic this file exists to isolate from.
+# lib/toggle.sh is sourced immediately below for the same cheap reason, even
+# though merge_autonomy_kill_state (stubbed below) never reaches its
+# machinery in this file.
 . "$SCRIPT_DIR/lib/toggle.sh"
 . "$SCRIPT_DIR/lib/merge-autonomy.sh"
 
@@ -197,13 +199,18 @@ mkdir -p "$cycle_dir" "$clone_dir" "$state_dir"
 # call site. KILL_KIND/KILL_RETRIED let a case simulate what the real
 # lib/merge-autonomy.sh would have left in the returned document's
 # `.record.kind`/`.retried`; KILL_STATE (default "enabled") simulates the
-# `.state` field itself. Records its own argv so a test can confirm the read
-# is FRESH (issue #513) and, now, RETRY-enabled (agent-ops#1081).
+# `.state` field itself. KILL_CAUSE (agent-ops#1118) simulates the real
+# function's own `.cause` — whichever error file (`$cache.err` or
+# `$cache.repo-err`) fleet_flag_fetch_cause resolved for this call — which
+# run_approver_stage's fail-closed warning now reads off this document
+# instead of reaching into lib/toggle.sh's cache files itself. Records its
+# own argv so a test can confirm the read is FRESH (issue #513) and, now,
+# RETRY-enabled (agent-ops#1081).
 merge_autonomy_kill_state() {
   printf '%s\n' "$*" >>"$T/mks_calls"
   jq -nc --arg s "${KILL_STATE:-enabled}" --arg k "${KILL_KIND:-}" \
-    --argjson r "${KILL_RETRIED:-0}" \
-    '{state: $s, retried: ($r == 1), record: (if $k == "" then {} else {kind: $k} end)}'
+    --arg c "${KILL_CAUSE:-}" --argjson r "${KILL_RETRIED:-0}" \
+    '{state: $s, retried: ($r == 1), cause: $c, record: (if $k == "" then {} else {kind: $k} end)}'
 }
 # Records its own argv (issue #513, PR #506 review follow-up) so a test can
 # confirm run_approver_stage asks for a FRESH read of the level rather than
@@ -334,16 +341,6 @@ HARNESS
   printf '%s\n' "$block"
   printf 'resolved="$(approver_stage_complexity "$PR_URL" "$COMPLEXITY" 0)"\n'
   printf '%s\n' 'printf '"'"'%s'"'"' "$resolved" >"$T/resolved_complexity"'
-  # agent-ops#1081: KILL_CAUSE, when a case sets it, stands in for what
-  # fleet_flag_fetch_status would have left in the kill flag's own
-  # $cache.err — the diagnostic text run_approver_stage's fail-closed
-  # warning reads back once merge_autonomy_kill_state (stubbed above)
-  # reports the document.
-  printf '%s\n' 'if [[ -n "${KILL_CAUSE:-}" ]]; then'
-  printf '%s\n' '  kill_errf="$(fleet_cache_file "$state_dir" "$MERGE_AUTONOMY_KILL_FLAG").err"'
-  printf '%s\n' '  mkdir -p "$(dirname "$kill_errf")"'
-  printf '%s\n' '  printf '"'"'%s'"'"' "$KILL_CAUSE" >"$kill_errf"'
-  printf '%s\n' 'fi'
   printf 'run_approver_stage "$PR_URL" "$resolved"\n'
   # agent-ops#1066: the three `approver_stage_*` globals `run_landing_stage`
   # reads to decide whether to arm a pull request for merge — dumped here,
@@ -424,7 +421,7 @@ assert_eq "  ... and never even asks merge_autonomy_effective_level — the kill
   "0" "$(count mal_calls)"
 assert_contains "  ... naming the pull request" "$URL" "$(warnings)"
 assert_contains "  ... the flag it could not read" "merge-autonomy-kill" "$(warnings)"
-assert_contains "  ... and the cause captured in \$cache.err" \
+assert_contains "  ... and the cause carried in merge_autonomy_kill_state's own document" \
   "API rate limit exceeded" "$(warnings)"
 assert_eq "  ... marked fail_closed:true, so an operator can tell it from a generic refusal" \
   'true' "$(jq -c '.fail_closed' <<<"$(warnings)")"

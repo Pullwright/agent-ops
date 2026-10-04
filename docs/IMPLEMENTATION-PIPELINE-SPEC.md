@@ -9207,17 +9207,24 @@ implements.
    far the most common cause of (agent-ops#1101's own three call sites hit the
    identical shape on the same node within an hour). So the stage calls
    `merge_autonomy_kill_state` itself first, with its own `RETRY` argument
-   set: on a fail-closed read, that function classifies whatever it left in
-   the kill flag's own `$cache.err` via `github_limit_kind`
+   set: on a fail-closed read, that function classifies the real cause of
+   this call's own `unreachable` answer via `github_limit_kind`
    (`lib/github-limit.sh` — reused, not reclassified) and, only when the
    cause was rate-limiting, waits out `github_limit_wait_plan`'s existing
    wait/backoff and asks GitHub once more before giving up — the same
    "classify, then retry only a rate limit" shape requirement 8c's own
-   `approver_post_or_warn` retry already applies to the write side. Both facts
-   a caller needs travel in the document `merge_autonomy_kill_state` itself
-   returns (`.record.kind`, `.retried`), never a global: this call happens
-   inside a `$(...)` command substitution to capture that document at all, and
-   a subshell's writes to a global never reach the caller back.
+   `approver_post_or_warn` retry already applies to the write side. The cause
+   classified is `fleet_flag_fetch_cause`'s own answer (agent-ops#1118): the
+   kill flag's own `$cache.err` unless that is itself the flag file's
+   ambiguous 404 and `fleet_repo_visible`'s repo probe (TD-PPagop-26081602) is
+   what actually failed, in which case it is `$cache.repo-err` instead — a
+   lone rate-limited repo probe, not merely a rate-limited flag fetch, is
+   retried and reported on its own real cause rather than the flag's
+   unhelpful "Not Found". All three facts a caller needs — `.record.kind`,
+   `.retried`, and now `.cause` — travel in the document
+   `merge_autonomy_kill_state` itself returns, never a global: this call
+   happens inside a `$(...)` command substitution to capture that document at
+   all, and a subshell's writes to a global never reach the caller back.
 
    If the kill switch is genuinely enabled, the stage proceeds to
    `merge_autonomy_effective_level` exactly as before (unaffected — the
@@ -9225,9 +9232,12 @@ implements.
    fail-closed `human` is entirely a property of the kill switch and never the
    freeze). If it is not enabled and the reason was the fail-closed synthesis,
    the stage logs a `warning` naming the pull request, the kill flag, and the
-   cause captured in `$cache.err`, distinguishing whether a retry was actually
-   taken (per requirement 8b's own contract that every other way this stage
-   cannot run logs a `warning` rather than acting on silently) and then
+   cause carried in `merge_autonomy_kill_state`'s own returned document (never
+   read directly off `$cache.err` or `$cache.repo-err` — that function alone
+   knows which one actually applies), distinguishing whether a retry was
+   actually taken (per requirement 8b's own contract that every other way
+   this stage cannot run logs a `warning` rather than acting on silently) and
+   then
    returns exactly as the plain `human` path always has — no App review, no
    change to the pull request's own state. A genuinely configured or manually
    killed `human` still logs nothing at all, the same silence as before this
