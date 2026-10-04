@@ -2635,20 +2635,39 @@ implements.
       entire job is reading the bucket's *live* headers, so it must never be
       answered from a cache or a stale reading. Every one of those is passed
       to the real binary completely unmodified: same argv, same stdout, same
-      stderr, same exit status. A `--paginate`/`--slurp` GET is a partial
-      exception, documented as an open scope limit in `lib/gh-shim.sh`'s own
-      header and filed as tech debt (agent-ops#1114) rather than built here:
-      its response is still stored for last-known-good and still ledgered,
-      but it is never sent a conditional header — one `If-None-Match` applied
-      uniformly to every page a `--paginate` call fetches could 304 a later
-      page whose content actually changed — and, unlike an ordinary
-      cacheable read, it is never sent `-i` either, because `-i` does not
-      merely prepend headers to a paginated call: plain `--paginate` stops
-      merging its pages into one JSON array, and `--slurp` prints its opening
-      `[` ahead of the first status line. Either would hand the caller a
-      differently-shaped document than the real binary gives it, so a
-      paginated call reaches the real binary with the caller's own argv and
-      has its stdout passed through byte for byte.
+      stderr, same exit status. A `--paginate`/`--slurp` GET is conditioned
+      too (agent-ops#1114), but not as a single request: a stale
+      `If-None-Match` applied uniformly to every page a `--paginate` call
+      fetches could 304 a later page whose content actually changed, so
+      `gh_shim_handle_paginate` drives the walk itself — one real-binary call
+      per page, page 1 unchanged and every later page the previous one's own
+      `Link: rel="next"` URL, each conditioned on that page's own stored
+      `ETag` and cached the same way an ordinary `read` is. The pages are
+      reassembled to match the real binary's own documented shape exactly,
+      never reparsed: `--slurp` wraps every page's own raw body as its own
+      array element; `-q`/`--jq`/`-t`/`--template` present re-runs that
+      filter once per page in the real binary too, so every page's own
+      already-filtered body is concatenated in call order; otherwise every
+      page's body is expected to be a top-level JSON array, merged by
+      splicing out each page's own outer `[`/`]` and joining with `,`. A page
+      that does not fit — a status other than a cache-backed `304` or `2xx`,
+      unparseable output, or (plain-array mode) a body that is not itself an
+      array — abandons the walk before printing anything partial and falls
+      back to one real-binary call with the caller's own argv and
+      `--paginate`/`--slurp` both untouched (`_gh_shim_paginate_legacy`,
+      this pathway's entire behaviour before agent-ops#1114), which is also
+      the only pathway a refusal is ever served last-known-good through
+      (property 2, unchanged by this) — from the same whole-call cache entry
+      a successful per-page walk also writes its merged result into. A
+      write's invalidation only ever reaches that whole-call entry and page
+      1's own relative path, never a later page's own absolute one, which
+      costs at most one needless extra round trip on that page's own next
+      fetch, never a wrong answer, since a `304` still depends on GitHub's
+      own `ETag` match. The whole call is ledgered `hit` when every page
+      served from its own `304` and `miss` when at least one page needed a
+      real fetch — the one ledger entry that says more than "a call
+      happened", surfacing the saving this closes agent-ops#1114 for in
+      `scripts/github-budget-report.sh`'s own summary.
 
       No pathway ever reshapes what the real binary printed. A conditioned
       read is the only call whose argv the shim adds to at all; what it
@@ -24600,10 +24619,12 @@ What exists, and the requirements each part answers to:
     Nothing else's stdin is ever read, which is what keeps `gh api --input -`
     working.
     `gh_shim_classify` (built on `gh_shim_parse`) is the one place
-    a call is sorted into `read` (a plain `gh api` GET — the only class ever
-    conditioned), `paginate` (a `gh api` GET carrying `--paginate`/`--slurp`
-    — stored and served last-known-good like a `read`, but never conditioned
-    and never reshaped), `write` (method resolves non-GET), `graphql`
+    a call is sorted into `read` (a plain `gh api` GET, conditioned as one
+    request), `paginate` (a `gh api` GET carrying `--paginate`/`--slurp` —
+    conditioned and merged one page at a time, falling back to an
+    unconditioned single call, still stored and served last-known-good like
+    a `read`, when a page does not fit the shape that walk expects),
+    `write` (method resolves non-GET), `graphql`
     (the literal `graphql` endpoint), `include` (the caller already asks for
     `-i`/`--include`) or `other` (not `gh api` at all, or `gh api` with no
     endpoint found) — every class but `read` reaching the real binary with
@@ -24613,9 +24634,13 @@ What exists, and the requirements each part answers to:
     always adds `-i` itself and always strips it back out of what the caller
     sees, taking the body by byte offset from past the header terminator
     (`gh_shim_header_end_offset`) so it is returned exactly as the wire
-    carried it; `gh_shim_handle_paginate` is the pathway that adds nothing at
-    all, for the calls `-i` would reshape (see requirement 2.0e's own
-    scope-limit note); `gh_shim_split_blocks` parses the HTTP
+    carried it; `gh_shim_handle_paginate` drives a paginated call's own walk
+    the same way, one page at a time, following each page's `Link:
+    rel="next"` and re-assembling the pages into the shape the real binary's
+    own `--paginate`/`--slurp` documents (agent-ops#1114) — falling back to
+    `_gh_shim_paginate_legacy`, the single real-binary call with the
+    caller's own argv untouched that was this pathway's entire behaviour
+    before, when a page does not fit; `gh_shim_split_blocks` parses the HTTP
     response block from that capture; `gh_shim_should_use_lkg` and
     `gh_shim_serve_lkg` decide and perform a last-known-good serve, reusing
     `lib/github-limit.sh`'s own `github_limit_kind` so a refusal can never be
@@ -26137,17 +26162,36 @@ oblige anyone to edit a test.
    `PW_GH_STALE_CEILING_SECONDS`; a successful write invalidates the reads it
    feeds and is itself never conditioned; a `POST`, `graphql`, `--input` and
    a caller's own `-i` each reach the real binary with unmodified argv and
-   return its output unmodified, none of them ever cached; a `--paginate`
-   call and a `--slurp` call each reach the real binary carrying neither `-i`
-   nor a conditional header and return its stdout unreshaped, are ledgered as
-   an ordinary read rather than a bypass, and are still served
-   last-known-good under a primary-limit refusal from the body a previous
-   call stored; output the shim cannot split into responses at all is passed
+   return its output unmodified, none of them ever cached; output the shim
+   cannot split into responses at all is passed
    through to the caller with the real binary's own exit status rather than
    dropped; a non-`api`
    subcommand's output and exit status (success and failure alike) pass
    through unmodified; and `PW_GH_NO_CACHE=1` forces the same unmodified
    passthrough for an otherwise-cacheable read, still ledgered as `bypass`.
+   A `--paginate` call drives its own pagination (agent-ops#1114): a fresh
+   call fetches every page with its own `-i` and merges their own bodies into
+   one JSON array, byte-spliced rather than reparsed, and caches page 1, page
+   2 and the whole-call last-known-good entry separately; an identical
+   repeat call sends each page's own stored `ETag`, 304s every page, merges
+   the identical document again from the cached bodies with no new cache
+   entry, and ledgers the call `hit`; a call where only the newest page
+   changed still sends page 1's previous `ETag` (304ing it unconditionally
+   server-side), re-fetches only the changed page, overwrites that page's
+   own cache entry in place, and ledgers the call `miss`; a page refused
+   mid-walk abandons the attempt and falls back to one whole-call request —
+   the same last-known-good body a previous successful call stored, with the
+   same `PW_GH_CACHE=stale age=<s>` marker and exit 0, and that fallback
+   request alone, unlike the per-page attempt, never carries `-i`; a
+   `--slurp` call wraps each page's own raw body as its own array element,
+   unreshaped; a `--paginate --jq` call concatenates each page's own
+   already-filtered body in order, exactly as the real binary's own re-run-
+   per-page semantics does, never an array-splice of text that was never a
+   JSON array; and a page whose body is not itself a JSON array in plain
+   mode is tried once (with `-i`) and then abandoned in favour of the same
+   unconditioned whole-call fallback, which reaches the real binary with the
+   caller's own argv and `--paginate`/`--slurp` both untouched, exactly this
+   pathway's own behaviour before agent-ops#1114.
    `lib/gh-shim.sh` and `scripts/gh-shim.sh` pass `shellcheck -x`.
 2q. **The on-demand credential seam mints a fresh token once the previous
    one is within `refresh_buffer` of expiry, never re-identifies an

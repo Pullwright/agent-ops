@@ -372,30 +372,36 @@ if [[ ! -f "$plan" ]]; then
   exit 99
 fi
 status="$(jq -r '.status' "$plan")"
-body="$(jq -r '.body' "$plan")"
+bodyfile="$plan_dir/.body.$n"
+jq -j '.body' "$plan" > "$bodyfile"  # never through a shell variable: $() strips a trailing newline a real body (a per-page `--jq` filter's own) may carry
 etag="$(jq -r '.etag // empty' "$plan")"
+link="$(jq -r '.link // empty' "$plan")"
 rc="$(jq -r '.rc' "$plan")"
 has_include=0
 for a in "$@"; do [[ "$a" == "-i" || "$a" == "--include" ]] && has_include=1; done
 if [[ "$has_include" == 1 ]]; then
   printf 'HTTP/2.0 %s X\r\n' "$status"
   [[ -n "$etag" ]] && printf 'etag: %s\r\n' "$etag"
+  [[ -n "$link" ]] && printf 'link: %s\r\n' "$link"
   if jq -e '.ratelimit != null' "$plan" >/dev/null 2>&1; then
     printf 'x-ratelimit-limit: %s\r\nx-ratelimit-used: %s\r\nx-ratelimit-remaining: %s\r\nx-ratelimit-reset: %s\r\nx-ratelimit-resource: core\r\n' \
       "$(jq -r '.ratelimit.limit' "$plan")" "$(jq -r '.ratelimit.used' "$plan")" \
       "$(jq -r '.ratelimit.remaining' "$plan")" "$(jq -r '.ratelimit.reset' "$plan")"
   fi
-  printf '\r\n%s' "$body"
+  printf '\r\n'
+  cat "$bodyfile"
 else
-  printf '%s' "$body"
+  cat "$bodyfile"
 fi
 exit "$rc"
 STUB
 chmod +x "$stub_bin/gh"
 
-plan() {  # PLAN_DIR N STATUS BODY ETAG RATELIMIT_JSON RC
+plan() {  # PLAN_DIR N STATUS BODY ETAG RATELIMIT_JSON RC [LINK]
   jq -n --argjson status "$3" --arg body "$4" --arg etag "$5" --argjson rl "$6" --argjson rc "$7" \
-    '{status: $status, body: $body, etag: (if $etag == "" then null else $etag end), ratelimit: $rl, rc: $rc}' \
+        --arg link "${8:-}" \
+    '{status: $status, body: $body, etag: (if $etag == "" then null else $etag end), ratelimit: $rl, rc: $rc,
+      link: (if $link == "" then null else $link end)}' \
     > "$1/$2.json"
 }
 
@@ -495,45 +501,121 @@ assert_eq "a caller already asking for -i gets the real binary's raw output back
 assert_eq "…and that call is never cached either" \
   "0" "$(find "$stD/gh-shim/http-cache" -name '*.json' 2>/dev/null | wc -l | tr -d ' ')"
 
-# --- "--paginate/--slurp reach the real binary with the caller's own argv" ---
+# --- "--paginate drives the pagination itself, one page at a time" (agent-ops#1114) ---
 #
-# The regression this pins: adding `-i` to a paginated call does not merely
-# prepend headers, it changes the document `gh` prints — plain `--paginate`
-# stops merging its pages into one array, and `--slurp` puts its opening `[`
-# ahead of the first status line, which no status-line anchor can then split.
-# Either way the caller would be handed a differently-shaped answer than the
-# real binary's. So nothing may be added to one of these calls, and its
-# stdout must arrive byte for byte.
+# Each page is its own conditional request, following the previous page's
+# own `Link: rel="next"` — so a repeat of an identical call 304s every page
+# and fetches nothing, and a call where only the newest page changed 304s
+# every earlier page and re-fetches only the one that did.
+
+p2url='https://api.github.com/repositories/999/labels?per_page=1&page=2'
 
 stP="$tmp_dir/stateP"; pdP="$tmp_dir/planP"; mkdir -p "$stP" "$pdP"
-plan "$pdP" 1 200 '[{"id":1},{"id":2},{"id":3}]' 'eP' null 0
+plan "$pdP" 1 200 '[{"id":1}]' 'e1' null 0 "<$p2url>; rel=\"next\""
+plan "$pdP" 2 200 '[{"id":2}]' 'e2' null 0
 outP1="$(run_shim "$stP" "$pdP" tokP api "repos/o/r/labels?per_page=1" --paginate)"; rcP1=$?
-assert_eq "a --paginate call's stdout reaches the caller exactly as the real binary printed it" \
-  '[{"id":1},{"id":2},{"id":3}]' "$outP1"
+assert_eq "a fresh --paginate call merges every page's own array into one" \
+  '[{"id":1},{"id":2}]' "$outP1"
 assert_eq "…with exit 0" "0" "$rcP1"
-assert_eq "…and the real binary was never asked to include headers" \
-  "no" "$(tail -1 "$pdP/calls.log" | grep -qF -- '-i' && echo yes || echo no)"
-assert_eq "…nor sent a conditional header" \
-  "no" "$(tail -1 "$pdP/calls.log" | grep -qF 'If-None-Match' && echo yes || echo no)"
-assert_eq "…and it is ledgered as an ordinary miss, not a bypass" \
+assert_eq "…each page fetched with -i, so this file can read its own headers" \
+  "2" "$(sed -n '1p;2p' "$pdP/calls.log" | tr '\037' '\n' | grep -cFx -- '-i')"
+assert_eq "…but page 1 of a first-ever call carries no conditional header yet" \
+  "no" "$(sed -n '1p' "$pdP/calls.log" | grep -qF 'If-None-Match' && echo yes || echo no)"
+assert_eq "…and the whole call is ledgered miss, since every page was freshly fetched" \
   "miss" "$(tail -1 "$stP/gh-shim/ledger.ndjson" | jq -r '.cache')"
+assert_eq "…caching page 1, page 2 and the whole-call last-known-good entry" \
+  "3" "$(find "$stP/gh-shim/http-cache" -name '*.json' | wc -l | tr -d ' ')"
 
-# Property 2 still holds for a paginated read: the body stored above is what a
-# refusal is served from, even though the call itself was never conditioned.
-plan "$pdP" 2 403 '{"message":"API rate limit exceeded for user ID 9"}' '' null 1
-outP2="$(run_shim "$stP" "$pdP" tokP api "repos/o/r/labels?per_page=1" --paginate \
-  2>"$tmp_dir/pstalestderr")"; rcP2=$?
-assert_eq "a paginated read is still served last-known-good under a primary-limit refusal" \
-  '[{"id":1},{"id":2},{"id":3}]' "$outP2"
-assert_eq "…with the stale exit code" "0" "$rcP2"
+plan "$pdP" 3 304 '' '' null 1
+plan "$pdP" 4 304 '' '' null 1
+outP2="$(run_shim "$stP" "$pdP" tokP api "repos/o/r/labels?per_page=1" --paginate)"; rcP2=$?
+assert_eq "an identical repeat call still merges the same document" \
+  '[{"id":1},{"id":2}]' "$outP2"
+assert_eq "…with exit 0" "0" "$rcP2"
+assert_eq "…every page conditioned on its own stored ETag" \
+  "e1" "$(sed -n '3p' "$pdP/calls.log" | tr '\037' '\n' | sed -n 's/^If-None-Match: //p')"
+assert_eq "…including the second page's own, different, ETag" \
+  "e2" "$(sed -n '4p' "$pdP/calls.log" | tr '\037' '\n' | sed -n 's/^If-None-Match: //p')"
+assert_eq "…and the whole call is ledgered hit: no full re-fetch happened" \
+  "hit" "$(tail -1 "$stP/gh-shim/ledger.ndjson" | jq -r '.cache')"
+assert_eq "…with no new cache entries — every page and the LKG copy reused in place" \
+  "3" "$(find "$stP/gh-shim/http-cache" -name '*.json' | wc -l | tr -d ' ')"
+
+# Only the newest page actually changed: page 1 304s unconditionally — sent
+# the *old* ETag, proving conditioning was still attempted even though the
+# server answered fresh — and only page 2 is re-fetched.
+plan "$pdP" 5 200 '[{"id":1,"v":2}]' 'e1b' null 0 "<$p2url>; rel=\"next\""
+plan "$pdP" 6 304 '' '' null 1
+outP3="$(run_shim "$stP" "$pdP" tokP api "repos/o/r/labels?per_page=1" --paginate)"; rcP3=$?
+assert_eq "page 1 changed, page 2 unchanged: only page 1's content is new" \
+  '[{"id":1,"v":2},{"id":2}]' "$outP3"
+assert_eq "…with exit 0" "0" "$rcP3"
+assert_eq "…page 1's request still carried the previous call's own ETag" \
+  "e1" "$(sed -n '5p' "$pdP/calls.log" | tr '\037' '\n' | sed -n 's/^If-None-Match: //p')"
+assert_eq "…and page 2's request carried its own, unrelated, ETag" \
+  "e2" "$(sed -n '6p' "$pdP/calls.log" | tr '\037' '\n' | sed -n 's/^If-None-Match: //p')"
+assert_eq "…ledgered miss, since page 1 needed a real fetch" \
+  "miss" "$(tail -1 "$stP/gh-shim/ledger.ndjson" | jq -r '.cache')"
+idP="$(GH_TOKEN=tokP gh_shim_identity)"
+p1key="$(gh_shim_cache_key "$idP" api "repos/o/r/labels?per_page=1")"
+assert_eq "…page 1's own cache entry now holds the new ETag, overwritten in place" \
+  "e1b" "$(gh_shim_cache_read "$stP/gh-shim" "$idP" "repos/o/r/labels" "$p1key" | jq -r '.etag')"
+
+# --- "a page that cannot be completed falls back to one whole-call request,
+# last-known-good included — never a partial document" ---
+
+stP2="$tmp_dir/stateP2"; pdP2="$tmp_dir/planP2"; mkdir -p "$stP2" "$pdP2"
+plan "$pdP2" 1 200 '[{"id":1},{"id":2},{"id":3}]' 'eP0' null 0
+run_shim "$stP2" "$pdP2" tokP2 api "repos/o/r/labels?per_page=1" --paginate >/dev/null
+plan "$pdP2" 2 403 '{"message":"API rate limit exceeded for user ID 9"}' '' null 1
+plan "$pdP2" 3 403 '{"message":"API rate limit exceeded for user ID 9"}' '' null 1
+outP2b="$(run_shim "$stP2" "$pdP2" tokP2 api "repos/o/r/labels?per_page=1" --paginate \
+  2>"$tmp_dir/pstalestderr")"; rcP2b=$?
+assert_eq "page 1 refused mid-walk falls back to the whole-call last-known-good" \
+  '[{"id":1},{"id":2},{"id":3}]' "$outP2b"
+assert_eq "…with the stale exit code" "0" "$rcP2b"
 assert_eq "…and the stale marker on stderr" \
   "yes" "$(grep -qE '^PW_GH_CACHE=stale age=[0-9]+s$' "$tmp_dir/pstalestderr" && echo yes || echo no)"
+assert_eq "…the fallback's own call, unlike the per-page attempt, never asked for -i" \
+  "no" "$(tail -1 "$pdP2/calls.log" | grep -qF -- '-i' && echo yes || echo no)"
 
-plan "$pdP" 3 200 '[[{"id":1}]]' '' null 0
-outP3="$(run_shim "$stP" "$pdP" tokP api repos/o/r/labels --paginate --slurp)"
-assert_eq "a --slurp call reaches the caller unreshaped too" '[[{"id":1}]]' "$outP3"
-assert_eq "…and was never asked to include headers either" \
-  "no" "$(tail -1 "$pdP/calls.log" | grep -qF -- '-i' && echo yes || echo no)"
+# --- "--slurp wraps every page's own raw body as its own element" ---
+
+stP3="$tmp_dir/stateP3"; pdP3="$tmp_dir/planP3"; mkdir -p "$stP3" "$pdP3"
+plan "$pdP3" 1 200 '[{"id":1}]' 's1' null 0 "<$p2url>; rel=\"next\""
+plan "$pdP3" 2 200 '[{"id":2}]' 's2' null 0
+outP4="$(run_shim "$stP3" "$pdP3" tokP3 api "repos/o/r/labels?per_page=1" --paginate --slurp)"
+assert_eq "a --slurp call wraps each page's own body, unreshaped, as one element" \
+  '[[{"id":1}],[{"id":2}]]' "$outP4"
+assert_eq "…and each page was still fetched with -i" \
+  "2" "$(sed -n '1p;2p' "$pdP3/calls.log" | tr '\037' '\n' | grep -cFx -- '-i')"
+
+# --- "--jq re-runs per page; this pathway streams the same concatenation,
+# never an array-splice of text that was never a JSON array" ---
+
+stP4="$tmp_dir/stateP4"; pdP4="$tmp_dir/planP4"; mkdir -p "$stP4" "$pdP4"
+plan "$pdP4" 1 200 $'name1\n' 'c1' null 0 "<$p2url>; rel=\"next\""
+plan "$pdP4" 2 200 $'name2\n' 'c2' null 0
+outP5="$(run_shim "$stP4" "$pdP4" tokP4 api "repos/o/r/things?per_page=1" --paginate --jq '.[].name')"
+assert_eq "--paginate --jq concatenates each page's own already-filtered body" \
+  $'name1\nname2' "$outP5"
+
+# --- "a plain --paginate page whose body is not a JSON array falls back
+# rather than mis-splicing it" ---
+
+stP5="$tmp_dir/stateP5"; pdP5="$tmp_dir/planP5"; mkdir -p "$stP5" "$pdP5"
+plan "$pdP5" 1 200 '{"total_count":1,"items":[{"id":1}]}' 'x1' null 0
+plan "$pdP5" 2 0 '{"total_count":1,"items":[{"id":1}]}' '' null 0
+outP6="$(run_shim "$stP5" "$pdP5" tokP5 api repos/o/r/weird --paginate)"; rcP6=$?
+assert_eq "an object-shaped page falls back to the real binary's own merge" \
+  '{"total_count":1,"items":[{"id":1}]}' "$outP6"
+assert_eq "…with exit 0" "0" "$rcP6"
+assert_eq "…having tried the per-page shape first (page 1 fetched with -i)…" \
+  "yes" "$(sed -n '1p' "$pdP5/calls.log" | grep -qF -- '-i' && echo yes || echo no)"
+assert_eq "…then fallen back to the unconditioned whole-call pathway (no -i)" \
+  "no" "$(sed -n '2p' "$pdP5/calls.log" | grep -qF -- '-i' && echo yes || echo no)"
+assert_eq "…ledgered as an ordinary miss" \
+  "miss" "$(tail -1 "$stP5/gh-shim/ledger.ndjson" | jq -r '.cache')"
 
 # --- a read the shim cannot parse still hands the caller the real stdout ---
 #
