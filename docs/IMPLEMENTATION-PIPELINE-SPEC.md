@@ -1661,8 +1661,8 @@ implements.
    rather than the bare id `claude --model` wants), so the two pipelines can
    never drift on what counts as a supported provider. `providers`'s own
    entries are each named by the installation, which is outside what the
-   declarative schema (requirement 1b) can shape-validate on its own — a
-   fourth cross-key guard alongside requirement 1c's three,
+   declarative schema (requirement 1b) can shape-validate on its own — an
+   eighth guard alongside requirement 1b's other seven,
    `lib/config-schema.sh`'s `config_provider_errors`, rejects an unknown key
    inside an entry, a missing or unsupported `substrate`, or an explicit
    empty `credential_env`, shared the same way between `agent-cycle.sh`,
