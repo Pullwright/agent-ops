@@ -55,7 +55,7 @@ there.
 This sits second in priority, above everything but security: you're the only
 consumer this system has, so answering you beats starting something new.
 
-Four things to know:
+Five things to know:
 
 - **You'll get the PR back in your review queue.** The re-request is the whole
   handoff on a second round — the PR never went back to draft, so nothing else
@@ -65,21 +65,18 @@ Four things to know:
   way it verifies the draft flip on a first round; neither is left to a model's
   good intentions. This is what poetic-fiddle #200 was missing: reviewed,
   answered, pushed, replied to — and then sitting in nobody's queue.
-- **The agent can't clear your `CHANGES_REQUESTED`, ever.** GitHub won't let a
-  PR's author dismiss a review on their own PR, and the agent raises PRs as
-  you (`warwickallen`). So the PR stays `BLOCKED` and un-mergeable until *you*
-  re-review — re-requesting your review doesn't change that, and isn't meant
-  to; it rings the bell without moving the gate. That's not a bug to route
-  around — it's the structural human **veto**, enforced by GitHub rather than
-  by good intentions, and it survives every `merge_autonomy` level: the
-  pipeline never dismisses a human review, so your `CHANGES_REQUESTED` blocks
-  landing even in a repository the Script is otherwise trusted to merge in.
-- **Every comment the pipeline posts says so, up top.** Because it writes as
-  you, the author field can't tell your own comments from the pipeline's — so
-  every comment it posts opens with a bold label naming which stage wrote it
-  and which node ran it, e.g. `**Implementer** · autonomous pipeline · node
-  \`poetic-2\``. A comment with no such label is one you, or another human,
-  wrote.
+- **Your `CHANGES_REQUESTED` blocks landing at every autonomy level.** The
+  pipeline never dismisses a human review — that is the structural human
+  **veto**, enforced by the Landing Gate regardless of the `merge_autonomy`
+  setting, so your `CHANGES_REQUESTED` blocks landing even in a repository the
+  Script is otherwise trusted to merge in. Re-requesting your review does not
+  clear the block; it rings the bell without moving the gate, which is
+  intentional — the mechanism works the same whether the PR was authored by you,
+  by the pipeline's own account, or by a dedicated authoring App.
+- **Every comment the pipeline posts says so, up top.** Every comment it posts
+  opens with a bold label naming which stage wrote it and which node ran it,
+  e.g. `**Implementer** · autonomous pipeline · node \`poetic-2\``. A comment
+  with no such label is one you, or another human, wrote.
 - **It answers each round exactly once.** Whose turn it is comes from comparing
   your latest review against the branch's head commit: review newer means the
   agent owes you a reply; commit newer means it has replied and is waiting on
@@ -110,10 +107,8 @@ the pipeline knows to answer:
   at the start.** Once your review is submitted — approving or not — that
   request is consumed, and nothing else asks you again. Every cycle, whether or
   not it touches that PR through any other stage, checks and re-asks whoever
-  already reviewed it (preferring them over a fixed name, since the pipeline's
-  own PRs are authored as `warwickallen` and GitHub refuses a review request
-  aimed at a PR's own author). This is what poetic-fiddle #170 was missing:
-  approved, green, and sitting for 6.8 days because nothing ever asked again.
+  already reviewed it. This is what poetic-fiddle #170 was missing: approved,
+  green, and sitting for 6.8 days because nothing ever asked again.
 - **An approved, mergeable, green PR idle for `human_nudge_idle_hours` (default
   24) gets one nudge comment**, `@`-mentioning you, once — not repeated, and not
   instead of the live review request above, which keeps working regardless.
@@ -142,8 +137,8 @@ every *other* kind of work the pipeline could pick instead:
 | Priority | Where the issue is picked up |
 |---|---|
 | `Urgent` | **Second overall, across all configured repositories** — ahead of everything except security work, including ahead of your review feedback and of finishing a stalled PR. |
-| `High` | After a red default branch, but ahead of `TECH-DEBT.md`. |
-| `Medium` | After `TECH-DEBT.md`, ahead of the implementation plan and the repository review's recommendations. |
+| `High` | After a red default branch, but ahead of [tech-debt items](../../concepts/glossary.md#tech-debt) (issues labelled `pw::type:tech-debt`). |
+| `Medium` | After tech-debt items, ahead of the implementation plan and the repository review's recommendations. |
 | `Low` | After the review recommendations, ahead of only the automated code-quality findings. |
 
 **An issue with no `Priority` set counts as `Medium`**, which is exactly where
@@ -183,8 +178,8 @@ pipeline](#handing-a-pull-request-to-the-pipeline): one hands work over, the
 other keeps it.
 
 ```bash
-gh issue edit <n> -R Poetic-Poems/<repo> --add-assignee @me      # reserve
-gh issue edit <n> -R Poetic-Poems/<repo> --remove-assignee @me   # release
+gh issue edit <n> -R <owner>/<repo> --add-assignee @me      # reserve
+gh issue edit <n> -R <owner>/<repo> --remove-assignee @me   # release
 ```
 
 Three things to know:
@@ -214,8 +209,8 @@ wakes the Co-Ordinator rather than being absorbed by a "nothing changed" skip.
 ## Cross-item dependencies
 
 **`Blocked-by: #195`, on its own line in an issue's body or any comment on
-it, holds that issue back until #195 closes.** For a dependency in the other
-repo this pipeline also works, name it in full: `Blocked-by: owner/repo#42`.
+it, holds that issue back until #195 closes.** For a dependency in another
+repository the pipeline works, name it in full: `Blocked-by: owner/repo#42`.
 Several references can share one line, comma- or space-separated
 (`Blocked-by: #1, #2`), and the line can carry a leading `-` if you're
 itemising it in a list.
@@ -263,18 +258,22 @@ work item. For example:
 - a PR you have **requested changes on** is answered (`review-feedback`).
 
 This is the switch to reach for when a PR the system *didn't* raise — most often
-one you created through `/td` — has drifted into conflict, or whenever you want
-the fleet to carry an existing PR the rest of the way.
+one you created through `/td` or an interactive session — has drifted into
+conflict, or whenever you want the fleet to carry an existing PR the rest of the
+way. **If you open a pull request yourself and want the pipeline to review and
+shepherd it, apply the `autonomous-agent` label at the time you raise it** — the
+pipeline does not discover PRs except through its own sources and through this
+label, so an unlabelled PR is invisible to it.
 
 Two things to know:
 
 - **It only applies to `agent/` branches** — the ones the system is
   allowed to push to; the implementation cycle raises every PR on
-  `agent/<item>`. `/td` raises its own PRs on an ordinary feature branch with
-  no fixed naming convention, so name it `agent/<something>` yourself if you
-  want to hand it to the fleet this way. Labelling a PR on any other branch
-  (e.g. `feature/…`) does nothing, because the landing gate reserves those and
-  the gatherers skip them even when labelled.
+  `agent/<item>`. An interactive session or `/td` that raises its own PR should
+  use a branch name starting with `agent/` (e.g. `agent/my-fix`) if you mean
+  to hand it to the fleet; a PR on any other branch (e.g. `feature/…`) is
+  ignored even when labelled, because the landing gate reserves those branches
+  and the gatherers skip them.
 - **Labelling grants write access.** A labelled PR is one the fleet may push to —
   including a `--force-with-lease` rebase to clear a conflict — and it counts
   toward the open-PR back-pressure cap. Remove the label to take the PR back.
@@ -327,19 +326,18 @@ whose source the landing stage cannot read back from the fleet's log.
   still needs your merge click, never what needs your veto.
 
 **Identity.** Every level above `human` needs a non-author GitHub App to hold
-approve rights — the pipeline authors every pull request as its own
-configured owner, and GitHub refuses to let a pull request's author approve
-it, so no level of agent approval is possible without a second identity. This
-App (**"Pullwright Approver"**) needs `pull_requests: write` and
-`contents: write`; its installation token — minted and cached for its
+approve rights. The pipeline may author pull requests through the node's own
+GitHub credential (the default `human` degrade path) or through a dedicated
+authoring App; in both cases, GitHub refuses to let a pull request's author
+approve it, so no level of agent approval is possible without a second
+identity. This approval App (**"Pullwright Approver"**) needs `pull_requests:
+write` and `contents: write`; its installation token — minted and cached for its
 ~1-hour lifetime by `lib/approver-token.sh` — is what the Script signs its
-reviews and merges with, never the owner credential the pipeline authors
-with. Set the App's
-id as `approver_app_id`, and its three cost tiers as
-`approver_model_default`/`_complex`/`_critical`; leaving `approver_model_default`
-empty switches the whole Approver stage off regardless of `merge_autonomy`,
-and leaving either of the other two empty falls that tier back to the one
-below it.
+reviews and merges with. Set the App's id as `approver_app_id`, and its three
+cost tiers as `approver_model_default`/`_complex`/`_critical`; leaving
+`approver_model_default` empty switches the whole Approver stage off
+regardless of `merge_autonomy`, and leaving either of the other two empty falls
+that tier back to the one below it.
 
 **What each level needs at the forge**, beyond `config.json`:
 
