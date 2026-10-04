@@ -16,13 +16,13 @@ to read first.
 | Understand what "blocked" and "void" mean, and what to do if you disagree with one | `docs/guides/operating/diagnose-by-symptom.md` § "An item is blocked or void" |
 | Respond to review comments the pipeline left on your pull request | `docs/guides/working-with-pullwright/README.md` § "Responding to your review comments" |
 | Pause the pipeline fleet without killing in-flight work | `docs/guides/operating/run-and-pause.md` § "Draining instead of stopping" |
-| Let one node reach an outside address without opening it up fleet-wide | `docs/guides/operating/README.md` § "The egress fence" |
-| Check that a freshly brought-up node is configured correctly before it starts working | `docs/guides/operating/README.md` § "Checking an installation" |
+| Let one node reach an outside address without opening it up fleet-wide | `docs/guides/operating/install-a-node.md` § "The egress fence" |
+| Check that a freshly brought-up node is configured correctly before it starts working | `docs/guides/operating/diagnose-by-symptom.md` § "Checking an installation" |
 | Get a node onto a newer image after merging a fix | `deploy/docker/README.md` § "Updating" |
-| Figure out why no node has opened a pull request in a while | `docs/guides/operating/README.md` § "Troubleshooting" |
+| Figure out why no node has opened a pull request in a while | `docs/guides/operating/diagnose-by-symptom.md` § "A pull request will not land" |
 | See what you need to provide to run an instance on your own infrastructure | `deploy/docker/README.md` § "What you need first" |
 | See which product decisions are still open | `docs/ROADMAP.md` § "Open questions" |
-| Understand which node in the fleet runs a given cycle | `docs/guides/operating/README.md` § "Which node runs the cycles" |
+| Understand which node in the fleet runs a given cycle | `docs/guides/operating/watch.md` § "Which node runs the cycles" |
 | Understand the levels of merge autonomy | `docs/guides/working-with-pullwright/README.md` § "Merge autonomy" |
 | Run the test suite | `docs/guides/contributing/README.md` § "Running the tests" |
 | Understand which parts of the docs are generated and must not be hand-edited | `AGENTS.md` § "Generated regions" |
@@ -31,9 +31,9 @@ to read first.
 | Find the requirement governing when a claim on an item expires | `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "Extended notes: `claim_ttl_hours`" |
 | Find the requirement governing the daily merge budget | `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "Extended notes: `merge_budget_per_day`" |
 | Understand how the as-built specifications relate to this repository | `docs/guides/contributing/README.md` § "For maintainers: the as-built specifications" |
-| Understand why a cycle produced no change | `docs/guides/operating/README.md` § "Skipping no-op cycles" |
+| Understand why a cycle produced no change | `docs/guides/operating/run-and-pause.md` § "Staying warm without spending" |
 | Understand how the pipeline avoids piling up unreviewed work | `docs/guides/working-with-pullwright/README.md` § "Staying in front of you" |
-| View the monitoring dashboard | `docs/guides/operating/README.md` § "Dashboard" |
+| View the monitoring dashboard | `docs/guides/operating/watch.md` § "The dashboard" |
 | Look up a configuration key, its default, and its notes | `docs/reference/configuration.md` |
 
 ## All documents

@@ -1,5 +1,15 @@
 # Operating
 
+<!-- toc:start -->
+- [Quick start](#quick-start)
+- [How the pipelines work](#how-the-pipelines-work)
+- [The node](#the-node)
+- [Node roles](#node-roles)
+- [The configuration](#the-configuration)
+- [Next steps](#next-steps)
+- [Data handling](#data-handling)
+<!-- toc:end -->
+
 Run and monitor the autonomous agent pipelines on a fleet of container nodes.
 
 ## Quick start

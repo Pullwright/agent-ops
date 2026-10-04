@@ -123,7 +123,7 @@ This does not publish to the state repository; it affects only this node's local
 
 ## Remove a node for good
 
-If you no longer need a node:
+To retire a node permanently:
 
 1. **Check the fleet can spare it:**
    ```bash
@@ -195,3 +195,5 @@ To remove agent-ops entirely from a host:
 - [Install a node](install-a-node.md) — bringing nodes up
 - [Run and pause](run-and-pause.md) — operating the switch and drain
 - [Diagnose by symptom](diagnose-by-symptom.md) — troubleshooting
+- The node runbook (`deploy/docker/README.md`) — the detail behind updating,
+  changing a node's role, and the failover drill

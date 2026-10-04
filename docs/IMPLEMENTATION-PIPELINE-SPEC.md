@@ -100,7 +100,7 @@ of pending work from the configured GitHub repositories, implements it on a
 feature branch in an ephemeral clone, reviews and corrects the result, and
 leaves a mergeable pull request for approval and landing at the repository's
 configured `merge_autonomy` level (see "## The Landing Gate"). It runs
-unattended on the host machine (WSL2 Ubuntu); human involvement narrows to
+unattended on a containerized node; human involvement narrows to
 whatever that level still requires.
 
 ```
@@ -188,11 +188,11 @@ has, whichever pipeline runs it (requirement 9d):
 
 ## Environment (verified 2026-07-20)
 
-- WSL2 Ubuntu; `bash`, `git`, `jq` and `gh` available.
+- A containerized node: `bash`, `git`, `jq`, `gh` and the standalone `claude`
+  CLI are all bundled in the node image (`deploy/docker/`); nothing is
+  installed by hand.
 - `gh` is authenticated as `warwickallen`, with push access to all configured
   repositories.
-- The standalone `claude` CLI is installed and resolvable from cron's
-  minimal environment.
 - On a containerized node, cron runs inside the scheduler container under
   supercronic, with the crontab rendered from `deploy/docker/crontab.tmpl`
   (see `docs/guides/operating/install-a-node.md`).
@@ -305,8 +305,8 @@ a node updates by pulling a new image rather than by pulling a branch.
   environment, since the entrypoint's default would otherwise mask a missing
   `ENV`. If a future CLI drops the variable, that check fails before the image
   reaches a node.
-- `deploy/docker/crontab` carries the same three pipeline schedules as the
-  laptop crontab — the dashboard heartbeat, the implementation cycle, the
+- `deploy/docker/crontab` carries the three pipeline schedules — the
+  dashboard heartbeat, the implementation cycle, the
   review tick — plus two fleet lines (requirement 2.5): a `state-sync.sh
   push`, which publishes this node's state and heartbeat to its own branch,
   and a `state-sync.sh fetch`, which materialises every peer's for the union
@@ -22549,17 +22549,17 @@ What exists, and the requirements each part answers to:
    the guides under `docs/guides/` and the configuration reference at
    `docs/reference/configuration.md` — `docs/guides/working-with-pullwright/README.md`
    (what it does, review, merge autonomy), `docs/guides/operating/README.md`
-   (install steps (below), how to operate it (`--dry-run`, `--once`, reading
-   the log and stage transcripts), and how to uninstall) and
-   `docs/guides/contributing/README.md` (for maintainers, branch workflow,
-   development). The operating guide presents the container as the
-   way a node runs and points at the runbook for the detail; the host install
-   and the WSL SysV dashboard service remain documented as the laptop's legacy
-   path, which must keep working until it is cut over.
-6. The crontab line, e.g.
-   `0 * * * * $HOME/Code/Poetic-Poems/agent-ops/agent-cycle.sh >> $HOME/.local/state/poetic-agents/cron.log 2>&1`,
-   with `AGENT_OPS_ROLE=active` set in the crontab's environment on the node
-   that is to run the cycles (requirement 2.4).
+   and its linked pages (install steps (below), how to operate it
+   (`--dry-run`, `--once`, reading the log and stage transcripts), and how to
+   uninstall) and `docs/guides/contributing/README.md` (for maintainers,
+   branch workflow, development). The operating guide documents the
+   container as the only way a node runs, and points at the runbook
+   (component 7) for the detail.
+6. The crontab line: never installed by hand on a containerized node — it is
+   the cycle line of `deploy/docker/crontab.tmpl`, rendered per node at
+   container start and run by supercronic inside the scheduler service, with
+   the node's role coming from `ROLE` in its `deploy/docker/.env`
+   (requirement 2.4) rather than from a crontab environment variable.
 7. `deploy/docker/` — the node image and the node stack (see "The node image"
    and "The node stack" above): `Dockerfile`, `entrypoint.sh`, `crontab` and the
    minimal `claude-settings.json` seed; `compose.yaml`, `ts-serve.json`,
@@ -22568,9 +22568,7 @@ What exists, and the requirements each part answers to:
    unattended `cloud-init.yaml` that performs its first three steps. The
    runbook is the operator-facing counterpart to those two sections: bring-up,
    everyday commands, updating, changing a node's role, the failover drill and
-   a symptom-to-cause table. The container crontab is the schedule component 6 describes,
-   expressed for a node; both exist because the laptop still runs the host-cron
-   path.
+   a symptom-to-cause table.
 8. `deploy/agent-ops-dashboard.init` and `deploy/tailscaled.init` — the legacy
    WSL SysV path for the laptop, superseded on a containerised node.
 9. `.github/workflows/build-image.yml` — the build-and-publish path for

@@ -51,7 +51,7 @@ Tell the pipeline which repositories to scan and how often:
 ```
 
 - `name` — `owner/repo` from GitHub
-- `pull_label` — label the pipeline applies to its PRs (used to track autonomy; keep it unique per node)
+- `pull_label` — label the pipeline applies to its PRs, for tracking autonomy; keep it unique per node
 - `branch_prefix` — branch prefix for new work (`agent/` for issue #123 becomes `agent/123`)
 - `work_sources` — which sources to scan:
   - `issues` — GitHub issues (general work)
@@ -144,7 +144,7 @@ This checks:
 - All configured repositories are readable and writable
 - GitHub token has needed scopes
 - Model credentials are set
-- Cron schedule is valid (if this is a host node)
+- The rendered crontab is valid
 - Prompts and overrides exist
 
 Exit codes:

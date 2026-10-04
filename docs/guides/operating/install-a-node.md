@@ -124,7 +124,7 @@ Five things are worth knowing:
 
 - **`~/.claude` is a volume.** Claude's OAuth credentials refresh and write back. The entrypoint seeds `settings.json` only when absent.
 
-- **`state_dir` is a volume.** The pipelines' memory lives here and is shared between nodes via the state repository (see [Keeping every node warm](#keeping-every-node-warm) in the Monitoring section).
+- **`state_dir` is a volume.** The pipelines' memory lives here and is shared between nodes via the state repository (see [Keeping every node warm](watch.md#keeping-every-node-warm)).
 
 - **`state_dir` must be writable by the container user** (uid 1000 by default). The entrypoint refuses to start if it is not. To match a different host uid, rebuild with `docker build --build-arg PUID=<uid> deploy/docker`.
 
@@ -193,3 +193,5 @@ After installation:
 - See [Configure](configure.md) to set up repositories and work sources
 - See [Run and pause](run-and-pause.md) to operate the pipelines
 - See [Watch](watch.md) to monitor your nodes
+- See the node runbook (`deploy/docker/README.md`) for the detail behind
+  bring-up, everyday commands, and the failover drill
