@@ -34,7 +34,10 @@
 #    "heading" `` (docs/README.md's own convention), `` `path`, "heading"
 #    `` or `` path's "heading" `` (the two forms most of this repository's
 #    prose actually uses) names a heading that exists in that file. Covers
-#    code, prompts, workflows and documents alike.
+#    code, prompts, workflows and documents alike, except the frozen
+#    records is_frozen_record lists (CHANGELOG.md included — docs/README.md
+#    itself classes it a "record"): a citation there is left exactly as
+#    filed even once the heading it names has moved.
 # 5. As-built phrasing ratchet — counts "previously", "used to", "no
 #    longer", "now uses" and "migration completed" (combined) per as-built
 #    document — every in-scope document except records, decision logs and
@@ -160,6 +163,7 @@ is_frozen_record() {
     docs/PHASE-1-POETIC-SPECIFICS-AUDIT.md|docs/VOCABULARY-SWEEP-679-AUDIT.md) return 0 ;;
     docs/PULLWRIGHT-DAY-ONE-AUTONOMY.md|docs/PULLWRIGHT-REHOMING.md) return 0 ;;
     docs/PROVIDER-SEAM-AUDIT.md) return 0 ;;
+    CHANGELOG.md) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -254,8 +258,8 @@ check_links_in_schema() {
   local ok=1 link target frag combined_slugs
   combined_slugs="$(mktemp)"
   {
-    markdown_heading_slugs README.md
-    explicit_anchor_ids README.md
+    markdown_heading_slugs docs/reference/configuration.md
+    explicit_anchor_ids docs/reference/configuration.md
     markdown_heading_slugs docs/IMPLEMENTATION-PIPELINE-SPEC.md
     explicit_anchor_ids docs/IMPLEMENTATION-PIPELINE-SPEC.md
     markdown_heading_slugs docs/REVIEW-PIPELINE-SPEC.md
@@ -269,14 +273,16 @@ check_links_in_schema() {
     if [[ "$target" == "#"* ]]; then
       frag="${target#\#}"
       if ! grep -qxF "$frag" "$combined_slugs"; then
-        fail "config.schema.json: x-docs link '$target' has no matching heading or anchor in README.md or the specs it renders into"
+        fail "config.schema.json: x-docs link '$target' has no matching heading or anchor in docs/reference/configuration.md or the specs it renders into"
         ok=0
       fi
     elif [[ -n "$target" ]]; then
-      # Not fragment-only: resolve exactly as an ordinary link from the repo
-      # root (x-docs text carries no path-only links today, but a future one
-      # would still need its target file, and any #fragment on it, checked).
-      check_link_target "config.schema.json" "$target" || ok=0
+      # Not fragment-only: resolve relative to docs/reference/configuration.md,
+      # the file render-config-table.sh renders every `readme` x-docs string
+      # into (a `spec` string carries no path-only links today, but a future
+      # one would still need its target file, and any #fragment on it,
+      # checked the same way, relative to the spec file it renders into).
+      check_link_target "docs/reference/configuration.md" "$target" || ok=0
     fi
   done < <(schema_x_docs_strings | extract_md_links)
 
