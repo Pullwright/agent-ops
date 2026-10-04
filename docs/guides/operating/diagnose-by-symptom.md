@@ -50,7 +50,7 @@ jq -r 'select(.event == "stand-down") | "\(.ts)  \(.reason)"' \
 
 - **No work:** That's fine — the pipeline idles. Watch the dashboard to see if new issues appear.
 - **Configuration has no repos:** Add repositories to `config.json` and run `docker compose restart scheduler`
-- **All items blocked:** See [Blocked and void items](watch.md) — most blocks clear themselves once the blocker resolves
+- **All items blocked:** See [An item is blocked or void](#an-item-is-blocked-or-void) — most blocks clear themselves once the blocker resolves
 - **No-op stand-down:** Nothing is wrong. The next cycle with actual changes will run.
 
 ## A pull request will not land
