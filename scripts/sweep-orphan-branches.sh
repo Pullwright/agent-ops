@@ -133,7 +133,7 @@ cfg() { jq -r "$1" <<<"$DEFAULTED_CONFIG" 2>/dev/null; }
 
 branch_prefix="$(cfg '.branch_prefix')"
 pr_label="$(cfg '.pr_label')"
-stale_hours="$(cfg '.abandoned_draft_after_hours')"
+stale_hours="$(cfg_int '.abandoned_draft_after_hours')"
 state_repo="$(cfg '.state_repo')"
 [[ "$stale_hours" =~ ^[0-9]+$ ]] || stale_hours=3
 

@@ -177,7 +177,7 @@ if [[ -n "${STATE_SYNC_STREAMS_RETAINED:-}" ]]; then
     say "WARNING: STATE_SYNC_STREAMS_RETAINED='$STATE_SYNC_STREAMS_RETAINED' is not a positive integer — ignoring it; state_local_streams_retained ($streams_retained) governs"
   fi
 fi
-min_free_workspace_bytes="${STATE_SYNC_MIN_FREE_WORKSPACE_BYTES:-$(cfg '.min_free_workspace_bytes')}"
+min_free_workspace_bytes="${STATE_SYNC_MIN_FREE_WORKSPACE_BYTES:-$(cfg_int '.min_free_workspace_bytes')}"
 [[ "$min_free_workspace_bytes" =~ ^[0-9]+$ ]] || min_free_workspace_bytes=0
 
 # A bearer secret carried in a webhook URL's own path (agent-ops#1721) — none

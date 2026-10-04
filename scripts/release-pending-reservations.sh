@@ -116,7 +116,7 @@ cfg() { jq -r "$1" <<<"$DEFAULTED_CONFIG" 2>/dev/null; }
 state_repo="$(cfg '.state_repo')"
 [[ -n "$state_repo" ]] || exit 0
 
-stuck_after_days="$(cfg '.reservation_release_stuck_after_days')"
+stuck_after_days="$(cfg_int '.reservation_release_stuck_after_days')"
 [[ "$stuck_after_days" =~ ^[0-9]+$ ]] || stuck_after_days=0
 now_epoch="${RELEASE_PENDING_NOW_EPOCH:-$(date -u +%s)}"
 
