@@ -130,10 +130,11 @@ To retire a node permanently:
    # Wait until cycle: idle and review: idle
    ```
 
-3. **Take off anything you want to keep:**
-   - State archives (logs, cycle records): `~/.local/state/poetic-agents/`
-   - Configuration: `~/poetic-node/.env`, `/path/to/config.json`
-   - Data volumes: checkpoint any `state_dir` contents
+3. **Take off anything you want to keep.** Logs and cycle records live in the
+   `state` volume, not on the host, so stream them out before `down -v`
+   destroys it (see [Archive logs](#uninstall) below for the command). The
+   node's own settings are in `~/poetic-node/.env`; `config.json` needs no
+   backup — it is committed to this repository and baked into the image.
 
 4. **Destroy the stack, volumes, and credentials:**
    ```bash
@@ -159,27 +160,31 @@ To retire a node permanently:
 
 To remove agent-ops entirely from a host:
 
-1. **Stop and remove containers:**
+1. **Archive logs first, if you want to keep them.** They live in the `state`
+   volume, not on the host, and step 2's `down -v` deletes it — so stream the
+   tarball out of the running container while it is still there:
+   ```bash
+   docker compose exec -T scheduler \
+     tar cz -C /home/agent/.local/state poetic-agents \
+     > "agent-ops-logs-$(date -u +%F).tar.gz"
+   ```
+
+2. **Stop and remove containers:**
    ```bash
    docker compose down -v
    cd ..
    rm -rf ~/poetic-node
    ```
 
-2. **Revoke credentials** (if the node had them):
+3. **Revoke credentials** (if the node had them):
    - GitHub PAT: [github.com/settings/tokens](https://github.com/settings/tokens)
    - Anthropic API key: [console.anthropic.com](https://console.anthropic.com)
    - Tailscale (if enabled): [app.tailscale.com/admin/machines](https://app.tailscale.com/admin/machines)
 
-3. **Remove from fleet** (if state repository is configured):
+4. **Remove from fleet** (if state repository is configured):
    ```bash
    # Delete the node's branch
    git push origin :nodes/<node-name> -f
-   ```
-
-4. **Archive logs** (if you want to keep them):
-   ```bash
-   tar czf agent-ops-logs-$(date -u +%F).tar.gz ~/.local/state/poetic-agents/
    ```
 
 ## Related pages

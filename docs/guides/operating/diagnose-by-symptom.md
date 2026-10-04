@@ -42,8 +42,9 @@ docker compose exec scheduler /app/agent-cycle.sh --dry-run
 The output shows what the Coordinator sees: which repositories, which issues, and what it selected (or why it selected nothing). Also check the log:
 
 ```bash
-jq -r 'select(.event == "stand-down") | "\(.ts)  \(.reason)"' \
-  ~/.local/state/poetic-agents/log.jsonl | tail -3
+docker compose exec scheduler \
+  jq -r 'select(.event == "stand-down") | "\(.ts)  \(.reason)"' \
+  /home/agent/.local/state/poetic-agents/log.jsonl | tail -3
 ```
 
 **Fixes:**
@@ -73,7 +74,7 @@ gh pr view <number> --json state,reviewDecision,mergeStateStatus,isDraft
 - **CI failing:** Check the workflow run for the error; the pipeline will fix transient failures or re-run the item
 - **Draft pull request:** Set `ROLE=active` on a node with the pipeline enabled; the Reviewer flips it to ready
 - **Dequeued:** The pipeline diagnosed why and fixed it; re-queue with "Merge when ready"
-- **Unreconciled comment:** The pipeline needs to answer a comment. Check for comments with `needs-reconciliation` or a structured `<!-- agent-ops:reconciles comment=… -->` marker
+- **Unreconciled comment:** No label marks this. A human comment posted since the pull request last became ready blocks landing until a Reviewer round answers it and cites it with an `<!-- agent-ops:reconciles comment=<id> -->` line in its own completion comment; `lib/reconciliation-gate.sh` is what refuses the handoff until then. Read the thread for a human comment with no matching citation
 
 ## An item is blocked or void
 
@@ -94,8 +95,9 @@ gh pr view <number> --json state,reviewDecision,mergeStateStatus,isDraft
 gh issue list -R <repo> --label blocked
 
 # See void items on the dashboard or in the log
-jq -r 'select(.event == "item-void") | "\(.ts)  \(.repo)#\(.item)  \(.detail)"' \
-  ~/.local/state/poetic-agents/log.jsonl | tail -5
+docker compose exec scheduler \
+  jq -r 'select(.event == "item-void") | "\(.ts)  \(.repo)#\(.item)  \(.detail)"' \
+  /home/agent/.local/state/poetic-agents/log.jsonl | tail -5
 ```
 
 **Fixes (blocked):**
@@ -120,12 +122,14 @@ jq -r 'select(.event == "item-void") | "\(.ts)  \(.repo)#\(.item)  \(.detail)"' 
 **Check:**
 ```bash
 # See recent stage completions
-jq -r 'select(.event == "stage-end") | "\(.ts)  \(.stage)  \(.kill_reason // "completed")  \(.duration_ms // "?")ms"' \
-  ~/.local/state/poetic-agents/log.jsonl | tail -10
+docker compose exec scheduler \
+  jq -r 'select(.event == "stage-end") | "\(.ts)  \(.stage)  \(.kill_reason // "completed")  \(.duration_ms // "?")ms"' \
+  /home/agent/.local/state/poetic-agents/log.jsonl | tail -10
 
 # Read the stage's transcript
-ls ~/.local/state/poetic-agents/cycles/<cycle-id>/
-cat ~/.local/state/poetic-agents/cycles/<cycle-id>/implementer.stream.jsonl
+docker compose exec scheduler ls /home/agent/.local/state/poetic-agents/cycles/<cycle-id>/
+docker compose exec scheduler \
+  cat /home/agent/.local/state/poetic-agents/cycles/<cycle-id>/implementer.stream.jsonl
 ```
 
 **Fixes:**
@@ -195,8 +199,9 @@ Run it after editing `config.json`, on a new node before its first cycle, and wh
 When a stage fails or times out, read its transcript:
 
 ```bash
-ls ~/.local/state/poetic-agents/cycles/
-cat ~/.local/state/poetic-agents/cycles/<cycle-id>/<stage>.stream.jsonl
+docker compose exec scheduler ls /home/agent/.local/state/poetic-agents/cycles/
+docker compose exec scheduler \
+  cat /home/agent/.local/state/poetic-agents/cycles/<cycle-id>/<stage>.stream.jsonl
 ```
 
 The stream shows every event the stage emitted, one JSON object per line, written as it happened. Read it when a stage timed out (the envelope shows only the completion, not how far it got).

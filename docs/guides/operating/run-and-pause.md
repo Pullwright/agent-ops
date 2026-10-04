@@ -39,7 +39,7 @@ Three things worth knowing:
 
 1. **Disables stop the *next* cycle, not one in flight.** `--status` tells you if a cycle is running. Don't recreate a container by hand (with `up -d`, `restart`, or `down`) during a cycle — use `--disable` to wait it out, then act.
 
-2. **Disables expire by default.** By default they last for `disable_default_ttl` (usually 2 hours). That prevents a forgotten switch from stopping everything silently forever. Use `--for forever` when you really mean it, and `--enable` when done.
+2. **Disables expire by default.** They last for `disable_default_ttl`, which is derived from the configured cadence rather than fixed: four firings of `schedule.cycle_interval_minutes` wide, so it stays a few cycles rather than a few hours whatever the cadence is. Setting the key puts a floor under that derivation, never a ceiling. That prevents a forgotten switch from stopping everything silently forever. Use `--for forever` when you really mean it, and `--enable` when done.
 
 3. **A reason is required.** It appears in `--status`, the logs, and the dashboard banner, so the next operator knows why nothing is running.
 

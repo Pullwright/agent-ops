@@ -55,21 +55,26 @@ docker compose exec scheduler /app/scripts/publish-dashboard.sh
 
 The pipeline records every event — work selected, items blocked, cycles completed, models used, state synced — to a JSON log. One event per line.
 
+`state_dir` is a Docker volume, not a host directory, so read the log through the scheduler container at its in-container path:
+
 ```bash
 # Follow the log as it runs
-tail -f ~/.local/state/poetic-agents/log.jsonl
+docker compose exec scheduler tail -f /home/agent/.local/state/poetic-agents/log.jsonl
 
 # See how the last 10 cycles ended
-jq -r 'select(.event == "cycle-end") | "\(.ts)  exit_code=\(.exit_code)"' \
-  ~/.local/state/poetic-agents/log.jsonl | tail -10
+docker compose exec scheduler \
+  jq -r 'select(.event == "cycle-end") | "\(.ts)  exit_code=\(.exit_code)"' \
+  /home/agent/.local/state/poetic-agents/log.jsonl | tail -10
 
 # Why did a cycle stand down?
-jq -r 'select(.event == "stand-down") | "\(.ts)  \(.reason)"' \
-  ~/.local/state/poetic-agents/log.jsonl | tail -5
+docker compose exec scheduler \
+  jq -r 'select(.event == "stand-down") | "\(.ts)  \(.reason)"' \
+  /home/agent/.local/state/poetic-agents/log.jsonl | tail -5
 
 # What items were marked void, and why?
-jq -r 'select(.event == "item-void") | "\(.ts)  \(.repo)#\(.item)  \(.detail)"' \
-  ~/.local/state/poetic-agents/log.jsonl | tail -10
+docker compose exec scheduler \
+  jq -r 'select(.event == "item-void") | "\(.ts)  \(.repo)#\(.item)  \(.detail)"' \
+  /home/agent/.local/state/poetic-agents/log.jsonl | tail -10
 ```
 
 An item that is *blocked* (as opposed to void) is not a `log.jsonl` event at all — it's a `blocked` (or `blocked:<reason>`) label on the GitHub issue or pull request itself; see [An item is blocked or void](diagnose-by-symptom.md#an-item-is-blocked-or-void).
@@ -138,7 +143,8 @@ It produces a digest report and files mechanical findings (things with knowable 
 See the digest for today:
 
 ```bash
-cat ~/.local/state/poetic-agents/monitor/$(date -u +%F)/report.md
+docker compose exec scheduler \
+  cat /home/agent/.local/state/poetic-agents/monitor/"$(date -u +%F)"/report.md
 ```
 
 To disable the Monitor, set `monitor_model` to `""` in `config.json`.
