@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
 # scripts/render-config-table.sh — render the configuration-key table rows
-# that README.md, docs/IMPLEMENTATION-PIPELINE-SPEC.md and
-# docs/REVIEW-PIPELINE-SPEC.md carry, from config.schema.json.
+# that docs/reference/configuration.md, docs/IMPLEMENTATION-PIPELINE-SPEC.md
+# and docs/REVIEW-PIPELINE-SPEC.md carry, from config.schema.json.
 #
 # Every configuration key used to be written down three times: the README's
 # table, the owning spec's table, and the schema (#195) — so a key could be
@@ -71,7 +71,7 @@
 # Four marked regions hold the whole table — header row, `|---|---|---|`
 # delimiter row, then the generated body rows:
 #
-#   README.md                              id=main, id=review
+#   docs/reference/configuration.md        id=main, id=review
 #   docs/IMPLEMENTATION-PIPELINE-SPEC.md   id=main
 #   docs/REVIEW-PIPELINE-SPEC.md           id=review
 #
@@ -177,8 +177,8 @@ fi
 # file:region-id:audience — audience picks which x-docs field (and which
 # schema description fallback) a region renders.
 regions=(
-  "README.md:main:readme"
-  "README.md:review:readme"
+  "docs/reference/configuration.md:main:readme"
+  "docs/reference/configuration.md:review:readme"
   "docs/IMPLEMENTATION-PIPELINE-SPEC.md:main:spec"
   "docs/REVIEW-PIPELINE-SPEC.md:review:spec"
 )

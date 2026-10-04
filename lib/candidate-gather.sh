@@ -820,7 +820,8 @@ while IFS=$'\t' read -r _ slug default_branch; do
     <<<"$unvoid_requests_json"$'\n'"$(gather_unvoid_requests "$slug")")"
   # Requirement 34g, same reasoning: a human's hand-applied label has to reach
   # the skip-list before the Co-Ordinator is handed it. An empty
-  # `needs_refinement_label` disables the projection entirely (README.md), so
+  # `needs_refinement_label` disables the projection entirely
+  # (docs/reference/configuration.md), so
   # there is nothing to scan for and no `gh` call to spend.
   if [[ -n "$needs_refinement_label" ]]; then
     hand_flagged_refinements_json="$(jq -nc 'input as $arr | input as $r | $arr + $r' \

@@ -197,7 +197,7 @@ has, whichever pipeline runs it (requirement 9d):
 - `cron` is running (started by WSL's `[boot]` command) with the crontab
   entries installed: the implementation cycle
   (`schedule.cycle_interval_minutes`), the review tick, and the dashboard
-  heartbeat (see `README.md`, "Installation").
+  heartbeat (see `docs/guides/operating/README.md`, "Installation").
 - Headless `claude -p` invocations authenticate with the user's existing
   Claude subscription login; `gh` uses its existing token. No new keys.
 
@@ -2219,8 +2219,8 @@ implements.
    triggers rotation on size, which self-corrects regardless of how often
    the log is written to.
 52. **The table of contents is generated from headings, not hand-maintained,
-   and regenerating it is gated in CI.** `README.md` and
-   `docs/IMPLEMENTATION-PIPELINE-SPEC.md` each carry a `<!-- toc:start -->`
+   and regenerating it is gated in CI.** `docs/IMPLEMENTATION-PIPELINE-SPEC.md`
+   and each guide under `docs/guides/` carries a `<!-- toc:start -->`
    … `<!-- toc:end -->` region, placed immediately after the document's
    title (and any lead-in paragraph, before its first `##` heading), holding
    a nested bullet list of every `##`/`###` heading in the document — the
@@ -22484,9 +22484,14 @@ What exists, and the requirements each part answers to:
    match/no-match/malformed-input cases) and exercised through the real
    `record_needs_refinement_block`/`unaccounted_items` in
    `test/fit-trim-block-refusal.test.sh`.
-5. `README.md`: what the system does, every config key, install steps
-   (below), how to operate it (`--dry-run`, `--once`, reading the log and
-   stage transcripts), and how to uninstall. It presents the container as the
+5. `README.md`: a landing page naming what the system does and pointing at
+   the guides under `docs/guides/` and the configuration reference at
+   `docs/reference/configuration.md` — `docs/guides/working-with-pullwright/README.md`
+   (what it does, review, merge autonomy), `docs/guides/operating/README.md`
+   (install steps (below), how to operate it (`--dry-run`, `--once`, reading
+   the log and stage transcripts), and how to uninstall) and
+   `docs/guides/contributing/README.md` (for maintainers, branch workflow,
+   development). The operating guide presents the container as the
    way a node runs and points at the runbook for the detail; the host install
    and the WSL SysV dashboard service remain documented as the laptop's legacy
    path, which must keep working until it is cut over.
@@ -23621,7 +23626,7 @@ What exists, and the requirements each part answers to:
 16. `scripts/render-config-table.sh` implementing requirement 1b's generated-
     table property: renders the Markdown table body rows of the three prose
     configuration tables (this document's, `docs/REVIEW-PIPELINE-SPEC.md`'s,
-    and the two in `README.md`) from `config.schema.json`'s leaf keys, in the
+    and the two in `docs/reference/configuration.md`) from `config.schema.json`'s leaf keys, in the
     schema's own property order — `schedule` and `repository_review` flatten one
     level into dotted keys (`schedule.review_hour`,
     `repository_review.lock_stale_after`) in the parent's position, and
@@ -24815,8 +24820,9 @@ What exists, and the requirements each part answers to:
    `render-config-table.sh`'s own region-validation precedent (component 16)
    of hard-failing on a malformed region rather than silently mis-rendering
    it. Once validated, with no
-   arguments, extracts every `##`/`###` heading from `README.md` and
-   `docs/IMPLEMENTATION-PIPELINE-SPEC.md` — skipping anything inside a
+   arguments, extracts every `##`/`###` heading from
+   `docs/IMPLEMENTATION-PIPELINE-SPEC.md` and each guide under
+   `docs/guides/` — skipping anything inside a
    fenced (```` ``` ```` or `~~~`) code block, as `lib/markdown-scan.sh`'s
    `markdown_unfenced` reads one for this and for component 24a alike (a
    fence opens on a run of three or more of either character, however far
@@ -29024,7 +29030,7 @@ oblige anyone to edit a test.
 1d. **The prose configuration tables are generated from the schema, and
     regenerating them is gated (requirement 1b, component 16).**
     `scripts/render-config-table.sh` with no arguments run against this
-    repository's own `config.schema.json`, `README.md`,
+    repository's own `config.schema.json`, `docs/reference/configuration.md`,
     `docs/IMPLEMENTATION-PIPELINE-SPEC.md` and `docs/REVIEW-PIPELINE-SPEC.md`
     leaves every file byte-identical to what is committed — regenerating a
     clean tree is a no-op — and `--check` exits 0 against it; `git diff`
@@ -31136,8 +31142,9 @@ oblige anyone to edit a test.
 
 52. **The table of contents is generated from headings, and regenerating it
     is gated (requirement 52, component 24).** `scripts/render-toc.sh` with
-    no arguments run against this repository's own `README.md` and
-    `docs/IMPLEMENTATION-PIPELINE-SPEC.md` leaves both files byte-identical
+    no arguments run against this repository's own
+    `docs/IMPLEMENTATION-PIPELINE-SPEC.md` and each guide under
+    `docs/guides/` leaves every file byte-identical
     to what is committed — regenerating a clean tree is a no-op — and
     `--check` exits 0 against it; `git diff` confirms nothing moved.
     Renaming a heading without regenerating makes `--check` exit non-zero

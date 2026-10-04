@@ -238,7 +238,8 @@ sha256 digest of the text actually sent — `lib/review-context.sh`'s
 `review_context_sources_digest` — so a past review's inputs are
 reconstructable without the log carrying arbitrary file content.
 
-The values below are the confirmed defaults; the README documents each key, and
+The values below are the confirmed defaults; `docs/reference/configuration.md`
+documents each key, and
 `config.schema.json` carries them alongside the implementation pipeline's
 (`docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 1b) — one file, one
 schema, so `scripts/doctor.sh` checks both pipelines' configuration in one
@@ -1220,12 +1221,14 @@ What exists, and the requirements each part answers to:
 3. `.claude/skills/project-review/` — the vendored skill (pinned; re-sync
    from upstream deliberately).
 4. `config.json` — the `repository_review` block.
-5. `README.md` — a "Repository review" section: what it does and why (the
-   loop it closes), every `repository_review.*` config key, how to install the
-   cron entry,
+5. `docs/guides/operating/README.md` — a "Repository review" section: what
+   it does and why (the loop it closes), how to install the cron entry,
    how to operate it (`--dry-run`, `--once`, `--repo`, reading
-   `review-log.jsonl` and the transcripts), how the outputs feed the
-   implementation pipeline / `project-remediation`, and how to uninstall.
+   `review-log.jsonl` and the transcripts), and how the outputs feed the
+   implementation pipeline / `project-remediation`; `docs/guides/operating/README.md`'s
+   "Uninstall" section for how to uninstall; and
+   `docs/reference/configuration.md` for every `repository_review.*` config
+   key.
 6. The crontab line(s) (see "Host provisioning").
 
 ## Acceptance checks

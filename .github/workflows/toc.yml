@@ -1,7 +1,7 @@
 name: Table of Contents check
 
-# Gates the generated table of contents in README.md and
-# docs/IMPLEMENTATION-PIPELINE-SPEC.md: both must be exactly what
+# Gates the generated table of contents in docs/IMPLEMENTATION-PIPELINE-SPEC.md
+# and each guide under docs/guides/: each must be exactly what
 # scripts/render-toc.sh renders from their ## and ### headings, or a heading
 # can drift out of the ToC (see the script's own header). Modelled on
 # config-table.yml.

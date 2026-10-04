@@ -6,7 +6,7 @@ its name, its role, and its tokens. That is the point: a node is not
 configured, it is instantiated.
 
 This is the runbook. For what the pipelines actually *do*, see the [main
-README](../../README.md) and `docs/*-SPEC.md`.
+README](../../README.md), the guides under `docs/guides/`, and `docs/*-SPEC.md`.
 
 ---
 
@@ -103,7 +103,7 @@ so they sit beside `compose.yaml` from the start.
 At minimum set `NODE_NAME`, `GH_TOKEN`, `GIT_USER_NAME`, `GIT_USER_EMAIL` and —
 for the `tailnet` profile — `TS_AUTHKEY`. Leave `ROLE=standby` unless this node
 is meant to be the one that spends; see [Which node runs the
-cycles](../../README.md#which-node-runs-the-cycles).
+cycles](../../docs/guides/operating/README.md#which-node-runs-the-cycles).
 
 Two more, for the `auto-update` profile's reconciler — the service that keeps
 *this file* current on this node the way watchtower keeps the image current
@@ -653,8 +653,8 @@ Two things decide what minute you may ask for:
   log rotation are fleet-wide values from `config.json`, identical on every
   node.
 
-Both of those, and the schedule keys generally, are tabulated in the [main
-README](../../README.md#configuration). They live in the image, so changing
+Both of those, and the schedule keys generally, are tabulated in the
+[configuration reference](../../docs/reference/configuration.md#configuration). They live in the image, so changing
 one is a pull request and an image roll, not an `.env` edit — which is the
 reason `CYCLE_MINUTE` exists as a per-node override at all.
 

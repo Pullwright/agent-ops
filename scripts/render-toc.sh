@@ -155,8 +155,10 @@ render_file() {
 }
 
 files=(
-  "README.md"
   "docs/IMPLEMENTATION-PIPELINE-SPEC.md"
+  "docs/guides/working-with-pullwright/README.md"
+  "docs/guides/operating/README.md"
+  "docs/guides/contributing/README.md"
 )
 
 failed=0

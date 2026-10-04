@@ -27,6 +27,6 @@ questions, see `docs/README.md` — the documentation map.
 
 For everything else — branch conventions and generated regions — see
 `CLAUDE.md`; the merge-queue behaviour the autonomous fleet operates under
-is in `README.md`'s "Merge autonomy" section, and its long-running-command
+is in `docs/guides/working-with-pullwright/README.md`'s "Merge autonomy" section, and its long-running-command
 rules are in the pipeline specs under `docs/` and the stage prompts under
 `prompts/`.

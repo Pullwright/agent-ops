@@ -10,30 +10,31 @@ to read first.
 
 | What you want to do | Where to find it |
 |----------------------|-------------------|
-| Reserve an issue so the pipeline doesn't pick it up while you work on it yourself | `README.md` § "Reserving an issue for yourself" |
-| Understand what a "refined" item is and what the Refiner does | `README.md` § "Refined items and the Refiner" |
-| Understand how the pipeline prioritizes which issue to work on next | `README.md` § "Issue priority" |
-| Understand what "blocked" and "void" mean, and what to do if you disagree with one | `README.md` § "Blocked and void items" |
-| Respond to review comments the pipeline left on your pull request | `README.md` § "Responding to your review comments" |
-| Pause the pipeline fleet without killing in-flight work | `README.md` § "Pausing the pipelines" |
-| Let one node reach an outside address without opening it up fleet-wide | `README.md` § "The egress fence" |
-| Check that a freshly brought-up node is configured correctly before it starts working | `README.md` § "Checking an installation" |
+| Reserve an issue so the pipeline doesn't pick it up while you work on it yourself | `docs/guides/working-with-pullwright/README.md` § "Reserving an issue for yourself" |
+| Understand what a "refined" item is and what the Refiner does | `docs/guides/operating/README.md` § "Refined items and the Refiner" |
+| Understand how the pipeline prioritizes which issue to work on next | `docs/guides/working-with-pullwright/README.md` § "Issue priority" |
+| Understand what "blocked" and "void" mean, and what to do if you disagree with one | `docs/guides/operating/README.md` § "Blocked and void items" |
+| Respond to review comments the pipeline left on your pull request | `docs/guides/working-with-pullwright/README.md` § "Responding to your review comments" |
+| Pause the pipeline fleet without killing in-flight work | `docs/guides/operating/README.md` § "Pausing the pipelines" |
+| Let one node reach an outside address without opening it up fleet-wide | `docs/guides/operating/README.md` § "The egress fence" |
+| Check that a freshly brought-up node is configured correctly before it starts working | `docs/guides/operating/README.md` § "Checking an installation" |
 | Get a node onto a newer image after merging a fix | `deploy/docker/README.md` § "Updating" |
-| Figure out why no node has opened a pull request in a while | `README.md` § "Troubleshooting" |
+| Figure out why no node has opened a pull request in a while | `docs/guides/operating/README.md` § "Troubleshooting" |
 | See what you need to provide to run an instance on your own infrastructure | `deploy/docker/README.md` § "What you need first" |
 | See which product decisions are still open | `docs/ROADMAP.md` § "Open questions" |
-| Understand which node in the fleet runs a given cycle | `README.md` § "Which node runs the cycles" |
-| Understand the levels of merge autonomy | `README.md` § "Merge autonomy" |
-| Run the test suite | `README.md` § "Running the tests" |
+| Understand which node in the fleet runs a given cycle | `docs/guides/operating/README.md` § "Which node runs the cycles" |
+| Understand the levels of merge autonomy | `docs/guides/working-with-pullwright/README.md` § "Merge autonomy" |
+| Run the test suite | `docs/guides/contributing/README.md` § "Running the tests" |
 | Understand which parts of the docs are generated and must not be hand-edited | `AGENTS.md` § "Generated regions" |
 | Understand where a changelog entry belongs | `AGENTS.md` § "Documentation principles" |
-| Try a change on a real node before it merges | `README.md` § "Trying a change on a real node before it merges" |
+| Try a change on a real node before it merges | `docs/guides/contributing/README.md` § "Trying a change on a real node before it merges" |
 | Find the requirement governing when a claim on an item expires | `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "Extended notes: `claim_ttl_hours`" |
 | Find the requirement governing the daily merge budget | `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "Extended notes: `merge_budget_per_day`" |
-| Understand how the as-built specifications relate to this repository | `README.md` § "For maintainers: the as-built specifications" |
-| Understand why a cycle produced no change | `README.md` § "Skipping no-op cycles" |
-| Understand how the pipeline avoids piling up unreviewed work | `README.md` § "Staying in front of you" |
-| View the monitoring dashboard | `README.md` § "Dashboard" |
+| Understand how the as-built specifications relate to this repository | `docs/guides/contributing/README.md` § "For maintainers: the as-built specifications" |
+| Understand why a cycle produced no change | `docs/guides/operating/README.md` § "Skipping no-op cycles" |
+| Understand how the pipeline avoids piling up unreviewed work | `docs/guides/working-with-pullwright/README.md` § "Staying in front of you" |
+| View the monitoring dashboard | `docs/guides/operating/README.md` § "Dashboard" |
+| Look up a configuration key, its default, and its notes | `docs/reference/configuration.md` |
 
 ## All documents
 
@@ -45,7 +46,7 @@ set under `docs/reviews/` one entry for its directory.
 
 | File | Audience | Kind | Purpose |
 |------|----------|------|---------|
-| `README.md` | operator, evaluator, person working in repo | tutorial, how-to | Landing page; how to install, operate, and understand the pipeline |
+| `README.md` | operator, evaluator, person working in repo | tutorial | Landing page: what Pullwright is, and where to go next |
 | `CONTRIBUTING.md` | contributor, person working in repo | how-to | Guidelines for contributing; pointers to detailed conventions |
 | `AGENTS.md` | agent, person working in repo, contributor | reference, explanation | Conventions for the repository: branch workflow, commit messages, PR rules, tech-debt, generated regions, documentation principles |
 | `CLAUDE.md` | agent | reference | Pointer to AGENTS.md (AGENTS.md imports it) |
@@ -60,6 +61,20 @@ set under `docs/reviews/` one entry for its directory.
 | File | Audience | Kind | Purpose |
 |------|----------|------|---------|
 | `docs/README.md` | operator, evaluator, contributor, agent, person working in repo, reader of fleet output | reference | This document: the map of every tracked document, with the conventions that govern them |
+
+#### Guides: `docs/guides/`
+
+| File | Audience | Kind | Purpose |
+|------|----------|------|---------|
+| `docs/guides/working-with-pullwright/README.md` | person working in a target repository | how-to | How the pipeline selects, claims, and hands back work in a repository it works; review, merge autonomy, and dependencies |
+| `docs/guides/operating/README.md` | operator | how-to | Installation, operation, pausing, diagnosis, repository review, the Pipeline Monitor, monitoring, troubleshooting, and node lifecycle |
+| `docs/guides/contributing/README.md` | contributor | how-to | For maintainers, branch workflow, and development |
+
+#### Reference: `docs/reference/`
+
+| File | Audience | Kind | Purpose |
+|------|----------|------|---------|
+| `docs/reference/configuration.md` | operator, agent, contributor | reference | Every configuration key, its default, and its extended notes (generated from `config.schema.json`) |
 
 #### Concepts (explanations)
 
@@ -311,14 +326,15 @@ read the entire document in one API call without excessive context cost.
   the complete specification)
 - `docs/DASHBOARD-SPEC.md` — 329 KB (required)
 - `docs/REVIEW-PIPELINE-SPEC.md` — 105 KB (required)
-- `README.md` — 235 KB (required; includes extensive configuration and
-  operation guides)
+- `docs/guides/operating/README.md` — 104 KB (a how-to guide, over budget
+  today, with no exemption that covers it)
 - `prompts/coordinator.md` — 124 KB (an operating prompt; over budget today,
   with no exemption that covers it)
 
-Every file above except `prompts/coordinator.md` is a specification or
-generated content required to be complete, which outweighs the size budget.
-`prompts/coordinator.md` has no such exemption; trimming it is left for a
+Every file above except `docs/guides/operating/README.md` and
+`prompts/coordinator.md` is a specification or generated content required to
+be complete, which outweighs the size budget.
+Neither of those two has such an exemption; trimming each is left for a
 future documentation sweep.
 
 ### Headings and anchors
@@ -336,7 +352,7 @@ documentation sweep.
 
 Sections are cited using the format: path + heading.
 
-Example: "`README.md` § \"Installation\"" or "`docs/IMPLEMENTATION-PIPELINE-SPEC.md` § \"What it is\"".
+Example: "`docs/guides/operating/README.md` § \"Installation\"" or "`docs/IMPLEMENTATION-PIPELINE-SPEC.md` § \"What it is\"".
 
 This format is:
 - Machine-readable (path is filepath, heading is quoted)

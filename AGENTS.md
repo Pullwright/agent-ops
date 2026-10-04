@@ -4,8 +4,8 @@ Operations tooling for the Poetic autonomous agent pipelines: the
 implementation cycle (`agent-cycle.sh`), the repository-review cycle
 (`review-cycle.sh`), the Pipeline Monitor (`monitor-cycle.sh`), and the
 local dashboard (`dashboard/`). `README.md`
-explains what the pipelines do and how to configure, install, pause, and
-monitor them; `docs/*-SPEC.md` are the as-built requirement specifications
+is the landing page; `docs/guides/` explains what the pipelines do and how to
+configure, install, pause, and monitor them; `docs/*-SPEC.md` are the as-built requirement specifications
 for each component; `prompts/` holds the runtime prompts the pipelines pass
 to their agents.
 
@@ -50,7 +50,8 @@ requirements, so bring the spec in line first, then the affected prompt(s).
 
 Three types of generated regions exist in this repository:
 
-1. **Configuration tables** — `README.md`'s two configuration tables and each
+1. **Configuration tables** — `docs/reference/configuration.md`'s two
+   configuration tables and each
    as-built spec's own (`docs/IMPLEMENTATION-PIPELINE-SPEC.md`'s,
    `docs/REVIEW-PIPELINE-SPEC.md`'s) are rendered from `config.schema.json`
    by `scripts/render-config-table.sh` — four `<!-- config-table:start
@@ -67,7 +68,8 @@ Three types of generated regions exist in this repository:
    carries this same contract inline, so it reads even to someone who reaches
    the row directly and never opened this file.
 
-2. **Table of contents** — `README.md` and `docs/IMPLEMENTATION-PIPELINE-SPEC.md`
+2. **Table of contents** — `docs/IMPLEMENTATION-PIPELINE-SPEC.md` and each guide
+   under `docs/guides/`
    have a table of contents between `<!-- toc:start -->` … `<!-- toc:end -->`
    markers, extracted from their `##` and `###` headings by
    `scripts/render-toc.sh`. Never hand-edit the content between these markers:
@@ -220,7 +222,7 @@ session that opens such a branch must write both; a body edit (`gh pr edit
 Run the suite through `./scripts/run-tests.sh`, which copies the working tree
 into a throwaway container from the image; the host's tools and a `docker
 exec` into a live node both fail tests on a pristine `main` (see
-`README.md` §"Running the tests" for why). A test asserts that `config.json`
+`docs/guides/contributing/README.md` §"Running the tests" for why). A test asserts that `config.json`
 is *valid* — it matches the schema and `doctor.sh` accepts it — and never
 what it says: every fixture supplies its own values by mutating
 `test/fixtures/config-base.json` or writing its own block, and a check that

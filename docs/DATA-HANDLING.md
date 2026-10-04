@@ -35,7 +35,7 @@ third-party URL.
 ## Data retention
 
 Data retention is governed by three configuration keys in `config.json`, documented
-in [README.md](../README.md) in the Configuration section:
+in [docs/reference/configuration.md](reference/configuration.md):
 
 - **`cycles_retained`** — the number of recent complete cycles to retain in full
   (their logs and transcripts). Older cycles' logs are deleted. This does not affect
@@ -50,7 +50,7 @@ in [README.md](../README.md) in the Configuration section:
   consolidated event log (`log.jsonl`). When the log exceeds this size, the oldest
   entries are removed to stay within the limit.
 
-Refer to the Configuration section of [README.md](../README.md) for the default
+Refer to [docs/reference/configuration.md](reference/configuration.md) for the default
 values and detailed explanations of each setting.
 
 ## Privacy and security considerations
@@ -70,7 +70,7 @@ values and detailed explanations of each setting.
 
 Before deploying this pipeline to an installation that is not Poetic-Poems:
 
-1. Review this document and the Configuration section in [README.md](../README.md)
+1. Review this document and [docs/reference/configuration.md](reference/configuration.md)
    to understand what data will be retained and for how long.
 2. Adjust `cycles_retained`, `state_local_cycles_retained`, and `log_retained_bytes`
    in `config.json` to match your retention and privacy requirements.
