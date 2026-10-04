@@ -558,6 +558,57 @@ assert_eq "probe-404: a repo-level 404 with a cached copy falls back to it, not 
 
 rm -f "$(fleet_cache_file "$fs_probe" disabled)"
 
+# --- agent-ops#1118: fleet_flag_fetch_cause's own choice between the two
+#     error files the block above writes. Asserted directly against the
+#     files rather than through a fetch, because the one case that matters
+#     most here — a `$cache.repo-err` left behind by an *earlier* call, on a
+#     call that never probed the repo at all — is precisely the state a
+#     single fetch cannot be made to produce: whichever call wrote the stale
+#     file is by definition not the call under test. ---
+fs_cause="$tmp_dir/fleet-state-cause"; mkdir -p "$fs_cause/fleet-cache"
+cause_cache="$(fleet_cache_file "$fs_cause" disabled)"
+
+# The ordinary case (agent-ops#1081's own shape): the flag fetch itself
+# failed, with a diagnosis that is not a 404, so no probe ever ran and
+# `$cache.err` is the whole story.
+printf 'gh: You have exceeded a secondary rate limit.' > "$cause_cache.err"
+rm -f "$cause_cache.repo-err"
+assert_eq "cause: a non-404 flag-fetch failure is reported from \$cache.err" \
+  "gh: You have exceeded a secondary rate limit." \
+  "$(fleet_flag_fetch_cause "$fs_cause" disabled)"
+
+# The same, but with a `$cache.repo-err` still on disk from an earlier call
+# that did probe. Reading it unconditionally would report a stale, unrelated
+# refusal as this call's cause — the mistake the 404 gate exists to prevent.
+printf 'gh: Not Found (HTTP 404)' > "$cause_cache.repo-err"
+assert_eq "  ... even with a stale \$cache.repo-err left by an earlier call" \
+  "gh: You have exceeded a secondary rate limit." \
+  "$(fleet_flag_fetch_cause "$fs_cause" disabled)"
+
+# The probe case: the flag file's own 404 is the ambiguous one, so the repo
+# probe ran and is what actually failed. Its own refusal is the real cause;
+# the flag's "Not Found" is the misleading answer this fixes.
+printf 'gh: HTTP 404: Not Found (https://api.github.com/repos/o/r/contents/fleet/disabled.json)' \
+  > "$cause_cache.err"
+printf 'gh: You have exceeded a secondary rate limit.' > "$cause_cache.repo-err"
+assert_eq "cause: a flag-file 404 reports the repo probe's own refusal, not the flag's Not Found" \
+  "gh: You have exceeded a secondary rate limit." \
+  "$(fleet_flag_fetch_cause "$fs_cause" disabled)"
+
+# A probe that failed silently (non-zero, nothing on stderr) truncates
+# `$cache.repo-err` to nothing, so there is no better answer than the flag's
+# own 404 — which must still be reported rather than an empty cause.
+: > "$cause_cache.repo-err"
+assert_eq "  ... but falls back to \$cache.err when the probe wrote nothing at all" \
+  "gh: HTTP 404: Not Found (https://api.github.com/repos/o/r/contents/fleet/disabled.json)" \
+  "$(fleet_flag_fetch_cause "$fs_cause" disabled)"
+
+# No error file at all — a caller asking before any fetch has failed — is an
+# empty cause, never an error.
+rm -f "$cause_cache.err" "$cause_cache.repo-err"
+assert_eq "cause: no error file at all is an empty cause, not a failure" \
+  "" "$(fleet_flag_fetch_cause "$fs_cause" disabled)"
+
 # --- issue #513 (PR #506 review follow-up): the memo is keyed by MODE too,
 #     not just (NAME, STATE_DIR) — the default mode and `probe-404`
 #     deliberately disagree about one and the same contents-API 404 (clear

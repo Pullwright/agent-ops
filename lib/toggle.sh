@@ -777,6 +777,31 @@ fleet_flag_fetch_status() {
   return 0
 }
 
+# fleet_flag_fetch_cause STATE_DIR NAME
+# The real diagnosis behind this (NAME, STATE_DIR)'s most recent "unreachable"
+# answer from fleet_flag_fetch_status above, for a caller (merge_autonomy_kill_state,
+# agent-ops#1118) that needs to report or classify it rather than merely fail
+# closed. `$cache.err` — the flag-file fetch's own diagnosis — is usually it,
+# but under `probe-404` mode a 404 there is ambiguous (the header's own 404
+# entry): it can mean the flag file genuinely does not exist, which
+# `fleet_repo_visible` then confirms by probing the repo itself, leaving its
+# own failure in `$cache.repo-err`. When that probe is what actually failed,
+# `$cache.err` still holds the flag's unhelpful "Not Found" and the real cause
+# is in `$cache.repo-err` instead. The same `grep -qiE 'HTTP 404|Not Found'`
+# test fleet_flag_fetch_status already applies to `$cache.err` gates reading
+# `$cache.repo-err` here too: that file is overwritten only on a call that
+# actually probed the repo, so reading it when `$cache.err` is not a 404 would
+# risk a stale copy left by an earlier, unrelated call.
+fleet_flag_fetch_cause() {
+  local state_dir="$1" name="$2" cache
+  cache="$(fleet_cache_file "$state_dir" "$name")"
+  if grep -qiE 'HTTP 404|Not Found' "${cache}.err" 2>/dev/null && [[ -s "${cache}.repo-err" ]]; then
+    cat "${cache}.repo-err"
+    return 0
+  fi
+  cat "${cache}.err" 2>/dev/null || true
+}
+
 # fleet_flag_fetch STATE_REPO STATE_DIR NAME
 # Print the flag's raw bytes, or nothing when it is clear. Always returns 0;
 # the caller cannot tell "clear" from "unreachable with no cache", which is

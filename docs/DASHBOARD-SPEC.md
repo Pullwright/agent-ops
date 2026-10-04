@@ -228,8 +228,11 @@ All paths derive from `config.json` (tilde-expanded `state_dir` and
   `merge_autonomy_kill_state`'s own `retried` boolean (always `false` here:
   this Publisher passes no `RETRY`, agent-ops#1081), where the local-only
   `_toggle_eval` value does not. Surfaced as
-  `fleet.flags.merge_autonomy_kill` — `{state, retried?, record?}`,
-  `lib/toggle.sh`'s own vocabulary — and rendered as its own banner,
+  `fleet.flags.merge_autonomy_kill` — `{state, retried?, cause?, record?}`
+  on a live tick (`cause` present only on the fail-closed synthesis,
+  agent-ops#1118 — the real diagnosis `fleet_flag_fetch_cause`,
+  `lib/toggle.sh`, resolved for that read), `{state, record?}` on the
+  local-only value — and rendered as its own banner,
   deliberately not folded
   into the fleet-switch banner above: cycles keep running while the kill
   switch is engaged, only landing collapses to `human` fleet-wide, so "every
