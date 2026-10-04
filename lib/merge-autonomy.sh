@@ -265,7 +265,7 @@ merge_autonomy_kill_clear() {
   fleet_flag_delete_outcome "$1" "$2" "$MERGE_AUTONOMY_KILL_FLAG"
 }
 
-# merge_autonomy_effective_level CONFIG_JSON SLUG STATE_REPO STATE_DIR [FRESH] [RETRY]
+# merge_autonomy_effective_level CONFIG_JSON SLUG STATE_REPO STATE_DIR [FRESH] [RETRY] [KILL_JSON]
 # What SLUG is actually governed by right now: `human` whenever the kill
 # switch is set (or its own state cannot be read as clear — see
 # merge_autonomy_kill_state); else, capped at `agent-approves` whenever
@@ -307,10 +307,21 @@ merge_autonomy_kill_clear() {
 # manually killed one calls `merge_autonomy_kill_state` itself instead of
 # this function (`run_approver_stage` does, ahead of this one) and reads
 # `.record.kind` off its own returned document.
+# KILL_JSON (agent-ops#1112) lets a caller that has already fetched the kill
+# switch's own document — `run_approver_stage` does, ahead of this call, for
+# the fail-closed `.record.kind` check above — hand it over instead of
+# making this function fetch it again. When non-empty, its `.state` is read
+# directly and `merge_autonomy_kill_state` is not called a second time; when
+# empty or omitted, behaviour is byte-for-byte unchanged for every other
+# caller (none of which hold such a document).
 merge_autonomy_effective_level() {
-  local config_json="$1" slug="$2" state_repo="$3" state_dir="$4" fresh="${5:-}" retry="${6:-}"
+  local config_json="$1" slug="$2" state_repo="$3" state_dir="$4" fresh="${5:-}" retry="${6:-}" kill_json="${7:-}"
   local kill_state configured configured_rank cap_rank freeze_state
-  kill_state="$(jq -r '.state' <<<"$(merge_autonomy_kill_state "$state_repo" "$state_dir" "$fresh" "$retry")" 2>/dev/null)"
+  if [[ -n "$kill_json" ]]; then
+    kill_state="$(jq -r '.state' <<<"$kill_json" 2>/dev/null)"
+  else
+    kill_state="$(jq -r '.state' <<<"$(merge_autonomy_kill_state "$state_repo" "$state_dir" "$fresh" "$retry")" 2>/dev/null)"
+  fi
   if [[ "$kill_state" != "enabled" ]]; then
     printf 'human'
     return 0

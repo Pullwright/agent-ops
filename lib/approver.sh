@@ -724,7 +724,7 @@ run_approver_stage() {
     fi
     return 0
   fi
-  level="$(merge_autonomy_effective_level "$DEFAULTED_CONFIG" "$selected_repo" "$state_repo" "$state_dir" fresh)"
+  level="$(merge_autonomy_effective_level "$DEFAULTED_CONFIG" "$selected_repo" "$state_repo" "$state_dir" fresh "" "$kill_json")"
   [[ "$level" != "human" ]] || return 0
 
   if [[ -z "$approver_model_default" ]]; then
