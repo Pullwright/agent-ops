@@ -1331,6 +1331,27 @@ assert_doctor "doctor resolves a model id qualified with a provider providers do
   '.providers = {"openai": {"substrate": "claude-code"}} | .coordinator_model = "openai/gpt-5"' 0 \
   "coordinator_model → gpt-5"
 
+# --- config_provider_errors' own faults. `providers` is a bare `"type":
+#     "object"` in the schema — its entries are installation-chosen names, so
+#     the declarative shape cannot reach inside them — which makes an entry
+#     carrying no `substrate` at all schema-valid, and this guard the only
+#     thing that reports it. It runs one call *after* `providers_load`, so
+#     the load has to survive the malformed entry for the guard's own message
+#     to be what the operator sees. ---
+assert_valid "a providers entry with no substrate is still schema-valid" \
+  '.providers = {"xai": {}}'
+assert_doctor "doctor names a providers entry that carries no substrate" \
+  '.providers = {"xai": {}}' 1 'providers.xai: substrate is required'
+assert_doctor "doctor names a providers entry whose substrate has no adapter" \
+  '.providers = {"xai": {"substrate": "grok-build"}}' 1 \
+  'providers.xai: substrate "grok-build" is not one this image has an adapter for'
+assert_doctor "doctor names a providers entry carrying an unknown key" \
+  '.providers = {"xai": {"substrate": "claude-code", "api_key": "x"}}' 1 \
+  'providers.xai: unknown key "api_key"'
+assert_doctor "doctor names a providers entry whose credential_env is explicitly empty" \
+  '.providers = {"xai": {"substrate": "claude-code", "credential_env": ""}}' 1 \
+  'providers.xai: credential_env, if set, must not be empty'
+
 # --- doctor.sh's cross-key rules: what the schema cannot say. ---
 assert_doctor "doctor fails an enabled Enabler with no assignee, as agent-cycle.sh would" \
   '.enabler_assignee = ""' 1 'enabler_model is set but enabler_assignee is not'
@@ -1827,6 +1848,22 @@ run_cycle_guard "$(jq -c '.repos[1].slug = .repos[0].slug' "$BASE_CONFIG")"
 assert_eq "duplicate repos[] slugs exit 1, past the schema gate" "1" "$guard_rc"
 assert_contains "the duplicate-slug guard names the repeated slug" \
   "repos lists [$BASE_REPO_1] more than once" "$guard_out"
+assert_not_contains "a config the schema accepts is not reported as a schema failure" \
+  "does not match config.schema.json" "$guard_out"
+
+# requirement 1b (issue #2131): the provider guard, shared with doctor.sh's
+# own `fail` above through the same lib/config-schema.sh function. A
+# substrate-less entry leaves providers_load nothing to subscript the
+# credential-default table with, and bash rejects an empty
+# associative-array subscript outright — so under the `set -e` this script
+# runs with, the load has to survive the malformed entry for the guard on the
+# very next line to be what the operator sees.
+run_cycle_guard "$(jq -c '.providers = {"xai": {}}' "$BASE_CONFIG")"
+assert_eq "a substrate-less providers entry exits 1, past the schema gate" "1" "$guard_rc"
+assert_contains "the provider guard names the offending entry" \
+  "providers.xai: substrate is required" "$guard_out"
+assert_not_contains "the providers load does not leak a bash array-subscript error" \
+  "bad array subscript" "$guard_out"
 assert_not_contains "a config the schema accepts is not reported as a schema failure" \
   "does not match config.schema.json" "$guard_out"
 

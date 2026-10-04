@@ -68,11 +68,25 @@ providers_load() {
   local providers_json="${1:-null}"
   PROVIDER_SUBSTRATE=()
   PROVIDER_CREDENTIAL_ENV=()
-  local name substrate credential_env
+  local name substrate credential_env default_env
   while IFS=$'\t' read -r name substrate credential_env; do
     [[ -n "$name" ]] || continue
     PROVIDER_SUBSTRATE["$name"]="$substrate"
-    PROVIDER_CREDENTIAL_ENV["$name"]="${credential_env:-${PROVIDER_SUBSTRATE_DEFAULT_CREDENTIAL_ENV[$substrate]:-}}"
+    # An entry carrying no `substrate` at all is a config fault, but it is
+    # `config_provider_errors`' fault to report, by name, one call *later*
+    # than this one — every caller loads the seam before running that guard,
+    # since the checks after it need the seam populated. So this has to
+    # survive a malformed entry rather than abort on it: the substrate is the
+    # default table's own subscript, and bash rejects an empty
+    # associative-array subscript outright ("bad array subscript", the same
+    # trap model_tier_rank guards below), which under the `set -e` every
+    # cycle script runs with would kill the script here — before its own
+    # guard could name the offending key.
+    default_env=""
+    if [[ -n "$substrate" ]]; then
+      default_env="${PROVIDER_SUBSTRATE_DEFAULT_CREDENTIAL_ENV[$substrate]:-}"
+    fi
+    PROVIDER_CREDENTIAL_ENV["$name"]="${credential_env:-$default_env}"
   done < <(jq -r '(. // {}) | to_entries[] | [.key, (.value.substrate // ""), (.value.credential_env // "")] | @tsv' \
     <<<"$providers_json" 2>/dev/null)
   if [[ -z "${PROVIDER_SUBSTRATE[anthropic]+set}" ]]; then
