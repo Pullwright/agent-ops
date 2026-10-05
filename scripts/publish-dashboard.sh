@@ -36,6 +36,11 @@ export DASHBOARD_GH_CMD="${DASHBOARD_GH_CMD:-gh}"
 MERGE_QUEUE_GH="$DASHBOARD_GH_CMD"
 export MERGE_QUEUE_GH
 
+# Which day the publisher considers "today" for cost roll-ups. A seam for the
+# test suite to pin the day and avoid UTC midnight races. Unset in production,
+# where this is the current UTC day. Used only by this script, not exported.
+DASHBOARD_TODAY="${DASHBOARD_TODAY:-}"
+
 for bin in jq "$DASHBOARD_GH_CMD"; do
   command -v "$bin" >/dev/null 2>&1 || { echo "publish-dashboard: missing binary: $bin" >&2; exit 1; }
 done
@@ -1974,7 +1979,11 @@ find "${cost_dirs[@]}" -name '*.out' -type f -print0 2>/dev/null | sort -z \
   > "$costs_file" 2>/dev/null
 jq -e 'type == "array"' "$costs_file" >/dev/null 2>&1 || printf '[]' > "$costs_file"
 
-today="$(date -u -d "$now_iso" +%Y%m%d)"
+if [[ -z "$now_override" ]]; then
+  today="${DASHBOARD_TODAY:-$(date -u -d "$now_iso" +%Y%m%d)}"
+else
+  today="$(date -u -d "$now_iso" +%Y%m%d)"
+fi
 # `recent_costs` backs the "today (local)" and "last 24h" readings of the
 # spend-today card (#186): both need each row's own instant, not just its GMT
 # day, and which instants count as "today" depends on the *reader's* zone, so
