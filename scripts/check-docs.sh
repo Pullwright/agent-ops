@@ -23,15 +23,20 @@
 #    dated `docs/reviews/project-review-*/` directory, which gets one row
 #    for the whole directory (docs/README.md's own convention); and every
 #    path that section names exists.
-# 3. Size — no in-scope document exceeds the 100,000-byte budget
-#    docs/README.md's "Size budget" section fixed, unless it is exempt
-#    (CHANGELOG.md, docs/reviews/**, docs/ROADMAP.md, the three as-built
-#    specifications, and docs/reference/configuration.md — the same
-#    exemptions that section lists) or it has an entry in
+# 3. Size — no in-scope document's hand-written content exceeds the
+#    100,000-byte budget docs/README.md's "Size budget" section fixed,
+#    unless it is exempt (SIZE_EXEMPT: CHANGELOG.md, docs/ROADMAP.md,
+#    docs/reviews/** and every as-built specification, docs/*-SPEC.md — the
+#    same exemptions that section lists) or it has an entry in
 #    scripts/docs-size-ratchet.tsv naming the issue that will bring it under
-#    budget. A ratchet entry may only shrink: the check fails if a listed
-#    file grows past its own recorded size, or if a file crosses the budget
-#    with no entry at all.
+#    budget. Hand-written means the bytes outside every generated region
+#    AGENTS.md's "Generated regions" section lists, since a schema change or
+#    a new heading regenerates those. A ratchet entry may only shrink: the
+#    check fails if a listed file grows past its own recorded size, or if a
+#    file crosses the budget with no entry at all. It also fails on an entry
+#    it would never read (a file that is missing, exempt or within the
+#    budget) and on an exemption that matches no document, so neither list
+#    can quietly outlive what it describes.
 # 4. Section citations — a quoted citation of the form `` `path` §
 #    "heading" `` (docs/README.md's own convention), `` `path`, "heading"
 #    `` or `` path's "heading" `` (the two forms most of this repository's
@@ -351,19 +356,75 @@ check_map() {
 # Check 3: size budget
 # ---------------------------------------------------------------------------
 
+# Documents over the budget by nature, never a debt the ratchet tracks: the
+# changelog and the dated review reports are records, the roadmap a decision
+# log, and an as-built specification grows with every requirement-affecting
+# change AGENTS.md's "As-built specifications" section requires, so no entry
+# could hold one still (#2163). The specifications are named by the same
+# pattern AGENTS.md and scripts/is-docs-only.sh use, so a new component's
+# spec is covered the day it lands. Two of them are a debt all the same:
+# #2094 splits docs/IMPLEMENTATION-PIPELINE-SPEC.md and docs/DASHBOARD-SPEC.md
+# into files within the budget. Each pattern must match at least one
+# in-scope document (check_size enforces it), so a move such as #2094's
+# fails here rather than leaving a stale exemption behind. docs/README.md's
+# "Size budget" section lists the same four.
+SIZE_EXEMPT=(
+  'CHANGELOG.md'
+  'docs/ROADMAP.md'
+  'docs/reviews/*'
+  'docs/*-SPEC.md'
+)
+
 is_size_exempt() {
-  case "$1" in
-    CHANGELOG.md|docs/ROADMAP.md) return 0 ;;
-    docs/reviews/*) return 0 ;;
-    docs/DASHBOARD-SPEC.md|docs/IMPLEMENTATION-PIPELINE-SPEC.md|docs/REVIEW-PIPELINE-SPEC.md) return 0 ;;
-    docs/reference/configuration.md) return 0 ;;
-    *) return 1 ;;
-  esac
+  local pattern
+  for pattern in "${SIZE_EXEMPT[@]}"; do
+    # shellcheck disable=SC2053  # Unquoted on purpose: each entry is a glob pattern.
+    [[ "$1" == $pattern ]] && return 0
+  done
+  return 1
+}
+
+# generated_region_bytes FILE
+# Print how many of FILE's bytes lie inside generated regions — the three
+# kinds AGENTS.md's "Generated regions" section lists: a configuration table
+# or its notes (scripts/render-config-table.sh), a table of contents
+# (scripts/render-toc.sh) and a stamped region (Pullwright/.agent's
+# scripts/sync.sh) — marker lines included. A marker counts only as a whole
+# line outside fenced code, matched the way its renderer matches it, so a
+# marker quoted in prose or shown in an example opens nothing; and a region
+# counts only once its end marker is reached, so an unterminated start
+# leaves every byte after it counted as hand-written. Bytes, not characters
+# (LC_ALL=C), to agree with `wc -c`.
+generated_region_bytes() {
+  markdown_unfenced "$1" | LC_ALL=C awk '
+    end == "" {
+      if ($0 == "<!-- toc:start -->") end = "<!-- toc:end -->"
+      else if ($0 ~ /^<!-- config-table:start id=[^ ]+($| .*-->$)/) end = "<!-- config-table:end -->"
+      else if ($0 ~ /^<!-- config-table:notes id=[^ ]+($| .*-->$)/) end = "<!-- config-table:notes-end -->"
+      else if ($0 ~ /^<!-- agent-info:start fragment=[^ ]+ .*-->$/) end = "agent-info"
+      else next
+      held = 0
+    }
+    { held += length($0) + 1 }
+    $0 == end || (end == "agent-info" && $0 ~ /^<!-- agent-info:end fragment=[^ ]+ -->$/) {
+      total += held
+      end = ""
+    }
+    END { print total + 0 }'
+}
+
+# hand_written_bytes FILE
+# FILE's size less its generated regions: what the budget measures.
+hand_written_bytes() {
+  local total generated
+  total=$(wc -c < "$1")
+  generated=$(generated_region_bytes "$1")
+  echo $(( total - generated ))
 }
 
 check_size() {
-  local ok=1 f bytes rpath rbytes rissue
-  declare -A ratchet_bytes=() ratchet_issue=()
+  local ok=1 f bytes rpath rbytes rissue pattern matched
+  declare -A ratchet_bytes=() ratchet_issue=() in_scope=()
   while IFS=$'\t' read -r rpath rbytes rissue; do
     [[ -z "$rpath" || "$rpath" == \#* ]] && continue
     ratchet_bytes["$rpath"]="$rbytes"
@@ -371,19 +432,52 @@ check_size() {
   done < "$SIZE_RATCHET"
 
   while IFS= read -r f; do
+    in_scope["$f"]=1
     is_size_exempt "$f" && continue
+    # The raw size bounds the hand-written one, so only a file over the
+    # budget as a whole pays for the region scan.
     bytes=$(wc -c < "$f")
+    (( bytes <= SIZE_BUDGET_BYTES )) && continue
+    bytes=$(hand_written_bytes "$f")
     (( bytes <= SIZE_BUDGET_BYTES )) && continue
     if [[ -n "${ratchet_bytes[$f]+x}" ]]; then
       if (( bytes > ratchet_bytes[$f] )); then
-        fail "$f: $bytes bytes, grew past its $SIZE_RATCHET entry of ${ratchet_bytes[$f]} bytes (tracked by #${ratchet_issue[$f]}) — a ratchet entry may only shrink"
+        fail "$f: $bytes hand-written bytes, grew past its $SIZE_RATCHET entry of ${ratchet_bytes[$f]} (tracked by #${ratchet_issue[$f]}) — a ratchet entry may only shrink"
         ok=0
       fi
     else
-      fail "$f: $bytes bytes exceeds the ${SIZE_BUDGET_BYTES}-byte size budget and has no entry in $SIZE_RATCHET"
+      fail "$f: $bytes hand-written bytes exceeds the ${SIZE_BUDGET_BYTES}-byte size budget and has no entry in $SIZE_RATCHET"
       ok=0
     fi
   done < <(in_scope_md_files)
+
+  # An entry the loop above never consults would read as a live constraint
+  # while holding nothing — a conflict resolution that kept a row for a file
+  # this check exempts, say — so each one fails, naming why it is dead.
+  for rpath in "${!ratchet_bytes[@]}"; do
+    if [[ -z "${in_scope[$rpath]+x}" ]]; then
+      fail "$SIZE_RATCHET: $rpath is not an in-scope document — delete its entry"
+      ok=0
+    elif is_size_exempt "$rpath"; then
+      fail "$SIZE_RATCHET: $rpath is exempt from the size budget, so its entry is never read — delete it"
+      ok=0
+    elif bytes=$(hand_written_bytes "$rpath"); (( bytes <= SIZE_BUDGET_BYTES )); then
+      fail "$SIZE_RATCHET: $rpath is within the size budget at $bytes hand-written bytes — delete its entry"
+      ok=0
+    fi
+  done
+
+  for pattern in "${SIZE_EXEMPT[@]}"; do
+    matched=0
+    for f in "${!in_scope[@]}"; do
+      # shellcheck disable=SC2053  # Unquoted on purpose: each entry is a glob pattern.
+      [[ "$f" == $pattern ]] && { matched=1; break; }
+    done
+    if (( ! matched )); then
+      fail "size exemption '$pattern' matches no in-scope document — update SIZE_EXEMPT and docs/README.md's \"Size budget\" section"
+      ok=0
+    fi
+  done
 
   (( ok )) && note "size budget: ok"
   return $(( ! ok ))

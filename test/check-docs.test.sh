@@ -50,7 +50,7 @@ assert_eq() {
 new_repo() {
   local dir
   dir="$(mktemp -d)"
-  mkdir -p "$dir/scripts" "$dir/docs" "$dir/lib"
+  mkdir -p "$dir/scripts" "$dir/docs/reviews" "$dir/docs/reference" "$dir/lib"
   cp "$SCRIPT_DIR/scripts/check-docs.sh" "$dir/scripts/check-docs.sh"
   cp "$SCRIPT_DIR/lib/markdown-scan.sh" "$dir/lib/markdown-scan.sh"
   chmod +x "$dir/scripts/check-docs.sh"
@@ -74,6 +74,12 @@ MD
 | `docs/README.md` | operator | reference | This map |
 | `docs/IMPLEMENTATION-PIPELINE-SPEC.md` | agent | reference | Fixture spec |
 | `docs/REVIEW-PIPELINE-SPEC.md` | agent | reference | Fixture spec |
+| `docs/MONITOR-PIPELINE-SPEC.md` | agent | reference | Fixture spec |
+| `docs/DASHBOARD-SPEC.md` | agent | reference | Fixture spec |
+| `docs/reference/configuration.md` | operator | reference | Fixture configuration reference |
+| `docs/ROADMAP.md` | maintainer | decision log | Fixture roadmap |
+| `docs/reviews/2026-01-01-fixture.md` | maintainer | record | Fixture review |
+| `CHANGELOG.md` | maintainer | record | Fixture changelog |
 | `AGENTS.md` | agent | reference | Fixture conventions |
 
 See `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "Fixture Heading" for an example
@@ -89,6 +95,14 @@ MD
   # tree must carry what it cites, the same as any other file's citations.
   cat > "$dir/AGENTS.md" <<'MD'
 # Fixture AGENTS
+
+## As-built specifications
+
+Fixture conventions.
+
+## Generated regions
+
+Fixture conventions.
 
 ## Tech debt
 
@@ -111,6 +125,30 @@ MD
 Content.
 MD
 
+  cat > "$dir/docs/MONITOR-PIPELINE-SPEC.md" <<'MD'
+# Fixture monitor spec
+
+Content.
+MD
+
+  cat > "$dir/docs/DASHBOARD-SPEC.md" <<'MD'
+# Fixture dashboard spec
+
+Content.
+MD
+
+  cat > "$dir/docs/reference/configuration.md" <<'MD'
+# Fixture configuration reference
+
+Content.
+MD
+
+  # Check 3 fails an exemption that matches no document, so the tree carries
+  # one document for each of check-docs.sh's SIZE_EXEMPT patterns.
+  printf '# Fixture roadmap\n\nContent.\n' > "$dir/docs/ROADMAP.md"
+  printf '# Fixture review\n\nContent.\n' > "$dir/docs/reviews/2026-01-01-fixture.md"
+  printf '# Fixture changelog\n\nContent.\n' > "$dir/CHANGELOG.md"
+
   echo '{}' > "$dir/config.schema.json"
   printf '# empty — nothing over budget in this fixture\n' > "$dir/scripts/docs-size-ratchet.tsv"
   printf '# empty — no as-built phrasing in this fixture\n' > "$dir/scripts/docs-phrasing-ratchet.tsv"
@@ -122,6 +160,29 @@ MD
 run_script() (
   cd "$1" && ./scripts/check-docs.sh --check
 )
+
+# pad_past_budget: print filler just past check 3's 100,000-byte budget.
+pad_past_budget() {
+  yes 'Padding line to cross the size budget.' | head -c 100100
+}
+
+# assert_fails DESC OUTPUT RC NEEDLE: the run exited non-zero and named NEEDLE.
+assert_fails() {
+  local desc="$1" out="$2" rc="$3" needle="$4"
+  if (( rc != 0 )); then
+    pass "$desc: --check exits non-zero"
+  else
+    fail "$desc: --check exits non-zero (got rc=0)"
+  fi
+  assert_contains "$desc: names the defect" "$out" "$needle"
+}
+
+# assert_size_ok DESC OUTPUT RC: the run exited 0 with the size check ok.
+assert_size_ok() {
+  local desc="$1" out="$2" rc="$3"
+  assert_eq "$desc: --check exits 0" "0" "$rc"
+  assert_contains "$desc: size budget ok" "$out" "size budget: ok"
+}
 
 # --- Baseline: a clean fixture tree passes every check. ---
 baseline="$(new_repo)"
@@ -206,43 +267,104 @@ rm -rf "$map_repo"
 # --- Check 3: size budget — a document past 100,000 bytes with no ratchet
 #     entry. ---
 size_repo="$(new_repo)"
-{
-  echo '# Fixture AGENTS'
-  echo
-  echo '## Tech debt'
-  echo
-  yes 'Padding line to cross the size budget.' | head -c 100100
-} > "$size_repo/AGENTS.md"
+pad_past_budget >> "$size_repo/AGENTS.md"
 size_out="$(run_script "$size_repo" 2>&1)"
-size_rc=$?
-if (( size_rc != 0 )); then
-  pass "check 3 fixture: --check exits non-zero on an over-budget file"
-else
-  fail "check 3 fixture: --check exits non-zero on an over-budget file (got rc=0)"
-fi
-assert_contains "check 3 fixture: names the size-budget violation" "$size_out" "exceeds the 100000-byte size budget"
+assert_fails "check 3 fixture" "$size_out" $? "exceeds the 100000-byte size budget"
 rm -rf "$size_repo"
 
-# --- Check 3, exemption: an as-built specification over budget with no
-#     ratchet entry does not fail — it is exempt by nature (#2163). ---
-exempt_repo="$(new_repo)"
-{
-  echo '# Fixture dashboard spec'
-  echo
-  echo '## Fixture Heading'
-  echo
-  yes 'Padding line to cross the size budget.' | head -c 100100
-} > "$exempt_repo/docs/DASHBOARD-SPEC.md"
-cat >> "$exempt_repo/docs/README.md" <<'MD'
+# --- Check 3, ratchet: an entry at the file's own hand-written size holds
+#     it, and one more byte fails. ---
+ratchet_repo="$(new_repo)"
+pad_past_budget >> "$ratchet_repo/AGENTS.md"
+printf 'AGENTS.md\t%s\t1\n' "$(wc -c < "$ratchet_repo/AGENTS.md")" >> "$ratchet_repo/scripts/docs-size-ratchet.tsv"
+ratchet_out="$(run_script "$ratchet_repo" 2>&1)"
+assert_size_ok "check 3 ratchet fixture" "$ratchet_out" $?
+printf 'x' >> "$ratchet_repo/AGENTS.md"
+ratchet_out="$(run_script "$ratchet_repo" 2>&1)"
+assert_fails "check 3 ratchet fixture, one byte more" "$ratchet_out" $? "grew past its scripts/docs-size-ratchet.tsv entry"
+rm -rf "$ratchet_repo"
 
-| `docs/DASHBOARD-SPEC.md` | agent | reference | Fixture spec |
-MD
-(cd "$exempt_repo" && git add -A)
-exempt_out="$(run_script "$exempt_repo" 2>&1)"
-exempt_rc=$?
-assert_eq "check 3 exemption fixture: --check exits 0 for an exempt over-budget file" "0" "$exempt_rc"
-assert_contains "check 3 exemption fixture: size budget ok despite the over-budget exempt file" "$exempt_out" "size budget: ok"
-rm -rf "$exempt_repo"
+# --- Check 3, exemption: every as-built specification AGENTS.md lists,
+#     over budget with no ratchet entry, passes — it is exempt by nature
+#     (#2163) — whichever docs/*-SPEC.md name it carries. ---
+for spec in IMPLEMENTATION-PIPELINE REVIEW-PIPELINE MONITOR-PIPELINE DASHBOARD; do
+  exempt_repo="$(new_repo)"
+  pad_past_budget >> "$exempt_repo/docs/$spec-SPEC.md"
+  exempt_out="$(run_script "$exempt_repo" 2>&1)"
+  assert_size_ok "check 3 exemption fixture, docs/$spec-SPEC.md" "$exempt_out" $?
+  rm -rf "$exempt_repo"
+done
+
+# --- Check 3, generated regions: bytes inside a complete region of each
+#     kind AGENTS.md's "Generated regions" section lists do not count. ---
+while IFS='|' read -r kind start_marker end_marker; do
+  region_repo="$(new_repo)"
+  {
+    echo
+    echo "$start_marker"
+    pad_past_budget
+    echo
+    echo "$end_marker"
+  } >> "$region_repo/docs/reference/configuration.md"
+  region_out="$(run_script "$region_repo" 2>&1)"
+  assert_size_ok "check 3 generated-region fixture, $kind" "$region_out" $?
+  rm -rf "$region_repo"
+done <<'REGIONS'
+table of contents|<!-- toc:start -->|<!-- toc:end -->
+configuration table|<!-- config-table:start id=main — GENERATED from config.schema.json by scripts/render-config-table.sh; edit the schema, not these rows -->|<!-- config-table:end -->
+configuration-table notes|<!-- config-table:notes id=main -->|<!-- config-table:notes-end -->
+stamped region|<!-- agent-info:start fragment=conventions source=Pullwright/.agent@b517d3d sha256=30bd787a7b6c -->|<!-- agent-info:end fragment=conventions -->
+REGIONS
+
+# --- Check 3, generated regions: an unterminated region, or markers inside
+#     fenced code, leave the bytes counted as hand-written. ---
+unterminated_repo="$(new_repo)"
+{
+  echo
+  echo '<!-- config-table:start id=main -->'
+  pad_past_budget
+} >> "$unterminated_repo/docs/reference/configuration.md"
+unterminated_out="$(run_script "$unterminated_repo" 2>&1)"
+assert_fails "check 3 unterminated-region fixture" "$unterminated_out" $? "docs/reference/configuration.md: "
+rm -rf "$unterminated_repo"
+
+fenced_repo="$(new_repo)"
+{
+  echo
+  echo '```'
+  echo '<!-- toc:start -->'
+  pad_past_budget
+  echo
+  echo '<!-- toc:end -->'
+  echo '```'
+} >> "$fenced_repo/docs/reference/configuration.md"
+fenced_out="$(run_script "$fenced_repo" 2>&1)"
+assert_fails "check 3 fenced-markers fixture" "$fenced_out" $? "docs/reference/configuration.md: "
+rm -rf "$fenced_repo"
+
+# --- Check 3, dead entries: a ratchet entry check 3 would never read — for
+#     an exempt document, a missing one, or one within the budget — fails,
+#     so a conflict resolution cannot keep one that looks live. ---
+while IFS='|' read -r case_name rpath needle; do
+  dead_repo="$(new_repo)"
+  printf '%s\t200000\t1\n' "$rpath" >> "$dead_repo/scripts/docs-size-ratchet.tsv"
+  dead_out="$(run_script "$dead_repo" 2>&1)"
+  assert_fails "check 3 dead-entry fixture, $case_name" "$dead_out" $? "$needle"
+  rm -rf "$dead_repo"
+done <<'DEAD'
+exempt document|docs/REVIEW-PIPELINE-SPEC.md|docs/REVIEW-PIPELINE-SPEC.md is exempt from the size budget
+missing document|docs/GONE.md|docs/GONE.md is not an in-scope document
+document within the budget|AGENTS.md|AGENTS.md is within the size budget
+DEAD
+
+# --- Check 3, stale exemption: an exemption that matches no document
+#     fails, as #2094's move of the specifications would make it. ---
+stale_repo="$(new_repo)"
+(cd "$stale_repo" && git rm -qf docs/ROADMAP.md)
+sed -i '\|docs/ROADMAP.md|d' "$stale_repo/docs/README.md"
+stale_out="$(run_script "$stale_repo" 2>&1)"
+assert_fails "check 3 stale-exemption fixture" "$stale_out" $? "size exemption 'docs/ROADMAP.md' matches no in-scope document"
+rm -rf "$stale_repo"
 
 # --- Check 4: section citations — a citation naming a heading that does
 #     not exist. ---

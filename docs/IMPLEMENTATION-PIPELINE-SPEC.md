@@ -2290,12 +2290,19 @@ implements.
    in `docs/README.md`'s "All documents" map, one row per file except a dated
    `docs/reviews/project-review-*/` directory, which takes one entry for the
    whole directory, and every path that map names exists. No in-scope
-   document exceeds the 100,000-byte budget `docs/README.md`'s "Size budget"
-   section fixed unless it is exempt there (`CHANGELOG.md`,
-   `docs/ROADMAP.md`, `docs/reviews/**`, the three as-built specifications,
-   `docs/reference/configuration.md`) or carries an entry in
-   `scripts/docs-size-ratchet.tsv` naming the byte count it may not grow past
-   and the issue that will bring it under budget. A quoted section citation,
+   document's hand-written content — its bytes outside the generated regions
+   `AGENTS.md`'s "Generated regions" section lists, which a schema change or
+   a new heading regenerates — exceeds the 100,000-byte budget
+   `docs/README.md`'s "Size budget" section fixed, unless the document is
+   exempt there (`CHANGELOG.md`, `docs/ROADMAP.md`, `docs/reviews/**`, and
+   every as-built specification, `docs/*-SPEC.md`, which `AGENTS.md`'s
+   "As-built specifications" section requires to grow; #2094 brings the
+   implementation and dashboard specifications under budget by splitting
+   them) or carries an entry in `scripts/docs-size-ratchet.tsv` naming the
+   byte count it may not grow past and the issue that will bring it under
+   budget. An entry for a document that is missing, exempt or within the
+   budget fails, as does an exemption that matches no document, so neither
+   list outlives what it describes. A quoted section citation,
    in any of the three forms `docs/README.md`'s "How sections are cited"
    section and this repository's prose use, names a heading of the file it
    cites or text that still exists in it — checked in documents, prompts,
@@ -2306,7 +2313,8 @@ implements.
    that file's entry for each as-built document: a ratchet, not a ban, since
    the standing decision of 2026-09-04 (#1154) allows a historical aside that
    passes the deletion test. Both ratchet files are inventories of what is
-   over the line today, never a place to buy slack by raising a limit.
+   over the line today, the exemptions aside, never a place to buy slack by
+   raising a limit.
    The whole check runs offline, reading no network, so an external link is
    out of scope by design — as are spelling, grammar and requirement-label
    citations, which issue #2095 covers instead.
@@ -24984,10 +24992,13 @@ What exists, and the requirements each part answers to:
    `lib/markdown-scan.sh` (component 24), sharing that library's `gh_slug`
    with `scripts/render-toc.sh` and adding `markdown_heading_texts` and
    `markdown_heading_slugs` to it for the heading lookups the two citation
-   and fragment checks need. Headings, slugs and whole bodies are cached per
-   file, the body cache as a scratch file matched with `grep -F` rather than
-   a Bash string, because `docs/IMPLEMENTATION-PIPELINE-SPEC.md` alone
-   unfences to 2.3 MB and Bash's own glob matching has no fast substring
+   and fragment checks need. The size check reads the same library's
+   `markdown_unfenced` to find generated regions, so a region marker shown
+   inside fenced code opens nothing, and it scans for regions only in a file
+   whose whole size is over the budget. Headings, slugs and whole bodies are
+   cached per file, the body cache as a scratch file matched with `grep -F`
+   rather than a Bash string, because `docs/IMPLEMENTATION-PIPELINE-SPEC.md`
+   alone unfences to 2.3 MB and Bash's own glob matching has no fast substring
    path; both cache helpers must be called as plain statements, never in
    command substitution, which would fork the assignment into a subshell and
    silently turn every call into a cache miss. Soft-wrapped paragraphs are
@@ -31421,8 +31432,16 @@ oblige anyone to edit a test.
     one way at a time, exits non-zero naming the defect — a relative link to
     a file that does not exist, a document on disk the map never lists, a
     document padded past 100,000 bytes with no size-ratchet entry, a
-    citation reworded to name a heading that is not there, and a sentence of
-    historical phrasing in a document with no phrasing-ratchet entry. A
+    size-ratchet entry for a document that is exempt, missing or within the
+    budget, a size exemption that matches no document, a citation reworded
+    to name a heading that is not there, and a sentence of historical
+    phrasing in a document with no phrasing-ratchet entry. Each of the four
+    as-built specifications `AGENTS.md` lists, padded past 100,000 bytes
+    with no entry, passes, and so does a document whose bytes past the
+    budget all lie inside one generated region, of each kind `AGENTS.md`'s
+    "Generated regions" section lists; the same document fails once the
+    region loses its end marker, or once its markers sit inside fenced code,
+    because those bytes then count as hand-written. A
     `#fragment` that no heading slugs to, but an explicit `<a id="…">`
     anchor in the target provides, passes — as `docs/concepts/glossary.md`'s
     own `#human-level` and `#no-op-cycle` links do, both of which sit over a
