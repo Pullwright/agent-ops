@@ -5,7 +5,7 @@ A node is one Compose project running the agent-ops scheduler and supporting ser
 ## Prerequisites
 
 - Docker and Docker Compose installed
-- A GitHub personal access token (`GH_TOKEN`) with `repo` and `security_events` scopes
+- A classic GitHub personal access token (`GH_TOKEN`) with `repo`, `workflow` and `read:org` scopes
 - Claude model credentials (API key or subscription)
 - A Tailscale authkey (optional, for dashboard access over your tailnet)
 
@@ -15,9 +15,10 @@ See [docs/DATA-HANDLING.md](../../DATA-HANDLING.md) to understand what data the 
 
 The pipeline authenticates with GitHub in two ways:
 
-**Primary:** A personal access token (`GH_TOKEN`) set in `.env`. Required scopes:
-- `repo` — to read and write to repositories the pipeline works on
-- `security_events` — to read Dependabot and code-scanning alerts
+**Primary:** A personal access token (`GH_TOKEN`) set in `.env`. Make it a classic token: a fine-grained one reaches a single account, and a fleet whose repositories span more than one owner needs a token that reaches them all. Required scopes:
+- `repo` — to read and write to the repositories the pipeline works on. Full `repo` rather than `public_repo`, because a state repository is private; on a classic token it also carries the Dependabot and code-scanning alert reads
+- `workflow` — separate from `repo` and not implied by it: this is what lets a cycle's pull request touch `.github/workflows/`
+- `read:org` — wanted by `gh` itself rather than by any call the pipeline makes, and only once the token is classic. `gh`'s minimum-scope check skips an empty `X-Oauth-Scopes` header (what a fine-grained token sends) but enforces `repo` plus one of `read:org`/`write:org`/`admin:org` on a classic one, so without it `gh auth status` and every `scripts/doctor.sh` GitHub check fail on a token that is in fact working
 
 **Optionally: Forge authoring App** (D18 decision 1). If your installation provisions a GitHub App for short-lived tokens, set `PULLWRIGHT_AUTHOR_APP_ID` and `PULLWRIGHT_AUTHOR_INSTALLATION_ID` (or, for a fleet spanning more than one owner, `PULLWRIGHT_AUTHOR_INSTALLATION_IDS`, a JSON map of owner to installation id) in `.env`, and point `PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH` at the App's `.pem` private key on the host — Compose bind-mounts it read-only into the container at that same path, so the key's contents never go in `.env`. The App mints tokens automatically, letting you rotate the key or remove the App without restarting nodes. Omit these and nodes authenticate with `GH_TOKEN` alone, which is the simpler path.
 
