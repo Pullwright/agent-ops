@@ -10,6 +10,12 @@
 # quoted section citation to a heading. One reading serves all three, so a
 # fence one of them mistakes for prose cannot make the others disagree with
 # it.
+#
+# The same holds for generated regions: the "Generated regions" section below
+# lists every region a renderer rewrites and the markers that delimit it, so
+# scripts/render-toc.sh and scripts/render-config-table.sh, which render them,
+# and scripts/check-docs.sh, which leaves them out of the size budget, read
+# one list and one marker grammar.
 
 # markdown_unfenced FILE
 # Print FILE's lines that lie outside fenced code blocks, in order, leaving out
@@ -30,7 +36,21 @@
 # follow a closing fence and stop it closing, and every heading and label after
 # the first fence would vanish from both readers.
 markdown_unfenced() {
-  awk '
+  markdown_unfenced_lines 0 "$1"
+}
+
+# markdown_unfenced_numbered FILE
+# As markdown_unfenced, but each line is prefixed with its line number in FILE
+# and a tab, so a reader that finds a line here can go back to FILE itself for
+# what lies around it, fenced code included.
+markdown_unfenced_numbered() {
+  markdown_unfenced_lines 1 "$1"
+}
+
+# markdown_unfenced_lines NUMBERED FILE
+# The one fence-aware pass behind both readers above.
+markdown_unfenced_lines() {
+  awk -v numbered="$1" '
     function run(s, c,    n) {
       n = 0
       while (substr(s, n + 1, 1) == c) n++
@@ -50,7 +70,8 @@ markdown_unfenced() {
             next
           }
         }
-        print
+        if (numbered) print NR "\t" $0
+        else print
         next
       }
       if (c == fence) {
@@ -59,7 +80,7 @@ markdown_unfenced() {
         sub(/[ \t]+$/, "", rest)
         if (n >= fence_len && rest == "") fence = ""
       }
-    }' "$1"
+    }' "$2"
 }
 
 # gh_slug TEXT
@@ -123,4 +144,132 @@ markdown_heading_slugs() {
     fi
     echo "$anchor"
   done < <(markdown_heading_texts "$1")
+}
+
+# ---------------------------------------------------------------------------
+# Generated regions
+# ---------------------------------------------------------------------------
+#
+# The regions AGENTS.md's "Generated regions" section describes: each one is
+# rewritten by a renderer and never edited by hand. A region is generated
+# only if it is listed here. scripts/render-toc.sh and
+# scripts/render-config-table.sh render exactly the regions listed, and
+# scripts/check-docs.sh leaves exactly these out of the size budget, so a
+# marker pair placed anywhere else, or one carrying an id or fragment that
+# nothing renders, holds hand-written bytes like any other line.
+
+# The files whose table of contents scripts/render-toc.sh renders, one region
+# each, from toc_start_re to toc_end_re.
+# shellcheck disable=SC2034  # Read by the scripts that source this file.
+TOC_FILES=(
+  "docs/IMPLEMENTATION-PIPELINE-SPEC.md"
+  "docs/guides/working-with-pullwright/README.md"
+  "docs/guides/operating/README.md"
+  "docs/guides/contributing/README.md"
+)
+
+# FILE:ID:AUDIENCE for each configuration table scripts/render-config-table.sh
+# renders from config.schema.json: a table region (config_table_start_re ID to
+# config_table_end_re) and the notes region beside it (config_notes_start_re
+# ID to config_notes_end_re). The audience picks which x-docs field, and which
+# schema description fallback, the regions render.
+# shellcheck disable=SC2034  # Read by the scripts that source this file.
+CONFIG_TABLE_REGIONS=(
+  "docs/reference/configuration.md:main:readme"
+  "docs/reference/configuration.md:review:readme"
+  "docs/IMPLEMENTATION-PIPELINE-SPEC.md:main:spec"
+  "docs/REVIEW-PIPELINE-SPEC.md:review:spec"
+)
+
+# FILE:FRAGMENT for each region Pullwright/.agent's scripts/sync.sh stamps in
+# this repository, from stamp_start_re FRAGMENT to stamp_end_re FRAGMENT. That
+# repository's sync/manifest.tsv decides them and nothing here can read it, so
+# this is a copy: a fragment the manifest adds counts as hand-written until it
+# is listed here too, which errs towards the budget, never past it.
+# shellcheck disable=SC2034  # Read by the scripts that source this file.
+STAMPED_REGIONS=(
+  "AGENTS.md:conventions"
+  "AGENTS.md:maintainer"
+  "AGENTS.md:documentation-principles"
+)
+
+# The markers, as POSIX extended regular expressions, each matched against a
+# whole line; ID and FRAGMENT are plain words. A configuration table's start
+# marker, or its notes', may carry prose between its id and a closing `-->`
+# (scripts/render-config-table.sh's header gives that contract). A stamped
+# region's start marker carries the source commit and a hash after its
+# fragment, as sync.sh writes it, and its end marker names the fragment again,
+# which is how sync.sh pairs the two. The other end markers carry nothing.
+toc_start_re() { printf '%s' '^<!-- toc:start -->$'; }
+toc_end_re() { printf '%s' '^<!-- toc:end -->$'; }
+config_table_start_re() { printf '^<!-- config-table:start id=%s($| .*-->$)' "$1"; }
+config_table_end_re() { printf '%s' '^<!-- config-table:end -->$'; }
+config_notes_start_re() { printf '^<!-- config-table:notes id=%s($| .*-->$)' "$1"; }
+config_notes_end_re() { printf '%s' '^<!-- config-table:notes-end -->$'; }
+stamp_start_re() { printf '^<!-- agent-info:start fragment=%s( .*)? -->$' "$1"; }
+stamp_end_re() { printf '^<!-- agent-info:end fragment=%s -->$' "$1"; }
+
+# markdown_generated_regions FILE
+# Print the first and last line numbers of each generated region FILE carries,
+# tab-separated, one region per line in document order, with both marker lines
+# included. Used by scripts/check-docs.sh to leave the regions out of the size
+# budget.
+#
+# Only the regions listed above for FILE count. A marker counts only as a
+# whole line outside fenced code, so a marker quoted in prose or shown in an
+# example opens nothing; fenced code inside a region is still part of it, and
+# a caller counts the region's lines from FILE itself. A region counts only
+# once its own end marker is reached, so an unterminated start leaves the rest
+# of the file out. Regions do not nest, so a start marker inside a region is
+# part of that region. Each listed region counts once, at its first
+# occurrence, which is the copy each renderer's check reads, so a second copy
+# is hand-written.
+markdown_generated_regions() {
+  local file="$1" entry path id
+  local -a markers=()
+  for path in "${TOC_FILES[@]}"; do
+    if [[ "$path" == "$file" ]]; then
+      markers+=("$(toc_start_re)" "$(toc_end_re)")
+    fi
+  done
+  for entry in "${CONFIG_TABLE_REGIONS[@]}"; do
+    IFS=: read -r path id _ <<< "$entry"
+    if [[ "$path" == "$file" ]]; then
+      markers+=("$(config_table_start_re "$id")" "$(config_table_end_re)")
+      markers+=("$(config_notes_start_re "$id")" "$(config_notes_end_re)")
+    fi
+  done
+  for entry in "${STAMPED_REGIONS[@]}"; do
+    path="${entry%%:*}"
+    id="${entry#*:}"
+    if [[ "$path" == "$file" ]]; then
+      markers+=("$(stamp_start_re "$id")" "$(stamp_end_re "$id")")
+    fi
+  done
+  if (( ${#markers[@]} == 0 )); then
+    return 0
+  fi
+  printf '%s\n' "${markers[@]}" | awk '
+    FNR == NR {
+      if (FNR % 2) start[++regions] = $0
+      else stop[regions] = $0
+      next
+    }
+    {
+      nr = $0
+      sub(/\t.*/, "", nr)
+      line = substr($0, length(nr) + 2)
+    }
+    open {
+      if (line ~ stop[open]) {
+        print first "\t" nr
+        done[open] = 1
+        open = 0
+      }
+      next
+    }
+    {
+      for (i = 1; i <= regions; i++)
+        if (!(i in done) && line ~ start[i]) { open = i; first = nr; break }
+    }' - <(markdown_unfenced_numbered "$file")
 }

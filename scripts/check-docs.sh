@@ -23,13 +23,22 @@
 #    dated `docs/reviews/project-review-*/` directory, which gets one row
 #    for the whole directory (docs/README.md's own convention); and every
 #    path that section names exists.
-# 3. Size — no in-scope document exceeds the 100,000-byte budget
-#    docs/README.md's "Size budget" section fixed, unless it is exempt
-#    (CHANGELOG.md, docs/reviews/**, docs/ROADMAP.md — the same exemptions
-#    that section lists) or it has an entry in scripts/docs-size-ratchet.tsv
-#    naming the issue that will bring it under budget. A ratchet entry may
-#    only shrink: the check fails if a listed file grows past its own
-#    recorded size, or if a file crosses the budget with no entry at all.
+# 3. Size — no in-scope document's hand-written content exceeds the
+#    100,000-byte budget docs/README.md's "Size budget" section fixed,
+#    unless it is exempt (SIZE_EXEMPT: CHANGELOG.md, docs/ROADMAP.md,
+#    docs/reviews/** and every as-built specification, docs/*-SPEC.md — the
+#    same exemptions that section lists) or it has an entry in
+#    scripts/docs-size-ratchet.tsv naming the issue that will bring it under
+#    budget. Hand-written means the bytes outside the generated regions
+#    lib/markdown-scan.sh lists, the regions scripts/render-toc.sh,
+#    scripts/render-config-table.sh and Pullwright/.agent's sync.sh rewrite
+#    (AGENTS.md's "Generated regions" section), since a schema change, a new
+#    heading or a new fragment regenerates those. A ratchet entry may only shrink: the
+#    check fails if a listed file grows past its own recorded size, or if a
+#    file crosses the budget with no entry at all. It also fails on an entry
+#    it would never read (a file that is missing, exempt or within the
+#    budget) and on an exemption that matches no document, so neither list
+#    can quietly outlive what it describes.
 # 4. Section citations — a quoted citation of the form `` `path` §
 #    "heading" `` (docs/README.md's own convention), `` `path`, "heading"
 #    `` or `` path's "heading" `` (the two forms most of this repository's
@@ -349,17 +358,71 @@ check_map() {
 # Check 3: size budget
 # ---------------------------------------------------------------------------
 
+# Documents over the budget by nature, never a debt the ratchet tracks: the
+# changelog and the dated review reports are records, the roadmap a decision
+# log, and an as-built specification grows with every requirement-affecting
+# change AGENTS.md's "As-built specifications" section requires, so no entry
+# could hold one still (#2163). The specifications are named by the same
+# pattern AGENTS.md and scripts/is-docs-only.sh use, so a new component's
+# spec is covered the day it lands. Two of them are a debt all the same:
+# #2094 splits docs/IMPLEMENTATION-PIPELINE-SPEC.md and docs/DASHBOARD-SPEC.md
+# into files within the budget. A `*` matches within one path segment, so
+# docs/*-SPEC.md means the specifications at the top of docs/, the files
+# AGENTS.md lists, and no -SPEC.md file anywhere below; a pattern ending in
+# `/**` takes everything below its directory, at any depth. Each pattern must
+# match at least one in-scope document (check_size enforces it), so a move
+# such as #2094's fails here rather than leaving a stale exemption behind.
+# docs/README.md's "Size budget" section lists the same four.
+SIZE_EXEMPT=(
+  'CHANGELOG.md'
+  'docs/ROADMAP.md'
+  'docs/reviews/**'
+  'docs/*-SPEC.md'
+)
+
+# exempt_pattern_matches PATH PATTERN
+# True when PATH matches PATTERN, read as SIZE_EXEMPT's comment says. Bash's
+# own glob lets a `*` cross a `/`, so a match must also hold exactly as many
+# slashes as the pattern does: then no wildcard can have taken one.
+exempt_pattern_matches() {
+  local path="$1" pattern="$2"
+  if [[ "$pattern" == */'**' ]]; then
+    [[ "$path" == "${pattern%'**'}"* ]]
+    return
+  fi
+  # shellcheck disable=SC2053  # Unquoted on purpose: the pattern is a glob.
+  [[ "$path" == $pattern && "${path//[!\/]/}" == "${pattern//[!\/]/}" ]]
+}
+
 is_size_exempt() {
-  case "$1" in
-    CHANGELOG.md|docs/ROADMAP.md) return 0 ;;
-    docs/reviews/*) return 0 ;;
-    *) return 1 ;;
-  esac
+  local pattern
+  for pattern in "${SIZE_EXEMPT[@]}"; do
+    exempt_pattern_matches "$1" "$pattern" && return 0
+  done
+  return 1
+}
+
+# hand_written_bytes FILE
+# FILE's size less its generated regions (lib/markdown-scan.sh's
+# markdown_generated_regions): what the budget measures. A region's bytes are
+# counted from FILE itself, every line from its start marker to its end marker
+# with its newline, so fenced code inside a region is generated like the rest
+# of it. Bytes, not characters (LC_ALL=C), to agree with `wc -c`.
+hand_written_bytes() {
+  local spans generated=0
+  spans=$(markdown_generated_regions "$1")
+  if [[ -n "$spans" ]]; then
+    generated=$(LC_ALL=C awk '
+      FNR == NR { for (i = $1; i <= $2; i++) generated[i] = 1; next }
+      FNR in generated { held += length($0) + 1 }
+      END { print held + 0 }' <(printf '%s\n' "$spans") "$1")
+  fi
+  echo $(( $(wc -c < "$1") - generated ))
 }
 
 check_size() {
-  local ok=1 f bytes rpath rbytes rissue
-  declare -A ratchet_bytes=() ratchet_issue=()
+  local ok=1 f bytes rpath rbytes rissue pattern matched
+  declare -A ratchet_bytes=() ratchet_issue=() in_scope=() measured=()
   while IFS=$'\t' read -r rpath rbytes rissue; do
     [[ -z "$rpath" || "$rpath" == \#* ]] && continue
     ratchet_bytes["$rpath"]="$rbytes"
@@ -367,19 +430,55 @@ check_size() {
   done < "$SIZE_RATCHET"
 
   while IFS= read -r f; do
+    in_scope["$f"]=1
     is_size_exempt "$f" && continue
-    bytes=$(wc -c < "$f")
+    # The raw size bounds the hand-written one, so only a file over the
+    # budget as a whole, or one with a ratchet entry to hold it to, pays for
+    # the region scan. Every entry for a non-exempt document is therefore
+    # measured here, and the dead-entry loop below reads the measure.
+    if [[ -z "${ratchet_bytes[$f]+x}" ]] && (( $(wc -c < "$f") <= SIZE_BUDGET_BYTES )); then
+      continue
+    fi
+    bytes=$(hand_written_bytes "$f")
+    measured["$f"]=$bytes
     (( bytes <= SIZE_BUDGET_BYTES )) && continue
     if [[ -n "${ratchet_bytes[$f]+x}" ]]; then
       if (( bytes > ratchet_bytes[$f] )); then
-        fail "$f: $bytes bytes, grew past its $SIZE_RATCHET entry of ${ratchet_bytes[$f]} bytes (tracked by #${ratchet_issue[$f]}) — a ratchet entry may only shrink"
+        fail "$f: $bytes hand-written bytes, grew past its $SIZE_RATCHET entry of ${ratchet_bytes[$f]} (tracked by #${ratchet_issue[$f]}) — a ratchet entry may only shrink"
         ok=0
       fi
     else
-      fail "$f: $bytes bytes exceeds the ${SIZE_BUDGET_BYTES}-byte size budget and has no entry in $SIZE_RATCHET"
+      fail "$f: $bytes hand-written bytes exceeds the ${SIZE_BUDGET_BYTES}-byte size budget and has no entry in $SIZE_RATCHET"
       ok=0
     fi
   done < <(in_scope_md_files)
+
+  # An entry the loop above never consults would read as a live constraint
+  # while holding nothing — a conflict resolution that kept a row for a file
+  # this check exempts, say — so each one fails, naming why it is dead.
+  for rpath in "${!ratchet_bytes[@]}"; do
+    if [[ -z "${in_scope[$rpath]+x}" ]]; then
+      fail "$SIZE_RATCHET: $rpath is not an in-scope document — delete its entry"
+      ok=0
+    elif is_size_exempt "$rpath"; then
+      fail "$SIZE_RATCHET: $rpath is exempt from the size budget, so its entry is never read — delete it"
+      ok=0
+    elif (( measured[$rpath] <= SIZE_BUDGET_BYTES )); then
+      fail "$SIZE_RATCHET: $rpath is within the size budget at ${measured[$rpath]} hand-written bytes — delete its entry"
+      ok=0
+    fi
+  done
+
+  for pattern in "${SIZE_EXEMPT[@]}"; do
+    matched=0
+    for f in "${!in_scope[@]}"; do
+      exempt_pattern_matches "$f" "$pattern" && { matched=1; break; }
+    done
+    if (( ! matched )); then
+      fail "size exemption '$pattern' matches no in-scope document — update SIZE_EXEMPT and docs/README.md's \"Size budget\" section"
+      ok=0
+    fi
+  done
 
   (( ok )) && note "size budget: ok"
   return $(( ! ok ))

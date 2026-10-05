@@ -1,15 +1,15 @@
 # scripts/docs-size-ratchet.tsv — files over the 100,000-byte documentation
-# size budget (docs/README.md, "Size budget"), tracked by scripts/check-docs.sh.
-# Format: path<TAB>bytes<TAB>issue — `bytes` is the most this file may be;
-# `issue` is the GitHub issue (bare number) that will bring it under budget.
-# Entries may only shrink (a falling byte count, or a removed line); never
-# add slack by raising one. Each figure is the file's size in this tree, so a
-# file whose growth this repository's own conventions require — a requirement
-# added to an as-built specification, a configuration key regenerating
-# README.md's tables — has no headroom here and fails the check; #2163 tracks
-# that collision and how to resolve it.
-docs/DASHBOARD-SPEC.md	329817	2094
-docs/IMPLEMENTATION-PIPELINE-SPEC.md	2407366	2094
-docs/REVIEW-PIPELINE-SPEC.md	105930	2094
-docs/guides/operating/README.md	103698	2169
+# size budget (docs/README.md, "Size budget"), tracked by scripts/check-docs.sh,
+# that are not exempt (check-docs.sh's SIZE_EXEMPT). The as-built
+# specifications are exempt rather than listed here, because AGENTS.md
+# requires them to grow with every requirement-affecting change and no entry
+# could hold one still; #2094, which splits the implementation and dashboard
+# specifications into files within the budget, is their fix.
+# Format: path<TAB>bytes<TAB>issue — `bytes` is the most hand-written content
+# this file may hold, its size outside generated regions, the measure
+# check-docs.sh applies; `issue` is the GitHub issue (bare number) that will
+# bring it under budget. Entries may only shrink (a falling byte count, or a
+# removed line); never add slack by raising one. An entry for a file that is
+# missing, exempt or back within the budget fails the check: delete it.
+docs/guides/operating/README.md	100759	2169
 prompts/coordinator.md	124323	2144

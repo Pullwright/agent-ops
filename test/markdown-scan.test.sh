@@ -2,7 +2,8 @@
 #
 # test/markdown-scan.test.sh — lib/markdown-scan.sh's `markdown_unfenced`, the
 # one fence-aware reading of Markdown that scripts/render-toc.sh (requirement
-# 52) and the documentation benchmark's source check (requirement 52a) share.
+# 52), the documentation benchmark's source check (requirement 52a) and
+# scripts/check-docs.sh (requirement 52b) share, and its numbered form.
 #
 # A fence the scanner gets wrong does not fail loudly: it hides every heading
 # and label after it, or lets a line of code count as one. So each way a fence
@@ -66,6 +67,12 @@ assert_eq "two backticks are not a fence" '``x``|b' \
   "$(unfenced $'``x``\nb')"
 assert_eq "a fence closes in a file with CRLF line endings, and no line keeps its CR" "a|## c" \
   "$(unfenced $'a\r\n```\r\nb\r\n```\r\n## c\r')"
+
+# markdown_unfenced_numbered keeps the same lines, each tagged with its own
+# line number in the file, so a reader can go back to the file's own bytes.
+printf '%s\n' $'a\n```\nb\n```\nd' >"$tmp_dir/doc.md"
+assert_eq "the numbered reading keeps the same lines, with their line numbers" $'1\ta|5\td' \
+  "$(markdown_unfenced_numbered "$tmp_dir/doc.md" | paste -sd'|' -)"
 
 if (( failures > 0 )); then
   printf '\n%d assertion(s) failed\n' "$failures"

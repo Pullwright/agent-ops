@@ -79,14 +79,21 @@ Three types of generated regions exist in this repository:
    same contract applies: a hand-edit fails the check even when the wording
    was right, because only the rendered copy survives a regeneration.
 
-3. **Stamped regions** — the two `<!-- agent-info:start fragment=... -->` …
+3. **Stamped regions** — the three `<!-- agent-info:start fragment=... -->` …
    `<!-- agent-info:end fragment=... -->` regions in this file carry the text
    every Pullwright and Poetic-Poems repository shares (the branch workflow,
-   commit messages and the maintainer statement), stamped from the
-   organisation's `Pullwright/.agent` repository by its `scripts/sync.sh`.
-   Never hand-edit inside them: change the fragment in `.agent`, then re-stamp.
-   Each start marker records the source commit and a hash of the content, so
-   the sync's `--check` tells a hand edit from a stale copy.
+   commit messages, the maintainer statement and the documentation
+   principles), stamped from the organisation's `Pullwright/.agent`
+   repository by its `scripts/sync.sh`. Never hand-edit inside them: change
+   the fragment in `.agent`, then re-stamp. Each start marker records the
+   source commit and a hash of the content, so the sync's `--check` tells a
+   hand edit from a stale copy.
+
+`lib/markdown-scan.sh` lists every generated region and the markers that
+delimit it. Both renderers read their targets from that list, and
+`scripts/check-docs.sh` leaves exactly those regions out of the documentation
+size budget, so a new region, or a fragment the sync starts stamping here, is
+listed there too, or its bytes count towards the budget as hand-written.
 
 <!-- agent-info:start fragment=conventions source=Pullwright/.agent@b517d3d sha256=30bd787a7b6c -->
 <!-- Stamped by Pullwright/.agent scripts/sync.sh from Pullwright/.agent:fragments/conventions.md - a hand edit inside this region is overwritten at the next sync; edit the source instead. -->
