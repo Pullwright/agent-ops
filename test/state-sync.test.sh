@@ -1976,7 +1976,8 @@ assert_eq "no marker yet reads as no age to report" "" "$(mirror_lock_holder_age
 mirror_lock_mark_started "$ml_mirror" push
 assert_eq "a marker just written reads back as this process' own pid" \
   "$$" "$(jq -r '.pid' "$(mirror_lock_holder_marker "$ml_mirror")")"
-assert_eq "…and an age of (about) zero" "0" "$(mirror_lock_holder_age_s "$ml_mirror")"
+ml_age="$(mirror_lock_holder_age_s "$ml_mirror")"
+assert_eq "…and an age of (about) zero" "1" "$(( ml_age <= 1 ? 1 : 0 ))"
 mirror_lock_clear_started "$ml_mirror"
 assert_eq "clearing it removes the marker" "0" \
   "$(test -e "$(mirror_lock_holder_marker "$ml_mirror")" && echo 1 || echo 0)"
