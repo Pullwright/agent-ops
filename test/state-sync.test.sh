@@ -222,7 +222,7 @@ jq -nc --arg long "$(printf 'x%.0s' $(seq 1 260))" '
 # heartbeat below rather than replicated verbatim.
 printf '{"computed_at":"2026-07-20T00:00:00Z","threshold":3,"idle_after_hours":48,"stages":{"coordinator":{"verdict":"failing","consecutive_failures":5,"last_success":null,"last_detail":"boom"}}}\n' \
   > "$state/.stage-health.json"
-# Its review-pipeline sibling (agent-ops#996, docs/REVIEW-PIPELINE-SPEC.md
+# Its review-pipeline sibling (agent-ops#996, docs/spec/review.md
 # R19): a file of its own, on the identical reasoning, folded into the
 # heartbeat as `review_stage_health` rather than `stage_health` — the two
 # pipelines' own verdicts must never be conflated on a node running both.

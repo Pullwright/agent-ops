@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #
 # scripts/docs-benchmark.sh — score the documentation against a fixed set of
-# real questions (requirement 52a, component 24a of
-# docs/IMPLEMENTATION-PIPELINE-SPEC.md).
+# real questions (requirement 52a of
+# docs/spec/implementation/requirements/the-script-01.md, component 24a of
+# docs/spec/implementation/components/components-03.md).
 #
 # The questions are test/docs-benchmark/questions.jsonl: each is asked the way
 # one of six readers would ask it, with a gold answer, the documents that state

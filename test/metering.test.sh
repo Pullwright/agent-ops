@@ -2,7 +2,7 @@
 #
 # test/metering.test.sh — self-contained regression test for
 # lib/metering.sh (docs/METERING-SCHEMA.md, requirement 33a of
-# docs/IMPLEMENTATION-PIPELINE-SPEC.md).
+# docs/spec/implementation/README.md).
 #
 # No test framework is used (none exists elsewhere in this repo); this is a
 # plain bash script with hand-rolled assertions. Run it directly:

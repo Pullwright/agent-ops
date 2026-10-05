@@ -307,7 +307,7 @@ peers_dir="$(fleet_peers_dir "$workspace_root")"
 #                   because a credential's expiry date has no reader off the
 #                   node that holds the credential.
 #   the review       `.review-stage-health.json` (agent-ops#996,
-#   pipeline's own    `docs/REVIEW-PIPELINE-SPEC.md` R19) is `.stage-health.
+#   pipeline's own    `docs/spec/review.md` R19) is `.stage-health.
 #   stage-health      json`'s sibling for the review pipeline's own
 #   snapshot          `project-reviewer` stage, excluded as a raw file for the
 #                   identical reason — a peer's copy would answer for a
@@ -1048,7 +1048,7 @@ do_push() {
   # healthy.
   #
   # And the review pipeline's own symmetric verdict (agent-ops#996,
-  # `docs/REVIEW-PIPELINE-SPEC.md` R19), read from `.review-stage-health.json`
+  # `docs/spec/review.md` R19), read from `.review-stage-health.json`
   # exactly as `stage_health` is read from `.stage-health.json` just above —
   # `review-cycle.sh`'s own cleanup writes it, over `review-log.jsonl` rather
   # than `log.jsonl`, so it travels as its own `review_stage_health` field

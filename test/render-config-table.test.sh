@@ -53,7 +53,7 @@ assert_not_contains() {
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-mkdir -p "$tmp/scripts" "$tmp/docs/reference" "$tmp/lib"
+mkdir -p "$tmp/scripts" "$tmp/docs/reference" "$tmp/docs/spec/implementation" "$tmp/lib"
 cp "$SCRIPT_DIR/scripts/render-config-table.sh" "$tmp/scripts/render-config-table.sh"
 cp "$SCRIPT_DIR/lib/markdown-scan.sh" "$tmp/lib/markdown-scan.sh"
 chmod +x "$tmp/scripts/render-config-table.sh"
@@ -281,7 +281,7 @@ MD
 }
 
 write_fixture_impl_spec() {
-  cat > "$tmp/docs/IMPLEMENTATION-PIPELINE-SPEC.md" <<'MD'
+  cat > "$tmp/docs/spec/implementation/configuration.md" <<'MD'
 # Fixture spec
 
 <!-- config-table:start id=main — GENERATED from config.schema.json by scripts/render-config-table.sh; edit the schema, not these rows -->
@@ -295,7 +295,7 @@ MD
 }
 
 write_fixture_review_spec() {
-  cat > "$tmp/docs/REVIEW-PIPELINE-SPEC.md" <<'MD'
+  cat > "$tmp/docs/spec/review.md" <<'MD'
 # Fixture review spec
 
 <!-- config-table:start id=review — GENERATED from config.schema.json by scripts/render-config-table.sh; edit the schema, not these rows -->
@@ -415,7 +415,7 @@ else
 fi
 
 # --- The two specs use the "spec" audience, not "readme" ---
-impl_spec_content="$(cat "$tmp/docs/IMPLEMENTATION-PIPELINE-SPEC.md")"
+impl_spec_content="$(cat "$tmp/docs/spec/implementation/configuration.md")"
 assert_contains "the impl spec renders x-docs.spec prose" "$impl_spec_content" 'Gamma spec prose.'
 # shellcheck disable=SC2016
 assert_contains "the impl spec renders theta's own value cell" "$impl_spec_content" '| `theta` | 4 h | Theta spec prose. |'
@@ -427,7 +427,7 @@ else
   pass "the impl spec does not render the README's prose"
 fi
 
-review_spec_content="$(cat "$tmp/docs/REVIEW-PIPELINE-SPEC.md")"
+review_spec_content="$(cat "$tmp/docs/spec/review.md")"
 # shellcheck disable=SC2016
 assert_contains "the review spec renders repository_review.defaults.sub_key" "$review_spec_content" '| `repository_review.defaults.sub_key` |'
 
@@ -638,12 +638,12 @@ assert_not_contains "psi's short code note gets no Extended notes subsection" "$
 
 # --- --check stays clean on the freshly rewritten tree, including the notes
 #     regions, and stays a no-op on a second render ---
-before_hash="$(cat "$tmp/docs/reference/configuration.md" "$tmp"/docs/*.md | sha256sum)"
+before_hash="$(find "$tmp/docs" -name '*.md' -print0 | sort -z | xargs -0 cat | sha256sum)"
 run_script --check >/dev/null 2>&1
 fresh_check_rc=$?
 assert_eq "--check exits zero on a fresh tree" "0" "$fresh_check_rc"
 run_script >/dev/null
-after_hash="$(cat "$tmp/docs/reference/configuration.md" "$tmp"/docs/*.md | sha256sum)"
+after_hash="$(find "$tmp/docs" -name '*.md' -print0 | sort -z | xargs -0 cat | sha256sum)"
 assert_eq "regenerating a fresh tree is a no-op" "$before_hash" "$after_hash"
 
 # --- A stale Extended notes subsection is refused, naming the region and

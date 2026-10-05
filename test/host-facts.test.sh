@@ -80,7 +80,7 @@ assert_eq "a NODE_NAME with a disallowed character is sanitized" \
 # override) — a readable-happy-path smoke test only, the same "unreadable is
 # empty, never a guessed 0" contract left to lib/memory.sh's own
 # already-tested memory_total_kb rather than duplicated here (see
-# docs/IMPLEMENTATION-PIPELINE-SPEC.md's 2n-ii acceptance check).
+# docs/spec/implementation/acceptance-checks/'s 2n-ii acceptance check).
 mem_total="$(host_facts_mem_total_bytes)"
 assert_eq "mem_total_bytes reads a positive integer on this host" \
   "yes" "$(if [[ "$mem_total" =~ ^[0-9]+$ ]] && (( mem_total > 0 )); then echo yes; else echo no; fi)"

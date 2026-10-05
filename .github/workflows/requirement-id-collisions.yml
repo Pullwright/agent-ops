@@ -1,7 +1,8 @@
 name: Requirement id collisions check
 
 # Permanent CI guard against a new duplicate requirement id across sections
-# in docs/IMPLEMENTATION-PIPELINE-SPEC.md (issue #1105) — see
+# in docs/spec/implementation/requirements/*.md and acceptance-checks/*.md
+# (issue #1105) — see
 # scripts/check-requirement-id-collisions.sh's own header for what counts as
 # a collision and why the known pre-existing ones (39, 39c, 55, 17b, 17g) are
 # allowlisted rather than failing this check forever. Modelled on

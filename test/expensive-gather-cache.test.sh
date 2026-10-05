@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # test/expensive-gather-cache.test.sh — regression test for
-# lib/expensive-gather-cache.sh (docs/IMPLEMENTATION-PIPELINE-SPEC.md
+# lib/expensive-gather-cache.sh (docs/spec/implementation/README.md
 # requirement 48, agent-ops#1086): the per-node cache that lets
 # `gather_ordered_repos` read one configured repo's expensive bands fresh
 # per cycle and reuse every other one's last read.

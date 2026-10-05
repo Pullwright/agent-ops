@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # lib/stage-budget.sh — how long a stage is allowed (requirement 4f of
-# docs/IMPLEMENTATION-PIPELINE-SPEC.md).
+# docs/spec/implementation/README.md).
 #
 # Requirement 4e gave every stage two caps: a backstop and a liveness
 # watchdog. This file decides what those two numbers should be, per

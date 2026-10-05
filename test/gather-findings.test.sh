@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # test/gather-findings.test.sh — regression test for the argv cap
-# (docs/IMPLEMENTATION-PIPELINE-SPEC.md, requirement 4g; TD-PPagop-26081503)
+# (docs/spec/implementation/requirements, requirement 4g; TD-PPagop-26081503)
 # in scripts/gather-findings.sh's combine-and-order build.
 #
 # `$dependabot_json` and `$code_scanning_json` are each a repo's whole open

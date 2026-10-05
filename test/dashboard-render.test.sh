@@ -4,7 +4,7 @@
 # JavaScript in dashboard/index.html: what it *renders*, not just whether it
 # throws (TD-PPagop-26072606).
 #
-# `docs/DASHBOARD-SPEC.md`'s verification list already asked for a headless
+# `docs/spec/dashboard/README.md`'s verification list already asked for a headless
 # render with no thrown errors, which catches a page that breaks and nothing
 # about a page that lies — and the Outcome column's "Ended" on a running cycle
 # (#94) is exactly that: it shipped, and stayed shipped, because reading the
@@ -48,9 +48,9 @@ failures=0
 INDEX_HTML="$SCRIPT_DIR/dashboard/index.html"
 for path in \
   docs/README.md \
-  docs/IMPLEMENTATION-PIPELINE-SPEC.md \
-  docs/REVIEW-PIPELINE-SPEC.md \
-  docs/DASHBOARD-SPEC.md \
+  docs/spec/implementation/README.md \
+  docs/spec/review.md \
+  docs/spec/dashboard/README.md \
   docs/METERING-SCHEMA.md \
   docs/ROADMAP.md \
 ; do

@@ -86,7 +86,7 @@
 # the majority of this repository's scripts. `-e` is an opt-in, not a default —
 # reach for it only when a script's author has a specific reason, and comment
 # why at the point it's set. `-e`'s hazard is documented once, in
-# docs/IMPLEMENTATION-PIPELINE-SPEC.md's Gotchas table ("A helper returns
+# docs/spec/implementation/gotchas.md's Gotchas table ("A helper returns
 # non-zero for a legitimately empty result, and the script runs under `set
 # -e`"); this comment does not repeat it.
 #

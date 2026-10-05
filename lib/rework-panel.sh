@@ -107,7 +107,7 @@ REWORK_PANEL_EVENTS="rework stage-end"
 # it until a corrective pull request landed after merge). This is a mapping
 # from the nine documented classes to the three rungs docs/ROADMAP.md's D23
 # names, never an attribution guess — the same class-to-rung table
-# docs/DASHBOARD-SPEC.md documents in prose for this panel.
+# docs/spec/dashboard/README.md documents in prose for this panel.
 #
 # --- The escape ladder's population: caught defects, not all landed items
 # A landed item with zero rework records of any class may have had zero real
@@ -161,7 +161,7 @@ REWORK_PANEL_EVENTS="rework stage-end"
 # which part of a cycle a repetition consumed, so no apportionment within a
 # cycle is derivable here. That makes `rework_share` an upper bound rather than
 # a measured split — stated in those words on the panel's own face, and in
-# docs/DASHBOARD-SPEC.md.
+# docs/spec/dashboard/README.md.
 # No apostrophes anywhere below, comments included: the whole program is one
 # single-quoted shell string, and an apostrophe ends it — breaking the file's
 # own bash syntax, not merely this jq program, which is why `shellcheck` does
@@ -243,7 +243,7 @@ REWORK_PANEL_JQ='
   # every *count* (`rework_count`, `whose`, the escape ladder) — only this
   # cycle-membership test reads the raw stream, which is what keeps
   # `rework_share` the upper bound its own comment below and
-  # docs/DASHBOARD-SPEC.md promise, never an undercount.
+  # docs/spec/dashboard/README.md promise, never an undercount.
   | ($rew_raw | map(.cycle) | map(select(. != null)) | unique) as $rework_cycles
   | ($cost_by_cycle | to_entries) as $cost_entries
   | ($cost_entries | map(.value)) as $all_costs
@@ -356,7 +356,7 @@ REWORK_PANEL_JQ='
 # (`item_lifecycle_fold`'s own "population, never fate" contract) — the
 # rework stream's own dedup and rung classification always read the whole
 # log, since a caught defect's rung is a permanent fact about it, the same
-# "never windowed" argument docs/DASHBOARD-SPEC.md's escape-audits paragraph
+# "never windowed" argument docs/spec/dashboard/README.md's escape-audits paragraph
 # makes. The Publisher calls with SINCE empty (unwindowed throughout); a
 # future caller passing one narrows which landed items this run reports
 # without changing how any one of them is classified.
@@ -376,7 +376,7 @@ REWORK_PANEL_JQ='
 #   confidently-stated falsehood, indistinguishable on the page from a fleet
 #   that genuinely repeated no work. This reports the outage shape instead
 #   (`{how_much: null, whose: null, escape_ladder: null, clean_count: null,
-#   merge_conflict_paths: null}`, docs/DASHBOARD-SPEC.md), the same "an outage is not a quiet zero"
+#   merge_conflict_paths: null}`, docs/spec/dashboard/README.md), the same "an outage is not a quiet zero"
 #   distinction every other roll-up on the page makes, and the same shape
 #   scripts/publish-dashboard.sh substitutes when it cannot assemble the
 #   payload at all. Guarding each individual index against every shape a

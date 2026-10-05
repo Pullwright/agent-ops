@@ -44,13 +44,13 @@ heading, the Script gives you one JSON object:
 Use `review_date` as the review's date **throughout** — the branch and the PR
 title — and `report_dir` as the output folder, exactly as given: the Script has
 already resolved it (a GNU `date` format string, configurable per repository,
-`docs/REVIEW-PIPELINE-SPEC.md` requirement R4a) — never derive a folder name of
+`docs/spec/review.md` requirement R4a) — never derive a folder name of
 your own from `review_date`. Use `branch` as the branch name and `pr_label` as
 the PR label exactly as given.
 
 `instructions` and `context` are optional and may be empty arrays: this
 installation's own per-repository configuration (`review_instructions`,
-`review_context`, `repo_context_file`; `docs/REVIEW-PIPELINE-SPEC.md`, "Review
+`review_context`, `repo_context_file`; `docs/spec/review.md`, "Review
 instructions and context"). Where `instructions` is non-empty, weigh what it
 says throughout the review — what to prioritise, what to ignore, which
 standards apply to this repository specifically. Where `context` is
@@ -206,7 +206,7 @@ All target repos follow these rules:
    *Approach* in `03-recommendations.md` names more than one candidate fix,
    add a `## Default: <fix>` heading (one sentence, the option you would
    take) directly below it, and an `Owner decision: yes` line beside it when
-   that choice falls under `docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement
+   that choice falls under `docs/spec/implementation/requirements` requirement
    36a's owner-only boundary (a credential or secret, an account/settings/
    permissions change, a licence/roadmap/product/architecture decision, an
    external service the pipeline does not hold, or information that exists

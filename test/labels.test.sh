@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # test/labels.test.sh — self-contained regression test for lib/labels.sh
-# (docs/IMPLEMENTATION-PIPELINE-SPEC.md requirement 6a).
+# (docs/spec/implementation/requirements requirement 6a).
 #
 # The two failure directions are not alike, and only one of them is loud:
 #

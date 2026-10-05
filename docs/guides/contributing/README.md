@@ -14,13 +14,13 @@
 
 ## For maintainers: the as-built specifications
 
-To modify this system (add a new work source, change the selection logic, etc.), start from `docs/IMPLEMENTATION-PIPELINE-SPEC.md` — the as-built requirements specification for the pipeline, with numbered requirements and acceptance checks. The specs are maintained as-built: a change to a component lands in the same pull request as the spec edit that keeps its document accurate (see `AGENTS.md`, "As-built specifications"). `prompts/coordinator.md`, `prompts/implementer.md`, and `prompts/reviewer.md` are the operating prompts actually fed to each stage's headless `claude -p` invocation — update the spec first, then bring the affected operating prompt(s) in line with it.
+To modify this system (add a new work source, change the selection logic, etc.), start from `docs/spec/implementation/README.md` — the as-built requirements specification for the pipeline, with numbered requirements and acceptance checks. The specs are maintained as-built: a change to a component lands in the same pull request as the spec edit that keeps its document accurate (see `AGENTS.md`, "As-built specifications"). `prompts/coordinator.md`, `prompts/implementer.md`, and `prompts/reviewer.md` are the operating prompts actually fed to each stage's headless `claude -p` invocation — update the spec first, then bring the affected operating prompt(s) in line with it.
 
-`docs/DASHBOARD-SPEC.md` is the companion specification for the monitoring dashboard (`scripts/publish-dashboard.sh` and `dashboard/index.html`).
+`docs/spec/dashboard/README.md` is the companion specification for the monitoring dashboard (`scripts/publish-dashboard.sh` and `dashboard/index.html`).
 
-`docs/REVIEW-PIPELINE-SPEC.md` is the companion specification for the repository-review pipeline (`review-cycle.sh` and `prompts/project-reviewer.md`).
+`docs/spec/review.md` is the companion specification for the repository-review pipeline (`review-cycle.sh` and `prompts/project-reviewer.md`).
 
-`docs/MONITOR-PIPELINE-SPEC.md` is the companion specification for the Pipeline Monitor (`monitor-cycle.sh`, `lib/monitor-digest.sh` and `prompts/monitor.md`).
+`docs/spec/monitor.md` is the companion specification for the Pipeline Monitor (`monitor-cycle.sh`, `lib/monitor-digest.sh` and `prompts/monitor.md`).
 
 ## Branch workflow
 

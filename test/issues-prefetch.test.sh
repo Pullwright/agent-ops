@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # test/issues-prefetch.test.sh — regression test for the pre-fetched issues
-# source (docs/IMPLEMENTATION-PIPELINE-SPEC.md, requirement 3j).
+# source (docs/spec/implementation/requirements, requirement 3j).
 #
 # The issues source used to be the Co-Ordinator's own `gh` read, and a cycle
 # was observed skipping the entire walk on a "no issue data provided in

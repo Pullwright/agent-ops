@@ -50,7 +50,8 @@ assert_eq() {
 new_repo() {
   local dir
   dir="$(mktemp -d)"
-  mkdir -p "$dir/scripts" "$dir/docs/reviews/project-review-2026-01-01" "$dir/docs/reference" "$dir/docs/guides/operating" "$dir/lib"
+  mkdir -p "$dir/scripts" "$dir/docs/reviews/project-review-2026-01-01" "$dir/docs/reference" "$dir/docs/guides/operating" "$dir/lib" \
+    "$dir/docs/spec/implementation" "$dir/docs/spec/dashboard"
   cp "$SCRIPT_DIR/scripts/check-docs.sh" "$dir/scripts/check-docs.sh"
   cp "$SCRIPT_DIR/lib/markdown-scan.sh" "$dir/lib/markdown-scan.sh"
   chmod +x "$dir/scripts/check-docs.sh"
@@ -72,10 +73,10 @@ MD
 |------|----------|------|---------|
 | `README.md` | operator | how-to | Fixture root readme |
 | `docs/README.md` | operator | reference | This map |
-| `docs/IMPLEMENTATION-PIPELINE-SPEC.md` | agent | reference | Fixture spec |
-| `docs/REVIEW-PIPELINE-SPEC.md` | agent | reference | Fixture spec |
-| `docs/MONITOR-PIPELINE-SPEC.md` | agent | reference | Fixture spec |
-| `docs/DASHBOARD-SPEC.md` | agent | reference | Fixture spec |
+| `docs/spec/implementation/README.md` | agent | reference | Fixture spec |
+| `docs/spec/review.md` | agent | reference | Fixture spec |
+| `docs/spec/monitor.md` | agent | reference | Fixture spec |
+| `docs/spec/dashboard/README.md` | agent | reference | Fixture spec |
 | `docs/reference/configuration.md` | operator | reference | Fixture configuration reference |
 | `docs/guides/operating/README.md` | operator | how-to | Fixture operating guide |
 | `docs/ROADMAP.md` | maintainer | decision log | Fixture roadmap |
@@ -84,7 +85,7 @@ MD
 | `CHANGELOG.md` | maintainer | record | Fixture changelog |
 | `AGENTS.md` | agent | reference | Fixture conventions |
 
-See `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "Fixture Heading" for an example
+See `docs/spec/implementation/README.md` § "Fixture Heading" for an example
 citation.
 
 ## Size budget
@@ -111,7 +112,7 @@ Fixture conventions.
 Fixture conventions.
 MD
 
-  cat > "$dir/docs/IMPLEMENTATION-PIPELINE-SPEC.md" <<'MD'
+  cat > "$dir/docs/spec/implementation/README.md" <<'MD'
 # Fixture spec
 
 ## Fixture Heading
@@ -119,7 +120,7 @@ MD
 Content.
 MD
 
-  cat > "$dir/docs/REVIEW-PIPELINE-SPEC.md" <<'MD'
+  cat > "$dir/docs/spec/review.md" <<'MD'
 # Fixture review spec
 
 ## Another Heading
@@ -127,13 +128,13 @@ MD
 Content.
 MD
 
-  cat > "$dir/docs/MONITOR-PIPELINE-SPEC.md" <<'MD'
+  cat > "$dir/docs/spec/monitor.md" <<'MD'
 # Fixture monitor spec
 
 Content.
 MD
 
-  cat > "$dir/docs/DASHBOARD-SPEC.md" <<'MD'
+  cat > "$dir/docs/spec/dashboard/README.md" <<'MD'
 # Fixture dashboard spec
 
 Content.
@@ -222,7 +223,7 @@ rm -rf "$links_repo"
 #     must pass — docs/concepts/glossary.md writes exactly this over a heading
 #     whose own slug differs. A fragment matching neither still fails. ---
 anchor_repo="$(new_repo)"
-cat >> "$anchor_repo/docs/IMPLEMENTATION-PIPELINE-SPEC.md" <<'MD'
+cat >> "$anchor_repo/docs/spec/implementation/README.md" <<'MD'
 
 <a id="explicit-anchor"></a>
 ## A heading whose slug is not the anchor
@@ -231,7 +232,7 @@ Content.
 MD
 cat >> "$anchor_repo/README.md" <<'MD'
 
-See [the anchored section](docs/IMPLEMENTATION-PIPELINE-SPEC.md#explicit-anchor).
+See [the anchored section](docs/spec/implementation/README.md#explicit-anchor).
 MD
 anchor_out="$(run_script "$anchor_repo" 2>&1)"
 anchor_rc=$?
@@ -277,12 +278,12 @@ assert_fails "check 3 ratchet fixture, one byte more" "$ratchet_out" $? "grew pa
 rm -rf "$ratchet_repo"
 
 # --- Check 3, exemptions: a document each SIZE_EXEMPT pattern covers, over
-#     budget with no ratchet entry, passes. That is every as-built
-#     specification AGENTS.md lists, exempt by nature (#2163), and a review
-#     report at either depth docs/reviews/** reaches. ---
-for doc in docs/IMPLEMENTATION-PIPELINE-SPEC.md docs/REVIEW-PIPELINE-SPEC.md \
-  docs/MONITOR-PIPELINE-SPEC.md docs/DASHBOARD-SPEC.md CHANGELOG.md \
-  docs/ROADMAP.md docs/reviews/2026-01-01-fixture.md \
+#     budget with no ratchet entry, passes. That is CHANGELOG.md, the
+#     roadmap, and a review report at either depth docs/reviews/** reaches —
+#     no as-built specification carries a blanket exemption (#2094 split the
+#     two that had actually grown past the budget into files that are each
+#     within it; see check-docs.sh's SIZE_EXEMPT comment). ---
+for doc in CHANGELOG.md docs/ROADMAP.md docs/reviews/2026-01-01-fixture.md \
   docs/reviews/project-review-2026-01-01/report.md; do
   exempt_repo="$(new_repo)"
   pad_past_budget >> "$exempt_repo/$doc"
@@ -291,18 +292,17 @@ for doc in docs/IMPLEMENTATION-PIPELINE-SPEC.md docs/REVIEW-PIPELINE-SPEC.md \
   rm -rf "$exempt_repo"
 done
 
-# --- Check 3, exemption scope: a `*` stays within one path segment, so
-#     specifications moved below docs/, as #2094 will move them, are held to
-#     the budget, and the pattern that matched them fails as stale. ---
-moved_repo="$(new_repo)"
-(cd "$moved_repo" && mkdir docs/spec && git mv docs/*-SPEC.md docs/spec/)
-sed -i 's|docs/\([A-Z-]*-SPEC\.md\)|docs/spec/\1|' "$moved_repo/docs/README.md"
-pad_past_budget >> "$moved_repo/docs/spec/DASHBOARD-SPEC.md"
-moved_out="$(run_script "$moved_repo" 2>&1)"
-assert_fails "check 3 moved-specification fixture" "$moved_out" $? "size exemption 'docs/*-SPEC.md' matches no in-scope document"
-assert_contains "check 3 moved-specification fixture: holds the moved spec to the budget" "$moved_out" \
-  "$(size_diag docs/spec/DASHBOARD-SPEC.md "$(wc -c < "$moved_repo/docs/spec/DASHBOARD-SPEC.md")")"
-rm -rf "$moved_repo"
+# --- Check 3, no blanket specification exemption: a specification file over
+#     budget with no ratchet entry fails like any other document, the way
+#     docs/spec/implementation/README.md and its sibling files do since
+#     #2094 — proof that SIZE_EXEMPT carries no `docs/*-SPEC.md`-shaped
+#     pattern a specification could still hide behind. ---
+spec_repo="$(new_repo)"
+pad_past_budget >> "$spec_repo/docs/spec/implementation/README.md"
+spec_out="$(run_script "$spec_repo" 2>&1)"
+assert_fails "check 3 specification fixture, no blanket exemption" "$spec_out" $? \
+  "$(size_diag docs/spec/implementation/README.md "$(wc -c < "$spec_repo/docs/spec/implementation/README.md")")"
+rm -rf "$spec_repo"
 
 # --- Check 3, generated regions: the bytes inside each kind of region
 #     lib/markdown-scan.sh lists, placed in a file it lists for that kind, do
@@ -422,7 +422,7 @@ while IFS='|' read -r case_name rpath needle; do
   assert_fails "check 3 dead-entry fixture, $case_name" "$dead_out" $? "$needle"
   rm -rf "$dead_repo"
 done <<'DEAD'
-exempt document|docs/REVIEW-PIPELINE-SPEC.md|docs/REVIEW-PIPELINE-SPEC.md is exempt from the size budget
+exempt document|CHANGELOG.md|CHANGELOG.md is exempt from the size budget
 missing document|docs/GONE.md|docs/GONE.md is not an in-scope document
 document within the budget|AGENTS.md|AGENTS.md is within the size budget
 DEAD

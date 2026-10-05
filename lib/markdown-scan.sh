@@ -159,13 +159,27 @@ markdown_heading_slugs() {
 # nothing renders, holds hand-written bytes like any other line.
 
 # The files whose table of contents scripts/render-toc.sh renders, one region
-# each, from toc_start_re to toc_end_re.
+# each, from toc_start_re to toc_end_re, built from that file's own `##`/`###`
+# headings.
 # shellcheck disable=SC2034  # Read by the scripts that source this file.
 TOC_FILES=(
-  "docs/IMPLEMENTATION-PIPELINE-SPEC.md"
   "docs/guides/working-with-pullwright/README.md"
   "docs/guides/operating/README.md"
   "docs/guides/contributing/README.md"
+)
+
+# FILE:DIR for each directory-wide table of contents scripts/render-toc.sh
+# renders between the same toc:start/toc:end marker pair, built instead from
+# every other Markdown file under DIR (recursive, sorted, FILE itself
+# excluded): one entry per sibling file, linking its own first heading,
+# nested by the sibling's sub-directory. #2094's split of the implementation
+# and dashboard specifications is why this exists: a directory of many
+# within-budget files needs one map, the way a single file's own headings
+# used to be that map.
+# shellcheck disable=SC2034  # Read by the scripts that source this file.
+TOC_DIR_FILES=(
+  "docs/spec/implementation/README.md:docs/spec/implementation"
+  "docs/spec/dashboard/README.md:docs/spec/dashboard"
 )
 
 # FILE:ID:AUDIENCE for each configuration table scripts/render-config-table.sh
@@ -177,8 +191,8 @@ TOC_FILES=(
 CONFIG_TABLE_REGIONS=(
   "docs/reference/configuration.md:main:readme"
   "docs/reference/configuration.md:review:readme"
-  "docs/IMPLEMENTATION-PIPELINE-SPEC.md:main:spec"
-  "docs/REVIEW-PIPELINE-SPEC.md:review:spec"
+  "docs/spec/implementation/configuration.md:main:spec"
+  "docs/spec/review.md:review:spec"
 )
 
 # FILE:FRAGMENT for each region Pullwright/.agent's scripts/sync.sh stamps in
@@ -228,6 +242,12 @@ markdown_generated_regions() {
   local file="$1" entry path id
   local -a markers=()
   for path in "${TOC_FILES[@]}"; do
+    if [[ "$path" == "$file" ]]; then
+      markers+=("$(toc_start_re)" "$(toc_end_re)")
+    fi
+  done
+  for entry in "${TOC_DIR_FILES[@]}"; do
+    path="${entry%%:*}"
     if [[ "$path" == "$file" ]]; then
       markers+=("$(toc_start_re)" "$(toc_end_re)")
     fi

@@ -2,7 +2,7 @@
 #
 # test/config-schema.test.sh — self-contained regression test for
 # config.schema.json, lib/config-schema.sh and the configuration half of
-# scripts/doctor.sh (docs/IMPLEMENTATION-PIPELINE-SPEC.md requirement 4c).
+# scripts/doctor.sh (docs/spec/implementation/requirements requirement 4c).
 #
 # Three things are asserted, and they fail in different directions:
 #
@@ -1708,7 +1708,7 @@ DOCUMENTED_REFINER_MODEL="$(jq -r '.properties.refiner_model["x-docs"].value' "$
 # shellcheck disable=SC2016  # backticks here are literal Markdown, not command substitution
 assert_doctor "doctor warns when a documented installation value drifts from what config.json resolves" \
   '.refiner_model = "claude-opus-5"' 0 \
-  "refiner_model is documented (docs/reference/configuration.md/docs/IMPLEMENTATION-PIPELINE-SPEC.md) as $DOCUMENTED_REFINER_MODEL but resolves to \`claude-opus-5\`"
+  "refiner_model is documented (docs/reference/configuration.md/docs/spec/implementation/README.md) as $DOCUMENTED_REFINER_MODEL but resolves to \`claude-opus-5\`"
 # refinement_policy is cleared too: the base fixture sets issues/tech-debt to
 # "required" (agent-ops#822, the shape the shipped installation runs), and an
 # empty refiner_model with a "required" source configured is itself a fail
@@ -1716,12 +1716,12 @@ assert_doctor "doctor warns when a documented installation value drifts from wha
 # convention under test here.
 assert_doctor "doctor renders an empty resolved value as *(unset)*, the same convention the docs use for one" \
   '.refiner_model = "" | .refinement_policy = {}' 0 \
-  "refiner_model is documented (docs/reference/configuration.md/docs/IMPLEMENTATION-PIPELINE-SPEC.md) as $DOCUMENTED_REFINER_MODEL but resolves to *(unset)*"
+  "refiner_model is documented (docs/reference/configuration.md/docs/spec/implementation/README.md) as $DOCUMENTED_REFINER_MODEL but resolves to *(unset)*"
 DOCUMENTED_EXCLUDED_MINUTES="$(jq -r '.properties.schedule.properties.excluded_minutes["x-docs"].value' "$SCHEMA")"
 # shellcheck disable=SC2016  # backticks here are literal Markdown, not command substitution
 assert_doctor "doctor compares an array-valued x-docs.value by its parsed JSON, naming the resolved array" \
   '.schedule.excluded_minutes = [5]' 0 \
-  "schedule.excluded_minutes is documented (docs/reference/configuration.md/docs/IMPLEMENTATION-PIPELINE-SPEC.md) as $DOCUMENTED_EXCLUDED_MINUTES but resolves to \`[5]\`"
+  "schedule.excluded_minutes is documented (docs/reference/configuration.md/docs/spec/implementation/README.md) as $DOCUMENTED_EXCLUDED_MINUTES but resolves to \`[5]\`"
 
 # A key whose `x-docs.value` equals its own schema `default` documents the
 # product's shipped behaviour, not this installation's — `merge_autonomy` is

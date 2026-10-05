@@ -1,7 +1,7 @@
 # Flow schema — as-built specification
 
 Sibling to `docs/METERING-SCHEMA.md` (requirements 47, 49 and 50 of
-`docs/IMPLEMENTATION-PIPELINE-SPEC.md`), under the same stability policy.
+`docs/spec/implementation/README.md`), under the same stability policy.
 Where that document is the field-by-field contract for what a stage *spent*,
 this one is the contract for D21/D23 of `docs/ROADMAP.md`'s **flow-and-outcome**
 records — three of them, each its own major section below:
@@ -20,7 +20,7 @@ records — three of them, each its own major section below:
 Like its companion this document is as-built: it describes the records that
 exist today, not a plan for ones that will exist later. Where it says
 "requirement N", it means requirement N of
-`docs/IMPLEMENTATION-PIPELINE-SPEC.md`.
+`docs/spec/implementation/README.md`.
 
 ## What this covers
 
@@ -446,7 +446,7 @@ actually read, bounded by `--since` and by whatever the union log currently
 holds. `log.jsonl` is **never rotated** (`scripts/rotate-logs.sh`'s own
 header: "NEVER rotated — this is the fleet's memory") and its analytics
 content is retained per `analytics_retained_days`
-(`docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 2.6d) — `0` by default,
+(`docs/spec/implementation/requirements` requirement 2.6d) — `0` by default,
 meaning indefinitely, which is today's behaviour — so this record's only
 real bound in practice is how far back this pipeline's own logging began,
 not a size-based rotation: no `log_retained_bytes`-style cap ever applies to
@@ -539,7 +539,7 @@ just after the implementation-cycle check rather than beside `review-start`.
 
 A fourth event shares `cycle-skipped`'s own name without being a fourth
 site: `cycle-skipped {reason: "overlap", …}` (requirement 11a of
-`docs/IMPLEMENTATION-PIPELINE-SPEC.md`, agent-ops#1287) is logged by the
+`docs/spec/implementation/README.md`, agent-ops#1287) is logged by the
 cycle that *held* the lock throughout, at its own cleanup, for a schedule
 slot supercronic silently dropped while that cycle was still running — the
 opposite case from the one above, where the tick that logs `cycle-skipped`
@@ -975,7 +975,7 @@ above — on the same terms:
   itself: `lib/node-time-state.sh`'s `node_time_state_fold`, behind the
   read-only `scripts/node-time-state.sh`, which unions `log.jsonl` and
   `review-log.jsonl` before folding. A third pipeline exists
-  (`monitor-cycle.sh`, `docs/MONITOR-PIPELINE-SPEC.md`) and deliberately
+  (`monitor-cycle.sh`, `docs/spec/monitor.md`) and deliberately
   writes no `node-state` event of any kind, so `monitor-log.jsonl` is not in
   that union: a third writer onto a timeline two writers already coordinate
   over risks clobbering a live `producing` span for a smaller gain than the

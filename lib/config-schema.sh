@@ -626,7 +626,7 @@ config_defaults() {
 
     # `state_local_streams_retained` alone takes a configured value as
     # configured — a cap as well as a floor (agent-ops#1826; the design
-    # decision in docs/IMPLEMENTATION-PIPELINE-SPEC.md records why). It is
+    # decision in docs/spec/implementation/README.md records why). It is
     # the one count key that bounds files of a different order of size from
     # the records holding them, and a host whose disk cannot hold the derived
     # count has to be able to say so. What it passes on is a whole number of
@@ -725,7 +725,7 @@ config_missing_plan_path_repos() {
 # Prints one "author_key<TAB>floor_key<TAB>author_id<TAB>floor_id" line per
 # pair where refiner_model or enabler_model — the two stages that can author a
 # work order's context/acceptance directly rather than relay text a human or
-# the Script already wrote (docs/IMPLEMENTATION-PIPELINE-SPEC.md requirements
+# the Script already wrote (docs/spec/implementation/requirements requirements
 # 39 and 36b) — ranks below an implementer tier it might write for
 # (requirement 1c, "the floor"; agent-ops#822). Empty when every rankable pair
 # clears it. Takes already-resolved *qualified* model ids

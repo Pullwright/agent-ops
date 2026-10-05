@@ -292,7 +292,7 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.cache-scope }}
           cache-to: type=gha,mode=max,scope=${{ matrix.cache-scope }}
 
-      # The acceptance checks of docs/IMPLEMENTATION-PIPELINE-SPEC.md (1b), run
+      # The acceptance checks of docs/spec/implementation/acceptance-checks/acceptance-checks-01.md (1b), run
       # here so a broken image cannot reach a node. `docker run` goes through
       # the entrypoint, which is itself part of what is being tested: it must
       # prepare a fresh container's state and exec what it was given.

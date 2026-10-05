@@ -8,7 +8,7 @@
 # against (requirement 3t/3x).
 #
 # Split out of agent-cycle.sh (#771) as the "claim loop and candidate
-# selection" seam docs/IMPLEMENTATION-PIPELINE-SPEC.md's requirements name.
+# selection" seam docs/spec/implementation/README.md's requirements name.
 # Sourced by agent-cycle.sh only; reads and writes the cycle's own globals
 # (`cycle_dir`, `claim_active`, `claim_kind`, `claim_key`, `claim_pr_key`,
 # `first_seen_known_json`, …) exactly as they did inline.
@@ -896,7 +896,7 @@ refinement_traceability_repair() {  # <candidate-json> <refinements-json>
 # those checks existed to catch; once nothing reaching them could ever be a
 # model's paste again, `agent-ops#1156` retired the checks and this fetch
 # along with them (TD-PPagop-26090604). See requirement 17g's as-built note in
-# docs/IMPLEMENTATION-PIPELINE-SPEC.md for the history.
+# docs/spec/implementation/README.md for the history.
 
 # Requirement 17h (agent-ops#769, resolving agent-ops#844 option (b)): the
 # live fetch `compose_selected_candidate_text` below uses to rebuild an

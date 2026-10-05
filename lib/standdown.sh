@@ -9,7 +9,7 @@
 # and back-pressure across every configured repository.
 #
 # Split out of agent-cycle.sh (#771) as the "stand-down reason ladder" seam
-# docs/IMPLEMENTATION-PIPELINE-SPEC.md's requirements name. Sourced by
+# docs/spec/implementation/README.md's requirements name. Sourced by
 # agent-cycle.sh only, and called exactly once, in place, from where this
 # text used to sit: every variable it reads (`github_min_core_budget`,
 # `crash_loop_repo`, `enabler_assignee`, `union_log`, …) is already set by

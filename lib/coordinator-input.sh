@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # lib/coordinator-input.sh — fit the Co-Ordinator's runtime input inside its
-# model's context window (docs/IMPLEMENTATION-PIPELINE-SPEC.md requirement 4i,
+# model's context window (docs/spec/implementation/requirements requirement 4i,
 # agent-ops#641).
 #
 # Requirement 4g moved every fleet-state aggregate off argv because

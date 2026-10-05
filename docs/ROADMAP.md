@@ -356,7 +356,7 @@ Poetic-Poems, with no pipeline code in it.
       #586, #653–#657). *[fleet — one item per specific]*
 - [x] Parameterise the operating prompts so an installation can extend or
       override them without forking the product (`prompt_overrides` in
-      `config.json`, docs/IMPLEMENTATION-PIPELINE-SPEC.md requirement 4a).
+      `config.json`, docs/spec/implementation/requirements requirement 4a).
       Installation-wide per stage, not yet scoped per repo — see the item
       below. *[fleet]*
 - [ ] Scope prompt overrides per repository, not just per installation. The
@@ -384,7 +384,7 @@ Poetic-Poems, with no pipeline code in it.
       changes how strictly a review judges lives in the installation's
       configuration alone. `review-stage-start` records every resolved
       source and a digest of its text, so a review's inputs are
-      reconstructable (`docs/REVIEW-PIPELINE-SPEC.md` R1c, R5 step 2a).
+      reconstructable (`docs/spec/review.md` R1c, R5 step 2a).
       This is the review pipeline's counterpart to the per-repo
       prompt-override item above; the two remain separate mechanisms — the
       per-repo prompt-override item is still open and may yet reuse this
@@ -399,7 +399,7 @@ Poetic-Poems, with no pipeline code in it.
       `review-cycle.sh` validate `config.json` against it before any
       individual key is read, and the two guards it wholly subsumed
       (`nice`'s range, `prompt_overrides`' shape) are retired in favour of it
-      (requirement 1b, `docs/IMPLEMENTATION-PIPELINE-SPEC.md`). *[fleet]*
+      (requirement 1b, `docs/spec/implementation/README.md`). *[fleet]*
 - [x] Make the schema the *only* source of truth rather than a third one
       beside the two prose tables: every reader takes its defaults from
       `config_defaults` (`lib/config-schema.sh`) instead of repeating a
@@ -634,7 +634,7 @@ induced outage rather than only over a quiet afternoon.
       holds either lock — but that only covers the roll. A graceful shutdown
       covers every other way a container goes away: a manual `up -d`,
       `restart`, `down`, a host reboot, an evicted pod. Distinct from
-      `--drain` (agent-ops#865, `docs/IMPLEMENTATION-PIPELINE-SPEC.md`
+      `--drain` (agent-ops#865, `docs/spec/implementation/requirements`
       requirement 2.3d): this item is one node finishing its own one
       in-flight cycle at shutdown, with no operator action and no effect on
       intake; `--drain` is an operator-issued, node- or fleet-wide mode that
@@ -795,7 +795,7 @@ induced outage rather than only over a quiet afternoon.
       than being sold more nodes. *[fleet]*
 - [x] Actor and model scorecards, superseding the Co-Ordinator verdict-quality
       panel and subsuming #529 (D22, issue #610, `counts.actor_scorecards`,
-      docs/DASHBOARD-SPEC.md). One card per actor and, within it, one
+      docs/spec/dashboard/README.md). One card per actor and, within it, one
       row per model and tier, reporting outcomes rather than activity:
       attempts, and how many ended cleanly (no `kill_reason`, no contribution
       to a crash loop); what those attempts *produced* — landed unchanged,

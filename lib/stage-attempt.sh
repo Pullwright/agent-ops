@@ -8,7 +8,7 @@
 # stage this pipeline runs eventually hits.
 #
 # Split out of agent-cycle.sh (#771) as the "stage orchestration and prompt
-# assembly" seam docs/IMPLEMENTATION-PIPELINE-SPEC.md's requirements name:
+# assembly" seam docs/spec/implementation/requirements/'s requirements name:
 # `run_coordinator_stage_attempt` is the one launch/parse/salvage sequence
 # every one of a cycle's per-repository Co-Ordinator engagements runs through,
 # `coordinator_merge_candidates` reconciles what they each returned into one
@@ -66,12 +66,12 @@
 #
 # scripts/publish-dashboard.sh's `extract_status` is a jq port of this
 # algorithm and review-cycle.sh carries a bash copy; the three move together
-# (docs/DASHBOARD-SPEC.md), and test/extract-json-result.test.sh holds them
+# (docs/spec/dashboard/state.md), and test/extract-json-result.test.sh holds them
 # to it.
 #
 # An empty-or-whitespace-only $text is checked explicitly and fails outright
 # (TD26072802, for symmetry with publish-dashboard.sh's extract_status,
-# which shares this algorithm per DASHBOARD-SPEC.md): `jq empty` on
+# which shares this algorithm per docs/spec/dashboard/state.md): `jq empty` on
 # whitespace input succeeds trivially with no output, so without this check
 # the function would return 0 — success — while printing nothing. Every call
 # site already treats empty output as failure regardless of the exit code, so

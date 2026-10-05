@@ -20,7 +20,7 @@
 #     no-substring-match discipline `scripts/autonomy-stage-report.sh`'s own
 #     `crit_agent_approved_prs` already applies (a `o/repo-extra` decoy must
 #     never count toward `o/repo`); derives `repo` from `pr_url` rather than
-#     trusting the event's own field (docs/IMPLEMENTATION-PIPELINE-SPEC.md
+#     trusting the event's own field (docs/spec/implementation/README.md
 #     requirement 33), so a pre-agent-ops#573 event with no `repo` field at
 #     all still reports one; and carries `first_approve_ts` as the *earliest*
 #     `ts` among that pull request's own APPROVE verdicts, not the latest

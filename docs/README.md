@@ -11,7 +11,7 @@ to read first.
 | What you want to do | Where to find it |
 |----------------------|-------------------|
 | Reserve an issue so the pipeline doesn't pick it up while you work on it yourself | `docs/guides/working-with-pullwright/README.md` § "Reserving an issue for yourself" |
-| Understand what a "refined" item is and what the Refiner does | `docs/guides/operating/watch.md` or `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "The Refiner" |
+| Understand what a "refined" item is and what the Refiner does | `docs/guides/operating/watch.md` or `docs/spec/implementation/requirements/refiner.md` § "The Refiner" |
 | Understand how the pipeline prioritizes which issue to work on next | `docs/guides/working-with-pullwright/README.md` § "Issue priority" |
 | Understand what "blocked" and "void" mean, and what to do if you disagree with one | `docs/guides/operating/diagnose-by-symptom.md` § "An item is blocked or void" |
 | Respond to review comments the pipeline left on your pull request | `docs/guides/working-with-pullwright/README.md` § "Responding to your review comments" |
@@ -28,8 +28,8 @@ to read first.
 | Understand which parts of the docs are generated and must not be hand-edited | `AGENTS.md` § "Generated regions" |
 | Understand where a changelog entry belongs | `AGENTS.md` § "Documentation principles" |
 | Try a change on a real node before it merges | `docs/guides/contributing/README.md` § "Trying a change on a real node before it merges" |
-| Find the requirement governing when a claim on an item expires | `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "Extended notes: `claim_ttl_hours`" |
-| Find the requirement governing the daily merge budget | `docs/IMPLEMENTATION-PIPELINE-SPEC.md` § "Extended notes: `merge_budget_per_day`" |
+| Find the requirement governing when a claim on an item expires | `docs/spec/implementation/configuration.md` § "Extended notes: `claim_ttl_hours`" |
+| Find the requirement governing the daily merge budget | `docs/spec/implementation/configuration.md` § "Extended notes: `merge_budget_per_day`" |
 | Understand how the as-built specifications relate to this repository | `docs/guides/contributing/README.md` § "For maintainers: the as-built specifications" |
 | Understand why a cycle produced no change | `docs/guides/operating/run-and-pause.md` § "Staying warm without spending" |
 | Understand how the pipeline avoids piling up unreviewed work | `docs/guides/working-with-pullwright/README.md` § "Staying in front of you" |
@@ -90,12 +90,60 @@ set under `docs/reviews/` one entry for its directory.
 
 #### Specifications (as-built)
 
+Split into within-budget files by #2094: `docs/spec/implementation/` for the
+implementation pipeline, `docs/spec/dashboard/` for the monitoring dashboard,
+each with a `README.md` holding a directory-wide table of contents.
+
 | File | Audience | Kind | Purpose |
 |------|----------|------|---------|
-| `docs/IMPLEMENTATION-PIPELINE-SPEC.md` | agent, contributor, evaluator | reference | As-built specification of the implementation pipeline (5 stages, architecture, requirements) |
-| `docs/REVIEW-PIPELINE-SPEC.md` | agent, contributor, evaluator | reference | As-built specification of the repository-review pipeline |
-| `docs/MONITOR-PIPELINE-SPEC.md` | operator, evaluator | reference | As-built specification of the Pipeline Monitor |
-| `docs/DASHBOARD-SPEC.md` | operator, evaluator | reference | As-built specification of the monitoring dashboard |
+| `docs/spec/implementation/README.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: index, environment, actors, directory table of contents |
+| `docs/spec/implementation/acceptance-checks/acceptance-checks-01.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks |
+| `docs/spec/implementation/acceptance-checks/acceptance-checks-02.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks, part 2 of 6 |
+| `docs/spec/implementation/acceptance-checks/acceptance-checks-03.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks, part 3 of 6 |
+| `docs/spec/implementation/acceptance-checks/acceptance-checks-04.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks, part 4 of 6 |
+| `docs/spec/implementation/acceptance-checks/acceptance-checks-05.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks, part 5 of 6 |
+| `docs/spec/implementation/acceptance-checks/acceptance-checks-06.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks, part 6 of 6 |
+| `docs/spec/implementation/components/components-01.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Components |
+| `docs/spec/implementation/components/components-02.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Components, part 2 of 3 |
+| `docs/spec/implementation/components/components-03.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Components, part 3 of 3 |
+| `docs/spec/implementation/configuration.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Configuration |
+| `docs/spec/implementation/cost-profile.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Cost profile |
+| `docs/spec/implementation/design-decisions.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Design decisions |
+| `docs/spec/implementation/environment.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Environment (verified 2026-07-20) |
+| `docs/spec/implementation/gotchas.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Gotchas |
+| `docs/spec/implementation/landing-gate.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Landing Gate |
+| `docs/spec/implementation/requirements/approver-01.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Approver |
+| `docs/spec/implementation/requirements/approver-02.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Approver, part 2 of 2 |
+| `docs/spec/implementation/requirements/co-ordinator-01.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Co-Ordinator (selection only) |
+| `docs/spec/implementation/requirements/co-ordinator-02.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Co-Ordinator, part 2 of 2 |
+| `docs/spec/implementation/requirements/enabler-01.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Enabler |
+| `docs/spec/implementation/requirements/enabler-02.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Enabler, part 2 of 2 |
+| `docs/spec/implementation/requirements/every-stage.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Every stage (untrusted external content) |
+| `docs/spec/implementation/requirements/implementer.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Implementer |
+| `docs/spec/implementation/requirements/logging-and-state-01.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Logging and state |
+| `docs/spec/implementation/requirements/logging-and-state-02.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Logging and state, part 2 of 2 |
+| `docs/spec/implementation/requirements/refiner.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Refiner |
+| `docs/spec/implementation/requirements/reviewer.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Reviewer |
+| `docs/spec/implementation/requirements/the-script-01.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Requirements |
+| `docs/spec/implementation/requirements/the-script-02.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Script, part 2 of 10 |
+| `docs/spec/implementation/requirements/the-script-03.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Script, part 3 of 10 |
+| `docs/spec/implementation/requirements/the-script-04.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Script, part 4 of 10 |
+| `docs/spec/implementation/requirements/the-script-05.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Script, part 5 of 10 |
+| `docs/spec/implementation/requirements/the-script-06.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Script, part 6 of 10 |
+| `docs/spec/implementation/requirements/the-script-07.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Script, part 7 of 10 |
+| `docs/spec/implementation/requirements/the-script-08.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Script, part 8 of 10 |
+| `docs/spec/implementation/requirements/the-script-09.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Script, part 9 of 10 |
+| `docs/spec/implementation/requirements/the-script-10.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: The Script, part 10 of 10 |
+| `docs/spec/dashboard/README.md` | operator, evaluator | reference | Monitoring dashboard specification: index, architecture, directory table of contents |
+| `docs/spec/dashboard/components.md` | operator, evaluator | reference | Monitoring dashboard specification: Components (as built) |
+| `docs/spec/dashboard/design-decisions.md` | operator, evaluator | reference | Monitoring dashboard specification: Design decisions |
+| `docs/spec/dashboard/integration.md` | operator, evaluator | reference | Monitoring dashboard specification: Integration |
+| `docs/spec/dashboard/publisher.md` | operator, evaluator | reference | Monitoring dashboard specification: The Publisher (`scripts/publish-dashboard.sh`) |
+| `docs/spec/dashboard/site.md` | operator, evaluator | reference | Monitoring dashboard specification: The Site (`dashboard/index.html`) |
+| `docs/spec/dashboard/state.md` | operator, evaluator | reference | Monitoring dashboard specification: State it reads (verified 2026-07-14) |
+| `docs/spec/dashboard/verifying-a-change.md` | operator, evaluator | reference | Monitoring dashboard specification: Verifying a change |
+| `docs/spec/review.md` | agent, contributor, evaluator | reference | As-built specification of the repository-review pipeline |
+| `docs/spec/monitor.md` | operator, evaluator | reference | As-built specification of the Pipeline Monitor |
 
 #### Schemas (reference)
 
@@ -147,8 +195,8 @@ set under `docs/reviews/` one entry for its directory.
 ### Pipeline prompts: `prompts/`
 
 Each file is the operating prompt a Script invocation hands to one headless
-agent for one pipeline stage; `docs/IMPLEMENTATION-PIPELINE-SPEC.md` and
-`docs/REVIEW-PIPELINE-SPEC.md` are the specifications these prompts
+agent for one pipeline stage; `docs/spec/implementation/README.md` and
+`docs/spec/review.md` are the specifications these prompts
 implement.
 
 | File | Audience | Kind | Purpose |
@@ -342,15 +390,13 @@ an agent that reads the whole file still reads its tables.
   `docs/reviews/`.
 - `docs/ROADMAP.md` (currently 118 KB) is also exempt as a decision log with
   historical weight.
-- Every as-built specification is exempt: the `docs/*-SPEC.md` files at the
-  top of `docs/`, which AGENTS.md's "As-built specifications" section lists,
-  because that section requires each one to grow with every
-  requirement-affecting change, so no ratchet entry could hold it still. The
-  pattern does not reach into a subdirectory, so a specification moved below
-  `docs/` is held to the budget, and the check fails on the pattern until it
-  follows the move. Two of them are a debt all the same: #2094 splits
-  `docs/IMPLEMENTATION-PIPELINE-SPEC.md` and `docs/DASHBOARD-SPEC.md` into
-  files within the budget.
+- No as-built specification carries a blanket exemption: AGENTS.md's
+  "As-built specifications" section requires each one to grow with every
+  requirement-affecting change, so one that grows past the budget is split
+  into a directory of files that are each within it (#2094) — the same
+  regime every other document follows, a future addition that pushes one of
+  those files over the budget fixed by splitting it further, never by
+  exempting it.
 
 **Current status.** Every other document over the budget is tracked in
 `scripts/docs-size-ratchet.tsv`, each entry naming the most hand-written bytes
@@ -374,7 +420,7 @@ documentation sweep.
 
 Sections are cited using the format: path + heading.
 
-Example: "`docs/guides/operating/README.md` § \"Installation\"" or "`docs/IMPLEMENTATION-PIPELINE-SPEC.md` § \"What it is\"".
+Example: "`docs/guides/operating/README.md` § \"Installation\"" or "`docs/spec/implementation/README.md` § \"What it is\"".
 
 This format is:
 - Machine-readable (path is filepath, heading is quoted)

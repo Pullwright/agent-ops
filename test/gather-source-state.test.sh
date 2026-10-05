@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # test/gather-source-state.test.sh — regression test for the argv cap
-# (docs/IMPLEMENTATION-PIPELINE-SPEC.md, requirement 4g; TD-PPagop-26081503)
+# (docs/spec/implementation/requirements, requirement 4g; TD-PPagop-26081503)
 # in scripts/gather-source-state.sh's final state build, and for the issues
 # and open-PR listings being paged to completion (requirement 3b) — the two
 # samples requirement 34i's work-gone sweep reads *absence* from, so a

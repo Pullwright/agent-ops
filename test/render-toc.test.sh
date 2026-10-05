@@ -44,7 +44,8 @@ assert_contains() {
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-mkdir -p "$tmp/scripts" "$tmp/docs/guides/working-with-pullwright" "$tmp/docs/guides/operating" "$tmp/docs/guides/contributing" "$tmp/lib"
+mkdir -p "$tmp/scripts" "$tmp/docs/guides/working-with-pullwright" "$tmp/docs/guides/operating" "$tmp/docs/guides/contributing" "$tmp/lib" \
+  "$tmp/docs/spec/implementation/sub" "$tmp/docs/spec/dashboard"
 cp "$SCRIPT_DIR/scripts/render-toc.sh" "$tmp/scripts/render-toc.sh"
 cp "$SCRIPT_DIR/lib/markdown-scan.sh" "$tmp/lib/markdown-scan.sh"
 chmod +x "$tmp/scripts/render-toc.sh"
@@ -96,23 +97,47 @@ Sentinel after.
 MD
 }
 
+# A directory-wide ToC (TOC_DIR_FILES): the README's own region lists every
+# *other* Markdown file under its directory, not its own headings — a
+# deliberately stale entry here (it names neither real sibling) covers the
+# same "stale tree" and "fresh tree is a no-op" cases write_fixture_readme's
+# single-file region does, for the other rendering mode.
 write_fixture_impl_spec() {
-  cat > "$tmp/docs/IMPLEMENTATION-PIPELINE-SPEC.md" <<'MD'
+  cat > "$tmp/docs/spec/implementation/README.md" <<'MD'
 # Fixture spec
 
 <!-- toc:start -->
-- [Alpha Section](#alpha-section)
-- [Beta Section](#beta-section)
+- [Old Entry](old.md)
 <!-- toc:end -->
 
-## Alpha Section
+Intro prose, no headings of its own to list.
+MD
+  cat > "$tmp/docs/spec/implementation/alpha.md" <<'MD'
+## Alpha File
 
-## Beta Section
+Content.
+MD
+  cat > "$tmp/docs/spec/implementation/sub/beta.md" <<'MD'
+### Beta File
+
+Content.
+MD
+}
+
+write_fixture_dashboard() {
+  cat > "$tmp/docs/spec/dashboard/README.md" <<'MD'
+# Fixture dashboard spec
+
+<!-- toc:start -->
+<!-- toc:end -->
+
+Intro prose, no siblings yet.
 MD
 }
 
 write_fixture_readme
 write_fixture_impl_spec
+write_fixture_dashboard
 write_fixture_other_guides
 
 run_script() (
@@ -147,14 +172,23 @@ assert_contains "text before the region survives" "$readme_content" "Sentinel be
 assert_contains "text between the region and headings survives" "$readme_content" "Sentinel between."
 assert_contains "text after the headings survives" "$readme_content" "Sentinel after."
 
+impl_readme_content="$(cat "$tmp/docs/spec/implementation/README.md")"
+assert_contains "the directory ToC lists a flat sibling's own heading" "$impl_readme_content" "- [Alpha File](alpha.md)"
+assert_contains "the directory ToC nests a sibling under its sub-directory" "$impl_readme_content" "  - [Beta File](sub/beta.md)"
+if [[ "$impl_readme_content" == *"Old Entry"* ]]; then
+  fail "the stale directory-ToC entry is gone"
+else
+  pass "the stale directory-ToC entry is gone"
+fi
+
 # --- --check stays clean on the freshly rewritten tree, and regenerating
 #     again is a no-op ---
-before_hash="$(cat "$tmp/docs/guides/working-with-pullwright/README.md" "$tmp"/docs/*.md | sha256sum)"
+before_hash="$(find "$tmp/docs" -name '*.md' -print0 | sort -z | xargs -0 cat | sha256sum)"
 run_script --check >/dev/null 2>&1
 fresh_check_rc=$?
 assert_eq "--check exits zero on a fresh tree" "0" "$fresh_check_rc"
 run_script >/dev/null
-after_hash="$(cat "$tmp/docs/guides/working-with-pullwright/README.md" "$tmp"/docs/*.md | sha256sum)"
+after_hash="$(find "$tmp/docs" -name '*.md' -print0 | sort -z | xargs -0 cat | sha256sum)"
 assert_eq "regenerating a fresh tree is a no-op" "$before_hash" "$after_hash"
 
 # ============================================================================

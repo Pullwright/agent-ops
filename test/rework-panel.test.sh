@@ -86,7 +86,7 @@ row_of() {  # <report-json> <stage>
 # item 4: one post-merge-revert (post-merge rung, no cycle — mined after the
 #         fact) on top of an earlier review-round-trip on the *same* item —
 #         its furthest rung is post-merge, not double-counted at agent-review.
-#         This is docs/DASHBOARD-SPEC.md's own reference case for why a
+#         This is docs/spec/dashboard/README.md's own reference case for why a
 #         per-rung `caught` figure is a floor, not a defect tally: item 4's
 #         agent-review round trip did catch something, but the item's
 #         furthest rung is post-merge, so agent-review's own `caught` count
@@ -257,7 +257,7 @@ assert_eq "but both cycles that logged a copy of it count as rework spend (upper
 # deduped stream, joining each surviving record's own `cycle` to the cost
 # table, so two nodes' copies of one human-gate catch charge the first
 # observer's cycle (c-early, $3) and never the echo's (c-echo, $7) or a blend
-# of the two ($5). This is the same sentence docs/DASHBOARD-SPEC.md's
+# of the two ($5). This is the same sentence docs/spec/dashboard/README.md's
 # acceptance-check bullet states for this file.
 survivor="$tmp_dir/first-wins-survivor.jsonl"
 cat > "$survivor" <<'EOF'

@@ -1,13 +1,13 @@
 # Metering schema — as-built specification
 
-Companion to `docs/IMPLEMENTATION-PIPELINE-SPEC.md` (requirement 33a) and
-`docs/REVIEW-PIPELINE-SPEC.md` (R16), and referenced by `docs/DASHBOARD-SPEC.md`.
+Companion to `docs/spec/implementation/README.md` (requirement 33a) and
+`docs/spec/review.md` (R16), and referenced by `docs/spec/dashboard/README.md`.
 This document is the field-by-field contract for the per-stage, per-cycle
 token and cost accounting both pipelines produce: field names, types, units,
 aggregation rules, and a stability policy for changing any of it later. Like
 its companions it is as-built — it describes the metering data that exists
 today, not a plan for data that will exist later. Where it says "requirement
-N", it means requirement N of `docs/IMPLEMENTATION-PIPELINE-SPEC.md`.
+N", it means requirement N of `docs/spec/implementation/README.md`.
 
 ## What this covers
 
@@ -20,7 +20,7 @@ contract for both:
   ran, and how many tokens it moved.
 - The **per-cycle and roll-up aggregates** the monitoring dashboard computes
   from those transcripts across both pipelines' history
-  (`docs/DASHBOARD-SPEC.md`): a cycle's total cost, and fleet-wide spend by
+  (`docs/spec/dashboard/README.md`): a cycle's total cost, and fleet-wide spend by
   day, by model, and by actor.
 
 Both derive from the same upstream source: the JSON envelope in
@@ -49,7 +49,7 @@ either emits the same shape.
 | Field | Type | Unit | Meaning |
 | --- | --- | --- | --- |
 | `model` | string | — | The model id passed to the `claude` invocation (the same string `config.json` names, resolved per `lib/model-id.sh`). Always present, including on a stage that never ran: it is what the invocation was *asked* for, not something read back out of the envelope. |
-| `cost_usd` | number \| null | US dollars | The envelope's own `total_cost_usd` — a **client-side estimate** Claude Code computes from token counts, not a charge or a draw against any plan limit (`docs/DASHBOARD-SPEC.md`'s design decision on plan limits makes the same point about the dashboard's own cost figures). Includes any subagents the stage's own invocation spawned. `null` if the envelope is missing or unparseable. |
+| `cost_usd` | number \| null | US dollars | The envelope's own `total_cost_usd` — a **client-side estimate** Claude Code computes from token counts, not a charge or a draw against any plan limit (`docs/spec/dashboard/README.md`'s design decision on plan limits makes the same point about the dashboard's own cost figures). Includes any subagents the stage's own invocation spawned. `null` if the envelope is missing or unparseable. |
 | `duration_ms` | integer \| null | milliseconds | The envelope's `duration_ms`: wall-clock time for the invocation. |
 | `num_turns` | integer \| null | count | The envelope's `num_turns`. |
 | `is_error` | boolean \| null | — | The envelope's `is_error`. |
@@ -127,7 +127,7 @@ and never "the run was never quiet".
 
 ## Per-cycle aggregate
 
-`cycles[].total_cost_usd` (`docs/DASHBOARD-SPEC.md`) is the sum of `cost_usd`
+`cycles[].total_cost_usd` (`docs/spec/dashboard/README.md`) is the sum of `cost_usd`
 across the cycle's three rendered stages — Co-Ordinator, Implementer,
 Reviewer — treating a stage that never ran (`cost_usd: null`) as `0`. It is
 the cost of the cycle's own attempt at its item, which is what the card
@@ -150,7 +150,7 @@ if a future reader needs them, following the same null-as-zero rule.
 
 `counts.by_day` / `counts.by_model` / `counts.by_actor` /
 `counts.spend_total_usd` / `counts.spend_today_usd` are computed by
-`docs/DASHBOARD-SPEC.md`'s Publisher directly from the
+`docs/spec/dashboard/README.md`'s Publisher directly from the
 raw transcripts across both pipelines' history, not from the per-stage record
 above — a fleet-wide history spans more transcripts than any single node's
 recent `log.jsonl` retains. Their fields:
@@ -162,7 +162,7 @@ recent `log.jsonl` retains. Their fields:
 | `by_day[].usd`, `.n` | number, integer | US dollars, count | Cost and transcript count for one UTC day. |
 | `by_model[].usd`, `.n` | number, integer | US dollars, count | Cost and transcript count for one model id. |
 | `by_actor[].usd`, `.n` | number, integer | US dollars, count | Cost and transcript count for one actor. The actor is the transcript's own filename stem, so the set is open, not enumerated: `coordinator`, `implementer`, `reviewer`, `enabler`, `refiner` and `limit-probe` from a cycle directory, `project-reviewer` normalised from a review's `reviewer-<repo>.out`, and any other stem verbatim — see the dashboard spec's note on actor naming. |
-| `cost_rows[].repo`, `.item`, `.source`, `.outcome` | string \| null | — | Which work item the row's cost bought (issue #593, D21), joined by `cycle` against the fleet-wide event union (`log.jsonl`, the same union `cycles[]` renders from) rather than against `cycles[]` itself — the union is never rotated (`docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 2.6) and is retained per `analytics_retained_days` (requirement 2.6d) rather than the `MAX_CYCLES` cap that keeps `cycles[]` to a recent detail window, so the join reaches back over the whole `COST_SCAN_DAYS` span the roll-ups themselves cover. Derived exactly as `cycles[].repo`/`.item`/`.source`/`.outcome` are: the last event in the cycle's own events carrying `.repo`/`.item`, the most recent `selection` event's `.source`, and the same outcome ladder (`pr-ready` > `pr-raised` > `attempt-failed` > `none-selected` > `stand-down` > `cycle-skipped` > `selection` > `ended`). All four are `null` together whenever `.attributed` (below) is `false`. |
+| `cost_rows[].repo`, `.item`, `.source`, `.outcome` | string \| null | — | Which work item the row's cost bought (issue #593, D21), joined by `cycle` against the fleet-wide event union (`log.jsonl`, the same union `cycles[]` renders from) rather than against `cycles[]` itself — the union is never rotated (`docs/spec/implementation/requirements` requirement 2.6) and is retained per `analytics_retained_days` (requirement 2.6d) rather than the `MAX_CYCLES` cap that keeps `cycles[]` to a recent detail window, so the join reaches back over the whole `COST_SCAN_DAYS` span the roll-ups themselves cover. Derived exactly as `cycles[].repo`/`.item`/`.source`/`.outcome` are: the last event in the cycle's own events carrying `.repo`/`.item`, the most recent `selection` event's `.source`, and the same outcome ladder (`pr-ready` > `pr-raised` > `attempt-failed` > `none-selected` > `stand-down` > `cycle-skipped` > `selection` > `ended`). All four are `null` together whenever `.attributed` (below) is `false`. |
 | `cost_rows[].attributed` | boolean | — | Whether the four fields above are populated. `true` only for a `coordinator`/`implementer`/`reviewer` row whose own cycle has events in the union. `false` for every other actor — `enabler`, `refiner`, `limit-probe` and `project-reviewer` — even when the row's `cycle` matches a real, populated cycle: the Enabler/Refiner/limit-probe share their triggering cycle's directory (and so its `cycle` id) but spend on a different item than the one that cycle selected, and a `project-reviewer` row's `cycle` is a review id that never appears in `log.jsonl` at all (the review pipeline logs to its own `review-log.jsonl`). Also `false` for a `coordinator`/`implementer`/`reviewer` row whose own cycle has no events in the union — rare in practice, since `log.jsonl` is never rotated and its analytics content outlives transcript pruning by design; a `state_dir` reset predating the cycle, or a line lost to `lib/fleet.sh`'s NUL-corruption repair (`fleet_repair_log`), are the realistic causes, not rotation. A row is never dropped from `cost_rows[]` for lacking attribution; only these five fields go null. |
 | `cost_rows[].tokens_input`, `.tokens_output`, `.tokens_cache_creation`, `.tokens_cache_read` | integer \| null | tokens | Issue #594, D21. That row's own `modelUsage` entry's token counts — the same fields, the same units, as the per-stage record's `tokens.*` above — pulled from the same cost-scan pass that already reads `costUSD` from that entry, so no second scan. All four are `null` together on an `unknown`-model row (an envelope with no readable `modelUsage`): that row has no per-model breakdown to offer, and reading it as `0` would corrupt a prompt-cache ratio computed over it, exactly as `tokens: null` on the per-stage record above means "not measured," never "measured as zero." |
 
@@ -171,7 +171,7 @@ The prompt-cache ratio a reader computes from these four fields — `cache_read
 served from cache; output tokens are not in the denominator — is not itself a
 stored field: it is computed client-side, per stage and per model, over
 whatever `cost_rows[]` slice the page's own time-frame selector picks,
-exactly as `docs/DASHBOARD-SPEC.md`'s spend-by-model and spend-by-actor
+exactly as `docs/spec/dashboard/README.md`'s spend-by-model and spend-by-actor
 charts already re-aggregate that array.
 
 ## `counts.stage_gaps` (D21)
@@ -197,7 +197,7 @@ window would be wrong, so this object states its own:
 ## Node metrics
 
 `scripts/node-health.sh --metrics` / the HTTP surface's `/metrics`
-(`scripts/node-health-server.py`, `docs/IMPLEMENTATION-PIPELINE-SPEC.md`
+(`scripts/node-health-server.py`, `docs/spec/implementation/requirements`
 requirements 57-60, issue #608) — a different shape from everything above:
 where the per-stage record and the roll-ups are about *spend*, this is about
 *node state*, one node's own liveness, readiness and health verdicts plus a
@@ -265,7 +265,7 @@ any other spec/code disagreement is.
   transcript reaches the roll-ups like any other `.out`.
 - **Consumed:** `scripts/publish-dashboard.sh` reads the same upstream
   envelope fields directly for its own per-stage and roll-up rendering
-  (`docs/DASHBOARD-SPEC.md`) rather than reading the derived `log.jsonl`
+  (`docs/spec/dashboard/README.md`) rather than reading the derived `log.jsonl`
   copy — the two are independent derivations of the same source and are
   expected to agree; a reader that finds them disagreeing has found a bug in
   one of them, not a second source of truth to reconcile.

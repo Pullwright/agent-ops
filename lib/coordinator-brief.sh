@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # lib/coordinator-brief.sh — the Co-Ordinator's repo/work-sources table,
-# generated from config.json (issue #78, docs/IMPLEMENTATION-PIPELINE-SPEC.md
+# generated from config.json (issue #78, docs/spec/implementation/README.md
 # requirement 4b).
 #
 # prompts/coordinator.md used to carry a hand-written copy of each configured

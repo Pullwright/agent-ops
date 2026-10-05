@@ -104,7 +104,7 @@ assert_contains "the finding names the offending file and line" "lib/bug.sh:3" "
 assert_contains "the failure explains the FIRST-unquoted-close rule" \
   "closes on the FIRST unquoted" "$out"
 assert_contains "…and points at the spec's Gotchas table entry" \
-  "IMPLEMENTATION-PIPELINE-SPEC.md" "$out"
+  "docs/spec/implementation/gotchas.md" "$out"
 assert_contains "…naming the row by its issue" "agent-ops#933" "$out"
 
 git -C "$repo" rm --quiet lib/bug.sh

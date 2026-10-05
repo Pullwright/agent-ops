@@ -2,7 +2,7 @@
 #
 # test/item-lifecycle.test.sh — self-contained regression test for
 # lib/item-lifecycle.sh (docs/FLOW-SCHEMA.md's "Item lifecycle record",
-# requirement 49 of docs/IMPLEMENTATION-PIPELINE-SPEC.md, issue #595). Also
+# requirement 49 of docs/spec/implementation/README.md, issue #595). Also
 # covers requirement 2.6d's de-duplication property (agent-ops#598), which
 # this fold is the worked example for.
 #

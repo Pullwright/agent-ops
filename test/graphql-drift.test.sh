@@ -151,7 +151,7 @@ assert_excluded() {  # <path> <why>
 assert_excluded test/graphql-drift.test.sh "a stub sends nothing to GitHub"
 assert_excluded scripts/check-graphql-drift.sh "it quotes the delimiter in its own commentary"
 assert_excluded CHANGELOG.md "prose about these documents is not one of them"
-assert_excluded docs/IMPLEMENTATION-PIPELINE-SPEC.md "so is the spec describing this very check"
+assert_excluded docs/spec/implementation/components/components-01.md "so is the spec describing this very check"
 
 sent="$(wc -l < "$tmp_dir/bodies.log")"
 assert_eq "gh was called once per document" "$checked" "$sent"
