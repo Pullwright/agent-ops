@@ -311,8 +311,23 @@ the top of the rendered document. This is acceptable in this repository.
 
 ### Size budget
 
-Hand-written documents stay under 100 KB (~25,000 tokens), so that an agent can
-read the entire document in one API call without excessive context cost.
+A document's hand-written content stays under 100 KB (~25,000 tokens). The
+budget bounds what an author writes and maintains: prose kept small enough
+for an agent to read in one API call without excessive context cost, and a
+document that outgrows it is split.
+
+Generated regions are left out of the measure. These are the regions
+`lib/markdown-scan.sh` lists, which `scripts/render-toc.sh`,
+`scripts/render-config-table.sh` and `Pullwright/.agent`'s sync rewrite
+(AGENTS.md's "Generated regions" section): a configuration table and its
+notes, a table of contents and a stamped region. Their size follows their
+source (the schema, the headings, the shared fragments), not anything the
+document's author can trim, so a budget on them could only block the change
+that regenerates them; their source is where their size is kept in check. A
+marker pair that nothing renders holds hand-written bytes like any other line.
+So `docs/reference/configuration.md`, which is mostly the configuration tables
+generated from `config.schema.json`, is measured by its prose alone, although
+an agent that reads the whole file still reads its tables.
 
 **Exemptions:**
 
@@ -320,11 +335,22 @@ read the entire document in one API call without excessive context cost.
   `docs/reviews/`.
 - `docs/ROADMAP.md` (currently 118 KB) is also exempt as a decision log with
   historical weight.
+- Every as-built specification is exempt: the `docs/*-SPEC.md` files at the
+  top of `docs/`, which AGENTS.md's "As-built specifications" section lists,
+  because that section requires each one to grow with every
+  requirement-affecting change, so no ratchet entry could hold it still. The
+  pattern does not reach into a subdirectory, so a specification moved below
+  `docs/` is held to the budget, and the check fails on the pattern until it
+  follows the move. Two of them are a debt all the same: #2094 splits
+  `docs/IMPLEMENTATION-PIPELINE-SPEC.md` and `docs/DASHBOARD-SPEC.md` into
+  files within the budget.
 
-**Current status — files over budget** are tracked in
-`scripts/docs-size-ratchet.tsv`, each entry naming the byte count it may not
-grow past and the issue that will bring it under budget — checked in CI; see
-"Checked in CI" below.
+**Current status.** Every other document over the budget is tracked in
+`scripts/docs-size-ratchet.tsv`, each entry naming the most hand-written bytes
+it may hold and the issue that will bring it under budget — checked in CI; see
+"Checked in CI" below. An entry for a document that is missing, exempt or
+back within the budget fails the check, as does an exemption that matches no
+document, so the file holds the remaining debt and nothing else.
 
 ### Headings and anchors
 
@@ -358,10 +384,12 @@ reworded, update all citations together.
 conventions above on every pull request: every relative link and `#fragment`
 resolves (including every `x-docs` link in `config.schema.json`); every
 in-scope document is named in this map, and every path this map names
-exists; no in-scope document exceeds the size budget without a
-`scripts/docs-size-ratchet.tsv` entry; a quoted section citation names a
-heading that exists; and a ratchet in `scripts/docs-phrasing-ratchet.tsv`
-holds historical-sounding as-built phrasing to its current count or lower.
+exists; no in-scope document's hand-written content exceeds the size budget
+unless the document is exempt or has a `scripts/docs-size-ratchet.tsv`
+entry, and every entry there is one the check still reads; a quoted section
+citation names a heading that exists; and a ratchet in
+`scripts/docs-phrasing-ratchet.tsv` holds historical-sounding as-built
+phrasing to its current count or lower.
 It does not check spelling, grammar, external links, or requirement-label
 citations.
 

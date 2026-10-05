@@ -53,8 +53,9 @@ assert_not_contains() {
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-mkdir -p "$tmp/scripts" "$tmp/docs/reference"
+mkdir -p "$tmp/scripts" "$tmp/docs/reference" "$tmp/lib"
 cp "$SCRIPT_DIR/scripts/render-config-table.sh" "$tmp/scripts/render-config-table.sh"
+cp "$SCRIPT_DIR/lib/markdown-scan.sh" "$tmp/lib/markdown-scan.sh"
 chmod +x "$tmp/scripts/render-config-table.sh"
 
 # --- Fixture schema. Covers: no x-docs (falls back to description); a
