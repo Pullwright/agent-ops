@@ -68,12 +68,9 @@
 # principle. Everything else (`repos`, `repository_review.repos`,
 # `prompt_overrides`) renders as a single row.
 #
-# Four marked regions hold the whole table — header row, `|---|---|---|`
-# delimiter row, then the generated body rows:
-#
-#   docs/reference/configuration.md        id=main, id=review
-#   docs/IMPLEMENTATION-PIPELINE-SPEC.md   id=main
-#   docs/REVIEW-PIPELINE-SPEC.md           id=review
+# Four marked regions, which lib/markdown-scan.sh's CONFIG_TABLE_REGIONS
+# lists, hold the whole table — header row, `|---|---|---|` delimiter row,
+# then the generated body rows:
 #
 #   <!-- config-table:start id=main -->
 #   | Key | Default | Notes |
@@ -174,14 +171,12 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 1
 fi
 
-# file:region-id:audience — audience picks which x-docs field (and which
-# schema description fallback) a region renders.
-regions=(
-  "docs/reference/configuration.md:main:readme"
-  "docs/reference/configuration.md:review:readme"
-  "docs/IMPLEMENTATION-PIPELINE-SPEC.md:main:spec"
-  "docs/REVIEW-PIPELINE-SPEC.md:review:spec"
-)
+# The regions this renders (CONFIG_TABLE_REGIONS, file:region-id:audience)
+# and the markers that delimit them come from lib/markdown-scan.sh, which
+# scripts/check-docs.sh reads to leave exactly these regions out of the size
+# budget.
+# shellcheck source=lib/markdown-scan.sh
+. "$repo_root/lib/markdown-scan.sh"
 
 # shellcheck disable=SC2016 # backticks here are literal Markdown, not command substitution
 jq_program='
@@ -372,15 +367,13 @@ render_region_json() {
   jq -c --arg region "$region" --arg audience "$audience" --argjson level "$level" "$jq_program" "$schema_file"
 }
 
-# Regexes, not literal strings: a start marker may carry trailing contract
-# prose after its id (see the header comment above), so matching it is a
-# prefix match — the id followed by end-of-line or a space and text ending
-# in `-->` — rather than exact-line equality. The end markers carry no id
-# and are never annotated, so they stay plain literal strings.
-start_marker_regex() { printf '^<!-- config-table:start id=%s($| .*-->$)' "$1"; }
-end_marker() { printf '<!-- config-table:end -->'; }
-notes_start_marker_regex() { printf '^<!-- config-table:notes id=%s($| .*-->$)' "$1"; }
-notes_end_marker() { printf '<!-- config-table:notes-end -->'; }
+# The markers are lib/markdown-scan.sh's config_table_start_re,
+# config_table_end_re, config_notes_start_re and config_notes_end_re, all
+# regexes: a start marker may carry trailing contract prose after its id (see
+# the header comment above), so matching it is a prefix match — the id
+# followed by end-of-line or a space and text ending in `-->` — rather than
+# exact-line equality. The end markers carry no id and are never annotated,
+# so each is matched as exactly that whole line.
 
 # Prints the region's generated body rows — the lines strictly between the
 # start-id marker and the next end marker, minus the header and delimiter
@@ -388,9 +381,9 @@ notes_end_marker() { printf '<!-- config-table:notes-end -->'; }
 # return) if either marker is missing.
 extract_body() {
   local file="$1" id="$2"
-  awk -v start="$(start_marker_regex "$id")" -v end="$(end_marker)" '
+  awk -v start="$(config_table_start_re "$id")" -v end="$(config_table_end_re)" '
     $0 ~ start { found=1; n=0; next }
-    found && $0 == end { printed=1; exit }
+    found && $0 ~ end { printed=1; exit }
     found {
       n++
       if (n <= 2) next
@@ -409,7 +402,7 @@ extract_body() {
 # so assert it.
 header_delimiter_ok() {
   local file="$1" id="$2"
-  awk -v start="$(start_marker_regex "$id")" '
+  awk -v start="$(config_table_start_re "$id")" '
     $0 ~ start { found=1; n=0; next }
     found {
       n++
@@ -428,9 +421,9 @@ replace_body() {
   local file="$1" id="$2" content_file="$3"
   local tmp
   tmp="$(mktemp "${file}.XXXXXX")"
-  awk -v start="$(start_marker_regex "$id")" -v end="$(end_marker)" -v contentfile="$content_file" '
+  awk -v start="$(config_table_start_re "$id")" -v end="$(config_table_end_re)" -v contentfile="$content_file" '
     $0 ~ start { print; inregion=1; n=0; next }
-    inregion && $0 == end {
+    inregion && $0 ~ end {
       while ((getline line < contentfile) > 0) print line
       close(contentfile)
       inregion=0
@@ -453,9 +446,9 @@ replace_body() {
 # header/delimiter to skip: the whole region is generated.
 extract_notes_body() {
   local file="$1" id="$2"
-  awk -v start="$(notes_start_marker_regex "$id")" -v end="$(notes_end_marker)" '
+  awk -v start="$(config_notes_start_re "$id")" -v end="$(config_notes_end_re)" '
     $0 ~ start { found=1; next }
-    found && $0 == end { printed=1; exit }
+    found && $0 ~ end { printed=1; exit }
     found { print }
     END { exit(printed ? 0 : 1) }
   ' "$file"
@@ -467,7 +460,7 @@ extract_notes_body() {
 # precedes it.
 notes_heading_level() {
   local file="$1" id="$2"
-  awk -v start="$(notes_start_marker_regex "$id")" '
+  awk -v start="$(config_notes_start_re "$id")" '
     match($0, /^#+ /) { level = RLENGTH - 1; have_level = 1 }
     $0 ~ start {
       if (have_level) { print (level + 1 > 6 ? 6 : level + 1); found = 1 }
@@ -484,9 +477,9 @@ replace_notes_body() {
   local file="$1" id="$2" content_file="$3"
   local tmp
   tmp="$(mktemp "${file}.XXXXXX")"
-  awk -v start="$(notes_start_marker_regex "$id")" -v end="$(notes_end_marker)" -v contentfile="$content_file" '
+  awk -v start="$(config_notes_start_re "$id")" -v end="$(config_notes_end_re)" -v contentfile="$content_file" '
     $0 ~ start { print; inregion=1; next }
-    inregion && $0 == end {
+    inregion && $0 ~ end {
       while ((getline line < contentfile) > 0) print line
       close(contentfile)
       inregion=0
@@ -524,7 +517,7 @@ first_differing_notes_key() {
 stale=0
 declare -A seen_slugs
 
-for spec in "${regions[@]}"; do
+for spec in "${CONFIG_TABLE_REGIONS[@]}"; do
   IFS=: read -r file id audience <<<"$spec"
   if [[ ! -f "$file" ]]; then
     echo "render-config-table: $file does not exist" >&2

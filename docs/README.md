@@ -311,15 +311,23 @@ the top of the rendered document. This is acceptable in this repository.
 
 ### Size budget
 
-Hand-written documents stay under 100 KB (~25,000 tokens), so that an agent can
-read the entire document in one API call without excessive context cost.
+A document's hand-written content stays under 100 KB (~25,000 tokens). The
+budget bounds what an author writes and maintains: prose kept small enough
+for an agent to read in one API call without excessive context cost, and a
+document that outgrows it is split.
 
-Only hand-written content counts. The generated regions AGENTS.md's "Generated
-regions" section lists (a configuration table and its notes, a table of
-contents, a stamped region) are left out of a document's size, because a
-schema change or a new heading regenerates them. So
-`docs/reference/configuration.md`, which is mostly the configuration tables
-generated from `config.schema.json`, is measured by its prose alone.
+Generated regions are left out of the measure. These are the regions
+`lib/markdown-scan.sh` lists, which `scripts/render-toc.sh`,
+`scripts/render-config-table.sh` and `Pullwright/.agent`'s sync rewrite
+(AGENTS.md's "Generated regions" section): a configuration table and its
+notes, a table of contents and a stamped region. Their size follows their
+source (the schema, the headings, the shared fragments), not anything the
+document's author can trim, so a budget on them could only block the change
+that regenerates them; their source is where their size is kept in check. A
+marker pair that nothing renders holds hand-written bytes like any other line.
+So `docs/reference/configuration.md`, which is mostly the configuration tables
+generated from `config.schema.json`, is measured by its prose alone, although
+an agent that reads the whole file still reads its tables.
 
 **Exemptions:**
 
@@ -327,12 +335,15 @@ generated from `config.schema.json`, is measured by its prose alone.
   `docs/reviews/`.
 - `docs/ROADMAP.md` (currently 118 KB) is also exempt as a decision log with
   historical weight.
-- Every as-built specification (`docs/*-SPEC.md`, the files AGENTS.md's
-  "As-built specifications" section lists) is exempt, because that section
-  requires each one to grow with every requirement-affecting change, so no
-  ratchet entry could hold it still. Two of them are a debt all the same:
-  #2094 splits `docs/IMPLEMENTATION-PIPELINE-SPEC.md` and
-  `docs/DASHBOARD-SPEC.md` into files within the budget.
+- Every as-built specification is exempt: the `docs/*-SPEC.md` files at the
+  top of `docs/`, which AGENTS.md's "As-built specifications" section lists,
+  because that section requires each one to grow with every
+  requirement-affecting change, so no ratchet entry could hold it still. The
+  pattern does not reach into a subdirectory, so a specification moved below
+  `docs/` is held to the budget, and the check fails on the pattern until it
+  follows the move. Two of them are a debt all the same: #2094 splits
+  `docs/IMPLEMENTATION-PIPELINE-SPEC.md` and `docs/DASHBOARD-SPEC.md` into
+  files within the budget.
 
 **Current status.** Every other document over the budget is tracked in
 `scripts/docs-size-ratchet.tsv`, each entry naming the most hand-written bytes

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# scripts/render-toc.sh — render the table of contents for README.md and
-# docs/IMPLEMENTATION-PIPELINE-SPEC.md between marker regions.
+# scripts/render-toc.sh — render the table of contents for each file
+# lib/markdown-scan.sh's TOC_FILES lists, between marker regions.
 #
 # Extracts `##` and `###` headings from markdown files (ignoring the top-level
 # `# ` title, code blocks, and anything inside fenced code), generates a nested
@@ -10,9 +10,9 @@
 # marker pairs placed immediately after each document's title and any lead-in
 # paragraph, before the first `##` heading.
 #
-# With no arguments, regenerate the ToC in both files. `--check` verifies that
-# both files' regions are current (exit non-zero if stale), mirroring
-# render-config-table.sh's contract.
+# With no arguments, regenerate the ToC in every listed file. `--check`
+# verifies that every listed file's region is current (exit non-zero if
+# stale), mirroring render-config-table.sh's contract.
 
 set -euo pipefail
 
@@ -37,7 +37,10 @@ fi
 # shellcheck source=lib/markdown-scan.sh
 . "$repo_root/lib/markdown-scan.sh"
 # gh_slug is defined in lib/markdown-scan.sh, shared with scripts/check-docs.sh
-# so the two cannot disagree about what a heading's anchor is.
+# so the two cannot disagree about what a heading's anchor is. So are the
+# files this renders (TOC_FILES) and the markers it matches (toc_start_re,
+# toc_end_re), which scripts/check-docs.sh reads to leave exactly these
+# regions out of the size budget.
 
 # Extract headings from a file: lines starting with ## or ###, skipping anything
 # inside fenced code blocks, which lib/markdown-scan.sh's `markdown_unfenced`
@@ -92,14 +95,14 @@ generate_toc() {
 markers_ok() {
   local file="$1"
   local start_count end_count
-  start_count=$(grep -c '^<!-- toc:start -->$' "$file" || true)
-  end_count=$(grep -c '^<!-- toc:end -->$' "$file" || true)
+  start_count=$(grep -cE "$(toc_start_re)" "$file" || true)
+  end_count=$(grep -cE "$(toc_end_re)" "$file" || true)
   if (( start_count != 1 || end_count != 1 )); then
     return 1
   fi
   local start_line end_line
-  start_line=$(grep -n '^<!-- toc:start -->$' "$file" | cut -d: -f1)
-  end_line=$(grep -n '^<!-- toc:end -->$' "$file" | cut -d: -f1)
+  start_line=$(grep -nE "$(toc_start_re)" "$file" | cut -d: -f1)
+  end_line=$(grep -nE "$(toc_end_re)" "$file" | cut -d: -f1)
   (( start_line < end_line ))
 }
 
@@ -119,11 +122,11 @@ render_file() {
 
   # Use awk to replace content between markers
   # This is more robust than sed for multiline replacements
-  awk -v toc="$toc_content" '
-    /^<!-- toc:start -->/ {
+  awk -v toc="$toc_content" -v start="$(toc_start_re)" -v end="$(toc_end_re)" '
+    $0 ~ start {
       print "<!-- toc:start -->"
       print toc
-      while (getline && !/^<!-- toc:end -->/) {}
+      while (getline && $0 !~ end) {}
       print "<!-- toc:end -->"
       next
     }
@@ -144,15 +147,8 @@ render_file() {
   return 0
 }
 
-files=(
-  "docs/IMPLEMENTATION-PIPELINE-SPEC.md"
-  "docs/guides/working-with-pullwright/README.md"
-  "docs/guides/operating/README.md"
-  "docs/guides/contributing/README.md"
-)
-
 failed=0
-for file in "${files[@]}"; do
+for file in "${TOC_FILES[@]}"; do
   if ! render_file "$file"; then
     failed=1
   fi

@@ -2291,18 +2291,22 @@ implements.
    `docs/reviews/project-review-*/` directory, which takes one entry for the
    whole directory, and every path that map names exists. No in-scope
    document's hand-written content — its bytes outside the generated regions
-   `AGENTS.md`'s "Generated regions" section lists, which a schema change or
-   a new heading regenerates — exceeds the 100,000-byte budget
-   `docs/README.md`'s "Size budget" section fixed, unless the document is
-   exempt there (`CHANGELOG.md`, `docs/ROADMAP.md`, `docs/reviews/**`, and
-   every as-built specification, `docs/*-SPEC.md`, which `AGENTS.md`'s
-   "As-built specifications" section requires to grow; #2094 brings the
-   implementation and dashboard specifications under budget by splitting
-   them) or carries an entry in `scripts/docs-size-ratchet.tsv` naming the
-   byte count it may not grow past and the issue that will bring it under
-   budget. An entry for a document that is missing, exempt or within the
-   budget fails, as does an exemption that matches no document, so neither
-   list outlives what it describes. A quoted section citation,
+   `lib/markdown-scan.sh` lists, the configuration tables of requirement 1b,
+   the tables of contents of requirement 52 and the regions the organisation's
+   sync stamps, which a schema change, a new heading or a re-stamp regenerates
+   — exceeds the 100,000-byte budget `docs/README.md`'s "Size budget" section
+   fixed, unless the document is exempt there (`CHANGELOG.md`,
+   `docs/ROADMAP.md`, `docs/reviews/**`, and every as-built specification,
+   `docs/*-SPEC.md` with its `*` inside one path segment, which `AGENTS.md`'s
+   "As-built specifications" section requires to grow) or carries an entry in
+   `scripts/docs-size-ratchet.tsv` naming the byte count it may not grow past
+   and the issue that will bring it under budget. A marker pair in a file, or
+   with an id or fragment, that the library does not list holds hand-written
+   bytes, as does a region that never reaches its own end marker, so only what
+   a renderer rewrites leaves the measure. An entry for a document that is
+   missing, exempt or within the budget fails, as does an exemption that
+   matches no document, so neither list outlives what it describes. A quoted
+   section citation,
    in any of the three forms `docs/README.md`'s "How sections are cited"
    section and this repository's prose use, names a heading of the file it
    cites or text that still exists in it — checked in documents, prompts,
@@ -23720,7 +23724,11 @@ What exists, and the requirements each part answers to:
     join a plain array of paragraph strings always got, and what a single
     string (a one-block array) already renders as unchanged.
     Rewrites four marked regions (`<!-- config-table:start id=main -->` /
-    `id=review` … `<!-- config-table:end -->`) in place with no arguments. A
+    `id=review` … `<!-- config-table:end -->`) in place with no arguments,
+    reading the regions from `lib/markdown-scan.sh`'s `CONFIG_TABLE_REGIONS`
+    and matching their markers by the same library's patterns, the list and
+    grammar component 24b reads to leave these regions out of the size
+    budget. A
     start marker's `id=<id>` token may be followed by further prose before
     the closing `-->` — AGENTS.md's "Generated regions" note and the
     markers themselves carry the same generated-from-schema contract inline
@@ -24867,8 +24875,11 @@ What exists, and the requirements each part answers to:
     no comment posted and no graphql call made; malformed arguments exiting
     2); must pass `shellcheck`.
 24. `scripts/render-toc.sh` and `.github/workflows/toc.yml` implementing
-   requirement 52's generated-table-of-contents property: before rendering
-   either file, verifies it contains exactly one `<!-- toc:start -->` /
+   requirement 52's generated-table-of-contents property, for the files
+   `lib/markdown-scan.sh`'s `TOC_FILES` lists, matching the markers by that
+   library's `toc_start_re` and `toc_end_re`, the list and grammar component
+   24b reads to leave these regions out of the size budget: before rendering
+   each file, verifies it contains exactly one `<!-- toc:start -->` /
    `<!-- toc:end -->` marker pair with the start marker on an earlier line
    than the end marker — a file with neither marker, only one of the pair,
    more than one of either, or the pair in reversed order, fails the script
@@ -24894,7 +24905,7 @@ What exists, and the requirements each part answers to:
    consecutive hyphens, so this script does not either), de-duplicated in
    heading order the way GitHub's own renderer de-duplicates repeated
    headings (the first occurrence keeps the bare slug, each later one is
-   suffixed `-1`, `-2`, …). `--check` renders both regions to a temporary
+   suffixed `-1`, `-2`, …). `--check` renders every region to a temporary
    file instead, leaving the working tree untouched, and exits non-zero
    naming the first stale file — the same contract
    `scripts/render-config-table.sh` (component 16) follows. `.github/workflows/toc.yml`
@@ -24993,9 +25004,13 @@ What exists, and the requirements each part answers to:
    with `scripts/render-toc.sh` and adding `markdown_heading_texts` and
    `markdown_heading_slugs` to it for the heading lookups the two citation
    and fragment checks need. The size check reads the same library's
-   `markdown_unfenced` to find generated regions, so a region marker shown
-   inside fenced code opens nothing, and it scans for regions only in a file
-   whose whole size is over the budget. Headings, slugs and whole bodies are
+   `markdown_generated_regions`, which finds the regions that library lists by
+   their markers outside fenced code, so a marker shown in an example opens
+   nothing, and it counts each region's bytes from the file itself, fenced
+   code inside the region included. It scans for regions only in a file whose
+   whole size is over the budget or that has a ratchet entry, and the
+   dead-entry pass reads the sizes that scan measured. Headings, slugs and
+   whole bodies are
    cached per file, the body cache as a scratch file matched with `grep -F`
    rather than a Bash string, because `docs/IMPLEMENTATION-PIPELINE-SPEC.md`
    alone unfences to 2.3 MB and Bash's own glob matching has no fast substring
@@ -31313,7 +31328,8 @@ oblige anyone to edit a test.
     longer one as content, treats an indented fence as a fence and a
     backtick run with another backtick on its line as inline code, runs an
     unterminated fence to the end of the file, and closes a fence in a file
-    with CRLF line endings.
+    with CRLF line endings; and `markdown_unfenced_numbered` keeps the same
+    lines, each tagged with its line number in the file.
 
 57. **Node health, readiness and liveness (requirements 57-60, issue #608).**
     `test/node-health.test.sh` passes: `lib/node-health.sh`'s
@@ -31433,15 +31449,24 @@ oblige anyone to edit a test.
     a file that does not exist, a document on disk the map never lists, a
     document padded past 100,000 bytes with no size-ratchet entry, a
     size-ratchet entry for a document that is exempt, missing or within the
-    budget, a size exemption that matches no document, a citation reworded
-    to name a heading that is not there, and a sentence of historical
-    phrasing in a document with no phrasing-ratchet entry. Each of the four
-    as-built specifications `AGENTS.md` lists, padded past 100,000 bytes
-    with no entry, passes, and so does a document whose bytes past the
-    budget all lie inside one generated region, of each kind `AGENTS.md`'s
-    "Generated regions" section lists; the same document fails once the
-    region loses its end marker, or once its markers sit inside fenced code,
-    because those bytes then count as hand-written. A
+    budget (one over it only by its generated region included), a size
+    exemption that matches no document (the specification pattern, once the
+    specifications move into a subdirectory of `docs/`, where they are then
+    held to the budget), a citation reworded to name a heading that is not
+    there, and a sentence of historical phrasing in a document with no
+    phrasing-ratchet entry. Each of the four as-built specifications
+    `AGENTS.md` lists, `CHANGELOG.md`, `docs/ROADMAP.md` and a review report
+    at either depth under `docs/reviews/`, padded past 100,000 bytes with no
+    entry, passes, and so does a document whose bytes past the budget all lie
+    inside one generated region, of each kind, where `lib/markdown-scan.sh`
+    lists it. The same bytes count as hand-written, and the document fails,
+    when the region sits in a file or carries an id or fragment the library
+    does not list, when a stamped region closes under another fragment's name,
+    when it has no end marker, when its markers sit inside fenced code, and
+    when it is a second copy of a listed region. A ratchet entry at a
+    document's hand-written size holds it although a region with fenced code
+    inside takes its whole size past the entry, and one more hand-written byte
+    fails. A
     `#fragment` that no heading slugs to, but an explicit `<a id="…">`
     anchor in the target provides, passes — as `docs/concepts/glossary.md`'s
     own `#human-level` and `#no-op-cycle` links do, both of which sit over a
