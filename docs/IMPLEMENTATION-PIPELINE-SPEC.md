@@ -2696,7 +2696,11 @@ implements.
       served from its own `304` and `miss` when at least one page needed a
       real fetch — the one ledger entry that says more than "a call
       happened", surfacing the saving this closes agent-ops#1114 for in
-      `scripts/github-budget-report.sh`'s own summary.
+      `scripts/github-budget-report.sh`'s own summary. A walk's final page
+      is never conditioned (acceptance check 2p, agent-ops#2183), so the
+      `hit` branch of this rule never currently obtains — every call that
+      reaches a final page ledgers `miss` on that page's own real fetch
+      alone.
 
       No pathway ever reshapes what the real binary printed. A conditioned
       read is the only call whose argv the shim adds to at all; what it
@@ -26202,9 +26206,11 @@ oblige anyone to edit a test.
    call fetches every page with its own `-i` and merges their own bodies into
    one JSON array, byte-spliced rather than reparsed, and caches page 1, page
    2 and the whole-call last-known-good entry separately; an identical
-   repeat call sends each page's own stored `ETag`, 304s every page, merges
-   the identical document again from the cached bodies with no new cache
-   entry, and ledgers the call `hit`; a call where only the newest page
+   repeat call sends each earlier page's own stored `ETag`, 304s every page
+   but the final one — which is always re-fetched in full, unconditioned —
+   merges the identical document with no new cache entry, and ledgers the
+   call `miss`, `hit` being unreachable while the walk's final page is
+   always a real fetch (agent-ops#2183); a call where only the newest page
    changed still sends page 1's previous `ETag` (304ing it unconditionally
    server-side), re-fetches only the changed page, overwrites that page's
    own cache entry in place, and ledgers the call `miss`; a page served
