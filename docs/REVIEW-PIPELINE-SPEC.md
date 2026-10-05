@@ -1221,15 +1221,11 @@ What exists, and the requirements each part answers to:
 3. `.claude/skills/project-review/` — the vendored skill (pinned; re-sync
    from upstream deliberately).
 4. `config.json` — the `repository_review` block.
-5. `docs/guides/operating/README.md` — a "Repository review" section: what
-   it does and why (the loop it closes), how to install the cron entry,
-   how to operate it (`--dry-run`, `--once`, `--repo`, reading
-   `review-log.jsonl` and the transcripts), and how the outputs feed the
-   implementation pipeline / `project-remediation`; `docs/guides/operating/README.md`'s
-   "Uninstall" section for how to uninstall; and
-   `docs/reference/configuration.md` for every `repository_review.*` config
-   key.
-6. The crontab line(s) (see "Host provisioning").
+5. `docs/guides/operating/README.md` names the review pipeline under "How
+   the pipelines work"; `docs/guides/operating/change-a-node.md` § "Uninstall"
+   covers how to uninstall; and `docs/reference/configuration.md` documents
+   every `repository_review.*` config key.
+6. The crontab line(s): on a containerized node, rendered from `deploy/docker/crontab.tmpl` and run by supercronic in the scheduler service.
 
 ## Acceptance checks
 
@@ -1452,42 +1448,6 @@ edit a test.
    independently of `stage_health`'s own — a node whose implementation-
    pipeline stages are all healthy while `project-reviewer` fails must read
    as failing too, never masked by the other panel's green verdict.
-
-## Host provisioning (human steps)
-
-All of this is in place on the current host; it is needed again only when
-standing the pipeline up on a new machine.
-
-1. Create the review label in each configured repo:
-   `gh api -X POST repos/Poetic-Poems/<repo>/labels -f name='project-review' -f color='5319e7' -f description='Raised by the project-review pipeline'`
-   (for each repository in `repository_review.repos`).
-2. Install the cron entry. **Recommended — a daily tick guarded by
-   `min_days_between_reviews`**, which is robust to a machine that sleeps:
-   ```
-   30 3 * * * $HOME/Code/Poetic-Poems/agent-ops/review-cycle.sh >> $HOME/.local/state/poetic-agents/review-cron.log 2>&1
-   ```
-   The skip-guard (R4) ensures this actually reviews each repo only about once a
-   week. *Strict weekly alternative* (simpler, but a missed Monday tick skips
-   the whole week): `30 3 * * 1 …` (Mondays 03:30). Schedule it at a different
-   minute from the implementation cycle's own tick to avoid both firing at once
-   (the review defers to a running cycle anyway, per R3). The crontab
-   environment must also set `AGENT_OPS_ROLE=active` on the node that is to run
-   the reviews (R2b); without it every tick stands down.
-
-   On a containerised node this entry is not installed by hand at all: it is
-   the review line of `deploy/docker/crontab`, which the scheduler service runs
-   under supercronic (see the node image section of
-   `docs/IMPLEMENTATION-PIPELINE-SPEC.md`). Its hour and minute are rendered
-   per node at container start (design decision D5): `config.json`'s
-   `schedule.review_offset_minutes` (`29`) past `CYCLE_MINUTE` (mod 60), at
-   `schedule.review_hour` (`3`), so the node's two heavy pipelines sit
-   maximally apart within its hour and no two nodes review at the same
-   moment either. The role comes from `ROLE` in the node's
-   `deploy/docker/.env` rather than from a crontab line, and defaults to
-   standby when it is missing.
-3. The shared prerequisites of `docs/IMPLEMENTATION-PIPELINE-SPEC.md` (the standalone `claude`
-   CLI, cron enabled under WSL, `gh` authenticated with push access) are
-   already satisfied by the implementation pipeline; nothing further is needed.
 
 ## Cost profile
 

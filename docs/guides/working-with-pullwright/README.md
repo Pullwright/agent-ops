@@ -29,20 +29,20 @@ Once an hour:
 And, at the end of a cycle, rarely: the **[Enabler](../../concepts/glossary.md#enabler)** (Opus) re-examines an item
 that has been blocked for several cycles, unblocks it if it can and raises an
 issue assigned to you if only you can — see
-[Blocked items and the Enabler](../operating/README.md#blocked-items-and-the-enabler). It also writes
+[Blocked items and the Enabler](../operating/diagnose-by-symptom.md#an-item-is-blocked-or-void). It also writes
 the specification for an item too vague to select, which is otherwise skipped
 in silence forever — see
-[Items nobody has specified](../operating/README.md#items-nobody-has-specified).
+[Items nobody has specified](../operating/diagnose-by-symptom.md#an-item-is-blocked-or-void).
 
 At the same end of the same cycle, and not rarely at all: the **[Refiner](../../concepts/glossary.md#refiner)**
 (Haiku) writes that specification for an item nobody has scoped *before* it has
 to be blocked and wait for the Enabler at all — see
-[Refined items and the Refiner](../operating/README.md#refined-items-and-the-refiner).
+[Refined items and the Refiner](../operating/configure.md#work-source-controls).
 
-If no suitable item exists, or if [back-pressure](../../concepts/glossary.md#back-pressure) shows open agent PRs, the cycle stands down — cheaply, without waking the Co-Ordinator, when nothing has changed since it last found nothing to do (see [Skipping no-op cycles](../operating/README.md#skipping-no-op-cycles)).
+If no suitable item exists, or if [back-pressure](../../concepts/glossary.md#back-pressure) shows open agent PRs, the cycle stands down — cheaply, without waking the Co-Ordinator, when nothing has changed since it last found nothing to do (see [Skipping no-op cycles](../operating/run-and-pause.md#staying-warm-without-spending)).
 
 Once a day, a third pipeline reads the other two and reports on them: see
-[The Pipeline Monitor](../operating/README.md#the-pipeline-monitor).
+[The Pipeline Monitor](../operating/watch.md#the-pipeline-monitor).
 
 ## Responding to your review comments
 
@@ -159,7 +159,7 @@ security work first, whatever its `Priority`.
 below.
 
 Re-prioritising an issue is picked up on the next cycle: the band is part of
-what the no-op check watches (see [Skipping no-op cycles](../operating/README.md#skipping-no-op-cycles)),
+what the no-op check watches (see [Skipping no-op cycles](../operating/run-and-pause.md#staying-warm-without-spending)),
 so a re-triage always wakes the Co-Ordinator rather than being absorbed by a
 "nothing changed" skip.
 
@@ -203,7 +203,7 @@ Assignment hides nothing: the issue stays open, keeps its band, and still appear
 in the dashboard's open-issues panel, which lists what is open rather than what
 is selectable. Releasing one is picked up on the next cycle — the assignee is
 part of the fingerprint the no-op check watches, alongside labels and `Priority`
-(see [Skipping no-op cycles](../operating/README.md#skipping-no-op-cycles)) — so unassigning always
+(see [Skipping no-op cycles](../operating/run-and-pause.md#staying-warm-without-spending)) — so unassigning always
 wakes the Co-Ordinator rather than being absorbed by a "nothing changed" skip.
 
 ## Cross-item dependencies
@@ -343,7 +343,7 @@ that tier back to the one below it.
 
 - **`agent-approves` and above** — install the App on the repository, with
   `approver_app_id` and `approver_model_default` both set in `config.json`
-  ([`scripts/doctor.sh`](../operating/README.md#checking-an-installation) fails the installation
+  ([`scripts/doctor.sh`](../operating/diagnose-by-symptom.md#checking-an-installation) fails the installation
   otherwise); set the three `PULLWRIGHT_APPROVER_*` environment variables the
   token wrapper reads (the App's id, its installation id, and the path to
   its private key), which `doctor.sh` cross-checks against `approver_app_id`
@@ -370,6 +370,6 @@ scaffolding.** Independent of `merge_autonomy` itself,
 Approver review and no automatic landing happens anywhere until
 `agent-cycle.sh --restore-merge-autonomy` clears it. `--status` reports
 whether it's set. Reach for it exactly as you would `--disable` (see
-[Pausing the pipelines](../operating/README.md#pausing-the-pipelines)), when what you want stood
+[Pausing the pipelines](../operating/run-and-pause.md#the-disableenable-switch)), when what you want stood
 down is the landing gate itself rather than the whole pipeline.
 

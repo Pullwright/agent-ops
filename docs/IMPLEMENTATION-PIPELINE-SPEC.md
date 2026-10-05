@@ -87,7 +87,6 @@ id defined in exactly one place may be left bare.
   - [The Approver](#the-approver)
 - [Components](#components)
 - [Acceptance checks](#acceptance-checks)
-- [Host provisioning (human steps)](#host-provisioning-human-steps)
 - [Cost profile](#cost-profile)
 - [Design decisions](#design-decisions)
 - [Gotchas](#gotchas)
@@ -101,7 +100,7 @@ of pending work from the configured GitHub repositories, implements it on a
 feature branch in an ephemeral clone, reviews and corrects the result, and
 leaves a mergeable pull request for approval and landing at the repository's
 configured `merge_autonomy` level (see "## The Landing Gate"). It runs
-unattended on the host machine (WSL2 Ubuntu); human involvement narrows to
+unattended on a containerized node; human involvement narrows to
 whatever that level still requires.
 
 ```
@@ -189,15 +188,14 @@ has, whichever pipeline runs it (requirement 9d):
 
 ## Environment (verified 2026-07-20)
 
-- WSL2 Ubuntu; `bash`, `git`, `jq` and `gh` available.
+- A containerized node: `bash`, `git`, `jq`, `gh` and the standalone `claude`
+  CLI are all bundled in the node image (`deploy/docker/`); nothing is
+  installed by hand.
 - `gh` is authenticated as `warwickallen`, with push access to all configured
   repositories.
-- The standalone `claude` CLI is installed and resolvable from cron's
-  minimal environment.
-- `cron` is running (started by WSL's `[boot]` command) with the crontab
-  entries installed: the implementation cycle
-  (`schedule.cycle_interval_minutes`), the review tick, and the dashboard
-  heartbeat (see `docs/guides/operating/README.md`, "Installation").
+- On a containerized node, cron runs inside the scheduler container under
+  supercronic, with the crontab rendered from `deploy/docker/crontab.tmpl`
+  (see `docs/guides/operating/install-a-node.md`).
 - Headless `claude -p` invocations authenticate with the user's existing
   Claude subscription login; `gh` uses its existing token. No new keys.
 
@@ -307,8 +305,8 @@ a node updates by pulling a new image rather than by pulling a branch.
   environment, since the entrypoint's default would otherwise mask a missing
   `ENV`. If a future CLI drops the variable, that check fails before the image
   reaches a node.
-- `deploy/docker/crontab` carries the same three pipeline schedules as the
-  laptop crontab — the dashboard heartbeat, the implementation cycle, the
+- `deploy/docker/crontab` carries the three pipeline schedules — the
+  dashboard heartbeat, the implementation cycle, the
   review tick — plus two fleet lines (requirement 2.5): a `state-sync.sh
   push`, which publishes this node's state and heartbeat to its own branch,
   and a `state-sync.sh fetch`, which materialises every peer's for the union
@@ -22551,17 +22549,17 @@ What exists, and the requirements each part answers to:
    the guides under `docs/guides/` and the configuration reference at
    `docs/reference/configuration.md` — `docs/guides/working-with-pullwright/README.md`
    (what it does, review, merge autonomy), `docs/guides/operating/README.md`
-   (install steps (below), how to operate it (`--dry-run`, `--once`, reading
-   the log and stage transcripts), and how to uninstall) and
-   `docs/guides/contributing/README.md` (for maintainers, branch workflow,
-   development). The operating guide presents the container as the
-   way a node runs and points at the runbook for the detail; the host install
-   and the WSL SysV dashboard service remain documented as the laptop's legacy
-   path, which must keep working until it is cut over.
-6. The crontab line, e.g.
-   `0 * * * * $HOME/Code/Poetic-Poems/agent-ops/agent-cycle.sh >> $HOME/.local/state/poetic-agents/cron.log 2>&1`,
-   with `AGENT_OPS_ROLE=active` set in the crontab's environment on the node
-   that is to run the cycles (requirement 2.4).
+   and its linked pages (install steps (below), how to operate it
+   (`--dry-run`, `--once`, reading the log and stage transcripts), and how to
+   uninstall) and `docs/guides/contributing/README.md` (for maintainers,
+   branch workflow, development). The operating guide documents the
+   container as the only way a node runs, and points at the runbook
+   (component 7) for the detail.
+6. The crontab line: never installed by hand on a containerized node — it is
+   the cycle line of `deploy/docker/crontab.tmpl`, rendered per node at
+   container start and run by supercronic inside the scheduler service, with
+   the node's role coming from `ROLE` in its `deploy/docker/.env`
+   (requirement 2.4) rather than from a crontab environment variable.
 7. `deploy/docker/` — the node image and the node stack (see "The node image"
    and "The node stack" above): `Dockerfile`, `entrypoint.sh`, `crontab` and the
    minimal `claude-settings.json` seed; `compose.yaml`, `ts-serve.json`,
@@ -22570,9 +22568,7 @@ What exists, and the requirements each part answers to:
    unattended `cloud-init.yaml` that performs its first three steps. The
    runbook is the operator-facing counterpart to those two sections: bring-up,
    everyday commands, updating, changing a node's role, the failover drill and
-   a symptom-to-cause table. The container crontab is the schedule component 6 describes,
-   expressed for a node; both exist because the laptop still runs the host-cron
-   path.
+   a symptom-to-cause table.
 8. `deploy/agent-ops-dashboard.init` and `deploy/tailscaled.init` — the legacy
    WSL SysV path for the laptop, superseded on a containerised node.
 9. `.github/workflows/build-image.yml` — the build-and-publish path for
@@ -31472,56 +31468,6 @@ oblige anyone to edit a test.
     own `#human-level` and `#no-op-cycle` links do, both of which sit over a
     heading that slugs to something else — while a fragment matching neither
     a heading nor an anchor still fails.
-
-## Host provisioning (human steps)
-
-All of this is in place on the current host; it is needed again only when
-standing the system up on a new machine.
-
-1. Install the standalone CLI: `curl -fsSL https://claude.ai/install.sh | bash`
-   (or `npm install -g @anthropic-ai/claude-code`). Verify headless auth
-   works: `claude -p "Reply with OK" --model claude-haiku-4-5-20251001`.
-   Then prove that cron can invoke Claude by running it in a minimal
-   environment with the same PATH shape cron will use, e.g.
-   `env -i HOME="$HOME" PATH="$HOME/.local/bin:$HOME/.claude/local:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" /bin/bash -lc 'command -v claude && claude -V'`.
-   If `command -v claude` fails, create a launcher in `~/.local/bin` or add
-   the correct PATH to the crontab before continuing.
-2. Enable cron in WSL: add to `/etc/wsl.conf`
-   `[boot]` / `command = "service cron start"` (requires sudo), then restart
-   WSL (`wsl --shutdown` from Windows). Alternative if preferred: a Windows
-   Task Scheduler job running
-   `wsl.exe -u wallen -e $HOME/Code/Poetic-Poems/agent-ops/agent-cycle.sh` on
-   the node's configured cadence (`schedule.cycle_interval_minutes`).
-   Either way, cycles only run while the machine is awake — a missed cycle
-   simply waits for the next tick, which is harmless.
-3. Create the label in each configured repo:
-   `gh api -X POST repos/Poetic-Poems/<repo>/labels -f name='autonomous-agent' -f color='ededed' -f description='PR raised by the autonomous agent system'`.
-   If your `gh` version already supports `gh label create`, that form also works; the API form above is the most compatible fallback.
-3c. Create the Enabler's escalation label in each configured repo, the same way:
-   `gh api -X POST repos/Poetic-Poems/<repo>/labels -f name='enabler-escalation' -f color='b60205' -f description='Raised by the Enabler: a blocked item that escalates'`
-   (`enabler_escalation_label`, requirement 36a). Without it an escalation is
-   still raised — the create is retried unlabelled — but it arrives with only
-   the assignment to distinguish it, so the human's filter and the duplicate
-   guard both lose their handle.
-3d. Create the refinement label in each configured repo, the same way:
-   `gh api -X POST repos/Poetic-Poems/<repo>/labels -f name='needs-refinement' -f color='fbca04' -f description='The autonomous pipeline cannot tell what done would mean for this item'`
-   (`needs_refinement_label`, requirement 34e). Without it the block is still
-   recorded and the item still reaches the Enabler — the projection is a
-   courtesy to whoever is browsing the issue list, not the record — but the
-   Script logs a warning each time it cannot apply it.
-3a. Enable the security work sources on each configured repo so the alerts the
-   `security`/`code-quality` sources read actually exist: turn on the
-   Dependabot alerts and code-scanning (CodeQL) features (Settings → Code
-   security, or the equivalent org policy — free for public repos; requires
-   GitHub Advanced Security for private ones). The `gh` token must be able to
-   read `repos/<slug>/dependabot/alerts` and
-   `repos/<slug>/code-scanning/alerts` (the `security_events` scope, or
-   `repo` on a classic token). If a feature stays off, `gather-findings.sh`
-   simply returns no findings for it and the rest of the pipeline is
-   unaffected.
-4. Create `Poetic-Poems/agent-ops` and clone it to
-   `~/Code/Poetic-Poems/agent-ops`.
-5. After the acceptance checks pass, install the crontab line.
 
 ## Cost profile
 

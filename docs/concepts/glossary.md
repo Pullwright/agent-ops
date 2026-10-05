@@ -24,7 +24,7 @@ spends: it runs the implementation cycle and the daily review tick. Only the
 exact value `active` counts — unset, empty, or misspelled all mean
 [standby](#standby).
 
-Authoritative: docs/guides/operating/README.md § "Which node runs the cycles".
+Authoritative: docs/guides/operating/watch.md § "Which node runs the cycles".
 
 <a id="agent-approves"></a>
 ### `agent-approves`
@@ -98,7 +98,7 @@ Co-Ordinator re-checks a blocked item itself each cycle and clears it (an
 an item that nothing clears reaches the Enabler. Distinct from
 [void](#void), which means there is no work at all.
 
-Authoritative: docs/guides/operating/README.md § "Blocked and void items".
+Authoritative: docs/guides/operating/diagnose-by-symptom.md § "An item is blocked or void".
 
 <a id="chain"></a>
 ### Chain (finish-then-continue)
@@ -265,7 +265,7 @@ any number of which may make up a fleet. `AGENT_OPS_ROLE` says whether a
 given node is [active](#active) or [standby](#standby).
 
 Authoritative: docs/IMPLEMENTATION-PIPELINE-SPEC.md § "The node image";
-docs/guides/operating/README.md § "Which node runs the cycles".
+docs/guides/operating/watch.md § "Which node runs the cycles".
 
 <a id="no-op-cycle"></a>
 ### No-op cycle (no-op short-circuit)
@@ -274,7 +274,7 @@ A cheap stand-down that skips launching the Co-Ordinator entirely when a
 fingerprint of everything its verdict would depend on matches the
 fingerprint already recorded against the last time it found nothing to do.
 
-Authoritative: docs/guides/operating/README.md § "Skipping no-op cycles".
+Authoritative: docs/guides/operating/run-and-pause.md § "Staying warm without spending".
 
 <a id="owner-decision"></a>
 ### Owner decision
@@ -403,8 +403,8 @@ The fleet or a node pausing new work. A usage-limit stand-down lasts until
 recovered, whichever comes first; a [no-op cycle](#no-op-cycle)'s
 stand-down lasts until something the Co-Ordinator would read has changed.
 
-Authoritative: docs/guides/operating/README.md § "Lifting a usage-limit stand-down"; §
-"Skipping no-op cycles".
+Authoritative: docs/guides/operating/run-and-pause.md § "Lifting a usage-limit stand-down"; §
+"Staying warm without spending".
 
 <a id="standby"></a>
 ### Standby
@@ -413,7 +413,7 @@ The node role value that means a machine does not spend:
 `AGENT_OPS_ROLE=standby`, or any value other than the exact string
 [`active`](#active).
 
-Authoritative: docs/guides/operating/README.md § "Which node runs the cycles".
+Authoritative: docs/guides/operating/watch.md § "Which node runs the cycles".
 
 <a id="state-repository"></a>
 ### State repository
@@ -437,7 +437,7 @@ void, so an agent allowed to clear it would free the item to be
 rediscovered every cycle. Distinct from [blocked](#blocked), where real
 work exists but is impeded.
 
-Authoritative: docs/guides/operating/README.md § "Blocked and void items".
+Authoritative: docs/guides/operating/diagnose-by-symptom.md § "An item is blocked or void".
 
 <a id="work-order"></a>
 ### Work order

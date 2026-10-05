@@ -1,0 +1,196 @@
+# Change a node
+
+Update images, configuration, node roles, and manage node removal.
+
+## Roll a new image
+
+The scheduler image updates automatically if the `auto-update` profile is enabled (watchtower). To roll manually or check the current version:
+
+```bash
+# Pull the latest image
+docker compose pull
+
+# Start the updated image (recreates the scheduler)
+docker compose up -d
+
+# Verify the version
+docker compose exec scheduler cat /app/build-info.json | jq .
+
+# Or check the dashboard — nodes show "behind" if an older image is running
+```
+
+To pin to a specific build (for testing or rollback):
+
+```bash
+echo "AGENT_OPS_IMAGE=ghcr.io/pullwright/agent-ops:<sha>" >> .env
+docker compose pull
+docker compose up -d
+```
+
+Check the [package registry](https://github.com/pullwright/agent-ops/pkgs/container/agent-ops) for available SHAs. A documentation-only merge publishes no image.
+
+### Timing
+
+Don't recreate the scheduler mid-cycle. Use `--disable` to wait out any in-flight cycle first:
+
+```bash
+docker compose exec scheduler /app/agent-cycle.sh --disable "rolling new image"
+docker compose exec scheduler /app/agent-cycle.sh --status  # wait for cycle to finish
+
+# Now safe to restart
+docker compose up -d
+
+docker compose exec scheduler /app/agent-cycle.sh --enable
+```
+
+If watchtower is enabled, it already does this — its pre-update hook reads the same locks and defers the roll.
+
+## Update configuration
+
+`config.json` is committed to this repository and baked into the image at build time (`deploy/docker/Dockerfile`'s `COPY --chown=agent:agent . /app`) — there is no volume mount for it. A configuration change reaches a node the same way a code change does:
+
+1. **Edit the config file in a clone of this repository:**
+   ```bash
+   $EDITOR config.json
+   ```
+
+2. **Validate it:**
+   ```bash
+   ./scripts/doctor.sh --config config.json
+   ```
+
+3. **Open a pull request and get it merged to `main`.** The merge publishes a new image to `ghcr.io/pullwright/agent-ops`.
+
+4. **Roll the node onto that image** — automatically if the `auto-update` profile is enabled, or manually (see [Roll a new image](#roll-a-new-image) above). The change takes effect once the node is running the new image.
+
+## Change the node's role
+
+Promote a standby node to active, or demote an active node to standby:
+
+```bash
+# Edit .env
+ROLE=active    # or standby
+
+# Recreate the scheduler so it picks up the new .env value
+docker compose up -d
+```
+
+`docker compose up -d` recreates the scheduler container with the new environment — a compose `environment:` entry is read once, at container start, not from the host's `.env` on every cycle. Once recreated, the role is checked at the start of every subsequent cycle, so no further action is needed.
+
+## Allow an extra egress domain
+
+If a Vercel project or another service serves from a custom domain:
+
+```bash
+echo "EGRESS_EXTRA_ALLOW=preview.example.com" >> .env
+docker compose up -d egress-proxy
+```
+
+For fleet-wide additions (domains multiple nodes need), add to `deploy/docker/egress-allowlist.txt` in the repository:
+
+```
+example.com  # used by custom Vercel domains
+```
+
+Then rebuild or wait for the next image to be pulled.
+
+For multiple domains, comma- or whitespace-separate them:
+
+```bash
+echo "EGRESS_EXTRA_ALLOW=preview.example.com other-domain.com" >> .env
+docker compose up -d egress-proxy
+```
+
+## Take one node out while others keep working
+
+To pause a single node without affecting the rest of the fleet:
+
+```bash
+docker compose exec scheduler /app/agent-cycle.sh --disable "maintenance" --this-node
+# ... do maintenance ...
+docker compose exec scheduler /app/agent-cycle.sh --enable --this-node
+```
+
+This does not publish to the state repository; it affects only this node's local switch.
+
+## Remove a node for good
+
+To retire a node permanently:
+
+1. **Check the fleet can spare it:**
+   ```bash
+   # Verify at least one other node is active
+   gh api repos/Poetic-Poems/agent-ops-state/branches \
+     | jq -r '.[] | select(.name | startswith("nodes/")) | .name'
+   ```
+
+2. **Let any in-flight cycle finish:**
+   ```bash
+   docker compose exec scheduler /app/agent-cycle.sh --status
+   # Wait until cycle: idle and review: idle
+   ```
+
+3. **Take off anything you want to keep.** Logs and cycle records live in the
+   `state` volume, not on the host, so stream them out before `down -v`
+   destroys it (see [Archive logs](#uninstall) below for the command). The
+   node's own settings are in `~/poetic-node/.env`; `config.json` needs no
+   backup — it is committed to this repository and baked into the image.
+
+4. **Destroy the stack, volumes, and credentials:**
+   ```bash
+   docker compose down -v
+   # Revoke the node's GitHub token at github.com/settings/tokens
+   # Revoke the Tailscale identity (if enabled)
+   ```
+
+5. **Remove from the fleet's memory** (if state repository is configured):
+   ```bash
+   # The node's branch in the state repository will be pruned
+   # after it hasn't published for longer than state sync retention
+   # Or delete manually:
+   git push origin :nodes/<node-name> -f  # force-delete the branch
+   ```
+
+6. **Delete the directory:**
+   ```bash
+   rm -rf ~/poetic-node
+   ```
+
+## Uninstall
+
+To remove agent-ops entirely from a host:
+
+1. **Archive logs first, if you want to keep them.** They live in the `state`
+   volume, not on the host, and step 2's `down -v` deletes it — so stream the
+   tarball out of the running container while it is still there:
+   ```bash
+   docker compose exec -T scheduler \
+     tar cz -C /home/agent/.local/state poetic-agents \
+     > "agent-ops-logs-$(date -u +%F).tar.gz"
+   ```
+
+2. **Stop and remove containers:**
+   ```bash
+   docker compose down -v
+   cd ..
+   rm -rf ~/poetic-node
+   ```
+
+3. **Revoke credentials** (if the node had them):
+   - GitHub PAT: [github.com/settings/tokens](https://github.com/settings/tokens)
+   - Anthropic API key: [console.anthropic.com](https://console.anthropic.com)
+   - Tailscale (if enabled): [app.tailscale.com/admin/machines](https://app.tailscale.com/admin/machines)
+
+4. **Remove from fleet** (if state repository is configured):
+   ```bash
+   # Delete the node's branch
+   git push origin :nodes/<node-name> -f
+   ```
+
+## Related pages
+
+- [Install a node](install-a-node.md) — bringing nodes up
+- [Run and pause](run-and-pause.md) — operating the switch and drain
+- [Diagnose by symptom](diagnose-by-symptom.md) — troubleshooting
+- The node runbook (`deploy/docker/README.md`) — the detail behind updating,
+  changing a node's role, and the failover drill

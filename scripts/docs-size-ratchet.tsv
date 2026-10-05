@@ -11,5 +11,4 @@
 # bring it under budget. Entries may only shrink (a falling byte count, or a
 # removed line); never add slack by raising one. An entry for a file that is
 # missing, exempt or back within the budget fails the check: delete it.
-docs/guides/operating/README.md	100759	2169
 prompts/coordinator.md	124323	2144
