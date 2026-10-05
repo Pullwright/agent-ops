@@ -557,9 +557,51 @@ assert_eq "…and page 2's request carried its own, unrelated, ETag" \
 assert_eq "…ledgered miss, since page 1 needed a real fetch" \
   "miss" "$(tail -1 "$stP/gh-shim/ledger.ndjson" | jq -r '.cache')"
 idP="$(GH_TOKEN=tokP gh_shim_identity)"
-p1key="$(gh_shim_cache_key "$idP" api "repos/o/r/labels?per_page=1")"
+p1key="$(gh_shim_cache_key "$idP paginate-page" api "repos/o/r/labels?per_page=1")"
 assert_eq "…page 1's own cache entry now holds the new ETag, overwritten in place" \
   "e1b" "$(gh_shim_cache_read "$stP/gh-shim" "$idP" "repos/o/r/labels" "$p1key" | jq -r '.etag')"
+
+# --- "a per-page entry never aliases the plain `read` entry for the same
+# endpoint" ---
+#
+# The regression this pins: page 1's per-page argv is byte-identical to what
+# a caller running the same endpoint *without* `--paginate` sends, so an
+# un-namespaced per-page key puts both in one cache entry. `gh_shim_handle_
+# read`'s own write carries no `next`, so the next walk to 304 on that shared
+# entry reads `next: null`, stops, and hands the caller page 1 alone as the
+# whole merged document — exit 0, valid JSON, ledgered `hit`, and silently
+# missing every later page.
+
+stP9="$tmp_dir/stateP9"; pdP9="$tmp_dir/planP9"; mkdir -p "$stP9" "$pdP9"
+plan "$pdP9" 1 200 '[{"id":1}]' 'n1' null 0          # a plain read lands first…
+run_shim "$stP9" "$pdP9" tokP9 api "repos/o/r/issues/5/comments" >/dev/null
+plan "$pdP9" 2 200 '[{"id":1}]' 'n1' null 0 "<$p2url>; rel=\"next\""  # …then a walk
+plan "$pdP9" 3 200 '[{"id":2}]' 'n2' null 0
+run_shim "$stP9" "$pdP9" tokP9 api "repos/o/r/issues/5/comments" --paginate >/dev/null
+assert_eq "a walk's page 1 does not read the plain read's own cache entry" \
+  "no" "$(sed -n '2p' "$pdP9/calls.log" | grep -qF 'If-None-Match' && echo yes || echo no)"
+plan "$pdP9" 4 200 '[{"id":1}]' 'n1' null 0          # a second plain read, then…
+run_shim "$stP9" "$pdP9" tokP9 api "repos/o/r/issues/5/comments" >/dev/null
+plan "$pdP9" 5 304 '' '' null 1                      # …a second walk, every page 304
+plan "$pdP9" 6 304 '' '' null 1
+outP10="$(run_shim "$stP9" "$pdP9" tokP9 api "repos/o/r/issues/5/comments" --paginate)"
+assert_eq "a plain read of the same endpoint cannot truncate a later walk" \
+  '[{"id":1},{"id":2}]' "$outP10"
+assert_eq "…the 304'd walk still followed its own stored next to page 2" \
+  "yes" "$(sed -n '6p' "$pdP9/calls.log" | grep -qF 'page=2' && echo yes || echo no)"
+
+# …and the converse: a walk's own page-1 entry must not answer a plain read
+# with a `next` the read pathway would never write, nor be mistaken for one.
+stPA="$tmp_dir/statePA"; pdPA="$tmp_dir/planPA"; mkdir -p "$stPA" "$pdPA"
+plan "$pdPA" 1 200 '[{"id":1}]' 'm1' null 0 "<$p2url>; rel=\"next\""
+plan "$pdPA" 2 200 '[{"id":2}]' 'm2' null 0
+run_shim "$stPA" "$pdPA" tokPA api "repos/o/r/issues/5/comments" --paginate >/dev/null
+plan "$pdPA" 3 200 '[{"id":1}]' 'm1' null 0
+outP11="$(run_shim "$stPA" "$pdPA" tokPA api "repos/o/r/issues/5/comments")"
+assert_eq "a plain read after a walk still gets page 1 alone, unconditioned" \
+  '[{"id":1}]' "$outP11"
+assert_eq "…having sent no If-None-Match, since the walk's entry is not its own" \
+  "no" "$(sed -n '3p' "$pdPA/calls.log" | grep -qF 'If-None-Match' && echo yes || echo no)"
 
 # --- "an empty page contributes no element, and above all no separator" ---
 #

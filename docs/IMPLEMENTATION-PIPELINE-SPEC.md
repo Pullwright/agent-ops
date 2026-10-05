@@ -2642,7 +2642,13 @@ implements.
       `gh_shim_handle_paginate` drives the walk itself — one real-binary call
       per page, page 1 unchanged and every later page the previous one's own
       `Link: rel="next"` URL, each conditioned on that page's own stored
-      `ETag` and cached the same way an ordinary `read` is. The pages are
+      `ETag` and cached the same way an ordinary `read` is, but under a cache
+      key of its own namespace: page 1's per-page argv is byte-identical to
+      the argv a caller running the same endpoint without `--paginate` sends,
+      and an entry a plain `read` wrote carries no `next`, so sharing one
+      entry between the two would have a later walk `304` on it, read
+      `next: null`, stop, and return page 1 alone as the whole merged
+      document. The pages are
       reassembled to match the real binary's own documented shape exactly,
       never reparsed: `--slurp` wraps every page's own raw body as its own
       array element; `-q`/`--jq`/`-t`/`--template` present re-runs that
@@ -26200,7 +26206,11 @@ oblige anyone to edit a test.
    JSON array — leading, trailing, or the only page there is — contributes
    neither an element nor a separator, so the merged document parses rather
    than carrying the `[{…},]` or `[,{…}]` an unconditional splice would
-   leave.
+   leave. A plain (non-`--paginate`) read of the same endpoint neither
+   conditions a later walk's page 1 nor truncates it: the walk still follows
+   its own stored `next` to page 2 even when every page `304`s, and a plain
+   read made after a walk is itself still unconditioned by the walk's own
+   per-page entry.
    `lib/gh-shim.sh` and `scripts/gh-shim.sh` pass `shellcheck -x`.
 2q. **The on-demand credential seam mints a fresh token once the previous
    one is within `refresh_buffer` of expiry, never re-identifies an

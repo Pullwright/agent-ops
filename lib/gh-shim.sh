@@ -154,7 +154,11 @@
 #
 #   http-cache/<identity>/<path-hash>/<key>.json
 #                           {identity, path, etag, fetched_at, body, next} —
-#                           one file per (identity, full argv) cache key,
+#                           one file per (identity, full argv) cache key —
+#                           a paginated call's own per-page entry keyed in a
+#                           namespace of its own, so page 1's argv cannot
+#                           alias the entry a plain `read` of the same
+#                           endpoint writes (`gh_shim_handle_paginate`) —
 #                           written via a temp file and `mv -f` so a reader
 #                           never sees a partial write. `next` is `null`
 #                           except for a paginated call's own per-page entry,
@@ -1197,7 +1201,10 @@ gh_shim_paginate_page_args() {
 # query-stripped path, a key hashed from that page's own argv
 # (gh_shim_paginate_page_args) — with its `Link: rel="next"` stored alongside
 # it (gh_shim_cache_write's own `next` field) so a page served from cache on
-# a `304` still knows whether, and where, to keep walking.
+# a `304` still knows whether, and where, to keep walking. That key is
+# namespaced away from the plain `read` pathway's own, which page 1's argv
+# would otherwise be byte-identical to; see the comment on the `pkey=` line
+# below for the silently-truncated walk that aliasing would produce.
 #
 # How the pages are put back together depends on what the caller asked for,
 # matching the real binary's own documented shapes byte for byte (verified
@@ -1279,7 +1286,20 @@ gh_shim_handle_paginate() {
     local -a page_args=("${GH_SHIM_PAGE_ARGS[@]}")
     local ppath pkey pcache petag=""
     ppath="$(gh_shim_strip_query "$page_endpoint")"
-    pkey="$(gh_shim_cache_key "$identity" "${page_args[@]}")"
+    # Keyed in a namespace of its own, never the plain `read` pathway's.
+    # Page 1's per-page argv is byte-identical to the argv a caller running
+    # the same endpoint *without* `--paginate` sends, so an un-namespaced key
+    # would have the two share one cache entry — and `gh_shim_handle_read`'s
+    # own write carries no `next`, so the next walk to 304 on that shared
+    # entry would read `next: null`, stop, and hand the caller page 1 alone
+    # as the whole merged document: exit 0, valid JSON, ledgered `hit`,
+    # silently truncated. The marker rides in gh_shim_cache_key's IDENTITY
+    # slot rather than the argv because every identity gh_shim_identity
+    # produces is one space-free token (hex, `no-token`,
+    # `app-<digits>-<digits>`), so nothing real can collide with one
+    # carrying a space — whereas any argv marker is a string some caller may
+    # legitimately pass.
+    pkey="$(gh_shim_cache_key "$identity paginate-page" "${page_args[@]}")"
     pcache="$(gh_shim_cache_read "$state_dir" "$identity" "$ppath" "$pkey")"
     [[ -n "$pcache" ]] && petag="$(jq -r '.etag // empty' <<<"$pcache" 2>/dev/null)"
 
