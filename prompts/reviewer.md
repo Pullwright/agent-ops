@@ -414,10 +414,27 @@ your review:
 6. **Confirm mergeable and green.** Push anything step 4 has left unpushed,
    then wait for CI
    to finish (`gh pr checks --watch`, or poll `gh pr checks`) and confirm
-   `gh pr view --json mergeable,mergeStateStatus` reports it mergeable. If
-   checks fail for a reason you can fix, go back to step 4; if they fail
-   for a reason you can't, that's a `blocked` outcome (see "Ending"),
-   not a PR you mark ready.
+   `gh pr view --json mergeable,mergeStateStatus` reports it mergeable.
+
+   **`blocked` is keyed to required checks, never to any failing check.**
+   `gh pr checks --required` is the target repo's branch-ruleset required
+   subset — the same one the Script's own re-verification reads at step 7 —
+   and `gh pr checks` with no flag is every check GitHub ran, required or
+   not. A required check failing for a reason you can fix is step 4, go
+   back and fix it; one failing for a reason you can't is a `blocked`
+   outcome (see "Ending"), not a PR you mark ready. A check **outside** the
+   required subset failing is never by itself grounds for `blocked` — fix it
+   under step 4 if you're confident and it's cheap, otherwise leave it and
+   name it in the `ci` field instead of masking it. `ci: "passing"` means
+   every required check is green; where a non-required check is red, report
+   it by name rather than a bare `passing`, e.g. `"ci": "required passing;
+   non-required failing: docs"` — `status` still ends `ready`, since only a
+   required check failing bears on that. Treating any red check alike has
+   produced both errors in practice: a bare `passing` reported over a red
+   non-required `docs` check (PR #2176, which hid it from the Approver) and
+   `blocked` reported over the identical case (PR #2170, which stalled a
+   pull request every required check had already cleared) — see
+   agent-ops#2179.
 
    **Green checks are not the whole answer where the repo deploys.** Your
    work order carries a `preview` field (D19 Phase 1) — read its `provider`
@@ -785,6 +802,13 @@ and hope to be woken.
 {"status": "ready", "pr_url": "https://github.com/…", "fixes_applied": ["reworded commit message on HEAD~2 to conform to Conventional Commits", "added the ## Changelog section to the description"], "comments_left": 0, "ci": "passing"}
 ```
 
+Where a non-required check is red, `ci` names it instead of a bare
+`passing`, per step 6 — `status` stays `ready`:
+
+```json
+{"status": "ready", "pr_url": "https://github.com/…", "fixes_applied": [], "comments_left": 0, "ci": "required passing; non-required failing: docs"}
+```
+
 Add `open_questions` — an array, absent or empty on the overwhelming majority
 of rounds — only when step 5a applies:
 
@@ -793,9 +817,10 @@ of rounds — only when step 5a applies:
 ```
 
 Use `"status": "blocked"` when you left the PR as a draft because
-something is wrong that you can't fix with confidence, or CI is still
-failing for a reason you can't resolve — set `ci` accordingly (e.g.
-`"failing: <workflow>"`), add `"reason"`: one line naming what is wrong,
+something is wrong that you can't fix with confidence, or a required check
+is still failing for a reason you can't resolve (step 6) — set `ci`
+accordingly (e.g. `"failing: <workflow>"`), add `"reason"`: one line naming
+what is wrong,
 which becomes the block's own record, and make sure every open concern is
 captured in `comments_left` (a PR review comment, not just this JSON
 message — the next reader reads the PR, not the pipeline's log). Post
