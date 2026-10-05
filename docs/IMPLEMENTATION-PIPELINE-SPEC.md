@@ -2652,14 +2652,20 @@ implements.
       same endpoint without `--paginate` sends, and an entry a plain `read`
       wrote carries no `next`, so sharing one entry between the two would
       have a later walk `304` on it, read `next: null`, stop, and return page
-      1 alone as the whole merged document. Continuing the walk always
-      prefers the live response's own `Link` header, that being the
-      authoritative statement of the resource's current pagination wherever
-      a response carries one, and falls back to the value an earlier fetch
-      of that page stored when it carries none — which a `304` always does,
-      GitHub answering a conditional request with the validators alone, so
-      the stored value is what continues a walk over cache-served pages.
-      The pages are
+      1 alone as the whole merged document. A page is conditioned on its own
+      stored `ETag` only when that page's own last fetch found a further
+      page (a non-`null` stored `next`); a page whose stored `next` is
+      `null` is always re-fetched in full, unconditioned, never served
+      `If-None-Match`. This is because GitHub answers a conditional request
+      with the validators alone and no `Link` header at all, so a `304`'d
+      page can only ever continue the walk from its own already-stored
+      `next`, never from a live header — were a page whose stored `next` is
+      `null` conditioned like any other, GitHub's count-based pagination
+      means an append-only collection's final page can grow a real next page
+      between walks while its own bytes, and so its `ETag`, stay identical:
+      it would `304`, revealing nothing, and the walk would end on the stale
+      `null` forever, silently dropping everything appended since. The pages
+      are
       reassembled to match the real binary's own documented shape exactly,
       never reparsed: `--slurp` wraps every page's own raw body as its own
       array element; `-q`/`--jq`/`-t`/`--template` present re-runs that
@@ -26207,8 +26213,12 @@ oblige anyone to edit a test.
    is not, so a response carrying a `Link` that names a further page the
    stored entry does not still continues the walk, fetches that page and
    ledgers the call `miss` — the preference order being what is checked
-   here, a real `304` from GitHub carrying no `Link` at all; a call naming
-   no `per_page` of its own gets the
+   here, a real `304` from GitHub carrying no `Link` at all; a page whose
+   stored `next` is `null` is never conditioned on a later walk, even when
+   cached — it is re-fetched in full every time, so a collection that grows
+   a real next page past an exactly-full final page is seen on the very
+   next walk rather than truncated forever behind a stale `304`; a call
+   naming no `per_page` of its own gets the
    real binary's own default of 100 added to page 1's query string, while
    one already named — in the endpoint's own query string, or an explicit
    `-F`/`-f` field alongside `-X GET` — is left alone; a page refused

@@ -116,15 +116,22 @@
 # query string gets a default `per_page=100` when the caller named none
 # (`gh_shim_paginate_page_args`), mirroring the real binary's own default for
 # a paginated GET, so a walk that does not ask for a page size does not fall
-# back to GitHub's 30-item server default instead. Continuing the walk
-# always reads the *live* response's own `Link` header first, since that is
-# the authoritative statement of the resource's current pagination wherever
-# it is present, and falls back to the value an earlier fetch of that same
-# page stored only when the live response carries none — which a `304`
-# always does: GitHub answers a conditional request with the validators
-# alone (`ETag`, the rate-limit figures) and no `Link` at all, verified live
-# both through `gh api -i` and raw `curl`, so the stored value is what
-# actually continues a walk over cache-served pages.
+# back to GitHub's 30-item server default instead. A page is conditioned on
+# its own stored `ETag` only when that page's last fetch found a further
+# page (a non-`null` stored `next`); a page whose stored `next` is `null` is
+# always re-fetched in full, unconditioned. This matters because GitHub
+# answers a conditional request with the validators alone and no `Link`
+# header at all — verified live both through `gh api -i` and raw `curl`
+# (agent-ops#2165) — so a `304`'d page can only ever continue the walk from
+# its own previously-stored `next`, never from a live header. Were a page
+# whose stored `next` is `null` conditioned like any other, GitHub's
+# count-based pagination means an append-only collection's final page can
+# grow a real next page between walks while its own bytes, and so its
+# `ETag`, stay identical: it would 304, revealing nothing, and the walk
+# would end on the stale `null` forever, since a full page's bytes never
+# change again on an append-only listing — silently dropping everything
+# appended since. Re-fetching that page in full each walk is what notices
+# the growth.
 #
 # The caller still never sees `-i`, and the merged document this produces is
 # the same shape the real binary's own `--paginate`/`--slurp` produces,
@@ -1272,10 +1279,18 @@ gh_shim_paginate_page_args() {
 # cached exactly like an ordinary `read` — identity, that page's own
 # query-stripped path, a key hashed from that page's own argv
 # (gh_shim_paginate_page_args) — with its `Link: rel="next"` stored alongside
-# it (gh_shim_cache_write's own `next` field) for whenever the live response
-# names none of its own: the live header is read first, being authoritative
-# wherever it is present, but a `304` carries none at all, so a page served
-# from cache continues from that stored value. That key is
+# it (gh_shim_cache_write's own `next` field) for whenever a cache-served
+# page needs it: GitHub answers a conditional request with the validators
+# alone and repeats no `Link` header (agent-ops#2165's review, verified live
+# against api.github.com), so a `304`'d page always continues from that
+# stored value, never from a live header. A page whose stored `next` is
+# `null` is therefore never conditioned in the first place, cached or not —
+# GitHub's pagination is count-based, so an append-only collection's final
+# page can grow a real next page between walks while its own bytes, and so
+# its `ETag`, stay identical; conditioning it would 304, reveal nothing, and
+# leave the walk ending on the stale `null` forever. Every such page is
+# re-fetched in full, which is what notices the growth (see the `pcache`
+# block below). That key is
 # namespaced away from the plain `read` pathway's own, which page 1's argv
 # would otherwise be byte-identical to; see the comment on the `pkey=` line
 # below for the silently-truncated walk that aliasing would produce.
@@ -1376,7 +1391,19 @@ gh_shim_handle_paginate() {
     # legitimately pass.
     pkey="$(gh_shim_cache_key "$identity paginate-page" "${page_args[@]}")"
     pcache="$(gh_shim_cache_read "$state_dir" "$identity" "$ppath" "$pkey")"
-    [[ -n "$pcache" ]] && petag="$(jq -r '.etag // empty' <<<"$pcache" 2>/dev/null)"
+    # A page whose last fetch found no further page (a stored `next` of
+    # `null`) is never conditioned, even when cached: GitHub's pagination is
+    # count-based, so an append-only collection's final page can grow a real
+    # `Link: rel="next"` between walks while its own bytes — and so its
+    # `ETag` — stay identical, and a `304` carries no `Link` header of its
+    # own to reveal that (agent-ops#2165's review, verified live against
+    # api.github.com). Conditioning here would 304, reveal nothing, and the
+    # walk would end on the stale `next: null` forever, since a full page's
+    # bytes never change again on an append-only listing. An unconditioned
+    # request is the only way to notice the newly appended page.
+    if [[ -n "$pcache" ]] && [[ -n "$(jq -r '.next // empty' <<<"$pcache" 2>/dev/null)" ]]; then
+      petag="$(jq -r '.etag // empty' <<<"$pcache" 2>/dev/null)"
+    fi
 
     local -a call_args=("${page_args[@]}")
     [[ -n "$petag" ]] && call_args+=(-H "If-None-Match: $petag")
@@ -1403,6 +1430,10 @@ gh_shim_handle_paginate() {
       next="$(gh_shim_header_value "$work/1.hdr" Link)"
       next="$(gh_shim_link_next "$next")"
       if [[ -z "$next" ]]; then
+        # Reached only for a page whose stored `next` is already known
+        # non-empty — the conditioning guard above never sends
+        # `If-None-Match` for one whose stored `next` is `null`, so this
+        # fallback can never resolve to empty and end the walk early.
         next="$(jq -r '.next // empty' <<<"$pcache" 2>/dev/null)"
       fi
     elif [[ "$status" =~ ^2[0-9][0-9]$ ]]; then

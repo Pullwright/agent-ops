@@ -505,61 +505,77 @@ assert_eq "…and that call is never cached either" \
 #
 # Each page is its own conditional request, following the previous page's
 # own `Link: rel="next"` — so a repeat of an identical call 304s every page
-# and fetches nothing, and a call where only the newest page changed 304s
-# every earlier page and re-fetches only the one that did.
+# that is not the final one, re-fetching only the one page whose content
+# actually changed — except the final page of the walk (the one whose own
+# last fetch found no further page), which is always re-fetched in full,
+# never conditioned (agent-ops#2165's fix, below). Three pages — page 1 and
+# page 2 both link onward, page 3 does not — are enough to show the two
+# behaviours apart: page 1 and page 2 are the "every earlier page 304s"
+# story this test narrates, and page 3 is the walk's final page throughout.
 
 p2url='https://api.github.com/repositories/999/labels?per_page=1&page=2'
+p3url='https://api.github.com/repositories/999/labels?per_page=1&page=3'
 
 stP="$tmp_dir/stateP"; pdP="$tmp_dir/planP"; mkdir -p "$stP" "$pdP"
 plan "$pdP" 1 200 '[{"id":1}]' 'e1' null 0 "<$p2url>; rel=\"next\""
-plan "$pdP" 2 200 '[{"id":2}]' 'e2' null 0
+plan "$pdP" 2 200 '[{"id":2}]' 'e2' null 0 "<$p3url>; rel=\"next\""
+plan "$pdP" 3 200 '[{"id":3}]' 'e3' null 0
 outP1="$(run_shim "$stP" "$pdP" tokP api "repos/o/r/labels?per_page=1" --paginate)"; rcP1=$?
 assert_eq "a fresh --paginate call merges every page's own array into one" \
-  '[{"id":1},{"id":2}]' "$outP1"
+  '[{"id":1},{"id":2},{"id":3}]' "$outP1"
 assert_eq "…with exit 0" "0" "$rcP1"
 assert_eq "…each page fetched with -i, so this file can read its own headers" \
-  "2" "$(sed -n '1p;2p' "$pdP/calls.log" | tr '\037' '\n' | grep -cFx -- '-i')"
+  "3" "$(sed -n '1p;2p;3p' "$pdP/calls.log" | tr '\037' '\n' | grep -cFx -- '-i')"
 assert_eq "…but page 1 of a first-ever call carries no conditional header yet" \
   "no" "$(sed -n '1p' "$pdP/calls.log" | grep -qF 'If-None-Match' && echo yes || echo no)"
 assert_eq "…and the whole call is ledgered miss, since every page was freshly fetched" \
   "miss" "$(tail -1 "$stP/gh-shim/ledger.ndjson" | jq -r '.cache')"
-assert_eq "…caching page 1, page 2 and the whole-call last-known-good entry" \
-  "3" "$(find "$stP/gh-shim/http-cache" -name '*.json' | wc -l | tr -d ' ')"
+assert_eq "…caching all three pages and the whole-call last-known-good entry" \
+  "4" "$(find "$stP/gh-shim/http-cache" -name '*.json' | wc -l | tr -d ' ')"
 
-plan "$pdP" 3 304 '' '' null 1
 plan "$pdP" 4 304 '' '' null 1
+plan "$pdP" 5 304 '' '' null 1
+plan "$pdP" 6 200 '[{"id":3}]' 'e3' null 0
 outP2="$(run_shim "$stP" "$pdP" tokP api "repos/o/r/labels?per_page=1" --paginate)"; rcP2=$?
 assert_eq "an identical repeat call still merges the same document" \
-  '[{"id":1},{"id":2}]' "$outP2"
+  '[{"id":1},{"id":2},{"id":3}]' "$outP2"
 assert_eq "…with exit 0" "0" "$rcP2"
-assert_eq "…every page conditioned on its own stored ETag" \
-  "e1" "$(sed -n '3p' "$pdP/calls.log" | tr '\037' '\n' | sed -n 's/^If-None-Match: //p')"
-assert_eq "…including the second page's own, different, ETag" \
-  "e2" "$(sed -n '4p' "$pdP/calls.log" | tr '\037' '\n' | sed -n 's/^If-None-Match: //p')"
-assert_eq "…and the whole call is ledgered hit: no full re-fetch happened" \
-  "hit" "$(tail -1 "$stP/gh-shim/ledger.ndjson" | jq -r '.cache')"
-assert_eq "…with no new cache entries — every page and the LKG copy reused in place" \
-  "3" "$(find "$stP/gh-shim/http-cache" -name '*.json' | wc -l | tr -d ' ')"
+assert_eq "…page 1 (not the final page) conditioned on its own stored ETag" \
+  "e1" "$(sed -n '4p' "$pdP/calls.log" | tr '\037' '\n' | sed -n 's/^If-None-Match: //p')"
+assert_eq "…page 2 (not the final page either) conditioned on its own, different, ETag" \
+  "e2" "$(sed -n '5p' "$pdP/calls.log" | tr '\037' '\n' | sed -n 's/^If-None-Match: //p')"
+assert_eq "…but page 3, the walk's final page, carries no conditional header at all" \
+  "no" "$(sed -n '6p' "$pdP/calls.log" | grep -qF 'If-None-Match' && echo yes || echo no)"
+assert_eq "…and the whole call is still ledgered miss: the final page is always a real fetch" \
+  "miss" "$(tail -1 "$stP/gh-shim/ledger.ndjson" | jq -r '.cache')"
+assert_eq "…with no new cache entries — every entry reused or overwritten in place" \
+  "4" "$(find "$stP/gh-shim/http-cache" -name '*.json' | wc -l | tr -d ' ')"
 
-# Only the newest page actually changed: page 1 304s unconditionally — sent
-# the *old* ETag, proving conditioning was still attempted even though the
-# server answered fresh — and only page 2 is re-fetched.
-plan "$pdP" 5 200 '[{"id":1,"v":2}]' 'e1b' null 0 "<$p2url>; rel=\"next\""
-plan "$pdP" 6 304 '' '' null 1
+# Only an earlier, conditioned page actually changed: page 1 304s
+# unconditionally — sent the *old* ETag, proving conditioning was still
+# attempted even though the server answered fresh — page 2 is re-fetched,
+# and page 3 (the final page) is, as always, re-fetched unconditioned
+# regardless of whether anything changed.
+plan "$pdP" 7 304 '' '' null 1
+plan "$pdP" 8 200 '[{"id":2,"v":2}]' 'e2b' null 0 "<$p3url>; rel=\"next\""
+plan "$pdP" 9 200 '[{"id":3}]' 'e3' null 0
 outP3="$(run_shim "$stP" "$pdP" tokP api "repos/o/r/labels?per_page=1" --paginate)"; rcP3=$?
-assert_eq "page 1 changed, page 2 unchanged: only page 1's content is new" \
-  '[{"id":1,"v":2},{"id":2}]' "$outP3"
+assert_eq "page 1 unchanged, page 2 changed: only page 2's content is new" \
+  '[{"id":1},{"id":2,"v":2},{"id":3}]' "$outP3"
 assert_eq "…with exit 0" "0" "$rcP3"
-assert_eq "…page 1's request still carried the previous call's own ETag" \
-  "e1" "$(sed -n '5p' "$pdP/calls.log" | tr '\037' '\n' | sed -n 's/^If-None-Match: //p')"
-assert_eq "…and page 2's request carried its own, unrelated, ETag" \
-  "e2" "$(sed -n '6p' "$pdP/calls.log" | tr '\037' '\n' | sed -n 's/^If-None-Match: //p')"
-assert_eq "…ledgered miss, since page 1 needed a real fetch" \
+assert_eq "…page 1's request still carried its own stored ETag" \
+  "e1" "$(sed -n '7p' "$pdP/calls.log" | tr '\037' '\n' | sed -n 's/^If-None-Match: //p')"
+assert_eq "…page 2's request carried its own, previous, ETag" \
+  "e2" "$(sed -n '8p' "$pdP/calls.log" | tr '\037' '\n' | sed -n 's/^If-None-Match: //p')"
+assert_eq "…and page 3's request still carried none, final page or not" \
+  "no" "$(sed -n '9p' "$pdP/calls.log" | grep -qF 'If-None-Match' && echo yes || echo no)"
+assert_eq "…ledgered miss, since page 2 needed a real fetch" \
   "miss" "$(tail -1 "$stP/gh-shim/ledger.ndjson" | jq -r '.cache')"
 idP="$(GH_TOKEN=tokP gh_shim_identity)"
-p1key="$(gh_shim_cache_key "$idP paginate-page" api "repos/o/r/labels?per_page=1")"
-assert_eq "…page 1's own cache entry now holds the new ETag, overwritten in place" \
-  "e1b" "$(gh_shim_cache_read "$stP/gh-shim" "$idP" "repos/o/r/labels" "$p1key" | jq -r '.etag')"
+p2key="$(gh_shim_cache_key "$idP paginate-page" api "$p2url")"
+p2ppath="$(gh_shim_strip_query "$p2url")"
+assert_eq "…page 2's own cache entry now holds the new ETag, overwritten in place" \
+  "e2b" "$(gh_shim_cache_read "$stP/gh-shim" "$idP" "$p2ppath" "$p2key" | jq -r '.etag')"
 
 # --- "a live Link header naming a page the stored cache does not continues
 # the walk — the stored `next` is the fallback, not the primary source" ---
@@ -567,30 +583,68 @@ assert_eq "…page 1's own cache entry now holds the new ETag, overwritten in pl
 # What this pins is the *preference order*: wherever a response carries a
 # `Link` header of its own, that header is authoritative about the
 # resource's current pagination, and a `next` stored by an earlier fetch of
-# the same page is consulted only when the response carries none. Call 7
-# below is the second case (a `304` with no `Link`, continuing from the
-# stored value) and call 8 the first (a header that disagrees with what was
-# stored, and wins).
+# the same page is consulted only when the response carries none. This
+# applies to page 1, a page the fix above still conditions (its own stored
+# `next` is not `null`), so the scenario stays reachable in reality — unlike
+# the version of this test before agent-ops#2165's fix, which pinned the
+# same preference order against what was then a `null`-next page, a case
+# the fix now makes unconditioned (see the next test below) and so
+# unreachable here.
 #
 # Note what this does *not* establish: a real `304` from GitHub carries no
 # `Link` header at all — verified live through both `gh api -i` and raw
-# `curl` during the 2026-10-05 review of agent-ops#2165 — so the stub's
-# call 8 is a shape the server does not actually produce. The branch is
-# still worth pinning, but a walk over genuinely cache-served pages always
-# continues from the stored `next`, and the truncation that fact permits
-# (an exactly-full final page whose collection has since grown) is not
-# closed by this test.
+# `curl` during the 2026-10-05 review of agent-ops#2165 — so this test's own
+# second call is a shape the server does not actually produce. The branch is
+# still worth pinning defensively.
 
-p3url='https://api.github.com/repositories/999/labels?per_page=1&page=3'
-plan "$pdP" 7 304 '' '' null 1
-plan "$pdP" 8 304 '' '' null 1 "<$p3url>; rel=\"next\""
-plan "$pdP" 9 200 '[{"id":3}]' 'e3' null 0
-outP3c="$(run_shim "$stP" "$pdP" tokP api "repos/o/r/labels?per_page=1" --paginate)"; rcP3c=$?
+stPref="$tmp_dir/statePref"; pdPref="$tmp_dir/planPref"; mkdir -p "$stPref" "$pdPref"
+p2url_alt='https://api.github.com/repositories/999/labels?per_page=1&page=2-alt'
+plan "$pdPref" 1 200 '[{"id":1}]' 'ref1' null 0 "<$p2url>; rel=\"next\""
+plan "$pdPref" 2 200 '[{"id":2}]' 'ref2a' null 0
+run_shim "$stPref" "$pdPref" tokPref api "repos/o/r/labels?per_page=1" --paginate >/dev/null
+plan "$pdPref" 3 304 '' '' null 1 "<$p2url_alt>; rel=\"next\""
+plan "$pdPref" 4 200 '[{"id":99}]' 'ref2b' null 0
+outPref="$(run_shim "$stPref" "$pdPref" tokPref api "repos/o/r/labels?per_page=1" --paginate)"
 assert_eq "a 304'd page whose own live Link names a next the cache never stored still continues the walk" \
-  '[{"id":1,"v":2},{"id":2},{"id":3}]' "$outP3c"
-assert_eq "…with exit 0" "0" "$rcP3c"
+  '[{"id":1},{"id":99}]' "$outPref"
 assert_eq "…ledgered miss, since the newly-revealed page needed a real fetch" \
-  "miss" "$(tail -1 "$stP/gh-shim/ledger.ndjson" | jq -r '.cache')"
+  "miss" "$(tail -1 "$stPref/gh-shim/ledger.ndjson" | jq -r '.cache')"
+
+# --- "a page whose last fetch found no further page is never conditioned,
+# so a collection that grows past it is not silently truncated forever"
+# (agent-ops#2165) ---
+#
+# The defect this pins: GitHub's pagination is count-based, so a page that
+# happens to be exactly full when first fetched carries no `Link` header —
+# the shim stores `next: null` for it — and a `304` never carries a `Link`
+# of its own either (verified live against api.github.com during the
+# 2026-10-05 review). If that page were still conditioned on a later walk,
+# its own bytes being unchanged would legitimately `304` it, revealing
+# nothing, and the stored `next: null` would end the walk even after the
+# collection grew a real next page past it — sticky, since a full page's
+# bytes never change again on an append-only listing. The fix: a page whose
+# stored `next` is `null` is never conditioned; it is always re-fetched in
+# full, which is what notices the growth.
+
+stP13="$tmp_dir/stateP13"; pdP13="$tmp_dir/planP13"; mkdir -p "$stP13" "$pdP13"
+plan "$pdP13" 1 200 '[{"id":1}]' 'full1' null 0   # exactly-full page, no Link: next
+outP13a="$(run_shim "$stP13" "$pdP13" tokP13 api "repos/o/r/labels?per_page=1" --paginate)"
+assert_eq "a walk whose only page carries no Link ends there, as a single page" \
+  '[{"id":1}]' "$outP13a"
+
+# The collection has since grown a second page. Page 1's own bytes have not
+# changed, so a conditioned request would legitimately 304 — and reveal
+# nothing, since a 304 carries no Link header of its own to correct the
+# stale `next: null` with.
+plan "$pdP13" 2 200 '[{"id":1}]' 'full1' null 0 "<$p2url>; rel=\"next\""
+plan "$pdP13" 3 200 '[{"id":2}]' 'full2' null 0
+outP13b="$(run_shim "$stP13" "$pdP13" tokP13 api "repos/o/r/labels?per_page=1" --paginate)"
+assert_eq "a later walk sees the newly appended page, not a stale truncation" \
+  '[{"id":1},{"id":2}]' "$outP13b"
+assert_eq "…because the previously-final page was re-fetched unconditioned, not 304'd" \
+  "no" "$(sed -n '2p' "$pdP13/calls.log" | grep -qF 'If-None-Match' && echo yes || echo no)"
+assert_eq "…ledgered miss, since the previously-final page needed a real fetch" \
+  "miss" "$(tail -1 "$stP13/gh-shim/ledger.ndjson" | jq -r '.cache')"
 
 # --- "a per-page entry never aliases the plain `read` entry for the same
 # endpoint" ---
