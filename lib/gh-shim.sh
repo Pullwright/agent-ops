@@ -112,7 +112,16 @@
 # next one. `-i` is added to each of those *per-page* calls — unlike the
 # whole `--paginate`/`--slurp` invocation, a single page is exactly the
 # cacheable-GET shape `-i` already works for — and the body taken from past
-# its own header terminator, same as `gh_shim_handle_read`.
+# its own header terminator, same as `gh_shim_handle_read`. Page 1's own
+# query string gets a default `per_page=100` when the caller named none
+# (`gh_shim_paginate_page_args`), mirroring the real binary's own default for
+# a paginated GET, so a walk that does not ask for a page size does not fall
+# back to GitHub's 30-item server default instead. Continuing the walk
+# always reads the *live* response's own `Link` header, a `304` included —
+# GitHub repeats it there, reflecting the resource's current pagination even
+# when the cached body is unchanged — and falls back to the value an earlier
+# fetch of that same page stored only when the live response itself carries
+# none.
 #
 # The caller still never sees `-i`, and the merged document this produces is
 # the same shape the real binary's own `--paginate`/`--slurp` produces,
@@ -163,11 +172,14 @@
 #                           never sees a partial write. `next` is `null`
 #                           except for a paginated call's own per-page entry,
 #                           where it is that page's `Link: rel="next"` URL
-#                           (or `null` on the last page) — stored because
-#                           GitHub never repeats a `Link` header on a `304`,
-#                           so a page served from cache still has to tell
-#                           `gh_shim_handle_paginate` whether, and where, to
-#                           keep walking. The two directory levels are the
+#                           (or `null` on the last page) — read back only as
+#                           a fallback for a `304` response whose own
+#                           `Link` header is itself absent: the ordinary
+#                           case reads that live header directly, 304
+#                           included, since GitHub does repeat it there,
+#                           reflecting the resource's current pagination
+#                           even when the cached body is unchanged. The two
+#                           directory levels are the
 #                           index a write's invalidation uses: everything
 #                           cached for one (identity, endpoint path) lives in
 #                           one directory, so dropping a path is `rm -rf` of
@@ -873,9 +885,10 @@ gh_shim_cache_read() {
 # large response body is never copied through bash. NEXT (optional, empty by
 # default) is stored as the entry's `next` field, `null` when empty — a
 # paginated call's own per-page entry (gh_shim_handle_paginate) is the only
-# writer that ever passes one, since GitHub never repeats a `Link` header on
-# a `304` and a page served from cache still needs to know whether, and
-# where, to keep walking. A write that loses a race with an invalidation
+# writer that ever passes one, read back only as a fallback for a `304`
+# whose own response carries no `Link` header: the ordinary case reads that
+# live header directly, 304 included, rather than this stored value. A
+# write that loses a race with an invalidation
 # removing its directory (the `mv` finds no target) is simply dropped — the
 # next read stores it again.
 gh_shim_cache_write() {
@@ -1142,12 +1155,54 @@ gh_shim_link_next() {
     | sed -E 's/^<([^>]+)>.*/\1/'
 }
 
+# _gh_shim_page_args_has_per_page NEW_ENDPOINT ARGS...
+# True iff NEW_ENDPOINT's own query string, or a -f/-F/--field/--raw-field
+# value among ARGS, already names `per_page` — so gh_shim_paginate_page_args
+# knows not to add its own default on top of one the caller already chose.
+# Pure.
+_gh_shim_page_args_has_per_page() {
+  local new_endpoint="$1"
+  shift
+  case "$new_endpoint" in
+    *\?*)
+      local q="${new_endpoint#*\?}" seg
+      local IFS='&'
+      for seg in $q; do
+        [[ "$seg" == per_page=* ]] && return 0
+      done
+      ;;
+  esac
+  local a
+  while [[ $# -gt 0 ]]; do
+    a="$1"
+    case "$a" in
+      -f=*|-F=*|--raw-field=*|--field=*)
+        [[ "${a#*=}" == per_page=* ]] && return 0
+        shift ;;
+      -f|-F|--raw-field|--field)
+        [[ "${2:-}" == per_page=* ]] && return 0
+        shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  return 1
+}
+
 # gh_shim_paginate_page_args NEW_ENDPOINT ARGS...
 # Sets GH_SHIM_PAGE_ARGS to ARGS — an "api …" argv, ARGS[0] == "api" — with
 # -p/--paginate/--slurp dropped, any caller-supplied -i/--include dropped
 # (gh_shim_handle_paginate's per-page fetch always adds its own), and the
 # first positional — the endpoint gh_shim_parse itself would find — replaced
-# by NEW_ENDPOINT. Every other flag, including one that consumes a following
+# by NEW_ENDPOINT, with `per_page=100` appended to NEW_ENDPOINT's own query
+# string first when neither NEW_ENDPOINT nor ARGS already names one
+# (_gh_shim_page_args_has_per_page) — mirroring the real binary's own
+# default for a paginated GET (agent-ops#2165's review), so a walk that
+# names no page size of its own fetches 100-item pages rather than
+# GitHub's 30-item server default, roughly a 3.3x difference in request
+# count. Added as a query parameter, never a `-f`/`-F` field: either of
+# those flips `gh_shim_parse`'s own method resolution to POST unless the
+# caller already overrode it, which a GET-only pathway must never do on its
+# own. Every other flag, including one that consumes a following
 # value, carries over unchanged. Mirrors gh_shim_parse's own flag table above
 # so a value-taking flag already known there is never mistaken for the
 # endpoint here; the two must be kept in sync by hand, the same as
@@ -1158,6 +1213,13 @@ gh_shim_paginate_page_args() {
   shift
   GH_SHIM_PAGE_ARGS=("$1")  # "api"
   shift
+  local -a rest_args=("$@")
+  if ! _gh_shim_page_args_has_per_page "$new_endpoint" "${rest_args[@]}"; then
+    case "$new_endpoint" in
+      *\?*) new_endpoint="${new_endpoint}&per_page=100" ;;
+      *)    new_endpoint="${new_endpoint}?per_page=100" ;;
+    esac
+  fi
   local endpoint_done=0 a
   while [[ $# -gt 0 ]]; do
     a="$1"
@@ -1195,13 +1257,19 @@ gh_shim_paginate_page_args() {
 # The `--paginate`/`--slurp` pathway (agent-ops#1114): drives the pagination
 # itself, one page at a time, so each page carries its own conditional
 # `If-None-Match` rather than the whole call always reaching the network in
-# full. Page 1 is GH_SHIM_ENDPOINT unchanged; every later page is the
-# previous one's own `Link: rel="next"` URL (gh_shim_link_next). Each page is
+# full. Page 1 is GH_SHIM_ENDPOINT, with a default `per_page=100` appended
+# to its own query string when neither it nor the caller's own args already
+# name one (gh_shim_paginate_page_args, mirroring the real binary's own
+# default for a paginated GET); every later page is the previous one's own
+# `Link: rel="next"` URL (gh_shim_link_next) — which, once page 1 carries an
+# explicit `per_page`, itself does too, so the default is only ever added
+# once. Each page is
 # cached exactly like an ordinary `read` — identity, that page's own
 # query-stripped path, a key hashed from that page's own argv
 # (gh_shim_paginate_page_args) — with its `Link: rel="next"` stored alongside
-# it (gh_shim_cache_write's own `next` field) so a page served from cache on
-# a `304` still knows whether, and where, to keep walking. That key is
+# it (gh_shim_cache_write's own `next` field) as a fallback for a `304` whose
+# own response names none: the ordinary case reads that live header
+# directly, 304 included, since GitHub does repeat it there. That key is
 # namespaced away from the plain `read` pathway's own, which page 1's argv
 # would otherwise be byte-identical to; see the comment on the `pkey=` line
 # below for the silently-truncated walk that aliasing would produce.
@@ -1222,11 +1290,12 @@ gh_shim_paginate_page_args() {
 #     merged into one by dropping each page's own outer `[`/`]` and joining
 #     with `,` — the splice is byte-exact, never a reparse, so field order,
 #     number formatting and escaping all survive exactly as GitHub sent them.
-#     A page that is itself an empty array contributes nothing and leaves no
-#     separator behind: GitHub serves one for any `Link: rel="next"` that
-#     outlived the items behind it — including a `next` this file stored on
-#     an earlier walk and replayed from a later `304` — and emitting its
-#     separator anyway would hand the caller `[a,]` rather than JSON.
+#     A page that is itself an empty array — or an array whose only inner
+#     bytes are whitespace — contributes nothing and leaves no separator
+#     behind: GitHub serves one for any `Link: rel="next"` that outlived the
+#     items behind it, a page's own live `Link` header naming one even on a
+#     `304` after the resource shrank — and emitting its separator anyway
+#     would hand the caller `[a,]` rather than JSON.
 #
 # A page that does not fit the active shape — a status that is neither a
 # cache-backed `304` nor `2xx`, output that does not split into exactly one
@@ -1318,7 +1387,16 @@ gh_shim_handle_paginate() {
     body_file="$work/body"
     if [[ "$status" == "304" && -n "$pcache" ]]; then
       jq -j '.body' <<<"$pcache" > "$body_file" 2>/dev/null
-      next="$(jq -r '.next // empty' <<<"$pcache" 2>/dev/null)"
+      # GitHub does repeat a `Link` header on a `304` (verified live,
+      # agent-ops#2165's review), and it reflects the resource's *current*
+      # pagination even though the cached body is unchanged — so the live
+      # header is read first; the cached `next` is a fallback for a `304`
+      # whose own response happens to carry none, never the primary source.
+      next="$(gh_shim_header_value "$work/1.hdr" Link)"
+      next="$(gh_shim_link_next "$next")"
+      if [[ -z "$next" ]]; then
+        next="$(jq -r '.next // empty' <<<"$pcache" 2>/dev/null)"
+      fi
     elif [[ "$status" =~ ^2[0-9][0-9]$ ]]; then
       local off; off="$(gh_shim_header_end_offset "$work/out")"
       if [[ "$off" =~ ^[0-9]+$ ]] && (( off > 0 )); then
@@ -1347,17 +1425,28 @@ gh_shim_handle_paginate() {
         # nothing at all and must leave no comma behind it, or the merged
         # document is `[a,]` / `[,a]` rather than JSON. An empty page is not
         # hypothetical — GitHub serves one for any `Link: rel="next"` that
-        # outlived the items behind it, which includes a `next` this file
-        # itself stored on an earlier walk (the cache's own `next` field) and
-        # replayed from a later `304` after the resource shrank.
-        local page_bytes inner_bytes
+        # outlived the items behind it, which a page's own live `Link`
+        # header can name even on a `304` after the resource shrank (the
+        # cache's own `next` field is only this walk's fallback when that
+        # live header is itself absent, see gh_shim_link_next's call site
+        # above). A page whose inner bytes are whitespace only — `[\n\n]` —
+        # is treated the same as a byte-exact `[]`: gh-mediated GitHub
+        # bodies are compact today so this never fires, but splicing
+        # whitespace in would still leave a separator with nothing real
+        # after it, the same non-JSON `[a,]` shape the byte-exact empty
+        # case already guards against.
+        local page_bytes inner_bytes inner_file
         page_bytes="$(wc -c < "$body_file" 2>/dev/null | tr -d ' ')"
         inner_bytes=$(( ${page_bytes:-2} - 2 ))
         if [[ "$first" == 1 ]]; then printf '[' >> "$merged_file"; fi
         if (( inner_bytes > 0 )); then
-          if [[ "$emitted" == 1 ]]; then printf ',' >> "$merged_file"; fi
-          tail -c +2 "$body_file" | head -c "$inner_bytes" >> "$merged_file"
-          emitted=1
+          inner_file="$work/inner"
+          tail -c +2 "$body_file" | head -c "$inner_bytes" > "$inner_file"
+          if LC_ALL=C grep -q '[^[:space:]]' "$inner_file" 2>/dev/null; then
+            if [[ "$emitted" == 1 ]]; then printf ',' >> "$merged_file"; fi
+            cat "$inner_file" >> "$merged_file"
+            emitted=1
+          fi
         fi
         ;;
       slurp)

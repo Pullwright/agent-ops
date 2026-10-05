@@ -561,6 +561,30 @@ p1key="$(gh_shim_cache_key "$idP paginate-page" api "repos/o/r/labels?per_page=1
 assert_eq "…page 1's own cache entry now holds the new ETag, overwritten in place" \
   "e1b" "$(gh_shim_cache_read "$stP/gh-shim" "$idP" "repos/o/r/labels" "$p1key" | jq -r '.etag')"
 
+# --- "a 304's own live Link header, naming a page the stored cache does
+# not, continues the walk — the stored value is a fallback, never the
+# primary source" ---
+#
+# The regression this pins (2026-10-05 review of agent-ops#1114): GitHub
+# does repeat a `Link` header on a `304`, reflecting the resource's current
+# pagination even when the cached body is unchanged. A listing whose count
+# happened to be an exact multiple of the page size stores `next: null` for
+# its final page; once the listing grows, that same page still 304s (its
+# own bytes are unchanged) but its live response now names a further page.
+# Trusting the stale cached `null` instead of that live header would stop
+# the walk right there and hand the caller a silently truncated document.
+
+p3url='https://api.github.com/repositories/999/labels?per_page=1&page=3'
+plan "$pdP" 7 304 '' '' null 1
+plan "$pdP" 8 304 '' '' null 1 "<$p3url>; rel=\"next\""
+plan "$pdP" 9 200 '[{"id":3}]' 'e3' null 0
+outP3c="$(run_shim "$stP" "$pdP" tokP api "repos/o/r/labels?per_page=1" --paginate)"; rcP3c=$?
+assert_eq "a 304'd page whose own live Link names a next the cache never stored still continues the walk" \
+  '[{"id":1,"v":2},{"id":2},{"id":3}]' "$outP3c"
+assert_eq "…with exit 0" "0" "$rcP3c"
+assert_eq "…ledgered miss, since the newly-revealed page needed a real fetch" \
+  "miss" "$(tail -1 "$stP/gh-shim/ledger.ndjson" | jq -r '.cache')"
+
 # --- "a per-page entry never aliases the plain `read` entry for the same
 # endpoint" ---
 #
@@ -607,11 +631,11 @@ assert_eq "…having sent no If-None-Match, since the walk's entry is not its ow
 #
 # The regression this pins: the comma belongs to the element that follows,
 # not to the page. GitHub serves an empty array for any `Link: rel="next"`
-# that outlived the items behind it — and this file replays a stored `next`
-# from a `304`, so a resource that shrank between two walks produces exactly
-# that. Splicing a page that contributes nothing anyway hands the caller
-# `[{…},]` or `[,{…}]`: exit 0, a `[`…`]` that passes every shape check here,
-# and not JSON.
+# that outlived the items behind it — a page's own live `Link` header can
+# still name one even on a `304`, so a resource that shrank between two
+# walks produces exactly that. Splicing a page that contributes nothing
+# anyway hands the caller `[{…},]` or `[,{…}]`: exit 0, a `[`…`]` that
+# passes every shape check here, and not JSON.
 
 stP6="$tmp_dir/stateP6"; pdP6="$tmp_dir/planP6"; mkdir -p "$stP6" "$pdP6"
 plan "$pdP6" 1 200 '[{"id":1}]' 'z1' null 0 "<$p2url>; rel=\"next\""
@@ -633,6 +657,20 @@ stP8="$tmp_dir/stateP8"; pdP8="$tmp_dir/planP8"; mkdir -p "$stP8" "$pdP8"
 plan "$pdP8" 1 200 '[]' 'w1' null 0
 outP9="$(run_shim "$stP8" "$pdP8" tokP8 api "repos/o/r/commits?per_page=1" --paginate)"
 assert_eq "a walk whose only page is empty is still the empty array" '[]' "$outP9"
+
+# A page whose inner bytes are whitespace only (`[\n\n]`) must be treated
+# the same as a byte-exact `[]` — unreachable against gh-mediated GitHub
+# bodies today (they are compact), but the inner-bytes-only check this pins
+# would otherwise splice a separator plus whitespace into the merged
+# document, handing the caller a trailing-comma non-JSON result.
+stP8b="$tmp_dir/stateP8b"; pdP8b="$tmp_dir/planP8b"; mkdir -p "$stP8b" "$pdP8b"
+plan "$pdP8b" 1 200 '[{"id":1}]' 'ws1' null 0 "<$p2url>; rel=\"next\""
+plan "$pdP8b" 2 200 $'[\n\n]' 'ws2' null 0
+outP9b="$(run_shim "$stP8b" "$pdP8b" tokP8b api "repos/o/r/commits?per_page=1" --paginate)"
+assert_eq "a whitespace-only-inner page leaves no trailing comma behind it either" \
+  '[{"id":1}]' "$outP9b"
+assert_eq "…and the merged document really does parse" \
+  "yes" "$(jq -e . <<<"$outP9b" >/dev/null 2>&1 && echo yes || echo no)"
 
 # --- "a page that cannot be completed falls back to one whole-call request,
 # last-known-good included — never a partial document" ---
@@ -689,6 +727,36 @@ assert_eq "…then fallen back to the unconditioned whole-call pathway (no -i)" 
   "no" "$(sed -n '2p' "$pdP5/calls.log" | grep -qF -- '-i' && echo yes || echo no)"
 assert_eq "…ledgered as an ordinary miss" \
   "miss" "$(tail -1 "$stP5/gh-shim/ledger.ndjson" | jq -r '.cache')"
+
+# --- "a --paginate call that names no per_page of its own gets the real
+# binary's own default of 100 added, mirroring what gh itself does for a
+# paginated GET" ---
+#
+# The second defect from the 2026-10-05 review: without this, every walk
+# with no explicit per_page used GitHub's 30-item server default instead —
+# roughly 3.3x the requests of a single per_page=100 page, in the very
+# component whose job is conserving API budget, and a smaller page makes
+# the truncation the previous test pins proportionally more likely.
+
+stP10="$tmp_dir/stateP10"; pdP10="$tmp_dir/planP10"; mkdir -p "$stP10" "$pdP10"
+plan "$pdP10" 1 200 '[{"id":1}]' 'pp1' null 0
+run_shim "$stP10" "$pdP10" tokP10 api "repos/o/r/labels" --paginate >/dev/null
+assert_eq "a --paginate call with no per_page gets the real binary's own default of 100" \
+  "yes" "$(sed -n '1p' "$pdP10/calls.log" | tr '\037' '\n' | grep -qFx 'repos/o/r/labels?per_page=100' && echo yes || echo no)"
+
+stP11="$tmp_dir/stateP11"; pdP11="$tmp_dir/planP11"; mkdir -p "$stP11" "$pdP11"
+plan "$pdP11" 1 200 '[{"id":1}]' 'pp2' null 0
+run_shim "$stP11" "$pdP11" tokP11 api "repos/o/r/labels?per_page=5" --paginate >/dev/null
+assert_eq "…but a caller-named per_page already in the endpoint's own query string is left alone" \
+  "yes" "$(sed -n '1p' "$pdP11/calls.log" | tr '\037' '\n' | grep -qFx 'repos/o/r/labels?per_page=5' && echo yes || echo no)"
+
+stP12="$tmp_dir/stateP12"; pdP12="$tmp_dir/planP12"; mkdir -p "$stP12" "$pdP12"
+plan "$pdP12" 1 200 '[{"id":1}]' 'pp3' null 0
+run_shim "$stP12" "$pdP12" tokP12 api "repos/o/r/labels" --paginate -X GET -F per_page=40 >/dev/null
+assert_eq "…nor a caller-named per_page passed as its own -F field" \
+  "yes" "$(sed -n '1p' "$pdP12/calls.log" | tr '\037' '\n' | grep -qFx 'repos/o/r/labels' && echo yes || echo no)"
+assert_eq "…that field still reaching the real binary unmodified" \
+  "yes" "$(sed -n '1p' "$pdP12/calls.log" | tr '\037' '\n' | grep -qFx 'per_page=40' && echo yes || echo no)"
 
 # --- a read the shim cannot parse still hands the caller the real stdout ---
 #
