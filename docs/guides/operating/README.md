@@ -58,7 +58,7 @@ Configuration is in `config.json` and tells the node:
 
 - Which repositories to scan (and which work sources to enable per repo)
 - How often to run cycles and what to do at each cycle
-- When to stop due to spend caps or rate limits
+- When to stand down for a GitHub rate-limit floor or a usage limit
 - Which stages timeout and how long
 - Whether to share state with peers via a state repository
 

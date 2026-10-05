@@ -5,7 +5,7 @@ A node is one Compose project running the agent-ops scheduler and supporting ser
 ## Prerequisites
 
 - Docker and Docker Compose installed
-- A GitHub personal access token (`GH_TOKEN`) with `repo`, `read:org`, and `security_events` scopes
+- A GitHub personal access token (`GH_TOKEN`) with `repo` and `security_events` scopes
 - Claude model credentials (API key or subscription)
 - A Tailscale authkey (optional, for dashboard access over your tailnet)
 
@@ -17,10 +17,9 @@ The pipeline authenticates with GitHub in two ways:
 
 **Primary:** A personal access token (`GH_TOKEN`) set in `.env`. Required scopes:
 - `repo` — to read and write to repositories the pipeline works on
-- `read:org` — to list organizations and repositories
 - `security_events` — to read Dependabot and code-scanning alerts
 
-**Optionally: Forge authoring App** (D18 decision 1). If your installation provisions a GitHub App for short-lived tokens, set `GH_APP_ID`, `GH_APP_INSTALLATION_ID`, and `GH_APP_PRIVATE_KEY` in `.env`; the App mints tokens automatically, letting you rotate the key or remove the App without restarting nodes. Omit these and nodes authenticate with `GH_TOKEN` alone, which is the simpler path.
+**Optionally: Forge authoring App** (D18 decision 1). If your installation provisions a GitHub App for short-lived tokens, set `PULLWRIGHT_AUTHOR_APP_ID` and `PULLWRIGHT_AUTHOR_INSTALLATION_ID` (or, for a fleet spanning more than one owner, `PULLWRIGHT_AUTHOR_INSTALLATION_IDS`, a JSON map of owner to installation id) in `.env`, and point `PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH` at the App's `.pem` private key on the host — Compose bind-mounts it read-only into the container at that same path, so the key's contents never go in `.env`. The App mints tokens automatically, letting you rotate the key or remove the App without restarting nodes. Omit these and nodes authenticate with `GH_TOKEN` alone, which is the simpler path.
 
 Test token access:
 ```bash

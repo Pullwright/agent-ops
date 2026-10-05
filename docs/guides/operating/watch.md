@@ -18,15 +18,13 @@ A local, single-page dashboard shows everything at a glance:
 
 ### View it locally
 
-The dashboard is served on loopback at `http://127.0.0.1:8787` (or the port set in `DASHBOARD_PORT`):
+Enable the `local` profile in `.env`:
 
 ```bash
-# Open it in your browser
-./scripts/open-dashboard.sh
-
-# Or serve it locally if your browser won't load from file://
-./scripts/serve-dashboard.sh        # then visit http://127.0.0.1:8787
+COMPOSE_PROFILES=local
 ```
+
+Compose starts a `dashboard-local` service running `serve-dashboard.sh` inside the container, published to the host's loopback at `http://127.0.0.1:8787` (or the port set in `DASHBOARD_PORT`). Visit that address in your browser.
 
 The page auto-refreshes every `dashboard_refresh_seconds` (5s by default). Untick *auto-refresh* to pause it while you read.
 
