@@ -117,11 +117,14 @@
 # (`gh_shim_paginate_page_args`), mirroring the real binary's own default for
 # a paginated GET, so a walk that does not ask for a page size does not fall
 # back to GitHub's 30-item server default instead. Continuing the walk
-# always reads the *live* response's own `Link` header, a `304` included —
-# GitHub repeats it there, reflecting the resource's current pagination even
-# when the cached body is unchanged — and falls back to the value an earlier
-# fetch of that same page stored only when the live response itself carries
-# none.
+# always reads the *live* response's own `Link` header first, since that is
+# the authoritative statement of the resource's current pagination wherever
+# it is present, and falls back to the value an earlier fetch of that same
+# page stored only when the live response carries none — which a `304`
+# always does: GitHub answers a conditional request with the validators
+# alone (`ETag`, the rate-limit figures) and no `Link` at all, verified live
+# both through `gh api -i` and raw `curl`, so the stored value is what
+# actually continues a walk over cache-served pages.
 #
 # The caller still never sees `-i`, and the merged document this produces is
 # the same shape the real binary's own `--paginate`/`--slurp` produces,
@@ -172,13 +175,11 @@
 #                           never sees a partial write. `next` is `null`
 #                           except for a paginated call's own per-page entry,
 #                           where it is that page's `Link: rel="next"` URL
-#                           (or `null` on the last page) — read back only as
-#                           a fallback for a `304` response whose own
-#                           `Link` header is itself absent: the ordinary
-#                           case reads that live header directly, 304
-#                           included, since GitHub does repeat it there,
-#                           reflecting the resource's current pagination
-#                           even when the cached body is unchanged. The two
+#                           (or `null` on the last page) — read back when
+#                           the live response carries no `Link` header of
+#                           its own, which a `304` never does, so this is
+#                           what continues a walk over a cache-served page.
+#                           The two
 #                           directory levels are the
 #                           index a write's invalidation uses: everything
 #                           cached for one (identity, endpoint path) lives in
@@ -885,9 +886,9 @@ gh_shim_cache_read() {
 # large response body is never copied through bash. NEXT (optional, empty by
 # default) is stored as the entry's `next` field, `null` when empty — a
 # paginated call's own per-page entry (gh_shim_handle_paginate) is the only
-# writer that ever passes one, read back only as a fallback for a `304`
-# whose own response carries no `Link` header: the ordinary case reads that
-# live header directly, 304 included, rather than this stored value. A
+# writer that ever passes one, read back when the live response carries no
+# `Link` header of its own — which a `304` never does, so this is what
+# tells a page served from cache whether, and where, to keep walking. A
 # write that loses a race with an invalidation
 # removing its directory (the `mv` finds no target) is simply dropped — the
 # next read stores it again.
@@ -1143,8 +1144,12 @@ gh_shim_handle_read() {
 
 # gh_shim_link_next LINK_HEADER_VALUE
 # The absolute URL named by the rel="next" entry of a GitHub `Link` response
-# header's value, or nothing when there is none — the last page, or no
-# `Link` header at all (as on a `304`, which GitHub never repeats one on).
+# header's value, or nothing when there is none — the last page, a final
+# page that happened to be exactly full (GitHub's pagination is count-based,
+# so it names no `rel="next"` there either), or no `Link` header at all, as
+# on a `304`: GitHub answers a conditional request with the validators alone
+# and repeats no `Link`, which is why a cache-served page falls back to the
+# `next` an earlier fetch of it stored.
 # Pure.
 gh_shim_link_next() {
   local link="${1:-}"
@@ -1267,9 +1272,10 @@ gh_shim_paginate_page_args() {
 # cached exactly like an ordinary `read` — identity, that page's own
 # query-stripped path, a key hashed from that page's own argv
 # (gh_shim_paginate_page_args) — with its `Link: rel="next"` stored alongside
-# it (gh_shim_cache_write's own `next` field) as a fallback for a `304` whose
-# own response names none: the ordinary case reads that live header
-# directly, 304 included, since GitHub does repeat it there. That key is
+# it (gh_shim_cache_write's own `next` field) for whenever the live response
+# names none of its own: the live header is read first, being authoritative
+# wherever it is present, but a `304` carries none at all, so a page served
+# from cache continues from that stored value. That key is
 # namespaced away from the plain `read` pathway's own, which page 1's argv
 # would otherwise be byte-identical to; see the comment on the `pkey=` line
 # below for the silently-truncated walk that aliasing would produce.
@@ -1387,11 +1393,13 @@ gh_shim_handle_paginate() {
     body_file="$work/body"
     if [[ "$status" == "304" && -n "$pcache" ]]; then
       jq -j '.body' <<<"$pcache" > "$body_file" 2>/dev/null
-      # GitHub does repeat a `Link` header on a `304` (verified live,
-      # agent-ops#2165's review), and it reflects the resource's *current*
-      # pagination even though the cached body is unchanged — so the live
-      # header is read first; the cached `next` is a fallback for a `304`
-      # whose own response happens to carry none, never the primary source.
+      # The live header is read first because, wherever a response carries
+      # one, it is the authoritative statement of the resource's *current*
+      # pagination — but a `304` carries none: GitHub answers a conditional
+      # request with the validators alone (verified live through both
+      # `gh api -i` and raw `curl`, agent-ops#2165's review), so in practice
+      # this falls through to the `next` an earlier fetch of this page
+      # stored. That stored value is what a cache-served page walks on.
       next="$(gh_shim_header_value "$work/1.hdr" Link)"
       next="$(gh_shim_link_next "$next")"
       if [[ -z "$next" ]]; then
@@ -1425,11 +1433,11 @@ gh_shim_handle_paginate() {
         # nothing at all and must leave no comma behind it, or the merged
         # document is `[a,]` / `[,a]` rather than JSON. An empty page is not
         # hypothetical — GitHub serves one for any `Link: rel="next"` that
-        # outlived the items behind it, which a page's own live `Link`
-        # header can name even on a `304` after the resource shrank (the
-        # cache's own `next` field is only this walk's fallback when that
-        # live header is itself absent, see gh_shim_link_next's call site
-        # above). A page whose inner bytes are whitespace only — `[\n\n]` —
+        # outlived the items behind it, which includes a `next` this file
+        # itself stored on an earlier walk (the cache's own `next` field)
+        # and walked on from a later `304` after the resource shrank, since
+        # a `304` carries no `Link` of its own to correct it. A page whose
+        # inner bytes are whitespace only — `[\n\n]` —
         # is treated the same as a byte-exact `[]`: gh-mediated GitHub
         # bodies are compact today so this never fires, but splicing
         # whitespace in would still leave a separator with nothing real

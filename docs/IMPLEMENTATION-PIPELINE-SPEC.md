@@ -2653,11 +2653,13 @@ implements.
       wrote carries no `next`, so sharing one entry between the two would
       have a later walk `304` on it, read `next: null`, stop, and return page
       1 alone as the whole merged document. Continuing the walk always
-      prefers the live response's own `Link` header, a `304` included —
-      GitHub repeats it there, reflecting the resource's current pagination
-      even when the cached body is unchanged — and falls back to the value
-      an earlier fetch of that page stored only when the live response
-      itself carries none. The pages are
+      prefers the live response's own `Link` header, that being the
+      authoritative statement of the resource's current pagination wherever
+      a response carries one, and falls back to the value an earlier fetch
+      of that page stored when it carries none — which a `304` always does,
+      GitHub answering a conditional request with the validators alone, so
+      the stored value is what continues a walk over cache-served pages.
+      The pages are
       reassembled to match the real binary's own documented shape exactly,
       never reparsed: `--slurp` wraps every page's own raw body as its own
       array element; `-q`/`--jq`/`-t`/`--template` present re-runs that
@@ -2668,8 +2670,9 @@ implements.
       separator belonging to the element that follows, so a page that is
       itself an empty array, or whose inner bytes are whitespace only,
       contributes neither an element nor a comma, as GitHub serves an empty
-      array for any `Link: rel="next"` that outlived the items behind it, a
-      page's own live header naming one even on a `304` included. A page
+      array for any `Link: rel="next"` that outlived the items behind it,
+      a `next` the shim itself stored and walked on from a later `304`
+      included. A page
       that does not fit — a status other than a cache-backed `304` or `2xx`,
       unparseable output, or (plain-array mode) a body that is not itself an
       array — abandons the walk before printing anything partial and falls
@@ -26198,14 +26201,14 @@ oblige anyone to edit a test.
    entry, and ledgers the call `hit`; a call where only the newest page
    changed still sends page 1's previous `ETag` (304ing it unconditionally
    server-side), re-fetches only the changed page, overwrites that page's
-   own cache entry in place, and ledgers the call `miss`; a page whose
-   `304` response carries its own live `Link` header naming a further page
-   the stored cache entry does not (an exactly-full final page, whose
-   collection grew since) still continues the walk and fetches that further
-   page, trusting the live header over the stale cached value and ledgering
-   the call `miss`, since the live header is read first on every page and
-   the cached value is read only as a fallback for a `304` whose own
-   response carries none; a call naming no `per_page` of its own gets the
+   own cache entry in place, and ledgers the call `miss`; a page served
+   from cache takes its continuation from the live response's own `Link`
+   header whenever one is present and from the stored `next` only when it
+   is not, so a response carrying a `Link` that names a further page the
+   stored entry does not still continues the walk, fetches that page and
+   ledgers the call `miss` — the preference order being what is checked
+   here, a real `304` from GitHub carrying no `Link` at all; a call naming
+   no `per_page` of its own gets the
    real binary's own default of 100 added to page 1's query string, while
    one already named — in the endpoint's own query string, or an explicit
    `-F`/`-f` field alongside `-X GET` — is left alone; a page refused

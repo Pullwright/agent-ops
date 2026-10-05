@@ -561,18 +561,25 @@ p1key="$(gh_shim_cache_key "$idP paginate-page" api "repos/o/r/labels?per_page=1
 assert_eq "…page 1's own cache entry now holds the new ETag, overwritten in place" \
   "e1b" "$(gh_shim_cache_read "$stP/gh-shim" "$idP" "repos/o/r/labels" "$p1key" | jq -r '.etag')"
 
-# --- "a 304's own live Link header, naming a page the stored cache does
-# not, continues the walk — the stored value is a fallback, never the
-# primary source" ---
+# --- "a live Link header naming a page the stored cache does not continues
+# the walk — the stored `next` is the fallback, not the primary source" ---
 #
-# The regression this pins (2026-10-05 review of agent-ops#1114): GitHub
-# does repeat a `Link` header on a `304`, reflecting the resource's current
-# pagination even when the cached body is unchanged. A listing whose count
-# happened to be an exact multiple of the page size stores `next: null` for
-# its final page; once the listing grows, that same page still 304s (its
-# own bytes are unchanged) but its live response now names a further page.
-# Trusting the stale cached `null` instead of that live header would stop
-# the walk right there and hand the caller a silently truncated document.
+# What this pins is the *preference order*: wherever a response carries a
+# `Link` header of its own, that header is authoritative about the
+# resource's current pagination, and a `next` stored by an earlier fetch of
+# the same page is consulted only when the response carries none. Call 7
+# below is the second case (a `304` with no `Link`, continuing from the
+# stored value) and call 8 the first (a header that disagrees with what was
+# stored, and wins).
+#
+# Note what this does *not* establish: a real `304` from GitHub carries no
+# `Link` header at all — verified live through both `gh api -i` and raw
+# `curl` during the 2026-10-05 review of agent-ops#2165 — so the stub's
+# call 8 is a shape the server does not actually produce. The branch is
+# still worth pinning, but a walk over genuinely cache-served pages always
+# continues from the stored `next`, and the truncation that fact permits
+# (an exactly-full final page whose collection has since grown) is not
+# closed by this test.
 
 p3url='https://api.github.com/repositories/999/labels?per_page=1&page=3'
 plan "$pdP" 7 304 '' '' null 1
