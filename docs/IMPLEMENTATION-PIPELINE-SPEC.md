@@ -2640,15 +2640,24 @@ implements.
       `If-None-Match` applied uniformly to every page a `--paginate` call
       fetches could 304 a later page whose content actually changed, so
       `gh_shim_handle_paginate` drives the walk itself — one real-binary call
-      per page, page 1 unchanged and every later page the previous one's own
-      `Link: rel="next"` URL, each conditioned on that page's own stored
-      `ETag` and cached the same way an ordinary `read` is, but under a cache
-      key of its own namespace: page 1's per-page argv is byte-identical to
-      the argv a caller running the same endpoint without `--paginate` sends,
-      and an entry a plain `read` wrote carries no `next`, so sharing one
-      entry between the two would have a later walk `304` on it, read
-      `next: null`, stop, and return page 1 alone as the whole merged
-      document. The pages are
+      per page, page 1 the caller's own endpoint with a default
+      `per_page=100` appended to its query string when neither it nor the
+      caller's own args already name one (mirroring the real binary's own
+      default for a paginated GET, so a walk that asks for no page size does
+      not fall back to GitHub's 30-item server default instead), and every
+      later page the previous one's own `Link: rel="next"` URL, each
+      conditioned on that page's own stored `ETag` and cached the same way an
+      ordinary `read` is, but under a cache key of its own namespace: page
+      1's per-page argv is byte-identical to the argv a caller running the
+      same endpoint without `--paginate` sends, and an entry a plain `read`
+      wrote carries no `next`, so sharing one entry between the two would
+      have a later walk `304` on it, read `next: null`, stop, and return page
+      1 alone as the whole merged document. Continuing the walk always
+      prefers the live response's own `Link` header, a `304` included —
+      GitHub repeats it there, reflecting the resource's current pagination
+      even when the cached body is unchanged — and falls back to the value
+      an earlier fetch of that page stored only when the live response
+      itself carries none. The pages are
       reassembled to match the real binary's own documented shape exactly,
       never reparsed: `--slurp` wraps every page's own raw body as its own
       array element; `-q`/`--jq`/`-t`/`--template` present re-runs that
@@ -2657,10 +2666,10 @@ implements.
       page's body is expected to be a top-level JSON array, merged by
       splicing out each page's own outer `[`/`]` and joining with `,` — the
       separator belonging to the element that follows, so a page that is
-      itself an empty array contributes neither an element nor a comma, as
-      GitHub serves one for any `Link: rel="next"` that outlived the items
-      behind it, a `next` the shim itself stored and replayed from a later
-      `304` included. A page
+      itself an empty array, or whose inner bytes are whitespace only,
+      contributes neither an element nor a comma, as GitHub serves an empty
+      array for any `Link: rel="next"` that outlived the items behind it, a
+      page's own live header naming one even on a `304` included. A page
       that does not fit — a status other than a cache-backed `304` or `2xx`,
       unparseable output, or (plain-array mode) a body that is not itself an
       array — abandons the walk before printing anything partial and falls
@@ -26189,7 +26198,17 @@ oblige anyone to edit a test.
    entry, and ledgers the call `hit`; a call where only the newest page
    changed still sends page 1's previous `ETag` (304ing it unconditionally
    server-side), re-fetches only the changed page, overwrites that page's
-   own cache entry in place, and ledgers the call `miss`; a page refused
+   own cache entry in place, and ledgers the call `miss`; a page whose
+   `304` response carries its own live `Link` header naming a further page
+   the stored cache entry does not (an exactly-full final page, whose
+   collection grew since) still continues the walk and fetches that further
+   page, trusting the live header over the stale cached value and ledgering
+   the call `miss`, since the live header is read first on every page and
+   the cached value is read only as a fallback for a `304` whose own
+   response carries none; a call naming no `per_page` of its own gets the
+   real binary's own default of 100 added to page 1's query string, while
+   one already named — in the endpoint's own query string, or an explicit
+   `-F`/`-f` field alongside `-X GET` — is left alone; a page refused
    mid-walk abandons the attempt and falls back to one whole-call request —
    the same last-known-good body a previous successful call stored, with the
    same `PW_GH_CACHE=stale age=<s>` marker and exit 0, and that fallback
@@ -26203,10 +26222,11 @@ oblige anyone to edit a test.
    unconditioned whole-call fallback, which reaches the real binary with the
    caller's own argv and `--paginate`/`--slurp` both untouched, exactly this
    pathway's own behaviour before agent-ops#1114. A page that is an empty
-   JSON array — leading, trailing, or the only page there is — contributes
-   neither an element nor a separator, so the merged document parses rather
-   than carrying the `[{…},]` or `[,{…}]` an unconditional splice would
-   leave. A plain (non-`--paginate`) read of the same endpoint neither
+   JSON array — leading, trailing, or the only page there is — or whose
+   inner bytes are whitespace only, contributes neither an element nor a
+   separator, so the merged document parses rather than carrying the
+   `[{…},]` or `[,{…}]` an unconditional splice would leave. A plain
+   (non-`--paginate`) read of the same endpoint neither
    conditions a later walk's page 1 nor truncates it: the walk still follows
    its own stored `next` to page 2 even when every page `304`s, and a plain
    read made after a walk is itself still unconditioned by the walk's own
