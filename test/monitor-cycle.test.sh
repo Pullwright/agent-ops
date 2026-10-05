@@ -546,6 +546,18 @@ assert_eq "and takes no lock on the way past" "0" \
   "$([[ -f "$(state_of "$d")/monitor-lock.json" ]] && echo 1 || echo 0)"
 
 # ============================================================================
+# 8a. A provider-qualified monitor_model resolves against config's own
+#     `providers` block instead of aborting (issue #2131, PR #2158) —
+#     `providers_load` must run before `resolve_model_id monitor_model` does.
+# ============================================================================
+d="$(make_node model-provider \
+  "$BASE | .providers = {acme: {substrate: \"claude-code\"}} | .monitor_model = \"acme/grok-4.3\"")"
+out="$(run_monitor "$d" --once)"
+assert_eq "a provider-qualified monitor_model runs rather than aborting" "1" \
+  "$([[ -f "$d/stub/prompt.txt" ]] && echo 1 || echo 0)"
+assert_lacks "with no 'provider not configured' refusal on stderr" "is not configured" "$out"
+
+# ============================================================================
 # 9. --dry-run builds the digest and nothing else
 # ============================================================================
 d="$(make_node dry "$BASE")"

@@ -118,9 +118,12 @@ TEMPLATE="$SCRIPT_DIR/dashboard/index.html"
 # (lib/cycle-state.sh, sourced above).
 . "$SCRIPT_DIR/lib/item-lifecycle.sh"
 # shellcheck source=lib/model-id.sh
-# `resolve_model_id` alone — the actor/model scorecards (issue #610) use it to
-# strip an `anthropic/`-qualified tier config value before comparing it
-# against the bare id every stage-end's own `model` field already carries.
+# `resolve_model_id` — the actor/model scorecards (issue #610) use it to
+# strip a qualified tier config value (e.g. `anthropic/claude-sonnet-5`)
+# before comparing it against the bare id every stage-end's own `model`
+# field already carries. `providers_load` (issue #2131) is called below,
+# once `DEFAULTED_CONFIG` exists, so a configured non-`anthropic` provider
+# resolves instead of falling through to the raw qualified value.
 . "$SCRIPT_DIR/lib/model-id.sh"
 # shellcheck source=lib/labels.sh
 # `labels_reconcile_role` alone: lib/pager.sh's `_pager_ensure_label_role`
@@ -215,6 +218,11 @@ expand_home() { local p="$1"; [[ "$p" == "~"* ]] && p="$HOME${p:1}"; printf '%s\
 DEFAULTED_CONFIG="$(config_defaults "$CONFIG_FILE" "$SCHEMA_FILE" 2>/dev/null)"
 cfg()      { jq -r "$1" <<<"$DEFAULTED_CONFIG" 2>/dev/null; }
 cfg_json() { jq -c "$1" <<<"$DEFAULTED_CONFIG" 2>/dev/null; }
+
+# The provider seam (requirement 1a, issue #2131): loaded here, ahead of the
+# `resolve_model_id` tier lookups below, the same startup position
+# agent-cycle.sh, review-cycle.sh and scripts/doctor.sh all load it at.
+providers_load "$(cfg_json '.providers')"
 
 state_dir="$(expand_home "$(cfg '.state_dir')")"
 # No `log_file` here: the log is read as the fleet's, through

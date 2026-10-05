@@ -106,15 +106,19 @@ assert_eq "a rejected qualifier aborts the script when assigned under set -e" \
   "before" "$abort_probe"
 
 # --- Model-tier ordering (requirement 1c; agent-ops#822): the fleet's four
-#     currently configured models, ranked haiku < sonnet < opus < fable. ---
-assert_eq "haiku ranks below sonnet" "1" "$(model_tier_rank claude-haiku-4-5-20251001)"
-assert_eq "sonnet ranks above haiku, below opus" "2" "$(model_tier_rank claude-sonnet-5)"
-assert_eq "opus ranks above sonnet, below fable" "3" "$(model_tier_rank claude-opus-5)"
-assert_eq "fable ranks highest" "4" "$(model_tier_rank claude-fable-5)"
+#     currently configured models, ranked haiku < sonnet < opus < fable.
+#     MODEL_TIER_RANK is keyed by the fully-qualified id (issue #2131), never
+#     the bare one resolve_model_id returns. ---
+assert_eq "haiku ranks below sonnet" "1" "$(model_tier_rank anthropic/claude-haiku-4-5-20251001)"
+assert_eq "sonnet ranks above haiku, below opus" "2" "$(model_tier_rank anthropic/claude-sonnet-5)"
+assert_eq "opus ranks above sonnet, below fable" "3" "$(model_tier_rank anthropic/claude-opus-5)"
+assert_eq "fable ranks highest" "4" "$(model_tier_rank anthropic/claude-fable-5)"
+assert_false "a bare id (unqualified) is not itself a ranked key" \
+  model_tier_rank claude-haiku-4-5-20251001
 assert_false "an unranked model prints nothing and fails" \
-  model_tier_rank claude-nonexistent-9
+  model_tier_rank anthropic/claude-nonexistent-9
 assert_eq "an unranked model's rank is empty" "" \
-  "$(model_tier_rank claude-nonexistent-9 2>/dev/null)"
+  "$(model_tier_rank anthropic/claude-nonexistent-9 2>/dev/null)"
 # An empty id must return 1 the ordinary way rather than abort the caller:
 # bash rejects an empty associative-array subscript ("bad array subscript"),
 # which under the `set -e` every script sourcing this file runs with would
@@ -131,21 +135,98 @@ assert_eq "an empty model id fails cleanly under set -e rather than aborting the
     ' _ "$SCRIPT_DIR" 2>/dev/null)"
 
 assert_true "model_tier_known accepts empty (a disabled stage)" model_tier_known ""
-assert_true "model_tier_known accepts a ranked model" model_tier_known claude-sonnet-5
-assert_false "model_tier_known rejects an unranked model" model_tier_known claude-nonexistent-9
+assert_true "model_tier_known accepts a ranked model" model_tier_known anthropic/claude-sonnet-5
+assert_false "model_tier_known rejects an unranked model" model_tier_known anthropic/claude-nonexistent-9
 
-assert_true "haiku is below sonnet" model_tier_below claude-haiku-4-5-20251001 claude-sonnet-5
+assert_true "haiku is below sonnet" \
+  model_tier_below anthropic/claude-haiku-4-5-20251001 anthropic/claude-sonnet-5
 assert_false "sonnet is not below sonnet (equal tier clears the floor)" \
-  model_tier_below claude-sonnet-5 claude-sonnet-5
-assert_false "opus is not below sonnet" model_tier_below claude-opus-5 claude-sonnet-5
+  model_tier_below anthropic/claude-sonnet-5 anthropic/claude-sonnet-5
+assert_false "opus is not below sonnet" \
+  model_tier_below anthropic/claude-opus-5 anthropic/claude-sonnet-5
 assert_false "an empty candidate never reports below (a different check's business)" \
-  model_tier_below "" claude-sonnet-5
+  model_tier_below "" anthropic/claude-sonnet-5
 assert_false "an empty floor never reports below (a different check's business)" \
-  model_tier_below claude-haiku-4-5-20251001 ""
+  model_tier_below anthropic/claude-haiku-4-5-20251001 ""
 assert_false "an unranked candidate never reports below — 'cannot verify', not 'fails'" \
-  model_tier_below claude-nonexistent-9 claude-sonnet-5
+  model_tier_below anthropic/claude-nonexistent-9 anthropic/claude-sonnet-5
 assert_false "an unranked floor never reports below either" \
-  model_tier_below claude-haiku-4-5-20251001 claude-nonexistent-9
+  model_tier_below anthropic/claude-haiku-4-5-20251001 anthropic/claude-nonexistent-9
+assert_false "a cross-provider pair ranks unknown, never below, on either side" \
+  model_tier_below xai/grok-4.3 anthropic/claude-sonnet-5
+
+# --- The provider seam (issue #2131): a top-level `providers` config block,
+#     and a model id qualified with a configured provider resolves to it
+#     instead of failing. ---
+
+# Before providers_load is ever called, `anthropic` still resolves exactly as
+# it always has — no test here, and no existing caller before this issue,
+# needs to call it first.
+assert_eq "resolve_model_provider accepts anthropic with no providers_load call" \
+  "anthropic" "$(resolve_model_provider coordinator_model "claude-sonnet-5")"
+assert_eq "resolve_model_provider accepts an anthropic/-qualified id the same way" \
+  "anthropic" "$(resolve_model_provider coordinator_model "anthropic/claude-sonnet-5")"
+assert_eq "resolve_model_provider prints nothing for an empty value" \
+  "" "$(resolve_model_provider enabler_model "")"
+assert_false "resolve_model_provider rejects an unconfigured provider" \
+  resolve_model_provider reviewer_model_default "openai/gpt-5"
+assert_eq "resolve_model_qualified qualifies a bare id under anthropic" \
+  "anthropic/claude-sonnet-5" "$(resolve_model_qualified coordinator_model "claude-sonnet-5")"
+assert_eq "resolve_model_qualified passes an already-qualified id through" \
+  "anthropic/claude-sonnet-5" "$(resolve_model_qualified coordinator_model "anthropic/claude-sonnet-5")"
+assert_eq "resolve_model_qualified prints nothing for an empty value" \
+  "" "$(resolve_model_qualified enabler_model "")"
+
+# providers_load with no `providers` key set (absent/null) behaves exactly
+# as if it were never called — `anthropic` synthesized, nothing else known.
+providers_load "null"
+assert_eq "providers_load with no providers configured still accepts anthropic" \
+  "anthropic" "$(resolve_model_provider coordinator_model "claude-sonnet-5")"
+assert_false "providers_load with no providers configured still rejects others" \
+  resolve_model_provider reviewer_model_default "xai/grok-4.3"
+
+# A configured provider resolves instead of failing (the issue's own
+# acceptance criterion, run against this library directly).
+providers_load '{"xai": {"substrate": "claude-code", "credential_env": "XAI_API_KEY"}}'
+assert_eq "a configured provider's qualifier resolves" \
+  "grok-4.3" "$(resolve_model_id implementer_model_default "xai/grok-4.3")"
+assert_eq "resolve_model_provider names the configured provider" \
+  "xai" "$(resolve_model_provider implementer_model_default "xai/grok-4.3")"
+assert_eq "resolve_model_qualified builds the qualified id for the tier ladder" \
+  "xai/grok-4.3" "$(resolve_model_qualified implementer_model_default "xai/grok-4.3")"
+assert_true "PROVIDER_CREDENTIAL_ENV records the configured credential_env" \
+  [ "${PROVIDER_CREDENTIAL_ENV[xai]}" = "XAI_API_KEY" ]
+assert_eq "anthropic is still synthesized alongside an explicitly configured provider" \
+  "anthropic" "$(resolve_model_provider coordinator_model "claude-sonnet-5")"
+
+# A provider configured with no credential_env falls back to its substrate's
+# own default — ANTHROPIC_API_KEY for claude-code, the only substrate today.
+providers_load '{"xai": {"substrate": "claude-code"}}'
+assert_true "credential_env defaults by substrate when not configured explicitly" \
+  [ "${PROVIDER_CREDENTIAL_ENV[xai]}" = "ANTHROPIC_API_KEY" ]
+
+# A configured provider whose substrate has no adapter installed on this
+# node fails fast too, naming the key and the substrate — forward groundwork
+# for #2133/#2134 (today's schema enum admits only `claude-code`, which is
+# always installed, so this is exercised directly against the library
+# rather than through a schema-valid config.json).
+providers_load '{"grok": {"substrate": "grok-build"}}'
+assert_false "an uninstalled substrate fails resolve_model_provider" \
+  resolve_model_provider implementer_model_default "grok/grok-4.3"
+err="$(resolve_model_provider implementer_model_default "grok/grok-4.3" 2>&1 >/dev/null)"
+case "$err" in
+  *"implementer_model_default"*"grok-build"*) printf 'ok   - %s\n' "the substrate error names the key and the substrate" ;;
+  *)
+    printf 'FAIL - the substrate error names the key and the substrate\n     actual: %s\n' "$err"
+    failures=$(( failures + 1 ))
+    ;;
+esac
+assert_false "resolve_model_id fails the same way for an uninstalled substrate" \
+  resolve_model_id implementer_model_default "grok/grok-4.3"
+# Leave providers_load back at the default state (no providers configured)
+# before any remaining assertion below, in case one is ever added that
+# relies on the no-op default.
+providers_load "null"
 
 echo
 if (( failures == 0 )); then
