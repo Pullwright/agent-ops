@@ -1,15 +1,13 @@
 # scripts/docs-size-ratchet.tsv — files over the 100,000-byte documentation
-# size budget (docs/README.md, "Size budget"), tracked by scripts/check-docs.sh.
+# size budget (docs/README.md, "Size budget"), tracked by scripts/check-docs.sh,
+# that are not otherwise exempt (check-docs.sh's is_size_exempt()). A file
+# whose growth this repository's own conventions mandate — an as-built
+# specification, the generated configuration reference — is exempt outright
+# rather than ratcheted: there is no fix to track for a file that is over
+# budget by nature.
 # Format: path<TAB>bytes<TAB>issue — `bytes` is the most this file may be;
 # `issue` is the GitHub issue (bare number) that will bring it under budget.
 # Entries may only shrink (a falling byte count, or a removed line); never
-# add slack by raising one. Each figure is the file's size in this tree, so a
-# file whose growth this repository's own conventions require — a requirement
-# added to an as-built specification, a configuration key regenerating
-# README.md's tables — has no headroom here and fails the check; #2163 tracks
-# that collision and how to resolve it.
-docs/DASHBOARD-SPEC.md	329817	2094
-docs/IMPLEMENTATION-PIPELINE-SPEC.md	2407366	2094
-docs/REVIEW-PIPELINE-SPEC.md	105930	2094
+# add slack by raising one.
 docs/guides/operating/README.md	103698	2169
 prompts/coordinator.md	124323	2144

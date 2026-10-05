@@ -320,6 +320,14 @@ read the entire document in one API call without excessive context cost.
   `docs/reviews/`.
 - `docs/ROADMAP.md` (currently 118 KB) is also exempt as a decision log with
   historical weight.
+- The as-built specifications are exempt: `docs/IMPLEMENTATION-PIPELINE-SPEC.md`,
+  `docs/REVIEW-PIPELINE-SPEC.md` and `docs/DASHBOARD-SPEC.md` grow with every
+  requirement-affecting change AGENTS.md's "As-built specifications" section
+  requires, so their size is a known, accepted property rather than a debt
+  with a fix.
+- `docs/reference/configuration.md` is exempt too: it carries the two
+  configuration tables generated from `config.schema.json`, so a new
+  configuration key grows it.
 
 **Current status — files over budget** are tracked in
 `scripts/docs-size-ratchet.tsv`, each entry naming the byte count it may not

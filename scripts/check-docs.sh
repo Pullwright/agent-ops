@@ -25,11 +25,13 @@
 #    path that section names exists.
 # 3. Size — no in-scope document exceeds the 100,000-byte budget
 #    docs/README.md's "Size budget" section fixed, unless it is exempt
-#    (CHANGELOG.md, docs/reviews/**, docs/ROADMAP.md — the same exemptions
-#    that section lists) or it has an entry in scripts/docs-size-ratchet.tsv
-#    naming the issue that will bring it under budget. A ratchet entry may
-#    only shrink: the check fails if a listed file grows past its own
-#    recorded size, or if a file crosses the budget with no entry at all.
+#    (CHANGELOG.md, docs/reviews/**, docs/ROADMAP.md, the three as-built
+#    specifications, and docs/reference/configuration.md — the same
+#    exemptions that section lists) or it has an entry in
+#    scripts/docs-size-ratchet.tsv naming the issue that will bring it under
+#    budget. A ratchet entry may only shrink: the check fails if a listed
+#    file grows past its own recorded size, or if a file crosses the budget
+#    with no entry at all.
 # 4. Section citations — a quoted citation of the form `` `path` §
 #    "heading" `` (docs/README.md's own convention), `` `path`, "heading"
 #    `` or `` path's "heading" `` (the two forms most of this repository's
@@ -353,6 +355,8 @@ is_size_exempt() {
   case "$1" in
     CHANGELOG.md|docs/ROADMAP.md) return 0 ;;
     docs/reviews/*) return 0 ;;
+    docs/DASHBOARD-SPEC.md|docs/IMPLEMENTATION-PIPELINE-SPEC.md|docs/REVIEW-PIPELINE-SPEC.md) return 0 ;;
+    docs/reference/configuration.md) return 0 ;;
     *) return 1 ;;
   esac
 }

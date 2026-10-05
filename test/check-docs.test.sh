@@ -207,12 +207,12 @@ rm -rf "$map_repo"
 #     entry. ---
 size_repo="$(new_repo)"
 {
-  echo '# Fixture spec'
+  echo '# Fixture AGENTS'
   echo
-  echo '## Fixture Heading'
+  echo '## Tech debt'
   echo
   yes 'Padding line to cross the size budget.' | head -c 100100
-} > "$size_repo/docs/IMPLEMENTATION-PIPELINE-SPEC.md"
+} > "$size_repo/AGENTS.md"
 size_out="$(run_script "$size_repo" 2>&1)"
 size_rc=$?
 if (( size_rc != 0 )); then
@@ -222,6 +222,27 @@ else
 fi
 assert_contains "check 3 fixture: names the size-budget violation" "$size_out" "exceeds the 100000-byte size budget"
 rm -rf "$size_repo"
+
+# --- Check 3, exemption: an as-built specification over budget with no
+#     ratchet entry does not fail — it is exempt by nature (#2163). ---
+exempt_repo="$(new_repo)"
+{
+  echo '# Fixture dashboard spec'
+  echo
+  echo '## Fixture Heading'
+  echo
+  yes 'Padding line to cross the size budget.' | head -c 100100
+} > "$exempt_repo/docs/DASHBOARD-SPEC.md"
+cat >> "$exempt_repo/docs/README.md" <<'MD'
+
+| `docs/DASHBOARD-SPEC.md` | agent | reference | Fixture spec |
+MD
+(cd "$exempt_repo" && git add -A)
+exempt_out="$(run_script "$exempt_repo" 2>&1)"
+exempt_rc=$?
+assert_eq "check 3 exemption fixture: --check exits 0 for an exempt over-budget file" "0" "$exempt_rc"
+assert_contains "check 3 exemption fixture: size budget ok despite the over-budget exempt file" "$exempt_out" "size budget: ok"
+rm -rf "$exempt_repo"
 
 # --- Check 4: section citations — a citation naming a heading that does
 #     not exist. ---

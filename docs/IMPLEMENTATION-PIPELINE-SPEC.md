@@ -2292,7 +2292,8 @@ implements.
    whole directory, and every path that map names exists. No in-scope
    document exceeds the 100,000-byte budget `docs/README.md`'s "Size budget"
    section fixed unless it is exempt there (`CHANGELOG.md`,
-   `docs/ROADMAP.md`, `docs/reviews/**`) or carries an entry in
+   `docs/ROADMAP.md`, `docs/reviews/**`, the three as-built specifications,
+   `docs/reference/configuration.md`) or carries an entry in
    `scripts/docs-size-ratchet.tsv` naming the byte count it may not grow past
    and the issue that will bring it under budget. A quoted section citation,
    in any of the three forms `docs/README.md`'s "How sections are cited"
