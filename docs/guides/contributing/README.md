@@ -45,7 +45,7 @@ the workflow in [Branch workflow](#branch-workflow) and `CLAUDE.md`. With the
 legacy host install cut over, a checkout is purely a development artefact: no
 cron entry and no pipeline runs out of it, so editing one cannot destabilise
 a running cycle. The rule in [Pausing the
-pipelines](../operating/run-and-pause.md) — disable before editing — protected the
+pipelines](../operating/run-and-pause.md#the-disableenable-switch) — disable before editing — protected the
 host install, where cron ran the very files being edited; on a fleet of
 containers, editing is always safe and the switch is about *rollout*, not
 editing.

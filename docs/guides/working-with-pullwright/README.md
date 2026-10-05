@@ -29,15 +29,15 @@ Once an hour:
 And, at the end of a cycle, rarely: the **[Enabler](../../concepts/glossary.md#enabler)** (Opus) re-examines an item
 that has been blocked for several cycles, unblocks it if it can and raises an
 issue assigned to you if only you can — see
-[Blocked items and the Enabler](../operating/watch.md#which-node-runs-the-cycles). It also writes
+[Blocked items and the Enabler](../operating/diagnose-by-symptom.md#an-item-is-blocked-or-void). It also writes
 the specification for an item too vague to select, which is otherwise skipped
 in silence forever — see
-[Items nobody has specified](../operating/diagnose-by-symptom.md).
+[Items nobody has specified](../operating/diagnose-by-symptom.md#an-item-is-blocked-or-void).
 
 At the same end of the same cycle, and not rarely at all: the **[Refiner](../../concepts/glossary.md#refiner)**
 (Haiku) writes that specification for an item nobody has scoped *before* it has
 to be blocked and wait for the Enabler at all — see
-[Refined items and the Refiner](../operating/diagnose-by-symptom.md).
+[Refined items and the Refiner](../operating/configure.md#work-source-controls).
 
 If no suitable item exists, or if [back-pressure](../../concepts/glossary.md#back-pressure) shows open agent PRs, the cycle stands down — cheaply, without waking the Co-Ordinator, when nothing has changed since it last found nothing to do (see [Skipping no-op cycles](../operating/run-and-pause.md#staying-warm-without-spending)).
 
@@ -370,6 +370,6 @@ scaffolding.** Independent of `merge_autonomy` itself,
 Approver review and no automatic landing happens anywhere until
 `agent-cycle.sh --restore-merge-autonomy` clears it. `--status` reports
 whether it's set. Reach for it exactly as you would `--disable` (see
-[Pausing the pipelines](../operating/run-and-pause.md)), when what you want stood
+[Pausing the pipelines](../operating/run-and-pause.md#the-disableenable-switch)), when what you want stood
 down is the landing gate itself rather than the whole pipeline.
 
