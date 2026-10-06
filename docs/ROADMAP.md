@@ -463,10 +463,10 @@ Poetic-Poems, with no pipeline code in it.
       provider resolves to it and the tier table of requirement 1c is keyed
       by qualified id (#2131, done); Grok Build evaluated headlessly
       against the stage contract, on the owner's xAI key (#2132); a
-      substrate adapter behind the one
-      stage launcher of requirement 4d, the Claude adapter extracted with
-      its stream and envelope byte-for-byte unchanged and `provider` added
-      to the metering record (#2133); and the xAI adapter — Grok Build in
+      substrate adapter behind the one stage launcher of requirement 4d,
+      the Claude adapter extracted with its stream and envelope
+      byte-for-byte unchanged and `provider` added to the metering record
+      (#2133); and the xAI adapter — Grok Build in
       the one image (D28), the API-key path first (#2134) and the
       subscription login directly after it (#2139), each with its egress
       domains under D24's allowlist, `doctor`, limit detection, metering and
