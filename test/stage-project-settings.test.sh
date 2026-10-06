@@ -1,0 +1,272 @@
+#!/usr/bin/env bash
+#
+# test/stage-project-settings.test.sh — a stage is never launched in a
+# directory whose Claude Code project settings could make the runner run
+# something (requirement 4k).
+#
+# What this guards:
+#
+#   the allowlist
+#     `stage_project_settings_refusal` passes a settings file only when every
+#     key in it is inert, or is a hook or MCP-approval key that the image's
+#     managed policy makes inert. `env`, the credential and telemetry helpers,
+#     `processWrapper` and plugin enabling are refused with or without the
+#     policy, because no managed key can switch them off; `hooks` is refused
+#     when the policy is absent; and `permissions` passes only for its `allow`
+#     list. A file that is not a JSON object is refused rather than guessed
+#     at, and `settings.local.json` is vetted exactly as `settings.json` is.
+#
+#   where the file came from
+#     The refusal says whether the commit the checkout holds carries the file
+#     as the working tree does, because a file an earlier stage left in a
+#     reused clone is refused too but appears nowhere in the pull request.
+#
+#   the launcher
+#     `run_claude_stage` must not start the runner at all in such a directory:
+#     the stub `claude` below records every invocation, and a refused stage
+#     must leave no record of one. It must also leave the reason where a
+#     reader looks (`<stage>.out.stderr`), leave `stage_kill_reason` empty (a
+#     cap kill is read by the stage-budget controller and the rework ledger,
+#     and this is neither), and give `handle_stage_failure` a detail that
+#     says what happened, whatever was wrong with the file, and that no later
+#     failure of the same stage inherits.
+#
+# `claude` is a stub on PATH; nothing here reaches a model.
+#
+# Run directly: ./test/stage-project-settings.test.sh — exit 0 iff all passed.
+
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+tmp_dir="$(mktemp -d)"
+trap 'rm -rf "$tmp_dir"' EXIT
+# A scratch checkout that is not a repository must not find one above it.
+export GIT_CEILING_DIRECTORIES="$tmp_dir"
+
+failures=0
+
+assert_eq() {
+  local desc="$1" expected="$2" actual="$3"
+  if [[ "$expected" == "$actual" ]]; then
+    printf 'ok   - %s\n' "$desc"
+  else
+    printf 'FAIL - %s\n     expected: %s\n     actual:   %s\n' "$desc" "$expected" "$actual"
+    failures=$(( failures + 1 ))
+  fi
+}
+
+# shellcheck source=lib/stage-run.sh
+. "$SCRIPT_DIR/lib/stage-run.sh"
+# shellcheck source=lib/stage-attempt.sh
+. "$SCRIPT_DIR/lib/stage-attempt.sh"
+
+# The signal handlers' globals, which run_claude_stage advertises into.
+# shellcheck disable=SC2034
+stage_pid=""
+# shellcheck disable=SC2034
+stage_name=""
+
+# The managed policy as the image installs it, and a path where none exists.
+policy="$tmp_dir/managed-settings.json"
+cp "$SCRIPT_DIR/deploy/docker/claude-managed-settings.json" "$policy"
+no_policy="$tmp_dir/no-such-managed-settings.json"
+
+# checkout NAME FILE JSON — a scratch checkout with one settings file in it.
+checkout() {
+  local dir="$tmp_dir/$1"
+  mkdir -p "$dir/.claude"
+  [[ -n "$2" ]] && printf '%s\n' "$3" >"$dir/.claude/$2"
+  printf '%s' "$dir"
+}
+
+# refusal DIR POLICY — the guard's status and output, as "<rc>|<output>",
+# without the clause on where the file came from, which section 3 tests.
+refusal() {
+  local out rc
+  out="$(STAGE_CLAUDE_MANAGED_SETTINGS="$2" stage_project_settings_refusal "$1")"
+  rc=$?
+  printf '%s|%s' "$rc" "${out%%; the file is *}"
+}
+# What follows the keys in every refusal that names them.
+loads=", which no stage loads from the checkout it runs in"
+
+# commit_all DIR — make DIR a repository whose one commit holds all of it.
+commit_all() {
+  git -C "$1" init -q
+  git -C "$1" add -A
+  git -C "$1" -c user.name=test -c user.email=test@example.invalid commit -q -m test
+}
+
+# --- 1. The allowlist ------------------------------------------------------------
+assert_eq "with no managed policy, only the inert keys are allowed" \
+  "$STAGE_PROJECT_SETTINGS_INERT_KEYS" \
+  "$(STAGE_CLAUDE_MANAGED_SETTINGS="$no_policy" stage_project_settings_allowed_keys)"
+assert_eq "the shipped policy adds the hook and MCP-approval keys it makes inert" \
+  '["hooks","enableAllProjectMcpServers","enabledMcpjsonServers","disabledMcpjsonServers"]' \
+  "$(STAGE_CLAUDE_MANAGED_SETTINGS="$policy" stage_project_settings_allowed_keys \
+     | jq -c --argjson inert "$STAGE_PROJECT_SETTINGS_INERT_KEYS" '. - $inert')"
+printf '%s\n' '{"allowManagedHooksOnly": false, "allowedMcpServers": [{"serverName": "x"}]}' \
+  >"$tmp_dir/weak-policy.json"
+assert_eq "a policy that does not pin a control does not unlock its keys" \
+  "$STAGE_PROJECT_SETTINGS_INERT_KEYS" \
+  "$(STAGE_CLAUDE_MANAGED_SETTINGS="$tmp_dir/weak-policy.json" stage_project_settings_allowed_keys)"
+
+# --- 2. What is refused, and what is not ------------------------------------------
+assert_eq "a directory with no project settings is not refused" \
+  "1|" "$(refusal "$(checkout none "" "")" "$no_policy")"
+# shellcheck disable=SC2016  # "$schema" is a JSON key, not a variable
+assert_eq "inert keys are not refused" \
+  "1|" "$(refusal "$(checkout inert settings.json \
+    '{"$schema":"x","permissions":{"allow":["Bash(npm test)"]},"includeCoAuthoredBy":true}')" "$no_policy")"
+
+hooks_dir="$(checkout hooks settings.json \
+  '{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"true"}]}]}}')"
+assert_eq "hooks are refused when no managed policy makes them inert" \
+  "0|.claude/settings.json sets hooks$loads" "$(refusal "$hooks_dir" "$no_policy")"
+assert_eq "and allowed under the shipped policy" \
+  "1|" "$(refusal "$hooks_dir" "$policy")"
+
+for key in env apiKeyHelper awsAuthRefresh awsCredentialExport gcpAuthRefresh \
+           otelHeadersHelper proxyAuthHelper processWrapper enabledPlugins \
+           extraKnownMarketplaces statusLine; do
+  assert_eq "$key is refused even under the shipped policy" \
+    "0|.claude/settings.json sets $key$loads" \
+    "$(refusal "$(checkout "key-$key" settings.json "{\"$key\":\"x\"}")" "$policy")"
+done
+
+# `permissions` sets what the stage may do: `deny` takes a tool away, and
+# `disableBypassPermissionsMode` drops the run out of bypass mode. Only
+# `allow`, which a stage's untrusted workspace ignores, passes.
+for sub in deny ask defaultMode disableBypassPermissionsMode additionalDirectories; do
+  assert_eq "permissions.$sub is refused even under the shipped policy" \
+    "0|.claude/settings.json sets permissions.$sub$loads" \
+    "$(refusal "$(checkout "permissions-$sub" settings.json \
+         "{\"permissions\":{\"allow\":[],\"$sub\":\"x\"}}")" "$policy")"
+done
+assert_eq "and so is a permissions value that is not an object" \
+  "0|.claude/settings.json sets permissions$loads" \
+  "$(refusal "$(checkout permissions-string settings.json '{"permissions":"x"}')" "$policy")"
+
+assert_eq "the refusal names every key outside the allowlist, in file order" \
+  "0|.claude/settings.json sets env, apiKeyHelper$loads" \
+  "$(refusal "$(checkout two settings.json \
+    '{"permissions":{},"env":{"BASH_ENV":"x"},"apiKeyHelper":"x"}')" "$policy")"
+assert_eq "settings.local.json is vetted as settings.json is" \
+  "0|.claude/settings.local.json sets enabledPlugins$loads" \
+  "$(refusal "$(checkout local settings.local.json '{"enabledPlugins":{"p@m":true}}')" "$policy")"
+assert_eq "a file jq cannot parse is refused, not guessed at" \
+  "0|.claude/settings.json cannot be read as a JSON object, so it cannot be vetted" \
+  "$(refusal "$(checkout broken settings.json '{"env": {')" "$policy")"
+assert_eq "so is valid JSON that is not an object" \
+  "0|.claude/settings.json cannot be read as a JSON object, so it cannot be vetted" \
+  "$(refusal "$(checkout array settings.json '["env"]')" "$policy")"
+
+link_dir="$(checkout link "" "")"
+printf '%s\n' '{"env":{"BASH_ENV":"x"}}' >"$tmp_dir/elsewhere.json"
+ln -s "$tmp_dir/elsewhere.json" "$link_dir/.claude/settings.json"
+assert_eq "a settings file that is a symlink is vetted by what it points at" \
+  "0|.claude/settings.json sets env$loads" "$(refusal "$link_dir" "$policy")"
+
+# --- 3. Where the file came from ------------------------------------------------
+origin_dir="$(checkout origin settings.json '{"env":{"A":"1"}}')"
+commit_all "$origin_dir"
+head="$(git -C "$origin_dir" rev-parse --short HEAD)"
+assert_eq "a refused file the commit carries is said to be committed" \
+  ".claude/settings.json sets env$loads; the file is as committed at $head" \
+  "$(STAGE_CLAUDE_MANAGED_SETTINGS="$policy" stage_project_settings_refusal "$origin_dir")"
+printf '%s\n' '{"env":{"A":"2"}}' >"$origin_dir/.claude/settings.json"
+assert_eq "one changed since the commit is said not to be" \
+  "the file is in the working tree but not as committed at $head" \
+  "$(stage_project_settings_origin "$origin_dir" .claude/settings.json)"
+printf '%s\n' '{"env":{"A":"1"}}' >"$origin_dir/.claude/settings.local.json"
+assert_eq "and so is one the commit does not hold at all" \
+  "the file is in the working tree but not as committed at $head" \
+  "$(stage_project_settings_origin "$origin_dir" .claude/settings.local.json)"
+assert_eq "a checkout that is not a repository has no commit to compare with" \
+  "the file is in the working tree, and there is no commit to compare it with" \
+  "$(stage_project_settings_origin "$link_dir" .claude/settings.json)"
+assert_eq "an unreadable file says where it came from too" \
+  ".claude/settings.json cannot be read as a JSON object, so it cannot be vetted; the file is in the working tree, and there is no commit to compare it with" \
+  "$(STAGE_CLAUDE_MANAGED_SETTINGS="$policy" stage_project_settings_refusal "$tmp_dir/broken")"
+
+# --- 4. The launcher -------------------------------------------------------------
+mkdir -p "$tmp_dir/bin"
+cat >"$tmp_dir/bin/claude" <<'STUB'
+#!/usr/bin/env bash
+printf 'invoked\n' >> "$STUB_CAPTURE/invocations"
+cat > /dev/null
+printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"done"}'
+STUB
+chmod +x "$tmp_dir/bin/claude"
+export PATH="$tmp_dir/bin:$PATH"
+
+refused_dir="$(checkout launch-refused settings.json '{"env":{"BASH_ENV":"./x.sh"}}')"
+commit_all "$refused_dir"
+export STUB_CAPTURE="$refused_dir"
+STAGE_CLAUDE_MANAGED_SETTINGS="$policy" \
+  run_claude_stage reviewer 60 test-model "a prompt" "$refused_dir/reviewer.out" "$refused_dir"
+rc=$?
+assert_eq "a refused stage returns non-zero" "1" "$rc"
+assert_eq "and never starts the runner" \
+  "no" "$([[ -e "$refused_dir/invocations" ]] && echo yes || echo no)"
+assert_eq "it says why on the stage's stderr" \
+  "run_claude_stage: the reviewer stage was not launched: .claude/settings.json sets env$loads; the file is as committed at $(git -C "$refused_dir" rev-parse --short HEAD) (requirement 4k)" \
+  "$(cat "$refused_dir/reviewer.out.stderr" 2>/dev/null)"
+assert_eq "without claiming a cap killed it" "" "$stage_kill_reason"
+assert_eq "its .out is empty, as a stage that never ran leaves it" \
+  "0" "$(wc -c < "$refused_dir/reviewer.out")"
+assert_eq "and so is its stream" \
+  "0" "$(wc -c < "$refused_dir/reviewer.stream.jsonl")"
+
+# handle_stage_failure's collaborators, stubbed to capture the detail.
+log_attempt_failed() { captured_detail="$2"; }
+detect_and_log_limit_hit() { return 1; }
+release_claim() { :; }
+captured_detail=""
+handle_stage_failure reviewer "$rc" "$refused_dir/reviewer.out"
+assert_eq "handle_stage_failure records a stage refused for a committed file as such" \
+  "reviewer was not launched: the commit its checkout holds carries Claude Code project settings no stage may load" \
+  "$captured_detail"
+
+# A file only the working tree holds, as one an earlier stage left in the
+# clone would be, and unreadable, so that the detail cannot lean on keys.
+leftover_dir="$(checkout launch-leftover settings.json '{"permissions":{"allow":["Bash(npm test)"]}}')"
+commit_all "$leftover_dir"
+printf '%s\n' '{"env": {' >"$leftover_dir/.claude/settings.local.json"
+export STUB_CAPTURE="$leftover_dir"
+STAGE_CLAUDE_MANAGED_SETTINGS="$policy" \
+  run_claude_stage reviewer 60 test-model "a prompt" "$leftover_dir/reviewer.out" "$leftover_dir"
+rc=$?
+assert_eq "a file only the working tree holds refuses the stage too" "1" "$rc"
+captured_detail=""
+handle_stage_failure reviewer "$rc" "$leftover_dir/reviewer.out"
+assert_eq "and is recorded as not in the commit" \
+  "reviewer was not launched: its checkout's working tree holds Claude Code project settings, not in the commit, that no stage may load" \
+  "$captured_detail"
+
+rm "$leftover_dir/.claude/settings.local.json"
+STAGE_CLAUDE_MANAGED_SETTINGS="$policy" \
+  run_claude_stage reviewer 60 test-model "a prompt" "$leftover_dir/reviewer.out" "$leftover_dir"
+rc=$?
+assert_eq "once the file is gone the same stage launches" "0" "$rc"
+captured_detail=""
+handle_stage_failure reviewer 1 "$leftover_dir/reviewer.out"
+assert_eq "and a later failure of it is not recorded as the earlier refusal" \
+  "reviewer exited 1" "$captured_detail"
+
+allowed_dir="$(checkout launch-allowed settings.json \
+  '{"permissions":{},"hooks":{"SessionStart":[]}}')"
+export STUB_CAPTURE="$allowed_dir"
+STAGE_CLAUDE_MANAGED_SETTINGS="$policy" \
+  run_claude_stage reviewer 60 test-model "a prompt" "$allowed_dir/reviewer.out" "$allowed_dir"
+rc=$?
+assert_eq "an allowed directory launches the runner as before" "0" "$rc"
+assert_eq "exactly once" "1" "$(wc -l < "$allowed_dir/invocations" 2>/dev/null || echo 0)"
+
+printf '\n'
+if (( failures )); then
+  printf '%d assertion(s) failed\n' "$failures"
+  exit 1
+fi
+printf 'all assertions passed\n'

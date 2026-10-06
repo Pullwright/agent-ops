@@ -224,6 +224,20 @@ Or ask the node itself, which reports which of the two paths it is on:
 docker compose exec scheduler /app/scripts/doctor.sh
 ```
 
+The image carries Claude Code's managed policy at
+`/etc/claude-code/managed-settings.json` (requirement 4k): no hook runs, no
+MCP server starts and no inline shell in a skill or command is executed,
+including any you add to the `claude-config` volume's `settings.json`. A stage
+is also not launched in a checkout whose `.claude/settings.json` sets `env`, a
+credential helper or anything else outside a short allowlist. Its
+`<stage>.out.stderr` names the file and the keys, and says whether the commit
+carries the file or only the working tree holds it. To confirm the policy holds
+on this node:
+
+```bash
+docker compose exec scheduler /app/scripts/claude-policy-probe.sh
+```
+
 ### Did it work?
 
 ```bash

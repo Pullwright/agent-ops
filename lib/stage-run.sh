@@ -54,6 +54,118 @@ stage_kill_reason=""
 # `limit_decide_structured` in lib/limit-detect.sh.
 stage_rate_limit_json=""
 
+# Requirement 4k: the Claude Code project settings a stage will load from the
+# directory it runs in. Headless `claude -p` treats its working directory as
+# trusted, and a project's `.claude/settings.json` or `settings.local.json` is
+# not only preferences: `env` sets variables in the runner's own process and
+# in every command it runs (`BASH_ENV` among them), and `apiKeyHelper`,
+# `awsAuthRefresh`, `awsCredentialExport`, `gcpAuthRefresh`,
+# `otelHeadersHelper`, `proxyAuthHelper` and `processWrapper` name commands it
+# runs itself, while `enabledPlugins` and `extraKnownMarketplaces` fetch code.
+# A stage runs in a checkout of a pull-request head as often as of `main`, so
+# any of these would run whatever the head says, before the stage's prompt
+# is read and with the stage's credentials. Measured against 2.1.267 with
+# every one planted in a checkout: `apiKeyHelper` and the AWS helpers ran
+# commands, and `env` switched the runner onto another provider.
+#
+# The image's managed policy (`deploy/docker/claude-managed-settings.json`,
+# installed root-owned at /etc/claude-code/managed-settings.json) switches off
+# hooks, MCP servers and inline shell in skills and commands wherever they
+# come from, but no managed key can switch off a project's `env`, and a list
+# of forbidden keys would be one new key away from failing open. So this is an
+# allowlist: keys that cannot run anything, change the environment or change
+# what the stage may do, plus the hook and MCP-approval keys only when the
+# managed policy is present and pins the control that makes them inert. A
+# file holding anything else, or one that is not a JSON object `jq` can read,
+# means the stage is not launched.
+#
+# `permissions` is allowed for its `allow` list and nothing else. Measured
+# against 2.1.267 under `--dangerously-skip-permissions`: `allow` is ignored
+# in a workspace nobody has trusted interactively, which no stage's is;
+# `deny` takes the named tool away from the stage, so a head could narrow
+# what its own Reviewer can see; and `disableBypassPermissionsMode` silently
+# drops the run into the default permission mode. `ask`, `defaultMode` and
+# `additionalDirectories` set what the stage may do as well, so they are
+# refused with them.
+#
+# Only the working directory matters: Claude reads project settings from
+# there and not from a parent or the repository root (measured likewise).
+# shellcheck disable=SC2016  # "$schema" is a JSON key, not a variable
+STAGE_PROJECT_SETTINGS_INERT_KEYS='["$schema","permissions","includeCoAuthoredBy","includeGitInstructions","cleanupPeriodDays","respectGitignore"]'
+STAGE_PROJECT_SETTINGS_INERT_PERMISSIONS='["allow"]'
+STAGE_CLAUDE_MANAGED_SETTINGS="${STAGE_CLAUDE_MANAGED_SETTINGS:-/etc/claude-code/managed-settings.json}"
+
+# stage_project_settings_allowed_keys
+# The allowlist as a JSON array: the inert keys, plus `hooks` when the managed
+# policy sets `allowManagedHooksOnly`, plus the project MCP-approval keys when
+# it sets `allowedMcpServers` to the empty list.
+stage_project_settings_allowed_keys() {
+  local policy
+  policy="$(jq -c 'if type == "object" then . else {} end' "$STAGE_CLAUDE_MANAGED_SETTINGS" 2>/dev/null)" \
+    || policy='{}'
+  [[ -n "$policy" ]] || policy='{}'
+  jq -cn --argjson inert "$STAGE_PROJECT_SETTINGS_INERT_KEYS" --argjson m "$policy" '
+    $inert
+    + (if $m.allowManagedHooksOnly == true then ["hooks"] else [] end)
+    + (if $m.allowedMcpServers == [] then
+         ["enableAllProjectMcpServers", "enabledMcpjsonServers", "disabledMcpjsonServers"]
+       else [] end)'
+}
+
+# stage_project_settings_origin DIR PATH
+# Whether the commit DIR has checked out carries the settings file PATH
+# (relative to DIR) exactly as the working tree does, as a clause for the
+# refusal. Claude loads the working tree, so the working tree is what is
+# vetted; this says only whether the pull request shows the file too. One that
+# is not as committed was written or changed after the commit, which is how a
+# file an earlier stage left in a clone the next stage reuses looks.
+stage_project_settings_origin() {
+  local dir="$1" path="$2" head
+  if ! head="$(git -C "$dir" rev-parse --short HEAD 2>/dev/null)"; then
+    printf 'the file is in the working tree, and there is no commit to compare it with'
+  elif git -C "$dir" cat-file -e "HEAD:./$path" 2>/dev/null \
+       && git -C "$dir" diff --quiet HEAD -- "$path" 2>/dev/null; then
+    printf 'the file is as committed at %s' "$head"
+  else
+    printf 'the file is in the working tree but not as committed at %s' "$head"
+  fi
+}
+
+# stage_project_settings_refusal DIR
+# Prints why a stage must not be launched in DIR and returns 0 when either of
+# its Claude Code project settings files carries a key outside the allowlist
+# or cannot be read as a JSON object; returns 1, printing nothing, when there
+# is no such file or every key in it is allowed. The reason names the file and
+# what is wrong with it, then says where the file came from.
+stage_project_settings_refusal() {
+  local dir="$1" allowed name file disallowed
+  allowed="$(stage_project_settings_allowed_keys)"
+  for name in settings.json settings.local.json; do
+    file="$dir/.claude/$name"
+    [[ -e "$file" || -L "$file" ]] || continue
+    if ! disallowed="$(jq -r --argjson allowed "$allowed" \
+           --argjson permissions "$STAGE_PROJECT_SETTINGS_INERT_PERMISSIONS" '
+           if type != "object" then error("not an object") else
+             [ (keys_unsorted[] | select(IN($allowed[]) | not)),
+               (.permissions // {}
+                | if type == "object" then
+                    keys_unsorted[] | select(IN($permissions[]) | not) | "permissions.\(.)"
+                  else "permissions" end) ]
+             | join(", ")
+           end' "$file" 2>/dev/null)"; then
+      printf '.claude/%s cannot be read as a JSON object, so it cannot be vetted; %s' \
+        "$name" "$(stage_project_settings_origin "$dir" ".claude/$name")"
+      return 0
+    fi
+    if [[ -n "$disallowed" ]]; then
+      printf '.claude/%s sets %s, which no stage loads from the checkout it runs in; %s' \
+        "$name" "$disallowed" "$(stage_project_settings_origin "$dir" ".claude/$name")"
+      return 0
+    fi
+  done
+  return 1
+}
+
 # stage_stream_file OUT_FILE
 # The progress stream that accompanies a stage's `.out`. Derived rather than
 # passed so that every caller — and every reader, in this repository and in
@@ -212,6 +324,24 @@ run_claude_stage() {
   stage_gaps_json="null"
   stage_kill_reason=""
   stage_rate_limit_json=""
+
+  # Requirement 4k: never start the runner in a directory whose project
+  # settings could make it run something. The three files are left as a stage
+  # that never ran leaves them, with the reason on stderr, where an operator
+  # reading `<stage>.out.stderr` will look first and where
+  # `handle_stage_failure` reads it. No variable carries it: one would outlive
+  # this call, and a later failure in the same cycle would inherit it.
+  # `stage_kill_reason` stays empty, because the stage-budget controller reads
+  # a kill reason as a cap kill and the rework ledger as a re-run, and a stage
+  # that never started is neither.
+  local settings_refusal
+  if settings_refusal="$(stage_project_settings_refusal "$cwd")"; then
+    : >"$stream_file"
+    : >"$out_file"
+    printf 'run_claude_stage: the %s stage was not launched: %s (requirement 4k)\n' \
+      "$stage" "$settings_refusal" >"$out_file.stderr"
+    return 1
+  fi
 
   # stdout (the event stream) and stderr (diagnostics) are kept in separate
   # files — merging them would let stray stderr output break the JSON parse
