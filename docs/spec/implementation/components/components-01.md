@@ -940,8 +940,12 @@ What exists, and the requirements each part answers to:
    launcher both pipelines call, with `stage_stream_file` and
    `stage_result_line` naming and reading the stream it writes, and
    `stage_gap_stats` summarising the inter-event gaps it measures from that
-   stream for requirement 33a, and `stage_rejected_rate_limit` reading the
-   refusal that stops a stage on the spot),
+   stream for requirement 33a, `stage_rejected_rate_limit` reading the
+   refusal that stops a stage on the spot, and
+   `stage_project_settings_refusal`, with
+   `stage_project_settings_allowed_keys` and
+   `stage_project_settings_origin`, vetting the working directory's
+   project settings before any launch for requirement 4k),
    `lib/stage-budget.sh` (requirement 4f's derivation:
    `stage_budget_observations` over the log union, `stage_budget_table`
    holding the estimator, the controller and the shrinkage,
@@ -995,8 +999,10 @@ What exists, and the requirements each part answers to:
    the whole of requirement 36a's ask of a human; the Refiner's carries no
    such template, since it has no escalation power of its own.
 4e. `prompts/approver.md` implementing requirements 40–44 (D18 WI-5): judge
-   only, never fix, posture keyed to the tier it is told (Standard, High or
-   adjudication), no GitHub-write instruction of any kind, ends with a
+   only, never fix, posture keyed to the tier word it is told — one defined
+   for each of `standard`, `high`, `critical` and `adjudication`, the four
+   the `## Tier` section can carry (requirement 41) — no GitHub-write
+   instruction of any kind, ends with a
    verdict-only JSON object. Sourced by `lib/approver.sh`'s `run_approver_stage`
    only.
 4f. `prompts/enabler-adjudicate.md` implementing requirement 36b's
@@ -1090,8 +1096,10 @@ What exists, and the requirements each part answers to:
    the node's role coming from `ROLE` in its `deploy/docker/.env`
    (requirement 2.4) rather than from a crontab environment variable.
 7. `deploy/docker/` — the node image and the node stack (see "The node image"
-   and "The node stack" above): `Dockerfile`, `entrypoint.sh`, `crontab` and the
-   minimal `claude-settings.json` seed; `compose.yaml`, `ts-serve.json`,
+   and "The node stack" above): `Dockerfile`, `entrypoint.sh`, `crontab`, the
+   minimal `claude-settings.json` seed and `claude-managed-settings.json`, the
+   managed policy of requirement 4k that the image installs root-owned at
+   `/etc/claude-code/managed-settings.json`; `compose.yaml`, `ts-serve.json`,
    `watchtower-pre-update.sh` (the hook that makes a roll wait for a running
    cycle) and `.env.example`; and the node runbook `deploy/docker/README.md` with the
    unattended `cloud-init.yaml` that performs its first three steps. The

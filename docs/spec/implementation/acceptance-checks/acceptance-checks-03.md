@@ -251,7 +251,9 @@
    handoff mechanism runs (requirement 31c).** `test/review-gate.test.sh`
    passes: every required check passing is `clean`; a failing required check
    and a pull request reporting no required checks are both `dirty`, never a
-   vacuous pass; a required-check list that could not be read at all is
+   vacuous pass — the second once requirement 63's own pair of signals has
+   been asked and did not confirm a repository configuring no CI at all; a
+   required-check list that could not be read at all is
    `unknown` rather than folded into `dirty` — but still exits non-zero,
    refusing the handoff exactly like `dirty` does (TD-PPagop-26081305). Those
    last two are asserted against the shapes `gh` itself produces, both of them
@@ -259,7 +261,18 @@
    stderr, with `gh`'s own wording in the stub for each (`no required checks
    reported on the '<branch>' branch` against a transport failure's) — a stub
    that answered the no-required-checks case with `[]` would assert a shape no
-   `gh` emits and let the trap it exists for be filed as a degraded node. An
+   `gh` emits and let the trap it exists for be filed as a degraded node.
+   Requirement 63's own branch is asserted on both of those no-required-checks
+   shapes: with `actions/workflows` reporting `total_count == 0` *and* no
+   commit statuses on the head commit, each is `clean` and exits 0; with
+   workflows configured, or with no workflows but a commit status still posted
+   to the head commit, each stays `dirty` naming the trap — one signal alone
+   never infers "no CI configured", since either half on its own is a
+   repository that does run checks. `test/review-gate-wiring.test.sh` passes
+   for the `unblock_condition` requirement 63 also constrains: a `dirty` gate
+   whose own reason names a security-severity code-scanning alert earns the
+   alert-clearing wording, and never the required-checks wording, which would
+   name nothing an alert-caused refusal can act on. An
    open code-scanning alert
    with a security severity on the pull request's branch is `dirty` unless the
    same alert number is already open on the default branch, in which case it

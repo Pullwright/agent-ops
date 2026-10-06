@@ -74,7 +74,10 @@
 
    **Dropping entries is the last rung, and it is loud.** Once the tightest
    tier is applied there is nothing left but entries, and those are capped per
-   band per repo (halving: 64, 32, … 1), keeping the highest `Priority` band
+   band per repo (300, 200, 128, then halving: 64, 32, … 1 — agent-ops#2191
+   added the first three so a backlog a sliver over the identity-only rung's
+   own byte count trims proportionately instead of losing 68% of itself to a
+   jump straight to 64), keeping the highest `Priority` band
    first and the freshest thread within a band for `issues`, and the freshest
    thread first for `tech_debt`, which carries no band (agent-ops#1379: the
    ascending-by-number order the cap once kept meant that, pinned at 64 for
@@ -330,6 +333,63 @@
    input, never toward an empty one" for every *other* path: a budget of 0
    still means the bound is off, and it is only this branch — where the Script
    has already established that no input fits — that shedding is forced.
+4k. **A stage runs nothing that the checkout it runs in supplies.** Headless
+   `claude -p` treats its working directory as trusted, and a stage's working
+   directory is often a checkout of a pull-request head. Two controls keep
+   that checkout from making the runner execute anything before, or apart
+   from, the stage's own prompt:
+   - **The image's managed policy.** `deploy/docker/claude-managed-settings.json`
+     is installed root-owned at `/etc/claude-code/managed-settings.json`
+     (component 7), outside `/app`, which `agent` owns. It sets
+     `allowManagedHooksOnly: true`, so no user, project, local or plugin hook
+     runs; `allowedMcpServers: []`, so no MCP server starts, whether from
+     `.mcp.json`, a settings file, an agent's frontmatter or a plugin; and
+     `disableSkillShellExecution: true`, so inline shell in a skill or a
+     custom command is replaced by a placeholder rather than run. The managed
+     file outranks every other settings source, and project instructions and
+     project skills load under it unchanged. The image build checks the three
+     pins, and its acceptance step runs `scripts/claude-policy-probe.sh`
+     against the built image. A scratch checkout plants a hook; an MCP server,
+     approved by the MCP-approval keys the launcher admits; and inline shell
+     in a project command and in a project skill. The checkout must run none
+     of the four, and must run all four once the policy is removed.
+   - **The launcher's settings check.** No managed key can switch off a
+     project's `env`, which sets variables in the runner's process and in
+     every command it runs, or the settings that name commands the runner
+     executes itself (`apiKeyHelper`, `awsAuthRefresh`,
+     `awsCredentialExport`, `gcpAuthRefresh`, `otelHeadersHelper`,
+     `proxyAuthHelper`, `processWrapper`), or those that fetch plugins
+     (`enabledPlugins`, `extraKnownMarketplaces`). So `run_claude_stage`
+     (requirement 4d) vets `.claude/settings.json` and
+     `.claude/settings.local.json` in its working directory, the only place
+     Claude reads project settings from, against an allowlist before it
+     starts anything. The allowlist holds keys that cannot run anything,
+     change the environment or change what the stage may do (`$schema`,
+     `includeCoAuthoredBy`, `includeGitInstructions`, `cleanupPeriodDays`,
+     `respectGitignore`, and `permissions` holding only `allow`, which a
+     stage's untrusted workspace ignores). It also holds `hooks` and the
+     project MCP-approval keys, but only while the managed policy pins the
+     control that makes them inert. The rest of `permissions` is refused,
+     because it sets what the stage may do: `deny` takes a tool away from the
+     stage, and `disableBypassPermissionsMode` silently drops the run out of
+     bypass mode. A file holding any other key, or one that is not a JSON
+     object `jq` can read, means the stage is not launched. It returns 1,
+     leaves `<stage>.out` and its stream empty, and leaves `stage_kill_reason`
+     empty, since the stage was neither capped nor re-run. It writes to
+     `<stage>.out.stderr` the file, what is wrong with it, and whether the
+     commit the checkout holds carries it as the working tree does. That
+     last part matters because the working tree is what is vetted, and a
+     clone can be reused by the next stage, so a file an earlier stage wrote
+     there refuses that stage too and appears nowhere in the pull request.
+     `handle_stage_failure` reads that line, never a variable a later
+     failure could inherit, and records one of two stable details:
+     "`<stage>` was not launched: the commit its checkout holds carries
+     Claude Code project settings no stage may load", or "`<stage>` was not
+     launched: its checkout's working tree holds Claude Code project
+     settings, not in the commit, that no stage may load". So a pull request
+     that adds such a file is blocked with that reason rather than reviewed
+     by a runner it can direct, and a file a stage left behind is told apart
+     from one the pull request commits.
 
 5. If the work order is `{"selected": false}`, log `none-selected` with the
    Co-Ordinator's reason **and the fingerprint computed in requirement 3b**

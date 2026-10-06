@@ -421,7 +421,7 @@
     - **`fit-ladder-pinned`** (owner-only). Fires when a node's
       `coordinator-input-fitted` events (`lib/coordinator-input.sh`,
       `agent-cycle.sh`) in the trailing 24h have all run out of prose to shed
-      and are dropping whole entries — rung 11 or tighter, the first of the 7
+      and are dropping whole entries — rung 11 or tighter, the first of the 10
       entry caps that follow the 10 prose tiers (`COORDINATOR_INPUT_TIERS` +
       1, a fixed constant of the ladder rather than a field either array
       carries) — with `entries_dropped > 0`. A node with no fitted cycle at

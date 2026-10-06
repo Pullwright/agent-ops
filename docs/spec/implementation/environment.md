@@ -44,6 +44,12 @@ a node updates by pulling a new image rather than by pulling a branch.
   container's memory ceiling is below what the largest script costs to lint,
   so that one file is skipped with a warning and CI is where it is actually
   checked (acceptance check 1g-i).
+- `/etc/claude-code/managed-settings.json`, installed root-owned from
+  `deploy/docker/claude-managed-settings.json`, is Claude Code's managed
+  policy (requirement 4k): no hook runs, no MCP server starts, and no inline
+  shell in a skill or command is executed, whichever settings file, checkout or
+  plugin asks. It outranks the seeded `settings.json` below and anything an
+  operator adds to the `claude-config` volume.
 - `deploy/docker/entrypoint.sh` runs as `agent` on every container start and is
   idempotent: it seeds `$CLAUDE_CONFIG_DIR/settings.json` from
   `deploy/docker/claude-settings.json` **only when absent** (that directory is a
