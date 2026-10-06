@@ -66,6 +66,19 @@ assert_eq "single-model: tokens sums the one modelUsage entry" \
   '{"input":100,"output":50,"cache_creation":200,"cache_read":300}' \
   "$(field claude-sonnet-5 "$single" '.tokens')"
 
+# --- provider (issue #2133): read from lib/model-id.sh's MODEL_PROVIDER, not
+#     a parameter, so every existing call site above is unaffected. A model
+#     id the map holds nothing for — every one above, since this test never
+#     calls resolve_model_id — falls back to "anthropic", same as
+#     lib/stage-run.sh's own lookup. ---
+assert_eq "a model never resolved through resolve_model_id defaults to anthropic" \
+  '"anthropic"' "$(field claude-sonnet-5 "$single" '.provider')"
+declare -A MODEL_PROVIDER=([grok-4.3]=xai)
+assert_eq "a model MODEL_PROVIDER names resolves to that provider" \
+  '"xai"' "$(field grok-4.3 "$single" '.provider')"
+unset MODEL_PROVIDER
+declare -gA MODEL_PROVIDER=()
+
 # --- A multi-model envelope (a stage whose subagents ran a different model):
 #     tokens is the sum across every modelUsage entry, not just the primary
 #     model's, matching how cost_usd already counts subagent spend. ---
@@ -112,9 +125,12 @@ printf '{}' > "$empty"
 malformed="$work_dir/malformed.out"
 printf 'not json at all' > "$malformed"
 
-# `model` is the argument, never read from the envelope, so it is the one
-# field still populated when everything else degrades.
-all_null='{"model":"claude-sonnet-5","cost_usd":null,"duration_ms":null,"num_turns":null,"is_error":null,"tokens":null,"gaps":null}'
+# `model` and `provider` are both arguments (`provider` via MODEL_PROVIDER,
+# issue #2133), never read from the envelope, so they are the two fields
+# still populated when everything else degrades. `claude-sonnet-5` was never
+# resolved through `resolve_model_id` in this test, so MODEL_PROVIDER holds
+# nothing for it and `provider` falls back to `anthropic`.
+all_null='{"model":"claude-sonnet-5","provider":"anthropic","cost_usd":null,"duration_ms":null,"num_turns":null,"is_error":null,"tokens":null,"gaps":null}'
 
 assert_eq "a missing out-file degrades to nulls, keeping the passed-in model" \
   "$all_null" "$(metering_fields claude-sonnet-5 "$missing" | jq -c .)"
