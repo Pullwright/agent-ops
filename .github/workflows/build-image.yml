@@ -349,7 +349,7 @@ jobs:
       # at start-up. Run against the built image with no network, so no request
       # leaves the runner, and as `agent`, who runs every stage and must not be
       # able to rewrite the policy. The control run removes the policy first and
-      # must see all three planted commands run, or the check proves nothing.
+      # must see all four planted commands run, or the check proves nothing.
       - name: Verify Claude Code runs nothing a checkout plants
         if: env.DOCS_ONLY != 'true'
         run: |

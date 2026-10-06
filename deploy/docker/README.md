@@ -229,8 +229,9 @@ The image carries Claude Code's managed policy at
 MCP server starts and no inline shell in a skill or command is executed,
 including any you add to the `claude-config` volume's `settings.json`. A stage
 is also not launched in a checkout whose `.claude/settings.json` sets `env`, a
-credential helper or anything else outside a short allowlist; its
-`<stage>.out.stderr` names the file and the keys. To confirm the policy holds
+credential helper or anything else outside a short allowlist. Its
+`<stage>.out.stderr` names the file and the keys, and says whether the commit
+carries the file or only the working tree holds it. To confirm the policy holds
 on this node:
 
 ```bash

@@ -8954,9 +8954,10 @@ implements.
      file outranks every other settings source, and project instructions and
      project skills load under it unchanged. The image build checks the three
      pins, and its acceptance step runs `scripts/claude-policy-probe.sh`
-     against the built image: a scratch checkout with a planted hook, MCP
-     server and inline-shell command must run none of them, and must run all
-     three once the policy is removed.
+     against the built image. A scratch checkout plants a hook; an MCP server,
+     approved by the MCP-approval keys the launcher admits; and inline shell
+     in a project command and in a project skill. The checkout must run none
+     of the four, and must run all four once the policy is removed.
    - **The launcher's settings check.** No managed key can switch off a
      project's `env`, which sets variables in the runner's process and in
      every command it runs, or the settings that name commands the runner
@@ -8967,20 +8968,33 @@ implements.
      (requirement 4d) vets `.claude/settings.json` and
      `.claude/settings.local.json` in its working directory, the only place
      Claude reads project settings from, against an allowlist before it
-     starts anything: keys that cannot run anything or change the
-     environment (`$schema`, `permissions`, `includeCoAuthoredBy`,
-     `includeGitInstructions`, `cleanupPeriodDays`, `respectGitignore`), and
-     `hooks` and the project MCP-approval keys only while the managed policy
-     pins the control that makes them inert. A file holding any other key,
-     or one that is not a JSON object `jq` can read, means the stage is not
-     launched: it returns 1, leaves `<stage>.out` and its stream empty, writes
-     the file and the offending keys to `<stage>.out.stderr`, and sets
-     `stage_launch_refusal`, never `stage_kill_reason`, since the stage was
-     neither capped nor re-run. `handle_stage_failure` records it with the
-     stable detail "`<stage>` was not launched: the checkout's Claude Code
-     project settings hold keys no stage loads", so a pull request that adds
-     such a file is blocked with that reason rather than reviewed by a
-     runner it can direct.
+     starts anything. The allowlist holds keys that cannot run anything,
+     change the environment or change what the stage may do (`$schema`,
+     `includeCoAuthoredBy`, `includeGitInstructions`, `cleanupPeriodDays`,
+     `respectGitignore`, and `permissions` holding only `allow`, which a
+     stage's untrusted workspace ignores). It also holds `hooks` and the
+     project MCP-approval keys, but only while the managed policy pins the
+     control that makes them inert. The rest of `permissions` is refused,
+     because it sets what the stage may do: `deny` takes a tool away from the
+     stage, and `disableBypassPermissionsMode` silently drops the run out of
+     bypass mode. A file holding any other key, or one that is not a JSON
+     object `jq` can read, means the stage is not launched. It returns 1,
+     leaves `<stage>.out` and its stream empty, and leaves `stage_kill_reason`
+     empty, since the stage was neither capped nor re-run. It writes to
+     `<stage>.out.stderr` the file, what is wrong with it, and whether the
+     commit the checkout holds carries it as the working tree does. That
+     last part matters because the working tree is what is vetted, and a
+     clone can be reused by the next stage, so a file an earlier stage wrote
+     there refuses that stage too and appears nowhere in the pull request.
+     `handle_stage_failure` reads that line, never a variable a later
+     failure could inherit, and records one of two stable details:
+     "`<stage>` was not launched: the commit its checkout holds carries
+     Claude Code project settings no stage may load", or "`<stage>` was not
+     launched: its checkout's working tree holds Claude Code project
+     settings, not in the commit, that no stage may load". So a pull request
+     that adds such a file is blocked with that reason rather than reviewed
+     by a runner it can direct, and a file a stage left behind is told apart
+     from one the pull request commits.
 
 5. If the work order is `{"selected": false}`, log `none-selected` with the
    Co-Ordinator's reason **and the fingerprint computed in requirement 3b**
@@ -22588,7 +22602,8 @@ What exists, and the requirements each part answers to:
    stream for requirement 33a, `stage_rejected_rate_limit` reading the
    refusal that stops a stage on the spot, and
    `stage_project_settings_refusal`, with
-   `stage_project_settings_allowed_keys`, vetting the working directory's
+   `stage_project_settings_allowed_keys` and
+   `stage_project_settings_origin`, vetting the working directory's
    project settings before any launch for requirement 4k),
    `lib/stage-budget.sh` (requirement 4f's derivation:
    `stage_budget_observations` over the log union, `stage_budget_table`

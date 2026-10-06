@@ -328,11 +328,17 @@ handle_stage_failure() {  # <stage> <rc> <out-file> [pr-url] [extra-json]
   elif [[ "$rc" == "124" ]]; then
     detail="$stage timed out"
   elif grep -q '^run_claude_stage: the .* stage was not launched: ' "$out_file.stderr" 2>/dev/null; then
-    # Requirement 4k, read from this stage's own stderr rather than from
-    # `stage_launch_refusal`, which a later failure in the same cycle that
-    # never reached the launcher would otherwise inherit. The file name and
-    # keys stay out of `detail`, which requirement 2.7 groups on.
-    detail="$stage was not launched: the checkout's Claude Code project settings hold keys no stage loads"
+    # Requirement 4k, read from this stage's own stderr, which the launcher
+    # rewrites on every call. The file name and its keys stay out of `detail`,
+    # which requirement 2.7 groups on; whether the commit carries the file
+    # stays in, because it decides who must act: the pull request that commits
+    # it, or whatever wrote it into the clone after the commit.
+    if grep -q '^run_claude_stage: the .* stage was not launched: .*; the file is as committed at ' \
+         "$out_file.stderr"; then
+      detail="$stage was not launched: the commit its checkout holds carries Claude Code project settings no stage may load"
+    else
+      detail="$stage was not launched: its checkout's working tree holds Claude Code project settings, not in the commit, that no stage may load"
+    fi
   else
     detail="$stage exited $rc"
   fi
