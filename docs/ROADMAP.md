@@ -59,7 +59,7 @@ says why.
 | D26 | Revenue model | **A paid tier exists on whichever delivery path Phase 4 chooses, keyed on entitlements rather than on the licence; hosting is the leading revenue hypothesis; free self-hosting stays for the segments that are the funnel rather than the revenue.** Decided August 2026. Until now monetisation was implied by the licence and deferred to Phase 4's "first paying customer", with nothing in between naming what that customer would buy. Three working models exist in this category, and all three run on public code: hosted-is-the-business with free self-hosting (Sentry, Plausible); open-core with a paid self-hosted tier (GitLab; n8n, which reached an estimated $40M ARR in 2025 under a fair-code licence — roughly 55% cloud, 30% enterprise licences, 15% embedded); and fully proprietary hosted products with funded distribution (Devin, Cursor, Copilot's coding agent). D2, D3 and D11 deliberately rule out the third shape, so the choice is between the first two — and the answer is both, because they do not conflict. **The tiers.** A free self-hosted tier — the whole suite, BYO keys, own use — for solo developers and open-source maintainers, who convert at low single digits and are worth more as distribution than as revenue. A paid self-hosted tier for small teams and mid-size organisations, keyed on the capabilities those buyers pay for and the free tier cannot have because they are expensive to build: the analytics surface (D21–D23) and the enterprise track (SSO, RBAC, audit trails) are the working hypothesis. And, if Phase 4 chooses SaaS, a hosted subscription that bundles the paid tier with the operating burden Phase 2 of this roadmap catalogues — provisioning, image rolls, credential renewal, configuration drift, derived-state repair. That burden is the product's own evidence that hosting is worth paying for, which is why hosting is the leading revenue hypothesis; it is tested with design partners in Phase 3 and does not close D2 early. **What it constrains now.** An entitlement — which tier an installation or tenant holds — is a first-class declaration in the control-plane skeleton (Phase 2), carried identically by a hosted tenant and a self-hosted installation so that neither path needs re-architecture, exactly as D4 designs in metering hooks ahead of usage resale; every paid capability is gated on it from the first one built, never retrofitted; and the both-paths rule holds, because entitlements serve both paths. Prices are not decided here: the pricing hypothesis is drafted in Phase 2, tested in Phase 3 and set at Phase 4 (GTM). What is decided is that there is a paid thing, what it is keyed on, and which segments it is sold to. |
 | D27 | Changelog store | **A change's changelog entry is a `## Changelog` section of its own pull-request description, and `CHANGELOG.md` is assembled from those descriptions by the release pull request — never edited by the change itself.** Decided 2026-09-23 by the owner (#1804). The evidence: between 2026-09-13 and 2026-09-23, 22 of this repository's 89 merged pull requests went through the `merge-conflicts` source, and a replay of each conflicted head against `main` at claim time found `CHANGELOG.md` the sole conflicting file in 16 of them and one of the conflicting files in 20; each conflict re-ran the Implementer, the Reviewer and the Approver, at about USD 4.60 and 70 stage-minutes an item — roughly one merge in four paying a tax that produced nothing. The cause is structural, not editorial: every entry is prepended at the top of the same sub-section of one file that two in five pull requests touch, and a merge queue cannot absorb a textual conflict, because a pull request must already be mergeable to enter it. D15's own reasoning applies unchanged — per-item register files existed so adjacent work could not textually conflict, and the forge supplies that property natively — and the pull-request description is already the store the squash merge writes onto `main` (`squash_merge_commit_message: PR_BODY`), the store D15's `td-record` block relies on. So the entry moves there: one or more Keep a Changelog category sub-headings (`### Added`, `### Changed`, `### Deprecated`, `### Removed`, `### Fixed`, `### Security`) with bullets written for that repository's changelog audience, or the single line `None.` where the change is not notable, so an omission is deliberate rather than forgotten; a `feat`, `fix` or `perf` title, or a breaking-change marker, owes the section, checked deterministically (requirement 25c) and marked required in each repository's ruleset — an owner act. A Reviewer's fix for a missing entry becomes a description edit, which moves no head, evicts no queued branch and stales no approval. `CHANGELOG.md` stays in Keep a Changelog format and is written by exactly one kind of pull request — the release pull request in a repository that cuts releases (#1807), a scheduled roll in one that does not (#1809) — which assembles every entry merged since the commit its own marker names, so the file's existing release checks and notes extractors keep working unchanged. The rule reaches every repository through the shared `documentation-principles` fragment (Pullwright/.agent#6) and each consumer's adoption issue (Poetic-Poems/poetic#251, Poetic-Poems/poetic-fiddle#434); a repository is under D27 from the commit that stamps the fragment into its `AGENTS.md`, and the stage prompts follow that file rather than their own summary, so a repository yet to adopt is worked under its old rule, never a mixture of the two. Accepted eyes-open: an entry is immutable once merged (a later documentation pull request can still correct the assembled file), and the assembled file lags `main` by up to one release or roll. The conflict class this retires is D23's `merge-conflict`; its remaining members are code conflicts, and which files conflicted becomes part of that record (#1805), so the effect is read off the rework panel rather than re-derived. |
 | D28 | Node image | **One image, many containers.** Decided 2026-10-02 by the owner (#1125). Every Actor, every Compose service and every node runs the one `ghcr.io/pullwright/agent-ops` image; what differs between them is the command, the environment and — where a container per stage exists — that container's own ceilings and credentials, never the image. The investigation ([#1125's findings comment](https://github.com/Pullwright/agent-ops/issues/1125#issuecomment-5944930274), 2026-10-02) measured what an image per Actor would buy and found nothing a D14 budget could register: a stage's CPU, memory, tokens and wall-clock are set by what it runs — the target repository's `npm ci` and test suite, `shellcheck -x` over this repository, `scripts/publish-dashboard.sh` — not by what is installed beside it; Docker shares layers, so a slim sibling built from the same Dockerfile prefix costs a node that already holds the full image no disk and no pull, and every node holds it because every node runs the Implementer; and a routine roll already moves about 4 MiB, the `COPY` layer, against a 315 MiB cold pull paid once per node. Of the eight Actors only the Implementer and Reviewer reach Node, npm, shellcheck, python3 or perl — the other six invoke `gh`, `jq`, `grep`, `sed` and `git` — so the family would have been two images, and the slim one would have served the actors whose cost is tokens and `gh` round-trips. The costs were real: the Script would have to launch containers, which on Compose is the Docker socket in the fenced scheduler that the #603 postmortem removed; a Script at one commit would routinely run a stage at another, at some fifty images published a week; and everything that knows "the image" — `AGENT_OPS_IMAGE`, `lib/image-drift.sh`, host-facts' `digest_match`, `build-info.json` — is singular. The three gains the idea gestured at each have a cheaper home, and this decision sends them there: tool scope and credentials per stage at the launch seam (#981, D24); a resource ceiling per stage from a *container* per stage — on Kubernetes each stage its own Job with its own requests and limits, the Phase 2 deployment item, since nothing inside a Compose container can bound one of its own stages; and toolchain variance resolved per target repository (D20; #2069, #1706, D19), because the environment a stage needs varies with the repository it works, not with the Actor that works it. |
-| D29 | Non-Claude providers and their substrate | **Brought forward, and run through each provider's own headless agentic CLI.** Decided 2026-10-03 (tracking agent-ops#2128; owner decision #2129). A prospective customer wants the pipeline on xAI's Grok models, so the first non-Claude provider moves from Phase 3 into Phase 1, and the substrate question parked for Phase 2 closes now rather than with the control-plane skeleton. A stage runs on the CLI its provider ships — Claude Code for Anthropic, Grok Build for xAI — behind one adapter seam in the stage launcher of requirement 4d: the vendor supplies the tool loop, permissions, sandboxing and skills; the pipeline supplies the orchestration (D12) and the containment that holds each vendor's CLI to D24, because a vendor's defaults are never trusted to do that, and the evaluation found two of Grok Build's that would not (below); and a provider's subscription is reachable at all only through that provider's own CLI, which is what makes this the one substrate that honours D4 for every provider. Three alternatives were weighed and refused: Claude Code pointed at xAI's Anthropic-compatible endpoint, which xAI has deprecated and which would run one vendor's client against another's models; an API gateway in front of Claude Code, which adds a container holding every provider's credential and reaches no subscription; and a provider-neutral runtime of our own over the raw APIs, which re-implements what both vendors ship. That runtime is refused as the substrate, not abandoned: it remains the fallback for a provider that has no headless CLI of its own, and is built only if design-partner demand reaches such a provider. xAI is first; further providers follow by design-partner demand through the same seam (Phase 3), each through its own headless CLI where it has one. The customer-control rule holds per provider: each actor's model is the customer's choice, the key is the customer's, and a subscription is the subscriber's own. Grok Build emits the Claude Code wire format on request (`--output-format streaming-messages-json`), and the evaluation (#2132, [`docs/reviews/2026-10-06-grok-build-evaluation.md`](reviews/2026-10-06-grok-build-evaluation.md)) found its terminal envelope readable by the existing readers unchanged. It also found that a `provider` field is not all the adapter needs, and that what the CLI supplies is not all the pipeline can trust: Grok's exit status is not a verdict (a cancelled run exits 0 with `is_error: true`); its failures carry neither `terminal_reason` nor `api_error_status`, so the refusal classifier reads none of them; xAI's 429 text matches the shared limit phrase, so one Grok rate limit stands the whole fleet down until #2135 scopes a limit to its provider; a 503 is retried silently for about 22 minutes unless `max_retries` is pinned; its stream needs `--include-partial-messages` to write a tool call before the command runs; its shell commands start in their own sessions and escape the launcher's process-group kill; and trusting a folder, which project instructions and skills need, also runs the checkout's own hooks and MCP servers unless root-owned policy pins stop them — the untrusted-checkout exposure D24 exists to close. The record's adapter specification is what #2134 implements. |
+| D29 | Non-Claude providers and their substrate | **Brought forward, and run through each provider's own headless agentic CLI.** Decided 2026-10-03 (tracking agent-ops#2128; owner decision #2129). A prospective customer wants the pipeline on xAI's Grok models, so the first non-Claude provider moves from Phase 3 into Phase 1, and the substrate question parked for Phase 2 closes now rather than with the control-plane skeleton. A stage runs on the CLI its provider ships — Claude Code for Anthropic, Grok Build for xAI — and never on another vendor's, so no provider other than Anthropic is configured on Claude Code's substrate (#2198 makes the resolver refuse it). The vendor supplies the tool loop and skills. The pipeline supplies the orchestration (D12) and all of the containment: it runs each CLI with its permission prompts bypassed (`--dangerously-skip-permissions`, `--permission-mode bypassPermissions`), so neither vendor's permission system nor its sandbox contains a stage, and nothing a vendor supplies is one of D24's controls; where a vendor's own policy file is used, as Grok Build's root-owned pins are (below), it is the pipeline that sets it. And a provider's subscription is reachable at all only through that provider's own CLI, which is what makes this the one substrate that honours D4 for every provider. Three alternatives were weighed and refused: Claude Code pointed at xAI's Anthropic-compatible endpoint, which xAI has deprecated and which would run one vendor's client against another's models; an API gateway in front of Claude Code, which adds a container holding every provider's credential and reaches no subscription; and a provider-neutral runtime of our own over the raw APIs, which re-implements what both vendors ship. That runtime is refused as the substrate, not abandoned: it remains the fallback for a provider that has no headless CLI of its own, and is built only if design-partner demand reaches such a provider. xAI is first; further providers follow by design-partner demand (Phase 3), each through its own headless CLI where it has one. **A provider is an adapter at the stage launcher of requirement 4d and an arm at each seam it touches, not one file.** The launcher is the seam every stage starts through, but the first non-Claude provider's adapter specification also reaches the refusal and limit readers (`stage_api_refusal_class`, `detect_and_log_limit_hit`), the stage budgets (`stage_budget_table`'s pools, keyed by provider), the image, the scheduler's environment and the egress allowlist, the container's start-up and housekeeping (`entrypoint.sh` seeds the CLI's configuration, and the node prunes the CLI's session files), and health (`doctor`, and requirement 2.1b's probe); each further provider is planned against that list. The customer-control rule holds per provider: each actor's model is the customer's choice (Grok Build's session-title call, below, is the one call it makes to a model of its own choosing), the key is the customer's, and a subscription is the subscriber's own. Grok Build emits the Claude Code wire format on request (`--output-format streaming-messages-json`), and the evaluation (#2132, [`docs/reviews/2026-10-06-grok-build-evaluation.md`](reviews/2026-10-06-grok-build-evaluation.md)) found its terminal envelope readable by the existing readers unchanged. It also found that a `provider` field is not all the adapter needs, and that what the CLI supplies is not all the pipeline can trust: Grok's exit status is not a verdict (a run whose tool call is cancelled exits 0 with `is_error: true`); its failures carry neither `terminal_reason` nor `api_error_status`, so the refusal classifier reads none of them; xAI's rate-limit text matches the shared limit phrase, so the adapter keeps phrase detection off Grok's output until #2135 scopes a limit to its provider; a 503 is retried silently for about 22 minutes unless `max_retries` is pinned; its stream needs `--include-partial-messages` to write a tool call before the command runs; its shell commands start in their own sessions and escape the launcher's process-group kill; trusting a folder, which project instructions and skills need, also runs the checkout's own hooks and MCP servers unless root-owned policy pins stop them — the untrusted-checkout exposure D24 exists to close; and every session also sends the head of the stage prompt to `grok-4.6`, whatever `-m` names, in a session-title call that no known switch stops and whose cost is absent from `modelUsage` — a model the customer did not choose and spend the metering record cannot see, which #2134 states in the operator documentation and the metering schema, and whose size the record leaves to be measured against xAI's own usage for the key. The record's adapter specification is what #2134 implements. |
 
 ## End state
 
@@ -437,15 +437,16 @@ Poetic-Poems, with no pipeline code in it.
       prefix still carry the old names (#1871, split off #592 as the
       higher-risk half: relabeling live pull requests and renaming a
       work-source string written permanently into `log.jsonl`). *[fleet]*
-- [ ] First-class non-interactive auth per provider: Anthropic API key,
-      Bedrock, and Vertex as the primary path for Claude, `XAI_API_KEY` for
-      Grok; each provider's subscription login documented as the supported
-      self-hosted alternative, with its constraints (D4, D29). The Claude
+- [ ] First-class non-interactive auth for Claude: Anthropic API key,
+      Bedrock, and Vertex as the primary path; subscription OAuth
+      documented as the supported self-hosted alternative (D4). The
       API-key half is in place (`ANTHROPIC_API_KEY`, and `scripts/doctor.sh`
       checks both of Claude's credential paths); Bedrock and Vertex are
-      undocumented and untested. Grok's two paths are not part of this
+      undocumented and untested. Grok's credentials are not part of this
       item: they are fleet work in the provider item below, the API key
-      with #2134 and the subscription login with #2139. *[interactive]*
+      with #2134 and the subscription login with #2139, and the
+      subscription is documented with xAI's terms, never as a
+      configuration xAI permits (D4). *[interactive]*
 - [x] Formalise the metering schema: per-cycle, per-stage token and cost
       accounting as a stable, documented format — `docs/METERING-SCHEMA.md`,
       the contract both pipelines and the dashboard are held to. *[fleet]*
@@ -462,24 +463,34 @@ Poetic-Poems, with no pipeline code in it.
       `providers` block in `config.json` naming each provider's substrate
       and credential, under which a model id qualified with a configured
       provider resolves to it and the tier table of requirement 1c is keyed
-      by qualified id (#2131, done); Grok Build evaluated headlessly
+      by qualified id (#2131, done); the resolver held to D29's boundaries,
+      refusing a provider other than Anthropic on `claude-code` and any tier
+      comparison across providers (#2198); Grok Build evaluated headlessly
       against the stage contract, on the owner's xAI key (#2132, done:
       [`docs/reviews/2026-10-06-grok-build-evaluation.md`](reviews/2026-10-06-grok-build-evaluation.md),
-      whose adapter specification #2134 implements); a
-      substrate adapter behind the one stage launcher of requirement 4d,
-      the Claude adapter extracted with its stream and envelope
-      byte-for-byte unchanged and `provider` added to the metering record
-      (#2133); and the xAI adapter — Grok Build in
-      the one image (D28), the API-key path first (#2134) and the
-      subscription login directly after it (#2139), each with its egress
+      whose adapter specification #2134 implements); a substrate adapter
+      behind the one stage launcher of requirement 4d, the Claude adapter
+      extracted with its stream and envelope byte-for-byte unchanged and
+      `provider` added to the metering record (#2133); and the xAI adapter —
+      Grok Build in the one image (D28), the API-key path first (#2134) and
+      the subscription login directly after it (#2139), each with its egress
       domains under D24's allowlist, `doctor`, limit detection, metering and
       the operator documentation. A usage-limit stand-down scoped to the
       provider that hit it (#2135) and the repository-review pipeline's
       Reviewer-Agent on a non-Claude provider (#2136) complete the set. The
-      owner decision #2129 was answered on 2026-10-03: the API key ships
-      first because the prospective customer is likely to want their
-      SuperGrok subscription next, and how its credential reaches the nodes
-      is negotiated with them. *[fleet, with owner-only acts flagged]*
+      customer's trial is the first non-Poetic installation, which fires
+      D24's trigger for per-stage tool scoping, so that scoping lands before
+      the trial: for both substrates, the Approver first, declared once at
+      the seam #2133 cuts and translated by each adapter into its own CLI's
+      flags (#981, interactive under D9). The owner decision #2129 was
+      answered on 2026-10-03: the API key ships first because the
+      prospective customer is likely to want their SuperGrok subscription
+      next. That subscription runs on the customer's own nodes, because D4
+      keeps a subscription to its subscriber's own use and Principle 9 keeps
+      a credential the customer could hold in the customer's hands until the
+      Phase 4 gate; what remains to agree with the customer is which of
+      #2139's mechanisms places the credential there.
+      *[fleet, with owner-only acts flagged]*
 - [x] Make the spend data say *what* the money bought (D21). Three defects
       stood between the metering this pipeline already recorded and any
       productivity figure, and all three are now fixed. **The model
@@ -1054,11 +1065,16 @@ channel exists and is producing roadmap items.
 - [ ] Support channel and telemetry (opt-in, privacy-respecting) for
       failure patterns. *[interactive]*
 - [ ] Further model providers beyond xAI, chosen by design-partner demand
-      (D12, D29) — each as one adapter behind the substrate seam Phase 1
-      fixes, each run through its own headless agentic CLI where it has
-      one, and through D29's fallback runtime only if demand reaches a
-      provider that has none; OpenAI's Codex CLI and Google's Gemini CLI
-      are the obvious candidates. *[fleet]*
+      (D12, D29) — each run through its own headless agentic CLI where it
+      has one, as an adapter at the stage launcher and an arm at each of
+      the seams D29 names, and through D29's fallback runtime only if
+      demand reaches a provider that has none; OpenAI's Codex CLI and
+      Google's Gemini CLI are the obvious candidates. Each provider needs
+      the owner acts the Grok tranche needed: a decision to take it on, a
+      funded credential, and an interactive evaluation of its CLI on that
+      credential. The fallback runtime would be an architectural move,
+      which D9 keeps to interactive sessions.
+      *[fleet, with owner-only acts flagged]*
 - [ ] Preview adapters beyond Vercel — Netlify, Cloudflare Pages, a plain
       URL template over the forge's deployments API — chosen by
       design-partner demand (D19). *[fleet]*
@@ -1151,7 +1167,13 @@ Deliberately lightweight — hours a week, not a phase of its own:
   Grok tranche forward into Phase 1. That tranche is scoped to what the
   customer needs in order to trial the pipeline on Grok, which is a
   different thing from #2132, the owner's own evaluation of Grok Build on
-  the owner's key.
+  the owner's key. The trial makes that customer an external user ahead of
+  Phase 3, and it leaves Phase 3's entry gate unchanged: it is one
+  partner's self-hosted installation, on the partner's own nodes and
+  credentials (D4, Principle 9). It is also the first non-Poetic
+  installation, which fires D24's trigger for per-stage tool scoping, so
+  the tranche includes that scoping and the trial waits for it (Phase 1's
+  provider item).
 - **Pricing hypothesis:** the tiers D26 names, with hosting as the leading
   revenue hypothesis; drafted during Phase 2, tested with partners during
   Phase 3, set at Phase 4.
@@ -1169,7 +1191,7 @@ Parked deliberately, each with a decide-by gate:
 | Which capabilities sit in the paid tier (D26) — the analytics surface (D21–D23) and the enterprise track (SSO, RBAC, audit trails) are the working hypothesis — and whether the tier boundary is the same on the hosted and self-hosted paths | Phase 2, with the pricing hypothesis; settled with design partners in Phase 3 |
 | Entitlement mechanism for a self-hosted installation (D26) — a signed offline key, a periodic check against a licensing endpoint, or both — priced under D14 and against the air-gapped installations D3's mid-size segment may include | Phase 2, with the control-plane skeleton |
 | Control-plane language (Go and TypeScript are the front-runners) | First control-plane commit, Phase 2 |
-| Cross-provider model-tier ordering (requirement 1c) — how a model from one provider ranks against another's for the rule that a cheaper model never authors the specification a dearer one then follows, when each vendor's own price list is the only scale it has. Within a provider the order is that vendor's pricing, as today; across providers a pair ranks unknown, which every check already treats as "cannot verify" and `doctor` warns about | Before the xAI adapter (#2134) lands, because that is when a Grok model and a Claude model can first share a cycle; revisited on the scorecards' evidence (D22) if the unknown pairs turn out to matter |
+| Cross-provider model-tier ordering (requirement 1c) — how a model from one provider ranks against another's for the rule that a cheaper model never authors the specification a dearer one then follows, when each vendor's own price list is the only scale it has. Within a provider the order is that vendor's pricing, as today. A cross-provider pair ranks unknown today only because no model outside Anthropic's is ranked: `MODEL_TIER_RANK` is one table of integers, so ranking Grok's models in it would put every Grok and Claude pair on one shared scale that nobody chose, and the floor check would pass or fail such a pair on that scale without a warning. Until this is decided, tiers are compared only within a provider: #2198 makes `model_tier_below` refuse any pair whose providers differ, which every check treats as "cannot verify" and `doctor` warns about, and #2134 then adds Grok's ranks as xAI's own scale | Before the xAI adapter (#2134) lands, because that is when a Grok model and a Claude model can first share a cycle on a substrate D29 accepts; revisited on the scorecards' evidence (D22) if the unknown pairs turn out to matter |
 | State store beyond git state-sync | Interface fixed in Phase 2; replacement whenever scale or measured resource cost (D14) demands |
 | What a rendered verdict is (D19) — screenshots a model eyeballs, scripted assertions the repo declares, a visual diff against a baseline, or some blend | First renderer commit, Phase 2 |
 | How tooling reaches a repository (D20) — a versioned package the repository pins, an image or action the pipeline mounts at cycle time, or product-managed synchronisation pull requests the repository merges. The choice is constrained by where the tooling has to run: some of it is CI (a repository's own workflow calling a product-supplied guard), some of it is an agent's shell mid-cycle | Interface fixed with the control-plane skeleton, Phase 2 |
@@ -1208,11 +1230,15 @@ Parked deliberately, each with a decide-by gate:
 - Each provider's own headless agentic CLI is the execution substrate for
   that provider — Claude Code for Anthropic, Grok Build for xAI (D29); the
   product's value is the orchestration, which is model-agnostic by design
-  (D12). A further provider arrives as one adapter behind the stage
-  launcher's seam, never by rewriting the engine per provider. A provider
-  without a headless CLI of its own is reached through D29's fallback, a
-  provider-neutral runtime of our own, which is built only if
-  design-partner demand reaches such a provider.
+  (D12). A further provider arrives as an adapter at the stage launcher
+  and an arm at each seam D29 names — the refusal and limit readers, the
+  stage budgets, the image and its egress, the container's start-up and
+  housekeeping, and health — never by rewriting the engine per provider;
+  the xAI adapter specification in the Grok Build evaluation is the
+  measure of what one costs. A provider without a headless CLI of its own
+  is reached through D29's fallback, a provider-neutral runtime of our
+  own, which is built only if design-partner demand reaches such a
+  provider.
 - The human merge is the default gate, and remains the only gate in every
   installation that has not deliberately configured otherwise: below
   `agent-merges-routine` on D18's ladder the product never auto-merges and
