@@ -86,7 +86,7 @@
 15y. **An engagement that produces no verdict costs its own repository's
     opportunity, and nothing else** (issue #587). Each engagement writes its
     own stage transcript to `<cycle-dir>/coordinator-<slug>.out` (plus the
-    `.out.stderr` and `.stream.jsonl` `run_claude_stage` derives from it),
+    `.out.stderr` and `.stream.jsonl` `run_model_stage` derives from it),
     where `<slug>` is that repository's configured slug with its `/`
     flattened to `-` — one flat file per repository in the cycle directory,
     never a path with a directory component in it, which nothing in the cycle

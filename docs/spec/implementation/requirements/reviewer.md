@@ -564,7 +564,7 @@
     as normal, never guessed at as rebase-only.
 
     A confirmed rebase-only push skips the Reviewer **engagement** —
-    `stage_budget_apply` and the `run_claude_stage` call alone — and logs
+    `stage_budget_apply` and the `run_model_stage` call alone — and logs
     `reviewer-carried-forward` (`repo`, `item`, `pr_url`, `old_head`,
     `new_head`, `rebase_only: true`) for D23's cost accounting to read, in
     place of the `stage-end` event no stage run produced. The cycle then

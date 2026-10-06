@@ -533,7 +533,7 @@
    item), it reports false without calling `rebase_only_push` even once.
    The engagement block pins the consequence: a true `rebase_only` logs
    `reviewer-carried-forward` (naming `pr_url`/`old_head`/`new_head` and
-   `rebase_only: true`), never calls `run_claude_stage` or
+   `rebase_only: true`), never calls `run_model_stage` or
    `stage_budget_apply`, and leaves a synthesised `status: "ready"` verdict
    for the handoff path below — so the Approver engagement and the arming
    step still run; a false one runs the engagement and logs a `stage-end`
@@ -549,7 +549,7 @@
    a `review-feedback`, `merge-conflicts` (without `"takeover": true`),
    `dequeued`, `landing-refusals` or `abandoned-drafts` work order whose
    `pr_url` is confirmed merged by `pr_merge_state` never reaches
-   `stage_budget_apply`/`run_claude_stage` for `implementer` at all, logs
+   `stage_budget_apply`/`run_model_stage` for `implementer` at all, logs
    `merge-observed` with `stage: "implementer-stage-start"` and an empty
    verdict, and releases both the item-keyed and the PR-keyed claim; a
    `merge-conflicts` work order carrying `"takeover": true`, or any source

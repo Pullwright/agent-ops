@@ -936,7 +936,7 @@ What exists, and the requirements each part answers to:
    `pr_merge_state`, `lib/candidate-select.sh`'s `release_pr_claim` and
    `lib/tech-debt-file.sh`'s `techdebt_file_debt`/`techdebt_file_issue`, so is
    sourced after all three),
-   `lib/stage-run.sh` (requirement 4d's `run_claude_stage`, the one stage
+   `lib/stage-run.sh` (requirement 4d's `run_model_stage`, the one stage
    launcher both pipelines call, with `stage_stream_file` and
    `stage_result_line` naming and reading the stream it writes, and
    `stage_gap_stats` summarising the inter-event gaps it measures from that
@@ -971,7 +971,7 @@ What exists, and the requirements each part answers to:
    `CLAIM_GH`), the role guard of requirement 2.4 (read
    by both pipelines), the fingerprint rule of requirement 3b and the
    provider-qualified model id resolution of requirement 1a
-   (`lib/model-id.sh`'s `resolve_model_id`) — sourced by `agent-cycle.sh`,
+   (`lib/model-id.sh`'s `resolve_model_id_into`) — sourced by `agent-cycle.sh`,
    `review-cycle.sh` and the dashboard's publisher rather than copied into
    any of them. Unit-tested directly (`test/*.test.sh`, plain bash assertions, no
    framework) and `shellcheck`-clean. These rules are the system's memory of

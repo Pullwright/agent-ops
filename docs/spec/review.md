@@ -16,7 +16,7 @@ pipelines deliberately share their machinery — the lock discipline, the
 minimal-`PATH` bootstrap for cron, usage-limit detection (`lib/limit-detect.sh`),
 the JSON-Lines log format and `log_event` helper, the ephemeral-clone rule,
 the stage launcher with its per-stage timeout, process-group kill and event
-stream (`lib/stage-run.sh`'s `run_claude_stage`), and the
+stream (`lib/stage-run.sh`'s `run_model_stage`), and the
 "straight-parse-else-last-fenced-```json```-block" result parser. This
 pipeline **reuses** those, and must not reinvent them. References of the form
 "requirement N" mean requirement N of `docs/spec/implementation/README.md`. The target
@@ -841,7 +841,7 @@ R5. **Per non-skipped repo** (processed **sequentially**, so a failure of one
    3. *Reviewer-Agent stage.* Launch the Reviewer-Agent headless (this
       repository's own resolved model, `--dangerously-skip-permissions`,
       timeout from its own resolved `timeout_review`), with the clone as the working
-      directory, passing `prompts/project-reviewer.md`. Use `run_claude_stage`
+      directory, passing `prompts/project-reviewer.md`. Use `run_model_stage`
       (R7b) so a timeout kills the whole process group, the invocation
       streams its events to `<stage>.stream.jsonl` as it runs, and its final
       `result` envelope lands in `<stage>.out` for the parse below. The
@@ -905,12 +905,17 @@ R7a. **A signal is a failure with a record.** The Script traps `TERM`, `INT`
    handler. Covered by the same `test/signal-exit.test.sh` as the
    implementation pipeline's acceptance check 4a.
 
-R7b. **One stage launcher, shared.** `run_claude_stage` is sourced from
+R7b. **One stage launcher, shared, provider-neutral.** `run_model_stage` is
+   sourced from
    `lib/stage-run.sh`, the implementation pipeline's requirement 4d — it is
    not a copy of it. The two scripts each held their own until the streaming
    change of #203 had to be made twice; both specs already said the copies
    must not diverge, and a shared file is the only form of that promise a
-   reviewer does not have to check by eye. Everything requirement 4d states
+   reviewer does not have to check by eye. Launching the Reviewer-Agent on a
+   provider other than `anthropic` therefore needs no change to this
+   pipeline at all (issue #2133): `run_model_stage` resolves the substrate
+   adapter from this repository's own resolved model, the same way every
+   other caller does. Everything requirement 4d states
    holds here unchanged: the process group, the wall-clock cap, the
    `<stage>.stream.jsonl` written as the run proceeds, and the final `result`
    event truncated into `<stage>.out` for R5.3's parse. The streams are

@@ -444,7 +444,7 @@
     both run from the cleanup of requirement 11. A `stage-end` alone, with no
     paired `stage-start`, also carries `stage: "enabler-adjudicate"`
     (requirement 36b, `run_enabler_adjudication`) — the one caller of
-    `run_claude_stage` outside those six actors that logs a `stage-end` at
+    `run_model_stage` outside those six actors that logs a `stage-end` at
     all; the usage-limit probe and a `<stage>-salvage` resume log neither. An
     `enabler-examined` carries
     `repo`, `item`, the
@@ -548,6 +548,9 @@
     invisible until you notice the same work being redone.
 33a. **Metering.** Every `stage-end` event additionally carries the per-stage
     metering record: `model` (the model id passed to the invocation),
+    `provider` (the provider that model resolves to, per `lib/model-id.sh` —
+    `anthropic` for every record this system has ever written, until a
+    second provider lands behind requirement 4d's adapter seam; issue #2133),
     `cost_usd`, `duration_ms`, `num_turns`, `is_error` (pulled from the
     stage's `result` envelope named in requirements 11 and 4d /
     `docs/spec/dashboard/README.md`), and `tokens` — an object with `input`,

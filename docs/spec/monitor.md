@@ -356,7 +356,7 @@ M8a. **A signal stops the stage first.** `TERM`, `INT` and `HUP` are trapped —
    and the review pipeline's R7a applies it to a sibling. In order: kill the
    stage's own process group (`KILL`, since the signaller's patience is
    unknown, and the group is beyond any signal sent to ours because
-   `run_claude_stage` detached it with `set -m`), log `attempt-failed`
+   `run_model_stage` detached it with `set -m`), log `attempt-failed`
    naming the stage and the signal, and exit through `exit` so `monitor-end`
    reports `128 + n`. Untrapped, a stale-lock takeover or a stopped container
    would end bash with no record at all and leave the model running for a run

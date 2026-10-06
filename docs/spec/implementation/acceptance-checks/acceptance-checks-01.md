@@ -508,7 +508,16 @@ oblige anyone to edit a test.
    key and provider on stderr; and an assignment of the rejected form under
    `set -euo pipefail` — the exact context every `cfg` read in `agent-cycle.sh`
    and `review-cycle.sh` uses — aborts the script rather than silently
-   continuing with the qualified string.
+   continuing with the qualified string. The same file covers the two
+   resolution forms requirement 1a distinguishes: `resolve_model_id_into`
+   assigns the bare id to the variable it names *and* leaves the provider
+   recorded in the caller's own `MODEL_PROVIDER`, while the printing
+   `resolve_model_id` returns the identical bare id and leaves that map
+   empty, because the command substitution it is called in discards the
+   recording; an empty value assigns empty, records nothing and succeeds,
+   since the three cycle scripts call this under `set -e` and a disabled
+   stage must not abort startup; and a rejected qualifier fails and records
+   nothing.
 1g. **Every shell script in the repository is shellcheck-clean, and a caller
    may lint a named subset instead of the whole tree.** `./scripts/lint-shell.sh`
    exits 0. Invoked with no arguments, it discovers the file set — every
@@ -799,9 +808,35 @@ oblige anyone to edit a test.
    and a stage that ran and then failed, a clean result, an empty transcript
    and an unparseable one are none of them called a refusal.
 
+1k0. **The stage launcher is provider-neutral, the Claude adapter behind it
+   changed nothing, and a second adapter is one file away — reached the way a
+   cycle script reaches it (requirement 4d).**
+   `test/stage-run.test.sh` passes, against a `claude` stub emitting a fixed
+   four-event transcript: a stage's `<stage>.stream.jsonl`,
+   `<stage>.out` and `<stage>.out.stderr` are byte-for-byte the fixture
+   strings the file pins (the shape this launcher produced before
+   `lib/substrate-claude-code.sh` was extracted out of it),
+   the prompt still arrives on the binary's stdin unchanged, and the argv is
+   still the Claude adapter's own — so nothing downstream of the launcher can
+   tell the dispatch happens. A stub substrate, defined and registered
+   entirely inside the test (never written to `lib/`, never added to
+   `config.schema.json`, never installed in the image), then proves the
+   dispatch itself: registering it costs exactly the two things requirement
+   4d's seam names — one `substrate` enum entry and one provider configured
+   with it — and `run_model_stage` reaches it, with its own binary and argv,
+   without `lib/stage-run.sh` changing at all. **And it is reached through
+   the whole chain a cycle script drives**, not from a map set up by hand:
+   `providers_load` from a `providers` block, then
+   `resolve_model_id_into` on a qualified id, then `run_model_stage` on what
+   that assigned, with `stage_provider` naming the provider it resolved to.
+   The printing `resolve_model_id`'s own fallback is pinned in the same file
+   (identical bare id, substrate back to `claude-code`), because requirement
+   1a's reason for preferring the assigning form is a silent fallback rather
+   than an error — a seam tested from a hand-populated `MODEL_PROVIDER` alone
+   would pass over the step that chooses the adapter.
 1k. **A stage prompt reaches `claude` on stdin, at a size argv could not
    carry (requirement 4c).** `test/stage-prompt-delivery.test.sh` passes: for
-   `run_claude_stage` as sourced from `lib/stage-run.sh` — the one copy both
+   `run_model_stage` as sourced from `lib/stage-run.sh` — the one copy both
    pipelines call, which the file asserts by finding the function in neither
    cycle script — a 200000-byte prompt, comfortably past `MAX_ARG_STRLEN`,
    exits 0, arrives on the stub's stdin whole, appears

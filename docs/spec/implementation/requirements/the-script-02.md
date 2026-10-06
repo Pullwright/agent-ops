@@ -264,7 +264,7 @@
       graphql, window_rolled}}` — at three points: `cycle-start`, the very
       reading 0's verdict then judges (recorded whether or not a floor is
       set, since the record is what D25's "measured to bind" trigger reads);
-      `stage`, after every model run `run_claude_stage` (`lib/stage-run.sh`)
+      `stage`, after every model run `run_model_stage` (`lib/stage-run.sh`)
       completes, naming the stage; and `cycle-end`, after the Enabler and the
       Refiner and before the `cycle-end` event, but only for a cycle that
       took the opening reading — an ending that never read GitHub (the
@@ -766,12 +766,19 @@
 
       Every `limit-hit` event and `fleet/limit.json` record carries `kind:
       "auto"`, `actor` (the detecting node — `limit-hit` events also keep
-      logging it as the event's own `node`), and `evidence` — the API's own
+      logging it as the event's own `node`), `provider` (the provider the
+      stage that hit the limit was running on — `lib/stage-run.sh`'s
+      `stage_provider`, `anthropic` on every record this system has ever
+      written, since that is the only provider that has ever existed; issue
+      #2133), and `evidence` — the API's own
       response, truncated to 400 characters (the structured
       `rate_limit_info` object where the runner supplied one, else the first
       matching limit line of the transcript). An extension of the flag is
       therefore always accompanied by the fresh observation that justified
-      it, because the only writer is the detector responding to a hit. A
+      it, because the only writer is the detector responding to a hit.
+      `provider` is informational only here: the stand-down it names still
+      covers the whole fleet regardless of which provider hit it (scoping it
+      per-provider is #2135's business, not this one's). A
       record whose `kind` is `manual` only ever enters `fleet/limit.json` by
       an operator's hand: it is honoured as written until its `resume_at`
       passes or `--clear-limit` lifts it, is never probed (1b) and never
@@ -786,7 +793,9 @@
       time and carries no information about the limit — so before standing
       down, the Script spends one minimal headless invocation of
       `implementer_model_trivial` (a fixed one-line prompt, 180 s timeout,
-      transcript kept as `limit-probe.out` in the cycle record) and classifies
+      transcript kept as `limit-probe.out` in the cycle record), through the
+      same provider-neutral `run_model_stage` (requirement 4d) every other
+      stage launches on, and classifies
       it with `limit_probe_verdict` (`lib/limit-detect.sh`, regression-tested
       against canned transcripts): the limit phrase anywhere in the transcript
       is `limited`; otherwise a well-formed envelope with `is_error: false`

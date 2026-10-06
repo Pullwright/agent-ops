@@ -575,12 +575,28 @@
    the same function (requirement 4d), so the review pipeline's smaller
    prompt — the one that would sit broken longest before anyone noticed — is
    covered by construction rather than by a second copy kept in step by hand.
-4d. **One stage launcher, and it streams.** Every headless `claude`
-   invocation either pipeline makes — the five stages of this document, the
-   usage-limit probe of requirement 1b, and the Reviewer-Agent of
-   `docs/spec/review.md` R5.3 — goes through `run_claude_stage` in
+4d. **One stage launcher, provider-neutral, and it streams.** Every headless
+   model invocation either pipeline makes — the five stages of this document,
+   the usage-limit probe of requirement 1b, and the Reviewer-Agent of
+   `docs/spec/review.md` R5.3 — goes through `run_model_stage` in
    `lib/stage-run.sh`: one implementation, sourced by both cycle scripts,
-   rather than a copy in each. It launches the invocation in its own process
+   rather than a copy in each. `run_model_stage` is itself provider-neutral
+   (issue #2133): it owns the process group and the two caps, the
+   stream/`.out`/`.out.stderr` files, the gap clock and the metering hand-off,
+   and resolves — per invocation, from the model it is asked to run, via
+   `lib/model-id.sh`'s `MODEL_PROVIDER` map (which requirement 1a's
+   `resolve_model_id_into` populates as each model key is read from config) —
+   which substrate adapter actually
+   launches the binary. A substrate adapter is one file,
+   `lib/substrate-<name>.sh`, supplying exactly what the provider-specific
+   half needs: the binary's name and version, the argument vector and prompt-
+   delivery method, the terminal `result` line in a finished stream, and a
+   structured rate-limit refusal in a live one. `lib/substrate-claude-code.sh`
+   is the only one that exists today — Claude Code, Anthropic's own CLI,
+   extracted from this launcher unchanged — so every model this pipeline has
+   ever run still launches exactly as it always did; a second provider lands
+   as a second adapter file, never a second launcher. It launches the
+   invocation in its own process
    group (`set -m`), so the stage timeout's kill reaches every descendant
    (requirement 9c), and it runs the invocation under
    `--output-format stream-json --verbose`. An optional resume-session-id
@@ -613,7 +629,7 @@
    repository for an unbounded one.
 4e. **Two caps on a stage, and they answer different questions.** Every stage
    is bounded by a **backstop** — the `timeout_<actor>` wall-clock cap, which
-   `run_claude_stage` enforces by killing the process group — and by a
+   `run_model_stage` enforces by killing the process group — and by a
    **liveness watchdog**: `inactivity_<actor>` minutes during which the stage
    produced no output whatsoever. Whichever fires first kills the stage, by
    the same sequence (TERM to the process group, a five-second grace, then

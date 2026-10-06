@@ -361,7 +361,10 @@
     `limit-hit` rather than being swallowed with the rest of the failure.
 33a. **The per-stage metering record matches `docs/METERING-SCHEMA.md`
     (requirement 33a).** `test/metering.test.sh` passes: `lib/metering.sh`'s
-    `metering_fields` derives `model`, `cost_usd`, `duration_ms`, `num_turns`,
+    `metering_fields` derives `model`, `provider` (read from
+    `lib/model-id.sh`'s `MODEL_PROVIDER`, falling back to `anthropic` for a
+    model never resolved through `resolve_model_id_into`), `cost_usd`,
+    `duration_ms`, `num_turns`,
     `is_error` and `tokens{input,output,cache_creation,cache_read}` from a
     single-model envelope and from a multi-model (subagent) envelope, summing
     `tokens` across every `modelUsage` entry in the latter; a genuinely zero or
