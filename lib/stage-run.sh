@@ -33,6 +33,8 @@
 #                         events — is what is measured.
 #   stage_kill_reason     which of the two caps ended the run, if either
 #                         (requirement 4e).
+#   stage_launch_refusal  why the run never started, if it did not
+#                         (requirement 4k).
 
 # The gap statistics of the most recent run, for the caller's `stage-end`
 # event. A stage that has not run yet, or that produced no output at all,
@@ -53,6 +55,84 @@ stage_kill_reason=""
 # strictly better evidence than the prose the phrase matcher reads — see
 # `limit_decide_structured` in lib/limit-detect.sh.
 stage_rate_limit_json=""
+
+# Why the most recent stage was never launched at all (requirement 4k), or
+# empty. Kept apart from `stage_kill_reason` on purpose: a non-empty kill
+# reason is read as a cap kill by the stage-budget controller and as a re-run
+# by the rework ledger, and a stage that never started is neither.
+stage_launch_refusal=""
+
+# Requirement 4k: the Claude Code project settings a stage will load from the
+# directory it runs in. Headless `claude -p` treats its working directory as
+# trusted, and a project's `.claude/settings.json` or `settings.local.json` is
+# not only preferences: `env` sets variables in the runner's own process and
+# in every command it runs (`BASH_ENV` among them), and `apiKeyHelper`,
+# `awsAuthRefresh`, `awsCredentialExport`, `gcpAuthRefresh`,
+# `otelHeadersHelper`, `proxyAuthHelper` and `processWrapper` name commands it
+# runs itself, while `enabledPlugins` and `extraKnownMarketplaces` fetch code.
+# A stage runs in a checkout of a pull-request head as often as of `main`, so
+# any of these would run whatever the head says, before the stage's prompt
+# is read and with the stage's credentials. Measured against 2.1.267 with
+# every one planted in a checkout: `apiKeyHelper` and the AWS helpers ran
+# commands, and `env` switched the runner onto another provider.
+#
+# The image's managed policy (`deploy/docker/claude-managed-settings.json`,
+# installed root-owned at /etc/claude-code/managed-settings.json) switches off
+# hooks, MCP servers and inline shell in skills and commands wherever they
+# come from, but no managed key can switch off a project's `env`, and a list
+# of forbidden keys would be one new key away from failing open. So this is an
+# allowlist: keys that cannot run anything or change the environment, plus the
+# hook and MCP-approval keys only when the managed policy is present and pins
+# the control that makes them inert. A file holding anything else, or one that
+# is not a JSON object `jq` can read, means the stage is not launched.
+#
+# Only the working directory matters: Claude reads project settings from
+# there and not from a parent or the repository root (measured likewise).
+# shellcheck disable=SC2016  # "$schema" is a JSON key, not a variable
+STAGE_PROJECT_SETTINGS_INERT_KEYS='["$schema","permissions","includeCoAuthoredBy","includeGitInstructions","cleanupPeriodDays","respectGitignore"]'
+STAGE_CLAUDE_MANAGED_SETTINGS="${STAGE_CLAUDE_MANAGED_SETTINGS:-/etc/claude-code/managed-settings.json}"
+
+# stage_project_settings_allowed_keys
+# The allowlist as a JSON array: the inert keys, plus `hooks` when the managed
+# policy sets `allowManagedHooksOnly`, plus the project MCP-approval keys when
+# it sets `allowedMcpServers` to the empty list.
+stage_project_settings_allowed_keys() {
+  local policy
+  policy="$(jq -c 'if type == "object" then . else {} end' "$STAGE_CLAUDE_MANAGED_SETTINGS" 2>/dev/null)" \
+    || policy='{}'
+  [[ -n "$policy" ]] || policy='{}'
+  jq -cn --argjson inert "$STAGE_PROJECT_SETTINGS_INERT_KEYS" --argjson m "$policy" '
+    $inert
+    + (if $m.allowManagedHooksOnly == true then ["hooks"] else [] end)
+    + (if $m.allowedMcpServers == [] then
+         ["enableAllProjectMcpServers", "enabledMcpjsonServers", "disabledMcpjsonServers"]
+       else [] end)'
+}
+
+# stage_project_settings_refusal DIR
+# Prints why a stage must not be launched in DIR and returns 0 when either of
+# its Claude Code project settings files carries a key outside the allowlist
+# or cannot be read as a JSON object; returns 1, printing nothing, when there
+# is no such file or every key in it is allowed.
+stage_project_settings_refusal() {
+  local dir="$1" allowed name file disallowed
+  allowed="$(stage_project_settings_allowed_keys)"
+  for name in settings.json settings.local.json; do
+    file="$dir/.claude/$name"
+    [[ -e "$file" || -L "$file" ]] || continue
+    if ! disallowed="$(jq -r --argjson allowed "$allowed" '
+           if type == "object" then [keys_unsorted[] | select(IN($allowed[]) | not)] | join(", ")
+           else error("not an object") end' "$file" 2>/dev/null)"; then
+      printf '.claude/%s cannot be read as a JSON object' "$name"
+      return 0
+    fi
+    if [[ -n "$disallowed" ]]; then
+      printf '.claude/%s sets %s' "$name" "$disallowed"
+      return 0
+    fi
+  done
+  return 1
+}
 
 # stage_stream_file OUT_FILE
 # The progress stream that accompanies a stage's `.out`. Derived rather than
@@ -212,6 +292,22 @@ run_claude_stage() {
   stage_gaps_json="null"
   stage_kill_reason=""
   stage_rate_limit_json=""
+  stage_launch_refusal=""
+
+  # Requirement 4k: never start the runner in a directory whose project
+  # settings could make it run something. The three files are left as a stage
+  # that never ran leaves them, with the reason on stderr where an operator
+  # reading `<stage>.out.stderr` will look first.
+  local settings_refusal
+  if settings_refusal="$(stage_project_settings_refusal "$cwd")"; then
+    # shellcheck disable=SC2034  # read by the caller, outside this library
+    stage_launch_refusal="$settings_refusal"
+    : >"$stream_file"
+    : >"$out_file"
+    printf 'run_claude_stage: the %s stage was not launched: %s, which no stage loads from the checkout it runs in (requirement 4k)\n' \
+      "$stage" "$settings_refusal" >"$out_file.stderr"
+    return 1
+  fi
 
   # stdout (the event stream) and stderr (diagnostics) are kept in separate
   # files — merging them would let stray stderr output break the JSON parse

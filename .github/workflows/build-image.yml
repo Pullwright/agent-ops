@@ -345,6 +345,28 @@ jobs:
           }
           echo "$env_line"
 
+      # Requirement 4k: a checkout cannot make a stage's `claude` run anything
+      # at start-up. Run against the built image with no network, so no request
+      # leaves the runner, and as `agent`, who runs every stage and must not be
+      # able to rewrite the policy. The control run removes the policy first and
+      # must see all three planted commands run, or the check proves nothing.
+      - name: Verify Claude Code runs nothing a checkout plants
+        if: env.DOCS_ONLY != 'true'
+        run: |
+          docker run --rm --network none --entrypoint bash agent-ops:ci -c '
+            set -e
+            owner="$(stat -c %U:%a /etc/claude-code/managed-settings.json)"
+            [ "$owner" = "root:644" ] || { echo "the managed policy is $owner, not root:644" >&2; exit 1; }
+            if touch /etc/claude-code/managed-settings.json 2>/dev/null; then
+              echo "agent can write the managed policy" >&2; exit 1
+            fi
+            /app/scripts/claude-policy-probe.sh --expect blocked
+          '
+          docker run --rm --network none --user root --entrypoint bash agent-ops:ci -c '
+            rm /etc/claude-code/managed-settings.json
+            runuser -u agent -- /app/scripts/claude-policy-probe.sh --expect ran
+          '
+
       # The stamp is only useful if the image can read it back, and its failure
       # mode is silent: a node whose version says "unknown" looks exactly like
       # one the dashboard has not heard from yet.

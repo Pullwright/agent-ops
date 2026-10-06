@@ -232,6 +232,12 @@ a node updates by pulling a new image rather than by pulling a branch.
   container's memory ceiling is below what the largest script costs to lint,
   so that one file is skipped with a warning and CI is where it is actually
   checked (acceptance check 1g-i).
+- `/etc/claude-code/managed-settings.json`, installed root-owned from
+  `deploy/docker/claude-managed-settings.json`, is Claude Code's managed
+  policy (requirement 4k): no hook runs, no MCP server starts, and no inline
+  shell in a skill or command is executed, whichever settings file, checkout or
+  plugin asks. It outranks the seeded `settings.json` below and anything an
+  operator adds to the `claude-config` volume.
 - `deploy/docker/entrypoint.sh` runs as `agent` on every container start and is
   idempotent: it seeds `$CLAUDE_CONFIG_DIR/settings.json` from
   `deploy/docker/claude-settings.json` **only when absent** (that directory is a
@@ -8932,6 +8938,49 @@ implements.
    input, never toward an empty one" for every *other* path: a budget of 0
    still means the bound is off, and it is only this branch — where the Script
    has already established that no input fits — that shedding is forced.
+4k. **A stage runs nothing that the checkout it runs in supplies.** Headless
+   `claude -p` treats its working directory as trusted, and a stage's working
+   directory is often a checkout of a pull-request head. Two controls keep
+   that checkout from making the runner execute anything before, or apart
+   from, the stage's own prompt:
+   - **The image's managed policy.** `deploy/docker/claude-managed-settings.json`
+     is installed root-owned at `/etc/claude-code/managed-settings.json`
+     (component 7), outside `/app`, which `agent` owns. It sets
+     `allowManagedHooksOnly: true`, so no user, project, local or plugin hook
+     runs; `allowedMcpServers: []`, so no MCP server starts, whether from
+     `.mcp.json`, a settings file, an agent's frontmatter or a plugin; and
+     `disableSkillShellExecution: true`, so inline shell in a skill or a
+     custom command is replaced by a placeholder rather than run. The managed
+     file outranks every other settings source, and project instructions and
+     project skills load under it unchanged. The image build checks the three
+     pins, and its acceptance step runs `scripts/claude-policy-probe.sh`
+     against the built image: a scratch checkout with a planted hook, MCP
+     server and inline-shell command must run none of them, and must run all
+     three once the policy is removed.
+   - **The launcher's settings check.** No managed key can switch off a
+     project's `env`, which sets variables in the runner's process and in
+     every command it runs, or the settings that name commands the runner
+     executes itself (`apiKeyHelper`, `awsAuthRefresh`,
+     `awsCredentialExport`, `gcpAuthRefresh`, `otelHeadersHelper`,
+     `proxyAuthHelper`, `processWrapper`), or those that fetch plugins
+     (`enabledPlugins`, `extraKnownMarketplaces`). So `run_claude_stage`
+     (requirement 4d) vets `.claude/settings.json` and
+     `.claude/settings.local.json` in its working directory, the only place
+     Claude reads project settings from, against an allowlist before it
+     starts anything: keys that cannot run anything or change the
+     environment (`$schema`, `permissions`, `includeCoAuthoredBy`,
+     `includeGitInstructions`, `cleanupPeriodDays`, `respectGitignore`), and
+     `hooks` and the project MCP-approval keys only while the managed policy
+     pins the control that makes them inert. A file holding any other key,
+     or one that is not a JSON object `jq` can read, means the stage is not
+     launched: it returns 1, leaves `<stage>.out` and its stream empty, writes
+     the file and the offending keys to `<stage>.out.stderr`, and sets
+     `stage_launch_refusal`, never `stage_kill_reason`, since the stage was
+     neither capped nor re-run. `handle_stage_failure` records it with the
+     stable detail "`<stage>` was not launched: the checkout's Claude Code
+     project settings hold keys no stage loads", so a pull request that adds
+     such a file is blocked with that reason rather than reviewed by a
+     runner it can direct.
 
 5. If the work order is `{"selected": false}`, log `none-selected` with the
    Co-Ordinator's reason **and the fingerprint computed in requirement 3b**
@@ -22536,8 +22585,11 @@ What exists, and the requirements each part answers to:
    launcher both pipelines call, with `stage_stream_file` and
    `stage_result_line` naming and reading the stream it writes, and
    `stage_gap_stats` summarising the inter-event gaps it measures from that
-   stream for requirement 33a, and `stage_rejected_rate_limit` reading the
-   refusal that stops a stage on the spot),
+   stream for requirement 33a, `stage_rejected_rate_limit` reading the
+   refusal that stops a stage on the spot, and
+   `stage_project_settings_refusal`, with
+   `stage_project_settings_allowed_keys`, vetting the working directory's
+   project settings before any launch for requirement 4k),
    `lib/stage-budget.sh` (requirement 4f's derivation:
    `stage_budget_observations` over the log union, `stage_budget_table`
    holding the estimator, the controller and the shrinkage,
@@ -22686,8 +22738,10 @@ What exists, and the requirements each part answers to:
    the node's role coming from `ROLE` in its `deploy/docker/.env`
    (requirement 2.4) rather than from a crontab environment variable.
 7. `deploy/docker/` — the node image and the node stack (see "The node image"
-   and "The node stack" above): `Dockerfile`, `entrypoint.sh`, `crontab` and the
-   minimal `claude-settings.json` seed; `compose.yaml`, `ts-serve.json`,
+   and "The node stack" above): `Dockerfile`, `entrypoint.sh`, `crontab`, the
+   minimal `claude-settings.json` seed and `claude-managed-settings.json`, the
+   managed policy of requirement 4k that the image installs root-owned at
+   `/etc/claude-code/managed-settings.json`; `compose.yaml`, `ts-serve.json`,
    `watchtower-pre-update.sh` (the hook that makes a roll wait for a running
    cycle) and `.env.example`; and the node runbook `deploy/docker/README.md` with the
    unattended `cloud-init.yaml` that performs its first three steps. The

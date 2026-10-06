@@ -327,6 +327,12 @@ handle_stage_failure() {  # <stage> <rc> <out-file> [pr-url] [extra-json]
     detail="$stage was stopped the moment the account reported a usage limit — nothing it did after that could have succeeded"
   elif [[ "$rc" == "124" ]]; then
     detail="$stage timed out"
+  elif grep -q '^run_claude_stage: the .* stage was not launched: ' "$out_file.stderr" 2>/dev/null; then
+    # Requirement 4k, read from this stage's own stderr rather than from
+    # `stage_launch_refusal`, which a later failure in the same cycle that
+    # never reached the launcher would otherwise inherit. The file name and
+    # keys stay out of `detail`, which requirement 2.7 groups on.
+    detail="$stage was not launched: the checkout's Claude Code project settings hold keys no stage loads"
   else
     detail="$stage exited $rc"
   fi
