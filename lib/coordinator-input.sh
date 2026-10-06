@@ -167,6 +167,20 @@ COORDINATOR_INPUT_TIERS=(
 # dropping 91 — before the ladder ever reaches a cap that cuts deep; 128
 # onward halves exactly, as it always did, so a wildly oversized input still
 # converges in a handful of measurements rather than one per entry.
+#
+# The first element (300) is itself only a floor, not the value walked:
+# `coordinator_fit_bands` below replaces it at call time with whichever is
+# looser of 300 and three-quarters of the backlog's own `entries_before`
+# (agent-ops#2213) — a fixed 300 is itself an absolute cliff once the backlog
+# outgrows ~600 entries, the same cliff shape #2191 fixed at a smaller scale,
+# since a cap that never grows with the backlog drops a *growing* fraction of
+# it. Keying off `entries_before` rather than a bigger fixed constant removes
+# the cliff at every scale instead of merely moving it, and 300 stays as a
+# floor so a backlog already below it (the 391-entry shape above) sees no
+# change at all: three-quarters of 391 is 293, tighter than 300, so the floor
+# — not the computed value — is what is actually walked there. Array elements
+# after the first are never recomputed; only the first rung of the
+# entry-cap segment is ever proportional.
 COORDINATOR_INPUT_ENTRY_CAPS=(300 200 128 64 32 16 8 4 2 1)
 
 # The jq program every rung runs. Bound as a shell variable rather than
@@ -297,6 +311,7 @@ coordinator_apply_rung() {  # <keep> <comment-bytes> <body-bytes> [entry-max]
 # document from the configured maximum before calling.
 coordinator_fit_bands() {  # <budget-bytes>  (repos JSON on stdin)
   local budget="${1:-0}" repos out="" size before rung=0 tier keep cb bb emax entries_before
+  local entry_caps proportional_cap
   repos="$(cat)"
   jq -e 'type == "array"' <<<"$repos" >/dev/null 2>&1 || repos='[]'
   [[ "$budget" =~ ^[0-9]+$ ]] || budget=0
@@ -329,7 +344,22 @@ coordinator_fit_bands() {  # <budget-bytes>  (repos JSON on stdin)
   # left to shed, at the tightest tier's caps.
   IFS=: read -r keep cb bb <<<"${COORDINATOR_INPUT_TIERS[${#COORDINATOR_INPUT_TIERS[@]}-1]}"
   local prev_emax="" lo hi mid mid_out mid_size
-  for emax in "${COORDINATOR_INPUT_ENTRY_CAPS[@]}"; do
+
+  # The first entry cap is a floor, not a constant (agent-ops#2213): three
+  # quarters of the backlog's own size, whichever is looser of that and the
+  # fixed 300 — so a backlog many times the size this ladder was tuned on
+  # still loses a roughly constant fraction at this rung rather than a
+  # fraction that grows toward the single-digit caps below. A backlog already
+  # under the floor (0.75 * entries_before <= 300) walks 300 unchanged, so a
+  # small backlog's behaviour here is untouched.
+  entry_caps=("${COORDINATOR_INPUT_ENTRY_CAPS[@]}")
+  if (( entries_before > 0 )); then
+    proportional_cap=$(( entries_before * 3 / 4 ))
+    (( proportional_cap >= 1 )) || proportional_cap=1
+    (( proportional_cap > entry_caps[0] )) && entry_caps[0]="$proportional_cap"
+  fi
+
+  for emax in "${entry_caps[@]}"; do
     rung=$(( rung + 1 ))
     # A cap whose own jq failed is recorded as the bracket all the same: the
     # search below reads `prev_emax` as "the tightest cap known not to fit",

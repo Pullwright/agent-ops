@@ -280,6 +280,24 @@ assert_true "…so far fewer than the 76 entries the fixed 64 cap would have dro
 assert_true "…and the result still fits inside its budget" \
   "$(jq '.fit.bytes_after <= .fit.budget' <<<"$out")"
 
+# --- agent-ops#2213: the first entry-cap rung is itself a floor, not a
+#     constant — three-quarters of the backlog's own size, whichever is
+#     looser of that and the fixed 300, so the cliff #2191 fixed at ~391
+#     entries does not recur once the backlog outgrows ~600. The 391-entry
+#     shape just above is below the floor (0.75 * 391 = 293 < 300) and so
+#     keeps walking 300 unchanged; these two are past it. ---
+for n in 601 2000; do
+  shape="$(mk_repos "$n" 400 0 0)"
+  r10="$(coordinator_apply_rung 0 0 0 <<<"$shape" | coordinator_rendered_bytes)"
+  out="$(fit "$(( r10 - 10 ))" <<<"$shape")"
+  expected_cap=$(( n * 3 / 4 ))
+  expected_dropped=$(( n - expected_cap ))
+  assert_eq "a sliver overflow on the $n-entry shape lands on the computed cap, not 300" \
+    "11 $expected_cap" "$(jq -r '"\(.fit.rung) \(.fit.entries_max)"' <<<"$out")"
+  assert_eq "…dropping a proportionate $expected_dropped of $n (~25%), not a cliff to 300" \
+    "$expected_dropped" "$(jq -r '.fit.entries_dropped' <<<"$out")"
+done
+
 opening="$(python3 -c '
 import json
 issues = [{"source": "issues", "ref": "1", "number": 1, "url": "https://github.com/o/r/issues/1",
