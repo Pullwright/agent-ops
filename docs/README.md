@@ -137,6 +137,7 @@ set under `docs/reviews/` one entry for its directory.
 | `docs/reviews/2026-10-03-rest-budget-shim-baseline.md` | evaluator, operator | record | Before/after REST budget and refusal counts for the `gh` transport shim (generated report) |
 | `docs/reviews/2026-10-03-rest-budget-shim-baseline-pre.md` | evaluator, operator | record | Raw GitHub API budget report, pre-shim window (generated report) |
 | `docs/reviews/2026-10-03-rest-budget-shim-baseline-post.md` | evaluator, operator | record | Raw GitHub API budget report, post-shim window (generated report) |
+| `docs/reviews/2026-10-06-grok-build-evaluation.md` | evaluator, contributor | record | Grok Build run headlessly against the provider substrate contract, with the adapter specification for the xAI provider (#2132) |
 | `docs/reviews/project-review-2026-08-23/` | evaluator, person working in repo, contributor | record | Full project review with summary, findings, recommendations, and improvement prompts (generated) |
 | `docs/reviews/project-review-2026-08-31/` | evaluator, person working in repo, contributor | record | Full project review (generated) |
 | `docs/reviews/project-review-2026-09-05/` | evaluator, person working in repo, contributor | record | Full project review (generated) |
