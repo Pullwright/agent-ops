@@ -7,7 +7,7 @@
 # launcher; everything in this file is what it is neutral *of* — the one
 # piece behind the seam that is Anthropic's own CLI and account model rather
 # than something every agentic CLI shares. A second provider lands as a
-# sibling file, `lib/substrate-<name>.sh`, supplying the same six operations:
+# sibling file, `lib/substrate-<name>.sh`, supplying the same five operations:
 #
 #   substrate_claude_code_binary               the executable's name on PATH
 #   substrate_claude_code_version               its own reported version

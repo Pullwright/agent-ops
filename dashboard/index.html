@@ -1094,7 +1094,7 @@
   // The same doubt, reached in minutes instead of hours, and on far better
   // evidence. `lock_stale_after` is a bound on how long a *cycle* may plausibly
   // run; a stage has a much tighter one of its own. agent-cycle.sh hands every
-  // stage to run_claude_stage with a timeout, which kills the process group when
+  // stage to run_model_stage with a timeout, which kills the process group when
   // it expires and logs `stage-end` unconditionally after — so a live stage
   // older than its own timeout is not a slow stage. It is a stage whose process
   // is gone, and whose log never got the ending.
@@ -1126,7 +1126,7 @@
     if (+fleet > 0) return +fleet;
     return STAGE_BACKSTOP_PRIOR[stage] || 0;
   }
-  // run_claude_stage polls every 2s, then SIGTERMs, waits 5s and SIGKILLs, and
+  // run_model_stage polls every 2s, then SIGTERMs, waits 5s and SIGKILLs, and
   // the `stage-end` after that still has to reach a push. This is the room that
   // sequence needs — wide enough that nothing healthy ever trips the rule.
   var STAGE_OVERRUN_GRACE_MIN = 2;
