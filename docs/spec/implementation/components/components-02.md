@@ -1,6 +1,6 @@
 ## Components
 
-Continued (part 2 of 3; 12b–17d).
+### Components — continued (part 2 of 3; 12b–17d)
 
 12b. `scripts/reconcile-compose.sh` and `lib/compose-reconcile.sh`
     implementing requirement 2.5a — the actor for the compose-drift verdict

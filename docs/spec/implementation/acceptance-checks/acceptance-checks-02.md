@@ -1,6 +1,6 @@
 ## Acceptance checks
 
-Continued (part 2 of 6; items 2m–7f).
+### Acceptance checks — continued (part 2 of 6; items 2m–7f)
 
 2m. **The installation has one push-notification channel, and everything the
    fleet already knows to log about an escalation, a page, or a stand-down

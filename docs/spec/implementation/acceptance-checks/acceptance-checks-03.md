@@ -1,6 +1,6 @@
 ## Acceptance checks
 
-Continued (part 3 of 6; items 7g–11e).
+### Acceptance checks — continued (part 3 of 6; items 7g–11e)
 
 7g. **A candidate's refinement is made to trace back to it, and one that
    cannot be is skipped rather than claimed (requirement 17f, agent-ops#626,

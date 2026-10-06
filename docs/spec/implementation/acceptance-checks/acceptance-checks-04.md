@@ -1,6 +1,6 @@
 ## Acceptance checks
 
-Continued (part 4 of 6; items 39a–8s).
+### Acceptance checks — continued (part 4 of 6; items 39a–8s)
 
 39a. **The Refiner's candidate set is correctly bounded (requirements 39a,
     39b).** `test/refiner-eligibility.test.sh` passes: `refiner_candidate_items`

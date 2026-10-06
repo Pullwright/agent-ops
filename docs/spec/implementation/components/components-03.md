@@ -1,6 +1,6 @@
 ## Components
 
-Continued (part 3 of 3; 17e–24b).
+### Components — continued (part 3 of 3; 17e–24b)
 
 17e. `scripts/roll-changelog.sh` implementing requirement 25e: with no
     marker present, renames the file's whole `[Unreleased]` section
