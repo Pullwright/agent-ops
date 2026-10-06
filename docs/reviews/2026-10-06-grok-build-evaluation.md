@@ -527,8 +527,10 @@ That adds 211 MB, and nothing under any home directory. Bump deliberately, as
 **Environment** (the scheduler's `environment:` block, beside Claude Code's
 optional-traffic switches): `GROK_DISABLE_AUTOUPDATER=1`,
 `GROK_TELEMETRY_ENABLED=0`, `GROK_FOLDER_TRUST=0`, and `GROK_HOME` set
-explicitly to a directory on a volume (a `grok-config` volume, mirroring
-`claude-config`), with `XAI_API_KEY` passed through as `ANTHROPIC_API_KEY` is.
+explicitly to a directory the container owns, with `XAI_API_KEY` passed
+through as `ANTHROPIC_API_KEY` is. The API-key path needs nothing in
+`GROK_HOME` to outlive the container; #2139 puts it on a `grok-config` volume,
+mirroring `claude-config`, for the subscription's `auth.json`.
 
 **Invocation**, from the clone, with the prompt on stdin:
 
