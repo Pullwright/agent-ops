@@ -239,6 +239,23 @@ assert_contains "  ... the bookkeeping recording a successful required-checks re
 assert_lacks "  ... and no node-level warning, since nothing implicates the node" \
   "warning" "$out"
 
+# --- dirty gate, alert-caused: named as such, not the required-checks text ----
+# agent-ops#2194: the unblock_condition used to always say "...and clear the
+# named security-severity code-scanning alert" regardless of which sub-check
+# actually fired, naming an alert that may never have existed. A dirty gate
+# whose own reason names an alert (`review_gate_security_alerts`'s wording,
+# lib/review-gate.sh) must earn the alert-clearing unblock_condition instead
+# of the required-checks one.
+ALERT_REASON="open security-severity code-scanning alert(s) introduced by this pull request: #7 (critical)"
+out="$(run_gate_block "$(review_json false dirty "$ALERT_REASON" false "" "")")"
+assert_eq "a dirty gate caused by an alert ends the cycle too" "no" "$(reached_end "$out")"
+assert_contains "  ... recording the handback naming the alert" \
+  "$ALERT_REASON" "$out"
+assert_contains "  ... with the alert-clearing unblock_condition" \
+  "Clear the named security-severity code-scanning alert" "$out"
+assert_lacks "  ... never the required-checks wording, which names nothing an alert-caused dirty should fix" \
+  "Get every required check green" "$out"
+
 # --- the blocking unreadable check list: the node's fault, named as such ------
 # TD-PPagop-26081305: the debt was that this arrived as the `dirty` handback
 # above, whose unblock_condition names nothing this node can fix.

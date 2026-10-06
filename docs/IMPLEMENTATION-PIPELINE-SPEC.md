@@ -14510,6 +14510,40 @@ implements.
     either way, exactly as `review_gate_verdict`'s existing `unknown` already
     treats a `gh` failure as a fact about the platform rather than the pull
     request.
+63. **A repository that configures no CI at all is `clean`, not requirement
+    31c's conflicting-PR-runs-no-CI trap (agent-ops#2194).** `gh pr checks
+    --required` reports both "checks were expected on this pull request and
+    are absent" (poetic-fiddle #190's trap) and "this repository runs no CI at
+    all, so nothing was ever going to be reported" in the identical shape —
+    empty stdout, non-zero exit. Poetic-Poems/poetic-fiddle#465 hit the
+    second case directly: its pull request was against `Pullwright/.agent`, a
+    repository with no `.github/workflows` and `actions/workflows` reporting
+    `total_count: 0`, and the trap refused it anyway, with an
+    `unblock_condition` naming a security-severity code-scanning alert that
+    was never identified — code scanning is not even enabled on that
+    repository.
+
+    `_review_gate_no_ci_configured` (`lib/review-gate.sh`) is asked before
+    either no-required-checks shape in `review_gate_required_checks` settles
+    on `dirty`. Branch protection and rulesets are not readable on a private
+    repository on the free plan (`403 Resource not accessible by
+    integration`), so "which checks are required here" cannot be asked
+    directly; two signals stand in for it instead — `GET
+    /repos/{slug}/actions/workflows` reporting `total_count == 0` *and* the
+    pull request's head commit carrying no commit statuses at all (`GET
+    /repos/{slug}/commits/{sha}/status`, `total_count == 0`). Only once both
+    read zero does the verdict become `clean`, with a line on stderr naming
+    why; a repository with workflows configured that simply reported nothing
+    for this head commit, or one with no workflows but a legacy commit-status
+    integration still posting to it, stays on the `dirty` trap exactly as
+    before — the regression poetic-fiddle #190 itself guards against.
+
+    The `unblock_condition` a `dirty` verdict's requirement 32a handback
+    carries (`lib/coordinator-phase.sh`) is chosen from which of requirement
+    31c's two sub-checks actually produced the reason: it names the
+    security-severity code-scanning alert only when the gate's own reason
+    names one, never as a blanket addition to a required-checks failure that
+    never implicated one.
 32. Ends with a single JSON object:
     `{"status": "ready" | "blocked", "pr_url": …, "fixes_applied": […], "comments_left": n, "ci": "passing" | …}`,
     plus `reason` — one line naming what is wrong — on `blocked`, which becomes
@@ -27990,7 +28024,9 @@ oblige anyone to edit a test.
    handoff mechanism runs (requirement 31c).** `test/review-gate.test.sh`
    passes: every required check passing is `clean`; a failing required check
    and a pull request reporting no required checks are both `dirty`, never a
-   vacuous pass; a required-check list that could not be read at all is
+   vacuous pass — the second once requirement 63's own pair of signals has
+   been asked and did not confirm a repository configuring no CI at all; a
+   required-check list that could not be read at all is
    `unknown` rather than folded into `dirty` — but still exits non-zero,
    refusing the handoff exactly like `dirty` does (TD-PPagop-26081305). Those
    last two are asserted against the shapes `gh` itself produces, both of them
@@ -27998,7 +28034,18 @@ oblige anyone to edit a test.
    stderr, with `gh`'s own wording in the stub for each (`no required checks
    reported on the '<branch>' branch` against a transport failure's) — a stub
    that answered the no-required-checks case with `[]` would assert a shape no
-   `gh` emits and let the trap it exists for be filed as a degraded node. An
+   `gh` emits and let the trap it exists for be filed as a degraded node.
+   Requirement 63's own branch is asserted on both of those no-required-checks
+   shapes: with `actions/workflows` reporting `total_count == 0` *and* no
+   commit statuses on the head commit, each is `clean` and exits 0; with
+   workflows configured, or with no workflows but a commit status still posted
+   to the head commit, each stays `dirty` naming the trap — one signal alone
+   never infers "no CI configured", since either half on its own is a
+   repository that does run checks. `test/review-gate-wiring.test.sh` passes
+   for the `unblock_condition` requirement 63 also constrains: a `dirty` gate
+   whose own reason names a security-severity code-scanning alert earns the
+   alert-clearing wording, and never the required-checks wording, which would
+   name nothing an alert-caused refusal can act on. An
    open code-scanning alert
    with a security severity on the pull request's branch is `dirty` unless the
    same alert number is already open on the default branch, in which case it
