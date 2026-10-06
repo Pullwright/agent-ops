@@ -674,15 +674,21 @@
    triggers rotation on size, which self-corrects regardless of how often
    the log is written to.
 52. **The table of contents is generated from headings, not hand-maintained,
-   and regenerating it is gated in CI.** `docs/spec/implementation/README.md`
-   and each guide under `docs/guides/` carries a `<!-- toc:start -->`
-   … `<!-- toc:end -->` region, placed immediately after the document's
-   title (and any lead-in paragraph, before its first `##` heading), holding
-   a nested bullet list of every `##`/`###` heading in the document — the
-   same "generated, never hand-edited" contract AGENTS.md's "Generated
-   regions" note states for the configuration tables (requirement 1b,
-   component 16), for a second kind of region. `scripts/render-toc.sh`
-   (component 24) renders it: extracting headings in document order while
+   and regenerating it is gated in CI.** Each guide under `docs/guides/`
+   carries a `<!-- toc:start -->` … `<!-- toc:end -->` region, placed
+   immediately after the document's title (and any lead-in paragraph,
+   before its first `##` heading), holding a nested bullet list of every
+   `##`/`###` heading in the document — the same "generated, never
+   hand-edited" contract AGENTS.md's "Generated regions" note states for the
+   configuration tables (requirement 1b, component 16), for a second kind of
+   region. `docs/spec/implementation/README.md` and
+   `docs/spec/dashboard/README.md` carry the same marker pair, but hold a
+   directory-wide list instead — one entry per sibling file under their own
+   directory, linking each sibling's own first heading, rather than headings
+   within the README itself. `scripts/render-toc.sh` (component 24) renders
+   both kinds, from `lib/markdown-scan.sh`'s `TOC_FILES` (the own-heading
+   kind) and `TOC_DIR_FILES` (the directory-wide kind): for the own-heading
+   kind, extracting headings in document order while
    skipping fenced code blocks (`lib/markdown-scan.sh`, the one fence-aware
    reading it shares with requirement 52a), slugging each to GitHub's own heading-anchor
    algorithm — lower-cased, stripped to `[a-z0-9_-]` and space, spaces to

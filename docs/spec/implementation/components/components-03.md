@@ -873,10 +873,11 @@
     2); must pass `shellcheck`.
 24. `scripts/render-toc.sh` and `.github/workflows/toc.yml` implementing
    requirement 52's generated-table-of-contents property, for the files
-   `lib/markdown-scan.sh`'s `TOC_FILES` lists, matching the markers by that
-   library's `toc_start_re` and `toc_end_re`, the list and grammar component
-   24b reads to leave these regions out of the size budget: before rendering
-   each file, verifies it contains exactly one `<!-- toc:start -->` /
+   `lib/markdown-scan.sh`'s `TOC_FILES` (the own-heading kind) and
+   `TOC_DIR_FILES` (the directory-wide kind) list, matching the markers by
+   that library's `toc_start_re` and `toc_end_re`, the list and grammar
+   component 24b reads to leave these regions out of the size budget: before
+   rendering each file, verifies it contains exactly one `<!-- toc:start -->` /
    `<!-- toc:end -->` marker pair with the start marker on an earlier line
    than the end marker — a file with neither marker, only one of the pair,
    more than one of either, or the pair in reversed order, fails the script
@@ -886,23 +887,26 @@
    unmatched or misordered marker would otherwise do — matching
    `render-config-table.sh`'s own region-validation precedent (component 16)
    of hard-failing on a malformed region rather than silently mis-rendering
-   it. Once validated, with no
-   arguments, extracts every `##`/`###` heading from
-   `docs/spec/implementation/README.md` and each guide under
-   `docs/guides/` — skipping anything inside a
+   it. Once validated, with no arguments: for a `TOC_FILES` entry (each guide
+   under `docs/guides/`), extracts every `##`/`###` heading from the file
+   itself — skipping anything inside a
    fenced (```` ``` ```` or `~~~`) code block, as `lib/markdown-scan.sh`'s
    `markdown_unfenced` reads one for this and for component 24a alike (a
    fence opens on a run of three or more of either character, however far
    indented, and closes only on a run of the same character at least as
    long, a carriage return that ends a line being ignored) — and rewrites
-   each file's own
+   the file's own
    `<!-- toc:start -->` … `<!-- toc:end -->` region with a nested bullet
    list linking to GitHub's own heading-anchor slug (lower-cased, stripped
    to `[a-z0-9_-]` and space, spaces to `-`; GitHub does not collapse
    consecutive hyphens, so this script does not either), de-duplicated in
    heading order the way GitHub's own renderer de-duplicates repeated
    headings (the first occurrence keeps the bare slug, each later one is
-   suffixed `-1`, `-2`, …). `--check` renders every region to a temporary
+   suffixed `-1`, `-2`, …). For a `TOC_DIR_FILES` entry
+   (`docs/spec/implementation/README.md` and `docs/spec/dashboard/README.md`),
+   lists every other Markdown file under the paired directory instead,
+   linking each sibling's own first heading, nested one level per
+   sub-directory. `--check` renders every region to a temporary
    file instead, leaving the working tree untouched, and exits non-zero
    naming the first stale file — the same contract
    `scripts/render-config-table.sh` (component 16) follows. `.github/workflows/toc.yml`

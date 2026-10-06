@@ -313,9 +313,10 @@
 
 52. **The table of contents is generated from headings, and regenerating it
     is gated (requirement 52, component 24).** `scripts/render-toc.sh` with
-    no arguments run against this repository's own
-    `docs/spec/implementation/README.md` and each guide under
-    `docs/guides/` leaves every file byte-identical
+    no arguments run against this repository's own guides under
+    `docs/guides/` (the `TOC_FILES` own-heading kind) and
+    `docs/spec/implementation/README.md` and `docs/spec/dashboard/README.md`
+    (the `TOC_DIR_FILES` directory-wide kind) leaves every file byte-identical
     to what is committed — regenerating a clean tree is a no-op — and
     `--check` exits 0 against it; `git diff` confirms nothing moved.
     Renaming a heading without regenerating makes `--check` exit non-zero
