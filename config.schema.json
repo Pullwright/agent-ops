@@ -419,7 +419,7 @@
       "type": "object",
       "default": {},
       "x-docs": {
-        "readme": "Model providers beyond the implicit `anthropic`, keyed by provider name — e.g. `{\"xai\": {\"substrate\": \"claude-code\", \"credential_env\": \"XAI_API_KEY\"}}`. `anthropic` needs no entry; it always resolves, substrate `claude-code`. Qualify any model key below with `<name>/<id>` to use a configured provider.",
+        "readme": "Model providers beyond the implicit `anthropic`, keyed by provider name: `{\"<name>\": {\"substrate\": \"<adapter>\", \"credential_env\": \"<VARIABLE>\"}}`, `credential_env` optional. `anthropic` needs no entry and always resolves on `claude-code`, the only adapter this image has; D29 runs no other provider's models on it (agent-ops#2198). Qualify any model key below with `<name>/<id>` to use a configured provider.",
         "spec": "Model providers beyond the implicit `anthropic` (requirement 1a), keyed by provider name, each entry's `substrate` naming the adapter that launches it (`claude-code` is the only one this image has) and optional `credential_env` naming the environment variable that adapter reads for an API key (defaulting by substrate — `ANTHROPIC_API_KEY` for `claude-code`). `anthropic` needs no entry: it is always accepted, substrate `claude-code`, whether or not this object names it explicitly.",
         "value": "`{}`"
       }
