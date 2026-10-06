@@ -8676,7 +8676,10 @@ implements.
 
    **Dropping entries is the last rung, and it is loud.** Once the tightest
    tier is applied there is nothing left but entries, and those are capped per
-   band per repo (halving: 64, 32, … 1), keeping the highest `Priority` band
+   band per repo (300, 200, 128, then halving: 64, 32, … 1 — agent-ops#2191
+   added the first three so a backlog a sliver over the identity-only rung's
+   own byte count trims proportionately instead of losing 68% of itself to a
+   jump straight to 64), keeping the highest `Priority` band
    first and the freshest thread within a band for `issues`, and the freshest
    thread first for `tech_debt`, which carries no band (agent-ops#1379: the
    ascending-by-number order the cap once kept meant that, pinned at 64 for
@@ -21029,7 +21032,7 @@ with the Reviewer's own.
     - **`fit-ladder-pinned`** (owner-only). Fires when a node's
       `coordinator-input-fitted` events (`lib/coordinator-input.sh`,
       `agent-cycle.sh`) in the trailing 24h have all run out of prose to shed
-      and are dropping whole entries — rung 11 or tighter, the first of the 7
+      and are dropping whole entries — rung 11 or tighter, the first of the 10
       entry caps that follow the 10 prose tiers (`COORDINATOR_INPUT_TIERS` +
       1, a fixed constant of the ladder rather than a field either array
       carries) — with `entries_dropped > 0`. A node with no fitted cycle at
@@ -31200,7 +31203,7 @@ oblige anyone to edit a test.
     unconfigured, with its evidence carrying the node's own `none-selected`
     reason and `coordinator-input-fitted` detail; `fit-ladder-pinned` fires
     on a node whose every `coordinator-input-fitted` event in the trailing
-    24h sits at rung 17 with entries dropped *and* on one pinned at rung 11
+    24h sits at rung 20 with entries dropped *and* on one pinned at rung 11
     (the first entry cap, #1128's own shape renumbered), with its evidence
     naming that node's rung and drop range, not on a node that came back up
     to a prose rung within the window, not on a node whose every cycle sits

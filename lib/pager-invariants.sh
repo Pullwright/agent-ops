@@ -130,7 +130,7 @@
 #                           could perform on the owner's behalf.
 #   fit-ladder-pinned       `coordinator-input-fitted` pinned in the
 #                           ladder's own entry-dropping segment — rung 11 or
-#                           tighter, the first of the 7 entry caps that
+#                           tighter, the first of the 10 entry caps that
 #                           follow lib/coordinator-input.sh's 10 prose tiers
 #                           (the first entry cap, which #1281's own evidence
 #                           sat at when it was rung 9 of an 8-tier ladder) —
@@ -898,7 +898,7 @@ pager_eval_idle_with_demand() {
 # Fires when a node's `coordinator-input-fitted` events (agent-cycle.sh,
 # lib/coordinator-input.sh) in the trailing 24h have *all* run out of prose
 # to shed and started dropping whole entries — rung 11 or tighter (the first
-# of the 7 entry-cap rungs that follow the 10 prose tiers:
+# of the 10 entry-cap rungs that follow the 10 prose tiers:
 # `COORDINATOR_INPUT_TIERS` + 1, a fixed constant of the ladder rather than a
 # field either array carries) with `entries_dropped > 0` — a node whose
 # eligible backlog has outgrown `coordinator_prompt_max_bytes` on every

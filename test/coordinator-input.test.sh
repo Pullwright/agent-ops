@@ -192,13 +192,40 @@ assert_true "an identity-only entry's body is its own elision marker naming its 
 assert_eq "…and its identity fields are intact" \
   "1 1 https://github.com/o/r/issues/1 issue 1 Medium 2026-08-02T00:00:00Z" \
   "$(jq -r '.repos[0].issues[0] | "\(.ref) \(.number) \(.url) \(.title) \(.priority) \(.updated_at)"' <<<"$out")"
-# More entries than the loosest cap keeps, so that the cap actually removes
-# some and the first rung past the trims is the one that fits.
+# --- agent-ops#2191: the entry caps run 300, 200, 128 before the
+#     longstanding 64, so a backlog only a sliver over the identity-only
+#     rung's own byte count trims proportionately instead of cliffing straight
+#     to a 68%-ish cull. A cap at or above the band's own entry count is a
+#     no-op (it reorders by keep-order but drops nothing), so a 70-entry band
+#     walks rungs 11-13 (300, 200, 128) finding each a no-op and only cuts at
+#     rung 14, the first cap below its own count (64) — the same position the
+#     single 64 cap used to sit at, renumbered. ---
+assert_eq "the entry caps run 300, 200, 128 ahead of the longstanding 64...1" \
+  "300 200 128 64 32 16 8 4 2 1" "${COORDINATOR_INPUT_ENTRY_CAPS[*]}"
+assert_true "no entry-cap rung drops more than half of the previous rung's survivors" \
+  "$(python3 -c '
+caps = [int(x) for x in "'"${COORDINATOR_INPUT_ENTRY_CAPS[*]}"'".split()]
+print("true" if all(caps[i + 1] >= caps[i] // 2 for i in range(len(caps) - 1)) else "false")
+')"
 crowd="$(mk_repos 70 400 0 0)"
 r10="$(coordinator_apply_rung 0 0 0 <<<"$crowd" | coordinator_rendered_bytes)"
 out="$(fit "$(( r10 - 10 ))" <<<"$crowd")"
-assert_eq "a few bytes short of the identities is the first entry cap, rung 11, and it drops" \
-  "11 64 6" "$(jq -r '"\(.fit.rung) \(.fit.entries_max) \(.fit.entries_dropped)"' <<<"$out")"
+assert_eq "a 70-entry band is below every cap but 64, so rung 14 is the first that drops" \
+  "14 64 6" "$(jq -r '"\(.fit.rung) \(.fit.entries_max) \(.fit.entries_dropped)"' <<<"$out")"
+
+# --- The pager's own reported shape (agent-ops#2191, #2187): 391 entries, a
+#     sliver over the identity-only rung's byte count. The old ladder jumped
+#     straight to the single 64 cap here, dropping 267-269 of 391 (68%); the
+#     new first cap (300) is the one this backlog actually needs. ---
+report_shape="$(mk_repos 391 400 0 0)"
+r10_report="$(coordinator_apply_rung 0 0 0 <<<"$report_shape" | coordinator_rendered_bytes)"
+out="$(fit "$(( r10_report - 10 ))" <<<"$report_shape")"
+assert_eq "a sliver overflow on the 391-entry shape lands on the first intermediate cap" \
+  "11 300" "$(jq -r '"\(.fit.rung) \(.fit.entries_max)"' <<<"$out")"
+assert_eq "…dropping a proportionate 91 of 391, not the old 267-269" \
+  "91" "$(jq -r '.fit.entries_dropped' <<<"$out")"
+assert_true "…keeping materially more than the old single 64-entry cap" \
+  "$(jq '.fit.entries_max > 64 and (.repos[0].issues | length) > 64' <<<"$out")"
 opening="$(python3 -c '
 import json
 issues = [{"source": "issues", "ref": "1", "number": 1, "url": "https://github.com/o/r/issues/1",
