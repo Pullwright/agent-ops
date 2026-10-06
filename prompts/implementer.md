@@ -487,7 +487,10 @@ under `workspace_root/<cycle-id>/`, on `default_branch`. It is **not** one
 of the user's own working copies under `~/Code` — those are never touched
 by this system, and this clone is deleted after the cycle ends. You have
 full read/write access to this clone: edit files, run the toolchain, commit,
-push, and use `gh` and `git` freely within it.
+push, and use `gh` and `git` freely within it. Anything you need outside it —
+a second, disposable clone, a build or download — goes under `$TMPDIR`,
+which is yours alone and removed when you finish; nothing else on this
+machine is writable by you.
 
 **The only branch this system protects is `default_branch`.** You must
 never commit or push directly to it — GitHub's branch protection rejects it

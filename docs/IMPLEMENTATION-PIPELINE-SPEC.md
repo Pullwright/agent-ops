@@ -209,6 +209,14 @@ a node updates by pulling a new image rather than by pulling a branch.
 - Base `ubuntu:24.04`, non-root user `agent` (uid/gid from the `PUID`/`PGID`
   build args, default 1000) with `HOME=/home/agent`, so `config.json`'s
   `~`-relative `state_dir` and `workspace_root` resolve under that home.
+  `/home/agent` is mode 0711. A second non-root user, `stage` (uid/gid from
+  `STAGE_UID`/`STAGE_GID`, default 1001, with its own home), is what every
+  model stage runs as, and `agent` is a member of its group; `sudo` and the
+  pieces requirement 45e describes (`/etc/sudoers.d/agent-ops`,
+  `/usr/local/libexec/agent-ops/`, `/etc/agent-ops/stage-gitconfig` and the
+  `/usr/local/bin/claude` shim) are installed root-owned, and the build
+  fails if `visudo -c` rejects the rules or the real CLI is not at
+  `/usr/bin/claude`.
 - Toolchain: `bash`, `git`, `jq`, `curl`, `python3`, `perl`, `coreutils`,
   `flock` and `rsync` (requirement 2.5); `openssl`, which RS256-signs the
   Approver App's JWT (requirement 14b) and is installed explicitly rather
@@ -233,7 +241,10 @@ a node updates by pulling a new image rather than by pulling a branch.
   so that one file is skipped with a warning and CI is where it is actually
   checked (acceptance check 1g-i).
 - `deploy/docker/entrypoint.sh` runs as `agent` on every container start and is
-  idempotent: it seeds `$CLAUDE_CONFIG_DIR/settings.json` from
+  idempotent: it gives `$CLAUDE_CONFIG_DIR` to group `stage` (group-writable,
+  setgid directories; requirement 45e) where an older image created it as
+  `agent`'s alone, touching only `agent`'s own regular files and directories;
+  it seeds `$CLAUDE_CONFIG_DIR/settings.json` from
   `deploy/docker/claude-settings.json` **only when absent** (that directory is a
   persistent volume holding refreshing OAuth credentials, and the seed carries
   model/effort defaults only — no plugins and no local marketplaces); wires
@@ -11339,6 +11350,79 @@ implements.
    contract, and the pinning test covers only the shipped prompts (see the
    `prompt_overrides` extended note). `extend` appends and removes nothing.
 
+45e. **A stage runs as its own Unix user.** In the node image every model
+   stage runs as the user `stage`, never as `agent`, the user the Script, its
+   scheduler and every cron job run as. So does every other `claude` the image
+   runs — the limit probe, `scripts/doctor.sh`'s checks, an operator's
+   `docker compose exec scheduler claude` — because the image's
+   `/usr/local/bin/claude` (`deploy/docker/claude-shim.sh`) stands ahead of
+   the real CLI on `PATH`, as the gh shim does, and runs it as `stage`.
+   The stage user cannot read either GitHub App's private key, the
+   Script's environment or the minted-token cache under `/dev/shm`, and cannot
+   write `/app`, `state_dir`, or anything under `workspace_root` except the
+   workspace it was given. What follows is how that holds.
+
+   - **Launch.** `deploy/docker/sudoers-agent-ops` (installed as
+     `/etc/sudoers.d/agent-ops`) lets `agent` run one program as `stage`,
+     `deploy/docker/stage-exec.sh` (installed root-owned as
+     `/usr/local/libexec/agent-ops/stage-exec`). sudo resets the environment
+     to the variables that rule's `env_keep` names: the model provider's
+     credential and switches, the egress fence's proxy variables, the node's
+     git identity, `AGENT_OPS_ROOT`, the preview check's Vercel credentials
+     and `LINT_SHELL_BUDGET_MIB`. No forge credential, App identity or
+     notification secret is on it, and `stage-exec` unsets those names again.
+     `stage-exec` sets `PW_GH_TOKEN_BROKER`, points `GIT_CONFIG_GLOBAL` at the
+     root-owned `/etc/agent-ops/stage-gitconfig` (the gh shim as credential
+     helper, `useHttpPath`, `safe.directory`), exports the node's identity as
+     `GIT_AUTHOR_*`/`GIT_COMMITTER_*`, sets `umask 002`, and gives the stage a
+     scratch directory of its own through `lib/scratch.sh`, sweeping the ones
+     killed stages left. The stage's prompt, stream and `.stderr` files are
+     the descriptors the Script opened, inherited through sudo unchanged.
+   - **Stopping.** A process may signal only its own user's processes, so
+     the group signal of requirements 4e and 9c reaches sudo and none of the
+     stage's. sudo relays a TERM, INT or HUP to `stage-exec` alone and cannot
+     relay a KILL. `stage-exec` therefore runs the command as its child and
+     does the group signal itself: on TERM, INT or HUP it sends TERM to its
+     process group, waits `PW_STAGE_KILL_GRACE` seconds (default 3, inside
+     the launcher's five) and sends KILL; and it runs under `setpriv
+     --pdeathsig TERM`, so the KILL a cycle's signal handler sends, which
+     kills sudo, reaches it as a TERM.
+   - **The forge credential.** Inside a stage the gh shim neither mints nor
+     falls back (component 22c): it asks `PW_GH_TOKEN_BROKER`
+     (`deploy/docker/forge-token-request.sh`), which uses the second sudoers
+     rule — `stage` may run `deploy/docker/forge-token.sh`
+     (`/usr/local/libexec/agent-ops/forge-token`) as `agent`, with one
+     argument, an owner. That program (`lib/forge-token-broker.sh`) reads the
+     authoring App's identity from the environment of pid 1, the scheduler
+     service, and from no other source, and only the variables it names, so
+     nothing a stage sets can steer it and the Approver App's key is never
+     read. It prints an installation token for the owner's installation, or
+     the default installation's for an owner the map does not name, with its
+     identity tag. A failed mint prints nothing: a stage is never given
+     `PW_GH_DEGRADE_TOKEN`. Only an installation with no authoring App at all
+     gives a stage its `GH_TOKEN`, the one credential it authors with.
+   - **Workspaces.** `lib/stage-boundary.sh`'s `stage_workspace_share`
+     gives a workspace to group `stage`, group-writable and setgid,
+     immediately before the first stage that must write in it: the
+     Implementer's clone (shared, as before, with the Reviewer and Approver
+     after it) and the project review's clone. `cycle_dir`, the Monitor's run
+     directory, a restale or comparison clone, the state mirror and the
+     peers' copies are never shared; a stage whose working directory is one
+     of them reads it and writes nothing there, and its scratch work goes in
+     its own scratch directory. Once a stage has had a workspace, the Script
+     runs no `git` in it (requirement 31e's comparison reads the forge
+     instead), reads from it only through `stage_breadcrumb_pr_url` — a
+     regular file, not a link, whose first line is exactly a github.com
+     pull-request URL — and removes it with `stage_workspace_remove`, which
+     hands to the stage user whatever a plain `rm -rf` could not take.
+   - **The Claude configuration** (`$CLAUDE_CONFIG_DIR`) is group `stage`,
+     mode 2770 in the image, and `deploy/docker/entrypoint.sh` brings a
+     volume an older image created to the same shape.
+
+   Outside the image there is no `stage` group and no sudoers rule, and
+   `lib/stage-boundary.sh` degrades to what the Script did without them:
+   sharing is a no-op and removal is `rm -rf`.
+
 ### The Co-Ordinator (selection only)
 
 14. Works read-only: `gh` reads (runs, PRs, file contents via
@@ -14254,10 +14338,15 @@ implements.
     against the base's current tip, and reports whether the two diffs are
     `git patch-id --stable`-identical — never authored dates, which a
     conflict-resolution commit moves just like any other. Both heads are
-    read from `origin` with `git ls-remote`, symmetrically: the question is
+    read from the forge with `git ls-remote` against the repository's own
+    `https://github.com/<slug>.git`, symmetrically: the question is
     whether the *push* changed the diff, and the clone's own working tree
     would instead answer whether the Implementer's edits did — true even of
-    an Implementer that reported `complete` having pushed nothing. A head
+    an Implementer that reported `complete` having pushed nothing. The
+    comparison itself runs in a bare repository the Script makes for it and
+    removes afterwards, into which the four commits are fetched without their
+    blobs (`rebase_only_forge_check`), never in the Implementer's clone,
+    which by then is the stage's (requirement 45e). A head
     that did not move at all is therefore not a rebase-only push but no push,
     and takes the full path. Advisory exactly like requirement 31d's own
     read: an unreadable ref at either point (the fetch of the pre-push SHAs
@@ -23777,6 +23866,20 @@ What exists, and the requirements each part answers to:
     with and without one set, the App path (fresh mint and a cached reuse),
     and the degraded path on both a refused mint and an unreachable API,
     each asserting both `TOKEN` and `SOURCE`. Must pass `shellcheck`.
+14i. `lib/stage-boundary.sh`, `lib/forge-token-broker.sh` and the image's
+    side of the boundary — `deploy/docker/stage-exec.sh`,
+    `deploy/docker/forge-token.sh`, `deploy/docker/forge-token-request.sh`,
+    `deploy/docker/claude-shim.sh`, `deploy/docker/sudoers-agent-ops` and
+    `deploy/docker/stage-gitconfig` — implementing requirement 45e.
+    `lib/stage-boundary.sh` is the Script's side: `stage_boundary_present`,
+    `stage_workspace_share DIR`, `stage_workspace_remove DIR`,
+    `stage_breadcrumb_pr_url FILE`, and `stage_boundary_as_stage`, the one
+    place it runs a command as the stage user. `lib/forge-token-broker.sh`
+    is what the stage user's one sudoers rule reaches:
+    `forge_token_broker_main ENVIRON_FILE OWNER`, the token and its identity
+    tag on two lines, exit 0, 1 (nothing to give) or 2 (a malformed
+    request).
+
 15. `lib/labels.sh` implementing requirement 6a: `labels_catalogue` (what a
     repository in a given role — `target`, `review`, `escalation` — needs, as
     `name`/`colour`/`description`, with the names taken from the config as
@@ -24673,7 +24776,10 @@ What exists, and the requirements each part answers to:
     alive — and falls back to `PW_GH_DEGRADE_TOKEN` (component 14h owns the
     name) when no App is configured or a mint attempt fails, leaving
     `GH_TOKEN` empty when neither is available (the pre-existing "nothing
-    configured" case). This is the seam's *first* front door; the second is
+    configured" case). Inside a stage (requirement 45e), where
+    `PW_GH_TOKEN_BROKER` is set, none of that runs: the broker's answer — a
+    token and its identity tag, or nothing — is the whole resolution, and
+    nothing falls back from it. This is the seam's *first* front door; the second is
     the same shim reached through `git`'s own credential helper
     (`!gh auth git-credential`, `deploy/docker/entrypoint.sh`, component 7)
     — an unqualified `gh` there resolves through `PATH` to this file exactly
@@ -28158,8 +28264,9 @@ oblige anyone to edit a test.
    true` and whose own `base` resolves to a real ref, and leaves both empty
    for a takeover, for any other source, or for an unresolvable base; the
    stage-start advisory block, given a stubbed `rebase_only_push` reporting
-   the pre-push and post-push diffs identical, reports `rebase_only` true and
-   reads both heads from `origin` rather than the clone's own `HEAD`; the
+   the pre-push and post-push diffs identical, reports `rebase_only` true,
+   reads both heads from the forge rather than the clone's own `HEAD`, and
+   runs no `git` in the clone at all; the
    same block reports false — without calling `rebase_only_push` at all —
    when the post-push head equals the pre-push one, since no push happened;
    the same block, with `rebase_only_push` reporting the diffs different,
@@ -30916,6 +31023,30 @@ oblige anyone to edit a test.
     block exactly once, and every copy is byte-identical with requirement
     45a's canonical one, which the test lifts from this document at run
     time rather than restating.
+
+45e. **A stage runs as its own Unix user (requirement 45e).**
+    `test/stage-boundary.test.sh` passes. Anywhere, it proves that a
+    breadcrumb gives back only a github.com pull-request URL and never
+    through a link; that removal hands what it cannot finish to the stage
+    user; that sharing changes nothing without the `stage` group; and that
+    `deploy/docker/stage-exec.sh` strips every forge credential, App
+    identity and the notification secret, sets the token broker, the stage
+    git configuration and the node's identity, passes stdin and the exit
+    status through, removes its own scratch directory, and stops its whole
+    process group on a TERM and when its parent is killed. In the node image
+    it also proves, across the two real users, that the stage user cannot
+    read a file only `agent` can, `agent`'s environment, or write `/app` or
+    an unshared directory of `agent`'s; that a forge credential `agent`
+    exports never reaches it; that it can run nothing as `agent` but the
+    token helper; that it can write a shared workspace, which `agent` then
+    removes even after the stage locked part of it; and that a TERM or a
+    KILL to a stage's process group leaves none of its processes running.
+    `test/forge-token-broker.test.sh` proves the helper mints only for the
+    authoring App, from the environ file it is given and not the caller's
+    environment, never gives the degrade token when a mint fails, and
+    refuses a malformed owner; `test/gh-shim-auth.test.sh` proves the shim
+    in a stage presents the broker's token and identity, asks for the
+    call's own owner, mints nothing and falls back to nothing.
 
 47. **The rework record matches `docs/FLOW-SCHEMA.md` and is emitted at
     every one of the nine classes' own detector sites (requirement 47).**

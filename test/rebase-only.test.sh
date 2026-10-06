@@ -135,6 +135,51 @@ fi
 bogus_output="$(diff_patch_id "$repo" "$old_base" "$bogus_sha" 2>/dev/null)"
 assert_eq "diff_patch_id prints nothing for an unreadable ref" "" "$bogus_output"
 
+# --- rebase_only_forge_check: the same question, asked of the forge rather
+#     than of a stage's workspace (requirement 45e). The fixture stands in for
+#     the forge: the forge URL is mapped onto it with `insteadOf`, in a global
+#     configuration of this test's own, and nothing else is in play. ---
+scratch="$tmp_dir/scratch"
+mkdir -p "$scratch"
+printf '[url "file://%s"]\n\tinsteadOf = https://github.com/acme/widgets.git\n' "$repo" \
+  >"$tmp_dir/forge-gitconfig"
+git -C "$repo" config uploadpack.allowFilter true
+git -C "$repo" config uploadpack.allowAnySHA1InWant true
+
+forge_check() {  # PR_HEAD — point the pull request's branch at it, then ask
+  git -C "$repo" branch -f pr "$1" >/dev/null
+  GIT_CONFIG_GLOBAL="$tmp_dir/forge-gitconfig" TMPDIR="$scratch" \
+    rebase_only_forge_check acme/widgets "$old_base" "$old_head" main pr
+}
+
+if forge_check "$rebased_head"; then
+  assert_eq "forge check: a clean rebase pushed to the forge reports rebase-only" "true" "true"
+else
+  assert_eq "forge check: a clean rebase pushed to the forge reports rebase-only" "true" "false"
+fi
+assert_eq "  ... reading the new head from the forge" "$rebased_head" "$rebase_only_new_head"
+assert_eq "  ... and the new base" "$new_base" "$rebase_only_new_base"
+assert_eq "  ... leaving no repository of its own behind" "" "$(ls -A "$scratch")"
+
+if forge_check "$changed_head"; then
+  assert_eq "forge check: a push that changed the diff is not rebase-only" "false" "true"
+else
+  assert_eq "forge check: a push that changed the diff is not rebase-only" "false" "false"
+fi
+
+if forge_check "$old_head"; then
+  assert_eq "forge check: a head that never moved is not rebase-only" "false" "true"
+else
+  assert_eq "forge check: a head that never moved is not rebase-only" "false" "false"
+fi
+
+if GIT_CONFIG_GLOBAL="$tmp_dir/forge-gitconfig" TMPDIR="$scratch" \
+     rebase_only_forge_check acme/widgets "$old_base" "$old_head" main no-such-branch; then
+  assert_eq "forge check: a branch the forge does not have is never rebase-only" "false" "true"
+else
+  assert_eq "forge check: a branch the forge does not have is never rebase-only" "false" "false"
+fi
+
 printf '\n'
 if (( failures > 0 )); then
   printf '%d assertion(s) failed\n' "$failures"

@@ -1,0 +1,25 @@
+# deploy/docker/sudoers-agent-ops — installed by the Dockerfile as
+# /etc/sudoers.d/agent-ops (mode 0440) and checked there with `visudo -c`.
+# The boundary between the Script and its stages (requirement 45e of
+# docs/IMPLEMENTATION-PIPELINE-SPEC.md) is these two rules and nothing else.
+#
+# 1. The Script's user may start a process as the stage user, only through
+#    stage-exec. sudo's own environment reset applies, so a stage receives
+#    only the variables named here: the model provider's switches and
+#    credential, the egress fence, the node's git identity, where the
+#    pipeline's own scripts are, the preview check's credentials and the
+#    shell linter's memory budget. No forge credential, no App identity and
+#    no notification secret is on this list, and stage-exec unsets them
+#    again.
+Defaults!/usr/local/libexec/agent-ops/stage-exec env_keep = "LANG LC_ALL TZ TERM COLORTERM"
+Defaults!/usr/local/libexec/agent-ops/stage-exec env_keep += "ANTHROPIC_API_KEY CLAUDE_CONFIG_DIR CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC DISABLE_AUTOUPDATER ENABLE_CLAUDEAI_MCP_SERVERS"
+Defaults!/usr/local/libexec/agent-ops/stage-exec env_keep += "HTTPS_PROXY HTTP_PROXY NO_PROXY https_proxy http_proxy no_proxy"
+Defaults!/usr/local/libexec/agent-ops/stage-exec env_keep += "GIT_USER_NAME GIT_USER_EMAIL"
+Defaults!/usr/local/libexec/agent-ops/stage-exec env_keep += "AGENT_OPS_ROOT VERCEL_AUTOMATION_BYPASS_SECRET VERCEL_TOKEN LINT_SHELL_BUDGET_MIB"
+agent ALL=(stage) NOPASSWD: /usr/local/libexec/agent-ops/stage-exec
+
+# 2. The stage user may obtain a forge authoring token, only through
+#    forge-token, run as the Script's user (lib/forge-token-broker.sh). sudo
+#    resets the environment, and forge-token reads the App's identity from
+#    the scheduler's own, so nothing the stage sets can steer the mint.
+stage ALL=(agent) NOPASSWD: /usr/local/libexec/agent-ops/forge-token

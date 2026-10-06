@@ -450,9 +450,11 @@ extract_pr_url() {
 # Fallback for a stage that dies before emitting a parseable final message: the
 # Reviewer-Agent writes the PR URL to this breadcrumb the moment it opens the
 # PR (.git/ is never part of the tracked tree, so it can't leak into the diff).
+# The stage owns the file (requirement 45e), so it is read through
+# lib/stage-boundary.sh's `stage_breadcrumb_pr_url`: never through a link, and
+# nothing but a pull-request URL comes back.
 read_pr_url_breadcrumb() {
-  local f="$1/.git/agent-ops-review-pr-url"
-  [[ -f "$f" ]] && head -n1 "$f" | tr -d '[:space:]'
+  stage_breadcrumb_pr_url "$1/.git/agent-ops-review-pr-url"
 }
 
 # Straight-parse the final message, else the last fenced ``` block regardless
@@ -507,8 +509,10 @@ cleanup() {
   # A signal landing mid-cleanup must not re-enter the handler over a run
   # that is already writing its record (R7a).
   trap '' TERM INT HUP
+  # Through lib/stage-boundary.sh, as every removal of a clone a stage has
+  # had is (requirement 45e).
   if [[ -n "$clone_dir" && -d "$clone_dir" ]]; then
-    rm -rf "$clone_dir"
+    stage_workspace_remove "$clone_dir"
   fi
   # The fleet-log snapshot (`union_log`): scratch with this run's lifetime,
   # read by nothing past this point, and removed by the run that wrote it
@@ -1316,6 +1320,14 @@ $(jq . <<<"$reviewer_input")
     '{repo: $r, model: $m}
      + (if ($b | type) == "object" then $b else {} end)
      + {backstop_min: $bs, inactivity_min: $is, review_context_sources: $rcs}')"
+  # Requirement 45e: the stage runs as the stage user, which can write the
+  # clone only once it is shared, and from then on the clone is the stage's.
+  if ! stage_workspace_share "$clone_dir"; then
+    log_event "review-attempt-failed" "$(jq -nc --arg r "$slug" '{repo: $r, stage: "workspace", detail: "the workspace could not be shared with the stage user (requirement 45e)"}')"
+    release_review_claim "$slug" "$branch" "$safe" no-pr
+    stage_workspace_remove "$clone_dir"; clone_dir=""
+    return 0
+  fi
   log_node_state_transition producing
   if run_claude_stage reviewer "$(( review_backstop_min * 60 ))" "$model" "$reviewer_prompt" "$out_file" "$clone_dir" "$(( review_inactivity_min * 60 ))"; then
     rc=0
@@ -1379,14 +1391,14 @@ $(pipeline_comment_marker "$review_id" review-script)" >/dev/null 2>&1 || true
     # ref whenever it has moved or an open PR uses it, and drops the registry
     # entry either way.
     release_review_claim "$slug" "$branch" "$safe" no-pr
-    rm -rf "$clone_dir"; clone_dir=""
+    stage_workspace_remove "$clone_dir"; clone_dir=""
     return 0
   fi
 
   log_event "review-pr-raised" "$(jq -nc --arg r "$slug" --arg u "$pr_url" '{repo: $r, pr_url: $u}')"
   release_review_claim "$slug" "$branch" "$safe" have-pr
   [[ -n "$pr_url" ]] && echo "$pr_url"
-  rm -rf "$clone_dir"; clone_dir=""
+  stage_workspace_remove "$clone_dir"; clone_dir=""
   return 0
 }
 

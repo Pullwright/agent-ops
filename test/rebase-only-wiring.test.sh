@@ -15,8 +15,10 @@
 #   - **The stage-start advisory block** (just inside "--- 8. Reviewer stage
 #     ---", right after the existing #916 merge-state check): compares the
 #     pre-push diff against the post-push one by patch-id, reading both heads
-#     from `origin` so the question stays "did the push change the diff",
-#     and settles `$rebase_only`.
+#     from the forge so the question stays "did the push change the diff",
+#     and settles `$rebase_only`. It runs lib/rebase-only.sh's real
+#     `rebase_only_forge_check` against a stub `git`, and asserts that none of
+#     it runs in the Implementer's clone (requirement 45e).
 #   - **The engagement block**: acts on `$rebase_only` — skipping
 #     `stage_budget_apply`/`run_claude_stage` and synthesising a `ready`
 #     verdict for the handoff path below, or running the engagement for real.
@@ -105,7 +107,7 @@ capture_block="$(extract_to_call \
   "$CYCLE")"
 
 advisory_block="$(extract_to_call \
-  '^rebase_only_new_head=""; rebase_only_new_base=""$' \
+  '^rebase_only_advisory_check[(][)] [{]$' \
   '^rebase_only_advisory_check && rebase_only=' \
   "$CYCLE")"
 
@@ -179,19 +181,21 @@ impl_pr_url="$pr_url"
 selected_repo="acme/widgets"
 selected_item="42"
 clone_dir="/no/such/clone"
+. "$SCRIPT_DIR/lib/rebase-only.sh"
 git() {
-  if [[ "\$1" == "-C" && "\$3" == "rev-parse" ]]; then
-    printf 'worktreeheadsha\n' >>"$tmp_dir/rev-parse-calls"; printf 'worktreeheadsha\n'; return 0
+  printf '%s\n' "\$*" >>"$tmp_dir/git-calls"
+  if [[ "\$1" == "-C" && "\$2" == "\$clone_dir" ]]; then
+    printf 'worktreeheadsha\n' >>"$tmp_dir/rev-parse-calls"; return 1
   fi
-  if [[ "\$1" == "-C" && "\$3" == "ls-remote" ]]; then
-    case "\$5" in
+  if [[ "\$1" == "ls-remote" && "\$2" == "https://github.com/acme/widgets.git" ]]; then
+    case "\$3" in
       *"agent/td-42") printf '$new_head\trefs/heads/agent/td-42\n' ;;
       *"main") printf 'newbasesha\trefs/heads/main\n' ;;
       *) return 1 ;;
     esac
     return 0
   fi
-  if [[ "\$1" == "-C" && "\$3" == "fetch" ]]; then
+  if [[ "\$1" == "init" || "\$1" == "-C" ]]; then
     return 0
   fi
   return 1
@@ -209,13 +213,17 @@ HARNESS
   bash "$tmp_dir/advisory-harness.sh"
 }
 
-: >"$tmp_dir/push-calls"; : >"$tmp_dir/rev-parse-calls"
+: >"$tmp_dir/push-calls"; : >"$tmp_dir/rev-parse-calls"; : >"$tmp_dir/git-calls"
 out="$(run_advisory "oldheadsha" "oldbasesha" "https://github.com/acme/widgets/pull/42" "true")"
 assert_eq "a confirmed rebase-only push settles rebase_only=true" "rebase_only=true" "$out"
 assert_contains "  ... comparing the pre-push pair against the post-push pair" \
   "oldbasesha oldheadsha newbasesha newheadsha" "$(cat "$tmp_dir/push-calls")"
-assert_eq "  ... reading the post-push head from origin, never the clone's own HEAD" \
+assert_eq "  ... reading the post-push head from the forge, never the clone's own HEAD" \
   "" "$(cat "$tmp_dir/rev-parse-calls")"
+assert_eq "  ... and running no git at all in the Implementer's clone (requirement 45e)" \
+  "" "$(grep -F -- "-C /no/such/clone" "$tmp_dir/git-calls" || true)"
+assert_contains "  ... fetching the four commits from the forge's own URL into its own repository" \
+  "remote add origin https://github.com/acme/widgets.git" "$(cat "$tmp_dir/git-calls")"
 
 : >"$tmp_dir/push-calls"
 out="$(run_advisory "oldheadsha" "oldbasesha" "https://github.com/acme/widgets/pull/42" "false")"

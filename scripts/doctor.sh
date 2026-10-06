@@ -2598,6 +2598,39 @@ fi
 # lib/compose-drift.sh reports in the heartbeat). The canary domain is one
 # no pipeline code path has any business reaching, so a success can only
 # mean the allowlist is not doing its job.
+section "Stage boundary"
+# Requirement 45e: every stage runs as the stage user, which must not be able
+# to read either App's key or write the Script's code. Checked from here, as
+# `agent`, by having the stage user try. A key file's mode comes from the
+# host through its bind mount, so this is the check that sees a key a host
+# left readable.
+stage_exec_bin="${STAGE_EXEC_BIN:-/usr/local/libexec/agent-ops/stage-exec}"
+if [[ ! -x "$stage_exec_bin" ]]; then
+  if [[ -n "${AGENT_OPS_ROLE:-}" ]]; then
+    fail "no stage boundary: $stage_exec_bin is missing, so this node's stages run as the Script's own user (requirement 45e) — this node's image predates it; update the image"
+  else
+    skip "stage boundary (no stage-exec — not the node image)"
+  fi
+elif ! ( cd / && sudo -n -u stage "$stage_exec_bin" true ) >/dev/null 2>&1; then
+  fail "the stage user cannot be started: sudo refused 'sudo -n -u stage $stage_exec_bin', so every stage fails at launch — the container must run as agent and without no-new-privileges"
+else
+  ok "stages run as the stage user (requirement 45e)"
+  for key_var in PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH; do
+    key_path="${!key_var:-}"
+    [[ -n "$key_path" && -f "$key_path" ]] || continue
+    if ( cd / && sudo -n -u stage "$stage_exec_bin" test -r "$key_path" ) >/dev/null 2>&1; then
+      fail "a stage can read the key $key_var names — on the host, make that file mode 600 and owned by uid $(id -u), this container's agent, then 'docker compose up -d'"
+    else
+      ok "a stage cannot read the key $key_var names"
+    fi
+  done
+  if ( cd / && sudo -n -u stage "$stage_exec_bin" test -w "$SCRIPT_DIR" ) >/dev/null 2>&1; then
+    fail "a stage can write $SCRIPT_DIR, the pipeline's own code"
+  else
+    ok "a stage cannot write $SCRIPT_DIR, the pipeline's own code"
+  fi
+fi
+
 section "Egress"
 if ((offline)); then
   skip "egress fence probes (--offline)"

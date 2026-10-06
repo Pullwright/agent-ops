@@ -212,6 +212,15 @@ outlives every container this node will ever run — this is the one thing here
 that cannot be rebuilt from the image, and the entrypoint warns on every start
 until it exists.
 
+Every `claude` in this image runs as the container's second user, `stage`,
+not as `agent` — the stage user that every model stage runs as, which cannot
+read the GitHub Apps' keys or write the pipeline's code and state
+(requirement 45e of `docs/IMPLEMENTATION-PIPELINE-SPEC.md`). The image's own
+`claude` takes care of that, so the command above is unchanged, and the
+credentials it writes belong to the stage user. The two App keys must be
+mode 600 on the host and owned by uid 1000, the container's `agent`;
+`doctor.sh` checks that a stage cannot read them.
+
 Either way, verify:
 
 ```bash
@@ -764,6 +773,8 @@ fleet across the hour](#spreading-the-fleet-across-the-hour).
 | A service restart-loops with `... is not writable by agent` | A volume created by an older image, or bind-mounted from another uid | `docker compose down -v` if losing it is acceptable, or rebuild with `--build-arg PUID=<owner>` |
 | A fresh node's first `up` aborts with `mkdir … /cycles: file exists` | Two services seeding the same new `state` volume at once — the current `compose.yaml` prevents this by starting the dashboard after the scheduler, so you only see it on a compose file fetched before that fix | `docker compose down -v`, then `docker compose up -d scheduler` before `docker compose up -d` |
 | Every cycle fails at its first stage | Claude was never authenticated on this node | Step 4 above |
+| Every stage fails at once, and its `<stage>.out.stderr` says `sudo: a password is required` or `effective uid is not 0` | The scheduler cannot start a process as the stage user (requirement 45e): the container was started with `no-new-privileges`, or as a user other than `agent` | Start it as this `compose.yaml` does — no `security_opt: no-new-privileges`, no `user:` override; `doctor.sh`'s "Stage boundary" section says which |
+| `doctor.sh` fails with `a stage can read the key …` | That App key file is readable by more than its owner on the host, and a bind mount keeps the host's mode | `chmod 600` the key on the host, owned by uid 1000, then `docker compose up -d` |
 | `WARNING: GH_TOKEN is unset` | No token in `.env` | Add it; this node can otherwise neither read nor push anything |
 | `agent-cycle: ERROR: GIT_USER_NAME and/or GIT_USER_EMAIL is unset` in the cron log | No git identity in `.env` — checked by the cycle itself, not the container, so this only appears once an active node's next tick tries to do real work | Add both to `.env` and `docker compose up -d` to pick them up; the next tick will use them |
 | `cannot clone …agent-ops-state` | The token cannot read the private state repo | Widen the token's repository access |

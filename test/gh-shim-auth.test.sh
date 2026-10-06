@@ -537,6 +537,54 @@ assert_eq "a caller's own GH_TOKEN is hashed too, even for a mapped owner" \
 unset PULLWRIGHT_AUTHOR_INSTALLATION_IDS PULLWRIGHT_AUTHOR_INSTALLATION_ID
 clear_author_env
 
+# === Inside a stage: the broker's answer is the whole resolution
+#     (requirement 45e) ========================================================
+#
+# A stage cannot read the App's key or hold a degrade token, so the shim asks
+# `PW_GH_TOKEN_BROKER` and takes its answer — a token and its identity tag —
+# or goes without. It never mints and never falls back, even with an App
+# configured and a degrade token in reach, both of which this section sets
+# up to prove neither is touched.
+broker="$tmp_dir/broker"
+cat >"$broker" <<BROKER
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >>"$tmp_dir/broker_calls"
+[[ -f "$tmp_dir/broker_fail" ]] && exit 1
+printf 'ghs_from_broker\napp-7710033-333333333\n'
+BROKER
+chmod +x "$broker"
+setup_author_env
+rm -f "$cache_dir"/* "$log_dir"/*.log "$tmp_dir/curl_calls" "$tmp_dir/broker_calls" "$tmp_dir/broker_fail"
+stub_curl 201 '{"token":"ghs_minted_in_stage","expires_at":"2026-08-14T13:00:00Z"}'
+
+run_shim GH_TOKEN= PW_GH_TOKEN_BROKER="$broker" PW_GH_DEGRADE_TOKEN=ghp_the_owner_pat \
+  PW_GH_NOW_EPOCH="$now0" -- -R acme-org/widgets pr view 5 >/dev/null
+assert_eq "in a stage: the broker's token is presented" "ghs_from_broker" "$(last_token)"
+assert_eq "  ... asked for the call's own owner" "acme-org" "$(cat "$tmp_dir/broker_calls")"
+assert_eq "  ... and nothing is minted in the stage" "0" "$(curl_call_count)"
+cred_out="$(run_shim GH_TOKEN= PW_GH_TOKEN_BROKER="$broker" PW_GH_NOW_EPOCH="$now0" \
+  -- auth git-credential <<<$'protocol=https\nhost=github.com\npath=other-org/repo.git\n')"
+assert_eq "in a stage: git's credential request gets the broker's token" \
+  "yes" "$(grep -qF 'password=ghs_from_broker' <<<"$cred_out" && echo yes || echo no)"
+assert_eq "  ... asked for the owner git's own path names" "other-org" "$(tail -1 "$tmp_dir/broker_calls")"
+assert_eq "in a stage: the broker's tag is the identity" "app-7710033-333333333" \
+  "$(identity_after GH_TOKEN= PW_GH_TOKEN_BROKER="$broker" -- -R acme-org/widgets pr view 5)"
+
+touch "$tmp_dir/broker_fail"
+: >"$log_dir/tokens.log"
+run_shim GH_TOKEN= PW_GH_TOKEN_BROKER="$broker" PW_GH_DEGRADE_TOKEN=ghp_the_owner_pat \
+  PW_GH_NOW_EPOCH="$now0" -- -R acme-org/widgets pr view 5 >/dev/null
+assert_eq "in a stage, the broker refusing: no token at all, never the degrade token" "" "$(last_token)"
+assert_eq "  ... and still nothing minted" "0" "$(curl_call_count)"
+rm -f "$tmp_dir/broker_fail"
+
+: >"$tmp_dir/broker_calls"
+run_shim GH_TOKEN=a_callers_own_token PW_GH_TOKEN_BROKER="$broker" PW_GH_NOW_EPOCH="$now0" \
+  -- -R acme-org/widgets pr view 5 >/dev/null
+assert_eq "in a stage, an explicit GH_TOKEN still wins" "a_callers_own_token" "$(last_token)"
+assert_eq "  ... without asking the broker" "" "$(cat "$tmp_dir/broker_calls")"
+clear_author_env
+
 printf '\n'
 if (( failures == 0 )); then
   printf 'all assertions passed\n'

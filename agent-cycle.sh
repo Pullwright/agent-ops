@@ -1391,8 +1391,10 @@ cleanup() {
   # and a release the network stalls must not cost the record.
   claim_release_timeout=8
   release_pr_claim
+  # Through lib/stage-boundary.sh: the stages that worked in the clone may
+  # have left what this user cannot remove on its own (requirement 45e).
   if [[ -n "$clone_dir" && -d "$clone_dir" ]]; then
-    rm -rf "$clone_dir"
+    stage_workspace_remove "$clone_dir"
   fi
   # The Enabler (requirement 35): here, and only here. This is the one place
   # every ending of a cycle passes through — nine of them exit 0 — so a single

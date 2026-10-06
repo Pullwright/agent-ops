@@ -59,6 +59,11 @@ ARG CLAUDE_CODE_VERSION=2.1.267
 # by accident.
 ARG PUID=1000
 ARG PGID=1000
+# The stage user's ids (requirement 45e): every model stage runs as this
+# second user, which shares the workspaces and the Claude configuration with
+# `agent` through its group and nothing else.
+ARG STAGE_UID=1001
+ARG STAGE_GID=1001
 
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
@@ -87,6 +92,7 @@ RUN apt-get update \
         python3 \
         rsync \
         squid \
+        sudo \
         tzdata \
         vim-tiny \
         xz-utils \
@@ -210,11 +216,21 @@ RUN case "$TARGETARCH" in \
 # it (an npm cache built as root leaves a directory `agent` cannot write, and
 # ~/.claude then cannot be created at all — a failure that shows up only at
 # run time, as a container that starts and can never authenticate).
+#
+# The second user, `stage`, is what every model stage runs as (requirement
+# 45e; deploy/docker/stage-exec.sh). `agent` is a member of its group, which
+# is how the two share a workspace and the Claude configuration, and
+# `/home/agent` is 0711 so that `stage` can reach those two by path without
+# being able to list, or read, anything else `agent` keeps at home.
 RUN userdel -r ubuntu 2>/dev/null || true \
     && groupdel ubuntu 2>/dev/null || true \
     && groupadd -g "$PGID" agent \
     && useradd -m -u "$PUID" -g "$PGID" -s /bin/bash agent \
-    && chown -R "$PUID:$PGID" /home/agent
+    && groupadd -g "$STAGE_GID" stage \
+    && useradd -m -u "$STAGE_UID" -g "$STAGE_GID" -s /bin/bash stage \
+    && usermod -a -G stage agent \
+    && chown -R "$PUID:$PGID" /home/agent \
+    && chmod 0711 /home/agent
 
 ENV HOME=/home/agent
 
@@ -263,6 +279,12 @@ COPY --chown=agent:agent . /app
 # first `docker compose up` gives the container three root-owned volumes it
 # cannot write, and every service restart-loops on its first mkdir.
 #
+# The Claude configuration's mount point is the one exception to "owned by
+# `agent`": it is group `stage`, setgid and 2770, because the CLI only ever
+# runs as the stage user (deploy/docker/claude-shim.sh) while the entrypoint,
+# as `agent`, still seeds its settings. A volume created before this line
+# existed is brought to the same shape by the entrypoint.
+#
 # `state_dir`/`workspace_root` are read out of the `config.json` just copied
 # in above, rather than written here as literals: this installation's
 # `config.json` names `~/.local/state/poetic-agents`/
@@ -298,7 +320,9 @@ RUN state_dir="$(jq -r '.state_dir' /app/config.json)" \
                 "$state_dir/cycles" \
                 "$state_dir/reviews" \
                 "$workspace_root" \
-    && chown -R "$PUID:$PGID" /home/agent "$state_dir" "$workspace_root"
+    && chown -R "$PUID:$PGID" /home/agent "$state_dir" "$workspace_root" \
+    && chown "$PUID:$STAGE_GID" /home/agent/.claude \
+    && chmod 2770 /home/agent/.claude
 
 # The `gh` transport shim (requirement 2.0e, agent-ops#1084): a symlink ahead
 # of apt's own /usr/bin/gh on PATH, so every `gh` call this image ever makes —
@@ -311,6 +335,34 @@ RUN state_dir="$(jq -r '.state_dir' /app/config.json)" \
 # second copy to keep in step.
 RUN ln -sf /app/scripts/gh-shim.sh /usr/local/bin/gh
 ENV PW_GH_REAL_BIN=/usr/bin/gh
+
+# The boundary between the Script and its stages (requirement 45e). Every
+# piece is installed root-owned and outside /app, so neither user can change
+# what the two sudoers rules let the other run:
+#
+#   /usr/local/bin/claude                    stands in front of the real CLI
+#                                            on PATH, as the gh shim does, and
+#                                            runs every `claude` as `stage`
+#   /usr/local/libexec/agent-ops/stage-exec  what `agent` may run as `stage`
+#   /usr/local/libexec/agent-ops/forge-token what `stage` may run as `agent`:
+#                                            the authoring token, nothing else
+#   /usr/local/libexec/agent-ops/forge-token-request
+#                                            the stage side of that request
+#   /etc/agent-ops/stage-gitconfig           the stage's global git config
+#   /etc/sudoers.d/agent-ops                 the two rules
+#
+# `visudo -c` fails the build on a rule sudo would not parse, and the real
+# CLI must be where the shim expects it, or every stage would fail at launch
+# rather than here.
+RUN install -d -o root -g root -m 0755 /usr/local/libexec/agent-ops /etc/agent-ops \
+    && install -o root -g root -m 0755 /app/deploy/docker/stage-exec.sh /usr/local/libexec/agent-ops/stage-exec \
+    && install -o root -g root -m 0755 /app/deploy/docker/forge-token.sh /usr/local/libexec/agent-ops/forge-token \
+    && install -o root -g root -m 0755 /app/deploy/docker/forge-token-request.sh /usr/local/libexec/agent-ops/forge-token-request \
+    && install -o root -g root -m 0755 /app/deploy/docker/claude-shim.sh /usr/local/bin/claude \
+    && install -o root -g root -m 0644 /app/deploy/docker/stage-gitconfig /etc/agent-ops/stage-gitconfig \
+    && install -o root -g root -m 0440 /app/deploy/docker/sudoers-agent-ops /etc/sudoers.d/agent-ops \
+    && visudo -c -q \
+    && test -x /usr/bin/claude
 
 # The egress fence config (D24), parsed at build so a typo fails here, not on
 # a node. The conf reads its allowlist from /tmp/egress-allowlist, so stage

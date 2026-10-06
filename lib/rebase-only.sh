@@ -68,3 +68,49 @@ rebase_only_push() {
   new_id="$(diff_patch_id "$git_dir" "$new_base" "$new_head")" || return 1
   [[ "$old_id" == "$new_id" ]]
 }
+
+# rebase_only_forge_check SLUG OLD_BASE OLD_HEAD BASE_NAME BRANCH
+# `rebase_only_push` against what the forge holds, in a repository only the
+# Script has written. True (exit 0) when BRANCH's head on the forge has moved
+# from OLD_HEAD and its diff against BASE_NAME's head is patch-id-identical
+# to OLD_HEAD's against OLD_BASE. Sets `rebase_only_new_head` and
+# `rebase_only_new_base` to the two heads it read, for the caller's log line.
+#
+# Never computed in a stage's workspace. That clone is the Implementer's to
+# rewrite (requirement 45e): its `.git/config` names `origin` and can name
+# diff drivers, filters, an fsmonitor and hooks, so a comparison run there
+# would both answer whatever the stage arranged and run the stage's commands
+# as the Script. Here both heads come from `ls-remote` against the forge's
+# own URL, and the commits are fetched, without their blobs (each is fetched
+# when `diff` first needs it), into a bare repository made for this check
+# under the Script's own scratch directory and removed after it. The Script's
+# own git configuration — the credential helper through the gh shim — is the
+# only configuration in play.
+#
+# Fails closed like everything else in this file: a head that cannot be
+# read, a head that has not moved (no push, which is not a push that changed
+# nothing), or a fetch that does not deliver the commits is never
+# rebase-only.
+rebase_only_new_head=""; rebase_only_new_base=""
+rebase_only_forge_check() {
+  local slug="$1" old_base="$2" old_head="$3" base_name="$4" branch="$5"
+  local url repo result=1
+  rebase_only_new_head=""; rebase_only_new_base=""
+  [[ -n "$slug" && -n "$old_base" && -n "$old_head" && -n "$base_name" && -n "$branch" ]] || return 1
+  url="https://github.com/$slug.git"
+  rebase_only_new_head="$(git ls-remote "$url" "refs/heads/$branch" 2>/dev/null | awk '{print $1; exit}')"
+  rebase_only_new_base="$(git ls-remote "$url" "refs/heads/$base_name" 2>/dev/null | awk '{print $1; exit}')"
+  [[ -n "$rebase_only_new_head" && -n "$rebase_only_new_base" ]] || return 1
+  [[ "$rebase_only_new_head" != "$old_head" ]] || return 1
+  repo="$(mktemp -d "${TMPDIR:-/tmp}/rebase-only.XXXXXX")" || return 1
+  if git init --quiet --bare "$repo" >/dev/null 2>&1 \
+     && git -C "$repo" remote add origin "$url" \
+     && git -C "$repo" fetch --quiet --filter=blob:none origin \
+          "$old_head" "$old_base" "$rebase_only_new_head" "$rebase_only_new_base" >/dev/null 2>&1 \
+     && rebase_only_push "$repo" "$old_base" "$old_head" \
+          "$rebase_only_new_base" "$rebase_only_new_head"; then
+    result=0
+  fi
+  rm -rf -- "$repo"
+  return "$result"
+}

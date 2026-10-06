@@ -60,8 +60,28 @@ require_writable() {
 export CLAUDE_CONFIG_DIR
 mkdir -p "$CLAUDE_CONFIG_DIR"
 require_writable "$CLAUDE_CONFIG_DIR" "the Claude configuration volume"
+# Every `claude` runs as the stage user (requirement 45e,
+# deploy/docker/claude-shim.sh), so the configuration must be that user's to
+# read and to write: group `stage`, group-writable, and setgid on every
+# directory so that whatever is created later stays in the group. The image
+# creates a new volume in that shape; this brings a volume an older image
+# created, whose files are all this user's own, to the same shape. Only this
+# user's own regular files and directories are touched — never a symbolic
+# link, and nothing the stage user has written since — so after the first
+# start it finds nothing to do. Not fatal: a configuration it could not fix
+# fails the first stage loudly, which is where the cause will be looked for.
+if getent group stage >/dev/null 2>&1; then
+  if ! find "$CLAUDE_CONFIG_DIR" -user "$(id -u)" ! -group stage \
+        \( -type f -o -type d \) \
+        -exec chgrp stage {} + -exec chmod g+rwX {} + 2>/dev/null \
+     || ! find "$CLAUDE_CONFIG_DIR" -user "$(id -u)" -type d ! -perm -2000 \
+        -exec chmod g+s {} + 2>/dev/null; then
+    say "WARNING: could not give the stage user the Claude configuration in $CLAUDE_CONFIG_DIR"
+  fi
+fi
 if [[ ! -e "$CLAUDE_CONFIG_DIR/settings.json" ]]; then
   cp "$APP_DIR/deploy/docker/claude-settings.json" "$CLAUDE_CONFIG_DIR/settings.json"
+  chmod g+w "$CLAUDE_CONFIG_DIR/settings.json" 2>/dev/null || true
   say "seeded $CLAUDE_CONFIG_DIR/settings.json"
 fi
 # The warning below is scoped to the OAuth path: a node with ANTHROPIC_API_KEY
