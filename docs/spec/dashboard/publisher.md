@@ -114,7 +114,10 @@ the GitHub-budget card, and the cost roll-ups' `day_cut`/`today`/`recent_cut`
 `scripts/autonomy-stage-report.sh` already provide. Omitted, it defaults to
 the real wall clock; it exists only so a test can pin every window this
 script computes to a calendar date it controls, rather than the clock the
-test happens to run under.
+test happens to run under. `DASHBOARD_TODAY` (`Components (as built)`,
+below) covers the narrower case of pinning just the cost roll-ups' `today`
+when a test wants that fixed without pinning every other window `--now`
+would also pin; it has no effect when `--now` is given.
 
 Those measures bound a rebuild; they do not make one cheap. A full publish
 grew from 5.1 s when they were introduced (#51) to 18.1 s by 2026-08-25 —

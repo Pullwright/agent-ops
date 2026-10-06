@@ -155,12 +155,23 @@
     line is never also a closing keyword for the same `N`: a body caught
     both resolving and deferring the same number is a defect in the body,
     fixed by keeping whichever the diff actually does.
-31. Confirms CI is passing (`gh pr checks`) and the PR is mergeable, then
-    marks it ready for review (`gh pr ready`), and where a human's review is
-    what blocks it, requests a fresh one from them (requirement 31b). It never
-    approves and never merges. A `ready` verdict is itself re-verified against
-    GitHub before any of this runs (requirement 31c) — the Reviewer's own
-    confirmation is a model's, and the Script's is not.
+31. **Confirms CI is passing — every one of the target repo's branch-ruleset
+    required status checks green at the pull request's current head commit
+    (`gh pr checks --required`), the same subset requirement 31c
+    independently re-verifies — and the PR is mergeable, then marks it ready
+    for review (`gh pr ready`), and where a human's review is what blocks it,
+    requests a fresh one from them (requirement 31b).** A status check
+    outside that required subset failing is never, by itself, grounds for
+    `blocked`: it is named in the `ci` field instead (requirement 32) rather
+    than hidden behind a bare `passing`. Reading any failing check, required
+    or not, as the trigger for `blocked` conflates the two and has produced
+    both errors in practice: a bare `passing` reported over a red
+    non-required check (PR #2176, masking it from the Approver), and
+    `blocked` reported over a pull request every required check had already
+    cleared, for the identical red non-required check (PR #2170, agent-ops#2179).
+    It never approves and never merges. A `ready` verdict is itself re-verified
+    against GitHub before any of this runs (requirement 31c) — the Reviewer's
+    own confirmation is a model's, and the Script's is not.
 31a. **The handoff is verified, not reported.** Requirement 31 is the pipeline's
     only irreversible outward act, and requirement 32 has the Reviewer *describe*
     it — two different things. Before recording `pr-ready` the Script asks GitHub
@@ -730,6 +741,14 @@
     already routes every other ending — an unparseable status included — down
     the same `attempt-failed` path, so no synonym was ever needed to provide
     tolerance for one.
+
+    `ci: "passing"` means every one of requirement 31's required checks is
+    green — nothing about a non-required check. Where a non-required check is
+    red, `ci` enumerates it by name instead of a bare `passing`, e.g.
+    `"ci": "required passing; non-required failing: docs"` — this is
+    orthogonal to `status`, which stays `ready` on this shape exactly as it
+    would with every check green, since only a required check failing bears
+    on `status` at all (requirement 31).
 
     Additive to a `ready` verdict, absent or empty on the overwhelming
     majority of rounds: `"open_questions": [{"question": …,

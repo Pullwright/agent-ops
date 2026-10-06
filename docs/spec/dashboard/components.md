@@ -5,7 +5,13 @@
   same one; it exists for the test suite, which must reach no network and
   cannot shadow a binary by PATH (the Publisher hardens PATH for cron, and its
   `gh` runs under `timeout`, which no exported shell function is visible to).
-  Unset in production, where it is exactly `gh`.
+  Unset in production, where it is exactly `gh`. `DASHBOARD_TODAY` is a
+  narrower seam over the same `today` the cost roll-ups use to compute
+  `spend_today_usd`: it lets the test suite pin which UTC day counts as
+  "today" without pinning every other window `--now` controls (below), and
+  only when `--now` is absent — `--now` takes precedence over it when both
+  are set. Unset in production, where "today" is the real UTC day. Not
+  exported: this script is the only reader.
 - `lib/version.sh` — what code this node is running: the image's CI stamp
   (`build-info.json`) if there is one, else git `HEAD`, else nothing. Shared
   with `scripts/state-sync.sh`, which publishes the answer in every heartbeat.
