@@ -155,9 +155,19 @@ COORDINATOR_INPUT_TIERS=(
 # rungs, the caps are reserved for an input whose identities alone do not fit.
 
 # The per-band, per-repo entry caps walked once the tightest tier above — the
-# identity-only rung — still does not fit: halving, so a wildly oversized
-# input converges in a handful of measurements rather than one per entry.
-COORDINATOR_INPUT_ENTRY_CAPS=(64 32 16 8 4 2 1)
+# identity-only rung — still does not fit. Never more than halving a rung's
+# survivors (agent-ops#2191): the old ladder jumped straight from "no cap at
+# all" to 64, so a backlog sitting a sliver over the identity-only rung's own
+# byte count — the fleet's own 391-entry shape was ~290 KB against a budget a
+# few hundred bytes tighter — fell through the first three rungs below this
+# comment untouched (each a no-op while the band is still larger than its
+# cap) and lost 267–269 of 391 entries at the fourth, 68% of the backlog for
+# an overflow of a few hundred bytes. 300, 200 and 128 ahead of the
+# longstanding 64 give that backlog a cap it actually fits inside — 300,
+# dropping 91 — before the ladder ever reaches a cap that cuts deep; 128
+# onward halves exactly, as it always did, so a wildly oversized input still
+# converges in a handful of measurements rather than one per entry.
+COORDINATOR_INPUT_ENTRY_CAPS=(300 200 128 64 32 16 8 4 2 1)
 
 # The jq program every rung runs. Bound as a shell variable rather than
 # repeated at three call sites so the ladder and the entry caps cannot drift
