@@ -260,6 +260,12 @@ principle it rests on.`
   reached instead through a provider-neutral runtime of our own, built only
   on design-partner demand. The pipeline runs each CLI with its permission
   prompts bypassed, so containment is the pipeline's, never the vendor's.
+  That containment includes D24's control that a stage runs nothing the
+  checkout it works in supplies, which both CLIs' headless trust would
+  otherwise allow. It has two parts: the vendor's own tighten-only policy
+  where the vendor has one, and a launcher check for whatever that policy
+  cannot reach (Claude Code's in #2196). Every provider's adapter must
+  show the control before the provider runs a stage (added 2026-10-06).
   D4's subscription stance extends to every provider whose CLI offers a
   subscription login: the API key is primary, the subscription is the
   documented alternative with its constraints (own use only, among them),
