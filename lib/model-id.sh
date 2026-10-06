@@ -19,9 +19,10 @@
 # alone, so the second case cannot yet be reached through a schema-valid
 # config — it is forward groundwork for #2133/#2134).
 #
-# Sourced by agent-cycle.sh and review-cycle.sh. `providers_load` must be
-# called once, with config's own `providers` object, before either script's
-# first `resolve_model_id`/`resolve_model_provider`/`resolve_model_qualified`
+# Sourced by agent-cycle.sh, review-cycle.sh, monitor-cycle.sh,
+# scripts/doctor.sh and scripts/publish-dashboard.sh. `providers_load` must be
+# called once, with config's own `providers` object, before a script's first
+# `resolve_model_id_into`/`resolve_model_id`/`resolve_model_provider`/`resolve_model_qualified`
 # call needs to see a provider beyond the implicit `anthropic` — the same
 # startup position requirement 1b's schema gate occupies. A caller that never
 # calls it (every test in test/model-id.test.sh included) still resolves
@@ -34,18 +35,26 @@
 # `anthropic` is checked before this map ever is.
 declare -gA PROVIDER_SUBSTRATE=()
 
-# Populated as a side effect of every `resolve_model_id` call below: keyed by
-# the bare id it returned, valued by the provider that id resolved from
-# (`resolve_model_provider`'s own return value for the same call). This is
-# how `lib/stage-run.sh`'s `run_model_stage` (issue #2133) learns which
+# Populated as a side effect of every `resolve_model_id_into` call below:
+# keyed by the bare id it assigned, valued by the provider that id resolved
+# from (`resolve_model_provider`'s own return value for the same call). This
+# is how `lib/stage-run.sh`'s `run_model_stage` (issue #2133) learns which
 # substrate to launch a model on without every one of its own call sites
 # having to resolve and pass a provider explicitly — "a stage runs on the
 # provider its model resolves to" falls out of config load alone, since
-# every model a stage ever launches first passed through `resolve_model_id`
-# to reach the variable that names it. Last-write-wins on a bare id two
-# different keys both resolve to: today that never happens (`anthropic` is
-# the only provider that exists), and is a known, acceptable narrowing for
-# the day a second one does — see `lib/stage-run.sh`'s own `stage_model_substrate`.
+# every model a stage ever launches first passed through
+# `resolve_model_id_into` to reach the variable that names it.
+#
+# `resolve_model_id_into`, and not `resolve_model_id`: this map is the one
+# thing about resolution that a *subshell* cannot deliver, so the form a
+# caller picks decides whether the recording survives at all. See
+# `resolve_model_id_into`'s own header for why, and
+# `docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 1a for the rule.
+#
+# Last-write-wins on a bare id two different keys both resolve to: today that
+# never happens (`anthropic` is the only provider that exists), and is a
+# known, acceptable narrowing for the day a second one does — see
+# `lib/stage-run.sh`'s own `stage_model_substrate`.
 declare -gA MODEL_PROVIDER=()
 
 # Populated by providers_load alongside PROVIDER_SUBSTRATE. The environment
@@ -165,29 +174,76 @@ resolve_model_provider() {
   fi
 }
 
-# resolve_model_id KEY VALUE
-# Prints the bare model id `claude --model` (or a future provider's own
-# model-selection flag) expects. An unqualified VALUE (including empty,
-# which some keys use to disable a stage) passes through unchanged; a
-# qualified VALUE has the qualifier stripped once resolve_model_provider
-# accepts it. Prints nothing and returns 1, exactly as resolve_model_provider
-# does and for the same reasons, when it does not.
+# resolve_model_id_into VAR KEY VALUE
+# Assigns to the variable *named* VAR the bare model id `claude --model` (or
+# a future provider's own model-selection flag) expects. An unqualified VALUE
+# (including empty, which some keys use to disable a stage) passes through
+# unchanged; a qualified VALUE has the qualifier stripped once
+# resolve_model_provider accepts it. Leaves VAR untouched and returns 1,
+# printing exactly what resolve_model_provider prints and for the same
+# reasons, when it does not.
 #
 # Side effect (issue #2133): records MODEL_PROVIDER[<bare id>]=<provider> for
 # every non-empty result, so a later `run_model_stage` call elsewhere in the
 # same process can look the provider back up from the bare id alone — see
 # MODEL_PROVIDER's own header comment above.
-resolve_model_id() {
-  local key="$1" value="$2" provider bare
-  provider="$(resolve_model_provider "$key" "$value")" || return 1
-  case "$value" in
-    */*) bare="${value#*/}" ;;
-    *) bare="$value" ;;
+#
+# **This assigning form exists because that side effect is the one thing a
+# subshell cannot hand back, and the printing form below is always called in
+# one.** `m="$(resolve_model_id KEY VALUE)"` runs the entire function —
+# recording included — inside a command substitution, and nothing a subshell
+# assigns ever reaches its parent: the bare id comes back on stdout, and the
+# MODEL_PROVIDER entry naming its provider is discarded with the subshell.
+# That is not a quirk of associative arrays; it is true of any assignment.
+# So every site whose resolved value is later handed to `run_model_stage` or
+# `metering_fields` — every stage model in agent-cycle.sh, review-cycle.sh
+# and monitor-cycle.sh — must use this form, and the printing form is for a
+# caller that genuinely only wants the string (scripts/doctor.sh's config
+# report, scripts/publish-dashboard.sh's tier lookups, review-cycle.sh's
+# startup validation, resolve_model_qualified below).
+#
+# VAR must not be named `__rmi_*`: bash's dynamic scoping would have this
+# function's own locals shadow the caller's variable of that name, so
+# `printf -v` would write to the local and the caller would see nothing.
+# Nothing in this repository names a variable that way, and the prefix exists
+# precisely so nothing has to think about it.
+resolve_model_id_into() {
+  local __rmi_var="$1" __rmi_key="$2" __rmi_value="$3" __rmi_provider __rmi_bare
+  __rmi_provider="$(resolve_model_provider "$__rmi_key" "$__rmi_value")" || return 1
+  case "$__rmi_value" in
+    */*) __rmi_bare="${__rmi_value#*/}" ;;
+    *) __rmi_bare="$__rmi_value" ;;
   esac
   # Read by lib/stage-run.sh's stage_model_substrate and lib/metering.sh's
   # metering_fields, which shellcheck cannot see from here.
-  # shellcheck disable=SC2034
-  [[ -n "$bare" ]] && MODEL_PROVIDER["$bare"]="$provider"
+  #
+  # An `if` rather than the shorter `[[ … ]] && …`: unlike the printing form
+  # this replaced, this function runs in its callers' own shell, under the
+  # `set -euo pipefail` all three cycle scripts set, and an empty VALUE (the
+  # "this stage is disabled" convention several keys use) is an ordinary
+  # input here rather than an error. Bash does spare a failing AND-list that
+  # is not a function's last command, but relying on that for a disabled
+  # stage is a sharper edge than this shared library should carry.
+  if [[ -n "$__rmi_bare" ]]; then
+    # shellcheck disable=SC2034
+    MODEL_PROVIDER["$__rmi_bare"]="$__rmi_provider"
+  fi
+  # `printf -v` rather than a nameref: it needs no bash feature this
+  # codebase does not already rely on, and it cannot be fed a circular
+  # reference the way `local -n` can when VAR happens to name a variable in
+  # this function's own scope.
+  printf -v "$__rmi_var" '%s' "$__rmi_bare"
+}
+
+# resolve_model_id KEY VALUE
+# resolve_model_id_into's printing form, for a caller that wants the bare id
+# and nothing else: identical resolution and identical failure, but — being
+# called in a command substitution at every one of its own call sites — it
+# cannot deliver the MODEL_PROVIDER recording described above. A caller whose
+# value will be launched as a stage wants `resolve_model_id_into` instead.
+resolve_model_id() {
+  local bare=""
+  resolve_model_id_into bare "$1" "$2" || return 1
   printf '%s\n' "$bare"
 }
 

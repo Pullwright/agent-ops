@@ -199,6 +199,84 @@ stub-model-1" "$(cat "$stub_capture/stub-argv.seen" 2>/dev/null)"
 assert_eq "and the real claude stub from part 1 was never invoked for this run" \
   "" "$(cat "$stub_capture/argv.seen" 2>/dev/null)"
 
+# =============================================================================
+# 3. …and it is reached the way a cycle script reaches it
+# =============================================================================
+#
+# Part 2 proves dispatch *given* a populated MODEL_PROVIDER, which it
+# populates by hand. That leaves the step before it untested, and that step is
+# the one that can silently stop working: the map is populated as a side
+# effect of resolution, so a caller that resolves inside a command
+# substitution loses the recording with the subshell and gets a silent
+# fallback to `claude-code` rather than an error. This part therefore drives
+# the whole chain a cycle script drives — `providers_load` from a config
+# `providers` block, then `resolve_model_id_into` on a qualified id, then
+# `run_model_stage` on what that assigned — and asserts the stub adapter is
+# reached with nothing set by hand in between.
+#
+# lib/model-id.sh is sourced here rather than at the top of the file because
+# it declares PROVIDER_SUBSTRATE/MODEL_PROVIDER fresh, which would undo part
+# 2's own registrations; `providers_load` resets PROVIDER_SUBSTRATE in any
+# case. The stub substrate is re-registered below for the same reason.
+
+# shellcheck source=lib/model-id.sh
+. "$SCRIPT_DIR/lib/model-id.sh"
+
+# The substrate enum, as a real installation gets it from
+# config.schema.json's `providers.*.substrate` via config_provider_errors:
+# resolve_model_provider refuses a provider whose substrate is not installed,
+# so the stub has to join the array before it can resolve at all.
+PROVIDER_SUBSTRATE_INSTALLED+=(stub-cli)
+# The `providers` block, as a real installation gets it from config.json.
+providers_load '{"stub-provider": {"substrate": "stub-cli"}}'
+
+assert_eq "providers_load registers the stub provider's substrate" \
+  "stub-cli" "${PROVIDER_SUBSTRATE[stub-provider]:-}"
+
+e2e_capture="$tmp_dir/e2e-run"
+mkdir -p "$e2e_capture"
+export STUB_CAPTURE="$e2e_capture"
+e2e_out="$e2e_capture/implementer.out"
+
+# Exactly what agent-cycle.sh/monitor-cycle.sh/review-cycle.sh do with a
+# configured model, and nothing else: no MODEL_PROVIDER write by hand.
+resolve_model_id_into e2e_model implementer_model_default "stub-provider/stub-model-2"
+e2e_rc_resolve=$?
+
+assert_eq "resolve_model_id_into assigns the bare id a provider's CLI wants" \
+  "stub-model-2" "${e2e_model:-}"
+assert_eq "…and succeeds" "0" "$e2e_rc_resolve"
+assert_eq "…and the recording survives into the caller's own shell" \
+  "stub-provider" "${MODEL_PROVIDER[stub-model-2]:-<unrecorded>}"
+assert_eq "…so stage_model_substrate resolves it without anything set by hand" \
+  "stub-cli" "$(stage_model_substrate "$e2e_model")"
+
+run_model_stage implementer 60 "$e2e_model" "irrelevant for this stub" "$e2e_out" "$e2e_capture"
+rc=$?
+
+assert_eq "run_model_stage dispatches on a provider resolved from config alone" \
+  "0" "$rc"
+assert_eq "…reaching the stub adapter, not the Claude one" \
+  "stub-provider-ran" "$(jq -r '.result' "$e2e_out" 2>/dev/null)"
+assert_contains "…with the stub's own argv carrying the resolved bare id" \
+  "--model
+stub-model-2" "$(cat "$e2e_capture/stub-argv.seen" 2>/dev/null)"
+assert_eq "…and claude was never invoked for it" \
+  "" "$(cat "$e2e_capture/argv.seen" 2>/dev/null)"
+assert_eq "stage_provider names the provider the model resolved to" \
+  "stub-provider" "$stage_provider"
+
+# The printing form is the one a caller uses when it only wants the string,
+# and it cannot carry the recording: pinned here so the two forms' difference
+# is a tested property rather than a comment, since a future call site
+# reaching for the wrong one is exactly how this seam stops dispatching.
+unset 'MODEL_PROVIDER[stub-model-3]'
+substituted_model="$(resolve_model_id implementer_model_trivial "stub-provider/stub-model-3")"
+assert_eq "resolve_model_id still returns the bare id" \
+  "stub-model-3" "$substituted_model"
+assert_eq "…but a command substitution discards the recording, so the substrate falls back" \
+  "claude-code" "$(stage_model_substrate "$substituted_model")"
+
 printf '\n'
 if (( failures )); then
   printf '%d assertion(s) failed\n' "$failures"

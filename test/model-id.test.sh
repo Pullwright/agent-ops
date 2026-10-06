@@ -252,6 +252,51 @@ case "$err" in
 esac
 assert_false "resolve_model_id fails the same way for an uninstalled substrate" \
   resolve_model_id implementer_model_default "grok/grok-4.3"
+# --- resolve_model_id_into: the assigning form, and why it exists
+#     (requirement 1a, issue #2133). ---
+#
+# MODEL_PROVIDER is the map requirement 4d's substrate dispatch and
+# requirement 33a's `provider` field both read back, and it is populated as a
+# side effect of resolution. That makes the *form* of the call load-bearing in
+# a way nothing else about this library is: a subshell cannot hand an
+# assignment back to its parent, so resolving inside `$( )` returns the bare
+# id and silently drops the recording. Both halves are asserted, because the
+# failure mode is not an error — it is a fallback that looks like success.
+providers_load '{"xai": {"substrate": "claude-code"}}'
+MODEL_PROVIDER=()
+
+resolve_model_id_into into_model implementer_model_default "xai/grok-4.3"
+assert_eq "resolve_model_id_into assigns the bare id to the named variable" \
+  "grok-4.3" "${into_model:-}"
+assert_eq "…and records the provider in the caller's own MODEL_PROVIDER" \
+  "xai" "${MODEL_PROVIDER[grok-4.3]:-<unrecorded>}"
+
+MODEL_PROVIDER=()
+substituted="$(resolve_model_id implementer_model_default "xai/grok-4.3")"
+assert_eq "the printing form returns the same bare id" "grok-4.3" "$substituted"
+assert_eq "…but its recording is discarded with the command substitution" \
+  "0" "${#MODEL_PROVIDER[@]}"
+
+# An empty value is the "this stage is disabled" convention, not an error:
+# it assigns empty, records nothing, and succeeds — the three cycle scripts
+# call this under `set -e`, so a non-zero return here would abort startup
+# for every installation with a stage switched off.
+MODEL_PROVIDER=()
+resolve_model_id_into into_empty enabler_model ""
+assert_eq "an empty value assigns empty and succeeds" "0" "$?"
+# `${x-…}`, not `${x:-…}`: the claim is that the variable was *assigned* an
+# empty string, which `:-` could not tell from never having been set at all.
+assert_eq "…assigning nothing, but assigning it" "" "${into_empty-unset}"
+assert_eq "…and recording nothing" "0" "${#MODEL_PROVIDER[@]}"
+
+# A rejected qualifier fails exactly as the printing form does, and records
+# nothing, so a caller under `set -e` still stops at config read time.
+MODEL_PROVIDER=()
+assert_false "resolve_model_id_into fails for an unconfigured provider" \
+  resolve_model_id_into into_bad reviewer_model_default "openai/gpt-5"
+assert_eq "…and records nothing for it" "0" "${#MODEL_PROVIDER[@]}"
+
+MODEL_PROVIDER=()
 # Leave providers_load back at the default state (no providers configured)
 # before any remaining assertion below, in case one is ever added that
 # relies on the no-op default.

@@ -433,7 +433,12 @@ if [[ -z "$monitor_model_raw" ]]; then
   (( ONCE )) && echo "monitor-cycle: monitor_model is empty — the Pipeline Monitor is switched off" >&2
   exit 0
 fi
-monitor_model="$(resolve_model_id monitor_model "$monitor_model_raw")"
+# The assigning form, never the printing one: a command substitution would
+# discard the MODEL_PROVIDER recording requirement 4d's substrate dispatch
+# reads back, leaving this stage launching on `claude-code` whatever
+# `monitor_model` resolved to — see lib/model-id.sh's `resolve_model_id_into`.
+monitor_model="$monitor_model_raw"
+resolve_model_id_into monitor_model monitor_model "$monitor_model"
 
 # --- The fleet's memory ---
 # The union of every node's shared log, snapshotted once here: the usage-limit

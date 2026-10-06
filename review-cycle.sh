@@ -273,7 +273,12 @@ fi
 # exact key to fix.
 while IFS=$'\t' read -r configured_model_key configured_model; do
   [[ -n "$configured_model" ]] || continue
-  resolve_model_id "$configured_model_key" "$configured_model" >/dev/null
+  # The assigning form into a throwaway, not the printing one: this sweep is
+  # here to validate, but it is also the parent-shell call that records each
+  # repository's provider in MODEL_PROVIDER for requirement 4d's substrate
+  # dispatch to read back — a command substitution would discard it (see
+  # lib/model-id.sh's `resolve_model_id_into`).
+  resolve_model_id_into _validated_model "$configured_model_key" "$configured_model"
 done < <(jq -r '[.[] | [.model_key, .model]] | unique | .[] | @tsv' <<<"$repository_review_repos_json")
 # Every configured review_instructions/review_context path is validated up
 # front too, at the same fail-fast position and for the same reason as the
@@ -1148,7 +1153,7 @@ review_one() {
   # in repository_review.repos, or repository_review.defaults otherwise. Already
   # validated (the model-id sweep before the lock, above), so this is a
   # straight re-derivation rather than a fresh check.
-  model="$(resolve_model_id "$(jq -r '.model_key' <<<"$entry")" "$(jq -r '.model' <<<"$entry")")"
+  resolve_model_id_into model "$(jq -r '.model_key' <<<"$entry")" "$(jq -r '.model' <<<"$entry")"
   pr_label="$(jq -r '.pr_label' <<<"$entry")"
   branch_prefix="$(jq -r '.branch_prefix' <<<"$entry")"
   # `entry.report_directory` is already fallback-applied (the pre-loop
