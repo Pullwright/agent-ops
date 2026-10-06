@@ -543,6 +543,23 @@ fi
 # below, with no `// literal` of its own to drift from the schema's.
 DEFAULTED_CONFIG="$(config_defaults "$CONFIG_FILE" "$SCHEMA_FILE")"
 
+# The provider seam (requirement 1a, issue #2131): config's own `providers`
+# block is loaded into lib/model-id.sh's PROVIDER_SUBSTRATE before any model
+# key below is resolved, synthesizing `anthropic` (substrate `claude-code`)
+# when config does not name it explicitly so every existing installation
+# resolves exactly as it did before this issue. `providers`'s own entries are
+# each named by the installation, which is outside what the declarative
+# schema's `properties`/`additionalProperties: false` can validate — checked
+# here instead, shared with scripts/doctor.sh's own `fail` through the same
+# lib/config-schema.sh function.
+providers_load "$(cfg_json '.providers')"
+provider_errors="$(config_provider_errors "$(cfg_json '.providers')")"
+if [[ -n "$provider_errors" ]]; then
+  echo "agent-cycle: providers block is invalid:" >&2
+  while IFS= read -r line; do echo "agent-cycle:   $line" >&2; done <<<"$provider_errors"
+  exit 1
+fi
+
 # Requirement 1b's cross-key duplicate-slug guard for repos[] (issue #1576):
 # unlike repository_review.repos (config_duplicate_repository_review_slugs, shared
 # with review-cycle.sh's own startup refusal), nothing checked repos[] itself
@@ -818,9 +835,15 @@ refinement_paused_sources="$(config_refinement_sources_paused_by_cap \
 # tier it might write for is exactly the failure #815 (fixed by #819) and
 # #821 both trace to. Shared with scripts/doctor.sh through the same
 # lib/config-schema.sh function, so the Script's refusal and doctor's `fail`
-# can never drift.
-tier_violations="$(config_model_tier_floor_violations "$refiner_model" "$enabler_model" \
-  "$implementer_model_default" "$implementer_model_trivial")"
+# can never drift. Re-resolved to each model's *qualified* id (issue #2131)
+# rather than reusing the bare variables above: MODEL_TIER_RANK is keyed by
+# qualified id, and these four have already been validated once each by the
+# resolve_model_id calls above, so re-resolving here cannot fail afresh.
+tier_violations="$(config_model_tier_floor_violations \
+  "$(resolve_model_qualified refiner_model "$(cfg '.refiner_model')")" \
+  "$(resolve_model_qualified enabler_model "$(cfg '.enabler_model')")" \
+  "$(resolve_model_qualified implementer_model_default "$(cfg '.implementer_model_default')")" \
+  "$(resolve_model_qualified implementer_model_trivial "$(cfg '.implementer_model_trivial')")")"
 if [[ -n "$tier_violations" ]]; then
   while IFS=$'\t' read -r author_key floor_key author_id floor_id; do
     [[ -n "$author_key" ]] || continue
@@ -1512,13 +1535,14 @@ cleanup() {
   # clean cycle-end, chain or no chain). So the marker is written whenever
   # this cycle ended cleanly, whether or not it had a chain to give up —
   # `chain_eligible` only gates the cancellation, which is a no-op where
-  # there was nothing eligible to begin with. `--once` is excluded outright:
-  # a human or a test asking for exactly one cycle must not arm an override
-  # on the node it ran on. Reads the same `image_drift_status` verdict the
-  # heartbeat's `image` field publishes (requirement 2.5) — no second signal
-  # — through the identical cache file the state-sync push just above
-  # refreshed, so this costs no second registry round trip.
-  if (( exit_code == 0 )) && ! (( ONCE )); then
+  # there was nothing eligible to begin with. `--once` and `--dry-run` are
+  # both excluded outright: a human or a test asking for exactly one cycle,
+  # real or dry, must not arm an override on the node it ran on. Reads the
+  # same `image_drift_status` verdict the heartbeat's `image` field
+  # publishes (requirement 2.5) — no second signal — through the identical
+  # cache file the state-sync push just above refreshed, so this costs no
+  # second registry round trip.
+  if (( exit_code == 0 )) && ! (( ONCE || DRY_RUN )); then
     local image_status_json=""
     image_status_json="$(image_drift_status "$(agent_ops_version "$SCRIPT_DIR")" \
       "$state_dir/.image-drift-cache.json" 2>/dev/null || echo null)"

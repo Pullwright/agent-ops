@@ -139,6 +139,23 @@ if [[ "$path" == repos/*/* && "$path" != */contents/* ]]; then
     echo "gh: Not Found (HTTP 404)" >&2
     exit 1
   fi
+  if [[ "${GH_STUB_MODE:-ok}" == "repo-ratelimit" ]]; then
+    # agent-ops#1118: the flag file's own 404 is ordinary (the flag is
+    # genuinely absent, below) but *this* probe — the one TD-PPagop-26081602
+    # sends to tell that apart from an invisible repo — is itself
+    # rate-limited. The counting is the same device the global "ratelimit"
+    # mode above uses, kept to its own counter file so it never collides with
+    # a case that also drives that mode.
+    n_file="${GH_STUB_STATE_DIR:?}/repo-ratelimit-calls"
+    n="$(cat "$n_file" 2>/dev/null || printf 0)"
+    n=$(( n + 1 ))
+    printf '%s' "$n" > "$n_file"
+    fail_count="$(cat "${GH_STUB_STATE_DIR:?}/repo-ratelimit-fail-count" 2>/dev/null || printf 0)"
+    if (( n <= fail_count )); then
+      echo "You have exceeded a secondary rate limit. Please wait a few minutes." >&2
+      exit 1
+    fi
+  fi
   echo '{}'
   exit 0
 fi
@@ -269,6 +286,27 @@ assert_eq "with no state_repo the switch reads enabled" "enabled" \
 assert_eq "and merge_autonomy_effective_level falls through to the configured level" "agent-approves" \
   "$(merge_autonomy_effective_level "$top_level_cfg" "acme/widgets" "" "$tmp_dir/no-fleet")"
 
+# --- agent-ops#1112: a caller that has already fetched the kill switch's own
+#     document (run_approver_stage, ahead of this call, for its own
+#     fail-closed .record.kind check) can hand it over as KILL_JSON instead
+#     of making this function fetch it again. Proven with GH_STUB_MODE=down
+#     and a never-fetched state dir: if KILL_JSON were ignored and a live
+#     call made anyway, the fail-closed behaviour above would force `human`
+#     regardless of what KILL_JSON said. ---
+fs_kill_json="$tmp_dir/fleet-state-kill-json"
+mkdir -p "$fs_kill_json"
+kill_json_enabled="$(jq -nc '{state: "enabled", retried: false, record: {}}')"
+kill_json_disabled="$(jq -nc '{state: "disabled", retried: false, record: {kind: "manual"}}')"
+assert_eq "KILL_JSON state enabled resolves the configured level without any live fetch" \
+  "agent-approves" \
+  "$(GH_STUB_MODE=down merge_autonomy_effective_level "$top_level_cfg" "acme/widgets" "$slug" "$fs_kill_json" "" "" "$kill_json_enabled")"
+assert_eq "KILL_JSON state disabled resolves human, also without any live fetch" \
+  "human" \
+  "$(GH_STUB_MODE=down merge_autonomy_effective_level "$top_level_cfg" "acme/widgets" "$slug" "$fs_kill_json" "" "" "$kill_json_disabled")"
+assert_eq "an empty KILL_JSON still falls back to a live (here, failing) fetch — human, fail-closed" \
+  "human" \
+  "$(GH_STUB_MODE=down merge_autonomy_effective_level "$top_level_cfg" "acme/widgets" "$slug" "$fs_kill_json")"
+
 # --- TD-PPagop-26081507: an unreachable state repo with no cached copy of
 #     the kill switch must fail *closed*, unlike every other fleet flag —
 #     this one flag's risk profile inverts once something arms a landing
@@ -368,6 +406,11 @@ assert_eq "  ... exactly two fetch attempts were made, not endless retries" "2" 
   "$(cat "$rl_state/ratelimit-calls")"
 assert_eq "  ... and the document still reports the retry was taken" "true" \
   "$(jq -r '.retried' <<<"$rl_fail")"
+# agent-ops#1118 case 1 (the flag content fetch itself is what is
+# rate-limited): the cause is still sourced from $cache.err, unchanged.
+assert_eq "  ... and carries the real cause, sourced from \$cache.err as before" \
+  "secondary rate limit" \
+  "$(jq -r '.cause' <<<"$rl_fail" | grep -o 'secondary rate limit')"
 
 fs_no_retry="$tmp_dir/fleet-state-no-retry"
 mkdir -p "$fs_no_retry"
@@ -404,6 +447,64 @@ mkdir -p "$fs_retry_level_fail"
 reset_ratelimit_stub 99
 assert_eq "  ... and a still-fail-closed read leaves the effective level human" "human" \
   "$(GH_STUB_MODE=ratelimit merge_autonomy_effective_level "$top_level_cfg" "acme/widgets" "$slug" "$fs_retry_level_fail" fresh retry)"
+
+# --- agent-ops#1118: case 2 — the kill flag's own 404 is ordinary (the flag
+#     is genuinely absent, the normal steady state), but the repo probe that
+#     404 sends to confirm it (TD-PPagop-26081602's own `probe-404` mode) is
+#     itself what fails, with a distinct, rate-limit-shaped cause. $cache.err
+#     holds only the flag's unhelpful "Not Found"; the real diagnosis is in
+#     $cache.repo-err. Before this fix, both the RETRY classification and
+#     run_approver_stage's own warning read $cache.err alone, so a rate-limit
+#     refusal here was neither retried (github_limit_kind saw "Not Found", not
+#     the real cause, and answered "none") nor reported accurately. -----------
+reset_repo_ratelimit_stub() {  # <fail-count>
+  printf '%s' "$1" > "$rl_state/repo-ratelimit-fail-count"
+  rm -f "$rl_state/repo-ratelimit-calls"
+}
+
+fs_case2_noretry="$tmp_dir/fleet-state-case2-noretry"
+mkdir -p "$fs_case2_noretry"
+reset_repo_ratelimit_stub 99
+case2_noretry="$(GH_STUB_MODE=repo-ratelimit merge_autonomy_kill_state "$slug" "$fs_case2_noretry" fresh)"
+assert_eq "case 2: a rate-limited repo probe still fails the kill switch closed" "disabled" \
+  "$(jq -r '.state' <<<"$case2_noretry")"
+assert_eq "  ... named fail-closed" "fail-closed" \
+  "$(jq -r '.record.kind // ""' <<<"$case2_noretry")"
+assert_eq "  ... and the cause is the repo probe's own refusal, not the flag's \"Not Found\"" \
+  "secondary rate limit" \
+  "$(jq -r '.cause' <<<"$case2_noretry" | grep -o 'secondary rate limit')"
+
+fs_case2_fail="$tmp_dir/fleet-state-case2-fail"
+mkdir -p "$fs_case2_fail"
+reset_repo_ratelimit_stub 99
+case2_fail="$(GH_STUB_MODE=repo-ratelimit merge_autonomy_kill_state "$slug" "$fs_case2_fail" fresh retry)"
+assert_eq "case 2 with RETRY: classified as rate-limiting from the repo probe's own cause, so a retry is taken" \
+  "true" "$(jq -r '.retried' <<<"$case2_fail")"
+assert_eq "  ... exactly two repo probes were made (the retry, not an endless loop)" "2" \
+  "$(cat "$rl_state/repo-ratelimit-calls")"
+assert_eq "  ... still rate-limited after the retry, so still fail-closed" "disabled" \
+  "$(jq -r '.state' <<<"$case2_fail")"
+assert_eq "  ... and the cause after the retry is still the repo probe's own" \
+  "secondary rate limit" \
+  "$(jq -r '.cause' <<<"$case2_fail" | grep -o 'secondary rate limit')"
+
+fs_case2_ok="$tmp_dir/fleet-state-case2-ok"
+mkdir -p "$fs_case2_ok"
+reset_repo_ratelimit_stub 1
+case2_ok="$(GH_STUB_MODE=repo-ratelimit merge_autonomy_kill_state "$slug" "$fs_case2_ok" fresh retry)"
+assert_eq "case 2 with RETRY: a repo probe that clears on retry confirms the flag genuinely absent" \
+  "enabled" "$(jq -r '.state' <<<"$case2_ok")"
+assert_eq "  ... and the document still reports the retry was taken" "true" \
+  "$(jq -r '.retried' <<<"$case2_ok")"
+
+# A repo probe failing with an ordinary (non-rate-limit-shaped) cause must
+# still not be retried — RETRY only ever rides out a rate limit, whichever
+# file the cause came from.
+fs_case2_404="$tmp_dir/fleet-state-case2-404"
+mkdir -p "$fs_case2_404"
+case2_404="$(GH_STUB_MODE=repo-404 merge_autonomy_kill_state "$slug" "$fs_case2_404" fresh retry)"
+assert_eq "case 2 variant: a plain (non-rate-limit) repo-404 is still not retried" "false" \
+  "$(jq -r '.retried' <<<"$case2_404")"
 
 unset GH_STUB_STATE_DIR
 

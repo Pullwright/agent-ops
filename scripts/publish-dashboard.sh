@@ -118,9 +118,12 @@ TEMPLATE="$SCRIPT_DIR/dashboard/index.html"
 # (lib/cycle-state.sh, sourced above).
 . "$SCRIPT_DIR/lib/item-lifecycle.sh"
 # shellcheck source=lib/model-id.sh
-# `resolve_model_id` alone — the actor/model scorecards (issue #610) use it to
-# strip an `anthropic/`-qualified tier config value before comparing it
-# against the bare id every stage-end's own `model` field already carries.
+# `resolve_model_id` — the actor/model scorecards (issue #610) use it to
+# strip a qualified tier config value (e.g. `anthropic/claude-sonnet-5`)
+# before comparing it against the bare id every stage-end's own `model`
+# field already carries. `providers_load` (issue #2131) is called below,
+# once `DEFAULTED_CONFIG` exists, so a configured non-`anthropic` provider
+# resolves instead of falling through to the raw qualified value.
 . "$SCRIPT_DIR/lib/model-id.sh"
 # shellcheck source=lib/labels.sh
 # `labels_reconcile_role` alone: lib/pager.sh's `_pager_ensure_label_role`
@@ -216,6 +219,11 @@ DEFAULTED_CONFIG="$(config_defaults "$CONFIG_FILE" "$SCHEMA_FILE" 2>/dev/null)"
 cfg()      { jq -r "$1" <<<"$DEFAULTED_CONFIG" 2>/dev/null; }
 cfg_json() { jq -c "$1" <<<"$DEFAULTED_CONFIG" 2>/dev/null; }
 
+# The provider seam (requirement 1a, issue #2131): loaded here, ahead of the
+# `resolve_model_id` tier lookups below, the same startup position
+# agent-cycle.sh, review-cycle.sh and scripts/doctor.sh all load it at.
+providers_load "$(cfg_json '.providers')"
+
 state_dir="$(expand_home "$(cfg '.state_dir')")"
 # No `log_file` here: the log is read as the fleet's, through
 # `fleet_logs "$state_dir" "$peers_dir" log.jsonl` (see read_events), which
@@ -246,22 +254,22 @@ github_budget_cycle_interval_minutes="$(cfg '.schedule.cycle_interval_minutes')"
 pager_enabled="$(cfg '.pager_enabled')"
 pager_repo="$(cfg '.pager_repo')"
 [[ -n "$pager_repo" ]] || pager_repo="$(cfg '.crash_loop_repo')"
-pager_min_firing_minutes="$(cfg '.pager_min_firing_minutes')"
+pager_min_firing_minutes="$(cfg_int '.pager_min_firing_minutes')"
 [[ "$pager_min_firing_minutes" =~ ^[0-9]+$ ]] || pager_min_firing_minutes=15
 # agent-ops#1282's own two keys: `node-stale`'s per-key filing-hysteresis
 # override, and `dashboard-unreadable`'s fetch-time tolerance.
-pager_stale_file_after_minutes="$(cfg '.pager_stale_file_after_minutes')"
+pager_stale_file_after_minutes="$(cfg_int '.pager_stale_file_after_minutes')"
 [[ "$pager_stale_file_after_minutes" =~ ^[0-9]+$ ]] || pager_stale_file_after_minutes=180
-pager_dashboard_fetch_seconds="$(cfg '.pager_dashboard_fetch_seconds')"
+pager_dashboard_fetch_seconds="$(cfg_int '.pager_dashboard_fetch_seconds')"
 [[ "$pager_dashboard_fetch_seconds" =~ ^[0-9]+$ ]] || pager_dashboard_fetch_seconds=30
 # agent-ops#1281's own three keys: idle-with-demand's cycle-count window,
 # work-order-repaired-rate's percentage threshold, escalation-burst's own
 # 24h count threshold.
-pager_idle_cycles="$(cfg '.pager_idle_cycles')"
+pager_idle_cycles="$(cfg_int '.pager_idle_cycles')"
 [[ "$pager_idle_cycles" =~ ^[0-9]+$ ]] || pager_idle_cycles=6
-pager_repair_rate_percent="$(cfg '.pager_repair_rate_percent')"
+pager_repair_rate_percent="$(cfg_int '.pager_repair_rate_percent')"
 [[ "$pager_repair_rate_percent" =~ ^[0-9]+$ ]] || pager_repair_rate_percent=20
-pager_escalation_burst="$(cfg '.pager_escalation_burst')"
+pager_escalation_burst="$(cfg_int '.pager_escalation_burst')"
 [[ "$pager_escalation_burst" =~ ^[0-9]+$ ]] || pager_escalation_burst=10
 # agent-ops#1280's own landing/approval class: landing-never-armed's
 # days-since-armed window, and pr-unreviewed's reuse of requirement 46's own
@@ -300,7 +308,7 @@ if [[ -n "$notify_webhook_url" && "$notify_webhook_url" == *$'\n'* ]]; then
 fi
 redact_add_literal "$notify_webhook_url"
 notify_events_json="$(cfg_json '.notify_events')"
-notify_min_interval_seconds="$(cfg '.notify_min_interval_seconds')"
+notify_min_interval_seconds="$(cfg_int '.notify_min_interval_seconds')"
 [[ "$notify_min_interval_seconds" =~ ^[0-9]+$ ]] || notify_min_interval_seconds=600
 
 out_dir="$state_dir/dashboard"
@@ -369,7 +377,7 @@ doctor_heartbeat_json="$(jq -c '{timestamp, verdict}' "$doctor_status_file" 2>/d
 # shape a peer's heartbeat.json `resources` field does, so both are read by
 # the one dashboard code path (`resourcesLine` et al.) without a
 # self-vs-peer branch.
-self_resources_window_hours="$(jq -r '.resources.report_window_hours // 24' <<<"$DEFAULTED_CONFIG")"
+self_resources_window_hours="$(cfg_int '.resources.report_window_hours // 24')"
 [[ "$self_resources_window_hours" =~ ^[0-9]+$ ]] || self_resources_window_hours=24
 self_resources_samples=""
 [[ -r "$state_dir/.resource-samples.jsonl" ]] && self_resources_samples="$(cat "$state_dir/.resource-samples.jsonl")"
@@ -546,7 +554,7 @@ work_tmp="$SCRATCH_DIR"
 # dashboard omits when more than one is transient at once is tracked
 # separately (agent-ops#1624), not a regression this defensive `head -n1`
 # introduces.
-crash_loop_after_dashboard="$(cfg '.crash_loop_after')"
+crash_loop_after_dashboard="$(cfg_int '.crash_loop_after')"
 [[ "$crash_loop_after_dashboard" =~ ^[0-9]+$ ]] || crash_loop_after_dashboard=0
 provider_unreachable_json='null'
 if (( crash_loop_after_dashboard > 0 )); then

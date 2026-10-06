@@ -455,12 +455,15 @@ Poetic-Poems, with no pipeline code in it.
       first non-Claude provider (D12, D29; tracking #2128). Brought forward
       from Phase 3 on 2026-10-03 for a prospective customer, and decomposed
       per the Dogfood rule: an audit of every place the pipeline assumes the
-      Claude Code CLI, classified for the seam (#2130); a `providers` block
-      in `config.json` naming each provider's substrate and credential,
-      under which a model id qualified with a configured provider resolves
-      to it and the tier table of requirement 1c is keyed by qualified id
-      (#2131); Grok Build evaluated headlessly against the stage contract,
-      on the owner's xAI key (#2132); a substrate adapter behind the one
+      Claude Code CLI, classified for the seam, which is
+      [`docs/PROVIDER-SEAM-AUDIT.md`](PROVIDER-SEAM-AUDIT.md) and names the
+      substrate contract any agentic CLI must satisfy (#2130, done); a
+      `providers` block in `config.json` naming each provider's substrate
+      and credential, under which a model id qualified with a configured
+      provider resolves to it and the tier table of requirement 1c is keyed
+      by qualified id (#2131, done); Grok Build evaluated headlessly
+      against the stage contract, on the owner's xAI key (#2132); a
+      substrate adapter behind the one
       stage launcher of requirement 4d, the Claude adapter extracted with
       its stream and envelope byte-for-byte unchanged and `provider` added
       to the metering record (#2133); and the xAI adapter — Grok Build in

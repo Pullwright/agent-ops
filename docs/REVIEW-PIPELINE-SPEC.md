@@ -8,7 +8,7 @@ its own clone, branch, report set and pull request. It is a companion to
 `docs/IMPLEMENTATION-PIPELINE-SPEC.md` (the implementation pipeline)
 and `docs/DASHBOARD-SPEC.md` (the monitoring dashboard), and like them it
 describes the system as it exists — any change to this pipeline lands
-together with the edit that keeps this document accurate (see `CLAUDE.md`,
+together with the edit that keeps this document accurate (see `AGENTS.md`,
 "As-built specifications").
 
 **Where this document is silent, follow `docs/IMPLEMENTATION-PIPELINE-SPEC.md`.** The two
@@ -238,7 +238,8 @@ sha256 digest of the text actually sent — `lib/review-context.sh`'s
 `review_context_sources_digest` — so a past review's inputs are
 reconstructable without the log carrying arbitrary file content.
 
-The values below are the confirmed defaults; the README documents each key, and
+The values below are the confirmed defaults; `docs/reference/configuration.md`
+documents each key, and
 `config.schema.json` carries them alongside the implementation pipeline's
 (`docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 1b) — one file, one
 schema, so `scripts/doctor.sh` checks both pipelines' configuration in one
@@ -306,13 +307,16 @@ aliases in the launch command.
 
 `repository_review.defaults.model` (or a repository's own override in
 `repository_review.repos`, requirement 342) accepts a bare id
-(`claude-sonnet-5`) or a provider-qualified one (`anthropic/claude-sonnet-5`),
-resolved by the same `resolve_model_id` (`lib/model-id.sh`) the implementation
-pipeline uses — see
-`docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 1a. Anthropic is the only
-executable provider (D12, `docs/ROADMAP.md`); a qualifier naming any other
-provider is a fail-fast config error at cycle start, not a value passed to
-`claude --model`.
+(`claude-sonnet-5`, meaning `anthropic`) or a provider-qualified one
+(`anthropic/claude-sonnet-5`, or `<name>/<id>` for a provider the top-level
+`providers` object configures), resolved by the same `resolve_model_id`
+(`lib/model-id.sh`) the implementation pipeline uses — see
+`docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 1a. `anthropic` is always
+accepted, substrate `claude-code`, whether or not `providers` names it
+explicitly (D12, `docs/ROADMAP.md`); a qualifier naming a provider
+`providers` does not configure, or one configured with a substrate this
+image has no adapter for, is a fail-fast config error at cycle start, not a
+value passed to `claude --model`.
 
 <!-- config-table:notes id=review — GENERATED from config.schema.json by scripts/render-config-table.sh; edit the schema, not this section -->
 
@@ -370,15 +374,21 @@ R1. **Bootstrap.** Reuse the `PATH` bootstrap and binary checks of
    minimal environment). Source `lib/limit-detect.sh`. The script must pass
    `shellcheck`.
 
-R1a. **Model id resolution (D12 groundwork).** Every configured repository's
-   own resolved model (`repository_review.defaults.model`, or its own override in
-   `repository_review.repos`, requirement 342) is resolved through
+R1a. **Model id resolution, against a configured set of providers (D12,
+   issue #2131).** `lib/model-id.sh`'s `providers_load` loads the top-level
+   `providers` object into `PROVIDER_SUBSTRATE` once, at startup, before the
+   sweep below — the same call and the same startup position
+   `agent-cycle.sh` makes (`docs/IMPLEMENTATION-PIPELINE-SPEC.md`
+   requirement 1a). Every configured repository's own resolved model
+   (`repository_review.defaults.model`, or its own override in
+   `repository_review.repos`, requirement 342) is then resolved through
    `lib/model-id.sh`'s `resolve_model_id` immediately after `repository_review`'s
    settings are read and resolved, before the lock — the same helper and the
-   same rule `agent-cycle.sh` applies to its own model keys
-   (`docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 1a): a bare id means
-   `anthropic/`, an `anthropic/`-qualified id has the qualifier stripped, and
-   any other qualifier is a fail-fast config error naming the precise key the
+   same rule `agent-cycle.sh` applies to its own model keys: a bare id means
+   `anthropic`, a qualified id has the qualifier stripped once the named
+   provider is accepted, and a qualifier naming a provider `providers` does
+   not configure — or one configured with a substrate this image has no
+   adapter for — is a fail-fast config error naming the precise key the
    value came from — `repository_review.repos[i].model` for a repository's own
    override, `repository_review.defaults.model` when it does not have one — never
    the generic `repository_review.model`, so the error points at the exact key to
@@ -1220,13 +1230,11 @@ What exists, and the requirements each part answers to:
 3. `.claude/skills/project-review/` — the vendored skill (pinned; re-sync
    from upstream deliberately).
 4. `config.json` — the `repository_review` block.
-5. `README.md` — a "Repository review" section: what it does and why (the
-   loop it closes), every `repository_review.*` config key, how to install the
-   cron entry,
-   how to operate it (`--dry-run`, `--once`, `--repo`, reading
-   `review-log.jsonl` and the transcripts), how the outputs feed the
-   implementation pipeline / `project-remediation`, and how to uninstall.
-6. The crontab line(s) (see "Host provisioning").
+5. `docs/guides/operating/README.md` names the review pipeline under "How
+   the pipelines work"; `docs/guides/operating/change-a-node.md` § "Uninstall"
+   covers how to uninstall; and `docs/reference/configuration.md` documents
+   every `repository_review.*` config key.
+6. The crontab line(s): on a containerized node, rendered from `deploy/docker/crontab.tmpl` and run by supercronic in the scheduler service.
 
 ## Acceptance checks
 
@@ -1449,42 +1457,6 @@ edit a test.
    independently of `stage_health`'s own — a node whose implementation-
    pipeline stages are all healthy while `project-reviewer` fails must read
    as failing too, never masked by the other panel's green verdict.
-
-## Host provisioning (human steps)
-
-All of this is in place on the current host; it is needed again only when
-standing the pipeline up on a new machine.
-
-1. Create the review label in each configured repo:
-   `gh api -X POST repos/Poetic-Poems/<repo>/labels -f name='project-review' -f color='5319e7' -f description='Raised by the project-review pipeline'`
-   (for each repository in `repository_review.repos`).
-2. Install the cron entry. **Recommended — a daily tick guarded by
-   `min_days_between_reviews`**, which is robust to a machine that sleeps:
-   ```
-   30 3 * * * $HOME/Code/Poetic-Poems/agent-ops/review-cycle.sh >> $HOME/.local/state/poetic-agents/review-cron.log 2>&1
-   ```
-   The skip-guard (R4) ensures this actually reviews each repo only about once a
-   week. *Strict weekly alternative* (simpler, but a missed Monday tick skips
-   the whole week): `30 3 * * 1 …` (Mondays 03:30). Schedule it at a different
-   minute from the implementation cycle's own tick to avoid both firing at once
-   (the review defers to a running cycle anyway, per R3). The crontab
-   environment must also set `AGENT_OPS_ROLE=active` on the node that is to run
-   the reviews (R2b); without it every tick stands down.
-
-   On a containerised node this entry is not installed by hand at all: it is
-   the review line of `deploy/docker/crontab`, which the scheduler service runs
-   under supercronic (see the node image section of
-   `docs/IMPLEMENTATION-PIPELINE-SPEC.md`). Its hour and minute are rendered
-   per node at container start (design decision D5): `config.json`'s
-   `schedule.review_offset_minutes` (`29`) past `CYCLE_MINUTE` (mod 60), at
-   `schedule.review_hour` (`3`), so the node's two heavy pipelines sit
-   maximally apart within its hour and no two nodes review at the same
-   moment either. The role comes from `ROLE` in the node's
-   `deploy/docker/.env` rather than from a crontab line, and defaults to
-   standby when it is missing.
-3. The shared prerequisites of `docs/IMPLEMENTATION-PIPELINE-SPEC.md` (the standalone `claude`
-   CLI, cron enabled under WSL, `gh` authenticated with push access) are
-   already satisfied by the implementation pipeline; nothing further is needed.
 
 ## Cost profile
 

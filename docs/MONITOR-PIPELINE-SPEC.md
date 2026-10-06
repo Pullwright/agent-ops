@@ -8,7 +8,7 @@ a third pipeline, sibling to the implementation pipeline
 (`docs/REVIEW-PIPELINE-SPEC.md`), whose subject is not a repository but the
 pipelines themselves. Like them it describes the system as it exists — any
 change to this pipeline lands together with the edit that keeps this document
-accurate (see `CLAUDE.md`, "As-built specifications").
+accurate (see `AGENTS.md`, "As-built specifications").
 
 **Where this document is silent, follow
 `docs/IMPLEMENTATION-PIPELINE-SPEC.md`.** The three pipelines deliberately
@@ -118,9 +118,10 @@ narrowing that is a requirement rather than an accident: see M3.
 ## Configuration
 
 Every key this pipeline reads is a top-level key of `config.json` and is
-rendered into the `id=main` configuration tables of `README.md` and
+rendered into the `id=main` configuration tables of
+`docs/reference/configuration.md` and
 `docs/IMPLEMENTATION-PIPELINE-SPEC.md` from `config.schema.json`, like every
-other top-level key (`CLAUDE.md`, "Generated regions"). This document
+other top-level key (`AGENTS.md`, "Generated regions"). This document
 deliberately carries no fourth generated region: the keys are
 `monitor_model`, `monitor_max_input_bytes`, `monitor_max_filings_per_run`,
 `monitor_tactical_keys`, `monitor_promote_after`, `schedule.monitor_hour`,

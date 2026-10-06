@@ -53,8 +53,9 @@ assert_not_contains() {
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-mkdir -p "$tmp/scripts" "$tmp/docs"
+mkdir -p "$tmp/scripts" "$tmp/docs/reference" "$tmp/lib"
 cp "$SCRIPT_DIR/scripts/render-config-table.sh" "$tmp/scripts/render-config-table.sh"
+cp "$SCRIPT_DIR/lib/markdown-scan.sh" "$tmp/lib/markdown-scan.sh"
 chmod +x "$tmp/scripts/render-config-table.sh"
 
 # --- Fixture schema. Covers: no x-docs (falls back to description); a
@@ -227,7 +228,7 @@ cat > "$tmp/config.schema.json" <<'JSON'
 }
 JSON
 
-# --- Fixture docs. README.md carries both regions; the two specs each carry
+# --- Fixture docs. docs/reference/configuration.md carries both regions; the two specs each carry
 #     one, matching the real repository's layout. The "main" region starts
 #     deliberately stale — missing "beta" entirely and carrying a hand-edited
 #     "gamma" row — so the first render must both add and restore rows. Each
@@ -238,7 +239,7 @@ JSON
 #
 #     The two specs' start markers, and README's "main" pair, carry trailing
 #     contract prose after `id=<id>` (#356) — the same annotation
-#     CLAUDE.md's "Generated regions" note and the real repository's own
+#     AGENTS.md's "Generated regions" note and the real repository's own
 #     markers carry — so every existing assertion against those regions
 #     doubles as coverage that the script matches an annotated marker by
 #     prefix rather than exact-line equality. README's "review" pair is left
@@ -246,7 +247,7 @@ JSON
 #     is still accepted too — both must work, since a marker predating this
 #     change must not suddenly stop matching. ---
 write_fixture_readme() {
-  cat > "$tmp/README.md" <<'MD'
+  cat > "$tmp/docs/reference/configuration.md" <<'MD'
 # Fixture
 
 Sentinel before.
@@ -323,7 +324,7 @@ if (( check_rc != 0 )); then
 else
   fail "--check exits non-zero on a stale region (got rc=0)"
 fi
-assert_contains "--check names the stale file" "$check_out" "README.md"
+assert_contains "--check names the stale file" "$check_out" "configuration.md"
 assert_contains "--check names the first differing key" "$check_out" "alpha"
 
 # --- Rewrite in place ---
@@ -336,14 +337,14 @@ assert_eq "rewriting in place exits 0" "0" "$rewrite_rc"
 #     here for both an annotated marker (README's "main" pair) and the
 #     older, plain form (README's "review" pair), so neither regresses ---
 # shellcheck disable=SC2016
-main_start_line="$(grep -m1 '^<!-- config-table:start id=main' "$tmp/README.md")"
+main_start_line="$(grep -m1 '^<!-- config-table:start id=main' "$tmp/docs/reference/configuration.md")"
 assert_contains "the annotated main start marker's trailing prose survives a rewrite" "$main_start_line" "GENERATED from config.schema.json by scripts/render-config-table.sh"
-main_notes_start_line="$(grep -m1 '^<!-- config-table:notes id=main' "$tmp/README.md")"
+main_notes_start_line="$(grep -m1 '^<!-- config-table:notes id=main' "$tmp/docs/reference/configuration.md")"
 assert_contains "the annotated main notes-start marker's trailing prose survives a rewrite" "$main_notes_start_line" "GENERATED from config.schema.json by scripts/render-config-table.sh"
-review_start_line="$(grep -m1 '^<!-- config-table:start id=review' "$tmp/README.md")"
+review_start_line="$(grep -m1 '^<!-- config-table:start id=review' "$tmp/docs/reference/configuration.md")"
 assert_eq "the plain (unannotated) review start marker is unchanged by a rewrite" "<!-- config-table:start id=review -->" "$review_start_line"
 
-main_region="$(awk '/<!-- config-table:start id=main/{f=1;next} /<!-- config-table:end -->/{f=0} f' "$tmp/README.md")"
+main_region="$(awk '/<!-- config-table:start id=main/{f=1;next} /<!-- config-table:end -->/{f=0} f' "$tmp/docs/reference/configuration.md")"
 
 # --- A key present in the schema and absent from the region is added ---
 # shellcheck disable=SC2016
@@ -394,7 +395,7 @@ assert_contains "theta falls through to its default for the README" "$main_regio
 
 # --- A `|` inside prose survives (escaped, so the table stays well-formed) ---
 # shellcheck disable=SC2016
-epsilon_line="$(grep '`epsilon`' "$tmp/README.md")"
+epsilon_line="$(grep '`epsilon`' "$tmp/docs/reference/configuration.md")"
 assert_contains "a pipe in prose is escaped" "$epsilon_line" 'left \| right'
 total_pipes="$(grep -o '|' <<<"$epsilon_line" | wc -l)"
 escaped_pipes="$(grep -o -F '\|' <<<"$epsilon_line" | wc -l)"
@@ -404,7 +405,7 @@ assert_eq "the epsilon row still has exactly 4 unescaped pipes (3 columns)" "4" 
 # shellcheck disable=SC2016
 assert_contains "schedule.nested_key renders dotted, in the main region" "$main_region" '| `schedule.nested_key` | `nested-default` | Nested key description. |'
 
-review_region_readme="$(awk '/<!-- config-table:start id=review -->/{f=1;next} /<!-- config-table:end -->/{f=0} f' "$tmp/README.md")"
+review_region_readme="$(awk '/<!-- config-table:start id=review -->/{f=1;next} /<!-- config-table:end -->/{f=0} f' "$tmp/docs/reference/configuration.md")"
 # shellcheck disable=SC2016
 assert_contains "repository_review.defaults.sub_key renders dotted, in its own region" "$review_region_readme" '| `repository_review.defaults.sub_key` | `sub-value` | Sub key description. |'
 if [[ "$main_region" == *"repository_review.defaults.sub_key"* ]]; then
@@ -431,7 +432,7 @@ review_spec_content="$(cat "$tmp/docs/REVIEW-PIPELINE-SPEC.md")"
 assert_contains "the review spec renders repository_review.defaults.sub_key" "$review_spec_content" '| `repository_review.defaults.sub_key` |'
 
 # --- Sentinels outside the markers are untouched ---
-readme_content="$(cat "$tmp/README.md")"
+readme_content="$(cat "$tmp/docs/reference/configuration.md")"
 assert_contains "text before the main region survives" "$readme_content" "Sentinel before."
 assert_contains "text between the two regions survives" "$readme_content" "Sentinel between."
 assert_contains "text after the review region survives" "$readme_content" "Sentinel after."
@@ -441,15 +442,15 @@ assert_contains "text after the review region survives" "$readme_content" "Senti
 # boundary and deferred to the matching Extended notes region.
 # ============================================================================
 
-main_notes_region="$(awk '/<!-- config-table:notes id=main/{f=1;next} /<!-- config-table:notes-end -->/{f=0} f' "$tmp/README.md")"
-review_notes_region="$(awk '/<!-- config-table:notes id=review -->/{f=1;next} /<!-- config-table:notes-end -->/{f=0} f' "$tmp/README.md")"
+main_notes_region="$(awk '/<!-- config-table:notes id=main/{f=1;next} /<!-- config-table:notes-end -->/{f=0} f' "$tmp/docs/reference/configuration.md")"
+review_notes_region="$(awk '/<!-- config-table:notes id=review -->/{f=1;next} /<!-- config-table:notes-end -->/{f=0} f' "$tmp/docs/reference/configuration.md")"
 
 # --- A plain over-long note (mu) is truncated with a continuation link, and
 #     no truncated Notes cell in the region exceeds the 500-character cap
 #     (cell content only — the `| ` / ` |` padding and the link target are
 #     not counted, per the issue's own rule) ---
 # shellcheck disable=SC2016
-mu_line="$(grep '`mu`' "$tmp/README.md" | head -1)"
+mu_line="$(grep '`mu`' "$tmp/docs/reference/configuration.md" | head -1)"
 assert_contains "mu's row carries the continuation link" "$mu_line" '...[continued below](#extended-notes-mu)'
 while IFS= read -r row; do
   [[ "$row" == *'[continued below]'* ]] || continue
@@ -466,7 +467,7 @@ pass "no truncated Notes cell in the main region exceeds the 500-character cap"
 #     truncated cell backs off to the word before the construct rather than
 #     splitting it, so it carries no unmatched backtick or link bracket ---
 # shellcheck disable=SC2016
-nu_line="$(grep '`nu`' "$tmp/README.md" | head -1)"
+nu_line="$(grep '`nu`' "$tmp/docs/reference/configuration.md" | head -1)"
 assert_contains "nu's row carries the continuation link" "$nu_line" '...[continued below](#extended-notes-nu)'
 assert_not_contains "nu's truncated cell does not carry the code span (backed off before it)" "$nu_line" 'abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 # shellcheck disable=SC2016
@@ -475,7 +476,7 @@ nu_backticks="$(grep -o '`' <<<"$nu_cell" | wc -l)"
 assert_eq "nu's truncated cell has an even number of backticks (no unclosed code span)" "0" "$(( nu_backticks % 2 ))"
 
 # shellcheck disable=SC2016
-xi_line="$(grep '`xi`' "$tmp/README.md" | head -1)"
+xi_line="$(grep '`xi`' "$tmp/docs/reference/configuration.md" | head -1)"
 assert_contains "xi's row carries the continuation link" "$xi_line" '...[continued below](#extended-notes-xi)'
 assert_not_contains "xi's truncated cell does not carry the embedded link (backed off before it)" "$xi_line" 'example.com'
 
@@ -490,7 +491,7 @@ assert_not_contains "xi's truncated cell does not carry the embedded link (backe
 #     atoms and could include some of them, landing the cut mid-link and
 #     leaving an unmatched bracket or paren in the cell.) ---
 # shellcheck disable=SC2016
-omicron_line="$(grep '`omicron`' "$tmp/README.md" | head -1)"
+omicron_line="$(grep '`omicron`' "$tmp/docs/reference/configuration.md" | head -1)"
 assert_contains "omicron's row carries the continuation link" "$omicron_line" '...[continued below](#extended-notes-omicron)'
 assert_not_contains "omicron's truncated cell does not carry the nested-bracket link (backed off before it)" "$omicron_line" 'example.com'
 # shellcheck disable=SC2016
@@ -500,7 +501,7 @@ omicron_close="$(grep -o ']' <<<"$omicron_cell" | wc -l)"
 assert_eq "omicron's truncated cell has balanced [ and ] (no unmatched bracket)" "$omicron_open" "$omicron_close"
 
 # shellcheck disable=SC2016
-phi_line="$(grep '`phi`' "$tmp/README.md" | head -1)"
+phi_line="$(grep '`phi`' "$tmp/docs/reference/configuration.md" | head -1)"
 assert_contains "phi's row carries the continuation link" "$phi_line" '...[continued below](#extended-notes-phi)'
 assert_not_contains "phi's truncated cell does not carry the balanced-paren-target link (backed off before it)" "$phi_line" 'wikipedia.org'
 # shellcheck disable=SC2016
@@ -517,14 +518,14 @@ assert_eq "phi's truncated cell has balanced ( and ) (no unmatched paren)" "$phi
 #     stray, dangling `` `` `` in the truncated cell instead of backing off
 #     before the span entirely ---
 # shellcheck disable=SC2016
-chi_line="$(grep '`chi`' "$tmp/README.md" | head -1)"
+chi_line="$(grep '`chi`' "$tmp/docs/reference/configuration.md" | head -1)"
 assert_contains "chi's row carries the continuation link" "$chi_line" '...[continued below](#extended-notes-chi)'
 assert_not_contains "chi's truncated cell does not carry the span's content (backed off before it)" "$chi_line" 'has a literal'
 assert_not_contains "chi's truncated cell carries no dangling double-backtick fragment" "$chi_line" '``'
 
 # --- A dotted key's slug drops the dot rather than the whole segment ---
 # shellcheck disable=SC2016
-sched_line="$(grep '`schedule.overflow_key`' "$tmp/README.md" | head -1)"
+sched_line="$(grep '`schedule.overflow_key`' "$tmp/docs/reference/configuration.md" | head -1)"
 assert_contains "schedule.overflow_key's row slugs the dotted key with the dot dropped" "$sched_line" '...[continued below](#extended-notes-scheduleoverflow_key)'
 
 # --- Every over-long note appears in full, verbatim (pipes unescaped), in
@@ -580,7 +581,7 @@ assert_contains "the review notes heading is clamped to exactly level 6" "$revie
 #     exactly as a plain array of strings always was; the Extended notes
 #     subsection puts a blank line between the two paragraphs instead. ---
 # shellcheck disable=SC2016
-pi_line="$(grep '`pi`' "$tmp/README.md" | head -1)"
+pi_line="$(grep '`pi`' "$tmp/docs/reference/configuration.md" | head -1)"
 assert_contains "pi's row carries the continuation link" "$pi_line" '...[continued below](#extended-notes-pi)'
 assert_eq "pi's row stays a single table line ending in |" "|" "${pi_line: -1}"
 # shellcheck disable=SC2016
@@ -592,7 +593,7 @@ assert_contains "the main notes region breaks pi's two paragraphs with a blank l
 #     subsection renders it as a real `- ` list, blank-line-separated from
 #     the paragraphs either side. ---
 # shellcheck disable=SC2016
-rho_line="$(grep '`rho`' "$tmp/README.md" | head -1)"
+rho_line="$(grep '`rho`' "$tmp/docs/reference/configuration.md" | head -1)"
 assert_contains "rho's row carries the continuation link" "$rho_line" '...[continued below](#extended-notes-rho)'
 assert_eq "rho's row stays a single table line ending in |" "|" "${rho_line: -1}"
 assert_contains "rho's cell degrades the list to items joined by a comma" "$rho_line" 'first list item text, second list item text, third list item text'
@@ -606,7 +607,7 @@ assert_contains "the main notes region blank-lines rho's list off the paragraph 
 #     its newlines turned to spaces; the Extended notes subsection renders
 #     it as a real fenced ```bash block, newlines intact. ---
 # shellcheck disable=SC2016
-sigma_line="$(grep '`sigma`' "$tmp/README.md" | head -1)"
+sigma_line="$(grep '`sigma`' "$tmp/docs/reference/configuration.md" | head -1)"
 assert_contains "sigma's row carries the continuation link" "$sigma_line" '...[continued below](#extended-notes-sigma)'
 assert_eq "sigma's row stays a single table line ending in |" "|" "${sigma_line: -1}"
 # shellcheck disable=SC2016
@@ -637,19 +638,19 @@ assert_not_contains "psi's short code note gets no Extended notes subsection" "$
 
 # --- --check stays clean on the freshly rewritten tree, including the notes
 #     regions, and stays a no-op on a second render ---
-before_hash="$(cat "$tmp/README.md" "$tmp"/docs/*.md | sha256sum)"
+before_hash="$(cat "$tmp/docs/reference/configuration.md" "$tmp"/docs/*.md | sha256sum)"
 run_script --check >/dev/null 2>&1
 fresh_check_rc=$?
 assert_eq "--check exits zero on a fresh tree" "0" "$fresh_check_rc"
 run_script >/dev/null
-after_hash="$(cat "$tmp/README.md" "$tmp"/docs/*.md | sha256sum)"
+after_hash="$(cat "$tmp/docs/reference/configuration.md" "$tmp"/docs/*.md | sha256sum)"
 assert_eq "regenerating a fresh tree is a no-op" "$before_hash" "$after_hash"
 
 # --- A stale Extended notes subsection is refused, naming the region and
 #     the first differing key, the same way a stale table row is ---
-cp "$tmp/README.md" "$tmp/README.md.bak"
+cp "$tmp/docs/reference/configuration.md" "$tmp/docs/reference/configuration.md.bak"
 # shellcheck disable=SC2016
-sed -i 's/### Extended notes: `mu`/### Extended notes: `mu` (EDITED)/' "$tmp/README.md"
+sed -i 's/### Extended notes: `mu`/### Extended notes: `mu` (EDITED)/' "$tmp/docs/reference/configuration.md"
 stale_notes_out="$(run_script --check 2>&1)"
 stale_notes_rc=$?
 if (( stale_notes_rc != 0 )); then
@@ -659,13 +660,13 @@ else
 fi
 assert_contains "the stale-notes error names the region" "$stale_notes_out" "id=main"
 assert_contains "the stale-notes error names the first differing key" "$stale_notes_out" "mu"
-mv "$tmp/README.md.bak" "$tmp/README.md"
+mv "$tmp/docs/reference/configuration.md.bak" "$tmp/docs/reference/configuration.md"
 
 # --- A missing notes-region marker pair is refused, naming the file and
 #     region, rather than silently skipping the region ---
-cp "$tmp/README.md" "$tmp/README.md.bak"
+cp "$tmp/docs/reference/configuration.md" "$tmp/docs/reference/configuration.md.bak"
 # shellcheck disable=SC2016
-grep -v '^<!-- config-table:notes id=main' "$tmp/README.md" > "$tmp/README.nomarker" && mv "$tmp/README.nomarker" "$tmp/README.md"
+grep -v '^<!-- config-table:notes id=main' "$tmp/docs/reference/configuration.md" > "$tmp/README.nomarker" && mv "$tmp/README.nomarker" "$tmp/docs/reference/configuration.md"
 missing_marker_out="$(run_script --check 2>&1)"
 missing_marker_rc=$?
 if (( missing_marker_rc != 0 )); then
@@ -673,17 +674,17 @@ if (( missing_marker_rc != 0 )); then
 else
   fail "--check exits non-zero when a notes-region marker is missing (got rc=0)"
 fi
-assert_contains "the missing-marker error names the file" "$missing_marker_out" "README.md"
+assert_contains "the missing-marker error names the file" "$missing_marker_out" "configuration.md"
 assert_contains "the missing-marker error names the region" "$missing_marker_out" "id=main"
-mv "$tmp/README.md.bak" "$tmp/README.md"
+mv "$tmp/docs/reference/configuration.md.bak" "$tmp/docs/reference/configuration.md"
 
 # --- A notes-region marker with no ATX heading above it is a hard failure,
 #     in both modes, not just a --check staleness report ---
-cp "$tmp/README.md" "$tmp/README.md.bak"
+cp "$tmp/docs/reference/configuration.md" "$tmp/docs/reference/configuration.md.bak"
 {
   printf '<!-- config-table:notes id=main -->\n<!-- config-table:notes-end -->\n'
-  cat "$tmp/README.md"
-} > "$tmp/README.orphan" && mv "$tmp/README.orphan" "$tmp/README.md"
+  cat "$tmp/docs/reference/configuration.md"
+} > "$tmp/README.orphan" && mv "$tmp/README.orphan" "$tmp/docs/reference/configuration.md"
 no_heading_out="$(run_script --check 2>&1)"
 no_heading_rc=$?
 if (( no_heading_rc != 0 )); then
@@ -692,7 +693,7 @@ else
   fail "a notes marker with no heading above it is refused (got rc=0)"
 fi
 assert_contains "the no-heading error names the region" "$no_heading_out" "id=main"
-mv "$tmp/README.md.bak" "$tmp/README.md"
+mv "$tmp/docs/reference/configuration.md.bak" "$tmp/docs/reference/configuration.md"
 
 # --- Two keys whose Extended notes headings would slug the same are
 #     refused rather than silently landing on the same anchor (a duplicate
@@ -717,7 +718,7 @@ awk '
   c == 1 { print; c = 2; next }   # header row - keep
   c == 2 { c = 3; next }          # delimiter row - drop
   { print }
-' "$tmp/README.md" > "$tmp/README.nodelim" && mv "$tmp/README.nodelim" "$tmp/README.md"
+' "$tmp/docs/reference/configuration.md" > "$tmp/README.nodelim" && mv "$tmp/README.nodelim" "$tmp/docs/reference/configuration.md"
 delim_out="$(run_script --check 2>&1)"
 delim_rc=$?
 if (( delim_rc != 0 )); then

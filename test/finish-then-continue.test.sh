@@ -112,7 +112,7 @@ STUB
     printf 'state_dir=%q\n' "$run_dir"
     printf 'log_file=%q\n' "$run_dir/log.jsonl"
     printf 'lock_acquired=0\nlock_file=%q\nclone_dir=""\n' "$run_dir/lock.json"
-    printf 'max_chained_cycles=%q\nONCE=0\n' "$max"
+    printf 'max_chained_cycles=%q\nONCE=0\nDRY_RUN=0\n' "$max"
     printf '%s\n' "$argv_decl"
     printf 'log_event() { printf "EVENT %%s %%s\\n" "$1" "$2" >> %q; }\n' "$run_dir/events.log"
     printf 'maybe_run_enabler() { :; }\n'
@@ -165,16 +165,17 @@ assert_eq "chain_eligible=1 after a *handled* stage failure (exit 0, like a stan
 # --- by agent-ops#1103) ----------------------------------------------------
 # The image-behind check inside cleanup() has two separable jobs: it only ever
 # *cancels* a chain that was otherwise eligible (never grants one), and it
-# writes the roll-pending marker at every clean, non-`--once` cycle-end that
-# is behind on its image — whether or not there was a chain to cancel, since a
-# node that is merely busy and never chains needs the same poll-sized gap a
-# chaining node's cancellation gives it. Only an unclean exit or a `--once` run
-# skips the check outright. Driven with the real chain_image_behind and
+# writes the roll-pending marker at every clean, non-`--once`, non-`--dry-run`
+# cycle-end that is behind on its image — whether or not there was a chain to
+# cancel, since a node that is merely busy and never chains needs the same
+# poll-sized gap a chaining node's cancellation gives it. Only an unclean exit
+# or a `--once`/`--dry-run` run skips the check outright. Driven with the real
+# chain_image_behind and
 # chain_write_roll_pending (lib/chain.sh) and a stubbed image_drift_status/
 # agent_ops_version, so no real registry call or build-info.json is needed.
 
-run_cycle_image() {  # run_cycle_image DESC CHAIN_ELIGIBLE EXIT_CODE IMAGE_STATUS_JSON [ONCE]
-  local desc="$1" eligible="$2" code="$3" image_json="$4" once="${5:-0}"
+run_cycle_image() {  # run_cycle_image DESC CHAIN_ELIGIBLE EXIT_CODE IMAGE_STATUS_JSON [ONCE] [DRY_RUN]
+  local desc="$1" eligible="$2" code="$3" image_json="$4" once="${5:-0}" dry_run="${6:-0}"
   local run_dir spawn_record script
   run_dir="$tmp_dir/img-$(printf '%s' "$desc" | tr -c 'A-Za-z0-9' '-')"
   mkdir -p "$run_dir/scripts"
@@ -194,7 +195,7 @@ STUB
     printf 'state_dir=%q\n' "$run_dir"
     printf 'log_file=%q\n' "$run_dir/log.jsonl"
     printf 'lock_acquired=0\nlock_file=%q\nclone_dir=""\n' "$run_dir/lock.json"
-    printf 'max_chained_cycles=3\ncycle_interval_minutes=15\nORIGINAL_ARGV=()\nONCE=%q\n' "$once"
+    printf 'max_chained_cycles=3\ncycle_interval_minutes=15\nORIGINAL_ARGV=()\nONCE=%q\nDRY_RUN=%q\n' "$once" "$dry_run"
     printf 'log_event() { printf "EVENT %%s %%s\\n" "$1" "$2" >> %q; }\n' "$run_dir/events.log"
     printf 'maybe_run_enabler() { :; }\n'
     printf 'agent_ops_version() { printf null; }\n'
@@ -258,6 +259,10 @@ run_dir="$(run_cycle_image once-never-writes-the-marker 0 0 "$behind" 1)"
 assert_eq "a --once run never writes the marker, even when behind (agent-ops#1103)" "0" \
   "$(test -f "$run_dir/roll-pending.json" && echo 1 || echo 0)"
 
+run_dir="$(run_cycle_image dry-run-never-writes-the-marker 0 0 "$behind" 0 1)"
+assert_eq "a --dry-run run never writes the marker, even when behind (agent-ops#2103)" "0" \
+  "$(test -f "$run_dir/roll-pending.json" && echo 1 || echo 0)"
+
 # --- The parent never waits on the child ----------------------------------------
 
 slow_run_dir="$tmp_dir/slow"
@@ -274,7 +279,7 @@ slow_script="$slow_run_dir/run.sh"
   printf 'state_dir=%q\n' "$slow_run_dir"
   printf 'log_file=%q\n' "$slow_run_dir/log.jsonl"
   printf 'lock_acquired=0\nlock_file=%q\nclone_dir=""\n' "$slow_run_dir/lock.json"
-  printf 'max_chained_cycles=3\nORIGINAL_ARGV=()\nONCE=0\n'
+  printf 'max_chained_cycles=3\nORIGINAL_ARGV=()\nONCE=0\nDRY_RUN=0\n'
   printf 'log_event() { :; }\nmaybe_run_enabler() { :; }\n'
   printf '%s\n' "$block"
   printf 'chain_eligible=1\nchain_count=1\nexit 0\n'
@@ -316,7 +321,7 @@ sig_script="$sig_run_dir/run.sh"
   printf 'state_dir=%q\n' "$sig_run_dir"
   printf 'log_file=%q\n' "$sig_run_dir/log.jsonl"
   printf 'lock_acquired=0\nlock_file=%q\nclone_dir=""\n' "$sig_run_dir/lock.json"
-  printf 'max_chained_cycles=3\nORIGINAL_ARGV=()\nONCE=0\n'
+  printf 'max_chained_cycles=3\nORIGINAL_ARGV=()\nONCE=0\nDRY_RUN=0\n'
   printf 'log_event() { :; }\nmaybe_run_enabler() { :; }\n'
   printf '%s\n' "$block"
   printf 'chain_eligible=1\nchain_count=1\nexit 0\n'

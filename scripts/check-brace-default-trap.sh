@@ -87,7 +87,7 @@ if [[ -n "$matches" ]]; then
     echo "  closing character it finds in word, not the one you meant — an unescaped"
     echo "  opening brace/bracket right after :- leaves a stray closing one just"
     echo "  outside the substitution, corrupting every non-empty value while the"
-    echo "  empty/unset path looks fine. See docs/IMPLEMENTATION-PIPELINE-SPEC.md's"
+    echo "  empty/unset path looks fine. See docs/IMPLEMENTATION-PIPELINE-SPEC.md,"
     echo "  Gotchas table (the row on agent-ops#933/TD-PPagop-26082816) for the fix:"
     echo "  initialise the variable ahead of the guard instead of defaulting it."
   } >&2

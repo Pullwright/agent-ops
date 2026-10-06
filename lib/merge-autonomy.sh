@@ -196,6 +196,19 @@ merge_autonomy_resolution_source() {
 # capture the printed document at all), which a subshell's own writes to a
 # process-wide variable never reach the caller back — so both facts travel
 # in the one document this function already returns, never a side channel.
+#
+# A fail-closed document (`.state == "disabled"`, `.record.kind ==
+# "fail-closed"`) also carries a top-level `cause` (agent-ops#1118): the text
+# `fleet_flag_fetch_cause` (lib/toggle.sh) resolves for this call, which is
+# `$cache.err` unless that is itself the flag file's ambiguous 404 and
+# `fleet_repo_visible`'s own repo probe is what actually failed, in which case
+# it is `$cache.repo-err` instead. Before this, the RETRY classification above
+# and `run_approver_stage`'s own fail-closed warning each read `$cache.err`
+# directly and so misreported the cause whenever the repo probe, not the flag
+# fetch, was the thing that failed — a 404-for-a-missing-repo behind a token
+# that lost access, say, reported as "could not read the flag" instead of the
+# probe's own refusal. Every caller now reads `cause` from this document
+# instead of reaching into lib/toggle.sh's private cache-file layout itself.
 merge_autonomy_kill_state() {
   local repo="$1" state_dir="$2" fresh="${3:-}" retry="${4:-}"
   local combined status raw retried_bool="false"
@@ -206,9 +219,8 @@ merge_autonomy_kill_state() {
   status="${combined%%$'\t'*}"
   raw="${combined#*$'\t'}"
   if [[ -z "$raw" && "$status" == "unreachable" && -n "$retry" ]]; then
-    local cache cause kind now reset_epoch wait
-    cache="$(fleet_cache_file "$state_dir" "$MERGE_AUTONOMY_KILL_FLAG")"
-    cause="$(cat "${cache}.err" 2>/dev/null || true)"
+    local cause kind now reset_epoch wait
+    cause="$(fleet_flag_fetch_cause "$state_dir" "$MERGE_AUTONOMY_KILL_FLAG")"
     kind="none"
     declare -F github_limit_kind >/dev/null 2>&1 && kind="$(github_limit_kind "$cause")"
     if [[ "$kind" != "none" ]] && declare -F github_limit_wait_plan >/dev/null 2>&1; then
@@ -230,8 +242,10 @@ merge_autonomy_kill_state() {
   fi
   if [[ -z "$raw" ]]; then
     if [[ "$status" == "unreachable" ]]; then
-      jq -nc --argjson r "$retried_bool" \
-        '{state: "disabled", retried: $r, record: {reason: "state repo unreachable and no cached copy of the kill switch — failing closed to human until a fetch succeeds (TD-PPagop-26081507)", expires_at: null, by: "", disabled_at: "", kind: "fail-closed"}}'
+      local cause
+      cause="$(fleet_flag_fetch_cause "$state_dir" "$MERGE_AUTONOMY_KILL_FLAG")"
+      jq -nc --argjson r "$retried_bool" --arg c "$cause" \
+        '{state: "disabled", retried: $r, cause: $c, record: {reason: "state repo unreachable and no cached copy of the kill switch — failing closed to human until a fetch succeeds (TD-PPagop-26081507)", expires_at: null, by: "", disabled_at: "", kind: "fail-closed"}}'
       return 0
     fi
     jq -nc --argjson r "$retried_bool" '{state: "enabled", retried: $r}'
@@ -265,7 +279,7 @@ merge_autonomy_kill_clear() {
   fleet_flag_delete_outcome "$1" "$2" "$MERGE_AUTONOMY_KILL_FLAG"
 }
 
-# merge_autonomy_effective_level CONFIG_JSON SLUG STATE_REPO STATE_DIR [FRESH] [RETRY]
+# merge_autonomy_effective_level CONFIG_JSON SLUG STATE_REPO STATE_DIR [FRESH] [RETRY] [KILL_JSON]
 # What SLUG is actually governed by right now: `human` whenever the kill
 # switch is set (or its own state cannot be read as clear — see
 # merge_autonomy_kill_state); else, capped at `agent-approves` whenever
@@ -307,10 +321,21 @@ merge_autonomy_kill_clear() {
 # manually killed one calls `merge_autonomy_kill_state` itself instead of
 # this function (`run_approver_stage` does, ahead of this one) and reads
 # `.record.kind` off its own returned document.
+# KILL_JSON (agent-ops#1112) lets a caller that has already fetched the kill
+# switch's own document — `run_approver_stage` does, ahead of this call, for
+# the fail-closed `.record.kind` check above — hand it over instead of
+# making this function fetch it again. When non-empty, its `.state` is read
+# directly and `merge_autonomy_kill_state` is not called a second time; when
+# empty or omitted, behaviour is byte-for-byte unchanged for every other
+# caller (none of which hold such a document).
 merge_autonomy_effective_level() {
-  local config_json="$1" slug="$2" state_repo="$3" state_dir="$4" fresh="${5:-}" retry="${6:-}"
+  local config_json="$1" slug="$2" state_repo="$3" state_dir="$4" fresh="${5:-}" retry="${6:-}" kill_json="${7:-}"
   local kill_state configured configured_rank cap_rank freeze_state
-  kill_state="$(jq -r '.state' <<<"$(merge_autonomy_kill_state "$state_repo" "$state_dir" "$fresh" "$retry")" 2>/dev/null)"
+  if [[ -n "$kill_json" ]]; then
+    kill_state="$(jq -r '.state' <<<"$kill_json" 2>/dev/null)"
+  else
+    kill_state="$(jq -r '.state' <<<"$(merge_autonomy_kill_state "$state_repo" "$state_dir" "$fresh" "$retry")" 2>/dev/null)"
+  fi
   if [[ "$kill_state" != "enabled" ]]; then
     printf 'human'
     return 0

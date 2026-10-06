@@ -234,6 +234,13 @@ DEFAULTED_CONFIG="$(config_defaults "$config_file" "$schema_file" 2>/dev/null)"
 cfg() { jq -r "$1" <<<"$DEFAULTED_CONFIG"; }
 cfg_json() { jq -c "$1" <<<"$DEFAULTED_CONFIG"; }
 
+# The provider seam (requirement 1a, issue #2131): loaded here, ahead of
+# every other check below, since the "Models" section's own resolution
+# checks need to see any provider config.json's `providers` configures
+# beyond the implicit `anthropic` — the same startup position agent-cycle.sh
+# and review-cycle.sh both load it at.
+providers_load "$(cfg_json '.providers')"
+
 # repository_review.repos, each resolved against repository_review.defaults
 # (requirement 342) — the same lib/config-schema.sh helper review-cycle.sh
 # uses, so the two scripts cannot resolve the same repository two different
@@ -274,7 +281,7 @@ doc_value_mismatches="$(config_documented_value_mismatches "$DEFAULTED_CONFIG" "
 if [[ -n "$doc_value_mismatches" ]]; then
   while IFS=$'\t' read -r dvm_key dvm_doc dvm_resolved; do
     [[ -n "$dvm_key" ]] || continue
-    warn "$dvm_key is documented (README.md/docs/IMPLEMENTATION-PIPELINE-SPEC.md) as $dvm_doc but resolves to $dvm_resolved from $config_file — the documentation describes an installation that does not exist"
+    warn "$dvm_key is documented (docs/reference/configuration.md/docs/IMPLEMENTATION-PIPELINE-SPEC.md) as $dvm_doc but resolves to $dvm_resolved from $config_file — the documentation describes an installation that does not exist"
   done <<<"$doc_value_mismatches"
 else
   ok "every documented installation value (x-docs.value differing from its own default) matches config.json"
@@ -376,7 +383,7 @@ fi
 # is instead an operator's deliberate, temporary pause of a stage that still
 # exists (warn, never refuse; #924's own wording).
 refiner_model="$(cfg '.refiner_model')"
-refiner_max_per_engagement="$(cfg '.refiner_max_per_engagement')"
+refiner_max_per_engagement="$(cfg_int '.refiner_max_per_engagement')"
 [[ "$refiner_max_per_engagement" =~ ^[0-9]+$ ]] || refiner_max_per_engagement=5
 refinement_policy_json="$(cfg_json '.refinement_policy')"
 required_sources_without_refiner="$(config_required_refinement_sources_without_refiner \
@@ -900,6 +907,40 @@ if [[ "$(cfg '.crash_loop_after')" != "0" && -z "$(cfg '.crash_loop_repo')" ]]; 
   warn "crash_loop_after is set but crash_loop_repo is empty, which disables both checks anyway — a fleet-wide crash loop would surface nowhere"
 fi
 
+# --- Providers ---
+
+section "Providers"
+
+# config_provider_errors (issue #2131) is the escape valve requirement 1b's
+# own cross-key guards use for a key the declarative schema cannot shape-
+# validate, because `providers`'s own entries are each named by the
+# installation: a fail here mirrors agent-cycle.sh's and review-cycle.sh's
+# own startup refusal, through the same lib/config-schema.sh function.
+provider_errors="$(config_provider_errors "$(cfg_json '.providers')")"
+if [[ -n "$provider_errors" ]]; then
+  while IFS= read -r line; do fail "$line"; done <<<"$provider_errors"
+else
+  ok "providers block is well-formed"
+fi
+
+# Reports every provider PROVIDER_SUBSTRATE knows — the implicit `anthropic`
+# included, synthesized by providers_load above whether or not config.json
+# names it — its substrate and its resolved credential_env, so an operator
+# can see at a glance what each configured provider resolves to without
+# reading `providers_load`'s own defaulting logic. Sorted by name: bash's own
+# associative-array key order is unspecified, and this report should read
+# the same from one run to the next.
+while IFS= read -r provider_name; do
+  [[ -n "$provider_name" ]] || continue
+  provider_substrate="${PROVIDER_SUBSTRATE[$provider_name]}"
+  provider_credential_env="${PROVIDER_CREDENTIAL_ENV[$provider_name]:-}"
+  if provider_substrate_installed "$provider_substrate"; then
+    ok "$provider_name → substrate $provider_substrate, credential $provider_credential_env"
+  else
+    fail "$provider_name → substrate $provider_substrate, which this image has no adapter for"
+  fi
+done < <(printf '%s\n' "${!PROVIDER_SUBSTRATE[@]}" | sort)
+
 # --- Models ---
 
 section "Models"
@@ -907,14 +948,19 @@ section "Models"
 # The six keys requirement 1c's model-tier ladder covers (lib/model-id.sh's
 # MODEL_TIER_RANK) get a second check beyond simple resolution: a value that
 # resolves cleanly but isn't on the ladder cannot be verified by the floor
-# check below, so it is warned here rather than silently treated as fine.
+# check below, so it is warned here rather than silently treated as fine —
+# including a cross-provider pair, which can never be ranked against another
+# provider's own tiers (MODEL_TIER_RANK's qualified keying, issue #2131).
 tier_ladder_keys=" coordinator_model refiner_model enabler_model implementer_model_default implementer_model_trivial reviewer_model_default "
 while IFS=$'\t' read -r key value; do
   [[ -n "$key" ]] || continue
   if resolved="$(resolve_model_id "$key" "$value" 2>&1)"; then
     ok "$key → $resolved"
-    if [[ "$tier_ladder_keys" == *" $key "* ]] && ! model_tier_known "$resolved"; then
-      warn "$key ($resolved) is not on the fleet's model-tier ladder (lib/model-id.sh's MODEL_TIER_RANK) — the model-tier floor check (requirement 1c) cannot verify it against the other five"
+    if [[ "$tier_ladder_keys" == *" $key "* ]]; then
+      qualified="$(resolve_model_qualified "$key" "$value" 2>/dev/null || true)"
+      if ! model_tier_known "$qualified"; then
+        warn "$key ($qualified) is not on the fleet's model-tier ladder (lib/model-id.sh's MODEL_TIER_RANK) — the model-tier floor check (requirement 1c) cannot verify it against the other five, including across providers"
+      fi
     fi
   else
     fail "$resolved"
@@ -954,12 +1000,12 @@ done < <(jq -r '
 # tier it might write for is exactly the failure #815 (fixed by #819) and
 # #821 both trace to. A fail here mirrors agent-cycle.sh's own startup guard,
 # through the same lib/config-schema.sh function, so the two can never drift.
-refiner_model_bare="$(resolve_model_id refiner_model "$(cfg '.refiner_model')" 2>/dev/null || true)"
-enabler_model_bare="$(resolve_model_id enabler_model "$(cfg '.enabler_model')" 2>/dev/null || true)"
-implementer_model_default_bare="$(resolve_model_id implementer_model_default "$(cfg '.implementer_model_default')" 2>/dev/null || true)"
-implementer_model_trivial_bare="$(resolve_model_id implementer_model_trivial "$(cfg '.implementer_model_trivial')" 2>/dev/null || true)"
-tier_violations="$(config_model_tier_floor_violations "$refiner_model_bare" "$enabler_model_bare" \
-  "$implementer_model_default_bare" "$implementer_model_trivial_bare")"
+refiner_model_q="$(resolve_model_qualified refiner_model "$(cfg '.refiner_model')" 2>/dev/null || true)"
+enabler_model_q="$(resolve_model_qualified enabler_model "$(cfg '.enabler_model')" 2>/dev/null || true)"
+implementer_model_default_q="$(resolve_model_qualified implementer_model_default "$(cfg '.implementer_model_default')" 2>/dev/null || true)"
+implementer_model_trivial_q="$(resolve_model_qualified implementer_model_trivial "$(cfg '.implementer_model_trivial')" 2>/dev/null || true)"
+tier_violations="$(config_model_tier_floor_violations "$refiner_model_q" "$enabler_model_q" \
+  "$implementer_model_default_q" "$implementer_model_trivial_q")"
 if [[ -n "$tier_violations" ]]; then
   while IFS=$'\t' read -r author_key floor_key author_id floor_id; do
     [[ -n "$author_key" ]] || continue

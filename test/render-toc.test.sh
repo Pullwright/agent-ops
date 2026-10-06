@@ -44,17 +44,38 @@ assert_contains() {
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-mkdir -p "$tmp/scripts" "$tmp/docs" "$tmp/lib"
+mkdir -p "$tmp/scripts" "$tmp/docs/guides/working-with-pullwright" "$tmp/docs/guides/operating" "$tmp/docs/guides/contributing" "$tmp/lib"
 cp "$SCRIPT_DIR/scripts/render-toc.sh" "$tmp/scripts/render-toc.sh"
 cp "$SCRIPT_DIR/lib/markdown-scan.sh" "$tmp/lib/markdown-scan.sh"
 chmod +x "$tmp/scripts/render-toc.sh"
 
-# --- Fixture docs: README.md carries a deliberately stale ToC region (a
+# --- Fixture docs: the working-with-pullwright guide carries a deliberately stale ToC region (a
 #     heading was added without regenerating); the impl spec fixture carries
 #     an already-fresh region, so the "fresh tree is a no-op" case is covered
 #     on a second file too. ---
+write_fixture_other_guides() {
+  cat > "$tmp/docs/guides/operating/README.md" <<'MD'
+# Fixture operating guide
+
+<!-- toc:start -->
+- [Operating Alpha](#operating-alpha)
+<!-- toc:end -->
+
+## Operating Alpha
+MD
+  cat > "$tmp/docs/guides/contributing/README.md" <<'MD'
+# Fixture contributing guide
+
+<!-- toc:start -->
+- [Contributing Alpha](#contributing-alpha)
+<!-- toc:end -->
+
+## Contributing Alpha
+MD
+}
+
 write_fixture_readme() {
-  cat > "$tmp/README.md" <<'MD'
+  cat > "$tmp/docs/guides/working-with-pullwright/README.md" <<'MD'
 # Fixture
 
 Sentinel before.
@@ -92,6 +113,7 @@ MD
 
 write_fixture_readme
 write_fixture_impl_spec
+write_fixture_other_guides
 
 run_script() (
   cd "$tmp" && ./scripts/render-toc.sh "$@"
@@ -112,7 +134,7 @@ run_script >/dev/null
 rewrite_rc=$?
 assert_eq "rewriting in place exits 0" "0" "$rewrite_rc"
 
-readme_content="$(cat "$tmp/README.md")"
+readme_content="$(cat "$tmp/docs/guides/working-with-pullwright/README.md")"
 assert_contains "the regenerated ToC lists First Heading" "$readme_content" "- [First Heading](#first-heading)"
 assert_contains "the regenerated ToC nests A Sub Heading" "$readme_content" "  - [A Sub Heading](#a-sub-heading)"
 assert_contains "the regenerated ToC lists Second Heading" "$readme_content" "- [Second Heading](#second-heading)"
@@ -127,12 +149,12 @@ assert_contains "text after the headings survives" "$readme_content" "Sentinel a
 
 # --- --check stays clean on the freshly rewritten tree, and regenerating
 #     again is a no-op ---
-before_hash="$(cat "$tmp/README.md" "$tmp"/docs/*.md | sha256sum)"
+before_hash="$(cat "$tmp/docs/guides/working-with-pullwright/README.md" "$tmp"/docs/*.md | sha256sum)"
 run_script --check >/dev/null 2>&1
 fresh_check_rc=$?
 assert_eq "--check exits zero on a fresh tree" "0" "$fresh_check_rc"
 run_script >/dev/null
-after_hash="$(cat "$tmp/README.md" "$tmp"/docs/*.md | sha256sum)"
+after_hash="$(cat "$tmp/docs/guides/working-with-pullwright/README.md" "$tmp"/docs/*.md | sha256sum)"
 assert_eq "regenerating a fresh tree is a no-op" "$before_hash" "$after_hash"
 
 # ============================================================================
@@ -142,8 +164,8 @@ assert_eq "regenerating a fresh tree is a no-op" "$before_hash" "$after_hash"
 # ============================================================================
 
 # --- Both markers missing entirely ---
-cp "$tmp/README.md" "$tmp/README.md.bak"
-sed -i '/<!-- toc:start -->/,/<!-- toc:end -->/d' "$tmp/README.md"
+cp "$tmp/docs/guides/working-with-pullwright/README.md" "$tmp/docs/guides/working-with-pullwright/README.md.bak"
+sed -i '/<!-- toc:start -->/,/<!-- toc:end -->/d' "$tmp/docs/guides/working-with-pullwright/README.md"
 missing_regen_out="$(run_script 2>&1)"
 missing_regen_rc=$?
 if (( missing_regen_rc != 0 )); then
@@ -160,11 +182,11 @@ else
   fail "--check mode refuses a file with no toc markers (got rc=0)"
 fi
 assert_contains "the no-markers error (--check mode) names the file" "$missing_check_out" "README.md"
-mv "$tmp/README.md.bak" "$tmp/README.md"
+mv "$tmp/docs/guides/working-with-pullwright/README.md.bak" "$tmp/docs/guides/working-with-pullwright/README.md"
 
 # --- Only the start marker present (end missing) ---
-cp "$tmp/README.md" "$tmp/README.md.bak"
-grep -v '^<!-- toc:end -->$' "$tmp/README.md" > "$tmp/README.md.tmp" && mv "$tmp/README.md.tmp" "$tmp/README.md"
+cp "$tmp/docs/guides/working-with-pullwright/README.md" "$tmp/docs/guides/working-with-pullwright/README.md.bak"
+grep -v '^<!-- toc:end -->$' "$tmp/docs/guides/working-with-pullwright/README.md" > "$tmp/docs/guides/working-with-pullwright/README.md.tmp" && mv "$tmp/docs/guides/working-with-pullwright/README.md.tmp" "$tmp/docs/guides/working-with-pullwright/README.md"
 only_start_out="$(run_script --check 2>&1)"
 only_start_rc=$?
 if (( only_start_rc != 0 )); then
@@ -173,11 +195,11 @@ else
   fail "--check refuses a file with only the start marker (got rc=0)"
 fi
 assert_contains "the unpaired-start error names the file" "$only_start_out" "README.md"
-mv "$tmp/README.md.bak" "$tmp/README.md"
+mv "$tmp/docs/guides/working-with-pullwright/README.md.bak" "$tmp/docs/guides/working-with-pullwright/README.md"
 
 # --- Only the end marker present (start missing) ---
-cp "$tmp/README.md" "$tmp/README.md.bak"
-grep -v '^<!-- toc:start -->$' "$tmp/README.md" > "$tmp/README.md.tmp" && mv "$tmp/README.md.tmp" "$tmp/README.md"
+cp "$tmp/docs/guides/working-with-pullwright/README.md" "$tmp/docs/guides/working-with-pullwright/README.md.bak"
+grep -v '^<!-- toc:start -->$' "$tmp/docs/guides/working-with-pullwright/README.md" > "$tmp/docs/guides/working-with-pullwright/README.md.tmp" && mv "$tmp/docs/guides/working-with-pullwright/README.md.tmp" "$tmp/docs/guides/working-with-pullwright/README.md"
 only_end_out="$(run_script --check 2>&1)"
 only_end_rc=$?
 if (( only_end_rc != 0 )); then
@@ -186,11 +208,11 @@ else
   fail "--check refuses a file with only the end marker (got rc=0)"
 fi
 assert_contains "the unpaired-end error names the file" "$only_end_out" "README.md"
-mv "$tmp/README.md.bak" "$tmp/README.md"
+mv "$tmp/docs/guides/working-with-pullwright/README.md.bak" "$tmp/docs/guides/working-with-pullwright/README.md"
 
 # --- More than one marker pair ---
-cp "$tmp/README.md" "$tmp/README.md.bak"
-sed -i '0,/<!-- toc:end -->/{s/<!-- toc:end -->/<!-- toc:end -->\n<!-- toc:start -->\n- extra\n<!-- toc:end -->/}' "$tmp/README.md"
+cp "$tmp/docs/guides/working-with-pullwright/README.md" "$tmp/docs/guides/working-with-pullwright/README.md.bak"
+sed -i '0,/<!-- toc:end -->/{s/<!-- toc:end -->/<!-- toc:end -->\n<!-- toc:start -->\n- extra\n<!-- toc:end -->/}' "$tmp/docs/guides/working-with-pullwright/README.md"
 dup_out="$(run_script --check 2>&1)"
 dup_rc=$?
 if (( dup_rc != 0 )); then
@@ -199,15 +221,15 @@ else
   fail "--check refuses a file with more than one marker pair (got rc=0)"
 fi
 assert_contains "the duplicate-markers error names the file" "$dup_out" "README.md"
-mv "$tmp/README.md.bak" "$tmp/README.md"
+mv "$tmp/docs/guides/working-with-pullwright/README.md.bak" "$tmp/docs/guides/working-with-pullwright/README.md"
 
 # --- Markers present exactly once each, but in reversed order ---
-cp "$tmp/README.md" "$tmp/README.md.bak"
+cp "$tmp/docs/guides/working-with-pullwright/README.md" "$tmp/docs/guides/working-with-pullwright/README.md.bak"
 awk '
   /^<!-- toc:start -->/ { start = $0; next }
   /^<!-- toc:end -->/ { print; print start; next }
   { print }
-' "$tmp/README.md" > "$tmp/README.md.tmp" && mv "$tmp/README.md.tmp" "$tmp/README.md"
+' "$tmp/docs/guides/working-with-pullwright/README.md" > "$tmp/docs/guides/working-with-pullwright/README.md.tmp" && mv "$tmp/docs/guides/working-with-pullwright/README.md.tmp" "$tmp/docs/guides/working-with-pullwright/README.md"
 reversed_out="$(run_script --check 2>&1)"
 reversed_rc=$?
 if (( reversed_rc != 0 )); then
@@ -216,7 +238,7 @@ else
   fail "--check refuses a file with reversed markers (got rc=0)"
 fi
 assert_contains "the reversed-markers error names the file" "$reversed_out" "README.md"
-mv "$tmp/README.md.bak" "$tmp/README.md"
+mv "$tmp/docs/guides/working-with-pullwright/README.md.bak" "$tmp/docs/guides/working-with-pullwright/README.md"
 
 # --- A correctly paired region is unaffected: --check is clean afterwards ---
 run_script --check >/dev/null 2>&1

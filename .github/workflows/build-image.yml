@@ -239,10 +239,11 @@ jobs:
 
     # The `test/` suite is the bulk of this job and takes ~20 minutes per
     # architecture inside the image (this workflow's own run history is the
-    # measurement — README.md's "Running the tests" figure is a developer
-    # host's, and slower); the image build and the toolchain/crontab/stamp
-    # checks around it add the rest. 90 minutes is deliberately generous
-    # margin over that, because the point of the bound is not to grade a slow
+    # measurement — docs/guides/contributing/README.md's "Running the
+    # tests" figure is a developer host's, and slower); the image build and
+    # the toolchain/crontab/stamp checks around it add the rest. 90 minutes
+    # is deliberately generous margin over that, because the point of the
+    # bound is not to grade a slow
     # run but to stop falling back to Actions' implicit 6-hour job timeout —
     # a hung test (this suite exercises real signal/process-group handling
     # with background `sleep` stand-ins) would otherwise spin, unexplained,

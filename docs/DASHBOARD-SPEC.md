@@ -5,7 +5,7 @@ describes the local monitoring dashboard **as built**: what it is, the state
 it reads, how it is assembled, and the decisions behind it. Use it to
 understand, modify, or regenerate the dashboard — and keep it accurate: any
 change to the dashboard lands together with the edit that keeps this
-document describing what actually exists (see `CLAUDE.md`, "As-built
+document describing what actually exists (see `AGENTS.md`, "As-built
 specifications"). Where it says "requirement N", it means requirement N of
 `docs/IMPLEMENTATION-PIPELINE-SPEC.md`.
 
@@ -228,8 +228,11 @@ All paths derive from `config.json` (tilde-expanded `state_dir` and
   `merge_autonomy_kill_state`'s own `retried` boolean (always `false` here:
   this Publisher passes no `RETRY`, agent-ops#1081), where the local-only
   `_toggle_eval` value does not. Surfaced as
-  `fleet.flags.merge_autonomy_kill` — `{state, retried?, record?}`,
-  `lib/toggle.sh`'s own vocabulary — and rendered as its own banner,
+  `fleet.flags.merge_autonomy_kill` — `{state, retried?, cause?, record?}`
+  on a live tick (`cause` present only on the fail-closed synthesis,
+  agent-ops#1118 — the real diagnosis `fleet_flag_fetch_cause`,
+  `lib/toggle.sh`, resolved for that read), `{state, record?}` on the
+  local-only value — and rendered as its own banner,
   deliberately not folded
   into the fleet-switch banner above: cycles keep running while the kill
   switch is engaged, only landing collapses to `human` fleet-wide, so "every
@@ -3785,28 +3788,26 @@ number's twins elsewhere on the page.
   log union, which quietly assumed every record came from a run. Some do not:
   the pipelines' own documented escape hatch for a stuck item is a hand-written
   `unvoided` (README, "Unsticking an item"), and it carries the
-  `cycle: "manual"` sentinel. Every such record, from every node, for all time,
-  therefore collapsed into a single phantom row — and each of the row's cells
-  then failed in the direction that looks most like a real problem. With no
+  `cycle: "manual"` sentinel. Every such record, from every node, therefore
+  collapsed into a single phantom row — and each of the row's cells then
+  failed in the direction that looks most like a real problem. With no
   `cycle-start` the Started column falls back to the first event's timestamp,
-  so the row was dated to the earliest hand-edit anyone had ever made and
-  froze there; with no `cycle-end` and no node claiming it, the Outcome column
-  reached for the accusation above and read **no clean end**, permanently, of
-  something that was never running; with no `cycles/manual` directory the
-  Stages cell showed three empty stages, as though the work had been abandoned
-  before it began. And because the fleet ordering is a reverse *lexical* sort
-  of the id — the one sort that interleaves every node's history correctly,
-  since a real id begins with its UTC timestamp — `manual` outranked every
-  digit and pinned itself above every genuine cycle, holding one of the
-  `MAX_CYCLES` slots for good.
-  The fix is to filter on the id's shape where the list is built, rather than
-  to special-case the string `manual` or to re-sort by `started_at`: the sort
-  is not what is wrong, and a filter on the shape covers the next sentinel
-  anyone invents as well as this one. Doing it in the Publisher rather than the
-  page keeps the events themselves in the log tail, which is where a record
-  about the pipeline belongs, and leaves untouched every reader that acts on
-  them — the limit stand-down, the blocked and void sets — because each keys on
-  the event and the item, never on the cycle.
+  so the row was dated to the earliest hand-edit anyone had ever made; with no
+  `cycle-end` and no node claiming it, the Outcome column reached for the
+  accusation above and read **no clean end**, permanently, of something that
+  was never running; with no `cycles/manual` directory the Stages cell showed
+  three empty stages. And because the fleet ordering is a reverse *lexical*
+  sort of the id — the one sort that interleaves every node's history
+  correctly, since a real id begins with its UTC timestamp — `manual`
+  outranked every digit and pinned itself above every genuine cycle, holding
+  one of the `MAX_CYCLES` slots.
+  The fix filters on the id's shape where the list is built, rather than
+  special-casing `manual` or re-sorting by `started_at`: the sort is not
+  wrong, and a shape filter covers the next sentinel too. Doing it in the
+  Publisher rather than the page keeps the events themselves in the log tail,
+  which is where a record about the pipeline belongs, and leaves untouched
+  every reader that acts on them — the limit stand-down, the blocked and void
+  sets — because each keys on the event and the item, never on the cycle.
 - **An empty panel states its own cause (the 2026-08-29 blackout).** For ten
   days every dashboard in the fleet reported "No substantive cycles in the
   fleet window" while all four nodes worked normally. Three things had to line
@@ -3826,14 +3827,13 @@ number's twins elsewhere on the page.
   the instance cost ten days was that the failure had no way to be seen, so
   the render now reports its verdict twice — to the Publisher's log for
   whoever is reading logs, and in the payload as `cycle_render` for whoever is
-  reading the page, which in practice is everyone. The rejected alternative
-  was to make the render failure fatal to the publish: it is not, because
-  every other panel on the page is still correct, and a page that stops
-  updating entirely is a worse answer than a page with one panel that says
-  what is wrong with it. Nor is the cache sweep skipped on a failed render —
-  it prunes to the window, which is right whatever the render did; it was the
-  render's silence, not the sweep's correctness, that turned a fault into a
-  blackout.
+  reading the page. The rejected alternative was to make the render failure
+  fatal to the publish: it is not, because every other panel on the page is
+  still correct, and a page that stops updating is a worse answer than a page
+  with one panel that says what is wrong with it. Nor is the cache sweep
+  skipped on a failed render — it prunes to the window, which is right
+  whatever the render did; it was the render's silence, not the sweep's
+  correctness, that turned a fault into a blackout.
 - **A no-op tick is counted, not listed (issue #271).** `MAX_CYCLES = 40` was
   sized for an hourly cadence; the `*/15` change (#268) quadrupled the tick
   rate without touching it, and most of the new ticks are no-ops — a
@@ -3854,7 +3854,7 @@ number's twins elsewhere on the page.
   reason text is a log-tail read rather than a click — the aggregate's
   newest-tick timestamp and the standing banners (switch, usage-limit) are
   what keep that reading a glance.
-  Losing a claim to a peer's healthy contention and then claiming the next
+  Losing a claim to a peer's contention and then claiming the next
   candidate is not a different outcome from an ordinary first-try
   selection — the cycle still did whatever `outcome` already says, PR raised
   or otherwise — so `raced` is not folded into the outcome ladder as a new
@@ -3896,7 +3896,7 @@ number's twins elsewhere on the page.
   node that has stopped heartbeating at all cannot be contending for a claim.
   Fleet-less data (no `fleet` key at all) says nothing about how many nodes
   are active, so it is not read as "one" and renders as it always has, and
-  fleet data naming two or more genuinely active nodes renders both badges
+  fleet data naming two or more active nodes renders both badges
   exactly as before this distinction existed.
 - **An overrun-slot count is not a no-op tick, and must not share its gate**
   (implementation spec 11a, agent-ops#1287). `noop_ticks.overlap` counts
@@ -4071,7 +4071,7 @@ number's twins elsewhere on the page.
   plain click now opens the card and pins it, and the *View on GitHub ↗* link
   the card already carried is the way through.
 
-  The two modes are kept strictly apart, because mixing them is what makes this
+  The two modes are kept apart, because mixing them is what makes this
   pattern annoying elsewhere: a card opened by hovering closes by unhovering,
   and a card opened by clicking closes only by clicking — off it, on the number
   again, on its close button, or `Escape`. A pinned card therefore neither

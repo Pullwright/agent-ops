@@ -20,7 +20,7 @@
       commit message on `main`, and CI checks both the title and every
       commit on the branch.
 - [ ] If this changes pipeline behaviour, the matching as-built spec under
-      `docs/` is updated in this same PR (see `CLAUDE.md`, "As-built
+      `docs/` is updated in this same PR (see `AGENTS.md`, "As-built
       specifications").
 - [ ] Any deferred work or known shortcut is filed as a `pw::type:tech-debt`
       issue and referenced with a `Defers: #n` line, per `TECH-DEBT.md`.

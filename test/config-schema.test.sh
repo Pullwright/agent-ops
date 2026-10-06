@@ -772,6 +772,56 @@ assert_defaults "...and a schedule.excluded_minutes carrying a non-numeric item"
   '.schedule.cycle_interval_minutes = 60 | .schedule.excluded_minutes = [0, "x"]' \
   ".claim_ttl_hours == $RUNTIME_FLOOR_HOURS and .cycles_retained == 200"
 
+# --- cfg_int (agent-ops#2113): config_schema_errors' own type_ok accepts an
+#     integral float (`7.0`, `1e1`) as an integer per JSON Schema's
+#     definition, and jq 1.7 prints such a literal exactly as written — so a
+#     caller whose own fallback guard is a strict `^[0-9]+$` silently discards
+#     it and falls back to its hardcoded default. cfg_int floors a
+#     schema-valid integral float before such a guard ever sees it, and
+#     passes everything else through unchanged so that guard still catches a
+#     genuinely invalid value exactly as it does today. ---
+assert_cfg_int() {
+  local desc="$1" defaulted_config="$2" filter="$3" expected="$4" actual
+  actual="$(DEFAULTED_CONFIG="$defaulted_config" cfg_int "$filter")"
+  if [[ "$actual" == "$expected" ]]; then
+    pass "$desc"
+  else
+    printf 'FAIL - %s\n     expected: %s\n     actual:   %s\n' "$desc" "$expected" "$actual"
+    failures=$(( failures + 1 ))
+  fi
+}
+
+assert_cfg_int "an integral float (7.0) floors to the bare integer" \
+  '{"k":7.0}' '.k' '7'
+assert_cfg_int "an integral float in exponent form (1e1) floors to the bare integer" \
+  '{"k":1e1}' '.k' '10'
+assert_cfg_int "a genuine integer passes through unchanged" \
+  '{"k":7}' '.k' '7'
+assert_cfg_int "a non-integral number passes through unchanged, for the caller's own guard to reject" \
+  '{"k":7.5}' '.k' '7.5'
+assert_cfg_int "a string passes through unchanged, for the caller's own guard to reject" \
+  '{"k":"nope"}' '.k' 'nope'
+assert_cfg_int "an explicit null passes through unchanged, for the caller's own guard to reject" \
+  '{"k":null}' '.k' 'null'
+assert_cfg_int "a missing key passes through unchanged, for the caller's own guard to reject" \
+  '{}' '.k' 'null'
+assert_cfg_int "a filter carrying a // fallback, as a raw jq call site uses, still floors an integral float" \
+  '{"k":7.0}' '.k // 24' '7'
+assert_cfg_int "...and still falls through to the fallback when the key is absent" \
+  '{}' '.k // 24' '24'
+
+# The reported repro (agent-ops#2113): scripts/publish-dashboard.sh resolves
+# pager_min_firing_minutes through cfg_int then the same
+# `^[0-9]+$`-else-default guard it always has; configured as 7.0 it must
+# resolve to 7, not silently revert to the hardcoded fallback of 15.
+pager_min_firing_minutes="$(DEFAULTED_CONFIG='{"pager_min_firing_minutes":7.0}' cfg_int '.pager_min_firing_minutes')"
+[[ "$pager_min_firing_minutes" =~ ^[0-9]+$ ]] || pager_min_firing_minutes=15
+if [[ "$pager_min_firing_minutes" == "7" ]]; then
+  pass "pager_min_firing_minutes configured as 7.0 resolves to 7, not the hardcoded fallback 15"
+else
+  bad "pager_min_firing_minutes configured as 7.0 resolves to 7, not the hardcoded fallback 15 (got $pager_min_firing_minutes)"
+fi
+
 # --- $ref resolution (issue #482): deref must resolve to a fixpoint, not one
 #     hop, and fail closed on a $ref that does not resolve. The shipped schema
 #     has no chained $def today (`pr_label` itself $refs `#/$defs/label` in one
@@ -1255,12 +1305,15 @@ assert_repository_review "an absent repository_review resolves to no repos, neve
   'del(.repository_review)' '. == []'
 
 # --- Model identifiers. D12's whole point is that the qualifier is checked
-#     before it reaches `claude --model`, and the schema is the earlier of the
-#     two places that happens. ---
+#     before it reaches `claude --model`, but since issue #2131 the schema
+#     itself only checks the *shape* (`<name>/<id>`, any name) — whether
+#     `<name>` is actually configured in `providers` is
+#     `lib/model-id.sh`'s `resolve_model_id`'s own fail-fast check at cycle
+#     start (asserted below, via assert_doctor/run_cycle_guard, never here). ---
 assert_valid "a provider-qualified model id is accepted" \
   '.coordinator_model = "anthropic/claude-haiku-4-5-20251001"'
-assert_rejected "a model id qualified with an unsupported provider is rejected" \
-  '.coordinator_model = "openai/gpt-5"' 'config.coordinator_model: "openai/gpt-5" does not match'
+assert_valid "a model id qualified with a provider the schema does not know is still shape-valid" \
+  '.coordinator_model = "openai/gpt-5"'
 assert_rejected "a required model id cannot be empty" \
   '.reviewer_model_default = ""' 'config.reviewer_model_default: must not be empty'
 assert_valid "an optional model id may be empty (it switches its stage off)" \
@@ -1269,8 +1322,35 @@ assert_valid "the Approver's three tiers may all be empty (it switches the whole
   '.approver_model_default = "" | .approver_model_complex = "" | .approver_model_critical = ""'
 assert_valid "a provider-qualified Approver model id is accepted" \
   '.approver_model_default = "anthropic/claude-sonnet-5"'
-assert_rejected "an Approver model id qualified with an unsupported provider is rejected" \
-  '.approver_model_critical = "openai/gpt-5"' 'config.approver_model_critical: "openai/gpt-5" does not match'
+assert_valid "an Approver model id qualified with a provider the schema does not know is still shape-valid" \
+  '.approver_model_critical = "openai/gpt-5"'
+assert_doctor "doctor fails a model id qualified with a provider providers does not configure" \
+  '.coordinator_model = "openai/gpt-5"' 1 \
+  "model-id: coordinator_model: provider 'openai' is not configured"
+assert_doctor "doctor resolves a model id qualified with a provider providers does configure" \
+  '.providers = {"openai": {"substrate": "claude-code"}} | .coordinator_model = "openai/gpt-5"' 0 \
+  "coordinator_model → gpt-5"
+
+# --- config_provider_errors' own faults. `providers` is a bare `"type":
+#     "object"` in the schema — its entries are installation-chosen names, so
+#     the declarative shape cannot reach inside them — which makes an entry
+#     carrying no `substrate` at all schema-valid, and this guard the only
+#     thing that reports it. It runs one call *after* `providers_load`, so
+#     the load has to survive the malformed entry for the guard's own message
+#     to be what the operator sees. ---
+assert_valid "a providers entry with no substrate is still schema-valid" \
+  '.providers = {"xai": {}}'
+assert_doctor "doctor names a providers entry that carries no substrate" \
+  '.providers = {"xai": {}}' 1 'providers.xai: substrate is required'
+assert_doctor "doctor names a providers entry whose substrate has no adapter" \
+  '.providers = {"xai": {"substrate": "grok-build"}}' 1 \
+  'providers.xai: substrate "grok-build" is not one this image has an adapter for'
+assert_doctor "doctor names a providers entry carrying an unknown key" \
+  '.providers = {"xai": {"substrate": "claude-code", "api_key": "x"}}' 1 \
+  'providers.xai: unknown key "api_key"'
+assert_doctor "doctor names a providers entry whose credential_env is explicitly empty" \
+  '.providers = {"xai": {"substrate": "claude-code", "credential_env": ""}}' 1 \
+  'providers.xai: credential_env, if set, must not be empty'
 
 # --- doctor.sh's cross-key rules: what the schema cannot say. ---
 assert_doctor "doctor fails an enabled Enabler with no assignee, as agent-cycle.sh would" \
@@ -1324,15 +1404,15 @@ assert_doctor_shipped "doctor passes with no review_instructions/review_context 
 #     specification for. ---
 assert_doctor "doctor fails refiner_model ranked below implementer_model_default" \
   '.refiner_model = "claude-haiku-4-5-20251001"' 1 \
-  'refiner_model (claude-haiku-4-5-20251001) ranks below implementer_model_default (claude-sonnet-5)'
+  'refiner_model (anthropic/claude-haiku-4-5-20251001) ranks below implementer_model_default (anthropic/claude-sonnet-5)'
 assert_doctor "doctor fails enabler_model ranked below implementer_model_default" \
   '.enabler_model = "claude-haiku-4-5-20251001" | .enabler_assignee = "someone"' 1 \
-  'enabler_model (claude-haiku-4-5-20251001) ranks below implementer_model_default (claude-sonnet-5)'
+  'enabler_model (anthropic/claude-haiku-4-5-20251001) ranks below implementer_model_default (anthropic/claude-sonnet-5)'
 assert_doctor_shipped "doctor passes the shipped configuration's model-tier floor" \
   '.' 0 'refiner_model and enabler_model each rank at or above every implementer tier'
 assert_doctor "doctor warns about a model the tier ladder does not know, rather than silently passing it" \
   '.implementer_model_default = "claude-nonexistent-9"' 0 \
-  'implementer_model_default (claude-nonexistent-9) is not on the fleet'"'"'s model-tier ladder'
+  'implementer_model_default (anthropic/claude-nonexistent-9) is not on the fleet'"'"'s model-tier ladder'
 # --- requirement 1c: a "required" refinement_policy source with no Refiner
 #     to ever refine it would wait forever. ---
 assert_doctor "doctor fails a required refinement source with refiner_model empty" \
@@ -1628,7 +1708,7 @@ DOCUMENTED_REFINER_MODEL="$(jq -r '.properties.refiner_model["x-docs"].value' "$
 # shellcheck disable=SC2016  # backticks here are literal Markdown, not command substitution
 assert_doctor "doctor warns when a documented installation value drifts from what config.json resolves" \
   '.refiner_model = "claude-opus-5"' 0 \
-  "refiner_model is documented (README.md/docs/IMPLEMENTATION-PIPELINE-SPEC.md) as $DOCUMENTED_REFINER_MODEL but resolves to \`claude-opus-5\`"
+  "refiner_model is documented (docs/reference/configuration.md/docs/IMPLEMENTATION-PIPELINE-SPEC.md) as $DOCUMENTED_REFINER_MODEL but resolves to \`claude-opus-5\`"
 # refinement_policy is cleared too: the base fixture sets issues/tech-debt to
 # "required" (agent-ops#822, the shape the shipped installation runs), and an
 # empty refiner_model with a "required" source configured is itself a fail
@@ -1636,12 +1716,12 @@ assert_doctor "doctor warns when a documented installation value drifts from wha
 # convention under test here.
 assert_doctor "doctor renders an empty resolved value as *(unset)*, the same convention the docs use for one" \
   '.refiner_model = "" | .refinement_policy = {}' 0 \
-  "refiner_model is documented (README.md/docs/IMPLEMENTATION-PIPELINE-SPEC.md) as $DOCUMENTED_REFINER_MODEL but resolves to *(unset)*"
+  "refiner_model is documented (docs/reference/configuration.md/docs/IMPLEMENTATION-PIPELINE-SPEC.md) as $DOCUMENTED_REFINER_MODEL but resolves to *(unset)*"
 DOCUMENTED_EXCLUDED_MINUTES="$(jq -r '.properties.schedule.properties.excluded_minutes["x-docs"].value' "$SCHEMA")"
 # shellcheck disable=SC2016  # backticks here are literal Markdown, not command substitution
 assert_doctor "doctor compares an array-valued x-docs.value by its parsed JSON, naming the resolved array" \
   '.schedule.excluded_minutes = [5]' 0 \
-  "schedule.excluded_minutes is documented (README.md/docs/IMPLEMENTATION-PIPELINE-SPEC.md) as $DOCUMENTED_EXCLUDED_MINUTES but resolves to \`[5]\`"
+  "schedule.excluded_minutes is documented (docs/reference/configuration.md/docs/IMPLEMENTATION-PIPELINE-SPEC.md) as $DOCUMENTED_EXCLUDED_MINUTES but resolves to \`[5]\`"
 
 # A key whose `x-docs.value` equals its own schema `default` documents the
 # product's shipped behaviour, not this installation's — `merge_autonomy` is
@@ -1771,12 +1851,28 @@ assert_contains "the duplicate-slug guard names the repeated slug" \
 assert_not_contains "a config the schema accepts is not reported as a schema failure" \
   "does not match config.schema.json" "$guard_out"
 
+# requirement 1b (issue #2131): the provider guard, shared with doctor.sh's
+# own `fail` above through the same lib/config-schema.sh function. A
+# substrate-less entry leaves providers_load nothing to subscript the
+# credential-default table with, and bash rejects an empty
+# associative-array subscript outright — so under the `set -e` this script
+# runs with, the load has to survive the malformed entry for the guard on the
+# very next line to be what the operator sees.
+run_cycle_guard "$(jq -c '.providers = {"xai": {}}' "$BASE_CONFIG")"
+assert_eq "a substrate-less providers entry exits 1, past the schema gate" "1" "$guard_rc"
+assert_contains "the provider guard names the offending entry" \
+  "providers.xai: substrate is required" "$guard_out"
+assert_not_contains "the providers load does not leak a bash array-subscript error" \
+  "bad array subscript" "$guard_out"
+assert_not_contains "a config the schema accepts is not reported as a schema failure" \
+  "does not match config.schema.json" "$guard_out"
+
 # requirement 1c (agent-ops#822): the model-tier floor guard, shared with
 # doctor.sh's own `fail` above through the same lib/config-schema.sh function.
 run_cycle_guard "$(jq -c '.refiner_model = "claude-haiku-4-5-20251001"' "$BASE_CONFIG")"
 assert_eq "refiner_model below implementer_model_default still exits 1, past the schema gate" "1" "$guard_rc"
 assert_contains "the model-tier floor guard names both sides of the violation" \
-  "refiner_model (claude-haiku-4-5-20251001) ranks below implementer_model_default (claude-sonnet-5)" "$guard_out"
+  "refiner_model (anthropic/claude-haiku-4-5-20251001) ranks below implementer_model_default (anthropic/claude-sonnet-5)" "$guard_out"
 assert_not_contains "a config the schema accepts is not reported as a schema failure" \
   "does not match config.schema.json" "$guard_out"
 

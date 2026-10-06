@@ -7,7 +7,7 @@ pipeline: the numbered requirements the system satisfies, the components that
 satisfy them, the acceptance checks that prove it, and the reasoning behind
 them. It describes the system as it exists, and it must keep doing so — any
 change to the pipeline lands together with the edit that keeps this document
-accurate (see `CLAUDE.md`, "As-built specifications"). Where this document is
+accurate (see `AGENTS.md`, "As-built specifications"). Where this document is
 silent, follow the conventions of the two target repositories (their
 `AGENTS.md` files — or `CLAUDE.md`, for a repository that has not migrated —
 are binding on any agent working inside them).
@@ -87,7 +87,6 @@ id defined in exactly one place may be left bare.
   - [The Approver](#the-approver)
 - [Components](#components)
 - [Acceptance checks](#acceptance-checks)
-- [Host provisioning (human steps)](#host-provisioning-human-steps)
 - [Cost profile](#cost-profile)
 - [Design decisions](#design-decisions)
 - [Gotchas](#gotchas)
@@ -101,7 +100,7 @@ of pending work from the configured GitHub repositories, implements it on a
 feature branch in an ephemeral clone, reviews and corrects the result, and
 leaves a mergeable pull request for approval and landing at the repository's
 configured `merge_autonomy` level (see "## The Landing Gate"). It runs
-unattended on the host machine (WSL2 Ubuntu); human involvement narrows to
+unattended on a containerized node; human involvement narrows to
 whatever that level still requires.
 
 ```
@@ -138,9 +137,12 @@ cron (schedule.cycle_interval_minutes)
    `REQUEST_CHANGES` — posted under a non-author GitHub App identity
    ("Pullwright Approver"), never under this system's own authoring account.
 6. The **Human Reviewer** — gives final approval (at `human`) or an
-   additional one alongside the Approver's own (above `human`), and performs
-   the merge on every pull request regardless of level, through the ordinary
-   GitHub process. Not launched by any part of this system.
+   additional one alongside the Approver's own (above `human`), through the
+   ordinary GitHub process. Merges the pull request directly at `human` and
+   `agent-approves`; at `agent-merges-routine` and `agent-merges-all`, the
+   arming step lands an eligible pull request itself (D18, "## The Landing
+   Gate"), and the Human Reviewer's own role narrows to whatever that
+   classifier did not cover. Not launched by any part of this system.
 7. The **Enabler** — a headless Claude Code invocation, engaged rarely and at
    the end of a cycle, that re-examines items recorded as blocked which the
    pipeline has not cleared by itself. It unblocks, voids, or leaves them
@@ -186,15 +188,14 @@ has, whichever pipeline runs it (requirement 9d):
 
 ## Environment (verified 2026-07-20)
 
-- WSL2 Ubuntu; `bash`, `git`, `jq` and `gh` available.
+- A containerized node: `bash`, `git`, `jq`, `gh` and the standalone `claude`
+  CLI are all bundled in the node image (`deploy/docker/`); nothing is
+  installed by hand.
 - `gh` is authenticated as `warwickallen`, with push access to all configured
   repositories.
-- The standalone `claude` CLI is installed and resolvable from cron's
-  minimal environment.
-- `cron` is running (started by WSL's `[boot]` command) with the crontab
-  entries installed: the implementation cycle
-  (`schedule.cycle_interval_minutes`), the review tick, and the dashboard
-  heartbeat (see `README.md`, "Installation").
+- On a containerized node, cron runs inside the scheduler container under
+  supercronic, with the crontab rendered from `deploy/docker/crontab.tmpl`
+  (see `docs/guides/operating/install-a-node.md`).
 - Headless `claude -p` invocations authenticate with the user's existing
   Claude subscription login; `gh` uses its existing token. No new keys.
 
@@ -304,8 +305,8 @@ a node updates by pulling a new image rather than by pulling a branch.
   environment, since the entrypoint's default would otherwise mask a missing
   `ENV`. If a future CLI drops the variable, that check fails before the image
   reaches a node.
-- `deploy/docker/crontab` carries the same three pipeline schedules as the
-  laptop crontab — the dashboard heartbeat, the implementation cycle, the
+- `deploy/docker/crontab` carries the three pipeline schedules — the
+  dashboard heartbeat, the implementation cycle, the
   review tick — plus two fleet lines (requirement 2.5): a `state-sync.sh
   push`, which publishes this node's state and heartbeat to its own branch,
   and a `state-sync.sh fetch`, which materialises every peer's for the union
@@ -997,6 +998,7 @@ and the schema must carry every one of them.
 | `analytics_retained_days` | `0` | How long the analytics records `log.jsonl`/`review-log.jsonl` carry are retained (requirement 2.6d), independent of requirement 2.6's rotation and requirement 2.5's `cycles/`/`reviews/` pruning — neither ever reaches either file. `0` (the default) means retain indefinitely, preserving today's behaviour: this key states the policy, not an enforced expiry, which nothing yet implements. |
 | `constraint_min_share` | `0.3` | The minimum share of fleet node-time (0-1) a candidate must account for before the constraint statement (D21, issue #609) names it as the binding constraint; below it, `scripts/constraint.sh`/`lib/constraint.sh`'s `constraint_classify` reports `insufficient-evidence` rather than naming the largest bucket regardless of size. |
 | `constraint_min_sample_seconds` | `14400` | The minimum aggregate node-seconds (`expected_total_seconds`, node-count x window) the node time-state account must cover before the constraint statement (issue #609) states one at all; below it, `constraint_classify` reports `insufficient-evidence` with reason `window-below-minimum-sample` rather than trusting a share computed from too little data. |
+| `providers` | `{}` | Model providers beyond the implicit `anthropic` (requirement 1a), keyed by provider name, each entry's `substrate` naming the adapter that launches it (`claude-code` is the only one this image has) and optional `credential_env` naming the environment variable that adapter reads for an API key (defaulting by substrate — `ANTHROPIC_API_KEY` for `claude-code`). `anthropic` needs no entry: it is always accepted, substrate `claude-code`, whether or not this object names it explicitly. |
 | `coordinator_model` | `claude-haiku-4-5-20251001` | Selection is cheap triage. |
 | `implementer_model_default` | `claude-sonnet-5` | Any change that affects runtime behaviour. |
 | `implementer_model_trivial` | `claude-haiku-4-5-20251001` | Docs-, comment-, or register-only items. The Co-Ordinator classifies each item and records its reasoning in the work order. |
@@ -1133,10 +1135,13 @@ aliases in the launch commands.
 
 Every `*_model` key above (and `repository_review.defaults.model`, or a repo's own
 override, in `docs/REVIEW-PIPELINE-SPEC.md`) accepts a bare id
-(`claude-sonnet-5`) or a provider-qualified one
-(`anthropic/claude-sonnet-5`), resolved per requirement 1a. Anthropic is the
-only executable provider (D12, `docs/ROADMAP.md`), so the two forms are the
-same value; no other qualifier is accepted.
+(`claude-sonnet-5`, meaning `anthropic`) or a provider-qualified one
+(`anthropic/claude-sonnet-5`, or `<name>/<id>` for a provider `providers`
+above configures), resolved per requirement 1a. `anthropic` is always
+accepted, substrate `claude-code`, whether or not `providers` names it
+explicitly (D12, `docs/ROADMAP.md`); any other qualifier is accepted only
+once `providers` configures it with a substrate this image has an adapter
+for.
 
 <!-- config-table:notes id=main — GENERATED from config.schema.json by scripts/render-config-table.sh; edit the schema, not this section -->
 
@@ -1619,25 +1624,50 @@ implements.
    sized to that handler's worst case (one process-group kill, one log
    append, one 8-second-bounded claim release). Polled rather than slept, so
    a cycle that records and exits in one second costs one second.
-1a. **Model id resolution (D12 groundwork).** Every model key read from
-   config — `coordinator_model`, `implementer_model_default`,
+1a. **Model id resolution, against a configured set of providers (D12,
+   issue #2131).** `providers` states which providers beyond the implicit
+   `anthropic` a model key may qualify with — keyed by provider name, each
+   entry naming a `substrate` (the adapter that launches it; `claude-code`
+   is the only one this image has) and, optionally, a `credential_env`
+   (defaulting by substrate — `ANTHROPIC_API_KEY` for `claude-code`).
+   `lib/model-id.sh`'s `providers_load` loads it into `PROVIDER_SUBSTRATE`
+   (and `PROVIDER_CREDENTIAL_ENV`) once, at startup, before any model key is
+   resolved — synthesizing `anthropic` with substrate `claude-code` whether
+   or not `providers` names it explicitly, so no existing `config.json`
+   needs to change. Every model key read from config —
+   `coordinator_model`, `implementer_model_default`,
    `implementer_model_trivial`, `reviewer_model_default`,
    `reviewer_model_complex`, `enabler_model`, `enabler_model_critical`,
    `refiner_model`, `approver_model_default`, `approver_model_complex`,
    `approver_model_critical` — is resolved immediately after
    being read, before the lock and before any stage may launch: a bare id
-   (`claude-sonnet-5`) means `anthropic/claude-sonnet-5`; an
-   `anthropic/`-qualified id has the qualifier stripped to the same bare id;
-   a qualifier naming any other provider is a fail-fast config error naming
-   the offending key, not a value ever passed to `claude --model`. An empty
-   value (the "disable this stage" convention `reviewer_model_complex` and
-   `enabler_model` both use) passes through unresolved. `review-cycle.sh`
-   applies the same resolution to every repository's own resolved
-   `repository_review.defaults.model` (or its own override in
-   `repository_review.repos`, requirement 342) (`docs/REVIEW-PIPELINE-SPEC.md`).
-   Both scripts share one implementation,
-   `lib/model-id.sh`'s `resolve_model_id`, so the two pipelines can never
-   drift on what counts as a supported provider.
+   (`claude-sonnet-5`) means `anthropic/claude-sonnet-5`; a qualified id has
+   the qualifier stripped to the same bare id once the named provider is
+   accepted; a qualifier naming a provider absent from `providers` is a
+   fail-fast config error naming the offending key, not a value ever passed
+   to `claude --model`, and so is one naming a provider whose configured
+   `substrate` has no adapter in this codebase — named alongside the key, so
+   a `grok-4.3` qualifier can never reach `claude --model` because the
+   schema admitted it. An empty value (the "disable this stage" convention
+   `reviewer_model_complex` and `enabler_model` both use) passes through
+   unresolved. `review-cycle.sh` applies the same resolution to every
+   repository's own resolved `repository_review.defaults.model` (or its own
+   override in `repository_review.repos`, requirement 342)
+   (`docs/REVIEW-PIPELINE-SPEC.md`). Both scripts share one implementation,
+   `lib/model-id.sh`'s `resolve_model_id` (and its sibling
+   `resolve_model_provider`, which names the provider a key resolves to
+   rather than the bare id `claude --model` wants), so the two pipelines can
+   never drift on what counts as a supported provider. `providers`'s own
+   entries are each named by the installation, which is outside what the
+   declarative schema (requirement 1b) can shape-validate on its own — an
+   eighth guard alongside requirement 1b's other seven,
+   `lib/config-schema.sh`'s `config_provider_errors`, rejects an unknown key
+   inside an entry, a missing or unsupported `substrate`, or an explicit
+   empty `credential_env`, shared the same way between `agent-cycle.sh`,
+   `review-cycle.sh` and `scripts/doctor.sh`. Launching a stage on any
+   substrate but `claude-code` is out of this requirement's scope (#2133,
+   #2134): a provider configured with one resolves here, but no stage ever
+   launches on it yet.
 1b. **The configuration has a machine-readable schema, and it is the startup
    gate both pipelines run on.** `config.schema.json` states the shape of
    `config.json` — every key an installation may set, its type, its
@@ -1799,26 +1829,51 @@ implements.
    is the same rule for `repository_review.repos`, shared with `review-cycle.sh`
    instead — `docs/REVIEW-PIPELINE-SPEC.md` requirement R1b).
 
+   An eighth guard, `config_provider_errors` (issue #2131), stays in code for
+   a reason none of the first seven share: it holds *within* one key,
+   `providers`, but that key's own entries are each named by the
+   installation rather than drawn from a fixed set the schema's `properties`
+   could enumerate in advance — the same gap `additionalProperties: false`
+   exists to close everywhere else, with nothing here for it to close
+   against. `config_provider_errors` rejects an unknown key inside one
+   entry (only `substrate` and `credential_env` are read), a missing or
+   unsupported `substrate` — `lib/model-id.sh`'s `PROVIDER_SUBSTRATE_INSTALLED`
+   names the full enum, `claude-code` alone after this issue — and an
+   explicit empty `credential_env`. `agent-cycle.sh` and `review-cycle.sh`
+   both refuse to start on it, and `scripts/doctor.sh` reports the same
+   condition as a `fail` through that one implementation, so the three can
+   never drift.
+
 1c. **The model-tier floor (agent-ops#822).** Nothing before this requirement
     stopped the cheapest model in the fleet from authoring a work order
     specification (`context`/`acceptance`) that a more capable model then
     implemented — #815 (fixed by #819) and #821 both trace to exactly this
     gap. `lib/model-id.sh`'s `MODEL_TIER_RANK` is the ordering that makes
     "cheaper" and "more capable" checkable rather than conventional: the
-    fleet's four currently configured model ids, ranked by capability
+    fleet's four currently configured Claude model ids, ranked by capability
     (Anthropic's own relative pricing confirms the order) —
     `claude-haiku-4-5-20251001` below `claude-sonnet-5` below
-    `claude-opus-5` below `claude-fable-5`. `model_tier_rank`,
-    `model_tier_known` and `model_tier_below` read it; a model the table has
-    never heard of (a future release, or a typo the `modelId` pattern still
-    accepts) ranks unknown rather than lowest or highest, and every check
-    below treats "unknown" as "cannot verify" — never as "fails" or
-    "passes" — so a model newer than this table cannot itself be rejected by
-    it; `scripts/doctor.sh` warns separately (in its "Models" section) when
-    one of `coordinator_model`, `refiner_model`, `enabler_model`,
-    `implementer_model_default`, `implementer_model_trivial` or
-    `reviewer_model_default` is unranked, so an unranked model is never
-    silently invisible to the checks that use this table.
+    `claude-opus-5` below `claude-fable-5` — each keyed by its fully-qualified
+    id (`anthropic/claude-sonnet-5`, `resolve_model_qualified`'s own return
+    shape, issue #2131) rather than the bare one `resolve_model_id` returns.
+    `model_tier_rank`, `model_tier_known` and `model_tier_below` all take a
+    qualified id and read the table by it; a model the table has never heard
+    of (a future release, a typo the `modelId` pattern still accepts, or a
+    second provider's own model before its own tier is ever added here) ranks
+    unknown rather than lowest or highest, and every check below treats
+    "unknown" as "cannot verify" — never as "fails" or "passes" — so a model
+    newer than this table cannot itself be rejected by it. The qualified
+    keying is what makes a cross-provider pair rank unknown by construction
+    rather than by a separate check: two providers' own model ids are simply
+    two different keys here, neither of which the other's own tiers can ever
+    satisfy, so requirement 1c's checks below compare tiers only *within* one
+    provider, exactly as this requirement always intended, without needing to
+    say so as a rule of its own. `scripts/doctor.sh` warns separately (in its
+    "Models" section) when one of `coordinator_model`, `refiner_model`,
+    `enabler_model`, `implementer_model_default`, `implementer_model_trivial`
+    or `reviewer_model_default` is unranked, including every cross-provider
+    case, so an unranked model is never silently invisible to the checks that
+    use this table.
 
     Two authors can write a work order's `context`/`acceptance` directly
     rather than relay text a human, the Script, or a gatherer already wrote:
@@ -2216,12 +2271,12 @@ implements.
    triggers rotation on size, which self-corrects regardless of how often
    the log is written to.
 52. **The table of contents is generated from headings, not hand-maintained,
-   and regenerating it is gated in CI.** `README.md` and
-   `docs/IMPLEMENTATION-PIPELINE-SPEC.md` each carry a `<!-- toc:start -->`
+   and regenerating it is gated in CI.** `docs/IMPLEMENTATION-PIPELINE-SPEC.md`
+   and each guide under `docs/guides/` carries a `<!-- toc:start -->`
    … `<!-- toc:end -->` region, placed immediately after the document's
    title (and any lead-in paragraph, before its first `##` heading), holding
    a nested bullet list of every `##`/`###` heading in the document — the
-   same "generated, never hand-edited" contract CLAUDE.md's "Generated
+   same "generated, never hand-edited" contract AGENTS.md's "Generated
    regions" note states for the configuration tables (requirement 1b,
    component 16), for a second kind of region. `scripts/render-toc.sh`
    (component 24) renders it: extracting headings in document order while
@@ -2270,6 +2325,59 @@ implements.
    three match. No stage, workflow or crontab entry runs the benchmark
    itself: a stage that launched `claude` would be an agent launching an
    agent (see "Actors"), and every run spends tokens.
+52b. **The documentation's links, map, size budget, section citations and
+   as-built phrasing are checked offline on every pull request.**
+   `scripts/check-docs.sh` (component 24b) makes five checks over every
+   tracked Markdown file bar the fixtures `test/check-docs.test.sh` builds to
+   break them and the frozen `tech-debt/` archive, printing one line per
+   violation and exiting non-zero if any check failed. Every relative
+   Markdown link, and every `x-docs` link in `config.schema.json`, resolves
+   to a path that exists, and a `#fragment` on one matches either a heading
+   of the target — slugged by `lib/markdown-scan.sh`'s `gh_slug`, the one
+   GitHub anchor-slug formula shared with requirement 52's table of contents,
+   so the fragment this accepts and the anchor that generates cannot
+   disagree — or an explicit `<a id="…">`/`<a name="…">` anchor in it, which
+   GitHub resolves a fragment against just as readily and which a
+   heading-only reading would call broken. Every in-scope document is named
+   in `docs/README.md`'s "All documents" map, one row per file except a dated
+   `docs/reviews/project-review-*/` directory, which takes one entry for the
+   whole directory, and every path that map names exists. No in-scope
+   document's hand-written content — its bytes outside the generated regions
+   `lib/markdown-scan.sh` lists, the configuration tables of requirement 1b,
+   the tables of contents of requirement 52 and the regions the organisation's
+   sync stamps, which a schema change, a new heading or a re-stamp regenerates
+   — exceeds the 100,000-byte budget `docs/README.md`'s "Size budget" section
+   fixed, unless the document is exempt there (`CHANGELOG.md`,
+   `docs/ROADMAP.md`, `docs/reviews/**`, and every as-built specification,
+   `docs/*-SPEC.md` with its `*` inside one path segment, which `AGENTS.md`'s
+   "As-built specifications" section requires to grow) or carries an entry in
+   `scripts/docs-size-ratchet.tsv` naming the byte count it may not grow past
+   and the issue that will bring it under budget. A marker pair in a file, or
+   with an id or fragment, that the library does not list holds hand-written
+   bytes, as does a region that never reaches its own end marker, so only what
+   a renderer rewrites leaves the measure. An entry for a document that is
+   missing, exempt or within the budget fails, as does an exemption that
+   matches no document, so neither list outlives what it describes. A quoted
+   section citation,
+   in any of the three forms `docs/README.md`'s "How sections are cited"
+   section and this repository's prose use, names a heading of the file it
+   cites or text that still exists in it — checked in documents, prompts,
+   scripts and workflows alike, but never inside a frozen record, whose
+   citations were true when it was filed and which is never edited
+   afterwards. And the count of the five historical-sounding phrases
+   `scripts/docs-phrasing-ratchet.tsv`'s own header lists stays at or below
+   that file's entry for each as-built document: a ratchet, not a ban, since
+   the standing decision of 2026-09-04 (#1154) allows a historical aside that
+   passes the deletion test. Both ratchet files are inventories of what is
+   over the line today, the exemptions aside, never a place to buy slack by
+   raising a limit.
+   The whole check runs offline, reading no network, so an external link is
+   out of scope by design — as are spelling, grammar and requirement-label
+   citations, which issue #2095 covers instead.
+   `.github/workflows/docs.yml` runs `scripts/check-docs.sh --check` on every
+   pull request, on `merge_group` and on push to `main`, ungated by `paths:`
+   — a renamed heading, a moved file or a new citation anywhere in the tree
+   can break any of the five.
 2. **Stand-down checks.** Each check logs its reason and exits cleanly:
 
    Before check 0 below, and before every other check in this list: which
@@ -2579,20 +2687,72 @@ implements.
       entire job is reading the bucket's *live* headers, so it must never be
       answered from a cache or a stale reading. Every one of those is passed
       to the real binary completely unmodified: same argv, same stdout, same
-      stderr, same exit status. A `--paginate`/`--slurp` GET is a partial
-      exception, documented as an open scope limit in `lib/gh-shim.sh`'s own
-      header and filed as tech debt (agent-ops#1114) rather than built here:
-      its response is still stored for last-known-good and still ledgered,
-      but it is never sent a conditional header — one `If-None-Match` applied
-      uniformly to every page a `--paginate` call fetches could 304 a later
-      page whose content actually changed — and, unlike an ordinary
-      cacheable read, it is never sent `-i` either, because `-i` does not
-      merely prepend headers to a paginated call: plain `--paginate` stops
-      merging its pages into one JSON array, and `--slurp` prints its opening
-      `[` ahead of the first status line. Either would hand the caller a
-      differently-shaped document than the real binary gives it, so a
-      paginated call reaches the real binary with the caller's own argv and
-      has its stdout passed through byte for byte.
+      stderr, same exit status. A `--paginate`/`--slurp` GET is conditioned
+      too (agent-ops#1114), but not as a single request: a stale
+      `If-None-Match` applied uniformly to every page a `--paginate` call
+      fetches could 304 a later page whose content actually changed, so
+      `gh_shim_handle_paginate` drives the walk itself — one real-binary call
+      per page, page 1 the caller's own endpoint with a default
+      `per_page=100` appended to its query string when neither it nor the
+      caller's own args already name one (mirroring the real binary's own
+      default for a paginated GET, so a walk that asks for no page size does
+      not fall back to GitHub's 30-item server default instead), and every
+      later page the previous one's own `Link: rel="next"` URL, each
+      conditioned on that page's own stored `ETag` and cached the same way an
+      ordinary `read` is, but under a cache key of its own namespace: page
+      1's per-page argv is byte-identical to the argv a caller running the
+      same endpoint without `--paginate` sends, and an entry a plain `read`
+      wrote carries no `next`, so sharing one entry between the two would
+      have a later walk `304` on it, read `next: null`, stop, and return page
+      1 alone as the whole merged document. A page is conditioned on its own
+      stored `ETag` only when that page's own last fetch found a further
+      page (a non-`null` stored `next`); a page whose stored `next` is
+      `null` is always re-fetched in full, unconditioned, never served
+      `If-None-Match`. This is because GitHub answers a conditional request
+      with the validators alone and no `Link` header at all, so a `304`'d
+      page can only ever continue the walk from its own already-stored
+      `next`, never from a live header — were a page whose stored `next` is
+      `null` conditioned like any other, GitHub's count-based pagination
+      means an append-only collection's final page can grow a real next page
+      between walks while its own bytes, and so its `ETag`, stay identical:
+      it would `304`, revealing nothing, and the walk would end on the stale
+      `null` forever, silently dropping everything appended since. The pages
+      are
+      reassembled to match the real binary's own documented shape exactly,
+      never reparsed: `--slurp` wraps every page's own raw body as its own
+      array element; `-q`/`--jq`/`-t`/`--template` present re-runs that
+      filter once per page in the real binary too, so every page's own
+      already-filtered body is concatenated in call order; otherwise every
+      page's body is expected to be a top-level JSON array, merged by
+      splicing out each page's own outer `[`/`]` and joining with `,` — the
+      separator belonging to the element that follows, so a page that is
+      itself an empty array, or whose inner bytes are whitespace only,
+      contributes neither an element nor a comma, as GitHub serves an empty
+      array for any `Link: rel="next"` that outlived the items behind it,
+      a `next` the shim itself stored and walked on from a later `304`
+      included. A page
+      that does not fit — a status other than a cache-backed `304` or `2xx`,
+      unparseable output, or (plain-array mode) a body that is not itself an
+      array — abandons the walk before printing anything partial and falls
+      back to one real-binary call with the caller's own argv and
+      `--paginate`/`--slurp` both untouched (`_gh_shim_paginate_legacy`,
+      this pathway's entire behaviour before agent-ops#1114), which is also
+      the only pathway a refusal is ever served last-known-good through
+      (property 2, unchanged by this) — from the same whole-call cache entry
+      a successful per-page walk also writes its merged result into. A
+      write's invalidation only ever reaches that whole-call entry and page
+      1's own relative path, never a later page's own absolute one, which
+      costs at most one needless extra round trip on that page's own next
+      fetch, never a wrong answer, since a `304` still depends on GitHub's
+      own `ETag` match. The whole call is ledgered `hit` when every page
+      served from its own `304` and `miss` when at least one page needed a
+      real fetch — the one ledger entry that says more than "a call
+      happened", surfacing the saving this closes agent-ops#1114 for in
+      `scripts/github-budget-report.sh`'s own summary. A walk's final page
+      is never conditioned (acceptance check 2p, agent-ops#2183), so the
+      `hit` branch of this rule never currently obtains — every call that
+      reaches a final page ledgers `miss` on that page's own real fetch
+      alone.
 
       No pathway ever reshapes what the real binary printed. A conditioned
       read is the only call whose argv the shim adds to at all; what it
@@ -9204,17 +9364,24 @@ implements.
    far the most common cause of (agent-ops#1101's own three call sites hit the
    identical shape on the same node within an hour). So the stage calls
    `merge_autonomy_kill_state` itself first, with its own `RETRY` argument
-   set: on a fail-closed read, that function classifies whatever it left in
-   the kill flag's own `$cache.err` via `github_limit_kind`
+   set: on a fail-closed read, that function classifies the real cause of
+   this call's own `unreachable` answer via `github_limit_kind`
    (`lib/github-limit.sh` — reused, not reclassified) and, only when the
    cause was rate-limiting, waits out `github_limit_wait_plan`'s existing
    wait/backoff and asks GitHub once more before giving up — the same
    "classify, then retry only a rate limit" shape requirement 8c's own
-   `approver_post_or_warn` retry already applies to the write side. Both facts
-   a caller needs travel in the document `merge_autonomy_kill_state` itself
-   returns (`.record.kind`, `.retried`), never a global: this call happens
-   inside a `$(...)` command substitution to capture that document at all, and
-   a subshell's writes to a global never reach the caller back.
+   `approver_post_or_warn` retry already applies to the write side. The cause
+   classified is `fleet_flag_fetch_cause`'s own answer (agent-ops#1118): the
+   kill flag's own `$cache.err` unless that is itself the flag file's
+   ambiguous 404 and `fleet_repo_visible`'s repo probe (TD-PPagop-26081602) is
+   what actually failed, in which case it is `$cache.repo-err` instead — a
+   lone rate-limited repo probe, not merely a rate-limited flag fetch, is
+   retried and reported on its own real cause rather than the flag's
+   unhelpful "Not Found". All three facts a caller needs — `.record.kind`,
+   `.retried`, and now `.cause` — travel in the document
+   `merge_autonomy_kill_state` itself returns, never a global: this call
+   happens inside a `$(...)` command substitution to capture that document at
+   all, and a subshell's writes to a global never reach the caller back.
 
    If the kill switch is genuinely enabled, the stage proceeds to
    `merge_autonomy_effective_level` exactly as before (unaffected — the
@@ -9222,9 +9389,12 @@ implements.
    fail-closed `human` is entirely a property of the kill switch and never the
    freeze). If it is not enabled and the reason was the fail-closed synthesis,
    the stage logs a `warning` naming the pull request, the kill flag, and the
-   cause captured in `$cache.err`, distinguishing whether a retry was actually
-   taken (per requirement 8b's own contract that every other way this stage
-   cannot run logs a `warning` rather than acting on silently) and then
+   cause carried in `merge_autonomy_kill_state`'s own returned document (never
+   read directly off `$cache.err` or `$cache.repo-err` — that function alone
+   knows which one actually applies), distinguishing whether a retry was
+   actually taken (per requirement 8b's own contract that every other way
+   this stage cannot run logs a `warning` rather than acting on silently) and
+   then
    returns exactly as the plain `human` path always has — no App review, no
    change to the pull request's own state. A genuinely configured or manually
    killed `human` still logs nothing at all, the same silence as before this
@@ -10623,9 +10793,10 @@ implements.
     natural, possibly sub-second gap between this cycle's lock release and
     the next cron firing either. So immediately before the chain decision,
     inside the same `cleanup` (11), every cycle that ended cleanly
-    (`exit_code == 0`) and was not a `--once` run (a human or a test asking
-    for exactly one cycle must not arm an override on the node it ran on)
-    asks: is the image it is running behind the registry's newest
+    (`exit_code == 0`) and was neither a `--once` nor a `--dry-run` run (a
+    human or a test asking for exactly one cycle, real or dry, must not arm
+    an override on the node it ran on) asks: is the image it is running
+    behind the registry's newest
     (`lib/image-drift.sh`'s `image_drift_status`, read back through the
     identical cache the requirement-2.5 heartbeat push just above it already
     refreshed — no second registry round trip, no second signal)? If so,
@@ -22480,16 +22651,21 @@ What exists, and the requirements each part answers to:
    match/no-match/malformed-input cases) and exercised through the real
    `record_needs_refinement_block`/`unaccounted_items` in
    `test/fit-trim-block-refusal.test.sh`.
-5. `README.md`: what the system does, every config key, install steps
-   (below), how to operate it (`--dry-run`, `--once`, reading the log and
-   stage transcripts), and how to uninstall. It presents the container as the
-   way a node runs and points at the runbook for the detail; the host install
-   and the WSL SysV dashboard service remain documented as the laptop's legacy
-   path, which must keep working until it is cut over.
-6. The crontab line, e.g.
-   `0 * * * * $HOME/Code/Poetic-Poems/agent-ops/agent-cycle.sh >> $HOME/.local/state/poetic-agents/cron.log 2>&1`,
-   with `AGENT_OPS_ROLE=active` set in the crontab's environment on the node
-   that is to run the cycles (requirement 2.4).
+5. `README.md`: a landing page naming what the system does and pointing at
+   the guides under `docs/guides/` and the configuration reference at
+   `docs/reference/configuration.md` — `docs/guides/working-with-pullwright/README.md`
+   (what it does, review, merge autonomy), `docs/guides/operating/README.md`
+   and its linked pages (install steps (below), how to operate it
+   (`--dry-run`, `--once`, reading the log and stage transcripts), and how to
+   uninstall) and `docs/guides/contributing/README.md` (for maintainers,
+   branch workflow, development). The operating guide documents the
+   container as the only way a node runs, and points at the runbook
+   (component 7) for the detail.
+6. The crontab line: never installed by hand on a containerized node — it is
+   the cycle line of `deploy/docker/crontab.tmpl`, rendered per node at
+   container start and run by supercronic inside the scheduler service, with
+   the node's role coming from `ROLE` in its `deploy/docker/.env`
+   (requirement 2.4) rather than from a crontab environment variable.
 7. `deploy/docker/` — the node image and the node stack (see "The node image"
    and "The node stack" above): `Dockerfile`, `entrypoint.sh`, `crontab` and the
    minimal `claude-settings.json` seed; `compose.yaml`, `ts-serve.json`,
@@ -22498,9 +22674,7 @@ What exists, and the requirements each part answers to:
    unattended `cloud-init.yaml` that performs its first three steps. The
    runbook is the operator-facing counterpart to those two sections: bring-up,
    everyday commands, updating, changing a node's role, the failover drill and
-   a symptom-to-cause table. The container crontab is the schedule component 6 describes,
-   expressed for a node; both exist because the laptop still runs the host-cron
-   path.
+   a symptom-to-cause table.
 8. `deploy/agent-ops-dashboard.init` and `deploy/tailscaled.init` — the legacy
    WSL SysV path for the laptop, superseded on a containerised node.
 9. `.github/workflows/build-image.yml` — the build-and-publish path for
@@ -23617,7 +23791,7 @@ What exists, and the requirements each part answers to:
 16. `scripts/render-config-table.sh` implementing requirement 1b's generated-
     table property: renders the Markdown table body rows of the three prose
     configuration tables (this document's, `docs/REVIEW-PIPELINE-SPEC.md`'s,
-    and the two in `README.md`) from `config.schema.json`'s leaf keys, in the
+    and the two in `docs/reference/configuration.md`) from `config.schema.json`'s leaf keys, in the
     schema's own property order — `schedule` and `repository_review` flatten one
     level into dotted keys (`schedule.review_hour`,
     `repository_review.lock_stale_after`) in the parent's position, and
@@ -23652,9 +23826,13 @@ What exists, and the requirements each part answers to:
     join a plain array of paragraph strings always got, and what a single
     string (a one-block array) already renders as unchanged.
     Rewrites four marked regions (`<!-- config-table:start id=main -->` /
-    `id=review` … `<!-- config-table:end -->`) in place with no arguments. A
+    `id=review` … `<!-- config-table:end -->`) in place with no arguments,
+    reading the regions from `lib/markdown-scan.sh`'s `CONFIG_TABLE_REGIONS`
+    and matching their markers by the same library's patterns, the list and
+    grammar component 24b reads to leave these regions out of the size
+    budget. A
     start marker's `id=<id>` token may be followed by further prose before
-    the closing `-->` — CLAUDE.md's "Generated regions" note and the
+    the closing `-->` — AGENTS.md's "Generated regions" note and the
     markers themselves carry the same generated-from-schema contract inline
     (#356), so an editor who reaches a row directly, without having read
     CLAUDE.md first, still sees it — and matching it is therefore a prefix
@@ -24524,10 +24702,12 @@ What exists, and the requirements each part answers to:
     Nothing else's stdin is ever read, which is what keeps `gh api --input -`
     working.
     `gh_shim_classify` (built on `gh_shim_parse`) is the one place
-    a call is sorted into `read` (a plain `gh api` GET — the only class ever
-    conditioned), `paginate` (a `gh api` GET carrying `--paginate`/`--slurp`
-    — stored and served last-known-good like a `read`, but never conditioned
-    and never reshaped), `write` (method resolves non-GET), `graphql`
+    a call is sorted into `read` (a plain `gh api` GET, conditioned as one
+    request), `paginate` (a `gh api` GET carrying `--paginate`/`--slurp` —
+    conditioned and merged one page at a time, falling back to an
+    unconditioned single call, still stored and served last-known-good like
+    a `read`, when a page does not fit the shape that walk expects),
+    `write` (method resolves non-GET), `graphql`
     (the literal `graphql` endpoint), `include` (the caller already asks for
     `-i`/`--include`) or `other` (not `gh api` at all, or `gh api` with no
     endpoint found) — every class but `read` reaching the real binary with
@@ -24537,9 +24717,13 @@ What exists, and the requirements each part answers to:
     always adds `-i` itself and always strips it back out of what the caller
     sees, taking the body by byte offset from past the header terminator
     (`gh_shim_header_end_offset`) so it is returned exactly as the wire
-    carried it; `gh_shim_handle_paginate` is the pathway that adds nothing at
-    all, for the calls `-i` would reshape (see requirement 2.0e's own
-    scope-limit note); `gh_shim_split_blocks` parses the HTTP
+    carried it; `gh_shim_handle_paginate` drives a paginated call's own walk
+    the same way, one page at a time, following each page's `Link:
+    rel="next"` and re-assembling the pages into the shape the real binary's
+    own `--paginate`/`--slurp` documents (agent-ops#1114) — falling back to
+    `_gh_shim_paginate_legacy`, the single real-binary call with the
+    caller's own argv untouched that was this pathway's entire behaviour
+    before, when a page does not fit; `gh_shim_split_blocks` parses the HTTP
     response block from that capture; `gh_shim_should_use_lkg` and
     `gh_shim_serve_lkg` decide and perform a last-known-good serve, reusing
     `lib/github-limit.sh`'s own `github_limit_kind` so a refusal can never be
@@ -24799,8 +24983,11 @@ What exists, and the requirements each part answers to:
     no comment posted and no graphql call made; malformed arguments exiting
     2); must pass `shellcheck`.
 24. `scripts/render-toc.sh` and `.github/workflows/toc.yml` implementing
-   requirement 52's generated-table-of-contents property: before rendering
-   either file, verifies it contains exactly one `<!-- toc:start -->` /
+   requirement 52's generated-table-of-contents property, for the files
+   `lib/markdown-scan.sh`'s `TOC_FILES` lists, matching the markers by that
+   library's `toc_start_re` and `toc_end_re`, the list and grammar component
+   24b reads to leave these regions out of the size budget: before rendering
+   each file, verifies it contains exactly one `<!-- toc:start -->` /
    `<!-- toc:end -->` marker pair with the start marker on an earlier line
    than the end marker — a file with neither marker, only one of the pair,
    more than one of either, or the pair in reversed order, fails the script
@@ -24811,8 +24998,9 @@ What exists, and the requirements each part answers to:
    `render-config-table.sh`'s own region-validation precedent (component 16)
    of hard-failing on a malformed region rather than silently mis-rendering
    it. Once validated, with no
-   arguments, extracts every `##`/`###` heading from `README.md` and
-   `docs/IMPLEMENTATION-PIPELINE-SPEC.md` — skipping anything inside a
+   arguments, extracts every `##`/`###` heading from
+   `docs/IMPLEMENTATION-PIPELINE-SPEC.md` and each guide under
+   `docs/guides/` — skipping anything inside a
    fenced (```` ``` ```` or `~~~`) code block, as `lib/markdown-scan.sh`'s
    `markdown_unfenced` reads one for this and for component 24a alike (a
    fence opens on a run of three or more of either character, however far
@@ -24825,7 +25013,7 @@ What exists, and the requirements each part answers to:
    consecutive hyphens, so this script does not either), de-duplicated in
    heading order the way GitHub's own renderer de-duplicates repeated
    headings (the first occurrence keeps the bare slug, each later one is
-   suffixed `-1`, `-2`, …). `--check` renders both regions to a temporary
+   suffixed `-1`, `-2`, …). `--check` renders every region to a temporary
    file instead, leaving the working tree untouched, and exits non-zero
    naming the first stale file — the same contract
    `scripts/render-config-table.sh` (component 16) follows. `.github/workflows/toc.yml`
@@ -24912,6 +25100,43 @@ What exists, and the requirements each part answers to:
    `DOCS_BENCHMARK_QUESTIONS`, `DOCS_BENCHMARK_REPORT_DIR` and
    `DOCS_BENCHMARK_SOURCE` let the test run the whole script against a stub
    `claude`. Acceptance check 52a. Must pass `shellcheck`.
+24b. `scripts/check-docs.sh`, `scripts/docs-size-ratchet.tsv`,
+   `scripts/docs-phrasing-ratchet.tsv` and `.github/workflows/docs.yml`
+   implementing requirement 52b: the five offline documentation checks
+   `toc.yml` and `config-table.yml` do not make. With no arguments or with
+   `--check` it runs all five and exits non-zero naming each violation — the
+   two forms do the same thing, unlike components 16 and 24, because there
+   is nothing here to render, and `--check` exists only so that every
+   documentation gate takes the same invocation. It reads each file through
+   `lib/markdown-scan.sh` (component 24), sharing that library's `gh_slug`
+   with `scripts/render-toc.sh` and adding `markdown_heading_texts` and
+   `markdown_heading_slugs` to it for the heading lookups the two citation
+   and fragment checks need. The size check reads the same library's
+   `markdown_generated_regions`, which finds the regions that library lists by
+   their markers outside fenced code, so a marker shown in an example opens
+   nothing, and it counts each region's bytes from the file itself, fenced
+   code inside the region included. It scans for regions only in a file whose
+   whole size is over the budget or that has a ratchet entry, and the
+   dead-entry pass reads the sizes that scan measured. Headings, slugs and
+   whole bodies are
+   cached per file, the body cache as a scratch file matched with `grep -F`
+   rather than a Bash string, because `docs/IMPLEMENTATION-PIPELINE-SPEC.md`
+   alone unfences to 2.3 MB and Bash's own glob matching has no fast substring
+   path; both cache helpers must be called as plain statements, never in
+   command substitution, which would fork the assignment into a subshell and
+   silently turn every call into a cache miss. Soft-wrapped paragraphs are
+   joined before citations are matched, so a citation split across a line
+   break still reads as one span, and a leading comment marker is stripped
+   first in a script or workflow, where each line of a comment block carries
+   its own. A citation matches a heading exactly, with the heading's leading
+   article dropped, or as a prefix of either (prose routinely stops before a
+   heading's parenthetical or em-dash suffix), and failing all three is
+   accepted if the quoted text still appears in the file at all, since this
+   repository's style quotes bullets and bold labels as well as headings.
+   `test/check-docs.test.sh` builds one scratch repository per scenario out
+   of fixture documents and runs the shipped script against it, so no
+   scenario's break leaks into another's baseline. Acceptance check 52b.
+   Must pass `shellcheck`.
 
 ## Acceptance checks
 
@@ -26020,17 +26245,61 @@ oblige anyone to edit a test.
    `PW_GH_STALE_CEILING_SECONDS`; a successful write invalidates the reads it
    feeds and is itself never conditioned; a `POST`, `graphql`, `--input` and
    a caller's own `-i` each reach the real binary with unmodified argv and
-   return its output unmodified, none of them ever cached; a `--paginate`
-   call and a `--slurp` call each reach the real binary carrying neither `-i`
-   nor a conditional header and return its stdout unreshaped, are ledgered as
-   an ordinary read rather than a bypass, and are still served
-   last-known-good under a primary-limit refusal from the body a previous
-   call stored; output the shim cannot split into responses at all is passed
+   return its output unmodified, none of them ever cached; output the shim
+   cannot split into responses at all is passed
    through to the caller with the real binary's own exit status rather than
    dropped; a non-`api`
    subcommand's output and exit status (success and failure alike) pass
    through unmodified; and `PW_GH_NO_CACHE=1` forces the same unmodified
    passthrough for an otherwise-cacheable read, still ledgered as `bypass`.
+   A `--paginate` call drives its own pagination (agent-ops#1114): a fresh
+   call fetches every page with its own `-i` and merges their own bodies into
+   one JSON array, byte-spliced rather than reparsed, and caches page 1, page
+   2 and the whole-call last-known-good entry separately; an identical
+   repeat call sends each earlier page's own stored `ETag`, 304s every page
+   but the final one — which is always re-fetched in full, unconditioned —
+   merges the identical document with no new cache entry, and ledgers the
+   call `miss`, `hit` being unreachable while the walk's final page is
+   always a real fetch (agent-ops#2183); a call where only the newest page
+   changed still sends page 1's previous `ETag` (304ing it unconditionally
+   server-side), re-fetches only the changed page, overwrites that page's
+   own cache entry in place, and ledgers the call `miss`; a page served
+   from cache takes its continuation from the live response's own `Link`
+   header whenever one is present and from the stored `next` only when it
+   is not, so a response carrying a `Link` that names a further page the
+   stored entry does not still continues the walk, fetches that page and
+   ledgers the call `miss` — the preference order being what is checked
+   here, a real `304` from GitHub carrying no `Link` at all; a page whose
+   stored `next` is `null` is never conditioned on a later walk, even when
+   cached — it is re-fetched in full every time, so a collection that grows
+   a real next page past an exactly-full final page is seen on the very
+   next walk rather than truncated forever behind a stale `304`; a call
+   naming no `per_page` of its own gets the
+   real binary's own default of 100 added to page 1's query string, while
+   one already named — in the endpoint's own query string, or an explicit
+   `-F`/`-f` field alongside `-X GET` — is left alone; a page refused
+   mid-walk abandons the attempt and falls back to one whole-call request —
+   the same last-known-good body a previous successful call stored, with the
+   same `PW_GH_CACHE=stale age=<s>` marker and exit 0, and that fallback
+   request alone, unlike the per-page attempt, never carries `-i`; a
+   `--slurp` call wraps each page's own raw body as its own array element,
+   unreshaped; a `--paginate --jq` call concatenates each page's own
+   already-filtered body in order, exactly as the real binary's own re-run-
+   per-page semantics does, never an array-splice of text that was never a
+   JSON array; and a page whose body is not itself a JSON array in plain
+   mode is tried once (with `-i`) and then abandoned in favour of the same
+   unconditioned whole-call fallback, which reaches the real binary with the
+   caller's own argv and `--paginate`/`--slurp` both untouched, exactly this
+   pathway's own behaviour before agent-ops#1114. A page that is an empty
+   JSON array — leading, trailing, or the only page there is — or whose
+   inner bytes are whitespace only, contributes neither an element nor a
+   separator, so the merged document parses rather than carrying the
+   `[{…},]` or `[,{…}]` an unconditional splice would leave. A plain
+   (non-`--paginate`) read of the same endpoint neither
+   conditions a later walk's page 1 nor truncates it: the walk still follows
+   its own stored `next` to page 2 even when every page `304`s, and a plain
+   read made after a walk is itself still unconditioned by the walk's own
+   per-page entry.
    `lib/gh-shim.sh` and `scripts/gh-shim.sh` pass `shellcheck -x`.
 2q. **The on-demand credential seam mints a fresh token once the previous
    one is within `refresh_buffer` of expiry, never re-identifies an
@@ -29020,7 +29289,7 @@ oblige anyone to edit a test.
 1d. **The prose configuration tables are generated from the schema, and
     regenerating them is gated (requirement 1b, component 16).**
     `scripts/render-config-table.sh` with no arguments run against this
-    repository's own `config.schema.json`, `README.md`,
+    repository's own `config.schema.json`, `docs/reference/configuration.md`,
     `docs/IMPLEMENTATION-PIPELINE-SPEC.md` and `docs/REVIEW-PIPELINE-SPEC.md`
     leaves every file byte-identical to what is committed — regenerating a
     clean tree is a no-op — and `--check` exits 0 against it; `git diff`
@@ -29509,10 +29778,11 @@ oblige anyone to edit a test.
     passes: the crontab report names the full comma list, not just the
     first occurrence.
 39c. **A pending image roll overrides an otherwise-eligible chain, never
-    grants one, widens the gap at every clean, non-`--once` cycle-end whether
-    or not there was a chain to give up, is honoured at the hook against
-    `lock.json` alone, is cleared once landed, and — while it is not — idles
-    the next cycle at most once rather than letting it run underneath the
+    grants one, widens the gap at every clean, non-`--once`, non-`--dry-run`
+    cycle-end whether or not there was a chain to give up, is honoured at
+    the hook against `lock.json` alone, is cleared once landed, and — while
+    it is not — idles the next cycle at most once rather than letting it
+    run underneath the
     marker** (requirement 39c (Finish-then-continue), agent-ops#1096, amended by agent-ops#1102,
     widened by agent-ops#1103). `test/chain.test.sh` passes: `chain_image_behind` reads
     true only for a `{"status":"behind",...}` verdict — "current",
@@ -29531,8 +29801,9 @@ oblige anyone to edit a test.
     still chains and writes no marker; a cycle with no chain to give up
     (`chain_eligible=0`) still writes the marker on a "behind" verdict,
     chaining nothing since there was nothing to cancel; a `--once` run never
-    writes the marker on a "behind" verdict either, the one case still gated
-    ahead of `chain_eligible` since a real `--once` run is never chain-eligible
+    writes the marker on a "behind" verdict either, nor does a `--dry-run`
+    run (agent-ops#2103) — both cases still gated ahead of `chain_eligible`
+    since neither a real `--once` nor a `--dry-run` run is ever chain-eligible
     to begin with; and a cycle that did not end cleanly (a non-zero exit)
     never even reaches the check, marker included. `test/watchtower-pre-update.
     test.sh` passes: an unexpired `roll-pending.json` makes the hook exit 0
@@ -31130,8 +31401,9 @@ oblige anyone to edit a test.
 
 52. **The table of contents is generated from headings, and regenerating it
     is gated (requirement 52, component 24).** `scripts/render-toc.sh` with
-    no arguments run against this repository's own `README.md` and
-    `docs/IMPLEMENTATION-PIPELINE-SPEC.md` leaves both files byte-identical
+    no arguments run against this repository's own
+    `docs/IMPLEMENTATION-PIPELINE-SPEC.md` and each guide under
+    `docs/guides/` leaves every file byte-identical
     to what is committed — regenerating a clean tree is a no-op — and
     `--check` exits 0 against it; `git diff` confirms nothing moved.
     Renaming a heading without regenerating makes `--check` exit non-zero
@@ -31208,7 +31480,8 @@ oblige anyone to edit a test.
     longer one as content, treats an indented fence as a fence and a
     backtick run with another backtick on its line as inline code, runs an
     unterminated fence to the end of the file, and closes a fence in a file
-    with CRLF line endings.
+    with CRLF line endings; and `markdown_unfenced_numbered` keeps the same
+    lines, each tagged with its line number in the file.
 
 57. **Node health, readiness and liveness (requirements 57-60, issue #608).**
     `test/node-health.test.sh` passes: `lib/node-health.sh`'s
@@ -31317,56 +31590,40 @@ oblige anyone to edit a test.
     `--window-hours`/`--now` each override what `config.json` would
     otherwise supply — `test/resource-budget-report.test.sh` exercises all
     four.
-
-## Host provisioning (human steps)
-
-All of this is in place on the current host; it is needed again only when
-standing the system up on a new machine.
-
-1. Install the standalone CLI: `curl -fsSL https://claude.ai/install.sh | bash`
-   (or `npm install -g @anthropic-ai/claude-code`). Verify headless auth
-   works: `claude -p "Reply with OK" --model claude-haiku-4-5-20251001`.
-   Then prove that cron can invoke Claude by running it in a minimal
-   environment with the same PATH shape cron will use, e.g.
-   `env -i HOME="$HOME" PATH="$HOME/.local/bin:$HOME/.claude/local:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" /bin/bash -lc 'command -v claude && claude -V'`.
-   If `command -v claude` fails, create a launcher in `~/.local/bin` or add
-   the correct PATH to the crontab before continuing.
-2. Enable cron in WSL: add to `/etc/wsl.conf`
-   `[boot]` / `command = "service cron start"` (requires sudo), then restart
-   WSL (`wsl --shutdown` from Windows). Alternative if preferred: a Windows
-   Task Scheduler job running
-   `wsl.exe -u wallen -e $HOME/Code/Poetic-Poems/agent-ops/agent-cycle.sh` on
-   the node's configured cadence (`schedule.cycle_interval_minutes`).
-   Either way, cycles only run while the machine is awake — a missed cycle
-   simply waits for the next tick, which is harmless.
-3. Create the label in each configured repo:
-   `gh api -X POST repos/Poetic-Poems/<repo>/labels -f name='autonomous-agent' -f color='ededed' -f description='PR raised by the autonomous agent system'`.
-   If your `gh` version already supports `gh label create`, that form also works; the API form above is the most compatible fallback.
-3c. Create the Enabler's escalation label in each configured repo, the same way:
-   `gh api -X POST repos/Poetic-Poems/<repo>/labels -f name='enabler-escalation' -f color='b60205' -f description='Raised by the Enabler: a blocked item that escalates'`
-   (`enabler_escalation_label`, requirement 36a). Without it an escalation is
-   still raised — the create is retried unlabelled — but it arrives with only
-   the assignment to distinguish it, so the human's filter and the duplicate
-   guard both lose their handle.
-3d. Create the refinement label in each configured repo, the same way:
-   `gh api -X POST repos/Poetic-Poems/<repo>/labels -f name='needs-refinement' -f color='fbca04' -f description='The autonomous pipeline cannot tell what done would mean for this item'`
-   (`needs_refinement_label`, requirement 34e). Without it the block is still
-   recorded and the item still reaches the Enabler — the projection is a
-   courtesy to whoever is browsing the issue list, not the record — but the
-   Script logs a warning each time it cannot apply it.
-3a. Enable the security work sources on each configured repo so the alerts the
-   `security`/`code-quality` sources read actually exist: turn on the
-   Dependabot alerts and code-scanning (CodeQL) features (Settings → Code
-   security, or the equivalent org policy — free for public repos; requires
-   GitHub Advanced Security for private ones). The `gh` token must be able to
-   read `repos/<slug>/dependabot/alerts` and
-   `repos/<slug>/code-scanning/alerts` (the `security_events` scope, or
-   `repo` on a classic token). If a feature stays off, `gather-findings.sh`
-   simply returns no findings for it and the rest of the pipeline is
-   unaffected.
-4. Create `Poetic-Poems/agent-ops` and clone it to
-   `~/Code/Poetic-Poems/agent-ops`.
-5. After the acceptance checks pass, install the crontab line.
+52b. **The documentation's links, map, size, citations and phrasing are
+    checked, and each check fails on a fixture built to break it
+    (requirement 52b, components 24 and 24b).** `scripts/check-docs.sh
+    --check` exits 0 against this checkout, as `.github/workflows/docs.yml`
+    runs it on every pull request, on `merge_group` and on push to `main`.
+    `test/check-docs.test.sh` passes: a clean fixture repository reports all
+    five checks ok and exits 0, and a fresh copy of that repository, broken
+    one way at a time, exits non-zero naming the defect — a relative link to
+    a file that does not exist, a document on disk the map never lists, a
+    document padded past 100,000 bytes with no size-ratchet entry, a
+    size-ratchet entry for a document that is exempt, missing or within the
+    budget (one over it only by its generated region included), a size
+    exemption that matches no document (the specification pattern, once the
+    specifications move into a subdirectory of `docs/`, where they are then
+    held to the budget), a citation reworded to name a heading that is not
+    there, and a sentence of historical phrasing in a document with no
+    phrasing-ratchet entry. Each of the four as-built specifications
+    `AGENTS.md` lists, `CHANGELOG.md`, `docs/ROADMAP.md` and a review report
+    at either depth under `docs/reviews/`, padded past 100,000 bytes with no
+    entry, passes, and so does a document whose bytes past the budget all lie
+    inside one generated region, of each kind, where `lib/markdown-scan.sh`
+    lists it. The same bytes count as hand-written, and the document fails,
+    when the region sits in a file or carries an id or fragment the library
+    does not list, when a stamped region closes under another fragment's name,
+    when it has no end marker, when its markers sit inside fenced code, and
+    when it is a second copy of a listed region. A ratchet entry at a
+    document's hand-written size holds it although a region with fenced code
+    inside takes its whole size past the entry, and one more hand-written byte
+    fails. A
+    `#fragment` that no heading slugs to, but an explicit `<a id="…">`
+    anchor in the target provides, passes — as `docs/concepts/glossary.md`'s
+    own `#human-level` and `#no-op-cycle` links do, both of which sit over a
+    heading that slugs to something else — while a fragment matching neither
+    a heading nor an anchor still fails.
 
 ## Cost profile
 

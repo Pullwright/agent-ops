@@ -1,0 +1,23 @@
+# scripts/docs-phrasing-ratchet.tsv — today's count of "previously", "used
+# to", "no longer", "now uses" and "migration completed" (combined) per
+# as-built document, tracked by scripts/check-docs.sh. Format:
+# path<TAB>count. Not a ban — the standing decision of 2026-09-04 (#1154)
+# allows a historical aside that passes the deletion test (AGENTS.md,
+# "Documentation principles") — a ratchet: a count may fall, never rise.
+.claude/skills/project-review/references/resumability.md	1
+.claude/skills/td/SKILL.md	1
+AGENTS.md	6
+deploy/docker/README.md	2
+docs/DASHBOARD-SPEC.md	17
+docs/FLOW-SCHEMA.md	3
+docs/IMPLEMENTATION-PIPELINE-SPEC.md	120
+docs/REVIEW-PIPELINE-SPEC.md	1
+docs/guides/contributing/README.md	3
+docs/guides/operating/README.md	5
+docs/reference/configuration.md	4
+prompts/coordinator.md	13
+prompts/enabler.md	2
+prompts/implementer.md	9
+prompts/project-reviewer.md	2
+prompts/refiner.md	2
+prompts/reviewer.md	4
