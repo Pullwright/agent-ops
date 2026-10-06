@@ -19755,17 +19755,34 @@ with the Reviewer's own.
     exactly the independence it exists to restore. `prompts/approver.md`
     states this as the stage's own operating rule, not only as a convention
     this requirement documents.
-41. **Posture follows tier.** Standard (`complexity:medium`): find a reason
+41. **Posture follows tier, and `prompts/approver.md` defines one for every
+    tier word the `## Tier` section can carry.** Those words are
+    `standard`, `high`, `critical` and `adjudication` — four, not the three
+    `trivial`/`standard`/`high`/`critical` tiers requirement 8b resolves,
+    because `trivial` never reaches a prompt (the Script posts that approval
+    itself, with no model call) and a refuse streak is labelled
+    `adjudication` rather than by the tier it displaces. Standard
+    (`complexity:medium`): find a reason
     to refuse; approve only if none is found. High (`complexity:high`):
     the same posture, refuse-by-default — this tier exists because the diff
     already earned `complexity:high` under requirement 26a's own rubric
     (concurrency, security, state replication, CI/workflow machinery, or
     shared library code), so the base rate of a genuine defect is higher and
-    the prompt is told to read expecting one. Adjudication: not a third
+    the prompt is told to read expecting one. Critical: the same posture at
+    its sharpest, on the ordinary `approve`/`refuse` verdict set and with no
+    `## Prior refusals` section beside it — requirement 8b's own
+    protected-path forcing is the one cause that puts this word in front of
+    an engagement, so a self-modifying change to the gate itself is read as
+    closely as a genuine security fix whatever its complexity grade said.
+    Adjudication, which requirement 8c's refuse streak is the one cause of
+    and which always carries `## Prior refusals`: not a third
     ordinary review — a ruling on whether the disagreement the two prior
     refusals raised is real and unresolved (`refuse`), has since been
     answered (`land`), or is a genuine judgement call neither side can settle
-    alone (`escalate`, favoured over a third guess).
+    alone (`escalate`, favoured over a third guess). The streak takes
+    precedence over whatever tier the complexity grade or a protected path
+    chose, so no one engagement is told both words, and the two postures'
+    verdict sets never have to be chosen between.
 42. **Never writes to GitHub.** The Approver's prompt is explicitly
     forbidden `gh pr review`, `gh pr comment`, `gh api .../reviews`,
     `gh pr merge`, `gh pr ready`, or any other GitHub write — its entire
@@ -22591,8 +22608,10 @@ What exists, and the requirements each part answers to:
    the whole of requirement 36a's ask of a human; the Refiner's carries no
    such template, since it has no escalation power of its own.
 4e. `prompts/approver.md` implementing requirements 40–44 (D18 WI-5): judge
-   only, never fix, posture keyed to the tier it is told (Standard, High or
-   adjudication), no GitHub-write instruction of any kind, ends with a
+   only, never fix, posture keyed to the tier word it is told — one defined
+   for each of `standard`, `high`, `critical` and `adjudication`, the four
+   the `## Tier` section can carry (requirement 41) — no GitHub-write
+   instruction of any kind, ends with a
    verdict-only JSON object. Sourced by `lib/approver.sh`'s `run_approver_stage`
    only.
 4f. `prompts/enabler-adjudicate.md` implementing requirement 36b's
