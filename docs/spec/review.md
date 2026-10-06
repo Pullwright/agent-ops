@@ -309,7 +309,7 @@ aliases in the launch command.
 `repository_review.repos`, requirement 342) accepts a bare id
 (`claude-sonnet-5`, meaning `anthropic`) or a provider-qualified one
 (`anthropic/claude-sonnet-5`, or `<name>/<id>` for a provider the top-level
-`providers` object configures), resolved by the same `resolve_model_id`
+`providers` object configures), resolved by the same `resolve_model_id_into`
 (`lib/model-id.sh`) the implementation pipeline uses — see
 `docs/spec/implementation/requirements/the-script-01.md` requirement 1a.
 `anthropic` is always
@@ -383,11 +383,12 @@ R1a. **Model id resolution, against a configured set of providers (D12,
    requirement 1a). Every configured repository's own resolved model
    (`repository_review.defaults.model`, or its own override in
    `repository_review.repos`, requirement 342) is then resolved through
-   `lib/model-id.sh`'s `resolve_model_id` immediately after `repository_review`'s
+   `lib/model-id.sh`'s `resolve_model_id_into` immediately after `repository_review`'s
    settings are read and resolved, before the lock — the same helper and the
-   same rule `agent-cycle.sh` applies to its own model keys
-   (`docs/spec/implementation/requirements/the-script-01.md` requirement
-   1a): a bare id means
+   same rule `agent-cycle.sh` applies to its own model keys, the assigning
+   form included, so that this sweep is also what records each repository's
+   provider for `run_model_stage`'s substrate dispatch to read back
+   (`docs/spec/implementation/README.md` requirements 1a and 4d): a bare id means
    `anthropic`, a qualified id has the qualifier stripped once the named
    provider is accepted, and a qualifier naming a provider `providers` does
    not configure — or one configured with a substrate this image has no

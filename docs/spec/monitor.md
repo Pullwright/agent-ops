@@ -367,7 +367,10 @@ M8a. **A signal stops the stage first.** `TERM`, `INT` and `HUP` are trapped —
 ### The Monitor stage (`prompts/monitor.md`)
 
 M9. **One stage, one model.** `monitor_model` (default `claude-sonnet-5`), its
-   value validated by `resolve_model_id` before the stage is launched and by
+   value resolved by `resolve_model_id_into` before the stage is launched —
+   the assigning form, so the provider it resolves to is recorded for
+   `run_model_stage`'s own substrate dispatch
+   (`docs/spec/implementation/README.md` requirements 1a and 4d) — and by
    `scripts/doctor.sh`'s Models section on every unattended pass, so an
    unsupported provider is reported once an hour rather than once a day —
    the same tier the repository review runs, for the same reason: the input is
