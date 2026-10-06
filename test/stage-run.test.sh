@@ -3,7 +3,7 @@
 # test/stage-run.test.sh — the substrate seam behind `run_model_stage`
 # (requirement 4d of docs/spec/implementation/README.md, issue #2133).
 #
-# Two properties, and they are tested separately because they are different
+# Three properties, and they are tested separately because they are different
 # claims about the same seam:
 #
 #   byte-for-byte unchanged   with only `anthropic` configured — every
@@ -26,6 +26,18 @@
 #                             behind the one stage launcher" has to mean: a
 #                             sibling adapter plugs in without `stage-run.sh`
 #                             itself changing.
+#   …and reached the way a cycle script reaches it   the same stub adapter,
+#                             dispatched to through the whole chain
+#                             `agent-cycle.sh`, `review-cycle.sh` and
+#                             `monitor-cycle.sh` drive — `providers_load`,
+#                             then `resolve_model_id_into`, then
+#                             `run_model_stage` — with nothing written into
+#                             MODEL_PROVIDER by hand. Part 2 proves dispatch
+#                             *given* a populated map; this proves the step
+#                             that populates it, which is the half that can
+#                             break silently, since both readers of the map
+#                             fall back to `anthropic`/`claude-code` rather
+#                             than failing.
 #
 # `claude` is a stub on PATH — no network, no model, no cost.
 #
