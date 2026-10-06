@@ -125,6 +125,15 @@ URL="https://github.com/Poetic-Poems/poetic-fiddle/pull/216"
 #                             file instead of `required.json` — standing in
 #                             for the rerun actually completing before the
 #                             repair's own next poll.
+#   $tmp_dir/workflows.count  the bare `total_count` `_review_gate_no_ci_
+#                             configured` reads off `actions/workflows`
+#                             (agent-ops#2194); defaults to "1" (has
+#                             workflows) so every test that never sets it
+#                             keeps today's dirty-by-default behaviour.
+#   $tmp_dir/commit-status.count  the bare `total_count` off
+#                             `commits/<sha>/status`; same "1" default.
+#   $tmp_dir/head-sha         what `gh pr view --json headRefOid` answers;
+#                             defaults to "deadbeef".
 cat >"$tmp_dir/gh" <<'STUB'
 #!/usr/bin/env bash
 d="$(dirname "$0")"
@@ -155,6 +164,13 @@ if [[ "$1 $2" == "run rerun" ]]; then
   exit 0
 fi
 
+if [[ "$1 $2" == "pr view" ]]; then
+  content="$(cat "$d/head-sha" 2>/dev/null || printf 'deadbeef')"
+  [[ "$content" == "ERROR" ]] && exit 1
+  printf '%s' "$content"
+  exit 0
+fi
+
 if [[ "$1" == "api" ]]; then
   ref=""
   path=""
@@ -172,6 +188,18 @@ if [[ "$1" == "api" ]]; then
   fi
   if [[ "$path" == */rules/branches/* ]]; then
     content="$(cat "$d/rules-branches.json" 2>/dev/null || printf '[]')"
+    [[ "$content" == "ERROR" ]] && exit 1
+    printf '%s' "$content"
+    exit 0
+  fi
+  if [[ "$path" == */actions/workflows ]]; then
+    content="$(cat "$d/workflows.count" 2>/dev/null || printf '1')"
+    [[ "$content" == "ERROR" ]] && exit 1
+    printf '%s' "$content"
+    exit 0
+  fi
+  if [[ "$path" == */commits/*/status ]]; then
+    content="$(cat "$d/commit-status.count" 2>/dev/null || printf '1')"
     [[ "$content" == "ERROR" ]] && exit 1
     printf '%s' "$content"
     exit 0
@@ -199,6 +227,9 @@ set_analyses() { printf '%s' "$1" >"$tmp_dir/analyses.count"; }
 set_rules_branches() { printf '%s' "$1" >"$tmp_dir/rules-branches.json"; }
 set_required_after_rerun() { printf '%s' "$1" >"$tmp_dir/required-after-rerun.json"; }
 clear_rerun_state() { rm -f "$tmp_dir/rerun-ids" "$tmp_dir/required-after-rerun.json"; }
+set_workflows() { printf '%s' "$1" >"$tmp_dir/workflows.count"; }
+set_commit_status() { printf '%s' "$1" >"$tmp_dir/commit-status.count"; }
+set_head_sha() { printf '%s' "$1" >"$tmp_dir/head-sha"; }
 
 # The repair polls; a test must not spend real wall-clock waiting on it.
 export REVIEW_GATE_RERUN_ATTEMPTS=3
@@ -237,6 +268,54 @@ out="$(review_gate_required_checks "$URL")"; rc=$?
 assert_eq "an empty required-check list is dirty too, however it arrives" "dirty" "${out%%$'\t'*}"
 assert_contains "  ... naming the same trap" "no required checks at all" "$out"
 assert_eq "  ... and exits 1" "1" "$rc"
+
+# --- review_gate_required_checks: the agent-ops#2194 no-CI-configured case ---
+# poetic-fiddle#465: a pull request against a repository with no workflows at
+# all (`Pullwright/.agent`) arrived in the identical shape as #190's own
+# CONFLICTING trap above and was refused the same way, with an
+# unblock_condition naming a code-scanning alert that was never identified.
+# `_review_gate_no_ci_configured`'s pair of signals — no workflows configured
+# *and* no commit status on the head commit — is what tells the two apart.
+set_required 'NONE'
+set_workflows '0'
+set_commit_status '0'
+set_head_sha 'deadbeef'
+out="$(review_gate_required_checks "$URL")"; rc=$?
+assert_eq "a repository with no configured workflows and no commit statuses on the head commit is clean, not dirty" \
+  "clean" "$out"
+assert_eq "  ... and exits 0" "0" "$rc"
+
+# Regression guard for #190: a repository that genuinely does run CI, but
+# reported nothing for this pull request's head commit, must stay dirty.
+set_workflows '1'
+out="$(review_gate_required_checks "$URL")"; rc=$?
+assert_eq "workflows configured but nothing reported for this PR stays the #190 trap" \
+  "dirty" "${out%%$'\t'*}"
+assert_contains "  ... naming the conflicting-PR-runs-no-CI trap" "no required checks at all" "$out"
+assert_eq "  ... and exits 1" "1" "$rc"
+
+# And no workflows but a commit status still posted to the head commit (a
+# legacy status-API integration) means checks were expected here too — stays
+# dirty rather than inferring "no CI" from one signal alone.
+set_workflows '0'
+set_commit_status '1'
+out="$(review_gate_required_checks "$URL")"; rc=$?
+assert_eq "no workflows but a commit status on the head commit stays dirty" \
+  "dirty" "${out%%$'\t'*}"
+assert_eq "  ... and exits 1" "1" "$rc"
+
+# The same empty-array shape (defensive case) gets the same treatment.
+set_required '[]'
+set_workflows '0'
+set_commit_status '0'
+out="$(review_gate_required_checks "$URL")"; rc=$?
+assert_eq "an empty required-check list is clean too, when no CI is configured at all" \
+  "clean" "$out"
+assert_eq "  ... and exits 0" "0" "$rc"
+
+# Reset to "has CI" defaults so no later test is affected by this state.
+set_workflows '1'
+set_commit_status '1'
 
 set_required 'ERROR'
 out="$(review_gate_required_checks "$URL")"; rc=$?

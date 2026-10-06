@@ -14444,6 +14444,40 @@ implements.
     either way, exactly as `review_gate_verdict`'s existing `unknown` already
     treats a `gh` failure as a fact about the platform rather than the pull
     request.
+63. **A repository that configures no CI at all is `clean`, not requirement
+    31c's conflicting-PR-runs-no-CI trap (agent-ops#2194).** `gh pr checks
+    --required` reports both "checks were expected on this pull request and
+    are absent" (poetic-fiddle #190's trap) and "this repository runs no CI at
+    all, so nothing was ever going to be reported" in the identical shape —
+    empty stdout, non-zero exit. Poetic-Poems/poetic-fiddle#465 hit the
+    second case directly: its pull request was against `Pullwright/.agent`, a
+    repository with no `.github/workflows` and `actions/workflows` reporting
+    `total_count: 0`, and the trap refused it anyway, with an
+    `unblock_condition` naming a security-severity code-scanning alert that
+    was never identified — code scanning is not even enabled on that
+    repository.
+
+    `_review_gate_no_ci_configured` (`lib/review-gate.sh`) is asked before
+    either no-required-checks shape in `review_gate_required_checks` settles
+    on `dirty`. Branch protection and rulesets are not readable on a private
+    repository on the free plan (`403 Resource not accessible by
+    integration`), so "which checks are required here" cannot be asked
+    directly; two signals stand in for it instead — `GET
+    /repos/{slug}/actions/workflows` reporting `total_count == 0` *and* the
+    pull request's head commit carrying no commit statuses at all (`GET
+    /repos/{slug}/commits/{sha}/status`, `total_count == 0`). Only once both
+    read zero does the verdict become `clean`, with a line on stderr naming
+    why; a repository with workflows configured that simply reported nothing
+    for this head commit, or one with no workflows but a legacy commit-status
+    integration still posting to it, stays on the `dirty` trap exactly as
+    before — the regression poetic-fiddle #190 itself guards against.
+
+    The `unblock_condition` a `dirty` verdict's requirement 32a handback
+    carries (`lib/coordinator-phase.sh`) is chosen from which of requirement
+    31c's two sub-checks actually produced the reason: it names the
+    security-severity code-scanning alert only when the gate's own reason
+    names one, never as a blanket addition to a required-checks failure that
+    never implicated one.
 32. Ends with a single JSON object:
     `{"status": "ready" | "blocked", "pr_url": …, "fixes_applied": […], "comments_left": n, "ci": "passing" | …}`,
     plus `reason` — one line naming what is wrong — on `blocked`, which becomes
