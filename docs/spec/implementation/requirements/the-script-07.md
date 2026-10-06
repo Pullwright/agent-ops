@@ -1,6 +1,6 @@
 ## Requirements
 
-### The Script — requirements, continued (part 7 of 10; 3w–4h: **Verdict quality is a rate, and every verdict pays for its …)
+### The Script — requirements, continued (part 7 of 10; 3w–4h: Verdict quality is a rate, and every verdict pays for its …)
 
 3w. **Verdict quality is a rate, and every verdict pays for its own
    denominator (issue #319).** Requirement 3t made a confabulated verdict

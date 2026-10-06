@@ -1,6 +1,6 @@
 ## Requirements
 
-### The Script — requirements, continued (part 9 of 10; 8e–59: **The classifier-escape audit re-checks the outcome, not jus…)
+### The Script — requirements, continued (part 9 of 10; 8e–59: The classifier-escape audit re-checks the outcome, not jus…)
 
 8e. **The classifier-escape audit re-checks the outcome, not just the
    decision (D18 Stage 2 exit criterion "zero classifier escapes";

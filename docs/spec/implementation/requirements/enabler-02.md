@@ -1,6 +1,6 @@
 ## Requirements
 
-### The Enabler — requirements, continued (part 2 of 2; 36f–38g: **The delegate mandate (D18, PR #1389, recommendation 3 of…)
+### The Enabler — requirements, continued (part 2 of 2; 36f–38g: The delegate mandate (D18, PR #1389, recommendation 3 of…)
 
 36f. **The delegate mandate (D18, PR #1389, recommendation 3 of
     `docs/reviews/2026-09-11-escalation-autonomy-review.md`).** The fourth rung of
