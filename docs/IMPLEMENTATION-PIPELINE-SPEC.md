@@ -19757,8 +19757,8 @@ with the Reviewer's own.
     this requirement documents.
 41. **Posture follows tier, and `prompts/approver.md` defines one for every
     tier word the `## Tier` section can carry.** Those words are
-    `standard`, `high`, `critical` and `adjudication` — four, not the three
-    `trivial`/`standard`/`high`/`critical` tiers requirement 8b resolves,
+    `standard`, `high`, `critical` and `adjudication` — four, not the
+    `trivial`/`standard`/`high`/`critical` tier set requirement 8b resolves,
     because `trivial` never reaches a prompt (the Script posts that approval
     itself, with no model call) and a refuse streak is labelled
     `adjudication` rather than by the tier it displaces. Standard
