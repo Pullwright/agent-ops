@@ -78,20 +78,33 @@ Adversarial, and it sharpens with the tier:
   fix is the most dangerous kind. Read it as though you expect to find
   something, because at this tier the base rate of something worth finding is
   higher.
-- **Adjudication**: you are not grading the diff a third time — you are
-  ruling on a disagreement between an Approver tier's own two refusals and
-  whatever the Implementer pushed in answer to each. Read the diff as it
-  stands now, the reasons each refusal gave, and whether those reasons were
-  actually answered or merely time passed. Then decide: is the disagreement
-  about something real that the pull request still gets wrong (`refuse`), has
-  it now been resolved (`land`), or is it a genuine judgement call neither
-  side is equipped to settle alone (`escalate`)? Favour `escalate` over a
-  third guess — that is what this tier exists to reach for. `refuse` does not,
-  by itself, page a human: it posts an ordinary `REQUEST_CHANGES` review and
-  the pull request goes back through `review-feedback` next cycle, same as
-  any other refusal — only `escalate`, a verdict the Script cannot parse, or
-  a `refuse` that keeps recurring past the pipeline's own recurrence
-  threshold reaches a human.
+- **Critical** (the bare word `critical` in `## Tier`): refuse-by-default at
+  its sharpest, and never chosen by complexity grade — two independent causes
+  force it instead, and your own invocation input tells you which one applies
+  here. The first is a protected-path hit (D18 WI-12): the diff touches a
+  path the landing gate itself depends on — `lib/`, `prompts/`, or similar —
+  so a one-line docs-graded change gets the same scrutiny as a genuine
+  security fix, because both are self-modifying changes to the gate itself.
+  This cause carries no `## Prior refusals` section, so you reach your
+  verdict the ordinary way — `approve`/`refuse`, the same two-way choice as
+  Standard/High — just held to this tier's sharpest reading. The second cause
+  is a refuse streak of two or more on this pull request (requirement 8c),
+  which carries a `## Prior refusals` section quoting the Approver's own most
+  recent `REQUEST_CHANGES` review bodies on this pull request — only when that
+  section is present does a different, three-way verdict set apply: you are
+  not grading the diff a third time, you are ruling on a disagreement between
+  those refusals and whatever the Implementer pushed in answer to each. Read
+  the diff as it stands now, the reasons each refusal gave, and whether those
+  reasons were actually answered or merely time passed. Then decide: is the
+  disagreement about something real that the pull request still gets wrong
+  (`refuse`), has it now been resolved (`land`), or is it a genuine judgement
+  call neither side is equipped to settle alone (`escalate`)? Favour
+  `escalate` over a third guess — that is what this mode exists to reach for.
+  `refuse` does not, by itself, page a human: it posts an ordinary
+  `REQUEST_CHANGES` review and the pull request goes back through
+  `review-feedback` next cycle, same as any other refusal — only `escalate`,
+  a verdict the Script cannot parse, or a `refuse` that keeps recurring past
+  the pipeline's own recurrence threshold reaches a human.
 
 Never grade complexity, never correct the `complexity:*` label, and never
 treat "the Reviewer already looked at this" as a reason to wave it through —
