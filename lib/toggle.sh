@@ -975,7 +975,7 @@ fleet_limit_resume_at() {
   return 0
 }
 
-# fleet_limit_publish STATE_REPO STATE_DIR RESUME_AT CLASS RESET_KNOWN NODE [EVIDENCE]
+# fleet_limit_publish STATE_REPO STATE_DIR RESUME_AT CLASS RESET_KNOWN NODE [EVIDENCE] [PROVIDER]
 # Publish a usage-limit stand-down, extend-only: a flag already resuming at
 # or after RESUME_AT is left alone. Two attempts — re-read between them — so
 # losing the CAS to a peer publishing the same limit converges instead of
@@ -994,9 +994,15 @@ fleet_limit_resume_at() {
 # the flag outright (requirement 2.1). Shortening it here would let a node
 # that parsed a shorter reset undercut a peer's longer one, which is the race
 # extend-only exists to prevent.
+#
+# PROVIDER (issue #2133) names which provider's account hit this limit — the
+# stand-down itself still covers the whole fleet regardless of provider
+# (scoping it per-provider is #2135), so this is informational only. Defaults
+# to `anthropic`: every caller before this issue, and every caller that
+# passes nothing, means the one provider that has ever existed.
 fleet_limit_publish() {
   local repo="$1" state_dir="$2" resume_at="$3" class="$4" reset_known="$5" node="$6"
-  local evidence="${7:-}"
+  local evidence="${7:-}" provider="${8:-anthropic}"
   local new_epoch body cur cur_at cur_epoch
   [[ -n "$repo" ]] || return 0
   new_epoch="$(date -d "$resume_at" +%s 2>/dev/null || echo 0)"
@@ -1006,9 +1012,9 @@ fleet_limit_publish() {
   # would not identify it better.
   evidence="${evidence:0:400}"
   body="$(jq -nc --arg r "$resume_at" --arg c "$class" --argjson k "${reset_known:-false}" \
-    --arg n "$node" --arg ts "$(_toggle_iso)" --arg e "$evidence" \
+    --arg n "$node" --arg ts "$(_toggle_iso)" --arg e "$evidence" --arg p "$provider" \
     '{resume_at: $r, class: $c, reset_known: $k, node: $n, ts: $ts,
-      kind: "auto", actor: $n,
+      kind: "auto", actor: $n, provider: $p,
       evidence: (if $e == "" then null else $e end)}')"
   for _ in 1 2; do
     cur="$(fleet_flag_fetch "$repo" "$state_dir" limit)"

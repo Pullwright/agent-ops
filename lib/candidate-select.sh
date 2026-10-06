@@ -1875,8 +1875,8 @@ detect_and_log_limit_hit() {
   # later extension must bring fresh (requirement 2; #244).
   evidence="${evidence:0:400}"
   log_event "limit-hit" "$(jq -nc --arg r "$resume_at" --arg c "$class" --argjson k "$reset_known" \
-    --arg n "$node_name" --arg e "$evidence" \
-    '{resume_at: $r, class: $c, reset_known: $k, kind: "auto", actor: $n,
+    --arg n "$node_name" --arg e "$evidence" --arg p "${stage_provider:-anthropic}" \
+    '{resume_at: $r, class: $c, reset_known: $k, kind: "auto", actor: $n, provider: $p,
       evidence: (if $e == "" then null else $e end)}')"
   # node-state (docs/FLOW-SCHEMA.md, D21): this is discovered mid-stage, not
   # at a cycle-ending stand-down, so it logs immediately rather than through
@@ -1887,7 +1887,7 @@ detect_and_log_limit_hit() {
   # as fleet/limit.json (extend-only; requirement 2.1). Best-effort — the
   # limit-hit event above is already in this node's log, and the union carries
   # it to every peer on their next fetch regardless.
-  fleet_limit_publish "$state_repo" "$state_dir" "$resume_at" "$class" "$reset_known" "$node_name" "$evidence" \
+  fleet_limit_publish "$state_repo" "$state_dir" "$resume_at" "$class" "$reset_known" "$node_name" "$evidence" "${stage_provider:-anthropic}" \
     || log_event "warning" "$(jq -nc \
          '{detail: "could not publish fleet/limit.json — peers will pick the cooldown up from the log union instead"}')"
 }
