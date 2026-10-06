@@ -19,7 +19,7 @@
 #                    (a single observation, an even count, p99 of a small
 #                    sample) rather than only in the middle where every
 #                    definition agrees.
-#   the measurement  `run_claude_stage` against a stub that emits with
+#   the measurement  `run_model_stage` against a stub that emits with
 #                    controlled pauses. This is the half that could pass
 #                    vacuously: a run whose gaps were never sampled and a run
 #                    with no gaps both report small numbers, so the pauses
@@ -134,7 +134,7 @@ export PATH="$tmp_dir/bin:$PATH"
 capture="$tmp_dir/paced"
 mkdir -p "$capture"
 STUB_LINES="$tmp_dir/lines.paced" \
-  run_claude_stage implementer 120 test-model "a prompt" "$capture/implementer.out" "$capture"
+  run_model_stage implementer 120 test-model "a prompt" "$capture/implementer.out" "$capture"
 rc=$?
 
 assert_eq "a measured stage still exits with the invocation's own status" 0 "$rc"
@@ -167,7 +167,7 @@ assert_eq "the stage's envelope is unaffected by being measured" \
 trailing="$tmp_dir/trailing"
 mkdir -p "$trailing"
 STUB_LINES="$tmp_dir/lines.trailing" \
-  run_claude_stage reviewer 120 test-model "a prompt" "$trailing/reviewer.out" "$trailing"
+  run_model_stage reviewer 120 test-model "a prompt" "$trailing/reviewer.out" "$trailing"
 
 assert_ge "the silence after the final event is counted as a gap" \
   6 "$(jq -r '.max' <<<"$stage_gaps_json")"
@@ -182,7 +182,7 @@ printf '' > "$tmp_dir/lines.silent"
 silent="$tmp_dir/silent"
 mkdir -p "$silent"
 STUB_LINES="$tmp_dir/lines.silent" \
-  run_claude_stage coordinator 120 test-model "a prompt" "$silent/coordinator.out" "$silent"
+  run_model_stage coordinator 120 test-model "a prompt" "$silent/coordinator.out" "$silent"
 
 assert_eq "a stage that emitted nothing still reports the silence that was all of it" \
   "1" "$(jq -r '.n' <<<"$stage_gaps_json")"

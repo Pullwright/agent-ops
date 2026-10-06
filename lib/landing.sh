@@ -2126,7 +2126,7 @@ $(jq . <<<"$input")
 "
   out="$cycle_dir/approver-adjudicate-open-question-${number}.out"
   stage_budget_apply approver-adjudicate-open-question "$slug" "$approver_model_critical" '{}' "$item"
-  if run_claude_stage approver-adjudicate-open-question "$(( stage_backstop_min * 60 ))" "$approver_model_critical" "$prompt" "$out" "$cycle_dir" "$(( stage_inactivity_min * 60 ))"; then
+  if run_model_stage approver-adjudicate-open-question "$(( stage_backstop_min * 60 ))" "$approver_model_critical" "$prompt" "$out" "$cycle_dir" "$(( stage_inactivity_min * 60 ))"; then
     rc=0
   else
     rc=$?

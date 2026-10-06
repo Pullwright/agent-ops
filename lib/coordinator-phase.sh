@@ -102,7 +102,7 @@ $(jq . <<<"$coord_repo_input")
 "
   # The slug's own `/` is flattened out of the filename, never carried into
   # it: `$cycle_dir/coordinator-Pullwright/agent-ops.out` names a directory
-  # component nothing in this cycle creates, and `run_claude_stage` redirects
+  # component nothing in this cycle creates, and `run_model_stage` redirects
   # into both `stage_stream_file "$out_file"` and `"$out_file.stderr"` — so
   # every engagement, in every repository, on every cycle, would die in its
   # own backgrounded subshell before `claude` was ever exec'd. One flat file
@@ -842,7 +842,7 @@ if ! stage_workspace_share "$clone_dir"; then
 fi
 
 stage_budget_apply implementer "$selected_repo" "$impl_model" "{}" "$selected_item"
-if run_claude_stage implementer "$(( stage_backstop_min * 60 ))" "$impl_model" "$implementer_prompt" "$impl_out" "$clone_dir" "$(( stage_inactivity_min * 60 ))"; then
+if run_model_stage implementer "$(( stage_backstop_min * 60 ))" "$impl_model" "$implementer_prompt" "$impl_out" "$clone_dir" "$(( stage_inactivity_min * 60 ))"; then
   impl_rc=0
 else
   impl_rc=$?
@@ -1264,7 +1264,7 @@ if [[ "$rebase_only" == "true" ]]; then
 else
   stage_budget_apply reviewer "$selected_repo" "$rev_model" \
     "$(jq -nc --arg c "$rev_complexity" '{complexity: $c}')" "$selected_item"
-  if run_claude_stage reviewer "$(( stage_backstop_min * 60 ))" "$rev_model" "$reviewer_prompt" "$rev_out" "$clone_dir" "$(( stage_inactivity_min * 60 ))"; then
+  if run_model_stage reviewer "$(( stage_backstop_min * 60 ))" "$rev_model" "$reviewer_prompt" "$rev_out" "$clone_dir" "$(( stage_inactivity_min * 60 ))"; then
     rev_rc=0
   else
     rev_rc=$?

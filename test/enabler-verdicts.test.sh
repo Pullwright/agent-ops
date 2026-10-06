@@ -249,7 +249,7 @@ chmod +x "$fake_root/lib/claim.sh"
 
 # --- Stubs for every dependency whose own correctness is not this test's job ---
 #
-# log_event, run_claude_stage, stage_prompt_text, stage_budget_apply,
+# log_event, run_model_stage, stage_prompt_text, stage_budget_apply,
 # metering_fields, stage_watchdog_warning, fleet_limit_resume_at,
 # release_refinement_label, create_escalation_issue: each has (or belongs to)
 # its own test elsewhere (metering.test.sh, stage-*.test.sh,
@@ -306,18 +306,18 @@ export VOID_GUARD_GH="$gh_stub"
 # create_escalation_issue is overridden per-scenario below (success vs a
 # filing failure), so it is not defined here.
 
-# run_claude_stage's stand-in for the Claude CLI: writes the canned verdict
+# run_model_stage's stand-in for the Claude CLI: writes the canned verdict
 # envelope `$STUB_EXAMINED_JSON` — `{"examined": [...]}` — to OUT_FILE as
 # `{"result": "<that envelope, as text>"}`, exactly the shape
 # extract_json_result parses a real transcript's final message out of. Also
-# sets the two globals the real run_claude_stage sets as a side effect
+# sets the two globals the real run_model_stage sets as a side effect
 # (stage_gaps_json, stage_kill_reason), since the caller reads them
 # immediately afterward. The last section of this file defines a second
-# `run_claude_stage` for the lifted `run_enabler_decide`, and a later
+# `run_model_stage` for the lifted `run_enabler_decide`, and a later
 # definition of the same name is what makes the linter read this one as
 # dead. It is not: every scenario above that section runs through here.
 # shellcheck disable=SC2317  # shadowed only by the decide-gate section's own stub, far below
-run_claude_stage() {
+run_model_stage() {
   local out_file="$5"
   jq -nc --argjson env "$STUB_EXAMINED_JSON" '{result: ($env | tostring), session_id: "stub-session"}' \
     > "$out_file"
@@ -2182,7 +2182,7 @@ log_node_state_transition() { :; }
 DECIDE_STUB_VERDICT=''
 DECIDE_PROMPT_FILE="$tmp_dir/decide-prompt.txt"
 # shellcheck disable=SC2317  # invoked only by the lifted run_enabler_decide
-run_claude_stage() {
+run_model_stage() {
   printf '%s' "$4" > "$DECIDE_PROMPT_FILE"
   jq -nc --arg r "$DECIDE_STUB_VERDICT" '{result: $r, session_id: "stub-session"}' > "$5"
   # shellcheck disable=SC2034

@@ -161,7 +161,7 @@ approver_post_review() {
   return 0
 }
 approver_escalate() { printf 'url=%s\n' "$1" >>"$T/escalations"; }
-run_claude_stage() {
+run_model_stage() {
   jq -nc --arg r "$VERDICT" '{result: $r}' >"$5"
   return 0
 }

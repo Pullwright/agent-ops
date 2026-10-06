@@ -34,6 +34,20 @@
 # `anthropic` is checked before this map ever is.
 declare -gA PROVIDER_SUBSTRATE=()
 
+# Populated as a side effect of every `resolve_model_id` call below: keyed by
+# the bare id it returned, valued by the provider that id resolved from
+# (`resolve_model_provider`'s own return value for the same call). This is
+# how `lib/stage-run.sh`'s `run_model_stage` (issue #2133) learns which
+# substrate to launch a model on without every one of its own call sites
+# having to resolve and pass a provider explicitly — "a stage runs on the
+# provider its model resolves to" falls out of config load alone, since
+# every model a stage ever launches first passed through `resolve_model_id`
+# to reach the variable that names it. Last-write-wins on a bare id two
+# different keys both resolve to: today that never happens (`anthropic` is
+# the only provider that exists), and is a known, acceptable narrowing for
+# the day a second one does — see `lib/stage-run.sh`'s own `stage_model_substrate`.
+declare -gA MODEL_PROVIDER=()
+
 # Populated by providers_load alongside PROVIDER_SUBSTRATE. The environment
 # variable the provider's adapter reads for an API key — config's own
 # `credential_env`, or PROVIDER_SUBSTRATE_DEFAULT_CREDENTIAL_ENV's default for
@@ -158,13 +172,23 @@ resolve_model_provider() {
 # qualified VALUE has the qualifier stripped once resolve_model_provider
 # accepts it. Prints nothing and returns 1, exactly as resolve_model_provider
 # does and for the same reasons, when it does not.
+#
+# Side effect (issue #2133): records MODEL_PROVIDER[<bare id>]=<provider> for
+# every non-empty result, so a later `run_model_stage` call elsewhere in the
+# same process can look the provider back up from the bare id alone — see
+# MODEL_PROVIDER's own header comment above.
 resolve_model_id() {
-  local key="$1" value="$2"
-  resolve_model_provider "$key" "$value" >/dev/null || return 1
+  local key="$1" value="$2" provider bare
+  provider="$(resolve_model_provider "$key" "$value")" || return 1
   case "$value" in
-    */*) printf '%s\n' "${value#*/}" ;;
-    *) printf '%s\n' "$value" ;;
+    */*) bare="${value#*/}" ;;
+    *) bare="$value" ;;
   esac
+  # Read by lib/stage-run.sh's stage_model_substrate and lib/metering.sh's
+  # metering_fields, which shellcheck cannot see from here.
+  # shellcheck disable=SC2034
+  [[ -n "$bare" ]] && MODEL_PROVIDER["$bare"]="$provider"
+  printf '%s\n' "$bare"
 }
 
 # resolve_model_qualified KEY VALUE

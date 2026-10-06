@@ -119,7 +119,7 @@ scratch_enter agent-cycle || exit 1
 # shellcheck source=lib/stage-budget.sh
 . "$SCRIPT_DIR/lib/stage-budget.sh"
 # shellcheck source=lib/stage-attempt.sh
-# Sourced after stage-run.sh (run_claude_stage) and stage-budget.sh
+# Sourced after stage-run.sh (run_model_stage) and stage-budget.sh
 # (stage_budget_apply), both of which run_coordinator_stage_attempt calls.
 . "$SCRIPT_DIR/lib/stage-attempt.sh"
 # shellcheck source=lib/cycle-state.sh
@@ -1619,7 +1619,7 @@ trap cleanup EXIT
 # `exit` hands 128+n to the EXIT trap, so `cycle-end` reports the truth and
 # `maybe_run_enabler`'s cycle_rc guard skips the Enabler unasked.
 #
-# `stage_pid`/`stage_name` are advertised by `run_claude_stage` while a stage
+# `stage_pid`/`stage_name` are advertised by `run_model_stage` while a stage
 # is in flight and empty otherwise, so the handler never blames a stage that
 # had already ended cleanly.
 stage_pid=""

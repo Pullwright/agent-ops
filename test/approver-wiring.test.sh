@@ -323,7 +323,7 @@ approver_escalation_retire() {
 # The one model launch. Records the model it was asked for, and writes the
 # `.out` file the block then reads a verdict out of. An empty VERDICT stands
 # for a stage that returned nothing parseable.
-run_claude_stage() {
+run_model_stage() {
   printf '%s\n' "$3" >>"$T/launches"
   if [[ -n "${VERDICT:-}" ]]; then
     jq -nc --arg r "$VERDICT" '{result: $r}' >"$5"

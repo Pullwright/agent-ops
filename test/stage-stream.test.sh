@@ -20,7 +20,7 @@
 #     Nothing downstream reads the stream: the result parsers, the per-stage
 #     metering record (requirement 33a), limit detection and the dashboard all
 #     read `<stage>.out`, and they read it exactly as they did before the
-#     switch because `run_claude_stage` truncates the stream to its final
+#     switch because `run_model_stage` truncates the stream to its final
 #     `result` event. `metering_fields` is run against both here — the
 #     truncated line and a bare non-streaming envelope carrying the same
 #     numbers — and asserted to derive the identical record, because "the
@@ -83,7 +83,7 @@ assert_true() {
 # shellcheck source=lib/metering.sh
 . "$SCRIPT_DIR/lib/metering.sh"
 
-# The signal handlers' globals, which run_claude_stage advertises into. Set
+# The signal handlers' globals, which run_model_stage advertises into. Set
 # here because the library is sourced without a cycle script around it; read
 # by a handler this file does not have, which is why shellcheck is told so.
 # shellcheck disable=SC2034
@@ -143,7 +143,7 @@ assert_eq "the stream sits beside the .out under a derived name" \
 ) &
 watcher=$!
 
-STUB_PAUSE=0.3 run_claude_stage implementer 60 test-model "a prompt" "$out" "$capture"
+STUB_PAUSE=0.3 run_model_stage implementer 60 test-model "a prompt" "$out" "$capture"
 rc=$?
 wait "$watcher" 2>/dev/null || true
 
@@ -193,7 +193,7 @@ printf '%s\n' '{"type":"assistant","message":{"role":"assistant"}}' >> "$tmp_dir
 killed="$tmp_dir/killed"
 mkdir -p "$killed"
 STUB_CAPTURE="$killed" STUB_LINES="$tmp_dir/lines.killed" \
-  run_claude_stage reviewer 60 test-model "a prompt" "$killed/reviewer.out" "$killed"
+  run_model_stage reviewer 60 test-model "a prompt" "$killed/reviewer.out" "$killed"
 
 assert_true "a stage that emitted no result event still leaves a .out" \
   "$([[ -f "$killed/reviewer.out" ]] && echo true || echo false)"

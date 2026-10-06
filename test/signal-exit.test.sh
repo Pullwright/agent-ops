@@ -93,13 +93,21 @@ extract_signal_block() {
 }
 
 # The stage runner is a library both cycle scripts source (requirement 4d), so
-# it is taken whole rather than carved out of a script: `run_claude_stage`
+# it is taken whole rather than carved out of a script: `run_model_stage`
 # calls its neighbours in that file, and a lift of the function alone would
 # assemble a script that could not run it. lib/stage-boundary.sh goes ahead of
 # it, since the library it sources would not be found beside the assembled
-# script.
+# script. Since issue #2133, lib/stage-run.sh itself also sources
+# lib/substrate-claude-code.sh (the Claude adapter — the launch argv and
+# prompt delivery this test's own sanity check below looks for moved there),
+# so it is lifted too; `assemble_and_signal` additionally drops a real copy of
+# the adapter file beside each assembled script, because the embedded
+# `. "$(dirname "${BASH_SOURCE[0]}")/substrate-claude-code.sh"` line resolves
+# against the assembled script's own path at runtime, not against this
+# repository's lib/.
 stage_runner_lib() {
-  cat "$SCRIPT_DIR/lib/stage-boundary.sh" "$SCRIPT_DIR/lib/stage-run.sh"
+  cat "$SCRIPT_DIR/lib/stage-boundary.sh" "$SCRIPT_DIR/lib/stage-run.sh" \
+    "$SCRIPT_DIR/lib/substrate-claude-code.sh"
 }
 
 # assemble_and_signal NAME CAPTURE_DIR PRELUDE MAINLINE SIGNAL_BLOCK STAGE_FN
@@ -124,6 +132,7 @@ assemble_and_signal() {
     printf '%s\n' "$mainline"
   } > "$mini"
   chmod +x "$mini"
+  cp "$SCRIPT_DIR/lib/substrate-claude-code.sh" "$capture/substrate-claude-code.sh"
 
   "$mini" &
   pid=$!
@@ -164,7 +173,7 @@ claim_active=1
 signal_block="$(extract_signal_block "$SCRIPT_DIR/agent-cycle.sh")"
 stage_fn="$(stage_runner_lib)"
 
-if [[ "$signal_block" != *"on_signal"* || "$stage_fn" != *"claude -p"* ]]; then
+if [[ "$signal_block" != *"on_signal"* || "$stage_fn" != *"--dangerously-skip-permissions"* ]]; then
   printf 'FAIL - the signal machinery could not be found in agent-cycle.sh (renamed or moved?)\n'
   exit 1
 fi
@@ -174,7 +183,7 @@ assert_contains "and the lifted stage runner advertises its pid" 'stage_pid="$pi
 mid_stage_mainline='
 touch "$CAPTURE/ready.pre"
 ( while [[ ! -f "$CAPTURE/claude.pid" ]]; do sleep 0.1; done; touch "$CAPTURE/ready" ) &
-run_claude_stage implementer 60 test-model "a prompt" "$CAPTURE/out" "$CAPTURE" || true
+run_model_stage implementer 60 test-model "a prompt" "$CAPTURE/out" "$CAPTURE" || true
 record "stage-returned"
 '
 
@@ -256,7 +265,7 @@ signal_claim_branch="review/2026-01-01"
 signal_claim_safe="Poetic-Poems_example"
 touch "$CAPTURE/ready.pre"
 ( while [[ ! -f "$CAPTURE/claude.pid" ]]; do sleep 0.1; done; touch "$CAPTURE/ready" ) &
-run_claude_stage reviewer 60 test-model "a prompt" "$CAPTURE/out" "$CAPTURE" || true
+run_model_stage reviewer 60 test-model "a prompt" "$CAPTURE/out" "$CAPTURE" || true
 record "stage-returned"
 '
 

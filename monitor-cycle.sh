@@ -16,7 +16,7 @@
 #
 # This is a sibling of agent-cycle.sh and review-cycle.sh, and deliberately
 # reuses their machinery (PATH bootstrap, lock discipline, the switch, the
-# role guard, run_claude_stage, result parsing, usage-limit detection). Where
+# role guard, run_model_stage, result parsing, usage-limit detection). Where
 # this script is silent, agent-cycle.sh / docs/spec/implementation/README.md
 # govern.
 #
@@ -253,10 +253,10 @@ log_shared_limit_hit() {
   local resume_at="$1" class="$2" reset_known="$3" ts
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   jq -nc --arg ts "$ts" --arg cycle "$monitor_id" --arg node "$node_name" \
-    --arg r "$resume_at" --arg c "$class" --argjson k "$reset_known" \
-    '{ts: $ts, cycle: $cycle, node: $node, event: "limit-hit", resume_at: $r, class: $c, reset_known: $k}' \
+    --arg r "$resume_at" --arg c "$class" --argjson k "$reset_known" --arg p "${stage_provider:-anthropic}" \
+    '{ts: $ts, cycle: $cycle, node: $node, event: "limit-hit", resume_at: $r, class: $c, reset_known: $k, provider: $p}' \
     >> "$log_file"
-  fleet_limit_publish "$state_repo" "$state_dir" "$resume_at" "$class" "$reset_known" "$node_name" \
+  fleet_limit_publish "$state_repo" "$state_dir" "$resume_at" "$class" "$reset_known" "$node_name" "" "${stage_provider:-anthropic}" \
     || log_event "warning" "$(jq -nc \
          '{detail: "could not publish fleet/limit.json — peers will pick the cooldown up from the log union instead"}')"
 }
@@ -883,7 +883,7 @@ log_event "monitor-stage-start" "$(jq -nc --arg m "$monitor_model" \
   --argjson digest_bytes "$digest_bytes" --argjson digest_rung "$digest_rung" \
   '{model: $m} + (if ($b | type) == "object" then $b else {} end)
    + {backstop_min: $bs, inactivity_min: $is, digest_bytes: $digest_bytes, digest_rung: $digest_rung}')"
-if run_claude_stage monitor "$(( monitor_backstop_min * 60 ))" "$monitor_model" \
+if run_model_stage monitor "$(( monitor_backstop_min * 60 ))" "$monitor_model" \
      "$monitor_prompt" "$out_file" "$run_dir" "$(( monitor_inactivity_min * 60 ))"; then
   monitor_rc=0
 else

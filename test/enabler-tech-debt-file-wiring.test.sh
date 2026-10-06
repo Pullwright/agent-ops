@@ -196,7 +196,7 @@ review_gate_unknown_streak_verdict() { cat >/dev/null; printf ''; }
 review_gate_degraded_since() { cat >/dev/null; return 1; }
 
 # shellcheck disable=SC2317  # invoked only by the eval'd maybe_run_enabler
-run_claude_stage() {
+run_model_stage() {
   local out_file="$5"
   jq -nc --argjson env "$STUB_EXAMINED_JSON" '{result: ($env | tostring), session_id: "stub-session"}' \
     > "$out_file"

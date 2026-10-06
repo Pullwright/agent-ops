@@ -77,7 +77,7 @@ fi
 
 events_log="$tmp_dir/events.jsonl"
 
-# The harness every case shares: lib/stage-run.sh for the real run_claude_stage,
+# The harness every case shares: lib/stage-run.sh for the real run_model_stage,
 # the two lifted functions, and a log_event stub that records outcomes instead
 # of writing the pipeline's real log.
 harness="

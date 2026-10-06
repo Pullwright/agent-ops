@@ -14,7 +14,7 @@
 # Reads and writes the cycle's own globals (`cycle_dir`, `enabler_allowed`,
 # `enabler_eligible_json`, …) exactly as they did inline.
 
-# `run_claude_stage` — the stage launcher, its wall-clock cap and its
+# `run_model_stage` — the stage launcher, its wall-clock cap and its
 # process-group kill — lives in lib/stage-run.sh, sourced at the top of this
 # script alongside every other shared rule. It is shared with review-cycle.sh
 # rather than copied into it (requirement 4d).
@@ -850,7 +850,7 @@ $(jq . <<<"$input")
 \`\`\`
 "
   out="$cycle_dir/enabler-adjudicate-$idx.out"
-  if run_claude_stage enabler-adjudicate "$(( stage_backstop_min * 60 ))" "$critical_model" "$prompt" "$out" "$cycle_dir" "$(( stage_inactivity_min * 60 ))"; then
+  if run_model_stage enabler-adjudicate "$(( stage_backstop_min * 60 ))" "$critical_model" "$prompt" "$out" "$cycle_dir" "$(( stage_inactivity_min * 60 ))"; then
     rc=0
   else
     rc=$?
@@ -990,7 +990,7 @@ $(jq . <<<"$input")
 \`\`\`
 "
   out="$cycle_dir/enabler-decide-$idx.out"
-  if run_claude_stage enabler-decide "$(( stage_backstop_min * 60 ))" "$critical_model" "$prompt" "$out" "$cycle_dir" "$(( stage_inactivity_min * 60 ))"; then
+  if run_model_stage enabler-decide "$(( stage_backstop_min * 60 ))" "$critical_model" "$prompt" "$out" "$cycle_dir" "$(( stage_inactivity_min * 60 ))"; then
     rc=0
   else
     rc=$?
@@ -1246,7 +1246,7 @@ $(jq . <<<"$input")
   # The Enabler spans repositories by construction, so its cell is keyed `*`
   # (requirement 4f) — there is no repository this engagement belongs to.
   stage_budget_apply enabler "*" "$enabler_model"
-  if run_claude_stage enabler "$(( stage_backstop_min * 60 ))" "$enabler_model" "$prompt" "$out" "$cycle_dir" "$(( stage_inactivity_min * 60 ))"; then
+  if run_model_stage enabler "$(( stage_backstop_min * 60 ))" "$enabler_model" "$prompt" "$out" "$cycle_dir" "$(( stage_inactivity_min * 60 ))"; then
     rc=0
   else
     rc=$?

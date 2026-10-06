@@ -135,7 +135,7 @@ run_case() {  # run_case NAME MODE HOLD BACKSTOP_SEC INACTIVITY_SEC -> sets rc, 
   capture="$tmp_dir/$name"
   mkdir -p "$capture"
   STUB_CAPTURE="$capture" STUB_MODE="$mode" STUB_HOLD="$hold" \
-    run_claude_stage "$name" "$backstop" test-model "a prompt" "$capture/$name.out" "$capture" "$inactivity"
+    run_model_stage "$name" "$backstop" test-model "a prompt" "$capture/$name.out" "$capture" "$inactivity"
   rc=$?
 }
 

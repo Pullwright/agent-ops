@@ -167,7 +167,7 @@ exit 0
 STUB
   chmod +x "$dir/stub/gh"
 
-  # The `claude` stub: emits the stream-json envelope `run_claude_stage`
+  # The `claude` stub: emits the stream-json envelope `run_model_stage`
   # truncates to `<stage>.out`, carrying whatever result.json holds as the
   # final message's `result` string. It also keeps the prompt it was handed,
   # so a case can assert the digest actually reached the stage.
