@@ -605,7 +605,7 @@ the GitHub-budget card, and the cost roll-ups' `day_cut`/`today`/`recent_cut`
 the real wall clock; it exists only so a test can pin every window this
 script computes to a calendar date it controls, rather than the clock the
 test happens to run under. `DASHBOARD_TODAY` (`Components (as built)`,
-above) covers the narrower case of pinning just the cost roll-ups' `today`
+below) covers the narrower case of pinning just the cost roll-ups' `today`
 when a test wants that fixed without pinning every other window `--now`
 would also pin; it has no effect when `--now` is given.
 
