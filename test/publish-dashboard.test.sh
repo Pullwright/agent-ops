@@ -205,6 +205,7 @@ stamp_of() {  # the JSON inside stamp.js, wrapper stripped
 
 today="$(date -u +%Y%m%dT%H%M%SZ)"
 today_day="${today:0:8}"
+export DASHBOARD_TODAY="$today_day"
 
 # --- The scan's semantics -------------------------------------------------------
 a="$(new_home nodeA)"
