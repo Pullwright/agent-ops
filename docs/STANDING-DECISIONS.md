@@ -258,8 +258,12 @@ principle it rests on.`
   Anthropic-compatible one) and never through an API gateway. D4's
   subscription stance extends to every provider whose CLI offers a
   subscription login: the API key is primary, the subscription is the
-  documented alternative with its constraints, and the provider's terms on
-  automated use are the subscriber's to satisfy. The API-key path ships
+  documented alternative with its constraints (own use only, among them),
+  and the provider's terms may forbid unattended use outright — xAI's
+  consumer terms forbid automated means that send more requests than a
+  person could from a browser — so whether a fleet may run on a
+  subscription is the subscriber's question, which the product documents
+  and takes no position on. The API-key path ships
   first and the subscription path follows it directly: the prospective
   customer is likely to want their SuperGrok subscription, and how its
   credential reaches the nodes is negotiated with them. Decided by the
