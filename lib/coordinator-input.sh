@@ -328,15 +328,45 @@ coordinator_fit_bands() {  # <budget-bytes>  (repos JSON on stdin)
   # Every rung of prose is gone and the array is still over. Only entries are
   # left to shed, at the tightest tier's caps.
   IFS=: read -r keep cb bb <<<"${COORDINATOR_INPUT_TIERS[${#COORDINATOR_INPUT_TIERS[@]}-1]}"
+  local prev_emax="" lo hi mid mid_out mid_size
   for emax in "${COORDINATOR_INPUT_ENTRY_CAPS[@]}"; do
     rung=$(( rung + 1 ))
     out="$(coordinator_apply_rung "$keep" "$cb" "$bb" "$emax" <<<"$repos" 2>/dev/null)" || continue
     size="$(coordinator_rendered_bytes <<<"$out")"
     if (( size <= budget )); then
+      # This cap fits, but the fixed step down from the one before it
+      # (which didn't) can overshoot the budget by far more than it needed
+      # to — the fleet's own 2026-10-06 shape landed here using only ~34% of
+      # a ~288KB budget because 128 overshot and the ladder fell straight to
+      # 64 (agent-ops#2221). Binary-search the gap the fixed array already
+      # brackets for the highest cap in it that still fits. The search never
+      # looks outside that gap, so its result is always less than the cap
+      # that didn't fit — at most exactly double this cap for every step
+      # from 128 down, and less than double for the three widest steps —
+      # which is the same never-more-than-halving bound agent-ops#2191
+      # established for the fixed array, preserved here without having to
+      # reassert it.
+      if [[ -n "$prev_emax" ]]; then
+        lo=$(( emax + 1 ))
+        hi=$(( prev_emax - 1 ))
+        while (( lo <= hi )); do
+          mid=$(( (lo + hi) / 2 ))
+          mid_out="$(coordinator_apply_rung "$keep" "$cb" "$bb" "$mid" <<<"$repos" 2>/dev/null)" \
+            || { hi=$(( mid - 1 )); continue; }
+          mid_size="$(coordinator_rendered_bytes <<<"$mid_out")"
+          if (( mid_size <= budget )); then
+            emax="$mid"; out="$mid_out"; size="$mid_size"
+            lo=$(( mid + 1 ))
+          else
+            hi=$(( mid - 1 ))
+          fi
+        done
+      fi
       coordinator_fit_report "$rung" "$keep" "$cb" "$bb" "$emax" "$size" "$before" \
         "$budget" "$entries_before" true <<<"$out"
       return 0
     fi
+    prev_emax="$emax"
   done
 
   # One entry per band per repo and still over budget. Hand back the smallest

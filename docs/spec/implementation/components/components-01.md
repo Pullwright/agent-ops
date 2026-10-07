@@ -1059,7 +1059,9 @@ What exists, and the requirements each part answers to:
    newest-comments-kept, entry dropping in the stated keep-order (tech-debt
    freshest-first), entry order left alone when nothing is dropped, the two
    trim rungs beneath `0:0:1000` and the first entry cap's position beyond
-   them, the fleet's 2026-09-23 shape settling on a trim rung, the
+   them, the binary search that refines a fixed entry cap towards whatever
+   higher cap in its gap still fits the allowance (bounded below double the
+   fixed cap it refines, agent-ops#2221), the fleet's 2026-09-23 shape settling on a trim rung, the
    unfittable case, the two whole-document bands trimmed and the other bands
    not, the rendered detail line, and — pinning requirement 4g — an array
    genuinely past
