@@ -69,10 +69,10 @@ See [Configure](configure.md) for the essentials. For every key and option, see 
 - **New to this?** Start with [Install a node](install-a-node.md)
 - **Something wrong?** See [Diagnose by symptom](diagnose-by-symptom.md)
 - **Want details?** Read the specification for your role:
-  - Implementer stage: `docs/IMPLEMENTATION-PIPELINE-SPEC.md`
-  - Reviewer stage: `docs/REVIEW-PIPELINE-SPEC.md`
-  - Monitor pipeline: `docs/MONITOR-PIPELINE-SPEC.md`
-  - Dashboard: `docs/DASHBOARD-SPEC.md`
+  - Implementer stage: `docs/spec/implementation/README.md`
+  - Reviewer stage: `docs/spec/review.md`
+  - Monitor pipeline: `docs/spec/monitor.md`
+  - Dashboard: `docs/spec/dashboard/README.md`
 
 ## Data handling
 

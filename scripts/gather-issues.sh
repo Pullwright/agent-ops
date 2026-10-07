@@ -2,7 +2,7 @@
 #
 # gather-issues.sh — deterministically pre-fetch one repo's open issues, whole
 # threads included, for the Co-Ordinator's runtime input
-# (docs/IMPLEMENTATION-PIPELINE-SPEC.md, requirement 3j).
+# (docs/spec/implementation/requirements, requirement 3j).
 #
 # Usage: gather-issues.sh <owner/repo>
 #

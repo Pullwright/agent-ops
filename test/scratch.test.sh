@@ -2,7 +2,7 @@
 #
 # test/scratch.test.sh — regression test for lib/scratch.sh: the per-process
 # scratch directory every entry point enters, and the sweep of the ones dead
-# processes leave (docs/IMPLEMENTATION-PIPELINE-SPEC.md requirement 2.5,
+# processes leave (docs/spec/implementation/requirements requirement 2.5,
 # agent-ops#1827).
 #
 # The property under test is the direction of every possible mistake: a

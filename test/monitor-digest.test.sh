@@ -5,7 +5,7 @@
 #
 # test/monitor-digest.test.sh — lib/monitor-digest.sh, the deterministic
 # digest the Pipeline Monitor reads instead of the fleet's own records
-# (agent-ops#1284, docs/MONITOR-PIPELINE-SPEC.md M6/M6a/M6b/M7).
+# (agent-ops#1284, docs/spec/monitor.md M6/M6a/M6b/M7).
 #
 # Every function under test is a pure reader, which is what makes this file
 # possible at all: fixture logs and a fixture state tree on disk, no network,
@@ -283,8 +283,8 @@ assert_eq "the default is empty" "[]" "$(monitor_digest_promoted)"
 digest="$(monitor_digest_build \
   "$(jq -nc --arg f "$SINCE" --arg t "$NOW_ISO" '{from: $f, to: $t, hours: 24, node: "n1"}')" \
   "$events" "$pager" "$nodes" "$work" "$forge" \
-  "$(monitor_digest_gotchas "$SCRIPT_DIR/docs/IMPLEMENTATION-PIPELINE-SPEC.md" \
-       "$SCRIPT_DIR/docs/MONITOR-PIPELINE-SPEC.md")" \
+  "$(monitor_digest_gotchas "$SCRIPT_DIR/docs/spec/implementation/gotchas.md" \
+       "$SCRIPT_DIR/docs/spec/monitor.md")" \
   "$promoted")"
 
 for section in window events pager nodes work forge gotchas promoted; do

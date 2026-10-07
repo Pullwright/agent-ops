@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # lib/model-id.sh — provider-qualified model identifiers (D12,
-# docs/IMPLEMENTATION-PIPELINE-SPEC.md requirement 1a, issue #2131).
+# docs/spec/implementation/requirements/the-script-01.md requirement 1a, issue #2131).
 #
 # Every model key in config.json (coordinator_model, implementer_model_*,
 # reviewer_model_*, enabler_model, repository_review.defaults.model and its
@@ -183,7 +183,7 @@ resolve_model_qualified() {
   printf '%s/%s\n' "$provider" "$bare"
 }
 
-# Model-tier ordering (agent-ops#822, docs/IMPLEMENTATION-PIPELINE-SPEC.md
+# Model-tier ordering (agent-ops#822, docs/spec/implementation/README.md
 # requirement 1c). #815 (fixed by #819) and #821 both trace to the same root
 # cause: nothing stopped a cheaper model from authoring a work order
 # specification a more capable Implementer then executed. This table is what

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
 # test/record-directory-lifetime.test.sh — what a review run leaves behind in
-# `state_dir/reviews/` (agent-ops#1826; docs/REVIEW-PIPELINE-SPEC.md R2 and
-# R2c, docs/IMPLEMENTATION-PIPELINE-SPEC.md requirement 2.5).
+# `state_dir/reviews/` (agent-ops#1826; docs/spec/review.md R2 and
+# R2c, docs/spec/implementation/requirements requirement 2.5).
 #
 #   a tick that did nothing   a run that finds the review lock held by a live
 #   leaves no directory       peer, or stands down because agent-cycle.sh

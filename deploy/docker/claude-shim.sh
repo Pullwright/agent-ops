@@ -5,8 +5,8 @@
 # same way scripts/gh-shim.sh stands in front of `gh`.
 #
 # Every `claude` this image runs therefore runs as the stage user
-# (requirement 45e of docs/IMPLEMENTATION-PIPELINE-SPEC.md): each stage
-# lib/stage-run.sh launches, the limit probe, `doctor.sh`'s version and
+# (requirement 45e of docs/spec/implementation/requirements/every-stage.md):
+# each stage lib/stage-run.sh launches, the limit probe, `doctor.sh`'s version and
 # authentication checks, and an operator's interactive
 # `docker compose exec scheduler claude`. That user owns the Claude
 # configuration, and it cannot read the GitHub Apps' keys, the Script's

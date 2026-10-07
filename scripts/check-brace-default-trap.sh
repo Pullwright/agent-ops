@@ -13,7 +13,7 @@
 # silently corrupting every other value with an extra trailing
 # brace/bracket. agent-ops#933/TD-PPagop-26082816 is the one instance found
 # so far: an empty-object default on `coordinator_fit_report_json` written
-# in exactly this shape (docs/IMPLEMENTATION-PIPELINE-SPEC.md's Gotchas
+# in exactly this shape (docs/spec/implementation/gotchas.md's Gotchas
 # table has the literal syntax) disarmed requirements 34e, 3x and 17g for a
 # month, because the empty/unset path (the only one any fixture drove)
 # happened to compose the correct default by accident.
@@ -21,7 +21,7 @@
 # This shape is not flagged by shellcheck — the buggy line lived under a
 # green shellcheck run from the day it shipped — so PR #940 fixed the one known
 # instance with a one-off manual grep sweep, documented the trap in
-# docs/IMPLEMENTATION-PIPELINE-SPEC.md's Gotchas table, and nothing stopped
+# docs/spec/implementation/gotchas.md's Gotchas table, and nothing stopped
 # the shape from being reintroduced. This script is that sweep, made
 # permanent, run as an additional step in the `shellcheck` CI job
 # (.github/workflows/shellcheck.yml) alongside shellcheck itself, never in
@@ -87,8 +87,8 @@ if [[ -n "$matches" ]]; then
     echo "  closing character it finds in word, not the one you meant — an unescaped"
     echo "  opening brace/bracket right after :- leaves a stray closing one just"
     echo "  outside the substitution, corrupting every non-empty value while the"
-    echo "  empty/unset path looks fine. See docs/IMPLEMENTATION-PIPELINE-SPEC.md,"
-    echo "  Gotchas table (the row on agent-ops#933/TD-PPagop-26082816) for the fix:"
+    echo "  empty/unset path looks fine. See the Gotchas table in"
+    echo "  docs/spec/implementation/gotchas.md (the row on agent-ops#933/TD-PPagop-26082816) for the fix:"
     echo "  initialise the variable ahead of the guard instead of defaulting it."
   } >&2
   exit 1

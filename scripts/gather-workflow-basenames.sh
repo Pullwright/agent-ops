@@ -18,7 +18,7 @@
 # one read that answers it, kept separate from gather-source-state.sh because
 # it is needed only for the (usually empty) residue of still-unretired
 # `failed-run-` void entries — see requirement 34n in
-# docs/IMPLEMENTATION-PIPELINE-SPEC.md.
+# docs/spec/implementation/README.md.
 #
 # Usage: gather-workflow-basenames.sh <owner/repo>
 #

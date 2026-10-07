@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # test/repo-order.test.sh — regression test for lib/repo-order.sh
-# (docs/IMPLEMENTATION-PIPELINE-SPEC.md requirement 3, acceptance check 1l).
+# (docs/spec/implementation/requirements requirement 3, acceptance check 1l).
 #
 # Requirement 3's repo walk decides which repo the Co-Ordinator looks at
 # first, every cycle, forever — and per-repo `nice` (config.json's
@@ -226,7 +226,7 @@ assert_eq "producer: an integer-valued float (5.0) is emitted as 5" \
   "$(repo_nice_selection_config '[{"slug":"org/x","nice":5.0}]')"
 
 # A `nice` outside -19..19, non-integer or otherwise malformed is now caught
-# by the schema gate (config.schema.json, docs/IMPLEMENTATION-PIPELINE-SPEC.md
+# by the schema gate (config.schema.json, docs/spec/implementation/README.md
 # requirement 1b) before agent-cycle.sh reads a single repos[] entry, rather
 # than by a hand-written startup guard in this script — so the end-to-end
 # "agent-cycle.sh actually refuses to start" case lives in

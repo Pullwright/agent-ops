@@ -20,7 +20,7 @@ Once an hour:
 3. **[Reviewer](../../concepts/glossary.md#reviewer)** (Sonnet, or Opus when the Implementer graded the work `complexity:high`) checks and corrects the implementation, then marks the PR ready for review.
 4. **[The Landing Gate](../../concepts/glossary.md#landing-gate)** reviews and merges the pull request. At the default
    [`merge_autonomy`](../../concepts/glossary.md#merge-autonomy) (`human`) a human does both; an opt-in trust ladder (see
-   [The Landing Gate](../../IMPLEMENTATION-PIPELINE-SPEC.md#the-landing-gate))
+   [The Landing Gate](../../spec/implementation/landing-gate.md#the-landing-gate))
    can add an **[Approver](../../concepts/glossary.md#approver)** App review and, at its top two rungs, have the
    [Script](../../concepts/glossary.md#script) itself land an eligible pull request — a human's own role then
    narrows to whatever the classifier didn't cover, and a human
@@ -283,7 +283,7 @@ Two things to know:
 Every pull request this pipeline raises goes through the same review and
 merge machinery; what varies is *who* performs the approve and the merge.
 That's `merge_autonomy`, a four-level trust ladder — see [The Landing
-Gate](../../IMPLEMENTATION-PIPELINE-SPEC.md#the-landing-gate) for the full
+Gate](../../spec/implementation/landing-gate.md#the-landing-gate) for the full
 requirements this section summarises:
 
 | Level | Who approves | Who lands | Your residual act |

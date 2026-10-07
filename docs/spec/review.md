@@ -5,13 +5,13 @@
 This is the as-built requirements specification for the repository-review
 pipeline — named for what each run does: one repository, on its own, with
 its own clone, branch, report set and pull request. It is a companion to
-`docs/IMPLEMENTATION-PIPELINE-SPEC.md` (the implementation pipeline)
-and `docs/DASHBOARD-SPEC.md` (the monitoring dashboard), and like them it
+`docs/spec/implementation/README.md` (the implementation pipeline)
+and `docs/spec/dashboard/README.md` (the monitoring dashboard), and like them it
 describes the system as it exists — any change to this pipeline lands
 together with the edit that keeps this document accurate (see `AGENTS.md`,
 "As-built specifications").
 
-**Where this document is silent, follow `docs/IMPLEMENTATION-PIPELINE-SPEC.md`.** The two
+**Where this document is silent, follow `docs/spec/implementation/README.md`.** The two
 pipelines deliberately share their machinery — the lock discipline, the
 minimal-`PATH` bootstrap for cron, usage-limit detection (`lib/limit-detect.sh`),
 the JSON-Lines log format and `log_event` helper, the ephemeral-clone rule,
@@ -19,7 +19,7 @@ the stage launcher with its per-stage timeout, process-group kill and event
 stream (`lib/stage-run.sh`'s `run_claude_stage`), and the
 "straight-parse-else-last-fenced-```json```-block" result parser. This
 pipeline **reuses** those, and must not reinvent them. References of the form
-"requirement N" mean requirement N of `docs/IMPLEMENTATION-PIPELINE-SPEC.md`. The target
+"requirement N" mean requirement N of `docs/spec/implementation/README.md`. The target
 repositories' `AGENTS.md` files — or `CLAUDE.md`, for a repository that has
 not migrated — remain binding on any agent working inside them.
 
@@ -58,7 +58,7 @@ cron (repository_review.defaults.min_days_between_reviews; a daily tick with a
   `config.json`, `state_dir`, `workspace_root`, `lib/limit-detect.sh`,
   `lib/git-identity.sh`, the ephemeral-clone discipline, the `PATH`
   bootstrap, the `gh` transport shim that bootstrap resolves
-  (`IMPLEMENTATION-PIPELINE-SPEC.md`'s requirement 2.0e — `review-cycle.sh`
+  (`docs/spec/implementation/requirements/the-script-02.md`'s requirement 2.0e — `review-cycle.sh`
   exports `PW_GH_STATE_DIR` once it resolves `state_dir`, so the shim finds
   this node's own state from every subprocess the review cycle forks,
   including its model-driven stage), and the result parser.
@@ -73,7 +73,7 @@ cron (repository_review.defaults.min_days_between_reviews; a daily tick with a
   either pipeline stands **both** down, and the dashboard shows it. The one
   other event that crosses over is `clone-footprint`, which the implementation
   pipeline's own pre-clone free-space gate reads back (requirement 2.0c of
-  `docs/IMPLEMENTATION-PIPELINE-SPEC.md`). Every other review event goes to the
+  `docs/spec/implementation/README.md`). Every other review event goes to the
   review pipeline's own stream (R16), so the dashboard's existing `log.jsonl`
   parser is unaffected.
 
@@ -87,7 +87,7 @@ cron (repository_review.defaults.min_days_between_reviews; a daily tick with a
 3. The **Reviewer-Agent** — a headless Claude Code invocation that runs the
    `project-review` skill against one ephemeral clone and raises one review
    pull request. One invocation per repository. It writes no comments today, so
-   it stamps none of `docs/IMPLEMENTATION-PIPELINE-SPEC.md`'s requirement 9d
+   it stamps none of `docs/spec/implementation/README.md`'s requirement 9d
    headers itself; `dashboard/index.html`'s `ACTOR` map and
    `lib/pipeline-marker.sh`'s `pipeline_actor_label` both carry an entry for it
    anyway, under the token `project-reviewer` and the display name **Project
@@ -100,7 +100,7 @@ cron (repository_review.defaults.min_days_between_reviews; a daily tick with a
 
 ## Environment
 
-Identical to `docs/IMPLEMENTATION-PIPELINE-SPEC.md` ("Environment" and "Target
+Identical to `docs/spec/implementation/README.md` ("Environment" and "Target
 repositories"); not repeated here. The target repositories are the same as
 that document's, currently `Poetic-Poems/poetic`, `Poetic-Poems/poetic-fiddle`,
 and `Pullwright/agent-ops`, and their shared conventions (protected `main`,
@@ -241,13 +241,13 @@ reconstructable without the log carrying arbitrary file content.
 The values below are the confirmed defaults; `docs/reference/configuration.md`
 documents each key, and
 `config.schema.json` carries them alongside the implementation pipeline's
-(`docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 1b) — one file, one
+(`docs/spec/implementation/requirements` requirement 1b) — one file, one
 schema, so `scripts/doctor.sh` checks both pipelines' configuration in one
 pass and neither half can drift while the other is checked. The object as a
 whole is optional there: an installation that does not run reviews simply
 leaves it out. `review-cycle.sh` therefore tests for the block against
 `config.json` itself rather than against the merge `config_defaults` returns
-(`docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 1b): that merge
+(`docs/spec/implementation/requirements` requirement 1b): that merge
 synthesises a `repository_review` object from the defaults of the leaves under
 it, so it can never report the block absent, and this one check must read
 absence as absence — against either spelling (`has("repository_review") or
@@ -259,7 +259,7 @@ already folded whichever spelling `config.json` set into that key.
 
 The body rows of the table below are generated from that schema — each key's
 `x-docs.spec` prose and `x-docs.value` cell — by
-`scripts/render-config-table.sh` (`docs/IMPLEMENTATION-PIPELINE-SPEC.md`
+`scripts/render-config-table.sh` (`docs/spec/implementation/README.md`
 component 16), between the `config-table` markers, and CI fails a pull
 request that leaves them stale. Edit the schema, not the rows. A Notes cell
 over 500 characters is capped, with its full text deferred to this document's
@@ -311,7 +311,8 @@ aliases in the launch command.
 (`anthropic/claude-sonnet-5`, or `<name>/<id>` for a provider the top-level
 `providers` object configures), resolved by the same `resolve_model_id`
 (`lib/model-id.sh`) the implementation pipeline uses — see
-`docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 1a. `anthropic` is always
+`docs/spec/implementation/requirements/the-script-01.md` requirement 1a.
+`anthropic` is always
 accepted, substrate `claude-code`, whether or not `providers` names it
 explicitly (D12, `docs/ROADMAP.md`); a qualifier naming a provider
 `providers` does not configure, or one configured with a substrate this
@@ -345,7 +346,7 @@ Conventional Commits form (e.g. `docs(review): repository review 2026-07-20`),
 and its body summarises the verdict and links the review index. A human
 approves and merges it, at every `merge_autonomy` level: `review-cycle.sh`
 engages no Approver stage, so the implementation pipeline's trust ladder
-(`docs/IMPLEMENTATION-PIPELINE-SPEC.md` §The Landing Gate) does not yet
+(`docs/spec/implementation/landing-gate.md` §The Landing Gate) does not yet
 reach review pull requests, however the installation has configured it.
 Review PRs join that ladder when an Approver is wired into this pipeline —
 work no item covers yet, named here so the gap is a stated one rather than
@@ -378,13 +379,15 @@ R1a. **Model id resolution, against a configured set of providers (D12,
    issue #2131).** `lib/model-id.sh`'s `providers_load` loads the top-level
    `providers` object into `PROVIDER_SUBSTRATE` once, at startup, before the
    sweep below — the same call and the same startup position
-   `agent-cycle.sh` makes (`docs/IMPLEMENTATION-PIPELINE-SPEC.md`
+   `agent-cycle.sh` makes (`docs/spec/implementation/requirements/the-script-01.md`
    requirement 1a). Every configured repository's own resolved model
    (`repository_review.defaults.model`, or its own override in
    `repository_review.repos`, requirement 342) is then resolved through
    `lib/model-id.sh`'s `resolve_model_id` immediately after `repository_review`'s
    settings are read and resolved, before the lock — the same helper and the
-   same rule `agent-cycle.sh` applies to its own model keys: a bare id means
+   same rule `agent-cycle.sh` applies to its own model keys
+   (`docs/spec/implementation/requirements/the-script-01.md` requirement
+   1a): a bare id means
    `anthropic`, a qualified id has the qualifier stripped once the named
    provider is accepted, and a qualifier naming a provider `providers` does
    not configure — or one configured with a substrate this image has no
@@ -404,7 +407,7 @@ R1b. **Duplicate-slug refusal.** Requirement 342's resolution rule assumes
    immediately after `repository_review_repos_json` is resolved, before the model
    sweep above: `lib/config-schema.sh`'s `config_duplicate_repository_review_slugs`
    — a third cross-key rule the schema itself cannot state, alongside
-   `agent-cycle.sh`'s own two (`docs/IMPLEMENTATION-PIPELINE-SPEC.md`
+   `agent-cycle.sh`'s own two (`docs/spec/implementation/requirements`
    requirement 1b) — names every slug appearing more than once, and the Script
    refuses to start naming them, exactly as `scripts/doctor.sh`'s own `fail`
    does against the same function, so the two can never drift on what counts
@@ -455,7 +458,7 @@ R2. **Lock.** Acquire `review-lock.json` in `state_dir` recording PID, start
    `host` is its own container, and honouring a lock written elsewhere until
    released or stale, since a pid means nothing outside the PID namespace
    that minted it (see the node stack section of
-   `docs/IMPLEMENTATION-PIPELINE-SPEC.md`). A review is protected exactly as
+   `docs/spec/implementation/README.md`). A review is protected exactly as
    long as it would keep the lock against another review.
 
 R3. **Stand-down checks.** Each logs its reason and exits 0:
@@ -567,7 +570,7 @@ R2b. **The role guard.** Before the switch, the config and the lock, stand the
 R2c. **The fleet's memory and state publication.** After the lock and before
    any work, snapshot the fleet's shared event stream — this node's
    `log.jsonl` unioned with every peer's, via `lib/fleet.sh`
-   (`docs/IMPLEMENTATION-PIPELINE-SPEC.md`, requirement 2.5) — so the
+   (`docs/spec/implementation/requirements`, requirement 2.5) — so the
    usage-limit checks below see a limit *any* node hit; the union is
    re-snapshotted between repos, and each snapshot is built on the terms of
    that same requirement: `fleet_logs` takes a peer's NUL-holed or spliced
@@ -642,7 +645,7 @@ R4. **Per-repo skip-guard (idempotency; this is how "once a week" is
 
 R4a. **Report directory (issue #761).** Where a report set (R11) is written,
    and where R4's own skip-guard and the implementation pipeline's
-   `project-review` Refiner source (`docs/IMPLEMENTATION-PIPELINE-SPEC.md`
+   `project-review` Refiner source (`docs/spec/implementation/requirements`
    requirement 3y) look for the most recent one, is a GNU `date`(1) format
    string, resolved with `date -u +"<format>"` relative to the repository
    root — never a fixed path. Resolution, per repository (requirement 342's
@@ -702,7 +705,7 @@ R4a. **Report directory (issue #761).** Where a report set (R11) is written,
    print is byte-for-byte what they printed before the distinction existed,
    including for a multi-segment format whose walk lists one level and fails
    at the next, so degraded and found-something are not exclusive states.
-   `docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 3y's `--current-date`
+   `docs/spec/implementation/requirements` requirement 3y's `--current-date`
    mode is the caller that needs it. R4's own skip-guard
    (`most_recent_review_date`) does not — a failed listing and an absent
    folder both mean "no date to compare against", and the guard already
@@ -734,7 +737,7 @@ R5. **Per non-skipped repo** (processed **sequentially**, so a failure of one
    0a. *Git identity.* Immediately after the claim succeeds — the first point
       in this repo's run that could actually commit — require
       `GIT_USER_NAME`/`GIT_USER_EMAIL` via the shared `lib/git-identity.sh`
-      (`docs/IMPLEMENTATION-PIPELINE-SPEC.md`, "The node image"): both are
+      (`docs/spec/implementation/environment.md`, "The node image"): both are
       required, with no default, and their absence exits non-zero with an
       actionable message rather than falling back to any identity. The claim's
       own lost/error skips, and every stand-down before it, commit nothing and
@@ -743,7 +746,7 @@ R5. **Per non-skipped repo** (processed **sequentially**, so a failure of one
       this repo is now certainly going to be worked — ensure its own resolved
       `repository_review` pr_label exists in it, via `labels_reconcile_role`
       (`lib/labels.sh`), unconditionally and unstamped: the same shape
-      `docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 6a
+      `docs/spec/implementation/requirements` requirement 6a
       uses for its own selected repository, immediately before the stage that
       needs the label to exist, rather than the rate-limited
       `labels_reconcile_stamped` requirement 6a's per-gathered-repository
@@ -781,7 +784,7 @@ R5. **Per non-skipped repo** (processed **sequentially**, so a failure of one
       transport is not rate-limited. The git credential helper
       `deploy/docker/entrypoint.sh` wires — `!gh auth git-credential`, an
       unqualified `gh` that `PATH` resolves to the transport shim and so to
-      the on-demand credential seam (IMPLEMENTATION-PIPELINE-SPEC component
+      the on-demand credential seam (docs/spec/implementation/components/components-03.md component
       22c) — authenticates the HTTPS remote, and
       `CLONE_GIT` substitutes a stub for tests, and anything already at the
       target path is discarded rather than inspected (requirement 6). Assert
@@ -792,7 +795,7 @@ R5. **Per non-skipped repo** (processed **sequentially**, so a failure of one
       `disk_space_clone_footprint_bytes`, a `du -sb` of the clone directory —
       and log a `clone-footprint` event carrying `{repo, bytes}` against the
       cloned repository's own slug, to the *shared* `log.jsonl` (R16), which is
-      where requirement 2.0c of `docs/IMPLEMENTATION-PIPELINE-SPEC.md` reads it
+      where requirement 2.0c of `docs/spec/implementation/README.md` reads it
       back from to derive its pre-clone free-space threshold. Best-effort: a
       `du` that cannot be read logs no event rather than a fabricated size, and
       nothing about the review depends on it.
@@ -844,7 +847,7 @@ R5. **Per non-skipped repo** (processed **sequentially**, so a failure of one
       `result` envelope lands in `<stage>.out` for the parse below. The
       prompt reaches the stage
       on stdin, never as a command-line argument, for the reason
-      `docs/IMPLEMENTATION-PIPELINE-SPEC.md`'s requirement 4c gives: a single
+      `docs/spec/implementation/README.md`'s requirement 4c gives: a single
       argv entry is capped at 131072 bytes, and a prompt is the one input here
       that grows without bound. This pipeline's prompt has room to spare today,
       which is precisely why the launcher is shared rather than copied — the
@@ -862,7 +865,7 @@ R5. **Per non-skipped repo** (processed **sequentially**, so a failure of one
       `review-attempt-failed` with enough detail to diagnose, and — if a PR was
       already opened — comment on it that the agent abandoned it and why,
       leaving the PR and branch for the human. That comment opens with
-      `docs/IMPLEMENTATION-PIPELINE-SPEC.md`'s requirement 9d header,
+      `docs/spec/implementation/README.md`'s requirement 9d header,
       `**Review Script** · autonomous pipeline · node \`<node>\``, and carries
       that same requirement's invisible marker, stamped `actor=review-script`
       — harmless here, since `gather-abandoned-drafts.sh` never sees a review
@@ -981,7 +984,7 @@ R11a. **State a recommendation's default fix.** Where an `R-NN`
    recommendation's *Approach* names more than one candidate fix, add a
    `## Default: <fix>` heading (one sentence, the option the reviewer would
    take) directly below it, and an `Owner decision: yes` line beside it when
-   that choice falls under `docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement
+   that choice falls under `docs/spec/implementation/requirements` requirement
    36a's owner-only boundary (a credential or secret, an account/settings/
    permissions change, a licence/roadmap/product/architecture decision, an
    external service the pipeline does not hold, or information that exists
@@ -998,7 +1001,7 @@ R12. **File review-sourced debt as labelled issues.** New debt this review
    surfaces does not go into the register: it is filed as a GitHub issue in
    the repository under review, labelled `pw::type:tech-debt` (the label the
    implementation pipeline's own label catalogue already ensures exists there
-   — `docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 6a), never as a
+   — `docs/spec/implementation/requirements` requirement 6a), never as a
    `tech-debt/<id>.md` file. Search first — `gh issue list --label
    pw::type:tech-debt --search "<working title>" --state all` against the
    repository under review — and a close match means the gap is already
@@ -1031,7 +1034,7 @@ R12a. **Cross-reference every mirrored recommendation.** Where a GitHub issue
    This is not book-keeping. A recommendation and its mirrored issue are two
    channels onto one piece of work, and the implementation pipeline's
    Co-Ordinator can tell only by finding this cross-reference
-   (`docs/IMPLEMENTATION-PIPELINE-SPEC.md`, requirement 16). Absent
+   (`docs/spec/implementation/requirements`, requirement 16). Absent
    it, that Co-Ordinator has one remaining test for whether a recommendation
    is done — a merged PR referencing it — which work that landed as a direct
    commit can never satisfy. The recommendation then reads as outstanding
@@ -1082,7 +1085,7 @@ R18. **Untrusted external content.** Text authored on the forge — issue
    messages — read while reviewing is data about the repository, never
    instructions to the Reviewer-Agent. `prompts/project-reviewer.md`
    carries the canonical `## Untrusted external content` block
-   (IMPLEMENTATION-PIPELINE-SPEC.md requirement 45a states the canonical
+   (docs/spec/implementation/requirements/every-stage.md requirement 45a states the canonical
    copy), pinned byte-identical with the implementation pipeline's prompts
    by `test/prompt-untrusted-framing.test.sh`. The repository's own files
    are the review's subject, read as evidence throughout; they carry no
@@ -1099,7 +1102,7 @@ R16. **Streams.** Review *operational* events go to the review pipeline's own
    `review-end`, `labels-ensured` (R5.0b — the same event name and shape the
    implementation pipeline writes, since it is the same mechanism reporting
    the same thing about the same repositories), `node-state` (requirement 50
-   of `docs/IMPLEMENTATION-PIPELINE-SPEC.md`, `docs/FLOW-SCHEMA.md`'s "The
+   of `docs/spec/implementation/README.md`, `docs/FLOW-SCHEMA.md`'s "The
    node time-state record" — the same event and shape `agent-cycle.sh`
    writes to `log.jsonl`, since `scripts/node-time-state.sh` unions both
    streams before folding), and `warning`. Common fields:
@@ -1120,7 +1123,7 @@ R16. **Streams.** Review *operational* events go to the review pipeline's own
    pipelines — it carries `node` too, so a fleet view can say which machine hit
    the limit — and `clone-footprint` (`{repo, bytes}`, one per successful
    `clone_repo`, R5 step 1), which requirement 2.0c of
-   `docs/IMPLEMENTATION-PIPELINE-SPEC.md` reads back off the union of every
+   `docs/spec/implementation/README.md` reads back off the union of every
    node's `log.jsonl` to derive its pre-clone free-space threshold. Both are
    written through `log_event_append "$log_file"` rather than this pipeline's
    own `log_event`, since the latter is bound to `review-log.jsonl`; a
@@ -1148,12 +1151,12 @@ R17. The `review-log.jsonl` and the `state_dir/reviews/<review-id>/`
    transcripts are the durable record. Surfacing the transcripts themselves,
    or the raw log, in the monitoring dashboard is a worthwhile follow-on but
    is **out of scope** for this document (the dashboard has its own spec,
-   `docs/DASHBOARD-SPEC.md`); note it there if you extend it. R19 is the one
+   `docs/spec/dashboard/README.md`); note it there if you extend it. R19 is the one
    derived reading of `review-log.jsonl` that is in scope: a per-stage health
    verdict, not the log itself.
 
 R19. **Per-stage health, mirrored (agent-ops#996).** The repository-review
-   pipeline's own symmetric reading of `docs/IMPLEMENTATION-PIPELINE-SPEC.md`
+   pipeline's own symmetric reading of `docs/spec/implementation/requirements`
    requirement 2.8: this pipeline runs one real stage, `project-reviewer`
    (R9–R15, the Reviewer-Agent invocation `review_one` makes), and until this
    requirement nothing read whether its most recent run of attempts on this
@@ -1203,7 +1206,7 @@ R19. **Per-stage health, mirrored (agent-ops#996).** The repository-review
    (rather than recomputing it) and surfaces it as
    `status.review_stage_health`; a peer's verdict comes from its heartbeat's
    `review_stage_health` field or reads null, never a verdict this node
-   derives on that peer's behalf. `docs/DASHBOARD-SPEC.md` documents the
+   derives on that peer's behalf. `docs/spec/dashboard/README.md` documents the
    page's own Review stage health section, its own page-top banner, and its
    own fleet-strip badge — each independent of `stage_health`'s own, so a
    node whose implementation-pipeline stages are all healthy while
@@ -1428,7 +1431,7 @@ edit a test.
 
 9. **The untrusted-content framing holds for the Reviewer-Agent too
    (R18).** `test/prompt-untrusted-framing.test.sh` passes — it lifts the
-   canonical block from IMPLEMENTATION-PIPELINE-SPEC.md requirement 45a and
+   canonical block from docs/spec/implementation/requirements/every-stage.md requirement 45a and
    pins `prompts/project-reviewer.md`'s copy byte-identical alongside the
    implementation pipeline's own prompts.
 

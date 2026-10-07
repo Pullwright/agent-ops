@@ -1407,9 +1407,19 @@ if [[ "$rev_status" == "ready" ]]; then
 
   if [[ "$review_safe" != "true" ]]; then
     if [[ "$gate_word" == "dirty" ]]; then
+      # `gate_reason` names exactly one of the gate's two sub-checks (a
+      # `dirty` required-checks read always wins the word over a `dirty`
+      # alerts read — `review_gate_verdict`'s own header), so the
+      # unblock_condition only ever needs to name the one that actually
+      # fired rather than naming an alert that, per agent-ops#2194, may
+      # never have existed.
+      dirty_unblock_condition="Get every required check green, then let the Reviewer re-examine it."
+      if [[ "$gate_reason" == *"security-severity code-scanning alert"* ]]; then
+        dirty_unblock_condition="Clear the named security-severity code-scanning alert, then let the Reviewer re-examine it."
+      fi
       log_reviewer_handback \
         "the Reviewer reported ready, but $impl_pr_url is not safe to hand off: $gate_reason" \
-        "$impl_pr_url" "Get every required check green and clear the named security-severity code-scanning alert, then let the Reviewer re-examine it."
+        "$impl_pr_url" "$dirty_unblock_condition"
       exit 0
     fi
     if [[ "$gate_checks_unreadable" == "true" ]]; then

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # lib/repo-order.sh — effective-age ordering for the Co-Ordinator's repo walk
-# (docs/IMPLEMENTATION-PIPELINE-SPEC.md requirement 3, acceptance check 1l).
+# (docs/spec/implementation/requirements requirement 3, acceptance check 1l).
 #
 # Requirement 3 sorts agent-cycle.sh's per-repo `ISO_ts \t slug \t
 # default_branch` lines least-recently-updated first, so the most-overdue

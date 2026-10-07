@@ -1,7 +1,8 @@
 # deploy/docker/sudoers-agent-ops — installed by the Dockerfile as
 # /etc/sudoers.d/agent-ops (mode 0440) and checked there with `visudo -c`.
 # The boundary between the Script and its stages (requirement 45e of
-# docs/IMPLEMENTATION-PIPELINE-SPEC.md) is these two rules and nothing else.
+# docs/spec/implementation/requirements/every-stage.md) is these two rules and
+# nothing else.
 #
 # 1. The Script's user may start a process as the stage user, only through
 #    stage-exec. sudo's own environment reset applies, so a stage receives

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # lib/metering.sh — the per-stage metering record (docs/METERING-SCHEMA.md,
-# requirement 33a of docs/IMPLEMENTATION-PIPELINE-SPEC.md).
+# requirement 33a of docs/spec/implementation/README.md).
 #
 # Sourced by agent-cycle.sh and review-cycle.sh so both pipelines derive the
 # same record from a stage's own JSON envelope — the `result` event

@@ -3,7 +3,7 @@
 # deploy/docker/stage-exec.sh — installed root-owned, by the Dockerfile, as
 # /usr/local/libexec/agent-ops/stage-exec: the one way the Script starts a
 # process as the stage user (requirement 45e of
-# docs/IMPLEMENTATION-PIPELINE-SPEC.md).
+# docs/spec/implementation/requirements/every-stage.md).
 #
 # Usage (as the Script's user):
 #   sudo -n -u stage /usr/local/libexec/agent-ops/stage-exec COMMAND [ARGS...]

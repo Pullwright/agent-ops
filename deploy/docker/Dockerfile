@@ -376,6 +376,20 @@ RUN grep -vE '^[[:space:]]*(#|$)' /app/deploy/docker/egress-allowlist.txt > /tmp
     && squid -k parse -f /app/deploy/docker/egress-proxy.conf \
     && rm -f /tmp/egress-allowlist
 
+# Claude Code's managed policy (requirement 4k). Headless `claude -p` treats
+# its working directory as trusted, and a stage's working directory is often a
+# checkout of a pull-request head, so without this a head could ship a hook, an
+# MCP server or an inline-shell skill or command that runs at start-up with the
+# stage's credentials. The managed file outranks every user, project and local
+# settings file, and it is installed root-owned outside /app (which `agent`
+# owns), so nothing a stage runs can rewrite it. The pins are checked here so a
+# bad edit fails the build rather than a node; the image's own acceptance step
+# in build-image.yml checks that `claude` honours them.
+RUN install -D -m 0644 -o root -g root /app/deploy/docker/claude-managed-settings.json \
+        /etc/claude-code/managed-settings.json \
+    && jq -e '.allowManagedHooksOnly == true and .allowedMcpServers == [] and .disableSkillShellExecution == true' \
+        /etc/claude-code/managed-settings.json >/dev/null
+
 USER agent
 WORKDIR /app
 

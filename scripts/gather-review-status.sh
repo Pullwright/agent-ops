@@ -16,7 +16,7 @@
 #
 # A `project-review` recommendation is already excluded from the Co-Ordinator's
 # candidates once "a *merged* pull request references its ref"
-# (`docs/IMPLEMENTATION-PIPELINE-SPEC.md`, requirement 16) — the review folder
+# (`docs/spec/implementation/requirements`, requirement 16) — the review folder
 # itself is a point-in-time record and is never edited to say a recommendation
 # is done (requirement 25), so a merged PR naming the ref, put there by the
 # Implementer that closed it out (the Implementer prompt's `source: project-review`

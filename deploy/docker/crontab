@@ -55,7 +55,7 @@
 # (mod 60), the same jitter shape the doctor line above uses, and — unlike
 # the review and publish lines — it fires *every* hour rather than at one.
 # That is the whole cadence mechanism (agent-ops#1284,
-# docs/MONITOR-PIPELINE-SPEC.md M4): the Pipeline Monitor is due once a day at
+# docs/spec/monitor.md M4): the Pipeline Monitor is due once a day at
 # schedule.monitor_hour *and* within the hour after any `pager-fired` event,
 # and no crontab line can express the second half — none of them can read the
 # fleet's own log. So this line fires hourly and `monitor-cycle.sh` decides,

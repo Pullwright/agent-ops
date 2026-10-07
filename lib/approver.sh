@@ -18,7 +18,7 @@
 #
 # Four tiers, mirroring the owner's own delegation ladder (§5.2):
 #   trivial       complexity:low — deterministic, no model call at all. The
-#                 grading rubric (docs/IMPLEMENTATION-PIPELINE-SPEC.md
+#                 grading rubric (docs/spec/implementation/README.md
 #                 requirement 26a) already forces anything touching
 #                 concurrency, security, CI/workflow machinery or shared
 #                 library code to grade `high`, never `low` — so the

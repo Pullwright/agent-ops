@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Pullwright/agent-ops/config.schema.json",
   "title": "agent-ops installation configuration",
-  "description": "The shape of config.json: every key an installation may set, its type, its constraints, and — where the code has one — the value used when the key is absent. This file is the machine-readable half of the configuration tables in docs/IMPLEMENTATION-PIPELINE-SPEC.md, docs/REVIEW-PIPELINE-SPEC.md and docs/reference/configuration.md, which remain the prose authority on what each key means. `default` here records what the code actually falls back to; a key listed in `required` has no fallback anywhere and must be set. Values in this file are the product's, not this installation's: Poetic's own choices live in config.json. A leaf's `x-docs.value`, where present, carries the two documents' own value cell (scripts/render-config-table.sh) — and doubles as a claim about which installation it describes: equal to this key's own `default`, it documents the product's shipped behaviour, and no installation's config.json is checked against it; differing from the default, it documents Poetic's own choice for this key, and scripts/doctor.sh (lib/config-schema.sh's config_documented_value_mismatches) warns if a live config.json ever resolves that key to something else (issue #567).",
+  "description": "The shape of config.json: every key an installation may set, its type, its constraints, and — where the code has one — the value used when the key is absent. This file is the machine-readable half of the configuration tables in docs/spec/implementation/README.md, docs/spec/review.md and docs/reference/configuration.md, which remain the prose authority on what each key means. `default` here records what the code actually falls back to; a key listed in `required` has no fallback anywhere and must be set. Values in this file are the product's, not this installation's: Poetic's own choices live in config.json. A leaf's `x-docs.value`, where present, carries the two documents' own value cell (scripts/render-config-table.sh) — and doubles as a claim about which installation it describes: equal to this key's own `default`, it documents the product's shipped behaviour, and no installation's config.json is checked against it; differing from the default, it documents Poetic's own choice for this key, and scripts/doctor.sh (lib/config-schema.sh's config_documented_value_mismatches) warns if a live config.json ever resolves that key to something else (issue #567).",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -419,7 +419,7 @@
       "type": "object",
       "default": {},
       "x-docs": {
-        "readme": "Model providers beyond the implicit `anthropic`, keyed by provider name — e.g. `{\"xai\": {\"substrate\": \"claude-code\", \"credential_env\": \"XAI_API_KEY\"}}`. `anthropic` needs no entry; it always resolves, substrate `claude-code`. Qualify any model key below with `<name>/<id>` to use a configured provider.",
+        "readme": "Model providers beyond the implicit `anthropic`, keyed by provider name: `{\"<name>\": {\"substrate\": \"<adapter>\", \"credential_env\": \"<VARIABLE>\"}}`, `credential_env` optional. `anthropic` needs no entry and always resolves on `claude-code`, the only adapter this image has; D29 runs no other provider's models on it (agent-ops#2198). Qualify any model key below with `<name>/<id>` to use a configured provider.",
         "spec": "Model providers beyond the implicit `anthropic` (requirement 1a), keyed by provider name, each entry's `substrate` naming the adapter that launches it (`claude-code` is the only one this image has) and optional `credential_env` naming the environment variable that adapter reads for an API key (defaulting by substrate — `ANTHROPIC_API_KEY` for `claude-code`). `anthropic` needs no entry: it is always accepted, substrate `claude-code`, whether or not this object names it explicitly.",
         "value": "`{}`"
       }
@@ -1319,7 +1319,7 @@
       "default": "claude-sonnet-5",
       "x-docs": {
         "readme": "The Pipeline Monitor: one scheduled read of the pipeline's own state, producing a dated report and at most `monitor_max_filings_per_run` filings — see [The Pipeline Monitor](../guides/operating/watch.md#the-pipeline-monitor). Leave it empty to switch the pipeline off.",
-        "spec": "The Pipeline Monitor (`docs/MONITOR-PIPELINE-SPEC.md` M9). The same tier the repository review runs, for the same reason: the input is a bounded digest rather than a repository, and the judgement asked of it is the one a human operator would make reading the same records. Empty disables the pipeline."
+        "spec": "The Pipeline Monitor (`docs/spec/monitor.md` M9). The same tier the repository review runs, for the same reason: the input is a bounded digest rather than a repository, and the judgement asked of it is the one a human operator would make reading the same records. Empty disables the pipeline."
       }
     },
     "monitor_max_input_bytes": {
@@ -1831,7 +1831,7 @@
       "default": 5,
       "x-docs": {
         "readme": "Seconds. How often an open dashboard tab polls for freshly-written data, matching the [heartbeat](../guides/operating/watch.md#keep-the-dashboard-fresh) cadence — it fetches a small stamp every tick and the full payload only when the stamp says it changed. Untick the page's *auto-refresh* box to pause it while reading.",
-        "spec": "How often an open dashboard tab polls for freshly-written data (`docs/DASHBOARD-SPEC.md`) — a small stamp every tick, the full `data.js` payload only when the stamp's fingerprint changed. Match it to the heartbeat cadence: a shorter interval polls a stamp nothing has rewritten, a longer one shows a cycle that has already moved on."
+        "spec": "How often an open dashboard tab polls for freshly-written data (`docs/spec/dashboard/README.md`) — a small stamp every tick, the full `data.js` payload only when the stamp's fingerprint changed. Match it to the heartbeat cadence: a shorter interval polls a stamp nothing has rewritten, a longer one shows a cycle that has already moved on."
       }
     },
     "schedule": {
@@ -2073,7 +2073,7 @@
           "default": 5,
           "x-docs": {
             "readme": "The hour the containerised node's daily Pipeline Monitor run is due (`monitor-cycle.sh`). Its crontab line fires hourly and stands down unless this hour's daily run is still owed, or a pager page fired since the last run.",
-            "spec": "The hour the daily monitor run is due (`docs/MONITOR-PIPELINE-SPEC.md` M4). The crontab line itself is hourly, so a node asleep at this hour still picks the day's run up at its next firing."
+            "spec": "The hour the daily monitor run is due (`docs/spec/monitor.md` M4). The crontab line itself is hourly, so a node asleep at this hour still picks the day's run up at its next firing."
           }
         },
         "monitor_offset_minutes": {

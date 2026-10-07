@@ -56,7 +56,7 @@
 # blocking it — first-round, or already approved — where the human still has
 # not been *asked*, only auto-subscribed by CODEOWNERS and then dropped from
 # the queue the moment they answered (requirement 38 in
-# docs/IMPLEMENTATION-PIPELINE-SPEC.md).
+# docs/spec/implementation/README.md).
 #
 # `handoff_answer_events` and `handoff_round_answered` are a different kind
 # of promise again: not an action, but the judgement two callers must agree

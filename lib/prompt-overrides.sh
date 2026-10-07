@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # lib/prompt-overrides.sh — per-installation prompt overrides (issue #79,
-# docs/IMPLEMENTATION-PIPELINE-SPEC.md requirement 4a).
+# docs/spec/implementation/requirements requirement 4a).
 #
 # `prompts/*.md` are product content: they ship with the image, and a fork
 # that edits one directly stops receiving updates to it. config.json's

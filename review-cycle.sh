@@ -7,12 +7,12 @@
 # the debt it surfaces as pw::type:tech-debt-labelled issues, and raises one
 # ready-for-review PR), then cleans up.
 #
-# Full specification: docs/REVIEW-PIPELINE-SPEC.md. Config: config.json
+# Full specification: docs/spec/review.md. Config: config.json
 # (.repository_review).
 # This is a sibling of agent-cycle.sh and deliberately reuses its machinery
 # (PATH bootstrap, lock discipline, run_claude_stage, result parsing,
 # usage-limit detection). Where this script is silent, agent-cycle.sh /
-# docs/IMPLEMENTATION-PIPELINE-SPEC.md govern.
+# docs/spec/implementation/README.md govern.
 
 set -euo pipefail
 
@@ -135,7 +135,7 @@ usage() {
 usage: review-cycle.sh [--dry-run] [--once] [--repo <slug>]
 
 Run one repository-review cycle across the configured target repositories.
-Full specification: docs/REVIEW-PIPELINE-SPEC.md.
+Full specification: docs/spec/review.md.
 
   --dry-run      Select the repos due for review and print the work list;
                  clone, stage and run nothing.
@@ -200,14 +200,14 @@ fi
 # Read against the raw file, deliberately: config_defaults (below) would
 # synthesise a `.repository_review` object from `not_before`'s own default even
 # when the key is entirely absent from config.json, and this is the one check
-# that must not be fooled by that (docs/REVIEW-PIPELINE-SPEC.md — the review
+# that must not be fooled by that (docs/spec/review.md — the review
 # pipeline is optional, and absence must mean absence). Either spelling
 # counts: `project_review` is still accepted as a deprecated alias
 # (agent-ops#592, D7; config_defaults folds it into `.repository_review`
 # below), so an installation that has not yet renamed its own config.json is
 # not treated as having no review pipeline configured at all.
 if [[ "$(jq -r '(has("repository_review") or has("project_review"))' "$CONFIG_FILE")" != "true" ]]; then
-  echo "review-cycle: config.json has no .repository_review block (see docs/REVIEW-PIPELINE-SPEC.md)" >&2
+  echo "review-cycle: config.json has no .repository_review block (see docs/spec/review.md)" >&2
   exit 1
 fi
 
@@ -253,7 +253,7 @@ repository_review_repos_json="$(config_repository_review_repos "$DEFAULTED_CONFI
 # apply, so this refuses to start rather than silently letting the later
 # entry win (lib/config-schema.sh's config_duplicate_repository_review_slugs,
 # shared with scripts/doctor.sh's own `fail` so the two can never drift,
-# docs/REVIEW-PIPELINE-SPEC.md requirement R1b).
+# docs/spec/review.md requirement R1b).
 duplicate_review_slugs="$(config_duplicate_repository_review_slugs "$repository_review_repos_json")"
 if [[ -n "$duplicate_review_slugs" ]]; then
   echo "review-cycle: repository_review.repos lists [$duplicate_review_slugs] more than once — refusing to start rather than guess which entry's overrides apply" >&2
@@ -530,7 +530,7 @@ cleanup() {
     rm -f "$lock_file"
   fi
   # Per-stage health snapshot for this pipeline's one real stage (agent-ops#996,
-  # docs/REVIEW-PIPELINE-SPEC.md R19; the implementation pipeline's own
+  # docs/spec/review.md R19; the implementation pipeline's own
   # equivalent is issue #662/lib/stage-health.sh, and agent-cycle.sh's own
   # call beside its own state-sync push is the direct precedent for this
   # one): recomputed from this run's own $review_log_file — which already

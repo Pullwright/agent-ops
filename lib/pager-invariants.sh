@@ -71,7 +71,7 @@
 #                          a run, not an event, because `review-end` is
 #                          written on every run whatever happened (see the
 #                          function's own header). The fleet-vantage reader
-#                          of the same fact `docs/REVIEW-PIPELINE-SPEC.md`
+#                          of the same fact `docs/spec/review.md`
 #                          R19 publishes per node as `review_stage_health`
 #                          (agent-ops#996): R19 states the verdict, this
 #                          files a page on it.
@@ -130,7 +130,7 @@
 #                           could perform on the owner's behalf.
 #   fit-ladder-pinned       `coordinator-input-fitted` pinned in the
 #                           ladder's own entry-dropping segment — rung 11 or
-#                           tighter, the first of the 7 entry caps that
+#                           tighter, the first of the 10 entry caps that
 #                           follow lib/coordinator-input.sh's 10 prose tiers
 #                           (the first entry cap, which #1281's own evidence
 #                           sat at when it was rung 9 of an 8-tier ladder) —
@@ -728,7 +728,7 @@ pager_eval_updater_stuck() {
 # lib/stage-health.sh's own un-schema-backed `THRESHOLD` default for the
 # identical reason that file states: this class has not yet seen a real
 # incident to tune the number against. The fleet-vantage reader of the same
-# fact `docs/REVIEW-PIPELINE-SPEC.md` R19's own `project-reviewer` verdict
+# fact `docs/spec/review.md` R19's own `project-reviewer` verdict
 # (agent-ops#996) carries in the heartbeat: R19 computes and publishes a
 # node's verdict for a human or the dashboard to look at, this invariant
 # reduces the fleet's own replicated `review-log.jsonl` union and *files a
@@ -898,7 +898,7 @@ pager_eval_idle_with_demand() {
 # Fires when a node's `coordinator-input-fitted` events (agent-cycle.sh,
 # lib/coordinator-input.sh) in the trailing 24h have *all* run out of prose
 # to shed and started dropping whole entries — rung 11 or tighter (the first
-# of the 7 entry-cap rungs that follow the 10 prose tiers:
+# of the 10 entry-cap rungs that follow the 10 prose tiers:
 # `COORDINATOR_INPUT_TIERS` + 1, a fixed constant of the ladder rather than a
 # field either array carries) with `entries_dropped > 0` — a node whose
 # eligible backlog has outgrown `coordinator_prompt_max_bytes` on every

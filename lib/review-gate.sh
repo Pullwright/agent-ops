@@ -62,6 +62,24 @@
 # unrecognised diagnosis falls to `unknown`: both words refuse the handoff, so
 # a reworded message costs attribution, never safety.
 #
+# Both shapes above arrive identically whether checks were genuinely expected
+# on this pull request and are absent (the trap), or this repository runs no
+# CI at all and so was never going to report anything (agent-ops#2194,
+# Poetic-Poems/poetic-fiddle#465: a pull request against `Pullwright/.agent`,
+# a repository with no workflows at all, was refused exactly like #190's
+# CONFLICTING pull request was, with an `unblock_condition` naming a
+# code-scanning alert that was never identified because none could exist).
+# `_review_gate_no_ci_configured` is asked before either shape settles on
+# `dirty`: branch protection and rulesets are not readable on a private
+# repository on the free plan (`403 Resource not accessible by integration`),
+# so "which checks are required here" cannot be asked directly, and the
+# inferred signal — `actions/workflows` reports no workflows at all *and* the
+# head commit carries no commit statuses either — stands in for it. Only when
+# both read zero is the pull request `clean`; a repository with workflows
+# configured that simply reported nothing for this head commit, or one with no
+# workflows but a legacy commit-status integration still posting to it, stays
+# on the `dirty` trap above exactly as before.
+#
 # `review_gate_security_alerts` is a different exception, and only for the
 # specific failure "the alerts API could not be asked at all" (no
 # `security_events` permission on this token, code scanning not enabled on
@@ -243,6 +261,47 @@ _review_gate_repair_duplicate_runs() {
   printf '%s' "$current"
 }
 
+# _review_gate_no_ci_configured SLUG NUMBER
+# Exit 0 when SLUG configures no CI at all for pull request NUMBER's current
+# head commit — `GET /repos/{slug}/actions/workflows` reports `total_count ==
+# 0` *and* the head commit carries no commit statuses (`GET
+# /repos/{slug}/commits/{sha}/status`, `total_count == 0`) — the one pair of
+# signals available on a private free-plan repository, where branch
+# protection and rulesets answer 403 and so cannot be asked "which checks are
+# required here" directly (agent-ops#2194). Exits 1, printing nothing,
+# whenever either read fails, reports a non-zero count, or the head commit's
+# sha itself cannot be resolved: the caller must stay on the dirty-by-default
+# path — the #190 trap — whenever "no CI configured" cannot be confirmed
+# outright, never infer it from a read that merely failed.
+_review_gate_no_ci_configured() {
+  local slug="$1" number="$2" gh_bin="${REVIEW_GATE_GH:-gh}" sha total
+
+  [[ -n "$slug" && -n "$number" ]] || return 1
+
+  total="$("$gh_bin" api --method GET "repos/$slug/actions/workflows" --jq '.total_count' 2>/dev/null)" || return 1
+  [[ "$total" =~ ^[0-9]+$ ]] || return 1
+  (( total == 0 )) || return 1
+
+  sha="$("$gh_bin" pr view "$number" -R "$slug" --json headRefOid --jq '.headRefOid' 2>/dev/null)" || return 1
+  [[ -n "$sha" ]] || return 1
+
+  total="$("$gh_bin" api --method GET "repos/$slug/commits/$sha/status" --jq '.total_count' 2>/dev/null)" || return 1
+  [[ "$total" =~ ^[0-9]+$ ]] || return 1
+  (( total == 0 ))
+}
+
+# _review_gate_no_ci_clean URL SLUG
+# Print `clean` for `review_gate_required_checks`'s own two no-required-checks
+# call sites, after logging one line on stderr naming why this one is not the
+# #190 trap — never a silent fall-through from "no checks reported" to
+# "nothing wrong".
+_review_gate_no_ci_clean() {
+  local url="$1" slug="$2"
+  printf 'review-gate: %s reports no required checks because %s configures no CI at all (actions/workflows total_count=0, no commit statuses on its head commit) — clean, not the conflicting-PR-runs-no-CI trap\n' \
+    "$url" "$slug" >&2
+  printf 'clean'
+}
+
 # review_gate_required_checks PR_URL [BASE_BRANCH]
 # Print `clean`, `dirty<TAB>reason`, or `unknown<TAB>reason`. Exit 0 for
 # clean, 1 for dirty *or* unknown — both refuse the handoff. A pull request
@@ -274,6 +333,13 @@ _review_gate_repair_duplicate_runs() {
 # surviving run already proves the head commit is fine. A genuine failure, or
 # a superseded run that does not clear on rerun, still reaches `dirty` below
 # exactly as before.
+#
+# Before either no-required-checks shape settles on the `dirty` trap, both
+# call `_review_gate_no_ci_configured` (agent-ops#2194): where it confirms
+# this repository configures no CI at all, the verdict is `clean` instead,
+# with a line on stderr naming why — never a silent fall-through, since this
+# is the one place in the function where an empty check list is *not* treated
+# as the trap it looks like.
 review_gate_required_checks() {
   local url="${1:-}" base_branch="${2:-}" gh_bin="${REVIEW_GATE_GH:-gh}" parts slug number raw failing
   local err_file diagnosis no_checks missing
@@ -302,6 +368,10 @@ review_gate_required_checks() {
   if ! jq -e 'type == "array"' <<<"$raw" >/dev/null 2>&1; then
     if [[ "$diagnosis" == *"no required checks reported on the"* \
        || "$diagnosis" == *"no checks reported on the"* ]]; then
+      if _review_gate_no_ci_configured "$slug" "$number"; then
+        _review_gate_no_ci_clean "$url" "$slug"
+        return 0
+      fi
       printf '%s' "$no_checks"
       return 1
     fi
@@ -309,6 +379,10 @@ review_gate_required_checks() {
     return 1
   fi
   if ! jq -e 'length > 0' <<<"$raw" >/dev/null 2>&1; then
+    if _review_gate_no_ci_configured "$slug" "$number"; then
+      _review_gate_no_ci_clean "$url" "$slug"
+      return 0
+    fi
     printf '%s' "$no_checks"
     return 1
   fi

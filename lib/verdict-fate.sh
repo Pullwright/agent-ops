@@ -7,7 +7,7 @@
 # amendment) was assembled by hand, pull request by pull request, because
 # nothing recorded the pairing durably. `agent-cycle.sh`'s `run_approver_stage`
 # already writes the verdict half live, as an `approver-verdict` event
-# (docs/IMPLEMENTATION-PIPELINE-SPEC.md requirement 33) — `repo`, `tier`,
+# (docs/spec/implementation/requirements requirement 33) — `repo`, `tier`,
 # `model`, `verdict`, `refuse_streak`, `adjudication`, `posted` (whether the
 # GitHub review this verdict describes actually reached GitHub). This file is
 # the read side: given that event log plus a small amount of live GitHub
@@ -104,7 +104,7 @@ verdict_fate_posted_review() {
 # exact-prefix match `scripts/autonomy-stage-report.sh`'s own
 # `crit_agent_approved_prs` already uses so a same-prefix decoy repo is never
 # counted. `repo` is always derived from `pr_url` rather than read off the
-# event's own `repo` field (docs/IMPLEMENTATION-PIPELINE-SPEC.md requirement
+# event's own `repo` field (docs/spec/implementation/requirements requirement
 # 33), so a pre-agent-ops#573 event carrying no `repo` at all reads the same
 # as a current one.
 #

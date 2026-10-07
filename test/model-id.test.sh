@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # test/model-id.test.sh — self-contained regression test for
-# lib/model-id.sh (docs/IMPLEMENTATION-PIPELINE-SPEC.md requirement 1a).
+# lib/model-id.sh (docs/spec/implementation/requirements requirement 1a).
 #
 # No test framework is used (none exists elsewhere in this repo); this is a
 # plain bash script with hand-rolled assertions. Run it directly:

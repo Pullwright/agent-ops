@@ -11,13 +11,13 @@
 # pipeline's own state, producing a dated report and at most
 # `monitor_max_filings_per_run` provenance-stamped filings.
 #
-# Full specification: docs/MONITOR-PIPELINE-SPEC.md. Config: config.json
+# Full specification: docs/spec/monitor.md. Config: config.json
 # (`monitor_*`, `schedule.monitor_hour`, `prompt_overrides.monitor`).
 #
 # This is a sibling of agent-cycle.sh and review-cycle.sh, and deliberately
 # reuses their machinery (PATH bootstrap, lock discipline, the switch, the
 # role guard, run_claude_stage, result parsing, usage-limit detection). Where
-# this script is silent, agent-cycle.sh / docs/IMPLEMENTATION-PIPELINE-SPEC.md
+# this script is silent, agent-cycle.sh / docs/spec/implementation/README.md
 # govern.
 #
 # Three properties are load-bearing and easy to lose in an edit:
@@ -826,9 +826,9 @@ digest_json="$(monitor_digest_build \
   "$(monitor_digest_nodes "$node_name" "$state_dir" "$peers_dir")" \
   "$(monitor_digest_work "$union_log" "$since_iso")" \
   "$(monitor_digest_forge "$forge_prs_json" "$forge_issues_json" "$forge_escalations_json")" \
-  "$(monitor_digest_gotchas "$SCRIPT_DIR/docs/IMPLEMENTATION-PIPELINE-SPEC.md" \
-       "$SCRIPT_DIR/docs/REVIEW-PIPELINE-SPEC.md" "$SCRIPT_DIR/docs/MONITOR-PIPELINE-SPEC.md" \
-       "$SCRIPT_DIR/docs/DASHBOARD-SPEC.md")" \
+  "$(monitor_digest_gotchas "$SCRIPT_DIR/docs/spec/implementation/gotchas.md" \
+       "$SCRIPT_DIR/docs/spec/review.md" "$SCRIPT_DIR/docs/spec/monitor.md" \
+       "$SCRIPT_DIR/docs/spec/dashboard/README.md")" \
   "$(monitor_digest_promoted "$promoted_open_json")")"
 
 digest_file="$run_dir/digest.md"

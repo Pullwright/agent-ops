@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
 # lib/forge-token-broker.sh — the forge authoring token a stage may have, and
-# nothing else (requirement 45e of docs/IMPLEMENTATION-PIPELINE-SPEC.md).
+# nothing else (requirement 45e of
+# docs/spec/implementation/requirements/every-stage.md).
 #
 # A stage runs as its own Unix user, which cannot read either GitHub App's
 # private key, the Script's environment, or the token cache under /dev/shm.

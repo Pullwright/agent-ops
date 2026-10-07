@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
 # lib/stage-boundary.sh — the Script's side of the boundary between itself
-# and its stages (requirement 45e of docs/IMPLEMENTATION-PIPELINE-SPEC.md).
+# and its stages (requirement 45e of
+# docs/spec/implementation/requirements/every-stage.md).
 #
 # In the node image every model stage runs as the stage user, through
 # deploy/docker/stage-exec.sh, and the Script runs as `agent`. The stage user

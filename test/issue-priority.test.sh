@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # test/issue-priority.test.sh — regression test for issue priority banding
-# (docs/IMPLEMENTATION-PIPELINE-SPEC.md, requirement 15e).
+# (docs/spec/implementation/requirements, requirement 15e).
 #
 # An open issue's rank in the Co-Ordinator's walk is its `Priority` issue field:
 # `Urgent` outranks everything but security, `High` beats tech-debt, `Medium` is

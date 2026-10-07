@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
 # test/prompt-untrusted-framing.test.sh — the untrusted-external-content
-# framing (IMPLEMENTATION-PIPELINE-SPEC.md requirement 45,
-# REVIEW-PIPELINE-SPEC.md R18, MONITOR-PIPELINE-SPEC.md M10a) is present in
+# framing (docs/spec/implementation/requirements/every-stage.md requirement 45,
+# docs/spec/review.md R18, docs/spec/monitor.md M10a) is present in
 # every prompt that reads forge-authored text, and every copy — the spec's
 # canonical one included — is byte-identical.
 #
@@ -47,20 +47,20 @@ count_markers() {
   grep -cE '^[[:space:]]*<!-- untrusted-content:start -->$' "$1"
 }
 
-canon="$(lift_block "$SCRIPT_DIR/docs/IMPLEMENTATION-PIPELINE-SPEC.md")"
+canon="$(lift_block "$SCRIPT_DIR/docs/spec/implementation/requirements/every-stage.md")"
 if [[ -z "$canon" ]]; then
-  echo "FAIL - could not lift the canonical block from IMPLEMENTATION-PIPELINE-SPEC.md (requirement 45a)"
+  echo "FAIL - could not lift the canonical block from docs/spec/implementation/requirements/every-stage.md (requirement 45a)"
   exit 1
 fi
-if [[ "$(count_markers "$SCRIPT_DIR/docs/IMPLEMENTATION-PIPELINE-SPEC.md")" != 1 ]]; then
-  echo "FAIL - IMPLEMENTATION-PIPELINE-SPEC.md must carry exactly one whole-line start marker (requirement 45a's)"
+if [[ "$(count_markers "$SCRIPT_DIR/docs/spec/implementation/requirements/every-stage.md")" != 1 ]]; then
+  echo "FAIL - docs/spec/implementation/requirements/every-stage.md must carry exactly one whole-line start marker (requirement 45a's)"
   exit 1
 fi
 printf 'ok   - canonical block lifted from requirement 45a (%s lines)\n' "$(wc -l <<<"$canon")"
 
 # Requirement 45's implementation-pipeline prompts, plus
-# project-reviewer.md under REVIEW-PIPELINE-SPEC.md R18 and monitor.md under
-# MONITOR-PIPELINE-SPEC.md M10a.
+# project-reviewer.md under docs/spec/review.md R18 and monitor.md under
+# docs/spec/monitor.md M10a.
 prompts=(coordinator implementer reviewer approver enabler enabler-adjudicate
          enabler-decide approver-adjudicate-open-question refiner project-reviewer
          monitor)

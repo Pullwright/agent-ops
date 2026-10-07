@@ -215,7 +215,7 @@ until it exists.
 Every `claude` in this image runs as the container's second user, `stage`,
 not as `agent` — the stage user that every model stage runs as, which cannot
 read the GitHub Apps' keys or write the pipeline's code and state
-(requirement 45e of `docs/IMPLEMENTATION-PIPELINE-SPEC.md`). The image's own
+(requirement 45e of `docs/spec/implementation/requirements/every-stage.md`). The image's own
 `claude` takes care of that, so the command above is unchanged, and the
 credentials it writes belong to the stage user. The two App keys must be
 mode 600 on the host and owned by uid 1000, the container's `agent`;
@@ -231,6 +231,20 @@ Or ask the node itself, which reports which of the two paths it is on:
 
 ```bash
 docker compose exec scheduler /app/scripts/doctor.sh
+```
+
+The image carries Claude Code's managed policy at
+`/etc/claude-code/managed-settings.json` (requirement 4k): no hook runs, no
+MCP server starts and no inline shell in a skill or command is executed,
+including any you add to the `claude-config` volume's `settings.json`. A stage
+is also not launched in a checkout whose `.claude/settings.json` sets `env`, a
+credential helper or anything else outside a short allowlist. Its
+`<stage>.out.stderr` names the file and the keys, and says whether the commit
+carries the file or only the working tree holds it. To confirm the policy holds
+on this node:
+
+```bash
+docker compose exec scheduler /app/scripts/claude-policy-probe.sh
 ```
 
 ### Did it work?

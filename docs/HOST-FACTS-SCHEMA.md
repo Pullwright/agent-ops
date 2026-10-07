@@ -10,7 +10,7 @@ since the agent-ops#603 postmortem, restated at `docs/ROADMAP.md`'s Phase 2
 "host-side vantage" bullet). Like its companions this document is as-built —
 it describes the record that exists today, not a plan for one that will
 exist later. Where it says "requirement N", it means requirement N of
-`docs/IMPLEMENTATION-PIPELINE-SPEC.md`.
+`docs/spec/implementation/README.md`.
 
 ## What this covers
 
@@ -234,8 +234,9 @@ own "What replicates" does not name in `EXCLUDES`.
   `scripts/publish-dashboard.sh` folding `host-facts/<node>.json` (self)
   and `<peers_dir>/<peer>/host-facts/<peer>.json` (each peer) into that
   node's row, `host: null` when no record exists for that node yet.
-- The Enabler's own 36a text (`docs/IMPLEMENTATION-PIPELINE-SPEC.md`,
-  "The owner-only boundary"), and `prompts/enabler.md`'s `escalate` verdict
+- The Enabler's own 36a text
+  (`docs/spec/implementation/requirements/enabler-01.md#the-owner-only-boundary`),
+  and `prompts/enabler.md`'s `escalate` verdict
   which implements it: conditions 7 and 8 are refused when this record
   already answers the fact being asked for.
 

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
 # scripts/check-requirement-id-collisions.sh — permanent CI guard against
-# duplicate requirement ids across sections in docs/IMPLEMENTATION-PIPELINE-SPEC.md
+# duplicate requirement ids across sections in
+# docs/spec/implementation/requirements/*.md and docs/spec/implementation/acceptance-checks/*.md
 # (issue #1105).
 #
 # Requirement ids (e.g., "39c") are unique within the ### section that defines
@@ -24,7 +25,14 @@ set -uo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root" || exit 1
 
-spec_file="docs/IMPLEMENTATION-PIPELINE-SPEC.md"
+# Unquoted everywhere it is read (test/check-requirement-id-collisions.test.sh
+# sed-replaces this one assignment with a single quoted fixture path; in
+# production it is two glob patterns, which an unquoted expansion turns into
+# every requirements/ and acceptance-checks/ file, read in one pass exactly
+# as the single pre-#2094 file was — the ### section a requirement id sits
+# under, and whether an acceptance-check id repeats, do not depend on which
+# file holds which heading, only on the headings themselves in file order.
+spec_file="docs/spec/implementation/requirements/*.md docs/spec/implementation/acceptance-checks/*.md"
 
 # Known pre-existing collisions, left unresolved by issue #1105's own scope
 # decision (qualify citations, don't renumber) and tracked individually:
@@ -50,8 +58,10 @@ allowlisted_ids=(39 39c 55 17b 17g)
 # instead, not a routine maintenance edit.
 acceptance_allowlisted_ids=(1c 1d 1m 39a 39c 51 55 8e 8w 8x)
 
-if [[ ! -f "$spec_file" ]]; then
-  echo "check-requirement-id-collisions: $spec_file not found" >&2
+# shellcheck disable=SC2206  # Unquoted on purpose: $spec_file is glob patterns in production.
+spec_files=( $spec_file )
+if (( ${#spec_files[@]} == 0 )) || [[ ! -f "${spec_files[0]}" ]]; then
+  echo "check-requirement-id-collisions: $spec_file matches no file" >&2
   exit 1
 fi
 
@@ -116,7 +126,7 @@ while IFS= read -r line; do
     acc_id="${BASH_REMATCH[1]}"
     acceptance_heading_counts[$acc_id]=$(( ${acceptance_heading_counts[$acc_id]:-0} + 1 ))
   fi
-done < "$spec_file"
+done < <(cat "${spec_files[@]}")
 
 # Check for collisions
 exit_code=0
