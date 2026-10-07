@@ -59,6 +59,10 @@ live_in_group() {
 
 # shellcheck source=lib/stage-boundary.sh
 . "$SCRIPT_DIR/lib/stage-boundary.sh"
+# On its own terms, with no boundary: in the image the reads below would be
+# the stage user's, which cannot enter this test's own directory (part 3
+# reads a breadcrumb across the boundary).
+STAGE_BOUNDARY_GROUP="agent-ops-no-such-group"
 
 crumb="$tmp_dir/crumb"
 printf 'https://github.com/acme/widgets/pull/42\n' >"$crumb"
@@ -337,6 +341,17 @@ else
   assert_eq "  ... leaving a stage running at the same time alone" "1" \
     "$(pgrep -u stage -fx 'sleep 303' | wc -l | tr -d ' ')"
   kill -TERM "$legit" 2>/dev/null; wait "$legit" 2>/dev/null
+
+  # A breadcrumb the stage leaves in a shared workspace is read across the
+  # boundary.
+  ws="$(mktemp -d /tmp/stage-boundary-ws.XXXXXX)"
+  chmod 755 "$ws"
+  mkdir "$ws/.git"
+  stage_workspace_share "$ws"
+  as_stage bash -c "printf 'https://github.com/acme/widgets/pull/42\\n' >'$ws/.git/agent-ops-pr-url'" >/dev/null 2>&1
+  assert_eq "a breadcrumb in a shared workspace is read as the stage user reads it" \
+    "https://github.com/acme/widgets/pull/42" "$(stage_breadcrumb_pr_url "$ws/.git/agent-ops-pr-url")"
+  stage_workspace_remove "$ws"
 
   # The settings vetting in a workspace the stage has had: no git as this
   # user (a stage-set core.fsmonitor runs as the stage user, if at all), a
