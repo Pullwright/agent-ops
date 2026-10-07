@@ -115,10 +115,10 @@ stage_boundary_sweep() {
 stage_boundary_capture() {
   local secs="$1" max="$2"
   shift 2
-  local -a run=("$@")
-  stage_boundary_present && run=(sudo -n -u stage "$STAGE_EXEC_BIN" "$@")
+  local -a capture_cmd=("$@")
+  stage_boundary_present && capture_cmd=(sudo -n -u stage "$STAGE_EXEC_BIN" "$@")
   ( set -o pipefail
-    cd / && timeout -k 5 "$secs" "${run[@]}" </dev/null 2>/dev/null | head -c "$max" )
+    cd / && timeout -k 5 "$secs" "${capture_cmd[@]}" </dev/null 2>/dev/null | head -c "$max" )
 }
 
 # stage_boundary_read FILE MAX_BYTES
