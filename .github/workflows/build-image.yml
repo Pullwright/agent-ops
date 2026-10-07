@@ -358,8 +358,9 @@ jobs:
 
       # Requirement 4k: a checkout cannot make a stage's `claude` run anything
       # at start-up. Run against the built image with no network, so no request
-      # leaves the runner, and as `agent`, who runs every stage and must not be
-      # able to rewrite the policy. The control run removes the policy first and
+      # leaves the runner, and as `agent`, who must not be able to rewrite the
+      # policy; the probe's `claude` runs as the stage user through the shim,
+      # as every stage's does. The control run removes the policy first and
       # must see all four planted commands run, or the check proves nothing.
       - name: Verify Claude Code runs nothing a checkout plants
         if: env.DOCS_ONLY != 'true'
