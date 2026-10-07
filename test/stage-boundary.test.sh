@@ -369,8 +369,8 @@ else
   out="$(stage_project_settings_refusal "$ws")"
   assert_eq "a refused file in a stage's workspace is still refused" "yes" \
     "$([[ "$out" == ".claude/settings.json sets env"* ]] && echo yes || echo no)"
-  assert_eq "  ... and the comparison never ran the stage's fsmonitor as this user" "" \
-    "$(grep -vx stage "$ws/fsmonitor-ran-as" 2>/dev/null || true)"
+  assert_eq "  ... and the comparison ran the stage's fsmonitor as the stage user only" "stage" \
+    "$(sort -u "$ws/fsmonitor-ran-as" 2>/dev/null | tr '\n' ' ' | sed 's/ $//')"
   as_stage bash -c "rm '$ws/.claude/settings.json' && mkfifo '$ws/.claude/settings.json'" >/dev/null 2>&1
   started=$SECONDS
   out="$(stage_project_settings_refusal "$ws")"
