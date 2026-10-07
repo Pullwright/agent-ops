@@ -36,7 +36,12 @@
 # `config_repo_slug_aliases` is not one of these guards — it is a plain
 # derivation, called by `lib/candidate-gather.sh` and `lib/eligibility.sh` to
 # build the alias map `work_gone_clearances` and `enabler_eligible_items`
-# resolve a blocked item's `repo` through.
+# resolve a blocked item's `repo` through. `config_cross_provider_floor_pairs`
+# (D29, issue #2198) is not one either, and not a startup guard at all: a
+# floor pair split across two providers is never verifiable, in either
+# direction, so there is nothing for `agent-cycle.sh` to refuse — only
+# `scripts/doctor.sh` calls it, to warn an operator rather than leave the
+# pair looking identical to an ordinary unranked model.
 #
 # `config_provider_errors` (issue #2131) is this file's own instance of the
 # same escape valve for a different reason than the other six: `providers` is
@@ -734,11 +739,12 @@ config_missing_plan_path_repos() {
 # (requirement 1a); an empty value on either side of a pair is skipped (an
 # empty model means that stage is disabled — a different check's business),
 # and so is a pair `model_tier_below` cannot rank on one side or the other —
-# an unranked model, including a cross-provider pair (MODEL_TIER_RANK's own
-# qualified keying never matches one provider's id against another's), is
-# `scripts/doctor.sh`'s own warning, not a floor violation, because this
-# predicate cannot tell "definitely clears it" from "cannot tell" and must
-# never report the latter as the former.
+# an unranked model, or a cross-provider pair (D29, issue #2198:
+# `model_tier_below` returns false for a pair whose providers differ,
+# whatever either side's rank is), is `scripts/doctor.sh`'s own warning —
+# the unranked-model one, or `config_cross_provider_floor_pairs` below — not
+# a floor violation, because this predicate cannot tell "definitely clears
+# it" from "cannot tell" and must never report the latter as the former.
 config_model_tier_floor_violations() {
   local refiner="$1" enabler="$2" impl_default="$3" impl_trivial="$4"
   local author author_key floor floor_key
@@ -761,22 +767,61 @@ config_model_tier_floor_violations() {
   done
 }
 
+# config_cross_provider_floor_pairs REFINER_MODEL ENABLER_MODEL IMPLEMENTER_MODEL_DEFAULT IMPLEMENTER_MODEL_TRIVIAL
+# Prints one "author_key<TAB>floor_key<TAB>author_id<TAB>floor_id" line per
+# pair (the same four keys config_model_tier_floor_violations above covers)
+# whose author and floor are qualified under different providers — the case
+# `model_tier_below` always reports as "cannot verify" regardless of either
+# side's rank (D29, issue #2198), so `scripts/doctor.sh` warns about it by
+# name rather than leaving it indistinguishable from an ordinary unranked
+# model. Takes the same already-resolved *qualified* ids as
+# config_model_tier_floor_violations, and skips a pair with either side empty
+# the same way; unlike that function this looks only at each id's provider
+# segment, never its rank, so it fires whether or not either side is on the
+# fleet's model-tier ladder (MODEL_TIER_RANK) at all. Empty when every pair
+# shares a provider, or either side of a pair is empty.
+config_cross_provider_floor_pairs() {
+  local refiner="$1" enabler="$2" impl_default="$3" impl_trivial="$4"
+  local author author_key floor floor_key
+  for author_key in refiner_model enabler_model; do
+    case "$author_key" in
+      refiner_model) author="$refiner" ;;
+      enabler_model) author="$enabler" ;;
+    esac
+    [[ -n "$author" ]] || continue
+    for floor_key in implementer_model_default implementer_model_trivial; do
+      case "$floor_key" in
+        implementer_model_default) floor="$impl_default" ;;
+        implementer_model_trivial) floor="$impl_trivial" ;;
+      esac
+      [[ -n "$floor" ]] || continue
+      if [[ "${author%%/*}" != "${floor%%/*}" ]]; then
+        printf '%s\t%s\t%s\t%s\n' "$author_key" "$floor_key" "$author" "$floor"
+      fi
+    done
+  done
+}
+
 # config_provider_errors PROVIDERS_JSON
 # Prints one "providers.<name>: <message>" line per fault in PROVIDERS_JSON
 # (config's top-level `providers` object, or "{}"/"null" when absent) that
 # declarative schema validation cannot express (issue #2131) — see this
 # file's own header comment for why `providers` needs this escape valve at
-# all. Three faults, per entry: an unknown key (only `substrate` and
-# `credential_env` are read), a missing/empty `substrate`, or one naming a
+# all. Four faults, per entry: an unknown key (only `substrate` and
+# `credential_env` are read), a missing/empty `substrate`, one naming a
 # substrate `lib/model-id.sh`'s `PROVIDER_SUBSTRATE_INSTALLED` does not list —
 # after this issue, `claude-code` alone, so this is also the full enum
 # `substrate` accepts (`provider_substrate_installed`, read by name rather
 # than by its own PROVIDERS_JSON argument, same as `config_model_tier_floor_violations`
-# reads `model_tier_below`'s table the same way). An explicit empty
-# `credential_env` is a fourth fault — a key present only to be switched off
-# is never a real intent, unlike an absent one, which `providers_load`
-# resolves to its substrate's own default. Empty when PROVIDERS_JSON is
-# absent/empty or every entry is clean.
+# reads `model_tier_below`'s table the same way) — or one naming `claude-code`
+# under a key other than `anthropic` (D29, issue #2198): that substrate runs
+# Claude Code pointed at the provider's own endpoint, which only the
+# `anthropic` provider — including a Bedrock/Vertex credential route, D4 — is
+# ever entitled to do. An explicit empty `credential_env` is a fifth fault —
+# a key present only to be switched off is never a real intent, unlike an
+# absent one, which `providers_load` resolves to its substrate's own
+# default. Empty when PROVIDERS_JSON is absent/empty or every entry is
+# clean.
 config_provider_errors() {
   local providers_json="${1:-{\}}"
   local installed_csv
@@ -796,6 +841,8 @@ config_provider_errors() {
            then ["providers.\($e.key): substrate is required"]
            elif ($known | index($v.substrate)) == null
            then ["providers.\($e.key): substrate \"\($v.substrate)\" is not one this image has an adapter for (known: \($known | join(", ")))"]
+           elif ($e.key != "anthropic" and $v.substrate == "claude-code")
+           then ["providers.\($e.key): substrate \"claude-code\" is reserved for anthropic"]
            else [] end),
           (if ($v | has("credential_env")) and (($v.credential_env // "") == "")
            then ["providers.\($e.key): credential_env, if set, must not be empty"]

@@ -929,15 +929,23 @@ fi
 # can see at a glance what each configured provider resolves to without
 # reading `providers_load`'s own defaulting logic. Sorted by name: bash's own
 # associative-array key order is unspecified, and this report should read
-# the same from one run to the next.
+# the same from one run to the next. Each line's own verdict mirrors the
+# fault `config_provider_errors` above would report for that entry — an
+# uninstalled substrate, or `claude-code` named by a provider it is not
+# reserved to (D29, issue #2198) — rather than reading `ok` directly beneath
+# the `fail` that just refused the same pairing. `config_provider_errors` is
+# the authority either way: it is what both cycle scripts refuse on, and this
+# loop reports rather than decides.
 while IFS= read -r provider_name; do
   [[ -n "$provider_name" ]] || continue
   provider_substrate="${PROVIDER_SUBSTRATE[$provider_name]}"
   provider_credential_env="${PROVIDER_CREDENTIAL_ENV[$provider_name]:-}"
-  if provider_substrate_installed "$provider_substrate"; then
-    ok "$provider_name → substrate $provider_substrate, credential $provider_credential_env"
-  else
+  if ! provider_substrate_installed "$provider_substrate"; then
     fail "$provider_name → substrate $provider_substrate, which this image has no adapter for"
+  elif [[ "$provider_substrate" == "claude-code" && "$provider_name" != "anthropic" ]]; then
+    fail "$provider_name → substrate claude-code, which is reserved for anthropic"
+  else
+    ok "$provider_name → substrate $provider_substrate, credential $provider_credential_env"
   fi
 done < <(printf '%s\n' "${!PROVIDER_SUBSTRATE[@]}" | sort)
 
@@ -948,9 +956,10 @@ section "Models"
 # The six keys requirement 1c's model-tier ladder covers (lib/model-id.sh's
 # MODEL_TIER_RANK) get a second check beyond simple resolution: a value that
 # resolves cleanly but isn't on the ladder cannot be verified by the floor
-# check below, so it is warned here rather than silently treated as fine —
-# including a cross-provider pair, which can never be ranked against another
-# provider's own tiers (MODEL_TIER_RANK's qualified keying, issue #2131).
+# check below, so it is warned here rather than silently treated as fine. A
+# floor pair that is ranked on both sides but split across two providers is
+# a separate condition this check cannot see (D29, issue #2198) — the
+# model-tier floor check's own cross-provider warning, below, covers it.
 tier_ladder_keys=" coordinator_model refiner_model enabler_model implementer_model_default implementer_model_trivial reviewer_model_default "
 while IFS=$'\t' read -r key value; do
   [[ -n "$key" ]] || continue
@@ -959,7 +968,7 @@ while IFS=$'\t' read -r key value; do
     if [[ "$tier_ladder_keys" == *" $key "* ]]; then
       qualified="$(resolve_model_qualified "$key" "$value" 2>/dev/null || true)"
       if ! model_tier_known "$qualified"; then
-        warn "$key ($qualified) is not on the fleet's model-tier ladder (lib/model-id.sh's MODEL_TIER_RANK) — the model-tier floor check (requirement 1c) cannot verify it against the other five, including across providers"
+        warn "$key ($qualified) is not on the fleet's model-tier ladder (lib/model-id.sh's MODEL_TIER_RANK) — the model-tier floor check (requirement 1c) cannot verify it against the other five"
       fi
     fi
   else
@@ -1013,6 +1022,19 @@ if [[ -n "$tier_violations" ]]; then
   done <<<"$tier_violations"
 else
   ok "refiner_model and enabler_model each rank at or above every implementer tier they might author a specification for"
+fi
+
+# D29 (issue #2198): a floor pair split across two providers can never be
+# verified either way — model_tier_below returns false for it regardless of
+# either side's rank — so it is warned here by name rather than left
+# indistinguishable from the unranked-model warning above.
+cross_provider_pairs="$(config_cross_provider_floor_pairs "$refiner_model_q" "$enabler_model_q" \
+  "$implementer_model_default_q" "$implementer_model_trivial_q")"
+if [[ -n "$cross_provider_pairs" ]]; then
+  while IFS=$'\t' read -r author_key floor_key author_id floor_id; do
+    [[ -n "$author_key" ]] || continue
+    warn "$author_key ($author_id) and $floor_key ($floor_id) are on different providers — the model-tier floor check (requirement 1c) cannot compare tiers across providers"
+  done <<<"$cross_provider_pairs"
 fi
 
 # --- Prompts ---

@@ -31,8 +31,12 @@
    issue #2131).** `providers` states which providers beyond the implicit
    `anthropic` a model key may qualify with — keyed by provider name, each
    entry naming a `substrate` (the adapter that launches it; `claude-code`
-   is the only one this image has) and, optionally, a `credential_env`
-   (defaulting by substrate — `ANTHROPIC_API_KEY` for `claude-code`).
+   is the only one this image has, and accepts the `anthropic` provider
+   only — D29, issue #2198: Claude Code pointed at another vendor's own
+   endpoint is not a thing this codebase does, so any other provider naming
+   `claude-code` is a config error, named below) and, optionally, a
+   `credential_env` (defaulting by substrate — `ANTHROPIC_API_KEY` for
+   `claude-code`).
    `lib/model-id.sh`'s `providers_load` loads it into `PROVIDER_SUBSTRATE`
    (and `PROVIDER_CREDENTIAL_ENV`) once, at startup, before any model key is
    resolved — synthesizing `anthropic` with substrate `claude-code` whether
@@ -65,12 +69,15 @@
    declarative schema (requirement 1b) can shape-validate on its own — an
    eighth guard alongside requirement 1b's other seven,
    `lib/config-schema.sh`'s `config_provider_errors`, rejects an unknown key
-   inside an entry, a missing or unsupported `substrate`, or an explicit
+   inside an entry, a missing or unsupported `substrate`, a `substrate` of
+   `claude-code` named by any provider but `anthropic`, or an explicit
    empty `credential_env`, shared the same way between `agent-cycle.sh`,
    `review-cycle.sh` and `scripts/doctor.sh`. Launching a stage on any
    substrate but `claude-code` is out of this requirement's scope (#2133,
-   #2134): a provider configured with one resolves here, but no stage ever
-   launches on it yet.
+   #2134), and so, until one of those lands, is a second provider ever
+   resolving at all: `claude-code` is the only adapter this image has, and
+   it is `anthropic`'s alone, so no other provider configured today clears
+   `config_provider_errors`.
 1b. **The configuration has a machine-readable schema, and it is the startup
    gate both pipelines run on.** `config.schema.json` states the shape of
    `config.json` — every key an installation may set, its type, its
@@ -241,8 +248,12 @@
    against. `config_provider_errors` rejects an unknown key inside one
    entry (only `substrate` and `credential_env` are read), a missing or
    unsupported `substrate` — `lib/model-id.sh`'s `PROVIDER_SUBSTRATE_INSTALLED`
-   names the full enum, `claude-code` alone after this issue — and an
-   explicit empty `credential_env`. `agent-cycle.sh` and `review-cycle.sh`
+   names the full enum, `claude-code` alone after this issue — a `substrate`
+   of `claude-code` named by any provider key but `anthropic` (D29, issue
+   #2198: that substrate is Claude Code pointed at the provider's own
+   endpoint, which only `anthropic` — a Bedrock/Vertex credential route of
+   it included, D4 — is entitled to do), and an explicit empty
+   `credential_env`. `agent-cycle.sh` and `review-cycle.sh`
    both refuse to start on it, and `scripts/doctor.sh` reports the same
    condition as a `fail` through that one implementation, so the three can
    never drift.
@@ -265,18 +276,25 @@
     second provider's own model before its own tier is ever added here) ranks
     unknown rather than lowest or highest, and every check below treats
     "unknown" as "cannot verify" — never as "fails" or "passes" — so a model
-    newer than this table cannot itself be rejected by it. The qualified
-    keying is what makes a cross-provider pair rank unknown by construction
-    rather than by a separate check: two providers' own model ids are simply
-    two different keys here, neither of which the other's own tiers can ever
-    satisfy, so requirement 1c's checks below compare tiers only *within* one
-    provider, exactly as this requirement always intended, without needing to
-    say so as a rule of its own. `scripts/doctor.sh` warns separately (in its
-    "Models" section) when one of `coordinator_model`, `refiner_model`,
-    `enabler_model`, `implementer_model_default`, `implementer_model_trivial`
-    or `reviewer_model_default` is unranked, including every cross-provider
-    case, so an unranked model is never silently invisible to the checks that
-    use this table.
+    newer than this table cannot itself be rejected by it. Tiers are compared
+    only *within* one provider (D29, issue #2198): `model_tier_below`
+    compares the two ids' provider segments explicitly, before reading
+    either side's rank, and returns false for a pair whose providers differ
+    whatever either side's rank is — ranking a second provider's models here
+    does not, on its own, make this comparison safe, since both sides would
+    then be ranked, just on scales nobody has compared; each provider's own
+    ranks are its own scale, ordered by that provider's own prices, until the
+    roadmap's open question on cross-provider tier ordering is decided.
+    `scripts/doctor.sh` warns separately (in its "Models" section) when one of
+    `coordinator_model`, `refiner_model`, `enabler_model`,
+    `implementer_model_default`, `implementer_model_trivial` or
+    `reviewer_model_default` is unranked, and separately again —
+    `config_cross_provider_floor_pairs`, named below — whenever a floor
+    pair's two sides name different providers, whatever either side's rank,
+    so neither case is ever silently invisible to the checks that use this
+    table (a cross-provider pair with an unranked side draws both warnings,
+    which is the honest reading: each names a reason the floor cannot be
+    verified, and removing either one would not restore the comparison).
 
     Two authors can write a work order's `context`/`acceptance` directly
     rather than relay text a human, the Script, or a gatherer already wrote:
@@ -292,9 +310,18 @@
     call the one function, so neither can drift from the other. An empty
     value on either side of a pair is skipped (that stage, or that
     implementer tier, is simply not in play), and so is a pair naming a model
-    the table cannot rank — reported instead as `scripts/doctor.sh`'s
-    unranked-model warning above, never silently treated as clearing the
-    floor. `coordinator_model` is deliberately outside this comparison:
+    the table cannot rank, or one whose author and floor name different
+    providers (D29, issue #2198) — reported instead as `scripts/doctor.sh`'s
+    unranked-model warning above, or its `config_cross_provider_floor_pairs`
+    (`lib/config-schema.sh`) warning for the cross-provider case, never
+    silently treated as clearing the floor. `config_cross_provider_floor_pairs`
+    takes the same four already-resolved qualified ids as
+    `config_model_tier_floor_violations` and prints the same
+    `author_key\tfloor_key\tauthor_id\tfloor_id` shape for every pair whose
+    two sides differ by provider segment, regardless of either side's rank;
+    `scripts/doctor.sh` is its only caller — `agent-cycle.sh` has nothing to
+    refuse on a pair that is merely unverifiable rather than in violation.
+    `coordinator_model` is deliberately outside this comparison:
     requirement 39a (The Refiner)'s "Per-source refinement policy" is what keeps it from
     authoring a specification for a source it must not — see the next
     paragraph — rather than a tier comparison the Co-Ordinator's whole

@@ -194,18 +194,19 @@ resolve_model_qualified() {
 # (resolve_model_qualified's own return shape) rather than the bare one
 # resolve_model_id returns — issue #2131, so that a pair naming models from
 # two different providers never collides on a bare id one provider's own
-# naming happens to share with another's, and so requirement 1c's own checks
-# below compare tiers only *within* one provider by construction: a
-# cross-provider pair's own qualified ids are simply two different keys here,
-# neither of which the other provider's rank can ever satisfy, so it ranks
-# unknown — the same "cannot verify" every other unranked model already
-# gets, never itself a floor violation. A model this table has never heard
-# of — a future release, a typo the modelId pattern still accepts, or a
-# second provider's own model before its tier is added here — ranks unknown
-# rather than lowest or highest, and every function below treats "unknown" as
-# "cannot verify", never as "fails" or "passes": scripts/doctor.sh warns
-# separately so an unranked model is never silently invisible to the checks
-# that use this.
+# naming happens to share with another's. Tiers are compared only *within*
+# one provider (requirement 1c; D29, issue #2198): model_tier_below's own
+# explicit provider check, below, is what enforces that — it is not, and
+# cannot be, a side effect of this table's keying alone, since once a second
+# provider is ranked here, a cross-provider pair's two ids are both ranked,
+# just on scales nobody has ever compared, and whatever the two integers say
+# would otherwise be compared as if they meant the same thing. A model this
+# table has never heard of — a future release, a typo the modelId pattern
+# still accepts, or a second provider's own model before its tier is added
+# here — ranks unknown rather than lowest or highest, and every function
+# below treats "unknown" as "cannot verify", never as "fails" or "passes":
+# scripts/doctor.sh warns separately so an unranked model is never silently
+# invisible to the checks that use this.
 declare -gA MODEL_TIER_RANK=(
   [anthropic/claude-haiku-4-5-20251001]=1
   [anthropic/claude-sonnet-5]=2
@@ -247,17 +248,23 @@ model_tier_known() {
 }
 
 # model_tier_below CANDIDATE FLOOR
-# True (exit 0) iff both CANDIDATE and FLOOR are ranked and CANDIDATE's tier
-# is strictly below FLOOR's. False whenever either side is empty (an empty
-# model id means that stage is disabled — a different check's business) or
-# unranked (an unranked model can never be placed relative to anything, so it
-# never fails this predicate on that account alone) — including a
-# cross-provider pair, which ranks unknown on each side by construction
-# (MODEL_TIER_RANK's own qualified keying above) rather than ever being
-# compared. Takes qualified ids, same as model_tier_rank.
+# True (exit 0) iff both CANDIDATE and FLOOR are ranked, they name the same
+# provider, and CANDIDATE's tier is strictly below FLOOR's. False whenever
+# either side is empty (an empty model id means that stage is disabled — a
+# different check's business), unranked (an unranked model can never be
+# placed relative to anything, so it never fails this predicate on that
+# account alone), or the two providers differ (D29, issue #2198) — compared
+# explicitly, before either side's rank is even read, so that ranking a
+# second provider's models here never starts comparing them against the
+# first provider's tiers on one integer scale nobody chose: each provider's
+# own ranks are a scale ordered by that provider's own prices, never
+# compared across providers, the interim rule the roadmap's open question on
+# cross-provider tier ordering records until the question is decided. Takes
+# qualified ids, same as model_tier_rank.
 model_tier_below() {
   local candidate="${1:-}" floor="${2:-}" cr fr
   [[ -n "$candidate" && -n "$floor" ]] || return 1
+  [[ "${candidate%%/*}" == "${floor%%/*}" ]] || return 1
   cr="$(model_tier_rank "$candidate")" || return 1
   fr="$(model_tier_rank "$floor")" || return 1
   (( cr < fr ))
