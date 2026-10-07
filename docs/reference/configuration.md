@@ -184,8 +184,9 @@ provider that `providers` does not configure, or one configured on a
 substrate this image has no adapter for, is rejected at cycle start with an
 error naming the key, not passed to the `claude` CLI. `claude-code` is the
 only substrate this image has, so Anthropic is the only provider a stage
-can run today; D29 runs no other provider's models on it, although the
-resolver does not yet refuse such a configuration (agent-ops#2198). No
+can run today; D29 reserves that substrate to `anthropic` alone, and
+configuring any other provider on it is itself a config error at cycle
+start, naming the provider and the substrate (agent-ops#2198). No
 existing config needs to change.
 
 The `repository_review` object configures the separate repository-review pipeline — see [Repository review](../guides/operating/watch.md#the-pipeline-monitor).
