@@ -587,7 +587,9 @@ Poetic-Poems, with no pipeline code in it.
 - [ ] Extract Poetic's consumer configuration and deployment into a new
       repository in Poetic-Poems (a fresh name — the transfer retires the
       old one), leaving no pipeline code in it, and provision it per
-      `docs/PULLWRIGHT-DAY-ONE-AUTONOMY.md`. *[interactive]*
+      `docs/PULLWRIGHT-DAY-ONE-AUTONOMY.md`. Inventory, mechanism and
+      running order: `docs/CONSUMER-EXTRACTION-PLAN.md`, tracked by #601.
+      *[interactive]*
 - [ ] Retire the in-repo tech-debt registers in favour of labelled issues
       (D15, revised 2026-08-28): the managed `pw::type:tech-debt` label,
       the issue-backed `tech-debt` band, the filing and resolution

@@ -169,6 +169,7 @@ each with a `README.md` holding a directory-wide table of contents.
 | `docs/VOCABULARY-SWEEP-679-AUDIT.md` | evaluator, contributor | record | Audit and cleanup of vocabulary inconsistencies (dated 2026) |
 | `docs/PULLWRIGHT-DAY-ONE-AUTONOMY.md` | evaluator, contributor | record | Analysis of autonomy level on day one of product launch (dated 2026) |
 | `docs/PULLWRIGHT-REHOMING.md` | operator, contributor | record | Runbook for moving the repository to the Pullwright organisation |
+| `docs/CONSUMER-EXTRACTION-PLAN.md` | operator, contributor | record | Inventory and running order for extracting Poetic's consumer configuration and deployment into a new Poetic-Poems repository |
 | `docs/PROVIDER-SEAM-AUDIT.md` | agent, contributor | record | Inventory of every place the code assumes the Claude Code CLI specifically, ahead of cutting the provider seam (dated 2026) |
 
 #### Dated reviews (generated records)
