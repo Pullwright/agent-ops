@@ -92,18 +92,18 @@ value. `agent-cycle.sh` reads it from a hardcoded path
 (`CONFIG_FILE="$SCRIPT_DIR/config.json"`, no override); `review-cycle.sh`
 and `monitor-cycle.sh`, and most of `scripts/`, already accept
 `AGENT_OPS_CONFIG` as an override (built for tests) and fall back to the
-same hardcoded path when it is unset. The Dockerfile reads `config.json`
-at **build** time to pre-create and `chown` the `state_dir`/`workspace_root`
-directories inside the image, and `deploy/docker/compose.yaml` mounts the
-state and workspace volumes at the literal paths
+same hardcoded path when it is unset. `docs/PHASE-1-POETIC-SPECIFICS-AUDIT.md`
+finding 6 (#657) is resolved: the Dockerfile's `RUN` and
+`deploy/docker/crontab.tmpl` both now read `state_dir`/`workspace_root` out
+of `config.json` at build/render time (PR #1883, merged 2026-09-27), so the
+image's own directory pre-creation already tracks whatever `config.json` —
+shipped or mounted — names, with no build argument needed. One hardcode
+survives that fix: `deploy/docker/compose.yaml` mounts the state and
+workspace volumes at the literal paths
 `/home/agent/.local/state/poetic-agents` and
-`/home/agent/.cache/poetic-agents/workspaces` — not from a variable, the
-directory name Poetic chose is written into the compose file itself. This
-last point is `docs/PHASE-1-POETIC-SPECIFICS-AUDIT.md` finding 6 (#657,
-"needs a key", still open): the directory name is baked into the image at
-three sites (the Dockerfile's `RUN`, `deploy/docker/crontab.tmpl`, and
-`compose.yaml`'s volume targets) with no build argument and no runtime
-remapping.
+`/home/agent/.cache/poetic-agents/workspaces` — not from a variable, and not
+read from `config.json` the way the Dockerfile and `crontab.tmpl` are, since
+a compose volume mapping cannot call `jq`. #2227 tracks this remaining gap.
 
 **Split.** `config.schema.json` stays product. `config.json` — Poetic's
 real values — moves to the consumer repository in full, unchanged.
@@ -150,15 +150,14 @@ first, is recommended:
   plan does not invent a second mechanism; the reconciler-pull pattern
   `lib/compose-drift.sh` established is this change's one more consumer,
   not a new one to design.
-- Resolve #657 alongside this: the Dockerfile's build-time `state_dir`/
-  `workspace_root` pre-creation, and `compose.yaml`'s own volume targets,
-  must stop hardcoding `poetic-agents` so that a mounted consumer
-  `config.json` naming a different directory does not reintroduce the
-  root-owned-volume restart loop the Dockerfile's own comment documents.
-  The direction this plan takes — mount the real config in, rather than
-  bake the product's shipped default into the image and trust every
-  installation to match it — is exactly what makes this resolution
-  necessary before T0, not merely convenient.
+- Resolve #2227 alongside this: `compose.yaml`'s own volume targets must
+  stop hardcoding `poetic-agents` so that a mounted consumer `config.json`
+  naming a different directory does not reintroduce the root-owned-volume
+  restart loop the Dockerfile's own comment documents, one layer up from
+  the image build #657 already fixed. The direction this plan takes — mount
+  the real config in, rather than bake the product's shipped default into
+  the image and trust every installation to match it — is exactly what
+  makes this resolution necessary before T0, not merely convenient.
 - **Validation** does not need the consumer repository to hold any
   pipeline code: its own CI workflow clones `Pullwright/agent-ops` at
   `main` (or a pinned ref) and runs `scripts/doctor.sh --config config.json
@@ -389,9 +388,9 @@ exactly as #913's per-owner Approver installation landed weeks ahead of the
 
 1. Extend `agent-cycle.sh`'s `CONFIG_FILE` resolution to honour
    `AGENT_OPS_CONFIG`, matching `review-cycle.sh`/`monitor-cycle.sh`.
-2. Resolve #657 (the Dockerfile/`crontab.tmpl`/`compose.yaml` hardcoded
-   `poetic-agents` directory name) so the image's own directory
-   pre-creation tracks whatever `config.json` — shipped or mounted — names.
+2. Resolve #2227 (`compose.yaml`'s own volume targets still hardcoding the
+   `poetic-agents` directory name, the one site #657 did not reach) so a
+   node's mount tracks whatever `config.json` — shipped or mounted — names.
 3. Add the `AGENT_OPS_CONFIG`/`AGENT_OPS_CONFIG_HOST_PATH` wiring to
    `compose.yaml`'s shared environment and volumes, defaulted off
    (`/dev/null`-safe), so existing nodes are unaffected until a node
@@ -542,8 +541,9 @@ for the new repository before either is treated as safe to rely on.
 
 ## Open dependencies
 
-- **#657** (state/workspace directory name baked into the image at build
-  time) must resolve before T0, per Part 1's mechanism section.
+- **#2227** (`compose.yaml`'s volume targets still baking in the
+  state/workspace directory name, the one site #657 left unresolved) must
+  resolve before T0, per Part 1's mechanism section.
 - **D20** (tooling delivery mechanism) is still open with a Phase 2 gate;
   the four **both** CI workflows in `.github/` are vendored into the
   consumer repository as an explicit interim, per that section.
