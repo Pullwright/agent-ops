@@ -16,7 +16,8 @@
     `stage-end`, `pr-raised`, `pr-ready`, `attempt-failed`, `unblocked`,
     `merge-observed`,
     `recheck-clean`, `item-void`, `unvoided`, `item-refined`,
-    `enabler-examined`, `refiner-examined`, `own-label-action`, `escalated`,
+    `enabler-examined`, `refiner-examined`, `own-label-action`,
+    `label-remove-failed`, `escalated`,
     `enabler-adjudication`,
     `crash-loop-escalated`, `provider-unreachable`,
     `labels-ensured`, `labels-minted`, `limit-hit`, `limit-cleared`,
@@ -56,6 +57,13 @@
     omits `outcome` (the event name itself already says it), `landing-audit`
     keeps it so a reader of the log alone can tell `clean` from
     `unverifiable` without cross-referencing the event name.
+    `label-remove-failed` (requirement 51's `blocked-label-orphaned`,
+    `label_remove_failure_fields`, agent-ops#2232) is logged by that
+    invariant's own remedy for a label removal `refinement_label_remove`
+    reports non-zero: `repo`, `item`, `label`, `exit_code` and `stderr`
+    (`gh`'s own exit code and stderr text for that attempt), so a removal
+    that keeps failing can be told apart from a stale/racing read instead of
+    only incrementing a failure counter.
     `merge-observed` (requirements 31d/31f/32c, `lib/merge-observed.sh`'s
     `reviewer_merge_observed`, agent-ops#916/#1062) is the completion this
     pipeline logs instead of `attempt-failed` when a subject pull request
