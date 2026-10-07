@@ -413,7 +413,7 @@ run_model_stage() {
   if settings_refusal="$(stage_project_settings_refusal "$cwd")"; then
     : >"$stream_file"
     : >"$out_file"
-    printf 'run_claude_stage: the %s stage was not launched: %s (requirement 4k)\n' \
+    printf 'run_model_stage: the %s stage was not launched: %s (requirement 4k)\n' \
       "$stage" "$settings_refusal" >"$out_file.stderr"
     return 1
   fi

@@ -22,7 +22,7 @@
 #     reused clone is refused too but appears nowhere in the pull request.
 #
 #   the launcher
-#     `run_claude_stage` must not start the runner at all in such a directory:
+#     `run_model_stage` must not start the runner at all in such a directory:
 #     the stub `claude` below records every invocation, and a refused stage
 #     must leave no record of one. It must also leave the reason where a
 #     reader looks (`<stage>.out.stderr`), leave `stage_kill_reason` empty (a
@@ -65,7 +65,7 @@ export STAGE_BOUNDARY_GROUP="agent-ops-no-such-group"
 # shellcheck source=lib/stage-attempt.sh
 . "$SCRIPT_DIR/lib/stage-attempt.sh"
 
-# The signal handlers' globals, which run_claude_stage advertises into.
+# The signal handlers' globals, which run_model_stage advertises into.
 # shellcheck disable=SC2034
 stage_pid=""
 # shellcheck disable=SC2034
@@ -209,13 +209,13 @@ refused_dir="$(checkout launch-refused settings.json '{"env":{"BASH_ENV":"./x.sh
 commit_all "$refused_dir"
 export STUB_CAPTURE="$refused_dir"
 STAGE_CLAUDE_MANAGED_SETTINGS="$policy" \
-  run_claude_stage reviewer 60 test-model "a prompt" "$refused_dir/reviewer.out" "$refused_dir"
+  run_model_stage reviewer 60 test-model "a prompt" "$refused_dir/reviewer.out" "$refused_dir"
 rc=$?
 assert_eq "a refused stage returns non-zero" "1" "$rc"
 assert_eq "and never starts the runner" \
   "no" "$([[ -e "$refused_dir/invocations" ]] && echo yes || echo no)"
 assert_eq "it says why on the stage's stderr" \
-  "run_claude_stage: the reviewer stage was not launched: .claude/settings.json sets env$loads; the file is as committed at $(git -C "$refused_dir" rev-parse --short HEAD) (requirement 4k)" \
+  "run_model_stage: the reviewer stage was not launched: .claude/settings.json sets env$loads; the file is as committed at $(git -C "$refused_dir" rev-parse --short HEAD) (requirement 4k)" \
   "$(cat "$refused_dir/reviewer.out.stderr" 2>/dev/null)"
 assert_eq "without claiming a cap killed it" "" "$stage_kill_reason"
 assert_eq "its .out is empty, as a stage that never ran leaves it" \
@@ -240,7 +240,7 @@ commit_all "$leftover_dir"
 printf '%s\n' '{"env": {' >"$leftover_dir/.claude/settings.local.json"
 export STUB_CAPTURE="$leftover_dir"
 STAGE_CLAUDE_MANAGED_SETTINGS="$policy" \
-  run_claude_stage reviewer 60 test-model "a prompt" "$leftover_dir/reviewer.out" "$leftover_dir"
+  run_model_stage reviewer 60 test-model "a prompt" "$leftover_dir/reviewer.out" "$leftover_dir"
 rc=$?
 assert_eq "a file only the working tree holds refuses the stage too" "1" "$rc"
 captured_detail=""
@@ -251,7 +251,7 @@ assert_eq "and is recorded as not in the commit" \
 
 rm "$leftover_dir/.claude/settings.local.json"
 STAGE_CLAUDE_MANAGED_SETTINGS="$policy" \
-  run_claude_stage reviewer 60 test-model "a prompt" "$leftover_dir/reviewer.out" "$leftover_dir"
+  run_model_stage reviewer 60 test-model "a prompt" "$leftover_dir/reviewer.out" "$leftover_dir"
 rc=$?
 assert_eq "once the file is gone the same stage launches" "0" "$rc"
 captured_detail=""
@@ -263,7 +263,7 @@ allowed_dir="$(checkout launch-allowed settings.json \
   '{"permissions":{},"hooks":{"SessionStart":[]}}')"
 export STUB_CAPTURE="$allowed_dir"
 STAGE_CLAUDE_MANAGED_SETTINGS="$policy" \
-  run_claude_stage reviewer 60 test-model "a prompt" "$allowed_dir/reviewer.out" "$allowed_dir"
+  run_model_stage reviewer 60 test-model "a prompt" "$allowed_dir/reviewer.out" "$allowed_dir"
 rc=$?
 assert_eq "an allowed directory launches the runner as before" "0" "$rc"
 assert_eq "exactly once" "1" "$(wc -l < "$allowed_dir/invocations" 2>/dev/null || echo 0)"

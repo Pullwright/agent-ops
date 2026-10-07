@@ -7,7 +7,7 @@
 # use to run a command the moment a headless stage starts in it — a
 # `SessionStart` hook in `.claude/settings.json`; an MCP server in `.mcp.json`,
 # approved in the same settings file by `enableAllProjectMcpServers` and
-# `enabledMcpjsonServers`, which `run_claude_stage` admits while the managed
+# `enabledMcpjsonServers`, which `run_model_stage` admits while the managed
 # policy is in force; and an inline-shell line in a project command and in a
 # project skill — then runs `claude -p` in it twice, as a stage would, once
 # invoking the command and once the skill. It reports which of the four ran
