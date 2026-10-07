@@ -155,6 +155,27 @@ assert_false "an unranked floor never reports below either" \
 assert_false "a cross-provider pair ranks unknown, never below, on either side" \
   model_tier_below xai/grok-4.3 anthropic/claude-sonnet-5
 
+# --- D29 (issue #2198): once a second provider's model is itself ranked,
+#     model_tier_below must still never compare it against another
+#     provider's tiers — an explicit provider check, not an accident of
+#     xai/grok-4.3 being unranked above. Ranked once low and once high, in
+#     both argument positions, to prove the provider check runs before
+#     either side's rank is read: if it didn't, at least one of these four
+#     would report "below" on the strength of the numbers alone. ---
+MODEL_TIER_RANK[xai/grok-4.3]=1
+assert_false "a cross-provider candidate ranked below the floor's own number still never reports below" \
+  model_tier_below xai/grok-4.3 anthropic/claude-fable-5
+assert_false "a cross-provider floor ranked below the candidate's own number still never has anything rank below it" \
+  model_tier_below anthropic/claude-fable-5 xai/grok-4.3
+MODEL_TIER_RANK[xai/grok-4.3]=99
+assert_false "a cross-provider candidate ranked above the floor's own number still never reports below" \
+  model_tier_below xai/grok-4.3 anthropic/claude-haiku-4-5-20251001
+assert_false "a cross-provider floor ranked above the candidate's own number still never has anything rank below it" \
+  model_tier_below anthropic/claude-haiku-4-5-20251001 xai/grok-4.3
+unset 'MODEL_TIER_RANK[xai/grok-4.3]'
+assert_true "a same-provider pair is still compared as before" \
+  model_tier_below anthropic/claude-haiku-4-5-20251001 anthropic/claude-sonnet-5
+
 # --- The provider seam (issue #2131): a top-level `providers` config block,
 #     and a model id qualified with a configured provider resolves to it
 #     instead of failing. ---
@@ -186,8 +207,13 @@ assert_false "providers_load with no providers configured still rejects others" 
   resolve_model_provider reviewer_model_default "xai/grok-4.3"
 
 # A configured provider resolves instead of failing (the issue's own
-# acceptance criterion, run against this library directly).
-providers_load '{"xai": {"substrate": "claude-code", "credential_env": "XAI_API_KEY"}}'
+# acceptance criterion, run against this library directly). `claude-code` is
+# reserved for `anthropic` alone (D29, issue #2198) — a config error
+# test/config-schema.test.sh asserts, not something lib/model-id.sh itself
+# polices — so this fixture gives `xai` a substrate the test appends to
+# PROVIDER_SUBSTRATE_INSTALLED instead, never claude-code.
+PROVIDER_SUBSTRATE_INSTALLED+=(test-substrate)
+providers_load '{"xai": {"substrate": "test-substrate", "credential_env": "XAI_API_KEY"}}'
 assert_eq "a configured provider's qualifier resolves" \
   "grok-4.3" "$(resolve_model_id implementer_model_default "xai/grok-4.3")"
 assert_eq "resolve_model_provider names the configured provider" \
@@ -200,10 +226,13 @@ assert_eq "anthropic is still synthesized alongside an explicitly configured pro
   "anthropic" "$(resolve_model_provider coordinator_model "claude-sonnet-5")"
 
 # A provider configured with no credential_env falls back to its substrate's
-# own default — ANTHROPIC_API_KEY for claude-code, the only substrate today.
-providers_load '{"xai": {"substrate": "claude-code"}}'
+# own default, the same way claude-code's ANTHROPIC_API_KEY does — exercised
+# here against this fixture's own test-substrate entry, appended above,
+# rather than claude-code, for the same reason.
+PROVIDER_SUBSTRATE_DEFAULT_CREDENTIAL_ENV[test-substrate]=TEST_SUBSTRATE_API_KEY
+providers_load '{"xai": {"substrate": "test-substrate"}}'
 assert_true "credential_env defaults by substrate when not configured explicitly" \
-  [ "${PROVIDER_CREDENTIAL_ENV[xai]}" = "ANTHROPIC_API_KEY" ]
+  [ "${PROVIDER_CREDENTIAL_ENV[xai]}" = "TEST_SUBSTRATE_API_KEY" ]
 
 # A configured provider whose substrate has no adapter installed on this
 # node fails fast too, naming the key and the substrate — forward groundwork

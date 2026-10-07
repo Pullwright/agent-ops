@@ -1327,9 +1327,6 @@ assert_valid "an Approver model id qualified with a provider the schema does not
 assert_doctor "doctor fails a model id qualified with a provider providers does not configure" \
   '.coordinator_model = "openai/gpt-5"' 1 \
   "model-id: coordinator_model: provider 'openai' is not configured"
-assert_doctor "doctor resolves a model id qualified with a provider providers does configure" \
-  '.providers = {"openai": {"substrate": "claude-code"}} | .coordinator_model = "openai/gpt-5"' 0 \
-  "coordinator_model → gpt-5"
 
 # --- config_provider_errors' own faults. `providers` is a bare `"type":
 #     "object"` in the schema — its entries are installation-chosen names, so
@@ -1337,7 +1334,10 @@ assert_doctor "doctor resolves a model id qualified with a provider providers do
 #     carrying no `substrate` at all schema-valid, and this guard the only
 #     thing that reports it. It runs one call *after* `providers_load`, so
 #     the load has to survive the malformed entry for the guard's own message
-#     to be what the operator sees. ---
+#     to be what the operator sees. The unknown-key and empty-credential_env
+#     cases below name `anthropic` rather than a made-up provider, so the
+#     substrate-reserved fault just below does not also fire and blur what
+#     each assertion is actually pinning down. ---
 assert_valid "a providers entry with no substrate is still schema-valid" \
   '.providers = {"xai": {}}'
 assert_doctor "doctor names a providers entry that carries no substrate" \
@@ -1346,11 +1346,21 @@ assert_doctor "doctor names a providers entry whose substrate has no adapter" \
   '.providers = {"xai": {"substrate": "grok-build"}}' 1 \
   'providers.xai: substrate "grok-build" is not one this image has an adapter for'
 assert_doctor "doctor names a providers entry carrying an unknown key" \
-  '.providers = {"xai": {"substrate": "claude-code", "api_key": "x"}}' 1 \
-  'providers.xai: unknown key "api_key"'
+  '.providers = {"anthropic": {"substrate": "claude-code", "api_key": "x"}}' 1 \
+  'providers.anthropic: unknown key "api_key"'
 assert_doctor "doctor names a providers entry whose credential_env is explicitly empty" \
-  '.providers = {"xai": {"substrate": "claude-code", "credential_env": ""}}' 1 \
-  'providers.xai: credential_env, if set, must not be empty'
+  '.providers = {"anthropic": {"substrate": "claude-code", "credential_env": ""}}' 1 \
+  'providers.anthropic: credential_env, if set, must not be empty'
+
+# --- D29 (issue #2198): claude-code runs Claude Code against the provider's
+#     own endpoint, which only anthropic — including a Bedrock/Vertex
+#     credential route, D4 — is entitled to do. ---
+assert_doctor "doctor passes an explicit anthropic entry naming substrate claude-code" \
+  '.providers = {"anthropic": {"substrate": "claude-code"}}' 0 \
+  "anthropic → substrate claude-code"
+assert_doctor "doctor fails a provider other than anthropic configured with substrate claude-code" \
+  '.providers = {"xai": {"substrate": "claude-code"}}' 1 \
+  'providers.xai: substrate "claude-code" is reserved for anthropic'
 
 # --- doctor.sh's cross-key rules: what the schema cannot say. ---
 assert_doctor "doctor fails an enabled Enabler with no assignee, as agent-cycle.sh would" \
@@ -1413,6 +1423,40 @@ assert_doctor_shipped "doctor passes the shipped configuration's model-tier floo
 assert_doctor "doctor warns about a model the tier ladder does not know, rather than silently passing it" \
   '.implementer_model_default = "claude-nonexistent-9"' 0 \
   'implementer_model_default (anthropic/claude-nonexistent-9) is not on the fleet'"'"'s model-tier ladder'
+
+# --- requirement 1c's cross-provider warning (D29, issue #2198):
+#     config_cross_provider_floor_pairs takes already-resolved qualified ids
+#     directly, the same as config_model_tier_floor_violations just above, so
+#     this is exercised against the function itself rather than through a
+#     full doctor.sh run — no second provider can actually resolve on this
+#     node yet (the only installed substrate, claude-code, is now reserved to
+#     anthropic alone), so an end-to-end run can't reach this case before
+#     #2134 adds a second substrate. ---
+cross_pairs="$(config_cross_provider_floor_pairs "xai/grok-4.3" "" "anthropic/claude-sonnet-5" "")"
+if [[ "$cross_pairs" == $'refiner_model\timplementer_model_default\txai/grok-4.3\tanthropic/claude-sonnet-5' ]]; then
+  pass "config_cross_provider_floor_pairs names a refiner/implementer pair split across providers"
+else
+  printf 'FAIL - %s\n     actual: %s\n' \
+    "config_cross_provider_floor_pairs names a refiner/implementer pair split across providers" "$cross_pairs"
+  failures=$(( failures + 1 ))
+fi
+cross_pairs="$(config_cross_provider_floor_pairs "anthropic/claude-opus-5" "" "anthropic/claude-sonnet-5" "")"
+if [[ -z "$cross_pairs" ]]; then
+  pass "config_cross_provider_floor_pairs is empty for a same-provider pair"
+else
+  printf 'FAIL - %s\n     actual: %s\n' \
+    "config_cross_provider_floor_pairs is empty for a same-provider pair" "$cross_pairs"
+  failures=$(( failures + 1 ))
+fi
+cross_pairs="$(config_cross_provider_floor_pairs "" "" "anthropic/claude-sonnet-5" "")"
+if [[ -z "$cross_pairs" ]]; then
+  pass "config_cross_provider_floor_pairs skips an empty author"
+else
+  printf 'FAIL - %s\n     actual: %s\n' \
+    "config_cross_provider_floor_pairs skips an empty author" "$cross_pairs"
+  failures=$(( failures + 1 ))
+fi
+
 # --- requirement 1c: a "required" refinement_policy source with no Refiner
 #     to ever refine it would wait forever. ---
 assert_doctor "doctor fails a required refinement source with refiner_model empty" \
