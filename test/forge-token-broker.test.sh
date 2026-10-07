@@ -147,6 +147,12 @@ out="$(forge_token_broker_main "$environ" 'Acme/../x' 2>/dev/null)"; rc=$?
 assert_eq "a malformed owner: exit 2" "2" "$rc"
 out="$(forge_token_broker_main "$environ" '-x' 2>/dev/null)"; rc=$?
 assert_eq "an owner shaped like an option: exit 2" "2" "$rc"
+# Every owner the gh shim can ask for is one the broker accepts: a managed
+# user's `name_shortcode`, a dotted name, and one longer than 39 characters.
+for owner in name_shortcode a.b "$(printf 'x%.0s' {1..45})"; do
+  assert_eq "an owner the shim accepts is accepted: $owner" "0" \
+    "$(forge_token_broker_owner_valid "$owner"; echo $?)"
+done
 out="$(forge_token_broker_main "$tmp_dir/no-such-environ" Acme 2>/dev/null)"; rc=$?
 assert_eq "an unreadable environ file: exit 1" "1" "$rc"
 

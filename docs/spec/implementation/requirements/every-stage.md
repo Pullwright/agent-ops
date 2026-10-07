@@ -72,9 +72,10 @@
    `/usr/local/bin/claude` (`deploy/docker/claude-shim.sh`) stands ahead of
    the real CLI on `PATH`, as the gh shim does, and runs it as `stage`.
    The stage user cannot read either GitHub App's private key, the
-   Script's environment or the minted-token cache under `/dev/shm`, and cannot
-   write `/app`, `state_dir`, or anything under `workspace_root` except the
-   workspace it was given. What follows is how that holds.
+   Script's environment or the minted-token cache, and cannot write `/app`,
+   `state_dir`, or anything under `workspace_root` except the workspace it
+   was given; and nothing it leaves behind runs as `agent`, holds the Script,
+   or outlives the stage. What follows is how that holds.
 
    - **Launch.** `deploy/docker/sudoers-agent-ops` (installed as
      `/etc/sudoers.d/agent-ops`) lets `agent` run one program as `stage`,
@@ -96,11 +97,25 @@
      the group signal of requirements 4e and 9c reaches sudo and none of the
      stage's. sudo relays a TERM, INT or HUP to `stage-exec` alone and cannot
      relay a KILL. `stage-exec` therefore runs the command as its child and
-     does the group signal itself: on TERM, INT or HUP it sends TERM to its
-     process group, waits `PW_STAGE_KILL_GRACE` seconds (default 3, inside
-     the launcher's five) and sends KILL; and it runs under `setpriv
-     --pdeathsig TERM`, so the KILL a cycle's signal handler sends, which
-     kills sudo, reaches it as a TERM.
+     stops the stage itself. It is a child subreaper, so a process the stage
+     detaches (`setsid`, a double fork, a daemon a tool starts) is
+     re-parented to it rather than to pid 1 and stays below it. On TERM, INT
+     or HUP, and again when the command ends, it sends TERM to every process
+     below it, waits up to `PW_STAGE_KILL_GRACE` seconds (default 3, inside
+     the launcher's five) for them to go, and sends KILL to any that remain;
+     it never signals itself, so a stopped stage exits 143. It runs under
+     `setpriv --pdeathsig TERM`, so the KILL a cycle's signal handler sends,
+     which kills sudo, reaches it as a TERM, and it is told the parent it was
+     started by, so a parent that died before that signal was armed stops it
+     too.
+   - **Strays.** A stage can still kill its own `stage-exec`. So every launch
+     through `stage-exec` — a stage, a probe, each thing the Script does as
+     the stage user — kills, as it starts and as it ends, every process of
+     the stage user's that is not below a live launch: a process of the stage
+     user's whose parent is sudo, running as root, started by the user sudo
+     names as its invoker (`SUDO_UID`). Nothing the stage user runs can make
+     one, and a stage running at the same time — a `doctor.sh` check, an
+     operator's login — is below its own launch and is left alone.
    - **The forge credential.** Inside a stage the gh shim neither mints nor
      falls back (component 22c): it asks `PW_GH_TOKEN_BROKER`
      (`deploy/docker/forge-token-request.sh`), which uses the second sudoers
@@ -117,18 +132,39 @@
      gives a stage its `GH_TOKEN`, the one credential it authors with.
    - **Workspaces.** `lib/stage-boundary.sh`'s `stage_workspace_share`
      gives a workspace to group `stage`, group-writable and setgid,
-     immediately before the first stage that must write in it: the
+     immediately before the first stage that must write in it — after a
+     sweep for strays, setting the group without following a link, and
+     setting the files' modes before any directory's, and the directories'
+     in post-order, so that no stage process can swap an entry for a link
+     before its change reaches it: the
      Implementer's clone (shared, as before, with the Reviewer and Approver
      after it) and the project review's clone. `cycle_dir`, the Monitor's run
      directory, a restale or comparison clone, the state mirror and the
      peers' copies are never shared; a stage whose working directory is one
      of them reads it and writes nothing there, and its scratch work goes in
      its own scratch directory. Once a stage has had a workspace, the Script
-     runs no `git` in it (requirement 31e's comparison reads the forge
-     instead), reads from it only through `stage_breadcrumb_pr_url` — a
+     runs no `git` in it and opens nothing in it itself: a stage can leave a
+     `.git/config` naming commands, a link to a file only `agent` can read,
+     or a FIFO. Requirement 31e's comparison reads the forge instead. What
+     the Script must learn from the workspace it learns through the stage
+     user, within a time limit and a size limit (`stage_boundary_capture`,
+     `stage_boundary_read`): the breadcrumb (`stage_breadcrumb_pr_url`, a
      regular file, not a link, whose first line is exactly a github.com
-     pull-request URL — and removes it with `stage_workspace_remove`, which
-     hands to the stage user whatever a plain `rm -rf` could not take.
+     pull-request URL) and requirement 4k's project settings, whose
+     comparison with the commit runs as the stage user too and is accepted
+     only in one of three fixed forms. It removes the workspace with
+     `stage_workspace_remove`, which hands to the stage user whatever a
+     plain `rm -rf` could not take, unlocking a chain of locked directories
+     in one pass.
+   - **The Script's own surroundings.** The cycles' `PATH` holds nothing
+     under `~/.claude`, which the stage user can write. The minted-token
+     cache is kept in a directory private to `agent`
+     (`/dev/shm/agent-ops-tokens.<uid>`, made mode 700 by the entrypoint
+     before any stage can run), never in `/dev/shm` itself, where the stage
+     user, which is told the identity tag a cache file's name is built from,
+     could claim the name first. The token helper accepts every owner the gh
+     shim can ask for, so a call the shim would resolve outside a stage is
+     not refused inside one.
    - **The Claude configuration** (`$CLAUDE_CONFIG_DIR`) is group `stage`,
      mode 2770 in the image, and `deploy/docker/entrypoint.sh` brings a
      volume an older image created to the same shape.

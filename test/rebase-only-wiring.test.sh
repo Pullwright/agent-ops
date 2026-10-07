@@ -8,26 +8,28 @@
 # push whatever the patch-id said.
 #
 #   - **The pre-capture block** (step 6b, just ahead of "--- 7. Implementer
-#     stage ---"): `premerge_rebase_only_capture` records the pull request's
-#     pre-push head and base SHAs — but only for a `merge-conflicts` work
-#     order that is not a Dependabot takeover, and only once the work order's
-#     own `base` resolves to a real ref.
+#     stage ---"): `premerge_rebase_only_capture` asks
+#     `rebase_only_forge_capture` for the pull request's pre-push head and
+#     base, from the forge — but only for a `merge-conflicts` work order that
+#     is not a Dependabot takeover, and only once the work order names its
+#     own `base`.
 #   - **The stage-start advisory block** (just inside "--- 8. Reviewer stage
 #     ---", right after the existing #916 merge-state check): compares the
 #     pre-push diff against the post-push one by patch-id, reading both heads
 #     from the forge so the question stays "did the push change the diff",
 #     and settles `$rebase_only`. It runs lib/rebase-only.sh's real
-#     `rebase_only_forge_check` against a stub `git`, and asserts that none of
-#     it runs in the Implementer's clone (requirement 45e).
+#     `rebase_only_forge_check` against a stub `git` and a stub
+#     `diff_patch_id`, and asserts that none of it runs in the Implementer's
+#     clone (requirement 45e).
 #   - **The engagement block**: acts on `$rebase_only` — skipping
 #     `stage_budget_apply`/`run_claude_stage` and synthesising a `ready`
 #     verdict for the handoff path below, or running the engagement for real.
 #
 # All three blocks are lifted verbatim out of agent-cycle.sh, the same technique
 # test/reviewer-merge-observed-wiring.test.sh already uses: the assertions are
-# about the shipped code, not a copy of its logic. `rebase_only_push` and
-# `log_event` are stubbed as recorders — `rebase_only_push` itself is
-# unit-tested on its own terms in test/rebase-only.test.sh — so this file owns
+# about the shipped code, not a copy of its logic. `rebase_only_forge_capture`,
+# `diff_patch_id` and `log_event` are stubbed as recorders — the first two are
+# unit-tested on their own terms in test/rebase-only.test.sh — so this file owns
 # only the thinner question: given each shape those can return, does
 # agent-cycle.sh's own dispatch do the right thing with it?
 #
@@ -123,27 +125,24 @@ for pair in "capture:$capture_block" "advisory:$advisory_block" "engagement:$eng
   fi
 done
 
-# --- The pre-capture block: stub git, run against each work-order shape ------
+# --- The pre-capture block: stub the capture, run against each work-order shape
 
-run_capture() {  # SELECTED_SOURCE TAKEOVER BASE_FIELD [ls-remote output style]
-  local selected_source="$1" takeover="$2" base_field="$3"
+run_capture() {  # SELECTED_SOURCE TAKEOVER BASE_FIELD [CAPTURE_RESULT]
+  local selected_source="$1" takeover="$2" base_field="$3" capture_result="${4:-true}"
   cat >"$tmp_dir/capture-harness.sh" <<HARNESS
 set -uo pipefail
 selected_source="$selected_source"
 selected_branch="agent/td-42"
+selected_repo="acme/widgets"
 clone_dir="/no/such/clone"
 work_order_json='$(jq -nc --arg t "$takeover" --arg b "$base_field" \
   '{takeover: ($t == "true"), base: (if $b == "" then null else $b end)}')'
-git() {
-  if [[ "\$1" == "-C" && "\$3" == "ls-remote" ]]; then
-    case "\$5" in
-      *"agent/td-42") printf 'oldheadsha\trefs/heads/agent/td-42\n' ;;
-      *"main") printf 'oldbasesha\trefs/heads/main\n' ;;
-      *) return 1 ;;
-    esac
-    return 0
-  fi
-  return 1
+. "$SCRIPT_DIR/lib/rebase-only.sh"
+git() { printf '%s\n' "\$*" >>"$tmp_dir/git-calls"; return 1; }
+rebase_only_forge_capture() {
+  printf '%s\n' "\$*" >>"$tmp_dir/capture-calls"
+  [[ "$capture_result" == true ]] || return 1
+  rebase_only_old_head="oldheadsha"; rebase_only_old_base="oldbasesha"
 }
 $capture_block
 printf 'head=%s\tbase=%s\tbase_name=%s\n' "\$premerge_old_head" "\$premerge_old_base" "\$premerge_base_name"
@@ -151,9 +150,17 @@ HARNESS
   bash "$tmp_dir/capture-harness.sh"
 }
 
+: >"$tmp_dir/capture-calls"; : >"$tmp_dir/git-calls"
 out="$(run_capture "merge-conflicts" "false" "main")"
-assert_eq "a merge-conflicts, non-takeover item with a resolvable base captures both SHAs" \
+assert_eq "a merge-conflicts, non-takeover item with a base captures both SHAs" \
   "head=oldheadsha	base=oldbasesha	base_name=main" "$out"
+assert_eq "  ... asking the forge capture for the item's own repository, base and branch" \
+  "acme/widgets main agent/td-42" "$(cat "$tmp_dir/capture-calls")"
+assert_eq "  ... and running no git in the clone" "" "$(cat "$tmp_dir/git-calls")"
+
+out="$(run_capture "merge-conflicts" "false" "main" false)"
+assert_eq "a capture the forge could not serve leaves both empty" \
+  "head=	base=	base_name=main" "$out"
 
 out="$(run_capture "merge-conflicts" "true" "main")"
 assert_eq "a Dependabot takeover captures nothing — it is ordinary fresh work" \
@@ -167,7 +174,7 @@ out="$(run_capture "merge-conflicts" "false" "")"
 assert_eq "a merge-conflicts item with no base field captures nothing" \
   "head=	base=	base_name=" "$out"
 
-# --- The stage-start advisory block: stub rebase_only_push, record its args --
+# --- The stage-start advisory block: the real check, stub git and patch-id ---
 
 run_advisory() {  # OLD_HEAD OLD_BASE IMPL_PR_URL PUSH_RESULT(true|false) NEW_HEAD
   local old_head="$1" old_base="$2" pr_url="$3" push_result="$4" new_head="${5:-newheadsha}"
@@ -182,29 +189,34 @@ selected_repo="acme/widgets"
 selected_item="42"
 clone_dir="/no/such/clone"
 . "$SCRIPT_DIR/lib/rebase-only.sh"
+# What the capture leaves behind, when there was one.
+if [[ -n "$old_head" ]]; then
+  rebase_only_repo="$tmp_dir/capture-repo"
+  rebase_only_old_head="$old_head"; rebase_only_old_base="$old_base"; rebase_only_old_id="oldid"
+fi
 git() {
   printf '%s\n' "\$*" >>"$tmp_dir/git-calls"
   if [[ "\$1" == "-C" && "\$2" == "\$clone_dir" ]]; then
     printf 'worktreeheadsha\n' >>"$tmp_dir/rev-parse-calls"; return 1
   fi
-  if [[ "\$1" == "ls-remote" && "\$2" == "https://github.com/acme/widgets.git" ]]; then
-    case "\$3" in
-      *"agent/td-42") printf '$new_head\trefs/heads/agent/td-42\n' ;;
-      *"main") printf 'newbasesha\trefs/heads/main\n' ;;
+  if [[ "\$1" == "-C" && "\$3" == "fetch" ]]; then
+    return 0
+  fi
+  if [[ "\$1" == "-C" && "\$3" == "rev-parse" ]]; then
+    case "\$6" in
+      refs/rebase-only/new-head) printf '%s\n' "$new_head" ;;
+      refs/rebase-only/new-base) printf 'newbasesha\n' ;;
       *) return 1 ;;
     esac
     return 0
   fi
-  if [[ "\$1" == "init" || "\$1" == "-C" ]]; then
-    return 0
-  fi
   return 1
 }
-rebase_only_push() {
+diff_patch_id() {
   printf '%s\n' "\$*" >>"$tmp_dir/push-calls"
   case "$push_result" in
-    true) return 0 ;;
-    *) return 1 ;;
+    true) printf 'oldid' ;;
+    *) printf 'newid' ;;
   esac
 }
 $advisory_block
@@ -216,14 +228,17 @@ HARNESS
 : >"$tmp_dir/push-calls"; : >"$tmp_dir/rev-parse-calls"; : >"$tmp_dir/git-calls"
 out="$(run_advisory "oldheadsha" "oldbasesha" "https://github.com/acme/widgets/pull/42" "true")"
 assert_eq "a confirmed rebase-only push settles rebase_only=true" "rebase_only=true" "$out"
-assert_contains "  ... comparing the pre-push pair against the post-push pair" \
-  "oldbasesha oldheadsha newbasesha newheadsha" "$(cat "$tmp_dir/push-calls")"
+assert_contains "  ... comparing the post-push pair's patch-id with the captured one" \
+  "newbasesha newheadsha" "$(cat "$tmp_dir/push-calls")"
 assert_eq "  ... reading the post-push head from the forge, never the clone's own HEAD" \
   "" "$(cat "$tmp_dir/rev-parse-calls")"
 assert_eq "  ... and running no git at all in the Implementer's clone (requirement 45e)" \
   "" "$(grep -F -- "-C /no/such/clone" "$tmp_dir/git-calls" || true)"
-assert_contains "  ... fetching the four commits from the forge's own URL into its own repository" \
-  "remote add origin https://github.com/acme/widgets.git" "$(cat "$tmp_dir/git-calls")"
+assert_contains "  ... fetching the pushed heads by name, commits only, into its own repository" \
+  "fetch --quiet --no-tags --filter=tree:0 origin +refs/heads/agent/td-42:refs/rebase-only/new-head +refs/heads/main:refs/rebase-only/new-base" \
+  "$(cat "$tmp_dir/git-calls")"
+assert_eq "  ... and never asking the forge for the old head by its id" \
+  "" "$(grep -F -- "oldheadsha" "$tmp_dir/git-calls" || true)"
 
 : >"$tmp_dir/push-calls"
 out="$(run_advisory "oldheadsha" "oldbasesha" "https://github.com/acme/widgets/pull/42" "false")"

@@ -569,16 +569,20 @@
     `--config -` on stdin, never argv, where it would sit world-readable in
     `/proc/<pid>/cmdline` for the length of the call. Its one cache is
     tmpfs-only and best-effort:
-    `/dev/shm/pullwright-approver-token.<installation id>.json` — keyed by
-    installation id, so one installation's token is never served for
-    another's — mode 600, written `mktemp`-then-rename so no reader sees a
-    partial write, and read back only when the file is this user's own, is
-    not a symlink, and is more than 300 s from expiry — `/dev/shm` is
-    world-writable, so a cache file someone else planted at that predictable
-    path is ignored rather than served as a credential. Tmpfs-only is
-    enforced, not assumed: the cache directory's filesystem type is checked
-    before anything is written, so a disk-backed `APPROVER_TOKEN_CACHE_DIR`
-    disables caching rather than putting a live token on disk; and an
+    `/dev/shm/agent-ops-tokens.<uid>/pullwright-approver-token.<installation id>.json`
+    — keyed by installation id, so one installation's token is never served
+    for another's — mode 600, written `mktemp`-then-rename so no reader sees
+    a partial write (the temporary file is removed when the rename fails),
+    and read back only when the file is this user's own, is not a symlink,
+    and is more than 300 s from expiry. The directory is private to this
+    user (`github_app_token_default_cache_dir`, made mode 700 when absent),
+    because in world-writable `/dev/shm` another user — the stage user
+    (requirement 45e) — could claim a cache file's predictable name first;
+    a cache directory that is another user's, a link, or open to the group
+    or the world is not used. Tmpfs-only is enforced, not assumed: the cache
+    directory's filesystem type is checked before anything is written, so a
+    disk-backed `APPROVER_TOKEN_CACHE_DIR` disables caching rather than
+    putting a live token on disk; and an
     `expires_at` that does not parse is never guessed at — the token is
     returned but not cached. Any cache failure at all is skipped silently
     and the call mints fresh, which is correct and merely slower.
@@ -919,8 +923,12 @@
     `deploy/docker/stage-gitconfig` — implementing requirement 45e.
     `lib/stage-boundary.sh` is the Script's side: `stage_boundary_present`,
     `stage_workspace_share DIR`, `stage_workspace_remove DIR`,
-    `stage_breadcrumb_pr_url FILE`, and `stage_boundary_as_stage`, the one
-    place it runs a command as the stage user. `lib/forge-token-broker.sh`
+    `stage_breadcrumb_pr_url FILE`, `stage_boundary_sweep`,
+    `stage_boundary_capture SECONDS MAX_BYTES COMMAND…` and
+    `stage_boundary_read FILE MAX_BYTES` (a command or a read as the stage
+    user, bounded in time and size, whose output the caller validates), and
+    `stage_boundary_as_stage`, which runs a command as the stage user with
+    its output discarded. `lib/forge-token-broker.sh`
     is what the stage user's one sudoers rule reaches:
     `forge_token_broker_main ENVIRON_FILE OWNER`, the token and its identity
     tag on two lines, exit 0, 1 (nothing to give) or 2 (a malformed

@@ -13,14 +13,18 @@
 #      alone, and that sharing changes nothing where there is no boundary.
 #   2. deploy/docker/stage-exec.sh run directly as this user: the environment
 #      a stage is given, its own scratch directory, stdin and exit status
-#      passing through, and the process group it stops — on a signal, and
-#      when its parent dies.
+#      passing through, the processes it stops — on a signal, when its parent
+#      dies, and what a stage detached when it ends — and its own exit 143.
 #   3. In the image only (skipped, and said so, anywhere the rule is absent):
 #      the stage user cannot read a file only the Script's user can, the
 #      Script's environment, or write /app; a forge credential the Script
 #      exports never reaches a stage; the stage user can run nothing as the
-#      Script's user but the token helper; and a stage's processes do not
-#      outlive the TERM or the KILL the Script sends its process group.
+#      Script's user but the token helper; a stage's processes do not
+#      outlive the TERM or the KILL the Script sends its process group; a
+#      stray a stage leaves is killed by the next launch and a concurrent
+#      stage is not; the settings vetting runs no git as the Script's user
+#      and is held by no FIFO; and the token cache is out of the stage
+#      user's reach.
 #
 #   ./test/stage-boundary.test.sh
 #
@@ -132,6 +136,23 @@ assert_eq "removing a link removes the link and not what it names" "no yes" \
   "$([[ -e "$tmp_dir/rm-link" || -L "$tmp_dir/rm-link" ]] && echo yes || echo no) $([[ -d "$tmp_dir/ws/sub" ]] && echo yes || echo no)"
 STAGE_BOUNDARY_GROUP="stage"
 
+# Reading through the stage user is bounded: a FIFO holds it no longer than
+# the time it was given, and what comes back is capped.
+STAGE_BOUNDARY_GROUP="agent-ops-no-such-group"
+printf '0123456789\n' >"$tmp_dir/readable"
+assert_eq "a bounded read gives the file, capped" "01234" "$(stage_boundary_read "$tmp_dir/readable" 5)"
+mkfifo "$tmp_dir/fifo"
+started=$SECONDS
+stage_boundary_capture 1 16 head -c 16 -- "$tmp_dir/fifo" >/dev/null; rc=$?
+assert_eq "a FIFO no one writes does not hold a bounded read" "stopped" \
+  "$( (( rc != 0 && SECONDS - started <= 8 )) && echo stopped || echo "held (rc $rc, $(( SECONDS - started ))s)")"
+STAGE_BOUNDARY_GROUP="stage"
+
+# The cycles' PATH holds nothing under ~/.claude, which the stage user can
+# write in the image.
+assert_eq "no cycle puts a directory under ~/.claude on its PATH" "" \
+  "$(grep -n '^path_dirs=.*\.claude' "$SCRIPT_DIR/agent-cycle.sh" "$SCRIPT_DIR/review-cycle.sh" "$SCRIPT_DIR/monitor-cycle.sh" || true)"
+
 # === 2. deploy/docker/stage-exec.sh, run directly ===========================
 
 broker="$tmp_dir/broker"
@@ -196,6 +217,34 @@ kill -KILL "$job"
 wait "$job" 2>/dev/null
 sleep 2.5
 assert_eq "the wrapper's parent being killed stops every process in the group" "0" "$(live_in_group "$job")"
+
+# A stage that stops on TERM ends the wrapper at once, with 143, and the
+# wrapper is not killed along with it.
+stage_exec sleep 300 </dev/null &
+job=$!
+sleep 1.5
+wrapper_pid="$(pgrep -P "$job" -f -- '--supervised' | head -n 1)"
+[[ -n "$wrapper_pid" ]] || wrapper_pid="$job"
+started=$SECONDS
+kill -TERM "$wrapper_pid"
+wait "$job"; rc=$?
+assert_eq "TERM to the wrapper ends it with 143" "143" "$rc"
+assert_eq "  ... without waiting out the grace once the stage has gone" "yes" \
+  "$( (( SECONDS - started < 2 )) && echo yes || echo no)"
+
+# What a stage detaches is stopped when the stage ends: the wrapper is a
+# child subreaper, so a `setsid` child and a double-forked one stay below it.
+detached="$(stage_exec bash -c 'setsid sleep 301 </dev/null >/dev/null 2>&1 & echo $!; ( sleep 302 </dev/null >/dev/null 2>&1 & echo $! )' </dev/null)"
+sleep 0.5
+alive=0
+for pid in $detached; do kill -0 "$pid" 2>/dev/null && alive=$(( alive + 1 )); done
+assert_eq "a process the stage detached does not outlive it" "0 of 2" "$alive of $(wc -w <<<"$detached" | tr -d ' ')"
+
+# A parent that died before the death signal was armed is seen: the wrapper
+# is told its original parent, and stops without running the command.
+stage_exec --supervised 1 touch "$tmp_dir/ran-orphaned" </dev/null; rc=$?
+assert_eq "a wrapper whose parent is not the one it was started by stops" \
+  "143 no" "$rc $([[ -e "$tmp_dir/ran-orphaned" ]] && echo yes || echo no)"
 
 # === 3. The boundary itself, in the image ===================================
 
@@ -262,6 +311,81 @@ else
   sleep 4.5
   assert_eq "KILL to a stage's group, as a cycle's handler sends, leaves none running either" "0" \
     "$(live_in_group "$job")"
+
+  # A chain of directories the stage locked, each inside the last, goes in
+  # one removal.
+  ws="$(mktemp -d /tmp/stage-boundary-ws.XXXXXX)"
+  chmod 755 "$ws"
+  stage_workspace_share "$ws"
+  as_stage bash -c "mkdir -p '$ws/a/b/c' && touch '$ws/a/b/c/f' && chmod 000 '$ws/a/b' '$ws/a'" >/dev/null 2>&1
+  stage_workspace_remove "$ws"
+  assert_eq "a chain of locked directories goes in one removal" "no" \
+    "$([[ -e "$ws" ]] && echo yes || echo no)"
+
+  # A stray — a process the stage left after killing its own wrapper — is
+  # killed by the next launch; a stage running at the same time is not.
+  ( exec sudo -n -u stage /usr/local/libexec/agent-ops/stage-exec sleep 303 ) </dev/null >/dev/null 2>&1 &
+  legit=$!
+  # shellcheck disable=SC2016  # $PPID is the stage's bash's: its wrapper
+  as_stage bash -c 'setsid sleep 304 </dev/null >/dev/null 2>&1 & sleep 0.3; kill -KILL $PPID' >/dev/null 2>&1
+  sleep 0.5
+  assert_eq "a stage that killed its own wrapper leaves a stray behind" "1" \
+    "$(pgrep -u stage -fx 'sleep 304' | wc -l | tr -d ' ')"
+  as_stage true >/dev/null 2>&1
+  sleep 0.3
+  assert_eq "  ... which the next launch kills" "0" "$(pgrep -u stage -fx 'sleep 304' | wc -l | tr -d ' ')"
+  assert_eq "  ... leaving a stage running at the same time alone" "1" \
+    "$(pgrep -u stage -fx 'sleep 303' | wc -l | tr -d ' ')"
+  kill -TERM "$legit" 2>/dev/null; wait "$legit" 2>/dev/null
+
+  # The settings vetting in a workspace the stage has had: no git as this
+  # user (a stage-set core.fsmonitor runs as the stage user, if at all), a
+  # FIFO does not hold it, and a link to a file only this user can read
+  # gives nothing back.
+  # shellcheck source=lib/stage-run.sh
+  . "$SCRIPT_DIR/lib/stage-run.sh"
+  ws="$(mktemp -d /tmp/stage-boundary-ws.XXXXXX)"
+  chmod 755 "$ws"
+  git -C "$ws" init -q
+  stage_workspace_share "$ws"
+  as_stage bash -c "cd '$ws' && mkdir .claude && printf '{\"env\":{}}' >.claude/settings.json \
+    && git add .claude && git -c user.name=s -c user.email=s@e commit -qm s \
+    && git config core.fsmonitor 'id -un >>$ws/fsmonitor-ran-as; true'" >/dev/null 2>&1
+  out="$(stage_project_settings_refusal "$ws")"
+  assert_eq "a refused file in a stage's workspace is still refused" "yes" \
+    "$([[ "$out" == ".claude/settings.json sets env"* ]] && echo yes || echo no)"
+  assert_eq "  ... and the comparison never ran the stage's fsmonitor as this user" "" \
+    "$(grep -vx stage "$ws/fsmonitor-ran-as" 2>/dev/null || true)"
+  as_stage bash -c "rm '$ws/.claude/settings.json' && mkfifo '$ws/.claude/settings.json'" >/dev/null 2>&1
+  started=$SECONDS
+  out="$(stage_project_settings_refusal "$ws")"
+  assert_eq "a settings file that is a FIFO is refused, not waited on" "yes" \
+    "$([[ "$out" == ".claude/settings.json cannot be read"* ]] && (( SECONDS - started <= 30 )) && echo yes || echo no)"
+  as_stage bash -c "rm '$ws/.claude/settings.json' && ln -s '$open_dir/key.pem' '$ws/.claude/settings.json'" >/dev/null 2>&1
+  out="$(stage_project_settings_refusal "$ws")"
+  assert_eq "a link to a file only this user can read is refused, and nothing of it read" "yes" \
+    "$([[ "$out" == ".claude/settings.json cannot be read"* && "$out" != *secret* ]] && echo yes || echo no)"
+  stage_workspace_remove "$ws"
+
+  # The token cache: a name the stage user claims first in /dev/shm costs
+  # nothing, and the cache is never kept in a directory that is not private.
+  # shellcheck source=lib/github-app-token.sh
+  . "$SCRIPT_DIR/lib/github-app-token.sh"
+  planted="/dev/shm/stage-boundary-planted.$$.json"
+  as_stage touch "$planted" >/dev/null 2>&1
+  before="$(find /dev/shm -maxdepth 1 -name '.github-app-token.*' -user "$(id -u)" | wc -l)"
+  _github_app_token_cache_write "$planted" tok 2099-01-01T00:00:00Z 4070908800
+  assert_eq "a cache write that cannot rename over a planted file leaves nothing behind" "$before" \
+    "$(find /dev/shm -maxdepth 1 -name '.github-app-token.*' -user "$(id -u)" | wc -l)"
+  as_stage rm -f "$planted" >/dev/null 2>&1
+  assert_eq "a shared directory is never used as the cache" "" \
+    "$(_github_app_token_cache_file /dev/shm pullwright-author-token 1)"
+  as_stage mkdir -m 700 "/dev/shm/stage-boundary-dir.$$" >/dev/null 2>&1
+  assert_eq "  ... nor a directory the stage user made first" "" \
+    "$(_github_app_token_cache_file "/dev/shm/stage-boundary-dir.$$" pullwright-author-token 1)"
+  as_stage rmdir "/dev/shm/stage-boundary-dir.$$" >/dev/null 2>&1
+  assert_eq "the default cache directory is private to this user" "yes" \
+    "$([[ -n "$(_github_app_token_cache_file "$(github_app_token_default_cache_dir)" pullwright-author-token 1)" ]] && echo yes || echo no)"
   rm -rf "$open_dir"
 fi
 

@@ -112,6 +112,10 @@ fi
 # reaches.
 # shellcheck source=lib/author-token.sh
 . "$APP_DIR/lib/author-token.sh"
+# The token cache's private directory, made now, before any stage can run in
+# this container and claim its name (lib/github-app-token.sh).
+_github_app_token_cache_dir_private "$(github_app_token_default_cache_dir)" \
+  || say "WARNING: $(github_app_token_default_cache_dir) is not this user's own; App tokens will not be cached"
 # shellcheck disable=SC2119 # "is this identity configured at all", deliberately no owner
 if author_token_credential_present; then
   # Stash the ambient PAT (if any) as the seam's fallback — lib/forge-auth.sh

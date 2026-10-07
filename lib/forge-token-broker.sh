@@ -59,10 +59,13 @@ FORGE_TOKEN_BROKER_ENV=(
 )
 
 # forge_token_broker_owner_valid OWNER
-# True for an empty owner (the default installation) or a GitHub account
-# name. Anything else is refused before it reaches a lookup or a log line.
+# True for an empty owner (the default installation) or a name shaped as the
+# gh shim's `_gh_shim_owner_valid` accepts one, which is every owner the shim
+# can ask for: an owner it would resolve outside a stage is never refused
+# inside one. Anything else is refused before it reaches a lookup or a log
+# line.
 forge_token_broker_owner_valid() {
-  [[ -z "${1:-}" || "$1" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,38}$ ]]
+  [[ -z "${1:-}" || "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]
 }
 
 # forge_token_broker_load_env ENVIRON_FILE

@@ -750,7 +750,10 @@ ensure_labels_for "$repo_slug" target
 # The Reviewer-stage-start check below (requirement 31e) needs to know what
 # this pull request's diff looked like *before* the Implementer stage moves
 # it, so it is captured here, ahead of that stage, while `$selected_branch`
-# still names the pre-push head. A `merge-conflicts` item carrying
+# still names the pre-push head: both heads are fetched from the forge into a
+# repository of the Script's own, and the pre-push diff's patch-id is
+# computed now, while the forge still serves that head as a branch tip
+# (`rebase_only_forge_capture`). A `merge-conflicts` item carrying
 # `takeover: true` names Dependabot's own pull request, not one of ours —
 # ordinary fresh work (requirement 3s) the Implementer's own procedure
 # excludes from this treatment, so it is excluded here too. Best-effort: an
@@ -762,8 +765,9 @@ premerge_rebase_only_capture() {
   [[ "$(jq -r '.takeover // false' <<<"$work_order_json")" != "true" ]] || return 0
   premerge_base_name="$(jq -r '.base // empty' <<<"$work_order_json")"
   [[ -n "$premerge_base_name" ]] || return 0
-  premerge_old_head="$(git -C "$clone_dir" ls-remote origin "refs/heads/$selected_branch" 2>/dev/null | awk '{print $1; exit}')"
-  premerge_old_base="$(git -C "$clone_dir" ls-remote origin "refs/heads/$premerge_base_name" 2>/dev/null | awk '{print $1; exit}')"
+  rebase_only_forge_capture "$selected_repo" "$premerge_base_name" "$selected_branch" || return 0
+  premerge_old_head="$rebase_only_old_head"
+  premerge_old_base="$rebase_only_old_base"
 }
 premerge_rebase_only_capture
 
@@ -1158,8 +1162,7 @@ fi
 # compares in a repository only the Script has written.
 rebase_only_advisory_check() {
   [[ -n "$premerge_old_head" && -n "$premerge_old_base" && -n "$impl_pr_url" ]] || return 1
-  rebase_only_forge_check "$selected_repo" "$premerge_old_base" "$premerge_old_head" \
-    "$premerge_base_name" "$selected_branch"
+  rebase_only_forge_check "$premerge_base_name" "$selected_branch"
 }
 rebase_only="false"
 rebase_only_advisory_check && rebase_only="true"

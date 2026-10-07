@@ -2586,18 +2586,7 @@ else
   rm -rf "$flush_dir"
 fi
 
-# --- Egress -------------------------------------------------------------
-# The D24 egress fence (IMPLEMENTATION-PIPELINE-SPEC, "The node stack"): on
-# a fleet node the scheduler sits on an internal-only network and reaches
-# the world solely through egress-proxy's domain allowlist. Three probes,
-# because the fence has three distinct failure shapes and each needs its own
-# verdict: the proxy path itself broken (the node cannot work at all), the
-# allowlist not enforcing (the fence is theatre), and direct egress still
-# routable (the fence is advisory — exactly the state an un-updated
-# compose.yaml leaves behind, which no image roll can fix; the same drift
-# lib/compose-drift.sh reports in the heartbeat). The canary domain is one
-# no pipeline code path has any business reaching, so a success can only
-# mean the allowlist is not doing its job.
+# --- Stage boundary -----------------------------------------------------
 section "Stage boundary"
 # Requirement 45e: every stage runs as the stage user, which must not be able
 # to read either App's key or write the Script's code. Checked from here, as
@@ -2631,6 +2620,18 @@ else
   fi
 fi
 
+# --- Egress -------------------------------------------------------------
+# The D24 egress fence (IMPLEMENTATION-PIPELINE-SPEC, "The node stack"): on
+# a fleet node the scheduler sits on an internal-only network and reaches
+# the world solely through egress-proxy's domain allowlist. Three probes,
+# because the fence has three distinct failure shapes and each needs its own
+# verdict: the proxy path itself broken (the node cannot work at all), the
+# allowlist not enforcing (the fence is theatre), and direct egress still
+# routable (the fence is advisory — exactly the state an un-updated
+# compose.yaml leaves behind, which no image roll can fix; the same drift
+# lib/compose-drift.sh reports in the heartbeat). The canary domain is one
+# no pipeline code path has any business reaching, so a success can only
+# mean the allowlist is not doing its job.
 section "Egress"
 if ((offline)); then
   skip "egress fence probes (--offline)"

@@ -135,50 +135,60 @@ fi
 bogus_output="$(diff_patch_id "$repo" "$old_base" "$bogus_sha" 2>/dev/null)"
 assert_eq "diff_patch_id prints nothing for an unreadable ref" "" "$bogus_output"
 
-# --- rebase_only_forge_check: the same question, asked of the forge rather
-#     than of a stage's workspace (requirement 45e). The fixture stands in for
-#     the forge: the forge URL is mapped onto it with `insteadOf`, in a global
-#     configuration of this test's own, and nothing else is in play. ---
+# --- rebase_only_forge_capture / rebase_only_forge_check: the same question,
+#     asked of the forge rather than of a stage's workspace (requirement 45e).
+#     A bare repository stands in for the forge, mapped onto its URL with
+#     `insteadOf` in a global configuration of this test's own. It serves
+#     objects by id only when a ref reaches them
+#     (`uploadpack.allowReachableSHA1InWant`), and between the capture and the
+#     check the pull request's branch is force-pushed and the forge pruned, so
+#     the old head is gone from it by the time the check runs: what a forge
+#     after an Implementer's rebase can be. ---
 scratch="$tmp_dir/scratch"
 mkdir -p "$scratch"
-printf '[url "file://%s"]\n\tinsteadOf = https://github.com/acme/widgets.git\n' "$repo" \
+forge="$tmp_dir/forge.git"
+printf '[url "file://%s"]\n\tinsteadOf = https://github.com/acme/widgets.git\n' "$forge" \
   >"$tmp_dir/forge-gitconfig"
-git -C "$repo" config uploadpack.allowFilter true
-git -C "$repo" config uploadpack.allowAnySHA1InWant true
 
-forge_check() {  # PR_HEAD — point the pull request's branch at it, then ask
-  git -C "$repo" branch -f pr "$1" >/dev/null
-  GIT_CONFIG_GLOBAL="$tmp_dir/forge-gitconfig" TMPDIR="$scratch" \
-    rebase_only_forge_check acme/widgets "$old_base" "$old_head" main pr
+as_script() {  # FUNCTION [ARGS...] — run with the forge mapping and scratch
+  GIT_CONFIG_GLOBAL="$tmp_dir/forge-gitconfig" TMPDIR="$scratch" "$@"
 }
 
-if forge_check "$rebased_head"; then
-  assert_eq "forge check: a clean rebase pushed to the forge reports rebase-only" "true" "true"
-else
-  assert_eq "forge check: a clean rebase pushed to the forge reports rebase-only" "true" "false"
-fi
+forge_check() {  # PR_HEAD — capture, push PR_HEAD over the branch, then ask
+  rm -rf "$forge"
+  git init -q --bare "$forge"
+  git -C "$forge" config uploadpack.allowFilter true
+  git -C "$forge" config uploadpack.allowReachableSHA1InWant true
+  git -C "$repo" push -q "$forge" "$old_base:refs/heads/main" "$old_head:refs/heads/pr"
+  as_script rebase_only_forge_capture acme/widgets main pr || return 2
+  git -C "$repo" push -q -f "$forge" "$new_base:refs/heads/main" "$1:refs/heads/pr"
+  git -C "$forge" reflog expire --expire=now --all
+  git -C "$forge" gc -q --prune=now
+  as_script rebase_only_forge_check main pr
+}
+
+forge_check "$rebased_head"; rc=$?
+assert_eq "forge check: a clean rebase pushed to the forge reports rebase-only" "0" "$rc"
+assert_eq "  ... capturing the old head from the forge" "$old_head" "$rebase_only_old_head"
+assert_eq "  ... and the old base" "$old_base" "$rebase_only_old_base"
 assert_eq "  ... reading the new head from the forge" "$rebased_head" "$rebase_only_new_head"
 assert_eq "  ... and the new base" "$new_base" "$rebase_only_new_base"
+assert_eq "  ... although the forge no longer holds the old head" "1" \
+  "$(git -C "$forge" cat-file -e "$old_head" 2>/dev/null; echo $?)"
 assert_eq "  ... leaving no repository of its own behind" "" "$(ls -A "$scratch")"
 
-if forge_check "$changed_head"; then
-  assert_eq "forge check: a push that changed the diff is not rebase-only" "false" "true"
-else
-  assert_eq "forge check: a push that changed the diff is not rebase-only" "false" "false"
-fi
+forge_check "$changed_head"; rc=$?
+assert_eq "forge check: a push that changed the diff is not rebase-only" "1" "$rc"
 
-if forge_check "$old_head"; then
-  assert_eq "forge check: a head that never moved is not rebase-only" "false" "true"
-else
-  assert_eq "forge check: a head that never moved is not rebase-only" "false" "false"
-fi
+forge_check "$old_head"; rc=$?
+assert_eq "forge check: a head that never moved is not rebase-only" "1" "$rc"
 
-if GIT_CONFIG_GLOBAL="$tmp_dir/forge-gitconfig" TMPDIR="$scratch" \
-     rebase_only_forge_check acme/widgets "$old_base" "$old_head" main no-such-branch; then
-  assert_eq "forge check: a branch the forge does not have is never rebase-only" "false" "true"
-else
-  assert_eq "forge check: a branch the forge does not have is never rebase-only" "false" "false"
-fi
+as_script rebase_only_forge_capture acme/widgets main no-such-branch; rc=$?
+assert_eq "forge capture: a branch the forge does not have captures nothing" "1" "$rc"
+assert_eq "  ... and sets no old head" "" "$rebase_only_old_head"
+assert_eq "  ... and leaves no repository behind" "" "$(ls -A "$scratch")"
+as_script rebase_only_forge_check main pr; rc=$?
+assert_eq "forge check: a check with no capture before it is never rebase-only" "1" "$rc"
 
 printf '\n'
 if (( failures > 0 )); then

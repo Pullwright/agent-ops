@@ -90,6 +90,19 @@ stage_rate_limit_json=""
 #
 # Only the working directory matters: Claude reads project settings from
 # there and not from a parent or the repository root (measured likewise).
+#
+# The directory is often a workspace an earlier stage has had (the Reviewer
+# and the Approver run in the Implementer's clone), and then everything in it
+# is the stage user's to arrange (requirement 45e). So the Script neither
+# opens these files nor runs `git` there itself: each file is read as the
+# stage user reads it, which is also exactly what Claude, running as that
+# user, would load, and the comparison with the commit runs as that user too,
+# both bounded in time and size (lib/stage-boundary.sh). A file that cannot
+# be read that way — a FIFO, one larger than
+# `STAGE_PROJECT_SETTINGS_MAX_BYTES` — is refused like one that is not JSON.
+# shellcheck source=lib/stage-boundary.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/stage-boundary.sh"
+STAGE_PROJECT_SETTINGS_MAX_BYTES=1048576
 # shellcheck disable=SC2016  # "$schema" is a JSON key, not a variable
 STAGE_PROJECT_SETTINGS_INERT_KEYS='["$schema","permissions","includeCoAuthoredBy","includeGitInstructions","cleanupPeriodDays","respectGitignore"]'
 STAGE_PROJECT_SETTINGS_INERT_PERMISSIONS='["allow"]'
@@ -119,16 +132,37 @@ stage_project_settings_allowed_keys() {
 # vetted; this says only whether the pull request shows the file too. One that
 # is not as committed was written or changed after the commit, which is how a
 # file an earlier stage left in a clone the next stage reuses looks.
+#
+# The comparison runs as the stage user (`stage_boundary_capture`), since the
+# repository's own configuration can name commands that `git diff` runs, and
+# what it reports is accepted only in one of three fixed forms.
 stage_project_settings_origin() {
-  local dir="$1" path="$2" head
-  if ! head="$(git -C "$dir" rev-parse --short HEAD 2>/dev/null)"; then
+  local dir="$1" path="$2" answer
+  # shellcheck disable=SC2016  # the script is the stage user's bash's to expand
+  answer="$(stage_boundary_capture 30 128 bash -c '
+    head="$(git -C "$1" rev-parse --short HEAD 2>/dev/null)" || { echo none; exit 0; }
+    if git -C "$1" cat-file -e "HEAD:./$2" 2>/dev/null \
+       && git -C "$1" diff --quiet HEAD -- "$2" 2>/dev/null; then
+      echo "same $head"
+    else
+      echo "changed $head"
+    fi' _ "$dir" "$path")"
+  if [[ "$answer" == none ]]; then
     printf 'the file is in the working tree, and there is no commit to compare it with'
-  elif git -C "$dir" cat-file -e "HEAD:./$path" 2>/dev/null \
-       && git -C "$dir" diff --quiet HEAD -- "$path" 2>/dev/null; then
-    printf 'the file is as committed at %s' "$head"
+  elif [[ "$answer" =~ ^same\ ([0-9a-f]{4,40})$ ]]; then
+    printf 'the file is as committed at %s' "${BASH_REMATCH[1]}"
+  elif [[ "$answer" =~ ^changed\ ([0-9a-f]{4,40})$ ]]; then
+    printf 'the file is in the working tree but not as committed at %s' "${BASH_REMATCH[1]}"
   else
-    printf 'the file is in the working tree but not as committed at %s' "$head"
+    printf 'the file is in the working tree, and it could not be compared with the commit'
   fi
+}
+
+# _stage_byte_length STRING
+# STRING's length in bytes, whatever the locale.
+_stage_byte_length() {
+  local LC_ALL=C
+  printf '%s' "${#1}"
 }
 
 # stage_project_settings_refusal DIR
@@ -138,11 +172,19 @@ stage_project_settings_origin() {
 # is no such file or every key in it is allowed. The reason names the file and
 # what is wrong with it, then says where the file came from.
 stage_project_settings_refusal() {
-  local dir="$1" allowed name file disallowed
+  local dir="$1" allowed name file content disallowed
   allowed="$(stage_project_settings_allowed_keys)"
   for name in settings.json settings.local.json; do
     file="$dir/.claude/$name"
     [[ -e "$file" || -L "$file" ]] || continue
+    # The `x` keeps a trailing newline from being stripped, so that the
+    # length compared is the length read.
+    if ! content="$(stage_boundary_read "$file" "$((STAGE_PROJECT_SETTINGS_MAX_BYTES + 1))" && printf x)" \
+       || (( $(_stage_byte_length "${content%x}") > STAGE_PROJECT_SETTINGS_MAX_BYTES )); then
+      printf '.claude/%s cannot be read as a file of at most %s bytes, so it cannot be vetted; %s' \
+        "$name" "$STAGE_PROJECT_SETTINGS_MAX_BYTES" "$(stage_project_settings_origin "$dir" ".claude/$name")"
+      return 0
+    fi
     if ! disallowed="$(jq -r --argjson allowed "$allowed" \
            --argjson permissions "$STAGE_PROJECT_SETTINGS_INERT_PERMISSIONS" '
            if type != "object" then error("not an object") else
@@ -152,7 +194,7 @@ stage_project_settings_refusal() {
                     keys_unsorted[] | select(IN($permissions[]) | not) | "permissions.\(.)"
                   else "permissions" end) ]
              | join(", ")
-           end' "$file" 2>/dev/null)"; then
+           end' <<<"${content%x}" 2>/dev/null)"; then
       printf '.claude/%s cannot be read as a JSON object, so it cannot be vetted; %s' \
         "$name" "$(stage_project_settings_origin "$dir" ".claude/$name")"
       return 0

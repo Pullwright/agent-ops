@@ -16,13 +16,17 @@ ORIGINAL_ARGV=("$@")
 # fallbacks, or a subprocess of this script (the 2.1b usage-limit probe is the
 # one that actually does this) silently reaches a real `claude`/`gh` instead
 # of the stub standing in for them (TD-PPagop-26080701).
+# Nothing under `~/.claude` belongs here: in the node image the Claude
+# configuration is the stage user's to write (requirement 45e), so a directory
+# under it on this PATH would run whatever a stage left there as the Script.
+# The CLI resolves from /usr/local/bin, where the image puts its stage shim.
 nvm_bin=""
 if [[ -s "$HOME/.nvm/nvm.sh" ]]; then
   # shellcheck disable=SC1091
   . "$HOME/.nvm/nvm.sh" --no-use
   nvm_bin="$(nvm which current 2>/dev/null | xargs -r dirname 2>/dev/null || true)"
 fi
-path_dirs=(/usr/local/bin /usr/bin /bin "$HOME/.local/bin" "$HOME/.claude/local")
+path_dirs=(/usr/local/bin /usr/bin /bin "$HOME/.local/bin")
 [[ -n "$nvm_bin" ]] && path_dirs+=("$nvm_bin")
 PATH="$PATH:$(IFS=:; echo "${path_dirs[*]}")"
 export PATH
