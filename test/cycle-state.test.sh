@@ -28,6 +28,10 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# The logic on its own terms, with no stage boundary: in the node image a
+# read would otherwise be the stage user's, which cannot enter this test's own
+# directory (test/stage-boundary.test.sh reads across the boundary).
+export STAGE_BOUNDARY_GROUP="agent-ops-no-such-group"
 # shellcheck source=lib/cycle-state.sh
 . "$SCRIPT_DIR/lib/cycle-state.sh"
 # shellcheck source=lib/work-gone.sh

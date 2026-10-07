@@ -100,8 +100,13 @@ stage_rate_limit_json=""
 # both bounded in time and size (lib/stage-boundary.sh). A file that cannot
 # be read that way — a FIFO, one larger than
 # `STAGE_PROJECT_SETTINGS_MAX_BYTES` — is refused like one that is not JSON.
-# shellcheck source=lib/stage-boundary.sh
-. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/stage-boundary.sh"
+# Sourced here unless its functions are already defined, as they are in each
+# cycle script (lib/cycle-state.sh sources it) and in a test that assembles
+# this file into a script of its own.
+if ! declare -F stage_boundary_read >/dev/null; then
+  # shellcheck source=lib/stage-boundary.sh
+  . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/stage-boundary.sh"
+fi
 STAGE_PROJECT_SETTINGS_MAX_BYTES=1048576
 # shellcheck disable=SC2016  # "$schema" is a JSON key, not a variable
 STAGE_PROJECT_SETTINGS_INERT_KEYS='["$schema","permissions","includeCoAuthoredBy","includeGitInstructions","cleanupPeriodDays","respectGitignore"]'

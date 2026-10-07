@@ -95,9 +95,11 @@ extract_signal_block() {
 # The stage runner is a library both cycle scripts source (requirement 4d), so
 # it is taken whole rather than carved out of a script: `run_claude_stage`
 # calls its neighbours in that file, and a lift of the function alone would
-# assemble a script that could not run it.
+# assemble a script that could not run it. lib/stage-boundary.sh goes ahead of
+# it, since the library it sources would not be found beside the assembled
+# script.
 stage_runner_lib() {
-  cat "$SCRIPT_DIR/lib/stage-run.sh"
+  cat "$SCRIPT_DIR/lib/stage-boundary.sh" "$SCRIPT_DIR/lib/stage-run.sh"
 }
 
 # assemble_and_signal NAME CAPTURE_DIR PRELUDE MAINLINE SIGNAL_BLOCK STAGE_FN
