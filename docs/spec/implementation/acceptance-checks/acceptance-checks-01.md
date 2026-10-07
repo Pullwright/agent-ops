@@ -759,7 +759,15 @@ oblige anyone to edit a test.
    ~200-entry counterpart on the short-opening rung; an allowance no
    amount of prose-shedding can meet drops entries highest-`Priority`-and-
    freshest first, counted in `issues_elided`, and tech-debt entries
-   freshest first, so the highest-numbered survive a cap; an allowance one entry cannot
+   freshest first, so the highest-numbered survive a cap; a backlog whose
+   entries past the first fixed cap that fits are disproportionately larger
+   than the ones ahead of it — the fixture pinning that the fixed cap alone
+   would leave over half the allowance unspent, rather than assuming it — is
+   refined towards the highest per-band-per-repo
+   cap in the gap below the next-loosest fixed cap that still fits that
+   allowance, leaving under half of it unspent and dropping far fewer
+   entries, while the cap chosen stays under
+   double the fixed cap it refines (agent-ops#2221); an allowance one entry cannot
    meet reports `fits: false` and still returns a usable array; `tech_debt` is
    trimmed on the same terms and `review_feedback`/`merge_conflicts` are not
    trimmed at all; and the rendered detail line names the allowance and spells
