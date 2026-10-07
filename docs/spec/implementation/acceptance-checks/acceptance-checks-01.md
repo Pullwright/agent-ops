@@ -761,10 +761,12 @@ oblige anyone to edit a test.
    freshest first, counted in `issues_elided`, and tech-debt entries
    freshest first, so the highest-numbered survive a cap; a backlog whose
    entries past the first fixed cap that fits are disproportionately larger
-   than the ones ahead of it is refined towards the highest per-band-per-repo
-   cap in the gap below the next-loosest fixed cap that still fits its
-   allowance — using over half of what the fixed cap alone would have left
-   unspent and dropping far fewer entries, while the cap chosen never exceeds
+   than the ones ahead of it — the fixture pinning that the fixed cap alone
+   would leave over half the allowance unspent, rather than assuming it — is
+   refined towards the highest per-band-per-repo
+   cap in the gap below the next-loosest fixed cap that still fits that
+   allowance, leaving under half of it unspent and dropping far fewer
+   entries, while the cap chosen stays under
    double the fixed cap it refines (agent-ops#2221); an allowance one entry cannot
    meet reports `fits: false` and still returns a usable array; `tech_debt` is
    trimmed on the same terms and `review_feedback`/`merge_conflicts` are not

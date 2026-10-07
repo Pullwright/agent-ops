@@ -207,11 +207,11 @@ assert_true "no entry-cap rung drops more than half of the previous rung's survi
 caps = [int(x) for x in "'"${COORDINATOR_INPUT_ENTRY_CAPS[*]}"'".split()]
 print("true" if all(caps[i + 1] >= caps[i] // 2 for i in range(len(caps) - 1)) else "false")
 ')"
-# 64 fits with 6 bytes of budget left over (the gap between 65 and 69 is
-# itself a no-op: a 70-entry band only has 70 entries, so any cap from 70
-# down to 65 renders identically to cap 64's own next-door neighbour, 69,
-# which the search below the fixed 64 (agent-ops#2221) duly finds and keeps —
-# one more entry than the old single-cap ladder did, for one fewer dropped.
+# 300, 200 and 128 are each a no-op on a 70-entry band, so each renders the
+# whole band — 10 bytes over — and the fixed sequence first fits at 64,
+# dropping 6. The search then walks the gap above it (65-127, agent-ops#2221):
+# every cap from 70 up is a no-op too and so still does not fit, leaving 69
+# the highest that does — one entry dropped in place of six.
 crowd="$(mk_repos 70 400 0 0)"
 r10="$(coordinator_apply_rung 0 0 0 <<<"$crowd" | coordinator_rendered_bytes)"
 out="$(fit "$(( r10 - 10 ))" <<<"$crowd")"
@@ -236,13 +236,18 @@ assert_true "…keeping materially more than the old single 64-entry cap" \
 #     the budget unused when the entries beyond the first 64 (by keep-order)
 #     are far larger than the first 64 — the fleet's own 2026-10-06 shape,
 #     where a 128-cap overshot the budget by far more than a uniform doubling
-#     would. 64 small entries (short title, one label) rank first; 76 large
+#     would. 64 small entries (short title, one label) rank first and 76 large
 #     ones (a 500-byte title, 20 labels — survivors of the identity-only trim,
-#     since only body/comments are shed there) rank after. A budget between
-#     64-small's size and 128's (64 small + 64 large) size leaves the fixed
-#     64 cap using under half the budget, and the search above it (which
-#     agent-ops#2191's bound still caps at under double, i.e. under 128) finds
-#     a cap that keeps far more than 64 while staying inside it. ---
+#     since only body/comments are shed there) rank after, which the fixture
+#     arranges through the one thing `keep_order_issues` ranks on once every
+#     entry shares a Priority band: the small entries carry the fresher
+#     `updated_at` (September against the large ones' August), so all 64 of
+#     them sort ahead of all 76. A budget above 64-small's own rendered size
+#     but under 128's (64 small + 64 large) leaves the fixed 64 cap spending
+#     barely a third of the allowance — #2221's own ~34% — and the search
+#     above it (which agent-ops#2191's bound still holds under double, i.e.
+#     under 128) finds a cap that keeps far more than 64 while staying inside
+#     it. ---
 skewed="$(python3 -c '
 import json
 def entry(i, big):
@@ -252,16 +257,24 @@ def entry(i, big):
             "priority": "Medium", "priority_set": True,
             "labels": (["L%d" % j for j in range(20)] if big else ["l"]),
             "author": "someone", "created_at": "2026-01-01T00:00:00Z",
-            "updated_at": "2026-09-%02dT00:00:00Z" % (28 - (i % 27)),
+            "updated_at": ("2026-09-%02dT00:00:00Z" % (28 - (i % 9))) if not big
+                          else ("2026-08-%02dT00:00:00Z" % (19 - (i % 19))),
             "body": "B", "comments": []}
 issues = [entry(i, False) for i in range(1, 65)] + [entry(i, True) for i in range(65, 141)]
 print(json.dumps([{"slug": "o/r", "sources": ["issues"], "issues": issues, "tech_debt": []}]))')"
-skewed_budget=122000
+skewed_budget=100000
+# The premise is pinned, not assumed: the fixed 64 cap really does leave over
+# half this allowance unspent, so the assertions below are about the search
+# recovering that headroom and not about a fixture that drifted out of the
+# shape #2221 reported.
+skewed_at_64="$(coordinator_apply_rung 0 0 0 64 <<<"$skewed" | coordinator_rendered_bytes)"
+assert_true "the fixed 64 cap alone would leave over half this allowance unspent" \
+  "$( (( skewed_budget - skewed_at_64 > skewed_budget / 2 )) && echo true || echo false )"
 out="$(fit "$skewed_budget" <<<"$skewed")"
-assert_true "a budget the fixed 64 cap would leave over half unused is not left that way" \
+assert_true "…and the search does not leave it that way" \
   "$(jq --argjson b "$skewed_budget" '(.fit.budget - .fit.bytes_after) < ($b / 2)' <<<"$out")"
-assert_true "…because the cap landed on is well past 64, and still under double it" \
-  "$(jq '.fit.entries_max > 64 and .fit.entries_max < 128' <<<"$out")"
+assert_true "…because the fixed cap that fit was still 64 (rung 14), refined well past it and under double it" \
+  "$(jq '.fit.rung == 14 and .fit.entries_max > 64 and .fit.entries_max < 128' <<<"$out")"
 assert_true "…so far fewer than the 76 entries the fixed 64 cap would have dropped are dropped" \
   "$(jq '.fit.entries_dropped < 76' <<<"$out")"
 assert_true "…and the result still fits inside its budget" \
