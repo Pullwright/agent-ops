@@ -84,9 +84,12 @@
    stopped by a fixed step that leaves most of the allowance unspent
    (agent-ops#2221). The search never looks outside the gap the fixed
    sequence already brackets, so its result is always below the cap that
-   did not fit — at most double the fixed cap that did, and less than double
-   for the three widest steps — which is the same never-more-than-halving
-   bound agent-ops#2191 established for the fixed sequence itself. Within
+   did not fit, and therefore always under double the fixed cap that did —
+   the halving steps put the cap that did not fit at exactly double, and the
+   three widest steps closer still — which is the same never-more-than-halving
+   bound agent-ops#2191 established for the fixed sequence itself. A cap whose
+   own render failed counts as one that did not fit, so an unmeasurable rung
+   narrows that bracket rather than widening the gap searched. Within
    whichever cap is finally chosen, entries are kept by the highest
    `Priority` band
    first and the freshest thread within a band for `issues`, and the freshest

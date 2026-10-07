@@ -331,7 +331,13 @@ coordinator_fit_bands() {  # <budget-bytes>  (repos JSON on stdin)
   local prev_emax="" lo hi mid mid_out mid_size
   for emax in "${COORDINATOR_INPUT_ENTRY_CAPS[@]}"; do
     rung=$(( rung + 1 ))
-    out="$(coordinator_apply_rung "$keep" "$cb" "$bb" "$emax" <<<"$repos" 2>/dev/null)" || continue
+    # A cap whose own jq failed is recorded as the bracket all the same: the
+    # search below reads `prev_emax` as "the tightest cap known not to fit",
+    # and a cap we could not measure must narrow that bracket rather than
+    # leave it at some looser cap, or the gap searched would widen past a
+    # rung and with it the never-more-than-double bound.
+    out="$(coordinator_apply_rung "$keep" "$cb" "$bb" "$emax" <<<"$repos" 2>/dev/null)" \
+      || { prev_emax="$emax"; continue; }
     size="$(coordinator_rendered_bytes <<<"$out")"
     if (( size <= budget )); then
       # This cap fits, but the fixed step down from the one before it
@@ -341,8 +347,9 @@ coordinator_fit_bands() {  # <budget-bytes>  (repos JSON on stdin)
       # 64 (agent-ops#2221). Binary-search the gap the fixed array already
       # brackets for the highest cap in it that still fits. The search never
       # looks outside that gap, so its result is always less than the cap
-      # that didn't fit — at most exactly double this cap for every step
-      # from 128 down, and less than double for the three widest steps —
+      # that didn't fit — one below double this cap for every step from 128
+      # down, where that cap sits at exactly double, and closer still for
+      # the three widest steps —
       # which is the same never-more-than-halving bound agent-ops#2191
       # established for the fixed array, preserved here without having to
       # reassert it.
