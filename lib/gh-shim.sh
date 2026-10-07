@@ -245,8 +245,13 @@
 #                                 node's ambient PAT here when the forge
 #                                 authoring App is configured. Read only when
 #                                 GH_TOKEN is empty and no App token could be
-#                                 minted.
-#   PW_GH_NOW_EPOCH               test seam only: the clock
+#                                 minted, and never inside a stage.
+#   PW_GH_TOKEN_BROKER            inside a stage only (set by
+#                                 deploy/docker/stage-exec.sh): the program
+#                                 that prints the token a stage authors with
+#                                 and its identity tag, in place of minting
+#                                 one here (requirement 45e).
+#   PW_GH_NOW_EPOCH              test seam only: the clock
 #                                 gh_shim_resolve_token mints against, in
 #                                 place of the real one, so a test can
 #                                 advance past a minted token's expiry
@@ -587,11 +592,30 @@ gh_shim_target_owner() {
 # one mint's, and no conditional read ever hit across a rotation
 # (agent-ops#1422). The installation is the thing whose view of GitHub, and
 # whose rate limit, the cache and budget file are actually keyed by.
+#
+# Inside a stage, none of that is reachable: the stage user cannot read the
+# App's key or the token cache, and holds no degrade token (requirement 45e).
+# There `PW_GH_TOKEN_BROKER` names the program that asks the Script's user
+# for a token (deploy/docker/forge-token-request.sh, set by
+# deploy/docker/stage-exec.sh), and its answer is the whole of the
+# resolution: a token and its identity tag, or no token at all. Nothing
+# falls back from it, because the only thing to fall back to is a credential
+# a stage must not hold.
 GH_SHIM_IDENTITY_TAG=""
 gh_shim_resolve_token() {
   GH_SHIM_IDENTITY_TAG=""
   [[ -z "${GH_TOKEN:-}" ]] || return 0
-  local now owner token installation_id
+  local now owner token installation_id brokered tag
+  if [[ -n "${PW_GH_TOKEN_BROKER:-}" ]]; then
+    owner="$(gh_shim_target_owner "$@")"
+    brokered="$("$PW_GH_TOKEN_BROKER" "$owner" 2>/dev/null)" || brokered=""
+    token="$(sed -n 1p <<<"$brokered")"
+    tag="$(sed -n 2p <<<"$brokered")"
+    [[ -n "$token" ]] || return 0
+    export GH_TOKEN="$token"
+    [[ "$tag" =~ ^app-[0-9]+-[0-9]+$ ]] && GH_SHIM_IDENTITY_TAG="$tag"
+    return 0
+  fi
   # The cheap, owner-less gate first, and deliberately: with no App
   # configured at all there is no installation to choose between, and
   # gh_shim_target_owner's own last rule forks `git` twice. A node that has

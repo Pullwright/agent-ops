@@ -955,6 +955,44 @@
     45a's canonical one, which the test lifts from this document at run
     time rather than restating.
 
+45e. **A stage runs as its own Unix user (requirement 45e).**
+    `test/stage-boundary.test.sh` passes. Anywhere, it proves that a
+    breadcrumb gives back only a github.com pull-request URL and never
+    through a link; that removal hands what it cannot finish to the stage
+    user; that sharing changes nothing without the `stage` group; and that
+    `deploy/docker/stage-exec.sh` strips every forge credential, App
+    identity and the notification secret, sets the token broker, the stage
+    git configuration and the node's identity, passes stdin and the exit
+    status through, removes its own scratch directory, stops its whole
+    process group on a TERM and when its parent is killed, exits 143 at once
+    when a stopped stage has gone, stops a process the stage detached when
+    the stage ends, and stops without running the command when its parent is
+    not the one it was started by; that a bounded read is capped and is not
+    held by a FIFO; and that no cycle puts a directory under `~/.claude` on
+    its `PATH`. In the node image
+    it also proves, across the two real users, that the stage user cannot
+    read a file only `agent` can, `agent`'s environment, or write `/app` or
+    an unshared directory of `agent`'s; that a forge credential `agent`
+    exports never reaches it; that it can run nothing as `agent` but the
+    token helper; that it can write a shared workspace, which `agent` then
+    removes even after the stage locked part of it, and a chain of locked
+    directories in one removal; that a TERM or a KILL to a stage's process
+    group leaves none of its processes running; that a stray left by a stage
+    that killed its own wrapper is killed by the next launch while a stage
+    running at the same time is not; that requirement 4k's vetting in a
+    workspace a stage has had never runs the stage's `core.fsmonitor` as
+    `agent`, refuses a FIFO without waiting on it, and refuses a link to a
+    file only `agent` can read without reading it; and that a cache file the
+    stage user planted leaves no temporary file behind, and neither
+    `/dev/shm` nor a directory the stage user made is used as the cache.
+    `test/forge-token-broker.test.sh` proves the helper mints only for the
+    authoring App, from the environ file it is given and not the caller's
+    environment, never gives the degrade token when a mint fails, refuses a
+    malformed owner, and accepts every owner the gh shim accepts;
+    `test/gh-shim-auth.test.sh` proves the shim
+    in a stage presents the broker's token and identity, asks for the
+    call's own owner, mints nothing and falls back to nothing.
+
 47. **The rework record matches `docs/FLOW-SCHEMA.md` and is emitted at
     every one of the nine classes' own detector sites (requirement 47).**
     `test/rework-record.test.sh` drives `lib/rework.sh`'s `rework_fields`

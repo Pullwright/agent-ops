@@ -83,7 +83,10 @@ You're in the same ephemeral clone the Implementer used, under
 `workspace_root/<cycle-id>/`, with the Implementer's branch checked out —
 not one of the user's own working copies under `~/Code`. You have full
 read/write access within this clone: edit files, run the toolchain, commit,
-push, use `git` and `gh` freely.
+push, use `git` and `gh` freely. Anything you need outside it — a second,
+disposable clone, a build or download — goes under `$TMPDIR`, which is yours
+alone and removed when you finish; nothing else on this machine is writable
+by you.
 
 **The only branch this system protects is `default_branch`.** Never commit
 or push to it. The PR's own branch (`branch` above — `agent/<item-ref>` for

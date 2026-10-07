@@ -20,6 +20,12 @@
 # first failed request; with no network the client's own back-off would
 # otherwise hold each run to the 60-second timeout.
 #
+# In the node image `claude` is the stage shim (deploy/docker/claude-shim.sh),
+# so the CLI runs as the stage user, as a stage's does. The scratch checkout is
+# therefore shared with that user (`stage_workspace_share`, requirement 45e),
+# as the Script shares the Implementer's clone, and removed with
+# `stage_workspace_remove`; outside the image both degrade to what they were.
+#
 # Usage: scripts/claude-policy-probe.sh [--expect blocked|ran]
 #   --expect blocked (the default): exit 0 iff none of the four ran and the
 #     skill loaded — the managed policy is in force.
@@ -39,8 +45,12 @@ case "${1:-}" in
   *) printf 'usage: %s [--expect blocked|ran]\n' "$0" >&2; exit 2 ;;
 esac
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=lib/stage-boundary.sh
+source "$SCRIPT_DIR/lib/stage-boundary.sh"
+
 probe="$(mktemp -d)"
-trap 'rm -rf "$probe"' EXIT
+trap 'stage_workspace_remove "$probe"' EXIT
 marks="$probe/marks"
 work="$probe/checkout"
 mkdir -p "$marks" "$work/.claude/skills/policy-probe" "$work/.claude/commands"
@@ -59,6 +69,9 @@ jq -n --arg m "$marks" \
   >"$work/.mcp.json"
 # shellcheck disable=SC2016  # the backticks are the command's own inline-shell syntax
 printf 'Policy probe.\n!`touch %s/inline-command`\n' "$marks" >"$work/.claude/commands/policyprobe.md"
+
+stage_workspace_share "$probe" \
+  || { printf 'claude-policy-probe: cannot share %s with the stage user\n' "$probe" >&2; exit 1; }
 
 # Invoked as a stage invokes it (requirement 4d), with the project command,
 # then the project skill, as the prompt, so that each one's inline shell is

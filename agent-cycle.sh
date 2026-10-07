@@ -16,13 +16,17 @@ ORIGINAL_ARGV=("$@")
 # fallbacks, or a subprocess of this script (the 2.1b usage-limit probe is the
 # one that actually does this) silently reaches a real `claude`/`gh` instead
 # of the stub standing in for them (TD-PPagop-26080701).
+# Nothing under `~/.claude` belongs here: in the node image the Claude
+# configuration is the stage user's to write (requirement 45e), so a directory
+# under it on this PATH would run whatever a stage left there as the Script.
+# The CLI resolves from /usr/local/bin, where the image puts its stage shim.
 nvm_bin=""
 if [[ -s "$HOME/.nvm/nvm.sh" ]]; then
   # shellcheck disable=SC1091
   . "$HOME/.nvm/nvm.sh" --no-use
   nvm_bin="$(nvm which current 2>/dev/null | xargs -r dirname 2>/dev/null || true)"
 fi
-path_dirs=(/usr/local/bin /usr/bin /bin "$HOME/.local/bin" "$HOME/.claude/local")
+path_dirs=(/usr/local/bin /usr/bin /bin "$HOME/.local/bin")
 [[ -n "$nvm_bin" ]] && path_dirs+=("$nvm_bin")
 PATH="$PATH:$(IFS=:; echo "${path_dirs[*]}")"
 export PATH
@@ -1391,8 +1395,10 @@ cleanup() {
   # and a release the network stalls must not cost the record.
   claim_release_timeout=8
   release_pr_claim
+  # Through lib/stage-boundary.sh: the stages that worked in the clone may
+  # have left what this user cannot remove on its own (requirement 45e).
   if [[ -n "$clone_dir" && -d "$clone_dir" ]]; then
-    rm -rf "$clone_dir"
+    stage_workspace_remove "$clone_dir"
   fi
   # The Enabler (requirement 35): here, and only here. This is the one place
   # every ending of a cycle passes through — nine of them exit 0 — so a single

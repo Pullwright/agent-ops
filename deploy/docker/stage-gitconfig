@@ -1,0 +1,14 @@
+# deploy/docker/stage-gitconfig — installed root-owned, by the Dockerfile, as
+# /etc/agent-ops/stage-gitconfig, and named by GIT_CONFIG_GLOBAL in every
+# stage's environment (deploy/docker/stage-exec.sh; requirement 45e).
+#
+# The credential helper is the gh shim, exactly as deploy/docker/entrypoint.sh
+# wires it for the Script; inside a stage the shim asks the Script's user for
+# a token rather than minting one. `safe.directory` lets the stage use a
+# workspace the Script's user created. Root-owned, so that no stage can leave
+# a different helper behind for the next one.
+[credential "https://github.com"]
+	helper = !gh auth git-credential
+	useHttpPath = true
+[safe]
+	directory = *

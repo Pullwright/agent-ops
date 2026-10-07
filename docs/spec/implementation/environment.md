@@ -21,6 +21,14 @@ a node updates by pulling a new image rather than by pulling a branch.
 - Base `ubuntu:24.04`, non-root user `agent` (uid/gid from the `PUID`/`PGID`
   build args, default 1000) with `HOME=/home/agent`, so `config.json`'s
   `~`-relative `state_dir` and `workspace_root` resolve under that home.
+  `/home/agent` is mode 0711. A second non-root user, `stage` (uid/gid from
+  `STAGE_UID`/`STAGE_GID`, default 1001, with its own home), is what every
+  model stage runs as, and `agent` is a member of its group; `sudo` and the
+  pieces requirement 45e describes (`/etc/sudoers.d/agent-ops`,
+  `/usr/local/libexec/agent-ops/`, `/etc/agent-ops/stage-gitconfig` and the
+  `/usr/local/bin/claude` shim) are installed root-owned, and the build
+  fails if `visudo -c` rejects the rules or the real CLI is not at
+  `/usr/bin/claude`.
 - Toolchain: `bash`, `git`, `jq`, `curl`, `python3`, `perl`, `coreutils`,
   `flock` and `rsync` (requirement 2.5); `openssl`, which RS256-signs the
   Approver App's JWT (requirement 14b) and is installed explicitly rather
@@ -51,7 +59,10 @@ a node updates by pulling a new image rather than by pulling a branch.
   plugin asks. It outranks the seeded `settings.json` below and anything an
   operator adds to the `claude-config` volume.
 - `deploy/docker/entrypoint.sh` runs as `agent` on every container start and is
-  idempotent: it seeds `$CLAUDE_CONFIG_DIR/settings.json` from
+  idempotent: it gives `$CLAUDE_CONFIG_DIR` to group `stage` (group-writable,
+  setgid directories; requirement 45e) where an older image created it as
+  `agent`'s alone, touching only `agent`'s own regular files and directories;
+  it seeds `$CLAUDE_CONFIG_DIR/settings.json` from
   `deploy/docker/claude-settings.json` **only when absent** (that directory is a
   persistent volume holding refreshing OAuth credentials, and the seed carries
   model/effort defaults only — no plugins and no local marketplaces); wires

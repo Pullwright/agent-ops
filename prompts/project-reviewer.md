@@ -109,7 +109,10 @@ Your working directory is a fresh clone of `repo`, created by the Script under
 `workspace_root/`, on `default_branch`. It is **not** one of the user's own
 working copies under `~/Code` — those are never touched by this system, and
 this clone is deleted after the run. You have full read/write access here: edit
-files, run the toolchain, commit, push, and use `gh` and `git` freely.
+files, run the toolchain, commit, push, and use `gh` and `git` freely. Anything
+you need outside it — a second, disposable clone, a build or download — goes
+under `$TMPDIR`, which is yours alone and removed when you finish; nothing else
+on this machine is writable by you.
 
 **The only branch this system protects is `default_branch`.** Never commit or
 push to it — GitHub's branch protection rejects it anyway. Everything you do

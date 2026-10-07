@@ -311,6 +311,17 @@ jobs:
             # requirement 2.0e: the gh transport shim must sit ahead of the
             # real binary on PATH, not merely exist somewhere on it.
             [[ "$(command -v gh)" == "/usr/local/bin/gh" ]] || { echo "gh: expected the transport shim at /usr/local/bin/gh to resolve first, got $(command -v gh)" >&2; exit 1; }
+            # requirement 45e: the claude shim must resolve first, so every
+            # claude runs as the stage user, and nothing that decides what
+            # either user may run as the other may be writable by agent.
+            [[ "$(command -v claude)" == "/usr/local/bin/claude" ]] || { echo "claude: expected the stage shim at /usr/local/bin/claude to resolve first, got $(command -v claude)" >&2; exit 1; }
+            for f in /usr/local/bin/claude /etc/sudoers.d/agent-ops /etc/agent-ops/stage-gitconfig \
+                     /usr/local/libexec/agent-ops /usr/local/libexec/agent-ops/stage-exec \
+                     /usr/local/libexec/agent-ops/forge-token /usr/local/libexec/agent-ops/forge-token-request; do
+              [[ "$(stat -c %U "$f")" == root ]] || { echo "$f is not owned by root" >&2; exit 1; }
+              [[ ! -w "$f" ]] || { echo "$f is writable by $(id -un)" >&2; exit 1; }
+            done
+            [[ "$(sudo -n -u stage /usr/local/libexec/agent-ops/stage-exec id -un)" == stage ]] || { echo "agent cannot start a process as the stage user" >&2; exit 1; }
             shellcheck --version | grep -qx "version: 0.10.0" || { echo "shellcheck: expected version 0.10.0" >&2; exit 1; }
           '
 
@@ -347,8 +358,9 @@ jobs:
 
       # Requirement 4k: a checkout cannot make a stage's `claude` run anything
       # at start-up. Run against the built image with no network, so no request
-      # leaves the runner, and as `agent`, who runs every stage and must not be
-      # able to rewrite the policy. The control run removes the policy first and
+      # leaves the runner, and as `agent`, who must not be able to rewrite the
+      # policy; the probe's `claude` runs as the stage user through the shim,
+      # as every stage's does. The control run removes the policy first and
       # must see all four planted commands run, or the check proves nothing.
       - name: Verify Claude Code runs nothing a checkout plants
         if: env.DOCS_ONLY != 'true'

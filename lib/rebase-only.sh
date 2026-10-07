@@ -68,3 +68,97 @@ rebase_only_push() {
   new_id="$(diff_patch_id "$git_dir" "$new_base" "$new_head")" || return 1
   [[ "$old_id" == "$new_id" ]]
 }
+
+# rebase_only_forge_capture SLUG BASE_NAME BRANCH
+# rebase_only_forge_check BASE_NAME BRANCH
+# `rebase_only_push` against what the forge holds, in a repository only the
+# Script has written, in two halves either side of the Implementer stage.
+# The capture fetches BRANCH's and BASE_NAME's heads from the forge, sets
+# `rebase_only_old_head` and `rebase_only_old_base` to them, and computes the
+# old diff's patch-id then and there (`rebase_only_old_id`), while both
+# commits are still branch tips the forge will serve. The check fetches the
+# two heads again, sets `rebase_only_new_head` and `rebase_only_new_base` for
+# the caller's log line, and is true (exit 0) when BRANCH's head has moved
+# and its diff against BASE_NAME's head has the captured patch-id. Nothing in
+# the check asks the forge for the old head, which a force-push has by then
+# made unreachable from every ref, and which a forge need not serve by its
+# id at all.
+#
+# Never computed in a stage's workspace. That clone is the Implementer's to
+# rewrite (requirement 45e): its `.git/config` names `origin` and can name
+# diff drivers, filters, an fsmonitor and hooks, so a comparison run there
+# would both answer whatever the stage arranged and run the stage's commands
+# as the Script. Here the heads are fetched by name from the forge's own URL,
+# commits only (`--filter=tree:0`: `merge-base` needs nothing else, and
+# `diff` fetches just the trees and blobs it compares), into a bare
+# repository made by the capture under the Script's own scratch directory
+# (`rebase_only_repo`), which the check reuses, so the second fetch brings
+# only what the push added, and then removes. The Script's own git
+# configuration — the credential helper through the gh shim — is the only
+# configuration in play.
+#
+# Fails closed like everything else in this file: a head that cannot be
+# fetched, a head that has not moved (no push, which is not a push that
+# changed nothing), a patch-id that cannot be computed, or a check with no
+# capture before it is never rebase-only.
+rebase_only_repo=""
+rebase_only_old_head=""; rebase_only_old_base=""; rebase_only_old_id=""
+rebase_only_new_head=""; rebase_only_new_base=""
+
+# _rebase_only_fetch_pair LABEL BASE_NAME BRANCH
+# Fetch BRANCH's and BASE_NAME's heads into `rebase_only_repo`, commits only,
+# as refs/rebase-only/LABEL-head and refs/rebase-only/LABEL-base.
+_rebase_only_fetch_pair() {
+  git -C "$rebase_only_repo" fetch --quiet --no-tags --filter=tree:0 origin \
+    "+refs/heads/$3:refs/rebase-only/$1-head" \
+    "+refs/heads/$2:refs/rebase-only/$1-base" >/dev/null 2>&1
+}
+
+# _rebase_only_ref LABEL-PART
+# The commit refs/rebase-only/LABEL-PART names in `rebase_only_repo`.
+_rebase_only_ref() {
+  git -C "$rebase_only_repo" rev-parse --verify --quiet "refs/rebase-only/$1" 2>/dev/null
+}
+
+# rebase_only_forge_release
+# Remove the capture's repository, if there is one.
+rebase_only_forge_release() {
+  [[ -z "$rebase_only_repo" ]] || rm -rf -- "$rebase_only_repo"
+  rebase_only_repo=""
+}
+
+rebase_only_forge_capture() {
+  local slug="$1" base_name="$2" branch="$3"
+  rebase_only_forge_release
+  rebase_only_old_head=""; rebase_only_old_base=""; rebase_only_old_id=""
+  [[ -n "$slug" && -n "$base_name" && -n "$branch" ]] || return 1
+  rebase_only_repo="$(mktemp -d "${TMPDIR:-/tmp}/rebase-only.XXXXXX")" || { rebase_only_repo=""; return 1; }
+  if git init --quiet --bare "$rebase_only_repo" >/dev/null 2>&1 \
+     && git -C "$rebase_only_repo" remote add origin "https://github.com/$slug.git" \
+     && _rebase_only_fetch_pair old "$base_name" "$branch" \
+     && rebase_only_old_head="$(_rebase_only_ref old-head)" \
+     && rebase_only_old_base="$(_rebase_only_ref old-base)" \
+     && rebase_only_old_id="$(diff_patch_id "$rebase_only_repo" "$rebase_only_old_base" "$rebase_only_old_head")"; then
+    return 0
+  fi
+  rebase_only_forge_release
+  rebase_only_old_head=""; rebase_only_old_base=""; rebase_only_old_id=""
+  return 1
+}
+
+rebase_only_forge_check() {
+  local base_name="$1" branch="$2" new_id result=1
+  rebase_only_new_head=""; rebase_only_new_base=""
+  if [[ -n "$rebase_only_repo" && -n "$rebase_only_old_head" && -n "$rebase_only_old_id" \
+        && -n "$base_name" && -n "$branch" ]] \
+     && _rebase_only_fetch_pair new "$base_name" "$branch" \
+     && rebase_only_new_head="$(_rebase_only_ref new-head)" \
+     && rebase_only_new_base="$(_rebase_only_ref new-base)" \
+     && [[ "$rebase_only_new_head" != "$rebase_only_old_head" ]] \
+     && new_id="$(diff_patch_id "$rebase_only_repo" "$rebase_only_new_base" "$rebase_only_new_head")" \
+     && [[ "$new_id" == "$rebase_only_old_id" ]]; then
+    result=0
+  fi
+  rebase_only_forge_release
+  return "$result"
+}

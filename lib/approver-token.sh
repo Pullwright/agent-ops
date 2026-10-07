@@ -79,7 +79,8 @@
 #
 # Environment overrides, for tests only: APPROVER_TOKEN_CURL, APPROVER_TOKEN_OPENSSL
 # (stub binaries) and APPROVER_TOKEN_CACHE_DIR (an alternative tmpfs — a
-# non-tmpfs directory is refused, so the override cannot re-introduce disk).
+# non-tmpfs directory is refused, so the override cannot re-introduce disk,
+# and so is one that is not private to this user).
 
 # shellcheck source=lib/github-app-token.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/github-app-token.sh"
@@ -220,7 +221,7 @@ approver_token_get() {
     "${PULLWRIGHT_APPROVER_APP_ID:-}" \
     "$installation_id" \
     "${PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH:-}" \
-    "${APPROVER_TOKEN_CACHE_DIR:-/dev/shm}" \
+    "${APPROVER_TOKEN_CACHE_DIR:-$(github_app_token_default_cache_dir)}" \
     "pullwright-approver-token" \
     "${APPROVER_TOKEN_CURL:-curl}" \
     "${APPROVER_TOKEN_OPENSSL:-openssl}" \
@@ -281,7 +282,7 @@ approver_token_installation_repositories() {
     "${PULLWRIGHT_APPROVER_APP_ID:-}" \
     "$installation_id" \
     "${PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH:-}" \
-    "${APPROVER_TOKEN_CACHE_DIR:-/dev/shm}" \
+    "${APPROVER_TOKEN_CACHE_DIR:-$(github_app_token_default_cache_dir)}" \
     "pullwright-approver-token" \
     "${APPROVER_TOKEN_CURL:-curl}" \
     "${APPROVER_TOKEN_OPENSSL:-openssl}" \

@@ -45,10 +45,11 @@
 # /proc/<pid>/cmdline for the length of the call. The one cache this file
 # keeps is best-effort and tmpfs-only, keyed by installation id so one
 # installation's token is never served for another's, mode 600, written
-# `mktemp`-then-rename so no reader sees a partial write, and read back only
-# when the file is this user's own — a cache directory's filesystem type is
-# checked before anything is written, so a disk-backed override disables
-# caching rather than putting a live token on disk.
+# `mktemp`-then-rename so no reader sees a partial write, kept in a directory
+# private to this user, and read back only when the file is this user's own —
+# a cache directory's filesystem type and ownership are checked before
+# anything is written, so a disk-backed or shared override disables caching
+# rather than putting a live token on disk or within another user's reach.
 #
 # Sourced, never executed: it sets no shell options, so a caller's own
 # `set -euo pipefail` or `set -uo pipefail` decides.
@@ -118,15 +119,42 @@ _github_app_token_to_epoch() {
   date -u -d "$iso" +%s 2>/dev/null
 }
 
+# github_app_token_default_cache_dir
+# The cache directory a caller uses when it is given none: a directory of
+# this user's own under /dev/shm. Not /dev/shm itself, which is mode 1777: a
+# file's name there is fixed and predictable, so another local user — in the
+# node image, the stage user every model stage runs as (requirement 45e),
+# which is told the identity tag the name is built from — could create it
+# first, and then this user could neither read it nor rename over it, and
+# every call would mint afresh and leave its temporary file behind.
+github_app_token_default_cache_dir() {
+  printf '/dev/shm/agent-ops-tokens.%s' "$(id -u)"
+}
+
+# _github_app_token_cache_dir_private CACHE_DIR
+# True when CACHE_DIR is a directory of this user's own that no one else can
+# write or enter — creating it, mode 700, when it does not exist. A directory
+# that is anything else (another user's, a link, group- or world-accessible)
+# is not used.
+_github_app_token_cache_dir_private() {
+  local dir="$1" mode
+  [[ -e "$dir" || -L "$dir" ]] || mkdir -m 700 "$dir" 2>/dev/null
+  [[ -d "$dir" && ! -L "$dir" && -O "$dir" ]] || return 1
+  mode="$(stat -c %a "$dir" 2>/dev/null)" || return 1
+  [[ "$mode" =~ ^[0-7]*[0-7]00$ ]]
+}
+
 # _github_app_token_cache_file CACHE_DIR CACHE_PREFIX INSTALLATION_ID
 # Print the tmpfs path this identity caches a minted token at, or nothing if
-# the cache directory does not exist or is not tmpfs-backed — caching is
+# the cache directory is not private to this user
+# (`_github_app_token_cache_dir_private`) or is not tmpfs-backed — caching is
 # best-effort, never a condition for success.
 #
 # The filename carries the installation id, so a token is only ever served to
 # the installation it was minted for. CACHE_PREFIX is what keeps two
-# identities sharing one cache directory (as every node here does — /dev/shm)
-# from ever colliding on the same filename.
+# identities sharing one cache directory (as every node here does —
+# `github_app_token_default_cache_dir`) from ever colliding on the same
+# filename.
 #
 # The filesystem-type check is what makes "never touches persistent storage"
 # enforced rather than assumed: a caller's own cache-dir override is an
@@ -136,7 +164,7 @@ _github_app_token_to_epoch() {
 # which is correct, just less efficient.
 _github_app_token_cache_file() {
   local cache_dir="$1" cache_prefix="$2" installation_id="$3"
-  [[ -d "$cache_dir" ]] || return 0
+  _github_app_token_cache_dir_private "$cache_dir" || return 0
   local fs_type
   fs_type="$(stat -f -c %T "$cache_dir" 2>/dev/null)" || return 0
   [[ "$fs_type" == "tmpfs" || "$fs_type" == "ramfs" ]] || return 0
@@ -149,15 +177,15 @@ _github_app_token_cache_file() {
 # otherwise — a missing, unreadable, malformed or near-expiry cache is simply
 # "mint a fresh one", never an error.
 #
-# The provenance check is not decoration. The default cache directory
-# `/dev/shm` is mode 1777, and a file's name in it is fixed and predictable,
-# so any local user can create it first — the sticky bit stops them replacing
-# *our* file, not claiming the name before we do. Without the check below we
-# would then read a token of their choosing and hand it to a caller as this
-# identity's credential. So: not a symlink, and owned by this user, or it is
-# not ours and we mint fresh instead. (The write path needs no equivalent —
-# it is `mktemp` plus a rename, which replaces a planted symlink rather than
-# following it, and cannot rename over a file it does not own.)
+# The provenance check is not decoration, though the cache directory is
+# private to this user (`_github_app_token_cache_dir_private`): it is what
+# stopped another local user who claimed a cache file's predictable name in a
+# shared directory such as /dev/shm from handing a caller a token of their
+# choosing as this identity's credential, and it stays as the second of the
+# two locks. So: not a symlink, and owned by this user, or it is not ours and
+# we mint fresh instead. (The write path needs no equivalent — it is `mktemp`
+# plus a rename, which replaces a planted symlink rather than following it;
+# when the rename fails, the temporary file is removed.)
 _github_app_token_cache_read() {
   local cache_file="$1" now="$2" buffer="$3"
   [[ -n "$cache_file" && -r "$cache_file" ]] || return 1
@@ -188,7 +216,7 @@ _github_app_token_cache_write() {
     return 0
   fi
   chmod 600 "$tmp" 2>/dev/null
-  mv -f "$tmp" "$cache_file" 2>/dev/null
+  mv -f "$tmp" "$cache_file" 2>/dev/null || rm -f "$tmp"
   return 0
 }
 

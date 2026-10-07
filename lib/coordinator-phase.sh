@@ -750,7 +750,10 @@ ensure_labels_for "$repo_slug" target
 # The Reviewer-stage-start check below (requirement 31e) needs to know what
 # this pull request's diff looked like *before* the Implementer stage moves
 # it, so it is captured here, ahead of that stage, while `$selected_branch`
-# still names the pre-push head. A `merge-conflicts` item carrying
+# still names the pre-push head: both heads are fetched from the forge into a
+# repository of the Script's own, and the pre-push diff's patch-id is
+# computed now, while the forge still serves that head as a branch tip
+# (`rebase_only_forge_capture`). A `merge-conflicts` item carrying
 # `takeover: true` names Dependabot's own pull request, not one of ours —
 # ordinary fresh work (requirement 3s) the Implementer's own procedure
 # excludes from this treatment, so it is excluded here too. Best-effort: an
@@ -762,8 +765,9 @@ premerge_rebase_only_capture() {
   [[ "$(jq -r '.takeover // false' <<<"$work_order_json")" != "true" ]] || return 0
   premerge_base_name="$(jq -r '.base // empty' <<<"$work_order_json")"
   [[ -n "$premerge_base_name" ]] || return 0
-  premerge_old_head="$(git -C "$clone_dir" ls-remote origin "refs/heads/$selected_branch" 2>/dev/null | awk '{print $1; exit}')"
-  premerge_old_base="$(git -C "$clone_dir" ls-remote origin "refs/heads/$premerge_base_name" 2>/dev/null | awk '{print $1; exit}')"
+  rebase_only_forge_capture "$selected_repo" "$premerge_base_name" "$selected_branch" || return 0
+  premerge_old_head="$rebase_only_old_head"
+  premerge_old_base="$rebase_only_old_base"
 }
 premerge_rebase_only_capture
 
@@ -826,6 +830,16 @@ $cycle_id
 $node_name
 "
 impl_out="$cycle_dir/implementer.out"
+
+# Requirement 45e: the Implementer, and the Reviewer and Approver after it in
+# this same clone, run as the stage user, which can write the clone only once
+# it is shared. From here on the clone is the stages': the Script runs no git
+# in it and reads from it only what it validates.
+if ! stage_workspace_share "$clone_dir"; then
+  log_event "attempt-failed" "$(jq -nc '{stage: "workspace", detail: "the workspace could not be shared with the stage user (requirement 45e)"}')"
+  release_claim no-pr
+  exit 0
+fi
 
 stage_budget_apply implementer "$selected_repo" "$impl_model" "{}" "$selected_item"
 if run_claude_stage implementer "$(( stage_backstop_min * 60 ))" "$impl_model" "$implementer_prompt" "$impl_out" "$clone_dir" "$(( stage_inactivity_min * 60 ))"; then
@@ -1136,24 +1150,19 @@ fi
 # merge-state read above it: an unreadable comparison just runs the stage as
 # normal, never guessed at as rebase-only.
 #
-# Both heads are read from `origin`, not from the clone's own working tree:
+# Both heads are read from the forge, not from the clone's own working tree:
 # the question this answers is "did the *push* change the diff", and
 # `git -C "$clone_dir" rev-parse HEAD` would instead answer "did the
 # Implementer's working tree change it" — true even of an Implementer that
 # reported `complete` having pushed nothing at all. An unmoved head is
 # caught explicitly for the same reason: no push happened, which is not the
 # same thing as a push that changed no content, and must take the full path.
-rebase_only_new_head=""; rebase_only_new_base=""
+# And none of it runs in `$clone_dir`, which by now is the Implementer's
+# (requirement 45e): `rebase_only_forge_check` reads the forge's own URL and
+# compares in a repository only the Script has written.
 rebase_only_advisory_check() {
   [[ -n "$premerge_old_head" && -n "$premerge_old_base" && -n "$impl_pr_url" ]] || return 1
-  rebase_only_new_head="$(git -C "$clone_dir" ls-remote origin "refs/heads/$selected_branch" 2>/dev/null | awk '{print $1; exit}')"
-  rebase_only_new_base="$(git -C "$clone_dir" ls-remote origin "refs/heads/$premerge_base_name" 2>/dev/null | awk '{print $1; exit}')"
-  [[ -n "$rebase_only_new_head" && -n "$rebase_only_new_base" ]] || return 1
-  [[ "$rebase_only_new_head" != "$premerge_old_head" ]] || return 1
-  git -C "$clone_dir" fetch --quiet origin "$premerge_old_head" "$premerge_old_base" \
-    "$rebase_only_new_head" "$rebase_only_new_base" >/dev/null 2>&1 || true
-  rebase_only_push "$clone_dir" "$premerge_old_base" "$premerge_old_head" \
-    "$rebase_only_new_base" "$rebase_only_new_head"
+  rebase_only_forge_check "$premerge_base_name" "$selected_branch"
 }
 rebase_only="false"
 rebase_only_advisory_check && rebase_only="true"

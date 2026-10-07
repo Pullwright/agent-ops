@@ -45,6 +45,11 @@
 # move as a five-hour Implementer works inside. Reading it alone would reap
 # the workspace of a running cycle.
 
+# Removal goes through lib/stage-boundary.sh's `stage_workspace_remove`, which
+# can also remove what a stage left that this user cannot (requirement 45e).
+# shellcheck source=lib/stage-boundary.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/stage-boundary.sh"
+
 # The floor, in seconds. Overridable for tests, which cannot wait a day.
 WORKSPACE_REAP_FLOOR_SEC="${WORKSPACE_REAP_FLOOR_SEC:-86400}"
 
@@ -104,7 +109,7 @@ workspace_reap() {
     # name is one path segment from `find -printf %f`, never a path, and the
     # root is confirmed non-empty here rather than trusted.
     [[ -n "$root" && -n "$name" && "$name" != "." && "$name" != ".." ]] || continue
-    rm -rf -- "${root:?}/${name:?}" 2>/dev/null || continue
+    stage_workspace_remove "${root:?}/${name:?}"
     [[ -e "$root/$name" ]] && continue
     printf '%s\t%s\n' "$bytes" "$name"
   done < <(workspace_orphans "$root" "$window" "$now")

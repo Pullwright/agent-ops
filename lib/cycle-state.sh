@@ -59,13 +59,17 @@
 # (lib/handoff.sh), which asks GitHub about the branch the *Script* pushed and
 # so needs nothing from the stage that failed.
 #
+# The file is the stage's, written in a workspace the stage can rewrite at
+# will (requirement 45e), so it is read through `stage_breadcrumb_pr_url`:
+# never through a link, and nothing but a pull-request URL comes back.
+#
 # Always succeeds. The callers are `[[ -z "$url" ]] && url="$(read_pr_url_breadcrumb …)"`,
 # whose status is this function's, so returning non-zero here aborts the whole
 # cycle under `set -e` — before the failure it was about to report is logged.
+# shellcheck source=lib/stage-boundary.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/stage-boundary.sh"
 read_pr_url_breadcrumb() {
-  local f="$1/.git/agent-ops-pr-url"
-  [[ -f "$f" ]] || return 0
-  head -n1 "$f" | tr -d '[:space:]'
+  stage_breadcrumb_pr_url "$1/.git/agent-ops-pr-url"
 }
 
 # item_event_fields STAGE DETAIL REPO ITEM [EXTRA_JSON]

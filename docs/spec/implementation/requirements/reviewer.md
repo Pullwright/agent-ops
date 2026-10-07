@@ -543,10 +543,20 @@
     against the base's current tip, and reports whether the two diffs are
     `git patch-id --stable`-identical — never authored dates, which a
     conflict-resolution commit moves just like any other. Both heads are
-    read from `origin` with `git ls-remote`, symmetrically: the question is
+    fetched by name from the forge, from the repository's own
+    `https://github.com/<slug>.git`, symmetrically: the question is
     whether the *push* changed the diff, and the clone's own working tree
     would instead answer whether the Implementer's edits did — true even of
-    an Implementer that reported `complete` having pushed nothing. A head
+    an Implementer that reported `complete` having pushed nothing. Both
+    comparisons run in a bare repository the Script makes for them, never in
+    the Implementer's clone, which by then is the stage's (requirement 45e):
+    before the Implementer stage, `rebase_only_forge_capture` fetches the
+    pre-push pair into it, commits only (`--filter=tree:0`), and computes the
+    pre-push patch-id there and then, while the forge still serves that head
+    as a branch tip; at the Reviewer's start, `rebase_only_forge_check`
+    fetches the post-push pair into the same repository, compares, and
+    removes it. Nothing asks the forge for the pre-push head after the
+    Implementer's force-push has made it unreachable. A head
     that did not move at all is therefore not a rebase-only push but no push,
     and takes the full path. Advisory exactly like requirement 31d's own
     read: an unreadable ref at either point (the fetch of the pre-push SHAs

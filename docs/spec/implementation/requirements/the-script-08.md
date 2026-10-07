@@ -373,7 +373,13 @@
      because it sets what the stage may do: `deny` takes a tool away from the
      stage, and `disableBypassPermissionsMode` silently drops the run out of
      bypass mode. A file holding any other key, or one that is not a JSON
-     object `jq` can read, means the stage is not launched. It returns 1,
+     object `jq` can read, means the stage is not launched. Each file is read
+     as the stage user reads it, within ten seconds and up to 1 MiB, since the
+     directory is often a workspace an earlier stage has had (requirement
+     45e); one that cannot be read so — a FIFO, a link to a file only `agent`
+     can read, one too large — is refused in the same way, and the
+     comparison with the commit described below runs as the stage user too.
+     It returns 1,
      leaves `<stage>.out` and its stream empty, and leaves `stage_kill_reason`
      empty, since the stage was neither capped nor re-run. It writes to
      `<stage>.out.stderr` the file, what is wrong with it, and whether the

@@ -543,7 +543,10 @@
     alive — and falls back to `PW_GH_DEGRADE_TOKEN` (component 14h owns the
     name) when no App is configured or a mint attempt fails, leaving
     `GH_TOKEN` empty when neither is available (the pre-existing "nothing
-    configured" case). This is the seam's *first* front door; the second is
+    configured" case). Inside a stage (requirement 45e), where
+    `PW_GH_TOKEN_BROKER` is set, none of that runs: the broker's answer — a
+    token and its identity tag, or nothing — is the whole resolution, and
+    nothing falls back from it. This is the seam's *first* front door; the second is
     the same shim reached through `git`'s own credential helper
     (`!gh auth git-credential`, `deploy/docker/entrypoint.sh`, component 7)
     — an unqualified `gh` there resolves through `PATH` to this file exactly

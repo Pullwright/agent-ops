@@ -523,8 +523,9 @@
    true` and whose own `base` resolves to a real ref, and leaves both empty
    for a takeover, for any other source, or for an unresolvable base; the
    stage-start advisory block, given a stubbed `rebase_only_push` reporting
-   the pre-push and post-push diffs identical, reports `rebase_only` true and
-   reads both heads from `origin` rather than the clone's own `HEAD`; the
+   the pre-push and post-push diffs identical, reports `rebase_only` true,
+   reads both heads from the forge rather than the clone's own `HEAD`, and
+   runs no `git` in the clone at all; the
    same block reports false — without calling `rebase_only_push` at all —
    when the post-push head equals the pre-push one, since no push happened;
    the same block, with `rebase_only_push` reporting the diffs different,
