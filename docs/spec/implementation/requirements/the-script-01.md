@@ -289,10 +289,12 @@
     `coordinator_model`, `refiner_model`, `enabler_model`,
     `implementer_model_default`, `implementer_model_trivial` or
     `reviewer_model_default` is unranked, and separately again —
-    `config_cross_provider_floor_pairs`, named below — when a floor pair is
-    ranked on both sides but the two sides name different providers, so
-    neither case is ever silently invisible to the checks that use this
-    table.
+    `config_cross_provider_floor_pairs`, named below — whenever a floor
+    pair's two sides name different providers, whatever either side's rank,
+    so neither case is ever silently invisible to the checks that use this
+    table (a cross-provider pair with an unranked side draws both warnings,
+    which is the honest reading: each names a reason the floor cannot be
+    verified, and removing either one would not restore the comparison).
 
     Two authors can write a work order's `context`/`acceptance` directly
     rather than relay text a human, the Script, or a gatherer already wrote:
