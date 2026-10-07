@@ -929,15 +929,23 @@ fi
 # can see at a glance what each configured provider resolves to without
 # reading `providers_load`'s own defaulting logic. Sorted by name: bash's own
 # associative-array key order is unspecified, and this report should read
-# the same from one run to the next.
+# the same from one run to the next. Each line's own verdict mirrors the
+# fault `config_provider_errors` above would report for that entry — an
+# uninstalled substrate, or `claude-code` named by a provider it is not
+# reserved to (D29, issue #2198) — rather than reading `ok` directly beneath
+# the `fail` that just refused the same pairing. `config_provider_errors` is
+# the authority either way: it is what both cycle scripts refuse on, and this
+# loop reports rather than decides.
 while IFS= read -r provider_name; do
   [[ -n "$provider_name" ]] || continue
   provider_substrate="${PROVIDER_SUBSTRATE[$provider_name]}"
   provider_credential_env="${PROVIDER_CREDENTIAL_ENV[$provider_name]:-}"
-  if provider_substrate_installed "$provider_substrate"; then
-    ok "$provider_name → substrate $provider_substrate, credential $provider_credential_env"
-  else
+  if ! provider_substrate_installed "$provider_substrate"; then
     fail "$provider_name → substrate $provider_substrate, which this image has no adapter for"
+  elif [[ "$provider_substrate" == "claude-code" && "$provider_name" != "anthropic" ]]; then
+    fail "$provider_name → substrate claude-code, which is reserved for anthropic"
+  else
+    ok "$provider_name → substrate $provider_substrate, credential $provider_credential_env"
   fi
 done < <(printf '%s\n' "${!PROVIDER_SUBSTRATE[@]}" | sort)
 

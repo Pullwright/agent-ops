@@ -1361,6 +1361,12 @@ assert_doctor "doctor passes an explicit anthropic entry naming substrate claude
 assert_doctor "doctor fails a provider other than anthropic configured with substrate claude-code" \
   '.providers = {"xai": {"substrate": "claude-code"}}' 1 \
   'providers.xai: substrate "claude-code" is reserved for anthropic'
+# …and the per-provider listing below the guard carries the same verdict, so
+# the section never reads `ok` for the very pairing the line above refused —
+# the same treatment it already gives an uninstalled substrate.
+assert_doctor "doctor's provider listing fails the reserved pairing rather than reporting it ok" \
+  '.providers = {"xai": {"substrate": "claude-code"}}' 1 \
+  'xai → substrate claude-code, which is reserved for anthropic'
 
 # --- doctor.sh's cross-key rules: what the schema cannot say. ---
 assert_doctor "doctor fails an enabled Enabler with no assignee, as agent-cycle.sh would" \
