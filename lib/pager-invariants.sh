@@ -1064,6 +1064,15 @@ pager_eval_blocked_label_orphaned() {
 # label is gone); only a removal that keeps failing stays filed, which is
 # what "the invariant files only if the removal fails" means in a framework
 # that always records a pipeline-act attempt (lib/pager.sh's own header).
+#
+# A failure logs `label-remove-failed` (via `label_remove_failure_fields`)
+# carrying `gh`'s own exit code and stderr text for that removal, captured
+# through `refinement_label_remove`'s optional `STDERR_VAR` (agent-ops#2232)
+# — confirmed empirically against a real issue, "already absent from the
+# issue" already exits 0 there (an ordinary idempotent retry, counted as
+# `removed`, never `failed`), so a logged failure here already means the
+# label is missing from the repository itself, or some other `gh` error, not
+# the stale/racing-read confusion that originally filed this item.
 pager_remedy_blocked_label_orphaned() {
   local _key="$1" _evidence="$2"
   local union_log_file="${PAGER_REMEDY_UNION_LOG_FILE:-}" log_file="${PAGER_REMEDY_LOG_FILE:-}" \
@@ -1074,14 +1083,20 @@ pager_remedy_blocked_label_orphaned() {
   hits="$(_pager_blocked_label_candidates "$union_log_file")"
   while IFS=$'\t' read -r repo item label; do
     [[ -n "$repo" && -n "$item" && -n "$label" ]] || continue
-    if refinement_label_remove "$repo" "$item" "$label"; then
+    local remove_stderr="" remove_rc
+    if refinement_label_remove "$repo" "$item" "$label" remove_stderr; then
       removed=$(( removed + 1 ))
       if declare -F label_own_action_fields >/dev/null 2>&1 && [[ -n "$log_file" ]]; then
         pager_log_event "$log_file" "$node" "$cycle" "own-label-action" \
           "$(label_own_action_fields "$repo" "$item" "$label" "remove")"
       fi
     else
+      remove_rc=$?
       failed=$(( failed + 1 ))
+      if declare -F label_remove_failure_fields >/dev/null 2>&1 && [[ -n "$log_file" ]]; then
+        pager_log_event "$log_file" "$node" "$cycle" "label-remove-failed" \
+          "$(label_remove_failure_fields "$repo" "$item" "$label" "$remove_rc" "$remove_stderr")"
+      fi
     fi
   done <<<"$hits"
   printf 'removed %d orphaned label(s); %d removal(s) failed' "$removed" "$failed"
