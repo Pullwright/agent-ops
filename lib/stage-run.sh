@@ -26,8 +26,13 @@
 
 # PROVIDER_SUBSTRATE/MODEL_PROVIDER are lib/model-id.sh's: the provider each
 # model resolves to (requirement 1a), and — populated as a side effect of
-# every `resolve_model_id` call — the provider each bare model id last
-# resolved from. Declared defensively here, rather than assumed, because
+# every `resolve_model_id_into` call, and only of the assigning form, since a
+# command substitution discards the recording with its subshell — the
+# provider each bare model id last resolved from. A new call site whose
+# resolved model reaches the launcher below therefore has to use
+# `resolve_model_id_into`; the printing `resolve_model_id` leaves this map
+# empty and the lookup silently falls back. Declared defensively here, rather
+# than assumed, because
 # several of this file's own tests source this file alone, never
 # lib/model-id.sh: a bare reference to an undeclared associative array is a
 # hard "unbound variable" under the `set -u` those tests (and every caller)

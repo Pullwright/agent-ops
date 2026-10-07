@@ -36,8 +36,11 @@ substrate_claude_code_binary() {
 }
 
 # substrate_claude_code_version
-# This substrate's own reported version, for scripts/doctor.sh's PATH check.
-# Prints nothing and returns 1 when the binary itself is not on PATH.
+# This substrate's own reported version. Prints nothing and returns 1 when the
+# binary itself is not on PATH. This operation and `_binary` above are the two
+# the adapter contract declares but nothing calls yet: scripts/doctor.sh and
+# lib/node-health.sh still read `claude` directly, and routing them through
+# here is #2200.
 substrate_claude_code_version() {
   command -v claude >/dev/null 2>&1 || return 1
   claude --version 2>/dev/null | head -1

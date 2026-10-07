@@ -49,7 +49,8 @@ declare -gA PROVIDER_SUBSTRATE=()
 # thing about resolution that a *subshell* cannot deliver, so the form a
 # caller picks decides whether the recording survives at all. See
 # `resolve_model_id_into`'s own header for why, and
-# `docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 1a for the rule.
+# `docs/spec/implementation/requirements/the-script-01.md` requirement 1a for
+# the rule.
 #
 # Last-write-wins on a bare id two different keys both resolve to: today that
 # never happens (`anthropic` is the only provider that exists), and is a

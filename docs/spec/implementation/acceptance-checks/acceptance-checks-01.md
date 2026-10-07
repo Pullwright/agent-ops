@@ -808,6 +808,19 @@ oblige anyone to edit a test.
    and a stage that ran and then failed, a clean result, an empty transcript
    and an unparseable one are none of them called a refusal.
 
+1k. **A stage prompt reaches `claude` on stdin, at a size argv could not
+   carry (requirement 4c).** `test/stage-prompt-delivery.test.sh` passes: for
+   `run_model_stage` as sourced from `lib/stage-run.sh` — the one copy both
+   pipelines call, which the file asserts by finding the function in neither
+   cycle script — a 200000-byte prompt, comfortably past `MAX_ARG_STRLEN`,
+   exits 0, arrives on the stub's stdin whole, appears
+   nowhere in its argv, and leaves the JSON envelope in `out_file` where the
+   caller's parser looks for it; an ordinary short prompt is delivered byte
+   for byte. The oversize prompt is sized to the kernel's constant rather
+   than to the prompt of the day, so the check keeps its meaning if a prompt
+   is ever trimmed; the file first confirms the cap exists on the kernel it
+   is running on, and says so and skips rather than passing vacuously if it
+   does not.
 1k0. **The stage launcher is provider-neutral, the Claude adapter behind it
    changed nothing, and a second adapter is one file away — reached the way a
    cycle script reaches it (requirement 4d).**
@@ -834,19 +847,6 @@ oblige anyone to edit a test.
    1a's reason for preferring the assigning form is a silent fallback rather
    than an error — a seam tested from a hand-populated `MODEL_PROVIDER` alone
    would pass over the step that chooses the adapter.
-1k. **A stage prompt reaches `claude` on stdin, at a size argv could not
-   carry (requirement 4c).** `test/stage-prompt-delivery.test.sh` passes: for
-   `run_model_stage` as sourced from `lib/stage-run.sh` — the one copy both
-   pipelines call, which the file asserts by finding the function in neither
-   cycle script — a 200000-byte prompt, comfortably past `MAX_ARG_STRLEN`,
-   exits 0, arrives on the stub's stdin whole, appears
-   nowhere in its argv, and leaves the JSON envelope in `out_file` where the
-   caller's parser looks for it; an ordinary short prompt is delivered byte
-   for byte. The oversize prompt is sized to the kernel's constant rather
-   than to the prompt of the day, so the check keeps its meaning if a prompt
-   is ever trimmed; the file first confirms the cap exists on the kernel it
-   is running on, and says so and skips rather than passing vacuously if it
-   does not.
 1k1. **A stage streams as it runs, and leaves the envelope its readers
    expect (requirement 4d).** `test/stage-stream.test.sh` passes, against a
    `claude` stub that emits stream-json a line at a time with a pause

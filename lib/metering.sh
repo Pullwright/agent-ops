@@ -25,10 +25,13 @@ declare -p MODEL_PROVIDER >/dev/null 2>&1 || declare -gA MODEL_PROVIDER=()
 # substrate — rather than taken as a parameter, so every existing caller's
 # `metering_fields "$model" "$out_file" "$gaps"` keeps working unchanged: the
 # provider for MODEL was already recorded the moment that model string was
-# resolved via `resolve_model_id`. Falls back to `anthropic` exactly as
-# `run_model_stage`'s own lookup does, for a MODEL the map holds nothing for
-# (every test that never called `providers_load`/`resolve_model_id` first,
-# and every model this image has ever run before this issue).
+# resolved via `resolve_model_id_into` — the assigning form, and only that
+# one, since the printing `resolve_model_id` runs in a command substitution
+# whose subshell takes the recording with it. Falls back to `anthropic`
+# exactly as `run_model_stage`'s own lookup does, for a MODEL the map holds
+# nothing for (every test that never called
+# `providers_load`/`resolve_model_id_into` first, and every model this image
+# has ever run before this issue).
 #
 # GAPS_JSON is the one field that does not come from the envelope, because it
 # cannot: it is what the Script observed of the run's own event stream while

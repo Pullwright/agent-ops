@@ -877,7 +877,9 @@ R5. **Per non-skipped repo** (processed **sequentially**, so a failure of one
 R6. **Usage-limit detection.** After every `claude` invocation, run the shared
    detector (`lib/limit-detect.sh`). On a match, write a `limit-hit` event to
    the *shared* `log.jsonl` with the requirement-10 shape (`resume_at`,
-   `class`, `reset_known`) and stop launching further repositories this run.
+   `class`, `reset_known`, and requirement 2.1's `provider` naming the
+   provider the stage that hit the limit was running on) and stop launching
+   further repositories this run.
    This is a single-line, atomic `O_APPEND` write; it is safe even if the
    implementation pipeline (holding its own lock) appends concurrently, and it
    is the one signal both pipelines and the dashboard key their stand-down off.
