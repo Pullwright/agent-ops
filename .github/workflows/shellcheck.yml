@@ -1,8 +1,8 @@
 name: Shell lint
 
 # CI backstop for the clean-shellcheck requirement the specs already state
-# (DASHBOARD-SPEC's "Verifying a change", and the pipeline spec's acceptance
-# check 1g). Nothing ran it, so it drifted: four findings accumulated in
+# (docs/spec/dashboard/verifying-a-change.md's "Verifying a change", and the pipeline spec's acceptance
+# check 1g, docs/spec/implementation/acceptance-checks/acceptance-checks-01.md). Nothing ran it, so it drifted: four findings accumulated in
 # scripts/publish-dashboard.sh and went unnoticed until #104. build-image.yml
 # runs the test suite, and a test suite does not read the scripts it does not
 # call.

@@ -71,7 +71,7 @@
 #                          a run, not an event, because `review-end` is
 #                          written on every run whatever happened (see the
 #                          function's own header). The fleet-vantage reader
-#                          of the same fact `docs/REVIEW-PIPELINE-SPEC.md`
+#                          of the same fact `docs/spec/review.md`
 #                          R19 publishes per node as `review_stage_health`
 #                          (agent-ops#996): R19 states the verdict, this
 #                          files a page on it.
@@ -728,7 +728,7 @@ pager_eval_updater_stuck() {
 # lib/stage-health.sh's own un-schema-backed `THRESHOLD` default for the
 # identical reason that file states: this class has not yet seen a real
 # incident to tune the number against. The fleet-vantage reader of the same
-# fact `docs/REVIEW-PIPELINE-SPEC.md` R19's own `project-reviewer` verdict
+# fact `docs/spec/review.md` R19's own `project-reviewer` verdict
 # (agent-ops#996) carries in the heartbeat: R19 computes and publishes a
 # node's verdict for a human or the dashboard to look at, this invariant
 # reduces the fleet's own replicated `review-log.jsonl` union and *files a

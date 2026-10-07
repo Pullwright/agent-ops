@@ -33,7 +33,7 @@ A [merge autonomy](#merge-autonomy) level at which the Approver App gives a
 pull request an independent second review and posts a real `APPROVE` or
 `REQUEST_CHANGES`, but a human still merges every pull request.
 
-Authoritative: docs/IMPLEMENTATION-PIPELINE-SPEC.md § "The Landing Gate".
+Authoritative: docs/spec/implementation/landing-gate.md § "The Landing Gate".
 
 <a id="agent-merges-all"></a>
 ### `agent-merges-all`
@@ -44,7 +44,7 @@ except that a hit on a [protected path](#protected-path) — refused outright
 one level down — is instead deferred to the Critical Approver tier and the
 [cool-off](#cool-off) wait.
 
-Authoritative: docs/IMPLEMENTATION-PIPELINE-SPEC.md § "The Landing Gate".
+Authoritative: docs/spec/implementation/landing-gate.md § "The Landing Gate".
 
 <a id="agent-merges-routine"></a>
 ### `agent-merges-routine`
@@ -53,7 +53,7 @@ A [merge autonomy](#merge-autonomy) level at which the Script's own arming
 step lands an eligible pull request itself, once the Approver has given an
 explicit, non-adjudicating `APPROVE` and every landing gate re-reads clear.
 
-Authoritative: docs/IMPLEMENTATION-PIPELINE-SPEC.md § "The Landing Gate".
+Authoritative: docs/spec/implementation/landing-gate.md § "The Landing Gate".
 
 <a id="approver"></a>
 ### Approver
@@ -65,7 +65,7 @@ The Script turns that verdict into a real GitHub review posted under a
 non-author GitHub App identity ("Pullwright Approver"), never under this
 system's own authoring account.
 
-Authoritative: docs/IMPLEMENTATION-PIPELINE-SPEC.md § "Actors", item 5a.
+Authoritative: docs/spec/implementation/README.md § "Actors", item 5a.
 
 <a id="back-pressure"></a>
 ### Back-pressure
@@ -75,7 +75,7 @@ silting up: when the count of open draft pull requests, `CHANGES_REQUESTED`
 pull requests, and live [claims](#claim) across configured repositories
 reaches `max_open_agent_prs`, a cycle stands down rather than adding more.
 
-Authoritative: docs/IMPLEMENTATION-PIPELINE-SPEC.md, requirement 2 (step 2).
+Authoritative: docs/spec/implementation/requirements, requirement 2 (step 2).
 
 <a id="band"></a>
 ### Band
@@ -86,7 +86,7 @@ spent at gathering time (`issues:urgent`, `issues:high`, and so on) and
 collapses to the plain [source](#source) `issues` by the time an item
 becomes a [work order](#work-order).
 
-Authoritative: config.schema.json `sourceToken`; docs/IMPLEMENTATION-PIPELINE-SPEC.md
+Authoritative: config.schema.json `sourceToken`; docs/spec/implementation/requirements
 requirement 39g.
 
 <a id="blocked"></a>
@@ -108,7 +108,7 @@ has fully ended, it may launch another cycle immediately rather than
 waiting for the next cron firing, as long as sources remain and the
 lineage is under `max_chained_cycles`.
 
-Authoritative: docs/IMPLEMENTATION-PIPELINE-SPEC.md, requirement 39 (§ "The
+Authoritative: docs/spec/implementation/requirements, requirement 39 (§ "The
 Script (`agent-cycle.sh`)").
 
 <a id="claim"></a>
@@ -121,7 +121,7 @@ working branch) for a fresh item, or a file claim for a source whose branch
 and pull request already exist (`review-feedback`, `merge-conflicts`,
 `dequeued`, `landing-refusals`, `abandoned-drafts`).
 
-Authoritative: docs/IMPLEMENTATION-PIPELINE-SPEC.md, requirement 17a.
+Authoritative: docs/spec/implementation/requirements, requirement 17a.
 
 <a id="co-ordinator"></a>
 ### Co-Ordinator
@@ -130,7 +130,7 @@ A headless Claude Code invocation that selects at most one well-scoped item
 of work each cycle and emits a [work order](#work-order). It does not
 implement anything.
 
-Authoritative: docs/IMPLEMENTATION-PIPELINE-SPEC.md § "Actors", item 3.
+Authoritative: docs/spec/implementation/README.md § "Actors", item 3.
 
 <a id="cool-off"></a>
 ### Cool-off
@@ -141,7 +141,7 @@ pull request and the arming step landing it. It is measured only against a
 standing review whose own `commit_id` still matches the pull request's
 current head, so a push after approval restarts it.
 
-Authoritative: docs/IMPLEMENTATION-PIPELINE-SPEC.md § "The Landing Gate".
+Authoritative: docs/spec/implementation/landing-gate.md § "The Landing Gate".
 
 <a id="decide-tactical"></a>
 ### `decide-tactical`
@@ -154,7 +154,7 @@ bounded pass runs first and may settle the item (recorded as an ordinary
 `decision-taken` event — instead of [paging](#page) a human at all. It
 never widens the owner-only boundary requirement 36a sets.
 
-Authoritative: docs/IMPLEMENTATION-PIPELINE-SPEC.md, requirement 36d.
+Authoritative: docs/spec/implementation/requirements, requirement 36d.
 
 <a id="drain"></a>
 ### Drain
@@ -166,7 +166,7 @@ flight finish. A drain reaches "at rest" once every repository's finishing
 `abandoned-drafts`) are empty and no live claim names a finishing-source
 item.
 
-Authoritative: docs/IMPLEMENTATION-PIPELINE-SPEC.md, requirements 2.3d and
+Authoritative: docs/spec/implementation/requirements, requirements 2.3d and
 2.9.
 
 <a id="enabler"></a>
@@ -179,7 +179,7 @@ blocked with a fresher condition; specifies an item nobody has scoped well
 enough to select; or, where an item cannot be moved any other way,
 [escalates](#escalation) it. It writes no code and raises no pull request.
 
-Authoritative: docs/IMPLEMENTATION-PIPELINE-SPEC.md § "Actors", item 7.
+Authoritative: docs/spec/implementation/README.md § "Actors", item 7.
 
 <a id="escalation"></a>
 ### Escalation
@@ -189,7 +189,7 @@ verdict is that an item cannot be moved without one. Closure is the whole
 protocol, and the issue body says so: the human does the thing and closes
 the issue.
 
-Authoritative: docs/IMPLEMENTATION-PIPELINE-SPEC.md, requirement 36a.
+Authoritative: docs/spec/implementation/requirements, requirement 36a.
 
 <a id="human-level"></a>
 ### `human` (merge autonomy level)
@@ -197,7 +197,7 @@ Authoritative: docs/IMPLEMENTATION-PIPELINE-SPEC.md, requirement 36a.
 The default [merge autonomy](#merge-autonomy) level, and today's behaviour
 byte-for-byte: a human approves and a human merges every pull request.
 
-Authoritative: docs/IMPLEMENTATION-PIPELINE-SPEC.md § "The Landing Gate".
+Authoritative: docs/spec/implementation/landing-gate.md § "The Landing Gate".
 
 <a id="human-reviewer"></a>
 ### Human Reviewer
@@ -212,7 +212,7 @@ pull request itself, and the Human Reviewer's own role narrows to whatever
 that classifier did not cover (see [Landing Gate](#landing-gate)). Not
 launched by any part of this system.
 
-Authoritative: docs/IMPLEMENTATION-PIPELINE-SPEC.md § "Actors", item 6, read
+Authoritative: docs/spec/implementation/README.md § "Actors", item 6, read
 together with § "The Landing Gate".
 
 <a id="implementer"></a>
@@ -221,7 +221,7 @@ together with § "The Landing Gate".
 A headless Claude Code invocation that carries out one [work
 order](#work-order) on a branch and raises a draft pull request.
 
-Authoritative: docs/IMPLEMENTATION-PIPELINE-SPEC.md § "Actors", item 4.
+Authoritative: docs/spec/implementation/README.md § "Actors", item 4.
 
 <a id="landing-gate"></a>
 ### Landing Gate
@@ -233,7 +233,7 @@ ever pushes to that branch, approves a pull request targeting it, or
 merges one, at any [merge autonomy](#merge-autonomy) level; GitHub's own
 branch protection enforces this independently of the gate.
 
-Authoritative: docs/IMPLEMENTATION-PIPELINE-SPEC.md § "The Landing Gate".
+Authoritative: docs/spec/implementation/landing-gate.md § "The Landing Gate".
 
 <a id="merge-autonomy"></a>
 ### Merge autonomy
@@ -244,7 +244,7 @@ may approve or land a pull request this system raises: one of
 [`agent-merges-routine`](#agent-merges-routine), or
 [`agent-merges-all`](#agent-merges-all).
 
-Authoritative: docs/IMPLEMENTATION-PIPELINE-SPEC.md § "The Landing Gate".
+Authoritative: docs/spec/implementation/landing-gate.md § "The Landing Gate".
 
 <a id="merge-budget"></a>
 ### Merge budget
@@ -255,7 +255,7 @@ and above. Reaching the cap approves a pull request through the ordinary
 review path but does not arm its landing — the backlog queues visibly
 rather than merging past the cap.
 
-Authoritative: docs/IMPLEMENTATION-PIPELINE-SPEC.md, requirement 2.3c.
+Authoritative: docs/spec/implementation/requirements, requirement 2.3c.
 
 <a id="node"></a>
 ### Node
@@ -264,7 +264,7 @@ One machine running the pipeline — a laptop, a cloud VM, or a container —
 any number of which may make up a fleet. `AGENT_OPS_ROLE` says whether a
 given node is [active](#active) or [standby](#standby).
 
-Authoritative: docs/IMPLEMENTATION-PIPELINE-SPEC.md § "The node image";
+Authoritative: docs/spec/implementation/environment.md § "The node image";
 docs/guides/operating/watch.md § "Which node runs the cycles".
 
 <a id="no-op-cycle"></a>
@@ -285,7 +285,7 @@ line in a record — never by prose alone. Marking it this way keeps the item
 inside requirement 36a's owner-only boundary regardless of what
 `escalation_autonomy` would otherwise let the pipeline decide.
 
-Authoritative: docs/IMPLEMENTATION-PIPELINE-SPEC.md, requirement 36a.
+Authoritative: docs/spec/implementation/requirements, requirement 36a.
 
 <a id="page"></a>
 ### Page
@@ -296,7 +296,7 @@ authority. [`decide-tactical`](#decide-tactical) and the rungs of
 `escalation_autonomy` above it exist to page a human less often, never to
 page one for anything requirement 36a's owner-only boundary reserves.
 
-Authoritative: docs/IMPLEMENTATION-PIPELINE-SPEC.md § "Actors", item 7;
+Authoritative: docs/spec/implementation/README.md § "Actors", item 7;
 requirement 36d.
 
 <a id="pipeline-monitor"></a>
@@ -308,8 +308,8 @@ mechanical findings are filed as `pw::type:tech-debt` issues that the
 implementation pipeline's own `tech-debt` source then selects. It never
 runs as a stage of `agent-cycle.sh`.
 
-Authoritative: docs/IMPLEMENTATION-PIPELINE-SPEC.md § "Actors", item 10;
-docs/MONITOR-PIPELINE-SPEC.md § "Actors".
+Authoritative: docs/spec/implementation/README.md § "Actors", item 10;
+docs/spec/monitor.md § "Actors".
 
 <a id="protected-path"></a>
 ### Protected path
@@ -319,7 +319,7 @@ routine-tier landing must not touch. A hit refuses landing outright below
 [`agent-merges-all`](#agent-merges-all); at `agent-merges-all` it is instead
 deferred to the Critical Approver tier and the [cool-off](#cool-off) wait.
 
-Authoritative: docs/IMPLEMENTATION-PIPELINE-SPEC.md § "The Landing Gate";
+Authoritative: docs/spec/implementation/landing-gate.md § "The Landing Gate";
 config.schema.json `merge_autonomy_protected_paths`.
 
 <a id="refined"></a>
@@ -331,7 +331,7 @@ the item carries a posted specification (a comment on the issue, or a
 `needs-refinement`, where only a human can supply what is missing. The
 Refiner can neither escalate nor void an item.
 
-Authoritative: docs/IMPLEMENTATION-PIPELINE-SPEC.md, requirements 39c and
+Authoritative: docs/spec/implementation/requirements, requirements 39c and
 39d.
 
 <a id="refiner"></a>
@@ -344,7 +344,7 @@ blocked and wait for the Enabler to reach it. It also bands every open
 issue whose `Priority` is unset. It writes no code, raises no pull
 request, and can neither escalate nor void.
 
-Authoritative: docs/IMPLEMENTATION-PIPELINE-SPEC.md § "Actors", item 8.
+Authoritative: docs/spec/implementation/README.md § "Actors", item 8.
 
 <a id="reservation"></a>
 ### Reservation
@@ -361,7 +361,7 @@ Authoritative: docs/guides/working-with-pullwright/README.md § "Reserving an is
 A headless Claude Code invocation that checks and corrects the
 Implementer's branch, then marks the pull request ready for review.
 
-Authoritative: docs/IMPLEMENTATION-PIPELINE-SPEC.md § "Actors", item 5.
+Authoritative: docs/spec/implementation/README.md § "Actors", item 5.
 
 <a id="reviewer-agent"></a>
 ### Reviewer-Agent (Project Reviewer, repository reviewer)
@@ -372,8 +372,8 @@ request per run. Also called the Project Reviewer (token
 `project-reviewer`) in the implementation pipeline's own Actors list, and
 referred to informally as the repository reviewer.
 
-Authoritative: docs/REVIEW-PIPELINE-SPEC.md § "Actors";
-docs/IMPLEMENTATION-PIPELINE-SPEC.md § "Actors", item 9.
+Authoritative: docs/spec/review.md § "Actors";
+docs/spec/implementation/README.md § "Actors", item 9.
 
 <a id="script"></a>
 ### Script
@@ -381,7 +381,7 @@ docs/IMPLEMENTATION-PIPELINE-SPEC.md § "Actors", item 9.
 `agent-cycle.sh`, the bash script that orchestrates one whole cycle. It
 launches every agent; agents never launch other agents.
 
-Authoritative: docs/IMPLEMENTATION-PIPELINE-SPEC.md § "Actors", item 2.
+Authoritative: docs/spec/implementation/README.md § "Actors", item 2.
 
 <a id="source"></a>
 ### Source
@@ -424,7 +424,7 @@ claim registry and the fleet flags (`fleet/disabled.json`,
 `fleet/limit.json`). Empty or absent means single-node operation, where
 every mode of `scripts/state-sync.sh` becomes a no-op.
 
-Authoritative: config.schema.json `state_repo`; docs/IMPLEMENTATION-PIPELINE-SPEC.md,
+Authoritative: config.schema.json `state_repo`; docs/spec/implementation/requirements,
 requirement 2.5.
 
 <a id="void"></a>
@@ -448,7 +448,7 @@ the Script and Implementer need. The Script derives and injects the claim
 branch itself; a work order's `pr_label` is guaranteed correct regardless
 of whether the model copied it correctly.
 
-Authoritative: docs/IMPLEMENTATION-PIPELINE-SPEC.md, requirement 20 (§ "The
+Authoritative: docs/spec/implementation/requirements, requirement 20 (§ "The
 Co-Ordinator (selection only)").
 
 ## Older names

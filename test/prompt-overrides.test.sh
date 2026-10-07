@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # test/prompt-overrides.test.sh — regression test for
-# lib/prompt-overrides.sh (docs/IMPLEMENTATION-PIPELINE-SPEC.md
+# lib/prompt-overrides.sh (docs/spec/implementation/README.md
 # requirement 4a).
 #
 # The mechanism's whole safety argument is "absent overrides change nothing":

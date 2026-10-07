@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # lib/dependency-gate.sh — the structured `Blocked-by:` convention
-# (docs/IMPLEMENTATION-PIPELINE-SPEC.md, requirement 34j).
+# (docs/spec/implementation/requirements, requirement 34j).
 #
 # No code used to parse a dependency note like "hold until #195 is merged"
 # and check the referenced item's live state: the note was prose, and the
@@ -141,7 +141,7 @@ dependency_clearances() {
 # Decide whether a needs_refinement-shaped ENTRY (`{repo, item, source,
 # reason, missing, evidence}`, from any reporting stage) asserts, as its
 # block, the same `Blocked-by:` dependency this cycle's own gate has already
-# resolved for that item — exclusion 4 (docs/IMPLEMENTATION-PIPELINE-SPEC.md
+# resolved for that item — exclusion 4 (docs/spec/implementation/README.md
 # requirement 16), which belongs to the Script and must never be re-derived
 # from a model's own reading of an issue thread (issue #566: five items
 # mislabelled `needs_refinement` in one cycle, each naming a dependency issue

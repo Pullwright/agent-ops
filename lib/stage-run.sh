@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # lib/stage-run.sh — the one implementation of "run a headless `claude` stage"
-# (requirement 4d of docs/IMPLEMENTATION-PIPELINE-SPEC.md).
+# (requirement 4d of docs/spec/implementation/README.md).
 #
 # Sourced by agent-cycle.sh and review-cycle.sh so both pipelines launch, cap
 # and kill a stage the same way, rather than each keeping its own copy of the

@@ -4,14 +4,14 @@
 
 This is the as-built requirements specification for the **Pipeline Monitor**:
 a third pipeline, sibling to the implementation pipeline
-(`docs/IMPLEMENTATION-PIPELINE-SPEC.md`) and the repository-review pipeline
-(`docs/REVIEW-PIPELINE-SPEC.md`), whose subject is not a repository but the
+(`docs/spec/implementation/README.md`) and the repository-review pipeline
+(`docs/spec/review.md`), whose subject is not a repository but the
 pipelines themselves. Like them it describes the system as it exists — any
 change to this pipeline lands together with the edit that keeps this document
 accurate (see `AGENTS.md`, "As-built specifications").
 
 **Where this document is silent, follow
-`docs/IMPLEMENTATION-PIPELINE-SPEC.md`.** The three pipelines deliberately
+`docs/spec/implementation/README.md`.** The three pipelines deliberately
 share their machinery — the lock discipline, the minimal-`PATH` bootstrap for
 cron, the switch (`lib/toggle.sh`), the role guard (`lib/role.sh`),
 usage-limit detection (`lib/limit-detect.sh`), the JSON-Lines log format and
@@ -21,8 +21,8 @@ and event stream (`lib/stage-run.sh`), the metering record
 the "straight-parse-else-last-fenced-```json```-block" result parser. This
 pipeline **reuses** those and must not reinvent them. References of the form
 "requirement N" mean requirement N of
-`docs/IMPLEMENTATION-PIPELINE-SPEC.md`; references of the form "R-n" mean
-requirement R-n of `docs/REVIEW-PIPELINE-SPEC.md`. This document's own
+`docs/spec/implementation/README.md`; references of the form "R-n" mean
+requirement R-n of `docs/spec/review.md`. This document's own
 requirements are numbered `Mn`.
 
 ## What it is
@@ -112,7 +112,7 @@ budget (M12), the dedup (M13) and the provenance line (M11) bound it.
 
 ## Environment
 
-Identical to `docs/IMPLEMENTATION-PIPELINE-SPEC.md` ("Environment"), with one
+Identical to `docs/spec/implementation/README.md` ("Environment"), with one
 narrowing that is a requirement rather than an accident: see M3.
 
 ## Configuration
@@ -120,7 +120,7 @@ narrowing that is a requirement rather than an accident: see M3.
 Every key this pipeline reads is a top-level key of `config.json` and is
 rendered into the `id=main` configuration tables of
 `docs/reference/configuration.md` and
-`docs/IMPLEMENTATION-PIPELINE-SPEC.md` from `config.schema.json`, like every
+`docs/spec/implementation/README.md` from `config.schema.json`, like every
 other top-level key (`AGENTS.md`, "Generated regions"). This document
 deliberately carries no fourth generated region: the keys are
 `monitor_model`, `monitor_max_input_bytes`, `monitor_max_filings_per_run`,
@@ -637,7 +637,7 @@ M17. **A stage-health verdict, from day one.** The Monitor logs `stage-end`
    that records a Monitor which exited non-zero, timed out or returned no
    usable completion — also carry `stage_failure: true`, the marker that same
    reader requires before an exit-0 `stage-end` counts as failed
-   (`docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 2.8): the Monitor
+   (`docs/spec/implementation/requirements` requirement 2.8): the Monitor
    selects and blocks no item, so it writes no item-verdict `attempt-failed`
    and every one of its own is unconditionally a genuine stage failure. At
    the end of a
@@ -650,10 +650,10 @@ M17. **A stage-health verdict, from day one.** The Monitor logs `stage-end`
    stages as `idle`. The dashboard's stage-health panel, its fleet-strip badge
    and its red banner all iterate the `stages` object rather than a fixed
    list, so the monitor row appears wherever the implementation pipeline's own
-   stages do (`docs/DASHBOARD-SPEC.md`). This closes for this pipeline, at
+   stages do (`docs/spec/dashboard/README.md`). This closes for this pipeline, at
    its first release, the detection gap agent-ops#996 recorded for the
    repository-review pipeline — which that pipeline closes for itself, over
-   its own stream and into its own file, in `docs/REVIEW-PIPELINE-SPEC.md`
+   its own stream and into its own file, in `docs/spec/review.md`
    R19.
 
 ### Logging and state

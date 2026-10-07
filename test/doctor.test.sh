@@ -2,7 +2,7 @@
 #
 # test/doctor.test.sh — the four network- and render-facing checks
 # scripts/doctor.sh added on top of test/config-schema.test.sh's coverage of
-# its configuration half (docs/IMPLEMENTATION-PIPELINE-SPEC.md component 14):
+# its configuration half (docs/spec/implementation/README.md component 14):
 # write access to every target repository, Claude credentials, the rendered
 # crontab, and the `nice` reordering report.
 #
@@ -184,7 +184,7 @@ case "$1" in
         printf '%s' "$rulesets_json" | jq -c "$jq_filter" ;;
       repos/*)
         [[ "${STUB_REPO_FAIL:-0}" != "1" ]] || exit 1
-        # Not a brace-default here (docs/IMPLEMENTATION-PIPELINE-SPEC.md's
+        # Not a brace-default here (docs/spec/implementation/README.md's
         # Gotchas table, agent-ops#933) — bash's `${VAR:-…}` parsing gets
         # confused when the default text itself contains an unescaped brace,
         # and silently appends a stray one to the *set* value too.

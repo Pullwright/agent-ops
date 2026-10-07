@@ -2,7 +2,7 @@
 #
 # test/rework-record.test.sh — self-contained regression test for
 # lib/rework.sh (docs/FLOW-SCHEMA.md, requirement 47 of
-# docs/IMPLEMENTATION-PIPELINE-SPEC.md, issue #596).
+# docs/spec/implementation/README.md, issue #596).
 #
 # No test framework is used (none exists elsewhere in this repo); this is a
 # plain bash script with hand-rolled assertions. Run it directly:

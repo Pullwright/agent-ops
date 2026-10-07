@@ -2,7 +2,7 @@
 #
 # gather-tech-debt.sh — deterministically pre-fetch one repo's open
 # `pw::type:tech-debt`-labelled issues for the Co-Ordinator's runtime input
-# (docs/IMPLEMENTATION-PIPELINE-SPEC.md, requirement 3t).
+# (docs/spec/implementation/requirements, requirement 3t).
 #
 # Usage: gather-tech-debt.sh <owner/repo>
 #

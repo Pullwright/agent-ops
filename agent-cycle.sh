@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # agent-cycle.sh — orchestrates one cycle of the autonomous agent pipeline.
-# Full specification: docs/IMPLEMENTATION-PIPELINE-SPEC.md. Config: config.json.
+# Full specification: docs/spec/implementation/README.md. Config: config.json.
 
 set -euo pipefail
 
@@ -847,7 +847,7 @@ tier_violations="$(config_model_tier_floor_violations \
 if [[ -n "$tier_violations" ]]; then
   while IFS=$'\t' read -r author_key floor_key author_id floor_id; do
     [[ -n "$author_key" ]] || continue
-    echo "agent-cycle: $author_key ($author_id) ranks below $floor_key ($floor_id) on the fleet's model-tier ladder (lib/model-id.sh's MODEL_TIER_RANK) — refusing to start rather than let it author a specification for a more capable Implementer (docs/IMPLEMENTATION-PIPELINE-SPEC.md requirement 1c)" >&2
+    echo "agent-cycle: $author_key ($author_id) ranks below $floor_key ($floor_id) on the fleet's model-tier ladder (lib/model-id.sh's MODEL_TIER_RANK) — refusing to start rather than let it author a specification for a more capable Implementer (docs/spec/implementation/requirements requirement 1c)" >&2
   done <<<"$tier_violations"
   exit 1
 fi

@@ -371,7 +371,7 @@ merge_budget_freeze_clear() {
 # issue #574 wants a dashboard tick to be able to show *why* a repository is
 # frozen and what it is holding without a live read of the freeze flag or
 # `merge_budget_oldest_waiting` — both are network reads a dashboard tick has
-# no business making (`docs/DASHBOARD-SPEC.md`'s own budget note) — so both
+# no business making (`docs/spec/dashboard/README.md`'s own budget note) — so both
 # ride the event that already fires the moment the freeze is set, the only
 # place this fact is ever established.
 merge_budget_apply_decision() {

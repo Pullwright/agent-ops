@@ -5,7 +5,7 @@
 # expansions — the same blanket lib/pager.sh carries for the same reason.
 #
 # lib/monitor-digest.sh — what the Pipeline Monitor reads instead of the
-# records themselves (issue #1284, docs/MONITOR-PIPELINE-SPEC.md M6/M7).
+# records themselves (issue #1284, docs/spec/monitor.md M6/M7).
 #
 # The primary records this pipeline exists to reason over are not readable by
 # a model: the fleet's union `log.jsonl` is measured in megabytes and the

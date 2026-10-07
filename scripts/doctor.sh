@@ -281,7 +281,7 @@ doc_value_mismatches="$(config_documented_value_mismatches "$DEFAULTED_CONFIG" "
 if [[ -n "$doc_value_mismatches" ]]; then
   while IFS=$'\t' read -r dvm_key dvm_doc dvm_resolved; do
     [[ -n "$dvm_key" ]] || continue
-    warn "$dvm_key is documented (docs/reference/configuration.md/docs/IMPLEMENTATION-PIPELINE-SPEC.md) as $dvm_doc but resolves to $dvm_resolved from $config_file — the documentation describes an installation that does not exist"
+    warn "$dvm_key is documented (docs/reference/configuration.md/docs/spec/implementation/README.md) as $dvm_doc but resolves to $dvm_resolved from $config_file — the documentation describes an installation that does not exist"
   done <<<"$doc_value_mismatches"
 else
   ok "every documented installation value (x-docs.value differing from its own default) matches config.json"
@@ -459,7 +459,7 @@ fi
 # entry per repository; two entries for the same slug leave no way to say
 # which one's overrides apply, so review-cycle.sh refuses to start rather
 # than silently letting the later entry win (lib/config-schema.sh's
-# config_duplicate_repository_review_slugs, docs/REVIEW-PIPELINE-SPEC.md
+# config_duplicate_repository_review_slugs, docs/spec/review.md
 # requirement R1b).
 duplicate_review_slugs="$(config_duplicate_repository_review_slugs "$repository_review_repos_json")"
 if [[ -n "$duplicate_review_slugs" ]]; then
@@ -1598,7 +1598,7 @@ if ((gh_ready)); then
   # cannot create labels, which nothing else would tell you. ROLE "review" is
   # the exception and says so: the review pipeline ensures its own repository's
   # `pr_label` unconditionally, immediately before the review it is about to
-  # run (`docs/REVIEW-PIPELINE-SPEC.md` R5.0b), so there is no interval to
+  # run (`docs/spec/review.md` R5.0b), so there is no interval to
   # quote there — the next review of that repository is the whole answer.
   # REVIEW_PR_LABEL (optional) is this repository's own resolved
   # repository_review pr_label (requirement 342) — only ROLE "review" needs it;

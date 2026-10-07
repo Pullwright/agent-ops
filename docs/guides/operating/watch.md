@@ -77,7 +77,7 @@ docker compose exec scheduler \
 
 An item that is *blocked* (as opposed to void) is not a `log.jsonl` event at all — it's a `blocked` (or `blocked:<reason>`) label on the GitHub issue or pull request itself; see [An item is blocked or void](diagnose-by-symptom.md#an-item-is-blocked-or-void).
 
-For a complete description of event types and fields, see `docs/IMPLEMENTATION-PIPELINE-SPEC.md` requirement 33.
+For a complete description of event types and fields, see `docs/spec/implementation/requirements` requirement 33.
 
 ## Keeping every node warm
 
@@ -147,7 +147,7 @@ docker compose exec scheduler \
 
 To disable the Monitor, set `monitor_model` to `""` in `config.json`.
 
-For the full specification, see `docs/MONITOR-PIPELINE-SPEC.md`.
+For the full specification, see `docs/spec/monitor.md`.
 
 ## Related pages
 

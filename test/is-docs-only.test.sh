@@ -2,7 +2,7 @@
 #
 # test/is-docs-only.test.sh — self-contained regression test for
 # scripts/is-docs-only.sh, the classifier that lets a documentation-only change
-# skip the image build (docs/IMPLEMENTATION-PIPELINE-SPEC.md acceptance check
+# skip the image build (docs/spec/implementation/README.md acceptance check
 # 1b).
 #
 # What is really being pinned here is the direction of the mistakes. Calling
@@ -74,15 +74,15 @@ assert_not_docs_only "a frozen register item file is not documentation" \
 assert_not_docs_only "the standing decisions file is read at /app by agent-cycle.sh" \
   docs/STANDING-DECISIONS.md
 assert_not_docs_only "the implementation pipeline spec's Gotchas feed the Monitor" \
-  docs/IMPLEMENTATION-PIPELINE-SPEC.md
+  docs/spec/implementation/gotchas.md
 assert_not_docs_only "the review pipeline spec's Gotchas feed the Monitor" \
-  docs/REVIEW-PIPELINE-SPEC.md
+  docs/spec/review.md
 assert_not_docs_only "the monitor pipeline spec's Gotchas feed the Monitor" \
-  docs/MONITOR-PIPELINE-SPEC.md
+  docs/spec/monitor.md
 assert_not_docs_only "the dashboard spec's Gotchas feed the Monitor" \
-  docs/DASHBOARD-SPEC.md
-assert_not_docs_only "a spec-named file nested under docs/ is still code" \
-  docs/notes/FOO-SPEC.md
+  docs/spec/dashboard/README.md
+assert_docs_only "a sibling file that merely shares a basename with one of the four exact paths is still documentation" \
+  docs/spec/implementation/requirements/gotchas.md
 
 # --- Markdown that is not prose. These are the assertions that matter: each
 #     one is a file whose contents change what a node does. ---

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # lib/docs-benchmark-report.sh — the documentation benchmark's dated report
-# (component 24a of docs/IMPLEMENTATION-PIPELINE-SPEC.md).
+# (component 24a of docs/spec/implementation/components/components-03.md).
 #
 # Sourced by scripts/docs-benchmark.sh and by test/docs-benchmark.test.sh. The
 # report's layout is not part of the benchmark's protocol (see the head of

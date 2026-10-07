@@ -2,7 +2,7 @@
 #
 # test/coordinator-brief.test.sh — self-contained regression test for
 # lib/coordinator-brief.sh (issue #78,
-# docs/IMPLEMENTATION-PIPELINE-SPEC.md requirement 4b).
+# docs/spec/implementation/requirements requirement 4b).
 #
 # No test framework is used (none exists elsewhere in this repo); this is a
 # plain bash script with hand-rolled assertions. Run it directly:

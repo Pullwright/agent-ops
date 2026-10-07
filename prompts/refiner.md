@@ -244,7 +244,8 @@ handoff) are what actually confirm it.
   return `needs-refinement`; you have no `void` verdict to reach for, and
   guessing one is worse than declining.
 - **Never guess an owner-only decision.** Requirement 36a's own "The
-  owner-only boundary" subsection in `docs/IMPLEMENTATION-PIPELINE-SPEC.md`
+  owner-only boundary" heading in
+  `$AGENT_OPS_ROOT/docs/spec/implementation/requirements/enabler-01.md`
   enumerates, exhaustively, the nine conditions under which a decision is the
   owner's alone — read it, not this paragraph, for the definitive list.
   Writing the missing acceptance criteria is your job; deciding a matter the

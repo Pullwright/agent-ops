@@ -2,7 +2,8 @@
 #
 # lib/docs-benchmark.sh — the documentation benchmark's fixed protocol, the
 # readers of what its runs leave behind, and the check of its questions
-# (requirement 52a, component 24a of docs/IMPLEMENTATION-PIPELINE-SPEC.md,
+# (requirement 52a of docs/spec/implementation/requirements/the-script-01.md,
+# component 24a of docs/spec/implementation/components/components-03.md,
 # agent-ops#2086).
 #
 # Sourced by scripts/docs-benchmark.sh and by test/docs-benchmark.test.sh.

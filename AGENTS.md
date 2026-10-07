@@ -5,9 +5,9 @@ implementation cycle (`agent-cycle.sh`), the repository-review cycle
 (`review-cycle.sh`), the Pipeline Monitor (`monitor-cycle.sh`), and the
 local dashboard (`dashboard/`). `README.md`
 is the landing page; `docs/guides/` explains what the pipelines do and how to
-configure, install, pause, and monitor them; `docs/*-SPEC.md` are the as-built requirement specifications
-for each component; `prompts/` holds the runtime prompts the pipelines pass
-to their agents.
+configure, install, pause, and monitor them; `docs/spec/` holds the as-built
+requirement specifications for each component; `prompts/` holds the runtime
+prompts the pipelines pass to their agents.
 
 For a map of all documentation and how to find answers to common questions,
 see `docs/README.md`.
@@ -16,16 +16,16 @@ see `docs/README.md`.
 
 Each component has an as-built requirements specification in `docs/`:
 
-- `docs/IMPLEMENTATION-PIPELINE-SPEC.md` — the implementation
+- `docs/spec/implementation/README.md` — the implementation
   pipeline (`agent-cycle.sh`, `lib/`, `scripts/`, and the five stage
   prompts).
-- `docs/REVIEW-PIPELINE-SPEC.md` — the repository-review pipeline: it reviews
+- `docs/spec/review.md` — the repository-review pipeline: it reviews
   one repository per run (`review-cycle.sh`, `prompts/project-reviewer.md`,
   the vendored skill).
-- `docs/MONITOR-PIPELINE-SPEC.md` — the Pipeline Monitor: a scheduled
+- `docs/spec/monitor.md` — the Pipeline Monitor: a scheduled
   reading of the pipelines' own state (`monitor-cycle.sh`,
   `lib/monitor-digest.sh`, `prompts/monitor.md`).
-- `docs/DASHBOARD-SPEC.md` — the monitoring dashboard
+- `docs/spec/dashboard/README.md` — the monitoring dashboard
   (`scripts/publish-dashboard.sh`, `dashboard/index.html`).
 
 These are requirement documents, and they are **as-built**: at all times they
@@ -46,14 +46,31 @@ working around the mismatch.
 The specs outrank the operating prompts: `prompts/*.md` implement the specs'
 requirements, so bring the spec in line first, then the affected prompt(s).
 
+The implementation and dashboard specifications are each split across a
+directory (`docs/spec/implementation/`, `docs/spec/dashboard/`), one file per
+top-level section, each within the documentation size budget (`docs/README.md`
+"Size budget"); the implementation specification's Requirements, Components
+and Acceptance checks sections are further split into `requirements/`,
+`components/` and `acceptance-checks/` subdirectories, one file per
+actor group or budget-sized chunk. Each directory's own `README.md` carries a
+directory-wide table of contents (AGENTS.md's "Generated regions" §2) rather
+than repeating the file's own headings. A branch opened before #2094 landed,
+whose diff touches the old monolithic `docs/IMPLEMENTATION-PIPELINE-SPEC.md`
+or `docs/DASHBOARD-SPEC.md`, conflicts on rebase as a modify/delete: resolve
+it by applying #2094's own split script (in that pull request's description)
+to the conflicting branch's own modified version of the old file, and taking
+the result — this carries the branch's edits into whichever new file now
+holds the section it touched, rather than losing them to the delete side of
+the conflict.
+
 ## Generated regions
 
 Three types of generated regions exist in this repository:
 
 1. **Configuration tables** — `docs/reference/configuration.md`'s two
    configuration tables and each
-   as-built spec's own (`docs/IMPLEMENTATION-PIPELINE-SPEC.md`'s,
-   `docs/REVIEW-PIPELINE-SPEC.md`'s) are rendered from `config.schema.json`
+   as-built spec's own (`docs/spec/implementation/configuration.md`'s,
+   `docs/spec/review.md`'s) are rendered from `config.schema.json`
    by `scripts/render-config-table.sh` — four `<!-- config-table:start
    id=... -->` … `<!-- config-table:end -->` regions in total, each paired
    with a `<!-- config-table:notes id=... -->` … `<!-- config-table:notes-end
@@ -68,11 +85,16 @@ Three types of generated regions exist in this repository:
    carries this same contract inline, so it reads even to someone who reaches
    the row directly and never opened this file.
 
-2. **Table of contents** — `docs/IMPLEMENTATION-PIPELINE-SPEC.md` and each guide
-   under `docs/guides/`
-   have a table of contents between `<!-- toc:start -->` … `<!-- toc:end -->`
-   markers, extracted from their `##` and `###` headings by
-   `scripts/render-toc.sh`. Never hand-edit the content between these markers:
+2. **Table of contents** — each guide under `docs/guides/` has a table of
+   contents between `<!-- toc:start -->` … `<!-- toc:end -->` markers,
+   extracted from its own `##` and `###` headings. `docs/spec/implementation/README.md`
+   and `docs/spec/dashboard/README.md` carry the same marker pair, but a
+   directory-wide one instead: a list of every other file under their own
+   directory, linking each sibling's own first heading, rather than headings
+   within the README itself. Either kind is rendered by
+   `scripts/render-toc.sh`, from `lib/markdown-scan.sh`'s `TOC_FILES` (the
+   own-heading kind) and `TOC_DIR_FILES` (the directory-wide kind). Never
+   hand-edit the content between these markers:
    edit headings instead, then run `scripts/render-toc.sh` (no arguments) to
    regenerate and `scripts/render-toc.sh --check` before you push —
    `.github/workflows/toc.yml` runs the same check on every pull request. The
@@ -220,7 +242,7 @@ A pull request whose head branch is named `agent/<n>` is, to CI, an
 issue-sourced work order: `.github/workflows/closing-keyword.yml` fails it
 unless the body carries both the `<!-- agent-ops:closes-issue item=<n> -->`
 marker and a real closing keyword (`Closes #<n>`) for that issue — see
-requirement 1b of `docs/IMPLEMENTATION-PIPELINE-SPEC.md`. An interactive
+requirement 1b of `docs/spec/implementation/requirements/the-script-01.md`. An interactive
 session that opens such a branch must write both; a body edit (`gh pr edit
 <n> --body-file …`) re-runs the check.
 

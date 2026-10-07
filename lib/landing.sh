@@ -63,7 +63,7 @@
 # `landing_protected_paths_hit` fences the deadliest class this design
 # names: a pull request that edits the gate it is riding through the gate it
 # just weakened. The complexity grade fences part of that ground too:
-# requirement 26a (docs/IMPLEMENTATION-PIPELINE-SPEC.md) forces
+# requirement 26a (docs/spec/implementation/README.md) forces
 # `complexity:high` onto anything touching concurrency, security,
 # CI/workflow machinery or shared library code, and `landing_eligible`
 # refuses that grade wherever `merge_autonomy_routine_complexity` leaves it

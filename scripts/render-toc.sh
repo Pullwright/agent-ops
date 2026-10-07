@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
 #
 # scripts/render-toc.sh — render the table of contents for each file
-# lib/markdown-scan.sh's TOC_FILES lists, between marker regions.
+# lib/markdown-scan.sh's TOC_FILES and TOC_DIR_FILES list, between marker
+# regions.
 #
-# Extracts `##` and `###` headings from markdown files (ignoring the top-level
-# `# ` title, code blocks, and anything inside fenced code), generates a nested
-# markdown bullet list with links using GitHub's auto-generated anchor slugging,
-# and writes/checks the list between `<!-- toc:start -->` / `<!-- toc:end -->`
-# marker pairs placed immediately after each document's title and any lead-in
-# paragraph, before the first `##` heading.
+# For a TOC_FILES entry: extracts `##` and `###` headings from the file
+# itself (ignoring the top-level `# ` title, code blocks, and anything inside
+# fenced code), and generates a nested markdown bullet list with links using
+# GitHub's auto-generated anchor slugging. For a TOC_DIR_FILES entry: lists
+# every other Markdown file under the paired directory instead, linking each
+# sibling's own first heading, nested one level per sub-directory. Either
+# way the list is written/checked between `<!-- toc:start -->` /
+# `<!-- toc:end -->` marker pairs placed immediately after each document's
+# title and any lead-in paragraph, before the first `##` heading.
 #
 # With no arguments, regenerate the ToC in every listed file. `--check`
 # verifies that every listed file's region is current (exit non-zero if
@@ -82,6 +86,94 @@ generate_toc() {
   done
 }
 
+# first_heading_title FILE
+# FILE's own first heading (any level, outside fenced code), stripped of its
+# `#` run, for use as a directory ToC entry's link text. Falls back to FILE's
+# own basename when it has no heading at all.
+first_heading_title() {
+  local file="$1" line
+  local title
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" == "#"* ]]; then
+      title="${line#"${line%%[!#]*}"}"
+      title="${title#"${title%%[^ ]*}"}"
+      # "Requirements" and "Acceptance checks" are the generic section marker
+      # every file in those directories repeats (scripts/docs-benchmark.sh's
+      # per-file section tracker needs it on every file, not just the
+      # first) — not a useful ToC label on its own, so keep reading for a
+      # more specific heading first and fall back to it only if there is none.
+      if [[ "$title" != "Requirements" && "$title" != "Acceptance checks" && "$title" != "Components" ]]; then
+        echo "$title"
+        return
+      fi
+    fi
+  done < <(markdown_unfenced "$file")
+  if [[ -n "${title:-}" ]]; then
+    echo "$title"
+    return
+  fi
+  basename "$file"
+}
+
+# generate_dir_toc FILE DIR
+# A directory-wide ToC: one entry per other Markdown file under DIR
+# (recursive, sorted, FILE itself excluded), linking that sibling's own first
+# heading, nested one level per sub-directory below DIR.
+generate_dir_toc() {
+  local file="$1" dir="$2" sibling rel title depth indent i
+  while IFS= read -r sibling; do
+    [[ "$sibling" == "$file" ]] && continue
+    rel="${sibling#"$dir"/}"
+    title="$(first_heading_title "$sibling")"
+    depth="$(grep -o '/' <<<"$rel" | wc -l)"
+    indent=""
+    for (( i = 0; i < depth; i++ )); do
+      indent+="  "
+    done
+    echo "${indent}- [$title]($rel)"
+  done < <(find "$dir" -name '*.md' | sort)
+}
+
+# render_dir_file FILE DIR
+# As render_file, but the content between the markers is DIR's directory-wide
+# ToC (generate_dir_toc) rather than FILE's own headings.
+render_dir_file() {
+  local file="$1" dir="$2"
+  local temp_file="${file}.toc.tmp"
+
+  if ! markers_ok "$file"; then
+    echo "render-toc: $file does not contain exactly one <!-- toc:start --> / <!-- toc:end --> marker pair" >&2
+    return 1
+  fi
+
+  local toc_content
+  toc_content=$(generate_dir_toc "$file" "$dir")
+
+  awk -v toc="$toc_content" -v start="$(toc_start_re)" -v end="$(toc_end_re)" '
+    $0 ~ start {
+      print "<!-- toc:start -->"
+      print toc
+      while (getline && $0 !~ end) {}
+      print "<!-- toc:end -->"
+      next
+    }
+    { print }
+  ' "$file" > "$temp_file"
+
+  if (( check_mode )); then
+    if ! diff -q "$file" "$temp_file" >/dev/null 2>&1; then
+      echo "render-toc: $file is stale" >&2
+      rm "$temp_file"
+      return 1
+    fi
+    rm "$temp_file"
+  else
+    mv "$temp_file" "$file"
+  fi
+
+  return 0
+}
+
 # True when a file contains exactly one <!-- toc:start --> and exactly one
 # <!-- toc:end --> marker, with the start marker on an earlier line than the
 # end marker. A file with neither, only one of the pair, or more than one of
@@ -150,6 +242,14 @@ render_file() {
 failed=0
 for file in "${TOC_FILES[@]}"; do
   if ! render_file "$file"; then
+    failed=1
+  fi
+done
+
+for entry in "${TOC_DIR_FILES[@]}"; do
+  file="${entry%%:*}"
+  dir="${entry#*:}"
+  if ! render_dir_file "$file" "$dir"; then
     failed=1
   fi
 done

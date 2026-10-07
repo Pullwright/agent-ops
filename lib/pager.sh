@@ -23,7 +23,7 @@
 # this node's own doctor verdict) — evaluated where those facts already
 # converge: scripts/publish-dashboard.sh's own WITH_GITHUB tick of the
 # Publisher's `*/5` pass (requirement 51 in docs/IMPLEMENTATION-PIPELINE-
-# SPEC.md, requirement 20 in docs/DASHBOARD-SPEC.md's Publisher section).
+# SPEC.md, requirement 20 in docs/spec/dashboard/README.md's Publisher section).
 # Exactly one node evaluates a given invariant in a given five-minute window
 # — a claim on `<key>__<window>` through lib/claim.sh, the same pseudo-slug
 # pattern the Enabler's own `claims/enabler/` uses (see lib/claim.sh's own
@@ -119,7 +119,7 @@ declare -ga PAGER_KEYS=()
 # EVAL_FN must print exactly one line, `{"firing": bool, "evidence": "…"}`
 # (evidence non-empty only when firing), plus an optional `"nodes": [...]`
 # naming which fleet nodes the evidence is about — the dashboard's own node
-# card badge (docs/DASHBOARD-SPEC.md) reads it to know which card to mark,
+# card badge (docs/spec/dashboard/README.md) reads it to know which card to mark,
 # rather than parsing EVIDENCE's own prose. Nothing else, ever — a raising
 # invariant must never abort the evaluation of every invariant registered
 # after it. REMEDY_CLASS is one of pipeline-act, config-lever, owner-only;

@@ -2,7 +2,7 @@
 #
 # test/coordinator-input.test.sh — self-contained regression test for
 # lib/coordinator-input.sh (agent-ops#641,
-# docs/IMPLEMENTATION-PIPELINE-SPEC.md requirement 4i).
+# docs/spec/implementation/requirements requirement 4i).
 #
 # No test framework is used (none exists elsewhere in this repo); this is a
 # plain bash script with hand-rolled assertions. Run it directly:

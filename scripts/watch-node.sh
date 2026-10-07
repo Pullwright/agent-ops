@@ -10,7 +10,7 @@
 #   cron    the node's cron log  (cron.log)  — one line per tick, including
 #           the standby ones
 #   events  the node's cycle log (log.jsonl) — cycle starts, selections, PRs
-#           raised, stand-downs; see docs/IMPLEMENTATION-PIPELINE-SPEC.md
+#           raised, stand-downs; see docs/spec/implementation/README.md
 #           (requirement 33) for event types and fields
 #   -f      follow, like `tail -f`, instead of printing the last 50 lines and
 #           exiting

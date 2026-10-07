@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # test/monitor-cycle.test.sh — the Pipeline Monitor end to end
-# (agent-ops#1284, docs/MONITOR-PIPELINE-SPEC.md).
+# (agent-ops#1284, docs/spec/monitor.md).
 #
 # Every case here drives the **real** `monitor-cycle.sh` against a shim node:
 # a directory of symlinks back into the tree with its own `config.json`, which

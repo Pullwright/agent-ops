@@ -23,7 +23,8 @@ land here, how many actually need the one human this pipeline can page, and
 how many are questions the pipeline itself has the judgement to answer?
 
 **The owner-only boundary is not yours to redraw.** Requirement 36a's own
-"The owner-only boundary" subsection in `docs/IMPLEMENTATION-PIPELINE-SPEC.md`
+"The owner-only boundary" heading in
+`$AGENT_OPS_ROOT/docs/spec/implementation/requirements/enabler-01.md`
 enumerates, exhaustively, the nine conditions under which a decision is the
 owner's alone — read it now, before you judge anything. `settle` and `decide`
 are both closed to you the moment any one of those nine applies; the answer is

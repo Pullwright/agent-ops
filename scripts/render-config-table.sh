@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
 # scripts/render-config-table.sh — render the configuration-key table rows
-# that docs/reference/configuration.md, docs/IMPLEMENTATION-PIPELINE-SPEC.md
-# and docs/REVIEW-PIPELINE-SPEC.md carry, from config.schema.json.
+# that docs/reference/configuration.md, docs/spec/implementation/configuration.md
+# and docs/spec/review.md carry, from config.schema.json.
 #
 # Every configuration key used to be written down three times: the README's
 # table, the owning spec's table, and the schema (#195) — so a key could be

@@ -2,7 +2,7 @@
 #
 # test/extract-json-result.test.sh — the final-message parser's three copies
 # (agent-cycle.sh, review-cycle.sh, and publish-dashboard.sh's jq port) accept
-# the same shapes and agree on every case. DASHBOARD-SPEC.md's "same
+# the same shapes and agree on every case. docs/spec/dashboard/state.md's "same
 # algorithm" claim, made checkable.
 #
 # What this guards: on 2026-08-03 an Enabler engagement examined three

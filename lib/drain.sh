@@ -7,7 +7,7 @@
 # `agent-cycle.sh` and the management/status/dashboard/heartbeat readers of
 # its output — never by `review-cycle.sh`, which has no finishing set of its
 # own and stands down under either mode exactly as it always has (requirement
-# R2a, docs/REVIEW-PIPELINE-SPEC.md).
+# R2a, docs/spec/review.md).
 #
 # "At rest" (2.2a's own finishing set, applied unconditionally rather than
 # only when back-pressure trips): every repo's four finishing bands —

@@ -25,9 +25,9 @@
 #    path that section names exists.
 # 3. Size — no in-scope document's hand-written content exceeds the
 #    100,000-byte budget docs/README.md's "Size budget" section fixed,
-#    unless it is exempt (SIZE_EXEMPT: CHANGELOG.md, docs/ROADMAP.md,
-#    docs/reviews/** and every as-built specification, docs/*-SPEC.md — the
-#    same exemptions that section lists) or it has an entry in
+#    unless it is exempt (SIZE_EXEMPT: CHANGELOG.md, docs/ROADMAP.md and
+#    docs/reviews/** — the same exemptions that section lists) or it has an
+#    entry in
 #    scripts/docs-size-ratchet.tsv naming the issue that will bring it under
 #    budget. Hand-written means the bytes outside the generated regions
 #    lib/markdown-scan.sh lists, the regions scripts/render-toc.sh,
@@ -269,10 +269,10 @@ check_links_in_schema() {
   {
     markdown_heading_slugs docs/reference/configuration.md
     explicit_anchor_ids docs/reference/configuration.md
-    markdown_heading_slugs docs/IMPLEMENTATION-PIPELINE-SPEC.md
-    explicit_anchor_ids docs/IMPLEMENTATION-PIPELINE-SPEC.md
-    markdown_heading_slugs docs/REVIEW-PIPELINE-SPEC.md
-    explicit_anchor_ids docs/REVIEW-PIPELINE-SPEC.md
+    markdown_heading_slugs docs/spec/implementation/configuration.md
+    explicit_anchor_ids docs/spec/implementation/configuration.md
+    markdown_heading_slugs docs/spec/review.md
+    explicit_anchor_ids docs/spec/review.md
   } | sort -u > "$combined_slugs"
 
   while IFS= read -r link; do
@@ -359,25 +359,22 @@ check_map() {
 # ---------------------------------------------------------------------------
 
 # Documents over the budget by nature, never a debt the ratchet tracks: the
-# changelog and the dated review reports are records, the roadmap a decision
-# log, and an as-built specification grows with every requirement-affecting
-# change AGENTS.md's "As-built specifications" section requires, so no entry
-# could hold one still (#2163). The specifications are named by the same
-# pattern AGENTS.md and scripts/is-docs-only.sh use, so a new component's
-# spec is covered the day it lands. Two of them are a debt all the same:
-# #2094 splits docs/IMPLEMENTATION-PIPELINE-SPEC.md and docs/DASHBOARD-SPEC.md
-# into files within the budget. A `*` matches within one path segment, so
-# docs/*-SPEC.md means the specifications at the top of docs/, the files
-# AGENTS.md lists, and no -SPEC.md file anywhere below; a pattern ending in
-# `/**` takes everything below its directory, at any depth. Each pattern must
-# match at least one in-scope document (check_size enforces it), so a move
-# such as #2094's fails here rather than leaving a stale exemption behind.
-# docs/README.md's "Size budget" section lists the same four.
+# changelog and the dated review reports are records, and the roadmap a
+# decision log with historical weight. An as-built specification carries no
+# blanket exemption: AGENTS.md's "As-built specifications" section requires
+# each one to grow with every requirement-affecting change, so one that grows
+# past the budget is split into a directory of files that are each within it
+# (#2094) — the same regime every other document follows, a future addition
+# that pushes one of those files over the budget fixed by splitting it
+# further, never by exempting it. A `*` matches within one path segment; a
+# pattern ending in `/**` takes everything below its directory, at any
+# depth. Each pattern must match at least one in-scope document (check_size
+# enforces it), so a stale exemption cannot linger unnoticed.
+# docs/README.md's "Size budget" section lists the same three.
 SIZE_EXEMPT=(
   'CHANGELOG.md'
   'docs/ROADMAP.md'
   'docs/reviews/**'
-  'docs/*-SPEC.md'
 )
 
 # exempt_pattern_matches PATH PATTERN
@@ -588,11 +585,12 @@ any_heading_matches() {
 # Populates BODY_CACHE[FILE] with the path to a scratch copy of its whole
 # unfenced, lower-cased, backtick-stripped text on first reference, for
 # citation_in_body's fallback search. A scratch *file*, not a bash
-# variable: `[[ "$bigstring" == *"$needle"* ]]` on a multi-megabyte string
-# (docs/IMPLEMENTATION-PIPELINE-SPEC.md alone unfences to 2.3 MB) measured
-# well over a minute per call — bash's own glob matching has no fast
-# substring path the way `grep -F` does. Same subshell caveat as
-# ensure_heading_cache: call as a plain statement, never substituted.
+# variable: `[[ "$bigstring" == *"$needle"* ]]` on a large document measured
+# well over a minute per call for one at the multi-megabyte scale the
+# documentation size budget now keeps every in-scope file well clear of —
+# bash's own glob matching has no fast substring path the way `grep -F`
+# does. Same subshell caveat as ensure_heading_cache: call as a plain
+# statement, never substituted.
 declare -A BODY_CACHE=()
 BODY_CACHE_DIR="$(mktemp -d)"
 trap 'rm -rf "$BODY_CACHE_DIR"' EXIT

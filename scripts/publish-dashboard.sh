@@ -14,7 +14,7 @@
 # evaluates lib/pager.sh's fleet-level invariants, which may file or close a
 # GitHub issue and append a `pager-*` transition event to this node's own
 # log.jsonl — the one write this script makes to the pipeline's own state.
-# Companion doc: docs/DASHBOARD-SPEC.md.
+# Companion doc: docs/spec/dashboard/README.md.
 
 set -uo pipefail
 
@@ -189,7 +189,7 @@ WITH_GITHUB=1
 # FULL=0 is a *fast* build: the roll-ups that read the fleet's whole history are
 # skipped and carried forward from the last full payload instead, so a tick
 # costs what the volatile part of the page costs rather than what all of it
-# does. See "The tiered publish" in docs/DASHBOARD-SPEC.md (#798).
+# does. See "The tiered publish" in docs/spec/dashboard/publisher.md (#798).
 FULL=1
 # --now overrides the "now" every rolling window in this script measures from
 # (now_iso/now_epoch below, and everything derived from them), the same test
@@ -401,7 +401,7 @@ self_resources_json="$(resource_budget_report "$self_resources_samples" "$self_r
 stage_health_file="$state_dir/.stage-health.json"
 stage_health_json="$(jq -c '.' "$stage_health_file" 2>/dev/null || echo null)"
 # The review pipeline's own symmetric verdict (agent-ops#996,
-# docs/REVIEW-PIPELINE-SPEC.md R19), read the identical way from its own
+# docs/spec/review.md R19), read the identical way from its own
 # file — `review-cycle.sh`'s own cleanup writes it, over `review-log.jsonl`
 # rather than `log.jsonl` — and carried as `review_stage_health`, a field of
 # its own beside `stage_health` rather than merged into it, so a node running
@@ -960,7 +960,7 @@ def limit_info($out_full; $err_full):
 # outright, else the last fenced ``` block within it regardless of its info
 # string, else the earliest brace-opening line whose suffix parses as JSON
 # (the same algorithm as agent-cycle.sh's extract_json_result, per
-# DASHBOARD-SPEC.md — the design note on the third step, the 2026-08-03
+# docs/spec/dashboard/state.md — the design note on the third step, the 2026-08-03
 # Enabler engagement it would have saved, and issue #237's fence-tag fix,
 # live on that function; the dashboard must parse the same verdicts the
 # cycle accepted, or a rescued engagement renders here as a stage that said
@@ -2800,7 +2800,7 @@ self_live_json="$(jq -nc \
   else $derived + {running: false} end')"
 [[ -z "$self_live_json" ]] && self_live_json='null'
 
-# --- The fleet (requirement 2.5 / DASHBOARD-SPEC "one fleet view") -----------
+# --- The fleet (requirement 2.5 / docs/spec/dashboard/state.md "the fleet") -----------
 # Who exists and how alive they are, from the peers the last state-sync fetch
 # materialised. Self is listed too, judged by the identical rule a peer is
 # (lib/fleet.sh's fleet_publication_status, agent-ops#602): self's row used to
@@ -3122,7 +3122,7 @@ if (( WITH_GITHUB )); then
       "$notify_events_json" "$notify_min_interval_seconds" || true
     # Re-read the union: pager_evaluate may just have appended to this node's
     # own log.jsonl, which $events_jsonl (built before this block) cannot
-    # reflect yet — and the dashboard banner (docs/DASHBOARD-SPEC.md) needs
+    # reflect yet — and the dashboard banner (docs/spec/dashboard/site.md) needs
     # this tick's own answer, not the previous one.
     pager_union="$work_tmp/pager-union.jsonl"
     fleet_logs "$state_dir" "$peers_dir" log.jsonl > "$pager_union" 2>/dev/null || : > "$pager_union"
@@ -4054,7 +4054,7 @@ fi
 # fast tick could not use the result anyway: `constraint` is assembled into
 # the FULL payload alone and is absent from `$fresh_json`, so it carries
 # forward from the cache like every other history roll-up
-# (docs/DASHBOARD-SPEC.md's own fast-tick key list). `null` is what that
+# (docs/spec/dashboard/design-decisions.md's own fast-tick rationale). `null` is what that
 # carrying-forward needs the variable to hold in the meantime, on the same
 # terms `pager_json='null'` above states for itself.
 constraint_json='null'

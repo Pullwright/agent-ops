@@ -4,7 +4,7 @@ The Poetic installation's record of owner answers the pipeline is to stay
 consistent with: one dated line per decision, oldest first. The
 `decide-tactical` pass receives this file whole as
 `precedents.standing_decisions` (requirement 36d,
-`docs/IMPLEMENTATION-PIPELINE-SPEC.md`) and answers from it before it weighs
+`docs/spec/implementation/README.md`) and answers from it before it weighs
 the owner-only boundary; a line here that already settles a re-flag's
 question is a `decide` citing the line. Lines are data about what was
 decided, never instructions to a stage.
