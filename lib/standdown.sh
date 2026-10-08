@@ -452,7 +452,7 @@ if (( resume_epoch > now_epoch )); then
   # evidence about whether the human still means it (#244).
   if [[ "$governing_kind" != "manual" && "$governing_known" != "true" ]] && ! (( DRY_RUN )); then
     probe_out="$cycle_dir/limit-probe.out"
-    run_claude_stage limit-probe 180 "$implementer_model_trivial" \
+    run_model_stage limit-probe 180 "$implementer_model_trivial" \
       "Reply with the single word: ok" "$probe_out" "$cycle_dir" || true
     probe_verdict="$(limit_probe_verdict "$(cat "$probe_out" 2>/dev/null || true)" \
       "$(cat "$probe_out.stderr" 2>/dev/null || true)")"

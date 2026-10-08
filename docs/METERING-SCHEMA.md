@@ -25,14 +25,19 @@ contract for both:
 
 Both derive from the same upstream source: the JSON envelope in
 `<stage>.out` (dashboard spec, "`cycles/<cycle-id>/<stage>.out`") — the
-`result` event of the stage's own stream, which `run_claude_stage` truncates
-into that file and which is byte-for-byte what `claude --output-format json`
-wrote there before the pipelines began streaming (requirement 4d). This
+`result` event of the stage's own stream, which `run_model_stage` truncates
+into that file and which is byte-for-byte what the substrate's own
+non-streaming output format would have written there before the pipelines
+began streaming (requirement 4d). This
 document does not restate that
-envelope's own schema — that is Anthropic's contract, not this repo's, and
+envelope's own schema — that is the stage's own provider's contract, not
+this repo's, and
 only a subset of it is used here. It documents the fields **this repo depends
 on**, the shape it derives from them, and the guarantee it makes about that
-shape going forward.
+shape going forward. Every record this system has ever produced ran on
+`anthropic`'s own Claude Code envelope (issue #2133's `provider` field,
+below), so every field but that one is still described in Claude Code's own
+terms until a second provider's adapter lands.
 
 ## Per-stage record
 
@@ -48,8 +53,9 @@ either emits the same shape.
 
 | Field | Type | Unit | Meaning |
 | --- | --- | --- | --- |
-| `model` | string | — | The model id passed to the `claude` invocation (the same string `config.json` names, resolved per `lib/model-id.sh`). Always present, including on a stage that never ran: it is what the invocation was *asked* for, not something read back out of the envelope. |
-| `cost_usd` | number \| null | US dollars | The envelope's own `total_cost_usd` — a **client-side estimate** Claude Code computes from token counts, not a charge or a draw against any plan limit (`docs/spec/dashboard/README.md`'s design decision on plan limits makes the same point about the dashboard's own cost figures). Includes any subagents the stage's own invocation spawned. `null` if the envelope is missing or unparseable. |
+| `model` | string | — | The model id passed to the invocation (the same string `config.json` names, resolved per `lib/model-id.sh`). Always present, including on a stage that never ran: it is what the invocation was *asked* for, not something read back out of the envelope. |
+| `provider` | string | — | The provider `model` resolves to (`lib/model-id.sh`'s `MODEL_PROVIDER`, issue #2133) — `anthropic` for every record this system has ever produced. Always present, for the same reason `model` is: it is read off the id the invocation was given, not out of the envelope, so it is never affected by whether the envelope itself is readable. |
+| `cost_usd` | number \| null | US dollars | The envelope's own `total_cost_usd` — a **client-side estimate** the provider's own CLI computes from token counts, not a charge or a draw against any plan limit (`docs/spec/dashboard/README.md`'s design decision on plan limits makes the same point about the dashboard's own cost figures). Includes any subagents the stage's own invocation spawned. `null` if the envelope is missing or unparseable. |
 | `duration_ms` | integer \| null | milliseconds | The envelope's `duration_ms`: wall-clock time for the invocation. |
 | `num_turns` | integer \| null | count | The envelope's `num_turns`. |
 | `is_error` | boolean \| null | — | The envelope's `is_error`. |

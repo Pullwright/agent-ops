@@ -120,7 +120,7 @@ with the Reviewer's own.
     wrong."
 44. **One-shot, no resumption, same foreground-wait discipline every other
     stage in this pipeline follows.** The Approver is launched exactly once
-    per Reviewer-`ready` round via `run_claude_stage` (component 4d, the same
+    per Reviewer-`ready` round via `run_model_stage` (component 4d, the same
     shared launcher every stage in this document uses), on
     `approver_model_default`/`approver_model_complex`/`approver_model_critical`
     per requirements 8b/8c, under the `approver` stage-budget key

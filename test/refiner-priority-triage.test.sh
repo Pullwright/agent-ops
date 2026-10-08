@@ -932,7 +932,7 @@ stage_watchdog_warning() { printf ''; }
 fleet_limit_resume_at() { printf ''; }
 detect_and_log_limit_hit() { return 0; }
 stage_salvage_result() { return 1; }
-run_claude_stage() {
+run_model_stage() {
   local out_file="$5"
   jq -nc --argjson env "$STUB_REFINED_JSON" '{result: ($env | tostring), session_id: "stub-session"}' \
     > "$out_file"

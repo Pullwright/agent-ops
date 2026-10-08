@@ -21,7 +21,7 @@
 # way, real, so the corroboration math under test is the genuine accounting
 # rather than a paraphrase of it (test/verdict-corroboration.test.sh already
 # covers those five in isolation; this file's job is the merge/fallback
-# orchestration built on top of them). `run_claude_stage` is stubbed to
+# orchestration built on top of them). `run_model_stage` is stubbed to
 # answer a queued sequence of canned verdicts — one per call — so a
 # scenario's several repositories can answer differently, the way genuinely
 # separate engagements do.
@@ -176,16 +176,16 @@ stage_budget_apply() {
   stage_inactivity_min=1
 }
 
-# run_claude_stage's stand-in: answers a queued sequence of canned verdicts,
+# run_model_stage's stand-in: answers a queued sequence of canned verdicts,
 # one per call (STUB_QUEUE_RC_<n>/STUB_QUEUE_JSON_<n>), so several
 # repositories' own engagements can answer differently within one cycle —
 # the way genuinely separate engagements do. Writes the envelope shape
 # extract_json_result parses a real transcript's final message out of.
 STUB_CALL_N=0
-run_claude_stage() {
+run_model_stage() {
   local out_file="$5"
   STUB_CALL_N=$(( STUB_CALL_N + 1 ))
-  record "run_claude_stage call=$STUB_CALL_N out=$(basename "$out_file")"
+  record "run_model_stage call=$STUB_CALL_N out=$(basename "$out_file")"
   local rc_var="STUB_QUEUE_RC_$STUB_CALL_N" json_var="STUB_QUEUE_JSON_$STUB_CALL_N"
   local rc="${!rc_var:-0}" body="${!json_var:-}"
   if [[ "$rc" == "0" && -n "$body" ]]; then
@@ -357,7 +357,7 @@ assert_contains "…and calls handle_stage_failure" "handle_stage_failure coordi
 
 : > "$calls_log"
 STUB_CALL_N=0
-# shellcheck disable=SC2034  # read only by the stubbed run_claude_stage
+# shellcheck disable=SC2034  # read only by the stubbed run_model_stage
 STUB_QUEUE_RC_1=0
 # shellcheck disable=SC2034
 STUB_QUEUE_JSON_1=""
@@ -530,7 +530,7 @@ calls="$(cat "$tmp_dir/scenario.out")"
 assert_eq "fully accounted: corroboration accepted" "accepted" \
   "$(events_named "$calls" corroboration | head -n1 | jq -r '.verdict')"
 assert_eq "…no fallback call (fallback_select_candidate never reached)" "0" \
-  "$(grep -cE '^run_claude_stage ' <<<"$calls")"
+  "$(grep -cE '^run_model_stage ' <<<"$calls")"
 assert_eq "…one none-selected, carrying the fingerprint" "fp-abc123" \
   "$(events_named "$calls" none-selected | head -n1 | jq -r '.fingerprint')"
 assert_eq "…and no td_verdict_rejected on a cleanly-accepted stand-down" "null" \
@@ -607,7 +607,7 @@ run_corroborate "every band accounted" '["acme/widgets"]' "acme/widgets: all rep
 calls="$(cat "$tmp_dir/scenario.out")"
 assert_eq "a per-item verdict in each band is corroborated" "1" \
   "$(events_named "$calls" corroboration | jq -s '[.[] | select(.verdict == "accepted")] | length')"
-assert_eq "…so no fallback call is bought" "0" "$(grep -cE '^run_claude_stage ' <<<"$calls")"
+assert_eq "…so no fallback call is bought" "0" "$(grep -cE '^run_model_stage ' <<<"$calls")"
 assert_eq "…and the none-selected carries the fingerprint" "fp-abc123" \
   "$(events_named "$calls" none-selected | head -n1 | jq -r '.fingerprint')"
 
@@ -714,7 +714,7 @@ assert_eq "a non-numeric failure count degrades to zero, not a crash" "fp-abc123
 
 # --- The stage transcript path must not carry the slug's own `/` -----------
 # `$cycle_dir/coordinator-Pullwright/agent-ops.out` names a directory
-# component nothing in the cycle creates; `run_claude_stage` redirects into
+# component nothing in the cycle creates; `run_model_stage` redirects into
 # both `stage_stream_file "$out_file"` and `"$out_file.stderr"`, so the
 # backgrounded subshell would die before `claude` was ever exec'd — for every
 # repository, on every cycle, with CI green over it because no function-level
@@ -733,9 +733,9 @@ else
     "$cycle_dir" "$(dirname "$coordinator_out")"
   assert_eq "…named for the repository, slug flattened" \
     "coordinator-Pullwright-agent-ops.out" "$(basename "$coordinator_out")"
-  # The redirections run_claude_stage performs, performed here: this is the
+  # The redirections run_model_stage performs, performed here: this is the
   # assertion that would have failed on the original path.
-  assert_eq "…and both of run_claude_stage's own redirections open against it" "0" \
+  assert_eq "…and both of run_model_stage's own redirections open against it" "0" \
     "$( : > "$coordinator_out" && : > "$coordinator_out.stderr" && echo 0 || echo 1 )"
   # Two configured repositories must never share a transcript.
   first_out="$coordinator_out"

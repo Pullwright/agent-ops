@@ -24,7 +24,7 @@
 # Sourced by agent-cycle.sh only; reads and writes the cycle's own globals
 # (`cycle_dir`, `ONCE`, `ordered_repos_json`, `selected_repo`/`selected_item`,
 # `claim_active`, …) exactly as it did inline, and calls lib/stage-run.sh's
-# `run_claude_stage` and lib/stage-budget.sh's `stage_budget_apply`.
+# `run_model_stage` and lib/stage-budget.sh's `stage_budget_apply`.
 
 # Stage prompts require the final message to be pure JSON, but a model will
 # sometimes prepend analysis prose anyway and put the real object in a
@@ -135,7 +135,7 @@ stage_salvage_inactivity_sec=90
 stage_salvage_result() {
   local stage="$1" out_file="$2" model="$3" cwd="$4"
   local session_id salvage_out salvage_rc salvage_result parsed
-  # run_claude_stage sets its caller-visible globals for whichever run is
+  # run_model_stage sets its caller-visible globals for whichever run is
   # most recent; the original run's metering is already logged by the time
   # this is called, but detect_and_log_limit_hit is not — it reads
   # $stage_rate_limit_json at the call sites' own discretion, later, against
@@ -144,22 +144,22 @@ stage_salvage_result() {
   # Saving and restoring here keeps this function's globals side effect
   # entirely local, which is what every caller of it is entitled to assume.
   local saved_gaps="$stage_gaps_json" saved_kill="$stage_kill_reason" \
-        saved_limit="$stage_rate_limit_json"
+        saved_limit="$stage_rate_limit_json" saved_provider="$stage_provider"
   session_id="$(jq -r '.session_id // empty' "$out_file" 2>/dev/null || true)"
   if [[ -z "$session_id" ]]; then
-    stage_gaps_json="$saved_gaps"; stage_kill_reason="$saved_kill"; stage_rate_limit_json="$saved_limit"
+    stage_gaps_json="$saved_gaps"; stage_kill_reason="$saved_kill"; stage_rate_limit_json="$saved_limit"; stage_provider="$saved_provider"
     return 1
   fi
   salvage_out="${out_file%.out}.salvage.out"
   log_event "salvage" "$(jq -nc --arg s "$stage" '{stage: $s, outcome: "attempted"}')"
-  if run_claude_stage "$stage-salvage" "$stage_salvage_backstop_sec" "$model" \
+  if run_model_stage "$stage-salvage" "$stage_salvage_backstop_sec" "$model" \
        "Return only the verdict JSON object, nothing else." \
        "$salvage_out" "$cwd" "$stage_salvage_inactivity_sec" "$session_id"; then
     salvage_rc=0
   else
     salvage_rc=$?
   fi
-  stage_gaps_json="$saved_gaps"; stage_kill_reason="$saved_kill"; stage_rate_limit_json="$saved_limit"
+  stage_gaps_json="$saved_gaps"; stage_kill_reason="$saved_kill"; stage_rate_limit_json="$saved_limit"; stage_provider="$saved_provider"
   if (( salvage_rc != 0 )); then
     log_event "salvage" "$(jq -nc --arg s "$stage" --argjson rc "$salvage_rc" \
       '{stage: $s, outcome: "failed", exit_code: $rc}')"
@@ -327,13 +327,13 @@ handle_stage_failure() {  # <stage> <rc> <out-file> [pr-url] [extra-json]
     detail="$stage was stopped the moment the account reported a usage limit — nothing it did after that could have succeeded"
   elif [[ "$rc" == "124" ]]; then
     detail="$stage timed out"
-  elif grep -q '^run_claude_stage: the .* stage was not launched: ' "$out_file.stderr" 2>/dev/null; then
+  elif grep -q '^run_model_stage: the .* stage was not launched: ' "$out_file.stderr" 2>/dev/null; then
     # Requirement 4k, read from this stage's own stderr, which the launcher
     # rewrites on every call. The file name and its keys stay out of `detail`,
     # which requirement 2.7 groups on; whether the commit carries the file
     # stays in, because it decides who must act: the pull request that commits
     # it, or whatever wrote it into the clone after the commit.
-    if grep -q '^run_claude_stage: the .* stage was not launched: .*; the file is as committed at ' \
+    if grep -q '^run_model_stage: the .* stage was not launched: .*; the file is as committed at ' \
          "$out_file.stderr"; then
       detail="$stage was not launched: the commit its checkout holds carries Claude Code project settings no stage may load"
     else
@@ -414,7 +414,7 @@ run_coordinator_stage_attempt() {  # <attempt-out-file> <prompt> [extra-budget-j
   coord_budget_repo="$(jq -r '.repo // "*"' <<<"$extra" 2>/dev/null || printf '*')"
   [[ -n "$coord_budget_repo" && "$coord_budget_repo" != "null" ]] || coord_budget_repo="*"
   stage_budget_apply coordinator "$coord_budget_repo" "$coordinator_model" "$extra"
-  if run_claude_stage coordinator "$(( stage_backstop_min * 60 ))" "$coordinator_model" "$prompt" "$out_file" "$cycle_dir" "$(( stage_inactivity_min * 60 ))"; then
+  if run_model_stage coordinator "$(( stage_backstop_min * 60 ))" "$coordinator_model" "$prompt" "$out_file" "$cycle_dir" "$(( stage_inactivity_min * 60 ))"; then
     rc=0
   else
     rc=$?

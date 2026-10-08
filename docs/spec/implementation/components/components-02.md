@@ -642,7 +642,7 @@
     `approver_stage_complexity`, the sole callers of the primitives above,
     composing them with `merge_autonomy_effective_level`
     (`lib/merge-autonomy.sh`), `create_escalation_issue` (`lib/enabler.sh`,
-    component 2) and the ordinary `run_claude_stage` launch every other stage
+    component 2) and the ordinary `run_model_stage` launch every other stage
     uses. Sourced, never executed, by `agent-cycle.sh`. Regression-tested in
     `test/approver.test.sh` against a stubbed `gh`, and the wiring those
     primitives hang off in `test/approver-wiring.test.sh`, which lifts

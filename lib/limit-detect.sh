@@ -217,7 +217,7 @@ limit_decide_structured() {
 # the only authority on whether the limit is still real). OUT_TEXT is the
 # probe's stdout — the headless JSON envelope — and ERR_TEXT its stderr; they
 # arrive as two arguments because stray stderr diagnostics concatenated into
-# the envelope would break the JSON parse (the same reason run_claude_stage
+# the envelope would break the JSON parse (the same reason run_model_stage
 # keeps the two files apart). Prints exactly one of:
 #   clear         the account answered — the limit behind the stand-down is
 #                 gone, and the caller may retire it (both carriers)

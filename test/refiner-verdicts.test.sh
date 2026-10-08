@@ -218,7 +218,7 @@ export REFINEMENT_GH="$tmp_dir/gh"
 
 # --- Stubs for every dependency whose own correctness is not this test's job -
 #
-# log_event, run_claude_stage, stage_prompt_text, stage_budget_apply,
+# log_event, run_model_stage, stage_prompt_text, stage_budget_apply,
 # metering_fields, stage_watchdog_warning, fleet_limit_resume_at,
 # detect_and_log_limit_hit, stage_salvage_result: each has (or belongs to) its
 # own test elsewhere (metering.test.sh, limit-detection.test.sh,
@@ -236,17 +236,17 @@ fleet_limit_resume_at() { printf ''; }
 detect_and_log_limit_hit() { return 0; }
 stage_salvage_result() { return 1; }
 
-# run_claude_stage's stand-in for the Claude CLI: writes the canned verdict
+# run_model_stage's stand-in for the Claude CLI: writes the canned verdict
 # envelope `$STUB_REFINED_JSON` — `{"refined": [...]}`, the Refiner's own
 # envelope key, deliberately not the Enabler's `examined` (a stub writing that
 # shape would make every case below pass vacuously with zero verdicts) — to
 # OUT_FILE as `{"result": "<that envelope, as text>"}`, exactly the shape
 # extract_json_result parses a real transcript's final message out of.
 # $STUB_RESULT_RAW substitutes unparseable prose for the containment case.
-# Also sets the two globals the real run_claude_stage sets as a side effect
+# Also sets the two globals the real run_model_stage sets as a side effect
 # (stage_gaps_json, stage_kill_reason), since the caller reads them
 # immediately afterward.
-run_claude_stage() {
+run_model_stage() {
   local out_file="$5"
   if [[ -n "${STUB_RESULT_RAW:-}" ]]; then
     jq -nc --arg r "$STUB_RESULT_RAW" '{result: $r, session_id: "stub-session"}' > "$out_file"

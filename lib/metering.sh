@@ -8,12 +8,30 @@
 # lib/stage-run.sh leaves in `<stage>.out` — rather than each growing its own
 # copy of the field list.
 
+# lib/model-id.sh's map, read by `provider` below — declared defensively
+# here too (same guard as lib/stage-run.sh's own copy) since this file is
+# sourced standalone by test/metering.test.sh, never lib/model-id.sh.
+declare -p MODEL_PROVIDER >/dev/null 2>&1 || declare -gA MODEL_PROVIDER=()
+
 # metering_fields MODEL OUT_FILE [GAPS_JSON]
-# Prints the documented per-stage metering object: model, cost_usd,
+# Prints the documented per-stage metering object: model, provider, cost_usd,
 # duration_ms, num_turns, is_error, tokens{input,output,cache_creation,
 # cache_read}, and gaps. MODEL is the id passed to the invocation (not
 # re-derived from the envelope, which may be silent or ambiguous about it);
 # OUT_FILE is the stage's own `.out` transcript.
+#
+# `provider` (issue #2133) is read from `lib/model-id.sh`'s MODEL_PROVIDER —
+# the same map `lib/stage-run.sh`'s `run_model_stage` reads to choose a
+# substrate — rather than taken as a parameter, so every existing caller's
+# `metering_fields "$model" "$out_file" "$gaps"` keeps working unchanged: the
+# provider for MODEL was already recorded the moment that model string was
+# resolved via `resolve_model_id_into` — the assigning form, and only that
+# one, since the printing `resolve_model_id` runs in a command substitution
+# whose subshell takes the recording with it. Falls back to `anthropic`
+# exactly as `run_model_stage`'s own lookup does, for a MODEL the map holds
+# nothing for (every test that never called
+# `providers_load`/`resolve_model_id_into` first, and every model this image
+# has ever run before this issue).
 #
 # GAPS_JSON is the one field that does not come from the envelope, because it
 # cannot: it is what the Script observed of the run's own event stream while
@@ -43,12 +61,13 @@
 # after the call: whatever jq makes of the envelope, this function prints one
 # valid object.
 metering_fields() {
-  local model="$1" out_file="$2" gaps="${3:-null}" record
+  local model="$1" out_file="$2" gaps="${3:-null}" record provider
   # Validated here rather than trusted: an unparseable third argument fed to
   # `--argjson` would fail the whole jq call, which is the one failure this
   # function is written to make impossible.
   jq -e . <<<"$gaps" >/dev/null 2>&1 || gaps="null"
-  record="$(jq -nc --arg model "$model" --argjson gaps "$gaps" \
+  provider="${MODEL_PROVIDER[$model]:-anthropic}"
+  record="$(jq -nc --arg model "$model" --arg provider "$provider" --argjson gaps "$gaps" \
     --rawfile raw <(cat "$out_file" 2>/dev/null || printf '{}') '
     ($raw | try fromjson catch {}) as $raw_e
     | (if ($raw_e | type) == "object" then $raw_e else {} end) as $e
@@ -59,6 +78,7 @@ metering_fields() {
     | def present($k): $e | has($k);
       {
         model: $model,
+        provider: $provider,
         cost_usd: (if present("total_cost_usd") then $e.total_cost_usd else null end),
         duration_ms: (if present("duration_ms") then $e.duration_ms else null end),
         num_turns: (if present("num_turns") then $e.num_turns else null end),
@@ -88,8 +108,8 @@ metering_fields() {
         gaps: $gaps
       }' 2>/dev/null)" || record=""
   if [[ -z "$record" ]]; then
-    record="$(jq -nc --arg model "$model" \
-      '{model: $model, cost_usd: null, duration_ms: null, num_turns: null, is_error: null, tokens: null, gaps: null}')"
+    record="$(jq -nc --arg model "$model" --arg provider "$provider" \
+      '{model: $model, provider: $provider, cost_usd: null, duration_ms: null, num_turns: null, is_error: null, tokens: null, gaps: null}')"
   fi
   printf '%s\n' "$record"
 }

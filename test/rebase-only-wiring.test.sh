@@ -22,7 +22,7 @@
 #     `diff_patch_id`, and asserts that none of it runs in the Implementer's
 #     clone (requirement 45e).
 #   - **The engagement block**: acts on `$rebase_only` — skipping
-#     `stage_budget_apply`/`run_claude_stage` and synthesising a `ready`
+#     `stage_budget_apply`/`run_model_stage` and synthesising a `ready`
 #     verdict for the handoff path below, or running the engagement for real.
 #
 # All three blocks are lifted verbatim out of agent-cycle.sh, the same technique
@@ -280,7 +280,7 @@ stage_gaps_json='{}'
 ONCE=0
 log_event() { printf '%s\t%s\n' "\$1" "\$2" >>"$tmp_dir/events"; }
 stage_budget_apply() { printf 'stage_budget_apply\n' >>"$tmp_dir/calls"; }
-run_claude_stage() { printf 'run_claude_stage\n' >>"$tmp_dir/calls"; return 0; }
+run_model_stage() { printf 'run_model_stage\n' >>"$tmp_dir/calls"; return 0; }
 metering_fields() { printf '{}'; }
 rework_stage_rerun_maybe() { :; }
 log_node_state_transition() { :; }
@@ -311,7 +311,7 @@ assert_contains "  ... at exit code 0, so handle_stage_failure never fires" "rc=
 
 out="$(run_engagement "false")"
 assert_contains "a push whose diff changed runs the engagement for real" \
-  "run_claude_stage" "$(cat "$tmp_dir/calls")"
+  "run_model_stage" "$(cat "$tmp_dir/calls")"
 assert_contains "  ... charging the stage budget for it" \
   "stage_budget_apply" "$(cat "$tmp_dir/calls")"
 assert_contains "  ... logging stage-end" "stage-end" "$(cat "$tmp_dir/events")"

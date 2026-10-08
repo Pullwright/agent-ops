@@ -16,7 +16,7 @@
 # exactly how test/enabler-verdicts.test.sh treats `run_enabler_adjudication`
 # (a live nested Claude launch has no place in a wiring test) — and, in its
 # own section below, `run_open_question_adjudication`'s own internals tested
-# directly, with `run_claude_stage` stubbed instead.
+# directly, with `run_model_stage` stubbed instead.
 #
 # Every function here is lifted verbatim out of lib/landing.sh, so the
 # assertions are about the shipped code rather than a copy of its logic.
@@ -344,7 +344,7 @@ echo
 
 # ============================================================================
 # Part C: `run_open_question_adjudication` itself — the prompt launch, model
-# choice and verdict parsing — with `run_claude_stage` stubbed instead of the
+# choice and verdict parsing — with `run_model_stage` stubbed instead of the
 # whole ladder above it.
 # ============================================================================
 
@@ -380,7 +380,7 @@ stage_budget_apply() { :; }
 metering_fields() { printf '{}'; }
 extract_json_result() { [[ -n "${1// /}" ]] || return 1; jq -c . <<<"$1"; }
 
-run_claude_stage() {
+run_model_stage() {
   printf '%s\n' "$3" >>"$T/launches"
   if [[ "${STAGE_RC:-0}" != "0" ]]; then
     return "$STAGE_RC"

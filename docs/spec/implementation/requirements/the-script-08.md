@@ -373,7 +373,7 @@
      executes itself (`apiKeyHelper`, `awsAuthRefresh`,
      `awsCredentialExport`, `gcpAuthRefresh`, `otelHeadersHelper`,
      `proxyAuthHelper`, `processWrapper`), or those that fetch plugins
-     (`enabledPlugins`, `extraKnownMarketplaces`). So `run_claude_stage`
+     (`enabledPlugins`, `extraKnownMarketplaces`). So `run_model_stage`
      (requirement 4d) vets `.claude/settings.json` and
      `.claude/settings.local.json` in its working directory, the only place
      Claude reads project settings from, against an allowlist before it

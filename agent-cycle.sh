@@ -119,7 +119,7 @@ scratch_enter agent-cycle || exit 1
 # shellcheck source=lib/stage-budget.sh
 . "$SCRIPT_DIR/lib/stage-budget.sh"
 # shellcheck source=lib/stage-attempt.sh
-# Sourced after stage-run.sh (run_claude_stage) and stage-budget.sh
+# Sourced after stage-run.sh (run_model_stage) and stage-budget.sh
 # (stage_budget_apply), both of which run_coordinator_stage_attempt calls.
 . "$SCRIPT_DIR/lib/stage-attempt.sh"
 # shellcheck source=lib/cycle-state.sh
@@ -593,28 +593,43 @@ workspace_root="$(expand_home "$(cfg '.workspace_root')")"
 # it is invoked, including a model-driven `gh …` call this process never sees
 # directly.
 export PW_GH_STATE_DIR="$state_dir"
-coordinator_model="$(resolve_model_id coordinator_model "$(cfg '.coordinator_model')")"
-implementer_model_default="$(resolve_model_id implementer_model_default "$(cfg '.implementer_model_default')")"
-implementer_model_trivial="$(resolve_model_id implementer_model_trivial "$(cfg '.implementer_model_trivial')")"
-reviewer_model_default="$(resolve_model_id reviewer_model_default "$(cfg '.reviewer_model_default')")"
+# Every stage model is read raw and then resolved *in place*, with
+# `resolve_model_id_into VAR KEY VALUE` (lib/model-id.sh) — never the
+# printing `resolve_model_id`, whose command substitution would discard the
+# MODEL_PROVIDER recording that requirement 4d's substrate dispatch and
+# requirement 33a's `provider` field both read back, leaving every stage
+# silently launching on `claude-code` whatever its model resolved to. The
+# two-step shape is what the tier chains below (`reviewer_model_complex`,
+# `approver_model_*`, `enabler_model_critical`) have always used for their
+# own reasons, so the whole block now reads one way; it also keeps each
+# variable a visible assignment, which an indirect `printf -v` is not.
+coordinator_model="$(cfg '.coordinator_model')"
+resolve_model_id_into coordinator_model coordinator_model "$coordinator_model"
+implementer_model_default="$(cfg '.implementer_model_default')"
+resolve_model_id_into implementer_model_default implementer_model_default "$implementer_model_default"
+implementer_model_trivial="$(cfg '.implementer_model_trivial')"
+resolve_model_id_into implementer_model_trivial implementer_model_trivial "$implementer_model_trivial"
+reviewer_model_default="$(cfg '.reviewer_model_default')"
+resolve_model_id_into reviewer_model_default reviewer_model_default "$reviewer_model_default"
 # The complexity escalation (requirement 8a): a PR graded `complexity:high` is
 # reviewed on this tier. Empty falls back to the default tier, which switches
 # the escalation off.
 reviewer_model_complex="$(cfg '.reviewer_model_complex')"
 [[ -n "$reviewer_model_complex" ]] || reviewer_model_complex="$reviewer_model_default"
-reviewer_model_complex="$(resolve_model_id reviewer_model_complex "$reviewer_model_complex")"
+resolve_model_id_into reviewer_model_complex reviewer_model_complex "$reviewer_model_complex"
 # The Approver (requirement 8b, D18 WI-5). Three tiers on the same
 # empty-falls-back-to-the-tier-below chain `reviewer_model_complex` already
-# uses, extended one step further for adjudication — `resolve_model_id`
+# uses, extended one step further for adjudication — `resolve_model_id_into`
 # passes an empty value through unchanged, so `approver_model_default` empty
 # stays empty here and disables the whole stage further down (requirement 8b).
-approver_model_default="$(resolve_model_id approver_model_default "$(cfg '.approver_model_default')")"
+approver_model_default="$(cfg '.approver_model_default')"
+resolve_model_id_into approver_model_default approver_model_default "$approver_model_default"
 approver_model_complex="$(cfg '.approver_model_complex')"
 [[ -n "$approver_model_complex" ]] || approver_model_complex="$approver_model_default"
-approver_model_complex="$(resolve_model_id approver_model_complex "$approver_model_complex")"
+resolve_model_id_into approver_model_complex approver_model_complex "$approver_model_complex"
 approver_model_critical="$(cfg '.approver_model_critical')"
 [[ -n "$approver_model_critical" ]] || approver_model_critical="$approver_model_complex"
-approver_model_critical="$(resolve_model_id approver_model_critical "$approver_model_critical")"
+resolve_model_id_into approver_model_critical approver_model_critical "$approver_model_critical"
 # The restale sweep's own no-progress escalation threshold (requirement 46,
 # agent-ops#682) — how long a rebase-only-stale Approver review, or an
 # unreviewed pull request whose recovery engagements are not producing one
@@ -628,7 +643,8 @@ approver_unreviewed_engage_after_hours="$(cfg '.approver_unreviewed_engage_after
 # The Enabler (requirements 35–37). Its model is the most expensive this system
 # runs, which is affordable only because the eligibility rule engages it rarely:
 # an empty `enabler_model` disables the stage outright.
-enabler_model="$(resolve_model_id enabler_model "$(cfg '.enabler_model')")"
+enabler_model="$(cfg '.enabler_model')"
+resolve_model_id_into enabler_model enabler_model "$enabler_model"
 # The Enabler's own critical tier (D18 §6, agent-ops#936): both bounded
 # passes below `escalate` — `adjudicate-first`'s adjudication and
 # `decide-tactical`'s decide — run at this model, on the same
@@ -638,7 +654,7 @@ enabler_model="$(resolve_model_id enabler_model "$(cfg '.enabler_model')")"
 # first appearance.
 enabler_model_critical="$(cfg '.enabler_model_critical')"
 [[ -n "$enabler_model_critical" ]] || enabler_model_critical="$enabler_model"
-enabler_model_critical="$(resolve_model_id enabler_model_critical "$enabler_model_critical")"
+resolve_model_id_into enabler_model_critical enabler_model_critical "$enabler_model_critical"
 enabler_after_coordinator_cycles="$(cfg '.enabler_after_coordinator_cycles')"
 # A refinement block (requirements 34e, 35a) ages on its own threshold,
 # because unlike an ordinary block it waits on the Enabler and nothing else —
@@ -792,7 +808,8 @@ escalation_adjudication_max_passes="$(cfg '.escalation_adjudication_max_passes')
 # Co-Ordinator (which sources it must not select unrefined); an unreadable
 # object is treated as empty, which is "every source exempt" — the same "not a
 # licence to spend" default every threshold here falls back to.
-refiner_model="$(resolve_model_id refiner_model "$(cfg '.refiner_model')")"
+refiner_model="$(cfg '.refiner_model')"
+resolve_model_id_into refiner_model refiner_model "$refiner_model"
 refined_label="$(cfg '.refined_label')"
 refiner_max_per_engagement="$(cfg '.refiner_max_per_engagement')"
 [[ "$refiner_max_per_engagement" =~ ^[0-9]+$ ]] || refiner_max_per_engagement=5
@@ -842,7 +859,7 @@ refinement_paused_sources="$(config_refinement_sources_paused_by_cap \
 # can never drift. Re-resolved to each model's *qualified* id (issue #2131)
 # rather than reusing the bare variables above: MODEL_TIER_RANK is keyed by
 # qualified id, and these four have already been validated once each by the
-# resolve_model_id calls above, so re-resolving here cannot fail afresh.
+# resolve_model_id_into calls above, so re-resolving here cannot fail afresh.
 tier_violations="$(config_model_tier_floor_violations \
   "$(resolve_model_qualified refiner_model "$(cfg '.refiner_model')")" \
   "$(resolve_model_qualified enabler_model "$(cfg '.enabler_model')")" \
@@ -1619,7 +1636,7 @@ trap cleanup EXIT
 # `exit` hands 128+n to the EXIT trap, so `cycle-end` reports the truth and
 # `maybe_run_enabler`'s cycle_rc guard skips the Enabler unasked.
 #
-# `stage_pid`/`stage_name` are advertised by `run_claude_stage` while a stage
+# `stage_pid`/`stage_name` are advertised by `run_model_stage` while a stage
 # is in flight and empty otherwise, so the handler never blames a stage that
 # had already ended cleanly.
 stage_pid=""

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# lib/stage-run.sh — the one implementation of "run a headless `claude` stage"
+# lib/stage-run.sh — the one implementation of "run a headless model stage"
 # (requirement 4d of docs/spec/implementation/README.md).
 #
 # Sourced by agent-cycle.sh and review-cycle.sh so both pipelines launch, cap
@@ -10,6 +10,54 @@
 # already said in as many words that they must not diverge; a shared file is
 # the only form of that promise a reviewer does not have to check by eye.
 #
+# `run_model_stage` is provider-neutral: everything in this file is what
+# docs/PROVIDER-SEAM-AUDIT.md §1 calls the substrate contract — the process
+# group and the two caps, the stream/`.out`/`.out.stderr` files, the gap
+# clock, the metering hand-off — identical whichever provider a stage's model
+# resolves to. What is *not* neutral (the binary, its argv, its prompt
+# delivery, its own result-line and rate-limit shapes) lives one call away,
+# in a `lib/substrate-<name>.sh` adapter — today, only
+# `lib/substrate-claude-code.sh`, sourced below — resolved per invocation by
+# `stage_model_substrate` from the model it was asked to run (issue #2133:
+# the Claude adapter extracted from this file unchanged).
+#
+# shellcheck source=lib/substrate-claude-code.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/substrate-claude-code.sh"
+
+# PROVIDER_SUBSTRATE/MODEL_PROVIDER are lib/model-id.sh's: the provider each
+# model resolves to (requirement 1a), and — populated as a side effect of
+# every `resolve_model_id_into` call, and only of the assigning form, since a
+# command substitution discards the recording with its subshell — the
+# provider each bare model id last resolved from. A new call site whose
+# resolved model reaches the launcher below therefore has to use
+# `resolve_model_id_into`; the printing `resolve_model_id` leaves this map
+# empty and the lookup silently falls back. Declared defensively here, rather
+# than assumed, because
+# several of this file's own tests source this file alone, never
+# lib/model-id.sh: a bare reference to an undeclared associative array is a
+# hard "unbound variable" under the `set -u` those tests (and every caller)
+# run under, not a convenient empty read. Guarded so as never to clobber a
+# map lib/model-id.sh already populated, whichever of the two is sourced
+# first.
+declare -p PROVIDER_SUBSTRATE >/dev/null 2>&1 || declare -gA PROVIDER_SUBSTRATE=()
+declare -p MODEL_PROVIDER >/dev/null 2>&1 || declare -gA MODEL_PROVIDER=()
+
+# stage_model_substrate MODEL
+# The installed substrate MODEL's provider resolves to: look up the provider
+# MODEL_PROVIDER last recorded for MODEL, then that provider's substrate in
+# PROVIDER_SUBSTRATE — falling back to `claude-code` at either step when
+# nothing is recorded, which is every caller that never loaded
+# lib/model-id.sh (most of this file's own tests, by design — see
+# lib/substrate-claude-code.sh's header) and every model this image has ever
+# run before #2133, since `anthropic`/`claude-code` is the only provider that
+# has ever existed to record.
+stage_model_substrate() {
+  local model="${1:-}" provider substrate
+  provider="${MODEL_PROVIDER[$model]:-anthropic}"
+  substrate="${PROVIDER_SUBSTRATE[$provider]:-claude-code}"
+  printf '%s\n' "$substrate"
+}
+
 # What a stage leaves behind, per invocation:
 #
 #   <stage>.stream.jsonl  every event the run emitted, newline-delimited JSON,
@@ -53,6 +101,14 @@ stage_kill_reason=""
 # strictly better evidence than the prose the phrase matcher reads — see
 # `limit_decide_structured` in lib/limit-detect.sh.
 stage_rate_limit_json=""
+
+# The provider the most recent run's model resolved to (`stage_model_substrate`'s
+# own input, not its output) — read by `detect_and_log_limit_hit`'s three
+# copies so a `limit-hit` event and `fleet/limit.json` record both name which
+# provider's account hit the limit, even though the stand-down itself still
+# covers the whole fleet regardless of provider (issue #2133; scoping it
+# per-provider is #2135). Defaults to `anthropic`, same as `stage_model_substrate`.
+stage_provider="anthropic"
 
 # Requirement 4k: the Claude Code project settings a stage will load from the
 # directory it runs in. Headless `claude -p` treats its working directory as
@@ -221,36 +277,26 @@ stage_stream_file() {
   printf '%s.stream.jsonl' "${1%.out}"
 }
 
-# stage_result_line STREAM_FILE
+# stage_result_line STREAM_FILE [SUBSTRATE]
 # Print the run's final `result` event, or nothing (returning 1) when the
-# stream carries none. Reading is deliberately tolerant in both directions a
-# stream can be damaged:
-#
-#   - a killed run's stream ends mid-line, and jq reports a parse error at
-#     EOF *after* emitting everything it had already parsed. Its status and
-#     its stderr are therefore both discarded: the question here is "was a
-#     complete result event written", and a torn tail is the normal shape of
-#     a stage that was killed, not an error to propagate.
-#   - a line that is valid JSON but not an object would make `.type` a hard
-#     jq error, taking the whole program — and with it a perfectly readable
-#     result line — down with it. jq's `and` short-circuits, so the type
-#     guard ahead of the field test is what keeps such a line merely skipped.
-#
-# `tail -n 1` rather than `head`: the result event is the last thing a run
-# emits, and taking the last match keeps this correct if a future CLI version
-# ever emits more than one.
+# stream carries none. Dispatches to SUBSTRATE's own
+# `substrate_<name>_result_line` (default `claude-code`, since that is the
+# only substrate every existing caller — direct, in a test, or via
+# `run_model_stage` with no model-id map populated — has ever meant). The
+# shape itself (a killed run's torn tail yielding an earlier complete event
+# rather than an error; `tail -n 1` over `head` in case a future CLI version
+# ever emits more than one `result`) is each adapter's own business now —
+# see lib/substrate-claude-code.sh's copy for the reasoning, unchanged from
+# when it lived here.
 stage_result_line() {
-  local stream_file="$1" line
-  [[ -s "$stream_file" ]] || return 1
-  line="$(jq -c 'select(type == "object" and .type == "result")' "$stream_file" 2>/dev/null | tail -n 1)" || true
-  [[ -n "$line" ]] || return 1
-  printf '%s\n' "$line"
+  local stream_file="$1" substrate="${2:-claude-code}"
+  "substrate_${substrate//-/_}_result_line" "$stream_file"
 }
 
 # stage_gap_stats SECONDS...
 # Summarise a run's inter-event gaps as the object requirement 33a documents:
 # `{n, p50, p95, p99, max}`, seconds. Prints `null` given no readable
-# observation at all — which no real run produces, since `run_claude_stage`
+# observation at all — which no real run produces, since `run_model_stage`
 # always records the silence that ended it, so `null` on a stage-end event
 # means the record was not measured rather than that the run was never quiet.
 #
@@ -278,35 +324,18 @@ stage_gap_stats() {
       end' 2>/dev/null || printf 'null'
 }
 
-# stage_rejected_rate_limit STREAM_FILE
+# stage_rejected_rate_limit STREAM_FILE [SUBSTRATE]
 # Print the `rate_limit_info` of a `rate_limit_event` in the stream that says
 # the account was refused, or nothing (returning 1) when there is none.
-#
-# `rejected` and nothing else. The runner's own vocabulary for this field is
-# `allowed`, `allowed_warning` and `rejected`, and only the last is a refusal:
-# `allowed_warning` is "you are close", which a stage should be allowed to run
-# through. Anything unrecognised is likewise left alone, so a value added
-# upstream later cannot start killing stages before anyone has looked at it —
-# it simply falls through to the phrase matcher that has always handled this,
-# after the stage ends. That asymmetry is deliberate: failing to abort early
-# costs the rest of a wall-clock cap, while aborting a healthy stage throws
-# away everything it had done.
-#
-# The `grep` is a pre-filter, not the decision. It runs every poll over the
-# whole stream, which is cheap even at megabytes, and only when it hits does
-# jq confirm the string came from a top-level `rate_limit_event` rather than
-# from inside a tool result — an Implementer working on limit detection would
-# otherwise abort itself for reading its own test fixtures.
+# Dispatches to SUBSTRATE's own `substrate_<name>_rejected_rate_limit`
+# (default `claude-code`, same reasoning as `stage_result_line` above). The
+# vocabulary itself (`allowed`/`allowed_warning`/`rejected`, and the
+# asymmetry in what each means for a stage in flight) is each adapter's own
+# business now — see lib/substrate-claude-code.sh's copy, unchanged from when
+# it lived here.
 stage_rejected_rate_limit() {
-  local stream_file="$1" info
-  [[ -s "$stream_file" ]] || return 1
-  grep -aqF '"status":"rejected"' "$stream_file" 2>/dev/null || return 1
-  info="$(jq -c 'select(type == "object" and .type == "rate_limit_event")
-                 | .rate_limit_info
-                 | select(type == "object" and .status == "rejected")' \
-            "$stream_file" 2>/dev/null | tail -n 1)" || true
-  [[ -n "$info" ]] || return 1
-  printf '%s\n' "$info"
+  local stream_file="$1" substrate="${2:-claude-code}"
+  "substrate_${substrate//-/_}_rejected_rate_limit" "$stream_file"
 }
 
 # stage_watchdog_warning STAGE
@@ -328,22 +357,24 @@ stage_watchdog_warning() {
     '{detail: ($s + " was stopped by the liveness watchdog: it produced no output at all for its whole inactivity threshold. Either it was wedged, which is what the watchdog is for, or the threshold is too tight for what it was doing — check the stage stream before assuming the first.")}'
 }
 
-# --- Run a headless claude invocation with a wall-clock timeout, killing its
-#     whole process group on timeout. `set -m` gives the backgrounded job its
-#     own process group so `kill -TERM -$pid` reaches every descendant. ---
+# --- Run a headless model-stage invocation with a wall-clock timeout, killing
+#     its whole process group on timeout. `set -m` gives the backgrounded job
+#     its own process group so `kill -TERM -$pid` reaches every descendant. ---
 #
-# run_claude_stage STAGE TIMEOUT_SEC MODEL PROMPT OUT_FILE CWD [INACTIVITY_SEC] [RESUME_SESSION_ID]
+# run_model_stage STAGE TIMEOUT_SEC MODEL PROMPT OUT_FILE CWD [INACTIVITY_SEC] [RESUME_SESSION_ID]
 # Returns the invocation's own exit status, or 124 when either cap fired.
 # Sets the caller-visible `stage_pid`/`stage_name` for the duration (see the
-# note at each pipeline's signal handler) and clears them on the way out, and
-# `stage_kill_reason` to say which cap fired, if either.
+# note at each pipeline's signal handler) and clears them on the way out,
+# `stage_kill_reason` to say which cap fired, if either, and `stage_provider`
+# to the provider MODEL resolved to (`stage_model_substrate`'s own input).
 #
-# RESUME_SESSION_ID, when given, is passed to `claude` as `--resume`: PROMPT
-# then continues that session instead of starting a fresh one. This is the one
-# mechanism a salvage attempt needs (issue #237) — the model that already did
-# the work is asked to restate its verdict, not to redo the work from nothing.
-# Every other cap, kill and metering path is identical to a fresh run; a
-# caller distinguishes a salvage's own record by the `stage` name it passes.
+# RESUME_SESSION_ID, when given, is passed through as a session to resume:
+# PROMPT then continues that session instead of starting a fresh one. This is
+# the one mechanism a salvage attempt needs (issue #237) — the model that
+# already did the work is asked to restate its verdict, not to redo the work
+# from nothing. Every other cap, kill and metering path is identical to a
+# fresh run; a caller distinguishes a salvage's own record by the `stage` name
+# it passes.
 #
 # TIMEOUT_SEC is the **backstop**: the outer bound on a stage, there for the
 # one failure the watchdog cannot see — a session looping productively,
@@ -359,18 +390,20 @@ stage_watchdog_warning() {
 # and the record says the pipeline only ever killed the first: across 456
 # stage runs, every killed run was emitting steadily when the wall reached
 # it, and not one genuinely hung actor was found.
-run_claude_stage() {
+run_model_stage() {
   local stage="$1" timeout_sec="$2" model="$3" prompt="$4" out_file="$5" cwd="$6"
   local inactivity_sec="${7:-0}" resume_session_id="${8:-}"
-  local pid waited=0 rc stream_file rate_limit_info
-  local -a claude_args=(-p --model "$model" --dangerously-skip-permissions \
-    --output-format stream-json --verbose)
-  [[ -n "$resume_session_id" ]] && claude_args+=(--resume "$resume_session_id")
+  local pid waited=0 rc stream_file rate_limit_info substrate
   local seen_bytes=0 now size last_growth gaps=()
+  substrate="$(stage_model_substrate "$model")"
   stream_file="$(stage_stream_file "$out_file")"
   stage_gaps_json="null"
   stage_kill_reason=""
   stage_rate_limit_json=""
+  # Read by detect_and_log_limit_hit's three copies (agent-cycle.sh,
+  # review-cycle.sh, monitor-cycle.sh), which shellcheck cannot see from here.
+  # shellcheck disable=SC2034
+  stage_provider="${MODEL_PROVIDER[$model]:-anthropic}"
 
   # Requirement 4k: never start the runner in a directory whose project
   # settings could make it run something. The three files are left as a stage
@@ -385,7 +418,7 @@ run_claude_stage() {
   if settings_refusal="$(stage_project_settings_refusal "$cwd")"; then
     : >"$stream_file"
     : >"$out_file"
-    printf 'run_claude_stage: the %s stage was not launched: %s (requirement 4k)\n' \
+    printf 'run_model_stage: the %s stage was not launched: %s (requirement 4k)\n' \
       "$stage" "$settings_refusal" >"$out_file.stderr"
     return 1
   fi
@@ -409,17 +442,22 @@ run_claude_stage() {
   # fixed at compile time and unaffected by `ulimit`, so `getconf ARG_MAX`'s
   # far larger total is no guide to it. An assembled stage prompt is already
   # the same order of magnitude and grows with every prompt edit, so passing
-  # it as `claude -p "$prompt"` puts the pipeline one paragraph away from an
-  # exec that fails with E2BIG before the model is ever reached. A here-string
-  # (rather than a pipe) keeps the invocation a single process whose status is
-  # the stage's own: under `pipefail` a `printf | claude` would report
-  # printf's SIGPIPE, 141, whenever a stage exited without draining stdin.
+  # it as an argument puts the pipeline one paragraph away from an exec that
+  # fails with E2BIG before the model is ever reached. A here-string (rather
+  # than a pipe) keeps the invocation a single process whose status is the
+  # stage's own: under `pipefail` a `printf | claude` would report printf's
+  # SIGPIPE, 141, whenever a stage exited without draining stdin.
   #
   # This pipeline's own prompts have room to spare in the review cycle and
   # none to spare in the implementation cycle; they share this function
   # precisely so the one with room cannot quietly stop being covered.
+  #
+  # The substrate adapter's own `_exec` becomes this subshell via `exec`
+  # (lib/substrate-claude-code.sh), so it is still this backgrounded job's
+  # pid and process group that `$!` captures below and that the caps below
+  # kill — never a child of it.
   set -m
-  ( cd "$cwd" && claude "${claude_args[@]}" <<<"$prompt" ) \
+  ( cd "$cwd" && "substrate_${substrate//-/_}_exec" "$model" "$resume_session_id" <<<"$prompt" ) \
     >"$stream_file" 2>"$out_file.stderr" &
   pid=$!
   set +m
@@ -469,7 +507,7 @@ run_claude_stage() {
       # burned the rest of its wall-clock cap first. Checked only when the
       # stream grew, because that is the only moment a new event can have
       # arrived.
-      if rate_limit_info="$(stage_rejected_rate_limit "$stream_file")"; then
+      if rate_limit_info="$(stage_rejected_rate_limit "$stream_file" "$substrate")"; then
         # shellcheck disable=SC2034  # read by each pipeline's limit detection
         stage_rate_limit_json="$rate_limit_info"
         stage_kill_reason="rate-limit"
@@ -537,7 +575,7 @@ run_claude_stage() {
   # Truncating the stream to its result event here — rather than publishing
   # the stream as `.out` — is also what keeps the state mirror's size where
   # it was: see scripts/state-sync.sh on why a stream is never replicated.
-  stage_result_line "$stream_file" >"$out_file" 2>/dev/null || : >"$out_file"
+  stage_result_line "$stream_file" "$substrate" >"$out_file" 2>/dev/null || : >"$out_file"
 
   # The GitHub budget reading after the model's own run, attributed to this
   # stage (requirement 2.0d, lib/github-limit.sh's `github_budget_record`).

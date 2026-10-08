@@ -96,7 +96,7 @@ All paths derive from `config.json` (tilde-expanded `state_dir` and
   lock over — a derived figure since requirement 4f, which the Publisher
   computes and passes under that name) is flagged as possibly dead. A second,
   far earlier bound catches the case that actually happens. Every stage is
-  capped by its own backstop, which `run_claude_stage` enforces by killing the
+  capped by its own backstop, which `run_model_stage` enforces by killing the
   process group and logging
   `stage-end` after — so a live stage older than its cap is not a slow stage but
   one whose process is already gone, and the page says so in minutes where
@@ -234,7 +234,7 @@ All paths derive from `config.json` (tilde-expanded `state_dir` and
   stop is.
 - **`cycles/<cycle-id>/<stage>.out`** — the stage's `result` envelope: the
   final line of the event stream `claude --output-format stream-json` wrote,
-  truncated into this file by `run_claude_stage` and identical to what
+  truncated into this file by `run_model_stage` and identical to what
   `--output-format json` used to leave here (requirements 11 and 4d). The
   stream itself, `<stage>.stream.jsonl`, is local to the node that ran it and
   never replicates, so this Publisher never sees one on a peer and reads none

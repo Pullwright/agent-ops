@@ -10,7 +10,7 @@
 # Full specification: docs/spec/review.md. Config: config.json
 # (.repository_review).
 # This is a sibling of agent-cycle.sh and deliberately reuses its machinery
-# (PATH bootstrap, lock discipline, run_claude_stage, result parsing,
+# (PATH bootstrap, lock discipline, run_model_stage, result parsing,
 # usage-limit detection). Where this script is silent, agent-cycle.sh /
 # docs/spec/implementation/README.md govern.
 
@@ -273,7 +273,12 @@ fi
 # exact key to fix.
 while IFS=$'\t' read -r configured_model_key configured_model; do
   [[ -n "$configured_model" ]] || continue
-  resolve_model_id "$configured_model_key" "$configured_model" >/dev/null
+  # The assigning form into a throwaway, not the printing one: this sweep is
+  # here to validate, but it is also the parent-shell call that records each
+  # repository's provider in MODEL_PROVIDER for requirement 4d's substrate
+  # dispatch to read back — a command substitution would discard it (see
+  # lib/model-id.sh's `resolve_model_id_into`).
+  resolve_model_id_into _validated_model "$configured_model_key" "$configured_model"
 done < <(jq -r '[.[] | [.model_key, .model]] | unique | .[] | @tsv' <<<"$repository_review_repos_json")
 # Every configured review_instructions/review_context path is validated up
 # front too, at the same fail-fast position and for the same reason as the
@@ -415,13 +420,13 @@ log_event() { log_event_append "$review_log_file" review "$review_id" "$node_nam
 # hit in either pipeline stands both down. A single-line O_APPEND write is
 # atomic even if the implementation pipeline appends concurrently.
 log_shared_limit_hit() {
-  local resume_at="$1" class="$2" reset_known="$3" ts
+  local resume_at="$1" class="$2" reset_known="$3" ts provider="${stage_provider:-anthropic}"
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  jq -nc --arg ts "$ts" --arg cycle "$review_id" --arg node "$node_name" --arg r "$resume_at" --arg c "$class" --argjson k "$reset_known" \
-    '{ts: $ts, cycle: $cycle, node: $node, event: "limit-hit", resume_at: $r, class: $c, reset_known: $k}' >> "$log_file"
+  jq -nc --arg ts "$ts" --arg cycle "$review_id" --arg node "$node_name" --arg r "$resume_at" --arg c "$class" --argjson k "$reset_known" --arg p "$provider" \
+    '{ts: $ts, cycle: $cycle, node: $node, event: "limit-hit", resume_at: $r, class: $c, reset_known: $k, provider: $p}' >> "$log_file"
   # And to the fleet flag (extend-only, best-effort), so peers stand down now
   # rather than at their next state-sync fetch — REVIEW-PIPELINE-SPEC R3.
-  fleet_limit_publish "$state_repo" "$state_dir" "$resume_at" "$class" "$reset_known" "$node_name" \
+  fleet_limit_publish "$state_repo" "$state_dir" "$resume_at" "$class" "$reset_known" "$node_name" "" "$provider" \
     || log_event "warning" "$(jq -nc \
          '{detail: "could not publish fleet/limit.json — peers will pick the cooldown up from the log union instead"}')"
 }
@@ -615,7 +620,7 @@ assert_in_workspace() {
   esac
 }
 
-# `run_claude_stage` — the stage launcher, its wall-clock cap and its
+# `run_model_stage` — the stage launcher, its wall-clock cap and its
 # process-group kill — comes from lib/stage-run.sh, sourced at the top of this
 # script. It used to be a second copy of agent-cycle.sh's, kept in step by
 # hand; R7b is the requirement that there is now one of it. This pipeline's
@@ -1148,7 +1153,7 @@ review_one() {
   # in repository_review.repos, or repository_review.defaults otherwise. Already
   # validated (the model-id sweep before the lock, above), so this is a
   # straight re-derivation rather than a fresh check.
-  model="$(resolve_model_id "$(jq -r '.model_key' <<<"$entry")" "$(jq -r '.model' <<<"$entry")")"
+  resolve_model_id_into model "$(jq -r '.model_key' <<<"$entry")" "$(jq -r '.model' <<<"$entry")"
   pr_label="$(jq -r '.pr_label' <<<"$entry")"
   branch_prefix="$(jq -r '.branch_prefix' <<<"$entry")"
   # `entry.report_directory` is already fallback-applied (the pre-loop
@@ -1333,7 +1338,7 @@ $(jq . <<<"$reviewer_input")
     return 0
   fi
   log_node_state_transition producing
-  if run_claude_stage reviewer "$(( review_backstop_min * 60 ))" "$model" "$reviewer_prompt" "$out_file" "$clone_dir" "$(( review_inactivity_min * 60 ))"; then
+  if run_model_stage reviewer "$(( review_backstop_min * 60 ))" "$model" "$reviewer_prompt" "$out_file" "$clone_dir" "$(( review_inactivity_min * 60 ))"; then
     rc=0
   else
     rc=$?

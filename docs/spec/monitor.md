@@ -356,7 +356,7 @@ M8a. **A signal stops the stage first.** `TERM`, `INT` and `HUP` are trapped —
    and the review pipeline's R7a applies it to a sibling. In order: kill the
    stage's own process group (`KILL`, since the signaller's patience is
    unknown, and the group is beyond any signal sent to ours because
-   `run_claude_stage` detached it with `set -m`), log `attempt-failed`
+   `run_model_stage` detached it with `set -m`), log `attempt-failed`
    naming the stage and the signal, and exit through `exit` so `monitor-end`
    reports `128 + n`. Untrapped, a stale-lock takeover or a stopped container
    would end bash with no record at all and leave the model running for a run
@@ -367,7 +367,10 @@ M8a. **A signal stops the stage first.** `TERM`, `INT` and `HUP` are trapped —
 ### The Monitor stage (`prompts/monitor.md`)
 
 M9. **One stage, one model.** `monitor_model` (default `claude-sonnet-5`), its
-   value validated by `resolve_model_id` before the stage is launched and by
+   value resolved by `resolve_model_id_into` before the stage is launched —
+   the assigning form, so the provider it resolves to is recorded for
+   `run_model_stage`'s own substrate dispatch
+   (`docs/spec/implementation/README.md` requirements 1a and 4d) — and by
    `scripts/doctor.sh`'s Models section on every unattended pass, so an
    unsupported provider is reported once an hour rather than once a day —
    the same tier the repository review runs, for the same reason: the input is

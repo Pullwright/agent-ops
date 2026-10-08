@@ -1811,7 +1811,7 @@ status_json="$(jq -n \
         | {
           stage: ($live_stage.key // null),
           # When that stage started. Every stage the pipeline runs is bounded —
-          # agent-cycle.sh hands run_claude_stage a timeout and kills the process
+          # agent-cycle.sh hands run_model_stage a timeout and kills the process
           # group when it expires — so the page can hold a live stage against its
           # own timeout and say, in minutes rather than in hours, that a stage
           # still shown as running has in fact been killed.

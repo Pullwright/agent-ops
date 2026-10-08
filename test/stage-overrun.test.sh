@@ -5,7 +5,7 @@
 #
 # The gap this guards: `lock_stale_after` bounds how long a *cycle* may
 # plausibly run (4 hours), but agent-cycle.sh bounds each *stage* far more
-# tightly — run_claude_stage kills the process group when the stage timeout
+# tightly — run_model_stage kills the process group when the stage timeout
 # expires and logs `stage-end` after it. A Co-Ordinator is capped at 15 minutes,
 # so a node rolled mid-cycle used to go on reporting "coordinator choosing work"
 # for the remaining three and three-quarter hours before anything on the page

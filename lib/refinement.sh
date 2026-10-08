@@ -1414,7 +1414,7 @@ _refiner_run_engagement() {
   # stdout, because this helper must run in its caller's own shell rather
   # than in a command substitution. Three things here are visible only to
   # the process that ran them:
-  #   - `stage_pid`/`stage_name`, which `run_claude_stage` advertises while
+  #   - `stage_pid`/`stage_name`, which `run_model_stage` advertises while
   #     the stage is in flight and requirement 9c's signal handler reads to
   #     kill the model's process group — a handler that cannot see them
   #     leaves the `claude` run this cycle is paying for alive past a TERM,
@@ -1453,7 +1453,7 @@ $(jq . <<<"$input")
   # The Refiner spans repositories by construction, so its cell is keyed `*`
   # (requirement 4f), the same as the Enabler's.
   stage_budget_apply refiner "*" "$refiner_model"
-  if run_claude_stage refiner "$(( stage_backstop_min * 60 ))" "$refiner_model" "$prompt" "$out" "$cycle_dir" "$(( stage_inactivity_min * 60 ))"; then
+  if run_model_stage refiner "$(( stage_backstop_min * 60 ))" "$refiner_model" "$prompt" "$out" "$cycle_dir" "$(( stage_inactivity_min * 60 ))"; then
     rc=0
   else
     rc=$?

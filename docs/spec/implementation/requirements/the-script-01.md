@@ -61,10 +61,27 @@
    repository's own resolved `repository_review.defaults.model` (or its own
    override in `repository_review.repos`, requirement 342)
    (`docs/spec/review.md`). Both scripts share one implementation,
-   `lib/model-id.sh`'s `resolve_model_id` (and its sibling
+   `lib/model-id.sh`'s `resolve_model_id_into` (and its siblings
+   `resolve_model_id`, the same resolution as a value on stdout, and
    `resolve_model_provider`, which names the provider a key resolves to
    rather than the bare id `claude --model` wants), so the two pipelines can
-   never drift on what counts as a supported provider. `providers`'s own
+   never drift on what counts as a supported provider. **Resolution also
+   records which provider each bare id came from, in `MODEL_PROVIDER`, and
+   that is why every stage model is resolved through the assigning
+   `resolve_model_id_into VAR KEY VALUE` rather than the printing
+   `resolve_model_id`** (issue #2133): the recording is a side effect in the
+   caller's own shell, and a caller writing
+   `VAR="$(resolve_model_id KEY VALUE)"` runs the whole resolution in a
+   subshell, so the bare id returns and the recording is discarded with it.
+   Requirement 4d's substrate dispatch and requirement 33a's `provider` field
+   are the two readers of that map, and both fall back to
+   `anthropic`/`claude-code` rather than failing when it holds nothing — so
+   the printing form at a stage-model site costs no error, only a stage
+   silently launching on the wrong provider's adapter. The printing form is
+   for a caller that genuinely wants the string alone: `scripts/doctor.sh`'s
+   configuration report, `scripts/publish-dashboard.sh`'s tier lookups, and
+   `resolve_model_qualified`, which builds the `<provider>/<bare-id>` id
+   requirement 1c's tier ladder is keyed by. `providers`'s own
    entries are each named by the installation, which is outside what the
    declarative schema (requirement 1b) can shape-validate on its own — an
    eighth guard alongside requirement 1b's other seven,

@@ -20,7 +20,7 @@
 # The property under test is therefore *not* "the prompt is delivered" (which
 # the argv version also satisfied, for a year) but "the prompt is delivered at a
 # size the argv version could not carry". Both cycle scripts are covered by one
-# check because since requirement 4d they call one `run_claude_stage`, in
+# check because since requirement 4d they call one `run_model_stage`, in
 # `lib/stage-run.sh`; that they still do is asserted here rather than assumed,
 # since the review pipeline's smaller prompt makes it the one that would sit
 # broken longest unnoticed if a copy ever grew back.
@@ -109,14 +109,14 @@ fi
 # own copy back would pass every delivery assertion here on a function this
 # file never looked at.
 LIB="$SCRIPT_DIR/lib/stage-run.sh"
-if [[ ! -f "$LIB" ]] || ! grep -q '^run_claude_stage() {$' "$LIB"; then
-  printf 'FAIL - run_claude_stage could not be found in lib/stage-run.sh (renamed or moved?)\n'
+if [[ ! -f "$LIB" ]] || ! grep -q '^run_model_stage() {$' "$LIB"; then
+  printf 'FAIL - run_model_stage could not be found in lib/stage-run.sh (renamed or moved?)\n'
   exit 1
 fi
 
 for script in agent-cycle.sh review-cycle.sh; do
-  if grep -q '^run_claude_stage() {$' "$SCRIPT_DIR/$script"; then
-    printf 'FAIL - %s defines its own run_claude_stage again; there is meant to be one (requirement 4d)\n' "$script"
+  if grep -q '^run_model_stage() {$' "$SCRIPT_DIR/$script"; then
+    printf 'FAIL - %s defines its own run_model_stage again; there is meant to be one (requirement 4d)\n' "$script"
     failures=$(( failures + 1 ))
   else
     printf 'ok   - %s calls the shared launcher rather than a copy\n' "$script"
@@ -141,7 +141,7 @@ check_delivery() {
     set -euo pipefail
     # shellcheck source=lib/stage-run.sh
     . "$LIB"
-    run_claude_stage test-stage 60 test-model "$over_cap" "$capture/out" "$capture"
+    run_model_stage test-stage 60 test-model "$over_cap" "$capture/out" "$capture"
   )
   rc=$?
 
@@ -174,7 +174,7 @@ check_delivery() {
     set -euo pipefail
     # shellcheck source=lib/stage-run.sh
     . "$LIB"
-    run_claude_stage test-stage 60 test-model "$small" "$capture/out" "$capture"
+    run_model_stage test-stage 60 test-model "$small" "$capture/out" "$capture"
   )
   assert_eq "an ordinary prompt is delivered byte for byte" \
     "$small" "$(cat "$capture/prompt.seen" 2>/dev/null)"

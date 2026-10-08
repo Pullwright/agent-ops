@@ -544,7 +544,7 @@
    an unparseable final message — the Co-Ordinator, Implementer and Reviewer
    stages here, and requirement 37's Enabler engagement — the Script makes
    one bounded resume attempt, provided the failed run actually left a
-   session behind to resume: `run_claude_stage` again, `--resume`d onto the
+   session behind to resume: `run_model_stage` again, `--resume`d onto the
    `session_id` the failed run's own envelope carried, prompted with nothing
    but "return the verdict JSON object, nothing else." A run that timed out
    or exited non-zero has no living session behind it and is never salvaged
@@ -564,7 +564,7 @@
    (including when there was no session to resume at all), requirement 9's
    ordinary failure path runs unchanged, `salvage` events record
    `outcome: "attempted"` and `outcome: "failed"` for the attempt, and the
-   resume's own use of `run_claude_stage` never leaks into the *original*
+   resume's own use of `run_model_stage` never leaks into the *original*
    run's kill-reason, gap or rate-limit bookkeeping — `stage_salvage_result`
    saves and restores them around its own call, because
    `detect_and_log_limit_hit` still reads them against the original `.out`
