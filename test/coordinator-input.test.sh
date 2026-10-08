@@ -298,6 +298,56 @@ for n in 601 2000; do
     "$expected_dropped" "$(jq -r '.fit.entries_dropped' <<<"$out")"
 done
 
+# --- agent-ops#2218 review: the proportional floor is keyed to the largest
+#     *single band*, never the fleet-wide sum across repos and bands,
+#     because $emax is applied per band per repo inside
+#     COORDINATOR_INPUT_FIT_JQ. Two repos of 400 issues each (800 entries
+#     total, no tech-debt) is the shape that broke under a fleet-wide sum:
+#     three-quarters of 800 (600) exceeds every individual band's own count
+#     (400), which would make this rung a no-op and fall through to the
+#     fixed 200 — a 50% cull in place of the intended ~25%. Keyed to the
+#     largest band (400) instead, the floor here is still the fixed 300
+#     (three-quarters of 400 is already below it), so this rung behaves
+#     exactly as it did before #2213 ever introduced a computed floor. ---
+two_repos="$(python3 -c '
+import json
+def repo(slug, base):
+    issues = [{"source": "issues", "ref": str(base + i), "number": base + i,
+               "url": "https://github.com/o/r/issues/%d" % (base + i),
+               "title": "issue %d" % (base + i),
+               "priority": ["Low", "Medium", "High", "Urgent"][i % 4], "priority_set": True,
+               "labels": ["enhancement"], "author": "someone",
+               "created_at": "2026-01-01T00:00:00Z",
+               "updated_at": "2026-08-%02dT00:00:00Z" % (i % 28 + 1),
+               "body": "B" * 400, "comments": []} for i in range(1, 401)]
+    return {"slug": slug, "sources": ["issues"], "issues": issues, "tech_debt": []}
+print(json.dumps([repo("o/r1", 0), repo("o/r2", 10000)]))')"
+r10_two="$(coordinator_apply_rung 0 0 0 <<<"$two_repos" | coordinator_rendered_bytes)"
+out="$(fit "$(( r10_two - 10 ))" <<<"$two_repos")"
+assert_eq "two 400-entry bands (800 total) land on the fixed floor 300, not a fleet-sum no-op" \
+  "11 300" "$(jq -r '"\(.fit.rung) \(.fit.entries_max)"' <<<"$out")"
+assert_eq "…dropping a proportionate 200 of 800 (25%), not the 50% a no-op rung would fall through to" \
+  "200" "$(jq -r '.fit.entries_dropped' <<<"$out")"
+assert_true "…with each repo's own band actually capped at 300, neither left whole" \
+  "$(jq '(.repos[0].issues | length) == 300 and (.repos[1].issues | length) == 300' <<<"$out")"
+
+# --- agent-ops#2218 review: a computed floor many times past the fixed
+#     sequence's second element (200) must not fall straight to it — a
+#     2000-entry single band's own floor is 1500, almost 8x 200, which would
+#     cull far more than half a rung's survivors in one step. The splice
+#     inserts extra halving rungs (1500, 750, 375, then the fixed 200) so a
+#     budget that fails the 1500 cap lands no lower than half of it. ---
+big_band="$(mk_repos 2000 400 0 0)"
+at_1500="$(coordinator_apply_rung 0 0 0 1500 <<<"$big_band" | coordinator_rendered_bytes)"
+at_750="$(coordinator_apply_rung 0 0 0 750 <<<"$big_band" | coordinator_rendered_bytes)"
+assert_true "the 1500 and 750 caps really do render at different sizes" \
+  "$( (( at_1500 > at_750 )) && echo true || echo false )"
+out="$(fit "$at_750" <<<"$big_band")"
+assert_eq "a budget that fails the computed 1500 cap but fits 750 lands on the spliced rung, not a jump to 200" \
+  "750" "$(jq -r '.fit.entries_max' <<<"$out")"
+assert_true "…never more than halving the computed cap's own survivors" \
+  "$(jq '.fit.entries_max * 2 >= 1500' <<<"$out")"
+
 opening="$(python3 -c '
 import json
 issues = [{"source": "issues", "ref": "1", "number": 1, "url": "https://github.com/o/r/issues/1",

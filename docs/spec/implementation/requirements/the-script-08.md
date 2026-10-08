@@ -76,28 +76,44 @@
    tier is applied there is nothing left but entries, and those are capped per
    band per repo against a sequence whose first element is computed rather
    than fixed — whichever is looser of 300 and three-quarters of the
-   backlog's own entry count (agent-ops#2213) — because a fixed cap is the
-   same cliff shape at a larger scale: it drops a *growing* fraction of the
-   backlog as the backlog grows past it, 391 entries sliding to 601 and
-   beyond exactly as 2191's own evidence had already outgrown 64. A backlog
-   under the floor (three-quarters of its own size no looser than 300) walks
-   300 unchanged, so a small backlog's behaviour here is untouched; only a
-   backlog above roughly 400 entries ever walks a looser value. The sequence
-   then continues 200, 128, and halving from there: 64, 32, … 1
-   (agent-ops#2191 added 200 and 128 ahead of the longstanding 64 so a
-   backlog a sliver over the identity-only rung's own byte count trims
-   proportionately instead of losing 68% of itself to a jump straight to
-   64). The first cap in the sequence that fits is then refined: the Script
-   binary-searches the gap between it and the cap before it (which did not
-   fit) for the highest per-band-per-repo cap in that gap that still fits,
-   so a byte-rich/entry-poor backlog is not stopped by a step that leaves
-   most of the allowance unspent (agent-ops#2221). The search never looks
-   outside the gap the sequence already brackets, so its result is always
-   below the cap that did not fit, and therefore always under double the
-   cap that did — the halving steps put the cap that did not fit at exactly
-   double, and the three widest steps closer still — which is the same
-   never-more-than-halving bound agent-ops#2191 established for the fixed
-   sequence itself. A cap whose own render failed counts as one that did not
+   *largest single band's* own entry count (one repo's `issues` or one
+   repo's `tech_debt`, agent-ops#2213) — because a fixed cap is the same
+   cliff shape at a larger scale: it drops a *growing* fraction of that band
+   as the band grows past it, 391 entries sliding to 601 and beyond exactly
+   as 2191's own evidence had already outgrown 64. The floor is keyed to the
+   largest band rather than the fleet-wide sum across every repo and band
+   because the cap is applied per band per repo: a cap computed from the sum
+   can exceed every individual band's own count whenever no single band
+   holds most of the backlog, which would make this rung a no-op and fall
+   through to the fixed 200 unnoticed — three-quarters of a positive count
+   is always below that count, so keying off the largest band guarantees the
+   rung never degenerates this way on the band that actually needs it
+   (agent-ops#2218 review). A backlog under the floor (three-quarters of its
+   largest band's own size no looser than 300) walks 300 unchanged, so a
+   small backlog's behaviour here is untouched; only a band above roughly
+   400 entries ever walks a looser value. The sequence then continues 200,
+   128, and halving from there: 64, 32, … 1 (agent-ops#2191 added 200 and
+   128 ahead of the longstanding 64 so a backlog a sliver over the
+   identity-only rung's own byte count trims proportionately instead of
+   losing 68% of itself to a jump straight to 64). A computed floor that
+   runs past double the sequence's second element (200) is not substituted
+   straight in ahead of it: the Script splices extra rungs between them,
+   halving at each one, until the gap back to 200 is itself no more than a
+   halving — so a single band many times the size the fixed sequence was
+   tuned on still degrades a halving at a time rather than falling from its
+   own computed floor straight to 200 (agent-ops#2218 review). The first cap
+   in the sequence — fixed, computed, or spliced — that fits is then
+   refined: the Script binary-searches the gap between it and the cap
+   before it (which did not fit) for the highest per-band-per-repo cap in
+   that gap that still fits, so a byte-rich/entry-poor backlog is not
+   stopped by a step that leaves most of the allowance unspent
+   (agent-ops#2221). The search never looks outside the gap the sequence
+   already brackets, so its result is always below the cap that did not
+   fit, and therefore always under double the cap that did — the halving
+   steps (fixed or spliced alike) put the cap that did not fit at exactly
+   double, and the three widest fixed steps closer still — which is the
+   same never-more-than-halving bound agent-ops#2191 established for the
+   fixed sequence itself. A cap whose own render failed counts as one that did not
    fit, so an unmeasurable rung narrows that bracket rather than widening
    the gap searched. Within whichever cap is finally chosen, entries are
    kept by the highest `Priority` band
