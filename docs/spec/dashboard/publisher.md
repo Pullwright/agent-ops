@@ -346,16 +346,27 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                                     //   shipped has completed
   counts:  { cycles_shown, failures_shown, prs_reached_ready,   // fleet-wide
              spend_today_usd, spend_total_usd,
-             by_day[], by_model[], by_actor[],   // both pipelines' actors;
-                                    //   by_model[].n counts transcripts that
-                                    //   touched that model, not transcripts
+             by_day[], by_model[], by_actor[], by_lane[],  // both pipelines'
+                                    //   actors; by_model[].n counts
+                                    //   transcripts that touched that model,
+                                    //   not transcripts
                                     //   attributed to it — a transcript
                                     //   spending on two models counts under
-                                    //   both (issue #536); by_day/by_actor
-                                    //   count transcripts, unaffected
+                                    //   both (issue #536); by_day/by_actor/
+                                    //   by_lane count transcripts, unaffected.
+                                    //   by_lane[] (issue #2239, D30) has
+                                    //   exactly three possible rows — api,
+                                    //   subscription, unknown — read off
+                                    //   each transcript's own sibling
+                                    //   `<stage>.stream.jsonl`, never off the
+                                    //   `.out` envelope the rest of this
+                                    //   object scans; unknown covers a
+                                    //   pruned, pre-dating or peer-only
+                                    //   stream this node cannot read
+                                    //   (docs/spec/dashboard/state.md)
              recent_costs[],       // {ts, cost} per row, last 3 days, for the
                                     //   spend-today card's GMT/local/24h toggle
-             cost_rows[],           // {day, model, actor, usd, cycle,
+             cost_rows[],           // {day, model, actor, usd, cycle, lane,
                                      //  tokens_input, tokens_output,
                                      //  tokens_cache_creation,
                                      //  tokens_cache_read,
@@ -383,7 +394,13 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                                      //   dedupes on it so a transcript that
                                      //   touched two models still counts once
                                      //   under `by_actor`'s windowed `n`,
-                                     //   never twice (issue #536).
+                                     //   never twice (issue #536). `lane`
+                                     //   (issue #2239, D30) is the same
+                                     //   per-transcript reading `by_lane[]`
+                                     //   above sums, carried per row so the
+                                     //   selector can re-aggregate it too —
+                                     //   `api`/`subscription`/`unknown`,
+                                     //   never null.
                                      //   repo/item/source/outcome (issue
                                      //   #593, D21) are joined onto `cycle`
                                      //   from the same fleet-wide event

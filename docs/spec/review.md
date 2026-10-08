@@ -1121,8 +1121,12 @@ R16. **Streams.** Review *operational* events go to the review pipeline's own
    `review_context_sources` (R5 step 2a, issue #589): one `{type, source,
    origin, digest, bytes, truncated}` entry per resolved
    `review_instructions`/`review_context`/`repo_context_file` source, never
-   the text itself. `review-stage-end` additionally carries the metering
-   record of requirement 33a — `model`, `cost_usd`, `duration_ms`,
+   the text itself, and — same reasoning as `stage-start`'s own `lane`,
+   requirement 33 — `lane` (issue #2239, D30): the credential lane the
+   Script *intended*, `lib/metering.sh`'s `metering_intended_lane`.
+   `review-stage-end` additionally carries the metering
+   record of requirement 33a — `model`, `lane` (the lane the run *actually*
+   used, distinct from `review-stage-start`'s own), `cost_usd`, `duration_ms`,
    `num_turns`, `is_error`, `tokens` — via the same `lib/metering.sh` helper
    `agent-cycle.sh` uses, so a review's stage costs exactly the same shape as
    a cycle's (`docs/METERING-SCHEMA.md`). Two events are written to the shared

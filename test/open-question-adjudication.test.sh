@@ -359,6 +359,7 @@ stage_backstop_min=30
 stage_inactivity_min=10
 stage_kill_reason=""
 stage_gaps_json='[]'
+stage_lane_json='null'
 approver_model_critical="${MODEL_CRITICAL-claude-fable-5}"
 mkdir -p "$state_dir" "$cycle_dir"
 : >"$union_log"; : >"$log_file"

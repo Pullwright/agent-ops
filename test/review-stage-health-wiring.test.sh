@@ -100,6 +100,7 @@ metering_fields() { printf '{"model":"%s"}' "$1"; }
 : > "$call_log"
 ( review_id="20260922T170650Z-n1-42" slug="o/r" rc=1 stage_kill_reason="" \
     model="claude-sonnet-5" out_file="/dev/null" stage_gaps_json="null" \
+    stage_lane_json="null" \
   eval "$stage_end_block" )
 fields_json="$(cut -f2 "$call_log")"
 assert_eq "review-stage-end names the shared event" \

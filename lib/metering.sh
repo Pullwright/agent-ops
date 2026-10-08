@@ -13,12 +13,24 @@
 # sourced standalone by test/metering.test.sh, never lib/model-id.sh.
 declare -p MODEL_PROVIDER >/dev/null 2>&1 || declare -gA MODEL_PROVIDER=()
 
-# metering_fields MODEL OUT_FILE [GAPS_JSON]
-# Prints the documented per-stage metering object: model, provider, cost_usd,
-# duration_ms, num_turns, is_error, tokens{input,output,cache_creation,
+# metering_fields MODEL OUT_FILE [GAPS_JSON] [LANE_JSON]
+# Prints the documented per-stage metering object: model, provider, lane,
+# cost_usd, duration_ms, num_turns, is_error, tokens{input,output,cache_creation,
 # cache_read}, and gaps. MODEL is the id passed to the invocation (not
 # re-derived from the envelope, which may be silent or ambiguous about it);
 # OUT_FILE is the stage's own `.out` transcript.
+#
+# `lane` (issue #2239, D30) is, like GAPS_JSON, a fact the envelope cannot
+# carry — it is `lib/stage-run.sh`'s own `stage_lane_json`, read from the
+# stage's *stream* via the substrate seam's `_lane_of` operation, not from
+# this function's OUT_FILE argument. Passed in rather than derived here for
+# the same reason GAPS_JSON is: this function stays a pure derivation from an
+# out-file, testable against a canned envelope, and a caller with nothing to
+# report — a stage that never ran, or one whose stream was never asked to
+# carry an `init` event — still yields a conforming record with `lane: null`
+# rather than a guessed lane. `null` is preserved exactly, never coerced to
+# `"api"` or any other value: this field says what was *observed*, and the
+# absence of an observation is itself the fact worth keeping.
 #
 # `provider` (issue #2133) is read from `lib/model-id.sh`'s MODEL_PROVIDER —
 # the same map `lib/stage-run.sh`'s `run_model_stage` reads to choose a
@@ -64,17 +76,19 @@ declare -p MODEL_PROVIDER >/dev/null 2>&1 || declare -gA MODEL_PROVIDER=()
 # after the call: whatever jq makes of the envelope, this function prints one
 # valid object.
 metering_fields() {
-  local model="$1" out_file="$2" gaps="${3:-null}" record provider
-  # Validated here rather than trusted: an unparseable third argument fed to
-  # `--argjson` would fail the whole jq call, which is the one failure this
-  # function is written to make impossible.
+  local model="$1" out_file="$2" gaps="${3:-null}" lane="${4:-null}" record provider
+  # Validated here rather than trusted: an unparseable third or fourth
+  # argument fed to `--argjson` would fail the whole jq call, which is the
+  # one failure this function is written to make impossible.
   jq -e . <<<"$gaps" >/dev/null 2>&1 || gaps="null"
+  jq -e . <<<"$lane" >/dev/null 2>&1 || lane="null"
   if [[ -n "$model" ]]; then
     provider="${MODEL_PROVIDER[$model]:-anthropic}"
   else
     provider="anthropic"
   fi
   record="$(jq -nc --arg model "$model" --arg provider "$provider" --argjson gaps "$gaps" \
+    --argjson lane "$lane" \
     --rawfile raw <(cat "$out_file" 2>/dev/null || printf '{}') '
     ($raw | try fromjson catch {}) as $raw_e
     | (if ($raw_e | type) == "object" then $raw_e else {} end) as $e
@@ -86,6 +100,7 @@ metering_fields() {
       {
         model: $model,
         provider: $provider,
+        lane: $lane,
         cost_usd: (if present("total_cost_usd") then $e.total_cost_usd else null end),
         duration_ms: (if present("duration_ms") then $e.duration_ms else null end),
         num_turns: (if present("num_turns") then $e.num_turns else null end),
@@ -115,8 +130,26 @@ metering_fields() {
         gaps: $gaps
       }' 2>/dev/null)" || record=""
   if [[ -z "$record" ]]; then
-    record="$(jq -nc --arg model "$model" --arg provider "$provider" \
-      '{model: $model, provider: $provider, cost_usd: null, duration_ms: null, num_turns: null, is_error: null, tokens: null, gaps: null}')"
+    record="$(jq -nc --arg model "$model" --arg provider "$provider" --argjson lane "$lane" \
+      '{model: $model, provider: $provider, lane: $lane, cost_usd: null, duration_ms: null, num_turns: null, is_error: null, tokens: null, gaps: null}')"
   fi
   printf '%s\n' "$record"
+}
+
+# metering_intended_lane
+# The lane a `stage-start` names as *intended* (requirement 33) — distinct
+# from `metering_fields`'s own `lane`, which is what the run actually used.
+# Until #2241 lets the Script draw from a provider's weighted lanes, the
+# intended lane is the one this node's single credential implies: `api` when
+# it holds `ANTHROPIC_API_KEY`, `subscription` otherwise — the only choice
+# every node makes today (docs/ROADMAP.md's D30 row). A stage-start logged
+# ahead of the run this predicts, so nothing here can read the stream the
+# run has not produced yet; `metering_fields`'s own `lane` is what later
+# confirms or contradicts this guess.
+metering_intended_lane() {
+  if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+    printf 'api\n'
+  else
+    printf 'subscription\n'
+  fi
 }

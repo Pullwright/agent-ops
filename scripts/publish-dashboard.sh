@@ -1944,9 +1944,42 @@ done
 # transcript that certainly spent some tokens reading as zero would corrupt
 # every cache-ratio computed over it, exactly as a genuinely-zero figure must
 # not be confused with "not measured" anywhere else in this schema.
+# `lane` (issue #2239, D30) cannot ride the same jq pass as everything above:
+# it is read off each transcript's *sibling* stream file,
+# `<stage>.stream.jsonl`, never off the `.out` envelope this scan's own
+# `input_filename` already names, and jq has no way to open a second file by
+# a computed name from inside a running program. So this reads every stream
+# file in its own batched pass first — the same `xargs -n 25` batching as the
+# cost scan below, for the same reason — and keys the lane each stream
+# answers by its own `.out` sibling's path, so the pass below's own
+# `input_filename` can look `lane` up rather than guess one. Only a readable
+# stream with a first `system`/`init` event naming a recognised
+# `apiKeySource` contributes a row; a missing, empty, `init`-less or
+# unrecognised stream (pruned, a peer's own non-replicated copy, older than
+# this field, or a provider this mapping does not yet cover) is simply absent
+# from the map, and the lookup below defaults to `unknown` for every path it
+# cannot answer — same three causes `docs/spec/dashboard/state.md` gives.
+lane_map_file="$work_tmp/lane-map.json"
+# shellcheck disable=SC2016  # `$f` below is a jq binding, not a shell variable
+find "${cost_dirs[@]}" -name '*.stream.jsonl' -type f -print0 2>/dev/null \
+  | xargs -0 -r -n 25 jq -c '
+      input_filename as $f
+      | select(type == "object" and .type == "system" and .subtype == "init")
+      | {path: ($f | sub("\\.stream\\.jsonl$"; ".out")), source: (.apiKeySource // null)}
+    ' 2>/dev/null \
+  | jq -sc '
+      map(select(.source != null)) | unique_by(.path)
+      | map({(.path): (
+          if .source == "none" then "subscription"
+          elif (.source == "ANTHROPIC_API_KEY" or .source == "apiKeyHelper"
+                or .source == "/login managed key") then "api"
+          else "unknown" end)})
+      | add // {}
+    ' > "$lane_map_file" 2>/dev/null
+jq -e 'type == "object"' "$lane_map_file" >/dev/null 2>&1 || printf '{}' > "$lane_map_file"
 # shellcheck disable=SC2016  # `$p` below is a jq binding, not a shell variable
 find "${cost_dirs[@]}" -name '*.out' -type f -print0 2>/dev/null | sort -z \
-  | xargs -0 -r -n 25 jq -c '
+  | xargs -0 -r -n 25 jq -c --slurpfile lanes "$lane_map_file" '
       (input_filename | split("/")) as $p
       | ($p[-2] // "") as $cid
       | (.total_cost_usd // 0) as $total
@@ -1973,7 +2006,8 @@ find "${cost_dirs[@]}" -name '*.out' -type f -print0 2>/dev/null | sort -z \
           models: $models,
           cycle: $cid,
           actor: (if ($p[-3] // "") == "reviews" then "project-reviewer"
-                  else ($p[-1] | rtrimstr(".out")) end)
+                  else ($p[-1] | rtrimstr(".out")) end),
+          lane: ($lanes[0][input_filename] // "unknown")
         }' 2>/dev/null \
   | jq -sc --arg cut "$day_cut" '[ .[] | select(.day >= $cut) ]' \
   > "$costs_file" 2>/dev/null
@@ -2055,6 +2089,12 @@ counts_json="$(jq -n --slurpfile cyc "$cycles_file" --slurpfile costs_in "$costs
                       | map(select(.model != "unknown" or .usd > 0)) | sort_by(-.usd)),
     by_actor: ($costs | group_by(.actor) | map({actor: .[0].actor, usd: (map(.cost)|add), n: length})
                       | sort_by(-.usd)),
+    # One row per transcript, like `by_day`/`by_actor` above — never per
+    # (transcript × model) like `by_model` — since a transcript ran on
+    # exactly one lane, whichever models it used along the way (issue #2239,
+    # D30).
+    by_lane: ($costs | group_by(.lane) | map({lane: .[0].lane, usd: (map(.cost)|add), n: length})
+                      | sort_by(-.usd)),
     recent_costs: ($costs | map(select(.ts != null and .ts >= $recent_cut)) | map({ts, cost})),
     # (No apostrophes below: this whole block is a single-quoted shell
     # string, so one would end it and hand the rest of the jq to the shell.)
@@ -2076,6 +2116,7 @@ counts_json="$(jq -n --slurpfile cyc "$cycles_file" --slurpfile costs_in "$costs
         | (($c.actor == "coordinator" or $c.actor == "implementer" or $c.actor == "reviewer")
            and $facts != null) as $attributed
         | {day: $c.day, model: $m.model, actor: $c.actor, usd: $m.usd, cycle: $c.cycle,
+           lane: $c.lane,
            tokens_input: $m.tokens_input, tokens_output: $m.tokens_output,
            tokens_cache_creation: $m.tokens_cache_creation, tokens_cache_read: $m.tokens_cache_read,
            repo:      (if $attributed then $facts.repo else null end),

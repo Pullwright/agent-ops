@@ -323,6 +323,48 @@ assert_eq "by_actor is not inflated by the per-model split either: two transcrip
 assert_eq "and by_actor sums the same total regardless of how many models a transcript touched" \
   "0.75" "$(jq -r '.counts.by_actor[] | select(.actor=="coordinator") | .usd' <<<"$mdata")"
 
+# --- The lane dimension (issue #2239, D30) ----------------------------------
+# One transcript per lane — api, subscription — each with a sibling
+# `<stage>.stream.jsonl` carrying the first `system`/`init` event the lane is
+# read off, plus one transcript with no stream at all (pruned, or a peer's
+# own non-replicated copy): it must roll up as "unknown" rather than being
+# dropped or guessed.
+l="$(new_home nodeL)"
+lcid_api="${today_day}T070000Z-71"
+lcid_sub="${today_day}T070100Z-72"
+lcid_unknown="${today_day}T070200Z-73"
+ld="$l/.local/state/poetic-agents/cycles"
+mkdir -p "$ld/$lcid_api" "$ld/$lcid_sub" "$ld/$lcid_unknown"
+printf '{"type":"result","subtype":"success","total_cost_usd":0.3,"duration_ms":5,"num_turns":1,"is_error":false,"modelUsage":{"model-a":{"costUSD":0.3}},"result":"ok"}' \
+  > "$ld/$lcid_api/coordinator.out"
+printf '{"type":"system","subtype":"init","apiKeySource":"ANTHROPIC_API_KEY"}\n' \
+  > "$ld/$lcid_api/coordinator.stream.jsonl"
+printf '{"type":"result","subtype":"success","total_cost_usd":0.2,"duration_ms":5,"num_turns":1,"is_error":false,"modelUsage":{"model-a":{"costUSD":0.2}},"result":"ok"}' \
+  > "$ld/$lcid_sub/coordinator.out"
+printf '{"type":"system","subtype":"init","apiKeySource":"none"}\n' \
+  > "$ld/$lcid_sub/coordinator.stream.jsonl"
+printf '{"type":"result","subtype":"success","total_cost_usd":0.1,"duration_ms":5,"num_turns":1,"is_error":false,"modelUsage":{"model-a":{"costUSD":0.1}},"result":"ok"}' \
+  > "$ld/$lcid_unknown/coordinator.out"
+# No stream file at all for this one.
+
+run_publish "$l"
+ldata="$(data_of "$l")"
+
+assert_eq "by_lane has exactly the three rows: api, subscription, unknown" \
+  '["api","subscription","unknown"]' \
+  "$(jq -cS '.counts.by_lane | map(.lane) | sort' <<<"$ldata")"
+assert_eq "the api-lane transcript's cost lands under by_lane's api row" \
+  "0.3" "$(jq -r '.counts.by_lane[] | select(.lane=="api") | .usd' <<<"$ldata")"
+assert_eq "the subscription-lane transcript's cost lands under by_lane's subscription row" \
+  "0.2" "$(jq -r '.counts.by_lane[] | select(.lane=="subscription") | .usd' <<<"$ldata")"
+assert_eq "the streamless transcript's cost lands under by_lane's unknown row, not dropped" \
+  "0.1" "$(jq -r '.counts.by_lane[] | select(.lane=="unknown") | .usd' <<<"$ldata")"
+assert_eq "by_lane's three rows sum to spend_total_usd" \
+  "true" "$(jq -r '(([.counts.by_lane[].usd] | add) == .counts.spend_total_usd)' <<<"$ldata")"
+assert_eq "cost_rows carries lane per row too, matching by_lane's own reading" \
+  "true" "$(jq -r --arg cid "$lcid_api" \
+    '.counts.cost_rows[] | select(.cycle==$cid) | (.lane=="api")' <<<"$ldata")"
+
 # --- cost_rows carries what the money bought (issue #593, D21) -------------
 # The join is against the fleet-wide event union (log.jsonl), not
 # cycles.json — this fixture never runs a real cycle, so the union is just
