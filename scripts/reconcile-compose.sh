@@ -21,12 +21,16 @@
 # same absolute path it has on the host — see that service, and
 # `AGENT_OPS_PROJECT_DIR` in .env.example.
 #
-# Usage: reconcile-compose.sh [--print]
+# Usage: reconcile-compose.sh [--print | --audit]
 #
 #   --print   print the verdict JSON and change nothing else (there is no
 #             "dry run": the verdict is computed the same way either way, and
 #             this flag only suppresses the human line, for a caller that
 #             wants the object).
+#   --audit   run no tick: read the last verdict back and say, one
+#             `<class> <message>` line per finding, whether this node can
+#             apply the next merged compose.yaml (`compose_reconcile_audit`).
+#             What scripts/check-node-compose.sh asks from the host.
 #
 # Exit status is 0 on every verdict, including `refused`. Nothing reads a
 # cron job's exit status on this image, and a refusal is a recorded state, not
@@ -40,12 +44,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=lib/compose-reconcile.sh
 . "$SCRIPT_DIR/lib/compose-reconcile.sh"
 
-print_only=0
+print_only=0 audit_only=0
 case "${1:-}" in
   -h|--help)
     awk 'NR >= 3 { if ($0 !~ /^#/) exit; sub(/^# ?/, ""); print }' "${BASH_SOURCE[0]}"
     exit 0 ;;
   --print) print_only=1 ;;
+  --audit) audit_only=1 ;;
   "") ;;
   *) echo "reconcile-compose: unknown argument: $1" >&2; exit 2 ;;
 esac
@@ -59,6 +64,12 @@ expand_home() {
 }
 
 state_dir="$(expand_home "$(jq -r '.state_dir // "~/.local/state/poetic-agents"' "$CONFIG_FILE" 2>/dev/null)")"
+
+if (( audit_only )); then
+  COMPOSE_RECONCILE_STATE_DIR="$state_dir" COMPOSE_RECONCILE_CONFIG="$CONFIG_FILE" \
+    compose_reconcile_audit
+  exit 0
+fi
 
 verdict="$(COMPOSE_RECONCILE_STATE_DIR="$state_dir" COMPOSE_RECONCILE_CONFIG="$CONFIG_FILE" \
   compose_reconcile_run)"

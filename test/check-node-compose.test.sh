@@ -15,6 +15,12 @@
 #     watchtower given both schedule and interval each fail on their own;
 #   - a stack with no watchtower is information, not a failure — a node
 #     without auto-update is a configuration, not a defect;
+#   - the reconciler's own audit is relayed line for line: its `bad` fails,
+#     its `info` informs, and its `unable` — or no answer at all, which is
+#     what an image older than `--audit` gives — is "could not check" (exit 2)
+#     and never a pass, though it never hides a failure either; a reconciler
+#     that is restarting or stopped fails; a stack with no reconciler at all
+#     is information;
 #   - a 0600 .env with no backup siblings passes; a non-0600 .env fails
 #     naming its actual mode, and each .env.bak*/*.env.old sibling fails
 #     naming itself (#696) — checked without Docker, so these still run even
@@ -57,7 +63,8 @@ assert_contains() {
 # --- The stubbed docker -------------------------------------------------------
 # One binary, its behaviour driven entirely by STUB_* variables, so each
 # scenario below is a handful of env assignments rather than a new stub.
-# Container c1 plays the scheduler; wt plays watchtower.
+# Container c1 plays the scheduler; wt plays watchtower; rc plays the
+# reconciler.
 stub_bin="$tmp_dir/bin"
 mkdir -p "$stub_bin"
 cat > "$stub_bin/docker" <<'STUB'
@@ -69,16 +76,25 @@ case "$cmd" in
     sub="$1"; shift
     case "$sub" in
       exec)
-        shift 2   # -T scheduler
-        case "$1" in
-          cat)  [[ -n "${STUB_IMAGE_COMPOSE:-}" ]] || exit 1
-                cat "$STUB_IMAGE_COMPOSE" ;;
-          test) [[ "${STUB_MOUNTED:-}" == "yes" ]] ;;
+        svc="$2"; shift 2   # -T <service>
+        case "$svc:$1" in
+          scheduler:cat)  [[ -n "${STUB_IMAGE_COMPOSE:-}" ]] || exit 1
+                          cat "$STUB_IMAGE_COMPOSE" ;;
+          scheduler:test) [[ "${STUB_MOUNTED:-}" == "yes" ]] ;;
+          # The audit, asked exactly as the script asks it; anything else is
+          # what an image without `--audit` answers.
+          reconciler:/app/scripts/reconcile-compose.sh)
+                          [[ "${2:-}" == --audit && -z "${STUB_RC_OLD_IMAGE:-}" ]] || {
+                            echo "reconcile-compose: unknown argument: ${2:-}" >&2; exit 2; }
+                          [[ -n "${STUB_RC_AUDIT:-}" ]] && printf '%s\n' "$STUB_RC_AUDIT"
+                          exit "${STUB_RC_AUDIT_RC:-0}" ;;
+          *) exit 1 ;;
         esac ;;
       ps)
-        case "$1" in
-          -q)  [[ -n "${STUB_CONTAINERS:-}" ]] && printf '%s\n' "$STUB_CONTAINERS" ;;
-          -aq) [[ -n "${STUB_WT_ID:-}" ]] && printf '%s\n' "$STUB_WT_ID" ;;
+        case "$1:${2:-}" in
+          -q:)            [[ -n "${STUB_CONTAINERS:-}" ]] && printf '%s\n' "$STUB_CONTAINERS" ;;
+          -aq:watchtower) [[ -n "${STUB_WT_ID:-}" ]] && printf '%s\n' "$STUB_WT_ID" ;;
+          -aq:reconciler) [[ -n "${STUB_RC_ID:-}" ]] && printf '%s\n' "$STUB_RC_ID" ;;
         esac ;;
     esac ;;
   inspect)
@@ -88,6 +104,7 @@ case "$cmd" in
       c1:*pre-update*)      printf '%s' "${STUB_HOOK:-}" ;;
       wt:*State.Running*)   printf '%s' "${STUB_WT_RUNNING:-true}" ;;
       wt:*Config.Env*)      printf '%s\n' "${STUB_WT_ENV:-}" ;;
+      rc:*State.Status*)    printf '%s' "${STUB_RC_STATE:-running}" ;;
     esac ;;
   logs) printf '%s\n' "${STUB_WT_LOG:-}" ;;
 esac
@@ -112,6 +129,9 @@ hook_path='/app/deploy/docker/watchtower-pre-update.sh'
 healthy_env='WATCHTOWER_LIFECYCLE_HOOKS=true
 WATCHTOWER_POLL_INTERVAL=300'
 
+healthy_audit="ok the reconciler can identify itself to the daemon by its project directory, /srv/node
+ok the reconciler's last verdict is in-sync"
+
 # One run, both answers, every stub variable stated per scenario.
 rc=0
 out=""
@@ -119,7 +139,7 @@ run_check() {  # run_check VAR=value…
   out="$(env PATH="$stub_bin:$PATH" STACK_DIR="$stack" \
     STUB_IMAGE_COMPOSE="$image_compose" STUB_CONTAINERS='c1' STUB_MOUNTED=yes \
     STUB_HOOK="$hook_path" STUB_WT_ID='wt' STUB_WT_ENV="$healthy_env" \
-    STUB_WT_LOG='pre-update hook ran' \
+    STUB_WT_LOG='pre-update hook ran' STUB_RC_ID='rc' STUB_RC_AUDIT="$healthy_audit" \
     "$@" "$CHECK" 2>&1)"
   rc=$?
 }
@@ -173,6 +193,59 @@ assert_eq "a watchtower that exists but is not running fails" "1" "$rc"
 run_check STUB_WT_ID=""
 assert_eq "no watchtower at all is not a failure" "0" "$rc"
 assert_contains "but is said" "auto-update profile off" "$out"
+
+# --- The reconciler -----------------------------------------------------------
+
+run_check
+assert_contains "the reconciler's own findings are relayed" \
+  "ok   - the reconciler's last verdict is in-sync" "$out"
+
+run_check STUB_RC_AUDIT="ok the reconciler can identify itself
+bad the reconciler refuses to apply a merged compose.yaml: a reason it gave"
+assert_eq "a reconciler that refuses fails" "1" "$rc"
+assert_contains "quoting the reconciler's own reason" \
+  "FAIL - the reconciler refuses to apply a merged compose.yaml: a reason it gave" "$out"
+
+run_check STUB_RC_AUDIT="bad no running container is labelled as the reconciler of /opt/poetic-node"
+assert_eq "any finding the audit fails fails here" "1" "$rc"
+
+run_check STUB_RC_AUDIT="ok the reconciler can identify itself
+info the reconciler is deferring: a cycle is in flight"
+assert_eq "a deferral the audit calls information is not a failure" "0" "$rc"
+assert_contains "but is said" "info - the reconciler is deferring: a cycle is in flight" "$out"
+
+run_check STUB_RC_AUDIT="unable the reconciler has written no verdict yet"
+assert_eq "a verdict the audit cannot judge is could-not-check, never a pass" "2" "$rc"
+assert_contains "marked as such" "UNKN - the reconciler has written no verdict yet" "$out"
+assert_contains "and summed up as no pass" "could not be made — this is not a pass" "$out"
+
+run_check STUB_RC_AUDIT="unable the reconciler has written no verdict yet" STUB_MOUNTED=no
+assert_eq "but could-not-check never hides a failure" "1" "$rc"
+
+run_check STUB_RC_AUDIT="" STUB_RC_AUDIT_RC=1
+assert_eq "a reconciler that cannot be asked is could-not-check" "2" "$rc"
+assert_contains "saying so" "could not ask the reconciler" "$out"
+
+run_check STUB_RC_OLD_IMAGE=1
+assert_eq "an image older than --audit is could-not-check, not a pass" "2" "$rc"
+
+run_check STUB_RC_STATE=restarting
+assert_eq "a reconciler in a restart loop fails — docker calls it running" "1" "$rc"
+assert_contains "naming its state" "the reconciler is restarting, not running" "$out"
+
+run_check STUB_RC_STATE=exited
+assert_eq "a reconciler that exists but is not running fails" "1" "$rc"
+
+run_check STUB_RC_ID=""
+assert_eq "no reconciler at all is not a failure" "0" "$rc"
+assert_contains "but is said, naming the manual ritual" "waits for a hand-run docker compose up -d" "$out"
+
+# The script asks the reconciler by the path the crontab runs it from, so the
+# question reaches the code that writes the verdict and not a copy of it.
+assert_eq "the audit is asked of the script the reconciler's crontab runs" "1" \
+  "$(grep -c '/app/scripts/reconcile-compose.sh' "$SCRIPT_DIR/deploy/docker/reconcile-crontab")"
+assert_eq "and that script answers --audit" "1" \
+  "$(grep -c '^  --audit) audit_only=1 ;;$' "$SCRIPT_DIR/scripts/reconcile-compose.sh")"
 
 # --- .env permissions and backup siblings (#696) -------------------------------
 

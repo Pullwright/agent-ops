@@ -24,7 +24,8 @@
 #      lib/compose-drift.sh — the same comparison the heartbeat badge makes,
 #      so the actor and the alarm can never disagree about what drift is;
 #   2. check every `${VAR}` the *new* file requires against the keys in the
-#      node's `.env`, and refuse outright if one is missing;
+#      node's `.env`, read through the daemon, and refuse outright if one is
+#      missing;
 #   3. honour the two cycle locks exactly as
 #      deploy/docker/watchtower-pre-update.sh honours them, so a compose
 #      recreate can no more kill a running cycle than an image roll can, and
@@ -33,8 +34,17 @@
 #      once — for `lock_stale_after` at the outside, the same bound a cycle
 #      lock gets;
 #   4. copy the image's copy over the node's, and run
-#      `docker compose up -d --remove-orphans` for that project — from a
-#      transient sibling container, never from this one.
+#      `docker compose up -d --remove-orphans` for that project — both from a
+#      transient sibling container running as root, never from this one.
+#
+# **This container needs to read `compose.yaml` and nothing else.** Drift is
+# read here on every tick; the `.env` keys are read by the daemon (`docker cp`
+# from this container's own mount) and the install runs in the sibling as
+# uid 0. A stack directory and an `.env` that root owns, which is how
+# `cloud-init.yaml` leaves a VM node, therefore need no host-side change, and
+# none is asked for: handing them to uid 1000 would give the node's secrets to
+# whatever account on the host has that uid. Root in the sibling grants
+# nothing the socket this container already holds does not.
 #
 # It never touches `.env`. That file holds the node's identity and its live
 # credentials, it is the one file that legitimately differs between two nodes,
@@ -54,7 +64,9 @@
 # reconcile. Truncating the existing inode instead makes the new content
 # visible through every existing mount the moment it lands. The write is
 # staged beside the target and verified byte-for-byte first, so the
-# non-atomic step is a single local copy of an already-checked file.
+# non-atomic step is a single local copy of an already-checked file. It runs
+# in the sibling, immediately before the `up`, by the same function sourced
+# from the same image (`_compose_reconcile_install`).
 #
 # **The recreate runs in a sibling container, not in this one.** `reconciler`
 # is a service of the very project an apply recreates, and on a real apply it
@@ -136,9 +148,11 @@
 #                                           — retried on the next tick in every
 #                                           case
 #   {status:"refused", at, since, reason}   the node is not configured for
-#                                           reconciliation, or the new file
-#                                           needs a `${VAR}` its `.env` does
-#                                           not define. Nothing was applied.
+#                                           reconciliation, this container
+#                                           cannot read its compose.yaml, or
+#                                           the new file needs a `${VAR}` its
+#                                           `.env` does not define. Nothing was
+#                                           applied.
 #
 # `at` is when the verdict was last written, which is every tick; `since` is
 # when the node entered it — the `at` of the last tick whose `status` or
@@ -172,6 +186,16 @@
 # forward at every cycle boundary, and rides in `detail` for that reason.
 COMPOSE_RECONCILE_APPLYING_REASON='an apply of the merged compose.yaml is in flight — a sibling container performs the recreate'
 COMPOSE_RECONCILE_ROLL_REASON='a watchtower roll is due on this node — the recreate waits until it has landed'
+# The two lock deferrals' reasons begin with these, and the audit
+# (`compose_reconcile_audit`) recognises a self-clearing deferral by them.
+COMPOSE_RECONCILE_CYCLE_REASON='an implementation cycle is in flight'
+COMPOSE_RECONCILE_REVIEW_REASON='a project review is in flight'
+# The sibling's own exit status for an install that did not happen, told apart
+# from Compose's own failures, which are retried as a recreate.
+COMPOSE_RECONCILE_INSTALL_FAILED=97
+# How often `deploy/docker/reconcile-crontab` ticks, which is what the audit
+# measures the age of a verdict against.
+COMPOSE_RECONCILE_TICK_SECONDS=300
 
 # shellcheck source=lib/compose-drift.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/compose-drift.sh"
@@ -233,9 +257,35 @@ compose_reconcile_env_keys() {
 # The set difference: what the new compose file requires and the node's `.env`
 # does not define, one name per line. Empty output is the passing case.
 compose_reconcile_missing_env() {  # <compose-file> <env-file>
+  _compose_reconcile_missing_keys "$1" "$(compose_reconcile_env_keys "$2")"
+}
+
+# The same difference, against key names already read — one per line, sorted,
+# as `compose_reconcile_env_keys` prints them.
+_compose_reconcile_missing_keys() {  # <compose-file> <keys>
   comm -23 \
     <(compose_reconcile_required_vars "$1") \
-    <(compose_reconcile_env_keys "$2") 2>/dev/null || true
+    <(printf '%s\n' "$2" | sed '/^$/d') 2>/dev/null || true
+}
+
+# The key names of `.env`, read through the daemon from this container's own
+# mount of it: `docker cp` asks the daemon, which reads as root, so an `.env`
+# root owns at mode 0600 — the one `cloud-init.yaml` writes — is read without
+# this container needing any access of its own, and without anyone on the host
+# widening access to the file to grant it. The value bytes pass through the
+# pipe into `compose_reconcile_env_keys`'s `sed` and nowhere else, exactly as
+# they do when that function reads the file directly.
+#
+# An `.env` that does not exist is the empty set, as it is for
+# `compose_reconcile_env_keys`; one that exists and cannot be fetched is a
+# failure, so the caller can tell "no keys" from "could not ask".
+_compose_reconcile_env_keys_via() {  # <docker> <container-id> <env-file>
+  local docker_cmd="$1" id="$2" file="$3" pipe_status=()
+  [[ -e "$file" ]] || return 0
+  "$docker_cmd" cp "$id:$file" - 2>/dev/null | tar -xOf - 2>/dev/null \
+    | compose_reconcile_env_keys /dev/stdin
+  pipe_status=("${PIPESTATUS[@]}")
+  (( pipe_status[0] == 0 && pipe_status[1] == 0 ))
 }
 
 # A one-line description of a lock this container must respect, or nothing.
@@ -446,9 +496,18 @@ compose_reconcile_run() {
       "$pending_apply"
     return 0
   fi
-  if [[ ! -w "$host_file" ]]; then
+  # Read access to `compose.yaml` is the one thing this container needs of
+  # the project directory itself, because drift is read here on every tick.
+  # Nothing else is: `.env` is read through the daemon and the install runs in
+  # the sibling as root (see `_compose_reconcile_env_keys_via` and
+  # `_compose_reconcile_apply`), so a stack directory and an `.env` that root
+  # owns, as `cloud-init.yaml` leaves them, are no obstacle and an in-sync node
+  # never depends on either.
+  if [[ ! -r "$host_file" ]]; then
     _compose_reconcile_settle "$state_dir" "$now" refused \
-      "$host_file is not writable from this container — the project directory must be bind-mounted read-write" \
+      "$(printf '%s is not readable by this container (uid %s; the file is uid %s, mode %s) — drift is read from it on every tick, so it has to be readable: chmod 644 %q on the host' \
+        "$host_file" "$(id -u)" "$(stat -c %u -- "$host_file" 2>/dev/null || echo '?')" \
+        "$(stat -c %04a -- "$host_file" 2>/dev/null || echo '?')" "$host_file")" \
       "$pending_apply"
     return 0
   fi
@@ -473,9 +532,34 @@ compose_reconcile_run() {
     return 0
   fi
 
+  # --- This container, as the daemon knows it ---------------------------------
+  # Resolved as soon as there is drift and before anything is read or written:
+  # the `.env` gate below and the apply both go through this container's own
+  # mounts, by its id, and it is the one precondition of an apply that can
+  # fail for a reason nothing here can put right — installing a file this
+  # tick cannot then act on only widens the window in which the node runs a
+  # compose.yaml none of its containers came from.
+  _compose_reconcile_self "$docker_cmd" "$project_dir"
+  if [[ -z "$compose_reconcile_self_id" ]]; then
+    _compose_reconcile_settle "$state_dir" "$now" deferred \
+      "this container cannot identify itself to the daemon, so there is no sibling to hand the recreate to — retrying on the next tick" \
+      "$pending_apply"
+    return 0
+  fi
+
   # --- The `.env` gate --------------------------------------------------------
-  local missing
-  missing="$(compose_reconcile_missing_env "$image_file" "$env_file" | paste -sd, - 2>/dev/null || true)"
+  # A `.env` that exists and cannot be fetched defers rather than reading as
+  # empty: an empty key set refuses for every `${VAR}` in the file, naming
+  # variables `.env` does define, and that refusal would send its reader to
+  # the wrong file.
+  local env_keys missing
+  if ! env_keys="$(_compose_reconcile_env_keys_via "$docker_cmd" "$compose_reconcile_self_id" "$env_file")"; then
+    _compose_reconcile_settle "$state_dir" "$now" deferred \
+      "could not read $env_file through the daemon — retrying on the next tick" \
+      "$pending_apply"
+    return 0
+  fi
+  missing="$(_compose_reconcile_missing_keys "$image_file" "$env_keys" | paste -sd, - 2>/dev/null || true)"
   if [[ -n "$missing" ]]; then
     _compose_reconcile_settle "$state_dir" "$now" refused \
       "the merged compose.yaml requires ${missing}, which this node's .env does not define and the file itself gives no default for — add it to .env by hand; nothing was applied" \
@@ -485,14 +569,7 @@ compose_reconcile_run() {
 
   # --- A roll falling due, and the two cycle locks -----------------------------
   local cycle_stale review_stale held
-  cycle_stale="$(jq -r '.lock_stale_after // 4' "$config_file" 2>/dev/null || echo 4)"
-  # repository_review is the current spelling; project_review is still
-  # accepted as a deprecated alias (agent-ops#592, D7) — read directly against
-  # the raw file here, same as the rest of this function, so both spellings
-  # resolve without going through config_defaults.
-  review_stale="$(jq -r '.repository_review.lock_stale_after // .project_review.lock_stale_after // 6' "$config_file" 2>/dev/null || echo 6)"
-  [[ "$cycle_stale"  =~ ^[0-9]+$ ]] || cycle_stale=4
-  [[ "$review_stale" =~ ^[0-9]+$ ]] || review_stale=6
+  read -r cycle_stale review_stale < <(_compose_reconcile_stale_hours "$config_file")
 
   # A due roll defers, before either lock is even read: watchtower and this
   # library recreate the same containers, and the marker is the one signal
@@ -512,32 +589,19 @@ compose_reconcile_run() {
   held="$(compose_reconcile_lock_held "$state_dir/lock.json" "$cycle_stale")"
   if [[ -n "$held" ]]; then
     _compose_reconcile_settle "$state_dir" "$now" deferred \
-      "an implementation cycle is in flight ($held) — retrying on the next tick" \
+      "$COMPOSE_RECONCILE_CYCLE_REASON ($held) — retrying on the next tick" \
       "$pending_apply"
     return 0
   fi
   held="$(compose_reconcile_lock_held "$state_dir/review-lock.json" "$review_stale")"
   if [[ -n "$held" ]]; then
     _compose_reconcile_settle "$state_dir" "$now" deferred \
-      "a project review is in flight ($held) — retrying on the next tick" \
+      "$COMPOSE_RECONCILE_REVIEW_REASON ($held) — retrying on the next tick" \
       "$pending_apply"
     return 0
   fi
 
   # --- Apply ------------------------------------------------------------------
-  # This container is resolved to the daemon before anything is written: it is
-  # the one precondition of an apply that can fail for a reason nothing here
-  # can put right, and installing a file this tick cannot then act on only
-  # widens the window in which the node runs a compose.yaml none of its
-  # containers came from.
-  _compose_reconcile_self "$docker_cmd" "$project_dir"
-  if [[ -z "$compose_reconcile_self_id" ]]; then
-    _compose_reconcile_settle "$state_dir" "$now" deferred \
-      "this container cannot identify itself to the daemon, so there is no sibling to hand the recreate to — retrying on the next tick" \
-      "$pending_apply"
-    return 0
-  fi
-
   local host_sha to_sha from_sha
   host_sha="$(compose_reconcile_sha "$host_file")"
   to_sha="$(compose_reconcile_sha "$image_file")"
@@ -565,15 +629,6 @@ compose_reconcile_run() {
   _compose_reconcile_record "$state_dir" "$now" applying \
     "$COMPOSE_RECONCILE_APPLYING_REASON" true "$from_sha" "$to_sha"
 
-  if [[ "$host_sha" != "$to_sha" ]]; then
-    if ! _compose_reconcile_install "$image_file" "$host_file" "$to_sha"; then
-      _compose_reconcile_settle "$state_dir" "$now" deferred \
-        "could not write $host_file — retrying on the next tick" \
-        true "$from_sha" "$to_sha"
-      return 0
-    fi
-  fi
-
   # Truncated per apply, and the header is this side's: it is what says an
   # apply was attempted at all on a tick that never came back to say anything
   # else. A state directory this container cannot write is not a reason to
@@ -589,7 +644,14 @@ compose_reconcile_run() {
 
   local up_log up_rc=0
   up_log="$(_compose_reconcile_apply "$docker_cmd" "$docker_socket" "$project_dir" \
-    "$compose_reconcile_self_id" "$compose_reconcile_self_image" "$apply_log" 2>&1)" || up_rc=$?
+    "$compose_reconcile_self_id" "$compose_reconcile_self_image" "$apply_log" \
+    "$image_file" "$host_file" "$to_sha" 2>&1)" || up_rc=$?
+  if (( up_rc == COMPOSE_RECONCILE_INSTALL_FAILED )); then
+    _compose_reconcile_settle "$state_dir" "$now" deferred \
+      "could not write $host_file — retrying on the next tick" \
+      true "$from_sha" "$to_sha" "$(printf '%s' "$up_log" | tail -n 1)"
+    return 0
+  fi
   if (( up_rc != 0 )); then
     # The file is installed and the containers are not yet created from it, so
     # the retry has to be driven by the marker rather than by drift.
@@ -610,6 +672,158 @@ compose_reconcile_run() {
   # leaves `applying` standing, and its successor settles it.
   _compose_reconcile_settle "$state_dir" "$now" reconciled "" false "$from_sha" "$to_sha"
   return 0
+}
+
+# The two lock bounds, in hours, as `<cycle> <review>`: how long a cycle lock
+# and a review lock are honoured before the next cycle would take them over.
+# repository_review is the current spelling; project_review is still accepted
+# as a deprecated alias (agent-ops#592, D7) — read directly against the raw
+# file, as the rest of this library reads it, so both spellings resolve
+# without going through config_defaults.
+_compose_reconcile_stale_hours() {  # <config-file>
+  local cycle review
+  cycle="$(jq -r '.lock_stale_after // 4' "$1" 2>/dev/null || echo 4)"
+  review="$(jq -r '.repository_review.lock_stale_after // .project_review.lock_stale_after // 6' "$1" 2>/dev/null || echo 6)"
+  [[ "$cycle"  =~ ^[0-9]+$ ]] || cycle=4
+  [[ "$review" =~ ^[0-9]+$ ]] || review=6
+  printf '%s %s\n' "$cycle" "$review"
+}
+
+# compose_reconcile_audit — what `scripts/check-node-compose.sh` asks of this
+# container (component 12): can this node apply the next merged compose.yaml?
+# Read-only. Answered here, beside the code that writes the verdict, rather
+# than on the host, because the host need not have `jq`, cannot see the state
+# volume, and would otherwise hold a second copy of the marker's path, its
+# shape and the bounds below, free to disagree with this one.
+#
+# One finding per line, `<class> <message>`, the class one of `ok`, `bad`,
+# `info` or `unable`, and the message on one line whatever the verdict's own
+# reason holds. Two findings at most:
+#
+#   - whether the daemon can name this container by its project directory —
+#     the lookup every apply needs first, and which a stack brought up through
+#     a different spelling of that directory (a symlink to it, say) fails on
+#     every tick, deferring for ever with nothing else wrong;
+#   - the verdict itself. `in-sync` and `reconciled` are fine. `refused` is
+#     not. A deferral for a lock or a due roll clears by itself and is
+#     information, until it has stood longer than either lock bound — longer
+#     than any wait this library honours, so it is not waiting any more — and
+#     every other deferral (no self-lookup, an `.env` the daemon cannot read,
+#     an install or a recreate that failed) is not self-clearing at all. An
+#     `applying` that has stood that long is a sibling that never finished. A
+#     verdict whose `at` is more than four ticks old is a schedule that has
+#     stopped firing, whatever it says; one that cannot be parsed is a fault;
+#     and no verdict at all is `unable`, unless the container has been up for
+#     those four ticks already.
+#
+# Paths and the clock come from the same overrides `compose_reconcile_run`
+# reads, so a suite reaches both the same way.
+compose_reconcile_audit() {
+  local project_dir state_dir config_file docker_cmd now now_epoch marker
+  local stale_after cycle_stale review_stale bound labels started
+  local status="" at="" since="" reason="" at_epoch since_epoch age held
+  project_dir="$(_compose_reconcile_clean_path \
+    "${COMPOSE_RECONCILE_PROJECT_DIR:-${AGENT_OPS_PROJECT_DIR:-}}")"
+  state_dir="${COMPOSE_RECONCILE_STATE_DIR:-}"
+  config_file="${COMPOSE_RECONCILE_CONFIG:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/config.json}"
+  docker_cmd="${COMPOSE_RECONCILE_DOCKER:-docker}"
+  now="${COMPOSE_RECONCILE_NOW:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+  now_epoch="$(date -u -d "$now" +%s 2>/dev/null || date -u +%s)"
+  marker="$state_dir/.compose-reconcile.json"
+  stale_after=$(( 4 * COMPOSE_RECONCILE_TICK_SECONDS ))
+  read -r cycle_stale review_stale < <(_compose_reconcile_stale_hours "$config_file")
+  bound=$(( (cycle_stale > review_stale ? cycle_stale : review_stale) * 3600 ))
+
+  compose_reconcile_self_id=""
+  if [[ -n "$project_dir" ]]; then
+    _compose_reconcile_self "$docker_cmd" "$project_dir"
+    if [[ -n "$compose_reconcile_self_id" ]]; then
+      _compose_reconcile_audit_line ok \
+        "the reconciler can identify itself to the daemon by its project directory, $project_dir"
+    else
+      labels="$("$docker_cmd" ps --filter "label=com.docker.compose.service=${AGENT_OPS_SERVICE:-reconciler}" \
+        --format '{{.Label "com.docker.compose.project.working_dir"}}' 2>/dev/null | sort -u | paste -sd, -)"
+      _compose_reconcile_audit_line bad \
+        "$(printf 'no running container is labelled as the reconciler of %s, so the next merged compose.yaml would defer for ever ("cannot identify itself to the daemon"); the reconcilers on this host were brought up from %s — once the node is idle, run: cd %q && docker compose up -d' \
+          "$project_dir" "${labels:-nowhere}" "$project_dir")"
+    fi
+  fi
+
+  if [[ ! -f "$marker" ]]; then
+    started=""
+    [[ -z "$compose_reconcile_self_id" ]] \
+      || started="$("$docker_cmd" inspect --format '{{.State.StartedAt}}' "$compose_reconcile_self_id" 2>/dev/null)"
+    started="$(date -u -d "$started" +%s 2>/dev/null || true)"
+    if [[ "$started" =~ ^[0-9]+$ ]] && (( now_epoch - started > stale_after )); then
+      _compose_reconcile_audit_line bad \
+        "the reconciler has been running for $(( (now_epoch - started) / 60 )) minutes and has written no verdict — it writes one every five minutes, so its schedule is not firing"
+    else
+      _compose_reconcile_audit_line unable \
+        "the reconciler has written no verdict yet — it writes one every five minutes; run this again after its first tick"
+    fi
+    return 0
+  fi
+
+  {
+    IFS= read -r status
+    IFS= read -r at
+    IFS= read -r since
+    reason="$(cat)"
+  } < <(jq -r 'def line: tostring | gsub("[\r\n]"; " ");
+               if type == "object" and (.status | type) == "string"
+               then (.status | line), (.at // "" | line), (.since // "" | line), (.reason // "" | tostring)
+               else empty end' "$marker" 2>/dev/null || true)
+  at_epoch=""
+  _compose_reconcile_is_stamp "$at" && at_epoch="$(date -u -d "$at" +%s 2>/dev/null || true)"
+  if [[ -z "$status" || ! "$at_epoch" =~ ^[0-9]+$ ]]; then
+    _compose_reconcile_audit_line bad \
+      "the reconciler's verdict ($marker) cannot be read — a working reconciler rewrites it every five minutes"
+    return 0
+  fi
+  age=$(( now_epoch - at_epoch ))
+  if (( age > stale_after )); then
+    _compose_reconcile_audit_line bad \
+      "the reconciler's last verdict ($status) was written at $at, $(( age / 60 )) minutes ago — it writes one every five minutes, so its schedule has stopped firing"
+    return 0
+  fi
+  since_epoch="$at_epoch"
+  _compose_reconcile_is_stamp "$since" \
+    && since_epoch="$(date -u -d "$since" +%s 2>/dev/null || echo "$at_epoch")"
+  held=$(( now_epoch - since_epoch ))
+
+  case "$status" in
+    in-sync|reconciled)
+      _compose_reconcile_audit_line ok "the reconciler's last verdict is $status" ;;
+    refused)
+      _compose_reconcile_audit_line bad "the reconciler refuses to apply a merged compose.yaml: $reason" ;;
+    deferred)
+      if [[ "$reason" != "$COMPOSE_RECONCILE_ROLL_REASON" \
+            && "$reason" != "$COMPOSE_RECONCILE_CYCLE_REASON ("* \
+            && "$reason" != "$COMPOSE_RECONCILE_REVIEW_REASON ("* ]]; then
+        _compose_reconcile_audit_line bad \
+          "the reconciler is deferring for a reason that does not clear by itself: $reason"
+      elif (( held > bound )); then
+        _compose_reconcile_audit_line bad \
+          "the reconciler has deferred since $since, longer than any lock or roll it waits on is honoured ($(( bound / 3600 )) hours): $reason"
+      else
+        _compose_reconcile_audit_line info "the reconciler is deferring: $reason"
+      fi ;;
+    applying)
+      if (( held > bound )); then
+        _compose_reconcile_audit_line bad \
+          "an apply has been in flight since $since, longer than $(( bound / 3600 )) hours — its sibling has not finished"
+      else
+        _compose_reconcile_audit_line info "an apply is in flight, since $since"
+      fi ;;
+    *)
+      _compose_reconcile_audit_line bad "the reconciler's verdict has a status this audit does not know: $status" ;;
+  esac
+  return 0
+}
+
+_compose_reconcile_audit_line() {  # <class> <message>
+  local message="${2//$'\n'/ }"
+  printf '%s %s\n' "$1" "${message//$'\r'/ }"
 }
 
 # This container's own id and image, into `compose_reconcile_self_id` and
@@ -703,9 +917,17 @@ _compose_reconcile_sibling_alive() {  # <docker>
 # project directory at the absolute path it has on the host, and the state
 # volume the apply log is written to — and a named volume cannot be asked for
 # by path from inside the container that holds it, since the path is a mount
-# destination and not somewhere on the host at all. The socket's own group is
-# added separately, read off the mounted socket rather than from a variable,
-# so it is this host's real `DOCKER_GID` whatever `.env` says.
+# destination and not somewhere on the host at all.
+#
+# **It runs as uid 0, and installs the file before the `up`.** Both the
+# install and Compose's own read of `.env` for interpolation need access a
+# root-owned stack directory does not give uid 1000, and the sibling is the
+# one place that can have it without anything on the host changing: it holds
+# the Docker socket, which is root on the host by another name, so `--user 0`
+# grants it nothing new. The install is `_compose_reconcile_install`, sourced
+# from this library in the same image; its failure exits
+# `COMPOSE_RECONCILE_INSTALL_FAILED` rather than Compose's own status, so the
+# verdict can say which of the two did not happen.
 #
 # **And its ceilings are this container's own, read back from the daemon.**
 # Every service in `compose.yaml` is bounded because an unbounded container on
@@ -731,13 +953,12 @@ _compose_reconcile_sibling_alive() {  # <docker>
 # between the two. `--rm` is what keeps the name free: the daemon removes the
 # container when it exits, so the name is held for exactly as long as an apply
 # is running.
-_compose_reconcile_apply() {  # <docker> <socket> <project-dir> <id> <image> <log>
+_compose_reconcile_apply() {  # <docker> <socket> <project-dir> <id> <image> <log> <image-file> <host-file> <to-sha>
   local docker_cmd="$1" socket="$2" project_dir="$3" id="$4" image="$5" log="$6"
-  local gid memory pids nanocpus
-  local -a group_args=() limits=()
-
-  gid="$(stat -c %g "$socket" 2>/dev/null || true)"
-  [[ "$gid" =~ ^[0-9]+$ ]] && group_args=(--group-add "$gid")
+  local image_file="$7" host_file="$8" to_sha="$9"
+  local lib memory pids nanocpus
+  local -a limits=()
+  lib="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/compose-reconcile.sh"
 
   IFS=$'\t' read -r memory pids nanocpus < <("$docker_cmd" inspect --format \
     '{{.HostConfig.Memory}}{{"\t"}}{{.HostConfig.PidsLimit}}{{"\t"}}{{.HostConfig.NanoCpus}}' \
@@ -751,18 +972,19 @@ _compose_reconcile_apply() {  # <docker> <socket> <project-dir> <id> <image> <lo
   "$docker_cmd" run --rm \
     --name "$(_compose_reconcile_sibling_name)" \
     --label com.pullwright.agent-ops.compose-apply=true \
+    --user 0 \
     --network none \
     --sig-proxy=false \
     --log-driver none \
     "${limits[@]}" \
-    "${group_args[@]}" \
     --volumes-from "$id" \
     --entrypoint env \
     "$image" \
     -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/home/agent \
     "DOCKER_HOST=unix://$socket" \
-    sh -c 'docker compose --project-directory "$1" up -d --remove-orphans >> "$2" 2>&1; rc=$?; cat "$2" 2>/dev/null; exit "$rc"' \
-    compose-apply "$project_dir" "$log"
+    bash -c '. "$3" || exit "$7"; if [[ "$(compose_reconcile_sha "$5")" != "$6" ]] && ! _compose_reconcile_install "$4" "$5" "$6"; then printf "compose-apply: could not write %s\n" "$5" >> "$2"; cat "$2" 2>/dev/null; exit "$7"; fi; docker compose --project-directory "$1" up -d --remove-orphans >> "$2" 2>&1; rc=$?; cat "$2" 2>/dev/null; exit "$rc"' \
+    compose-apply "$project_dir" "$log" "$lib" "$image_file" "$host_file" "$to_sha" \
+    "$COMPOSE_RECONCILE_INSTALL_FAILED"
 }
 
 # Stage the image's copy beside the target, prove it arrived intact, then
@@ -803,23 +1025,53 @@ _compose_reconcile_install() {  # <image-file> <host-file> <expected-sha>
 # a roll is bounded from `since` (`_compose_reconcile_waited_out`), and `from`
 # is the digest the apply replaced, which the host file no longer holds once
 # the file is installed.
+#
+# One field per line, and the one free-text field last. Not one tab-separated
+# line: tab is IFS whitespace, so `read` folds a run of tabs into one
+# separator and every field after an empty one shifts left — most verdicts
+# have one, so an `in-sync` marker's `since` was read as its reason, and a
+# marker written before `since` existed read `false` into `since`. Not a fixed
+# count of lines either, which discards the whole marker, `pending_apply`
+# included, the moment any field holds a newline. `reason` is the only field
+# that can — it embeds a path and a lock file's own values — so the five
+# machine-written fields come first, each with any newline flattened, and
+# `reason` is whatever follows, verbatim.
+#
+# A `since` that is not a timestamp of the shape this library writes reads as
+# absent, so the next verdict starts its clock afresh instead of carrying the
+# value forward: a marker already holding `"since": "false"` heals on the
+# first tick, and a `deferred` roll wait is never timed from epoch 0.
 _compose_reconcile_begin_tick() {  # <state-dir>
-  local fields=""
   compose_reconcile_tick_status=""
   compose_reconcile_tick_reason=""
   compose_reconcile_tick_since=""
   compose_reconcile_tick_from=""
   compose_reconcile_tick_to=""
   compose_reconcile_tick_pending=false
-  fields="$(jq -r '[.status // "", .reason // "", .since // "", .from // "", .to // "",
-                    (if .pending_apply then "true" else "false" end)] | @tsv' \
-    "$1/.compose-reconcile.json" 2>/dev/null || true)"
-  [[ -n "$fields" ]] || return 0
-  IFS=$'\t' read -r compose_reconcile_tick_status compose_reconcile_tick_reason \
-    compose_reconcile_tick_since compose_reconcile_tick_from compose_reconcile_tick_to \
-    compose_reconcile_tick_pending <<<"$fields"
+  [[ -f "$1/.compose-reconcile.json" ]] || return 0
+  {
+    IFS= read -r compose_reconcile_tick_pending
+    IFS= read -r compose_reconcile_tick_status
+    IFS= read -r compose_reconcile_tick_since
+    IFS= read -r compose_reconcile_tick_from
+    IFS= read -r compose_reconcile_tick_to
+    compose_reconcile_tick_reason="$(cat)"
+  } < <(jq -r 'def line: tostring | gsub("[\r\n]"; " ");
+               (if .pending_apply == true then "true" else "false" end),
+               (.status // "" | line), (.since // "" | line),
+               (.from // "" | line), (.to // "" | line),
+               (.reason // "" | tostring)' \
+    "$1/.compose-reconcile.json" 2>/dev/null || true)
   [[ "$compose_reconcile_tick_pending" == "true" ]] || compose_reconcile_tick_pending=false
+  _compose_reconcile_is_stamp "$compose_reconcile_tick_since" || compose_reconcile_tick_since=""
   return 0
+}
+
+# Whether a value has the shape this library writes `at` and `since` in.
+# Checked before anything is handed to `date -d`, which reads far more than
+# that — the empty string as midnight today, among others.
+_compose_reconcile_is_stamp() {  # <value>
+  [[ "$1" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]
 }
 
 # Record the verdict, and log it iff it is a *transition* — a different status,

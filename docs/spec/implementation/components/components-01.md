@@ -1247,12 +1247,20 @@ What exists, and the requirements each part answers to:
     watchtower pre-update hook label on every running agent-ops container,
     and watchtower's actual environment — lifecycle hooks enabled, schedule
     and interval not both set — plus an advisory count of lifecycle mentions
-    in watchtower's log. Every check but the first is read-only against
-    Docker (`docker compose exec/ps`, `docker inspect/logs`, `diff`), so it
-    is safe to allow-list like `watch-node.sh`; the `.env` check reads only
-    the host filesystem (`stat`, a glob) and runs even when the stack is
-    down. Exit 0 all checks passed, 1 at least one failed, 2 unable to check
-    — and unable is never reported as clean. Fetched at bring-up beside
+    in watchtower's log, and whether the reconciler can apply the next
+    merged `compose.yaml`: a reconciler whose `.State.Status` is not
+    `running` (a restart loop included, which Docker reports as running)
+    fails, and otherwise its own audit (`reconcile-compose.sh --audit`,
+    requirement 2.5a) is relayed line for line. Every check but the first is
+    read-only against Docker (`docker compose exec/ps`,
+    `docker inspect/logs`, `diff`), so it is safe to allow-list like
+    `watch-node.sh`; the `.env` check reads only the host filesystem
+    (`stat`, a glob) and runs even when the stack is down. Exit 0 all checks
+    passed, 1 at least one failed, 2 unable to check — before any check ran,
+    or because one could not be made (`UNKN`: the audit's own `unable`, or no
+    answer from it, which is what an image older than `--audit` gives) and
+    none failed — and unable is never reported as clean. Fetched at bring-up
+    beside
     `compose.yaml` (component 7, including `cloud-init.yaml`). Unit-tested
     against a stubbed `docker` on `PATH` (`test/check-node-compose.test.sh`);
     must pass `shellcheck`.
