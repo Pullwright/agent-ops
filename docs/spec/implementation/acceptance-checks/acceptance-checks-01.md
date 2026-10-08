@@ -873,7 +873,14 @@ oblige anyone to edit a test.
    (identical bare id, substrate back to `claude-code`), because requirement
    1a's reason for preferring the assigning form is a silent fallback rather
    than an error — a seam tested from a hand-populated `MODEL_PROVIDER` alone
-   would pass over the step that chooses the adapter.
+   would pass over the step that chooses the adapter. The same file pins the
+   **empty** model — requirement 1a's "disable this stage" convention, which
+   is an ordinary input to this map's readers and not an error: under the
+   `set -euo pipefail` every cycle script runs, both `stage_model_substrate`
+   and `run_model_stage` resolve it to the `anthropic`/`claude-code` fallback
+   and dispatch, rather than aborting the calling script on bash's own
+   bad-array-subscript error for an empty associative-array subscript
+   (issue #2234).
 1k1. **A stage streams as it runs, and leaves the envelope its readers
    expect (requirement 4d).** `test/stage-stream.test.sh` passes, against a
    `claude` stub that emits stream-json a line at a time with a pause

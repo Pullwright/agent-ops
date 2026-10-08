@@ -363,7 +363,10 @@
     (requirement 33a).** `test/metering.test.sh` passes: `lib/metering.sh`'s
     `metering_fields` derives `model`, `provider` (read from
     `lib/model-id.sh`'s `MODEL_PROVIDER`, falling back to `anthropic` for a
-    model never resolved through `resolve_model_id_into`), `cost_usd`,
+    model never resolved through `resolve_model_id_into`, and for an empty
+    one — which under `set -euo pipefail` resolves to that same fallback
+    rather than aborting the caller on bash's own bad-array-subscript error
+    for an empty associative-array subscript, issue #2234), `cost_usd`,
     `duration_ms`, `num_turns`,
     `is_error` and `tokens{input,output,cache_creation,cache_read}` from a
     single-model envelope and from a multi-model (subagent) envelope, summing

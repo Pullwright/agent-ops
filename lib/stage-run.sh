@@ -46,14 +46,21 @@ declare -p MODEL_PROVIDER >/dev/null 2>&1 || declare -gA MODEL_PROVIDER=()
 # The installed substrate MODEL's provider resolves to: look up the provider
 # MODEL_PROVIDER last recorded for MODEL, then that provider's substrate in
 # PROVIDER_SUBSTRATE — falling back to `claude-code` at either step when
-# nothing is recorded, which is every caller that never loaded
+# MODEL is unknown but non-empty, which is every caller that never loaded
 # lib/model-id.sh (most of this file's own tests, by design — see
 # lib/substrate-claude-code.sh's header) and every model this image has ever
 # run before #2133, since `anthropic`/`claude-code` is the only provider that
-# has ever existed to record.
+# has ever existed to record. An empty MODEL is handled separately, below:
+# bash makes an empty subscript on an associative array a hard "bad array
+# subscript" error rather than an empty read, so `:-anthropic` never gets a
+# chance to apply.
 stage_model_substrate() {
   local model="${1:-}" provider substrate
-  provider="${MODEL_PROVIDER[$model]:-anthropic}"
+  if [[ -n "$model" ]]; then
+    provider="${MODEL_PROVIDER[$model]:-anthropic}"
+  else
+    provider="anthropic"
+  fi
   substrate="${PROVIDER_SUBSTRATE[$provider]:-claude-code}"
   printf '%s\n' "$substrate"
 }
@@ -402,8 +409,16 @@ run_model_stage() {
   stage_rate_limit_json=""
   # Read by detect_and_log_limit_hit's three copies (agent-cycle.sh,
   # review-cycle.sh, monitor-cycle.sh), which shellcheck cannot see from here.
+  # Falls back to `anthropic` for a MODEL the map holds nothing for; an empty
+  # MODEL is handled separately, since bash makes an empty subscript on an
+  # associative array a hard "bad array subscript" error rather than an empty
+  # read, as stage_model_substrate's own header above explains.
   # shellcheck disable=SC2034
-  stage_provider="${MODEL_PROVIDER[$model]:-anthropic}"
+  if [[ -n "$model" ]]; then
+    stage_provider="${MODEL_PROVIDER[$model]:-anthropic}"
+  else
+    stage_provider="anthropic"
+  fi
 
   # Requirement 4k: never start the runner in a directory whose project
   # settings could make it run something. The three files are left as a stage
