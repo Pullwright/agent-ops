@@ -7,7 +7,7 @@
 # launcher; everything in this file is what it is neutral *of* — the one
 # piece behind the seam that is Anthropic's own CLI and account model rather
 # than something every agentic CLI shares. A second provider lands as a
-# sibling file, `lib/substrate-<name>.sh`, supplying the same five operations:
+# sibling file, `lib/substrate-<name>.sh`, supplying the same six operations:
 #
 #   substrate_claude_code_binary               the executable's name on PATH
 #   substrate_claude_code_version               its own reported version
@@ -19,6 +19,9 @@
 #   substrate_claude_code_rejected_rate_limit    recognise a structured
 #                                                rate-limit refusal in a
 #                                                live stream
+#   substrate_claude_code_lane_of                read the credential lane a
+#                                                run actually used off its
+#                                                own `init` event
 #
 # This file is the extraction of what `lib/stage-run.sh` always did for
 # Claude Code, unchanged in behaviour (docs/PROVIDER-SEAM-AUDIT.md §1): the
@@ -110,4 +113,31 @@ substrate_claude_code_rejected_rate_limit() {
             "$stream_file" 2>/dev/null | tail -n 1)" || true
   [[ -n "$info" ]] || return 1
   printf '%s\n' "$info"
+}
+
+# substrate_claude_code_lane_of STREAM_FILE
+# Print the credential lane this run actually used — `api` or `subscription`
+# — or nothing (returning 1) when the stream carries no readable answer.
+# Issue #2239 (D30): the lane is *observed*, off the stream's own first
+# `system`/`init` event's `apiKeySource`, rather than assumed from what the
+# Script intended — the one fact this adapter alone can read, since only the
+# CLI that actually ran knows which credential it resolved to. `none` is a
+# subscription login; `ANTHROPIC_API_KEY`, `apiKeyHelper` and `/login managed
+# key` each bill a Console account, so all three are the `api` lane
+# (docs/ROADMAP.md's D30 row). Anything else — a vocabulary this adapter
+# does not recognise, or a stream with no `init` event at all (a stage killed
+# before its first byte, or one this test harness never asked to emit one) —
+# is left to the caller's own `null` degradation, same as every other
+# envelope-derived field this pipeline cannot read.
+substrate_claude_code_lane_of() {
+  local stream_file="$1" source
+  [[ -s "$stream_file" ]] || return 1
+  source="$(jq -r 'select(type == "object" and .type == "system" and .subtype == "init")
+                    | .apiKeySource // empty' "$stream_file" 2>/dev/null | head -n 1)" || true
+  [[ -n "$source" ]] || return 1
+  case "$source" in
+    none) printf 'subscription\n' ;;
+    ANTHROPIC_API_KEY|apiKeyHelper|"/login managed key") printf 'api\n' ;;
+    *) return 1 ;;
+  esac
 }

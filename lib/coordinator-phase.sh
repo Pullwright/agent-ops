@@ -857,7 +857,7 @@ if run_model_stage implementer "$(( stage_backstop_min * 60 ))" "$impl_model" "$
 else
   impl_rc=$?
 fi
-log_event "stage-end" "$(jq -nc --argjson rc "$impl_rc" --arg kr "$stage_kill_reason" --argjson m "$(metering_fields "$impl_model" "$impl_out" "$stage_gaps_json")" \
+log_event "stage-end" "$(jq -nc --argjson rc "$impl_rc" --arg kr "$stage_kill_reason" --argjson m "$(metering_fields "$impl_model" "$impl_out" "$stage_gaps_json" "$stage_lane_json")" \
   --arg r "$selected_repo" --arg i "$selected_item" \
   '{stage: "implementer", exit_code: $rc} + (if $kr == "" then {} else {kill_reason: $kr} end) + $m
    + (if $r == "" then {} else {repo: $r} end) + (if $i == "" then {} else {item: $i} end)')"
@@ -1288,7 +1288,7 @@ else
   else
     rev_rc=$?
   fi
-  log_event "stage-end" "$(jq -nc --argjson rc "$rev_rc" --arg kr "$stage_kill_reason" --argjson m "$(metering_fields "$rev_model" "$rev_out" "$stage_gaps_json")" \
+  log_event "stage-end" "$(jq -nc --argjson rc "$rev_rc" --arg kr "$stage_kill_reason" --argjson m "$(metering_fields "$rev_model" "$rev_out" "$stage_gaps_json" "$stage_lane_json")" \
     --arg r "$selected_repo" --arg i "$selected_item" \
     '{stage: "reviewer", exit_code: $rc} + (if $kr == "" then {} else {kill_reason: $kr} end) + $m
      + (if $r == "" then {} else {repo: $r} end) + (if $i == "" then {} else {item: $i} end)')"

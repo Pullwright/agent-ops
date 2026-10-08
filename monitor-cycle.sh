@@ -898,7 +898,7 @@ fi
 # `lib/stage-health.sh` already reads, so this pipeline's verdict needs no
 # second reader (M17).
 log_event "stage-end" "$(jq -nc --argjson rc "$monitor_rc" --arg kr "$stage_kill_reason" \
-  --argjson m "$(metering_fields "$monitor_model" "$out_file" "$stage_gaps_json")" \
+  --argjson m "$(metering_fields "$monitor_model" "$out_file" "$stage_gaps_json" "$stage_lane_json")" \
   '{stage: "monitor", exit_code: $rc} + (if $kr == "" then {} else {kill_reason: $kr} end) + $m')"
 stage_health_recorded=1
 watchdog_warning="$(stage_watchdog_warning monitor || true)"

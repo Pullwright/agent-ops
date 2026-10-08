@@ -345,6 +345,18 @@ stage_rejected_rate_limit() {
   "substrate_${substrate//-/_}_rejected_rate_limit" "$stream_file"
 }
 
+# stage_lane_of STREAM_FILE [SUBSTRATE]
+# Print the credential lane the run actually used — "api" or "subscription"
+# — or nothing (returning 1) when the stream carries no readable answer.
+# Dispatches to SUBSTRATE's own `substrate_<name>_lane_of` (default
+# `claude-code`, same reasoning as `stage_result_line` above). The vocabulary
+# itself (which `apiKeySource` strings mean which lane) is each adapter's own
+# business now — see lib/substrate-claude-code.sh's copy.
+stage_lane_of() {
+  local stream_file="$1" substrate="${2:-claude-code}"
+  "substrate_${substrate//-/_}_lane_of" "$stream_file"
+}
+
 # stage_watchdog_warning STAGE
 # The body of the `warning` event a watchdog kill earns, or nothing (returning
 # 1) when the last run ended any other way.
@@ -405,6 +417,7 @@ run_model_stage() {
   substrate="$(stage_model_substrate "$model")"
   stream_file="$(stage_stream_file "$out_file")"
   stage_gaps_json="null"
+  stage_lane_json="null"
   stage_kill_reason=""
   stage_rate_limit_json=""
   # Read by detect_and_log_limit_hit's three copies (agent-cycle.sh,
@@ -582,6 +595,21 @@ run_model_stage() {
   # inside this library.
   # shellcheck disable=SC2034
   stage_gaps_json="$(stage_gap_stats "${gaps[@]+"${gaps[@]}"}")"
+
+  # The lane this run actually used (issue #2239, D30) — observed off the
+  # stream's own `init` event, read before `stage_result_line` below
+  # truncates it away, so a killed stage's torn tail is read past exactly as
+  # that call reads past it. `null` for a run whose stream carries no
+  # readable answer (killed before its first byte, or an adapter — or test
+  # fixture — that never emits one), the same degradation every other
+  # `metering_fields` input gets when it cannot be read.
+  local stage_lane
+  if stage_lane="$(stage_lane_of "$stream_file" "$substrate")"; then
+    stage_lane_json="$(jq -nc --arg l "$stage_lane" '$l')"
+  else
+    # shellcheck disable=SC2034
+    stage_lane_json="null"
+  fi
 
   # `.out` is written on every path, including the killed one, so a reader
   # never has to distinguish "no envelope" from "no file": the callers'

@@ -375,7 +375,15 @@
     or unparseable out-file degrades the envelope-derived fields to `null`
     while `model` keeps the id it was passed; and an envelope whose
     `modelUsage` entries are unreadable still yields one valid object, so no
-    envelope can cost a `stage-end` event its `stage` and `exit_code`. Both
+    envelope can cost a `stage-end` event its `stage` and `exit_code`. It also
+    derives `lane` (`api`, `subscription` or `null` — issue #2239, D30) from
+    the lane `lib/stage-run.sh` passes in alongside the gap statistics, not
+    from the envelope: `test/metering.test.sh` asserts it is carried through
+    exactly as given and degrades to `null`, never a guessed lane, when
+    omitted or unparseable; `test/stage-run.test.sh` asserts
+    `lib/substrate-claude-code.sh`'s own `substrate_claude_code_lane_of` maps
+    a stub stream's `init` event to the lane `run_model_stage` then carries
+    into `stage_lane_json`. Both
     `agent-cycle.sh` and `review-cycle.sh` source
     `lib/metering.sh` and merge its output into every `stage-end` /
     `review-stage-end` event they log, so this one function's correctness is

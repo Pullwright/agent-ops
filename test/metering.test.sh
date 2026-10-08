@@ -130,7 +130,7 @@ printf 'not json at all' > "$malformed"
 # still populated when everything else degrades. `claude-sonnet-5` was never
 # resolved through `resolve_model_id` in this test, so MODEL_PROVIDER holds
 # nothing for it and `provider` falls back to `anthropic`.
-all_null='{"model":"claude-sonnet-5","provider":"anthropic","cost_usd":null,"duration_ms":null,"num_turns":null,"is_error":null,"tokens":null,"gaps":null}'
+all_null='{"model":"claude-sonnet-5","provider":"anthropic","lane":null,"cost_usd":null,"duration_ms":null,"num_turns":null,"is_error":null,"tokens":null,"gaps":null}'
 
 assert_eq "a missing out-file degrades to nulls, keeping the passed-in model" \
   "$all_null" "$(metering_fields claude-sonnet-5 "$missing" | jq -c .)"
@@ -177,6 +177,71 @@ assert_eq "an unparseable gaps argument degrades to null rather than failing the
   "null" "$(metering_fields claude-sonnet-5 "$single" 'not json' | jq -c '.gaps')"
 assert_eq "…and the rest of that record is intact" \
   "0.1234" "$(metering_fields claude-sonnet-5 "$single" 'not json' | jq -c '.cost_usd')"
+
+# --- lane (issue #2239, D30): observed off the run's own stream, handed in
+#     beside the gap statistics exactly as gaps is — carried faithfully, and
+#     never coerced to a guessed lane when it cannot be read. ---
+assert_eq "an api lane is carried through exactly as given" \
+  '"api"' "$(metering_fields claude-sonnet-5 "$single" null '"api"' | jq -c '.lane')"
+assert_eq "a subscription lane is carried through exactly as given" \
+  '"subscription"' "$(metering_fields claude-sonnet-5 "$single" null '"subscription"' | jq -c '.lane')"
+assert_eq "an omitted lane argument is null, not a missing key" \
+  "true" "$(metering_fields claude-sonnet-5 "$single" | jq -c 'has("lane") and .lane == null')"
+assert_eq "an explicit null lane is null" \
+  "null" "$(metering_fields claude-sonnet-5 "$single" null null | jq -c '.lane')"
+assert_eq "an unparseable lane argument degrades to null rather than failing the record, never becoming \"api\"" \
+  "null" "$(metering_fields claude-sonnet-5 "$single" null 'not json' | jq -c '.lane')"
+assert_eq "…and the rest of that record is intact" \
+  "0.1234" "$(metering_fields claude-sonnet-5 "$single" null 'not json' | jq -c '.cost_usd')"
+
+# --- substrate_claude_code_lane_of: the observation itself, off a stream's
+#     own first system/init event's apiKeySource (lib/substrate-claude-code.sh). ---
+# shellcheck source=lib/substrate-claude-code.sh
+. "$SCRIPT_DIR/lib/substrate-claude-code.sh"
+
+lane_stream() {
+  local out="$work_dir/lane-$2.stream.jsonl"
+  printf '{"type":"system","subtype":"init","apiKeySource":"%s"}\n' "$1" > "$out"
+  printf '%s\n' "$out"
+}
+
+none_stream="$(lane_stream none none)"
+key_stream="$(lane_stream ANTHROPIC_API_KEY key)"
+helper_stream="$(lane_stream apiKeyHelper helper)"
+managed_stream="$(lane_stream "/login managed key" managed)"
+no_init_stream="$work_dir/lane-no-init.stream.jsonl"
+printf '{"type":"assistant","message":{"role":"assistant"}}\n' > "$no_init_stream"
+
+assert_eq "apiKeySource none maps to the subscription lane" \
+  "subscription" "$(substrate_claude_code_lane_of "$none_stream")"
+assert_eq "apiKeySource ANTHROPIC_API_KEY maps to the api lane" \
+  "api" "$(substrate_claude_code_lane_of "$key_stream")"
+assert_eq "apiKeySource apiKeyHelper maps to the api lane" \
+  "api" "$(substrate_claude_code_lane_of "$helper_stream")"
+assert_eq "apiKeySource /login managed key maps to the api lane" \
+  "api" "$(substrate_claude_code_lane_of "$managed_stream")"
+
+no_init_rc=0
+substrate_claude_code_lane_of "$no_init_stream" >/dev/null || no_init_rc=$?
+assert_eq "a stream with no init event reports failure, not a guessed lane" \
+  "1" "$no_init_rc"
+
+# --- metering_intended_lane: what a stage-start names as intended, distinct
+#     from metering_fields's own observed lane above ---
+saved_api_key="${ANTHROPIC_API_KEY-}"
+saved_api_key_was_set=0
+[[ -v ANTHROPIC_API_KEY ]] && saved_api_key_was_set=1
+unset ANTHROPIC_API_KEY
+assert_eq "with no API key in the environment, the intended lane is subscription" \
+  "subscription" "$(metering_intended_lane)"
+ANTHROPIC_API_KEY="sk-ant-test-placeholder"
+assert_eq "with an API key in the environment, the intended lane is api" \
+  "api" "$(metering_intended_lane)"
+if (( saved_api_key_was_set )); then
+  ANTHROPIC_API_KEY="$saved_api_key"
+else
+  unset ANTHROPIC_API_KEY
+fi
 
 # --- An empty model resolves to the anthropic fallback, not a hard abort ---
 # Issue #2234: bash makes an empty subscript on an associative array a hard

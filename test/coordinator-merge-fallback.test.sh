@@ -196,6 +196,8 @@ run_model_stage() {
   # shellcheck disable=SC2034  # read by the eval'd functions, not visible here
   stage_gaps_json="null"
   # shellcheck disable=SC2034
+  stage_lane_json="null"
+  # shellcheck disable=SC2034
   stage_kill_reason=""
   return "$rc"
 }

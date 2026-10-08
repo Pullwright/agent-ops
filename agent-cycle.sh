@@ -982,11 +982,12 @@ stage_budget_apply() {
          '($p[$a] // $p.implementer).inactivity')"
   log_event "stage-start" "$(jq -nc --arg s "$actor" --arg m "$model" \
     --argjson e "$extra" --arg r "$repo" --arg i "$item" \
+    --arg lane "$(metering_intended_lane)" \
     --argjson b "$(jq -nc --argjson x "$budget" \
       --argjson bs "$stage_backstop_min" --argjson is "$stage_inactivity_min" \
       'if ($x | type) == "object" then $x else {} end
        + {backstop_min: $bs, inactivity_min: $is}')" \
-    '{stage: $s, model: $m} + (if ($e | type) == "object" then $e else {} end) + $b
+    '{stage: $s, model: $m, lane: $lane} + (if ($e | type) == "object" then $e else {} end) + $b
      + (if $r == "" or $r == "*" then {} else {repo: $r} end)
      + (if $i == "" then {} else {item: $i} end)')"
   # node-state (docs/FLOW-SCHEMA.md, D21): every stage-start is a transition,

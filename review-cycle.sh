@@ -1325,8 +1325,8 @@ $(jq . <<<"$reviewer_input")
   log_event "review-stage-start" "$(jq -nc --arg r "$slug" --arg m "$model" \
     --argjson b "$review_budget" \
     --argjson bs "$review_backstop_min" --argjson is "$review_inactivity_min" \
-    --argjson rcs "$review_context_sources" \
-    '{repo: $r, model: $m}
+    --argjson rcs "$review_context_sources" --arg lane "$(metering_intended_lane)" \
+    '{repo: $r, model: $m, lane: $lane}
      + (if ($b | type) == "object" then $b else {} end)
      + {backstop_min: $bs, inactivity_min: $is, review_context_sources: $rcs}')"
   # Requirement 45e: the stage runs as the stage user, which can write the
@@ -1354,7 +1354,7 @@ $(jq . <<<"$reviewer_input")
   # an id, is exactly the case that join was never built for.
   log_event "review-stage-end" "$(jq -nc --arg r "$slug" --argjson rc "$rc" --arg kr "$stage_kill_reason" \
     --arg cyc "$review_id:$slug" \
-    --argjson m "$(metering_fields "$model" "$out_file" "$stage_gaps_json")" \
+    --argjson m "$(metering_fields "$model" "$out_file" "$stage_gaps_json" "$stage_lane_json")" \
     '{repo: $r, exit_code: $rc, stage: "project-reviewer", cycle: $cyc}
      + (if $kr == "" then {} else {kill_reason: $kr} end) + $m')"
   log_node_state_transition overhead
