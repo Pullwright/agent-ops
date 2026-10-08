@@ -273,3 +273,27 @@ principle it rests on.`
   Principle 9 runs on the customer's own nodes, and which of #2139's
   mechanisms places its credential there is agreed with them. Decided by
   the owner on 2026-10-03, on #2129.
+- 2026-10-08 · #2238 · **Each provider runs on its API key and its
+  subscription at once, at a weighted share, and a stage switches lanes
+  on its own at a limit or a spend threshold (D30).** A lane is one
+  provider on one credential path, named for what it bills, and it is
+  the unit of routing, stand-down and spend: the launcher draws a lane
+  for every launch by weight from the provider's open lanes, with no
+  memory and no ledger read; a lane of weight zero is the fallback; a
+  usage limit or an exhausted credit freezes the lane rather than the
+  provider or the fleet; a cap or a balance floor closes it on the best
+  measure the lane has — the provider's statement where there is one,
+  else the record's estimate, and a lane with neither carries no cap —
+  and a closure only an owner act can clear pages the owner at once;
+  `agent-cycle.sh --mix` moves the weights, opens a lane and restates
+  a balance live through `fleet/mix.json`, openings and preferences
+  that fail open to the configured single lane, while a closure goes
+  on `fleet/limit.json`, never on a new file, and a cap or a floor is
+  configuration. By default a
+  provider has one open lane, the one its CLI would use unaided, so a
+  second lane is an explicit choice. D4 is amended: the key stays
+  primary by default and in the documentation, an installation weights
+  its lanes as it chooses under D4's constraints, and running both adds
+  no permission. Decided by the owner on 2026-10-08, on filing #2238: he
+  holds Claude API credits he wants spent alongside the Poetic fleet's
+  subscription; revised the same day for his review of #2249.
