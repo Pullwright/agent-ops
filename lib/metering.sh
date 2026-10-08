@@ -31,7 +31,10 @@ declare -p MODEL_PROVIDER >/dev/null 2>&1 || declare -gA MODEL_PROVIDER=()
 # exactly as `run_model_stage`'s own lookup does, for a MODEL the map holds
 # nothing for (every test that never called
 # `providers_load`/`resolve_model_id_into` first, and every model this image
-# has ever run before this issue).
+# has ever run before this issue). An empty MODEL is handled separately: bash
+# makes an empty subscript on an associative array a hard "bad array
+# subscript" error rather than an empty read, so `:-anthropic` never gets a
+# chance to apply.
 #
 # GAPS_JSON is the one field that does not come from the envelope, because it
 # cannot: it is what the Script observed of the run's own event stream while
@@ -66,7 +69,11 @@ metering_fields() {
   # `--argjson` would fail the whole jq call, which is the one failure this
   # function is written to make impossible.
   jq -e . <<<"$gaps" >/dev/null 2>&1 || gaps="null"
-  provider="${MODEL_PROVIDER[$model]:-anthropic}"
+  if [[ -n "$model" ]]; then
+    provider="${MODEL_PROVIDER[$model]:-anthropic}"
+  else
+    provider="anthropic"
+  fi
   record="$(jq -nc --arg model "$model" --arg provider "$provider" --argjson gaps "$gaps" \
     --rawfile raw <(cat "$out_file" 2>/dev/null || printf '{}') '
     ($raw | try fromjson catch {}) as $raw_e

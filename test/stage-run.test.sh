@@ -289,6 +289,46 @@ assert_eq "resolve_model_id still returns the bare id" \
 assert_eq "…but a command substitution discards the recording, so the substrate falls back" \
   "claude-code" "$(stage_model_substrate "$substituted_model")"
 
+# =============================================================================
+# 4. An empty MODEL resolves to the anthropic fallback, not a hard abort
+# =============================================================================
+#
+# Issue #2234: bash makes an empty subscript on an associative array a hard
+# "bad array subscript" error rather than an empty read, so
+# `${MODEL_PROVIDER[$model]:-anthropic}` never gets a chance to apply when
+# MODEL is empty — unlike an unknown-but-non-empty model, which the fallback
+# above already covers. Run under the same `set -euo pipefail` every cycle
+# script runs under (same shape as test/approver.test.sh's "survives the
+# caller's shell options"), so a regression here reports as a failed
+# assertion rather than the whole test process dying mid-run.
+empty_model_rc=0
+empty_model_substrate="$(
+  set -euo pipefail
+  . "$SCRIPT_DIR/lib/stage-run.sh" 2>/dev/null
+  stage_model_substrate ""
+)" || empty_model_rc=$?
+assert_eq "an empty model does not abort stage_model_substrate under set -e" \
+  "0" "$empty_model_rc"
+assert_eq "…and resolves to the anthropic fallback's own substrate" \
+  "claude-code" "$empty_model_substrate"
+
+empty_run_capture="$tmp_dir/empty-model-run"
+mkdir -p "$empty_run_capture"
+(
+  set -euo pipefail
+  . "$SCRIPT_DIR/lib/stage-run.sh" 2>/dev/null
+  # shellcheck disable=SC2030,SC2031
+  STUB_CAPTURE="$empty_run_capture"
+  export STUB_CAPTURE
+  run_model_stage implementer 60 "" "irrelevant for this stub" \
+    "$empty_run_capture/implementer.out" "$empty_run_capture"
+  [[ "$stage_provider" == "anthropic" ]] || exit 9
+)
+assert_eq "run_model_stage with an empty model does not abort under set -e" \
+  "0" "$?"
+assert_eq "…and the stub it dispatched to is still the claude-code one" \
+  "ok" "$(jq -r '.result' "$empty_run_capture/implementer.out" 2>/dev/null)"
+
 printf '\n'
 if (( failures )); then
   printf '%d assertion(s) failed\n' "$failures"

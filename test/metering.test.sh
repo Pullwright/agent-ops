@@ -178,6 +178,25 @@ assert_eq "an unparseable gaps argument degrades to null rather than failing the
 assert_eq "…and the rest of that record is intact" \
   "0.1234" "$(metering_fields claude-sonnet-5 "$single" 'not json' | jq -c '.cost_usd')"
 
+# --- An empty model resolves to the anthropic fallback, not a hard abort ---
+# Issue #2234: bash makes an empty subscript on an associative array a hard
+# "bad array subscript" error rather than an empty read, so
+# `${MODEL_PROVIDER[$model]:-anthropic}` never gets a chance to apply when
+# the model argument is empty. Run under the same `set -euo pipefail` every
+# cycle script runs under (same shape as test/approver.test.sh's "survives
+# the caller's shell options"), so a regression here reports as a failed
+# assertion rather than the whole test process dying mid-run.
+empty_model_rc=0
+empty_model_provider="$(
+  set -euo pipefail
+  . "$SCRIPT_DIR/lib/metering.sh" 2>/dev/null
+  metering_fields "" "$single" | jq -c '.provider'
+)" || empty_model_rc=$?
+assert_eq "an empty model does not abort metering_fields under set -e" \
+  "0" "$empty_model_rc"
+assert_eq "…and resolves to the anthropic fallback" \
+  '"anthropic"' "$empty_model_provider"
+
 echo
 if (( failures == 0 )); then
   echo "All metering assertions passed."
