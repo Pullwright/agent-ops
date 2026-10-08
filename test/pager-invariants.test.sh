@@ -249,8 +249,13 @@ stub_gh_repo_of() {  # stub_gh_repo_of ARGS... -> the value after -R
 # claim-unreconciled's remedy). agent-ops#1280's own:
 # STUB_GH_PR_LIST_BY_REPO (repo -> `gh pr list` JSON array, answered per the
 # `-R` repository the call actually names, mirroring `issue list`'s own
-# per-label answering above), for pr-unreviewed's own listing.
+# per-label answering above), for pr-unreviewed's own listing. agent-ops#2232's
+# own: STUB_GH_EDIT_STDERR, the text a failing `issue edit` writes to stderr —
+# the same channel `refinement_label_remove`'s own `STDERR_VAR` capture reads,
+# so blocked-label-orphaned's remedy can be tested for passing it through
+# rather than discarding it.
 STUB_GH_EDIT_OK=1
+STUB_GH_EDIT_STDERR="'the-label' not found"
 declare -A STUB_GH_API_MAP=()
 STUB_GH_COMMENT_OK=1
 declare -A STUB_GH_PR_LIST_BY_REPO=()
@@ -276,7 +281,7 @@ gh() {
     "issue create") printf 'created: %s\n' "$STUB_GH_CREATE_URL"; return 0 ;;
     "issue close") return 0 ;;
     "issue comment") if (( STUB_GH_COMMENT_OK )); then return 0; else return 1; fi ;;
-    "issue edit") if (( STUB_GH_EDIT_OK )); then return 0; else return 1; fi ;;
+    "issue edit") if (( STUB_GH_EDIT_OK )); then return 0; else printf '%s\n' "$STUB_GH_EDIT_STDERR" >&2; return 1; fi ;;
     "pr view") gh_state_lookup "$STUB_GH_PR_STATE_MAP" "$3" ;;
     "issue view") gh_state_lookup "$STUB_GH_ISSUE_STATE_MAP" "$3" ;;
     *) return 1 ;;
@@ -790,6 +795,13 @@ assert_eq "  ... via issue edit --remove-label" "1" "$(grep -c '^issue edit' "$G
 STUB_GH_EDIT_OK=0
 outcome="$(pager_remedy_blocked_label_orphaned blocked-label-orphaned "irrelevant, re-derived live")"
 assert_eq "a failing removal is reported, not silently dropped" "removed 0 orphaned label(s); 1 removal(s) failed" "$outcome"
+failed_event="$(jq -c 'select(.event == "label-remove-failed")' "$PAGER_REMEDY_LOG_FILE" | tail -1)"
+assert_eq "  ... the failure logs a label-remove-failed event, not just a counter" "1" \
+  "$(jq -r '. != null' <<<"$failed_event" | grep -c true)"
+assert_eq "  ... carrying gh's own exit code" "1" \
+  "$(jq -r '.exit_code == 1' <<<"$failed_event" | grep -c true)"
+assert_eq "  ... and gh's own stderr text, not discarded" "1" \
+  "$(jq -r '.stderr' <<<"$failed_event" | grep -c "the-label' not found")"
 STUB_GH_EDIT_OK=1
 
 orph_log_clear="$WORKDIR/orphaned-clear.jsonl"

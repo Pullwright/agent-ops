@@ -605,7 +605,7 @@ _refinement_label_ensure_once() {
 }
 
 # refinement_label_add REPO NUMBER LABEL
-# refinement_label_remove REPO NUMBER LABEL
+# refinement_label_remove REPO NUMBER LABEL [STDERR_VAR]
 # Project the label onto an issue, or take it off again. Return non-zero when
 # `gh` would not do it — a repo where the label was never created is the common
 # case, and the caller records the block regardless: losing the projection costs
@@ -615,6 +615,20 @@ _refinement_label_ensure_once() {
 # add retries, once, through `$REFINEMENT_LABEL_ENSURE` (see "Environment"
 # above) before giving up — costing nothing in the steady state, since it only
 # runs after a failure, and never fatal, same as the ensure it calls.
+#
+# `refinement_label_remove`'s own non-zero case is narrower than it looks
+# (agent-ops#2232): `gh issue edit --remove-label` against a label that is
+# merely absent from the issue — the ordinary idempotent-retry case — already
+# exits 0, confirmed empirically against a real issue; the label has to be
+# missing from the *repository itself* (never created, or a typo) to exit
+# non-zero. So a failure here already means something worth logging, not the
+# routine race the caller might otherwise assume. `STDERR_VAR`, when given
+# non-empty, names a variable this function assigns `gh`'s own stderr text
+# into via `printf -v` — the caller's own exit-status check (`$?` right after
+# the call, or the function's own return value in an `if`) still carries
+# `gh`'s real exit code unchanged, so passing it costs nothing to a caller
+# that does not opt in, which is why the four plain 3-arg call sites in
+# `lib/candidate-gather.sh` need no change.
 refinement_label_add() {
   local repo="$1" number="$2" label="$3" gh_bin="${REFINEMENT_GH:-gh}"
   [[ -n "$repo" && -n "$number" && -n "$label" ]] || return 1
@@ -624,8 +638,15 @@ refinement_label_add() {
 }
 
 refinement_label_remove() {
-  local repo="$1" number="$2" label="$3" gh_bin="${REFINEMENT_GH:-gh}"
+  local repo="$1" number="$2" label="$3" stderr_var="${4:-}" gh_bin="${REFINEMENT_GH:-gh}"
   [[ -n "$repo" && -n "$number" && -n "$label" ]] || return 1
+  if [[ -n "$stderr_var" ]]; then
+    local _refinement_label_remove_stderr _refinement_label_remove_rc
+    _refinement_label_remove_stderr="$("$gh_bin" issue edit "$number" -R "$repo" --remove-label "$label" 2>&1 >/dev/null)"
+    _refinement_label_remove_rc=$?
+    printf -v "$stderr_var" '%s' "$_refinement_label_remove_stderr"
+    return "$_refinement_label_remove_rc"
+  fi
   "$gh_bin" issue edit "$number" -R "$repo" --remove-label "$label" >/dev/null 2>&1
 }
 

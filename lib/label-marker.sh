@@ -132,6 +132,18 @@ label_own_action_fields() {
     '{repo: $r, item: ($i | tostring), label: $l, action: $a}' 2>/dev/null || printf '{}'
 }
 
+# label_remove_failure_fields REPO ITEM LABEL EXIT_CODE STDERR
+# Print the extra fields a `label-remove-failed` event carries: which item,
+# which label, and `gh`'s own exit code and stderr text for the attempt —
+# the detail `refinement_label_remove`'s plain 0/1 contract discards on its
+# own (agent-ops#2232), needed to tell a genuinely stuck removal (the label
+# missing from the repository itself) apart from a stale/racing read.
+label_remove_failure_fields() {
+  local repo="$1" item="$2" label="$3" exit_code="$4" stderr="$5"
+  jq -nc --arg r "$repo" --arg i "$item" --arg l "$label" --argjson e "${exit_code:-null}" --arg s "$stderr" \
+    '{repo: $r, item: ($i | tostring), label: $l, exit_code: $e, stderr: $s}' 2>/dev/null || printf '{}'
+}
+
 # label_own_actions_map LABEL [LOG_FILE]
 # Print, as a JSON object keyed `"<repo>|<item>"`, this system's own recorded
 # history for LABEL against every repo+item that has one: `{action, ts,

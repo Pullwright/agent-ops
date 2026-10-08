@@ -464,7 +464,14 @@
       invariant's own next evaluation (the label is gone), so only a
       removal that keeps failing stays filed — "the invariant files only if
       the removal fails," in a framework that always records a pipeline-act
-      attempt (this requirement's own remedy-class table).
+      attempt (this requirement's own remedy-class table). A removal that
+      fails instead logs `label-remove-failed` (requirement 33,
+      `label_remove_failure_fields`, agent-ops#2232), carrying `gh`'s own
+      exit code and stderr text for that attempt — captured through
+      `refinement_label_remove`'s optional `STDERR_VAR` capture — so a
+      genuinely stuck removal (the label missing from the repository
+      itself) can be told apart from a stale/racing read instead of only
+      incrementing a failure counter.
     - **`claim-unreconciled`** (pipeline-act). Fires when an
       `enabler-examined` event whose `outcome` is the Enabler's own escalate
       verdict (`lib/enabler.sh`: `outcome="$verdict"`, never reassigned on
