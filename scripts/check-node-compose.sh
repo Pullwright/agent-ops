@@ -36,10 +36,13 @@
 #              loss cost the cycles that led to #131
 #   watchtower lifecycle hooks are enabled in its *actual* environment (not
 #              the file's), and schedule/interval are not both set
-#   reconciler the reconciler's own last verdict is not `refused` — every
-#              check above passes on a node whose reconciler cannot apply
-#              the next merged compose.yaml, because they ask whether this
-#              one is current, and a refusal only bites at the next one
+#   reconciler the reconciler is running and, by its own audit
+#              (`reconcile-compose.sh --audit`), can apply the next merged
+#              compose.yaml: its verdict is fresh, not `refused`, not a
+#              deferral that will not clear, and the daemon can name it by
+#              its project directory — every check above passes on a node
+#              that cannot, because they ask whether this compose.yaml is
+#              current, and the failure only bites at the next one
 #
 # The container checks are the ground truth and the file check is the early
 # warning: a clean file with stale containers fails the label/env checks, a
@@ -48,7 +51,9 @@
 # roadmap's zero-touch-fleet phase retires the hand-held file entirely,
 # which is that comparison done properly.
 #
-# Exit: 0 every check passed · 1 at least one failed · 2 could not check.
+# Exit: 0 every check passed · 1 at least one failed · 2 could not check —
+# either before any check ran, or because a check could not be made (`UNKN`)
+# and none failed.
 
 set -uo pipefail
 
@@ -59,7 +64,8 @@ usage: check-node-compose.sh
 Verify, from a node's host, that its compose.yaml and the containers created
 from it have not fallen behind the repository: the file against the running
 image's own copy, the pre-update hook label on every agent-ops container,
-watchtower's actual environment, and the reconciler's last verdict.
+watchtower's actual environment, and whether the reconciler can apply the next
+merged compose.yaml.
 
 Run from the node's stack directory (wherever compose.yaml and .env live), or
 set STACK_DIR to point at it. A host running two stacks: once per directory.
@@ -85,6 +91,10 @@ failures=0
 ok()   { printf 'ok   - %s\n' "$1"; }
 bad()  { printf 'FAIL - %s\n' "$1"; failures=$(( failures + 1 )); }
 info() { printf 'info - %s\n' "$1"; }
+# A check that could not be made. Never a pass: it turns an otherwise clean run
+# into exit 2, "could not check".
+unknowns=0
+unable() { printf 'UNKN - %s\n' "$1"; unknowns=$(( unknowns + 1 )); }
 
 # The same normalisation lib/compose-drift.sh applies, for the same reason:
 # comments drift constantly and change nothing a container runs.
@@ -204,34 +214,51 @@ else
   fi
 fi
 
-# --- The reconciler's own verdict ---------------------------------------------
-# Read from the marker the heartbeat folds in (lib/compose-reconcile.sh), so
-# this audit and the fleet strip's `reconcile refused` badge read one record
-# and cannot disagree — they did, on a VM node whose root-owned stack the
-# reconciler had refused for days while every check above passed. Parsed by
-# the reconciler's own `jq`, because a node's host need not have one. `-a`,
-# for the reason watchtower's check gives.
-reconcile_marker='/home/agent/.local/state/poetic-agents/.compose-reconcile.json'
+# --- The reconciler -----------------------------------------------------------
+# Whether this node can apply the *next* merged compose.yaml, which every check
+# above passes without asking: they ask whether this one is current. The
+# judgement is the reconciler's own (`reconcile-compose.sh --audit`,
+# `compose_reconcile_audit` in lib/compose-reconcile.sh), made inside the
+# container that holds the verdict, its marker's path and the bounds it is
+# judged by, so this audit and the fleet strip read one record and this script
+# needs no `jq` on a host that has none. This script only relays what it is
+# told, and reports a check it could not make, never a pass, when it is told
+# nothing — an image older than `--audit` answers "unknown argument". `-a`,
+# for the reason watchtower's check gives; `.State.Status` rather than
+# `.State.Running`, because Docker reports a container in a restart loop as
+# running.
 rc_id="$("${compose[@]}" ps -aq reconciler 2>/dev/null | head -n 1)"
 if [[ -z "$rc_id" ]]; then
   info "the reconciler is not part of this stack (auto-update profile off) — a merged compose.yaml waits for a hand-run docker compose up -d"
-elif [[ "$(docker inspect "$rc_id" --format '{{.State.Running}}' 2>/dev/null)" != "true" ]]; then
-  bad "the reconciler exists but is not running — a merged compose.yaml waits for a hand-run docker compose up -d (docker logs the container)"
 else
-  rc_status="" rc_reason=""
-  { IFS= read -r rc_status; IFS= read -r rc_reason; } < <("${compose[@]}" exec -T reconciler \
-    jq -r '.status // "", .reason // ""' "$reconcile_marker" 2>/dev/null)
-  case "$rc_status" in
-    in-sync|reconciled) ok "the reconciler's last verdict is $rc_status" ;;
-    refused) bad "the reconciler refuses to apply a merged compose.yaml: $rc_reason" ;;
-    "") info "the reconciler has no verdict to read yet — it writes one every five minutes" ;;
-    *) info "the reconciler's last verdict is $rc_status: $rc_reason" ;;
-  esac
+  rc_state="$(docker inspect "$rc_id" --format '{{.State.Status}}' 2>/dev/null)"
+  if [[ "$rc_state" != running ]]; then
+    bad "the reconciler is ${rc_state:-in a state docker inspect cannot report}, not running — a merged compose.yaml waits for a hand-run docker compose up -d (docker logs the container)"
+  else
+    audit_out="$("${compose[@]}" exec -T reconciler /app/scripts/reconcile-compose.sh --audit 2>/dev/null)"
+    audit_rc=$?
+    audit_seen=0
+    while IFS= read -r line; do
+      case "${line%% *}" in
+        ok)     ok     "${line#* }"; audit_seen=1 ;;
+        bad)    bad    "${line#* }"; audit_seen=1 ;;
+        info)   info   "${line#* }"; audit_seen=1 ;;
+        unable) unable "${line#* }"; audit_seen=1 ;;
+      esac
+    done <<<"$audit_out"
+    if (( audit_rc != 0 || audit_seen == 0 )); then
+      unable "could not ask the reconciler whether it can apply the next merged compose.yaml (exit $audit_rc) — an image older than this script answers 'unknown argument'"
+    fi
+  fi
 fi
 
 printf '\n'
 if (( failures > 0 )); then
   printf '%d check(s) failed\n' "$failures"
   exit 1
+fi
+if (( unknowns > 0 )); then
+  printf '%d check(s) could not be made — this is not a pass\n' "$unknowns"
+  exit 2
 fi
 printf 'all checks passed\n'

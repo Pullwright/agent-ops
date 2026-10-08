@@ -5,15 +5,19 @@
 12b. `scripts/reconcile-compose.sh` and `lib/compose-reconcile.sh`
     implementing requirement 2.5a — the actor for the compose-drift verdict
     components 12 and `lib/compose-drift.sh` only ever reported. The library
-    holds the decision (drift, through `lib/compose-drift.sh` itself; the
-    `${VAR}`-against-`.env`-keys check; the two cycle locks, read by the same
-    rules the watchtower pre-update hook reads them by, and a `roll-pending`
-    marker, read as a reason to wait rather than as that hook's own override;
-    the in-place install; and the `docker compose up -d --remove-orphans`,
-    which it runs in a transient sibling container rather than in its own),
-    and the script is the crontab's
+    holds the decision (drift, through `lib/compose-drift.sh` itself, and the
+    read access to `compose.yaml` that needs; this container named to the
+    daemon by its project directory; the `${VAR}`-against-`.env`-keys check,
+    with the keys read through the daemon; the two cycle locks, read by the
+    same rules the watchtower pre-update hook reads them by, and a
+    `roll-pending` marker, read as a reason to wait rather than as that
+    hook's own override; and the in-place install and the
+    `docker compose up -d --remove-orphans`, which it runs in a transient
+    sibling container as root rather than in its own) and the audit that
+    reads the verdict back for component 12, and the script is the crontab's
     entry point, resolving `state_dir` from `config.json` and printing one
-    line per tick — nothing at all on the steady state. It runs in the
+    line per tick — nothing at all on the steady state — or, with `--audit`,
+    running no tick and printing the audit's findings. It runs in the
     `reconciler` service (see "The node stack"), the only container given a
     read-write Docker socket and this node's own project directory; unlike
     components 12 and 12a it is not run by hand on a host, and unlike them it

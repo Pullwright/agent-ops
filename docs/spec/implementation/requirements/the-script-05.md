@@ -24,7 +24,16 @@
    that service): the same path on both sides is what makes the file's own
    relative bind sources (`./compose.yaml`, `./ts-serve.json`) resolve
    identically for the Compose CLI inside the container and for the daemon
-   outside it. On drift, in order:
+   outside it. That copy is the one thing in the directory this container
+   reads itself, so it needs read access to `compose.yaml` and to nothing
+   else there — a `compose.yaml` it cannot read is `refused`, naming the
+   file's owner and mode and the quoted `chmod` to run — and an `in-sync`
+   node depends on nothing beyond it. On drift, in order:
+
+   - **This container is named to the daemon first** (the lookup described
+     under the sibling below), because the `.env` gate and the apply both go
+     through its own mounts by its id. A lookup that comes up empty is
+     `deferred` and reads and installs nothing.
 
    - **Every `${VAR}` the new file requires must be a key in this node's
      `.env`.** Required means the braced forms with no default and no
@@ -39,7 +48,13 @@
      records which name, and changes nothing — compose would otherwise
      interpolate an empty string and deploy it. `.env` is never written and
      its values are never read: the scan keeps the key name and discards
-     everything after the `=`.
+     everything after the `=`. It is read **through the daemon**,
+     `docker cp` from this container's own mount of it, so an `.env` root
+     owns at mode 0600 — the one `cloud-init.yaml` writes — needs no access
+     of this container's own and nobody on the host has to widen access to
+     it. No `.env` at all is the empty key set; one that exists and cannot
+     be fetched is `deferred`, because an empty key set would refuse for
+     every `${VAR}` in the file and send its reader to the wrong file.
    - **`lock.json` and `review-lock.json` defer it, exactly as they defer a
      roll** (`deploy/docker/watchtower-pre-update.sh`), bounded by the same
      `lock_stale_after` and `repository_review.lock_stale_after`, and judged by
@@ -81,7 +96,8 @@
      only ever about the marker.
    - **Then the image's copy is written over the node's, in place, and
      `docker compose up -d --remove-orphans` is run for that project
-     directory — from a transient sibling container, never from this one.**
+     directory — both from a transient sibling container running as root,
+     never from this one.**
      In place — the existing inode truncated and rewritten from
      a copy staged beside it and verified byte-for-byte first — because a
      bind mount of a *file* pins the inode it was created against: a rename
@@ -103,8 +119,15 @@
      fleet (agent-ops#1913). The sibling is a `docker run --rm` of the image
      *this container is running*, `--network none`, `--sig-proxy=false` so a
      signal delivered to the attached client cannot abort a recreate half-way,
-     and with the socket's own group added so a uid-1000 process can open it —
-     the shape watchtower uses to update itself. Its mounts are this
+     and `--user 0` — the shape watchtower uses to update itself. As root it
+     can write a stack directory and read an `.env` that root owns, which the
+     install and Compose's own interpolation both need, and it gains nothing
+     by it: a process holding the Docker socket is root on the host by
+     another name. The install is the same function this library defines,
+     sourced in the same image, run immediately before the `up`; an install
+     that fails exits with a status of its own, so the verdict can say which
+     of the two did not happen, and is `deferred` with `pending_apply`. Its
+     mounts are this
      container's own, by `--volumes-from`: the three it needs are the three
      this service already has and no others — the socket, the project
      directory at the absolute path it has on the host, and the state volume —
@@ -188,21 +211,44 @@
    The verdict is `$state_dir/.compose-reconcile.json`: `in-sync`,
    `applying` (an apply is in flight and a sibling is recreating the project),
    `reconciled` (carrying the SHA-256 of both files), `deferred` (a lock, a
-   roll falling due, or a recreate that exited non-zero) or `refused` (no
-   project directory, no `compose.yaml` in it, no copy in the image, a
-   missing `${VAR}`, or a directory or `compose.yaml` this container cannot
-   write or a `.env` it cannot read — whose reason, where another uid owns
-   any of the three, names that uid's `chown` rather than the mount). Every
-   verdict carries `at`, the
+   roll falling due, a container the daemon cannot name, an `.env` it could
+   not fetch, or an install or a recreate that failed) or `refused` (no
+   project directory, no `compose.yaml` in it or one this container cannot
+   read, no copy in the image, or a missing `${VAR}`). Every verdict carries
+   `at`, the
    time this tick wrote it, and `since`, the `at` of the last tick whose
    `status` or `reason` differed from the tick before — when the node entered
    the state rather than when it last confirmed it, which is what "how long
    has this been going on" needs and what the roll-pending bound above is
-   measured from. It is local to the node and excluded from replication like
+   measured from. A `since` read back that is not a timestamp of the shape
+   this library writes is treated as absent, so the next verdict starts its
+   clock afresh rather than carrying the value forward. The marker is read
+   one field per line, with `reason`, the one free-text field, last and
+   verbatim, so a newline in it cannot cost the marker `pending_apply`. It
+   is local to the node and excluded from replication like
    `.stage-health.json`, and the verdict alone travels, folded into
    `heartbeat.json` as `compose_reconcile` beside the `compose` drift verdict
    it acts on (requirement 2.5; rendered on every dashboard's fleet strip,
    `docs/spec/dashboard/site.md`).
+
+   **The verdict is read back for the host by the same library.**
+   `scripts/reconcile-compose.sh --audit` runs no tick; it prints one
+   `<class> <message>` line per finding (`ok`, `bad`, `info` or `unable`), and
+   is what `scripts/check-node-compose.sh` (component 12) asks, so the host
+   needs neither `jq` nor the marker's path. It reports whether the daemon
+   can name this container by its project directory — a stack brought up
+   through another spelling of that directory, such as a symlink to it,
+   fails that lookup on every apply with nothing else wrong, and the finding
+   names the directory the stack was brought up from and the quoted `cd` and
+   `up` that fix it — and then judges the verdict. `in-sync` and `reconciled`
+   are `ok`; `refused` is `bad`; a deferral for a lock or a due roll is
+   `info` until it has stood, by its `since`, longer than the larger of the
+   two `lock_stale_after` bounds, which is longer than any wait this library
+   honours, and every other deferral is `bad` at once; `applying` is `info`
+   until it has stood that long. Whatever the status, a verdict whose `at` is
+   more than four ticks old is `bad`, because the schedule has stopped, and
+   one that cannot be parsed or carries no `at` is `bad`; no verdict at all is
+   `unable`, unless the container has been up for four ticks already.
 
    **`applying` is recorded before the file is installed, carries
    `pending_apply`, and stands for as long as the sibling runs.** A verdict
@@ -271,10 +317,9 @@
    existing node the one way anything compose-level does: one last
    `docker compose up -d` on that host, with `AGENT_OPS_PROJECT_DIR` set
    (`deploy/docker/README.md`, `deploy/docker/.env.example`).
-   `deploy/docker/cloud-init.yaml` sets that variable and this host's
-   `DOCKER_GID` on a node it provisions, and hands its stack directory,
-   `compose.yaml` and `.env` to uid 1000, the image's `agent` user, so a node
-   built from it needs no such visit. A node without the service keeps the `compose drifted` badge
+   `deploy/docker/cloud-init.yaml` sets that variable, and this host's
+   `DOCKER_GID`, on a node it provisions, so a node built from it needs no
+   such visit. A node without the service keeps the `compose drifted` badge
    and the manual ritual, and nothing else about it changes. The Kubernetes
    target (`deploy/kubernetes/`) needs none of this: a pod's spec is applied
    by the cluster from the manifest it is reconciled against, so there is no

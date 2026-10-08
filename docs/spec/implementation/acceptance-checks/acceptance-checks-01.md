@@ -298,6 +298,33 @@ oblige anyone to edit a test.
    between the install and the retry reads `deferred` naming that cycle and
    **keeps** `pending_apply`, since a postponed retry that was discarded would
    leave the node running a `compose.yaml` none of its containers came from.
+   A stack this container's uid can neither write nor read `.env` in — the
+   root-owned stack `cloud-init.yaml` leaves, played by the suite's own files
+   with the owner's bits removed, which the stub lifts only for the daemon's
+   `docker cp` and for a sibling started with `--user 0` — reconciles,
+   installing the file in place and leaving every mode as it was; an in-sync
+   node with an unreadable `.env` still reads `in-sync` and asks the daemon
+   nothing; a `compose.yaml` this container cannot read is `refused`, naming
+   its owner and mode and a `chmod` whose path is quoted; an install the
+   sibling cannot perform is `deferred` as the write that failed, with
+   `pending_apply` kept and the file untouched; an `.env` the daemon cannot
+   hand over is `deferred` and names `.env` rather than any variable; and no
+   `.env` at all refuses as every required variable missing. A marker with no
+   `since`, and one already holding `"since": "false"`, start the clock on
+   the tick that reads them; an unchanged `in-sync` keeps the `since` it
+   began with; and a newline in a stored `reason` keeps `pending_apply`, the
+   status and both digests. The audit (`reconcile-compose.sh --audit`, called
+   both directly and through the script with `state_dir` from `config.json`)
+   passes a fresh `in-sync`; fails a verdict four ticks old, a refusal
+   (quoting it), a lock deferral older than the larger lock bound, any
+   deferral that is not for a lock or a roll, an `applying` that old, a
+   marker that will not parse or has no `at`, and a container the daemon
+   cannot name by its project directory (naming the directory it was brought
+   up from and the quoted `cd` that fixes it); reports a fresh lock or roll
+   deferral and a fresh `applying` as information; reports no verdict as
+   `unable` on a container that has just started and as a failure on one up
+   for four ticks; keeps a multi-line reason on one line; and writes and logs
+   nothing and asks the daemon only `ps` and `inspect`.
    `compose.yaml`
    declares the service in the `auto-update` profile with the socket, the
    same-absolute-path project mount, `network_mode: none`, neither shared

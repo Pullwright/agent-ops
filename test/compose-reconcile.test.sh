@@ -135,6 +135,8 @@ egress-proxy
 dashboard
 reconciler'
 export DOCKER_STUB_RUNNING_FILE="$tmp_dir/running"
+# The directory the stub plays root over (see `as_root` in the stub).
+export DOCKER_STUB_PROJECT="$tmp_dir/project"
 
 # The socket the sibling is handed. A plain file is enough: the library only
 # ever mounts it by path and reads its group.
@@ -149,16 +151,81 @@ cat > "$bin/docker" <<'EOF'
 # `up -d` does to the project — including the part that is the whole point:
 # the process driving the `up` is stopped by it, and whether the rest of the
 # project ends up running depends on where that process was.
-printf '%s\n' "$*" >> "$DOCKER_STUB_LOG"
+printf '%s%s\n' "${DOCKER_STUB_IN_SIBLING:+(sibling) }" "$*" >> "$DOCKER_STUB_LOG"
+
+# The daemon, and a sibling run as `--user 0`, read and write as root. A suite
+# that is not root cannot, so for the length of such a call the stub lifts the
+# owner's bits on the project directory and every file in it, and puts the
+# modes back afterwards. Lifted only for what is root's: a sibling started
+# without `--user 0` runs as the suite's own uid, so a library that forgot to
+# ask for root fails the cases below that make the stack unwritable.
+# DOCKER_STUB_NO_ROOT plays a daemon that cannot write either — a read-only
+# mount. Only what is actually lifted is put back: a sibling outlives the tick
+# a killed-tick case ends, and one that restored modes it never changed would
+# overwrite whatever a later case had set by then.
+as_root() {
+  local -a modes=()
+  local m path rc=0
+  if [[ -n "${DOCKER_STUB_PROJECT:-}" && -d "$DOCKER_STUB_PROJECT" \
+        && "${DOCKER_STUB_NO_ROOT:-}" != 1 ]]; then
+    while IFS= read -r m; do
+      path="${m#* }"
+      if [[ -d "$path" ]]; then
+        [[ -r "$path" && -w "$path" && -x "$path" ]] && continue
+        chmod u+rwx "$path"
+      else
+        [[ -r "$path" && -w "$path" ]] && continue
+        chmod u+rw "$path"
+      fi
+      modes+=("$m")
+    done < <(find "$DOCKER_STUB_PROJECT" -maxdepth 1 \( -type d -o -type f \) -printf '%m %p\n')
+  fi
+  "$@" || rc=$?
+  for m in "${modes[@]}"; do chmod "${m%% *}" "${m#* }" 2>/dev/null; done
+  return "$rc"
+}
+
+# `docker cp <id>:<path> -`: the file as a tar stream, read as the daemon reads
+# it.
+if [[ "$1" == cp ]]; then
+  [[ "${DOCKER_STUB_CP_RC:-0}" == 0 ]] || exit "$DOCKER_STUB_CP_RC"
+  src="${2#*:}"
+  as_root tar -C "$(dirname "$src")" -cf - "$(basename "$src")" 2>/dev/null
+  exit $?
+fi
+
+# `docker run`: the sibling's own script, run here — the install it performs
+# and the `docker compose up` it then asks for, which reaches this stub again
+# marked as the sibling's. The image's `env -i …` is not reproduced; `PATH`
+# puts this stub first so that `docker` inside the script is this one, never a
+# real CLI.
+if [[ "$1" == run ]]; then
+  args=("$@") script="" i=0
+  for (( i = 0; i + 2 < ${#args[@]}; i++ )); do
+    if [[ "${args[i]}" == bash && "${args[i+1]}" == -c ]]; then
+      script="${args[i+2]}"; break
+    fi
+  done
+  [[ -n "$script" ]] || exit 125
+  runner=(env)
+  [[ " $* " == *" --user 0 "* ]] && runner=(as_root env)
+  "${runner[@]}" DOCKER_STUB_IN_SIBLING=1 PATH="$(dirname "$0"):$PATH" \
+    bash -c "$script" "${args[@]:i+3}"
+  exit $?
+fi
 
 # Two questions per verb, told apart by what they filter or format on. `ps`
 # asks either "which container am I" or "is an apply of mine already running";
 # `inspect` asks either for this container's image or for the ceilings the
 # sibling has to be given, which no node's `.env` reaches from in here.
+# The audit asks two more: which project directories this host's reconcilers
+# were brought up from, and when this container started.
 case "$1" in
   ps)
     if [[ "$*" == *compose-apply* ]]; then
       printf '%s\n' "${DOCKER_STUB_SIBLING_ID:-}"
+    elif [[ "$*" == *--format* ]]; then
+      printf '%s\n' "${DOCKER_STUB_LABELS:-}"
     else
       printf '%s\n' "$DOCKER_STUB_SELF_ID"
     fi
@@ -167,6 +234,8 @@ case "$1" in
     if [[ "$*" == *HostConfig* ]]; then
       printf '%s\t%s\t%s\n' "${DOCKER_STUB_MEMORY:-268435456}" \
         "${DOCKER_STUB_PIDS:-256}" "${DOCKER_STUB_NANOCPUS:-500000000}"
+    elif [[ "$*" == *StartedAt* ]]; then
+      printf '%s\n' "${DOCKER_STUB_STARTED_AT:-}"
     else
       printf '%s\n' "$DOCKER_STUB_SELF_IMAGE"
     fi
@@ -183,7 +252,7 @@ esac
 # "every service running" assertions below if the recreate ever moves back
 # inside the project.
 if [[ "${DOCKER_STUB_RC:-0}" == "0" ]]; then
-  if [[ "$1" == run ]]; then
+  if [[ -n "${DOCKER_STUB_IN_SIBLING:-}" ]]; then
     printf '%s\n' "$DOCKER_STUB_SERVICES" > "$DOCKER_STUB_RUNNING_FILE"
   else
     : > "$DOCKER_STUB_RUNNING_FILE"
@@ -502,7 +571,8 @@ verdict="$(run_reconcile)"
 assert_eq "a missing required variable refuses" "refused" "$(jq -r '.status' <<<"$verdict")"
 assert_contains "and names it" "NODE_NAME" "$(jq -r '.reason' <<<"$verdict")"
 assert_eq "and applies nothing" "$host_before" "$(sha256sum "$host_file" | cut -d' ' -f1)"
-assert_eq "and recreates nothing" "0" "$(docker_calls)"
+assert_eq "and recreates nothing — the daemon is asked what this container is and what .env holds, and nothing is run" \
+  "0" "$(( $(sibling_recreates) + $(in_place_recreates) ))"
 assert_eq "one compose-reconcile-refused event" "1" "$(events_of compose-reconcile-refused)"
 
 # The discriminating half: the same run, with the same .env, once the file's
@@ -525,7 +595,8 @@ host_before="$(sha256sum "$host_file" | cut -d' ' -f1)"
 verdict="$(run_reconcile)"
 assert_eq "an implementation cycle in flight defers" "deferred" "$(jq -r '.status' <<<"$verdict")"
 assert_eq "and nothing is applied" "$host_before" "$(sha256sum "$host_file" | cut -d' ' -f1)"
-assert_eq "and nothing is recreated" "0" "$(docker_calls)"
+assert_eq "and nothing is recreated — the daemon is asked what this container is and what .env holds, and nothing is run" \
+  "0" "$(( $(sibling_recreates) + $(in_place_recreates) ))"
 assert_eq "one compose-reconcile-deferred event" "1" "$(events_of compose-reconcile-deferred)"
 
 # A tick every five minutes must leave one record of a deferral, not one per
@@ -821,58 +892,136 @@ assert_contains "and says what to set" "AGENT_OPS_PROJECT_DIR" "$(jq -r '.reason
 # verdict carries its `since` forward: a VM node published `"since": "false"`
 # for as long as its refusal stood.
 reason_unset="$(jq -r '.reason' <<<"$verdict")"
-jq -nc --arg r "$reason_unset" '{status: "refused", at: "2026-09-11T00:00:00Z", reason: $r}' > "$marker"
-verdict="$(COMPOSE_RECONCILE_PROJECT_DIR="" COMPOSE_RECONCILE_IMAGE_FILE="$image_file" \
+run_unset() {  # <now>
+  COMPOSE_RECONCILE_PROJECT_DIR="" COMPOSE_RECONCILE_IMAGE_FILE="$image_file" \
   COMPOSE_RECONCILE_STATE_DIR="$state" COMPOSE_RECONCILE_CONFIG="$config" \
-  COMPOSE_RECONCILE_DOCKER="$bin/docker" COMPOSE_RECONCILE_NOW=2026-09-11T00:05:00Z \
-  compose_reconcile_run)"
+  COMPOSE_RECONCILE_DOCKER="$bin/docker" COMPOSE_RECONCILE_NOW="$1" \
+    compose_reconcile_run
+}
+jq -nc --arg r "$reason_unset" '{status: "refused", at: "2026-09-11T00:00:00Z", reason: $r}' > "$marker"
+verdict="$(run_unset 2026-09-11T00:05:00Z)"
 assert_eq "a marker with no since starts the clock on this tick, not at the string false" \
   "2026-09-11T00:05:00Z" "$(jq -r '.since' <<<"$verdict")"
 
-# Root ignores every permission bit these cases are made of, so they are
-# skipped there rather than passing vacuously; the image this suite runs in is
-# non-root (`USER agent`). COMPOSE_RECONCILE_UID stands in for the uid the
-# files belong to, which a suite that cannot chown has no other way to vary.
+# And the marker that bug already left on a node: a `since` that is not a
+# timestamp is read as absent, so it heals on the first tick rather than being
+# carried forward by every unchanged verdict after it.
+jq -nc --arg r "$reason_unset" '{status: "refused", at: "2026-09-11T00:00:00Z", since: "false", reason: $r}' > "$marker"
+verdict="$(run_unset 2026-09-11T00:05:00Z)"
+assert_eq "a stored since of false is replaced, not carried forward" \
+  "2026-09-11T00:05:00Z" "$(jq -r '.since' <<<"$verdict")"
+verdict="$(run_unset 2026-09-11T00:10:00Z)"
+assert_eq "and the timestamp that replaced it is then the one kept" \
+  "2026-09-11T00:05:00Z" "$(jq -r '.since' <<<"$verdict")"
+
+# A newline in `reason` — which embeds a path and a lock file's own values —
+# must not cost the marker its other fields. Read as a fixed count of lines,
+# the marker was discarded whole, `pending_apply` with it, and an installed
+# but unrecreated apply was forgotten: drift reads in-sync from the install on.
+jq -nc '{status: "deferred", at: "2026-09-11T00:00:00Z", since: "2026-09-10T00:00:00Z",
+         reason: "a\nb", from: "aaa", to: "bbb", pending_apply: true}' > "$marker"
+_compose_reconcile_begin_tick "$state"
+assert_eq "a newline in reason keeps pending_apply" "true" "$compose_reconcile_tick_pending"
+assert_eq "and the status beside it" "deferred" "$compose_reconcile_tick_status"
+assert_eq "and the digests" "aaa bbb" "$compose_reconcile_tick_from $compose_reconcile_tick_to"
+assert_eq "and the reason itself, verbatim" $'a\nb' "$compose_reconcile_tick_reason"
+
+# --- A stack directory root owns -----------------------------------------------
+# `cloud-init.yaml` writes the stack as root: the directory 0755, compose.yaml
+# 0644 and .env 0600, none of them this container's uid's. Nothing on the host
+# should have to change for that: the `.env` keys are read through the daemon
+# and the install runs in the sibling as root. Played here by the suite's own
+# files with the owner's bits taken away, which the stub's daemon and its
+# `--user 0` sibling lift for the length of their own calls. Skipped as root,
+# whom no permission bit stops, rather than passing vacuously; the image this
+# suite runs in is non-root (`USER agent`).
 if (( EUID != 0 )); then
-  other_uid=$(( $(id -u) + 1 ))
-
   reset_fixture
-  chmod 444 "$host_file"; chmod 555 "$project"
-  host_before="$(sha256sum "$host_file" | cut -d' ' -f1)"
-  verdict="$(COMPOSE_RECONCILE_UID="$other_uid" run_reconcile)"
-  chmod 755 "$project"; chmod 644 "$host_file"
-  assert_eq "a project directory owned by another uid refuses" \
-    "refused" "$(jq -r '.status' <<<"$verdict")"
-  assert_contains "naming the chown that fixes it, for the directory" \
-    "chown $other_uid:$other_uid $project " "$(jq -r '.reason' <<<"$verdict")"
-  assert_contains "and for compose.yaml and .env with it" \
-    "$host_file $env_file" "$(jq -r '.reason' <<<"$verdict")"
-  assert_eq "and applies nothing" "$host_before" "$(sha256sum "$host_file" | cut -d' ' -f1)"
-  assert_eq "and recreates nothing" "0" "$(docker_calls)"
+  before_inode="$(stat -c %i "$host_file")"
+  chmod 444 "$host_file"; chmod 000 "$env_file"; chmod 555 "$project"
+  verdict="$(run_reconcile)"
+  modes_after="$(stat -c %a "$project" "$host_file" "$env_file" | paste -sd' ' -)"
+  chmod 755 "$project"; chmod 644 "$host_file"; chmod 600 "$env_file"
+  assert_eq "a stack this container's uid can neither write nor read .env in reconciles" \
+    "reconciled" "$(jq -r '.status' <<<"$verdict")"
+  assert_eq "installing the image's file, byte for byte" \
+    "$(sha256sum "$image_file" | cut -d' ' -f1)" "$(sha256sum "$host_file" | cut -d' ' -f1)"
+  assert_eq "in place, through the sibling" "$before_inode" "$(stat -c %i "$host_file")"
+  assert_eq "and changing no permission on the host to do it" "555 444 0" "$modes_after"
+  assert_contains "because the sibling runs as root" "--user 0" \
+    "$(grep '^run --rm ' "$DOCKER_STUB_LOG" | tail -n 1)"
 
-  # The half `compose.yaml` alone never tested: a writable file and directory
-  # beside a `.env` this uid cannot read. The gate would read no keys from it
-  # and refuse for a `NODE_NAME` the file does define.
+  # The node this used to break most quietly: nothing to apply, and an `.env`
+  # it cannot read. It read in-sync before any of this, and must still.
   reset_fixture
+  cp "$image_file" "$host_file"
   chmod 000 "$env_file"
-  verdict="$(COMPOSE_RECONCILE_UID="$other_uid" run_reconcile)"
+  verdict="$(run_reconcile)"
   chmod 600 "$env_file"
-  assert_eq "an unreadable .env refuses" "refused" "$(jq -r '.status' <<<"$verdict")"
-  assert_contains "as the .env it cannot read" "$env_file" "$(jq -r '.reason' <<<"$verdict")"
-  assert_eq "and not as a variable .env does define" "0" \
-    "$(count_matching 'NODE_NAME' <(jq -r '.reason' <<<"$verdict"))"
-  assert_eq "and recreates nothing" "0" "$(docker_calls)"
+  assert_eq "an in-sync node with an unreadable .env reads in-sync" \
+    "in-sync" "$(jq -r '.status' <<<"$verdict")"
+  assert_eq "without asking the daemon anything" "0" "$(docker_calls)"
 
-  # Every file this uid's own, and still not writable: then it is the mount.
+  # The one access this container does need: drift is read from compose.yaml
+  # here, on every tick.
   reset_fixture
-  chmod 444 "$host_file"
+  chmod 000 "$host_file"
   verdict="$(run_reconcile)"
   chmod 644 "$host_file"
-  assert_eq "a file this uid owns but cannot write refuses" "refused" "$(jq -r '.status' <<<"$verdict")"
-  assert_contains "and blames the mount" "bind-mounted read-write" "$(jq -r '.reason' <<<"$verdict")"
+  assert_eq "a compose.yaml this container cannot read refuses" \
+    "refused" "$(jq -r '.status' <<<"$verdict")"
+  assert_contains "naming the file, its mode and what to run" \
+    "the file is uid $(id -u), mode 0000) — drift is read from it on every tick, so it has to be readable: chmod 644 $host_file" \
+    "$(jq -r '.reason' <<<"$verdict")"
+
+  # A path that would split if pasted unquoted is quoted in the advice.
+  saved_project="$project"
+  project="$tmp_dir/agent ops"; host_file="$project/compose.yaml"; env_file="$project/.env"
+  reset_fixture
+  chmod 000 "$host_file"
+  verdict="$(run_reconcile)"
+  chmod 644 "$host_file"
+  assert_contains "and quoting it, so a path with a space pastes as one argument" \
+    'chmod 644 '"$(printf '%q' "$host_file")" "$(jq -r '.reason' <<<"$verdict")"
+  rm -rf "$project"
+  project="$saved_project"; host_file="$project/compose.yaml"; env_file="$project/.env"
+
+  # A daemon that cannot write either — a read-only mount — leaves the file as
+  # it was, and says so rather than blaming the recreate.
+  reset_fixture
+  host_before="$(sha256sum "$host_file" | cut -d' ' -f1)"
+  chmod 555 "$project"
+  verdict="$(DOCKER_STUB_NO_ROOT=1 run_reconcile)"
+  chmod 755 "$project"
+  assert_eq "an install the sibling cannot perform defers" "deferred" "$(jq -r '.status' <<<"$verdict")"
+  assert_contains "as the write that failed, not as the recreate" "could not write $host_file" \
+    "$(jq -r '.reason' <<<"$verdict")"
+  assert_eq "keeping the retry pending" "true" "$(jq -r '.pending_apply' <<<"$verdict")"
+  assert_eq "and leaves the node's file as it was" "$host_before" "$(sha256sum "$host_file" | cut -d' ' -f1)"
+  assert_eq "and recreates nothing" "$(every_service)" "$(running_services)"
 else
-  printf 'skip - unwritable project directory (running as root: the permission bits do not apply)\n'
+  printf 'skip - a root-owned stack (running as root: the permission bits do not apply)\n'
 fi
+
+# An `.env` the daemon cannot hand over is not an `.env` with no keys: read as
+# empty, it refused for every `${VAR}` in the file, each of which it defines.
+reset_fixture
+verdict="$(DOCKER_STUB_CP_RC=1 run_reconcile)"
+assert_eq "an .env the daemon cannot read defers" "deferred" "$(jq -r '.status' <<<"$verdict")"
+assert_contains "naming the file" "could not read $env_file through the daemon" \
+  "$(jq -r '.reason' <<<"$verdict")"
+assert_eq "and not as a variable .env does define" "0" \
+  "$(count_matching 'NODE_NAME' <(jq -r '.reason' <<<"$verdict"))"
+assert_eq "and recreates nothing" "0" "$(( $(sibling_recreates) + $(in_place_recreates) ))"
+
+# No `.env` at all is the empty key set, as it always was: the gate then names
+# what the file requires.
+reset_fixture
+rm -f "$env_file"
+verdict="$(run_reconcile)"
+assert_eq "no .env at all refuses as every required variable missing" \
+  "refused" "$(jq -r '.status' <<<"$verdict")"
+assert_contains "naming them" "NODE_NAME" "$(jq -r '.reason' <<<"$verdict")"
 
 # --- since -----------------------------------------------------------------------
 # `in-sync` has no reason, so its marker has an empty field second — the case
@@ -886,6 +1035,121 @@ run_reconcile 2026-09-11T00:00:00Z >/dev/null
 verdict="$(run_reconcile 2026-09-11T00:05:00Z)"
 assert_eq "an unchanged in-sync verdict keeps the since it began with" \
   "2026-09-11T00:00:00Z" "$(jq -r '.since' <<<"$verdict")"
+
+# --- The audit ----------------------------------------------------------------
+# `scripts/check-node-compose.sh` asks this, from the host, through
+# `reconcile-compose.sh --audit`: can this node apply the next merged
+# compose.yaml? Every way the answer used to read clean while it was "no" is a
+# case here — a verdict that could not be read, a schedule that stopped, a
+# deferral that will never clear, a container the daemon cannot find.
+
+audit() {
+  COMPOSE_RECONCILE_PROJECT_DIR="$project" \
+  COMPOSE_RECONCILE_STATE_DIR="$state" \
+  COMPOSE_RECONCILE_CONFIG="$config" \
+  COMPOSE_RECONCILE_DOCKER="$bin/docker" \
+  COMPOSE_RECONCILE_NOW=2026-09-11T01:00:00Z \
+    compose_reconcile_audit
+}
+write_marker() {  # <status> <at> [since] [reason]
+  jq -nc --arg s "$1" --arg at "$2" --arg since "${3:-$2}" --arg r "${4:-}" \
+    '{status: $s, at: $at, since: $since} + (if $r == "" then {} else {reason: $r} end)' > "$marker"
+}
+verdict_line() { grep -v '^ok the reconciler can identify itself' <<<"$1"; }
+lock_reason="$COMPOSE_RECONCILE_CYCLE_REASON (lock.json held by container c1 since 2026-09-11T00:40:00Z) — retrying on the next tick"
+
+reset_fixture
+write_marker in-sync 2026-09-11T00:55:00Z 2026-09-01T00:00:00Z
+out="$(audit)"
+assert_contains "the audit confirms the daemon can name this container" \
+  "ok the reconciler can identify itself to the daemon by its project directory, $project" "$out"
+assert_eq "and passes a fresh in-sync verdict, however long it has held" \
+  "ok the reconciler's last verdict is in-sync" "$(verdict_line "$out")"
+assert_eq "two findings, one per line" "2" "$(wc -l <<<"$out" | tr -d ' ')"
+
+write_marker in-sync 2026-09-11T00:30:00Z
+assert_contains "a verdict four ticks old fails, whatever it says — the schedule has stopped" \
+  "bad the reconciler's last verdict (in-sync) was written at 2026-09-11T00:30:00Z, 30 minutes ago" "$(audit)"
+
+write_marker refused 2026-09-11T00:55:00Z "" "a reason it gave"
+assert_eq "a refusal fails, quoting the reconciler's reason" \
+  "bad the reconciler refuses to apply a merged compose.yaml: a reason it gave" "$(verdict_line "$(audit)")"
+
+write_marker deferred 2026-09-11T00:55:00Z 2026-09-11T00:40:00Z "$lock_reason"
+assert_eq "a deferral for a lock is information" \
+  "info the reconciler is deferring: $lock_reason" "$(verdict_line "$(audit)")"
+write_marker deferred 2026-09-11T00:55:00Z 2026-09-11T00:40:00Z "$COMPOSE_RECONCILE_ROLL_REASON"
+assert_eq "and so is one for a due roll" \
+  "info the reconciler is deferring: $COMPOSE_RECONCILE_ROLL_REASON" "$(verdict_line "$(audit)")"
+write_marker deferred 2026-09-11T00:55:00Z 2026-09-10T00:00:00Z "$lock_reason"
+assert_contains "until it has stood longer than either lock bound, past which nothing it honours is still waiting" \
+  "bad the reconciler has deferred since 2026-09-10T00:00:00Z, longer than any lock or roll it waits on is honoured (6 hours)" \
+  "$(audit)"
+write_marker deferred 2026-09-11T00:55:00Z 2026-09-11T00:50:00Z \
+  "this container cannot identify itself to the daemon, so there is no sibling to hand the recreate to — retrying on the next tick"
+assert_contains "a deferral that does not clear by itself fails at once" \
+  "bad the reconciler is deferring for a reason that does not clear by itself: this container cannot identify itself" "$(audit)"
+
+write_marker applying 2026-09-11T00:55:00Z 2026-09-11T00:50:00Z "$COMPOSE_RECONCILE_APPLYING_REASON"
+assert_eq "an apply in flight is information" \
+  "info an apply is in flight, since 2026-09-11T00:50:00Z" "$(verdict_line "$(audit)")"
+write_marker applying 2026-09-11T00:55:00Z 2026-09-10T12:00:00Z "$COMPOSE_RECONCILE_APPLYING_REASON"
+assert_contains "until it has stood longer than either lock bound" \
+  "bad an apply has been in flight since 2026-09-10T12:00:00Z" "$(audit)"
+
+write_marker deferred 2026-09-11T00:55:00Z 2026-09-11T00:50:00Z $'the recreate exited 1\nand said more'
+assert_eq "a reason holding a newline is still one line" "2" "$(audit | wc -l | tr -d ' ')"
+
+printf 'not json\n' > "$marker"
+assert_contains "a verdict that cannot be parsed fails, rather than reading as no verdict" \
+  "bad the reconciler's verdict ($marker) cannot be read" "$(audit)"
+printf '{"status":"in-sync"}\n' > "$marker"
+assert_contains "and so does one with no time on it" "cannot be read" "$(audit)"
+
+rm -f "$marker"
+assert_eq "no verdict on a container that has only just started is unable, never clean" \
+  "unable the reconciler has written no verdict yet — it writes one every five minutes; run this again after its first tick" \
+  "$(verdict_line "$(DOCKER_STUB_STARTED_AT=2026-09-11T00:58:00.123456789Z audit)")"
+assert_contains "but on one that has been up for four ticks it is a schedule that is not firing" \
+  "bad the reconciler has been running for 60 minutes and has written no verdict" \
+  "$(DOCKER_STUB_STARTED_AT=2026-09-11T00:00:00.5Z audit)"
+
+# poetic-1, 2026-10-08: brought up from /opt/poetic-1, a symlink to the
+# /opt/poetic-node its `.env` names, so every container's working_dir label
+# reads the symlink and the lookup by the real path finds nothing. Nothing
+# else is wrong, and the node would defer for ever at the next merge.
+saved_self_id="$DOCKER_STUB_SELF_ID"
+DOCKER_STUB_SELF_ID=""
+write_marker in-sync 2026-09-11T00:55:00Z
+out="$(DOCKER_STUB_LABELS=/opt/poetic-1 audit)"
+DOCKER_STUB_SELF_ID="$saved_self_id"
+assert_contains "a container the daemon cannot name by its project directory fails" \
+  "bad no running container is labelled as the reconciler of $project" "$out"
+assert_contains "naming the directory the stack was actually brought up from" \
+  "were brought up from /opt/poetic-1" "$out"
+assert_contains "and the one command that fixes it, quoted" \
+  "cd $(printf '%q' "$project") && docker compose up -d" "$out"
+
+# Read-only: the audit runs no tick, writes no verdict and logs nothing.
+write_marker deferred 2026-09-11T00:55:00Z 2026-09-11T00:40:00Z "$lock_reason"
+marker_before="$(sha256sum "$marker" | cut -d' ' -f1)"
+: > "$DOCKER_STUB_LOG"
+audit >/dev/null
+assert_eq "the audit leaves the verdict as it found it" "$marker_before" "$(sha256sum "$marker" | cut -d' ' -f1)"
+assert_eq "and logs no event" "0" "$( [[ -f "$log_file" ]] && wc -l < "$log_file" | tr -d ' ' || echo 0)"
+assert_eq "and asks the daemon nothing but questions" "0" \
+  "$(grep -cvE '^(ps|inspect) ' "$DOCKER_STUB_LOG")"
+
+# And through the entry point the host calls, resolving the state directory
+# from config.json exactly as the tick does — so the audit cannot read one
+# marker while the tick writes another.
+jq --arg d "$state" '. + {state_dir: $d}' "$config" > "$tmp_dir/config-audit.json"
+out="$(AGENT_OPS_CONFIG="$tmp_dir/config-audit.json" COMPOSE_RECONCILE_PROJECT_DIR="$project" \
+  COMPOSE_RECONCILE_DOCKER="$bin/docker" COMPOSE_RECONCILE_NOW=2026-09-11T01:00:00Z \
+  "$SCRIPT_DIR/scripts/reconcile-compose.sh" --audit)"
+assert_eq "reconcile-compose.sh --audit reads the marker the tick writes" \
+  "info the reconciler is deferring: $lock_reason" "$(verdict_line "$out")"
+assert_eq "and still runs no tick" "$marker_before" "$(sha256sum "$marker" | cut -d' ' -f1)"
 
 # --- Never non-zero ------------------------------------------------------------
 # This runs from cron in a container whose only job it is. Nothing reads its
