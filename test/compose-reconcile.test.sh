@@ -46,6 +46,12 @@
 #   - the file is replaced *in place*, keeping its inode, because a bind mount
 #     of a file pins the inode it was created against;
 #   - `.env` is never written, and its values are never read;
+#   - a project directory this container's uid does not own refuses, naming
+#     the owner and the `chown` that fixes it rather than the mount, and an
+#     unreadable `.env` refuses as that rather than as every `${VAR}` missing;
+#   - `since` is when the node entered its state: it holds across ticks that
+#     repeat the verdict, an `in-sync` one included, and is never the string
+#     `false` an empty field shifted into it;
 #   - every event is a transition, not a tick.
 #
 # `docker` is stubbed throughout: this suite creates no container and reaches
@@ -808,6 +814,78 @@ verdict="$(COMPOSE_RECONCILE_PROJECT_DIR="" COMPOSE_RECONCILE_IMAGE_FILE="$image
 assert_eq "no project directory refuses, rather than guessing at one" \
   "refused" "$(jq -r '.status' <<<"$verdict")"
 assert_contains "and says what to set" "AGENT_OPS_PROJECT_DIR" "$(jq -r '.reason' <<<"$verdict")"
+
+# A marker from before `since` existed, holding the verdict this tick repeats.
+# Read back as one tab-separated line, the empty fields between `reason` and
+# `pending_apply` collapsed and shifted `false` into `since`, and an unchanged
+# verdict carries its `since` forward: a VM node published `"since": "false"`
+# for as long as its refusal stood.
+reason_unset="$(jq -r '.reason' <<<"$verdict")"
+jq -nc --arg r "$reason_unset" '{status: "refused", at: "2026-09-11T00:00:00Z", reason: $r}' > "$marker"
+verdict="$(COMPOSE_RECONCILE_PROJECT_DIR="" COMPOSE_RECONCILE_IMAGE_FILE="$image_file" \
+  COMPOSE_RECONCILE_STATE_DIR="$state" COMPOSE_RECONCILE_CONFIG="$config" \
+  COMPOSE_RECONCILE_DOCKER="$bin/docker" COMPOSE_RECONCILE_NOW=2026-09-11T00:05:00Z \
+  compose_reconcile_run)"
+assert_eq "a marker with no since starts the clock on this tick, not at the string false" \
+  "2026-09-11T00:05:00Z" "$(jq -r '.since' <<<"$verdict")"
+
+# Root ignores every permission bit these cases are made of, so they are
+# skipped there rather than passing vacuously; the image this suite runs in is
+# non-root (`USER agent`). COMPOSE_RECONCILE_UID stands in for the uid the
+# files belong to, which a suite that cannot chown has no other way to vary.
+if (( EUID != 0 )); then
+  other_uid=$(( $(id -u) + 1 ))
+
+  reset_fixture
+  chmod 444 "$host_file"; chmod 555 "$project"
+  host_before="$(sha256sum "$host_file" | cut -d' ' -f1)"
+  verdict="$(COMPOSE_RECONCILE_UID="$other_uid" run_reconcile)"
+  chmod 755 "$project"; chmod 644 "$host_file"
+  assert_eq "a project directory owned by another uid refuses" \
+    "refused" "$(jq -r '.status' <<<"$verdict")"
+  assert_contains "naming the chown that fixes it, for the directory" \
+    "chown $other_uid:$other_uid $project " "$(jq -r '.reason' <<<"$verdict")"
+  assert_contains "and for compose.yaml and .env with it" \
+    "$host_file $env_file" "$(jq -r '.reason' <<<"$verdict")"
+  assert_eq "and applies nothing" "$host_before" "$(sha256sum "$host_file" | cut -d' ' -f1)"
+  assert_eq "and recreates nothing" "0" "$(docker_calls)"
+
+  # The half `compose.yaml` alone never tested: a writable file and directory
+  # beside a `.env` this uid cannot read. The gate would read no keys from it
+  # and refuse for a `NODE_NAME` the file does define.
+  reset_fixture
+  chmod 000 "$env_file"
+  verdict="$(COMPOSE_RECONCILE_UID="$other_uid" run_reconcile)"
+  chmod 600 "$env_file"
+  assert_eq "an unreadable .env refuses" "refused" "$(jq -r '.status' <<<"$verdict")"
+  assert_contains "as the .env it cannot read" "$env_file" "$(jq -r '.reason' <<<"$verdict")"
+  assert_eq "and not as a variable .env does define" "0" \
+    "$(count_matching 'NODE_NAME' <(jq -r '.reason' <<<"$verdict"))"
+  assert_eq "and recreates nothing" "0" "$(docker_calls)"
+
+  # Every file this uid's own, and still not writable: then it is the mount.
+  reset_fixture
+  chmod 444 "$host_file"
+  verdict="$(run_reconcile)"
+  chmod 644 "$host_file"
+  assert_eq "a file this uid owns but cannot write refuses" "refused" "$(jq -r '.status' <<<"$verdict")"
+  assert_contains "and blames the mount" "bind-mounted read-write" "$(jq -r '.reason' <<<"$verdict")"
+else
+  printf 'skip - unwritable project directory (running as root: the permission bits do not apply)\n'
+fi
+
+# --- since -----------------------------------------------------------------------
+# `in-sync` has no reason, so its marker has an empty field second — the case
+# that reset `since` to `at` on every tick, because the tab-separated read
+# took the old `since` for the reason and the new verdict then differed from
+# it.
+
+reset_fixture
+cp "$image_file" "$host_file"
+run_reconcile 2026-09-11T00:00:00Z >/dev/null
+verdict="$(run_reconcile 2026-09-11T00:05:00Z)"
+assert_eq "an unchanged in-sync verdict keeps the since it began with" \
+  "2026-09-11T00:00:00Z" "$(jq -r '.since' <<<"$verdict")"
 
 # --- Never non-zero ------------------------------------------------------------
 # This runs from cron in a container whose only job it is. Nothing reads its

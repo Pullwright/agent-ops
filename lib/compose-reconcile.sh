@@ -136,7 +136,9 @@
 #                                           — retried on the next tick in every
 #                                           case
 #   {status:"refused", at, since, reason}   the node is not configured for
-#                                           reconciliation, or the new file
+#                                           reconciliation, this container
+#                                           cannot write its project directory
+#                                           or read its `.env`, or the new file
 #                                           needs a `${VAR}` its `.env` does
 #                                           not define. Nothing was applied.
 #
@@ -163,7 +165,9 @@
 # must never reach a real Docker socket: COMPOSE_RECONCILE_PROJECT_DIR,
 # _IMAGE_FILE, _STATE_DIR, _CONFIG, _DOCKER (the `docker` command itself,
 # stubbed), _DOCKER_SOCKET (this container's own socket path, whose group the
-# sibling is added to and which its `DOCKER_HOST` names) and _NOW.
+# sibling is added to and which its `DOCKER_HOST` names) and _NOW. _UID is
+# the uid file ownership is judged against, which a suite that cannot chown
+# needs in order to see its own files as somebody else's.
 
 # The two reasons a later tick has to recognise by value rather than by
 # reading, written once here instead of at each site. `reason` is the key the
@@ -446,10 +450,34 @@ compose_reconcile_run() {
       "$pending_apply"
     return 0
   fi
-  if [[ ! -w "$host_file" ]]; then
-    _compose_reconcile_settle "$state_dir" "$now" refused \
-      "$host_file is not writable from this container — the project directory must be bind-mounted read-write" \
-      "$pending_apply"
+  # Three accesses, not one, because an apply needs all three: the install
+  # stages its copy beside `compose.yaml` before writing it in place, and the
+  # `.env` gate below and the sibling's `docker compose up -d` both read
+  # `.env`. A read-write mount grants none of them to this container's uid if
+  # the host files belong to another one, which is how a stack set up as root
+  # starts — `cloud-init.yaml`'s did, until it handed the directory over — so
+  # the reason names the owner and the `chown` that fixes it rather than
+  # blaming the mount. Testing `compose.yaml` alone let a root-owned `.env`
+  # through to the gate, which then read no keys at all and refused for every
+  # `${VAR}` in the file, each of which `.env` does define.
+  if [[ ! -w "$host_file" || ! -w "$project_dir" ]] \
+     || [[ -e "$env_file" && ! -r "$env_file" ]]; then
+    local uid foreign=() f
+    uid="${COMPOSE_RECONCILE_UID:-$(id -u)}"
+    for f in "$project_dir" "$host_file" "$env_file"; do
+      if [[ -e "$f" && "$(stat -c %u -- "$f" 2>/dev/null)" != "$uid" ]]; then
+        foreign+=("$f")
+      fi
+    done
+    if (( ${#foreign[@]} > 0 )); then
+      _compose_reconcile_settle "$state_dir" "$now" refused \
+        "this container runs as uid $uid and does not own ${foreign[*]} — on the host, run: chown $uid:$uid ${foreign[*]}" \
+        "$pending_apply"
+    else
+      _compose_reconcile_settle "$state_dir" "$now" refused \
+        "$host_file is not writable from this container — the project directory must be bind-mounted read-write" \
+        "$pending_apply"
+    fi
     return 0
   fi
 
@@ -803,21 +831,33 @@ _compose_reconcile_install() {  # <image-file> <host-file> <expected-sha>
 # a roll is bounded from `since` (`_compose_reconcile_waited_out`), and `from`
 # is the digest the apply replaced, which the host file no longer holds once
 # the file is installed.
+#
+# One field per line, not one tab-separated line: tab is IFS whitespace, so a
+# `read` over a run of tabs folds it into one separator and every field after
+# an empty one shifts left. Most verdicts have one — `in-sync` has no reason,
+# none but an apply's has digests — so the tick read an `in-sync` marker's
+# `since` as its reason and `false` as its `since`, and a marker written
+# before `since` existed carried `"since": "false"` forward for as long as its
+# verdict held. No field holds a newline: every reason is one of this file's
+# own strings, and `detail`, which carries command output, is not read.
 _compose_reconcile_begin_tick() {  # <state-dir>
-  local fields=""
+  local fields=()
   compose_reconcile_tick_status=""
   compose_reconcile_tick_reason=""
   compose_reconcile_tick_since=""
   compose_reconcile_tick_from=""
   compose_reconcile_tick_to=""
   compose_reconcile_tick_pending=false
-  fields="$(jq -r '[.status // "", .reason // "", .since // "", .from // "", .to // "",
-                    (if .pending_apply then "true" else "false" end)] | @tsv' \
-    "$1/.compose-reconcile.json" 2>/dev/null || true)"
-  [[ -n "$fields" ]] || return 0
-  IFS=$'\t' read -r compose_reconcile_tick_status compose_reconcile_tick_reason \
-    compose_reconcile_tick_since compose_reconcile_tick_from compose_reconcile_tick_to \
-    compose_reconcile_tick_pending <<<"$fields"
+  mapfile -t fields < <(jq -r '.status // "", .reason // "", .since // "", .from // "", .to // "",
+                    (if .pending_apply then "true" else "false" end)' \
+    "$1/.compose-reconcile.json" 2>/dev/null || true)
+  (( ${#fields[@]} == 6 )) || return 0
+  compose_reconcile_tick_status="${fields[0]}"
+  compose_reconcile_tick_reason="${fields[1]}"
+  compose_reconcile_tick_since="${fields[2]}"
+  compose_reconcile_tick_from="${fields[3]}"
+  compose_reconcile_tick_to="${fields[4]}"
+  compose_reconcile_tick_pending="${fields[5]}"
   [[ "$compose_reconcile_tick_pending" == "true" ]] || compose_reconcile_tick_pending=false
   return 0
 }

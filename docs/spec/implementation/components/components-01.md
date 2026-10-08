@@ -1247,7 +1247,10 @@ What exists, and the requirements each part answers to:
     watchtower pre-update hook label on every running agent-ops container,
     and watchtower's actual environment — lifecycle hooks enabled, schedule
     and interval not both set — plus an advisory count of lifecycle mentions
-    in watchtower's log. Every check but the first is read-only against
+    in watchtower's log, and the reconciler's last verdict
+    (`.compose-reconcile.json`, requirement 2.5a, parsed by the reconciler's
+    own `jq`), which fails when it is `refused` or when the reconciler exists
+    and is not running. Every check but the first is read-only against
     Docker (`docker compose exec/ps`, `docker inspect/logs`, `diff`), so it
     is safe to allow-list like `watch-node.sh`; the `.env` check reads only
     the host filesystem (`stat`, a glob) and runs even when the stack is

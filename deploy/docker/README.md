@@ -485,6 +485,7 @@ docker compose exec scheduler /app/agent-cycle.sh --status   # wait for idle
 curl -fsSLO https://raw.githubusercontent.com/Pullwright/agent-ops/main/deploy/docker/compose.yaml
 printf 'AGENT_OPS_PROJECT_DIR=%s\n' "$PWD" >> .env
 grep -q '^DOCKER_GID=' .env || printf 'DOCKER_GID=%s\n' "$(getent group docker | cut -d: -f3)" >> .env
+sudo chown 1000:1000 . compose.yaml .env   # the uid every agent-ops container runs as
 docker compose up -d
 docker compose logs reconciler          # should be quiet: nothing to do
 ```
@@ -496,8 +497,13 @@ mounts (`./compose.yaml`, `./ts-serve.json`) resolve the same way for the
 daemon as for the container. `DOCKER_GID` is this host's docker group id,
 without which the container cannot open the socket it is given. On a host
 running two stacks, do this from each stack directory, with *that* directory's
-path — never the shared parent. A node built by `cloud-init.yaml` has both
-already.
+path — never the shared parent. The `chown` hands the directory to the
+image's `agent` user: the reconciler writes `compose.yaml` in place, stages
+its copy beside it and reads `.env` for the key names a new file needs, and a
+stack set up as root grants it none of that through a read-write mount, so it
+refuses on every tick. Where the directory is already that user's — on a
+workstation it usually is — the `chown` changes nothing. A node built by
+`cloud-init.yaml` has all three already.
 
 The `AGENT_OPS_PROJECT_DIR` line is appended unconditionally, and that is
 deliberate: `.env.example` ships the key already present and empty, a later
@@ -524,7 +530,8 @@ every dashboard's fleet strip carries it:
 - **reconcile refused** (amber) — the node's reconciler will not apply the
   merged file, and says why in the badge's title: usually a `${VAR}` the new
   file needs and this node's `.env` does not define, which you add by hand,
-  or `AGENT_OPS_PROJECT_DIR` not set. Nothing has been applied;
+  `AGENT_OPS_PROJECT_DIR` not set, or a stack directory another uid owns,
+  for which the reason gives the `chown` to run. Nothing has been applied;
 - **reconcile deferred** (grey) — it is waiting on a cycle, on a watchtower
   roll that is due, or a recreate failed and is being retried. This one clears
   itself;
@@ -559,7 +566,9 @@ It diffs the file against the running image's copy, confirms the pre-update
 hook label on every agent-ops container and lifecycle hooks in watchtower's
 actual environment, and exits non-zero if anything has drifted — those checks
 cover exactly the properties whose silent loss cost the cycles behind
-issue #131. It also flags, host-side and without needing the stack to be up,
+issue #131. It also fails when the reconciler's last verdict is `refused`,
+quoting the reconciler's reason: the checks above ask whether this
+`compose.yaml` is current, and a refusal only shows at the next one. It also flags, host-side and without needing the stack to be up,
 a `.env` that is not `0600` and any `.env.bak*`/`*.env.old` backup left
 beside it (see above).
 

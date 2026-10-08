@@ -36,6 +36,10 @@
 #              loss cost the cycles that led to #131
 #   watchtower lifecycle hooks are enabled in its *actual* environment (not
 #              the file's), and schedule/interval are not both set
+#   reconciler the reconciler's own last verdict is not `refused` — every
+#              check above passes on a node whose reconciler cannot apply
+#              the next merged compose.yaml, because they ask whether this
+#              one is current, and a refusal only bites at the next one
 #
 # The container checks are the ground truth and the file check is the early
 # warning: a clean file with stale containers fails the label/env checks, a
@@ -54,8 +58,8 @@ usage: check-node-compose.sh
 
 Verify, from a node's host, that its compose.yaml and the containers created
 from it have not fallen behind the repository: the file against the running
-image's own copy, the pre-update hook label on every agent-ops container, and
-watchtower's actual environment.
+image's own copy, the pre-update hook label on every agent-ops container,
+watchtower's actual environment, and the reconciler's last verdict.
 
 Run from the node's stack directory (wherever compose.yaml and .env live), or
 set STACK_DIR to point at it. A host running two stacks: once per directory.
@@ -198,6 +202,31 @@ else
     hook_mentions="$(docker logs "$wt_id" 2>&1 | grep -cE 'pre-update|lifecycle' || true)"
     info "watchtower's log mentions the lifecycle hook $hook_mentions time(s) — 0 across a period containing a roll means the hook never ran"
   fi
+fi
+
+# --- The reconciler's own verdict ---------------------------------------------
+# Read from the marker the heartbeat folds in (lib/compose-reconcile.sh), so
+# this audit and the fleet strip's `reconcile refused` badge read one record
+# and cannot disagree — they did, on a VM node whose root-owned stack the
+# reconciler had refused for days while every check above passed. Parsed by
+# the reconciler's own `jq`, because a node's host need not have one. `-a`,
+# for the reason watchtower's check gives.
+reconcile_marker='/home/agent/.local/state/poetic-agents/.compose-reconcile.json'
+rc_id="$("${compose[@]}" ps -aq reconciler 2>/dev/null | head -n 1)"
+if [[ -z "$rc_id" ]]; then
+  info "the reconciler is not part of this stack (auto-update profile off) — a merged compose.yaml waits for a hand-run docker compose up -d"
+elif [[ "$(docker inspect "$rc_id" --format '{{.State.Running}}' 2>/dev/null)" != "true" ]]; then
+  bad "the reconciler exists but is not running — a merged compose.yaml waits for a hand-run docker compose up -d (docker logs the container)"
+else
+  rc_status="" rc_reason=""
+  { IFS= read -r rc_status; IFS= read -r rc_reason; } < <("${compose[@]}" exec -T reconciler \
+    jq -r '.status // "", .reason // ""' "$reconcile_marker" 2>/dev/null)
+  case "$rc_status" in
+    in-sync|reconciled) ok "the reconciler's last verdict is $rc_status" ;;
+    refused) bad "the reconciler refuses to apply a merged compose.yaml: $rc_reason" ;;
+    "") info "the reconciler has no verdict to read yet — it writes one every five minutes" ;;
+    *) info "the reconciler's last verdict is $rc_status: $rc_reason" ;;
+  esac
 fi
 
 printf '\n'

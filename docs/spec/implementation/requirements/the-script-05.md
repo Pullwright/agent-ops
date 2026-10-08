@@ -189,7 +189,11 @@
    `applying` (an apply is in flight and a sibling is recreating the project),
    `reconciled` (carrying the SHA-256 of both files), `deferred` (a lock, a
    roll falling due, or a recreate that exited non-zero) or `refused` (no
-   project directory, or a missing `${VAR}`). Every verdict carries `at`, the
+   project directory, no `compose.yaml` in it, no copy in the image, a
+   missing `${VAR}`, or a directory or `compose.yaml` this container cannot
+   write or a `.env` it cannot read — whose reason, where another uid owns
+   any of the three, names that uid's `chown` rather than the mount). Every
+   verdict carries `at`, the
    time this tick wrote it, and `since`, the `at` of the last tick whose
    `status` or `reason` differed from the tick before — when the node entered
    the state rather than when it last confirmed it, which is what "how long
@@ -267,9 +271,10 @@
    existing node the one way anything compose-level does: one last
    `docker compose up -d` on that host, with `AGENT_OPS_PROJECT_DIR` set
    (`deploy/docker/README.md`, `deploy/docker/.env.example`).
-   `deploy/docker/cloud-init.yaml` sets that variable, and this host's
-   `DOCKER_GID`, on a node it provisions, so a node built from it needs no
-   such visit. A node without the service keeps the `compose drifted` badge
+   `deploy/docker/cloud-init.yaml` sets that variable and this host's
+   `DOCKER_GID` on a node it provisions, and hands its stack directory,
+   `compose.yaml` and `.env` to uid 1000, the image's `agent` user, so a node
+   built from it needs no such visit. A node without the service keeps the `compose drifted` badge
    and the manual ritual, and nothing else about it changes. The Kubernetes
    target (`deploy/kubernetes/`) needs none of this: a pod's spec is applied
    by the cluster from the manifest it is reconciled against, so there is no

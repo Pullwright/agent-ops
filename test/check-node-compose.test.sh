@@ -15,6 +15,9 @@
 #     watchtower given both schedule and interval each fail on their own;
 #   - a stack with no watchtower is information, not a failure — a node
 #     without auto-update is a configuration, not a defect;
+#   - a reconciler whose last verdict is `refused` fails, quoting its reason,
+#     as does one that exists but is not running; a deferral, a missing
+#     verdict and a stack with no reconciler at all are information;
 #   - a 0600 .env with no backup siblings passes; a non-0600 .env fails
 #     naming its actual mode, and each .env.bak*/*.env.old sibling fails
 #     naming itself (#696) — checked without Docker, so these still run even
@@ -57,7 +60,8 @@ assert_contains() {
 # --- The stubbed docker -------------------------------------------------------
 # One binary, its behaviour driven entirely by STUB_* variables, so each
 # scenario below is a handful of env assignments rather than a new stub.
-# Container c1 plays the scheduler; wt plays watchtower.
+# Container c1 plays the scheduler; wt plays watchtower; rc plays the
+# reconciler.
 stub_bin="$tmp_dir/bin"
 mkdir -p "$stub_bin"
 cat > "$stub_bin/docker" <<'STUB'
@@ -69,16 +73,20 @@ case "$cmd" in
     sub="$1"; shift
     case "$sub" in
       exec)
-        shift 2   # -T scheduler
-        case "$1" in
-          cat)  [[ -n "${STUB_IMAGE_COMPOSE:-}" ]] || exit 1
-                cat "$STUB_IMAGE_COMPOSE" ;;
-          test) [[ "${STUB_MOUNTED:-}" == "yes" ]] ;;
+        svc="$2"; shift 2   # -T <service>
+        case "$svc:$1" in
+          scheduler:cat)  [[ -n "${STUB_IMAGE_COMPOSE:-}" ]] || exit 1
+                          cat "$STUB_IMAGE_COMPOSE" ;;
+          scheduler:test) [[ "${STUB_MOUNTED:-}" == "yes" ]] ;;
+          reconciler:jq)  [[ -n "${STUB_RC_STATUS:-}" ]] || exit 2
+                          printf '%s\n%s\n' "$STUB_RC_STATUS" "${STUB_RC_REASON:-}" ;;
+          *) exit 1 ;;
         esac ;;
       ps)
-        case "$1" in
-          -q)  [[ -n "${STUB_CONTAINERS:-}" ]] && printf '%s\n' "$STUB_CONTAINERS" ;;
-          -aq) [[ -n "${STUB_WT_ID:-}" ]] && printf '%s\n' "$STUB_WT_ID" ;;
+        case "$1:${2:-}" in
+          -q:)            [[ -n "${STUB_CONTAINERS:-}" ]] && printf '%s\n' "$STUB_CONTAINERS" ;;
+          -aq:watchtower) [[ -n "${STUB_WT_ID:-}" ]] && printf '%s\n' "$STUB_WT_ID" ;;
+          -aq:reconciler) [[ -n "${STUB_RC_ID:-}" ]] && printf '%s\n' "$STUB_RC_ID" ;;
         esac ;;
     esac ;;
   inspect)
@@ -88,6 +96,7 @@ case "$cmd" in
       c1:*pre-update*)      printf '%s' "${STUB_HOOK:-}" ;;
       wt:*State.Running*)   printf '%s' "${STUB_WT_RUNNING:-true}" ;;
       wt:*Config.Env*)      printf '%s\n' "${STUB_WT_ENV:-}" ;;
+      rc:*State.Running*)   printf '%s' "${STUB_RC_RUNNING:-true}" ;;
     esac ;;
   logs) printf '%s\n' "${STUB_WT_LOG:-}" ;;
 esac
@@ -119,7 +128,7 @@ run_check() {  # run_check VAR=value…
   out="$(env PATH="$stub_bin:$PATH" STACK_DIR="$stack" \
     STUB_IMAGE_COMPOSE="$image_compose" STUB_CONTAINERS='c1' STUB_MOUNTED=yes \
     STUB_HOOK="$hook_path" STUB_WT_ID='wt' STUB_WT_ENV="$healthy_env" \
-    STUB_WT_LOG='pre-update hook ran' \
+    STUB_WT_LOG='pre-update hook ran' STUB_RC_ID='rc' STUB_RC_STATUS='in-sync' \
     "$@" "$CHECK" 2>&1)"
   rc=$?
 }
@@ -173,6 +182,28 @@ assert_eq "a watchtower that exists but is not running fails" "1" "$rc"
 run_check STUB_WT_ID=""
 assert_eq "no watchtower at all is not a failure" "0" "$rc"
 assert_contains "but is said" "auto-update profile off" "$out"
+
+# --- The reconciler -----------------------------------------------------------
+
+run_check STUB_RC_STATUS=refused \
+  STUB_RC_REASON='this container runs as uid 1000 and does not own /opt/poetic-node'
+assert_eq "a reconciler that refuses fails" "1" "$rc"
+assert_contains "quoting the reconciler's own reason" "does not own /opt/poetic-node" "$out"
+
+run_check STUB_RC_RUNNING=false
+assert_eq "a reconciler that exists but is not running fails" "1" "$rc"
+
+run_check STUB_RC_STATUS=deferred STUB_RC_REASON='an implementation cycle is in flight'
+assert_eq "a deferral is not a failure" "0" "$rc"
+assert_contains "but is said, with its reason" "deferred: an implementation cycle is in flight" "$out"
+
+run_check STUB_RC_STATUS=""
+assert_eq "a reconciler with no verdict yet is not a failure" "0" "$rc"
+assert_contains "but is said" "no verdict to read yet" "$out"
+
+run_check STUB_RC_ID=""
+assert_eq "no reconciler at all is not a failure" "0" "$rc"
+assert_contains "but is said, naming the manual ritual" "waits for a hand-run docker compose up -d" "$out"
 
 # --- .env permissions and backup siblings (#696) -------------------------------
 

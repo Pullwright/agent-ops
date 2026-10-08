@@ -94,6 +94,16 @@ runcmd:
   # the reconciler its whole job.
   - [sh, -c, 'printf "DOCKER_GID=%s\n" "$(getent group docker | cut -d: -f3)" >> /opt/poetic-node/.env']
 
+  # The stack directory handed to uid 1000, the `agent` user every agent-ops
+  # container runs as, because root wrote everything above. The `reconciler`
+  # writes compose.yaml in place, stages its copy beside it and reads .env for
+  # the key names a new file needs, and a read-write mount grants uid 1000
+  # none of that over root's files: left as root, the node settles `refused`
+  # on its first tick and never applies a merged compose change. It grants
+  # that container nothing it lacked — it holds the Docker socket, which is
+  # root on this host by another name — and .env keeps its 0600.
+  - [sh, -c, "chown 1000:1000 /opt/poetic-node /opt/poetic-node/compose.yaml /opt/poetic-node/.env"]
+
   - [sh, -c, "cd /opt/poetic-node && docker compose up -d"]
 
   # A note where the next person will look, since the node is not finished
