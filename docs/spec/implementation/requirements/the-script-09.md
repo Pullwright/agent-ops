@@ -624,6 +624,50 @@
    Co-Ordinator pasting a specification the Implementer has already found
    wanting into a future work order, whether or not the label removal itself
    succeeded.
+9g. **A stage killed for inactivity states, in its own comment, whether it
+   pushed.** Requirement 9's stage-failure comment, for the specific case of
+   a stage stopped by the inactivity watchdog (`rc` 124, `stage_kill_reason`
+   `inactivity`), names the pull request's head SHA at the start of the round
+   and at kill time, so a reader does not have to re-verify the stage's own
+   comments against the head blob by hand to tell announced-but-unpushed work
+   from work that landed. The two SHAs equal is the signal that matters
+   most: it says plainly that the round pushed nothing, so every comment that
+   round posted describes intent, not landed work. The two SHAs differing
+   still names both, inviting the reader to diff the round's actual
+   contribution against what its comments claimed, since some of it may have
+   landed.
+
+   The round-start SHA is read by whichever of `lib/coordinator-phase.sh`'s
+   two call sites of `handle_stage_failure` can name a pull request before
+   its stage launches — the Implementer's, for the five finishing sources
+   whose work order already carries a `pr_url`
+   (`preflight_existing_branch_source`), and the Reviewer's, whose subject is
+   always the pull request the Implementer has just raised or confirmed —
+   one `gh pr view --json headRefOid` call immediately ahead of that stage's
+   own `run_model_stage`, held in `stage_pr_head_sha_at_start` and read
+   inside `handle_stage_failure` as a global rather than threaded through as
+   an argument, the same pattern `stage_kill_reason` itself already uses. An
+   ordinary fresh claim has no pull request yet at round start — the
+   Implementer raises it during the round — so that case leaves the variable
+   empty and carries no such sentence. The kill-time SHA is read the same
+   way, inside `handle_stage_failure` itself, once the stage has stopped.
+   Either read missing or failing (no pull request yet, a closed pull
+   request, a transient API fault) drops the sentence rather than the
+   comment: the ordinary wedged-stage notice (requirement 9) still posts
+   regardless. Every other failure detail's comment is unchanged by this
+   requirement.
+
+   This exists because a stage that comments before it pushes can leave a
+   pull request thread asserting fixes it never pushed, with nothing to
+   reconcile the claim against the head SHA — observed live on PR #2218
+   (agent-ops#2236), where a Reviewer's inactivity kill followed two long
+   comments claiming fixes "in this round" that were absent from the diff,
+   and the Script's own follow-up note ("produced no output at all … and was
+   stopped as wedged") read as "the stage said nothing" rather than "the
+   stage said a great deal and then failed to act on it". Not specific to the
+   Reviewer, or to a `review-feedback` round: any stage that can comment on a
+   pull request before it pushes can produce the same gap, and the
+   inactivity kill is the ordinary way it happens.
 10. **Usage-limit detection.** Two sources, and the structured one is
     preferred wherever it exists. When a stage was stopped because its stream
     reported the account `rejected` (requirement 4e), the `limit-hit` is
