@@ -2,7 +2,9 @@
 #
 # test/stage-project-settings.test.sh — a stage is never launched in a
 # directory whose Claude Code project settings could make the runner run
-# something (requirement 4k).
+# something (requirement 4k), and never launched at all while the Claude
+# configuration volume's own user-level settings.json could do the same
+# (requirement 4k/45e, issue #2251).
 #
 # What this guards:
 #
@@ -30,6 +32,15 @@
 #     and this is neither), and give `handle_stage_failure` a detail that
 #     says what happened, whatever was wrong with the file, and that no later
 #     failure of the same stage inherits.
+#
+#   the user-level file (section 5)
+#     `stage_user_settings_refusal` vets `$CLAUDE_CONFIG_DIR/settings.json`
+#     the same way, with the same allowlist plus `effortLevel`, the one key
+#     the image's own seed holds that no project settings file would. It has
+#     no commit to compare against, so `run_model_stage` wires it in as a
+#     second, independent check, and `handle_stage_failure` must tell its
+#     refusal apart from a project-settings one rather than blaming the
+#     checkout for what the configuration volume did.
 #
 # `claude` is a stub on PATH; nothing here reaches a model.
 #
@@ -60,6 +71,10 @@ assert_eq() {
 # read would otherwise be the stage user's, which cannot enter this test's own
 # directory (test/stage-boundary.test.sh reads across the boundary).
 export STAGE_BOUNDARY_GROUP="agent-ops-no-such-group"
+# Isolates every test in sections 1-4 from stage_user_settings_refusal
+# (section 5): a path that is never created, so the user-level file is always
+# "absent" until a test below points CLAUDE_CONFIG_DIR somewhere real.
+export CLAUDE_CONFIG_DIR="$tmp_dir/no-such-claude-config"
 # shellcheck source=lib/stage-run.sh
 . "$SCRIPT_DIR/lib/stage-run.sh"
 # shellcheck source=lib/stage-attempt.sh
@@ -267,6 +282,63 @@ STAGE_CLAUDE_MANAGED_SETTINGS="$policy" \
 rc=$?
 assert_eq "an allowed directory launches the runner as before" "0" "$rc"
 assert_eq "exactly once" "1" "$(wc -l < "$allowed_dir/invocations" 2>/dev/null || echo 0)"
+
+# --- 5. The user-level Claude configuration file (requirement 4k/45e, issue
+#        #2251) ------------------------------------------------------------
+user_loads=", which no stage loads from the Claude configuration volume"
+
+assert_eq "with no managed policy, the user-level allowlist adds just effortLevel" \
+  "$(jq -c '. + ["effortLevel"]' <<<"$STAGE_PROJECT_SETTINGS_INERT_KEYS")" \
+  "$(STAGE_CLAUDE_MANAGED_SETTINGS="$no_policy" stage_project_settings_allowed_keys \
+     | jq -c --argjson extra "$STAGE_USER_SETTINGS_EXTRA_ALLOWED_KEYS" '. + $extra')"
+
+user_config="$tmp_dir/claude-config"
+mkdir -p "$user_config"
+export CLAUDE_CONFIG_DIR="$user_config"
+
+assert_eq "an absent user-level file is not refused" "1" "$(stage_user_settings_refusal; echo $?)"
+
+printf '%s\n' '{"effortLevel":"max","includeCoAuthoredBy":true}' >"$user_config/settings.json"
+assert_eq "the seed's own keys are not refused" "1" "$(stage_user_settings_refusal; echo $?)"
+
+for key in env apiKeyHelper awsAuthRefresh gcpAuthRefresh; do
+  printf '{"%s":"x"}' "$key" >"$user_config/settings.json"
+  assert_eq "user-level $key is refused" \
+    "0|$user_config/settings.json sets $key$user_loads" \
+    "$(out="$(stage_user_settings_refusal)"; printf '%s|%s' "$?" "$out")"
+done
+
+printf '%s\n' '{"env": {' >"$user_config/settings.json"
+assert_eq "a user-level file jq cannot parse is refused, not guessed at" \
+  "0|$user_config/settings.json cannot be read as a JSON object, so it cannot be vetted" \
+  "$(out="$(stage_user_settings_refusal)"; printf '%s|%s' "$?" "$out")"
+
+rm -f "$user_config/settings.json"
+
+# The launcher: a planted apiKeyHelper refuses the launch exactly as a
+# project-level one does, and handle_stage_failure does not mistake it for a
+# checkout's own project settings, which it is not.
+printf '{"apiKeyHelper":"x"}' >"$user_config/settings.json"
+user_refused_dir="$(checkout user-refused "" "")"
+export STUB_CAPTURE="$user_refused_dir"
+STAGE_CLAUDE_MANAGED_SETTINGS="$policy" \
+  run_model_stage reviewer 60 test-model "a prompt" "$user_refused_dir/reviewer.out" "$user_refused_dir"
+rc=$?
+assert_eq "a planted user-level apiKeyHelper refuses the launch" "1" "$rc"
+assert_eq "and never starts the runner" \
+  "no" "$([[ -e "$user_refused_dir/invocations" ]] && echo yes || echo no)"
+assert_eq "it says why on the stage's stderr, naming the user-level file" \
+  "run_model_stage: the reviewer stage was not launched: $user_config/settings.json sets apiKeyHelper$user_loads (requirement 4k)" \
+  "$(cat "$user_refused_dir/reviewer.out.stderr" 2>/dev/null)"
+
+captured_detail=""
+handle_stage_failure reviewer "$rc" "$user_refused_dir/reviewer.out"
+assert_eq "handle_stage_failure attributes it to the configuration volume, not the checkout" \
+  "reviewer was not launched: the Claude configuration volume's settings.json carries a key no stage may load" \
+  "$captured_detail"
+
+rm -f "$user_config/settings.json"
+export CLAUDE_CONFIG_DIR="$tmp_dir/no-such-claude-config"
 
 printf '\n'
 if (( failures )); then

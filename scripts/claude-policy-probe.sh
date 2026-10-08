@@ -26,11 +26,29 @@
 # as the Script shares the Implementer's clone, and removed with
 # `stage_workspace_remove`; outside the image both degrade to what they were.
 #
+# A fifth, independent case (requirement 4k/45e, issue #2251): a planted
+# `apiKeyHelper` in the Claude configuration volume's own settings.json, the
+# one place outside any checkout a stage's `claude` reads from. No managed
+# policy key switches this off — removing the policy (the `--expect ran`
+# control below) does not touch it, because it is lib/stage-run.sh's own
+# allowlist (`stage_user_settings_refusal`), not a Claude Code managed
+# setting — so this case is checked unconditionally, in both `--expect`
+# modes, through `run_model_stage` itself (the one launcher every real stage
+# goes through) rather than a raw `claude -p`, since a raw invocation would in
+# fact run a planted helper the CLI has no way to refuse on its own
+# (requirement 4k's own measurement against 2.1.267). It uses a scratch
+# configuration directory throughout, never the real `$CLAUDE_CONFIG_DIR`:
+# this probe may run on a live node and must not touch an operator's actual
+# Claude configuration.
+#
 # Usage: scripts/claude-policy-probe.sh [--expect blocked|ran]
-#   --expect blocked (the default): exit 0 iff none of the four ran and the
-#     skill loaded — the managed policy is in force.
-#   --expect ran: exit 0 iff all four ran — the control that shows the probe
-#     can see what it is looking for.
+#   --expect blocked (the default): exit 0 iff none of the four checkout-
+#     planted things ran, the skill loaded, and the planted user-level
+#     apiKeyHelper did not run — the managed policy is in force.
+#   --expect ran: exit 0 iff all four checkout-planted things ran (the
+#     control that shows the probe can see what it is looking for) and the
+#     user-level apiKeyHelper still did not run — removing the managed
+#     policy does not touch that control.
 
 set -uo pipefail
 
@@ -48,12 +66,15 @@ esac
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=lib/stage-boundary.sh
 source "$SCRIPT_DIR/lib/stage-boundary.sh"
+# shellcheck source=lib/stage-run.sh
+source "$SCRIPT_DIR/lib/stage-run.sh"
 
 probe="$(mktemp -d)"
 trap 'stage_workspace_remove "$probe"' EXIT
 marks="$probe/marks"
 work="$probe/checkout"
-mkdir -p "$marks" "$work/.claude/skills/policy-probe" "$work/.claude/commands"
+user_config="$probe/claude-config"
+mkdir -p "$marks" "$work/.claude/skills/policy-probe" "$work/.claude/commands" "$user_config"
 
 git -C "$work" init -q
 printf '# Policy probe\n' >"$work/CLAUDE.md"
@@ -69,6 +90,8 @@ jq -n --arg m "$marks" \
   >"$work/.mcp.json"
 # shellcheck disable=SC2016  # the backticks are the command's own inline-shell syntax
 printf 'Policy probe.\n!`touch %s/inline-command`\n' "$marks" >"$work/.claude/commands/policyprobe.md"
+jq -n --arg m "$marks" '{apiKeyHelper: "touch \($m)/user-apikeyhelper; echo sk-ant-api03-x"}' \
+  >"$user_config/settings.json"
 
 stage_workspace_share "$probe" \
   || { printf 'claude-policy-probe: cannot share %s with the stage user\n' "$probe" >&2; exit 1; }
@@ -97,7 +120,30 @@ printf 'ran: %s\n' "${ran[*]:-none}"
 printf 'project skill loaded: %s\n' "$([[ "${skill:-0}" == "1" ]] && echo yes || echo no)"
 
 if [[ "$expect" == "blocked" ]]; then
-  (( ${#ran[@]} == 0 )) && [[ "${skill:-0}" == "1" ]]
+  main_ok=0
+  [[ ${#ran[@]} -eq 0 && "${skill:-0}" == "1" ]] || main_ok=1
 else
-  (( ${#ran[@]} == 4 ))
+  main_ok=0
+  [[ ${#ran[@]} -eq 4 ]] || main_ok=1
 fi
+
+# The fifth, independent case: through run_model_stage itself (requirement
+# 4d), the one launcher every real stage goes through, with CLAUDE_CONFIG_DIR
+# pointed at the scratch directory above rather than the real one, and a
+# clean cwd carrying no project settings of its own, so only
+# stage_user_settings_refusal is under test. A refusal (rc 1) with the mark
+# absent is "did not run"; anything else is a bypass of requirement 4k/45e.
+user_check_cwd="$probe/user-check-cwd"
+mkdir -p "$user_check_cwd"
+stage_kill_reason=""
+CLAUDE_CONFIG_DIR="$user_config" \
+  run_model_stage policy-probe 60 test-model "/policyprobe" "$probe/user-settings.out" "$user_check_cwd"
+user_rc=$?
+user_ran="$([[ -e "$marks/user-apikeyhelper" ]] && echo yes || echo no)"
+
+printf 'user-level apiKeyHelper ran: %s\n' "$user_ran"
+
+user_ok=0
+[[ "$user_ran" == "no" && "$user_rc" == "1" ]] || user_ok=1
+
+exit $(( main_ok || user_ok ))

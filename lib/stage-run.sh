@@ -175,6 +175,11 @@ STAGE_PROJECT_SETTINGS_MAX_BYTES=1048576
 STAGE_PROJECT_SETTINGS_INERT_KEYS='["$schema","permissions","includeCoAuthoredBy","includeGitInstructions","cleanupPeriodDays","respectGitignore"]'
 STAGE_PROJECT_SETTINGS_INERT_PERMISSIONS='["allow"]'
 STAGE_CLAUDE_MANAGED_SETTINGS="${STAGE_CLAUDE_MANAGED_SETTINGS:-/etc/claude-code/managed-settings.json}"
+# The one extra key the user-level file legitimately holds that no project
+# settings file would: deploy/docker/claude-settings.json, the image's own
+# seed, sets `effortLevel` alongside `includeCoAuthoredBy` (already inert
+# above).
+STAGE_USER_SETTINGS_EXTRA_ALLOWED_KEYS='["effortLevel"]'
 
 # stage_project_settings_allowed_keys
 # The allowlist as a JSON array: the inert keys, plus `hooks` when the managed
@@ -273,6 +278,59 @@ stage_project_settings_refusal() {
       return 0
     fi
   done
+  return 1
+}
+
+# stage_user_settings_refusal
+# The user-level counterpart to stage_project_settings_refusal: prints why a
+# stage must not be launched because $CLAUDE_CONFIG_DIR/settings.json (the
+# Claude configuration volume's own file, defaulted the same way
+# entrypoint.sh defaults it) carries a key outside the allowlist, or cannot be
+# read as a JSON object; returns 1, printing nothing, when the file is absent
+# or every key in it is allowed. Unlike the project files, this one is never
+# part of a commit a stage's checkout holds, so there is no origin clause to
+# add.
+#
+# This file ought never to hold anything else in the first place —
+# deploy/docker/entrypoint.sh seeds it `agent`-owned and excludes it from the
+# reshaping that gives the stage user everything else in the directory
+# (requirement 45e) — so this check is the backstop for whatever reaches here
+# anyway: an older volume this node has not yet restarted onto the fixed
+# entrypoint, or a gap neither control anticipated. The allowlist is the
+# project one plus `STAGE_USER_SETTINGS_EXTRA_ALLOWED_KEYS`, the one key the
+# image's own seed holds that no project settings file would.
+stage_user_settings_refusal() {
+  local dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}" allowed file content disallowed
+  file="$dir/settings.json"
+  [[ -e "$file" || -L "$file" ]] || return 1
+  allowed="$(stage_project_settings_allowed_keys | jq -c \
+    --argjson extra "$STAGE_USER_SETTINGS_EXTRA_ALLOWED_KEYS" '. + $extra')"
+  # The `x` keeps a trailing newline from being stripped, so that the length
+  # compared is the length read.
+  if ! content="$(stage_boundary_read "$file" "$((STAGE_PROJECT_SETTINGS_MAX_BYTES + 1))" && printf x)" \
+     || (( $(_stage_byte_length "${content%x}") > STAGE_PROJECT_SETTINGS_MAX_BYTES )); then
+    printf '%s cannot be read as a file of at most %s bytes, so it cannot be vetted' \
+      "$file" "$STAGE_PROJECT_SETTINGS_MAX_BYTES"
+    return 0
+  fi
+  if ! disallowed="$(jq -r --argjson allowed "$allowed" \
+         --argjson permissions "$STAGE_PROJECT_SETTINGS_INERT_PERMISSIONS" '
+         if type != "object" then error("not an object") else
+           [ (keys_unsorted[] | select(IN($allowed[]) | not)),
+             (.permissions // {}
+              | if type == "object" then
+                  keys_unsorted[] | select(IN($permissions[]) | not) | "permissions.\(.)"
+                else "permissions" end) ]
+           | join(", ")
+         end' <<<"${content%x}" 2>/dev/null)"; then
+    printf '%s cannot be read as a JSON object, so it cannot be vetted' "$file"
+    return 0
+  fi
+  if [[ -n "$disallowed" ]]; then
+    printf '%s sets %s, which no stage loads from the Claude configuration volume' \
+      "$file" "$disallowed"
+    return 0
+  fi
   return 1
 }
 
@@ -431,6 +489,13 @@ run_model_stage() {
   # that never started is neither.
   local settings_refusal
   if settings_refusal="$(stage_project_settings_refusal "$cwd")"; then
+    : >"$stream_file"
+    : >"$out_file"
+    printf 'run_model_stage: the %s stage was not launched: %s (requirement 4k)\n' \
+      "$stage" "$settings_refusal" >"$out_file.stderr"
+    return 1
+  fi
+  if settings_refusal="$(stage_user_settings_refusal)"; then
     : >"$stream_file"
     : >"$out_file"
     printf 'run_model_stage: the %s stage was not launched: %s (requirement 4k)\n' \

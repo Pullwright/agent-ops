@@ -167,7 +167,18 @@
      not refused inside one.
    - **The Claude configuration** (`$CLAUDE_CONFIG_DIR`) is group `stage`,
      mode 2770 in the image, and `deploy/docker/entrypoint.sh` brings a
-     volume an older image created to the same shape.
+     volume an older image created to the same shape — except for its own
+     `settings.json`, which stays `agent`-owned, mode 0640, and excluded
+     from that reshaping: `env` and `apiKeyHelper` run as whoever starts
+     `claude`, with that run's own credentials, so a copy the stage user
+     could write to this file would persist onto a volume that outlives any
+     one stage and reach every later `claude` on the node, the limit probe
+     and `doctor.sh`'s checks included. The entrypoint seeds it only when
+     absent, and quarantines — moves aside to a `.quarantined-<timestamp>`
+     sibling, then reseeds — a `settings.json` an existing volume holds that
+     is stage-owned or group-writable, since nothing but the image seeds this
+     file. `run_model_stage` (requirement 4k) vets it before every stage
+     launch too, as a backstop for whatever reaches the volume anyway.
 
    Outside the image there is no `stage` group and no sudoers rule, and
    `lib/stage-boundary.sh` degrades to what the Script did without them:

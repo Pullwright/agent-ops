@@ -62,16 +62,24 @@ mkdir -p "$CLAUDE_CONFIG_DIR"
 require_writable "$CLAUDE_CONFIG_DIR" "the Claude configuration volume"
 # Every `claude` runs as the stage user (requirement 45e,
 # deploy/docker/claude-shim.sh), so the configuration must be that user's to
-# read and to write: group `stage`, group-writable, and setgid on every
-# directory so that whatever is created later stays in the group. The image
-# creates a new volume in that shape; this brings a volume an older image
-# created, whose files are all this user's own, to the same shape. Only this
-# user's own regular files and directories are touched — never a symbolic
-# link, and nothing the stage user has written since — so after the first
-# start it finds nothing to do. Not fatal: a configuration it could not fix
-# fails the first stage loudly, which is where the cause will be looked for.
+# read: group `stage`, group-writable, and setgid on every directory so that
+# whatever is created later stays in the group. The image creates a new
+# volume in that shape; this brings a volume an older image created, whose
+# files are all this user's own, to the same shape. Only this user's own
+# regular files and directories are touched — never a symbolic link, and
+# nothing the stage user has written since — so after the first start it
+# finds nothing to do. Not fatal: a configuration it could not fix fails the
+# first stage loudly, which is where the cause will be looked for.
+#
+# `settings.json` is the one file excluded from this reshaping (requirement
+# 4k/45e, issue #2251): `env` and `apiKeyHelper` run as whoever starts
+# `claude`, with that run's own credentials, so a copy the stage user could
+# write would let one stage run persist onto a volume that outlives it and
+# reach every later run on this node, including the Script's own limit probe
+# and `doctor.sh`. The seed below is `agent`'s alone to write.
 if getent group stage >/dev/null 2>&1; then
   if ! find "$CLAUDE_CONFIG_DIR" -user "$(id -u)" ! -group stage \
+        ! -path "$CLAUDE_CONFIG_DIR/settings.json" \
         \( -type f -o -type d \) \
         -exec chgrp stage {} + -exec chmod g+rwX {} + 2>/dev/null \
      || ! find "$CLAUDE_CONFIG_DIR" -user "$(id -u)" -type d ! -perm -2000 \
@@ -79,10 +87,30 @@ if getent group stage >/dev/null 2>&1; then
     say "WARNING: could not give the stage user the Claude configuration in $CLAUDE_CONFIG_DIR"
   fi
 fi
-if [[ ! -e "$CLAUDE_CONFIG_DIR/settings.json" ]]; then
-  cp "$APP_DIR/deploy/docker/claude-settings.json" "$CLAUDE_CONFIG_DIR/settings.json"
-  chmod g+w "$CLAUDE_CONFIG_DIR/settings.json" 2>/dev/null || true
-  say "seeded $CLAUDE_CONFIG_DIR/settings.json"
+claude_settings_file="$CLAUDE_CONFIG_DIR/settings.json"
+# A file an older image's entrypoint (or, before this fix, the stage user
+# itself) left group-writable, or that the stage user somehow came to own, is
+# never reused: nothing but the image seeds this file, so anything else on an
+# existing volume is either an operator's own hand edit — recoverable from the
+# quarantined copy — or exactly the persistence this check exists to stop.
+if [[ -e "$claude_settings_file" ]]; then
+  stage_owned=false
+  [[ "$(stat -c %u "$claude_settings_file" 2>/dev/null)" != "$(id -u)" ]] && stage_owned=true
+  group_writable=false
+  [[ -n "$(find "$claude_settings_file" -perm -g+w 2>/dev/null)" ]] && group_writable=true
+  if $stage_owned || $group_writable; then
+    quarantined="$claude_settings_file.quarantined-$(date -u +%Y%m%dT%H%M%SZ)"
+    if mv "$claude_settings_file" "$quarantined" 2>/dev/null; then
+      say "WARNING: $claude_settings_file was stage-owned or group-writable; moved aside to $quarantined and restoring the seed"
+    else
+      say "WARNING: could not quarantine $claude_settings_file, which was stage-owned or group-writable"
+    fi
+  fi
+fi
+if [[ ! -e "$claude_settings_file" ]]; then
+  cp "$APP_DIR/deploy/docker/claude-settings.json" "$claude_settings_file"
+  chmod 0640 "$claude_settings_file" 2>/dev/null || true
+  say "seeded $claude_settings_file"
 fi
 # The warning below is scoped to the OAuth path: a node with ANTHROPIC_API_KEY
 # set (D4's primary path, agent-ops#684/#856) needs no .credentials.json and
