@@ -306,6 +306,7 @@ stage_api_refusal_class() {  # <out-file> -> "transient", "refused", or empty
 # globals already give it, unchanged.
 handle_stage_failure() {  # <stage> <rc> <out-file> [pr-url] [extra-json]
   local stage="$1" rc="$2" out_file="$3" pr_url="${4:-}" extra="${5:-{\}}" detail refusal refusal_msg refusal_class
+  local wedge_sha_note=""
   jq -e 'type == "object"' <<<"$extra" >/dev/null 2>&1 || extra='{}'
   # 124 is now both caps, and they are not the same news to whoever reads this
   # next — the Enabler, or a human asking why an item is blocked. "Ran to its
@@ -323,6 +324,25 @@ handle_stage_failure() {  # <stage> <rc> <out-file> [pr-url] [extra-json]
     detail="$stage was refused by the API before it could run: $refusal"
   elif [[ "$rc" == "124" && "$stage_kill_reason" == "inactivity" ]]; then
     detail="$stage produced no output at all for its inactivity threshold and was stopped as wedged"
+    # Requirement 9g (issue #2236): a stage that comments before it pushes can
+    # leave a PR thread asserting fixes it never pushed, with nothing to
+    # reconcile the claim against the head SHA. `stage_pr_head_sha_at_start`
+    # is set by the caller, immediately before this stage launched, the same
+    # way `stage_kill_reason` is — empty when no PR existed yet at round
+    # start (an ordinary fresh claim). Read here, at kill time, rather than
+    # inside the caller: this is the one place that already knows the stage
+    # has stopped.
+    if [[ -n "$pr_url" && -n "$stage_pr_head_sha_at_start" ]]; then
+      local kill_sha
+      kill_sha="$(gh pr view "$pr_url" --json headRefOid --jq .headRefOid 2>/dev/null || true)"
+      if [[ -n "$kill_sha" ]]; then
+        if [[ "$kill_sha" == "$stage_pr_head_sha_at_start" ]]; then
+          wedge_sha_note=" This round pushed nothing — the head SHA is unchanged at $kill_sha — so every comment it posted this round describes intent, not landed work."
+        else
+          wedge_sha_note=" This round's head moved from $stage_pr_head_sha_at_start to $kill_sha while it ran — diff that range against what its comments claimed before taking any of them at face value."
+        fi
+      fi
+    fi
   elif [[ "$rc" == "124" && "$stage_kill_reason" == "rate-limit" ]]; then
     detail="$stage was stopped the moment the account reported a usage limit — nothing it did after that could have succeeded"
   elif [[ "$rc" == "124" ]]; then
@@ -367,7 +387,7 @@ handle_stage_failure() {  # <stage> <rc> <out-file> [pr-url] [extra-json]
   if [[ -n "$pr_url" ]]; then
     gh pr comment "$pr_url" --body "$(pipeline_comment_header script "$node_name")
 
-The $(pipeline_actor_label "$stage") stopped on this PR: $detail. Recorded blocked; the pipeline's Enabler will re-examine it, and will raise an issue if a human is needed.
+The $(pipeline_actor_label "$stage") stopped on this PR: $detail.$wedge_sha_note Recorded blocked; the pipeline's Enabler will re-examine it, and will raise an issue if a human is needed.
 
 $(pipeline_comment_marker "$cycle_id" script)" >/dev/null 2>&1 || true
     release_claim have-pr

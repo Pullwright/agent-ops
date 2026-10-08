@@ -841,6 +841,16 @@ if ! stage_workspace_share "$clone_dir"; then
   exit 0
 fi
 
+# Requirement 9g (issue #2236): the round-start head SHA `handle_stage_
+# failure` needs to tell a wedged Implementer's announced-but-unpushed
+# comments from ones it actually landed — read now, immediately ahead of the
+# stage, from whichever pull request the work order already names
+# ($implementer_subject_pr_url above); empty for an ordinary fresh claim,
+# which has no pull request yet for the stage to move.
+stage_pr_head_sha_at_start=""
+if [[ -n "$implementer_subject_pr_url" ]]; then
+  stage_pr_head_sha_at_start="$(gh pr view "$implementer_subject_pr_url" --json headRefOid --jq .headRefOid 2>/dev/null || true)"
+fi
 stage_budget_apply implementer "$selected_repo" "$impl_model" "{}" "$selected_item"
 if run_model_stage implementer "$(( stage_backstop_min * 60 ))" "$impl_model" "$implementer_prompt" "$impl_out" "$clone_dir" "$(( stage_inactivity_min * 60 ))"; then
   impl_rc=0
@@ -1262,6 +1272,15 @@ if [[ "$rebase_only" == "true" ]]; then
     '{status: "ready", pr_url: $u, fixes_applied: [], comments_left: 0,
       ci: "carried forward: the Implementer push changed no net content (requirement 31e)"}')"
 else
+  # Requirement 9g (issue #2236): the round-start head SHA `handle_stage_
+  # failure` needs to tell a wedged Reviewer's announced-but-unpushed
+  # comments from ones it actually landed — read now, immediately ahead of
+  # the stage, from the pull request the Implementer has just raised or
+  # confirmed ($impl_pr_url is always known by this point).
+  stage_pr_head_sha_at_start=""
+  if [[ -n "$impl_pr_url" ]]; then
+    stage_pr_head_sha_at_start="$(gh pr view "$impl_pr_url" --json headRefOid --jq .headRefOid 2>/dev/null || true)"
+  fi
   stage_budget_apply reviewer "$selected_repo" "$rev_model" \
     "$(jq -nc --arg c "$rev_complexity" '{complexity: $c}')" "$selected_item"
   if run_model_stage reviewer "$(( stage_backstop_min * 60 ))" "$rev_model" "$reviewer_prompt" "$rev_out" "$clone_dir" "$(( stage_inactivity_min * 60 ))"; then
