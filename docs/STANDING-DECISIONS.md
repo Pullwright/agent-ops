@@ -273,3 +273,17 @@ principle it rests on.`
   Principle 9 runs on the customer's own nodes, and which of #2139's
   mechanisms places its credential there is agreed with them. Decided by
   the owner on 2026-10-03, on #2129.
+- 2026-10-08 · #2238 · **Each provider runs on its API key and its
+  subscription at once, at a weighted share, and a stage switches lanes
+  on its own at a limit or a spend threshold (D30).** A lane is one
+  provider on one credential path, and it is the unit of routing,
+  stand-down and spend: the launcher picks the open weighted lane
+  furthest below its target share from the fleet's own ledger, a lane of
+  weight zero is the fallback, a usage limit or an exhausted credit
+  freezes the lane rather than the provider or the fleet, a cap or a
+  balance floor closes it on the record's client-side estimate, and
+  `agent-cycle.sh --mix` moves the weights live through `fleet/mix.json`.
+  D4 stands: the key is primary and the defaults say so, the subscription
+  keeps its constraints, and running both adds no permission. Decided by
+  the owner on 2026-10-08, on filing #2238: he holds Claude API credits
+  he wants spent alongside the Poetic fleet's subscription.
