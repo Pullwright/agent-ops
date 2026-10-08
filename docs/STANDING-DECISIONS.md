@@ -285,9 +285,11 @@ principle it rests on.`
   measure the lane has — the provider's statement where there is one,
   else the record's estimate, and a lane with neither carries no cap —
   and a closure only an owner act can clear pages the owner at once;
-  `agent-cycle.sh --mix` moves the weights live through
-  `fleet/mix.json`, a preference that fails open to config, while a
-  closure goes on `fleet/limit.json`, never on a new file. By default a
+  `agent-cycle.sh --mix` moves the weights, opens a lane and restates
+  a balance live through `fleet/mix.json`, openings and preferences
+  that fail open to the configured single lane, while a closure goes
+  on `fleet/limit.json`, never on a new file, and a cap or a floor is
+  configuration. By default a
   provider has one open lane, the one its CLI would use unaided, so a
   second lane is an explicit choice. D4 is amended: the key stays
   primary by default and in the documentation, an installation weights
