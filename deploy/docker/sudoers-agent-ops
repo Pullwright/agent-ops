@@ -14,7 +14,7 @@
 #    again.
 Defaults!/usr/local/libexec/agent-ops/stage-exec env_keep = "LANG LC_ALL TZ TERM COLORTERM"
 Defaults!/usr/local/libexec/agent-ops/stage-exec env_keep += "ANTHROPIC_API_KEY CLAUDE_CONFIG_DIR CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC CLAUDE_CODE_MAX_RETRIES DISABLE_AUTOUPDATER ENABLE_CLAUDEAI_MCP_SERVERS"
-Defaults!/usr/local/libexec/agent-ops/stage-exec env_keep += "XAI_API_KEY GROK_HOME GROK_DISABLE_AUTOUPDATER GROK_TELEMETRY_ENABLED GROK_FOLDER_TRUST"
+Defaults!/usr/local/libexec/agent-ops/stage-exec env_keep += "XAI_API_KEY GROK_HOME GROK_DISABLE_AUTOUPDATER GROK_TELEMETRY_ENABLED GROK_FOLDER_TRUST GROK_XAI_API_BASE_URL"
 Defaults!/usr/local/libexec/agent-ops/stage-exec env_keep += "HTTPS_PROXY HTTP_PROXY NO_PROXY https_proxy http_proxy no_proxy"
 Defaults!/usr/local/libexec/agent-ops/stage-exec env_keep += "GIT_USER_NAME GIT_USER_EMAIL"
 Defaults!/usr/local/libexec/agent-ops/stage-exec env_keep += "AGENT_OPS_ROOT VERCEL_AUTOMATION_BYPASS_SECRET VERCEL_TOKEN LINT_SHELL_BUDGET_MIB"

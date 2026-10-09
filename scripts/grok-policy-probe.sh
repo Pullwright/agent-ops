@@ -12,10 +12,15 @@
 # which of the five ran and whether the clone's own `AGENTS.md` and a staged
 # skill still loaded, which the policy must never block.
 #
-# No model is reached and nothing is billed: the run carries a placeholder
-# API key the API refuses, and every planted vector fires before any model
-# call would be made. Run it with no network (as the image build does) or on
-# a node, where the request is refused.
+# No model is reached and nothing is billed: a local stand-in answers
+# `GET /v1/models` and `GET /v1/api-key` (`GROK_XAI_API_BASE_URL`, the same
+# override docs/reviews/2026-10-06-grok-build-evaluation.md §10 used) so
+# Grok's own model-id check — which, unlike Claude Code's, needs a real
+# answer before it will do anything else at all, model validation included
+# — passes locally, and refuses everything else, so no chat-completion
+# request the actual model is ever reached, which the image build's own
+# `--network none` would refuse in any case. Every planted vector fires
+# before that refusal.
 #
 # In the node image `grok` is the stage shim (deploy/docker/grok-shim.sh), so
 # the CLI runs as the stage user, as a stage's does. The scratch checkout is
@@ -81,6 +86,69 @@ printf 'touch %s/envrc\n' "$marks" >"$work/.envrc"
 # than needing its own chgrp/chmod.
 printf 'Reply with the single word: ok\n' >"$probe/prompt.txt"
 
+# A minimal stand-in for api.x.ai, listening on loopback only (reachable
+# across the stage-user boundary within the same network namespace, but
+# never leaving the container even without `--network none`). Answers the
+# two GET routes Grok's own start-up needs — a model list that admits
+# whatever `-m` names, and an unblocked/undisabled api-key report — and
+# refuses everything else, `/v1/chat/completions` included, so no model
+# call ever succeeds whatever the image's own network policy is.
+standin_py="$probe/standin.py"
+cat >"$standin_py" <<'PYEOF'
+import http.server
+import json
+import sys
+
+MODEL_ID = sys.argv[1] if len(sys.argv) > 1 else "grok-build-0.1"
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def _json(self, status, body):
+        payload = json.dumps(body).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def do_GET(self):
+        if self.path.startswith("/v1/models"):
+            self._json(200, {"data": [{"id": MODEL_ID, "object": "model"}]})
+        elif self.path.startswith("/v1/api-key"):
+            self._json(
+                200,
+                {"api_key_blocked": False, "api_key_disabled": False, "team_blocked": False},
+            )
+        else:
+            self._json(403, {"error": "refused by the policy-probe stand-in"})
+
+    def do_POST(self):
+        self._json(403, {"error": "refused by the policy-probe stand-in"})
+
+    def log_message(self, *_args):
+        pass
+
+
+server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+print(server.server_port, flush=True)
+server.serve_forever()
+PYEOF
+
+python3 "$standin_py" grok-build-0.1 >"$probe/standin.port" 2>"$probe/standin.stderr" &
+standin_pid=$!
+trap 'kill "$standin_pid" 2>/dev/null; stage_workspace_remove "$probe"' EXIT
+standin_waited=0
+while [[ ! -s "$probe/standin.port" ]] && (( standin_waited < 50 )); do
+  sleep 0.1
+  standin_waited=$(( standin_waited + 1 ))
+done
+standin_port="$(cat "$probe/standin.port" 2>/dev/null || true)"
+if [[ ! "$standin_port" =~ ^[0-9]+$ ]]; then
+  printf 'grok-policy-probe: the local stand-in never reported a port\n' >&2
+  cat "$probe/standin.stderr" >&2 2>/dev/null || true
+  exit 1
+fi
+
 stage_workspace_share "$probe" \
   || { printf 'grok-policy-probe: cannot share %s with the stage user\n' "$probe" >&2; exit 1; }
 
@@ -88,6 +156,7 @@ stage_workspace_share "$probe" \
   cd "$work" || exit 1
   timeout 60 env GROK_FOLDER_TRUST=0 GROK_DISABLE_AUTOUPDATER=1 GROK_TELEMETRY_ENABLED=0 \
     XAI_API_KEY=xai-policy-probe-placeholder \
+    GROK_XAI_API_BASE_URL="http://127.0.0.1:$standin_port" \
     grok -m grok-build-0.1 --permission-mode bypassPermissions \
     --output-format streaming-messages-json --include-partial-messages \
     --prompt-file "$probe/prompt.txt" \
