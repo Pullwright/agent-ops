@@ -247,6 +247,38 @@ on this node:
 docker compose exec scheduler /app/scripts/claude-policy-probe.sh
 ```
 
+**xAI (Grok Build, issue #2134), on the same D4 stance D29 extends to a
+second provider:** the API key is the primary path, and the only one this
+image has — the subscription alternative follows in #2139. Add a
+`providers` entry naming this provider and set `XAI_API_KEY` in `.env`
+(step 2); `docker compose up -d` picks it up. Nothing further to do, and —
+unlike the Claude credential above — nothing per-node: `grok` reads the key
+from the environment on every invocation, so any number of nodes may share
+the same key. Verify the same way:
+
+```bash
+docker compose exec scheduler /app/scripts/doctor.sh
+```
+
+The image carries Grok Build's own policy at `/etc/grok/requirements.toml`:
+no hook outside managed policy runs, no MCP server starts, and a checkout's
+own `.envrc` is not run at start-up. A Grok stage is also not launched in a
+checkout holding a `.grok/lsp.json`, or a `.grok/config.toml` naming
+anything outside `permission`/`mcp`/`mcp_servers` — the same
+`<stage>.out.stderr` reporting this that Claude Code's own policy check
+above uses. Confirm the policy holds on this node the same way:
+
+```bash
+docker compose exec scheduler /app/scripts/grok-policy-probe.sh
+```
+
+One thing to know about cost: every Grok session also sends the head of its
+own prompt to a second xAI model (`grok-4.6`) to generate a session title,
+with no switch that turns it off — the same account either way, so no new
+party sees anything, but that call's own cost never appears in the
+pipeline's own recorded figures (`docs/METERING-SCHEMA.md`,
+`docs/DATA-HANDLING.md`).
+
 ### Did it work?
 
 ```bash

@@ -768,9 +768,7 @@
       "auto"`, `actor` (the detecting node — `limit-hit` events also keep
       logging it as the event's own `node`), `provider` (the provider the
       stage that hit the limit was running on — `lib/stage-run.sh`'s
-      `stage_provider`, `anthropic` on every record this system has ever
-      written, since that is the only provider that has ever existed; issue
-      #2133), and `evidence` — the API's own
+      `stage_provider`; issue #2133), and `evidence` — the API's own
       response, truncated to 400 characters (the structured
       `rate_limit_info` object where the runner supplied one, else the first
       matching limit line of the transcript). An extension of the flag is
@@ -778,7 +776,14 @@
       it, because the only writer is the detector responding to a hit.
       `provider` is informational only here: the stand-down it names still
       covers the whole fleet regardless of which provider hit it (scoping it
-      per-provider is #2135's business, not this one's). A
+      per-provider is #2135's business, not this one's). Still `anthropic`
+      on every record this system has ever written: a second provider,
+      Grok Build (issue #2134), now runs stages, but its own phrase-based
+      detection is held off until #2135 scopes a stand-down to the account
+      it hit (`detect_and_log_limit_hit`'s own guard), so a Grok limit
+      reaches the record through requirement 2.7's refusal classifier instead of
+      this one, and `provider` here stays a one-value field until #2135
+      lifts that guard. A
       record whose `kind` is `manual` only ever enters `fleet/limit.json` by
       an operator's hand: it is honoured as written until its `resume_at`
       passes or `--clear-limit` lifts it, is never probed (1b) and never
