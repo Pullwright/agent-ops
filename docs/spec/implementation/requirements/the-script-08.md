@@ -372,11 +372,13 @@
    input, never toward an empty one" for every *other* path: a budget of 0
    still means the bound is off, and it is only this branch — where the Script
    has already established that no input fits — that shedding is forced.
-4k. **A stage runs nothing that the checkout it runs in supplies.** Headless
-   `claude -p` treats its working directory as trusted, and a stage's working
-   directory is often a checkout of a pull-request head. Two controls keep
-   that checkout from making the runner execute anything before, or apart
-   from, the stage's own prompt:
+4k. **A stage runs nothing that the checkout it runs in, or the Claude
+   configuration volume it reads from, supplies.** Headless `claude -p`
+   treats its working directory as trusted, and a stage's working directory
+   is often a checkout of a pull-request head. Two controls keep that
+   checkout, and a third keeps `$CLAUDE_CONFIG_DIR` (requirement 45e), from
+   making the runner execute anything before, or apart from, the stage's own
+   prompt:
    - **The image's managed policy.** `deploy/docker/claude-managed-settings.json`
      is installed root-owned at `/etc/claude-code/managed-settings.json`
      (component 7), outside `/app`, which `agent` owns. It sets
@@ -427,14 +429,27 @@
      clone can be reused by the next stage, so a file an earlier stage wrote
      there refuses that stage too and appears nowhere in the pull request.
      `handle_stage_failure` reads that line, never a variable a later
-     failure could inherit, and records one of two stable details:
+     failure could inherit, and records one of three stable details:
      "`<stage>` was not launched: the commit its checkout holds carries
-     Claude Code project settings no stage may load", or "`<stage>` was not
+     Claude Code project settings no stage may load", "`<stage>` was not
      launched: its checkout's working tree holds Claude Code project
-     settings, not in the commit, that no stage may load". So a pull request
+     settings, not in the commit, that no stage may load", or (the bullet
+     below) "`<stage>` was not launched: the Claude configuration volume's
+     settings.json carries a key no stage may load". So a pull request
      that adds such a file is blocked with that reason rather than reviewed
      by a runner it can direct, and a file a stage left behind is told apart
      from one the pull request commits.
+   - **The launcher's user-level settings check.** The same exposure applies
+     to `$CLAUDE_CONFIG_DIR/settings.json` (requirement 45e's "Claude
+     configuration" bullet): it is one `claude -p` on this node reads before
+     every stage, the limit probe and `doctor.sh`'s checks alike, and it sits
+     on a volume that outlives any one of them, so a key written there by one
+     run reaches every later one. `run_model_stage` vets it too, with the
+     project allowlist above plus `effortLevel`, the one extra key the
+     image's own seed (`deploy/docker/claude-settings.json`) holds. Unlike
+     the project files, this one is never part of a commit, so its refusal
+     carries no origin clause and `handle_stage_failure` records the third
+     detail above rather than either checkout-based one.
 
 5. If the work order is `{"selected": false}`, log `none-selected` with the
    Co-Ordinator's reason **and the fingerprint computed in requirement 3b**

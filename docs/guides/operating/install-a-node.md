@@ -122,7 +122,7 @@ Check the [package registry](https://github.com/pullwright/agent-ops/pkgs/contai
 
 Five things are worth knowing:
 
-- **`~/.claude` is a volume.** Claude's OAuth credentials refresh and write back. The entrypoint seeds `settings.json` only when absent.
+- **`~/.claude` is a volume.** Claude's OAuth credentials refresh and write back. The entrypoint seeds `settings.json` only when absent, never group-writable; a `settings.json` left over from before this, hand-edited to be group-writable, or replaced by a symbolic link, is moved aside to a `.quarantined-<timestamp>` sibling and reseeded on the next start.
 
 - **`state_dir` is a volume.** The pipelines' memory lives here and is shared between nodes via the state repository (see [Keeping every node warm](watch.md#keeping-every-node-warm)).
 

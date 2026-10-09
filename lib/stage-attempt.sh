@@ -352,8 +352,13 @@ handle_stage_failure() {  # <stage> <rc> <out-file> [pr-url] [extra-json]
     # rewrites on every call. The file name and its keys stay out of `detail`,
     # which requirement 2.7 groups on; whether the commit carries the file
     # stays in, because it decides who must act: the pull request that commits
-    # it, or whatever wrote it into the clone after the commit.
-    if grep -q '^run_model_stage: the .* stage was not launched: .*; the file is as committed at ' \
+    # it, or whatever wrote it into the clone after the commit. The user-level
+    # file (stage_user_settings_refusal) is never part of a commit, so it is
+    # told apart by its own refusal never naming a `.claude/` path, and gets a
+    # detail of its own rather than a false claim about the checkout.
+    if ! grep -q '^run_model_stage: the .* stage was not launched: \.claude/' "$out_file.stderr"; then
+      detail="$stage was not launched: the Claude configuration volume's settings.json carries a key no stage may load"
+    elif grep -q '^run_model_stage: the .* stage was not launched: \.claude/.*; the file is as committed at ' \
          "$out_file.stderr"; then
       detail="$stage was not launched: the commit its checkout holds carries Claude Code project settings no stage may load"
     else
