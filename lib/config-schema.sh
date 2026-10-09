@@ -903,8 +903,16 @@ config_provider_errors() {
         [$lanes | to_entries[] | select(.key == "api" or .key == "subscription")
          | lane_value_errors($pkey; .key; .value) | .[]],
         (
-          (($lanes.api.weight) // 1) as $api_w |
-          (($lanes.subscription.weight) // 0) as $sub_w |
+          # Each side has its type checked before `.weight` is reached: a
+          # lane value that is not an object has already been reported above,
+          # and indexing a string or an array with `.weight` is a *fatal* jq
+          # error rather than a null — it would abandon the rest of this
+          # output mid-stream, losing every fault of every provider after
+          # this one. A malformed lane falls back to its own default weight
+          # here, so the pair below is judged on whichever lanes are at
+          # least shaped like lanes.
+          (($lanes.api | if type == "object" then .weight else null end) // 1) as $api_w |
+          (($lanes.subscription | if type == "object" then .weight else null end) // 0) as $sub_w |
           if ($api_w == 0 and $sub_w == 0)
           then ["providers.\($pkey).lanes: both api and subscription weight 0 leaves no lane open"]
           else [] end

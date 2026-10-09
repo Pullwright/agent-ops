@@ -1404,6 +1404,31 @@ assert_doctor "doctor names an enabled that is not a boolean" \
 assert_doctor "doctor names an unknown key within a lane" \
   '.providers = {"anthropic": {"substrate": "claude-code", "lanes": {"api": {"nope": 1}}}}' 1 \
   'providers.anthropic.lanes.api: unknown key "nope"'
+assert_doctor "doctor names a lane value that is not an object at all" \
+  '.providers = {"anthropic": {"substrate": "claude-code", "lanes": {"api": "sk-ant-oops"}}}' 1 \
+  'providers.anthropic.lanes.api: must be an object'
+
+# --- A lane value that is not an object must not cost the rest of the run
+#     its findings. The weight-pair rule reads `.weight` off both lanes, and
+#     indexing a string or an array with it is a fatal jq error rather than a
+#     null: unguarded, it abandons `config_provider_errors`' output
+#     mid-stream, so every fault of every provider ordered after the
+#     malformed one goes unreported and the operator fixes the config one
+#     refused startup at a time. Both faults below must appear in the one
+#     run. ---
+jq '.providers = {"aaa": {"substrate": "claude-code", "lanes": {"api": ["not an object"]}}, "zzz": {"substrate": "no-such-substrate"}}' \
+  "$BASE_CONFIG" > "$tmp/c.json"
+truncation_out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID \
+  -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH \
+  bash "$SCRIPT_DIR/scripts/doctor.sh" --offline --config "$tmp/c.json" 2>&1)"
+if [[ "$truncation_out" == *"providers.aaa.lanes.api: must be an object"* \
+   && "$truncation_out" == *'providers.zzz: substrate "no-such-substrate" is not one this image has an adapter for'* ]]; then
+  pass "a malformed lane value does not truncate a later provider's own faults"
+else
+  printf 'FAIL - %s\n     actual: %s\n' \
+    "a malformed lane value does not truncate a later provider's own faults" "$truncation_out"
+  failures=$(( failures + 1 ))
+fi
 
 # --- a providers entry with no lanes block resolves to the defaults: api
 #     weight 1, subscription weight 0, neither enabled explicitly — D4's

@@ -309,14 +309,18 @@
    could enumerate in advance — the same gap `additionalProperties: false`
    exists to close everywhere else, with nothing here for it to close
    against. `config_provider_errors` rejects an unknown key inside one
-   entry (only `substrate` and `credential_env` are read), a missing or
+   entry (only `substrate`, `credential_env` and `lanes` are read), a missing or
    unsupported `substrate` — `lib/model-id.sh`'s `PROVIDER_SUBSTRATE_INSTALLED`
    names the full enum, `claude-code` alone after this issue — a `substrate`
    of `claude-code` named by any provider key but `anthropic` (D29, issue
    #2198: that substrate is Claude Code pointed at the provider's own
    endpoint, which only `anthropic` — a Bedrock/Vertex credential route of
    it included, D4 — is entitled to do), and an explicit empty
-   `credential_env`. `agent-cycle.sh` and `review-cycle.sh`
+   `credential_env`. The same escape valve covers each lane nested inside a
+   `lanes` block, for the gap one step further in — a lane's own shape sits
+   under a provider key the schema cannot enumerate, so `properties` cannot
+   reach it either — and requirement 1a above states that block's own faults
+   in full. `agent-cycle.sh` and `review-cycle.sh`
    both refuse to start on it, and `scripts/doctor.sh` reports the same
    condition as a `fail` through that one implementation, so the three can
    never drift.
