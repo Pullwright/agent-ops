@@ -1860,6 +1860,14 @@ detect_and_log_limit_hit() {
     limit_hit_this_cycle=1
     evidence="$stage_rate_limit_json"
   else
+    # Before #2135 scopes a limit to the account that hit it, phrase
+    # detection stays off any non-Claude stage's output: xAI's own 429 text
+    # already matches `rate limit` in LIMIT_PHRASE_REGEX, and a Grok limit
+    # would otherwise stand the whole fleet down, Claude stages included.
+    # Such a limit still reaches the record through `stage_api_refusal`'s own
+    # normalisation (lib/substrate-grok-build.sh), as `api_error_429`
+    # (transient) or `credit_exhausted` (refused).
+    [[ "${stage_provider:-anthropic}" == "anthropic" ]] || return 1
     limit_phrase_in "$out_file" "$out_file.stderr" || return 1
     # Remembered for the rest of the cycle, because the Enabler runs from the exit
     # trap — after this point on every path — and engaging the fleet's most

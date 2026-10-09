@@ -71,14 +71,17 @@ declare -gA PROVIDER_CREDENTIAL_ENV=()
 # The credential_env default for a substrate with no explicit one configured.
 declare -gA PROVIDER_SUBSTRATE_DEFAULT_CREDENTIAL_ENV=(
   [claude-code]=ANTHROPIC_API_KEY
+  [grok-build]=XAI_API_KEY
 )
 
 # Substrates this codebase has an adapter for, and so the full enum
 # config_provider_errors validates `providers.*.substrate` against — the two
 # concepts are the same list today (there is no partial-install concept yet:
-# an adapter either exists in this codebase or it does not). After this
-# issue, `claude-code` alone; #2133/#2134 add to this, never remove from it.
-declare -ga PROVIDER_SUBSTRATE_INSTALLED=(claude-code)
+# an adapter either exists in this codebase or it does not). `grok-build`
+# (issue #2134) is not reserved to any particular provider name the way
+# `claude-code` is reserved to `anthropic` (D29, issue #2198) — any provider
+# entry may name it.
+declare -ga PROVIDER_SUBSTRATE_INSTALLED=(claude-code grok-build)
 
 # providers_load PROVIDERS_JSON
 # Populates PROVIDER_SUBSTRATE and PROVIDER_CREDENTIAL_ENV from config's
@@ -293,6 +296,13 @@ declare -gA MODEL_TIER_RANK=(
   [anthropic/claude-sonnet-5]=2
   [anthropic/claude-opus-5]=3
   [anthropic/claude-fable-5]=4
+  # xAI's own models (issue #2134), ranked by xAI's own prices within the
+  # provider — never compared against the ranks above (D29, issue #2198;
+  # model_tier_below's explicit provider check is what enforces that, not
+  # this table's keying).
+  [xai/grok-build-0.1]=1
+  [xai/grok-4.3]=2
+  [xai/grok-4.7]=3
 )
 
 # model_tier_rank QUALIFIED_MODEL_ID

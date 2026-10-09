@@ -99,11 +99,13 @@ checkout() {
   printf '%s' "$dir"
 }
 
-# refusal DIR POLICY — the guard's status and output, as "<rc>|<output>",
-# without the clause on where the file came from, which section 3 tests.
+# refusal DIR POLICY [SUBSTRATE] — the guard's status and output, as
+# "<rc>|<output>", without the clause on where the file came from, which
+# section 3 tests. SUBSTRATE defaults to claude-code, same as the function
+# under test.
 refusal() {
   local out rc
-  out="$(STAGE_CLAUDE_MANAGED_SETTINGS="$2" stage_project_settings_refusal "$1")"
+  out="$(STAGE_CLAUDE_MANAGED_SETTINGS="$2" stage_project_settings_refusal "$1" "${3:-claude-code}")"
   rc=$?
   printf '%s|%s' "$rc" "${out%%; the file is *}"
 }
@@ -339,6 +341,75 @@ assert_eq "handle_stage_failure attributes it to the configuration volume, not t
 
 rm -f "$user_config/settings.json"
 export CLAUDE_CONFIG_DIR="$tmp_dir/no-such-claude-config"
+
+# --- 6. Grok Build's own counterpart (issue #2134) -------------------------------
+# The same guard, dispatched by substrate: `.claude/settings.json`'s own
+# checks above already run for `grok-build` too (no second stub of them
+# needed — the dispatch is the one thing under test here), plus two files
+# only a Grok stage's own launch vets.
+
+# grok_checkout NAME REL_PATH CONTENT — a scratch checkout with one file at
+# an arbitrary relative path, for .grok/lsp.json and .grok/config.toml,
+# neither of which `checkout` above (fixed to .claude/<name>) can place.
+grok_checkout() {
+  local dir="$tmp_dir/$1" rel="$2"
+  mkdir -p "$dir/$(dirname "$rel")"
+  printf '%s\n' "$3" >"$dir/$rel"
+  printf '%s' "$dir"
+}
+
+assert_eq "a directory with no Grok files is not refused for grok-build" \
+  "1|" "$(refusal "$(checkout grok-none "" "")" "$no_policy" grok-build)"
+
+# .claude/settings.json's own checks are not substrate-specific: Grok reads
+# the same file's hooks under its own Claude-compatibility layer when
+# GROK_FOLDER_TRUST=0 trusts a checkout, so the one guard protects a
+# grok-build stage against its `env` key too, with no dispatch of its own.
+assert_eq "a grok-build stage is refused on .claude/settings.json's env too" \
+  "0|.claude/settings.json sets env$loads" \
+  "$(refusal "$(checkout grok-env settings.json '{"env":{"BASH_ENV":"x"}}')" "$policy" grok-build)"
+
+lsp_dir="$(grok_checkout grok-lsp .grok/lsp.json '{}')"
+assert_eq ".grok/lsp.json is refused outright" \
+  "0|.grok/lsp.json is present, and no stage runs a project LSP server from the checkout it runs in" \
+  "$(refusal "$lsp_dir" "$policy" grok-build)"
+assert_eq "…but not for claude-code, which never reads it" \
+  "1|" "$(refusal "$lsp_dir" "$policy" claude-code)"
+
+allowed_toml_dir="$(grok_checkout grok-toml-allowed .grok/config.toml \
+  $'[permission]\nfoo = true\n[mcp]\nbar = 1\n[mcp_servers]\n')"
+assert_eq ".grok/config.toml with only permission/mcp/mcp_servers sections is not refused" \
+  "1|" "$(refusal "$allowed_toml_dir" "$policy" grok-build)"
+
+plugins_toml_dir="$(grok_checkout grok-toml-plugins .grok/config.toml \
+  $'[permission]\nfoo = true\n[plugins]\nbaz = true\n')"
+assert_eq ".grok/config.toml naming a section outside the allowlist is refused" \
+  "0|.grok/config.toml sets section(s) plugins, which no stage loads from the checkout it runs in" \
+  "$(refusal "$plugins_toml_dir" "$policy" grok-build)"
+assert_eq "…but not for claude-code, which never reads it" \
+  "1|" "$(refusal "$plugins_toml_dir" "$policy" claude-code)"
+
+# The launcher, dispatched to grok-build by MODEL_PROVIDER/PROVIDER_SUBSTRATE
+# (as `resolve_model_id_into`/`providers_load` populate them, requirement
+# 1a) rather than a real `grok` binary — a refused stage never reaches
+# `substrate_grok_build_exec` at all, so none is needed.
+# shellcheck disable=SC2034  # read by stage_model_substrate
+MODEL_PROVIDER[test-grok-model]=xai
+# shellcheck disable=SC2034
+PROVIDER_SUBSTRATE[xai]=grok-build
+
+grok_refused_dir="$(grok_checkout grok-launch-refused .grok/lsp.json '{}')"
+commit_all "$grok_refused_dir"
+export STUB_CAPTURE="$grok_refused_dir"
+STAGE_CLAUDE_MANAGED_SETTINGS="$policy" \
+  run_model_stage reviewer 60 test-grok-model "a prompt" "$grok_refused_dir/reviewer.out" "$grok_refused_dir"
+rc=$?
+assert_eq "a Grok stage refused on .grok/lsp.json returns non-zero" "1" "$rc"
+assert_eq "and never starts a runner" \
+  "no" "$([[ -e "$grok_refused_dir/invocations" ]] && echo yes || echo no)"
+assert_eq "it says why on the stage's stderr, exactly as a refused Claude stage does" \
+  "run_model_stage: the reviewer stage was not launched: .grok/lsp.json is present, and no stage runs a project LSP server from the checkout it runs in; the file is as committed at $(git -C "$grok_refused_dir" rev-parse --short HEAD) (requirement 4k)" \
+  "$(cat "$grok_refused_dir/reviewer.out.stderr" 2>/dev/null)"
 
 printf '\n'
 if (( failures )); then

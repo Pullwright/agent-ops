@@ -269,6 +269,10 @@ detect_and_log_limit_hit() {
     log_shared_limit_hit "$resume_at" "$class" "$reset_known"
     return 0
   fi
+  # Before #2135 scopes a limit to the account that hit it, phrase detection
+  # stays off any non-Claude stage's output (see agent-cycle.sh's copy of
+  # this comment for why).
+  [[ "${stage_provider:-anthropic}" == "anthropic" ]] || return 1
   limit_phrase_in "$out_file" "$out_file.stderr" || return 1
   text="$(cat "$out_file" "$out_file.stderr" 2>/dev/null || true)"
   IFS=$'\t' read -r resume_at class reset_known < <(limit_decide "$text" "$limit_cooldown_default_hours")

@@ -40,6 +40,13 @@
 # Both directions of both mechanisms are chosen so that censoring pushes them
 # the safe way. See `stage_budget_table`.
 
+# lib/model-id.sh's map, read by `stage_budget_resolve` below to find the
+# provider a not-yet-launched MODEL will run on — declared defensively here
+# too (same guard as lib/stage-run.sh's and lib/metering.sh's own copies)
+# since this file is sourced standalone by this file's own tests, never
+# lib/model-id.sh.
+declare -p MODEL_PROVIDER >/dev/null 2>&1 || declare -gA MODEL_PROVIDER=()
+
 # The shipped priors, in minutes, and the only numbers here that are not
 # derived from something. They exist so that an installation with no history
 # whatever — a customer on its first cycle — gets sensible behaviour without
@@ -98,7 +105,7 @@ stage_budget_settings() {
 # stage_budget_observations  < union JSONL on stdin
 # One record per completed stage run, oldest first, as a JSON array:
 #
-#   {actor, repo, model, ts, duration_min, gap_max, killed}
+#   {actor, repo, model, provider, ts, duration_min, gap_max, killed}
 #
 # Three joins and one exclusion are worth naming:
 #
@@ -159,6 +166,16 @@ STAGE_BUDGET_OBSERVATIONS_JQ='
                  elif $actor == "coordinator" then (.repo // "*")
                  else (.repo // $repo_of[(.cycle // "")] // "*") end),
           model: (.model // "*"),
+          # The provider the model resolved to (issue #2133 own field on
+          # every metered event), read here so stage_budget_table pooled
+          # levels (below) can be kept per provider: a second provider own
+          # gaps are not drawn from the same distribution as the first, and
+          # without this one cell of theirs would widen the pool every cell
+          # of this actor on the other provider shrinks towards. No
+          # apostrophe anywhere in this comment, or the one above it, or
+          # the next one below: this whole block is one single-quoted
+          # shell word, and an apostrophe would end it early.
+          provider: (.provider // "anthropic"),
           ts: (.ts // ""),
           duration_min: (if $killed != "" or (.duration_ms | type) != "number"
                          then null else (.duration_ms / 60000) end),
@@ -181,7 +198,11 @@ stage_budget_observations() {
 #
 #   {settings, cutoff, cells: {<key>: {…}}, actors: {<actor>: {…}}}
 #
-# where a cell key is `<actor>|<repo>|<model>`.
+# where a cell key is `<actor>|<repo>|<model>` and an `actors` key is
+# `<actor>|<provider>` (issue #2134: the pooled fallback tier is per
+# provider too, so Grok's own gaps never widen the threshold a Claude cell
+# of the same actor shrinks towards — see `pooled_inactivity`'s own header
+# below).
 #
 # ## The cell is (actor, repository, model)
 #
@@ -329,18 +350,28 @@ stage_budget_table() {
     def prior_of($actor; $field):
       ($priors[$actor][$field] // $priors.implementer[$field]);
 
-    # The two pooled levels above a cell: the same actor across every model,
-    # and the same actor and model across every repository. The shipped prior
-    # is the root of the hierarchy.
-    def pooled_inactivity($actor; $by_actor):
+    # The two pooled levels above a cell: the same actor (and provider)
+    # across every model, and the same actor, provider and model across
+    # every repository. The shipped prior is the root of the hierarchy.
+    #
+    # Keyed by provider as well as actor (issue #2134), so a second provider
+    # cells shrink towards that provider own pool and then the shipped
+    # prior, never towards a pool another provider runs also feed. Without
+    # this, one Grok cell with wider gaps (one silence still spans one
+    # command, but the commands a Grok stage waits on are not drawn from the
+    # same distribution as Claude own) would widen the pooled threshold
+    # every Claude cell of the same actor shrinks towards, the instant a
+    # second provider first run lands. No apostrophe anywhere below this
+    # point either, for the same reason the observations jq program gives.
+    def pooled_inactivity($actor; $provider; $by_actor):
       prior_of($actor; "inactivity") as $p
-      | ($by_actor[$actor] // {n: 0, gap_max: null}) as $st
+      | ($by_actor[$actor + "|" + $provider] // {n: 0, gap_max: null}) as $st
       | shrink((if $st.gap_max == null then null else ($s.gap_multiplier * $st.gap_max / 60) end);
                $p; $st.n);
 
-    def model_inactivity($actor; $model; $by_actor; $by_actor_model):
-      pooled_inactivity($actor; $by_actor) as $up
-      | ($by_actor_model[$actor + "|" + $model] // {n: 0, gap_max: null}) as $st
+    def model_inactivity($actor; $provider; $model; $by_actor; $by_actor_model):
+      pooled_inactivity($actor; $provider; $by_actor) as $up
+      | ($by_actor_model[$actor + "|" + $provider + "|" + $model] // {n: 0, gap_max: null}) as $st
       | shrink((if $st.gap_max == null then null else ($s.gap_multiplier * $st.gap_max / 60) end);
                $up; $st.n);
 
@@ -369,21 +400,33 @@ stage_budget_table() {
     | ($now_epoch - ($s.window_days * 86400)) as $cut_epoch
     | ($cut_epoch | todateiso8601) as $cutoff
     | [ $obs[] | select((.ts // "") >= $cutoff) ] as $recent
-    | ($recent | group_by(.actor)
-       | map({key: .[0].actor, value: stats(.)}) | from_entries) as $by_actor
-    | ($recent | group_by([.actor, .model])
-       | map({key: (.[0].actor + "|" + .[0].model), value: stats(.)}) | from_entries) as $by_actor_model
+    # Grouped by [actor, provider] — not actor alone (issue #2134) — so the
+    # pooled level above a cell is per provider; see pooled_inactivity own
+    # header above for why. $by_actor_model follows suit for the same
+    # reason, though in practice a bare model id rarely collides across
+    # providers on its own.
+    | ($recent | group_by([.actor, .provider])
+       | map({key: (.[0].actor + "|" + .[0].provider), value: stats(.)}) | from_entries) as $by_actor
+    | ($recent | group_by([.actor, .provider, .model])
+       | map({key: (.[0].actor + "|" + .[0].provider + "|" + .[0].model), value: stats(.)}) | from_entries) as $by_actor_model
     | ($recent | map(select(.actor == "coordinator" and .repo == "*"))
        | group_by(.model)
        | map({key: .[0].model, value: stats(.)}) | from_entries) as $coordinator_star_by_model
     | {
         settings: $s,
         cutoff: $cutoff,
+        # Keyed "<actor>|<provider>", the same composite $by_actor itself
+        # uses — stage_budget_resolve builds the same key to look a cell
+        # fallback tier up here. Actor names never carry "|", so splitting
+        # the key back apart for prior_of (which is keyed by the bare actor
+        # name — the shipped priors have no provider dimension) is
+        # unambiguous.
         actors: ($by_actor
           | to_entries
-          | map(.key as $a | .value as $st
+          | map(.key as $ap | (.key | split("|")) as $parts | $parts[0] as $a | $parts[1] as $provider
+            | .value as $st
             | {
-                key: $a,
+                key: $ap,
                 value: {
                   n: $st.n,
                   gap_max: $st.gap_max,
@@ -397,7 +440,7 @@ stage_budget_table() {
                   # pooled threshold has every repository behind it.
                   inactivity_min: (
                     (prior_of($a; "backstop") | floor) as $b
-                    | (([pooled_inactivity($a; $by_actor), prior_of($a; "inactivity")] | max) | ceil) as $i
+                    | (([pooled_inactivity($a; $provider; $by_actor), prior_of($a; "inactivity")] | max) | ceil) as $i
                     | if $i > $b then $b else $i end),
                   basis: (if $st.n > 0 then "pooled" else "prior" end)
                 }
@@ -405,7 +448,7 @@ stage_budget_table() {
           | from_entries),
         cells: ($recent | group_by([.actor, .repo, .model])
           | map(
-              .[0].actor as $a | .[0].repo as $r | .[0].model as $m
+              .[0].actor as $a | .[0].repo as $r | .[0].model as $m | .[0].provider as $p
               | stats(.) as $st
               | (($a == "coordinator" and $r != "*") as $warm_started
                  | if $warm_started
@@ -414,7 +457,7 @@ stage_budget_table() {
               | controller($st; $backstop_seed) as $b
               | ($b | ceil) as $bmin
               | shrink((if $st.gap_max == null then null else ($s.gap_multiplier * $st.gap_max / 60) end);
-                       model_inactivity($a; $m; $by_actor; $by_actor_model); $st.n) as $inact
+                       model_inactivity($a; $p; $m; $by_actor; $by_actor_model); $st.n) as $inact
               | (([$inact, prior_of($a; "inactivity")] | max) | ceil) as $imin
               | {
                   key: ($a + "|" + $r + "|" + $m),
@@ -484,14 +527,24 @@ stage_budget_table() {
 # the pipeline never writes to `config.json`, so a self-tuning value can never
 # turn into pull-request churn in somebody else’s repository.
 stage_budget_resolve() {
-  local table="${1:-{\}}" actor="$2" repo="${3:-*}" model="${4:-*}" overrides="${5:-{\}}" out
+  local table="${1:-{\}}" actor="$2" repo="${3:-*}" model="${4:-*}" overrides="${5:-{\}}" out provider
+  # The provider MODEL will run on, read off lib/model-id.sh's own map —
+  # already populated by the time any caller resolves a budget, since a
+  # model that will reach `run_model_stage` has already been resolved via
+  # `resolve_model_id_into` (issue #2134; see `pooled_inactivity`'s own
+  # header in `stage_budget_table` for why the pooled tier needs this at all).
+  if [[ -n "$model" ]]; then
+    provider="${MODEL_PROVIDER[$model]:-anthropic}"
+  else
+    provider="anthropic"
+  fi
   out="$(jq -nc --argjson t "$table" --argjson o "$overrides" \
       --argjson priors "$STAGE_BUDGET_PRIORS" \
-      --arg a "$actor" --arg r "$repo" --arg m "$model" '
+      --arg a "$actor" --arg r "$repo" --arg m "$model" --arg p "$provider" '
     ($priors[$a] // $priors.implementer) as $prior
     | ($t.cells[$a + "|" + $r + "|" + $m] // null) as $cell
     | (if $a == "coordinator" and $r != "*" then ($t.cells[$a + "|*|" + $m] // null) else null end) as $star
-    | ($t.actors[$a] // null) as $pooled
+    | ($t.actors[$a + "|" + $p] // null) as $pooled
     | (if $cell != null then {b: $cell.backstop_min, i: $cell.inactivity_min, src: "cell", basis: $cell.basis}
        elif $star != null then {b: $star.backstop_min, i: $star.inactivity_min, src: "pooled", basis: "pooled"}
        elif $pooled != null then {b: $pooled.backstop_min, i: $pooled.inactivity_min, src: "pooled", basis: $pooled.basis}
