@@ -52,6 +52,24 @@ assert_eq "a non-zero exit passes through unchanged" "7" "$?"
 assert_eq "stdin reaches the wrapped command unchanged" \
   "hello" "$(printf 'hello' | "$WRAPPER" cat)"
 
+# --- 1a. --cleanup PATH removes PATH once the child has exited -------------
+# lib/substrate-grok-build.sh's own `_exec` passes this: it writes the
+# prompt to a real file (never `/dev/stdin` itself — see that function's own
+# header) and has no "after" moment of its own to delete it, since its last
+# act is an `exec` into this wrapper.
+cleanup_target="$tmp_dir/prompt-to-clean"
+printf 'prompt content\n' >"$cleanup_target"
+"$WRAPPER" --cleanup "$cleanup_target" -- true
+assert_eq "--cleanup removes the file after a clean exit" \
+  "no" "$([[ -e "$cleanup_target" ]] && echo yes || echo no)"
+
+printf 'prompt content\n' >"$cleanup_target"
+"$WRAPPER" --cleanup "$cleanup_target" -- bash -c 'exit 3'
+rc=$?
+assert_eq "--cleanup still removes the file when the child exits non-zero" \
+  "no" "$([[ -e "$cleanup_target" ]] && echo yes || echo no)"
+assert_eq "…and the child's own exit status still passes through" "3" "$rc"
+
 # --- 2. Containment: a setsid child survives a direct SIGTERM to the
 #     wrapper's own direct child, and the sweep still kills it ------------
 

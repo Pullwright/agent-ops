@@ -2685,10 +2685,21 @@ if (( grok_configured )); then
   else
     grok_flush_dir="$(mktemp -d)"
     grok_flush_stream="$grok_flush_dir/probe.stream.jsonl"
+    # Never `--prompt-file /dev/stdin`: see lib/substrate-grok-build.sh's
+    # own `_exec` for why Grok cannot read the launcher's inherited stdin
+    # that way once it crosses into the stage user. A real file, shared
+    # with that user the same way, stands in for it here — the directory
+    # too, since `mktemp -d` leaves it 0700 and group-readable on the file
+    # alone would not let `stage` traverse into it.
+    grok_flush_prompt="$grok_flush_dir/prompt.txt"
+    printf 'Reply with the single word: ok\n' >"$grok_flush_prompt"
+    chgrp stage "$grok_flush_dir" "$grok_flush_prompt" 2>/dev/null || true
+    chmod 750 "$grok_flush_dir"
+    chmod 640 "$grok_flush_prompt"
     grok -m grok-build-0.1 --permission-mode bypassPermissions \
       --output-format streaming-messages-json --include-partial-messages \
-      --prompt-file /dev/stdin \
-      <<<"Reply with the single word: ok" >"$grok_flush_stream" 2>"$grok_flush_dir/err" &
+      --prompt-file "$grok_flush_prompt" \
+      >"$grok_flush_stream" 2>"$grok_flush_dir/err" &
     grok_flush_pid=$!
     grok_flush_seen=0
     grok_flush_waited=0

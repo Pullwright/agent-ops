@@ -63,12 +63,27 @@ substrate_grok_build_version() {
 # silence to one command rather than one whole message ("Stream timing" in
 # the adapter specification) — without it the liveness watchdog could kill a
 # stage still working through a message that ran several commands in a row.
-# The prompt arrives on stdin exactly as Claude Code's does (the split
+#
+# The prompt is read off this function's own inherited stdin — the split
 # between "that the prompt arrives on stdin" and "which file descriptor
-# stdin already is" is lib/substrate-claude-code.sh's own, unchanged here):
-# `--prompt-file /dev/stdin` is Grok's own stdin-reading form, since `-p`/
-# `--single` (its `-p`) takes the prompt as an *argument* and does not read
-# stdin at all (§2).
+# stdin already is" is lib/substrate-claude-code.sh's own, unchanged here —
+# but, unlike Claude Code, never handed to Grok as `/dev/stdin` itself.
+# Measured directly against the image: Grok's `--prompt-file` always opens
+# the path it is given by name, even when that name is `/dev/stdin`, and
+# re-opening a process's own stdin by path is a fresh `open()` the kernel
+# checks against the *original* file's permission bits — which this
+# launcher's here-string sets restrictively, readable only by the process
+# that created it. Every `grok` this image runs crosses exactly that
+# boundary (requirement 45e: `grok`, like `claude`, runs as the `stage`
+# user, a different one from the Script's own that opened the here-string),
+# so this never works, the one respect in which Grok's "read stdin" claim
+# (docs/reviews/2026-10-06-grok-build-evaluation.md §2) does not carry over
+# unchanged — only tested there as the same user throughout. The adapter
+# instead drains its own stdin into a real file this invocation owns,
+# group-readable by `stage` (`chgrp`+`chmod`, the same group `claude-config`
+# already shares between `agent` and `stage`), and passes that path instead;
+# the subreaper wrapper removes it once Grok has exited, since this
+# function's own `exec` below never returns to do so itself.
 #
 # Launched under the child-subreaper wrapper, not directly: Grok starts every
 # `run_terminal_command` in its own session, so `run_model_stage`'s own
@@ -83,12 +98,16 @@ substrate_grok_build_version() {
 # is one level the group-kill does not need to see, because the wrapper
 # itself forwards the signal and waits for the sweep.
 substrate_grok_build_exec() {
-  local model="$1" resume_session_id="$2"
+  local model="$1" resume_session_id="$2" prompt_file
+  prompt_file="$(mktemp "${TMPDIR:-/tmp}/grok-prompt.XXXXXX")"
+  cat >"$prompt_file"
+  chgrp stage "$prompt_file" 2>/dev/null || true
+  chmod 640 "$prompt_file"
   local -a args=(-m "$model" --permission-mode bypassPermissions \
     --output-format streaming-messages-json --include-partial-messages \
-    --prompt-file /dev/stdin)
+    --prompt-file "$prompt_file")
   [[ -n "$resume_session_id" ]] && args+=(-r "$resume_session_id")
-  exec "$SUBSTRATE_GROK_BUILD_SUBREAPER" grok "${args[@]}"
+  exec "$SUBSTRATE_GROK_BUILD_SUBREAPER" --cleanup "$prompt_file" -- grok "${args[@]}"
 }
 
 # Over a Grok failure envelope — `is_error: true`, no `result`, its text in

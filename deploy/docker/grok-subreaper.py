@@ -25,10 +25,18 @@
 # none. That whole sweep fits inside lib/stage-run.sh's own five-second
 # grace between its TERM and its KILL.
 #
-# Usage: grok-subreaper.py <command> [args...]
+# Usage: grok-subreaper.py [--cleanup PATH] [--] <command> [args...]
 # Execs <command> [args...] (ordinarily `grok` and its own arguments) as a
 # forked child; exits with that child's own exit status (128+signal if the
 # child died of a signal this wrapper did not itself forward and SIGKILL).
+#
+# `--cleanup PATH`, when given, removes PATH once the child has exited (the
+# prompt file lib/substrate-grok-build.sh's own `_exec` writes, since Grok's
+# own `--prompt-file` cannot read the launcher's inherited stdin by path
+# across the uid change `grok` itself runs under — see that function's own
+# header for why). This wrapper is the only thing in the chain with a
+# definite "the run that needed it is over" moment: its caller `exec`s
+# straight into it and so never returns to clean up after itself.
 
 import ctypes
 import os
@@ -113,8 +121,18 @@ def sweep(my_pid):
 
 
 def main(argv):
-    if len(argv) < 2:
-        sys.stderr.write("usage: %s <command> [args...]\n" % argv[0])
+    args = argv[1:]
+    cleanup_path = None
+    if args[:1] == ["--cleanup"]:
+        if len(args) < 2:
+            sys.stderr.write("usage: %s [--cleanup PATH] [--] <command> [args...]\n" % argv[0])
+            return 2
+        cleanup_path = args[1]
+        args = args[2:]
+    if args[:1] == ["--"]:
+        args = args[1:]
+    if not args:
+        sys.stderr.write("usage: %s [--cleanup PATH] [--] <command> [args...]\n" % argv[0])
         return 2
 
     set_subreaper()
@@ -123,9 +141,9 @@ def main(argv):
     child_pid = os.fork()
     if child_pid == 0:
         try:
-            os.execvp(argv[1], argv[1:])
+            os.execvp(args[0], args)
         except OSError as exc:
-            sys.stderr.write("grok-subreaper: %s: %s\n" % (argv[1], exc))
+            sys.stderr.write("grok-subreaper: %s: %s\n" % (args[0], exc))
         os._exit(127)
 
     state = {"signalled_at": None}
@@ -164,6 +182,12 @@ def main(argv):
         time.sleep(POLL_INTERVAL_SECONDS)
 
     sweep(my_pid)
+
+    if cleanup_path is not None:
+        try:
+            os.unlink(cleanup_path)
+        except OSError:
+            pass
 
     if os.WIFSIGNALED(child_status):
         return 128 + os.WTERMSIG(child_status)

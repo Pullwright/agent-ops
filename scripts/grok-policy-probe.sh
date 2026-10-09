@@ -71,6 +71,15 @@ jq -n --arg m "$marks" \
   '{mcpServers: {"policy-probe-json": {command: "sh", args: ["-c", "touch \($m)/mcpjson-mcp; exec cat"]}}}' \
   >"$work/.mcp.json"
 printf 'touch %s/envrc\n' "$marks" >"$work/.envrc"
+# Never `--prompt-file /dev/stdin`: Grok opens whatever `--prompt-file`
+# names by path, even `/dev/stdin`, and re-opening a process's own stdin by
+# path is a fresh `open()` the kernel checks against the *original* file's
+# permission bits — which fail once `grok` crosses into the stage user
+# (lib/substrate-grok-build.sh's own `_exec` has the full account). Written
+# here, before `stage_workspace_share` below, so it is shared with the
+# stage user the same way every other fixture in this checkout is, rather
+# than needing its own chgrp/chmod.
+printf 'Reply with the single word: ok\n' >"$probe/prompt.txt"
 
 stage_workspace_share "$probe" \
   || { printf 'grok-policy-probe: cannot share %s with the stage user\n' "$probe" >&2; exit 1; }
@@ -81,8 +90,8 @@ stage_workspace_share "$probe" \
     XAI_API_KEY=xai-policy-probe-placeholder \
     grok -m grok-build-0.1 --permission-mode bypassPermissions \
     --output-format streaming-messages-json --include-partial-messages \
-    --prompt-file /dev/stdin \
-    <<<"Reply with the single word: ok" >"$probe/run.jsonl" 2>"$probe/run.stderr"
+    --prompt-file "$probe/prompt.txt" \
+    >"$probe/run.jsonl" 2>"$probe/run.stderr"
 )
 run_rc=$?
 printf 'grok exit status: %s\n' "$run_rc"
