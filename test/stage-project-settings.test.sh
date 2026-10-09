@@ -389,6 +389,38 @@ assert_eq ".grok/config.toml naming a section outside the allowlist is refused" 
 assert_eq "…but not for claude-code, which never reads it" \
   "1|" "$(refusal "$plugins_toml_dir" "$policy" claude-code)"
 
+# TOML lets the same section be written several ways, and each of them
+# declares it as surely as `[hooks]` does. A header the guard cannot read as
+# a bare name is refused as itself rather than passed over, because a header
+# it does not name is one it cannot clear.
+for header in '[[plugins]]' '[ plugins ]' '["plugins"]'; do
+  shape_dir="$(grok_checkout "grok-toml-shape-$RANDOM" .grok/config.toml \
+    "$header"$'\nbaz = true\n')"
+  assert_eq ".grok/config.toml's $header is refused, not read past" \
+    "0|.grok/config.toml sets section(s) $header, which no stage loads from the checkout it runs in" \
+    "$(refusal "$shape_dir" "$policy" grok-build)"
+done
+
+# …and a `[` that opens an array value rather than a section is not a
+# header, so an allowed section holding a multi-line list still passes.
+array_toml_dir="$(grok_checkout grok-toml-array .grok/config.toml \
+  $'[permission]\nallow = [\n  "Bash",\n]\n')"
+assert_eq ".grok/config.toml with a multi-line array in an allowed section passes" \
+  "1|" "$(refusal "$array_toml_dir" "$policy" grok-build)"
+
+# The file is read the way the `.claude` files are — as the stage user,
+# bounded in time and size — because the directory is often a workspace an
+# earlier stage has had (lib/stage-boundary.sh's second rule). One that
+# cannot be read that way is refused, never skipped: a dangling link here
+# stands in for the FIFO and the link-to-the-Script's-own-file that the real
+# boundary exists for.
+unreadable_dir="$tmp_dir/grok-toml-unreadable"
+mkdir -p "$unreadable_dir/.grok"
+ln -s /no/such/grok/config.toml "$unreadable_dir/.grok/config.toml"
+assert_eq ".grok/config.toml that cannot be read is refused, not passed over" \
+  "0|.grok/config.toml cannot be read as a file of at most $STAGE_PROJECT_SETTINGS_MAX_BYTES bytes, so it cannot be vetted" \
+  "$(refusal "$unreadable_dir" "$policy" grok-build)"
+
 # The launcher, dispatched to grok-build by MODEL_PROVIDER/PROVIDER_SUBSTRATE
 # (as `resolve_model_id_into`/`providers_load` populate them, requirement
 # 1a) rather than a real `grok` binary — a refused stage never reaches

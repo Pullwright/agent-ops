@@ -256,18 +256,40 @@ _stage_byte_length() {
 # guarantee this file can keep.
 STAGE_GROK_CONFIG_ALLOWED_SECTIONS='permission mcp mcp_servers'
 
-# _stage_toml_top_level_sections FILE
-# The top-level `[section]` header names TOML FILE declares, one per line —
-# a grep, not a parser: this reads only what a section-header *line* says,
-# which is all requirement 4k's Grok guard needs to ask ("does this file
-# touch any section beyond the allowed three"), never what a section's own
-# keys hold. An array-of-tables header (`[[name]]`) is intentionally not
-# matched by this pattern and so refused by the caller's own "every section
-# must be on the allowlist" reading of its output, the same safe-by-default
-# stance the JSON checks below take toward anything they cannot parse.
+# _stage_toml_top_level_sections  < TOML on stdin
+# One line per table header the TOML on stdin declares: the section's own
+# name where the header is a plain `[name]` that can be compared against an
+# allowlist, and the header line itself, verbatim, where it is any other
+# shape. A line reader, not a parser: this reads only what a header *line*
+# says, which is all requirement 4k's Grok guard needs to ask ("does this
+# file touch any section beyond the allowed three"), never what a section's
+# own keys hold.
+#
+# That second case is why this is not one regular expression. An
+# array-of-tables header (`[[plugins]]`), a quoted one (`["hooks"]`) and a
+# whitespaced one (`[ hooks ]`) are all valid TOML, and each declares a
+# section as surely as `[hooks]` does; a pattern matching only `[name]`
+# reports none of them, and a header this function does not report is one
+# the caller cannot refuse, since it refuses a file only for the sections it
+# is told about. So anything header-shaped this cannot read as a bare name
+# is printed as itself, which no allowlist entry matches — the same
+# safe-by-default stance the JSON checks below take toward a file they
+# cannot parse. A line that opens with `[` without closing on the same line
+# (an array value spilling over several) is not header-shaped and is
+# skipped; so is a blank or indented-value line, since a header is the only
+# thing whose first non-blank character is `[`.
 _stage_toml_top_level_sections() {
-  grep -oE '^[[:space:]]*\[[A-Za-z0-9_.-]+\][[:space:]]*(#.*)?$' "$1" 2>/dev/null \
-    | sed -E 's/^[[:space:]]*\[([A-Za-z0-9_.-]+)\].*/\1/'
+  local line stripped
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    stripped="${line#"${line%%[![:space:]]*}"}"
+    [[ "$stripped" == '['* ]] || continue
+    [[ "$stripped" =~ \][[:space:]]*(#.*)?$ ]] || continue
+    if [[ "$stripped" =~ ^\[([A-Za-z0-9_.-]+)\][[:space:]]*(#.*)?$ ]]; then
+      printf '%s\n' "${BASH_REMATCH[1]}"
+    else
+      printf '%s\n' "$stripped"
+    fi
+  done
 }
 
 # stage_project_settings_refusal DIR [SUBSTRATE]
@@ -285,7 +307,10 @@ _stage_toml_top_level_sections() {
 # both substrates' own stages against it, with nothing to dispatch. What
 # *is* substrate-specific is the second block, below the loop: Grok's own
 # `.grok/lsp.json` and `.grok/config.toml`, which Claude Code never reads and
-# so never needs vetted.
+# so never needs vetted. `.grok/config.toml` is read through
+# `stage_boundary_read`, on the same terms and for the same reason the
+# `.claude` files are; `.grok/lsp.json` is refused on sight, so its content
+# is never opened at all.
 stage_project_settings_refusal() {
   local dir="$1" substrate="${2:-claude-code}" allowed name file content disallowed s
   allowed="$(stage_project_settings_allowed_keys)"
@@ -330,6 +355,19 @@ stage_project_settings_refusal() {
     fi
     file="$dir/.grok/config.toml"
     if [[ -e "$file" || -L "$file" ]]; then
+      # Read as the stage user reads it, bounded in time and size, for the
+      # same reason the `.claude` files above are (lib/stage-boundary.sh's
+      # second rule): this directory is often a workspace an earlier stage
+      # has had, so the path can be a link to a file only the Script can
+      # read, or a FIFO that never answers whoever opens it. Refused rather
+      # than skipped when it cannot be read that way — a file this guard
+      # cannot see is a file it cannot vet.
+      if ! content="$(stage_boundary_read "$file" "$((STAGE_PROJECT_SETTINGS_MAX_BYTES + 1))" && printf x)" \
+         || (( $(_stage_byte_length "${content%x}") > STAGE_PROJECT_SETTINGS_MAX_BYTES )); then
+        printf '.grok/config.toml cannot be read as a file of at most %s bytes, so it cannot be vetted; %s' \
+          "$STAGE_PROJECT_SETTINGS_MAX_BYTES" "$(stage_project_settings_origin "$dir" ".grok/config.toml")"
+        return 0
+      fi
       disallowed=""
       while IFS= read -r s; do
         [[ -n "$s" ]] || continue
@@ -337,7 +375,7 @@ stage_project_settings_refusal() {
           *" $s "*) ;;
           *) disallowed+="${disallowed:+, }$s" ;;
         esac
-      done < <(_stage_toml_top_level_sections "$file")
+      done < <(_stage_toml_top_level_sections <<<"${content%x}")
       if [[ -n "$disallowed" ]]; then
         printf '.grok/config.toml sets section(s) %s, which no stage loads from the checkout it runs in; %s' \
           "$disallowed" "$(stage_project_settings_origin "$dir" ".grok/config.toml")"

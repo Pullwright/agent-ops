@@ -456,16 +456,17 @@
      `/etc/grok/requirements.toml`, root-owned beside the Claude policy,
      pins `allow_managed_hooks_only = true`, `allowed_mcp_servers = []` and
      `[session] load_envrc = false`, releasable by no lower layer;
-     `scripts/grok-policy-probe.sh` is its acceptance step, mirroring
-     `scripts/claude-policy-probe.sh`. What it misses still needs
+     `scripts/grok-policy-probe.sh` is its acceptance step, mirroring the
+     probe above. What it misses still needs
      `stage_project_settings_refusal` (requirement 4d), dispatched per
      substrate: `.claude/settings.json`'s `env` key (refused above already,
      Grok reading it too under its Claude-compatibility layer); and two
      Grok-only files — `.grok/lsp.json` (no stage runs a project LSP
-     server from its own checkout) and `.grok/config.toml` (refused unless
-     every section is `permission`, `mcp` or `mcp_servers`, sound only
-     while `allowed_mcp_servers` stays empty; `[plugins]` is also refused,
-     per `permissions.deny` above). Same return shape either substrate, so
+     server from its own checkout) and `.grok/config.toml`, read as the
+     files above are and refused unless every section it declares is
+     `permission`, `mcp` or `mcp_servers`, sound only while
+     `allowed_mcp_servers` stays empty (`[plugins]` is refused, per
+     `permissions.deny` above). Same return shape either substrate, so
      `handle_stage_failure` reads it unmodified.
 
 5. If the work order is `{"selected": false}`, log `none-selected` with the
