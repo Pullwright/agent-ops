@@ -2602,7 +2602,7 @@ else
         # failure below.
         console_present=1
         claude_credential_ok=1
-        ok "subscription lane: absent — the login is a Console account ($(jq -r '.apiProvider // "provider unknown"' <<<"$claude_auth_json")), which bills the API rather than opening a subscription lane (#2241)"
+        ok "subscription lane: absent — the login is a Console account ($(jq -r '.apiProvider // "provider unknown"' <<<"$claude_auth_json")), which bills the API rather than opening a subscription lane (#2241) (weight $sub_lane_weight, enabled $(lane_enabled_desc "$sub_lane_enabled" 0))"
       fi
     else
       ok "subscription lane: absent (weight $sub_lane_weight, enabled $(lane_enabled_desc "$sub_lane_enabled" 0))"

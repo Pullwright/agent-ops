@@ -2151,7 +2151,7 @@ assert_eq "and doctor.sh exits 0" "0" "$rc"
 # (#2241) — reported as such, present on neither failure path.
 run_doctor STUB_CLAUDE_AUTH_JSON='{"loggedIn":true,"authMethod":"console","apiProvider":"console"}'
 assert_contains "a Console login is reported as such, not as a subscription lane" \
-  "[ ok ] subscription lane: absent — the login is a Console account (console), which bills the API rather than opening a subscription lane (#2241)" "$out"
+  "[ ok ] subscription lane: absent — the login is a Console account (console), which bills the API rather than opening a subscription lane (#2241) (weight 0, enabled not by default)" "$out"
 assert_not_contains "and is never read as a failure" "[fail] claude" "$out"
 assert_eq "and doctor.sh exits 0" "0" "$rc"
 

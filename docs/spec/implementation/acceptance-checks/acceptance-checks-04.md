@@ -504,7 +504,9 @@
     with a `subscriptionType` is `ok` naming the lane present, `loggedIn:
     true` with no `subscriptionType` is `ok` naming a Console account rather
     than an open subscription lane (#2241), and `loggedIn: false` is `ok`
-    naming it absent; both lanes absent is `fail` — distinguished from the
+    naming it absent, each of these three naming the lane's configured
+    weight and whether it is enabled, exactly as the `api` lane's own lines
+    do; both lanes absent is `fail` — distinguished from the
     subscription lane's own parse failure, since `loggedIn: false` is a
     legitimate answer rather than evidence the JSON could not be read — and a
     `claude` with no `auth` subcommand leaves the subscription lane `skip`;

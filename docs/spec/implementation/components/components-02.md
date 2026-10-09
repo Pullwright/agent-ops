@@ -205,7 +205,9 @@
     `loggedIn: false` is `ok` naming it absent, and anything that does not
     exit 0 with that shape — an older CLI with no `auth` subcommand included
     — is `skip`, since a probe that cannot answer is never evidence of a
-    fault. Both lanes absent — neither a usable `ANTHROPIC_API_KEY` nor a
+    fault. Every one of the subscription lane's `ok` outcomes, the Console
+    one included, names the lane's own `PROVIDER_LANES[anthropic]` weight
+    and whether it is enabled, exactly as the `api` lane's do. Both lanes absent — neither a usable `ANTHROPIC_API_KEY` nor a
     `loggedIn: true` of either kind — is `fail`, distinguished from the
     subscription lane's own parse failure above, since `loggedIn: false` is a
     legitimate answer `skip` must not swallow. The rendered crontab is
