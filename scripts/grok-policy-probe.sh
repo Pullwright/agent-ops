@@ -103,7 +103,7 @@ out="$(cat "$probe/inspect.out" 2>/dev/null)"
 trusted="$([[ "$out" == *"Project trusted: yes"* ]] && echo yes || echo no)"
 instructions_loaded="$([[ "$out" == *"Project Instructions (0)"* ]] && echo no || echo yes)"
 skill_loaded="$([[ "$out" == *"Skills (0)"* ]] && echo no || echo yes)"
-hooks_disabled="$([[ "$out" == *"disabled"* ]] && echo yes || echo no)"
+hooks_disabled="$([[ "$out" == *"Hooks outside managed policy disabled"* ]] && echo yes || echo no)"
 mcp_blocked_count="$(grep -c 'BLOCKED' <<<"$out" || true)"
 
 printf 'trusted: %s\n' "$trusted"
