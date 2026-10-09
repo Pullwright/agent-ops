@@ -6,7 +6,7 @@
 # peer-vantage invariants; agent-ops#1281's seven selection/ledger
 # invariants (idle-with-demand, fit-ladder-pinned, work-order-repaired-rate,
 # blocked-label-orphaned, claim-unreconciled, escalation-burst,
-# digest-truncated).
+# digest-truncated); agent-ops#2277's `gather-claimed-degraded`.
 #
 # lib/pager.sh's own registry/state-machine/remedy-class behaviour is
 # test/pager.test.sh's job; this file calls each invariant's EVAL_FN and
@@ -857,6 +857,63 @@ assert_eq "  ... and its remedy comments on nothing" \
   "no unreconciled claim found on re-check — nothing to correct" \
   "$(pager_remedy_claim_unreconciled claim-unreconciled "irrelevant, re-derived live")"
 assert_eq "  ... posting no comment at all" "0" "$(grep -c '^issue comment' "$GH_CALLS_FILE")"
+
+# --- gather-claimed-degraded (agent-ops#2277) -------------------------------
+
+guard_degraded_ev() {  # guard_degraded_ev TS SITE DETAIL
+  cycle_ev "$1" n1 c1 guard-degraded "$(jq -nc --arg s "$2" --arg d "$3" '{site: $s, detail: $d, n: 1}')"
+}
+
+gcd_log="$WORKDIR/gather-claimed-degraded.jsonl"
+write_log "$gcd_log" \
+  "$(guard_degraded_ev "$(rel -100)" "gather_claimed:Poetic-Poems/poetic" \
+      "jq: error (at <unknown>): startswith() requires string inputs")"
+verdict="$(pager_eval_gather_claimed_degraded "[]" "$gcd_log")"
+assert_eq "a guard-degraded gather_claimed startswith() type error: fires" "true" \
+  "$(jq -r '.firing' <<<"$verdict")"
+assert_eq "  ... evidence names the repo" "1" \
+  "$(grep -c 'Poetic-Poems/poetic' <<<"$(jq -r '.evidence' <<<"$verdict")")"
+
+gcd_log_other_site="$WORKDIR/gather-claimed-degraded-other-site.jsonl"
+write_log "$gcd_log_other_site" \
+  "$(guard_degraded_ev "$(rel -100)" "updater:n1" "some other failure")"
+assert_eq "a guard-degraded event at a different site: does not fire" "false" \
+  "$(jq -r '.firing' <<<"$(pager_eval_gather_claimed_degraded "[]" "$gcd_log_other_site")")"
+
+gcd_log_other_detail="$WORKDIR/gather-claimed-degraded-other-detail.jsonl"
+write_log "$gcd_log_other_detail" \
+  "$(guard_degraded_ev "$(rel -100)" "gather_claimed:o/r" "jq: error: some unrelated failure")"
+assert_eq "a gather_claimed guard-degraded event whose detail lacks the signature: does not fire" "false" \
+  "$(jq -r '.firing' <<<"$(pager_eval_gather_claimed_degraded "[]" "$gcd_log_other_detail")")"
+
+gcd_log_empty="$WORKDIR/gather-claimed-degraded-empty.jsonl"
+write_log "$gcd_log_empty" "$(cycle_ev "$(rel -100)" n1 c1 warning '{"detail":"unrelated"}')"
+assert_eq "an empty/irrelevant log: does not fire" "false" \
+  "$(jq -r '.firing' <<<"$(pager_eval_gather_claimed_degraded "[]" "$gcd_log_empty")")"
+
+gcd_log_old="$WORKDIR/gather-claimed-degraded-old.jsonl"
+write_log "$gcd_log_old" \
+  "$(guard_degraded_ev "$(rel -172800)" "gather_claimed:Poetic-Poems/poetic" \
+      "jq: error (at <unknown>): startswith() requires string inputs")"
+assert_eq "the same signature outside the trailing 24h: does not fire" "false" \
+  "$(jq -r '.firing' <<<"$(pager_eval_gather_claimed_degraded "[]" "$gcd_log_old")")"
+
+: > "$GH_CALLS_FILE"
+PAGER_REMEDY_REPO="reader/repo"
+outcome="$(pager_remedy_gather_claimed_degraded gather-claimed-degraded \
+  "1 guard-degraded gather_claimed event(s) in the trailing 24h (jq startswith() type error) — repo(s): Poetic-Poems/poetic")"
+assert_eq "the remedy reports what it filed" "1" "$(grep -c 'reader/repo#701' <<<"$outcome")"
+assert_eq "  ... labelled pw::type:tech-debt" "1" \
+  "$(grep '^issue create' "$GH_CALLS_FILE" | grep -c 'pw::type:tech-debt')"
+assert_eq "  ... filed in the reader's own repo (PAGER_REMEDY_REPO), unassigned" "0" \
+  "$(grep '^issue create' "$GH_CALLS_FILE" | grep -c -- '--assignee')"
+
+PAGER_REMEDY_REPO=""
+if pager_remedy_gather_claimed_degraded gather-claimed-degraded "x" >/dev/null 2>&1; then
+  printf 'FAIL - no PAGER_REMEDY_REPO should return failure\n'; failures=$(( failures + 1 ))
+else
+  printf 'ok   - no PAGER_REMEDY_REPO returns failure rather than filing nowhere\n'
+fi
 
 # --- escalation-burst (agent-ops#1281) --------------------------------------
 
