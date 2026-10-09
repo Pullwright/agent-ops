@@ -52,9 +52,10 @@
 # loud has nothing to anchor to for a key nobody but the installation named
 # in advance. `config_model_tier_floor_violations` reads `lib/model-id.sh`'s
 # `MODEL_TIER_RANK` table, through `model_tier_below`, and `config_provider_errors`
-# reads that same file's `PROVIDER_SUBSTRATE_INSTALLED`, through
-# `provider_substrate_installed`; both scripts that source this file also
-# source that one, in whichever order, before either is ever called.
+# reads that same file's `PROVIDER_SUBSTRATE_INSTALLED` (through
+# `provider_substrate_installed`) and `PROVIDER_LANE_NO_MEASURE`; both scripts
+# that source this file also source that one, in whichever order, before
+# either is ever called.
 #
 # Sourced by agent-cycle.sh and scripts/doctor.sh. jq 1.6 compatible: nodes
 # carry 1.7, but a host running doctor.sh before installing anything may well
@@ -807,27 +808,117 @@ config_cross_provider_floor_pairs() {
 # (config's top-level `providers` object, or "{}"/"null" when absent) that
 # declarative schema validation cannot express (issue #2131) — see this
 # file's own header comment for why `providers` needs this escape valve at
-# all. Four faults, per entry: an unknown key (only `substrate` and
-# `credential_env` are read), a missing/empty `substrate`, one naming a
-# substrate `lib/model-id.sh`'s `PROVIDER_SUBSTRATE_INSTALLED` does not list —
-# after this issue, `claude-code` alone, so this is also the full enum
-# `substrate` accepts (`provider_substrate_installed`, read by name rather
-# than by its own PROVIDERS_JSON argument, same as `config_model_tier_floor_violations`
-# reads `model_tier_below`'s table the same way) — or one naming `claude-code`
-# under a key other than `anthropic` (D29, issue #2198): that substrate runs
-# Claude Code pointed at the provider's own endpoint, which only the
-# `anthropic` provider — including a Bedrock/Vertex credential route, D4 — is
-# ever entitled to do. An explicit empty `credential_env` is a fifth fault —
-# a key present only to be switched off is never a real intent, unlike an
-# absent one, which `providers_load` resolves to its substrate's own
-# default. Empty when PROVIDERS_JSON is absent/empty or every entry is
-# clean.
+# all. Five faults at the provider level: an unknown key (only `substrate`,
+# `credential_env` and `lanes` are read), a missing/empty `substrate`, one
+# naming a substrate `lib/model-id.sh`'s `PROVIDER_SUBSTRATE_INSTALLED` does
+# not list — after this issue, `claude-code` alone, so this is also the full
+# enum `substrate` accepts (`provider_substrate_installed`, read by name
+# rather than by its own PROVIDERS_JSON argument, same as
+# `config_model_tier_floor_violations` reads `model_tier_below`'s table the
+# same way) — or one naming `claude-code` under a key other than `anthropic`
+# (D29, issue #2198): that substrate runs Claude Code pointed at the
+# provider's own endpoint, which only the `anthropic` provider — including a
+# Bedrock/Vertex credential route, D4 — is ever entitled to do. An explicit
+# empty `credential_env` is a fifth fault — a key present only to be switched
+# off is never a real intent, unlike an absent one, which `providers_load`
+# resolves to its substrate's own default.
+#
+# A `lanes` block (issue #2240, D30) adds its own faults, under
+# `providers.<name>.lanes`: an unknown lane name (only `api` and
+# `subscription`), a lane value that is not an object, an unknown key within
+# a lane (only `weight`, `enabled`, `spend_cap_usd`, `spend_window_hours`,
+# `balance_usd`, `balance_as_of` and `balance_floor_usd`), a `weight` that is
+# not an integer >= 0, an `enabled` that is not a boolean, a `spend_cap_usd`
+# that is not a number >= 0, a `spend_window_hours` that is not a positive
+# integer, a `balance_usd` that is not a number, a `balance_as_of` that is not
+# a string, a `balance_floor_usd` that is not a number, a `balance_floor_usd`
+# set without both `balance_usd` and `balance_as_of`, a `spend_cap_usd` or
+# `balance_floor_usd` set on a lane `lib/model-id.sh`'s
+# `PROVIDER_LANE_NO_MEASURE` names as having no cost measure (today:
+# `xai/subscription` alone), and both lanes resolving (configured weight, or
+# the default — `api` 1, `subscription` 0 — when absent) to weight 0, which
+# would leave the provider with no open lane at all.
+#
+# Empty when PROVIDERS_JSON is absent/empty or every entry is clean.
 config_provider_errors() {
   local providers_json="${1:-{\}}"
-  local installed_csv
+  local installed_csv unmeasured_csv
   installed_csv="$(IFS=,; printf '%s' "${PROVIDER_SUBSTRATE_INSTALLED[*]}")"
-  jq -r --arg installed "$installed_csv" '
+  unmeasured_csv="$(IFS=,; printf '%s' "${PROVIDER_LANE_NO_MEASURE[*]}")"
+  jq -r --arg installed "$installed_csv" --arg unmeasured "$unmeasured_csv" '
     ($installed | split(",")) as $known |
+    ($unmeasured | split(",")) as $no_measure |
+
+    def lane_value_errors($pkey; $lname; $lv):
+      (if ($lv | type) != "object" then
+        ["providers.\($pkey).lanes.\($lname): must be an object"]
+      else
+        [$lv | keys[] | select(. != "weight" and . != "enabled" and . != "spend_cap_usd"
+            and . != "spend_window_hours" and . != "balance_usd"
+            and . != "balance_as_of" and . != "balance_floor_usd")
+         | "providers.\($pkey).lanes.\($lname): unknown key \"\(.)\""],
+        (if ($lv | has("weight")) and (($lv.weight | type) != "number" or ($lv.weight | floor) != $lv.weight or $lv.weight < 0)
+         then ["providers.\($pkey).lanes.\($lname): weight must be an integer >= 0"]
+         else [] end),
+        (if ($lv | has("enabled")) and (($lv.enabled | type) != "boolean")
+         then ["providers.\($pkey).lanes.\($lname): enabled must be a boolean"]
+         else [] end),
+        (if ($lv | has("spend_cap_usd")) and (($lv.spend_cap_usd | type) != "number" or $lv.spend_cap_usd < 0)
+         then ["providers.\($pkey).lanes.\($lname): spend_cap_usd must be a number >= 0"]
+         else [] end),
+        (if ($lv | has("spend_window_hours")) and (($lv.spend_window_hours | type) != "number" or ($lv.spend_window_hours | floor) != $lv.spend_window_hours or $lv.spend_window_hours < 1)
+         then ["providers.\($pkey).lanes.\($lname): spend_window_hours must be a positive integer"]
+         else [] end),
+        (if ($lv | has("balance_usd")) and (($lv.balance_usd | type) != "number")
+         then ["providers.\($pkey).lanes.\($lname): balance_usd must be a number"]
+         else [] end),
+        (if ($lv | has("balance_as_of")) and (($lv.balance_as_of | type) != "string")
+         then ["providers.\($pkey).lanes.\($lname): balance_as_of must be an ISO 8601 date string"]
+         else [] end),
+        (if ($lv | has("balance_floor_usd")) and (($lv.balance_floor_usd | type) != "number")
+         then ["providers.\($pkey).lanes.\($lname): balance_floor_usd must be a number"]
+         else [] end),
+        (if ($lv | has("balance_floor_usd")) and ((($lv | has("balance_usd")) | not) or (($lv | has("balance_as_of")) | not))
+         then ["providers.\($pkey).lanes.\($lname): balance_floor_usd requires balance_usd and balance_as_of"]
+         else [] end),
+        (
+          if ($no_measure | index("\($pkey)/\($lname)")) != null
+          then
+            (if ($lv | has("spend_cap_usd")) and (($lv.spend_cap_usd // 0) != 0)
+             then ["providers.\($pkey).lanes.\($lname): \($pkey)/\($lname) has no cost measure — spend_cap_usd is refused on it"]
+             else [] end)
+            + (if ($lv | has("balance_floor_usd"))
+               then ["providers.\($pkey).lanes.\($lname): \($pkey)/\($lname) has no cost measure — balance_floor_usd is refused on it"]
+               else [] end)
+          else [] end
+        )
+      end);
+
+    def lanes_errors($pkey; $lanes):
+      if ($lanes | type) != "object" then
+        ["providers.\($pkey).lanes: must be an object"]
+      else
+        [$lanes | keys[] | select(. != "api" and . != "subscription")
+         | "providers.\($pkey).lanes: unknown lane \"\(.)\""],
+        [$lanes | to_entries[] | select(.key == "api" or .key == "subscription")
+         | lane_value_errors($pkey; .key; .value) | .[]],
+        (
+          # Each side has its type checked before `.weight` is reached: a
+          # lane value that is not an object has already been reported above,
+          # and indexing a string or an array with `.weight` is a *fatal* jq
+          # error rather than a null — it would abandon the rest of this
+          # output mid-stream, losing every fault of every provider after
+          # this one. A malformed lane falls back to its own default weight
+          # here, so the pair below is judged on whichever lanes are at
+          # least shaped like lanes.
+          (($lanes.api | if type == "object" then .weight else null end) // 1) as $api_w |
+          (($lanes.subscription | if type == "object" then .weight else null end) // 0) as $sub_w |
+          if ($api_w == 0 and $sub_w == 0)
+          then ["providers.\($pkey).lanes: both api and subscription weight 0 leaves no lane open"]
+          else [] end
+        )
+      end;
+
     (. // {}) | to_entries[] | . as $e |
     (
       if ($e.value | type) != "object" then
@@ -835,7 +926,7 @@ config_provider_errors() {
       else
         ($e.value) as $v |
         (
-          [$v | keys[] | select(. != "substrate" and . != "credential_env")
+          [$v | keys[] | select(. != "substrate" and . != "credential_env" and . != "lanes")
            | "providers.\($e.key): unknown key \"\(.)\""],
           (if (($v.substrate // "") == "")
            then ["providers.\($e.key): substrate is required"]
@@ -846,7 +937,8 @@ config_provider_errors() {
            else [] end),
           (if ($v | has("credential_env")) and (($v.credential_env // "") == "")
            then ["providers.\($e.key): credential_env, if set, must not be empty"]
-           else [] end)
+           else [] end),
+          (if ($v | has("lanes")) then lanes_errors($e.key; $v.lanes) else [] end)
         )
       end
     )[]

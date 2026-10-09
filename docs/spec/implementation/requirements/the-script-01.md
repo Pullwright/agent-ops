@@ -95,6 +95,52 @@
    resolving at all: `claude-code` is the only adapter this image has, and
    it is `anthropic`'s alone, so no other provider configured today clears
    `config_provider_errors`.
+
+   A provider's entry may also carry `lanes` (the credit mix, D30, issue
+   #2240): an object naming at most the two credential paths `api` and
+   `subscription`, each carrying `weight` (an integer >= 0; a lane's share of
+   its provider's launches relative to its sibling, and so of its spend in
+   expectation — #2241 is the launcher that reads it; this requirement only
+   configures and validates it), `enabled` (a boolean, or unset meaning "open
+   only when it is the one the CLI would use unaided" — the key when
+   present, else the login, which is every node's behaviour before this
+   configuration key existed), and the thresholds `scripts/doctor.sh`'s
+   "Claude" section reads and #2243's closing lever will act on:
+   `spend_cap_usd` (0 means none) with `spend_window_hours`, and
+   `balance_usd`, `balance_as_of` and `balance_floor_usd`. Absent, or present
+   without `lanes`, a provider's two lanes resolve to `api` weight 1,
+   `subscription` weight 0, neither enabled and no thresholds — D4's
+   precedence exactly as every node already runs it, reproduced rather than
+   newly configured. `config_provider_errors` validates `lanes` the same way
+   it validates the rest of a provider's entry, and for the same reason
+   (each provider's own key, and now each lane nested inside it, is a name
+   the installation chooses, outside the declarative schema's reach):
+   an unknown lane name, a lane value that is not an object, an unknown key
+   inside a lane, a `weight` that is not an integer >= 0, an `enabled` that
+   is not a boolean, a `spend_cap_usd`/`balance_usd`/`balance_floor_usd` that
+   is not a number or a `spend_window_hours` that is not a positive integer,
+   a `balance_as_of` that is not a string, a `balance_floor_usd` set without
+   both `balance_usd` and `balance_as_of`, a `spend_cap_usd` or
+   `balance_floor_usd` set on a lane `lib/model-id.sh`'s
+   `PROVIDER_LANE_NO_MEASURE` names as having no cost measure at all (no
+   substrate-reported cost and no statement, #2248 — today: `xai/subscription`
+   alone, #2246), and both lanes resolving to weight 0, which would leave the
+   provider with no open lane. `providers_load` populates `PROVIDER_LANES`
+   (keyed by provider name, valued by a JSON object carrying both lanes fully
+   defaulted) alongside `PROVIDER_SUBSTRATE` and `PROVIDER_CREDENTIAL_ENV`,
+   synthesizing the same all-default object for the implicit `anthropic`
+   whenever `providers` does not name it explicitly. `scripts/doctor.sh`'s
+   "Claude" section reads it to report both of `anthropic`'s own lanes
+   independently — the `api` lane by `ANTHROPIC_API_KEY`'s presence and
+   shape, the `subscription` lane by `claude auth status --json` run with
+   that key stripped from its own environment (so the answer is about the
+   login, not the key), naming whether the login is a genuine subscription
+   or a Console account (which bills the API and so is not an open
+   subscription lane, #2241) — each line naming present or absent, the
+   lane's own configured weight, and whether it is enabled (explicitly, or by
+   default given this node's own live credential presence). Both lanes
+   absent is still a `fail`, exactly as a single missing credential was
+   before this paragraph's own configuration key existed.
 1b. **The configuration has a machine-readable schema, and it is the startup
    gate both pipelines run on.** `config.schema.json` states the shape of
    `config.json` — every key an installation may set, its type, its
@@ -263,14 +309,18 @@
    could enumerate in advance — the same gap `additionalProperties: false`
    exists to close everywhere else, with nothing here for it to close
    against. `config_provider_errors` rejects an unknown key inside one
-   entry (only `substrate` and `credential_env` are read), a missing or
+   entry (only `substrate`, `credential_env` and `lanes` are read), a missing or
    unsupported `substrate` — `lib/model-id.sh`'s `PROVIDER_SUBSTRATE_INSTALLED`
    names the full enum, `claude-code` alone after this issue — a `substrate`
    of `claude-code` named by any provider key but `anthropic` (D29, issue
    #2198: that substrate is Claude Code pointed at the provider's own
    endpoint, which only `anthropic` — a Bedrock/Vertex credential route of
    it included, D4 — is entitled to do), and an explicit empty
-   `credential_env`. `agent-cycle.sh` and `review-cycle.sh`
+   `credential_env`. The same escape valve covers each lane nested inside a
+   `lanes` block, for the gap one step further in — a lane's own shape sits
+   under a provider key the schema cannot enumerate, so `properties` cannot
+   reach it either — and requirement 1a above states that block's own faults
+   in full. `agent-cycle.sh` and `review-cycle.sh`
    both refuse to start on it, and `scripts/doctor.sh` reports the same
    condition as a `fail` through that one implementation, so the three can
    never drift.

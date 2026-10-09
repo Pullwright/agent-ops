@@ -1368,6 +1368,103 @@ assert_doctor "doctor's provider listing fails the reserved pairing rather than 
   '.providers = {"xai": {"substrate": "claude-code"}}' 1 \
   'xai → substrate claude-code, which is reserved for anthropic'
 
+# --- A `lanes` block (issue #2240, D30): weights, enabled, thresholds, each
+#     validated the same way `providers` itself is — a cross-key escape
+#     valve, since a lane's own shape is nested inside a dynamically-keyed
+#     object the declarative schema cannot reach. ---
+assert_valid "a valid lanes block on the implicit anthropic is schema-valid" \
+  '.providers = {"anthropic": {"substrate": "claude-code", "lanes": {"api": {"weight": 1}, "subscription": {"weight": 1, "enabled": true}}}}'
+assert_valid "a lanes block on a second, installation-named provider is schema-valid too — the declarative schema has no way to see which provider key it is on" \
+  '.providers = {"anthropic": {"substrate": "claude-code"}, "second": {"substrate": "grok-build", "lanes": {"subscription": {"weight": 2}}}}'
+assert_doctor "doctor passes a valid lanes block on anthropic" \
+  '.providers = {"anthropic": {"substrate": "claude-code", "lanes": {"api": {"weight": 1}, "subscription": {"weight": 1, "enabled": true}}}}' \
+  0 "providers block is well-formed"
+
+assert_doctor "doctor names an unknown lane" \
+  '.providers = {"anthropic": {"substrate": "claude-code", "lanes": {"nope": {}}}}' 1 \
+  'providers.anthropic.lanes: unknown lane "nope"'
+assert_doctor "doctor names a negative weight" \
+  '.providers = {"anthropic": {"substrate": "claude-code", "lanes": {"api": {"weight": -1}}}}' 1 \
+  'providers.anthropic.lanes.api: weight must be an integer >= 0'
+assert_doctor "doctor names both lanes resolving to weight 0, naming the provider" \
+  '.providers = {"anthropic": {"substrate": "claude-code", "lanes": {"api": {"weight": 0}, "subscription": {"weight": 0}}}}' 1 \
+  'providers.anthropic.lanes: both api and subscription weight 0 leaves no lane open'
+assert_doctor "doctor passes an explicit subscription weight with api left at its own default (1), since the pair is never both 0" \
+  '.providers = {"anthropic": {"substrate": "claude-code", "lanes": {"subscription": {"weight": 0}}}}' 0 \
+  "providers block is well-formed"
+assert_doctor "doctor names a balance_floor_usd set without balance_usd and balance_as_of" \
+  '.providers = {"anthropic": {"substrate": "claude-code", "lanes": {"api": {"balance_floor_usd": 5}}}}' 1 \
+  'providers.anthropic.lanes.api: balance_floor_usd requires balance_usd and balance_as_of'
+assert_doctor "doctor passes a balance_floor_usd set alongside both balance_usd and balance_as_of" \
+  '.providers = {"anthropic": {"substrate": "claude-code", "lanes": {"api": {"balance_usd": 10, "balance_as_of": "2026-01-01", "balance_floor_usd": 5}}}}' 0 \
+  "providers block is well-formed"
+assert_doctor "doctor names an enabled that is not a boolean" \
+  '.providers = {"anthropic": {"substrate": "claude-code", "lanes": {"api": {"enabled": "yes"}}}}' 1 \
+  'providers.anthropic.lanes.api: enabled must be a boolean'
+assert_doctor "doctor names an unknown key within a lane" \
+  '.providers = {"anthropic": {"substrate": "claude-code", "lanes": {"api": {"nope": 1}}}}' 1 \
+  'providers.anthropic.lanes.api: unknown key "nope"'
+assert_doctor "doctor names a lane value that is not an object at all" \
+  '.providers = {"anthropic": {"substrate": "claude-code", "lanes": {"api": "sk-ant-oops"}}}' 1 \
+  'providers.anthropic.lanes.api: must be an object'
+
+# --- A lane value that is not an object must not cost the rest of the run
+#     its findings. The weight-pair rule reads `.weight` off both lanes, and
+#     indexing a string or an array with it is a fatal jq error rather than a
+#     null: unguarded, it abandons `config_provider_errors`' output
+#     mid-stream, so every fault of every provider ordered after the
+#     malformed one goes unreported and the operator fixes the config one
+#     refused startup at a time. Both faults below must appear in the one
+#     run. ---
+jq '.providers = {"aaa": {"substrate": "claude-code", "lanes": {"api": ["not an object"]}}, "zzz": {"substrate": "no-such-substrate"}}' \
+  "$BASE_CONFIG" > "$tmp/c.json"
+truncation_out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID \
+  -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH \
+  bash "$SCRIPT_DIR/scripts/doctor.sh" --offline --config "$tmp/c.json" 2>&1)"
+if [[ "$truncation_out" == *"providers.aaa.lanes.api: must be an object"* \
+   && "$truncation_out" == *'providers.zzz: substrate "no-such-substrate" is not one this image has an adapter for'* ]]; then
+  pass "a malformed lane value does not truncate a later provider's own faults"
+else
+  printf 'FAIL - %s\n     actual: %s\n' \
+    "a malformed lane value does not truncate a later provider's own faults" "$truncation_out"
+  failures=$(( failures + 1 ))
+fi
+
+# --- a providers entry with no lanes block resolves to the defaults: api
+#     weight 1, subscription weight 0, neither enabled explicitly — D4's
+#     today's-behaviour default, reproduced rather than configured. ---
+assert_doctor "doctor passes a providers entry with no lanes block at all, resolving to the defaults" \
+  '.providers = {"anthropic": {"substrate": "claude-code"}}' 0 \
+  "providers block is well-formed"
+
+# --- xai/subscription has no cost measure (PROVIDER_LANE_NO_MEASURE,
+#     lib/model-id.sh) — no statement (#2248) and no substrate-reported cost
+#     (#2246's own adapter has not landed), so a cap or a floor on it can
+#     never be enforced and is refused rather than silently accepted. `xai`
+#     cannot resolve as an installed substrate today (D29 reserves
+#     claude-code to anthropic alone) — this reuses the "grok-build" fixture
+#     already above, which fails on its substrate regardless, since
+#     config_provider_errors emits every fault category independently rather
+#     than stopping at the first: the lanes message asserted here is present
+#     in the same output alongside that unrelated substrate fault. ---
+assert_doctor "doctor refuses a spend_cap_usd on xai/subscription, which has no cost measure" \
+  '.providers = {"xai": {"substrate": "grok-build", "lanes": {"subscription": {"spend_cap_usd": 5}}}}' 1 \
+  'providers.xai.lanes.subscription: xai/subscription has no cost measure — spend_cap_usd is refused on it'
+assert_doctor "doctor refuses a balance_floor_usd on xai/subscription too" \
+  '.providers = {"xai": {"substrate": "grok-build", "lanes": {"subscription": {"balance_usd": 10, "balance_as_of": "2026-01-01", "balance_floor_usd": 5}}}}' 1 \
+  'providers.xai.lanes.subscription: xai/subscription has no cost measure — balance_floor_usd is refused on it'
+jq '.providers = {"xai": {"substrate": "grok-build", "lanes": {"api": {"spend_cap_usd": 5}}}}' "$BASE_CONFIG" > "$tmp/c.json"
+api_lane_out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID \
+  -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH \
+  bash "$SCRIPT_DIR/scripts/doctor.sh" --offline --config "$tmp/c.json" 2>&1)"
+if [[ "$api_lane_out" != *"has no cost measure"* ]]; then
+  pass "doctor does not raise the no-cost-measure fault for xai/api, which does have one"
+else
+  printf 'FAIL - %s\n     actual: %s\n' \
+    "doctor does not raise the no-cost-measure fault for xai/api, which does have one" "$api_lane_out"
+  failures=$(( failures + 1 ))
+fi
+
 # --- doctor.sh's cross-key rules: what the schema cannot say. ---
 assert_doctor "doctor fails an enabled Enabler with no assignee, as agent-cycle.sh would" \
   '.enabler_assignee = ""' 1 'enabler_model is set but enabler_assignee is not'

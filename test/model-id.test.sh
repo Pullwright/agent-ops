@@ -225,6 +225,24 @@ assert_true "PROVIDER_CREDENTIAL_ENV records the configured credential_env" \
 assert_eq "anthropic is still synthesized alongside an explicitly configured provider" \
   "anthropic" "$(resolve_model_provider coordinator_model "claude-sonnet-5")"
 
+# PROVIDER_LANES (issue #2240, D30): populated alongside PROVIDER_SUBSTRATE and
+# PROVIDER_CREDENTIAL_ENV, both lanes always fully defaulted — api weight 1,
+# subscription weight 0, neither enabled, no thresholds — whether or not
+# config.json's own entry names a `lanes` block at all.
+all_default_lanes='{"api":{"weight":1,"enabled":null,"spend_cap_usd":0,"spend_window_hours":24,"balance_usd":null,"balance_as_of":null,"balance_floor_usd":null},"subscription":{"weight":0,"enabled":null,"spend_cap_usd":0,"spend_window_hours":24,"balance_usd":null,"balance_as_of":null,"balance_floor_usd":null}}'
+assert_eq "a configured provider with no lanes block resolves to the all-default lanes object" \
+  "$all_default_lanes" "${PROVIDER_LANES[xai]}"
+assert_eq "the implicit anthropic gets the same all-default lanes object" \
+  "$all_default_lanes" "${PROVIDER_LANES[anthropic]}"
+
+providers_load '{"xai": {"substrate": "test-substrate", "lanes": {"subscription": {"weight": 3, "enabled": true}}}}'
+assert_eq "a configured lane overrides its own default weight and enabled" \
+  '{"weight":3,"enabled":true,"spend_cap_usd":0,"spend_window_hours":24,"balance_usd":null,"balance_as_of":null,"balance_floor_usd":null}' \
+  "$(jq -c '.subscription' <<<"${PROVIDER_LANES[xai]}")"
+assert_eq "…leaving the sibling lane at its own untouched default" \
+  '{"weight":1,"enabled":null,"spend_cap_usd":0,"spend_window_hours":24,"balance_usd":null,"balance_as_of":null,"balance_floor_usd":null}' \
+  "$(jq -c '.api' <<<"${PROVIDER_LANES[xai]}")"
+
 # A provider configured with no credential_env falls back to its substrate's
 # own default, the same way claude-code's ANTHROPIC_API_KEY does — exercised
 # here against this fixture's own test-substrate entry, appended above,
