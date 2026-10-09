@@ -93,6 +93,12 @@ printf 'Reply with the single word: ok\n' >"$probe/prompt.txt"
 # whatever `-m` names, and an unblocked/undisabled api-key report — and
 # refuses everything else, `/v1/chat/completions` included, so no model
 # call ever succeeds whatever the image's own network policy is.
+#
+# GROK_XAI_API_BASE_URL itself must already end in `/v1` — Grok appends
+# `/models`/`/api-key` directly onto it, never adding that segment itself
+# (confirmed directly: pointed at a bare origin, it requested plain
+# `/models`, not `/v1/models`), matching the model catalogue's own
+# `api_base_url` field, which is `https://api.x.ai/v1` already.
 standin_py="$probe/standin.py"
 cat >"$standin_py" <<'PYEOF'
 import http.server
@@ -165,7 +171,7 @@ stage_workspace_share "$probe" \
   cd "$work" || exit 1
   timeout 60 env GROK_FOLDER_TRUST=0 GROK_DISABLE_AUTOUPDATER=1 GROK_TELEMETRY_ENABLED=0 \
     XAI_API_KEY=xai-policy-probe-placeholder \
-    GROK_XAI_API_BASE_URL="http://127.0.0.1:$standin_port" \
+    GROK_XAI_API_BASE_URL="http://127.0.0.1:$standin_port/v1" \
     grok -m grok-build-0.1 --permission-mode bypassPermissions \
     --output-format streaming-messages-json --include-partial-messages \
     --prompt-file "$probe/prompt.txt" \
