@@ -165,6 +165,17 @@
     candidate found, re-deriving the candidate set live rather than parsing
     the evidence string, and reports how many it enqueued.
 
+    The same file also drives agent-ops#2277's `gather-claimed-degraded`
+    invariant: it fires on a `guard-degraded` event naming a
+    `gather_claimed:<repo>` site whose `detail` contains jq's own
+    `startswith() requires string inputs` text, with evidence naming the
+    repo; it does not fire on a `guard-degraded` event at a different site,
+    on one whose `detail` lacks that text, on an empty/irrelevant log, or on
+    a matching event dated outside the trailing 24h; its remedy files a
+    stubbed `pw::type:tech-debt` issue against `PAGER_REMEDY_REPO`, labelled
+    `pw::type:tech-debt`, unassigned, and returns failure rather than filing
+    nowhere when `PAGER_REMEDY_REPO` is unset.
+
     `scripts/render-config-table.sh --check` passes with
     `pager_stale_file_after_minutes`/`pager_dashboard_fetch_seconds`/
     `pager_idle_cycles`/`pager_repair_rate_percent`/`pager_escalation_burst`/

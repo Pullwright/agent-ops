@@ -1195,6 +1195,73 @@ $(pipeline_comment_marker "$cycle" script)"
   printf 'posted %d correction comment(s)' "$posted"
 }
 
+# pager_eval_gather_claimed_degraded FLEET_NODES_JSON UNION_LOG_FILE
+# Fires when a `guard-degraded` event (agent-cycle.sh's `guard_warn`: `{ts,
+# cycle, node, event:"guard-degraded", site, detail, n, final?}`, site/detail
+# top-level, never nested) names a `gather_claimed:<repo>` site whose `detail`
+# carries jq's own `startswith() requires string inputs` text, within the
+# trailing 24h — agent-ops#2277's own signature, restated by the Monitor
+# across two reports (the `monitor_promote_after` threshold) before being
+# promoted to this deterministic invariant.
+#
+# Windowed on the same terms `pager_eval_escalation_burst` documents at
+# length: the union log is never rotated, so an unwindowed reading would keep
+# firing on this exact incident long after it clears. This signature is
+# deterministic rather than a statistical burst, so no tunable threshold
+# gates it — one matching event in the window is enough to fire.
+pager_eval_gather_claimed_degraded() {
+  local _fleet_nodes_json="$1" union_log_file="$2"
+  [[ -f "$union_log_file" ]] || { printf '{"firing":false}'; return 0; }
+  jq -c -R -n --argjson now "$(date -u +%s)" '
+    86400 as $w
+    | [ inputs | select(length > 0) | (fromjson? // empty)
+        | select(.event == "guard-degraded")
+        | select(((.site // "") | startswith("gather_claimed:")))
+        | select(((.detail // "") | contains("startswith() requires string inputs")))
+        | select((try (.ts | fromdateiso8601) catch null) != null)
+        | select(($now - (.ts | fromdateiso8601)) <= $w) ] as $hits
+    | if ($hits | length) == 0 then {firing: false}
+      else
+        ( [ $hits[] | (.site // "") | ltrimstr("gather_claimed:") ] | unique ) as $repos
+        | {firing: true,
+           evidence: ("\($hits | length) guard-degraded gather_claimed event(s) in the trailing 24h (jq startswith() type error) — repo(s): "
+             + ($repos | join(", ")))}
+      end
+  ' < "$union_log_file" 2>/dev/null || printf '{"firing":false}'
+}
+
+# pager_remedy_gather_claimed_degraded KEY EVIDENCE
+# Pipeline act: model directly on `pager_remedy_verdict_unanimous` — the root
+# cause lives in this pipeline's own shared claim-gathering code
+# (lib/claim.sh's `do_branches()`, lib/candidate-select.sh's
+# `gather_claimed()`), never in a target repo, so the issue is filed against
+# PAGER_REMEDY_REPO (this reader's own repo), the same as `verdict-unanimous`,
+# not against whichever repo the evidence names. Reuses `_pager_create_issue`
+# for its dedup, keyed on this item's own `ref:` line, so repeated firings of
+# the same incident never spam duplicates.
+pager_remedy_gather_claimed_degraded() {
+  local key="$1" evidence="$2" repo="${PAGER_REMEDY_REPO:-}"
+  [[ -n "$repo" ]] || { printf 'no pager_repo configured — could not file the tech-debt issue'; return 1; }
+  local item="pager-reader:$key" body_file created number
+  body_file="$(mktemp)"
+  {
+    printf 'A fleet-wide invariant fired: gather_claimed'"'"'s jq filter crashes with a startswith() type error.\n\n'
+    printf '%s\n\n' "$evidence"
+    printf '%s\n\n' "lib/claim.sh's do_branches() runs \`gh api --paginate --slurp ... --jq\`: that combination applies the jq filter per page, then slurps each page's own filtered result into one outer array — so the return value is an array of per-page arrays (e.g. [[]] for a repo with zero matching branches), never the flat array of branch-name strings the function's own comment promises. lib/candidate-select.sh's gather_claimed() then iterates \$br[] assuming each element is a branch-name string and calls startswith() on it directly, which throws on the non-string per-page sub-array — unconditionally once branch_prefix is non-empty, independent of whether the repo holds any real claim branches."
+    printf '%s\n\n' "Fix either do_branches() (flatten its result before returning) or gather_claimed()'s consumption of \$br (make it type-safe)."
+    printf -- '---\nFiled automatically by lib/pager.sh (issue #2277).\nref: %s\n' "$item"
+  } > "$body_file"
+  if created="$(_pager_create_issue "$repo" "$item" "pw::type:tech-debt" \
+        "Pager: gather-claimed-degraded fired ($evidence)" "$body_file" "")" && [[ -n "$created" ]]; then
+    number="${created%%$'\t'*}"
+    rm -f "$body_file"
+    printf 'filed %s#%s (pw::type:tech-debt)' "$repo" "$number"
+    return 0
+  fi
+  rm -f "$body_file"
+  return 1
+}
+
 # pager_eval_escalation_burst FLEET_NODES_JSON UNION_LOG_FILE
 # Fires when the fleet-wide count of `escalated` events in the trailing 24h
 # exceeds PAGER_EVAL_ESCALATION_BURST, or the same re-flag reason (the
@@ -1716,6 +1783,8 @@ pager_register_builtin_invariants() {
     pipeline-act pager_remedy_blocked_label_orphaned
   pager_register claim-unreconciled pager_eval_claim_unreconciled \
     pipeline-act pager_remedy_claim_unreconciled
+  pager_register gather-claimed-degraded pager_eval_gather_claimed_degraded \
+    pipeline-act pager_remedy_gather_claimed_degraded
   pager_register escalation-burst pager_eval_escalation_burst owner-only \
     "More than pager_escalation_burst escalations were filed fleet-wide in the trailing 24h, or the same re-flag reason paged the same item twice (agent-ops#933's own signature: a mechanical burst from a handful of unfixed bugs). The evidence above carries the reason histogram — start from whichever reason recurs most."
   pager_register digest-truncated pager_eval_digest_truncated \

@@ -654,6 +654,30 @@
     host — the compatibility this issue's own acceptance names for the
     orchestrated-container target.
 
+    Issue #2277 adds one more, promoted from a finding the Pipeline Monitor
+    restated across two reports (`monitor_promote_after`'s own threshold for
+    turning a repeat finding into a deterministic invariant rather than a
+    recurring issue): **`gather-claimed-degraded`** (pipeline-act). Fires
+    when a `guard-degraded` event (`agent-cycle.sh`'s `guard_warn`) names a
+    `gather_claimed:<repo>` site whose `detail` carries jq's own `startswith()
+    requires string inputs` text, in the trailing 24h — windowed on
+    `escalation-burst`'s own terms, since the union log is never rotated and
+    an unwindowed reading could never clear. This signature is deterministic
+    rather than a statistical burst, so no tunable threshold gates it: one
+    matching event in the window is enough to fire. Caught: #2277 itself —
+    `gather_claimed`'s (`lib/candidate-select.sh`) consumption of
+    `do_branches()`'s (`lib/claim.sh`) own `gh api --paginate --slurp --jq`
+    result, an array of per-page arrays rather than the flat array of
+    branch-name strings its own comment promises, so `startswith()` throws on
+    the non-string per-page element unconditionally once `branch_prefix` is
+    non-empty — independent of whether the repo holds any real claim
+    branches, which is why it fired even on a repo with zero issues and zero
+    open pull requests. The pipeline-act remedy files a `pw::type:tech-debt`
+    issue against this pipeline's own repository (the reader lives here,
+    never in a target repo), naming the root cause above, on
+    `verdict-unanimous`'s own terms. No new configuration: the invariant
+    reads the union log alone.
+
     `docs/spec/dashboard/publisher.md`'s "The Publisher" section documents the
     evaluation site and the `WITH_GITHUB`-not-merely-`FULL` gate; its own
     page-rendering section documents the `pager-firing` banner and node-card
