@@ -450,35 +450,23 @@
      the project files, this one is never part of a commit, so its refusal
      carries no origin clause and `handle_stage_failure` records the third
      detail above rather than either checkout-based one.
-   - **Grok Build's own counterpart (issue #2134).** `GROK_FOLDER_TRUST=0`,
-     which a Grok stage needs so its checkout's own `AGENTS.md`/`CLAUDE.md`
-     and the staged review skill auto-load the way `claude -p` already does,
-     also trusts the checkout's own hooks, MCP servers and `.envrc` at
-     start-up — before any prompt framing applies. The image's own
-     `/etc/grok/requirements.toml`, root-owned outside `/app` beside the
-     Claude managed policy, pins `allow_managed_hooks_only = true`,
-     `allowed_mcp_servers = []` and `[session] load_envrc = false`; no
-     configuration layer below it can release any of the three. The image's
-     acceptance step runs `scripts/grok-policy-probe.sh` against the built
-     image the same way it runs `scripts/claude-policy-probe.sh`. Two things
-     the pin cannot reach still need the launcher's own check, which
-     `stage_project_settings_refusal` (requirement 4d) carries out for every
-     substrate it is given: `.claude/settings.json`'s `env` key, which Grok
-     also reads under its own Claude-compatibility layer and which the
-     allowlist above already refuses regardless of which substrate is about
-     to launch; and two Grok-only files the allowlist has never needed to
-     know about — `.grok/lsp.json`, refused outright, since no stage runs a
-     project LSP server from the checkout it runs in, and
-     `.grok/config.toml`, refused unless every section it declares is one of
-     `permission`, `mcp` or `mcp_servers` (the last only sound while the
-     image's own `allowed_mcp_servers` pin stays empty). `.grok/config.toml`'s
-     `[plugins]` is refused for the same reason `permissions.deny` is above:
-     a plugin stays untrusted under folder trust only while nothing else
-     grants it the run, and "inert today" is not a guarantee this check can
-     keep standing in for. A Grok stage refused on either of its own two
-     files is recorded exactly as a Claude Code stage refused on its own is —
-     `stage_project_settings_refusal` returns the same shape, so
-     `handle_stage_failure` needs nothing substrate-specific to read it.
+   - **Grok Build's own counterpart (issue #2134).** `GROK_FOLDER_TRUST=0`
+     (needed for a checkout's `AGENTS.md`/`CLAUDE.md`/review skill to
+     auto-load) also trusts its hooks, MCP servers and `.envrc` at start-up.
+     `/etc/grok/requirements.toml`, root-owned beside the Claude policy,
+     pins `allow_managed_hooks_only = true`, `allowed_mcp_servers = []` and
+     `[session] load_envrc = false`, releasable by no lower layer;
+     `scripts/grok-policy-probe.sh` is its acceptance step, mirroring
+     `scripts/claude-policy-probe.sh`. What it misses still needs
+     `stage_project_settings_refusal` (requirement 4d), dispatched per
+     substrate: `.claude/settings.json`'s `env` key (refused above already,
+     Grok reading it too under its Claude-compatibility layer); and two
+     Grok-only files — `.grok/lsp.json` (no stage runs a project LSP
+     server from its own checkout) and `.grok/config.toml` (refused unless
+     every section is `permission`, `mcp` or `mcp_servers`, sound only
+     while `allowed_mcp_servers` stays empty; `[plugins]` is also refused,
+     per `permissions.deny` above). Same return shape either substrate, so
+     `handle_stage_failure` reads it unmodified.
 
 5. If the work order is `{"selected": false}`, log `none-selected` with the
    Co-Ordinator's reason **and the fingerprint computed in requirement 3b**
