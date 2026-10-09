@@ -4,27 +4,28 @@
 # checkout plants for it (issue #2134, requirement 4k's Grok counterpart)?
 #
 # Builds a scratch checkout holding the things a pull-request head could use
-# to run a command the moment a headless Grok stage starts in it, under
+# to make a headless Grok stage run something at start-up, under
 # `GROK_FOLDER_TRUST=0` — a `.grok/hooks/start.json` hook; a `.claude/settings.json`
-# hook, which Grok also runs under its own Claude-compatibility layer; an MCP
-# server in `.grok/config.toml` and another in `.mcp.json`; and a project
-# `.envrc` — then runs `grok -p` in it once, as a stage would. It reports
-# which of the five ran and whether the clone's own `AGENTS.md` and a staged
-# skill still loaded, which the policy must never block.
+# hook, which Grok also runs under its own Claude-compatibility layer; and an
+# MCP server each in `.grok/config.toml` and `.mcp.json` — then runs
+# `grok inspect` in it, the same command
+# docs/reviews/2026-10-06-grok-build-evaluation.md §7/"Project-supplied hooks
+# and MCP servers" reads this policy from directly. Unlike `-p`, `inspect`
+# needs no credential and reaches no model at all, so this needs no network
+# and no stand-in for one: it is Grok's own CLI reporting what its policy
+# currently blocks, the most direct reading there is.
 #
-# No real model is ever reached and nothing is billed: a local stand-in
-# answers `GET /v1/models` and `GET /v1/api-key` (`GROK_XAI_API_BASE_URL`,
-# the same override docs/reviews/2026-10-06-grok-build-evaluation.md §10
-# used) so Grok's own model-id and sign-in checks — which, unlike Claude
-# Code's, need a real answer before Grok will do anything else at all —
-# pass locally, without `--network none` (the image build's own choice for
-# this check) ever being asked to let anything real through. It also
-# answers `POST /v1/chat/completions` with a minimal, well-formed success —
-# never a real model's words — because measured directly, none of the five
-# planted vectors below runs until Grok has processed one such turn; a
-# flatly refused completion leaves every one of them silent even with the
-# policy removed, which is the control this probe needs to trust its own
-# "blocked" reading, not merely the behaviour requirement 4k cares about.
+# Reports whether the project's own instructions and skill still show as
+# loaded (which the policy must never block), whether the hooks section
+# reports every hook outside managed policy disabled, and whether each
+# planted MCP server shows as blocked by policy — the three things
+# `requirements.toml`'s own two pins (`allow_managed_hooks_only`,
+# `allowed_mcp_servers`) exist to guarantee. `.envrc` is planted alongside
+# them for parity with the full set of vectors issue #2134's own
+# "What a checkout supplies" section names, but `inspect` reports nothing
+# about it one way or the other; that pin (`[session] load_envrc = false`)
+# is the one piece of this policy the evaluation record verified directly
+# against a real headless run rather than this probe.
 #
 # In the node image `grok` is the stage shim (deploy/docker/grok-shim.sh), so
 # the CLI runs as the stage user, as a stage's does. The scratch checkout is
@@ -33,10 +34,12 @@
 # `stage_workspace_remove`; outside the image both degrade to what they were.
 #
 # Usage: scripts/grok-policy-probe.sh [--expect blocked|ran]
-#   --expect blocked (the default): exit 0 iff none of the five ran and the
-#     instructions and skill still loaded — the policy is in force.
-#   --expect ran: exit 0 iff all five ran — the control that shows the probe
-#     can see what it is looking for.
+#   --expect blocked (the default): exit 0 iff both planted MCP servers
+#     report blocked, the hooks section reports disabled, and the project
+#     instructions and skill still show as loaded — the policy is in force.
+#   --expect ran: exit 0 iff neither MCP server reports blocked and the
+#     hooks section does not report disabled — the control that shows the
+#     probe can see what it is looking for.
 
 set -uo pipefail
 
@@ -80,165 +83,38 @@ jq -n --arg m "$marks" \
   '{mcpServers: {"policy-probe-json": {command: "sh", args: ["-c", "touch \($m)/mcpjson-mcp; exec cat"]}}}' \
   >"$work/.mcp.json"
 printf 'touch %s/envrc\n' "$marks" >"$work/.envrc"
-# Never `--prompt-file /dev/stdin`: Grok opens whatever `--prompt-file`
-# names by path, even `/dev/stdin`, and re-opening a process's own stdin by
-# path is a fresh `open()` the kernel checks against the *original* file's
-# permission bits — which fail once `grok` crosses into the stage user
-# (lib/substrate-grok-build.sh's own `_exec` has the full account). Written
-# here, before `stage_workspace_share` below, so it is shared with the
-# stage user the same way every other fixture in this checkout is, rather
-# than needing its own chgrp/chmod.
-printf 'Reply with the single word: ok\n' >"$probe/prompt.txt"
-
-# A minimal stand-in for api.x.ai, listening on loopback only (reachable
-# across the stage-user boundary within the same network namespace, but
-# never leaving the container even without `--network none`). Answers the
-# two GET routes Grok's own start-up needs — a model list that admits
-# whatever `-m` names, and an unblocked/undisabled api-key report — and
-# `POST /v1/chat/completions` with a minimal success (see this script's
-# own header for why that, and not a refusal, is what lets every planted
-# vector below get the chance to run at all). Nothing else is answered;
-# none of this ever reaches a real model, on this loopback-only stand-in
-# or on the real api.x.ai, which `--network none` would refuse regardless.
-#
-# GROK_XAI_API_BASE_URL itself must already end in `/v1` — Grok appends
-# `/models`/`/api-key` directly onto it, never adding that segment itself
-# (confirmed directly: pointed at a bare origin, it requested plain
-# `/models`, not `/v1/models`), matching the model catalogue's own
-# `api_base_url` field, which is `https://api.x.ai/v1` already.
-standin_py="$probe/standin.py"
-cat >"$standin_py" <<'PYEOF'
-import http.server
-import json
-import sys
-
-MODEL_ID = sys.argv[1] if len(sys.argv) > 1 else "grok-build-0.1"
-
-
-class Handler(http.server.BaseHTTPRequestHandler):
-    def _json(self, status, body):
-        payload = json.dumps(body).encode()
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(payload)))
-        self.end_headers()
-        self.wfile.write(payload)
-
-    def do_GET(self):
-        if self.path.startswith("/v1/models"):
-            self._json(200, {"data": [{"id": MODEL_ID, "object": "model"}]})
-        elif self.path.startswith("/v1/api-key"):
-            self._json(
-                200,
-                {
-                    "api_key_blocked": False,
-                    "api_key_disabled": False,
-                    "team_blocked": False,
-                    "acls": ["api-key"],
-                    "api_key_id": "policy-probe",
-                    "name": "policy-probe",
-                    "team_id": "policy-probe-team",
-                },
-            )
-        else:
-            self._json(403, {"error": "refused by the policy-probe stand-in"})
-
-    def do_POST(self):
-        # A session-start hook or an MCP server connect may not run until
-        # Grok has processed one real turn (measured directly: a refused
-        # completion here left every planted vector un-run, even under
-        # --expect ran). So this answers with a minimal, well-formed
-        # success — never a real model's words, just enough of the
-        # OpenAI-compatible shape xAI's own API uses for Grok's client to
-        # accept it as a completed turn and proceed into whatever it does
-        # once one exists.
-        if self.path.startswith("/v1/chat/completions"):
-            self._json(
-                200,
-                {
-                    "id": "policy-probe",
-                    "object": "chat.completion",
-                    "created": 0,
-                    "model": MODEL_ID,
-                    "choices": [
-                        {
-                            "index": 0,
-                            "message": {"role": "assistant", "content": "ok"},
-                            "finish_reason": "stop",
-                        }
-                    ],
-                    "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
-                },
-            )
-        else:
-            self._json(403, {"error": "refused by the policy-probe stand-in"})
-
-    def log_message(self, fmt, *args):
-        with open(sys.argv[2], "a") as f:
-            f.write((fmt % args) + "\n")
-
-
-server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
-print(server.server_port, flush=True)
-server.serve_forever()
-PYEOF
-
-python3 "$standin_py" grok-build-0.1 "$probe/standin.requests" >"$probe/standin.port" 2>"$probe/standin.stderr" &
-standin_pid=$!
-trap 'kill "$standin_pid" 2>/dev/null; stage_workspace_remove "$probe"' EXIT
-standin_waited=0
-while [[ ! -s "$probe/standin.port" ]] && (( standin_waited < 50 )); do
-  sleep 0.1
-  standin_waited=$(( standin_waited + 1 ))
-done
-standin_port="$(cat "$probe/standin.port" 2>/dev/null || true)"
-if [[ ! "$standin_port" =~ ^[0-9]+$ ]]; then
-  printf 'grok-policy-probe: the local stand-in never reported a port\n' >&2
-  cat "$probe/standin.stderr" >&2 2>/dev/null || true
-  exit 1
-fi
 
 stage_workspace_share "$probe" \
   || { printf 'grok-policy-probe: cannot share %s with the stage user\n' "$probe" >&2; exit 1; }
 
 (
   cd "$work" || exit 1
-  timeout 60 env GROK_FOLDER_TRUST=0 GROK_DISABLE_AUTOUPDATER=1 GROK_TELEMETRY_ENABLED=0 \
-    XAI_API_KEY=xai-policy-probe-placeholder \
-    GROK_XAI_API_BASE_URL="http://127.0.0.1:$standin_port/v1" \
-    grok -m grok-build-0.1 --permission-mode bypassPermissions \
-    --output-format streaming-messages-json --include-partial-messages \
-    --prompt-file "$probe/prompt.txt" \
-    >"$probe/run.jsonl" 2>"$probe/run.stderr"
-)
-run_rc=$?
-printf 'grok exit status: %s\n' "$run_rc"
-printf 'stdout bytes: %s\n' "$(wc -c <"$probe/run.jsonl" 2>/dev/null || echo 0)"
-if [[ -s "$probe/run.stderr" ]]; then
-  printf 'stderr (first 2000 bytes):\n%s\n' "$(head -c 2000 "$probe/run.stderr")"
-fi
-if [[ -s "$probe/standin.requests" ]]; then
-  printf 'stand-in requests:\n%s\n' "$(cat "$probe/standin.requests")"
+  timeout 30 env GROK_FOLDER_TRUST=0 GROK_DISABLE_AUTOUPDATER=1 GROK_TELEMETRY_ENABLED=0 \
+    grok inspect
+) >"$probe/inspect.out" 2>"$probe/inspect.stderr"
+inspect_rc=$?
+printf 'grok inspect exit status: %s\n' "$inspect_rc"
+cat "$probe/inspect.out"
+if [[ -s "$probe/inspect.stderr" ]]; then
+  printf 'stderr (first 1000 bytes):\n%s\n' "$(head -c 1000 "$probe/inspect.stderr")"
 fi
 
-ran=()
-for m in grok-hook claude-settings-hook grok-config-mcp mcpjson-mcp envrc; do
-  [[ -e "$marks/$m" ]] && ran+=("$m")
-done
-# A looser signal than claude-policy-probe.sh's own skill-name check against
-# the `init` line's `skills` array: Grok's `init` line shape has not been
-# captured for every field this probe could otherwise assert on. Reaching a
-# terminal `result` line at all is still informative, since the model can
-# only answer "ok" once its own AGENTS.md instructions (and, were the prompt
-# to ask for it, the staged skill) have been read off disk — a policy that
-# somehow blocked those too would show up here as no result line at all.
-result_line="$(jq -c 'select(type == "object" and .type == "result")' "$probe/run.jsonl" 2>/dev/null | tail -n 1)"
+out="$(cat "$probe/inspect.out" 2>/dev/null)"
+trusted="$([[ "$out" == *"Project trusted: yes"* ]] && echo yes || echo no)"
+instructions_loaded="$([[ "$out" == *"Project Instructions (0)"* ]] && echo no || echo yes)"
+skill_loaded="$([[ "$out" == *"Skills (0)"* ]] && echo no || echo yes)"
+hooks_disabled="$([[ "$out" == *"disabled"* ]] && echo yes || echo no)"
+mcp_blocked_count="$(grep -c 'BLOCKED' <<<"$out" || true)"
 
-printf 'ran: %s\n' "${ran[*]:-none}"
-printf 'reached a result line: %s\n' "$([[ -n "$result_line" ]] && echo yes || echo no)"
+printf 'trusted: %s\n' "$trusted"
+printf 'instructions loaded: %s\n' "$instructions_loaded"
+printf 'skill loaded: %s\n' "$skill_loaded"
+printf 'hooks reported disabled: %s\n' "$hooks_disabled"
+printf 'MCP servers reported blocked: %s\n' "$mcp_blocked_count"
 
 if [[ "$expect" == "blocked" ]]; then
-  (( ${#ran[@]} == 0 ))
+  [[ "$trusted" == yes && "$instructions_loaded" == yes && "$skill_loaded" == yes \
+     && "$hooks_disabled" == yes && "$mcp_blocked_count" == 2 ]]
 else
-  (( ${#ran[@]} == 5 ))
+  [[ "$trusted" == yes && "$hooks_disabled" == no && "$mcp_blocked_count" == 0 ]]
 fi
