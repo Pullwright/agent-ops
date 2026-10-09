@@ -15,9 +15,8 @@
 # fast here, at config read time, rather than reaching `claude --model`
 # mid-cycle — either because config.json's `providers` does not configure
 # that name, or because it configures a `substrate` this node has no adapter
-# for (`PROVIDER_SUBSTRATE_INSTALLED` below; after this issue, `claude-code`
-# alone, so the second case cannot yet be reached through a schema-valid
-# config — it is forward groundwork for #2133/#2134).
+# for (`PROVIDER_SUBSTRATE_INSTALLED` below, the same list
+# `config_provider_errors` validates `providers.*.substrate` against).
 #
 # Sourced by agent-cycle.sh, review-cycle.sh, monitor-cycle.sh,
 # scripts/doctor.sh and scripts/publish-dashboard.sh. `providers_load` must be
@@ -52,9 +51,9 @@ declare -gA PROVIDER_SUBSTRATE=()
 # `docs/spec/implementation/requirements/the-script-01.md` requirement 1a for
 # the rule.
 #
-# Last-write-wins on a bare id two different keys both resolve to: today that
-# never happens (`anthropic` is the only provider that exists), and is a
-# known, acceptable narrowing for the day a second one does — see
+# Last-write-wins on a bare id two different keys both resolve to: a known,
+# acceptable narrowing, and one it takes two providers whose own model ids
+# collide with the qualifier stripped to reach at all — see
 # `lib/stage-run.sh`'s own `stage_model_substrate`.
 declare -gA MODEL_PROVIDER=()
 
