@@ -15,6 +15,15 @@
 # on the subreaper wrapper's `--cleanup` to remove it once Grok is done
 # (`_exec` itself never returns to do that, since its last act is `exec`).
 #
+# The file's own mode is only half of that, and the other half is checked
+# here too: the stage user has to traverse every directory on the path to
+# reach the file at all, which the Script's own scratch directory (0700,
+# `lib/scratch.sh`) refuses outright. So the prompt file belongs in
+# `$GROK_HOME`, the one directory the image shares between the two users,
+# and falls back to `$TMPDIR` only where there is no boundary — which is
+# the case in this file, so the two destinations are asserted directly
+# rather than through a real uid change.
+#
 # Run directly: ./test/substrate-grok-build.test.sh — exit 0 iff all passed.
 
 set -uo pipefail
@@ -113,9 +122,34 @@ assert_contains "the wrapper is told to clean the prompt file up" "--cleanup" "$
 # The --cleanup argument and the --prompt-file argument name the same file —
 # `_exec` has no later moment of its own to remove it, so if the two ever
 # drifted apart the real file would leak forever.
-cleanup_arg="$(grep -oE -- '--cleanup \[[^]]+\]' <<<"$out" | sed -E 's/.*\[(.*)\]/\1/')"
-prompt_arg="$(grep -oE -- '--prompt-file \[[^]]+\]' <<<"$out" | sed -E 's/.*\[(.*)\]/\1/')"
+# Each argv entry is printed `[word]`, so the pattern has to match the
+# bracket around the flag too — without it both extractions come back empty
+# and the comparison passes whatever the adapter did.
+prompt_file_arg() {
+  grep -oE -- "\[$1\] \[[^]]+\]" <<<"$2" | sed -E 's/.*\[(.*)\]$/\1/'
+}
+cleanup_arg="$(prompt_file_arg --cleanup "$out")"
+prompt_arg="$(prompt_file_arg --prompt-file "$out")"
+assert_eq "the two extractions found a path at all" \
+  "yes" "$([[ -n "$prompt_arg" && -n "$cleanup_arg" ]] && echo yes || echo no)"
 assert_eq "…and names the exact same path --prompt-file does" "$prompt_arg" "$cleanup_arg"
+
+# Where the prompt file goes, which the file's own mode cannot settle: the
+# stage user must be able to traverse to it, so $GROK_HOME (shared between
+# the two users by the image: group `stage`, 2770, setgid) is where it goes
+# whenever that is a writable directory.
+grok_home="$tmp_dir/grok-home"
+mkdir -p "$grok_home"
+( GROK_HOME="$grok_home" substrate_grok_build_exec grok-build-0.1 "" <<<"homed prompt" )
+homed="$(prompt_file_arg --prompt-file "$(cat "$capture")")"
+assert_eq "the prompt file is written inside \$GROK_HOME when there is one" \
+  "$grok_home" "$(dirname "$homed")"
+
+( GROK_HOME="$tmp_dir/no-such-grok-home" TMPDIR="$tmp_dir" \
+    substrate_grok_build_exec grok-build-0.1 "" <<<"fallback prompt" )
+fallback="$(prompt_file_arg --prompt-file "$(cat "$capture")")"
+assert_eq "…and in \$TMPDIR where \$GROK_HOME names nothing writable" \
+  "$tmp_dir" "$(dirname "$fallback")"
 
 # A resume session id is passed through as -r, and omitted when empty (the
 # fresh-session case just exercised above already covers omission).

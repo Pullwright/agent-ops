@@ -85,6 +85,23 @@ substrate_grok_build_version() {
 # the subreaper wrapper removes it once Grok has exited, since this
 # function's own `exec` below never returns to do so itself.
 #
+# *Where* that file goes is the same permission question one directory up,
+# and the file's own mode cannot answer it: `stage` must be able to traverse
+# every component of the path to reach the file at all. $TMPDIR is this
+# process's own scratch directory (lib/scratch.sh), which `mktemp -d`
+# creates mode 0700 owned by the Script's user, and `stage` is in no group
+# of the Script's (deploy/docker/Dockerfile adds `agent` to group `stage`,
+# never the reverse) — so a prompt file there is unreachable however
+# permissively its own bits read. $GROK_HOME is the directory the image
+# already shares between the two users for exactly this reason: group
+# `stage`, 2770 and setgid, under a `/home/agent` that is 0711 so `stage`
+# can reach it by path. So the prompt file goes there whenever it is a
+# writable directory, and falls back to $TMPDIR only where there is no
+# boundary at all — a developer's checkout, this file's own tests — in
+# which case both are the same user anyway. The setgid bit also means
+# `mktemp` already creates the file in group `stage`; the `chgrp` below
+# stays for the fallback, where it is a no-op or harmlessly fails.
+#
 # Launched under the child-subreaper wrapper, not directly: Grok starts every
 # `run_terminal_command` in its own session, so `run_model_stage`'s own
 # process-group kill (`kill -TERM -$pid`) ends Grok but leaves its last
@@ -98,8 +115,12 @@ substrate_grok_build_version() {
 # is one level the group-kill does not need to see, because the wrapper
 # itself forwards the signal and waits for the sweep.
 substrate_grok_build_exec() {
-  local model="$1" resume_session_id="$2" prompt_file
-  prompt_file="$(mktemp "${TMPDIR:-/tmp}/grok-prompt.XXXXXX")"
+  local model="$1" resume_session_id="$2" prompt_file prompt_dir
+  prompt_dir="${TMPDIR:-/tmp}"
+  if [[ -n "${GROK_HOME:-}" && -d "$GROK_HOME" && -w "$GROK_HOME" ]]; then
+    prompt_dir="$GROK_HOME"
+  fi
+  prompt_file="$(mktemp "$prompt_dir/grok-prompt.XXXXXX")"
   cat >"$prompt_file"
   chgrp stage "$prompt_file" 2>/dev/null || true
   chmod 640 "$prompt_file"
