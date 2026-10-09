@@ -117,7 +117,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
         elif self.path.startswith("/v1/api-key"):
             self._json(
                 200,
-                {"api_key_blocked": False, "api_key_disabled": False, "team_blocked": False},
+                {
+                    "api_key_blocked": False,
+                    "api_key_disabled": False,
+                    "team_blocked": False,
+                    "acls": ["api-key"],
+                    "api_key_id": "policy-probe",
+                    "name": "policy-probe",
+                    "team_id": "policy-probe-team",
+                },
             )
         else:
             self._json(403, {"error": "refused by the policy-probe stand-in"})
@@ -125,8 +133,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         self._json(403, {"error": "refused by the policy-probe stand-in"})
 
-    def log_message(self, *_args):
-        pass
+    def log_message(self, fmt, *args):
+        with open(sys.argv[2], "a") as f:
+            f.write((fmt % args) + "\n")
 
 
 server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
@@ -134,7 +143,7 @@ print(server.server_port, flush=True)
 server.serve_forever()
 PYEOF
 
-python3 "$standin_py" grok-build-0.1 >"$probe/standin.port" 2>"$probe/standin.stderr" &
+python3 "$standin_py" grok-build-0.1 "$probe/standin.requests" >"$probe/standin.port" 2>"$probe/standin.stderr" &
 standin_pid=$!
 trap 'kill "$standin_pid" 2>/dev/null; stage_workspace_remove "$probe"' EXIT
 standin_waited=0
@@ -167,6 +176,9 @@ printf 'grok exit status: %s\n' "$run_rc"
 printf 'stdout bytes: %s\n' "$(wc -c <"$probe/run.jsonl" 2>/dev/null || echo 0)"
 if [[ -s "$probe/run.stderr" ]]; then
   printf 'stderr (first 2000 bytes):\n%s\n' "$(head -c 2000 "$probe/run.stderr")"
+fi
+if [[ -s "$probe/standin.requests" ]]; then
+  printf 'stand-in requests:\n%s\n' "$(cat "$probe/standin.requests")"
 fi
 
 ran=()
