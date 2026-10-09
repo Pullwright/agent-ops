@@ -186,20 +186,29 @@
     `state_repo` access check — `ok` "not set" or `warn` "SET" naming what
     clears it — since reading a fleet flag costs a network call this
     document's offline Configuration section cannot spend. Claude credentials
-    are checked on whichever of D4's two paths this environment carries,
-    rather than always reading OAuth status and skipping when a node has
-    chosen the other path: a non-empty `ANTHROPIC_API_KEY` (the BYO API-key
-    path, D4's primary) is `ok` when it carries the `sk-ant-` prefix Anthropic
-    mints keys with and `warn` otherwise — a static shape check, never a live
-    call — and OAuth status is not consulted when a key is present. Absent an
-    `ANTHROPIC_API_KEY`, credentials fall back to `claude auth status --json`
-    (the subscription-OAuth path, D4's documented alternative), treated as a
-    probe that can answer only sometimes: `loggedIn: true` is `ok`,
-    `loggedIn: false` is `fail` — distinguished from a parse failure, since
-    `false` is a legitimate answer — and anything that does not exit 0 with
-    that shape — an older CLI with no `auth` subcommand included — is `skip`,
-    since a probe that cannot answer is never evidence of a fault. The
-    rendered crontab is
+    are checked on both of D4/D30's two lanes independently, since a node may
+    hold both at once (the credit mix, issue #2240): the `api` lane is a
+    non-empty `ANTHROPIC_API_KEY`, `ok` when it carries the `sk-ant-` prefix
+    Anthropic mints keys with and `warn` otherwise — a static shape check,
+    never a live call — and `ok` naming it absent otherwise, each line naming
+    the lane's own `PROVIDER_LANES[anthropic]` weight and whether it is
+    enabled (explicitly, or by default given this node's own live credential
+    presence, per D4's precedence: the key when present, else the login).
+    The `subscription` lane is `claude auth status --json`, run with
+    `ANTHROPIC_API_KEY` stripped from that call's own environment so the
+    answer is about the login rather than the key even when the `api` lane
+    above is also open, treated as a probe that can answer only sometimes:
+    `loggedIn: true` with a `subscriptionType` is `ok` naming the lane
+    present, `loggedIn: true` with no `subscriptionType` (a Console login,
+    which bills the API account and so is not an open subscription lane,
+    #2241) is `ok` naming it absent and the login a Console account,
+    `loggedIn: false` is `ok` naming it absent, and anything that does not
+    exit 0 with that shape — an older CLI with no `auth` subcommand included
+    — is `skip`, since a probe that cannot answer is never evidence of a
+    fault. Both lanes absent — neither a usable `ANTHROPIC_API_KEY` nor a
+    `loggedIn: true` of either kind — is `fail`, distinguished from the
+    subscription lane's own parse failure above, since `loggedIn: false` is a
+    legitimate answer `skip` must not swallow. The rendered crontab is
     `deploy/docker/render-crontab.sh` run for real, into a `mktemp -d` this
     check removes afterwards, against the config under check: a non-zero
     exit is `fail`, a missing template is `skip`, and success is `ok`

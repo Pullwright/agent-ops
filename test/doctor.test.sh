@@ -2134,38 +2134,56 @@ assert_contains "--offline still names the unresolved owner" \
 assert_not_contains "  ... but spends no mint on the ones that do resolve" \
   "forge authoring App installation token" "$out"
 
-# --- Claude credentials ----------------------------------------------------
+# --- Claude credentials: both lanes reported independently (issue #2240, D30) ---
 
+# Both credentials present: two present lanes, the api lane enabled by
+# default (the key, per D4, when both are present and neither lane sets an
+# explicit `enabled`).
+run_doctor ANTHROPIC_API_KEY='sk-ant-api03-abc123' \
+  STUB_CLAUDE_AUTH_JSON='{"loggedIn":true,"authMethod":"claude.ai","subscriptionType":"max"}'
+assert_contains "both present: the api lane reports present, enabled by default" \
+  "[ ok ] api lane: ANTHROPIC_API_KEY is set and shaped like an Anthropic key (weight 1, enabled by default)" "$out"
+assert_contains "both present: the subscription lane reports present too, naming its own weight" \
+  "[ ok ] subscription lane: claude is authenticated via subscription OAuth (claude.ai, max) (weight 0, enabled not by default)" "$out"
+assert_eq "and doctor.sh exits 0" "0" "$rc"
+
+# A Console login bills the API account and is not a subscription lane
+# (#2241) — reported as such, present on neither failure path.
+run_doctor STUB_CLAUDE_AUTH_JSON='{"loggedIn":true,"authMethod":"console","apiProvider":"console"}'
+assert_contains "a Console login is reported as such, not as a subscription lane" \
+  "[ ok ] subscription lane: absent — the login is a Console account (console), which bills the API rather than opening a subscription lane (#2241)" "$out"
+assert_not_contains "and is never read as a failure" "[fail] claude" "$out"
+assert_eq "and doctor.sh exits 0" "0" "$rc"
+
+# One present (the api lane), one absent (the subscription lane).
+run_doctor ANTHROPIC_API_KEY='sk-ant-api03-abc123' STUB_CLAUDE_AUTH_JSON='{"loggedIn":false}'
+assert_contains "api lane present" \
+  "[ ok ] api lane: ANTHROPIC_API_KEY is set and shaped like an Anthropic key" "$out"
+assert_contains "subscription lane absent, named as such rather than skipped" \
+  "[ ok ] subscription lane: absent (weight 0, enabled not by default)" "$out"
+assert_not_contains "neither lane absent, so no failure" "[fail] claude" "$out"
+
+# The mirror: subscription present, api absent.
 run_doctor STUB_CLAUDE_AUTH_JSON='{"loggedIn":true,"authMethod":"claude.ai","subscriptionType":"max"}'
-assert_contains "loggedIn true is ok, naming the OAuth path" \
-  "[ ok ] claude is authenticated via subscription OAuth" "$out"
+assert_contains "api lane absent, enabled not by default (the login is what the CLI would use unaided)" \
+  "[ ok ] api lane: ANTHROPIC_API_KEY is absent (weight 1, enabled not by default)" "$out"
+assert_contains "subscription lane present, enabled by default" \
+  "[ ok ] subscription lane: claude is authenticated via subscription OAuth (claude.ai, max) (weight 0, enabled by default)" "$out"
 
+# Neither lane present: still a failure, exactly as before this issue.
 run_doctor STUB_CLAUDE_AUTH_JSON='{"loggedIn":false}'
-assert_contains "loggedIn false is a failure, distinguished from a parse failure" \
+assert_contains "neither lane present is a failure, naming both lanes" \
   "[fail] claude is not authenticated on either credential path" "$out"
 assert_eq "and doctor.sh exits 1" "1" "$rc"
 
 run_doctor STUB_CLAUDE_NO_AUTH_SUBCOMMAND=1
-assert_contains "a claude with no auth subcommand is a skip, not a failure" \
-  "[skip] claude auth status did not succeed" "$out"
+assert_contains "a claude with no auth subcommand is a skip of the subscription lane, not a failure" \
+  "[skip] subscription lane: claude auth status did not succeed" "$out"
 assert_not_contains "and is not reported as a failure" "[fail] claude" "$out"
-
-# --- Claude credentials: the BYO API-key path (D4's primary) ---------------
-
-run_doctor ANTHROPIC_API_KEY='sk-ant-api03-abc123'
-assert_contains "a well-shaped ANTHROPIC_API_KEY is ok, naming the API-key path" \
-  "[ ok ] ANTHROPIC_API_KEY is set and shaped like an Anthropic key" "$out"
-assert_eq "and doctor.sh exits 0" "0" "$rc"
-
-run_doctor ANTHROPIC_API_KEY='sk-ant-api03-abc123' STUB_CLAUDE_AUTH_JSON='{"loggedIn":false}'
-assert_not_contains "and subscription OAuth is not consulted when a key is present" \
-  "claude is not authenticated" "$out"
-assert_not_contains "nor is it reported as authenticated via OAuth" \
-  "authenticated via subscription OAuth" "$out"
 
 run_doctor ANTHROPIC_API_KEY='not-a-real-key'
 assert_contains "a badly-shaped ANTHROPIC_API_KEY is a warning, not a failure" \
-  "[warn] ANTHROPIC_API_KEY is set but is not shaped like an Anthropic key" "$out"
+  "[warn] api lane: ANTHROPIC_API_KEY is set but is not shaped like an Anthropic key" "$out"
 assert_eq "a warning alone still exits 0" "0" "$rc"
 
 # --- The rendered crontab ---------------------------------------------------
@@ -2368,7 +2386,7 @@ out_plain="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATI
 assert_eq "an ordinary run (no --unattended) does not write the status file" "0" \
   "$( [[ -f "$status_file" ]] && echo 1 || echo 0 )"
 assert_contains "and its Claude section actually runs (neither --unattended nor --offline)" \
-  "[ ok ] claude is authenticated" "$out_plain"
+  "[ ok ] subscription lane: claude is authenticated" "$out_plain"
 
 # --- Cache directory cleanup (issue #510) ------------------------------------
 #

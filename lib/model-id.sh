@@ -68,6 +68,24 @@ declare -gA MODEL_PROVIDER=()
 # reads `ANTHROPIC_API_KEY` itself, same as before this issue).
 declare -gA PROVIDER_CREDENTIAL_ENV=()
 
+# Populated by providers_load alongside PROVIDER_SUBSTRATE and
+# PROVIDER_CREDENTIAL_ENV (issue #2240, D30). Keyed by provider name, valued
+# by a compact JSON object `{"api": {...}, "subscription": {...}}`, each
+# lane's own object carrying `weight` (integer >= 0; default 1 for `api`, 0
+# for `subscription` — the fallback lane, drawn only when no weighted lane of
+# its provider is open), `enabled` (boolean or `null` when unset — unset
+# means "open only when it is the one the CLI would use unaided", today's
+# behaviour), and the thresholds `scripts/doctor.sh`'s "Claude" section and
+# the stage launcher (#2241/#2243) read: `spend_cap_usd` (0 means none,
+# default 0), `spend_window_hours` (default 24), `balance_usd`,
+# `balance_as_of` and `balance_floor_usd` (each `null` when unset). Every
+# provider's entry carries both lanes fully defaulted, whether or not
+# config.json's own `providers.<name>.lanes` names either of them, so a
+# reader never has to re-apply the defaults itself. `anthropic` is
+# synthesized with the all-default object whenever config does not name it
+# explicitly, same as PROVIDER_SUBSTRATE above.
+declare -gA PROVIDER_LANES=()
+
 # The credential_env default for a substrate with no explicit one configured.
 declare -gA PROVIDER_SUBSTRATE_DEFAULT_CREDENTIAL_ENV=(
   [claude-code]=ANTHROPIC_API_KEY
@@ -80,20 +98,39 @@ declare -gA PROVIDER_SUBSTRATE_DEFAULT_CREDENTIAL_ENV=(
 # issue, `claude-code` alone; #2133/#2134 add to this, never remove from it.
 declare -ga PROVIDER_SUBSTRATE_INSTALLED=(claude-code)
 
+# Lanes ("<provider>/<lane>") with no cost measure at all (issue #2240, D30):
+# the substrate reports no cost on that lane, and no statement (#2248)
+# supplies one either, so no `spend_cap_usd` or `balance_floor_usd` can ever
+# be enforced on it — `config_provider_errors` refuses a `lanes` block that
+# sets either on a lane named here. Today: `xai/subscription` alone (#2246
+# has not landed Grok Build's own adapter, and #2248 has not landed its
+# statement); #2246/#2248 add to this, never remove from it.
+# shellcheck disable=SC2034  # read by lib/config-schema.sh's config_provider_errors, which sources this file
+declare -ga PROVIDER_LANE_NO_MEASURE=(xai/subscription)
+
 # providers_load PROVIDERS_JSON
-# Populates PROVIDER_SUBSTRATE and PROVIDER_CREDENTIAL_ENV from config's
-# `providers` object — a JSON object (or "{}"/"null" when config.json does
-# not set the key) keyed by provider name, each value carrying `substrate`
-# and optionally `credential_env`. Idempotent and safe to call more than
-# once (a fresh engagement re-sourcing this file gets a fresh, empty map
-# first). `anthropic` is synthesized with substrate `claude-code` whenever
-# config does not name it explicitly.
+# Populates PROVIDER_SUBSTRATE, PROVIDER_CREDENTIAL_ENV and PROVIDER_LANES
+# from config's `providers` object — a JSON object (or "{}"/"null" when
+# config.json does not set the key) keyed by provider name, each value
+# carrying `substrate`, optionally `credential_env`, and optionally `lanes`.
+# Idempotent and safe to call more than once (a fresh engagement re-sourcing
+# this file gets a fresh, empty map first). `anthropic` is synthesized with
+# substrate `claude-code` and the all-default lanes object whenever config
+# does not name it explicitly.
 providers_load() {
   local providers_json="${1:-null}"
   PROVIDER_SUBSTRATE=()
   PROVIDER_CREDENTIAL_ENV=()
-  local name substrate credential_env default_env
-  while IFS=$'\t' read -r name substrate credential_env; do
+  PROVIDER_LANES=()
+  local name substrate lanes_json credential_env default_env
+  # lanes_json (never empty — lane_defaults always fills both lanes) comes
+  # before credential_env (routinely empty) in both the jq row and this read:
+  # `read` with a tab IFS collapses a run of consecutive tabs into a single
+  # delimiter exactly as it does whitespace-default IFS, so an empty field
+  # anywhere but last silently merges into its neighbour and shifts every
+  # field after it — this field order is what keeps the one field that can
+  # be empty safely last.
+  while IFS=$'\t' read -r name substrate lanes_json credential_env; do
     [[ -n "$name" ]] || continue
     PROVIDER_SUBSTRATE["$name"]="$substrate"
     # An entry carrying no `substrate` at all is a config fault, but it is
@@ -111,12 +148,26 @@ providers_load() {
       default_env="${PROVIDER_SUBSTRATE_DEFAULT_CREDENTIAL_ENV[$substrate]:-}"
     fi
     PROVIDER_CREDENTIAL_ENV["$name"]="${credential_env:-$default_env}"
-  done < <(jq -r '(. // {}) | to_entries[] | [.key, (.value.substrate // ""), (.value.credential_env // "")] | @tsv' \
+    PROVIDER_LANES["$name"]="$lanes_json"
+  done < <(jq -r '
+    def lane_defaults(n):
+      {weight: (if n == "api" then 1 else 0 end), enabled: null,
+       spend_cap_usd: 0, spend_window_hours: 24,
+       balance_usd: null, balance_as_of: null, balance_floor_usd: null};
+    (. // {}) | to_entries[] | . as $e |
+    ($e.value.lanes // {}) as $lanes |
+    [$e.key, ($e.value.substrate // ""),
+     ({api: (lane_defaults("api") * ($lanes.api // {})),
+       subscription: (lane_defaults("subscription") * ($lanes.subscription // {}))} | tojson),
+     ($e.value.credential_env // "")
+    ] | @tsv' \
     <<<"$providers_json" 2>/dev/null)
   if [[ -z "${PROVIDER_SUBSTRATE[anthropic]+set}" ]]; then
     PROVIDER_SUBSTRATE[anthropic]="claude-code"
     # shellcheck disable=SC2034  # read by scripts/doctor.sh, which sources this file
     PROVIDER_CREDENTIAL_ENV[anthropic]="ANTHROPIC_API_KEY"
+    # shellcheck disable=SC2034  # read by scripts/doctor.sh, which sources this file
+    PROVIDER_LANES[anthropic]='{"api":{"weight":1,"enabled":null,"spend_cap_usd":0,"spend_window_hours":24,"balance_usd":null,"balance_as_of":null,"balance_floor_usd":null},"subscription":{"weight":0,"enabled":null,"spend_cap_usd":0,"spend_window_hours":24,"balance_usd":null,"balance_as_of":null,"balance_floor_usd":null}}'
   fi
 }
 

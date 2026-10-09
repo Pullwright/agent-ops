@@ -2508,18 +2508,39 @@ fi
 
 # --- Claude ---
 #
-# Two credential paths, per D4: BYO API key (ANTHROPIC_API_KEY) is primary,
-# and subscription OAuth (`claude auth status`) is the documented alternative
-# for a self-hosted, own-use node. A node runs exactly one of them, so this
-# reports on whichever is present rather than always reading OAuth status and
-# skipping when a node has chosen the other path.
+# Two credential lanes, per D4/D30: BYO API key (ANTHROPIC_API_KEY, the `api`
+# lane) and subscription OAuth (`claude auth status`, the `subscription`
+# lane) can both be open on the same node at once — the credit mix (#2238) —
+# so this reports both independently rather than whichever it meets first,
+# each against its own `providers.anthropic.lanes` entry (`PROVIDER_LANES`,
+# lib/model-id.sh), populated and defaulted by `providers_load` above.
 
 section "Claude"
 
-# Whichever branch below finds a working-looking credential sets this, so the
-# stream-flush check further down can ask one question regardless of which of
-# D4's two paths this node runs.
+# Whichever lane check below finds a working-looking credential sets this, so
+# the stream-flush check further down can ask one question regardless of
+# which lane (or lanes) this node runs.
 claude_credential_ok=0
+
+anthropic_lanes_json="${PROVIDER_LANES[anthropic]:-}"
+api_lane_weight="$(jq -r '.api.weight // 1' <<<"${anthropic_lanes_json:-{\}}" 2>/dev/null)"
+api_lane_enabled="$(jq -r '.api.enabled' <<<"${anthropic_lanes_json:-{\}}" 2>/dev/null)"
+sub_lane_weight="$(jq -r '.subscription.weight // 0' <<<"${anthropic_lanes_json:-{\}}" 2>/dev/null)"
+sub_lane_enabled="$(jq -r '.subscription.enabled' <<<"${anthropic_lanes_json:-{\}}" 2>/dev/null)"
+
+# lane_enabled_desc EXPLICIT IS_DEFAULT_OPEN
+# "yes"/"no" for an explicit true/false `enabled`, else "by default" or "not
+# by default" against whether this lane is the one the CLI would use
+# unaided (D4) — the key when present, else the login — which is this node's
+# own live credential presence, not merely its configuration.
+lane_enabled_desc() {
+  local explicit="$1" is_default_open="$2"
+  case "$explicit" in
+    true) echo "yes" ;;
+    false) echo "no" ;;
+    *) if ((is_default_open)); then echo "by default"; else echo "not by default"; fi ;;
+  esac
+}
 
 if ((offline)); then
   skip "Claude credentials (--offline)"
@@ -2527,33 +2548,70 @@ elif ((unattended)); then
   skip "Claude credentials (--unattended; a scheduled pass must not read a credential)"
 elif ! command -v claude >/dev/null 2>&1; then
   skip "Claude credentials (claude is not installed)"
-elif [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
-  # A static shape check, not a live call — consistent with how the
-  # Approver's own runtime credential is verified above (present and
+else
+  api_present=0
+  sub_present=0
+  console_present=0
+  sub_resolved=0
+
+  # api lane: a static shape check, not a live call — consistent with how
+  # the Approver's own runtime credential is verified above (present and
   # readable, never exercised against GitHub). Anthropic API keys are
   # minted with an "sk-ant-" prefix; anything else is very likely a
   # copy-paste error rather than a working key.
-  claude_credential_ok=1
-  if [[ "$ANTHROPIC_API_KEY" == sk-ant-* ]]; then
-    ok "ANTHROPIC_API_KEY is set and shaped like an Anthropic key — claude uses it directly (BYO API-key path, D4's primary); subscription OAuth is not consulted"
+  if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+    api_present=1
+    claude_credential_ok=1
+    if [[ "$ANTHROPIC_API_KEY" == sk-ant-* ]]; then
+      ok "api lane: ANTHROPIC_API_KEY is set and shaped like an Anthropic key (weight $api_lane_weight, enabled $(lane_enabled_desc "$api_lane_enabled" 1))"
+    else
+      warn "api lane: ANTHROPIC_API_KEY is set but is not shaped like an Anthropic key (expected an \"sk-ant-\" prefix) — claude will still try to use it as given; check for a copy-paste error"
+    fi
   else
-    warn "ANTHROPIC_API_KEY is set but is not shaped like an Anthropic key (expected an \"sk-ant-\" prefix) — claude will still try to use it as given; check for a copy-paste error"
+    ok "api lane: ANTHROPIC_API_KEY is absent (weight $api_lane_weight, enabled $(lane_enabled_desc "$api_lane_enabled" 0))"
   fi
-elif ! claude_auth_json="$(timeout 15 claude auth status --json 2>/dev/null)"; then
-  # An older CLI with no `auth` subcommand, or one that hangs and hits the
-  # timeout above, exits non-zero here rather than printing anything this
-  # can trust — a version gap, not a finding about this token.
-  skip "claude auth status did not succeed — cannot verify credentials"
-elif ! logged_in="$(jq -r '.loggedIn' <<<"$claude_auth_json" 2>/dev/null)"; then
-  # -r without -e: `false` is a legitimate answer this check must tell apart
-  # from a parse failure, and -e would treat both alike (its exit status
-  # reflects the output *value*, not whether parsing succeeded).
-  skip "claude auth status printed something other than the expected JSON — cannot verify credentials"
-elif [[ "$logged_in" == "true" ]]; then
-  claude_credential_ok=1
-  ok "claude is authenticated via subscription OAuth ($(jq -r '.authMethod // "method unknown"' <<<"$claude_auth_json"), $(jq -r '.subscriptionType // .apiProvider // "provider unknown"' <<<"$claude_auth_json")) — D4's documented alternative path"
-else
-  fail "claude is not authenticated on either credential path — ANTHROPIC_API_KEY is unset and claude auth status reports not logged in; every stage launches through it and would fail at the first invocation"
+
+  # subscription lane: the key is stripped from this call's own environment
+  # (`env -u`) so the answer is about the login, not the key — otherwise a
+  # node that holds both credentials would never learn whether its login is
+  # even a real subscription, since claude itself prefers the key once it is
+  # present.
+  if ! claude_auth_json="$(env -u ANTHROPIC_API_KEY timeout 15 claude auth status --json 2>/dev/null)"; then
+    # An older CLI with no `auth` subcommand, or one that hangs and hits the
+    # timeout above, exits non-zero here rather than printing anything this
+    # can trust — a version gap, not a finding about this login.
+    skip "subscription lane: claude auth status did not succeed — cannot verify credentials"
+  elif ! logged_in="$(jq -r '.loggedIn' <<<"$claude_auth_json" 2>/dev/null)"; then
+    # -r without -e: `false` is a legitimate answer this check must tell
+    # apart from a parse failure, and -e would treat both alike (its exit
+    # status reflects the output *value*, not whether parsing succeeded).
+    skip "subscription lane: claude auth status printed something other than the expected JSON — cannot verify credentials"
+  else
+    sub_resolved=1
+    if [[ "$logged_in" == "true" ]]; then
+      subscription_type="$(jq -r '.subscriptionType // ""' <<<"$claude_auth_json")"
+      if [[ -n "$subscription_type" ]]; then
+        sub_present=1
+        claude_credential_ok=1
+        ok "subscription lane: claude is authenticated via subscription OAuth ($(jq -r '.authMethod // "method unknown"' <<<"$claude_auth_json"), $subscription_type) (weight $sub_lane_weight, enabled $(lane_enabled_desc "$sub_lane_enabled" $((api_present ? 0 : 1))))"
+      else
+        # A Console login bills the API account, not a subscription — it is
+        # not an open subscription lane (#2241), but it is a working
+        # credential claude will actually launch on, so it still satisfies
+        # claude_credential_ok and is not counted toward the "neither lane"
+        # failure below.
+        console_present=1
+        claude_credential_ok=1
+        ok "subscription lane: absent — the login is a Console account ($(jq -r '.apiProvider // "provider unknown"' <<<"$claude_auth_json")), which bills the API rather than opening a subscription lane (#2241)"
+      fi
+    else
+      ok "subscription lane: absent (weight $sub_lane_weight, enabled $(lane_enabled_desc "$sub_lane_enabled" 0))"
+    fi
+  fi
+
+  if ((sub_resolved)) && ! ((api_present)) && ! ((sub_present)) && ! ((console_present)); then
+    fail "claude is not authenticated on either credential path — ANTHROPIC_API_KEY is unset and claude auth status reports not logged in (or reports a Console account, which is not a subscription lane); every stage launches through it and would fail at the first invocation"
+  fi
 fi
 
 # --- The stream really streams, on this node -----------------------------------

@@ -493,14 +493,22 @@
     "cannot push" (agent-ops#1397), an installation carrying `contents:
     write` over a covered repository is `ok`, a narrower grant or a selection
     leaving the repository out is `fail` naming which, and either installation
-    read being unreachable is `skip`; Claude credentials check whichever of D4's two paths this
-    environment carries — a non-empty `ANTHROPIC_API_KEY` shaped like an
-    Anthropic key (the `sk-ant-` prefix) is `ok`, one that is not is `warn`,
-    and OAuth is not consulted when a key is present; absent a key,
-    `claude auth status --json` reporting `loggedIn: true` is `ok`,
-    `loggedIn: false` is `fail` — distinguished from a parse failure, since
-    `false` is a legitimate answer rather than evidence the JSON could not be
-    read — and a `claude` with no `auth` subcommand is `skip`; the real
+    read being unreachable is `skip`; Claude credentials check both of D4/D30's
+    two lanes independently — the `api` lane's non-empty `ANTHROPIC_API_KEY`
+    shaped like an Anthropic key (the `sk-ant-` prefix) is `ok`, one that is
+    not is `warn`, and its absence is `ok` naming it absent, each naming the
+    lane's configured weight and whether it is enabled; the `subscription`
+    lane's own `claude auth status --json` — run with `ANTHROPIC_API_KEY`
+    stripped from that call's environment, so it is checked regardless of
+    whether the `api` lane above is also present — reporting `loggedIn: true`
+    with a `subscriptionType` is `ok` naming the lane present, `loggedIn:
+    true` with no `subscriptionType` is `ok` naming a Console account rather
+    than an open subscription lane (#2241), and `loggedIn: false` is `ok`
+    naming it absent; both lanes absent is `fail` — distinguished from the
+    subscription lane's own parse failure, since `loggedIn: false` is a
+    legitimate answer rather than evidence the JSON could not be read — and a
+    `claude` with no `auth` subcommand leaves the subscription lane `skip`;
+    the real
     `deploy/docker/render-crontab.sh` run against a config whose
     `schedule.excluded_minutes` rules out every minute is `fail`, the same
     renderer run against a trimmed copy of the repository missing
