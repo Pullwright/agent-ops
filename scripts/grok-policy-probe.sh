@@ -83,7 +83,13 @@ stage_workspace_share "$probe" \
     --output-format streaming-messages-json --include-partial-messages \
     --prompt-file /dev/stdin \
     <<<"Reply with the single word: ok" >"$probe/run.jsonl" 2>"$probe/run.stderr"
-) || true
+)
+run_rc=$?
+printf 'grok exit status: %s\n' "$run_rc"
+printf 'stdout bytes: %s\n' "$(wc -c <"$probe/run.jsonl" 2>/dev/null || echo 0)"
+if [[ -s "$probe/run.stderr" ]]; then
+  printf 'stderr (first 2000 bytes):\n%s\n' "$(head -c 2000 "$probe/run.stderr")"
+fi
 
 ran=()
 for m in grok-hook claude-settings-hook grok-config-mcp mcpjson-mcp envrc; do
