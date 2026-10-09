@@ -257,6 +257,8 @@ run_model_stage() {
   # shellcheck disable=SC2034  # read by the eval'd maybe_run_refiner, not visible here
   stage_gaps_json="null"
   # shellcheck disable=SC2034
+  stage_lane_json="null"
+  # shellcheck disable=SC2034
   stage_kill_reason=""
   return "${STUB_RUN_RC:-0}"
 }

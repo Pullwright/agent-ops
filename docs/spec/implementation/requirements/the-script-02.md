@@ -795,7 +795,16 @@
       `implementer_model_trivial` (a fixed one-line prompt, 180 s timeout,
       transcript kept as `limit-probe.out` in the cycle record), through the
       same provider-neutral `run_model_stage` (requirement 4d) every other
-      stage launches on, and classifies
+      stage launches on. It is not a stage — it logs no `stage-start`, the
+      one invocation besides a `<stage>-salvage` resume that does not — but
+      it still spends real tokens, so `lib/standdown.sh` logs its own
+      `stage-end`, `stage: "limit-probe"`, carrying the metering record of
+      requirement 33a (issue #2239, D30): `lane`, `cost_usd`, `tokens` and
+      the rest, so this spend reaches the fleet-wide ledger the same way
+      every other launch's does, rather than only the dashboard's own cost
+      scan of the raw transcript. `lib/stage-health.sh`'s stage list does not
+      name `limit-probe`, so this carries no verdict risk for it. The Script
+      then classifies
       it with `limit_probe_verdict` (`lib/limit-detect.sh`, regression-tested
       against canned transcripts): the limit phrase anywhere in the transcript
       is `limited`; otherwise a well-formed envelope with `is_error: false`

@@ -235,10 +235,8 @@ All paths derive from `config.json` (tilde-expanded `state_dir` and
 - **`cycles/<cycle-id>/<stage>.out`** — the stage's `result` envelope: the
   final line of the event stream `claude --output-format stream-json` wrote,
   truncated into this file by `run_model_stage` and identical to what
-  `--output-format json` used to leave here (requirements 11 and 4d). The
-  stream itself, `<stage>.stream.jsonl`, is local to the node that ran it and
-  never replicates, so this Publisher never sees one on a peer and reads none
-  on its own node either. Fields used: `result` (final message → parsed
+  `--output-format json` used to leave here (requirements 11 and 4d). Fields
+  used: `result` (final message → parsed
   into the work order / status object via the same algorithm `agent-cycle.sh`
   uses — straight parse, else the last fenced ``` block regardless of its
   info string (a bare fence or one tagged anything other than `json` is not
@@ -252,6 +250,16 @@ All paths derive from `config.json` (tilde-expanded `state_dir` and
   unchanged by the per-stage record `lib/metering.sh` writes to `log.jsonl`
   (requirement 33a); this reader and that one derive the same figures
   independently from the same envelope and are expected to agree.
+
+  The stream itself, `<stage>.stream.jsonl`, is local to the node that ran it
+  and never replicates (`scripts/state-sync.sh`'s own exclude list), so this
+  Publisher never sees one for a peer's cycle — only for its own node's, and
+  only until it is pruned. The one field read from it is `apiKeySource`, off
+  the stream's own first `system`/`init` event (issue #2239, D30): `none` →
+  `subscription`, `ANTHROPIC_API_KEY`/`apiKeyHelper`/`/login managed key` →
+  `api`, anything else — including a stream this node cannot see at all —
+  → `unknown`. This backs `counts.by_lane[]` and `cost_rows[].lane`
+  (`docs/spec/dashboard/publisher.md`).
 
   The **actor** that spent it is the transcript's own filename, and needs no
   new field: `cycles/<id>/{coordinator,implementer,reviewer,enabler,refiner}.out`

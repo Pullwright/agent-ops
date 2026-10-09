@@ -2132,7 +2132,7 @@ $(jq . <<<"$input")
     rc=$?
   fi
   log_event "stage-end" "$(jq -nc --argjson rc "$rc" --arg kr "$stage_kill_reason" \
-    --argjson m "$(metering_fields "$approver_model_critical" "$out" "$stage_gaps_json")" \
+    --argjson m "$(metering_fields "$approver_model_critical" "$out" "$stage_gaps_json" "$stage_lane_json")" \
     --arg r "$slug" --arg i "$item" \
     '{stage: "approver-adjudicate-open-question", exit_code: $rc} + (if $kr == "" then {} else {kill_reason: $kr} end) + $m
      + (if $r == "" then {} else {repo: $r} end) + (if $i == "" then {} else {item: $i} end)')"

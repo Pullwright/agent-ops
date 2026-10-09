@@ -444,7 +444,7 @@ run_coordinator_stage_attempt() {  # <attempt-out-file> <prompt> [extra-budget-j
   else
     rc=$?
   fi
-  coord_attempt_metering_json="$(metering_fields "$coordinator_model" "$out_file" "$stage_gaps_json")"
+  coord_attempt_metering_json="$(metering_fields "$coordinator_model" "$out_file" "$stage_gaps_json" "$stage_lane_json")"
   log_event "stage-end" "$(jq -nc --argjson rc "$rc" --arg kr "$stage_kill_reason" \
     --argjson m "$coord_attempt_metering_json" --argjson e "$extra" \
     '{stage: "coordinator", exit_code: $rc} + (if $kr == "" then {} else {kill_reason: $kr} end) + $m + $e')"

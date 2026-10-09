@@ -78,6 +78,7 @@ metering_fields() { printf '{"model":"%s"}' "$1"; }
 run_it() {  # <block> <rc-variable-name> <selected_repo> <selected_item>
   : > "$events_file"
   ( selected_repo="$3" selected_item="$4" stage_kill_reason="" stage_gaps_json='[]' \
+    stage_lane_json='null' \
     impl_model="m" impl_out="/dev/null" rev_model="m" rev_out="/dev/null"
     printf -v "$2" '%s' 0
     eval "$1" )
