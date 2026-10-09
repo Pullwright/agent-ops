@@ -146,6 +146,39 @@ if [[ ! -e "$CLAUDE_CONFIG_DIR/.credentials.json" && -z "${ANTHROPIC_API_KEY:-}"
   say "         authenticated once: docker compose exec scheduler claude"
 fi
 
+# --- Grok Build (xAI) files (issue #2134) ---
+# Seeded only when absent, same reasoning as the Claude settings.json seed
+# above: GROK_HOME is not a persistent volume (nothing on the API-key path
+# needs to outlive the container), but a plain container *restart* — as
+# opposed to a recreation from the image — keeps its writable layer, and
+# Grok's own process may have written there since the last start. `agent`
+# owns it already (the image build chowns it, since it is never a volume a
+# different uid could have created), so no group-ownership fixup is needed
+# the way the Claude config volume's own might be.
+: "${GROK_HOME:=$HOME/.grok-run}"
+export GROK_HOME
+mkdir -p "$GROK_HOME"
+if [[ -w "$GROK_HOME" && ! -e "$GROK_HOME/config.toml" ]]; then
+  printf '%s\n' '[storage]' 'cleanup_ttl_days = 1' '[models]' 'max_retries = 6' \
+    > "$GROK_HOME/config.toml"
+  say "seeded $GROK_HOME/config.toml"
+fi
+
+# --- Grok Build (xAI) credential (issue #2134) ---
+# Unlike ANTHROPIC_API_KEY above, this has no "every node runs it" default to
+# warn against missing: XAI_API_KEY is only ever needed once this
+# installation's own config.json configures a provider whose substrate is
+# grok-build, and warning on every other node — every node that configures
+# none — would be a permanent false positive. $CONFIG_FILE is read directly
+# here, ahead of the "State and workspace" section's own stricter read of it,
+# because this check needs nothing from that section.
+if [[ -z "${XAI_API_KEY:-}" ]] && [[ -r "$CONFIG_FILE" ]] \
+   && jq -e '(.providers // {}) | to_entries[] | select(.value.substrate == "grok-build")' \
+        "$CONFIG_FILE" >/dev/null 2>&1; then
+  say "WARNING: XAI_API_KEY is unset, but $CONFIG_FILE configures a provider with substrate"
+  say "         grok-build — every stage that resolves to it will fail at the first invocation"
+fi
+
 # --- gh / git authentication (D18 decision 1, agent-ops#607; the on-demand
 #     credential seam, agent-ops#1021) ---
 # The commit identity (GIT_USER_NAME/GIT_USER_EMAIL) is deliberately not set
