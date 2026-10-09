@@ -12,15 +12,19 @@
 # which of the five ran and whether the clone's own `AGENTS.md` and a staged
 # skill still loaded, which the policy must never block.
 #
-# No model is reached and nothing is billed: a local stand-in answers
-# `GET /v1/models` and `GET /v1/api-key` (`GROK_XAI_API_BASE_URL`, the same
-# override docs/reviews/2026-10-06-grok-build-evaluation.md §10 used) so
-# Grok's own model-id check — which, unlike Claude Code's, needs a real
-# answer before it will do anything else at all, model validation included
-# — passes locally, and refuses everything else, so no chat-completion
-# request the actual model is ever reached, which the image build's own
-# `--network none` would refuse in any case. Every planted vector fires
-# before that refusal.
+# No real model is ever reached and nothing is billed: a local stand-in
+# answers `GET /v1/models` and `GET /v1/api-key` (`GROK_XAI_API_BASE_URL`,
+# the same override docs/reviews/2026-10-06-grok-build-evaluation.md §10
+# used) so Grok's own model-id and sign-in checks — which, unlike Claude
+# Code's, need a real answer before Grok will do anything else at all —
+# pass locally, without `--network none` (the image build's own choice for
+# this check) ever being asked to let anything real through. It also
+# answers `POST /v1/chat/completions` with a minimal, well-formed success —
+# never a real model's words — because measured directly, none of the five
+# planted vectors below runs until Grok has processed one such turn; a
+# flatly refused completion leaves every one of them silent even with the
+# policy removed, which is the control this probe needs to trust its own
+# "blocked" reading, not merely the behaviour requirement 4k cares about.
 #
 # In the node image `grok` is the stage shim (deploy/docker/grok-shim.sh), so
 # the CLI runs as the stage user, as a stage's does. The scratch checkout is
@@ -91,8 +95,11 @@ printf 'Reply with the single word: ok\n' >"$probe/prompt.txt"
 # never leaving the container even without `--network none`). Answers the
 # two GET routes Grok's own start-up needs — a model list that admits
 # whatever `-m` names, and an unblocked/undisabled api-key report — and
-# refuses everything else, `/v1/chat/completions` included, so no model
-# call ever succeeds whatever the image's own network policy is.
+# `POST /v1/chat/completions` with a minimal success (see this script's
+# own header for why that, and not a refusal, is what lets every planted
+# vector below get the chance to run at all). Nothing else is answered;
+# none of this ever reaches a real model, on this loopback-only stand-in
+# or on the real api.x.ai, which `--network none` would refuse regardless.
 #
 # GROK_XAI_API_BASE_URL itself must already end in `/v1` — Grok appends
 # `/models`/`/api-key` directly onto it, never adding that segment itself
@@ -137,7 +144,34 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._json(403, {"error": "refused by the policy-probe stand-in"})
 
     def do_POST(self):
-        self._json(403, {"error": "refused by the policy-probe stand-in"})
+        # A session-start hook or an MCP server connect may not run until
+        # Grok has processed one real turn (measured directly: a refused
+        # completion here left every planted vector un-run, even under
+        # --expect ran). So this answers with a minimal, well-formed
+        # success — never a real model's words, just enough of the
+        # OpenAI-compatible shape xAI's own API uses for Grok's client to
+        # accept it as a completed turn and proceed into whatever it does
+        # once one exists.
+        if self.path.startswith("/v1/chat/completions"):
+            self._json(
+                200,
+                {
+                    "id": "policy-probe",
+                    "object": "chat.completion",
+                    "created": 0,
+                    "model": MODEL_ID,
+                    "choices": [
+                        {
+                            "index": 0,
+                            "message": {"role": "assistant", "content": "ok"},
+                            "finish_reason": "stop",
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+                },
+            )
+        else:
+            self._json(403, {"error": "refused by the policy-probe stand-in"})
 
     def log_message(self, fmt, *args):
         with open(sys.argv[2], "a") as f:
