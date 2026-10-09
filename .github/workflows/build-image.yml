@@ -381,7 +381,12 @@ jobs:
 
       # Issue #2134's own counterpart, same reasoning: /etc/grok/requirements.toml
       # outranks a checkout's folder trust, and the probe's `grok` runs as the
-      # stage user through the grok shim, as every Grok stage's does.
+      # stage user through the grok shim, as every Grok stage's does. Grok's
+      # own Claude-compatibility layer also reads /etc/claude-code/managed-
+      # settings.json, so the control run has to clear both policy files —
+      # dropping requirements.toml alone still leaves managed-settings.json
+      # disabling hooks and locking down MCP servers, and the probe never
+      # reaches "ran".
       - name: Verify Grok Build runs nothing a checkout plants
         if: env.DOCS_ONLY != 'true'
         run: |
@@ -395,7 +400,7 @@ jobs:
             /app/scripts/grok-policy-probe.sh --expect blocked
           '
           docker run --rm --network none --user root --entrypoint bash agent-ops:ci -c '
-            rm /etc/grok/requirements.toml
+            rm /etc/grok/requirements.toml /etc/claude-code/managed-settings.json
             runuser -u agent -- /app/scripts/grok-policy-probe.sh --expect ran
           '
 
