@@ -76,7 +76,12 @@ require_writable "$CLAUDE_CONFIG_DIR" "the Claude configuration volume"
 # `claude`, with that run's own credentials, so a copy the stage user could
 # write would let one stage run persist onto a volume that outlives it and
 # reach every later run on this node, including the Script's own limit probe
-# and `doctor.sh`. The seed below is `agent`'s alone to write.
+# and `doctor.sh`. The seed below is `agent`'s alone to write *in place*; the
+# directory around it stays group `stage` and group-writable, so a stage can
+# still unlink the file and leave its own, which is why what this start seeds
+# or quarantines is only half the control and `run_model_stage`'s own content
+# check (requirement 4k) is the half that holds until the next start brings
+# the entrypoint back here (agent-ops#2275).
 if getent group stage >/dev/null 2>&1; then
   if ! find "$CLAUDE_CONFIG_DIR" -user "$(id -u)" ! -group stage \
         ! -path "$CLAUDE_CONFIG_DIR/settings.json" \
@@ -89,28 +94,49 @@ if getent group stage >/dev/null 2>&1; then
 fi
 claude_settings_file="$CLAUDE_CONFIG_DIR/settings.json"
 # A file an older image's entrypoint (or, before this fix, the stage user
-# itself) left group-writable, or that the stage user somehow came to own, is
-# never reused: nothing but the image seeds this file, so anything else on an
-# existing volume is either an operator's own hand edit — recoverable from the
-# quarantined copy — or exactly the persistence this check exists to stop.
-if [[ -e "$claude_settings_file" ]]; then
-  stage_owned=false
-  [[ "$(stat -c %u "$claude_settings_file" 2>/dev/null)" != "$(id -u)" ]] && stage_owned=true
-  group_writable=false
-  [[ -n "$(find "$claude_settings_file" -perm -g+w 2>/dev/null)" ]] && group_writable=true
-  if $stage_owned || $group_writable; then
+# itself) left group-writable, that the stage user somehow came to own, or
+# that is a symbolic link at all, is never reused: nothing but the image seeds
+# this file, so anything else on an existing volume is either an operator's own
+# hand edit — recoverable from the quarantined copy — or exactly the
+# persistence this check exists to stop.
+#
+# The link case is tested first and alone, because neither other test can see
+# it: `stat` resolves the link and reports its *target's* owner, and `find
+# -perm` on a link given as a start point reads the link's own mode, which
+# Linux fixes at 0777 — so a link to an `agent`-owned file trips
+# `group-writable` by accident, while a link to a path that does not exist
+# trips neither test. That dangling link is also why the gate below is not
+# `-e` alone, and why the seeding `cp` is guarded: a dangling link is not
+# `-e`, and GNU `cp` refuses to write through one ("not writing through
+# dangling symlink") — which under this script's own `set -e` would take the
+# whole entrypoint down before `exec "$@"`, a restart loop the stage user
+# could arm with one `ln -s`, since the directory is group `stage` and
+# group-writable (requirement 45e) whatever this file's own mode is. Seeding
+# is not worth a failed start: an absent settings.json is a `claude` on its
+# own defaults, which every stage still launches under.
+if [[ -e "$claude_settings_file" || -L "$claude_settings_file" ]]; then
+  suspect=""
+  [[ -L "$claude_settings_file" ]] && suspect="a symbolic link"
+  [[ -z "$suspect" && "$(stat -c %u "$claude_settings_file" 2>/dev/null)" != "$(id -u)" ]] \
+    && suspect="not owned by $(id -un)"
+  [[ -z "$suspect" && -n "$(find "$claude_settings_file" -perm -g+w 2>/dev/null)" ]] \
+    && suspect="group-writable"
+  if [[ -n "$suspect" ]]; then
     quarantined="$claude_settings_file.quarantined-$(date -u +%Y%m%dT%H%M%SZ)"
     if mv "$claude_settings_file" "$quarantined" 2>/dev/null; then
-      say "WARNING: $claude_settings_file was stage-owned or group-writable; moved aside to $quarantined and restoring the seed"
+      say "WARNING: $claude_settings_file was $suspect; moved aside to $quarantined and restoring the seed"
     else
-      say "WARNING: could not quarantine $claude_settings_file, which was stage-owned or group-writable"
+      say "WARNING: could not quarantine $claude_settings_file, which was $suspect"
     fi
   fi
 fi
-if [[ ! -e "$claude_settings_file" ]]; then
-  cp "$APP_DIR/deploy/docker/claude-settings.json" "$claude_settings_file"
-  chmod 0640 "$claude_settings_file" 2>/dev/null || true
-  say "seeded $claude_settings_file"
+if [[ ! -e "$claude_settings_file" && ! -L "$claude_settings_file" ]]; then
+  if cp "$APP_DIR/deploy/docker/claude-settings.json" "$claude_settings_file" 2>/dev/null; then
+    chmod 0640 "$claude_settings_file" 2>/dev/null || true
+    say "seeded $claude_settings_file"
+  else
+    say "WARNING: could not seed $claude_settings_file"
+  fi
 fi
 # The warning below is scoped to the OAuth path: a node with ANTHROPIC_API_KEY
 # set (D4's primary path, agent-ops#684/#856) needs no .credentials.json and

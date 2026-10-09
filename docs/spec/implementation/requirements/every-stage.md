@@ -176,9 +176,16 @@
      and `doctor.sh`'s checks included. The entrypoint seeds it only when
      absent, and quarantines — moves aside to a `.quarantined-<timestamp>`
      sibling, then reseeds — a `settings.json` an existing volume holds that
-     is stage-owned or group-writable, since nothing but the image seeds this
-     file. `run_model_stage` (requirement 4k) vets it before every stage
-     launch too, as a backstop for whatever reaches the volume anyway.
+     is stage-owned, group-writable, or a symbolic link, since nothing but
+     the image seeds this file. The link case is its own test rather than a
+     consequence of the other two, which cannot see it: a dangling link is
+     not `-e` at all, and the seeding `cp` refuses to write through one,
+     which would end the start before its `exec`. Seeding is not fatal
+     either way; an absent `settings.json` is a `claude` on its own
+     defaults. `run_model_stage` (requirement 4k) vets it before every stage
+     launch too, as a backstop for whatever reaches the volume anyway — and
+     as the only one of these controls that holds within a container's own
+     lifetime, since the directory around the file stays group-writable.
 
    Outside the image there is no `stage` group and no sudoers rule, and
    `lib/stage-boundary.sh` degrades to what the Script did without them:
