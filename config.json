@@ -51,7 +51,7 @@
   "approver_model_critical": "claude-fable-5",
   "pr_label": "autonomous-agent",
   "branch_prefix": "agent/",
-  "max_open_agent_prs": 8,
+  "max_open_agent_prs": 16,
   "candidates_max": 3,
   "max_chained_cycles": 3,
   "human_nudge_idle_hours": 24,
