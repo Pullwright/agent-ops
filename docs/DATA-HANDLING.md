@@ -14,6 +14,24 @@ The pipeline reads only public GitHub data for the configured repositories:
 All of this data is already public on GitHub for public repositories. The pipeline
 makes no attempts to read or use private repository data.
 
+## What a stage sends to its model provider
+
+Every stage's own prompt — a work order, an issue body, review content, and
+whatever the stage itself reads and writes during its run — is sent to
+whichever model provider the stage's configured model resolves to:
+Anthropic's own API for a Claude Code stage, or xAI's for a Grok Build one
+(`providers`, [docs/reference/configuration.md](reference/configuration.md)).
+Neither sends this content anywhere else on the installation's behalf.
+
+A Grok Build stage sends one thing beyond the stage's own prompt: xAI's own
+CLI also sends the head of that same prompt, truncated, to a second xAI
+model (`grok-4.6`) to generate a session title, on every run, with no switch
+that turns it off. The same xAI account receives it either way, so no new
+party sees any data because of this — but its cost is not in the envelope
+the pipeline reads (`docs/METERING-SCHEMA.md`), so a Grok Build stage's
+recorded cost understates what the run actually spent by a few thousand
+input tokens on that second model.
+
 ## What the pipeline stores and where
 
 The pipeline stores operational telemetry under the configured `state_dir` directory

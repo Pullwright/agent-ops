@@ -54,6 +54,13 @@ platform.claude.com
 claude.ai
 claude.com
 
+# --- xAI: the Grok Build substrate's API-key path (issue #2134) -----------
+# Model calls, and everything else Grok Build's optional traffic
+# (GROK_DISABLE_AUTOUPDATER/GROK_TELEMETRY_ENABLED in compose.yaml) leaves
+# needing a network call for. The subscription path's own two domains
+# (auth.x.ai, cli-chat-proxy.grok.com) arrive with #2139.
+api.x.ai
+
 # --- Vercel: the preview a Reviewer checks (D19 "deployed" tier) ----------
 # scripts/preview-deploy.sh: the deployments API (build logs on failure)...
 api.vercel.com

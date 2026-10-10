@@ -2608,6 +2608,119 @@ else
   rm -rf "$flush_dir"
 fi
 
+# --- xAI ------------------------------------------------------------------
+#
+# Only when this installation's own config.json configures a provider with
+# substrate grok-build: an installation that configures none gets no section
+# at all, never a skipped one — the same reason entrypoint.sh's own
+# XAI_API_KEY warning is gated the same way. PROVIDER_SUBSTRATE is already
+# populated by providers_load, above.
+
+grok_configured=0
+for _p in "${!PROVIDER_SUBSTRATE[@]}"; do
+  [[ "${PROVIDER_SUBSTRATE[$_p]}" == "grok-build" ]] && grok_configured=1
+done
+
+if (( grok_configured )); then
+  section "xAI"
+
+  xai_credential_ok=0
+
+  if ((offline)); then
+    skip "xAI credentials (--offline)"
+  elif ((unattended)); then
+    skip "xAI credentials (--unattended; a scheduled pass must not read a credential)"
+  elif [[ -z "${XAI_API_KEY:-}" ]]; then
+    fail "XAI_API_KEY is unset, but a configured provider's substrate is grok-build — every Grok Build stage would fail at the first invocation"
+  else
+    # A static shape check first, on the same terms as the Claude section
+    # above: the one key seen in the evaluation record
+    # (docs/reviews/2026-10-06-grok-build-evaluation.md §9) was 84
+    # characters, so length is not checked, only the "xai-" prefix xAI mints
+    # keys with.
+    if [[ "$XAI_API_KEY" == xai-* ]]; then
+      ok "XAI_API_KEY is set and shaped like an xAI key"
+    else
+      warn "XAI_API_KEY is set but is not shaped like an xAI key (expected an \"xai-\" prefix) — grok will still try to use it as given; check for a copy-paste error"
+    fi
+    # The live probe (§9, §"doctor" of the adapter specification): GET
+    # /v1/api-key answers 200 with the key's own block/disable/team-block
+    # flags for a usable key and 400 for an invalid one. Never `grok
+    # models`, which exits 0 and prints the same line whether or not the key
+    # actually works — no probe at all.
+    if api_key_json="$(curl -fsS --max-time 15 -H "Authorization: Bearer $XAI_API_KEY" \
+         https://api.x.ai/v1/api-key 2>/dev/null)"; then
+      xai_credential_ok=1
+      blocked="$(jq -r '.api_key_blocked // false' <<<"$api_key_json" 2>/dev/null)"
+      disabled="$(jq -r '.api_key_disabled // false' <<<"$api_key_json" 2>/dev/null)"
+      team_blocked="$(jq -r '.team_blocked // false' <<<"$api_key_json" 2>/dev/null)"
+      if [[ "$blocked" == "true" || "$disabled" == "true" || "$team_blocked" == "true" ]]; then
+        warn "XAI_API_KEY answers, but api_key_blocked=$blocked api_key_disabled=$disabled team_blocked=$team_blocked — this key will not run a stage"
+      else
+        ok "XAI_API_KEY is live (GET /v1/api-key answered 200, every block/disable flag false)"
+      fi
+    else
+      fail "XAI_API_KEY did not answer GET https://api.x.ai/v1/api-key — either the key is invalid (xAI answers 400) or the request could not be made at all"
+    fi
+  fi
+
+  if command -v grok >/dev/null 2>&1; then
+    ok "grok is installed ($(grok --version 2>/dev/null | head -1))"
+  else
+    fail "grok is not installed, but a configured provider's substrate is grok-build"
+  fi
+
+  # The same stream-flush probe the Claude section runs above, against
+  # Grok's own CLI — requirement 4e's liveness watchdog needs the same
+  # signal from every substrate, not just the one this pipeline has run
+  # the longest.
+  if ((offline)); then
+    skip "Grok stream flushing (--offline; the check costs one minimal model call)"
+  elif ((unattended)); then
+    skip "Grok stream flushing (--unattended; the check costs one minimal model call, which a scheduled pass must not spend)"
+  elif ! command -v grok >/dev/null 2>&1; then
+    skip "Grok stream flushing (grok is not installed)"
+  elif (( ! xai_credential_ok )); then
+    skip "Grok stream flushing (needs a working credential)"
+  else
+    grok_flush_dir="$(mktemp -d)"
+    grok_flush_stream="$grok_flush_dir/probe.stream.jsonl"
+    # Never `--prompt-file /dev/stdin`: see lib/substrate-grok-build.sh's
+    # own `_exec` for why Grok cannot read the launcher's inherited stdin
+    # that way once it crosses into the stage user. A real file, shared
+    # with that user the same way, stands in for it here — the directory
+    # too, since `mktemp -d` leaves it 0700 and group-readable on the file
+    # alone would not let `stage` traverse into it.
+    grok_flush_prompt="$grok_flush_dir/prompt.txt"
+    printf 'Reply with the single word: ok\n' >"$grok_flush_prompt"
+    chgrp stage "$grok_flush_dir" "$grok_flush_prompt" 2>/dev/null || true
+    chmod 750 "$grok_flush_dir"
+    chmod 640 "$grok_flush_prompt"
+    grok -m grok-build-0.1 --permission-mode bypassPermissions \
+      --output-format streaming-messages-json --include-partial-messages \
+      --prompt-file "$grok_flush_prompt" \
+      >"$grok_flush_stream" 2>"$grok_flush_dir/err" &
+    grok_flush_pid=$!
+    grok_flush_seen=0
+    grok_flush_waited=0
+    while kill -0 "$grok_flush_pid" 2>/dev/null && (( grok_flush_waited < 120 )); do
+      if [[ -s "$grok_flush_stream" ]]; then grok_flush_seen=1; break; fi
+      sleep 1
+      grok_flush_waited=$(( grok_flush_waited + 1 ))
+    done
+    wait "$grok_flush_pid" 2>/dev/null || true
+
+    if (( grok_flush_seen )); then
+      ok "the Grok stage stream flushes as it runs — the liveness watchdog has a signal to read"
+    elif [[ ! -s "$grok_flush_stream" ]]; then
+      skip "Grok stream flushing: the probe produced nothing at all, so it proves nothing about buffering ($(head -c 160 "$grok_flush_dir/err" 2>/dev/null | tr '\n' ' ' || true))"
+    else
+      fail "the Grok stage stream arrived only once the invocation had ended — stdout is buffered on this node, so the liveness watchdog would see no progress and kill every healthy Grok stage at its inactivity threshold."
+    fi
+    rm -rf "$grok_flush_dir"
+  fi
+fi
+
 # --- Stage boundary -----------------------------------------------------
 section "Stage boundary"
 # Requirement 45e: every stage runs as the stage user, which must not be able

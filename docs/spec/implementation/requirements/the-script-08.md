@@ -450,6 +450,24 @@
      the project files, this one is never part of a commit, so its refusal
      carries no origin clause and `handle_stage_failure` records the third
      detail above rather than either checkout-based one.
+   - **Grok Build's own counterpart (issue #2134).** `GROK_FOLDER_TRUST=0`
+     (needed for a checkout's `AGENTS.md`/`CLAUDE.md`/review skill to
+     auto-load) also trusts its hooks, MCP servers and `.envrc` at start-up.
+     `/etc/grok/requirements.toml`, root-owned beside the Claude policy,
+     pins `allow_managed_hooks_only = true`, `allowed_mcp_servers = []` and
+     `[session] load_envrc = false`, releasable by no lower layer;
+     `scripts/grok-policy-probe.sh` is its acceptance step, mirroring the
+     probe above. What it misses still needs
+     `stage_project_settings_refusal` (requirement 4d), dispatched per
+     substrate: `.claude/settings.json`'s `env` key (refused above already,
+     Grok reading it too under its Claude-compatibility layer); and two
+     Grok-only files — `.grok/lsp.json` (no stage runs a project LSP
+     server from its own checkout) and `.grok/config.toml`, read as the
+     files above are and refused unless every section it declares is
+     `permission`, `mcp` or `mcp_servers`, sound only while
+     `allowed_mcp_servers` stays empty (`[plugins]` is refused, per
+     `permissions.deny` above). Same return shape either substrate, so
+     `handle_stage_failure` reads it unmodified.
 
 5. If the work order is `{"selected": false}`, log `none-selected` with the
    Co-Ordinator's reason **and the fingerprint computed in requirement 3b**

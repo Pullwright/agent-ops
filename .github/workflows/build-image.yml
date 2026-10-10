@@ -379,6 +379,31 @@ jobs:
             runuser -u agent -- /app/scripts/claude-policy-probe.sh --expect ran
           '
 
+      # Issue #2134's own counterpart, same reasoning: /etc/grok/requirements.toml
+      # outranks a checkout's folder trust, and the probe's `grok` runs as the
+      # stage user through the grok shim, as every Grok stage's does. Grok's
+      # own Claude-compatibility layer also reads /etc/claude-code/managed-
+      # settings.json, so the control run has to clear both policy files —
+      # dropping requirements.toml alone still leaves managed-settings.json
+      # disabling hooks and locking down MCP servers, and the probe never
+      # reaches "ran".
+      - name: Verify Grok Build runs nothing a checkout plants
+        if: env.DOCS_ONLY != 'true'
+        run: |
+          docker run --rm --network none --entrypoint bash agent-ops:ci -c '
+            set -e
+            owner="$(stat -c %U:%a /etc/grok/requirements.toml)"
+            [ "$owner" = "root:644" ] || { echo "the Grok policy is $owner, not root:644" >&2; exit 1; }
+            if touch /etc/grok/requirements.toml 2>/dev/null; then
+              echo "agent can write the Grok policy" >&2; exit 1
+            fi
+            /app/scripts/grok-policy-probe.sh --expect blocked
+          '
+          docker run --rm --network none --user root --entrypoint bash agent-ops:ci -c '
+            rm /etc/grok/requirements.toml /etc/claude-code/managed-settings.json
+            runuser -u agent -- /app/scripts/grok-policy-probe.sh --expect ran
+          '
+
       # The stamp is only useful if the image can read it back, and its failure
       # mode is silent: a node whose version says "unknown" looks exactly like
       # one the dashboard has not heard from yet.

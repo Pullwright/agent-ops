@@ -235,16 +235,16 @@ assert_true "credential_env defaults by substrate when not configured explicitly
   [ "${PROVIDER_CREDENTIAL_ENV[xai]}" = "TEST_SUBSTRATE_API_KEY" ]
 
 # A configured provider whose substrate has no adapter installed on this
-# node fails fast too, naming the key and the substrate — forward groundwork
-# for #2133/#2134 (today's schema enum admits only `claude-code`, which is
-# always installed, so this is exercised directly against the library
-# rather than through a schema-valid config.json).
-providers_load '{"grok": {"substrate": "grok-build"}}'
+# node fails fast too, naming the key and the substrate (today's schema enum
+# admits `claude-code` and `grok-build`, both always installed, so this is
+# exercised directly against the library, with a substrate name neither
+# names, rather than through a schema-valid config.json).
+providers_load '{"grok": {"substrate": "not-an-installed-substrate"}}'
 assert_false "an uninstalled substrate fails resolve_model_provider" \
   resolve_model_provider implementer_model_default "grok/grok-4.3"
 err="$(resolve_model_provider implementer_model_default "grok/grok-4.3" 2>&1 >/dev/null)"
 case "$err" in
-  *"implementer_model_default"*"grok-build"*) printf 'ok   - %s\n' "the substrate error names the key and the substrate" ;;
+  *"implementer_model_default"*"not-an-installed-substrate"*) printf 'ok   - %s\n' "the substrate error names the key and the substrate" ;;
   *)
     printf 'FAIL - the substrate error names the key and the substrate\n     actual: %s\n' "$err"
     failures=$(( failures + 1 ))

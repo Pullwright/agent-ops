@@ -31,12 +31,14 @@
    issue #2131).** `providers` states which providers beyond the implicit
    `anthropic` a model key may qualify with — keyed by provider name, each
    entry naming a `substrate` (the adapter that launches it; `claude-code`
-   is the only one this image has, and accepts the `anthropic` provider
-   only — D29, issue #2198: Claude Code pointed at another vendor's own
-   endpoint is not a thing this codebase does, so any other provider naming
-   `claude-code` is a config error, named below) and, optionally, a
-   `credential_env` (defaulting by substrate — `ANTHROPIC_API_KEY` for
-   `claude-code`).
+   and `grok-build` are the two this image has, issue #2134. `claude-code`
+   accepts the `anthropic` provider only — D29, issue #2198: Claude Code
+   pointed at another vendor's own endpoint is not a thing this codebase
+   does, so any other provider naming `claude-code` is a config error,
+   named below. `grok-build` is open to any provider name, since Grok Build
+   itself is the vendor's own CLI pointed at its own account) and,
+   optionally, a `credential_env` (defaulting by substrate —
+   `ANTHROPIC_API_KEY` for `claude-code`, `XAI_API_KEY` for `grok-build`).
    `lib/model-id.sh`'s `providers_load` loads it into `PROVIDER_SUBSTRATE`
    (and `PROVIDER_CREDENTIAL_ENV`) once, at startup, before any model key is
    resolved — synthesizing `anthropic` with substrate `claude-code` whether
@@ -89,12 +91,10 @@
    inside an entry, a missing or unsupported `substrate`, a `substrate` of
    `claude-code` named by any provider but `anthropic`, or an explicit
    empty `credential_env`, shared the same way between `agent-cycle.sh`,
-   `review-cycle.sh` and `scripts/doctor.sh`. Launching a stage on any
-   substrate but `claude-code` is out of this requirement's scope (#2133,
-   #2134), and so, until one of those lands, is a second provider ever
-   resolving at all: `claude-code` is the only adapter this image has, and
-   it is `anthropic`'s alone, so no other provider configured today clears
-   `config_provider_errors`.
+   `review-cycle.sh` and `scripts/doctor.sh`. Which substrate a resolved
+   model's provider launches on, and how that substrate's own adapter is
+   implemented, is requirement 4d's own scope, not this one's — this
+   requirement stops at naming the provider a model key resolves to.
 1b. **The configuration has a machine-readable schema, and it is the startup
    gate both pipelines run on.** `config.schema.json` states the shape of
    `config.json` — every key an installation may set, its type, its
@@ -284,9 +284,12 @@
     fleet's four currently configured Claude model ids, ranked by capability
     (Anthropic's own relative pricing confirms the order) —
     `claude-haiku-4-5-20251001` below `claude-sonnet-5` below
-    `claude-opus-5` below `claude-fable-5` — each keyed by its fully-qualified
-    id (`anthropic/claude-sonnet-5`, `resolve_model_qualified`'s own return
-    shape, issue #2131) rather than the bare one `resolve_model_id` returns.
+    `claude-opus-5` below `claude-fable-5` — plus, since issue #2134, xAI's
+    own three Grok models, ranked the same way on xAI's own prices —
+    `grok-build-0.1` below `grok-4.3` below `grok-4.7` — each keyed by its
+    fully-qualified id (`anthropic/claude-sonnet-5`, `xai/grok-build-0.1`,
+    `resolve_model_qualified`'s own return shape, issue #2131) rather than
+    the bare one `resolve_model_id` returns.
     `model_tier_rank`, `model_tier_known` and `model_tier_below` all take a
     qualified id and read the table by it; a model the table has never heard
     of (a future release, a typo the `modelId` pattern still accepts, or a

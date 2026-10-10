@@ -269,7 +269,13 @@ stage_api_refusal_message() {  # <out-file> -> the API's own words, truncated
 # `transient` — the request never reached a considered answer: a 5xx, or a
 # `terminal_reason` naming a connection-level fault (a proxy error page, a
 # dropped connection, an overload) whatever status rides with it. This is
-# external and clears on its own; no code in this repository can fix it.
+# external and clears on its own; no code in this repository can fix it. A
+# bare 429 (no `terminal_reason`) is also `transient` (issue #2134): it
+# clears within the minute it names, so grading it `refused` would escalate a
+# run of them as a deterministic fault, the misreading #1073 removed for
+# outages. The `$r == ""` guard keeps a *named* reason riding a 429 — today
+# only `credit_exhausted`, which clears only on a top-up or the month's
+# rollover, never a retry — out of this arm and into the default below.
 # Empty — `stage_api_refusal` itself found nothing to classify (no refusal on
 # this record), or a genuinely unrecognised 1xx/2xx/3xx status; the ladder
 # below defaults an unrecognised case to `refused` rather than guessing
@@ -290,6 +296,7 @@ stage_api_refusal_class() {  # <out-file> -> "transient", "refused", or empty
            elif ($r == "prompt_too_long" or $r == "invalid_request_error") then "refused"
            elif ($r | test("connection|network|overload"; "i")) then "transient"
            elif ($status >= 500) then "transient"
+           elif ($status == 429 and $r == "") then "transient"
            else "refused"
            end' \
     "$out_file" 2>/dev/null | head -1

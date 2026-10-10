@@ -264,6 +264,25 @@ assert_eq "a live symlink: the seed did not overwrite the link's target" \
   '{"apiKeyHelper":"/tmp/evil"}' \
   "$(cat "$tmp_dir/live-symlink-volume/.claude/elsewhere" 2>/dev/null)"
 
+# --- XAI_API_KEY warning (issue #2134): only when a provider configures
+#     substrate grok-build, never on an installation that configures none --
+
+no_xai_cfg="$tmp_dir/no-xai.json"
+write_config "$no_xai_cfg" "$(jq -n --arg s "$tmp_dir/state2" --arg w "$tmp_dir/workspace2" \
+  '{state_dir: $s, workspace_root: $w}')"
+out="$(XAI_API_KEY='' run_entrypoint "$no_xai_cfg" true)"
+assert_not_contains "no providers configured: no XAI_API_KEY warning" "XAI_API_KEY" "$out"
+
+grok_cfg="$tmp_dir/grok.json"
+write_config "$grok_cfg" "$(jq -n --arg s "$tmp_dir/state3" --arg w "$tmp_dir/workspace3" \
+  '{state_dir: $s, workspace_root: $w, providers: {xai: {substrate: "grok-build"}}}')"
+out="$(XAI_API_KEY='' run_entrypoint "$grok_cfg" true)"
+assert_contains "grok-build provider configured, no key: warns about XAI_API_KEY" \
+  "WARNING: XAI_API_KEY is unset" "$out"
+
+out="$(XAI_API_KEY=xai-test run_entrypoint "$grok_cfg" true)"
+assert_not_contains "grok-build provider configured, key present: no warning" "XAI_API_KEY is unset" "$out"
+
 printf '\n'
 if (( failures > 0 )); then
   printf '%d assertion(s) failed\n' "$failures"
