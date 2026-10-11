@@ -316,20 +316,19 @@
     work, not a stranded approval), is never offered at all — cheap,
     fresh-read exclusions that keep this sweep from re-attempting, and
     re-logging, work the gates below would refuse identically every cycle.
-    The one gate this sweep answers differently
-    from the original round is the pull request's own `source`: not
-    re-derivable from GitHub (there is no field for it, and it is fixed at
-    claim time regardless), so `landing_retry_source_map`
-    (`lib/union-log-scan.sh`) reads it back from the fleet's own union log's
-    `selection` events for that repository, one pass building a
-    `{branch: {source, item}}` map — built once for this sweep's whole pass,
-    never once per candidate (#1050) — keeping only the most recent event
-    when a branch was reused; a pull request whose source cannot be resolved
-    this cycle is skipped, never guessed at. Every arm or refusal this sweep produces is
-    `landing-armed`/`landing-refused`, the same events requirement 8d's own
-    gates always log, additionally carrying `retry: true` so the fleet log
-    (and any reader of it) can tell a sweep-driven landing apart from the
-    round that first approved it.
+    The one gate this sweep answers differently from the original round is
+    the pull request's own `source`: not re-derivable from GitHub (there is
+    no field for it, and it is fixed at claim time regardless), so
+    `landing_retry_source_map` (`lib/union-log-scan.sh`) reads it back from
+    the fleet's own union log's `selection` events for that repository, one
+    pass building a `{branch: {source, item}}` map — built once for this
+    sweep's whole pass, never once per candidate (#1050) — keeping only the
+    most recent event when a branch was reused; a pull request whose source
+    cannot be resolved this cycle is skipped, never guessed at. Every arm or
+    refusal this sweep produces is `landing-armed`/`landing-refused`, the
+    same events requirement 8d's own gates always log, additionally carrying
+    `retry: true` so the fleet log (and any reader of it) can tell a
+    sweep-driven landing apart from the round that first approved it.
 
     **Neither this sweep nor this round's own arming step ever arms more of
     a repository's stranded pull requests, between them, than that
