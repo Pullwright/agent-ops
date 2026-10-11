@@ -2190,22 +2190,22 @@ assert_eq "a warning alone still exits 0" "0" "$rc"
 
 run_doctor ANTHROPIC_API_KEY='sk-ant-usr-abc123'
 assert_contains "an sk-ant- key with no \"-api-\" and no workspace id warns" \
-  "[warn] ANTHROPIC_API_KEY is set and shaped like an Anthropic key, but not scoped to a single workspace, and no workspace id is configured" "$out"
+  "[warn] api lane: ANTHROPIC_API_KEY is set and shaped like an Anthropic key, but not scoped to a single workspace, and no workspace id is configured" "$out"
 assert_eq "a warning alone still exits 0" "0" "$rc"
 
 run_doctor ANTHROPIC_API_KEY='sk-ant-usr-abc123' ANTHROPIC_WORKSPACE_ID='wrkspc_abc'
 assert_contains "...and the same key with a well-shaped ANTHROPIC_WORKSPACE_ID is ok" \
-  "[ ok ] ANTHROPIC_API_KEY is set and shaped like an Anthropic key not scoped to a single workspace — ANTHROPIC_WORKSPACE_ID=wrkspc_abc supplies the anthropic-workspace-id header every request needs" "$out"
+  "[ ok ] api lane: ANTHROPIC_API_KEY is set and shaped like an Anthropic key not scoped to a single workspace — ANTHROPIC_WORKSPACE_ID=wrkspc_abc supplies the anthropic-workspace-id header every request needs" "$out"
 assert_eq "and doctor.sh exits 0" "0" "$rc"
 
 run_doctor ANTHROPIC_API_KEY='sk-ant-usr-abc123' ANTHROPIC_WORKSPACE_ID='not-a-workspace-id'
 assert_contains "...and a malformed ANTHROPIC_WORKSPACE_ID warns, naming it" \
-  "[warn] ANTHROPIC_WORKSPACE_ID is set but is not shaped like a workspace id (expected a \"wrkspc_\" prefix): \"not-a-workspace-id\"" "$out"
+  "[warn] api lane: ANTHROPIC_WORKSPACE_ID is set but is not shaped like a workspace id (expected a \"wrkspc_\" prefix): \"not-a-workspace-id\"" "$out"
 assert_eq "a warning alone still exits 0" "0" "$rc"
 
 run_doctor ANTHROPIC_API_KEY='sk-ant-usr-abc123' ANTHROPIC_CUSTOM_HEADERS='anthropic-workspace-id: wrkspc_abc'
 assert_contains "...and an operator-supplied anthropic-workspace-id header is ok too, with no ANTHROPIC_WORKSPACE_ID" \
-  "[ ok ] ANTHROPIC_API_KEY is set and shaped like an Anthropic key not scoped to a single workspace — ANTHROPIC_CUSTOM_HEADERS already names anthropic-workspace-id" "$out"
+  "[ ok ] api lane: ANTHROPIC_API_KEY is set and shaped like an Anthropic key not scoped to a single workspace — ANTHROPIC_CUSTOM_HEADERS already names anthropic-workspace-id" "$out"
 assert_eq "and doctor.sh exits 0" "0" "$rc"
 
 run_doctor ANTHROPIC_API_KEY='sk-ant-api03-abc123' ANTHROPIC_WORKSPACE_ID='wrkspc_abc'
