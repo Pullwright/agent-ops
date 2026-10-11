@@ -277,7 +277,7 @@ run_doctor() {
     if [[ "$1" == "--" ]]; then shift; extra_args=( "$@" ); break; fi
     env_pairs+=( "$1" ); shift
   done
-  out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH -u ANTHROPIC_API_KEY -u NOTIFY_WEBHOOK_URL PATH="$stub_bin:$PATH" "${env_pairs[@]}" \
+  out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH -u ANTHROPIC_API_KEY -u ANTHROPIC_WORKSPACE_ID -u NOTIFY_WEBHOOK_URL PATH="$stub_bin:$PATH" "${env_pairs[@]}" \
     bash "$DOCTOR" --config "$base_config" "${extra_args[@]}" 2>&1)"
   rc=$?
 }
@@ -2186,6 +2186,27 @@ assert_contains "a badly-shaped ANTHROPIC_API_KEY is a warning, not a failure" \
   "[warn] api lane: ANTHROPIC_API_KEY is set but is not shaped like an Anthropic key" "$out"
 assert_eq "a warning alone still exits 0" "0" "$rc"
 
+# --- Claude credentials: a key outside the ordinary sk-ant-api- family
+#     (agent-ops#2308) — the shape the 2026-10-10 outage's own key had -------
+
+run_doctor ANTHROPIC_API_KEY='sk-ant-usr-abc123'
+assert_contains "a sk-ant-usr- key without a workspace header warns, naming the refusal" \
+  "[warn] api lane: ANTHROPIC_API_KEY is set but is not shaped like an ordinary sk-ant-api- key" "$out"
+assert_eq "a warning alone still exits 0" "0" "$rc"
+
+run_doctor ANTHROPIC_API_KEY='sk-ant-usr-abc123' ANTHROPIC_WORKSPACE_ID='ws_123'
+assert_contains "the same key with ANTHROPIC_WORKSPACE_ID configured is ok instead" \
+  "[ ok ] api lane: ANTHROPIC_API_KEY is set, outside the ordinary sk-ant-api- family, but ANTHROPIC_WORKSPACE_ID is configured" "$out"
+assert_not_contains "...and is not warned about" \
+  "[warn] api lane: ANTHROPIC_API_KEY" "$out"
+assert_eq "and doctor.sh exits 0" "0" "$rc"
+
+run_doctor ANTHROPIC_API_KEY='sk-ant-api03-abc123'
+assert_not_contains "the existing sk-ant-api03- case is unchanged: still ok, never the new warning" \
+  "not shaped like an ordinary sk-ant-api- key" "$out"
+assert_contains "...still reporting the original ok wording" \
+  "[ ok ] api lane: ANTHROPIC_API_KEY is set and shaped like an Anthropic key" "$out"
+
 # --- The rendered crontab ---------------------------------------------------
 
 # CYCLE_MINUTE=1 makes the cycle (and therefore review) minute deterministic —
@@ -2330,6 +2351,69 @@ assert_eq "its timestamp is a real UTC instant" "1" \
   "$(jq -r '.timestamp' "$status_file" 2>/dev/null | grep -Ecq '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'; echo $((1 - $?)))"
 assert_eq "no GitHub-Authentication-Token-Expiration header (this fixture's stub sends none) leaves token_expiry null" \
   "null" "$(jq -c '.token_expiry' "$status_file" 2>/dev/null)"
+
+# --- --unattended: a refused model credential is read from this node's own
+#     log.jsonl, by name, without the live credential ever being read
+#     (agent-ops#2308) --------------------------------------------------------
+
+cred_unattended_state_dir="$tmp/unattended-cred-state-dir"
+mkdir -p "$cred_unattended_state_dir"
+cred_unattended_config="$tmp/unattended-cred-config.json"
+jq --arg sd "$cred_unattended_state_dir" '.state_dir = $sd' "$niced_config" > "$cred_unattended_config"
+
+# The newest Co-Ordinator attempt-failed since the last Co-Ordinator success
+# is the credential refusal — the exact shape the 2026-10-10 outage's own
+# log carried (api_error_400, the workspace-scope message), with an older
+# success and an older, unrelated failure around it so the check is proven
+# to read the *newest since the last success*, not merely "any failure ever".
+cat > "$cred_unattended_state_dir/log.jsonl" <<'LOG'
+{"ts":"2026-10-10T06:00:00Z","event":"stage-end","stage":"coordinator","exit_code":1}
+{"ts":"2026-10-10T07:00:00Z","event":"stage-end","stage":"coordinator","exit_code":0}
+{"ts":"2026-10-10T08:29:12Z","event":"attempt-failed","stage":"coordinator","detail":"coordinator was refused by the API before it could run: api_error_400","api_refusal":"api_error_400","api_refusal_class":"refused","api_message":"This API key is not scoped to a workspace, so this request must include the anthropic-workspace-id header."}
+{"ts":"2026-10-10T08:48:12Z","event":"attempt-failed","stage":"coordinator","detail":"coordinator was refused by the API before it could run: api_error_400","api_refusal":"api_error_400","api_refusal_class":"refused","api_message":"This API key is not scoped to a workspace, so this request must include the anthropic-workspace-id header."}
+LOG
+
+out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH -u ANTHROPIC_API_KEY -u ANTHROPIC_WORKSPACE_ID PATH="$stub_bin:$PATH" \
+  STUB_REPO_JSON='{"permissions":{"push":true},"archived":false}' \
+  bash "$DOCTOR" --config "$cred_unattended_config" --unattended 2>&1)"
+rc=$?
+assert_contains "the unattended pass fails, naming the refusal" \
+  "[fail] the model credential was refused on this node's most recent Co-Ordinator attempt" "$out"
+assert_contains "...quoting the API's own message" \
+  "not scoped to a workspace" "$out"
+assert_eq "...and doctor.sh exits 1" "1" "$rc"
+assert_not_contains "...still never reading the live credential itself" \
+  "[ ok ] ANTHROPIC_API_KEY" "$out"
+
+cred_status_file="$cred_unattended_state_dir/.doctor-status.json"
+assert_eq "...and the failure lands in .doctor-status.json's own fails array" "true" \
+  "$(jq '(.fails // []) | any(test("not scoped to a workspace"))' "$cred_status_file" 2>/dev/null)"
+assert_eq "...with the verdict itself fail" "fail" "$(jq -r '.verdict' "$cred_status_file" 2>/dev/null)"
+
+# A success after the refusal clears it — the newest event since the last
+# success is what the check reads, and a recovered node reports clean.
+cat >> "$cred_unattended_state_dir/log.jsonl" <<'LOG'
+{"ts":"2026-10-10T20:00:00Z","event":"stage-end","stage":"coordinator","exit_code":0}
+LOG
+out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH -u ANTHROPIC_API_KEY -u ANTHROPIC_WORKSPACE_ID PATH="$stub_bin:$PATH" \
+  STUB_REPO_JSON='{"permissions":{"push":true},"archived":false}' \
+  bash "$DOCTOR" --config "$cred_unattended_config" --unattended 2>&1)"
+assert_not_contains "a Co-Ordinator success since the refusal clears the failure" \
+  "the model credential was refused" "$out"
+
+# The existing, unchanged case: no log.jsonl at all (a fresh node) reports
+# nothing extra, same as before this check existed.
+empty_unattended_state_dir="$tmp/unattended-empty-state-dir"
+mkdir -p "$empty_unattended_state_dir"
+empty_unattended_config="$tmp/unattended-empty-config.json"
+jq --arg sd "$empty_unattended_state_dir" '.state_dir = $sd' "$niced_config" > "$empty_unattended_config"
+out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH -u ANTHROPIC_API_KEY -u ANTHROPIC_WORKSPACE_ID PATH="$stub_bin:$PATH" \
+  STUB_REPO_JSON='{"permissions":{"push":true},"archived":false}' \
+  bash "$DOCTOR" --config "$empty_unattended_config" --unattended 2>&1)"
+rc=$?
+assert_not_contains "a fresh node with no log.jsonl at all reports nothing extra" \
+  "the model credential was refused" "$out"
+assert_eq "...and still exits 0" "0" "$rc"
 
 # --- PAT expiry (agent-ops#694) ----------------------------------------------
 
