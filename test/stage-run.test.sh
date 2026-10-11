@@ -97,7 +97,7 @@ cat >"$tmp_dir/bin/claude" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$@" > "$STUB_CAPTURE/argv.seen"
 cat > "$STUB_CAPTURE/prompt.seen"
-printf '%s\n' '{"type":"system","subtype":"init","session_id":"s1"}'
+printf '%s\n' '{"type":"system","subtype":"init","session_id":"s1","apiKeySource":"ANTHROPIC_API_KEY"}'
 printf '%s\n' '{"type":"assistant","message":{"role":"assistant"}}'
 printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"ok","total_cost_usd":0.01,"duration_ms":100,"num_turns":2}'
 STUB
@@ -114,7 +114,7 @@ rc=$?
 
 assert_eq "a fixture run exits with the invocation's own status" "0" "$rc"
 
-expected_stream='{"type":"system","subtype":"init","session_id":"s1"}
+expected_stream='{"type":"system","subtype":"init","session_id":"s1","apiKeySource":"ANTHROPIC_API_KEY"}
 {"type":"assistant","message":{"role":"assistant"}}
 {"type":"result","subtype":"success","is_error":false,"result":"ok","total_cost_usd":0.01,"duration_ms":100,"num_turns":2}'
 assert_eq ".stream.jsonl is byte-for-byte the transcript the run emitted" \
@@ -131,6 +131,8 @@ assert_eq "the prompt reached the substrate's own binary on stdin, unchanged" \
   "a fixed prompt" "$(cat "$fixture_capture/prompt.seen")"
 assert_contains "the launch argv is still the Claude adapter's own, unchanged" \
   "--dangerously-skip-permissions" "$(cat "$fixture_capture/argv.seen")"
+assert_eq "the run's own lane, observed off the stub's init event, reaches stage_lane_json (issue #2239)" \
+  '"api"' "$stage_lane_json"
 
 # =============================================================================
 # 2. A second adapter is one file away
@@ -156,11 +158,13 @@ STUB
 chmod +x "$tmp_dir/stub-bin/stub-cli"
 
 # The stub adapter's own contract — same shape as
-# lib/substrate-claude-code.sh's three functions: build the argv, decide the
+# lib/substrate-claude-code.sh's four functions: build the argv, decide the
 # prompt-delivery method (here, stdin again — a provider that needed
 # `--prompt-file` instead would simply write one here), name the binary, and
 # become it via `exec`; find the terminal result line; recognise a rate-limit
-# refusal (this stub never produces one).
+# refusal (this stub never produces one); read the lane a run used (this stub
+# never reports one, since it is not Claude Code and has no apiKeySource
+# vocabulary of its own — issue #2239 is Claude Code's own adapter alone).
 substrate_stub_cli_exec() {
   local model="$1" resume_session_id="$2"
   exec stub-cli --model "$model" ${resume_session_id:+--continue "$resume_session_id"}
@@ -170,6 +174,9 @@ substrate_stub_cli_result_line() {
   jq -c 'select(type == "object" and .type == "result")' "$stream_file" 2>/dev/null | tail -n 1
 }
 substrate_stub_cli_rejected_rate_limit() {
+  return 1
+}
+substrate_stub_cli_lane_of() {
   return 1
 }
 

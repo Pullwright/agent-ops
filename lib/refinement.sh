@@ -1479,7 +1479,7 @@ $(jq . <<<"$input")
   else
     rc=$?
   fi
-  log_event "stage-end" "$(jq -nc --argjson rc "$rc" --arg kr "$stage_kill_reason" --argjson m "$(metering_fields "$refiner_model" "$out" "$stage_gaps_json")" \
+  log_event "stage-end" "$(jq -nc --argjson rc "$rc" --arg kr "$stage_kill_reason" --argjson m "$(metering_fields "$refiner_model" "$out" "$stage_gaps_json" "$stage_lane_json")" \
     '{stage: "refiner", exit_code: $rc} + (if $kr == "" then {} else {kill_reason: $kr} end) + $m')"
   # No repo/item: the Refiner spans repositories by construction (see above).
   rework_stage_rerun_maybe "refiner" "$stage_kill_reason"

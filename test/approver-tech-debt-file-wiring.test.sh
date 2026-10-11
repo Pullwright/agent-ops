@@ -114,6 +114,7 @@ stage_backstop_min=30
 stage_inactivity_min=10
 stage_kill_reason=""
 stage_gaps_json='[]'
+stage_lane_json='null'
 ONCE=0
 approver_model_default="model-default"
 approver_model_complex="model-complex"

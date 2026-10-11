@@ -898,7 +898,7 @@ $node_name
     else
       rc=$?
     fi
-    log_event "stage-end" "$(jq -nc --argjson rc "$rc" --arg kr "$stage_kill_reason" --argjson m "$(metering_fields "$model" "$out" "$stage_gaps_json")" \
+    log_event "stage-end" "$(jq -nc --argjson rc "$rc" --arg kr "$stage_kill_reason" --argjson m "$(metering_fields "$model" "$out" "$stage_gaps_json" "$stage_lane_json")" \
       --arg r "$selected_repo" --arg i "$selected_item" \
       '{stage: "approver", exit_code: $rc} + (if $kr == "" then {} else {kill_reason: $kr} end) + $m
        + (if $r == "" then {} else {repo: $r} end) + (if $i == "" then {} else {item: $i} end)')"

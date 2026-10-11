@@ -88,7 +88,12 @@
   `modelUsage` map the same way its `costUSD` already is, with a `modelUsage`
   entry that is not an object skipped exactly as the existing `costUSD`
   handling skips it; the `unknown`-model fallback carries all four as `null`,
-  never `0`. `counts.stage_gaps` folds a synthetic event set of `stage-end`/
+  never `0`. `counts.by_lane[]`/`cost_rows[].lane` (issue #2239, D30) read a
+  transcript's own `apiKeySource` off its sibling `<stage>.stream.jsonl`,
+  never off the `.out` envelope the rest of the cost scan reads — `api`,
+  `subscription` or `unknown` for a missing, pruned or peer-only stream,
+  three rows summing to `spend_total_usd` exactly as `by_day`/`by_model`/
+  `by_actor` already do. `counts.stage_gaps` folds a synthetic event set of `stage-end`/
   `review-stage-end` records into its per-stage `runs`/`median_of_run_p50`/
   `worst_run_p95`/`worst_run_max`: a `stage-end` with `gaps: null` is excluded
   from `runs` rather than counted as a silent one, a `review-stage-end` (which

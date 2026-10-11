@@ -381,7 +381,15 @@
     exactly once. A `stage-start` carries the two caps that stage
     was given and where each came from — `backstop_min`, `inactivity_min`,
     `source` and `basis` (requirement 4f) — because a self-tuning number that
-    cannot be traced is a mystery number. A `stage-end` carries `kill_reason` —
+    cannot be traced is a mystery number. It also carries `lane` (issue
+    #2239, D30) — the credential lane the Script *intended* the stage to run
+    on, `lib/metering.sh`'s `metering_intended_lane`: `api` when this node
+    holds `ANTHROPIC_API_KEY`, `subscription` otherwise, until #2241 lets a
+    provider route across a weighted set of open lanes instead of this
+    node's single credential. Distinct from the `lane` requirement 33a's
+    metering record carries on the matching `stage-end`, which is what the
+    run *actually* used — read off the stage's own stream rather than
+    assumed, so the two may disagree. A `stage-end` carries `kill_reason` —
     `inactivity`, `backstop` or `rate-limit` — when and only when requirement
     4e stopped the stage; its absence means the stage ended on its own,
     well or badly. `exit_code` is 124 for both kills and so cannot tell them
@@ -453,7 +461,10 @@
     paired `stage-start`, also carries `stage: "enabler-adjudicate"`
     (requirement 36b, `run_enabler_adjudication`) — the one caller of
     `run_model_stage` outside those six actors that logs a `stage-end` at
-    all; the usage-limit probe and a `<stage>-salvage` resume log neither. An
+    all; a `<stage>-salvage` resume logs neither. The usage-limit probe of
+    requirement 1b also logs a `stage-end` alone, `stage: "limit-probe"`
+    (issue #2239, D30, `lib/standdown.sh`) — ignored by `lib/stage-health.sh`,
+    whose stage list does not name it. An
     `enabler-examined` carries
     `repo`, `item`, the
     `blocked_ts` it was examined against, an `outcome`, and the Enabler's own
@@ -564,7 +575,16 @@
     `docs/spec/dashboard/README.md`), and `tokens` — an object with `input`,
     `output`, `cache_creation` and `cache_read`, summed across every model the
     invocation's own tree used (top-level plus any subagents), matching how
-    `cost_usd` already counts subagent spend. `lib/metering.sh`'s
+    `cost_usd` already counts subagent spend. It also carries `lane` — `api`,
+    `subscription` or `null` (issue #2239, D30) — the credential lane this
+    run actually used, read off the stage's own *stream* rather than the
+    `result` envelope every other field above comes from: `lib/stage-run.sh`
+    reads it through the substrate seam's `_lane_of` operation
+    (`lib/substrate-claude-code.sh`'s own version maps the stream's first
+    `system`/`init` event's `apiKeySource`) exactly as it reads
+    `stage_result_line`, and hands the result to `metering_fields` beside the
+    gap statistics. `null` when the stream carries no readable answer, never
+    a guessed lane. `lib/metering.sh`'s
     `metering_fields` derives this from the stage's own out-file, and is the
     one implementation both this Script and `review-cycle.sh` call for their
     `stage-end`/`review-stage-end` events — a stage whose out-file was never

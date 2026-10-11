@@ -147,10 +147,16 @@ assert_eq "an empty stream still names every known stage" \
 # read alongside agent-cycle.sh itself, which still logs implementer and
 # reviewer directly. `workspace` is deliberately not among them: it logs
 # `attempt-failed` only, never a `stage-end`, so it would read `idle` for
-# ever.
+# ever. `limit-probe` (issue #2239, D30, `lib/standdown.sh`) is excluded for
+# the opposite reason: it does log a `stage-end`, but deliberately carries no
+# paired `stage-start` and is not one of this pipeline's six implementation
+# stages, so counting its runs or failures here would be exactly the
+# fleet-wide/per-item confusion requirement 33's own exception list already
+# warns against — see the assertion just below this block.
 logged_stages="$(grep -ohE 'stage: "[a-z-]+", exit_code' \
     "$SCRIPT_DIR/agent-cycle.sh" "$SCRIPT_DIR"/lib/*.sh \
-  | grep -oE '"[a-z-]+"' | tr -d '"' | jq -Rnc '[inputs] | unique' 2>/dev/null \
+  | grep -oE '"[a-z-]+"' | tr -d '"' | grep -v '^limit-probe$' \
+  | jq -Rnc '[inputs] | unique' 2>/dev/null \
   || true)"
 if [[ -z "$logged_stages" || "$logged_stages" == "[]" ]]; then
   printf 'FAIL - could not read the stage-end literals out of the pipeline'"'"'s source — has the shape moved?\n'
@@ -159,6 +165,15 @@ else
   assert_eq "every stage agent-cycle.sh logs a stage-end for is one this reader names" \
     "$logged_stages" "$(jq -cS 'keys' <<<"$empty_verdicts")"
 fi
+# issue #2239, D30: the usage-limit probe's own stage-end (stage:
+# "limit-probe", lib/standdown.sh) is a real logged event, fed through this
+# same reader like any other, but STAGE_HEALTH_STAGE_NAMES does not name it —
+# so it contributes no idle/failing verdict of its own and cannot be read
+# back out of the result at all.
+probe_fed="$(stage_end_at 2026-08-21T09:00:00Z limit-probe 1)"
+probe_verdicts="$(stage_health_verdicts 3 48 "$NOW_EPOCH" <<<"$probe_fed")"
+assert_eq "limit-probe's own stage-end is ignored, not read as an idle implementation stage" \
+  "false" "$(jq -c 'has("limit-probe")' <<<"$probe_verdicts")"
 assert_eq "a stage with no events at all reads idle" \
   "idle" "$(jq -r '.coordinator.verdict' <<<"$empty_verdicts")"
 assert_eq "and its last_success is null" \

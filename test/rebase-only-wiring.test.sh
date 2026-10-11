@@ -277,6 +277,7 @@ stage_backstop_min=90
 stage_inactivity_min=15
 stage_kill_reason=""
 stage_gaps_json='{}'
+stage_lane_json='null'
 ONCE=0
 log_event() { printf '%s\t%s\n' "\$1" "\$2" >>"$tmp_dir/events"; }
 stage_budget_apply() { printf 'stage_budget_apply\n' >>"$tmp_dir/calls"; }

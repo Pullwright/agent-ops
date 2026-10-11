@@ -324,6 +324,8 @@ run_model_stage() {
   # shellcheck disable=SC2034  # read by the eval'd maybe_run_enabler, not visible here
   stage_gaps_json="null"
   # shellcheck disable=SC2034
+  stage_lane_json="null"
+  # shellcheck disable=SC2034
   stage_kill_reason=""
   return "${STUB_RUN_RC:-0}"
 }
@@ -2187,6 +2189,8 @@ run_model_stage() {
   jq -nc --arg r "$DECIDE_STUB_VERDICT" '{result: $r, session_id: "stub-session"}' > "$5"
   # shellcheck disable=SC2034
   stage_gaps_json="null"
+  # shellcheck disable=SC2034
+  stage_lane_json="null"
   # shellcheck disable=SC2034
   stage_kill_reason=""
   return 0

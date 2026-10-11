@@ -203,6 +203,8 @@ run_model_stage() {
   # shellcheck disable=SC2034
   stage_gaps_json="null"
   # shellcheck disable=SC2034
+  stage_lane_json="null"
+  # shellcheck disable=SC2034
   stage_kill_reason=""
   return "${STUB_RUN_RC:-0}"
 }

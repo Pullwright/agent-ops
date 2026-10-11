@@ -58,6 +58,12 @@ fi
 
 # shellcheck source=lib/stage-budget.sh
 . "$SCRIPT_DIR/lib/stage-budget.sh"
+# stage_budget_apply's own stage-start also calls lib/metering.sh's
+# metering_intended_lane (issue #2239, D30) for its `lane` field — sourced
+# for real (pure and cheap, reading only ANTHROPIC_API_KEY) rather than
+# stubbed, same reasoning as lib/node-time-state.sh below.
+# shellcheck source=lib/metering.sh
+. "$SCRIPT_DIR/lib/metering.sh"
 stage_budget_overrides() { printf '{}'; }
 # docs/FLOW-SCHEMA.md, requirement 50, issue #597: stage_budget_apply's own
 # stage-start also calls lib/node-time-state.sh's node_state_for_stage and
