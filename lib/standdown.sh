@@ -172,102 +172,6 @@ if [[ "$gh_auth_verdict" == "unauthorized" ]]; then
   exit 0
 fi
 
-# 2.0h Model credential check (requirement 2.0h, agent-ops#2308). The model
-# path has no equivalent of 2.0b above: the first thing that exercises
-# ANTHROPIC_API_KEY (or a subscription login) is the Co-Ordinator itself,
-# after the GitHub gather, so a refused credential crash-loops every stage
-# that follows it. On 2026-10-10 the owner replaced every node's key with one
-# minted without a workspace scope, and for eleven hours all four nodes ran
-# the Co-Ordinator's full gather, every cycle, before a human traced the
-# refusal by hand reading `api_message` off the log (issues #2297/#2298/
-# #2299, the crash-loop ladder those nodes' stand-downs filed, all pointed at
-# `.out` files inside a container rather than at the API's own words already
-# sitting on the event).
-#
-# One minimal invocation of the trivial model, through the same
-# `run_model_stage` 1b's own usage-limit probe below already uses, judged by
-# `stage_api_refusal_class`: a `refused` verdict stands the cycle down
-# exactly as 2.0b's GitHub check does above, with `stage_api_refusal_message`
-# (already truncated to 600 bytes) as the reason, so the log and the
-# escalation both quote the API's own words rather than a bare token. A
-# `transient` verdict (a 5xx, an overload) changes nothing: that is 2.1's
-# business, not this check's, the same distinction `stage_api_refusal_class`
-# exists to draw (agent-ops#1073).
-#
-# Gated, unlike 2.0b: a free `/rate_limit` call costs nothing, but this one
-# spends a fraction of a cent, so it runs only on the first cycle after this
-# container started, or on any cycle whose own last probe here was itself
-# refused — so a healthy node pays this once per container lifetime, and an
-# unhealthy one keeps being caught cheaply rather than crash-looping again
-# until its next restart. "First cycle after this container started" is read
-# from `_updater_health_own_started` (lib/updater-health.sh) — this
-# container's own PID 1 start time, the same reading
-# `deploy/docker/watchtower-pre-update.sh`'s own roll ledger uses, and for
-# the same reason: this node's hostname alone survives a watchtower roll
-# (agent-ops#1072), so only the kernel's own process-start clock tells a
-# fresh boot from a restart-in-place — cached in this node's own `state_dir`
-# alongside the last probe's own verdict, so a cycle before the first-ever
-# reading (state file absent, or the reading itself unavailable) always
-# probes rather than silently comparing two empty strings as unchanged.
-# `--dry-run` never probes, the same reasoning 1b's own gate rests on below: a
-# cycle that promises to change nothing must not write a fresh escalation.
-if ! (( DRY_RUN )); then
-  cred_state_file="$state_dir/.credential-preflight.json"
-  cred_container_started="$(_updater_health_own_started)"
-  cred_prev_started=""
-  cred_prev_verdict=""
-  if [[ -s "$cred_state_file" ]]; then
-    IFS=$'\t' read -r cred_prev_started cred_prev_verdict < <(jq -r \
-      '(.container_started // "") + "\t" + (.verdict // "")' \
-      "$cred_state_file" 2>/dev/null || printf '\t\n')
-  fi
-  if [[ ! -s "$cred_state_file" \
-        || "$cred_prev_started" != "$cred_container_started" \
-        || "$cred_prev_verdict" == "refused" ]]; then
-    cred_probe_out="$cycle_dir/credential-probe.out"
-    run_model_stage credential-probe 180 "$implementer_model_trivial" \
-      "Reply with the single word: ok" "$cred_probe_out" "$cycle_dir" || true
-    cred_class="$(stage_api_refusal_class "$cred_probe_out")"
-    if [[ "$cred_class" == "refused" ]]; then
-      cred_token="$(stage_api_refusal "$cred_probe_out")"
-      cred_message="$(stage_api_refusal_message "$cred_probe_out")"
-      jq -nc --arg s "$cred_container_started" '{container_started: $s, verdict: "refused"}' \
-        > "$cred_state_file" 2>/dev/null || true
-      cred_reason="The model credential was refused by the API — $cred_message"
-      if [[ -n "$crash_loop_repo" && -n "$enabler_assignee" ]]; then
-        cred_body="$cycle_dir/credential-refused-issue.md"
-        # shellcheck disable=SC2016  # the backticks are the issue body's Markdown, not expansions
-        {
-          printf '## This node'"'"'s model credential was refused\n\n'
-          printf -- '- node: `%s`\n- cycle: `%s`\n- the API'"'"'s own response:\n\n```\n%s\n```\n\n' \
-            "$node_name" "$cycle_id" "$cred_message"
-          printf 'Nothing clears this automatically — replace or remove `ANTHROPIC_API_KEY` in `.env`, or complete the subscription login, then `docker compose up -d`, and the next cycle proceeds normally.\n\n'
-          printf -- '---\nItem: `credential-refused:%s` · raised by the Script · cycle `%s` · node `%s`\n' \
-            "$node_name" "$cycle_id" "$node_name"
-        } > "$cred_body"
-        if cred_created="$(create_escalation_issue "$crash_loop_repo" "credential-refused:$node_name" \
-             "$enabler_escalation_label" \
-             "Model credential rejected on node $node_name" \
-             "$cred_body")" && [[ -n "$cred_created" ]]; then
-          log_event "credential-refused-escalated" "$(jq -nc \
-            --argjson n "${cred_created%%$'\t'*}" --arg u "${cred_created#*$'\t'}" \
-            '{issue_number: $n, issue_url: $u}')"
-        else
-          log_event "warning" "$(jq -nc \
-            --arg d "model credential refused but the escalation issue could not be filed — will retry next cycle" \
-            '{detail: $d}')"
-        fi
-      fi
-      log_event "stand-down" "$(jq -nc --arg r "$cred_reason" --arg d "$cred_message" --arg t "$cred_token" \
-        '{reason: $r, cause: "credential-refused", detail: $d, token: $t}')"
-      set_node_state_terminal externally-blocked credential-refused
-      exit 0
-    fi
-    jq -nc --arg s "$cred_container_started" '{container_started: $s, verdict: "ok"}' \
-      > "$cred_state_file" 2>/dev/null || true
-  fi
-fi
-
 # 2.0c Free disk space (requirement 2.0c, agent-ops#756; both directories,
 # agent-ops#992). Free, like 2.0 and 2.0b: `df -Pk` costs nothing and touches
 # no network, so it runs ahead of every check below that can spend.
@@ -461,6 +365,130 @@ if [[ "$host_budget_enforce" == "true" ]]; then
         exit 0
       fi
     fi
+  fi
+fi
+
+# 2.0h Model credential check (requirement 2.0h, agent-ops#2308). The model
+# path has no equivalent of 2.0b above: the first thing that exercises
+# ANTHROPIC_API_KEY (or a subscription login) is the Co-Ordinator itself,
+# after the GitHub gather, so a refused credential crash-loops every stage
+# that follows it. On 2026-10-10 the owner replaced every node's key with one
+# minted without a workspace scope, and for eleven hours all four nodes ran
+# the Co-Ordinator's full gather, every cycle, before a human traced the
+# refusal by hand reading `api_message` off the log (issues #2297/#2298/
+# #2299, the crash-loop ladder those nodes' stand-downs filed, all pointed at
+# `.out` files inside a container rather than at the API's own words already
+# sitting on the event).
+#
+# It sits here, last of the 2.0 band, rather than beside the 2.0b check it
+# otherwise mirrors, because it is the first check that spends: 2.0c, 2.0f
+# and 2.0g each run "ahead of every check below that can spend" — their own
+# words — and this one writes a probe transcript and its own state file into
+# the very `state_dir` 2.0c exists to guard, whose exhaustion left
+# zero-length git objects in two nodes' mirrors (#604). Catching a refused
+# credential one check earlier buys nothing; starting a spend into a host
+# 2.0c would have stood down costs exactly what that band exists to prevent.
+#
+# One minimal invocation of the trivial model, through the same
+# `run_model_stage` 1b's own usage-limit probe below already uses, judged by
+# `stage_api_refusal_class` and `stage_api_refusal` together: a `refused`
+# verdict whose own token names the credential — `authentication_failed`,
+# `workspace_scope_refused`, or a 4xx `api_error_<status>` — stands the cycle
+# down exactly as 2.0b's GitHub check does above, with
+# `stage_api_refusal_message` (already truncated to 600 bytes) as the reason,
+# so the log and the escalation both quote the API's own words rather than a
+# bare token. A `transient` verdict (a 5xx, an overload) changes nothing:
+# that is 2.1's business, not this check's, the same distinction
+# `stage_api_refusal_class` exists to draw (agent-ops#1073). Nor does a
+# `refused` verdict carrying any other token: that is a deterministic fault
+# in something other than the credential, and 2.7's own crash-loop ladder is
+# what reads it.
+#
+# Gated, unlike 2.0b: a free `/rate_limit` call costs nothing, but this one
+# spends a fraction of a cent, so it runs only on the first cycle after this
+# container started, or on any cycle whose own last probe here was itself
+# refused — so a healthy node pays this once per container lifetime, and an
+# unhealthy one keeps being caught cheaply rather than crash-looping again
+# until its next restart. "First cycle after this container started" is read
+# from `_updater_health_own_started` (lib/updater-health.sh) — this
+# container's own PID 1 start time, the same reading
+# `deploy/docker/watchtower-pre-update.sh`'s own roll ledger uses, and for
+# the same reason: this node's hostname alone survives a watchtower roll
+# (agent-ops#1072), so only the kernel's own process-start clock tells a
+# fresh boot from a restart-in-place — cached in this node's own `state_dir`
+# alongside the last probe's own verdict, so a cycle before the first-ever
+# reading (state file absent, or the reading itself unavailable) always
+# probes rather than silently comparing two empty strings as unchanged.
+# `--dry-run` never probes, the same reasoning 1b's own gate rests on below: a
+# cycle that promises to change nothing must not write a fresh escalation.
+if ! (( DRY_RUN )); then
+  cred_state_file="$state_dir/.credential-preflight.json"
+  cred_container_started="$(_updater_health_own_started)"
+  cred_prev_started=""
+  cred_prev_verdict=""
+  if [[ -s "$cred_state_file" ]]; then
+    IFS=$'\t' read -r cred_prev_started cred_prev_verdict < <(jq -r \
+      '(.container_started // "") + "\t" + (.verdict // "")' \
+      "$cred_state_file" 2>/dev/null || printf '\t\n')
+  fi
+  if [[ ! -s "$cred_state_file" \
+        || -z "$cred_container_started" \
+        || "$cred_prev_started" != "$cred_container_started" \
+        || "$cred_prev_verdict" == "refused" ]]; then
+    cred_probe_out="$cycle_dir/credential-probe.out"
+    run_model_stage credential-probe 180 "$implementer_model_trivial" \
+      "Reply with the single word: ok" "$cred_probe_out" "$cycle_dir" || true
+    cred_class="$(stage_api_refusal_class "$cred_probe_out")"
+    cred_token="$(stage_api_refusal "$cred_probe_out")"
+    # Both halves, exactly as the requirement states them: a `refused` class
+    # *and* a token naming the credential itself. The class alone is too
+    # broad — `stage_api_refusal_class`'s default arm deliberately grades
+    # every unrecognised deterministic refusal `refused`, `credit_exhausted`
+    # among them (`lib/substrate-grok-build.sh` synthesises that one for a
+    # billing lapse), and standing a node down as `credential-refused` over
+    # an exhausted balance would send the next reader at the key rather than
+    # the account. The same gate `crash_loop_escalate`'s own credential hint
+    # and `scripts/doctor.sh`'s unattended pass apply, so all three readers
+    # name a credential fault by the same rule.
+    if [[ "$cred_class" == "refused" ]] \
+       && [[ "$cred_token" == "authentication_failed" \
+             || "$cred_token" == "workspace_scope_refused" \
+             || "$cred_token" =~ ^api_error_4[0-9][0-9]$ ]]; then
+      cred_message="$(stage_api_refusal_message "$cred_probe_out")"
+      jq -nc --arg s "$cred_container_started" '{container_started: $s, verdict: "refused"}' \
+        > "$cred_state_file" 2>/dev/null || true
+      cred_reason="The model credential was refused by the API — $cred_message"
+      if [[ -n "$crash_loop_repo" && -n "$enabler_assignee" ]]; then
+        cred_body="$cycle_dir/credential-refused-issue.md"
+        # shellcheck disable=SC2016  # the backticks are the issue body's Markdown, not expansions
+        {
+          printf '## This node'"'"'s model credential was refused\n\n'
+          printf -- '- node: `%s`\n- cycle: `%s`\n- the API'"'"'s own response:\n\n```\n%s\n```\n\n' \
+            "$node_name" "$cycle_id" "$cred_message"
+          printf 'Nothing clears this automatically — replace or remove `ANTHROPIC_API_KEY` in `.env`, or complete the subscription login, then `docker compose up -d`, and the next cycle proceeds normally.\n\n'
+          printf -- '---\nItem: `credential-refused:%s` · raised by the Script · cycle `%s` · node `%s`\n' \
+            "$node_name" "$cycle_id" "$node_name"
+        } > "$cred_body"
+        if cred_created="$(create_escalation_issue "$crash_loop_repo" "credential-refused:$node_name" \
+             "$enabler_escalation_label" \
+             "Model credential rejected on node $node_name" \
+             "$cred_body")" && [[ -n "$cred_created" ]]; then
+          log_event "credential-refused-escalated" "$(jq -nc \
+            --argjson n "${cred_created%%$'\t'*}" --arg u "${cred_created#*$'\t'}" \
+            '{issue_number: $n, issue_url: $u}')"
+        else
+          log_event "warning" "$(jq -nc \
+            --arg d "model credential refused but the escalation issue could not be filed — will retry next cycle" \
+            '{detail: $d}')"
+        fi
+      fi
+      log_event "stand-down" "$(jq -nc --arg r "$cred_reason" --arg d "$cred_message" --arg t "$cred_token" \
+        '{reason: $r, cause: "credential-refused", detail: $d, token: $t}')"
+      set_node_state_terminal externally-blocked credential-refused
+      exit 0
+    fi
+    jq -nc --arg s "$cred_container_started" '{container_started: $s, verdict: "ok"}' \
+      > "$cred_state_file" 2>/dev/null || true
   fi
 fi
 

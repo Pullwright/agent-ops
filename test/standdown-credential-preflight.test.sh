@@ -59,7 +59,7 @@ extract_block() {
 # shellcheck source=lib/stage-attempt.sh
 . "$SCRIPT_DIR/lib/stage-attempt.sh"
 
-cred_block="$(extract_block '^# 2\.0h Model credential check' '^# 2\.0c Free disk space' "$STANDDOWN")"
+cred_block="$(extract_block '^# 2\.0h Model credential check' '^# 2\.1 Usage-limit cooldown' "$STANDDOWN")"
 if [[ -z "$cred_block" ]]; then
   echo "FAIL - could not extract the model-credential check block from lib/standdown.sh — has it moved?" >&2
   exit 1
@@ -118,6 +118,9 @@ run_block() {
           ;;
         transient-503)
           echo '{"is_error":true,"terminal_reason":"api_error","api_error_status":503,"result":"This is a server-side issue, usually temporary"}' > "$out_file"
+          ;;
+        refused-credit)
+          echo '{"is_error":true,"terminal_reason":"credit_exhausted","api_error_status":429,"result":"Your credit balance is too low to access the Anthropic API."}' > "$out_file"
           ;;
       esac
       return 0
@@ -245,6 +248,54 @@ assert_eq "…and nothing is escalated for it here" \
   "0" "$(grep -c '^---end---' "$esc_file_t" 2>/dev/null)"
 assert_eq "…and nothing is stood down for it here" \
   "no" "$(if grep -q '^stand-down' "$evt_file_t"; then echo yes; else echo no; fi)"
+
+# --- refused, but not by the credential: `credit_exhausted` reaches
+# `stage_api_refusal_class`'s own default arm as `refused` (deliberately —
+# a top-up, not a retry, is what clears it) while its token names the
+# account's balance, not the key. `lib/substrate-grok-build.sh` synthesises
+# exactly this shape for a billing lapse, so standing the fleet down as
+# `credential-refused` over it would send the next reader at the key. The
+# gate is both halves: the class *and* a credential-shaped token. ---
+
+state_dir_credit="$tmp_dir/state-credit"; mkdir -p "$state_dir_credit"
+probe_count_credit="$tmp_dir/credit-probe-count"; : > "$probe_count_credit"
+esc_file_credit="$tmp_dir/credit-escalations"; : > "$esc_file_credit"
+evt_file_credit="$tmp_dir/credit-events"
+block_rc_credit="$(run_block refused-credit boot-1 0 "$state_dir_credit" \
+  "$probe_count_credit" "$esc_file_credit" "$evt_file_credit")"
+assert_eq "a refused-class verdict whose token is not credential-shaped exits 0" \
+  "0" "$block_rc_credit"
+assert_eq "…falling through rather than standing the cycle down" \
+  "yes" "$(if grep -q 'FELL THROUGH' "$evt_file_credit"; then echo yes; else echo no; fi)"
+assert_eq "…with no stand-down logged" \
+  "no" "$(if grep -q '^stand-down' "$evt_file_credit"; then echo yes; else echo no; fi)"
+assert_eq "…and no credential escalation filed against an exhausted balance" \
+  "0" "$(grep -c '^---end---' "$esc_file_credit" 2>/dev/null)"
+assert_eq "…and the probe did run, so this is the gate's verdict and not a skip" \
+  "1" "$(wc -l < "$probe_count_credit" | tr -d ' ')"
+
+# --- the container-start reading itself unavailable: the gate must treat an
+# empty reading as due a probe, never compare two empty readings as
+# unchanged. `_updater_health_own_started` returning nothing (a kernel this
+# node cannot read a start time from) is the case: the first cycle writes
+# `container_started: ""`, and a second cycle comparing `"" != ""` would
+# otherwise skip for the rest of that container's life. ---
+
+state_dir_noboot="$tmp_dir/state-noboot"; mkdir -p "$state_dir_noboot"
+probe_count_noboot="$tmp_dir/noboot-probe-count"; : > "$probe_count_noboot"
+esc_file_noboot="$tmp_dir/noboot-escalations"; : > "$esc_file_noboot"
+evt_file_noboot="$tmp_dir/noboot-events"
+run_block ok "" 0 "$state_dir_noboot" "$probe_count_noboot" "$esc_file_noboot" \
+  "$evt_file_noboot" >/dev/null
+assert_eq "an unavailable container-start reading still probes on the first cycle" \
+  "1" "$(wc -l < "$probe_count_noboot" | tr -d ' ')"
+evt_file_noboot2="$tmp_dir/noboot-events-2"
+block_rc_noboot2="$(run_block ok "" 0 "$state_dir_noboot" "$probe_count_noboot" \
+  "$esc_file_noboot" "$evt_file_noboot2")"
+assert_eq "a second cycle with the reading still unavailable exits 0" \
+  "0" "$block_rc_noboot2"
+assert_eq "…and probes again rather than reading two empty strings as unchanged" \
+  "2" "$(wc -l < "$probe_count_noboot" | tr -d ' ')"
 
 # --- --dry-run: no call is made at all ---
 

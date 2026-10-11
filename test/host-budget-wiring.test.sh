@@ -55,11 +55,11 @@ extract_block() {
   ' "$file"
 }
 
-# Ends at 2.1's own heading: requirement 2.0g's block is the last of the
-# free, no-network checks before 2.1's usage-limit cooldown, so this is the
-# natural closing anchor, the same way 2.0f's own extraction in
-# test/memory-wiring.test.sh ends at 2.1 too.
-budget_block="$(extract_block '^# 2\.0g Host budget' '^# 2\.1 Usage-limit cooldown' "$AGENT_CYCLE")"
+# Ends at 2.0h's own heading, the next block down: 2.0g is the last of the
+# free, no-network checks, and 2.0h — the credential preflight, which spends
+# — follows it. Stopping at 2.1 instead would lift that preflight in too,
+# unstubbed, which is this file's own subject in neither sense.
+budget_block="$(extract_block '^# 2\.0g Host budget' '^# 2\.0h Model credential check' "$AGENT_CYCLE")"
 if [[ -z "$budget_block" ]]; then
   echo "FAIL - could not extract the host-budget check block from lib/standdown.sh — has it moved?" >&2
   exit 1
