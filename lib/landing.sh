@@ -2282,11 +2282,15 @@ OQ_ESC_BODY
 #     alone, so asking is pure cost for a repository this sweep cannot act
 #     on regardless.
 #   - A candidate is open, non-draft, carries `pr_label`, and its own
-#     `complexity:*` label reads `low` or `medium` (never `high` — the
-#     cheapest of the seven gates to pre-check, from data already fetched here,
-#     so a permanently-ineligible pull request costs one list call per
-#     repository per cycle rather than the changed-file read
-#     `landing_eligible` would otherwise repeat forever).
+#     `complexity:*` label is a member of `_landing_routine_complexity`'s
+#     list for SLUG (the same list `landing_eligible`'s own preflight
+#     consults, agent-ops#2310 — this pre-check used to hardcode `low`/
+#     `medium`, which left a repository configured to admit `high` with no
+#     path that ever armed one) — the cheapest of the seven gates to
+#     pre-check, from data already fetched here, so a permanently-ineligible
+#     pull request costs one list call per repository per cycle rather than
+#     the changed-file read `landing_eligible` would otherwise repeat
+#     forever.
 #   - Only a pull request the Approver has genuinely, currently approved is
 #     this sweep's business (`landing_approver_standing_review`, the same
 #     fresh read `_landing_stage_attempt`'s own gate 4 makes) — one never
@@ -2357,10 +2361,14 @@ _landing_retry_sweep_repo() {
       '{detail: $d, repo: $r}')"
   fi
 
+  local routine_complexity_json
+  routine_complexity_json="$(_landing_routine_complexity "$DEFAULTED_CONFIG" "$slug")"
+
   local candidates
-  candidates="$(jq -c '[.[] | select(.isDraft | not)
+  candidates="$(jq -c --argjson routine "$routine_complexity_json" \
+    '[.[] | select(.isDraft | not)
     | . + {complexity: ((.labels // []) | map(.name) | map(select(startswith("complexity:"))) | first // "" | sub("^complexity:";""))}
-    | select(.complexity == "low" or .complexity == "medium")
+    | select(.complexity as $c | $routine | index($c) != null)
     | {number, url, branch: .headRefName, complexity}]' <<<"$open" 2>/dev/null || echo '[]')"
 
   # Issue #987/TD-PPagop-26082509: fetched once per repository for this

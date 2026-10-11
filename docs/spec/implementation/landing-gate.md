@@ -155,7 +155,8 @@ TD-PPagop-26081701): once per cycle, for every repository at
 unchanged, not a second copy of them — for every open, non-draft pull request
 whose Approver review is genuinely standing `APPROVED` on GitHub right now.
 A pull request whose gates still refuse is refused again, at whatever cost
-that refusal already had (a `complexity:high` pull request, or a
+that refusal already had (a pull request whose resolved complexity falls
+outside the repository's own configured routine complexity, or a
 protected-path hit below `agent-merges-all`, is never eligible in the first
 place, so the classifier refuses it identically every time it is asked); a
 pull request whose refusal reason has

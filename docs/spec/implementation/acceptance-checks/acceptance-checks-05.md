@@ -296,24 +296,27 @@
     `--dry-run` (it can land a pull request), for every repository whose
     `merge_autonomy_effective_level` (a *fresh* read, issue #513) is
     `agent-merges-routine` or `agent-merges-all`: every open, non-draft pull
-    request carrying `pr_label` whose own `complexity:*` label reads `low` or
-    `medium` and whose Approver review is genuinely standing `APPROVED` on
-    GitHub right now is offered to `_landing_stage_attempt` (requirement 8d)
-    with `RETRY` set — the identical seven gates the round that first approved
-    it ran, never a second copy of them, so a `complexity:high` pull request,
-    a source outside the repository's own `merge_autonomy_routine_sources`,
-    or a protected-path hit below `agent-merges-all` is refused exactly as it
+    request carrying `pr_label` whose own `complexity:*` label is a member of
+    that repository's own `_landing_routine_complexity` list — the same list
+    `landing_eligible`'s own preflight consults (default `low`/`medium`;
+    agent-ops#2310) — and whose Approver review is genuinely standing
+    `APPROVED` on GitHub right now is offered to `_landing_stage_attempt`
+    (requirement 8d) with `RETRY` set — the identical seven gates the round
+    that first approved it ran, never a second copy of them, so a source
+    outside the repository's own `merge_autonomy_routine_sources`, or a
+    protected-path hit below `agent-merges-all`, is refused exactly as it
     always was: by `landing_eligible`, on the same terms, every time it is
     asked. At `agent-merges-all`, `landing_eligible` instead reports a
     protected-path hit eligible and defers to gate 4.5 (requirement 8d), just
     as it did the round that first approved the pull request — the sweep
     re-enters gate 4.5 too, and a control it finds unmet there refuses the
-    pull request identically. A pull request whose `complexity:*` label
-    already reads `high`, or that carries no standing Approver `APPROVED`
-    review (ordinary in-flight work, not a stranded approval), is never
-    offered at all — cheap, fresh-read exclusions that keep this sweep from
-    re-attempting, and re-logging, work the gates below would refuse
-    identically every cycle. The one gate this sweep answers differently
+    pull request identically. A pull request whose `complexity:*` label is
+    outside that repository's own configured routine-complexity list, or
+    that carries no standing Approver `APPROVED` review (ordinary in-flight
+    work, not a stranded approval), is never offered at all — cheap,
+    fresh-read exclusions that keep this sweep from re-attempting, and
+    re-logging, work the gates below would refuse identically every cycle.
+    The one gate this sweep answers differently
     from the original round is the pull request's own `source`: not
     re-derivable from GitHub (there is no field for it, and it is fixed at
     claim time regardless), so `landing_retry_source_map`

@@ -78,10 +78,21 @@ if [[ -z "$sweep_block" || "$sweep_block" != *"_landing_stage_attempt"* ]]; then
   exit 1
 fi
 
+# _landing_routine_complexity (lib/landing.sh) is lifted the same way, never
+# stubbed: the complexity pre-filter now calls the real resolver (agent-ops
+# #2310) rather than a hardcoded low/medium pair, and it is pure jq over
+# $DEFAULTED_CONFIG — no gh call of its own — so exercising the shipped
+# function costs nothing a stub would have saved.
+routine_complexity_block="$(extract _landing_routine_complexity)"
+if [[ -z "$routine_complexity_block" || "$routine_complexity_block" != *"routine_complexity"* ]]; then
+  echo "FAIL - could not extract _landing_routine_complexity from lib/landing.sh — has it moved?" >&2
+  exit 1
+fi
+
 # --- Assembly -----------------------------------------------------------------
 # PR_LIST_JSON is the `gh pr list` fixture; STANDING_<n> / SOURCE_<branch,
 # sanitised> steer the per-candidate stubs; LEVEL/DEFAULT_BRANCH_RC/
-# LIST_TRUNCATED steer the repo-level ones.
+# LIST_TRUNCATED/DEFAULTED_CONFIG steer the repo-level ones.
 
 cat >"$tmp_dir/harness.sh" <<'HARNESS'
 set -euo pipefail
@@ -90,7 +101,7 @@ set -euo pipefail
 source "$SCRIPT_DIR/lib/github-limit.sh"
 
 pr_label="autonomous-agent"
-DEFAULTED_CONFIG='{}'
+DEFAULTED_CONFIG="${DEFAULTED_CONFIG:-"{}"}"
 state_repo="acme/widgets"
 state_dir="$T/state"
 union_log="$T/union-log.jsonl"
@@ -197,6 +208,7 @@ _landing_stage_attempt() {
 HARNESS
 
 {
+  printf '%s\n' "$routine_complexity_block"
   printf '%s\n' "$sweep_block"
   printf '_landing_retry_sweep_repo "acme/widgets" "pullwright-approver[bot]"\n'
   # `landing_armed_by_repo["acme/widgets"]` after the pass (PR #557 review
@@ -270,6 +282,26 @@ rc="$(run_case PR_LIST_JSON="$open_list" STANDING_1="APPROVED" SOURCE_td_TD_1="t
 assert_eq "  ... a draft PR (#2) is never offered" "" "$(grep 'pull/2' <(attempts) || true)"
 assert_eq "  ... a complexity:high PR (#3) is never offered" "" "$(grep 'pull/3' <(attempts) || true)"
 assert_eq "  ... a PR with no complexity label at all (#4) is never offered" "" "$(grep 'pull/4' <(attempts) || true)"
+
+# --- agent-ops#2310: the pre-filter follows the repository's own configured
+#     routine complexity, never a hardcoded low/medium pair, so a repository
+#     that admits `high` gets a candidate #3 never offers under the default -
+
+high_admitting_config='{"repos":[{"slug":"acme/widgets","merge_autonomy_routine_complexity":["low","medium","high"]}]}'
+
+rc="$(run_case PR_LIST_JSON="$open_list" STANDING_1="APPROVED" STANDING_3="APPROVED" \
+  SOURCE_td_TD_1="tech-debt" SOURCE_agent_x="tech-debt" \
+  DEFAULTED_CONFIG="$high_admitting_config")"
+assert_contains "a complexity:high PR (#3) is offered once the repository's own routine complexity admits high" \
+  "pull/3" "$(attempts)"
+
+low_medium_config='{"repos":[{"slug":"acme/widgets","merge_autonomy_routine_complexity":["low","medium"]}]}'
+
+rc="$(run_case PR_LIST_JSON="$open_list" STANDING_1="APPROVED" STANDING_3="APPROVED" \
+  SOURCE_td_TD_1="tech-debt" SOURCE_agent_x="tech-debt" \
+  DEFAULTED_CONFIG="$low_medium_config")"
+assert_eq "  ... and the same PR (#3) stays excluded under an explicit low/medium list" \
+  "" "$(grep 'pull/3' <(attempts) || true)"
 
 # --- The standing-Approver-review precondition -------------------------------
 
