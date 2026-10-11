@@ -444,10 +444,11 @@ $(pipeline_comment_marker "$cycle_id" script)"
 # defer`) knows to queue it.
 crash_loop_escalate() {
   local verdict_json="$1" item_ref="$2" kind_label="$3" title_prefix="$4" evidence_line="$5"
-  local cl_detail cl_first_ts cl_repo cl_body cl_created
+  local cl_detail cl_first_ts cl_repo cl_body cl_created cl_api_message cl_credential_hint
   cl_detail="$(jq -r '.detail // ""' <<<"$verdict_json")"
   cl_first_ts="$(jq -r '.first_ts // ""' <<<"$verdict_json")"
   cl_repo="$(jq -r '.repo // ""' <<<"$verdict_json")"
+  cl_api_message="$(jq -r '.api_message // ""' <<<"$verdict_json")"
   if crash_loop_escalated_since "$cl_first_ts" "$cl_detail" "$cl_repo" < "$union_log"; then
     return 0
   fi
@@ -464,18 +465,34 @@ crash_loop_escalate() {
   local cl_body_slug="${item_ref#crash-loop:}"
   cl_body_slug="${cl_body_slug//\//-}"
   cl_body="$cycle_dir/crash-loop-issue-${cl_body_slug}.md"
+  # A detail naming a credential refusal (agent-ops#2308) — the model
+  # credential's own stable tokens, lib/stage-attempt.sh's
+  # `stage_api_refusal` — adds it as a third possibility to the sentence
+  # below, so a human reading the escalation sees the same lead the
+  # 2026-10-10 outage took eleven hours to find by hand, rather than only
+  # "something that ships in the image or the config".
+  cl_credential_hint=""
+  if [[ "$cl_detail" == "authentication_failed" || "$cl_detail" == "workspace_scope_refused" \
+        || "$cl_detail" =~ ^api_error_4[0-9][0-9]$ ]]; then
+    cl_credential_hint=", the model credential (\`ANTHROPIC_API_KEY\`/login)"
+  fi
   {
     printf '## What the fleet log shows\n\n'
     jq -r --arg k "$kind_label" \
       '"- **\(.count) consecutive \($k)**, every one `\(.detail)`\n- first at `\(.first_ts)`, still failing at `\(.last_ts)`\n- nodes affected: \(.nodes | join(", "))"' \
       <<<"$verdict_json"
+    if [[ -n "$cl_api_message" ]]; then
+      # shellcheck disable=SC2016  # the backticks are the issue body's Markdown fence, not expansions
+      printf -- '\nThe API'"'"'s own words on the newest counted failure:\n\n```\n%s\n```\n' "$cl_api_message"
+    fi
     cat <<CRASH_LOOP_BODY
 
 No recovery — a success, or (for a pre-selection death) a cycle reaching a
 selection stage — has happened anywhere in the fleet since the first of these.
 A failure this uniform is almost certainly deterministic — something that
-ships in the image or the config, not a transient — so no amount of retrying
-will clear it, and until it clears the fleet selects no work at all.
+ships in the image or the config$cl_credential_hint, not a transient — so no
+amount of retrying will clear it, and until it clears the fleet selects no
+work at all.
 
 $evidence_line
 
