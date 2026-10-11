@@ -365,6 +365,56 @@ assert_eq "cost_rows carries lane per row too, matching by_lane's own reading" \
   "true" "$(jq -r --arg cid "$lcid_api" \
     '.counts.cost_rows[] | select(.cycle==$cid) | (.lane=="api")' <<<"$ldata")"
 
+# --- A torn stream must not cost its neighbours their lane (issue #2239) ----
+# A stage killed on `inactivity`/`backstop` tears its stream's final line by
+# construction, and jq abandons a whole invocation at its first parse error.
+# Read in one batch, a single torn stream would report every readable stream
+# behind it in that batch as `unknown`; read one file per invocation, it costs
+# nothing beyond its own torn tail — and not even that, since the `init` it
+# recorded before the tear has already been emitted by the time jq gives up.
+# The torn cycle's id sorts first, so it really is ahead of the readable one
+# in the scan's own `sort -z` order rather than incidentally behind it.
+t="$(new_home nodeT)"
+tcid_torn="${today_day}T065900Z-70"
+tcid_good="${today_day}T070000Z-71"
+td="$t/.local/state/poetic-agents/cycles"
+mkdir -p "$td/$tcid_torn" "$td/$tcid_good"
+printf '{"type":"result","subtype":"success","total_cost_usd":0.4,"duration_ms":5,"num_turns":1,"is_error":false,"modelUsage":{"model-a":{"costUSD":0.4}},"result":"ok"}' \
+  > "$td/$tcid_torn/coordinator.out"
+# A good `init`, then a final line torn mid-write — no trailing newline.
+printf '{"type":"system","subtype":"init","apiKeySource":"none"}\n{"type":"assistant","message":{"con' \
+  > "$td/$tcid_torn/coordinator.stream.jsonl"
+printf '{"type":"result","subtype":"success","total_cost_usd":0.3,"duration_ms":5,"num_turns":1,"is_error":false,"modelUsage":{"model-a":{"costUSD":0.3}},"result":"ok"}' \
+  > "$td/$tcid_good/coordinator.out"
+printf '{"type":"system","subtype":"init","apiKeySource":"ANTHROPIC_API_KEY"}\n' \
+  > "$td/$tcid_good/coordinator.stream.jsonl"
+
+run_publish "$t"
+tdata="$(data_of "$t")"
+
+assert_eq "the readable stream scanned behind a torn one still reports its real lane" \
+  "0.3" "$(jq -r '.counts.by_lane[] | select(.lane=="api") | .usd' <<<"$tdata")"
+assert_eq "and the torn stream still yields the lane it recorded before the tear" \
+  "0.4" "$(jq -r '.counts.by_lane[] | select(.lane=="subscription") | .usd' <<<"$tdata")"
+assert_eq "so nothing in this fixture falls to unknown at all" \
+  "[]" "$(jq -cS '.counts.by_lane | map(select(.lane=="unknown"))' <<<"$tdata")"
+assert_eq "cost_rows agrees per row for the stream behind the torn one" \
+  "true" "$(jq -r --arg cid "$tcid_good" \
+    '.counts.cost_rows[] | select(.cycle==$cid) | (.lane=="api")' <<<"$tdata")"
+
+# --- A stream carrying two init events takes the first, as the adapter does -
+# `lib/substrate-claude-code.sh`'s `substrate_claude_code_lane_of` reads the
+# *first* `system`/`init` event (its own `head -n 1`); this roll-up must not
+# disagree with the authoritative per-stage record by picking an arbitrary one.
+printf '{"type":"system","subtype":"init","apiKeySource":"none"}\n{"type":"system","subtype":"init","apiKeySource":"ANTHROPIC_API_KEY"}\n' \
+  > "$td/$tcid_good/coordinator.stream.jsonl"
+run_publish "$t"
+tdata2="$(data_of "$t")"
+assert_eq "the first init event decides the lane, not the last" \
+  "0.7" "$(jq -r '.counts.by_lane[] | select(.lane=="subscription") | .usd' <<<"$tdata2")"
+assert_eq "and no api row survives, since neither stream's first init names one" \
+  "[]" "$(jq -cS '.counts.by_lane | map(select(.lane=="api"))' <<<"$tdata2")"
+
 # --- cost_rows carries what the money bought (issue #593, D21) -------------
 # The join is against the fleet-wide event union (log.jsonl), not
 # cycles.json — this fixture never runs a real cycle, so the union is just

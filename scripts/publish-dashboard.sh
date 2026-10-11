@@ -1949,32 +1949,55 @@ done
 # `<stage>.stream.jsonl`, never off the `.out` envelope this scan's own
 # `input_filename` already names, and jq has no way to open a second file by
 # a computed name from inside a running program. So this reads every stream
-# file in its own batched pass first — the same `xargs -n 25` batching as the
-# cost scan below, for the same reason — and keys the lane each stream
-# answers by its own `.out` sibling's path, so the pass below's own
-# `input_filename` can look `lane` up rather than guess one. Only a readable
-# stream with a first `system`/`init` event naming a recognised
-# `apiKeySource` contributes a row; a missing, empty, `init`-less or
-# unrecognised stream (pruned, a peer's own non-replicated copy, older than
-# this field, or a provider this mapping does not yet cover) is simply absent
-# from the map, and the lookup below defaults to `unknown` for every path it
-# cannot answer — same three causes `docs/spec/dashboard/state.md` gives.
+# file in its own pass first, and keys the lane each stream answers by its own
+# `.out` sibling's path, so the pass below's own `input_filename` can look
+# `lane` up rather than guess one.
+#
+# `xargs -n 1`, one jq invocation per stream — deliberately not the `-n 25`
+# batching the cost scan below uses, and the extra process per stream is the
+# price of being right. jq abandons the whole invocation at its first parse
+# error, and a stage killed on `inactivity`/`backstop` tears its stream's
+# final line by construction (`run_model_stage`'s own note on reading past
+# it), so a batch would let one torn stream report up to 24 perfectly
+# readable transcripts as `unknown`. Per-file, a torn tail costs only its own
+# file — and not even that, since jq emits each `init` as it reads it, so a
+# killed stage's stream still yields the lane it recorded before the tear.
+# `jq -R 'fromjson? // empty'` is not an alternative: a torn file with no
+# trailing newline concatenates its partial last line with the next file's
+# first line, losing that file's `init` just as silently.
+#
+# `sort -z` makes the map deterministic, as the cost scan's own `.out` pass
+# already does, which is what lets the reduce below keep the *first* `init`
+# per path rather than an arbitrary one of several — the same "first
+# `system`/`init` event" semantics `lib/substrate-claude-code.sh`'s
+# `substrate_claude_code_lane_of` reads for the authoritative per-stage
+# record.
+#
+# Two different degradations both land on `unknown`, and the lookup below
+# cannot tell them apart: a missing, empty or `init`-less stream (pruned, a
+# peer's own non-replicated copy, or older than this field) contributes no row
+# at all and falls to the lookup's own `unknown` default, whereas a stream
+# whose `apiKeySource` this mapping does not recognise (a provider whose
+# vocabulary is #2246's business) is present in the map carrying the literal
+# "unknown". Same observable result, different mechanism — see
+# `docs/spec/dashboard/state.md`.
 lane_map_file="$work_tmp/lane-map.json"
 # shellcheck disable=SC2016  # `$f` below is a jq binding, not a shell variable
-find "${cost_dirs[@]}" -name '*.stream.jsonl' -type f -print0 2>/dev/null \
-  | xargs -0 -r -n 25 jq -c '
+find "${cost_dirs[@]}" -name '*.stream.jsonl' -type f -print0 2>/dev/null | sort -z \
+  | xargs -0 -r -n 1 jq -c '
       input_filename as $f
       | select(type == "object" and .type == "system" and .subtype == "init")
       | {path: ($f | sub("\\.stream\\.jsonl$"; ".out")), source: (.apiKeySource // null)}
     ' 2>/dev/null \
   | jq -sc '
-      map(select(.source != null)) | unique_by(.path)
-      | map({(.path): (
-          if .source == "none" then "subscription"
-          elif (.source == "ANTHROPIC_API_KEY" or .source == "apiKeyHelper"
-                or .source == "/login managed key") then "api"
-          else "unknown" end)})
-      | add // {}
+      reduce (.[] | select(.source != null)) as $r ({};
+        if has($r.path) then .
+        else .[$r.path] = (
+          if $r.source == "none" then "subscription"
+          elif ($r.source == "ANTHROPIC_API_KEY" or $r.source == "apiKeyHelper"
+                or $r.source == "/login managed key") then "api"
+          else "unknown" end)
+        end)
     ' > "$lane_map_file" 2>/dev/null
 jq -e 'type == "object"' "$lane_map_file" >/dev/null 2>&1 || printf '{}' > "$lane_map_file"
 # shellcheck disable=SC2016  # `$p` below is a jq binding, not a shell variable
