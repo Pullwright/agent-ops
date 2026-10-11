@@ -685,7 +685,7 @@
       development box should be able to say so once" is exactly what leaving
       `host_budget_enforce` at its default does, with no fight against this
       requirement required. On: an overcommit logs a `stand-down` event with
-      `cause: "host-overcommit"` (one of the sixteen tokens in the closed
+      `cause: "host-overcommit"` (one of the seventeen tokens in the closed
       cause vocabulary, `docs/FLOW-SCHEMA.md`) whose `reason` carries
       `lib/host-budget.sh`'s own `host_budget_describe` — both dimensions'
       arithmetic, the declared sum, the reserve, the host total, and the
