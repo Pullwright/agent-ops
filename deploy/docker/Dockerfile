@@ -53,6 +53,10 @@ ARG SHELLCHECK_SHA256_ARM64=324a7e89de8fa2aed0d0c28f3dab59cf84c6d74264022c00c22a
 # has), so a bad release must not reach every subsequently-built node with no
 # local pin to fall back to. Bump deliberately, in its own PR.
 ARG CLAUDE_CODE_VERSION=2.1.267
+# Grok Build (issue #2134), pinned under the same policy and for the same
+# reason: docs/reviews/2026-10-06-grok-build-evaluation.md evaluated 1.0.46,
+# the npm `latest` dist-tag on 2026-10-06.
+ARG GROK_BUILD_VERSION=1.0.46
 # The container user's ids. They matter because the state, workspace and
 # Claude-config volumes outlive the container: mounting a host directory owned
 # by a different uid is the classic way to make a persistent volume read-only
@@ -176,6 +180,51 @@ RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
     && npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
     && npm cache clean --force
 
+# Grok Build (issue #2134, D28/D14 — one image, every substrate in it), in
+# the same root-run block that installs Claude Code, before ENV HOME, pinned
+# the same way: an installation-time pin against a dependency with the same
+# reach as the pipeline itself, bumped deliberately in its own PR.
+#
+# The npm package's own `postinstall` copies its 171 MB native binary a
+# second time into `$GROK_HOME/bin` (default `~/.grok/bin`) and writes
+# `$GROK_HOME/config.toml` — run as root here, that would leave a root-owned
+# `/home/agent/.grok` that `agent` cannot write, breaking every later
+# credential and session write. That copy is never used at run time (the
+# `grok` command itself resolves through the npm-installed binary, not
+# through $GROK_HOME), so GROK_HOME is pointed at a scratch directory for
+# this install and removed in the same layer — the recipe
+# docs/reviews/2026-10-06-grok-build-evaluation.md §1 verified adds 211 MB
+# and nothing under any home directory.
+#
+# The root-owned policy file narrows what a checkout's own folder trust can
+# make Grok run at start-up (requirement 4k's Grok counterpart; see
+# lib/stage-run.sh's own `stage_project_settings_refusal` for the two vectors
+# this cannot pin and must refuse at launch instead):
+#   allow_managed_hooks_only   skips every hook outside managed policy —
+#                              `.grok/hooks/*.json` and `.claude/settings.json`
+#                              hooks alike, which Grok also reads under its
+#                              own Claude-compatibility layer.
+#   allowed_mcp_servers = []   blocks every MCP server a checkout configures,
+#                              `.grok/config.toml` and `.mcp.json` alike.
+#   session.load_envrc = false stops Grok running a checkout's own `.envrc`
+#                              through bash at start-up.
+# No configuration layer below this file can release any of the three.
+RUN GROK_HOME=/tmp/grok-install npm install -g "@xai-official/grok@${GROK_BUILD_VERSION}" \
+    && rm -rf /tmp/grok-install \
+    && npm cache clean --force \
+    && mkdir -p /etc/grok \
+    && printf '%s\n' \
+         'allow_managed_hooks_only = true' \
+         'allowed_mcp_servers = []' \
+         '[session]' \
+         'load_envrc = false' \
+         > /etc/grok/requirements.toml \
+    && chown root:root /etc/grok/requirements.toml \
+    && chmod 0644 /etc/grok/requirements.toml \
+    && grep -qxF 'allow_managed_hooks_only = true' /etc/grok/requirements.toml \
+    && grep -qxF 'allowed_mcp_servers = []' /etc/grok/requirements.toml \
+    && grep -qxF 'load_envrc = false' /etc/grok/requirements.toml
+
 # supercronic: a cron implementation that runs as pid 1 in a container without
 # a system cron daemon, logs to stdout, and needs no root. The crontab it runs
 # is deploy/docker/crontab. The release asset name and its pinned checksum
@@ -270,6 +319,16 @@ ENV HOME=/home/agent
 # of that same warning — harmless, and the CI check below fails first.
 ENV CLAUDE_CONFIG_DIR=/home/agent/.claude
 
+# Where Grok Build keeps its own sessions, logs and seeded config.toml
+# (issue #2134). Unlike CLAUDE_CONFIG_DIR, this is deliberately *not* a
+# persistent volume: on the API-key path nothing here needs to outlive the
+# container (a salvage resume happens within the same cycle, in the same
+# container), and the default `~/.grok` would otherwise sit inside `agent`'s
+# home directory, which `chmod 0711` above keeps the stage user from
+# listing. #2139's subscription path adds the one thing here that does need
+# to persist (`auth.json`), on its own volume, mirroring `claude-config`.
+ENV GROK_HOME=/home/agent/.grok-run
+
 COPY --chown=agent:agent . /app
 
 # The mount points for the persistent volumes, created here and owned by
@@ -317,12 +376,13 @@ RUN state_dir="$(jq -r '.state_dir' /app/config.json)" \
     && case "$state_dir" in "~"*) state_dir="$HOME${state_dir#\~}" ;; esac \
     && case "$workspace_root" in "~"*) workspace_root="$HOME${workspace_root#\~}" ;; esac \
     && mkdir -p /home/agent/.claude \
+                /home/agent/.grok-run \
                 "$state_dir/cycles" \
                 "$state_dir/reviews" \
                 "$workspace_root" \
     && chown -R "$PUID:$PGID" /home/agent "$state_dir" "$workspace_root" \
-    && chown "$PUID:$STAGE_GID" /home/agent/.claude \
-    && chmod 2770 /home/agent/.claude
+    && chown "$PUID:$STAGE_GID" /home/agent/.claude /home/agent/.grok-run \
+    && chmod 2770 /home/agent/.claude /home/agent/.grok-run
 
 # The `gh` transport shim (requirement 2.0e, agent-ops#1084): a symlink ahead
 # of apt's own /usr/bin/gh on PATH, so every `gh` call this image ever makes —
@@ -343,11 +403,19 @@ ENV PW_GH_REAL_BIN=/usr/bin/gh
 #   /usr/local/bin/claude                    stands in front of the real CLI
 #                                            on PATH, as the gh shim does, and
 #                                            runs every `claude` as `stage`
+#   /usr/local/bin/grok                      the same boundary, for Grok
+#                                            Build (issue #2134)
 #   /usr/local/libexec/agent-ops/stage-exec  what `agent` may run as `stage`
 #   /usr/local/libexec/agent-ops/forge-token what `stage` may run as `agent`:
 #                                            the authoring token, nothing else
 #   /usr/local/libexec/agent-ops/forge-token-request
 #                                            the stage side of that request
+#   /usr/local/libexec/agent-ops/grok-subreaper
+#                                            contains a killed Grok Build run
+#                                            (issue #2134) — needs no
+#                                            privilege of its own, installed
+#                                            here anyway so a checkout cannot
+#                                            change what the stage user runs
 #   /etc/agent-ops/stage-gitconfig           the stage's global git config
 #   /etc/sudoers.d/agent-ops                 the two rules
 #
@@ -358,11 +426,14 @@ RUN install -d -o root -g root -m 0755 /usr/local/libexec/agent-ops /etc/agent-o
     && install -o root -g root -m 0755 /app/deploy/docker/stage-exec.sh /usr/local/libexec/agent-ops/stage-exec \
     && install -o root -g root -m 0755 /app/deploy/docker/forge-token.sh /usr/local/libexec/agent-ops/forge-token \
     && install -o root -g root -m 0755 /app/deploy/docker/forge-token-request.sh /usr/local/libexec/agent-ops/forge-token-request \
+    && install -o root -g root -m 0755 /app/deploy/docker/grok-subreaper.py /usr/local/libexec/agent-ops/grok-subreaper \
     && install -o root -g root -m 0755 /app/deploy/docker/claude-shim.sh /usr/local/bin/claude \
+    && install -o root -g root -m 0755 /app/deploy/docker/grok-shim.sh /usr/local/bin/grok \
     && install -o root -g root -m 0644 /app/deploy/docker/stage-gitconfig /etc/agent-ops/stage-gitconfig \
     && install -o root -g root -m 0440 /app/deploy/docker/sudoers-agent-ops /etc/sudoers.d/agent-ops \
     && visudo -c -q \
-    && test -x /usr/bin/claude
+    && test -x /usr/bin/claude \
+    && test -x /usr/bin/grok
 
 # The egress fence config (D24), parsed at build so a typo fails here, not on
 # a node. The conf reads its allowlist from /tmp/egress-allowlist, so stage

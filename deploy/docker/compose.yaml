@@ -51,6 +51,13 @@ x-agent-ops-env: &agent-ops-env
   # login per node, own use only), authenticated once into the claude-config
   # volume below rather than through any variable here.
   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  # The xAI provider's own credential (issue #2134), for a `providers.<name>`
+  # entry whose `substrate` is `grok-build` — read directly and
+  # non-interactively by every `grok` invocation, the same BYO API-key shape
+  # ANTHROPIC_API_KEY above gives Claude Code. Left empty, no Grok Build
+  # stage can run; the subscription alternative (#2139) needs a second
+  # variable of its own, since the two credentials are not interchangeable.
+  XAI_API_KEY: ${XAI_API_KEY:-}
   # What lets a stage check the Vercel preview its own pull request deploys
   # (scripts/preview-deploy.sh). Both optional, and a node without either
   # runs every cycle exactly as before: the check then reports "could not
@@ -521,6 +528,16 @@ services:
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
       DISABLE_AUTOUPDATER: "1"
       ENABLE_CLAUDEAI_MCP_SERVERS: "false"
+      # Grok Build's own optional traffic, off at the source for the same
+      # reason (issue #2134): an update check and telemetry neither a
+      # headless stage nor this image's own pin policy needs, and
+      # GROK_FOLDER_TRUST=0 so a stage's checkout auto-loads its own
+      # AGENTS.md/CLAUDE.md and the staged review skill the way `claude -p`
+      # already does — never "0", for the same reason as the Claude switches
+      # above: some of these treat any value as opted out.
+      GROK_DISABLE_AUTOUPDATER: "1"
+      GROK_TELEMETRY_ENABLED: "0"
+      GROK_FOLDER_TRUST: "0"
     # The container-runtime liveness check (requirement 60c, issue #608): runs
     # `scripts/node-health.sh --live` *inside* this container, exactly as a
     # Kubernetes `exec` probe would — the CLI is the same in both places, so

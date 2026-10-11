@@ -44,6 +44,7 @@ starter="$SCRIPT_DIR/deploy/docker/egress-proxy-start.sh"
 for domain in \
   github.com api.github.com codeload.github.com .githubusercontent.com \
   api.anthropic.com platform.claude.com claude.ai claude.com \
+  api.x.ai \
   api.vercel.com .vercel.app vercel.com \
   registry.npmjs.org fonts.googleapis.com fonts.gstatic.com ghcr.io
 do

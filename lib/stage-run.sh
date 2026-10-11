@@ -16,13 +16,16 @@
 # clock, the metering hand-off — identical whichever provider a stage's model
 # resolves to. What is *not* neutral (the binary, its argv, its prompt
 # delivery, its own result-line and rate-limit shapes) lives one call away,
-# in a `lib/substrate-<name>.sh` adapter — today, only
-# `lib/substrate-claude-code.sh`, sourced below — resolved per invocation by
-# `stage_model_substrate` from the model it was asked to run (issue #2133:
-# the Claude adapter extracted from this file unchanged).
+# in a `lib/substrate-<name>.sh` adapter — `lib/substrate-claude-code.sh`
+# (issue #2133: the Claude adapter extracted from this file unchanged) and
+# `lib/substrate-grok-build.sh` (issue #2134), both sourced below — resolved
+# per invocation by `stage_model_substrate` from the model it was asked to
+# run.
 #
 # shellcheck source=lib/substrate-claude-code.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/substrate-claude-code.sh"
+# shellcheck source=lib/substrate-grok-build.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/substrate-grok-build.sh"
 
 # PROVIDER_SUBSTRATE/MODEL_PROVIDER are lib/model-id.sh's: the provider each
 # model resolves to (requirement 1a), and — populated as a side effect of
@@ -238,14 +241,78 @@ _stage_byte_length() {
   printf '%s' "${#1}"
 }
 
-# stage_project_settings_refusal DIR
-# Prints why a stage must not be launched in DIR and returns 0 when either of
-# its Claude Code project settings files carries a key outside the allowlist
-# or cannot be read as a JSON object; returns 1, printing nothing, when there
-# is no such file or every key in it is allowed. The reason names the file and
-# what is wrong with it, then says where the file came from.
+# STAGE_GROK_CONFIG_ALLOWED_SECTIONS: the only `.grok/config.toml` top-level
+# sections a Grok stage may carry (requirement 4k's Grok counterpart, issue
+# #2134's own probe of "what a checkout supplies" — see
+# docs/reviews/2026-10-06-grok-build-evaluation.md and the issue body's
+# extension of it). `[permission]` and `[mcp]` are themselves inert the same
+# way Claude Code's own `permissions`/MCP-approval keys are (allowed for the
+# same reason those are allowed in STAGE_PROJECT_SETTINGS_INERT_KEYS);
+# `[mcp_servers]` is allowed only while the image's own
+# `/etc/grok/requirements.toml` pins `allowed_mcp_servers = []`, which this
+# repository always ships — there is no configuration that lifts that pin.
+# `[plugins]` is refused: a plugin stays untrusted under folder trust, but
+# only while nothing else grants it the run, and "inert today" is not a
+# guarantee this file can keep.
+STAGE_GROK_CONFIG_ALLOWED_SECTIONS='permission mcp mcp_servers'
+
+# _stage_toml_top_level_sections  < TOML on stdin
+# One line per table header the TOML on stdin declares: the section's own
+# name where the header is a plain `[name]` that can be compared against an
+# allowlist, and the header line itself, verbatim, where it is any other
+# shape. A line reader, not a parser: this reads only what a header *line*
+# says, which is all requirement 4k's Grok guard needs to ask ("does this
+# file touch any section beyond the allowed three"), never what a section's
+# own keys hold.
+#
+# That second case is why this is not one regular expression. An
+# array-of-tables header (`[[plugins]]`), a quoted one (`["hooks"]`) and a
+# whitespaced one (`[ hooks ]`) are all valid TOML, and each declares a
+# section as surely as `[hooks]` does; a pattern matching only `[name]`
+# reports none of them, and a header this function does not report is one
+# the caller cannot refuse, since it refuses a file only for the sections it
+# is told about. So anything header-shaped this cannot read as a bare name
+# is printed as itself, which no allowlist entry matches — the same
+# safe-by-default stance the JSON checks below take toward a file they
+# cannot parse. A line that opens with `[` without closing on the same line
+# (an array value spilling over several) is not header-shaped and is
+# skipped; so is a blank or indented-value line, since a header is the only
+# thing whose first non-blank character is `[`.
+_stage_toml_top_level_sections() {
+  local line stripped
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    stripped="${line#"${line%%[![:space:]]*}"}"
+    [[ "$stripped" == '['* ]] || continue
+    [[ "$stripped" =~ \][[:space:]]*(#.*)?$ ]] || continue
+    if [[ "$stripped" =~ ^\[([A-Za-z0-9_.-]+)\][[:space:]]*(#.*)?$ ]]; then
+      printf '%s\n' "${BASH_REMATCH[1]}"
+    else
+      printf '%s\n' "$stripped"
+    fi
+  done
+}
+
+# stage_project_settings_refusal DIR [SUBSTRATE]
+# Prints why a stage must not be launched in DIR and returns 0 when a
+# project settings file it would load carries something outside the
+# allowlist, or cannot be read as it needs to be to vet; returns 1, printing
+# nothing, when there is no such file or every one found is allowed. The
+# reason names the file and what is wrong with it, then says where the file
+# came from.
+#
+# The `.claude/settings.json`/`settings.local.json` checks below run for
+# every SUBSTRATE, not only `claude-code`: Grok Build reads the same file's
+# `hooks` under its own Claude-compatibility layer when `GROK_FOLDER_TRUST=0`
+# trusts a checkout (issue #2134's probe), so the one guard already protects
+# both substrates' own stages against it, with nothing to dispatch. What
+# *is* substrate-specific is the second block, below the loop: Grok's own
+# `.grok/lsp.json` and `.grok/config.toml`, which Claude Code never reads and
+# so never needs vetted. `.grok/config.toml` is read through
+# `stage_boundary_read`, on the same terms and for the same reason the
+# `.claude` files are; `.grok/lsp.json` is refused on sight, so its content
+# is never opened at all.
 stage_project_settings_refusal() {
-  local dir="$1" allowed name file content disallowed
+  local dir="$1" substrate="${2:-claude-code}" allowed name file content disallowed s
   allowed="$(stage_project_settings_allowed_keys)"
   for name in settings.json settings.local.json; do
     file="$dir/.claude/$name"
@@ -278,6 +345,45 @@ stage_project_settings_refusal() {
       return 0
     fi
   done
+
+  if [[ "$substrate" == "grok-build" ]]; then
+    file="$dir/.grok/lsp.json"
+    if [[ -e "$file" || -L "$file" ]]; then
+      printf '.grok/lsp.json is present, and no stage runs a project LSP server from the checkout it runs in; %s' \
+        "$(stage_project_settings_origin "$dir" ".grok/lsp.json")"
+      return 0
+    fi
+    file="$dir/.grok/config.toml"
+    if [[ -e "$file" || -L "$file" ]]; then
+      # Read as the stage user reads it, bounded in time and size, for the
+      # same reason the `.claude` files above are (lib/stage-boundary.sh's
+      # second rule): this directory is often a workspace an earlier stage
+      # has had, so the path can be a link to a file only the Script can
+      # read, or a FIFO that never answers whoever opens it. Refused rather
+      # than skipped when it cannot be read that way — a file this guard
+      # cannot see is a file it cannot vet.
+      if ! content="$(stage_boundary_read "$file" "$((STAGE_PROJECT_SETTINGS_MAX_BYTES + 1))" && printf x)" \
+         || (( $(_stage_byte_length "${content%x}") > STAGE_PROJECT_SETTINGS_MAX_BYTES )); then
+        printf '.grok/config.toml cannot be read as a file of at most %s bytes, so it cannot be vetted; %s' \
+          "$STAGE_PROJECT_SETTINGS_MAX_BYTES" "$(stage_project_settings_origin "$dir" ".grok/config.toml")"
+        return 0
+      fi
+      disallowed=""
+      while IFS= read -r s; do
+        [[ -n "$s" ]] || continue
+        case " $STAGE_GROK_CONFIG_ALLOWED_SECTIONS " in
+          *" $s "*) ;;
+          *) disallowed+="${disallowed:+, }$s" ;;
+        esac
+      done < <(_stage_toml_top_level_sections <<<"${content%x}")
+      if [[ -n "$disallowed" ]]; then
+        printf '.grok/config.toml sets section(s) %s, which no stage loads from the checkout it runs in; %s' \
+          "$disallowed" "$(stage_project_settings_origin "$dir" ".grok/config.toml")"
+        return 0
+      fi
+    fi
+  fi
+
   return 1
 }
 
@@ -403,6 +509,24 @@ stage_rejected_rate_limit() {
   "substrate_${substrate//-/_}_rejected_rate_limit" "$stream_file"
 }
 
+# stage_verdict_rc RC OUT_FILE [SUBSTRATE]
+# RC, corrected by SUBSTRATE's own `substrate_<name>_verdict_rc` when it
+# defines one, or RC unchanged otherwise (every substrate but `grok-build`
+# today). Exists because a provider's own exit status is not guaranteed to
+# be a verdict — Grok Build's can be 0 with `is_error: true` (issue #2134,
+# docs/reviews/2026-10-06-grok-build-evaluation.md's "Beyond the ten
+# questions" section, "Exit status") — and `run_model_stage`'s own callers branch on
+# the return value alone, never on `.out`'s content, to decide whether a
+# stage succeeded.
+stage_verdict_rc() {
+  local rc="$1" out_file="$2" substrate="${3:-claude-code}"
+  if declare -F "substrate_${substrate//-/_}_verdict_rc" >/dev/null 2>&1; then
+    "substrate_${substrate//-/_}_verdict_rc" "$rc" "$out_file"
+  else
+    printf '%s\n' "$rc"
+  fi
+}
+
 # stage_watchdog_warning STAGE
 # The body of the `warning` event a watchdog kill earns, or nothing (returning
 # 1) when the last run ended any other way.
@@ -488,7 +612,7 @@ run_model_stage() {
   # a kill reason as a cap kill and the rework ledger as a re-run, and a stage
   # that never started is neither.
   local settings_refusal
-  if settings_refusal="$(stage_project_settings_refusal "$cwd")"; then
+  if settings_refusal="$(stage_project_settings_refusal "$cwd" "$substrate")"; then
     : >"$stream_file"
     : >"$out_file"
     printf 'run_model_stage: the %s stage was not launched: %s (requirement 4k)\n' \
@@ -656,6 +780,15 @@ run_model_stage() {
   # the stream as `.out` — is also what keeps the state mirror's size where
   # it was: see scripts/state-sync.sh on why a stream is never replicated.
   stage_result_line "$stream_file" "$substrate" >"$out_file" 2>/dev/null || : >"$out_file"
+
+  # A cap kill's own 124 is already the verdict (requirement 4e) — never
+  # corrected, since it did not come from the provider at all. Every other
+  # path asks the substrate whether its own exit status needs folding
+  # against what `.out` actually says (lib/substrate-grok-build.sh's
+  # `_verdict_rc`; every other substrate today leaves RC exactly as given).
+  if (( rc != 124 )); then
+    rc="$(stage_verdict_rc "$rc" "$out_file" "$substrate")"
+  fi
 
   # The GitHub budget reading after the model's own run, attributed to this
   # stage (requirement 2.0d, lib/github-limit.sh's `github_budget_record`).

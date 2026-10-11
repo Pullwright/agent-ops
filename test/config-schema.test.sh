@@ -1343,8 +1343,8 @@ assert_valid "a providers entry with no substrate is still schema-valid" \
 assert_doctor "doctor names a providers entry that carries no substrate" \
   '.providers = {"xai": {}}' 1 'providers.xai: substrate is required'
 assert_doctor "doctor names a providers entry whose substrate has no adapter" \
-  '.providers = {"xai": {"substrate": "grok-build"}}' 1 \
-  'providers.xai: substrate "grok-build" is not one this image has an adapter for'
+  '.providers = {"xai": {"substrate": "not-an-installed-substrate"}}' 1 \
+  'providers.xai: substrate "not-an-installed-substrate" is not one this image has an adapter for'
 assert_doctor "doctor names a providers entry carrying an unknown key" \
   '.providers = {"anthropic": {"substrate": "claude-code", "api_key": "x"}}' 1 \
   'providers.anthropic: unknown key "api_key"'

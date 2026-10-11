@@ -34,10 +34,19 @@ envelope's own schema — that is the stage's own provider's contract, not
 this repo's, and
 only a subset of it is used here. It documents the fields **this repo depends
 on**, the shape it derives from them, and the guarantee it makes about that
-shape going forward. Every record this system has ever produced ran on
-`anthropic`'s own Claude Code envelope (issue #2133's `provider` field,
-below), so every field but that one is still described in Claude Code's own
-terms until a second provider's adapter lands.
+shape going forward. It is still described in Claude Code's own terms
+(issue #2133's `provider` field, below, names which provider a given record
+actually ran on). Grok Build's own raw envelope is a second upstream
+source — its `streaming-messages-json` terminal `result` line, as
+`docs/reviews/2026-10-06-grok-build-evaluation.md` §3 records it — but a
+success envelope already carries `total_cost_usd`/`duration_ms`/`num_turns`/
+`is_error`/`modelUsage` unchanged, and a failure envelope is normalised onto
+the same vocabulary before `metering_fields` ever reads it
+(`lib/substrate-grok-build.sh`'s own adapter boundary, issue #2134). So this
+document's field table holds for either provider's envelope without a
+branch of its own; only the two Claude-specific terms this document's own
+"Stability policy" section names below (`total_cost_usd`, `modelUsage`) are,
+for a Grok record, the adapter's own normalisation rather than the CLI's.
 
 ## Per-stage record
 
@@ -54,7 +63,7 @@ either emits the same shape.
 | Field | Type | Unit | Meaning |
 | --- | --- | --- | --- |
 | `model` | string | — | The model id passed to the invocation (the same string `config.json` names, resolved per `lib/model-id.sh`). Always present, including on a stage that never ran: it is what the invocation was *asked* for, not something read back out of the envelope. |
-| `provider` | string | — | The provider `model` resolves to (`lib/model-id.sh`'s `MODEL_PROVIDER`, issue #2133) — `anthropic` for every record this system has ever produced. Always present, for the same reason `model` is: it is read off the id the invocation was given, not out of the envelope, so it is never affected by whether the envelope itself is readable. |
+| `provider` | string | — | The provider `model` resolves to (`lib/model-id.sh`'s `MODEL_PROVIDER`, issue #2133) — `anthropic` for a Claude Code stage, `xai` for a Grok Build one (issue #2134), or whichever name a configured `providers` entry gives a third. Always present, for the same reason `model` is: it is read off the id the invocation was given, not out of the envelope, so it is never affected by whether the envelope itself is readable. |
 | `cost_usd` | number \| null | US dollars | The envelope's own `total_cost_usd` — a **client-side estimate** the provider's own CLI computes from token counts, not a charge or a draw against any plan limit (`docs/spec/dashboard/README.md`'s design decision on plan limits makes the same point about the dashboard's own cost figures). Includes any subagents the stage's own invocation spawned. `null` if the envelope is missing or unparseable. |
 | `duration_ms` | integer \| null | milliseconds | The envelope's `duration_ms`: wall-clock time for the invocation. |
 | `num_turns` | integer \| null | count | The envelope's `num_turns`. |
@@ -254,6 +263,16 @@ this repo does not control. If that envelope's shape changes upstream in a
 way that breaks the derivation above — a renamed field, a changed unit — that
 is a bug in this document or in `lib/metering.sh`, to be fixed the same way
 any other spec/code disagreement is.
+
+A Grok Build stage's `cost_usd`/`tokens` both understate what the run
+actually spent, by a known and bounded amount: every Grok session also
+sends the head of its own prompt, truncated, to a second xAI model
+(`grok-4.6`) to generate a session title (docs/DATA-HANDLING.md,
+"What a stage sends to its model provider"), and that call's cost never
+appears in `modelUsage` — `modelUsage` names only the run's own model, in
+every envelope the evaluation record captured. This is a known gap in the
+record, not a derivation bug: there is nothing in `lib/metering.sh` to fix,
+because the envelope itself never carries the figure.
 
 ## Where it's produced and consumed
 

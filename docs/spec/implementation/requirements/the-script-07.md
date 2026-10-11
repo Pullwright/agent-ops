@@ -588,15 +588,20 @@
    `resolve_model_id_into` populates as each model key is read from config) —
    which substrate adapter actually
    launches the binary. A substrate adapter is one file,
-   `lib/substrate-<name>.sh`, supplying exactly what the provider-specific
-   half needs: the binary's name and version, the argument vector and prompt-
-   delivery method, the terminal `result` line in a finished stream, and a
-   structured rate-limit refusal in a live one. `lib/substrate-claude-code.sh`
-   is the only one that exists today — Claude Code, Anthropic's own CLI,
-   extracted from this launcher unchanged — so every model this pipeline has
-   ever run still launches exactly as it always did; a second provider lands
-   as a second adapter file, never a second launcher. It launches the
-   invocation in its own process
+   `lib/substrate-<name>.sh`, supplying the provider-specific half: the
+   binary's name and version, the argument vector and prompt-delivery
+   method, the terminal `result` line in a finished stream, a structured
+   rate-limit refusal in a live one, and — optionally, read only when the
+   adapter defines it (`stage_verdict_rc`'s own dispatch) — a correction of
+   the run's own exit status against what its envelope actually says, for a
+   CLI whose exit code is not always a verdict. `lib/substrate-claude-code.sh`
+   (Claude Code, Anthropic's own CLI, extracted from this launcher unchanged)
+   and `lib/substrate-grok-build.sh` (Grok Build, xAI's own CLI, issue
+   #2134) are the two that exist today, each a sibling file behind the same
+   seam — landing the second changed nothing about the first, and every
+   model this pipeline ran before it still launches exactly as it always
+   did. A third provider lands the same way, as a third adapter file, never
+   a second launcher. It launches the invocation in its own process
    group (`set -m`), so the stage timeout's kill reaches every descendant
    (requirement 9c), and it runs the invocation under
    `--output-format stream-json --verbose`. An optional resume-session-id
@@ -805,15 +810,25 @@
    prior.
    **Cold start is hierarchical shrinkage, not a threshold.** A cell's
    estimate is `(n·own + n₀·prior) / (n + n₀)`, with the prior the pooled
-   value one level up — the same actor and model across every repository,
-   falling back to the same actor across every model, and the shipped prior at
-   the root. There is no run count at which a cell switches on; it slides.
-   That is what makes the model dimension affordable: a model used twice in a
-   repository contributes almost nothing of its own and sits essentially at
-   the pooled estimate, rather than producing the wild cell a hard split would
-   give. An installation with no history at all runs on the shipped priors,
-   which is the whole requirement — a customer must never be asked to choose a
-   timeout, and must get sensible behaviour on cycle one.
+   value one level up — the same actor, provider and model across every
+   repository, falling back to the same actor and provider across every
+   model, and the shipped prior at the root. There is no run count at which a
+   cell switches on; it slides. That is what makes the model dimension
+   affordable: a model used twice in a repository contributes almost nothing
+   of its own and sits essentially at the pooled estimate, rather than
+   producing the wild cell a hard split would give. The provider dimension
+   (issue #2134) exists in the pool for the opposite reason, to keep two
+   providers from pooling into each other at all: a second provider's gaps
+   are not drawn from the first's own distribution (one silence still spans
+   one command under either substrate, but the commands a stage waits on
+   differ by more than which account is paying for them), so a pool one
+   level above a cell is keyed `(actor, provider)`, never `(actor)` alone —
+   a new provider's own first cell shrinks towards its own provider's pool
+   and then the shipped prior, never towards whatever every other
+   provider's cells have already shrunk towards. An installation with no
+   history at all runs on the shipped priors, which is the whole
+   requirement — a customer must never be asked to choose a timeout, and
+   must get sensible behaviour on cycle one.
    **Precedence, most specific first:** a `stage_timeouts` /
    `stage_inactivity` entry on the repository being worked; the plain
    `timeout_<actor>` / `inactivity_<actor>` key; the adaptive value for the
