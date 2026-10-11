@@ -755,6 +755,14 @@
       cycle that promises to change nothing must not write a fresh
       escalation.
 
+      It runs last of the 0 band rather than beside the 0b check it
+      otherwise mirrors, because it is the only one of them that spends:
+      0c, 0f and 0g each run ahead of every check below them that can,
+      and this one writes its probe transcript and its own state record
+      into the very `state_dir` 0c exists to guard. Catching a refused
+      credential one check sooner buys nothing; spending into a host 0c
+      would have stood down costs what that band exists to prevent.
+
       Proof is `test/standdown-credential-preflight.test.sh` (this
       requirement's own block lifted out of `lib/standdown.sh`, the same
       technique `test/auth-failure-wiring.test.sh` uses for 0b): a refused
@@ -764,7 +772,13 @@
       probe falls through to the rest of the cycle and is not probed again
       on a second cycle of the same healthy container, but is probed again
       after a fresh container start; a `transient` verdict stands nothing
-      down; `--dry-run` makes no call at all.
+      down; a `refused` verdict whose own token names something other than
+      the credential (`credit_exhausted`, which
+      `lib/substrate-grok-build.sh` synthesises for a billing lapse) stands
+      nothing down either, and files nothing; a container-start reading that
+      is unavailable on every cycle probes on every cycle, rather than
+      reading its own two empty records as unchanged; `--dry-run` makes no
+      call at all.
 
    1. *Usage-limit cooldown*: the same signal arrives on two carriers, and
       the **later** `resume_at` wins. The log union's most recent `limit-hit`

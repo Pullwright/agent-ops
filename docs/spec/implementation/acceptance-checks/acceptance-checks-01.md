@@ -1349,5 +1349,12 @@ oblige anyone to edit a test.
    through and is not probed again on a second cycle of the same healthy
    container, but is probed again after a fresh container start
    (`_updater_health_own_started` reading a different value); a `transient`
-   verdict (a 5xx) stands nothing down; `--dry-run` makes no probe call at
-   all.
+   verdict (a 5xx) stands nothing down; a `refused` verdict whose own
+   `stage_api_refusal` token is not credential-shaped — `credit_exhausted`
+   riding a 429, which reaches the classifier's own default arm as
+   `refused` — stands nothing down and files nothing either, the probe
+   having run, so the gate is proven to read both halves rather than the
+   class alone; a container-start reading that is unavailable (an empty
+   `_updater_health_own_started`) probes on its second cycle as well as its
+   first, rather than comparing its own two empty records as unchanged;
+   `--dry-run` makes no probe call at all.

@@ -229,11 +229,15 @@ dump_stage_output() {
 # A second shape is named the same way (agent-ops#2308): a key the API
 # accepts but refuses to route because it carries no workspace scope — a
 # 400 whose message is a stable sentence (`... must include the
-# anthropic-workspace-id header ...`, or the sibling `invalid x-api-key`/
-# `authentication_error` wording a differently-misconfigured key returns),
-# never a moving part. Named `workspace_scope_refused`, and, like
-# `authentication_failed`, `refused` below: nothing about this clears by
-# retrying, only a corrected or rescoped key.
+# anthropic-workspace-id header ...`, or the sibling `invalid x-api-key`
+# wording a differently-misconfigured key returns), never a moving part.
+# Named `workspace_scope_refused`, and, like `authentication_failed`,
+# `refused` below: nothing about this clears by retrying, only a corrected
+# or rescoped key. The authentication test above is deliberately left to run
+# first, so a message naming `authentication_error` — which that test's own
+# `authenticat` matches — is `authentication_failed` rather than this, which
+# is the truer of the two names for a key the API would not authenticate at
+# all.
 stage_api_refusal() {  # <out-file> -> terminal reason, or empty
   local out_file="$1"
   [[ -s "$out_file" ]] || return 0
@@ -241,7 +245,7 @@ stage_api_refusal() {  # <out-file> -> terminal reason, or empty
          | (((.terminal_reason // "") == "api_error")
             and ((.result // "") | test("authenticat|oauth|unauthori[sz]ed"; "i"))) as $auth
          | (((.terminal_reason // "") == "api_error")
-            and ((.result // "") | test("not scoped to a workspace|anthropic-workspace-id|invalid x-api-key|authentication_error"; "i"))) as $workspace
+            and ((.result // "") | test("not scoped to a workspace|anthropic-workspace-id|invalid x-api-key"; "i"))) as $workspace
          | select($auth or $workspace or ((.api_error_status // null) | type == "number"))
          | if $auth then "authentication_failed"
            elif $workspace then "workspace_scope_refused"
@@ -258,7 +262,7 @@ stage_api_refusal_message() {  # <out-file> -> the API's own words, truncated
          | (((.terminal_reason // "") == "api_error")
             and ((.result // "") | test("authenticat|oauth|unauthori[sz]ed"; "i"))) as $auth
          | (((.terminal_reason // "") == "api_error")
-            and ((.result // "") | test("not scoped to a workspace|anthropic-workspace-id|invalid x-api-key|authentication_error"; "i"))) as $workspace
+            and ((.result // "") | test("not scoped to a workspace|anthropic-workspace-id|invalid x-api-key"; "i"))) as $workspace
          | select($auth or $workspace or ((.api_error_status // null) | type == "number"))
          | (.result // "") | .[0:600]' \
     "$out_file" 2>/dev/null | head -1
@@ -305,7 +309,7 @@ stage_api_refusal_class() {  # <out-file> -> "transient", "refused", or empty
          | (((.terminal_reason // "") == "api_error")
             and ((.result // "") | test("authenticat|oauth|unauthori[sz]ed"; "i"))) as $auth
          | (((.terminal_reason // "") == "api_error")
-            and ((.result // "") | test("not scoped to a workspace|anthropic-workspace-id|invalid x-api-key|authentication_error"; "i"))) as $workspace
+            and ((.result // "") | test("not scoped to a workspace|anthropic-workspace-id|invalid x-api-key"; "i"))) as $workspace
          | select($auth or $workspace or ((.api_error_status // null) | type == "number"))
          | (.terminal_reason // "") as $r
          | (.api_error_status // 0) as $status

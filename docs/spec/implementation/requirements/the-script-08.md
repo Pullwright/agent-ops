@@ -243,8 +243,8 @@
    A second shape is named the same way (agent-ops#2308): an API key the
    API accepts but refuses to route because it carries no workspace
    scope — a 400 whose message is a stable sentence (`not scoped to a
-   workspace`, `anthropic-workspace-id`, or the sibling `invalid x-api-key`/
-   `authentication_error` wording a differently-misconfigured key returns),
+   workspace`, `anthropic-workspace-id`, or the sibling `invalid x-api-key`
+   wording a differently-misconfigured key returns),
    never a moving part, the shape the 2026-10-10 outage's own
    `ANTHROPIC_API_KEY` carried for eleven hours across the whole fleet.
    Named `workspace_scope_refused`: nothing about it clears by retrying,

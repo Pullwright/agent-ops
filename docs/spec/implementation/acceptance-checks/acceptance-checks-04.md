@@ -551,7 +551,10 @@
     4xx `api_error_<status>`) is `fail`, naming the event's own `api_message`;
     a Co-Ordinator success since that refusal clears it; and a node with no
     `log.jsonl` at all (or none since its last success) reports nothing
-    extra, exactly as before this check existed; a completed run leaves
+    extra, exactly as before this check existed — nothing on stdout *or*
+    stderr, the read being guarded by the file's own existence rather than
+    by a redirection's `2>/dev/null`, which bash applies after the input
+    redirection it would have to cover; a completed run leaves
     `state_dir/.doctor-status.json` with a `timestamp` (a real UTC instant),
     a `verdict` (the worst of `fail`/`warn`/`ok` this run found), its
     `fails`/`warns` as arrays of the exact messages printed, and a

@@ -2414,6 +2414,14 @@ rc=$?
 assert_not_contains "a fresh node with no log.jsonl at all reports nothing extra" \
   "the model credential was refused" "$out"
 assert_eq "...and still exits 0" "0" "$rc"
+# `$out` above captures stderr too (`2>&1`), which is the point: the check's
+# own `2>/dev/null` cannot cover the input redirection bash performs before
+# it, so without an `[[ -s ]]` guard the shell itself printed
+# "…/log.jsonl: No such file or directory" onto the pass a scheduler reads.
+assert_not_contains "...and says nothing at all about the absent log" \
+  "log.jsonl" "$out"
+assert_not_contains "...not even the shell's own redirection error" \
+  "No such file or directory" "$out"
 
 # --- PAT expiry (agent-ops#694) ----------------------------------------------
 
