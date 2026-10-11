@@ -1196,6 +1196,33 @@ assert_eq "and takes neither credential anchor" "0" \
 assert_eq "and names no secret of its own" "0" \
   "$(grep -cE 'GH_TOKEN|ANTHROPIC_API_KEY|PRIVATE_KEY' <<<"$block")"
 
+# --- The workspace-id header's own forwarding (issue #2309) --------------------
+# The shared anchor is where a node's ANTHROPIC_WORKSPACE_ID and
+# ANTHROPIC_CUSTOM_HEADERS reach a stage at all — compose reads .env for
+# `${...}` interpolation only, so a variable not named in the anchor never
+# reaches any container, same reasoning the anchor's own comment gives for
+# every other credential in it. `collector` is checked the same way
+# `reconciler`'s own credential-anchor assertions above are: it takes neither
+# shared anchor, so it is the control case proving these two names are not
+# simply present everywhere by accident.
+anchor_block="$(awk '/^x-agent-ops-env: &agent-ops-env$/ {inblock=1; next}
+                      inblock && /^[a-zA-Z]/ {exit}
+                      inblock {print}' "$compose")"
+assert_eq "the x-agent-ops-env anchor forwards ANTHROPIC_WORKSPACE_ID" "1" \
+  "$(grep -cE '^ +ANTHROPIC_WORKSPACE_ID: \$\{ANTHROPIC_WORKSPACE_ID:-\}$' <<<"$anchor_block")"
+assert_eq "...and ANTHROPIC_CUSTOM_HEADERS" "1" \
+  "$(grep -cE '^ +ANTHROPIC_CUSTOM_HEADERS: \$\{ANTHROPIC_CUSTOM_HEADERS:-\}$' <<<"$anchor_block")"
+
+collector_block="$(awk '/^  collector:$/ {inblock=1; next}
+                         inblock && /^  [a-z]/ {exit}
+                         inblock {print}' "$compose")"
+assert_eq "compose.yaml declares a collector service" "1" \
+  "$([[ -n "$collector_block" ]] && echo 1 || echo 0)"
+assert_eq "collector takes neither credential anchor either" "0" \
+  "$(grep -cE '^ +<<: \*agent-ops(-env)?$' <<<"$collector_block")"
+assert_eq "...so it never receives the workspace id or the custom headers it composes into" "0" \
+  "$(grep -cE 'ANTHROPIC_WORKSPACE_ID|ANTHROPIC_CUSTOM_HEADERS' <<<"$collector_block")"
+
 assert_eq "the reconciler's crontab runs the script the image ships" "1" \
   "$(grep -cE '^\*/[0-9]+ \* \* \* \*[[:space:]]+/app/scripts/reconcile-compose\.sh$' \
      "$SCRIPT_DIR/deploy/docker/reconcile-crontab")"

@@ -70,6 +70,8 @@ source "$SCRIPT_DIR/lib/config-schema.sh"
 source "$SCRIPT_DIR/lib/review-context.sh"
 # shellcheck source=lib/model-id.sh
 source "$SCRIPT_DIR/lib/model-id.sh"
+# shellcheck source=lib/substrate-claude-code.sh
+source "$SCRIPT_DIR/lib/substrate-claude-code.sh"
 # shellcheck source=lib/labels.sh
 source "$SCRIPT_DIR/lib/labels.sh"
 # shellcheck source=lib/fleet.sh
@@ -2605,30 +2607,27 @@ else
   if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
     api_present=1
     claude_credential_ok=1
-    # A key shaped "sk-ant-api-..." is further distinguished from every other
-    # "sk-ant-<family>-..." key (agent-ops#2308): the API refuses a
-    # non-workspace-scoped key outright (the 2026-10-10 outage's own 400 —
-    # "This API key is not scoped to a workspace, so this request must
-    # include the anthropic-workspace-id header…"), and a key minted outside
-    # the ordinary "api" family is exactly the shape that carries no
-    # workspace scope. `ANTHROPIC_WORKSPACE_ID` is this check's own escape
-    # hatch for that case — carrying the header itself on every request is a
-    # separate, not-yet-built change (the issue's own "Related, not in
-    # scope") — so a node that has configured it is not warned about a key
-    # shape this check cannot otherwise tell from a working one.
-    #
-    # Which is why replacing the key leads the warning and the variable does
-    # not: nothing in this repository reads `ANTHROPIC_WORKSPACE_ID` yet, so
-    # an operator who takes it as the remedy silences this line and changes
-    # nothing about a key the API still refuses. It records that the shape is
-    # deliberate; it does not make it work.
     if [[ "$ANTHROPIC_API_KEY" == sk-ant-api* ]]; then
       ok "api lane: ANTHROPIC_API_KEY is set and shaped like an Anthropic key (weight $api_lane_weight, enabled $(lane_enabled_desc "$api_lane_enabled" 1))"
     elif [[ "$ANTHROPIC_API_KEY" == sk-ant-* ]]; then
+      # Issue #2309: a key minted without the Console's single-workspace scope
+      # (a personal or multi-workspace service-account key — not a copy-paste
+      # error, hence "sk-ant-" without the "-api" that follows on a
+      # single-workspace key) is refused on every request unless it also
+      # carries the anthropic-workspace-id header. ANTHROPIC_WORKSPACE_ID is
+      # what lib/substrate-claude-code.sh composes that header from; an
+      # operator who set the header directly, under ANTHROPIC_CUSTOM_HEADERS,
+      # needs nothing more either.
       if [[ -n "${ANTHROPIC_WORKSPACE_ID:-}" ]]; then
-        ok "api lane: ANTHROPIC_API_KEY is set, outside the ordinary sk-ant-api- family, but ANTHROPIC_WORKSPACE_ID is configured alongside it — claude uses the key directly (weight $api_lane_weight, enabled $(lane_enabled_desc "$api_lane_enabled" 1))"
+        if [[ "$ANTHROPIC_WORKSPACE_ID" =~ $SUBSTRATE_CLAUDE_CODE_WORKSPACE_ID_RE ]]; then
+          ok "api lane: ANTHROPIC_API_KEY is set and shaped like an Anthropic key not scoped to a single workspace — ANTHROPIC_WORKSPACE_ID=$ANTHROPIC_WORKSPACE_ID supplies the anthropic-workspace-id header every request needs (weight $api_lane_weight, enabled $(lane_enabled_desc "$api_lane_enabled" 1))"
+        else
+          warn "api lane: ANTHROPIC_WORKSPACE_ID is set but is not shaped like a workspace id (expected a \"wrkspc_\" prefix): \"$ANTHROPIC_WORKSPACE_ID\" — claude will still try to use it as given; check for a copy-paste error"
+        fi
+      elif substrate_claude_code_custom_headers_has_name "${ANTHROPIC_CUSTOM_HEADERS:-}" anthropic-workspace-id; then
+        ok "api lane: ANTHROPIC_API_KEY is set and shaped like an Anthropic key not scoped to a single workspace — ANTHROPIC_CUSTOM_HEADERS already names anthropic-workspace-id (weight $api_lane_weight, enabled $(lane_enabled_desc "$api_lane_enabled" 1))"
       else
-        warn "api lane: ANTHROPIC_API_KEY is set but is not shaped like an ordinary sk-ant-api- key — a key shaped exactly like this is what the API refuses outright for carrying no workspace scope; replace it with a key scoped to a workspace, or, if this shape is deliberate, set ANTHROPIC_WORKSPACE_ID to say so and silence this warning (nothing carries that header on a request yet) (weight $api_lane_weight, enabled $(lane_enabled_desc "$api_lane_enabled" 1))"
+        warn "api lane: ANTHROPIC_API_KEY is set and shaped like an Anthropic key, but not scoped to a single workspace, and no workspace id is configured — every Claude Code request will be refused with a 400; create the key under the Console's single-workspace scope, or set ANTHROPIC_WORKSPACE_ID to the workspace's \"wrkspc_\" id"
       fi
     else
       warn "api lane: ANTHROPIC_API_KEY is set but is not shaped like an Anthropic key (expected an \"sk-ant-\" prefix) — claude will still try to use it as given; check for a copy-paste error (weight $api_lane_weight, enabled $(lane_enabled_desc "$api_lane_enabled" 1))"

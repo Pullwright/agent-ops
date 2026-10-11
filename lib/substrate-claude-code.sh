@@ -77,7 +77,73 @@ substrate_claude_code_exec() {
   local -a args=(-p --model "$model" --dangerously-skip-permissions \
     --output-format stream-json --verbose)
   [[ -n "$resume_session_id" ]] && args+=(--resume "$resume_session_id")
+  substrate_claude_code_compose_workspace_header
   exec claude "${args[@]}"
+}
+
+# SUBSTRATE_CLAUDE_CODE_WORKSPACE_ID_RE
+# The shape of a workspace id as Anthropic's Console prints one (Settings →
+# Workspaces): `wrkspc_` followed by its own opaque suffix. Shared by
+# substrate_claude_code_compose_workspace_header below and by
+# scripts/doctor.sh's Claude section, so the two never drift on what counts
+# as a real id versus a copy-paste error.
+SUBSTRATE_CLAUDE_CODE_WORKSPACE_ID_RE='^wrkspc_[0-9A-Za-z]+$'
+
+# substrate_claude_code_custom_headers_has_name HEADERS NAME
+# Whether HEADERS — ANTHROPIC_CUSTOM_HEADERS' own "Name: Value" newline-
+# separated shape — already names NAME, compared case-insensitively the same
+# way an HTTP header name itself is. Lets
+# substrate_claude_code_compose_workspace_header leave an operator's own
+# `anthropic-workspace-id` line alone rather than appending a second one.
+substrate_claude_code_custom_headers_has_name() {
+  local headers="$1" name="$2" line header_name
+  local lower_name
+  lower_name="$(tr '[:upper:]' '[:lower:]' <<<"$name")"
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    header_name="${line%%:*}"
+    header_name="$(tr '[:upper:]' '[:lower:]' <<<"$header_name")"
+    header_name="${header_name#"${header_name%%[![:space:]]*}"}"
+    header_name="${header_name%"${header_name##*[![:space:]]}"}"
+    [[ "$header_name" == "$lower_name" ]] && return 0
+  done <<<"$headers"
+  return 1
+}
+
+# substrate_claude_code_compose_workspace_header
+# Appends an `anthropic-workspace-id` line to ANTHROPIC_CUSTOM_HEADERS, built
+# from ANTHROPIC_WORKSPACE_ID, and exports the result — so it survives the
+# `exec claude` this runs ahead of and, in the image, the sudo environment
+# reset `deploy/docker/claude-shim.sh` calls through next, since sudo keeps
+# whatever `env_keep` names from *this* process's own environment, never from
+# a config file (issue #2309: ANTHROPIC_WORKSPACE_ID and
+# ANTHROPIC_CUSTOM_HEADERS are both named in
+# deploy/docker/sudoers-agent-ops' own `env_keep` for exactly this).
+#
+# A key scoped at creation to a single workspace, and the subscription-OAuth
+# path, need no header at all, so an unset ANTHROPIC_WORKSPACE_ID leaves the
+# environment exactly as it already was. A malformed one composes nothing —
+# the request is what should refuse a bad id, not this launcher — and is
+# reported to this stage's own `.out.stderr` instead: `run_model_stage`
+# redirects this function's stderr there before it ever calls this, so a
+# warning here lands exactly where requirement 4k's own refusals already do.
+# An operator-supplied ANTHROPIC_CUSTOM_HEADERS, or one that already names
+# this header itself, is kept rather than clobbered.
+substrate_claude_code_compose_workspace_header() {
+  local workspace_id="${ANTHROPIC_WORKSPACE_ID:-}"
+  [[ -n "$workspace_id" ]] || return 0
+  if [[ ! "$workspace_id" =~ $SUBSTRATE_CLAUDE_CODE_WORKSPACE_ID_RE ]]; then
+    printf 'substrate-claude-code: ANTHROPIC_WORKSPACE_ID "%s" is not shaped like a workspace id (expected a "wrkspc_" prefix) — not composing the anthropic-workspace-id header; check for a copy-paste error\n' \
+      "$workspace_id" >&2
+    return 0
+  fi
+  substrate_claude_code_custom_headers_has_name "${ANTHROPIC_CUSTOM_HEADERS:-}" anthropic-workspace-id && return 0
+  if [[ -n "${ANTHROPIC_CUSTOM_HEADERS:-}" ]]; then
+    export ANTHROPIC_CUSTOM_HEADERS="${ANTHROPIC_CUSTOM_HEADERS}
+anthropic-workspace-id: ${workspace_id}"
+  else
+    export ANTHROPIC_CUSTOM_HEADERS="anthropic-workspace-id: ${workspace_id}"
+  fi
 }
 
 # substrate_claude_code_result_line STREAM_FILE

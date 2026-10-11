@@ -336,6 +336,73 @@ assert_eq "run_model_stage with an empty model does not abort under set -e" \
 assert_eq "…and the stub it dispatched to is still the claude-code one" \
   "ok" "$(jq -r '.result' "$empty_run_capture/implementer.out" 2>/dev/null)"
 
+# =============================================================================
+# 5. ANTHROPIC_WORKSPACE_ID composes the anthropic-workspace-id header (#2309)
+# =============================================================================
+#
+# A fresh stub `claude`, prepended onto PATH ahead of part 1's: this one also
+# prints its own environment's ANTHROPIC_CUSTOM_HEADERS, which is the one
+# thing substrate_claude_code_compose_workspace_header
+# (lib/substrate-claude-code.sh) changes before the real exec.
+
+mkdir -p "$tmp_dir/header-bin"
+cat >"$tmp_dir/header-bin/claude" <<'STUB'
+#!/usr/bin/env bash
+printf '%s' "${ANTHROPIC_CUSTOM_HEADERS:-}" > "$STUB_CAPTURE/headers.seen"
+cat > /dev/null
+printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"ok"}'
+STUB
+chmod +x "$tmp_dir/header-bin/claude"
+export PATH="$tmp_dir/header-bin:$PATH"
+
+header_capture="$tmp_dir/header-run-valid"
+mkdir -p "$header_capture"
+# shellcheck disable=SC2031  # false positive: run_model_stage's own
+# backgrounded subshell exports this name too, for the stub it launches —
+# this process's own value, never that one, is what this line sets
+export STUB_CAPTURE="$header_capture"
+export ANTHROPIC_WORKSPACE_ID="wrkspc_abc"
+unset ANTHROPIC_CUSTOM_HEADERS
+run_model_stage implementer 60 claude-sonnet-5 "irrelevant for this stub" \
+  "$header_capture/implementer.out" "$header_capture"
+assert_eq "a valid ANTHROPIC_WORKSPACE_ID composes the anthropic-workspace-id header" \
+  "anthropic-workspace-id: wrkspc_abc" "$(cat "$header_capture/headers.seen" 2>/dev/null)"
+
+header_capture="$tmp_dir/header-run-operator"
+mkdir -p "$header_capture"
+export STUB_CAPTURE="$header_capture"
+export ANTHROPIC_WORKSPACE_ID="wrkspc_abc"
+# shellcheck disable=SC2031  # same false positive: this process's own value
+# is what the stub prints, never a value read back from the subshell above
+export ANTHROPIC_CUSTOM_HEADERS="x-operator: 1"
+run_model_stage implementer 60 claude-sonnet-5 "irrelevant for this stub" \
+  "$header_capture/implementer.out" "$header_capture"
+assert_eq "an operator-supplied ANTHROPIC_CUSTOM_HEADERS is kept, with the workspace line appended" \
+  "x-operator: 1
+anthropic-workspace-id: wrkspc_abc" "$(cat "$header_capture/headers.seen" 2>/dev/null)"
+
+header_capture="$tmp_dir/header-run-malformed"
+mkdir -p "$header_capture"
+export STUB_CAPTURE="$header_capture"
+export ANTHROPIC_WORKSPACE_ID="not-a-workspace-id"
+unset ANTHROPIC_CUSTOM_HEADERS
+run_model_stage implementer 60 claude-sonnet-5 "irrelevant for this stub" \
+  "$header_capture/implementer.out" "$header_capture"
+assert_eq "a malformed ANTHROPIC_WORKSPACE_ID composes nothing" \
+  "" "$(cat "$header_capture/headers.seen" 2>/dev/null)"
+assert_contains "...and the launch records a warning naming the bad id, on its own .out.stderr" \
+  "not-a-workspace-id" "$(cat "$header_capture/implementer.out.stderr" 2>/dev/null)"
+
+header_capture="$tmp_dir/header-run-unset"
+mkdir -p "$header_capture"
+export STUB_CAPTURE="$header_capture"
+unset ANTHROPIC_WORKSPACE_ID
+unset ANTHROPIC_CUSTOM_HEADERS
+run_model_stage implementer 60 claude-sonnet-5 "irrelevant for this stub" \
+  "$header_capture/implementer.out" "$header_capture"
+assert_eq "with no ANTHROPIC_WORKSPACE_ID set, ANTHROPIC_CUSTOM_HEADERS is left unset" \
+  "" "$(cat "$header_capture/headers.seen" 2>/dev/null)"
+
 printf '\n'
 if (( failures )); then
   printf '%d assertion(s) failed\n' "$failures"

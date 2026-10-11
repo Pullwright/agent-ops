@@ -277,7 +277,7 @@ run_doctor() {
     if [[ "$1" == "--" ]]; then shift; extra_args=( "$@" ); break; fi
     env_pairs+=( "$1" ); shift
   done
-  out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH -u ANTHROPIC_API_KEY -u ANTHROPIC_WORKSPACE_ID -u NOTIFY_WEBHOOK_URL PATH="$stub_bin:$PATH" "${env_pairs[@]}" \
+  out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH -u ANTHROPIC_API_KEY -u ANTHROPIC_WORKSPACE_ID -u ANTHROPIC_CUSTOM_HEADERS -u NOTIFY_WEBHOOK_URL PATH="$stub_bin:$PATH" "${env_pairs[@]}" \
     bash "$DOCTOR" --config "$base_config" "${extra_args[@]}" 2>&1)"
   rc=$?
 }
@@ -2186,26 +2186,34 @@ assert_contains "a badly-shaped ANTHROPIC_API_KEY is a warning, not a failure" \
   "[warn] api lane: ANTHROPIC_API_KEY is set but is not shaped like an Anthropic key" "$out"
 assert_eq "a warning alone still exits 0" "0" "$rc"
 
-# --- Claude credentials: a key outside the ordinary sk-ant-api- family
-#     (agent-ops#2308) — the shape the 2026-10-10 outage's own key had -------
+# --- A key not scoped to a single workspace (issue #2309) -------------------
 
 run_doctor ANTHROPIC_API_KEY='sk-ant-usr-abc123'
-assert_contains "a sk-ant-usr- key without a workspace header warns, naming the refusal" \
-  "[warn] api lane: ANTHROPIC_API_KEY is set but is not shaped like an ordinary sk-ant-api- key" "$out"
+assert_contains "an sk-ant- key with no \"-api-\" and no workspace id warns" \
+  "[warn] ANTHROPIC_API_KEY is set and shaped like an Anthropic key, but not scoped to a single workspace, and no workspace id is configured" "$out"
 assert_eq "a warning alone still exits 0" "0" "$rc"
 
-run_doctor ANTHROPIC_API_KEY='sk-ant-usr-abc123' ANTHROPIC_WORKSPACE_ID='ws_123'
-assert_contains "the same key with ANTHROPIC_WORKSPACE_ID configured is ok instead" \
-  "[ ok ] api lane: ANTHROPIC_API_KEY is set, outside the ordinary sk-ant-api- family, but ANTHROPIC_WORKSPACE_ID is configured" "$out"
-assert_not_contains "...and is not warned about" \
-  "[warn] api lane: ANTHROPIC_API_KEY" "$out"
+run_doctor ANTHROPIC_API_KEY='sk-ant-usr-abc123' ANTHROPIC_WORKSPACE_ID='wrkspc_abc'
+assert_contains "...and the same key with a well-shaped ANTHROPIC_WORKSPACE_ID is ok" \
+  "[ ok ] ANTHROPIC_API_KEY is set and shaped like an Anthropic key not scoped to a single workspace — ANTHROPIC_WORKSPACE_ID=wrkspc_abc supplies the anthropic-workspace-id header every request needs" "$out"
 assert_eq "and doctor.sh exits 0" "0" "$rc"
 
-run_doctor ANTHROPIC_API_KEY='sk-ant-api03-abc123'
-assert_not_contains "the existing sk-ant-api03- case is unchanged: still ok, never the new warning" \
-  "not shaped like an ordinary sk-ant-api- key" "$out"
-assert_contains "...still reporting the original ok wording" \
+run_doctor ANTHROPIC_API_KEY='sk-ant-usr-abc123' ANTHROPIC_WORKSPACE_ID='not-a-workspace-id'
+assert_contains "...and a malformed ANTHROPIC_WORKSPACE_ID warns, naming it" \
+  "[warn] ANTHROPIC_WORKSPACE_ID is set but is not shaped like a workspace id (expected a \"wrkspc_\" prefix): \"not-a-workspace-id\"" "$out"
+assert_eq "a warning alone still exits 0" "0" "$rc"
+
+run_doctor ANTHROPIC_API_KEY='sk-ant-usr-abc123' ANTHROPIC_CUSTOM_HEADERS='anthropic-workspace-id: wrkspc_abc'
+assert_contains "...and an operator-supplied anthropic-workspace-id header is ok too, with no ANTHROPIC_WORKSPACE_ID" \
+  "[ ok ] ANTHROPIC_API_KEY is set and shaped like an Anthropic key not scoped to a single workspace — ANTHROPIC_CUSTOM_HEADERS already names anthropic-workspace-id" "$out"
+assert_eq "and doctor.sh exits 0" "0" "$rc"
+
+run_doctor ANTHROPIC_API_KEY='sk-ant-api03-abc123' ANTHROPIC_WORKSPACE_ID='wrkspc_abc'
+assert_contains "the existing sk-ant-api03-abc123 case is unchanged even with a workspace id set" \
   "[ ok ] api lane: ANTHROPIC_API_KEY is set and shaped like an Anthropic key" "$out"
+assert_not_contains "...and the workspace id is not mentioned for a key already scoped to a single workspace" \
+  "ANTHROPIC_WORKSPACE_ID=" "$out"
+assert_eq "and doctor.sh exits 0" "0" "$rc"
 
 # --- The rendered crontab ---------------------------------------------------
 

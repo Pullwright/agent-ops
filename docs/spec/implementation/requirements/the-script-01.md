@@ -49,7 +49,9 @@
    named below. `grok-build` is open to any provider name, since Grok Build
    itself is the vendor's own CLI pointed at its own account) and,
    optionally, a `credential_env` (defaulting by substrate —
-   `ANTHROPIC_API_KEY` for `claude-code`, `XAI_API_KEY` for `grok-build`).
+   `ANTHROPIC_API_KEY` for `claude-code`, `XAI_API_KEY` for `grok-build`; an
+   `ANTHROPIC_API_KEY` not scoped at creation to a single workspace also
+   needs `ANTHROPIC_WORKSPACE_ID` set, issue #2309).
    `lib/model-id.sh`'s `providers_load` loads it into `PROVIDER_SUBSTRATE`
    (and `PROVIDER_CREDENTIAL_ENV`) once, at startup, before any model key is
    resolved — synthesizing `anthropic` with substrate `claude-code` whether
