@@ -1441,12 +1441,8 @@ assert_doctor "doctor passes a providers entry with no lanes block at all, resol
 #     lib/model-id.sh) — no statement (#2248) and no substrate-reported cost
 #     (#2246's own adapter has not landed), so a cap or a floor on it can
 #     never be enforced and is refused rather than silently accepted. `xai`
-#     cannot resolve as an installed substrate today (D29 reserves
-#     claude-code to anthropic alone) — this reuses the "grok-build" fixture
-#     already above, which fails on its substrate regardless, since
-#     config_provider_errors emits every fault category independently rather
-#     than stopping at the first: the lanes message asserted here is present
-#     in the same output alongside that unrelated substrate fault. ---
+#     names `grok-build`, an installed substrate open to any provider name
+#     (#2134), so the lanes fault asserted here is the entry's only one. ---
 assert_doctor "doctor refuses a spend_cap_usd on xai/subscription, which has no cost measure" \
   '.providers = {"xai": {"substrate": "grok-build", "lanes": {"subscription": {"spend_cap_usd": 5}}}}' 1 \
   'providers.xai.lanes.subscription: xai/subscription has no cost measure — spend_cap_usd is refused on it'

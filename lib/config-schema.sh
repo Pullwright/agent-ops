@@ -811,7 +811,7 @@ config_cross_provider_floor_pairs() {
 # all. Five faults at the provider level: an unknown key (only `substrate`,
 # `credential_env` and `lanes` are read), a missing/empty `substrate`, one
 # naming a substrate `lib/model-id.sh`'s `PROVIDER_SUBSTRATE_INSTALLED` does
-# not list — after this issue, `claude-code` alone, so this is also the full
+# not list — `claude-code` and `grok-build` today, so this is also the full
 # enum `substrate` accepts (`provider_substrate_installed`, read by name
 # rather than by its own PROVIDERS_JSON argument, same as
 # `config_model_tier_floor_violations` reads `model_tier_below`'s table the

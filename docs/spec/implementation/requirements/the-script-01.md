@@ -311,7 +311,7 @@
    against. `config_provider_errors` rejects an unknown key inside one
    entry (only `substrate`, `credential_env` and `lanes` are read), a missing or
    unsupported `substrate` — `lib/model-id.sh`'s `PROVIDER_SUBSTRATE_INSTALLED`
-   names the full enum, `claude-code` alone after this issue — a `substrate`
+   names the full enum, `claude-code` and `grok-build` — a `substrate`
    of `claude-code` named by any provider key but `anthropic` (D29, issue
    #2198: that substrate is Claude Code pointed at the provider's own
    endpoint, which only `anthropic` — a Bedrock/Vertex credential route of
