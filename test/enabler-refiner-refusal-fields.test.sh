@@ -88,6 +88,8 @@ run_either() {
     refiner_model="claude-haiku-4-5-20251001"
     # shellcheck disable=SC2034
     stage_gaps_json="null"
+    # shellcheck disable=SC2034
+    stage_lane_json="null"
     # shellcheck disable=SC2317  # called from $block via eval
     log_event() { printf '%s\t%s\n' "$1" "${2:-{\}}" >> "$EVENT_FILE"; }
     export EVENT_FILE="$event_file"
