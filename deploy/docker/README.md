@@ -191,6 +191,11 @@ read a host fact none of the others can (see `docs/HOST-FACTS-SCHEMA.md`).
 
 ### 4. Give this node model credentials
 
+A node may hold one or both of the two credential lanes below at once (D30,
+the credit mix) — `providers.anthropic.lanes` in `config.json` weights
+launches across whichever of them are present, and `scripts/doctor.sh`'s own
+"Claude" section reports each lane independently.
+
 **API key (primary, D4):** set `ANTHROPIC_API_KEY` in `.env` (step 2) and
 `docker compose up -d` to pick it up. Nothing further to do — `claude` reads
 it from the environment on every invocation, so there is no per-node login
@@ -227,7 +232,7 @@ Either way, verify:
 docker compose exec scheduler claude -p 'say ok' --model claude-haiku-4-5-20251001
 ```
 
-Or ask the node itself, which reports which of the two paths it is on:
+Or ask the node itself, which reports which lane(s) — one, or both — it holds:
 
 ```bash
 docker compose exec scheduler /app/scripts/doctor.sh
