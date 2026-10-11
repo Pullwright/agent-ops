@@ -1268,8 +1268,27 @@ $(jq . <<<"$input")
   else
     rc=$?
   fi
-  log_event "stage-end" "$(jq -nc --argjson rc "$rc" --arg kr "$stage_kill_reason" --argjson m "$(metering_fields "$enabler_model" "$out" "$stage_gaps_json" "$stage_lane_json")" \
-    '{stage: "enabler", exit_code: $rc} + (if $kr == "" then {} else {kill_reason: $kr} end) + $m')"
+  # The Enabler never pins a repo/item, so it never routes through
+  # handle_stage_failure (lib/stage-attempt.sh) the way the Co-Ordinator,
+  # Implementer and Reviewer do — which left its own `stage-end`/`warning`
+  # with no api_refusal/api_refusal_class/api_message at all, even when a
+  # refused model credential is exactly why it had nothing to report
+  # (agent-ops#2308). Read the same three classifiers directly instead.
+  enabler_refusal="$(stage_api_refusal "$out")"
+  enabler_refusal_msg=""
+  enabler_refusal_class=""
+  if [[ -n "$enabler_refusal" ]]; then
+    enabler_refusal_msg="$(stage_api_refusal_message "$out")"
+    enabler_refusal_class="$(stage_api_refusal_class "$out")"
+  fi
+  log_event "stage-end" "$(jq -nc --argjson rc "$rc" --arg kr "$stage_kill_reason" \
+    --arg r "$enabler_refusal" --arg m "$enabler_refusal_msg" --arg c "$enabler_refusal_class" \
+    --argjson metered "$(metering_fields "$enabler_model" "$out" "$stage_gaps_json" "$stage_lane_json")" \
+    '{stage: "enabler", exit_code: $rc} + (if $kr == "" then {} else {kill_reason: $kr} end)
+     + (if $r == "" then {} else {api_refusal: $r} end)
+     + (if $m == "" then {} else {api_message: $m} end)
+     + (if $c == "" then {} else {api_refusal_class: $c} end)
+     + $metered')"
   # No repo/item: the Enabler spans repositories by construction (see above).
   rework_stage_rerun_maybe "enabler" "$stage_kill_reason"
   log_node_state_transition overhead
@@ -1312,7 +1331,11 @@ $(jq . <<<"$input")
     # grows with the number of items this engagement claimed, so it arrives
     # on stdin rather than as a second --argjson.
     log_event "warning" "$(jq -nc --arg d "$detail — no verdicts recorded; the claims stand until gc lets a later cycle retry" \
-      'input as $items | {detail: $d, items: $items}' <<<"$items_named_json")"
+      --arg r "$enabler_refusal" --arg m "$enabler_refusal_msg" --arg c "$enabler_refusal_class" \
+      'input as $items | {detail: $d, items: $items}
+       + (if $r == "" then {} else {api_refusal: $r} end)
+       + (if $m == "" then {} else {api_message: $m} end)
+       + (if $c == "" then {} else {api_refusal_class: $c} end)' <<<"$items_named_json")"
     # The tombstone (requirement 35c) stays a tombstone — releasing it outright
     # would let the next cycle re-engage the same still-unchanged items at
     # Opus prices with nothing new to show for it. Backdating each entry's
