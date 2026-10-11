@@ -504,9 +504,10 @@
     read being unreachable is `skip`; Claude credentials check both of D4/D30's
     two lanes independently — the `api` lane's non-empty `ANTHROPIC_API_KEY`
     shaped like an Anthropic key (the `sk-ant-` prefix) is `ok` outright when
-    it is shaped `sk-ant-api`, the prefix a key scoped at creation to a single
-    workspace gets; one shaped `sk-ant-` but not `sk-ant-api` is `ok` only
-    with a well-shaped `ANTHROPIC_WORKSPACE_ID` (`wrkspc_…`) or an
+    it is shaped `sk-ant-api`, which the check reads as a key scoped at
+    creation to a single workspace; one shaped `sk-ant-` but not
+    `sk-ant-api` is `ok` only with a well-shaped
+    `ANTHROPIC_WORKSPACE_ID` (`wrkspc_…`) or an
     `ANTHROPIC_CUSTOM_HEADERS` already naming `anthropic-workspace-id` —
     otherwise `warn`, naming a malformed id when that is why (issue #2309);
     one not shaped like an Anthropic key at all is `warn`, and its absence is

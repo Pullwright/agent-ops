@@ -189,13 +189,14 @@
     are checked on both of D4/D30's two lanes independently, since a node may
     hold both at once (the credit mix, issue #2240): the `api` lane is a
     non-empty `ANTHROPIC_API_KEY` — a static shape check, never a live call.
-    One that carries the narrower `sk-ant-api` prefix a key scoped at
-    creation to a single workspace gets is `ok` outright. One shaped
-    `sk-ant-` but not `sk-ant-api` — a personal key, or a service-account key
-    created for several workspaces — needs `ANTHROPIC_WORKSPACE_ID` set to a
+    One that carries the narrower `sk-ant-api` prefix, which the check reads
+    as a key scoped at creation to a single workspace, is `ok` outright. One
+    shaped `sk-ant-` but not `sk-ant-api` — a personal key, or a
+    service-account key created for several workspaces — needs
+    `ANTHROPIC_WORKSPACE_ID` set to a
     well-shaped `wrkspc_…` id, or `ANTHROPIC_CUSTOM_HEADERS` already naming
     `anthropic-workspace-id`, to read `ok` (issue #2309: such a key is
-    refused on every request without the header either composes); a
+    refused on every request without the header either of them supplies); a
     malformed `ANTHROPIC_WORKSPACE_ID`, or neither configured, is `warn`,
     naming which. One that does not carry the `sk-ant-` prefix at all is
     `warn`, and the key's absence is `ok` naming it absent, each line naming

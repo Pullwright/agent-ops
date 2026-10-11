@@ -53,8 +53,8 @@ x-agent-ops-env: &agent-ops-env
   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
   # The workspace an ANTHROPIC_API_KEY not scoped at creation to a single
   # workspace needs named on every request (issue #2309): Claude Code refuses
-  # such a key with a 400 unless the request carries an `anthropic-
-  # workspace-id` header, and lib/substrate-claude-code.sh's
+  # such a key with a 400 unless the request carries an
+  # `anthropic-workspace-id` header, and lib/substrate-claude-code.sh's
   # `substrate_claude_code_compose_workspace_header` composes that header
   # from this variable, appending it to ANTHROPIC_CUSTOM_HEADERS below. A key
   # scoped to one workspace, and the subscription-OAuth path above, need
