@@ -1867,6 +1867,51 @@ acquire_lock() {
     '{pid: $pid, started_at: $started_at, host: $host}' > "$lock_file"
   lock_acquired=1
 }
+
+# skip_cycle_if_lock_fresh — the common-case half of `acquire_lock` above,
+# run before the fleet-log union below is built rather than after it
+# (agent-ops#2312: on 2026-10-10 this union reached 111 MB, and 16 of 23
+# `cycle-start`s on one node that day paid for building and reading it only
+# to then find the lock held and exit). `acquire_lock` needs the
+# union-derived `lock_stale_after_sec` (set at 1a1 below) to decide whether a
+# genuinely *stale* lock should be taken over, but that refinement is never
+# needed to recognise a lock that is plainly still held: a live pid younger
+# than the pre-derivation default/floor already in `lock_stale_after_sec`
+# here is held under that too, so this short-circuits the single most common
+# outcome on one `stat` and one `kill -0`, with the union never built at all.
+#
+# This function only ever skips; it never takes a lock over. A lock it does
+# not recognise as fresh — dead pid, foreign host, or one whose age already
+# clears even this conservative threshold — falls through unchanged to the
+# union build and the full `acquire_lock` call below, which re-examines it
+# with the real derived threshold. The one case this trades away is a lock
+# whose *derived* stale threshold turns out smaller than the pre-derivation
+# default (an installation configuring unusually small stage backstops): a
+# hung holder then waits for age to clear the larger default before this
+# fast check stops re-skipping and the slow path can reclaim it. That is a
+# delay in reclaiming a hung lock, never an incorrect takeover — this
+# function performs no takeover branch at all.
+skip_cycle_if_lock_fresh() {
+  [[ -f "$lock_file" ]] || return 0
+  local pid host started_at started_epoch age_sec
+  pid="$(jq -r '.pid // empty' "$lock_file" 2>/dev/null || true)"
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 0
+  host="$(jq -r '.host // empty' "$lock_file" 2>/dev/null || true)"
+  [[ -z "$host" || "$host" == "${HOSTNAME:-}" ]] || return 0
+  started_at="$(jq -r '.started_at // empty' "$lock_file" 2>/dev/null || true)"
+  started_epoch="$(date -d "$started_at" +%s 2>/dev/null || echo 0)"
+  age_sec=$(( $(date +%s) - started_epoch ))
+  kill -0 "$pid" 2>/dev/null && (( age_sec < lock_stale_after_sec )) || return 0
+  log_event "cycle-skipped" "$(jq -nc --arg d "lock held by pid $pid, age ${age_sec}s" '{detail: $d}')"
+  # Same reasoning as the identical branch in `acquire_lock` above: not a
+  # node state (the holder's own transitions already cover these seconds),
+  # and not a record worth a directory (nothing below here has run yet).
+  suppress_node_state_transitions
+  rm -rf -- "$cycle_dir"
+  exit 0
+}
+skip_cycle_if_lock_fresh
+
 # --- 1a. The fleet's memory (requirement 2.5) ---
 # `lock.json` keeps two cycles apart on one node; per-item claims (requirement
 # 17a) keep two *nodes* off the same work. Nothing arbitrates "the" active

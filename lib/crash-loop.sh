@@ -412,8 +412,16 @@ crash_loop_detail_recurred_since() {
 # logs a second `crash-loop-escalated` for it in the first place, so there is
 # nothing to prefer between there.
 crash_loop_open_escalations() {
+  # Filters before it collects (agent-ops#2312): `crash-loop-escalated` and
+  # `crash-loop-retired` events together are a few hundred lines even in a
+  # union running to the hundred-megabyte range, so selecting them inside the
+  # same comprehension that builds `$events` — rather than slurping every
+  # event and throwing away everything else afterwards — is what keeps this
+  # reader's memory proportional to the escalations it actually holds, not
+  # to the fleet's whole event history.
   jq -c -R -n '
-    [ inputs | select(length > 0) | (fromjson? // empty) ] as $events
+    [ inputs | select(length > 0) | (fromjson? // empty)
+      | select(.event == "crash-loop-escalated" or .event == "crash-loop-retired") ] as $events
     | ($events | map(select(.event == "crash-loop-retired") | (.issue_number // empty))
                 | map(select(. != ""))) as $retired
     | $events

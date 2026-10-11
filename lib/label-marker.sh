@@ -158,11 +158,13 @@ label_remove_failure_fields() {
 # `lib/cycle-state.sh`.
 label_own_actions_map() {
   local label="$1" src="${2:--}" out=""
-  # shellcheck disable=SC2016  # jq's $label/$e, not the shell's.
-  local jq_prog='
-    [ .[] | select(.event == "own-label-action" and (.label // "") == $label
-                   and (.repo // "") != "" and (.item // "") != "") ]
-    | sort_by(.ts)
+  # shellcheck disable=SC2016  # jq's $label, not the shell's.
+  local select_prog='
+    select(.event == "own-label-action" and (.label // "") == $label
+           and (.repo // "") != "" and (.item // "") != "")'
+  # shellcheck disable=SC2016  # jq's $e, not the shell's.
+  local reduce_prog='
+    sort_by(.ts)
     | reduce .[] as $e ({};
         ($e.repo + "|" + ($e.item | tostring)) as $k
         | .[$k] = ((.[$k] // {action: "", ts: "", adds: []})
@@ -171,12 +173,21 @@ label_own_actions_map() {
             | if ($e.action // "") == "add"
               then .adds += [($e.ts // "")]
               else . end))'
+  # Filter before collecting (agent-ops#2312, same standard as
+  # `crash_loop_open_escalations`): `own-label-action` events for one label
+  # are a handful of lines in a union that can run to the hundred-megabyte
+  # range, so the un-filtered `jq -sc` below used to slurp every event in the
+  # log just to throw almost all of it away. Selecting first means only the
+  # already-small matching subset is ever held as one array for the
+  # `sort_by`/`reduce` that need random access to it.
   if [[ "$src" == "-" ]]; then
     out="$(jq -c -R 'fromjson? // empty' 2>/dev/null \
-      | jq -sc --arg label "$label" "$jq_prog" 2>/dev/null || true)"
+      | jq -c --arg label "$label" "$select_prog" 2>/dev/null \
+      | jq -sc "$reduce_prog" 2>/dev/null || true)"
   elif [[ -s "$src" ]]; then
     out="$(jq -c -R 'fromjson? // empty' "$src" 2>/dev/null \
-      | jq -sc --arg label "$label" "$jq_prog" 2>/dev/null || true)"
+      | jq -c --arg label "$label" "$select_prog" 2>/dev/null \
+      | jq -sc "$reduce_prog" 2>/dev/null || true)"
   fi
   [[ -n "$out" ]] || out='{}'
   printf '%s' "$out"
@@ -201,14 +212,23 @@ label_own_actions_map() {
 # `label_own_stale_applications` fall back to wall clock on their own, the
 # same as before this function existed (a brand-new fleet's union log has no
 # own records to defer against anyway).
+#
+# A streaming fold (agent-ops#2312), not `jq -rs 'map(...)'`: the second jq
+# used to slurp the whole union — tens of records held as one array just to
+# take their max — which OOM-killed this reader outright once the union
+# reached 111 MB on 2026-10-10. `reduce (inputs | ...)` holds one running
+# maximum and nothing else, so peak memory no longer scales with the union's
+# size at all.
 log_latest_ts() {
   local src="${1:--}" out=""
   if [[ "$src" == "-" ]]; then
     out="$(jq -c -R 'fromjson? // empty' 2>/dev/null \
-      | jq -rs 'map(.ts // empty) | if length == 0 then empty else max end' 2>/dev/null || true)"
+      | jq -nr 'reduce (inputs | .ts // empty) as $t (null; if . == null or $t > . then $t else . end) // empty' \
+          2>/dev/null || true)"
   elif [[ -s "$src" ]]; then
     out="$(jq -c -R 'fromjson? // empty' "$src" 2>/dev/null \
-      | jq -rs 'map(.ts // empty) | if length == 0 then empty else max end' 2>/dev/null || true)"
+      | jq -nr 'reduce (inputs | .ts // empty) as $t (null; if . == null or $t > . then $t else . end) // empty' \
+          2>/dev/null || true)"
   fi
   printf '%s' "$out"
 }
