@@ -2,21 +2,32 @@
 
 ### The Script (`agent-cycle.sh`)
 
-1. **Lock.** On start, acquire a lock file in `state_dir` recording PID,
-   start time, and the writer's hostname (`host` — on a containerised node
-   the container, which is the PID namespace the recorded PID is meaningful
-   in; the watchtower pre-update hook reads it, see the node stack section).
-   A pid is only meaningful in the PID namespace that minted it, so a lock
-   whose recorded `host` differs from this run's own is judged by host, not
-   pid: it was written by a container that is gone by construction, taken
-   over immediately — no liveness check, no process-group kill — logging the
-   same `warning`. Only a lock whose `host` matches (or carries none, from
-   before this stamp existed) is judged by liveness: if held by a live
-   process younger than `lock_stale_after`, log `cycle-skipped`, remove the
-   record directory this tick made (its only content is the fleet-log
-   snapshot taken before the lock, and a directory that ran no stage would
-   otherwise take one of `state_local_streams_retained`'s slots from a cycle
-   that did — requirement 2.5) and exit 0;
+1. **Lock.** Before the fleet-log union below is built, a cheap pre-check
+   reads any lock file already in `state_dir`: a recorded pid that is alive,
+   whose `host` matches (or carries none), and whose age is under the
+   pre-derivation default/floor `lock_stale_after` already holds (requirement
+   4f's own derivation from the union has not run yet) is treated as held and
+   fresh — log `cycle-skipped`, remove the record directory this tick made
+   (which holds nothing at this point: the fleet-log union has not been
+   built) and exit 0. Every other case — no lock file, a dead pid, a foreign
+   host, or an age that already clears even that conservative threshold —
+   falls through unchanged: the union is built (requirement 2.5) and the
+   precise `lock_stale_after` derived from it (requirement 4f), and only then
+   does the script acquire the lock file in `state_dir`, recording PID, start
+   time, and the writer's hostname (`host` — on a containerised node the
+   container, which is the PID namespace the recorded PID is meaningful in;
+   the watchtower pre-update hook reads it, see the node stack section). A pid
+   is only meaningful in the PID namespace that minted it, so a lock whose
+   recorded `host` differs from this run's own is judged by host, not pid: it
+   was written by a container that is gone by construction, taken over
+   immediately — no liveness check, no process-group kill — logging the same
+   `warning`. Only a lock whose `host` matches (or carries none, from before
+   this stamp existed) is judged by liveness: if held by a live process
+   younger than the now-derived `lock_stale_after`, log `cycle-skipped`,
+   remove the record directory this tick made (its only content at this
+   second check is the fleet-log snapshot built above, and a directory that
+   ran no stage would otherwise take one of `state_local_streams_retained`'s
+   slots from a cycle that did — requirement 2.5) and exit 0;
    if the holder is dead or older than `lock_stale_after`, end its whole
    process group if still alive — TERM first, then a polled grace of up to
    20 seconds for the process to exit, then KILL — log a `warning` (a stale

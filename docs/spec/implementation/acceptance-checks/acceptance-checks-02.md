@@ -862,6 +862,19 @@
    including `prompts/implementer.md`) still carry
    `PIPELINE_COMMENT_MARKER_PREFIX`.
 3. A second invocation while one holds the lock exits without acting.
+3a. **The lock-held case above costs a `stat` and a `kill -0`, never the
+   fleet-log union (requirement 1; agent-ops#2312).** `test/lock-skip-before-
+   union.test.sh` passes: the lock pre-check that recognises a live,
+   not-yet-stale holder is defined and called in `agent-cycle.sh` before the
+   `fleet_logs` snapshot that materialises `union_log`, before the
+   stage-budget derivation that reads it, and before the full lock
+   acquisition that re-derives the precise `lock_stale_after` from it.
+   Separately, `test/union-read-memory-bound.test.sh` passes: run over a
+   generated union of at least 100 MB, `log_latest_ts` (`lib/label-marker.sh`)
+   and `crash_loop_open_escalations` (`lib/crash-loop.sh`) each still return
+   the correct answer under a `ulimit -v` of 50,000 KB — a bound neither
+   reader's pre-fix form (a whole-union `jq -s`/`jq -rs` slurp) can pass —
+   and `label_own_actions_map`, audited against the same question, does too.
 4. A simulated stale lock (fake lock file, old timestamp, dead PID) is taken
    over with a logged warning. A simulated foreign lock (fake lock file
    naming a different `host`, fresh timestamp, a pid that is alive here
