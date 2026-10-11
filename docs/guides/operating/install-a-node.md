@@ -37,11 +37,16 @@ docker compose exec scheduler gh repo list --limit 1
 The scheduler runs Claude over text from GitHub, so every node needs model credentials. Two paths:
 
 **Primary: BYO API key**
-1. Get an Anthropic API key from [console.anthropic.com](https://console.anthropic.com)
+1. Get an Anthropic API key from [console.anthropic.com](https://console.anthropic.com), scoped to a workspace
 2. Set `ANTHROPIC_API_KEY=<key>` in `.env`
 3. `docker compose up -d` — the key is picked up at container start
 
-This scales to any number of nodes sharing the same key.
+This scales to any number of nodes sharing the same key. A key minted
+outside the ordinary `sk-ant-api-...` shape — one that carries no workspace
+scope — is refused by the API outright; `scripts/doctor.sh` warns on that
+shape unless `ANTHROPIC_WORKSPACE_ID` is also set in `.env` (carrying the
+header that variable would support on every request is not yet built, so
+set it only once that lands, or replace the key).
 
 **Alternative: Subscription OAuth**
 1. `docker compose up -d` to start the node
@@ -49,7 +54,13 @@ This scales to any number of nodes sharing the same key.
 3. Complete the login flow in your browser
 4. The node's Claude session is saved to its `~/.claude` volume
 
-This path is interactive per node (no script), and the subscription's terms limit it to your own use, not a service for others. Until one of these is configured, every cycle fails at its first stage.
+This path is interactive per node (no script), and the subscription's terms
+limit it to your own use, not a service for others. Until one of these is
+configured, every cycle fails at its first stage; once either is configured
+and then starts being refused — the key revoked, rescoped away, or the login
+lapsed — the Script's own credential preflight (requirement 2.0h) catches it
+before the next GitHub gather and files an issue, rather than crash-looping
+the fleet until a human happens to read the log by hand.
 
 ## Install a container node
 

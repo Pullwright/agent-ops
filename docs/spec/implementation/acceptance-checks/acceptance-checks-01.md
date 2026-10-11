@@ -835,6 +835,17 @@ oblige anyone to edit a test.
    and a stage that ran and then failed, a clean result, an empty transcript
    and an unparseable one are none of them called a refusal.
 
+   `test/stage-api-refusal.test.sh` (agent-ops#2308) passes, sourcing
+   `lib/stage-attempt.sh` directly: a bare `terminal_reason: "api_error"`
+   (no `prompt_too_long`/`invalid_request_error`/connection-fault name riding
+   with it) now carries its own HTTP status in the returned token
+   (`api_error_400`), where before this fix it fell through to the literal,
+   status-less string `"api_error"`; a key the API refuses for carrying no
+   workspace scope is named `workspace_scope_refused` and classified
+   `refused`, with the API's own message kept beside it; the existing
+   `authentication_failed` case and a bare `api_error_503` are both
+   unchanged.
+
 1k. **A stage prompt reaches `claude` on stdin, at a size argv could not
    carry (requirement 4c).** `test/stage-prompt-delivery.test.sh` passes: for
    `run_model_stage` as sourced from `lib/stage-run.sh` — the one copy both
@@ -1323,3 +1334,20 @@ oblige anyone to edit a test.
    whichever of the two it is (never claiming an HTTP 401 that never
    happened); `ok` and `unreachable` verdicts fall through
    untouched, filing nothing.
+
+2s. **A refused model credential stands the cycle down before the Co-Ordinator
+   ever runs, the model-credential analogue of 2l above (requirement 2.0h,
+   agent-ops#2308).** `test/standdown-credential-preflight.test.sh` passes
+   against the block lifted verbatim from `lib/standdown.sh`: a `refused`
+   verdict from `run_model_stage credential-probe` exits 0 without falling
+   through to the gather, logs `stand-down` with `cause: "credential-
+   refused"` and the API's own message (`stage_api_refusal_message`) as the
+   reason, and files exactly one escalation through `create_escalation_issue`
+   in `crash_loop_repo`, keyed `credential-refused:<node>`, body quoting the
+   message; a second cycle of the same still-refused container probes again
+   and escalates again (through the same dedup); an `ok` verdict falls
+   through and is not probed again on a second cycle of the same healthy
+   container, but is probed again after a fresh container start
+   (`_updater_health_own_started` reading a different value); a `transient`
+   verdict (a 5xx) stands nothing down; `--dry-run` makes no probe call at
+   all.

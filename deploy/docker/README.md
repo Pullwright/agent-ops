@@ -199,7 +199,17 @@ launches across whichever of them are present, and `scripts/doctor.sh`'s own
 **API key (primary, D4):** set `ANTHROPIC_API_KEY` in `.env` (step 2) and
 `docker compose up -d` to pick it up. Nothing further to do — `claude` reads
 it from the environment on every invocation, so there is no per-node login
-and no `claude-config` volume to protect.
+and no `claude-config` volume to protect. A key must be scoped to a
+workspace: one shaped `sk-ant-api-...` is the ordinary shape; the API
+refuses any other `sk-ant-<family>-...` shape outright (agent-ops#2308), so
+`doctor.sh` warns on that shape unless `ANTHROPIC_WORKSPACE_ID` is also set
+in `.env`. Carrying the workspace header on every request from that
+variable is not yet built — set it only once that work has landed, or
+replace the key with one scoped to a workspace. Either way, a refused key
+is caught before it crash-loops the fleet: the Script's own credential
+preflight (requirement 2.0h) stands the cycle down and files an issue in
+`crash_loop_repo` the first time it sees the refusal, rather than running a
+full GitHub gather every cycle only to be refused afterwards.
 
 **Subscription OAuth (alternative — interactive per node, own use only):**
 the sole exception to this stack's non-interactive bring-up (D4) — every

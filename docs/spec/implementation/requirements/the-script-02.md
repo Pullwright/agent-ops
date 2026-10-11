@@ -702,6 +702,70 @@
       `lib/standdown.sh`, the same split `test/disk-space[-wiring].test.sh`
       already use for 0c).
 
+   0h. *Model credential check* (agent-ops#2308): the Claude-credential
+      analogue of 0b's GitHub-credential check, for the same reason — the
+      first thing that exercises `ANTHROPIC_API_KEY` (or a subscription
+      login) is otherwise the Co-Ordinator itself, after the GitHub gather
+      (step 6), so a refused credential crash-loops every stage that follows
+      it rather than being caught before any of them spend. On 2026-10-10 an
+      `ANTHROPIC_API_KEY` minted without a workspace scope crash-looped all
+      four fleet nodes for eleven hours — every cycle ran its full GitHub
+      gather, then was refused by the Co-Ordinator in about a second, three
+      times per cycle — before a human traced the fault by hand, reading
+      `api_message` off an `attempt-failed` event the log had carried the
+      whole time.
+
+      One invocation of `implementer_model_trivial` with 1b's own trivial
+      prompt (`"Reply with the single word: ok"`), through the same
+      `run_model_stage` (requirement 4d), judged by `stage_api_refusal_class`
+      (requirement 4i, as amended by this same issue): a `refused` verdict
+      whose own `stage_api_refusal` token is `authentication_failed`,
+      `workspace_scope_refused`, or a 4xx `api_error_<status>` — a credential
+      fault, never a `transient` one (a 5xx, an overload; 1's own business,
+      not this check's) — stands the cycle down with `stage_api_refusal_
+      message` (already truncated to 600 bytes) as the reason, escalates
+      through `create_escalation_issue` in `crash_loop_repo` — labelled
+      `enabler_escalation_label`, assigned `enabler_assignee`, item ref
+      `credential-refused:<node>`, body quoting the API's own message in a
+      fenced block and naming the remedy (replace or remove
+      `ANTHROPIC_API_KEY` in `.env`, or complete the subscription login, then
+      `docker compose up -d`) — the same duplicate-guarded route 0b's own
+      check uses, and logs `stand-down` with `cause: "credential-refused"`
+      before exiting ahead of the gather. `credential-refused` is the
+      seventeenth token in the closed `externally-blocked` cause vocabulary
+      (`lib/node-time-state.sh`, `docs/FLOW-SCHEMA.md`).
+
+      Gated, unlike 0b: a free `/rate_limit` call costs nothing, but this
+      probe spends a fraction of a cent, so it runs only on the first cycle
+      after this container started, or on any cycle whose own last probe
+      here was itself refused — a healthy node therefore pays this once per
+      container lifetime, and an unhealthy one keeps being caught cheaply
+      rather than crash-looping again until its next restart. "First cycle
+      after this container started" is read from `_updater_health_own_
+      started` (`lib/updater-health.sh`) — this container's own PID 1 start
+      time, the same reading `deploy/docker/watchtower-pre-update.sh`'s own
+      roll ledger uses, and for the same reason: this node's hostname alone
+      survives a watchtower roll (agent-ops#1072), so only the kernel's own
+      process-start clock tells a fresh boot from a restart-in-place —
+      cached in this node's own `state_dir`, alongside the last probe's own
+      verdict, in a small record a cycle before the first-ever reading (the
+      state file absent, or the reading itself unavailable) always treats as
+      due a probe, rather than comparing two empty readings as unchanged.
+      `--dry-run` never probes, the same reasoning 1b's own gate rests on: a
+      cycle that promises to change nothing must not write a fresh
+      escalation.
+
+      Proof is `test/standdown-credential-preflight.test.sh` (this
+      requirement's own block lifted out of `lib/standdown.sh`, the same
+      technique `test/auth-failure-wiring.test.sh` uses for 0b): a refused
+      probe stands the cycle down, escalates once, and keeps probing (and
+      escalating, through the same dedup `create_escalation_issue` already
+      guards) on a second cycle of the same still-refused container; an `ok`
+      probe falls through to the rest of the cycle and is not probed again
+      on a second cycle of the same healthy container, but is probed again
+      after a fresh container start; a `transient` verdict stands nothing
+      down; `--dry-run` makes no call at all.
+
    1. *Usage-limit cooldown*: the same signal arrives on two carriers, and
       the **later** `resume_at` wins. The log union's most recent `limit-hit`
       is as fresh as the last state-sync fetch; `fleet/limit.json` on the

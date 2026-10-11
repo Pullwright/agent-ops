@@ -977,6 +977,20 @@
    repository-scoped clearing success, which is named in the closing comment,
    and its flap guard still sees a repository-scoped recurrence of its own
    detail and blocks that retirement.
+
+   **The escalation quotes the API's own words (agent-ops#2308).**
+   `crash_loop_verdict`'s own emitted object now carries the run's newest
+   counted event's own `api_message`, when any event in the run carried one,
+   and `crash_loop_escalate`'s issue body quotes it in a fenced block, naming
+   the model credential as a third possibility alongside "the image or the
+   config" whenever the run's own `detail` is credential-shaped
+   (`authentication_failed`, `workspace_scope_refused`, or a 4xx
+   `api_error_<status>`). `test/crash-loop-escalate.test.sh` covers this
+   directly: a four-event run carrying the 2026-10-10 outage's own workspace-
+   scope message yields a verdict whose `api_message` is that message, and
+   the filed issue body both quotes it and names `ANTHROPIC_API_KEY`; the
+   original, api_message-less `four_fails` run's own issue body quotes
+   nothing extra and names no credential.
    back-pressure, and the logged reason states the count's composition
    (`N ready + N draft + N unraised claim(s)`).
 5b. **A personal access token's own expiry is read, recorded, and escalated
