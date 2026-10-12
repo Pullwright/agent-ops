@@ -462,6 +462,7 @@ gh_calls="$(cat "$GH_CALLS_FILE")"
 assert_eq_n "reach (c) refused: one decision-acted retires the act" "1" "^decision-acted" "$calls"
 acted_fields="$(grep '^decision-acted' <<<"$calls" | cut -f2-)"
 assert_eq "reach (c) refused: ...as refused" "refused" "$(jq -r '.outcome' <<<"$acted_fields")"
+# shellcheck disable=SC2016  # the expected string carries Markdown backticks
 assert_contains "reach (c) refused: ...with the path in its reason" \
   '`scripts/sweep-closed-issues.sh` exists in acme/widgets' "$(jq -r '.reason' <<<"$acted_fields")"
 assert_eq_n "reach (c) refused: exactly one warning" "1" "^warning" "$calls"

@@ -18,11 +18,11 @@
 #
 # Exit status is 0 iff every assertion passed.
 
-set -uo pipefail
-
 # The reasons lib/refile.sh prints are Markdown, so the expected strings
 # below carry literal backticks.
 # shellcheck disable=SC2016
+
+set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 

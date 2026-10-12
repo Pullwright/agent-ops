@@ -2307,6 +2307,7 @@ REFILE_PRESENT=$'acme/widgets scripts/sweep-closed-issues.sh\npipe/ops scripts/s
 out="$(decide_pass "515" delegate "$refile_verdict")"
 assert_eq "decide gate (c): a path that exists where the item was filed refuses the act" \
   "escalate" "$(jq -r '.verdict' <<<"$out")"
+# shellcheck disable=SC2016  # the expected string carries Markdown backticks
 assert_contains "decide gate (c): ...naming the path and that repository" \
   '`scripts/sweep-closed-issues.sh` exists in acme/widgets' "$(jq -r '.evidence' <<<"$out")"
 assert_contains "decide gate (c): ...and the act" 'refile-to-pipeline-repo' "$(jq -r '.evidence' <<<"$out")"
@@ -2316,6 +2317,7 @@ REFILE_PRESENT="pipe/ops scripts/sweep-closed-issues.sh"
 out="$(decide_pass "515" delegate "$refile_verdict")"
 assert_eq "decide gate (c): a path absent from the pipeline repository too refuses" \
   "escalate" "$(jq -r '.verdict' <<<"$out")"
+# shellcheck disable=SC2016  # the expected string carries Markdown backticks
 assert_contains "decide gate (c): ...naming it" '`prompts/implementer.md` is absent from pipe/ops' \
   "$(jq -r '.evidence' <<<"$out")"
 
@@ -2323,6 +2325,7 @@ REFILE_PRESENT=$'pipe/ops scripts/sweep-closed-issues.sh\npipe/ops prompts/imple
 REFILE_UNKNOWN="acme/widgets prompts/implementer.md"
 out="$(decide_pass "515" delegate "$refile_verdict")"
 assert_eq "decide gate (c): a path that cannot be read at all refuses" "escalate" "$(jq -r '.verdict' <<<"$out")"
+# shellcheck disable=SC2016  # the expected string carries Markdown backticks
 assert_contains "decide gate (c): ...saying it could not establish it" \
   'could not establish whether `prompts/implementer.md` exists in acme/widgets' "$(jq -r '.evidence' <<<"$out")"
 REFILE_UNKNOWN=""
