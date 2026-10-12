@@ -685,7 +685,7 @@
       development box should be able to say so once" is exactly what leaving
       `host_budget_enforce` at its default does, with no fight against this
       requirement required. On: an overcommit logs a `stand-down` event with
-      `cause: "host-overcommit"` (one of the sixteen tokens in the closed
+      `cause: "host-overcommit"` (one of the seventeen tokens in the closed
       cause vocabulary, `docs/FLOW-SCHEMA.md`) whose `reason` carries
       `lib/host-budget.sh`'s own `host_budget_describe` — both dimensions'
       arithmetic, the declared sum, the reserve, the host total, and the
@@ -701,6 +701,94 @@
       wiring.test.sh` (this requirement's own block lifted out of
       `lib/standdown.sh`, the same split `test/disk-space[-wiring].test.sh`
       already use for 0c).
+
+   0h. *Model credential check* (agent-ops#2308): the Claude-credential
+      analogue of 0b's GitHub-credential check, for the same reason — the
+      first thing that exercises `ANTHROPIC_API_KEY` (or a subscription
+      login) is otherwise the Co-Ordinator itself, after the GitHub gather
+      (step 6), so a refused credential crash-loops every stage that follows
+      it rather than being caught before any of them spend. On 2026-10-10 an
+      `ANTHROPIC_API_KEY` minted without a workspace scope crash-looped all
+      four fleet nodes for eleven hours — every cycle ran its full GitHub
+      gather, then was refused by the Co-Ordinator in about a second, three
+      times per cycle — before a human traced the fault by hand, reading
+      `api_message` off an `attempt-failed` event the log had carried the
+      whole time.
+
+      One invocation of `implementer_model_trivial` with 1b's own trivial
+      prompt (`"Reply with the single word: ok"`), through the same
+      `run_model_stage` (requirement 4d), judged by `stage_api_refusal_class`
+      (requirement 4i, as amended by this same issue): a `refused` verdict
+      whose own `stage_api_refusal` token is `authentication_failed`,
+      `workspace_scope_refused`, or a 4xx `api_error_<status>` — a credential
+      fault, never a `transient` one (a 5xx, an overload; 1's own business,
+      not this check's) — stands the cycle down with `stage_api_refusal_
+      message` (already truncated to 600 bytes) as the reason, escalates
+      through `create_escalation_issue` in `crash_loop_repo` — labelled
+      `enabler_escalation_label`, assigned `enabler_assignee`, item ref
+      `credential-refused:<node>`, body quoting the API's own message in a
+      fenced block and naming the remedy (replace or remove
+      `ANTHROPIC_API_KEY` in `.env`, or complete the subscription login, then
+      `docker compose up -d`) — the same duplicate-guarded route 0b's own
+      check uses, and logs `stand-down` with `cause: "credential-refused"`
+      before exiting ahead of the gather. `credential-refused` is the
+      seventeenth token in the closed `externally-blocked` cause vocabulary
+      (`lib/node-time-state.sh`, `docs/FLOW-SCHEMA.md`).
+
+      It is not a stage — it logs no `stage-start`, like 1b's limit-probe and
+      a `<stage>-salvage` resume — but it still spends real tokens, so
+      `lib/standdown.sh` logs its own `stage-end`, `stage:
+      "credential-probe"`, carrying the same metering record requirement 33a
+      describes for 1b's limit-probe: `lane`, `cost_usd`, `tokens` and the
+      rest, so this spend reaches the fleet-wide ledger the same way every
+      other launch's does, rather than only the dashboard's own cost scan of
+      the raw transcript. `lib/stage-health.sh`'s stage list does not name
+      `credential-probe`, so this carries no verdict risk for it.
+
+      Gated, unlike 0b: a free `/rate_limit` call costs nothing, but this
+      probe spends a fraction of a cent, so it runs only on the first cycle
+      after this container started, or on any cycle whose own last probe
+      here was itself refused — a healthy node therefore pays this once per
+      container lifetime, and an unhealthy one keeps being caught cheaply
+      rather than crash-looping again until its next restart. "First cycle
+      after this container started" is read from `_updater_health_own_
+      started` (`lib/updater-health.sh`) — this container's own PID 1 start
+      time, the same reading `deploy/docker/watchtower-pre-update.sh`'s own
+      roll ledger uses, and for the same reason: this node's hostname alone
+      survives a watchtower roll (agent-ops#1072), so only the kernel's own
+      process-start clock tells a fresh boot from a restart-in-place —
+      cached in this node's own `state_dir`, alongside the last probe's own
+      verdict, in a small record a cycle before the first-ever reading (the
+      state file absent, or the reading itself unavailable) always treats as
+      due a probe, rather than comparing two empty readings as unchanged.
+      `--dry-run` never probes, the same reasoning 1b's own gate rests on: a
+      cycle that promises to change nothing must not write a fresh
+      escalation.
+
+      It runs last of the 0 band rather than beside the 0b check it
+      otherwise mirrors, because it is the only one of them that spends:
+      0c, 0f and 0g each run ahead of every check below them that can,
+      and this one writes its probe transcript and its own state record
+      into the very `state_dir` 0c exists to guard. Catching a refused
+      credential one check sooner buys nothing; spending into a host 0c
+      would have stood down costs what that band exists to prevent.
+
+      Proof is `test/standdown-credential-preflight.test.sh` (this
+      requirement's own block lifted out of `lib/standdown.sh`, the same
+      technique `test/auth-failure-wiring.test.sh` uses for 0b): a refused
+      probe stands the cycle down, escalates once, and keeps probing (and
+      escalating, through the same dedup `create_escalation_issue` already
+      guards) on a second cycle of the same still-refused container; an `ok`
+      probe falls through to the rest of the cycle and is not probed again
+      on a second cycle of the same healthy container, but is probed again
+      after a fresh container start; a `transient` verdict stands nothing
+      down; a `refused` verdict whose own token names something other than
+      the credential (`credit_exhausted`, which
+      `lib/substrate-grok-build.sh` synthesises for a billing lapse) stands
+      nothing down either, and files nothing; a container-start reading that
+      is unavailable on every cycle probes on every cycle, rather than
+      reading its own two empty records as unchanged; `--dry-run` makes no
+      call at all.
 
    1. *Usage-limit cooldown*: the same signal arrives on two carriers, and
       the **later** `resume_at` wins. The log union's most recent `limit-hit`
@@ -800,9 +888,9 @@
       `implementer_model_trivial` (a fixed one-line prompt, 180 s timeout,
       transcript kept as `limit-probe.out` in the cycle record), through the
       same provider-neutral `run_model_stage` (requirement 4d) every other
-      stage launches on. It is not a stage — it logs no `stage-start`, the
-      one invocation besides a `<stage>-salvage` resume that does not — but
-      it still spends real tokens, so `lib/standdown.sh` logs its own
+      stage launches on. It is not a stage — it logs no `stage-start`, like
+      0h's credential probe and a `<stage>-salvage` resume — but it still
+      spends real tokens, so `lib/standdown.sh` logs its own
       `stage-end`, `stage: "limit-probe"`, carrying the metering record of
       requirement 33a (issue #2239, D30): `lane`, `cost_usd`, `tokens` and
       the rest, so this spend reaches the fleet-wide ledger the same way

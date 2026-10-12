@@ -225,16 +225,32 @@ dump_stage_output() {
 # runner's own `api_error` reason *and* an authentication message — so a
 # stage that ran and then failed, or an `api_error` of some other statusless
 # kind, still gets its honest exit code rather than a confident falsehood.
+#
+# A second shape is named the same way (agent-ops#2308): a key the API
+# accepts but refuses to route because it carries no workspace scope — a
+# 400 whose message is a stable sentence (`... must include the
+# anthropic-workspace-id header ...`, or the sibling `invalid x-api-key`
+# wording a differently-misconfigured key returns), never a moving part.
+# Named `workspace_scope_refused`, and, like `authentication_failed`,
+# `refused` below: nothing about this clears by retrying, only a corrected
+# or rescoped key. The authentication test above is deliberately left to run
+# first, so a message naming `authentication_error` — which that test's own
+# `authenticat` matches — is `authentication_failed` rather than this, which
+# is the truer of the two names for a key the API would not authenticate at
+# all.
 stage_api_refusal() {  # <out-file> -> terminal reason, or empty
   local out_file="$1"
   [[ -s "$out_file" ]] || return 0
   jq -r 'select((.is_error // false) == true)
          | (((.terminal_reason // "") == "api_error")
             and ((.result // "") | test("authenticat|oauth|unauthori[sz]ed"; "i"))) as $auth
-         | select($auth or ((.api_error_status // null) | type == "number"))
+         | (((.terminal_reason // "") == "api_error")
+            and ((.result // "") | test("not scoped to a workspace|anthropic-workspace-id|invalid x-api-key"; "i"))) as $workspace
+         | select($auth or $workspace or ((.api_error_status // null) | type == "number"))
          | if $auth then "authentication_failed"
+           elif $workspace then "workspace_scope_refused"
            else ((.terminal_reason // "") as $r
-                 | if $r == "" or $r == "completed" then "api_error_\(.api_error_status)" else $r end)
+                 | if $r == "" or $r == "completed" or $r == "api_error" then "api_error_\(.api_error_status)" else $r end)
            end' \
     "$out_file" 2>/dev/null | head -1
 }
@@ -245,7 +261,9 @@ stage_api_refusal_message() {  # <out-file> -> the API's own words, truncated
   jq -r 'select((.is_error // false) == true)
          | (((.terminal_reason // "") == "api_error")
             and ((.result // "") | test("authenticat|oauth|unauthori[sz]ed"; "i"))) as $auth
-         | select($auth or ((.api_error_status // null) | type == "number"))
+         | (((.terminal_reason // "") == "api_error")
+            and ((.result // "") | test("not scoped to a workspace|anthropic-workspace-id|invalid x-api-key"; "i"))) as $workspace
+         | select($auth or $workspace or ((.api_error_status // null) | type == "number"))
          | (.result // "") | .[0:600]' \
     "$out_file" 2>/dev/null | head -1
 }
@@ -281,18 +299,22 @@ stage_api_refusal_message() {  # <out-file> -> the API's own words, truncated
 # below defaults an unrecognised case to `refused` rather than guessing
 # `transient`, since escalating a puzzle for a human to read is the safe
 # failure and silently swallowing a real deterministic loop is not.
-# `authentication_failed` (stage_api_refusal above) is `refused`: no retry
-# clears a lapsed login, only a person completing one.
+# `authentication_failed` and `workspace_scope_refused` (stage_api_refusal
+# above) are both `refused`: no retry clears a lapsed login or an unscoped
+# key, only a person completing a login or correcting the key.
 stage_api_refusal_class() {  # <out-file> -> "transient", "refused", or empty
   local out_file="$1"
   [[ -s "$out_file" ]] || return 0
   jq -r 'select((.is_error // false) == true)
          | (((.terminal_reason // "") == "api_error")
             and ((.result // "") | test("authenticat|oauth|unauthori[sz]ed"; "i"))) as $auth
-         | select($auth or ((.api_error_status // null) | type == "number"))
+         | (((.terminal_reason // "") == "api_error")
+            and ((.result // "") | test("not scoped to a workspace|anthropic-workspace-id|invalid x-api-key"; "i"))) as $workspace
+         | select($auth or $workspace or ((.api_error_status // null) | type == "number"))
          | (.terminal_reason // "") as $r
          | (.api_error_status // 0) as $status
          | if $auth then "refused"
+           elif $workspace then "refused"
            elif ($r == "prompt_too_long" or $r == "invalid_request_error") then "refused"
            elif ($r | test("connection|network|overload"; "i")) then "transient"
            elif ($status >= 500) then "transient"

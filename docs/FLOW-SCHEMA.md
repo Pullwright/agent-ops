@@ -616,7 +616,11 @@ revisable in this one place rather than scattered across every emission site:
   disabled node is not idle: nothing about demand would change its behaviour.
 - **`externally-blocked`** covers `usage-limit`, `github-budget`,
   `unreachable` (GitHub itself unreachable for a claim attempt),
-  `unauthorized` (a dead or missing credential), and the host resource
+  `unauthorized` (a dead or missing GitHub credential),
+  `credential-refused` (requirement 2.0h, agent-ops#2308 — the model
+  credential refused outright, the same permanent-fault shape as
+  `unauthorized` but for `ANTHROPIC_API_KEY`/login rather than
+  `GH_TOKEN`), and the host resource
   guards `disk-low`/`disk-full`/`memory-low`/`host-overcommit`. These four
   are not "external" in the strictest sense — they are a fact about this
   node's own host — but they are grouped here rather than under
@@ -659,13 +663,13 @@ this document.
 
 ### The closed cause vocabulary
 
-Sixteen tokens, each mapping to exactly one state — `lib/node-time-state.sh`'s
+Seventeen tokens, each mapping to exactly one state — `lib/node-time-state.sh`'s
 `node_time_state_for_cause` is the one function that knows the mapping:
 
 | Cause | State |
 | --- | --- |
 | `disabled-node`, `disabled-fleet` | `down` |
-| `usage-limit`, `github-budget`, `unreachable`, `unauthorized`, `disk-low`, `disk-full`, `memory-low`, `host-overcommit`, `roll-pending` | `externally-blocked` |
+| `usage-limit`, `github-budget`, `unreachable`, `unauthorized`, `credential-refused`, `disk-low`, `disk-full`, `memory-low`, `host-overcommit`, `roll-pending` | `externally-blocked` |
 | `back-pressure`, `awaiting-tick`, `peer-claimed`, `coordinator-declined` | `idle-with-demand` |
 | `no-demand` | `idle-without-demand` |
 
@@ -893,7 +897,7 @@ above — on the same terms:
   carries in a way an existing reader could misread as the old shape;
   changing an existing fate's own assignment rule; changing the fate
   priority order; renaming or removing one of the six states or one of the
-  sixteen causes; changing which state an existing cause maps to; changing
+  seventeen causes; changing which state an existing cause maps to; changing
   the definitional pin (which stages count as `producing`, what `down`
   covers).
 
@@ -1030,7 +1034,7 @@ and dedicated assertions folded into `test/landing-wiring.test.sh`,
 
 **The node time-state record:** `test/node-time-state.test.sh` drives
 `lib/node-time-state.sh` directly: `node_time_state_for_cause` against every
-one of the sixteen closed-vocabulary tokens (including the three translated
+one of the seventeen closed-vocabulary tokens (including the three translated
 rather than renamed — `raced`/`pre-claimed` to `peer-claimed`,
 `untraceable` to `coordinator-declined`) and an unrecognised
 one (maps to nothing); `node_time_state_idle_split` against a positive

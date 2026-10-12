@@ -94,6 +94,8 @@ assert_eq "unreachable maps to externally-blocked" \
   "externally-blocked	unreachable" "$(node_time_state_for_cause unreachable)"
 assert_eq "unauthorized maps to externally-blocked" \
   "externally-blocked	unauthorized" "$(node_time_state_for_cause unauthorized)"
+assert_eq "credential-refused maps to externally-blocked" \
+  "externally-blocked	credential-refused" "$(node_time_state_for_cause credential-refused)"
 assert_eq "disk-low maps to externally-blocked" \
   "externally-blocked	disk-low" "$(node_time_state_for_cause disk-low)"
 assert_eq "disk-full maps to externally-blocked" \

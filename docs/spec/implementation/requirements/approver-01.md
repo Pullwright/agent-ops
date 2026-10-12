@@ -753,7 +753,7 @@ with the Reviewer's own.
     node-count x window — and this requirement is where it is made
     checkable: a `node-state` transition event, logged the instant a node's
     own state changes, carrying the state it is entering, its cause (for the
-    four states that have one, from a closed sixteen-token vocabulary), and
+    four states that have one, from a closed seventeen-token vocabulary), and
     the state it was in a moment before; and a pure fold,
     `lib/node-time-state.sh`'s `node_time_state_fold` (behind the read-only
     `scripts/node-time-state.sh`), reconstructing seconds per state from

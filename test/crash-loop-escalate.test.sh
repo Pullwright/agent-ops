@@ -176,6 +176,67 @@ assert_eq "a failed filing logs crash-loop-deferred, structured with the run's o
 assert_eq "a failed filing carries the run's own first_ts" \
   "$(jq -r '.first_ts' <<<"$verdict")" "$(events_of crash-loop-deferred | jq -r '.first_ts')"
 
+# --- crash_loop_escalate: the issue body quotes the newest api_message
+#     (agent-ops#2308), and names the model credential as a possibility when
+#     the run's own detail is a credential-shaped one -----------------------
+
+api_msg_detail_at() {
+  jq -nc --arg ts "$1" --arg node "$2" --arg d "$3" --arg m "$4" \
+    '{ts: $ts, node: $node, event: "attempt-failed", stage: "coordinator",
+      detail: $d, api_message: $m, api_refusal_class: "refused"}'
+}
+workspace_msg="This API key is not scoped to a workspace, so this request must include the anthropic-workspace-id header."
+api_msg_events="$(api_msg_detail_at 2026-10-10T08:29:12Z n1 api_error_400 "$workspace_msg"
+  api_msg_detail_at 2026-10-10T08:48:12Z n1 api_error_400 "$workspace_msg"
+  api_msg_detail_at 2026-10-10T09:03:12Z n1 api_error_400 "$workspace_msg"
+  api_msg_detail_at 2026-10-10T09:18:12Z n1 api_error_400 "$workspace_msg")"
+api_msg_verdict="$(crash_loop_verdict 4 <<<"$api_msg_events")"
+assert_eq "the verdict itself carries the newest api_message" \
+  "$workspace_msg" "$(jq -r '.api_message' <<<"$api_msg_verdict")"
+
+# create_escalation_issue is invoked as `cl_created="$(create_escalation_issue
+# ...)"` by crash_loop_escalate — a command substitution, which runs in a
+# subshell — so, same as STUB_CREATE_CALLS_FILE above, the captured body goes
+# through a file rather than a plain variable, which would vanish with the
+# subshell the moment the substitution finished.
+captured_body_file="$WORKDIR/captured-body"
+create_escalation_issue() {
+  printf 'x\n' >> "$STUB_CREATE_CALLS_FILE"
+  cat "$5" 2>/dev/null > "$CAPTURED_BODY_FILE"
+  printf '999\thttps://github.com/o/r/issues/999'
+  return 0
+}
+export CAPTURED_BODY_FILE="$captured_body_file"
+STUB_CREATE_MODE="success"; stub_create_calls_reset; EVENTS=()
+: > "$captured_body_file"
+crash_loop_escalate "$api_msg_verdict" "crash-loop:coordinator" "failures" "title" "evidence" >/dev/null
+captured_body="$(cat "$captured_body_file")"
+assert_eq "the issue body quotes the newest api_message" \
+  "yes" "$(if [[ "$captured_body" == *"$workspace_msg"* ]]; then echo yes; else echo no; fi)"
+assert_eq "…and names the model credential as a possibility, for a credential-shaped detail" \
+  "yes" "$(if [[ "$captured_body" == *'ANTHROPIC_API_KEY'* ]]; then echo yes; else echo no; fi)"
+
+# A run with no api_message at all (a crash, a timeout) carries no such field
+# on the verdict, and the body says nothing extra — asserted against the
+# original `four_fails`/`verdict` above, whose events carry no api_message.
+: > "$captured_body_file"
+crash_loop_escalate "$verdict" "crash-loop:coordinator" "failures" "title" "evidence" >/dev/null
+captured_body="$(cat "$captured_body_file")"
+assert_eq "a run with no api_message quotes nothing extra" \
+  "no" "$(if [[ "$captured_body" == *"own words on the newest"* ]]; then echo yes; else echo no; fi)"
+assert_eq "…and does not name the credential, for an ordinary detail" \
+  "no" "$(if [[ "$captured_body" == *'ANTHROPIC_API_KEY'* ]]; then echo yes; else echo no; fi)"
+
+# Restore the ordinary stub for every section after this one.
+create_escalation_issue() {
+  printf 'x\n' >> "$STUB_CREATE_CALLS_FILE"
+  if [[ "$STUB_CREATE_MODE" == "success" ]]; then
+    printf '999\thttps://github.com/o/r/issues/999'
+    return 0
+  fi
+  return 1
+}
+
 # --- crash_loop_escalate_or_defer: fresh vs. retry --------------------------
 
 union_log="$WORKDIR/union-fresh.jsonl"

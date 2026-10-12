@@ -2546,6 +2546,49 @@ if ((offline)); then
   skip "Claude credentials (--offline)"
 elif ((unattended)); then
   skip "Claude credentials (--unattended; a scheduled pass must not read a credential)"
+  # A scheduled pass may not read the live credential (the skip above), but
+  # this node's own already-written log.jsonl spends nothing and reads no
+  # secret (agent-ops#2308) — so it can still name a credential this node
+  # already has being refused outright, which the hourly unattended pass
+  # ended "No failures" through for eleven hours on 2026-10-10 despite
+  # `log.jsonl` already carrying the API's own words on every refused
+  # attempt. The newest Co-Ordinator `attempt-failed` since this node's own
+  # last Co-Ordinator success — never the fleet union, this node's own
+  # state_dir/log.jsonl alone — is read the same way `handle_stage_failure`
+  # (lib/stage-attempt.sh) already classified it onto the event: a
+  # `refused` class carrying `authentication_failed`, `workspace_scope_
+  # refused`, or a 4xx `api_error_<status>` token is a credential, not a
+  # transient, fault.
+  #
+  # Guarded by `[[ -s ]]` rather than by the redirection's own `2>/dev/null`,
+  # which never covers it: bash performs an input redirection before that
+  # redirection applies, so on a node with no log yet — a fresh install, the
+  # first hour of a new container — the shell itself printed
+  # "…/log.jsonl: No such file or directory" onto the *unattended* pass's own
+  # stderr, the one output a scheduler and the dashboard read rather than a
+  # human.
+  cred_log_message=""
+  if [[ -s "$state_dir/log.jsonl" ]]; then
+    cred_log_message="$(jq -r -R -n '
+        [ inputs | select(length > 0) | (fromjson? // empty)
+          | select((.event == "attempt-failed"
+                    or (.event == "stage-end" and ((.exit_code // 1) == 0)))
+                   and (.stage // "") == "coordinator") ]
+        | sort_by(.ts // "")
+        | (map(select(.event == "stage-end")) | last | (.ts // "")) as $since
+        | map(select(.event == "attempt-failed" and (.ts // "") >= $since))
+        | last
+        | if . == null then "" else
+            ((.api_refusal_class // "") as $c | (.api_refusal // "") as $r
+             | if $c == "refused"
+                  and ($r == "authentication_failed" or $r == "workspace_scope_refused"
+                       or ($r | test("^api_error_4[0-9][0-9]$")))
+               then (.api_message // "") else "" end)
+          end' < "$state_dir/log.jsonl" 2>/dev/null || true)"
+  fi
+  if [[ -n "$cred_log_message" ]]; then
+    fail "the model credential was refused on this node's most recent Co-Ordinator attempt — $cred_log_message"
+  fi
 elif ! command -v claude >/dev/null 2>&1; then
   skip "Claude credentials (claude is not installed)"
 else
@@ -2562,10 +2605,33 @@ else
   if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
     api_present=1
     claude_credential_ok=1
-    if [[ "$ANTHROPIC_API_KEY" == sk-ant-* ]]; then
+    # A key shaped "sk-ant-api-..." is further distinguished from every other
+    # "sk-ant-<family>-..." key (agent-ops#2308): the API refuses a
+    # non-workspace-scoped key outright (the 2026-10-10 outage's own 400 —
+    # "This API key is not scoped to a workspace, so this request must
+    # include the anthropic-workspace-id header…"), and a key minted outside
+    # the ordinary "api" family is exactly the shape that carries no
+    # workspace scope. `ANTHROPIC_WORKSPACE_ID` is this check's own escape
+    # hatch for that case — carrying the header itself on every request is a
+    # separate, not-yet-built change (the issue's own "Related, not in
+    # scope") — so a node that has configured it is not warned about a key
+    # shape this check cannot otherwise tell from a working one.
+    #
+    # Which is why replacing the key leads the warning and the variable does
+    # not: nothing in this repository reads `ANTHROPIC_WORKSPACE_ID` yet, so
+    # an operator who takes it as the remedy silences this line and changes
+    # nothing about a key the API still refuses. It records that the shape is
+    # deliberate; it does not make it work.
+    if [[ "$ANTHROPIC_API_KEY" == sk-ant-api* ]]; then
       ok "api lane: ANTHROPIC_API_KEY is set and shaped like an Anthropic key (weight $api_lane_weight, enabled $(lane_enabled_desc "$api_lane_enabled" 1))"
+    elif [[ "$ANTHROPIC_API_KEY" == sk-ant-* ]]; then
+      if [[ -n "${ANTHROPIC_WORKSPACE_ID:-}" ]]; then
+        ok "api lane: ANTHROPIC_API_KEY is set, outside the ordinary sk-ant-api- family, but ANTHROPIC_WORKSPACE_ID is configured alongside it — claude uses the key directly (weight $api_lane_weight, enabled $(lane_enabled_desc "$api_lane_enabled" 1))"
+      else
+        warn "api lane: ANTHROPIC_API_KEY is set but is not shaped like an ordinary sk-ant-api- key — a key shaped exactly like this is what the API refuses outright for carrying no workspace scope; replace it with a key scoped to a workspace, or, if this shape is deliberate, set ANTHROPIC_WORKSPACE_ID to say so and silence this warning (nothing carries that header on a request yet) (weight $api_lane_weight, enabled $(lane_enabled_desc "$api_lane_enabled" 1))"
+      fi
     else
-      warn "api lane: ANTHROPIC_API_KEY is set but is not shaped like an Anthropic key (expected an \"sk-ant-\" prefix) — claude will still try to use it as given; check for a copy-paste error"
+      warn "api lane: ANTHROPIC_API_KEY is set but is not shaped like an Anthropic key (expected an \"sk-ant-\" prefix) — claude will still try to use it as given; check for a copy-paste error (weight $api_lane_weight, enabled $(lane_enabled_desc "$api_lane_enabled" 1))"
     fi
   else
     ok "api lane: ANTHROPIC_API_KEY is absent (weight $api_lane_weight, enabled $(lane_enabled_desc "$api_lane_enabled" 0))"

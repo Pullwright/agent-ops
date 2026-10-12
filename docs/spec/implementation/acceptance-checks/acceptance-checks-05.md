@@ -1127,7 +1127,7 @@
     transition reaches every site requirement 50 names, and the invariant
     balances (requirement 50).** `test/node-time-state.test.sh` drives
     `lib/node-time-state.sh` directly: `node_time_state_for_cause` against
-    every one of the sixteen closed-vocabulary tokens, including the three
+    every one of the seventeen closed-vocabulary tokens, including the three
     translated rather than renamed (`raced`/`pre-claimed` to `peer-claimed`,
     `untraceable` to `coordinator-declined`) and an unrecognised
     cause (maps to nothing, never a guess); `node_time_state_idle_split`

@@ -59,18 +59,26 @@
 
 # crash_loop_verdict THRESHOLD < union.jsonl
 # Print one JSON object per line (JSON Lines) — {stage, detail, count,
-# first_ts, last_ts, nodes, escalate, repo?} — one line for every repository
-# (plus the repo-less fallback group) whose own tail independently shows
-# THRESHOLD or more consecutive same-detail Co-Ordinator failures with no
-# intervening same-repository Co-Ordinator success; print nothing when no
-# group reaches THRESHOLD. `repo` is present iff the group's own events
-# carried one — the repo-less fallback group's object omits it, exactly as
-# every verdict object did before repositories were grouped, so a caller that
-# only ever fed this a repo-less stream sees byte-identical output. Multiple
-# lines mean multiple repositories are independently crash-looping in the
-# same cycle; each is a separate, independently-escalatable run. A THRESHOLD
-# that is not a positive integer prints nothing: 0 (or an unset key upstream)
-# is the feature's off switch.
+# first_ts, last_ts, nodes, escalate, repo?, api_message?} — one line for
+# every repository (plus the repo-less fallback group) whose own tail
+# independently shows THRESHOLD or more consecutive same-detail Co-Ordinator
+# failures with no intervening same-repository Co-Ordinator success; print
+# nothing when no group reaches THRESHOLD. `repo` is present iff the group's
+# own events carried one — the repo-less fallback group's object omits it,
+# exactly as every verdict object did before repositories were grouped, so a
+# caller that only ever fed this a repo-less stream sees byte-identical
+# output. Multiple lines mean multiple repositories are independently
+# crash-looping in the same cycle; each is a separate, independently-
+# escalatable run. A THRESHOLD that is not a positive integer prints nothing:
+# 0 (or an unset key upstream) is the feature's off switch.
+#
+# `api_message` (agent-ops#2308) is the newest counted event's own
+# `api_message` field, carried forward through the run the same way `nodes`
+# and `last_ts` already are, and omitted when the run's own events never
+# carried one (a crash, a timeout — nothing `stage_api_refusal` ever
+# classified). This is what lets `crash_loop_escalate` quote the API's own
+# words in the issue body rather than pointing a human at a `.out` file
+# inside a container they usually cannot reach.
 #
 # `escalate` (issue #1073) is `false` exactly when every failure counted in
 # that group's own run carries `api_refusal_class: "transient"` on its own
@@ -113,25 +121,30 @@ crash_loop_verdict() {
         # reset lands first and the failure then counts 1, which is the
         # truth of that cycle.
         | reduce .[] as $e (
-            {detail: "", count: 0, first_ts: null, last_ts: null, nodes: [], all_transient: true};
+            {detail: "", count: 0, first_ts: null, last_ts: null, nodes: [],
+             all_transient: true, last_api_message: ""};
             if $e.event == "stage-end" then
-              {detail: "", count: 0, first_ts: null, last_ts: null, nodes: [], all_transient: true}
+              {detail: "", count: 0, first_ts: null, last_ts: null, nodes: [],
+               all_transient: true, last_api_message: ""}
             elif ($e.detail // "") == .detail and .count > 0 then
               {detail: .detail, count: (.count + 1), first_ts: .first_ts,
                last_ts: ($e.ts // .last_ts),
                nodes: ((.nodes + [$e.node // "?"]) | unique),
-               all_transient: (.all_transient and (($e.api_refusal_class // "") == "transient"))}
+               all_transient: (.all_transient and (($e.api_refusal_class // "") == "transient")),
+               last_api_message: ($e.api_message // .last_api_message)}
             else
               {detail: ($e.detail // ""), count: 1,
                first_ts: ($e.ts // null), last_ts: ($e.ts // null),
                nodes: [$e.node // "?"],
-               all_transient: (($e.api_refusal_class // "") == "transient")}
+               all_transient: (($e.api_refusal_class // "") == "transient"),
+               last_api_message: ($e.api_message // "")}
             end
           )
         | select(.count >= $threshold and .detail != "")
         | {stage: "coordinator", detail, count, first_ts, last_ts, nodes,
            escalate: (.all_transient | not)}
           + (if $repo == "" then {} else {repo: $repo} end)
+          + (if .last_api_message == "" then {} else {api_message: .last_api_message} end)
       )
     | .[]
   ' 2>/dev/null || true

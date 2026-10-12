@@ -503,9 +503,12 @@
     leaving the repository out is `fail` naming which, and either installation
     read being unreachable is `skip`; Claude credentials check both of D4/D30's
     two lanes independently — the `api` lane's non-empty `ANTHROPIC_API_KEY`
-    shaped like an Anthropic key (the `sk-ant-` prefix) is `ok`, one that is
-    not is `warn`, and its absence is `ok` naming it absent, each naming the
-    lane's configured weight and whether it is enabled; the `subscription`
+    shaped `sk-ant-api-...` is `ok`; one shaped `sk-ant-<other family>-...`
+    (agent-ops#2308 — the shape the 2026-10-10 outage's own key had) is
+    `warn` unless `ANTHROPIC_WORKSPACE_ID` is also set, in which case it is
+    `ok`; one not shaped `sk-ant-` at all is `warn` regardless; and its
+    absence is `ok` naming it absent, each naming the lane's configured
+    weight and whether it is enabled; the `subscription`
     lane's own `claude auth status --json` — run with `ANTHROPIC_API_KEY`
     stripped from that call's environment, so it is checked regardless of
     whether the `api` lane above is also present — reporting `loggedIn: true`
@@ -540,7 +543,18 @@
     `--unattended` still reports write access (the GitHub section is not
     skipped, unlike under `--offline`); Claude credentials and the
     stream-flushing probe are each reported `skip` naming `--unattended`,
-    never `--offline`'s wording; a completed run leaves
+    never `--offline`'s wording; still under `--unattended` and spending no
+    call and reading no live credential (agent-ops#2308), this node's own
+    `state_dir/log.jsonl` is read for the newest Co-Ordinator
+    `attempt-failed` since its last Co-Ordinator success — a credential-
+    shaped refusal (`authentication_failed`, `workspace_scope_refused`, or a
+    4xx `api_error_<status>`) is `fail`, naming the event's own `api_message`;
+    a Co-Ordinator success since that refusal clears it; and a node with no
+    `log.jsonl` at all (or none since its last success) reports nothing
+    extra, exactly as before this check existed — nothing on stdout *or*
+    stderr, the read being guarded by the file's own existence rather than
+    by a redirection's `2>/dev/null`, which bash applies after the input
+    redirection it would have to cover; a completed run leaves
     `state_dir/.doctor-status.json` with a `timestamp` (a real UTC instant),
     a `verdict` (the worst of `fail`/`warn`/`ok` this run found), its
     `fails`/`warns` as arrays of the exact messages printed, and a

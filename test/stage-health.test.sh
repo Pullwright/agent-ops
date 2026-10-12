@@ -147,15 +147,18 @@ assert_eq "an empty stream still names every known stage" \
 # read alongside agent-cycle.sh itself, which still logs implementer and
 # reviewer directly. `workspace` is deliberately not among them: it logs
 # `attempt-failed` only, never a `stage-end`, so it would read `idle` for
-# ever. `limit-probe` (issue #2239, D30, `lib/standdown.sh`) is excluded for
-# the opposite reason: it does log a `stage-end`, but deliberately carries no
-# paired `stage-start` and is not one of this pipeline's six implementation
-# stages, so counting its runs or failures here would be exactly the
-# fleet-wide/per-item confusion requirement 33's own exception list already
-# warns against — see the assertion just below this block.
+# ever. `limit-probe` (issue #2239, D30, `lib/standdown.sh`) and
+# `credential-probe` (requirement 2.0h, agent-ops#2308, `lib/standdown.sh`)
+# are both excluded for the opposite reason: each does log a `stage-end`, but
+# deliberately carries no paired `stage-start` and is not one of this
+# pipeline's six implementation stages, so counting its runs or failures here
+# would be exactly the fleet-wide/per-item confusion requirement 33's own
+# exception list already warns against — see the assertions just below this
+# block.
 logged_stages="$(grep -ohE 'stage: "[a-z-]+", exit_code' \
     "$SCRIPT_DIR/agent-cycle.sh" "$SCRIPT_DIR"/lib/*.sh \
-  | grep -oE '"[a-z-]+"' | tr -d '"' | grep -v '^limit-probe$' \
+  | grep -oE '"[a-z-]+"' | tr -d '"' \
+  | grep -v -e '^limit-probe$' -e '^credential-probe$' \
   | jq -Rnc '[inputs] | unique' 2>/dev/null \
   || true)"
 if [[ -z "$logged_stages" || "$logged_stages" == "[]" ]]; then
@@ -174,6 +177,13 @@ probe_fed="$(stage_end_at 2026-08-21T09:00:00Z limit-probe 1)"
 probe_verdicts="$(stage_health_verdicts 3 48 "$NOW_EPOCH" <<<"$probe_fed")"
 assert_eq "limit-probe's own stage-end is ignored, not read as an idle implementation stage" \
   "false" "$(jq -c 'has("limit-probe")' <<<"$probe_verdicts")"
+# requirement 2.0h, agent-ops#2308: the model-credential probe's own
+# stage-end (stage: "credential-probe", lib/standdown.sh) is excluded on the
+# same terms as limit-probe above.
+cred_probe_fed="$(stage_end_at 2026-08-21T09:00:00Z credential-probe 1)"
+cred_probe_verdicts="$(stage_health_verdicts 3 48 "$NOW_EPOCH" <<<"$cred_probe_fed")"
+assert_eq "credential-probe's own stage-end is ignored, not read as an idle implementation stage" \
+  "false" "$(jq -c 'has("credential-probe")' <<<"$cred_probe_verdicts")"
 assert_eq "a stage with no events at all reads idle" \
   "idle" "$(jq -r '.coordinator.verdict' <<<"$empty_verdicts")"
 assert_eq "and its last_success is null" \

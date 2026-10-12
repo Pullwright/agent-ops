@@ -177,10 +177,10 @@ recent `log.jsonl` retains. Their fields:
 | `spend_today_usd` | number | US dollars | The same sum, restricted to today (UTC). |
 | `by_day[].usd`, `.n` | number, integer | US dollars, count | Cost and transcript count for one UTC day. |
 | `by_model[].usd`, `.n` | number, integer | US dollars, count | Cost and transcript count for one model id. |
-| `by_actor[].usd`, `.n` | number, integer | US dollars, count | Cost and transcript count for one actor. The actor is the transcript's own filename stem, so the set is open, not enumerated: `coordinator`, `implementer`, `reviewer`, `enabler`, `refiner` and `limit-probe` from a cycle directory, `project-reviewer` normalised from a review's `reviewer-<repo>.out`, and any other stem verbatim — see the dashboard spec's note on actor naming. |
+| `by_actor[].usd`, `.n` | number, integer | US dollars, count | Cost and transcript count for one actor. The actor is the transcript's own filename stem, so the set is open, not enumerated: `coordinator`, `implementer`, `reviewer`, `enabler`, `refiner`, `limit-probe` and `credential-probe` (requirement 2.0h, agent-ops#2308) from a cycle directory, `project-reviewer` normalised from a review's `reviewer-<repo>.out`, and any other stem verbatim — see the dashboard spec's note on actor naming. |
 | `by_lane[].usd`, `.n` | number, integer | US dollars, count | Cost and transcript count for one lane — `api`, `subscription` or `unknown` (issue #2239, D30) — read the same way the per-stage record's own `lane` is, off each transcript's sibling `<stage>.stream.jsonl`, not off the `.out` envelope the rest of this roll-up scans. `unknown` covers every transcript this reads cannot assign a lane to: the stream was pruned, predates this field, belongs to a peer node (the stream never replicates — `docs/spec/dashboard/state.md`), carries no `system`/`init` event at all, or names an `apiKeySource` this mapping does not recognise (a provider whose own vocabulary is issue #2246's business). No readable stream is ever lost to an unreadable one: each is read in its own pass, so a stage killed mid-write — whose stream's final line is torn by construction — costs neither its own lane, which it recorded before the tear, nor any other transcript's. One row per transcript, like `by_day`/`by_actor` above, never per `(transcript × model)` like `by_model`. |
 | `cost_rows[].repo`, `.item`, `.source`, `.outcome` | string \| null | — | Which work item the row's cost bought (issue #593, D21), joined by `cycle` against the fleet-wide event union (`log.jsonl`, the same union `cycles[]` renders from) rather than against `cycles[]` itself — the union is never rotated (`docs/spec/implementation/requirements` requirement 2.6) and is retained per `analytics_retained_days` (requirement 2.6d) rather than the `MAX_CYCLES` cap that keeps `cycles[]` to a recent detail window, so the join reaches back over the whole `COST_SCAN_DAYS` span the roll-ups themselves cover. Derived exactly as `cycles[].repo`/`.item`/`.source`/`.outcome` are: the last event in the cycle's own events carrying `.repo`/`.item`, the most recent `selection` event's `.source`, and the same outcome ladder (`pr-ready` > `pr-raised` > `attempt-failed` > `none-selected` > `stand-down` > `cycle-skipped` > `selection` > `ended`). All four are `null` together whenever `.attributed` (below) is `false`. |
-| `cost_rows[].attributed` | boolean | — | Whether the four fields above are populated. `true` only for a `coordinator`/`implementer`/`reviewer` row whose own cycle has events in the union. `false` for every other actor — `enabler`, `refiner`, `limit-probe` and `project-reviewer` — even when the row's `cycle` matches a real, populated cycle: the Enabler/Refiner/limit-probe share their triggering cycle's directory (and so its `cycle` id) but spend on a different item than the one that cycle selected, and a `project-reviewer` row's `cycle` is a review id that never appears in `log.jsonl` at all (the review pipeline logs to its own `review-log.jsonl`). Also `false` for a `coordinator`/`implementer`/`reviewer` row whose own cycle has no events in the union — rare in practice, since `log.jsonl` is never rotated and its analytics content outlives transcript pruning by design; a `state_dir` reset predating the cycle, or a line lost to `lib/fleet.sh`'s NUL-corruption repair (`fleet_repair_log`), are the realistic causes, not rotation. A row is never dropped from `cost_rows[]` for lacking attribution; only these five fields go null. |
+| `cost_rows[].attributed` | boolean | — | Whether the four fields above are populated. `true` only for a `coordinator`/`implementer`/`reviewer` row whose own cycle has events in the union. `false` for every other actor — `enabler`, `refiner`, `limit-probe`, `credential-probe` and `project-reviewer` — even when the row's `cycle` matches a real, populated cycle: the Enabler/Refiner/limit-probe/credential-probe share their triggering cycle's directory (and so its `cycle` id) but spend on a different item than the one that cycle selected, and a `project-reviewer` row's `cycle` is a review id that never appears in `log.jsonl` at all (the review pipeline logs to its own `review-log.jsonl`). Also `false` for a `coordinator`/`implementer`/`reviewer` row whose own cycle has no events in the union — rare in practice, since `log.jsonl` is never rotated and its analytics content outlives transcript pruning by design; a `state_dir` reset predating the cycle, or a line lost to `lib/fleet.sh`'s NUL-corruption repair (`fleet_repair_log`), are the realistic causes, not rotation. A row is never dropped from `cost_rows[]` for lacking attribution; only these five fields go null. |
 | `cost_rows[].tokens_input`, `.tokens_output`, `.tokens_cache_creation`, `.tokens_cache_read` | integer \| null | tokens | Issue #594, D21. That row's own `modelUsage` entry's token counts — the same fields, the same units, as the per-stage record's `tokens.*` above — pulled from the same cost-scan pass that already reads `costUSD` from that entry, so no second scan. All four are `null` together on an `unknown`-model row (an envelope with no readable `modelUsage`): that row has no per-model breakdown to offer, and reading it as `0` would corrupt a prompt-cache ratio computed over it, exactly as `tokens: null` on the per-stage record above means "not measured," never "measured as zero." |
 | `cost_rows[].lane` | string | — | Issue #2239, D30. `api`, `subscription` or `unknown` — the same reading `by_lane[]` above sums, carried per row rather than only in the roll-up so a reader can re-aggregate it over whatever time frame the page's own selector picks, exactly as `model`/`actor` already let it. `unknown`, never `null`: unlike the per-stage record's own `lane`, which says "not observed" by being absent, this roll-up has no envelope-shaped degradation to preserve and so states plainly that the transcript's lane could not be read, the same convention `cost_rows[].model` already uses for `unknown`. |
 
@@ -284,12 +284,14 @@ because the envelope itself never carries the figure.
   each passing its own model id, `.out` path, the gap statistics
   `lib/stage-run.sh` left in `stage_gaps_json`, and (issue #2239, D30) the
   lane it left in `stage_lane_json` for the run that just ended (requirement
-  33a). The usage-limit probe of requirement 1b — a single minimal-model call
-  that is deliberately not a stage and so logs no `stage-start` — gains its
-  own `stage-end`, `stage: "limit-probe"`, carrying this same record
-  (`lib/standdown.sh`); `lib/stage-health.sh` ignores it, since its stage
-  list does not name `limit-probe`. The one invocation that still logs
-  neither is a `<stage>-salvage` resume.
+  33a). The usage-limit probe of requirement 1b and the model-credential
+  probe of requirement 0h — each a single minimal-model call that is
+  deliberately not a stage and so logs no `stage-start` — gain their own
+  `stage-end`, `stage: "limit-probe"` and `stage: "credential-probe"`
+  respectively, each carrying this same record (`lib/standdown.sh`);
+  `lib/stage-health.sh` ignores both, since its stage list does not name
+  either. The one invocation that still logs neither is a `<stage>-salvage`
+  resume.
 - **`metering_intended_lane`** produces `stage-start`/`review-stage-start`'s
   own `lane` (requirement 33) — what the Script *intended* before the run,
   rather than what `metering_fields`'s own `lane` later observed the run
@@ -324,12 +326,15 @@ event is counted, and that a stage which emitted nothing reports `null`.
 stub stream's `init` event, with each of the four recognised `apiKeySource`
 values and with none at all, maps to `stage_lane_json` exactly as
 `lib/substrate-claude-code.sh`'s own `substrate_claude_code_lane_of` header
-documents. `test/stage-health.test.sh` asserts `stage: "limit-probe"` is
-ignored by `stage_health_verdicts`, never read as an idle implementation
-stage. `test/standdown-limit-probe.test.sh` lifts the probe's own stage-end
-block out of `lib/standdown.sh` and asserts it carries `stage: "limit-probe"`,
-the real exit code, and this same metering record — `lane`, `cost_usd` and
-`tokens` included.
+documents. `test/stage-health.test.sh` asserts `stage: "limit-probe"` and
+`stage: "credential-probe"` are each ignored by `stage_health_verdicts`,
+never read as an idle implementation stage. `test/standdown-limit-probe.test.sh`
+lifts the probe's own stage-end block out of `lib/standdown.sh` and asserts
+it carries `stage: "limit-probe"`, the real exit code, and this same
+metering record — `lane`, `cost_usd` and `tokens` included.
+`test/standdown-credential-preflight.test.sh` asserts the same for the
+model-credential probe's own stage-end, `stage: "credential-probe"`, on both
+its refused and healthy paths.
 
 `test/node-health-cli.test.sh` covers the node metrics object above: it
 asserts `scripts/node-health.sh --metrics`'s output carries every top-level

@@ -2124,8 +2124,9 @@ counts_json="$(jq -n --slurpfile cyc "$cycles_file" --slurpfile costs_in "$costs
     #
     # `attributed` is true only for a coordinator/implementer/reviewer row
     # whose cycle actually has events in `$cycle_index` — an Enabler/Refiner/
-    # limit-probe row (which shares its cycle directory, and so its `cycle`
-    # id, with whichever coordinator/implementer/reviewer cycle triggered it
+    # limit-probe/credential-probe row (which shares its cycle directory, and
+    # so its `cycle` id, with whichever coordinator/implementer/reviewer
+    # cycle triggered it
     # from the exit trap) never attributes, because that cycle owns the item
     # some other stage of the same cycle worked, not the one the
     # Enabler/Refiner/probe itself examined; a `project-reviewer` row (from

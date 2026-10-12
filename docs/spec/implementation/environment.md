@@ -314,7 +314,17 @@ file and carries placeholders only; `.env` itself is never committed.
   carries D4's stated constraints — interactive per node, so it does not
   scale the way the API-key path does, and limited by the subscription's own
   terms to your own use. `scripts/doctor.sh`'s Claude section reports on
-  whichever path this node carries.
+  whichever path this node carries, including whether a BYO key's own shape
+  (`sk-ant-api-...` versus some other `sk-ant-<family>-...`) is one the API
+  is known to refuse outright for carrying no workspace scope
+  (agent-ops#2308), unless `ANTHROPIC_WORKSPACE_ID` is also set.
+  `run_standdown_checks`' own credential preflight (requirement 2.0h)
+  probes this same credential, cheaply and gated to run at most once per
+  container start on a node whose credential is working, and stands the
+  whole cycle down ahead of the GitHub gather when the API refuses it
+  outright — never reading `ANTHROPIC_WORKSPACE_ID` itself, since carrying
+  the header this variable would support on every request is a separate,
+  not-yet-built change.
 - **`tailscale`** (profile `tailnet`) — the sidecar whose network namespace
   `dashboard` shares. Refuses to start when `TS_AUTHKEY` is empty: its
   `entrypoint` checks the variable itself, before the image's own

@@ -415,7 +415,8 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                                      //   coordinator/implementer/reviewer
                                      //   row whose own cycle has events in
                                      //   that union. Every other row —
-                                     //   enabler/refiner/limit-probe (which
+                                     //   enabler/refiner/limit-probe/
+                                     //   credential-probe (which
                                      //   share their triggering cycle's id
                                      //   but spent on a different item),
                                      //   project-reviewer (whose cycle id

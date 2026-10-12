@@ -211,8 +211,12 @@
    which covers every way a stage can end badly including ones that ran first;
    calling those "refused before it could run" would put a confident falsehood
    where an honest exit code used to be. `terminal_reason` names which refusal
-   where the runner recorded one, and the status stands in where it did not
-   (`api_error_529`). The split is
+   where the runner recorded one, and the status stands in where it did not —
+   empty, `completed`, or the runner's own generic `api_error` token, which
+   names no refusal more specific than "the API returned a status" (`api_error_529`,
+   or `api_error_400` for a bare `api_error` carrying a 400; agent-ops#2308
+   closed the gap where a literal `"api_error"` fell through to its own bare
+   token instead of this fallback). The split is
    load-bearing — requirement 2.7 counts consecutive failures carrying the
    *same* detail, and the message names a token count that moved every cycle,
    so a detail built from it would have read as four distinct failures and the
@@ -236,6 +240,17 @@
    details. The gate is deliberately both halves: an `api_error` with no
    status and no such message still gets its honest exit code.
 
+   A second shape is named the same way (agent-ops#2308): an API key the
+   API accepts but refuses to route because it carries no workspace
+   scope — a 400 whose message is a stable sentence (`not scoped to a
+   workspace`, `anthropic-workspace-id`, or the sibling `invalid x-api-key`
+   wording a differently-misconfigured key returns),
+   never a moving part, the shape the 2026-10-10 outage's own
+   `ANTHROPIC_API_KEY` carried for eleven hours across the whole fleet.
+   Named `workspace_scope_refused`: nothing about it clears by retrying,
+   only a rescoped or replaced key, the same permanence
+   `authentication_failed` already carries for a lapsed login.
+
    **Not every refusal is deterministic, and the record now says which
    (issue #1073).** `stage_api_refusal`'s stable token cannot itself carry
    that distinction — the whole point of narrowing it was to keep a moving
@@ -247,12 +262,15 @@
    amount of retrying changes that — and `transient` for a 5xx or a
    connection-level fault — the request never reached a considered answer,
    the fault is external, and it clears on its own — and `refused` for
-   `authentication_failed`, which no retry clears, only a person completing
-   the login. `handle_stage_failure`
+   `authentication_failed` or `workspace_scope_refused`, neither of which any
+   retry clears, only a person completing a login or correcting a key.
+   `handle_stage_failure`
    carries it on the `attempt-failed` event as `api_refusal_class`, empty
    when `stage_api_refusal` found nothing to classify. `crash_loop_verdict`
-   is the one reader of this field today (requirement 2.7); no other part of
-   this requirement changes on its account.
+   (requirement 2.7) and `scripts/doctor.sh`'s own unattended pass
+   (component 14, agent-ops#2308) both read this field; the credential
+   preflight (requirement 2.0h) reads it too, directly off its own probe's
+   transcript rather than off a logged event.
 
 4j. **The unsheddable half of the Co-Ordinator's input is bounded too, and
    `refinements` is bounded by candidacy.** Requirement 4i bounds the prompt
