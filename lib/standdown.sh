@@ -593,8 +593,8 @@ if (( resume_epoch > now_epoch )); then
       "Reply with the single word: ok" "$probe_out" "$cycle_dir" || probe_rc=$?
     # The probe's own spend, joined into the fleet-wide ledger like every
     # other launch through run_model_stage (issue #2239, D30) — it never had
-    # a stage-start (this is the one invocation requirement 33 names as
-    # logging neither), but it is still a real invocation that spent real
+    # a stage-start, like 2.0h's own credential probe above, which requirement
+    # 33 names beside it, but it is still a real invocation that spent real
     # tokens, and until this event existed that spend was invisible to
     # log.jsonl even though the cost scan always saw it in the transcript
     # itself. `lib/stage-health.sh`'s own stage list does not name

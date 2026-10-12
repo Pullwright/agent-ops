@@ -459,9 +459,10 @@
     two are the ones that may appear on a cycle which selected nothing, since
     both run from the cleanup of requirement 11. A `stage-end` alone, with no
     paired `stage-start`, also carries `stage: "enabler-adjudicate"`
-    (requirement 36b, `run_enabler_adjudication`) — the one caller of
-    `run_model_stage` outside those six actors that logs a `stage-end` at
-    all; a `<stage>-salvage` resume logs neither. The usage-limit probe of
+    (requirement 36b, `run_enabler_adjudication`) — a caller of
+    `run_model_stage` outside those six actors that logs a `stage-end` alone
+    rather than a pair; a `<stage>-salvage` resume logs neither. The
+    usage-limit probe of
     requirement 1b also logs a `stage-end` alone, `stage: "limit-probe"`
     (issue #2239, D30, `lib/standdown.sh`) — ignored by `lib/stage-health.sh`,
     whose stage list does not name it. The model-credential probe of
