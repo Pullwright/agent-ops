@@ -2203,8 +2203,14 @@ decide_pass() {  # decide_pass ITEM MANDATE VERDICT_JSON -> the function's own s
   cycle_dir="$(mktemp -d)"
   calls_log="$cycle_dir/calls.log"
   : > "$calls_log"
-  run_enabler_decide "acme/widgets" "$1" '{"kind":"","detail":"d","unblock_condition":"u"}' \
-    '{"issue":{"title":"t","body":"b"}}' "$cycle_dir" 0 "$2"
+  # Under the Script's own `set -e` (review of PR #2344): a gate that fails
+  # in a way errexit turns into an aborted cycle shows up here as a verdict
+  # no assertion below expects, rather than passing under this file's own
+  # options.
+  ( set -e
+    run_enabler_decide "acme/widgets" "$1" '{"kind":"","detail":"d","unblock_condition":"u"}' \
+      '{"issue":{"title":"t","body":"b"}}' "$cycle_dir" 0 "$2" ) \
+    || printf '{"verdict":"run_enabler_decide aborted under set -e","evidence":""}'
 }
 
 act_verdict='{"verdict":"decide","evidence":"the draft is unwanted","decision":"close it",

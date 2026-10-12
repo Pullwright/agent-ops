@@ -59,14 +59,23 @@
       Script establishes it rather than trusting the pass: every named path
       is absent from the item's repository at its default branch and present
       in the pipeline's (`refile_act_check`, `lib/refile.sh` — one `gh api
-      repos/<repo>/contents/<path>` read per path per repository, a 404
-      reading "absent", a success "present", and any other answer, a rate
-      limit or a network failure among them, "unknown", which refuses the
-      act in either direction). The item must be a plain issue number (a
-      thread to copy and to close), `paths` a non-empty list of at most
-      twenty plain relative paths — no leading `/`, no `.` or `..` segment,
-      de-duplicated and sorted as carried — and the pipeline's repository
-      configured and not the item's own. The act is the owner's decision of
+      repos/<repo>/contents/<path>` read per path per repository, asking
+      for the `object` media type so a file over a megabyte answers like
+      any other; a 404 reading "absent", a success "present", and any other
+      answer, a rate limit or a network failure among them, "unknown",
+      which is never taken for either: at verdict time it refuses the act,
+      since no decision exists yet to lose, and at act time it leaves the
+      act waiting for a cycle that can read, below). The item must be a
+      plain issue number (a thread to copy and to close), `paths` a
+      non-empty list of at most twenty plain relative paths — nothing
+      outside `[A-Za-z0-9._/-]`, no leading `/` or `-`, no `.` or `..`
+      segment, no empty or trailing segment, a leading `.` allowed so a
+      misfiled CI or agent-configuration defect under `.github/` or
+      `.claude/` is reachable, checked inside `jq` on the array as carried
+      so a path holding a newline is one bad path rather than two good
+      ones, de-duplicated and sorted as carried — and the pipeline's
+      repository configured and not the item's own. The act is the owner's
+      decision of
       2026-10-12 (`docs/STANDING-DECISIONS.md`, poetic-fiddle#516): an
       escalation asking only for it is mechanical, and both halves of it
       reverse.
@@ -170,43 +179,71 @@
     corroborated void.
 
     **`refile-to-pipeline-repo` is a filing and a close, and nothing more.**
-    Performing it (`refile_perform`, `lib/refile.sh`) first repeats
-    `refile_act_check` whole — the window between verdict and act is hours
-    long and either repository may have moved, so the fact is re-established
-    live, never carried from the verdict — then reads the original issue and
-    files one copy in the pipeline's repository: the same title; the body
-    with every `Blocked-by:` line dropped (those name the original
+    Performing it (`refile_act`, `lib/refile.sh`) spends its reads in the
+    order that refuses cheapest: the shape half of `refile_act_check` first
+    (no read), then one read of the original issue — an original a person
+    closed during the window is the cheapest refusal there is, and must not
+    cost every contents read first — then the paths re-checked live, never
+    carried from the verdict, because the window between verdict and act is
+    hours long and either repository may have moved. It then files one copy
+    in the pipeline's repository (`refile_perform`): the same title; the
+    body with every `Blocked-by:` line dropped (those name the original
     repository's own issues, and the owner's own re-files dropped them,
-    poetic-fiddle#445); a trailing provenance section carrying a machine
+    poetic-fiddle#445) and every other bare `#n` reference qualified to
+    `<repo>#n`, so "see #445" still names the issue it meant and a `Fixes
+    #n` the original carried is never a live closing keyword against the
+    pipeline's own issues; a trailing provenance section carrying a machine
     marker (`<!-- agent-ops:refiled-from repo=<repo> item=<n> -->`), the
-    original's URL, the verified paths, the instant they were verified and
-    the decision-log issue's URL; and `pw::type:tech-debt` where the original
-    carried it (retried once unlabelled where the labelled create fails, as
-    `techdebt_file_debt` does), with no `refined` label and no block label —
-    a fresh Refiner pass in the right repository is cheap insurance, and the
-    original's own specification stays one link away. It then closes the
-    original as not planned with one comment in the pipeline's voice naming
-    the copy, the paths and the decision-log issue. The two halves are
-    idempotent together: the marker is what a later cycle searches the
-    pipeline's repository for, so a cycle whose close half failed after its
-    filing half succeeded retries the close alone and never files twice. It
-    logs `decision-acted` with `refiled: {repo, number, url}` beside
-    `outcome: "performed"`, and the ordinary `unblocked`; the original then
-    leaves every reader's view the way any closed issue does.
+    original's URL, the verified paths, the instant they were verified, the
+    decision-log issue's URL and what was rewritten; and `pw::type:tech-debt`
+    where the original carried it (retried once unlabelled where the
+    labelled create fails — `issue_create_with_retry`, `lib/issue-file.sh`,
+    the one retry every filer makes), with no `refined` label and no block
+    label — a fresh Refiner pass in the right repository is cheap insurance,
+    and the original's own specification stays one link away. It then
+    closes the original as not planned with one comment in the pipeline's
+    voice naming the copy, the paths and the decision-log issue, and saying
+    how the act reverses now that it has run: by hand, closing the copy it
+    names and reopening the original — the log issue's reopen is a lever
+    before the act and nothing after it. The two halves are idempotent
+    together: the marker is what a later cycle searches the pipeline's
+    repository for (`issue_find_by_body`, every state, a stated page of 200
+    — the pipeline's repository cites items as `owner/repo#n` in
+    escalations and decision logs, so a short page could push the copy off
+    it), so a cycle whose close half failed after its filing half succeeded
+    retries the close alone and never files twice, and a cycle that finds
+    the original already closed *and* a copy carrying the marker has found
+    the act itself, performed by a cycle that died between its close and
+    its record, and writes the record at last. It logs `decision-acted`
+    with `refiled: {repo, number, url}` beside `outcome: "performed"`, and
+    the ordinary `unblocked`; the original then leaves every reader's view
+    the way any closed issue does.
 
-    Three things short of performing it, each named in a `warning`. A read
-    or a write that fails — the original unreadable, the create refused, the
-    close refused — leaves the act pending for a later cycle, exactly as an
-    unreadable lever does. The re-check failing, or the original already
-    closed (someone acted first, and a second copy is the duplicate this act
-    exists to avoid), retires the act with `decision-acted`'s third outcome,
+    Two things short of performing it, each named in a `warning`. A read, a
+    search or a write that fails — the original unreadable, a path that
+    cannot be read at all, the marker search failed (which is not "none
+    found": filing on it would file the second copy the search exists to
+    prevent), the create refused, the close refused — leaves the act
+    pending for a later cycle, exactly as an unreadable lever does: a
+    decision that stood through its whole window is not retired over a read
+    that failed. The re-check establishing the fact false (a path that
+    exists where the item was filed, or is absent from the pipeline's
+    repository too), or the original already closed with no marked copy
+    (someone acted first, and a second copy is the duplicate this act exists
+    to avoid), retires the act with `decision-acted`'s third outcome,
     `refused`, its `reason` saying why, and says the same on the decision-log
     issue in one comment, so the owner who was offered the lever learns the
     act was never taken. A refused act clears nothing: the item stays
     blocked, and its next Enabler engagement escalates to a person on
-    requirement 36d's own per-reason bound, carrying the refusal. Each of
-    the three spends one of the cycle's three act slots, since each cost the
-    reads a performed act would have.
+    requirement 36d's own per-reason bound, carrying the refusal. A wait and
+    a refusal each spend one of the cycle's three act slots, since each cost
+    the reads a performed act would have, and a wait is bounded: an act of
+    either kind still owed `PENDING_DECISION_ACT_WAIT_WINDOWS` (three) veto
+    windows after it fell due — days, longer than any outage the fleet has
+    seen — is retired as `refused` the same way, naming how long it waited,
+    after the lever read alone, so an original its author deleted or a
+    repository the token cannot write to cannot hold one of the slots for
+    ever.
 
     **A veto cancels a pending act, and says so.** When
     `run_decision_veto_sweep` records a `decision-vetoed` for a log issue

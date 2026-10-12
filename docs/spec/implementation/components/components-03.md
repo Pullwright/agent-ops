@@ -688,7 +688,21 @@
       agent-ops#938 exists to prevent. Losing the label costs a later Refiner
       its marker — the issue reads to it as an item carrying neither marker
       (requirement 39d's third case); losing the create costs the filing.
-      Prints `"<number>\t<url>"` on success, nothing on failure.
+      Prints `"<number>\t<url>"` on success, nothing on failure. The dedup
+      search and the create are `lib/issue-file.sh`'s `issue_find_by_body`
+      (open issues, a stated page of 200, matched on the body) and
+      `issue_create_with_retry`, the two halves every filer shares —
+      `_pager_create_issue` (`lib/pager.sh`), `monitor_create_issue`
+      (`monitor-cycle.sh`) and `refile_perform` (`lib/refile.sh`) are the
+      others — routed through `_techdebt_gh` by a `local ISSUE_FILE_GH`, so
+      `TOKEN` below still governs every call. A dedup search that fails
+      outright (`gh` exiting non-zero, or an answer that is not an array,
+      which `issue_find_by_body` reports apart from "none found") files
+      anyway, noted on `tech-debt-file.err`: this filing is a stage
+      verdict's one chance, nothing retries a `file_issue`, and a duplicate
+      the body-reference convention keeps visible is the lesser harm against
+      a filing lost in silence — the pager and the re-file, each retried on a
+      later pass, make the opposite choice with the same helper.
     - `techdebt_default_section DEFAULT_FIX [OWNER_DECISION]` (agent-ops#938)
       — the `## Default: <DEFAULT_FIX>` heading both filing functions append
       (`## Default: not stated` when `DEFAULT_FIX` is empty — a malformed
@@ -729,10 +743,11 @@
       creates a fresh issue (`gh issue create --label pw::type:tech-debt`)
       whose body is `BODY` plus `techdebt_default_section`'s trailing `##
       Default` section plus `PROVENANCE`. A labelled create that fails is
-      retried once unlabelled — a repository whose `pw::type:tech-debt` label
-      the ensure pass (component 6a) has not reached yet — exactly as
-      `techdebt_file_issue`'s own `pw::owner-decision` retry above, logged to
-      `tech-debt-file.err`. Nothing reconciles the result: the filed issue
+      retried once unlabelled (`issue_create_with_retry`, `lib/issue-file.sh`)
+      — a repository whose `pw::type:tech-debt` label the ensure pass
+      (component 6a) has not reached yet — exactly as `techdebt_file_issue`'s
+      own `pw::owner-decision` retry above, logged to `tech-debt-file.err`.
+      Nothing reconciles the result: the filed issue
       carries no `pw::type:tech-debt` label, so it is invisible by
       construction both to `scripts/gather-tech-debt.sh`'s own label search
       and to the archive mirror's (2.6c), and neither of 2.6c's own audits

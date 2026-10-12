@@ -208,6 +208,15 @@ pager_state_for() {
 # lib/claim.sh's CLAIM_GH and lib/labels.sh's LABELS_GH.
 _pager_gh() { printf '%s' "${PAGER_GH:-gh}"; }
 
+# The dedup search and the create-with-retry `_pager_create_issue` makes are
+# lib/issue-file.sh's, shared with every other filer; sourced relative to
+# this file, so this file stays sourceable alone (its own header), and
+# guarded, so a caller that sourced lib/issue-file.sh first is left alone.
+if ! declare -F issue_create_with_retry >/dev/null 2>&1; then
+  # shellcheck source=lib/issue-file.sh
+  . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/issue-file.sh"
+fi
+
 # _pager_webhook_notify URL REPO ITEM TITLE BODY_FILE NODE CYCLE
 # Best-effort fallback, parameterised twin of lib/enabler.sh's
 # escalation_webhook_notify. A no-op when URL is empty.
@@ -258,44 +267,30 @@ _pager_ensure_label_role() {
 # Prints "<number>\t<url>"; prints nothing and returns 1 on failure. ASSIGNEE
 # empty files unassigned (config-lever's tracking issue and pipeline-act's
 # both do). Dedup: an open issue carrying LABEL whose body already contains
-# ITEM is reused, on the same body-contains-item-ref convention every other
-# escalation dedup in this codebase already uses. ENSURE_ROLE, when given, is
-# the lib/labels.sh catalogue role that owns LABEL, ensured in REPO on the
-# create path only (see _pager_ensure_label_role); omitted, nothing is
-# ensured and the retry-without-label below is the only safety net.
+# ITEM is reused (`issue_find_by_body`, lib/issue-file.sh), on the same
+# body-contains-item-ref convention every other escalation dedup in this
+# codebase already uses. A search that fails is not "none": the page may
+# already be open, and filing on it would file it twice, so this window
+# files nothing and returns 1 — the caller falls to its webhook and logs no
+# `pager-fired`, and the candidate is evaluated again at the next window.
+# ENSURE_ROLE, when given, is the lib/labels.sh catalogue role that owns
+# LABEL, ensured in REPO on the create path only (see
+# _pager_ensure_label_role); omitted, nothing is ensured and
+# `issue_create_with_retry`'s retry without the label is the only safety net.
 _pager_create_issue() {
   local repo="$1" item="$2" label="$3" title="$4" body_file="$5" assignee="${6:-}" \
         ensure_role="${7:-}"
-  local gh existing raw url number
-  gh="$(_pager_gh)"
-  existing="$("$gh" issue list -R "$repo" --label "$label" --state open --search "$item" --limit 200 \
-                --json number,url,body 2>/dev/null \
-              | jq -r --arg it "$item" \
-                  'map(select(((.body // "") | contains($it)))) | first
-                   | if . == null then empty else "\(.number)\t\(.url)" end' 2>/dev/null || true)"
-  if [[ -n "$existing" ]]; then
+  local ISSUE_FILE_GH=("$(_pager_gh)") existing rc=0
+  existing="$(issue_find_by_body "$repo" "$item" "$item" open "$label" 200)" || rc=$?
+  if (( rc == 0 )); then
     printf '%s' "$existing"
     return 0
   fi
+  (( rc == 1 )) || return 1
   # Only on the path that actually creates — costs nothing on the dedup path
   # above, which is the common one.
   _pager_ensure_label_role "$repo" "$ensure_role"
-  if [[ -n "$assignee" ]]; then
-    raw="$("$gh" issue create -R "$repo" --title "$title" --body-file "$body_file" \
-             --assignee "$assignee" --label "$label" 2>/dev/null || true)"
-    [[ -n "$raw" ]] || raw="$("$gh" issue create -R "$repo" --title "$title" --body-file "$body_file" \
-             --assignee "$assignee" 2>/dev/null || true)"
-  else
-    raw="$("$gh" issue create -R "$repo" --title "$title" --body-file "$body_file" \
-             --label "$label" 2>/dev/null || true)"
-    [[ -n "$raw" ]] || raw="$("$gh" issue create -R "$repo" --title "$title" --body-file "$body_file" \
-             2>/dev/null || true)"
-  fi
-  url="$(grep -oE 'https://github\.com/[A-Za-z0-9_./-]+/issues/[0-9]+' <<<"$raw" | tail -n1 || true)"
-  [[ -n "$url" ]] || return 1
-  number="${url##*/}"
-  [[ "$number" =~ ^[0-9]+$ ]] || return 1
-  printf '%s\t%s' "$number" "$url"
+  issue_create_with_retry "$repo" "$title" "$body_file" "$label" "$assignee"
 }
 
 # _pager_create_decision_log_issue REPO ITEM LABEL TITLE BODY_FILE REASON_KEY

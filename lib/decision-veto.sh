@@ -155,6 +155,14 @@ run_decision_veto_sweep() {
 # one rate-limit bucket.
 PENDING_DECISION_ACT_MAX="${PENDING_DECISION_ACT_MAX:-3}"
 
+# How long a due act may wait, in veto windows (`decision_veto_window_hours`
+# each, and never less than an hour in all), before it is retired as refused
+# rather than retried once more: a wait is a read, a search or a write that
+# failed, each retry spends one of the slots above, and nothing else bounds
+# how many cycles one act may fail for. Three windows is days — longer than
+# any outage this fleet has seen, and short of for ever.
+PENDING_DECISION_ACT_WAIT_WINDOWS="${PENDING_DECISION_ACT_WAIT_WINDOWS:-3}"
+
 # run_pending_decision_acts
 # Requirement 36f's other half: perform the acts `decide-with-veto` decisions
 # deferred behind the veto window, once that window has passed and nobody
@@ -196,15 +204,21 @@ PENDING_DECISION_ACT_MAX="${PENDING_DECISION_ACT_MAX:-3}"
 # API call, and that is exactly what the delegate mandate, the elapsed window
 # and the un-pulled lever supply here.
 #
-# `refile-to-pipeline-repo` — the second, reach (c) — is `refile_perform`
-# (lib/refile.sh): re-check the paths live, file the copy, close the
-# original with a pointer. It is the one act here with outcomes short of
-# performing it, each in its own branch below: a read or a write that fails
-# leaves it pending for a later cycle, exactly as an unreadable lever does;
-# a re-check that fails, or an original someone already closed, retires it
-# through `_decision_act_refuse` — `decision-acted`'s third outcome,
-# `refused` — and says so on the decision-log issue, so the owner who was
-# offered the lever learns the act was never taken.
+# `refile-to-pipeline-repo` — the second, reach (c) — is `refile_act`
+# (lib/refile.sh): read the original, re-check the paths live, file the
+# copy, close the original with a pointer. It is the one act here with
+# outcomes short of performing it, each in its own branch below: a read, a
+# search or a write that fails — a path that cannot be read at all among
+# them — leaves it pending for a later cycle, exactly as an unreadable lever
+# does; a re-check that establishes the fact false, or an original someone
+# else already closed, retires it through `_decision_act_refuse` —
+# `decision-acted`'s third outcome, `refused` — and says so on the
+# decision-log issue, so the owner who was offered the lever learns the act
+# was never taken. A wait is bounded (PENDING_DECISION_ACT_WAIT_WINDOWS,
+# above): an act still owed that many veto windows after it fell due is
+# retired the same way, so an original its author deleted, or a repository
+# the token cannot write to, cannot hold one of a cycle's three slots for
+# ever.
 
 # _decision_act_refuse REPO ITEM ISSUE_NUMBER ISSUE_URL ACT_JSON REASON
 # Retire a due act the Script could not corroborate at act time: a
@@ -226,7 +240,7 @@ _decision_act_refuse() {
       outcome: "refused", reason: $reason}')"
   gh issue comment "$number" -R "$repo" --body "$(pipeline_comment_header enabler-decide "${node_name:-}")
 
-The act this decision carried (\`$kind\`) was **not** performed: when its window passed, the pipeline re-checked what it rests on and could not corroborate it — $reason. The decision is retired; the item stays blocked and reaches a person through the ordinary escalation.
+The act this decision carried (\`$kind\`) was **not** performed. When its window had passed, the pipeline found that $reason. The decision is retired; the item stays blocked and reaches a person through the ordinary escalation.
 
 $(pipeline_comment_marker "${cycle_id:-}" enabler-decide)" >/dev/null 2>>"$cycle_dir/pending-decision-acts.err" || true
 }
@@ -236,7 +250,7 @@ run_pending_decision_acts() {
 
   local pending_json pending now_epoch due_epoch acted=0 deferred=0
   local a_repo a_item a_number a_url a_kind a_after a_decision a_rationale a_state
-  local a_act a_extra a_checked a_pipeline_repo a_result a_rc a_copy_number a_copy_url
+  local a_act a_extra a_result a_rc a_copy_number a_copy_url a_window a_wait_hours
   pending_json="$(pending_decision_acts "$union_log")"
   jq -e 'type == "array" and length > 0' <<<"$pending_json" >/dev/null 2>&1 || return 0
   now_epoch="$(date -u +%s)"
@@ -281,6 +295,23 @@ run_pending_decision_acts() {
 
     a_act="$(jq -c '.act // {}' <<<"$pending" 2>/dev/null || printf '{}')"
     a_extra='{}'
+
+    # A due act still owed PENDING_DECISION_ACT_WAIT_WINDOWS windows after it
+    # fell due has been waiting on something no later cycle is going to fix,
+    # and is retired here rather than retried: every retry spends one of this
+    # cycle's slots, and three such acts would starve every other act for
+    # ever.
+    a_window="${decision_veto_window_hours:-24}"
+    [[ "$a_window" =~ ^[0-9]+$ ]] || a_window=24
+    a_wait_hours=$(( PENDING_DECISION_ACT_WAIT_WINDOWS * a_window ))
+    (( a_wait_hours >= 1 )) || a_wait_hours=1
+    if (( now_epoch - due_epoch > a_wait_hours * 3600 )); then
+      _decision_act_refuse "$a_repo" "$a_item" "$a_number" "$a_url" "$a_act" \
+        "the act fell due at $a_after and has waited more than $a_wait_hours hours past that ($PENDING_DECISION_ACT_WAIT_WINDOWS veto windows) without being performed, which is as long as a wait may last"
+      acted=$(( acted + 1 ))
+      continue
+    fi
+
     case "$a_kind" in
       corroborate-void)
         log_event "item-void" "$(item_event_fields "decision" \
@@ -290,19 +321,16 @@ run_pending_decision_acts() {
              '{evidence: $ev, decision_issue_number: $n, decision_issue_url: $u}')")"
         ;;
       refile-to-pipeline-repo)
-        # Re-checked here, never carried from the verdict: the window between
-        # the two is hours long and either repository may have moved. A
-        # refusal and a wait each spend one of this cycle's slots, since each
-        # cost the reads a performed act would have.
-        if ! a_checked="$(refile_act_check "$a_repo" "$a_item" "$a_act")"; then
-          _decision_act_refuse "$a_repo" "$a_item" "$a_number" "$a_url" "$a_act" "$a_checked"
-          acted=$(( acted + 1 ))
-          continue
-        fi
-        a_pipeline_repo="$(decision_pipeline_repo)"
-        a_result="$(refile_perform "$a_repo" "$a_item" "$a_pipeline_repo" \
-                      "$(jq -c '.paths' <<<"$a_checked")" "$a_url")"
-        a_rc=$?
+        # Performed through `refile_act`, which re-establishes the fact live,
+        # never carried from the verdict: the window between the two is hours
+        # long and either repository may have moved. A refusal and a wait
+        # each spend one of this cycle's slots, since each cost the reads a
+        # performed act would have, and the wait is bounded above. `|| a_rc=$?`,
+        # never a bare assignment followed by `$?`: this runs under
+        # agent-cycle.sh's `set -e`, where a substitution that fails would
+        # abort the cycle before the status could be read.
+        a_rc=0
+        a_result="$(refile_act "$a_repo" "$a_item" "$a_act" "$a_url")" || a_rc=$?
         if (( a_rc == 2 )); then
           _decision_act_refuse "$a_repo" "$a_item" "$a_number" "$a_url" "$a_act" "$a_result"
           acted=$(( acted + 1 ))
@@ -315,7 +343,7 @@ run_pending_decision_acts() {
           continue
         fi
         IFS=$'\t' read -r a_copy_number a_copy_url <<<"$a_result"
-        a_extra="$(jq -nc --arg r "$a_pipeline_repo" --arg n "$a_copy_number" --arg u "$a_copy_url" \
+        a_extra="$(jq -nc --arg r "$(decision_pipeline_repo)" --arg n "$a_copy_number" --arg u "$a_copy_url" \
           '{refiled: {repo: $r, number: ($n | tonumber), url: $u}}')"
         ;;
       *)

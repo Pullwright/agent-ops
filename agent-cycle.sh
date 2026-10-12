@@ -154,10 +154,15 @@ scratch_enter agent-cycle || exit 1
 # have run, deliberately later than run_standdown_checks's own sweeps — see its
 # own header for why.
 . "$SCRIPT_DIR/lib/decision-veto.sh"
+# shellcheck source=lib/issue-file.sh
+# The search-then-create every filer shares; lib/tech-debt-file.sh,
+# lib/pager.sh and lib/refile.sh each source it themselves too, guarded, so
+# the explicit line here is for the reader.
+. "$SCRIPT_DIR/lib/issue-file.sh"
 # shellcheck source=lib/refile.sh
 # Requirement 36f's reach (c): `refile_act_check` is called from
-# run_enabler_decide (lib/enabler.sh) and from run_pending_decision_acts
-# (lib/decision-veto.sh), `refile_perform` from the latter alone.
+# run_enabler_decide (lib/enabler.sh), `refile_act` from
+# run_pending_decision_acts (lib/decision-veto.sh) once the window has passed.
 . "$SCRIPT_DIR/lib/refile.sh"
 # shellcheck source=lib/toggle.sh
 . "$SCRIPT_DIR/lib/toggle.sh"

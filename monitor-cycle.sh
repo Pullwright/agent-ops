@@ -120,6 +120,8 @@ scratch_enter monitor-cycle || exit 1
 . "$SCRIPT_DIR/lib/prompt-overrides.sh"
 # shellcheck source=lib/monitor-digest.sh
 . "$SCRIPT_DIR/lib/monitor-digest.sh"
+# shellcheck source=lib/issue-file.sh
+. "$SCRIPT_DIR/lib/issue-file.sh"
 # shellcheck source=lib/pager.sh
 . "$SCRIPT_DIR/lib/pager.sh"
 # shellcheck source=lib/pager-invariants.sh
@@ -1008,20 +1010,13 @@ monitor_open_finding() {
 }
 
 # monitor_create_issue REPO TITLE BODY_FILE LABEL ASSIGNEE -> "<number>\t<url>"
-# One create, with the retry-without-label lib/pager.sh's own
-# `_pager_create_issue` performs and for the same reason: a repository whose
-# label catalogue has not been ensured yet must still get its issue.
+# One create, with the retry-without-label every filer makes
+# (`issue_create_with_retry`, lib/issue-file.sh) and for the same reason: a
+# repository whose label catalogue has not been ensured yet must still get
+# its issue.
 monitor_create_issue() {
-  local repo="$1" title="$2" body_file="$3" label="$4" assignee="$5" raw url number
-  local -a args=(issue create -R "$repo" --title "$title" --body-file "$body_file")
-  [[ -n "$assignee" ]] && args+=(--assignee "$assignee")
-  raw="$(gh "${args[@]}" --label "$label" 2>/dev/null || true)"
-  [[ -n "$raw" ]] || raw="$(gh "${args[@]}" 2>/dev/null || true)"
-  url="$(grep -oE 'https://github\.com/[A-Za-z0-9_./-]+/issues/[0-9]+' <<<"$raw" | tail -n1 || true)"
-  [[ -n "$url" ]] || return 1
-  number="${url##*/}"
-  [[ "$number" =~ ^[0-9]+$ ]] || return 1
-  printf '%s\t%s' "$number" "$url"
+  local repo="$1" title="$2" body_file="$3" label="$4" assignee="$5"
+  issue_create_with_retry "$repo" "$title" "$body_file" "$label" "$assignee"
 }
 
 while IFS= read -r finding; do

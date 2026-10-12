@@ -205,7 +205,9 @@ What exists, and the requirements each part answers to:
    `compute_skip_lists` (`lib/candidate-gather.sh`), the band eligibility and
    Enabler/Refiner pre-fetch pass (`lib/eligibility.sh`), the decision-veto
    sweep and pending decision acts (`lib/decision-veto.sh`, with
-   `lib/refile.sh` performing requirement 36f's relocation act), back-pressure's
+   `lib/refile.sh` performing requirement 36f's relocation act, its search
+   and its filing through `lib/issue-file.sh`, the two halves every issue
+   filer shares — see component 23d), back-pressure's
    narrowing of the finishing sources (requirement 2.2a), the requirement-4i
    prompt-fit ladder (`lib/coordinator-input.sh`) and the no-op short-circuit
    (requirement 3b, `lib/noop-skip.sh`). Several of its paths exit the cycle

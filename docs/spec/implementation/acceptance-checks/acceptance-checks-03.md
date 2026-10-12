@@ -734,44 +734,71 @@
    records for a log issue still carrying a pending act logs
    `decision-acted` with `outcome: "cancelled"`, so the cancellation is on
    the record rather than merely absent from the pending set.
-   `test/refile.test.sh` passes against a stubbed `gh` (reach (c)):
-   `refile_paths_normalise` refuses an empty list, more than the cap, and
-   any path with a leading `/`, a `.` or `..` segment, an empty segment or a
-   trailing `/`, and de-duplicates the rest; `refile_path_state` reads a
-   success as present, an `HTTP 404` as absent and anything else — a network
-   failure, a rate limit — as unknown; `refile_paths_verify` holds only when
-   every path is absent where the item was filed and present in the
-   pipeline's repository, naming the first path and repository that fail,
-   and refuses an unknown in either direction; `refile_act_check` refuses a
-   pull-request void shape and a register id, an unconfigured pipeline
-   repository, and the item's own repository as the target, and resolves
-   `pager_repo` ahead of `crash_loop_repo`; and `refile_perform` files the
-   copy with the original's title, its body less every `Blocked-by:` line,
-   the `agent-ops:refiled-from` marker and `pw::type:tech-debt` where the
-   original carried it (retrying unlabelled once), closes the original as
-   not planned with a comment naming the copy and the decision, reuses a
-   copy already carrying the marker rather than filing twice, returns the
-   wait code on an unreadable original, a failed create and a failed close
-   (naming the copy it did file), and the refuse code on an original already
-   closed. `test/enabler-verdicts.test.sh`'s decide gate passes for reach
-   (c): a `refile-to-pipeline-repo` act survives, normalised, only when
-   every named path reads 404 where the item was filed and a success in the
-   pipeline's repository, with `pipeline_repo` in the pass's runtime input;
-   it is refused — the escalation naming the path and the repository — when
-   a path exists where the item was filed, is absent from the pipeline's
-   repository or cannot be read at all, when the item is not an issue
-   number, when the act names no paths, at `decide-tactical`, and when no
-   pipeline repository is configured or it is the item's own.
-   `test/decision-veto-sweep.test.sh` passes for reach (c): a due
-   `refile-to-pipeline-repo` act re-checks its paths, files the copy, closes
-   the original and logs `decision-acted` (`outcome: "performed"`,
-   `refiled.url`, the act's own `paths`) and `unblocked`, writing no
-   `item-void`; a re-check that fails retires it as `refused` with the path
-   in `reason`, a `warning`, one comment on the decision-log issue and no
-   filing; an original already closed is `refused` the same way; a create
-   that fails leaves the act pending — a `warning` and no `decision-acted` —
-   and the next cycle performs it; and a copy already carrying the marker is
-   reused, so only the close is made.
+   `test/refile.test.sh` passes against a stubbed `gh`, under `set -euo
+   pipefail` (reach (c)): `refile_paths_normalise` refuses an empty list,
+   more than the cap, and any path with a leading `/` or `-`, a `.` or `..`
+   segment, an empty segment, a trailing `/`, a space or a newline (one bad
+   path, never two good ones), accepts a leading `.`, and de-duplicates the
+   rest; `refile_path_state` asks for the `object` media type and reads a
+   success as present, an `HTTP 404` as absent and anything else — a
+   network failure, a rate limit — as unknown; `refile_paths_verify` holds
+   only when every path is absent where the item was filed and present in
+   the pipeline's repository, returning 1 and naming the first path and
+   repository that fail, and 3 for an unknown in either direction;
+   `refile_act_check` refuses a pull-request void shape and a register id,
+   an unconfigured pipeline repository, and the item's own repository as
+   the target, resolves `pager_repo` ahead of `crash_loop_repo`, and passes
+   the 3 through; `refile_perform` files the copy with the original's
+   title, its body less every `Blocked-by:` line and with every bare `#n`
+   qualified (an already qualified reference and a URL fragment left
+   alone), the `agent-ops:refiled-from` marker and `pw::type:tech-debt`
+   where the original carried it (retrying unlabelled once), closes the
+   original as not planned with a comment naming the copy and the decision
+   and saying both halves reverse by hand, reuses a copy already carrying
+   the marker rather than filing twice, does not read an original it was
+   handed, returns the wait code on an unreadable original, a failed marker
+   search (open or closed original), a failed create and a failed close
+   (naming the copy it did file), the refuse code on an original already
+   closed with no marked copy, and the performed code — printing the copy,
+   with no filing and no close — on an original already closed whose marked
+   copy exists; and `refile_act` reads the original before any contents
+   read, refuses a bad shape with no read at all, refuses a closed original
+   after one read and one search, waits on an unreadable path and on an
+   unreadable original, and refuses a path that exists where the item was
+   filed. `test/issue-file.test.sh` passes for the two halves every filer
+   shares: `issue_find_by_body` finds the first issue whose body carries the
+   needle, honours state, label and limit, and returns 1 on a listing with
+   no match and 2 on a listing that failed or is not an array;
+   `issue_create_with_retry` files once with the label last, carries an
+   assignee, retries a failed labelled create once unlabelled, and returns 1
+   when both fail or when no issue URL with a numeric number comes back; and
+   a caller's local `ISSUE_FILE_GH`/`ISSUE_FILE_ERRLOG` route every call and
+   its stderr. `test/enabler-verdicts.test.sh`'s decide gate, run under
+   `set -e`, passes for reach (c): a `refile-to-pipeline-repo` act
+   survives, normalised, only when every named path reads 404 where the
+   item was filed and a success in the pipeline's repository, with
+   `pipeline_repo` in the pass's runtime input; it is refused — the
+   escalation naming the path and the repository — when a path exists where
+   the item was filed, is absent from the pipeline's repository or cannot be
+   read at all, when the item is not an issue number, when the act names no
+   paths, at `decide-tactical`, and when no pipeline repository is
+   configured or it is the item's own. `test/decision-veto-sweep.test.sh`,
+   its sweep run under `set -e`, passes for reach (c): a due
+   `refile-to-pipeline-repo` act reads the original, re-checks its paths,
+   files the copy, closes the original and logs `decision-acted` (`outcome:
+   "performed"`, `refiled.url`, the act's own `paths`) and `unblocked`,
+   writing no `item-void`; a re-check that establishes the fact false
+   retires it as `refused` with the path in `reason`, a `warning`, one
+   comment on the decision-log issue and no filing; an original already
+   closed with no marked copy is `refused` the same way, with no contents
+   read made; an original already closed whose marked copy exists is
+   `performed`, naming that copy, with no filing and no close; a path that
+   cannot be read, a failed marker search and a create that fails each
+   leave the act pending — a `warning` and no `decision-acted` — and the
+   next cycle performs it; a copy already carrying the marker is reused, so
+   only the close is made; and an act still owed three veto windows after
+   it fell due is `refused`, naming how long it waited, after the lever read
+   alone, with the bound following the configured window.
    `test/close-void-github-items.test.sh` passes its `stage: "decision"`
    case: such a void closes its pull request through the ordinary
    `pr-<n>-…` branch, exactly as an `enabler` one does, while an

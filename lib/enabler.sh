@@ -1069,9 +1069,11 @@ $(jq . <<<"$input")
     elif [[ "$act_kind" == "refile-to-pipeline-repo" ]]; then
       # Reach (c): the Script corroborates the one fact the act rests on
       # itself — every named path absent where the item was filed, present
-      # in the pipeline's repository — and refuses the act on anything it
-      # cannot establish (lib/refile.sh). The normalised act is what is
-      # carried onward, so the record names exactly the paths checked.
+      # in the pipeline's repository — and, here at verdict time, refuses
+      # the act on anything it cannot establish too: no decision exists yet
+      # to lose, so an unreadable path escalates (lib/refile.sh; at act time
+      # the same answer is a wait). The normalised act is what is carried
+      # onward, so the record names exactly the paths checked.
       if act_checked="$(refile_act_check "$repo" "$item" "$act")"; then
         act="$act_checked"
       else
