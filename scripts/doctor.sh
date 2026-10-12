@@ -2622,12 +2622,12 @@ else
         if [[ "$ANTHROPIC_WORKSPACE_ID" =~ $SUBSTRATE_CLAUDE_CODE_WORKSPACE_ID_RE ]]; then
           ok "api lane: ANTHROPIC_API_KEY is set and shaped like an Anthropic key not scoped to a single workspace — ANTHROPIC_WORKSPACE_ID=$ANTHROPIC_WORKSPACE_ID supplies the anthropic-workspace-id header every request needs (weight $api_lane_weight, enabled $(lane_enabled_desc "$api_lane_enabled" 1))"
         else
-          warn "api lane: ANTHROPIC_WORKSPACE_ID is set but is not shaped like a workspace id (expected a \"wrkspc_\" prefix): \"$ANTHROPIC_WORKSPACE_ID\" — no anthropic-workspace-id header is composed from a malformed id, so it is as though none were set; check for a copy-paste error"
+          warn "api lane: ANTHROPIC_WORKSPACE_ID is set but is not shaped like a workspace id (expected a \"wrkspc_\" prefix): \"$ANTHROPIC_WORKSPACE_ID\" — no anthropic-workspace-id header is composed from a malformed id, so it is as though none were set; check for a copy-paste error (weight $api_lane_weight, enabled $(lane_enabled_desc "$api_lane_enabled" 1))"
         fi
       elif substrate_claude_code_custom_headers_has_name "${ANTHROPIC_CUSTOM_HEADERS:-}" anthropic-workspace-id; then
         ok "api lane: ANTHROPIC_API_KEY is set and shaped like an Anthropic key not scoped to a single workspace — ANTHROPIC_CUSTOM_HEADERS already names anthropic-workspace-id (weight $api_lane_weight, enabled $(lane_enabled_desc "$api_lane_enabled" 1))"
       else
-        warn "api lane: ANTHROPIC_API_KEY is set and shaped like an Anthropic key, but not scoped to a single workspace, and no workspace id is configured — every Claude Code request will be refused with a 400; create the key under the Console's single-workspace scope, or set ANTHROPIC_WORKSPACE_ID to the workspace's \"wrkspc_\" id"
+        warn "api lane: ANTHROPIC_API_KEY is set and shaped like an Anthropic key, but not scoped to a single workspace, and no workspace id is configured — every Claude Code request will be refused with a 400; create the key under the Console's single-workspace scope, or set ANTHROPIC_WORKSPACE_ID to the workspace's \"wrkspc_\" id (weight $api_lane_weight, enabled $(lane_enabled_desc "$api_lane_enabled" 1))"
       fi
     else
       warn "api lane: ANTHROPIC_API_KEY is set but is not shaped like an Anthropic key (expected an \"sk-ant-\" prefix) — claude will still try to use it as given; check for a copy-paste error (weight $api_lane_weight, enabled $(lane_enabled_desc "$api_lane_enabled" 1))"
