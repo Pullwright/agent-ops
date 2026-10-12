@@ -297,3 +297,14 @@ principle it rests on.`
   no permission. Decided by the owner on 2026-10-08, on filing #2238: he
   holds Claude API credits he wants spent alongside the Poetic fleet's
   subscription; revised the same day for his review of #2249.
+- 2026-10-12 · poetic-fiddle#516 · **The delegate mandate reaches a third
+  act: re-filing a misfiled item into the pipeline's own repository and
+  closing the original with a pointer, once the Script itself has
+  verified that every file the item names is absent from the item's
+  repository and present in the pipeline's** (requirement 36f, reach
+  (c)). An escalation asking only for that re-file is mechanical (#666's
+  principle above); it reached the owner three times in eleven days
+  (poetic-fiddle#445, #480, #516) while agent-ops#2031, the filing-side
+  fix, waited unselected; and both halves of the act reverse — a copy
+  closes, an original reopens — so it belongs behind the veto window
+  rather than in front of the owner. Decided by the owner on 2026-10-12.

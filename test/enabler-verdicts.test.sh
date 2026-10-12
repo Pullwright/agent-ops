@@ -70,6 +70,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$SCRIPT_DIR/lib/refinement.sh"
 # shellcheck source=lib/escalation-autonomy.sh
 . "$SCRIPT_DIR/lib/escalation-autonomy.sh"
+# shellcheck source=lib/refile.sh
+. "$SCRIPT_DIR/lib/refile.sh"
 # shellcheck source=lib/void-guard.sh
 . "$SCRIPT_DIR/lib/void-guard.sh"
 # Both for the last section only (agent-ops#815), which asserts the comment
@@ -2201,8 +2203,14 @@ decide_pass() {  # decide_pass ITEM MANDATE VERDICT_JSON -> the function's own s
   cycle_dir="$(mktemp -d)"
   calls_log="$cycle_dir/calls.log"
   : > "$calls_log"
-  run_enabler_decide "acme/widgets" "$1" '{"kind":"","detail":"d","unblock_condition":"u"}' \
-    '{"issue":{"title":"t","body":"b"}}' "$cycle_dir" 0 "$2"
+  # Under the Script's own `set -e` (review of PR #2344): a gate that fails
+  # in a way errexit turns into an aborted cycle shows up here as a verdict
+  # no assertion below expects, rather than passing under this file's own
+  # options.
+  ( set -e
+    run_enabler_decide "acme/widgets" "$1" '{"kind":"","detail":"d","unblock_condition":"u"}' \
+      '{"issue":{"title":"t","body":"b"}}' "$cycle_dir" 0 "$2" ) \
+    || printf '{"verdict":"run_enabler_decide aborted under set -e","evidence":""}'
 }
 
 act_verdict='{"verdict":"decide","evidence":"the draft is unwanted","decision":"close it",
@@ -2263,6 +2271,96 @@ out="$(decide_pass "TD26080001" delegate \
 assert_eq "decide gate: an actless decide under the delegate mandate still decides" "decide" \
   "$(jq -r '.verdict' <<<"$out")"
 assert_eq "decide gate: ...carrying no act" "" "$(jq -r '.act.kind // ""' <<<"$out")"
+
+# --- reach (c): refile-to-pipeline-repo (docs/STANDING-DECISIONS.md,
+# 2026-10-12). The act survives only when the Script's own reads corroborate
+# it — every path 404 where the item was filed, a success in the pipeline's
+# repository — and is refused, naming the path and the repository, on
+# anything short of that. `gh` is stood in for here alone: the contents
+# reads are the whole of what reach (c) asks of it at verdict time. ---
+crash_loop_repo="pipe/ops"
+pager_repo=""
+REFILE_PRESENT=""
+REFILE_UNKNOWN=""
+# shellcheck disable=SC2317  # invoked only through refile_act_check
+gh() {
+  case "$1 $2" in
+    "api repos/"*)
+      local target="${2#repos/}" repo path
+      repo="${target%%/contents/*}"; path="${target#*/contents/}"
+      if grep -qxF "$repo $path" <<<"$REFILE_UNKNOWN"; then
+        printf 'gh: error connecting to api.github.com\n' >&2; return 1
+      fi
+      if grep -qxF "$repo $path" <<<"$REFILE_PRESENT"; then printf '{"type":"file"}'; return 0; fi
+      printf 'gh: Not Found (HTTP 404)\n' >&2; return 1 ;;
+    *) return 0 ;;
+  esac
+}
+refile_verdict='{"verdict":"decide","evidence":"every file it names lives in the pipeline repository",
+                 "decision":"re-file it there","rationale":"nothing here can implement it",
+                 "options_considered":"leave it, re-file it",
+                 "act":{"kind":"refile-to-pipeline-repo","paths":["scripts/sweep-closed-issues.sh","prompts/implementer.md","scripts/sweep-closed-issues.sh"]}}'
+REFILE_PRESENT=$'pipe/ops scripts/sweep-closed-issues.sh\npipe/ops prompts/implementer.md'
+out="$(decide_pass "515" delegate "$refile_verdict")"
+assert_eq "decide gate (c): corroborated paths keep the act" "decide" "$(jq -r '.verdict' <<<"$out")"
+assert_eq "decide gate (c): ...of the right kind" "refile-to-pipeline-repo" "$(jq -r '.act.kind' <<<"$out")"
+assert_eq "decide gate (c): ...carrying the paths as verified, de-duplicated and sorted" \
+  '["prompts/implementer.md","scripts/sweep-closed-issues.sh"]' "$(jq -c '.act.paths' <<<"$out")"
+assert_contains "decide gate (c): the pass is told the pipeline repository in its runtime input" \
+  '"pipeline_repo": "pipe/ops"' "$(cat "$DECIDE_PROMPT_FILE")"
+
+REFILE_PRESENT=$'acme/widgets scripts/sweep-closed-issues.sh\npipe/ops scripts/sweep-closed-issues.sh\npipe/ops prompts/implementer.md'
+out="$(decide_pass "515" delegate "$refile_verdict")"
+assert_eq "decide gate (c): a path that exists where the item was filed refuses the act" \
+  "escalate" "$(jq -r '.verdict' <<<"$out")"
+# shellcheck disable=SC2016  # the expected string carries Markdown backticks
+assert_contains "decide gate (c): ...naming the path and that repository" \
+  '`scripts/sweep-closed-issues.sh` exists in acme/widgets' "$(jq -r '.evidence' <<<"$out")"
+assert_contains "decide gate (c): ...and the act" 'refile-to-pipeline-repo' "$(jq -r '.evidence' <<<"$out")"
+assert_eq "decide gate (c): ...carrying no act onward" "" "$(jq -r '.act.kind // ""' <<<"$out")"
+
+REFILE_PRESENT="pipe/ops scripts/sweep-closed-issues.sh"
+out="$(decide_pass "515" delegate "$refile_verdict")"
+assert_eq "decide gate (c): a path absent from the pipeline repository too refuses" \
+  "escalate" "$(jq -r '.verdict' <<<"$out")"
+# shellcheck disable=SC2016  # the expected string carries Markdown backticks
+assert_contains "decide gate (c): ...naming it" '`prompts/implementer.md` is absent from pipe/ops' \
+  "$(jq -r '.evidence' <<<"$out")"
+
+REFILE_PRESENT=$'pipe/ops scripts/sweep-closed-issues.sh\npipe/ops prompts/implementer.md'
+REFILE_UNKNOWN="acme/widgets prompts/implementer.md"
+out="$(decide_pass "515" delegate "$refile_verdict")"
+assert_eq "decide gate (c): a path that cannot be read at all refuses" "escalate" "$(jq -r '.verdict' <<<"$out")"
+# shellcheck disable=SC2016  # the expected string carries Markdown backticks
+assert_contains "decide gate (c): ...saying it could not establish it" \
+  'could not establish whether `prompts/implementer.md` exists in acme/widgets' "$(jq -r '.evidence' <<<"$out")"
+REFILE_UNKNOWN=""
+
+out="$(decide_pass "pr-363-abandoned-aaaaaaaaaaaa" delegate "$refile_verdict")"
+assert_eq "decide gate (c): a pull-request void shape is not an issue to re-file" "escalate" "$(jq -r '.verdict' <<<"$out")"
+assert_contains "decide gate (c): ...and the evidence says so" 'is not an issue' "$(jq -r '.evidence' <<<"$out")"
+
+out="$(decide_pass "515" delegate \
+  '{"verdict":"decide","evidence":"e","decision":"d","rationale":"r","act":{"kind":"refile-to-pipeline-repo"}}')"
+assert_eq "decide gate (c): an act naming no paths is refused" "escalate" "$(jq -r '.verdict' <<<"$out")"
+assert_contains "decide gate (c): ...saying so" 'names no paths' "$(jq -r '.evidence' <<<"$out")"
+
+out="$(decide_pass "515" tactical "$refile_verdict")"
+assert_eq "decide gate (c): the act is out of mandate at decide-tactical" "escalate" "$(jq -r '.verdict' <<<"$out")"
+assert_contains "decide gate (c): ...named in the refusal" 'refile-to-pipeline-repo' "$(jq -r '.evidence' <<<"$out")"
+
+crash_loop_repo=""
+out="$(decide_pass "515" delegate "$refile_verdict")"
+assert_eq "decide gate (c): no pipeline repository configured refuses" "escalate" "$(jq -r '.verdict' <<<"$out")"
+assert_contains "decide gate (c): ...naming the keys" 'pager_repo' "$(jq -r '.evidence' <<<"$out")"
+assert_contains "decide gate (c): ...and the input said the repository is empty" \
+  '"pipeline_repo": ""' "$(cat "$DECIDE_PROMPT_FILE")"
+crash_loop_repo="acme/widgets"
+out="$(decide_pass "515" delegate "$refile_verdict")"
+assert_eq "decide gate (c): the item's own repository as the pipeline's refuses" "escalate" "$(jq -r '.verdict' <<<"$out")"
+assert_contains "decide gate (c): ...saying it is already where it belongs" 'already where it belongs' \
+  "$(jq -r '.evidence' <<<"$out")"
+crash_loop_repo="pipe/ops"
 
 printf '\n'
 if (( failures > 0 )); then

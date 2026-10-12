@@ -154,6 +154,16 @@ scratch_enter agent-cycle || exit 1
 # have run, deliberately later than run_standdown_checks's own sweeps — see its
 # own header for why.
 . "$SCRIPT_DIR/lib/decision-veto.sh"
+# shellcheck source=lib/issue-file.sh
+# The search-then-create every filer shares; lib/tech-debt-file.sh,
+# lib/pager.sh and lib/refile.sh each source it themselves too, guarded, so
+# the explicit line here is for the reader.
+. "$SCRIPT_DIR/lib/issue-file.sh"
+# shellcheck source=lib/refile.sh
+# Requirement 36f's reach (c): `refile_act_check` is called from
+# run_enabler_decide (lib/enabler.sh), `refile_act` from
+# run_pending_decision_acts (lib/decision-veto.sh) once the window has passed.
+. "$SCRIPT_DIR/lib/refile.sh"
 # shellcheck source=lib/toggle.sh
 . "$SCRIPT_DIR/lib/toggle.sh"
 # shellcheck source=lib/merge-budget.sh
@@ -705,6 +715,13 @@ escalation_refile_after_hours="$(cfg '.escalation_refile_after_hours')"
 crash_loop_after="$(cfg '.crash_loop_after')"
 [[ "$crash_loop_after" =~ ^[0-9]+$ ]] || crash_loop_after=0
 crash_loop_repo="$(cfg '.crash_loop_repo')"
+# `pager_repo` (agent-ops#1278) is read here for one consumer, requirement
+# 36f's reach (c) (`decision_pipeline_repo`, lib/refile.sh): the act files
+# into "the pipeline's own repository", resolved exactly as lib/pager.sh and
+# monitor-cycle.sh resolve it — `pager_repo`, falling back to
+# `crash_loop_repo`.
+pager_repo="$(cfg '.pager_repo')"
+[[ "$pager_repo" != "null" ]] || pager_repo=""
 # `crash_loop_min_clear_minutes`: how long a Co-Ordinator-class escalation's
 # clearing success must hold, with the same detail never resuming in the
 # meantime, before `crash_loop_retire_resolved` actually closes the issue

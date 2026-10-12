@@ -23,6 +23,10 @@
 #   dedup hit above returns the existing issue untouched, label included. A
 #   refused labelled create is retried once without the label, so a repository
 #   that has not had `pw::owner-decision` ensured yet still gets its issue.
+#   The dedup search and that create are lib/issue-file.sh's
+#   `issue_find_by_body`/`issue_create_with_retry`, shared with every other
+#   filer; a dedup search that fails outright files anyway, noted on the
+#   error log, because this filing is a stage verdict's one chance (below).
 #
 # techdebt_file_debt REPO TITLE BODY PROVENANCE [TOKEN] [DEFAULT_FIX] \
 #                     [OWNER_DECISION]
@@ -86,6 +90,15 @@ TECHDEBT_DEDUP_LIST_LIMIT="${TECHDEBT_DEDUP_LIST_LIMIT:-500}"
 # App identity of its own and always omits TOKEN, filing under the ordinary
 # pipeline login exactly as create_escalation_issue already does.
 
+# The dedup search and the create-with-retry both functions make are
+# lib/issue-file.sh's, shared with every other filer; sourced relative to
+# this file so a script that sources lib/tech-debt-file.sh alone gets them,
+# and guarded so a caller that sourced lib/issue-file.sh first is left alone.
+if ! declare -F issue_create_with_retry >/dev/null 2>&1; then
+  # shellcheck source=lib/issue-file.sh
+  . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/issue-file.sh"
+fi
+
 # _techdebt_gh TOKEN ARGS...
 # Run `gh` ARGS..., under TOKEN's identity if non-empty, the ordinary
 # pipeline login otherwise — explicitly unset for that call (`env -u
@@ -143,16 +156,24 @@ techdebt_default_section() {
 techdebt_file_issue() {
   local repo="$1" item_ref="$2" title="$3" body_file="$4" token="${5:-}" \
         default_fix="${6:-}" owner_decision="${7:-false}"
-  local existing raw url number errlog body_content combined_file label_args=()
-  errlog="$(_techdebt_err_log)"
-  existing="$(_techdebt_gh "$token" issue list -R "$repo" --state open --search "$item_ref" \
-                --json number,url,body 2>>"$errlog" \
-              | jq -r --arg it "$item_ref" \
-                  'map(select(((.body // "") | contains($it)))) | first
-                   | if . == null then empty else "\(.number)\t\(.url)" end' 2>/dev/null || true)"
-  if [[ -n "$existing" ]]; then
+  local existing rc=0 body_content combined_file label="" result
+  local ISSUE_FILE_GH=(_techdebt_gh "$token") ISSUE_FILE_ERRLOG
+  ISSUE_FILE_ERRLOG="$(_techdebt_err_log)"
+  existing="$(issue_find_by_body "$repo" "$item_ref" "$item_ref" open "" 200)" || rc=$?
+  if (( rc == 0 )); then
     printf '%s' "$existing"
     return 0
+  fi
+  # A dedup search that failed outright (not "none found": `gh` exited
+  # non-zero, or answered something other than an array) files anyway, noted
+  # on the error log. This filing is a stage verdict's one chance — the
+  # verdict is consumed with its cycle and nothing retries a `file_issue` —
+  # so a possible duplicate, which the body-reference convention keeps
+  # visible, is the lesser harm against a filing lost in silence.
+  # lib/pager.sh and lib/refile.sh make the opposite choice for the same
+  # helper, because each of them is retried on a later pass.
+  if (( rc == 2 )); then
+    printf 'techdebt_file_issue: %s dedup search failed -- filing without it\n' "$repo" >>"$ISSUE_FILE_ERRLOG"
   fi
   body_content="$(cat "$body_file" 2>/dev/null || true)"
   combined_file="$(mktemp)"
@@ -163,28 +184,21 @@ techdebt_file_issue() {
   # filing call is itself trusted (lib/labels.sh's own comment).
   printf '%s\n\n%s' "$body_content" "$(techdebt_default_section "$default_fix")" \
     > "$combined_file"
-  [[ "$owner_decision" == "true" ]] && label_args=(--label pw::owner-decision)
-  raw="$(_techdebt_gh "$token" issue create -R "$repo" --title "$title" --body-file "$combined_file" \
-           "${label_args[@]}" 2>>"$errlog" || true)"
-  # One retry without the label, exactly as requirement 36a's escalation
-  # contract and create_escalation_issue (lib/enabler.sh) already do: `gh`
-  # resolves a label name to an id as part of the create, so a repository that
-  # has not had `pw::owner-decision` ensured yet fails the whole create and the
-  # filing is lost — the one outcome agent-ops#938 exists to prevent, and the
-  # failure class agent-ops#1009 already records for this file's own
-  # `gh pr create --label`. Losing the label costs the Refiner its marker (the
-  # issue reads to a later pass as a legacy no-marker item); losing the create
-  # costs the filing itself.
-  if [[ -z "$raw" && ${#label_args[@]} -gt 0 ]]; then
-    raw="$(_techdebt_gh "$token" issue create -R "$repo" --title "$title" \
-             --body-file "$combined_file" 2>>"$errlog" || true)"
-  fi
+  [[ "$owner_decision" == "true" ]] && label="pw::owner-decision"
+  # One retry without the label (`issue_create_with_retry`), exactly as
+  # requirement 36a's escalation contract and create_escalation_issue
+  # (lib/enabler.sh) already do: `gh` resolves a label name to an id as part
+  # of the create, so a repository that has not had `pw::owner-decision`
+  # ensured yet fails the whole create and the filing is lost — the one
+  # outcome agent-ops#938 exists to prevent, and the failure class
+  # agent-ops#1009 already records for this file's own `gh pr create
+  # --label`. Losing the label costs the Refiner its marker (the issue reads
+  # to a later pass as a legacy no-marker item); losing the create costs the
+  # filing itself.
+  result="$(issue_create_with_retry "$repo" "$title" "$combined_file" "$label")" || result=""
   rm -f "$combined_file"
-  url="$(grep -oE 'https://github\.com/[A-Za-z0-9_./-]+/issues/[0-9]+' <<<"$raw" | tail -n1 || true)"
-  [[ -n "$url" ]] || return 1
-  number="${url##*/}"
-  [[ "$number" =~ ^[0-9]+$ ]] || return 1
-  printf '%s\t%s' "$number" "$url"
+  [[ -n "$result" ]] || return 1
+  printf '%s' "$result"
 }
 
 # _techdebt_normalize_title TITLE
@@ -228,8 +242,10 @@ _techdebt_title_dedup_match() {
 techdebt_file_debt() {
   local repo="$1" title="$2" body="$3" provenance="$4" token="${5:-}" \
         default_fix="${6:-}" owner_decision="${7:-false}"
-  local errlog needle list list_n match_number match_url combined_file raw url number
+  local errlog needle list list_n match_number match_url combined_file result
+  local ISSUE_FILE_GH=(_techdebt_gh "$token") ISSUE_FILE_ERRLOG
   errlog="$(_techdebt_err_log)"
+  ISSUE_FILE_ERRLOG="$errlog"
 
   needle="$(_techdebt_normalize_title "$title")"
   if [[ -n "$needle" ]]; then
@@ -266,25 +282,16 @@ techdebt_file_debt() {
   combined_file="$(mktemp)"
   printf '%s\n\n%s\n%s\n' "$body" "$(techdebt_default_section "$default_fix" "$owner_decision")" \
     "$provenance" > "$combined_file"
-  raw="$(_techdebt_gh "$token" issue create -R "$repo" --title "$title" \
-           --body-file "$combined_file" --label pw::type:tech-debt 2>>"$errlog" || true)"
   # A repository whose `pw::type:tech-debt` label the ensure pass (lib/labels.sh)
   # has not reached yet fails the whole labelled create -- `gh` resolves a
-  # label name to an id as part of it -- so this is retried once unlabelled
-  # rather than losing the filing, exactly as techdebt_file_issue's own
-  # `pw::owner-decision` retry above. Nothing reconciles the result: the
-  # unlabelled issue stays invisible to every label-based reader of this
-  # band, including the archive mirror's own audits (agent-ops#1223).
-  if [[ -z "$raw" ]]; then
-    printf 'techdebt_file_debt: labelled issue create failed for %s -- retrying unlabelled\n' \
-      "$repo" >>"$errlog"
-    raw="$(_techdebt_gh "$token" issue create -R "$repo" --title "$title" \
-             --body-file "$combined_file" 2>>"$errlog" || true)"
-  fi
+  # label name to an id as part of it -- so `issue_create_with_retry` retries
+  # once unlabelled rather than losing the filing, exactly as
+  # techdebt_file_issue's own `pw::owner-decision` retry above, and notes the
+  # retry on the error log. Nothing reconciles the result: the unlabelled
+  # issue stays invisible to every label-based reader of this band, including
+  # the archive mirror's own audits (agent-ops#1223).
+  result="$(issue_create_with_retry "$repo" "$title" "$combined_file" pw::type:tech-debt)" || result=""
   rm -f "$combined_file"
-  url="$(grep -oE 'https://github\.com/[A-Za-z0-9_./-]+/issues/[0-9]+' <<<"$raw" | tail -n1 || true)"
-  [[ -n "$url" ]] || return 1
-  number="${url##*/}"
-  [[ "$number" =~ ^[0-9]+$ ]] || return 1
-  printf '%s\t%s' "$number" "$url"
+  [[ -n "$result" ]] || return 1
+  printf '%s' "$result"
 }
