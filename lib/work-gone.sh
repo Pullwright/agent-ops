@@ -151,9 +151,12 @@ work_gone_plan_ids() {
 # or unreadable means the register was not read, which decides nothing either.
 #
 # REVIEW_STATUS_JSON maps repo → recommendation ref → "merged" when a merged
-# pull request on the default branch names that ref
-# (`scripts/gather-review-status.sh`); anything else absent or unreadable
-# decides nothing.
+# pull request on the default branch names that ref, or "tracked-closed"
+# (issue #2333) when every tracking id that ref's own recommendation names is
+# itself closed or resolved — a signal satisfied by owner action outside this
+# pipeline entirely, which never produces a pull request naming the ref and so
+# never sets "merged" (`scripts/gather-review-status.sh`); anything else
+# absent or unreadable decides nothing.
 #
 # PLAN_STATUS_JSON maps repo → task id → "done" or "open", read off that task's
 # own checkbox in the repo's implementation-plan document
@@ -215,6 +218,8 @@ work_gone_clearances() {
            ((($review[$repo] // {})[$item] // "") | ascii_downcase) as $status
            | if $status == "merged"
              then "a merged pull request references \($item)"
+             elif $status == "tracked-closed"
+             then "every tracking id the \($item) recommendation names is closed or resolved"
              else null end
          elif ($item | test($plan_re)) then
            ((($plan[$repo] // {})[$item] // "") | ascii_downcase) as $status

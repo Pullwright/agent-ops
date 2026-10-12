@@ -994,6 +994,45 @@ assert_eq "an empty slug resolves to nothing" "1" "$rc"
 out="$(void_review_item_tech_debt_id "review-2026-09-09-R-01" "Poetic-Poems/poetic-fiddle")"; rc=$?
 assert_eq "an unreadable recommendations file resolves to nothing" "1" "$rc"
 
+# --- review_recommendation_tracking_ids: every tracking id a recommendation ----
+# --- names, in any of the three shapes observed in the wild (issue #2333) ------
+# Unlike the backtick-only id above, a recommendation's own line may instead
+# name one bare issue, several "and"-joined, or carry no tracking line at all.
+# shellcheck disable=SC2016  # the backtick below is literal Markdown, not command substitution.
+tracking_fixture='## R-01 — singular bare issue
+
+**Approach:** something. Tech-debt item: #447.
+
+## R-02 — plural bare issues
+
+**Approach:** something else. Tech-debt items: #432 and #437.
+
+## R-03 — backtick register id takes priority over a bare id on the same line
+
+**Approach:** another thing. Tech-debt item: `TD-PPpfid-26080907` (was #999).
+
+## R-04 — no tracking line at all
+
+**Approach:** nothing to track here.
+'
+printf '{"content":"%s"}' "$(printf '%s' "$tracking_fixture" | base64 -w0)" \
+  >"$tmp_dir/contents-main-reviews_project-review-2026-09-28_03-recommendations.md"
+
+assert_eq "a singular bare issue resolves to its number alone" \
+  "447" "$(review_recommendation_tracking_ids "review-2026-09-28-R-01" "Poetic-Poems/poetic-fiddle" main "$tmp_dir/gh")"
+assert_eq "plural bare issues resolve to both numbers, one per line" \
+  "432
+437" "$(review_recommendation_tracking_ids "review-2026-09-28-R-02" "Poetic-Poems/poetic-fiddle" main "$tmp_dir/gh")"
+assert_eq "a backtick register id takes priority over a bare id on the same line" \
+  "TD-PPpfid-26080907" \
+  "$(review_recommendation_tracking_ids "review-2026-09-28-R-03" "Poetic-Poems/poetic-fiddle" main "$tmp_dir/gh")"
+out="$(review_recommendation_tracking_ids "review-2026-09-28-R-04" "Poetic-Poems/poetic-fiddle" main "$tmp_dir/gh")"; rc=$?
+assert_eq "a recommendation naming no tracking id at all resolves to nothing" "1" "$rc"
+assert_eq "  ... and prints nothing" "" "$out"
+
+out="$(review_recommendation_tracking_ids "review-2026-09-28-R-99" "Poetic-Poems/poetic-fiddle" main "$tmp_dir/gh")"; rc=$?
+assert_eq "an unknown recommendation number resolves to nothing" "1" "$rc"
+
 # --- void_pr_matches_item: the review-ref resolver fallback (issue #2030) ------
 # The exact shape of the incident: PRs #290/#312/#313/#325 each implemented a
 # recommendation, naming only its designated tech-debt id — never the literal

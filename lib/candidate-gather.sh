@@ -1031,14 +1031,42 @@ done < <(jq -r 'to_entries[] | .key + "\t" + (.value | join(" "))' \
 
 # The project-review read, for the repos that have blocked project-review
 # items and no others — same cost shape as the register read above.
+#
+# The PR-independent tracking-id signal (issue #2333) rides along on this same
+# call rather than a second one: `gather_review_status` forwards its own extra
+# flags straight to scripts/gather-review-status.sh, which already receives
+# the refs. The repo's own full open-issues digest, read from
+# `source_states_json` (already fetched this cycle for every repo, never
+# scoped to this repo's blocked items alone), and whatever `register_status_json`
+# already holds for this repo from the register read just above, each travel
+# as a file path, not inline JSON — an open-issues digest grows with the
+# repo, unbounded, so an inline flag would risk the same MAX_ARG_STRLEN
+# failure TD-PPagop-26081401 already fixed for `work_gone_clearances`'s own
+# inputs (requirement 4g). Neither is fetched again here: an id the
+# recommendation names that is absent from either decides nothing, same as
+# every other "unknown is not gone" read in this file.
 review_status_json='{}'
 while IFS=$'\t' read -r rev_slug rev_refs; do
   [[ -n "$rev_slug" && -n "$rev_refs" ]] || continue
   rev_branch="$(jq -r --arg s "$rev_slug" 'map(select(.slug == $s)) | .[0].default_branch // ""' \
     <<<"$ordered_repos_json" 2>/dev/null || true)"
   [[ -n "$rev_branch" ]] || continue
+  rev_safe="${rev_slug//\//_}"
+  rev_issues_file="$cycle_dir/review-tracking-issues-$rev_safe.json"
+  rev_register_file="$cycle_dir/review-tracking-register-$rev_safe.json"
+  rev_state="$(jq -c --arg s "$rev_slug" \
+    '[ .[] | select((.slug // "") == $s and .ok == true) ] | first // null' \
+    <<<"$source_states_json" 2>/dev/null || true)"
+  if [[ -n "$rev_state" && "$rev_state" != "null" ]]; then
+    jq -c '[ .issues[]?.n ]' <<<"$rev_state" 2>/dev/null > "$rev_issues_file" || printf '' > "$rev_issues_file"
+  else
+    printf '' > "$rev_issues_file"
+  fi
+  jq -c --arg s "$rev_slug" '.[$s] // {}' <<<"$register_status_json" 2>/dev/null > "$rev_register_file" \
+    || printf '{}' > "$rev_register_file"
   # shellcheck disable=SC2086  # $rev_refs is a deliberate word-split ref list.
-  rev_map="$(gather_review_status "$rev_slug" "$rev_branch" blocked $rev_refs)"
+  rev_map="$(gather_review_status "$rev_slug" "$rev_branch" blocked \
+    --issues-file "$rev_issues_file" --register-file "$rev_register_file" $rev_refs)"
   review_status_json="$(jq -c --arg s "$rev_slug" --argjson m "$rev_map" '. + {($s): $m}' \
     <<<"$review_status_json" 2>/dev/null || printf '%s' "$review_status_json")" # TD-PPagop-26081407: passes test 2 -- falls back to the unchanged prior aggregate, not a fabricated empty
 done < <(jq -r 'to_entries[] | .key + "\t" + (.value | join(" "))' \

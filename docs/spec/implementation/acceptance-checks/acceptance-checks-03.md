@@ -600,9 +600,14 @@
    clears a block out from under real work and costs a full cycle an hour until
    somebody notices: so a closed issue, a merged pull request, a `resolved` or
    `not-debt` register item, a project-review recommendation named by a merged
-   pull request, and an implementation-plan task checked off in its document
+   pull request or whose every own tracking id is itself closed or resolved
+   (`"tracked-closed"`, a distinct status from `"merged"`, asserted for all
+   three text shapes a recommendation's "Tech-debt item(s): …" line can take —
+   a single bare `#NNN`, several "and"-joined, and one backtick-quoted
+   register id), and an implementation-plan task checked off in its document
    each clear their block, while an **open** issue, an **open** pull request, an
-   **open** register item, a recommendation no merged pull request names, and an
+   **open** register item, a recommendation no merged pull request names and
+   whose tracking id(s) are not every one confirmed closed or resolved, and an
    **unchecked** (or ambiguous) plan task each do not, and every unreadable
    shape — a repo missing from the digest, a digest carrying `ok: false`, an id
    no item file claims by `id` or `legacy-id`, an id two of them claim, a
