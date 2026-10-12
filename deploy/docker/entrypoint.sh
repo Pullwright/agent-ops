@@ -146,18 +146,25 @@ if [[ ! -e "$CLAUDE_CONFIG_DIR/.credentials.json" && -z "${ANTHROPIC_API_KEY:-}"
   say "         authenticated once: docker compose exec scheduler claude"
 fi
 
-# --- Grok Build (xAI) files (issue #2134) ---
-# Seeded only when absent, same reasoning as the Claude settings.json seed
-# above: GROK_HOME is not a persistent volume (nothing on the API-key path
-# needs to outlive the container), but a plain container *restart* — as
-# opposed to a recreation from the image — keeps its writable layer, and
-# Grok's own process may have written there since the last start. `agent`
-# owns it already (the image build chowns it, since it is never a volume a
-# different uid could have created), so no group-ownership fixup is needed
-# the way the Claude config volume's own might be.
+# --- Grok Build (xAI) files (issues #2134, #2139) ---
+# GROK_HOME is the grok-config volume (deploy/docker/compose.yaml),
+# persisting a device-code login's $GROK_HOME/auth.json across a container
+# being replaced — the same reason CLAUDE_CONFIG_DIR is the claude-config
+# volume above. `agent` owns the mount point already (the image build chowns
+# it — see the Dockerfile's own comment on its two exceptions to "owned by
+# agent" — and this volume is new as of #2139, so no older image ever
+# created it in some other shape for this entrypoint to fix up, the way the
+# Claude config directory's own reshaping above exists for).
 : "${GROK_HOME:=$HOME/.grok-run}"
 export GROK_HOME
 mkdir -p "$GROK_HOME"
+require_writable "$GROK_HOME" "the Grok Build configuration volume"
+# Seeded only when absent, same reasoning as the Claude settings.json seed
+# above: a device-code login (an interactive operator step — `docker compose
+# exec scheduler grok login --device-auth` — never run by this entrypoint,
+# a stage, or any check) may have written auth.json and sessions/ here since
+# this volume was created, and this seed carries no auth content of its own
+# to lose by being skipped.
 if [[ -w "$GROK_HOME" && ! -e "$GROK_HOME/config.toml" ]]; then
   printf '%s\n' '[storage]' 'cleanup_ttl_days = 1' '[models]' 'max_retries = 6' \
     > "$GROK_HOME/config.toml"

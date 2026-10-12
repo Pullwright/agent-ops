@@ -225,6 +225,23 @@ cmd_ready() {
   local claude_config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
   [[ -f "$claude_config_dir/.credentials.json" ]] && credentials_present=true
 
+  # xAI (issue #2139): gated on config.json actually naming a grok-build
+  # provider, the same jq filter entrypoint.sh's own XAI_API_KEY warning and
+  # doctor.sh's "xAI" section already use, so all three agree on what
+  # "configured" means. A subscription login is a local file check only —
+  # never a live call — for the same reason doctor.sh's own check is one:
+  # completing `grok login --device-auth` is an interactive operator step,
+  # never this script's or a stage's to attempt.
+  local xai_configured=false xai_credentials_present=false
+  if jq -e '(.providers // {}) | to_entries[] | select(.value.substrate == "grok-build")' \
+       "$CONFIG_FILE" >/dev/null 2>&1; then
+    xai_configured=true
+    local grok_home="${GROK_HOME:-$HOME/.grok-run}"
+    if [[ -n "${XAI_API_KEY:-}" ]] || [[ -s "$grok_home/auth.json" ]]; then
+      xai_credentials_present=true
+    fi
+  fi
+
   local ttl
   ttl="$(cfg '.node_health_forge_check_cache_seconds')"
   [[ "$ttl" =~ ^[0-9]+$ ]] || ttl=30
@@ -278,13 +295,16 @@ cmd_ready() {
   local facts
   facts="$(jq -nc \
     --argjson credentials_present "$credentials_present" \
+    --argjson xai_configured "$xai_configured" --argjson xai_credentials_present "$xai_credentials_present" \
     --arg gh_auth "$gh_verdict" --arg gh_auth_detail "$gh_detail" \
     --argjson disk_free_kb "${disk_free_kb:-null}" --argjson disk_floor_bytes "$min_free_bytes" \
     --argjson core_remaining "${core_remaining:-null}" --argjson core_floor "$core_floor" \
     --argjson graphql_remaining "${graphql_remaining:-null}" --argjson graphql_floor "$graphql_floor" \
     --argjson node_disabled "$node_disabled" --argjson fleet_disabled "$fleet_disabled" \
     --argjson limit_freeze "$limit_freeze" \
-    '{credentials_present:$credentials_present, gh_auth:$gh_auth, gh_auth_detail:$gh_auth_detail,
+    '{credentials_present:$credentials_present,
+      xai_configured:$xai_configured, xai_credentials_present:$xai_credentials_present,
+      gh_auth:$gh_auth, gh_auth_detail:$gh_auth_detail,
       disk_free_kb:$disk_free_kb, disk_floor_bytes:$disk_floor_bytes,
       core_remaining:$core_remaining, core_floor:$core_floor,
       graphql_remaining:$graphql_remaining, graphql_floor:$graphql_floor,

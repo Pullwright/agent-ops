@@ -2738,6 +2738,20 @@ fi
 # at all, never a skipped one — the same reason entrypoint.sh's own
 # XAI_API_KEY warning is gated the same way. PROVIDER_SUBSTRATE is already
 # populated by providers_load, above.
+#
+# Two credential lanes, per D4/D29/D30 (issue #2139 adds the second): BYO API
+# key (XAI_API_KEY, the `api` lane) and a device-code login
+# ($GROK_HOME/auth.json, the `subscription` lane) can both be present on the
+# same node at once, so this reports both independently, mirroring the
+# Claude section above — against each one's own `providers.xai.lanes` entry
+# (PROVIDER_LANES, lib/model-id.sh, already generalised to every provider by
+# #2240/#2280) via the same `lane_enabled_desc` helper that section defines.
+# Unlike the Claude section's own subscription lane, this is never a live
+# call: completing `grok login --device-auth` is an interactive operator
+# step this check must never attempt itself (the Enabler's note on #2139),
+# so "present" here means only that the file exists and parses, not that its
+# session is still live — grok's own background refresh, or the next real
+# stage, is what would surface an expired one.
 
 grok_configured=0
 for _p in "${!PROVIDER_SUBSTRATE[@]}"; do
@@ -2748,42 +2762,75 @@ if (( grok_configured )); then
   section "xAI"
 
   xai_credential_ok=0
+  xai_lanes_json="${PROVIDER_LANES[xai]:-}"
+  xai_api_lane_weight="$(jq -r '.api.weight // 1' <<<"${xai_lanes_json:-{\}}" 2>/dev/null)"
+  xai_api_lane_enabled="$(jq -r '.api.enabled' <<<"${xai_lanes_json:-{\}}" 2>/dev/null)"
+  xai_sub_lane_weight="$(jq -r '.subscription.weight // 0' <<<"${xai_lanes_json:-{\}}" 2>/dev/null)"
+  xai_sub_lane_enabled="$(jq -r '.subscription.enabled' <<<"${xai_lanes_json:-{\}}" 2>/dev/null)"
+
+  xai_auth_file="${GROK_HOME:-$HOME/.grok-run}/auth.json"
+  xai_sub_present=0
+  if [[ -s "$xai_auth_file" ]] && jq -e . "$xai_auth_file" >/dev/null 2>&1; then
+    xai_sub_present=1
+  fi
 
   if ((offline)); then
     skip "xAI credentials (--offline)"
   elif ((unattended)); then
     skip "xAI credentials (--unattended; a scheduled pass must not read a credential)"
-  elif [[ -z "${XAI_API_KEY:-}" ]]; then
-    fail "XAI_API_KEY is unset, but a configured provider's substrate is grok-build — every Grok Build stage would fail at the first invocation"
   else
-    # A static shape check first, on the same terms as the Claude section
-    # above: the one key seen in the evaluation record
-    # (docs/reviews/2026-10-06-grok-build-evaluation.md §9) was 84
-    # characters, so length is not checked, only the "xai-" prefix xAI mints
-    # keys with.
-    if [[ "$XAI_API_KEY" == xai-* ]]; then
-      ok "XAI_API_KEY is set and shaped like an xAI key"
-    else
-      warn "XAI_API_KEY is set but is not shaped like an xAI key (expected an \"xai-\" prefix) — grok will still try to use it as given; check for a copy-paste error"
-    fi
-    # The live probe (§9, §"doctor" of the adapter specification): GET
-    # /v1/api-key answers 200 with the key's own block/disable/team-block
-    # flags for a usable key and 400 for an invalid one. Never `grok
-    # models`, which exits 0 and prints the same line whether or not the key
-    # actually works — no probe at all.
-    if api_key_json="$(curl -fsS --max-time 15 -H "Authorization: Bearer $XAI_API_KEY" \
-         https://api.x.ai/v1/api-key 2>/dev/null)"; then
+    # subscription lane first: native auth precedence (verified against the
+    # grok-build repository on 2026-10-08) prefers a stored session over the
+    # key, so this lane is the one "by default" open whenever it is
+    # present — the api lane's own default flips the other way, the mirror
+    # image of the Claude section's own D4 default.
+    if ((xai_sub_present)); then
       xai_credential_ok=1
-      blocked="$(jq -r '.api_key_blocked // false' <<<"$api_key_json" 2>/dev/null)"
-      disabled="$(jq -r '.api_key_disabled // false' <<<"$api_key_json" 2>/dev/null)"
-      team_blocked="$(jq -r '.team_blocked // false' <<<"$api_key_json" 2>/dev/null)"
-      if [[ "$blocked" == "true" || "$disabled" == "true" || "$team_blocked" == "true" ]]; then
-        warn "XAI_API_KEY answers, but api_key_blocked=$blocked api_key_disabled=$disabled team_blocked=$team_blocked — this key will not run a stage"
+      ok "subscription lane: $xai_auth_file is present — grok is authenticated via a device-code login (weight $xai_sub_lane_weight, enabled $(lane_enabled_desc "$xai_sub_lane_enabled" 1))"
+    else
+      ok "subscription lane: absent (weight $xai_sub_lane_weight, enabled $(lane_enabled_desc "$xai_sub_lane_enabled" 0))"
+    fi
+
+    if [[ -z "${XAI_API_KEY:-}" ]]; then
+      if ((xai_sub_present)); then
+        ok "api lane: XAI_API_KEY is absent (weight $xai_api_lane_weight, enabled $(lane_enabled_desc "$xai_api_lane_enabled" 0)) — grok runs on the subscription login above"
       else
-        ok "XAI_API_KEY is live (GET /v1/api-key answered 200, every block/disable flag false)"
+        fail "api lane: XAI_API_KEY is unset and no subscription login is present ($xai_auth_file) — every Grok Build stage would fail at the first invocation"
       fi
     else
-      fail "XAI_API_KEY did not answer GET https://api.x.ai/v1/api-key — either the key is invalid (xAI answers 400) or the request could not be made at all"
+      # A static shape check first, on the same terms as the Claude section
+      # above: the one key seen in the evaluation record
+      # (docs/reviews/2026-10-06-grok-build-evaluation.md §9) was 84
+      # characters, so length is not checked, only the "xai-" prefix xAI mints
+      # keys with.
+      if [[ "$XAI_API_KEY" == xai-* ]]; then
+        ok "api lane: XAI_API_KEY is set and shaped like an xAI key"
+      else
+        warn "api lane: XAI_API_KEY is set but is not shaped like an xAI key (expected an \"xai-\" prefix) — grok will still try to use it as given; check for a copy-paste error"
+      fi
+      # The live probe (§9, §"doctor" of the adapter specification): GET
+      # /v1/api-key answers 200 with the key's own block/disable/team-block
+      # flags for a usable key and 400 for an invalid one. Never `grok
+      # models`, which exits 0 and prints the same line whether or not the key
+      # actually works — no probe at all.
+      if api_key_json="$(curl -fsS --max-time 15 -H "Authorization: Bearer $XAI_API_KEY" \
+           https://api.x.ai/v1/api-key 2>/dev/null)"; then
+        xai_credential_ok=1
+        blocked="$(jq -r '.api_key_blocked // false' <<<"$api_key_json" 2>/dev/null)"
+        disabled="$(jq -r '.api_key_disabled // false' <<<"$api_key_json" 2>/dev/null)"
+        team_blocked="$(jq -r '.team_blocked // false' <<<"$api_key_json" 2>/dev/null)"
+        if [[ "$blocked" == "true" || "$disabled" == "true" || "$team_blocked" == "true" ]]; then
+          warn "api lane: XAI_API_KEY answers, but api_key_blocked=$blocked api_key_disabled=$disabled team_blocked=$team_blocked — this key will not run a stage (weight $xai_api_lane_weight, enabled $(lane_enabled_desc "$xai_api_lane_enabled" $((xai_sub_present ? 0 : 1))))"
+        else
+          ok "api lane: XAI_API_KEY is live (GET /v1/api-key answered 200, every block/disable flag false) (weight $xai_api_lane_weight, enabled $(lane_enabled_desc "$xai_api_lane_enabled" $((xai_sub_present ? 0 : 1))))"
+        fi
+      else
+        fail "api lane: XAI_API_KEY did not answer GET https://api.x.ai/v1/api-key — either the key is invalid (xAI answers 400) or the request could not be made at all"
+      fi
+
+      if ((xai_sub_present)); then
+        warn "both XAI_API_KEY and a subscription login ($xai_auth_file) are present — grok's own auth precedence prefers the stored session, so the key above is a fallback only unless \$GROK_HOME/config.toml pins [auth] preferred_method = \"api_key\" (the dual-lane adapter, agent-ops#2246)"
+      fi
     fi
   fi
 

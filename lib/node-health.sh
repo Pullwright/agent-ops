@@ -240,6 +240,7 @@ node_health_health() {
 #
 #   {
 #     "credentials_present": bool,
+#     "xai_configured": bool, "xai_credentials_present": bool,
 #     "gh_auth": "ok"|"unauthorized"|"unreachable",
 #     "gh_auth_detail": string,
 #     "disk_free_kb": int|null, "disk_floor_bytes": int,
@@ -247,6 +248,12 @@ node_health_health() {
 #     "graphql_remaining": int|null, "graphql_floor": int,
 #     "node_disabled": bool, "fleet_disabled": bool, "limit_freeze": bool
 #   }
+#
+# `xai_configured`/`xai_credentials_present` are optional (issue #2139): a
+# caller that omits them — any fixture or integration predating this pair —
+# reads as `xai_configured: null`, which the check below never matches
+# `== true`, so an old caller's readiness is unchanged by this pair
+# existing at all.
 #
 # Prints `{"ready":bool,"unmet":[{"code":..., "detail":...}, ...]}` — every
 # failed condition, not just the first, because an orchestrator deciding
@@ -262,6 +269,14 @@ node_health_readiness() {
     [
       check(.credentials_present != true;
         "credentials-missing"; "no Claude credentials at $CLAUDE_CONFIG_DIR/.credentials.json"),
+      # xai_configured is only ever true when a configured providers own
+      # substrate is grok-build (issue 2139, the xAI counterpart of the
+      # Claude check above), so this never fires on a node that configures
+      # no xAI provider at all — a device-code login auth.json file counts
+      # as a credential here exactly as ANTHROPIC_API_KEY/.credentials.json
+      # do for Claude above.
+      check(.xai_configured == true and .xai_credentials_present != true;
+        "credentials-missing"; "a configured provider has substrate grok-build, but neither XAI_API_KEY nor a subscription login at $GROK_HOME/auth.json is present"),
       check(.gh_auth == "unauthorized";
         "gh-unauthenticated"; ("gh is not authenticated: " + (.gh_auth_detail // "unknown"))),
       # A forge that cannot be reached at all is honestly "not ready", never
