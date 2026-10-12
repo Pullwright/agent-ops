@@ -58,6 +58,8 @@ extract_block() {
 
 # shellcheck source=lib/stage-attempt.sh
 . "$SCRIPT_DIR/lib/stage-attempt.sh"
+# shellcheck source=lib/metering.sh
+. "$SCRIPT_DIR/lib/metering.sh"
 
 cred_block="$(extract_block '^# 2\.0h Model credential check' '^# 2\.1 Usage-limit cooldown' "$STANDDOWN")"
 if [[ -z "$cred_block" ]]; then
@@ -66,6 +68,10 @@ if [[ -z "$cred_block" ]]; then
 fi
 if ! grep -q 'run_model_stage credential-probe' <<<"$cred_block"; then
   echo "FAIL - extracted block does not call run_model_stage credential-probe — the anchors matched the wrong text" >&2
+  exit 1
+fi
+if [[ "$cred_block" != *'stage: "credential-probe"'* || "$cred_block" != *'metering_fields'* ]]; then
+  echo "FAIL - extracted block does not log a stage-end carrying metering_fields for stage: \"credential-probe\"" >&2
   exit 1
 fi
 
@@ -123,6 +129,16 @@ run_block() {
           echo '{"is_error":true,"terminal_reason":"credit_exhausted","api_error_status":429,"result":"Your credit balance is too low to access the Anthropic API."}' > "$out_file"
           ;;
       esac
+      # The two caller-visible globals a real run_model_stage launch leaves
+      # (lib/stage-run.sh), read back by the credential-probe's own
+      # stage-end via metering_fields — set here so $cred_block's log_event
+      # call runs under the same `set -u` the real block runs under.
+      # shellcheck disable=SC2034
+      stage_gaps_json="null"
+      # shellcheck disable=SC2034
+      stage_lane_json='"api"'
+      # shellcheck disable=SC2034
+      stage_kill_reason=""
       return 0
     }
     export PROBE_COUNT_FILE="$probe_count_file" STUB_CRED_MODE="$mode"
@@ -163,6 +179,16 @@ assert_eq "a refused credential stands the cycle down (exit 0, never falls throu
 assert_eq "…and the block never runs off its own end into the gather" \
   "no" "$(if grep -q 'FELL THROUGH' "$evt_file"; then echo yes; else echo no; fi)"
 assert_eq "the probe actually ran" "1" "$(wc -l < "$probe_count" | tr -d ' ')"
+
+stage_end_line="$(grep -m1 '^stage-end' "$evt_file" || true)"
+assert_eq "the probe's own spend is logged as a stage-end" \
+  "yes" "$(if [[ -n "$stage_end_line" ]]; then echo yes; else echo no; fi)"
+assert_eq "…naming stage: credential-probe" \
+  "credential-probe" "$(jq -r '.stage' <<<"${stage_end_line#stage-end$'\t'}" 2>/dev/null)"
+assert_eq "…with a real exit_code (the stub run_model_stage returns 0)" \
+  "0" "$(jq -r '.exit_code' <<<"${stage_end_line#stage-end$'\t'}" 2>/dev/null)"
+assert_eq "…carrying the metering fields a real run leaves" \
+  "true" "$(jq -r 'has("lane") and has("cost_usd") and has("tokens")' <<<"${stage_end_line#stage-end$'\t'}" 2>/dev/null)"
 
 standdown_line="$(grep '^stand-down' "$evt_file" || true)"
 assert_eq "a stand-down event was logged" "yes" "$(if [[ -n "$standdown_line" ]]; then echo yes; else echo no; fi)"
@@ -213,6 +239,8 @@ assert_eq "…and without standing anything down" \
   "no" "$(if grep -q '^stand-down' "$evt_file_ok"; then echo yes; else echo no; fi)"
 assert_eq "the first cycle after a container start always probes" \
   "1" "$(wc -l < "$probe_count_ok" | tr -d ' ')"
+assert_eq "…and still logs the probe's own stage-end on the healthy path" \
+  "1" "$(grep -c '^stage-end' "$evt_file_ok")"
 
 # --- a second cycle of the same healthy container: the probe is skipped —
 # a healthy node pays for this once per container lifetime, not every cycle ---

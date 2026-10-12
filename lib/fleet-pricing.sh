@@ -29,10 +29,11 @@
 # Applied in this order, first match wins, so every row lands in exactly one
 # bucket — never dropped, never double-counted:
 #
-#   1. overhead        `.attributed` is false (an Enabler/Refiner/limit-probe/
-#                       project-reviewer row, or a coordinator/implementer/
-#                       reviewer row whose own cycle carried no events in the
-#                       union), OR `.repo`/`.item` are empty even though
+#   1. overhead        `.attributed` is false (an Enabler/Refiner/
+#                       limit-probe/credential-probe/project-reviewer row, or
+#                       a coordinator/implementer/reviewer row whose own
+#                       cycle carried no events in the union), OR
+#                       `.repo`/`.item` are empty even though
 #                       `.attributed` is true — a coordinator cycle that
 #                       selected nothing (`none-selected`), stood down, was
 #                       skipped, or simply ended, all of which are process

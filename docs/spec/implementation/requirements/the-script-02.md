@@ -735,6 +735,16 @@
       seventeenth token in the closed `externally-blocked` cause vocabulary
       (`lib/node-time-state.sh`, `docs/FLOW-SCHEMA.md`).
 
+      It is not a stage — it logs no `stage-start`, like 1b's limit-probe and
+      a `<stage>-salvage` resume — but it still spends real tokens, so
+      `lib/standdown.sh` logs its own `stage-end`, `stage:
+      "credential-probe"`, carrying the same metering record requirement 33a
+      describes for 1b's limit-probe: `lane`, `cost_usd`, `tokens` and the
+      rest, so this spend reaches the fleet-wide ledger the same way every
+      other launch's does, rather than only the dashboard's own cost scan of
+      the raw transcript. `lib/stage-health.sh`'s stage list does not name
+      `credential-probe`, so this carries no verdict risk for it.
+
       Gated, unlike 0b: a free `/rate_limit` call costs nothing, but this
       probe spends a fraction of a cent, so it runs only on the first cycle
       after this container started, or on any cycle whose own last probe
@@ -878,9 +888,9 @@
       `implementer_model_trivial` (a fixed one-line prompt, 180 s timeout,
       transcript kept as `limit-probe.out` in the cycle record), through the
       same provider-neutral `run_model_stage` (requirement 4d) every other
-      stage launches on. It is not a stage — it logs no `stage-start`, the
-      one invocation besides a `<stage>-salvage` resume that does not — but
-      it still spends real tokens, so `lib/standdown.sh` logs its own
+      stage launches on. It is not a stage — it logs no `stage-start`, like
+      0h's credential probe and a `<stage>-salvage` resume — but it still
+      spends real tokens, so `lib/standdown.sh` logs its own
       `stage-end`, `stage: "limit-probe"`, carrying the metering record of
       requirement 33a (issue #2239, D30): `lane`, `cost_usd`, `tokens` and
       the rest, so this spend reaches the fleet-wide ledger the same way

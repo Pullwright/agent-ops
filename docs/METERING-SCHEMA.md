@@ -284,12 +284,14 @@ because the envelope itself never carries the figure.
   each passing its own model id, `.out` path, the gap statistics
   `lib/stage-run.sh` left in `stage_gaps_json`, and (issue #2239, D30) the
   lane it left in `stage_lane_json` for the run that just ended (requirement
-  33a). The usage-limit probe of requirement 1b — a single minimal-model call
-  that is deliberately not a stage and so logs no `stage-start` — gains its
-  own `stage-end`, `stage: "limit-probe"`, carrying this same record
-  (`lib/standdown.sh`); `lib/stage-health.sh` ignores it, since its stage
-  list does not name `limit-probe`. The one invocation that still logs
-  neither is a `<stage>-salvage` resume.
+  33a). The usage-limit probe of requirement 1b and the model-credential
+  probe of requirement 0h — each a single minimal-model call that is
+  deliberately not a stage and so logs no `stage-start` — gain their own
+  `stage-end`, `stage: "limit-probe"` and `stage: "credential-probe"`
+  respectively, each carrying this same record (`lib/standdown.sh`);
+  `lib/stage-health.sh` ignores both, since its stage list does not name
+  either. The one invocation that still logs neither is a `<stage>-salvage`
+  resume.
 - **`metering_intended_lane`** produces `stage-start`/`review-stage-start`'s
   own `lane` (requirement 33) — what the Script *intended* before the run,
   rather than what `metering_fields`'s own `lane` later observed the run
@@ -324,12 +326,15 @@ event is counted, and that a stage which emitted nothing reports `null`.
 stub stream's `init` event, with each of the four recognised `apiKeySource`
 values and with none at all, maps to `stage_lane_json` exactly as
 `lib/substrate-claude-code.sh`'s own `substrate_claude_code_lane_of` header
-documents. `test/stage-health.test.sh` asserts `stage: "limit-probe"` is
-ignored by `stage_health_verdicts`, never read as an idle implementation
-stage. `test/standdown-limit-probe.test.sh` lifts the probe's own stage-end
-block out of `lib/standdown.sh` and asserts it carries `stage: "limit-probe"`,
-the real exit code, and this same metering record — `lane`, `cost_usd` and
-`tokens` included.
+documents. `test/stage-health.test.sh` asserts `stage: "limit-probe"` and
+`stage: "credential-probe"` are each ignored by `stage_health_verdicts`,
+never read as an idle implementation stage. `test/standdown-limit-probe.test.sh`
+lifts the probe's own stage-end block out of `lib/standdown.sh` and asserts
+it carries `stage: "limit-probe"`, the real exit code, and this same
+metering record — `lane`, `cost_usd` and `tokens` included.
+`test/standdown-credential-preflight.test.sh` asserts the same for the
+model-credential probe's own stage-end, `stage: "credential-probe"`, on both
+its refused and healthy paths.
 
 `test/node-health-cli.test.sh` covers the node metrics object above: it
 asserts `scripts/node-health.sh --metrics`'s output carries every top-level

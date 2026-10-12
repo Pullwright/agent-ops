@@ -436,8 +436,20 @@ if ! (( DRY_RUN )); then
         || "$cred_prev_started" != "$cred_container_started" \
         || "$cred_prev_verdict" == "refused" ]]; then
     cred_probe_out="$cycle_dir/credential-probe.out"
+    cred_probe_rc=0
     run_model_stage credential-probe 180 "$implementer_model_trivial" \
-      "Reply with the single word: ok" "$cred_probe_out" "$cycle_dir" || true
+      "Reply with the single word: ok" "$cred_probe_out" "$cycle_dir" || cred_probe_rc=$?
+    # The probe's own spend, joined into the fleet-wide ledger like every
+    # other launch through run_model_stage (issue #2239, D30), the same way
+    # 1b's own limit-probe stage-end does fifty lines below: it never had a
+    # stage-start, but it is still a real invocation that spent real tokens,
+    # and without this event that spend would be invisible to log.jsonl even
+    # though the cost scan always saw it in the transcript itself.
+    # `lib/stage-health.sh`'s own stage list does not name
+    # "credential-probe", so this carries no verdict risk for it.
+    log_event "stage-end" "$(jq -nc --argjson rc "$cred_probe_rc" --arg kr "$stage_kill_reason" \
+      --argjson m "$(metering_fields "$implementer_model_trivial" "$cred_probe_out" "$stage_gaps_json" "$stage_lane_json")" \
+      '{stage: "credential-probe", exit_code: $rc} + (if $kr == "" then {} else {kill_reason: $kr} end) + $m')"
     cred_class="$(stage_api_refusal_class "$cred_probe_out")"
     cred_token="$(stage_api_refusal "$cred_probe_out")"
     # Both halves, exactly as the requirement states them: a `refused` class
