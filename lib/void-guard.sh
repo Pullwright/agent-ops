@@ -170,6 +170,14 @@ VOID_GUARD_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=lib/merge-queue.sh
 . "$VOID_GUARD_DIR/lib/merge-queue.sh"
 
+# `review_recommendation_tech_debt_id` — the section-isolating resolution of
+# a review ref's own designated tech-debt id — is lib/review-recommendation.sh's,
+# sourced for the same self-containment reason as the three above. Shared with
+# scripts/gather-review-status.sh (issue #2333), which asks the same file a
+# different question about the same section.
+# shellcheck source=lib/review-recommendation.sh
+. "$VOID_GUARD_DIR/lib/review-recommendation.sh"
+
 # entry_field_text ENTRY_JSON FIELD
 # Print one field of a model-supplied entry as a single string — objects and
 # arrays are rendered as JSON so a caller can test emptiness without caring
@@ -820,42 +828,16 @@ void_finishing_pr_reason() {
 # recommendation's own section — so the caller falls through to today's
 # existing refusal rather than this resolver fabricating a pass from a
 # half-read file.
+#
+# Thin wrapper over lib/review-recommendation.sh's own
+# `review_recommendation_tech_debt_id` (issue #2333) — the section isolation
+# and the backtick-only extraction below both moved there unchanged, shared
+# with scripts/gather-review-status.sh's broader "every tracking id" reading
+# of the same line, so this file still resolves its default branch itself
+# (BRANCH left empty) exactly as it always has.
 void_review_item_tech_debt_id() {
   local item="$1" slug="$2" gh_bin="${VOID_GUARD_GH:-gh}"
-  local date rec_id default_branch path api_out content section td_id
-
-  [[ "$item" =~ ^review-([0-9]{4}-[0-9]{2}-[0-9]{2})-(R-[0-9]+)$ ]] || return 1
-  date="${BASH_REMATCH[1]}"
-  rec_id="${BASH_REMATCH[2]}"
-  [[ -n "$slug" ]] || return 1
-
-  default_branch="$("$gh_bin" api "repos/$slug" --jq '.default_branch' 2>/dev/null)" || default_branch=""
-  [[ -n "$default_branch" ]] || default_branch="main"
-
-  path="reviews/project-review-$date/03-recommendations.md"
-  api_out="$("$gh_bin" api "repos/$slug/contents/$path?ref=$default_branch" 2>/dev/null)" || return 1
-  [[ -n "$api_out" ]] || return 1
-  content="$(jq -r '.content // empty' <<<"$api_out" 2>/dev/null | tr -d '\n' | base64 -d 2>/dev/null)"
-  [[ -n "$content" ]] || return 1
-
-  # Isolate the recommendation's own section — from its `## R-<nn> — …`
-  # heading up to (not including) the next `## ` heading or end of file — the
-  # same split `scripts/gather-project-review.sh` performs, so a "Tech-debt
-  # item:" line belonging to a *different* recommendation can never be picked
-  # up by accident.
-  section="$(awk -v id="$rec_id" '
-    $0 ~ ("^## " id "([ \t]|$)") { capture = 1; print; next }
-    capture && /^## / { exit }
-    capture { print }
-  ' <<<"$content")"
-  [[ -n "$section" ]] || return 1
-
-  # shellcheck disable=SC2016  # the backticks are literal Markdown, not command substitution.
-  td_id="$(grep -oE 'Tech-debt item: `[^`]+`' <<<"$section" | head -n1 \
-    | sed -E 's/Tech-debt item: `([^`]+)`/\1/')"
-  [[ -n "$td_id" ]] || return 1
-
-  printf '%s' "$td_id"
+  review_recommendation_tech_debt_id "$item" "$slug" "" "$gh_bin"
 }
 
 # void_pr_matches_item SLUG NUM ITEM ENTRY_REPO [CTX_JSON]

@@ -207,6 +207,15 @@ void_liveness_actioned() {
 # (`WORK_GONE_REVIEW_RE`, `WORK_GONE_PLAN_RE`) — one definition, per
 # requirement 34a — so a caller must source that file first.
 #
+# `work_gone_clearances`'s own `"tracked-closed"` value (issue #2333) is
+# deliberately not read below: it answers "is the blocked item's work gone",
+# which a void item never needs (requirement 34h), and the callers that could
+# feed it here never pass the digests `scripts/gather-review-status.sh` would
+# need to produce it for the void pass either (lib/candidate-gather.sh's own
+# `void`-purpose call to `gather_review_status`). A `"tracked-closed"` ref
+# therefore falls through to the "anything else, which decides nothing"
+# branch, same as any other unrecognised status.
+#
 # REVIEW_CURRENT_JSON (TD-PPagop-26082309) is repo -> the repository's current
 # review folder's own date string, from `scripts/gather-project-review.sh
 # --current-date`:

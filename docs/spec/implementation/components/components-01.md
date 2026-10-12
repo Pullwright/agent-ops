@@ -626,12 +626,19 @@ What exists, and the requirements each part answers to:
    0); regression-tested in `test/work-gone.test.sh`; must pass `shellcheck`.
 3o. `scripts/gather-review-status.sh` implementing requirement 34i's
    project-review half: given a repo slug, default branch and recommendation
-   refs, prints a JSON object mapping each ref a merged pull request's title
-   or body names to `"merged"`, searched over the repo's 100
-   most-recently-closed pull requests targeting that branch. Called once per
-   repo that has blocked project-review items and not at all otherwise. Fails
-   safe to `{}` (exit 0); regression-tested in `test/work-gone.test.sh`; must
-   pass `shellcheck`.
+   refs, prints a JSON object mapping each ref either of two signals confirms
+   to that signal's own status string — a merged pull request's title or body
+   naming the ref, searched over the repo's 100 most-recently-closed pull
+   requests targeting that branch, to `"merged"`; or every tracking id that
+   ref's own recommendation names (via `lib/review-recommendation.sh`'s
+   `review_recommendation_tracking_ids`, shared with `lib/void-guard.sh`'s
+   `void_review_item_tech_debt_id`) confirmed closed or resolved against an
+   optional `--issues-file`/`--register-file` digest the caller already holds
+   this cycle, to `"tracked-closed"` — never fetched afresh here, and never
+   decided for an id either digest does not cover. Called once per repo that
+   has blocked project-review items and not at all otherwise. Fails safe to
+   `{}` (exit 0); regression-tested in `test/work-gone.test.sh`; must pass
+   `shellcheck`.
 3p. `scripts/gather-plan-status.sh` implementing requirement 34i's
    implementation-plan half: given a repo slug, default branch,
    `implementation_plan_path` and task ids, prints a JSON object mapping each

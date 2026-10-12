@@ -37,17 +37,32 @@
       whether to run is the cycle-late failure 34f and 34g are placed here to
       avoid, and two reads is a small price beside the Enabler engagements that
       item is already earning;
-    - **a project-review recommendation** (`review-<date>-R-NN`) — a *merged*
-      pull request on the default branch names that ref, read by
-      `scripts/gather-review-status.sh` for the blocked refs and no others,
-      against the repo's 100 most-recently-closed pull requests. This is the
-      same test requirement 16 already applies when deciding whether to offer
-      the recommendation as a candidate at all — the review folder is a
-      point-in-time record no stage ever edits to say a recommendation is
-      done (requirement 25), so the merged PR's own text naming the ref, put
-      there by the Implementer that closed the recommendation out, is the one
-      fact anywhere that answers "is this done?", and this reads it instead of
-      asking a Co-Ordinator to notice it went stale;
+    - **a project-review recommendation** (`review-<date>-R-NN`) — either of
+      two signals, both read by `scripts/gather-review-status.sh` for the
+      blocked refs and no others: a *merged* pull request on the default
+      branch names that ref, against the repo's 100 most-recently-closed
+      pull requests (this is the same test requirement 16 already applies
+      when deciding whether to offer the recommendation as a candidate at
+      all — the review folder is a point-in-time record no stage ever edits
+      to say a recommendation is done (requirement 25), so the merged PR's
+      own text naming the ref, put there by the Implementer that closed the
+      recommendation out, is the one fact anywhere that answers "is this
+      done?"); or every tracking id the recommendation's own "Tech-debt
+      item(s): …" line names (one bare `#NNN`, several "and"-joined, or a
+      single backtick-quoted register id) is itself already closed or
+      resolved — satisfied by owner action outside this pipeline entirely
+      (closing the named issue(s) by hand, or flipping a register file's
+      frontmatter directly), which never produces a pull request naming the
+      ref, so the first signal alone would leave such a recommendation
+      blocked forever. The second signal is decided only from digests this
+      same cycle already holds for the repo — its open-issue digest
+      (requirement 3b) for a bare id, the register read just above for a
+      register id — never a fresh fetch per tracking id, so it follows the
+      same "unknown is not gone" rule as every other class here: an id
+      absent from, or unresolvable in, either digest leaves the *whole*
+      recommendation blocked. `work_gone_clearances` reads the two signals
+      as distinct status strings (`"merged"`, `"tracked-closed"`) in the same
+      map, each with its own `detail` wording;
     - **an implementation-plan task** (e.g. `W10-breach-handling`) — the
       task's own checkbox, in the repo's `implementation_plan_path` document
       on the default branch, is checked (`- [x]`), read by
@@ -59,7 +74,9 @@
 
     - **Unknown is never gone.** A repo missing from the digest, a digest
       carrying `ok: false`, an id no register file claims by `id` or
-      `legacy-id`, a review ref no merged pull request's title or body names, a
+      `legacy-id`, a review ref no merged pull request's title or body names
+      and whose own tracking id(s) are not every one confirmed closed or
+      resolved in the open-issue/register digests already in hand, a
       plan id no task-list line names (or that two of them do), all decide
       nothing and leave the item blocked. The failure is a delayed clearance,
       which costs a cycle; the other direction clears a block out from under

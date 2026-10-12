@@ -111,6 +111,24 @@ assert_eq "a recommendation no merged pull request names does not" \
 assert_eq "and neither does one the review read never answered for" \
   "" "$(reason_of "$(work_gone_clearances "$(blocked_of review-2026-07-11-R-02)" "$states")")"
 
+# The PR-independent tracking-id signal (issue #2333): a distinct status
+# string, so its reason reads differently from the merged-pull-request one
+# above even though both clear the same way.
+tracked_closed='{"o/a":{"review-2026-09-28-R-02":"tracked-closed"}}'
+tracked_closed_reason="$(reason_of "$(work_gone_clearances "$(blocked_of review-2026-09-28-R-02)" \
+  "$states" '{}' "$tracked_closed")")"
+assert_eq "a recommendation whose every tracked id is closed clears its block too" \
+  "every tracking id the review-2026-09-28-R-02 recommendation names is closed or resolved" \
+  "$tracked_closed_reason"
+if [[ "$tracked_closed_reason" == "a merged pull request references review-2026-09-28-R-02" ]]; then
+  printf 'FAIL - %s\n' "  ... with a reason distinct from the merged-pull-request one"
+  failures=$(( failures + 1 ))
+else
+  printf 'ok   - %s\n' "  ... with a reason distinct from the merged-pull-request one"
+fi
+assert_eq "a recommendation whose tracked ids are not confirmed closed does not clear" \
+  "" "$(reason_of "$(work_gone_clearances "$(blocked_of review-2026-09-28-R-09)" "$states" '{}' "$tracked_closed")")"
+
 plan='{"o/a":{"W10-breach-handling":"done","W10-other-task":"open"}}'
 assert_eq "a plan task checked off clears its block" \
   "the implementation plan marks W10-breach-handling done" \
@@ -292,6 +310,10 @@ cat >"$tmp_dir/bin/gh" <<'STUB'
 set -uo pipefail
 [[ "${1:-}" == "api" ]] || { echo "stub gh: unexpected call: $*" >&2; exit 1; }
 path="${2:-}"
+# Every API path this stub is asked for, when a test wants to assert a read
+# did *not* happen (the no-digest case below, which must cost no
+# recommendations fetch) rather than only what the answer was.
+[[ -z "${STUB_CALL_LOG:-}" ]] || printf '%s\n' "$path" >> "$STUB_CALL_LOG"
 case "$path" in
   */contents/tech-debt\?*)
     case "${STUB_MODE:-hit}" in
@@ -329,6 +351,22 @@ case "$path" in
     case "${STUB_PULLS_MODE:-hit}" in
       hit) cat "$STUB_PULLS_FILE" ;;
       *) echo "gh: error connecting to api.github.com" >&2; exit 1 ;;
+    esac
+    ;;
+  */contents/reviews/*)
+    case "${STUB_RECS_MODE:-hit}" in
+      hit)
+        printf '{"content":"%s","encoding":"base64"}\n' "$(base64 -w0 < "$STUB_RECS_FILE")"
+        ;;
+      404)
+        echo '{"message":"Not Found","documentation_url":"https://docs.github.com/rest","status":"404"}'
+        echo "gh: Not Found (HTTP 404)" >&2
+        exit 1
+        ;;
+      *)
+        echo "gh: error connecting to api.github.com" >&2
+        exit 1
+        ;;
     esac
     ;;
   */contents/*)
@@ -446,6 +484,93 @@ STUB_PULLS_MODE=fail assert_eq "an API failure resolves nothing" \
 assert_eq "but is diagnosed on stderr" \
   "1" "$(grep -c "error connecting" "$tmp_dir/err")"
 STUB_PULLS_MODE=hit
+
+# --- gather-review-status.sh, the PR-independent tracking-id signal (issue -----
+# --- #2333) -----------------------------------------------------------------
+# Covers all three text shapes observed in the wild: a single bare `#NNN`
+# (R-01), several "and"-joined (R-02, this item's own trigger shape), and one
+# backtick-quoted register id (R-03). R-04 names no tracking line at all.
+export STUB_RECS_FILE="$tmp_dir/recs.md"
+# shellcheck disable=SC2016  # the backtick below is literal Markdown.
+cat >"$STUB_RECS_FILE" <<'RECS'
+## R-01 — singular bare issue
+
+**Approach:** something. Tech-debt item: #447.
+
+## R-02 — plural bare issues
+
+**Approach:** something else. Tech-debt items: #432 and #437.
+
+## R-03 — backtick register id
+
+**Approach:** another thing. Tech-debt item: `TD-PPpfid-26080907`.
+
+## R-04 — no tracking line at all
+
+**Approach:** nothing to track here.
+RECS
+export STUB_RECS_MODE=hit
+
+# Both digests travel as file paths, never inline JSON (requirement 4g) —
+# see scripts/gather-review-status.sh's own header for why.
+issues_file="$tmp_dir/issues.json"
+register_file="$tmp_dir/register.json"
+
+printf '[]' > "$issues_file"
+assert_eq "a singular bare-issue recommendation clears once that issue is closed" \
+  "tracked-closed" \
+  "$(run_review_gather --issues-file "$issues_file" review-2026-09-28-R-01 | jq -r '.["review-2026-09-28-R-01"] // ""')"
+printf '[447]' > "$issues_file"
+assert_eq "  ... but not while that issue is still open" \
+  "{}" "$(run_review_gather --issues-file "$issues_file" review-2026-09-28-R-01)"
+
+printf '[]' > "$issues_file"
+assert_eq "a plural bare-issue recommendation clears once both issues are closed" \
+  "tracked-closed" \
+  "$(run_review_gather --issues-file "$issues_file" review-2026-09-28-R-02 | jq -r '.["review-2026-09-28-R-02"] // ""')"
+printf '[432]' > "$issues_file"
+assert_eq "  ... but not while only one of the two is closed" \
+  "{}" "$(run_review_gather --issues-file "$issues_file" review-2026-09-28-R-02)"
+
+printf '{"TD-PPpfid-26080907":"resolved"}' > "$register_file"
+assert_eq "a backtick register-id recommendation clears once the register resolves it" \
+  "tracked-closed" \
+  "$(run_review_gather --register-file "$register_file" review-2026-09-28-R-03 \
+     | jq -r '.["review-2026-09-28-R-03"] // ""')"
+printf '{"TD-PPpfid-26080907":"open"}' > "$register_file"
+assert_eq "  ... but not while the register still calls it open" \
+  "{}" "$(run_review_gather --register-file "$register_file" review-2026-09-28-R-03)"
+# A map that answered for *other* ids but not this one, rather than an empty
+# one: an empty map is skipped before the lookup (no digest can answer, so no
+# recommendations read is paid at all — asserted below), which would leave the
+# "unknown is not gone" lookup itself unexercised.
+printf '{"TD-PPpfid-26080101":"resolved"}' > "$register_file"
+assert_eq "  ... and neither does a register map that never answered for it" \
+  "{}" "$(run_review_gather --register-file "$register_file" review-2026-09-28-R-03)"
+
+printf '[]' > "$issues_file"
+assert_eq "a recommendation with no tracking line at all is unaffected" \
+  "{}" "$(run_review_gather --issues-file "$issues_file" --register-file "$register_file" review-2026-09-28-R-04)"
+
+export STUB_CALL_LOG="$tmp_dir/gh-calls.log"
+: > "$STUB_CALL_LOG"
+assert_eq "omitting both digests leaves a tracked recommendation exactly where it was" \
+  "{}" "$(run_review_gather review-2026-09-28-R-01)"
+# And costs nothing to say so: with neither digest in hand no tracking id could
+# be confirmed anyway, so the recommendations read is skipped rather than paid
+# per ref and discarded — the `void`-purpose caller's whole bill.
+assert_eq "  ... and pays no recommendations read at all to do so" \
+  "0" "$(grep -c '/contents/reviews/' "$STUB_CALL_LOG" || true)"
+: > "$STUB_CALL_LOG"
+printf '[]' > "$issues_file"
+assert_eq "  ... while a digest in hand does read it" \
+  "tracked-closed" \
+  "$(run_review_gather --issues-file "$issues_file" review-2026-09-28-R-01 | jq -r '.["review-2026-09-28-R-01"] // ""')"
+assert_eq "  ... exactly once for the one ref asked about" \
+  "1" "$(grep -c '/contents/reviews/' "$STUB_CALL_LOG" || true)"
+unset STUB_CALL_LOG
+
+STUB_RECS_MODE=hit
 
 # --- gather-plan-status.sh, against a stubbed contents API ----------------------
 
