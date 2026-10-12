@@ -6,13 +6,13 @@
     `docs/reviews/2026-09-11-escalation-autonomy-review.md`).** The fourth rung of
     `escalation_autonomy`, `decide-with-veto`, including everything
     `decide-tactical` reaches (requirement 36d) and widening it in exactly
-    two places. Same pass (`run_enabler_decide`,
+    three places. Same pass (`run_enabler_decide`,
     `prompts/enabler-decide.md`), same tier (`enabler_model_critical`,
     falling back to `enabler_model`), same per-reason bound and cap, same
     decision log and veto (requirement 36e). One field of the pass's runtime
     input differs: `mandate`, `"tactical"` at `decide-tactical` and
     `"delegate"` at `decide-with-veto`, and it is the only thing that tells
-    the pass which of the two reaches below are open to it. Every pass at
+    the pass which of the three reaches below are open to it. Every pass at
     this rung is logged as the same `enabler-adjudication` event carrying
     `pass: "decide-tactical"` that requirement 36d's own passes are, which is
     what keeps one bound over both: the two rungs are one ladder position
@@ -42,6 +42,34 @@
       excludes them by construction, the void on those shapes is about the
       conflict or the dequeue rather than about the pull request, and closing
       one discards live work of ours (TD-PPagop-26080901).
+    - **(c) Relocation of a misfiled item** into the pipeline's own
+      repository — `pager_repo`, falling back to `crash_loop_repo`, as
+      `lib/pager.sh` and the Monitor's M13a already resolve it
+      (`decision_pipeline_repo`, `lib/refile.sh`) — for an issue-shaped item
+      whose fix lives there and not where it was filed. The shape is the one
+      requirement 36c's repo-local filing produces (agent-ops#2031): an
+      Enabler examining a product repository's item notices a defect in the
+      pipeline's own code and can only file it into that product repository,
+      where no Implementer can reach the files it names; GitHub refuses to
+      transfer an issue between organisations, so the item costs a person a
+      re-file by hand (poetic-fiddle#445, #480, #516). A `decide` verdict
+      may carry `act: {"kind": "refile-to-pipeline-repo", "paths": [...]}`,
+      naming the repository-relative paths the item's own body or
+      specification directs changes to. The act rests on one fact, and the
+      Script establishes it rather than trusting the pass: every named path
+      is absent from the item's repository at its default branch and present
+      in the pipeline's (`refile_act_check`, `lib/refile.sh` — one `gh api
+      repos/<repo>/contents/<path>` read per path per repository, a 404
+      reading "absent", a success "present", and any other answer, a rate
+      limit or a network failure among them, "unknown", which refuses the
+      act in either direction). The item must be a plain issue number (a
+      thread to copy and to close), `paths` a non-empty list of at most
+      twenty plain relative paths — no leading `/`, no `.` or `..` segment,
+      de-duplicated and sorted as carried — and the pipeline's repository
+      configured and not the item's own. The act is the owner's decision of
+      2026-10-12 (`docs/STANDING-DECISIONS.md`, poetic-fiddle#516): an
+      escalation asking only for it is mechanical, and both halves of it
+      reverse.
 
     Conditions 1, 3, 4, 5, 6 and 9 of requirement 36a are owner-only at
     every rung including this one; condition 7 stays owner-only wherever the
@@ -55,8 +83,11 @@
     verdict missing its own `decision`/`rationale` (requirement 36d): a
     verdict this system may not act on is not a decision, whatever it called
     itself. It refuses the same way, at either rung, an act whose `kind` is
-    not `corroborate-void`, and a `corroborate-void` act on an item whose id
-    is not one of the three shapes above. Each refusal names the act, so the
+    neither `corroborate-void` nor `refile-to-pipeline-repo`, a
+    `corroborate-void` act on an item whose id is not one of the three shapes
+    above, and a `refile-to-pipeline-repo` act that `refile_act_check`
+    (`lib/refile.sh`) cannot corroborate — that refusal names the path and
+    the repository that failed. Each refusal names the act, so the
     escalation the human then receives says what the pass proposed.
 
     **The act waits out a veto window, and nothing else about the decision
@@ -102,7 +133,9 @@
     - **still `CLOSED`** — performs the act, then logs `decision-acted`
       (`repo`, `item`, `issue_number`, `issue_url`, `act`, `outcome:
       "performed"`) and the ordinary `unblocked` (`by: "enabler"`, `reason`
-      naming the decision);
+      naming the decision) — for reach (c) only once both halves of the act
+      have happened, with the outcomes short of that named in its own
+      paragraph below;
     - **open** — does nothing and logs nothing. The reopen is the veto, and
       `run_decision_veto_sweep` owns the record of one;
     - **unreadable** — refuses the act for this cycle and logs a `warning`
@@ -135,6 +168,45 @@
     elapsed. Requirement 34k's one-shot rule, its `stage` gate, its action
     cap and a human's plain re-open all apply to it exactly as to any other
     corroborated void.
+
+    **`refile-to-pipeline-repo` is a filing and a close, and nothing more.**
+    Performing it (`refile_perform`, `lib/refile.sh`) first repeats
+    `refile_act_check` whole — the window between verdict and act is hours
+    long and either repository may have moved, so the fact is re-established
+    live, never carried from the verdict — then reads the original issue and
+    files one copy in the pipeline's repository: the same title; the body
+    with every `Blocked-by:` line dropped (those name the original
+    repository's own issues, and the owner's own re-files dropped them,
+    poetic-fiddle#445); a trailing provenance section carrying a machine
+    marker (`<!-- agent-ops:refiled-from repo=<repo> item=<n> -->`), the
+    original's URL, the verified paths, the instant they were verified and
+    the decision-log issue's URL; and `pw::type:tech-debt` where the original
+    carried it (retried once unlabelled where the labelled create fails, as
+    `techdebt_file_debt` does), with no `refined` label and no block label —
+    a fresh Refiner pass in the right repository is cheap insurance, and the
+    original's own specification stays one link away. It then closes the
+    original as not planned with one comment in the pipeline's voice naming
+    the copy, the paths and the decision-log issue. The two halves are
+    idempotent together: the marker is what a later cycle searches the
+    pipeline's repository for, so a cycle whose close half failed after its
+    filing half succeeded retries the close alone and never files twice. It
+    logs `decision-acted` with `refiled: {repo, number, url}` beside
+    `outcome: "performed"`, and the ordinary `unblocked`; the original then
+    leaves every reader's view the way any closed issue does.
+
+    Three things short of performing it, each named in a `warning`. A read
+    or a write that fails — the original unreadable, the create refused, the
+    close refused — leaves the act pending for a later cycle, exactly as an
+    unreadable lever does. The re-check failing, or the original already
+    closed (someone acted first, and a second copy is the duplicate this act
+    exists to avoid), retires the act with `decision-acted`'s third outcome,
+    `refused`, its `reason` saying why, and says the same on the decision-log
+    issue in one comment, so the owner who was offered the lever learns the
+    act was never taken. A refused act clears nothing: the item stays
+    blocked, and its next Enabler engagement escalates to a person on
+    requirement 36d's own per-reason bound, carrying the refusal. Each of
+    the three spends one of the cycle's three act slots, since each cost the
+    reads a performed act would have.
 
     **A veto cancels a pending act, and says so.** When
     `run_decision_veto_sweep` records a `decision-vetoed` for a log issue

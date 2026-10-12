@@ -527,9 +527,10 @@ failed, in which case the row still renders, its own cell reading "not
 filed" rather than being dropped for want of one), and a status badge:
 `vetoed` where a `decision-vetoed` event for the same log issue postdates it,
 `pending act` where the decision carries a `decide-with-veto` act
-(requirement 36f) that no `decision-acted` event has yet performed or
-cancelled — the one status where the lever still changes what happens rather
-than only undoing it — and `stands` otherwise. A row's `act_after` is what
+(requirement 36f) that no `decision-acted` event has yet performed,
+cancelled or refused — the one status where the lever still changes what
+happens rather than only undoing it — and `stands` otherwise. A row's
+`act_after` is what
 the `pending act` badge names as its title, so the owner can see from the
 panel alone how long they have. A payload the Publisher could not assemble sets
 `decisions` to `null`, rendered as "the decisions digest could not be

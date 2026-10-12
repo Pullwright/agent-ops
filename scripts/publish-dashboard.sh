@@ -3983,7 +3983,7 @@ fi
 # and, for a `decide-with-veto` decision that carries an act (requirement
 # 36f, PR #1389), whether that act is still pending: `pending_act` is
 # true while the decision names an `act` and no `decision-acted` event has
-# performed or cancelled it, which is the one state in which the owner's
+# performed, cancelled or refused it, which is the one state in which the owner's
 # reopen still changes what happens rather than only undoing it. A
 # `decision-taken` event's own `issue_number` (the closed `pw::decision` log
 # issue `lib/enabler.sh`'s `create_decision_log_issue` files) is what a veto

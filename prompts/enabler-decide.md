@@ -90,6 +90,7 @@ pass` heading, the Script gives you one JSON object:
   "item": "911",
   "kind": "",
   "mandate": "tactical",
+  "pipeline_repo": "Pullwright/agent-ops",
   "refinement": {},
   "reflag": {
     "reason": "threshold",
@@ -124,9 +125,13 @@ pass` heading, the Script gives you one JSON object:
   between the two rungs, and it decides what you may reach: at `"tactical"`
   the owner-only boundary is the whole of your limit and **no verdict of
   yours may carry an `act`**; at `"delegate"` requirement 36f adds exactly
-  two reaches to it, and an `act` becomes available for one of them. Never
+  three reaches to it, and an `act` becomes available for two of them. Never
   infer the mandate from anything else — not the repository, not the item,
   not what an earlier decision reached.
+- `pipeline_repo` is the pipeline's own repository — `pager_repo`, falling
+  back to `crash_loop_repo` — the one place the relocation reach below may
+  re-file an item into. Empty when the installation configures neither, in
+  which case that reach is closed whatever the mandate says.
 - `refinement` is `{}` for an ordinary blocked item, or, for a refinement
   item, what an earlier engagement produced last time this item was refined —
   `comment_url` (an issue's own refinement comment — read it with `gh issue
@@ -215,7 +220,7 @@ not a near miss — the Script refuses the whole verdict and the item escalates
 to a person with your act named in the refusal.
 
 Requirement 36f, "The delegate mandate", is where what you may reach is
-written. Read it. It adds two reaches to the boundary and nothing else:
+written. Read it. It adds three reaches to the boundary and nothing else:
 
 - **Condition 2's acceptance clause, and only that clause.** You may accept a
   residual exposure or a residual risk in a repository the installation itself
@@ -239,6 +244,33 @@ written. Read it. It adds two reaches to the boundary and nothing else:
   resolved, the pull request stays live work of ours, and requirement 34k
   excludes them for a reason that cost this pipeline a real pull request
   once. The Script refuses either shape outright.
+- **Relocation of a misfiled item** into `pipeline_repo`, for an item that
+  is a plain issue number in some other configured repository and whose own
+  body or specification directs every change to files that live in the
+  pipeline's repository and not where it was filed — the shape an Enabler
+  produces when it notices a defect in the pipeline's own code while
+  examining a product repository's item, and can only file it there. This
+  is the second reach that carries an `act`:
+
+  ```json
+  "act": {"kind": "refile-to-pipeline-repo", "paths": ["scripts/sweep-closed-issues.sh", "prompts/implementer.md"]}
+  ```
+
+  `paths` names every file the item directs changes to, repository-relative,
+  at most twenty. Read them yourself first — `gh api
+  repos/<repo>/contents/<path>` against both repositories — and name only
+  paths that answer 404 where the item was filed and exist in
+  `pipeline_repo`; but your reading is a proposal, not the fact. The Script
+  repeats every read itself, at verdict time and again when the window has
+  passed, and refuses the act whole on the first path that exists where the
+  item was filed, is absent from `pipeline_repo`, or cannot be read at all.
+  Where you are not sure every file lives there — the item names a mix, or
+  names none — the verdict is `escalate`. When the act runs it files one copy
+  of the issue in `pipeline_repo` (title, body, `pw::type:tech-debt` where
+  carried, a provenance section naming the original and this decision) and
+  closes the original as not planned with a comment naming the copy. Nothing
+  else: no refinement travels with it, and no label the original carried
+  beyond that one.
 
 Conditions 1, 3, 4, 5, 6 and 9 are owner-only at this rung exactly as they are
 at every other, and condition 7 stays owner-only wherever the account really
@@ -342,12 +374,15 @@ message itself must be nothing but the object.
   escalation issue on `escalate`: that issue is the ordinary Enabler
   engagement's own draft, filed with your evidence appended underneath.
 - `act` belongs only to a `decide` verdict under `mandate: "delegate"`, and
-  only for the one reach named above; omit it in every other case, which is
-  most of them. A verdict carrying an act the mandate does not reach — the
-  wrong rung, an unrecognised `kind`, or an item that is not one of the three
-  pull-request shapes — is refused whole and escalated, with the act named in
-  the refusal. An act is a proposal, never a description of something you did:
-  you never perform one yourself.
+  only for the two reaches named above that carry one — `{"kind":
+  "corroborate-void"}` or `{"kind": "refile-to-pipeline-repo", "paths":
+  [...]}`; omit it in every other case, which is most of them. A verdict
+  carrying an act the mandate does not reach — the wrong rung, an
+  unrecognised `kind`, a `corroborate-void` on an item that is not one of
+  the three pull-request shapes, or a `refile-to-pipeline-repo` whose paths
+  the Script cannot corroborate — is refused whole and escalated, with the
+  act named in the refusal. An act is a proposal, never a description of
+  something you did: you never perform one yourself.
 - `decision`, `rationale` and `options_considered` belong only to `decide`;
   omit them otherwise. All three are recorded on the `decision-taken` event
   and, for an item that is itself a GitHub issue, posted as one comment on its

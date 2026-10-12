@@ -42,6 +42,10 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$REPO_ROOT/lib/cycle-state.sh"
 # shellcheck source=lib/decision-veto.sh
 . "$REPO_ROOT/lib/decision-veto.sh"
+# shellcheck source=lib/pipeline-marker.sh
+. "$REPO_ROOT/lib/pipeline-marker.sh"
+# shellcheck source=lib/refile.sh
+. "$REPO_ROOT/lib/refile.sh"
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
@@ -374,6 +378,138 @@ run "$pending_veto_actions"
 calls="$(log_event_calls)"
 assert_eq_n "a veto with no pending act still logs the veto" "1" "^decision-vetoed" "$calls"
 assert_eq_n "...and logs no cancellation, because there was nothing to cancel" "0" "^decision-acted" "$calls"
+: > "$union_log"
+
+# ============================================================================
+# run_pending_decision_acts, reach (c) (docs/STANDING-DECISIONS.md,
+# 2026-10-12): the `refile-to-pipeline-repo` act. The same sweep, the same
+# window and lever; what differs is the act, which has outcomes short of
+# performing it. `gh` is a richer stand-in here — the act reads the
+# original, searches for an earlier copy, files, closes and comments —
+# dispatching on its first two words and recording every call.
+# ============================================================================
+
+crash_loop_repo="pipe/ops"
+pager_repo=""
+RF_PRESENT=$'pipe/ops scripts/sweep-closed-issues.sh\npipe/ops prompts/implementer.md'
+RF_ORIG_STATE="OPEN"
+RF_LIST='[]'
+RF_CREATE_FAIL=""
+# shellcheck disable=SC2317  # invoked only by run_pending_decision_acts and lib/refile.sh
+gh() {
+  printf '%s\n' "$*" >> "$GH_CALLS_FILE"
+  case "$1 $2" in
+    "issue view")
+      if [[ "$*" == *"--json state"* ]]; then
+        [[ -z "$GH_ISSUE_FAIL" ]] || return 1
+        printf '%s' "$GH_ISSUE_STATE"
+      else
+        jq -nc --arg s "$RF_ORIG_STATE" \
+          '{title: "sweep-closed-issues.sh resolves one item", body: "## The gap\n\nBlocked-by: #516\nthe body",
+            state: $s, labels: [{name: "pw::type:tech-debt"}, {name: "blocked"}],
+            url: "https://github.com/acme/widgets/issues/515"}'
+      fi ;;
+    "api repos/"*)
+      local target="${2#repos/}" repo path
+      repo="${target%%/contents/*}"; path="${target#*/contents/}"
+      if grep -qxF "$repo $path" <<<"$RF_PRESENT"; then printf '{"type":"file"}'; return 0; fi
+      printf 'gh: Not Found (HTTP 404)\n' >&2; return 1 ;;
+    "issue list") printf '%s' "$RF_LIST" ;;
+    "issue create")
+      [[ -z "$RF_CREATE_FAIL" ]] || return 1
+      printf 'https://github.com/pipe/ops/issues/900\n' ;;
+    *) return 0 ;;
+  esac
+}
+refile_evt() {  # refile_evt ISSUE_NUMBER ACT_AFTER -> one decision-taken line carrying the act
+  jq -nc --arg n "$1" --arg aa "$2" \
+    '{ts: "2026-09-01T00:00:00Z", event: "decision-taken", repo: "acme/widgets", item: "515",
+      decision: "re-file it in the pipeline repository", rationale: "nothing here can implement it",
+      issue_number: ($n | tonumber), issue_url: ("https://github.com/acme/widgets/issues/" + $n),
+      act: {kind: "refile-to-pipeline-repo", paths: ["scripts/sweep-closed-issues.sh", "prompts/implementer.md"]},
+      act_after: $aa}'
+}
+
+# --- performed: re-check, file, close, record ------------------------------
+GH_ISSUE_STATE="CLOSED"; GH_ISSUE_FAIL=""
+run_acts "$(refile_evt 801 "$past")"
+calls="$(log_event_calls)"
+gh_calls="$(cat "$GH_CALLS_FILE")"
+assert_eq_n "reach (c): no item-void is written — this act is not a void" "0" "^item-void" "$calls"
+assert_contains "reach (c): the paths are re-checked live where the item was filed" \
+  "api repos/acme/widgets/contents/scripts/sweep-closed-issues.sh" "$gh_calls"
+assert_contains "reach (c): ...and in the pipeline repository" \
+  "api repos/pipe/ops/contents/prompts/implementer.md" "$gh_calls"
+assert_contains "reach (c): the copy is filed in the pipeline repository" \
+  "issue create -R pipe/ops --title sweep-closed-issues.sh resolves one item" "$gh_calls"
+assert_contains "reach (c): the original is closed as not planned" \
+  "issue close 515 -R acme/widgets --reason not planned" "$gh_calls"
+assert_eq_n "reach (c): exactly one decision-acted" "1" "^decision-acted" "$calls"
+acted_fields="$(grep '^decision-acted' <<<"$calls" | cut -f2-)"
+assert_eq "reach (c): ...performed" "performed" "$(jq -r '.outcome' <<<"$acted_fields")"
+assert_eq "reach (c): ...naming the copy" "https://github.com/pipe/ops/issues/900" "$(jq -r '.refiled.url' <<<"$acted_fields")"
+assert_eq "reach (c): ...and its repository" "pipe/ops" "$(jq -r '.refiled.repo' <<<"$acted_fields")"
+assert_eq "reach (c): ...carrying the act's own paths" "2" "$(jq -r '.act.paths | length' <<<"$acted_fields")"
+assert_eq_n "reach (c): the item is unblocked, the ordinary way" "1" "^unblocked" "$calls"
+assert_eq "reach (c): no warning" "0" "$(grep -c '^warning' <<<"$calls" || true)"
+
+# --- refused: the re-check fails, because the file now exists where the item
+# was filed — the fact the verdict rested on no longer holds -------------------
+RF_PRESENT=$'acme/widgets scripts/sweep-closed-issues.sh\npipe/ops scripts/sweep-closed-issues.sh\npipe/ops prompts/implementer.md'
+run_acts "$(refile_evt 802 "$past")"
+calls="$(log_event_calls)"
+gh_calls="$(cat "$GH_CALLS_FILE")"
+assert_eq_n "reach (c) refused: one decision-acted retires the act" "1" "^decision-acted" "$calls"
+acted_fields="$(grep '^decision-acted' <<<"$calls" | cut -f2-)"
+assert_eq "reach (c) refused: ...as refused" "refused" "$(jq -r '.outcome' <<<"$acted_fields")"
+assert_contains "reach (c) refused: ...with the path in its reason" \
+  '`scripts/sweep-closed-issues.sh` exists in acme/widgets' "$(jq -r '.reason' <<<"$acted_fields")"
+assert_eq_n "reach (c) refused: exactly one warning" "1" "^warning" "$calls"
+assert_eq_n "reach (c) refused: nothing is unblocked" "0" "^unblocked" "$calls"
+assert_eq "reach (c) refused: nothing is filed" "0" "$(grep -c '^issue create' <<<"$gh_calls" || true)"
+assert_eq "reach (c) refused: nothing is closed" "0" "$(grep -c '^issue close' <<<"$gh_calls" || true)"
+assert_contains "reach (c) refused: the refusal is said on the decision-log issue" \
+  "issue comment 802 -R acme/widgets" "$gh_calls"
+RF_PRESENT=$'pipe/ops scripts/sweep-closed-issues.sh\npipe/ops prompts/implementer.md'
+
+# --- refused: the original is already closed — someone acted first --------
+RF_ORIG_STATE="CLOSED"
+run_acts "$(refile_evt 803 "$past")"
+calls="$(log_event_calls)"
+gh_calls="$(cat "$GH_CALLS_FILE")"
+acted_fields="$(grep '^decision-acted' <<<"$calls" | cut -f2-)"
+assert_eq "reach (c) closed original: refused" "refused" "$(jq -r '.outcome' <<<"$acted_fields")"
+assert_contains "reach (c) closed original: ...saying someone acted first" "already closed" \
+  "$(jq -r '.reason' <<<"$acted_fields")"
+assert_eq "reach (c) closed original: nothing is filed" "0" "$(grep -c '^issue create' <<<"$gh_calls" || true)"
+RF_ORIG_STATE="OPEN"
+
+# --- waits: the create fails; the act is still owed, and the next cycle
+# performs it ---------------------------------------------------------------
+RF_CREATE_FAIL=1
+run_acts "$(refile_evt 804 "$past")"
+calls="$(log_event_calls)"
+assert_eq_n "reach (c) create failed: no decision-acted — the act is still owed" "0" "^decision-acted" "$calls"
+assert_eq_n "reach (c) create failed: one warning says why" "1" "^warning" "$calls"
+assert_contains "reach (c) create failed: ...naming the repository" "could not file the copy in pipe/ops" \
+  "$(grep '^warning' <<<"$calls" | cut -f2- | jq -r '.detail')"
+RF_CREATE_FAIL=""
+run_acts "$(refile_evt 804 "$past")"
+calls="$(log_event_calls)"
+assert_eq "reach (c) create failed: the next cycle performs it" "performed" \
+  "$(grep '^decision-acted' <<<"$calls" | cut -f2- | jq -r '.outcome')"
+
+# --- idempotent: a copy already carrying the marker is reused, the close
+# alone is made ---------------------------------------------------------------
+RF_LIST='[{"number":890,"url":"https://github.com/pipe/ops/issues/890","body":"<!-- agent-ops:refiled-from repo=acme/widgets item=515 -->"}]'
+run_acts "$(refile_evt 805 "$past")"
+calls="$(log_event_calls)"
+gh_calls="$(cat "$GH_CALLS_FILE")"
+assert_eq "reach (c) reuse: no second filing" "0" "$(grep -c '^issue create' <<<"$gh_calls" || true)"
+assert_eq "reach (c) reuse: the close is made" "1" "$(grep -c '^issue close' <<<"$gh_calls" || true)"
+assert_eq "reach (c) reuse: the record names the copy found" "https://github.com/pipe/ops/issues/890" \
+  "$(grep '^decision-acted' <<<"$calls" | cut -f2- | jq -r '.refiled.url')"
+RF_LIST='[]'
 : > "$union_log"
 
 echo

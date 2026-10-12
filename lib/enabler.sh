@@ -261,9 +261,11 @@ create_decision_log_issue() {
 # becomes due, so the lever a reader is being offered is a lever *before* the
 # fact rather than only after it. Both empty for every decision that carries
 # no act, which is every decision at every rung below `decide-with-veto`.
+# ACT_PATHS is reach (c)'s verified paths as Markdown, so the lever's own
+# body says which files the re-file rests on; empty for every other act.
 enabler_decision_log_body() {
   local decision="$1" rationale="$2" options="$3" model="$4" cycle="$5" comment_url="$6" repo="$7" item="$8"
-  local reason_key="${9:-}" act_kind="${10:-}" act_after="${11:-}"
+  local reason_key="${9:-}" act_kind="${10:-}" act_after="${11:-}" act_paths="${12:-}"
   local body
   body="<!-- agent-ops:decision-log item=$item repo=$repo reason_key=$reason_key -->
 
@@ -283,7 +285,10 @@ Comment: $comment_url"
   if [[ -n "$act_kind" ]]; then
     body="$body
 
-**Act:** \`$act_kind\`
+**Act:** \`$act_kind\`"
+    [[ -n "$act_paths" ]] && body="$body
+**Paths:** $act_paths"
+    body="$body
 **Acts after:** $act_after
 
 This decision carries an act, so nothing has happened yet: the pipeline
@@ -931,9 +936,10 @@ escalation_autonomy_decide_pass_available() {
 #
 # MANDATE is `tactical` at `decide-tactical` and `delegate` at
 # `decide-with-veto` (requirement 36f), and reaches the pass verbatim as the
-# input's own `mandate` field: it is what tells the pass which of the two
-# reaches the delegate mandate adds — condition 2's acceptance clause, and
-# the human corroboration of a void — are open to it this run. Only the
+# input's own `mandate` field: it is what tells the pass which of the three
+# reaches the delegate mandate adds — condition 2's acceptance clause, the
+# human corroboration of a void, and the relocation of a misfiled item
+# (lib/refile.sh) — are open to it this run. Only the
 # delegate mandate may return an `act`, and this function is where that is
 # enforced rather than in the caller, so every refusal reads the same way an
 # unreadable verdict does (below) whichever rung produced it.
@@ -948,7 +954,7 @@ run_enabler_decide() {
   local repo="$1" item="$2" claimed_entry="$3" ex="$4" cycle_dir="$5" idx="$6"
   local mandate="${7:-tactical}"
   local input prompt out rc=0 result parsed verdict evidence decision rationale options
-  local act act_kind
+  local act act_kind act_checked
   local critical_model="${enabler_model_critical:-$enabler_model}"
   local precedents
 
@@ -974,7 +980,8 @@ run_enabler_decide() {
     --argjson escalation "$(jq -c '{title: (.issue.title // ""), body: (.issue.body // "")}' <<<"$ex" 2>/dev/null || printf '{}')" \
     --argjson precedents "$precedents" \
     --arg mandate "$mandate" \
-    '{repo: $r, item: $i, kind: $kind, mandate: $mandate, refinement: $refinement, reflag: $reflag, escalation: $escalation, precedents: $precedents}' \
+    --arg pipeline_repo "$(decision_pipeline_repo 2>/dev/null || true)" \
+    '{repo: $r, item: $i, kind: $kind, mandate: $mandate, pipeline_repo: $pipeline_repo, refinement: $refinement, reflag: $reflag, escalation: $escalation, precedents: $precedents}' \
     2>/dev/null || true)"
   if [[ -z "$input" ]]; then
     printf '{"verdict":"escalate","evidence":"could not build the decide-tactical input"}'
@@ -1034,9 +1041,11 @@ $(jq . <<<"$input")
   fi
 
   # The act (requirement 36f). Only a `decide` verdict under the delegate
-  # mandate may carry one, and only the one kind the mandate names, on only
-  # the three pull-request shapes requirement 34k actually closes. Each of
-  # the three refusals below is an `escalate` naming the act, on exactly the
+  # mandate may carry one, and only a kind the mandate names:
+  # `corroborate-void` on one of the three pull-request shapes requirement
+  # 34k actually closes, or `refile-to-pipeline-repo` on an issue whose
+  # named paths the Script can corroborate itself (lib/refile.sh). Each of
+  # the refusals below is an `escalate` naming the act, on exactly the
   # reading the missing-decision check above uses: a verdict this system may
   # not act on is not a decision, whatever it called itself. Enforced here
   # rather than in the caller so that a pass which proposes an act at the
@@ -1053,10 +1062,23 @@ $(jq . <<<"$input")
       verdict="escalate"
       evidence="the decide pass proposed the act \"${act_kind:-(unnamed)}\", which is out of mandate at this rung: only escalation_autonomy \"decide-with-veto\" carries the delegate mandate (requirement 36f) that may perform one.${evidence:+ The pass reported: $evidence}"
       act=""
-    elif [[ "$act_kind" != "corroborate-void" ]]; then
+    elif [[ "$act_kind" != "corroborate-void" && "$act_kind" != "refile-to-pipeline-repo" ]]; then
       verdict="escalate"
-      evidence="the decide pass proposed the act \"${act_kind:-(unnamed)}\", which the delegate mandate does not name — requirement 36f reaches exactly one act, \"corroborate-void\".${evidence:+ The pass reported: $evidence}"
+      evidence="the decide pass proposed the act \"${act_kind:-(unnamed)}\", which the delegate mandate does not name — requirement 36f reaches exactly two acts, \"corroborate-void\" and \"refile-to-pipeline-repo\".${evidence:+ The pass reported: $evidence}"
       act=""
+    elif [[ "$act_kind" == "refile-to-pipeline-repo" ]]; then
+      # Reach (c): the Script corroborates the one fact the act rests on
+      # itself — every named path absent where the item was filed, present
+      # in the pipeline's repository — and refuses the act on anything it
+      # cannot establish (lib/refile.sh). The normalised act is what is
+      # carried onward, so the record names exactly the paths checked.
+      if act_checked="$(refile_act_check "$repo" "$item" "$act")"; then
+        act="$act_checked"
+      else
+        verdict="escalate"
+        evidence="the decide pass proposed the act \"refile-to-pipeline-repo\" for $repo#$item, which the Script could not corroborate: ${act_checked:-no reason given}.${evidence:+ The pass reported: $evidence}"
+        act=""
+      fi
     elif [[ ! "$item" =~ ^pr-[0-9]+-(abandoned|review|superseded)- ]]; then
       verdict="escalate"
       evidence="the decide pass proposed the act \"corroborate-void\" for item \"$item\", which is not one of the three pull-request shapes requirement 34d corroborates and requirement 34k closes (pr-<n>-abandoned-…, pr-<n>-review-…, pr-<n>-superseded-…).${evidence:+ The pass reported: $evidence}"
@@ -1137,6 +1159,7 @@ maybe_run_enabler() {
   local e_dec_decision_text e_dec_rationale e_dec_options e_dec_comment_url
   local e_dec_log_number e_dec_log_url e_dec_log_title e_dec_log_body_file e_dec_log_created
   local e_dec_mandate e_dec_act e_dec_act_kind e_dec_act_after e_dec_pending e_dec_window
+  local e_dec_act_paths
   local e_file_debt fd_title fd_body fd_result fd_number fd_url \
     fd_default_fix fd_owner_decision
   local e_file_issue fi_title fi_body fi_body_file fi_result fi_number fi_url \
@@ -1775,9 +1798,12 @@ $(jq . <<<"$input")
               [[ "$e_dec_act" == "null" ]] && e_dec_act=""
               e_dec_act_kind=""
               e_dec_act_after=""
+              e_dec_act_paths=""
               if [[ -n "$e_dec_act" ]]; then
                 e_dec_pending=1
                 e_dec_act_kind="$(jq -r '.kind // ""' <<<"$e_dec_act" 2>/dev/null || true)"
+                e_dec_act_paths="$(jq -r '(.paths // []) | map("`" + . + "`") | join(", ")' \
+                                     <<<"$e_dec_act" 2>/dev/null || true)"
                 e_dec_window="${decision_veto_window_hours:-24}"
                 [[ "$e_dec_window" =~ ^[0-9]+$ ]] || e_dec_window=24
                 e_dec_act_after="$(date -u -d "+${e_dec_window} hours" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || true)"
@@ -1807,7 +1833,7 @@ $(jq . <<<"$input")
               enabler_decision_log_body "$e_dec_decision_text" "$e_dec_rationale" "$e_dec_options" \
                 "${enabler_model_critical:-$enabler_model}" "$cycle_id" "$e_dec_comment_url" \
                 "$e_repo" "$e_item" "$e_dec_reason_key" \
-                "$e_dec_act_kind" "$e_dec_act_after" > "$e_dec_log_body_file"
+                "$e_dec_act_kind" "$e_dec_act_after" "$e_dec_act_paths" > "$e_dec_log_body_file"
               if e_dec_log_created="$(create_decision_log_issue "$e_repo" "$e_item" "pw::decision" \
                                         "$e_dec_log_title" "$e_dec_log_body_file" "$e_dec_reason_key")" \
                    && [[ -n "$e_dec_log_created" ]]; then

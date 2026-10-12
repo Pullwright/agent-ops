@@ -697,7 +697,7 @@
    twice and confirming the second call still yields the recorded set, the
    fact that stops the sweep re-closing an object a human has since reopened
    by hand rather than through `unvoid_label`.
-36f. **The delegate mandate reaches exactly two things, and its act waits out
+36f. **The delegate mandate reaches exactly three things, and its act waits out
    the veto window (requirement 36f).**
    `test/escalation-autonomy.test.sh` passes:
    `escalation_autonomy_configured_level` resolves `decide-with-veto` from
@@ -734,6 +734,44 @@
    records for a log issue still carrying a pending act logs
    `decision-acted` with `outcome: "cancelled"`, so the cancellation is on
    the record rather than merely absent from the pending set.
+   `test/refile.test.sh` passes against a stubbed `gh` (reach (c)):
+   `refile_paths_normalise` refuses an empty list, more than the cap, and
+   any path with a leading `/`, a `.` or `..` segment, an empty segment or a
+   trailing `/`, and de-duplicates the rest; `refile_path_state` reads a
+   success as present, an `HTTP 404` as absent and anything else — a network
+   failure, a rate limit — as unknown; `refile_paths_verify` holds only when
+   every path is absent where the item was filed and present in the
+   pipeline's repository, naming the first path and repository that fail,
+   and refuses an unknown in either direction; `refile_act_check` refuses a
+   pull-request void shape and a register id, an unconfigured pipeline
+   repository, and the item's own repository as the target, and resolves
+   `pager_repo` ahead of `crash_loop_repo`; and `refile_perform` files the
+   copy with the original's title, its body less every `Blocked-by:` line,
+   the `agent-ops:refiled-from` marker and `pw::type:tech-debt` where the
+   original carried it (retrying unlabelled once), closes the original as
+   not planned with a comment naming the copy and the decision, reuses a
+   copy already carrying the marker rather than filing twice, returns the
+   wait code on an unreadable original, a failed create and a failed close
+   (naming the copy it did file), and the refuse code on an original already
+   closed. `test/enabler-verdicts.test.sh`'s decide gate passes for reach
+   (c): a `refile-to-pipeline-repo` act survives, normalised, only when
+   every named path reads 404 where the item was filed and a success in the
+   pipeline's repository, with `pipeline_repo` in the pass's runtime input;
+   it is refused — the escalation naming the path and the repository — when
+   a path exists where the item was filed, is absent from the pipeline's
+   repository or cannot be read at all, when the item is not an issue
+   number, when the act names no paths, at `decide-tactical`, and when no
+   pipeline repository is configured or it is the item's own.
+   `test/decision-veto-sweep.test.sh` passes for reach (c): a due
+   `refile-to-pipeline-repo` act re-checks its paths, files the copy, closes
+   the original and logs `decision-acted` (`outcome: "performed"`,
+   `refiled.url`, the act's own `paths`) and `unblocked`, writing no
+   `item-void`; a re-check that fails retires it as `refused` with the path
+   in `reason`, a `warning`, one comment on the decision-log issue and no
+   filing; an original already closed is `refused` the same way; a create
+   that fails leaves the act pending — a `warning` and no `decision-acted` —
+   and the next cycle performs it; and a copy already carrying the marker is
+   reused, so only the close is made.
    `test/close-void-github-items.test.sh` passes its `stage: "decision"`
    case: such a void closes its pull request through the ordinary
    `pr-<n>-…` branch, exactly as an `enabler` one does, while an

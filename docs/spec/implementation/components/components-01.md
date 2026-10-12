@@ -204,7 +204,8 @@ What exists, and the requirements each part answers to:
    inline block it replaces, runs — in this order — `gather_ordered_repos`/
    `compute_skip_lists` (`lib/candidate-gather.sh`), the band eligibility and
    Enabler/Refiner pre-fetch pass (`lib/eligibility.sh`), the decision-veto
-   sweep and pending decision acts (`lib/decision-veto.sh`), back-pressure's
+   sweep and pending decision acts (`lib/decision-veto.sh`, with
+   `lib/refile.sh` performing requirement 36f's relocation act), back-pressure's
    narrowing of the finishing sources (requirement 2.2a), the requirement-4i
    prompt-fit ladder (`lib/coordinator-input.sh`) and the no-op short-circuit
    (requirement 3b, `lib/noop-skip.sh`). Several of its paths exit the cycle
