@@ -277,6 +277,20 @@ every envelope the evaluation record captured. This is a known gap in the
 record, not a derivation bug: there is nothing in `lib/metering.sh` to fix,
 because the envelope itself never carries the figure.
 
+A Grok Build stage run on the xAI subscription credential path (issue
+#2139, a device-code login rather than `XAI_API_KEY`) carries a second,
+larger gap today: xAI's own `streaming-messages-json` format reports an
+unknown cost as the literal `0` rather than omitting the field, so
+`total_cost_usd`/`modelUsage.*.costUSD` read as a genuine zero rather than
+`null` — the opposite of D21's own convention, under which an unknown figure
+must never read as a free run. The adapter does not yet correct this: doing
+so needs the `init` event's own `apiKeySource` to tell the two credential
+paths apart, which `lib/substrate-grok-build.sh` does not read (issue #2246,
+blocked on #2139, adds it). Until #2246 lands, a subscription-lane Grok
+Build run's `cost_usd` is an undercount that reads as exactly `0`, not
+`null`, and should be read with that caveat rather than trusted at face
+value.
+
 ## Where it's produced and consumed
 
 - **Produced:** `lib/metering.sh` (`metering_fields`), called from every

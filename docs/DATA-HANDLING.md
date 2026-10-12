@@ -23,6 +23,19 @@ Anthropic's own API for a Claude Code stage, or xAI's for a Grok Build one
 (`providers`, [docs/reference/configuration.md](reference/configuration.md)).
 Neither sends this content anywhere else on the installation's behalf.
 
+A node authenticating the xAI provider's subscription credential path
+(issue #2139, `docker compose exec scheduler grok login --device-auth`)
+contacts `auth.x.ai` to complete the device-code login; the subscriber
+completes the sign-in itself, in their own browser, on `accounts.x.ai`,
+which the node never reaches, and nothing beyond that login exchange is
+sent to `auth.x.ai`. Where a subscription-authenticated stage's own model
+traffic lands — `api.x.ai`, as the API-key path uses, or
+`cli-chat-proxy.grok.com`, which Grok Build's model catalogue names for
+this path — is not yet confirmed against the egress fence (no live
+subscription was available to test it; tracked as tech debt in #2330), so
+this domain is not yet on `deploy/docker/egress-allowlist.txt` and a stage
+on this path may need it added once that is confirmed.
+
 A Grok Build stage sends one thing beyond the stage's own prompt: xAI's own
 CLI also sends the head of that same prompt, truncated, to a second xAI
 model (`grok-4.6`) to generate a session title, on every run, with no switch
