@@ -105,19 +105,31 @@ review_recommendation_tech_debt_id() {
 #
 # The backtick form takes priority when a line somehow carries both — it is
 # the more specific citation, and nothing mints a recommendation naming both a
-# register id and an issue number for the same gap. Prints nothing and returns
-# 1 when the section cannot be resolved, or is resolved but names no tracking
-# id at all (issue #2171's "no twin to resolve" case, left to the caller).
+# register id and an issue number for the same gap — but every backtick-quoted
+# id on the line is emitted, not just the first: a line naming two register
+# ids only resolves once both of them do (issue #2355), never once either
+# alone does. A bare id only matches a standalone `#NNN`; one prefixed with an
+# `owner/repo` form (`owner/repo#123`) names a different repository's issue
+# and is never emitted here, since resolving it against this repository's own
+# open-issue digest would answer for the wrong repo entirely (issue #2355).
+# Prints nothing and returns 1 when the section cannot be resolved, or is
+# resolved but names no tracking id at all (issue #2171's "no twin to
+# resolve" case, left to the caller).
 review_recommendation_tracking_ids() {
   local section line ids
   section="$(review_recommendation_section "$@")" || return 1
   line="$(grep -m1 -E 'Tech-debt items?:' <<<"$section")"
   [[ -n "$line" ]] || return 1
-  if [[ "$line" =~ \`([^\`]+)\` ]]; then
-    printf '%s\n' "${BASH_REMATCH[1]}"
+  # shellcheck disable=SC2016  # the backticks are literal Markdown, not command substitution.
+  ids="$(grep -oE '`[^`]+`' <<<"$line" | sed -E 's/^`(.*)`$/\1/')"
+  if [[ -n "$ids" ]]; then
+    printf '%s\n' "$ids"
     return 0
   fi
-  ids="$(grep -oE '#[0-9]+' <<<"$line" | tr -d '#')"
+  # Drop any complete owner/repo#NNN span before matching bare ids, so a
+  # cross-repository reference is never stripped down to a standalone number.
+  ids="$(sed -E 's/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+#[0-9]+//g' <<<"$line" \
+    | grep -oE '#[0-9]+' | tr -d '#')"
   [[ -n "$ids" ]] || return 1
   printf '%s\n' "$ids"
 }

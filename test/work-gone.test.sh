@@ -489,7 +489,9 @@ STUB_PULLS_MODE=hit
 # --- #2333) -----------------------------------------------------------------
 # Covers all three text shapes observed in the wild: a single bare `#NNN`
 # (R-01), several "and"-joined (R-02, this item's own trigger shape), and one
-# backtick-quoted register id (R-03). R-04 names no tracking line at all.
+# backtick-quoted register id (R-03). R-04 names no tracking line at all. R-05
+# and R-06 are issue #2355's two over-clearing edge shapes: two backtick-quoted
+# register ids on one line, and a bare id prefixed with an owner/repo form.
 export STUB_RECS_FILE="$tmp_dir/recs.md"
 # shellcheck disable=SC2016  # the backtick below is literal Markdown.
 cat >"$STUB_RECS_FILE" <<'RECS'
@@ -508,6 +510,14 @@ cat >"$STUB_RECS_FILE" <<'RECS'
 ## R-04 — no tracking line at all
 
 **Approach:** nothing to track here.
+
+## R-05 — two backtick register ids on the same line
+
+**Approach:** a third thing. Tech-debt items: `TD-PPpfid-26080910` and `TD-PPpfid-26080911`.
+
+## R-06 — a bare id prefixed with owner/repo
+
+**Approach:** see the other repo. Tech-debt item: Poetic-Poems/poetic-fiddle#999.
 RECS
 export STUB_RECS_MODE=hit
 
@@ -532,6 +542,21 @@ printf '[432]' > "$issues_file"
 assert_eq "  ... but not while only one of the two is closed" \
   "{}" "$(run_review_gather --issues-file "$issues_file" review-2026-09-28-R-02)"
 
+# issue #2355: a malformed/non-array --issues-file must answer "unknown", not
+# "closed" — tracking_id_closed's own jq call used to treat any jq failure
+# (a parse error, or a type it cannot index) the same as a clean "not found in
+# the open list", over-clearing on a digest it could not actually read. Not
+# reachable through the one wired caller today (candidate-gather always
+# supplies either a jq-produced array or an empty, guarded file), so this is a
+# direct exercise of gather-review-status.sh's own --issues-file contract
+# rather than of anything candidate-gather would ever pass it.
+printf '{"not":"an array"}' > "$issues_file"
+assert_eq "a non-array issues digest answers unknown, not closed" \
+  "{}" "$(run_review_gather --issues-file "$issues_file" review-2026-09-28-R-01)"
+printf 'not even json' > "$issues_file"
+assert_eq "  ... and so does one jq cannot parse at all" \
+  "{}" "$(run_review_gather --issues-file "$issues_file" review-2026-09-28-R-01)"
+
 printf '{"TD-PPpfid-26080907":"resolved"}' > "$register_file"
 assert_eq "a backtick register-id recommendation clears once the register resolves it" \
   "tracked-closed" \
@@ -551,6 +576,23 @@ assert_eq "  ... and neither does a register map that never answered for it" \
 printf '[]' > "$issues_file"
 assert_eq "a recommendation with no tracking line at all is unaffected" \
   "{}" "$(run_review_gather --issues-file "$issues_file" --register-file "$register_file" review-2026-09-28-R-04)"
+
+# issue #2355: a line naming two register ids only clears once *both* resolve.
+printf '{"TD-PPpfid-26080910":"resolved","TD-PPpfid-26080911":"open"}' > "$register_file"
+assert_eq "two backtick register ids on one line do not clear while either is open" \
+  "{}" "$(run_review_gather --register-file "$register_file" review-2026-09-28-R-05)"
+printf '{"TD-PPpfid-26080910":"resolved","TD-PPpfid-26080911":"resolved"}' > "$register_file"
+assert_eq "  ... and clear once both resolve" \
+  "tracked-closed" \
+  "$(run_review_gather --register-file "$register_file" review-2026-09-28-R-05 \
+     | jq -r '.["review-2026-09-28-R-05"] // ""')"
+
+# issue #2355: a bare id prefixed with owner/repo names a different
+# repository's issue and must never be resolved against this repo's own
+# open-issue digest, even when the number happens to coincide.
+printf '[999]' > "$issues_file"
+assert_eq "a bare owner/repo#999 reference is never resolved against local issue 999" \
+  "{}" "$(run_review_gather --issues-file "$issues_file" review-2026-09-28-R-06)"
 
 export STUB_CALL_LOG="$tmp_dir/gh-calls.log"
 : > "$STUB_CALL_LOG"

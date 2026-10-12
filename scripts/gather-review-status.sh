@@ -137,12 +137,19 @@ merged_text="$(jq -r '[ .[] | select(.merged_at != null)
 
 # tracking_id_closed ID — whether ID (a bare issue number or a register id)
 # is itself closed/resolved, decided only from ISSUES_JSON/REGISTER_JSON — see
-# the file header for why no fetch happens here.
+# the file header for why no fetch happens here. A malformed or non-array
+# ISSUES_JSON answers "not closed" (unknown), the same as "absent digest"
+# above it — distinct from a clean read that finds ID genuinely missing from
+# the open-issue list, which alone answers "closed" (issue #2355: the two
+# used to be conflated, both exiting the `! jq -e index(...)` pipeline the
+# same way when jq itself failed to parse or type-check the input).
 tracking_id_closed() {
   local id="$1"
   if [[ "$id" =~ ^[0-9]+$ ]]; then
     [[ -n "$issues_json" ]] || return 1
-    ! jq -e --argjson n "$id" 'index($n) != null' <<<"$issues_json" >/dev/null 2>&1
+    jq -e --argjson n "$id" \
+      'if type != "array" then error("issues digest is not an array") else (index($n) == null) end' \
+      <<<"$issues_json" >/dev/null 2>&1
   else
     local status
     status="$(jq -r --arg k "$id" '.[$k] // ""' <<<"$register_json" 2>/dev/null | tr '[:upper:]' '[:lower:]')"
