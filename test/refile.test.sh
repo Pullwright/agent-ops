@@ -20,6 +20,10 @@
 
 set -uo pipefail
 
+# The reasons lib/refile.sh prints are Markdown, so the expected strings
+# below carry literal backticks.
+# shellcheck disable=SC2016
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # shellcheck source=lib/pipeline-marker.sh
