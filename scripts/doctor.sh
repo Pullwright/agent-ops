@@ -2743,9 +2743,16 @@ fi
 # key (XAI_API_KEY, the `api` lane) and a device-code login
 # ($GROK_HOME/auth.json, the `subscription` lane) can both be present on the
 # same node at once, so this reports both independently, mirroring the
-# Claude section above — against each one's own `providers.xai.lanes` entry
-# (PROVIDER_LANES, lib/model-id.sh, already generalised to every provider by
-# #2240/#2280) via the same `lane_enabled_desc` helper that section defines.
+# Claude section above — against each one's own `providers.<name>.lanes`
+# entry (PROVIDER_LANES, lib/model-id.sh, already generalised to every
+# provider by #2240/#2280) via the same `lane_enabled_desc` helper that
+# section defines. Keyed by the configured provider's own name, read out of
+# the same loop that found it, never the literal `xai`: `grok-build` is open
+# to any provider name (requirement 1a), unlike `claude-code`, which is
+# reserved to `anthropic` and so is the one the Claude section may name as a
+# literal. An installation naming two grok-build providers reports the last
+# one's lanes, the same arbitrary-but-harmless choice `grok_configured`
+# itself already makes.
 # Unlike the Claude section's own subscription lane, this is never a live
 # call: completing `grok login --device-auth` is an interactive operator
 # step this check must never attempt itself (the Enabler's note on #2139),
@@ -2754,15 +2761,19 @@ fi
 # stage, is what would surface an expired one.
 
 grok_configured=0
+grok_provider=""
 for _p in "${!PROVIDER_SUBSTRATE[@]}"; do
-  [[ "${PROVIDER_SUBSTRATE[$_p]}" == "grok-build" ]] && grok_configured=1
+  if [[ "${PROVIDER_SUBSTRATE[$_p]}" == "grok-build" ]]; then
+    grok_configured=1
+    grok_provider="$_p"
+  fi
 done
 
 if (( grok_configured )); then
   section "xAI"
 
   xai_credential_ok=0
-  xai_lanes_json="${PROVIDER_LANES[xai]:-}"
+  xai_lanes_json="${PROVIDER_LANES[$grok_provider]:-}"
   xai_api_lane_weight="$(jq -r '.api.weight // 1' <<<"${xai_lanes_json:-{\}}" 2>/dev/null)"
   xai_api_lane_enabled="$(jq -r '.api.enabled' <<<"${xai_lanes_json:-{\}}" 2>/dev/null)"
   xai_sub_lane_weight="$(jq -r '.subscription.weight // 0' <<<"${xai_lanes_json:-{\}}" 2>/dev/null)"
@@ -2770,8 +2781,21 @@ if (( grok_configured )); then
 
   xai_auth_file="${GROK_HOME:-$HOME/.grok-run}/auth.json"
   xai_sub_present=0
-  if [[ -s "$xai_auth_file" ]] && jq -e . "$xai_auth_file" >/dev/null 2>&1; then
+  xai_sub_unparsed=0
+  # Presence is `-s` alone — never a successful parse. The login runs as the
+  # *stage* user (deploy/docker/grok-shim.sh puts every `grok` through
+  # stage-exec), and xAI's own documentation keeps auth.json owner-only, so
+  # this check, which runs as the Script's user, may be unable to read a file
+  # it can still stat — and `-s` needs only the directory `$GROK_HOME` that
+  # the image already shares between the two users. Taking the parse as the
+  # presence signal would report a completed login as absent and, on a node
+  # holding no key, fail the whole section over it. A parse failure is only
+  # ever reported where the file was actually readable.
+  if [[ -s "$xai_auth_file" ]]; then
     xai_sub_present=1
+    if [[ -r "$xai_auth_file" ]] && ! jq -e . "$xai_auth_file" >/dev/null 2>&1; then
+      xai_sub_unparsed=1
+    fi
   fi
 
   if ((offline)); then
@@ -2787,6 +2811,9 @@ if (( grok_configured )); then
     if ((xai_sub_present)); then
       xai_credential_ok=1
       ok "subscription lane: $xai_auth_file is present — grok is authenticated via a device-code login (weight $xai_sub_lane_weight, enabled $(lane_enabled_desc "$xai_sub_lane_enabled" 1))"
+      if ((xai_sub_unparsed)); then
+        warn "$xai_auth_file does not parse as JSON — the stored session may be truncated or corrupt; repeat the login (docker compose exec scheduler grok login --device-auth) if a stage fails to authenticate"
+      fi
     else
       ok "subscription lane: absent (weight $xai_sub_lane_weight, enabled $(lane_enabled_desc "$xai_sub_lane_enabled" 0))"
     fi

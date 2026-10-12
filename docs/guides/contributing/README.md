@@ -311,6 +311,11 @@ What carries across every roll:
   a fresh one. The image sets `CLAUDE_CONFIG_DIR` to this volume's mount point
   so the file lands inside it instead. Nothing else moved, and no node needs
   to do anything: the change arrives with the next watchtower roll.
+- **The `grok-config` volume** — the xAI counterpart, for the same reason: a
+  `docker compose exec scheduler grok login --device-auth` session refreshes
+  itself in place, so the device-code login is once per node, not per
+  container. It also holds the seeded `config.toml` and Grok Build's own
+  sessions.
 - **The `state` and `workspaces` volumes** — the pipelines' memory and any
   in-progress clone.
 

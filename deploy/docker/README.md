@@ -919,5 +919,6 @@ fleet across the hour](#spreading-the-fleet-across-the-hour).
 ## Unattended bring-up
 
 `cloud-init.yaml` in this directory performs steps 1–3 on a fresh Ubuntu VM.
-Fill in the two secrets before you paste it as user-data; step 4 (the Claude
-login) is interactive and has to happen afterwards over SSH.
+Fill in the two secrets before you paste it as user-data; step 4's logins
+(Claude's, and the xAI subscription's where this node runs one) are
+interactive and have to happen afterwards over SSH.

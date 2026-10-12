@@ -1202,7 +1202,14 @@
     by its own stable code rather than folded into a bare boolean:
     `credentials-missing` (`$CLAUDE_CONFIG_DIR/.credentials.json` absent —
     existence only, on the same terms `scripts/doctor.sh --unattended`
-    already holds to, requirement 1c), `gh-unauthenticated`/
+    already holds to, requirement 1c — or, where `providers` names an entry
+    whose `substrate` is `grok-build`, that provider carrying neither
+    `XAI_API_KEY` nor a subscription login at `$GROK_HOME/auth.json`, the
+    same existence-only terms and the same code, each cause stating which
+    it is in its own `detail`; the xAI condition is gated on that
+    configuration, so an installation configuring no `grok-build` provider
+    answers exactly as it did before the condition existed),
+    `gh-unauthenticated`/
     `gh-forge-unreachable` (`lib/github-limit.sh`'s `github_auth_probe`, the
     two failure shapes requirement 2.0b already distinguishes),
     `disk-low` (`state_dir`'s free space against `min_free_workspace_bytes`,
