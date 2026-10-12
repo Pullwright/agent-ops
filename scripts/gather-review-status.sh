@@ -49,6 +49,10 @@
 # caller before issue #2333 does) answers "unknown" for that class, so a
 # caller that never passes `--issues-file` gets exactly today's behaviour for
 # every bare-issue tracking id — this signal simply never fires for them.
+# Omitting *both* skips the recommendations read altogether rather than
+# performing it per ref and discarding the answer: nothing either digest could
+# have decided is in hand, so the read could only ever cost a `gh` call and
+# conclude "unknown".
 #
 # Both travel as a *file path*, never inline JSON (requirement 4g): an
 # open-issues digest grows with the repo, unbounded, and an inline
@@ -146,6 +150,19 @@ tracking_id_closed() {
   fi
 }
 
+# Whether either digest can answer for an id at all. A caller that passes
+# neither — `lib/candidate-gather.sh`'s own `void`-purpose call, and every
+# caller that predates this signal — can never confirm a tracking id, so
+# reading the recommendations file for one would be a `gh` call per unmerged
+# ref, every cycle, for an answer already known to be "unknown". Checked
+# before the loop rather than inside it: the two digests are the same for
+# every ref asked about.
+tracking_possible=0
+if [[ -n "$issues_json" ]] \
+   || jq -e 'type == "object" and length > 0' <<<"$register_json" >/dev/null 2>&1; then
+  tracking_possible=1
+fi
+
 out="{}"
 for ref in "$@"; do
   [[ -n "$ref" ]] || continue
@@ -153,6 +170,7 @@ for ref in "$@"; do
     out="$(jq -c --arg k "$ref" '. + {($k): "merged"}' <<<"$out" 2>/dev/null || printf '%s' "$out")"
     continue
   fi
+  (( tracking_possible )) || continue
   tracked_ids="$(review_recommendation_tracking_ids "$ref" "$slug" "$branch" 2>/dev/null || true)"
   [[ -n "$tracked_ids" ]] || continue
   all_closed=1
