@@ -503,25 +503,28 @@
     leaving the repository out is `fail` naming which, and either installation
     read being unreachable is `skip`; Claude credentials check both of D4/D30's
     two lanes independently — the `api` lane's non-empty `ANTHROPIC_API_KEY`
-    shaped `sk-ant-api-...` is `ok`; one shaped `sk-ant-<other family>-...`
-    (agent-ops#2308 — the shape the 2026-10-10 outage's own key had) is
-    `warn` unless `ANTHROPIC_WORKSPACE_ID` is also set, in which case it is
-    `ok`; one not shaped `sk-ant-` at all is `warn` regardless; and its
-    absence is `ok` naming it absent, each naming the lane's configured
-    weight and whether it is enabled; the `subscription`
-    lane's own `claude auth status --json` — run with `ANTHROPIC_API_KEY`
-    stripped from that call's environment, so it is checked regardless of
-    whether the `api` lane above is also present — reporting `loggedIn: true`
-    with a `subscriptionType` is `ok` naming the lane present, `loggedIn:
-    true` with no `subscriptionType` is `ok` naming a Console account rather
-    than an open subscription lane (#2241), and `loggedIn: false` is `ok`
-    naming it absent, each of these three naming the lane's configured
-    weight and whether it is enabled, exactly as the `api` lane's own lines
-    do; both lanes absent is `fail` — distinguished from the
-    subscription lane's own parse failure, since `loggedIn: false` is a
-    legitimate answer rather than evidence the JSON could not be read — and a
-    `claude` with no `auth` subcommand leaves the subscription lane `skip`;
-    the real
+    shaped like an Anthropic key (the `sk-ant-` prefix) is `ok` outright when
+    it is shaped `sk-ant-api`, which the check reads as a key scoped at
+    creation to a single workspace; one shaped `sk-ant-` but not
+    `sk-ant-api` is `ok` only with a well-shaped
+    `ANTHROPIC_WORKSPACE_ID` (`wrkspc_…`) or an
+    `ANTHROPIC_CUSTOM_HEADERS` already naming `anthropic-workspace-id` —
+    otherwise `warn`, naming a malformed id when that is why (issue #2309);
+    one not shaped like an Anthropic key at all is `warn`, and its absence is
+    `ok` naming it absent, each naming the lane's configured weight and
+    whether it is enabled; the `subscription` lane's own `claude auth status
+    --json` — run with `ANTHROPIC_API_KEY` stripped from that call's
+    environment, so it is checked regardless of whether the `api` lane above
+    is also present — reporting `loggedIn: true` with a `subscriptionType` is
+    `ok` naming the lane present, `loggedIn: true` with no `subscriptionType`
+    is `ok` naming a Console account rather than an open subscription lane
+    (#2241), and `loggedIn: false` is `ok` naming it absent, each of these
+    three naming the lane's configured weight and whether it is enabled,
+    exactly as the `api` lane's own lines do; both lanes absent is `fail` —
+    distinguished from the subscription lane's own parse failure, since
+    `loggedIn: false` is a legitimate answer rather than evidence the JSON
+    could not be read — and a `claude` with no `auth` subcommand leaves the
+    subscription lane `skip`; the real
     `deploy/docker/render-crontab.sh` run against a config whose
     `schedule.excluded_minutes` rules out every minute is `fail`, the same
     renderer run against a trimmed copy of the repository missing

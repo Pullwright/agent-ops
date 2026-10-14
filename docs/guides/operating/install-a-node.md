@@ -37,16 +37,11 @@ docker compose exec scheduler gh repo list --limit 1
 The scheduler runs Claude over text from GitHub, so every node needs model credentials. Two paths:
 
 **Primary: BYO API key**
-1. Get an Anthropic API key from [console.anthropic.com](https://console.anthropic.com), scoped to a workspace
+1. Get an Anthropic API key from [console.anthropic.com](https://console.anthropic.com), scoped at creation to a single workspace (the Create-key dialog offers this as an optional choice) — Anthropic's own guidance for a shared or automated workload like this one is a service-account key scoped to one workspace
 2. Set `ANTHROPIC_API_KEY=<key>` in `.env`
 3. `docker compose up -d` — the key is picked up at container start
 
-This scales to any number of nodes sharing the same key. A key minted
-outside the ordinary `sk-ant-api-...` shape — one that carries no workspace
-scope — is refused by the API outright; `scripts/doctor.sh` warns on that
-shape unless `ANTHROPIC_WORKSPACE_ID` is also set in `.env` (carrying the
-header that variable would support on every request is not yet built, so
-set it only once that lands, or replace the key).
+This scales to any number of nodes sharing the same key. A key created without the single-workspace scope — a personal key, or a service-account key created for several workspaces — is refused on every request with a 400 unless `.env`'s `ANTHROPIC_WORKSPACE_ID` also names the workspace to bill (its own `wrkspc_…` id, from the Console's Settings → Workspaces).
 
 **Alternative: Subscription OAuth**
 1. `docker compose up -d` to start the node
