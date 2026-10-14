@@ -709,7 +709,8 @@
      the class comes from and why it travels beside `detail` rather than
      inside it. `crash_loop_reverify`, the escalated/deferred dedup checks,
      the flap guard (`crash_loop_detail_recurred_since`) and the retirement's
-     own success lookup (`crash_loop_last_success_since`) are all matched on
+     own success lookup (`crash_loop_last_success_since`, and the
+     `crash_loop_detail_last_failure_since` clamp it is given) are all matched on
      `repo` too, so two repositories that happen to share a generic detail
      (e.g. both saying "coordinator exited 1") can never dedup, defer or
      retire against each other's own run. The two families differ in what an
@@ -721,7 +722,9 @@
      for each other. `crash_loop_last_success_since` and
      `crash_loop_detail_recurred_since` read evidence about the Co-Ordinator
      itself, so an absent `repo` imposes no constraint at all and they read
-     the whole fleet, exactly as they did before this grouping existed: an
+     the whole fleet, exactly as they did before this grouping existed
+     (`crash_loop_detail_last_failure_since` reads the same evidence on the
+     same terms): an
      escalation filed before agent-ops#1630 carries no `repo`, while every
      Co-Ordinator event logged since issue #587 carries one, so the other
      reading would leave every such issue permanently unretirable (the
@@ -859,18 +862,29 @@
    to close — the detector's silence is never evidence the loop broke, in
    this direction any more than in the deferred-filing one.
 
-   `crash_loop_last_success_since` names the **latest** qualifying success,
-   not the earliest (agent-ops#2311): the fleet's nodes recover from the
-   same incident at different times, each administered separately, so the
-   earliest success often names a node that cleared while a sibling node
-   sharing the same detail was still failing — fixing *that* success as the
-   evidence would leave every later same-detail failure from the still-
-   broken sibling reading as a recurrence "at or after" it, and the run
-   would never retire however long the fleet has since been healthy. Naming
-   the latest qualifying success instead lets the named success walk forward
-   with the fleet's own staggered recovery, so the run retires once that
-   success and the **bounded** `crash_loop_min_clear_minutes` window after it
-   (below) both agree, together, that the incident is over.
+   The success `crash_loop_last_success_since` names is the **earliest
+   qualifying success at or after the incident's own last same-detail
+   failure** (`crash_loop_detail_last_failure_since`, lib/crash-loop.sh,
+   matched on the same `detail` and `repo` terms as the recurrence guard
+   below) — not the earliest at or after the run's own `first_ts`
+   (agent-ops#2311). The fleet's nodes recover from one incident at
+   different times, each host administered separately, so a success at or
+   after `first_ts` routinely names a node that cleared while a sibling
+   sharing the same detail was still failing: every one of that sibling's
+   later failures then reads as a recurrence "at or after" the named
+   success, and the run never retires however long the fleet has since been
+   healthy. Clamping the lookup forward past the last same-detail failure
+   names the instant the whole fleet stopped failing instead, so a
+   staggered recovery retires once the `crash_loop_min_clear_minutes` window
+   below has passed clean from that instant. The named success is the
+   *earliest* such one, not the latest, because it is also what that window
+   is measured against: a recovered fleet logs a fresh Co-Ordinator success
+   every cycle, so the latest success is permanently only minutes older than
+   the horizon and the window could never elapse at all — the same symptom
+   from the other side. Each recurrence moves the last same-detail failure
+   forward, which moves the named success forward with it and re-arms the
+   window from scratch, so a flapping run (below) still cannot retire while
+   it is flapping.
 
    Two further guards (agent-ops#1134 review) stop retirement from closing an
    issue a *new* run of the same shape has already claimed, or is about to:
@@ -931,7 +945,15 @@
      tunable: closing the issue while the very log the decision is reading
      already contradicts the "the loop has broken" comment the close is
      about to post is the mistake "silence must never retire an alarm"
-     always forbade, met here from the other direction.
+     always forbade, met here from the other direction. Because the success
+     lookup above is clamped past the incident's last same-detail failure,
+     the ordinary resumed-failure case is caught one guard earlier — a
+     detail still failing with no success after it leaves no clearing
+     success nameable at all, and the positive-evidence requirement blocks
+     the retirement — and what this guard still answers for on its own is
+     the boundary: a same-detail failure sharing the clearing success's own
+     timestamp, which the clamp admits (both bounds are inclusive) and this
+     check rejects.
    - **`crash_loop_min_clear_minutes`** requires the clearing success itself
      to be at least this many minutes older than the union snapshot's own
      requirement-39f horizon (`log_latest_ts`, passed to

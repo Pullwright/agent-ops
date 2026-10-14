@@ -964,6 +964,27 @@
    old that success is, a success that has genuinely held the window with no
    recurrence is retired exactly as before, and `crash_loop_min_clear_
    minutes` 0 restores instant retirement on the first nameable success.
+
+   **A fleet that recovers node by node still retires (agent-ops#2311).**
+   `test/crash-loop.test.sh` covers the two readers directly: the success
+   lookup names the *earliest* qualifying success at or after whatever
+   instant it is given, so a later instant skips an earlier success, and
+   `crash_loop_detail_last_failure_since` names the latest same-detail
+   failure across nodes, nothing when the detail never failed at or after
+   the instant asked about, nothing for a different detail, and — under a
+   non-empty `repo` — only that repository's own failures.
+   `test/crash-loop-escalate.test.sh` covers the retirement those two
+   compose into, `crash_loop_min_clear_minutes` at its schema default: a run
+   whose second node clears half an hour after the first retires, with the
+   *later* node's success named in the closing comment; a same-detail
+   failure after the only clearing success leaves the issue open; a
+   recurrence that itself clears and then stays quiet past the window
+   retires, naming that settled success; a recurrence re-arms the window
+   even where an earlier success is long past it, so a flapping run stays
+   open; and a fleet that recovered hours ago and has been succeeding every
+   cycle since, right up to `UNION_LOG_HORIZON`, retires — naming the
+   success that ended the incident rather than the newest one in the log,
+   which no elapsed window could ever be measured against.
    The same file also covers per-repository dedup and retirement
    (agent-ops#1630), two repositories sharing a generic detail (e.g. both
    "coordinator exited 1"): repository B's own run still files its own

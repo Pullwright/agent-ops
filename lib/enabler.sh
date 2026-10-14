@@ -711,22 +711,32 @@ crash_loop_refile_pending() {
 # `first_ts`-fresh `crash-loop-escalated` event, agent-ops#1140) across
 # every recurrence inside the window, rather than a fresh one per flap.
 #
-# `crash_loop_last_success_since` itself names the *latest* qualifying
-# success, not the earliest (agent-ops#2311): a fleet whose nodes recover at
-# different times — each administered separately — would otherwise pin the
-# named success to whichever node happened to clear first, leaving every
-# later same-detail failure from a still-broken sibling node reading as a
-# recurrence "at or after" that fixed point forever. Naming the latest
-# success instead lets it walk forward with the fleet's own recovery, so the
-# two flap guards above — themselves unaffected by which success is named —
-# retire the issue once the named success and the bounded
-# `crash_loop_min_clear_minutes` window after it both agree the incident is
-# over, however many cycles apart the fleet's own nodes actually recovered.
+# The success those two guards are anchored at is looked for from the
+# incident's own *last* same-detail failure, not from the run's `first_ts`
+# (agent-ops#2311): a fleet's nodes recover at different times — each host is
+# administered separately — so the earliest success after `first_ts` names
+# whichever node cleared first, and a sibling still failing under the same
+# detail then has every one of its failures read as a recurrence "at or
+# after" that fixed point, for ever, however long the whole fleet has since
+# been healthy (observed 2026-10-10, agent-ops#2297/#2298/#2299).
+# `crash_loop_detail_last_failure_since` moves the lookup past those
+# failures, so the named success is the instant the *fleet* stopped failing,
+# and the window below is measured from there.
+#
+# Both guards keep their force under that clamp. The recurrence guard still
+# catches the equality edge — a same-detail failure sharing the clearing
+# success's own timestamp — and `crash_loop_min_clear_minutes` is what holds
+# a 2026-09-05-shaped flap open: every recurrence moves the last failure
+# forward, which moves the named success forward with it, which re-arms the
+# window from scratch. A flap therefore cannot retire while it is still
+# flapping, and a staggered recovery retires once the window has passed
+# clean, however many cycles apart the fleet's own nodes recovered.
 crash_loop_retire_resolved() {
   local union_log_horizon="$1"
   [[ -n "$crash_loop_repo" && -s "$union_log" ]] || return 0
   local entry stage detail first_ts repo issue_number issue_url success_ts body
   local active_detail min_clear_minutes success_epoch horizon_epoch
+  local last_fail_ts clear_from
   min_clear_minutes="${crash_loop_min_clear_minutes:-0}"
   [[ "$min_clear_minutes" =~ ^[0-9]+$ ]] || min_clear_minutes=0
   while IFS= read -r entry; do
@@ -749,7 +759,17 @@ crash_loop_retire_resolved() {
     [[ -n "$active_detail" && "$active_detail" == "$detail" ]] && continue
     [[ -z "$(crash_loop_reverify "$(jq -nc --arg s "$stage" --arg d "$detail" --arg f "$first_ts" --arg r "$repo" \
                 '{stage: $s, detail: $d, first_ts: $f} + (if $r == "" then {} else {repo: $r} end)')" "$crash_loop_after" < "$union_log")" ]] || continue
-    success_ts="$(crash_loop_last_success_since "$stage" "$first_ts" "$repo" < "$union_log")"
+    # Look for the clearing success from the incident's own last same-detail
+    # failure, not from the run's `first_ts` (agent-ops#2311) — see the
+    # header above. A fleet whose nodes recover separately has failures from
+    # a still-broken sibling *after* the first node's success, and naming
+    # that first success would pin the retirement to it for ever.
+    clear_from="$first_ts"
+    last_fail_ts="$(crash_loop_detail_last_failure_since "$detail" "$first_ts" "$repo" < "$union_log")"
+    if [[ -n "$last_fail_ts" && "$last_fail_ts" > "$clear_from" ]]; then
+      clear_from="$last_fail_ts"
+    fi
+    success_ts="$(crash_loop_last_success_since "$stage" "$clear_from" "$repo" < "$union_log")"
     # Positive evidence only. `crash_loop_reverify` going quiet is not the
     # same fact as "the Co-Ordinator recovered": a run stops matching the
     # detector whenever it stops being *this* run, and a still-broken fleet

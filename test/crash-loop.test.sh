@@ -506,18 +506,51 @@ assert_eq "names the clearing success's own timestamp" \
 assert_eq "nothing printed when no success exists at or after first_ts" \
   "" "$(crash_loop_last_success_since coordinator 2026-08-01T10:00:00Z <<<"$four_fails")"
 
-# A fleet's nodes clear the same incident at different times (agent-ops#2311):
-# the *latest* qualifying success is named, not the earliest, so a run is not
-# pinned forever to whichever node happened to recover first.
+# The *earliest* qualifying success, not the latest — the instant the
+# incident stopped, so that `crash_loop_retire_resolved`'s own
+# `crash_loop_min_clear_minutes` window, measured against it, can age and
+# elapse (agent-ops#2311). A recovered fleet logs another success every
+# cycle, so the latest one is always only minutes old and that window could
+# never elapse at all.
 two_successes="$(cat <<<"$four_fails"
   success_at 2026-08-01T11:00:00Z n1
   success_at 2026-08-01T12:00:00Z n2)"
-assert_eq "names the later of two qualifying successes, not the earlier" \
-  "2026-08-01T12:00:00Z" "$(crash_loop_last_success_since coordinator 2026-08-01T10:00:00Z <<<"$two_successes")"
+assert_eq "names the earlier of two qualifying successes, not the later" \
+  "2026-08-01T11:00:00Z" "$(crash_loop_last_success_since coordinator 2026-08-01T10:00:00Z <<<"$two_successes")"
 assert_eq "...regardless of the order the two successes appear in the stream" \
-  "2026-08-01T12:00:00Z" "$(crash_loop_last_success_since coordinator 2026-08-01T10:00:00Z <<<"$(cat <<<"$four_fails"
+  "2026-08-01T11:00:00Z" "$(crash_loop_last_success_since coordinator 2026-08-01T10:00:00Z <<<"$(cat <<<"$four_fails"
     success_at 2026-08-01T12:00:00Z n2
     success_at 2026-08-01T11:00:00Z n1)")"
+# Which success is "earliest" is entirely a function of where the caller
+# starts looking, which is why `crash_loop_retire_resolved` clamps its own
+# FIRST_TS forward past the incident's last same-detail failure.
+assert_eq "a later FIRST_TS skips the earlier success and names the next one" \
+  "2026-08-01T12:00:00Z" "$(crash_loop_last_success_since coordinator 2026-08-01T11:30:00Z <<<"$two_successes")"
+
+# --- crash_loop_detail_last_failure_since (agent-ops#2311) ------------------
+#
+# The clamp `crash_loop_retire_resolved` applies to that lookup: the latest
+# same-detail failure, which is the instant the whole fleet — not just its
+# first-recovering node — stopped failing.
+staggered="$(cat <<<"$four_fails"
+  success_at 2026-08-01T11:00:00Z n-A
+  fail_at 2026-08-01T11:10:00Z n-B 'coordinator exited 126'
+  success_at 2026-08-01T11:40:00Z n-B)"
+assert_eq "names the latest same-detail failure, across nodes" \
+  "2026-08-01T11:10:00Z" "$(crash_loop_detail_last_failure_since 'coordinator exited 126' 2026-08-01T10:00:00Z <<<"$staggered")"
+assert_eq "and clamping the success lookup to it names the later node's own success" \
+  "2026-08-01T11:40:00Z" "$(crash_loop_last_success_since coordinator \
+    "$(crash_loop_detail_last_failure_since 'coordinator exited 126' 2026-08-01T10:00:00Z <<<"$staggered")" <<<"$staggered")"
+assert_eq "nothing printed when the detail never failed at or after SINCE_TS" \
+  "" "$(crash_loop_detail_last_failure_since 'coordinator exited 126' 2026-08-01T11:30:00Z <<<"$staggered")"
+assert_eq "a different detail is not this incident's own last failure" \
+  "" "$(crash_loop_detail_last_failure_since 'some other detail' 2026-08-01T10:00:00Z <<<"$staggered")"
+assert_eq "a non-empty REPO restricts the match to that repository's own failures" \
+  "" "$(crash_loop_detail_last_failure_since 'coordinator exited 126' 2026-08-01T10:00:00Z o/r <<<"$staggered")"
+assert_eq "...and matches a failure that does carry it" \
+  "2026-08-01T11:20:00Z" "$(crash_loop_detail_last_failure_since 'coordinator exited 126' 2026-08-01T10:00:00Z o/r \
+    <<<"$(cat <<<"$staggered"
+    fail_repo_at 2026-08-01T11:20:00Z n-B o/r 'coordinator exited 126')")"
 
 # --- crash_loop_open_escalations (agent-ops#1074) ---------------------------
 
