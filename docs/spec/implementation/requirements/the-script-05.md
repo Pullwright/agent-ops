@@ -859,6 +859,19 @@
    to close — the detector's silence is never evidence the loop broke, in
    this direction any more than in the deferred-filing one.
 
+   `crash_loop_last_success_since` names the **latest** qualifying success,
+   not the earliest (agent-ops#2311): the fleet's nodes recover from the
+   same incident at different times, each administered separately, so the
+   earliest success often names a node that cleared while a sibling node
+   sharing the same detail was still failing — fixing *that* success as the
+   evidence would leave every later same-detail failure from the still-
+   broken sibling reading as a recurrence "at or after" it, and the run
+   would never retire however long the fleet has since been healthy. Naming
+   the latest qualifying success instead lets the named success walk forward
+   with the fleet's own staggered recovery, so the run retires once that
+   success and the **bounded** `crash_loop_min_clear_minutes` window after it
+   (below) both agree, together, that the incident is over.
+
    Two further guards (agent-ops#1134 review) stop retirement from closing an
    issue a *new* run of the same shape has already claimed, or is about to:
 

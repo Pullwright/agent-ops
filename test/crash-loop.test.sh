@@ -506,6 +506,19 @@ assert_eq "names the clearing success's own timestamp" \
 assert_eq "nothing printed when no success exists at or after first_ts" \
   "" "$(crash_loop_last_success_since coordinator 2026-08-01T10:00:00Z <<<"$four_fails")"
 
+# A fleet's nodes clear the same incident at different times (agent-ops#2311):
+# the *latest* qualifying success is named, not the earliest, so a run is not
+# pinned forever to whichever node happened to recover first.
+two_successes="$(cat <<<"$four_fails"
+  success_at 2026-08-01T11:00:00Z n1
+  success_at 2026-08-01T12:00:00Z n2)"
+assert_eq "names the later of two qualifying successes, not the earlier" \
+  "2026-08-01T12:00:00Z" "$(crash_loop_last_success_since coordinator 2026-08-01T10:00:00Z <<<"$two_successes")"
+assert_eq "...regardless of the order the two successes appear in the stream" \
+  "2026-08-01T12:00:00Z" "$(crash_loop_last_success_since coordinator 2026-08-01T10:00:00Z <<<"$(cat <<<"$four_fails"
+    success_at 2026-08-01T12:00:00Z n2
+    success_at 2026-08-01T11:00:00Z n1)")"
+
 # --- crash_loop_open_escalations (agent-ops#1074) ---------------------------
 
 open_and_retired="$(cat <<<"$four_fails"

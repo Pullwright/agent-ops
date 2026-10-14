@@ -338,13 +338,30 @@ crash_loop_reverify() {
 }
 
 # crash_loop_last_success_since STAGE FIRST_TS [REPO] < union.jsonl
-# Print the timestamp of the earliest `stage-end` for STAGE with exit 0 at or
-# after FIRST_TS — the success that would break a run starting there — or
-# nothing if none exists. Named evidence for the retirement comment a broken
-# run's open escalation is closed with (agent-ops#1074); only meaningful for
+# Print the timestamp of the latest `stage-end` for STAGE with exit 0 at or
+# after FIRST_TS — the most recent evidence the run has broken — or nothing
+# if none exists. Named evidence for the retirement comment a broken run's
+# open escalation is closed with (agent-ops#1074); only meaningful for
 # `STAGE=coordinator`, the only class `crash_loop_reverify` can name a single
 # resetting stage-end for (pre-selection resets on either a clean cycle exit
 # or a selection-path stage-start, no single event answers "the" success).
+#
+# The *latest*, not the earliest, qualifying success (agent-ops#2311): a
+# fleet's nodes recover from the same incident at different times — each is
+# administered separately, and the remedy (an `.env` edit, a container
+# recreate) lands on each one in its own good time — so the earliest success
+# often names a node that cleared while a sibling node, sharing the same
+# detail, was still failing. Naming that earliest success fixes it as the
+# evidence forever: every later same-detail failure from the still-broken
+# sibling reads as "at or after" it, and `crash_loop_detail_recurred_since`
+# below then blocks retirement for good, however long the whole fleet has
+# since been healthy (observed 2026-10-10, agent-ops#2297/#2298/#2299).
+# Naming the latest qualifying success instead means a still-looping sibling
+# keeps pushing the named success forward, cycle over cycle, until its own
+# failures stop — at which point the latest success and the last failure
+# finally agree the incident is over, and `crash_loop_detail_recurred_since`,
+# reading forward from that same point, finds nothing.
+#
 # A non-empty REPO restricts the match to that repository's own successes,
 # once the run this is naming evidence for is itself repository-scoped
 # (agent-ops#1630) — a sibling repository's Co-Ordinator succeeding is not
@@ -365,7 +382,7 @@ crash_loop_last_success_since() {
       | select(.event == "stage-end" and (.stage // "") == $stage
                and ((.exit_code // 1) == 0) and (.ts // "") >= $ts
                and ($repo == "" or (.repo // "") == $repo)) ]
-    | sort_by(.ts) | first | .ts // empty
+    | sort_by(.ts) | last | .ts // empty
   ' 2>/dev/null || true
 }
 

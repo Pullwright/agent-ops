@@ -710,6 +710,18 @@ crash_loop_refile_pending() {
 # rebound (and re-logged with the flap's own new `detail`-unchanged,
 # `first_ts`-fresh `crash-loop-escalated` event, agent-ops#1140) across
 # every recurrence inside the window, rather than a fresh one per flap.
+#
+# `crash_loop_last_success_since` itself names the *latest* qualifying
+# success, not the earliest (agent-ops#2311): a fleet whose nodes recover at
+# different times — each administered separately — would otherwise pin the
+# named success to whichever node happened to clear first, leaving every
+# later same-detail failure from a still-broken sibling node reading as a
+# recurrence "at or after" that fixed point forever. Naming the latest
+# success instead lets it walk forward with the fleet's own recovery, so the
+# two flap guards above — themselves unaffected by which success is named —
+# retire the issue once the named success and the bounded
+# `crash_loop_min_clear_minutes` window after it both agree the incident is
+# over, however many cycles apart the fleet's own nodes actually recovered.
 crash_loop_retire_resolved() {
   local union_log_horizon="$1"
   [[ -n "$crash_loop_repo" && -s "$union_log" ]] || return 0
