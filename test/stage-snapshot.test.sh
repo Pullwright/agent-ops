@@ -5,8 +5,10 @@
 # working tree carries real, uncommitted work must not lose that work to the
 # clone's own disposal. `_stage_snapshot_and_push` (lib/stage-run.sh) is what
 # closes that gap — it commits and pushes whatever the stage's CWD holds,
-# as the stage user, in the pause between the TERM and the KILL every cap
-# already sends.
+# through `stage_boundary_capture` (as the stage user where a boundary
+# exists, as this user where none does — this test's own case, per the note
+# below), in the pause between the TERM and the KILL every cap already
+# sends.
 #
 # Three things matter here, and the first two are opposite findings:
 #
