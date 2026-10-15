@@ -149,6 +149,90 @@ EOF
 assert_eq "a repo-less unblock clears the item in every repo" \
   "0" "$(blocked_items "$log" | jq 'length')"
 
+# --- blocked_items/void_items/open_blocked_items: the slug-rename alias map
+# --- (issue #2064, extended to LATEST_UNRESOLVED_JQ by #2359) ---
+#
+# A repository rename splits one item's identity across two slugs: the block
+# is recorded under the slug the repo had at the time, but the Co-Ordinator
+# or Enabler always clears it under the slug the repo is configured under
+# now. Without resolving both sides of the match through
+# `config_repo_slug_aliases`' map first, the clear can never find the block
+# it is meant to answer.
+aliases='{"o/old":"o/r"}'
+
+cat > "$log" <<'EOF'
+{"ts":"2026-07-16T08:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/old","item":"42","detail":"needs repo secrets"}
+{"ts":"2026-07-16T09:00:00Z","event":"unblocked","repo":"o/r","item":"42"}
+EOF
+assert_eq "with no aliases map, a clear under the current slug does not reach a block under the old one" \
+  "42" "$(blocked_items "$log" | jq -r '.[].item')"
+assert_eq "resolved through the alias map, the same clear does reach it" \
+  "0" "$(blocked_items "$log" "$aliases" | jq 'length')"
+
+# The mirror: a block recorded under the current slug, cleared under the old
+# one (the shape a hand-appended `unblocked` might carry if a human copied an
+# old issue link).
+cat > "$log" <<'EOF'
+{"ts":"2026-07-16T08:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/r","item":"43","detail":"needs repo secrets"}
+{"ts":"2026-07-16T09:00:00Z","event":"unblocked","repo":"o/old","item":"43"}
+EOF
+assert_eq "...and the mirror: a block under the current slug is cleared by a clear under the old one" \
+  "0" "$(blocked_items "$log" "$aliases" | jq 'length')"
+
+# void_items shares LATEST_UNRESOLVED_JQ, so the same resolution applies to
+# item-void/unvoided.
+cat > "$log" <<'EOF'
+{"ts":"2026-07-16T08:00:00Z","event":"item-void","stage":"enabler","repo":"o/old","item":"44","detail":"already done","evidence":"abc123"}
+{"ts":"2026-07-16T09:00:00Z","event":"unvoided","repo":"o/r","item":"44"}
+EOF
+assert_eq "with no aliases map, an unvoided under the current slug does not reach a void under the old one" \
+  "44" "$(void_items "$log" | jq -r '.[].item')"
+assert_eq "resolved through the alias map, the same unvoided does reach it" \
+  "0" "$(void_items "$log" "$aliases" | jq 'length')"
+
+# open_blocked_items (requirement 34h) threads the same map into both of its
+# nested extracts.
+cat > "$log" <<'EOF'
+{"ts":"2026-07-16T08:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/old","item":"45","detail":"needs repo secrets"}
+{"ts":"2026-07-16T09:00:00Z","event":"unblocked","repo":"o/r","item":"45"}
+EOF
+assert_eq "open_blocked_items resolves the same alias map" \
+  "0" "$(open_blocked_items "$log" "$aliases" | jq 'length')"
+
+# open_blocked_items' own void-wins subtraction (requirement 34h,
+# OPEN_BLOCKED_JQ) is a second match the alias map has to reach, independent
+# of the one above: that case cleared the block itself via `unblocked`, so
+# `open_blocked_items` saw nothing left to subtract void from. Here the block
+# stands unblocked, and only an `item-void` logged across the rename retires
+# it — a void recorded under the repo's current slug against a block under
+# the slug it had before (agent-ops#2388).
+cat > "$log" <<'EOF'
+{"ts":"2026-07-16T08:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/old","item":"47","detail":"needs repo secrets"}
+{"ts":"2026-07-16T09:00:00Z","event":"item-void","stage":"enabler","repo":"o/r","item":"47","detail":"already done"}
+EOF
+assert_eq "with no aliases map, an item-void under the current slug does not retire a block under the old one" \
+  "47" "$(open_blocked_items "$log" | jq -r '.[].item')"
+assert_eq "resolved through the alias map, the void wins and retires it" \
+  "0" "$(open_blocked_items "$log" "$aliases" | jq 'length')"
+
+# The mirror: a block recorded under the current slug, voided under the old
+# one.
+cat > "$log" <<'EOF'
+{"ts":"2026-07-16T08:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/r","item":"48","detail":"needs repo secrets"}
+{"ts":"2026-07-16T09:00:00Z","event":"item-void","stage":"enabler","repo":"o/old","item":"48","detail":"already done"}
+EOF
+assert_eq "...and the mirror: a block under the current slug is retired by a void under the old one" \
+  "0" "$(open_blocked_items "$log" "$aliases" | jq 'length')"
+
+# An argument that is not a JSON object degrades to {} — a caller's own
+# malformed config must cost it the alias resolution, never the fold itself.
+cat > "$log" <<'EOF'
+{"ts":"2026-07-16T08:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/old","item":"46","detail":"needs repo secrets"}
+{"ts":"2026-07-16T09:00:00Z","event":"unblocked","repo":"o/r","item":"46"}
+EOF
+assert_eq "a malformed aliases argument degrades to no resolution, not a crash" \
+  "46" "$(blocked_items "$log" 'not json' | jq -r '.[].item')"
+
 # --- blocked_items: recheck_clean_ts (requirement 18a, TD-PPagop-26072801) ---
 
 cat > "$log" <<'EOF'
@@ -197,6 +281,18 @@ cat > "$log" <<'EOF'
 EOF
 assert_eq "a repo-scoped recheck-clean folds into only that repo's item" \
   "o/a" "$(blocked_items "$log" | jq -r '[.[] | select(.recheck_clean_ts != null)][0].repo')"
+
+# BLOCKED_ITEMS_JQ's recheck-clean join resolves through the same slug-rename
+# alias map (agent-ops#2388): a block recorded under the repo's old slug is
+# still covered by a recheck-clean logged under the slug it has now.
+cat > "$log" <<'EOF'
+{"ts":"2026-07-28T08:00:00Z","event":"attempt-failed","stage":"coordinator","repo":"o/old","item":"53","detail":"waiting on maintainer"}
+{"ts":"2026-07-29T09:00:00Z","event":"recheck-clean","repo":"o/r","item":"53"}
+EOF
+assert_eq "with no aliases map, a recheck-clean under the current slug does not reach a block under the old one" \
+  "null" "$(blocked_items "$log" | jq -r '.[0].recheck_clean_ts // "null"')"
+assert_eq "resolved through the alias map, the same recheck-clean does reach it" \
+  "2026-07-29T09:00:00Z" "$(blocked_items "$log" "$aliases" | jq -r '.[0].recheck_clean_ts')"
 
 # --- requirement 18a: the mandatory re-check loop, end to end (check 7a, ---
 # --- TD-PPagop-26080102) ---

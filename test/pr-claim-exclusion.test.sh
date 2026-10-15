@@ -391,7 +391,8 @@ run_stale_ref_block() {  # run_stale_ref_block <ordered-repos-json> <enabler-eli
   # visible to shellcheck's own static analysis.
   # shellcheck disable=SC2034
   ordered_repos_json="$1" enabler_eligible_json="$2" blocked_json="${3:-[]}" \
-    void_json='[]' union_log='/dev/null' logged="" logged_fields=""
+    void_json='[]' union_log='/dev/null' logged="" logged_fields="" \
+    repo_slug_aliases_json='{}'
   # shellcheck disable=SC2317
   guard_warn() { :; }
   # shellcheck disable=SC2317

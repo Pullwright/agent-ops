@@ -406,7 +406,7 @@ while IFS=$'\t' read -r _ slug default_branch; do
           log_event "warning" "$(jq -nc --arg d "could not remove the orphaned $orph_label label from $orph_repo#$orph_item" \
              '{detail: $d}')"
         fi
-      done < <(refinement_blocked_label_orphaned "$(blocked_items "$union_log")" \
+      done < <(refinement_blocked_label_orphaned "$(blocked_items "$union_log" "$repo_slug_aliases_json")" \
                  "$live_reason_issues_json" "$slug" "$union_log")
 
       # Requirement 38b's Route 2 (agent-ops#1832): the reconciliation above
@@ -430,7 +430,7 @@ while IFS=$'\t' read -r _ slug default_branch; do
       # reach a branch that could never claim them. The set can only shrink:
       # nothing has written `needs_refinement_assignee` since agent-ops#639.
       stranded_candidates="$(refinement_blocked_label_stranded_candidates \
-          "$(blocked_items "$union_log")" "$slug" "$union_log")"
+          "$(blocked_items "$union_log" "$repo_slug_aliases_json")" "$slug" "$union_log")"
       stranded_json='[]'
       if [[ -n "$stranded_candidates" ]]; then
         live_bare_blocked_json="$(gh issue list -R "$slug" --label "$REFINEMENT_BLOCKED_LABEL" \
@@ -503,7 +503,7 @@ while IFS=$'\t' read -r _ slug default_branch; do
           log_event "warning" "$(jq -nc --arg d "could not remove the stranded legacy $strand_label label from $strand_repo#$strand_item" \
              '{detail: $d}')"
         fi
-      done < <(refinement_blocked_label_orphaned "$(blocked_items "$union_log")" \
+      done < <(refinement_blocked_label_orphaned "$(blocked_items "$union_log" "$repo_slug_aliases_json")" \
                  '[]' "$slug" "$union_log" "$stranded_json")
     fi
     issues_raw="$(gather_issues "$slug")"
@@ -856,7 +856,7 @@ compute_skip_lists() {
 # whatever peers had written since, which is the inconsistency it exists to
 # prevent, so the exact lines this cycle just wrote are what gets added and
 # nothing else.
-unvoid_clearances_json="$(unvoid_clearances "$unvoid_requests_json" "$(void_items "$union_log")")"
+unvoid_clearances_json="$(unvoid_clearances "$unvoid_requests_json" "$(void_items "$union_log" "$repo_slug_aliases_json")")"
 unvoid_clearances_n="$(jq 'length' <<<"$unvoid_clearances_json" 2>&1)" \
   || { guard_warn "unvoid_clearances_n" "$unvoid_clearances_n"; unvoid_clearances_n=0; }
 if [[ "$unvoid_clearances_n" != "0" ]]; then
@@ -900,7 +900,7 @@ if [[ -n "$needs_refinement_label" ]]; then
   refinement_own_actions_json="$(label_own_actions_map "$needs_refinement_label" "$union_log")"
   hand_flagged_not_ours_json="$(label_filter_own_applications "$hand_flagged_refinements_json" \
     "$refinement_own_actions_json" "$union_log_horizon")"
-  hand_flag_new_json="$(refinement_hand_flag_new "$hand_flagged_not_ours_json" "$(blocked_items "$union_log")")"
+  hand_flag_new_json="$(refinement_hand_flag_new "$hand_flagged_not_ours_json" "$(blocked_items "$union_log" "$repo_slug_aliases_json")")"
   hand_flag_new_n="$(jq 'length' <<<"$hand_flag_new_json" 2>&1)" \
     || { guard_warn "hand_flag_new_n" "$hand_flag_new_n"; hand_flag_new_n=0; }
   if [[ "$hand_flag_new_n" != "0" ]]; then
@@ -938,7 +938,7 @@ if [[ -n "$needs_refinement_label" ]]; then
   # between.
   if ! (( DRY_RUN )); then
     hand_flag_stale_json="$(label_own_stale_applications "$hand_flagged_refinements_json" \
-      "$refinement_own_actions_json" "$(blocked_items "$union_log")" "$union_log_horizon")"
+      "$refinement_own_actions_json" "$(blocked_items "$union_log" "$repo_slug_aliases_json")" "$union_log_horizon")"
     while IFS=$'\t' read -r stale_repo stale_number; do
       [[ -n "$stale_repo" && -n "$stale_number" ]] || continue
       if refinement_label_remove "$stale_repo" "$stale_number" "$needs_refinement_label"; then
@@ -953,7 +953,7 @@ if [[ -n "$needs_refinement_label" ]]; then
                <<<"$hand_flag_stale_json" 2>/dev/null || true)
   fi
 
-  hand_flag_cleared_json="$(refinement_hand_flag_cleared "$hand_flagged_refinements_json" "$(blocked_items "$union_log")")"
+  hand_flag_cleared_json="$(refinement_hand_flag_cleared "$hand_flagged_refinements_json" "$(blocked_items "$union_log" "$repo_slug_aliases_json")")"
   hand_flag_cleared_n="$(jq 'length' <<<"$hand_flag_cleared_json" 2>&1)" \
     || { guard_warn "hand_flag_cleared_n" "$hand_flag_cleared_n"; hand_flag_cleared_n=0; }
   if [[ "$hand_flag_cleared_n" != "0" ]]; then
@@ -993,7 +993,7 @@ if ! (( DRY_RUN )); then
         "$(jq -nc --arg d "could not retry removing the $stale_label label from $stale_repo#$stale_item" \
            '{detail: $d}')"
     fi
-  done < <(refinement_blocked_label_stale "$(blocked_items "$union_log")" "$union_log")
+  done < <(refinement_blocked_label_stale "$(blocked_items "$union_log" "$repo_slug_aliases_json")" "$union_log")
 fi
 
 # Requirement 34i, applied last of the three reconciliations, and for the same
@@ -1010,7 +1010,7 @@ fi
 # Against the *open* blocked set (requirement 34h): a void item needs no
 # unblocking, and an `unblocked` written against a void would put a clear in the
 # log for no reason at all.
-open_blocked_now="$(open_blocked_items "$union_log")"
+open_blocked_now="$(open_blocked_items "$union_log" "$repo_slug_aliases_json")"
 # The register read, for the repos that have blocked register items and no
 # others — usually none, and then it costs nothing. `ordered_repos_json` is what
 # names each repo's default branch; a repo this cycle did not walk has no entry
@@ -1159,8 +1159,8 @@ if [[ "$dependency_n" != "0" ]]; then
   tail -n "+$(( log_lines_before + 1 ))" "$log_file" >> "$union_log" 2>/dev/null || true
 fi
 
-blocked_json="$(blocked_items "$union_log")"
-void_json="$(void_items "$union_log")"
+blocked_json="$(blocked_items "$union_log" "$repo_slug_aliases_json")"
+void_json="$(void_items "$union_log" "$repo_slug_aliases_json")"
 
 # Requirement 34n's memory, applied the moment the extract exists: every pair
 # an earlier cycle already retired (a `void-retired` event on the log — a

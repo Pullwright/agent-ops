@@ -759,6 +759,19 @@
    would arrive in the Co-Ordinator's input arguing, in the pipeline's own voice
    and in detail, for an item requirement 34c says must never be selected again.
 
+   Every `repo` comparison this map makes — the void exclusion just above, and
+   the one that drops a refinement a fresher `needs-refinement` re-block has
+   superseded — resolves both sides through `config_repo_slug_aliases`' `{old_
+   slug: current_slug}` map first (agent-ops#2064, extended here by
+   agent-ops#2359), the same way requirement 34's own set/clear matching does.
+   Without it, a repository rename splits one item's identity across two
+   slugs: an `item-refined` logged under the repo's current slug would not be
+   recognized as refining (or as voided or superseded) an item blocked or
+   voided under the slug the repository had before the rename. The same
+   resolution governs `decisions_map`'s own three exclusions (requirement
+   36d) — void, superseded-by-refinement and vetoed — each of which matches
+   on `repo` the same way.
+
    **A phantom `item-refined` event is skipped here on requirement 35a's own
    terms (TD-PPagop-26082819):** an event whose `comment_url` names no comment
    — no `#issuecomment-` anchor or REST API comment form
