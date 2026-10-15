@@ -67,7 +67,13 @@
     `abandoned-drafts` recovery path (requirement 3e) — resume from the last
     checkpoint instead of from the claim commit alone, and it is also a
     "genuine push" in the sense requirement 3e's own activity clock already
-    watches for.
+    watches for. This checkpoint discipline is belt-and-braces, not the only
+    guarantee: the Script's own kill sequence (requirement 4l of
+    `docs/spec/implementation/requirements/the-script-07.md`) commits and
+    pushes whatever the working tree holds immediately before a watchdog or
+    backstop kill, so a run stopped mid verification — after real work but
+    before this stage reached its own next checkpoint — still leaves that
+    work recoverable.
 24. Implements the item, then runs the same checks the repo's CI runs (as
     documented in that repo's `AGENTS.md`/`CLAUDE.md` and workflow files) and
     fixes anything they surface.

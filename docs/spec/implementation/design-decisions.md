@@ -1083,4 +1083,43 @@ confirmed by the repo owner on 2026-07-13; no open questions remain.
   thirty runs under load, one file. The release therefore renames the
   directory to a tombstone before removing it, with the signals ignored for
   the duration; forty further runs under load left nothing.
+- **A killed stage's recovery net lives in the Script, not in the prompt**
+  (requirement 4l, issue #2186). The failure this closes was observed twice on
+  the same item (Poetic-Poems/poetic-fiddle#496): an Implementer run made a
+  complete, passing change, started a slow verification command (a full test
+  suite, then a build), fell quiet past the watchdog's inactivity threshold
+  with no commit ever pushed, and was killed and reaped as an untouched claim
+  — discarding the finished work and returning the item to the pool. The
+  obvious first fix — count the stream's `tool_progress` heartbeats as
+  liveness, or cap their reported backoff — turned out to target nothing real:
+  measured against the live `claude` CLI, heartbeats already arrive at a flat
+  cadence the watchdog's own byte-growth check already treats as activity (no
+  event-type filter exists to add one to), and a growing backoff, where it
+  does appear, lives inside `@anthropic-ai/claude-code`, outside this
+  repository's reach. A second candidate — a longer grace period while a tool
+  call is outstanding — was set aside because it weakens the one invariant
+  `test/stage-watchdog.test.sh` calls "the assertion that matters most": a
+  genuinely wedged stage must still be killed on a bounded, provable schedule,
+  and "a tool call is outstanding" cannot tell that apart from "wedged inside a
+  tool call".
+  What was left was recoverability: `docs/spec/implementation/requirements/
+  implementer.md`'s requirement 23a already told the Implementer to commit and
+  push at each checkpoint, and had since before this issue existed — the two
+  observed failures are run-to-run variance in a model's compliance with that
+  instruction under time pressure, not a gap in what the instruction says. A
+  second, stronger sentence in the same prompt was judged unlikely to close a
+  gap the existing sentence already named plainly. So the net was moved to a
+  place no model's compliance governs: the Script's own kill sequence, which
+  already holds the process group between the TERM and the KILL. Committing
+  and pushing from there needed the stage-user boundary (requirement 45e)
+  rather than a plain `git` call from the Script's own user, since by the time
+  a stage is running, its working directory is the stage's and the Script
+  commits to never running `git` there itself (`lib/stage-boundary.sh`'s own
+  stated rule) — a stage-written `.git/config` could name a hook or filter
+  driver the Script's own far more privileged user would then run. The orphan
+  branch this produces — a moved ref with no pull request yet open on it —
+  needed no new recovery path: requirement 17b's orphan-branch sweep already
+  mints a recovery draft for exactly that shape, because it already exists to
+  recover the same shape left by a stage that crashed between its own push and
+  its own `gh pr create`.
 

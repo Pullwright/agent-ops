@@ -1021,6 +1021,19 @@ oblige anyone to edit a test.
    wider per-repository `stage_timeouts` entry both reach it exactly as they
    reach `agent-cycle.sh`'s lock and `scripts/doctor.sh`'s report, rather than
    the dashboard silently deriving from an empty overrides map of its own.
+1k5. **A killed stage's uncommitted work is not lost with it (requirement
+   4l, issue #2186).** `test/stage-snapshot.test.sh` passes, against a real
+   local bare repository standing in for `origin` (no GitHub, no network): a
+   stage killed by the watchdog after leaving real, uncommitted changes in
+   its working tree — a tracked file's edit and an untracked new file alike —
+   has both land in a commit pushed to the claimed branch before the final
+   `kill -KILL`, the commit message itself Conventional-Commits-shaped so it
+   does not fail the CI format check of the draft it lands on; a stage killed
+   by the backstop gets the identical treatment, since a productively-looping
+   stage's unsaved work is exactly as worth keeping as a wedged one's; and a
+   stage with nothing uncommitted when it is killed leaves the claimed
+   branch's ref exactly where it was, so `release_branch_if_untouched`
+   (lib/claim.sh) still reaps a genuinely untouched claim exactly as before.
 1l. **Repos are walked most-overdue-first by nice-weighted effective age,
    and it never starves a repo (requirement 3).** `test/repo-order.test.sh`
    passes: `repo_order_by_effective_age` returns an order byte-identical to

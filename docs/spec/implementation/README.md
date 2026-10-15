@@ -36,7 +36,7 @@ Split from a single file by #2094 so every part is within the 100,000-byte docum
   - [The Script — requirements, continued (part 4 of 10; 2.5–2.5: The fleet's shared memory…)](requirements/the-script-04.md)
   - [The Script — requirements, continued (part 5 of 10; 2.5a–3a: Compose reconciliation…)](requirements/the-script-05.md)
   - [The Script — requirements, continued (part 6 of 10; 3c–3v: Review-feedback pre-fetch (requirement 3c)…)](requirements/the-script-06.md)
-  - [The Script — requirements, continued (part 7 of 10; 3w–4h: Verdict quality is a rate, and every verdict pays for its …)](requirements/the-script-07.md)
+  - [The Script — requirements, continued (part 7 of 10; 3w–4l: Verdict quality is a rate, and every verdict pays for its …)](requirements/the-script-07.md)
   - [The Script — requirements, continued (part 8 of 10; 4i–8d: The assembled Co-Ordinator prompt is bounded by its model'…)](requirements/the-script-08.md)
   - [The Script — requirements, continued (part 9 of 10; 8e–59: The classifier-escape audit re-checks the outcome, not jus…)](requirements/the-script-09.md)
   - [The Script — requirements, continued (part 10 of 10; 60–60: The CLI surface: `scripts/node-health.sh`…)](requirements/the-script-10.md)
