@@ -565,7 +565,7 @@ assert_eq "...and an open issue under the resolved slug still keeps it ineligibl
   "$(reason_for TD1 3 0 "$open_52" "" '{"o/old":"o/r"}')"
 
 # issue #2359: `same_item` resolves the same alias map, so `refined_before` —
-# requirement 35d's thrash guard — recognizes a refinement logged under the
+# requirement 36b's thrash guard — recognizes a refinement logged under the
 # repo's current slug as refining a `needs-refinement` block recorded under a
 # slug in that repo's `previous_slugs`. Without this, items 1198 and 1199 of
 # `Poetic-Poems/agent-ops` kept reading unrefined under their renamed slug for

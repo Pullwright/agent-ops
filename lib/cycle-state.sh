@@ -1172,7 +1172,7 @@ ENABLER_ELIGIBLE_JQ='
 # through the same map (#2359), so an escalation, an `enabler-examined`, or
 # the `item-refined` behind `refined_before` logged under one slug is matched
 # against a block recorded under the other — without that, `refined_before`
-# read null for an item refined across a rename, disarming requirement 35d's
+# read null for an item refined across a rename, disarming requirement 36b's
 # one-refinement-per-item thrash guard exactly when the rename made it most
 # likely to fire.
 #

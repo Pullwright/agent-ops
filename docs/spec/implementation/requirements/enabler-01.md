@@ -162,7 +162,7 @@
     slug would not be recognized as describing a block recorded under a slug
     in that repo's `previous_slugs`, and `refined_before` would read `null`
     for an item genuinely refined across a rename — disarming requirement
-    35d's thrash guard exactly when the rename made a second, redundant
+    36b's thrash guard exactly when the rename made a second, redundant
     refinement most likely.
 
     **A phantom `item-refined` event is skipped, not trusted (TD-PPagop-
