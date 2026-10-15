@@ -622,6 +622,156 @@ crash_loop_retire_resolved 2026-09-05T00:13:05Z
 assert_eq "crash_loop_min_clear_minutes 0 retires on the first nameable success, as before this key existed" \
   "1" "$STUB_GH_CLOSE_CALLS"
 
+# --- Multi-node recovery: the named success walks forward with a staggered
+# fleet (agent-ops#2311) ------------------------------------------------------
+#
+# Each node in the fleet is administered separately, so they do not clear a
+# shared incident at the same moment: one node (here "n-A") can succeed
+# while a sibling ("n-B") is still failing under the very same detail. The
+# 2026-10-10 incident (#2297/#2298/#2299) is the real one — four nodes
+# refused by the API, the remedy an `.env` edit and a container recreate per
+# host. Asking for the earliest success at or after the run's own `first_ts`
+# names n-A's, and n-B's later failures then read as a recurrence "at or
+# after" that fixed point for ever, so the issue never retires however long
+# the fleet has since been healthy; the clamp forward to the incident's last
+# same-detail failure is what these fixtures hold in place.
+crash_loop_min_clear_minutes=30
+
+union_log="$WORKDIR/union-staggered-recovery-retires.jsonl"
+{
+  fail_at 2026-10-10T08:00:00Z n1 'coordinator exited 126'
+  fail_at 2026-10-10T08:15:00Z n1 'coordinator exited 126'
+  fail_at 2026-10-10T08:30:00Z n1 'coordinator exited 126'
+  fail_at 2026-10-10T08:45:00Z n1 'coordinator exited 126'
+  printf '%s\n' "$(jq -nc '{ts:"2026-10-10T08:00:05Z", node:"n1", event:"crash-loop-escalated", stage:"coordinator", detail:"coordinator exited 126", first_ts:"2026-10-10T08:00:00Z", issue_number:1301, issue_url:"https://github.com/o/r/issues/1301"}')"
+  success_at 2026-10-10T09:00:00Z n-A
+  fail_at 2026-10-10T09:02:00Z n-B 'coordinator exited 126'
+  fail_at 2026-10-10T09:06:00Z n-B 'coordinator exited 126'
+  fail_at 2026-10-10T09:10:00Z n-B 'coordinator exited 126'
+  success_at 2026-10-10T09:40:00Z n-B
+} > "$union_log"
+STUB_GH_CLOSE_MODE="success"; STUB_GH_CLOSE_CALLS=0; EVENTS=()
+crash_loop_retire_resolved 2026-10-10T10:20:00Z
+assert_eq "a run whose later node (n-B) clears after the first node (n-A) still retires" \
+  "1" "$STUB_GH_CLOSE_CALLS"
+assert_eq "naming the later node's own clearing success, not the earlier one's" \
+  "1" "$(grep -c '2026-10-10T09:40:00Z' <<<"$STUB_GH_CLOSE_LAST_BODY")"
+
+union_log="$WORKDIR/union-staggered-recovery-still-recurring.jsonl"
+{
+  fail_at 2026-10-10T10:00:00Z n1 'coordinator exited 126'
+  fail_at 2026-10-10T10:15:00Z n1 'coordinator exited 126'
+  fail_at 2026-10-10T10:30:00Z n1 'coordinator exited 126'
+  fail_at 2026-10-10T10:45:00Z n1 'coordinator exited 126'
+  printf '%s\n' "$(jq -nc '{ts:"2026-10-10T10:00:05Z", node:"n1", event:"crash-loop-escalated", stage:"coordinator", detail:"coordinator exited 126", first_ts:"2026-10-10T10:00:00Z", issue_number:1302, issue_url:"https://github.com/o/r/issues/1302"}')"
+  success_at 2026-10-10T11:00:00Z n1
+  fail_at 2026-10-10T11:02:00Z n1 'coordinator exited 126'
+} > "$union_log"
+STUB_GH_CLOSE_MODE="success"; STUB_GH_CLOSE_CALLS=0; EVENTS=()
+crash_loop_retire_resolved 2026-10-10T11:40:00Z
+assert_eq "a same-detail failure shortly after the only clearing success still leaves the issue open" \
+  "0" "$STUB_GH_CLOSE_CALLS"
+
+union_log="$WORKDIR/union-staggered-recovery-settles.jsonl"
+{
+  fail_at 2026-10-10T12:00:00Z n1 'coordinator exited 126'
+  fail_at 2026-10-10T12:15:00Z n1 'coordinator exited 126'
+  fail_at 2026-10-10T12:30:00Z n1 'coordinator exited 126'
+  fail_at 2026-10-10T12:45:00Z n1 'coordinator exited 126'
+  printf '%s\n' "$(jq -nc '{ts:"2026-10-10T12:00:05Z", node:"n1", event:"crash-loop-escalated", stage:"coordinator", detail:"coordinator exited 126", first_ts:"2026-10-10T12:00:00Z", issue_number:1303, issue_url:"https://github.com/o/r/issues/1303"}')"
+  success_at 2026-10-10T13:00:00Z n1
+  fail_at 2026-10-10T13:02:00Z n1 'coordinator exited 126'
+  success_at 2026-10-10T13:05:00Z n1
+} > "$union_log"
+STUB_GH_CLOSE_MODE="success"; STUB_GH_CLOSE_CALLS=0; EVENTS=()
+crash_loop_retire_resolved 2026-10-10T13:40:00Z
+assert_eq "once a later success settles with nothing recurring since, the run retires" \
+  "1" "$STUB_GH_CLOSE_CALLS"
+assert_eq "naming the later, settled success" \
+  "1" "$(grep -c '2026-10-10T13:05:00Z' <<<"$STUB_GH_CLOSE_LAST_BODY")"
+
+# The other half of that: because the named success moves with the
+# incident's last failure, every recurrence re-arms
+# `crash_loop_min_clear_minutes` from scratch. An early success that is
+# itself long past the window therefore buys a flapping run nothing — the
+# 2026-09-05 shape, which must stay open for a rebind to reuse.
+union_log="$WORKDIR/union-staggered-recovery-rearms.jsonl"
+{
+  fail_at 2026-10-10T12:00:00Z n1 'coordinator exited 126'
+  fail_at 2026-10-10T12:15:00Z n1 'coordinator exited 126'
+  fail_at 2026-10-10T12:30:00Z n1 'coordinator exited 126'
+  fail_at 2026-10-10T12:45:00Z n1 'coordinator exited 126'
+  printf '%s\n' "$(jq -nc '{ts:"2026-10-10T12:00:05Z", node:"n1", event:"crash-loop-escalated", stage:"coordinator", detail:"coordinator exited 126", first_ts:"2026-10-10T12:00:00Z", issue_number:1305, issue_url:"https://github.com/o/r/issues/1305"}')"
+  success_at 2026-10-10T13:00:00Z n1
+  fail_at 2026-10-10T13:50:00Z n1 'coordinator exited 126'
+  success_at 2026-10-10T13:52:00Z n1
+} > "$union_log"
+STUB_GH_CLOSE_MODE="success"; STUB_GH_CLOSE_CALLS=0; EVENTS=()
+crash_loop_retire_resolved 2026-10-10T14:00:00Z
+assert_eq "a recurrence re-arms the clear window, even with an older success long past it" \
+  "0" "$STUB_GH_CLOSE_CALLS"
+assert_eq "and no retirement is logged for the flap" \
+  "0" "$(events_of crash-loop-retired | wc -l | tr -d ' ')"
+
+# The shape every fixture above leaves out, and the one a live fleet is in
+# almost all of the time: the incident ended hours ago and the Co-Ordinator
+# has been succeeding every cycle since, right up to `union_log_horizon`
+# (which is `log_latest_ts "$union_log"`, i.e. ≈ now — agent-cycle.sh). The
+# named success must be the one that *ended the incident*, not the most
+# recent one in the log: anchoring `crash_loop_min_clear_minutes` to the
+# latest success would leave it for ever only minutes older than the
+# horizon, so the window could never elapse and the escalation would be
+# pinned open by the hysteresis itself — the #2311 symptom again, from the
+# other side.
+union_log="$WORKDIR/union-recovered-and-still-succeeding.jsonl"
+{
+  fail_at 2026-10-10T14:00:00Z n1 'coordinator exited 126'
+  fail_at 2026-10-10T14:15:00Z n2 'coordinator exited 126'
+  fail_at 2026-10-10T14:30:00Z n1 'coordinator exited 126'
+  fail_at 2026-10-10T14:45:00Z n2 'coordinator exited 126'
+  printf '%s\n' "$(jq -nc '{ts:"2026-10-10T14:00:05Z", node:"n1", event:"crash-loop-escalated", stage:"coordinator", detail:"coordinator exited 126", first_ts:"2026-10-10T14:00:00Z", issue_number:1304, issue_url:"https://github.com/o/r/issues/1304"}')"
+  for recovered_h in 15 16 17 18 19 20 21 22 23; do
+    for recovered_m in 00 15 30 45; do
+      success_at "2026-10-10T$recovered_h:$recovered_m:00Z" n1
+      success_at "2026-10-10T$recovered_h:$recovered_m:30Z" n2
+    done
+  done
+} > "$union_log"
+STUB_GH_CLOSE_MODE="success"; STUB_GH_CLOSE_CALLS=0; EVENTS=()
+crash_loop_retire_resolved 2026-10-10T23:46:00Z
+assert_eq "a fleet that recovered hours ago and is still succeeding every cycle retires" \
+  "1" "$STUB_GH_CLOSE_CALLS"
+assert_eq "naming the success that ended the incident, not the newest one in the log" \
+  "1" "$(grep -c '2026-10-10T15:00:00Z' <<<"$STUB_GH_CLOSE_LAST_BODY")"
+
+# The one case the clamp hands straight back to `crash_loop_detail_recurred_
+# since`: a same-detail failure sharing the clearing success's own timestamp.
+# Both the clamp's and the success lookup's bounds are inclusive, so a
+# success logged in the very same second as the incident's last failure is
+# still nameable, and only the recurrence guard — inclusive at its own lower
+# bound — rejects it. Nothing else here can: the window below has long since
+# elapsed, and no failure follows. Requirement 2.7 names this as what that
+# guard still answers for on its own.
+union_log="$WORKDIR/union-staggered-recovery-boundary.jsonl"
+{
+  fail_at 2026-10-10T16:00:00Z n1 'coordinator exited 126'
+  fail_at 2026-10-10T16:15:00Z n1 'coordinator exited 126'
+  fail_at 2026-10-10T16:30:00Z n1 'coordinator exited 126'
+  fail_at 2026-10-10T16:45:00Z n1 'coordinator exited 126'
+  printf '%s\n' "$(jq -nc '{ts:"2026-10-10T16:00:05Z", node:"n1", event:"crash-loop-escalated", stage:"coordinator", detail:"coordinator exited 126", first_ts:"2026-10-10T16:00:00Z", issue_number:1306, issue_url:"https://github.com/o/r/issues/1306"}')"
+  success_at 2026-10-10T17:00:00Z n-A
+  fail_at 2026-10-10T17:10:00Z n-B 'coordinator exited 126'
+  success_at 2026-10-10T17:10:00Z n-B
+} > "$union_log"
+STUB_GH_CLOSE_MODE="success"; STUB_GH_CLOSE_CALLS=0; EVENTS=()
+crash_loop_retire_resolved 2026-10-10T18:00:00Z
+assert_eq "a same-detail failure sharing the clearing success's own timestamp still blocks retirement" \
+  "0" "$STUB_GH_CLOSE_CALLS"
+assert_eq "and no retirement is logged for the boundary case" \
+  "0" "$(events_of crash-loop-retired | wc -l | tr -d ' ')"
+
+crash_loop_min_clear_minutes=0
+
 # --- Prefix-collision dedup filters (agent-ops#1694) ------------------------
 #
 # PR #1687 introduced a per-repository crash-loop item ref

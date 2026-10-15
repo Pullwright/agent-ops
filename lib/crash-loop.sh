@@ -345,6 +345,24 @@ crash_loop_reverify() {
 # `STAGE=coordinator`, the only class `crash_loop_reverify` can name a single
 # resetting stage-end for (pre-selection resets on either a clean cycle exit
 # or a selection-path stage-start, no single event answers "the" success).
+#
+# The *earliest* qualifying success, which is what makes this reader usable
+# as `crash_loop_retire_resolved`'s own retirement clock: it is the instant
+# the incident stopped, so it ages, and `crash_loop_min_clear_minutes`
+# measured against it eventually elapses. The latest success would not
+# (agent-ops#2311): a fleet that has recovered logs another Co-Ordinator
+# success every cycle, so the latest one is for ever only minutes older than
+# `union_log_horizon` and that window could never elapse at all. Which
+# success is the earliest depends entirely on where FIRST_TS is placed, and
+# that is the caller's job — `crash_loop_retire_resolved` clamps it forward
+# to the incident's own last same-detail failure
+# (`crash_loop_detail_last_failure_since` below) rather than passing the
+# run's `first_ts` raw, so that a sibling node still failing under the same
+# detail pushes the named success past its own failures instead of having
+# them read as a recurrence for ever after. This reader stays a pure
+# "earliest qualifying success at or after a given instant"; all of the
+# judgement about which instant to ask about lives at the call site.
+#
 # A non-empty REPO restricts the match to that repository's own successes,
 # once the run this is naming evidence for is itself repository-scoped
 # (agent-ops#1630) — a sibling repository's Co-Ordinator succeeding is not
@@ -366,6 +384,44 @@ crash_loop_last_success_since() {
                and ((.exit_code // 1) == 0) and (.ts // "") >= $ts
                and ($repo == "" or (.repo // "") == $repo)) ]
     | sort_by(.ts) | first | .ts // empty
+  ' 2>/dev/null || true
+}
+
+# crash_loop_detail_last_failure_since DETAIL SINCE_TS [REPO] < union.jsonl
+# Print the timestamp of the *latest* Co-Ordinator `attempt-failed` carrying
+# DETAIL (and, if REPO is non-empty, that same `repo`) with `ts` at or after
+# SINCE_TS, or nothing if none exists. The matching terms are
+# `crash_loop_detail_recurred_since`'s below, exactly; this answers "when did
+# the incident last fail" where that one answers "has it failed since".
+#
+# `crash_loop_retire_resolved` clamps its success lookup forward to this
+# (agent-ops#2311), which is what lets a fleet whose nodes recover at
+# different times retire its escalation at all. Each node is administered
+# separately — the remedy for the 2026-10-10 incident was an `.env` edit and
+# a container recreate per host — so one node routinely clears while a
+# sibling, failing under the very same detail, has not. Asking only for the
+# earliest success at or after the run's own `first_ts` names the node that
+# cleared first, and every later failure from the still-broken sibling then
+# reads as a recurrence "at or after" that fixed point, for ever
+# (agent-ops#2297/#2298/#2299). Asking instead for the earliest success at or
+# after the incident's *last* same-detail failure names a success with no
+# same-detail failure anywhere after it — the instant the whole fleet, not
+# just its luckiest node, stopped failing — and that instant then ages
+# normally under `crash_loop_min_clear_minutes`.
+#
+# An empty REPO means no repository constraint at all, on the same terms —
+# and for the same reason — as `crash_loop_last_success_since` above. Both
+# directions are conservative here: a failure this misses can only move the
+# clamp earlier, which at worst leaves the retirement where #2311 found it,
+# never closing an alarm the log in hand still contradicts.
+crash_loop_detail_last_failure_since() {
+  local detail="$1" since_ts="$2" repo="${3:-}"
+  jq -r -R -n --arg d "$detail" --arg ts "$since_ts" --arg repo "$repo" '
+    [ inputs | select(length > 0) | (fromjson? // empty)
+      | select(.event == "attempt-failed" and (.stage // "") == "coordinator"
+               and (.detail // "") == $d and (.ts // "") >= $ts
+               and ($repo == "" or (.repo // "") == $repo)) ]
+    | sort_by(.ts) | last | .ts // empty
   ' 2>/dev/null || true
 }
 
