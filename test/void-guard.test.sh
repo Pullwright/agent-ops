@@ -1014,6 +1014,14 @@ tracking_fixture='## R-01 — singular bare issue
 ## R-04 — no tracking line at all
 
 **Approach:** nothing to track here.
+
+## R-05 — two backtick register ids on the same line (issue #2355)
+
+**Approach:** a third thing. Tech-debt items: `TD-PPpfid-26080910` and `TD-PPpfid-26080911`.
+
+## R-06 — a bare id prefixed with owner/repo is a different repository (issue #2355)
+
+**Approach:** see the other repo. Tech-debt item: Poetic-Poems/poetic-fiddle#999.
 '
 printf '{"content":"%s"}' "$(printf '%s' "$tracking_fixture" | base64 -w0)" \
   >"$tmp_dir/contents-main-reviews_project-review-2026-09-28_03-recommendations.md"
@@ -1032,6 +1040,15 @@ assert_eq "  ... and prints nothing" "" "$out"
 
 out="$(review_recommendation_tracking_ids "review-2026-09-28-R-99" "Poetic-Poems/poetic-fiddle" main "$tmp_dir/gh")"; rc=$?
 assert_eq "an unknown recommendation number resolves to nothing" "1" "$rc"
+
+assert_eq "two backtick register ids on one line both come back, one per line" \
+  "TD-PPpfid-26080910
+TD-PPpfid-26080911" \
+  "$(review_recommendation_tracking_ids "review-2026-09-28-R-05" "Poetic-Poems/poetic-fiddle" main "$tmp_dir/gh")"
+
+out="$(review_recommendation_tracking_ids "review-2026-09-28-R-06" "Poetic-Poems/poetic-fiddle" main "$tmp_dir/gh")"; rc=$?
+assert_eq "a bare id prefixed with owner/repo is not emitted as a local id" "1" "$rc"
+assert_eq "  ... and prints nothing" "" "$out"
 
 # --- void_pr_matches_item: the review-ref resolver fallback (issue #2030) ------
 # The exact shape of the incident: PRs #290/#312/#313/#325 each implemented a
