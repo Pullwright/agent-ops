@@ -227,7 +227,8 @@ principle it rests on.`
   requests by hand against 15 autonomous landings. It settles the
   merge-autonomy configuration and nothing else: it decides no open
   question or escalation, and is no reason to land a pull request that any
-  gate holds.
+  gate holds. Amended 2026-10-16: agent-ops's wait is 6
+  hours (see that date's line).
 - 2026-10-02 · #1125 · **One image, many containers (D28).** Every Actor,
   every Compose service and every node runs the one node image; per-stage
   tool scope and credentials come from the launch seam (#981), a per-stage
@@ -322,3 +323,15 @@ principle it rests on.`
   this line; closing a duplicate, or an item whose premise is gone, is
   unaffected. The work is #2422 (with #2416 and #2417). Decided by the
   owner on 2026-10-16.
+- 2026-10-16 · #2366/#2398 · **agent-ops's protected-path cool-off is 6
+  hours (a `landing_cool_off_hours` override), and the next protected-path
+  pull request is left to land autonomously as the first end-to-end test of
+  that path.** The audit on #2398 found that the owner had queued every
+  protected-path pull request by hand between 0.1 and 20 hours after its
+  approval, so none reached the end of the 24-hour wait, no protected-path
+  pull request had ever landed autonomously, and the landing code after the
+  cool-off had never run in production. The owner chose to test it, and
+  shortened the wait to cut the chance that a conflicting merge pushes the
+  branch and restarts the clock. poetic and poetic-fiddle keep 24 hours,
+  because their protected paths reach production. Decided by the owner on
+  2026-10-16.
