@@ -155,6 +155,27 @@ check_condition "node disabled" '{node_disabled:true}' "node-disabled"
 check_condition "fleet disabled" '{fleet_disabled:true}' "fleet-disabled"
 check_condition "a usage-limit freeze in force" '{limit_freeze:true}' "usage-limit-freeze"
 
+# --- xai_configured/xai_credentials_present (issue #2139) ------------------
+
+check_condition "xai configured with neither XAI_API_KEY nor a subscription login" \
+  '{xai_configured:true,xai_credentials_present:false}' "credentials-missing"
+
+xai_ok="$(jq -c '. + {xai_configured:true,xai_credentials_present:true}' <<<"$all_good")"
+assert_eq "readiness: xai configured with a credential present is ready" "true" \
+  "$(node_health_readiness "$xai_ok" | jq -r '.ready')"
+
+xai_not_configured="$(jq -c '. + {xai_configured:false,xai_credentials_present:false}' <<<"$all_good")"
+assert_eq "readiness: xai not configured at all is ready regardless of xai_credentials_present" "true" \
+  "$(node_health_readiness "$xai_not_configured" | jq -r '.ready')"
+
+# A caller that predates this pair (any fixture or integration that never
+# sets xai_configured/xai_credentials_present) must see unchanged readiness:
+# the two fields default to missing, never false, in $all_good itself —
+# unlike every check above, this one is tested against a fact object that
+# never names the fields at all, not merely sets them false.
+assert_eq "readiness: an old caller with no xai fields at all is unaffected" "true" \
+  "$(node_health_readiness "$all_good" | jq -r '.ready')"
+
 # An unreadable local meter is "unknown", not "not ready" — the disk/budget
 # checks never fire on a null reading, only on a reading that is actually
 # below the floor (see the header's own distinction between an unreachable

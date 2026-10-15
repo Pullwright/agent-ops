@@ -303,20 +303,20 @@ file and carries placeholders only; `.env` itself is never committed.
   `docker compose up -d` there; no image roll delivers them, which is the
   general hazard `lib/compose-drift.sh` and `scripts/check-node-compose.sh`
   exist for.
-- **Model credentials are one of two paths, per D4.** `ANTHROPIC_API_KEY`
-  reaches the scheduler from `.env` through the shared environment block —
-  the BYO API-key path, D4's primary — read by `claude` directly and
-  non-interactively on every invocation. Left empty, a node instead runs the
-  subscription-OAuth alternative: an interactive `claude` login performed
-  once against the `claude-config` volume, which the entrypoint warns is
-  absent on every start until that login exists — a warning scoped to this
-  path alone, since it would be false on the API-key path above. This path
-  carries D4's stated constraints — interactive per node, so it does not
-  scale the way the API-key path does, and limited by the subscription's own
-  terms to your own use. `scripts/doctor.sh`'s Claude section reports on
-  whichever path this node carries. A key not scoped at creation to a single
-  workspace is refused on every request unless the same block also forwards
-  `ANTHROPIC_WORKSPACE_ID` (issue #2309):
+- **Model credentials are one of two paths per provider, per D4/D29/D30.**
+  `ANTHROPIC_API_KEY` reaches the scheduler from `.env` through the shared
+  environment block — the BYO API-key path, D4's primary — read by `claude`
+  directly and non-interactively on every invocation. Left empty, a node
+  instead runs the subscription-OAuth alternative: an interactive `claude`
+  login performed once against the `claude-config` volume, which the
+  entrypoint warns is absent on every start until that login exists — a
+  warning scoped to this path alone, since it would be false on the API-key
+  path above. This path carries D4's stated constraints — interactive per
+  node, so it does not scale the way the API-key path does, and limited by
+  the subscription's own terms to your own use. `scripts/doctor.sh`'s Claude
+  section reports on whichever path this node carries. A key not scoped at
+  creation to a single workspace is refused on every request unless the same
+  block also forwards `ANTHROPIC_WORKSPACE_ID` (issue #2309):
   `lib/substrate-claude-code.sh`'s `substrate_claude_code_compose_workspace_header`
   composes it, together with any operator-supplied `ANTHROPIC_CUSTOM_HEADERS`,
   into the `anthropic-workspace-id` header every request from such a key
@@ -327,6 +327,16 @@ file and carries placeholders only; `.env` itself is never committed.
   outright — never reading `ANTHROPIC_WORKSPACE_ID` itself, since it is the
   header composed from it, not the variable, that the live request either
   carries or doesn't.
+
+  D29 extends the same two-path stance to xAI's Grok Build substrate:
+  `XAI_API_KEY` (issue #2134) is the same BYO API-key shape, read directly
+  and non-interactively by every `grok` invocation; left empty, a node
+  instead runs `grok login --device-auth` once (issue #2139), an interactive
+  login against the `grok-config` volume, the Grok Build counterpart of
+  `claude-config`. Native precedence prefers a stored session over the key
+  when both are present — the mirror image of D4's own Claude default — and
+  `scripts/doctor.sh`'s xAI section reports both lanes independently, the
+  same shape its Claude section already has.
 - **`tailscale`** (profile `tailnet`) — the sidecar whose network namespace
   `dashboard` shares. Refuses to start when `TS_AUTHKEY` is empty: its
   `entrypoint` checks the variable itself, before the image's own
@@ -569,15 +579,18 @@ file and carries placeholders only; `.env` itself is never committed.
   the same library rather than duplicating a registry client there.
 - Which profiles a node runs is set by `COMPOSE_PROFILES` in its `.env`, so the
   operator's command is `docker compose up -d` on every node regardless.
-- Three named volumes carry everything that must survive a container being
+- Four named volumes carry everything that must survive a container being
   replaced: `state` (the node's cycle records, logs and locks), `claude-config`
   (the OAuth credentials, which refresh themselves and cannot be rebuilt from
   the image, and — via `CLAUDE_CONFIG_DIR` — the global config file that would
-  otherwise sit outside it), and `workspaces`. A node updates by replacing its
-  containers; these are what it keeps. Anything Claude Code writes that is not
-  under one of these mount points is lost on the next roll, which is why the
-  config directory is relocated rather than the volume list extended: a named
-  volume cannot mount a single file.
+  otherwise sit outside it), `grok-config` (the xAI subscription path's own
+  session, issue #2139, mounted at the whole of `$GROK_HOME` the same way
+  `claude-config` is mounted at the whole of `$CLAUDE_CONFIG_DIR`), and
+  `workspaces`. A node updates by replacing its containers; these are what it
+  keeps. Anything Claude Code writes that is not under one of these mount
+  points is lost on the next roll, which is why the config directory is
+  relocated rather than the volume list extended: a named volume cannot mount
+  a single file.
 - The dashboard service of either profile `depends_on` the scheduler. Both mount
   the `state` volume, and on a node's first start that volume is empty and is
   seeded from the image's mount point; two containers seeding it at once race,

@@ -319,14 +319,14 @@ ENV HOME=/home/agent
 # of that same warning — harmless, and the CI check below fails first.
 ENV CLAUDE_CONFIG_DIR=/home/agent/.claude
 
-# Where Grok Build keeps its own sessions, logs and seeded config.toml
-# (issue #2134). Unlike CLAUDE_CONFIG_DIR, this is deliberately *not* a
-# persistent volume: on the API-key path nothing here needs to outlive the
-# container (a salvage resume happens within the same cycle, in the same
-# container), and the default `~/.grok` would otherwise sit inside `agent`'s
-# home directory, which `chmod 0711` above keeps the stage user from
-# listing. #2139's subscription path adds the one thing here that does need
-# to persist (`auth.json`), on its own volume, mirroring `claude-config`.
+# Where Grok Build keeps its own sessions, logs, seeded config.toml and —
+# once a device-code login completes (issue #2139) — the session in
+# `auth.json`, which refreshes itself and cannot be regenerated from the
+# image, same reasoning as CLAUDE_CONFIG_DIR above. The default `~/.grok`
+# would otherwise sit inside `agent`'s home directory, which `chmod 0711`
+# above keeps the stage user from listing, so this names a path of its own
+# instead — mounted as the `grok-config` volume (deploy/docker/compose.yaml),
+# mirroring `claude-config`.
 ENV GROK_HOME=/home/agent/.grok-run
 
 COPY --chown=agent:agent . /app
@@ -335,14 +335,17 @@ COPY --chown=agent:agent . /app
 # `agent`. This is not tidiness: Docker seeds a new named volume from whatever
 # is at its mount point in the image, ownership included, and creates the
 # directory as root when there is nothing there. Without these lines the very
-# first `docker compose up` gives the container three root-owned volumes it
+# first `docker compose up` gives the container four root-owned volumes it
 # cannot write, and every service restart-loops on its first mkdir.
 #
-# The Claude configuration's mount point is the one exception to "owned by
-# `agent`": it is group `stage`, setgid and 2770, because the CLI only ever
-# runs as the stage user (deploy/docker/claude-shim.sh) while the entrypoint,
-# as `agent`, still seeds its settings. A volume created before this line
-# existed is brought to the same shape by the entrypoint.
+# The Claude and Grok Build configuration mount points are the two exceptions
+# to "owned by `agent`": both are group `stage`, setgid and 2770, because
+# their own CLIs only ever run as the stage user (deploy/docker/claude-shim.sh,
+# deploy/docker/grok-shim.sh) while the entrypoint, as `agent`, still seeds
+# Claude's settings (and, on the Grok side, config.toml). A claude-config
+# volume created before this line existed is brought to the same shape by the
+# entrypoint; grok-config carries no such older-image lineage, since this is
+# the first image to mount it as a volume at all.
 #
 # `state_dir`/`workspace_root` are read out of the `config.json` just copied
 # in above, rather than written here as literals: this installation's

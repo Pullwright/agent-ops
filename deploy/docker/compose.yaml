@@ -69,9 +69,11 @@ x-agent-ops-env: &agent-ops-env
   # The xAI provider's own credential (issue #2134), for a `providers.<name>`
   # entry whose `substrate` is `grok-build` — read directly and
   # non-interactively by every `grok` invocation, the same BYO API-key shape
-  # ANTHROPIC_API_KEY above gives Claude Code. Left empty, no Grok Build
-  # stage can run; the subscription alternative (#2139) needs a second
-  # variable of its own, since the two credentials are not interchangeable.
+  # ANTHROPIC_API_KEY above gives Claude Code. Left empty, a node instead
+  # runs the subscription alternative (issue #2139): an interactive
+  # `grok login --device-auth` performed once against the grok-config volume
+  # below, the same shape the Claude subscription login above has, not a
+  # second variable here.
   XAI_API_KEY: ${XAI_API_KEY:-}
   # What lets a stage check the Vercel preview its own pull request deploys
   # (scripts/preview-deploy.sh). Both optional, and a node without either
@@ -223,10 +225,16 @@ x-agent-ops: &agent-ops
       max-file: ${AGENT_OPS_LOG_MAX_FILE:-5}
   environment: *agent-ops-env
   volumes:
-    # The three things that must survive a container being replaced by a newer
+    # The four things that must survive a container being replaced by a newer
     # image. Everything else in the container is rebuilt from the image.
     - state:/home/agent/.local/state/poetic-agents
     - claude-config:/home/agent/.claude
+    # Grok Build's own session (issue #2139), xAI's counterpart of
+    # claude-config above: a device-code login's $GROK_HOME/auth.json
+    # refreshes itself and cannot be rebuilt from the image, so the whole of
+    # $GROK_HOME (the Dockerfile's own ENV default) is the mount point, same
+    # as CLAUDE_CONFIG_DIR is claude-config's.
+    - grok-config:/home/agent/.grok-run
     - workspaces:/home/agent/.cache/poetic-agents/workspaces
     # This file, handed to the containers it creates, so a node can tell when
     # its copy has fallen behind the repository (issue #131: nothing else can
@@ -1219,8 +1227,12 @@ volumes:
   # between nodes; until then it is per-node.
   state:
   # Claude's OAuth credentials, which refresh themselves and cannot be
-  # regenerated from the image. The one volume whose loss costs a manual login.
+  # regenerated from the image. A volume whose loss costs a manual login.
   claude-config:
+  # Grok Build's device-code login session (issue #2139) — the xAI
+  # counterpart of claude-config above, for the same reason: it refreshes
+  # itself and cannot be regenerated from the image.
+  grok-config:
   # Throwaway clones. Kept in a volume rather than the container layer so a
   # restart mid-cycle does not orphan a large tree inside a dead container.
   workspaces:

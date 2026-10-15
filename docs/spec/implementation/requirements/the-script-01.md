@@ -153,7 +153,17 @@
    lane's own configured weight, and whether it is enabled (explicitly, or by
    default given this node's own live credential presence). Both lanes
    absent is still a `fail`, exactly as a single missing credential was
-   before this paragraph's own configuration key existed.
+   before this paragraph's own configuration key existed. Its "xAI" section
+   reads the same map the same way for whichever provider entry names
+   substrate `grok-build` — by that entry's own key, never the literal name
+   `xai`, which `grok-build` is not reserved to — reporting the `api` lane by
+   `XAI_API_KEY` and the `subscription` lane by the existence of
+   `$GROK_HOME/auth.json` alone, since completing the device-code login that
+   writes it is an interactive operator step no check may perform — D4's own
+   exception to the non-interactive bring-up, the same one the Claude
+   subscription login carries. Both
+   present warns that Grok Build's own precedence prefers the stored session
+   over the key; neither is the same `fail`.
 1b. **The configuration has a machine-readable schema, and it is the startup
    gate both pipelines run on.** `config.schema.json` states the shape of
    `config.json` — every key an installation may set, its type, its

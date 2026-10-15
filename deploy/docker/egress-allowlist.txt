@@ -57,9 +57,17 @@ claude.com
 # --- xAI: the Grok Build substrate's API-key path (issue #2134) -----------
 # Model calls, and everything else Grok Build's optional traffic
 # (GROK_DISABLE_AUTOUPDATER/GROK_TELEMETRY_ENABLED in compose.yaml) leaves
-# needing a network call for. The subscription path's own two domains
-# (auth.x.ai, cli-chat-proxy.grok.com) arrive with #2139.
+# needing a network call for.
 api.x.ai
+# The subscription path's device-code login (issue #2139; `docker compose
+# exec scheduler grok login --device-auth`) — confirmed contacted behind
+# this fence directly (the login fails at once with exit 1 when refused,
+# prints the URL and code when allowed). `cli-chat-proxy.grok.com`, the
+# model catalogue's own subscription-path base_url, is not added here: it
+# was never confirmed actually contacted behind the fence (no live
+# subscription was available to test a real model call against it), tracked
+# as tech debt in #2330 rather than guessed at here.
+auth.x.ai
 
 # --- Vercel: the preview a Reviewer checks (D19 "deployed" tier) ----------
 # scripts/preview-deploy.sh: the deployments API (build logs on failure)...

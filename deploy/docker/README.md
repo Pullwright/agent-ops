@@ -263,14 +263,42 @@ on this node:
 docker compose exec scheduler /app/scripts/claude-policy-probe.sh
 ```
 
-**xAI (Grok Build, issue #2134), on the same D4 stance D29 extends to a
-second provider:** the API key is the primary path, and the only one this
-image has — the subscription alternative follows in #2139. Add a
-`providers` entry naming this provider and set `XAI_API_KEY` in `.env`
-(step 2); `docker compose up -d` picks it up. Nothing further to do, and —
-unlike the Claude credential above — nothing per-node: `grok` reads the key
-from the environment on every invocation, so any number of nodes may share
-the same key. Verify the same way:
+**xAI (Grok Build), on the same D4 stance D29 extends to a second
+provider:** a node may hold one or both of this provider's own two
+credential lanes too.
+
+*API key (primary, issue #2134):* add a `providers` entry naming this
+provider and set `XAI_API_KEY` in `.env` (step 2); `docker compose up -d`
+picks it up. Nothing further to do, and — unlike the Claude credential
+above — nothing per-node: `grok` reads the key from the environment on
+every invocation, so any number of nodes may share the same key.
+
+*Subscription — a SuperGrok, SuperGrok Heavy or X Premium+ account (alternative,
+issue #2139; interactive per node, own use only):* xAI's own consumer
+Acceptable Use Policy prohibits "unauthorized automated or non-human
+means", and says nothing about whether a headless fleet on a subscription
+is authorised — the product documents this and takes no position, as it
+does for the Claude subscription above. The pool is weekly, shared across
+every Grok product and every node on the same subscription, so an
+exhausted pool stands the whole fleet down on this provider, and spend is
+not reported for this path, so the dashboard reads it as unknown rather
+than zero. Leave `XAI_API_KEY` unset and log in once per node:
+
+```bash
+docker compose exec scheduler grok login --device-auth
+```
+
+(Grok's own error text has been seen to suggest the spelling
+`--device-code` instead — try that if `--device-auth` is rejected.) It
+prints a URL and a code; complete the sign-in on any device, in your own
+browser — the node itself never sees your xAI account credentials, only
+the resulting session. The session lands in the `grok-config` volume,
+which outlives every container this node will ever run, the same shape
+`claude-config` already has for the Claude subscription. A node holding
+both a key and a login runs on whichever `doctor.sh` reports as live below —
+xAI's own precedence prefers the stored session over the key.
+
+Verify either xAI credential the same way:
 
 ```bash
 docker compose exec scheduler /app/scripts/doctor.sh
@@ -293,7 +321,18 @@ own prompt to a second xAI model (`grok-4.6`) to generate a session title,
 with no switch that turns it off — the same account either way, so no new
 party sees anything, but that call's own cost never appears in the
 pipeline's own recorded figures (`docs/METERING-SCHEMA.md`,
-`docs/DATA-HANDLING.md`).
+`docs/DATA-HANDLING.md`). On the subscription path a second, larger gap
+applies until issue #2246 lands: xAI reports an unknown cost as the literal
+`0`, which the pipeline records as a genuine zero rather than "unknown"
+(`docs/METERING-SCHEMA.md`) until the adapter is taught to tell the two
+credential paths apart.
+
+One thing to know about egress: a subscription-authenticated stage's own
+model traffic may use a different xAI domain than the API-key path's
+`api.x.ai` — unconfirmed against this fence (issue #2330) for want of a
+live subscription to test with. If a subscription stage's model calls fail
+where its login succeeded, that domain is the first thing to check against
+`deploy/docker/egress-allowlist.txt`.
 
 ### Did it work?
 
@@ -880,5 +919,6 @@ fleet across the hour](#spreading-the-fleet-across-the-hour).
 ## Unattended bring-up
 
 `cloud-init.yaml` in this directory performs steps 1–3 on a fresh Ubuntu VM.
-Fill in the two secrets before you paste it as user-data; step 4 (the Claude
-login) is interactive and has to happen afterwards over SSH.
+Fill in the two secrets before you paste it as user-data; step 4's logins
+(Claude's, and the xAI subscription's where this node runs one) are
+interactive and have to happen afterwards over SSH.
