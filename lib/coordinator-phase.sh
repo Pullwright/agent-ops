@@ -1010,6 +1010,26 @@ changelog_section_finding=""
 if [[ -n "$impl_pr_url" ]]; then
   log_event "pr-raised" "$(jq -nc --arg u "$impl_pr_url" --arg r "$repo_slug" --arg i "$selected_item" \
     '{pr_url: $u, repo: $r} + (if $i == "" then {} else {item: $i} end)')"
+
+  # Requirement 17a (agent-ops#2074/#2403): the claim loop guarantees the
+  # *value* of pr_label on the work order, but nothing until now guaranteed
+  # the Implementer model actually applied it to the pull request it just
+  # raised. `pr_label_ensure` (lib/labels.sh) is idempotent, so this runs
+  # unconditionally rather than trusting the model's own report; a miss stays
+  # visible via the `warning` below instead of silently dropping this pull
+  # request out of every gatherer that finds this system's own work by label.
+  pr_label_result="$(pr_label_ensure "$repo_slug" "${impl_pr_url##*/}" "$pr_label")" || true
+  case "$pr_label_result" in
+    added)
+      log_event "warning" "$(jq -nc --arg u "$impl_pr_url" --arg l "$pr_label" \
+        '{detail: ($u + " was raised without its own " + $l + " label — the Script applied it directly"), pr_url: $u}')"
+      ;;
+    failed)
+      log_event "warning" "$(jq -nc --arg u "$impl_pr_url" --arg l "$pr_label" \
+        '{detail: ("could not ensure " + $u + " carries its own " + $l + " label"), pr_url: $u}')"
+      ;;
+  esac
+
   # The open PR is now the visible claim for the item-keyed entry; back-pressure
   # counts the PR from here on, not that entry (lib/claim.sh count excludes the
   # PR-keyed entry below from its own count for the same reason). The PR-keyed

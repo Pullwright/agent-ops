@@ -749,3 +749,50 @@ labels_mint() {
                  | split("\t") | {name: .[0], reason: .[1]}))
     }'
 }
+
+# pr_label_ensure SLUG NUMBER LABEL
+# Puts LABEL on pull request #NUMBER in SLUG iff it is not already there —
+# the Script's own backstop for `pr_label` (requirement 17a, agent-ops#2074),
+# run against the pull request itself immediately after `pr-raised`, rather
+# than trusting the Implementer model to have applied the label it was handed
+# (`prompts/implementer.md`'s own "Label it `pr_label`" step). Mirrors
+# `landing_open_question_label_project`'s (`lib/landing.sh`) read-before-write
+# contract exactly, for the identical reason: `gh pr edit --add-label`
+# already no-ops on a pull request that carries LABEL, but only a read
+# beforehand tells the caller whether this call just added it (worth a
+# `warning` — the model's own miss) or found it already there (the ordinary
+# case, worth none).
+#
+# Prints one word:
+#   added     LABEL was absent and is now on the pull request.
+#   present   LABEL was already there. Nothing was touched.
+#   failed    an argument was empty, the label list could not be read, or the
+#             add did not take — most often because LABEL has never been
+#             created in this repository yet. Best-effort either way:
+#             applying `pr_label` is advisory, never a reason to undo an
+#             already-raised pull request.
+#
+# Exit status is 0 for `added` and `present`, 1 for `failed`.
+pr_label_ensure() {
+  local slug="$1" number="$2" label="$3" gh_bin="${LABELS_GH:-gh}" existing
+  if [[ -z "$slug" || -z "$number" || -z "$label" ]]; then
+    printf 'failed'
+    return 1
+  fi
+  if ! existing="$("$gh_bin" pr view "$number" -R "$slug" --json labels \
+                     --jq '.labels[].name' 2>/dev/null)"; then
+    "$gh_bin" pr edit "$number" -R "$slug" --add-label "$label" >/dev/null 2>&1 || true
+    printf 'failed'
+    return 1
+  fi
+  if grep -qxF "$label" <<<"$existing"; then
+    printf 'present'
+    return 0
+  fi
+  if "$gh_bin" pr edit "$number" -R "$slug" --add-label "$label" >/dev/null 2>&1; then
+    printf 'added'
+    return 0
+  fi
+  printf 'failed'
+  return 1
+}

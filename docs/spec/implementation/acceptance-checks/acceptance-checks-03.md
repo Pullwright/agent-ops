@@ -63,6 +63,24 @@
    agent-ops#1156 removed the checked functions and retired
    `test/item-text-fabrication.test.sh` with them. There is nothing left
    here to verify. See requirement 17g's as-built note for the history.
+7i. **The Script re-applies `pr_label` to a raised pull request the
+   Implementer left unlabelled (requirement 17a, agent-ops#2074/#2403).**
+   `test/pr-label-ensure.test.sh` passes, against `pr_label_ensure`
+   (`lib/labels.sh`) and a stubbed `gh`: a pull request that already carries
+   the label prints `present`, exit 0, and no `--add-label` call is ever
+   made; one that does not prints `added`, exit 0, with exactly one
+   `--add-label` call naming the right repo, number and label; an unreadable
+   label list still attempts the add best-effort, and an `--add-label` GitHub
+   itself refuses (most often because the label was never created in this
+   repository), both printing `failed`, exit 1, never a hard error; and an
+   empty argument prints `failed` without spending a `gh` call at all.
+   `test/pr-label-ensure-wiring.test.sh` passes, against the block lifted
+   verbatim from `lib/coordinator-phase.sh` immediately after `pr-raised`:
+   `pr_label_ensure` is called with the repo, the pull request's own number
+   parsed from its URL, and `pr_label`; an `added` verdict logs a `warning`
+   naming the pull request and the label; a `present` verdict logs nothing;
+   a `failed` verdict logs a `warning` too, never aborting the cycle a pull
+   request has already been raised in.
 8. **A no-op Implementer is recorded.** Drive one cycle in which the
    Implementer reports `blocked` without opening a PR: the cycle must exit 0
    having logged an `attempt-failed` carrying that item and the stage's own
