@@ -178,8 +178,14 @@ fi
 # grok-build, and warning on every other node — every node that configures
 # none — would be a permanent false positive. $CONFIG_FILE is read directly
 # here, ahead of the "State and workspace" section's own stricter read of it,
-# because this check needs nothing from that section.
-if [[ -z "${XAI_API_KEY:-}" ]] && [[ -r "$CONFIG_FILE" ]] \
+# because this check needs nothing from that section. Like the Claude
+# warning above, this is a two-lane check: a completed device-code login
+# ($GROK_HOME/auth.json, the subscription lane) runs grok fine with no key,
+# so the warning is scoped to a node holding neither credential — mirroring
+# doctor.sh's own `-s` presence check (never a parse: the login runs as the
+# stage user, so this entrypoint's user may be unable to read a file it can
+# still stat).
+if [[ -z "${XAI_API_KEY:-}" ]] && [[ ! -s "$GROK_HOME/auth.json" ]] && [[ -r "$CONFIG_FILE" ]] \
    && jq -e '(.providers // {}) | to_entries[] | select(.value.substrate == "grok-build")' \
         "$CONFIG_FILE" >/dev/null 2>&1; then
   say "WARNING: XAI_API_KEY is unset, but $CONFIG_FILE configures a provider with substrate"

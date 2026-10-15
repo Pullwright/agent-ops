@@ -283,6 +283,17 @@ assert_contains "grok-build provider configured, no key: warns about XAI_API_KEY
 out="$(XAI_API_KEY=xai-test run_entrypoint "$grok_cfg" true)"
 assert_not_contains "grok-build provider configured, key present: no warning" "XAI_API_KEY is unset" "$out"
 
+# A completed device-code login (the subscription lane, #2139) runs grok
+# fine with no XAI_API_KEY, so the warning must not fire once one exists —
+# mirroring the Claude warning's own two-lane check just above it.
+PRESET_HOME="$tmp_dir/grok-login-volume"
+mkdir -p "$PRESET_HOME/.grok-run"
+printf '{"token":"test"}\n' >"$PRESET_HOME/.grok-run/auth.json"
+out="$(XAI_API_KEY='' run_entrypoint "$grok_cfg" true)"
+unset PRESET_HOME
+assert_not_contains "grok-build provider configured, subscription login present: no warning" \
+  "XAI_API_KEY is unset" "$out"
+
 printf '\n'
 if (( failures > 0 )); then
   printf '%d assertion(s) failed\n' "$failures"
