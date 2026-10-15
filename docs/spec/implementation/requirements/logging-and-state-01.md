@@ -438,7 +438,14 @@
     (requirement 34 calls that the safe direction), where a `recheck-clean`
     folded into an unrelated repo's identically-numbered item would raise
     requirement 18a's comparison threshold and so *suppress* a mandated
-    re-read. The Script tolerates an entry that arrives as a bare id — the
+    re-read. Both sides of that repo match resolve through
+    `config_repo_slug_aliases`' `{old_slug: current_slug}` map first, the
+    same way requirement 34's own fourth detail has the set/clear match
+    resolve (agent-ops#2359): scoping the marker to one repo must not also
+    scope it to one of a renamed repo's two slugs, leaving a block recorded
+    under the slug the repository had before the rename uncovered by a
+    `recheck-clean` logged under the slug it has now.
+    The Script tolerates an entry that arrives as a bare id — the
     event is logged without `repo`, and the extract folds it into every
     same-numbered blocked item, leaning on requirement 18a having obliged the
     emitting Co-Ordinator to re-read all of them — but that is a degraded
@@ -624,7 +631,7 @@
     `attempt-failed` / `unblocked` event *for that item* is `attempt-failed`.
     An `attempt-failed` event must carry enough detail for a future
     Co-Ordinator to judge whether the blocker has since been removed.
-    `unblocked` events may also be appended by hand by the human. Three
+    `unblocked` events may also be appended by hand by the human. Four
     details decide whether this rule works at all:
     - **Key on `repo` and `item` together.** An item id is only unique within
       its repo — every repo has a `dependabot-alert-1`, and registers that
