@@ -894,6 +894,13 @@ log_event "monitor-stage-start" "$(jq -nc --arg m "$monitor_model" \
   --argjson digest_bytes "$digest_bytes" --argjson digest_rung "$digest_rung" \
   '{model: $m} + (if ($b | type) == "object" then $b else {} end)
    + {backstop_min: $bs, inactivity_min: $is, digest_bytes: $digest_bytes, digest_rung: $digest_rung}')"
+# `run_model_stage`'s own credential-lane draw (issue #2241, D30) seeds on
+# the global `cycle_id`, which agent-cycle.sh sets once per cycle but this
+# script never did — leaving every monitor launch on this node seeded on the
+# empty string forever, so the configured lane weights could never be
+# realised here (review round on PR #2385). `$monitor_id` is this launch's
+# own identifier, already unique per run (date, node and pid).
+cycle_id="$monitor_id"
 if run_model_stage monitor "$(( monitor_backstop_min * 60 ))" "$monitor_model" \
      "$monitor_prompt" "$out_file" "$run_dir" "$(( monitor_inactivity_min * 60 ))"; then
   monitor_rc=0
@@ -911,6 +918,7 @@ watchdog_warning="$(stage_watchdog_warning monitor || true)"
 if [[ -n "$watchdog_warning" ]]; then
   log_event "warning" "$watchdog_warning"
 fi
+stage_lane_mismatch_standdown "${state_dir:-}" monitor || true
 if (( ONCE )); then
   cat "$out_file"
   # `if`, not a trailing `&&`: an empty stderr file is the common case, and a

@@ -143,11 +143,24 @@ stage_salvage_result() {
   # resume's own (almost always empty) limit info before that read happens.
   # Saving and restoring here keeps this function's globals side effect
   # entirely local, which is what every caller of it is entitled to assume.
+  #
+  # `stage_lane` and its two explanatory companions (issue #2241, D30) are
+  # saved for the same reason `stage_provider` is, and have to be: the lane
+  # sits beside the provider for exactly the same later reader, so a salvage
+  # resume that drew its own lane would otherwise leave the pair describing
+  # two different runs. `stage_lane_managed_key_detected` is deliberately
+  # *not* saved: it is the one-shot notice that a forced subscription login
+  # turned out to be a Console key, the latch behind it is already set for
+  # the rest of the process, and restoring it would discard the only warning
+  # that discovery ever earns.
   local saved_gaps="$stage_gaps_json" saved_kill="$stage_kill_reason" \
-        saved_limit="$stage_rate_limit_json" saved_provider="$stage_provider"
+        saved_limit="$stage_rate_limit_json" saved_provider="$stage_provider" \
+        saved_lane="$stage_lane" saved_lane_mismatch="$stage_lane_mismatch_json" \
+        saved_lane_states="$stage_lane_states_json"
   session_id="$(jq -r '.session_id // empty' "$out_file" 2>/dev/null || true)"
   if [[ -z "$session_id" ]]; then
     stage_gaps_json="$saved_gaps"; stage_kill_reason="$saved_kill"; stage_rate_limit_json="$saved_limit"; stage_provider="$saved_provider"
+    stage_lane="$saved_lane"; stage_lane_mismatch_json="$saved_lane_mismatch"; stage_lane_states_json="$saved_lane_states"
     return 1
   fi
   salvage_out="${out_file%.out}.salvage.out"
@@ -160,6 +173,7 @@ stage_salvage_result() {
     salvage_rc=$?
   fi
   stage_gaps_json="$saved_gaps"; stage_kill_reason="$saved_kill"; stage_rate_limit_json="$saved_limit"; stage_provider="$saved_provider"
+  stage_lane="$saved_lane"; stage_lane_mismatch_json="$saved_lane_mismatch"; stage_lane_states_json="$saved_lane_states"
   if (( salvage_rc != 0 )); then
     log_event "salvage" "$(jq -nc --arg s "$stage" --argjson rc "$salvage_rc" \
       '{stage: $s, outcome: "failed", exit_code: $rc}')"
@@ -492,6 +506,7 @@ run_coordinator_stage_attempt() {  # <attempt-out-file> <prompt> [extra-budget-j
   if [[ -n "$watchdog_warning" ]]; then
     log_event "warning" "$watchdog_warning"
   fi
+  stage_lane_mismatch_standdown "${state_dir:-}" coordinator || true
   (( ONCE )) && dump_stage_output "$out_file"
 
   if (( rc != 0 )); then

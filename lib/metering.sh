@@ -139,13 +139,16 @@ metering_fields() {
 # metering_intended_lane
 # The lane a `stage-start` names as *intended* (requirement 33) — distinct
 # from `metering_fields`'s own `lane`, which is what the run actually used.
-# Until #2241 lets the Script draw from a provider's weighted lanes, the
-# intended lane is the one this node's single credential implies: `api` when
-# it holds `ANTHROPIC_API_KEY`, `subscription` otherwise — the only choice
-# every node makes today (docs/ROADMAP.md's D30 row). A stage-start logged
-# ahead of the run this predicts, so nothing here can read the stream the
-# run has not produced yet; `metering_fields`'s own `lane` is what later
-# confirms or contradicts this guess.
+# The lane named here is the one this node's own credential implies: `api`
+# when it holds `ANTHROPIC_API_KEY`, `subscription` otherwise
+# (docs/ROADMAP.md's D30 row). It is *not* the lane `run_model_stage`'s own
+# weighted draw goes on to force for the launch (issue #2241): a stage-start
+# is logged ahead of the run it predicts, so neither that draw's result nor
+# the stream it has not produced yet is readable from here. On a node
+# holding both credentials the two therefore disagree by construction —
+# `metering_fields`'s own `lane`, read off the stream afterwards, is what
+# says which credential actually paid, and `lib/stage-run.sh`'s `stage_lane`
+# is what says which one the launcher forced.
 metering_intended_lane() {
   if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
     printf 'api\n'

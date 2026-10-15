@@ -850,7 +850,12 @@ R5. **Per non-skipped repo** (processed **sequentially**, so a failure of one
       on stdin, never as a command-line argument, for the reason
       `docs/spec/implementation/README.md`'s requirement 4c gives: a single
       argv entry is capped at 131072 bytes, and a prompt is the one input here
-      that grows without bound. This pipeline's prompt has room to spare today,
+      that grows without bound. For a `claude-code` stage, requirement 4d's
+      own credit-mix lane draw (issue #2241, D30) applies here exactly as it
+      does to every other stage this launcher runs: a lane is drawn, forced
+      and verified against the stream, and `review-stage-end` carries
+      `kill_reason: "lane-mismatch"` on the same terms a mismatch earns
+      anywhere else. This pipeline's prompt has room to spare today,
       which is precisely why the launcher is shared rather than copied — the
       smaller prompt is the one that would sit broken longest before anyone
       noticed.

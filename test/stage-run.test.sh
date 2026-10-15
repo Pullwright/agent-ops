@@ -42,6 +42,13 @@
 # `claude` is a stub on PATH — no network, no model, no cost.
 #
 # Run directly: ./test/stage-run.test.sh — exit 0 iff all passed.
+#
+# shellcheck disable=SC2031  # false positive, file-wide: a `VAR=val
+# run_model_stage ...` prefix assignment does not subshell a function call —
+# bash scopes it to that one command's own environment, not a copy of the
+# calling shell — so `run_model_stage`'s own global writes (`stage_lane`,
+# `stage_kill_reason`, and friends) reach this file's later assertions
+# exactly as part 6's own runs below prove empirically.
 
 set -uo pipefail
 
@@ -75,12 +82,30 @@ assert_contains() {
 
 # shellcheck source=lib/stage-run.sh
 . "$SCRIPT_DIR/lib/stage-run.sh"
+# shellcheck source=lib/toggle.sh
+. "$SCRIPT_DIR/lib/toggle.sh"
 
 # Read by the cycle scripts' signal handlers, which this file does not have.
 # shellcheck disable=SC2034
 stage_pid=""
 # shellcheck disable=SC2034
 stage_name=""
+
+# Issue #2241, D30: lane management (the draw, the forcing, the live-stream
+# verification) only ever engages once at least one of claude-code's two
+# credentials is present (`stage_lane_any_present`) — see
+# `run_model_stage`'s own "Presence" paragraph for why. One credential
+# present, deterministically, is what every part below except part 6 (which
+# manages its own) needs: the acceptance criterion this exists to satisfy is
+# "the existing test/stage-run.test.sh cases pass unchanged with no `lanes`
+# configured and one credential present" — present, not ambient, since
+# relying on whatever happens to be in this process's own environment would
+# make every assertion below depend on the host that runs it rather than on
+# this file alone. A placeholder shape (test/metering.test.sh's own
+# convention), and a config directory that is never created, so the
+# subscription lane is never also present by accident.
+export ANTHROPIC_API_KEY="sk-ant-test-placeholder"
+export CLAUDE_CONFIG_DIR="$tmp_dir/no-such-claude-config"
 
 # =============================================================================
 # 1. Byte-for-byte: only `anthropic` configured, the extraction changed nothing
@@ -402,6 +427,350 @@ run_model_stage implementer 60 claude-sonnet-5 "irrelevant for this stub" \
   "$header_capture/implementer.out" "$header_capture"
 assert_eq "with no ANTHROPIC_WORKSPACE_ID set, ANTHROPIC_CUSTOM_HEADERS is left unset" \
   "" "$(cat "$header_capture/headers.seen" 2>/dev/null)"
+
+# =============================================================================
+# 6. The credit mix: a lane is drawn by weight, forced, and verified (#2241, D30)
+# =============================================================================
+#
+# A stub `claude` whose `init` event reports an `apiKeySource` the caller can
+# either let fall out of its own environment (so a forced lane's own `env -u
+# ANTHROPIC_API_KEY` is observable) or override outright (so the mismatch and
+# managed-key cases can be driven without actually faking a real credential).
+# `STUB_HOLD` keeps the process alive a few seconds after its `init` line so
+# the 2-second poll loop gets a chance to read and act on it before the stub
+# exits on its own — the same reason test/stage-watchdog.test.sh's "rejected"
+# mode sleeps after its own rate-limit event.
+mkdir -p "$tmp_dir/lane-bin"
+cat >"$tmp_dir/lane-bin/claude" <<'STUB'
+#!/usr/bin/env bash
+cat > /dev/null
+src="${STUB_INIT_SOURCE:-}"
+if [[ -z "$src" ]]; then
+  if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then src="ANTHROPIC_API_KEY"; else src="none"; fi
+fi
+printf '%s\n' "{\"type\":\"system\",\"subtype\":\"init\",\"apiKeySource\":\"$src\"}"
+if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then echo present >"$STUB_CAPTURE/key.seen"; else echo absent >"$STUB_CAPTURE/key.seen"; fi
+sleep "${STUB_HOLD:-3}"
+printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"ok"}'
+STUB
+chmod +x "$tmp_dir/lane-bin/claude"
+export PATH="$tmp_dir/lane-bin:$PATH"
+
+# A real subscription credential (a file-existence check, never a live
+# `claude auth status` call — lib/substrate-claude-code.sh's own
+# `substrate_claude_code_lane_present` header) and one that is absent.
+sub_present_dir="$tmp_dir/sub-present-claude-config"
+mkdir -p "$sub_present_dir"
+printf '{}' >"$sub_present_dir/.credentials.json"
+sub_absent_dir="$tmp_dir/sub-absent-claude-config"
+mkdir -p "$sub_absent_dir"
+
+# Fleet-union call-count instrumentation: `run_model_stage`/`stage_lane_draw`
+# read no ledger at all, so every reader the real fleet union is behind stays
+# at zero through every scenario below, this file's own stub adapters from
+# parts 1-5 included (the acceptance criterion is "no read", not "no read
+# during this one scenario").
+union_stream_calls=0
+union_stream() { union_stream_calls=$(( union_stream_calls + 1 )); }
+fleet_logs_calls=0
+fleet_logs() { fleet_logs_calls=$(( fleet_logs_calls + 1 )); }
+
+# --- 6a. The draw itself: reproducible, and splits by weight -----------------
+export ANTHROPIC_API_KEY="sk-ant-test-placeholder"
+export CLAUDE_CONFIG_DIR="$sub_present_dir"
+PROVIDER_LANES[anthropic]='{"api":{"weight":2,"enabled":true},"subscription":{"weight":1,"enabled":true}}'
+
+assert_eq "the same seed always draws the same lane" \
+  "$(stage_lane_draw anthropic claude-code 'repeat-me')" \
+  "$(stage_lane_draw anthropic claude-code 'repeat-me')"
+
+api_draws=0
+sub_draws=0
+for ((i = 0; i < 300; i++)); do
+  case "$(stage_lane_draw anthropic claude-code "fixture-seed-$i")" in
+    api) api_draws=$(( api_draws + 1 )) ;;
+    subscription) sub_draws=$(( sub_draws + 1 )) ;;
+  esac
+done
+api_pct=$(( api_draws * 100 / 300 ))
+assert_eq "300 seeds at weight 2:1 split within ten points of the 66.7% api would need" \
+  "within tolerance" \
+  "$(if (( api_pct >= 57 && api_pct <= 77 )); then echo "within tolerance"; else echo "$api_pct% api, outside 57-77%"; fi)"
+assert_eq "...and every one of the 300 drawn lanes was one of the two configured" \
+  "300" "$(( api_draws + sub_draws ))"
+
+# --- 6a2. The seed is the launch's own identifier, not just the stage name -
+# review round on PR #2385: review-cycle.sh and monitor-cycle.sh never set
+# `cycle_id` (only agent-cycle.sh does), so before that fix every launch of
+# theirs seeded on the constant string "" (empty `cycle_id`) and `:$stage`
+# alone — every review-cycle.sh launch of the same stage name drew the same
+# lane forever, fleet-wide, however many distinct repos or runs it covered.
+# This reproduces review-cycle.sh's own per-repo loop shape: one process,
+# one stage name ("reviewer"), several repos sharing a single $review_id,
+# each setting `cycle_id="$review_id:$slug"` (review-cycle.sh's own fix)
+# immediately before calling `run_model_stage`. Two repos under the *same*
+# review_id land on different lanes below — proof the slug, not merely the
+# stage name, reaches the seed.
+PROVIDER_LANES[anthropic]='{"api":{"weight":2,"enabled":true},"subscription":{"weight":1,"enabled":true}}'
+review_id="fixture-review-1"
+for slug in alpha beta; do
+  cycle_id="$review_id:$slug"
+  expect_lane="$(stage_lane_draw anthropic claude-code "$cycle_id:reviewer")"
+  run_capture="$tmp_dir/lane-6a2-review-$slug"
+  mkdir -p "$run_capture"
+  STUB_CAPTURE="$run_capture" STUB_HOLD=0 \
+    run_model_stage reviewer 60 claude-sonnet-5 "irrelevant" \
+    "$run_capture/reviewer.out" "$run_capture"
+  assert_eq "review-cycle-shaped launch for $review_id:$slug lands on the seeded draw's own output" \
+    "$expect_lane" "$stage_lane"
+done
+assert_eq "...and the two repos under the same review_id drew different lanes" \
+  "subscription then api" \
+  "$(stage_lane_draw anthropic claude-code "$review_id:alpha:reviewer") then $(stage_lane_draw anthropic claude-code "$review_id:beta:reviewer")"
+
+# monitor-cycle.sh's own fix: `cycle_id="$monitor_id"`, one launch per
+# process. Two different monitor_id values draw different lanes below —
+# proof the run's own identity reaches the seed there too, not a constant.
+for monitor_id in fixture-monitor-1 fixture-monitor-3; do
+  cycle_id="$monitor_id"
+  expect_lane="$(stage_lane_draw anthropic claude-code "$cycle_id:monitor")"
+  run_capture="$tmp_dir/lane-6a2-monitor-$monitor_id"
+  mkdir -p "$run_capture"
+  STUB_CAPTURE="$run_capture" STUB_HOLD=0 \
+    run_model_stage monitor 60 claude-sonnet-5 "irrelevant" \
+    "$run_capture/monitor.out" "$run_capture"
+  assert_eq "monitor-cycle-shaped launch for $monitor_id lands on the seeded draw's own output" \
+    "$expect_lane" "$stage_lane"
+done
+assert_eq "...and the two monitor_id values drew different lanes" \
+  "api then subscription" \
+  "$(stage_lane_draw anthropic claude-code "fixture-monitor-1:monitor") then $(stage_lane_draw anthropic claude-code "fixture-monitor-3:monitor")"
+
+# The two assertions above drive the launcher with `cycle_id` set by *this
+# file*, which is the behaviour half of the claim. The structural half is the
+# shipped scripts: the seed reads a global each pipeline has to remember to
+# set, and `${cycle_id:-}` keeps `set -u` quiet about one that forgot — which
+# is precisely how review-cycle.sh and monitor-cycle.sh came to seed every
+# launch on the same constant string. So assert over the scripts themselves,
+# the way test/stage-prompt-delivery.test.sh asserts no cycle script grew its
+# own `run_model_stage` back: deleting either assignment must fail a test
+# rather than silently returning the fleet to one lane forever.
+for cyc_script in agent-cycle.sh review-cycle.sh monitor-cycle.sh; do
+  seed_assign="$(grep -n '^[[:space:]]*cycle_id=' "$SCRIPT_DIR/$cyc_script" | head -1)"
+  assert_eq "$cyc_script assigns the \`cycle_id\` lib/stage-run.sh's lane seed reads" \
+    "assigned" "$([[ -n "$seed_assign" ]] && echo assigned || echo 'never assigned')"
+  # A constant would be as broken as an unset variable, so the value has to
+  # expand something — this launch's own date/pid, review id, repo slug.
+  assert_eq "...from a per-launch expansion rather than a constant" \
+    "expands" "$([[ "$seed_assign" == *'$'* ]] && echo expands || echo "no expansion in: ${seed_assign:-<nothing>}")"
+  # agent-cycle.sh reaches the launcher through the libs it sources
+  # (lib/coordinator-phase.sh, lib/enabler.sh, …) rather than calling it
+  # itself, so only the two scripts that call it directly can be ordered.
+  # 0 for "no such line" keeps the arithmetic below well-formed on exactly
+  # the regression this guards: an assignment deleted, the call still there.
+  seed_call="$(grep -n '^[[:space:]]*\(if \)\?run_model_stage ' "$SCRIPT_DIR/$cyc_script" | head -1)"
+  seed_assign_line="${seed_assign%%:*}"
+  seed_call_line="${seed_call%%:*}"
+  if [[ -n "$seed_call_line" ]]; then
+    assert_eq "...before $cyc_script's own run_model_stage call" \
+      "before" \
+      "$(if (( ${seed_assign_line:-0} > 0 && ${seed_assign_line:-0} < seed_call_line )); then echo before
+         else echo "assigned at line ${seed_assign_line:-none}, called at line $seed_call_line"; fi)"
+  fi
+done
+
+# --- 6b. End-to-end: run_model_stage lands on exactly what the draw dictates -
+cycle_id="fixture-cycle-6b"
+for stagename in implementer reviewer enabler refiner; do
+  expect_lane="$(stage_lane_draw anthropic claude-code "$cycle_id:$stagename")"
+  run_capture="$tmp_dir/lane-6b-$stagename"
+  mkdir -p "$run_capture"
+  STUB_CAPTURE="$run_capture" STUB_HOLD=0 \
+    run_model_stage "$stagename" 60 claude-sonnet-5 "irrelevant" \
+    "$run_capture/$stagename.out" "$run_capture"
+  assert_eq "run_model_stage's own $stagename launch lands on the seeded draw's own output" \
+    "$expect_lane" "$stage_lane"
+done
+
+# --- 6c. Weight 1:0 (api only, with both credentials): every stage runs api -
+PROVIDER_LANES[anthropic]='{"api":{"weight":1,"enabled":null},"subscription":{"weight":0,"enabled":null}}'
+for stagename in a b c; do
+  run_capture="$tmp_dir/lane-6c-$stagename"
+  mkdir -p "$run_capture"
+  STUB_CAPTURE="$run_capture" STUB_HOLD=0 \
+    run_model_stage "$stagename" 60 claude-sonnet-5 "irrelevant" \
+    "$run_capture/$stagename.out" "$run_capture"
+  assert_eq "weight 1:0 with both credentials present: $stagename lands on api" \
+    "api" "$stage_lane"
+  assert_eq "...and ANTHROPIC_API_KEY reached the stub, unforced" \
+    "present" "$(cat "$run_capture/key.seen" 2>/dev/null)"
+done
+
+# --- 6d. Only a login present: every stage runs subscription whatever weight
+saved_key="$ANTHROPIC_API_KEY"
+unset ANTHROPIC_API_KEY
+PROVIDER_LANES[anthropic]='{"api":{"weight":5,"enabled":null},"subscription":{"weight":1,"enabled":null}}'
+for stagename in a b; do
+  run_capture="$tmp_dir/lane-6d-$stagename"
+  mkdir -p "$run_capture"
+  STUB_CAPTURE="$run_capture" STUB_HOLD=0 \
+    run_model_stage "$stagename" 60 claude-sonnet-5 "irrelevant" \
+    "$run_capture/$stagename.out" "$run_capture"
+  assert_eq "only a login present: $stagename lands on subscription whatever the weights" \
+    "subscription" "$stage_lane"
+  assert_eq "...and ANTHROPIC_API_KEY never reached the stub" \
+    "absent" "$(cat "$run_capture/key.seen" 2>/dev/null)"
+done
+export ANTHROPIC_API_KEY="$saved_key"
+
+# --- 6e. Both credentials, no lanes block at all: api always, subscription
+#         never forced -------------------------------------------------------
+unset 'PROVIDER_LANES[anthropic]'
+for stagename in a b; do
+  run_capture="$tmp_dir/lane-6e-$stagename"
+  mkdir -p "$run_capture"
+  STUB_CAPTURE="$run_capture" STUB_HOLD=0 \
+    run_model_stage "$stagename" 60 claude-sonnet-5 "irrelevant" \
+    "$run_capture/$stagename.out" "$run_capture"
+  assert_eq "no lanes block at all, both credentials present: $stagename lands on api" \
+    "api" "$stage_lane"
+  assert_eq "...and the subscription lane's env -u ANTHROPIC_API_KEY never ran" \
+    "present" "$(cat "$run_capture/key.seen" 2>/dev/null)"
+done
+PROVIDER_LANES[anthropic]='{"api":{"weight":2,"enabled":true},"subscription":{"weight":1,"enabled":true}}'
+
+# --- 6f. A forced lane bypasses the draw -------------------------------------
+forced_capture="$tmp_dir/lane-6f"
+mkdir -p "$forced_capture"
+STUB_CAPTURE="$forced_capture" STUB_HOLD=0 \
+  run_model_stage forced-stage 60 claude-sonnet-5 "irrelevant" \
+  "$forced_capture/out" "$forced_capture" 0 "" subscription
+assert_eq "an explicit lane argument is forced outright, never drawn" \
+  "subscription" "$stage_lane"
+assert_eq "...confirmed by the env the stub actually saw" \
+  "absent" "$(cat "$forced_capture/key.seen" 2>/dev/null)"
+
+# An override naming a lane this node holds no credential for is a refusal,
+# never a silent fall-through to the unmanaged path 6e already covers — a
+# caller that named a lane explicitly (requirement 2.1b's probe, doctor's own
+# per-lane check) gets either that lane or a clear "no open lane", never its
+# request quietly ignored because nothing else happened to be present either.
+forced_absent_capture="$tmp_dir/lane-6f-absent"
+mkdir -p "$forced_absent_capture"
+saved_key_6f="$ANTHROPIC_API_KEY"
+unset ANTHROPIC_API_KEY
+export CLAUDE_CONFIG_DIR="$sub_absent_dir"
+STUB_CAPTURE="$forced_absent_capture" STUB_HOLD=0 \
+  run_model_stage forced-absent 60 claude-sonnet-5 "irrelevant" \
+  "$forced_absent_capture/out" "$forced_absent_capture" 0 "" api
+forced_absent_rc=$?
+assert_eq "forcing a lane with no credential for it refuses, rather than launching unmanaged" \
+  "1" "$forced_absent_rc"
+assert_eq "...attributed to no-open-lane" \
+  "no-open-lane" "$stage_kill_reason"
+export ANTHROPIC_API_KEY="$saved_key_6f"
+export CLAUDE_CONFIG_DIR="$sub_present_dir"
+
+# --- 6g. A genuine mismatch stops the stage at its init event ---------------
+mismatch_capture="$tmp_dir/lane-6g"
+mkdir -p "$mismatch_capture"
+STUB_CAPTURE="$mismatch_capture" STUB_HOLD=5 STUB_INIT_SOURCE=ANTHROPIC_API_KEY \
+  run_model_stage mismatched 60 claude-sonnet-5 "irrelevant" \
+  "$mismatch_capture/out" "$mismatch_capture" 0 "" subscription
+mismatch_rc=$?
+assert_eq "a forced lane the init event contradicts stops the stage at once" \
+  "124" "$mismatch_rc"
+assert_eq "...attributed to a lane mismatch, not a cap" \
+  "lane-mismatch" "$stage_kill_reason"
+assert_eq "...naming the forced and the observed lane for the record" \
+  '{"forced":"subscription","observed":"api"}' "$stage_lane_mismatch_json"
+assert_contains "...and earns a warning naming the mismatch" \
+  "does not match the lane it was launched on" "$(stage_watchdog_warning mismatched)"
+
+# ...and the node stands itself down over it: the local switch
+# (state_dir/disabled.json, kind "auto", scope "node"), so every further
+# cycle on this node refuses to run until a human clears it.
+mismatch_state_dir="$tmp_dir/lane-6g-state"
+mkdir -p "$mismatch_state_dir"
+stage_lane_mismatch_standdown "$mismatch_state_dir" mismatched
+assert_eq "a lane mismatch writes the local switch, kind auto" \
+  "auto" "$(jq -r '.kind' "$mismatch_state_dir/disabled.json" 2>/dev/null)"
+assert_eq "...scoped to this node, never the fleet" \
+  "node" "$(jq -r '.scope' "$mismatch_state_dir/disabled.json" 2>/dev/null)"
+assert_eq "...indefinite: nothing here can derive a TTL to expire it against" \
+  "null" "$(jq -c '.expires_at' "$mismatch_state_dir/disabled.json" 2>/dev/null)"
+assert_contains "...naming the mismatch in its own reason" \
+  "forced subscription, observed api" "$(jq -r '.reason' "$mismatch_state_dir/disabled.json" 2>/dev/null)"
+clean_after_mismatch_capture="$tmp_dir/lane-6g-clean"
+mkdir -p "$clean_after_mismatch_capture"
+STUB_CAPTURE="$clean_after_mismatch_capture" STUB_HOLD=0 \
+  run_model_stage clean-after-mismatch 60 claude-sonnet-5 "irrelevant" \
+  "$clean_after_mismatch_capture/out" "$clean_after_mismatch_capture"
+assert_eq "a run that was not a lane mismatch writes no switch at all" \
+  "1" "$(stage_lane_mismatch_standdown "$tmp_dir/lane-6g-state-unused" clean-after-mismatch >/dev/null 2>&1; echo $?)"
+
+# --- 6h. A managed-key login is the documented soft case, not a mismatch ----
+managed_capture="$tmp_dir/lane-6h"
+mkdir -p "$managed_capture"
+SUBSTRATE_CLAUDE_CODE_SUBSCRIPTION_MANAGED_KEY=0
+STUB_CAPTURE="$managed_capture" STUB_HOLD=3 STUB_INIT_SOURCE="/login managed key" \
+  run_model_stage managed 60 claude-sonnet-5 "irrelevant" \
+  "$managed_capture/out" "$managed_capture" 0 "" subscription
+managed_rc=$?
+assert_eq "a managed-key login does not stop the stage" "0" "$managed_rc"
+assert_eq "...and carries no kill reason" "" "$stage_kill_reason"
+managed_warning="$(stage_watchdog_warning managed)"
+assert_contains "...but earns a one-time warning naming the Console login" \
+  "Console login" "$managed_warning"
+
+# ...and the very next launch in this cycle draws `api`: the subscription
+# lane closed the moment the managed key was discovered, so the weighted
+# 2:1-favouring-api config above now has only one open lane to draw from,
+# whatever its own weight says.
+after_managed_capture="$tmp_dir/lane-6h-next"
+mkdir -p "$after_managed_capture"
+STUB_CAPTURE="$after_managed_capture" STUB_HOLD=0 \
+  run_model_stage after-managed 60 claude-sonnet-5 "irrelevant" \
+  "$after_managed_capture/out" "$after_managed_capture"
+assert_eq "the next launch in the cycle draws api, the subscription lane now closed" \
+  "api" "$stage_lane"
+assert_eq "...and earns no managed-key warning of its own: it was not the run that discovered it" \
+  "" "$(stage_watchdog_warning after-managed || true)"
+SUBSTRATE_CLAUDE_CODE_SUBSCRIPTION_MANAGED_KEY=0
+
+# --- 6i. A credential present but configured into total unavailability
+#         refuses to launch at all, rather than running unmanaged ------------
+# Distinct from 6e's "neither credential present at all", which launches
+# unmanaged on purpose (run_model_stage's own "Presence" paragraph) — here
+# ANTHROPIC_API_KEY *is* present, so there is something to manage, and the
+# operator has configured both lanes closed.
+noopen_capture="$tmp_dir/lane-6i"
+mkdir -p "$noopen_capture"
+export CLAUDE_CONFIG_DIR="$sub_absent_dir"
+PROVIDER_LANES[anthropic]='{"api":{"weight":0,"enabled":false},"subscription":{"weight":0,"enabled":false}}'
+STUB_CAPTURE="$noopen_capture" STUB_HOLD=0 \
+  run_model_stage noopen 60 claude-sonnet-5 "irrelevant" \
+  "$noopen_capture/out" "$noopen_capture"
+noopen_rc=$?
+assert_eq "a present credential configured into total unavailability refuses to launch" \
+  "1" "$noopen_rc"
+assert_eq "...attributed to no-open-lane, not a cap" \
+  "no-open-lane" "$stage_kill_reason"
+assert_eq "...and the stub was never actually invoked" \
+  "0" "$(wc -c < "$noopen_capture/out" 2>/dev/null || echo 1)"
+assert_contains "...which earns a warning naming the provider with no open lane" \
+  "no lane is open for provider anthropic" "$(stage_watchdog_warning noopen)"
+export CLAUDE_CONFIG_DIR="$sub_present_dir"
+PROVIDER_LANES[anthropic]='{"api":{"weight":2,"enabled":true},"subscription":{"weight":1,"enabled":true}}'
+
+# --- 6j. The fleet union is never read, through every scenario above --------
+assert_eq "run_model_stage/stage_lane_draw read the union stream zero times" \
+  "0" "$union_stream_calls"
+assert_eq "...and the fleet's own per-node logs zero times" \
+  "0" "$fleet_logs_calls"
+
+unset ANTHROPIC_API_KEY CLAUDE_CONFIG_DIR
+unset 'PROVIDER_LANES[anthropic]'
 
 printf '\n'
 if (( failures )); then

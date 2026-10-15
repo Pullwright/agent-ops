@@ -906,6 +906,7 @@ $node_name
     log_node_state_transition overhead
     approver_watchdog_warning="$(stage_watchdog_warning approver || true)"
     [[ -n "$approver_watchdog_warning" ]] && log_event "warning" "$approver_watchdog_warning"
+    stage_lane_mismatch_standdown "${state_dir:-}" approver || true
     (( ONCE )) && dump_stage_output "$out"
 
     status_json="$(extract_json_result "$(jq -r '.result // empty' "$out" 2>/dev/null || true)" 2>/dev/null || true)"

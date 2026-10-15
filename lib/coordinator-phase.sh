@@ -871,6 +871,7 @@ watchdog_warning="$(stage_watchdog_warning implementer || true)"
 if [[ -n "$watchdog_warning" ]]; then
   log_event "warning" "$watchdog_warning"
 fi
+stage_lane_mismatch_standdown "${state_dir:-}" implementer || true
 (( ONCE )) && dump_stage_output "$impl_out"
 
 impl_result="$(jq -r '.result // empty' "$impl_out" 2>/dev/null || true)"
@@ -1302,6 +1303,7 @@ else
   if [[ -n "$watchdog_warning" ]]; then
     log_event "warning" "$watchdog_warning"
   fi
+  stage_lane_mismatch_standdown "${state_dir:-}" reviewer || true
   (( ONCE )) && dump_stage_output "$rev_out"
 
   rev_result="$(jq -r '.result // empty' "$rev_out" 2>/dev/null || true)"
