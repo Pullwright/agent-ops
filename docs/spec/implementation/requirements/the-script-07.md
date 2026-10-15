@@ -736,7 +736,11 @@
    instead, the same way any other automatic stand-down is found today.
    **`kill_reason`** distinguishes all four on the `stage-end` /
    `review-stage-end` event: `inactivity`, `backstop`, `rate-limit` or
-   `lane-mismatch`, and absent when the stage ended on its own. `exit_code:
+   `lane-mismatch`, and absent when the stage ended on its own. The same
+   field carries a fifth value that is not a stop at all — `no-open-lane`,
+   requirement 4d's own refusal to launch a stage whose provider has no open
+   lane left — so a reader scanning it for the four kills above selects them
+   by name rather than by the field's presence. `exit_code:
    124` cannot carry it, and they imply different corrections — a backstop
    kill argues the cap is too tight for work that was progressing, an
    inactivity kill argues the stage stopped, a rate-limit stop argues

@@ -384,16 +384,21 @@
     cannot be traced is a mystery number. It also carries `lane` (issue
     #2239, D30) — the credential lane the Script *intended* the stage to run
     on, `lib/metering.sh`'s `metering_intended_lane`: `api` when this node
-    holds `ANTHROPIC_API_KEY`, `subscription` otherwise, until #2241 lets a
-    provider route across a weighted set of open lanes instead of this
-    node's single credential. Distinct from the `lane` requirement 33a's
+    holds `ANTHROPIC_API_KEY`, `subscription` otherwise. It names this node's
+    own credential rather than the lane requirement 4d's draw went on to
+    force for the launch, which is not yet known when this event is logged —
+    so on a node holding both credentials the two disagree by construction,
+    and a reader wanting the forced lane reads the launch's own
+    `stage_lane`, never this. Distinct too from the `lane` requirement 33a's
     metering record carries on the matching `stage-end`, which is what the
     run *actually* used — read off the stage's own stream rather than
     assumed, so the two may disagree. A `stage-end` carries `kill_reason` —
-    `inactivity`, `backstop` or `rate-limit` — when and only when requirement
-    4e stopped the stage; its absence means the stage ended on its own,
-    well or badly. `exit_code` is 124 for both kills and so cannot tell them
-    apart, and they are different findings. A `labels-ensured` carries the `repo`, its `role`,
+    `inactivity`, `backstop`, `rate-limit` or `lane-mismatch` when
+    requirement 4e stopped the stage, and `no-open-lane` when requirement
+    4d's own draw left it unlaunched entirely; its absence means the stage
+    ran and ended on its own, well or badly. `exit_code` is 124 for every
+    kill and 1 for the refusal, so neither tells them apart, and they are
+    different findings. A `labels-ensured` carries the `repo`, its `role`,
     and the labels `created`, `updated`, `deleted` and `failed` (requirement
     6a) — `updated`/`deleted` are ever non-empty only for a `label_prefix`-named
     label reconciled by `labels_reconcile_role`'s own full CRUD (`target`'s

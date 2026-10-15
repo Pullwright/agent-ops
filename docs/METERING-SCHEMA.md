@@ -293,9 +293,11 @@ because the envelope itself never carries the figure.
   either. The one invocation that still logs neither is a `<stage>-salvage`
   resume.
 - **`metering_intended_lane`** produces `stage-start`/`review-stage-start`'s
-  own `lane` (requirement 33) — what the Script *intended* before the run,
-  rather than what `metering_fields`'s own `lane` later observed the run
-  actually used; the two are independent and may disagree.
+  own `lane` (requirement 33) — the lane this node's own credential implies,
+  read before the run and so neither the lane `run_model_stage`'s draw went
+  on to force (issue #2241) nor the one `metering_fields`'s own `lane` later
+  observed the run actually use; all three are independent and, on a node
+  holding both credentials, disagree by construction.
 - **Consumed:** `scripts/publish-dashboard.sh` reads the same upstream
   envelope fields directly for its own per-stage and roll-up rendering
   (`docs/spec/dashboard/README.md`) rather than reading the derived `log.jsonl`
