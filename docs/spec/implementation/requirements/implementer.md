@@ -18,11 +18,15 @@
     17a) — and never creates, renames, or deletes a branch of its own.
 23. **Makes the claim visible before implementing.** The branch is the
     lock, but humans read PRs, not refs: opens a draft PR immediately,
-    labelled with the work order's `pr_label` — guaranteed correct because
-    the claim loop stamps it from `config.json`'s own `pr_label` key
-    unconditionally (requirement 17a), the Co-Ordinator's own verbatim copy
-    (requirement 20) being belt-and-braces rather than the load-bearing
-    source — with a Conventional-Commits title (it will become the squash commit on `main`)
+    labelled with the work order's `pr_label` — the value is guaranteed
+    correct because the claim loop stamps it from `config.json`'s own
+    `pr_label` key unconditionally (requirement 17a), the Co-Ordinator's own
+    verbatim copy (requirement 20) being belt-and-braces rather than the
+    load-bearing source, and the label actually reaching the pull request is
+    itself guaranteed: the Script applies `pr_label` to the raised pull
+    request directly, immediately after `pr-raised` (`pr_label_ensure`,
+    requirement 17a), so a model that skips this labelling step still leaves
+    the pull request labelled — with a Conventional-Commits title (it will become the squash commit on `main`)
     and a body giving the item reference and planned approach. Immediately
     records the PR's URL at `.git/agent-ops-pr-url` in the clone — `.git/` is
     never part of the tracked tree, so this can't leak into a commit — so the

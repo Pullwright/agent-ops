@@ -1011,6 +1011,20 @@
       `gather-human-visibility-hygiene.sh`, `scripts/sweep-closed-issues.sh`,
       `lib/merge-budget.sh` — or the back-pressure count (2.2), could ever
       find again.
+    - **The Script re-applies `pr_label` to the raised pull request too
+      (agent-ops#2074/#2403).** Stamping the work order's own field,
+      immediately above, guarantees the *value* the Implementer's labelling
+      step reaches for; it does not guarantee the Implementer's model actually
+      calls `gh pr edit --add-label` with it. Immediately after `pr-raised` is
+      logged (`lib/coordinator-phase.sh`), the Script calls `pr_label_ensure`
+      (`lib/labels.sh`) against the raised pull request itself, idempotently:
+      present already, nothing changes and nothing is logged; absent, the
+      Script adds it directly and logs a `warning` naming the pull request,
+      so a model that skipped its own labelling step stays visible instead of
+      quietly dropping the pull request out of every gatherer the bullet
+      above names. The measured case was #1577 — the one pull request, among
+      178 this repository's own App identity raised since 2026-09-01, that
+      the model never labelled.
 17b. **The orphan-branch sweep.** The gc's only-if-untouched rule (17a)
     leaves one state behind on purpose that is right for the work and wrong
     for the item: an Implementer that pushed commits and died before its
