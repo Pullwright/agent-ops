@@ -244,6 +244,12 @@ pr_label="$(cfg '.pr_label')"
 max_open_agent_prs="$(cfg '.max_open_agent_prs')"
 state_repo="$(cfg '.state_repo')"
 repos_json="$(cfg_json '.repos')"
+# The slug-rename alias map (issue #2064, threaded into the blocked/void
+# extracts below by #2359), on the same terms agent-cycle.sh's own
+# `repo_slug_aliases_json` is: so a block or void recorded under a repo's
+# old slug is not shown here as still outstanding after a rename has already
+# cleared it under the new one.
+repo_slug_aliases_json="$(config_repo_slug_aliases "$repos_json")"
 # The GitHub-budget card's own two floors and cadence source (issue #1090) —
 # the same `github_min_core_budget`/`github_min_graphql_budget` requirement
 # 2.0's own gate reads, and `schedule.cycle_interval_minutes`, so the card can
@@ -2654,7 +2660,7 @@ counts_merged="$(jq -c --slurpfile v "$stage_gaps_file" \
 # standing — `item-void` clears nothing — so listing the raw blocked set here
 # put items in *both* tables, in the one panel whose whole purpose is to keep
 # the two apart, and left them there for as long as the log remembered them.
-blocked_json="$(open_blocked_items "$union_kept_dir/open-blocked.jsonl" | jq -c \
+blocked_json="$(open_blocked_items "$union_kept_dir/open-blocked.jsonl" "$repo_slug_aliases_json" | jq -c \
   'map({repo: (.repo // ""), item: .item, ts: .ts, detail: (.detail // ""), stage: (.stage // ""), kind: (.kind // "")})' 2>/dev/null)"
 [[ -z "$blocked_json" ]] && blocked_json='[]'
 
@@ -2702,7 +2708,7 @@ blocked_json="$(jq -nc "$UNION_STREAM_JQ"'
 # union-reader-end: blocked-enrichment
 [[ -z "$blocked_json" ]] && blocked_json='[]'
 
-void_json="$(void_items "$union_kept_dir/void.jsonl" | jq -c \
+void_json="$(void_items "$union_kept_dir/void.jsonl" "$repo_slug_aliases_json" | jq -c \
   'map({repo: (.repo // ""), item: .item, ts: .ts, detail: (.detail // ""), stage: (.stage // ""), evidence: (.evidence // "")})' 2>/dev/null)"
 [[ -z "$void_json" ]] && void_json='[]'
 

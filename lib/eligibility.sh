@@ -139,7 +139,7 @@ done < <(jq -r '[.[] | select(((.issues // []) | length) > 0) | .slug] | unique[
 # already pastes; for every other item type this map is the only place it
 # exists, and without it the refinement would be written, the item unblocked,
 # and the next work order composed as if nothing had been settled.
-refinements_json="$(refinements_map "$union_log")"
+refinements_json="$(refinements_map "$union_log" "$repo_slug_aliases_json")"
 
 # A fourth, sibling extract (agent-ops#936, requirement 36d): a tactical
 # decision a `decide-tactical` pass took in place of escalating, beside — not
@@ -147,7 +147,7 @@ refinements_json="$(refinements_map "$union_log")"
 # question rather than supplying a specification; the Refiner is what turns
 # one into the other, the same way it would turn a human's own answer on a
 # closed escalation into one.
-decisions_json="$(decisions_map "$union_log")"
+decisions_json="$(decisions_map "$union_log" "$repo_slug_aliases_json")"
 
 # A snapshot for `prefetch_refiner_sources` below, taken before the fifth
 # pass's own subtraction — the same reason 35e's `live_pr_refs_json` snapshot

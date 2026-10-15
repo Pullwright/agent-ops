@@ -639,6 +639,15 @@
       human appending one by hand has no repo to hand either, so there is
       nothing to match on. Over-clearing is the safe direction: the item
       merely becomes a candidate again and re-blocks on its next attempt.
+    - **A renamed repo's slug still matches.** Both sides of the `repo`
+      comparison — grouping the `attempt-failed` events and matching an
+      `unblocked`/`item-void` against them — resolve through
+      `config_repo_slug_aliases`' `{old_slug: current_slug}` map
+      (`previous_slugs`, agent-ops#2064) first. Without this, a repository
+      rename splits one item's identity across two slugs: a block recorded
+      under the slug the repository had before the rename is never cleared
+      by an `unblocked`/`item-void` logged under the slug it has now
+      (agent-ops#2359).
 34a. Whatever computes requirement 34 must be the **only** definition of it.
     Anything else that reports blocked items — notably the monitoring
     dashboard (`docs/spec/dashboard/README.md`) — shares that one
@@ -648,11 +657,11 @@
     this class of bug, and it would show you the wrong answer confidently.
 34c. Void semantics: an item is void iff the most recent `item-void` /
     `unvoided` event *for that item* is `item-void`. The rule is requirement
-    34's shape over a different pair of events, and all three of its details
+    34's shape over a different pair of events, and all four of its details
     apply unchanged — key on `repo`+`item`, an event naming no item voids
-    nothing, a clear naming no repo clears everywhere. Build it as one
-    parameterised rule used twice, not two rules that happen to agree
-    (requirement 34a).
+    nothing, a clear naming no repo clears everywhere, a renamed repo's slug
+    still matches. Build it as one parameterised rule used twice, not two
+    rules that happen to agree (requirement 34a).
     - An `item-void` event carries `reason` and `evidence` — the SHAs, paths,
       or commands proving there is no work. A void is terminal, so the record
       must let a human audit the verdict without redoing the investigation.

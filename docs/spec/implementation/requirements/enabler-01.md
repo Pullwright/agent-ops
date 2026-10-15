@@ -154,7 +154,16 @@
     repo+item whose `comment_url` — if it carries one — actually names a
     comment, or `null` if none does. That field is the thrash guard's input
     and the record of what the last engagement already specified, so a later
-    one need not reconstruct it.
+    one need not reconstruct it. `same_item`'s own repo comparison — behind
+    every clause above that matches an event against *B*, `refined_before`
+    included — resolves both sides through `config_repo_slug_aliases`' map
+    first, same as clause 3 (agent-ops#2359): without it, an `escalated`,
+    `enabler-examined`, or `item-refined` event logged under a repo's current
+    slug would not be recognized as describing a block recorded under a slug
+    in that repo's `previous_slugs`, and `refined_before` would read `null`
+    for an item genuinely refined across a rename — disarming requirement
+    35d's thrash guard exactly when the rename made a second, redundant
+    refinement most likely.
 
     **A phantom `item-refined` event is skipped, not trusted (TD-PPagop-
     26082819).** An event logged before the corroboration fix at requirement

@@ -133,33 +133,53 @@ _log_fold() {
 # (requirements 34, 34c), so neither source has a repo to match on. Over-
 # clearing is the safe direction — the item merely becomes a candidate again,
 # and re-pins on the next attempt if the reason is still there.
-# shellcheck disable=SC2016  # $set/$clear/$events/$e are jq's, not the shell's.
+# $aliases (issue #2064, extended to this program by #2359) must already be
+# bound by the caller — `--argjson aliases …` at the top of whichever jq
+# invocation splices this program in — mapping a repo slug this pipeline used
+# to be configured under to the slug it is configured under now
+# (`config_repo_slug_aliases`). `canon_repo` resolves both the $set event's own
+# repo (for grouping) and each candidate $clear event's repo (for matching)
+# through it before either comparison, the same read-time-only way
+# `work_gone_clearances` (lib/work-gone.sh) already resolves a block's repo:
+# without it, a repository rename splits one item's identity across two
+# slugs, and an `unblocked`/`item-void` logged under the current slug can
+# never clear an `attempt-failed`/`item-void` recorded under the slug the
+# repository had before the rename.
+# shellcheck disable=SC2016  # $set/$clear/$events/$e/$aliases are jq's, not the shell's.
 LATEST_UNRESOLVED_JQ='
+  def canon_repo($r): ($aliases[$r] // $r);
   [ .[] | select((.event == $set or .event == $clear)
                  and (.item // "") != "") ] as $events
   | ($events | map(select(.event == $clear))) as $clears
   | $events
   | map(select(.event == $set))
-  | group_by((.repo // "") + "|" + .item)
+  | group_by(canon_repo(.repo // "") + "|" + .item)
   | map(sort_by(.ts) | last)
   | map(. as $e
         | select($clears
                  | any(.item == $e.item
-                       and ((.repo // "") == "" or .repo == ($e.repo // ""))
+                       and ((.repo // "") == "" or canon_repo(.repo // "") == canon_repo($e.repo // ""))
                        and .ts > $e.ts)
                  | not))
 '
 
-# _latest_unresolved SET_EVENT CLEAR_EVENT [LOG_FILE]
+# _latest_unresolved SET_EVENT CLEAR_EVENT [LOG_FILE] [ALIASES_JSON]
+# ALIASES_JSON (issue #2064, extended by #2359) is `config_repo_slug_aliases`'s
+# own map, resolved through `LATEST_UNRESOLVED_JQ`'s `canon_repo` before the
+# set/clear match runs; defaults to `{}`, under which every repo resolves to
+# itself and behaviour is unchanged. An argument that is not a JSON object is
+# treated the same way — read-time resolution must never fail the fold.
+#
 # Always succeeds, printing [] for a missing, empty, or unreadable log: a caller
 # running under `set -e` must not be killed by an unparseable log line, and a
 # log that can't be read pins nothing. Malformed lines are skipped rather than
 # fatal, so one truncated append can't strand every item.
 _latest_unresolved() {
-  local set_event="$1" clear_event="$2" src="${3:--}" out=""
+  local set_event="$1" clear_event="$2" src="${3:--}" aliases="${4:-{\}}" out=""
+  jq -e 'type == "object"' <<<"$aliases" >/dev/null 2>&1 || aliases='{}'
   if [[ "$src" == "-" || -s "$src" ]]; then
     out="$(_log_fold "$src" "$LATEST_UNRESOLVED_JQ" "$set_event $clear_event" \
-      --arg set "$set_event" --arg clear "$clear_event" 2>/dev/null || true)"
+      --arg set "$set_event" --arg clear "$clear_event" --argjson aliases "$aliases" 2>/dev/null || true)"
   fi
   [[ -n "$out" ]] || out='[]'
   printf '%s' "$out"
@@ -207,7 +227,7 @@ BLOCKED_ITEMS_JQ='
         | if $rc_ts == null then $b else $b + {recheck_clean_ts: $rc_ts} end)
 '
 
-# blocked_items [LOG_FILE]
+# blocked_items [LOG_FILE] [ALIASES_JSON]
 # Print, as a JSON array, the most recent attempt-failed event for every item
 # with no later unblocked event — the items a Co-Ordinator must skip *for now*,
 # and may clear itself once the impediment has demonstrably gone. Each entry
@@ -215,10 +235,19 @@ BLOCKED_ITEMS_JQ='
 # for it (requirement 18a) — the newest such ts, for the Co-Ordinator to
 # compare a blocked GitHub issue's `updated_at` against alongside the block's
 # own `ts`. Reads LOG_FILE, or stdin if it is omitted or "-".
+#
+# ALIASES_JSON (issue #2064, extended by #2359) is threaded into
+# `BLOCKED_ITEMS_JQ`'s own `latest_unresolved`, so an `unblocked` logged under
+# a repo's current slug clears an `attempt-failed` recorded under a slug in
+# that repo's `previous_slugs`, and vice versa. Defaults to `{}` (every repo
+# resolves to itself); an argument that is not a JSON object is treated the
+# same way.
 blocked_items() {
-  local src="${1:--}" out=""
+  local src="${1:--}" aliases="${2:-{\}}" out=""
+  jq -e 'type == "object"' <<<"$aliases" >/dev/null 2>&1 || aliases='{}'
   if [[ "$src" == "-" || -s "$src" ]]; then
-    out="$(_log_fold "$src" "$BLOCKED_ITEMS_JQ" "$BLOCKED_ITEMS_EVENTS" 2>/dev/null || true)"
+    out="$(_log_fold "$src" "$BLOCKED_ITEMS_JQ" "$BLOCKED_ITEMS_EVENTS" \
+      --argjson aliases "$aliases" 2>/dev/null || true)"
   fi
   [[ -n "$out" ]] || out='[]'
   printf '%s' "$out"
@@ -228,20 +257,26 @@ blocked_items() {
 # (`_log_fold`).
 VOID_ITEMS_EVENTS="item-void unvoided"
 
-# void_items [LOG_FILE]
+# void_items [LOG_FILE] [ALIASES_JSON]
 # Print, as a JSON array, the most recent item-void event for every item with no
 # later unvoided event — the items that no longer describe real work, which a
 # Co-Ordinator must skip and must never clear. Reads LOG_FILE, or stdin if it is
 # omitted or "-".
+#
+# ALIASES_JSON (issue #2064, extended by #2359) is threaded straight into
+# `_latest_unresolved`, so an `unvoided` logged under a repo's current slug
+# clears an `item-void` recorded under a slug in that repo's `previous_slugs`,
+# and vice versa. Defaults to `{}` (every repo resolves to itself).
 #
 # A void is scoped to the item id, so it cannot outstay its welcome: next week's
 # review files its recommendations under fresh refs (review-<new-date>-R-NN),
 # which no void covers. Voiding R-02 today cannot silence a genuine regression a
 # later review finds.
 void_items() {
-  # shellcheck disable=SC2086  # a word list by design.
-  set -- "${1:--}" $VOID_ITEMS_EVENTS
-  _latest_unresolved "$2" "$3" "$1"
+  local log="${1:--}" aliases="${2:-{\}}"
+  # shellcheck disable=SC2086  # VOID_ITEMS_EVENTS is a word list by design.
+  set -- "$log" $VOID_ITEMS_EVENTS
+  _latest_unresolved "$2" "$3" "$1" "$aliases"
 }
 
 # void_object_closed_items [LOG_FILE]
@@ -631,21 +666,28 @@ OPEN_BLOCKED_JQ='
                  | not))
 '
 
-# open_blocked_items [LOG_FILE]
+# open_blocked_items [LOG_FILE] [ALIASES_JSON]
 # Print, as a JSON array, the blocked items that are not void — the items still
 # waiting on something, in the sense a human reading a dashboard or an Enabler
 # deciding where to spend means it. Entries are `blocked_items`' entries
 # unchanged, `recheck_clean_ts` and all. Reads LOG_FILE, or stdin if it is
 # omitted or "-".
 #
+# ALIASES_JSON (issue #2064, extended by #2359) is threaded into
+# `OPEN_BLOCKED_JQ`'s own nested `latest_unresolved`/`BLOCKED_ITEMS_JQ` calls,
+# on the same terms `blocked_items`/`void_items` document. Defaults to `{}`
+# (every repo resolves to itself).
+#
 # `blocked_items` remains the raw rule of requirement 34 and is what the
 # Co-Ordinator's own skip list is built from: it is handed the void list beside
 # the blocked one and requirement 34c is emphatic that it must be able to see
 # both, so nothing is subtracted there.
 open_blocked_items() {
-  local src="${1:--}" out=""
+  local src="${1:--}" aliases="${2:-{\}}" out=""
+  jq -e 'type == "object"' <<<"$aliases" >/dev/null 2>&1 || aliases='{}'
   if [[ "$src" == "-" || -s "$src" ]]; then
-    out="$(_log_fold "$src" "$OPEN_BLOCKED_JQ" "$OPEN_BLOCKED_EVENTS" 2>/dev/null || true)"
+    out="$(_log_fold "$src" "$OPEN_BLOCKED_JQ" "$OPEN_BLOCKED_EVENTS" \
+      --argjson aliases "$aliases" 2>/dev/null || true)"
   fi
   [[ -n "$out" ]] || out='[]'
   printf '%s' "$out"
@@ -689,8 +731,19 @@ open_blocked_items() {
 # own. The skip is silent by design — the recording seam now refuses the
 # shape, so the set of phantom events is closed, and `enabler_eligible_items`
 # already warns for any of them still standing behind an open block.
-# shellcheck disable=SC2016  # jq's $set/$clear/$r/$re, not the shell's.
+# $aliases must already be bound by the caller (`--argjson aliases …`), same
+# contract as `LATEST_UNRESOLVED_JQ`'s own. Beyond the two nested
+# `latest_unresolved` calls (which resolve through it already), the void/
+# blocked exclusions below match a refinement event's own `repo` against
+# `$void`/`$blocked`'s directly — never through `latest_unresolved` — so
+# `canon_repo` is applied there too: without it, a refinement logged under a
+# repo's current slug would not be recognized as refining (or voiding, or
+# superseding) a block recorded under a slug in that repo's `previous_slugs`,
+# issue #2359's second symptom (`refined_before` reading null across a
+# rename, disarming requirement 36b's one-refinement-per-item thrash guard).
+# shellcheck disable=SC2016  # jq's $set/$clear/$r/$re/$aliases, not the shell's.
 REFINEMENTS_MAP_JQ='
+  def canon_repo($r): ($aliases[$r] // $r);
   def latest_unresolved($set; $clear): '"$LATEST_UNRESOLVED_JQ"';
   . as $all
   | ($all | latest_unresolved("item-void"; "unvoided")) as $void
@@ -702,12 +755,12 @@ REFINEMENTS_MAP_JQ='
       | . as $r
       | select($void
                | any((.item // "") == ($r.item // "")
-                     and ((.repo // "") == "" or (.repo // "") == ($r.repo // "")))
+                     and ((.repo // "") == "" or canon_repo(.repo // "") == canon_repo($r.repo // "")))
                | not)
       | select($blocked
                | any((.kind // "") == "needs-refinement"
                      and (.item // "") == ($r.item // "")
-                     and ((.repo // "") == "" or (.repo // "") == ($r.repo // ""))
+                     and ((.repo // "") == "" or canon_repo(.repo // "") == canon_repo($r.repo // ""))
                      and (((.ts // "") > ($r.ts // ""))))
                | not) ]
   | sort_by(.ts)
@@ -718,28 +771,34 @@ REFINEMENTS_MAP_JQ='
          + (if ($r.comment_url // "") == "" then {} else {comment_url: $r.comment_url} end)))
 '
 
-# refinements_map [LOG_FILE]
+# refinements_map [LOG_FILE] [ALIASES_JSON]
 # Print, as a JSON object keyed repo → item, the latest refinement recorded for
 # every item that has one and is not void. Reads LOG_FILE, or stdin if it is
 # omitted or "-".
+#
+# ALIASES_JSON (issue #2064, extended by #2359) is `config_repo_slug_aliases`'s
+# own map, threaded into `REFINEMENTS_MAP_JQ`'s `canon_repo`. Defaults to `{}`
+# (every repo resolves to itself); an argument that is not a JSON object is
+# treated the same way.
 #
 # Always succeeds, printing {} for a missing, empty or unreadable log, for the
 # same reason `_latest_unresolved` prints []: this is computed inside a cycle
 # running under `set -e`, and a log it cannot parse must cost the Co-Ordinator
 # one input, never the cycle.
 refinements_map() {
-  local src="${1:--}" out=""
+  local src="${1:--}" aliases="${2:-{\}}" out=""
   # The same literal-copy fallback `enabler_eligible_items` keeps, for the
   # same reason: a caller testing this file in isolation may not have sourced
   # lib/refinement.sh, and the two must still agree — production always has
   # the real one (agent-cycle.sh sources every lib/*.sh file, requirement 4a).
   local comment_url_re="${REFINEMENT_COMMENT_URL_RE:-(#issuecomment-[0-9]+|/issues/comments/[0-9]+)$}"
+  jq -e 'type == "object"' <<<"$aliases" >/dev/null 2>&1 || aliases='{}'
   if [[ "$src" == "-" ]]; then
     out="$(jq -c -R 'fromjson? // empty' 2>/dev/null \
-      | jq -sc --arg re "$comment_url_re" "$REFINEMENTS_MAP_JQ" 2>/dev/null || true)"
+      | jq -sc --arg re "$comment_url_re" --argjson aliases "$aliases" "$REFINEMENTS_MAP_JQ" 2>/dev/null || true)"
   elif [[ -s "$src" ]]; then
     out="$(jq -c -R 'fromjson? // empty' "$src" 2>/dev/null \
-      | jq -sc --arg re "$comment_url_re" "$REFINEMENTS_MAP_JQ" 2>/dev/null || true)"
+      | jq -sc --arg re "$comment_url_re" --argjson aliases "$aliases" "$REFINEMENTS_MAP_JQ" 2>/dev/null || true)"
   fi
   [[ -n "$out" ]] || out='{}'
   printf '%s' "$out"
@@ -782,8 +841,15 @@ refinements_map() {
 # (never the log issue's own number — that is `decision_vetoes_processed_items`'
 # own remapping, not this event's own field), so it matches `$d` the same
 # `same_item`-shaped way `$refined` does above.
-# shellcheck disable=SC2016  # jq's $set/$clear/$r/$re, not the shell's.
+#
+# $aliases must already be bound by the caller (`--argjson aliases …`), the
+# same contract `LATEST_UNRESOLVED_JQ` and `REFINEMENTS_MAP_JQ` share — the
+# nested `latest_unresolved` call below requires it in scope regardless, and
+# the void/refined/vetoed matches resolve through the same `canon_repo` for
+# the same reason `REFINEMENTS_MAP_JQ`'s own matches do (agent-ops#2359).
+# shellcheck disable=SC2016  # jq's $set/$clear/$r/$re/$aliases, not the shell's.
 DECISIONS_MAP_JQ='
+  def canon_repo($r): ($aliases[$r] // $r);
   def latest_unresolved($set; $clear): '"$LATEST_UNRESOLVED_JQ"';
   . as $all
   | ($all | latest_unresolved("item-void"; "unvoided")) as $void
@@ -796,16 +862,16 @@ DECISIONS_MAP_JQ='
       | . as $d
       | select($void
                | any((.item // "") == ($d.item // "")
-                     and ((.repo // "") == "" or (.repo // "") == ($d.repo // "")))
+                     and ((.repo // "") == "" or canon_repo(.repo // "") == canon_repo($d.repo // "")))
                | not)
       | select($refined
                | any((.item // "") == ($d.item // "")
-                     and ((.repo // "") == "" or (.repo // "") == ($d.repo // ""))
+                     and ((.repo // "") == "" or canon_repo(.repo // "") == canon_repo($d.repo // ""))
                      and (((.ts // "") > ($d.ts // ""))))
                | not)
       | select($vetoed
                | any((.item // "") == ($d.item // "")
-                     and ((.repo // "") == "" or (.repo // "") == ($d.repo // ""))
+                     and ((.repo // "") == "" or canon_repo(.repo // "") == canon_repo($d.repo // ""))
                      and (((.ts // "") > ($d.ts // ""))))
                | not) ]
   | sort_by(.ts)
@@ -818,22 +884,28 @@ DECISIONS_MAP_JQ='
         + (if ($d.issue_url // "") == "" then {} else {issue_url: $d.issue_url} end))
 '
 
-# decisions_map [LOG_FILE]
+# decisions_map [LOG_FILE] [ALIASES_JSON]
 # Print, as a JSON object keyed repo → item, the latest tactical decision
 # recorded for every item that has one, is not void, and has not since been
 # carried forward into a refinement. Reads LOG_FILE, or stdin if it is
 # omitted or "-". Always succeeds, printing {} on a missing, empty or
 # unreadable log, on the same terms `refinements_map` does.
+#
+# ALIASES_JSON (issue #2064, extended by #2359) is `config_repo_slug_aliases`'
+# own map, threaded into `DECISIONS_MAP_JQ`'s `canon_repo`. Defaults to `{}`
+# (every repo resolves to itself); an argument that is not a JSON object is
+# treated the same way.
 decisions_map() {
-  local src="${1:--}" out=""
+  local src="${1:--}" aliases="${2:-{\}}" out=""
   # Same fallback as refinements_map above, same reason.
   local comment_url_re="${REFINEMENT_COMMENT_URL_RE:-(#issuecomment-[0-9]+|/issues/comments/[0-9]+)$}"
+  jq -e 'type == "object"' <<<"$aliases" >/dev/null 2>&1 || aliases='{}'
   if [[ "$src" == "-" ]]; then
     out="$(jq -c -R 'fromjson? // empty' 2>/dev/null \
-      | jq -sc --arg re "$comment_url_re" "$DECISIONS_MAP_JQ" 2>/dev/null || true)"
+      | jq -sc --arg re "$comment_url_re" --argjson aliases "$aliases" "$DECISIONS_MAP_JQ" 2>/dev/null || true)"
   elif [[ -s "$src" ]]; then
     out="$(jq -c -R 'fromjson? // empty' "$src" 2>/dev/null \
-      | jq -sc --arg re "$comment_url_re" "$DECISIONS_MAP_JQ" 2>/dev/null || true)"
+      | jq -sc --arg re "$comment_url_re" --argjson aliases "$aliases" "$DECISIONS_MAP_JQ" 2>/dev/null || true)"
   fi
   [[ -n "$out" ]] || out='{}'
   printf '%s' "$out"
@@ -994,9 +1066,9 @@ decisions_map() {
 # escalation registration observe the same "closing it releases the item"
 # contract an ordinary escalation already gets.
 ENABLER_ELIGIBLE_JQ='
-  def same_item($e): (.item // "") == ($e.item // "")
-                     and ((.repo // "") == "" or (.repo // "") == ($e.repo // ""));
   def canon_repo($r): ($aliases[$r] // $r);
+  def same_item($e): (.item // "") == ($e.item // "")
+                     and ((.repo // "") == "" or canon_repo(.repo // "") == canon_repo($e.repo // ""));
   ($all | ('"$OPEN_BLOCKED_JQ"')) as $blocked
   | [ $blocked[]
       | . as $b
@@ -1089,14 +1161,20 @@ ENABLER_ELIGIBLE_JQ='
 # when omitted or not a number — the two ages independently only when a
 # caller actually configures them apart (requirement 35a).
 #
-# ALIASES_JSON (issue #2064) maps a repo slug this pipeline used to be
-# configured under to the slug it is configured under now
+# ALIASES_JSON (issue #2064, extended by #2359) maps a repo slug this pipeline
+# used to be configured under to the slug it is configured under now
 # (`config_repo_slug_aliases`). A block's `repo` is resolved through it before
 # the OPEN_ISSUES_JSON lookup above, since that map is always built from the
 # live configured slug — without this, a block recorded under a name the
 # repository no longer has reads as a repo this cycle "could not read",
 # which this function already treats as `unknown` and leaves ineligible
-# forever, not merely delayed.
+# forever, not merely delayed. `ENABLER_ELIGIBLE_JQ`'s `same_item` resolves
+# through the same map (#2359), so an escalation, an `enabler-examined`, or
+# the `item-refined` behind `refined_before` logged under one slug is matched
+# against a block recorded under the other — without that, `refined_before`
+# read null for an item refined across a rename, disarming requirement 35d's
+# one-refinement-per-item thrash guard exactly when the rename made it most
+# likely to fire.
 #
 # Always succeeds, printing [] for a missing, empty or unreadable log, exactly
 # as `_latest_unresolved` does and for the same reason: the caller runs under

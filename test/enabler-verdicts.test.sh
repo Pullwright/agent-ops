@@ -1201,6 +1201,12 @@ guard_warn() { :; }
 ordered_repos_json='[{"slug":"acme/widgets","tech_debt":[{"source":"tech-debt","ref":"TD26082901"}]}]'
 blocked_json='[]'
 void_json='[]'
+# config_repo_slug_aliases' own map (issue #2064, #2359): compute_band_eligibility
+# threads it into refinements_map/decisions_map now, same as agent-cycle.sh's
+# own global of the same name. Empty here — none of these fixtures rename a
+# repo — resolves every repo to itself, same as production with no
+# previous_slugs configured.
+repo_slug_aliases_json='{}'
 union_log="$recon_log"
 refiner_model='claude-test-model'
 refinement_policy_json="$td_required"
@@ -1253,7 +1259,7 @@ assert_eq "decide/no-refiner real-sequence: with no refiner_model, the pass does
 # redirect every such read at `$recon_log` for the rest of the file.
 unset union_log ordered_repos_json blocked_json void_json refiner_model \
   refiner_repos_json refiner_prefetch_source_json refiner_candidates_real \
-  refinement_policy_json recon_log_mc
+  refinement_policy_json recon_log_mc repo_slug_aliases_json
 
 # --- decision-vetoed clears the decision (agent-ops#937, agent-ops#1198):
 # reopening the log issue withdraws the decision it logged, and a Refiner

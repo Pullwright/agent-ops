@@ -974,6 +974,43 @@ assert_eq "a refinement written after an older block is not shadowed by it" \
   "$(refinements_map "$stale_log" | jq -r '."o/r"."77".spec')"
 rm -f "$stale_log"
 
+# --- issue #2359: refinements_map resolves a repository rename ------------------
+# A repository rename splits one item's identity across two slugs: the void
+# or the needs-refinement block that would otherwise shadow a refinement is
+# recorded under one slug, the item-refined event under the other. Without
+# resolving both sides through `config_repo_slug_aliases`' map first, the
+# void/shadow test can never find the event it is meant to match.
+rename_log="$(mktemp)"
+aliases='{"o/old":"o/r"}'
+
+# The void side: an item-void logged under the old slug must still withhold
+# a refinement logged under the current one.
+cat > "$rename_log" <<'EOF'
+{"ts":"2026-09-06T09:00:00Z","cycle":"c1","event":"item-refined","repo":"o/r","item":"1198","spec":"the refined spec"}
+{"ts":"2026-09-05T09:00:00Z","cycle":"c0","event":"item-void","stage":"enabler","repo":"o/old","item":"1198","detail":"already done","evidence":"main@aad1405"}
+EOF
+assert_eq "with no aliases map, a void under the old slug does not withhold a refinement under the current one" \
+  "the refined spec" \
+  "$(refinements_map "$rename_log" | jq -r '."o/r"."1198".spec')"
+assert_eq "resolved through the alias map, the void does withhold it" \
+  "null" \
+  "$(refinements_map "$rename_log" "$aliases" | jq -r '."o/r"."1198" // "null"')"
+
+# The shadow side (requirement 39d, renamed): a needs-refinement block logged
+# under the old slug, after a refinement logged under the current one, must
+# still shadow it.
+cat > "$rename_log" <<'EOF'
+{"ts":"2026-09-06T09:00:00Z","cycle":"c1","event":"item-refined","repo":"o/r","item":"1199","comment_url":"https://github.com/o/r/issues/1199#issuecomment-1"}
+{"ts":"2026-09-08T09:00:00Z","cycle":"c2","event":"attempt-failed","stage":"implementer","kind":"needs-refinement","repo":"o/old","item":"1199","reason":"still unclear","unblock_condition":"say which behaviour is wanted"}
+EOF
+assert_eq "with no aliases map, a re-block under the old slug does not shadow the refinement under the current one" \
+  "https://github.com/o/r/issues/1199#issuecomment-1" \
+  "$(refinements_map "$rename_log" | jq -r '."o/r"."1199".comment_url')"
+assert_eq "resolved through the alias map, the re-block does shadow it — restoring the thrash guard across the rename" \
+  "null" \
+  "$(refinements_map "$rename_log" "$aliases" | jq -r '."o/r"."1199" // "null"')"
+rm -f "$rename_log"
+
 # --- TD-PPagop-26082819, the refinements_map seam: a phantom is not a refinement --
 # The recording seam above already refuses to *write* an item-refined whose
 # comment_url names no comment, and `enabler_eligible_items` already skips one

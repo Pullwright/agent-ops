@@ -564,6 +564,24 @@ escalated_log_aliased_repo
 assert_eq "...and an open issue under the resolved slug still keeps it ineligible" "" \
   "$(reason_for TD1 3 0 "$open_52" "" '{"o/old":"o/r"}')"
 
+# issue #2359: `same_item` resolves the same alias map, so `refined_before` —
+# requirement 35d's thrash guard — recognizes a refinement logged under the
+# repo's current slug as refining a `needs-refinement` block recorded under a
+# slug in that repo's `previous_slugs`. Without this, items 1198 and 1199 of
+# `Poetic-Poems/agent-ops` kept reading unrefined under their renamed slug for
+# 34 days after the Refiner had already specified them.
+cat > "$log" <<'EOF'
+{"ts":"2026-07-22T09:00:00Z","cycle":"c0","event":"attempt-failed","stage":"coordinator","kind":"needs-refinement","repo":"o/old","item":"TD1","reason":"vague","unblock_condition":"clarify"}
+EOF
+coord_cycles 3 >> "$log"
+cat >> "$log" <<'EOF'
+{"ts":"2026-07-23T09:00:00Z","cycle":"c4","event":"item-refined","repo":"o/r","item":"TD1","spec":"the refined spec"}
+EOF
+assert_eq "with no aliases map, refined_before does not see a refinement logged under the current slug" \
+  "null" "$(eligible 3 0 "$open_none" | jq -r '.[0].refined_before // "null"')"
+assert_eq "resolved through the alias map, refined_before does see it — restoring the thrash guard across the rename" \
+  "the refined spec" "$(eligible 3 0 "$open_none" "" '{"o/old":"o/r"}' | jq -r '.[0].refined_before.spec // "null"')"
+
 # An escalated event with no usable issue number cannot be checked against the
 # digest at all; it must not read as "closed" and hand the item a free
 # verification pass.
