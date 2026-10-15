@@ -577,15 +577,29 @@ stage_watchdog_warning() {
 # here is: a wedged `git push` must not hold up the kill it is meant to
 # precede.
 #
+# Never the default branch, and that check comes before the commit rather
+# than after it. The clone the Script hands a stage arrives on the
+# repository's default branch (`clone_repo`, lib/repo-clone.sh) — it is the
+# stage itself that checks its own branch out (requirement 23a's step 1, and
+# the review pipeline's own first step) — so a stage killed before it got
+# that far is still standing there, and a push would carry unreviewed work
+# straight at `refs/heads/<default_branch>`. The remote's own protection
+# would refuse it on every repository worked here, but the one thing this net
+# must never attempt cannot rest on a setting on the far side of it. The
+# default branch is read from `refs/remotes/origin/HEAD`, which a plain
+# `git clone` always sets, and a clone that names none at all is refused
+# rather than guessed about: fail closed, since "which branch must not be
+# pushed to" is exactly the question a silent fallback would get wrong.
+#
 # A no-op — never a warning, never a failure this function reports — when
-# there is no `.git`, no boundary, nothing uncommitted, or the commit/push
-# itself fails (a moved branch, a network blip, no upstream remote): this is
-# a safety net for the common case, not a guarantee, and its own failure must
-# never change whether or how the stage is killed. A branch genuinely
-# untouched when the stage is killed stays genuinely untouched — there is
-# nothing for `git status --porcelain` to report, so this prints nothing and
-# `release_branch_if_untouched` (lib/claim.sh) still reaps it exactly as
-# before.
+# there is no `.git`, no boundary, nothing uncommitted, the branch is the
+# default one or unknowable, or the commit/push itself fails (a moved branch,
+# a network blip, no upstream remote): this is a safety net for the common
+# case, not a guarantee, and its own failure must never change whether or how
+# the stage is killed. A branch genuinely untouched when the stage is killed
+# stays genuinely untouched — there is nothing for `git status --porcelain`
+# to report, so this prints nothing and `release_branch_if_untouched`
+# (lib/claim.sh) still reaps it exactly as before.
 _stage_snapshot_and_push() {
   local cwd="$1"
   [[ -d "$cwd/.git" ]] || return 0
@@ -593,12 +607,15 @@ _stage_snapshot_and_push() {
   stage_boundary_capture 25 1 bash -c '
     cd "$1" || exit 0
     git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
+    branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" || exit 0
+    [[ -n "$branch" && "$branch" != "HEAD" ]] || exit 0
+    default="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)" || default=""
+    default="${default#origin/}"
+    [[ -n "$default" && "$branch" != "$default" ]] || exit 0
     [[ -n "$(git status --porcelain 2>/dev/null)" ]] || exit 0
     git add -A >/dev/null 2>&1 || exit 0
     git commit -q -m "chore: snapshot work in progress before a stage cap stopped the run" \
       >/dev/null 2>&1 || exit 0
-    branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" || exit 0
-    [[ -n "$branch" && "$branch" != "HEAD" ]] || exit 0
     git push -q origin "HEAD:refs/heads/$branch" >/dev/null 2>&1
   ' _ "$cwd" >/dev/null 2>&1 || true
   return 0

@@ -8,7 +8,7 @@
 # as the stage user, in the pause between the TERM and the KILL every cap
 # already sends.
 #
-# Two things matter here, and they are opposite findings:
+# Three things matter here, and the first two are opposite findings:
 #
 #   real work survives      a stage killed mid-verification, after making a
 #                            real change it never got around to committing
@@ -22,6 +22,11 @@
 #                            pushed, and `git status --porcelain` finding
 #                            nothing is what this function treats as "there is
 #                            no snapshot to take", not an error.
+#   the default branch is never pushed to   a stage killed before it checked
+#                            its own claim branch out is still standing on the
+#                            default branch, dirty tree and all, and this net
+#                            must refuse that push on this side of the remote
+#                            rather than leave it to the remote's protection.
 #
 # `claude` is a stub on PATH — no network, no model, no cost. `origin` is a
 # real local bare repository — no GitHub, no network — so the push this test
@@ -94,20 +99,35 @@ chmod +x "$tmp_dir/bin/claude"
 export PATH="$tmp_dir/bin:$PATH"
 
 # --- A real local remote, so the push this test watches for is a real one ---------
+# Seeded with a default branch, and with its own `HEAD` naming it, exactly as
+# every repository worked here has one: a clone of it lands on that branch
+# with `refs/remotes/origin/HEAD` set, which is what the snapshot reads to
+# know which branch it must never push to.
 origin="$tmp_dir/origin.git"
 git init --quiet --bare "$origin"
+seed="$tmp_dir/seed"
+git clone --quiet "$origin" "$seed" >/dev/null 2>&1
+git -C "$seed" config user.email test@example.invalid
+git -C "$seed" config user.name "Test"
+printf 'first\n' >"$seed/README.md"
+git -C "$seed" add README.md
+git -C "$seed" commit --quiet -m "chore: seed"
+git -C "$seed" push --quiet origin "HEAD:refs/heads/main" >/dev/null 2>&1
+git -C "$origin" symbolic-ref HEAD refs/heads/main
 
-make_clone() {  # make_clone NAME BRANCH -> prints the clone's directory
-  local name="$1" branch="$2" dir
+make_clone() {  # make_clone NAME [BRANCH] -> prints the clone's directory
+  # With BRANCH: the claim the Script creates at the default branch's head
+  # before the stage is launched, checked out as a compliant stage checks it
+  # out. Without: the clone exactly as the Script hands it over — on the
+  # default branch, which is where a stage killed before its own `git
+  # checkout` still stands.
+  local name="$1" branch="${2:-}" dir
   dir="$tmp_dir/$name"
+  [[ -z "$branch" ]] || git -C "$origin" update-ref "refs/heads/$branch" refs/heads/main
   git clone --quiet "$origin" "$dir" >/dev/null 2>&1
   git -C "$dir" config user.email test@example.invalid
   git -C "$dir" config user.name "Test"
-  printf 'first\n' >"$dir/README.md"
-  git -C "$dir" add README.md
-  git -C "$dir" commit --quiet -m "chore: seed"
-  git -C "$dir" push --quiet origin "HEAD:refs/heads/$branch" >/dev/null 2>&1
-  git -C "$dir" checkout --quiet -b "$branch" 2>/dev/null || git -C "$dir" checkout --quiet "$branch"
+  [[ -z "$branch" ]] || git -C "$dir" checkout --quiet "$branch"
   printf '%s\n' "$dir"
 }
 
@@ -183,6 +203,37 @@ else
   printf 'FAIL - a backstop kill left the uncommitted work behind\n'
   failures=$(( failures + 1 ))
 fi
+
+# --- 4. The default branch is never pushed to, however dirty the tree --------------
+# The clone the Script hands a stage is on the default branch; the stage checks
+# its own claim branch out itself. So a stage killed before it got that far is
+# standing on the default branch with its work uncommitted — and this net must
+# not answer that by pushing unreviewed work at `refs/heads/main`. The remote's
+# own protection would refuse it on every repository worked here, which is
+# exactly why the refusal has to be provable on this side of it.
+default_clone="$(make_clone ondefault)"
+assert_eq "the fixture reproduces the hand-over state: a clone on the default branch" \
+  "main" "$(git -C "$default_clone" rev-parse --abbrev-ref HEAD)"
+main_before="$(origin_head main)"
+printf 'in progress\n' >"$default_clone/NOTES.md"
+printf 'changed\n' >>"$default_clone/README.md"
+cat >"$tmp_dir/bin/claude" <<'STUB'
+#!/usr/bin/env bash
+cat > /dev/null
+printf '%s\n' '{"type":"system","subtype":"init"}'
+sleep "${STUB_HOLD:-60}"
+printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"ok"}'
+STUB
+chmod +x "$tmp_dir/bin/claude"
+STUB_HOLD=60 run_model_stage ondefault 120 test-model "a prompt" "$tmp_dir/ondefault.out" "$default_clone" 4
+rc=$?
+assert_eq "a stage standing on the default branch is still killed as wedged" "124" "$rc"
+assert_eq "…attributed to the watchdog" "inactivity" "$stage_kill_reason"
+assert_eq "…and the default branch never moved: the snapshot refused to push to it" \
+  "$main_before" "$(origin_head main)"
+assert_eq "…and no other ref was invented to carry it instead" \
+  "$(printf 'refs/heads/agent/2186\nrefs/heads/agent/4242\nrefs/heads/agent/9999\nrefs/heads/main')" \
+  "$(git -C "$origin" for-each-ref --format='%(refname)' refs/heads | sort)"
 
 printf '\n'
 if (( failures )); then

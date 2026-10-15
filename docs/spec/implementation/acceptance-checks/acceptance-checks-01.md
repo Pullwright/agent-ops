@@ -1030,10 +1030,14 @@ oblige anyone to edit a test.
    `kill -KILL`, the commit message itself Conventional-Commits-shaped so it
    does not fail the CI format check of the draft it lands on; a stage killed
    by the backstop gets the identical treatment, since a productively-looping
-   stage's unsaved work is exactly as worth keeping as a wedged one's; and a
+   stage's unsaved work is exactly as worth keeping as a wedged one's; a
    stage with nothing uncommitted when it is killed leaves the claimed
    branch's ref exactly where it was, so `release_branch_if_untouched`
-   (lib/claim.sh) still reaps a genuinely untouched claim exactly as before.
+   (lib/claim.sh) still reaps a genuinely untouched claim exactly as before;
+   and a stage killed while still standing on the clone's default branch —
+   where the Script's own hand-over leaves it, before the stage's first `git
+   checkout` — moves that branch's ref on `origin` not at all, and mints no
+   other ref in its place, however much uncommitted work its tree holds.
 1l. **Repos are walked most-overdue-first by nice-weighted effective age,
    and it never starves a repo (requirement 3).** `test/repo-order.test.sh`
    passes: `repo_order_by_effective_age` returns an order byte-identical to

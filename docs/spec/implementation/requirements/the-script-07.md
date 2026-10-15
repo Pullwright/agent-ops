@@ -1135,11 +1135,26 @@
    bounded in time (25 seconds) for the same reason every other boundary
    crossing is: a wedged push must not hold up the kill it is meant to
    precede.
+   It never pushes to the repository's **default branch**, and that is
+   established before anything is committed. The clone the Script hands a
+   stage over arrives on the default branch (`clone_repo`,
+   `lib/repo-clone.sh`) — checking the claim branch out is the stage's own
+   first step (requirement 23a of
+   `docs/spec/implementation/requirements/implementer.md`, and the review
+   pipeline's own step 1) — so a stage killed before it got that far is still
+   standing there, and the push this step would otherwise make carries
+   unreviewed work straight at `refs/heads/<default_branch>`. Every repository
+   worked here protects that branch and the remote would refuse it, but the
+   one thing this step must never attempt cannot rest on a setting on the far
+   side of it. The branch it must not push to is read from
+   `refs/remotes/origin/HEAD`, which a plain `git clone` always sets, and a
+   clone naming no default branch at all is refused rather than guessed at.
    It is a best-effort safety net, never a guarantee the kill waits on: no
-   `.git` directory, no boundary, nothing `git status --porcelain` reports, or
-   the commit or push itself failing (a moved branch, no configured upstream,
-   a network blip) are all silent no-ops, and none of them changes whether or
-   how the stage is killed. A branch genuinely untouched when the stage is
+   `.git` directory, no boundary, nothing `git status --porcelain` reports, a
+   detached `HEAD`, the default branch (above) or a clone that cannot name
+   one, or the commit or push itself failing (a moved branch, no configured
+   upstream, a network blip) are all silent no-ops, and none of them changes
+   whether or how the stage is killed. A branch genuinely untouched when the stage is
    killed is exactly as reapable after this as before it — there is nothing
    for this step to find, so `release_branch_if_untouched` still deletes it on
    the same terms it always has. A branch this step *does* push to survives
