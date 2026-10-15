@@ -1,6 +1,6 @@
 ## Requirements
 
-### The Script — requirements, continued (part 7 of 10; 3w–4h: Verdict quality is a rate, and every verdict pays for its …)
+### The Script — requirements, continued (part 7 of 10; 3w–4l: Verdict quality is a rate, and every verdict pays for its …)
 
 3w. **Verdict quality is a rate, and every verdict pays for its own
    denominator (issue #319).** Requirement 3t made a confabulated verdict
@@ -637,8 +637,9 @@
    `run_model_stage` enforces by killing the process group — and by a
    **liveness watchdog**: `inactivity_<actor>` minutes during which the stage
    produced no output whatsoever. Whichever fires first kills the stage, by
-   the same sequence (TERM to the process group, a five-second grace, then
-   KILL) and with the same exit status, 124.
+   the same sequence (TERM to the process group, a five-second grace, the
+   work snapshot requirement 4l adds — bounded at 25 seconds — then KILL)
+   and with the same exit status, 124.
    The watchdog reads the stage's own event stream (requirement 4d): inside
    the poll loop that already runs every two seconds, it compares the file's
    size against the largest size seen. Liveness is **monotonic growth of that
@@ -1109,4 +1110,72 @@
    the sibling of the `claim.sh count` site's own `=~ ^[0-9]+$` — reporting
    through `guard_warn` and falling back to the same literal, so a malformed
    success is treated exactly like a failure rather than trusted.
+4l. **Killing a stage never throws away uncommitted work it already did
+   (issue #2186).** Requirement 4e's kill sequence carries a step between its
+   five-second grace and its KILL: `run_model_stage` (via its
+   shared `_stage_kill` helper in `lib/stage-run.sh`) commits and pushes
+   whatever the stage's own working directory holds, before the KILL that
+   ends it for good. This closes a loss the backstop and watchdog share: a
+   stage stopped mid verification — a build, a full test suite, run after the
+   change itself was already complete — has by definition not reached its own
+   final commit yet, so a kill at that moment discards a finished
+   implementation with nothing to show for it, and the claimed branch is
+   reaped untouched by `release_branch_if_untouched` (lib/claim.sh) on the
+   very same cycle. Recoverability therefore does not depend on a stage's own
+   compliance with "commit and push at each checkpoint" (requirement 23a of
+   `docs/spec/implementation/requirements/implementer.md`) landing before the
+   one moment it matters most — the step immediately before the slowest,
+   least interruptible part of a run.
+   The commit and push run through `stage_boundary_capture` (requirement 45e
+   of `docs/spec/implementation/requirements/every-stage.md`), which on an
+   installation with the boundary present runs them **as the stage user**,
+   never as the Script's own: the stage's working directory is the stage's,
+   once shared, and running git there as the Script's user would run
+   whatever a stage's own `.git/config` names — a hook, a diff or filter
+   driver, `core.fsmonitor` — with the Script's own far greater privilege.
+   Where no boundary exists at all — a developer's checkout, this
+   requirement's own test (`test/stage-snapshot.test.sh`) — `stage_boundary_
+   capture` runs the identical commands as this user instead, on the terms
+   it already documents for every other boundary crossing: there is no
+   privileged user on this side of a boundary that does not exist to
+   protect. It is bounded in time (25 seconds) regardless, for the same
+   reason every other boundary crossing is: a wedged push must not hold up
+   the kill it is meant to precede.
+   It never pushes to the repository's **default branch**, and that is
+   established before anything is committed. The clone the Script hands a
+   stage over arrives on the default branch (`clone_repo`,
+   `lib/repo-clone.sh`) — checking the claim branch out is the stage's own
+   first step (requirement 23a of
+   `docs/spec/implementation/requirements/implementer.md`, and the review
+   pipeline's own step 1) — so a stage killed before it got that far is still
+   standing there, and the push this step would otherwise make carries
+   unreviewed work straight at `refs/heads/<default_branch>`. Every repository
+   worked here protects that branch and the remote would refuse it, but the
+   one thing this step must never attempt cannot rest on a setting on the far
+   side of it. The branch it must not push to is read from
+   `refs/remotes/origin/HEAD`, which a plain `git clone` always sets, and a
+   clone naming no default branch at all is refused rather than guessed at.
+   It is a best-effort safety net, never a guarantee the kill waits on: no
+   `.git` directory, nothing `git status --porcelain` reports, a detached
+   `HEAD`, the default branch (above) or a clone that cannot name one, or
+   the commit or push itself failing (a moved branch, no configured
+   upstream, a network blip) are all silent no-ops, and none of them changes
+   whether or how the stage is killed. A branch genuinely untouched when the stage is
+   killed is exactly as reapable after this as before it — there is nothing
+   for this step to find, so `release_branch_if_untouched` still deletes it on
+   the same terms it always has. A branch this step *does* push to survives
+   that same check (its ref has moved) and, carrying commits ahead of the
+   default branch with no pull request yet open on it, becomes an ordinary
+   orphan the next cycle's orphan-branch sweep (requirement 17b of
+   `docs/spec/implementation/requirements/co-ordinator-01.md`) mints a
+   recovery draft for — the same recovery path a stage's own crash between
+   pushing and opening its draft PR already uses.
+   The commit message is a fixed, Conventional-Commits-shaped line (`chore:
+   …`), so it cannot itself fail the commit-format check the draft it lands
+   on is bound by (the "Commit messages" section of this repository's own
+   `AGENTS.md`). This applies to every cap this file documents — the backstop
+   and the watchdog alike, and a rate-limit stop too: whichever reason ends
+   the stage, the process is being stopped forcibly and whatever work already
+   sits in its working directory is exactly as worth keeping regardless of
+   which of the three stopped it.
 

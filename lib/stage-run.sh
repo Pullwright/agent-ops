@@ -558,6 +558,90 @@ stage_watchdog_warning() {
     '{detail: ($s + " was stopped by the liveness watchdog: it produced no output at all for its whole inactivity threshold. Either it was wedged, which is what the watchdog is for, or the threshold is too tight for what it was doing — check the stage stream before assuming the first.")}'
 }
 
+# _stage_snapshot_and_push CWD
+# Best-effort recovery net for a stage this function's caller is about to
+# kill (issue #2186): before the final `kill -KILL`, commit and push whatever
+# CWD's working tree holds, so a run stopped mid verification — a build, a
+# full test suite — after real work was done leaves that work on the claimed
+# branch rather than only in the clone, which is gone the moment this stage's
+# workspace is removed. Without this, recovery depends entirely on the stage
+# itself having committed and pushed before the cap fired — exactly the step
+# a stage mid-verification has by definition not reached yet.
+#
+# Runs through `stage_boundary_capture` rather than a plain `git` call: CWD
+# is the stage's own workspace (requirement 45e of
+# docs/spec/implementation/requirements/every-stage.md), and on an
+# installation with the boundary present, this is what keeps the commit and
+# push running as the stage user, never as this far more privileged process —
+# running git there as this user would run whatever a stage's own
+# `.git/config` names (`core.fsmonitor`, hooks, diff/filter drivers) with that
+# far greater privilege. Where there is no boundary at all — a developer's
+# checkout, this file's own test — `stage_boundary_capture` runs the same
+# commands as this user instead, on the terms `lib/stage-boundary.sh` already
+# documents for every other boundary crossing: there is no privileged user on
+# this side of a boundary that does not exist to protect. Bounded in time for
+# the same reason every other boundary crossing here is: a wedged `git push`
+# must not hold up the kill it is meant to precede.
+#
+# Never the default branch, and that check comes before the commit rather
+# than after it. The clone the Script hands a stage arrives on the
+# repository's default branch (`clone_repo`, lib/repo-clone.sh) — it is the
+# stage itself that checks its own branch out (requirement 23a's step 1, and
+# the review pipeline's own first step) — so a stage killed before it got
+# that far is still standing there, and a push would carry unreviewed work
+# straight at `refs/heads/<default_branch>`. The remote's own protection
+# would refuse it on every repository worked here, but the one thing this net
+# must never attempt cannot rest on a setting on the far side of it. The
+# default branch is read from `refs/remotes/origin/HEAD`, which a plain
+# `git clone` always sets, and a clone that names none at all is refused
+# rather than guessed about: fail closed, since "which branch must not be
+# pushed to" is exactly the question a silent fallback would get wrong.
+#
+# A no-op — never a warning, never a failure this function reports — when
+# there is no `.git`, nothing uncommitted, the branch is the default one or
+# unknowable, or the commit/push itself fails (a moved branch, a network
+# blip, no upstream remote): this is a safety net for the common case, not a
+# guarantee, and its own failure must never change whether or how the stage
+# is killed. A branch genuinely untouched when the stage is killed
+# stays genuinely untouched — there is nothing for `git status --porcelain`
+# to report, so this prints nothing and `release_branch_if_untouched`
+# (lib/claim.sh) still reaps it exactly as before.
+_stage_snapshot_and_push() {
+  local cwd="$1"
+  [[ -d "$cwd/.git" ]] || return 0
+  # shellcheck disable=SC2016  # the script is the stage user's bash's to expand
+  stage_boundary_capture 25 1 bash -c '
+    cd "$1" || exit 0
+    git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
+    branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" || exit 0
+    [[ -n "$branch" && "$branch" != "HEAD" ]] || exit 0
+    default="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)" || default=""
+    default="${default#origin/}"
+    [[ -n "$default" && "$branch" != "$default" ]] || exit 0
+    [[ -n "$(git status --porcelain 2>/dev/null)" ]] || exit 0
+    git add -A >/dev/null 2>&1 || exit 0
+    git commit -q -m "chore: snapshot work in progress before a stage cap stopped the run" \
+      >/dev/null 2>&1 || exit 0
+    git push -q origin "HEAD:refs/heads/$branch" >/dev/null 2>&1
+  ' _ "$cwd" >/dev/null 2>&1 || true
+  return 0
+}
+
+# _stage_kill PID CWD
+# The one kill sequence every cap below uses: TERM, a grace period, the
+# snapshot above (while the process is (hopefully) no longer touching CWD but
+# before its group is gone for good), then KILL and a reap. Shared so the
+# three caps cannot drift into killing differently, and so the snapshot is
+# never a line a future cap forgets to add.
+_stage_kill() {
+  local pid="$1" cwd="$2"
+  kill -TERM "-$pid" 2>/dev/null || true
+  sleep 5
+  _stage_snapshot_and_push "$cwd"
+  kill -KILL "-$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+}
+
 # --- Run a headless model-stage invocation with a wall-clock timeout, killing
 #     its whole process group on timeout. `set -m` gives the backgrounded job
 #     its own process group so `kill -TERM -$pid` reaches every descendant. ---
@@ -698,10 +782,7 @@ run_model_stage() {
   while kill -0 "$pid" 2>/dev/null; do
     if (( waited >= timeout_sec )); then
       stage_kill_reason="backstop"
-      kill -TERM "-$pid" 2>/dev/null || true
-      sleep 5
-      kill -KILL "-$pid" 2>/dev/null || true
-      wait "$pid" 2>/dev/null || true
+      _stage_kill "$pid" "$cwd"
       rc=124
       break
     fi
@@ -728,10 +809,7 @@ run_model_stage() {
         # shellcheck disable=SC2034  # read by each pipeline's limit detection
         stage_rate_limit_json="$rate_limit_info"
         stage_kill_reason="rate-limit"
-        kill -TERM "-$pid" 2>/dev/null || true
-        sleep 5
-        kill -KILL "-$pid" 2>/dev/null || true
-        wait "$pid" 2>/dev/null || true
+        _stage_kill "$pid" "$cwd"
         rc=124
         break
       fi
@@ -745,10 +823,7 @@ run_model_stage() {
       # pipeline's failure handling, which shellcheck cannot see from here.)
       # shellcheck disable=SC2034
       stage_kill_reason="inactivity"
-      kill -TERM "-$pid" 2>/dev/null || true
-      sleep 5
-      kill -KILL "-$pid" 2>/dev/null || true
-      wait "$pid" 2>/dev/null || true
+      _stage_kill "$pid" "$cwd"
       rc=124
       break
     fi
