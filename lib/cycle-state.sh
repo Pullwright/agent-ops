@@ -209,10 +209,20 @@ _latest_unresolved() {
 # caught by requirement 35a, whose clocks are measured from the block's own
 # `ts` and which this marker deliberately never touches.
 # The event types BLOCKED_ITEMS_JQ reads — the set/clear pair and the marker —
-# its declaration (`_log_fold`).
+# its declaration (`_log_fold`). $aliases must already be bound by the caller
+# (`--argjson aliases …`), same contract as `LATEST_UNRESOLVED_JQ`'s own:
+# beyond the nested `latest_unresolved` call (which resolves through it
+# already), the recheck-clean join below matches a marker's own `repo`
+# against the block's directly — never through `latest_unresolved` — so
+# `canon_repo` is applied there too (agent-ops#2388): without it, a
+# `recheck-clean` logged under a repo's current slug would never fold into a
+# block recorded under a slug in that repo's `previous_slugs`, leaving
+# requirement 18a's re-read-suppression marker unable to cover a renamed
+# block.
 BLOCKED_ITEMS_EVENTS="attempt-failed unblocked recheck-clean"
-# shellcheck disable=SC2016  # jq's $b/$rechecks, not the shell's.
+# shellcheck disable=SC2016  # jq's $b/$rechecks/$aliases, not the shell's.
 BLOCKED_ITEMS_JQ='
+  def canon_repo($r): ($aliases[$r] // $r);
   def latest_unresolved($set; $clear): '"$LATEST_UNRESOLVED_JQ"';
   . as $all
   | ($all | latest_unresolved("attempt-failed"; "unblocked")) as $blocked
@@ -221,7 +231,7 @@ BLOCKED_ITEMS_JQ='
   | map(. as $b
         | ($rechecks
            | map(select(.item == $b.item
-                        and ((.repo // "") == "" or (.repo // "") == ($b.repo // ""))))
+                        and ((.repo // "") == "" or canon_repo(.repo // "") == canon_repo($b.repo // ""))))
            | map(.ts // "")
            | sort | last) as $rc_ts
         | if $rc_ts == null then $b else $b + {recheck_clean_ts: $rc_ts} end)
@@ -650,11 +660,23 @@ retire_void_items() {
 # The match is requirement 34's, not a stricter one: a void naming no repo
 # covers the item in every repo, for the reason 34c gives — both an `item-void`
 # and its `unvoided` may be hand-appended by a human, who has no repo to hand.
+# $aliases must already be bound by the caller (`--argjson aliases …`), same
+# contract as `LATEST_UNRESOLVED_JQ`'s own: beyond the nested
+# `latest_unresolved`/`BLOCKED_ITEMS_JQ` calls (which resolve through it
+# already), the void-wins subtraction below matches a void event's own `repo`
+# against the block's directly — never through `latest_unresolved` — so
+# `canon_repo` is applied there too (agent-ops#2388), the same way
+# `REFINEMENTS_MAP_JQ`'s own void drop already does: without it, an
+# `item-void` logged under a repo's current slug would never clear an
+# `attempt-failed` recorded under a slug in that repo's `previous_slugs`
+# (or the mirror), leaving a cross-rename-voided item handed to the Enabler
+# and listed on the dashboard's blocked table forever.
 # The event types OPEN_BLOCKED_JQ reads — the void pair and BLOCKED_ITEMS_JQ's —
 # its declaration (`_log_fold`).
 OPEN_BLOCKED_EVENTS="$VOID_ITEMS_EVENTS $BLOCKED_ITEMS_EVENTS"
-# shellcheck disable=SC2016  # jq's $all/$void/$b, not the shell's.
+# shellcheck disable=SC2016  # jq's $all/$void/$b/$aliases, not the shell's.
 OPEN_BLOCKED_JQ='
+  def canon_repo($r): ($aliases[$r] // $r);
   def latest_unresolved($set; $clear): '"$LATEST_UNRESOLVED_JQ"';
   . as $all
   | ($all | latest_unresolved("item-void"; "unvoided")) as $void
@@ -662,7 +684,7 @@ OPEN_BLOCKED_JQ='
   | map(. as $b
         | select($void
                  | any(.item == $b.item
-                       and ((.repo // "") == "" or (.repo // "") == ($b.repo // "")))
+                       and ((.repo // "") == "" or canon_repo(.repo // "") == canon_repo($b.repo // "")))
                  | not))
 '
 
