@@ -367,7 +367,7 @@ named here because the order in Part 2 depends on when each moves:
   repository slug. It already sits in Poetic-Poems and does not move; it
   becomes the consumer repository's state store simply by continuing to be
   what Poetic's installation already uses it as.
-- **`Poetic-Poems/helper-scripts/count-autonomous-agent-prs.sh`**, which
+- **`Pullwright/helper-scripts/count-autonomous-agent-prs.sh`**, which
   reads `config.json` from `Pullwright/agent-ops` today (updated by the
   2026-09-07 transfer's own aftercare, helper-scripts `ccb9dbb`). It needs a
   second, equivalent update once `config.json` moves again — from the
@@ -436,7 +436,7 @@ discipline apply:
    placeholder (Part 1) in the same pull request that removes nothing else
    — this is a content replacement, not a path deletion, so it carries no
    "no path moved, deleted or renamed" exception to account for.
-4. **Update `count-autonomous-agent-prs.sh`** (Poetic-Poems/helper-scripts)
+4. **Update `count-autonomous-agent-prs.sh`** (Pullwright/helper-scripts)
    to read `config.json` from the new consumer repository's slug.
 5. **On each node** — `ockham-container`, `ockham-2`, `poetic-1`,
    `poetic-2` — once idle:
