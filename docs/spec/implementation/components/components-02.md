@@ -976,8 +976,13 @@
     `labels_mint` (create and apply a stage's own suggested labels onto one
     issue or pull request, capped and reporting `created`/`applied`/
     `refused`) — called from `agent-cycle.sh`'s Implementer handoff and
-    `lib/refinement.sh`'s `_refiner_apply_labels`. `LABELS_GH`
-    overrides the `gh` binary for tests. Sourced by `agent-cycle.sh`,
+    `lib/refinement.sh`'s `_refiner_apply_labels`. And implementing
+    requirement 17a's own `pr_label` backstop: `pr_label_ensure` (put
+    `pr_label` on one raised pull request iff a read of its labels shows it
+    absent, reporting `added`/`present`/`failed`, never failing a cycle),
+    called from `lib/coordinator-phase.sh` immediately after `pr-raised`.
+    `LABELS_GH`
+    overrides the `gh` binary for tests, for every function here. Sourced by `agent-cycle.sh`,
     `review-cycle.sh` and `scripts/doctor.sh`; component 3h's
     `_refiner_apply_labels` calls `labels_mint`/`labels_reserved_names`
     without sourcing this file itself, so it resolves them only in a process
@@ -987,7 +992,8 @@
     `test/refiner-verdicts.test.sh` sources both files itself for the same
     reason. Regression-tested against a stubbed `gh` that records every
     invocation (`test/labels.test.sh`, `test/refiner-verdicts.test.sh`,
-    `test/implementer-labels-wiring.test.sh`); must pass `shellcheck`.
+    `test/implementer-labels-wiring.test.sh`, `test/pr-label-ensure.test.sh`,
+    `test/pr-label-ensure-wiring.test.sh`); must pass `shellcheck`.
 16. `scripts/render-config-table.sh` implementing requirement 1b's generated-
     table property: renders the Markdown table body rows of the three prose
     configuration tables (this document's, `docs/spec/review.md`'s,

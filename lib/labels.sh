@@ -766,15 +766,19 @@ labels_mint() {
 # Prints one word:
 #   added     LABEL was absent and is now on the pull request.
 #   present   LABEL was already there. Nothing was touched.
-#   failed    the label list could not be read, or the add did not take —
-#             most often because LABEL has never been created in this
-#             repository yet. Best-effort either way: applying `pr_label` is
-#             advisory, never a reason to undo an already-raised pull
-#             request.
+#   failed    an argument was empty, the label list could not be read, or the
+#             add did not take — most often because LABEL has never been
+#             created in this repository yet. Best-effort either way:
+#             applying `pr_label` is advisory, never a reason to undo an
+#             already-raised pull request.
 #
 # Exit status is 0 for `added` and `present`, 1 for `failed`.
 pr_label_ensure() {
-  local slug="$1" number="$2" label="$3" gh_bin="${PR_LABEL_ENSURE_GH:-gh}" existing
+  local slug="$1" number="$2" label="$3" gh_bin="${LABELS_GH:-gh}" existing
+  if [[ -z "$slug" || -z "$number" || -z "$label" ]]; then
+    printf 'failed'
+    return 1
+  fi
   if ! existing="$("$gh_bin" pr view "$number" -R "$slug" --json labels \
                      --jq '.labels[].name' 2>/dev/null)"; then
     "$gh_bin" pr edit "$number" -R "$slug" --add-label "$label" >/dev/null 2>&1 || true

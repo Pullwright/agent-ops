@@ -70,9 +70,10 @@
    the label prints `present`, exit 0, and no `--add-label` call is ever
    made; one that does not prints `added`, exit 0, with exactly one
    `--add-label` call naming the right repo, number and label; an unreadable
-   label list, and an `--add-label` GitHub itself refuses (most often
-   because the label was never created in this repository), both print
-   `failed`, exit 1, never a hard error.
+   label list still attempts the add best-effort, and an `--add-label` GitHub
+   itself refuses (most often because the label was never created in this
+   repository), both printing `failed`, exit 1, never a hard error; and an
+   empty argument prints `failed` without spending a `gh` call at all.
    `test/pr-label-ensure-wiring.test.sh` passes, against the block lifted
    verbatim from `lib/coordinator-phase.sh` immediately after `pr-raised`:
    `pr_label_ensure` is called with the repo, the pull request's own number

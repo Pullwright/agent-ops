@@ -68,7 +68,7 @@ echo "stub gh: unexpected invocation: $*" >&2
 exit 64
 STUB
 chmod +x "$tmp/gh"
-export PR_LABEL_ENSURE_GH="$tmp/gh"
+export LABELS_GH="$tmp/gh"
 
 reset_stub() {
   : > "$tmp/log"
@@ -105,6 +105,8 @@ export GH_VIEW_FAILS=1
 out="$(pr_label_ensure acme/widgets 12 autonomous-agent)"; rc=$?
 assert_eq "labels unreadable: prints 'failed'" "failed" "$out"
 assert_eq "  ... exit 1" "1" "$rc"
+assert_eq "  ... the add was still attempted, best-effort" \
+  "acme/widgets	12	autonomous-agent" "$(cat "$tmp/apply-log")"
 unset GH_VIEW_FAILS
 
 # --- Add refused (most often: the label was never created in this repo). ---
@@ -115,6 +117,21 @@ out="$(pr_label_ensure acme/widgets 12 autonomous-agent)"; rc=$?
 assert_eq "add refused: prints 'failed'" "failed" "$out"
 assert_eq "  ... exit 1" "1" "$rc"
 unset GH_EDIT_FAILS
+
+# --- An empty argument is refused outright, without spending a `gh` call —
+#     the same guard refinement_label_project and
+#     landing_open_question_label_project carry. ---
+
+reset_stub "complexity:low"
+out="$(pr_label_ensure acme/widgets "" autonomous-agent)"; rc=$?
+assert_eq "empty pull-request number: prints 'failed'" "failed" "$out"
+assert_eq "  ... exit 1" "1" "$rc"
+assert_eq "  ... no gh call was made at all" "0" "$(wc -l < "$tmp/log")"
+
+reset_stub "complexity:low"
+out="$(pr_label_ensure acme/widgets 12 "")"; rc=$?
+assert_eq "empty label: prints 'failed'" "failed" "$out"
+assert_eq "  ... no gh call was made at all" "0" "$(wc -l < "$tmp/log")"
 
 echo
 if (( failures > 0 )); then
