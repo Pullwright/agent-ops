@@ -744,6 +744,32 @@ assert_eq "a fleet that recovered hours ago and is still succeeding every cycle 
 assert_eq "naming the success that ended the incident, not the newest one in the log" \
   "1" "$(grep -c '2026-10-10T15:00:00Z' <<<"$STUB_GH_CLOSE_LAST_BODY")"
 
+# The one case the clamp hands straight back to `crash_loop_detail_recurred_
+# since`: a same-detail failure sharing the clearing success's own timestamp.
+# Both the clamp's and the success lookup's bounds are inclusive, so a
+# success logged in the very same second as the incident's last failure is
+# still nameable, and only the recurrence guard — inclusive at its own lower
+# bound — rejects it. Nothing else here can: the window below has long since
+# elapsed, and no failure follows. Requirement 2.7 names this as what that
+# guard still answers for on its own.
+union_log="$WORKDIR/union-staggered-recovery-boundary.jsonl"
+{
+  fail_at 2026-10-10T16:00:00Z n1 'coordinator exited 126'
+  fail_at 2026-10-10T16:15:00Z n1 'coordinator exited 126'
+  fail_at 2026-10-10T16:30:00Z n1 'coordinator exited 126'
+  fail_at 2026-10-10T16:45:00Z n1 'coordinator exited 126'
+  printf '%s\n' "$(jq -nc '{ts:"2026-10-10T16:00:05Z", node:"n1", event:"crash-loop-escalated", stage:"coordinator", detail:"coordinator exited 126", first_ts:"2026-10-10T16:00:00Z", issue_number:1306, issue_url:"https://github.com/o/r/issues/1306"}')"
+  success_at 2026-10-10T17:00:00Z n-A
+  fail_at 2026-10-10T17:10:00Z n-B 'coordinator exited 126'
+  success_at 2026-10-10T17:10:00Z n-B
+} > "$union_log"
+STUB_GH_CLOSE_MODE="success"; STUB_GH_CLOSE_CALLS=0; EVENTS=()
+crash_loop_retire_resolved 2026-10-10T18:00:00Z
+assert_eq "a same-detail failure sharing the clearing success's own timestamp still blocks retirement" \
+  "0" "$STUB_GH_CLOSE_CALLS"
+assert_eq "and no retirement is logged for the boundary case" \
+  "0" "$(events_of crash-loop-retired | wc -l | tr -d ' ')"
+
 crash_loop_min_clear_minutes=0
 
 # --- Prefix-collision dedup filters (agent-ops#1694) ------------------------

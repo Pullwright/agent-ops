@@ -710,8 +710,8 @@
      inside it. `crash_loop_reverify`, the escalated/deferred dedup checks,
      the flap guard (`crash_loop_detail_recurred_since`) and the retirement's
      own success lookup (`crash_loop_last_success_since`, and the
-     `crash_loop_detail_last_failure_since` clamp it is given) are all matched on
-     `repo` too, so two repositories that happen to share a generic detail
+     `crash_loop_detail_last_failure_since` clamp it is given) are all
+     matched on `repo` too, so two repositories that share a generic detail
      (e.g. both saying "coordinator exited 1") can never dedup, defer or
      retire against each other's own run. The two families differ in what an
      *absent* `repo` means, because they read different things.
@@ -724,12 +724,11 @@
      itself, so an absent `repo` imposes no constraint at all and they read
      the whole fleet, exactly as they did before this grouping existed
      (`crash_loop_detail_last_failure_since` reads the same evidence on the
-     same terms): an
-     escalation filed before agent-ops#1630 carries no `repo`, while every
-     Co-Ordinator event logged since issue #587 carries one, so the other
-     reading would leave every such issue permanently unretirable (the
-     success it needs to name could never again be found) with its flap
-     guard reading the empty set.
+     same terms): an escalation filed before agent-ops#1630 carries no
+     `repo`, while every Co-Ordinator event logged since issue #587 carries
+     one, so the other reading would leave every such issue permanently
+     unretirable (the success it needs to name could never again be found)
+     with its flap guard reading the empty set.
      `crash_loop_preselection_verdict` below stays fleet-wide, grouped only
      by `exit_code` — it fires before selection ever assigns a repository
      to anything, so it has no `repo` to group by.

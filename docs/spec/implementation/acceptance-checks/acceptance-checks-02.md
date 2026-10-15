@@ -984,7 +984,11 @@
    open; and a fleet that recovered hours ago and has been succeeding every
    cycle since, right up to `UNION_LOG_HORIZON`, retires — naming the
    success that ended the incident rather than the newest one in the log,
-   which no elapsed window could ever be measured against.
+   which no elapsed window could ever be measured against. A sixth fixture
+   covers the boundary the clamp hands back to the recurrence guard: a
+   same-detail failure sharing the clearing success's own timestamp, with the
+   window long elapsed and no failure after, still leaves the issue open and
+   logs no retirement.
    The same file also covers per-repository dedup and retirement
    (agent-ops#1630), two repositories sharing a generic detail (e.g. both
    "coordinator exited 1"): repository B's own run still files its own
