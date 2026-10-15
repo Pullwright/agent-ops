@@ -546,6 +546,39 @@ assert_eq "...and the two monitor_id values drew different lanes" \
   "api then subscription" \
   "$(stage_lane_draw anthropic claude-code "fixture-monitor-1:monitor") then $(stage_lane_draw anthropic claude-code "fixture-monitor-3:monitor")"
 
+# The two assertions above drive the launcher with `cycle_id` set by *this
+# file*, which is the behaviour half of the claim. The structural half is the
+# shipped scripts: the seed reads a global each pipeline has to remember to
+# set, and `${cycle_id:-}` keeps `set -u` quiet about one that forgot — which
+# is precisely how review-cycle.sh and monitor-cycle.sh came to seed every
+# launch on the same constant string. So assert over the scripts themselves,
+# the way test/stage-prompt-delivery.test.sh asserts no cycle script grew its
+# own `run_model_stage` back: deleting either assignment must fail a test
+# rather than silently returning the fleet to one lane forever.
+for cyc_script in agent-cycle.sh review-cycle.sh monitor-cycle.sh; do
+  seed_assign="$(grep -n '^[[:space:]]*cycle_id=' "$SCRIPT_DIR/$cyc_script" | head -1)"
+  assert_eq "$cyc_script assigns the \`cycle_id\` lib/stage-run.sh's lane seed reads" \
+    "assigned" "$([[ -n "$seed_assign" ]] && echo assigned || echo 'never assigned')"
+  # A constant would be as broken as an unset variable, so the value has to
+  # expand something — this launch's own date/pid, review id, repo slug.
+  assert_eq "...from a per-launch expansion rather than a constant" \
+    "expands" "$([[ "$seed_assign" == *'$'* ]] && echo expands || echo "no expansion in: ${seed_assign:-<nothing>}")"
+  # agent-cycle.sh reaches the launcher through the libs it sources
+  # (lib/coordinator-phase.sh, lib/enabler.sh, …) rather than calling it
+  # itself, so only the two scripts that call it directly can be ordered.
+  # 0 for "no such line" keeps the arithmetic below well-formed on exactly
+  # the regression this guards: an assignment deleted, the call still there.
+  seed_call="$(grep -n '^[[:space:]]*\(if \)\?run_model_stage ' "$SCRIPT_DIR/$cyc_script" | head -1)"
+  seed_assign_line="${seed_assign%%:*}"
+  seed_call_line="${seed_call%%:*}"
+  if [[ -n "$seed_call_line" ]]; then
+    assert_eq "...before $cyc_script's own run_model_stage call" \
+      "before" \
+      "$(if (( ${seed_assign_line:-0} > 0 && ${seed_assign_line:-0} < seed_call_line )); then echo before
+         else echo "assigned at line ${seed_assign_line:-none}, called at line $seed_call_line"; fi)"
+  fi
+done
+
 # --- 6b. End-to-end: run_model_stage lands on exactly what the draw dictates -
 cycle_id="fixture-cycle-6b"
 for stagename in implementer reviewer enabler refiner; do
