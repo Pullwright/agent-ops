@@ -637,8 +637,9 @@
    `run_model_stage` enforces by killing the process group — and by a
    **liveness watchdog**: `inactivity_<actor>` minutes during which the stage
    produced no output whatsoever. Whichever fires first kills the stage, by
-   the same sequence (TERM to the process group, a five-second grace, then
-   KILL) and with the same exit status, 124.
+   the same sequence (TERM to the process group, a five-second grace, the
+   work snapshot requirement 4l adds — bounded at 25 seconds — then KILL)
+   and with the same exit status, 124.
    The watchdog reads the stage's own event stream (requirement 4d): inside
    the poll loop that already runs every two seconds, it compares the file's
    size against the largest size seen. Liveness is **monotonic growth of that
@@ -1110,8 +1111,8 @@
    through `guard_warn` and falling back to the same literal, so a malformed
    success is treated exactly like a failure rather than trusted.
 4l. **Killing a stage never throws away uncommitted work it already did
-   (issue #2186).** Requirement 4e's kill sequence — TERM, a five-second
-   grace, then KILL — gains a step in the grace: `run_model_stage` (via its
+   (issue #2186).** Requirement 4e's kill sequence carries a step between its
+   five-second grace and its KILL: `run_model_stage` (via its
    shared `_stage_kill` helper in `lib/stage-run.sh`) commits and pushes
    whatever the stage's own working directory holds, before the KILL that
    ends it for good. This closes a loss the backstop and watchdog share: a
