@@ -308,3 +308,17 @@ principle it rests on.`
   fix, waited unselected; and both halves of the act reverse — a copy
   closes, an original reopens — so it belongs behind the veto window
   rather than in front of the owner. Decided by the owner on 2026-10-12.
+- 2026-10-16 · #2319/#2422 · **No tech-debt is closed to manage volume;
+  whoever files an issue, tech-debt included, sets its `Priority` band and
+  records its native Issue Dependencies, and the ranking reaches the
+  important work first.** The question was raised by #2319: 225
+  `pw::type:tech-debt` issues were created and 78 closed between 2026-09-24
+  and 2026-10-15, and the fit ladder drops the stalest agent-ops tech-debt
+  on every cycle. The owner's answer: "I don't want to ignore any
+  tech-debt, but I would like the agents who author Issues to consider
+  carefully how to make the best use of the Issue Priority field and Issue
+  Dependencies, so the more important Issues are prioritised." A proposal
+  to triage or close stale tech-debt to shrink the backlog is answered by
+  this line; closing a duplicate, or an item whose premise is gone, is
+  unaffected. The work is #2422 (with #2416 and #2417). Decided by the
+  owner on 2026-10-16.
