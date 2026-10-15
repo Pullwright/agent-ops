@@ -588,7 +588,14 @@
     `system`/`init` event's `apiKeySource`) exactly as it reads
     `stage_result_line`, and hands the result to `metering_fields` beside the
     gap statistics. `null` when the stream carries no readable answer, never
-    a guessed lane. `lib/metering.sh`'s
+    a guessed lane. Distinct from `stage-start`'s own `lane`
+    (`docs/METERING-SCHEMA.md`'s own note), which is
+    what the Script *intended* before the run — and, since requirement 4d's
+    draw (issue #2241, D30), also distinct from the lane `run_model_stage`
+    actually *forced* the launch onto: that forced lane is verified against
+    this same observed one while the stage is still running, and a mismatch
+    stops it outright (`kill_reason: "lane-mismatch"`, requirement 4e) rather
+    than merely being noted here after the fact. `lib/metering.sh`'s
     `metering_fields` derives this from the stage's own out-file, and is the
     one implementation both this Script and `review-cycle.sh` call for their
     `stage-end`/`review-stage-end` events — a stage whose out-file was never

@@ -34,7 +34,7 @@ docker compose exec scheduler gh repo list --limit 1
 
 ## Model authentication
 
-The scheduler runs Claude over text from GitHub, so every node needs model credentials. Two paths:
+The scheduler runs Claude over text from GitHub, so every node needs model credentials. Two paths, and a node may hold both at once — the credit mix (`config.json`'s `providers.anthropic.lanes`, `docs/reference/configuration.md`) draws between them by weight on every launch rather than treating one as a fallback for the other; a node configuring only one of the two runs on it exactly as described below, unaffected by that option's existence.
 
 **Primary: BYO API key**
 1. Get an Anthropic API key from [console.anthropic.com](https://console.anthropic.com), scoped at creation to a single workspace (the Create-key dialog offers this as an optional choice) — Anthropic's own guidance for a shared or automated workload like this one is a service-account key scoped to one workspace
@@ -80,7 +80,7 @@ the fleet until a human happens to read the log by hand.
    Required:
    - `NODE_NAME=<your-node-name>` — a short identifier (alphanumeric, no spaces)
    - `GH_TOKEN=<token>` — GitHub PAT from above
-   - Either `ANTHROPIC_API_KEY=<key>` (primary) or leave empty and set up subscription OAuth in step 4
+   - `ANTHROPIC_API_KEY=<key>` (primary), subscription OAuth (step 4), or both — see "Model authentication" above for running both at once
    
    Optional (for dashboard over your tailnet):
    - `COMPOSE_PROFILES=tailnet`

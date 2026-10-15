@@ -492,6 +492,7 @@ run_coordinator_stage_attempt() {  # <attempt-out-file> <prompt> [extra-budget-j
   if [[ -n "$watchdog_warning" ]]; then
     log_event "warning" "$watchdog_warning"
   fi
+  stage_lane_mismatch_standdown "${state_dir:-}" coordinator || true
   (( ONCE )) && dump_stage_output "$out_file"
 
   if (( rc != 0 )); then

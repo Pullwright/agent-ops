@@ -1370,6 +1370,7 @@ $(jq . <<<"$reviewer_input")
   if [[ -n "$watchdog_warning" ]]; then
     log_event "warning" "$watchdog_warning"
   fi
+  stage_lane_mismatch_standdown "${state_dir:-}" reviewer || true
   (( ONCE )) && dump_stage_output "$out_file"
 
   detect_and_log_limit_hit "$out_file" || true

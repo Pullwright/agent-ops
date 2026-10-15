@@ -601,7 +601,35 @@
    seam — landing the second changed nothing about the first, and every
    model this pipeline ran before it still launches exactly as it always
    did. A third provider lands the same way, as a third adapter file, never
-   a second launcher. It launches the invocation in its own process
+   a second launcher.
+   For `claude-code` specifically (the credit mix, D30, issue #2241),
+   `run_model_stage` also draws a **credential lane** — `api` or
+   `subscription` — for every launch, among that provider's two lanes
+   (`providers.<name>.lanes`, requirement 1a) that are both present (a
+   credential this node actually holds: `ANTHROPIC_API_KEY`, or
+   `$CLAUDE_CONFIG_DIR/.credentials.json` for a login that has not reported
+   itself as a managed key) and open (`enabled`, or — unset — whichever the
+   CLI would use unaided: `api` whenever it is present, `subscription` only
+   when `api` is not). One is drawn with probability proportional to its own
+   `weight`; with none of positive weight, the open lane of weight zero; with
+   neither, nothing is launched at all. The draw is seeded on the launch's
+   own cycle id and stage name, so it is reproducible rather than merely
+   sampled, and it reads no ledger: a lane that reopens rejoins the draw at
+   its weight, with no deficit and no catch-up. A caller may also force a
+   specific lane outright, bypassing the draw — the limit probe of
+   requirement 2.1b and `doctor`'s own per-lane check are the two that do —
+   in which case only presence is still required. The chosen lane is forced
+   onto the adapter (a forced `subscription` launch strips
+   `ANTHROPIC_API_KEY` from the launched process's own environment) and
+   verified against the stream's own `init` event as soon as it arrives
+   (requirement 4e's own stop conditions). A node holding neither credential
+   at all launches unmanaged, exactly as this function always has before
+   this issue; a node holding a credential that is configured into total
+   unavailability — both lanes closed, or the only present one — is refused
+   outright, the same way requirement 4k's own settings refusal is, rather
+   than launched at all. A second substrate manages no lanes yet (#2246 is
+   Grok Build's own).
+   It launches the invocation in its own process
    group (`set -m`), so the stage timeout's kill reaches every descendant
    (requirement 9c), and it runs the invocation under
    `--output-format stream-json --verbose`. An optional resume-session-id
@@ -682,12 +710,38 @@
    to the same `resume_at`/`class`/`reset_known` triple the prose path
    produces, so the two cannot yield differently-shaped stand-downs, and
    declines rather than guessing when the record says nothing usable.
-   **`kill_reason`** distinguishes all three on the `stage-end` /
-   `review-stage-end` event: `inactivity`, `backstop` or `rate-limit`, and
-   absent when the stage ended on its own. `exit_code: 124` cannot carry it,
-   and they imply different corrections — a backstop kill argues the cap is
-   too tight for work that was progressing, an inactivity kill argues the
-   stage stopped, and a rate-limit stop argues nothing about the caps at all.
+   A fourth thing stops a `claude-code` stage, and it is neither a cap nor
+   the account refusing: **the lane it reports does not match the lane it
+   was launched on** (requirement 4d's own draw/force, issue #2241, D30).
+   Checked once, the moment the stream's own `init` event first appears, the
+   same "only when the stream grew" gate the rate-limit check above uses.
+   One particular mismatch is not treated as one at all: a forced
+   `subscription` launch whose `init` reports a Console login (`/login
+   managed key`) bills an API account rather than opening a subscription
+   lane, which the draw's own documentation already calls out as expected
+   rather than a fault — the stage runs to completion, a `warning` names the
+   login once, and the subscription lane is treated as absent, for this
+   node, for the rest of this process's life (one cycle), so the very next
+   draw that would otherwise have forced it again lands on `api` instead.
+   Every other mismatch stops the stage at once, the same kill sequence as
+   the other three — and, unlike the other three, also stands the whole node
+   down: every caller that launches a `claude-code` stage writes the local
+   switch (`lib/toggle.sh`'s `toggle_disable`, `state_dir/disabled.json`,
+   `kind: "auto"`, `scope: "node"`, indefinite) the moment it sees
+   `kill_reason: "lane-mismatch"`, so the node takes no further cycle until a
+   human clears it having fixed whatever in its own configuration drifted
+   from what the Script forced. Filing an escalation issue the way
+   requirement 2.0h's own credential-refused preflight does is not yet
+   wired for this — a human reads it off the dashboard or `--status`
+   instead, the same way any other automatic stand-down is found today.
+   **`kill_reason`** distinguishes all four on the `stage-end` /
+   `review-stage-end` event: `inactivity`, `backstop`, `rate-limit` or
+   `lane-mismatch`, and absent when the stage ended on its own. `exit_code:
+   124` cannot carry it, and they imply different corrections — a backstop
+   kill argues the cap is too tight for work that was progressing, an
+   inactivity kill argues the stage stopped, a rate-limit stop argues
+   nothing about the caps at all, and a lane-mismatch stop argues the node's
+   own configuration, not the Script's, has drifted from what it forced.
    The `attempt-failed` detail says which in words, for the Enabler and for
    whoever asks why the item is blocked.
    A watchdog kill also logs a **`warning`**. Its kill path had fired zero

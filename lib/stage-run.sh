@@ -44,6 +44,21 @@
 # first.
 declare -p PROVIDER_SUBSTRATE >/dev/null 2>&1 || declare -gA PROVIDER_SUBSTRATE=()
 declare -p MODEL_PROVIDER >/dev/null 2>&1 || declare -gA MODEL_PROVIDER=()
+# lib/model-id.sh's own map (issue #2240, D30): a provider's `api`/`subscription`
+# weights and `enabled` flags, read by `stage_lane_draw` below. Guarded the
+# same way and for the same reason — several of this file's own tests source
+# it alone, never lib/model-id.sh, and a bare reference under `set -u` would
+# abort them rather than read empty.
+declare -p PROVIDER_LANES >/dev/null 2>&1 || declare -gA PROVIDER_LANES=()
+
+# The lanes object `stage_lane_draw` reads when PROVIDER_LANES holds nothing
+# for a run's own provider — every caller that never called
+# lib/model-id.sh's `providers_load` (most of this file's own tests) and
+# every provider `providers_load` itself has not been told about. Mirrors
+# that function's own all-default `anthropic` synthesis (weight 1 for `api`,
+# 0 for `subscription`, both `enabled: null`) without the spend fields
+# `stage_lane_draw` never reads.
+STAGE_LANE_DEFAULT_JSON='{"api":{"weight":1,"enabled":null},"subscription":{"weight":0,"enabled":null}}'
 
 # stage_model_substrate MODEL
 # The installed substrate MODEL's provider resolves to: look up the provider
@@ -119,6 +134,36 @@ stage_rate_limit_json=""
 # covers the whole fleet regardless of provider (issue #2133; scoping it
 # per-provider is #2135). Defaults to `anthropic`, same as `stage_model_substrate`.
 stage_provider="anthropic"
+
+# The lane the most recent run was launched on (issue #2241, D30) — "api" or
+# "subscription" when `stage_provider`'s substrate manages lanes at all (only
+# `claude-code` does today) and at least one of that provider's two lanes has
+# a credential present on this node, empty otherwise (every other substrate,
+# and a claude-code run on a node with neither credential, which is simply
+# unmanaged — see `run_model_stage`'s own "Presence" handling). Distinct from
+# `stage_lane_json`, which is what the stream *observed*: this is what the
+# launcher *forced*, sits beside `stage_provider` for `detect_and_log_limit_hit`'s
+# three copies to read (#2242), and is what the live-stream watch below
+# verifies the observed lane against.
+stage_lane=""
+
+# `{forced, observed}` when the most recent run was stopped for
+# `kill_reason: "lane-mismatch"`, read by `stage_watchdog_warning`'s own
+# warning text; empty otherwise.
+stage_lane_mismatch_json=""
+
+# `{api: {present, weight, enabled}, subscription: {...}}` when the most
+# recent run was refused for `kill_reason: "no-open-lane"`, read the same
+# way; empty otherwise.
+stage_lane_states_json=""
+
+# Set to 1 for exactly the run whose `init` event first revealed a forced
+# subscription login as a managed (Console) key — see
+# SUBSTRATE_CLAUDE_CODE_SUBSCRIPTION_MANAGED_KEY in
+# lib/substrate-claude-code.sh. `stage_watchdog_warning` reads this once and
+# clears it, so the warning it earns reaches the caller exactly once per
+# cycle rather than once per run for the rest of it.
+stage_lane_managed_key_detected=""
 
 # Requirement 4k: the Claude Code project settings a stage will load from the
 # directory it runs in. Headless `claude -p` treats its working directory as
@@ -539,9 +584,129 @@ stage_lane_of() {
   "substrate_${substrate//-/_}_lane_of" "$stream_file"
 }
 
+# stage_lane_any_present SUBSTRATE
+# True (exit 0) iff SUBSTRATE manages lanes at all (defines its own
+# `substrate_<name>_lane_present`, today only `claude-code` — #2246 is
+# Grok Build's own) *and* at least one of its two lanes' credentials is
+# present on this node right now. False for every other substrate (no lane
+# management: `run_model_stage` launches exactly as it did before #2241) and
+# for a claude-code run with neither credential present (also unmanaged
+# — see `run_model_stage`'s own "Presence" handling for why that is the
+# right default rather than refusing to launch at all).
+stage_lane_any_present() {
+  local substrate="$1" fn
+  fn="substrate_${substrate//-/_}_lane_present"
+  declare -F "$fn" >/dev/null 2>&1 || return 1
+  "$fn" api && return 0
+  "$fn" subscription && return 0
+  return 1
+}
+
+# stage_lane_draw PROVIDER SUBSTRATE SEED
+# Draws a lane ("api" or "subscription") for PROVIDER on SUBSTRATE among its
+# open lanes, by weight (issue #2241, D30, docs/ROADMAP.md's D30 row) — only
+# ever called once `stage_lane_any_present` has already confirmed at least
+# one of the two is present.
+#
+# A lane is open when it is present (SUBSTRATE's own
+# `substrate_<name>_lane_present`) and `enabled`: true opens it outright,
+# false closes it outright, and unset (the common case: PROVIDER_LANES'
+# own default, and every lane config.json's `lanes` block does not mention)
+# opens it only when it is the lane the CLI would use unaided — `api`
+# whenever it is present, `subscription` only when it is present and `api`
+# is not (D4's own precedence; the same rule `scripts/doctor.sh`'s
+# `lane_enabled_desc` reports against).
+#
+# Among the open lanes of positive weight, one is drawn with probability
+# proportional to its weight; with none, the open lane of weight zero (there
+# is normally at most one); with neither, nothing is printed and the exit
+# status is 1 — the caller's own business how to read that (see
+# `run_model_stage`'s "no open lane" handling).
+#
+# The draw itself is `cksum SEED mod (the open weighted lanes' total
+# weight)`, bucketed by each candidate's own share of that total — never
+# `$RANDOM`, which is unseeded by design (`lib/expensive-gather-cache.sh`'s
+# `_expensive_gather_node_offset` is the same pattern, for the same reason):
+# the same SEED always draws the same lane, so a record explains a draw
+# after the fact and a test reproduces it rather than merely sampling it.
+# `run_model_stage` seeds this on the launch's own identifier — the cycle id
+# and the stage name — so a draw is reproducible without being predictable
+# far enough ahead to game.
+stage_lane_draw() {
+  local provider="$1" substrate="$2" seed="$3" fn lanes_json
+  fn="substrate_${substrate//-/_}_lane_present"
+  lanes_json="${PROVIDER_LANES[$provider]:-$STAGE_LANE_DEFAULT_JSON}"
+  [[ -n "$lanes_json" ]] || lanes_json="$STAGE_LANE_DEFAULT_JSON"
+
+  local present_api=0 present_sub=0
+  "$fn" api && present_api=1
+  "$fn" subscription && present_sub=1
+
+  local w_api w_sub en_api en_sub
+  w_api="$(jq -r '.api.weight // 1' <<<"$lanes_json" 2>/dev/null)"
+  [[ "$w_api" =~ ^[0-9]+$ ]] || w_api=1
+  w_sub="$(jq -r '.subscription.weight // 0' <<<"$lanes_json" 2>/dev/null)"
+  [[ "$w_sub" =~ ^[0-9]+$ ]] || w_sub=0
+  en_api="$(jq -r '.api.enabled' <<<"$lanes_json" 2>/dev/null)"
+  en_sub="$(jq -r '.subscription.enabled' <<<"$lanes_json" 2>/dev/null)"
+
+  local open_api=0 open_sub=0
+  case "$en_api" in
+    true) (( present_api )) && open_api=1 ;;
+    false) ;;
+    *) (( present_api )) && open_api=1 ;;
+  esac
+  case "$en_sub" in
+    true) (( present_sub )) && open_sub=1 ;;
+    false) ;;
+    *) (( present_sub && ! present_api )) && open_sub=1 ;;
+  esac
+
+  local -a weighted=() fallback=()
+  (( open_api )) && (( w_api > 0 )) && weighted+=(api)
+  (( open_sub )) && (( w_sub > 0 )) && weighted+=(subscription)
+  (( open_api )) && (( w_api == 0 )) && fallback+=(api)
+  (( open_sub )) && (( w_sub == 0 )) && fallback+=(subscription)
+
+  local hash
+  hash="$(cksum <<<"$seed" | cut -d' ' -f1)"
+  [[ "$hash" =~ ^[0-9]+$ ]] || hash=0
+
+  if (( ${#weighted[@]} > 0 )); then
+    local total=0 name w pick cum=0
+    for name in "${weighted[@]}"; do
+      case "$name" in api) w=$w_api ;; subscription) w=$w_sub ;; esac
+      total=$(( total + w ))
+    done
+    (( total > 0 )) || total=1
+    pick=$(( hash % total ))
+    for name in "${weighted[@]}"; do
+      case "$name" in api) w=$w_api ;; subscription) w=$w_sub ;; esac
+      cum=$(( cum + w ))
+      if (( pick < cum )); then
+        printf '%s\n' "$name"
+        return 0
+      fi
+    done
+    printf '%s\n' "${weighted[$(( ${#weighted[@]} - 1 ))]}"
+    return 0
+  fi
+
+  if (( ${#fallback[@]} > 0 )); then
+    printf '%s\n' "${fallback[$(( hash % ${#fallback[@]} ))]}"
+    return 0
+  fi
+
+  return 1
+}
+
 # stage_watchdog_warning STAGE
-# The body of the `warning` event a watchdog kill earns, or nothing (returning
-# 1) when the last run ended any other way.
+# The body of the `warning` event a watchdog kill, a lane mismatch, or an
+# exhausted lane set earns, or nothing (returning 1) when the last run ended
+# any other way and reported no managed-key login either. Every one of this
+# function's own 8 call sites already calls it unconditionally after every
+# run and logs a `warning` event iff it printed something, so each new
+# condition below reaches every caller for free.
 #
 # A separate event from the `stage-end` that records `kill_reason`, and
 # deliberately so. The watchdog's kill path had fired zero times in the whole
@@ -552,22 +717,123 @@ stage_lane_of() {
 # threshold is too tight for something a stage legitimately does, which is the
 # failure this whole mechanism exists to end arriving from the other side. The
 # rate is the thing to watch, and a rate nobody is told about is not watched.
+#
+# The managed-key notice (issue #2241, D30) is not keyed on `stage_kill_reason`
+# at all — that run did not fail, it simply billed differently than the draw
+# intended — so it is checked first, against `stage_lane_managed_key_detected`,
+# which `run_model_stage` itself resets at the top of every call and sets only
+# for the one run that first flips SUBSTRATE_CLAUDE_CODE_SUBSCRIPTION_MANAGED_KEY.
+# So this notice fires for exactly the run that discovered the managed key,
+# not for every run afterwards — see that reset's own comment for why this
+# function cannot clear the flag itself (every call site reads it through a
+# command substitution).
 stage_watchdog_warning() {
-  [[ "$stage_kill_reason" == "inactivity" ]] || return 1
-  jq -nc --arg s "$1" \
-    '{detail: ($s + " was stopped by the liveness watchdog: it produced no output at all for its whole inactivity threshold. Either it was wedged, which is what the watchdog is for, or the threshold is too tight for what it was doing — check the stage stream before assuming the first.")}'
+  local stage="$1"
+  if [[ -n "${stage_lane_managed_key_detected:-}" ]]; then
+    jq -nc --arg s "$stage" \
+      '{detail: ($s + "'"'"'s forced subscription lane reported a Console login (\"/login managed key\"), which bills an API account rather than opening a subscription lane; the subscription lane is treated as absent for the rest of this cycle.")}'
+    return 0
+  fi
+  case "$stage_kill_reason" in
+    inactivity)
+      jq -nc --arg s "$1" \
+        '{detail: ($s + " was stopped by the liveness watchdog: it produced no output at all for its whole inactivity threshold. Either it was wedged, which is what the watchdog is for, or the threshold is too tight for what it was doing — check the stage stream before assuming the first.")}'
+      ;;
+    lane-mismatch)
+      jq -nc --arg s "$stage" --argjson m "${stage_lane_mismatch_json:-null}" \
+        '{detail: ($s + " was stopped: the lane its stream reported does not match the lane it was launched on."), lane: $m}'
+      ;;
+    no-open-lane)
+      jq -nc --arg s "$stage" --arg p "$stage_provider" --argjson l "${stage_lane_states_json:-null}" \
+        '{detail: ($s + " was not launched: no lane is open for provider " + $p + " — check config.json'\''s providers." + $p + ".lanes."), provider: $p, lanes: $l}'
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+# stage_lane_mismatch_standdown STATE_DIR STAGE
+# Writes the local switch (`lib/toggle.sh`'s `toggle_disable`,
+# `state_dir/disabled.json`, `kind: "auto"`) iff the most recent run's own
+# `stage_kill_reason` is `lane-mismatch` (issue #2241, D30) — a no-op,
+# returning 1, for every other kill reason, so every call site can call this
+# unconditionally, the same convention `stage_watchdog_warning` already is.
+#
+# A lane mismatch means this node's own configuration — `ANTHROPIC_API_KEY`,
+# a project or user settings file, an environment override — no longer
+# matches what the Script forced, which is a fault in the node rather than
+# in the item the stage was working: every further cycle on this node would
+# re-force the same lane and mismatch again. So the whole node stops taking
+# further cycles until a human clears it (`agent-cycle.sh --enable`, having
+# fixed whatever drifted), `kind: "auto"` and `scope: "node"` because this is
+# a detector's own inference about this one node, never an operator's
+# deliberate choice and never the fleet's. `forever`: nothing here can know
+# how long the drift will take to notice and fix, so there is no TTL to
+# derive one from — the other automatic stand-downs this pipeline writes
+# (a usage limit, a disk threshold) all carry their own natural clock to
+# expire against; a lane mismatch has none.
+#
+# Escalating this the way the credential-refused preflight does
+# (`lib/standdown.sh`, `create_escalation_issue`) is deferred (filed as its
+# own tech-debt item): that helper's own context
+# (`crash_loop_repo`/`enabler_assignee`, `lib/enabler.sh`) exists only in
+# `agent-cycle.sh`'s own process, not `review-cycle.sh`'s or
+# `monitor-cycle.sh`'s, so filing correctly from all three needs its own
+# design rather than reusing this one in place. The switch itself already
+# stops this node outright: a human reading the dashboard or `--status`
+# finds it disabled, the same as any other automatic stand-down, just not
+# yet paged for one proactively.
+stage_lane_mismatch_standdown() {
+  local state_dir="$1" stage="$2" reason detail
+  [[ "$stage_kill_reason" == "lane-mismatch" ]] || return 1
+  detail="$(jq -r '"forced " + .forced + ", observed " + .observed' \
+    <<<"${stage_lane_mismatch_json:-null}" 2>/dev/null)"
+  [[ -n "$detail" && "$detail" != "forced , observed " ]] || detail="see the stage-end event"
+  reason="the ${stage} stage's forced credential lane did not match what it actually used ($detail) — issue #2241, D30: this node's own configuration no longer matches what the Script forced"
+  toggle_disable "$state_dir" "$reason" forever 0 "agent-ops" "lane-mismatch:$stage" auto node stop \
+    >/dev/null 2>&1
 }
 
 # --- Run a headless model-stage invocation with a wall-clock timeout, killing
 #     its whole process group on timeout. `set -m` gives the backgrounded job
 #     its own process group so `kill -TERM -$pid` reaches every descendant. ---
 #
-# run_model_stage STAGE TIMEOUT_SEC MODEL PROMPT OUT_FILE CWD [INACTIVITY_SEC] [RESUME_SESSION_ID]
+# run_model_stage STAGE TIMEOUT_SEC MODEL PROMPT OUT_FILE CWD [INACTIVITY_SEC] [RESUME_SESSION_ID] [LANE]
 # Returns the invocation's own exit status, or 124 when either cap fired.
 # Sets the caller-visible `stage_pid`/`stage_name` for the duration (see the
 # note at each pipeline's signal handler) and clears them on the way out,
-# `stage_kill_reason` to say which cap fired, if either, and `stage_provider`
-# to the provider MODEL resolved to (`stage_model_substrate`'s own input).
+# `stage_kill_reason` to say which cap fired, if either, `stage_provider`
+# to the provider MODEL resolved to (`stage_model_substrate`'s own input),
+# and `stage_lane` to the lane it was launched on (issue #2241, D30; see
+# "Presence" below).
+#
+# LANE, when given, bypasses the draw and forces that lane outright —
+# requirement 2.1b's own limit probe (#2242) and `doctor`'s per-lane check are
+# the callers that need this; presence is still required, so a LANE this
+# node holds no credential for fails exactly like "no open lane" below.
+#
+# **Presence.** Lane management (the draw, the forcing, the live-stream
+# verification, all below) runs only when SUBSTRATE manages lanes at all —
+# today only `claude-code` does — *and* at least one of its provider's two
+# lanes has a credential present on this node right now
+# (`stage_lane_any_present`). Every other case — a provider whose substrate
+# does not manage lanes, or a claude-code run where neither credential is
+# present at all — launches exactly as this function always has, with
+# `stage_lane` left empty: a node with no credential at all is already a
+# `scripts/doctor.sh` failure, so this is dead in a correctly provisioned
+# installation, but it is what keeps every caller that launches a stage
+# without first arranging a credential (most of this file's own tests)
+# launching exactly as before rather than being refused by a gate they never
+# asked for.
+#
+# Once lane management is running, "no open lane" — every lane either absent
+# or closed by its own `enabled`/weight (`stage_lane_draw` returning 1) — is
+# the one case this function refuses to launch at all, the same way
+# requirement 4k's settings refusal does: both `.stream.jsonl`/`.out` are
+# left empty, the reason lands on `.out.stderr`, and `stage_kill_reason` is
+# set to `no-open-lane` so `stage-end` and `stage_watchdog_warning`'s own
+# warning both name it (the cycle's own stand-down logic for a provider with
+# no open lane is #2135's business, still unimplemented; this is simply what
+# it will have to read).
 #
 # RESUME_SESSION_ID, when given, is passed through as a session to resume:
 # PROMPT then continues that session instead of starting a fresh one. This is
@@ -593,15 +859,28 @@ stage_watchdog_warning() {
 # it, and not one genuinely hung actor was found.
 run_model_stage() {
   local stage="$1" timeout_sec="$2" model="$3" prompt="$4" out_file="$5" cwd="$6"
-  local inactivity_sec="${7:-0}" resume_session_id="${8:-}"
+  local inactivity_sec="${7:-0}" resume_session_id="${8:-}" lane_override="${9:-}"
   local pid waited=0 rc stream_file rate_limit_info substrate
   local seen_bytes=0 now size last_growth gaps=()
+  local forced_lane="" lane_verified=0 raw_source no_open_lane
   substrate="$(stage_model_substrate "$model")"
   stream_file="$(stage_stream_file "$out_file")"
   stage_gaps_json="null"
   stage_lane_json="null"
   stage_kill_reason=""
   stage_rate_limit_json=""
+  # shellcheck disable=SC2034
+  stage_lane=""
+  # Reset every call, never cleared by `stage_watchdog_warning` itself: every
+  # one of that function's own 8 call sites reads it through a command
+  # substitution, whose subshell would take a clear-on-read with it rather
+  # than ever letting it reach the caller — the same "a command substitution
+  # discards the recording" trap `lib/model-id.sh`'s own header warns about.
+  # Resetting here instead means the flag answers exactly one question, "did
+  # *this* run just reveal the managed-key login", so it is true for the one
+  # run that detects the transition and false for every run before or after.
+  # shellcheck disable=SC2034
+  stage_lane_managed_key_detected=""
   # Read by detect_and_log_limit_hit's three copies (agent-cycle.sh,
   # review-cycle.sh, monitor-cycle.sh), which shellcheck cannot see from here.
   # Falls back to `anthropic` for a MODEL the map holds nothing for; an empty
@@ -640,6 +919,50 @@ run_model_stage() {
     return 1
   fi
 
+  # Issue #2241, D30: draw (or accept a forced override of) a lane, only when
+  # SUBSTRATE manages lanes at all — see this function's own "Presence"
+  # paragraph above for why every other case leaves `forced_lane` empty and
+  # launches unmanaged, exactly as before this issue.
+  #
+  # LANE_OVERRIDE is checked *before* the "is anything present at all" gate,
+  # never behind it: an explicit override is a request to force a specific
+  # lane outright, and a caller that named one wants either that lane or a
+  # clear refusal — never to have the request silently ignored because
+  # neither credential happened to be present. The ordinary (undrawn) path
+  # stays behind that gate, so a node with neither credential and nothing
+  # forcing it keeps launching unmanaged exactly as it always has.
+  no_open_lane=0
+  if declare -F "substrate_${substrate//-/_}_lane_present" >/dev/null 2>&1; then
+    if [[ -n "$lane_override" ]]; then
+      if "substrate_${substrate//-/_}_lane_present" "$lane_override"; then
+        forced_lane="$lane_override"
+      else
+        no_open_lane=1
+      fi
+    elif stage_lane_any_present "$substrate"; then
+      forced_lane="$(stage_lane_draw "$stage_provider" "$substrate" "${cycle_id:-}:$stage")" \
+        || no_open_lane=1
+    fi
+    if (( no_open_lane )); then
+      local present_api=0 present_sub=0
+      "substrate_${substrate//-/_}_lane_present" api && present_api=1
+      "substrate_${substrate//-/_}_lane_present" subscription && present_sub=1
+      # shellcheck disable=SC2034  # read by stage_watchdog_warning
+      stage_lane_states_json="$(jq -nc --argjson pa "$present_api" --argjson ps "$present_sub" \
+        --argjson lanes "${PROVIDER_LANES[$stage_provider]:-$STAGE_LANE_DEFAULT_JSON}" \
+        '{api: ({present: ($pa == 1)} + ($lanes.api // {})),
+          subscription: ({present: ($ps == 1)} + ($lanes.subscription // {}))}')"
+      : >"$stream_file"
+      : >"$out_file"
+      printf 'run_model_stage: the %s stage was not launched: no lane is open for provider %s (requirement 4d, D30) — present api=%s subscription=%s; check config.json'\''s providers.%s.lanes\n' \
+        "$stage" "$stage_provider" "$present_api" "$present_sub" "$stage_provider" >"$out_file.stderr"
+      stage_kill_reason="no-open-lane"
+      return 1
+    fi
+  fi
+  # shellcheck disable=SC2034
+  stage_lane="$forced_lane"
+
   # stdout (the event stream) and stderr (diagnostics) are kept in separate
   # files — merging them would let stray stderr output break the JSON parse
   # of the events.
@@ -674,7 +997,7 @@ run_model_stage() {
   # pid and process group that `$!` captures below and that the caps below
   # kill — never a child of it.
   set -m
-  ( cd "$cwd" && "substrate_${substrate//-/_}_exec" "$model" "$resume_session_id" <<<"$prompt" ) \
+  ( cd "$cwd" && "substrate_${substrate//-/_}_exec" "$model" "$resume_session_id" "$forced_lane" <<<"$prompt" ) \
     >"$stream_file" 2>"$out_file.stderr" &
   pid=$!
   set +m
@@ -734,6 +1057,55 @@ run_model_stage() {
         wait "$pid" 2>/dev/null || true
         rc=124
         break
+      fi
+      # Issue #2241, D30: a lane choice is verified, never assumed. Checked
+      # only once, the moment the stream's own `init` event first appears —
+      # same "only when the stream grew" gate as the rate-limit check above,
+      # since that is the only moment a new event can have arrived, and there
+      # is nothing left to verify once it has been read once.
+      if [[ -n "$forced_lane" && "$substrate" == "claude-code" && $lane_verified -eq 0 ]] \
+         && raw_source="$(substrate_claude_code_init_api_key_source "$stream_file" 2>/dev/null)"; then
+        lane_verified=1
+        local observed_lane=""
+        case "$raw_source" in
+          none) observed_lane="subscription" ;;
+          ANTHROPIC_API_KEY|apiKeyHelper) observed_lane="api" ;;
+          "/login managed key")
+            # A Console login bills an API account: this is not the mismatch
+            # this check exists to catch, it is the one case D30 itself
+            # documents as expected — a forced subscription run whose login
+            # turns out not to be a subscription at all. Latched once, for
+            # the rest of this process's life (SUBSTRATE_CLAUDE_CODE_SUBSCRIPTION_MANAGED_KEY),
+            # so the very next draw that would otherwise have forced it again
+            # lands on `api` instead; `stage_lane_managed_key_detected` names
+            # only this one run as the one `stage_watchdog_warning` should
+            # report it for (its own header explains why that flag, unlike
+            # this one, is reset on every call rather than latched).
+            if [[ "$forced_lane" == "subscription" ]]; then
+              if [[ "$SUBSTRATE_CLAUDE_CODE_SUBSCRIPTION_MANAGED_KEY" != "1" ]]; then
+                SUBSTRATE_CLAUDE_CODE_SUBSCRIPTION_MANAGED_KEY=1
+                # shellcheck disable=SC2034  # read by stage_watchdog_warning
+                stage_lane_managed_key_detected=1
+              fi
+              observed_lane="subscription"
+            else
+              observed_lane="api"
+            fi
+            ;;
+          *) observed_lane="" ;;
+        esac
+        if [[ -n "$observed_lane" && "$observed_lane" != "$forced_lane" ]]; then
+          # shellcheck disable=SC2034  # read by stage_watchdog_warning
+          stage_lane_mismatch_json="$(jq -nc --arg f "$forced_lane" --arg o "$observed_lane" \
+            '{forced: $f, observed: $o}')"
+          stage_kill_reason="lane-mismatch"
+          kill -TERM "-$pid" 2>/dev/null || true
+          sleep 5
+          kill -KILL "-$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          rc=124
+          break
+        fi
       fi
     elif (( inactivity_sec > 0 && now - last_growth >= inactivity_sec )); then
       # Nothing has been written for the whole threshold. The kill is the same

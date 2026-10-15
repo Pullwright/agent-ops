@@ -892,6 +892,21 @@ oblige anyone to edit a test.
    and dispatch, rather than aborting the calling script on bash's own
    bad-array-subscript error for an empty associative-array subscript
    (issue #2234).
+   The same file's part 6 covers the credit mix's own draw (issue #2241,
+   D30): against a stub whose `init` event reports whichever `apiKeySource`
+   its own launched environment actually implies, 300 distinct seeds at a
+   configured weight of 2:1 split within ten points of that ratio and the
+   same seed always draws the same lane; a weight of 1:0, a node holding
+   only a login, and a node holding both credentials with no `lanes` block
+   configured at all each land every launch on the one lane each case
+   documents, whatever the others' weights say; an explicit lane argument
+   bypasses the draw outright; and a credential present but configured
+   (`enabled: false` on both lanes) into total unavailability refuses to
+   launch at all — `stage_kill_reason: "no-open-lane"` and an empty stream —
+   rather than running unmanaged, which is reserved for a node holding
+   neither credential. Stubbed `union_stream`/`fleet_logs` readers are called
+   zero times across every one of those cases, pinning "the launcher reads
+   no ledger" as a call count rather than an assertion about one path alone.
 1k1. **A stage streams as it runs, and leaves the envelope its readers
    expect (requirement 4d).** `test/stage-stream.test.sh` passes, against a
    `claude` stub that emits stream-json a line at a time with a pause
@@ -950,6 +965,23 @@ oblige anyone to edit a test.
    included — out for the stand-down; an `allowed_warning` does *not* stop it,
    nor does the same status string appearing inside a tool result, which is
    what an Implementer working on limit detection would be reading.
+   `test/stage-run.test.sh`'s part 6 covers requirement 4e's fourth stop, the
+   credit mix's own lane verification (issue #2241, D30): a forced lane the
+   stream's `init` event contradicts is stopped at once, `kill_reason:
+   "lane-mismatch"`, naming both the forced and the observed lane; a forced
+   `subscription` run whose `init` instead reports a Console login (`/login
+   managed key`) is *not* stopped — it runs to completion, earns a one-time
+   warning, and the very next launch in the same process draws `api`, the
+   subscription lane now closed, confirmed against a run that is not the one
+   that discovered it earning no warning of its own. `stage_lane_mismatch_standdown`
+   writes the local switch (`state_dir/disabled.json`, `kind: "auto"`,
+   `scope: "node"`, indefinite) naming the forced and observed lanes in its
+   own reason iff the last run's own `kill_reason` was `lane-mismatch`, and
+   is a no-op for every other run; all 8 of `run_model_stage`'s own call
+   sites (`agent-cycle.sh`'s Implementer and Reviewer, `review-cycle.sh`'s
+   Reviewer-Agent, `monitor-cycle.sh`'s Monitor, and the Co-Ordinator,
+   Approver, Enabler and Refiner each in their own `lib/*.sh`) call it
+   unconditionally, the same convention `stage_watchdog_warning` already is.
    `test/limit-detect.test.sh` passes: `limit_decide_structured` returns the
    stated reset as a known one, maps a seven-day limit to the weekly class and
    a five-hour one to `other`, falls back exactly as the prose path does when

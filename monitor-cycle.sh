@@ -911,6 +911,7 @@ watchdog_warning="$(stage_watchdog_warning monitor || true)"
 if [[ -n "$watchdog_warning" ]]; then
   log_event "warning" "$watchdog_warning"
 fi
+stage_lane_mismatch_standdown "${state_dir:-}" monitor || true
 if (( ONCE )); then
   cat "$out_file"
   # `if`, not a trailing `&&`: an empty stderr file is the common case, and a
