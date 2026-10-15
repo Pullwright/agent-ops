@@ -499,6 +499,53 @@ assert_eq "300 seeds at weight 2:1 split within ten points of the 66.7% api woul
 assert_eq "...and every one of the 300 drawn lanes was one of the two configured" \
   "300" "$(( api_draws + sub_draws ))"
 
+# --- 6a2. The seed is the launch's own identifier, not just the stage name -
+# review round on PR #2385: review-cycle.sh and monitor-cycle.sh never set
+# `cycle_id` (only agent-cycle.sh does), so before that fix every launch of
+# theirs seeded on the constant string "" (empty `cycle_id`) and `:$stage`
+# alone — every review-cycle.sh launch of the same stage name drew the same
+# lane forever, fleet-wide, however many distinct repos or runs it covered.
+# This reproduces review-cycle.sh's own per-repo loop shape: one process,
+# one stage name ("reviewer"), several repos sharing a single $review_id,
+# each setting `cycle_id="$review_id:$slug"` (review-cycle.sh's own fix)
+# immediately before calling `run_model_stage`. Two repos under the *same*
+# review_id land on different lanes below — proof the slug, not merely the
+# stage name, reaches the seed.
+PROVIDER_LANES[anthropic]='{"api":{"weight":2,"enabled":true},"subscription":{"weight":1,"enabled":true}}'
+review_id="fixture-review-1"
+for slug in alpha beta; do
+  cycle_id="$review_id:$slug"
+  expect_lane="$(stage_lane_draw anthropic claude-code "$cycle_id:reviewer")"
+  run_capture="$tmp_dir/lane-6a2-review-$slug"
+  mkdir -p "$run_capture"
+  STUB_CAPTURE="$run_capture" STUB_HOLD=0 \
+    run_model_stage reviewer 60 claude-sonnet-5 "irrelevant" \
+    "$run_capture/reviewer.out" "$run_capture"
+  assert_eq "review-cycle-shaped launch for $review_id:$slug lands on the seeded draw's own output" \
+    "$expect_lane" "$stage_lane"
+done
+assert_eq "...and the two repos under the same review_id drew different lanes" \
+  "subscription then api" \
+  "$(stage_lane_draw anthropic claude-code "$review_id:alpha:reviewer") then $(stage_lane_draw anthropic claude-code "$review_id:beta:reviewer")"
+
+# monitor-cycle.sh's own fix: `cycle_id="$monitor_id"`, one launch per
+# process. Two different monitor_id values draw different lanes below —
+# proof the run's own identity reaches the seed there too, not a constant.
+for monitor_id in fixture-monitor-1 fixture-monitor-3; do
+  cycle_id="$monitor_id"
+  expect_lane="$(stage_lane_draw anthropic claude-code "$cycle_id:monitor")"
+  run_capture="$tmp_dir/lane-6a2-monitor-$monitor_id"
+  mkdir -p "$run_capture"
+  STUB_CAPTURE="$run_capture" STUB_HOLD=0 \
+    run_model_stage monitor 60 claude-sonnet-5 "irrelevant" \
+    "$run_capture/monitor.out" "$run_capture"
+  assert_eq "monitor-cycle-shaped launch for $monitor_id lands on the seeded draw's own output" \
+    "$expect_lane" "$stage_lane"
+done
+assert_eq "...and the two monitor_id values drew different lanes" \
+  "api then subscription" \
+  "$(stage_lane_draw anthropic claude-code "fixture-monitor-1:monitor") then $(stage_lane_draw anthropic claude-code "fixture-monitor-3:monitor")"
+
 # --- 6b. End-to-end: run_model_stage lands on exactly what the draw dictates -
 cycle_id="fixture-cycle-6b"
 for stagename in implementer reviewer enabler refiner; do

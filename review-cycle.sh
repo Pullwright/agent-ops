@@ -1342,6 +1342,16 @@ $(jq . <<<"$reviewer_input")
     return 0
   fi
   log_node_state_transition producing
+  # `run_model_stage`'s own credential-lane draw (issue #2241, D30) seeds on
+  # the global `cycle_id`, which agent-cycle.sh sets once per cycle but this
+  # script never did — leaving every reviewer launch on this node seeded on
+  # the empty string forever, so the configured lane weights could never be
+  # realised here (review round on PR #2385). `$review_id:$slug` is this
+  # launch's own identifier, matching the synthetic `cyc` id `review-stage-end`
+  # and `review-attempt-failed` already key on below, for the same reason:
+  # one `review_id` can cover several repos in this while-loop, so the bare
+  # id would seed every one of them identically.
+  cycle_id="$review_id:$slug"
   if run_model_stage reviewer "$(( review_backstop_min * 60 ))" "$model" "$reviewer_prompt" "$out_file" "$clone_dir" "$(( review_inactivity_min * 60 ))"; then
     rc=0
   else
