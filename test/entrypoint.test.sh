@@ -112,13 +112,15 @@ run_entrypoint() {
   shift
   home="${PRESET_HOME:-$tmp_dir/home-$RANDOM}"
   mkdir -p "$home"
-  # CLAUDE_CONFIG_DIR is pinned here, not merely left to entrypoint.sh's own
-  # HOME-relative default, because an ambient value (set by whatever runs
-  # this test — an interactive Claude Code session's own environment does)
-  # would otherwise leak straight through `: "${CLAUDE_CONFIG_DIR:=...}"` and
-  # point every assertion below at a real, already-seeded volume instead of
-  # this test's own throwaway one.
-  APP_DIR="$stub_app" CONFIG_FILE="$cfg" HOME="$home" CLAUDE_CONFIG_DIR="$home/.claude" GH_TOKEN="" \
+  # CLAUDE_CONFIG_DIR and GROK_HOME are pinned here, not merely left to
+  # entrypoint.sh's own HOME-relative defaults, because an ambient value —
+  # the image itself sets GROK_HOME (deploy/docker/Dockerfile), and an
+  # interactive Claude Code session's own environment does the same for
+  # CLAUDE_CONFIG_DIR — would otherwise leak straight through each
+  # `: "${VAR:=...}"` default and point every assertion below at a real,
+  # already-seeded volume instead of this test's own throwaway one.
+  APP_DIR="$stub_app" CONFIG_FILE="$cfg" HOME="$home" CLAUDE_CONFIG_DIR="$home/.claude" \
+    GROK_HOME="$home/.grok-run" GH_TOKEN="" \
     bash "$ENTRYPOINT" "$@" 2>&1
 }
 
