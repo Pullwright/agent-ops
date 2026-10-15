@@ -48,21 +48,28 @@
       own text naming the ref, put there by the Implementer that closed the
       recommendation out, is the one fact anywhere that answers "is this
       done?"); or every tracking id the recommendation's own "Tech-debt
-      item(s): …" line names (one bare `#NNN`, several "and"-joined, or a
-      single backtick-quoted register id) is itself already closed or
-      resolved — satisfied by owner action outside this pipeline entirely
-      (closing the named issue(s) by hand, or flipping a register file's
-      frontmatter directly), which never produces a pull request naming the
-      ref, so the first signal alone would leave such a recommendation
-      blocked forever. The second signal is decided only from digests this
-      same cycle already holds for the repo — its open-issue digest
-      (requirement 3b) for a bare id, the register read just above for a
-      register id — never a fresh fetch per tracking id, so it follows the
-      same "unknown is not gone" rule as every other class here: an id
-      absent from, or unresolvable in, either digest leaves the *whole*
-      recommendation blocked. `work_gone_clearances` reads the two signals
-      as distinct status strings (`"merged"`, `"tracked-closed"`) in the same
-      map, each with its own `detail` wording;
+      item(s): …" line names (one bare `#NNN`, several "and"-joined, or
+      every backtick-quoted register id the line carries, so a line naming
+      two of them is answered only once both are; a bare id counts only
+      standalone, an `owner/repo#NNN`-prefixed reference naming another
+      repository's issue rather than one of this repo's) is itself already
+      closed or resolved — satisfied by owner action outside this pipeline
+      entirely (closing the named issue(s) by hand, or flipping a register
+      file's frontmatter directly), which never produces a pull request
+      naming the ref, so the first signal alone would leave such a
+      recommendation blocked forever. The second signal is decided only
+      from digests this same cycle already holds for the repo — its
+      open-issue digest (requirement 3b) for a bare id, the register read
+      just above for a register id — never a fresh fetch per tracking id,
+      so it follows the same "unknown is not gone" rule as every other
+      class here: an id absent from, or unresolvable in, either digest
+      leaves the *whole* recommendation blocked, and so does a digest that
+      cannot be read as the shape it should be — a malformed or non-array
+      open-issue digest answers nothing about an id, which is a different
+      fact from a digest read cleanly and found not to carry it.
+      `work_gone_clearances` reads the two signals as distinct status
+      strings (`"merged"`, `"tracked-closed"`) in the same map, each with
+      its own `detail` wording;
     - **an implementation-plan task** (e.g. `W10-breach-handling`) — the
       task's own checkbox, in the repo's `implementation_plan_path` document
       on the default branch, is checked (`- [x]`), read by

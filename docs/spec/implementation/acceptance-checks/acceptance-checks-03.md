@@ -601,17 +601,23 @@
    somebody notices: so a closed issue, a merged pull request, a `resolved` or
    `not-debt` register item, a project-review recommendation named by a merged
    pull request or whose every own tracking id is itself closed or resolved
-   (`"tracked-closed"`, a distinct status from `"merged"`, asserted for all
-   three text shapes a recommendation's "Tech-debt item(s): …" line can take —
-   a single bare `#NNN`, several "and"-joined, and one backtick-quoted
-   register id), and an implementation-plan task checked off in its document
+   (`"tracked-closed"`, a distinct status from `"merged"`, asserted for every
+   text shape a recommendation's "Tech-debt item(s): …" line can take — a
+   single bare `#NNN`, several "and"-joined, one backtick-quoted register id,
+   and two backtick-quoted register ids on one line, which clears only once
+   both of them resolve and not while either is still open), and an
+   implementation-plan task checked off in its document
    each clear their block, while an **open** issue, an **open** pull request, an
    **open** register item, a recommendation no merged pull request names and
-   whose tracking id(s) are not every one confirmed closed or resolved, and an
+   whose tracking id(s) are not every one confirmed closed or resolved —
+   among them a line whose only reference is an `owner/repo#NNN` one, which
+   names another repository's issue and is never resolved against this
+   repo's own open-issue digest even when the number coincides — and an
    **unchecked** (or ambiguous) plan task each do not, and every unreadable
    shape — a repo missing from the digest, a digest carrying `ok: false`, an id
    no item file claims by `id` or `legacy-id`, an id two of them claim, a
-   register/review/plan read that failed — clears nothing at all. Too shy is
+   register/review/plan read that failed, an `--issues-file` digest that is
+   not an array or is not parseable at all — clears nothing at all. Too shy is
    the silent failure this requirement exists to end: so assert the legacy id
    (`TD26072401`) resolving through the renamed file that carries it, and assert
    that the classes still left to the Enabler stay blocked — above all a
