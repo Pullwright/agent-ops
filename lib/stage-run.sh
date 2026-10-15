@@ -568,14 +568,20 @@ stage_watchdog_warning() {
 # itself having committed and pushed before the cap fired — exactly the step
 # a stage mid-verification has by definition not reached yet.
 #
-# Run as the stage user (`stage_boundary_capture`), never as this process:
-# CWD is the stage's own workspace (requirement 45e of
-# docs/spec/implementation/requirements/every-stage.md), and running git
-# there as this user would run whatever a stage's own `.git/config` names —
-# `core.fsmonitor`, hooks, diff/filter drivers — as this far more privileged
-# user. Bounded in time for the same reason every other boundary crossing
-# here is: a wedged `git push` must not hold up the kill it is meant to
-# precede.
+# Runs through `stage_boundary_capture` rather than a plain `git` call: CWD
+# is the stage's own workspace (requirement 45e of
+# docs/spec/implementation/requirements/every-stage.md), and on an
+# installation with the boundary present, this is what keeps the commit and
+# push running as the stage user, never as this far more privileged process —
+# running git there as this user would run whatever a stage's own
+# `.git/config` names (`core.fsmonitor`, hooks, diff/filter drivers) with that
+# far greater privilege. Where there is no boundary at all — a developer's
+# checkout, this file's own test — `stage_boundary_capture` runs the same
+# commands as this user instead, on the terms `lib/stage-boundary.sh` already
+# documents for every other boundary crossing: there is no privileged user on
+# this side of a boundary that does not exist to protect. Bounded in time for
+# the same reason every other boundary crossing here is: a wedged `git push`
+# must not hold up the kill it is meant to precede.
 #
 # Never the default branch, and that check comes before the commit rather
 # than after it. The clone the Script hands a stage arrives on the
@@ -592,11 +598,11 @@ stage_watchdog_warning() {
 # pushed to" is exactly the question a silent fallback would get wrong.
 #
 # A no-op — never a warning, never a failure this function reports — when
-# there is no `.git`, no boundary, nothing uncommitted, the branch is the
-# default one or unknowable, or the commit/push itself fails (a moved branch,
-# a network blip, no upstream remote): this is a safety net for the common
-# case, not a guarantee, and its own failure must never change whether or how
-# the stage is killed. A branch genuinely untouched when the stage is killed
+# there is no `.git`, nothing uncommitted, the branch is the default one or
+# unknowable, or the commit/push itself fails (a moved branch, a network
+# blip, no upstream remote): this is a safety net for the common case, not a
+# guarantee, and its own failure must never change whether or how the stage
+# is killed. A branch genuinely untouched when the stage is killed
 # stays genuinely untouched — there is nothing for `git status --porcelain`
 # to report, so this prints nothing and `release_branch_if_untouched`
 # (lib/claim.sh) still reaps it exactly as before.

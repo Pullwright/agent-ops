@@ -1125,16 +1125,21 @@
    `docs/spec/implementation/requirements/implementer.md`) landing before the
    one moment it matters most — the step immediately before the slowest,
    least interruptible part of a run.
-   The commit and push run **as the stage user**
-   (`stage_boundary_capture`, requirement 45e of
-   `docs/spec/implementation/requirements/every-stage.md`), never as the
-   Script's own user: the stage's working directory is the stage's, once
-   shared, and running git there as the Script's user would run whatever a
-   stage's own `.git/config` names — a hook, a diff or filter driver,
-   `core.fsmonitor` — with the Script's own far greater privilege. It is
-   bounded in time (25 seconds) for the same reason every other boundary
-   crossing is: a wedged push must not hold up the kill it is meant to
-   precede.
+   The commit and push run through `stage_boundary_capture` (requirement 45e
+   of `docs/spec/implementation/requirements/every-stage.md`), which on an
+   installation with the boundary present runs them **as the stage user**,
+   never as the Script's own: the stage's working directory is the stage's,
+   once shared, and running git there as the Script's user would run
+   whatever a stage's own `.git/config` names — a hook, a diff or filter
+   driver, `core.fsmonitor` — with the Script's own far greater privilege.
+   Where no boundary exists at all — a developer's checkout, this
+   requirement's own test (`test/stage-snapshot.test.sh`) — `stage_boundary_
+   capture` runs the identical commands as this user instead, on the terms
+   it already documents for every other boundary crossing: there is no
+   privileged user on this side of a boundary that does not exist to
+   protect. It is bounded in time (25 seconds) regardless, for the same
+   reason every other boundary crossing is: a wedged push must not hold up
+   the kill it is meant to precede.
    It never pushes to the repository's **default branch**, and that is
    established before anything is committed. The clone the Script hands a
    stage over arrives on the default branch (`clone_repo`,
@@ -1150,9 +1155,9 @@
    `refs/remotes/origin/HEAD`, which a plain `git clone` always sets, and a
    clone naming no default branch at all is refused rather than guessed at.
    It is a best-effort safety net, never a guarantee the kill waits on: no
-   `.git` directory, no boundary, nothing `git status --porcelain` reports, a
-   detached `HEAD`, the default branch (above) or a clone that cannot name
-   one, or the commit or push itself failing (a moved branch, no configured
+   `.git` directory, nothing `git status --porcelain` reports, a detached
+   `HEAD`, the default branch (above) or a clone that cannot name one, or
+   the commit or push itself failing (a moved branch, no configured
    upstream, a network blip) are all silent no-ops, and none of them changes
    whether or how the stage is killed. A branch genuinely untouched when the stage is
    killed is exactly as reapable after this as before it — there is nothing
