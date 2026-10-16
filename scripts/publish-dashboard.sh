@@ -1147,11 +1147,12 @@ raw_events_jsonl="$work_tmp/raw-events.jsonl"
 # invisible (agent-ops#794). Both counts come
 # from the one snapshot, which is what makes the difference a fact about the
 # window rather than about how much the pipelines appended between two reads;
-# it also keeps this to a single `fleet_logs`: this is the tick's only read of
-# `log.jsonl`, and every later consumer — the transient-refusal verdict just
-# below, the pager's own state reads, the payload's `pager` array — reads this
-# snapshot (or, for the pager, an extract of it) rather than taking the union
-# again. A second `fleet_logs` is a whole extra read-and-sort of the fleet's
+# it also keeps this to a single `fleet_logs`: this is the tick's only
+# `fleet_logs` of `log.jsonl`, and every later consumer reads this snapshot
+# rather than taking the union again — the transient-refusal verdict just
+# below reads it raw, the pager's own state reads read an extract of it, and
+# the payload's `pager` array reads an extract of it plus this node's own
+# `log.jsonl`. A second `fleet_logs` is a whole extra read-and-sort of the fleet's
 # 124 MB (2026-10-16) on the per-tick hot path, which is the cost the
 # file-not-a-pipe note above was written about in the first place, and the
 # pager's per-key re-reads of a fresh re-union were the largest measured cost
@@ -1183,8 +1184,8 @@ dropped_log_lines=$(( dropped_log_lines + $(union_damage_count "$raw_events_dama
 # stream. It reads the snapshot rather than a `fleet_logs` of its own because
 # it is the same union either way, and because its own read sat ahead of the
 # no-op short-circuit above, so a tick that short-circuit ended had built the
-# whole 124 MB union before deciding to skip; such a tick now reads nothing at
-# all (agent-ops#2429). `crash_loop_after` 0 (or absent) disables this the
+# whole 124 MB union before deciding to skip; such a tick now builds no union
+# at all (agent-ops#2429). `crash_loop_after` 0 (or absent) disables this the
 # same way it disables the escalation itself — a run this reads back is one
 # whose threshold is off.
 #
@@ -4170,7 +4171,7 @@ fi
 # beside `$raw_events_jsonl` was written about. `review_log_union` is built
 # once, ahead of the FULL block, and read here through `review_events_union`
 # as it is by the stage-gap series above and the stage budgets below (issue
-# #1586), and by the pager at `WITH_GITHUB`: one build, four consumers, so
+# #1586), and directly by the pager at `WITH_GITHUB`: one build, four consumers, so
 # this reuse costs nothing further. A fast tick could not use the result
 # anyway: `constraint` is assembled into
 # the FULL payload alone and is absent from `$fresh_json`, so it carries

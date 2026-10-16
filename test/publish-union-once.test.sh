@@ -65,7 +65,13 @@ review_union_pattern='fleet_logs "\$state_dir" "\$peers_dir" review-log\.jsonl'
 verdict_pattern='crash_loop_verdict "\$crash_loop_after_dashboard"'
 
 log_union_count="$(count_matching "$log_union_pattern")"
-log_union_line="$(first_line_matching "$log_union_pattern")"
+# The snapshot is anchored on the line that writes it — the one call that
+# passes the damage file — not on the first match of the pattern: on a script
+# that still built a union for the verdict ahead of the snapshot, the first
+# match would be that one, and the ordering assertion below would pass for
+# the wrong reason.
+# shellcheck disable=SC2016  # ditto.
+log_union_line="$(first_line_matching "$log_union_pattern"' "\$raw_events_damage"')"
 review_union_count="$(count_matching "$review_union_pattern")"
 review_union_line="$(first_line_matching "$review_union_pattern")"
 verdict_line="$(first_line_matching "$verdict_pattern")"
