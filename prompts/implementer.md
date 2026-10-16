@@ -1130,6 +1130,18 @@ described. Do not edit the issue's body to add this; a comment is enough, and
 the item still needs your `reason` and `unblock_condition` above regardless —
 this is in addition to them, not instead.
 
+**Record the same dependency through GitHub's native Issue Dependencies too
+(agent-ops#2422), when both issues are in the same organisation** — the
+native feature does not reach across organisations, which is the one case
+the `Blocked-by:` text convention above still has to cover alone, so post it
+either way: `gh api -X POST repos/<repo>/issues/<n>/dependencies/blocked_by
+-f issue_id=<blocking-issue's-own-numeric-id>` (the issue's internal id, from
+`gh api repos/<repo>/issues/<n> --jq .id`, not the number everyone reads —
+check the exact field name against `gh api --help` for the endpoint if it
+has moved). `lib/dependency-gate.sh` honours a native dependency the same way
+it honours the text line. Best-effort: if the call fails, the text line
+alone still holds the block — never let it fail your own attempt.
+
 **If instead the work order itself is the problem** — you started, and the
 brief does not say enough to build against: no acceptance criterion you can
 find, a scope so vague two different implementations would both satisfy it, an
