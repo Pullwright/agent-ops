@@ -1189,7 +1189,7 @@ void_json="$(void_items "$union_log" "$repo_slug_aliases_json")"
 # so an operator has a kill switch if retirement ever misbehaves, and flipping
 # it back re-masks from the log with nothing re-queried.
 if (( void_retire_after_days > 0 )); then
-  void_json="$(subtract_retired_voids "$void_json" "$(void_retired_items "$union_log")")"
+  void_json="$(subtract_retired_voids "$void_json" "$(void_retired_items "$union_log")" "$repo_slug_aliases_json")"
 fi
 
 # 34k: act on void. A void already stops the item being selected again
@@ -1607,7 +1607,7 @@ if (( void_retire_after_days > 0 )); then
     || { guard_warn "void_actioned_json:closed-merge" "$void_actioned_json"; void_actioned_json='[]'; }
 
   void_json_before_retire="$void_json"
-  void_json="$(retire_void_items "$void_json" "$void_actioned_json" "$void_retire_after_days" "$now_epoch")"
+  void_json="$(retire_void_items "$void_json" "$void_actioned_json" "$void_retire_after_days" "$now_epoch" "$repo_slug_aliases_json")"
 
   if ! (( DRY_RUN )); then
     # Both extracts on stdin (requirement 4g); a retire_void_items failure
