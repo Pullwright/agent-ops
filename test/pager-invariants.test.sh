@@ -373,8 +373,9 @@ fm_row() { node_row "$1" "$2" "$3" "" "" ""; }
 # fires. n2: last cycle-start 4 hours ago, cleanly completed (no lock held)
 # — fires, with a two-entry duration histogram. n3: last cycle-start equally
 # ancient, but its heartbeat itself is stale — excluded regardless. n4:
-# cycling, but its last event is an unmatched cycle-start (still running) —
-# never fires, however old that start was. n5: cycle-start 40 minutes ago,
+# cycling, its only event an unmatched cycle-start 90 minutes ago — past 2x
+# the interval but well within the four-hour lock-staleness bound, so still
+# never fires. n5: cycle-start 40 minutes ago,
 # still unmatched (a cycle genuinely still running, past 2x the 15-minute
 # interval), with two later cycle-skipped events (own, distinct cycle ids,
 # same as a real skipped attempt logs — agent-cycle.sh:1472) at -25m and
@@ -403,6 +404,39 @@ fm_row() { node_row "$1" "$2" "$3" "" "" ""; }
 #                   itself. Neither is a node saying it is standing by, and
 #                   an exemption wants positive evidence.
 #   n10 (no field)  judged, and named, for the same reason.
+#
+# n11 to n13 are agent-ops#1412's own regression fixtures.
+#
+#   n11  a single unmatched cycle-start, six hours old — past the four-hour
+#        lock-staleness bound, so nothing trusts it as still held: named,
+#        the exact shape (a container-recreation orphan with nothing
+#        since) the owner's 2026-10-15 follow-up found on three fleet
+#        nodes.
+#   n12  the ockham-2 2026-09-11 sequence itself: a long cycle's own
+#        cycle-start 32 minutes old and still unmatched, plus a later
+#        chained cycle (distinct `.cycle` id) whose own cycle-start,
+#        cycle-skipped (naming the long cycle's pid as the lock holder)
+#        and cycle-end become the node's three newest *events* a second or
+#        so after the long cycle started. Never named: the long cycle's
+#        own unmatched start — not merely the newest event — is what
+#        proves the lock is still held.
+#   n13  one real, cleanly completed cycle four days old, and a
+#        lock-contention skip tick (cycle-start/cycle-skipped/cycle-end
+#        under one `.cycle` id, a second apart) that is itself five and a
+#        half hours old — past the lock-staleness bound, so it is not
+#        trusted as live-lock evidence either, and the node fires. Its
+#        duration histogram carries only the one real cycle: the skip
+#        tick's own near-zero duration is excluded, never read as a
+#        further completed cycle.
+#   n14  one real, cleanly completed 20-minute cycle that outran a
+#        schedule slot and so logged its own requirement 11a overrun-slot
+#        `cycle-skipped` (`reason: "overlap"`, no lock-holding `detail`)
+#        under its *own* `cycle` id, before its own cycle-end — the shape
+#        agent-cycle.sh:1531 writes. The node fires (nothing since), and
+#        its histogram still carries that cycle's 20 minutes: only a
+#        lock-contention skip's `detail` excludes a group, because
+#        excluding every group carrying any `cycle-skipped` would drop
+#        precisely the long cycles this histogram exists to show.
 fm_log="$WORKDIR/firing-missed.jsonl"
 fm_events=(
   "$(cycle_ev "$(rel -300)" n1 c1 cycle-start)"
@@ -413,10 +447,24 @@ fm_events=(
   "$(cycle_ev "$(rel -7100)" n2 c2 cycle-end '{"exit_code":0}')"
   "$(cycle_ev "$(rel -14400)" n3 c1 cycle-start)"
   "$(cycle_ev "$(rel -14300)" n3 c1 cycle-end '{"exit_code":0}')"
-  "$(cycle_ev "$(rel -14400)" n4 c1 cycle-start)"
+  "$(cycle_ev "$(rel -5400)" n4 c1 cycle-start)"
   "$(cycle_ev "$(rel -2400)" n5 c1 cycle-start)"
   "$(cycle_ev "$(rel -1500)" n5 c2 cycle-skipped)"
   "$(cycle_ev "$(rel -600)" n5 c3 cycle-skipped)"
+  "$(cycle_ev "$(rel -21600)" n11 c1 cycle-start)"
+  "$(cycle_ev "$(rel -1928)" n12 cLong cycle-start)"
+  "$(cycle_ev "$(rel -1911)" n12 cShort cycle-start)"
+  "$(cycle_ev "$(rel -1901)" n12 cShort cycle-skipped '{"detail":"lock held by pid 2651, age 1917s"}')"
+  "$(cycle_ev "$(rel -1900)" n12 cShort cycle-end '{"exit_code":0}')"
+  "$(cycle_ev "$(rel -345600)" n13 real1 cycle-start)"
+  "$(cycle_ev "$(rel -345540)" n13 real1 cycle-end '{"exit_code":0}')"
+  "$(cycle_ev "$(rel -19800)" n13 skip1 cycle-start)"
+  "$(cycle_ev "$(rel -19790)" n13 skip1 cycle-skipped '{"detail":"lock held by pid 1, age 10s"}')"
+  "$(cycle_ev "$(rel -19789)" n13 skip1 cycle-end '{"exit_code":0}')"
+  "$(cycle_ev "$(rel -4000)" n14 cOverran cycle-start)"
+  "$(cycle_ev "$(rel -3000)" n14 cOverran cycle-skipped \
+      '{"reason":"overlap","slot_ts":"2026-10-15T09:15:00Z","held_by":"cOverran","elapsed_s":900}')"
+  "$(cycle_ev "$(rel -2800)" n14 cOverran cycle-end '{"exit_code":0}')"
 )
 for demoted in n6 n7 n8 n9 n10; do
   fm_events+=(
@@ -428,7 +476,9 @@ write_log "$fm_log" "${fm_events[@]}"
 fm_nodes="$(fleet_rows "$(fm_row n1 false active)" "$(fm_row n2 false active)" \
   "$(fm_row n3 true active)" "$(fm_row n4 false active)" "$(fm_row n5 false active)" \
   "$(fm_row n6 false standby)" "$(fm_row n7 false "STANDBY ")" \
-  "$(fm_row n8 false Active)" "$(fm_row n9 false unknown)" "$(fm_row n10 false "")")"
+  "$(fm_row n8 false Active)" "$(fm_row n9 false unknown)" "$(fm_row n10 false "")" \
+  "$(fm_row n11 false active)" "$(fm_row n12 false active)" "$(fm_row n13 false active)" \
+  "$(fm_row n14 false active)")"
 
 PAGER_EVAL_CYCLE_INTERVAL_MINUTES=15
 verdict="$(pager_eval_firing_missed "$fm_nodes" "$fm_log")"
@@ -437,7 +487,7 @@ assert_eq "a cycling node past 2x the interval, no lock held: fires" "true" "$(j
 assert_eq "  ... n1 (recently cycled) is not named" "0" "$(named n1)"
 assert_eq "  ... n2 (stale cycle-start, no lock held) is named" "1" "$(named n2)"
 assert_eq "  ... n3 (stale heartbeat) is excluded even though equally ancient" "0" "$(named n3)"
-assert_eq "  ... n4 (still holds its lock) is never named, however old" "0" "$(named n4)"
+assert_eq "  ... n4 (unmatched cycle-start, within the lock-staleness bound) is never named" "0" "$(named n4)"
 assert_eq "  ... n5 (long cycle, but a recent trailing skip proves the scheduler is alive) is never named" "0" \
   "$(named n5)"
 assert_eq "  ... n6 (role standby, fresh heartbeat, cycle-start five days old) is never named" "0" "$(named n6)"
@@ -447,6 +497,17 @@ assert_eq "  ... n9 (role \"unknown\": no evidence of a standby) is named" "1" "
 assert_eq "  ... n10 (no role field at all) is named for the same reason" "1" "$(named n10)"
 assert_eq "  ... evidence carries n2's own cycle-duration histogram" "1" \
   "$(grep -c 'cycle durations' <<<"$(jq -r '.evidence' <<<"$verdict")")"
+assert_eq "  ... n11 (a single unmatched cycle-start, past the lock-staleness bound) is named" "1" \
+  "$(named n11)"
+assert_eq "  ... n12 (agent-ops#1412's own chained-overlap sequence) is never named" "0" "$(named n12)"
+assert_eq "  ... n13 (a stale lock-contention skip tick, past the bound) is named" "1" "$(named n13)"
+n13_segment="$(grep -oE 'n13 \([^)]*\)' <<<"$(jq -r '.evidence' <<<"$verdict")")"
+assert_eq "  ... n13's histogram carries only its one real cycle, not the skip tick" \
+  "n13 (329m since last cycle-start/cycle-skipped; recent cycle durations in minutes: 1)" "$n13_segment"
+assert_eq "  ... n14 (a completed cycle that outran a slot, nothing since) is named" "1" "$(named n14)"
+n14_segment="$(grep -oE 'n14 \([^)]*\)' <<<"$(jq -r '.evidence' <<<"$verdict")")"
+assert_eq "  ... n14's own overrun-slot cycle-skipped does not drop its cycle from the histogram" \
+  "n14 (50m since last cycle-start/cycle-skipped; recent cycle durations in minutes: 20)" "$n14_segment"
 
 # The #1686/#1768 fleet as the evaluating node saw it: one standby whose
 # newest cycle event is days old beside actives that cycled minutes ago.
