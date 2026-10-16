@@ -277,6 +277,14 @@ else
     # that nothing in cleanup swallows or replaces the abort's own status.
     # shellcheck source=lib/node-time-state.sh
     . "$SCRIPT_DIR/lib/node-time-state.sh"
+    # agent-ops#1324: cleanup reads the node's true base minute via
+    # schedule_crontab_base_minute before the overrun-slot block runs, on
+    # every cycle regardless of flags — sourced for real for the same reason
+    # node-time-state.sh is above, and because it is a plain `var="$(...)"`
+    # assignment, an undefined function here would abort this subshell under
+    # set -e at the wrong line, before the abort this case means to exercise.
+    # shellcheck source=lib/schedule-slots.sh
+    . "$SCRIPT_DIR/lib/schedule-slots.sh"
     eval "$cleanup_src"
     trap cleanup EXIT
     false  # the unhandled abort: errexit ends the cycle between statements

@@ -266,5 +266,11 @@ jq -nc --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg node "$node_name" \
 # real agent-cycle.sh (test/wake-poll.test.sh) — the same override-by-env-var
 # seam test/claim.test.sh's CLAIM_GH and test/state-sync.test.sh's
 # STATE_SYNC_REMOTE already use, never read in production.
-"${WAKE_POLL_AGENT_CYCLE_BIN:-$SCRIPT_DIR/agent-cycle.sh}"
+#
+# --wake-poll (agent-ops#1324): this invocation starts at whatever instant
+# the poll above detected a change, never a minute the real crontab fires
+# on, so agent-cycle.sh's own requirement 11a overrun-slot logging must not
+# mistake it for the cron-fired original — the same exclusion --once and
+# --dry-run already get, for the identical reason.
+"${WAKE_POLL_AGENT_CYCLE_BIN:-$SCRIPT_DIR/agent-cycle.sh}" --wake-poll
 exit 0

@@ -333,7 +333,7 @@ REFINEMENT_LABEL_ENSURE=refinement_label_ensure_one
 
 usage() {
   cat <<'EOF'
-usage: agent-cycle.sh [--dry-run] [--once] [--repo <slug>]
+usage: agent-cycle.sh [--dry-run] [--once] [--wake-poll] [--repo <slug>]
        agent-cycle.sh --disable [<reason>] [--for <90m|4h|2d|forever>] [--until <timestamp>] [--this-node]
        agent-cycle.sh --drain <reason> [--for <90m|4h|2d|forever>] [--until <timestamp>] [--this-node]
        agent-cycle.sh --enable [--this-node]
@@ -347,6 +347,15 @@ stops cycles from starting (shared with review-cycle.sh).
 
   --dry-run          Select an item and print the work order; implement nothing.
   --once             One verbose cycle in the foreground.
+  --wake-poll        This cycle was started by scripts/wake-poll.sh rather
+                     than the cron-fired @CYCLE_MINUTE@ line (requirement
+                     54): an ordinary cycle in every other respect, but
+                     excluded from requirement 11a's overrun-slot logging
+                     the same way --once/--dry-run are, since its own start
+                     minute is whatever instant the poll detected a change
+                     at, not a minute the real crontab fires on. Set by
+                     scripts/wake-poll.sh itself; a human has no reason to
+                     pass this.
   --repo <slug>      Restrict selection to one configured repo (testing).
   --disable [reason] Stop future cycles starting outright — in-flight work
                      included. A reason is required — the next person to
@@ -436,6 +445,7 @@ EOF
 # --- Flags ---
 DRY_RUN=0
 ONCE=0
+WAKE_POLL=0
 REPO_FILTER=""
 MANAGE_ACTION=""
 DISABLE_REASON=""
@@ -456,6 +466,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run) DRY_RUN=1; shift ;;
     --once) ONCE=1; shift ;;
+    --wake-poll) WAKE_POLL=1; shift ;;
     --repo) REPO_FILTER="${2:-}"; shift 2 ;;
     --disable)
       set_manage_action disable; shift
@@ -495,7 +506,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -n "$MANAGE_ACTION" ]]; then
-  if (( DRY_RUN || ONCE )) || [[ -n "$REPO_FILTER" ]]; then
+  if (( DRY_RUN || ONCE || WAKE_POLL )) || [[ -n "$REPO_FILTER" ]]; then
     echo "agent-cycle: --disable/--drain/--enable/--clear-limit/--kill-merge-autonomy/--restore-merge-autonomy/--status manage stand-down state; they do not run a cycle" >&2
     exit 64
   fi
@@ -1490,6 +1501,14 @@ cleanup() {
   # header for why logging it earlier, at the stand-down site itself, would
   # let a later Enabler engagement silently overwrite it).
   finalize_node_state_for_cycle
+  # The node's true base minute (agent-ops#1324), read here — once, before
+  # the extracted block below — rather than inside it: schedule_overrun_
+  # slots stays a pure, fixture-testable function (see its own header), and
+  # this is the one line in this whole requirement that has to touch a real
+  # file. Empty on any parse failure, which the block below's own fallback
+  # already handles the same way it always did.
+  local cron_base_minute=""
+  cron_base_minute="$(schedule_crontab_base_minute "$SCRIPT_DIR/deploy/docker/crontab")"
   # Overrun-slot skips (requirement 11a, agent-ops#1287): schedule slots that
   # fell inside this cycle's own run, which supercronic silently dropped
   # because this cycle was still holding the lock at each of them. Only the
@@ -1514,16 +1533,22 @@ cleanup() {
   # has already ended by the time the chained cycle runs: its slots are not
   # dropped at all — they fire, contend for the lock, and are already recorded
   # by the contending tick as requirement 1's own `reason`-less
-  # `cycle-skipped`. Logging them again here would double-count them, and at a
-  # fabricated `slot_ts` besides: a chained cycle starts whenever its
-  # predecessor happened to finish, an arbitrary minute-of-hour, which
-  # `schedule_overrun_slots` would take as the node's base minute (see its
-  # header). `--once` and `--dry-run` runs have exactly that shape too — the
-  # manual run is not supercronic's job, so its firings land and contend as
-  # normal. The one case left ungated is a human running this script with
-  # neither flag; distinguishing that from the cron firing needs machinery
-  # this is not worth (agent-ops#1301).
-  if [[ "$lock_acquired" == "1" ]] && (( chain_count == 1 )) && ! (( ONCE || DRY_RUN )); then
+  # `cycle-skipped`. Logging them again here would double-count them, and —
+  # whenever `cron_base_minute` above came back empty — at a fabricated
+  # `slot_ts` besides: a chained cycle starts whenever its predecessor
+  # happened to finish, an arbitrary minute-of-hour, which
+  # `schedule_overrun_slots` would then fall back to taking as the node's
+  # base minute (see its header). `--once` and `--dry-run` runs have exactly
+  # that shape too — the manual run is not supercronic's job, so its firings
+  # land and contend as normal. So does a wake-poll-triggered run
+  # (requirement 54): `scripts/wake-poll.sh` invokes this script with
+  # `--wake-poll`, never on the cron-fired job's own clock, whatever instant
+  # the poll itself happened to detect a change at, so it is excluded here
+  # the same way the other two are rather than the one case this used to
+  # leave ungated alongside a human's own unflagged run (agent-ops#1324).
+  # The one case left ungated now is that human run; distinguishing it from
+  # the cron firing needs machinery this is not worth (agent-ops#1301).
+  if [[ "$lock_acquired" == "1" ]] && (( chain_count == 1 )) && ! (( ONCE || DRY_RUN || WAKE_POLL )); then
     local overrun_now_iso overrun_now_epoch overrun_start_epoch overrun_slot overrun_slot_epoch
     overrun_now_iso="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     overrun_now_epoch="$(date -u +%s)"
@@ -1534,7 +1559,7 @@ cleanup() {
       log_event "cycle-skipped" "$(jq -nc --arg r "overlap" --arg s "$overrun_slot" \
         --arg h "$cycle_id" --argjson e "$(( overrun_slot_epoch - overrun_start_epoch ))" \
         '{reason: $r, slot_ts: $s, held_by: $h, elapsed_s: $e}')"
-    done < <(schedule_overrun_slots "$cycle_started_at" "$overrun_now_iso" "$schedule_json")
+    done < <(schedule_overrun_slots "$cycle_started_at" "$overrun_now_iso" "$schedule_json" "$cron_base_minute")
   fi
   log_event "cycle-end" "$(jq -nc --argjson rc "$exit_code" '{exit_code: $rc}')"
   if [[ "$lock_acquired" == "1" ]]; then
