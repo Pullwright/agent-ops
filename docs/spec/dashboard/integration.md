@@ -58,8 +58,9 @@
   idles `LAUNCHER_DUTY_DIVISOR` (9) times that before the next one starts**,
   within the window and, when the backoff outlasts the window, across the
   windows after it (below), so the Publisher can take at most about a tenth
-  of wall-clock whatever a publish grows to cost. Pacing off a measurement
-  rather than a constant is what keeps
+  of wall-clock for any tick under `LAUNCHER_PACE_CAP`/9 (400s); above that
+  the cap holds the idle to an hour and the share rises. Pacing off a
+  measurement rather than a constant is what keeps
   that true as the state grows: the loop previously slept to the next 5-second
   boundary and no further, on an assumption — stated in its own header and
   budgeted at five seconds — that nothing enforced and nothing measured. When a
@@ -130,8 +131,12 @@
   <local_cost_s> <next_tick_at>`: the last cost of each kind in whole seconds
   rounded up, and the epoch second at which the last tick's backoff ends when
   that is past the window it ran in, or `0` when it ended inside it. A field
-  that does not read as a number reads as `0`. The file is launcher
-  bookkeeping: it is excluded
+  that does not read as a number reads as `0`, and so does an instant more
+  than `LAUNCHER_PACE_CAP` (plus the whole-second rounding) past the window's
+  start, which the launcher never writes: the window-idle path below persists
+  nothing, so a hand-edited or foreign instant that far ahead would otherwise
+  stop the node's dashboard until the file was edited again. The file is
+  launcher bookkeeping: it is excluded
   from the fingerprint under **The no-op tick** and from replication, so
   writing it cannot invalidate the skip it exists beside.
   The backoff computed from a tick's own cost (`last_cost_ms * duty_divisor`)

@@ -15,8 +15,8 @@
 # backoff that outlasts the window is persisted for the window after it, which
 # idles through what is left of it or exits without a tick. So the Publisher
 # can never take more than a fixed share of wall-clock — across windows, not
-# merely within one — whatever a publish grows to cost. See `duty_divisor`
-# below.
+# merely within one — whatever a publish grows to cost, up to the hour
+# `pace_cap_s` holds the idle to. See `duty_divisor` and `pace_cap_s` below.
 
 set -uo pipefail
 
@@ -32,10 +32,11 @@ endat=$(( startat + ${LAUNCHER_WINDOW:-295} ))
 tick_margin=10
 
 # How long the loop must idle after a tick, as a multiple of what that tick
-# cost. 9 holds the Publisher to a tenth of wall-clock: of the window, while
-# the backoff fits inside it, and of the windows after it when it does not,
-# because the backoff is persisted (`next_tick_at`, below) and the next window
-# honours it before it runs anything.
+# cost. 9 holds the Publisher to a tenth of wall-clock, until `pace_cap_s`
+# below bounds the idle: of the window, while the backoff fits inside it, and
+# of the windows after it when it does not, because the backoff is persisted
+# (`next_tick_at`, below) and the next window honours it before it runs
+# anything.
 #
 # The loop used to sleep to the next 5-second boundary and no more, whatever a
 # tick had just cost, on the assumption a tick fits in five seconds (the
@@ -160,6 +161,15 @@ fi
 [[ "$gh_cost_s"    =~ ^[0-9]+$ ]] || gh_cost_s=0
 [[ "$local_cost_s" =~ ^[0-9]+$ ]] || local_cost_s=0
 [[ "$next_tick_at" =~ ^[0-9]+$ ]] || next_tick_at=0
+# So does an instant further ahead than this launcher could have written. A
+# persisted instant is at most `pace_cap_s` past the end of a tick, rounded up
+# to the whole second (hence the one second of slack), and that tick ended
+# before this window opened; a later one is a hand edit, a clock stepped back
+# after the write, or another machine's file. Honouring it would stop this
+# node's dashboard until someone edited the file: the window-idle path below
+# exits without a tick and without rewriting the cache, so nothing else would
+# ever correct it.
+(( next_tick_at <= startat + pace_cap_s + 1 )) || next_tick_at=0
 cost_stamp="$gh_cost_s $local_cost_s $next_tick_at"
 
 # The very first thing we touch is the lock/log in $logdir, before
@@ -282,8 +292,9 @@ sleep_ms() {
 }
 
 # What the last tick cost, and therefore the earliest the next may start. Zero
-# until a tick has been measured, so the first tick of a window is never
-# delayed and a window that runs one tick behaves exactly as it did before.
+# until a tick has been measured, so the loop itself never delays a window's
+# first tick; the pacing check above may, for a backoff carried in from an
+# earlier window.
 last_cost_ms=0
 next_tick_ms=0
 # Ticks actually started in this window, for the first-tick floor on the

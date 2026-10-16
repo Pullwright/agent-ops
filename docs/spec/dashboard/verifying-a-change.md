@@ -61,8 +61,10 @@
   inside it runs no tick and logs `pacing: window idle`, and a later window
   with room logs `pacing: idle until` and starts its tick no sooner than 18s
   after that tick ended, by the stub's own clock; `LAUNCHER_PACE_CAP=5`
-  persists an instant past the tick's end, but no more than the cap plus the
-  rounding to a whole second past it; the batched cost scan
+  persists an instant past the tick's end, but no more than the cap, plus the
+  rounding to a whole second and the tick's own exit latency, past it; and a
+  third field further ahead than the cap allows reads as nothing owed, so the
+  window runs its tick; the batched cost scan
   matches the per-file semantics (day cut-off, torn-file tolerance, each row's
   own instant carried through as `ts` — `null` for a directory name that
   doesn't parse as one, which still counts toward the totals but drops out of

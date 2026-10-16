@@ -2005,7 +2005,12 @@ assert_contains "and logs the idle it took first" \
 # page eleven hours behind is not an outage an operator can read, where one
 # an hour behind is. LAUNCHER_PACE_CAP bounds it: 5s here, against the 18s
 # the same tick would otherwise owe. The persisted instant is rounded up to a
-# whole second, so it may sit up to one second past the cap.
+# whole second from the launcher's own clock, which reads the tick's end only
+# once the stub has exited and `flock` has returned; so it may sit up to one
+# second of rounding plus that exit latency past the cap. Measured from the
+# stub's own end stamp that is 7s, not 6: a stamp whose fraction lies within
+# the latency of the next whole second crosses it before the launcher reads
+# the end, and the ceiling then adds most of another.
 expire_backoff "$carry_home"
 touch "$carry_state/.dashboard-github.json"
 : > "$carry_log"
@@ -2013,8 +2018,23 @@ run_carry 15 5
 carry_cap_end="$(awk '$2 == "end" {print $1; exit}' "$carry_log")"
 assert_eq "a capped backoff is still persisted as an instant past the tick's end" "1" \
   "$(awk -v f="$(carry_owed)" -v e="${carry_cap_end:-0}" 'BEGIN { print (f > e) ? 1 : 0 }')"
-assert_eq "…and no more than the cap, plus the rounding, past it" "1" \
-  "$(awk -v f="$(carry_owed)" -v e="${carry_cap_end:-0}" 'BEGIN { print (f - e <= 6) ? 1 : 0 }')"
+assert_eq "…and no more than the cap, plus the rounding and the tick's exit latency, past it" "1" \
+  "$(awk -v f="$(carry_owed)" -v e="${carry_cap_end:-0}" 'BEGIN { print (f - e <= 7) ? 1 : 0 }')"
+
+# --- …and an instant the launcher could not have written reads as nothing owed
+# The window-idle path exits without a tick and persists nothing, so a third
+# field far enough ahead — a hand edit, a clock stepped back after the write,
+# another machine's file — would otherwise keep every window idle until
+# someone noticed the file. The launcher never writes an instant more than the
+# cap, rounded up, past a tick's end, and that end precedes any window that
+# reads it; so an instant further ahead than that is bounded on read the way a
+# non-number is, as 0, and the window runs its tick. 15s and the same 2s stub,
+# for the reasons the sections above give.
+printf '1 1 99999999999\n' > "$carry_state/.dashboard-tick-cost"
+: > "$carry_log"
+run_carry 15 3600
+assert_eq "an instant beyond the cap reads as nothing owed, and the window runs its tick" "1" \
+  "$(grep -c ' end$' "$carry_log")"
 
 # --- The cron panel survives a rotation (TD26072501, spec requirement 2.6) ------
 # scripts/rotate-logs.sh renames cron.log to cron.log.1 once it grows past
