@@ -39,7 +39,10 @@ for bin in claude gh git jq sha256sum; do
 done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONFIG_FILE="$SCRIPT_DIR/config.json"
+# AGENT_OPS_CONFIG is the test seam, exactly as it is for review-cycle.sh and
+# monitor-cycle.sh: cron and the container invoke this bare and get the
+# config beside the script.
+CONFIG_FILE="${AGENT_OPS_CONFIG:-$SCRIPT_DIR/config.json}"
 SCHEMA_FILE="$SCRIPT_DIR/config.schema.json"
 PROMPTS_DIR="$SCRIPT_DIR/prompts"
 # Exported, and the only variable here that is: a stage's working directory is

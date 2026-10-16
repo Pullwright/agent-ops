@@ -348,6 +348,31 @@ assert_eq "gc retires an expired claim on its very next sweep" "0" \
 env CLAIM_GH="$stub_bin/gh" "$CLAIM" expire enabler "no-such-key"
 assert_eq "expire on a missing entry is a silent no-op" "0" "$?"
 
+# --- refusal: no claim under a fallback name inside a container (agent-ops#2421) ---
+# A fake sentinel rather than the real /.dockerenv: this test must pass
+# identically whether or not the host running it is itself a container.
+refuse_sentinel="$tmp_dir/fake-dockerenv"
+: > "$refuse_sentinel"
+
+env -u NODE_NAME CLAIM_GH="$stub_bin/gh" CLAIM_CONTAINER_SENTINEL="$refuse_sentinel" \
+  "$CLAIM" claim branch Poetic-Poems/poetic td/TD-REFUSE main >/dev/null 2>&1
+assert_eq "a branch claim with no NODE_NAME inside a container refuses" "1" "$?"
+assert_eq "...and creates no branch ref in the stub" "0" \
+  "$(test -f "$GH_STUB_DIR/refs/Poetic-Poems/poetic/td/TD-REFUSE" && echo 1 || echo 0)"
+
+env -u NODE_NAME CLAIM_GH="$stub_bin/gh" CLAIM_CONTAINER_SENTINEL="$refuse_sentinel" \
+  "$CLAIM" claim file Poetic-Poems/poetic "TD-REFUSE-FILE" >/dev/null 2>&1
+assert_eq "a file claim with no NODE_NAME inside a container refuses" "1" "$?"
+assert_eq "...and writes no registry entry in the stub" "0" \
+  "$(test -f "$reg_dir/Poetic-Poems__poetic/TD-REFUSE-FILE.json" && echo 1 || echo 0)"
+
+# Outside a container (no sentinel on disk), the same bare invocation claims
+# normally — the refusal is scoped to the image, not to every caller that
+# simply forgot CLAIM_NODE.
+env -u NODE_NAME CLAIM_GH="$stub_bin/gh" CLAIM_CONTAINER_SENTINEL="$tmp_dir/no-such-sentinel" \
+  "$CLAIM" claim branch Poetic-Poems/poetic td/TD-NOSENTINEL main >/dev/null 2>&1
+assert_eq "outside a container, the same claim with no NODE_NAME still wins" "0" "$?"
+
 # ------------------------------------------------------------------------------------
 printf '\n%s\n' "----------------------------------------"
 if (( failures == 0 )); then

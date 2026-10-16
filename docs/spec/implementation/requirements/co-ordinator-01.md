@@ -825,7 +825,13 @@
 17a. **The claim.** The Script — never the model — takes an atomic per-item
     claim before the Implementer starts, walking the ranked candidates in
     order and handing the first successful claim onward (`lib/claim.sh`).
-    The primitive is create-only, so GitHub arbitrates every race:
+    Inside the image, both kinds of claim below refuse outright — a warning,
+    no GitHub call — when the `/.dockerenv` sentinel is present and
+    `NODE_NAME` is unset (`CLAIM_CONTAINER_SENTINEL` overrides it for tests):
+    every scheduled process is handed the variable by Compose, so this can
+    only mean something was invoked directly inside the image with no node
+    identity of its own (agent-ops#2421). The primitive is create-only, so
+    GitHub arbitrates every race:
     - *Branch claims* (every source except the four finishing ones —
       `review-feedback`, `merge-conflicts`, `dequeued` and `abandoned-drafts`
       — plus one exception within `merge-conflicts` itself, below): a REST
