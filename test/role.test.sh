@@ -151,31 +151,41 @@ sandbox_config="$tmp_dir/config.json"
 jq '.state_repo = ""' "$SCRIPT_DIR/config.json" > "$sandbox_config"
 sandbox_node_name="role-test-node"
 
+# The sandbox is built once, out here, so the PATH assertion below can
+# interrogate the very environment run_guarded hands the real scripts rather
+# than a PATH it composes for itself — an assertion that prepends the stub
+# directory on its own behalf proves only that `command -v` works, and would
+# go on passing with the prepend stripped out of run_guarded entirely.
+#
+# Every `-u` must precede every `NAME=VALUE` in `env`'s own argument order —
+# GNU env stops parsing options at the first assignment it sees, so
+# `AGENT_OPS_ROLE=standby -u GH_TOKEN` silently treats `-u` as the command to
+# exec rather than an option. Hence two arrays, concatenated in that order.
+guard_unsets=(
+  -u GH_TOKEN -u GITHUB_TOKEN -u GIT_CONFIG_GLOBAL
+  -u PW_GH_TOKEN_BROKER -u PW_GH_DEGRADE_TOKEN
+  -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID
+  -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH
+)
+guard_sandbox=(
+  GIT_CONFIG_NOSYSTEM=1 HOME="$fake_home" NODE_NAME="$sandbox_node_name"
+  AGENT_OPS_CONFIG="$sandbox_config" PATH="$fake_home/.local/bin:$PATH"
+)
+
 run_guarded() {  # run_guarded <role|-> <script> [args…]
   local role="$1" script="$2"; shift 2
-  # Every `-u` must precede every `NAME=VALUE` in `env`'s own argument order
-  # — GNU env stops parsing options at the first assignment it sees, so
-  # `AGENT_OPS_ROLE=standby -u GH_TOKEN` silently treats `-u` as the command
-  # to exec rather than an option.
-  local -a seam=(
-    -u GH_TOKEN -u GITHUB_TOKEN -u GIT_CONFIG_GLOBAL
-    -u PW_GH_TOKEN_BROKER -u PW_GH_DEGRADE_TOKEN
-    -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID
-    -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH
-  )
+  local -a seam=("${guard_unsets[@]}")
   if [[ "$role" == "-" ]]; then
     seam+=(-u AGENT_OPS_ROLE)
   fi
-  seam+=(
-    GIT_CONFIG_NOSYSTEM=1 HOME="$fake_home" NODE_NAME="$sandbox_node_name"
-    AGENT_OPS_CONFIG="$sandbox_config" PATH="$fake_home/.local/bin:$PATH"
-  )
+  seam+=("${guard_sandbox[@]}")
   [[ "$role" == "-" ]] || seam+=(AGENT_OPS_ROLE="$role")
   env "${seam[@]}" "$SCRIPT_DIR/$script" "$@" 2>&1
 }
 
-assert_eq "the stub gh is first on PATH, never the image's own" \
-  "$fake_home/.local/bin/gh" "$(PATH="$fake_home/.local/bin:$PATH" command -v gh)"
+assert_eq "the stub gh is first on PATH for every guarded run, never the image's own" \
+  "$fake_home/.local/bin/gh" \
+  "$(env "${guard_unsets[@]}" "${guard_sandbox[@]}" sh -c 'command -v gh')"
 
 out="$(run_guarded - agent-cycle.sh)"; rc=$?
 assert_eq "agent-cycle: no role exits 0" "0" "$rc"
@@ -223,8 +233,14 @@ assert_contains "--status reports the switch" "role.test.sh" "$out"
 # With state_repo blanked out in the sandboxed config, both are a documented
 # no-op before either ever reaches `git` or `gh`, so the stub log from every
 # invocation above must still be empty: not merely "the stub failed safely",
-# but "the stub was never reached at all". Reverting this test's own sandbox
-# (state_repo, NODE_NAME, or the prepended PATH) fails this assertion.
+# but "the stub was never reached at all". Restoring the real `state_repo` is
+# what fails this assertion — `scripts/state-sync.sh` exits 0 on an empty
+# `state_repo` before it reads a node name at all, and `lib/claim.sh`'s file
+# claim wins vacuously for the same reason, so the blanked-out `state_repo`
+# is the lever this one turns on. The explicit NODE_NAME and the prepended
+# PATH are the sandbox's other two walls, each with its own assertion: the
+# PATH one directly above, and NODE_NAME's refusal in test/state-sync.test.sh
+# and test/claim.test.sh, which reach the code this run never does.
 assert_eq "no run above pushed or claimed anything on any remote" \
   "" "$(cat "$stub_calls" 2>/dev/null)"
 
