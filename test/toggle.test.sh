@@ -833,8 +833,8 @@ case "\$method" in
 esac
 STUB
 chmod +x "$race_stub"
-race_result="$(TOGGLE_GH="$race_stub" GH_STUB_BACKING="$race_backing" \
-  mix_write "$slug" "$tmp_dir/fs-race" anthropic '{"api":{"weight":99}}' "operator pid 4" "operator")"
+TOGGLE_GH="$race_stub" GH_STUB_BACKING="$race_backing" \
+  mix_write "$slug" "$tmp_dir/fs-race" anthropic '{"api":{"weight":99}}' "operator pid 4" "operator" >/dev/null
 assert_eq "mix_write's own retry converges past a stale-sha PUT" "0" "$?"
 assert_eq "…and the second attempt actually landed" "99" \
   "$(jq -r '.providers.anthropic.lanes.api.weight' "$race_backing/fleet/mix.json")"
