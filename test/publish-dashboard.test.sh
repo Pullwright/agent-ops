@@ -2568,6 +2568,25 @@ assert_eq "and a warm one re-reads none of them" "0" "$(grep -c '^pr view' "$gh_
 assert_eq "while still serving them all" "$idx_n" \
   "$(jq '.github.pr_index | length' <<<"$(data_of "$x")")"
 
+# A `pager-fired` event in this node's own log.jsonl reaches the payload's
+# `pager` array, which a GitHub tick reads from the tick's own union snapshot
+# plus whatever this node's own log gained during `pager_evaluate`, reduced to
+# the pager's own events by `pager_events_extract` (agent-ops#2429) — never
+# from a second `fleet_logs`. The event is appended before the tick rather
+# than by it: the stub answers `lib/claim.sh`'s `api -X PUT` with exit 1, so
+# every invariant's claim fails closed and `pager_evaluate` appends nothing
+# here, which leaves the "appended by this very tick" half of that read to
+# lib/pager.sh's own test of the extract.
+printf '{"ts":"2026-07-26T12:00:00Z","cycle":"publisher-nodeX-self-0","node":"nodeX-self","event":"pager-fired","key":"dashboard-unreadable","first_seen":"2026-07-26T00:00:00Z","evidence":"data.js unreadable","issue_number":null,"issue_url":null,"remedy_class":"owner-only","nodes":["nodeX-self"]}\n' \
+  >> "$xlog"
+run_gh_publish
+assert_eq "a fired invariant in this node's own log reaches the payload's pager array" \
+  "dashboard-unreadable" "$(jq -r '.pager[0].key' <<<"$(data_of "$x")")"
+assert_eq "  ... carrying its evidence and the node it names" "data.js unreadable nodeX-self" \
+  "$(jq -r '.pager[0] | "\(.evidence) \(.nodes[0])"' <<<"$(data_of "$x")")"
+assert_eq "  ... and only that one, of the eighteen registered keys" "1" \
+  "$(jq '.pager | length' <<<"$(data_of "$x")")"
+
 # A --no-github tick carries the index forward like every other GitHub-sourced
 # panel; blanking it would empty every hover card on the page between fetches.
 run_publish "$x" NODE_NAME=nodeX-self

@@ -168,6 +168,83 @@ printf '{"ts":"2026-01-01T00:20:00Z","event":"pager-cleared","key":"demo","clear
 assert_eq "a cleared event reads clear again" "clear" "$(pager_state_for demo < "$state_fixture")"
 assert_eq "a different key's events are ignored" "clear" "$(pager_state_for other < "$state_fixture")"
 
+# --- pager_events_extract (agent-ops#2429) -----------------------------------
+# What `pager_evaluate` and the Publisher's own `pager` array read in place of
+# the whole union: it must carry every pager event, and nothing a state read
+# could mistake for one. The decoys are the three shapes the prefilter alone
+# would get wrong — a record of another type whose nested object carries
+# `"event":"pager-fired"` (built with `jq -nc`, so it is compact exactly as a
+# real record is; a string field could not carry it, since JSON escapes the
+# quotes inside a string), a spliced line, and a blank line.
+extract_in="$WORKDIR/extract-in.jsonl"
+{
+  printf '{"ts":"2026-01-01T00:00:00Z","event":"cycle-start","node":"n1","cycle":"c0"}\n'
+  cat "$state_fixture"
+  jq -nc '{ts: "2026-01-01T00:30:00Z", event: "escalated", node: "n1", key: "demo",
+           record: {event: "pager-fired", key: "demo"}}'
+  printf '{"ts":"2026-01-01T00:40:00Z","event":"pager-fired","key":"spliced"}{"ts":"2026-01-01T00:41:00Z","event":"pager-cleared","key":"spliced"}\n'
+  printf '\n'
+  printf '{"ts":"2026-01-01T00:50:00Z","event":"pager-candidate","key":"other","first_seen":"2026-01-01T00:50:00Z"}\n'
+} > "$extract_in"
+extract_out="$WORKDIR/extract-out.jsonl"
+pager_events_extract < "$extract_in" > "$extract_out"
+extract_rc=$?
+assert_eq "the extract exits 0 over a union with pager events in it" "0" "$extract_rc"
+assert_eq "the extract keeps the four pager event types, in log order, and nothing else" \
+  "pager-candidate pager-candidate-cleared pager-fired pager-cleared pager-candidate" \
+  "$(jq -r '.event' "$extract_out" | tr '\n' ' ' | sed 's/ $//')"
+assert_eq "  ... a record of another type carrying the prefilter's substring in a nested object is dropped" \
+  "0" "$(grep -c '"event":"escalated"' "$extract_out")"
+assert_eq "  ... a spliced line is dropped whole, the tolerance every union reader has" \
+  "0" "$(grep -c 'spliced' "$extract_out")"
+assert_eq "  ... and every kept line is one compact object" \
+  "5" "$(jq -c 'objects' "$extract_out" | wc -l | tr -d ' ')"
+assert_eq "a union with no pager event at all extracts to nothing, with exit status 0 (grep's 1 is not a failure)" \
+  "0 0" "$(out="$(printf '{"ts":"2026-01-01T00:00:00Z","event":"cycle-start"}\n' | pager_events_extract)"; printf '%s %s' "$?" "${#out}")"
+assert_eq "  ... and so does an empty one" \
+  "0 0" "$(out="$(pager_events_extract < /dev/null)"; printf '%s %s' "$?" "${#out}")"
+
+# `pager_state_for` over the extract must equal `pager_state_for` over the raw
+# union at every point of the state machine above — compared over every prefix
+# of the decoy-laden union, so clear, candidate, clear again, fired and clear
+# again are each compared, with the decoys in play.
+raw_states=""; extract_states=""
+extract_prefix="$WORKDIR/extract-prefix.jsonl"
+for (( n = 0; n <= $(wc -l < "$extract_in"); n++ )); do
+  head -n "$n" "$extract_in" > "$extract_prefix"
+  raw_states+="$(pager_state_for demo < "$extract_prefix") "
+  extract_states+="$(pager_events_extract < "$extract_prefix" | pager_state_for demo) "
+done
+assert_eq "pager_state_for over the extract equals pager_state_for over the raw union at every prefix" \
+  "$raw_states" "$extract_states"
+assert_eq "  ... and that walk is the state machine itself, undisturbed by the decoys" \
+  "clear clear candidate clear fired clear clear clear clear clear " "$raw_states"
+
+# --- pager_evaluate over a union carrying a decoy nested record ---------------
+# The extract is what the state reads inside `_pager_evaluate_one` consult, so
+# a decoy must not read as a fired key there either; and the extract must be
+# rebuilt per call, so tick 2 sees the candidate tick 1 appended. TMPDIR is
+# pointed at WORKDIR for the calls, so the extract's own removal can be seen.
+PAGER_EVAL_FN=(); PAGER_REMEDY_CLASS=(); PAGER_REMEDY_ARG=(); PAGER_KEYS=()
+pager_register decoyed stub_eval pipeline-act stub_remedy
+union_log="$WORKDIR/decoy.jsonl"
+jq -nc '{ts: "2026-01-01T00:00:00Z", event: "escalated", node: "n1", key: "decoyed",
+         record: {event: "pager-fired", key: "decoyed"}}' > "$union_log"
+: > "$GH_CALLS_FILE"; : > "$REMEDY_CALLS_FILE"
+STUB_FIRING="true"; STUB_GH_CREATE_FAIL=""; STUB_GH_LIST_OPEN="[]"; STUB_GH_LIST_ALL="[]"
+TMPDIR="$WORKDIR" pager_evaluate "$CLAIM_STUB" "o/r" "pw::pager" "enabler-escalation" \
+  "" "" 0 "$union_log" "$union_log" '[]' n1 c1
+assert_eq "tick 1 over a decoy: the key reads clear and becomes a candidate, never fired" \
+  "1 0" "$(printf '%s %s' "$(count_events "$union_log" pager-candidate decoyed)" \
+                          "$(count_events "$union_log" pager-fired decoyed)")"
+TMPDIR="$WORKDIR" pager_evaluate "$CLAIM_STUB" "o/r" "pw::pager" "enabler-escalation" \
+  "" "" 0 "$union_log" "$union_log" '[]' n1 c1
+assert_eq "tick 2: the extract is rebuilt per call, so the candidate tick 1 appended is seen and fires" \
+  "fired" "$(pager_state_for decoyed < "$union_log")"
+assert_eq "  ... the remedy ran exactly once" "1" "$(remedy_calls)"
+assert_eq "  ... and the extract file is removed when the loop ends" "" \
+  "$(ls "$WORKDIR"/pager-events.* 2>/dev/null)"
+
 # --- End to end: fire (candidate) -> hysteresis -> fired -> clear ------------
 # One invariant, pipeline-act, min_firing_minutes 0 so the very first
 # candidate evaluation is already past hysteresis on the next tick.
@@ -331,6 +408,7 @@ STUB_REMEDY_FAIL=""
 # lib/pager.sh probes for `labels_reconcile_role` with `declare -F` so the
 # rest of this file still runs without lib/labels.sh sourced at all.
 ENSURE_CALLS_FILE="$WORKDIR/ensure-calls"; : > "$ENSURE_CALLS_FILE"
+# shellcheck disable=SC2317  # invoked only by lib/pager.sh's _pager_ensure_label_role, behind its `declare -F` probe, which a static reader does not follow
 labels_reconcile_role() { printf '%s\n' "$3 $4" >> "$ENSURE_CALLS_FILE"; }
 ensure_calls() { wc -l < "$ENSURE_CALLS_FILE" | tr -d ' '; }
 

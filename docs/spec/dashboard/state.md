@@ -11,9 +11,12 @@ All paths derive from `config.json` (tilde-expanded `state_dir` and
   spec requirement 2.5). What survives is parsed line-by-line with
   `fromjson? // empty`, so a half-written trailing line (the Script may be
   appending), or any other malformed line, never aborts the parse. What those
-  drops cost is not left invisible: the union lands raw on disk once and is
-  parsed from there, so both line counts describe the one snapshot rather
-  than two reads a pipeline's own appends can separate, and the difference,
+  drops cost is not left invisible: the union lands raw on disk once per tick
+  — that landing is the tick's only union read of `log.jsonl`, its one
+  `fleet_logs`, and every later consumer reads the snapshot — and is parsed
+  from there, so both line counts
+  describe the one snapshot rather than two reads a pipeline's own appends can
+  separate, and the difference,
   plus the damaged lines `fleet_logs` reports it took apart or dropped (its
   damage file), rides the payload as `log_repair.dropped_log_lines`
   (agent-ops#794, #2037) — the log tail panel's own title names it whenever
