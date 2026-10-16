@@ -246,7 +246,12 @@ chmod +x "$stub_bin/claude"
 #     say. Changing a cadence in config.json is a configuration change, and it
 #     must not oblige anyone to re-derive an assertion here — so the block
 #     states its own, deliberately unlike the shipped values, and the
-#     assertions read from it. ---
+#     assertions read from it.
+#
+#     `providers` is deleted for the reason the autonomy keys are: the lane
+#     assertions below (#2240) are written against the default lanes — api
+#     weight 1, subscription weight 0, neither with an explicit `enabled` — and
+#     the shipped config now opens both lanes for the credit mix (#2238). ---
 slug="acme-org/target-repo"
 base_config="$tmp/base-config.json"
 jq --arg slug "$slug" '
@@ -260,7 +265,8 @@ jq --arg slug "$slug" '
                  state_sync_push_minutes: 8, state_sync_fetch_minutes: 9,
                  log_rotation_minute: 23}
   | del(.merge_autonomy, .approver_app_id, .approver_model_default,
-        .approver_model_complex, .approver_model_critical, .escalation_autonomy)
+        .approver_model_complex, .approver_model_critical, .escalation_autonomy,
+        .providers)
 ' "$CONFIG" > "$base_config"
 
 # run_doctor [VAR=value…] [-- extra doctor.sh args]
