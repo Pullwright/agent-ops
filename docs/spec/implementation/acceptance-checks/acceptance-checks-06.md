@@ -33,13 +33,22 @@
     `firing-missed` fires on an active node whose newest `cycle-start` or
     `cycle-skipped` is past 2× a configured interval with no lock held, but
     not on a node that recently cycled, not on one whose heartbeat is itself
-    stale, not on one whose own last event is an unmatched `cycle-start`
-    (still holds its lock) however old, not on one whose long-running
-    cycle-start is trailed by a recent `cycle-skipped` — proof its scheduler
-    kept ticking and correctly deferred — even though that skip is not
-    itself a lock hold, and not on one whose published `role` is a
-    standby's however old its newest cycle event — including a raw
-    `"STANDBY "`, since the role is read normalised. Five nodes sharing
+    stale, not on one with an unmatched `cycle-start` within the four-hour
+    lock-staleness bound (still holds its lock) — including when a later
+    chained cycle's own `cycle-start`/`cycle-skipped`/`cycle-end` become the
+    node's newest *events* a second or so afterwards, since the unmatched
+    start, not the newest event, is what is checked (agent-ops#1412) — not
+    on one whose long-running cycle-start is trailed by a recent
+    `cycle-skipped` — proof its scheduler kept ticking and correctly
+    deferred — even though that skip is not itself a lock hold, and not on
+    one whose published `role` is a standby's however old its newest cycle
+    event — including a raw `"STANDBY "`, since the role is read
+    normalised. It does fire on a node whose only unmatched `cycle-start`,
+    or whose only `cycle-skipped` naming a lock-holding pid, is older than
+    the four-hour bound — a container-recreation orphan with nothing since
+    — and its cycle-duration histogram excludes a lock-contention skip
+    tick's own near-zero duration even when that tick is itself past the
+    bound, counting only genuinely completed cycles. Five nodes sharing
     that one ancient history and differing only in the role their row
     publishes pin the rest of the matrix: `"Active"` is named (requirement
     2.4 runs cycles on it, so a peer must not read it as a standby),
