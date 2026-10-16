@@ -122,7 +122,7 @@ yet have a `reviews/` folder, and the skill will create one on its first run.
 The skill is **vendored** into this repository at
 `.claude/skills/project-review/` — a pinned copy of the upstream skill at
 `skills/project-review/` in `warwickallen/claude-skills` (upstream commit
-`ae6fd83`, vendored 2026-10-17), plus one local change upstream does
+`981af30`, vendored 2026-10-17), plus one local change upstream does
 not carry: new tech debt is filed as `pw::type:tech-debt` issues (R12, with
 R12a's cross-reference to the recommendation it mirrors), with a fallback
 for an unreachable tracker and, for a missing label, the handling that
