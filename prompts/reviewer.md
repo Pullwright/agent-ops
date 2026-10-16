@@ -328,10 +328,17 @@ your review:
    already tracked, so cite the existing issue rather than filing a duplicate
    — otherwise `gh issue create` in the target repo, labelled
    `pw::type:tech-debt`, naming this pull request in its body (e.g. "Noticed
-   while reviewing #631"). Then add a `Defers: #<n>` line to **this** pull
+   while reviewing #631"), with a `Priority: <band>` line — one of `Urgent`,
+   `High`, `Medium` or `Low`, one sentence naming why — so the band is set at
+   filing time rather than left for later triage: a defect that pages, blocks
+   other work, or affects correctness, safety or spend ranks above wording,
+   comment drift or tidying; `Medium` where you are unsure, the same default
+   an untriaged issue already carries. Then add a `Defers: #<n>` line to
+   **this** pull
    request's body — never a closing keyword, which would tell GitHub this PR
    finishes the deferred work too. Where the gap is a question rather than a
    scoped fix, `gh issue create` in the target repo instead, unlabelled, with
+   a `Priority: <band>` line the same way and
    no `Defers:` line. Either way, still leave a short pointer in your step-5
    comment for the human — the issue is the durable copy, the comment is what
    a reader notices first. A `Defers:` line with no code change alongside it

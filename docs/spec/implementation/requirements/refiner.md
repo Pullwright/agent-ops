@@ -442,12 +442,15 @@
     nothing until a human removes it by hand.
 
 39g. **Priority triage, a one-way ratchet the Refiner sets and the Script
-    alone enforces (D18 WI-11; agent-ops#414).** Every open `issues`-source
+    alone enforces (D18 WI-11; agent-ops#414; lifted from `issues` alone to
+    cover `tech-debt` too by agent-ops#2422).** Every open `issues`- or
+    `tech-debt`-source
     item carries GitHub's own `Priority` `IssueFieldSingleSelect` — the band
     requirement 15e already ranks the Co-Ordinator's walk by — and most of
-    the backlog never has it set: `gather-issues.sh`'s `priority` collapses
+    the backlog never has it set: `gather-issues.sh`'s and
+    `gather-tech-debt.sh`'s own `priority` collapses
     "unset", "unreadable" and "explicitly Medium" into the same value
-    (deliberately, to agree with the Co-Ordinator's own default), so it
+    (deliberately, to agree with the Co-Ordinator's own default), so each
     emits a second field, `priority_set` (boolean), for exactly this duty to
     read — true whenever *any* option is set on the field, even one outside
     the four names `priority` itself recognises (an organisation can add a
@@ -459,15 +462,17 @@
     below engages from every cycle's own exit trap unconditionally on the
     no-op fingerprint that digest feeds.
 
-    An `issues` entry with `priority_set: false` is a Refiner candidate
+    An `issues` or `tech-debt` entry with `priority_set: false` is a Refiner
+    candidate
     (requirement 39a) even when `refinements_map` already names it refined
     — the one exception to that exclusion in this whole file — marked
     `triage_only: true` (`refiner_candidate_items`, `lib/refinement.sh`) so
     the Refiner knows not to write a second specification for an item that
     already has one; every other requirement 39a exclusion (policy exempt,
     blocked, void, claimed) still applies unchanged. An entry with no
-    `priority_set` key at all — every non-`issues` source, and any `issues`
-    entry gathered before this requirement existed — never qualifies.
+    `priority_set` key at all — every source but `issues`/`tech-debt`, and
+    any such entry
+    gathered before this requirement existed — never qualifies.
 
     A repository this token cannot resolve `Priority` for at all — `ORG_ONLY`
     visibility without organisation membership, or no such field — must never
