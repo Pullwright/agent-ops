@@ -137,53 +137,6 @@ dependency_clearances() {
   printf '%s' "$out"
 }
 
-# dependency_refusal_reason ENTRY_JSON ISSUES_BY_REPO_JSON
-# Decide whether a needs_refinement-shaped ENTRY (`{repo, item, source,
-# reason, missing, evidence}`, from any reporting stage) asserts, as its
-# block, the same `Blocked-by:` dependency this cycle's own gate has already
-# resolved for that item — exclusion 4 (docs/spec/implementation/README.md
-# requirement 16), which belongs to the Script and must never be re-derived
-# from a model's own reading of an issue thread (issue #566: five items
-# mislabelled `needs_refinement` in one cycle, each naming a dependency issue
-# number that had already closed, because the entry's own prose — "blocked
-# on #410 (closed …)", never the raw `Blocked-by:` line itself — reasoned
-# past what the Script had already checked live).
-#
-# Prints nothing and returns 0 when ENTRY may be recorded ordinarily. Prints
-# a one-line reason and returns 1 when it must be refused instead — the same
-# calling convention as `refinement_entry_problem` in lib/refinement.sh, so a
-# caller can chain both bars the same way.
-#
-# Refusal requires all three:
-#   - ENTRY's `source` is (or defaults to, requirement 16a) `"issues"` — the
-#     `Blocked-by:` convention is documented for issue threads only.
-#   - ENTRY's own item's thread, read from ISSUES_BY_REPO_JSON, names at least
-#     one `Blocked-by:` reference (`dependency_refs`, the same parser
-#     `dependency_clearances` reads — never re-derived here, on the fix's own
-#     "the gate is already computed" terms). The thread is reachable at all
-#     only when `scripts/gather-issues.sh`'s live check this same cycle found
-#     every one of its references already resolved (the same proof
-#     `dependency_clearances` above reads: an item with an unresolved
-#     reference is dropped before it ever reaches this map, so being in it at
-#     all *is* the resolved verdict) — an item this cycle never gathered, or
-#     whose thread names no dependency at all, decides nothing here, on the
-#     same "unknown is never gone" terms `dependency_clearances` observes.
-#   - ENTRY's own `reason`/`missing`/`evidence` names that *same* reference by
-#     number — a genuine `#410` token, or the cross-repo slug verbatim, not
-#     merely the digits in passing. Deliberately not "cites a `Blocked-by:`
-#     line": the Co-Ordinator's own fields are prose about the thread, not a
-#     copy of it, so the check reads what the report actually asserts rather
-#     than demanding it echo the convention's exact keyword. An entry naming
-#     no reference the thread's own resolved list carries — a report that
-#     fails to rank, or is under-specified, for some unrelated reason — is
-#     untouched: this refuses only the specific, false, dependency claim,
-#     never the judgement half.
-#
-# ISSUES_BY_REPO_JSON is `agent-cycle.sh`'s own `issues_by_repo_json`
-# (`{"owner/repo": {"196": {"body": …, "comments": […]}}}`), computed once
-# per cycle from this cycle's freshly gathered `issues` candidates — reused
-# here exactly as `dependency_clearances` reuses it, never a second `gh`
-# read.
 # dependency_native_blocked_by SLUG NUMBER
 # Print, as a JSON array, every issue GitHub's native Issue Dependencies
 # feature records as blocking SLUG#NUMBER — one REST read of
@@ -273,32 +226,64 @@ dependency_native_open_ref() {
 # has no second repository's priorities to read; the text convention's own
 # cross-repo reach stays limited to the block/clear check, not inheritance.
 #
-# O(n^2) in the array's own length — one `dependency_refs` parse per item,
-# compared against every other item's own band — which is the same bound the
-# existing `issue_blocked_by_ref` live-check already pays per candidate, just
-# without a `gh` call per pair: a repository's open-issue count is already
-# capped (`ISSUE_PREFETCH_MAX_PAGES`, lib/issue-prefetch.sh), so this stays a
-# pure, cheap pass over data already in hand.
+# Costed in `jq` invocations, not in comparisons, because that is what
+# actually dominates: one pass over the whole array up front for every item's
+# number, band and thread, then — per item whose thread *could* name a
+# reference at all — one `dependency_refs` parse, and one small accumulation
+# per reference it names. The naive shape, one `jq` per item to pull that
+# item's own thread out of the array, re-parses the entire payload n times:
+# measured on this repository's own open-issue count (521 issues, 2.4 MB) it
+# cost 55 seconds a call, and both gatherers call it (agent-ops#2437 review).
+# With the lookups hoisted, the per-item work no longer scales with the
+# array's size, so this stays what the rest of this file is — a pure, cheap
+# pass over data already in hand, with no `gh` call anywhere in it.
 #
 # Always prints a JSON array; falls back to ISSUES_JSON unchanged on its own
 # jq failure, on the same "an unchanged set beats an emptied one" terms as
 # this codebase's other pure jq-backed fallbacks.
 issue_priority_inherit() {
-  local issues_json="${1:-[]}" numbers n thread refs ref own_priority own_rank raise_map='{}'
+  local issues_json="${1:-[]}" rows n thread thread_b64 refs ref own_priority own_rank raise_map='{}'
   jq -e 'type == "array"' <<<"$issues_json" >/dev/null 2>&1 || { printf '%s' "$issues_json"; return 0; }
-  numbers="$(jq -r '.[] | (.number // "" | tostring) | select(. != "")' <<<"$issues_json" 2>/dev/null || true)"
-  [[ -n "$numbers" ]] || { printf '%s' "$issues_json"; return 0; }
-  while IFS= read -r n; do
+  # One pass over the whole array for every item's number, own band and whole
+  # thread at once — never one `jq` per item over the entire payload, which is
+  # what the cost note above is about. The thread rides base64-encoded so a
+  # body carrying newlines or tabs survives its `@tsv` row intact; `@base64`
+  # emits a single unwrapped line, so the three fields can never collide with
+  # the row's own separators.
+  #
+  # The thread is emitted at all only for an item whose thread *could* name a
+  # reference: `dependency_refs` only ever matches a line whose own start,
+  # lowercased, is `blocked-by:` (optionally behind a `-`/`*` list marker), so
+  # a thread with no such substring anywhere cannot yield one. Deciding that
+  # here, inside the pass that already has the text, spends the loop's one
+  # `base64` fork per item only on the few that can matter. It is a strict
+  # pre-filter on what `dependency_refs` would itself have returned, never a
+  # second opinion on it: every line the parser matches contains the substring
+  # by construction, so nothing it would have found is dropped — the parser
+  # still decides which of those lines count and which tokens on them are
+  # valid.
+  rows="$(jq -r '.[]
+      | select((.number // "") != "")
+      | (((.body // "") + "\n" + (((.comments // []) | map(.body // "")) | join("\n")))) as $thread
+      | [((.number) | tostring),
+         (.priority // "Medium"),
+         (if ($thread | ascii_downcase | contains("blocked-by:")) then ($thread | @base64) else "" end)]
+      | @tsv' <<<"$issues_json" 2>/dev/null || true)"
+  [[ -n "$rows" ]] || { printf '%s' "$issues_json"; return 0; }
+  while IFS=$'\t' read -r n own_priority thread_b64; do
     [[ -n "$n" ]] || continue
-    thread="$(jq -r --arg n "$n" '.[] | select((.number // "" | tostring) == $n)
-                | (.body // "") as $b
-                | (((.comments // []) | map(.body // "")) | join("\n")) as $c
-                | $b + "\n" + $c' <<<"$issues_json" 2>/dev/null || true)"
+    [[ -n "$thread_b64" ]] || continue
+    thread="$(base64 -d <<<"$thread_b64" 2>/dev/null || true)"
     refs="$(dependency_refs "${thread:-}")"
     [[ "$(jq 'length' <<<"$refs" 2>/dev/null || echo 0)" != "0" ]] || continue
-    own_priority="$(jq -r --arg n "$n" '.[] | select((.number // "" | tostring) == $n) | (.priority // "Medium")' \
-      <<<"$issues_json" 2>/dev/null || printf 'Medium')"
-    own_rank="$(jq -n --arg p "$own_priority" '{Urgent:4,High:3,Medium:2,Low:1}[$p] // 2')"
+    # The same table the jq below applies, in bash: Medium, an unset band and
+    # an unrecognised one all rank 2.
+    case "${own_priority:-Medium}" in
+      Urgent) own_rank=4 ;;
+      High)   own_rank=3 ;;
+      Low)    own_rank=1 ;;
+      *)      own_rank=2 ;;
+    esac
     while IFS= read -r ref; do
       [[ -n "$ref" ]] || continue
       [[ "$ref" == */* ]] && continue
@@ -308,7 +293,7 @@ issue_priority_inherit() {
           elif $cur.rank == $r then .[$b].by = ((.[$b].by + [$by]) | unique)
           else . end' <<<"$raise_map" 2>/dev/null || printf '%s' "$raise_map")"
     done < <(jq -r '.[]' <<<"$refs" 2>/dev/null || true)
-  done <<<"$numbers"
+  done <<<"$rows"
   [[ "$raise_map" != "{}" ]] || { printf '%s' "$issues_json"; return 0; }
   jq -c --argjson raise "$raise_map" '
     def rank($p): {Urgent:4,High:3,Medium:2,Low:1}[$p // "Medium"] // 2;
@@ -320,6 +305,53 @@ issue_priority_inherit() {
         end ]' <<<"$issues_json" 2>/dev/null || printf '%s' "$issues_json"
 }
 
+# dependency_refusal_reason ENTRY_JSON ISSUES_BY_REPO_JSON
+# Decide whether a needs_refinement-shaped ENTRY (`{repo, item, source,
+# reason, missing, evidence}`, from any reporting stage) asserts, as its
+# block, the same `Blocked-by:` dependency this cycle's own gate has already
+# resolved for that item — exclusion 4 (docs/spec/implementation/README.md
+# requirement 16), which belongs to the Script and must never be re-derived
+# from a model's own reading of an issue thread (issue #566: five items
+# mislabelled `needs_refinement` in one cycle, each naming a dependency issue
+# number that had already closed, because the entry's own prose — "blocked
+# on #410 (closed …)", never the raw `Blocked-by:` line itself — reasoned
+# past what the Script had already checked live).
+#
+# Prints nothing and returns 0 when ENTRY may be recorded ordinarily. Prints
+# a one-line reason and returns 1 when it must be refused instead — the same
+# calling convention as `refinement_entry_problem` in lib/refinement.sh, so a
+# caller can chain both bars the same way.
+#
+# Refusal requires all three:
+#   - ENTRY's `source` is (or defaults to, requirement 16a) `"issues"` — the
+#     `Blocked-by:` convention is documented for issue threads only.
+#   - ENTRY's own item's thread, read from ISSUES_BY_REPO_JSON, names at least
+#     one `Blocked-by:` reference (`dependency_refs`, the same parser
+#     `dependency_clearances` reads — never re-derived here, on the fix's own
+#     "the gate is already computed" terms). The thread is reachable at all
+#     only when `scripts/gather-issues.sh`'s live check this same cycle found
+#     every one of its references already resolved (the same proof
+#     `dependency_clearances` above reads: an item with an unresolved
+#     reference is dropped before it ever reaches this map, so being in it at
+#     all *is* the resolved verdict) — an item this cycle never gathered, or
+#     whose thread names no dependency at all, decides nothing here, on the
+#     same "unknown is never gone" terms `dependency_clearances` observes.
+#   - ENTRY's own `reason`/`missing`/`evidence` names that *same* reference by
+#     number — a genuine `#410` token, or the cross-repo slug verbatim, not
+#     merely the digits in passing. Deliberately not "cites a `Blocked-by:`
+#     line": the Co-Ordinator's own fields are prose about the thread, not a
+#     copy of it, so the check reads what the report actually asserts rather
+#     than demanding it echo the convention's exact keyword. An entry naming
+#     no reference the thread's own resolved list carries — a report that
+#     fails to rank, or is under-specified, for some unrelated reason — is
+#     untouched: this refuses only the specific, false, dependency claim,
+#     never the judgement half.
+#
+# ISSUES_BY_REPO_JSON is `agent-cycle.sh`'s own `issues_by_repo_json`
+# (`{"owner/repo": {"196": {"body": …, "comments": […]}}}`), computed once
+# per cycle from this cycle's freshly gathered `issues` candidates — reused
+# here exactly as `dependency_clearances` reuses it, never a second `gh`
+# read.
 dependency_refusal_reason() {
   local entry="$1" issues_by_repo="${2:-{\}}" source repo item thread_text \
         thread_refs entry_text ref matched=""

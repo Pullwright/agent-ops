@@ -464,6 +464,45 @@ malformed_result="$(issue_priority_inherit 'not json at all')"
 assert_eq "malformed input falls back to itself unchanged" \
   "not json at all" "$malformed_result"
 
+# The whole-array pass this function reads its threads out of carries each
+# thread through a single `@tsv` row, base64-encoded for exactly this reason:
+# a body or comment holding the row's own separators — a tab, a newline —
+# must reach `dependency_refs` byte-for-byte, or a reference on a later line
+# of a multi-line body is silently lost.
+separator_fixture='[
+  {"number": 60, "priority": "Low", "body": "x", "comments": []},
+  {"number": 61, "priority": "Urgent",
+   "body": "A first line\twith a tab in it\nand a second line\n\t- Blocked-by: #60",
+   "comments": [{"body": "A comment\twith its own tab."}]}
+]'
+separator_result="$(issue_priority_inherit "$separator_fixture")"
+assert_eq "a reference behind a tab and a newline in the body is still found" \
+  "Urgent" "$(jq -r '.[] | select(.number == 60) | .priority' <<<"$separator_result")"
+assert_eq "...and a reference on a comment's own line is found the same way" \
+  "High" "$(jq -r '.[] | select(.number == 62) | .priority' \
+    <<<"$(issue_priority_inherit '[
+      {"number": 62, "priority": "Low", "body": "y", "comments": []},
+      {"number": 63, "priority": "High", "body": "No reference here.",
+       "comments": [{"body": "Line one.\nBlocked-by: #62"}]}]')")"
+
+# The pass only hands `dependency_refs` a thread that contains the substring
+# `blocked-by:` at all, since no line the parser matches can lack it. The
+# parser, not that pre-filter, still decides which lines count: a thread
+# whose only occurrence is mid-sentence names no reference, and a thread
+# whose `Blocked-by:` line is uppercased behind a list marker names one.
+prefilter_fixture='[
+  {"number": 70, "priority": "Low", "body": "z", "comments": []},
+  {"number": 71, "priority": "Urgent",
+   "body": "This was blocked-by: #70 at one point, in a sentence.", "comments": []},
+  {"number": 72, "priority": "Low", "body": "w", "comments": []},
+  {"number": 73, "priority": "High", "body": " * BLOCKED-BY: #72", "comments": []}
+]'
+prefilter_result="$(issue_priority_inherit "$prefilter_fixture")"
+assert_eq "a mid-sentence blocked-by: mention raises nothing" \
+  "Low" "$(jq -r '.[] | select(.number == 70) | .priority' <<<"$prefilter_result")"
+assert_eq "an uppercased Blocked-by: behind a list marker still raises" \
+  "High" "$(jq -r '.[] | select(.number == 72) | .priority' <<<"$prefilter_result")"
+
 echo
 if (( failures == 0 )); then
   echo "All dependency-gate assertions passed."
