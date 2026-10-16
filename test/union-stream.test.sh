@@ -179,8 +179,9 @@ lib_check crash_loop_verdict "$(declare -f crash_loop_verdict)" "${CRASH_LOOP_VE
 # `_pager_blocked_label_candidate_repos`, `refinement_blocked_label_stale`
 # and `refinement_blocked_label_orphaned` (whose `latest_attempt_failed` is
 # `_REFINEMENT_LEGACY_JQ_DEF`'s), and `pr-unreviewed` through
-# `_pager_pr_unreviewed_candidates` — so those bodies are appended to the
-# program checked, and test/pager-invariants.test.sh compares each
+# `_pager_pr_unreviewed_candidates` — so `pager_program_of` appends those
+# bodies to the program checked (a helper added to an invariant later must
+# be added there too), and test/pager-invariants.test.sh compares each
 # invariant's verdict over the reduction with its verdict over the whole
 # fixture besides. `review-pipeline-failing` is the one body that reads
 # event types and declares none: it reads them from the review union, through

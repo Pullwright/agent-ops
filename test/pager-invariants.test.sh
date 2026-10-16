@@ -309,11 +309,13 @@ fi
 # union, the verdict over that reduction must equal the verdict over the
 # whole fixture — the same `firing`, `evidence` and `nodes` — so a
 # declaration that misses a type a fixture uses fails here rather than
-# firing a quiet zero in production; the helpers an EVAL_FN reads through
-# (`blocked_items`, `refinement_blocked_label_stale`,
-# `_pager_blocked_label_candidate_repos`, `refinement_blocked_label_orphaned`,
-# `_pager_pr_unreviewed_candidates`) read types test/union-stream.test.sh's
-# program check cannot trace, and this comparison is what covers them. The
+# firing a quiet zero in production. test/union-stream.test.sh's program
+# check sees the helpers an EVAL_FN reads through (`blocked_items`,
+# `refinement_blocked_label_stale`, `_pager_blocked_label_candidate_repos`,
+# `refinement_blocked_label_orphaned`, `_pager_pr_unreviewed_candidates`)
+# only because its `pager_program_of` appends their bodies by hand, since
+# its checker cannot follow a call; this comparison is the second net, for a
+# type neither body shows. The
 # fixture is padded first with a record of an undeclared type
 # (`merge-observed`, the real union's commonest) and a record of another
 # type carrying the key's first declared type in a nested object — the one
@@ -842,8 +844,10 @@ assert_eq "an own-label-action add with no later remove, and the block cleared: 
 assert_eq "  ... evidence names the issue" "1" "$(grep -c 'o/r#5' <<<"$(jq -r '.evidence' <<<"$verdict")")"
 # The four helpers this reads through (`blocked_items`,
 # `refinement_blocked_label_stale`, `_pager_blocked_label_candidate_repos`,
-# `refinement_blocked_label_orphaned`) are what the declaration must cover
-# and what the program check in test/union-stream.test.sh cannot see into.
+# `refinement_blocked_label_orphaned`) are what the declaration must cover;
+# test/union-stream.test.sh's program check sees their bodies only because
+# its `pager_program_of` appends them by hand, and this comparison is the
+# net under that one.
 assert_reduced_verdict_eq blocked-label-orphaned "[]" "$orph_log"
 
 : > "$GH_CALLS_FILE"

@@ -70,7 +70,7 @@ agent-ops#1649). What a reader holds is what its answer is about:
   — over the tick's raw snapshot of the same union, `$raw_events_jsonl`,
   since it takes raw lines on stdin — and `blocked_items`/`void_items`/
   `draft_obsolete_flags` inside the item-lifecycle fold) each gather their
-  declared types in the one `jq` process that folds them. Three of those
+  declared types in the one `jq` process that folds them. Two of those
   folds, and the stand-down banner's `limit_union_record`, are handed only
   the lines of their declared types to begin with: `union_prefilter`
   (`lib/union-stream.sh`) keeps, with one byte-level `grep -F`, the lines

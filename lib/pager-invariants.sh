@@ -1755,13 +1755,17 @@ pager_remedy_pr_unreviewed() {
 # evaluation runs (agent-ops#2429). A key declared with no types reads
 # nothing from the union — the heartbeats, GitHub, or the review union
 # through PAGER_EVAL_REVIEW_UNION_LOG_FILE — and gets an empty file. The
-# declaration names every type the EVAL_FN's own program reads, which
-# `test/union-stream.test.sh` checks against the program text, and every
-# type a helper it calls reads, which that check cannot trace and so is
-# listed in the comment beside the declaration and covered by
+# declaration names every type the EVAL_FN's own program reads and every
+# type a helper it calls reads. `test/union-stream.test.sh` checks the
+# declaration against the program text, and because its checker cannot
+# follow a call, its `pager_program_of` appends the named helpers' bodies
+# (and the two jq definitions they read through) to that text by hand — so
+# a helper added to an invariant later must be added there too, and each
+# is listed in the comment beside its declaration — while
 # `test/pager-invariants.test.sh`'s whole-fixture-against-reduced-fixture
-# comparison instead. A type missed in either makes the invariant silently
-# see nothing of it.
+# comparison is the second net, which catches a type neither body shows. A
+# type missed in the declaration makes the invariant silently see nothing
+# of it.
 pager_register_builtin_invariants() {
   local stale_file_after_minutes="${1:-180}" cycle_interval_minutes="${2:-}"
   local firing_missed_file_after=""
@@ -1808,11 +1812,13 @@ pager_register_builtin_invariants() {
   pager_register work-order-repaired-rate pager_eval_work_order_repaired_rate owner-only \
     "More than pager_repair_rate_percent of a day's selections needed a work-order-repaired repair (agent-ops#821's own signature: a work order composed from trimmed input). Check the fit report and the trimmed candidates' own sizes directly. Retire this invariant once agent-ops#769's part (b) lands and agent-ops#1156 removes the gate this rate reads."
   pager_declare_events work-order-repaired-rate selection work-order-repaired
-  # blocked-label-orphaned reads through helpers the program check cannot
-  # trace: `blocked_items` (lib/cycle-state.sh, BLOCKED_ITEMS_EVENTS:
-  # attempt-failed, unblocked, recheck-clean), `refinement_blocked_label_stale`
-  # (lib/refinement.sh: own-label-action), `_pager_blocked_label_candidate_repos`
-  # (attempt-failed, own-label-action) and `refinement_blocked_label_orphaned`
+  # blocked-label-orphaned reads through helpers, whose bodies
+  # test/union-stream.test.sh's `pager_program_of` appends to the program it
+  # checks (a helper added here must be added there too): `blocked_items`
+  # (lib/cycle-state.sh, BLOCKED_ITEMS_EVENTS: attempt-failed, unblocked,
+  # recheck-clean), `refinement_blocked_label_stale` (lib/refinement.sh:
+  # own-label-action), `_pager_blocked_label_candidate_repos` (attempt-failed,
+  # own-label-action) and `refinement_blocked_label_orphaned`
   # (lib/refinement.sh's `latest_attempt_failed`: attempt-failed).
   pager_register blocked-label-orphaned pager_eval_blocked_label_orphaned \
     pipeline-act pager_remedy_blocked_label_orphaned
@@ -1836,9 +1842,9 @@ pager_register_builtin_invariants() {
   pager_register landing-refused-unknown pager_eval_landing_refused_unknown \
     pipeline-act pager_remedy_landing_refused_unknown
   pager_declare_events landing-refused-unknown landing-refused
-  # pr-unreviewed reads through `_pager_pr_unreviewed_candidates`, which the
-  # program check cannot trace: approver-verdict, approver-unreviewed-engaged,
-  # warning.
+  # pr-unreviewed reads through `_pager_pr_unreviewed_candidates`, whose body
+  # test/union-stream.test.sh's `pager_program_of` appends to the program it
+  # checks: approver-verdict, approver-unreviewed-engaged, warning.
   pager_register pr-unreviewed pager_eval_pr_unreviewed \
     pipeline-act pager_remedy_pr_unreviewed
   pager_declare_events pr-unreviewed approver-verdict approver-unreviewed-engaged warning

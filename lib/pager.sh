@@ -190,11 +190,13 @@ pager_register() {
 #
 # A type missed here makes the invariant silently see none of that type,
 # which is the quiet-zero failure `test/union-stream.test.sh` exists to
-# catch: it checks every built-in EVAL_FN's own program against this
-# declaration, and `test/pager-invariants.test.sh` checks that each
-# built-in's verdict over the reduced union equals its verdict over the whole
-# fixture, which covers the types read through helper functions the program
-# check cannot trace.
+# catch: it checks every built-in EVAL_FN's program against this
+# declaration — the function's own body, plus the bodies of the helpers it
+# reads through, which the test's `pager_program_of` appends by hand because
+# the checker cannot follow a call — and `test/pager-invariants.test.sh`
+# checks that each built-in's verdict over the reduced union equals its
+# verdict over the whole fixture, the second net for a type neither body
+# shows.
 pager_declare_events() {
   local key="$1"
   shift

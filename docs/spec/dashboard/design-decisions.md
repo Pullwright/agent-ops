@@ -1097,13 +1097,15 @@
     from the whole union only when a key files. Two tests keep a
     declaration honest, since a type missed in one makes its invariant see
     nothing of that type and report a quiet zero: `test/union-stream.test.sh`
-    checks every built-in evaluation function's own program against its
+    checks every built-in evaluation function's program against its
     declaration, in the three forms the programs use (`.event == "x"`,
-    `(.event // "") == "x"`, `map(.event) | index("x")`), and
-    `test/pager-invariants.test.sh` checks that each built-in's verdict over
-    the reduced fixture equals its verdict over the whole fixture, which
-    covers the types read through helper functions the program check cannot
-    trace.
+    `(.event // "") == "x"`, `map(.event) | index("x")`) — the function's
+    own body plus, since the checker cannot follow a call, the bodies of the
+    helpers two keys read through, which the test's `pager_program_of`
+    appends by hand, so a helper added to an invariant later must be added
+    there too — and `test/pager-invariants.test.sh` checks that each
+    built-in's verdict over the reduced fixture equals its verdict over the
+    whole fixture, the second net for a type neither body shows.
   - *`fleet_logs` sorts under `LC_ALL=C`.* The union's order is byte order by
     design, so it must not depend on the locale cron or a shell hands the
     caller; on the real union the C order was byte-identical to `C.UTF-8`'s

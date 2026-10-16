@@ -34,7 +34,8 @@
     in place. The remedy variables below (`PAGER_REMEDY_UNION_LOG_FILE`)
     keep the whole union. Every built-in invariant is declared
     (`pager_register_builtin_invariants`); `test/union-stream.test.sh`
-    checks each built-in EVAL_FN's own program against its declaration, and
+    checks each built-in EVAL_FN's program, with the bodies of the helpers
+    it reads through, against its declaration, and
     `test/pager-invariants.test.sh` checks that each built-in's verdict over
     the reduced fixture equals its verdict over the whole one. REMEDY_CLASS is one of
     `pipeline-act` (REMEDY_ARG names a shell function, `REMEDY_ARG KEY
