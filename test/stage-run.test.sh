@@ -499,6 +499,38 @@ assert_eq "300 seeds at weight 2:1 split within ten points of the 66.7% api woul
 assert_eq "...and every one of the 300 drawn lanes was one of the two configured" \
   "300" "$(( api_draws + sub_draws ))"
 
+# --- 6a1. The shipped lanes block draws the split its own weights state -----
+# Read back through `providers_load`, the resolution every cycle script uses,
+# rather than repeated, so the credit mix's change of weights (#2238: 1:1,
+# then 1:9) needs no change here. Run in a subshell, because providers_load
+# replaces PROVIDER_LANES and the scenarios below set their own. Both
+# credentials are present, as on a node that holds the key.
+shipped_draw="$(
+  providers_load "$(jq -c '.providers' "$SCRIPT_DIR/config.json")"
+  lanes="${PROVIDER_LANES[anthropic]}"
+  w_api="$(jq -r '.api.weight' <<<"$lanes")"
+  w_sub="$(jq -r '.subscription.weight' <<<"$lanes")"
+  api_n=0 sub_n=0
+  for ((i = 0; i < 300; i++)); do
+    case "$(stage_lane_draw anthropic claude-code "shipped-seed-$i")" in
+      api) api_n=$(( api_n + 1 )) ;;
+      subscription) sub_n=$(( sub_n + 1 )) ;;
+    esac
+  done
+  printf '%s %s %s %s\n' "$w_api" "$w_sub" "$api_n" "$sub_n"
+)"
+read -r shipped_w_api shipped_w_sub shipped_api_n shipped_sub_n <<<"$shipped_draw"
+shipped_want_pct=$(( shipped_w_api * 100 / (shipped_w_api + shipped_w_sub) ))
+shipped_api_pct=$(( shipped_api_n * 100 / 300 ))
+assert_eq "the shipped lanes block, at ${shipped_w_api}:${shipped_w_sub}, draws api within ten points of ${shipped_want_pct}%" \
+  "within tolerance" \
+  "$(if (( shipped_api_pct >= shipped_want_pct - 10 && shipped_api_pct <= shipped_want_pct + 10 )); then echo "within tolerance"; else echo "$shipped_api_pct% api"; fi)"
+assert_eq "...and draws every lane its weights open at least once" \
+  "yes" \
+  "$(if (( (shipped_w_api == 0 || shipped_api_n > 0) && (shipped_w_sub == 0 || shipped_sub_n > 0) )); then echo yes; else echo "api $shipped_api_n, subscription $shipped_sub_n"; fi)"
+assert_eq "...and every one of the 300 drawn lanes was one of the two configured" \
+  "300" "$(( shipped_api_n + shipped_sub_n ))"
+
 # --- 6a2. The seed is the launch's own identifier, not just the stage name -
 # review round on PR #2385: review-cycle.sh and monitor-cycle.sh never set
 # `cycle_id` (only agent-cycle.sh does), so before that fix every launch of
