@@ -283,9 +283,26 @@
 
       `lock.json` is never published (`scripts/state-sync.sh`
       excludes it), so "holds no lock" is derived purely from the union log:
-      a node's own newest cycle-start/cycle-end/cycle-skipped event being a
-      `cycle-start` means that cycle has not yet ended, so a long
-      *legitimate* cycle is never mistaken for a missed one. Staleness itself
+      grouping a node's own cycle-start/cycle-end/cycle-skipped events by
+      the `cycle` id they share, any group whose `cycle-start` has no
+      matching `cycle-end`, or any `cycle-skipped` whose own `detail` names
+      a pid holding the lock (`acquire_lock`'s own log format), is evidence
+      the lock is, or very recently was, held — whatever the node's newest
+      *event* happens to be, so a long *legitimate* cycle is never mistaken
+      for a missed one, and a chained continuation's own
+      `cycle-start`/`cycle-skipped`/`cycle-end` becoming the node's newest
+      events never hides an older cycle that still holds the lock
+      (agent-ops#1412: a second cycle chaining in while a first one is still
+      running writes exactly that shape within a second or two of the
+      first). That evidence is trusted only while it is younger than a
+      four-hour bound — the same default `lock_stale_after` documents
+      elsewhere for how long a legitimate cycle may hold the lock — because a
+      container recreation leaves its last `cycle-start` permanently
+      unmatched, and nothing will ever write that cycle an end: trusting an
+      unmatched start indefinitely would read a stale orphan as a lock held
+      forever and silence a genuine missed firing on exactly the node this
+      invariant exists to catch (agent-ops#1412's own 2026-10-15 follow-up,
+      which found such an orphan on three fleet nodes). Staleness itself
       is measured from the newer of the node's last `cycle-start` and last
       `cycle-skipped`, not from `cycle-start` alone, so a cycle that outlasts
       2× the interval while its scheduler keeps ticking (and correctly
@@ -307,8 +324,23 @@
       Evidence carries each
       firing node's own recent cycle-duration histogram (up to five
       completed cycles, matched by the `cycle` id every start/end pair
-      shares) — the acceptance's own "file, with the node's cycle-duration
-      histogram".
+      shares, excluding any cycle whose own group also carries a
+      lock-contention `cycle-skipped` — one whose `detail` names the pid
+      holding the lock: such a tick's start/skip/end triple
+      completes in about a second, and counting it alongside real cycles
+      would read as a run of near-zero-minute entries — the all-zero
+      histogram agent-ops#1412 found paging two mid-cycle nodes on
+      2026-10-15. The test is on that `detail` rather than on any
+      `cycle-skipped` in the group because requirement 11a's overrun-slot
+      skips (`reason: "overlap"`) are logged by the long cycle itself,
+      before its own `cycle-end` and so under its own `cycle` id, so a
+      group-wide exclusion would drop every cycle that outran a schedule
+      slot — precisely the durations this histogram exists to show) —
+      the acceptance's own "file, with the node's
+      cycle-duration histogram". A firing node whose own last `cycle-start`
+      is unmatched but too old to trust (past the bound above) has that
+      attempt's own age named in the evidence alongside the histogram,
+      rather than silently dropped.
     - **`node-stale`** (owner-only). Fires when a node's `heartbeat_age_s`
       (`fleet_publication_status`, requirement 2.5, carried by every row
       including this node's own) exceeds 2× `node_stale_after_minutes` —
