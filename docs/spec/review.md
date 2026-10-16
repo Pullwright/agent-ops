@@ -124,10 +124,12 @@ The skill is **vendored** into this repository at
 `skills/project-review/` in `warwickallen/claude-skills` (upstream commit
 `ae6fd83`, vendored 2026-10-17), plus one local change upstream does
 not carry: new tech debt is filed as `pw::type:tech-debt` issues (R12, with
-R12a's cross-reference to the recommendation it mirrors), with fallbacks
-for an unreachable tracker and for a missing label, wherever `SKILL.md` and
-`references/output-templates.md` describe filing it (#919, #1937). That
-change is this product's policy (D15), not the general skill's. It is
+R12a's cross-reference to the recommendation it mirrors), with a fallback
+for an unreachable tracker and, for a missing label, the handling that
+standing decision #942 sets (create the label or, if that fails, file
+unlabelled and name the remedy), wherever `SKILL.md` and
+`references/output-templates.md` describe filing it (#919, #1937, #2464).
+That change is this product's policy (D15), not the general skill's. It is
 exactly what `diff -r` between this copy and upstream at the pinned commit
 shows, ignoring `evals/`, so a re-sync carries that difference onto
 upstream's newer commit, and the same `diff -r` against the new commit
@@ -995,16 +997,17 @@ R11. **Run the skill end-to-end.** Invoke the vendored `project-review` skill
    and follow it to completion: produce the report set (index, summary,
    findings, recommendations, improvement prompts) in `report_dir` — the
    directory the runtime input names (R4a) — and file the debt it surfaces
-   per R12. The skill's own resume scan (its Step 0) treats `report_dir` as
-   a review folder the caller named, so it looks for an interrupted review's
-   `review-state.json` in `report_dir` and its dated siblings, which for a
-   repository on R4a's default format are the skill's own default,
-   `reviews/project-review-*/`. No run of this pipeline leaves an unfinished
-   checkpoint behind — R7 deletes each run's clone, R9 admits no resumption,
-   and the book-keeping below deletes the state file before anything is
-   committed — so the scan finds no review of the pipeline's own to resume;
-   a state file committed by another route is passed over while its status
-   is `complete`. The injected skill under
+   per R12. `report_dir` is the review folder itself — what the skill's
+   Step 0, item 4 calls a review folder the caller names — never a
+   directory to create a dated folder inside, whatever shape R4a's format
+   gives its path. Every run is a fresh review: where the skill's resume
+   scan finds a `review-state.json` in `report_dir` or one of its dated
+   siblings, the Reviewer-Agent starts afresh in `report_dir` whatever
+   status that file records. Resuming a dated sibling's review would
+   continue it in that sibling's folder, outside `report_dir`. No run of
+   this pipeline leaves such a file behind: R7 deletes each run's clone, R9
+   admits no resumption, and the book-keeping below deletes the state file
+   before anything is committed. The injected skill under
    `.claude/skills/project-review/` is *tooling staged for this run*, **not**
    part of the repository under review: exclude it from the review's scope and
    findings, and never `git add` it (R5b also git-excludes it as a backstop).
@@ -1521,7 +1524,7 @@ state only what is.
   (review yields to a running cycle) keep them from fighting over quota.
 - **The skill is vendored into the orchestrator and injected into the clone**,
   not committed into the product repos. Reproducible (pinned, in this repo's
-  version control, not the machine's symlinked global skill), keeps the product
+  version control, not a machine's global copy of the skill), keeps the product
   repos clean, keeps the review out of its own scope, and needs no pull request
   into two protected product repositories to switch the pipeline on.
 - **The review PR is raised ready, not draft.** The review is the deliverable;

@@ -41,7 +41,7 @@ Establish the basics before reading any code:
 
    In the Claude.ai chat, where the real repository is not writable, put whichever folder this order chooses under `/mnt/user-data/outputs/` in place of the project root (by default `/mnt/user-data/outputs/reviews/project-review-YYYY-MM-DD/`) and present it to the user at the end.
 
-   **The same order decides where Step 0's resume scan looks for a `review-state.json`**; this is the rule's full statement, which Step 0's opening paragraph and `references/resumability.md` only summarise. For a named review folder, scan that folder and its dated siblings — the same path with every date component in it (a year, month, day or day of the year) replaced by `*`, so `docs/reviews/project-review-2026-07-07/` is scanned as `docs/reviews/project-review-*/` and `reviews/2026/07/07/` as `reviews/*/*/*/` — because an interrupted review's folder carries the date the review *started*, not today's; a named folder with no date component in its path is scanned alone. For a named directory, scan `project-review-*/` inside it. Otherwise, scan `reviews/project-review-*/` under the project root.
+   **The same order decides where Step 0's resume scan looks for a `review-state.json`**; this is the rule's full statement, which Step 0's opening paragraph and `references/resumability.md` only summarise. For a named review folder, scan that folder and its dated siblings: the folders whose path is the named one with its date written for another day, in the same format, and nothing else different. So `docs/reviews/project-review-2026-07-01/` is a sibling of a named `docs/reviews/project-review-2026-07-07/`, and `reviews/2026/06/30/` is a sibling of `reviews/2026/07/07/`, but `docs/reviews/project-review-2026-07-01-2/`, `docs/reviews/archive/` and `reviews/archive/2026/notes/` are not. The siblings matter because an interrupted review's folder carries the date the review *started*, not today's. A named folder with no date in its path is scanned alone. For a named directory, scan `project-review-*/` inside it. Otherwise, scan `reviews/project-review-*/` under the project root.
 5. **Create the folder and the initial `review-state.json`** as described in `references/resumability.md`. From this point on, follow that reference's checkpoint discipline: persist work to `worknotes/` the moment each unit of work finishes, and keep the state file current, so that a fresh session could resume with at most one dimension's work lost.
 
 ### Step 1 — Reconnaissance (breadth)
@@ -123,13 +123,25 @@ its only trigger.
 
 **When the tracker is reachable but the repository has no
 `pw::type:tech-debt` label**, that is a separate failure from having no
-tracker at all: do not create the label yourself — creating a
-product-namespaced label mutates a repository the review was asked only to
-read, which the "Anywhere" operating condition above says to ask about
-first. Where a user is present, ask once whether to create it. Where they
-decline, or no one is present to ask, file the issue **unlabelled**, name
-the intended label in its body, and record in the review output that the
-item is unlabelled and which label belongs on it.
+tracker at all, and the label's absence must never cost the filing. Create
+the label first, with the same colour and description Pullwright gives it:
+
+```
+gh label create "pw::type:tech-debt" --color 5319e7 --description "Tech debt: a known gap or shortcut with a knowable fix. Managed by Pullwright."
+```
+
+This is not the kind of change the "Anywhere" operating condition above
+asks about first: labels under Pullwright's own prefix (`pw::` today) are
+Pullwright's to manage, which is what the prefix exists to say. Record in
+the review output that the review created the label, and that Pullwright
+manages the labels under that prefix. If creating it fails for any reason —
+no triage rights, or anything else — file the issue **unlabelled**, name
+the intended label in its body, and record in the review output which items
+are unlabelled, the `gh label create` command above, and why the label
+matters: the tech-debt work band selects on it, and because only a
+collaborator with triage rights can apply a label, it is what lets an
+issue's membership of that band be trusted while the issue's body stays
+untrusted data.
 
 **Language.** Match the spelling conventions of the project's existing documentation where they are evident; otherwise use British English.
 
