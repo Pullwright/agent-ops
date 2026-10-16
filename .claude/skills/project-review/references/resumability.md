@@ -4,7 +4,7 @@ A full project review is a large piece of work, and it may be interrupted before
 
 ## The state file and working notes
 
-Everything needed to resume lives inside the review output folder, a dated subdirectory of `reviews/`:
+Everything needed to resume lives inside the review output folder. Where SKILL.md's Step 0, item 4 ("Decide the output location"), puts that folder depends on what the caller named; by default it is a dated subdirectory of `reviews/`, as shown here:
 
 ```
 reviews/
@@ -61,12 +61,12 @@ Checkpoint at every one of these moments, by writing the relevant worknotes file
 
 ## Resuming
 
-At the very start of Step 0, before anything else, look for `reviews/project-review-*/review-state.json` under the project root (and, in the Claude.ai chat, among the uploads — the user may have uploaded a partial review folder alongside the project). If one is found with a status other than `complete`:
+At the very start of Step 0, before anything else, look for `review-state.json` wherever SKILL.md's Step 0, item 4, says the resume scan looks (in a folder the caller named and its dated siblings, inside a directory the caller named, or otherwise in `reviews/project-review-*/` under the project root) and, in the Claude.ai chat, among the uploads (the user may have uploaded a partial review folder alongside the project). If one is found with a status other than `complete`:
 
 1. Read the state file and every existing worknotes file. Together with the review documents already written, these restore the session's knowledge; do not redo completed steps.
 2. Verify the revision. If the project's current revision matches the state file, resume **automatically**: tell the user, in one sentence, that an interrupted review from `<started>` is being resumed at `<first pending item>`, and carry on. Do not ask permission — automatic resumption is the designed behaviour.
 3. If the revision has *changed* since the interruption, the saved findings may be stale; this is the one case where the user decides. Briefly offer: resume anyway (fast, possibly stale), or start afresh. If the user explicitly asked for a fresh review, honour that without asking.
-4. Resume into the *existing* folder even if its date is no longer today's; note the resumption date in the index's date line (e.g., "Started 2026-07-01, completed 2026-07-07.").
+4. Resume into the *existing* folder even if its date is no longer today's, or differs from the date in a folder the caller named; note the resumption date in the index's date line (e.g., "Started 2026-07-01, completed 2026-07-07.").
 
 ## Environment caveat for the Claude.ai chat
 

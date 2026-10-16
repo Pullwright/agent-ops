@@ -278,9 +278,10 @@ its own to drift-check.
 
 The vendored `project-review` skill that `review-cycle.sh` stages into each
 clone at runtime is product source (D7) and stays. Nothing inside it is
-Poetic-specific (`docs/PHASE-1-POETIC-SPECIFICS-AUDIT.md` finding 15: the
-gap there is untracked provenance, not a Poetic-specific to remove, and is
-better filed as its own tech-debt item than folded into this plan).
+Poetic-specific (`docs/PHASE-1-POETIC-SPECIFICS-AUDIT.md` finding 15). Its
+provenance — the upstream commit it is pinned to and the local change it
+carries — is recorded in `docs/spec/review.md`'s "The `project-review`
+skill (vendored)" section, so nothing about it belongs in this plan.
 
 ### `tech-debt/` and `TECH-DEBT.md`
 

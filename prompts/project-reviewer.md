@@ -45,7 +45,10 @@ Use `review_date` as the review's date **throughout** — the branch and the PR
 title — and `report_dir` as the output folder, exactly as given: the Script has
 already resolved it (a GNU `date` format string, configurable per repository,
 `docs/spec/review.md` requirement R4a) — never derive a folder name of
-your own from `review_date`. Use `branch` as the branch name and `pr_label` as
+your own from `review_date`. `report_dir` is the review folder itself — what
+the skill's Step 0, item 4 calls a review folder the caller names — never a
+directory to create a dated `project-review-…` folder inside, however its
+path reads. Use `branch` as the branch name and `pr_label` as
 the PR label exactly as given.
 
 `instructions` and `context` are optional and may be empty arrays: this
@@ -204,6 +207,13 @@ All target repos follow these rules:
    to parallelise the dimension reviews across subagents, as the skill
    describes; keep each subagent on the lowest-cost model tier likely to do
    its slice correctly.
+
+   **This is always a fresh review.** If the skill's Step 0 resume scan
+   finds a `review-state.json` — in `report_dir` or in one of its dated
+   siblings, whatever status the file records — do not resume from it: you
+   are the caller asking for a fresh review, so start afresh in
+   `report_dir`. Resuming a dated sibling's review would continue it in
+   that sibling's folder, outside `report_dir`.
 
    **State a recommendation's default fix.** Where an `R-NN` recommendation's
    *Approach* in `03-recommendations.md` names more than one candidate fix,

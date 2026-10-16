@@ -121,22 +121,33 @@ yet have a `reviews/` folder, and the skill will create one on its first run.
 
 The skill is **vendored** into this repository at
 `.claude/skills/project-review/` — a pinned copy of the upstream skill at
-`~/Code/claude-skills/skills/project-review` (upstream commit `2c8e18c`,
-vendored 2026-07-19). Only the runtime surface is vendored: `SKILL.md` and
-`references/` (the four reference documents the skill reads); the upstream
-`evals/` directory is dev-only and is intentionally omitted.
+`skills/project-review/` in `warwickallen/claude-skills` (upstream commit
+`981af30`, vendored 2026-10-17), plus one local change upstream does
+not carry: new tech debt is filed as `pw::type:tech-debt` issues (R12, with
+R12a's cross-reference to the recommendation it mirrors), with a fallback
+for an unreachable tracker and, for a missing label, the handling that
+standing decision #942 sets (create the label or, if that fails, file
+unlabelled and name the remedy), wherever `SKILL.md` and
+`references/output-templates.md` describe filing it (#919, #1937, #2464).
+That change is this product's policy (D15), not the general skill's. It is
+exactly what `diff -r` between this copy and upstream at the pinned commit
+shows, ignoring `evals/`, so a re-sync carries that difference onto
+upstream's newer commit, and the same `diff -r` against the new commit
+then shows nothing else. Only the runtime surface is vendored: `SKILL.md`
+and `references/` (the four reference documents the skill reads); the
+upstream `evals/` directory is dev-only and is intentionally omitted.
 
 Two decisions are deliberate:
 
-- **Vendored, not relied on ambient.** The machine's globally-available
-  `project-review` skill is a *symlink* into the authoring repo
-  (`~/.claude/skills/project-review` → `~/Code/claude-skills/...`) — machine
-  state outside this repository's version control. Vendoring a pinned copy
-  makes the pipeline reproducible from `agent-ops` alone and immune to the
-  authoring repo moving or changing under it. Re-sync the copy deliberately
-  when you want a newer skill; treat upstream as the source and this copy as a
-  pinned deployment, exactly as `poetic` vendors framework files into consumer
-  repos.
+- **Vendored, not relied on ambient.** A machine's globally available
+  `project-review` skill, wherever it comes from (a clone of
+  `warwickallen/claude-skills`, a link into one, or an account-synced copy),
+  is machine state outside this repository's version control. Vendoring a
+  pinned copy makes the pipeline reproducible from `agent-ops` alone and
+  immune to upstream, or a machine's copy of it, changing under it. Re-sync
+  the copy deliberately when you want a newer skill; treat upstream as the
+  source and this copy as a pinned deployment, exactly as `poetic` vendors
+  framework files into consumer repos.
 - **In the orchestrator, not the product repos.** The review runs in an
   *ephemeral clone* of each product repo (the pipeline never touches the
   working copies under `~/Code`, and `main` is protected). So the skill must
@@ -986,7 +997,17 @@ R11. **Run the skill end-to-end.** Invoke the vendored `project-review` skill
    and follow it to completion: produce the report set (index, summary,
    findings, recommendations, improvement prompts) in `report_dir` — the
    directory the runtime input names (R4a) — and file the debt it surfaces
-   per R12. The injected skill under
+   per R12. `report_dir` is the review folder itself — what the skill's
+   Step 0, item 4 calls a review folder the caller names — never a
+   directory to create a dated folder inside, whatever shape R4a's format
+   gives its path. Every run is a fresh review: where the skill's resume
+   scan finds a `review-state.json` in `report_dir` or one of its dated
+   siblings, the Reviewer-Agent starts afresh in `report_dir` whatever
+   status that file records. Resuming a dated sibling's review would
+   continue it in that sibling's folder, outside `report_dir`. No run of
+   this pipeline leaves such a file behind: R7 deletes each run's clone, R9
+   admits no resumption, and the book-keeping below deletes the state file
+   before anything is committed. The injected skill under
    `.claude/skills/project-review/` is *tooling staged for this run*, **not**
    part of the repository under review: exclude it from the review's scope and
    findings, and never `git add` it (R5b also git-excludes it as a backstop).
@@ -1503,7 +1524,7 @@ state only what is.
   (review yields to a running cycle) keep them from fighting over quota.
 - **The skill is vendored into the orchestrator and injected into the clone**,
   not committed into the product repos. Reproducible (pinned, in this repo's
-  version control, not the machine's symlinked global skill), keeps the product
+  version control, not a machine's global copy of the skill), keeps the product
   repos clean, keeps the review out of its own scope, and needs no pull request
   into two protected product repositories to switch the pipeline on.
 - **The review PR is raised ready, not draft.** The review is the deliverable;
