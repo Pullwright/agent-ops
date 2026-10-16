@@ -49,6 +49,15 @@
   "approver_model_default": "claude-sonnet-5",
   "approver_model_complex": "claude-opus-5",
   "approver_model_critical": "claude-fable-5",
+  "providers": {
+    "anthropic": {
+      "substrate": "claude-code",
+      "lanes": {
+        "api": {"weight": 1, "enabled": true},
+        "subscription": {"weight": 1, "enabled": true}
+      }
+    }
+  },
   "pr_label": "autonomous-agent",
   "branch_prefix": "agent/",
   "max_open_agent_prs": 16,
