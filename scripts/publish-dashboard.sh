@@ -544,37 +544,6 @@ trap publish_cleanup EXIT
 scratch_enter publish-dashboard || exit 1
 work_tmp="$SCRATCH_DIR"
 
-# The transient-refusal verdict (lib/crash-loop.sh, issue #1073): a
-# `crash_loop_verdict` run whose `escalate` is `false` — every failure it
-# counted was the API being unreachable, not refusing a request — never
-# reaches an escalation issue (requirement 2.7), so this is the only place
-# it is ever surfaced. Read straight from the same union `agent-cycle.sh`
-# itself scans (`fleet_logs`, never `read_events`'s already-`fromjson`'d
-# stream — `crash_loop_verdict` wants the same raw-lines-on-stdin shape the
-# Script's own `union_log` file is), so a sustained outage shows here without
-# needing this node to have run the cycle that would have escalated it.
-# `crash_loop_after` 0 (or absent) disables this the same way it disables the
-# escalation itself — a run this reads back is one whose threshold is off.
-# Read once the working set is entered, as every union read here is:
-# `fleet_logs` sets its candidate lines aside in TMPDIR, and its sort spools
-# there too (agent-ops#1827).
-#
-# `crash_loop_verdict` now prints one JSON-Lines object per independently
-# crash-looping repository (agent-ops#1630); `--argjson` below needs exactly
-# one JSON value, so only the first matching line is kept — a repository this
-# dashboard omits when more than one is transient at once is tracked
-# separately (agent-ops#1624), not a regression this defensive `head -n1`
-# introduces.
-crash_loop_after_dashboard="$(cfg_int '.crash_loop_after')"
-[[ "$crash_loop_after_dashboard" =~ ^[0-9]+$ ]] || crash_loop_after_dashboard=0
-provider_unreachable_json='null'
-if (( crash_loop_after_dashboard > 0 )); then
-  provider_unreachable_json="$(fleet_logs "$state_dir" "$peers_dir" log.jsonl \
-    | crash_loop_verdict "$crash_loop_after_dashboard" 2>/dev/null \
-    | jq -c 'select(.escalate == false)' 2>/dev/null | head -n1)"
-  [[ -z "$provider_unreachable_json" ]] && provider_unreachable_json='null'
-fi
-
 if [[ -n "$now_override" ]]; then
   now_iso="$now_override"
   now_epoch="$(date -u -d "$now_iso" +%s)"
@@ -1178,10 +1147,16 @@ raw_events_jsonl="$work_tmp/raw-events.jsonl"
 # invisible (agent-ops#794). Both counts come
 # from the one snapshot, which is what makes the difference a fact about the
 # window rather than about how much the pipelines appended between two reads;
-# it also keeps this to a single `fleet_logs` — a second one is a whole extra
-# read-and-sort of the fleet's nine megabytes on the per-tick hot path, which
-# is the cost the file-not-a-pipe note above was written about in the first
-# place.
+# it also keeps this to a single `fleet_logs`: this is the tick's only read of
+# `log.jsonl`, and every later consumer — the transient-refusal verdict just
+# below, the pager's own state reads, the payload's `pager` array — reads this
+# snapshot (or, for the pager, an extract of it) rather than taking the union
+# again. A second `fleet_logs` is a whole extra read-and-sort of the fleet's
+# 124 MB (2026-10-16) on the per-tick hot path, which is the cost the
+# file-not-a-pipe note above was written about in the first place, and the
+# pager's per-key re-reads of a fresh re-union were the largest measured cost
+# of a GitHub tick (agent-ops#2429); `test/publish-union-once.test.sh` pins
+# the count.
 #
 # `fleet_logs` itself takes a NUL-holed or spliced line apart before its sort
 # (#2037), so such a line never reaches the raw file to be counted there; it
@@ -1195,6 +1170,38 @@ read_events "$raw_events_jsonl" > "$events_jsonl" 2>/dev/null || : > "$events_js
 dropped_log_lines=$(( $(count_lines "$raw_events_jsonl") - $(count_lines "$events_jsonl") ))
 (( dropped_log_lines >= 0 )) || dropped_log_lines=0
 dropped_log_lines=$(( dropped_log_lines + $(union_damage_count "$raw_events_damage") ))
+# --- The transient-refusal verdict, off the same snapshot --------------------
+# lib/crash-loop.sh's `crash_loop_verdict` (issue #1073): a run whose
+# `escalate` is `false` — every failure it counted was the API being
+# unreachable, not refusing a request — never reaches an escalation issue
+# (requirement 2.7), so this is the only place it is ever surfaced, and a
+# sustained outage shows here without needing this node to have run the cycle
+# that would have escalated it. It reads `$raw_events_jsonl`, the tick's own
+# snapshot of the same union `agent-cycle.sh` itself scans, and never
+# `$events_jsonl`: `crash_loop_verdict` wants the raw-lines-on-stdin shape the
+# Script's own `union_log` file has, not `read_events`'s already-`fromjson`'d
+# stream. It reads the snapshot rather than a `fleet_logs` of its own because
+# it is the same union either way, and because its own read sat ahead of the
+# no-op short-circuit above, so a tick that short-circuit ended had built the
+# whole 124 MB union before deciding to skip; such a tick now reads nothing at
+# all (agent-ops#2429). `crash_loop_after` 0 (or absent) disables this the
+# same way it disables the escalation itself — a run this reads back is one
+# whose threshold is off.
+#
+# `crash_loop_verdict` prints one JSON-Lines object per independently
+# crash-looping repository (agent-ops#1630); `--argjson` below needs exactly
+# one JSON value, so only the first matching line is kept — a repository this
+# dashboard omits when more than one is transient at once is tracked
+# separately (agent-ops#1624), not a regression this defensive `head -n1`
+# introduces.
+crash_loop_after_dashboard="$(cfg_int '.crash_loop_after')"
+[[ "$crash_loop_after_dashboard" =~ ^[0-9]+$ ]] || crash_loop_after_dashboard=0
+provider_unreachable_json='null'
+if (( crash_loop_after_dashboard > 0 )); then
+  provider_unreachable_json="$(crash_loop_verdict "$crash_loop_after_dashboard" < "$raw_events_jsonl" 2>/dev/null \
+    | jq -c 'select(.escalate == false)' 2>/dev/null | head -n1)"
+  [[ -z "$provider_unreachable_json" ]] && provider_unreachable_json='null'
+fi
 # --- Full-log readers stream rather than slurp (agent-ops#1649) --------------
 # The readers of `$events_jsonl` below fold it as a stream — `jq -n` over
 # `inputs`, with `reduce`/`foreach` for an aggregate — or keep only the events
@@ -1850,6 +1857,28 @@ status_json="$(jq -n \
       stage_health: $stage_health,
       review_stage_health: $review_stage_health
     }')"
+
+# --- The review-log union, built once for every consumer ---------------------
+# `review-log.jsonl` is the review pipeline's own log, fleet-replicated like
+# `log.jsonl` (scripts/state-sync.sh excludes neither) and a second fleet-wide
+# union beside `$events_jsonl`, which covers `log.jsonl` alone. It is built
+# here, once, and read by four consumers: the stage-gap series, the constraint
+# panel's node time-state fold and the stage budgets (all FULL-only, through
+# `review_events_union` below, issue #1586), and the pager's
+# `review-pipeline-failing` invariant (agent-ops#1282, WITH_GITHUB-only).
+# Gated on the union of its consumers' gates — a fast tick without GitHub has
+# no reader for it and gets an empty file, which every consumer already treats
+# as "no review events" — so the fleet's review logs are read and sorted at
+# most once a tick, never once per consumer (agent-ops#2429). `WITH_GITHUB`
+# implies `FULL` above, so the second term states the pager's own need rather
+# than a path a tick can take today.
+review_log_union="$work_tmp/review-log-union.jsonl"
+if (( FULL || WITH_GITHUB )); then
+  fleet_logs "$state_dir" "$peers_dir" review-log.jsonl > "$review_log_union" 2>/dev/null \
+    || : > "$review_log_union"
+else
+  : > "$review_log_union"
+fi
 
 if (( FULL )); then
 # --- everything to the matching `fi` is a full-build-only roll-up: it reads
@@ -2565,14 +2594,8 @@ counts_merged="$(jq -c --slurpfile v "$scorecards_file" \
 # same word (the same distinction the by-actor spend chart already draws).
 #
 # `review-log.jsonl` is a *second* fleet-wide log union — `$events_jsonl` covers
-# `log.jsonl` alone — fetched here once and reused by the constraint panel and
-# the stage budgets below (issue #1586), both of which would otherwise fetch
-# it again themselves: reading the fleet's logs twice (or three times) in one
-# tick is exactly the per-tick cost that panel's own note on
-# `review_log_union` already exists to avoid paying.
-review_log_union="$work_tmp/review-log-union.jsonl"
-fleet_logs "$state_dir" "$peers_dir" review-log.jsonl > "$review_log_union" 2>/dev/null \
-  || : > "$review_log_union"
+# `log.jsonl` alone. `review_log_union` is that union, built once ahead of the
+# FULL block (its note there names every consumer); this is the first of them.
 # Both pipelines' logs, concatenated on disk once and reused by every consumer
 # below that needs the union rather than `log.jsonl` alone (`node_time_state_json`,
 # `stage_budget_json`) — streamed file-to-file through `cat`, never assembled as
@@ -3174,34 +3197,53 @@ if (( WITH_GITHUB )); then
       "$github_budget_cycle_interval_minutes"
     export CLAIM_GH="$DASHBOARD_GH_CMD"
     export PAGER_GH="$DASHBOARD_GH_CMD"
-    # review-log.jsonl's own fleet union, for `review-pipeline-failing`
-    # (agent-ops#1282) alone — fleet-replicated like log.jsonl
-    # (scripts/state-sync.sh does not exclude it) but not part of the
-    # implementation union log every other invariant reads.
-    pager_review_union="$work_tmp/pager-review-union.jsonl"
-    fleet_logs "$state_dir" "$peers_dir" review-log.jsonl > "$pager_review_union" 2>/dev/null \
-      || : > "$pager_review_union"
+    # `review_log_union` (built once ahead of the FULL block) is for
+    # `review-pipeline-failing` (agent-ops#1282) alone among the invariants:
+    # the review pipeline's own log, not part of the implementation union log
+    # every other invariant reads.
+    #
+    # This node's own log.jsonl is counted before `pager_evaluate` so that the
+    # lines it appends can be found afterwards by line number — the technique
+    # lib/candidate-gather.sh uses for the Script's own appends — for the
+    # `pager` array below. `count_lines`, like `tail`, counts a final line
+    # with no newline, so the two agree on where the appends start.
+    pager_own_lines_before="$(count_lines "$state_dir/log.jsonl")"
     pager_evaluate "$SCRIPT_DIR/lib/claim.sh" "$pager_repo" "pw::pager" \
       "$enabler_escalation_label" "$enabler_assignee" "$notify_webhook_url" \
       "$pager_min_firing_minutes" "$state_dir/log.jsonl" "$events_jsonl" "$fleet_nodes_json" \
       "$self_node" "publisher-$self_node-$now_epoch" \
       "$github_budget_cycle_interval_minutes" "$node_stale_after_minutes_raw" \
       "$updater_stuck_after_minutes_raw" "$pager_dashboard_fetch_seconds" \
-      "$pager_review_union" "$pager_idle_cycles" "$pager_repair_rate_percent" \
+      "$review_log_union" "$pager_idle_cycles" "$pager_repair_rate_percent" \
       "$pager_escalation_burst" "$pager_repos_merge_autonomy_json" "$pr_label" \
       "$approver_unreviewed_engage_after_hours" "$pager_landing_armed_within_days" \
       "$notify_events_json" "$notify_min_interval_seconds" || true
-    # Re-read the union: pager_evaluate may just have appended to this node's
-    # own log.jsonl, which $events_jsonl (built before this block) cannot
-    # reflect yet — and the dashboard banner (docs/spec/dashboard/site.md) needs
-    # this tick's own answer, not the previous one.
-    pager_union="$work_tmp/pager-union.jsonl"
-    fleet_logs "$state_dir" "$peers_dir" log.jsonl > "$pager_union" 2>/dev/null || : > "$pager_union"
+    # The payload's `pager` array needs this tick's own answer, not the
+    # previous one (the dashboard banner, docs/spec/dashboard/site.md), and
+    # `pager_evaluate` may just have appended to this node's own log.jsonl,
+    # which the snapshot `$raw_events_jsonl` (taken before this block) cannot
+    # see. The answer is the snapshot plus exactly those appends — the lines
+    # `$state_dir/log.jsonl` gained past `pager_own_lines_before` — reduced by
+    # `pager_events_extract` to the pager's own events, which is all the two
+    # readers below ever look at; a fresh `fleet_logs` here was a second
+    # read-and-sort of the fleet's 124 MB plus two `jq` passes over it per
+    # registered key (agent-ops#2429). The sum is exact, not approximate:
+    # `pager_evaluate` is the only writer of pager events between the snapshot
+    # and here, it appends to this node's own log.jsonl and to nothing else, a
+    # repair never rewrites that file inside a tick (the launcher repairs
+    # before its loop, and a tick runs under the launcher's lock), and a line
+    # the cycle appended between the snapshot and the count is not a pager
+    # event, so the extract drops it. The `printf '\n'` is the same join guard
+    # `review_events_union` uses; the extract drops the blank line.
+    pager_events_file="$work_tmp/pager-events.jsonl"
+    { cat "$raw_events_jsonl"; printf '\n'
+      tail -n "+$(( pager_own_lines_before + 1 ))" "$state_dir/log.jsonl" 2>/dev/null || true
+    } | pager_events_extract > "$pager_events_file" 2>/dev/null || : > "$pager_events_file"
     pager_json="$(
       { while IFS= read -r pk; do
           [[ -n "$pk" ]] || continue
-          [[ "$(pager_state_for "$pk" < "$pager_union")" == "fired" ]] || continue
-          pager_last_event "$pk" < "$pager_union"
+          [[ "$(pager_state_for "$pk" < "$pager_events_file")" == "fired" ]] || continue
+          pager_last_event "$pk" < "$pager_events_file"
         done < <(pager_registered_keys)
       } | jq -sc '[.[] | {key, first_seen, evidence, nodes: (.nodes // []),
                            issue_number: (.issue_number // null), issue_url: (.issue_url // null)}]' \
@@ -4115,14 +4157,14 @@ fi
 # `review-cycle.sh` as `down`.
 #
 # FULL-gated, and it has to be: this panel needs the *second* fleet-wide log
-# union (review-log.jsonl — the pager's own read at `WITH_GITHUB` above is the
-# only other one in this script), and reading it is a whole extra read-and-sort
-# of the fleet's logs, exactly the per-tick cost the single-`fleet_logs` note
-# beside `$raw_events_jsonl` was written about. `review_log_union`, already
-# built once above for the stage-gap series, is reused here rather than
-# fetched a second time — and reused again below by the stage budgets (issue
-# #1586): one fetch, three consumers, so that reuse costs nothing further. A
-# fast tick could not use the result anyway: `constraint` is assembled into
+# union (review-log.jsonl), and reading it is a whole extra read-and-sort of
+# the fleet's logs, exactly the per-tick cost the single-`fleet_logs` note
+# beside `$raw_events_jsonl` was written about. `review_log_union` is built
+# once, ahead of the FULL block, and read here through `review_events_union`
+# as it is by the stage-gap series above and the stage budgets below (issue
+# #1586), and by the pager at `WITH_GITHUB`: one build, four consumers, so
+# this reuse costs nothing further. A fast tick could not use the result
+# anyway: `constraint` is assembled into
 # the FULL payload alone and is absent from `$fresh_json`, so it carries
 # forward from the cache like every other history roll-up
 # (docs/spec/dashboard/design-decisions.md's own fast-tick rationale). `null` is what that

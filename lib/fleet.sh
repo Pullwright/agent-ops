@@ -383,6 +383,12 @@ fleet_logs() (  # <state_dir> <peers_dir> [log-basename] [damage-file]
   state_dir="$1" peers="$2" name="${3:-log.jsonl}" damage="${4:-}"
   side="$(mktemp "${TMPDIR:-/tmp}/fleet-logs.XXXXXX" 2>/dev/null)" || exit 1
   trap 'rm -f "$side"' EXIT
+  # The union's order is byte order by design (this file's header: a plain
+  # byte sort is a time sort), so the sort is pinned to the C locale rather
+  # than left to whatever locale cron or a caller's shell hands this process.
+  # Measured on the real 124 MB union on 2026-10-16: byte-identical to the
+  # order the image's `LANG=C.UTF-8` gave, and about twice as fast
+  # (agent-ops#2429).
   {
     {
       [[ -f "$state_dir/$name" ]] && cat "$state_dir/$name"
@@ -398,7 +404,7 @@ fleet_logs() (  # <state_dir> <peers_dir> [log-basename] [damage-file]
     if [[ -s "$side" ]]; then
       jq -nRr "$FLEET_RECOVER_JQ"' inputs | fleet_resolve' "$side" || exit 1
     fi
-  } | sort
+  } | LC_ALL=C sort
   st=("${PIPESTATUS[@]}")
   (( st[0] == 0 && st[1] == 0 )) || exit 1
   if [[ -n "$damage" ]]; then

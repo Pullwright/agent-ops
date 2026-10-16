@@ -71,7 +71,10 @@
 # any node can evaluate any invariant in any window and agree with every
 # other node about what has already happened, on the same terms
 # `token_expiry_escalated_for` (lib/token-expiry.sh) already does for a
-# single-shot escalation.
+# single-shot escalation. Those four are all a state read ever looks at, so
+# `pager_evaluate` reads them off one extract of the union
+# (`pager_events_extract`, made once before its loop) rather than parsing
+# the whole union twice per key (agent-ops#2429).
 #
 # Remedy classes (the issue's own "Remedy by class"): every firing invariant
 # that reaches the hysteresis threshold gets ONE issue per key, in
@@ -171,6 +174,30 @@ pager_log_event() {
   jq -nc --arg ts "$ts" --arg cycle "$cycle" --arg node "$node" --arg event "$event" \
     --argjson fields "$fields" '{ts: $ts, cycle: $cycle, node: $node, event: $event} + $fields' \
     >> "$log_file" 2>/dev/null || true
+}
+
+# pager_events_extract < union.jsonl > pager-events.jsonl
+# The pager's own four transition events, as compact JSON lines, out of a raw
+# fleet union: everything `pager_last_event` and `pager_state_for` can ever
+# read, and nothing else. A byte-level `grep -F` prefilter keeps the lines
+# that carry `"event":"pager-` and one `jq` parses only those — on the 124 MB
+# union of 2026-10-16 that is 2,480 lines of 422,628, and the whole extract
+# costs well under a second where one `jq` pass over the union costs five to
+# thirteen (agent-ops#2429). The prefilter is exact, not a heuristic: every
+# pager record is written by `pager_log_event`'s `jq -nc`, compact, so each
+# carries that substring verbatim; a record of another type that merely
+# carries it in a nested field passes the prefilter and is dropped by the
+# `select`; a spliced or damaged line fails `fromjson?` and is dropped, the
+# same tolerance every union reader has. `grep` exits 1 on a union with no
+# pager event at all, which is an empty extract and not a failure (the
+# `|| [[ $? -eq 1 ]]`); `-a` keeps a stray NUL from turning the whole stream
+# into one "binary file matches" line; `LC_ALL=C`, as `fleet_logs` itself
+# reads.
+pager_events_extract() {
+  { LC_ALL=C grep -a -F '"event":"pager-' || [[ $? -eq 1 ]]; } \
+    | jq -c -R 'fromjson? // empty | objects
+                | select(.event == "pager-candidate" or .event == "pager-candidate-cleared"
+                         or .event == "pager-fired" or .event == "pager-cleared")' 2>/dev/null
 }
 
 # pager_last_event KEY < union.jsonl
@@ -610,7 +637,16 @@ _pager_evaluate_one() {
   firing="$(jq -r '.firing // false' <<<"$verdict" 2>/dev/null)"
   evidence="$(jq -r '.evidence // ""' <<<"$verdict" 2>/dev/null)"
   [[ "$firing" == "true" ]] || firing="false"
-  state="$(pager_state_for "$key" < "$union_log_file")"
+  # The two state reads (here and in the candidate branch below) read the
+  # extract of the pager's own events `pager_evaluate` made before its loop
+  # — PAGER_EVAL_PAGER_EVENTS_FILE, a plain variable on the same documented-
+  # exception terms as every PAGER_EVAL_* above, set by the caller this time
+  # rather than for a callee; see `pager_evaluate` for why one extract serves
+  # every key exactly. EVAL_FN and the remedy variables above keep the whole
+  # union: what they read is not the pager's own events. An empty variable
+  # (no extract could be made) falls back to the whole union.
+  local state_events_file="${PAGER_EVAL_PAGER_EVENTS_FILE:-$union_log_file}"
+  state="$(pager_state_for "$key" < "$state_events_file")"
 
   case "${state}:${firing}" in
     clear:true)
@@ -619,7 +655,7 @@ _pager_evaluate_one() {
       ;;
     candidate:true)
       local cand first_seen first_seen_epoch age_min nodes_json key_min_firing_minutes
-      cand="$(pager_last_event "$key" < "$union_log_file")"
+      cand="$(pager_last_event "$key" < "$state_events_file")"
       first_seen="$(jq -r '.first_seen // empty' <<<"$cand" 2>/dev/null)"
       [[ -n "$first_seen" ]] || first_seen="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
       first_seen_epoch="$(date -u -d "$first_seen" +%s 2>/dev/null || date -u +%s)"
@@ -664,9 +700,35 @@ _pager_evaluate_one() {
 # EVAL_FN or one lost claim never stops the rest — each invariant's own
 # failure is contained to itself, the same isolation crash_loop_verdict's own
 # `2>/dev/null || true` gives a torn union-log line.
+#
+# The pager's own events are extracted from UNION_LOG_FILE once, before the
+# loop (`pager_events_extract`), and every key's two state reads in
+# `_pager_evaluate_one` read that extract in place of the whole union: with
+# the eighteen built-in keys those reads were up to thirty-six `jq` passes
+# over the 124 MB union per GitHub tick (agent-ops#2429). One extract before
+# the loop is exact, not merely close: a key reads its own state before it
+# appends its own transition, is evaluated once per call, and no key reads
+# another's events, so nothing the loop appends is ever something a later
+# key needs to see. The file is made under TMPDIR on `fleet_logs`' own
+# convention — inside the Publisher's working set, which `scratch_enter`
+# points TMPDIR at, so the removal below is belt and braces there — and its
+# path travels to `_pager_evaluate_one` as a plain variable, the documented
+# exception every PAGER_EVAL_* already uses. A file that cannot be made, or
+# an extract that fails, leaves the variable empty and the state reads fall
+# back to the whole union.
 pager_evaluate() {
-  local key
+  local key union_log_file="${9:-}" pager_events_file
+  pager_events_file="$(mktemp "${TMPDIR:-/tmp}/pager-events.XXXXXX" 2>/dev/null)" \
+    || pager_events_file=""
+  if [[ -n "$pager_events_file" ]]; then
+    pager_events_extract < "$union_log_file" > "$pager_events_file" 2>/dev/null \
+      || { rm -f "$pager_events_file"; pager_events_file=""; }
+  fi
+  PAGER_EVAL_PAGER_EVENTS_FILE="$pager_events_file"
   for key in "${PAGER_KEYS[@]}"; do
     _pager_evaluate_one "$key" "$@" || true
   done
+  PAGER_EVAL_PAGER_EVENTS_FILE=""
+  [[ -z "$pager_events_file" ]] || rm -f "$pager_events_file"
+  return 0
 }
