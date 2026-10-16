@@ -334,9 +334,10 @@ stamp_file="$out_dir/stamp.js"
 # it so a local-only refresh doesn't blank the PR list / work sources or raise a
 # false "GitHub unavailable" alarm between GitHub refreshes. Its mtime is also
 # the heartbeat's gate: publish-dashboard-launcher.sh fetches on the first tick
-# to find this file older than LAUNCHER_GITHUB_MAX_AGE, so this write is what
-# schedules the next fetch — hence writing it for a failed attempt too, a few
-# hundred lines below.
+# to find this file older than the due age it derives from what a fetch costs
+# (LAUNCHER_GITHUB_MAX_AGE at the least), so this write is what schedules the
+# next fetch — hence writing it for a failed attempt too, a few hundred lines
+# below.
 gh_cache="$state_dir/.dashboard-github.json"
 # Claim bodies by blob SHA. A blob's SHA is a hash of its content, so a hit is
 # never stale by construction and the registry costs one API call a tick while
@@ -606,12 +607,14 @@ fi
 #      input added by a later panel is therefore covered on the day it is added,
 #      with nobody having to remember this rule exists — the failure direction
 #      of a mistake here is a needless rebuild, never a stale page.
-#   2. A GitHub tick never skips. The launcher forces one about every five
-#      minutes (LAUNCHER_GITHUB_MAX_AGE), so even a fingerprint that is wrong
-#      in the dangerous direction can only hold a stale page until the next
-#      one — which is the cadence the dashboard published at before the
-#      sub-minute heartbeat existed at all (#26), and well inside the hours
-#      that `lock_stale_after` reasons in.
+#   2. A GitHub tick never skips. The launcher forces one whenever the last
+#      fetch is older than its due age — about every five minutes
+#      (LAUNCHER_GITHUB_MAX_AGE) while a fetch is cheap, nine times a fetch's
+#      cost when it is not — so even a fingerprint that is wrong in the
+#      dangerous direction can only hold a stale page until the next one —
+#      five minutes is the cadence the dashboard published at before the
+#      sub-minute heartbeat existed at all (#26), and the due age stays well
+#      inside the hours that `lock_stale_after` reasons in.
 #
 # The skipped ticks are counted rather than logged. Logging each one would
 # replace fourteen "wrote" lines per window with fourteen "skipped" lines and

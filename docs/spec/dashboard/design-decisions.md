@@ -62,9 +62,12 @@
   tick rate, because the stamp records the *attempt*. And N itself follows
   what a fetch costs — `LAUNCHER_GITHUB_MAX_AGE` is its floor, `duty_divisor`
   times the last GitHub tick's cost its figure, under `LAUNCHER_PACE_CAP` —
-  for the same reason every other tick's backoff does, and the backoff a tick
-  owes past its window is persisted for the next window to honour rather than
-  forgotten with the launcher's process. Measured on 2026-10-16 (#2429): a
+  for the same reason every other tick's backoff does, and the backoff a
+  local tick owes past its window is persisted for the windows after it to
+  honour rather than forgotten with the launcher's process; a refresh is
+  paced by that due age alone, since a backoff honoured as well would end
+  exactly as the due age fell and make the first tick after every refresh
+  another refresh. Measured on 2026-10-16 (#2429): a
   refresh cost 500–1,100s and a local tick 45–270s on every node, 1:9 of
   either outlasts a 295s window, and the refresh was due again 285s after it
   finished; so every window's first tick ran at once, most of them refreshes,

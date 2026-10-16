@@ -1842,10 +1842,11 @@ assert_eq "and what it cost outlives the window that measured it" "1" \
 # the last *local* tick (~0s) and started it. The kind-aware reserve reads the
 # 15s window one persisted and stops instead.
 touch "$tail_state/.dashboard-github.json"
-# The 15s GitHub tick owes 15s of backoff past window one (divisor 1), which
-# window two would otherwise idle through (#2429); this section is about the
-# reserve, so the debt is expired as cron's gap would have.
-expire_backoff "$tail_home"
+# The 15s GitHub tick leaves window two nothing to idle through: a refresh's
+# pacing is its due age, never a persisted backoff (#2429, the section after
+# the next), so the reserve this section is about is all window two sees.
+assert_eq "a refresh leaves no backoff for the next window to honour" "0" \
+  "$(awk '{print $3+0}' "$tail_state/.dashboard-tick-cost" 2>/dev/null)"
 : > "$tail_log"
 run_tail 30 18 0 15
 assert_eq "a GitHub tick that cannot fit the tail is not started" "local " "$(tail_kinds)"
@@ -1872,8 +1873,9 @@ assert_eq "cheap local ticks still run several to a window" "1" \
 #
 # The stub sleeps 2.5s rather than 3: the launcher rounds a cost up to whole
 # seconds, so 2.5s plus the stub's own start-up measures as 3s on any box with
-# under half a second of overhead per process, where a 3s sleep would measure
-# as 4s on every box and put the due age at 36s instead. 15-second windows
+# under half a second of overhead per process, and as 4s on one with more —
+# the due age the assertions expect is built from the cost the launcher
+# persisted, whichever it was, so a loaded box shifts both together. 15-second windows
 # for the reason the cadence section above uses them: the loop admits a first
 # tick only in the window's first `LAUNCHER_WINDOW - 10` seconds, and five of
 # those cover the launcher's own start-up on a loaded box.
@@ -1898,13 +1900,20 @@ run_due 15 3600
 assert_contains "a refresh runs when nothing has been measured" "github" "$(due_kinds)"
 assert_contains "and the log states the due age it was gated on" \
   "github: refreshing (last fetch never, due after 0s)" "$(cat "$due_dashboard_log")"
-assert_eq "the refresh's cost is persisted as 3s" "3" \
-  "$(awk '{print $1}' "$due_state/.dashboard-tick-cost" 2>/dev/null)"
+due_cost="$(awk '{print $1+0}' "$due_state/.dashboard-tick-cost" 2>/dev/null)"
+assert_eq "the refresh's cost is persisted, rounded up to 3s or 4s" "1" \
+  "$(( due_cost >= 3 && due_cost <= 4 ))"
+# A refresh persists no backoff of its own: its due age is its pacing. A
+# backoff honoured as well would end exactly as the due age fell, so the first
+# tick after every refresh would be another refresh and no local tick would
+# run while a refresh cost more than a ninth of LAUNCHER_GITHUB_MAX_AGE.
+assert_eq "and persists no backoff: a refresh's due age is its pacing" "0" \
+  "$(awk '{print $3+0}' "$due_state/.dashboard-tick-cost" 2>/dev/null)"
 
-# Window two, at once: the stamp is seconds old and the refresh is not due for
-# 27s, so every tick in a 15s window is local. Under the fixed floor alone,
-# every one of them was a refresh.
-expire_backoff "$due_home"
+# Window two, at once, with nothing owed: the stamp is seconds old and the
+# refresh is not due for 27s (36s on a box that measured 4s), so every tick in
+# a 15s window is local. Under the fixed floor alone, every one of them was a
+# refresh.
 run_due 15 3600
 assert_eq "a window inside the cost-derived due age makes no GitHub call" "local " "$(due_kinds)"
 
@@ -1914,7 +1923,7 @@ expire_backoff "$due_home"
 run_due 15 3600
 assert_contains "a stamp older than the due age is refetched" "github" "$(due_kinds)"
 assert_eq "and the line names the cost-derived due age" "1" \
-  "$(( $(grep -cE 'github: refreshing \(last fetch [0-9]+s ago, due after 27s\)' "$due_dashboard_log") >= 1 ))"
+  "$(( $(grep -cE "github: refreshing \\(last fetch [0-9]+s ago, due after $(( due_cost * 9 ))s\\)" "$due_dashboard_log") >= 1 ))"
 
 # The cap bounds the due age too: with LAUNCHER_PACE_CAP=5 a stamp 10s old is
 # past due although the 27s have not passed.
@@ -2003,23 +2012,25 @@ assert_contains "and logs the idle it took first" \
 # A persisted backoff scales with the tick's cost, and nothing upstream bounds
 # what wedges a tick: #1305's 4,511,835 ms tick is 11.3 hours at 1:9, and a
 # page eleven hours behind is not an outage an operator can read, where one
-# an hour behind is. LAUNCHER_PACE_CAP bounds it: 5s here, against the 18s
-# the same tick would otherwise owe. The persisted instant is rounded up to a
-# whole second from the launcher's own clock, which reads the tick's end only
-# once the stub has exited and `flock` has returned; so it may sit up to one
-# second of rounding plus that exit latency past the cap. Measured from the
-# stub's own end stamp that is 7s, not 6: a stamp whose fraction lies within
-# the latency of the next whole second crosses it before the launcher reads
-# the end, and the ceiling then adds most of another.
+# an hour behind is. LAUNCHER_PACE_CAP bounds it: 10s here, against the 18s
+# the same tick would otherwise owe, in a 12s window so that the capped backoff
+# still ends past the window's end — a backoff ending inside its window is
+# owed to no window that opens after it, and is not persisted. The persisted
+# instant is rounded up to a whole second from the launcher's own clock, which
+# reads the tick's end only once the stub has exited and `flock` has returned;
+# so it may sit up to one second of rounding plus that exit latency past the
+# cap. Measured from the stub's own end stamp that is 12s, not 11: a stamp
+# whose fraction lies within the latency of the next whole second crosses it
+# before the launcher reads the end, and the ceiling then adds most of another.
 expire_backoff "$carry_home"
 touch "$carry_state/.dashboard-github.json"
 : > "$carry_log"
-run_carry 15 5
+run_carry 12 10
 carry_cap_end="$(awk '$2 == "end" {print $1; exit}' "$carry_log")"
 assert_eq "a capped backoff is still persisted as an instant past the tick's end" "1" \
   "$(awk -v f="$(carry_owed)" -v e="${carry_cap_end:-0}" 'BEGIN { print (f > e) ? 1 : 0 }')"
 assert_eq "…and no more than the cap, plus the rounding and the tick's exit latency, past it" "1" \
-  "$(awk -v f="$(carry_owed)" -v e="${carry_cap_end:-0}" 'BEGIN { print (f - e <= 7) ? 1 : 0 }')"
+  "$(awk -v f="$(carry_owed)" -v e="${carry_cap_end:-0}" 'BEGIN { print (f - e <= 12) ? 1 : 0 }')"
 
 # --- …and an instant the launcher could not have written reads as nothing owed
 # The window-idle path exits without a tick and persists nothing, so a third

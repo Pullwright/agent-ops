@@ -56,11 +56,12 @@
   a 15s window started inside the 27s it is due after makes no GitHub call and
   at least one local tick, the stamp aged past it is refetched, the `github:
   refreshing` line states the due age it was gated on, and `LAUNCHER_PACE_CAP`
-  caps that age; a 2s local tick at 1:9 persists the instant its 18s backoff
-  ends as `.dashboard-tick-cost`'s third field, a window started at once
-  inside it runs no tick and logs `pacing: window idle`, and a later window
-  with room logs `pacing: idle until` and starts its tick no sooner than 18s
-  after that tick ended, by the stub's own clock; `LAUNCHER_PACE_CAP=5`
+  caps that age, and a refresh persists no backoff of its own; a 2s local
+  tick at 1:9 persists the instant its 18s backoff ends as
+  `.dashboard-tick-cost`'s third field, a window started at once inside it
+  runs no tick and logs `pacing: window idle`, and a later window with room
+  logs `pacing: idle until` and starts its tick no sooner than 18s after that
+  tick ended, by the stub's own clock; `LAUNCHER_PACE_CAP=10` in a 12s window
   persists an instant past the tick's end, but no more than the cap, plus the
   rounding to a whole second and the tick's own exit latency, past it; and a
   third field further ahead than the cap allows reads as nothing owed, so the
@@ -508,8 +509,10 @@
   renders its ordinary relative age.
 - On a node that has been up for at least ten minutes,
   `grep 'github: refreshing' <state_dir>/dashboard.log | tail -3` shows one
-  line roughly every five minutes, and `github.fetched_at` in `data.js` is
-  within about five minutes of `generated_at`. Those two facts are the whole
+  line per due age plus a refresh's own cost — each line states the age it
+  was gated on, `due after Ns`, which is 285s while a refresh costs under
+  32s and nine times its cost above that — and `github.fetched_at` in
+  `data.js` is within that of `generated_at`. Those two facts are the whole
   of "the PR panels are live"; nothing else on the page distinguishes a
   refresh that is happening from one that is not. (If that `grep` comes back
   empty or says "binary file matches", check for a hole before concluding the
