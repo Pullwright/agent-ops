@@ -2063,7 +2063,9 @@ paused_log_file="$paused_home/.cache/agent-ops-test/state/log.jsonl"
 
 run_paused_cycle() {  # run_paused_cycle CONFIG_JSON [ARGS…]
   printf '%s' "$1" > "$guard_app/config.json"; shift
-  guard_out="$(env AGENT_OPS_ROLE=active HOME="$paused_home" "$guard_app/agent-cycle.sh" "$@" 2>&1)"
+  guard_out="$(env AGENT_OPS_ROLE=active HOME="$paused_home" \
+    PATH="$paused_home/.local/bin:$PATH" \
+    "$guard_app/agent-cycle.sh" "$@" 2>&1)"
   guard_rc=$?
 }
 paused_warnings() {  # paused_warnings — every paused-by-cap warning logged so far
