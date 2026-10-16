@@ -1185,7 +1185,14 @@
    are gone; a bare issue number and a `pr-<n>-stale` in a *configured* repo
    are never actioned however few sources remain; a repo-less void is
    skipped; and an empty, non-array or malformed repo array decides nothing
-   rather than retiring the whole extract. The section also pins the age
+   rather than retiring the whole extract. A void recorded under a
+   configured repo's `previous_slugs` alias is resolved to that repo's
+   current slug before either test (agent-ops#2455): it is never
+   `repo-dropped` while the repo it was renamed from stays configured under
+   its new slug, it is `source-dropped` precisely when the resolved repo's
+   `sources` omits the shape's source, and a void under a
+   genuinely unconfigured slug — one no `previous_slugs` entry names — is
+   still `repo-dropped`. The section also pins the age
    half — an actioned-and-old config pair reaches `retire_void_items` and is
    dropped, an actioned-but-young one is kept — and, in `agent-cycle.sh`, that
    the array read is `all_repos_json` rather than the `--repo`-filtered

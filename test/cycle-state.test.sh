@@ -939,6 +939,33 @@ assert_eq "malformed REPOS_JSON fails safe to []" \
 assert_eq "malformed VOID_JSON fails safe to []" \
   "[]" "$(void_config_actioned "not valid json" "$cfg_stripped")"
 
+# A void recorded under a repo's old name (issue #2455): the repo's
+# `previous_slugs` must be resolved before either the repo-dropped or the
+# source-dropped lookup, or a void under the old slug is retired as
+# repo-dropped forever even though the repo is still configured — under its
+# current slug — with the exact source that mints this shape. This is the
+# reproduction from the issue body, in miniature.
+cfg_alias_repos='[{"slug":"Pullwright/agent-ops","previous_slugs":["Poetic-Poems/agent-ops"],"sources":["human-visibility"]}]'
+cfg_alias_void='[{"repo":"Poetic-Poems/agent-ops","item":"human-visibility-0fcb26686dfd","ts":"2026-07-01T00:00:00Z"}]'
+assert_eq "a void under a configured previous_slugs alias is not repo-dropped" \
+  "0" "$(void_config_actioned "$cfg_alias_void" "$cfg_alias_repos" | jq 'length')"
+
+cfg_current_void='[{"repo":"Pullwright/agent-ops","item":"human-visibility-0fcb26686dfd","ts":"2026-07-01T00:00:00Z"}]'
+assert_eq "  ... and the same item under the repo's current slug is still left alone" \
+  "0" "$(void_config_actioned "$cfg_current_void" "$cfg_alias_repos" | jq 'length')"
+
+cfg_unaliased_void='[{"repo":"o/never-configured","item":"human-visibility-0fcb26686dfd","ts":"2026-07-01T00:00:00Z"}]'
+assert_eq "  ... but a genuinely unconfigured slug is still repo-dropped (regression guard)" \
+  "repo-dropped" "$(void_config_actioned "$cfg_unaliased_void" "$cfg_alias_repos" | jq -r '.[0].by')"
+
+# The source-dropped branch needs the identical resolution: the alias must
+# resolve to the repo's current sources list, not an absent entry for the old
+# slug (which would read as "no sources at all" and mint source-dropped for
+# every mapped shape regardless of what is actually still configured).
+cfg_alias_repos_dropped='[{"slug":"Pullwright/agent-ops","previous_slugs":["Poetic-Poems/agent-ops"],"sources":["issues:high"]}]'
+assert_eq "source-dropped is reached through the alias too, when the source really is gone" \
+  "source-dropped" "$(void_config_actioned "$cfg_alias_void" "$cfg_alias_repos_dropped" | jq -r '.[0].by')"
+
 # The age half, as for every other signal: liveness is not the age test.
 cfg_now_epoch=1786579200
 cfg_age_void='[
