@@ -1090,9 +1090,8 @@ cycle — never that the label was withheld or needs a live read to find out.
   finishing ones: the Script derives and creates the claim branch (`agent/<ref>`)
   itself.
 
-Evaluate candidates in the order the array already carries them — ranked by
-Priority, then by the freshest thread (it already arrives sorted that way,
-the same bands "Issue priority" below defines). The
+Evaluate candidates in the array's own order (Priority, freshness;
+see "Issue priority"). The
 under-specification and owner-decision-gate exclusions (5, 6 below) and
 "Reporting an under-specified item" apply to a tech-debt candidate exactly as
 to any other: skip it and report it in `needs_refinement`, do not guess.
@@ -1107,11 +1106,9 @@ yet.
 run of a workflow on the default branch is a failure — a later green run
 supersedes older failures, so don't resurrect a since-fixed workflow.
 
-**Issue priority.** Every open issue — and, since agent-ops#2422, every
-tech-debt item, which is simply an issue carrying `pw::type:tech-debt` —
-belongs to exactly one band — `Urgent`, `High`, `Medium` or `Low` — taken
-from its **`Priority`** field, and the band decides where in the walk that
-item is considered:
+**Issue priority.** Every open issue, tech-debt included, belongs to one
+band — `Urgent`, `High`, `Medium` or `Low` — its **`Priority`** field,
+deciding when in the walk it is reached:
 
 | Band | Ranks | Reached |
 |---|---|---|
@@ -1120,32 +1117,21 @@ item is considered:
 | `Medium` | after tech-debt, before the implementation plan | in this repository's own walk |
 | `Low` | after project-review, before code-quality | in this repository's own walk |
 
-`Priority` is a GitHub **issue field**, not a label, and it arrives already
-read: each entry in a repo's `issues` and `tech_debt` arrays carries its band
+`Priority` is a GitHub **issue field**, not a label, and arrives already
+read: each entry in a repo's `issues`/`tech_debt` arrays carries its band
 as `priority`, derived by the Script from the REST listing's
 `issue_field_values` (the `single_select_option.name` of the entry named
 `Priority`) — the one API surface that exposes it; `gh issue view --json`
-does not. Band every issue from the array before you start walking that
-repo's sources. The array also carries each entry's `updated_at`, which
-"Re-checking blocked items" below needs — it is all fetched once, so nothing
-here costs you a `gh` call.
+does not. Band every issue before walking. The array also carries
+`updated_at`, which "Re-checking blocked items" below needs — all fetched
+once, at no further cost.
 
 **An issue with no `Priority` set is `Medium`.** So is one whose field you
 cannot read, or whose value is not one of the four names. Never treat a missing
 `Priority` as lowest, and never invent a band from the issue's labels, title or
 tone — an untriaged issue ranks in the middle, and only the field moves it.
-
-**An entry's `priority` may already be raised above what it was triaged
-to.** The Script applies priority inheritance (`issue_priority_inherit`,
-lib/dependency-gate.sh) before you ever see this input: an open item that
-blocks another — named in a `Blocked-by:` reference on the blocked item's own
-thread, same repository — ranks at least as high as the highest band among
-every item it blocks, whichever of `issues`/`tech_debt` either one is in. A
-raised entry carries `priority_raised_by`, an array of the blocked items' own
-display refs (`"#42"`) that caused the raise — read it for context if you are
-curious why an item outranks what its own thread seems to argue for, but
-treat `priority` itself exactly as you would an issue's own stated band; there
-is nothing further for you to compute here.
+`priority` may already be raised by inheritance (a blocker ranks as high as
+what it blocks, named in `priority_raised_by`) — treat it as stated.
 
 Banding changes rank and nothing else. A `security`-labelled issue is still
 security work first (see "Security is always prioritised") whatever its band,
