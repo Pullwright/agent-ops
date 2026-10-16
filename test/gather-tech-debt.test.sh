@@ -189,8 +189,11 @@ assert_eq "an issue carrying no pw::type:tech-debt label at all is never a candi
 assert_eq "nothing on stderr on the success path" "" "$(cat "$tmp_dir/err")"
 
 # --- Sorted by issue number ascending ---
-assert_eq "sorted by issue number ascending, oldest first" \
-  "19 20" "$(jq -r '[.[].number] | join(" ")' <<<"$out")"
+# Both #19 and #20 are unbanded (Medium, tied): sorted by Priority then by
+# the freshest thread (agent-ops#2422), #20's own updatedAt (2026-07-20)
+# outranks #19's (2026-07-18), so #20 comes first.
+assert_eq "sorted by Priority then by the freshest thread" \
+  "20 19" "$(jq -r '[.[].number] | join(" ")' <<<"$out")"
 
 # --- The entry shape: everything the Co-Ordinator selects on ---
 entry20="$(jq -c '.[] | select(.number == 20)' <<<"$out")"

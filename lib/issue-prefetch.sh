@@ -21,8 +21,11 @@
 #
 # Sourced, never executed: like lib/dependency-gate.sh, it sets no shell
 # options and expects the caller already running under `set -uo pipefail`.
-# `issue_blocked_by_ref` below calls `dependency_refs`
-# (lib/dependency-gate.sh), which the caller must source first.
+# `issue_blocked_by_ref` below calls `dependency_refs` and
+# `dependency_native_open_ref` (lib/dependency-gate.sh), which the caller
+# must source first; `issue_priority_inherit`, also there, is the shared
+# priority-inheritance pass both callers run over `issue_prefetch_annotate_priority`'s
+# own output (requirement 4 of agent-ops#2422).
 
 # ISSUE_DETERMINISTIC_FILTER_JQ — two jq function definitions, meant to be
 # concatenated ahead of a `[.[] | select(issue_deterministic_ok) | ...]`
@@ -52,34 +55,72 @@ def issue_exclude_reason:
   else null end;
 JQ
 
-# issue_blocked_by_ref SLUG THREAD_TEXT
+# issue_blocked_by_ref SLUG NUMBER THREAD_TEXT
 # Print the display form (`#195` for a same-repo reference, `owner/repo#42`
 # for a cross-repo one) of THREAD_TEXT's first still-open `Blocked-by:`
-# reference (requirement 34j), or print nothing — and return 0 either way —
-# when it names none, or every one it names is already closed. A reference
-# whose live state cannot be read counts as still-open, the same fail-safe
-# direction every other deterministic exclusion in this file takes.
+# reference (requirement 34j), or — when the thread names none, or every one
+# it names is already closed — of the first still-open reference GitHub's
+# native Issue Dependencies feature records for SLUG#NUMBER
+# (`dependency_native_open_ref`, lib/dependency-gate.sh); or print nothing —
+# and return 0 either way — when neither convention names an open blocker.
+# A reference whose live state cannot be read counts as still-open, the same
+# fail-safe direction every other deterministic exclusion in this file
+# takes. NUMBER is this candidate's own issue number — needed only for the
+# native check, which asks GitHub about *this* issue's own dependencies
+# rather than parsing text; pass the empty string to skip it and check the
+# text convention alone (test/dependency-gate.test.sh's narrower fixtures do
+# this).
 issue_blocked_by_ref() {
-  local slug="$1" thread_text="$2" dep_refs ref ref_repo ref_n ref_state ref_display
+  local slug="$1" number="$2" thread_text="$3" dep_refs ref ref_repo ref_n ref_state ref_display
   dep_refs="$(dependency_refs "$thread_text")"
-  [[ "$(jq 'length' <<<"$dep_refs" 2>/dev/null || echo 0)" != "0" ]] || return 0
-  while IFS= read -r ref; do
-    [[ -n "$ref" ]] || continue
-    if [[ "$ref" == */* ]]; then
-      ref_repo="${ref%%#*}"
-      ref_n="${ref##*#}"
-    else
-      ref_repo="$slug"
-      ref_n="$ref"
-    fi
-    ref_state="$(gh api "repos/$ref_repo/issues/$ref_n" --jq '.state' 2>/dev/null || true)"
-    if [[ "$ref_state" != "closed" ]]; then
-      ref_display="$ref"; [[ "$ref_display" == */* ]] || ref_display="#$ref_display"
-      printf '%s\n' "$ref_display"
-      return 0
-    fi
-  done < <(jq -r '.[]' <<<"$dep_refs")
+  if [[ "$(jq 'length' <<<"$dep_refs" 2>/dev/null || echo 0)" != "0" ]]; then
+    while IFS= read -r ref; do
+      [[ -n "$ref" ]] || continue
+      if [[ "$ref" == */* ]]; then
+        ref_repo="${ref%%#*}"
+        ref_n="${ref##*#}"
+      else
+        ref_repo="$slug"
+        ref_n="$ref"
+      fi
+      ref_state="$(gh api "repos/$ref_repo/issues/$ref_n" --jq '.state' 2>/dev/null || true)"
+      if [[ "$ref_state" != "closed" ]]; then
+        ref_display="$ref"; [[ "$ref_display" == */* ]] || ref_display="#$ref_display"
+        printf '%s\n' "$ref_display"
+        return 0
+      fi
+    done < <(jq -r '.[]' <<<"$dep_refs")
+  fi
+  [[ -n "$number" ]] || return 0
+  dependency_native_open_ref "$slug" "$number"
   return 0
+}
+
+# issue_prefetch_annotate_priority ISSUES_JSON
+# Print ISSUES_JSON (the shape `issue_prefetch_open_issues` returns — each
+# element carrying its own `issue_field_values`) with `priority` (one of the
+# four band names, "Medium" standing in for unset) and `priority_set` (true
+# iff any option at all is chosen, including one outside the four names)
+# added to every element — the same parse `scripts/gather-issues.sh` always
+# applied inline, lifted out here so `scripts/gather-tech-debt.sh` can read
+# the identical field the identical way (requirement 1/2 of agent-ops#2422:
+# tech-debt now carries a band too) and so both scripts can run
+# `issue_priority_inherit` (lib/dependency-gate.sh) over the very same
+# annotated array — every open issue in the repository, not only the ones
+# either script's own label filter keeps — before either one narrows to its
+# own band. Falls back to ISSUES_JSON unchanged on its own jq failure, never
+# `[]`, so a caller already past its degrade() guard does not lose its whole
+# candidate set to a transient jq error here.
+issue_prefetch_annotate_priority() {
+  local issues_json="${1:-[]}"
+  jq -c '
+    [.[] | . as $e
+     | ([$e.issue_field_values[]? | select(.issue_field_name == "Priority")
+                                   | .single_select_option.name | select(. != null)]) as $priority_names
+     | ($priority_names | map(select(. == "Urgent" or . == "High" or . == "Medium" or . == "Low"))) as $priority_values
+     | $e + {priority: (($priority_values | first) // "Medium"),
+             priority_set: (($priority_names | length) > 0)}]' \
+    <<<"$issues_json" 2>/dev/null || printf '%s' "$issues_json"
 }
 
 # How many 100-issue pages `issue_prefetch_open_issues` will walk before

@@ -287,6 +287,183 @@ assert_eq "the pre-extract release clears the already-blocked item the same cycl
 assert_eq "naming the resolved reference" \
   "true" "$(jq -r '.[0].reason | test("#195")' <<<"$released")"
 
+
+# ============================================================================
+# Native Issue Dependencies (agent-ops#2422, requirement 3) — a stubbed `gh`
+# ============================================================================
+# `dependency_native_blocked_by`/`dependency_native_open_ref` read GitHub's
+# own `dependencies/blocked_by` REST endpoint, never the `Blocked-by:` text
+# convention — both halves of the acceptance criterion ("treats a native
+# blocked by on an open issue as a block and its closure as a release") are
+# live re-checks, like the text convention's own, so there is no persisted
+# state to flip: the same call simply answers differently once the blocking
+# issue closes.
+
+native_state_file="$tmp_dir/native-42-state"
+echo "open" > "$native_state_file"
+mkdir -p "$tmp_dir/bin-native"
+cat >"$tmp_dir/bin-native/gh" <<STUB
+#!/usr/bin/env bash
+set -uo pipefail
+[[ "\${1:-}" == "api" ]] || { echo "stub gh: unexpected command: \$*" >&2; exit 1; }
+path="\$2"
+case "\$path" in
+  repos/o/r/issues/100/dependencies/blocked_by)
+    state="\$(cat "$native_state_file")"
+    echo "[{\\"number\\": 42, \\"state\\": \\"\$state\\", \\"repository\\": {\\"full_name\\": \\"o/r\\"}}]"
+    ;;
+  repos/o/r/issues/101/dependencies/blocked_by)
+    echo "[]"
+    ;;
+  repos/o/r/issues/102/dependencies/blocked_by)
+    echo "[{\\"number\\": 9, \\"state\\": \\"closed\\", \\"repository\\": {\\"full_name\\": \\"o/r\\"}}]"
+    ;;
+  repos/o/r/issues/103/dependencies/blocked_by)
+    echo "[{\\"number\\": 7, \\"state\\": \\"open\\", \\"repository\\": {\\"full_name\\": \\"o/other\\"}}]"
+    ;;
+  repos/o/r/issues/104/dependencies/blocked_by)
+    exit 1
+    ;;
+  *) echo "stub gh: unexpected path: \$path" >&2; exit 1;;
+esac
+STUB
+chmod +x "$tmp_dir/bin-native/gh"
+
+export DEPENDENCY_GATE_GH="$tmp_dir/bin-native/gh"
+result="$(dependency_native_blocked_by o/r 100)"
+assert_eq "an open native dependency is reported" \
+  '[{"number":42,"state":"open","repo":"o/r"}]' "$(jq -c . <<<"$result")"
+assert_eq "...and dependency_native_open_ref names it as a block" \
+  "#42" "$(dependency_native_open_ref o/r 100)"
+
+echo "closed" > "$native_state_file"
+assert_eq "closing the native dependency releases it" \
+  "" "$(dependency_native_open_ref o/r 100)"
+
+assert_eq "an issue with no recorded native dependency is never blocked" \
+  "" "$(dependency_native_open_ref o/r 101)"
+
+assert_eq "an already-closed native dependency is never a block" \
+  "" "$(dependency_native_open_ref o/r 102)"
+
+assert_eq "a cross-repository native dependency is displayed owner/repo#n" \
+  "o/other#7" "$(dependency_native_open_ref o/r 103)"
+
+assert_eq "a failing read is 'cannot see a block', not 'assume one'" \
+  "" "$(dependency_native_open_ref o/r 104)"
+
+assert_eq "a malformed slug never calls gh at all" \
+  "[]" "$(dependency_native_blocked_by 'not-a-slug' 1)"
+assert_eq "a non-numeric issue number never calls gh at all" \
+  "[]" "$(dependency_native_blocked_by o/r five)"
+unset DEPENDENCY_GATE_GH
+
+# `issue_blocked_by_ref` (lib/issue-prefetch.sh) honours the native check
+# exactly as it honours the text convention — the one call site both
+# scripts/gather-issues.sh and scripts/gather-tech-debt.sh already use.
+# shellcheck source=lib/issue-prefetch.sh
+. "$SCRIPT_DIR/lib/issue-prefetch.sh"
+
+native_state_file2="$tmp_dir/native-200-state"
+echo "open" > "$native_state_file2"
+mkdir -p "$tmp_dir/bin-native2"
+cat >"$tmp_dir/bin-native2/gh" <<STUB
+#!/usr/bin/env bash
+set -uo pipefail
+[[ "\${1:-}" == "api" ]] || { echo "stub gh: unexpected command: \$*" >&2; exit 1; }
+path="\$2"; shift 2
+filter='.'
+while [[ \$# -gt 0 ]]; do
+  case "\$1" in --jq) filter="\$2"; shift 2;; *) shift;; esac
+done
+case "\$path" in
+  repos/o/r/issues/200/dependencies/blocked_by)
+    state="\$(cat "$native_state_file2")"
+    body="[{\\"number\\": 55, \\"state\\": \\"\$state\\"}]"
+    ;;
+  repos/o/r/issues/201/dependencies/blocked_by) body="[]" ;;
+  repos/o/r/issues/9) body="{\\"state\\": \\"open\\"}" ;;
+  *) echo "stub gh: unexpected path: \$path" >&2; exit 1;;
+esac
+jq -c "\$filter" <<<"\$body"
+STUB
+chmod +x "$tmp_dir/bin-native2/gh"
+
+export DEPENDENCY_GATE_GH="$tmp_dir/bin-native2/gh"
+export PATH="$tmp_dir/bin-native2:$PATH"
+assert_eq "issue_blocked_by_ref falls through to the native check when the thread names no Blocked-by: line" \
+  "#55" "$(issue_blocked_by_ref o/r 200 "An ordinary thread, no text convention at all.")"
+echo "closed" > "$native_state_file2"
+assert_eq "...and stops reporting a block once the native dependency closes" \
+  "" "$(issue_blocked_by_ref o/r 200 "An ordinary thread, no text convention at all.")"
+assert_eq "a text Blocked-by: reference still wins when both are present" \
+  "#9" "$(issue_blocked_by_ref o/r 201 "Blocked-by: #9")"
+assert_eq "an empty NUMBER skips the native check entirely" \
+  "" "$(issue_blocked_by_ref o/r "" "No text reference here either.")"
+unset DEPENDENCY_GATE_GH
+
+# ============================================================================
+# Priority inheritance (agent-ops#2422, requirement 4) — issue_priority_inherit
+# ============================================================================
+# "An open item that blocks others ranks at least as high as the highest
+# band among the open items it blocks" — a Low item (#1) that a High item
+# (#2) names as its Blocked-by dependency ranks as High, and says why.
+
+inherit_fixture='[
+  {"number": 1, "priority": "Low", "body": "Nothing blocks on this.", "comments": []},
+  {"number": 2, "priority": "High", "body": "Blocked-by: #1", "comments": []},
+  {"number": 3, "priority": "Medium", "body": "Unrelated.", "comments": []}
+]'
+inherited="$(issue_priority_inherit "$inherit_fixture")"
+assert_eq "a Low item blocking a High item is raised to High" \
+  "High" "$(jq -r '.[] | select(.number == 1) | .priority' <<<"$inherited")"
+assert_eq "...naming the blocked item that raised it" \
+  '["#2"]' "$(jq -c '.[] | select(.number == 1) | .priority_raised_by' <<<"$inherited")"
+assert_eq "the blocked item (#2) itself is untouched" \
+  "High" "$(jq -r '.[] | select(.number == 2) | .priority' <<<"$inherited")"
+assert_eq "...and carries no priority_raised_by of its own" \
+  "null" "$(jq -c '.[] | select(.number == 2) | .priority_raised_by // null' <<<"$inherited")"
+assert_eq "an unrelated item is untouched" \
+  "Medium" "$(jq -r '.[] | select(.number == 3) | .priority' <<<"$inherited")"
+assert_eq "...and carries no priority_raised_by" \
+  "null" "$(jq -c '.[] | select(.number == 3) | .priority_raised_by // null' <<<"$inherited")"
+
+no_raise_fixture='[
+  {"number": 10, "priority": "High", "body": "Fine as is.", "comments": []},
+  {"number": 11, "priority": "Low", "body": "Blocked-by: #10", "comments": []}
+]'
+no_raise="$(issue_priority_inherit "$no_raise_fixture")"
+assert_eq "a High item blocking a Low item is never lowered" \
+  "High" "$(jq -r '.[] | select(.number == 10) | .priority' <<<"$no_raise")"
+assert_eq "...and carries no priority_raised_by: it was never raised" \
+  "null" "$(jq -c '.[] | select(.number == 10) | .priority_raised_by // null' <<<"$no_raise")"
+
+two_blockers='[
+  {"number": 20, "priority": "Low", "body": "", "comments": []},
+  {"number": 21, "priority": "Medium", "body": "Blocked-by: #20", "comments": []},
+  {"number": 22, "priority": "High", "body": "Blocked-by: #20", "comments": []}
+]'
+two_result="$(issue_priority_inherit "$two_blockers")"
+assert_eq "an item blocking two others inherits the higher of the two bands" \
+  "High" "$(jq -r '.[] | select(.number == 20) | .priority' <<<"$two_result")"
+assert_eq "...naming only the blocked item that actually carries that band" \
+  '["#22"]' "$(jq -c '.[] | select(.number == 20) | .priority_raised_by' <<<"$two_result")"
+
+cross_repo_fixture='[
+  {"number": 30, "priority": "Low", "body": "Nothing.", "comments": []},
+  {"number": 31, "priority": "Urgent", "body": "Blocked-by: o/other#30", "comments": []}
+]'
+cross_result="$(issue_priority_inherit "$cross_repo_fixture")"
+assert_eq "a cross-repo Blocked-by reference contributes nothing to inheritance" \
+  "Low" "$(jq -r '.[] | select(.number == 30) | .priority' <<<"$cross_result")"
+
+empty_result="$(issue_priority_inherit '[]')"
+assert_eq "an empty array is the identity" "[]" "$(jq -c . <<<"$empty_result")"
+
+malformed_result="$(issue_priority_inherit 'not json at all')"
+assert_eq "malformed input falls back to itself unchanged" \
+  "not json at all" "$malformed_result"
+
 echo
 if (( failures == 0 )); then
   echo "All dependency-gate assertions passed."

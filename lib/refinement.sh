@@ -1119,22 +1119,25 @@ refiner_candidate_items() {
     def is_claimed($repo; $item):
       $claimed | any((.repo // "") == $repo
                      and ((.item // "") | tostring) == ($item | tostring));
-    # requirement 39g: an `issues` entry gather-issues.sh marked
-    # `priority_set: false` is unbanded. When such an entry is *also* already
-    # refined, it would otherwise never reach the Refiner again (is_refined
-    # excludes it) — so a mechanical Priority triage would have to fall to a
-    # human forever. `triage_only` lets it through solely for the band: the
-    # existing exempt/blocked/void/claimed exclusions still bind unchanged,
-    # only the is_refined exclusion is bypassed, and only for this reason.
-    # An entry with no `priority_set` key at all (every source but `issues`,
-    # and any `issues` entry gathered before this field existed) never
-    # qualifies here. Deliberately `has("priority_set") and .priority_set ==
-    # false` rather than `(.priority_set // null) == false`: the `//`
-    # operator substitutes on a `false` left-hand side exactly as it does on
-    # `null`, so the shorter form would collapse a real `priority_set: false`
-    # into `null` and never match.
+    # requirement 39g: an `issues` or `tech-debt` entry its own gatherer
+    # marked `priority_set: false` is unbanded (agent-ops#2422 lifted this
+    # from `issues` alone: both gatherers now read the identical `Priority`
+    # field the identical way — see scripts/gather-tech-debt.sh). When such
+    # an entry is *also* already refined, it would otherwise never reach the
+    # Refiner again (is_refined excludes it) — so a mechanical Priority triage
+    # would have to fall to a human forever. `triage_only` lets it through
+    # solely for the band: the existing exempt/blocked/void/claimed exclusions
+    # still bind unchanged, only the is_refined exclusion is bypassed, and
+    # only for this reason. An entry with no `priority_set` key at all (any
+    # entry gathered before this field existed) never qualifies here.
+    # Deliberately `has("priority_set") and .priority_set == false` rather
+    # than `(.priority_set // null) == false`: the `//` operator substitutes
+    # on a `false` left-hand side exactly as it does on `null`, so the shorter
+    # form would collapse a real `priority_set: false` into `null` and never
+    # match.
     def is_unbanded_issue($source; $e):
-      $source == "issues" and ($e | has("priority_set")) and ($e.priority_set == false);
+      ($source == "issues" or $source == "tech-debt")
+      and ($e | has("priority_set")) and ($e.priority_set == false);
     # agent-ops#1058: for a decision-pending candidate with no thread (keyed
     # the same way agent-ops#1128 keys the e_number derivation,
     # lib/refinement.sh ~1552 — on `entry.number`, never on `source`, since
@@ -1722,7 +1725,9 @@ _refiner_process_one_verdict() {
     Urgent | High | Medium | Low) ;;
     *) e_priority="" ;;
   esac
-  if [[ -n "$e_priority" && "$e_source" == "issues" && -n "$e_number" ]] && ! (( DRY_RUN )); then
+  if [[ -n "$e_priority" \
+        && ( "$e_source" == "issues" || "$e_source" == "tech-debt" ) \
+        && -n "$e_number" ]] && ! (( DRY_RUN )); then
     _refiner_apply_priority "$e_repo" "$e_item" "$e_number" "$e_priority"
   fi
 
