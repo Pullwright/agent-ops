@@ -248,10 +248,11 @@ chmod +x "$stub_bin/claude"
 #     states its own, deliberately unlike the shipped values, and the
 #     assertions read from it.
 #
-#     `providers` is deleted for the reason the autonomy keys are: the lane
-#     assertions below (#2240) are written against the default lanes — api
-#     weight 1, subscription weight 0, neither with an explicit `enabled` — and
-#     the shipped config now opens both lanes for the credit mix (#2238). ---
+#     `providers` is stated for the same reason: the lane assertions below
+#     (#2240) are about the default lanes — api weight 1, subscription weight
+#     0, neither with an explicit `enabled` — so the fixture names Anthropic
+#     with no `lanes` block at all, whatever the shipped one says. The shipped
+#     block has its own assertion, which reads it back. ---
 slug="acme-org/target-repo"
 base_config="$tmp/base-config.json"
 jq --arg slug "$slug" '
@@ -265,8 +266,8 @@ jq --arg slug "$slug" '
                  state_sync_push_minutes: 8, state_sync_fetch_minutes: 9,
                  log_rotation_minute: 23}
   | del(.merge_autonomy, .approver_app_id, .approver_model_default,
-        .approver_model_complex, .approver_model_critical, .escalation_autonomy,
-        .providers)
+        .approver_model_complex, .approver_model_critical, .escalation_autonomy)
+  | .providers = {anthropic: {substrate: "claude-code"}}
 ' "$CONFIG" > "$base_config"
 
 # run_doctor [VAR=value…] [-- extra doctor.sh args]
@@ -284,7 +285,7 @@ run_doctor() {
     env_pairs+=( "$1" ); shift
   done
   out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH -u ANTHROPIC_API_KEY -u ANTHROPIC_WORKSPACE_ID -u ANTHROPIC_CUSTOM_HEADERS -u NOTIFY_WEBHOOK_URL PATH="$stub_bin:$PATH" "${env_pairs[@]}" \
-    bash "$DOCTOR" --config "$base_config" "${extra_args[@]}" 2>&1)"
+    bash "$DOCTOR" --config "${doctor_config:-$base_config}" "${extra_args[@]}" 2>&1)"
   rc=$?
 }
 
@@ -2175,6 +2176,33 @@ assert_contains "api lane absent, enabled not by default (the login is what the 
   "[ ok ] api lane: ANTHROPIC_API_KEY is absent (weight 1, enabled not by default)" "$out"
 assert_contains "subscription lane present, enabled by default" \
   "[ ok ] subscription lane: claude is authenticated via subscription OAuth (claude.ai, max) (weight 0, enabled by default)" "$out"
+
+# The shipped lanes block, read back rather than repeated: its weights and
+# `enabled` flags come out of `providers_load`, the resolution doctor.sh
+# itself uses, so a change of weights (the credit mix's 1:9 follow-up to
+# #2238) needs no change here. Both credentials are present, so a lane with
+# no explicit `enabled` reads as it would on a node holding both: api open by
+# default, subscription not.
+shipped_lanes_config="$tmp/shipped-lanes-config.json"
+jq --slurpfile shipped "$CONFIG" '.providers = $shipped[0].providers' "$base_config" > "$shipped_lanes_config"
+shipped_lanes="$(source "$SCRIPT_DIR/lib/model-id.sh" \
+  && providers_load "$(jq -c '.providers' "$CONFIG")" \
+  && printf '%s' "${PROVIDER_LANES[anthropic]}")"
+shipped_lane_desc() {  # <lane> <open-by-default 0|1> -> "weight W, enabled D"
+  jq -r --arg l "$1" --argjson d "$2" '
+    .[$l] | "weight \(.weight), enabled \(
+      if .enabled == true then "yes" elif .enabled == false then "no"
+      elif $d == 1 then "by default" else "not by default" end)"' <<<"$shipped_lanes"
+}
+doctor_config="$shipped_lanes_config"
+run_doctor ANTHROPIC_API_KEY='sk-ant-api03-abc123' \
+  STUB_CLAUDE_AUTH_JSON='{"loggedIn":true,"authMethod":"claude.ai","subscriptionType":"max"}'
+unset doctor_config
+assert_contains "the shipped lanes block: the api lane reports its own weight and enabled state" \
+  "[ ok ] api lane: ANTHROPIC_API_KEY is set and shaped like an Anthropic key ($(shipped_lane_desc api 1))" "$out"
+assert_contains "the shipped lanes block: the subscription lane reports its own weight and enabled state" \
+  "[ ok ] subscription lane: claude is authenticated via subscription OAuth (claude.ai, max) ($(shipped_lane_desc subscription 0))" "$out"
+assert_eq "and doctor.sh exits 0" "0" "$rc"
 
 # Neither lane present: still a failure, exactly as before this issue.
 run_doctor STUB_CLAUDE_AUTH_JSON='{"loggedIn":false}'
