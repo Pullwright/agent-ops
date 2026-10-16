@@ -137,13 +137,18 @@ schedule_overrun_slots() {
 # a comma-separated, ascending list — cycle_minute, cycle_minute+interval,
 # … — so its lowest entry is cycle_minute itself, the one minute no single
 # firing can be told apart from its neighbours (see schedule_overrun_slots's
-# own header). Prints nothing at all — never fails — if CRONTAB_FILE does
+# own header). CRONTAB_FILE is the very file supercronic runs
+# (compose.yaml's `scheduler` names deploy/docker/crontab), so this is exact
+# whether or not render-crontab.sh's own render succeeded: the crontab baked
+# into the image, which a failed render leaves standing, carries a real
+# minute list of its own and is the schedule supercronic then fires on.
+# Prints nothing at all — never fails — if CRONTAB_FILE does
 # not exist, carries no line invoking */agent-cycle.sh outside a comment
 # (`#`-prefixed lines, including the template's own explanatory ones, are
 # skipped), or that line's own first field is not a plain comma-separated
-# list of integers (the baked placeholder crontab checked into this
-# repository before a container's first render, or a line shaped by a
-# template this parser does not recognise).
+# list of integers (a line shaped by a template this parser does not
+# recognise — crontab.tmpl's own unrendered @CYCLE_MINUTE@ among them,
+# though this function is never pointed at the template).
 schedule_crontab_base_minute() {
   local crontab_file="$1" cron_line="" minute_field=""
   [[ -f "$crontab_file" ]] || return 0

@@ -758,11 +758,17 @@
     It is never re-derived by re-hashing `NODE_NAME` the way that script's
     own `hash_minute()` does, since re-hashing could drift from whatever the
     rendered schedule actually contains; reading the file it wrote cannot.
-    Reading that file can still fail — a baked placeholder crontab before a
-    container's first render, a template this parser does not recognise —
-    in which case `schedule_overrun_slots` falls back to `cycle_started_at`'s
-    own minute-of-hour, correct only when this cycle happens to have fired on
-    the lowest minute its own crontab line keeps (agent-ops#1324).
+    That file is the one supercronic itself runs
+    (`compose.yaml`'s `scheduler` names it), so the read is exact whether or
+    not the render succeeded: the baked crontab a failed render leaves
+    standing is a valid, working schedule carrying its own real minute list,
+    and it is that schedule supercronic then fires on. Reading it can still
+    fail — the file absent, or its `agent-cycle.sh` line's minute field not
+    a plain comma-separated integer list (a crontab shaped by a template
+    this parser does not recognise) — in which case `schedule_overrun_slots`
+    falls back to `cycle_started_at`'s own minute-of-hour, correct only when
+    this cycle happens to have fired on the lowest minute its own crontab
+    line keeps (agent-ops#1324).
 
     Holding the lock alone would not make either base minute trustworthy:
     only the cron-fired original *is* supercronic's running job. A chained
