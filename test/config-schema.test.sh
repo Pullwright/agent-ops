@@ -1927,7 +1927,7 @@ done
 # machine's real state_dir. Sets $guard_out and $guard_rc.
 run_cycle_guard() {
   printf '%s' "$1" > "$guard_app/config.json"
-  guard_out="$(env AGENT_OPS_ROLE=active HOME="$guard_home" "$guard_app/agent-cycle.sh" 2>&1)"
+  guard_out="$(env AGENT_OPS_ROLE=active HOME="$guard_home" PATH="$guard_home/.local/bin:$PATH" "$guard_app/agent-cycle.sh" 2>&1)"
   guard_rc=$?
 }
 
@@ -1938,6 +1938,7 @@ run_review_guard() {
   printf '%s' "$1" > "$tmp/review-guard-config.json"
   guard_out="$(env AGENT_OPS_ROLE=active HOME="$guard_home" \
     AGENT_OPS_CONFIG="$tmp/review-guard-config.json" \
+    PATH="$guard_home/.local/bin:$PATH" \
     "$SCRIPT_DIR/review-cycle.sh" 2>&1)"
   guard_rc=$?
 }
