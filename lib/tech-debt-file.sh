@@ -9,7 +9,7 @@
 # under the calling stage's own identity where one applies.
 #
 # techdebt_file_issue REPO ITEM_REF TITLE BODY_FILE [TOKEN] [DEFAULT_FIX] \
-#                      [OWNER_DECISION]
+#                      [OWNER_DECISION] [PRIORITY]
 #   Files one plain GitHub issue, or returns an existing one that already
 #   covers ITEM_REF. No label or assignee — unlike an escalation
 #   (create_escalation_issue) this is not addressed at a specific human and
@@ -28,8 +28,20 @@
 #   filer; a dedup search that fails outright files anyway, noted on the
 #   error log, because this filing is a stage verdict's one chance (below).
 #
+#   PRIORITY (agent-ops#2422, requirement 1 — "the Script's own filers write
+#   the band directly through lib/issue-priority.sh"), one of
+#   Urgent/High/Medium/Low, is applied through `issue_priority_apply`'s own
+#   ratchet immediately after a *fresh* create only — the dedup-hit path
+#   above returns before this ever runs, on the same "an existing issue's own
+#   band is not this call's to touch" terms applying it only on create
+#   already follows for everything else about the issue. Omitted or anything
+#   else is silently skipped, exactly as an unset `priority` already is
+#   everywhere else in this pipeline — a filer with no opinion on the band
+#   leaves it to a human or the Refiner's own triage pass, never to a guess
+#   here.
+#
 # techdebt_file_debt REPO TITLE BODY PROVENANCE [TOKEN] [DEFAULT_FIX] \
-#                     [OWNER_DECISION]
+#                     [OWNER_DECISION] [PRIORITY]
 #   Files TITLE/BODY as a GitHub issue in REPO labelled `pw::type:tech-debt`
 #   (D15 as revised, agent-ops#869/#872/#874) — the same trust anchor
 #   scripts/gather-tech-debt.sh reads to serve the band, and the one
@@ -42,6 +54,10 @@
 #   default of 30. Prints "<number>\t<url>" on
 #   success — the new issue's, or the matched one's — and prints nothing and
 #   returns 1 otherwise.
+#
+#   PRIORITY, same four names, is applied the same way as
+#   techdebt_file_issue's own — a fresh create only, never the dedup-comment
+#   path, through the same ratchet.
 #
 #   Retired by this move (agent-ops#874): the `td/<id>` reservation
 #   (scripts/reserve-tech-debt-id.pl), the `td-record/<id>` filing branch,
@@ -99,6 +115,34 @@ if ! declare -F issue_create_with_retry >/dev/null 2>&1; then
   . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/issue-file.sh"
 fi
 
+# PRIORITY's own ratchet, `issue_priority_apply` — guarded and sourced
+# relative to this file the same way, so a caller that sourced
+# lib/issue-priority.sh first (it carries its own source-time cache-directory
+# setup, which must run at most once) is left alone.
+if ! declare -F issue_priority_apply >/dev/null 2>&1; then
+  # shellcheck source=lib/issue-priority.sh
+  . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/issue-priority.sh"
+fi
+
+# _techdebt_apply_priority REPO NUMBER PRIORITY
+# The shared tail both techdebt_file_issue and techdebt_file_debt run after a
+# *fresh* create: PRIORITY, one of Urgent/High/Medium/Low, applied through
+# the one-way ratchet. Silently does nothing for an empty or unrecognised
+# PRIORITY — the same "no opinion, leave it" direction every other optional
+# priority input in this pipeline takes — and for a failed or skipped
+# application, which is never this filing's own failure: `issue_priority_apply`
+# already reasons about applied/skipped/failed on its own terms, and a filer
+# that has just created the issue has nothing further useful to say about it.
+_techdebt_apply_priority() {
+  local repo="$1" number="$2" priority="$3"
+  case "$priority" in
+    Urgent | High | Medium | Low) ;;
+    *) return 0 ;;
+  esac
+  issue_priority_apply "$repo" "$number" "$priority" >/dev/null 2>&1 || true
+  return 0
+}
+
 # _techdebt_gh TOKEN ARGS...
 # Run `gh` ARGS..., under TOKEN's identity if non-empty, the ordinary
 # pipeline login otherwise — explicitly unset for that call (`env -u
@@ -155,8 +199,8 @@ techdebt_default_section() {
 #                      [OWNER_DECISION]
 techdebt_file_issue() {
   local repo="$1" item_ref="$2" title="$3" body_file="$4" token="${5:-}" \
-        default_fix="${6:-}" owner_decision="${7:-false}"
-  local existing rc=0 body_content combined_file label="" result
+        default_fix="${6:-}" owner_decision="${7:-false}" priority="${8:-}"
+  local existing rc=0 body_content combined_file label="" result number
   local ISSUE_FILE_GH=(_techdebt_gh "$token") ISSUE_FILE_ERRLOG
   ISSUE_FILE_ERRLOG="$(_techdebt_err_log)"
   existing="$(issue_find_by_body "$repo" "$item_ref" "$item_ref" open "" 200)" || rc=$?
@@ -198,6 +242,8 @@ techdebt_file_issue() {
   result="$(issue_create_with_retry "$repo" "$title" "$combined_file" "$label")" || result=""
   rm -f "$combined_file"
   [[ -n "$result" ]] || return 1
+  number="${result%%$'\t'*}"
+  _techdebt_apply_priority "$repo" "$number" "$priority"
   printf '%s' "$result"
 }
 
@@ -241,8 +287,8 @@ _techdebt_title_dedup_match() {
 #                     [OWNER_DECISION]
 techdebt_file_debt() {
   local repo="$1" title="$2" body="$3" provenance="$4" token="${5:-}" \
-        default_fix="${6:-}" owner_decision="${7:-false}"
-  local errlog needle list list_n match_number match_url combined_file result
+        default_fix="${6:-}" owner_decision="${7:-false}" priority="${8:-}"
+  local errlog needle list list_n match_number match_url combined_file result number
   local ISSUE_FILE_GH=(_techdebt_gh "$token") ISSUE_FILE_ERRLOG
   errlog="$(_techdebt_err_log)"
   ISSUE_FILE_ERRLOG="$errlog"
@@ -293,5 +339,7 @@ techdebt_file_debt() {
   result="$(issue_create_with_retry "$repo" "$title" "$combined_file" pw::type:tech-debt)" || result=""
   rm -f "$combined_file"
   [[ -n "$result" ]] || return 1
+  number="${result%%$'\t'*}"
+  _techdebt_apply_priority "$repo" "$number" "$priority"
   printf '%s' "$result"
 }
