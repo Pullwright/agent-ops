@@ -735,55 +735,71 @@
     all, so nothing else ever gets the chance to log it. At cleanup
     (requirement 11), before the lock releases and only for a cycle that
     actually acquired the lock *and* is the cron-fired original — its chain
-    depth is 1 (requirement 39) and neither `--once` nor `--dry-run` was
-    given — the Script computes which of its own schedule's
-    slots fell strictly inside its own run — from its own start
-    (`cycle_started_at`) and its own end, and its own already-defaulted
+    depth is 1 (requirement 39) and none of `--once`, `--dry-run` or
+    `--wake-poll` was given — the Script computes which of its own
+    schedule's slots fell strictly inside its own run — from its own start
+    (`cycle_started_at`) and its own end, its own already-defaulted
     `schedule` block (`cycle_hours`, `cycle_interval_minutes`,
     `excluded_minutes` — the same block `deploy/docker/render-crontab.sh`
-    renders into the crontab, requirement 1d) — and writes one
-    `cycle-skipped {reason: "overlap", slot_ts, held_by: <cycle id>,
-    elapsed_s}` event per slot, oldest first. `slot_ts` is the dropped
-    firing's own instant; `elapsed_s` is how long this cycle had already
-    been running at that instant — the same quantity supercronic's own log
-    line reports, computed independently here since this process never
-    reads that log. The node's own base minute is never re-derived by
-    re-hashing `NODE_NAME` the way that script's `hash_minute()` does:
-    for the cron-fired original the gate above admits, `cycle_started_at` is
-    a minute the real crontab already chose to fire this cycle on, so its own
-    minute-of-hour serves directly, and no slot named this way can be one the
-    crontab would not have fired — which an independent re-hash, drifting
-    from the rendered schedule, could name.
+    renders into the crontab, requirement 1d), and the node's own true base
+    minute (below) — and writes one `cycle-skipped {reason: "overlap",
+    slot_ts, held_by: <cycle id>, elapsed_s}` event per slot, oldest first.
+    `slot_ts` is the dropped firing's own instant; `elapsed_s` is how long
+    this cycle had already been running at that instant — the same quantity
+    supercronic's own log line reports, computed independently here since
+    this process never reads that log.
 
-    That gate is what makes the base minute trustworthy, and holding the lock
-    alone would not: only the cron-fired original *is* supercronic's running
-    job. A chained continuation (requirement 39) is spawned detached and
-    disowned and its cron-fired parent then exits, ending supercronic's job,
-    so the slots inside a chained cycle's run are not dropped at all — they
-    fire, contend for the lock, and are already recorded by the contending
-    tick as requirement 1's own `reason`-less `cycle-skipped`. Logging them
-    here as well would double-count them, and at a fabricated `slot_ts`
-    besides, since a chained cycle starts whenever its predecessor happened
-    to finish — an arbitrary minute-of-hour, which the derivation above would
-    take as the node's base. `--once` and `--dry-run` runs have the same
-    shape: supercronic's job is untouched by them, so their firings land and
-    contend as normal. Nothing is lost by the narrowing, because every slot
+    The node's own base minute is read straight out of the rendered crontab
+    (`schedule_crontab_base_minute`, `lib/schedule-slots.sh`): the
+    agent-cycle.sh line's own minute field is an ascending, comma-separated
+    list — `cycle_minute, cycle_minute+cycle_interval_minutes, …` — so its
+    lowest entry is `cycle_minute` itself, the node's real base regardless of
+    which of that list's minutes this particular cycle happened to fire on.
+    It is never re-derived by re-hashing `NODE_NAME` the way that script's
+    own `hash_minute()` does, since re-hashing could drift from whatever the
+    rendered schedule actually contains; reading the file it wrote cannot.
+    Reading that file can still fail — a baked placeholder crontab before a
+    container's first render, a template this parser does not recognise —
+    in which case `schedule_overrun_slots` falls back to `cycle_started_at`'s
+    own minute-of-hour, correct only when this cycle happens to have fired on
+    the lowest minute its own crontab line keeps (agent-ops#1324).
+
+    Holding the lock alone would not make either base minute trustworthy:
+    only the cron-fired original *is* supercronic's running job. A chained
+    continuation (requirement 39) is spawned detached and disowned and its
+    cron-fired parent then exits, ending supercronic's job, so the slots
+    inside a chained cycle's run are not dropped at all — they fire, contend
+    for the lock, and are already recorded by the contending tick as
+    requirement 1's own `reason`-less `cycle-skipped`. Logging them here as
+    well would double-count them, and — whenever the crontab read above
+    failed — at a fabricated `slot_ts` besides, since a chained cycle starts
+    whenever its predecessor happened to finish, an arbitrary minute-of-hour
+    the fallback derivation would then take as the node's base. `--once` and
+    `--dry-run` runs have the same shape: supercronic's job is untouched by
+    them, so their firings land and contend as normal. So does a
+    wake-poll-triggered run (requirement 54): `scripts/wake-poll.sh` invokes
+    this script with `--wake-poll`, on whatever instant the poll detected a
+    change at rather than the cron-fired job's own clock, so it is excluded
+    here the same way. Nothing is lost by the narrowing, because every slot
     it declines to name is one the contending tick recorded. A human running
-    the script with neither flag is the one case left ungated, a known bound
-    rather than an oversight: distinguishing it from the cron firing needs
-    machinery this does not carry.
+    the script with none of the three flags is the one case left ungated, a
+    known bound rather than an oversight: distinguishing it from the cron
+    firing needs machinery this does not carry.
 
-    What it names is the slot series running forward from *this* firing's
-    own minute, repeating at `cycle_interval_minutes` within each allowed
-    hour. That is the node's whole series only when the cycle fired on the
-    lowest kept minute of its hour; a cycle that fired on a later one
+    What it names is the slot series running forward from the node's own
+    base minute, repeating at `cycle_interval_minutes` within each allowed
+    hour. Read from the crontab, that series is the node's whole set, exact
+    rather than a bound. Fallen back to the cycle's own firing minute
+    instead, it is the node's whole series only when that firing minute was
+    the lowest kept minute of its hour; a cycle that fired on a later one
     contributes no slot at any earlier minute-of-hour of any subsequent
     hour, because one firing minute does not identify which of the hour's
     kept minutes is the base (`:55` at a fifteen-minute interval is equally
-    consistent with a base of 10, 25, 40 or 55). The error is one-sided:
-    every event written names a firing that really was dropped, and the
-    count is a lower bound on the firings lost, never an overstatement
-    (agent-ops#1324) (`lib/schedule-slots.sh`'s `schedule_overrun_slots`,
+    consistent with a base of 10, 25, 40 or 55). That fallback error is
+    one-sided: every event written still names a firing that really was
+    dropped, and the count is a lower bound on the firings lost, never an
+    overstatement (agent-ops#1324) (`lib/schedule-slots.sh`'s
+    `schedule_overrun_slots` and `schedule_crontab_base_minute`,
     `test/schedule-slots.test.sh`).
 
     These are ordinary `cycle-skipped` events, sharing their name with
@@ -1037,14 +1053,19 @@
     (`schedule.wake_poll_minutes`, default 2m — well under
     `cycle_interval_minutes`'s own 15m default), does one conditional GET
     (`If-None-Match`) per configured repository against a small, fixed set
-    of endpoints, and invokes `agent-cycle.sh` — the identical entry point
-    the cron line's own `@CYCLE_MINUTE@` firing uses, so a woken node
-    takes the same lock (requirement 1), the same claims (17a), and the
+    of endpoints, and invokes `agent-cycle.sh --wake-poll` — the identical
+    entry point the cron line's own `@CYCLE_MINUTE@` firing uses, so a woken
+    node takes the same lock (requirement 1), the same claims (17a), and the
     same back-pressure cap as a cron-fired one — the moment any of them
     answers with real content rather than a `304`. This shortens pickup
     latency for a source-relevant event without widening the
     concurrent-claim window: nothing on the claim path changes, only how
-    soon `agent-cycle.sh` is invoked.
+    soon `agent-cycle.sh` is invoked. The one thing `--wake-poll` itself
+    changes is requirement 11a's own overrun-slot logging, which it excludes
+    this invocation from — a wake starts at whatever instant the poll
+    detected a change, never a minute the real crontab fires on, so it must
+    not be mistaken for the cron-fired original that requirement's gate
+    exists to admit (agent-ops#1324).
 
     Mechanism, priced under D14: a GitHub webhook receiver was rejected —
     nodes have no public ingress (they sit behind Tailscale,

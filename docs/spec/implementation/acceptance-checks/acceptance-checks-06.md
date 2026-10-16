@@ -295,21 +295,32 @@
     probes' job, on every unattended run.
 
 51. **Overrun-slot skips are computed and logged correctly (requirement 11a,
-    agent-ops#1287).** `test/schedule-slots.test.sh` passes:
+    agent-ops#1287, agent-ops#1324).** `test/schedule-slots.test.sh` passes:
     `lib/schedule-slots.sh`'s `schedule_overrun_slots` names exactly the
-    slots of the series running forward from the span's own start minute
-    that fell strictly inside a fixture `[start, end]` span for a given
-    `schedule` block, including a fixture cycle spanning two slots
-    (asserting both `slot_ts` values), a span crossing an hour boundary, a
-    span crossing midnight, an hour `cycle_hours` excludes entirely, and an
-    unparseable start printing nothing rather than failing; `agent-cycle.sh`'s
+    slots of the series running forward from its own base minute — a given
+    `TRUE_BASE_MINUTE` argument when one is supplied, the span's own start
+    minute otherwise — that fell strictly inside a fixture `[start, end]`
+    span for a given `schedule` block, including a fixture cycle spanning
+    two slots (asserting both `slot_ts` values), the issue's own two
+    reproduction spans (a true base minute distinct from, and earlier
+    within the hour than, the span's own start minute names every
+    earlier-in-hour slot a start-minute-only fallback cannot, including a
+    firing on the hour's last kept minute naming a nonzero set), a span
+    crossing an hour boundary, a span crossing midnight, an
+    hour `cycle_hours` excludes entirely, and an unparseable start printing
+    nothing rather than failing; `schedule_crontab_base_minute` reads a
+    fixture rendered-crontab file's own `agent-cycle.sh` line and prints its
+    minute field's lowest entry, skipping a `#`-prefixed comment line that
+    merely mentions that filename, and printing nothing for a missing file
+    or an unparseable minute field; `agent-cycle.sh`'s
     own cleanup-time call site, lifted verbatim out of the script (the same
     extraction `test/finish-then-continue.test.sh` uses), logs one
     `cycle-skipped {reason: "overlap", slot_ts, held_by, elapsed_s}` per slot
     returned, only when `lock_acquired` is `1` and the cycle is the cron-fired
     original — logging nothing for a chained cycle (`chain_count` above 1) or
-    for a `--once` or `--dry-run` run, whose slots the contending tick already
-    records; and `lib/manage.sh`'s
+    for a `--once`, `--dry-run` or `--wake-poll` run, whose slots the
+    contending tick already records — and threads a true base minute given
+    to it through to `schedule_overrun_slots` unchanged; and `lib/manage.sh`'s
     `overlap_status_report` counts only this node's own last-24h
     `reason: "overlap"` events, ignoring the `reason`-less lock-contention
     `cycle-skipped` shape, counting the events either side of a spliced line,
