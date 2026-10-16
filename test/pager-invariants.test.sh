@@ -302,6 +302,54 @@ else
   printf 'ok   - no PAGER_REMEDY_REPO returns failure rather than filing nowhere\n'
 fi
 
+# --- The declared reduction every invariant is evaluated over (agent-ops#2429)
+# `_pager_evaluate_one` hands an EVAL_FN not the union but the union reduced
+# by `union_prefilter` to the event types `pager_register_builtin_invariants`
+# declares for its key. For every invariant this file drives with a fixture
+# union, the verdict over that reduction must equal the verdict over the
+# whole fixture — the same `firing`, `evidence` and `nodes` — so a
+# declaration that misses a type a fixture uses fails here rather than
+# firing a quiet zero in production. test/union-stream.test.sh's program
+# check sees the helpers an EVAL_FN reads through (`blocked_items`,
+# `refinement_blocked_label_stale`, `_pager_blocked_label_candidate_repos`,
+# `refinement_blocked_label_orphaned`, `_pager_pr_unreviewed_candidates`)
+# only because its `pager_program_of` appends their bodies by hand, since
+# its checker cannot follow a call; this comparison is the second net, for a
+# type neither body shows. The
+# fixture is padded first with a record of an undeclared type
+# (`merge-observed`, the real union's commonest) and a record of another
+# type carrying the key's first declared type in a nested object — the one
+# shape that passes the byte-level prefilter — so the reduction is a proper
+# subset of what the whole-fixture verdict read, and the equality says
+# something: recall of every declared line, and the EVAL_FN's own precision
+# over the decoy. Each comparison runs right after its invariant's own
+# fixture assertions, under the same PAGER_EVAL_* and `gh` stub state.
+pager_register_builtin_invariants 180 15 >/dev/null 2>&1
+for key in "${PAGER_KEYS[@]}"; do
+  assert_eq "built-in invariant '$key' declares the event types it reads" "yes" \
+    "$([[ -v "PAGER_EVAL_EVENTS[$key]" ]] && echo yes || echo no)"
+done
+assert_reduced_verdict_eq() {  # assert_reduced_verdict_eq KEY NODES_JSON LOG_FILE
+  local key="$1" nodes="$2" log="$3" fn padded="$WORKDIR/padded.jsonl" reduced="$WORKDIR/reduced.jsonl"
+  local first whole over_reduced
+  fn="${PAGER_EVAL_FN[$key]}"
+  first="${PAGER_EVAL_EVENTS[$key]%% *}"
+  {
+    printf '{"ts":"2026-01-01T00:00:00Z","node":"n0","cycle":"c0","event":"merge-observed","repo":"o/r","item":"1"}\n'
+    cat "$log"
+    jq -nc --arg e "${first:-stage-end}" \
+      '{ts: "2026-01-01T00:00:01Z", node: "n0", cycle: "c0", event: "log-repaired", nested: {event: $e}}'
+  } > "$padded"
+  # shellcheck disable=SC2086  # a word list by design.
+  union_prefilter "$padded" ${PAGER_EVAL_EVENTS[$key]} > "$reduced"
+  assert_eq "$key: the declared reduction of $(basename "$log") is a proper subset of the padded fixture" "yes" \
+    "$( (( $(wc -l < "$reduced") < $(wc -l < "$padded") )) && echo yes || echo no)"
+  whole="$("$fn" "$nodes" "$padded" | jq -c '{firing, evidence, nodes}')"
+  over_reduced="$("$fn" "$nodes" "$reduced" | jq -c '{firing, evidence, nodes}')"
+  assert_eq "  ... and the verdict over it equals the verdict over the whole fixture" "$whole" "$over_reduced"
+}
+assert_reduced_verdict_eq verdict-unanimous "$fleet3_all_failing" /dev/null
+
 # --- page-outlived-item ---------------------------------------------------------
 
 : > "$GH_CALLS_FILE"
@@ -338,6 +386,7 @@ assert_eq "  ... one listing per label, never one comma-joined (which GitHub AND
   "$(grep '^issue list' "$GH_CALLS_FILE" | grep -c -- '--label [^ ]*,')"
 assert_eq "  ... both labels were asked for" "2" \
   "$(grep '^issue list' "$GH_CALLS_FILE" | grep -c -- '--label')"
+assert_reduced_verdict_eq page-outlived-item "" /dev/null
 
 : > "$GH_CALLS_FILE"
 outcome="$(pager_remedy_page_outlived_item page-outlived-item "irrelevant, re-derived live")"
@@ -508,6 +557,7 @@ assert_eq "  ... n14 (a completed cycle that outran a slot, nothing since) is na
 n14_segment="$(grep -oE 'n14 \([^)]*\)' <<<"$(jq -r '.evidence' <<<"$verdict")")"
 assert_eq "  ... n14's own overrun-slot cycle-skipped does not drop its cycle from the histogram" \
   "n14 (50m since last cycle-start/cycle-skipped; recent cycle durations in minutes: 20)" "$n14_segment"
+assert_reduced_verdict_eq firing-missed "$fm_nodes" "$fm_log"
 
 # The #1686/#1768 fleet as the evaluating node saw it: one standby whose
 # newest cycle event is days old beside actives that cycled minutes ago.
@@ -557,6 +607,7 @@ PAGER_EVAL_NODE_STALE_AFTER_MINUTES=30
 verdict="$(pager_eval_node_stale "$ns_nodes" /dev/null)"
 assert_eq "only the node past 2x node_stale_after_minutes fires" "true" "$(jq -r '.firing' <<<"$verdict")"
 assert_eq "  ... names exactly that node" "n2" "$(jq -r '.nodes | join(",")' <<<"$verdict")"
+assert_reduced_verdict_eq node-stale "$ns_nodes" /dev/null
 
 ns_nodes_fresh="$(printf '%s\n' "$(ns_row n1 100)" | jq -sc '.')"
 assert_eq "every node under threshold: does not fire" "false" \
@@ -582,6 +633,7 @@ assert_eq "only the active node stuck past 2x updater_stuck_after_minutes fires"
 assert_eq "  ... names exactly that node" "n2" "$(jq -r '.nodes | join(",")' <<<"$verdict")"
 assert_eq "  ... a stale node's stuck streak is not trusted" "0" \
   "$(jq -r '.nodes | index("n3") != null' <<<"$verdict" | grep -c true)"
+assert_reduced_verdict_eq updater-stuck "$us_nodes" /dev/null
 
 PAGER_EVAL_UPDATER_STUCK_AFTER_MINUTES=""
 assert_eq "no configured threshold: never fires" "false" \
@@ -629,6 +681,10 @@ assert_eq "  ... a run that completed a review resets: n2's own 2-run tail does 
   "$(jq -r '.nodes | index("n2") != null' <<<"$verdict" | grep -c true)"
 assert_eq "  ... names agent-ops#996's own project-reviewer verdict, the per-node reading this is the alarm for" "1" \
   "$(grep -c '#996' <<<"$(jq -r '.evidence' <<<"$verdict")")"
+# Its declaration is empty: it reads the review union through
+# PAGER_EVAL_REVIEW_UNION_LOG_FILE (set just above) and ignores the
+# implementation union it is handed, so an empty file must change nothing.
+assert_reduced_verdict_eq review-pipeline-failing "" /dev/null
 
 # A run that stood down, was skipped, or had no repository due writes neither
 # a `review-attempt-failed` nor a `review-stage-end`: it says nothing about
@@ -670,6 +726,7 @@ verdict="$(pager_eval_dashboard_unreadable "$df_nodes" /dev/null)"
 assert_eq "a slow fetch and a failed parse both fire" "true" "$(jq -r '.firing' <<<"$verdict")"
 assert_eq "  ... names both, never the node with no probe result at all" "n2,n3" \
   "$(jq -r '.nodes | sort | join(",")' <<<"$verdict")"
+assert_reduced_verdict_eq dashboard-unreadable "$df_nodes" /dev/null
 
 df_nodes_ok="$(printf '%s\n' "$(df_row n1 5 true)" | jq -sc '.')"
 assert_eq "a fast, parsed fetch does not fire" "false" \
@@ -731,6 +788,7 @@ assert_eq "  ... n2's own back-pressure cycles are excluded" "0" \
   "$(jq -r '.nodes | index("n2") != null' <<<"$verdict" | grep -c true)"
 assert_eq "  ... n3's one cycle that ended without demand breaks the streak" "0" \
   "$(jq -r '.nodes | index("n3") != null' <<<"$verdict" | grep -c true)"
+assert_reduced_verdict_eq idle-with-demand "$idle_nodes" "$idle_log"
 
 # The fault firing-missed had, one invariant along (agent-ops#1686): a node
 # demoted mid-streak keeps publishing a fresh heartbeat while requirement
@@ -798,6 +856,7 @@ assert_eq "  ... n3 (one cycle back up to a prose rung, dropping nothing) is exc
   "$(jq -r '.nodes | index("n3") != null' <<<"$verdict" | grep -c true)"
 assert_eq "  ... n4 (every cycle on the identity-only rung 10, dropping nothing) is excluded" "0" \
   "$(jq -r '.nodes | index("n4") != null' <<<"$verdict" | grep -c true)"
+assert_reduced_verdict_eq fit-ladder-pinned "[]" "$fit_log"
 
 fit_log_none="$WORKDIR/fit-none.jsonl"
 write_log "$fit_log_none" "$(fit_ev "$(rel -100000)" n1 c1 20 12)"
@@ -819,6 +878,7 @@ verdict="$(pager_eval_work_order_repaired_rate "[]" "$rate_log")"
 assert_eq "2 of 4 selections repaired (50%), above the 20% threshold: fires" "true" \
   "$(jq -r '.firing' <<<"$verdict")"
 assert_eq "  ... evidence names the rate" "1" "$(grep -c '50%' <<<"$(jq -r '.evidence' <<<"$verdict")")"
+assert_reduced_verdict_eq work-order-repaired-rate "[]" "$rate_log"
 
 PAGER_EVAL_REPAIR_RATE_PERCENT=60
 assert_eq "the same rate under a 60% threshold: does not fire" "false" \
@@ -843,6 +903,13 @@ verdict="$(pager_eval_blocked_label_orphaned "[]" "$orph_log")"
 assert_eq "an own-label-action add with no later remove, and the block cleared: fires" "true" \
   "$(jq -r '.firing' <<<"$verdict")"
 assert_eq "  ... evidence names the issue" "1" "$(grep -c 'o/r#5' <<<"$(jq -r '.evidence' <<<"$verdict")")"
+# The four helpers this reads through (`blocked_items`,
+# `refinement_blocked_label_stale`, `_pager_blocked_label_candidate_repos`,
+# `refinement_blocked_label_orphaned`) are what the declaration must cover;
+# test/union-stream.test.sh's program check sees their bodies only because
+# its `pager_program_of` appends them by hand, and this comparison is the
+# net under that one.
+assert_reduced_verdict_eq blocked-label-orphaned "[]" "$orph_log"
 
 : > "$GH_CALLS_FILE"
 PAGER_REMEDY_UNION_LOG_FILE="$orph_log"
@@ -881,6 +948,7 @@ assert_eq "an escalate verdict with no matching escalated event in the same cycl
   "$(jq -r '.firing' <<<"$verdict")"
 assert_eq "  ... evidence names the item and cycle" "1" \
   "$(grep -c 'o/r#9 (cycle c1)' <<<"$(jq -r '.evidence' <<<"$verdict")")"
+assert_reduced_verdict_eq claim-unreconciled "[]" "$claim_log"
 
 : > "$GH_CALLS_FILE"
 PAGER_REMEDY_UNION_LOG_FILE="$claim_log"
@@ -896,6 +964,9 @@ write_log "$claim_log_reconciled" \
   "$(cycle_ev "$(rel -99)" n1 c1 enabler-examined '{"repo":"o/r","item":"9","outcome":"escalate"}')"
 assert_eq "a matching escalated event in the same cycle: does not fire" "false" \
   "$(jq -r '.firing' <<<"$(pager_eval_claim_unreconciled "[]" "$claim_log_reconciled")")"
+# The reconciling `escalated` is a second declared type: dropped from the
+# declaration, the reduction would fire where the whole fixture does not.
+assert_reduced_verdict_eq claim-unreconciled "[]" "$claim_log_reconciled"
 
 claim_log_failed="$WORKDIR/claim-failed.jsonl"
 write_log "$claim_log_failed" \
@@ -934,6 +1005,7 @@ assert_eq "a guard-degraded gather_claimed startswith() type error: fires" "true
   "$(jq -r '.firing' <<<"$verdict")"
 assert_eq "  ... evidence names the repo" "1" \
   "$(grep -c 'Poetic-Poems/poetic' <<<"$(jq -r '.evidence' <<<"$verdict")")"
+assert_reduced_verdict_eq gather-claimed-degraded "[]" "$gcd_log"
 
 gcd_log_other_site="$WORKDIR/gather-claimed-degraded-other-site.jsonl"
 write_log "$gcd_log_other_site" \
@@ -1002,6 +1074,9 @@ verdict="$(pager_eval_escalation_burst "[]" "$reflag_log")"
 assert_eq "the same re-flag reason paged the same item twice: fires despite a high burst threshold" \
   "true" "$(jq -r '.firing' <<<"$verdict")"
 assert_eq "  ... evidence names the reflagged item" "1" "$(grep -c 'o/r#9 reflagged 2x' <<<"$(jq -r '.evidence' <<<"$verdict")")"
+# Both halves of the declaration are load-bearing here: the burst count reads
+# `escalated`, the re-flag fingerprint reads the `attempt-failed` behind it.
+assert_reduced_verdict_eq escalation-burst "[]" "$reflag_log"
 
 reflag_log_old="$WORKDIR/reflag-old.jsonl"
 write_log "$reflag_log_old" \
@@ -1030,6 +1105,7 @@ verdict="$(pager_eval_digest_truncated "[]" "$digest_log")"
 assert_eq "the digest undercounts a live total as of the digest's own ts: fires" "true" "$(jq -r '.firing' <<<"$verdict")"
 assert_eq "  ... evidence names the repo and both counts" "1" \
   "$(grep -c 'o/r (digest issues=50/live=150, digest open_prs=2/live=2)' <<<"$(jq -r '.evidence' <<<"$verdict")")"
+assert_reduced_verdict_eq digest-truncated "[]" "$digest_log"
 
 : > "$GH_CALLS_FILE"
 : > "$WORKDIR/pager-remedy.jsonl"
@@ -1091,6 +1167,7 @@ assert_eq "  ... a repo at human is excluded despite the same refusal pattern" "
   "$(grep -c 'human/repo' <<<"$(jq -r '.evidence' <<<"$verdict")")"
 assert_eq "  ... a repo with no landing-refused activity in the window never fires" "0" \
   "$(grep -c 'idle/repo' <<<"$(jq -r '.evidence' <<<"$verdict")")"
+assert_reduced_verdict_eq landing-never-armed "[]" "$lna_log"
 
 : > "$GH_CALLS_FILE"
 PAGER_REMEDY_REPO="reader/repo"
@@ -1105,6 +1182,9 @@ write_log "$lna_log_armed" \
   "$(landing_ev "$(rel -300000)" landing-armed o/r)"
 assert_eq "a landing-armed event inside the window: does not fire" "false" \
   "$(jq -r '.firing' <<<"$(pager_eval_landing_never_armed "[]" "$lna_log_armed")")"
+# The arming is the second declared type: dropped from the declaration, the
+# reduction would fire where the whole fixture does not.
+assert_reduced_verdict_eq landing-never-armed "[]" "$lna_log_armed"
 
 PAGER_EVAL_REPOS_JSON_SAVE="$PAGER_EVAL_REPOS_JSON"
 PAGER_EVAL_REPOS_JSON=""
@@ -1130,6 +1210,7 @@ verdict="$(pager_eval_landing_refused_unknown "[]" "$lru_log")"
 assert_eq "6 of 10 landing-refused events are class unknown (>= half, >= 5): fires" \
   "true" "$(jq -r '.firing' <<<"$verdict")"
 assert_eq "  ... evidence names the count" "1" "$(grep -c '6 of 10' <<<"$(jq -r '.evidence' <<<"$verdict")")"
+assert_reduced_verdict_eq landing-refused-unknown "[]" "$lru_log"
 
 : > "$GH_CALLS_FILE"
 PAGER_REMEDY_REPO="reader/repo"
@@ -1210,6 +1291,10 @@ assert_eq "  ... the too-young pull request (#13) is excluded" "0" "$(grep -c 'o
 assert_eq "  ... the already-engaged pull request (#14) is excluded" "0" "$(grep -c 'o/r#14' <<<"$(jq -r '.evidence' <<<"$verdict")")"
 assert_eq "  ... the already-verdicted pull request (#15) is excluded" "0" "$(grep -c 'o/r#15' <<<"$(jq -r '.evidence' <<<"$verdict")")"
 assert_eq "  ... the already-warned pull request (#16) is excluded" "0" "$(grep -c 'o/r#16' <<<"$(jq -r '.evidence' <<<"$verdict")")"
+# All three declared types are what exclude #14, #15 and #16: one dropped
+# from the declaration, and the reduction would name a pull request the
+# whole fixture does not.
+assert_reduced_verdict_eq pr-unreviewed "[]" "$pru_log"
 
 pager_remedy_pr="$WORKDIR/pager-remedy-pr.jsonl"
 : > "$pager_remedy_pr"

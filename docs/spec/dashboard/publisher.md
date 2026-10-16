@@ -70,20 +70,34 @@ agent-ops#1649). What a reader holds is what its answer is about:
   — over the tick's raw snapshot of the same union, `$raw_events_jsonl`,
   since it takes raw lines on stdin — and `blocked_items`/`void_items`/
   `draft_obsolete_flags` inside the item-lifecycle fold) each gather their
-  declared types in the one `jq` process that folds them.
+  declared types in the one `jq` process that folds them. Two of those
+  folds, and the stand-down banner's `limit_union_record`, are handed only
+  the lines of their declared types to begin with: `union_prefilter`
+  (`lib/union-stream.sh`) keeps, with one byte-level `grep -F`, the lines
+  carrying `"event":"<type>"` for each type a reader declares —
+  `crash_loop_verdict`'s `CRASH_LOOP_VERDICT_EVENTS` over the raw snapshot,
+  `limit_union_record`'s `LIMIT_UNION_EVENTS` over `$events_jsonl`, and
+  `node_time_state_fold`'s `NODE_TIME_STATE_EVENTS` over the review union —
+  into a file in the working set, and the fold's `jq` reads that file. The
+  reduction keeps every record of a declared type (each is written compact,
+  so it carries the substring) and the fold's own `select` drops a record of
+  another type that carries the substring nested, so what the fold keeps is
+  unchanged; a prefilter that fails leaves the whole union in place.
   `fleet_sizing_contention_by_node` keeps its
   selections and contended claim losses.
 
 A roll-up that reports the whole log's time span (`window_from`/`window_to`
 on the scorecards and the stage-gap series, `window` on the item lifecycle
 and the fleet-sizing contention) takes it from the span its stream folds
-over every event, not from the events it kept. Three readers on this path
-gather log-scale data. The item-lifecycle fold gathers every item-scoped
-event, because its `records[]` carries each item's whole history as
-`instants`; its output is itself log-scale, so the scorecards read a
-`{repo, item, fate}` projection of it. Four of the pager's invariants
-(`lib/pager-invariants.sh`, on a GitHub tick) gather the union unfiltered.
-The stand-down banner's `limit_union_record` reads through
+over every event, not from the events it kept, and so reads the whole union,
+never a prefiltered one. Three readers on this path gather log-scale data.
+The item-lifecycle fold gathers every item-scoped event, because its
+`records[]` carries each item's whole history as `instants`; its output is
+itself log-scale, so the scorecards read a `{repo, item, fate}` projection
+of it. Four of the pager's invariants (`lib/pager-invariants.sh`, on a
+GitHub tick) gather their input unfiltered, where that input is the union
+reduced to the key's declared types (the pager section below). The
+stand-down banner's `limit_union_record` reads through
 `lib/limit-detect.sh`'s own reader (agent-ops#2037).
 
 `data.js`'s size is dominated by capped transcripts, not by the small
@@ -914,8 +928,17 @@ union is already there. `pager_evaluate` itself extracts the pager's own
 four event types from the implementation union once, before its loop
 (`pager_events_extract`: a byte-level `grep -F` prefilter on
 `"event":"pager-`, then one `jq` parse of the lines kept), and every key's
-two state reads consult that extract; the invariants' own evaluation
-functions and the remedy variables keep the whole union.
+two state reads consult that extract. Each invariant's own evaluation
+function receives, as its `UNION_LOG_FILE`, the implementation union
+reduced to the event types its registration declares
+(`pager_declare_events`, `PAGER_EVAL_EVENTS`; `union_prefilter` makes the
+file under the working set before the evaluation and removes it after): a
+key declared with no types — `verdict-unanimous`, `page-outlived-item`,
+`node-stale`, `updater-stuck`, `dashboard-unreadable` and
+`review-pipeline-failing`, which read the heartbeats, GitHub or the review
+union — receives an empty file, a key with no declaration receives the
+whole union, and a prefilter that fails leaves the whole union in place.
+The remedy variables (`PAGER_REMEDY_UNION_LOG_FILE`) keep the whole union.
 The block also reads the two config keys agent-ops#1282 added —
 `pager_stale_file_after_minutes`, passed to
 `pager_register_builtin_invariants` as `node-stale`'s own per-key filing
