@@ -1135,10 +1135,11 @@ this is in addition to them, not instead.
 native feature does not reach across organisations, which is the one case
 the `Blocked-by:` text convention above still has to cover alone, so post it
 either way: `gh api -X POST repos/<repo>/issues/<n>/dependencies/blocked_by
--f issue_id=<blocking-issue's-own-numeric-id>` (the issue's internal id, from
-`gh api repos/<repo>/issues/<n> --jq .id`, not the number everyone reads —
-check the exact field name against `gh api --help` for the endpoint if it
-has moved). `lib/dependency-gate.sh` honours a native dependency the same way
+-F issue_id=<blocking-issue's-own-numeric-id>` (the issue's internal id, from
+`gh api repos/<repo>/issues/<n> --jq .id`, not the number everyone reads).
+`-F`, never `-f`: the endpoint types `issue_id` as an integer, and `gh`'s
+`-f` sends every value as a string, which earns a 422 the best-effort
+rule below would then swallow silently. `lib/dependency-gate.sh` honours a native dependency the same way
 it honours the text line. Best-effort: if the call fails, the text line
 alone still holds the block — never let it fail your own attempt.
 
