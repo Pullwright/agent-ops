@@ -5,12 +5,13 @@
 # where (agent-ops#2429).
 #
 # On 2026-10-16 the four nodes' `log.jsonl` union was 124 MB and one `jq`
-# pass over it cost 5 to 13 s. The Publisher built that union four times a
+# pass over it cost 5 to 13 s. The Publisher built that union three times a
 # tick — once for the transient-refusal verdict, ahead of the no-op
 # short-circuit, so even a tick that then skipped had paid for it; once for
 # the snapshot every reader shares; once more, fresh, for the payload's
-# `pager` array — and twice for `review-log.jsonl`, and the pager's state
-# reads parsed the whole fresh re-union twice per registered key. A GitHub
+# `pager` array — and twice for `review-log.jsonl`, and that array's state
+# reads parsed the whole fresh re-union once or twice per registered key,
+# after `pager_evaluate`'s own reads had parsed the whole snapshot. A GitHub
 # tick cost 700 s against a 295 s launcher window. What this test pins
 # against reappearing: `log.jsonl` goes through `fleet_logs` exactly once a
 # tick, at the snapshot, after the no-op short-circuit's own `exit 0`;

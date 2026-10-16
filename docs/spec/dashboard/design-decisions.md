@@ -1023,20 +1023,33 @@
   to 13 s, a GitHub tick made about ninety such passes and cost 700 s against
   a 295 s launcher window, and every idle host sat at load 4 to 6. Building
   the union (`fleet_logs`, about 1.1 s) was not the cost; the Publisher built
-  it four times a tick, and the pager's state reads parsed the whole of it,
-  over a *fresh* re-union, twice per registered key, with eighteen keys
-  registered. Three things follow.
+  it three times a tick (five `fleet_logs` counting `review-log.jsonl`'s
+  two), `pager_evaluate`'s state reads parsed the whole snapshot up to twice
+  per registered key, and the payload's `pager` array parsed a *fresh*
+  re-union once or twice more per key, with eighteen keys registered. Three
+  things follow.
   - *One `fleet_logs` of `log.jsonl` a tick*, the snapshot `$raw_events_jsonl`.
     The transient-refusal verdict reads it rather than a union of its own —
     its own read sat ahead of the no-op short-circuit, so a tick that skipped
     had built the whole union first — and the payload's `pager` array reads
-    it plus the lines this node's own `log.jsonl` gained during
-    `pager_evaluate`, found by line number. That sum is exact: `pager_evaluate`
-    is the only writer of pager events between the snapshot and the array, it
-    appends only to this node's own file, no repair rewrites that file inside
-    a tick (the launcher repairs before its loop, and a tick runs under its
-    lock), and a line the cycle appended in the same window is not a pager
-    event and is dropped by the extract. `test/publish-union-once.test.sh`
+    it plus the whole of this node's own `log.jsonl`, raw. That sum is exact:
+    `pager_evaluate` is the only writer of pager events between the snapshot
+    and the array, it appends only to this node's own file, the pre-snapshot
+    lines that file repeats parse to the records the snapshot already carries
+    and both readers reduce by `sort_by(.ts) | last`, and a line the cycle
+    appended in the same window is not a pager event and is dropped by the
+    extract. It is the whole file rather than the lines gained during
+    `pager_evaluate` found by line number, as `lib/candidate-gather.sh` finds
+    the Script's own appends, because that join holds only while nothing
+    rewrites the file between the count and the tail, and nothing guarantees
+    that here: the launcher repairs `log.jsonl` before its loop gated on the
+    implementation cycle's lock alone, holds no lock of its own
+    (`dashboard.lck` is each tick's), and cron starts a fresh launcher every
+    window, so a tick that has overrun its window — the issue's own measured
+    state — has the next launcher's repair run beside it, and a repair of a
+    damaged own log moves every later line, which the tail would read as the
+    tick's own appends lost. The whole file costs one `grep -F` over tens of
+    MB, a fraction of a second. `test/publish-union-once.test.sh`
     pins the count structurally, as `test/lock-skip-before-union.test.sh`
     does for the Script, because "the union was not built a second time" is
     not observable from a stubbed run. The `review-log.jsonl` union is built

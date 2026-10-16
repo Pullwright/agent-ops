@@ -923,13 +923,12 @@ hysteresis, and `pager_dashboard_fetch_seconds` — along with the raw
 Because `pager_evaluate` may itself append `pager-*` transition events to
 this node's own `log.jsonl`, which the snapshot taken before it cannot see,
 the payload's own `pager` array is read from that snapshot
-(`$raw_events_jsonl`) plus the lines this node's own `log.jsonl` has gained
-since the block counted them immediately before `pager_evaluate` (`tail -n
-+<count+1>`, the line-number technique `lib/candidate-gather.sh` uses for the
-Script's own appends), the two reduced by `pager_events_extract` to the
-pager's own events. The tick therefore reads `log.jsonl` through `fleet_logs`
-exactly once, at the snapshot — `test/publish-union-once.test.sh` pins that
-count — and the "Design decisions" section says why the sum is exact.
+(`$raw_events_jsonl`) plus the whole of this node's own `log.jsonl`, read
+raw, the two reduced by `pager_events_extract` to the pager's own events.
+The tick therefore reads `log.jsonl` through `fleet_logs` exactly once, at
+the snapshot — `test/publish-union-once.test.sh` pins that count — and the
+"Design decisions" section says why that sum is exact, and why it is the
+whole file rather than the lines gained during `pager_evaluate`.
 
 The `pager` key of the payload (present on a `FULL` build, carried forward
 by a fast one on the same terms every other `FULL`-only key already is) is

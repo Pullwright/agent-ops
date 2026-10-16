@@ -3201,13 +3201,6 @@ if (( WITH_GITHUB )); then
     # `review-pipeline-failing` (agent-ops#1282) alone among the invariants:
     # the review pipeline's own log, not part of the implementation union log
     # every other invariant reads.
-    #
-    # This node's own log.jsonl is counted before `pager_evaluate` so that the
-    # lines it appends can be found afterwards by line number — the technique
-    # lib/candidate-gather.sh uses for the Script's own appends — for the
-    # `pager` array below. `count_lines`, like `tail`, counts a final line
-    # with no newline, so the two agree on where the appends start.
-    pager_own_lines_before="$(count_lines "$state_dir/log.jsonl")"
     pager_evaluate "$SCRIPT_DIR/lib/claim.sh" "$pager_repo" "pw::pager" \
       "$enabler_escalation_label" "$enabler_assignee" "$notify_webhook_url" \
       "$pager_min_firing_minutes" "$state_dir/log.jsonl" "$events_jsonl" "$fleet_nodes_json" \
@@ -3222,22 +3215,37 @@ if (( WITH_GITHUB )); then
     # previous one (the dashboard banner, docs/spec/dashboard/site.md), and
     # `pager_evaluate` may just have appended to this node's own log.jsonl,
     # which the snapshot `$raw_events_jsonl` (taken before this block) cannot
-    # see. The answer is the snapshot plus exactly those appends — the lines
-    # `$state_dir/log.jsonl` gained past `pager_own_lines_before` — reduced by
-    # `pager_events_extract` to the pager's own events, which is all the two
-    # readers below ever look at; a fresh `fleet_logs` here was a second
-    # read-and-sort of the fleet's 124 MB plus two `jq` passes over it per
-    # registered key (agent-ops#2429). The sum is exact, not approximate:
-    # `pager_evaluate` is the only writer of pager events between the snapshot
-    # and here, it appends to this node's own log.jsonl and to nothing else, a
-    # repair never rewrites that file inside a tick (the launcher repairs
-    # before its loop, and a tick runs under the launcher's lock), and a line
-    # the cycle appended between the snapshot and the count is not a pager
-    # event, so the extract drops it. The `printf '\n'` is the same join guard
-    # `review_events_union` uses; the extract drops the blank line.
+    # see. The answer is the snapshot plus the whole of this node's own
+    # log.jsonl, read raw, the two reduced by `pager_events_extract` to the
+    # pager's own events, which is all the two readers below ever look at; a
+    # fresh `fleet_logs` here was a second read-and-sort of the fleet's
+    # 124 MB plus two `jq` passes over it per registered key (agent-ops#2429).
+    #
+    # The whole file, not the lines it gained during `pager_evaluate` found by
+    # line number as lib/candidate-gather.sh finds the Script's own appends:
+    # that join holds only while nothing rewrites the file between the count
+    # and the tail, and nothing here guarantees that. The launcher repairs
+    # every JSONL log before its loop, gated for log.jsonl on the
+    # implementation cycle's lock alone (`cycle_lock_live`,
+    # publish-dashboard-launcher.sh); it holds no lock of its own —
+    # `dashboard.lck` is taken by each tick, not by the launcher — and cron
+    # starts a fresh launcher every window, so a tick that has overrun its
+    # window (agent-ops#2429 measured 700 s against 295 s) has the next
+    # launcher's repair run beside it, and a repair of a damaged own log moves
+    # every later line, which a tail by line number would read as this tick's
+    # own appends lost for one tick. Reading the whole file is exact under any
+    # concurrent repair: `pager_evaluate` is the only writer of pager events
+    # between the snapshot and here, it appends to this node's own log.jsonl
+    # and to nothing else, the pre-snapshot lines the file repeats parse to
+    # the records the snapshot already carries and both readers below reduce
+    # by `sort_by(.ts) | last`, and a line the cycle appended in the same
+    # window is not a pager event, so the extract drops it. The cost is one
+    # `LC_ALL=C grep -F` over this node's own log — tens of MB, a fraction of
+    # a second. The `printf '\n'` is the same join guard `review_events_union`
+    # uses; the extract drops the blank line.
     pager_events_file="$work_tmp/pager-events.jsonl"
     { cat "$raw_events_jsonl"; printf '\n'
-      tail -n "+$(( pager_own_lines_before + 1 ))" "$state_dir/log.jsonl" 2>/dev/null || true
+      cat "$state_dir/log.jsonl" 2>/dev/null || true
     } | pager_events_extract > "$pager_events_file" 2>/dev/null || : > "$pager_events_file"
     pager_json="$(
       { while IFS= read -r pk; do
