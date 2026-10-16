@@ -124,8 +124,15 @@ printf 'run-tests: image %s\n' "$IMAGE" >&2
 # announces a node role, none of which this is. `-i` because the working tree
 # arrives on stdin as a tar: a bind mount would carry the host's uids and, when
 # read-only, its own set of failures that are not the branch's fault either.
+# `NODE_NAME` is set for the whole container, not per test: this image is the
+# same one a fleet node runs, so anything invoked inside it without its own
+# explicit node identity would otherwise fall back to the container's
+# hostname — the exact publication agent-ops#2421 traced back to a test run
+# this same way. A handful of tests already set NODE_NAME per invocation
+# because they need a specific value; this default only covers the rest.
 tar --exclude=.git --exclude=node_modules -cf - -C "$SCRIPT_DIR" . \
-  | docker run --rm -i --entrypoint bash -e "RUN_TESTS_FILTER=$filter_str" "$IMAGE" -lc '
+  | docker run --rm -i --entrypoint bash \
+      -e "RUN_TESTS_FILTER=$filter_str" -e "NODE_NAME=test-suite" "$IMAGE" -lc '
       set -uo pipefail
       work=/tmp/agent-ops-tests
       rm -rf "$work"; mkdir -p "$work"

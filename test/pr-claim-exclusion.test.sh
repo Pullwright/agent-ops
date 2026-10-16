@@ -46,6 +46,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 
+# This suite runs inside the node image, where the real `/.dockerenv` exists —
+# and `lib/claim.sh` refuses a claim under that sentinel when `NODE_NAME` is
+# unset (agent-ops#2421). Every case below is about claim arbitration rather
+# than about that refusal, so the sentinel points at a path that does not
+# exist. Same seam, and the same reason for reaching for it, as
+# test/compose-drift.test.sh and test/cgroup-parent-setup.test.sh: a test that
+# needs to answer "am I in a container?" for itself must not be answered by the
+# container it is running in.
+export CLAIM_CONTAINER_SENTINEL="$tmp_dir/absent-container-sentinel"
+
 failures=0
 
 assert_eq() {

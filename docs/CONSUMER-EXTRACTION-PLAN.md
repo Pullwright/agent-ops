@@ -88,11 +88,14 @@ agent-ops; `config.json` holds Poetic's real values — its three
 `Pullwright/agent-ops` itself), its `state_repo`
 (`Poetic-Poems/agent-ops-state`), its `state_dir`/`workspace_root`, its
 Approver/Author installation ids, and every other installation-specific
-value. `agent-cycle.sh` reads it from a hardcoded path
-(`CONFIG_FILE="$SCRIPT_DIR/config.json"`, no override); `review-cycle.sh`
-and `monitor-cycle.sh`, and most of `scripts/`, already accept
-`AGENT_OPS_CONFIG` as an override (built for tests) and fall back to the
-same hardcoded path when it is unset. `docs/PHASE-1-POETIC-SPECIFICS-AUDIT.md`
+value. All three cycle entry points (`agent-cycle.sh`, `review-cycle.sh`,
+`monitor-cycle.sh`), `lib/claim.sh` and the `scripts/` a cycle itself
+invokes (`state-sync.sh`, `publish-dashboard.sh`, the sweeps) accept
+`AGENT_OPS_CONFIG` as an override (built for tests) and fall back to
+`$SCRIPT_DIR/config.json` when it is unset; the reporting and housekeeping
+utilities under `scripts/` (`wake-poll.sh`, `rotate-logs.sh`,
+`node-health.sh`, the metrics reports) still read that path directly.
+`docs/PHASE-1-POETIC-SPECIFICS-AUDIT.md`
 finding 6 (#657) is resolved: the Dockerfile's `RUN` and
 `deploy/docker/crontab.tmpl` both now read `state_dir`/`workspace_root` out
 of `config.json` at build/render time (PR #1883, merged 2026-09-27), so the
@@ -117,8 +120,9 @@ Three options exist:
    (`FROM ghcr.io/pullwright/agent-ops` plus `COPY config.json /app/`),
    published from the consumer repository's own build workflow.
 3. **A config-path variable honoured by every entry point**, which is
-   option 1's prerequisite rather than an alternative to it — `agent-cycle.sh`
-   is the one entry point that does not yet honour `AGENT_OPS_CONFIG`.
+   option 1's prerequisite rather than an alternative to it — every entry
+   point a cycle runs through honours `AGENT_OPS_CONFIG`; the `scripts/`
+   reporting and housekeeping utilities named above do not.
 
 Option 2 is rejected: it gives the consumer repository a Dockerfile and a
 publish workflow of its own, which is exactly the pipeline code D8
@@ -127,12 +131,12 @@ by producing a second, installation-specific image that every node would
 need to track alongside the product's own. Option 1, completing option 3
 first, is recommended:
 
-- Extend `agent-cycle.sh`'s `CONFIG_FILE` resolution to
-  `"${AGENT_OPS_CONFIG:-$SCRIPT_DIR/config.json}"`, matching
-  `review-cycle.sh` and `monitor-cycle.sh` exactly. This is a small,
-  backward-compatible change — unset, behaviour is unchanged — landable in
-  agent-ops as an ordinary fleet pull request ahead of T0, with no fleet
-  disruption.
+- Extend the remaining `scripts/` utilities' `CONFIG_FILE` resolution to
+  `"${AGENT_OPS_CONFIG:-$SCRIPT_DIR/config.json}"`, matching the cycle
+  entry points, which already resolve it that way (#2421 closed the last
+  of those). This is a small, backward-compatible change — unset,
+  behaviour is unchanged — landable in agent-ops as an ordinary fleet pull
+  request ahead of T0, with no fleet disruption.
 - Add `AGENT_OPS_CONFIG: ${AGENT_OPS_CONFIG:-}` to `compose.yaml`'s shared
   environment anchor (`x-agent-ops-env`), so a node opts in by setting one
   `.env` variable rather than by an image change.
@@ -386,8 +390,9 @@ These can land in agent-ops independently of everything else in this plan,
 exactly as #913's per-owner Approver installation landed weeks ahead of the
 2026-09-07 transfer:
 
-1. Extend `agent-cycle.sh`'s `CONFIG_FILE` resolution to honour
-   `AGENT_OPS_CONFIG`, matching `review-cycle.sh`/`monitor-cycle.sh`.
+1. Extend the remaining `scripts/` reporting and housekeeping utilities'
+   `CONFIG_FILE` resolution to honour `AGENT_OPS_CONFIG`, matching the
+   cycle entry points (#2421 closed the last of those).
 2. Resolve #2227 (`compose.yaml`'s own volume targets still hardcoding the
    `poetic-agents` directory name, the one site #657 did not reach) so a
    node's mount tracks whatever `config.json` — shipped or mounted — names.

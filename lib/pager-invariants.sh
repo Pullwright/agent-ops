@@ -1844,7 +1844,7 @@ pager_register_builtin_invariants() {
   # alone; review-pipeline-failing reads the review union through
   # PAGER_EVAL_REVIEW_UNION_LOG_FILE and ignores UNION_LOG_FILE.
   pager_register node-stale pager_eval_node_stale owner-only \
-    "This node has not confirmed a publication into the shared state for over twice node_stale_after_minutes. Confirm directly whether the node (container/host) is still running, and check its own state-sync push logs. Once agent-ops#1279's notification channel lands, this class of page reaches it automatically (notify_events' own default includes \"pager\") — today it is filed only." \
+    "This node has not confirmed a publication into the shared state for over twice node_stale_after_minutes. Confirm directly whether the node (container/host) is still running, and check its own state-sync push logs. If instead the node has left the fleet for good — decommissioned, renamed, or a stray hostname that should never have published (agent-ops#2421) — delete its \`nodes/<node>\` branch on the state repository: fleet membership is any \`nodes/*\` branch, so this page cannot clear on its own until that branch is gone. Once agent-ops#1279's notification channel lands, this class of page reaches it automatically (notify_events' own default includes \"pager\") — today it is filed only." \
     "$stale_file_after_minutes"
   pager_declare_events node-stale
   pager_register updater-stuck pager_eval_updater_stuck owner-only \

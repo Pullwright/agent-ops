@@ -55,6 +55,16 @@ assert_eq() {
   fi
 }
 
+assert_contains() {
+  local desc="$1" needle="$2" haystack="$3"
+  if [[ "$haystack" == *"$needle"* ]]; then
+    printf 'ok   - %s\n' "$desc"
+  else
+    printf 'FAIL - %s\n     expected to contain: %s\n     actual:   %s\n' "$desc" "$needle" "$haystack"
+    failures=$(( failures + 1 ))
+  fi
+}
+
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
 
@@ -593,6 +603,8 @@ assert_eq "  ... and with no interval to read, the framework's own hysteresis de
   "${PAGER_MIN_FIRING_MINUTES_OVERRIDE[firing-missed]}"
 assert_eq "  ... node-stale's own override is untouched by any of it" "180" \
   "${PAGER_MIN_FIRING_MINUTES_OVERRIDE[node-stale]}"
+assert_contains "node-stale's remedy names deleting the branch of a node that has left for good" \
+  "delete its \`nodes/<node>\` branch" "${PAGER_REMEDY_ARG[node-stale]}"
 
 PAGER_EVAL_CYCLE_INTERVAL_MINUTES=""
 assert_eq "no configured interval: never fires" "false" \
