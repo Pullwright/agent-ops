@@ -389,8 +389,9 @@ Three things it will not hide, each a way a digest could mislead by omission:
   `dashboard/index.html`) — one of `lib/landing.sh`'s own
   `_LANDING_REFUSAL_CLASSES` (TD-PPagop-26082823), naming the gate that
   refused (`kill-switch`/`autonomy-level` for gate 1, `ineligible`/`unknown`
-  for gate 2's `landing_eligible` and gate 4.5's
-  `landing_protected_path_controls_ok` alike, `open-question`/
+  for gate 2's `landing_eligible`, `protected-path-cooloff`/
+  `protected-path-tier`/`protected-path-stale-head`/`unknown` for gate 4.5's
+  `landing_protected_path_controls_ok`, `open-question`/
   `open-question-unreadable`, `review-gate`, and a class per remaining gate:
   `malformed-pr-url`, `approver-login-unreadable`,
   `approver-review-unreadable`, `approver-review-not-approved`,
