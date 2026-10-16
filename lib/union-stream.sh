@@ -6,7 +6,7 @@
 # `scripts/rotate-logs.sh` never rotates; the readers here hold only what a
 # reader's answer is about.
 #
-# Three things live here, so each is written once:
+# Four things live here, so each is written once:
 #
 #   UNION_STREAM_JQ      the jq definitions every streamed reader shares: the
 #                        tolerant raw-line event stream, the span fold, the
@@ -18,6 +18,11 @@
 #                        several readers at once, each reader's from its own
 #                        declaration (`union_reader_events`), so the union is
 #                        parsed once for all of them rather than once each.
+#   union_prefilter      one byte-level `grep -F` pass that keeps the lines
+#                        carrying a reader's declared event types, so a
+#                        reader that parses its whole input parses a few per
+#                        cent of the union rather than all of it
+#                        (agent-ops#2429).
 #
 # A reader's event types are declared once — in `union_reader_events` for the
 # Publisher's own readers, beside the program in its library for the others —
@@ -28,9 +33,9 @@
 # Sourced, never executed: no shell options are set here, matching every
 # other lib/*.sh — the caller owns those. Sourced by agent-cycle.sh,
 # review-cycle.sh, monitor-cycle.sh, scripts/node-health.sh and
-# scripts/publish-dashboard.sh, and by lib/limit-detect.sh, lib/fleet-sizing.sh
-# and lib/item-lifecycle.sh for their own readers; sourcing it twice is
-# harmless, since it only defines.
+# scripts/publish-dashboard.sh, and by lib/limit-detect.sh, lib/fleet-sizing.sh,
+# lib/item-lifecycle.sh and lib/pager.sh for their own readers; sourcing it
+# twice is harmless, since it only defines.
 
 # The tolerant raw-line event stream (#2037). The fleet union is every node's
 # log concatenated, and one line in it may not parse — a record cut off
@@ -149,6 +154,53 @@ union_stream() {
     def union_keep: '"$keep"';
     union_kept_with_span('"$stream"'; union_keep; union_ts_'"$ts"'; $since)' \
     "$src" --args $names
+}
+
+# union_prefilter SOURCE EVENT...
+# Print the lines of SOURCE that carry `"event":"<EVENT>"` for any EVENT, in
+# file order, through one `LC_ALL=C grep -a -F` with the patterns on its
+# stdin, never one per argument: the reader that then parses the output
+# parses only those lines. With no EVENT, print nothing. Exits 0 when nothing
+# matched (grep's own 1 means "nothing kept", not failure) and non-zero only
+# when grep itself failed, so a caller can tell an empty extract from a read
+# that did not happen and fall back to the whole union on the second.
+#
+# Why this is exact, and not a heuristic (agent-ops#2429). Every record in a
+# fleet log is written by a pipeline's `jq -nc` log writer, compact, with
+# `event` a top-level string, so a record of type T carries the substring
+# `"event":"T"` verbatim: recall is exact, and no record a reader declares
+# is ever dropped. Precision is the reader's own: a record of another type
+# that carries the substring in a nested object (a string field cannot, since
+# its quotes are escaped) passes the prefilter and is dropped by the reader's
+# own `select(.event == …)`, which every declared reader already applies. The
+# prefilter therefore changes nothing a reader keeps; what it changes is how
+# many bytes the reader's `jq` sees, which on the 124 MB union of 2026-10-16
+# is a few per cent for every declared reader, read in well under a second
+# where one `jq` pass costs five to thirteen.
+#
+# The one behavioural caveat: a line the prefilter drops never reaches the
+# reader. A reader that keeps a non-object line on purpose, so that a torn
+# log aborts its fold rather than being folded as though whole
+# (`union_stream` without `--objects`, `union_partition`, the span readers),
+# must not be given a prefiltered input, because the line it would abort on
+# is exactly one this never keeps. Only a reader that already drops every
+# line it does not declare — `fromjson? // empty | select(.event == …)` — may
+# read through this.
+#
+# `-a` keeps a stray NUL from turning the whole stream into one "binary file
+# matches" line; `LC_ALL=C`, as `fleet_logs` itself reads; `-f -` reads the
+# patterns from the here-string, one per line, so the event list never
+# becomes grep's argv. An empty EVENT is skipped rather than written as an
+# empty pattern, which would match every line.
+union_prefilter() {
+  local src="$1" e patterns=""
+  shift
+  for e in "$@"; do
+    [[ -n "$e" ]] || continue
+    patterns+="\"event\":\"$e\""$'\n'
+  done
+  [[ -n "$patterns" ]] || return 0
+  { LC_ALL=C grep -a -F -f - -- "$src" <<<"${patterns%$'\n'}" || [[ $? -eq 1 ]]; }
 }
 
 # union_reader_events READER

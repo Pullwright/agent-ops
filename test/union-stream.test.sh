@@ -12,8 +12,12 @@
 #                   is checked against its declaration: the Publisher's own
 #                   (between `# union-reader:` markers in
 #                   scripts/publish-dashboard.sh, declared by
-#                   `union_reader_events`) and the library folds' (each
-#                   `<NAME>_JQ` against its `<NAME>_EVENTS`).
+#                   `union_reader_events`), the library folds' (each
+#                   `<NAME>_JQ` against its `<NAME>_EVENTS`), the pager's
+#                   built-in invariants (each `pager_eval_*` function's own
+#                   body against `PAGER_EVAL_EVENTS[key]`, agent-ops#2429)
+#                   and `crash_loop_verdict`'s (against
+#                   `CRASH_LOOP_VERDICT_EVENTS`).
 #   union_stream    the kept-events-then-span protocol: the two timestamp
 #                   rules, the SINCE gate, `--objects`, `--raw`, and the
 #                   abort on a record that is not an object, which must leave
@@ -21,6 +25,11 @@
 #   union_partition one pass, one file per reader, each closed by the span;
 #                   an event two readers declare reaches both; a failed pass
 #                   leaves no file behind.
+#   union_prefilter the byte-level reduction a declared reader is handed:
+#                   every line of a declared type is kept, a decoy carrying
+#                   the substring nested passes it and is dropped by the
+#                   reader's own `select`, other types are dropped, and no
+#                   match (or no events) prints nothing and exits 0.
 #
 # No test framework is used (none exists elsewhere in this repo). Run
 # directly:
@@ -48,6 +57,17 @@ PUBLISH="$SCRIPT_DIR/scripts/publish-dashboard.sh"
 . "$SCRIPT_DIR/lib/fleet-sizing.sh"
 # shellcheck source=lib/limit-detect.sh
 . "$SCRIPT_DIR/lib/limit-detect.sh"
+# shellcheck source=lib/crash-loop.sh
+. "$SCRIPT_DIR/lib/crash-loop.sh"
+# The pager's built-in invariants, whose declarations are checked below
+# against their programs; lib/refinement.sh for the two helpers
+# blocked-label-orphaned reads through, whose bodies are traced too.
+# shellcheck source=lib/pager.sh
+. "$SCRIPT_DIR/lib/pager.sh"
+# shellcheck source=lib/pager-invariants.sh
+. "$SCRIPT_DIR/lib/pager-invariants.sh"
+# shellcheck source=lib/refinement.sh
+. "$SCRIPT_DIR/lib/refinement.sh"
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
@@ -65,14 +85,18 @@ assert_eq() {
 }
 
 # event_reads PROGRAM — the event types a jq program reads, one per line,
-# sorted: `.event == "x"` in any spacing, `.event | IN("x", …)`, and the
-# set/clear pair a `latest_unresolved("x"; "y")` call folds.
+# sorted: `.event == "x"` in any spacing, `.event | IN("x", …)`, the
+# set/clear pair a `latest_unresolved("x"; "y")` call folds, and the two
+# forms the pager's programs and lib/refinement.sh's use — the defaulted
+# `(.event // "") == "x"` and the per-group `map(.event) | index("x")`.
 event_reads() {
   local text="$1"
   {
     grep -oE '\.event *== *"[A-Za-z0-9_-]+"' <<<"$text" | grep -oE '"[^"]+"'
     grep -oE '\.event *\| *IN\([^)]*\)' <<<"$text" | grep -oE '"[^"]+"'
     grep -oE 'latest_unresolved\("[^"]+"; *"[^"]+"\)' <<<"$text" | grep -oE '"[^"]+"'
+    grep -oE '\(\.event *// *""\) *== *"[A-Za-z0-9_-]+"' <<<"$text" | grep -oE '== *"[^"]+"' | grep -oE '"[^"]+"'
+    grep -oE 'map\(\.event\) *\| *index\("[A-Za-z0-9_-]+"\)' <<<"$text" | grep -oE '"[^"]+"'
   } | tr -d '"' | LC_ALL=C sort -u
 }
 
@@ -97,8 +121,8 @@ reader_text() {
 # --- The checker itself catches an undeclared read --------------------------------
 # Without this, a checker that silently matched nothing would pass every
 # reader below.
-assert_eq "the checker finds every form of read" "a b c d e" \
-  "$(event_reads 'select(.event == "a") | select(.event=="b") | (.event | IN("c", "d")) | latest_unresolved("e"; "a")' \
+assert_eq "the checker finds every form of read" "a b c d e f g" \
+  "$(event_reads 'select(.event == "a") | select(.event=="b") | (.event | IN("c", "d")) | latest_unresolved("e"; "a") | select((.event // "") == "f") | (map(.event) | index("g"))' \
      | tr '\n' ' ' | sed 's/ $//')"
 assert_eq "an undeclared read is reported" "zzz-undeclared" \
   "$(undeclared 'select(.event == "stage-end" or .event == "zzz-undeclared")' "stage-end")"
@@ -141,6 +165,105 @@ assert_eq "void_items declares exactly its set/clear pair" "item-void unvoided" 
 # shellcheck disable=SC2086  # a word list by design.
 assert_eq "the partition's open-blocked declaration is cycle-state's own" \
   "$(printf '%s\n' $OPEN_BLOCKED_EVENTS | tr '\n' ' ')" "$(union_reader_events open-blocked | tr '\n' ' ')"
+assert_eq "crash_loop_verdict declares the event types it reads (agent-ops#2429)" "yes" \
+  "$([[ -n "${CRASH_LOOP_VERDICT_EVENTS:-}" ]] && echo yes || echo no)"
+lib_check crash_loop_verdict "$(declare -f crash_loop_verdict)" "${CRASH_LOOP_VERDICT_EVENTS:-}"
+
+# --- Every built-in pager invariant reads only what it declares (agent-ops#2429)
+# `_pager_evaluate_one` hands each EVAL_FN the union reduced to the types
+# `pager_register_builtin_invariants` declares for its key, so a type an
+# EVAL_FN's own program reads that its declaration lacks is a type it never
+# sees. Each function's body (`declare -f`) is checked against the
+# declaration. Two keys read through helpers the body check cannot see into
+# — `blocked-label-orphaned` through `blocked_items`,
+# `_pager_blocked_label_candidate_repos`, `refinement_blocked_label_stale`
+# and `refinement_blocked_label_orphaned` (whose `latest_attempt_failed` is
+# `_REFINEMENT_LEGACY_JQ_DEF`'s), and `pr-unreviewed` through
+# `_pager_pr_unreviewed_candidates` — so those bodies are appended to the
+# program checked, and test/pager-invariants.test.sh compares each
+# invariant's verdict over the reduction with its verdict over the whole
+# fixture besides. `review-pipeline-failing` is the one body that reads
+# event types and declares none: it reads them from the review union, through
+# PAGER_EVAL_REVIEW_UNION_LOG_FILE, and ignores its UNION_LOG_FILE argument,
+# so its declaration is empty by design and its reads are pinned here
+# instead, so that a later read of the implementation union cannot hide
+# behind the exception.
+pager_register_builtin_invariants 180 15 >/dev/null 2>&1
+assert_eq "the built-in registry is the eighteen keys this test expects" "18" "${#PAGER_KEYS[@]}"
+pager_program_of() {  # pager_program_of KEY -> the EVAL_FN's body plus the bodies it reads through
+  local key="$1"
+  declare -f "${PAGER_EVAL_FN[$key]}"
+  case "$key" in
+    blocked-label-orphaned)
+      declare -f _pager_blocked_label_candidates _pager_blocked_label_candidate_repos \
+        refinement_blocked_label_stale refinement_blocked_label_orphaned
+      printf '%s\n%s\n' "$BLOCKED_ITEMS_JQ" "$_REFINEMENT_LEGACY_JQ_DEF" ;;
+    pr-unreviewed)
+      declare -f _pager_pr_unreviewed_candidates ;;
+  esac
+}
+for key in "${PAGER_KEYS[@]}"; do
+  assert_eq "built-in invariant '$key' has a declaration" "yes" \
+    "$([[ -v "PAGER_EVAL_EVENTS[$key]" ]] && echo yes || echo no)"
+  [[ -v "PAGER_EVAL_EVENTS[$key]" ]] || continue
+  program="$(pager_program_of "$key")"
+  if [[ "$key" == "review-pipeline-failing" ]]; then
+    assert_eq "built-in invariant '$key' declares nothing of the implementation union" "" \
+      "${PAGER_EVAL_EVENTS[$key]}"
+    assert_eq "  ... and reads exactly the review union's two types, through PAGER_EVAL_REVIEW_UNION_LOG_FILE" \
+      "review-attempt-failed review-stage-end" "$(event_reads "$program" | tr '\n' ' ' | sed 's/ $//')"
+  elif [[ -z "${PAGER_EVAL_EVENTS[$key]}" ]]; then
+    assert_eq "built-in invariant '$key' declares no types, and its program reads none" "" \
+      "$(event_reads "$program" | tr '\n' ' ' | sed 's/ $//')"
+  else
+    assert_eq "built-in invariant '$key' reads at least one event type (the checker sees its program)" \
+      "yes" "$([[ -n "$(event_reads "$program")" ]] && echo yes || echo no)"
+    assert_eq "built-in invariant '$key' reads only the event types it declares" "" \
+      "$(undeclared "$program" "${PAGER_EVAL_EVENTS[$key]}")"
+  fi
+done
+
+# --- union_prefilter: the reduction a declared reader is handed --------------------
+# Recall is exact: every record is written compact, so a record of type T
+# carries `"event":"T"`. Precision is the reader's: a record of another type
+# carrying the substring in a nested object passes the prefilter and is
+# dropped by the reader's own `select`.
+pre="$tmp_dir/prefilter.jsonl"
+cat > "$pre" <<'EOF'
+{"ts":"1","event":"cycle-start","n":1}
+{"ts":"2","event":"merge-observed","n":2}
+{"ts":"3","event":"cycle-end","n":3}
+{"ts":"4","event":"log-repaired","nested":{"event":"cycle-start"},"n":4}
+{"ts":"5","event":"cycle-start","n":5}
+garbage line
+EOF
+out="$(union_prefilter "$pre" cycle-start cycle-end)"; rc=$?
+assert_eq "union_prefilter exits 0 when it kept something" "0" "$rc"
+assert_eq "it keeps every line of a declared type, in file order, and the nested decoy" \
+  "1 3 4 5" "$(jq -r '.n' <<<"$out" | tr '\n' ' ' | sed 's/ $//')"
+assert_eq "  ... and drops the other types" "0" "$(grep -c 'merge-observed' <<<"$out")"
+assert_eq "  ... a reader's own select then drops the decoy, so what it keeps is unchanged" \
+  "1 3 5" "$(jq -r 'select(.event == "cycle-start" or .event == "cycle-end") | .n' <<<"$out" | tr '\n' ' ' | sed 's/ $//')"
+assert_eq "  ... byte for byte: the reduction is the declared lines of the file" \
+  "$(grep -F -e '"event":"cycle-start"' -e '"event":"cycle-end"' "$pre")" "$out"
+out="$(union_prefilter "$pre" no-such-type)"; rc=$?
+assert_eq "no match prints nothing and exits 0 (grep's 1 is not a failure)" "0 0" "$rc ${#out}"
+out="$(union_prefilter "$pre")"; rc=$?
+assert_eq "no events at all prints nothing and exits 0" "0 0" "$rc ${#out}"
+out="$(union_prefilter "$pre" "" "")"; rc=$?
+assert_eq "an empty event is skipped, never an empty pattern that matches every line" "0 0" "$rc ${#out}"
+out="$(union_prefilter "$tmp_dir/no-such-file.jsonl" cycle-start 2>/dev/null)"; rc=$?
+assert_eq "a file that cannot be read fails, so a caller can fall back to the whole union" \
+  "nonzero" "$( (( rc != 0 )) && echo nonzero || echo zero)"
+# A NUL-holed line is kept as a line (`-a`), never collapsed with the rest
+# into one "binary file matches" line; the NUL is stripped before `jq` here
+# only because a raw NUL is not valid JSON, which is the reader's problem to
+# tolerate, not the prefilter's.
+printf '{"ts":"6","event":"cycle-start","nul":"\0here","n":6}\n' >> "$pre"
+assert_eq "a NUL in a line does not turn the stream into one 'binary file matches' line" \
+  "1 4 5 6" "$(union_prefilter "$pre" cycle-start | tr -d '\0' | jq -r '.n' | tr '\n' ' ' | sed 's/ $//')"
+assert_eq "  ... and the kept lines are the file's own, NUL included" "1" \
+  "$(union_prefilter "$pre" cycle-start | tr -cd '\0' | wc -c | tr -d ' ')"
 
 # --- union_events: the tolerant raw-line event stream (#2037) ---------------------
 # Every reader that must not go blind on a line that does not parse folds this

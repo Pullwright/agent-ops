@@ -92,6 +92,15 @@
 # proves it alone. The run is still counted and still resets on a
 # same-repository success either way — `escalate` only changes what the
 # caller does with a verdict that already fired, never whether one fires.
+#
+# The event types the program below reads, declared beside it so a caller
+# that reads the whole union can hand this verdict only the lines of those
+# types (`union_prefilter`, lib/union-stream.sh; the Publisher's
+# transient-refusal verdict does, agent-ops#2429) rather than the 124 MB
+# union, and so `test/union-stream.test.sh` can fail when the program reads
+# a type this list lacks — which would otherwise be a quiet zero.
+# shellcheck disable=SC2034  # read by scripts/publish-dashboard.sh and test/union-stream.test.sh, never here.
+CRASH_LOOP_VERDICT_EVENTS="attempt-failed stage-end"
 crash_loop_verdict() {
   local threshold="${1:-0}"
   if ! [[ "$threshold" =~ ^[0-9]+$ ]] || (( threshold < 1 )); then

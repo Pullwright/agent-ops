@@ -1748,6 +1748,20 @@ pager_remedy_pr_unreviewed() {
 # exemption fixes the standby that never cycles, this fixes the standby that
 # has just been told to). Omitted, or not a number, falls through to the
 # framework's own `pager_min_firing_minutes` exactly as before.
+#
+# Each registration is followed by its declaration of the event types its
+# EVAL_FN reads from UNION_LOG_FILE (`pager_declare_events`, lib/pager.sh),
+# which is what `_pager_evaluate_one` reduces the union to before the
+# evaluation runs (agent-ops#2429). A key declared with no types reads
+# nothing from the union — the heartbeats, GitHub, or the review union
+# through PAGER_EVAL_REVIEW_UNION_LOG_FILE — and gets an empty file. The
+# declaration names every type the EVAL_FN's own program reads, which
+# `test/union-stream.test.sh` checks against the program text, and every
+# type a helper it calls reads, which that check cannot trace and so is
+# listed in the comment beside the declaration and covered by
+# `test/pager-invariants.test.sh`'s whole-fixture-against-reduced-fixture
+# comparison instead. A type missed in either makes the invariant silently
+# see nothing of it.
 pager_register_builtin_invariants() {
   local stale_file_after_minutes="${1:-180}" cycle_interval_minutes="${2:-}"
   local firing_missed_file_after=""
@@ -1756,44 +1770,76 @@ pager_register_builtin_invariants() {
     firing_missed_file_after="$(awk -v i="$cycle_interval_minutes" \
       'BEGIN { v = i + 15; printf "%d", (v == int(v) ? v : int(v) + 1) }')"
   fi
+  # Reads fleet_nodes_json alone.
   pager_register verdict-unanimous pager_eval_verdict_unanimous \
     pipeline-act pager_remedy_verdict_unanimous
+  pager_declare_events verdict-unanimous
+  # Reads GitHub alone (PAGER_EVAL_REPO, lib/pager.sh's documented exception).
   pager_register page-outlived-item pager_eval_page_outlived_item \
     pipeline-act pager_remedy_page_outlived_item
+  pager_declare_events page-outlived-item
   pager_register firing-missed pager_eval_firing_missed owner-only \
     "A node the fleet expects to be cycling appears to have had a firing dropped outright (the union log carries neither a cycle-start nor a cycle-skipped recent enough, and this node's newest cycle event is not an unmatched cycle-start) rather than merely still running a long cycle — a cycle-skipped would itself have proved the scheduler ticked and deferred to a held lock. Check the node's own cron/supercronic logs and crontab directly — on Kubernetes, check for a concurrencyPolicy: Forbid skip. The evidence above carries this node's own recent cycle-duration histogram. A node whose published role is a standby's is never named here: requirement 2.4 stops its ticks before the log, so there is nothing in the union log to judge it by in either direction, and a standby whose scheduler has stopped is invisible until it is promoted (agent-ops#1788). If this page names a node you have just promoted, its first cycle will clear it; if it names one you then demote, the page is closed as cleared, because the fleet has stopped expecting cycles from it." \
     "$firing_missed_file_after"
+  pager_declare_events firing-missed cycle-start cycle-end cycle-skipped
+  # node-stale, updater-stuck and dashboard-unreadable read fleet_nodes_json
+  # alone; review-pipeline-failing reads the review union through
+  # PAGER_EVAL_REVIEW_UNION_LOG_FILE and ignores UNION_LOG_FILE.
   pager_register node-stale pager_eval_node_stale owner-only \
     "This node has not confirmed a publication into the shared state for over twice node_stale_after_minutes. Confirm directly whether the node (container/host) is still running, and check its own state-sync push logs. Once agent-ops#1279's notification channel lands, this class of page reaches it automatically (notify_events' own default includes \"pager\") — today it is filed only." \
     "$stale_file_after_minutes"
+  pager_declare_events node-stale
   pager_register updater-stuck pager_eval_updater_stuck owner-only \
     "A container this node's own updater told to roll has been \"stuck\" for over twice updater_stuck_after_minutes. Check watchtower / the deploy pipeline on this node directly — this may be agent-ops#603's container-name collision, or, on Kubernetes, an ImagePullBackOff or a rollout stuck past progressDeadlineSeconds."
+  pager_declare_events updater-stuck
   pager_register review-pipeline-failing pager_eval_review_pipeline_failing owner-only \
     "The repository-review pipeline (review-cycle.sh) has failed its last several attempts on this node with no successful review-end between. Start with that node's own project-reviewer verdict (agent-ops#996): the dashboard's Review stage health panel, or the review_stage_health field of its heartbeat, which carries the consecutive-failure count and the last attempt's own detail. Then check review-log.jsonl and the Reviewer stage's own logs on this node directly."
+  pager_declare_events review-pipeline-failing
   pager_register dashboard-unreadable pager_eval_dashboard_unreadable owner-only \
     "A viewer fetching this node's data.js (agent-ops#1283's own probe) found it slower than pager_dashboard_fetch_seconds or unparseable — a fact this node cannot observe about itself. Check network/tailnet conditions to this node and the size of its data.js directly."
+  pager_declare_events dashboard-unreadable
   # agent-ops#1281: the selection and ledger class.
   pager_register idle-with-demand pager_eval_idle_with_demand owner-only \
     "A node's own selection/stand-down history shows real demand going unclaimed for several cycles running (agent-ops#1128/#1163/#1165's own class of fleet-wide stand-down and starvation). The evidence above carries this node's own most recent none-selected reason and coordinator-input-fitted detail — the two facts a diagnosis starts from. Check the Co-Ordinator's own verdicts and eligibility gates on this node directly."
+  pager_declare_events idle-with-demand node-state none-selected coordinator-input-fitted
   pager_register fit-ladder-pinned pager_eval_fit_ladder_pinned owner-only \
     "The coordinator input ladder (lib/coordinator-input.sh) has bottomed out at its own tightest rung and is still shedding backlog entries on every fitted cycle for a full day — the eligible backlog has outgrown coordinator_prompt_max_bytes. Either raise the byte budget or reduce the backlog (close stale issues, tighten a repo's own sources) directly."
+  pager_declare_events fit-ladder-pinned coordinator-input-fitted
   pager_register work-order-repaired-rate pager_eval_work_order_repaired_rate owner-only \
     "More than pager_repair_rate_percent of a day's selections needed a work-order-repaired repair (agent-ops#821's own signature: a work order composed from trimmed input). Check the fit report and the trimmed candidates' own sizes directly. Retire this invariant once agent-ops#769's part (b) lands and agent-ops#1156 removes the gate this rate reads."
+  pager_declare_events work-order-repaired-rate selection work-order-repaired
+  # blocked-label-orphaned reads through helpers the program check cannot
+  # trace: `blocked_items` (lib/cycle-state.sh, BLOCKED_ITEMS_EVENTS:
+  # attempt-failed, unblocked, recheck-clean), `refinement_blocked_label_stale`
+  # (lib/refinement.sh: own-label-action), `_pager_blocked_label_candidate_repos`
+  # (attempt-failed, own-label-action) and `refinement_blocked_label_orphaned`
+  # (lib/refinement.sh's `latest_attempt_failed`: attempt-failed).
   pager_register blocked-label-orphaned pager_eval_blocked_label_orphaned \
     pipeline-act pager_remedy_blocked_label_orphaned
+  pager_declare_events blocked-label-orphaned attempt-failed unblocked recheck-clean own-label-action
   pager_register claim-unreconciled pager_eval_claim_unreconciled \
     pipeline-act pager_remedy_claim_unreconciled
+  pager_declare_events claim-unreconciled enabler-examined escalated tech-debt-filed
   pager_register gather-claimed-degraded pager_eval_gather_claimed_degraded \
     pipeline-act pager_remedy_gather_claimed_degraded
+  pager_declare_events gather-claimed-degraded guard-degraded
   pager_register escalation-burst pager_eval_escalation_burst owner-only \
     "More than pager_escalation_burst escalations were filed fleet-wide in the trailing 24h, or the same re-flag reason paged the same item twice (agent-ops#933's own signature: a mechanical burst from a handful of unfixed bugs). The evidence above carries the reason histogram — start from whichever reason recurs most."
+  pager_declare_events escalation-burst escalated attempt-failed
   pager_register digest-truncated pager_eval_digest_truncated \
     pipeline-act pager_remedy_digest_truncated
+  pager_declare_events digest-truncated source-state-digest
   # agent-ops#1280: the landing and approval class.
   pager_register landing-never-armed pager_eval_landing_never_armed \
     pipeline-act pager_remedy_landing_never_armed
+  pager_declare_events landing-never-armed landing-armed landing-refused
   pager_register landing-refused-unknown pager_eval_landing_refused_unknown \
     pipeline-act pager_remedy_landing_refused_unknown
+  pager_declare_events landing-refused-unknown landing-refused
+  # pr-unreviewed reads through `_pager_pr_unreviewed_candidates`, which the
+  # program check cannot trace: approver-verdict, approver-unreviewed-engaged,
+  # warning.
   pager_register pr-unreviewed pager_eval_pr_unreviewed \
     pipeline-act pager_remedy_pr_unreviewed
+  pager_declare_events pr-unreviewed approver-verdict approver-unreviewed-engaged warning
 }

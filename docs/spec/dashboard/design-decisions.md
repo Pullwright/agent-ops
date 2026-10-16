@@ -1013,9 +1013,11 @@
   item-scoped event (`records[]` is each item's whole history), and the
   readers of its output — the rework panel, spend by fate, turns per landed
   item and exclusive landings — load that output whole; four of the pager's
-  invariants (`lib/pager-invariants.sh`, on a GitHub tick) gather the union
-  unfiltered; and `limit_union_record` reads through `lib/limit-detect.sh`'s
-  own reader (agent-ops#2037).
+  invariants (`lib/pager-invariants.sh`, on a GitHub tick) gather their
+  input unfiltered, though that input is the union reduced to their declared
+  types (the next bullet); and `limit_union_record` reads through
+  `lib/limit-detect.sh`'s own reader (agent-ops#2037), over the same
+  reduction.
 - **The union is read once a tick, and the pager reads only its own events**
   (agent-ops#2429). Streaming bounded the Publisher's memory but not its
   passes: on 2026-10-16 the four nodes' `log.jsonl` union was 124 MB
@@ -1064,8 +1066,44 @@
     line is dropped as every union reader drops it. One extract before
     `pager_evaluate`'s loop serves every key, because each reads its own
     state before appending its own transition, is evaluated once, and reads
-    no other key's. The invariants' evaluation functions and the remedy
-    variables keep the whole union; prefiltering those is a separate change.
+    no other key's.
+  - *Each invariant, and each declared reader, sees only the events it
+    declares.* The same byte-level prefilter, generalised as
+    `union_prefilter` (one `LC_ALL=C grep -F` with one pattern per declared
+    type), is what every invariant's evaluation function and three of the
+    Publisher's own readers are handed, so the invariants' twenty or so
+    `jq` passes over the union per GitHub tick — including the two `jq -s`
+    slurps per candidate repository inside `blocked-label-orphaned`'s
+    helpers, the 580 to 680 MB resident processes the issue observed — and
+    the local tick's transient-refusal verdict and stand-down banner each
+    parse a few per cent of the union's bytes. It is exact for the same
+    reason the pager extract is: every record is written compact by a
+    pipeline's `jq -nc`, so recall is exact, and precision is the reader's
+    own `select`. The declaration is the registry's own
+    (`pager_declare_events`, beside each `pager_register` in
+    `pager_register_builtin_invariants`), because the registry is where a
+    key's evaluation function is named and a declaration describes that
+    function: a key declared with no types gets an empty file, a key with no
+    declaration gets the whole union, so an invariant added without a
+    declaration is slower, never blind. The readers that cannot take a
+    prefiltered input are left on the whole union by construction: the
+    cycle-keyed and every-record readers, `union_partition`, the stage-gap
+    series, `fleet_sizing_contention_by_node` and
+    `stage_budget_observations`, which report or fold a span over every
+    record or keep a non-object line on purpose so a torn log aborts the
+    fold — a line the prefilter drops never reaches a reader, so such a
+    reader would lose exactly the line it aborts on; the item-lifecycle fold,
+    which needs every item-scoped record; and the remedies, which re-derive
+    from the whole union only when a key files. Two tests keep a
+    declaration honest, since a type missed in one makes its invariant see
+    nothing of that type and report a quiet zero: `test/union-stream.test.sh`
+    checks every built-in evaluation function's own program against its
+    declaration, in the three forms the programs use (`.event == "x"`,
+    `(.event // "") == "x"`, `map(.event) | index("x")`), and
+    `test/pager-invariants.test.sh` checks that each built-in's verdict over
+    the reduced fixture equals its verdict over the whole fixture, which
+    covers the types read through helper functions the program check cannot
+    trace.
   - *`fleet_logs` sorts under `LC_ALL=C`.* The union's order is byte order by
     design, so it must not depend on the locale cron or a shell hands the
     caller; on the real union the C order was byte-identical to `C.UTF-8`'s
@@ -1075,7 +1113,11 @@
   `review-log.jsonl`, and with eighteen keys up to seventy-two `jq` passes
   over the union (up to thirty-six in `pager_evaluate`, fewer when peers win
   the claims, and eighteen to thirty-six in the array); at the measured 5 to
-  13 s a pass, that is most of the 700 s.
+  13 s a pass, that is most of the 700 s. The declared reductions take the
+  invariants' own passes, about twenty-two a GitHub tick, and the
+  per-repository slurps from the whole union to a few per cent of it, and a
+  local tick loses two of its ten full passes, the verdict's and the
+  banner's.
 - **The working set is the publish's `TMPDIR`, and the rebuild is a child,
   not an `exec`** (agent-ops#1827, #1933). A publish spools through its own
   `mktemp` calls and through those of a dozen libraries, and the 2026-09-28
