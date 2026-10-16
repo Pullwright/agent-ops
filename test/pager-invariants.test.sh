@@ -278,7 +278,21 @@ gh() {
       local repo; repo="$(stub_gh_repo_of "$@")"
       printf '%s' "${STUB_GH_PR_LIST_BY_REPO[$repo]:-[]}"
       return 0 ;;
-    "issue create") printf 'created: %s\n' "$STUB_GH_CREATE_URL"; return 0 ;;
+    "issue create")
+      # Capture --body-file's own content before the caller's own `rm -f`
+      # deletes it (issue #1992's own remedy tests need to read what the
+      # body actually says, not just that an issue was created) — the stub
+      # runs synchronously, ahead of that cleanup, so the file still exists
+      # here.
+      local create_args=("$@") ci bf=""
+      for (( ci=0; ci<${#create_args[@]}; ci++ )); do
+        if [[ "${create_args[$ci]}" == "--body-file" ]]; then
+          bf="${create_args[$ci+1]}"
+          break
+        fi
+      done
+      if [[ -n "$bf" && -f "$bf" ]]; then cp "$bf" "$WORKDIR/last-issue-body"; else : > "$WORKDIR/last-issue-body"; fi
+      printf 'created: %s\n' "$STUB_GH_CREATE_URL"; return 0 ;;
     "issue close") return 0 ;;
     "issue comment") if (( STUB_GH_COMMENT_OK )); then return 0; else return 1; fi ;;
     "issue edit") if (( STUB_GH_EDIT_OK )); then return 0; else printf '%s\n' "$STUB_GH_EDIT_STDERR" >&2; return 1; fi ;;
@@ -1005,10 +1019,19 @@ assert_eq "no source-state-digest events at all: never fires" "false" \
 
 # --- landing-never-armed (agent-ops#1280) -----------------------------------
 
-landing_ev() {  # landing_ev TS EVENT REPO [REASON]
-  jq -nc --arg ts "$1" --arg ev "$2" --arg r "$3" --arg reason "${4:-}" \
+landing_ev() {  # landing_ev TS EVENT REPO [REASON [CLASS]]
+  # CLASS defaults to REASON's own text before its first colon — the real
+  # `_landing_refuse` class for every fixture below whose REASON happens to
+  # carry one (issue #1992's actual bug only ever showed for a class, like
+  # `autonomy-level`, whose REASON carries none) — but a caller can always
+  # pass CLASS explicitly, which is what proves the fix: the event's own
+  # `class` field groups correctly even when REASON has no colon to split.
+  local reason="${4:-}" class="${5:-}"
+  [[ -n "$class" || -z "$reason" ]] || class="${reason%%:*}"
+  jq -nc --arg ts "$1" --arg ev "$2" --arg r "$3" --arg reason "$reason" --arg class "$class" \
     '{ts: $ts, node: "n1", cycle: "c1", event: $ev, repo: $r}
-     + (if $reason == "" then {} else {reason: $reason} end)'
+     + (if $reason == "" then {} else {reason: $reason} end)
+     + (if $class == "" then {} else {class: $class} end)'
 }
 
 lna_log="$WORKDIR/landing-never-armed.jsonl"
@@ -1037,6 +1060,8 @@ outcome="$(pager_remedy_landing_never_armed landing-never-armed "$(jq -r '.evide
 assert_eq "the remedy reports what it filed" "1" "$(grep -c 'reader/repo#701' <<<"$outcome")"
 assert_eq "  ... labelled pw::type:tech-debt" "1" \
   "$(grep '^issue create' "$GH_CALLS_FILE" | grep -c 'pw::type:tech-debt')"
+assert_eq "  ... the histogram carries 'unknown', so the body names the #718 signature" "1" \
+  "$(grep -c 'This is the #718 signature' "$WORKDIR/last-issue-body")"
 
 lna_log_armed="$WORKDIR/landing-never-armed-armed.jsonl"
 write_log "$lna_log_armed" \
@@ -1055,10 +1080,73 @@ assert_eq "no PAGER_EVAL_LANDING_ARMED_WITHIN_DAYS configured: never fires" "fal
   "$(jq -r '.firing' <<<"$(pager_eval_landing_never_armed "[]" "$lna_log")")"
 PAGER_EVAL_LANDING_ARMED_WITHIN_DAYS=7
 
+# issue #1992: histogram and the "#718 signature" attribution both read each
+# event's own `class` field, never a `(.reason | split(":")[0])` parse — the
+# TD-PPagop-26082502 defect this was mis-replicating. A `class` of
+# `autonomy-level` carries a REASON with no colon at all
+# (`landing_autonomy_refusal_reason`'s own plain sentence), which the old
+# reason-parse would have grouped as the entire sentence rather than the
+# real class.
+lna_log_class="$WORKDIR/landing-never-armed-class.jsonl"
+write_log "$lna_log_class" \
+  "$(landing_ev "$(rel -500000)" landing-refused o/r \
+      "merge_autonomy effective level is agent-approves, not agent-merges-routine or agent-merges-all" \
+      "autonomy-level")"
+verdict="$(pager_eval_landing_never_armed "[]" "$lna_log_class")"
+assert_eq "a colon-less reason still groups under its own class field" "1" \
+  "$(grep -c 'autonomy-level: 1' <<<"$(jq -r '.evidence' <<<"$verdict")")"
+assert_eq "  ... never as the raw sentence (the pre-#1992 bug)" "0" \
+  "$(grep -c 'merge_autonomy effective level' <<<"$(jq -r '.evidence' <<<"$verdict")")"
+assert_eq "  ... and a deterministic class alone still fires (no blanket exclusion — issue #1992 rejected #1352's broader proposal)" \
+  "true" "$(jq -r '.firing' <<<"$verdict")"
+assert_eq "  ... without the #718 attribution, since the histogram carries no 'unknown'" "0" \
+  "$(grep -c '#718 signature' <<<"$(jq -r '.evidence' <<<"$verdict")")"
+
+: > "$GH_CALLS_FILE"
+PAGER_REMEDY_REPO="reader/repo"
+pager_remedy_landing_never_armed landing-never-armed "$(jq -r '.evidence' <<<"$verdict")" >/dev/null
+assert_eq "  ... so the remedy's own issue body drops the #718 sentence too (the #1352 complaint)" "0" \
+  "$(grep -c 'This is the #718 signature' "$WORKDIR/last-issue-body")"
+
+# issue #1992: a protected-path-cooloff refusal (lib/landing.sh gate 4.5)
+# still inside its own cool-off window is discounted — the Landing Gate is
+# waiting exactly as configured, not stuck.
+cooloff_reason() {  # cooloff_reason APPROVED_REL_SECONDS HOURS
+  printf 'ineligible:protected-path cool-off has %sh remaining (approved %s, landing_cool_off_hours=%s)' \
+    "0.1" "$(rel "$1")" "$2"
+}
+lna_log_cooloff_open="$WORKDIR/landing-never-armed-cooloff-open.jsonl"
+write_log "$lna_log_cooloff_open" \
+  "$(landing_ev "$(rel -300)" landing-refused o/r "$(cooloff_reason -3600 24)" "protected-path-cooloff")"
+assert_eq "a live cool-off refusal, still inside its own window: does not fire" "false" \
+  "$(jq -r '.firing' <<<"$(pager_eval_landing_never_armed "[]" "$lna_log_cooloff_open")")"
+
+lna_log_cooloff_elapsed="$WORKDIR/landing-never-armed-cooloff-elapsed.jsonl"
+write_log "$lna_log_cooloff_elapsed" \
+  "$(landing_ev "$(rel -300)" landing-refused o/r "$(cooloff_reason -100000 24)" "protected-path-cooloff")"
+assert_eq "the same class, but its own window has since elapsed (refusals outlasted it): fires" "true" \
+  "$(jq -r '.firing' <<<"$(pager_eval_landing_never_armed "[]" "$lna_log_cooloff_elapsed")")"
+
+lna_log_cooloff_mixed="$WORKDIR/landing-never-armed-cooloff-mixed.jsonl"
+write_log "$lna_log_cooloff_mixed" \
+  "$(landing_ev "$(rel -300)" landing-refused o/r "$(cooloff_reason -3600 24)" "protected-path-cooloff")" \
+  "$(landing_ev "$(rel -300)" landing-refused o/r \
+      "touches a protected path at agent-merges-all but the approving engagement did not run at the critical tier (tier: empty)" \
+      "protected-path-tier")"
+assert_eq "an open cool-off alongside a different (non-cooloff) refusal: fires — 'or another gate refuses'" \
+  "true" "$(jq -r '.firing' <<<"$(pager_eval_landing_never_armed "[]" "$lna_log_cooloff_mixed")")"
+
 # --- landing-refused-unknown (agent-ops#1280) -------------------------------
 
-refused_ev() { jq -nc --arg ts "$1" --arg reason "$2" \
-  '{ts: $ts, node: "n1", cycle: "c1", event: "landing-refused", repo: "o/r", reason: $reason}'; }
+refused_ev() {  # refused_ev TS REASON [CLASS]
+  # CLASS defaults to REASON's own text before its first colon, same
+  # fallback as landing_ev above — pass it explicitly for a REASON with no
+  # colon (issue #1992).
+  local reason="$2" class="${3:-}"
+  [[ -n "$class" ]] || class="${reason%%:*}"
+  jq -nc --arg ts "$1" --arg reason "$reason" --arg class "$class" \
+    '{ts: $ts, node: "n1", cycle: "c1", event: "landing-refused", repo: "o/r", reason: $reason, class: $class}'
+}
 
 lru_log="$WORKDIR/landing-refused-unknown.jsonl"
 {
@@ -1069,6 +1157,18 @@ verdict="$(pager_eval_landing_refused_unknown "[]" "$lru_log")"
 assert_eq "6 of 10 landing-refused events are class unknown (>= half, >= 5): fires" \
   "true" "$(jq -r '.firing' <<<"$verdict")"
 assert_eq "  ... evidence names the count" "1" "$(grep -c '6 of 10' <<<"$(jq -r '.evidence' <<<"$verdict")")"
+
+# issue #1992: the "unknown" count reads each event's own `class` field —
+# a REASON with no colon (so a `split(":")[0]` parse would read the whole
+# sentence, never matching the literal string "unknown") still counts
+# correctly when `class` says so explicitly.
+lru_log_colonless="$WORKDIR/landing-refused-unknown-colonless.jsonl"
+{
+  for i in 1 2 3 4 5 6; do refused_ev "$(rel -300)" "could not even attempt the live read for o/r#$i" "unknown"; done
+  for i in 1 2 3 4; do refused_ev "$(rel -300)" "ineligible:complexity high"; done
+} > "$lru_log_colonless"
+assert_eq "a colon-less reason with class \"unknown\" still counts as unknown" "true" \
+  "$(jq -r '.firing' <<<"$(pager_eval_landing_refused_unknown "[]" "$lru_log_colonless")")"
 
 : > "$GH_CALLS_FILE"
 PAGER_REMEDY_REPO="reader/repo"

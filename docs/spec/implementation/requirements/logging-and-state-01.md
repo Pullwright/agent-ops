@@ -338,8 +338,11 @@
     verdict, a dirty or unreadable review gate, a standing human
     `CHANGES_REQUESTED`, D18 WI-12's own gate 4.5 refusing a protected-path
     pull request at `agent-merges-all` whose approving engagement did not run
-    at the critical tier or whose `landing_cool_off_hours` wait has not yet
-    elapsed (naming the remaining time), an unreadable merge budget or App
+    at the critical tier (class `protected-path-tier`), whose standing
+    review's own commit does not match the pull request's current head
+    (class `protected-path-stale-head`), or whose `landing_cool_off_hours`
+    wait has not yet elapsed (class `protected-path-cooloff`, naming the
+    remaining time), an unreadable merge budget or App
     login, an already-queued or unreadable merge-queue probe, an unreadable
     token mint, or `landing_arm` itself refusing) — and, on the same terms as
     `landing-armed` above, `retry: true` when the refusal came from the

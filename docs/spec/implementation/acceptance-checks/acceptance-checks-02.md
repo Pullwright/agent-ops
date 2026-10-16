@@ -427,9 +427,11 @@
 62. **A persistent landing refusal posts, and a cleared one edits, the one
    notice comment (requirement 62, issue #1979).** `test/landing.test.sh`
    passes: `_landing_refusal_persistent` reads `ineligible`, `autonomy-level`,
-   `kill-switch`, `open-question`, `reconciliation-unanswered`,
-   `human-changes-requested` and `merge-queue-occupied` as persistent and
-   every other `_LANDING_REFUSAL_CLASSES` member (and an empty class) as not;
+   `kill-switch`, `open-question`, `protected-path-cooloff`,
+   `protected-path-stale-head`, `protected-path-tier`,
+   `reconciliation-unanswered`, `human-changes-requested` and
+   `merge-queue-occupied` as persistent and every other
+   `_LANDING_REFUSAL_CLASSES` member (and an empty class) as not;
    `_landing_notice_eligible_at` computes a cool-off reason's absolute
    eligible-at as `approved + landing_cool_off_hours`, including a fractional
    hours value, and prints nothing for a reason that names no cool-off.

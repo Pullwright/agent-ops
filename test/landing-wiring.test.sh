@@ -651,8 +651,8 @@ assert_eq "  ... and the PR still arms (its own protected-path refusal, if any, 
 rc="$(run_case LEVEL="agent-merges-all" PP_CTL="ineligible:protected-path cool-off has 3.2h remaining (approved 2026-08-17T10:00:00Z, landing_cool_off_hours=24)")"
 assert_eq "gate 4.5 refusing a live cool-off arms nothing" "0" "$(count arms)"
 assert_contains "  ... naming the remaining time" "cool-off has 3.2h remaining" "$(refusal)"
-assert_eq "  ... and groups under the same ineligible class gate 2 uses" \
-  "ineligible" "$(refusal_class)"
+assert_eq "  ... and groups under its own protected-path-cooloff class (issue #1992), distinct from gate 2's generic ineligible" \
+  "protected-path-cooloff" "$(refusal_class)"
 assert_eq "  ... returning 0" "0" "$rc"
 # Issue #1979, requirement 62: a cool-off refusal's notice states the
 # absolute wall-clock eligibility time — approved (2026-08-17T10:00:00Z) plus
@@ -666,7 +666,19 @@ assert_contains "  ... computed as approved + landing_cool_off_hours" \
 rc="$(run_case LEVEL="agent-merges-all" PP_CTL="ineligible:touches a protected path at agent-merges-all but the approving engagement did not run at the critical tier (tier: standard)")"
 assert_eq "gate 4.5 refusing a non-critical-tier approval arms nothing" "0" "$(count arms)"
 assert_contains "  ... naming the tier it actually found" "did not run at the critical tier (tier: standard)" "$(refusal)"
+assert_eq "  ... and groups under its own protected-path-tier class (issue #1992)" \
+  "protected-path-tier" "$(refusal_class)"
 assert_eq "  ... returning 0" "0" "$rc"
+
+rc="$(run_case LEVEL="agent-merges-all" PP_CTL="ineligible:touches a protected path at agent-merges-all but no approval timestamp could be established for the cool-off")"
+assert_eq "gate 4.5 refusing a missing approval timestamp arms nothing" "0" "$(count arms)"
+assert_eq "  ... and groups under the same protected-path-tier class" \
+  "protected-path-tier" "$(refusal_class)"
+
+rc="$(run_case LEVEL="agent-merges-all" PP_CTL="ineligible:the standing review approved commit abc123, but acme/widgets#512's current head is def456 — a push after approval restarts the protected-path cool-off")"
+assert_eq "gate 4.5 refusing a stale (pushed-past-approval) head arms nothing" "0" "$(count arms)"
+assert_eq "  ... and groups under its own protected-path-stale-head class (issue #1992)" \
+  "protected-path-stale-head" "$(refusal_class)"
 
 rc="$(run_case LEVEL="agent-merges-all" PP_CTL="unknown:could not re-establish acme/widgets#512's changed-file list for the protected-path controls")"
 assert_eq "gate 4.5's own unknown is never a pass" "0" "$(count arms)"
