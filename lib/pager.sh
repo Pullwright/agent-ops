@@ -304,6 +304,13 @@ if ! declare -F union_prefilter >/dev/null 2>&1; then
   . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/union-stream.sh"
 fi
 
+# PRIORITY's own ratchet, `issue_priority_apply` — guarded and sourced
+# relative to this file the same way (agent-ops#2422).
+if ! declare -F issue_priority_apply >/dev/null 2>&1; then
+  # shellcheck source=lib/issue-priority.sh
+  . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/issue-priority.sh"
+fi
+
 # _pager_webhook_notify URL REPO ITEM TITLE BODY_FILE NODE CYCLE
 # Best-effort fallback, parameterised twin of lib/enabler.sh's
 # escalation_webhook_notify. A no-op when URL is empty.
@@ -350,7 +357,8 @@ _pager_ensure_label_role() {
   return 0
 }
 
-# _pager_create_issue REPO ITEM LABEL TITLE BODY_FILE ASSIGNEE [ENSURE_ROLE]
+# _pager_create_issue REPO ITEM LABEL TITLE BODY_FILE ASSIGNEE [ENSURE_ROLE] \
+#                      [PRIORITY]
 # Prints "<number>\t<url>"; prints nothing and returns 1 on failure. ASSIGNEE
 # empty files unassigned (config-lever's tracking issue and pipeline-act's
 # both do). Dedup: an open issue carrying LABEL whose body already contains
@@ -364,10 +372,15 @@ _pager_ensure_label_role() {
 # LABEL, ensured in REPO on the create path only (see
 # _pager_ensure_label_role); omitted, nothing is ensured and
 # `issue_create_with_retry`'s retry without the label is the only safety net.
+# PRIORITY (agent-ops#2422, requirement 1), one of Urgent/High/Medium/Low,
+# applies through `issue_priority_apply`'s own ratchet on the create path
+# only — a page firing for a dedup hit does not revisit the existing issue's
+# own band, on the same terms lib/tech-debt-file.sh's own filers already
+# follow.
 _pager_create_issue() {
   local repo="$1" item="$2" label="$3" title="$4" body_file="$5" assignee="${6:-}" \
-        ensure_role="${7:-}"
-  local ISSUE_FILE_GH=("$(_pager_gh)") existing rc=0
+        ensure_role="${7:-}" priority="${8:-}"
+  local ISSUE_FILE_GH=("$(_pager_gh)") existing rc=0 result number
   existing="$(issue_find_by_body "$repo" "$item" "$item" open "$label" 200)" || rc=$?
   if (( rc == 0 )); then
     printf '%s' "$existing"
@@ -377,7 +390,15 @@ _pager_create_issue() {
   # Only on the path that actually creates — costs nothing on the dedup path
   # above, which is the common one.
   _pager_ensure_label_role "$repo" "$ensure_role"
-  issue_create_with_retry "$repo" "$title" "$body_file" "$label" "$assignee"
+  result="$(issue_create_with_retry "$repo" "$title" "$body_file" "$label" "$assignee")" || return 1
+  [[ -n "$result" ]] || return 1
+  number="${result%%$'\t'*}"
+  case "$priority" in
+    Urgent | High | Medium | Low)
+      issue_priority_apply "$repo" "$number" "$priority" >/dev/null 2>&1 || true
+      ;;
+  esac
+  printf '%s' "$result"
 }
 
 # _pager_create_decision_log_issue REPO ITEM LABEL TITLE BODY_FILE REASON_KEY
@@ -500,8 +521,11 @@ pager_file() {
   [[ "$remedy_class" == "owner-only" ]] && file_assignee="$assignee"
   if [[ -z "$pager_repo" ]]; then
     logged=1  # nothing to file into; the transition is still the fact
+  # `High` (agent-ops#2422, requirement 1's shared guide: "a defect that
+  # pages... ranks above wording, comment drift or tidying"): every page here
+  # is a fired monitoring invariant, never routine, whatever its remedy class.
   elif created="$(_pager_create_issue "$pager_repo" "$item" "$label" "Pager: $key ($evidence)" \
-        "$body_file" "$file_assignee" escalation)" && [[ -n "$created" ]]; then
+        "$body_file" "$file_assignee" escalation High)" && [[ -n "$created" ]]; then
     number="${created%%$'\t'*}"; url="${created#*$'\t'}"
     logged=1
   else

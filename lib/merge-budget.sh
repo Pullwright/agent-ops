@@ -71,6 +71,14 @@
 # shellcheck source=lib/github-limit.sh
 # (Sourced by every caller of this file already — see the header above.)
 
+# PRIORITY's own ratchet, `issue_priority_apply` (agent-ops#2422) — guarded
+# and sourced relative to this file, so a standalone test of this file alone
+# still has it, the same pattern lib/pager.sh and lib/tech-debt-file.sh use.
+if ! declare -F issue_priority_apply >/dev/null 2>&1; then
+  # shellcheck source=lib/issue-priority.sh
+  . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/issue-priority.sh"
+fi
+
 MERGE_BUDGET_FREEZE_FLAG_PREFIX="merge-budget-freeze-"
 
 # _merge_budget_freeze_flag_name SLUG
@@ -458,6 +466,9 @@ MERGE_BUDGET_ESC_BODY
     return 0
   fi
   number="${url##*/}"
+  # Urgent (agent-ops#2422, requirement 1): the governor holding past its own
+  # cap is a correctness invariant violated, not a routine finding.
+  issue_priority_apply "$slug" "$number" "Urgent" >/dev/null 2>&1 || true
   log_event "merge-budget-freeze-escalated" "$(jq -nc --arg s "$slug" --argjson n "$number" \
     --arg u "$url" --argjson cap "$cap" --argjson count "$count" \
     '{repo: $s, issue_number: $n, issue_url: $u, cap: $cap, count: $count}')"
