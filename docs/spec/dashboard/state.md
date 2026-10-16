@@ -180,6 +180,15 @@ All paths derive from `config.json` (tilde-expanded `state_dir` and
   reads the same function directly (its own "the merge-autonomy kill switch
   is …" line) — this is the same position, on the dashboard instead of a
   one-shot pass.
+- **`fleet/mix.json`** (requirement 2.3e, issue #2244) is a fifth flag in
+  this same family, naming the credit mix's live lane weights. This
+  Publisher does not fetch it, and neither of `fleet-cache/mix.json` nor a
+  `fleet.flags.mix` field exists: unlike the three flags above, nothing on
+  this page renders it yet. `agent-cycle.sh --status` and `scripts/node-
+  health.sh --metrics` are its own two surfaces today, both reading the
+  identical object `lib/mix.sh`'s `mix_fleet_status_json` builds
+  (requirement 34a) — a future dashboard panel would read the same function
+  rather than add a third.
 - **`disabled.json`** — the switch (requirement 2.3), read through
   `lib/toggle.sh`: the same code the pipelines gate on, so the dashboard cannot
   disagree with them about whether cycles are meant to be running (requirement

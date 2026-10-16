@@ -516,6 +516,11 @@ toggle_status_report() {
 #     deletes it instead, which is how a human ends a stand-down early
 #     without breaking that rule.
 #
+# Two further flags reuse this same mechanism outright, under their own flag
+# name, documented where they live rather than here: `fleet/merge-autonomy-
+# kill.json` (requirement 2.3b, `lib/merge-autonomy.sh`) and `fleet/mix.json`,
+# the credit mix's live lever (requirement 2.3e, `lib/mix.sh`, issue #2244).
+#
 # Both live as files on the state repository's main branch, written through
 # the contents API — the same CAS the claim registry uses (requirement 17a):
 # a PUT with a stale sha loses, and the loser re-reads before retrying. There

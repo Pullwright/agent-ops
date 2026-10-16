@@ -108,6 +108,9 @@ scratch_enter monitor-cycle || exit 1
 . "$SCRIPT_DIR/lib/stage-health.sh"
 # shellcheck source=lib/toggle.sh
 . "$SCRIPT_DIR/lib/toggle.sh"
+# shellcheck source=lib/mix.sh
+# After model-id.sh and toggle.sh, both sourced above.
+. "$SCRIPT_DIR/lib/mix.sh"
 # shellcheck source=lib/role.sh
 . "$SCRIPT_DIR/lib/role.sh"
 # shellcheck source=lib/fleet.sh
@@ -181,6 +184,13 @@ workspace_root="$(expand_home "$(cfg '.workspace_root')")"
 # real state_dir/gh-shim/ from every subprocess this run forks.
 export PW_GH_STATE_DIR="$state_dir"
 state_repo="$(cfg '.state_repo')"
+# The credit mix's live lever (issue #2244, D30): overlays fleet/mix.json onto
+# PROVIDER_LANES in place, so the launcher below draws from the same
+# effective lanes agent-cycle.sh's own stages do (lib/mix.sh, requirement
+# 34a). A flag too mangled to parse leaves PROVIDER_LANES exactly as
+# config.json resolved it; this run's own log carries no equivalent warning
+# event for it — agent-cycle.sh's does, and it runs far more often.
+providers_apply_mix "$state_repo" "$state_dir" || true
 monitor_model_raw="$(cfg '.monitor_model')"
 monitor_max_input_bytes="$(cfg '.monitor_max_input_bytes')"
 monitor_max_filings="$(cfg '.monitor_max_filings_per_run')"

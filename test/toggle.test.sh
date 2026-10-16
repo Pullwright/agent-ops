@@ -700,6 +700,194 @@ assert_eq "and records an automatic kind with the node as actor" "auto/node-b" \
   "$(fleet_flag_fetch "$slug" "$fs_a" limit | jq -r '"\(.kind)/\(.actor)"')"
 rm -f "$gh_backing/fleet/limit.json"
 
+# ===== The credit mix's live lever, lib/mix.sh (issue #2244, D30) =============
+# `fleet/mix.json` is a fourth member of this file's own fleet-flag family —
+# `mix_write`/`mix_reset` below are thin wrappers over `fleet_flag_write`/
+# `_fetch`/`_delete`, exercised here at the lib level; the CLI surface
+# (`agent-cycle.sh --mix`) is exercised further down, alongside
+# --kill-merge-autonomy, in the offline e2e section.
+# shellcheck source=lib/model-id.sh
+. "$SCRIPT_DIR/lib/model-id.sh"
+# shellcheck source=lib/substrate-claude-code.sh
+. "$SCRIPT_DIR/lib/substrate-claude-code.sh"
+# shellcheck source=lib/mix.sh
+. "$SCRIPT_DIR/lib/mix.sh"
+
+providers_load "{}"
+fs_mix="$tmp_dir/fleet-state-mix"; mkdir -p "$fs_mix"
+
+# --- mix_build_overlay: the same validation and messages as config.json's own
+# providers.*.lanes block (lib/config-schema.sh's config_provider_errors) ---
+
+ov="$(mix_build_overlay anthropic "api=70" "subscription=30" "subscription.enabled=true")"
+assert_eq "mix_build_overlay builds the overlay from <lane>=<weight> and <lane>.enabled=true" \
+  '{"api":{"weight":70},"subscription":{"weight":30,"enabled":true}}' "$ov"
+
+ov_balance="$(mix_build_overlay anthropic "subscription.balance_usd=40")"
+assert_eq "a balance_usd assignment stamps balance_as_of at the same instant" \
+  "$(_toggle_iso)" "$(jq -r '.subscription.balance_as_of' <<<"$ov_balance")"
+assert_eq "…alongside the balance itself" "40" "$(jq -r '.subscription.balance_usd' <<<"$ov_balance")"
+
+mix_build_overlay anthropic "subscription.enabled=false" >/dev/null 2>/tmp/mix-err-$$
+assert_eq "enabled=false is refused, not silently accepted" "64" "$?"
+assert_contains "…naming --close-lane as the way to actually close a lane" \
+  "--close-lane" "$(cat /tmp/mix-err-$$)"
+rm -f /tmp/mix-err-$$
+
+mix_build_overlay anthropic "api=-1" >/dev/null 2>/tmp/mix-err-$$
+assert_eq "a negative weight is refused" "64" "$?"
+assert_contains "…with the same message config.json's own validation gives" \
+  "weight must be an integer >= 0" "$(cat /tmp/mix-err-$$)"
+rm -f /tmp/mix-err-$$
+
+mix_build_overlay anthropic "api=1.5" >/dev/null 2>/tmp/mix-err-$$
+assert_eq "a non-integer weight is refused" "64" "$?"
+rm -f /tmp/mix-err-$$
+
+mix_build_overlay anthropic "xai.weight=1" >/dev/null 2>/tmp/mix-err-$$
+assert_eq "an unknown lane is refused" "64" "$?"
+assert_contains "…naming the lane" 'unknown lane "xai"' "$(cat /tmp/mix-err-$$)"
+rm -f /tmp/mix-err-$$
+
+mix_build_overlay anthropic "api.spend_cap_usd=5" >/dev/null 2>/tmp/mix-err-$$
+assert_eq "an unknown key (a cap or a floor) is refused — this lever carries no closures" "64" "$?"
+rm -f /tmp/mix-err-$$
+
+# --- mix_write: writes the flag with provenance, and merges onto what is
+# already there rather than replacing it outright ---
+
+mix_write "$slug" "$fs_mix" anthropic "$ov" "operator pid 1" "operator" >/dev/null
+assert_eq "mix_write publishes fleet/mix.json" "1" \
+  "$(test -f "$gh_backing/fleet/mix.json" && echo 1 || echo 0)"
+assert_eq "it carries the provider's own lanes" "70" \
+  "$(fleet_flag_fetch "$slug" "$fs_mix" mix | jq -r '.providers.anthropic.lanes.api.weight')"
+assert_eq "it attributes itself (by)" "operator pid 1" \
+  "$(fleet_flag_fetch "$slug" "$fs_mix" mix | jq -r '.by')"
+assert_eq "…and (actor)" "operator" \
+  "$(fleet_flag_fetch "$slug" "$fs_mix" mix | jq -r '.actor')"
+assert_eq "…and ts" "$(_toggle_iso)" \
+  "$(fleet_flag_fetch "$slug" "$fs_mix" mix | jq -r '.ts')"
+
+mix_write "$slug" "$fs_mix" anthropic '{"subscription":{"enabled":true}}' "operator pid 2" "operator" >/dev/null
+assert_eq "a second write restates incrementally — api's own weight survives untouched" \
+  "70" "$(fleet_flag_fetch "$slug" "$fs_mix" mix | jq -r '.providers.anthropic.lanes.api.weight')"
+assert_eq "…while the new field actually lands" "true" \
+  "$(fleet_flag_fetch "$slug" "$fs_mix" mix | jq -r '.providers.anthropic.lanes.subscription.enabled')"
+
+mix_write "$slug" "$fs_mix" xai '{"api":{"weight":5}}' "operator pid 3" "operator" >/dev/null
+assert_eq "a second provider's entry does not disturb the first's" "70" \
+  "$(fleet_flag_fetch "$slug" "$fs_mix" mix | jq -r '.providers.anthropic.lanes.api.weight')"
+
+# --- mix_write's own CAS retry: a stale sha on the first attempt re-reads and
+# lands on the second, the same two-attempt shape fleet_limit_publish uses ---
+
+race_backing="$tmp_dir/mix-race-remote"; mkdir -p "$race_backing/fleet"
+jq -nc '{providers:{anthropic:{lanes:{api:{weight:1}}}}, by: "seed", actor: "seed", ts: "2026-07-17T00:00:00Z"}' \
+  > "$race_backing/fleet/mix.json"
+race_put_count="$tmp_dir/mix-race-put-count"
+: > "$race_put_count"
+race_stub="$tmp_dir/mix-race-gh-stub"
+cat > "$race_stub" <<STUB
+#!/usr/bin/env bash
+set -uo pipefail
+backing="$race_backing"
+put_count_file="$race_put_count"
+method=GET path="" jq_expr=""
+declare -A f=()
+args=("\$@"); i=0
+while (( i < \${#args[@]} )); do
+  a="\${args[\$i]}"
+  case "\$a" in
+    -X)      i=\$((i+1)); method="\${args[\$i]}" ;;
+    --jq)    i=\$((i+1)); jq_expr="\${args[\$i]}" ;;
+    -f)      i=\$((i+1)); kv="\${args[\$i]}"; f["\${kv%%=*}"]="\${kv#*=}" ;;
+    repos/*) path="\$a" ;;
+  esac
+  i=\$((i+1))
+done
+if [[ "\$path" == repos/*/* && "\$path" != */contents/* ]]; then echo '{}'; exit 0; fi
+rel="\${path#repos/*/*/contents/}"; rel="\${rel%%\?*}"
+file="\$backing/\$rel"
+sha_of() { sha1sum "\$1" | awk '{print \$1}'; }
+case "\$method" in
+  GET)
+    [[ -f "\$file" ]] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
+    if [[ "\$jq_expr" == ".sha" ]]; then sha_of "\$file"; exit 0; fi
+    jq -n --arg c "\$(base64 -w0 < "\$file")" --arg s "\$(sha_of "\$file")" '{content: \$c, sha: \$s}'
+    ;;
+  PUT)
+    echo x >> "\$put_count_file"
+    # The first PUT this process ever attempts loses the race outright — a
+    # peer's own concurrent write landed between this process's read and its
+    # PUT — whatever sha it offers. Every later attempt behaves like the
+    # ordinary stub: real CAS against the file's live sha.
+    if [[ \$(wc -l < "\$put_count_file") -eq 1 ]]; then
+      echo "gh: sha mismatch (HTTP 409)" >&2; exit 1
+    fi
+    if [[ -f "\$file" ]]; then
+      [[ "\${f[sha]:-}" == "\$(sha_of "\$file")" ]] || { echo "gh: sha mismatch (HTTP 409)" >&2; exit 1; }
+    fi
+    mkdir -p "\$(dirname "\$file")"
+    printf '%s' "\${f[content]:?}" | base64 -d > "\$file"
+    ;;
+esac
+STUB
+chmod +x "$race_stub"
+race_result="$(TOGGLE_GH="$race_stub" GH_STUB_BACKING="$race_backing" \
+  mix_write "$slug" "$tmp_dir/fs-race" anthropic '{"api":{"weight":99}}' "operator pid 4" "operator")"
+assert_eq "mix_write's own retry converges past a stale-sha PUT" "0" "$?"
+assert_eq "…and the second attempt actually landed" "99" \
+  "$(jq -r '.providers.anthropic.lanes.api.weight' "$race_backing/fleet/mix.json")"
+assert_eq "…having tried the PUT exactly twice" "2" "$(wc -l < "$race_put_count")"
+
+# --- providers_apply_mix: overlays onto PROVIDER_LANES, fails open on a flag
+# too mangled to parse, and MIX_SOURCE names which side supplied each field ---
+
+PROVIDER_LANES=()
+providers_load "{}"
+providers_apply_mix "$slug" "$fs_mix"
+assert_eq "providers_apply_mix overlays the live weight onto PROVIDER_LANES" "70" \
+  "$(jq -r '.api.weight' <<<"${PROVIDER_LANES[anthropic]}")"
+assert_eq "…leaving an unmentioned field (spend_cap_usd) at its config default" "0" \
+  "$(jq -r '.api.spend_cap_usd' <<<"${PROVIDER_LANES[anthropic]}")"
+assert_eq "MIX_SOURCE names the fleet flag as api's weight source" "fleet" \
+  "$(jq -r '.api.weight' <<<"${MIX_SOURCE[anthropic]}")"
+assert_eq "…and config as api's own enabled source (the flag never named it)" "config" \
+  "$(jq -r '.api.enabled' <<<"${MIX_SOURCE[anthropic]}")"
+
+printf 'not json at all' > "$gh_backing/fleet/mix.json"
+PROVIDER_LANES=()
+providers_load "{}"
+providers_apply_mix "$slug" "$tmp_dir/fs-mix-garbage"
+assert_eq "a garbage flag is reported (non-zero), not silently accepted" "1" "$?"
+assert_eq "…and PROVIDER_LANES is left exactly as config resolved it" "1" \
+  "$(jq -r '.api.weight' <<<"${PROVIDER_LANES[anthropic]}")"
+
+# --- mix_reset: deletes a provider's own entry, or the whole flag when it was
+# the last one ---
+
+fs_reset="$tmp_dir/fleet-state-mix-reset"; mkdir -p "$fs_reset"
+rm -f "$gh_backing/fleet/mix.json"
+assert_eq "resetting a provider with no live entry at all is a quiet no-op" "absent" \
+  "$(mix_reset "$slug" "$fs_reset" anthropic "operator pid 5")"
+
+mix_write "$slug" "$fs_reset" anthropic '{"api":{"weight":40}}' "operator pid 6" >/dev/null
+mix_write "$slug" "$fs_reset" xai '{"api":{"weight":5}}' "operator pid 6" >/dev/null
+assert_eq "resetting one of two providers leaves the flag written, the other untouched" "written" \
+  "$(mix_reset "$slug" "$fs_reset" anthropic "operator pid 7")"
+assert_eq "anthropic's own entry is gone" "null" \
+  "$(fleet_flag_fetch "$slug" "$fs_reset" mix | jq -c '.providers.anthropic // null')"
+assert_eq "xai's survives" "5" \
+  "$(fleet_flag_fetch "$slug" "$fs_reset" mix | jq -r '.providers.xai.lanes.api.weight')"
+
+assert_eq "resetting the last provider deletes the whole flag" "deleted" \
+  "$(mix_reset "$slug" "$fs_reset" xai "operator pid 8")"
+assert_eq "fleet/mix.json is actually gone" "0" \
+  "$(test -f "$gh_backing/fleet/mix.json" && echo 1 || echo 0)"
+
+rm -f "$gh_backing/fleet/mix.json"
+PROVIDER_LANES=()
+
 # ===== The pipelines honour the fleet flags (offline e2e) =====================
 #
 # Node A sets the fleet switch with the real management command; node B runs
@@ -1234,6 +1422,64 @@ assert_contains "--restore-merge-autonomy on an already-clear switch says so" \
 assert_eq "and exits cleanly" "0" "$already_clear_rc"
 
 rm -f "$gh_backing/fleet/merge-autonomy-kill.json"
+
+# --- agent-cycle.sh --mix (issue #2244, D30): the CLI surface over lib/mix.sh,
+# a fourth fleet flag built on the same family's fleet_flag_write/_fetch -----
+
+mix_out="$(run_node "$a_home" agent-cycle.sh --mix anthropic api=70 subscription=30 subscription.enabled=true 2>&1)"
+assert_contains "--mix reports what it set" "mix set for anthropic" "$mix_out"
+assert_eq "--mix publishes fleet/mix.json" "1" \
+  "$(test -f "$gh_backing/fleet/mix.json" && echo 1 || echo 0)"
+assert_eq "it carries the weights given" "70 30" \
+  "$(jq -r '.providers.anthropic.lanes | "\(.api.weight) \(.subscription.weight)"' "$gh_backing/fleet/mix.json")"
+assert_eq "…and the enabled flag" "true" \
+  "$(jq -r '.providers.anthropic.lanes.subscription.enabled' "$gh_backing/fleet/mix.json")"
+assert_eq "it attributes itself, the same by/actor/ts provenance as fleet/disabled.json" \
+  "fleet-node-a" "$(jq -r '.actor' "$gh_backing/fleet/mix.json")"
+assert_contains "…naming the pid in by" "pid" "$(jq -r '.by' "$gh_backing/fleet/mix.json")"
+assert_eq "…and a timestamp" "false" "$(jq -r '.ts == null' "$gh_backing/fleet/mix.json")"
+assert_contains "the mix-set event is logged" '"event":"mix-set"' "$(cat "$a_log" 2>/dev/null)"
+
+mix_status_out="$(run_node "$a_home" agent-cycle.sh --status 2>&1)"
+assert_contains "--status reports the live mix" "anthropic api: weight=70" "$mix_status_out"
+assert_contains "…naming the fleet flag as its source" "fleet/mix.json" "$mix_status_out"
+
+a_log_lines_before="$(wc -l < "$a_log" 2>/dev/null || echo 0)"
+mix_bare_out="$(run_node "$a_home" agent-cycle.sh --mix 2>&1)"
+assert_contains "--mix with no arguments prints the same effective report" \
+  "anthropic api: weight=70" "$mix_bare_out"
+assert_eq "…and does not log anything (it is a read, not a command)" \
+  "$a_log_lines_before" "$(wc -l < "$a_log" 2>/dev/null || echo 0)"
+
+mix_close_out="$(run_node "$a_home" agent-cycle.sh --mix anthropic subscription.enabled=false 2>&1)"
+mix_close_rc=$?
+assert_eq "--mix refuses enabled=false" "64" "$mix_close_rc"
+assert_contains "…naming --close-lane as the way to actually close a lane" \
+  "--close-lane" "$mix_close_out"
+assert_eq "…and the flag is unchanged by the refusal" "true" \
+  "$(jq -r '.providers.anthropic.lanes.subscription.enabled' "$gh_backing/fleet/mix.json")"
+
+mix_reset_out="$(run_node "$a_home" agent-cycle.sh --mix anthropic --reset 2>&1)"
+assert_contains "--mix --reset reports clearing the flag" "fleet/mix.json cleared" "$mix_reset_out"
+assert_eq "--reset deletes fleet/mix.json (anthropic was the only provider on it)" "0" \
+  "$(test -f "$gh_backing/fleet/mix.json" && echo 1 || echo 0)"
+assert_contains "the mix-reset event is logged" '"event":"mix-reset"' "$(cat "$a_log" 2>/dev/null)"
+
+reset_again_out="$(run_node "$a_home" agent-cycle.sh --mix anthropic --reset 2>&1)"
+assert_contains "resetting again, with nothing live, says so rather than erroring" \
+  "no live mix entry" "$reset_again_out"
+
+# A garbage flag yields config with a warning (lib/mix.sh's own
+# providers_apply_mix, exercised here through an ordinary cycle attempt
+# rather than --status/--mix, which never log it — see agent-cycle.sh's own
+# comment on why that warning is gated on a real cycle alone).
+printf 'not json at all' > "$gh_backing/fleet/mix.json"
+rm -f "$a_log"
+run_node "$a_home" agent-cycle.sh >/dev/null 2>&1
+assert_contains "a garbage mix flag earns a warning event on an ordinary cycle" \
+  '"event":"warning"' "$(cat "$a_log" 2>/dev/null)"
+assert_contains "…naming fleet/mix.json" "fleet/mix.json" "$(cat "$a_log" 2>/dev/null)"
+rm -f "$gh_backing/fleet/mix.json" "$a_log"
 
 # --- A manual fleet/limit.json is honoured, never probed (#244) -----------
 # An operator's stand-down is a decision, not an inference: the cycle must

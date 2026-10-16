@@ -122,7 +122,7 @@ assert_eq "unknown exit is 2, distinct from fail's 1 and ok's 0" "2" "$unknown_r
 
 metrics_out="$(run --metrics)"; metrics_rc=$?
 assert_eq "metrics always exits 0" "0" "$metrics_rc"
-for field in node role ts version live ready health cycles containers; do
+for field in node role ts version live ready health cycles containers mix; do
   assert_eq "metrics carries top-level field '$field'" "true" \
     "$(jq --arg f "$field" 'has($f)' <<<"$metrics_out")"
 done
@@ -130,6 +130,13 @@ assert_eq "metrics.cycles carries log_selections" "true" \
   "$(jq 'has("log_selections")' <<<"$(jq -c '.cycles' <<<"$metrics_out")")"
 assert_eq "metrics.cycles carries log_attempts_failed" "true" \
   "$(jq 'has("log_attempts_failed")' <<<"$(jq -c '.cycles' <<<"$metrics_out")")"
+# issue #2244 (D30): the credit mix's own object, the same one --status
+# renders (requirement 34a) — `anthropic` always appears, synthesized by
+# providers_load whether or not config.json names it explicitly.
+assert_eq "metrics.mix carries the synthesized anthropic provider" "true" \
+  "$(jq 'has("anthropic")' <<<"$(jq -c '.mix' <<<"$metrics_out")")"
+assert_eq "metrics.mix.anthropic carries both lanes" "true" \
+  "$(jq -r '.mix.anthropic | has("api") and has("subscription")' <<<"$metrics_out")"
 
 # --- One forge read per TTL window, and the body is what readiness reads ---
 # Requirement 58a: `--ready` makes exactly one `/rate_limit` call on the

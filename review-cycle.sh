@@ -114,6 +114,9 @@ scratch_enter review-cycle || exit 1
 . "$SCRIPT_DIR/lib/stage-budget.sh"
 # shellcheck source=lib/toggle.sh
 . "$SCRIPT_DIR/lib/toggle.sh"
+# shellcheck source=lib/mix.sh
+# After model-id.sh and toggle.sh, both sourced above.
+. "$SCRIPT_DIR/lib/mix.sh"
 # shellcheck source=lib/role.sh
 . "$SCRIPT_DIR/lib/role.sh"
 # shellcheck source=lib/git-identity.sh
@@ -327,6 +330,13 @@ stage_budget_json='{"cells":{},"actors":{}}'
 lock_stale_after_sec=14400
 limit_cooldown_default_hours="$(cfg '.limit_cooldown_default')"
 state_repo="$(cfg '.state_repo')"
+# The credit mix's live lever (issue #2244, D30): overlays fleet/mix.json onto
+# PROVIDER_LANES in place, so the launcher below draws from the same
+# effective lanes agent-cycle.sh's own stages do (lib/mix.sh, requirement
+# 34a). A flag too mangled to parse leaves PROVIDER_LANES exactly as
+# config.json resolved it; this run's own log carries no equivalent warning
+# event for it — agent-cycle.sh's does, and it runs far more often.
+providers_apply_mix "$state_repo" "$state_dir" || true
 
 mkdir -p "$state_dir" "$state_dir/reviews" "$workspace_root"
 log_file="$state_dir/log.jsonl"                 # shared stream (limit-hit lives here)
