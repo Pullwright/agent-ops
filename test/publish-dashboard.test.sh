@@ -1452,11 +1452,27 @@ chmod +x "$launcher_gh_stub"
 env HOME="$a" LAUNCHER_WINDOW=15 DASHBOARD_GH_CMD="$launcher_gh_stub" "$LAUNCHER" >/dev/null 2>&1
 assert_eq "launcher exits 0 on a healthy window" "0" "$?"
 
+# Windows in this file run back to back, where cron's are five minutes apart,
+# so the backoff a window persists for the one after it — the third field of
+# `.dashboard-tick-cost`, which "A backoff that outlasts its window" below is
+# about (#2429) — would reach into the window the next assertion runs, and
+# idle it: the real publish above cost seconds, and owes nine times that.
+# Expiring the debt by hand between windows is the trick `touch -d` plays on
+# the GitHub stamp, standing in for the time cron would have let pass. The two
+# costs are kept, because the tail reserve reads them.
+expire_backoff() {  # expire_backoff <home>
+  local f="$1/.local/state/poetic-agents/.dashboard-tick-cost" gh lc
+  [[ -r "$f" ]] || return 0
+  read -r gh lc _ < "$f" || true
+  printf '%s %s 0\n' "${gh:-0}" "${lc:-0}" > "$f"
+}
+
 # And with the lock already held: every tick skips (exit 111 inside), which
 # must still be a healthy window, logged as skipped.
 lck="$a/.local/state/poetic-agents/dashboard.lck"
 log="$a/.local/state/poetic-agents/dashboard.log"
 : > "$log"
+expire_backoff "$a"
 flock "$lck" sleep 30 &
 holder=$!
 env HOME="$a" LAUNCHER_WINDOW=15 DASHBOARD_GH_CMD="$launcher_gh_stub" "$LAUNCHER" >/dev/null 2>&1
@@ -1683,6 +1699,9 @@ chmod +x "$pace_stub"
 
 run_paced() {  # run_paced <window> <cost-seconds> <divisor>
   : > "$pace_log"
+  # Each call is a window on its own: what the previous call's last tick still
+  # owed past its window (#2429) is expired, as cron's five-minute gap would.
+  expire_backoff "$pace_home"
   env HOME="$pace_home" LAUNCHER_WINDOW="$1" STUB_COST="$2" LAUNCHER_DUTY_DIVISOR="$3" \
       LAUNCHER_PUBLISH_CMD="$pace_stub" TICK_LOG="$pace_log" "$LAUNCHER" >/dev/null 2>&1
 }
@@ -1823,6 +1842,10 @@ assert_eq "and what it cost outlives the window that measured it" "1" \
 # the last *local* tick (~0s) and started it. The kind-aware reserve reads the
 # 15s window one persisted and stops instead.
 touch "$tail_state/.dashboard-github.json"
+# The 15s GitHub tick owes 15s of backoff past window one (divisor 1), which
+# window two would otherwise idle through (#2429); this section is about the
+# reserve, so the debt is expired as cron's gap would have.
+expire_backoff "$tail_home"
 : > "$tail_log"
 run_tail 30 18 0 15
 assert_eq "a GitHub tick that cannot fit the tail is not started" "local " "$(tail_kinds)"
@@ -1833,6 +1856,165 @@ assert_contains "and the window says why, rather than just going quiet" \
 # cost is what gates a local tick, not the expensive kind's.
 assert_eq "cheap local ticks still run several to a window" "1" \
   "$(( $(grep -c . "$tail_log") >= 2 ))"
+
+# --- The GitHub refresh is due by its own cost, not a fixed age (#2429) --------
+# The stamp's age gated a refresh at a fixed 285s however long the refresh
+# took. On 2026-10-16 a refresh cost 500–1,100s on every node, so it was due
+# again 285s after it finished, every window's first tick was one, and the 1:9
+# the section above holds every tick to never reached the one kind that cost
+# the most. The due age is the larger of LAUNCHER_GITHUB_MAX_AGE and
+# duty_divisor times what the last refresh cost; with the floor at 0 and a 3s
+# refresh at 1:9 it is 27s, which a 15-second window started at once cannot
+# reach however loaded the box: its last tick starts no later than 10s after
+# it opened (`endat - tick_margin`, then one 5-second alignment), and it opened
+# in the refresh's own tail, so the stamp — which the launcher touches as the
+# refresh ends — is at most about 13s old at any tick it runs.
+#
+# The stub sleeps 2.5s rather than 3: the launcher rounds a cost up to whole
+# seconds, so 2.5s plus the stub's own start-up measures as 3s on any box with
+# under half a second of overhead per process, where a 3s sleep would measure
+# as 4s on every box and put the due age at 36s instead. 15-second windows
+# for the reason the cadence section above uses them: the loop admits a first
+# tick only in the window's first `LAUNCHER_WINDOW - 10` seconds, and five of
+# those cover the launcher's own start-up on a loaded box.
+due_home="$(new_home nodeD)"
+due_state="$due_home/.local/state/poetic-agents"
+due_log="$tmp_dir/due-ticks"
+run_due() {  # run_due <window> <pace-cap>
+  : > "$due_log"
+  env HOME="$due_home" LAUNCHER_WINDOW="$1" LAUNCHER_PACE_CAP="$2" \
+      LAUNCHER_GITHUB_MAX_AGE=0 LAUNCHER_DUTY_DIVISOR=9 \
+      STUB_LOCAL_COST=0 STUB_GH_COST=2.5 \
+      LAUNCHER_PUBLISH_CMD="$tail_stub" TICK_LOG="$due_log" "$LAUNCHER" >/dev/null 2>&1
+}
+due_kinds() { awk '{print $2}' "$due_log" | sort -u | tr '\n' ' '; }
+due_dashboard_log="$due_state/dashboard.log"
+
+# Window one: nothing measured yet, so the due age is the bare floor and the
+# cold stamp is refetched at once — and the line says which age it was gated
+# on, because once that age follows the cost a reader of the log cannot tell
+# a slow refresh paying for itself from a gate that failed to fire.
+run_due 15 3600
+assert_contains "a refresh runs when nothing has been measured" "github" "$(due_kinds)"
+assert_contains "and the log states the due age it was gated on" \
+  "github: refreshing (last fetch never, due after 0s)" "$(cat "$due_dashboard_log")"
+assert_eq "the refresh's cost is persisted as 3s" "3" \
+  "$(awk '{print $1}' "$due_state/.dashboard-tick-cost" 2>/dev/null)"
+
+# Window two, at once: the stamp is seconds old and the refresh is not due for
+# 27s, so every tick in a 15s window is local. Under the fixed floor alone,
+# every one of them was a refresh.
+expire_backoff "$due_home"
+run_due 15 3600
+assert_eq "a window inside the cost-derived due age makes no GitHub call" "local " "$(due_kinds)"
+
+# Window three: once the stamp passes the due age, the next tick fetches.
+touch -d '2 minutes ago' "$due_state/.dashboard-github.json"
+expire_backoff "$due_home"
+run_due 15 3600
+assert_contains "a stamp older than the due age is refetched" "github" "$(due_kinds)"
+assert_eq "and the line names the cost-derived due age" "1" \
+  "$(( $(grep -cE 'github: refreshing \(last fetch [0-9]+s ago, due after 27s\)' "$due_dashboard_log") >= 1 ))"
+
+# The cap bounds the due age too: with LAUNCHER_PACE_CAP=5 a stamp 10s old is
+# past due although the 27s have not passed.
+touch -d '10 seconds ago' "$due_state/.dashboard-github.json"
+expire_backoff "$due_home"
+run_due 15 5
+assert_contains "the due age is capped at LAUNCHER_PACE_CAP" "github" "$(due_kinds)"
+assert_eq "and the line says so" "1" \
+  "$(( $(grep -cE 'github: refreshing \(last fetch [0-9]+s ago, due after 5s\)' "$due_dashboard_log") >= 1 ))"
+
+# --- A backoff that outlasts its window is honoured by the next one (#2429) ----
+# The pacing section above proves the loop idles nine times a tick's cost —
+# inside its window. The backoff lived in the launcher's own process, so a
+# tick whose backoff ran past the window's end was followed, five minutes
+# later, by a fresh launcher that ran its first tick at once: the 1:9 held for
+# exactly as long as nine times a tick fitted in 295s, and on 2026-10-16 no
+# tick on any node did. The instant the backoff ends is therefore persisted as
+# the third field of `.dashboard-tick-cost`, and a window that opens before it
+# either idles until it (when a tick can still fit after it) or exits with no
+# tick at all.
+#
+# A 2s local tick at 1:9 owes 18s. Window one is 15s, so the tick's backoff
+# runs past its end by at least 5s and must be persisted; window two, also 15s
+# and started at once, opens inside the debt with no room for a tick past it,
+# and must run none; window three, 45s, has room, and its first tick must
+# start no sooner than 18s after window one's tick ended. The gap is measured
+# from the stub's own timestamps, so a loaded box that shifts every instant
+# together changes nothing. 45s rather than 40 for window three because the
+# debt can end up to 25s after window one opened and the window must still
+# have the loop's 10s margin past that, with room to spare for the arm64 leg
+# (agent-ops#1750).
+carry_home="$(new_home nodeC)"
+carry_state="$carry_home/.local/state/poetic-agents"
+carry_log="$tmp_dir/carry-ticks"
+carry_stub="$tmp_dir/carry-publish.sh"
+cat > "$carry_stub" <<'STUB'
+#!/usr/bin/env bash
+# Records when this tick started and when it ended, on its own clock, so the
+# gap the next window keeps is measured from the tick's end rather than from
+# anything the launcher logged.
+printf '%s start\n' "${EPOCHREALTIME/,/.}" >> "$TICK_LOG"
+sleep "${STUB_COST:-0}"
+printf '%s end\n' "${EPOCHREALTIME/,/.}" >> "$TICK_LOG"
+STUB
+chmod +x "$carry_stub"
+run_carry() {  # run_carry <window> <pace-cap>
+  env HOME="$carry_home" LAUNCHER_WINDOW="$1" LAUNCHER_PACE_CAP="$2" \
+      STUB_COST=2 LAUNCHER_DUTY_DIVISOR=9 \
+      LAUNCHER_PUBLISH_CMD="$carry_stub" TICK_LOG="$carry_log" "$LAUNCHER" >/dev/null 2>&1
+}
+# The third field, or 0 when there is none: a launcher without the field
+# must read as owing nothing, and so must this.
+carry_owed() { awk '{print $3+0}' "$carry_state/.dashboard-tick-cost" 2>/dev/null || echo 0; }
+carry_dashboard_log="$carry_state/dashboard.log"
+# A fresh stamp keeps every tick local; the refresh cadence is the section
+# above's concern.
+touch "$carry_state/.dashboard-github.json"
+
+: > "$carry_log"
+run_carry 15 3600
+carry_t1_end="$(awk '$2 == "end" {print $1; exit}' "$carry_log")"
+assert_eq "window one runs its one tick" "1" "$(grep -c ' end$' "$carry_log")"
+assert_eq "and persists the instant the tick's backoff ends, in the future" "1" \
+  "$(( $(carry_owed) > EPOCHSECONDS ))"
+assert_eq "…at least 18s past the tick's end" "1" \
+  "$(awk -v f="$(carry_owed)" -v e="$carry_t1_end" 'BEGIN { print (f - e >= 18) ? 1 : 0 }')"
+
+# Window two: inside the debt, with no room for a tick past it.
+run_carry 15 3600
+assert_eq "a window that opens inside the debt exits 0" "0" "$?"
+assert_eq "and runs no tick" "1" "$(grep -c ' end$' "$carry_log")"
+assert_contains "and says why, rather than just going quiet" \
+  "pacing: window idle — the last tick's backoff runs to" "$(cat "$carry_dashboard_log")"
+
+# Window three: room for a tick once the debt is paid.
+run_carry 45 3600
+carry_t3_start="$(awk '$2 == "start" { n++; if (n == 2) { print $1; exit } }' "$carry_log")"
+assert_eq "a window with room past the debt runs a tick" "1" \
+  "$(( $(grep -c ' end$' "$carry_log") >= 2 ))"
+assert_eq "…no sooner than 18s after window one's tick ended" "1" \
+  "$(awk -v s="${carry_t3_start:-0}" -v e="$carry_t1_end" 'BEGIN { print (s - e >= 18) ? 1 : 0 }')"
+assert_contains "and logs the idle it took first" \
+  "pacing: idle until" "$(cat "$carry_dashboard_log")"
+
+# --- …and the persisted backoff is capped (#2429, after #1305) ----------------
+# A persisted backoff scales with the tick's cost, and nothing upstream bounds
+# what wedges a tick: #1305's 4,511,835 ms tick is 11.3 hours at 1:9, and a
+# page eleven hours behind is not an outage an operator can read, where one
+# an hour behind is. LAUNCHER_PACE_CAP bounds it: 5s here, against the 18s
+# the same tick would otherwise owe. The persisted instant is rounded up to a
+# whole second, so it may sit up to one second past the cap.
+expire_backoff "$carry_home"
+touch "$carry_state/.dashboard-github.json"
+: > "$carry_log"
+run_carry 15 5
+carry_cap_end="$(awk '$2 == "end" {print $1; exit}' "$carry_log")"
+assert_eq "a capped backoff is still persisted as an instant past the tick's end" "1" \
+  "$(awk -v f="$(carry_owed)" -v e="${carry_cap_end:-0}" 'BEGIN { print (f > e) ? 1 : 0 }')"
+assert_eq "…and no more than the cap, plus the rounding, past it" "1" \
+  "$(awk -v f="$(carry_owed)" -v e="${carry_cap_end:-0}" 'BEGIN { print (f - e <= 6) ? 1 : 0 }')"
 
 # --- The cron panel survives a rotation (TD26072501, spec requirement 2.6) ------
 # scripts/rotate-logs.sh renames cron.log to cron.log.1 once it grows past
@@ -3896,8 +4078,9 @@ assert_eq "a missing page rebuilds even when the fingerprint matches" "1" \
 # The safety net. lib/noop-skip.sh's warning is that a fingerprint missing an
 # input stalls the pipeline silently; here a GitHub tick rebuilds unconditionally,
 # so the worst a wrong fingerprint can do is hold a stale page until the next one
-# — about five minutes (LAUNCHER_GITHUB_MAX_AGE), which is the cadence the
-# dashboard published at before the sub-minute heartbeat existed (#26).
+# — at least about five minutes (LAUNCHER_GITHUB_MAX_AGE, the floor on the
+# launcher's due age), which is the cadence the dashboard published at before
+# the sub-minute heartbeat existed (#26).
 np_publish >/dev/null
 np_fail_gh="$tmp_dir/np-gh-stub"; printf '#!/usr/bin/env bash\nexit 1\n' > "$np_fail_gh"; chmod +x "$np_fail_gh"
 before_mtime="$(stat -c %Y "$np_data")"

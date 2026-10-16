@@ -51,7 +51,18 @@
   repairing `review-log.jsonl` in the same window, and repairs `log.jsonl`
   once that pid has gone; a cold window
   fetches from GitHub exactly once, a window following a fresh fetch not at
-  all, and an aged stamp is refetched on the next tick; the batched cost scan
+  all, and an aged stamp is refetched on the next tick; the refresh's due age
+  follows its cost — with `LAUNCHER_GITHUB_MAX_AGE=0` and a 3s refresh at 1:9,
+  a 15s window started inside the 27s it is due after makes no GitHub call and
+  at least one local tick, the stamp aged past it is refetched, the `github:
+  refreshing` line states the due age it was gated on, and `LAUNCHER_PACE_CAP`
+  caps that age; a 2s local tick at 1:9 persists the instant its 18s backoff
+  ends as `.dashboard-tick-cost`'s third field, a window started at once
+  inside it runs no tick and logs `pacing: window idle`, and a later window
+  with room logs `pacing: idle until` and starts its tick no sooner than 18s
+  after that tick ended, by the stub's own clock; `LAUNCHER_PACE_CAP=5`
+  persists an instant past the tick's end, but no more than the cap plus the
+  rounding to a whole second past it; the batched cost scan
   matches the per-file semantics (day cut-off, torn-file tolerance, each row's
   own instant carried through as `ts` — `null` for a directory name that
   doesn't parse as one, which still counts toward the totals but drops out of

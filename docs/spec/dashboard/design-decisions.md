@@ -59,7 +59,20 @@
   elsewhere and that no test here was watching. The first rule also degrades
   the way this page wants: on a missed window it fetches late rather than not
   at all, and on a GitHub outage it retries at the cadence rather than at the
-  tick rate, because the stamp records the *attempt*.
+  tick rate, because the stamp records the *attempt*. And N itself follows
+  what a fetch costs — `LAUNCHER_GITHUB_MAX_AGE` is its floor, `duty_divisor`
+  times the last GitHub tick's cost its figure, under `LAUNCHER_PACE_CAP` —
+  for the same reason every other tick's backoff does, and the backoff a tick
+  owes past its window is persisted for the next window to honour rather than
+  forgotten with the launcher's process. Measured on 2026-10-16 (#2429): a
+  refresh cost 500–1,100s and a local tick 45–270s on every node, 1:9 of
+  either outlasts a 295s window, and the refresh was due again 285s after it
+  finished; so every window's first tick ran at once, most of them refreshes,
+  the Publisher was busy about two thirds of every hour, two of them per
+  host, and every host sat at a load of 4 to 6 while the pipeline was idle.
+  A page an hour behind is an outage the operator can read off the page; the
+  cap is there because at 1:9 the 4,511,835 ms tick of #1305 would have been
+  eleven hours, which is not.
 - **The blocked and void lists are not computed here.** `blocked[]` and
   `void[]` come from the same shared implementation the Script feeds its
   Co-Ordinator (`lib/cycle-state.sh`, per requirement 34a of

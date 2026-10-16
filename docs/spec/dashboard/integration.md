@@ -55,9 +55,11 @@
   (leaving a ~5s gap so consecutive cron runs don't overlap), republishing
   local state — lock, running cycle, cost, log — on every tick. A tick lands
   on a 5-second boundary, but the loop **measures what each tick costs and
-  idles `LAUNCHER_DUTY_DIVISOR` (9) times that before the next one starts**, so
-  the Publisher can take at most about a tenth of the window whatever a publish
-  grows to cost. Pacing off a measurement rather than a constant is what keeps
+  idles `LAUNCHER_DUTY_DIVISOR` (9) times that before the next one starts**,
+  within the window and, when the backoff outlasts the window, across the
+  windows after it (below), so the Publisher can take at most about a tenth
+  of wall-clock whatever a publish grows to cost. Pacing off a measurement
+  rather than a constant is what keeps
   that true as the state grows: the loop previously slept to the next 5-second
   boundary and no further, on an assumption — stated in its own header and
   budgeted at five seconds — that nothing enforced and nothing measured. When a
@@ -68,8 +70,17 @@
   less live than it was; an expensive one now pays for itself, and logs its
   cost and its backoff so the next such regression shows up in `dashboard.log`
   rather than only in `top`. A full GitHub-hitting publish runs only when the last fetch has
-  aged past `LAUNCHER_GITHUB_MAX_AGE` (285s, so that the gap between fetches
-  including the fetch's own ~20s comes to about five minutes); the cheaper
+  aged past its **due age: the larger of `LAUNCHER_GITHUB_MAX_AGE` (285s, so
+  that the gap between fetches including a fetch's own ~20s comes to about
+  five minutes) and `LAUNCHER_DUTY_DIVISOR` times what the last GitHub tick
+  cost, capped at `LAUNCHER_PACE_CAP`** — so a refresh keeps to the same share
+  of wall-clock as any other tick, and one that cost 700s is due again an hour
+  (the cap) after it finished rather than 285s after. The `github: refreshing
+  (last fetch Ns ago, due after Ns)` line states the age it was gated on,
+  since a reader of the log could not otherwise tell a slow refresh paying for
+  itself from a gate that failed to fire; the cost it follows is the one the
+  tail reserve below persists, so the first window after a refresh already
+  knows it. The cheaper
   `--no-github --fast` publish runs in between and carries the last fetch
   forward, so the page stays near-live without hammering the GitHub API. That
   GitHub tick is also the **full** build (see **The tiered publish**): the
@@ -109,15 +120,23 @@
   supercronic runs no overlapping instance of a job, so it then dropped the
   entire next window — `not starting: job is still running` — and the page went
   ten minutes without an update (#807). A window always runs its **first**
-  tick regardless, so a publish that outgrew its window degrades to one
-  overrun per window rather than to a page that silently stops updating; a
+  tick regardless of the reserve, so a publish that outgrew its window
+  degrades to one overrun per window rather than to a page that silently
+  stops updating — a rule about fit, distinct from the pacing below, which may
+  leave a window with no tick and says so; a
   deferred tick logs `deferred: a <kind> tick needs Ns, window has Ns left`,
   because a fetch that does not happen is otherwise indistinguishable from a
-  quiet system. `.dashboard-tick-cost` is launcher bookkeeping: it is excluded
+  quiet system. `.dashboard-tick-cost` holds one line, `<gh_cost_s>
+  <local_cost_s> <next_tick_at>`: the last cost of each kind in whole seconds
+  rounded up, and the epoch second at which the last tick's backoff ends when
+  that is past the window it ran in, or `0` when it ended inside it. A field
+  that does not read as a number reads as `0`. The file is launcher
+  bookkeeping: it is excluded
   from the fingerprint under **The no-op tick** and from replication, so
   writing it cannot invalidate the skip it exists beside.
   The backoff computed from a tick's own cost (`last_cost_ms * duty_divisor`)
-  is itself **clamped to what the window has left** (`endat - tick_margin`,
+  is **capped at `LAUNCHER_PACE_CAP` (3600s)** and, within its window,
+  **clamped to what the window has left** (`endat - tick_margin`,
   floored at zero) before it is either slept against or logged (agent-ops#1305):
   a node livelocked by a parent memory cgroup's throttling (see `scripts/
   cgroup-parent-setup.sh` and `docs/spec/implementation/requirements` requirement
@@ -127,12 +146,28 @@
   that long, and a coincidence of that incident's numbers rather than a
   property the backoff itself ever had to respect. The `pacing:` line always
   reports the clamped figure, never the raw product, so the log cannot claim a
-  backoff longer than the window it is inside of.
+  backoff longer than the window it is inside of. **A backoff that ends past
+  `endat - tick_margin` is persisted** as `next_tick_at` (above) and honoured
+  by the next window, after that window's repair and sweep (the launcher's own
+  housekeeping, wanted whatever the Publisher is owed) and before its loop: a
+  backoff ending by that window's own `endat - tick_margin` is slept through,
+  logged as `pacing: idle until <ISO 8601> — the last tick's backoff reaches
+  into this window`, and the window then runs as any other; one ending later
+  leaves the window no tick, logged as `pacing: window idle — the last tick's
+  backoff runs to <ISO 8601>`, and the window exits 0. So a 75s local tick is
+  followed by 675s of idle whichever cron firings those fall in, and the tenth
+  holds across windows. The cap bounds the persisted backoff and the GitHub
+  due age alike, because both scale with a measured cost that nothing upstream
+  bounds: that 4,511,835 ms tick is 11.3 hours at 1:9, and a page an hour
+  behind is an outage the operator can read, where an eleven-hour one is not.
+  (The 2026-10-16 measurement that made the persisted backoff and the
+  cost-following due age necessary is under **Design decisions**, #2429.)
   A healthy window ends `exit 0` — its exit status is explicit, not
   whatever the final tick's lock bookkeeping happened to return
   (`LAUNCHER_WINDOW` shortens the window, `LAUNCHER_PUBLISH_CMD` swaps in a
-  stub Publisher, and `LAUNCHER_DUTY_DIVISOR` sets the pacing ratio, for the
-  test suite only — cron runs every default). Each window also opens by
+  stub Publisher, `LAUNCHER_DUTY_DIVISOR` sets the pacing ratio and
+  `LAUNCHER_PACE_CAP` the cap, for the test suite only — cron runs every
+  default). Each window also opens by
   repairing `dashboard.log` and, alongside it, `state_dir`'s three other
   never-rotated logs — `log.jsonl`, `review-log.jsonl` and
   `revert-rate.jsonl` (agent-ops#794, `fleet_repair_log`, `lib/fleet.sh`): a
