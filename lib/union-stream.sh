@@ -179,13 +179,17 @@ union_stream() {
 # where one `jq` pass costs five to thirteen.
 #
 # The one behavioural caveat: a line the prefilter drops never reaches the
-# reader. A reader that keeps a non-object line on purpose, so that a torn
-# log aborts its fold rather than being folded as though whole
-# (`union_stream` without `--objects`, `union_partition`, the span readers),
-# must not be given a prefiltered input, because the line it would abort on
-# is exactly one this never keeps. Only a reader that already drops every
-# line it does not declare — `fromjson? // empty | select(.event == …)` — may
-# read through this.
+# reader. A reader whose reported failure is the abort a non-object line
+# causes, kept on purpose so that a torn log fails the read rather than
+# folding as though whole (`union_stream` without `--objects`,
+# `union_partition`, the span readers), must not be given a prefiltered
+# input, because the line it would abort on is exactly one this never keeps.
+# A fold whose abort surfaces only as an empty answer (`_log_fold` in
+# lib/cycle-state.sh, which `blocked_items` runs inside the pager) loses
+# nothing it could have reported, since no line the pipelines' `jq -nc`
+# writers or `fleet_logs`' splicing produce parses to a non-object. A reader
+# that already drops every line it does not declare — `fromjson? // empty |
+# select(.event == …)` — reads through this unchanged.
 #
 # `-a` keeps a stray NUL from turning the whole stream into one "binary file
 # matches" line; `LC_ALL=C`, as `fleet_logs` itself reads; `-f -` reads the

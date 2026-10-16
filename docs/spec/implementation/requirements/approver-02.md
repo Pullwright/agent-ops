@@ -12,8 +12,9 @@
     node's own doctor verdict. `lib/pager.sh` is where that reading happens.
 
     `pager_register KEY EVAL_FN REMEDY_CLASS REMEDY_ARG` builds a registry —
-    `PAGER_KEYS`/`PAGER_EVAL_FN`/`PAGER_EVAL_EVENTS`/`PAGER_REMEDY_CLASS`/
-    `PAGER_REMEDY_ARG`, five associative structures rather than a config
+    `PAGER_KEYS` (the keys in registration order) and the associative
+    `PAGER_EVAL_FN`/`PAGER_EVAL_EVENTS`/`PAGER_REMEDY_CLASS`/`PAGER_REMEDY_ARG`/
+    `PAGER_MIN_FIRING_MINUTES_OVERRIDE`, shell arrays rather than a config
     file, so a repository's own `scripts/publish-dashboard.sh` decides at
     source time which invariants exist. EVAL_FN is a pure function, `EVAL_FN
     FLEET_NODES_JSON UNION_LOG_FILE`, printing one line — `{firing,

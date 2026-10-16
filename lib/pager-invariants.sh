@@ -1753,8 +1753,9 @@ pager_remedy_pr_unreviewed() {
 # EVAL_FN reads from UNION_LOG_FILE (`pager_declare_events`, lib/pager.sh),
 # which is what `_pager_evaluate_one` reduces the union to before the
 # evaluation runs (agent-ops#2429). A key declared with no types reads
-# nothing from the union — the heartbeats, GitHub, or the review union
-# through PAGER_EVAL_REVIEW_UNION_LOG_FILE — and gets an empty file. The
+# nothing from the union (it reads the heartbeats, GitHub, or the review
+# union through PAGER_EVAL_REVIEW_UNION_LOG_FILE instead) and gets an empty
+# file. The
 # declaration names every type the EVAL_FN's own program reads and every
 # type a helper it calls reads. `test/union-stream.test.sh` checks the
 # declaration against the program text, and because its checker cannot
@@ -1820,6 +1821,10 @@ pager_register_builtin_invariants() {
   # own-label-action), `_pager_blocked_label_candidate_repos` (attempt-failed,
   # own-label-action) and `refinement_blocked_label_orphaned`
   # (lib/refinement.sh's `latest_attempt_failed`: attempt-failed).
+  # `blocked_items`'s own fold keeps a non-object line so a torn log aborts
+  # it, but here that abort surfaces only as an empty answer, and no line the
+  # pipelines' `jq -nc` writers or `fleet_logs`' splicing produce parses to a
+  # non-object, so the reduction is safe (lib/union-stream.sh's caveat).
   pager_register blocked-label-orphaned pager_eval_blocked_label_orphaned \
     pipeline-act pager_remedy_blocked_label_orphaned
   pager_declare_events blocked-label-orphaned attempt-failed unblocked recheck-clean own-label-action

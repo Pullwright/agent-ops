@@ -125,8 +125,9 @@ declare -ga PAGER_KEYS=()
 # the path so a pure jq reader can `-R -n` it directly without this framework
 # forking a second copy of a potentially large stream through a pipe.
 # UNION_LOG_FILE is the union reduced to the event types the key declares
-# (`pager_declare_events` below), or the whole union for a key that declares
-# nothing. EVAL_FN must print exactly one line, `{"firing": bool,
+# (`pager_declare_events` below), or the whole union for a key with no
+# declaration (a key declared with no types gets an empty file). EVAL_FN
+# must print exactly one line, `{"firing": bool,
 # "evidence": "…"}` (evidence non-empty only when firing), plus an optional
 # `"nodes": [...]` naming which fleet nodes the evidence is about — the
 # dashboard's own node card badge (docs/spec/dashboard/README.md) reads it to

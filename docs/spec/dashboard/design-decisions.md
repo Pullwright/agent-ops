@@ -1016,8 +1016,8 @@
   invariants (`lib/pager-invariants.sh`, on a GitHub tick) gather their
   input unfiltered, though that input is the union reduced to their declared
   types (the next bullet); and `limit_union_record` reads through
-  `lib/limit-detect.sh`'s own reader (agent-ops#2037), over the same
-  reduction.
+  `lib/limit-detect.sh`'s own reader (agent-ops#2037), over its own
+  declared reduction (`LIMIT_UNION_EVENTS`).
 - **The union is read once a tick, and the pager reads only its own events**
   (agent-ops#2429). Streaming bounded the Publisher's memory but not its
   passes: on 2026-10-16 the four nodes' `log.jsonl` union was 124 MB
@@ -1072,9 +1072,11 @@
     `union_prefilter` (one `LC_ALL=C grep -F` with one pattern per declared
     type), is what every invariant's evaluation function and three of the
     Publisher's own readers are handed, so the invariants' twenty or so
-    `jq` passes over the union per GitHub tick — including the two `jq -s`
-    slurps per candidate repository inside `blocked-label-orphaned`'s
-    helpers, the 580 to 680 MB resident processes the issue observed — and
+    `jq` passes over the union per GitHub tick — including
+    `refinement_blocked_label_stale`'s one `jq -s` slurp and
+    `refinement_blocked_label_orphaned`'s one per candidate repository inside
+    `blocked-label-orphaned`'s helpers, the 580 to 680 MB resident processes
+    the issue observed — and
     the local tick's transient-refusal verdict and stand-down banner each
     parse a few per cent of the union's bytes. It is exact for the same
     reason the pager extract is: every record is written compact by a

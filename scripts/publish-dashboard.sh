@@ -1233,7 +1233,8 @@ fi
 # declared event types by `union_prefilter` before the evaluation runs
 # (lib/pager.sh, agent-ops#2429); and the stand-down banner's
 # `limit_union_record`, which reads through lib/limit-detect.sh's own reader
-# (agent-ops#2037) over the same reduction. Each `reduce` below keeps its one
+# (agent-ops#2037) over its own declared reduction (`LIMIT_UNION_EVENTS`).
+# Each `reduce` below keeps its one
 # map at the top of the accumulator and updates an entry with `|=`, never
 # through an `as` binding of anything read from the accumulator: a binding
 # holds a second reference to the map, so the update copies the whole of it
