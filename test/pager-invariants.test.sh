@@ -428,6 +428,15 @@ fm_row() { node_row "$1" "$2" "$3" "" "" ""; }
 #        duration histogram carries only the one real cycle: the skip
 #        tick's own near-zero duration is excluded, never read as a
 #        further completed cycle.
+#   n14  one real, cleanly completed 20-minute cycle that outran a
+#        schedule slot and so logged its own requirement 11a overrun-slot
+#        `cycle-skipped` (`reason: "overlap"`, no lock-holding `detail`)
+#        under its *own* `cycle` id, before its own cycle-end — the shape
+#        agent-cycle.sh:1531 writes. The node fires (nothing since), and
+#        its histogram still carries that cycle's 20 minutes: only a
+#        lock-contention skip's `detail` excludes a group, because
+#        excluding every group carrying any `cycle-skipped` would drop
+#        precisely the long cycles this histogram exists to show.
 fm_log="$WORKDIR/firing-missed.jsonl"
 fm_events=(
   "$(cycle_ev "$(rel -300)" n1 c1 cycle-start)"
@@ -452,6 +461,10 @@ fm_events=(
   "$(cycle_ev "$(rel -19800)" n13 skip1 cycle-start)"
   "$(cycle_ev "$(rel -19790)" n13 skip1 cycle-skipped '{"detail":"lock held by pid 1, age 10s"}')"
   "$(cycle_ev "$(rel -19789)" n13 skip1 cycle-end '{"exit_code":0}')"
+  "$(cycle_ev "$(rel -4000)" n14 cOverran cycle-start)"
+  "$(cycle_ev "$(rel -3000)" n14 cOverran cycle-skipped \
+      '{"reason":"overlap","slot_ts":"2026-10-15T09:15:00Z","held_by":"cOverran","elapsed_s":900}')"
+  "$(cycle_ev "$(rel -2800)" n14 cOverran cycle-end '{"exit_code":0}')"
 )
 for demoted in n6 n7 n8 n9 n10; do
   fm_events+=(
@@ -464,7 +477,8 @@ fm_nodes="$(fleet_rows "$(fm_row n1 false active)" "$(fm_row n2 false active)" \
   "$(fm_row n3 true active)" "$(fm_row n4 false active)" "$(fm_row n5 false active)" \
   "$(fm_row n6 false standby)" "$(fm_row n7 false "STANDBY ")" \
   "$(fm_row n8 false Active)" "$(fm_row n9 false unknown)" "$(fm_row n10 false "")" \
-  "$(fm_row n11 false active)" "$(fm_row n12 false active)" "$(fm_row n13 false active)")"
+  "$(fm_row n11 false active)" "$(fm_row n12 false active)" "$(fm_row n13 false active)" \
+  "$(fm_row n14 false active)")"
 
 PAGER_EVAL_CYCLE_INTERVAL_MINUTES=15
 verdict="$(pager_eval_firing_missed "$fm_nodes" "$fm_log")"
@@ -490,6 +504,10 @@ assert_eq "  ... n13 (a stale lock-contention skip tick, past the bound) is name
 n13_segment="$(grep -oE 'n13 \([^)]*\)' <<<"$(jq -r '.evidence' <<<"$verdict")")"
 assert_eq "  ... n13's histogram carries only its one real cycle, not the skip tick" \
   "n13 (329m since last cycle-start/cycle-skipped; recent cycle durations in minutes: 1)" "$n13_segment"
+assert_eq "  ... n14 (a completed cycle that outran a slot, nothing since) is named" "1" "$(named n14)"
+n14_segment="$(grep -oE 'n14 \([^)]*\)' <<<"$(jq -r '.evidence' <<<"$verdict")")"
+assert_eq "  ... n14's own overrun-slot cycle-skipped does not drop its cycle from the histogram" \
+  "n14 (50m since last cycle-start/cycle-skipped; recent cycle durations in minutes: 20)" "$n14_segment"
 
 # The #1686/#1768 fleet as the evaluating node saw it: one standby whose
 # newest cycle event is days old beside actives that cycled minutes ago.

@@ -307,11 +307,18 @@
       firing node's own recent cycle-duration histogram (up to five
       completed cycles, matched by the `cycle` id every start/end pair
       shares, excluding any cycle whose own group also carries a
-      `cycle-skipped`: a lock-contention skip tick's start/skip/end triple
+      lock-contention `cycle-skipped` — one whose `detail` names the pid
+      holding the lock: such a tick's start/skip/end triple
       completes in about a second, and counting it alongside real cycles
       would read as a run of near-zero-minute entries — the all-zero
       histogram agent-ops#1412 found paging two mid-cycle nodes on
-      2026-10-15) — the acceptance's own "file, with the node's
+      2026-10-15. The test is on that `detail` rather than on any
+      `cycle-skipped` in the group because requirement 11a's overrun-slot
+      skips (`reason: "overlap"`) are logged by the long cycle itself,
+      before its own `cycle-end` and so under its own `cycle` id, so a
+      group-wide exclusion would drop every cycle that outran a schedule
+      slot — precisely the durations this histogram exists to show) —
+      the acceptance's own "file, with the node's
       cycle-duration histogram". A firing node whose own last `cycle-start`
       is unmatched but too old to trust (past the bound above) has that
       attempt's own age named in the evidence alongside the histogram,

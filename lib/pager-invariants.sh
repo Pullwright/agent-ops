@@ -633,10 +633,17 @@ Retired automatically by lib/pager.sh (issue #1278)."
 # firing node's age and its own recent cycle-duration histogram (up to the
 # last 5 completed cycles, matched by the `cycle` id every cycle-start/
 # cycle-end pair shares, excluding any cycle whose own group also carries a
-# `cycle-skipped`: a lock-contention skip tick's start/skip/end triple
-# completes in about a second, and counting it alongside real cycles would
-# read as a run of near-zero-minute entries — the all-zero histogram agent-
-# ops#1412 found paging two mid-cycle nodes on 2026-10-15) — "file, with the
+# lock-contention `cycle-skipped` — one whose `detail` names the pid holding
+# the lock: such a tick's start/skip/end triple completes in about a second,
+# and counting it alongside real cycles would read as a run of near-zero-
+# minute entries — the all-zero histogram agent-ops#1412 found paging two
+# mid-cycle nodes on 2026-10-15. The narrower `detail` test, rather than
+# "any `cycle-skipped` in the group", is what keeps the real long cycles in:
+# requirement 11a's overrun-slot skips (`reason: "overlap"`, agent-ops#1287)
+# are logged by the long cycle itself, before its own `cycle-end` and so
+# under its own `cycle` id, which means a group-wide exclusion would drop
+# every cycle that outran a schedule slot — precisely the durations this
+# histogram exists to show) — "file, with the
 # node's cycle-duration histogram" (#1282's own acceptance). A firing node
 # whose own last `cycle-start` is unmatched but too old to trust (past the
 # bound above) has that attempt's own age named in the evidence alongside
@@ -679,7 +686,10 @@ pager_eval_firing_missed() {
                   ( ($node_events | group_by(.cycle)
                      | map(select((map(.event) | index("cycle-start"))
                                   and (map(.event) | index("cycle-end"))
-                                  and ((map(.event) | index("cycle-skipped")) | not)))
+                                  and ((map(select(.event == "cycle-skipped"
+                                                   and ((.detail // "")
+                                                        | test("^lock held by pid [0-9]+"))))
+                                        | length) == 0)))
                      | map({s: (map(select(.event == "cycle-start")) | .[0].ts),
                             e: (map(select(.event == "cycle-end")) | .[0].ts)})
                      | map((((.e | fromdateiso8601) - (.s | fromdateiso8601)) / 60) | floor)

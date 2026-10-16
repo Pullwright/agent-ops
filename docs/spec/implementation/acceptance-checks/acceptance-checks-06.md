@@ -48,7 +48,9 @@
     the four-hour bound — a container-recreation orphan with nothing since
     — and its cycle-duration histogram excludes a lock-contention skip
     tick's own near-zero duration even when that tick is itself past the
-    bound, counting only genuinely completed cycles. Five nodes sharing
+    bound, while still counting a genuinely completed long cycle that
+    logged its own requirement 11a overrun-slot `cycle-skipped` events
+    under the same `cycle` id. Five nodes sharing
     that one ancient history and differing only in the role their row
     publishes pin the rest of the matrix: `"Active"` is named (requirement
     2.4 runs cycles on it, so a peer must not read it as a standby),
