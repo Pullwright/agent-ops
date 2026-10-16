@@ -733,12 +733,13 @@
     agent-ops#2393) for symmetry with `retire_void_items` above, though in
     practice it self-heals without one: a `void-retired` event always
     records the entry's own repo, set at the moment of retirement rather
-    than read back from a possibly-renamed slug. Two bounds follow that re-deciding retirement from
-    scratch each cycle would not give: the per-cycle GitHub cost is
-    proportional to the *unretired residue*, never to every void ever filed —
-    an id whose retirement is on the log is never asked about again — and the
-    extract stays bounded even on a cycle whose register read fails, because
-    the subtraction needs nothing but the log. The subtraction is ts-ordered
+    than read back from a possibly-renamed slug. Two bounds follow that
+    re-deciding retirement from scratch each cycle would not give: the
+    per-cycle GitHub cost is proportional to the *unretired residue*, never
+    to every void ever filed — an id whose retirement is on the log is
+    never asked about again — and the extract stays bounded even on a
+    cycle whose register read fails, because the subtraction needs nothing
+    but the log. The subtraction is ts-ordered
     like every clearing rule here: a `void-retired` event masks only an
     `item-void` older than itself, so an item voided afresh after its
     retirement re-enters the extract on the new verdict's own terms. On
