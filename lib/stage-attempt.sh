@@ -165,9 +165,13 @@ stage_salvage_result() {
   fi
   salvage_out="${out_file%.out}.salvage.out"
   log_event "salvage" "$(jq -nc --arg s "$stage" '{stage: $s, outcome: "attempted"}')"
+  # Forces LANE to the original run's own lane (issue #2436) rather than
+  # letting the retry draw again: a salvage resumes the same session the
+  # original run held, so it is the same launch continuing, not a new one,
+  # and the pair should be billed and recorded on the one lane throughout.
   if run_model_stage "$stage-salvage" "$stage_salvage_backstop_sec" "$model" \
        "Return only the verdict JSON object, nothing else." \
-       "$salvage_out" "$cwd" "$stage_salvage_inactivity_sec" "$session_id"; then
+       "$salvage_out" "$cwd" "$stage_salvage_inactivity_sec" "$session_id" "$saved_lane"; then
     salvage_rc=0
   else
     salvage_rc=$?
@@ -482,7 +486,11 @@ run_coordinator_stage_attempt() {  # <attempt-out-file> <prompt> [extra-budget-j
   coord_budget_repo="$(jq -r '.repo // "*"' <<<"$extra" 2>/dev/null || printf '*')"
   [[ -n "$coord_budget_repo" && "$coord_budget_repo" != "null" ]] || coord_budget_repo="*"
   stage_budget_apply coordinator "$coord_budget_repo" "$coordinator_model" "$extra"
-  if run_model_stage coordinator "$(( stage_backstop_min * 60 ))" "$coordinator_model" "$prompt" "$out_file" "$cycle_dir" "$(( stage_inactivity_min * 60 ))"; then
+  # Issue #2436: the repository this engagement belongs to is also the lane
+  # draw's own seed suffix, so the per-repository loop's several Coordinator
+  # launches within one cycle draw independently rather than sharing the one
+  # cycle-and-stage seed every one of them would otherwise reuse.
+  if run_model_stage coordinator "$(( stage_backstop_min * 60 ))" "$coordinator_model" "$prompt" "$out_file" "$cycle_dir" "$(( stage_inactivity_min * 60 ))" "" "" "$coord_budget_repo"; then
     rc=0
   else
     rc=$?

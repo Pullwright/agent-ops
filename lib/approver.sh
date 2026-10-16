@@ -893,7 +893,12 @@ $node_name
     out="$cycle_dir/approver.out"
     stage_budget_apply approver "$selected_repo" "$model" \
       "$(jq -nc --arg t "$tier" --arg m "$mode" '{complexity: $t, mode: $m}')" "$selected_item"
-    if run_model_stage approver "$(( stage_backstop_min * 60 ))" "$model" "$prompt" "$out" "$clone_dir" "$(( stage_inactivity_min * 60 ))"; then
+    # Issue #2436: the pull request this engagement is reviewing is also the
+    # lane draw's own seed suffix, so the per-pull-request loop's several
+    # Approver launches within one cycle draw independently rather than
+    # sharing the one cycle-and-stage seed every one of them would otherwise
+    # reuse.
+    if run_model_stage approver "$(( stage_backstop_min * 60 ))" "$model" "$prompt" "$out" "$clone_dir" "$(( stage_inactivity_min * 60 ))" "" "" "$pr_url"; then
       rc=0
     else
       rc=$?
