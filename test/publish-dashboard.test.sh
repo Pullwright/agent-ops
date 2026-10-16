@@ -67,6 +67,10 @@ PUBLISH="$SCRIPT_DIR/scripts/publish-dashboard.sh"
 LAUNCHER="$SCRIPT_DIR/scripts/publish-dashboard-launcher.sh"
 # shellcheck source=lib/scratch.sh
 . "$SCRIPT_DIR/lib/scratch.sh"
+# `node_time_state_fold` alone: the constraint-account assertion folds the
+# fixture log itself, unreduced, as the expected value (agent-ops#2429).
+# shellcheck source=lib/node-time-state.sh
+. "$SCRIPT_DIR/lib/node-time-state.sh"
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
@@ -2658,6 +2662,35 @@ puh3="$(new_home nodePU3)"
 run_publish "$puh3" NODE_NAME=nodePU3-self
 assert_eq "a deterministic (refused) run never badges the node card" "null" \
   "$(jq -r '.fleet.nodes[] | select(.self) | .provider_unreachable' <<<"$(data_of "$puh3")")"
+
+# --- The constraint panel's node time-state account is unchanged by the
+#     prefilter (agent-ops#2429). `node_time_state_fold` is handed the review
+#     union reduced by `union_prefilter` to its one declared type,
+#     `node-state`, and the account it folds — which rides the payload as
+#     `constraint.account` — must be the one the whole union gives. The
+#     fixture is this node's own three transitions with a `cycle-start`, a
+#     `merge-observed` and a record of another type carrying
+#     `"event":"node-state"` in a nested object (the one shape that passes
+#     the byte-level prefilter) between them; the expected account is the
+#     fold over the same log, unreduced.
+nsh="$(new_home nodeNS)"
+ns_log="$nsh/.local/state/poetic-agents/log.jsonl"
+{
+  printf '{"ts":"2026-08-01T00:00:00Z","node":"nodeNS-self","cycle":"c1","event":"cycle-start"}\n'
+  printf '{"ts":"2026-08-01T00:00:01Z","node":"nodeNS-self","cycle":"c1","event":"node-state","state":"overhead","prev_state":"down","cause":null}\n'
+  printf '{"ts":"2026-08-01T00:05:00Z","node":"nodeNS-self","cycle":"c1","event":"merge-observed","repo":"o/r","item":"1"}\n'
+  printf '{"ts":"2026-08-01T00:10:01Z","node":"nodeNS-self","cycle":"c1","event":"node-state","state":"producing","prev_state":"overhead","cause":null}\n'
+  printf '{"ts":"2026-08-01T00:15:00Z","node":"nodeNS-self","cycle":"c1","event":"log-repaired","nested":{"event":"node-state","state":"down"}}\n'
+  printf '{"ts":"2026-08-01T00:20:01Z","node":"nodeNS-self","cycle":"c1","event":"node-state","state":"idle-with-demand","prev_state":"producing","cause":"awaiting-tick"}\n'
+  printf '{"ts":"2026-08-01T00:20:02Z","node":"nodeNS-self","cycle":"c1","event":"cycle-end","exit_code":0}\n'
+} >> "$ns_log"
+run_publish "$nsh" NODE_NAME=nodeNS-self
+ns_account="$(jq -cS '.constraint.account' <<<"$(data_of "$nsh")")"
+assert_eq "the constraint panel's node time-state account is the whole union's own fold" \
+  "$(node_time_state_fold "$ns_log" | jq -cS '.')" "$ns_account"
+assert_eq "  ... this node's two accounted stretches, over the window its node-state events span" \
+  "600 600 1200 true" \
+  "$(jq -r '"\(.totals.overhead) \(.totals.producing) \(.window.seconds) \(.balanced)"' <<<"$ns_account")"
 
 # --- The pull-request index ------------------------------------------------------
 # Every `#number` on the page resolves to a record here. Two properties are what

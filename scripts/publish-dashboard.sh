@@ -1198,11 +1198,23 @@ dropped_log_lines=$(( dropped_log_lines + $(union_damage_count "$raw_events_dama
 # dashboard omits when more than one is transient at once is tracked
 # separately (agent-ops#1624), not a regression this defensive `head -n1`
 # introduces.
+#
+# It reads the snapshot through `union_prefilter` (lib/union-stream.sh),
+# reduced to the two event types `CRASH_LOOP_VERDICT_EVENTS` declares beside
+# its program, so its `jq` parses a few per cent of the union rather than
+# all of it (agent-ops#2429); the reduction is exact for this reader, which
+# drops every line it does not declare, and a prefilter that fails leaves
+# the whole snapshot in place. The reduced file lives in the working set
+# with the snapshot it came from.
 crash_loop_after_dashboard="$(cfg_int '.crash_loop_after')"
 [[ "$crash_loop_after_dashboard" =~ ^[0-9]+$ ]] || crash_loop_after_dashboard=0
 provider_unreachable_json='null'
 if (( crash_loop_after_dashboard > 0 )); then
-  provider_unreachable_json="$(crash_loop_verdict "$crash_loop_after_dashboard" < "$raw_events_jsonl" 2>/dev/null \
+  crash_loop_input="$work_tmp/crash-loop-input.jsonl"
+  # shellcheck disable=SC2086  # a word list by design.
+  union_prefilter "$raw_events_jsonl" $CRASH_LOOP_VERDICT_EVENTS > "$crash_loop_input" 2>/dev/null \
+    || crash_loop_input="$raw_events_jsonl"
+  provider_unreachable_json="$(crash_loop_verdict "$crash_loop_after_dashboard" < "$crash_loop_input" 2>/dev/null \
     | jq -c 'select(.escalate == false)' 2>/dev/null | head -n1)"
   [[ -z "$provider_unreachable_json" ]] && provider_unreachable_json='null'
 fi
@@ -1219,9 +1231,13 @@ fi
 # on this path still gather log-scale data (agent-ops#2042): the item-
 # lifecycle fold, which gathers every item-scoped event because its records
 # carry each item's whole history; four of the pager's invariants
-# (lib/pager-invariants.sh, on a GitHub tick), which gather the union
-# unfiltered; and the stand-down banner's `limit_union_record`, which reads
-# through lib/limit-detect.sh's own reader (agent-ops#2037). Each `reduce` below keeps its one
+# (lib/pager-invariants.sh, on a GitHub tick), which gather their input
+# unfiltered — though that input is the union reduced to each key's
+# declared event types by `union_prefilter` before the evaluation runs
+# (lib/pager.sh, agent-ops#2429); and the stand-down banner's
+# `limit_union_record`, which reads through lib/limit-detect.sh's own reader
+# (agent-ops#2037) over its own declared reduction (`LIMIT_UNION_EVENTS`).
+# Each `reduce` below keeps its one
 # map at the top of the accumulator and updates an entry with `|=`, never
 # through an `as` binding of anything read from the accumulator: a binding
 # holds a second reference to the map, so the update copies the whole of it
@@ -1734,7 +1750,16 @@ fi
 # The reduction is lib/limit-detect.sh's, so a `limit-cleared` event retires
 # the banner exactly when it retires the stand-down itself (requirement 34a —
 # the dashboard must not still be reporting a limit the pipelines have lifted).
-last_limit_hit="$(limit_union_record < "$events_jsonl")"
+# It reads `$events_jsonl` through `union_prefilter`, reduced to the three
+# event types `LIMIT_UNION_EVENTS` declares beside that reader's program, so
+# the fold's `jq` parses a few per cent of the union rather than all of it
+# (agent-ops#2429); the reduction is exact for a reader that keeps only its
+# declared types, and a prefilter that fails leaves the whole union in place.
+limit_input="$work_tmp/limit-input.jsonl"
+# shellcheck disable=SC2086  # a word list by design.
+union_prefilter "$events_jsonl" $LIMIT_UNION_EVENTS > "$limit_input" 2>/dev/null \
+  || limit_input="$events_jsonl"
+last_limit_hit="$(limit_union_record < "$limit_input")"
 [[ -n "$last_limit_hit" ]] || last_limit_hit='{}'
 limit_resume="$(jq -r '.resume_at // empty' <<<"$last_limit_hit" 2>/dev/null)"
 limit_class="$(jq -r '.class // "other"' <<<"$last_limit_hit" 2>/dev/null)"
@@ -4182,9 +4207,22 @@ fi
 # (docs/spec/dashboard/design-decisions.md's own fast-tick rationale). `null` is what that
 # carrying-forward needs the variable to hold in the meantime, on the same
 # terms `pager_json='null'` above states for itself.
+#
+# The fold reads `$review_events_union` through `union_prefilter`, reduced
+# to the one event type `NODE_TIME_STATE_EVENTS` declares beside its program
+# (`node-state`), so its `jq` parses a few per cent of both unions rather
+# than the whole of them (agent-ops#2429). The reduction is exact: the fold
+# keeps only its declared type, and its reported window is the earliest and
+# latest `ts` of the `node-state` events it keeps, never of the records
+# around them, so the account is the same to the byte. A prefilter that
+# fails leaves the whole union in place.
 constraint_json='null'
 if (( FULL )); then
-  node_time_state_json="$(node_time_state_fold "$review_events_union" "" "" 2>/dev/null)"
+  node_time_state_input="$work_tmp/node-time-state-input.jsonl"
+  # shellcheck disable=SC2086  # a word list by design.
+  union_prefilter "$review_events_union" $NODE_TIME_STATE_EVENTS > "$node_time_state_input" 2>/dev/null \
+    || node_time_state_input="$review_events_union"
+  node_time_state_json="$(node_time_state_fold "$node_time_state_input" "" "" 2>/dev/null)"
   [[ -n "$node_time_state_json" ]] || node_time_state_json='{}'
   constraint_json="$(constraint_classify "$node_time_state_json" \
     "$(cfg '.constraint_min_share')" "$(cfg '.constraint_min_sample_seconds')" \

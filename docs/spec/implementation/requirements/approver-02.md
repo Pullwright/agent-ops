@@ -12,15 +12,33 @@
     node's own doctor verdict. `lib/pager.sh` is where that reading happens.
 
     `pager_register KEY EVAL_FN REMEDY_CLASS REMEDY_ARG` builds a registry —
-    `PAGER_KEYS`/`PAGER_EVAL_FN`/`PAGER_REMEDY_CLASS`/`PAGER_REMEDY_ARG`, four
-    associative structures rather than a config file, so a repository's own
-    `scripts/publish-dashboard.sh` decides at source time which invariants
-    exist. EVAL_FN is a pure function, `EVAL_FN FLEET_NODES_JSON
-    UNION_LOG_FILE`, printing one line — `{firing, evidence}`, plus an
-    optional `nodes` array the dashboard's own node-card badge reads — with
-    one documented exception (`page-outlived-item`, below) that reads GitHub
-    directly rather than a replicated fact, since an issue's own terminal
-    state is not something any heartbeat carries. REMEDY_CLASS is one of
+    `PAGER_KEYS` (the keys in registration order) and the associative
+    `PAGER_EVAL_FN`/`PAGER_EVAL_EVENTS`/`PAGER_REMEDY_CLASS`/`PAGER_REMEDY_ARG`/
+    `PAGER_MIN_FIRING_MINUTES_OVERRIDE`, shell arrays rather than a config
+    file, so a repository's own `scripts/publish-dashboard.sh` decides at
+    source time which invariants exist. EVAL_FN is a pure function, `EVAL_FN
+    FLEET_NODES_JSON UNION_LOG_FILE`, printing one line — `{firing,
+    evidence}`, plus an optional `nodes` array the dashboard's own node-card
+    badge reads — with one documented exception (`page-outlived-item`,
+    below) that reads GitHub directly rather than a replicated fact, since
+    an issue's own terminal state is not something any heartbeat carries.
+    UNION_LOG_FILE is the union reduced to the event types the key's
+    registration declares — `pager_declare_events KEY [EVENT...]`, called
+    after `pager_register` (which clears any earlier declaration for the
+    key, since a declaration describes the EVAL_FN registered with it),
+    records them in `PAGER_EVAL_EVENTS`, and `_pager_evaluate_one` keeps
+    the lines of the union carrying `"event":"<type>"` for each declared
+    type (`union_prefilter`, `lib/union-stream.sh`) into a file under the
+    Publisher's working set, passes that file, and removes it after. A key
+    declared with no types receives an empty file; a key with no declaration
+    receives the whole union; a prefilter that fails leaves the whole union
+    in place. The remedy variables below (`PAGER_REMEDY_UNION_LOG_FILE`)
+    keep the whole union. Every built-in invariant is declared
+    (`pager_register_builtin_invariants`); `test/union-stream.test.sh`
+    checks each built-in EVAL_FN's program, with the bodies of the helpers
+    it reads through, against its declaration, and
+    `test/pager-invariants.test.sh` checks that each built-in's verdict over
+    the reduced fixture equals its verdict over the whole one. REMEDY_CLASS is one of
     `pipeline-act` (REMEDY_ARG names a shell function, `REMEDY_ARG KEY
     EVIDENCE`, run before filing — it performs the fix directly, never
     asking, and its one-line return value is recorded in the issue body),
