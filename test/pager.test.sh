@@ -197,15 +197,16 @@ assert_eq "a different key's events are ignored" "clear" "$(pager_state_for othe
 # What `pager_evaluate` and the Publisher's own `pager` array read in place of
 # the whole union: it must carry every pager event, and nothing a state read
 # could mistake for one. The decoys are the three shapes the prefilter alone
-# would get wrong — a record of another type whose nested field carries
+# would get wrong — a record of another type whose nested object carries
 # `"event":"pager-fired"` (built with `jq -nc`, so it is compact exactly as a
-# real record is), a spliced line, and a blank line.
+# real record is; a string field could not carry it, since JSON escapes the
+# quotes inside a string), a spliced line, and a blank line.
 extract_in="$WORKDIR/extract-in.jsonl"
 {
   printf '{"ts":"2026-01-01T00:00:00Z","event":"cycle-start","node":"n1","cycle":"c0"}\n'
   cat "$state_fixture"
   jq -nc '{ts: "2026-01-01T00:30:00Z", event: "escalated", node: "n1", key: "demo",
-           body: "{\"event\":\"pager-fired\",\"key\":\"demo\"}"}'
+           record: {event: "pager-fired", key: "demo"}}'
   printf '{"ts":"2026-01-01T00:40:00Z","event":"pager-fired","key":"spliced"}{"ts":"2026-01-01T00:41:00Z","event":"pager-cleared","key":"spliced"}\n'
   printf '\n'
   printf '{"ts":"2026-01-01T00:50:00Z","event":"pager-candidate","key":"other","first_seen":"2026-01-01T00:50:00Z"}\n'
@@ -217,7 +218,7 @@ assert_eq "the extract exits 0 over a union with pager events in it" "0" "$extra
 assert_eq "the extract keeps the four pager event types, in log order, and nothing else" \
   "pager-candidate pager-candidate-cleared pager-fired pager-cleared pager-candidate" \
   "$(jq -r '.event' "$extract_out" | tr '\n' ' ' | sed 's/ $//')"
-assert_eq "  ... a record of another type carrying the prefilter's substring in a nested field is dropped" \
+assert_eq "  ... a record of another type carrying the prefilter's substring in a nested object is dropped" \
   "0" "$(grep -c '"event":"escalated"' "$extract_out")"
 assert_eq "  ... a spliced line is dropped whole, the tolerance every union reader has" \
   "0" "$(grep -c 'spliced' "$extract_out")"
@@ -253,7 +254,7 @@ PAGER_EVAL_FN=(); PAGER_REMEDY_CLASS=(); PAGER_REMEDY_ARG=(); PAGER_KEYS=()
 pager_register decoyed stub_eval pipeline-act stub_remedy
 union_log="$WORKDIR/decoy.jsonl"
 jq -nc '{ts: "2026-01-01T00:00:00Z", event: "escalated", node: "n1", key: "decoyed",
-         body: "{\"event\":\"pager-fired\",\"key\":\"decoyed\"}"}' > "$union_log"
+         record: {event: "pager-fired", key: "decoyed"}}' > "$union_log"
 : > "$GH_CALLS_FILE"; : > "$REMEDY_CALLS_FILE"
 STUB_FIRING="true"; STUB_GH_CREATE_FAIL=""; STUB_GH_LIST_OPEN="[]"; STUB_GH_LIST_ALL="[]"
 TMPDIR="$WORKDIR" pager_evaluate "$CLAIM_STUB" "o/r" "pw::pager" "enabler-escalation" \

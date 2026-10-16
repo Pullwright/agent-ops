@@ -236,8 +236,9 @@ pager_log_event() {
 # thirteen (agent-ops#2429). The prefilter is exact, not a heuristic: every
 # pager record is written by `pager_log_event`'s `jq -nc`, compact, so each
 # carries that substring verbatim; a record of another type that merely
-# carries it in a nested field passes the prefilter and is dropped by the
-# `select`; a spliced or damaged line fails `fromjson?` and is dropped, the
+# carries it in a nested object passes the prefilter and is dropped by the
+# `select` (a string field cannot carry it, since JSON escapes the quotes
+# inside a string); a spliced or damaged line fails `fromjson?` and is dropped, the
 # same tolerance every union reader has. `grep` exits 1 on a union with no
 # pager event at all, which is an empty extract and not a failure (the
 # `|| [[ $? -eq 1 ]]`); `-a` keeps a stray NUL from turning the whole stream
