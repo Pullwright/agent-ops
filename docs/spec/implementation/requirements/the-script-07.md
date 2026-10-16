@@ -623,8 +623,10 @@
    reads no ledger: a lane that reopens rejoins the draw at
    its weight, with no deficit and no catch-up. A caller may also force a
    specific lane outright, bypassing the draw — the limit probe of
-   requirement 2.1b and `doctor`'s own per-lane check are the two that do —
-   in which case only presence is still required. The chosen lane is forced
+   requirement 2.1b, `doctor`'s own per-lane check, and requirement 9e's
+   salvage (pinning the resume onto the run it resumes rather than letting
+   it draw again) are the three that do — in which case only presence is
+   still required. The chosen lane is forced
    onto the adapter (a forced `subscription` launch strips
    `ANTHROPIC_API_KEY` from the launched process's own environment) and
    verified against the stream's own `init` event as soon as it arrives

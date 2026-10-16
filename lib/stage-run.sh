@@ -892,9 +892,11 @@ _stage_kill() {
 # "Presence" below).
 #
 # LANE, when given, bypasses the draw and forces that lane outright —
-# requirement 2.1b's own limit probe (#2242) and `doctor`'s per-lane check are
-# the callers that need this; presence is still required, so a LANE this
-# node holds no credential for fails exactly like "no open lane" below.
+# requirement 2.1b's own limit probe (#2242), `doctor`'s per-lane check, and
+# requirement 9e's salvage retry (issue #2436; it pins LANE to the run it
+# resumes rather than letting the retry draw again) are the callers that
+# need this; presence is still required, so a LANE this node holds no
+# credential for fails exactly like "no open lane" below.
 #
 # SEED_SUFFIX, when given, is folded into the lane draw's own seed alongside
 # the cycle id and STAGE (issue #2436): a caller that can launch the same
