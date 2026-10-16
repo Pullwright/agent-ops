@@ -211,19 +211,21 @@
     the same issue, decides the block exactly as it already did. Holding
     applies identically either way: a candidate naming an open native
     dependency never reaches the Co-Ordinator, on the same terms as 3j/3t's
-    own text-based drop above. Releasing does not, in one respect: this
-    requirement's own release mechanism reshapes a cycle's freshly gathered
-    `issues` candidates into a `repo → item → thread` map and reads a
-    `Blocked-by:` *line* out of that thread to explain why a blocked item
-    reappeared, so a block that was native-only (no text line at all) still
-    releases the moment the gatherer's own holding check next finds it
-    resolved — the item simply reappears as a candidate, exactly as a
-    text-resolved one does — but the `unblocked` event's own `detail` has no
-    native reference to name, since nothing here re-fetches native
+    own text-based drop above. Releasing does not: this requirement's own
+    release mechanism reshapes a cycle's freshly gathered `issues` candidates
+    into a `repo → item → thread` map and reads a `Blocked-by:` *line* out of
+    that thread, so an item whose dependency was declared natively only — no
+    text line anywhere in its thread — yields no clearance, and therefore no
+    `unblocked` event. The gatherer-level hold is unaffected either way: an
+    item merely dropped by the holding check above, never recorded blocked,
+    reappears as a candidate the moment the native dependency closes, because
+    nothing persisted that drop. A block that did reach the log stays there
+    until an Enabler engagement clears it, since nothing re-fetches native
     dependencies for an already-blocked item outside the gatherer's own live
-    check. Filed as tech debt (see "Tech debt" in `AGENTS.md`) rather than
-    fixed here: closing it would mean a third live read, this time inside the
-    release window itself, for a detail message alone.
+    check. Recorded as tech debt in agent-ops#2459 rather than fixed here;
+    the Implementer is instructed to record a dependency both ways
+    (`prompts/implementer.md`), so an item this pipeline blocks itself
+    carries the text line the release reads.
 
     This binds to GitHub issues only, for the same reason requirement 18a
     does: they are the one blocked-item shape with a thread the cycle
