@@ -164,9 +164,12 @@ invalidates the very skip it sits beside. Getting this wrong is not
 theoretical — the fingerprint counted its own outputs for a day and a half, so
 no tick ever skipped and the feature it was built for saved nothing (#801,
 #803). And a GitHub tick never skips, so even a fingerprint wrong in the
-dangerous direction can only hold a stale page until the next one, about five
-minutes (`LAUNCHER_GITHUB_MAX_AGE`) — the cadence the dashboard published at
-before the sub-minute heartbeat existed (#26).
+dangerous direction can only hold a stale page until the next one: at least
+`LAUNCHER_GITHUB_MAX_AGE`, about five minutes — the cadence the dashboard
+published at before the sub-minute heartbeat existed (#26) — and about the
+due age the launcher derives from what a refresh costs, plus whatever backoff
+the local tick before it still owes (see **Heartbeat** under
+**Integration**).
 
 ### The tiered publish
 

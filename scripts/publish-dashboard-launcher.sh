@@ -5,14 +5,19 @@
 # cron can't fire more than once a minute, so cron launches this once every
 # 5 minutes and it self-loops for ~295s (leaving a ~5s gap so consecutive cron
 # runs don't overlap). Each tick regenerates the dashboard; a full
-# GitHub-hitting refresh runs only when the last one has aged out (~5 minutes),
-# with the cheap local-only --no-github refresh in between — so the page stays
-# near-live without hammering the GitHub API.
+# GitHub-hitting refresh runs only when the last one has aged out — five
+# minutes, or `duty_divisor` times what the last one cost when that is longer,
+# up to `pace_cap_s` — with the cheap local-only --no-github refresh in
+# between, so the page stays near-live without hammering the GitHub API.
 #
 # A tick lands on a 5-second boundary as before, but the loop also measures
-# what each tick costs and idles a multiple of that before the next one, so the
-# Publisher can never take more than a fixed share of the window whatever a
-# publish grows to cost. See `duty_divisor` below.
+# what each tick costs and idles a multiple of that before the next one; a
+# local tick's backoff that outlasts the window is persisted for the windows
+# after it, which idle through what is left of it or exit without a tick, and
+# a refresh is paced by its due age alone. So each kind of tick can never take
+# more than a fixed share of wall-clock — across windows, not merely within
+# one — whatever a publish grows to cost, up to the hour `pace_cap_s` holds
+# the idle to. See `duty_divisor` and `pace_cap_s` below.
 
 set -uo pipefail
 
@@ -28,7 +33,12 @@ endat=$(( startat + ${LAUNCHER_WINDOW:-295} ))
 tick_margin=10
 
 # How long the loop must idle after a tick, as a multiple of what that tick
-# cost. 9 holds the Publisher to a tenth of the window's wall-clock.
+# cost. 9 holds each kind of tick to a tenth of wall-clock, until `pace_cap_s`
+# below bounds the idle: of the window, while the backoff fits inside it, and
+# of the windows after it when it does not, because a local tick's backoff is
+# persisted (`next_tick_at`, below) and every window that opens before it
+# ends honours it before running anything, while a refresh's pacing is the due
+# age the loop derives from the same multiple (`gh_due_s`).
 #
 # The loop used to sleep to the next 5-second boundary and no more, whatever a
 # tick had just cost, on the assumption a tick fits in five seconds (the
@@ -44,7 +54,31 @@ tick_margin=10
 # boundary), while an expensive one pays for itself. It needs no per-node
 # tuning and cannot be invalidated by the state growing, which a hard-coded
 # budget — or a hand-set LAUNCHER_WINDOW — can and did.
+#
+# For as long as the backoff lived only in this process, that share held only
+# inside a window: cron starts a fresh launcher every five minutes, a window
+# always runs its first tick (the floor on the tail reserve in the loop, which
+# is about fit, not pacing), and nothing told the new launcher what the old one
+# still owed. Invisible while a tick cost 20s, because 180s of backoff fits a
+# 295s window. By 2026-10-16 a GitHub refresh cost 500–1,100s and a local tick
+# 45–270s on every node, so no backoff fitted, every window's first tick ran
+# at once, and the Publisher was busy about two thirds of every hour — two of
+# them per host, with every host at a load of 4 to 6 while the pipeline was
+# idle (#2429). The refresh was also due again 285s after it finished whatever
+# it had cost, which is the same defect from the other side; see `gh_due_s` in
+# the loop.
 duty_divisor="${LAUNCHER_DUTY_DIVISOR:-9}"
+
+# The most a persisted backoff, or the GitHub refresh's due age, may come to.
+# Both scale with a measured cost, and nothing upstream bounds what wedges a
+# tick: #1305 measured a 4,511,835 ms tick on a node livelocked under its
+# memory cgroup's throttling, which at 1:9 is 11.3 hours of idling. A page an
+# hour behind is an outage the operator can read; an eleven-hour one is not.
+# The in-window clamp (`max_next_tick_ms`, in the loop) bounds the sleep a
+# single window takes; this bounds what crosses windows. LAUNCHER_PACE_CAP
+# exists for the test suite, like the other LAUNCHER_* variables; cron always
+# runs the default.
+pace_cap_s="${LAUNCHER_PACE_CAP:-3600}"
 
 scriptdir="$(cd "$(dirname "$0")" && pwd)"
 appdir="$(dirname "$scriptdir")"
@@ -90,29 +124,56 @@ lck="$logdir/dashboard.lck"
 # gap between fetches is this plus however long one takes (~20s on a two-repo
 # node). Ageing out slightly early keeps the observed cadence at five minutes
 # instead of drifting past it.
+#
+# This is the *floor* on the due age, not the due age itself: a refresh that
+# costs more than a ninth of it is due `duty_divisor` times its own cost after
+# it finished instead, so that it keeps to the same share of wall-clock as any
+# other tick (`gh_due_s`, computed in the loop because the cost it follows
+# changes inside a window). A fixed 285s let a 700s refresh fall due again
+# 285s after it finished, which is what made every window's first tick a
+# refresh on every node (#2429).
 gh_cache="$logdir/.dashboard-github.json"
 gh_max_age="${LAUNCHER_GITHUB_MAX_AGE:-285}"
 
-# What a tick of each kind last cost, in whole seconds, rounded up. The tail
-# reserve below needs this on the *first* tick of a window, and cron starts a
-# fresh launcher every window — so learning it in-process would reset it
-# exactly when it is wanted, and the fix would ship inert. That is the shape
-# #793 shipped with for a day and a half, so it is worth a file.
+# What a tick of each kind last cost, in whole seconds, rounded up, and the
+# instant the last local tick's backoff ends when that is past its own window:
+# "<gh_cost_s> <local_cost_s> <next_tick_at>", the third in epoch seconds, or
+# 0 for a backoff that ended inside its window or for a refresh, whose pacing
+# is its due age (see the loop). The tail reserve below needs
+# the costs on the *first* tick of a window, the pacing check needs the
+# backoff *before* that tick, and cron starts a fresh launcher every window —
+# so learning either in-process would reset it exactly when it is wanted, and
+# the fix would ship inert. That is the shape #793 shipped with for a day and
+# a half, so it is worth a file.
 #
 # Seconds rather than milliseconds because `endat` and `EPOCHSECONDS` are
-# seconds and the reserve is the only consumer; rounded up because
-# under-reserving is what this exists to prevent.
+# seconds and the reserve and the pacing check are the only consumers; rounded
+# up because under-reserving, and under-idling, is what this exists to
+# prevent.
 cost_cache="$logdir/.dashboard-tick-cost"
 gh_cost_s=0
 local_cost_s=0
+next_tick_at=0
 if [[ -r "$cost_cache" ]]; then
-  read -r gh_cost_s local_cost_s _ < "$cost_cache" 2>/dev/null || true
+  read -r gh_cost_s local_cost_s next_tick_at _ < "$cost_cache" 2>/dev/null || true
 fi
 # A truncated or hand-edited cache must not become an arithmetic error in the
-# loop; an unreadable value simply means "not measured yet".
+# loop; an unreadable value simply means "not measured yet" — or, for the
+# third field, "nothing owed", which is also what a cache with two fields
+# reads as.
 [[ "$gh_cost_s"    =~ ^[0-9]+$ ]] || gh_cost_s=0
 [[ "$local_cost_s" =~ ^[0-9]+$ ]] || local_cost_s=0
-cost_stamp="$gh_cost_s $local_cost_s"
+[[ "$next_tick_at" =~ ^[0-9]+$ ]] || next_tick_at=0
+# So does an instant further ahead than this launcher could have written. A
+# persisted instant is at most `pace_cap_s` past the end of a tick, rounded up
+# to the whole second (hence the one second of slack), and that tick ended
+# before this window opened; a later one is a hand edit, a clock stepped back
+# after the write, or another machine's file. Honouring it would stop this
+# node's dashboard until someone edited the file: the window-idle path below
+# exits without a tick and without rewriting the cache, so nothing else would
+# ever correct it.
+(( next_tick_at <= startat + pace_cap_s + 1 )) || next_tick_at=0
+cost_stamp="$gh_cost_s $local_cost_s $next_tick_at"
 
 # The very first thing we touch is the lock/log in $logdir, before
 # publish-dashboard.sh gets a chance to create it — make sure it exists.
@@ -186,6 +247,46 @@ if [[ "$swept" =~ ^[0-9]+$ ]] && (( swept > 0 )); then
     -1 "$swept" "${TMPDIR:-/tmp}" >>"$log"
 fi
 
+# What the last local tick, in whichever window it ran, still owes. Its
+# backoff was computed in that process and persisted (the third field above)
+# because it ran past that window; every window that opens before it ends
+# either idles through what is left of it, or has no room for a tick past it
+# and ends without one. Across windows that is the same 1:9 the sleep in the
+# loop keeps within one: a 75s local tick is followed by 675s of idle
+# whichever cron firings those seconds fall in, where a fresh launcher that
+# knew nothing of the debt ran its first tick at once (#2429). It is pacing,
+# not fit: the floor in the loop that always runs a window's first tick is
+# about a tick the window cannot fit, and does not apply here — nor after the
+# idle below, whose tick is no longer the window's first in the sense that
+# floor is about (`ticks_run`), so a tick that cannot fit after the idle is
+# deferred to the next window, which owes nothing and runs it at once.
+#
+# After the repair and the sweep rather than before them: both are the
+# launcher's own per-window housekeeping, cheap, and wanted on every node
+# every five minutes whatever the Publisher is owed — a hole in a log is worth
+# closing before the next read of it rather than an hour later, and a dead
+# Publisher's working set is reclaimed the window it is found. The pacing is
+# about the Publisher's share of the machine, which neither of them touches.
+#
+# Strictly before `endat - tick_margin`, the loop's own admission test: the
+# loop admits no tick in the window's final `tick_margin` seconds, so a
+# backoff ending there or later leaves this window nothing to wait for, and an
+# `idle until` line must never precede a window that then runs nothing. Whole
+# seconds, because `next_tick_at` is whole seconds and the loop's own 5-second
+# alignment follows regardless.
+if (( EPOCHSECONDS < next_tick_at )); then
+  if (( next_tick_at < endat - tick_margin )); then
+    printf '%(%Y-%m-%dT%H:%M:%S%z)T pacing: idle until %(%Y-%m-%dT%H:%M:%S%z)T — the last tick'\''s backoff reaches into this window\n' \
+      -1 "$next_tick_at" >>"$log"
+    sleep $(( next_tick_at - EPOCHSECONDS ))
+    idled=1
+  else
+    printf '%(%Y-%m-%dT%H:%M:%S%z)T pacing: window idle — the last tick'\''s backoff runs to %(%Y-%m-%dT%H:%M:%S%z)T\n' \
+      -1 "$next_tick_at" >>"$log"
+    exit 0
+  fi
+fi
+
 # EPOCHSECONDS is too coarse to pace with: it rounds a 0.4s no-op tick to 0 and
 # a 0.6s one to 1, and the backoff below multiplies whatever it is given, so
 # that rounding would be multiplied too. EPOCHREALTIME carries microseconds.
@@ -200,23 +301,46 @@ sleep_ms() {
   sleep "$(( ms / 1000 )).$(printf '%03d' "$(( ms % 1000 ))")"
 }
 
+# sleep_until_ms T — sleep until `now_ms` is at or past T, in milliseconds.
+# `sleep` returns no earlier than asked, but the arithmetic that sizes a
+# single sleep truncates to the millisecond, so that sleep can end a fraction
+# of a millisecond short of T. Where T is a whole second, EPOCHSECONDS then
+# reads one less than the second aimed at, and every test in the loop is in
+# whole seconds: the 5-second alignment slept one second instead of five, the
+# reserve check read a window as having a second more than it had, and a
+# second tick started on the reserve line — which the suite's inflated-backoff
+# assertion caught on every window that opened on a multiple of five seconds
+# (#2429). Re-reading the clock after each sleep closes that.
+sleep_until_ms() {
+  local target="$1" now
+  while now="$(now_ms)"; (( now < target )); do
+    sleep_ms $(( target - now + 1 ))
+  done
+}
+
 # What the last tick cost, and therefore the earliest the next may start. Zero
-# until a tick has been measured, so the first tick of a window is never
-# delayed and a window that runs one tick behaves exactly as it did before.
+# until a tick has been measured, so the loop itself never delays a window's
+# first tick; the pacing check above may, for a backoff carried in from an
+# earlier window.
 last_cost_ms=0
 next_tick_ms=0
 # Ticks actually started in this window, for the first-tick floor on the
-# reserve below.
+# reserve below. An idle taken above counts as one: that floor exists for a
+# tick no window could ever fit, and a tick that cannot fit after an idle is
+# the next window's to run first, with nothing owed.
 ticks_run=0
+(( ${idled:-0} )) && ticks_run=1
 
 while (( EPOCHSECONDS < endat - tick_margin )); do
   # Wait out the backoff the previous tick earned. One that would run past the
   # end of the window ends the window instead: cron opens the next one on
-  # schedule, and sleeping through the remainder here would only delay it.
+  # schedule, that one reads what this tick persisted (a local tick's backoff;
+  # a refresh's pacing is its due age) and idles the rest of the backoff
+  # itself, and sleeping through the remainder here would only delay it.
   backoff_ms=$(( next_tick_ms - $(now_ms) ))
   if (( backoff_ms > 0 )); then
     (( EPOCHSECONDS + backoff_ms / 1000 < endat - tick_margin )) || break
-    sleep_ms "$backoff_ms"
+    sleep_until_ms "$next_tick_ms"
   fi
 
   # --fast with it: a local tick carries the history roll-ups forward from the
@@ -224,9 +348,23 @@ while (( EPOCHSECONDS < endat - tick_margin )); do
   # follow a running cycle at 1:9 pacing (#798). The GitHub tick below is the
   # full build, so nothing carried forward is ever more than one fetch old.
   github=(--no-github --fast); kind=local
-  sleep $(( 5 - EPOCHSECONDS % 5 ))
+  sleep_until_ms $(( ($(now_ms) / 5000 + 1) * 5000 ))
   gh_at="$(stat -c %Y "$gh_cache" 2>/dev/null)" || gh_at=0
-  if (( EPOCHSECONDS - ${gh_at:-0} >= gh_max_age )); then
+  # The refresh is due when the stamp is older than the larger of `gh_max_age`
+  # and `duty_divisor` times what the last refresh cost, capped at
+  # `pace_cap_s`: the 1:9 every tick keeps, applied to the one kind a fixed
+  # age let run back to back (#2429). This is the whole of a refresh's pacing
+  # — its backoff is not persisted across windows (below) — because the two
+  # figures coincide: a refresh whose backoff were honoured as well would find
+  # its stamp exactly that old when the backoff ended, and the first tick after
+  # every refresh would be another refresh, with no local tick ever running
+  # while a refresh cost more than a ninth of `gh_max_age`. Computed here
+  # rather than once at the top, because every refresh this window runs
+  # re-measures `gh_cost_s`.
+  gh_due_s=$(( gh_cost_s * duty_divisor ))
+  (( gh_due_s <= pace_cap_s )) || gh_due_s=$pace_cap_s
+  (( gh_due_s >= gh_max_age )) || gh_due_s=$gh_max_age
+  if (( EPOCHSECONDS - ${gh_at:-0} >= gh_due_s )); then
     github=(); kind=github
   fi
 
@@ -280,8 +418,13 @@ while (( EPOCHSECONDS < endat - tick_margin )); do
     # GitHub-sourced panels were last actually refreshed — the symptom this
     # gate's predecessor produced was a page that looked healthy while its PR
     # list quietly aged, with nothing in the log to say so.
+    #
+    # The due age it was gated on goes with it: once that age follows the
+    # cost, a reader cannot tell from the stamp alone whether a fifty-minute
+    # gap was a slow refresh paying for itself or a gate that failed to fire.
     if (( gh_at > 0 )); then age="$(( EPOCHSECONDS - gh_at ))s ago"; else age="never"; fi
-    printf '%(%Y-%m-%dT%H:%M:%S%z)T github: refreshing (last fetch %s)\n' -1 "$age" >>"$log"
+    printf '%(%Y-%m-%dT%H:%M:%S%z)T github: refreshing (last fetch %s, due after %ss)\n' \
+      -1 "$age" "$gh_due_s" >>"$log"
   fi
   # -E 111: distinguish "another publish holds the lock" (skip, don't stack
   # up) from a genuine publish failure, and leave a trace so a stuck lock
@@ -292,18 +435,35 @@ while (( EPOCHSECONDS < endat - tick_margin )); do
   rc=$?
   tick_end_ms="$(now_ms)"
   last_cost_ms=$(( tick_end_ms - tick_start_ms ))
-  next_tick_ms=$(( tick_end_ms + last_cost_ms * duty_divisor ))
-  # Clamped to the window's own remaining time: an unclamped backoff scales
-  # with `last_cost_ms`, which scales with whatever wedged the tick, and
+  # The backoff this tick earns, capped at `pace_cap_s` (see there): a backoff
+  # scales with `last_cost_ms`, which scales with whatever wedged the tick, and
   # nothing upstream bounds that. agent-ops#1305 measured a 4,511,835 ms tick
   # — a node livelocked under a memory cgroup's throttling, not a publish
   # merely running long — which this loop turned into a computed "next tick
-  # in 40606s" (11.3 hours): harmless only because the window's own `endat`
-  # guard below breaks out of the loop first, and worth clamping regardless,
-  # since the raw figure is what a later `pacing:` line would otherwise log as
-  # this tick's backoff. Never below `tick_end_ms`: a window already past its
-  # reserve owes no backoff, not a negative one.
+  # in 40606s" (11.3 hours).
+  raw_backoff_ms=$(( last_cost_ms * duty_divisor ))
+  (( raw_backoff_ms <= pace_cap_s * 1000 )) || raw_backoff_ms=$(( pace_cap_s * 1000 ))
+  next_tick_ms=$(( tick_end_ms + raw_backoff_ms ))
+  # A local tick's backoff that ends past this window's end is the next
+  # windows' to honour, so the instant it ends is persisted below, with the
+  # costs, in whole seconds rounded up. Zero when it ends inside the window —
+  # a backoff ending before `endat` can be owed to no window that opens after
+  # it, and on an idle node every window's last tick ends its few seconds of
+  # backoff inside the window, which must not become a rewrite of the cache
+  # every window — and zero for a refresh, whose pacing is its due age (see
+  # `gh_due_s` above for why it cannot be both).
   max_next_tick_ms=$(( (endat - tick_margin) * 1000 ))
+  if [[ "$kind" == local ]] && (( next_tick_ms > endat * 1000 )); then
+    next_tick_at=$(( (next_tick_ms + 999) / 1000 ))
+  else
+    next_tick_at=0
+  fi
+  # Within the window the sleep is clamped to the window's own remaining time:
+  # cron opens the next window on schedule and that window reads what is owed,
+  # so sleeping past `endat` here would only delay it — and the raw figure is
+  # what a later `pacing:` line would otherwise log as this tick's backoff,
+  # which is how #1305's 40606s reached the log. Never below `tick_end_ms`: a
+  # window already past its reserve owes no backoff, not a negative one.
   (( max_next_tick_ms < tick_end_ms )) && max_next_tick_ms=$tick_end_ms
   (( next_tick_ms > max_next_tick_ms )) && next_tick_ms=$max_next_tick_ms
   backoff_ms=$(( next_tick_ms - tick_end_ms ))
@@ -327,7 +487,8 @@ while (( EPOCHSECONDS < endat - tick_margin )); do
       -1 "$last_cost_ms" "$(( backoff_ms / 1000 ))" "$duty_divisor" >>"$log"
   fi
   # Remember what this kind of tick costs, for the tail reserve at the top of
-  # the loop — and for the next window, which is a different process.
+  # the loop — and, with what its backoff still owes past this window, for the
+  # next window, which is a different process.
   #
   # A lock collision is excluded: it returns in milliseconds without publishing
   # anything, and recording that as the cost of a GitHub tick would under-
@@ -339,13 +500,16 @@ while (( EPOCHSECONDS < endat - tick_margin )); do
     else
       local_cost_s=$(( (last_cost_ms + 999) / 1000 ))
     fi
-    # Written only when a whole second moved. The cache lives in `state_dir`,
-    # which the Publisher fingerprints, and a rewrite on every 5-second no-op
-    # tick would be pure churn for that fingerprint to step around — the same
+    # Written only when a whole second moved, or the owed instant changed —
+    # which it does on the one tick a window can have whose backoff crosses
+    # the window's end, and on the first tick after it, so at most twice a
+    # window and never on an idle node. The cache lives in `state_dir`, which
+    # the Publisher fingerprints, and a rewrite on every 5-second no-op tick
+    # would be pure churn for that fingerprint to step around — the same
     # self-invalidation that made #802 and #804 necessary. It is pruned there
     # explicitly, but not writing it is cheaper than excluding it well.
-    if [[ "$gh_cost_s $local_cost_s" != "$cost_stamp" ]]; then
-      cost_stamp="$gh_cost_s $local_cost_s"
+    if [[ "$gh_cost_s $local_cost_s $next_tick_at" != "$cost_stamp" ]]; then
+      cost_stamp="$gh_cost_s $local_cost_s $next_tick_at"
       # Rename into place: a launcher killed mid-write must not leave the next
       # window reading half a number and reserving nothing.
       if printf '%s\n' "$cost_stamp" > "$cost_cache.$$" 2>/dev/null; then
