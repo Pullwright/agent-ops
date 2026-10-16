@@ -694,7 +694,15 @@
       the seven signals — the config rule skips an empty repo explicitly, and
       `void_review_plan_actioned`'s fourth input skips a repo absent from
       its own map — so it is left, as it always was, for a human to
-      retract; and
+      retract. Both sides of the `{repo, item}` match resolve through
+      `config_repo_slug_aliases`' `{old_slug: current_slug}` map first
+      (`retire_void_items`'s own `aliases_json`, the same way requirement
+      34's own set/clear match already does, agent-ops#2359, extended here
+      by agent-ops#2393), since every actioned pair the seven signals above
+      build is drawn from a live read or register row and so always names a
+      repo's current slug: without it, a void entry logged under a slug the
+      repository had before a rename could never match an actioned pair
+      naming the renamed slug, and would carry in the extract forever; and
     - **old** — its `item-void` event's own `ts` is at least
       `void_retire_after_days` old (default 30; `0` disables retirement
       outright).
@@ -709,7 +717,12 @@
     `lib/cycle-state.sh`) and subtracts it from the extract
     (`subtract_retired_voids`) the moment `void_items` has produced it —
     before the 34k sweep, the register-status read, and this requirement's own
-    evidence-gathering. Two bounds follow that re-deciding retirement from
+    evidence-gathering. `subtract_retired_voids` resolves the same alias map
+    on both sides of its own `{repo, item}` match (its own `aliases_json`,
+    agent-ops#2393) for symmetry with `retire_void_items` above, though in
+    practice it self-heals without one: a `void-retired` event always
+    records the entry's own repo, set at the moment of retirement rather
+    than read back from a possibly-renamed slug. Two bounds follow that re-deciding retirement from
     scratch each cycle would not give: the per-cycle GitHub cost is
     proportional to the *unretired residue*, never to every void ever filed —
     an id whose retirement is on the log is never asked about again — and the

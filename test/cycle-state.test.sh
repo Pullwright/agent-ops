@@ -560,6 +560,28 @@ assert_eq "malformed void_json is returned verbatim rather than raising" \
 assert_eq "malformed actioned_json fails safe to no retirement" \
   "$(jq -c . <<<"$void_all")" "$(retire_void_items "$void_all" "not valid json" 30 "$now_epoch" | jq -c .)"
 
+# --- issue #2393: the slug-rename alias map ---
+#
+# ACTIONED_JSON is built from live GitHub reads and register rows, which
+# always name a repo's *current* configured slug (lib/candidate-gather.sh's
+# two call sites). A void entry recorded under the slug the repo had before
+# a rename — "o/old" here — would otherwise never match, and so never
+# retire, modeled directly on the alias-map regression in
+# test/enabler-eligibility.test.sh.
+void_aliased_repo='[{"ts":"2026-07-09T00:00:00Z","repo":"o/old","item":"1","detail":"actioned and old, under the pre-rename slug"}]'
+actioned_renamed='[{"repo":"o/r","item":"1"}]'
+
+assert_eq "with no aliases map, a void under the old slug is never retired (today's bug, preserved)" \
+  "1" "$(retire_void_items "$void_aliased_repo" "$actioned_renamed" 30 "$now_epoch" | jq 'length')"
+assert_eq "resolved through the alias map, the same void retires" \
+  "0" "$(retire_void_items "$void_aliased_repo" "$actioned_renamed" 30 "$now_epoch" '{"o/old":"o/r"}' | jq 'length')"
+assert_eq "...and an actioned pair under a different current slug still does not match through the map" \
+  "1" "$(retire_void_items "$void_aliased_repo" '[{"repo":"z/w","item":"1"}]' 30 "$now_epoch" '{"o/old":"o/r"}' | jq 'length')"
+assert_eq "an omitted aliases_json argument leaves existing assertions passing unchanged" \
+  "5" "$(retire_void_items "$void_all" "$actioned_all" 30 "$now_epoch" | jq 'length')"
+assert_eq "malformed aliases_json degrades to no canonicalization rather than erroring" \
+  "1" "$(retire_void_items "$void_aliased_repo" "$actioned_renamed" 30 "$now_epoch" "not valid json" | jq 'length')"
+
 # The shared void/blocked pairing (LATEST_UNRESOLVED_JQ) is what every
 # internal reader — open_blocked_items, and (via ENABLER_ELIGIBLE_JQ and
 # REFINEMENTS_MAP_JQ) enabler_eligible_items and refinements_map — recomputes
@@ -614,6 +636,24 @@ assert_eq "subtract_retired_voids: malformed void_json is returned verbatim rath
   "not valid json" "$(subtract_retired_voids "not valid json" "$retired_one")"
 assert_eq "subtract_retired_voids: a malformed retired set fails safe to no subtraction" \
   "$(jq -c . <<<"$void_masked")" "$(subtract_retired_voids "$void_masked" "not valid json" | jq -c .)"
+
+# --- issue #2393: the slug-rename alias map (for symmetry with retire_void_items) ---
+#
+# `subtract_retired_voids` self-heals in practice, since a `void-retired`
+# event records the entry's own repo — but it has the identical raw-match
+# shape, so it gains the same canonicalization for symmetry rather than
+# diverging from `retire_void_items`'s new contract.
+void_masked_aliased='[{"ts":"2026-06-01T00:00:00Z","repo":"o/old","item":"1","detail":"voided before retirement, under the pre-rename slug"}]'
+retired_renamed='[{"repo":"o/r","item":"1","ts":"2026-08-01T00:00:00Z"}]'
+
+assert_eq "with no aliases map, a void under the old slug is kept" \
+  "1" "$(subtract_retired_voids "$void_masked_aliased" "$retired_renamed" | jq 'length')"
+assert_eq "resolved through the alias map, the retirement drops it" \
+  "0" "$(subtract_retired_voids "$void_masked_aliased" "$retired_renamed" '{"o/old":"o/r"}' | jq 'length')"
+assert_eq "an omitted aliases_json argument leaves existing assertions passing unchanged" \
+  "0" "$(subtract_retired_voids "$void_masked" "$retired_one" | jq 'length')"
+assert_eq "malformed aliases_json degrades to no canonicalization rather than erroring" \
+  "1" "$(subtract_retired_voids "$void_masked_aliased" "$retired_renamed" "not valid json" | jq 'length')"
 
 # Round-trip on one log: the raw void definition never learns about
 # retirement — void_items still reports the entry (the dashboard's view, and
