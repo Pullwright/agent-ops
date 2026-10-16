@@ -613,12 +613,20 @@
    when `api` is not). One is drawn with probability proportional to its own
    `weight`; with none of positive weight, the open lane of weight zero; with
    neither, nothing is launched at all. The draw is seeded on the launch's
-   own cycle id and stage name, so it is reproducible rather than merely
-   sampled, and it reads no ledger: a lane that reopens rejoins the draw at
+   own cycle id and stage name, plus — for a caller whose own loop can launch
+   the same stage more than once within one cycle, the Co-Ordinator's
+   per-repository loop and the Approver's per-pull-request loop — a seed
+   suffix distinguishing that launch from a sibling one (the repository slug,
+   the pull request url), so a sibling launch draws independently rather than
+   sharing the lone cycle-and-stage seed every one of them would otherwise
+   reuse (issue #2436). It is reproducible rather than merely sampled, and it
+   reads no ledger: a lane that reopens rejoins the draw at
    its weight, with no deficit and no catch-up. A caller may also force a
    specific lane outright, bypassing the draw — the limit probe of
-   requirement 2.1b and `doctor`'s own per-lane check are the two that do —
-   in which case only presence is still required. The chosen lane is forced
+   requirement 2.1b, `doctor`'s own per-lane check, and requirement 9e's
+   salvage (pinning the resume onto the run it resumes rather than letting
+   it draw again) are the three that do — in which case only presence is
+   still required. The chosen lane is forced
    onto the adapter (a forced `subscription` launch strips
    `ANTHROPIC_API_KEY` from the launched process's own environment) and
    verified against the stream's own `init` event as soon as it arrives

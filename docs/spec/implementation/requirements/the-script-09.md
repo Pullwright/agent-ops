@@ -555,7 +555,15 @@
    90 seconds) rather than requirement 4f's adaptive per-(actor, repository,
    model) budget — a continuation with no tool calls needs none of that
    estimation, and a bound that could grow to a whole stage's own backstop is
-   not a bound worth having.
+   not a bound worth having. The resume also forces `run_model_stage`'s own
+   LANE (requirement 4d, issue #2436) onto the original run's own lane rather
+   than letting the retry draw again under the `"<stage>-salvage"` name — it
+   is the same launch continuing, not a new one, so it is billed and recorded
+   on the one lane throughout — which means the resume inherits forcing's own
+   failure mode: a node whose credential for that lane has gone away between
+   the original run and the resume fails the salvage outright as "no open
+   lane" (requirement 4d), where the undifferentiated draw this replaced
+   could instead have landed on the node's other open lane.
 
    When the resume's own final message parses, its object is used exactly as
    if the original run had produced it — no failure is recorded here, no
