@@ -194,12 +194,15 @@
     this node's own fresh events and silently undo the fix.
 39g. **Priority triage bands correctly and never lowers a band
     (requirement 39g).** `test/refiner-priority-triage.test.sh` passes:
-    `refiner_candidate_items` admits an already-refined `issues` entry only
+    `refiner_candidate_items` admits an already-refined `issues` or
+    `tech-debt` entry only
     when `priority_set` is literally `false`, marks it `triage_only: true`,
     excludes a banded or claimed/blocked/void/exempt one exactly as
     requirement 39a (The Refiner) already requires, and never admits an entry carrying no
     `priority_set` key at all — the pre-existing shape every source but
-    `issues` still carries. `lib/issue-priority.sh`'s ratchet, driven
+    `issues`/`tech-debt` still carries, and a `tech-debt` entry carrying a
+    `priority_set: false` band reaches `maybe_run_refiner`'s own priority
+    application the same way an `issues` one does. `lib/issue-priority.sh`'s ratchet, driven
     against a stubbed `gh`: `issue_priority_field_ids` resolves the field
     and option ids from a live GraphQL read and fails (never an empty
     result read as "nothing to band") when the field is absent;

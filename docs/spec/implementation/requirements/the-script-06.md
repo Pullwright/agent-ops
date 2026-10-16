@@ -588,7 +588,16 @@
    default — because a band the digest and the candidate set derived
    differently is the fingerprint failure requirement 3b exists to prevent),
    `labels`, `author`, `created_at`, `updated_at`, the `body` verbatim, and
-   `comments` (author, timestamp, body — verbatim, oldest first). Each
+   `comments` (author, timestamp, body — verbatim, oldest first). `priority`
+   may already be raised above the band the issue itself was triaged to:
+   priority inheritance (agent-ops#2422) runs over every open issue in the
+   repository — `issues` and `tech-debt` alike — before either gatherer's own
+   label filter narrows to its own band, and raises an item's own `priority`
+   to the highest band among every other open issue that names it in a
+   same-repo `Blocked-by:` reference, carrying `priority_raised_by` (an array
+   of the blocked items' own display refs, e.g. `["#42"]`) when it did. A
+   cross-repository `Blocked-by:` reference contributes nothing to
+   inheritance, only to the block/release check below. Each
    `issues_excluded` entry is `{number, reason}` — one per issue the
    deterministic filter below dropped, `reason` one of `"assigned"`,
    `"blocked-label"`, or `"blocked-by: <ref>"` — see "The deterministic drop is
@@ -607,7 +616,9 @@
    - **The deterministic half of requirement 16.4 is applied here**: assigned
      issues, issues labelled `blocked` (case-insensitive), issues naming an
      unresolved `Blocked-by:` reference (requirement 34j, checked live once
-     each candidate's whole thread is in hand), and the pull requests the
+     each candidate's whole thread is in hand) or carrying an open native
+     GitHub Issue Dependency (requirement 34j, `dependency_native_open_ref`,
+     agent-ops#2422), and the pull requests the
      issues endpoint interleaves are dropped in the gatherer, so the
      Co-Ordinator never spends judgement on entries no rule would let it
      pick — the assignment drop also covers the Enabler's escalation issues,
@@ -902,13 +913,20 @@
    issue's membership of this band is trustable even though its body stays
    framed as untrusted data — that has also survived the same deterministic
    filter requirement 3j applies to the `issues` band: not assigned, not
-   labelled `blocked`, and naming no still-open `Blocked-by:` reference
-   (requirement 34j), shared between the two gatherers via
+   labelled `blocked`, and naming no still-open `Blocked-by:` reference,
+   text or native (requirement 34j), shared between the two gatherers via
    `lib/issue-prefetch.sh` rather than re-derived. `source: "tech-debt"`, the
-   bare issue number as `ref` (and as `number`), `title`, `url`, `labels`,
+   bare issue number as `ref` (and as `number`), `title`, `url`, the
+   `Priority` band as `priority` and whether it is actually set as
+   `priority_set` — the identical field, read the identical way requirement
+   3j's `issues` entry already reads it, including priority inheritance and
+   its own `priority_raised_by` (agent-ops#2422; before this, tech-debt
+   carried no band at all) — `labels`,
    `author`, `created_at`, `updated_at`, and the whole issue thread — body and
-   every comment, verbatim — as `body`/`comments`. Sorted by issue number
-   ascending. Degrades to `[]` (exit 0) on any failure, like requirements 3a
+   every comment, verbatim — as `body`/`comments`. Sorted by Priority, then by
+   the freshest thread (agent-ops#2422; before this, by issue number
+   ascending) — see requirement 4i's `keep_order_tech_debt`, which now applies
+   the identical order to this band's own entry caps. Degrades to `[]` (exit 0) on any failure, like requirements 3a
    and 3j: this array is *given to* the Co-Ordinator, so an empty array
    faithfully records what it saw, and the repo's `head_sha` (already in the
    no-op fingerprint, requirement 3b) still busts the fingerprint when a real

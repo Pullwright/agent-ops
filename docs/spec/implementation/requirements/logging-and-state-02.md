@@ -195,6 +195,36 @@
     `lib/dependency-gate.sh`, alongside the parser, `dependency_refs`, that
     both mechanisms share.
 
+    **GitHub's own native Issue Dependencies feature (agent-ops#2422) is
+    honoured the same way, as a second signal alongside the `Blocked-by:`
+    text convention — never a replacement for it.** `dependency_native_open_ref`
+    (`lib/dependency-gate.sh`) reads the REST `issues/<n>/dependencies/blocked_by`
+    endpoint live, and reports the first still-open issue it names (same- or
+    cross-repository, displayed the same `#195`/`owner/repo#195` way a text
+    reference is) — or nothing, when it names none, or every one it names is
+    already closed; a read that fails counts as still-open, the same
+    fail-safe direction the text convention's own live re-check already
+    takes. `issue_blocked_by_ref` (`lib/issue-prefetch.sh`), the one call site
+    both gatherers' holding check already made, tries the text convention
+    first and falls through to the native check only when the thread names no
+    `Blocked-by:` reference at all — so a text reference, where both exist on
+    the same issue, decides the block exactly as it already did. Holding
+    applies identically either way: a candidate naming an open native
+    dependency never reaches the Co-Ordinator, on the same terms as 3j/3t's
+    own text-based drop above. Releasing does not, in one respect: this
+    requirement's own release mechanism reshapes a cycle's freshly gathered
+    `issues` candidates into a `repo → item → thread` map and reads a
+    `Blocked-by:` *line* out of that thread to explain why a blocked item
+    reappeared, so a block that was native-only (no text line at all) still
+    releases the moment the gatherer's own holding check next finds it
+    resolved — the item simply reappears as a candidate, exactly as a
+    text-resolved one does — but the `unblocked` event's own `detail` has no
+    native reference to name, since nothing here re-fetches native
+    dependencies for an already-blocked item outside the gatherer's own live
+    check. Filed as tech debt (see "Tech debt" in `AGENTS.md`) rather than
+    fixed here: closing it would mean a third live read, this time inside the
+    release window itself, for a detail message alone.
+
     This binds to GitHub issues only, for the same reason requirement 18a
     does: they are the one blocked-item shape with a thread the cycle
     already reads whole. It does not need requirement 3b's fingerprint
