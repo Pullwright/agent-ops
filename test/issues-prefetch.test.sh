@@ -79,13 +79,41 @@ mkdir -p "$tmp_dir/bin"
 cat >"$tmp_dir/bin/gh" <<'STUB'
 #!/usr/bin/env bash
 set -uo pipefail
-[[ "${1:-}" == "api" && "${2:-}" == "graphql" ]] || { echo "stub gh: unexpected command: $*" >&2; exit 1; }
-shift 2
-filter='.'
-while [[ $# -gt 0 ]]; do
-  case "$1" in --jq) filter="$2"; shift 2;; *) shift;; esac
-done
-jq -c "$filter" "$STUB_ISSUES"
+if [[ "${1:-}" == "api" && "${2:-}" == "graphql" ]]; then
+  shift 2
+  filter='.'
+  while [[ $# -gt 0 ]]; do
+    case "$1" in --jq) filter="$2"; shift 2;; *) shift;; esac
+  done
+  jq -c "$filter" "$STUB_ISSUES"
+  exit 0
+fi
+# `dependencies/blocked_by` (native Issue Dependencies, agent-ops#2422):
+# empty for every issue unless STUB_NATIVE_DEPS names one, so the ordinary
+# fixtures below never pay for the native check they never asked for.
+if [[ "${1:-}" == "api" && "${2:-}" =~ ^repos/o/r/issues/([0-9]+)/dependencies/blocked_by$ ]]; then
+  n="${BASH_REMATCH[1]}"
+  if [[ -n "${STUB_NATIVE_DEPS:-}" && -f "${STUB_NATIVE_DEPS}/$n.json" ]]; then
+    cat "${STUB_NATIVE_DEPS}/$n.json"
+  else
+    echo '[]'
+  fi
+  exit 0
+fi
+# The text convention's own live re-check (`repos/<repo>/issues/<n>`, --jq
+# .state): every referenced issue in this fixture is open unless
+# STUB_CLOSED_ISSUES names it.
+if [[ "${1:-}" == "api" && "${2:-}" =~ ^repos/o/r/issues/([0-9]+)$ ]]; then
+  n="${BASH_REMATCH[1]}"
+  if [[ -n "${STUB_CLOSED_ISSUES:-}" ]] && grep -qx "$n" <<<"$STUB_CLOSED_ISSUES"; then
+    echo '"closed"'
+  else
+    echo '"open"'
+  fi
+  exit 0
+fi
+echo "stub gh: unexpected command: $*" >&2
+exit 1
 STUB
 chmod +x "$tmp_dir/bin/gh"
 export PATH="$tmp_dir/bin:$PATH"
@@ -288,6 +316,52 @@ fi
 
 fp_same="$(fp_input "$candidates_json" | noop_fingerprint)"
 assert_eq "an unchanged array fingerprints identically" "$fp_before" "$fp_same"
+
+# --- Priority inheritance, end to end (agent-ops#2422, requirement 4): a Low
+#     item (#20) that a High item (#21) names as its own `Blocked-by:`
+#     dependency ranks as High in the Co-Ordinator's own input — the array
+#     scripts/gather-issues.sh actually hands it — not merely in the pure
+#     function test/dependency-gate.test.sh already covers. #21 itself is
+#     excluded (#20 is open, so the dependency is unresolved) — expected, and
+#     exactly how requirement 34j's own holding already behaves — while #20
+#     survives as an ordinary candidate, its own band raised. ---
+export STUB_ISSUES="$tmp_dir/issues-inherit.json"
+cat >"$STUB_ISSUES" <<'EOF'
+{"data": {"repository": {"issues": {"pageInfo": {"hasNextPage": false, "endCursor": null}, "nodes": [
+  {"number": 20, "url": "https://github.com/o/r/issues/20", "title": "the blocker, banded Low",
+   "author": {"login": "warwick"},
+   "labels": {"nodes": []},
+   "assignees": {"totalCount": 0},
+   "issueFieldValues": {"nodes": [
+     {"__typename": "IssueFieldSingleSelectValue", "name": "Low",
+      "field": {"__typename": "IssueFieldSingleSelect", "name": "Priority"}}]},
+   "createdAt": "2026-07-19T08:00:00Z", "updatedAt": "2026-07-20T09:00:00Z",
+   "body": "Nothing blocks this one.", "comments": {"nodes": []}},
+  {"number": 21, "url": "https://github.com/o/r/issues/21", "title": "the blocked item, banded High",
+   "author": {"login": "warwick"},
+   "labels": {"nodes": []},
+   "assignees": {"totalCount": 0},
+   "issueFieldValues": {"nodes": [
+     {"__typename": "IssueFieldSingleSelectValue", "name": "High",
+      "field": {"__typename": "IssueFieldSingleSelect", "name": "Priority"}}]},
+   "createdAt": "2026-07-19T08:00:00Z", "updatedAt": "2026-07-20T09:00:00Z",
+   "body": "Needs #20 first.\n\nBlocked-by: #20", "comments": {"nodes": []}}
+]}}}}
+EOF
+inherit_json="$("$SCRIPT_DIR/scripts/gather-issues.sh" o/r)"
+inherit_candidates="$(jq -c '.candidates' <<<"$inherit_json")"
+assert_eq "the blocked item (#21) is held out, unresolved" \
+  "false" "$(jq '[.[] | select(.number == 21)] | length > 0' <<<"$inherit_candidates")"
+assert_eq "the blocker (#20) survives as an ordinary candidate" \
+  "true" "$(jq '[.[] | select(.number == 20)] | length > 0' <<<"$inherit_candidates")"
+assert_eq "...ranked High, not its own triaged Low" \
+  "High" "$(jq -r '.[] | select(.number == 20) | .priority' <<<"$inherit_candidates")"
+assert_eq "...naming the blocked item that raised it" \
+  '["#21"]' "$(jq -c '.[] | select(.number == 20) | .priority_raised_by' <<<"$inherit_candidates")"
+assert_eq "...priority_set still reflects #20's own triage, untouched by inheritance" \
+  "true" "$(jq -r '.[] | select(.number == 20) | .priority_set' <<<"$inherit_candidates")"
+assert_eq "#21 is reported excluded, naming the unresolved reference" \
+  "blocked-by: #20" "$(jq -r '.excluded[] | select(.number == 21) | .reason' <<<"$inherit_json")"
 
 # --- Degrading: a failing API yields the empty shape, exit 0, and says so
 #     on stderr ---
