@@ -196,7 +196,7 @@ techdebt_default_section() {
 }
 
 # techdebt_file_issue REPO ITEM_REF TITLE BODY_FILE [TOKEN] [DEFAULT_FIX] \
-#                      [OWNER_DECISION]
+#                      [OWNER_DECISION] [PRIORITY]
 techdebt_file_issue() {
   local repo="$1" item_ref="$2" title="$3" body_file="$4" token="${5:-}" \
         default_fix="${6:-}" owner_decision="${7:-false}" priority="${8:-}"
@@ -284,7 +284,7 @@ _techdebt_title_dedup_match() {
 }
 
 # techdebt_file_debt REPO TITLE BODY PROVENANCE [TOKEN] [DEFAULT_FIX] \
-#                     [OWNER_DECISION]
+#                     [OWNER_DECISION] [PRIORITY]
 techdebt_file_debt() {
   local repo="$1" title="$2" body="$3" provenance="$4" token="${5:-}" \
         default_fix="${6:-}" owner_decision="${7:-false}" priority="${8:-}"
