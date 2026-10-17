@@ -128,6 +128,18 @@ fields, and `branch` names the existing branch.
   trust level allows; you never do. Do not try to route around it — no
   `gh pr review --approve`, no dismissing the review, no merging. Push the
   fix, reply, and stop.
+- **Re-verify the body against the diff before you finish (issue #2496).**
+  Compare the PR's current body (`gh pr view --json body`) — and any
+  `td-record` block it carries — against the diff this round actually
+  produced. Where answering the review is a direct implementation of what was
+  asked, with no change to the approach the body already describes, this is
+  re-verify, and fix only if wrong, not a mandate to touch the body every
+  time. But where answering it forced a materially different approach than
+  the body states, edit the body (`gh pr edit --body-file`) so the prose, and
+  any `td-record` block's `summary`/`resolution` fields, describe what the
+  diff now actually does. This corrects what the body already claims; it is
+  not licence to add a fresh `Fixes #…`/`Closes #…` or a new `td-record`
+  block — the original round already closed that loop.
 - **Leave the PR ready, not draft.** It was already ready for review; putting it
   back to draft would read to the human as "not for you yet".
 - The `status: "complete"` you report means *the feedback is answered and
@@ -414,6 +426,20 @@ it.
   `CHANGES_REQUESTED`, and gate 4's own refusal is not a signal any human
   sees directly (that is the gap this whole item exists to close). Do not
   call `requested_reviewers`, and do not treat this step as needing one.
+- **Re-verify the body against the diff before you finish (issue #2496).**
+  Compare the PR's current body (`gh pr view --json body`) — and any
+  `td-record` block it carries — against the diff reconciling the named
+  comment(s) actually produced. Where the reconciliation is a direct
+  implementation of what the comment asked, or a reply contesting it with no
+  code change, with no change to the approach the body already describes,
+  this is re-verify, and fix only if wrong, not a mandate to touch the body
+  every time. But where it forced a materially different approach than the
+  body states, edit the body (`gh pr edit --body-file`) so the prose, and any
+  `td-record` block's `summary`/`resolution` fields, describe what the diff
+  now actually does. This corrects what the body already claims; it is not
+  licence to add a fresh `Fixes #…`/`Closes #…` or a new `td-record`
+  block — the "Do not close the loop on the originating item" rule above
+  still applies.
 - **Leave the PR ready, not draft.** It was already Ready; putting it back to
   draft would take it out of the landing gate's own reach for no reason —
   gate 4 only ever runs against a non-draft pull request.
