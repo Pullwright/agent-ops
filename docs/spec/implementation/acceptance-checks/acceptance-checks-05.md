@@ -204,8 +204,13 @@
     lifts the new gate 4.5 in place, stubbed as its own function: never
     consulted at all below `agent-merges-all` (confirmed by an empty call
     log) with the pull request still arming normally; at `agent-merges-all`
-    a refusal from the gate — a live cool-off, a non-critical tier, an
-    unreadable re-check — arms nothing and is named in `landing-refused`;
+    a refusal from the gate — a live cool-off, a non-critical tier, a missing
+    approval timestamp, a head pushed past the standing review, an
+    unreadable re-check — arms nothing and is named in `landing-refused`,
+    each under its own class rather than the generic `ineligible` every
+    other gate shares (`protected-path-cooloff`, `protected-path-tier` for
+    both of the two approving-engagement shapes, `protected-path-stale-head`,
+    and gate 2's own `unknown` for the unreadable re-check — issue #1992);
     the gate is consulted with this round's own in-process `approver_stage_tier`
     on the ordinary path, and with `landing_retry_tier`'s own fleet-log read
     instead on a direct `_landing_stage_attempt` call with `RETRY` set,

@@ -150,21 +150,42 @@
     fires on a repository named in `PAGER_EVAL_REPOS_JSON` at
     `agent-merges-routine` with `landing-refused` events but no
     `landing-armed` event in the trailing `pager_landing_armed_within_days`
-    window, with evidence naming its own refusal-class histogram, its remedy
-    filing a stubbed `pw::type:tech-debt` issue naming that histogram; does
-    not fire on a repository at `human`, on one with a `landing-armed` event
-    inside the window, or on one with no `landing-refused` activity in the
-    window at all (nothing ready to land is not this incident); and does not
-    fire with `PAGER_EVAL_REPOS_JSON`/`PAGER_EVAL_LANDING_ARMED_WITHIN_DAYS`
-    unconfigured.
+    window, with evidence naming its own refusal-class histogram (grouped on
+    each event's own `class` field, a fixture with a colon-less `reason` and
+    an explicit `class` of `autonomy-level` proving it never falls back to
+    parsing `reason`'s own text — issue #1992), its remedy filing a stubbed
+    `pw::type:tech-debt` issue naming that histogram and the "#718 signature"
+    phrase only when the histogram actually carries class `unknown`, dropping
+    it from both evidence and remedy body on a fixture whose only class is
+    `autonomy-level`; does not fire on a repository at `human`, on one with a
+    `landing-armed` event inside the window, or on one with no
+    `landing-refused` activity in the window at all (nothing ready to land is
+    not this incident); does not fire with
+    `PAGER_EVAL_REPOS_JSON`/`PAGER_EVAL_LANDING_ARMED_WITHIN_DAYS`
+    unconfigured; and, on a repository whose only in-window refusal is class
+    `protected-path-cooloff`, does not fire while that refusal's own
+    `approved_at + landing_cool_off_hours` window (parsed out of its own
+    `reason`) had not yet elapsed as of that refusal's own logged `ts`, fires
+    once a fixture logs the refusal with a `ts` that postdates the same
+    window (the refusal outlasted its own cool-off), does not fire on a
+    fixture whose refusal was logged while its window was still open even
+    though that same window has long since elapsed by the evaluation's own
+    "now" (a refusal logged shortly after approval, evaluated long after a
+    pull request merged early — the owner's 2026-10-15 amendment's own
+    false-positive this time base exists to silence), and fires on a
+    repository mixing a still-open cool-off refusal with a different class in
+    the same window (issue #1992, folding in agent-ops#1352 item 2's narrower
+    proposal).
     `landing-refused-unknown` fires when a trailing-24h window's
-    `landing-refused` events are at least half class `unknown` (split on the
-    reason's own first colon) with at least five; it does not fire when
-    either bound alone is missed — four `unknown` of six total is at or
-    above half but under the five-event floor, five of eleven clears the
-    floor but is under half, so the two bounds are exercised independently —
-    nor on the same qualifying shape dated outside the trailing 24h at all;
-    its remedy files a stubbed `pw::type:tech-debt` issue. `pr-unreviewed` fires on a stubbed `pr list` naming a ready,
+    `landing-refused` events are at least half class `unknown` (each event's
+    own `class` field, a fixture with a colon-less `reason` and an explicit
+    `class` of `unknown` proving the same thing) with at least five; it does
+    not fire when either bound alone is missed — four `unknown` of six total
+    is at or above half but under the five-event floor, five of eleven clears
+    the floor but is under half, so the two bounds are exercised
+    independently — nor on the same qualifying shape dated outside the
+    trailing 24h at all; its remedy files a stubbed `pw::type:tech-debt`
+    issue. `pr-unreviewed` fires on a stubbed `pr list` naming a ready,
     non-draft, `pr_label` pull request older than
     `PAGER_EVAL_APPROVER_UNREVIEWED_ENGAGE_AFTER_HOURS` with an empty
     `reviewDecision` and no `approver-verdict`/`approver-unreviewed-engaged`/

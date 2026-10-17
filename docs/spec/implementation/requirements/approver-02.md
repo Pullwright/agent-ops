@@ -616,7 +616,7 @@
 
     - **`landing-never-armed`** (pipeline-act). Fires when a repository
       configured at merge_autonomy `agent-merges-routine` or above logged at
-      least one `landing-refused` event in the trailing
+      least one *countable* `landing-refused` event in the trailing
       `pager_landing_armed_within_days` (default 7) window but no
       `landing-armed` event in that same window. Caught: #718 — agent-ops sat
       at `agent-merges-routine` from 2026-08-18 with 115 `landing-refused`
@@ -625,13 +625,34 @@
       gate is deliberate, never "no `landing-armed` event" alone: a
       repository with nothing ready to land in the window is not this
       incident, and would otherwise fire on every quiet repository at this
-      level, forever. Evidence embeds each firing repository's own
-      refusal-class histogram (`reason`'s own `<class>:<detail>` vocabulary,
-      split on the first colon) — the fact a diagnosis starts from. The
-      pipeline-act remedy files a `pw::type:tech-debt` issue against this
-      pipeline's own repository (the reader, `lib/landing.sh`, lives here,
-      never in a target repo), naming the histogram, on
-      `verdict-unanimous`'s own terms.
+      level, forever. "Countable" (issue #1992) discounts exactly one thing:
+      a `protected-path-cooloff` refusal (`lib/landing.sh` gate 4.5) whose
+      own cool-off window — `approved_at` plus `landing_cool_off_hours`,
+      both parsed back out of the refusal's own `reason` text — had not yet
+      elapsed as of that refusal's own logged `ts`, never the evaluation's
+      own "now" (a window judged against "now" would make every cool-off
+      refusal look stuck once enough wall-clock time passes, however early
+      the pull request actually merged); a repository whose every in-window
+      refusal was logged while its own cool-off was still open is waiting
+      exactly as configured, not failing, while one carrying a refusal whose
+      own `ts` postdates its stated window (or that carries any other class)
+      still fires. No other
+      class is excluded wholesale: `ineligible`/`autonomy-level`/
+      `kill-switch` all still count on their own, since doing otherwise would
+      also hide a non-critical-tier gate 4.5 refusal (class
+      `protected-path-tier`) or a tier-read gap that never self-corrects.
+      Evidence embeds each firing repository's own refusal-class histogram,
+      grouped on each `landing-refused` event's own `class` field (never a
+      `reason` parse, which cannot tell a class prefix from an embedded
+      `pr_url`'s own scheme colon — TD-PPagop-26082502), and states "(the
+      #718 signature)" only when that histogram actually contains class
+      `unknown` — #718 was a live GitHub read failing closed, a fact only
+      that class asserts, so a firing made entirely of deterministic classes
+      gets the histogram and no false diagnosis. The pipeline-act remedy
+      files a `pw::type:tech-debt` issue against this pipeline's own
+      repository (the reader, `lib/landing.sh`, lives here, never in a
+      target repo), naming the histogram and, on the same condition as the
+      evidence, the #718 diagnosis, on `verdict-unanimous`'s own terms.
     - **`landing-refused-unknown`** (pipeline-act). Fires when
       `landing-refused` events of class `unknown` (`lib/landing.sh`'s own
       `unknown:<reason>` vocabulary — the fail-closed answer

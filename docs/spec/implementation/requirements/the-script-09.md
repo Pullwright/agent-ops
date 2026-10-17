@@ -311,11 +311,16 @@
    stage makes already calls — classifies its own `class` argument as
    persistent or not (`_landing_refusal_persistent`,
    `_LANDING_PERSISTENT_REFUSAL_CLASSES`: `ineligible`, `autonomy-level`,
-   `kill-switch`, `open-question`, `reconciliation-unanswered`,
-   `human-changes-requested` and `merge-queue-occupied` — a subset of
-   `_LANDING_REFUSAL_CLASSES`, `test/landing-wiring.test.sh` asserts — every
-   class whose cause will not change without a new push, a configuration
-   edit, a cool-off timer elapsing or a human act). A persistent refusal
+   `kill-switch`, `open-question`, `protected-path-cooloff`,
+   `protected-path-stale-head`, `protected-path-tier`,
+   `reconciliation-unanswered`, `human-changes-requested` and
+   `merge-queue-occupied` — a subset of `_LANDING_REFUSAL_CLASSES`,
+   `test/landing-wiring.test.sh` asserts — every class whose cause will not
+   change without a new push, a configuration edit, a cool-off timer
+   elapsing or a human act; the `protected-path-*` trio (issue #1992) is
+   gate 4.5's own three distinct compensating-control refusals, named apart
+   from the generic `ineligible` every other gate still shares). A
+   persistent refusal
    posts or updates, in place, one pipeline-marked comment on the pull
    request (`_landing_notice_upsert`) naming the class and the reason in
    words; a refusal whose cause touches `landing_cool_off_hours` states the

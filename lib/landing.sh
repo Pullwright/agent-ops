@@ -1012,16 +1012,22 @@ landing_approver_adjudication_history() {
 # happens to contain (TD-PPagop-26082502's own defect: a `reason` embedding
 # `$pr_url` carries the URL's own scheme colon, which a split-on-first-`:`
 # rule cannot tell apart from a class prefix). Every call site below passes
-# its CLASS as a literal string, even the three gates (autonomy, eligibility,
-# protected-path controls) whose underlying helper can return one of two or
-# three shapes — each shape gets its own literal call site rather than a
-# class computed from the helper's own text, so this list stays a plain,
-# grep-able enumeration and never has to parse prose to verify itself.
+# its CLASS as a literal string, even the gates (autonomy, eligibility,
+# protected-path controls) whose underlying helper can return one of several
+# shapes — each shape gets its own literal call site rather than a class
+# computed from the helper's own text, so this list stays a plain, grep-able
+# enumeration and never has to parse prose to verify itself. Gate 4.5's own
+# `protected-path-cooloff`/`protected-path-tier`/`protected-path-stale-head`
+# trio (issue #1992) is the widest of these: `landing_protected_path_
+# controls_ok` prints four distinct `ineligible:`-prefixed shapes plus
+# `unknown:`, and the gate's own call site pattern-matches each one to its
+# own literal class rather than falling back to the generic `ineligible`
+# every other `ineligible:*` reason still uses.
 # `test/landing-wiring.test.sh` extracts this constant and every literal
 # third argument `_landing_refuse` is called with in this file, and asserts
 # the two sets are equal — a call site added with a class outside this list,
 # or with no literal class argument at all, fails that test.
-_LANDING_REFUSAL_CLASSES="approver-login-unreadable approver-review-not-approved approver-review-unreadable approver-token-unmintable arm-failed autonomy-level dequeued-actionable dequeued-manual human-changes-requested human-veto-unreadable ineligible kill-switch malformed-pr-url merge-queue-occupied merge-queue-unreadable open-question open-question-unreadable reconciliation-unanswered reconciliation-unreadable review-gate unknown"
+_LANDING_REFUSAL_CLASSES="approver-login-unreadable approver-review-not-approved approver-review-unreadable approver-token-unmintable arm-failed autonomy-level dequeued-actionable dequeued-manual human-changes-requested human-veto-unreadable ineligible kill-switch malformed-pr-url merge-queue-occupied merge-queue-unreadable open-question open-question-unreadable protected-path-cooloff protected-path-stale-head protected-path-tier reconciliation-unanswered reconciliation-unreadable review-gate unknown"
 
 # _LANDING_PERSISTENT_REFUSAL_CLASSES — the subset of `_LANDING_REFUSAL_
 # CLASSES` whose cause will not change without a new push, a configuration
@@ -1038,8 +1044,13 @@ _LANDING_REFUSAL_CLASSES="approver-login-unreadable approver-review-not-approved
 # `merge_budget_decide`'s own `hold`/`refuse` outcomes never reach
 # `_landing_refuse` at all (`merge-budget-hold`/`merge-budget-frozen`,
 # requirement 33, logged by `merge_budget_apply_decision` instead) — a
-# distinct vocabulary this set has no member for.
-_LANDING_PERSISTENT_REFUSAL_CLASSES="autonomy-level kill-switch ineligible open-question reconciliation-unanswered human-changes-requested merge-queue-occupied"
+# distinct vocabulary this set has no member for. The `protected-path-*`
+# trio (issue #1992) replaces what used to be the generic `ineligible`
+# member for gate 4.5 specifically — each one is exactly as persistent as
+# that was (a cool-off clears only once its own timer elapses; a tier or a
+# stale head clears only once the Approver re-reviews), so all three stay in
+# this set rather than only the one `ineligible` member they used to share.
+_LANDING_PERSISTENT_REFUSAL_CLASSES="autonomy-level kill-switch ineligible open-question protected-path-cooloff protected-path-stale-head protected-path-tier reconciliation-unanswered human-changes-requested merge-queue-occupied"
 
 # _landing_refusal_persistent CLASS
 # True (exit 0) iff CLASS is a member of `_LANDING_PERSISTENT_REFUSAL_
@@ -1732,6 +1743,18 @@ _landing_stage_attempt() {
   # a retry attempt has no in-process fact for a pull request this process
   # never claimed, the same reasoning `landing_retry_source_map`
   # (lib/union-log-scan.sh) already applies to a work order's own source.
+  #
+  # issue #1992's own audit: a single generic `ineligible` class here hid
+  # three distinct causes from `pager_eval_landing_never_armed` — a cool-off
+  # that is simply still running (expected, and will clear on its own), a
+  # tier that never reached `critical` (which keeps refusing forever if the
+  # underlying cause — e.g. a union-log read lagging behind this node —
+  # itself never clears), and a push after approval restarting the wait.
+  # Each gets its own literal class below, matching
+  # `landing_protected_path_controls_ok`'s own four `printf` shapes, so a
+  # reader (human or the pager) can tell "still waiting, as designed" apart
+  # from "stuck, and would keep refusing even once the pager's own cool-off
+  # discount stops applying".
   if [[ "$level" == "agent-merges-all" ]]; then
     local pp_tier pp_ctl
     if [[ -n "$retry" ]]; then
@@ -1742,6 +1765,9 @@ _landing_stage_attempt() {
     pp_ctl="$(landing_protected_path_controls_ok "$DEFAULTED_CONFIG" "$slug" "$number" "$pp_tier" "$submitted_at" "$review_commit")"
     if [[ "$pp_ctl" != "ok" ]]; then
       case "$pp_ctl" in
+        ineligible:*"cool-off has "*"h remaining"*) _landing_refuse "$pr_url" "$slug" "protected-path-cooloff" "$pp_ctl" "$retry" "$item" ;;
+        ineligible:*"did not run at the critical tier"*|ineligible:*"no approval timestamp could be established"*) _landing_refuse "$pr_url" "$slug" "protected-path-tier" "$pp_ctl" "$retry" "$item" ;;
+        ineligible:*"restarts the protected-path cool-off"*) _landing_refuse "$pr_url" "$slug" "protected-path-stale-head" "$pp_ctl" "$retry" "$item" ;;
         ineligible:*) _landing_refuse "$pr_url" "$slug" "ineligible" "$pp_ctl" "$retry" "$item" ;;
         *) _landing_refuse "$pr_url" "$slug" "unknown" "$pp_ctl" "$retry" "$item" ;;
       esac

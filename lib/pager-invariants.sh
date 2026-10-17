@@ -1481,23 +1481,56 @@ pager_remedy_digest_truncated() {
 
 # pager_eval_landing_never_armed FLEET_NODES_JSON UNION_LOG_FILE
 # Fires when a repository PAGER_EVAL_REPOS_JSON names at merge_autonomy
-# agent-merges-routine or above logged at least one landing-refused event in
-# the trailing PAGER_EVAL_LANDING_ARMED_WITHIN_DAYS (default 7) window but no
-# landing-armed event in that same window — the #718 signature: six days of
-# refusals and zero armings, because the refusal path itself
-# (landing_protected_paths_hit's `gh api … -F`) was silently failing closed
-# on every attempt. The landing-refused gate (never "no landing-armed event"
-# alone) is deliberate: a repository with nothing ready to land in the window
-# is not this incident, and would otherwise fire on every quiet repository
-# configured at this level, forever. merge_autonomy here is the *configured*
-# level (PAGER_EVAL_REPOS_JSON's own `merge_autonomy`, this file's header),
-# never the live effective one — a per-repository merge-budget-freeze read
-# this invariant declines to pay for on every evaluation, the same
-# approximation `scripts/publish-dashboard.sh`'s own back-pressure card
-# already makes (D18 WI-6) for an identical reason. Evidence embeds each
-# repository's own refusal-class histogram (`reason`'s own `<class>:<detail>`
-# vocabulary, split on the first colon) — the two facts the remedy's own
-# tech-debt issue starts a diagnosis from.
+# agent-merges-routine or above logged at least one *countable*
+# landing-refused event in the trailing PAGER_EVAL_LANDING_ARMED_WITHIN_DAYS
+# (default 7) window but no landing-armed event in that same window — most
+# often the #718 signature (see the evidence note below): refusals and zero
+# armings because the refusal path itself (landing_protected_paths_hit's
+# `gh api … -F`) was silently failing closed on every attempt. The
+# landing-refused gate (never "no landing-armed event" alone) is deliberate:
+# a repository with nothing ready to land in the window is not this
+# incident, and would otherwise fire on every quiet repository configured at
+# this level, forever. merge_autonomy here is the *configured* level
+# (PAGER_EVAL_REPOS_JSON's own `merge_autonomy`, this file's header), never
+# the live effective one — a per-repository merge-budget-freeze read this
+# invariant declines to pay for on every evaluation, the same approximation
+# `scripts/publish-dashboard.sh`'s own back-pressure card already makes
+# (D18 WI-6) for an identical reason.
+#
+# "Countable" (issue #1992, amending both #718's own original diagnosis and
+# #1352 item 2's broader proposal) discounts exactly one thing: a
+# `protected-path-cooloff` refusal (lib/landing.sh gate 4.5) whose own
+# cool-off window — `approved_at` plus `landing_cool_off_hours`, both
+# embedded in the refusal's own `reason` text and parsed back out here, the
+# same arithmetic `_landing_notice_eligible_at` already does — had not yet
+# elapsed as of that refusal's own `ts`, never this evaluation's own `now`:
+# the window is fixed the moment the refusal is logged, so judging it against
+# whatever "now" happens to be when some later evaluation runs would make
+# every merged-early cool-off look stuck once enough wall-clock time passes,
+# which is exactly the 2026-10-15 amendment's own false-positive ("fires
+# merely because the owner merged first") this arithmetic exists to silence.
+# A repository whose every in-window refusal was logged while its own
+# cool-off was still open is the Landing Gate waiting exactly as configured,
+# not a failure; one carrying a refusal whose own `ts` postdates its stated
+# window — the gate persisting past the cool-off's end — or that carries any
+# other class alongside it, still fires — that is no longer "waiting", it is
+# stuck. No other class is special-cased: a blanket exclusion of whole
+# classes (`ineligible`/`autonomy-level`/`kill-switch`, as #1352 and an
+# earlier draft of this fix both proposed) was rejected because it would also
+# have hidden two real failures — a non-critical-tier gate 4.5 refusal
+# (`protected-path-tier`) that never clears, and a `tier: empty` read gap
+# that stops self-correcting — not merely this incident's own false
+# positives.
+#
+# Evidence embeds each repository's own refusal-class histogram, grouped on
+# each `landing-refused` event's own `class` field (never a `reason` parse —
+# TD-PPagop-26082502's own defect, see `_LANDING_REFUSAL_CLASSES`'s header).
+# The "(the #718 signature)" attribution is included only when that
+# histogram actually names class `unknown` — #718 was a live GitHub read
+# failing closed, a fact only that class asserts, and naming it
+# unconditionally on a histogram made entirely of deterministic classes puts
+# a false diagnosis into the remedy's own tech-debt issue (the #1352
+# complaint, fixed here mechanically rather than narrated).
 pager_eval_landing_never_armed() {
   local _fleet_nodes_json="$1" union_log_file="$2"
   local repos_json="${PAGER_EVAL_REPOS_JSON:-}" days="${PAGER_EVAL_LANDING_ARMED_WITHIN_DAYS:-}"
@@ -1507,6 +1540,19 @@ pager_eval_landing_never_armed() {
   fi
   [[ -f "$union_log_file" ]] || { printf '{"firing":false}'; return 0; }
   jq -c -R -n --argjson repos "$repos_json" --argjson days "$days" --argjson now "$(date -u +%s)" '
+    def cooloff_elapsed($ev):
+      ($ev.reason // "") as $r
+      | if ($r | test("cool-off has [0-9.]+h remaining \\(approved [^,]+, landing_cool_off_hours=[0-9.]+\\)")) then
+          ($r | capture("cool-off has [0-9.]+h remaining \\(approved (?<at>[^,]+), landing_cool_off_hours=(?<hrs>[0-9.]+)\\)")) as $m
+          | ((try ($m.at | fromdateiso8601) catch null)) as $a
+          | ((try ($ev.ts | fromdateiso8601) catch null)) as $evts
+          | if $a == null or $evts == null then true
+            else (($a + (($m.hrs | tonumber) * 3600)) <= $evts)
+            end
+        else true
+        end;
+    def is_countable($ev):
+      if ($ev.class // "") == "protected-path-cooloff" then cooloff_elapsed($ev) else true end;
     (86400 * $days) as $window_s
     | [ inputs | select(length > 0) | (fromjson? // empty)
         | select(.event == "landing-armed" or .event == "landing-refused")
@@ -1520,18 +1566,21 @@ pager_eval_landing_never_armed() {
     | ( [ $eligible[] as $r
           | ($r.slug) as $slug
           | ($refused | map(select(.repo == $slug))) as $repo_refused
-          | select(($repo_refused | length) > 0)
+          | ($repo_refused | map(select(is_countable(.)))) as $countable
+          | select(($countable | length) > 0)
           | select(($armed | map(select(.repo == $slug)) | length) == 0)
-          | ($repo_refused | group_by((.reason // "") | split(":")[0])
-             | map({class: ((.[0].reason // "") | split(":")[0]), count: length})
+          | ($repo_refused | group_by(.class // "unclassified")
+             | map({class: (.[0].class // "unclassified"), count: length})
              | sort_by(-.count)) as $hist
           | {repo: $slug, refused: ($repo_refused | length),
+             has_unknown: ($hist | any(.class == "unknown")),
              histogram: ($hist | map("\(.class): \(.count)") | join(", "))}
         ] ) as $hits
     | if ($hits | length) == 0 then {firing: false}
       else {firing: true, nodes: [],
             evidence: ("at merge_autonomy agent-merges-routine or above with zero landing-armed events in the trailing "
-              + ($days | tostring) + " day(s) despite landing-refused activity (the #718 signature), on "
+              + ($days | tostring) + " day(s) despite landing-refused activity"
+              + (if ($hits | any(.has_unknown)) then " (the #718 signature)" else "" end) + ", on "
               + (($hits | map("\(.repo) (\(.refused) refusal(s); refusal-class histogram: \(.histogram))")) | join("; ")))}
       end
   ' < "$union_log_file" 2>/dev/null || printf '{"firing":false}'
@@ -1543,6 +1592,17 @@ pager_eval_landing_never_armed() {
 # here, never in a target repo, the identical reasoning
 # pager_remedy_verdict_unanimous already states — naming the refusal-class
 # histogram EVIDENCE already carries.
+#
+# The "#718 signature" diagnosis is only written when EVIDENCE itself
+# already carries the "(the #718 signature)" attribution
+# `pager_eval_landing_never_armed` conditioned on class `unknown` being
+# present (issue #1992) — re-read from EVIDENCE rather than re-derived from
+# the histogram a second time, so the two functions can never disagree about
+# which firing earns the diagnosis. A fire made entirely of deterministic
+# classes (a cool-off that outlasted its own window, a tier that never
+# reached `critical`, …) gets the histogram and nothing more: a human still
+# has everything needed to start from the right gate, without a false claim
+# about which one actually failed.
 pager_remedy_landing_never_armed() {
   local key="$1" evidence="$2" repo="${PAGER_REMEDY_REPO:-}"
   [[ -n "$repo" ]] || { printf 'no pager_repo configured — could not file the tech-debt issue'; return 1; }
@@ -1551,7 +1611,9 @@ pager_remedy_landing_never_armed() {
   {
     printf 'A fleet-wide invariant fired: a repository configured at merge_autonomy agent-merges-routine or above armed no landing in pager_landing_armed_within_days despite refusal activity.\n\n'
     printf '%s\n\n' "$evidence"
-    printf 'This is the #718 signature — a gate inside _landing_stage_attempt (most often landing_protected_paths_hit) failing closed on every attempt, refusing every landing regardless of merit. The refusal-class histogram above names which gate to start from.\n\n'
+    if [[ "$evidence" == *"(the #718 signature)"* ]]; then
+      printf 'This is the #718 signature — a gate inside _landing_stage_attempt (most often landing_protected_paths_hit) failing closed on every attempt, refusing every landing regardless of merit. The refusal-class histogram above names which gate to start from.\n\n'
+    fi
     printf -- '---\nFiled automatically by lib/pager.sh (issue #1280).\nref: %s\n' "$item"
   } > "$body_file"
   if created="$(_pager_create_issue "$repo" "$item" "pw::type:tech-debt" \
@@ -1566,9 +1628,10 @@ pager_remedy_landing_never_armed() {
 }
 
 # pager_eval_landing_refused_unknown FLEET_NODES_JSON UNION_LOG_FILE
-# Fires when landing-refused events of class `unknown`
-# (lib/landing.sh's own `unknown:<reason>` vocabulary — the fail-closed
-# answer landing_eligible/landing_protected_path_controls_ok give when a live
+# Fires when landing-refused events of class `unknown` (each event's own
+# `class` field — never a `reason` parse, TD-PPagop-26082502's own defect,
+# see `_LANDING_REFUSAL_CLASSES`'s header — the fail-closed answer
+# landing_eligible/landing_protected_path_controls_ok give when a live
 # GitHub read could not even be attempted, never a deterministic ineligible)
 # make up at least half of a trailing-24h window's landing-refused events,
 # fleet-wide, with at least five. Caught: the #718 incident (72 of 115). The
@@ -1587,7 +1650,7 @@ pager_eval_landing_refused_unknown() {
         | select((try (.ts | fromdateiso8601) catch null) != null)
         | select(($now - (.ts | fromdateiso8601)) <= $window_s) ] as $refusals
     | ($refusals | length) as $total
-    | ($refusals | map(select((((.reason // "") | split(":")[0])) == "unknown")) | length) as $unknown
+    | ($refusals | map(select((.class // "") == "unknown")) | length) as $unknown
     | if $total == 0 then {firing: false}
       elif ($unknown >= $min) and (($unknown * 2) >= $total)
       then {firing: true,
