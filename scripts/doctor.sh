@@ -958,10 +958,7 @@ section "Models"
 # The six keys requirement 1c's model-tier ladder covers (lib/model-id.sh's
 # MODEL_TIER_RANK) get a second check beyond simple resolution: a value that
 # resolves cleanly but isn't on the ladder cannot be verified by the floor
-# check below, so it is warned here rather than silently treated as fine. A
-# floor pair that is ranked on both sides but split across two providers is
-# a separate condition this check cannot see (D29, issue #2198) — the
-# model-tier floor check's own cross-provider warning, below, covers it.
+# check below, so it is warned here rather than silently treated as fine.
 tier_ladder_keys=" coordinator_model refiner_model enabler_model implementer_model_default implementer_model_trivial reviewer_model_default "
 while IFS=$'\t' read -r key value; do
   [[ -n "$key" ]] || continue
@@ -1024,19 +1021,6 @@ if [[ -n "$tier_violations" ]]; then
   done <<<"$tier_violations"
 else
   ok "refiner_model and enabler_model each rank at or above every implementer tier they might author a specification for"
-fi
-
-# D29 (issue #2198): a floor pair split across two providers can never be
-# verified either way — model_tier_below returns false for it regardless of
-# either side's rank — so it is warned here by name rather than left
-# indistinguishable from the unranked-model warning above.
-cross_provider_pairs="$(config_cross_provider_floor_pairs "$refiner_model_q" "$enabler_model_q" \
-  "$implementer_model_default_q" "$implementer_model_trivial_q")"
-if [[ -n "$cross_provider_pairs" ]]; then
-  while IFS=$'\t' read -r author_key floor_key author_id floor_id; do
-    [[ -n "$author_key" ]] || continue
-    warn "$author_key ($author_id) and $floor_key ($floor_id) are on different providers — the model-tier floor check (requirement 1c) cannot compare tiers across providers"
-  done <<<"$cross_provider_pairs"
 fi
 
 # --- Prompts ---

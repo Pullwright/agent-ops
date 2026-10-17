@@ -105,14 +105,16 @@ abort_probe="$(bash -euo pipefail -c '
 assert_eq "a rejected qualifier aborts the script when assigned under set -e" \
   "before" "$abort_probe"
 
-# --- Model-tier ordering (requirement 1c; agent-ops#822): the fleet's four
-#     currently configured models, ranked haiku < sonnet < opus < fable.
-#     MODEL_TIER_RANK is keyed by the fully-qualified id (issue #2131), never
-#     the bare one resolve_model_id returns. ---
-assert_eq "haiku ranks below sonnet" "1" "$(model_tier_rank anthropic/claude-haiku-4-5-20251001)"
-assert_eq "sonnet ranks above haiku, below opus" "2" "$(model_tier_rank anthropic/claude-sonnet-5)"
-assert_eq "opus ranks above sonnet, below fable" "3" "$(model_tier_rank anthropic/claude-opus-5)"
-assert_eq "fable ranks highest" "4" "$(model_tier_rank anthropic/claude-fable-5)"
+# --- Model-tier ordering (requirement 1c; agent-ops#822): one capability
+#     scale spanning every provider (D31, issue #2445) — the fleet's four
+#     currently configured Claude models, ranked haiku < sonnet < opus <
+#     fable, and xAI's three Grok models placed on the same scale rather than
+#     a scale of their own. MODEL_TIER_RANK is keyed by the fully-qualified
+#     id (issue #2131), never the bare one resolve_model_id returns. ---
+assert_eq "haiku ranks below sonnet" "10" "$(model_tier_rank anthropic/claude-haiku-4-5-20251001)"
+assert_eq "sonnet ranks above haiku, below opus" "20" "$(model_tier_rank anthropic/claude-sonnet-5)"
+assert_eq "opus ranks above sonnet, below fable" "30" "$(model_tier_rank anthropic/claude-opus-5)"
+assert_eq "fable ranks highest" "40" "$(model_tier_rank anthropic/claude-fable-5)"
 assert_false "a bare id (unqualified) is not itself a ranked key" \
   model_tier_rank claude-haiku-4-5-20251001
 assert_false "an unranked model prints nothing and fails" \
@@ -152,27 +154,26 @@ assert_false "an unranked candidate never reports below — 'cannot verify', not
   model_tier_below anthropic/claude-nonexistent-9 anthropic/claude-sonnet-5
 assert_false "an unranked floor never reports below either" \
   model_tier_below anthropic/claude-haiku-4-5-20251001 anthropic/claude-nonexistent-9
-assert_false "a cross-provider pair ranks unknown, never below, on either side" \
-  model_tier_below xai/grok-4.3 anthropic/claude-sonnet-5
 
-# --- D29 (issue #2198): once a second provider's model is itself ranked,
-#     model_tier_below must still never compare it against another
-#     provider's tiers — an explicit provider check, not an accident of
-#     xai/grok-4.3 being unranked above. Ranked once low and once high, in
-#     both argument positions, to prove the provider check runs before
-#     either side's rank is read: if it didn't, at least one of these four
-#     would report "below" on the strength of the numbers alone. ---
-MODEL_TIER_RANK[xai/grok-4.3]=1
-assert_false "a cross-provider candidate ranked below the floor's own number still never reports below" \
-  model_tier_below xai/grok-4.3 anthropic/claude-fable-5
-assert_false "a cross-provider floor ranked below the candidate's own number still never has anything rank below it" \
-  model_tier_below anthropic/claude-fable-5 xai/grok-4.3
-MODEL_TIER_RANK[xai/grok-4.3]=99
-assert_false "a cross-provider candidate ranked above the floor's own number still never reports below" \
-  model_tier_below xai/grok-4.3 anthropic/claude-haiku-4-5-20251001
-assert_false "a cross-provider floor ranked above the candidate's own number still never has anything rank below it" \
-  model_tier_below anthropic/claude-haiku-4-5-20251001 xai/grok-4.3
-unset 'MODEL_TIER_RANK[xai/grok-4.3]'
+# --- D31 (issue #2445): tiers compare across providers on one shared scale
+#     now, never only within one provider — a ranked pair from two different
+#     providers is compared exactly as a same-provider pair is. ---
+assert_false "sonnet and grok-4.7 tie (same band): neither is below the other" \
+  model_tier_below anthropic/claude-sonnet-5 xai/grok-4.7
+assert_false "sonnet and grok-4.7 tie (same band), checked in the other order too" \
+  model_tier_below xai/grok-4.7 anthropic/claude-sonnet-5
+assert_true "grok-4.3 ranks below sonnet on the shared scale" \
+  model_tier_below xai/grok-4.3 anthropic/claude-sonnet-5
+assert_false "sonnet does not rank below grok-4.3" \
+  model_tier_below anthropic/claude-sonnet-5 xai/grok-4.3
+assert_true "grok-4.7 ranks below opus on the shared scale" \
+  model_tier_below xai/grok-4.7 anthropic/claude-opus-5
+assert_false "opus does not rank below grok-4.7" \
+  model_tier_below anthropic/claude-opus-5 xai/grok-4.7
+assert_false "an unranked id against a ranked one of a different provider still never reports below" \
+  model_tier_below anthropic/claude-nonexistent-9 xai/grok-4.7
+assert_false "a ranked id against an unranked one of a different provider still never has anything rank below it" \
+  model_tier_below xai/grok-4.7 anthropic/claude-nonexistent-9
 assert_true "a same-provider pair is still compared as before" \
   model_tier_below anthropic/claude-haiku-4-5-20251001 anthropic/claude-sonnet-5
 

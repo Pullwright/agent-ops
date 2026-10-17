@@ -322,37 +322,39 @@ resolve_model_qualified() {
 # cause: nothing stopped a cheaper model from authoring a work order
 # specification a more capable Implementer then executed. This table is what
 # makes "cheaper" and "more capable" checkable in code rather than by
-# convention — the fleet's four currently configured Claude model ids, ranked
-# by capability (confirmed by Anthropic's own relative pricing: haiku <
-# sonnet < opus < fable), each keyed by its fully-qualified id
-# (resolve_model_qualified's own return shape) rather than the bare one
-# resolve_model_id returns — issue #2131, so that a pair naming models from
-# two different providers never collides on a bare id one provider's own
-# naming happens to share with another's. Tiers are compared only *within*
-# one provider (requirement 1c; D29, issue #2198): model_tier_below's own
-# explicit provider check, below, is what enforces that — it is not, and
-# cannot be, a side effect of this table's keying alone, since once a second
-# provider is ranked here, a cross-provider pair's two ids are both ranked,
-# just on scales nobody has ever compared, and whatever the two integers say
-# would otherwise be compared as if they meant the same thing. A model this
-# table has never heard of — a future release, a typo the modelId pattern
-# still accepts, or a second provider's own model before its tier is added
-# here — ranks unknown rather than lowest or highest, and every function
-# below treats "unknown" as "cannot verify", never as "fails" or "passes":
-# scripts/doctor.sh warns separately so an unranked model is never silently
-# invisible to the checks that use this.
+# convention — one scale of capability bands spanning every provider (D31,
+# issue #2445, landing the owner's decision on #2445), each model keyed by
+# its fully-qualified id (resolve_model_qualified's own return shape) rather
+# than the bare one resolve_model_id returns — issue #2131, so that a pair
+# naming models from two different providers never collides on a bare id one
+# provider's own naming happens to share with another's. The ranks are
+# capability, not price, within a provider as well as across them, and are
+# spaced ten apart so a later model can be placed between two bands without
+# renumbering any existing one: the fleet's four currently configured Claude
+# model ids (Anthropic's own relative pricing happens to corroborate this
+# order for these four, but would not for a second generation, and is not
+# itself the ordering principle), and xAI's three Grok models, placed
+# relative to them on the same scale rather than on a scale of xAI's own —
+# today's integers are the owner's judgement from public evidence (D31), not
+# carried over from any earlier xAI-only ranking. Two models in one band tie,
+# and model_tier_below reports neither below the other. Every placement is
+# revised only by a dated decision-log entry on the scorecards' evidence
+# (D22), never by a stage. A model this table has never heard of — a future
+# release, a typo the modelId pattern still accepts, or a second provider's
+# own model before its tier is added here — ranks unknown rather than lowest
+# or highest, and every function below treats "unknown" as "cannot verify",
+# never as "fails" or "passes": scripts/doctor.sh warns separately so an
+# unranked model is never silently invisible to the checks that use this.
 declare -gA MODEL_TIER_RANK=(
-  [anthropic/claude-haiku-4-5-20251001]=1
-  [anthropic/claude-sonnet-5]=2
-  [anthropic/claude-opus-5]=3
-  [anthropic/claude-fable-5]=4
-  # xAI's own models (issue #2134), ranked by xAI's own prices within the
-  # provider — never compared against the ranks above (D29, issue #2198;
-  # model_tier_below's explicit provider check is what enforces that, not
-  # this table's keying).
-  [xai/grok-build-0.1]=1
-  [xai/grok-4.3]=2
-  [xai/grok-4.7]=3
+  [anthropic/claude-haiku-4-5-20251001]=10
+  [anthropic/claude-sonnet-5]=20
+  [anthropic/claude-opus-5]=30
+  [anthropic/claude-fable-5]=40
+  # xAI's own models (issue #2134), placed on the same cross-provider scale
+  # as the Claude ids above (D31, issue #2445) — never xAI's own prices.
+  [xai/grok-build-0.1]=10
+  [xai/grok-4.3]=15
+  [xai/grok-4.7]=20
 )
 
 # model_tier_rank QUALIFIED_MODEL_ID
@@ -389,23 +391,19 @@ model_tier_known() {
 }
 
 # model_tier_below CANDIDATE FLOOR
-# True (exit 0) iff both CANDIDATE and FLOOR are ranked, they name the same
-# provider, and CANDIDATE's tier is strictly below FLOOR's. False whenever
-# either side is empty (an empty model id means that stage is disabled — a
-# different check's business), unranked (an unranked model can never be
-# placed relative to anything, so it never fails this predicate on that
-# account alone), or the two providers differ (D29, issue #2198) — compared
-# explicitly, before either side's rank is even read, so that ranking a
-# second provider's models here never starts comparing them against the
-# first provider's tiers on one integer scale nobody chose: each provider's
-# own ranks are a scale ordered by that provider's own prices, never
-# compared across providers, the interim rule the roadmap's open question on
-# cross-provider tier ordering records until the question is decided. Takes
-# qualified ids, same as model_tier_rank.
+# True (exit 0) iff both CANDIDATE and FLOOR are ranked and CANDIDATE's tier
+# is strictly below FLOOR's, on MODEL_TIER_RANK's one scale spanning every
+# provider (D31, issue #2445) — CANDIDATE and FLOOR may name the same
+# provider or different ones; nothing here compares their provider segments
+# at all any more. False whenever either side is empty (an empty model id
+# means that stage is disabled — a different check's business) or unranked
+# (an unranked model can never be placed relative to anything, so it never
+# fails this predicate on that account alone). Two models ranked in the same
+# band are never below one another. Takes qualified ids, same as
+# model_tier_rank.
 model_tier_below() {
   local candidate="${1:-}" floor="${2:-}" cr fr
   [[ -n "$candidate" && -n "$floor" ]] || return 1
-  [[ "${candidate%%/*}" == "${floor%%/*}" ]] || return 1
   cr="$(model_tier_rank "$candidate")" || return 1
   fr="$(model_tier_rank "$floor")" || return 1
   (( cr < fr ))

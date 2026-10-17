@@ -353,41 +353,40 @@
     specification (`context`/`acceptance`) that a more capable model then
     implemented — #815 (fixed by #819) and #821 both trace to exactly this
     gap. `lib/model-id.sh`'s `MODEL_TIER_RANK` is the ordering that makes
-    "cheaper" and "more capable" checkable rather than conventional: the
-    fleet's four currently configured Claude model ids, ranked by capability
-    (Anthropic's own relative pricing confirms the order) —
-    `claude-haiku-4-5-20251001` below `claude-sonnet-5` below
-    `claude-opus-5` below `claude-fable-5` — plus, since issue #2134, xAI's
-    own three Grok models, ranked the same way on xAI's own prices —
+    "cheaper" and "more capable" checkable rather than conventional: one
+    scale of capability bands spanning every provider (D31, issue #2445),
+    never a scale per provider — the fleet's four currently configured
+    Claude model ids — `claude-haiku-4-5-20251001` below `claude-sonnet-5`
+    below `claude-opus-5` below `claude-fable-5` — and, since issue #2134,
+    xAI's own three Grok models placed on that same scale —
     `grok-build-0.1` below `grok-4.3` below `grok-4.7` — each keyed by its
     fully-qualified id (`anthropic/claude-sonnet-5`, `xai/grok-build-0.1`,
     `resolve_model_qualified`'s own return shape, issue #2131) rather than
-    the bare one `resolve_model_id` returns.
+    the bare one `resolve_model_id` returns. The ranks are spaced ten apart
+    so a later model can be placed between two existing bands without
+    renumbering any of them, and are the owner's own judgement from public
+    evidence (D31) — Anthropic's relative pricing happens to corroborate the
+    order of today's four Claude ids, but pricing is not the ordering
+    principle and would not corroborate a second generation; xAI's own
+    prices are not consulted at all. Two models placed in the same band tie,
+    and neither ranks below the other. A placement is revised only by a
+    dated decision-log entry on the scorecards' evidence (D22), never by a
+    stage, and a model an installation judges differently is moved in its
+    own `config.json` rather than by editing this table.
     `model_tier_rank`, `model_tier_known` and `model_tier_below` all take a
     qualified id and read the table by it; a model the table has never heard
     of (a future release, a typo the `modelId` pattern still accepts, or a
     second provider's own model before its own tier is ever added here) ranks
     unknown rather than lowest or highest, and every check below treats
     "unknown" as "cannot verify" — never as "fails" or "passes" — so a model
-    newer than this table cannot itself be rejected by it. Tiers are compared
-    only *within* one provider (D29, issue #2198): `model_tier_below`
-    compares the two ids' provider segments explicitly, before reading
-    either side's rank, and returns false for a pair whose providers differ
-    whatever either side's rank is — ranking a second provider's models here
-    does not, on its own, make this comparison safe, since both sides would
-    then be ranked, just on scales nobody has compared; each provider's own
-    ranks are its own scale, ordered by that provider's own prices, until the
-    roadmap's open question on cross-provider tier ordering is decided.
-    `scripts/doctor.sh` warns separately (in its "Models" section) when one of
-    `coordinator_model`, `refiner_model`, `enabler_model`,
+    newer than this table cannot itself be rejected by it. `model_tier_below`
+    compares two ranked ids' ranks directly, whether or not they name the
+    same provider — nothing in it reads either id's provider segment any
+    more. `scripts/doctor.sh` warns separately (in its "Models" section) when
+    one of `coordinator_model`, `refiner_model`, `enabler_model`,
     `implementer_model_default`, `implementer_model_trivial` or
-    `reviewer_model_default` is unranked, and separately again —
-    `config_cross_provider_floor_pairs`, named below — whenever a floor
-    pair's two sides name different providers, whatever either side's rank,
-    so neither case is ever silently invisible to the checks that use this
-    table (a cross-provider pair with an unranked side draws both warnings,
-    which is the honest reading: each names a reason the floor cannot be
-    verified, and removing either one would not restore the comparison).
+    `reviewer_model_default` is unranked, so an unranked model is never
+    silently invisible to the checks that use this table.
 
     Two authors can write a work order's `context`/`acceptance` directly
     rather than relay text a human, the Script, or a gatherer already wrote:
@@ -398,28 +397,19 @@
     (`lib/config-schema.sh`) rejects a configuration where `refiner_model` or
     `enabler_model` ranks strictly below `implementer_model_default` or
     `implementer_model_trivial` — either pairing means that author could write
-    a specification for an Implementer more capable than itself. Both
-    `agent-cycle.sh` (a startup guard, fatal) and `scripts/doctor.sh` (`fail`)
-    call the one function, so neither can drift from the other. An empty
-    value on either side of a pair is skipped (that stage, or that
-    implementer tier, is simply not in play), and so is a pair naming a model
-    the table cannot rank, or one whose author and floor name different
-    providers (D29, issue #2198) — reported instead as `scripts/doctor.sh`'s
-    unranked-model warning above, or its `config_cross_provider_floor_pairs`
-    (`lib/config-schema.sh`) warning for the cross-provider case, never
-    silently treated as clearing the floor. `config_cross_provider_floor_pairs`
-    takes the same four already-resolved qualified ids as
-    `config_model_tier_floor_violations` and prints the same
-    `author_key\tfloor_key\tauthor_id\tfloor_id` shape for every pair whose
-    two sides differ by provider segment, regardless of either side's rank;
-    `scripts/doctor.sh` is its only caller — `agent-cycle.sh` has nothing to
-    refuse on a pair that is merely unverifiable rather than in violation.
-    `coordinator_model` is deliberately outside this comparison:
-    requirement 39a (The Refiner)'s "Per-source refinement policy" is what keeps it from
-    authoring a specification for a source it must not — see the next
-    paragraph — rather than a tier comparison the Co-Ordinator's whole
-    reason for existing (cheap triage) would otherwise make impossible to
-    satisfy.
+    a specification for an Implementer more capable than itself, whether or
+    not the two name the same provider. Both `agent-cycle.sh` (a startup
+    guard, fatal) and `scripts/doctor.sh` (`fail`) call the one function, so
+    neither can drift from the other. An empty value on either side of a
+    pair is skipped (that stage, or that implementer tier, is simply not in
+    play), and so is a pair naming a model the table cannot rank — reported
+    instead as `scripts/doctor.sh`'s unranked-model warning above, never
+    silently treated as clearing the floor. `coordinator_model` is
+    deliberately outside this comparison: requirement 39a (The Refiner)'s
+    "Per-source refinement policy" is what keeps it from authoring a
+    specification for a source it must not — see the next paragraph —
+    rather than a tier comparison the Co-Ordinator's whole reason for
+    existing (cheap triage) would otherwise make impossible to satisfy.
 
     Today's shipped configuration holds `refiner_model` and
     `implementer_model_default` at the **same** tier (`claude-sonnet-5` for
