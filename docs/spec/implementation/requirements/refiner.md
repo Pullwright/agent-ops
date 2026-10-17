@@ -168,6 +168,20 @@
     `refined-uncorroborated` and **no** `item-refined` is written: the item
     stays exactly as unrefined as it was, and is a candidate again next cycle.
 
+    A `refined` verdict that is recorded also clears, in the same pass, an
+    open `needs-refinement` block already standing against the same
+    repo+item — whatever stage originally recorded it, not only the Refiner's
+    own (agent-ops#2477). The Script checks `blocked_json`, this cycle's own
+    snapshot taken before the Refiner ran, so any entry it carries for the
+    item necessarily predates this refinement; where one exists, the Script
+    logs `unblocked` carrying `by: "refiner"` and the verdict's own `reason`,
+    then releases the block's labels exactly as the Enabler's own `unblocked`
+    verdict does (requirement 36b). This is not a second pass at the same
+    disagreement, so `refinement_second_pass_refused`'s thrash guard (36b)
+    never sees it: that guard governs a fresh `unblocked` *verdict* asked of
+    the Enabler, never this same-pass clearance that rides along with a
+    `refined` one.
+
     **`comments_posted[0]` must actually name a comment (TD-PPagop-26082819).**
     An `#issuecomment-<n>` anchor or the REST API comment form
     (`.../issues/comments/<n>`) — `refinement_comment_url_valid`/
