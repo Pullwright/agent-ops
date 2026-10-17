@@ -48,6 +48,41 @@ Three properties are deliberate and non-negotiable:
   cannot slow or disturb a running cycle. It redacts home paths and
   token-shaped strings so a screenshot is safe to share.
 
+## What a badge means
+
+An index from a dashboard badge — or a background risk with no badge at
+all — straight to its fuller explanation, for an operator who sees
+something wrong and does not yet know which file explains it. Each entry
+links out to the existing fuller paragraph and to the `lib/*.sh` header
+comment that is the design-rationale source; neither is repeated here.
+
+- **N stage(s) failing** (the Stage health panel, agent-ops#662) — a
+  stage's most recent run of attempts is failing on this node. What to do:
+  read the named stage's own consecutive-failure count and last-attempt
+  detail on the panel (or its transcript inline) and fix the cause; the
+  badge clears itself once that stage next succeeds. See [The Doctor and
+  stage-health panels](site.md#the-doctor-and-stage-health-panels) and
+  [`lib/stage-health.sh`](../../../lib/stage-health.sh)'s own header
+  comment (the 2026-08-21 all-stages-failing incident this badge exists to
+  catch).
+- **updater deferring** / **updater stuck** (agent-ops#603) — grey
+  "deferring" is informational only: a roll is waiting on a cycle or
+  review in flight, and resolves on its own once that ends. Amber "stuck"
+  needs a human: the retry it is waiting on repeats the very collision
+  that stuck it, so it will not clear by itself — recreate or restart the
+  named container. See the "updater deferring"/"updater stuck" bullet in
+  [Design decisions](design-decisions.md) and
+  [`lib/updater-health.sh`](../../../lib/updater-health.sh)'s own header
+  comment (the 2026-08-14 watchtower container-hostname collision this
+  badge exists to catch).
+- Orphaned-workspace disk fill (agent-ops#605) — background risk, not a
+  dashboard badge: a cycle killed by the machine (an out-of-memory kill, a
+  host freeze, a container recreate mid-stage) leaves its scratch clone
+  under `workspace_root` forever, invisible until the volume fills. What to
+  do: nothing from the dashboard — there is no badge for this to watch; see
+  [`lib/workspace.sh`](../../../lib/workspace.sh)'s own header comment for
+  the reaper that reclaims it on its own schedule.
+
 ## Architecture
 
 ```
