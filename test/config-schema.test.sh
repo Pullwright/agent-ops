@@ -1523,38 +1523,18 @@ assert_doctor "doctor warns about a model the tier ladder does not know, rather 
   '.implementer_model_default = "claude-nonexistent-9"' 0 \
   'implementer_model_default (anthropic/claude-nonexistent-9) is not on the fleet'"'"'s model-tier ladder'
 
-# --- requirement 1c's cross-provider warning (D29, issue #2198):
-#     config_cross_provider_floor_pairs takes already-resolved qualified ids
-#     directly, the same as config_model_tier_floor_violations just above, so
-#     this is exercised against the function itself rather than through a
-#     full doctor.sh run — no second provider can actually resolve on this
-#     node yet (the only installed substrate, claude-code, is now reserved to
-#     anthropic alone), so an end-to-end run can't reach this case before
-#     #2134 adds a second substrate. ---
-cross_pairs="$(config_cross_provider_floor_pairs "xai/grok-4.3" "" "anthropic/claude-sonnet-5" "")"
-if [[ "$cross_pairs" == $'refiner_model\timplementer_model_default\txai/grok-4.3\tanthropic/claude-sonnet-5' ]]; then
-  pass "config_cross_provider_floor_pairs names a refiner/implementer pair split across providers"
-else
-  printf 'FAIL - %s\n     actual: %s\n' \
-    "config_cross_provider_floor_pairs names a refiner/implementer pair split across providers" "$cross_pairs"
-  failures=$(( failures + 1 ))
-fi
-cross_pairs="$(config_cross_provider_floor_pairs "anthropic/claude-opus-5" "" "anthropic/claude-sonnet-5" "")"
-if [[ -z "$cross_pairs" ]]; then
-  pass "config_cross_provider_floor_pairs is empty for a same-provider pair"
-else
-  printf 'FAIL - %s\n     actual: %s\n' \
-    "config_cross_provider_floor_pairs is empty for a same-provider pair" "$cross_pairs"
-  failures=$(( failures + 1 ))
-fi
-cross_pairs="$(config_cross_provider_floor_pairs "" "" "anthropic/claude-sonnet-5" "")"
-if [[ -z "$cross_pairs" ]]; then
-  pass "config_cross_provider_floor_pairs skips an empty author"
-else
-  printf 'FAIL - %s\n     actual: %s\n' \
-    "config_cross_provider_floor_pairs skips an empty author" "$cross_pairs"
-  failures=$(( failures + 1 ))
-fi
+# --- requirement 1c's floor compares across providers now, on
+#     MODEL_TIER_RANK's one shared scale (D31, issue #2445) — a ranked pair
+#     split across providers is an ordinary floor comparison, never a
+#     separate "cannot verify" case. `providers.xai` resolves on
+#     `grok-build`, already installed, so this runs end-to-end through
+#     doctor.sh rather than against config_model_tier_floor_violations alone. ---
+assert_doctor "doctor fails a refiner_model ranked below an implementer tier from a different provider" \
+  '.providers = {"xai": {"substrate": "grok-build"}} | .refiner_model = "xai/grok-4.3"' 1 \
+  'refiner_model (xai/grok-4.3) ranks below implementer_model_default (anthropic/claude-sonnet-5)'
+assert_doctor "doctor clears the floor for a refiner_model and an implementer tier from different providers that tie" \
+  '.providers = {"xai": {"substrate": "grok-build"}} | .implementer_model_default = "xai/grok-4.7"' 0 \
+  'refiner_model and enabler_model each rank at or above every implementer tier'
 
 # --- requirement 1c: a "required" refinement_policy source with no Refiner
 #     to ever refine it would wait forever. ---
@@ -2017,6 +1997,16 @@ run_cycle_guard "$(jq -c '.refiner_model = "claude-haiku-4-5-20251001"' "$BASE_C
 assert_eq "refiner_model below implementer_model_default still exits 1, past the schema gate" "1" "$guard_rc"
 assert_contains "the model-tier floor guard names both sides of the violation" \
   "refiner_model (anthropic/claude-haiku-4-5-20251001) ranks below implementer_model_default (anthropic/claude-sonnet-5)" "$guard_out"
+assert_not_contains "a config the schema accepts is not reported as a schema failure" \
+  "does not match config.schema.json" "$guard_out"
+
+# requirement 1c's floor compares across providers now (D31, issue #2445):
+# a refiner_model ranked below an implementer tier from a different provider
+# still exits 1, the same guard, shared with doctor.sh above.
+run_cycle_guard "$(jq -c '.providers = {"xai": {"substrate": "grok-build"}} | .refiner_model = "xai/grok-4.3"' "$BASE_CONFIG")"
+assert_eq "refiner_model below an implementer tier from a different provider still exits 1, past the schema gate" "1" "$guard_rc"
+assert_contains "the model-tier floor guard names both sides of the cross-provider violation" \
+  "refiner_model (xai/grok-4.3) ranks below implementer_model_default (anthropic/claude-sonnet-5)" "$guard_out"
 assert_not_contains "a config the schema accepts is not reported as a schema failure" \
   "does not match config.schema.json" "$guard_out"
 

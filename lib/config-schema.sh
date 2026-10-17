@@ -36,12 +36,7 @@
 # `config_repo_slug_aliases` is not one of these guards — it is a plain
 # derivation, called by `lib/candidate-gather.sh` and `lib/eligibility.sh` to
 # build the alias map `work_gone_clearances` and `enabler_eligible_items`
-# resolve a blocked item's `repo` through. `config_cross_provider_floor_pairs`
-# (D29, issue #2198) is not one either, and not a startup guard at all: a
-# floor pair split across two providers is never verifiable, in either
-# direction, so there is nothing for `agent-cycle.sh` to refuse — only
-# `scripts/doctor.sh` calls it, to warn an operator rather than leave the
-# pair looking identical to an ordinary unranked model.
+# resolve a blocked item's `repo` through.
 #
 # `config_provider_errors` (issue #2131) is this file's own instance of the
 # same escape valve for a different reason than the other six: `providers` is
@@ -740,12 +735,11 @@ config_missing_plan_path_repos() {
 # (requirement 1a); an empty value on either side of a pair is skipped (an
 # empty model means that stage is disabled — a different check's business),
 # and so is a pair `model_tier_below` cannot rank on one side or the other —
-# an unranked model, or a cross-provider pair (D29, issue #2198:
-# `model_tier_below` returns false for a pair whose providers differ,
-# whatever either side's rank is), is `scripts/doctor.sh`'s own warning —
-# the unranked-model one, or `config_cross_provider_floor_pairs` below — not
-# a floor violation, because this predicate cannot tell "definitely clears
-# it" from "cannot tell" and must never report the latter as the former.
+# an unranked model is `scripts/doctor.sh`'s own warning, not a floor
+# violation, because this predicate cannot tell "definitely clears it" from
+# "cannot tell" and must never report the latter as the former. A pair
+# ranked on both sides compares on MODEL_TIER_RANK's one cross-provider scale
+# (D31, issue #2445) whether or not the two name the same provider.
 config_model_tier_floor_violations() {
   local refiner="$1" enabler="$2" impl_default="$3" impl_trivial="$4"
   local author author_key floor floor_key
@@ -762,41 +756,6 @@ config_model_tier_floor_violations() {
       esac
       [[ -n "$floor" ]] || continue
       if model_tier_below "$author" "$floor"; then
-        printf '%s\t%s\t%s\t%s\n' "$author_key" "$floor_key" "$author" "$floor"
-      fi
-    done
-  done
-}
-
-# config_cross_provider_floor_pairs REFINER_MODEL ENABLER_MODEL IMPLEMENTER_MODEL_DEFAULT IMPLEMENTER_MODEL_TRIVIAL
-# Prints one "author_key<TAB>floor_key<TAB>author_id<TAB>floor_id" line per
-# pair (the same four keys config_model_tier_floor_violations above covers)
-# whose author and floor are qualified under different providers — the case
-# `model_tier_below` always reports as "cannot verify" regardless of either
-# side's rank (D29, issue #2198), so `scripts/doctor.sh` warns about it by
-# name rather than leaving it indistinguishable from an ordinary unranked
-# model. Takes the same already-resolved *qualified* ids as
-# config_model_tier_floor_violations, and skips a pair with either side empty
-# the same way; unlike that function this looks only at each id's provider
-# segment, never its rank, so it fires whether or not either side is on the
-# fleet's model-tier ladder (MODEL_TIER_RANK) at all. Empty when every pair
-# shares a provider, or either side of a pair is empty.
-config_cross_provider_floor_pairs() {
-  local refiner="$1" enabler="$2" impl_default="$3" impl_trivial="$4"
-  local author author_key floor floor_key
-  for author_key in refiner_model enabler_model; do
-    case "$author_key" in
-      refiner_model) author="$refiner" ;;
-      enabler_model) author="$enabler" ;;
-    esac
-    [[ -n "$author" ]] || continue
-    for floor_key in implementer_model_default implementer_model_trivial; do
-      case "$floor_key" in
-        implementer_model_default) floor="$impl_default" ;;
-        implementer_model_trivial) floor="$impl_trivial" ;;
-      esac
-      [[ -n "$floor" ]] || continue
-      if [[ "${author%%/*}" != "${floor%%/*}" ]]; then
         printf '%s\t%s\t%s\t%s\n' "$author_key" "$floor_key" "$author" "$floor"
       fi
     done

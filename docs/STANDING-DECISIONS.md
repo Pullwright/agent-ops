@@ -273,7 +273,11 @@ principle it rests on.`
   likely to want their SuperGrok subscription, which under D4 and
   Principle 9 runs on the customer's own nodes, and which of #2139's
   mechanisms places its credential there is agreed with them. Decided by
-  the owner on 2026-10-03, on #2129.
+  the owner on 2026-10-03, on #2129. Amended 2026-10-17 under D31: the
+  interim rule issue #2198 built on this decision — that a provider's own
+  model-tier ranks are its own scale, compared only within that provider —
+  is replaced by one scale of capability spanning every provider; the
+  substrate boundary this entry decides is unaffected.
 - 2026-10-08 · #2238 · **Each provider runs on its API key and its
   subscription at once, at a weighted share, and a stage switches lanes
   on its own at a limit or a spend threshold (D30).** A lane is one
@@ -335,3 +339,19 @@ principle it rests on.`
   branch and restarts the clock. poetic and poetic-fiddle keep 24 hours,
   because their protected paths reach production. Decided by the owner on
   2026-10-16.
+- 2026-10-17 · #2445 · **Model-tier ordering is one scale of capability
+  bands spanning every provider, not a scale per provider (D31).** #2247's
+  own weighted model set needs a tier comparison that works across
+  providers, and the interim rule D29 and issue #2198 left in place —
+  compare only within one provider, until decided — was always provisional
+  on this decision. The scale is capability, not price, within a provider
+  as well as across providers; two models placed in the same band tie, and
+  a tie clears the model-tier floor (requirement 1c) the same as an equal
+  rank always has; the placements are the owner's own judgement from public
+  evidence, revised only by a dated decision-log entry on the scorecards'
+  evidence (D22), never by a stage; a model the table does not know stays
+  "cannot verify" — warned about, never refused or passed — exactly as an
+  unranked model always has; and an installation that judges a placement
+  differently moves the model in its own `config.json` rather than editing
+  `lib/model-id.sh` (#2465). Decided by the owner on 2026-10-17, on
+  filing #2445. This unblocks #2247 and #2465.
