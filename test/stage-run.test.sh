@@ -620,8 +620,10 @@ done
 # process set once. `run_coordinator_stage_attempt` (lib/stage-attempt.sh)
 # passes its own per-repository `coord_budget_repo` as `run_model_stage`'s
 # trailing seed-suffix argument for exactly this reason; the Approver's own
-# per-pull-request loop (lib/approver.sh) passes `$pr_url` the same way. This
-# drives `run_model_stage` directly with that per-repository shape, since
+# per-pull-request loop (lib/approver.sh), and the landing gate's own
+# `run_open_question_adjudication` (lib/landing.sh, issue #2462), pass
+# `$pr_url` the same way. This drives `run_model_stage` directly with that
+# per-repository shape, since
 # exercising `run_coordinator_stage_attempt` itself needs machinery
 # (stage_budget_apply, log_event, …) this file never sources.
 cycle_id="fixture-cycle-6a3"
@@ -645,6 +647,39 @@ assert_eq "...and the two repos under the same cycle_id drew different lanes" \
 assert_eq "...whereas the undifferentiated cycle-and-stage seed draws just one lane for both" \
   "api" \
   "$(stage_lane_draw anthropic claude-code "$cycle_id:coordinator")"
+
+# --- 6a3b. The landing gate's own per-pull-request loop draws independently
+# too (issue #2462) -----------------------------------------------------------
+# The 2.1e landing-retry sweep can enter the landing gate for more than one
+# pull request within one cycle, and `run_open_question_adjudication`
+# (lib/landing.sh) launches the approver-adjudicate-open-question stage once
+# per pull request it adjudicates, all sharing the one `cycle_id` the cycle
+# set once — the same shape 6a3 above already covers for the Co-Ordinator's
+# per-repository loop, this time for a third caller passing `$pr_url` as the
+# trailing seed-suffix argument.
+cycle_id="fixture-cycle-6a3b"
+pr_url_1="https://github.com/acme/widgets/pull/1"
+pr_url_2="https://github.com/acme/widgets/pull/3"
+for pr_url in "$pr_url_1" "$pr_url_2"; do
+  expect_lane="$(stage_lane_draw anthropic claude-code "$cycle_id:approver-adjudicate-open-question:$pr_url")"
+  run_capture="$tmp_dir/lane-6a3b-$(basename "$pr_url")"
+  mkdir -p "$run_capture"
+  STUB_CAPTURE="$run_capture" STUB_HOLD=0 \
+    run_model_stage approver-adjudicate-open-question 60 claude-sonnet-5 "irrelevant" \
+    "$run_capture/approver-adjudicate-open-question.out" "$run_capture" "" "" "" "$pr_url"
+  assert_eq "adjudication launch for pull request $pr_url lands on the seeded draw's own output" \
+    "$expect_lane" "$stage_lane"
+done
+assert_eq "...and the two pull requests under the same cycle_id drew different lanes" \
+  "api then subscription" \
+  "$(stage_lane_draw anthropic claude-code "$cycle_id:approver-adjudicate-open-question:$pr_url_1") then $(stage_lane_draw anthropic claude-code "$cycle_id:approver-adjudicate-open-question:$pr_url_2")"
+# The bug this closes: with no seed suffix, every pull request's own launch
+# seeds on the identical string ("$cycle_id:approver-adjudicate-open-question"
+# names no pull request at all), so both of the distinct draws above would
+# instead collapse onto this one shared value.
+assert_eq "...whereas the undifferentiated cycle-and-stage seed draws just one lane for both" \
+  "subscription" \
+  "$(stage_lane_draw anthropic claude-code "$cycle_id:approver-adjudicate-open-question")"
 
 # --- 6b. End-to-end: run_model_stage lands on exactly what the draw dictates -
 cycle_id="fixture-cycle-6b"

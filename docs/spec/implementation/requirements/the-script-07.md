@@ -615,11 +615,14 @@
    neither, nothing is launched at all. The draw is seeded on the launch's
    own cycle id and stage name, plus — for a caller whose own loop can launch
    the same stage more than once within one cycle, the Co-Ordinator's
-   per-repository loop and the Approver's per-pull-request loop — a seed
+   per-repository loop, the Approver's per-pull-request loop, and the
+   landing gate's own `run_open_question_adjudication` (`lib/landing.sh`,
+   entered more than once per cycle by the 2.1e landing-retry sweep) — a seed
    suffix distinguishing that launch from a sibling one (the repository slug,
-   the pull request url), so a sibling launch draws independently rather than
+   the pull request url — the latter for both of the pull-request-shaped
+   callers), so a sibling launch draws independently rather than
    sharing the lone cycle-and-stage seed every one of them would otherwise
-   reuse (issue #2436). It is reproducible rather than merely sampled, and it
+   reuse (issues #2436, #2462). It is reproducible rather than merely sampled, and it
    reads no ledger: a lane that reopens rejoins the draw at
    its weight, with no deficit and no catch-up. A caller may also force a
    specific lane outright, bypassing the draw — the limit probe of

@@ -2152,7 +2152,13 @@ $(jq . <<<"$input")
 "
   out="$cycle_dir/approver-adjudicate-open-question-${number}.out"
   stage_budget_apply approver-adjudicate-open-question "$slug" "$approver_model_critical" '{}' "$item"
-  if run_model_stage approver-adjudicate-open-question "$(( stage_backstop_min * 60 ))" "$approver_model_critical" "$prompt" "$out" "$cycle_dir" "$(( stage_inactivity_min * 60 ))"; then
+  # Issue #2462: the pull request this adjudication is judging is also the
+  # lane draw's own seed suffix, so the 2.1e landing-retry sweep's several
+  # same-cycle adjudications draw independently rather than sharing the one
+  # cycle-and-stage seed every one of them would otherwise reuse (the same
+  # fix issue #2436 gave the Co-Ordinator's per-repository loop and the
+  # Approver's own per-pull-request loop).
+  if run_model_stage approver-adjudicate-open-question "$(( stage_backstop_min * 60 ))" "$approver_model_critical" "$prompt" "$out" "$cycle_dir" "$(( stage_inactivity_min * 60 ))" "" "" "$pr_url"; then
     rc=0
   else
     rc=$?
