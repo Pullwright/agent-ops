@@ -578,11 +578,15 @@
       level, forever. "Countable" (issue #1992) discounts exactly one thing:
       a `protected-path-cooloff` refusal (`lib/landing.sh` gate 4.5) whose
       own cool-off window — `approved_at` plus `landing_cool_off_hours`,
-      both parsed back out of the refusal's own `reason` text — has not yet
-      elapsed as of the evaluation's own "now"; a repository whose every
-      in-window refusal is still inside its own open cool-off is waiting
-      exactly as configured, not failing, while one whose refusals outlast
-      that window (or that carries any other class) still fires. No other
+      both parsed back out of the refusal's own `reason` text — had not yet
+      elapsed as of that refusal's own logged `ts`, never the evaluation's
+      own "now" (a window judged against "now" would make every cool-off
+      refusal look stuck once enough wall-clock time passes, however early
+      the pull request actually merged); a repository whose every in-window
+      refusal was logged while its own cool-off was still open is waiting
+      exactly as configured, not failing, while one carrying a refusal whose
+      own `ts` postdates its stated window (or that carries any other class)
+      still fires. No other
       class is excluded wholesale: `ineligible`/`autonomy-level`/
       `kill-switch` all still count on their own, since doing otherwise would
       also hide a non-critical-tier gate 4.5 refusal (class

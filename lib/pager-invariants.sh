@@ -1449,18 +1449,25 @@ pager_remedy_digest_truncated() {
 # `protected-path-cooloff` refusal (lib/landing.sh gate 4.5) whose own
 # cool-off window — `approved_at` plus `landing_cool_off_hours`, both
 # embedded in the refusal's own `reason` text and parsed back out here, the
-# same arithmetic `_landing_notice_eligible_at` already does — has not yet
-# elapsed as of this evaluation's own `now`. A repository whose every
-# in-window refusal is still inside its own open cool-off is the Landing
-# Gate waiting exactly as configured, not a failure; one whose refusals
-# *outlast* that window, or that carries any other class alongside it, still
-# fires — that is no longer "waiting", it is stuck. No other class is
-# special-cased: a blanket exclusion of whole classes (`ineligible`/
-# `autonomy-level`/`kill-switch`, as #1352 and an earlier draft of this fix
-# both proposed) was rejected because it would also have hidden two real
-# failures — a non-critical-tier gate 4.5 refusal (`protected-path-tier`)
-# that never clears, and a `tier: empty` read gap that stops
-# self-correcting — not merely this incident's own false positives.
+# same arithmetic `_landing_notice_eligible_at` already does — had not yet
+# elapsed as of that refusal's own `ts`, never this evaluation's own `now`:
+# the window is fixed the moment the refusal is logged, so judging it against
+# whatever "now" happens to be when some later evaluation runs would make
+# every merged-early cool-off look stuck once enough wall-clock time passes,
+# which is exactly the 2026-10-15 amendment's own false-positive ("fires
+# merely because the owner merged first") this arithmetic exists to silence.
+# A repository whose every in-window refusal was logged while its own
+# cool-off was still open is the Landing Gate waiting exactly as configured,
+# not a failure; one carrying a refusal whose own `ts` postdates its stated
+# window — the gate persisting past the cool-off's end — or that carries any
+# other class alongside it, still fires — that is no longer "waiting", it is
+# stuck. No other class is special-cased: a blanket exclusion of whole
+# classes (`ineligible`/`autonomy-level`/`kill-switch`, as #1352 and an
+# earlier draft of this fix both proposed) was rejected because it would also
+# have hidden two real failures — a non-critical-tier gate 4.5 refusal
+# (`protected-path-tier`) that never clears, and a `tier: empty` read gap
+# that stops self-correcting — not merely this incident's own false
+# positives.
 #
 # Evidence embeds each repository's own refusal-class histogram, grouped on
 # each `landing-refused` event's own `class` field (never a `reason` parse —
@@ -1480,18 +1487,19 @@ pager_eval_landing_never_armed() {
   fi
   [[ -f "$union_log_file" ]] || { printf '{"firing":false}'; return 0; }
   jq -c -R -n --argjson repos "$repos_json" --argjson days "$days" --argjson now "$(date -u +%s)" '
-    def cooloff_elapsed($ev; $now):
+    def cooloff_elapsed($ev):
       ($ev.reason // "") as $r
       | if ($r | test("cool-off has [0-9.]+h remaining \\(approved [^,]+, landing_cool_off_hours=[0-9.]+\\)")) then
           ($r | capture("cool-off has [0-9.]+h remaining \\(approved (?<at>[^,]+), landing_cool_off_hours=(?<hrs>[0-9.]+)\\)")) as $m
           | ((try ($m.at | fromdateiso8601) catch null)) as $a
-          | if $a == null then true
-            else (($a + (($m.hrs | tonumber) * 3600)) <= $now)
+          | ((try ($ev.ts | fromdateiso8601) catch null)) as $evts
+          | if $a == null or $evts == null then true
+            else (($a + (($m.hrs | tonumber) * 3600)) <= $evts)
             end
         else true
         end;
-    def is_countable($ev; $now):
-      if ($ev.class // "") == "protected-path-cooloff" then cooloff_elapsed($ev; $now) else true end;
+    def is_countable($ev):
+      if ($ev.class // "") == "protected-path-cooloff" then cooloff_elapsed($ev) else true end;
     (86400 * $days) as $window_s
     | [ inputs | select(length > 0) | (fromjson? // empty)
         | select(.event == "landing-armed" or .event == "landing-refused")
@@ -1505,7 +1513,7 @@ pager_eval_landing_never_armed() {
     | ( [ $eligible[] as $r
           | ($r.slug) as $slug
           | ($refused | map(select(.repo == $slug))) as $repo_refused
-          | ($repo_refused | map(select(is_countable(.; $now)))) as $countable
+          | ($repo_refused | map(select(is_countable(.)))) as $countable
           | select(($countable | length) > 0)
           | select(($armed | map(select(.repo == $slug)) | length) == 0)
           | ($repo_refused | group_by(.class // "unclassified")

@@ -1127,6 +1127,21 @@ write_log "$lna_log_cooloff_elapsed" \
 assert_eq "the same class, but its own window has since elapsed (refusals outlasted it): fires" "true" \
   "$(jq -r '.firing' <<<"$(pager_eval_landing_never_armed "[]" "$lna_log_cooloff_elapsed")")"
 
+# issue #1992 (the owner's 2026-10-15 amendment): a cool-off refusal logged
+# shortly after approval, while its own window was still open, must not fire
+# merely because that window has long since elapsed by the time some later
+# evaluation runs — the merged-early signature (a PR queued well inside its
+# cool-off, with nothing logged since). approved -100000s, a 24h (86400s)
+# window ending at -13600s; the refusal itself is logged at -99000s, 1000s
+# after approval and well before the window's own end — so it was logged
+# while open — even though that window elapsed over three hours before this
+# evaluation's own "now" (0s).
+lna_log_cooloff_merged_early="$WORKDIR/landing-never-armed-cooloff-merged-early.jsonl"
+write_log "$lna_log_cooloff_merged_early" \
+  "$(landing_ev "$(rel -99000)" landing-refused o/r "$(cooloff_reason -100000 24)" "protected-path-cooloff")"
+assert_eq "logged inside its own window, even though that window has since elapsed by evaluation time: does not fire" \
+  "false" "$(jq -r '.firing' <<<"$(pager_eval_landing_never_armed "[]" "$lna_log_cooloff_merged_early")")"
+
 lna_log_cooloff_mixed="$WORKDIR/landing-never-armed-cooloff-mixed.jsonl"
 write_log "$lna_log_cooloff_mixed" \
   "$(landing_ev "$(rel -300)" landing-refused o/r "$(cooloff_reason -3600 24)" "protected-path-cooloff")" \

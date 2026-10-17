@@ -154,11 +154,17 @@
     unconfigured; and, on a repository whose only in-window refusal is class
     `protected-path-cooloff`, does not fire while that refusal's own
     `approved_at + landing_cool_off_hours` window (parsed out of its own
-    `reason`) has not yet elapsed as of the evaluation's "now", fires once a
-    fixture moves `approved_at` far enough into the past that the same window
-    has elapsed, and fires on a repository mixing a still-open cool-off
-    refusal with a different class in the same window (issue #1992, folding
-    in agent-ops#1352 item 2's narrower proposal).
+    `reason`) had not yet elapsed as of that refusal's own logged `ts`, fires
+    once a fixture logs the refusal with a `ts` that postdates the same
+    window (the refusal outlasted its own cool-off), does not fire on a
+    fixture whose refusal was logged while its window was still open even
+    though that same window has long since elapsed by the evaluation's own
+    "now" (a refusal logged shortly after approval, evaluated long after a
+    pull request merged early — the owner's 2026-10-15 amendment's own
+    false-positive this time base exists to silence), and fires on a
+    repository mixing a still-open cool-off refusal with a different class in
+    the same window (issue #1992, folding in agent-ops#1352 item 2's narrower
+    proposal).
     `landing-refused-unknown` fires when a trailing-24h window's
     `landing-refused` events are at least half class `unknown` (each event's
     own `class` field, a fixture with a colon-less `reason` and an explicit
