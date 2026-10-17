@@ -137,6 +137,174 @@ dependency_clearances() {
   printf '%s' "$out"
 }
 
+# dependency_native_blocked_by SLUG NUMBER
+# Print, as a JSON array, every issue GitHub's native Issue Dependencies
+# feature records as blocking SLUG#NUMBER — one REST read of
+# `repos/<slug>/issues/<number>/dependencies/blocked_by` — each element
+# `{"number": n, "state": "open"|"closed", "repo": "owner/repo"}`. `repo` is
+# the blocking issue's own repository (it may differ from SLUG: the feature
+# allows a cross-repository block), read from `.repository.full_name` when
+# the API names one, falling back to SLUG itself when it does not (the
+# same-repo case, which is both the common one and the one every existing
+# caller in this file already assumes for the text convention). Prints `[]`
+# on any read failure — missing means "nothing known to block it", the same
+# direction `dependency_refs` already takes for a thread with no `Blocked-by:`
+# line, never "assume blocked" on an API hiccup.
+dependency_native_blocked_by() {
+  local slug="${1:-}" number="${2:-}" gh_bin="${DEPENDENCY_GATE_GH:-gh}" raw
+  [[ "$slug" =~ ^[^/]+/[^/]+$ ]] || { printf '[]'; return 0; }
+  [[ "$number" =~ ^[0-9]+$ ]] || { printf '[]'; return 0; }
+  raw="$("$gh_bin" api "repos/$slug/issues/$number/dependencies/blocked_by" 2>/dev/null)" \
+    || { printf '[]'; return 0; }
+  jq -c --arg s "$slug" '
+    if type == "array" then
+      [.[] | {number: .number, state: (.state // "open"),
+              repo: (.repository.full_name // $s)}]
+    else [] end' <<<"$raw" 2>/dev/null || printf '[]'
+}
+
+# dependency_native_open_ref SLUG NUMBER
+# Print the display form (`#195`/`owner/repo#42`, matching
+# `issue_blocked_by_ref`'s own) of the first still-open issue
+# `dependency_native_blocked_by` reports blocking SLUG#NUMBER, or print
+# nothing when it names none, or every one it names is already closed —
+# the native twin of `issue_blocked_by_ref`'s text-based check, read the
+# same "a block I cannot verify counts as still-open" way. Always returns 0.
+dependency_native_open_ref() {
+  local slug="${1:-}" number="${2:-}" blockers entry b_repo b_number b_state display
+  blockers="$(dependency_native_blocked_by "$slug" "$number")"
+  [[ "$(jq 'length' <<<"$blockers" 2>/dev/null || echo 0)" != "0" ]] || return 0
+  while IFS= read -r entry; do
+    [[ -n "$entry" ]] || continue
+    b_repo="$(jq -r '.repo // ""' <<<"$entry" 2>/dev/null || true)"
+    b_number="$(jq -r '.number // ""' <<<"$entry" 2>/dev/null || true)"
+    b_state="$(jq -r '.state // "open"' <<<"$entry" 2>/dev/null || true)"
+    [[ -n "$b_number" ]] || continue
+    if [[ "$b_state" != "closed" ]]; then
+      if [[ -n "$b_repo" && "$b_repo" != "$slug" ]]; then
+        display="$b_repo#$b_number"
+      else
+        display="#$b_number"
+      fi
+      printf '%s\n' "$display"
+      return 0
+    fi
+  done < <(jq -c '.[]' <<<"$blockers" 2>/dev/null || true)
+  return 0
+}
+
+# issue_priority_inherit ISSUES_JSON
+# ISSUES_JSON is an array of open-issue objects, each already carrying its
+# own `number`, `priority` (one of the four band names, "Medium" standing in
+# for unset — the same default `issue_priority_field_ids`'s callers already
+# use) and whole thread (`body`, `comments: [{body}, …]`) — the shape
+# `issue_prefetch_annotate_priority` (lib/issue-prefetch.sh) produces, every
+# open issue in one repository, not only the candidates either gatherer's own
+# label filter keeps (requirement 4's "what it needs", point 4: "An open item
+# that blocks others ranks at least as high as the highest band among the
+# open items it blocks").
+#
+# For every item X here, scans every *other* item Y in the same array whose
+# thread names X in a same-repo `Blocked-by:` reference (`dependency_refs`,
+# the same parser `issue_blocked_by_ref`/`dependency_clearances` already
+# read) — Y need not itself survive the live Blocked-by exclusion to count;
+# this only asks what Y's own thread says, not whether Y is eligible this
+# cycle — and raises X's own `priority` to the highest band among every such
+# Y's own `priority`, where that outranks X's starting band. `priority_set`
+# is left exactly as it arrived: inheritance changes the *rank* an unrelated
+# issue decides it should carry, never the "has anyone actually triaged this
+# issue" fact the Refiner's own triage rule (`is_unbanded_issue`,
+# lib/refinement.sh) still needs. An item whose band was raised carries a new
+# `priority_raised_by` field, an array of the blocked items' own display refs
+# (`"#42"`) that caused the raise — "the Co-Ordinator's input says when an
+# entry's rank was raised by what it blocks" — present only when the raise
+# actually happened; every other item is untouched, including this key's
+# absence.
+#
+# A cross-repository `Blocked-by: owner/repo#42` reference contributes
+# nothing here — this function sees one repository's own open issues, so it
+# has no second repository's priorities to read; the text convention's own
+# cross-repo reach stays limited to the block/clear check, not inheritance.
+#
+# Costed in `jq` invocations, not in comparisons, because that is what
+# actually dominates: one pass over the whole array up front for every item's
+# number, band and thread, then — per item whose thread *could* name a
+# reference at all — one `dependency_refs` parse, and one small accumulation
+# per reference it names. The naive shape, one `jq` per item to pull that
+# item's own thread out of the array, re-parses the entire payload n times:
+# measured on this repository's own open-issue count (521 issues, 2.4 MB) it
+# cost 55 seconds a call, and both gatherers call it (agent-ops#2437 review).
+# With the lookups hoisted, the per-item work no longer scales with the
+# array's size, so this stays what the rest of this file is — a pure, cheap
+# pass over data already in hand, with no `gh` call anywhere in it.
+#
+# Always prints a JSON array; falls back to ISSUES_JSON unchanged on its own
+# jq failure, on the same "an unchanged set beats an emptied one" terms as
+# this codebase's other pure jq-backed fallbacks.
+issue_priority_inherit() {
+  local issues_json="${1:-[]}" rows n thread thread_b64 refs ref own_priority own_rank raise_map='{}'
+  jq -e 'type == "array"' <<<"$issues_json" >/dev/null 2>&1 || { printf '%s' "$issues_json"; return 0; }
+  # One pass over the whole array for every item's number, own band and whole
+  # thread at once — never one `jq` per item over the entire payload, which is
+  # what the cost note above is about. The thread rides base64-encoded so a
+  # body carrying newlines or tabs survives its `@tsv` row intact; `@base64`
+  # emits a single unwrapped line, so the three fields can never collide with
+  # the row's own separators.
+  #
+  # The thread is emitted at all only for an item whose thread *could* name a
+  # reference: `dependency_refs` only ever matches a line whose own start,
+  # lowercased, is `blocked-by:` (optionally behind a `-`/`*` list marker), so
+  # a thread with no such substring anywhere cannot yield one. Deciding that
+  # here, inside the pass that already has the text, spends the loop's one
+  # `base64` fork per item only on the few that can matter. It is a strict
+  # pre-filter on what `dependency_refs` would itself have returned, never a
+  # second opinion on it: every line the parser matches contains the substring
+  # by construction, so nothing it would have found is dropped — the parser
+  # still decides which of those lines count and which tokens on them are
+  # valid.
+  rows="$(jq -r '.[]
+      | select((.number // "") != "")
+      | (((.body // "") + "\n" + (((.comments // []) | map(.body // "")) | join("\n")))) as $thread
+      | [((.number) | tostring),
+         (.priority // "Medium"),
+         (if ($thread | ascii_downcase | contains("blocked-by:")) then ($thread | @base64) else "" end)]
+      | @tsv' <<<"$issues_json" 2>/dev/null || true)"
+  [[ -n "$rows" ]] || { printf '%s' "$issues_json"; return 0; }
+  while IFS=$'\t' read -r n own_priority thread_b64; do
+    [[ -n "$n" ]] || continue
+    [[ -n "$thread_b64" ]] || continue
+    thread="$(base64 -d <<<"$thread_b64" 2>/dev/null || true)"
+    refs="$(dependency_refs "${thread:-}")"
+    [[ "$(jq 'length' <<<"$refs" 2>/dev/null || echo 0)" != "0" ]] || continue
+    # The same table the jq below applies, in bash: Medium, an unset band and
+    # an unrecognised one all rank 2.
+    case "${own_priority:-Medium}" in
+      Urgent) own_rank=4 ;;
+      High)   own_rank=3 ;;
+      Low)    own_rank=1 ;;
+      *)      own_rank=2 ;;
+    esac
+    while IFS= read -r ref; do
+      [[ -n "$ref" ]] || continue
+      [[ "$ref" == */* ]] && continue
+      raise_map="$(jq -c --arg b "$ref" --argjson r "$own_rank" --arg by "#$n" '
+        (.[$b] // null) as $cur
+        | if $cur == null or $cur.rank < $r then .[$b] = {rank: $r, by: [$by]}
+          elif $cur.rank == $r then .[$b].by = ((.[$b].by + [$by]) | unique)
+          else . end' <<<"$raise_map" 2>/dev/null || printf '%s' "$raise_map")"
+    done < <(jq -r '.[]' <<<"$refs" 2>/dev/null || true)
+  done <<<"$rows"
+  [[ "$raise_map" != "{}" ]] || { printf '%s' "$issues_json"; return 0; }
+  jq -c --argjson raise "$raise_map" '
+    def rank($p): {Urgent:4,High:3,Medium:2,Low:1}[$p // "Medium"] // 2;
+    def name($r): {"4":"Urgent","3":"High","2":"Medium","1":"Low"}[$r | tostring];
+    [ .[] | . as $e | ((.number // "") | tostring) as $num
+      | ($raise[$num] // null) as $r
+      | if $r == null or $r.rank <= rank($e.priority) then $e
+        else $e + {priority: name($r.rank), priority_raised_by: $r.by}
+        end ]' <<<"$issues_json" 2>/dev/null || printf '%s' "$issues_json"
+}
+
 # dependency_refusal_reason ENTRY_JSON ISSUES_BY_REPO_JSON
 # Decide whether a needs_refinement-shaped ENTRY (`{repo, item, source,
 # reason, missing, evidence}`, from any reporting stage) asserts, as its

@@ -244,20 +244,36 @@ assert_eq "  ... with the repo, title, body and provenance" "1" \
 # agent-ops#874: no clone_dir/pr_label reach the call any more -- filing is a
 # single labelled-issue create, not a branch-and-PR sequence, so
 # default_fix/owner_decision follow straight after the (empty) token.
+# agent-ops#2422: priority follows owner_decision, empty here (the verdict
+# names none) -- a trailing empty positional arg disappears from "$*" into a
+# trailing space, which the anchor below accounts for.
 assert_eq "  ... and default_fix/owner_decision past the (empty) token" "1" \
-  "$(grep -c '^techdebt_file_debt .* Do the smaller fix false$' <<<"$out")"
+  "$(grep -c '^techdebt_file_debt .* Do the smaller fix false $' <<<"$out")"
 assert_eq "  ... tech-debt-filed event logged" "1" "$(events_named "$out" tech-debt-filed | grep -c .)"
 fields="$(events_named "$out" tech-debt-filed)"
 assert_eq "  ... event names by:enabler" "enabler" "$(jq -r '.by' <<<"$fields")"
 assert_eq "  ... event carries the returned issue number" "501" "$(jq -r '.issue_number' <<<"$fields")"
 assert_eq "  ... no warning" "0" "$(events_named "$out" warning | grep -c .)"
 
+# --- file_debt/file_issue: priority (agent-ops#2422, requirement 1) is
+#     passed through verbatim to techdebt_file_debt/techdebt_file_issue,
+#     whose own PRIORITY parameter applies it through the ratchet.
+fd_priority='{"title":"A gap worth filing","body":"The body text.","default_fix":"Do the smaller fix","priority":"High"}'
+out="$(run_case "file_debt priority" "$(still_blocked_verdict "$fd_priority" null)")"
+assert_eq "file_debt: priority is passed through as the trailing argument" "1" \
+  "$(grep -c '^techdebt_file_debt .* Do the smaller fix false High$' <<<"$out")"
+
+fi_priority='{"title":"A question worth asking","body":"Body of the issue.","default_fix":"Answer it this way","priority":"Urgent"}'
+out="$(run_case "file_issue priority" "$(still_blocked_verdict null "$fi_priority")")"
+assert_eq "file_issue: priority is passed through as the trailing argument" "1" \
+  "$(grep -c '^techdebt_file_issue .* Answer it this way false Urgent$' <<<"$out")"
+
 # --- file_debt: owner_decision true, no default_fix -> passed through, no --
 #     "malformed" warning (the owner_decision alone is enough)
 fd_owner='{"title":"A gap that is an owner call","body":"The body text.","owner_decision":true}'
 out="$(run_case "file_debt owner_decision" "$(still_blocked_verdict "$fd_owner" null)")"
 assert_eq "file_debt owner_decision: passed through as \"true\"" "1" \
-  "$(grep -c '^techdebt_file_debt .*  true$' <<<"$out")"
+  "$(grep -c '^techdebt_file_debt .*  true $' <<<"$out")"
 assert_eq "  ... no warning" "0" "$(events_named "$out" warning | grep -c .)"
 
 # --- file_debt: neither default_fix nor owner_decision -> malformed, filed --
@@ -290,7 +306,7 @@ assert_eq "file_issue success: techdebt_file_issue called once" "1" \
 assert_eq "  ... with the repo, item ref and title" "1" \
   "$(grep -c 'techdebt_file_issue acme/widgets TD26082201 A question worth asking' <<<"$out")"
 assert_eq "  ... and default_fix/owner_decision past the (empty) token" "1" \
-  "$(grep -c '^techdebt_file_issue .* Answer it this way false$' <<<"$out")"
+  "$(grep -c '^techdebt_file_issue .* Answer it this way false $' <<<"$out")"
 assert_eq "  ... issue-filed event logged" "1" "$(events_named "$out" issue-filed | grep -c .)"
 fields="$(events_named "$out" issue-filed)"
 assert_eq "  ... event names by:enabler" "enabler" "$(jq -r '.by' <<<"$fields")"

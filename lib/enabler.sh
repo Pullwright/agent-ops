@@ -1212,9 +1212,9 @@ maybe_run_enabler() {
   local e_dec_mandate e_dec_act e_dec_act_kind e_dec_act_after e_dec_pending e_dec_window
   local e_dec_act_paths
   local e_file_debt fd_title fd_body fd_result fd_number fd_url \
-    fd_default_fix fd_owner_decision
+    fd_default_fix fd_owner_decision fd_priority
   local e_file_issue fi_title fi_body fi_body_file fi_result fi_number fi_url \
-    fi_default_fix fi_owner_decision
+    fi_default_fix fi_owner_decision fi_priority
 
   # --- Guards (requirement 35). Every one of them declining is normal. ---
   # The lock is the log's single-writer guarantee, and this stage writes events.
@@ -2126,6 +2126,12 @@ $(jq . <<<"$input")
         'if (.owner_decision // false) == true then "true" else "false" end' \
         <<<"$e_file_debt" 2>/dev/null || true)"
       [[ -n "$fd_owner_decision" ]] || fd_owner_decision="false"
+      # requirement 1 of agent-ops#2422: the Script's own filers set the
+      # band directly. An unrecognised or absent priority is silently
+      # skipped by `_techdebt_apply_priority` (lib/tech-debt-file.sh) — no
+      # warning needed, the same "no opinion, leave it" terms `default_fix`'s
+      # own absence is held to one line below.
+      fd_priority="$(jq -r '.priority // ""' <<<"$e_file_debt" 2>/dev/null || true)"
       if [[ -z "$fd_title" || -z "$fd_body" ]]; then
         log_event "warning" "$(jq -nc \
           --arg d "enabler set file_debt for $e_repo $e_item, but it carries no title or body — ignored" \
@@ -2142,7 +2148,7 @@ $(jq . <<<"$input")
         fi
         if fd_result="$(techdebt_file_debt "$e_repo" "$fd_title" "$fd_body" \
                "during an Enabler engagement on $e_item (cycle $cycle_id)" "" \
-               "$fd_default_fix" "$fd_owner_decision")" \
+               "$fd_default_fix" "$fd_owner_decision" "$fd_priority")" \
                && [[ -n "$fd_result" ]]; then
           IFS=$'\t' read -r fd_number fd_url <<<"$fd_result"
           log_event "tech-debt-filed" "$(jq -nc --arg r "$e_repo" --arg i "$e_item" \
@@ -2165,6 +2171,7 @@ $(jq . <<<"$input")
         'if (.owner_decision // false) == true then "true" else "false" end' \
         <<<"$e_file_issue" 2>/dev/null || true)"
       [[ -n "$fi_owner_decision" ]] || fi_owner_decision="false"
+      fi_priority="$(jq -r '.priority // ""' <<<"$e_file_issue" 2>/dev/null || true)"
       if [[ -z "$fi_title" || -z "$fi_body" ]]; then
         log_event "warning" "$(jq -nc \
           --arg d "enabler set file_issue for $e_repo $e_item, but it carries no title or body — ignored" \
@@ -2183,7 +2190,7 @@ $(jq . <<<"$input")
         printf '%s\n\n---\nNoticed by the autonomous pipeline while examining `%s` in %s.\n' \
           "$fi_body" "$e_item" "$e_repo" > "$fi_body_file"
         if fi_result="$(techdebt_file_issue "$e_repo" "$e_item" "$fi_title" "$fi_body_file" "" \
-               "$fi_default_fix" "$fi_owner_decision")" \
+               "$fi_default_fix" "$fi_owner_decision" "$fi_priority")" \
              && [[ -n "$fi_result" ]]; then
           IFS=$'\t' read -r fi_number fi_url <<<"$fi_result"
           log_event "issue-filed" "$(jq -nc --arg r "$e_repo" --arg i "$e_item" \

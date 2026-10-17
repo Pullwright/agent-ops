@@ -129,9 +129,16 @@ assert_contains "  ... naming this pull request in the provenance" "$URL" "$(deb
 assert_eq "  ... with no TOKEN (the ordinary pipeline login)" "" "$(debt_field 5)"
 assert_eq "  ... the default_fix" "do X" "$(debt_field 6)"
 assert_eq "  ... and owner_decision false" "false" "$(debt_field 7)"
+assert_eq "  ... and priority is empty when the verdict names none" "" "$(debt_field 8)"
 tdf="$(events_named tech-debt-filed)"
 assert_eq "tech-debt-filed names the reviewer" '"reviewer"' "$(jq -c '.by' <<<"$tdf")"
 assert_eq "  ... and the filed issue url" '"https://github.com/acme/widgets/issues/501"' "$(jq -c '.issue_url' <<<"$tdf")"
+
+# --- file_debt: priority (agent-ops#2422) is passed through verbatim --------
+reset_stubs
+rev_json='{"file_debt":{"title":"the gap","body":"body text","default_fix":"do X","owner_decision":false,"priority":"Urgent"}}'
+reviewer_merge_observed "$URL" "" "$rev_json" "reviewer"
+assert_eq "priority is passed through as the trailing argument" "Urgent" "$(debt_field 8)"
 
 # --- file_debt missing a body: ignored, warned, never filed -------------------
 reset_stubs
@@ -172,6 +179,13 @@ assert_contains "  ... and names the merged pull request" "$URL" "$(cat "$tmp_di
 fi_event="$(events_named issue-filed)"
 assert_eq "issue-filed names the reviewer" '"reviewer"' "$(jq -c '.by' <<<"$fi_event")"
 assert_eq "  ... and the filed issue number" "502" "$(jq -c '.issue_number' <<<"$fi_event")"
+assert_eq "  ... and priority is empty when the verdict names none" "" "$(issue_field 8)"
+
+# --- file_issue: priority (agent-ops#2422) is passed through verbatim -------
+reset_stubs
+rev_json='{"file_issue":{"title":"question","body":"why this matters","owner_decision":true,"priority":"Low"}}'
+reviewer_merge_observed "$URL" "" "$rev_json" "reviewer"
+assert_eq "priority is passed through as the trailing argument" "Low" "$(issue_field 8)"
 
 # --- file_issue missing a title: ignored, warned ------------------------------
 reset_stubs

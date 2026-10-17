@@ -84,9 +84,46 @@ gh() {
       return 0 ;;
     "issue close")
       [[ "$STUB_GH_CLOSE_MODE" == "success" ]] ;;
+    "api graphql")
+      # agent-ops#2422: _pager_create_issue's own PRIORITY applies through
+      # issue_priority_apply (lib/issue-priority.sh), which calls the bare
+      # `gh` this stub overrides exactly like every other call site here.
+      shift 2
+      local query="" jqfilter="." opt_id=""
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          -f) case "$2" in
+                query=*) query="${2#query=}" ;;
+                optionId=*) opt_id="${2#optionId=}" ;;
+              esac; shift 2 ;;
+          --jq) jqfilter="$2"; shift 2 ;;
+          *) shift ;;
+        esac
+      done
+      if [[ "$query" == *setIssueFieldValue* ]]; then
+        printf '%s\n' "$opt_id" >> "$PRIORITY_MUTATION_CALLS_FILE"
+        return 0
+      fi
+      jq -c "$jqfilter" <<<'{"data":{"repository":{"issueFields":{"nodes":[
+        {"id":"IFSS_priority","name":"Priority","options":[
+          {"id":"OPT_URGENT","name":"Urgent"},{"id":"OPT_HIGH","name":"High"},
+          {"id":"OPT_MEDIUM","name":"Medium"},{"id":"OPT_LOW","name":"Low"}]}]}}}}' 2>/dev/null
+      return 0 ;;
+"api repos/o/r/issues/501")
+      shift 2
+      local issue_jqfilter="."
+      while [[ $# -gt 0 ]]; do
+        case "$1" in --jq) issue_jqfilter="$2"; shift 2 ;; *) shift ;; esac
+      done
+      jq -c "$issue_jqfilter" <<<'{"node_id":"I_501","issue_field_values":[]}' 2>/dev/null
+      return 0 ;;
     *) return 1 ;;
   esac
 }
+PRIORITY_MUTATION_CALLS_FILE="$WORKDIR/priority-mutation-calls"
+: > "$PRIORITY_MUTATION_CALLS_FILE"
+export ISSUE_PRIORITY_CACHE_DIR="$WORKDIR/priority-cache"
+mkdir -p "$ISSUE_PRIORITY_CACHE_DIR"
 
 REMEDY_CALLS_FILE="$WORKDIR/remedy-calls"
 : > "$REMEDY_CALLS_FILE"
@@ -364,6 +401,10 @@ assert_eq "tick 2 (hysteresis 0, still firing): exactly one pager-fired" \
 assert_eq "  ... the remedy function ran exactly once" "1" "$(remedy_calls)"
 assert_eq "  ... its return value rode into the issue body" "1" \
   "$(grep -c "$STUB_REMEDY_OUTPUT" "$STUB_GH_LAST_BODY_FILE")"
+# agent-ops#2422, requirement 1: every pager escalation files at High —
+# "a defect that pages... ranks above wording, comment drift or tidying".
+assert_eq "  ... and the tracking issue's Priority is set to High" "OPT_HIGH" \
+  "$(tail -n1 "$PRIORITY_MUTATION_CALLS_FILE" 2>/dev/null || true)"
 
 # The tracking issue now "exists" on the fake GitHub — the close attempt
 # below must find it via `gh issue list`, exactly as the real one would.

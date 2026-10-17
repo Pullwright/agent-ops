@@ -101,7 +101,13 @@
 # also emits text/date/etc. field-value shapes; an admin can retype the
 # field to a different type) contributes nothing to `$priority_names` — the
 # `select(. != null)` guard drops it — so it reads as unset, not set
-# (agent-ops#527).
+# (agent-ops#527). The parse itself now lives in `issue_prefetch_annotate_priority`
+# (lib/issue-prefetch.sh, agent-ops#2422) so scripts/gather-tech-debt.sh reads
+# the identical field the identical way; this script calls it, then
+# `issue_priority_inherit` (lib/dependency-gate.sh) over the whole open-issue
+# set — priority inheritance, requirement 4: an issue that blocks another
+# ranks at least as high as the highest band among what it blocks, named in
+# the raised entry's own `priority_raised_by`.
 #
 # ## Degrading, and the 100-item windows
 #
@@ -177,6 +183,15 @@ fi
 jq -e 'type == "array"' <<<"$issues_raw" >/dev/null 2>&1 \
   || degrade "issues list payload is not an array"
 
+# Every open issue's `priority`/`priority_set` (requirement 1/2,
+# agent-ops#2422), then priority inheritance over the whole set — including
+# issues this script's own label filter below will not keep as a candidate,
+# since an item that is itself excluded can still be what raises some other
+# item's band (requirement 4's "what it needs", point 4). Both are pure
+# passes over data already in hand; neither issues a further `gh` call.
+issues_raw="$(issue_prefetch_annotate_priority "$issues_raw")"
+issues_raw="$(issue_priority_inherit "$issues_raw")"
+
 # The deterministic filter and the entry shape. `issue_deterministic_ok`
 # (lib/issue-prefetch.sh, shared with scripts/gather-tech-debt.sh) drops the
 # PRs the issues endpoint interleaves — never reported in `excluded`, since a
@@ -211,22 +226,18 @@ candidates="$(jq -c "$ISSUE_DETERMINISTIC_FILTER_JQ"'
   [.[]
    | select(issue_deterministic_ok)
    | select(([.labels[]?.name] | index("pw::type:tech-debt")) == null)
-   | ([.issue_field_values[]? | select(.issue_field_name == "Priority")
-                              | .single_select_option.name
-                              | select(. != null)]) as $priority_names
-   | ($priority_names | map(select(. == "Urgent" or . == "High"
-                                    or . == "Medium" or . == "Low"))) as $priority_values
    | {number: .number,
       url: .html_url,
       title: .title,
-      priority: (($priority_values | first) // "Medium"),
-      priority_set: (($priority_names | length) > 0),
+      priority: (.priority // "Medium"),
+      priority_set: (.priority_set // false),
       labels: ([.labels[]?.name] | sort),
       author: (.user.login // ""),
       created_at: .created_at,
       updated_at: .updated_at,
       body: (.body // ""),
-      comments: [(.comments // [])[] | {author: (.user.login // ""), created_at: .created_at, body: (.body // "")}]}]
+      comments: [(.comments // [])[] | {author: (.user.login // ""), created_at: .created_at, body: (.body // "")}]}
+     + (if (.priority_raised_by // null) == null then {} else {priority_raised_by: .priority_raised_by} end)]
   | sort_by(.number)' <<<"$issues_raw" 2>/dev/null)" \
   || degrade "issues filter failed"
 
@@ -254,7 +265,7 @@ while IFS= read -r candidate; do
   # made to get it.
   thread_text="$(jq -r '.body' <<<"$candidate")
 $(jq -r '[.comments[].body] | join("\n")' <<<"$candidate")"
-  ref_display="$(issue_blocked_by_ref "$slug" "$thread_text")"
+  ref_display="$(issue_blocked_by_ref "$slug" "$n" "$thread_text")"
   if [[ -n "$ref_display" ]]; then
     excl_entry="$(jq -nc --argjson n "$n" --arg ref "$ref_display" \
       '{number: $n, reason: ("blocked-by: " + $ref)}')" || degrade "excluded entry assembly failed for issue #$n"
