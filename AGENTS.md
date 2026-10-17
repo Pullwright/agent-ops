@@ -63,6 +63,28 @@ the result — this carries the branch's edits into whichever new file now
 holds the section it touched, rather than losing them to the delete side of
 the conflict.
 
+When a file in an already-split directory (`acceptance-checks/`,
+`components/`, or a future directory split the same way) grows past the
+documentation size budget, split its tail into a new file at the next unused
+number in that directory — e.g. if `01`–`06` exist, the new file is `07`,
+never a renumbering of `02`–`06`. Never rename, renumber, or move an existing
+file in the directory as part of a split: every other file's path stays
+byte-identical in the diff. Update each touched file's own heading line (the
+`### … — continued (part N of M; items X–Y)` text `scripts/render-toc.sh`
+reads verbatim into the directory's table of contents and `docs/README.md`'s
+file-by-file listing) only for the file that was split (its item range
+shrinks) and the new file (its item range is the moved tail, with `N` = the
+new file's own position in filename order, i.e. `N = M` for a freshly
+appended file); every other existing file's heading needs only its `M`
+(total count) bumped by one. Item ranges across files become non-contiguous
+in filename order once this happens more than once, and that is accepted,
+not a defect — a file appended later may hold items that logically precede
+another file's range, and a reader relies on each file's own stated item
+range rather than on files appearing in logical reading order. After any
+heading edit, regenerate the directory's table of contents with
+`scripts/render-toc.sh` and update `docs/README.md`'s listing for the
+touched and new files, the same as for any other split.
+
 ## Generated regions
 
 Three types of generated regions exist in this repository:
