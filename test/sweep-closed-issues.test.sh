@@ -66,15 +66,15 @@ S="$SWEEP_STUB_DIR"
 printf '%s\n' "$*" >> "$S/calls.log"
 args="$*"
 case "$args" in
-  "pr list -R x/y --state merged --label autonomous-agent "*)
+  "pr list -R "*" --state merged --label autonomous-agent "*)
     cat "$S/prs.json" ;;
-  "issue list -R x/y --label enabler-escalation --state open --search approver-adjudication "*)
+  "issue list -R "*" --label enabler-escalation --state open --search approver-adjudication "*)
     [[ -f "$S/fail-esc-list" ]] && exit 1
     cat "$S/esc-issues.json" 2>/dev/null || echo '[]' ;;
-  "api repos/x/y/issues/"*)
+  "api repos/"*"/issues/"*)
     n="${args##*issues/}"
     if [[ -f "$S/issue-$n" ]]; then cat "$S/issue-$n"; else exit 1; fi ;;
-  "issue close "*" -R x/y --comment "*)
+  "issue close "*" -R "*" --comment "*)
     n="${args#issue close }"; n="${n%% *}"
     [[ -f "$S/fail-close-$n" ]] && exit 1
     exit 0 ;;
@@ -87,6 +87,12 @@ chmod +x "$stub"
 run_sweep() {
   SWEEP_STUB_DIR="$1" SWEEP_GH="$stub" AGENT_OPS_CONFIG="$config" \
     bash "$SWEEP" x/y node-1 cycle-1 "$tmp_dir/state"
+}
+
+run_sweep_for() {
+  local slug="$1" stub_dir="$2" state_dir="$3"
+  SWEEP_STUB_DIR="$stub_dir" SWEEP_GH="$stub" AGENT_OPS_CONFIG="$config" \
+    bash "$SWEEP" "$slug" node-1 cycle-1 "$state_dir"
 }
 
 # --- Case 1: a merged, marker-carrying PR whose issue is still open --------------
@@ -330,6 +336,50 @@ assert_contains "a failed escalation listing is warned about, not read as \"noth
 assert_eq "  ... and the rest of the pass still runs, since it does not depend on that call" \
   '{"action":"closed","issue":1101,"pr_number":1100,"pr_url":"https://github.com/x/y/pull/1100"}' \
   "$(jq -c 'select(.action == "closed")' <<<"$out")"
+
+# --- Case 12: two repositories sharing one state dir don't erase each other's merge-observed keys ---
+# `lib/standdown.sh`'s 2.1c sweep invokes this script once per configured
+# repository, all against one shared state_dir and therefore one seen-file
+# (agent-ops#2476). The first repo's own write must not wipe the second
+# repo's previously recorded keys, and vice versa — and a repo's own
+# already-seen key must still not re-emit after a *different* repo's own
+# invocation has written to the shared file in between.
+c="$tmp_dir/case12"; mkdir -p "$c"
+shared_state="$tmp_dir/case12-state"
+
+jq -n '[{number: 1200, url: "https://github.com/a/one/pull/1200",
+         body: "<!-- agent-ops:closes-issue item=1201 -->",
+         mergeCommit: {oid: "aaa111"}}]' > "$c/prs.json"
+jq -n '{state: "closed"}' > "$c/issue-1201"
+
+out1="$(run_sweep_for "a/one" "$c" "$shared_state")"
+assert_eq "the first repo's merge instant is reported" \
+  '{"action":"merge-observed","pr_number":1200,"pr_url":"https://github.com/a/one/pull/1200","item":"1201","merge_sha":"aaa111"}' \
+  "$(jq -c 'select(.action == "merge-observed")' <<<"$out1")"
+
+jq -n '[{number: 1300, url: "https://github.com/b/two/pull/1300",
+         body: "<!-- agent-ops:closes-issue item=1301 -->",
+         mergeCommit: {oid: "bbb222"}}]' > "$c/prs.json"
+jq -n '{state: "closed"}' > "$c/issue-1301"
+
+out2="$(run_sweep_for "b/two" "$c" "$shared_state")"
+assert_eq "the second repo's own merge instant is reported too" \
+  '{"action":"merge-observed","pr_number":1300,"pr_url":"https://github.com/b/two/pull/1300","item":"1301","merge_sha":"bbb222"}' \
+  "$(jq -c 'select(.action == "merge-observed")' <<<"$out2")"
+
+seen_file="$shared_state/sweep-closed-issues-merge-observed-seen.json"
+assert_contains "  ... and the seen-file still holds the first repo's key after the second repo's write" \
+  '"a/one#1200"' "$(cat "$seen_file")"
+assert_contains "  ... alongside the second repo's own key" \
+  '"b/two#1300"' "$(cat "$seen_file")"
+
+jq -n '[{number: 1200, url: "https://github.com/a/one/pull/1200",
+         body: "<!-- agent-ops:closes-issue item=1201 -->",
+         mergeCommit: {oid: "aaa111"}}]' > "$c/prs.json"
+
+out3="$(run_sweep_for "a/one" "$c" "$shared_state")"
+assert_eq "  ... and a later run back on the first repo does not re-emit its own already-seen key" '' \
+  "$(jq -c 'select(.action == "merge-observed")' <<<"$out3" 2>/dev/null || true)"
 
 if (( failures > 0 )); then
   echo "$failures failure(s)"
