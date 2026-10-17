@@ -176,6 +176,19 @@ of the "branch and PR already exist" instructions below apply to it.
   **not** add a `Fixes #…`/`td-record` block, a `Closes #…`, or a
   changelog entry here; those already happened (or will happen) on the PR's
   own terms. Touch only what resolving the conflict requires.
+- **Re-verify the body against the diff before you finish.** Compare the
+  PR's current body (`gh pr view --json body`) — and any `td-record` block
+  it carries — against the diff the conflict resolution actually produced. A
+  mechanical rebase or merge that changed no described behaviour needs no
+  edit: this is re-verify, and fix only if wrong, not a mandate to touch the
+  body every time. But where reconciling the conflict forced a materially
+  different approach than the body states — #2453's case, where #2478's
+  append-only re-split convention landing mid-flight forced a different fix
+  than the body described — edit the body (`gh pr edit --body-file`) so the
+  prose, and any `td-record` block's `summary`/`resolution` fields, describe
+  what the diff now actually does. This corrects what the body already
+  claims; it is not licence to add a `Fixes #…`/`Closes #…` or a new
+  `td-record` block — the "Do not close the loop" rule above still applies.
 - **Verify like CI does, then confirm the conflict is gone** (Procedure steps 3–4
   and 6). Run the repo's lint/typecheck/format/test/build — a rebase can
   reintroduce a break a clean tree had hidden. Then `gh pr view --json
