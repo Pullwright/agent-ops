@@ -460,7 +460,7 @@ Poetic-Poems, with no pipeline code in it.
       exhaustion closures (#2243); the live `--mix` lever (#2244); the
       dashboard and Monitor surfaces (#2245); the xAI arm (#2246, after
       #2134 and #2139); a weighted model set per actor for a share across
-      providers (#2247, on the cross-provider tier question); and provider
+      providers (#2247, on D31's one cross-provider tier scale); and provider
       statements reconciling the ledger (#2248). The owner acts, in order:
       the API key into each Poetic node's `.env` (a container recreate),
       which until #2241 lands and the subscription lane is enabled runs

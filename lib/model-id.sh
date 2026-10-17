@@ -323,11 +323,11 @@ resolve_model_qualified() {
 # specification a more capable Implementer then executed. This table is what
 # makes "cheaper" and "more capable" checkable in code rather than by
 # convention — one scale of capability bands spanning every provider (D31,
-# issue #2445, landing the owner's decision on #2445), each model keyed by
-# its fully-qualified id (resolve_model_qualified's own return shape) rather
-# than the bare one resolve_model_id returns — issue #2131, so that a pair
-# naming models from two different providers never collides on a bare id one
-# provider's own naming happens to share with another's. The ranks are
+# issue #2445), each model keyed by its fully-qualified id
+# (resolve_model_qualified's own return shape) rather than the bare one
+# resolve_model_id returns — issue #2131, so that a pair naming models from
+# two different providers never collides on a bare id one provider's own
+# naming happens to share with another's. The ranks are
 # capability, not price, within a provider as well as across them, and are
 # spaced ten apart so a later model can be placed between two bands without
 # renumbering any existing one: the fleet's four currently configured Claude
