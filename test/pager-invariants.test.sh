@@ -412,6 +412,60 @@ STUB_GH_LIST_BY_LABEL=([enabler-escalation]="[]" [pw::pager]="[]")
 verdict="$(pager_eval_page_outlived_item "" "")"
 assert_eq "no open pages at all: does not fire" "false" "$(jq -r '.firing' <<<"$verdict")"
 
+# --- page-outlived-item: footer resolution (agent-ops#2482) ----------------
+#
+# Every Enabler escalation body carries a footer line naming its own item
+# (prompts/enabler.md: "Item: `<item>` · repo `<repo>` · blocked since
+# `<ts>`"). Page #4 below cites, in prose, a pull request that has since
+# merged — the exact shape of agent-ops#2452, which was wrongly retired this
+# way 28 minutes after being filed while its own item (#2441) was still
+# open. Page #6 carries no footer at all and exercises the fallback scan's
+# own priority: an issues URL must not be outranked by a `/pull/` URL the
+# body happens to cite first.
+: > "$GH_CALLS_FILE"
+# shellcheck disable=SC2016  # literal backticks in the footer's own markdown, not command substitution.
+footer() { printf 'Item: `%s` · repo `%s` · blocked since `2026-01-01T00:00:00Z`\nRaised by the Enabler · cycle `c0` · node `n0`' "$1" "$2"; }
+STUB_GH_LIST_BY_LABEL=(
+  [enabler-escalation]="$(jq -nc \
+    --arg b4 "This escalation cites https://github.com/o/r/pull/30 as context; that pull request has since merged.
+
+---
+$(footer 31 o/r)" \
+    --arg b5 "This escalation's own item has genuinely concluded.
+
+---
+$(footer 32 o/r)" \
+    '[{number:4,url:"https://github.com/o/r/issues/4",body:$b4},
+      {number:5,url:"https://github.com/o/r/issues/5",body:$b5}]')"
+  [pw::pager]="$(jq -nc \
+    --arg b6 'This page cites a merged pull request https://github.com/o/r/pull/33 ahead of its own still-open issue https://github.com/o/r/issues/34 in document order, and carries no footer at all.' \
+    '[{number:6,url:"https://github.com/o/r/issues/6",body:$b6}]')"
+)
+STUB_GH_API_MAP=(["repos/o/r/issues/31"]="issue" ["repos/o/r/issues/32"]="issue")
+STUB_GH_PR_STATE_MAP="https://github.com/o/r/pull/30=MERGED;https://github.com/o/r/pull/33=MERGED"
+STUB_GH_ISSUE_STATE_MAP="https://github.com/o/r/issues/31=OPEN;https://github.com/o/r/issues/32=CLOSED;https://github.com/o/r/issues/34=OPEN"
+
+verdict="$(pager_eval_page_outlived_item "" "")"
+evidence="$(jq -r '.evidence' <<<"$verdict")"
+assert_eq "exactly one of the three pages has genuinely concluded: fires" "true" "$(jq -r '.firing' <<<"$verdict")"
+assert_eq "  ... evidence counts exactly one" "1" "$(grep -c '^1 page' <<<"$evidence")"
+assert_eq "  ... page #4 (footer names a still-open issue; body only cites a merged PR) is not retired" "0" \
+  "$(grep -c '#4' <<<"$evidence")"
+assert_eq "  ... page #5 (footer names a genuinely closed issue) is retired" "1" \
+  "$(grep -c '#5' <<<"$evidence")"
+assert_eq "  ... page #6 (no footer; a merged PR URL cited first does not outrank the issue URL) is not retired" "0" \
+  "$(grep -c '#6' <<<"$evidence")"
+
+: > "$GH_CALLS_FILE"
+outcome="$(pager_remedy_page_outlived_item page-outlived-item "irrelevant, re-derived live")"
+assert_eq "the remedy closes exactly the one genuinely outlived page" "closed 1 outlived page(s)" "$outcome"
+assert_eq "  ... issue #4 was left alone (footer protects it from the merged PR cited in its own body)" "0" \
+  "$(grep -c '^issue close 4 ' "$GH_CALLS_FILE")"
+assert_eq "  ... issue #5 was closed" "1" \
+  "$(grep -c '^issue close 5 ' "$GH_CALLS_FILE")"
+assert_eq "  ... issue #6 was left alone (no footer; the issue URL outranks the merged pull URL cited first)" "0" \
+  "$(grep -c '^issue close 6 ' "$GH_CALLS_FILE")"
+
 # --- firing-missed (agent-ops#1282) ---------------------------------------------
 
 cycle_ev() {  # cycle_ev TS NODE CYCLE EVENT [EXTRA_JSON]

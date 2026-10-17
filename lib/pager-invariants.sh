@@ -479,15 +479,54 @@ _pager_open_page_issues() {
 }
 
 # _pager_outlived_ref BODY -> "kind\treference" (kind: pr|issue) for the
-# first PR or issue URL BODY names, or nothing. A page's body always carries
-# one — every escalation this codebase files links the item it is about.
+# page's own item. Every Enabler escalation's body carries a footer line —
+# `Item: `<ref>` · repo `<slug>`` (prompts/enabler.md) — naming the item the
+# page is about, and that footer is read first: when present, it settles
+# kind and reference on its own, regardless of what other `/pull/` or
+# `/issues/` URLs the body's own prose also links. Without this, a page
+# whose body merely cites, in passing, the pull request that surfaced it
+# was read as being *about* that pull request and retired the moment it
+# merged (agent-ops#2482: agent-ops#2452 was closed as outlived 28 minutes
+# after filing, on exactly this confusion, while its own item — #2441 —
+# was still open).
+#
+# Only a page with no such footer falls back to scanning the body for the
+# first URL — issue URLs checked before pull-request ones, so a prose
+# mention of a pull request still cannot outrank a real issue link.
 _pager_outlived_ref() {
-  local body="$1" ref
-  ref="$(grep -oE 'https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+' <<<"$body" | head -n1)"
-  if [[ -n "$ref" ]]; then printf 'pr\t%s' "$ref"; return 0; fi
+  local body="$1" item repo kind ref
+  if [[ "$body" =~ Item:\ \`([^\`]+)\`[[:space:]]+·[[:space:]]+repo[[:space:]]+\`([^\`]+)\` ]]; then
+    item="${BASH_REMATCH[1]}" repo="${BASH_REMATCH[2]}"
+    if [[ "$item" =~ ^[0-9]+$ && -n "$repo" ]]; then
+      kind="$(_pager_footer_item_kind "$repo" "$item")"
+      if [[ "$kind" == "pr" ]]; then
+        printf 'pr\thttps://github.com/%s/pull/%s' "$repo" "$item"
+      else
+        printf 'issue\thttps://github.com/%s/issues/%s' "$repo" "$item"
+      fi
+      return 0
+    fi
+  fi
   ref="$(grep -oE 'https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/issues/[0-9]+' <<<"$body" | head -n1)"
-  [[ -n "$ref" ]] && printf 'issue\t%s' "$ref"
+  if [[ -n "$ref" ]]; then printf 'issue\t%s' "$ref"; return 0; fi
+  ref="$(grep -oE 'https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+' <<<"$body" | head -n1)"
+  [[ -n "$ref" ]] && printf 'pr\t%s' "$ref"
   return 0
+}
+
+# _pager_footer_item_kind REPO NUM -> "pr" or "issue", read from the shared
+# issues/pulls numbering space's own REST "pull_request" signal
+# (lib/issue-prefetch.sh's `issue_deterministic_ok` reads the identical key
+# the other way round, to exclude a pull request from an issue listing). A
+# lookup that fails — network, scope, a deleted item — defaults to "issue":
+# the resulting `gh issue view` call on an actual pull-request number fails
+# closed with no state, never a false "outlived" (the same fail-safe
+# direction `lib/issue-prefetch.sh`'s own `issue_blocked_by_ref` takes).
+_pager_footer_item_kind() {
+  local repo="$1" num="$2" kind
+  kind="$("${PAGER_GH:-gh}" api "repos/$repo/issues/$num" \
+    --jq 'if has("pull_request") then "pr" else "issue" end' 2>/dev/null)"
+  [[ "$kind" == "pr" ]] && printf 'pr' || printf 'issue'
 }
 
 # pager_eval_page_outlived_item FLEET_NODES_JSON UNION_LOG_FILE
