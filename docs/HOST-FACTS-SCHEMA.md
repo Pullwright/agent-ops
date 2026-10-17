@@ -172,7 +172,7 @@ materialised, plus itself:
 | `viewer_probe.<node>.ok` | boolean | Whether the fetch of that node's own dashboard `data.js` succeeded and parsed as JSON. |
 | `viewer_probe.<node>.bytes` | integer \| null | The response body's size, `null` when nothing was fetched at all. A body that arrived but would not parse reads its own size here alongside `ok: false` — the size is a real measurement either way, and "it answered, with 40 KB of the wrong thing" is a different fault from "it did not answer". |
 | `viewer_probe.<node>.seconds` | number \| null | Wall time the fetch took, `null` on any `ok: false` — a timing for a fetch that did not deliver usable JSON would read like a healthy latency figure in any consumer that averaged it. |
-| `viewer_probe.<node>.reason` | string \| null | Why `ok` is `false` — a timeout, a non-200 status, a body that did not parse — `null` when `ok` is `true`. |
+| `viewer_probe.<node>.reason` | string \| null | Why `ok` is `false` — a connection failure, a timeout, a non-2xx status, a body that did not parse — each tagged with curl's own exit code (and, on a non-2xx response, the HTTP status) so the fault is diagnosable from the digest alone — `null` when `ok` is `true`. |
 
 This is the check agent-ops#1286 exists for: it answers "does `data.js`
 actually arrive, from a vantage that is not the dashboard's own container,"
