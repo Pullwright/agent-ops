@@ -199,6 +199,8 @@ done <<'PATTERNS'
 0	  ... and never the --repo-filtered repos_json	void_config_actioned "$void_json" "$repos_json"
 0	  ... nor the back-pressure-narrowed ordered_repos_json	void_config_actioned "$void_json" "$ordered_repos_json"
 0	the void residue list never travels to jq via argv	--argjson void "$void_json"
+1	issue #2393: subtract_retired_voids is handed repo_slug_aliases_json	subtract_retired_voids "$void_json" "$(void_retired_items "$union_log")" "$repo_slug_aliases_json"
+1	issue #2393: retire_void_items is handed repo_slug_aliases_json	retire_void_items "$void_json" "$void_actioned_json" "$void_retire_after_days" "$now_epoch" "$repo_slug_aliases_json"
 PATTERNS
 
 if (( failures )); then
