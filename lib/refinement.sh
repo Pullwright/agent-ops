@@ -1678,6 +1678,22 @@ _refiner_process_one_verdict() {
                 '{detail: $d}')"
             fi
           fi
+          # agent-ops#2477: a `refined` verdict is exactly what an open
+          # `needs-refinement` block was waiting for, whatever stage
+          # originally recorded it — so clear it in the same pass rather
+          # than leaving it for a human or an Enabler engagement that can
+          # only escalate (`refinement_second_pass_refused` refuses the
+          # Enabler's own `unblocked` verdict here). `blocked_json` is this
+          # cycle's own snapshot, taken before the Refiner ran, so any open
+          # block it carries for this item necessarily predates this
+          # refinement's own timestamp.
+          if jq -e --arg r "$e_repo" --arg i "$e_item" --arg kind "$REFINEMENT_BLOCK_KIND" \
+               'any(.[]?; (.repo // "") == $r and ((.item // "") | tostring) == $i and (.kind // "") == $kind)' \
+               <<<"${blocked_json:-[]}" >/dev/null 2>&1; then
+            log_event "unblocked" "$(jq -nc --arg i "$e_item" --arg r "$e_repo" --arg reason "$e_reason" \
+              '{item: $i, repo: $r, by: "refiner", reason: $reason}')"
+            release_refinement_label "$e_item" "$e_repo"
+          fi
         fi
       fi
       ;;
