@@ -351,6 +351,17 @@ doctor_status_report() {
   fi
 }
 
+# The `--status` line(s) for the credit mix's live lever (issue #2244, D30):
+# every configured provider's effective lanes, built from the one shared
+# object `lib/mix.sh`'s `mix_status_text` also renders for `agent-cycle.sh
+# --mix` itself (requirement 34a) — so a value read here can never disagree
+# with what the lever reports directly, or with `scripts/node-health.sh
+# --metrics`'s own copy of the same object.
+mix_status_report() {
+  printf 'mix:\n'
+  mix_status_text
+}
+
 # run_manage_command — the `--disable`/`--enable`/`--status`/`--clear-limit`/
 # `--kill-merge-autonomy` handling itself, called once from `agent-cycle.sh`
 # in place of the inline block it replaces (#771). Returns without doing
@@ -374,6 +385,7 @@ if [[ -n "$MANAGE_ACTION" ]]; then
       fleet_status_report
       limit_status_report
       merge_autonomy_status_report
+      mix_status_report
       stage_health_status_report
       decisions_status_report
       overlap_status_report
@@ -704,6 +716,68 @@ if [[ -n "$MANAGE_ACTION" ]]; then
         notify_post_cycle "fleet-standdown-end" "standdown:merge-autonomy-kill" \
           "Merge-autonomy kill switch cleared" "" "" "cleared by hand"
       fi
+      refresh_dashboard
+      exit 0
+      ;;
+    mix)
+      # No arguments at all: print the effective mix every provider is
+      # running under right now — the same report `--status` gives, read
+      # through the identical `mix_status_text` (requirement 34a).
+      if (( ${#MIX_ARGS[@]} == 0 )); then
+        mix_status_text
+        exit 0
+      fi
+      mix_provider="${MIX_ARGS[0]}"
+      if [[ "$mix_provider" == --* ]]; then
+        echo "agent-cycle: --mix needs a provider name first (got \"$mix_provider\")" >&2
+        exit 64
+      fi
+      mix_rest=("${MIX_ARGS[@]:1}")
+      if [[ -z "$state_repo" ]]; then
+        echo "agent-cycle: no state_repo configured — --mix has nothing to publish to (single-node install; config.json's providers.$mix_provider.lanes already governs)" >&2
+        exit 64
+      fi
+      by="$(toggle_actor) pid $$"
+      if (( ${#mix_rest[@]} == 1 )) && [[ "${mix_rest[0]}" == "--reset" ]]; then
+        mix_outcome="$(mix_reset "$state_repo" "$state_dir" "$mix_provider" "$by")"
+        case "$mix_outcome" in
+          absent)
+            printf 'agent-cycle: no live mix entry for %s — config.json already governs\n' "$mix_provider"
+            ;;
+          deleted)
+            printf 'agent-cycle: mix reset for %s — fleet/mix.json cleared (it was the last provider on it)\n' "$mix_provider"
+            ;;
+          written)
+            printf 'agent-cycle: mix reset for %s — other providers'"'"' entries on fleet/mix.json are left standing\n' "$mix_provider"
+            ;;
+          *)
+            echo "agent-cycle: WARNING — could not reset the mix for $mix_provider (state repo unreachable?)" >&2
+            exit 1
+            ;;
+        esac
+        log_event "mix-reset" "$(jq -nc --arg p "$mix_provider" --arg by "$by" --arg outcome "$mix_outcome" \
+          '{provider: $p, by: $by, actor: $by, outcome: $outcome}')"
+        refresh_dashboard
+        exit 0
+      fi
+      for mix_tok in "${mix_rest[@]}"; do
+        if [[ "$mix_tok" == "--reset" ]]; then
+          echo "agent-cycle: --mix: --reset must be the only argument after the provider name" >&2
+          exit 64
+        fi
+      done
+      if (( ${#mix_rest[@]} == 0 )); then
+        echo "agent-cycle: --mix $mix_provider needs at least one <lane>=<weight>, <lane>.enabled=true or <lane>.balance_usd=<n>, or --reset" >&2
+        exit 64
+      fi
+      mix_overlay="$(mix_build_overlay "$mix_provider" "${mix_rest[@]}")" || exit $?
+      if ! mix_write "$state_repo" "$state_dir" "$mix_provider" "$mix_overlay" "$by" >/dev/null; then
+        echo "agent-cycle: WARNING — could not publish the mix for $mix_provider (state repo unreachable?)" >&2
+        exit 1
+      fi
+      printf 'agent-cycle: mix set for %s: %s\n' "$mix_provider" "$mix_overlay"
+      log_event "mix-set" "$(jq -nc --arg p "$mix_provider" --argjson overlay "$mix_overlay" --arg by "$by" \
+        '{provider: $p, overlay: $overlay, by: $by, actor: $by}')"
       refresh_dashboard
       exit 0
       ;;

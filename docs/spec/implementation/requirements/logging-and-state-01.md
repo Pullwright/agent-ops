@@ -680,6 +680,18 @@
     a dashboard that quietly disagrees with the Co-Ordinator about what is
     blocked is worse than no dashboard: it is where you would look to find
     this class of bug, and it would show you the wrong answer confidently.
+
+    The same discipline governs every other value more than one reader must
+    agree on, and this requirement's own number is cited throughout this
+    specification and its code wherever one applies, not only where the value
+    is requirement 34's own: the fleet switch (requirement 2.3/2.3a, read
+    identically by both pipelines, `--status` and the dashboard), the
+    merge-autonomy kill switch (requirement 2.3b), and the credit mix's
+    effective lanes (requirement 2.3e) — `agent-cycle.sh --status` and
+    `scripts/node-health.sh --metrics` render the one object `lib/mix.sh`
+    builds, rather than each deriving its own answer from `PROVIDER_LANES`
+    and `fleet/mix.json`. A second computation of any of these is the same
+    fault this requirement describes, wearing a different value.
 34c. Void semantics: an item is void iff the most recent `item-void` /
     `unvoided` event *for that item* is `item-void`. The rule is requirement
     34's shape over a different pair of events, and all four of its details

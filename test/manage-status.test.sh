@@ -272,6 +272,112 @@ assert_eq "current_limit_record: a union that could not be built leaves the flag
 assert_eq "…and reports it under its own site" "current_limit_record:union" "$(cat "$guard_calls")"
 unset -f guard_warn fleet_flag_fetch
 
+# --- mix_status_report (issue #2244, D30): the credit mix's own --status
+# section, built from the identical `mix_fleet_status_json`/`mix_status_text`
+# (lib/mix.sh) node-health.sh --metrics also renders from (requirement 34a).
+# Needs the provider seam and the fleet-flag machinery mix.sh is built on,
+# neither of which the sections above needed — sourced here, immediately
+# before the one section that does.
+# shellcheck source=lib/model-id.sh
+. "$SCRIPT_DIR/lib/model-id.sh"
+# shellcheck source=lib/toggle.sh
+. "$SCRIPT_DIR/lib/toggle.sh"
+# shellcheck source=lib/substrate-claude-code.sh
+. "$SCRIPT_DIR/lib/substrate-claude-code.sh"
+# shellcheck source=lib/mix.sh
+. "$SCRIPT_DIR/lib/mix.sh"
+
+mix_gh_backing="$tmp_dir/mix-fleet-remote"
+mkdir -p "$mix_gh_backing"
+mix_gh_stub="$tmp_dir/mix-gh-stub"
+cat > "$mix_gh_stub" <<'STUB'
+#!/usr/bin/env bash
+set -uo pipefail
+if [[ "${GH_STUB_MODE:-ok}" == "down" ]]; then
+  echo "dial tcp: could not resolve host github.com" >&2
+  exit 1
+fi
+backing="${GH_STUB_BACKING:?}"
+method=GET path="" jq_expr=""
+declare -A f=()
+args=("$@"); i=0
+while (( i < ${#args[@]} )); do
+  a="${args[$i]}"
+  case "$a" in
+    -X)      i=$((i+1)); method="${args[$i]}" ;;
+    --jq)    i=$((i+1)); jq_expr="${args[$i]}" ;;
+    -f)      i=$((i+1)); kv="${args[$i]}"; f["${kv%%=*}"]="${kv#*=}" ;;
+    repos/*) path="$a" ;;
+  esac
+  i=$((i+1))
+done
+if [[ "$path" == repos/*/* && "$path" != */contents/* ]]; then
+  echo '{}'
+  exit 0
+fi
+rel="${path#repos/*/*/contents/}"; rel="${rel%%\?*}"
+file="$backing/$rel"
+sha_of() { sha1sum "$1" | awk '{print $1}'; }
+case "$method" in
+  GET)
+    [[ -f "$file" ]] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
+    if [[ "$jq_expr" == ".sha" ]]; then sha_of "$file"; exit 0; fi
+    jq -n --arg c "$(base64 -w0 < "$file")" --arg s "$(sha_of "$file")" '{content: $c, sha: $s}'
+    ;;
+  PUT)
+    if [[ -f "$file" ]]; then
+      [[ "${f[sha]:-}" == "$(sha_of "$file")" ]] || { echo "gh: sha mismatch (HTTP 409)" >&2; exit 1; }
+    elif [[ -n "${f[sha]:-}" ]]; then
+      echo "gh: sha given for a missing file (HTTP 422)" >&2; exit 1
+    fi
+    mkdir -p "$(dirname "$file")"
+    printf '%s' "${f[content]:?}" | base64 -d > "$file"
+    ;;
+esac
+STUB
+chmod +x "$mix_gh_stub"
+export TOGGLE_GH="$mix_gh_stub" GH_STUB_BACKING="$mix_gh_backing"
+mix_slug="example/agent-ops-state"
+mix_fs="$tmp_dir/mix-fleet-state"
+mkdir -p "$mix_fs"
+
+providers_load "{}"
+
+# Case 1: config alone governs (no live flag, and no cache yet either) —
+# every field's source reads "config".
+providers_apply_mix "$mix_slug" "$mix_fs"
+out="$(mix_status_report)"
+assert_contains "mix: reports the config-only case" "mix:" "$out"
+assert_contains "…weight sourced from config" "anthropic api: weight=1 (config)" "$out"
+assert_contains "…subscription weight also from config" "anthropic subscription: weight=0 (config)" "$out"
+
+# Case 2: a live `--mix` sets the fleet flag; --status must report both the
+# new weights *and* which side supplied them, with the flag's own ts/by.
+mix_overlay="$(mix_build_overlay anthropic "api=70" "subscription=30" "subscription.enabled=true")"
+mix_write "$mix_slug" "$mix_fs" anthropic "$mix_overlay" "operator pid 1" "operator" >/dev/null
+providers_apply_mix "$mix_slug" "$mix_fs"
+out="$(mix_status_report)"
+assert_contains "mix: reports the live flag's api weight" "anthropic api: weight=70 (fleet/mix.json, set" "$out"
+assert_contains "…naming the actor who set it" "by operator pid 1)" "$out"
+assert_contains "mix: reports the live flag's subscription weight and enabled" \
+  "anthropic subscription: weight=30 (fleet/mix.json" "$out"
+assert_contains "…and enabled sourced from the flag too" "enabled=yes (fleet/mix.json" "$out"
+
+# Case 3: the flag is unreadable (state repo down, no cache) — --status must
+# fall back to reporting config, exactly as case 1, never the stale fleet
+# values from case 2 above (a fresh fleet-state dir makes sure of that).
+mix_fs_fresh="$tmp_dir/mix-fleet-state-fresh"
+mkdir -p "$mix_fs_fresh"
+# A fresh providers_load, the same reset a brand-new process's own cycle
+# start performs — PROVIDER_LANES still carried case 2's overlaid 70/30 from
+# the mutation above, and this is what a real unreadable-flag process never
+# has to undo: it starts from config every time.
+providers_load "{}"
+GH_STUB_MODE=down providers_apply_mix "$mix_slug" "$mix_fs_fresh"
+out="$(GH_STUB_MODE=down mix_status_report)"
+assert_contains "mix: an unreadable flag falls back to config" "anthropic api: weight=1 (config)" "$out"
+assert_contains "…for every field, not just weight" "enabled=default (config)" "$out"
+
 if (( failures > 0 )); then
   echo "$failures failure(s)"
   exit 1

@@ -238,6 +238,7 @@ shares that record's own fields.
 | `cycles.log_selections` | integer | Count of `selection` events in this node's own retained `log.jsonl` — this node's log only, never the fleet union, so nothing here double-counts against a reader that also unions every peer. |
 | `cycles.log_attempts_failed` | integer | Count of `attempt-failed` events, same source and scope as `log_selections`. |
 | `containers` | object \| null | `host-facts/<node>.json`'s own `budget` section (issue #606's collector) where it exists, `null` otherwise — reported where produced, never fabricated by this endpoint. |
+| `mix` | object | The credit mix's effective lanes (issue #2244, D30), keyed by provider name — `{api: {weight, enabled, present, state}, subscription: {...}, source?}` per provider. `enabled`/`present` are `true`/`false`/`null` (`enabled: null` means D4's own unset default applies; `present: null` means this node's substrate ships no presence check at all); `state` is `"open"`/`"closed"`. `source`, present only when `fleet/mix.json` names this provider, carries `{ts, by}` plus which side — `"config"` or `"fleet"` — supplied each of the two lanes' `weight`/`enabled`/`balance` fields. The identical object `agent-cycle.sh --status`'s own `mix:` section renders from (`lib/mix.sh`'s `mix_fleet_status_json`, requirement 34a). |
 
 Additive-only in practice so far (no field has ever been renamed, removed, or
 changed unit or type) — governed by the same policy as every other object

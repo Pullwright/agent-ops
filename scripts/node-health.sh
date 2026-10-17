@@ -7,13 +7,27 @@
 # usage: node-health.sh [--live|--ready|--health|--metrics] [--json]
 #                        [--config FILE] [--state-dir DIR] [--peers-dir DIR]
 #
-# Read-only throughout: touches no lock, writes no event, publishes nothing,
-# and makes no network call except the single cached `/rate_limit` read
-# `--ready` needs for the GitHub budget (see `_node_health_rate_limit`
-# below). Never triggers a state-sync push, a gather, a dashboard publish or
-# a `claude` invocation — these compute on demand from what cron already
-# wrote, so an orchestrator polling this every few seconds costs nothing
-# beyond that one cached forge read.
+# Read-only throughout: touches no lock, writes no event, publishes nothing.
+# Never triggers a state-sync push, a gather, a dashboard publish or a
+# `claude` invocation — every verdict computes on demand from what cron
+# already wrote.
+#
+# Exactly two forge reads exist, each confined to the one mode that reports
+# it (requirement 60a):
+#
+#   --ready   the single *cached* `/rate_limit` read it needs for the GitHub
+#             budget — see `_node_health_rate_limit` below. TTL-bounded by
+#             `node_health_forge_check_cache_seconds` (requirement 58a), so
+#             polling every few seconds costs nothing beyond it.
+#   --metrics one `fleet/mix.json` contents read, through
+#             `providers_apply_mix`, for the credit mix's own `mix` field
+#             (requirement 2.3e) — and the `state_dir/fleet-cache/mix.json`
+#             the whole fleet-flag family shares as a side effect. Skipped
+#             entirely where no `state_repo` is configured. Unlike
+#             `--ready`'s, this one is *not* TTL-cached: `fleet_flag_fetch`
+#             memoises per pid, so one invocation is one read and a
+#             collector polling `/metrics` pays one contents call per
+#             scrape (#2495 weighs routing it through 58a's cache instead).
 #
 # `--json` is accepted for clarity in scripts that spell it out explicitly;
 # output is always the one compact JSON object either way (this CLI has no
@@ -31,6 +45,20 @@ SCHEMA_FILE="$SCRIPT_DIR/config.schema.json"
 . "$SCRIPT_DIR/lib/fleet.sh"
 # shellcheck source=lib/toggle.sh
 . "$SCRIPT_DIR/lib/toggle.sh"
+# shellcheck source=lib/model-id.sh
+# providers_load/PROVIDER_LANES/PROVIDER_SUBSTRATE — the credit mix's
+# `--metrics` field (issue #2244, D30) below needs the same provider seam
+# every other reader of PROVIDER_LANES does.
+. "$SCRIPT_DIR/lib/model-id.sh"
+# shellcheck source=lib/substrate-claude-code.sh
+# Only its own `substrate_claude_code_lane_present` (a pure env/file check,
+# no `claude` invocation) — never lib/stage-run.sh itself, which this script
+# stays free of by design (see the header: read-only, no claude invocation).
+. "$SCRIPT_DIR/lib/substrate-claude-code.sh"
+# shellcheck source=lib/substrate-grok-build.sh
+. "$SCRIPT_DIR/lib/substrate-grok-build.sh"
+# shellcheck source=lib/mix.sh
+. "$SCRIPT_DIR/lib/mix.sh"
 # The tolerant raw-line event stream `limit_union_record` folds (#2037);
 # lib/limit-detect.sh sources it too.
 # shellcheck source=lib/union-stream.sh
@@ -61,8 +89,9 @@ Read-only. Prints one compact JSON object on stdout and exits:
               (outbound) and running the version the installation intends
               (converged). exit 0 ok, 1 fail, 2 unknown.
   --metrics   node identity, version, all three verdicts and their
-              components, and cycle/container counters, documented under
-              docs/METERING-SCHEMA.md's stability policy.
+              components, cycle/container counters, and the credit mix's
+              effective lanes, documented under docs/METERING-SCHEMA.md's
+              stability policy.
               exit 0 always (not a verdict).
 
   --json      accepted for clarity; output is always JSON.
@@ -345,12 +374,25 @@ cmd_health() {
 # --- metrics ----------------------------------------------------------------
 
 cmd_metrics() {
-  local version heartbeat live ready health containers
+  local version heartbeat live ready health containers mix
   version="$(agent_ops_version "$SCRIPT_DIR")"
   live="$(cmd_live)"
   ready="$(cmd_ready)"
   health="$(cmd_health)"
   heartbeat="$(_node_health_heartbeat)"
+
+  # The credit mix's live lever (issue #2244, D30): the provider seam and its
+  # fleet-flag overlay, loaded here rather than unconditionally at startup —
+  # the one contents read providers_apply_mix can make must stay confined to
+  # the mode that actually reports it, never paid by --live/--ready/--health
+  # (the header's own forge-read table, requirement 60a). It is uncached
+  # across processes, so a `/metrics` poller pays it per scrape — the cost
+  # #2495 weighs against 58a's own TTL cache. mix_fleet_status_json
+  # (lib/mix.sh) is the identical object --status renders from
+  # (requirement 34a).
+  providers_load "$(jq -c '.providers // {}' <<<"$DEFAULTED_CONFIG" 2>/dev/null)"
+  providers_apply_mix "$(cfg '.state_repo')" "$state_dir" || true
+  mix="$(mix_fleet_status_json)"
 
   # Cycle counters over this node's own retained log only (never the fleet
   # union — metrics answers for this node, and folding peers in here would
@@ -373,11 +415,11 @@ cmd_metrics() {
     --argjson version "$version" \
     --argjson live "$live" --argjson ready "$ready" --argjson health "$health" \
     --argjson selections "${selections:-0}" --argjson attempts_failed "${attempts_failed:-0}" \
-    --argjson containers "$containers" \
+    --argjson containers "$containers" --argjson mix "$mix" \
     '{node:$node, role:$role, ts:$ts, version:$version,
       live:$live, ready:$ready, health:$health,
       cycles:{log_selections:$selections, log_attempts_failed:$attempts_failed},
-      containers:$containers}'
+      containers:$containers, mix:$mix}'
 }
 
 # --- dispatch ---------------------------------------------------------------

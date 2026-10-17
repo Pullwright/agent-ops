@@ -102,14 +102,17 @@ extract_signal_block() {
 # prompt delivery this test's own sanity check below looks for moved there),
 # so it is lifted too — and so, since issue #2134, is
 # lib/substrate-grok-build.sh, the second adapter lib/stage-run.sh sources the
-# same way; `assemble_and_signal` additionally drops a real copy of each
-# adapter file beside the assembled script, because the embedded
-# `. "$(dirname "${BASH_SOURCE[0]}")/substrate-<name>.sh"` lines resolve
+# same way, and, since issue #2244, is lib/lane.sh (lane_effective_open,
+# `stage_lane_draw`'s own open/closed rule); `assemble_and_signal`
+# additionally drops a real copy of each of the three beside the assembled
+# script, because the embedded
+# `. "$(dirname "${BASH_SOURCE[0]}")/<name>.sh"` lines resolve
 # against the assembled script's own path at runtime, not against this
 # repository's lib/.
 stage_runner_lib() {
   cat "$SCRIPT_DIR/lib/stage-boundary.sh" "$SCRIPT_DIR/lib/stage-run.sh" \
-    "$SCRIPT_DIR/lib/substrate-claude-code.sh" "$SCRIPT_DIR/lib/substrate-grok-build.sh"
+    "$SCRIPT_DIR/lib/substrate-claude-code.sh" "$SCRIPT_DIR/lib/substrate-grok-build.sh" \
+    "$SCRIPT_DIR/lib/lane.sh"
 }
 
 # assemble_and_signal NAME CAPTURE_DIR PRELUDE MAINLINE SIGNAL_BLOCK STAGE_FN
@@ -136,6 +139,7 @@ assemble_and_signal() {
   chmod +x "$mini"
   cp "$SCRIPT_DIR/lib/substrate-claude-code.sh" "$capture/substrate-claude-code.sh"
   cp "$SCRIPT_DIR/lib/substrate-grok-build.sh" "$capture/substrate-grok-build.sh"
+  cp "$SCRIPT_DIR/lib/lane.sh" "$capture/lane.sh"
 
   "$mini" &
   pid=$!
