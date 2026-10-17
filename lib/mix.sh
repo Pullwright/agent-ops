@@ -5,8 +5,9 @@
 # the fleet runs, through `fleet/mix.json`, outranking `config.json`'s own
 # `providers.<name>.lanes` for the keys it names.
 #
-# `fleet/mix.json` is a fourth member of `lib/toggle.sh`'s fleet-flag family
-# (`disabled`, `limit`, `merge-autonomy-kill`), reusing its `fleet_flag_write`/
+# `fleet/mix.json` is a fifth member of `lib/toggle.sh`'s fleet-flag family
+# (`disabled`, `limit`, `merge-autonomy-kill`, `merge-budget-freeze-<slug>`),
+# reusing its `fleet_flag_write`/
 # `fleet_flag_fetch`/`fleet_flag_delete` outright under its own flag name
 # `mix`, with the same `by`/`actor`/`ts` provenance `fleet/disabled.json`
 # carries. Its own shape:

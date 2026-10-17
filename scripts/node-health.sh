@@ -7,13 +7,27 @@
 # usage: node-health.sh [--live|--ready|--health|--metrics] [--json]
 #                        [--config FILE] [--state-dir DIR] [--peers-dir DIR]
 #
-# Read-only throughout: touches no lock, writes no event, publishes nothing,
-# and makes no network call except the single cached `/rate_limit` read
-# `--ready` needs for the GitHub budget (see `_node_health_rate_limit`
-# below). Never triggers a state-sync push, a gather, a dashboard publish or
-# a `claude` invocation — these compute on demand from what cron already
-# wrote, so an orchestrator polling this every few seconds costs nothing
-# beyond that one cached forge read.
+# Read-only throughout: touches no lock, writes no event, publishes nothing.
+# Never triggers a state-sync push, a gather, a dashboard publish or a
+# `claude` invocation — every verdict computes on demand from what cron
+# already wrote.
+#
+# Exactly two forge reads exist, each confined to the one mode that reports
+# it (requirement 60a):
+#
+#   --ready   the single *cached* `/rate_limit` read it needs for the GitHub
+#             budget — see `_node_health_rate_limit` below. TTL-bounded by
+#             `node_health_forge_check_cache_seconds` (requirement 58a), so
+#             polling every few seconds costs nothing beyond it.
+#   --metrics one `fleet/mix.json` contents read, through
+#             `providers_apply_mix`, for the credit mix's own `mix` field
+#             (requirement 2.3e) — and the `state_dir/fleet-cache/mix.json`
+#             the whole fleet-flag family shares as a side effect. Skipped
+#             entirely where no `state_repo` is configured. Unlike
+#             `--ready`'s, this one is *not* TTL-cached: `fleet_flag_fetch`
+#             memoises per pid, so one invocation is one read and a
+#             collector polling `/metrics` pays one contents call per
+#             scrape (#2495 weighs routing it through 58a's cache instead).
 #
 # `--json` is accepted for clarity in scripts that spell it out explicitly;
 # output is always the one compact JSON object either way (this CLI has no
@@ -369,11 +383,13 @@ cmd_metrics() {
 
   # The credit mix's live lever (issue #2244, D30): the provider seam and its
   # fleet-flag overlay, loaded here rather than unconditionally at startup —
-  # the one network call providers_apply_mix can make must stay confined to
+  # the one contents read providers_apply_mix can make must stay confined to
   # the mode that actually reports it, never paid by --live/--ready/--health
-  # (the header's own "costs nothing beyond that one cached forge read").
-  # mix_fleet_status_json (lib/mix.sh) is the identical object --status
-  # renders from (requirement 34a).
+  # (the header's own forge-read table, requirement 60a). It is uncached
+  # across processes, so a `/metrics` poller pays it per scrape — the cost
+  # #2495 weighs against 58a's own TTL cache. mix_fleet_status_json
+  # (lib/mix.sh) is the identical object --status renders from
+  # (requirement 34a).
   providers_load "$(jq -c '.providers // {}' <<<"$DEFAULTED_CONFIG" 2>/dev/null)"
   providers_apply_mix "$(cfg '.state_repo')" "$state_dir" || true
   mix="$(mix_fleet_status_json)"

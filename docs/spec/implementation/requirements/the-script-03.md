@@ -125,8 +125,9 @@
    This flag's own mechanism — `fleet_flag_write`'s compare-and-set,
    `fleet_flag_fetch`'s three failure directions, the `by`/`actor`/`ts`
    provenance — is generic rather than specific to stopping cycles: requirement
-   2.1's usage-limit stand-down, requirement 2.3b's merge-autonomy kill switch
-   and requirement 2.3e's credit-mix lever each reuse it outright, under their
+   2.1's usage-limit stand-down, requirement 2.3b's merge-autonomy kill
+   switch, requirement 2.3c's per-repository merge-budget freeze and
+   requirement 2.3e's credit-mix lever each reuse it outright, under their
    own flag name, rather than growing their own copy of it.
 2.3b. **The merge-autonomy kill switch** (D18,
    `docs/reviews/2026-08-14-autonomy-investigation.md` §6; `lib/merge-autonomy.sh`).
@@ -385,10 +386,10 @@
    keys it names. Built on the same generic mechanism requirement 2.3a's own
    fleet switch is (`fleet_flag_write`'s compare-and-set, `fleet_flag_fetch`,
    `lib/toggle.sh`), under its own name, carrying the same `by`/`actor`/`ts`
-   provenance `fleet/disabled.json` does — the fourth flag to reuse that
-   machinery outright, after requirement 2.3a's own switch, requirement
-   2.1's usage-limit stand-down and requirement 2.3b's merge-autonomy kill
-   switch.
+   provenance `fleet/disabled.json` does — the fifth flag built on that
+   machinery, after requirement 2.3a's own switch, requirement 2.1's
+   usage-limit stand-down, requirement 2.3b's merge-autonomy kill switch and
+   requirement 2.3c's per-repository merge-budget freeze.
 
    Unlike every flag before it, this lever carries **openings and preferences
    only** — a lane's weight, `enabled: true`, and a restated balance — and
