@@ -16,6 +16,15 @@
 
 set -euo pipefail
 
+# Marks this process tree as the scheduler, never forgeable by Compose or a
+# crontab: lib/claim.sh's and scripts/state-sync.sh's own fallback-name
+# refusal keys on this being set rather than on NODE_NAME, because a `docker
+# exec` into a live node container inherits NODE_NAME from compose.yaml but
+# never a variable a script only exports transiently in its own process tree
+# (agent-ops#2449). Exported before anything below can reach a claim or a
+# push.
+export AGENT_OPS_SCHEDULER_RUN=1
+
 # --- PATH: cron's environment is minimal; make sure claude, gh, git, jq resolve. ---
 # Appended, not prepended: an already-resolvable PATH entry — a caller's own
 # shim, e.g. test/toggle.test.sh's offline-e2e stub_bin — must win over these

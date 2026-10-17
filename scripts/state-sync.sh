@@ -245,18 +245,24 @@ mirror="${STATE_SYNC_MIRROR:-$workspace_root/.agent-ops-state}"
 # meaningless to every peer reading it back — must never land in shared
 # state (agent-ops#2421: a test run directly inside a node container with no
 # NODE_NAME set published its throwaway state as a new fleet node, which
-# paged forever). The real scheduler always has NODE_NAME set — compose.yaml
-# defaults it to "unnamed", never empty — so this can only fire from
-# something invoked directly inside the image with no NODE_NAME at all: a
-# stray manual run, or an unhermetic test. STATE_SYNC_CONTAINER_SENTINEL
+# paged forever). Keying the refusal on NODE_NAME alone missed the
+# neighbouring shape where a `docker exec` into a *live* node container
+# inherits NODE_NAME from compose.yaml, sailing through unrefused while
+# pushing a test's throwaway state over the real node's own branch
+# (agent-ops#2449). The refusal therefore keys on AGENT_OPS_SCHEDULER_RUN,
+# exported only by the cycle entry points' own top (agent-cycle.sh,
+# review-cycle.sh, monitor-cycle.sh) before any code path that can reach a
+# push — never by Compose, the crontab template, or a test harness's
+# container, so a `docker exec` or a bare invocation inside the image never
+# carries it, whatever NODE_NAME it inherited. STATE_SYNC_CONTAINER_SENTINEL
 # overrides the sentinel path for the test suite, the same seam
 # lib/compose-drift.sh and scripts/cgroup-parent-setup.sh use for the same
 # question. Fetch is unaffected: it only reads node_name to exclude this
 # node's own branch from the peers it materialises, never to publish one.
 refuse_fallback_node_name() {
   local sentinel="${STATE_SYNC_CONTAINER_SENTINEL:-/.dockerenv}"
-  if [[ -e "$sentinel" && -z "${NODE_NAME:-}" ]]; then
-    say "WARNING: refusing to push — NODE_NAME is unset inside the node image; publishing under the hostname ($node_name) would create a fleet node nobody configured"
+  if [[ -e "$sentinel" && -z "${AGENT_OPS_SCHEDULER_RUN:-}" ]]; then
+    say "WARNING: refusing to push — not invoked by the scheduler inside the node image; publishing under the hostname ($node_name) would create a fleet node nobody configured"
     return 1
   fi
   return 0

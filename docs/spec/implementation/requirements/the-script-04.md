@@ -304,14 +304,19 @@
    a branch, so pushes cannot contend and nothing arbitrates them. A push
    refuses outright, with a warning and no git call at all, when the
    `/.dockerenv` sentinel (`lib/compose-drift.sh`'s own, overridable as
-   `STATE_SYNC_CONTAINER_SENTINEL` for tests) is present and `NODE_NAME` is
-   unset: every scheduled process is handed the variable by Compose (it
-   defaults the default to `unnamed` rather than leaving it empty), so this
-   can only mean something was invoked directly inside the image with no
-   node identity of its own — a stray manual run, or an unhermetic test
-   (agent-ops#2421, where this published a fleet node under the container's
-   own hostname that no one could later act on). `lib/claim.sh`'s own branch
-   and file claims refuse the same way, on the same sentinel
+   `STATE_SYNC_CONTAINER_SENTINEL` for tests) is present and
+   `AGENT_OPS_SCHEDULER_RUN` is unset: `agent-cycle.sh`, `review-cycle.sh`
+   and `monitor-cycle.sh` each export that marker, unconditionally, before
+   any code path that can reach a push, and nothing else ever sets it — not
+   Compose, not the crontab template, not a test harness's container — so
+   its absence can only mean something was invoked directly inside the
+   image with no scheduler of its own: a stray manual run, an unhermetic
+   test, or a `docker exec` into a live node container, which inherits
+   `NODE_NAME` from Compose but never this marker (agent-ops#2421,
+   agent-ops#2449 — the first published a fleet node under the container's
+   own hostname that no one could later act on, the second a test's
+   throwaway state over a live node's own branch). `lib/claim.sh`'s own
+   branch and file claims refuse the same way, on the same sentinel
    (`CLAIM_CONTAINER_SENTINEL`), before either writes anything. Each push
    stamps `heartbeat.json` (`{node, role, ts, last_cycle, version, compose,
    compose_reconcile, image, switch, stage_health, mirror, updater}`)

@@ -827,11 +827,17 @@
     order and handing the first successful claim onward (`lib/claim.sh`).
     Inside the image, both kinds of claim below refuse outright — a warning,
     no GitHub call — when the `/.dockerenv` sentinel is present and
-    `NODE_NAME` is unset (`CLAIM_CONTAINER_SENTINEL` overrides it for tests):
-    every scheduled process is handed the variable by Compose, so this can
-    only mean something was invoked directly inside the image with no node
-    identity of its own (agent-ops#2421). The primitive is create-only, so
-    GitHub arbitrates every race:
+    `AGENT_OPS_SCHEDULER_RUN` is unset (`CLAIM_CONTAINER_SENTINEL` overrides
+    the sentinel for tests): `agent-cycle.sh`, `review-cycle.sh` and
+    `monitor-cycle.sh` each export that marker, unconditionally, before any
+    code path that can reach a claim, and nothing else ever sets it — not
+    Compose, not the crontab template, not a test harness's container — so
+    its absence can only mean something was invoked directly inside the
+    image with no scheduler of its own: a stray manual run, an unhermetic
+    test, or a `docker exec` into a live node container, which inherits
+    `NODE_NAME` from Compose but never this marker (agent-ops#2421,
+    agent-ops#2449). The primitive is create-only, so GitHub arbitrates
+    every race:
     - *Branch claims* (every source except the four finishing ones —
       `review-feedback`, `merge-conflicts`, `dequeued` and `abandoned-drafts`
       — plus one exception within `merge-conflicts` itself, below): a REST
