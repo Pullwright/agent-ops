@@ -634,12 +634,23 @@
         `sources` still list it — so a repo that drops `merge-conflicts` (or
         `security`) freezes every void of that shape
         it had already minted, and a repo dropped from `repos` altogether
-        freezes every shape but the closed-object one. An entry is actioned
-        when its repo is absent from the configured repo set (`by:
+        freezes every shape but the closed-object one. Before either test,
+        the void's own `repo` is resolved through `config_repo_slug_aliases`'
+        `{old_slug: current_slug}` map (built from every configured repo's
+        own `previous_slugs`, agent-ops#2064), the same resolution
+        requirement 34i's digest lookup above makes — without it, a void
+        recorded under a slug its repository has since been renamed away
+        from reads as `repo-dropped` forever, even though the repository is
+        still configured, under its current slug (agent-ops#2455). An entry
+        is actioned when the resolved repo is absent from the configured
+        repo set (`by:
         "repo-dropped"`, any shape — nothing in a repo the config does not
         name can be offered by any source), or when its item is shaped like a
-        source's own id and that source is absent from the repo's `sources`
-        (`by: "source-dropped"`). The shape -> source map is the inverse of
+        source's own id and that source is absent from the resolved repo's
+        `sources`
+        (`by: "source-dropped"`); the emitted entry still names the void's
+        own unresolved `repo`, since that is what identifies it among
+        `VOID_JSON`'s own pairs downstream. The shape -> source map is the inverse of
         the repo walk's own gating, one entry per shape — the alert shape
         alone has two, `security` and `code-quality`, because
         `scripts/gather-findings.sh` serves both and either alone keeps its

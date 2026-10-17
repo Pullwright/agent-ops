@@ -289,6 +289,19 @@ void_review_plan_actioned() {
 # waiting and would mint a spurious `source-dropped` for `security`
 # on every back-pressured cycle.
 #
+# A void's own `repo` is resolved through each configured repo's
+# `previous_slugs` (`config_repo_slug_aliases`'s own logic, inlined here
+# rather than called out to, since the two run inside the same jq program)
+# before either lookup below, so a void recorded under a repo's old name is
+# judged against that repo's *current* `sources` list rather than read as
+# naming a repo the config no longer has at all. Without this, every void
+# under a renamed repo's old slug reads as `repo-dropped` forever: the old
+# slug is never a key in `$by_repo`, no matter what the repo is called today
+# (issue #2455). The emitted `{repo, item, by}` entry still reports the
+# void's own original, unresolved `repo` — only the internal lookup is
+# resolved, never what is reported or matched back against `$void_json`'s
+# own pairs downstream.
+#
 # The shape -> source map is the inverse of the repo walk's own gating: each
 # shape is minted by exactly one gather, and that gather runs only for a repo
 # whose `sources` list the entry named here. The alert shape is the one with
@@ -348,15 +361,18 @@ void_config_actioned() {
       else
         ($cfg | map({key: .slug, value: [ (.sources // [])[] | tostring ]})
               | from_entries) as $by_repo
+        | ([ $cfg[] | . as $r | ($r.previous_slugs // [])[] | {key: ., value: $r.slug} ]
+           | from_entries) as $aliases
         | [ $void[]
             | . as $e
             | ($e.repo // "") as $repo
             | ($e.item // "") as $item
             | select($repo != "" and $item != "")
-            | if ($by_repo | has($repo) | not) then
+            | ($aliases[$repo] // $repo) as $resolved
+            | if ($by_repo | has($resolved) | not) then
                 {repo: $repo, item: $item, by: "repo-dropped"}
               else
-                ($by_repo[$repo]) as $srcs
+                ($by_repo[$resolved]) as $srcs
                 | minted_by($item) as $need
                 | select($need != null)
                 | select((($need - $srcs) | length) == ($need | length))
