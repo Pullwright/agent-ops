@@ -106,11 +106,11 @@ GH="${RELEASE_PENDING_GH:-gh}"
 # scripts/sweep-orphan-branches.sh's own sourcing of this file already gives.
 # shellcheck source=lib/tech-debt-file.sh
 . "$SCRIPT_DIR/lib/tech-debt-file.sh"
-# This script never calls a lib/tech-debt-file.sh function, but sourcing it
-# still runs lib/issue-priority.sh's own source-time cache-directory setup
-# (agent-ops#2422) — this script has no other trap and exits from several
-# points below, so the cleanup is armed here, immediately after.
-trap issue_priority_cache_cleanup EXIT
+# This script never calls a lib/tech-debt-file.sh function, and that file's
+# own `issue_priority_apply` sourcing is lazy — deferred to the branch that
+# actually applies a Priority band (agent-ops#2422 fallout) — so sourcing it
+# here never touches lib/issue-priority.sh's own cache directory at all;
+# there is nothing for this script to arm a cleanup trap for.
 
 # config_defaults (issue #197) is the only place a default is written: every
 # key config.schema.json declares a `default` for reads as fully populated

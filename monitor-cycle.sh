@@ -333,10 +333,13 @@ cleanup() {
   local exit_code=$?
   trap '' TERM INT HUP
   [[ -d "$run_dir" ]] && rm -rf "$run_dir"
-  # ISSUE_PRIORITY_CACHE_DIR (lib/issue-priority.sh, sourced via lib/pager.sh
-  # above) is this process's own to remove, the same convention
-  # agent-cycle.sh's own cleanup() follows (agent-ops#2422).
-  issue_priority_cache_cleanup
+  # ISSUE_PRIORITY_CACHE_DIR (lib/issue-priority.sh) is this process's own to
+  # remove, the same convention agent-cycle.sh's own cleanup() follows
+  # (agent-ops#2422) — but lib/pager.sh, sourced above, only sources
+  # lib/issue-priority.sh lazily, on the branch that actually applies a
+  # Priority band, so `issue_priority_cache_cleanup` is often never defined
+  # at all; call it only when it is.
+  declare -F issue_priority_cache_cleanup >/dev/null 2>&1 && issue_priority_cache_cleanup
   # The stage-health verdict for this pipeline (M17), written from day one
   # rather than left for a later issue the way the review pipeline's was
   # (agent-ops#996). Merged into `.stage-health.json` rather than written over
