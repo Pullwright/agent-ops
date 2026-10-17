@@ -605,11 +605,26 @@ Retired automatically by lib/pager.sh (issue #1278)."
 # evidence stays in the closed issue, and agent-ops#1788 is what would let
 # the fault keep being noticed after the demotion.
 # `lock.json` itself is never published (scripts/state-sync.sh excludes
-# it), so "holds no lock" is derived purely from the union log: a node's own
-# newest cycle-start/cycle-end/cycle-skipped event — whichever the union
-# log's own timestamps put last — being a `cycle-start` means that cycle has
-# not yet ended, i.e. the lock is (or very recently was) held, so a long
-# *legitimate* cycle is never mistaken for a missed firing. Staleness itself
+# it), so "holds no lock" is derived purely from the union log: grouping a
+# node's own cycle-start/cycle-end/cycle-skipped events by the `cycle` id
+# they share, any group whose `cycle-start` has no matching `cycle-end`, or
+# any `cycle-skipped` whose own `detail` names a pid holding the lock
+# (`acquire_lock`'s own log format), is evidence the lock is, or very
+# recently was, held — whatever the node's newest *event* happens to be, so
+# a chained continuation's own start/skip/end becoming the node's newest
+# events never hides an older cycle that still holds the lock (agent-ops#1412:
+# a second cycle chaining in while a first one is still running writes
+# exactly that shape, and the first cycle's own unmatched `cycle-start` is
+# what proves the lock is still held once the newest-event reading is
+# dropped). That evidence is trusted only while it is younger than
+# `lock_stale_sec` below (four hours by default, the same default
+# `lock_stale_after` documents elsewhere for how long a legitimate cycle may
+# hold the lock): a container recreation leaves its last `cycle-start`
+# permanently unmatched, and nothing will ever write that cycle an end, so
+# trusting an unmatched start indefinitely would read a stale orphan as a
+# lock held forever and silence a genuine missed firing on exactly the node
+# this invariant exists to catch (agent-ops#1412's own 2026-10-15 follow-up,
+# which found such an orphan on three fleet nodes). Staleness itself
 # is measured from the newer of the node's last `cycle-start` and last
 # `cycle-skipped` — not from `cycle-start` alone — so a cycle that outlasts
 # 2× the interval while its scheduler keeps ticking (and correctly skipping,
@@ -617,15 +632,34 @@ Retired automatically by lib/pager.sh (issue #1278)."
 # threshold either; only silence on both counts does. Evidence embeds each
 # firing node's age and its own recent cycle-duration histogram (up to the
 # last 5 completed cycles, matched by the `cycle` id every cycle-start/
-# cycle-end pair shares) — "file, with the node's cycle-duration histogram"
-# (#1282's own acceptance).
+# cycle-end pair shares, excluding any cycle whose own group also carries a
+# lock-contention `cycle-skipped` — one whose `detail` names the pid holding
+# the lock: such a tick's start/skip/end triple completes in about a second,
+# and counting it alongside real cycles would read as a run of near-zero-
+# minute entries — the all-zero histogram agent-ops#1412 found paging two
+# mid-cycle nodes on 2026-10-15. The narrower `detail` test, rather than
+# "any `cycle-skipped` in the group", is what keeps the real long cycles in:
+# requirement 11a's overrun-slot skips (`reason: "overlap"`, agent-ops#1287)
+# are logged by the long cycle itself, before its own `cycle-end` and so
+# under its own `cycle` id, which means a group-wide exclusion would drop
+# every cycle that outran a schedule slot — precisely the durations this
+# histogram exists to show) — "file, with the
+# node's cycle-duration histogram" (#1282's own acceptance). A firing node
+# whose own last `cycle-start` is unmatched but too old to trust (past the
+# bound above) has that attempt's own age named in the evidence alongside
+# the histogram, rather than silently dropped.
 pager_eval_firing_missed() {
   local fleet_nodes_json="$1" union_log_file="$2"
   local interval_min="${PAGER_EVAL_CYCLE_INTERVAL_MINUTES:-}"
   [[ "$interval_min" =~ ^[0-9]+([.][0-9]+)?$ ]] || { printf '{"firing":false}'; return 0; }
   [[ -f "$union_log_file" ]] || { printf '{"firing":false}'; return 0; }
+  # Override, for tests only: production never sets this, so every real
+  # evaluation uses the four-hour default the header above documents.
+  local lock_stale_sec="${PAGER_EVAL_LOCK_STALE_AFTER_SECONDS:-}"
+  [[ "$lock_stale_sec" =~ ^[0-9]+$ ]] || lock_stale_sec=14400
   jq -c -R -n --argjson nodes "$fleet_nodes_json" --argjson interval "$interval_min" \
-    --argjson now "$(date -u +%s)" "$PAGER_JQ_ROW_PREDICATES"'
+    --argjson now "$(date -u +%s)" --argjson lock_stale_sec "$lock_stale_sec" \
+    "$PAGER_JQ_ROW_PREDICATES"'
     ($nodes | map(select(pager_row_cycling)) | map(.node)) as $active
     | [ inputs | select(length > 0) | (fromjson? // empty)
         | select(.event == "cycle-start" or .event == "cycle-end" or .event == "cycle-skipped")
@@ -635,21 +669,37 @@ pager_eval_firing_missed() {
           | ($node_events | map(select(.event == "cycle-start"))) as $starts
           | if ($starts | length) == 0 then empty
             else
-              ($node_events | last) as $last_event
-              | ($node_events | map(select(.event == "cycle-start" or .event == "cycle-skipped"))
+              ($node_events | map(select(.event == "cycle-start" or .event == "cycle-skipped"))
                  | last) as $last_activity
               | ($last_activity.ts | fromdateiso8601) as $start_epoch
               | (($now - $start_epoch) / 60) as $age_min
-              | ($last_event.event == "cycle-start") as $lock_held
+              | ($node_events | map(select(.event == "cycle-end")) | map(.cycle)) as $ended_cycles
+              | ($node_events | map(select(.event == "cycle-skipped"))) as $skips
+              | ($starts | map(select((.cycle as $c | $ended_cycles | index($c)) | not))) as $unmatched_starts
+              | ($skips | map(select((.detail // "") | test("^lock held by pid [0-9]+"))))
+                 as $live_lock_skips
+              | ( [ $unmatched_starts[].ts, $live_lock_skips[].ts ]
+                  | map($now - (. | fromdateiso8601)) ) as $lock_evidence_ages
+              | ( ($lock_evidence_ages | length) > 0
+                  and ($lock_evidence_ages | min) < $lock_stale_sec ) as $lock_held
               | if ($lock_held | not) and ($age_min > (2 * $interval)) then
                   ( ($node_events | group_by(.cycle)
                      | map(select((map(.event) | index("cycle-start"))
-                                  and (map(.event) | index("cycle-end"))))
+                                  and (map(.event) | index("cycle-end"))
+                                  and ((map(select(.event == "cycle-skipped"
+                                                   and ((.detail // "")
+                                                        | test("^lock held by pid [0-9]+"))))
+                                        | length) == 0)))
                      | map({s: (map(select(.event == "cycle-start")) | .[0].ts),
                             e: (map(select(.event == "cycle-end")) | .[0].ts)})
                      | map((((.e | fromdateiso8601) - (.s | fromdateiso8601)) / 60) | floor)
                      | .[-5:]) as $durations
-                  | {node: $n, age_min: ($age_min | floor), durations: $durations} )
+                  | ( $unmatched_starts | sort_by(.ts) | last ) as $stuck_start
+                  | ( if $stuck_start == null then null
+                      else (($now - ($stuck_start.ts | fromdateiso8601)) / 60 | floor) end
+                    ) as $running_age_min
+                  | {node: $n, age_min: ($age_min | floor), durations: $durations,
+                     running_age_min: $running_age_min} )
                 else empty end
             end
         ] ) as $hits
@@ -657,8 +707,11 @@ pager_eval_firing_missed() {
       else {firing: true, nodes: ($hits | map(.node)),
             evidence: ("newest cycle-start or cycle-skipped older than 2× schedule.cycle_interval_minutes ("
               + ($interval | tostring) + "m) while the heartbeat is fresh and no lock is held, on "
-              + (($hits | map("\(.node) (\(.age_min)m since last cycle-start/cycle-skipped; recent cycle "
-                  + "durations in minutes: "
+              + (($hits | map("\(.node) (\(.age_min)m since last cycle-start/cycle-skipped; "
+                  + (if .running_age_min != null then
+                       "an unmatched cycle-start left running \(.running_age_min)m with no cycle-end logged; "
+                     else "" end)
+                  + "recent cycle durations in minutes: "
                   + (if (.durations | length) == 0 then "none recorded"
                      else (.durations | map(tostring) | join(", ")) end) + ")")) | join("; ")))}
       end
@@ -1748,6 +1801,25 @@ pager_remedy_pr_unreviewed() {
 # exemption fixes the standby that never cycles, this fixes the standby that
 # has just been told to). Omitted, or not a number, falls through to the
 # framework's own `pager_min_firing_minutes` exactly as before.
+#
+# Each registration is followed by its declaration of the event types its
+# EVAL_FN reads from UNION_LOG_FILE (`pager_declare_events`, lib/pager.sh),
+# which is what `_pager_evaluate_one` reduces the union to before the
+# evaluation runs (agent-ops#2429). A key declared with no types reads
+# nothing from the union (it reads the heartbeats, GitHub, or the review
+# union through PAGER_EVAL_REVIEW_UNION_LOG_FILE instead) and gets an empty
+# file. The
+# declaration names every type the EVAL_FN's own program reads and every
+# type a helper it calls reads. `test/union-stream.test.sh` checks the
+# declaration against the program text, and because its checker cannot
+# follow a call, its `pager_program_of` appends the named helpers' bodies
+# (and the two jq definitions they read through) to that text by hand — so
+# a helper added to an invariant later must be added there too, and each
+# is listed in the comment beside its declaration — while
+# `test/pager-invariants.test.sh`'s whole-fixture-against-reduced-fixture
+# comparison is the second net, which catches a type neither body shows. A
+# type missed in the declaration makes the invariant silently see nothing
+# of it.
 pager_register_builtin_invariants() {
   local stale_file_after_minutes="${1:-180}" cycle_interval_minutes="${2:-}"
   local firing_missed_file_after=""
@@ -1756,44 +1828,82 @@ pager_register_builtin_invariants() {
     firing_missed_file_after="$(awk -v i="$cycle_interval_minutes" \
       'BEGIN { v = i + 15; printf "%d", (v == int(v) ? v : int(v) + 1) }')"
   fi
+  # Reads fleet_nodes_json alone.
   pager_register verdict-unanimous pager_eval_verdict_unanimous \
     pipeline-act pager_remedy_verdict_unanimous
+  pager_declare_events verdict-unanimous
+  # Reads GitHub alone (PAGER_EVAL_REPO, lib/pager.sh's documented exception).
   pager_register page-outlived-item pager_eval_page_outlived_item \
     pipeline-act pager_remedy_page_outlived_item
+  pager_declare_events page-outlived-item
   pager_register firing-missed pager_eval_firing_missed owner-only \
     "A node the fleet expects to be cycling appears to have had a firing dropped outright (the union log carries neither a cycle-start nor a cycle-skipped recent enough, and this node's newest cycle event is not an unmatched cycle-start) rather than merely still running a long cycle — a cycle-skipped would itself have proved the scheduler ticked and deferred to a held lock. Check the node's own cron/supercronic logs and crontab directly — on Kubernetes, check for a concurrencyPolicy: Forbid skip. The evidence above carries this node's own recent cycle-duration histogram. A node whose published role is a standby's is never named here: requirement 2.4 stops its ticks before the log, so there is nothing in the union log to judge it by in either direction, and a standby whose scheduler has stopped is invisible until it is promoted (agent-ops#1788). If this page names a node you have just promoted, its first cycle will clear it; if it names one you then demote, the page is closed as cleared, because the fleet has stopped expecting cycles from it." \
     "$firing_missed_file_after"
+  pager_declare_events firing-missed cycle-start cycle-end cycle-skipped
+  # node-stale, updater-stuck and dashboard-unreadable read fleet_nodes_json
+  # alone; review-pipeline-failing reads the review union through
+  # PAGER_EVAL_REVIEW_UNION_LOG_FILE and ignores UNION_LOG_FILE.
   pager_register node-stale pager_eval_node_stale owner-only \
-    "This node has not confirmed a publication into the shared state for over twice node_stale_after_minutes. Confirm directly whether the node (container/host) is still running, and check its own state-sync push logs. Once agent-ops#1279's notification channel lands, this class of page reaches it automatically (notify_events' own default includes \"pager\") — today it is filed only." \
+    "This node has not confirmed a publication into the shared state for over twice node_stale_after_minutes. Confirm directly whether the node (container/host) is still running, and check its own state-sync push logs. If instead the node has left the fleet for good — decommissioned, renamed, or a stray hostname that should never have published (agent-ops#2421) — delete its \`nodes/<node>\` branch on the state repository: fleet membership is any \`nodes/*\` branch, so this page cannot clear on its own until that branch is gone. Once agent-ops#1279's notification channel lands, this class of page reaches it automatically (notify_events' own default includes \"pager\") — today it is filed only." \
     "$stale_file_after_minutes"
+  pager_declare_events node-stale
   pager_register updater-stuck pager_eval_updater_stuck owner-only \
     "A container this node's own updater told to roll has been \"stuck\" for over twice updater_stuck_after_minutes. Check watchtower / the deploy pipeline on this node directly — this may be agent-ops#603's container-name collision, or, on Kubernetes, an ImagePullBackOff or a rollout stuck past progressDeadlineSeconds."
+  pager_declare_events updater-stuck
   pager_register review-pipeline-failing pager_eval_review_pipeline_failing owner-only \
     "The repository-review pipeline (review-cycle.sh) has failed its last several attempts on this node with no successful review-end between. Start with that node's own project-reviewer verdict (agent-ops#996): the dashboard's Review stage health panel, or the review_stage_health field of its heartbeat, which carries the consecutive-failure count and the last attempt's own detail. Then check review-log.jsonl and the Reviewer stage's own logs on this node directly."
+  pager_declare_events review-pipeline-failing
   pager_register dashboard-unreadable pager_eval_dashboard_unreadable owner-only \
     "A viewer fetching this node's data.js (agent-ops#1283's own probe) found it slower than pager_dashboard_fetch_seconds or unparseable — a fact this node cannot observe about itself. Check network/tailnet conditions to this node and the size of its data.js directly."
+  pager_declare_events dashboard-unreadable
   # agent-ops#1281: the selection and ledger class.
   pager_register idle-with-demand pager_eval_idle_with_demand owner-only \
     "A node's own selection/stand-down history shows real demand going unclaimed for several cycles running (agent-ops#1128/#1163/#1165's own class of fleet-wide stand-down and starvation). The evidence above carries this node's own most recent none-selected reason and coordinator-input-fitted detail — the two facts a diagnosis starts from. Check the Co-Ordinator's own verdicts and eligibility gates on this node directly."
+  pager_declare_events idle-with-demand node-state none-selected coordinator-input-fitted
   pager_register fit-ladder-pinned pager_eval_fit_ladder_pinned owner-only \
     "The coordinator input ladder (lib/coordinator-input.sh) has bottomed out at its own tightest rung and is still shedding backlog entries on every fitted cycle for a full day — the eligible backlog has outgrown coordinator_prompt_max_bytes. Either raise the byte budget or reduce the backlog (close stale issues, tighten a repo's own sources) directly."
+  pager_declare_events fit-ladder-pinned coordinator-input-fitted
   pager_register work-order-repaired-rate pager_eval_work_order_repaired_rate owner-only \
     "More than pager_repair_rate_percent of a day's selections needed a work-order-repaired repair (agent-ops#821's own signature: a work order composed from trimmed input). Check the fit report and the trimmed candidates' own sizes directly. Retire this invariant once agent-ops#769's part (b) lands and agent-ops#1156 removes the gate this rate reads."
+  pager_declare_events work-order-repaired-rate selection work-order-repaired
+  # blocked-label-orphaned reads through helpers, whose bodies
+  # test/union-stream.test.sh's `pager_program_of` appends to the program it
+  # checks (a helper added here must be added there too): `blocked_items`
+  # (lib/cycle-state.sh, BLOCKED_ITEMS_EVENTS: attempt-failed, unblocked,
+  # recheck-clean), `refinement_blocked_label_stale` (lib/refinement.sh:
+  # own-label-action), `_pager_blocked_label_candidate_repos` (attempt-failed,
+  # own-label-action) and `refinement_blocked_label_orphaned`
+  # (lib/refinement.sh's `latest_attempt_failed`: attempt-failed).
+  # `blocked_items`'s own fold keeps a non-object line so a torn log aborts
+  # it, but here that abort surfaces only as an empty answer, and no line the
+  # pipelines' `jq -nc` writers or `fleet_logs`' splicing produce parses to a
+  # non-object, so the reduction is safe (lib/union-stream.sh's caveat).
   pager_register blocked-label-orphaned pager_eval_blocked_label_orphaned \
     pipeline-act pager_remedy_blocked_label_orphaned
+  pager_declare_events blocked-label-orphaned attempt-failed unblocked recheck-clean own-label-action
   pager_register claim-unreconciled pager_eval_claim_unreconciled \
     pipeline-act pager_remedy_claim_unreconciled
+  pager_declare_events claim-unreconciled enabler-examined escalated tech-debt-filed
   pager_register gather-claimed-degraded pager_eval_gather_claimed_degraded \
     pipeline-act pager_remedy_gather_claimed_degraded
+  pager_declare_events gather-claimed-degraded guard-degraded
   pager_register escalation-burst pager_eval_escalation_burst owner-only \
     "More than pager_escalation_burst escalations were filed fleet-wide in the trailing 24h, or the same re-flag reason paged the same item twice (agent-ops#933's own signature: a mechanical burst from a handful of unfixed bugs). The evidence above carries the reason histogram — start from whichever reason recurs most."
+  pager_declare_events escalation-burst escalated attempt-failed
   pager_register digest-truncated pager_eval_digest_truncated \
     pipeline-act pager_remedy_digest_truncated
+  pager_declare_events digest-truncated source-state-digest
   # agent-ops#1280: the landing and approval class.
   pager_register landing-never-armed pager_eval_landing_never_armed \
     pipeline-act pager_remedy_landing_never_armed
+  pager_declare_events landing-never-armed landing-armed landing-refused
   pager_register landing-refused-unknown pager_eval_landing_refused_unknown \
     pipeline-act pager_remedy_landing_refused_unknown
+  pager_declare_events landing-refused-unknown landing-refused
+  # pr-unreviewed reads through `_pager_pr_unreviewed_candidates`, whose body
+  # test/union-stream.test.sh's `pager_program_of` appends to the program it
+  # checks: approver-verdict, approver-unreviewed-engaged, warning.
   pager_register pr-unreviewed pager_eval_pr_unreviewed \
     pipeline-act pager_remedy_pr_unreviewed
+  pager_declare_events pr-unreviewed approver-verdict approver-unreviewed-engaged warning
 }

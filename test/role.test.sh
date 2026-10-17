@@ -11,9 +11,18 @@
 # `active` must stand the node down, and a standby tick must leave no trace in
 # state_dir for the next snapshot restore to disagree with.
 #
-# The two end-to-end cases drive the real scripts with a stubbed `claude` and a
-# throwaway HOME, because the guard's placement (before the config is read,
-# after the flags are parsed) is as much the requirement as its logic.
+# The two end-to-end cases drive the real scripts with stubbed `claude`/`gh`
+# binaries and a throwaway HOME, because the guard's placement (before the
+# config is read, after the flags are parsed) is as much the requirement as
+# its logic. Both scripts' own cleanup still runs regardless of where the
+# guard or the disabled-pipeline switch stands a cycle down (agent-ops#2421:
+# a node's heartbeat push and the pager's own tick happen unconditionally at
+# cycle end), so every invocation below is fully sandboxed, not just
+# role-guarded: a throwaway `AGENT_OPS_CONFIG` with `state_repo` blanked out,
+# an explicit `NODE_NAME` (never left to fall back to the host/container's
+# own), the stub directory first on `PATH` rather than appended, and every
+# credential-bearing variable the image sets unset — so a run that reaches
+# past the guard can push nothing and claim nothing on any real remote.
 #
 # No test framework is used (none exists elsewhere in this repo). Run directly:
 #
@@ -103,28 +112,80 @@ assert_contains "an unrecognised value diagnoses itself" "AGENT_OPS_ROLE=activ i
 
 # --- End to end, against the real entry points ---
 #
-# A throwaway HOME makes config.json's ~-relative state_dir land in the temp
-# tree, so "the tick left nothing behind" is an assertion about a directory
-# this test owns. The stub `claude` (and a stub `gh` for review-cycle.sh, whose
-# PATH check runs before the guard) satisfies each script's required-binary
-# check without any risk of a real invocation: if the guard ever let a cycle
-# through, the stub would fail the cycle rather than spend.
+# A throwaway HOME makes config.json's ~-relative state_dir (and
+# workspace_root) land in the temp tree, so "the tick left nothing behind" is
+# an assertion about a directory this test owns. The stub `claude`/`gh`
+# satisfy each script's required-binary check without any risk of a real
+# invocation: if the guard ever let a cycle through, the stub would fail the
+# cycle rather than spend — and every call either stub receives is appended
+# to stub_calls, so a run that should have touched neither can be checked
+# against an empty log rather than trusted on faith.
 fake_home="$tmp_dir/home"
 mkdir -p "$fake_home/.local/bin"
+stub_calls="$tmp_dir/stub-calls.log"
+: > "$stub_calls"
 for stub in claude gh; do
-  printf '#!/bin/sh\necho "%s stub: the role guard should have prevented this" >&2\nexit 1\n' "$stub" \
-    > "$fake_home/.local/bin/$stub"
+  cat > "$fake_home/.local/bin/$stub" <<STUB
+#!/bin/sh
+printf '%s %s\n' "$stub" "\$*" >> "$stub_calls"
+echo "$stub stub: the role guard should have prevented this" >&2
+exit 1
+STUB
   chmod +x "$fake_home/.local/bin/$stub"
 done
 
+# agent-ops#2421: both scripts' own end-of-cycle cleanup (the state-sync
+# heartbeat push, the pager's tick) runs regardless of where the guard or the
+# disabled-pipeline switch stands a cycle down — reaching that far must still
+# be unable to touch anything real. A sandboxed copy of the real config with
+# state_repo blanked out makes every write scripts/state-sync.sh or
+# lib/claim.sh could make a documented no-op (both already no-op silently
+# when state_repo is unset), and an explicit NODE_NAME means neither ever
+# falls back to publishing under this host/container's own hostname — the
+# exact mechanism that published a pseudo-node from inside a live node
+# container. The stub directory goes *first* on PATH, not appended the way
+# agent-cycle.sh/review-cycle.sh's own PATH bootstrap deliberately does it,
+# so a real claude/gh resolvable earlier on the inherited PATH (true inside
+# the node image, where this bug actually surfaced) is never reached either.
+sandbox_config="$tmp_dir/config.json"
+jq '.state_repo = ""' "$SCRIPT_DIR/config.json" > "$sandbox_config"
+sandbox_node_name="role-test-node"
+
+# The sandbox is built once, out here, so the PATH assertion below can
+# interrogate the very environment run_guarded hands the real scripts rather
+# than a PATH it composes for itself — an assertion that prepends the stub
+# directory on its own behalf proves only that `command -v` works, and would
+# go on passing with the prepend stripped out of run_guarded entirely.
+#
+# Every `-u` must precede every `NAME=VALUE` in `env`'s own argument order —
+# GNU env stops parsing options at the first assignment it sees, so
+# `AGENT_OPS_ROLE=standby -u GH_TOKEN` silently treats `-u` as the command to
+# exec rather than an option. Hence two arrays, concatenated in that order.
+guard_unsets=(
+  -u GH_TOKEN -u GITHUB_TOKEN -u GIT_CONFIG_GLOBAL
+  -u PW_GH_TOKEN_BROKER -u PW_GH_DEGRADE_TOKEN
+  -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID
+  -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH
+)
+guard_sandbox=(
+  GIT_CONFIG_NOSYSTEM=1 HOME="$fake_home" NODE_NAME="$sandbox_node_name"
+  AGENT_OPS_CONFIG="$sandbox_config" PATH="$fake_home/.local/bin:$PATH"
+)
+
 run_guarded() {  # run_guarded <role|-> <script> [args…]
   local role="$1" script="$2"; shift 2
+  local -a seam=("${guard_unsets[@]}")
   if [[ "$role" == "-" ]]; then
-    env -u AGENT_OPS_ROLE HOME="$fake_home" "$SCRIPT_DIR/$script" "$@" 2>&1
-  else
-    env AGENT_OPS_ROLE="$role" HOME="$fake_home" "$SCRIPT_DIR/$script" "$@" 2>&1
+    seam+=(-u AGENT_OPS_ROLE)
   fi
+  seam+=("${guard_sandbox[@]}")
+  [[ "$role" == "-" ]] || seam+=(AGENT_OPS_ROLE="$role")
+  env "${seam[@]}" "$SCRIPT_DIR/$script" "$@" 2>&1
 }
+
+assert_eq "the stub gh is first on PATH for every guarded run, never the image's own" \
+  "$fake_home/.local/bin/gh" \
+  "$(env "${guard_unsets[@]}" "${guard_sandbox[@]}" sh -c 'command -v gh')"
 
 out="$(run_guarded - agent-cycle.sh)"; rc=$?
 assert_eq "agent-cycle: no role exits 0" "0" "$rc"
@@ -164,6 +225,24 @@ assert_contains "review-cycle: --dry-run reached the switch" "review-stand-down"
 out="$(run_guarded standby agent-cycle.sh --status)"; rc=$?
 assert_eq "--status works on a standby node" "0" "$rc"
 assert_contains "--status reports the switch" "role.test.sh" "$out"
+
+# agent-ops#2421's own regression: every run above that reached a cycle's own
+# cleanup (the "reaching the switch" and "--once"/"--dry-run bypasses the
+# guard" cases) still ran the state-sync heartbeat push and a pager tick —
+# neither call site may be skipped just because the guard already said no.
+# With state_repo blanked out in the sandboxed config, both are a documented
+# no-op before either ever reaches `git` or `gh`, so the stub log from every
+# invocation above must still be empty: not merely "the stub failed safely",
+# but "the stub was never reached at all". Restoring the real `state_repo` is
+# what fails this assertion — `scripts/state-sync.sh` exits 0 on an empty
+# `state_repo` before it reads a node name at all, and `lib/claim.sh`'s file
+# claim wins vacuously for the same reason, so the blanked-out `state_repo`
+# is the lever this one turns on. The explicit NODE_NAME and the prepended
+# PATH are the sandbox's other two walls, each with its own assertion: the
+# PATH one directly above, and NODE_NAME's refusal in test/state-sync.test.sh
+# and test/claim.test.sh, which reach the code this run never does.
+assert_eq "no run above pushed or claimed anything on any remote" \
+  "" "$(cat "$stub_calls" 2>/dev/null)"
 
 printf '\n%s\n' "----------------------------------------"
 if (( failures == 0 )); then

@@ -90,7 +90,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # this source to nothing. See lib/github-limit.sh.
 # shellcheck source=lib/github-limit.sh
 . "$SCRIPT_DIR/lib/github-limit.sh"
-CONFIG_FILE="$SCRIPT_DIR/config.json"
+# AGENT_OPS_CONFIG is the test seam, exactly as it is for review-cycle.sh and
+# monitor-cycle.sh: cron and the container invoke this bare and get the
+# config beside the script.
+CONFIG_FILE="${AGENT_OPS_CONFIG:-$SCRIPT_DIR/config.json}"
 SCHEMA_FILE="$SCRIPT_DIR/config.schema.json"
 
 GH="${CLAIM_GH:-gh}"
@@ -114,6 +117,26 @@ branch_prefix="$(cfg '.branch_prefix')"
 say() { printf 'claim: %s\n' "$*"; }
 
 usage() { sed -n '3,48p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+
+# A write recorded under a name nobody chose — the container's own hostname,
+# meaningless to every peer reading it back — must never land in shared
+# state (agent-ops#2421: two such writes, from a test run directly inside a
+# node container with no NODE_NAME set, published a pseudo-node that paged
+# forever). The real scheduler always has NODE_NAME set — compose.yaml
+# defaults it to "unnamed", never empty — so this can only fire from
+# something invoked directly inside the image with no NODE_NAME at all: a
+# stray manual run, or an unhermetic test. CLAIM_CONTAINER_SENTINEL
+# overrides the sentinel path for the test suite, the same seam
+# lib/compose-drift.sh and scripts/cgroup-parent-setup.sh use for the same
+# question.
+claim_refuse_fallback_name() {
+  local sentinel="${CLAIM_CONTAINER_SENTINEL:-/.dockerenv}"
+  if [[ -e "$sentinel" && -z "${NODE_NAME:-}" ]]; then
+    say "refusing to write — NODE_NAME is unset inside the node image; writing under the hostname ($(hostname)) would publish a fleet node nobody configured"
+    return 1
+  fi
+  return 0
+}
 
 registry_path() {  # <target-slug> <key> -> path inside the state repo
   printf 'claims/%s/%s.json' "$(san "$1")" "$(san "$2")"
@@ -160,6 +183,7 @@ lost_or_error() {  # after a failed create: 3 if the thing now exists, else 1
 
 do_claim_branch() {  # <target-slug> <branch> <default-branch>
   local slug="$1" branch="$2" default_branch="$3" base_sha rc=0
+  claim_refuse_fallback_name || return 1
   base_sha="$("$GH" api "repos/$slug/git/ref/heads/$default_branch" --jq '.object.sha' 2>/dev/null)" \
     || { say "cannot read $slug $default_branch head"; return 1; }
   if ! "$GH" api -X POST "repos/$slug/git/refs" \
@@ -179,6 +203,7 @@ do_claim_branch() {  # <target-slug> <branch> <default-branch>
 do_claim_file() {  # <target-slug> <key>
   local slug="$1" key="$2" rc=0 body payload path
   [[ -n "$state_repo" ]] || { say "no state_repo — file claim vacuously won"; return 0; }
+  claim_refuse_fallback_name || return 1
   path="$(registry_path "$slug" "$key")"
   body="$(jq -nc \
     --arg node "${CLAIM_NODE:-$(hostname)}" --arg cycle "${CLAIM_CYCLE:-}" \
@@ -354,10 +379,12 @@ do_branches() {  # <target-slug> -> JSON array of live <branch_prefix>* branch n
   # (stale squash-merged refs alone can get there) would silently hide the
   # overflow from every consumer of this listing — the Co-Ordinator's
   # `claimed` input and the Script's own candidate filters both go blind
-  # exactly where the contention is worst.
+  # exactly where the contention is worst. `gh` rejects --slurp paired with
+  # --jq, so the filter runs as a separate jq call over the slurped output
+  # rather than inline.
   local slug="$1" pfx_refs
-  pfx_refs="$("$GH" api --paginate --slurp "repos/$slug/git/matching-refs/heads/$branch_prefix" \
-    --jq '[.[][].ref | ltrimstr("refs/heads/")]' 2>/dev/null)"
+  pfx_refs="$("$GH" api --paginate --slurp "repos/$slug/git/matching-refs/heads/$branch_prefix" 2>/dev/null \
+    | jq -c '[.[][].ref | ltrimstr("refs/heads/")]' 2>/dev/null)"
   [[ -n "$pfx_refs" ]] && printf '%s' "$pfx_refs" || echo '[]'
 }
 

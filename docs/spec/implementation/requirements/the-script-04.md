@@ -301,7 +301,18 @@
    **Push.** Every node — active or standby — mirrors its `state_dir` into
    its **own branch**, `nodes/<NODE_NAME>`, every few minutes from the
    crontab and again from the cleanup that ends a cycle. No two nodes share
-   a branch, so pushes cannot contend and nothing arbitrates them. Each push
+   a branch, so pushes cannot contend and nothing arbitrates them. A push
+   refuses outright, with a warning and no git call at all, when the
+   `/.dockerenv` sentinel (`lib/compose-drift.sh`'s own, overridable as
+   `STATE_SYNC_CONTAINER_SENTINEL` for tests) is present and `NODE_NAME` is
+   unset: every scheduled process is handed the variable by Compose (it
+   defaults the default to `unnamed` rather than leaving it empty), so this
+   can only mean something was invoked directly inside the image with no
+   node identity of its own — a stray manual run, or an unhermetic test
+   (agent-ops#2421, where this published a fleet node under the container's
+   own hostname that no one could later act on). `lib/claim.sh`'s own branch
+   and file claims refuse the same way, on the same sentinel
+   (`CLAIM_CONTAINER_SENTINEL`), before either writes anything. Each push
    stamps `heartbeat.json` (`{node, role, ts, last_cycle, version, compose,
    compose_reconcile, image, switch, stage_health, mirror, updater}`)
    into the branch root — on a standby, which has no cycles to publish, the

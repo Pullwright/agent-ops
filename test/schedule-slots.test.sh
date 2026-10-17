@@ -1,16 +1,26 @@
 #!/usr/bin/env bash
 #
 # test/schedule-slots.test.sh — the overrun-slot skip (requirement 11a,
-# agent-ops#1287): supercronic will not start a job while the previous run
-# of that job is still running, and logs the drop only to a container log
-# the fleet never reads. Two things are under test here:
+# agent-ops#1287, agent-ops#1324): supercronic will not start a job while
+# the previous run of that job is still running, and logs the drop only to
+# a container log the fleet never reads. Three things are under test here:
 #
 #   lib/schedule-slots.sh's `schedule_overrun_slots` — a pure function
 #     tested directly against fixture `schedule` blocks: given a cycle's own
 #     [start, end] span, does it name exactly the slots that fell strictly
 #     inside it, honouring `cycle_interval_minutes`, `excluded_minutes` and
 #     `cycle_hours` (including an hour-boundary crossing, and an hour
-#     `cycle_hours` excludes entirely)?
+#     `cycle_hours` excludes entirely), and — given a true base minute
+#     distinct from the span's own start minute — every earlier-in-hour slot
+#     that minute implies, rather than only the ones a start-minute-only
+#     derivation would find (agent-ops#1324's own reproduction included)?
+#
+#   lib/schedule-slots.sh's `schedule_crontab_base_minute` — a second pure
+#     function, tested directly against fixture rendered-crontab files: does
+#     it print the lowest minute of the `agent-cycle.sh` line's own
+#     comma-separated minute field, skip a `#`-prefixed comment line that
+#     merely mentions that filename, and print nothing rather than failing
+#     for a missing file or an unparseable minute field?
 #
 #   agent-cycle.sh's own cleanup-time call site — the "Overrun-slot skips"
 #     block, lifted verbatim out of agent-cycle.sh the same way
@@ -20,10 +30,12 @@
 #     slot_ts, held_by, elapsed_s}` per slot `schedule_overrun_slots`
 #     returns, only when `lock_acquired` is `1`, and nothing at all when it
 #     is `0` (a stood-down or lock-contention cycle never blocked a firing)?
-#     And does it log nothing for a cycle that held the lock but is not the
+#     Does it log nothing for a cycle that held the lock but is not the
 #     cron-fired original — a chained continuation, a `--once` run, a
-#     `--dry-run` run — whose start minute is arbitrary and whose slots
-#     supercronic fired for real, the contending tick recording them?
+#     `--dry-run` run, or a `--wake-poll` run — whose start minute is
+#     arbitrary and whose slots supercronic fired for real, the contending
+#     tick recording them? And does it thread a true base minute through to
+#     `schedule_overrun_slots` unchanged?
 #
 #   lib/manage.sh's `overlap_status_report` — the `--status` line
 #     `check-nodes.sh` (external to this repository) already prints
@@ -75,8 +87,15 @@ assert_eq "a cycle that ends before its own next slot names none" "" "$out"
 
 out="$(schedule_overrun_slots "2026-09-08T10:50:00Z" "2026-09-08T12:20:00Z" \
   '{"cycle_hours":"9-17","cycle_interval_minutes":30,"excluded_minutes":[0]}')"
-assert_eq "a span crossing an hour boundary still finds the next hour's own slot" \
+assert_eq "a span crossing an hour boundary, with no true base minute given, still finds the next hour's own slot (the undercounted fallback shape)" \
   "2026-09-08T11:50:00Z" "$out"
+
+out="$(schedule_overrun_slots "2026-09-08T10:50:00Z" "2026-09-08T12:20:00Z" \
+  '{"cycle_hours":"9-17","cycle_interval_minutes":30,"excluded_minutes":[0]}' 20)"
+assert_eq "...given the real cron's lower base minute (20, not this span's own :50), names the earlier-in-hour slot the fallback above missed, both sides of it" \
+  "2026-09-08T11:20:00Z
+2026-09-08T11:50:00Z
+2026-09-08T12:20:00Z" "$out"
 
 out="$(schedule_overrun_slots "2026-09-08T08:50:00Z" "2026-09-08T10:20:00Z" \
   '{"cycle_hours":"8,10","cycle_interval_minutes":30,"excluded_minutes":[]}')"
@@ -85,12 +104,86 @@ assert_eq "an hour cycle_hours excludes entirely contributes no slot from it" \
 
 out="$(schedule_overrun_slots "2026-09-08T23:50:00Z" "2026-09-09T00:55:00Z" \
   '{"cycle_hours":"*","cycle_interval_minutes":15,"excluded_minutes":[]}')"
-assert_eq "a span crossing midnight still names the next day's own slot (base minute :50, restarting each hour rather than carrying the interval over)" \
+assert_eq "a span crossing midnight, with no true base minute given, still names the next day's own slot (base minute :50, restarting each hour rather than carrying the interval over — the undercounted fallback shape)" \
   "2026-09-09T00:50:00Z" "$out"
+
+out="$(schedule_overrun_slots "2026-09-08T23:50:00Z" "2026-09-09T00:55:00Z" \
+  '{"cycle_hours":"*","cycle_interval_minutes":15,"excluded_minutes":[]}' 5)"
+assert_eq "...given the real cron's lower base minute (5, not this span's own :50), names every one of the next day's own earlier-in-hour slots" \
+  "2026-09-09T00:05:00Z
+2026-09-09T00:20:00Z
+2026-09-09T00:35:00Z
+2026-09-09T00:50:00Z" "$out"
 
 out="$(schedule_overrun_slots "not-a-timestamp" "2026-09-08T10:37:00Z" \
   '{"cycle_hours":"*","cycle_interval_minutes":15,"excluded_minutes":[]}')"
 assert_eq "an unparseable start prints nothing rather than failing" "" "$out"
+
+# --- agent-ops#1324's own reproduction: a node whose real base minute (:07,
+# interval 15) is not the minute either span happens to start on ------------
+
+out="$(schedule_overrun_slots "2026-09-09T10:22:00Z" "2026-09-09T11:12:00Z" \
+  '{"cycle_hours":"*","cycle_interval_minutes":15,"excluded_minutes":[]}' 7)"
+assert_eq "the issue's first span now names 11:07 too, not just the two slots the start-minute fallback found" \
+  "2026-09-09T10:37:00Z
+2026-09-09T10:52:00Z
+2026-09-09T11:07:00Z" "$out"
+
+out="$(schedule_overrun_slots "2026-09-09T10:52:00Z" "2026-09-09T11:32:00Z" \
+  '{"cycle_hours":"*","cycle_interval_minutes":15,"excluded_minutes":[]}' 7)"
+assert_eq "the issue's second span — a firing on the hour's own last kept minute — now names both dropped slots instead of reporting zero" \
+  "2026-09-09T11:07:00Z
+2026-09-09T11:22:00Z" "$out"
+
+out="$(schedule_overrun_slots "2026-09-09T10:52:00Z" "2026-09-09T11:32:00Z" \
+  '{"cycle_hours":"*","cycle_interval_minutes":15,"excluded_minutes":[]}')"
+assert_eq "...and with no true base minute at all, the fallback reproduces the issue's own zero — the known bound, not a fix on its own" \
+  "" "$out"
+
+out="$(schedule_overrun_slots "2026-09-09T10:52:00Z" "2026-09-09T11:32:00Z" \
+  '{"cycle_hours":"*","cycle_interval_minutes":15,"excluded_minutes":[]}' "not-a-minute")"
+assert_eq "an unparseable true base minute falls back the same way, rather than failing" \
+  "" "$out"
+
+out="$(schedule_overrun_slots "2026-09-09T10:52:00Z" "2026-09-09T11:32:00Z" \
+  '{"cycle_hours":"*","cycle_interval_minutes":15,"excluded_minutes":[]}' "99")"
+assert_eq "a true base minute outside 0-59 falls back the same way too" \
+  "" "$out"
+
+# --- schedule_crontab_base_minute, directly --------------------------------
+
+cron_file="$tmp_dir/crontab"
+cat > "$cron_file" <<'CRON'
+# render-crontab.sh's own explanatory comment mentions /app/agent-cycle.sh
+# here, deliberately, to prove a commented-out mention is never matched.
+*/2 * * * *  /app/scripts/wake-poll.sh >> $LOGDIR/wake-poll.log 2>&1 || true
+7,22,37,52 * * * *  /app/agent-cycle.sh  >> $LOGDIR/cron.log        2>&1
+7 3 * * *  /app/review-cycle.sh >> $LOGDIR/review-cron.log 2>&1
+CRON
+assert_eq "reads the lowest minute off the real agent-cycle.sh line, ignoring the comment and the other scripts' own lines" \
+  "7" "$(schedule_crontab_base_minute "$cron_file")"
+
+cat > "$cron_file" <<'CRON'
+38 * * * *  /app/agent-cycle.sh  >> $LOGDIR/cron.log        2>&1
+CRON
+assert_eq "a single-minute line (cycle_interval_minutes=60) reads that one minute" \
+  "38" "$(schedule_crontab_base_minute "$cron_file")"
+
+assert_eq "a missing file prints nothing rather than failing" \
+  "" "$(schedule_crontab_base_minute "$tmp_dir/does-not-exist")"
+
+cat > "$cron_file" <<'CRON'
+# nothing on this line invokes agent-cycle.sh at all
+*/5 * * * *  /app/scripts/collect-resource-usage.sh >> $LOGDIR/resource-usage.log 2>&1 || true
+CRON
+assert_eq "a crontab with no agent-cycle.sh line prints nothing" \
+  "" "$(schedule_crontab_base_minute "$cron_file")"
+
+cat > "$cron_file" <<'CRON'
+@CYCLE_MINUTE@ * * * *  /app/agent-cycle.sh  >> $LOGDIR/cron.log        2>&1
+CRON
+assert_eq "an unrendered placeholder minute field prints nothing rather than a bogus minute" \
+  "" "$(schedule_crontab_base_minute "$cron_file")"
 
 # --- The cleanup-time call site, extracted -------------------------------------
 # From the "Overrun-slot skips" comment through the block's own closing `fi`,
@@ -110,7 +203,7 @@ if [[ -z "$block" ]]; then
 fi
 
 # run_block LOCK_ACQUIRED CYCLE_STARTED_AT NOW_ISO SCHEDULE_JSON \
-#           [CHAIN_COUNT] [ONCE] [DRY_RUN]
+#           [CHAIN_COUNT] [ONCE] [DRY_RUN] [WAKE_POLL] [CRON_BASE_MINUTE]
 # Assembles and runs a standalone script around the extracted block: a `date`
 # override so "now" is the fixture's NOW_ISO/its epoch rather than the real
 # wall clock (the block calls plain `date -u +%Y-%m-%dT...`/`+%s` for "now",
@@ -120,11 +213,17 @@ fi
 # cleanup() does), and a recording `log_event`. Prints one
 # "EVENT <name> <fields-json>" line per call.
 #
-# CHAIN_COUNT/ONCE/DRY_RUN default to the cron-fired original's own values
-# (1/0/0) so the cases that are not about the gate need not restate them.
+# CHAIN_COUNT/ONCE/DRY_RUN/WAKE_POLL default to the cron-fired original's own
+# values (1/0/0/0) so the cases that are not about the gate need not restate
+# them. CRON_BASE_MINUTE defaults empty — the real cleanup() sets its own
+# `cron_base_minute` from `schedule_crontab_base_minute` before this block
+# runs (never inside it, so the block stays this test's own fixture input
+# here rather than a real file read) — exercising the fallback every
+# existing case above already covers.
 run_block() {
   local lock_acquired="$1" cycle_started_at="$2" now_iso="$3" schedule_json="$4"
   local chain_count="${5:-1}" once="${6:-0}" dry_run="${7:-0}"
+  local wake_poll="${8:-0}" cron_base_minute="${9:-}"
   local script="$tmp_dir/run-$$-$RANDOM.sh"
   {
     printf '#!/usr/bin/env bash\nset -uo pipefail\n'
@@ -140,6 +239,8 @@ run_block() {
     printf 'chain_count=%q\n' "$chain_count"
     printf 'ONCE=%q\n' "$once"
     printf 'DRY_RUN=%q\n' "$dry_run"
+    printf 'WAKE_POLL=%q\n' "$wake_poll"
+    printf 'cron_base_minute=%q\n' "$cron_base_minute"
     printf 'cycle_started_at=%q\n' "$cycle_started_at"
     printf 'cycle_id=%q\n' "test-cycle-fixture"
     printf 'schedule_json=%q\n' "$schedule_json"
@@ -186,6 +287,25 @@ assert_eq "a --once run logs nothing — it is not supercronic's job and its sta
 out="$(run_block 1 "2026-09-08T10:05:00Z" "2026-09-08T10:37:00Z" \
   '{"cycle_hours":"*","cycle_interval_minutes":15,"excluded_minutes":[0]}' 1 0 1)"
 assert_eq "a --dry-run run logs nothing, for the same reason" "" "$out"
+
+out="$(run_block 1 "2026-09-08T10:05:00Z" "2026-09-08T10:37:00Z" \
+  '{"cycle_hours":"*","cycle_interval_minutes":15,"excluded_minutes":[0]}' 1 0 0 1)"
+assert_eq "a --wake-poll run logs nothing either (agent-ops#1324) — its own start minute is the instant the poll detected a change, not the cron-fired job's" \
+  "" "$out"
+
+# The call site threads a true base minute through to schedule_overrun_slots
+# unchanged — cleanup()'s own cron_base_minute, read from the rendered
+# crontab before this block runs (see run_block's own header).
+out="$(run_block 1 "2026-09-08T10:52:00Z" "2026-09-08T11:32:00Z" \
+  '{"cycle_hours":"*","cycle_interval_minutes":15,"excluded_minutes":[]}' 1 0 0 0 7)"
+assert_eq "a true base minute threaded through from cleanup() finds the slot a start-minute-only derivation would have missed" \
+  "2" "$(grep -c '^EVENT cycle-skipped ' <<<"$out")"
+assert_eq "...naming both of agent-ops#1324's own dropped slots, 11:07 first" \
+  '{"reason":"overlap","slot_ts":"2026-09-08T11:07:00Z","held_by":"test-cycle-fixture","elapsed_s":900}' \
+  "$(grep '^EVENT cycle-skipped ' <<<"$out" | sed -n '1p' | cut -d' ' -f3-)"
+assert_eq "...then 11:22" \
+  '{"reason":"overlap","slot_ts":"2026-09-08T11:22:00Z","held_by":"test-cycle-fixture","elapsed_s":1800}' \
+  "$(grep '^EVENT cycle-skipped ' <<<"$out" | sed -n '2p' | cut -d' ' -f3-)"
 
 # --- lib/manage.sh's overlap_status_report -------------------------------------
 

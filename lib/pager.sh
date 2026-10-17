@@ -71,7 +71,14 @@
 # any node can evaluate any invariant in any window and agree with every
 # other node about what has already happened, on the same terms
 # `token_expiry_escalated_for` (lib/token-expiry.sh) already does for a
-# single-shot escalation.
+# single-shot escalation. Those four are all a state read ever looks at, so
+# `pager_evaluate` reads them off one extract of the union
+# (`pager_events_extract`, made once before its loop) rather than parsing
+# the whole union twice per key (agent-ops#2429). An invariant's own
+# evaluation is bounded the same way: a registration declares the event
+# types its EVAL_FN reads (`pager_declare_events`, `PAGER_EVAL_EVENTS`), and
+# `_pager_evaluate_one` hands EVAL_FN the union reduced to those types
+# (`union_prefilter`, lib/union-stream.sh) rather than the whole of it.
 #
 # Remedy classes (the issue's own "Remedy by class"): every firing invariant
 # that reaches the hysteresis threshold gets ONE issue per key, in
@@ -106,6 +113,7 @@
 
 # --- The registry ------------------------------------------------------------
 declare -gA PAGER_EVAL_FN=()
+declare -gA PAGER_EVAL_EVENTS=()
 declare -gA PAGER_REMEDY_CLASS=()
 declare -gA PAGER_REMEDY_ARG=()
 declare -gA PAGER_MIN_FIRING_MINUTES_OVERRIDE=()
@@ -116,17 +124,24 @@ declare -ga PAGER_KEYS=()
 # called with the union log as EVAL_FN's own stdin is *not* used — it takes
 # the path so a pure jq reader can `-R -n` it directly without this framework
 # forking a second copy of a potentially large stream through a pipe.
-# EVAL_FN must print exactly one line, `{"firing": bool, "evidence": "…"}`
-# (evidence non-empty only when firing), plus an optional `"nodes": [...]`
-# naming which fleet nodes the evidence is about — the dashboard's own node
-# card badge (docs/spec/dashboard/README.md) reads it to know which card to mark,
-# rather than parsing EVIDENCE's own prose. Nothing else, ever — a raising
-# invariant must never abort the evaluation of every invariant registered
-# after it. REMEDY_CLASS is one of pipeline-act, config-lever, owner-only;
-# REMEDY_ARG's meaning depends on it (see this file's header). Re-registering
-# an existing KEY replaces its entry — the last registration wins, which lets
-# a caller (or a test) override a built-in invariant's eval function without
-# needing a separate unregister.
+# UNION_LOG_FILE is the union reduced to the event types the key declares
+# (`pager_declare_events` below), or the whole union for a key with no
+# declaration (a key declared with no types gets an empty file). EVAL_FN
+# must print exactly one line, `{"firing": bool,
+# "evidence": "…"}` (evidence non-empty only when firing), plus an optional
+# `"nodes": [...]` naming which fleet nodes the evidence is about — the
+# dashboard's own node card badge (docs/spec/dashboard/README.md) reads it to
+# know which card to mark, rather than parsing EVIDENCE's own prose. Nothing
+# else, ever — a raising invariant must never abort the evaluation of every
+# invariant registered after it. REMEDY_CLASS is one of pipeline-act,
+# config-lever, owner-only; REMEDY_ARG's meaning depends on it (see this
+# file's header). Re-registering an existing KEY replaces its entry — the
+# last registration wins, which lets a caller (or a test) override a built-in
+# invariant's eval function without needing a separate unregister. The
+# replacement is the whole entry, the key's event declaration included: a
+# declaration describes the EVAL_FN it was made with, and a new EVAL_FN
+# reads whatever it reads, so it starts undeclared and sees the whole union
+# until `pager_declare_events` says otherwise.
 #
 # MIN_FIRING_MINUTES_OVERRIDE, when non-empty, replaces `pager_evaluate`'s own
 # MIN_FIRING_MINUTES for this key alone — agent-ops#1282's `node-stale`, whose
@@ -151,6 +166,44 @@ pager_register() {
   PAGER_EVAL_FN["$key"]="$eval_fn"
   PAGER_REMEDY_CLASS["$key"]="$remedy_class"
   PAGER_REMEDY_ARG["$key"]="$remedy_arg"
+  unset 'PAGER_EVAL_EVENTS[$key]'
+}
+
+# pager_declare_events KEY [EVENT...]
+# Declare the event types KEY's EVAL_FN reads from UNION_LOG_FILE, so that
+# `_pager_evaluate_one` hands it the union reduced to those types
+# (`union_prefilter`) rather than the whole 124 MB of it (agent-ops#2429).
+# A companion call rather than a sixth `pager_register` argument, because
+# the one distinction the design turns on — a key declared with *no* types,
+# whose EVAL_FN reads nothing from the union (`verdict-unanimous` reads the
+# heartbeats, `page-outlived-item` reads GitHub, `review-pipeline-failing`
+# reads the review union through PAGER_EVAL_REVIEW_UNION_LOG_FILE) and so
+# gets an empty file, against a key with no declaration at all, which gets
+# the whole union as before — is exactly the one a trailing positional
+# argument cannot carry: an omitted sixth argument and an empty sixth
+# argument both read as "", and telling them apart by `$#` would hide the
+# load-bearing fact in an arity count. Here the call itself is the
+# declaration, and its word list sits beside the key it describes, as every
+# other reader's declaration sits beside its program (lib/union-stream.sh's
+# own header). Called after `pager_register`, which clears any earlier
+# declaration for the key (see its header); a key that is not registered is
+# refused, since a declaration describes an EVAL_FN.
+#
+# A type missed here makes the invariant silently see none of that type,
+# which is the quiet-zero failure `test/union-stream.test.sh` exists to
+# catch: it checks every built-in EVAL_FN's program against this
+# declaration — the function's own body, plus the bodies of the helpers it
+# reads through, which the test's `pager_program_of` appends by hand because
+# the checker cannot follow a call — and `test/pager-invariants.test.sh`
+# checks that each built-in's verdict over the reduced union equals its
+# verdict over the whole fixture, the second net for a type neither body
+# shows.
+pager_declare_events() {
+  local key="$1"
+  shift
+  [[ -n "$key" && -n "${PAGER_EVAL_FN[$key]:-}" ]] \
+    || { printf 'pager_declare_events: %s is not a registered key\n' "${key:-(empty)}" >&2; return 1; }
+  PAGER_EVAL_EVENTS["$key"]="$*"
 }
 
 # pager_registered_keys — one registered key per line, in registration order.
@@ -171,6 +224,31 @@ pager_log_event() {
   jq -nc --arg ts "$ts" --arg cycle "$cycle" --arg node "$node" --arg event "$event" \
     --argjson fields "$fields" '{ts: $ts, cycle: $cycle, node: $node, event: $event} + $fields' \
     >> "$log_file" 2>/dev/null || true
+}
+
+# pager_events_extract < union.jsonl > pager-events.jsonl
+# The pager's own four transition events, as compact JSON lines, out of a raw
+# fleet union: everything `pager_last_event` and `pager_state_for` can ever
+# read, and nothing else. A byte-level `grep -F` prefilter keeps the lines
+# that carry `"event":"pager-` and one `jq` parses only those — on the 124 MB
+# union of 2026-10-16 that is 2,480 lines of 422,628, and the whole extract
+# costs well under a second where one `jq` pass over the union costs five to
+# thirteen (agent-ops#2429). The prefilter is exact, not a heuristic: every
+# pager record is written by `pager_log_event`'s `jq -nc`, compact, so each
+# carries that substring verbatim; a record of another type that merely
+# carries it in a nested object passes the prefilter and is dropped by the
+# `select` (a string field cannot carry it, since JSON escapes the quotes
+# inside a string); a spliced or damaged line fails `fromjson?` and is dropped, the
+# same tolerance every union reader has. `grep` exits 1 on a union with no
+# pager event at all, which is an empty extract and not a failure (the
+# `|| [[ $? -eq 1 ]]`); `-a` keeps a stray NUL from turning the whole stream
+# into one "binary file matches" line; `LC_ALL=C`, as `fleet_logs` itself
+# reads.
+pager_events_extract() {
+  { LC_ALL=C grep -a -F '"event":"pager-' || [[ $? -eq 1 ]]; } \
+    | jq -c -R 'fromjson? // empty | objects
+                | select(.event == "pager-candidate" or .event == "pager-candidate-cleared"
+                         or .event == "pager-fired" or .event == "pager-cleared")' 2>/dev/null
 }
 
 # pager_last_event KEY < union.jsonl
@@ -215,6 +293,15 @@ _pager_gh() { printf '%s' "${PAGER_GH:-gh}"; }
 if ! declare -F issue_create_with_retry >/dev/null 2>&1; then
   # shellcheck source=lib/issue-file.sh
   . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/issue-file.sh"
+fi
+# `union_prefilter`, which `_pager_evaluate_one` reduces each key's input
+# with, is lib/union-stream.sh's; sourced and guarded on the same terms as
+# lib/issue-file.sh above, so this file stays sourceable alone and a caller
+# that sourced lib/union-stream.sh first (scripts/publish-dashboard.sh) is
+# left alone.
+if ! declare -F union_prefilter >/dev/null 2>&1; then
+  # shellcheck source=lib/union-stream.sh
+  . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/union-stream.sh"
 fi
 
 # _pager_webhook_notify URL REPO ITEM TITLE BODY_FILE NODE CYCLE
@@ -606,11 +693,49 @@ _pager_evaluate_one() {
   PAGER_REMEDY_UNION_LOG_FILE="$union_log_file"
   PAGER_REMEDY_NODE="$node"
   PAGER_REMEDY_CYCLE="$cycle"
-  verdict="$("$eval_fn" "$fleet_nodes_json" "$union_log_file" 2>/dev/null)"
+  # EVAL_FN's UNION_LOG_FILE is the union reduced to the event types the
+  # key declares (`pager_declare_events`): one `grep -F` pass over the
+  # 124 MB union keeps a few per cent of it, and the invariant's own `jq`
+  # parses that rather than the whole (agent-ops#2429). The reduction is
+  # exact for every reader that drops what it does not declare, which every
+  # EVAL_FN here does (`union_prefilter`'s own header has the argument). A
+  # key with no declaration reads the whole union, as every key did before;
+  # a key declared with no types reads an empty file, because its EVAL_FN
+  # reads nothing from the union at all. The file is made under TMPDIR, on
+  # the same terms as `pager_evaluate`'s extract — inside the Publisher's
+  # working set — and removed once EVAL_FN has returned; a file that cannot
+  # be made, or a prefilter that fails, leaves the whole union in place. The
+  # remedy variables above keep the whole union: a remedy re-derives its
+  # candidates from it, and may read types its EVAL_FN does not.
+  local eval_input_file="" eval_union_log_file="$union_log_file"
+  if [[ -v "PAGER_EVAL_EVENTS[$key]" ]]; then
+    eval_input_file="$(mktemp "${TMPDIR:-/tmp}/pager-input.XXXXXX" 2>/dev/null)" \
+      || eval_input_file=""
+    if [[ -n "$eval_input_file" ]]; then
+      # shellcheck disable=SC2086  # a word list by design.
+      if union_prefilter "$union_log_file" ${PAGER_EVAL_EVENTS[$key]} > "$eval_input_file" 2>/dev/null; then
+        eval_union_log_file="$eval_input_file"
+      else
+        rm -f "$eval_input_file"; eval_input_file=""
+      fi
+    fi
+  fi
+  verdict="$("$eval_fn" "$fleet_nodes_json" "$eval_union_log_file" 2>/dev/null)"
+  [[ -z "$eval_input_file" ]] || rm -f "$eval_input_file"
   firing="$(jq -r '.firing // false' <<<"$verdict" 2>/dev/null)"
   evidence="$(jq -r '.evidence // ""' <<<"$verdict" 2>/dev/null)"
   [[ "$firing" == "true" ]] || firing="false"
-  state="$(pager_state_for "$key" < "$union_log_file")"
+  # The two state reads (here and in the candidate branch below) read the
+  # extract of the pager's own events `pager_evaluate` made before its loop
+  # — PAGER_EVAL_PAGER_EVENTS_FILE, a plain variable on the same documented-
+  # exception terms as every PAGER_EVAL_* above, set by the caller this time
+  # rather than for a callee; see `pager_evaluate` for why one extract serves
+  # every key exactly. The remedy variables above keep the whole union: what
+  # they read is not the pager's own events, and EVAL_FN's own input is the
+  # key's declared reduction, made just above. An empty variable (no extract
+  # could be made) falls back to the whole union.
+  local state_events_file="${PAGER_EVAL_PAGER_EVENTS_FILE:-$union_log_file}"
+  state="$(pager_state_for "$key" < "$state_events_file")"
 
   case "${state}:${firing}" in
     clear:true)
@@ -619,7 +744,7 @@ _pager_evaluate_one() {
       ;;
     candidate:true)
       local cand first_seen first_seen_epoch age_min nodes_json key_min_firing_minutes
-      cand="$(pager_last_event "$key" < "$union_log_file")"
+      cand="$(pager_last_event "$key" < "$state_events_file")"
       first_seen="$(jq -r '.first_seen // empty' <<<"$cand" 2>/dev/null)"
       [[ -n "$first_seen" ]] || first_seen="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
       first_seen_epoch="$(date -u -d "$first_seen" +%s 2>/dev/null || date -u +%s)"
@@ -664,9 +789,35 @@ _pager_evaluate_one() {
 # EVAL_FN or one lost claim never stops the rest — each invariant's own
 # failure is contained to itself, the same isolation crash_loop_verdict's own
 # `2>/dev/null || true` gives a torn union-log line.
+#
+# The pager's own events are extracted from UNION_LOG_FILE once, before the
+# loop (`pager_events_extract`), and every key's two state reads in
+# `_pager_evaluate_one` read that extract in place of the whole union: with
+# the eighteen built-in keys those reads were up to thirty-six `jq` passes
+# over the 124 MB union per GitHub tick (agent-ops#2429). One extract before
+# the loop is exact, not merely close: a key reads its own state before it
+# appends its own transition, is evaluated once per call, and no key reads
+# another's events, so nothing the loop appends is ever something a later
+# key needs to see. The file is made under TMPDIR on `fleet_logs`' own
+# convention — inside the Publisher's working set, which `scratch_enter`
+# points TMPDIR at, so the removal below is belt and braces there — and its
+# path travels to `_pager_evaluate_one` as a plain variable, the documented
+# exception every PAGER_EVAL_* already uses. A file that cannot be made, or
+# an extract that fails, leaves the variable empty and the state reads fall
+# back to the whole union.
 pager_evaluate() {
-  local key
+  local key union_log_file="${9:-}" pager_events_file
+  pager_events_file="$(mktemp "${TMPDIR:-/tmp}/pager-events.XXXXXX" 2>/dev/null)" \
+    || pager_events_file=""
+  if [[ -n "$pager_events_file" ]]; then
+    pager_events_extract < "$union_log_file" > "$pager_events_file" 2>/dev/null \
+      || { rm -f "$pager_events_file"; pager_events_file=""; }
+  fi
+  PAGER_EVAL_PAGER_EVENTS_FILE="$pager_events_file"
   for key in "${PAGER_KEYS[@]}"; do
     _pager_evaluate_one "$key" "$@" || true
   done
+  PAGER_EVAL_PAGER_EVENTS_FILE=""
+  [[ -z "$pager_events_file" ]] || rm -f "$pager_events_file"
+  return 0
 }

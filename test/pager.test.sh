@@ -153,6 +153,31 @@ assert_eq "an omitted override records as empty, not unset" "" "${PAGER_MIN_FIRI
 pager_register k3 stub_eval owner-only "decide this too" 180
 assert_eq "a given override records against the key" "180" "${PAGER_MIN_FIRING_MINUTES_OVERRIDE[k3]}"
 
+# The event declaration (agent-ops#2429): `pager_declare_events KEY
+# [EVENT...]` records, against a registered key, the event types its EVAL_FN
+# reads from the union, and `_pager_evaluate_one` hands it the union reduced
+# to those. A companion call rather than a sixth positional argument, because
+# the distinction the design turns on — a key declared with *no* types, whose
+# EVAL_FN reads nothing from the union and gets an empty file, against a key
+# with no declaration, which gets the whole union — is one an omitted and an
+# empty trailing argument cannot carry, both reading as "".
+assert_eq "a registered key starts with no declaration" "no" \
+  "$([[ -v "PAGER_EVAL_EVENTS[k1]" ]] && echo yes || echo no)"
+pager_declare_events k1 cycle-start cycle-end
+assert_eq "a declaration records the key's event types, as a word list" "cycle-start cycle-end" \
+  "${PAGER_EVAL_EVENTS[k1]}"
+pager_declare_events k2
+assert_eq "a key declared with no types records an empty declaration, present rather than absent" "yes" \
+  "$([[ -v "PAGER_EVAL_EVENTS[k2]" && -z "${PAGER_EVAL_EVENTS[k2]}" ]] && echo yes || echo no)"
+if pager_declare_events k9 cycle-start 2>/dev/null; then
+  printf 'FAIL - a declaration for an unregistered key is refused\n'; failures=$(( failures + 1 ))
+else
+  printf 'ok   - a declaration for an unregistered key is refused\n'
+fi
+pager_register k1 stub_eval owner-only "changed my mind again"
+assert_eq "re-registering a key clears its declaration, since a declaration describes the EVAL_FN it was made with" \
+  "no" "$([[ -v "PAGER_EVAL_EVENTS[k1]" ]] && echo yes || echo no)"
+
 # --- pager_state_for / pager_last_event ---------------------------------------
 
 state_fixture="$WORKDIR/state-fixture.jsonl"
@@ -167,6 +192,151 @@ assert_eq "a fired event reads fired" "fired" "$(pager_state_for demo < "$state_
 printf '{"ts":"2026-01-01T00:20:00Z","event":"pager-cleared","key":"demo","cleared_at":"2026-01-01T00:20:00Z"}\n' >> "$state_fixture"
 assert_eq "a cleared event reads clear again" "clear" "$(pager_state_for demo < "$state_fixture")"
 assert_eq "a different key's events are ignored" "clear" "$(pager_state_for other < "$state_fixture")"
+
+# --- pager_events_extract (agent-ops#2429) -----------------------------------
+# What `pager_evaluate` and the Publisher's own `pager` array read in place of
+# the whole union: it must carry every pager event, and nothing a state read
+# could mistake for one. The decoys are the three shapes the prefilter alone
+# would get wrong — a record of another type whose nested object carries
+# `"event":"pager-fired"` (built with `jq -nc`, so it is compact exactly as a
+# real record is; a string field could not carry it, since JSON escapes the
+# quotes inside a string), a spliced line, and a blank line.
+extract_in="$WORKDIR/extract-in.jsonl"
+{
+  printf '{"ts":"2026-01-01T00:00:00Z","event":"cycle-start","node":"n1","cycle":"c0"}\n'
+  cat "$state_fixture"
+  jq -nc '{ts: "2026-01-01T00:30:00Z", event: "escalated", node: "n1", key: "demo",
+           record: {event: "pager-fired", key: "demo"}}'
+  printf '{"ts":"2026-01-01T00:40:00Z","event":"pager-fired","key":"spliced"}{"ts":"2026-01-01T00:41:00Z","event":"pager-cleared","key":"spliced"}\n'
+  printf '\n'
+  printf '{"ts":"2026-01-01T00:50:00Z","event":"pager-candidate","key":"other","first_seen":"2026-01-01T00:50:00Z"}\n'
+} > "$extract_in"
+extract_out="$WORKDIR/extract-out.jsonl"
+pager_events_extract < "$extract_in" > "$extract_out"
+extract_rc=$?
+assert_eq "the extract exits 0 over a union with pager events in it" "0" "$extract_rc"
+assert_eq "the extract keeps the four pager event types, in log order, and nothing else" \
+  "pager-candidate pager-candidate-cleared pager-fired pager-cleared pager-candidate" \
+  "$(jq -r '.event' "$extract_out" | tr '\n' ' ' | sed 's/ $//')"
+assert_eq "  ... a record of another type carrying the prefilter's substring in a nested object is dropped" \
+  "0" "$(grep -c '"event":"escalated"' "$extract_out")"
+assert_eq "  ... a spliced line is dropped whole, the tolerance every union reader has" \
+  "0" "$(grep -c 'spliced' "$extract_out")"
+assert_eq "  ... and every kept line is one compact object" \
+  "5" "$(jq -c 'objects' "$extract_out" | wc -l | tr -d ' ')"
+assert_eq "a union with no pager event at all extracts to nothing, with exit status 0 (grep's 1 is not a failure)" \
+  "0 0" "$(out="$(printf '{"ts":"2026-01-01T00:00:00Z","event":"cycle-start"}\n' | pager_events_extract)"; printf '%s %s' "$?" "${#out}")"
+assert_eq "  ... and so does an empty one" \
+  "0 0" "$(out="$(pager_events_extract < /dev/null)"; printf '%s %s' "$?" "${#out}")"
+
+# `pager_state_for` over the extract must equal `pager_state_for` over the raw
+# union at every point of the state machine above — compared over every prefix
+# of the decoy-laden union, so clear, candidate, clear again, fired and clear
+# again are each compared, with the decoys in play.
+raw_states=""; extract_states=""
+extract_prefix="$WORKDIR/extract-prefix.jsonl"
+for (( n = 0; n <= $(wc -l < "$extract_in"); n++ )); do
+  head -n "$n" "$extract_in" > "$extract_prefix"
+  raw_states+="$(pager_state_for demo < "$extract_prefix") "
+  extract_states+="$(pager_events_extract < "$extract_prefix" | pager_state_for demo) "
+done
+assert_eq "pager_state_for over the extract equals pager_state_for over the raw union at every prefix" \
+  "$raw_states" "$extract_states"
+assert_eq "  ... and that walk is the state machine itself, undisturbed by the decoys" \
+  "clear clear candidate clear fired clear clear clear clear clear " "$raw_states"
+
+# --- pager_evaluate over a union carrying a decoy nested record ---------------
+# The extract is what the state reads inside `_pager_evaluate_one` consult, so
+# a decoy must not read as a fired key there either; and the extract must be
+# rebuilt per call, so tick 2 sees the candidate tick 1 appended. TMPDIR is
+# pointed at WORKDIR for the calls, so the extract's own removal can be seen.
+PAGER_EVAL_FN=(); PAGER_REMEDY_CLASS=(); PAGER_REMEDY_ARG=(); PAGER_KEYS=()
+pager_register decoyed stub_eval pipeline-act stub_remedy
+union_log="$WORKDIR/decoy.jsonl"
+jq -nc '{ts: "2026-01-01T00:00:00Z", event: "escalated", node: "n1", key: "decoyed",
+         record: {event: "pager-fired", key: "decoyed"}}' > "$union_log"
+: > "$GH_CALLS_FILE"; : > "$REMEDY_CALLS_FILE"
+STUB_FIRING="true"; STUB_GH_CREATE_FAIL=""; STUB_GH_LIST_OPEN="[]"; STUB_GH_LIST_ALL="[]"
+TMPDIR="$WORKDIR" pager_evaluate "$CLAIM_STUB" "o/r" "pw::pager" "enabler-escalation" \
+  "" "" 0 "$union_log" "$union_log" '[]' n1 c1
+assert_eq "tick 1 over a decoy: the key reads clear and becomes a candidate, never fired" \
+  "1 0" "$(printf '%s %s' "$(count_events "$union_log" pager-candidate decoyed)" \
+                          "$(count_events "$union_log" pager-fired decoyed)")"
+TMPDIR="$WORKDIR" pager_evaluate "$CLAIM_STUB" "o/r" "pw::pager" "enabler-escalation" \
+  "" "" 0 "$union_log" "$union_log" '[]' n1 c1
+assert_eq "tick 2: the extract is rebuilt per call, so the candidate tick 1 appended is seen and fires" \
+  "fired" "$(pager_state_for decoyed < "$union_log")"
+assert_eq "  ... the remedy ran exactly once" "1" "$(remedy_calls)"
+assert_eq "  ... and the extract file is removed when the loop ends" "" \
+  "$(ls "$WORKDIR"/pager-events.* 2>/dev/null)"
+
+# --- The declared reduction: EVAL_FN is handed only the events its key declares
+# (agent-ops#2429). A recording EVAL_FN keeps a copy of the UNION_LOG_FILE it
+# was handed, the path it came by, and what PAGER_REMEDY_UNION_LOG_FILE named
+# at the time. Three keys, each registered and evaluated alone so its
+# recording is its own: one declared, one undeclared, one declared with no
+# types. The union carries two declared types, two undeclared ones, and a
+# record of another type carrying `"event":"cycle-start"` in a nested object
+# — the one shape that passes the byte-level prefilter, which an EVAL_FN's
+# own `select` is what drops. TMPDIR is pointed at WORKDIR so the input
+# file's own removal can be seen.
+SEEN_INPUT="$WORKDIR/seen-input.jsonl"; SEEN_PATH="$WORKDIR/seen-path"; SEEN_REMEDY="$WORKDIR/seen-remedy"
+# shellcheck disable=SC2317  # invoked by lib/pager.sh's _pager_evaluate_one by name, which a static reader does not follow
+recording_eval() {
+  cp "$2" "$SEEN_INPUT" 2>/dev/null || : > "$SEEN_INPUT"
+  printf '%s' "$2" > "$SEEN_PATH"
+  printf '%s' "${PAGER_REMEDY_UNION_LOG_FILE:-}" > "$SEEN_REMEDY"
+  printf '{"firing":false}'
+}
+union_log="$WORKDIR/declared.jsonl"
+cat > "$union_log" <<'EOF'
+{"ts":"2026-01-01T00:00:00Z","event":"cycle-start","node":"n1","cycle":"c1"}
+{"ts":"2026-01-01T00:01:00Z","event":"merge-observed","node":"n1","cycle":"c1","repo":"o/r","item":"1"}
+{"ts":"2026-01-01T00:02:00Z","event":"stage-end","node":"n1","cycle":"c1","stage":"coordinator","exit_code":0}
+{"ts":"2026-01-01T00:03:00Z","event":"log-repaired","node":"n1","nested":{"event":"cycle-start"}}
+{"ts":"2026-01-01T00:04:00Z","event":"cycle-end","node":"n1","cycle":"c1","exit_code":0}
+EOF
+PAGER_EVAL_FN=(); PAGER_REMEDY_CLASS=(); PAGER_REMEDY_ARG=(); PAGER_KEYS=(); PAGER_EVAL_EVENTS=()
+pager_register declared recording_eval owner-only "decide this"
+pager_declare_events declared cycle-start cycle-end
+TMPDIR="$WORKDIR" pager_evaluate "$CLAIM_STUB" "o/r" "pw::pager" "enabler-escalation" \
+  "" "" 0 "$union_log" "$union_log" '[]' n1 c1
+assert_eq "a declared key's EVAL_FN is handed the lines of its declared types, in log order, the nested decoy among them" \
+  "cycle-start log-repaired cycle-end" "$(jq -r '.event' "$SEEN_INPUT" | tr '\n' ' ' | sed 's/ $//')"
+assert_eq "  ... as a file under TMPDIR, never the union by its own path" "yes" \
+  "$([[ "$(cat "$SEEN_PATH")" == "$WORKDIR"/pager-input.* ]] && echo yes || echo "no ($(cat "$SEEN_PATH"))")"
+assert_eq "  ... removed once the evaluation has returned" "" "$(ls "$WORKDIR"/pager-input.* 2>/dev/null)"
+assert_eq "  ... while PAGER_REMEDY_UNION_LOG_FILE still names the whole union" "$union_log" "$(cat "$SEEN_REMEDY")"
+assert_eq "  ... and the union itself is untouched" "5" "$(wc -l < "$union_log" | tr -d ' ')"
+
+PAGER_EVAL_FN=(); PAGER_REMEDY_CLASS=(); PAGER_REMEDY_ARG=(); PAGER_KEYS=(); PAGER_EVAL_EVENTS=()
+pager_register undeclared recording_eval owner-only "decide this"
+TMPDIR="$WORKDIR" pager_evaluate "$CLAIM_STUB" "o/r" "pw::pager" "enabler-escalation" \
+  "" "" 0 "$union_log" "$union_log" '[]' n1 c1
+assert_eq "an undeclared key's EVAL_FN is handed the whole union, by its own path" "$union_log" "$(cat "$SEEN_PATH")"
+assert_eq "  ... every line of it" "5" "$(wc -l < "$SEEN_INPUT" | tr -d ' ')"
+
+PAGER_EVAL_FN=(); PAGER_REMEDY_CLASS=(); PAGER_REMEDY_ARG=(); PAGER_KEYS=(); PAGER_EVAL_EVENTS=()
+pager_register nothing recording_eval owner-only "decide this"
+pager_declare_events nothing
+TMPDIR="$WORKDIR" pager_evaluate "$CLAIM_STUB" "o/r" "pw::pager" "enabler-escalation" \
+  "" "" 0 "$union_log" "$union_log" '[]' n1 c1
+assert_eq "a key declared with no types is handed an empty file" "0" "$(wc -c < "$SEEN_INPUT" | tr -d ' ')"
+assert_eq "  ... not the union" "yes" "$([[ "$(cat "$SEEN_PATH")" != "$union_log" ]] && echo yes || echo no)"
+assert_eq "  ... and it too is removed afterwards" "" "$(ls "$WORKDIR"/pager-input.* 2>/dev/null)"
+
+# A prefilter that fails — here, a union that cannot be read — leaves the
+# whole union in place, so the EVAL_FN sees what it always saw rather than
+# a reduction of nothing. stderr is silenced because the state reads' own
+# redirections from the missing file say so too, as they always have.
+PAGER_EVAL_FN=(); PAGER_REMEDY_CLASS=(); PAGER_REMEDY_ARG=(); PAGER_KEYS=(); PAGER_EVAL_EVENTS=()
+pager_register declared recording_eval owner-only "decide this"
+pager_declare_events declared cycle-start
+TMPDIR="$WORKDIR" pager_evaluate "$CLAIM_STUB" "o/r" "pw::pager" "enabler-escalation" \
+  "" "" 0 "$WORKDIR/own.jsonl" "$WORKDIR/missing-union.jsonl" '[]' n1 c1 2>/dev/null
+assert_eq "a prefilter that fails leaves the whole union in place, by its own path" \
+  "$WORKDIR/missing-union.jsonl" "$(cat "$SEEN_PATH")"
+assert_eq "  ... and leaves no input file behind" "" "$(ls "$WORKDIR"/pager-input.* 2>/dev/null)"
 
 # --- End to end: fire (candidate) -> hysteresis -> fired -> clear ------------
 # One invariant, pipeline-act, min_firing_minutes 0 so the very first
@@ -331,6 +501,7 @@ STUB_REMEDY_FAIL=""
 # lib/pager.sh probes for `labels_reconcile_role` with `declare -F` so the
 # rest of this file still runs without lib/labels.sh sourced at all.
 ENSURE_CALLS_FILE="$WORKDIR/ensure-calls"; : > "$ENSURE_CALLS_FILE"
+# shellcheck disable=SC2317  # invoked only by lib/pager.sh's _pager_ensure_label_role, behind its `declare -F` probe, which a static reader does not follow
 labels_reconcile_role() { printf '%s\n' "$3 $4" >> "$ENSURE_CALLS_FILE"; }
 ensure_calls() { wc -l < "$ENSURE_CALLS_FILE" | tr -d ' '; }
 

@@ -25,7 +25,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CONFIG_FILE="$SCRIPT_DIR/config.json"
+# AGENT_OPS_CONFIG is the test seam, exactly as it is for review-cycle.sh and
+# monitor-cycle.sh: cron and the container invoke this bare and get the
+# config beside the script.
+CONFIG_FILE="${AGENT_OPS_CONFIG:-$SCRIPT_DIR/config.json}"
 SCHEMA_FILE="$SCRIPT_DIR/config.schema.json"
 
 # shellcheck source=lib/scratch.sh
@@ -238,6 +241,26 @@ node_name="${node_name//[^A-Za-z0-9._-]/-}"
 state_branch="nodes/$node_name"
 remote_url="${STATE_SYNC_REMOTE:-https://github.com/$state_repo.git}"
 mirror="${STATE_SYNC_MIRROR:-$workspace_root/.agent-ops-state}"
+# A push recorded under a name nobody chose — the container's own hostname,
+# meaningless to every peer reading it back — must never land in shared
+# state (agent-ops#2421: a test run directly inside a node container with no
+# NODE_NAME set published its throwaway state as a new fleet node, which
+# paged forever). The real scheduler always has NODE_NAME set — compose.yaml
+# defaults it to "unnamed", never empty — so this can only fire from
+# something invoked directly inside the image with no NODE_NAME at all: a
+# stray manual run, or an unhermetic test. STATE_SYNC_CONTAINER_SENTINEL
+# overrides the sentinel path for the test suite, the same seam
+# lib/compose-drift.sh and scripts/cgroup-parent-setup.sh use for the same
+# question. Fetch is unaffected: it only reads node_name to exclude this
+# node's own branch from the peers it materialises, never to publish one.
+refuse_fallback_node_name() {
+  local sentinel="${STATE_SYNC_CONTAINER_SENTINEL:-/.dockerenv}"
+  if [[ -e "$sentinel" && -z "${NODE_NAME:-}" ]]; then
+    say "WARNING: refusing to push — NODE_NAME is unset inside the node image; publishing under the hostname ($node_name) would create a fleet node nobody configured"
+    return 1
+  fi
+  return 0
+}
 peers_dir="$(fleet_peers_dir "$workspace_root")"
 
 # --- What is memory and what is merely local ---------------------------------
@@ -948,6 +971,7 @@ prune_derived_under_pressure() {
 }
 
 do_push() {
+  refuse_fallback_node_name || return 1
   require rsync
   require git
   mirror_lock

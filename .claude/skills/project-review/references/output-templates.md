@@ -19,7 +19,7 @@ All outputs are Markdown. Follow these templates in structure; adapt headings on
 | [Findings](02-findings.md) | <One or two sentences, including the finding count by severity, e.g., "31 findings: 2 critical, 7 high, 14 medium, 8 low.".> |
 | [Recommendations](03-recommendations.md) | <One or two sentences, including the number of recommendations.> |
 | [Improvement prompts](04-improvement-prompts.md) | <One or two sentences.> |
-| [Tech debt filed](<the `pw::type:tech-debt` issue search URL for this repository, the register's own path if the project still has one, or — when nothing could be filed because no tracker was reachable — the "Unfiled tech debt" anchor in [Findings](02-findings.md#unfiled-tech-debt)>) | <One or two sentences: how many new issues this review filed (noting how many, if any, were filed unlabelled and why), whether any existing register item was marked resolved, and — when the tracker could not be reached at all — how many items are listed unfiled instead.> |
+| [Tech debt filed](<the `pw::type:tech-debt` issue search URL for this repository, the register's own path if the project still has one, or — when nothing could be filed because no tracker was reachable — the "Unfiled tech debt" anchor in [Findings](02-findings.md#unfiled-tech-debt)>) | <One or two sentences: how many new issues this review filed (and, where the repository had no `pw::type:tech-debt` label, whether the review created it or filed items unlabelled, with what the "Tech debt" section below says to add in each case), whether any existing register item was marked resolved, and — when the tracker could not be reached at all — how many items are listed unfiled instead.> |
 ```
 
 Add rows for any supplementary annexes.
@@ -156,13 +156,14 @@ trigger — present the same list to the user there instead of filing it.
 
 **When the tracker is reachable but the repository has no
 `pw::type:tech-debt` label**, that is a separate failure from having no
-tracker at all: do not create the label yourself — creating a
-product-namespaced label mutates a repository the review was asked only to
-read. Where a user is present, ask once whether to create it. Where they
-decline, or no one is present to ask, file the issue **unlabelled**, name
-the intended label in its body, and note in the index row's own sentence
-(or, alongside any items also unfilable outright, in "Unfiled tech debt")
-that it was filed unlabelled and which label belongs on it.
+tracker at all: create the label first, as `SKILL.md`'s Step 4 gives it,
+and say in the index row's own sentence that the review created it and
+that Pullwright manages the labels under its own prefix (`pw::` today). If
+creating it fails for any reason, file the issue **unlabelled**, name the
+intended label in its body, and note in the index row's own sentence (or,
+alongside any items also unfilable outright, in "Unfiled tech debt") which
+items were filed unlabelled, the `gh label create` command that adds the
+label, and why the label matters.
 
 **An existing register is history, not a filing destination.** Registers
 come in two formats: **per-item** — a `tech-debt/` directory exists, or the

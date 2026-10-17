@@ -629,9 +629,10 @@ stage_lane_any_present() {
 # `_expensive_gather_node_offset` is the same pattern, for the same reason):
 # the same SEED always draws the same lane, so a record explains a draw
 # after the fact and a test reproduces it rather than merely sampling it.
-# `run_model_stage` seeds this on the launch's own identifier — the cycle id
-# and the stage name — so a draw is reproducible without being predictable
-# far enough ahead to game.
+# `run_model_stage` seeds this on the launch's own identifier — the cycle id,
+# the stage name, and (when given) a caller's own seed suffix distinguishing
+# this launch from a sibling launch of the same stage in the same cycle — so
+# a draw is reproducible without being predictable far enough ahead to game.
 stage_lane_draw() {
   local provider="$1" substrate="$2" seed="$3" fn lanes_json
   fn="substrate_${substrate//-/_}_lane_present"
@@ -881,7 +882,7 @@ _stage_kill() {
 #     its whole process group on timeout. `set -m` gives the backgrounded job
 #     its own process group so `kill -TERM -$pid` reaches every descendant. ---
 #
-# run_model_stage STAGE TIMEOUT_SEC MODEL PROMPT OUT_FILE CWD [INACTIVITY_SEC] [RESUME_SESSION_ID] [LANE]
+# run_model_stage STAGE TIMEOUT_SEC MODEL PROMPT OUT_FILE CWD [INACTIVITY_SEC] [RESUME_SESSION_ID] [LANE] [SEED_SUFFIX]
 # Returns the invocation's own exit status, or 124 when either cap fired.
 # Sets the caller-visible `stage_pid`/`stage_name` for the duration (see the
 # note at each pipeline's signal handler) and clears them on the way out,
@@ -891,9 +892,20 @@ _stage_kill() {
 # "Presence" below).
 #
 # LANE, when given, bypasses the draw and forces that lane outright —
-# requirement 2.1b's own limit probe (#2242) and `doctor`'s per-lane check are
-# the callers that need this; presence is still required, so a LANE this
-# node holds no credential for fails exactly like "no open lane" below.
+# requirement 2.1b's own limit probe (#2242), `doctor`'s per-lane check, and
+# requirement 9e's salvage retry (issue #2436; it pins LANE to the run it
+# resumes rather than letting the retry draw again) are the callers that
+# need this; presence is still required, so a LANE this node holds no
+# credential for fails exactly like "no open lane" below.
+#
+# SEED_SUFFIX, when given, is folded into the lane draw's own seed alongside
+# the cycle id and STAGE (issue #2436): a caller that can launch the same
+# STAGE more than once within one cycle — the Co-Ordinator's per-repository
+# loop, the Approver's per-pull-request loop — passes whatever distinguishes
+# this launch from a sibling one (a repository slug, a pull request url) so
+# each draws independently rather than sharing the one cycle-and-stage seed.
+# Omitted (the default, every call site but those two), the seed is exactly
+# `"${cycle_id:-}:$stage"`, byte-for-byte what it has always been.
 #
 # **Presence.** Lane management (the draw, the forcing, the live-stream
 # verification, all below) runs only when SUBSTRATE manages lanes at all —
@@ -944,6 +956,7 @@ _stage_kill() {
 run_model_stage() {
   local stage="$1" timeout_sec="$2" model="$3" prompt="$4" out_file="$5" cwd="$6"
   local inactivity_sec="${7:-0}" resume_session_id="${8:-}" lane_override="${9:-}"
+  local seed_suffix="${10:-}"
   local pid waited=0 rc stream_file rate_limit_info substrate
   local seen_bytes=0 now size last_growth gaps=()
   local forced_lane="" lane_verified=0 raw_source no_open_lane
@@ -1024,7 +1037,8 @@ run_model_stage() {
         no_open_lane=1
       fi
     elif stage_lane_any_present "$substrate"; then
-      forced_lane="$(stage_lane_draw "$stage_provider" "$substrate" "${cycle_id:-}:$stage")" \
+      forced_lane="$(stage_lane_draw "$stage_provider" "$substrate" \
+          "${cycle_id:-}:$stage${seed_suffix:+:$seed_suffix}")" \
         || no_open_lane=1
     fi
     if (( no_open_lane )); then

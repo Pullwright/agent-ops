@@ -911,6 +911,26 @@ assert_eq "a snapshot already in the mirror is deleted from it" "0" \
   "$(test -e "$tmp_dir/pushed-again/cycles/20260720T010000Z-1/.fleet-log.jsonl" && echo 1 || echo 0)"
 
 # ==============================================================================
+# refusal — no push under a fallback name inside a container (agent-ops#2421)
+# ==============================================================================
+# A fake sentinel rather than the real /.dockerenv: this test must pass
+# identically whether or not the host running it is itself a container.
+refuse_sentinel="$tmp_dir/fake-dockerenv"
+: > "$refuse_sentinel"
+refuse_remote="$tmp_dir/refuse-remote.git"
+git init --quiet --bare "$refuse_remote"
+refuse_home="$(new_node refuse-node)"
+refuse_out="$(env -u NODE_NAME HOME="$refuse_home" AGENT_OPS_ROLE=active \
+  STATE_SYNC_REMOTE="$refuse_remote" STATE_SYNC_CONTAINER_SENTINEL="$refuse_sentinel" \
+  "$SYNC" push 2>&1)"
+assert_eq "a push with no NODE_NAME inside a container refuses" "1" "$?"
+assert_contains "...with a warning naming NODE_NAME" "NODE_NAME" "$refuse_out"
+assert_eq "...and publishes no branch at all, not even under the hostname" "" \
+  "$(git -C "$refuse_remote" for-each-ref --format='%(refname)' refs/heads 2>/dev/null)"
+assert_eq "...and never starts the mirror that a real push would have built" "0" \
+  "$(test -e "$refuse_home/.cache/poetic-agents/workspaces/.agent-ops-state" && echo 1 || echo 0)"
+
+# ==============================================================================
 # mirror integrity — a corrupted mirror is discarded and rebuilt, never
 # repaired or silently trusted (#604)
 # ==============================================================================

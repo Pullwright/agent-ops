@@ -12,15 +12,33 @@
     node's own doctor verdict. `lib/pager.sh` is where that reading happens.
 
     `pager_register KEY EVAL_FN REMEDY_CLASS REMEDY_ARG` builds a registry —
-    `PAGER_KEYS`/`PAGER_EVAL_FN`/`PAGER_REMEDY_CLASS`/`PAGER_REMEDY_ARG`, four
-    associative structures rather than a config file, so a repository's own
-    `scripts/publish-dashboard.sh` decides at source time which invariants
-    exist. EVAL_FN is a pure function, `EVAL_FN FLEET_NODES_JSON
-    UNION_LOG_FILE`, printing one line — `{firing, evidence}`, plus an
-    optional `nodes` array the dashboard's own node-card badge reads — with
-    one documented exception (`page-outlived-item`, below) that reads GitHub
-    directly rather than a replicated fact, since an issue's own terminal
-    state is not something any heartbeat carries. REMEDY_CLASS is one of
+    `PAGER_KEYS` (the keys in registration order) and the associative
+    `PAGER_EVAL_FN`/`PAGER_EVAL_EVENTS`/`PAGER_REMEDY_CLASS`/`PAGER_REMEDY_ARG`/
+    `PAGER_MIN_FIRING_MINUTES_OVERRIDE`, shell arrays rather than a config
+    file, so a repository's own `scripts/publish-dashboard.sh` decides at
+    source time which invariants exist. EVAL_FN is a pure function, `EVAL_FN
+    FLEET_NODES_JSON UNION_LOG_FILE`, printing one line — `{firing,
+    evidence}`, plus an optional `nodes` array the dashboard's own node-card
+    badge reads — with one documented exception (`page-outlived-item`,
+    below) that reads GitHub directly rather than a replicated fact, since
+    an issue's own terminal state is not something any heartbeat carries.
+    UNION_LOG_FILE is the union reduced to the event types the key's
+    registration declares — `pager_declare_events KEY [EVENT...]`, called
+    after `pager_register` (which clears any earlier declaration for the
+    key, since a declaration describes the EVAL_FN registered with it),
+    records them in `PAGER_EVAL_EVENTS`, and `_pager_evaluate_one` keeps
+    the lines of the union carrying `"event":"<type>"` for each declared
+    type (`union_prefilter`, `lib/union-stream.sh`) into a file under the
+    Publisher's working set, passes that file, and removes it after. A key
+    declared with no types receives an empty file; a key with no declaration
+    receives the whole union; a prefilter that fails leaves the whole union
+    in place. The remedy variables below (`PAGER_REMEDY_UNION_LOG_FILE`)
+    keep the whole union. Every built-in invariant is declared
+    (`pager_register_builtin_invariants`); `test/union-stream.test.sh`
+    checks each built-in EVAL_FN's program, with the bodies of the helpers
+    it reads through, against its declaration, and
+    `test/pager-invariants.test.sh` checks that each built-in's verdict over
+    the reduced fixture equals its verdict over the whole one. REMEDY_CLASS is one of
     `pipeline-act` (REMEDY_ARG names a shell function, `REMEDY_ARG KEY
     EVIDENCE`, run before filing — it performs the fix directly, never
     asking, and its one-line return value is recorded in the issue body),
@@ -265,9 +283,26 @@
 
       `lock.json` is never published (`scripts/state-sync.sh`
       excludes it), so "holds no lock" is derived purely from the union log:
-      a node's own newest cycle-start/cycle-end/cycle-skipped event being a
-      `cycle-start` means that cycle has not yet ended, so a long
-      *legitimate* cycle is never mistaken for a missed one. Staleness itself
+      grouping a node's own cycle-start/cycle-end/cycle-skipped events by
+      the `cycle` id they share, any group whose `cycle-start` has no
+      matching `cycle-end`, or any `cycle-skipped` whose own `detail` names
+      a pid holding the lock (`acquire_lock`'s own log format), is evidence
+      the lock is, or very recently was, held — whatever the node's newest
+      *event* happens to be, so a long *legitimate* cycle is never mistaken
+      for a missed one, and a chained continuation's own
+      `cycle-start`/`cycle-skipped`/`cycle-end` becoming the node's newest
+      events never hides an older cycle that still holds the lock
+      (agent-ops#1412: a second cycle chaining in while a first one is still
+      running writes exactly that shape within a second or two of the
+      first). That evidence is trusted only while it is younger than a
+      four-hour bound — the same default `lock_stale_after` documents
+      elsewhere for how long a legitimate cycle may hold the lock — because a
+      container recreation leaves its last `cycle-start` permanently
+      unmatched, and nothing will ever write that cycle an end: trusting an
+      unmatched start indefinitely would read a stale orphan as a lock held
+      forever and silence a genuine missed firing on exactly the node this
+      invariant exists to catch (agent-ops#1412's own 2026-10-15 follow-up,
+      which found such an orphan on three fleet nodes). Staleness itself
       is measured from the newer of the node's last `cycle-start` and last
       `cycle-skipped`, not from `cycle-start` alone, so a cycle that outlasts
       2× the interval while its scheduler keeps ticking (and correctly
@@ -289,8 +324,23 @@
       Evidence carries each
       firing node's own recent cycle-duration histogram (up to five
       completed cycles, matched by the `cycle` id every start/end pair
-      shares) — the acceptance's own "file, with the node's cycle-duration
-      histogram".
+      shares, excluding any cycle whose own group also carries a
+      lock-contention `cycle-skipped` — one whose `detail` names the pid
+      holding the lock: such a tick's start/skip/end triple
+      completes in about a second, and counting it alongside real cycles
+      would read as a run of near-zero-minute entries — the all-zero
+      histogram agent-ops#1412 found paging two mid-cycle nodes on
+      2026-10-15. The test is on that `detail` rather than on any
+      `cycle-skipped` in the group because requirement 11a's overrun-slot
+      skips (`reason: "overlap"`) are logged by the long cycle itself,
+      before its own `cycle-end` and so under its own `cycle` id, so a
+      group-wide exclusion would drop every cycle that outran a schedule
+      slot — precisely the durations this histogram exists to show) —
+      the acceptance's own "file, with the node's
+      cycle-duration histogram". A firing node whose own last `cycle-start`
+      is unmatched but too old to trust (past the bound above) has that
+      attempt's own age named in the evidence alongside the histogram,
+      rather than silently dropped.
     - **`node-stale`** (owner-only). Fires when a node's `heartbeat_age_s`
       (`fleet_publication_status`, requirement 2.5, carried by every row
       including this node's own) exceeds 2× `node_stale_after_minutes` —

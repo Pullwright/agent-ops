@@ -59,7 +59,23 @@
   elsewhere and that no test here was watching. The first rule also degrades
   the way this page wants: on a missed window it fetches late rather than not
   at all, and on a GitHub outage it retries at the cadence rather than at the
-  tick rate, because the stamp records the *attempt*.
+  tick rate, because the stamp records the *attempt*. And N itself follows
+  what a fetch costs — `LAUNCHER_GITHUB_MAX_AGE` is its floor, `duty_divisor`
+  times the last GitHub tick's cost its figure, under `LAUNCHER_PACE_CAP` —
+  for the same reason every other tick's backoff does, and the backoff a
+  local tick owes past its window is persisted for the windows after it to
+  honour rather than forgotten with the launcher's process; a refresh is
+  paced by that due age alone, since a backoff honoured as well would end
+  exactly as the due age fell and make the first tick after every refresh
+  another refresh. Measured on 2026-10-16 (#2429): a
+  refresh cost 500–1,100s and a local tick 45–270s on every node, 1:9 of
+  either outlasts a 295s window, and the refresh was due again 285s after it
+  finished; so every window's first tick ran at once, most of them refreshes,
+  the Publisher was busy about two thirds of every hour, two of them per
+  host, and every host sat at a load of 4 to 6 while the pipeline was idle.
+  A page an hour behind is an outage the operator can read off the page; the
+  cap is there because at 1:9 the 4,511,835 ms tick of #1305 would have been
+  eleven hours, which is not.
 - **The blocked and void lists are not computed here.** `blocked[]` and
   `void[]` come from the same shared implementation the Script feeds its
   Co-Ordinator (`lib/cycle-state.sh`, per requirement 34a of
@@ -592,9 +608,10 @@
   amount of retrying will clear it" — false on the escalation's own evidence,
   and gone the moment the network returned. A run whose `escalate` field
   reads `false` — every failure it counted classified `transient` — now never
-  reaches that escalation at all; the Publisher reads the same union log
-  directly (`fleet_logs`, not the heartbeat: this is a fleet-wide fact, not
-  one only the affected node can report on its own behalf) and renders
+  reaches that escalation at all; the Publisher reads the tick's own union
+  snapshot (the raw lines `fleet_logs` produced, not the heartbeat: this is
+  a fleet-wide fact, not one only the affected node can report on its own
+  behalf) and renders
   **provider unreachable**, amber like `updater stuck` — a fault worth a
   human's attention, but not one this node's own code caused — on every
   node the run's own `nodes` names, titled with the consecutive count, the
@@ -1012,9 +1029,115 @@
   item-scoped event (`records[]` is each item's whole history), and the
   readers of its output — the rework panel, spend by fate, turns per landed
   item and exclusive landings — load that output whole; four of the pager's
-  invariants (`lib/pager-invariants.sh`, on a GitHub tick) gather the union
-  unfiltered; and `limit_union_record` reads through `lib/limit-detect.sh`'s
-  own reader (agent-ops#2037).
+  invariants (`lib/pager-invariants.sh`, on a GitHub tick) gather their
+  input unfiltered, though that input is the union reduced to their declared
+  types (the next bullet); and `limit_union_record` reads through
+  `lib/limit-detect.sh`'s own reader (agent-ops#2037), over its own
+  declared reduction (`LIMIT_UNION_EVENTS`).
+- **The union is read once a tick, and the pager reads only its own events**
+  (agent-ops#2429). Streaming bounded the Publisher's memory but not its
+  passes: on 2026-10-16 the four nodes' `log.jsonl` union was 124 MB
+  (422,628 lines, growing 3 to 4.7 MB a day), one `jq` pass over it cost 5
+  to 13 s, a GitHub tick made about ninety such passes and cost 700 s against
+  a 295 s launcher window, and every idle host sat at load 4 to 6. Building
+  the union (`fleet_logs`, about 1.1 s) was not the cost; the Publisher built
+  it three times a tick (five `fleet_logs` counting `review-log.jsonl`'s
+  two), `pager_evaluate`'s state reads parsed the whole snapshot up to twice
+  per registered key, and the payload's `pager` array parsed a *fresh*
+  re-union once or twice more per key, with eighteen keys registered. Three
+  things follow.
+  - *One `fleet_logs` of `log.jsonl` a tick*, the snapshot `$raw_events_jsonl`.
+    The transient-refusal verdict reads it rather than a union of its own —
+    its own read sat ahead of the no-op short-circuit, so a tick that skipped
+    had built the whole union first — and the payload's `pager` array reads
+    it plus the whole of this node's own `log.jsonl`, raw. That sum is exact:
+    `pager_evaluate` is the only writer of pager events between the snapshot
+    and the array, it appends only to this node's own file, the pre-snapshot
+    lines that file repeats parse to the records the snapshot already carries
+    and both readers reduce by `sort_by(.ts) | last`, and a line the cycle
+    appended in the same window is not a pager event and is dropped by the
+    extract. It is the whole file rather than the lines gained during
+    `pager_evaluate` found by line number, as `lib/candidate-gather.sh` finds
+    the Script's own appends, because that join holds only while nothing
+    rewrites the file between the count and the tail, and nothing guarantees
+    that here: the launcher repairs `log.jsonl` before its loop gated on the
+    implementation cycle's lock alone, holds no lock of its own
+    (`dashboard.lck` is each tick's), and cron starts a fresh launcher every
+    window, so a tick that has overrun its window — the issue's own measured
+    state — has the next launcher's repair run beside it, and a repair of a
+    damaged own log moves every later line, which the tail would read as the
+    tick's own appends lost. The whole file costs one `grep -F` over tens of
+    MB, a fraction of a second. `test/publish-union-once.test.sh`
+    pins the count structurally, as `test/lock-skip-before-union.test.sh`
+    does for the Script, because "the union was not built a second time" is
+    not observable from a stubbed run. The `review-log.jsonl` union is built
+    once on the same terms, ahead of the full-build roll-ups, for its four
+    consumers.
+  - *The pager's state reads see only pager events.* `pager_events_extract`
+    keeps the lines carrying `"event":"pager-` with a byte-level `grep -F`
+    (2,480 of 422,628 lines on the real union, well under a second) and
+    parses only those. It is exact, not heuristic: `pager_log_event` writes
+    every pager record compact, so each carries that substring; a record of
+    another type that carries it nested is dropped by the `select`; a damaged
+    line is dropped as every union reader drops it. One extract before
+    `pager_evaluate`'s loop serves every key, because each reads its own
+    state before appending its own transition, is evaluated once, and reads
+    no other key's.
+  - *Each invariant, and each declared reader, sees only the events it
+    declares.* The same byte-level prefilter, generalised as
+    `union_prefilter` (one `LC_ALL=C grep -F` with one pattern per declared
+    type), is what every invariant's evaluation function and three of the
+    Publisher's own readers are handed, so the invariants' twenty or so
+    `jq` passes over the union per GitHub tick — including
+    `refinement_blocked_label_stale`'s one `jq -s` slurp and
+    `refinement_blocked_label_orphaned`'s one per candidate repository inside
+    `blocked-label-orphaned`'s helpers, the 580 to 680 MB resident processes
+    the issue observed — and
+    the local tick's transient-refusal verdict and stand-down banner each
+    parse a few per cent of the union's bytes. It is exact for the same
+    reason the pager extract is: every record is written compact by a
+    pipeline's `jq -nc`, so recall is exact, and precision is the reader's
+    own `select`. The declaration is the registry's own
+    (`pager_declare_events`, beside each `pager_register` in
+    `pager_register_builtin_invariants`), because the registry is where a
+    key's evaluation function is named and a declaration describes that
+    function: a key declared with no types gets an empty file, a key with no
+    declaration gets the whole union, so an invariant added without a
+    declaration is slower, never blind. The readers that cannot take a
+    prefiltered input are left on the whole union by construction: the
+    cycle-keyed and every-record readers, `union_partition`, the stage-gap
+    series, `fleet_sizing_contention_by_node` and
+    `stage_budget_observations`, which report or fold a span over every
+    record or keep a non-object line on purpose so a torn log aborts the
+    fold — a line the prefilter drops never reaches a reader, so such a
+    reader would lose exactly the line it aborts on; the item-lifecycle fold,
+    which needs every item-scoped record; and the remedies, which re-derive
+    from the whole union only when a key files. Two tests keep a
+    declaration honest, since a type missed in one makes its invariant see
+    nothing of that type and report a quiet zero: `test/union-stream.test.sh`
+    checks every built-in evaluation function's program against its
+    declaration, in the three forms the programs use (`.event == "x"`,
+    `(.event // "") == "x"`, `map(.event) | index("x")`) — the function's
+    own body plus, since the checker cannot follow a call, the bodies of the
+    helpers two keys read through, which the test's `pager_program_of`
+    appends by hand, so a helper added to an invariant later must be added
+    there too — and `test/pager-invariants.test.sh` checks that each
+    built-in's verdict over the reduced fixture equals its verdict over the
+    whole fixture, the second net for a type neither body shows.
+  - *`fleet_logs` sorts under `LC_ALL=C`.* The union's order is byte order by
+    design, so it must not depend on the locale cron or a shell hands the
+    caller; on the real union the C order was byte-identical to `C.UTF-8`'s
+    and about twice as fast.
+
+  Per GitHub tick this removes two `fleet_logs` of `log.jsonl`, one of
+  `review-log.jsonl`, and with eighteen keys up to seventy-two `jq` passes
+  over the union (up to thirty-six in `pager_evaluate`, fewer when peers win
+  the claims, and eighteen to thirty-six in the array); at the measured 5 to
+  13 s a pass, that is most of the 700 s. The declared reductions take the
+  invariants' own passes, about twenty-two a GitHub tick, and the
+  per-repository slurps from the whole union to a few per cent of it, and a
+  local tick loses two of its ten full passes, the verdict's and the
+  banner's.
 - **The working set is the publish's `TMPDIR`, and the rebuild is a child,
   not an `exec`** (agent-ops#1827, #1933). A publish spools through its own
   `mktemp` calls and through those of a dozen libraries, and the 2026-09-28

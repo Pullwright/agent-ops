@@ -66,22 +66,38 @@ agent-ops#1649). What a reader holds is what its answer is about:
   `open_blocked_items` and `void_items` — each closed by the whole log's span.
   The stage-gap series takes its own stream over the review union, and the
   `lib/` folds the Publisher calls (`rework_panel_build`,
-  `node_time_state_fold`, `stage_budget_observations`, `crash_loop_verdict`,
-  and `blocked_items`/`void_items`/`draft_obsolete_flags` inside the
-  item-lifecycle fold) each gather their declared types in the one `jq`
-  process that folds them. `fleet_sizing_contention_by_node` keeps its
+  `node_time_state_fold`, `stage_budget_observations`, `crash_loop_verdict`
+  — over the tick's raw snapshot of the same union, `$raw_events_jsonl`,
+  since it takes raw lines on stdin — and `blocked_items`/`void_items`/
+  `draft_obsolete_flags` inside the item-lifecycle fold) each gather their
+  declared types in the one `jq` process that folds them. Two of those
+  folds, and the stand-down banner's `limit_union_record`, are handed only
+  the lines of their declared types to begin with: `union_prefilter`
+  (`lib/union-stream.sh`) keeps, with one byte-level `grep -F`, the lines
+  carrying `"event":"<type>"` for each type a reader declares —
+  `crash_loop_verdict`'s `CRASH_LOOP_VERDICT_EVENTS` over the raw snapshot,
+  `limit_union_record`'s `LIMIT_UNION_EVENTS` over `$events_jsonl`, and
+  `node_time_state_fold`'s `NODE_TIME_STATE_EVENTS` over the review union —
+  into a file in the working set, and the fold's `jq` reads that file. The
+  reduction keeps every record of a declared type (each is written compact,
+  so it carries the substring) and the fold's own `select` drops a record of
+  another type that carries the substring nested, so what the fold keeps is
+  unchanged; a prefilter that fails leaves the whole union in place.
+  `fleet_sizing_contention_by_node` keeps its
   selections and contended claim losses.
 
 A roll-up that reports the whole log's time span (`window_from`/`window_to`
 on the scorecards and the stage-gap series, `window` on the item lifecycle
 and the fleet-sizing contention) takes it from the span its stream folds
-over every event, not from the events it kept. Three readers on this path
-gather log-scale data. The item-lifecycle fold gathers every item-scoped
-event, because its `records[]` carries each item's whole history as
-`instants`; its output is itself log-scale, so the scorecards read a
-`{repo, item, fate}` projection of it. Four of the pager's invariants
-(`lib/pager-invariants.sh`, on a GitHub tick) gather the union unfiltered.
-The stand-down banner's `limit_union_record` reads through
+over every event, not from the events it kept, and so reads the whole union,
+never a prefiltered one. Three readers on this path gather log-scale data.
+The item-lifecycle fold gathers every item-scoped event, because its
+`records[]` carries each item's whole history as `instants`; its output is
+itself log-scale, so the scorecards read a `{repo, item, fate}` projection
+of it. Four of the pager's invariants (`lib/pager-invariants.sh`, on a
+GitHub tick) gather their input unfiltered, where that input is the union
+reduced to the key's declared types (the pager section below). The
+stand-down banner's `limit_union_record` reads through
 `lib/limit-detect.sh`'s own reader (agent-ops#2037).
 
 `data.js`'s size is dominated by capped transcripts, not by the small
@@ -162,9 +178,12 @@ invalidates the very skip it sits beside. Getting this wrong is not
 theoretical — the fingerprint counted its own outputs for a day and a half, so
 no tick ever skipped and the feature it was built for saved nothing (#801,
 #803). And a GitHub tick never skips, so even a fingerprint wrong in the
-dangerous direction can only hold a stale page until the next one, about five
-minutes (`LAUNCHER_GITHUB_MAX_AGE`) — the cadence the dashboard published at
-before the sub-minute heartbeat existed (#26).
+dangerous direction can only hold a stale page until the next one: at least
+`LAUNCHER_GITHUB_MAX_AGE`, about five minutes — the cadence the dashboard
+published at before the sub-minute heartbeat existed (#26) — and about the
+due age the launcher derives from what a refresh costs, plus whatever backoff
+the local tick before it still owes (see **Heartbeat** under
+**Integration**).
 
 ### The tiered publish
 
@@ -190,16 +209,17 @@ So a tick has two kinds, and `--fast` chooses:
   `fleet_sizing`, `spend_fate`, `turns_per_landed_item`, and
   the stage budgets inside `config`) are not computed at all: they read the
   fleet's whole history and change on the scale of cycles, not ticks.
-  `constraint` is the one whose skipping is worth its own sentence: it is what
-  needs a *second* fleet-wide log union (`review-log.jsonl` beside
-  `log.jsonl`), so computing it on a fast tick would double that read on the
-  per-tick path for a value the fast payload does not carry. `fleet_sizing`
-  reads the node time-state account that union produces rather than fetching
-  it again, so it is gated for the same reason at no further cost. The stage
-  budgets read that same union a second time (issue #1586, so that
-  `config.stage_backstops` can carry a `project-reviewer` entry) rather than
-  fetching it again, so this stays a single extra read shared by two
-  roll-ups, not two.
+  `constraint` is the one whose skipping is worth its own sentence: it needs
+  the *second* fleet-wide log union (`review-log.jsonl` beside `log.jsonl`),
+  which a tick builds at most once — on a full build or a GitHub tick, ahead
+  of the full-build roll-ups — and never on a fast tick, where no consumer of
+  it runs and the fast payload does not carry the value. `fleet_sizing` reads
+  the node time-state account that union produces rather than fetching it
+  again, so it is gated for the same reason at no further cost. The stage
+  budgets (issue #1586, so that `config.stage_backstops` can carry a
+  `project-reviewer` entry), the stage-gap series and the pager's
+  `review-pipeline-failing` invariant read that same one build, so the review
+  union costs one read-and-sort a tick however many consumers it has.
 
 A fast build emits only the keys it recomputed and merges them **over** the
 cached payload rather than assembling a whole object from variables the skipped
@@ -898,14 +918,27 @@ both without a second fetch of either. `pager_enabled` (default `true`)
 gates the whole call; `false` skips it outright, the same as `--no-github`
 does structurally.
 
-One invariant needs a third artefact, which this block therefore assembles
-itself: `review-pipeline-failing` (agent-ops#1282) reads the review
-pipeline's own log, not the implementation one, so the block runs
-`fleet_logs` a second time over `review-log.jsonl` — fleet-replicated like
-`log.jsonl`, and excluded from neither — and hands the result to
-`pager_evaluate` as `REVIEW_UNION_LOG_FILE`. It is assembled here rather
-than alongside `events_jsonl` above because it has exactly one reader, on a
-path already gated to `WITH_GITHUB`: an ordinary tick never pays for it.
+One invariant needs a third artefact: `review-pipeline-failing`
+(agent-ops#1282) reads the review pipeline's own log, not the implementation
+one, so the block hands `pager_evaluate` the tick's own `review-log.jsonl`
+union (`review_log_union`, built once ahead of the full-build roll-ups and
+shared with the stage-gap series, the constraint panel and the stage
+budgets) as `REVIEW_UNION_LOG_FILE`; a GitHub tick is a full build, so the
+union is already there. `pager_evaluate` itself extracts the pager's own
+four event types from the implementation union once, before its loop
+(`pager_events_extract`: a byte-level `grep -F` prefilter on
+`"event":"pager-`, then one `jq` parse of the lines kept), and every key's
+two state reads consult that extract. Each invariant's own evaluation
+function receives, as its `UNION_LOG_FILE`, the implementation union
+reduced to the event types its registration declares
+(`pager_declare_events`, `PAGER_EVAL_EVENTS`; `union_prefilter` makes the
+file under the working set before the evaluation and removes it after): a
+key declared with no types — `verdict-unanimous`, `page-outlived-item`,
+`node-stale`, `updater-stuck`, `dashboard-unreadable` and
+`review-pipeline-failing`, which read the heartbeats, GitHub or the review
+union — receives an empty file, a key with no declaration receives the
+whole union, and a prefilter that fails leaves the whole union in place.
+The remedy variables (`PAGER_REMEDY_UNION_LOG_FILE`) keep the whole union.
 The block also reads the two config keys agent-ops#1282 added —
 `pager_stale_file_after_minutes`, passed to
 `pager_register_builtin_invariants` as `node-stale`'s own per-key filing
@@ -914,12 +947,14 @@ hysteresis, and `pager_dashboard_fetch_seconds` — along with the raw
 `updater_stuck_after_minutes` those invariants compare against directly.
 
 Because `pager_evaluate` may itself append `pager-*` transition events to
-this node's own `log.jsonl`, the payload's own `pager` array is read from a
-*fresh* re-union of the fleet log — `fleet_logs` run again, after
-`pager_evaluate` returns — rather than the `events_jsonl` snapshot taken
-before it: that snapshot cannot see what this tick itself just wrote. This
-is the one place in the script that reads the union log twice in a single
-run, and deliberately so.
+this node's own `log.jsonl`, which the snapshot taken before it cannot see,
+the payload's own `pager` array is read from that snapshot
+(`$raw_events_jsonl`) plus the whole of this node's own `log.jsonl`, read
+raw, the two reduced by `pager_events_extract` to the pager's own events.
+The tick therefore reads `log.jsonl` through `fleet_logs` exactly once, at
+the snapshot — `test/publish-union-once.test.sh` pins that count — and the
+"Design decisions" section says why that sum is exact, and why it is the
+whole file rather than the lines gained during `pager_evaluate`.
 
 The `pager` key of the payload (present on a `FULL` build, carried forward
 by a fast one on the same terms every other `FULL`-only key already is) is

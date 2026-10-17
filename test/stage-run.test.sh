@@ -611,6 +611,41 @@ for cyc_script in agent-cycle.sh review-cycle.sh monitor-cycle.sh; do
   fi
 done
 
+# --- 6a3. A seed-suffix argument distinguishes several launches of one stage
+# within one cycle (issue #2436) --------------------------------------------
+# Unlike review-cycle.sh and monitor-cycle.sh above — one stage name per
+# process, so `cycle_id` alone already distinguishes every launch —
+# agent-cycle.sh's own per-repository loop can launch the coordinator stage
+# more than once inside one process, all sharing the one `cycle_id` the
+# process set once. `run_coordinator_stage_attempt` (lib/stage-attempt.sh)
+# passes its own per-repository `coord_budget_repo` as `run_model_stage`'s
+# trailing seed-suffix argument for exactly this reason; the Approver's own
+# per-pull-request loop (lib/approver.sh) passes `$pr_url` the same way. This
+# drives `run_model_stage` directly with that per-repository shape, since
+# exercising `run_coordinator_stage_attempt` itself needs machinery
+# (stage_budget_apply, log_event, …) this file never sources.
+cycle_id="fixture-cycle-6a3"
+for repo in alpha beta; do
+  expect_lane="$(stage_lane_draw anthropic claude-code "$cycle_id:coordinator:$repo")"
+  run_capture="$tmp_dir/lane-6a3-$repo"
+  mkdir -p "$run_capture"
+  STUB_CAPTURE="$run_capture" STUB_HOLD=0 \
+    run_model_stage coordinator 60 claude-sonnet-5 "irrelevant" \
+    "$run_capture/coordinator.out" "$run_capture" "" "" "" "$repo"
+  assert_eq "coordinator-shaped launch for repo $repo lands on the seeded draw's own output" \
+    "$expect_lane" "$stage_lane"
+done
+assert_eq "...and the two repos under the same cycle_id drew different lanes" \
+  "subscription then api" \
+  "$(stage_lane_draw anthropic claude-code "$cycle_id:coordinator:alpha") then $(stage_lane_draw anthropic claude-code "$cycle_id:coordinator:beta")"
+# The bug this closes: with no seed suffix, every repository's own launch
+# seeds on the identical string ("$cycle_id:coordinator" names no repository
+# at all), so both of the distinct draws above would instead collapse onto
+# this one shared value.
+assert_eq "...whereas the undifferentiated cycle-and-stage seed draws just one lane for both" \
+  "api" \
+  "$(stage_lane_draw anthropic claude-code "$cycle_id:coordinator")"
+
 # --- 6b. End-to-end: run_model_stage lands on exactly what the draw dictates -
 cycle_id="fixture-cycle-6b"
 for stagename in implementer reviewer enabler refiner; do

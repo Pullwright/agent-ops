@@ -27,6 +27,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 
+# This suite runs inside the node image, where the real `/.dockerenv` exists —
+# and `lib/claim.sh` refuses a claim under that sentinel when `NODE_NAME` is
+# unset (agent-ops#2421). Every case below is about claim arbitration rather
+# than about that refusal, so the sentinel points at a path that does not
+# exist. Same seam, and the same reason for reaching for it, as
+# test/compose-drift.test.sh and test/cgroup-parent-setup.test.sh: a test that
+# needs to answer "am I in a container?" for itself must not be answered by the
+# container it is running in.
+export CLAIM_CONTAINER_SENTINEL="$tmp_dir/absent-container-sentinel"
+
 failures=0
 
 assert_eq() {
@@ -267,6 +277,14 @@ else
     # that nothing in cleanup swallows or replaces the abort's own status.
     # shellcheck source=lib/node-time-state.sh
     . "$SCRIPT_DIR/lib/node-time-state.sh"
+    # agent-ops#1324: cleanup reads the node's true base minute via
+    # schedule_crontab_base_minute before the overrun-slot block runs, on
+    # every cycle regardless of flags — sourced for real for the same reason
+    # node-time-state.sh is above, and because it is a plain `var="$(...)"`
+    # assignment, an undefined function here would abort this subshell under
+    # set -e at the wrong line, before the abort this case means to exercise.
+    # shellcheck source=lib/schedule-slots.sh
+    . "$SCRIPT_DIR/lib/schedule-slots.sh"
     eval "$cleanup_src"
     trap cleanup EXIT
     false  # the unhandled abort: errexit ends the cycle between statements

@@ -39,6 +39,16 @@ CLAIM="$SCRIPT_DIR/lib/claim.sh"
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 
+# This suite runs inside the node image, where the real `/.dockerenv` exists —
+# and `lib/claim.sh` refuses a claim under that sentinel when `NODE_NAME` is
+# unset (agent-ops#2421). Every case below is about claim arbitration rather
+# than about that refusal, so the sentinel points at a path that does not
+# exist. Same seam, and the same reason for reaching for it, as
+# test/compose-drift.test.sh and test/cgroup-parent-setup.test.sh: a test that
+# needs to answer "am I in a container?" for itself must not be answered by the
+# container it is running in.
+export CLAIM_CONTAINER_SENTINEL="$tmp_dir/absent-container-sentinel"
+
 failures=0
 
 assert_eq() {
@@ -107,12 +117,16 @@ chmod +x "$stub_bin/gh"
 
 # The "wake" marker: WAKE_POLL_AGENT_CYCLE_BIN points wake-poll.sh's own
 # invocation here instead of the real agent-cycle.sh, so a test can assert
-# whether a wake happened without running the real pipeline.
+# whether a wake happened without running the real pipeline. It also records
+# its own argv, so a test can confirm --wake-poll (agent-ops#1324) is always
+# among them — requirement 11a's own overrun-slot gate relies on it to tell
+# a wake-triggered cycle apart from the cron-fired original.
 marker_bin="$tmp_dir/marker"
 mkdir -p "$marker_bin"
 cat > "$marker_bin/agent-cycle.sh" <<STUB
 #!/usr/bin/env bash
 echo "woken" >> "$tmp_dir/woken.log"
+printf '%s\n' "\$*" >> "$tmp_dir/woken-args.log"
 exit 0
 STUB
 chmod +x "$marker_bin/agent-cycle.sh"
@@ -128,11 +142,13 @@ state="$tmp_dir/state"
 mkdir -p "$state"
 jq -n '{repos: [{slug: "o/r", sources: ["tech-debt"]}], state_dir: "'"$state"'"}' > "$conf"
 
-rm -f "$tmp_dir/woken.log"
+rm -f "$tmp_dir/woken.log" "$tmp_dir/woken-args.log"
 out1="$(GH_STUB_ETAGS='' run_wake_poll "$conf" "$state" 2>&1)"
 assert_eq "a cold cache (no stored etag) wakes — bootstrap firing" "1" \
   "$(test -f "$tmp_dir/woken.log" && wc -l < "$tmp_dir/woken.log" | tr -d ' ' || echo 0)"
 assert_contains "the wake reason names what changed" "changed" "$out1"
+assert_contains "the wake invokes agent-cycle.sh with --wake-poll (agent-ops#1324)" "--wake-poll" \
+  "$(cat "$tmp_dir/woken-args.log" 2>/dev/null)"
 assert_eq "four etags are now stored, one per polled endpoint" "4" \
   "$(find "$state/wake-poll" -name '*.etag' | wc -l | tr -d ' ')"
 

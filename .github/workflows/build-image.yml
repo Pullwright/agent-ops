@@ -428,7 +428,14 @@ jobs:
       - name: Run the test suite inside the image
         if: env.DOCS_ONLY != 'true'
         run: |
-          docker run --rm agent-ops:ci bash -lc '
+          # NODE_NAME is set for the whole container, not per test: this is
+          # the same image a fleet node runs, so anything invoked inside it
+          # without its own explicit node identity would otherwise fall back
+          # to the container's hostname — the exact publication agent-ops#2421
+          # traced back to a test run this same way. A handful of tests
+          # already set NODE_NAME per invocation because they need a specific
+          # value; this default only covers the rest.
+          docker run --rm -e NODE_NAME=test-suite agent-ops:ci bash -lc '
             failed=0
             for t in /app/test/*.test.sh; do
               if out="$(timeout 600 bash "$t" 2>&1)"; then
