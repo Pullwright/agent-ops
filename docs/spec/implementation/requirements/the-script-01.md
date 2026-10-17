@@ -381,8 +381,8 @@
     "unknown" as "cannot verify" — never as "fails" or "passes" — so a model
     newer than this table cannot itself be rejected by it. `model_tier_below`
     compares two ranked ids' ranks directly, whether or not they name the
-    same provider — nothing in it reads either id's provider segment any
-    more. `scripts/doctor.sh` warns separately (in its "Models" section) when
+    same provider — nothing in it reads either id's provider segment.
+    `scripts/doctor.sh` warns separately (in its "Models" section) when
     one of `coordinator_model`, `refiner_model`, `enabler_model`,
     `implementer_model_default`, `implementer_model_trivial` or
     `reviewer_model_default` is unranked, so an unranked model is never
