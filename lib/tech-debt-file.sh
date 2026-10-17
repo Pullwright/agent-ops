@@ -115,15 +115,6 @@ if ! declare -F issue_create_with_retry >/dev/null 2>&1; then
   . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/issue-file.sh"
 fi
 
-# PRIORITY's own ratchet, `issue_priority_apply` — guarded and sourced
-# relative to this file the same way, so a caller that sourced
-# lib/issue-priority.sh first (it carries its own source-time cache-directory
-# setup, which must run at most once) is left alone.
-if ! declare -F issue_priority_apply >/dev/null 2>&1; then
-  # shellcheck source=lib/issue-priority.sh
-  . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/issue-priority.sh"
-fi
-
 # _techdebt_apply_priority REPO NUMBER PRIORITY
 # The shared tail both techdebt_file_issue and techdebt_file_debt run after a
 # *fresh* create: PRIORITY, one of Urgent/High/Medium/Low, applied through
@@ -133,12 +124,28 @@ fi
 # application, which is never this filing's own failure: `issue_priority_apply`
 # already reasons about applied/skipped/failed on its own terms, and a filer
 # that has just created the issue has nothing further useful to say about it.
+# `issue_priority_apply` (lib/issue-priority.sh) is sourced lazily, right here,
+# rather than at this file's own top level: that file's source-time
+# `mktemp -d` has no scoped working set to land inside for a caller that
+# sources this file only for TECHDEBT_RECORD_BRANCH_PREFIX and never calls a
+# function it defines (scripts/publish-tech-debt-archive.sh,
+# scripts/release-pending-reservations.sh, scripts/sweep-orphan-branches.sh) —
+# sourcing it merely by loading this file left a stray directory outside any
+# working set for the whole of such a process (agent-ops#2422 fallout).
+# Deferred to exactly the branch that calls it, the one path where a cache
+# directory is unavoidable; guarded the same way so a caller that sourced
+# lib/issue-priority.sh first (it carries its own source-time cache-directory
+# setup, which must run at most once) is left alone.
 _techdebt_apply_priority() {
   local repo="$1" number="$2" priority="$3"
   case "$priority" in
     Urgent | High | Medium | Low) ;;
     *) return 0 ;;
   esac
+  if ! declare -F issue_priority_apply >/dev/null 2>&1; then
+    # shellcheck source=lib/issue-priority.sh
+    . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/issue-priority.sh"
+  fi
   issue_priority_apply "$repo" "$number" "$priority" >/dev/null 2>&1 || true
   return 0
 }
