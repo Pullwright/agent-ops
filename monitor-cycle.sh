@@ -37,11 +37,13 @@
 
 set -euo pipefail
 
-# Marks this process tree as the scheduler, never forgeable by Compose or a
-# crontab: lib/claim.sh's and scripts/state-sync.sh's own fallback-name
-# refusal keys on this being set rather than on NODE_NAME, because a `docker
-# exec` into a live node container inherits NODE_NAME from compose.yaml but
-# never a variable a script only exports transiently in its own process tree
+# Marks this process tree as the scheduler, which is what lib/claim.sh's and
+# scripts/state-sync.sh's own fallback-name refusal keys on rather than on
+# NODE_NAME: a `docker exec` into a live node container inherits NODE_NAME
+# from compose.yaml, but inherits neither a variable a script exports
+# transiently in its own process tree nor supercronic's crontab environment
+# (deploy/docker/crontab.tmpl, which sets the same marker for the scheduled
+# jobs that reach a write through none of these entry points)
 # (agent-ops#2449). Exported before anything below can reach a claim or a
 # push.
 export AGENT_OPS_SCHEDULER_RUN=1

@@ -104,10 +104,23 @@
 # that could not read one counter this time is simply retried next tick,
 # not a crashed script.
 #
+# AGENT_OPS_SCHEDULER_RUN=1 is not a schedule at all: it marks every job
+# below as the scheduler's own, which is what `lib/claim.sh`'s and
+# `scripts/state-sync.sh`'s fallback-name refusal keys on (agent-ops#2449).
+# It belongs here, in supercronic's own environment block, rather than only
+# in the three cycle entry points, because the two `state-sync.sh` lines
+# below are scheduled jobs in their own right and reach the push without
+# passing through any of them — without it, every node's five-minute publish
+# refuses itself. Setting it here grants a `docker exec` session nothing:
+# that shell inherits the *container's* declared environment
+# (`compose.yaml`'s `NODE_NAME` among it), never a crontab's, so an
+# unhermetic test run that way still carries no marker and is still refused.
+#
 # Everything not a placeholder is documented in the baked crontab, which is
 # also the fallback whenever this template cannot be rendered.
 
 LOGDIR=/home/agent/.local/state/poetic-agents
+AGENT_OPS_SCHEDULER_RUN=1
 
 * * * * *  touch $LOGDIR/.node-alive 2>/dev/null || true
 */5 * * * *  /app/scripts/publish-dashboard-launcher.sh

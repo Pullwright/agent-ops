@@ -126,11 +126,17 @@ usage() { sed -n '3,48p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 # shape where a `docker exec` into a *live* node container inherits
 # NODE_NAME from compose.yaml, sailing through unrefused while pushing a
 # test's state over the real node's own branch (agent-ops#2449). The refusal
-# therefore keys on AGENT_OPS_SCHEDULER_RUN, exported only by the cycle
-# entry points' own top (agent-cycle.sh, review-cycle.sh, monitor-cycle.sh)
-# before any code path that can reach a claim — never by Compose, the
-# crontab template, or a test harness's container, so a `docker exec` or a
-# bare invocation inside the image never carries it, whatever NODE_NAME it
+# therefore keys on AGENT_OPS_SCHEDULER_RUN, set by exactly two things, both
+# of them the scheduler itself: each cycle entry point's own top
+# (agent-cycle.sh, review-cycle.sh, monitor-cycle.sh) exports it before any
+# code path that can reach a claim, and supercronic's crontab sets it for
+# every job it fires (deploy/docker/crontab.tmpl's environment block, which
+# scripts/state-sync.sh's own cron-scheduled push needs — it reaches a write
+# through none of the three). What never sets it is a *container's* declared
+# environment — not compose.yaml, not a test harness's `docker run -e …` —
+# which is the whole point: a `docker exec` session inherits that
+# environment, NODE_NAME included, but never a crontab's, so a bare
+# invocation inside the image still carries no marker whatever NODE_NAME it
 # inherited. CLAIM_CONTAINER_SENTINEL overrides the sentinel path for the
 # test suite, the same seam lib/compose-drift.sh and
 # scripts/cgroup-parent-setup.sh use for the same question.

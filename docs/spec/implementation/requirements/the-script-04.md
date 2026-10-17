@@ -305,17 +305,23 @@
    refuses outright, with a warning and no git call at all, when the
    `/.dockerenv` sentinel (`lib/compose-drift.sh`'s own, overridable as
    `STATE_SYNC_CONTAINER_SENTINEL` for tests) is present and
-   `AGENT_OPS_SCHEDULER_RUN` is unset: `agent-cycle.sh`, `review-cycle.sh`
-   and `monitor-cycle.sh` each export that marker, unconditionally, before
-   any code path that can reach a push, and nothing else ever sets it — not
-   Compose, not the crontab template, not a test harness's container — so
-   its absence can only mean something was invoked directly inside the
-   image with no scheduler of its own: a stray manual run, an unhermetic
-   test, or a `docker exec` into a live node container, which inherits
-   `NODE_NAME` from Compose but never this marker (agent-ops#2421,
-   agent-ops#2449 — the first published a fleet node under the container's
-   own hostname that no one could later act on, the second a test's
-   throwaway state over a live node's own branch). `lib/claim.sh`'s own
+   `AGENT_OPS_SCHEDULER_RUN` is unset. Exactly two things set that marker,
+   both of them the scheduler itself: `agent-cycle.sh`, `review-cycle.sh`
+   and `monitor-cycle.sh` each export it, unconditionally, before any code
+   path that can reach a push, and the crontab (`deploy/docker/crontab.tmpl`
+   and the baked `deploy/docker/crontab`) sets it in its own environment
+   block for every job supercronic fires — which the
+   `state-sync.sh push` line needs, being a scheduled job in its own right
+   that passes through none of those three. No *container's* declared
+   environment ever sets it — neither Compose's nor a test harness's
+   `docker run -e …` — so its absence can only mean something was invoked
+   directly inside the image with no scheduler of its own: a stray manual
+   run, an unhermetic test, or a `docker exec` into a live node container,
+   which inherits `NODE_NAME` from Compose but never a crontab's
+   environment (agent-ops#2421, agent-ops#2449 — the first published a
+   fleet node under the container's own hostname that no one could later
+   act on, the second a test's throwaway state over a live node's own
+   branch). `lib/claim.sh`'s own
    branch and file claims refuse the same way, on the same sentinel
    (`CLAIM_CONTAINER_SENTINEL`), before either writes anything. Each push
    stamps `heartbeat.json` (`{node, role, ts, last_cycle, version, compose,

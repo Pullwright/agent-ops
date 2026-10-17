@@ -165,7 +165,17 @@ a node updates by pulling a new image rather than by pulling a branch.
   `render-crontab.sh` (below) sets from `config.json`'s own `state_dir` at
   every container start rather than baking it in, so the dashboard's
   log-derived views keep working against whichever path the installation
-  actually configured. It deliberately omits the laptop's personal
+  actually configured. The crontab's own environment block carries one other
+  entry, `AGENT_OPS_SCHEDULER_RUN=1`, which marks every job supercronic
+  fires as the scheduler's own: it is what the fallback-name refusal in
+  `scripts/state-sync.sh` and `lib/claim.sh` keys on (requirement 2.5's
+  Push, requirement 17a), and the `state-sync.sh push` line above is a scheduled
+  job in its own right rather than one reached through a cycle entry point,
+  so without it that line would refuse its own publish. A crontab's
+  environment reaches only the jobs supercronic starts, never a `docker
+  exec` session, which is why the marker can live here without becoming
+  forgeable from inside a running container. It deliberately omits the
+  laptop's personal
   `update-main-branches.sh` entry: that refreshes interactive checkouts, and
   a node has none.
 - **The cycle and review minutes are per-node** (design decision D5). At
