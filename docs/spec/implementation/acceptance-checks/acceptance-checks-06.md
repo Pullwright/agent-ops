@@ -1,6 +1,6 @@
 ## Acceptance checks
 
-### Acceptance checks — continued (part 6 of 6; items 51–52b)
+### Acceptance checks — continued (part 6 of 7; items 51–52b)
 
 51. **The pager framework files once per firing key, closes once the fact
     clears, and never twice for the same transition (requirement 51).**

@@ -4,11 +4,12 @@ Split from a single file by #2094 so every part is within the 100,000-byte docum
 
 <!-- toc:start -->
   - [Acceptance checks](acceptance-checks/acceptance-checks-01.md)
-  - [Acceptance checks — continued (part 2 of 6; items 2m–7f)](acceptance-checks/acceptance-checks-02.md)
-  - [Acceptance checks — continued (part 3 of 6; items 7g–11e)](acceptance-checks/acceptance-checks-03.md)
-  - [Acceptance checks — continued (part 4 of 6; items 39a–8s)](acceptance-checks/acceptance-checks-04.md)
-  - [Acceptance checks — continued (part 5 of 6; items 8t–50)](acceptance-checks/acceptance-checks-05.md)
-  - [Acceptance checks — continued (part 6 of 6; items 51–52b)](acceptance-checks/acceptance-checks-06.md)
+  - [Acceptance checks — continued (part 2 of 7; items 2m–7f)](acceptance-checks/acceptance-checks-02.md)
+  - [Acceptance checks — continued (part 3 of 7; items 7g–11e)](acceptance-checks/acceptance-checks-03.md)
+  - [Acceptance checks — continued (part 4 of 7; items 39a–8s)](acceptance-checks/acceptance-checks-04.md)
+  - [Acceptance checks — continued (part 5 of 7; items 8t–50)](acceptance-checks/acceptance-checks-05.md)
+  - [Acceptance checks — continued (part 6 of 7; items 51–52b)](acceptance-checks/acceptance-checks-06.md)
+  - [Acceptance checks — continued (part 7 of 7; items 1h–2s)](acceptance-checks/acceptance-checks-07.md)
   - [Components](components/components-01.md)
   - [Components — continued (part 2 of 3; 12b–17d)](components/components-02.md)
   - [Components — continued (part 3 of 3; 17e–24b)](components/components-03.md)
