@@ -500,6 +500,9 @@
     Enabler also carries `repo`, `by: "enabler"` and a `reason`, which is what
     distinguishes it from the Co-Ordinator's cheap re-check of requirement 18 —
     the bare-id form remains valid and remains what a human appends by hand. An
+    `unblocked` written by the Refiner carries the same shape, `by: "refiner"`,
+    logged in the same pass as the `item-refined` that cleared the block it
+    answers (requirement 39c; agent-ops#2477). An
     `unvoided` written from a label (requirement 34f) carries `repo`,
     `by: "label"`, the `request_url` that authorised it, `labelled_at`, and the
     `cleared_void_ts` it reopened; the bare hand-appended form remains valid.
