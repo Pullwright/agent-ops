@@ -248,24 +248,73 @@ host_facts_updater_json() {
     '{ledger_tail:$tail, last_session:$last}'
 }
 
+# host_facts_viewer_probe_reason RC HTTP-CODE STDERR-TEXT — the `reason`
+# string for a failed fetch, diagnosable from the digest alone without a
+# live login: a DNS/connect-level failure (curl exit 6/7) and a timeout
+# (curl exit 28) read distinctly from a non-2xx HTTP response (curl exit 22,
+# whose status `host_facts_viewer_probe_one` captures via `-w '%{http_code}'`
+# since `-f` suppresses the body on that path), each tagged with curl's own
+# exit code. STDERR-TEXT, when curl wrote one, is appended verbatim
+# (collapsed to one line) for whatever further detail curl itself captured.
+host_facts_viewer_probe_reason() {
+  local rc="${1:-}" http_code="${2:-}" stderr_text="${3:-}" detail=""
+  case "$rc" in
+    6|7) detail="connection failed (curl exit $rc)" ;;
+    28) detail="timed out (curl exit $rc)" ;;
+    22)
+      if [[ -n "$http_code" && "$http_code" != "000" ]]; then
+        detail="http $http_code"
+      else
+        detail="http error (curl exit $rc)"
+      fi
+      ;;
+    0) detail="empty response" ;;
+    *) detail="curl exit $rc" ;;
+  esac
+  stderr_text="$(printf '%s' "$stderr_text" | tr '\n' ' ')"
+  stderr_text="${stderr_text#"${stderr_text%%[![:space:]]*}"}"
+  stderr_text="${stderr_text%"${stderr_text##*[![:space:]]}"}"
+  if [[ -n "$stderr_text" ]]; then
+    printf '%s: %s' "$detail" "$stderr_text"
+  else
+    printf '%s' "$detail"
+  fi
+}
+
 # host_facts_viewer_probe_one NODE URL [CURL-CMD] — one entry's own value:
 # {"ok":true,"bytes":N,"seconds":N} on a fetch that both succeeds and parses
-# as JSON, {"ok":false,"bytes":null,"seconds":null,"reason":"..."} otherwise.
-# CURL-CMD defaults to `curl`; the test suite points it at a fixture
-# standing in for the network, the same override shape
-# `IMAGE_DRIFT_CURL_CMD` already gives `lib/image-drift.sh`.
+# as JSON, {"ok":false,"bytes":null,"seconds":null,"reason":"..."} otherwise,
+# the reason built by `host_facts_viewer_probe_reason` above. CURL-CMD
+# defaults to `curl`; the test suite points it at a fixture standing in for
+# the network, the same override shape `IMAGE_DRIFT_CURL_CMD` already gives
+# `lib/image-drift.sh`.
 host_facts_viewer_probe_one() {
   local node="${1:-}" url="${2:-}" curl_cmd="${3:-${HOST_FACTS_CURL_CMD:-curl}}"
-  local start="" end="" body="" rc=0 seconds=""
+  local start="" end="" raw="" body="" http_code="" rc=0 seconds=""
+  local stderr_file="" stderr_text=""
+  stderr_file="$(mktemp 2>/dev/null || printf '/dev/null')"
   start="$(date +%s.%N 2>/dev/null || date +%s)"
-  body="$($curl_cmd -fsS --max-time "${HOST_FACTS_VIEWER_PROBE_TIMEOUT:-5}" "$url" 2>/dev/null)"
+  raw="$($curl_cmd -fsS --max-time "${HOST_FACTS_VIEWER_PROBE_TIMEOUT:-5}" -w '\n%{http_code}' "$url" 2>"$stderr_file")"
   rc=$?
   end="$(date +%s.%N 2>/dev/null || date +%s)"
+  if [[ "$stderr_file" != /dev/null ]]; then
+    stderr_text="$(<"$stderr_file")"
+    rm -f "$stderr_file"
+  fi
   seconds="$(awk -v s="$start" -v e="$end" 'BEGIN{printf "%.3f", e - s}' 2>/dev/null || echo 0)"
+  if [[ "$raw" == *$'\n'* ]]; then
+    http_code="${raw##*$'\n'}"
+    body="${raw%$'\n'*}"
+  else
+    body="$raw"
+    http_code=""
+  fi
   if (( rc != 0 )) || [[ -z "$body" ]]; then
-    jq -nc --argjson s "$seconds" \
-      '{ok:false, bytes:null, seconds:null, reason:"fetch failed"}' 2>/dev/null \
-      || printf '{"ok":false,"bytes":null,"seconds":null,"reason":"fetch failed"}'
+    local reason=""
+    reason="$(host_facts_viewer_probe_reason "$rc" "$http_code" "$stderr_text")"
+    jq -nc --arg r "$reason" \
+      '{ok:false, bytes:null, seconds:null, reason:$r}' 2>/dev/null \
+      || printf '{"ok":false,"bytes":null,"seconds":null,"reason":"curl exit %s"}' "$rc"
     return 0
   fi
   if ! jq -e . >/dev/null 2>&1 <<<"$body"; then

@@ -169,6 +169,21 @@ exit 22
 STUB
 chmod +x "$fail_curl"
 
+connect_refused_curl="$tmp_dir/connect-refused-curl.sh"
+cat > "$connect_refused_curl" <<'STUB'
+#!/usr/bin/env bash
+echo "curl: (7) Failed to connect to node-d port 443: Connection refused" >&2
+exit 7
+STUB
+chmod +x "$connect_refused_curl"
+
+timeout_curl="$tmp_dir/timeout-curl.sh"
+cat > "$timeout_curl" <<'STUB'
+#!/usr/bin/env bash
+exit 28
+STUB
+chmod +x "$timeout_curl"
+
 bad_body_curl="$tmp_dir/bad-body-curl.sh"
 cat > "$bad_body_curl" <<'STUB'
 #!/usr/bin/env bash
@@ -184,6 +199,17 @@ assert_eq "a successful fetch carries a byte count" "1" \
 probe_fail="$(host_facts_viewer_probe_one node-b http://node-b/data.js "$fail_curl")"
 assert_eq "a failed fetch reads ok:false" "false" "$(jq -r '.ok' <<<"$probe_fail")"
 assert_eq "a failed fetch carries no byte count" "null" "$(jq -r '.bytes' <<<"$probe_fail")"
+
+probe_refused="$(host_facts_viewer_probe_one node-d http://node-d/data.js "$connect_refused_curl")"
+assert_eq "a connection-refused fetch reads ok:false" "false" "$(jq -r '.ok' <<<"$probe_refused")"
+assert_eq "a connection-refused fetch names the connect failure, not the generic reason" \
+  "connection failed (curl exit 7): curl: (7) Failed to connect to node-d port 443: Connection refused" \
+  "$(jq -r '.reason' <<<"$probe_refused")"
+
+probe_timeout="$(host_facts_viewer_probe_one node-e http://node-e/data.js "$timeout_curl")"
+assert_eq "a timed-out fetch reads ok:false" "false" "$(jq -r '.ok' <<<"$probe_timeout")"
+assert_eq "a timed-out fetch names the timeout, distinctly from a connection failure" \
+  "timed out (curl exit 28)" "$(jq -r '.reason' <<<"$probe_timeout")"
 
 probe_bad_body="$(host_facts_viewer_probe_one node-c http://node-c/data.js "$bad_body_curl")"
 assert_eq "a body that will not parse reads ok:false" "false" "$(jq -r '.ok' <<<"$probe_bad_body")"
