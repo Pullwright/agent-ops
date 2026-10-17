@@ -541,6 +541,10 @@ publish_cleanup() {
   for staged in "$data_tmp" "$stamp_tmp" "${payload_cache:+$payload_cache.tmp}"; do
     [[ -n "$staged" && -e "$staged" ]] && rm -f -- "$staged"
   done
+  # ISSUE_PRIORITY_CACHE_DIR (lib/issue-priority.sh, sourced via lib/pager.sh
+  # above) is this process's own to remove, the same convention
+  # scripts/doctor.sh's own EXIT trap follows (agent-ops#2422).
+  issue_priority_cache_cleanup
   scratch_release
   return 0
 }
