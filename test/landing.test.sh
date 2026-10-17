@@ -1081,6 +1081,7 @@ assert_contains "  ... alongside the later one" \
 # --- _landing_refusal_persistent (issue #1979, requirement 62) --------------
 
 for class in ineligible autonomy-level kill-switch open-question \
+             protected-path-cooloff protected-path-stale-head protected-path-tier \
              reconciliation-unanswered human-changes-requested merge-queue-occupied; do
   _landing_refusal_persistent "$class"; rc=$?
   assert_eq "_landing_refusal_persistent reads $class as persistent" "0" "$rc"
