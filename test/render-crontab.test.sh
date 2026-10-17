@@ -125,6 +125,11 @@ push_line() { grep 'state-sync.sh push' "$1"; }
 fetch_line() { grep 'state-sync.sh fetch' "$1"; }
 rotate_line() { grep 'rotate-logs.sh' "$1"; }
 logdir_line() { grep '^LOGDIR=' "$1"; }
+marker_line() { grep '^AGENT_OPS_SCHEDULER_RUN=' "$1"; }
+# The 1-based line number of the first line matching $2 in $1, or "" for none —
+# so a case can assert that the crontab's own environment block precedes the
+# jobs it is meant to reach, which is the only order cron gives them.
+line_no() { grep -n -- "$2" "$1" | head -n1 | cut -d: -f1; }
 
 write_config() {  # write_config <path> <schedule-json>
   # state_dir is required (no schema default) and, since this PR, feeds
@@ -183,6 +188,23 @@ assert_contains "log rotation is at log_rotation_minute" "$rotation * * * *  /ap
 shipped_state_dir="$(config_defaults "$CONFIG" "$SCRIPT_DIR/config.schema.json" | jq -r '.state_dir')"
 assert_eq "LOGDIR follows the shipped config's own state_dir, ~ expanded" "LOGDIR=${shipped_state_dir/#\~/$HOME}" "$(logdir_line "$out")"
 assert_eq "no placeholder survives a render" "0" "$(grep -c '@' "$out")"
+
+# agent-ops#2449: `state-sync.sh push` and `lib/claim.sh`'s claims refuse
+# outright inside the node image unless AGENT_OPS_SCHEDULER_RUN is set, and the
+# push is a crontab line in its own right — it reaches a write through none of
+# the three cycle entry points that export the marker themselves. So the
+# crontab's own environment block has to carry it, or every node's publish
+# silently refuses itself every few minutes. Asserted on both the rendered
+# output and the baked fallback, since either can be the schedule a container
+# actually runs.
+assert_eq "the crontab's environment marks every job it fires as the scheduler" \
+  "AGENT_OPS_SCHEDULER_RUN=1" "$(marker_line "$out")"
+assert_eq "the baked fallback carries the same marker, being a working schedule too" \
+  "AGENT_OPS_SCHEDULER_RUN=1" "$(marker_line "$SCRIPT_DIR/deploy/docker/crontab")"
+marker_at="$(line_no "$out" '^AGENT_OPS_SCHEDULER_RUN=')"
+push_at="$(line_no "$out" 'state-sync.sh push')"
+assert_eq "the marker precedes the state-sync push line it has to reach" "true" \
+  "$( (( marker_at > 0 && marker_at < push_at )) && echo true || echo false)"
 
 out2="$tmp_dir/crontab2"
 env NODE_NAME=poetic-1 "$RENDER" "$TMPL" "$out2" "$CONFIG" 2>/dev/null

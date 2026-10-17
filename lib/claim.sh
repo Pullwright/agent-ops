@@ -122,17 +122,28 @@ usage() { sed -n '3,48p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 # meaningless to every peer reading it back — must never land in shared
 # state (agent-ops#2421: two such writes, from a test run directly inside a
 # node container with no NODE_NAME set, published a pseudo-node that paged
-# forever). The real scheduler always has NODE_NAME set — compose.yaml
-# defaults it to "unnamed", never empty — so this can only fire from
-# something invoked directly inside the image with no NODE_NAME at all: a
-# stray manual run, or an unhermetic test. CLAIM_CONTAINER_SENTINEL
-# overrides the sentinel path for the test suite, the same seam
-# lib/compose-drift.sh and scripts/cgroup-parent-setup.sh use for the same
-# question.
+# forever). Keying the refusal on NODE_NAME alone missed the neighbouring
+# shape where a `docker exec` into a *live* node container inherits
+# NODE_NAME from compose.yaml, sailing through unrefused while pushing a
+# test's state over the real node's own branch (agent-ops#2449). The refusal
+# therefore keys on AGENT_OPS_SCHEDULER_RUN, set by exactly two things, both
+# of them the scheduler itself: each cycle entry point's own top
+# (agent-cycle.sh, review-cycle.sh, monitor-cycle.sh) exports it before any
+# code path that can reach a claim, and supercronic's crontab sets it for
+# every job it fires (deploy/docker/crontab.tmpl's environment block, which
+# scripts/state-sync.sh's own cron-scheduled push needs — it reaches a write
+# through none of the three). What never sets it is a *container's* declared
+# environment — not compose.yaml, not a test harness's `docker run -e …` —
+# which is the whole point: a `docker exec` session inherits that
+# environment, NODE_NAME included, but never a crontab's, so a bare
+# invocation inside the image still carries no marker whatever NODE_NAME it
+# inherited. CLAIM_CONTAINER_SENTINEL overrides the sentinel path for the
+# test suite, the same seam lib/compose-drift.sh and
+# scripts/cgroup-parent-setup.sh use for the same question.
 claim_refuse_fallback_name() {
   local sentinel="${CLAIM_CONTAINER_SENTINEL:-/.dockerenv}"
-  if [[ -e "$sentinel" && -z "${NODE_NAME:-}" ]]; then
-    say "refusing to write — NODE_NAME is unset inside the node image; writing under the hostname ($(hostname)) would publish a fleet node nobody configured"
+  if [[ -e "$sentinel" && -z "${AGENT_OPS_SCHEDULER_RUN:-}" ]]; then
+    say "refusing to write — not invoked by the scheduler inside the node image; writing under the hostname ($(hostname)) would publish a fleet node nobody configured"
     return 1
   fi
   return 0

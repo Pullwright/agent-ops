@@ -70,6 +70,18 @@ SYNC="$SCRIPT_DIR/scripts/state-sync.sh"
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 
+# This suite runs inside the node image, where the real `/.dockerenv`
+# exists — and scripts/state-sync.sh refuses a push under that sentinel
+# unless AGENT_OPS_SCHEDULER_RUN is set (agent-ops#2421, agent-ops#2449).
+# Every case below is about push behaviour rather than about that refusal,
+# so the sentinel points at a path that does not exist, and the refusal's
+# own cases below override it per invocation. Same seam, and the same
+# reason for reaching for it, as test/claim.test.sh,
+# test/compose-drift.test.sh and test/cgroup-parent-setup.test.sh: a test
+# that needs to answer "am I in a container?" for itself must not be
+# answered by the container it is running in.
+export STATE_SYNC_CONTAINER_SENTINEL="$tmp_dir/absent-container-sentinel"
+
 failures=0
 
 assert_eq() {
@@ -911,7 +923,8 @@ assert_eq "a snapshot already in the mirror is deleted from it" "0" \
   "$(test -e "$tmp_dir/pushed-again/cycles/20260720T010000Z-1/.fleet-log.jsonl" && echo 1 || echo 0)"
 
 # ==============================================================================
-# refusal — no push under a fallback name inside a container (agent-ops#2421)
+# refusal — no push without a scheduler marker inside a container
+# (agent-ops#2421, agent-ops#2449)
 # ==============================================================================
 # A fake sentinel rather than the real /.dockerenv: this test must pass
 # identically whether or not the host running it is itself a container.
@@ -920,15 +933,41 @@ refuse_sentinel="$tmp_dir/fake-dockerenv"
 refuse_remote="$tmp_dir/refuse-remote.git"
 git init --quiet --bare "$refuse_remote"
 refuse_home="$(new_node refuse-node)"
-refuse_out="$(env -u NODE_NAME HOME="$refuse_home" AGENT_OPS_ROLE=active \
+refuse_out="$(env -u AGENT_OPS_SCHEDULER_RUN -u NODE_NAME HOME="$refuse_home" AGENT_OPS_ROLE=active \
   STATE_SYNC_REMOTE="$refuse_remote" STATE_SYNC_CONTAINER_SENTINEL="$refuse_sentinel" \
   "$SYNC" push 2>&1)"
-assert_eq "a push with no NODE_NAME inside a container refuses" "1" "$?"
-assert_contains "...with a warning naming NODE_NAME" "NODE_NAME" "$refuse_out"
+assert_eq "a push with no scheduler marker inside a container refuses" "1" "$?"
+assert_contains "...with a warning naming the scheduler" "not invoked by the scheduler" "$refuse_out"
 assert_eq "...and publishes no branch at all, not even under the hostname" "" \
   "$(git -C "$refuse_remote" for-each-ref --format='%(refname)' refs/heads 2>/dev/null)"
 assert_eq "...and never starts the mirror that a real push would have built" "0" \
   "$(test -e "$refuse_home/.cache/poetic-agents/workspaces/.agent-ops-state" && echo 1 || echo 0)"
+
+# The neighbouring shape agent-ops#2449 closes: a `docker exec` into a live
+# node container inherits NODE_NAME from compose.yaml, so the refusal must
+# not key on NODE_NAME at all — it still fires with NODE_NAME set, exactly
+# as that live container's own exec session would see it, so long as the
+# scheduler's own marker is absent.
+live_out="$(env -u AGENT_OPS_SCHEDULER_RUN HOME="$refuse_home" AGENT_OPS_ROLE=active \
+  NODE_NAME=poetic-2 STATE_SYNC_REMOTE="$refuse_remote" \
+  STATE_SYNC_CONTAINER_SENTINEL="$refuse_sentinel" \
+  "$SYNC" push 2>&1)"
+assert_eq "a push with NODE_NAME set but no scheduler marker inside a container still refuses" "1" "$?"
+assert_contains "...with the same warning" "not invoked by the scheduler" "$live_out"
+assert_eq "...and still publishes no branch at all" "" \
+  "$(git -C "$refuse_remote" for-each-ref --format='%(refname)' refs/heads 2>/dev/null)"
+
+# Inside a container, the real scheduler's own marker is what unblocks the
+# push — not NODE_NAME, which the live-container shape above shows is no
+# longer part of the condition at all.
+scheduler_home="$(new_node scheduler-node)"
+env AGENT_OPS_SCHEDULER_RUN=1 HOME="$scheduler_home" AGENT_OPS_ROLE=active \
+  NODE_NAME=poetic-2 STATE_SYNC_REMOTE="$refuse_remote" \
+  STATE_SYNC_CONTAINER_SENTINEL="$refuse_sentinel" \
+  "$SYNC" push >/dev/null 2>&1
+assert_eq "inside a container, a push with the scheduler marker set wins" "0" "$?"
+assert_contains "...and publishes the node's own branch" "refs/heads/nodes/poetic-2" \
+  "$(git -C "$refuse_remote" for-each-ref --format='%(refname)' refs/heads 2>/dev/null)"
 
 # ==============================================================================
 # mirror integrity — a corrupted mirror is discarded and rebuilt, never

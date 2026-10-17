@@ -239,8 +239,9 @@ assert_contains "--status reports the switch" "role.test.sh" "$out"
 # claim wins vacuously for the same reason, so the blanked-out `state_repo`
 # is the lever this one turns on. The explicit NODE_NAME and the prepended
 # PATH are the sandbox's other two walls, each with its own assertion: the
-# PATH one directly above, and NODE_NAME's refusal in test/state-sync.test.sh
-# and test/claim.test.sh, which reach the code this run never does.
+# PATH one directly above, and the scheduler-marker refusal in
+# test/state-sync.test.sh and test/claim.test.sh, which reach the code this
+# run never does.
 assert_eq "no run above pushed or claimed anything on any remote" \
   "" "$(cat "$stub_calls" 2>/dev/null)"
 
