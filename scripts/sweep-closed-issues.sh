@@ -55,10 +55,18 @@
 # emit a `merge-observed` action for every one it can identify. Bounded the
 # same way the close action already is by `pr_search_limit`, and de-duplicated
 # per node against `<state-dir>/sweep-closed-issues-merge-observed-seen.json`
-# — a small, self-pruning list of `repo#number` keys this call has already
-# reported, replaced wholesale each run with exactly the current window's own
-# keys, so a pull request re-emits nothing once it ages out of
-# `pr_search_limit` and nothing is retained past what could ever be re-seen.
+# — a small list of `repo#number` keys this call has already reported, for
+# every repository this state_dir has ever been swept for, not only this
+# invocation's own `slug`: `lib/standdown.sh`'s 2.1c sweep invokes this script
+# once per configured repository, all sharing one state_dir, so a write that
+# kept only this invocation's own window would erase every other repo's keys
+# on every pass (agent-ops#2476). Each write therefore merges this run's own
+# window into whatever the file already held, pruning only the entries that
+# carry this invocation's own `slug#` prefix and have aged out of its current
+# window — self-pruning stays bounded by `pr_search_limit` per repo, but only
+# for the repo actually being swept this call; every other repo's keys are
+# left exactly as that repo's own invocation last wrote them, and pruned only
+# when that repo is swept in turn.
 # Cross-node duplication is not de-duplicated here — several nodes each
 # noticing the same merge is the ordinary fleet-wide shape every other record
 # in `docs/FLOW-SCHEMA.md` already tolerates, reduced first-wins-by-`ts` by
@@ -325,16 +333,20 @@ if (( deferred > 0 )); then
   jq -nc --argjson n "$deferred" '{action: "deferred", remaining: $n}'
 fi
 
-# Replace the seen-file wholesale with exactly this run's own window (see
-# this script's own header) — self-pruning, and small: bounded by
-# `pr_search_limit` regardless of how long the sweep has run. An unwritable
-# state_dir must not fail the sweep — the caller still gets this run's
-# actions — but it must not go unnoticed either: silently losing the write
-# means every merge-observed key re-emits, up to `pr_search_limit` of them,
-# on every future stand-down until the directory is writable again.
+# Merge this run's own window into the seen-file rather than replacing it
+# wholesale (see this script's own header) — pruning only this invocation's
+# own $slug's entries that fell out of its current window, and leaving every
+# other repository's own keys untouched, since this invocation never learns
+# their current windows. An unwritable state_dir must not fail the sweep —
+# the caller still gets this run's actions — but it must not go unnoticed
+# either: silently losing the write means every merge-observed key for this
+# repo re-emits, up to `pr_search_limit` of them, on every future stand-down
+# until the directory is writable again.
 if [[ -n "$state_dir" ]]; then
+  window_json="$(printf '%s\n' "${merge_observed_window[@]:-}" | jq -R 'select(length > 0)' | jq -sc 'unique')"
   if ! { mkdir -p "$state_dir" 2>/dev/null && \
-      printf '%s\n' "${merge_observed_window[@]:-}" | jq -R 'select(length > 0)' | jq -sc 'unique' \
+      jq -nc --argjson existing "$merge_observed_seen" --argjson window "$window_json" --arg slug "$slug" \
+        '[$existing[] | select(startswith($slug + "#") | not)] + $window | unique' \
         > "$merge_observed_seen_file.tmp" 2>/dev/null && \
       mv "$merge_observed_seen_file.tmp" "$merge_observed_seen_file" 2>/dev/null; }; then
     warn "failed to write merge-observed seen-file $merge_observed_seen_file — merge-observed events may re-emit on future runs"
