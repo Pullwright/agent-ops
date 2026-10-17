@@ -494,7 +494,7 @@ jobs:
       # has been evicted the arm64 leg rebuilds here under emulation rather
       # than failing — slow is better than no image on `main`.
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v4
