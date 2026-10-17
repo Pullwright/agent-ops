@@ -54,7 +54,7 @@
     "anthropic": {
       "substrate": "claude-code",
       "lanes": {
-        "api": {"weight": 1},
+        "api": {"weight": 0},
         "subscription": {"weight": 1, "enabled": true}
       }
     }
