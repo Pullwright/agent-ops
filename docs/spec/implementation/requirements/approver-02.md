@@ -178,9 +178,17 @@
       reader lives here, never in a target repo), never asking.
     - **`page-outlived-item`** (pipeline-act). Fires when any open issue
       carrying `enabler_escalation_label` or `pw::pager` in `pager_repo`
-      links a PR or issue (the first `github.com/…/pull/<n>` or
-      `github.com/…/issues/<n>` its body names) that has already gone
-      terminal — merged, closed. "Or" is a union of two listings, one per
+      links a PR or issue that has already gone terminal — merged, closed.
+      The page's own item is resolved from its body's own
+      `Item: `<ref>` · repo `<slug>`` footer line (every Enabler escalation
+      carries one) when present — settling both the item and whether it is
+      a PR or an issue, via a `gh api repos/<repo>/issues/<n>` lookup on the
+      shared issues/pulls numbering space's own `pull_request` key — so that
+      a PR the body's prose merely cites as context can never be read as the
+      page's own item. Only a page with no footer line falls back to
+      scanning the body for the first `github.com/…/issues/<n>` or
+      `github.com/…/pull/<n>` URL it names, issue URLs checked ahead of
+      pull-request ones. "Or" is a union of two listings, one per
       label, merged and deduped on the issue number, because `gh issue
       list`'s own `--label "a,b"` is an *intersection* — it filters for
       issues carrying every name given — and no page ever carries both, so a
