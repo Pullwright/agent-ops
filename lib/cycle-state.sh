@@ -1355,7 +1355,12 @@ enabler_defer_open_dependency_items() {
     item="$(jq -r '.item' <<<"$entry" 2>/dev/null || true)"
     blocked_ts="$(jq -r '.blocked_ts // ""' <<<"$entry" 2>/dev/null || true)"
     [[ -n "$repo" && -n "$item" ]] || continue
-    blocked_epoch="$(date -u -d "${blocked_ts:-}" +%s 2>/dev/null || true)"
+    # Tested for emptiness first, not left to `date` to reject: GNU `date -u
+    # -d "" +%s` succeeds, answering today's midnight, so a block whose own
+    # `ts` is missing would read as a few hours old and be deferred — the
+    # opposite of the direction the `else` branch below is here to take.
+    blocked_epoch=""
+    [[ -n "$blocked_ts" ]] && blocked_epoch="$(date -u -d "$blocked_ts" +%s 2>/dev/null || true)"
     if [[ -n "$blocked_epoch" ]]; then
       age_hours=$(( (now - blocked_epoch) / 3600 ))
     else

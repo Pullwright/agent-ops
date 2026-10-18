@@ -127,7 +127,17 @@
     suppress a *different* item's genuine refinement stamped in the same
     second, since the log is fleet-wide and `log_event`'s timestamps are
     whole-second, so the phantom set is matched on the whole
-    `{repo, item, ts}` triple rather than on `ts` alone.
+    `{repo, item, ts}` triple rather than on `ts` alone. Clause 5 is asserted
+    on both sides too: a `threshold` candidate whose thread still names an
+    open `Blocked-by:` reference is deferred and logs one
+    `enabler-dependency-deferred` naming the item and the reference, the same
+    candidate is engaged once the reference closes and engaged anyway once
+    past the age bound, and an `issue-closed` or `recheck` candidate is
+    engaged without its thread being fetched at all. One assertion is about
+    the wiring rather than the rule — the predicates the clause needs are
+    defined by some library `agent-cycle.sh` sources — because the clause
+    skips itself when they are not, and a rule that silently skips itself
+    reads exactly like a rule with nothing to defer.
 11a. <a id="impl-ac-11a"></a>**The fingerprint wakes a quiet fleet at the threshold, and lets it go
     quiet again (requirement 35b).** In `test/noop-skip.test.sh`, per the same
     discipline as the abandoned-drafts trap: an item entering the eligible set
