@@ -372,7 +372,42 @@
     and neither ranks below the other. A placement is revised only by a
     dated decision-log entry on the scorecards' evidence (D22), never by a
     stage, and a model an installation judges differently is moved in its
-    own `config.json` rather than by editing this table.
+    own `config.json`'s `model_tiers` key (D29's customer-control rule, issue
+    #2465) rather than by editing this table.
+
+    **The override (issue #2465).** `model_tiers` is a top-level
+    `config.json` object, keyed by model id in the `modelId` shape (a bare
+    id meaning `anthropic/`, as every other model key's shape does), valued
+    by an integer tier band >= 0 — the shape is declarative, stated by the
+    schema's `propertyNames` (the `modelId` pattern) and `additionalProperties`
+    (an integer schema, rather than the `false` every other dynamically-named
+    object in the schema uses) rather than the escape-valve code `providers`
+    needs, since a model id's shape is fixed in advance the way a
+    provider's own chosen name is not. `lib/model-id.sh`'s `model_tiers_load`
+    merges it over `MODEL_TIER_RANK` — an entry for a model already placed
+    moves it to the stated band, an entry for one the table does not know
+    places it, and nothing shipped is removed by omission — called at the
+    same five sites `providers_load` is (requirement 1a), immediately after
+    it, since each key's own provider must already be configured. That
+    check is `resolve_model_qualified`'s own fail-fast check at cycle start,
+    naming `model_tiers` as the key, exactly as an ordinary model key is
+    checked: a `model_tiers` key naming a provider `providers` does not
+    configure, or one configured with a substrate this node has no adapter
+    for, is the identical error, aborting `agent-cycle.sh`/`review-cycle.sh`
+    under `set -e`. `model_tiers_load` always resets `MODEL_TIER_RANK` to the
+    shipped table first, so calling it more than once in one process never
+    compounds a previous call's overrides, and a caller that never calls it
+    reads the shipped table unchanged — the same convention `providers_load`
+    already established for `anthropic`. `scripts/doctor.sh`'s "Models"
+    section lists every override beside the band it shipped at (or "not on
+    the shipped ladder", for a model the table has never heard of), so a
+    placement that clears or trips the floor below is visible rather than
+    silent, and a model an override has placed is exempt from the
+    unranked-model warning above. A placement's own band is still not carried by
+    the `--mix` lever (D30): `--mix` carries no threshold and never relaxes a
+    guard, and a tier placement is configuration, rolled with the image like
+    any other.
+
     `model_tier_rank`, `model_tier_known` and `model_tier_below` all take a
     qualified id and read the table by it; a model the table has never heard
     of (a future release, a typo the `modelId` pattern still accepts, or a

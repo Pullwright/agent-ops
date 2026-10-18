@@ -232,6 +232,11 @@ cfg_json() { jq -c "$1" <<<"$DEFAULTED_CONFIG" 2>/dev/null; }
 # agent-cycle.sh, review-cycle.sh and scripts/doctor.sh all load it at.
 providers_load "$(cfg_json '.providers')"
 
+# The model-tier override seam (issue #2465): config's own `model_tiers`
+# merges over lib/model-id.sh's shipped MODEL_TIER_RANK, the same startup
+# position providers_load is loaded at above.
+model_tiers_load "$(cfg_json '.model_tiers')"
+
 state_dir="$(expand_home "$(cfg '.state_dir')")"
 # No `log_file` here: the log is read as the fleet's, through
 # `fleet_logs "$state_dir" "$peers_dir" log.jsonl` (see read_events), which

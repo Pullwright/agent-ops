@@ -599,6 +599,14 @@ if [[ -n "$provider_errors" ]]; then
   exit 1
 fi
 
+# The model-tier override seam (requirement 1c, D29's customer-control rule,
+# issue #2465): config's own `model_tiers` merges over lib/model-id.sh's
+# shipped MODEL_TIER_RANK before anything below reads it, after `providers`
+# is known valid (above), since each key resolves against it. A key naming
+# an unconfigured provider is the same fail-fast config error an ordinary
+# model key gets, aborting here.
+model_tiers_load "$(cfg_json '.model_tiers')"
+
 # Requirement 1b's cross-key duplicate-slug guard for repos[] (issue #1576):
 # unlike repository_review.repos (config_duplicate_repository_review_slugs, shared
 # with review-cycle.sh's own startup refusal), nothing checked repos[] itself

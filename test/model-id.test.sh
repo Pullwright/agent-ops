@@ -316,6 +316,55 @@ assert_false "resolve_model_id_into fails for an unconfigured provider" \
 assert_eq "…and records nothing for it" "0" "${#MODEL_PROVIDER[@]}"
 
 MODEL_PROVIDER=()
+
+# --- model_tiers_load (issue #2465, D29's customer-control rule): an
+#     installation-level override of MODEL_TIER_RANK, merged over the
+#     shipped table rather than ever edited in it. `xai` is configured on
+#     `grok-build` (always installed), never `test-substrate`, since these
+#     assertions are about the override mechanism, not substrate
+#     resolution, already covered above. ---
+providers_load '{"xai": {"substrate": "grok-build"}}'
+
+model_tiers_load '{"xai/grok-4.7": 30}'
+assert_eq "model_tiers moves a model the shipped table already places" \
+  "30" "$(model_tier_rank xai/grok-4.7)"
+assert_true "…and model_tier_below reads the moved band" \
+  model_tier_below anthropic/claude-sonnet-5 xai/grok-4.7
+assert_false "…the moved band also clears what it used to rank below" \
+  model_tier_below xai/grok-4.7 anthropic/claude-sonnet-5
+
+model_tiers_load '{"xai/grok-5": 30}'
+assert_true "model_tiers places a model the shipped table has never heard of" \
+  model_tier_known xai/grok-5
+assert_eq "…at the stated band" "30" "$(model_tier_rank xai/grok-5)"
+assert_eq "…and a prior call's override (grok-4.7) is not carried into this one — reset first" \
+  "20" "$(model_tier_rank xai/grok-4.7)"
+
+# A key naming a provider `providers` does not configure is the identical
+# fail-fast config error an ordinary model key gets, naming "model_tiers" as
+# the key — every other key in the same object is still attempted and
+# merged, so one bad entry never hides what a sibling would have reported.
+assert_false "model_tiers_load fails on a key naming an unconfigured provider, after merging its valid sibling" \
+  model_tiers_load '{"xai/grok-4.7": 25, "openai/gpt-5": 10}'
+assert_eq "…the valid sibling still merged" "25" "$(model_tier_rank xai/grok-4.7)"
+err="$(model_tiers_load '{"openai/gpt-5": 10}' 2>&1 >/dev/null)"
+case "$err" in
+  *"model_tiers"*"openai"*) printf 'ok   - %s\n' "the error names model_tiers and the offending provider" ;;
+  *)
+    printf 'FAIL - the error names model_tiers and the offending provider\n     actual: %s\n' "$err"
+    failures=$(( failures + 1 ))
+    ;;
+esac
+
+# A caller that never calls model_tiers_load reads the shipped table
+# unchanged — exercised here by resetting with an absent/null object, which
+# must behave identically to never having called it at all.
+model_tiers_load "null"
+assert_eq "an absent model_tiers leaves the shipped table exactly as it ships" \
+  "20" "$(model_tier_rank anthropic/claude-sonnet-5)"
+assert_false "…and an earlier call's override does not survive a later one" \
+  model_tier_known xai/grok-5
+
 # Leave providers_load back at the default state (no providers configured)
 # before any remaining assertion below, in case one is ever added that
 # relies on the no-op default.

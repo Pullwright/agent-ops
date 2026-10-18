@@ -278,6 +278,7 @@ minItems
 uniqueItems
 contains
 properties
+propertyNames
 required
 additionalProperties
 items
@@ -1535,6 +1536,80 @@ assert_doctor "doctor fails a refiner_model ranked below an implementer tier fro
 assert_doctor "doctor clears the floor for a refiner_model and an implementer tier from different providers that tie" \
   '.providers = {"xai": {"substrate": "grok-build"}} | .implementer_model_default = "xai/grok-4.7"' 0 \
   'refiner_model and enabler_model each rank at or above every implementer tier'
+
+# --- model_tiers (requirement 1c's installation-level override, D29's
+#     customer-control rule, issue #2465): an installation's own override of
+#     MODEL_TIER_RANK, merged over the shipped table. Schema shape first —
+#     keyed by model id (propertyNames), valued by a non-negative integer
+#     (additionalProperties) — then the cross-key effects through doctor.sh,
+#     exactly like `providers` above. ---
+assert_valid "a model_tiers override for a bare model id is schema-valid" \
+  '.model_tiers = {"claude-sonnet-5": 25}'
+assert_valid "a model_tiers override for a provider-qualified model id is schema-valid" \
+  '.model_tiers = {"xai/grok-5": 10}'
+assert_valid "a model_tiers value of 0 is schema-valid (the floor of the type, not a sentinel)" \
+  '.model_tiers = {"xai/grok-5": 0}'
+assert_rejected "a model_tiers value that is not an integer is a schema error" \
+  '.model_tiers = {"xai/grok-5": "ten"}' \
+  "model_tiers.xai/grok-5: expected integer, got string"
+assert_rejected "a negative model_tiers value is a schema error" \
+  '.model_tiers = {"xai/grok-5": -1}' \
+  "model_tiers.xai/grok-5: -1 is below the minimum 0"
+assert_rejected "a model_tiers key that is not a valid model id is a schema error" \
+  '.model_tiers = {"not a valid id!": 5}' \
+  'model_tiers key "not a valid id!": "not a valid id!" does not match'
+
+assert_doctor "doctor lists a model_tiers override beside the band it shipped at" \
+  '.model_tiers = {"anthropic/claude-opus-5": 25}' 0 \
+  'model_tiers: anthropic/claude-opus-5 → 25 (shipped: 30)'
+assert_doctor "doctor lists a model_tiers override placing a model the shipped table has never heard of" \
+  '.providers = {"xai": {"substrate": "grok-build"}} | .model_tiers = {"xai/grok-5": 15}' 0 \
+  'model_tiers: xai/grok-5 → 15 (shipped: not on the shipped ladder)'
+assert_doctor "doctor fails a model_tiers key naming a provider providers does not configure, naming model_tiers and the key" \
+  '.model_tiers = {"openai/gpt-5": 10}' 1 \
+  "model-id: model_tiers: provider 'openai' is not configured"
+
+# The floor (requirement 1c), both directions: an override that drops the
+# shipped placement below a floor that otherwise passes, and one that raises
+# it to clear a floor that otherwise fails.
+assert_doctor "doctor fails a floor that the shipped placement alone would have cleared, once a model_tiers override drops it" \
+  '.model_tiers = {"anthropic/claude-sonnet-5": 5}' 1 \
+  'refiner_model (anthropic/claude-sonnet-5) ranks below implementer_model_trivial (anthropic/claude-haiku-4-5-20251001)'
+assert_doctor "doctor clears a floor that the shipped placement alone would have failed, once a model_tiers override raises it" \
+  '.refiner_model = "claude-haiku-4-5-20251001" | .model_tiers = {"anthropic/claude-haiku-4-5-20251001": 25}' 0 \
+  'refiner_model and enabler_model each rank at or above every implementer tier'
+
+# The unranked-model warning (above, in doctor.sh's "Models" section) no
+# longer fires for a model a model_tiers override has placed — run directly
+# (bypassing assert_doctor's single-substring check) so both the warning's
+# absence and the override's own listing are asserted against the same run.
+unranked_fixture="$tmp/model-tiers-unranked.json"
+jq '.providers = {"xai": {"substrate": "grok-build"}} | .implementer_model_default = "xai/grok-5"' \
+  "$BASE_CONFIG" > "$unranked_fixture"
+unranked_out="$(bash "$SCRIPT_DIR/scripts/doctor.sh" --offline --config "$unranked_fixture" 2>&1)"
+if [[ "$unranked_out" == *"implementer_model_default (xai/grok-5) is not on the fleet's model-tier ladder"* ]]; then
+  pass "doctor's unranked-model warning fires for a model the shipped ladder does not know"
+else
+  bad "doctor's unranked-model warning fires for a model the shipped ladder does not know"
+fi
+
+placed_fixture="$tmp/model-tiers-placed.json"
+jq '.providers = {"xai": {"substrate": "grok-build"}} | .implementer_model_default = "xai/grok-5" | .model_tiers = {"xai/grok-5": 15}' \
+  "$BASE_CONFIG" > "$placed_fixture"
+placed_out="$(bash "$SCRIPT_DIR/scripts/doctor.sh" --offline --config "$placed_fixture" 2>&1)"
+if [[ "$placed_out" == *"model_tiers: xai/grok-5 → 15 (shipped: not on the shipped ladder)"* ]]; then
+  pass "…and clears once model_tiers places that same model"
+else
+  bad "…and clears once model_tiers places that same model"
+fi
+if [[ "$placed_out" != *"is not on the fleet's model-tier ladder"* ]]; then
+  pass "…the unranked-model warning no longer fires for it"
+else
+  bad "…the unranked-model warning no longer fires for it"
+fi
+
+assert_doctor_shipped "doctor passes the shipped configuration with no model_tiers key at all" \
+  '.' 0 'refiner_model and enabler_model each rank at or above every implementer tier'
 
 # --- requirement 1c: a "required" refinement_policy source with no Refiner
 #     to ever refine it would wait forever. ---

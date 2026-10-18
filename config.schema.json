@@ -424,6 +424,23 @@
         "value": "`{}`"
       }
     },
+    "model_tiers": {
+      "description": "An installation-level override of `lib/model-id.sh`'s `MODEL_TIER_RANK` — the one capability scale spanning every provider that requirement 1c's model-tier floor reads (D31, issue #2445) — for an installation that judges a placement differently, or wants to place a model the shipped table has not yet heard of (D29's customer-control rule, issue #2465). Keyed by model id in the `modelId` shape below (a bare id meaning `anthropic/`, as every other model key's shape does), valued by an integer tier band >= 0. Merges over the shipped table: an entry for a model it already places moves it to the stated band, an entry for one it does not know places it, and nothing shipped is removed by omission — an installation that wants a model left unranked simply does not name it here. Loaded by `lib/model-id.sh`'s `model_tiers_load`, called wherever `providers_load` is (requirement 1a); each key's own provider must already be one `providers` configures (or the implicit `anthropic`), which is `resolve_model_qualified`'s own fail-fast check at cycle start, naming this key, exactly as an ordinary model key is checked and outside what this declarative shape validates on its own. Never carries which band each shipped model sits at today; that placement is `lib/model-id.sh`'s own, revised only by a dated decision-log entry (D22), never by this key.",
+      "type": "object",
+      "default": {},
+      "propertyNames": {
+        "$ref": "#/$defs/modelId"
+      },
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "x-docs": {
+        "readme": "An installation-level override of the fleet's model-tier capability scale (`lib/model-id.sh`'s `MODEL_TIER_RANK`), for a customer who disagrees with the shipped placement or wants to place a model the shipped table does not know: `{\"<model id>\": <band>}`, keyed as any other model key is (bare meaning `anthropic/`), valued by a non-negative integer band. Merges over the shipped table — nothing shipped is removed by omission. Each key's own provider must already be configured in `providers` above.",
+        "spec": "An installation-level override of `lib/model-id.sh`'s `MODEL_TIER_RANK` (requirement 1c), for an installation that disagrees with the shipped placement (D29's customer-control rule, issue #2465) or wants to place a model the shipped table has not yet heard of. Keyed by model id (`modelId`'s own shape), valued by an integer band >= 0; merges over the shipped table, moving a known model or placing an unknown one, never removing one by omission. Loaded by `model_tiers_load`, called wherever `providers_load` is; each key's own provider must already be one `providers` configures, checked the same fail-fast way an ordinary model key is.",
+        "value": "`{}`"
+      }
+    },
     "coordinator_model": {
       "$ref": "#/$defs/modelId",
       "description": "The Co-Ordinator's model. Selection is cheap triage.",
