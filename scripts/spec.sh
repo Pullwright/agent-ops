@@ -311,12 +311,14 @@ cmd_show() {
 # and test/fixtures/ holds synthetic content that is not a real citation.
 # This script's own usage documentation and its test's fixture labels are
 # excluded for the same reason: they are examples of the citation grammar,
-# not citations of anything that has to resolve.
+# not citations of anything that has to resolve. So is the ratchet file
+# itself — every label it names is one check already knows does not
+# resolve, by construction, not a second citation of it.
 spec_citation_sources() {
   git ls-files \
     | grep -vE '^(CHANGELOG\.md|docs/ROADMAP\.md|docs/STANDING-DECISIONS\.md)$' \
     | grep -vE '^(tech-debt/|docs/reviews/|test/fixtures/)' \
-    | grep -vE '^(scripts/spec\.sh|test/spec\.test\.sh)$' \
+    | grep -vE '^(scripts/spec\.sh|test/spec\.test\.sh|scripts/spec-check-ratchet\.tsv)$' \
     | grep -vE '\.(png|jpg|jpeg|gif|svg|lock)$'
 }
 
