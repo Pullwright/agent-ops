@@ -246,6 +246,12 @@ if [[ -n "$provider_errors" ]]; then
   exit 1
 fi
 
+# The model-tier override seam (issue #2465): config's own `model_tiers`
+# merges over lib/model-id.sh's shipped MODEL_TIER_RANK, the same startup
+# position agent-cycle.sh loads it at, once `providers` above is known
+# valid.
+model_tiers_load "$(cfg_json '.model_tiers')"
+
 state_dir="$(expand_home "$(cfg '.state_dir')")"
 workspace_root="$(expand_home "$(cfg '.workspace_root')")"
 # Exported so the `gh` transport shim (requirement 2.0e, agent-ops#1084),

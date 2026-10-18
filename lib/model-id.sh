@@ -27,6 +27,12 @@
 # calls it (every test in test/model-id.test.sh included) still resolves
 # bare and `anthropic/`-qualified ids exactly as before this issue, since
 # `anthropic` needs no entry in `PROVIDER_SUBSTRATE` to be accepted.
+#
+# `model_tiers_load` (issue #2465) is called at the same five sites,
+# immediately after `providers_load`, with config's own `model_tiers`
+# object: an installation-level override of `MODEL_TIER_RANK` below, merged
+# over the shipped table rather than ever edited in it. See that function's
+# own header for why it needs `providers_load` to have already run.
 
 # Populated by providers_load. Keyed by provider name, valued by that
 # provider's configured substrate. Read directly by resolve_model_provider;
@@ -337,9 +343,13 @@ resolve_model_qualified() {
 # relative to them on the same scale rather than on a scale of xAI's own —
 # today's integers are the owner's judgement from public evidence (D31), not
 # carried over from any earlier xAI-only ranking. Two models in one band tie,
-# and model_tier_below reports neither below the other. Every placement is
-# revised only by a dated decision-log entry on the scorecards' evidence
-# (D22), never by a stage. A model this table has never heard of — a future
+# and model_tier_below reports neither below the other. Every placement below
+# is revised only by a dated decision-log entry on the scorecards' evidence
+# (D22), never by a stage; an installation that judges a placement
+# differently overrides it in its own config.json instead (`model_tiers`,
+# D29's customer-control rule, issue #2465) — `model_tiers_load` below merges
+# that object over this literal rather than this table ever being edited on
+# an installation's behalf. A model this table has never heard of — a future
 # release, a typo the modelId pattern still accepts, or a second provider's
 # own model before its tier is added here — ranks unknown rather than lowest
 # or highest, and every function below treats "unknown" as "cannot verify",
@@ -356,6 +366,116 @@ declare -gA MODEL_TIER_RANK=(
   [xai/grok-4.3]=15
   [xai/grok-4.7]=20
 )
+
+# The table above, exactly as shipped — populated once, here, by copying
+# MODEL_TIER_RANK at source time, never edited directly (edit the literal
+# above instead). model_tiers_load always rebuilds MODEL_TIER_RANK from this
+# snapshot before merging an installation's own overrides onto it, so a
+# second call in the same process (a test exercising two different
+# model_tiers objects, say) starts from the shipped bands again rather than
+# compounding whatever the previous call left behind — the same reason
+# providers_load resets PROVIDER_SUBSTRATE on every call.
+declare -gA MODEL_TIER_RANK_SHIPPED=()
+for __model_tier_rank_shipped_k in "${!MODEL_TIER_RANK[@]}"; do
+  MODEL_TIER_RANK_SHIPPED["$__model_tier_rank_shipped_k"]="${MODEL_TIER_RANK[$__model_tier_rank_shipped_k]}"
+done
+unset __model_tier_rank_shipped_k
+
+# model_tiers_rows MODEL_TIERS_JSON
+# Prints one "<model id><TAB><band>" row per entry of a `model_tiers` object
+# (issue #2465), the one reading both model_tiers_load below and
+# scripts/doctor.sh's own "Model tiers" report take it through, so the band
+# the doctor lists and the band the loader merges can never be two different
+# renderings of the same JSON number. A band JSON writes with a fractional
+# part that is still an integer — `25.0`, or `1e2`, both of which requirement
+# 1b's schema accepts as `integer` (`type_ok` reads the keyword as "a number
+# with nothing after the point", not as jq's own number type) — is
+# canonicalised to the plain decimal form bash arithmetic can evaluate, since
+# jq's own `tostring` would otherwise hand `(( ))` a literal `25.0` and
+# model_tier_below would swallow the arithmetic error as "not below",
+# reporting requirement 1c's floor clear on a comparison it never made.
+# Anything else is passed through unchanged for model_tier_band_ok below to
+# refuse by name.
+model_tiers_rows() {
+  jq -r '(. // {}) | to_entries[]
+         | [.key, (.value | if (type == "number") and (floor == .)
+                            then (floor | tostring) else tostring end)]
+         | @tsv' <<<"${1:-null}" 2>/dev/null
+}
+
+# model_tier_band_ok BAND
+# True (exit 0) iff BAND is the plain decimal non-negative integer every
+# reader of MODEL_TIER_RANK's values can compare — `(( ))` evaluates them,
+# and a value bash cannot parse as an integer is not a wrong answer there but
+# a shell error (`25.0` a syntax error, `ten` an unbound variable under
+# `set -u`) that every caller below swallows. Requirement 1b's schema already
+# rejects a `model_tiers` value that is not an integer >= 0, so this refuses
+# only what reaches the table anyway: a band schema validation accepts but jq
+# cannot render as a plain integer (`1e20`), and any band at all in the
+# scripts that report a config's faults rather than refusing to start on them
+# (scripts/doctor.sh, which names every schema error and then keeps going).
+model_tier_band_ok() {
+  [[ "${1:-}" =~ ^[0-9]+$ ]]
+}
+
+# model_tiers_load MODEL_TIERS_JSON
+# Merges config's own `model_tiers` object (issue #2465, D29's customer-
+# control rule) over MODEL_TIER_RANK — keyed by model id in the `modelId`
+# shape (a bare id meaning `anthropic/`, as every other model key's shape
+# does), valued by an integer tier band >= 0. An entry for a model the
+# shipped table already places moves it to the stated band; an entry for one
+# it does not know places it; nothing shipped is removed by omission — an
+# installation that wants a model left unranked simply does not name it
+# here. Always resets MODEL_TIER_RANK to MODEL_TIER_RANK_SHIPPED first (see
+# that array's own header above), so calling this more than once in one
+# process never compounds a prior call's overrides. A caller that never
+# calls this (every test in test/model-id.test.sh that predates this issue
+# included) reads the shipped table unchanged, exactly as a caller that
+# never calls providers_load still resolves bare and `anthropic/`-qualified
+# ids unchanged.
+#
+# Each key is resolved through resolve_model_qualified — exactly as an
+# ordinary model key (`coordinator_model`, etc.) is resolved — so a key
+# naming a provider `providers` does not configure, or one configured with a
+# substrate this node has no adapter for, is the identical fail-fast config
+# error that function already prints, naming "model_tiers" as the offending
+# key and the model id as the value. `providers_load` must already have run
+# (the same ordering requirement every other resolution call in this file
+# has). A band model_tier_band_ok above refuses is the same kind of fault,
+# named the same way, and that entry is left at whatever the shipped table
+# says rather than merged: a band the arithmetic below cannot evaluate is
+# worse than no override at all, since model_tier_below swallows the shell
+# error it causes and reports requirement 1c's floor clear on a comparison it
+# never made. Every key is attempted regardless of an earlier one's fault, so
+# one bad entry never hides what every other entry would have reported; this
+# returns 1 once any key failed, after merging every key that resolved
+# cleanly. A caller under `set -euo pipefail` that calls this bare
+# (agent-cycle.sh, review-cycle.sh) aborts right there, the same as a
+# rejected qualifier on an ordinary model key does; scripts/doctor.sh calls
+# it with stderr discarded, since its own "Model tiers" report resolves and
+# reports each key again for its structured fail/ok vocabulary, and would
+# otherwise duplicate the same message raw.
+model_tiers_load() {
+  local model_tiers_json="${1:-null}"
+  MODEL_TIER_RANK=()
+  local __mtl_k
+  for __mtl_k in "${!MODEL_TIER_RANK_SHIPPED[@]}"; do
+    MODEL_TIER_RANK["$__mtl_k"]="${MODEL_TIER_RANK_SHIPPED[$__mtl_k]}"
+  done
+  local id rank qualified status=0
+  while IFS=$'\t' read -r id rank; do
+    [[ -n "$id" ]] || continue
+    if ! qualified="$(resolve_model_qualified model_tiers "$id")"; then
+      status=1
+    elif ! model_tier_band_ok "$rank"; then
+      echo "model-id: model_tiers: '$id' names a tier band that is not a non-negative integer — got '$rank'" >&2
+      status=1
+    else
+      MODEL_TIER_RANK["$qualified"]="$rank"
+    fi
+  done < <(model_tiers_rows "$model_tiers_json")
+  return "$status"
+}
 
 # model_tier_rank QUALIFIED_MODEL_ID
 # Prints QUALIFIED_MODEL_ID's integer tier rank (higher is more capable) and

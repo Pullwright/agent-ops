@@ -243,6 +243,16 @@ cfg_json() { jq -c "$1" <<<"$DEFAULTED_CONFIG"; }
 # and review-cycle.sh both load it at.
 providers_load "$(cfg_json '.providers')"
 
+# The model-tier override seam (issue #2465): config's own `model_tiers`
+# merges over lib/model-id.sh's shipped MODEL_TIER_RANK, the same startup
+# position providers_load is loaded at above — ahead of the "Models"
+# section's own tier-ladder and floor checks below, which must see the
+# merged table. Its own stderr is discarded: the "Model tiers" report
+# inside that section (below) resolves and reports each key again for this
+# command's own fail/ok vocabulary, and would otherwise duplicate the same
+# message raw.
+model_tiers_load "$(cfg_json '.model_tiers')" 2>/dev/null || true
+
 # repository_review.repos, each resolved against repository_review.defaults
 # (requirement 342) — the same lib/config-schema.sh helper review-cycle.sh
 # uses, so the two scripts cannot resolve the same repository two different
@@ -1001,6 +1011,32 @@ done < <(jq -r '
   + [ ($rr.repos // [])[] | select(has("model"))
       | {k: (.slug + "'"'"'s \($rr_key).model override"), v: .model} ]
   | .[] | select((.v // "") != "") | [.k, .v] | @tsv' "$config_file")
+
+# model_tiers (requirement 1c's installation-level override, D29's
+# customer-control rule, issue #2465): model_tiers_load above already merged
+# config's own `model_tiers` object over the shipped MODEL_TIER_RANK, with
+# its own stderr discarded there — every key is resolved again here, for
+# this command's own fail/ok vocabulary, rather than parsing
+# lib/model-id.sh's raw error text. Each override is listed beside the band
+# it shipped at (or "not on the shipped ladder", for a model the shipped table
+# has never heard of), so a placement that clears or trips the floor below
+# is visible to the operator rather than silent.
+# A band the loader itself refused (model_tier_band_ok) is reported here as a
+# `fail` in the same vocabulary, rather than listed as though it had taken
+# effect: this command reports a config's faults and keeps going where both
+# cycle scripts refuse to start on them, so it is the one reader that reaches
+# this block with a band requirement 1b's schema has already named as wrong.
+while IFS=$'\t' read -r tier_id tier_rank; do
+  [[ -n "$tier_id" ]] || continue
+  if ! tier_qualified="$(resolve_model_qualified model_tiers "$tier_id" 2>&1)"; then
+    fail "$tier_qualified"
+  elif ! model_tier_band_ok "$tier_rank"; then
+    fail "model_tiers: '$tier_id' names a tier band that is not a non-negative integer — got '$tier_rank', so the shipped band stands and the model-tier floor check below cannot read the placement this key intended"
+  else
+    tier_shipped="${MODEL_TIER_RANK_SHIPPED[$tier_qualified]:-not on the shipped ladder}"
+    ok "model_tiers: $tier_qualified → $tier_rank (shipped: $tier_shipped)"
+  fi
+done < <(model_tiers_rows "$(cfg_json '.model_tiers')")
 
 # Requirement 1c, "the floor" (agent-ops#822): refiner_model and enabler_model
 # are the two stages that can author a work order's context/acceptance

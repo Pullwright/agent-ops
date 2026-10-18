@@ -16,8 +16,10 @@
 # perl and python3's standard library) or several hundred lines of jq; neither
 # buys anything the product needs. Supported: type, enum, const, minimum,
 # maximum, exclusiveMinimum, exclusiveMaximum, minLength, pattern, minItems,
-# uniqueItems, contains, properties, required, additionalProperties (false
-# only), items, and local `$ref`s into `#/$defs`.
+# uniqueItems, contains, properties, propertyNames, required,
+# additionalProperties (`false`, or an object schema applied to every key
+# `properties` does not name — `model_tiers`'s own values, issue #2465, are
+# the first use of the latter), items, and local `$ref`s into `#/$defs`.
 #
 # Also holds cross-key rules the schema itself cannot state — each holds
 # *between* two keys (or two array entries) rather than about one, which is
@@ -159,6 +161,13 @@ config_schema_errors() {
           + (if ($s | has("items")) then
                schema_faults($s.items; (if $p == "" then "items" else "\($p).items" end))
              else [] end)
+          + (if ($s | has("propertyNames")) then
+               schema_faults($s.propertyNames; (if $p == "" then "propertyNames" else "\($p).propertyNames" end))
+             else [] end)
+          + (if ($s | has("additionalProperties")) and (($s.additionalProperties | type) == "object") then
+               schema_faults($s.additionalProperties;
+                 (if $p == "" then "additionalProperties" else "\($p).additionalProperties" end))
+             else [] end)
           + (if ($s | has("$defs")) then
                [ ($s["$defs"] | keys_unsorted[]) as $k
                  | schema_faults($s["$defs"][$k];
@@ -222,6 +231,25 @@ config_schema_errors() {
                     then [ ($v | keys_unsorted[]) as $k
                            | select((($s.properties // {}) | has($k)) | not)
                            | "\($p): unknown key \"\($k)\"" ]
+                    else [] end)
+                 # additionalProperties as an object schema (rather than
+                 # `false`): applied to every key `properties` does not name
+                 # itself — `model_tiers`'\''s own values (issue #2465) are
+                 # the first schema to use this rather than the closed-shape
+                 # `false` form above, since its keys are not drawn from a
+                 # fixed set `properties` could enumerate.
+                 + (if ($s | has("additionalProperties")) and (($s.additionalProperties | type) == "object")
+                    then [ ($v | keys_unsorted[]) as $k
+                           | select((($s.properties // {}) | has($k)) | not)
+                           | errs($s.additionalProperties; $v[$k]; "\($p).\($k)")[] ]
+                    else [] end)
+                 # propertyNames: a schema applied to every key itself
+                 # (as a string), rather than to the value it holds —
+                 # `model_tiers`'\''s own keys, each a model id in the
+                 # `modelId` shape, are the first use.
+                 + (if ($s | has("propertyNames"))
+                    then [ ($v | keys_unsorted[]) as $k
+                           | errs($s.propertyNames; $k; "\($p) key \"\($k)\"")[] ]
                     else [] end)
                  + [ ($v | keys_unsorted[]) as $k
                      | select(($s.properties // {}) | has($k))
