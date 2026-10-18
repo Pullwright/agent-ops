@@ -328,7 +328,7 @@ void_object_closed_items() {
 
 # decision_vetoes_processed_items [LOG_FILE]
 # Print, as a JSON array of {repo, item}, every `pw::decision` decision-log
-# issue requirement 937's veto sweep has already handled — logged
+# issue #937's veto sweep has already handled — logged
 # `decision-vetoed` for. `item` here is the *log issue's own number*
 # (stringified), not the original work item's ref: one work item's decision
 # could in principle be re-decided and re-vetoed later under a fresh log

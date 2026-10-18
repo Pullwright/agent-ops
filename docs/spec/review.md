@@ -413,7 +413,7 @@ R1a. <a id="rev-r1a"></a>**Model id resolution, against a configured set of prov
    worked, so a bad model on one repository is never discovered only after
    others have already been reviewed.
 
-R1b. <a id="rev-r1b"></a>**Duplicate-slug refusal.** Requirement 342's resolution rule assumes
+R1b. <a id="rev-r1b"></a>**Duplicate-slug refusal.** Issue #342's resolution rule assumes
    exactly one `repository_review.repos` entry per repository; two entries naming
    the same `slug` leave no way to say which one's overrides apply. Checked
    immediately after `repository_review_repos_json` is resolved, before the model

@@ -582,7 +582,7 @@
    `obsolete`, `open-question` (the Reviewer's own projection,
    requirement 8f), `pw::type:tech-debt`, `pw::owner-decision`
    (`techdebt_file_issue`'s own marker for an owner-only `file_debt`/
-   `file_issue`, requirements 23d, 36c, 42a — a fourth fixed name, for the
+   `file_issue`, components 23d, 36c, 42a — a fourth fixed name, for the
    same reason as `pw::type:tech-debt`: only a collaborator with triage can
    apply a label, so a filed issue's membership of the owner-only band is
    trustable even though its body stays untrusted data) and `pw::decision`
@@ -1126,7 +1126,7 @@
    such issue is open, which is the common case: most pull requests never
    escalate at all. Both close it inside the same
    `pipeline_comment_header`/`pipeline_comment_marker` envelope every other
-   comment this system posts carries (requirement 3f), and both skip an issue
+   comment this system posts carries (component 3f), and both skip an issue
    GitHub reports reopened (`stateReason`, read on the same listing): a
    human's own re-open wins over either retirement, the same answer
    requirement 34k's one-shot rule and requirement 17c's own
@@ -1357,7 +1357,7 @@
       `clean` passes silently: a veto check that reads as clear on the one
       path where it never ran is the failure this gate exists to prevent.
       Because every non-`clean` word now refuses before this gate sequence
-      can reach an arm, the landing audit record (requirement 8x) can only
+      can reach an arm, the landing audit record (acceptance check 8x) can only
       ever carry a `comment-reconciliation` entry reading `clean`.
    4.5. D18 WI-12 (Stage 4, agent-ops#415): only at `agent-merges-all`, and
       only for a pull request `landing_protected_path_controls_ok`

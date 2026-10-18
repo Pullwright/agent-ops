@@ -277,7 +277,7 @@
       this anchor is only ever asked whether a closing keyword for `N`
       exists at all — never in which repository — and it runs where no repo
       slug was passed to the checker in the first place
-      (`lib/closing-keyword-gate.sh`, acceptance check 17a).
+      (`lib/closing-keyword-gate.sh`, requirement 17a).
     - **The branch.** A head branch of exactly `agent/<N>` — the name the
       Script itself mints for any work order whose item is a bare issue
       number, `issues` and `tech-debt` sources alike (`claim_branch_for`),

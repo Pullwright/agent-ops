@@ -300,7 +300,7 @@ value.
   `lib/stage-run.sh` left in `stage_gaps_json`, and (issue #2239, D30) the
   lane it left in `stage_lane_json` for the run that just ended (requirement
   33a). The usage-limit probe of requirement 1b and the model-credential
-  probe of requirement 0h — each a single minimal-model call that is
+  probe of requirement 2.0h — each a single minimal-model call that is
   deliberately not a stage and so logs no `stage-start` — gain their own
   `stage-end`, `stage: "limit-probe"` and `stage: "credential-probe"`
   respectively, each carrying this same record (`lib/standdown.sh`);

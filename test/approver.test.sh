@@ -36,7 +36,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$SCRIPT_DIR/lib/approver.sh"
 # approver_escalation_retire wraps its own close comment in the same
 # header/marker envelope every other comment this system posts carries
-# (requirement 3f) — agent-cycle.sh sources this file too.
+# (component 3f) — agent-cycle.sh sources this file too.
 # shellcheck source=lib/pipeline-marker.sh
 . "$SCRIPT_DIR/lib/pipeline-marker.sh"
 # escalation_refile_suppressed/escalation_event_logged_since (the requirement
@@ -631,7 +631,7 @@ RECENT_CLOSE=""
 # The other half of `approver_escalate`'s own dedup lookup, read back: an open
 # `enabler_escalation_label`-labelled issue whose body names this pull
 # request's own `pr-<n>-approver-adjudication` reference is closed with a
-# cause-specific comment — inside requirement 3f's own header/marker envelope
+# cause-specific comment — inside component 3f's own header/marker envelope
 # — and an `approver-escalation-retired` event; no match, and a match somebody
 # reopened, are both a no-op, logging nothing and never calling `gh issue
 # close` at all.
@@ -691,7 +691,7 @@ assert_contains "a matching open issue is closed, naming the right issue number"
   "number=501" "$(ar_closes)"
 assert_contains "  ... the land comment names the landing sha" "abc123" "$(ar_closes)"
 # shellcheck disable=SC2016  # the backticks are literal Markdown, not command substitution
-assert_contains "  ... opening with the visible pipeline header (requirement 3f)" \
+assert_contains "  ... opening with the visible pipeline header (component 3f)" \
   '**Script** · autonomous pipeline · node `node-7`' "$(ar_closes)"
 assert_contains "  ... and closing with the invisible marker" \
   "$PIPELINE_COMMENT_MARKER_PREFIX cycle=$cycle_id actor=script -->" "$(ar_closes)"

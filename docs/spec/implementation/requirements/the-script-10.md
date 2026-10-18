@@ -15,8 +15,9 @@
     always exits `0`, since it reports data, never a verdict. No argument
     prints `--health`.
 
-    60a. **Read-only throughout.** Touches no lock, writes no event,
-    publishes nothing, and triggers no state-sync push, gather, dashboard
+    60a. <a id="impl-60a"></a>**Read-only throughout.** Touches no lock, writes no event,
+    publishes nothing, and — beyond the one cached forge read of 58a —
+    makes no network call and triggers no state-sync push, gather, dashboard
     publish or `claude` invocation: every verdict computes on demand from
     what cron already wrote. Exactly two forge reads exist across the whole
     CLI, each confined to the one mode that reports it: 58a's own cached
@@ -38,7 +39,7 @@
     `state_dir/fleet-cache/mix.json` (or its `.err` sibling on a failed
     read), the same cache every other fleet-flag reader shares.
 
-    60b. **The three verdicts genuinely diverge, from one CLI, in one
+    60b. <a id="impl-60b"></a>**The three verdicts genuinely diverge, from one CLI, in one
     process.** `test/node-health-cli.test.sh` builds a fixture that is live
     (a fresh marker), not ready (the node switch set) and unhealthy (a
     `stuck` updater verdict and a stale publication) all at once, and
@@ -47,7 +48,7 @@
     the CLI rather than only through `lib/node-health.sh`'s own pure
     functions (`test/node-health.test.sh`).
 
-    60c. **The container-runtime healthcheck runs the identical CLI.**
+    60c. <a id="impl-60c"></a>**The container-runtime healthcheck runs the identical CLI.**
     `deploy/docker/compose.yaml`'s `scheduler` service carries a
     `healthcheck:` running `scripts/node-health.sh --live` *inside* the
     container — the same command a Kubernetes `exec` probe would run, so
@@ -57,7 +58,7 @@
     self-certification the 2026-08-08 incident exposed, arriving by a new
     route. `docker compose config` renders it cleanly.
 
-    60d. **The HTTP surface is a second front over the identical
+    60d. <a id="impl-60d"></a>**The HTTP surface is a second front over the identical
     computation, never a second answer.** `scripts/node-health-server.py`
     answers `/livez`, `/readyz`, `/healthz`, `/metrics` by shelling out to
     the same `scripts/node-health.sh` the container healthcheck runs
@@ -88,7 +89,7 @@
     describes leaves through the same D24 egress path the scheduler uses
     (issue #1587).
 
-    60e. **`--metrics`' field list is the node metrics shape
+    60e. <a id="impl-60e"></a>**`--metrics`' field list is the node metrics shape
     `docs/METERING-SCHEMA.md` documents under its own stability policy.**
     Node identity (`node`, `role`, `ts`, `version`), all three other
     verdicts and their components in full (`live`, `ready`, `health`),
@@ -109,7 +110,7 @@
     by this item's own scope. `test/node-health-cli.test.sh` asserts every
     top-level field's presence against this documented shape.
 
-    60f. **New config keys, documented and rendered.**
+    60f. <a id="impl-60f"></a>**New config keys, documented and rendered.**
     `node_health_live_stale_after_minutes` (57) and
     `node_health_forge_check_cache_seconds` (58a) — both flat top-level
     keys, `config.schema.json`'s existing convention, never nested: this

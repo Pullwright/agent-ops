@@ -187,7 +187,7 @@
     eligible`'s `ineligible:` already establish, so the *Autonomous
     landings* panel's existing `byReason` grouping (`docs/DASHBOARD-
     SPEC.md`) surfaces it with no dashboard code change); a pass rides in
-    the landing audit record (requirement 8x) as its own `open-question`
+    the landing audit record (acceptance check 8x) as its own `open-question`
     gate, reading `clear` where no question stood and `settled` where one
     did and the adjudication pass below answered it on that same round — so
     a landing armed over a question is never indistinguishable, in the
@@ -1369,7 +1369,7 @@
     folded into "unknown": it is honestly evidence readiness cannot
     proceed, not merely evidence this node cannot say so.
 
-    58a. **No network call beyond the one exempt read, and no live fetch of
+    58a. <a id="impl-58a"></a>**No network call beyond the one exempt read, and no live fetch of
     fleet state.** `--ready` makes exactly one network call —
     `gh api rate_limit`, cached in `state_dir/.node-health-ratelimit-cache.json`
     with a TTL of `node_health_forge_check_cache_seconds` — so that an
@@ -1447,7 +1447,7 @@
     is exactly the green-endpoint-that-means-nothing this composition rule
     exists to close.
 
-    59a. **`updater` and `image` component mappings.** `updater`: `stuck`
+    59a. <a id="impl-59a"></a>**`updater` and `image` component mappings.** `updater`: `stuck`
     (a fault only a human clears) is `fail`; `rolled` and `deferring` (both
     ordinary, the second self-resolving) are `ok`; `null` (no ledger
     evidence yet) is `unknown`. `image`: `current` is `ok`; `unverified`

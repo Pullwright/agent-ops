@@ -231,7 +231,7 @@
     streak of two still logs `critical_reason: "refuse-streak"`, so the two
     causes are pinned as distinguishable in the log; and a pull request
     touching no protected path is unaffected, keeping every tier exactly as
-    requirement 8s already pins it. `scripts/doctor.sh` warns when a
+    acceptance check 8s already pins it. `scripts/doctor.sh` warns when a
     repository's own configured `merge_autonomy` is `agent-merges-all` and
     its effective `landing_cool_off_hours` resolves to `0` — the cool-off
     control disabled entirely, the residual risk §7 risk 1 accepts only with
@@ -788,7 +788,7 @@
     verdict's own `skip` never raises `doctor.sh`'s exit status by itself:
     for the `rulesets` case the run still exits 0, while an unreadable
     merge-queue state exits 1 on the strength of the pairing check's own
-    `fail` (requirement 8t) — a separate verdict answering the separate
+    `fail` (acceptance check 8t) — a separate verdict answering the separate
     question of whether landing works at all, not this one changing its
     mind about what it could confirm.
 70. <a id="impl-ac-70"></a>**`file_debt`/`file_issue` file what a stage found, and only the Script
@@ -931,7 +931,7 @@
     matching record — reported, never rendered with the silent nulls the
     digest used to fall back to. The older `approver-verdict`-by-timestamp
     join is retained as the fallback for a `landing-armed` from before
-    requirement 8x shipped, which can never have a matching audit record:
+    acceptance check 8x shipped, which can never have a matching audit record:
     it explains that row's tier and verdict where one is locatable, and
     never clears its `anomaly: true`, which the missing record alone
     decides. `dashboard/index.html`'s landings panel adds a Record column

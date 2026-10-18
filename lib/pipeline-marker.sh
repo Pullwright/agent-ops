@@ -2,7 +2,7 @@
 #
 # lib/pipeline-marker.sh — the whole envelope every pull-request or issue
 # comment this system posts wraps its own prose in: a visible header naming
-# which Actor wrote it and from which node (requirement 3f), and an invisible
+# which Actor wrote it and from which node (component 3f), and an invisible
 # marker proving to gather-abandoned-drafts.sh that the write was the
 # pipeline's own (requirement 3e; TD26072605).
 #

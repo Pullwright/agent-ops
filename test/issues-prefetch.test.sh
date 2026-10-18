@@ -314,7 +314,7 @@ fi
 
 # --- The argv cap (requirement 4g, TD-PPagop-26081406) ---
 #
-# $comments (a whole issue thread — requirement 3d/#118 pre-fetches every
+# $comments (a whole issue thread — component 3d/#118 pre-fetches every
 # comment) and the array-assembly append both used to ride into jq as
 # --argjson: unbounded past this call, the same reasoning
 # TD-PPagop-26081401 already applied elsewhere. Past MAX_ARG_STRLEN (131072

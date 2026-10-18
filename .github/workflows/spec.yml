@@ -1,0 +1,40 @@
+name: Spec label check
+
+# Gates every requirement/acceptance-check/component label this repository
+# cites: no duplicate label, no citation that resolves to nothing, no bare
+# "requirement N" that actually names an acceptance check or a component
+# (scripts/spec.sh check), and docs/spec/index.json is exactly what
+# scripts/spec.sh index renders from the current anchors (scripts/spec.sh
+# index --check) — or a citation/duplicate can drift unnoticed the way
+# scripts/doctor.sh's "requirement 14b" (meaning component 14b) did before
+# issue #2095. Modelled on toc.yml and config-table.yml.
+#
+# Deliberately `pull_request` (not `pull_request_target`), so a fork PR never
+# runs with write-scoped secrets, and ungated by `paths:` — a citation can be
+# added or broken from any file in the repository, and a spec edit without a
+# matching index regeneration both need catching regardless of which files a
+# change touches.
+#
+# The `merge_group:` trigger is required for this context to report inside
+# the merge queue — without it, a required `spec` would stall every queue
+# entry for the ruleset's 60-minute `check_response_timeout_minutes`.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  spec:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check every requirement/acceptance-check/component label and citation
+        run: scripts/spec.sh check
+      - name: Check the generated spec index is fresh
+        run: scripts/spec.sh index --check

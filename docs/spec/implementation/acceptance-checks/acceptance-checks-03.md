@@ -501,7 +501,7 @@
    verdict are filed under the ordinary pipeline login (no `TOKEN`) exactly as
    the Enabler's own use of the two fields already is, and against the cycle's
    own clone of the target repository rather than its state directory
-   (requirement 23d's `GIT_DIR`, which a state directory fails outright)
+   (component 23d's `GIT_DIR`, which a state directory fails outright)
    (`test/merge-observed.test.sh`), and are silently absent at the stage-start
    call site, where no verdict exists yet to carry them. Assert the fall-through: a Reviewer
    claiming a merge `pr_merge_state` does not confirm (`merge_state` `open` or

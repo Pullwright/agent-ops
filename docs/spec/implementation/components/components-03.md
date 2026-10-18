@@ -745,7 +745,7 @@
       Default` section plus `PROVENANCE`. A labelled create that fails is
       retried once unlabelled (`issue_create_with_retry`, `lib/issue-file.sh`)
       — a repository whose `pw::type:tech-debt` label the ensure pass
-      (component 6a) has not reached yet — exactly as `techdebt_file_issue`'s
+      (requirement 6a) has not reached yet — exactly as `techdebt_file_issue`'s
       own `pw::owner-decision` retry above, logged to `tech-debt-file.err`.
       Nothing reconciles the result: the filed issue
       carries no `pw::type:tech-debt` label, so it is invisible by

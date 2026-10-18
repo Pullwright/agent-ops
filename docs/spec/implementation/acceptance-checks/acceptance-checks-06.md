@@ -285,9 +285,9 @@
    `open-question-raised` event and keys `create_escalation_issue`'s dedup
    on a `pr-<n>-open-question` reference, distinct from `pr-<n>-approver-
    adjudication` (requirement 8c) sharing the same pull request number.
-   `test/prompt-untrusted-framing.test.sh` (requirement 8z) covers
+   `test/prompt-untrusted-framing.test.sh` (acceptance check 8z) covers
    `prompts/approver-adjudicate-open-question.md` alongside every other
-   shipped stage prompt. `test/dashboard-render.test.sh` (requirement 8x)
+   shipped stage prompt. `test/dashboard-render.test.sh` (acceptance check 8x)
    asserts an `open-question:`-classed refusal in a fixture renders as its
    own `byReason` group, exactly as `ineligible`/`kill-switch` already do,
    with no `dashboard/index.html` change required to produce it. No test

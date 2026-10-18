@@ -467,7 +467,7 @@ else
   ok "every repos entry names a distinct repository"
 fi
 
-# Requirement 342's resolution rule assumes exactly one repository_review.repos
+# Issue #342's resolution rule assumes exactly one repository_review.repos
 # entry per repository; two entries for the same slug leave no way to say
 # which one's overrides apply, so review-cycle.sh refuses to start rather
 # than silently letting the later entry win (lib/config-schema.sh's

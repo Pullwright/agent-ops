@@ -272,7 +272,7 @@ export PW_GH_STATE_DIR="$state_dir"
 # scripts/doctor.sh, so the two scripts cannot resolve the same repository two
 # different ways (issue #342).
 repository_review_repos_json="$(config_repository_review_repos "$DEFAULTED_CONFIG")"
-# Requirement 342's resolution rule assumes exactly one entry per repository;
+# Issue #342's resolution rule assumes exactly one entry per repository;
 # two entries for the same slug leave no way to say which one's overrides
 # apply, so this refuses to start rather than silently letting the later
 # entry win (lib/config-schema.sh's config_duplicate_repository_review_slugs,

@@ -267,7 +267,7 @@ _landing_is_protected() {
 # exit 2 or 3 is a refusal to arm: an unreadable or truncated list, or a
 # protected-paths list this cannot even evaluate, must never read as "nothing
 # protected was touched". The other call site — `_landing_stage_attempt`'s
-# own `landing-audit-record` write (requirement 8x) — runs after the arm has
+# own `landing-audit-record` write (acceptance check 8x) — runs after the arm has
 # already happened, so exit 2 or 3 there instead maps to a bare `unknown`
 # protected-path verdict in the record and proceeds; there is nothing left
 # to refuse.
@@ -935,7 +935,7 @@ landing_latest_refusal_reason() {
 # Every `approver-verdict` event for PR_URL, oldest first — a compact JSON
 # array of `{ts, tier, model, verdict, adjudication, refuse_streak, posted}` —
 # the D18 landing audit record's own "adjudication history" field
-# (requirement 8x, agent-ops#578): a pull request a refuse streak sent
+# (acceptance check 8x, agent-ops#578): a pull request a refuse streak sent
 # through more than one Approver engagement carries every one of them here,
 # not only the round that finally approved it. The record's own `approver`
 # object is this array's *last* entry, exactly as `landing_retry_tier` reads
@@ -1454,7 +1454,7 @@ run_landing_stage() {
 #      does tolerate an `unknown` there as non-blocking — this arming-time
 #      instance is stricter by design. Because every non-`clean` word now
 #      refuses before this function can reach an arm, the landing audit
-#      record (requirement 8x) never carries a `comment-reconciliation`
+#      record (acceptance check 8x) never carries a `comment-reconciliation`
 #      entry reading anything but `clean`.
 #   4.5. D18 WI-12 (Stage 4, agent-ops#415): only at `agent-merges-all`, and
 #      only for a pull request `landing_protected_path_controls_ok`
@@ -1515,7 +1515,7 @@ run_landing_stage() {
 # and the claim release, and nothing here can affect either; a retry attempt
 # runs long after both, against a pull request already sitting `pr-ready`.
 #
-# A successful arm also logs `landing-audit-record` (requirement 8x, D18,
+# A successful arm also logs `landing-audit-record` (acceptance check 8x, D18,
 # agent-ops#578) — one durable record of everything that justified landing
 # this pull request without a human act anywhere in the chain, assembled
 # here rather than reconstructed later by joining separate events at report
@@ -1621,7 +1621,7 @@ _landing_stage_attempt() {
   # tries again next cycle, rather than routing into the escalation/
   # adjudication machinery over a question it never confirmed exists.
   # `oq_word` is this gate's own verdict for the landing audit record
-  # (requirement 8x, which carries *every* gate this function passed): `clear`
+  # (acceptance check 8x, which carries *every* gate this function passed): `clear`
   # when no question stood, `settled` when one did and the adjudication pass
   # answered it on this very round. No other value can reach the record — every
   # other outcome returns above without arming anything.
@@ -1928,7 +1928,7 @@ _landing_stage_attempt() {
     fi
   fi
 
-  # requirement 8x (D18, agent-ops#578) — see this function's own header for
+  # acceptance check 8x (D18, agent-ops#578) — see this function's own header for
   # what each field is and why it costs no extra read beyond the one line
   # below actually needs.
   local autonomy_source
@@ -2956,7 +2956,7 @@ landing_open_question_label_release() {
 # falling back to `$log_file` alone otherwise — a single source, not a union
 # of the two the way `landing_approver_adjudication_history` above literally
 # unions SRC1 and SRC2. Or stdin if omitted or "-", or a path passed
-# directly (requirement 8x). Malformed lines are skipped, not fatal. This is
+# directly (acceptance check 8x). Malformed lines are skipped, not fatal. This is
 # read-only, supplementary content for prose a human or an adjudication pass
 # reads — never what the landing gate itself decides on, which stays the
 # label alone (requirement 8f's own "no log join" reasoning for the gate

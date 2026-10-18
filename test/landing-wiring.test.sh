@@ -134,7 +134,7 @@ source "$SCRIPT_DIR/lib/landing.sh"
 # overriding lib/merge-queue.sh's own definition.
 # shellcheck source=lib/merge-queue.sh
 source "$SCRIPT_DIR/lib/merge-queue.sh"
-# `merge_autonomy_resolution_source` (requirement 8x, agent-ops#578) — the
+# `merge_autonomy_resolution_source` (acceptance check 8x, agent-ops#578) — the
 # real, small pure config resolution the landing audit record's `autonomy`
 # field reads; `merge_autonomy_effective_level`/`merge_autonomy_kill_state`
 # from this same file are stubbed below, overriding lib/merge-autonomy.sh's
@@ -165,7 +165,7 @@ approver_stage_verdict="$VERDICT"
 approver_stage_adjudicating="$ADJUDICATING"
 approver_stage_tier="${APPROVER_STAGE_TIER:-critical}"
 union_log="$T/union.jsonl"
-# `log_file` (requirement 8x, agent-ops#578) — the landing audit record's
+# `log_file` (acceptance check 8x, agent-ops#578) — the landing audit record's
 # `approver.history` field reads the union of this and `$union_log`
 # (TD-PPagop-26082308), exactly as production's own `log_event` already
 # appends every event to it; `log_event` is stubbed above to append to
@@ -361,7 +361,7 @@ pr_merge_state() {
 }
 
 # The landing audit record's own second, independent read of the
-# protected-path classifier (requirement 8x, agent-ops#578) — stubbed
+# protected-path classifier (acceptance check 8x, agent-ops#578) — stubbed
 # exactly like every other gate helper here rather than left to the real
 # `gh`-backed function, which this harness never wants reaching outside the
 # process. Defaults to "no hit" (exit 1, nothing printed), the neutral case
@@ -510,7 +510,7 @@ assert_eq "  ... naming the method it was armed via" \
 assert_contains "  ... in the cleared comment's own body" \
   "it was armed to land via enqueued" "$(notice_clears)"
 
-# --- ... alongside one landing-audit-record (requirement 8x, agent-ops#578) --
+# --- ... alongside one landing-audit-record (acceptance check 8x, agent-ops#578) --
 # Deep field-by-field coverage lives in test/landing-audit-record.test.sh;
 # this is the wiring proof that the same successful arm that logs
 # landing-armed also logs its audit record, from the same in-hand facts.

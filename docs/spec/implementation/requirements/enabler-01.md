@@ -791,7 +791,7 @@
       one exception, adding a label of its own). Logs `issue-filed` (`repo`,
       `item`, `by: "enabler"`, `issue_number`, `issue_url`) on success; a
       `warning` on failure.
-    - `default_fix`/`owner_decision` (agent-ops#938, requirement 23d's own
+    - `default_fix`/`owner_decision` (agent-ops#938, component 23d's own
       `techdebt_default_section`): `default_fix` is the option the Enabler
       would take, one sentence, required whenever the body names more than
       one; `owner_decision` is `true` only under requirement 36a's boundary.

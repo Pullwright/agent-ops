@@ -485,7 +485,7 @@
     requirement 1b also logs a `stage-end` alone, `stage: "limit-probe"`
     (issue #2239, D30, `lib/standdown.sh`) — ignored by `lib/stage-health.sh`,
     whose stage list does not name it. The model-credential probe of
-    requirement 0h logs a `stage-end` alone the same way, `stage:
+    requirement 2.0h logs a `stage-end` alone the same way, `stage:
     "credential-probe"` (agent-ops#2308, `lib/standdown.sh`) — also ignored by
     `lib/stage-health.sh`, whose stage list does not name it either. An
     `enabler-examined` carries

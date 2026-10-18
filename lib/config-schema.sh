@@ -1001,7 +1001,7 @@ config_refinement_sources_paused_by_cap() {
 # Given an array of objects each carrying a `slug` — config.json's
 # `repository_review.repos` itself, or config_repository_review_repos's
 # resolved output, both shaped alike — prints the comma-joined slugs that name
-# more than one entry. Requirement 342's resolution rule assumes exactly one
+# more than one entry. Issue #342's resolution rule assumes exactly one
 # entry per repository; two entries for the same slug leave no way to say
 # which one's overrides apply, so review-cycle.sh refuses to start rather than
 # silently letting the later entry win. Empty when every slug is unique

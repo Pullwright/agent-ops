@@ -553,7 +553,7 @@ oblige anyone to edit a test.
    tomorrow is covered without anyone adding it to a list. Invoked with one or
    more arguments that each name a file that actually exists, it lints only
    those files instead, through the same mechanism, so the size guard
-   (requirement 1g-i) and the confined SC1091/SC2154/SC2034 handling apply to
+   (acceptance check 1g-i) and the confined SC1091/SC2154/SC2034 handling apply to
    a selected file exactly as to a swept one; an argument that does not name
    an existing file is not a selector and is forwarded to shellcheck as an
    option instead, same as every argument is when no selector is present —
