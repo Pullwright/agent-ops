@@ -525,7 +525,7 @@ if [[ -z "$claimed_json" ]]; then
     standdown_reason="every candidate is already claimed elsewhere"
     standdown_cause="raced"
   fi
-  # A raced stand-down chains (requirement 39): a cycle that lost every
+  # A raced stand-down chains (requirement 67): a cycle that lost every
   # attempted claim to peers has spent its Co-Ordinator learning the fleet
   # is busy, not that the fleet is done — `ordered_repos_json` still says
   # sources remain, and the winners' claims are visible to a fresh gather
@@ -611,7 +611,7 @@ log_event "selection" "$(jq -c --argjson n "$race_losses" --argjson fb "$selecte
 rework_selection_fields_json="$(rework_selection_fields "$work_order_json")"
 [[ -n "$rework_selection_fields_json" ]] && log_event "rework" "$rework_selection_fields_json"
 
-# Finish-then-continue (requirement 39): a claim just won is real work, and
+# Finish-then-continue (requirement 67): a claim just won is real work, and
 # `ordered_repos_json` — gathered once, ahead of the Co-Ordinator, and
 # untouched since — is cheap evidence of whether more might be waiting
 # (lib/chain.sh). `--once` is a human or a test asking for exactly one
@@ -780,7 +780,7 @@ premerge_rebase_only_capture
 # takeover, whose `pr_url` names Dependabot's own pull request rather than a
 # subject this stage can retire) hand it a work order whose `pr_url` can be
 # just as stale, and nothing asked GitHub about it before paying for the
-# stage. Requirement 5c's own pre-flight (`preflight_branch_merged_reason`)
+# stage. Requirement 34m's own pre-flight (`preflight_branch_merged_reason`)
 # already runs earlier this same cycle, but against `source_states_json` /
 # an ancestry compare sampled before the Co-Ordinator engagement — exactly
 # the gap a pull request can merge inside. This is the live read
@@ -909,7 +909,7 @@ impl_status="$(jq -r '.status // empty' <<<"$impl_status_json" 2>/dev/null || tr
 # re-selected indefinitely.
 if (( impl_rc == 0 )) && [[ "$impl_status" == "void" ]]; then
   # Requirement 34d, extended by issue #243 from the Co-Ordinator alone to
-  # every stage: the Implementer reads the tree itself (requirement 27b), but
+  # every stage: the Implementer reads the tree itself (requirement 22), but
   # that does not stop a model citing the wrong artefact from it — see
   # lib/void-guard.sh's own note on issue #243. `repos` is passed as `[]`: the
   # Implementer gathers no per-cycle candidate list, so `void_guard_reason`'s
@@ -1104,7 +1104,7 @@ if [[ -n "$impl_pr_url" ]]; then
   # time, rather than waiting for a downstream item to happen to block on
   # this one the way #1540 did, 6+ hours after PR #1503 deleted
   # .github/workflows/tech-debt-register.yml. `lib/review-gate.sh`'s own
-  # backstop (requirement 55) catches the same fact again at the Reviewer's
+  # backstop (requirement 66) catches the same fact again at the Reviewer's
   # `ready` handoff, as a safety net for a finding missed here.
   # `|| true` for the same reason `closing_keyword_gate`'s own call above
   # carries one: this block is advisory, and nothing it can fail at is worth

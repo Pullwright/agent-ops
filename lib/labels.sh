@@ -143,7 +143,7 @@
 #                 pager_repo)
 #
 # REVIEW_PR_LABEL is used only for ROLE "review": repository_review's pr_label is
-# resolved per repository (requirement 342 — an entry in `repository_review.repos`
+# resolved per repository (issue #342 — an entry in `repository_review.repos`
 # may override `repository_review.defaults.pr_label`), so there is no longer one
 # global value this function could read out of the config itself. The caller
 # already knows the specific repository's effective label — review-cycle.sh

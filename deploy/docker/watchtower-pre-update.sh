@@ -46,7 +46,7 @@
 # bound today is therefore two-part: one cycle's length for a healthy node
 # (agent-cycle.sh's own cleanup() writes `roll-pending` at every clean,
 # non-`--once` cycle-end the moment `image_drift_status` reads "behind" —
-# chaining or not — and separately yields any chain it had — requirement 39,
+# chaining or not — and separately yields any chain it had — requirement 67,
 # requirement 2.5, agent-ops#1103), and `lock_stale_after` hours only for a
 # cycle that is actually wedged, which never reaches that cleanup path at all.
 #

@@ -2,7 +2,7 @@
 #
 # deploy/docker/render-crontab.sh — render the node's schedule from
 # crontab.tmpl and config.json's `schedule`, writing over the baked crontab
-# (design decision D5: per-node cycle offsets from one image).
+# (per-node cycle offsets from one image).
 #
 # Why offsets exist: every active node spends the same Claude account and
 # talks to the same GitHub repos. N nodes all firing at the same minute is N

@@ -599,7 +599,7 @@ coordinator_refinements_view() {  # <refinements-json> <ordered-repos-json>
                       else {} end))' <<<"$docs" 2>/dev/null || printf '%s' "$refinements"
 }
 
-# Requirement 17f (issue #626): requirement 17b already obliges the
+# Requirement 17f (issue #626): requirement 64 already obliges the
 # Co-Ordinator to paste a refined item's own recorded refinement — a `spec`
 # verbatim, or (for an issue) the comment its own `comment_url` names,
 # already folded into requirement 20's whole-thread paste — into that same
@@ -731,7 +731,7 @@ refinement_traceability_fault() {  # <candidate-json> <refinements-json>
     fi
     if ! jq -ne --arg h "$norm_context" --arg n "$norm_needle" \
         '$h | contains($n)' >/dev/null 2>&1; then
-      printf '%s %s: recorded refinement spec is not present, verbatim (after whitespace normalization), in this work order'\''s context — requirement 17b requires it, and a cross-item swap cannot satisfy this by accident' \
+      printf '%s %s: recorded refinement spec is not present, verbatim (after whitespace normalization), in this work order'\''s context — requirement 64 requires it, and a cross-item swap cannot satisfy this by accident' \
         "$repo" "$item"
       return 0
     fi
@@ -799,7 +799,7 @@ refinement_traceability_fault() {  # <candidate-json> <refinements-json>
   fi
   if ! jq -ne --arg hc "$norm_context" --arg ha "$norm_acceptance" --arg n "$norm_needle" \
       '($hc | contains($n)) or ($ha | contains($n))' >/dev/null 2>&1; then
-    printf '%s %s: recorded refinement comment (%s) is not present, verbatim (after whitespace normalization), in this work order'\''s context or acceptance — requirement 17b/20 both require it, and a cross-item swap cannot satisfy this by accident' \
+    printf '%s %s: recorded refinement comment (%s) is not present, verbatim (after whitespace normalization), in this work order'\''s context or acceptance — requirement 64/20 both require it, and a cross-item swap cannot satisfy this by accident' \
       "$repo" "$item" "$comment_url"
   fi
 }
@@ -895,7 +895,7 @@ refinement_traceability_repair() {  # <candidate-json> <refinements-json>
 # from a live read instead of a model's paste, which is exactly the condition
 # those checks existed to catch; once nothing reaching them could ever be a
 # model's paste again, `agent-ops#1156` retired the checks and this fetch
-# along with them (TD-PPagop-26090604). See requirement 17g's as-built note in
+# along with them (TD-PPagop-26090604). See requirement 65's as-built note in
 # docs/spec/implementation/README.md for the history.
 
 # Requirement 17h (agent-ops#769, resolving agent-ops#844 option (b)): the

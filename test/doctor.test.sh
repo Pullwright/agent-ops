@@ -1860,7 +1860,7 @@ assert_not_contains "and not as a kill somebody set" \
   "the merge-autonomy kill switch is SET" "$out"
 
 # --- The Approver identity's two sources of truth are reconciled ------------
-# The token wrapper (requirement 14b) reads PULLWRIGHT_APPROVER_APP_ID from
+# The token wrapper (component 14b) reads PULLWRIGHT_APPROVER_APP_ID from
 # the environment; approver_app_id is the config declaration doctor already
 # validates. Nothing else compares them, so doctor must: a set pair that
 # differs means the node would mint as an App the configuration never named,

@@ -2,7 +2,7 @@
 
 ### Acceptance checks — continued (part 5 of 7; items 8t–50)
 
-8t. **The arming step lands only what the classifier clears, re-reads every
+8t. <a id="impl-ac-8t"></a>**The arming step lands only what the classifier clears, re-reads every
     gate fresh, and disarms cleanly (requirement 8d, D18 WI-7).**
     `test/landing.test.sh` passes against a stubbed `gh`:
     `landing_protected_paths_hit` reports every one of the nine protected
@@ -294,7 +294,7 @@
     (`test/doctor.test.sh`).
     `./scripts/render-config-table.sh --check` and `./scripts/lint-shell.sh`
     are clean.
-8u. **A pull request the arming step already approved once, but could not
+8u. <a id="impl-ac-8u"></a>**A pull request the arming step already approved once, but could not
     land for a reason that can change without the pull request changing, is
     re-armed without a human's click (TD-PPagop-26081701).**
     Once per cycle, fleet-wide regardless of `--repo` and skipped on
@@ -449,7 +449,7 @@
     `anomaly` it reports stay exactly what the (unmodified) merged-PR count
     read — an ALREADY_ARMED-driven hold never reports `anomaly: true` on its
     own.
-46. **A pull request cannot rely on the cycle that owed it an Approver
+46. <a id="impl-ac-46"></a>**A pull request cannot rely on the cycle that owed it an Approver
     round to also deliver one (requirement 46, agent-ops#682, #890).**
     `test/approver.test.sh` passes against a stubbed `gh`: `approver_review_
     stale` reads `CHANGES_REQUESTED` with a mismatched commit as stale and
@@ -576,7 +576,7 @@
     a synthetic work order naming `pr-<n>-approver-unreviewed` instead,
     reporting its outcome through the same global.
 
-46a. **A newer authored commit whose diff is unchanged is not genuine
+46a. <a id="impl-ac-46a"></a>**A newer authored commit whose diff is unchanged is not genuine
     progress (requirement 46a, agent-ops#1806).** `test/rebase-only.test.sh`
     exercises `lib/rebase-only.sh`'s `diff_patch_id`/`rebase_only_push`
     against a real, local, throwaway git fixture repository — no stubs, since
@@ -603,7 +603,7 @@
     identical except the stub reports the diff changed, still reaches a real
     re-review exactly as every pre-#1806 case in the file does, confirming
     the new gate narrows nothing it should not.
-8v. **A D18 rollout stage's own exit criteria are measured, not recalled
+8v. <a id="impl-ac-8v"></a>**A D18 rollout stage's own exit criteria are measured, not recalled
     (component 22).** `test/autonomy-stage-report.test.sh` passes: a
     repository at `human` (Stage 0) verdicts `met` once a baseline file
     exists and `merge_autonomy` is configured; a repository at
@@ -629,7 +629,7 @@
     certifies a zero (agent-ops#661), and its `measured` string still names
     both the settled sample and the pull request left unread.
     `scripts/autonomy-stage-report.sh` passes `shellcheck`.
-8w. **The Approver's verdict is paired with the pull request's eventual fate,
+72. <a id="impl-ac-72"></a>**The Approver's verdict is paired with the pull request's eventual fate,
     and a divergence is never silently dropped (component 22a).**
     `test/verdict-fate.test.sh` passes: `verdict_fate_posted_review` maps the
     Approver's own verdict vocabulary onto the two GitHub review events the
@@ -673,7 +673,7 @@
     `CHANGES_REQUESTED` verdict its `divergence` criterion `met`, naming the
     sample the zero is backed by. `lib/verdict-fate.sh` and
     `scripts/verdict-fate-report.sh` pass `shellcheck`.
-8x. **The classifier-escape audit recomputes independently, never trusts
+8x. <a id="impl-ac-8x"></a>**The classifier-escape audit recomputes independently, never trusts
     what it is auditing, and never confuses "cannot tell" with "clean"
     (requirement 8e, agent-ops#572).** `test/detect-classifier-escapes.test.sh`
     pins the reimplemented protected-path matching, protected-path resolution,
@@ -746,7 +746,7 @@
     not windowed) and the per-row `audit`/`audit_reason` join into the WI-8
     digest's `armed` rows. `./scripts/lint-shell.sh` is clean.
 
-8w. **A repository's autonomy readiness is one verdict, and it never fails for
+8w. <a id="impl-ac-8w"></a>**A repository's autonomy readiness is one verdict, and it never fails for
     what it could not read (component 14, agent-ops#575).**
     `test/doctor.test.sh` passes, over the same single-target-repo fixture and
     `gh`/`rulesets` stubs acceptance check 38g uses. The three new
@@ -791,7 +791,7 @@
     `fail` (requirement 8t) — a separate verdict answering the separate
     question of whether landing works at all, not this one changing its
     mind about what it could confirm.
-8x. **`file_debt`/`file_issue` file what a stage found, and only the Script
+70. <a id="impl-ac-70"></a>**`file_debt`/`file_issue` file what a stage found, and only the Script
     ever writes (requirements 36c, 42a, agent-ops#631, revised agent-ops#874).**
     `test/tech-debt-file.test.sh` passes: `techdebt_file_debt` dedups first
     against the target repository's own open `pw::type:tech-debt` issues by
@@ -837,7 +837,7 @@
     an Approver `refuse` each still file alongside their own ordinary
     handling, proving the two are independent rather than one silently
     suppressing the other.
-8y. **A stage files inline, on its own branch, and a stale pre-#874
+8y. <a id="impl-ac-8y"></a>**A stage files inline, on its own branch, and a stale pre-#874
     reservation drains itself rather than sitting forever (agent-ops#631).**
     `test/release-pending-reservations.test.sh` passes (requirement 17g,
     component 23f, TD-PPagop-26082427): with no `state_repo` configured, or
@@ -870,7 +870,7 @@
     `pw::type:tech-debt` issue (read, not executed — an Implementer or
     Reviewer engagement is a live model session this suite does not drive).
 
-8x. **One durable audit record justifies every autonomous landing, and a
+71. <a id="impl-ac-71"></a>**One durable audit record justifies every autonomous landing, and a
     landing with none is an anomaly, not a null (D18, agent-ops#578).**
     `_landing_stage_attempt` (lib/landing.sh) logs `landing-audit-record`
     once, in the same call that logs `landing-armed`, on every successful
@@ -954,7 +954,7 @@
     `test/dashboard-render.test.sh` asserts the rendered panel shows
     "missing" for an anomalous landing rather than a bare "unknown".
 
-8z. **The untrusted-content framing is present and identical in every
+8z. <a id="impl-ac-8z"></a>**The untrusted-content framing is present and identical in every
     prompt (requirement 45).** `test/prompt-untrusted-framing.test.sh`
     passes: every shipped stage prompt — `prompts/project-reviewer.md`
     included (docs/spec/review.md R18) — carries the marker-delimited
@@ -962,7 +962,7 @@
     45a's canonical one, which the test lifts from this document at run
     time rather than restating.
 
-45e. **A stage runs as its own Unix user (requirement 45e).**
+45e. <a id="impl-ac-45e"></a>**A stage runs as its own Unix user (requirement 45e).**
     `test/stage-boundary.test.sh` passes. Anywhere, it proves that a
     breadcrumb gives back only a github.com pull-request URL and never
     through a link; that removal hands what it cannot finish to the stage
@@ -1000,7 +1000,7 @@
     in a stage presents the broker's token and identity, asks for the
     call's own owner, mints nothing and falls back to nothing.
 
-47. **The rework record matches `docs/FLOW-SCHEMA.md` and is emitted at
+47. <a id="impl-ac-47"></a>**The rework record matches `docs/FLOW-SCHEMA.md` and is emitted at
     every one of the nine classes' own detector sites (requirement 47).**
     `test/rework-record.test.sh` drives `lib/rework.sh`'s `rework_fields`
     directly — a well-formed evidence object, an unparseable one (degrades to
@@ -1015,7 +1015,7 @@
     skipped rather than fatal to the reduction. `scripts/lint-shell.sh` is
     clean on every file this requirement touches.
 
-48. **Expensive per-repository gather runs for one repository per cycle,
+48. <a id="impl-ac-48"></a>**Expensive per-repository gather runs for one repository per cycle,
     offset per node (requirement 48, agent-ops#1106).**
     `test/expensive-gather-cache.test.sh` passes:
     `expensive_gather_pick_repo` picks a never-cached repository over any
@@ -1063,7 +1063,7 @@
     replayed band unfiltered by this reapplication. `scripts/lint-shell.sh`
     is clean on every file this requirement touches.
 
-49. **The item lifecycle record matches `docs/FLOW-SCHEMA.md`, the join key
+49. <a id="impl-ac-49"></a>**The item lifecycle record matches `docs/FLOW-SCHEMA.md`, the join key
     reaches every site requirement 49 names, and the fold balances
     (requirement 49).** `test/item-lifecycle.test.sh` drives
     `lib/item-lifecycle.sh`'s `item_lifecycle_fold` directly against one
@@ -1128,7 +1128,7 @@
     rather than losing the memo silently).
     `scripts/lint-shell.sh` is clean on every file this requirement touches.
 
-50. **The node time-state record matches `docs/FLOW-SCHEMA.md`, a `node-state`
+50. <a id="impl-ac-50"></a>**The node time-state record matches `docs/FLOW-SCHEMA.md`, a `node-state`
     transition reaches every site requirement 50 names, and the invariant
     balances (requirement 50).** `test/node-time-state.test.sh` drives
     `lib/node-time-state.sh` directly: `node_time_state_for_cause` against

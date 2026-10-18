@@ -2,7 +2,7 @@
 
 ### Acceptance checks — continued (part 7 of 7; items 1h–2s)
 
-1h. **A log past `log_retained_bytes` rotates, keeps `log_generations`, and
+1h. <a id="impl-ac-1h"></a>**A log past `log_retained_bytes` rotates, keeps `log_generations`, and
    never touches `log.jsonl`.** `test/rotate-logs.test.sh` passes: a log under
    the threshold is left alone; one over it is renamed to `.1` and a fresh
    empty file takes its place; a second rotation shifts `.1` to `.2` rather
@@ -11,7 +11,7 @@
    `once-pr4-verify.log` is removed if present. `test/publish-dashboard.test.sh`
    passes its cron-panel case: with `cron.log` short and `cron.log.1` present,
    the panel's tail draws from both, newest last.
-1h-i. **Analytics retention is a stated policy, and rotation and pruning
+1h-i. <a id="impl-ac-1h-i"></a>**Analytics retention is a stated policy, and rotation and pruning
    both already conform to it (requirement 2.6d).**
    `test/rotate-logs.test.sh` passes an added assertion: the shipped
    config's own `analytics_retained_days` resolves to `0` (retain
@@ -30,7 +30,7 @@
    `analytics_retained_days`, `default: 0`, with `x-docs.readme`/
    `x-docs.spec`, and `scripts/render-config-table.sh --check` passes with
    it rendered into all four `config-table` regions.
-1i. **Per-installation prompt overrides extend or replace a stage's prompt,
+1i. <a id="impl-ac-1i"></a>**Per-installation prompt overrides extend or replace a stage's prompt,
    and the fingerprint tracks them (requirement 4a).**
    `test/prompt-overrides.test.sh` passes: with no `prompt_overrides`
    configured (or a stage absent from it), `stage_prompt_text` is
@@ -54,7 +54,7 @@
    config.schema.json's concern rather than this library's (requirement 1b);
    test/config-schema.test.sh asserts one rejection per class, naming the
    offending path.
-1j. **The Co-Ordinator's repo/work-sources table is config-driven, and names
+1j. <a id="impl-ac-1j"></a>**The Co-Ordinator's repo/work-sources table is config-driven, and names
    no consumer repo in `prompts/coordinator.md` (requirement 4b).**
    `test/coordinator-brief.test.sh` passes: `coordinator_work_sources_table`
    renders one Markdown row per repo, each `sources` entry numbered in the
@@ -66,7 +66,7 @@
    `test/noop-skip.test.sh` passes: a change to the rendered table busts the
    no-op fingerprint, and an input predating the `coordinator_work_sources_
    table` key canonicalises the same as one carrying it empty.
-1ja. **The assembled Co-Ordinator prompt cannot outgrow its model's context
+1ja. <a id="impl-ac-1ja"></a>**The assembled Co-Ordinator prompt cannot outgrow its model's context
    window (requirement 4i).** `test/coordinator-input.test.sh` passes:
    `coordinator_fit_bands` hands an already-fitting array back byte-identical
    with `applied: false`; a `0`, non-numeric or non-array input changes
@@ -134,7 +134,7 @@
    `authentication_failed` case and a bare `api_error_503` are both
    unchanged.
 
-1k. **A stage prompt reaches `claude` on stdin, at a size argv could not
+1k. <a id="impl-ac-1k"></a>**A stage prompt reaches `claude` on stdin, at a size argv could not
    carry (requirement 4c).** `test/stage-prompt-delivery.test.sh` passes: for
    `run_model_stage` as sourced from `lib/stage-run.sh` — the one copy both
    pipelines call, which the file asserts by finding the function in neither
@@ -147,7 +147,7 @@
    is ever trimmed; the file first confirms the cap exists on the kernel it
    is running on, and says so and skips rather than passing vacuously if it
    does not.
-1k0. **The stage launcher is provider-neutral, the Claude adapter behind it
+1k0. <a id="impl-ac-1k0"></a>**The stage launcher is provider-neutral, the Claude adapter behind it
    changed nothing, and a second adapter is one file away — reached the way a
    cycle script reaches it (requirement 4d).**
    `test/stage-run.test.sh` passes, against a `claude` stub emitting a fixed
@@ -195,7 +195,7 @@
    neither credential. Stubbed `union_stream`/`fleet_logs` readers are called
    zero times across every one of those cases, pinning "the launcher reads
    no ledger" as a call count rather than an assertion about one path alone.
-1k1. **A stage streams as it runs, and leaves the envelope its readers
+1k1. <a id="impl-ac-1k1"></a>**A stage streams as it runs, and leaves the envelope its readers
    expect (requirement 4d).** `test/stage-stream.test.sh` passes, against a
    `claude` stub that emits stream-json a line at a time with a pause
    between lines: the invocation is made with `--output-format stream-json
@@ -216,7 +216,7 @@
    `state_local_streams_retained` removes the streams of older cycle and
    review directories while leaving those directories and every other file
    in them in place.
-1k2. **A stage's inter-event gaps are measured while it runs (requirement
+1k2. <a id="impl-ac-1k2"></a>**A stage's inter-event gaps are measured while it runs (requirement
    33a).** `test/stage-gaps.test.sh` passes: `stage_gap_stats` summarises a
    known sample at the nearest rank — checked at the ranks where definitions
    differ, not only in the middle — leaves one long silence among short ones
@@ -233,7 +233,7 @@
    `gaps` is carried through as given, is `null` when the caller supplies
    none, and degrades to `null` — rather than failing the whole record —
    when the caller supplies something unparseable.
-1k3. **A stage that stops producing is stopped, and the two kills are told
+1k3. <a id="impl-ac-1k3"></a>**A stage that stops producing is stopped, and the two kills are told
    apart (requirement 4e).** `test/stage-watchdog.test.sh` passes, against a
    `claude` stub whose output it controls: a stage that goes quiet for longer
    than its inactivity threshold is killed, returns 124, and reports
@@ -291,7 +291,7 @@
    events, and exits non-zero when its `jq` fails outright.
    `test/doctor.test.sh` passes: `--offline` reports the stream-flushing
    probe skipped rather than running it, so the suite never spends.
-1k4. **Both stage caps derive themselves, and in the safe direction
+1k4. <a id="impl-ac-1k4"></a>**Both stage caps derive themselves, and in the safe direction
    (requirement 4f).** `test/stage-budget.test.sh` passes against fixture
    logs with absolute dates: a stage is keyed to the repository its cycle
    selected and to the model it ran, two repositories are two cells, and a
@@ -341,7 +341,7 @@
    wider per-repository `stage_timeouts` entry both reach it exactly as they
    reach `agent-cycle.sh`'s lock and `scripts/doctor.sh`'s report, rather than
    the dashboard silently deriving from an empty overrides map of its own.
-1k5. **A killed stage's uncommitted work is not lost with it (requirement
+1k5. <a id="impl-ac-1k5"></a>**A killed stage's uncommitted work is not lost with it (requirement
    4l, issue #2186).** `test/stage-snapshot.test.sh` passes, against a real
    local bare repository standing in for `origin` (no GitHub, no network): a
    stage killed by the watchdog after leaving real, uncommitted changes in
@@ -358,7 +358,7 @@
    where the Script's own hand-over leaves it, before the stage's first `git
    checkout` — moves that branch's ref on `origin` not at all, and mints no
    other ref in its place, however much uncommitted work its tree holds.
-1l. **Repos are walked most-overdue-first by nice-weighted effective age,
+1l. <a id="impl-ac-1l"></a>**Repos are walked most-overdue-first by nice-weighted effective age,
    and it never starves a repo (requirement 3).** `test/repo-order.test.sh`
    passes: `repo_order_by_effective_age` returns an order byte-identical to
    a plain least-recently-updated-first `sort` of the same lines when every
@@ -378,7 +378,7 @@
    anywhere), so it must drop the key rather than emit `{}`. Separately: a
    `nice` outside `-19`..`19`, or non-integer, makes `agent-cycle.sh` refuse
    to start, naming every offending repo's slug.
-1m. **A guard reports its degradation and still answers exactly what it
+78. <a id="impl-ac-78"></a>**A guard reports its degradation and still answers exactly what it
    always did (requirement 4h).** `test/guard-degradation.test.sh` passes.
    `guard_warn` and `stage_budget_overrides` are lifted whole out of
    `agent-cycle.sh`, `gather_claimed`, `unaccounted_items` and
@@ -425,18 +425,18 @@
    issue body that it is the time `fleet/limit.json` was last written, while
    one an hour old files nothing; and a flag-only freeze whose record has no
    `ts` files nothing and reports `freeze_since:flag`.
-2. `--dry-run` completes against the real repos: stand-down checks pass,
+2. <a id="impl-ac-2"></a>`--dry-run` completes against the real repos: stand-down checks pass,
    ordering is computed, the findings pre-fetch runs, the Co-Ordinator selects
    an item or declines with a reason, the work order is printed, nothing
    further launches, and the log records the cycle.
-2a. `scripts/gather-findings.sh Poetic-Poems/poetic` prints a valid JSON
+2a. <a id="impl-ac-2a"></a>`scripts/gather-findings.sh Poetic-Poems/poetic` prints a valid JSON
    array (possibly empty), and prints `[]` and exits 0 for a repo with the
    features disabled — never a non-zero exit that would abort the cycle.
-2b. `scripts/gather-abandoned-drafts.sh Poetic-Poems/does-not-exist autonomous-agent agent/ 3`
+2b. <a id="impl-ac-2b"></a>`scripts/gather-abandoned-drafts.sh Poetic-Poems/does-not-exist autonomous-agent agent/ 3`
    prints `[]` and exits 0 — a missing repo, a disabled feature, an API error, or
    an unparseable threshold never aborts the cycle. Its candidate rule is
    regression-tested in `test/abandoned-drafts.test.sh`.
-2i. **The GitHub API budget gates the cycle, and a short refusal is waited
+2i. <a id="impl-ac-2i"></a>**The GitHub API budget gates the cycle, and a short refusal is waited
    out.** `test/github-limit.test.sh` passes: `github_limit_verdict` returns
    `ok` above both floors, `exhausted` naming the binding resource below
    either, the **later**-resetting resource when both are below, and `unknown`
@@ -463,7 +463,7 @@
    snapshot made only of empty windows is `unknown`, never `ok`, one real
    pool beside one is judged on the real pool, and a header reading below the
    floor is `exhausted`.
-2o. **The budget is recorded, and the record adds up (requirement 2.0d).**
+2o. <a id="impl-ac-2o"></a>**The budget is recorded, and the record adds up (requirement 2.0d).**
    `test/github-limit.test.sh` passes: `github_limit_budget_delta` gives the
    difference in `used` within one window, the new window's `used` flagged
    `window_rolled` across a roll, `null` for a count that went backwards, for
@@ -488,7 +488,7 @@
    shim's own section, and reads as zero calls — never an error — when
    explicit log files were given instead of a `state_dir`.
    `scripts/github-budget-report.sh` passes `shellcheck`.
-2p. **The `gh` transport shim conditions a cacheable read, serves
+2p. <a id="impl-ac-2p"></a>**The `gh` transport shim conditions a cacheable read, serves
    last-known-good under a refusal, and never touches anything else
    (requirement 2.0e, agent-ops#1084).** `test/gh-shim.test.sh` passes, both
    the pure functions (sourced directly) and the shim end to end against a
@@ -586,7 +586,7 @@
    read made after a walk is itself still unconditioned by the walk's own
    per-page entry.
    `lib/gh-shim.sh` and `scripts/gh-shim.sh` pass `shellcheck -x`.
-2q. **The on-demand credential seam mints a fresh token once the previous
+2q. <a id="impl-ac-2q"></a>**The on-demand credential seam mints a fresh token once the previous
    one is within `refresh_buffer` of expiry, never re-identifies an
    explicit `GH_TOKEN`, and degrades exactly like the identity it fronts for
    (D18 decision 1 as amended, agent-ops#1021).** `test/gh-shim-auth.test.sh`
@@ -611,7 +611,7 @@
    back to `GH_TOKEN` exactly as before — and `test/forge-auth.test.sh`,
    `test/gh-shim.test.sh` and `test/gh-shim-auth.test.sh` all pass
    `shellcheck`.
-2r. **The seam mints against the installation covering the repository the
+2r. <a id="impl-ac-2r"></a>**The seam mints against the installation covering the repository the
    call targets, and reaches for the PAT when none does.**
    `test/gh-shim-auth.test.sh` passes: with
    `PULLWRIGHT_AUTHOR_INSTALLATION_IDS` naming two owners and no scalar
@@ -649,7 +649,7 @@
    PAT the seam degrades to, as well as a caller's own non-empty `GH_TOKEN`
    even for a mapped owner, are each a hash of the token, never an App tag
    (agent-ops#1422).
-2l. **A rejected or missing credential is classified apart from an outage,
+2l. <a id="impl-ac-2l"></a>**A rejected or missing credential is classified apart from an outage,
    and stands the cycle down before the Co-Ordinator ever runs (requirement
    2.0b, agent-ops#691, TD-PPagop-26082306).** `test/github-limit.test.sh`
    passes: `github_auth_probe` returns `ok` for a working token,
@@ -672,7 +672,7 @@
    happened); `ok` and `unreachable` verdicts fall through
    untouched, filing nothing.
 
-2s. **A refused model credential stands the cycle down before the Co-Ordinator
+2s. <a id="impl-ac-2s"></a>**A refused model credential stands the cycle down before the Co-Ordinator
    ever runs, the model-credential analogue of 2l above (requirement 2.0h,
    agent-ops#2308).** `test/standdown-credential-preflight.test.sh` passes
    against the block lifted verbatim from `lib/standdown.sh`: a `refused`

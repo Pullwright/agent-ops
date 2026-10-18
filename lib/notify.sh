@@ -2,7 +2,7 @@
 # shellcheck disable=SC2034  # notify_post's context params are read by name at each call site, not by shellcheck's flow analysis.
 #
 # lib/notify.sh — the installation's one push-notification channel
-# (issue #1279, requirement 2m as rewritten): every escalation issue filed or
+# (issue #1279, acceptance check 2m as rewritten): every escalation issue filed or
 # auto-closed, every `pager-fired`/`pager-cleared` (#1278), and every
 # fleet-wide stand-down beginning or ending, POSTed as one compact JSON body
 # to `notify_webhook_url`. Promoted from `escalation_webhook_notify`'s own
@@ -148,7 +148,7 @@ _notify_suppressed_count_since() {
 # seconds, in which case a `notify-suppressed` event is logged instead and the
 # next allowed send folds this one into its own `count`.
 #
-# Requirement 2m's guarantees, unchanged from `escalation_webhook_notify`:
+# Acceptance check 2m's guarantees, unchanged from `escalation_webhook_notify`:
 # credential-independent (no `gh`/`GH_TOKEN` anywhere in this path),
 # best-effort (a POST failure logs one local `notify-failed` and never
 # propagates), `https://`-only — by the schema's own pattern on
@@ -170,7 +170,7 @@ notify_post() {
   # A read log that does not exist yet is an ordinary state for a freshly
   # provisioned node, not an error: without this the redirect below fails,
   # and because every caller runs under `set -e` that failure would abort the
-  # cycle from inside the one path requirement 2m promises never blocks it.
+  # cycle from inside the one path acceptance check 2m promises never blocks it.
   # No prior send is readable, so no send is suppressed — fail open.
   [[ -r "$read_log" ]] || read_log=/dev/null
 

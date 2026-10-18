@@ -369,7 +369,7 @@ refiner_repos_json="$refiner_prefetch_source_json"
 if [[ -n "$refiner_model" ]]; then
   # This repository's own resolved report_directory (its override in
   # repository_review.repos, or repository_review.defaults' otherwise,
-  # requirement 342) — or, absent from repository_review entirely (this repo
+  # issue #342) — or, absent from repository_review entirely (this repo
   # may not even be one review-cycle.sh reviews), the same ultimate fallback
   # review-cycle.sh itself falls back to (issue #761). Computed once, outside
   # the loop: every repository's own resolved value is a lookup against this,

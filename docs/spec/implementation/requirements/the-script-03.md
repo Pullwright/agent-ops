@@ -2,7 +2,7 @@
 
 ### The Script — requirements, continued (part 3 of 10; 2.3a–2.4: The fleet switch…)
 
-2.3a. **The fleet switch.** The same switch, one level up: `fleet/disabled.json`
+2.3a. <a id="impl-2-3a"></a>**The fleet switch.** The same switch, one level up: `fleet/disabled.json`
    on the state repository's main, holding the same record shape and read
    through the same evaluation. With several nodes active, "stop the
    pipelines" has to mean all of them, so `--disable` writes both levels
@@ -129,7 +129,7 @@
    switch, requirement 2.3c's per-repository merge-budget freeze and
    requirement 2.3e's credit-mix lever each reuse it outright, under their
    own flag name, rather than growing their own copy of it.
-2.3b. **The merge-autonomy kill switch** (D18,
+2.3b. <a id="impl-2-3b"></a>**The merge-autonomy kill switch** (D18,
    `docs/reviews/2026-08-14-autonomy-investigation.md` §6; `lib/merge-autonomy.sh`).
    A second fleet flag, `fleet/merge-autonomy-kill.json`, independent of the
    fleet switch above: setting it forces every repository's *effective*
@@ -227,7 +227,7 @@
    (component 14) reads the *configured* level instead, deliberately, so a
    pairing that would fail the moment someone clears the switch is caught now
    rather than only once they do.
-2.3c. **The merge budget** (D18 §5.4, `docs/reviews/2026-08-14-autonomy-investigation.md`;
+2.3c. <a id="impl-2-3c"></a>**The merge budget** (D18 §5.4, `docs/reviews/2026-08-14-autonomy-investigation.md`;
    `lib/merge-budget.sh`). `merge_budget_per_day` is a rolling-24-hour cap,
    per repository, on how many pull requests this pipeline may *land* —
    fleet-wide default with a `repos[]` override, on the same precedence
@@ -312,7 +312,7 @@
    is unaffected by any of this: a freeze only ever lowers a level already
    above `agent-approves`, and a repository configured at or below it stays
    exactly as configured, frozen or not.
-2.3d. **The drain mode** (agent-ops#865, agent-ops#903). The switch's record
+2.3d. <a id="impl-2-3d"></a>**The drain mode** (agent-ops#865, agent-ops#903). The switch's record
    (requirement 2.3) carries a second field, `mode`: `"stop"` — the switch's
    original, only behaviour, and what every record written before this field
    existed reads as — or `"drain"`, written by `--drain <reason> [--for
@@ -379,7 +379,7 @@
    `mode` (`"stop"`/`"drain"`) alongside `scope` and `fleet_flag`, so a log
    reader can tell which was in force without cross-referencing the record
    file, which may have since been cleared or overwritten.
-2.3e. **The credit mix's live lever** (issue #2244, D30, part of #2238). A
+2.3e. <a id="impl-2-3e"></a>**The credit mix's live lever** (issue #2244, D30, part of #2238). A
    fifth fleet flag, `fleet/mix.json`, moving a provider's lane weights and
    openings across the fleet while it runs — no image roll, no container
    recreate — outranking `config.json`'s own `providers.<name>.lanes` for the
@@ -497,7 +497,7 @@
    `monitor_tactical_keys` may later name the mix so the Pipeline Monitor can
    move it through decide-tactical (requirement 36); this requirement does
    not wire that, only leaves the flag's writer callable from the Script.
-2.4. **The role guard.** The environment variable `AGENT_OPS_ROLE` names the
+2.4. <a id="impl-2-4"></a>**The role guard.** The environment variable `AGENT_OPS_ROLE` names the
    one node that runs unattended cycles. Compared case-insensitively and
    ignoring surrounding whitespace against the single value `active`;
    **anything else — unset, empty, misspelt, or a word from some other

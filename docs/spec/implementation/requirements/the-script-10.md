@@ -2,7 +2,7 @@
 
 ### The Script — requirements, continued (part 10 of 10; 60–60: The CLI surface: `scripts/node-health.sh`…)
 
-60. **The CLI surface: `scripts/node-health.sh`.** `[--live|--ready|--health|
+60. <a id="impl-60"></a>**The CLI surface: `scripts/node-health.sh`.** `[--live|--ready|--health|
     --metrics] [--json] [--config FILE] [--state-dir DIR] [--peers-dir DIR]`
     (the last three test-only overrides, on the same convention
     `scripts/pickup-metrics.sh` already carries). Exactly one compact JSON

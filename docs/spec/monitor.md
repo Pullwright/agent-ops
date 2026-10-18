@@ -142,7 +142,7 @@ Monitor reuses them rather than adding a fourth.
 
 ### The Monitor Script (`monitor-cycle.sh`)
 
-M1. **The boundary.** The Monitor never writes a label the Co-Ordinator keys
+M1. <a id="mon-m1"></a>**The boundary.** The Monitor never writes a label the Co-Ordinator keys
    on (requirement 16's work sources — `pw::type:tech-debt` is the one
    exception, and it is the exception on purpose: a mechanical finding is
    ordinary work for the fleet, filed exactly as the Reviewer, Implementer
@@ -150,7 +150,7 @@ M1. **The boundary.** The Monitor never writes a label the Co-Ordinator keys
    never runs as a stage of `agent-cycle.sh`. It raises no pull request and
    pushes no branch.
 
-M2. **Its own lock.** `state_dir/monitor-lock.json`, in the same shape and
+M2. <a id="mon-m2"></a>**Its own lock.** `state_dir/monitor-lock.json`, in the same shape and
    with the same takeover discipline as `lock.json` and `review-lock.json`:
    `{pid, started_at, host}`, a live pid inside the staleness window skips the
    tick, a foreign `host` is taken over immediately (a pid is meaningful only
@@ -161,19 +161,19 @@ M2. **Its own lock.** `state_dir/monitor-lock.json`, in the same shape and
    from state replication (`scripts/state-sync.sh`), exactly as its two
    siblings are.
 
-M2a. **The switch.** `lib/toggle.sh`'s node switch and the fleet switch both
+M2a. <a id="mon-m2a"></a>**The switch.** `lib/toggle.sh`'s node switch and the fleet switch both
    stand this pipeline down, checked before the lock. It honours the switch
    and never sets or clears it: `agent-cycle.sh --disable` is the one way in,
    so there is one writer and one record. A `drain` stands it down exactly as
    a plain stop does — the Monitor opens no pull request, so it has nothing
    for a drain to finish.
 
-M2b. **The role guard.** `lib/role.sh`'s `role_is_active`: only a node whose
+M2b. <a id="mon-m2b"></a>**The role guard.** `lib/role.sh`'s `role_is_active`: only a node whose
    `AGENT_OPS_ROLE` is `active` runs an unattended monitor pass, and a standby
    tick leaves nothing behind but the cron-log line. Checked before the config
    is read; `--dry-run` and `--once` bypass it.
 
-M3. **CronJob-shaped.** The Monitor uses no Docker socket, no `ssh`, no host
+M3. <a id="mon-m3"></a>**CronJob-shaped.** The Monitor uses no Docker socket, no `ssh`, no host
    path and no privileged mount. Everything it knows about a host it learns
    from that node's own host-facts record (`docs/HOST-FACTS-SCHEMA.md`),
    published by `scripts/collect-host-facts.sh` and carried fleet-wide by the
@@ -183,7 +183,7 @@ M3. **CronJob-shaped.** The Monitor uses no Docker socket, no `ssh`, no host
    that the pipeline's runtime container holds neither the Docker socket nor
    the Kubernetes API.
 
-M3.1. **The usage-limit cooldown.** Requirement 2.1's check, in full: the log
+M3.1. <a id="mon-m3-1"></a>**The usage-limit cooldown.** Requirement 2.1's check, in full: the log
    union (as fresh as the last fetch) and `fleet/limit.json` (read live),
    later resume wins. A cooldown in force stands the run down before the
    digest is built. The union is read with requirement 2.1's reduction,
@@ -195,7 +195,7 @@ M3.1. **The usage-limit cooldown.** Requirement 2.1's check, in full: the log
    neither is repaired afterwards; a `monitor-log.jsonl` snapshot that could
    not be built is logged as a `warning` too.
 
-M3.2. **Deference to a live sibling.** If either `lock.json` (the
+M3.2. <a id="mon-m3-2"></a>**Deference to a live sibling.** If either `lock.json` (the
    implementation pipeline) or `review-lock.json` (the review pipeline) is
    held by a **live** process, the Monitor stands down and waits for the next
    hourly tick. R3.2 states this rule for one lock; it is widened to two here
@@ -204,7 +204,7 @@ M3.2. **Deference to a live sibling.** If either `lock.json` (the
    review cycle is the longer-running of the two. This requires no change to
    either sibling; the deference is entirely on the Monitor's side.
 
-M4. **Cadence: an hourly tick and a due gate.** The crontab line fires every
+M4. <a id="mon-m4"></a>**Cadence: an hourly tick and a due gate.** The crontab line fires every
    hour, at `schedule.monitor_offset_minutes` past the node's own base minute
    (mod 60) — the same per-node jitter `schedule.doctor_offset_minutes` gives
    the unattended doctor pass. Each firing decides for itself whether the run
@@ -231,7 +231,7 @@ M4. **Cadence: an hourly tick and a due gate.** The crontab line fires every
    themselves a trigger (`requested`): an operator asking for a run now gets
    one.
 
-M5. **One run per slot, fleet-wide.** Before the digest is built, the run
+M5. <a id="mon-m5"></a>**One run per slot, fleet-wide.** Before the digest is built, the run
    claims its slot through `lib/claim.sh`: `claim file monitor <slot-key>`,
    where the slot key is the UTC date for a `daily` run and
    `<date>T<hour>` for a `pager`-triggered one. This is the pseudo-slug
@@ -246,7 +246,7 @@ M5. **One run per slot, fleet-wide.** Before the digest is built, the run
 
 ### The digest (`lib/monitor-digest.sh`)
 
-M6. **The model never reads a primary record.** The Script assembles a digest
+M6. <a id="mon-m6"></a>**The model never reads a primary record.** The Script assembles a digest
    and the stage reads that. The digest's sections are:
 
    - **the last 24 h of the union log grouped by event class**, with a count,
@@ -295,7 +295,7 @@ M6. **The model never reads a primary record.** The Script assembles a digest
      (M6a) may perform itself, so the Script decides it and hands this
      section the already-narrowed result; a retired key is simply absent.
 
-M6a. **Deterministic.** Every function in `lib/monitor-digest.sh` is a pure
+M6a. <a id="mon-m6a"></a>**Deterministic.** Every function in `lib/monitor-digest.sh` is a pure
    reader: it takes paths and JSON on argv, reads no `config.json`, calls no
    `gh`, and writes nothing but the rendered file it is handed. Two runs over
    the same inputs produce the same digest — which the dedup of M13 depends
@@ -305,13 +305,13 @@ M6a. **Deterministic.** Every function in `lib/monitor-digest.sh` is a pure
    which is also what lets the whole builder be tested against a fixture
    directory with no network.
 
-M6b. **Degrade, never fail.** Every reader returns its empty shape rather
+M6b. <a id="mon-m6b"></a>**Degrade, never fail.** Every reader returns its empty shape rather
    than a non-zero status: an unreadable union log, a fleet whose peers have
    not synced, a forge listing that failed. A monitor run with less to say is
    a monitor run; a monitor run that died because a peer directory was absent
    is a gap in exactly the observability this pipeline exists to provide.
 
-M7. **Bounded by `monitor_max_input_bytes`, on a stated ladder.** The digest
+M7. <a id="mon-m7"></a>**Bounded by `monitor_max_input_bytes`, on a stated ladder.** The digest
    is rendered as Markdown and measured **in bytes** (not characters — this
    text carries plenty of multi-byte punctuation, and a character count would
    let a dense digest overshoot the bound by exactly the overhead the bound
@@ -339,7 +339,7 @@ M7. **Bounded by `monitor_max_input_bytes`, on a stated ladder.** The digest
 
 ### Signals and cleanup
 
-M8. **Every exit leaves a record.** `cleanup()` runs on `EXIT` however the run
+M8. <a id="mon-m8"></a>**Every exit leaves a record.** `cleanup()` runs on `EXIT` however the run
    ends: it removes the run's scratch directory under `workspace_root`, writes
    the stage-health verdict (M17) when a stage actually ran, logs
    `monitor-end` with the exit code, releases the lock, pushes this node's
@@ -351,7 +351,7 @@ M8. **Every exit leaves a record.** `cleanup()` runs on `EXIT` however the run
    re-enter the handler over a run already writing its record, so the first
    thing both handlers do is `trap '' TERM INT HUP`.
 
-M8a. **A signal stops the stage first.** `TERM`, `INT` and `HUP` are trapped —
+M8a. <a id="mon-m8a"></a>**A signal stops the stage first.** `TERM`, `INT` and `HUP` are trapped —
    the implementation spec's requirement 9c sets out the reasoning at length,
    and the review pipeline's R7a applies it to a sibling. In order: kill the
    stage's own process group (`KILL`, since the signaller's patience is
@@ -366,7 +366,7 @@ M8a. **A signal stops the stage first.** `TERM`, `INT` and `HUP` are trapped —
 
 ### The Monitor stage (`prompts/monitor.md`)
 
-M9. **One stage, one model.** `monitor_model` (default `claude-sonnet-5`), its
+M9. <a id="mon-m9"></a>**One stage, one model.** `monitor_model` (default `claude-sonnet-5`), its
    value resolved by `resolve_model_id_into` before the stage is launched —
    the assigning form, so the provider it resolves to is recorded for
    `run_model_stage`'s own substrate dispatch
@@ -379,7 +379,7 @@ M9. **One stage, one model.** `monitor_model` (default `claude-sonnet-5`), its
    `monitor_model` disables the pipeline outright, checked before the lock,
    the same way an empty `enabler_model` disables that stage.
 
-M9a. **Its caps are derived.** The Monitor's backstop and inactivity
+M9a. <a id="mon-m9a"></a>**Its caps are derived.** The Monitor's backstop and inactivity
    watchdog come from `lib/stage-budget.sh`'s derivation
    (requirement 4f) under the actor key `monitor`, at repository `*` — it
    reads the fleet, not a repository, so keying it per repository would
@@ -391,7 +391,7 @@ M9a. **Its caps are derived.** The Monitor's backstop and inactivity
    reading only the first would see no monitor run ever and hold the stage at
    its prior for ever.
 
-M10. **What the stage is asked for.** `prompts/monitor.md` asks for three
+M10. <a id="mon-m10"></a>**What the stage is asked for.** `prompts/monitor.md` asks for three
    readings — what is broken now; what limited throughput in the last 24 h and
    which lever it points at; what is new — plus a triage verdict for every
    open page (M15), and a final JSON object carrying `status`,
@@ -399,7 +399,7 @@ M10. **What the stage is asked for.** `prompts/monitor.md` asks for three
    every write: no `gh` write of any kind, no page closed, no configuration
    edited, no primary record read directly.
 
-M10a. **The untrusted-content framing.** `prompts/monitor.md` carries the
+M10a. <a id="mon-m10a"></a>**The untrusted-content framing.** `prompts/monitor.md` carries the
    canonical `## Untrusted external content` block of requirement 45a,
    byte-identical and marker-delimited, pinned by
    `test/prompt-untrusted-framing.test.sh` alongside every other prompt that
@@ -408,14 +408,14 @@ M10a. **The untrusted-content framing.** `prompts/monitor.md` carries the
    title, a `none-selected` reason quoting an issue and a commit message in
    the forge section are all text anyone with a GitHub account can author.
 
-M10b. **`prompt_overrides.monitor`.** The stage's prompt is assembled through
+M10b. <a id="mon-m10b"></a>**`prompt_overrides.monitor`.** The stage's prompt is assembled through
    `lib/prompt-overrides.sh` exactly as the implementation pipeline's stages
    are (requirement 4a), so an installation may extend or replace it without
    forking `prompts/`.
 
 ### Filing (the Script's own writes)
 
-M11. **Every filing carries a provenance line and a finding key.** The
+M11. <a id="mon-m11"></a>**Every filing carries a provenance line and a finding key.** The
    provenance line is `Monitor: monitor/<date> M-<nn>` — R12a's pattern, so
    the Co-Ordinator can tell when the work behind a finding is done, and a
    human reading the issue can find the report that produced it. `<nn>`
@@ -438,7 +438,7 @@ M11. **Every filing carries a provenance line and a finding key.** The
    quietly rewrote a key would file a second issue against the first run's
    finding.
 
-M12. **A filing budget.** At most `monitor_max_filings_per_run` (default 3)
+M12. <a id="mon-m12"></a>**A filing budget.** At most `monitor_max_filings_per_run` (default 3)
    GitHub items are created per run, counted across every class together,
    a promotion (M13a) included — it is a GitHub item like any other, so it
    spends the same budget rather than sitting outside it. The
@@ -449,7 +449,7 @@ M12. **A filing budget.** At most `monitor_max_filings_per_run` (default 3)
    `monitor_max_filings_per_run: 0` files nothing and reports everything —
    promotion included, on the same terms.
 
-M13. **Search-first dedup.** Before the stage runs, the Script lists every
+M13. <a id="mon-m13"></a>**Search-first dedup.** Before the stage runs, the Script lists every
    open issue in every repository it may file into whose body carries a
    `monitor-finding-key:` marker, and hands the stage that list as
    `open_findings`. A finding whose key is already open files **nothing** and
@@ -460,7 +460,7 @@ M13. **Search-first dedup.** Before the stage runs, the Script lists every
    the same run is added to the in-memory list, so two findings sharing a key
    inside one run dedup against each other too.
 
-M13a. **Promoting a repeat finding into a pager invariant, autonomously**
+M13a. <a id="mon-m13a"></a>**Promoting a repeat finding into a pager invariant, autonomously**
    (agent-ops#1285, part 6 of the #1126 findings). When a finding key has been
    carried by `monitor_promote_after` or more of the fleet's own
    `monitor-report-written` events' ledgers — counted across reports, not
@@ -510,7 +510,7 @@ M13a. **Promoting a repeat finding into a pager invariant, autonomously**
    row for a key the same as any other outcome, so deferring a promotion for
    budget does not reset its repeat count.
 
-M13b. **Retirement.** Once the invariant a promotion proposed actually
+M13b. <a id="mon-m13b"></a>**Retirement.** Once the invariant a promotion proposed actually
    exists — a `pager-fired` or `pager-cleared` transition for the key has
    been logged anywhere in the fleet (proof `lib/pager.sh` is evaluating it),
    or this checkout's own `lib/pager-invariants.sh` registers the key even
@@ -524,9 +524,9 @@ M13b. **Retirement.** Once the invariant a promotion proposed actually
    further mention anywhere: the invariant it named is now the deterministic
    check, and the Monitor's own filing has done its job.
 
-M14. **Filing by class**, mirroring `escalation_autonomy`'s own taxonomy:
+M14. <a id="mon-m14"></a>**Filing by class**, mirroring `escalation_autonomy`'s own taxonomy:
 
-M14a. **Mechanical** — a defect with a knowable fix. Filed as a
+M14a. <a id="mon-m14a"></a>**Mechanical** — a defect with a knowable fix. Filed as a
    `pw::type:tech-debt`-labelled issue in the repository the finding names, as
    the Reviewer, Implementer and Project Reviewer already file (D15 as
    revised), where the Co-Ordinator's `tech-debt` work band can select it as
@@ -535,7 +535,7 @@ M14a. **Mechanical** — a defect with a knowable fix. Filed as a
    that could open an issue in an arbitrary repository has the whole forge as
    its blast radius.
 
-M14b. **Tactical** — a configuration lever, where the right value is a
+M14b. <a id="mon-m14b"></a>**Tactical** — a configuration lever, where the right value is a
    judgement rather than a defect. **Always** stated in the report, with the
    key, the evidence and the value proposed. It is *moved* only when the
    finding's `config_key` appears in `monitor_tactical_keys`, and then only
@@ -547,7 +547,7 @@ M14b. **Tactical** — a configuration lever, where the right value is a
    `pw::decision` record states a decision; it changes no configuration, since
    `config.json` reaches a node only as a versioned change (ROADMAP D16).
 
-M14c. **Strategic, or owner-only under requirement 36a** — a trade-off, a
+M14c. <a id="mon-m14c"></a>**Strategic, or owner-only under requirement 36a** — a trade-off, a
    priority call, or a fact only a human holds. One `enabler_escalation_label`
    issue in the escalation repository, assigned to `enabler_assignee`, with
    the options written out. Assignment is the load-bearing half, exactly as
@@ -555,9 +555,9 @@ M14c. **Strategic, or owner-only under requirement 36a** — a trade-off, a
    `issues` work source (requirement 16.4). **This is the only path from this
    pipeline to the owner.**
 
-M14c1. **A filing reaches GitHub and nothing else.** None of M14's three
+M14c1. <a id="mon-m14c1"></a>**A filing reaches GitHub and nothing else.** None of M14's three
    classes posts to the installation's push channel (`lib/notify.sh`,
-   requirement 2m): that requirement's `escalation` class is scoped to the
+   acceptance check 2m): that requirement's `escalation` class is scoped to the
    issues `create_escalation_issue` creates, and this pipeline files through
    its own creator. M14c's escalation is therefore the one owner-facing
    filing in the system that arrives on the forge and nowhere else. Recorded
@@ -565,7 +565,7 @@ M14c1. **A filing reaches GitHub and nothing else.** None of M14's three
    an open pull request when this pipeline was specified and worked, and
    landed while it was in flight.
 
-M14d. **Nowhere to file is not a failure.** An installation with neither
+M14d. <a id="mon-m14d"></a>**Nowhere to file is not a failure.** An installation with neither
    `crash_loop_repo` nor `pager_repo` configured has nowhere to put an
    escalation or a decision record; such a finding is recorded as `proposed`
    in the report and nothing else happens. A filing that the forge refuses is
@@ -575,7 +575,7 @@ M14d. **Nowhere to file is not a failure.** An installation with neither
 
 ### Pages triage
 
-M15. **The Monitor is the consumer of pager pages.** For every open
+M15. <a id="mon-m15"></a>**The Monitor is the consumer of pager pages.** For every open
    `pw::pager` issue in its digest — read from, and commented on in, the
    pager repository resolved by the pager's own rule (M6: `pager_repo`, else
    `crash_loop_repo`) — the Monitor writes a triage verdict in the report, in
@@ -592,7 +592,7 @@ M15. **The Monitor is the consumer of pager pages.** For every open
    - **tactical**: proposed in the report, nothing posted.
    - **strategic**: left for the owner and said so in the report.
 
-M15a. **The Monitor never closes a page.** The pager's lifecycle is
+M15a. <a id="mon-m15a"></a>**The Monitor never closes a page.** The pager's lifecycle is
    event-sourced and transition-only (`lib/pager.sh`): a key's state is
    derived purely from the latest `pager-candidate` /
    `pager-candidate-cleared` / `pager-fired` / `pager-cleared` event in the
@@ -608,7 +608,7 @@ M15a. **The Monitor never closes a page.** The pager's lifecycle is
 
 ### The report
 
-M16. **A dated report in the state store.** `state_dir/monitor/<date>/report.md`,
+M16. <a id="mon-m16"></a>**A dated report in the state store.** `state_dir/monitor/<date>/report.md`,
    carrying the stage's own three sections (what is broken now; what limited
    throughput and which lever; what is new) plus its pages section, and — added
    by the Script, not the stage — a filings ledger and a triage ledger. The
@@ -632,7 +632,7 @@ M16. **A dated report in the state store.** `state_dir/monitor/<date>/report.md`
    spec — and is recorded as deferred work at
    `tech-debt/TD-PPagop-26091101.md`.
 
-M17. **A stage-health verdict, from day one.** The Monitor logs `stage-end`
+M17. <a id="mon-m17"></a>**A stage-health verdict, from day one.** The Monitor logs `stage-end`
    with `stage: "monitor"` and `attempt-failed` with the same field into its
    own stream, which are the exact event name and field `lib/stage-health.sh`
    already reads — so this pipeline needs no second reader. Both of this
@@ -661,7 +661,7 @@ M17. **A stage-health verdict, from day one.** The Monitor logs `stage-end`
 
 ### Logging and state
 
-M18. **Streams.** Monitor *operational* events go to
+M18. <a id="mon-m18"></a>**Streams.** Monitor *operational* events go to
    `state_dir/monitor-log.jsonl` — this pipeline's own stream, keyed by a
    `monitor` id (`<UTC-timestamp>-<node>-<pid>`, pid last, exactly as
    requirement 33 shapes the cycle id), so the dashboard's `log.jsonl` parser
@@ -687,7 +687,7 @@ M18. **Streams.** Monitor *operational* events go to
    (M3.1), because usage-limit stand-down is shared across all three
    pipelines.
 
-M18a. **`monitor-log.jsonl` is never rotated.** It joins `log.jsonl`,
+M18a. <a id="mon-m18a"></a>**`monitor-log.jsonl` is never rotated.** It joins `log.jsonl`,
    `review-log.jsonl` and `revert-rate.jsonl` in `scripts/rotate-logs.sh`'s
    never-touched set, for the same reason: the fleet unions it to decide whose
    turn the daily run is and when the last report was written, and a rotated
@@ -695,7 +695,7 @@ M18a. **`monitor-log.jsonl` is never rotated.** It joins `log.jsonl`,
    `monitor-cron.log` — the crontab line's own text output — is rotated like
    `cron.log` and `review-cron.log`.
 
-M19. **No `node-state` transition.** The Monitor writes none of requirement
+M19. <a id="mon-m19"></a>**No `node-state` transition.** The Monitor writes none of requirement
    50's `node-state` events. `docs/FLOW-SCHEMA.md`'s fold reconstructs one
    timeline per node from two writers that already coordinate through the
    `impl_cycle_running` checks; a third writer contributing a few minutes a
@@ -706,7 +706,7 @@ M19. **No `node-state` transition.** The Monitor writes none of requirement
 
 ## Components
 
-1. `monitor-cycle.sh` implementing M1–M5 (the boundary, the lock, both
+1. <a id="mon-c-1"></a>`monitor-cycle.sh` implementing M1–M5 (the boundary, the lock, both
    switches, the role guard, the CronJob shape, both stand-downs, the due gate
    and the slot claim), M8/M8a (cleanup and the signal handler),
    M9/M9a/M10b (the stage and its caps, assembled through
@@ -717,19 +717,19 @@ M19. **No `node-state` transition.** The Monitor writes none of requirement
    `lib/pager.sh` and `lib/pager-invariants.sh` for the registry membership
    check M13b needs, and nothing else from either — no evaluation, no filing,
    no fleet-wide claim. `shellcheck`-clean; sets its own `PATH`.
-2. `lib/monitor-digest.sh` implementing M6, M6a, M6b and M7, including the
+2. <a id="mon-c-2"></a>`lib/monitor-digest.sh` implementing M6, M6a, M6b and M7, including the
    promoted-findings section (M13a) `monitor_digest_promoted` shapes. Pure
    readers, unit-tested over fixture logs (`test/monitor-digest.test.sh`);
    `shellcheck`-clean.
-3. `prompts/monitor.md` implementing M10, M10a and M15.
-4. `lib/stage-health.sh`'s `STAGE_NAMES_JSON` parameter and merging writer,
+3. <a id="mon-c-3"></a>`prompts/monitor.md` implementing M10, M10a and M15.
+4. <a id="mon-c-4"></a>`lib/stage-health.sh`'s `STAGE_NAMES_JSON` parameter and merging writer,
    implementing M17.
-5. `lib/stage-budget.sh`'s `monitor` prior, implementing M9a.
-6. `lib/pipeline-marker.sh`'s `monitor` token and `dashboard/index.html`'s
+5. <a id="mon-c-5"></a>`lib/stage-budget.sh`'s `monitor` prior, implementing M9a.
+6. <a id="mon-c-6"></a>`lib/pipeline-marker.sh`'s `monitor` token and `dashboard/index.html`'s
    `ACTOR` entry, implementing requirement 9d for this actor.
-7. `deploy/docker/crontab.tmpl` + `deploy/docker/render-crontab.sh`'s
+7. <a id="mon-c-7"></a>`deploy/docker/crontab.tmpl` + `deploy/docker/render-crontab.sh`'s
    `@MONITOR_MINUTE@`, implementing M4's hourly line.
-8. `config.schema.json`'s `monitor_*`, `schedule.monitor_*` and
+8. <a id="mon-c-8"></a>`config.schema.json`'s `monitor_*`, `schedule.monitor_*` and
    `prompt_overrides.monitor` keys, and the regenerated configuration tables.
 
 ## Acceptance checks
@@ -742,9 +742,9 @@ that applies here unchanged: **no check may expect a particular value from
 `config.json`.** The shipped file is asserted to be valid; every fixture
 supplies its own values.
 
-1. `shellcheck monitor-cycle.sh` and `shellcheck lib/monitor-digest.sh` are
+1. <a id="mon-ac-1"></a>`shellcheck monitor-cycle.sh` and `shellcheck lib/monitor-digest.sh` are
    clean (`./scripts/lint-shell.sh`).
-2. **The digest is what it says it is (M6, M6a).**
+2. <a id="mon-ac-2"></a>**The digest is what it says it is (M6, M6a).**
    `test/monitor-digest.test.sh` passes: over a fixture union log, events are
    grouped by class with counts, contributing nodes and at most three of the
    *newest* samples; events outside the 24 h window are excluded; the pager
@@ -756,41 +756,41 @@ supplies its own values.
    reader lifts a `## Gotchas` section and contributes nothing for a file
    without one; and every reader returns its empty shape for a missing file
    rather than failing.
-3. **The bound holds exactly (M7).** Same file: the rendered digest is never
+3. <a id="mon-ac-3"></a>**The bound holds exactly (M7).** Same file: the rendered digest is never
    larger than `monitor_max_input_bytes`, measured in bytes, at every rung
    including the truncating one; the rung climbs monotonically as the bound
    tightens; and `0` disables the bound and reports rung 0.
-4. **Four findings file three and defer the fourth by key (M12).**
+4. <a id="mon-ac-4"></a>**Four findings file three and defer the fourth by key (M12).**
    `test/monitor-cycle.test.sh` passes: with a stubbed `claude` returning four
    findings and a stubbed `gh`, exactly three issues are created, the fourth
    is recorded `deferred` in the report **with its finding key**, and each
    filed issue's body carries `Monitor: monitor/<date> M-<nn>` and
    `monitor-finding-key: <key>`.
-5. **Dedup (M13).** Same file: a second run whose findings carry the same keys
+5. <a id="mon-ac-5"></a>**Dedup (M13).** Same file: a second run whose findings carry the same keys
    creates no issue at all, and the report cites the open issue's number for
    each.
-5a. **Promotion (M13a).** Same file: two fixture reports sharing a key —
+5a. <a id="mon-ac-5a"></a>**Promotion (M13a).** Same file: two fixture reports sharing a key —
    two runs of the Script, its own `monitor-report-written` ledger from the
    first read back by the second — file exactly one `pager: add invariant
    <key>` issue on the second, whose body carries both reports' own evidence;
    the run logs `monitor-promoted`; and a third run's digest carries the key
    under its promoted-findings section, citing the issue.
-5b. **Retirement (M13b).** Same file: a promoted key for which the fixture's
+5b. <a id="mon-ac-5b"></a>**Retirement (M13b).** Same file: a promoted key for which the fixture's
    union log already carries a `pager-fired` event is retired — absent from
    the digest's promoted-findings section, and dropped from `findings[]`
    before the ledger or the report see it, even when the stubbed `claude`
    restates it anyway.
-5c. **Promotion spends the M12 budget (M12/M13a).** Same file: a key that
+5c. <a id="mon-ac-5c"></a>**Promotion spends the M12 budget (M12/M13a).** Same file: a key that
    reaches `monitor_promote_after` while `monitor_max_filings_per_run` is
    already spent by earlier findings in the same run creates no issue and is
    recorded `deferred`, not `promoted`; with `monitor_max_filings_per_run: 0`
    a key past the promotion threshold is deferred the same way rather than
    filed regardless of budget.
-6. **The tactical gate is closed by default (M14b).** Same file: a tactical
+6. <a id="mon-ac-6"></a>**The tactical gate is closed by default (M14b).** Same file: a tactical
    finding with `monitor_tactical_keys` empty produces a proposal in the
    report and **no** `pw::decision` issue; with the key listed, it produces a
    `pw::decision` that is created and then closed.
-6a. **The pages read targets the repository the pager writes to (M6/M15).**
+6a. <a id="mon-ac-6a"></a>**The pages read targets the repository the pager writes to (M6/M15).**
    Same file: with `pager_repo` unset and `crash_loop_repo` set, the open-pages
    listing is made against `crash_loop_repo` and the runtime input's
    `pager_repository` names it; with both unset the listing is skipped and the
@@ -798,22 +798,22 @@ supplies its own values.
    never on the run merely succeeding — the defect this closes produced a run
    that succeeded, reported no pages, and was wrong.
 
-7. **The stage-health verdict exists (M17).** Same file: after a run,
+7. <a id="mon-ac-7"></a>**The stage-health verdict exists (M17).** Same file: after a run,
    `state_dir/.stage-health.json` carries a `monitor` entry, and an
    implementation-pipeline write of the same file does not remove it
    (`test/stage-health.test.sh` covers the merge in isolation).
-8. **The untrusted framing is byte-identical (M10a).**
+8. <a id="mon-ac-8"></a>**The untrusted framing is byte-identical (M10a).**
    `test/prompt-untrusted-framing.test.sh` passes with `prompts/monitor.md` in
    its list.
-9. **The cadence gate (M4).** Same file: a tick at an hour that is not
+9. <a id="mon-ac-9"></a>**The cadence gate (M4).** Same file: a tick at an hour that is not
    `schedule.monitor_hour`, with no `pager-fired` newer than the last report,
    stands down with `cause: "not-due"` and launches no `claude`; a
    `pager-fired` newer than the last report makes the same tick due.
-10. **The role guard and the switch stand this pipeline down too (M2a/M2b).**
+10. <a id="mon-ac-10"></a>**The role guard and the switch stand this pipeline down too (M2a/M2b).**
    Same file: `AGENT_OPS_ROLE` unset exits 0 with one line and writes nothing
    under `state_dir`; a set node switch logs `monitor-stand-down` and launches
    no `claude`.
-11. **The config tables regenerate clean.** `scripts/render-config-table.sh
+11. <a id="mon-ac-11"></a>**The config tables regenerate clean.** `scripts/render-config-table.sh
    --check` passes.
 
 ## Gotchas

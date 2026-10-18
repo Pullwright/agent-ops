@@ -1369,7 +1369,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `tech-debt/TD-PPagop-26091101.md` (the report is not surfaced on the
   dashboard), `tech-debt/TD-PPagop-26091102.md` (the Monitor writes no
   `node-state` transition) and `tech-debt/TD-PPagop-26091105.md` (its
-  filings do not reach requirement 2m's push channel, which landed while
+  filings do not reach acceptance check 2m's push channel, which landed while
   this was in flight).
 
 - **The dashboard's cycle rows, void-item rows and fleet-node cards are now
@@ -1455,7 +1455,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   overrun in the last 24h` line, which `check-nodes.sh` inherits for free.
 
 - **`escalation_webhook_url` promoted to the installation's one
-  push-notification channel** (issue #1279, requirement 2m): `lib/notify.sh`'s
+  push-notification channel** (issue #1279, acceptance check 2m): `lib/notify.sh`'s
   `notify_post` POSTs one compact JSON body — `{event, key, title, url, repo,
   node, ts, detail}` — to `notify_webhook_url` for every escalation issue
   filed or auto-closed, every `pager-fired`/`pager-cleared` (#1278), and
@@ -3113,7 +3113,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `switch` verdicts, so a repeat rebuild reads as a repeat rather than one
   more indistinguishable line.
 - Every escalation route now reaches an operator even when GitHub itself
-  rejects the node's own credential (requirement 2m, TD-PPagop-26082304): a
+  rejects the node's own credential (acceptance check 2m, TD-PPagop-26082304): a
   new optional `escalation_webhook_url` config key, POSTed to
   from inside `create_escalation_issue` (`lib/enabler.sh`) on every failure
   to file — most often the same dead `GH_TOKEN` requirement 2.0b's
@@ -3163,7 +3163,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   agent-ops#668): an `open_questions` entry alongside a `ready` verdict.
   The landing gate refuses unattended landing while one stands
   (`open-question:`-classed, grouped by the *Autonomous landings* panel with
-  no dashboard change needed) and requirement 8u's retry sweep holds it
+  no dashboard change needed) and acceptance check 8u's retry sweep holds it
   across cycles through the identical gate. It resolves through the
   `escalation_autonomy` ladder: at `always-escalate`, one escalation issue
   per pull request; at `adjudicate-first`, one bounded adjudication pass at
@@ -3626,7 +3626,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   a quiet night — an empty list is a reportable nothing, `null` is an outage,
   and the two must not look alike.
 
-- The landing-retry sweep (requirement 8u, TD-PPagop-26081701): once per
+- The landing-retry sweep (acceptance check 8u, TD-PPagop-26081701): once per
   cycle, fleet-wide, for every repository at `merge_autonomy:
   agent-merges-routine` or `agent-merges-all`, re-enters the arming step's
   own six gates for every open pull request whose Approver review is

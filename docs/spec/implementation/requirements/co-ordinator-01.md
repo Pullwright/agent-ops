@@ -2,7 +2,7 @@
 
 ### The Co-Ordinator (selection only)
 
-14. Works read-only: `gh` reads (runs, PRs, file contents via
+14. <a id="impl-14"></a>Works read-only: `gh` reads (runs, PRs, file contents via
     `gh api`) — it does not clone, and writes nothing but its final message.
     For the `security` and `code-quality` sources it does **not** re-query the
     Dependabot/code-scanning APIs itself; it reads the pre-fetched `findings`
@@ -13,7 +13,7 @@
     no array and never did — it is queried live, and "not pre-fetched" means
     "go and look", not "skip". The remaining `gh` budget goes on the cheap
     claim/blocked checks below and on reading what an item references.
-14a. **An issue is its whole thread, not just the opening post.** Whenever it
+14a. <a id="impl-14a"></a>**An issue is its whole thread, not just the opening post.** Whenever it
     evaluates or selects a GitHub issue, the Co-Ordinator reads the body *and
     every comment*. For `issues`-source candidates both arrive in the array
     entry (`body`, `comments` — verbatim); for an issue outside the array (one
@@ -26,7 +26,7 @@
     "blocked"/"won't do" note, or a maintainer turning a discussion into an
     actionable task. A later comment that contradicts the body is the current
     instruction; the body alone is never taken as the whole ask.
-15. One Co-Ordinator engagement per configured repository, launched in the
+15. <a id="impl-15"></a>One Co-Ordinator engagement per configured repository, launched in the
     walk order requirement 3 computes — not one engagement across every
     repository together (issue #587; before this, a single engagement's
     `repos` array held every configured repository, and this requirement
@@ -57,7 +57,7 @@
     unblocked task(s) in the repo's own plan document, read at the path in
     that repo's runtime-input `implementation_plan_path` (requirement 3k) —
     no pre-fetch, and no path named in the prompt.
-15z. **The Script reconciles the six cross-repository tiers itself, once
+15z. <a id="impl-15z"></a>**The Script reconciles the six cross-repository tiers itself, once
     every repository's own engagement this cycle has answered** (issue
     #587). Before the split, one engagement saw every repository at once and
     could judge "is repository Z's security finding more urgent than
@@ -83,7 +83,7 @@
     the one enforcement of that bound that happens mechanically rather than
     by instruction, since no single engagement can cap a merge across
     repositories it never saw.
-15y. **An engagement that produces no verdict costs its own repository's
+15y. <a id="impl-15y"></a>**An engagement that produces no verdict costs its own repository's
     opportunity, and nothing else** (issue #587). Each engagement writes its
     own stage transcript to `<cycle-dir>/coordinator-<slug>.out` (plus the
     `.out.stderr` and `.stream.jsonl` `run_model_stage` derives from it),
@@ -137,7 +137,7 @@
       Script folds it into `coord_false_repo_slugs_json` instead, with a
       reason naming the contract violation, exactly as an honest
       `"selected": false` is.
-15b. **Review feedback comes third, across repositories.** Like security and
+15b. <a id="impl-15b"></a>**Review feedback comes third, across repositories.** Like security and
     urgent issues, this outranks the plain source walk: any selectable
     `review_feedback` candidate in any repository is taken before any work
     below it in another — reconciled by the Script (requirement 15z) rather
@@ -149,7 +149,7 @@
     must **not** apply requirement 16's claim exclusion to this source: the open
     PR *is* the item, and excluding it makes every candidate permanently
     unselectable while looking entirely correct.
-15d. **Merge conflicts come fourth, across repositories.** After security, urgent
+15d. <a id="impl-15d"></a>**Merge conflicts come fourth, across repositories.** After security, urgent
     issues and review-feedback, and likewise outranking the plain
     source walk: any
     selectable `merge_conflicts` candidate in any repository is taken before any fresh
@@ -175,7 +175,7 @@
     routing it through a second source or a back-pressure carve-out of its own
     would be exactly the new ledger/escalation concept the feature was built
     without (issue #250's acceptance criteria).
-15f. **Dequeued pull requests come fifth, across repositories.** After
+15f. <a id="impl-15f"></a>**Dequeued pull requests come fifth, across repositories.** After
     security, urgent issues, review-feedback and merge-conflicts, and
     likewise outranking the plain source walk: any selectable `dequeued`
     candidate in any repository is taken before any fresh work in a
@@ -188,7 +188,7 @@
     Co-Ordinator must **not** apply requirement 16's claim exclusion to this
     source — the open PR *is* the item, and the pre-fetch has already
     established it is ours, dequeued and actionable.
-15c. **Abandoned drafts come sixth, across repositories.** After security, urgent
+15c. <a id="impl-15c"></a>**Abandoned drafts come sixth, across repositories.** After security, urgent
     issues, review-feedback, merge-conflicts and dequeued, and likewise outranking the plain
     source walk: any selectable `abandoned_drafts` candidate in any repository
     is taken before any fresh work in a more-overdue one — reconciled by the
@@ -200,7 +200,7 @@
     item, and the pre-fetch (requirement 3e) has already established it is stale
     and ours, so treating it as a claim would make every candidate permanently
     unselectable.
-15g. **landing-refusals and human-visibility carry no cross-repository tier
+15g. <a id="impl-15g"></a>**landing-refusals and human-visibility carry no cross-repository tier
     of their own**, unlike the six sources requirements 15a/15e/15b/15d/15f/15c
     name — each is selectable only when its own repository's ordinary source
     walk reaches its configured rank there, and requirement 15z's merge
@@ -208,7 +208,7 @@
     lower issue bands and code-quality: two candidates from that tier, from
     two different repositories, are ordered by repository walk order alone,
     never by which of the two sources either one is.
-15a. **Security is always prioritised.** Within a single repository, a
+15a. <a id="impl-15a"></a>**Security is always prioritised.** Within a single repository, a
     candidate is security-related if it is a `security` finding, a GitHub
     issue labelled `security`/`vulnerability`, a tech-debt entry flagged as
     a security concern, or a `project-review` recommendation whose text
@@ -235,7 +235,7 @@
     issues: a repository's own findings are sorted most-severe-first before
     the Script ever sees them, but the merge does not itself compare
     severity across repositories once every engagement has answered.
-15e. **Issues rank by their `Priority` field.** An open issue's band is its
+15e. <a id="impl-15e"></a>**Issues rank by their `Priority` field.** An open issue's band is its
     organisation-level `Priority` issue field — `Urgent`, `High`, `Medium` or
     `Low` — and the band is the issue's rank in the walk, as
     `issues:urgent` / `issues:high` / `issues:medium` / `issues:low` in the
@@ -294,7 +294,7 @@
     whatever its band, including a `Low` one), the bare issue number as the item
     ref, and `"source": "issues"` in the work order (requirement 21) —
     downstream consumers never see the band.
-16. Excludes from candidacy any item that is:
+16. <a id="impl-16"></a>Excludes from candidacy any item that is:
     - recorded as blocked in the shared log (an `attempt-failed` event not
       followed by an `unblocked` event for that item) — for a GitHub issue,
       only once requirement 18a's mandatory re-check, where it applies, has
@@ -443,7 +443,7 @@
 
     The last two exclusions, and requirement 17's "if in doubt, skip it", are
     reported rather than acted on silently — see requirement 16a.
-16a. **Under-specified and decision-gated skips are reported, not silent.** The
+16a. <a id="impl-16a"></a>**Under-specified and decision-gated skips are reported, not silent.** The
     Co-Ordinator's final message carries an optional `needs_refinement` array,
     alongside `unblocked` and `voided`, whose entries are
     `{repo, item, source, reason, missing, evidence}`: `reason` is one line on
@@ -493,7 +493,7 @@
     The pipeline looked healthy throughout, which is this system's signature
     failure mode (requirement 3b, requirement 34d) in its purest form — an item
     that starves while every component behaves exactly as specified.
-17. From the remaining candidates, ranks the qualifying items best-first and
+17. <a id="impl-17"></a>From the remaining candidates, ranks the qualifying items best-first and
     returns up to `candidates_max` of them, each a stand-alone unit of work,
     clearly scoped, and adequately refined; the ranking preserves the
     priority walk, and the alternates exist because a peer node may win the
@@ -503,7 +503,7 @@
     qualifies, fall through to the next category, then the next repo. Only
     after exhausting all repos does it return `{"selected": false}` with a
     one-line reason.
-17b. **A refined item is selected on what the refinement says.** Where
+64. <a id="impl-64"></a>**A refined item is selected on what the refinement says.** Where
     requirement 3h's `refinements` map names an item the Co-Ordinator is putting
     in a work order, an entry carrying a `spec` is carried into the work order's
     `context` **verbatim** — it exists nowhere else, and the Implementer starts
@@ -519,7 +519,7 @@
     20's own paste instruction (for the sources that still have one) already
     carries in full, and requirement 14a already makes the latest contradicting
     comment the current instruction.
-17f. **The Script verifies traceability before claiming, rather than trusting
+17f. <a id="impl-17f"></a>**The Script verifies traceability before claiming, rather than trusting
     the model's own account (agent-ops#626).** A work order composed alongside
     others in the same Co-Ordinator engagement can carry one candidate's
     `context`/`acceptance` while actually holding another item's refinement
@@ -544,10 +544,10 @@
     different; `TRACEABILITY_DEBUG=1` logs, to stderr, the normalized
     haystack/needle a comparison actually ran against, never required to
     diagnose a failure, only to see it directly.
-    - A `spec` entry (requirement 17b) costs no extra read: the text is
+    - A `spec` entry (requirement 64) costs no extra read: the text is
       already in `refinements`, so its presence in `context` is checked
       directly.
-    - A `comment_url` entry (requirement 17b) is checked in two stages. First,
+    - A `comment_url` entry (requirement 64) is checked in two stages. First,
       free: the issue number embedded in the URL itself must equal the
       candidate's own `item` — a comment_url naming a different issue is a
       fault regardless of what the work order says, and catches a corrupted
@@ -570,7 +570,7 @@
     **A model-typed prose citation is checked too, independent of what is on
     record (agent-ops#1027).** The two checks above validate the *recorded*
     `refinements[repo][item]` entry; neither reads the `Refinement:`-style
-    citation requirement 17b has the Co-Ordinator paste into the work order's
+    citation requirement 64 has the Co-Ordinator paste into the work order's
     own `context`/`acceptance` prose. That citation is text the model wrote,
     not anything the Script maintains, so it can name the wrong issue's
     comment even when the recorded refinement is correct, or when there is no
@@ -596,7 +596,7 @@
     without that scope the check would report a mismatch for every citation
     those sources' work orders carry, by construction rather than by fault:
     they are the three sources this function is reachable for at all (the 17h
-    note below), the three whose `context` requirement 17b has the
+    note below), the three whose `context` requirement 64 has the
     Co-Ordinator make self-contained by pasting related text verbatim, and the
     only ones a recorded `spec` is ever written for — which the repair half
     below appends to `context` itself, so an unscoped check would fault the
@@ -691,7 +691,7 @@
     fallback pick nor a requirement 17h compose can hold another item's
     refinement, because neither ever reads `refinements` for anything but the
     one item it is building.
-17g. **No check verifies a trimmed candidate's `acceptance` against the
+65. <a id="impl-65"></a>**No check verifies a trimmed candidate's `acceptance` against the
     item's own live text — requirement 17h's compose step removed the
     condition such a check would exist to catch.** Between agent-ops#821
     (issue #815) and agent-ops#1156, this requirement specified
@@ -733,7 +733,7 @@
     requirement 17h's own fail-closed refusal on a failed live fetch at
     composition (folded into `cause: "untraceable"`), are both unchanged by
     this retirement — neither depended on the checks that were removed.
-17h. **The Script composes `context`/`acceptance`/`title` for a Co-Ordinator
+17h. <a id="impl-17h"></a>**The Script composes `context`/`acceptance`/`title` for a Co-Ordinator
     selection, from a live read or the pre-fetched band entry — never from
     the model, and never from a trimmed extract (agent-ops#769, resolving the
     escalation at agent-ops#844 with option (b)).** Requirements 17f/17g exist
@@ -778,7 +778,7 @@
       a GitHub issue carrying `pw::type:tech-debt` since the register's D15
       migration, so it is fetched identically to an `issues` entry. The other
       eight sources' band entries are never trimmed at all (the fit ladder's
-      own scope, requirement 17g above), so the Script composes directly from
+      own scope, requirement 65 above), so the Script composes directly from
       the entry `coordinator_eligible_items` already located for this
       candidate's own `{repo, source, item}` — a lookup, not a second fetch.
     - **The per-source template mirrors `fallback_select_candidate`'s own**
@@ -822,7 +822,7 @@
       the trimming this requirement exists to close, and unifying the two
       paths costs nothing extra for the other eight sources, whose template
       output is identical either way.
-17a. **The claim.** The Script — never the model — takes an atomic per-item
+17a. <a id="impl-17a"></a>**The claim.** The Script — never the model — takes an atomic per-item
     claim before the Implementer starts, walking the ranked candidates in
     order and handing the first successful claim onward (`lib/claim.sh`).
     Inside the image, both kinds of claim below refuse outright — a warning,
@@ -1040,7 +1040,7 @@
       above names. The measured case was #1577 — the one pull request, among
       178 this repository's own App identity raised since 2026-09-01, that
       the model never labelled.
-17b. **The orphan-branch sweep.** The gc's only-if-untouched rule (17a)
+17b. <a id="impl-17b"></a>**The orphan-branch sweep.** The gc's only-if-untouched rule (17a)
     leaves one state behind on purpose that is right for the work and wrong
     for the item: an Implementer that pushed commits and died before its
     draft PR existed leaves a moved ref with no PR — which nothing recovers
@@ -1143,7 +1143,7 @@
     identical to the empty orphan, so its ref can be deleted mid-run — the
     Implementer's later push recreates it, and the cost is at worst a
     duplicate PR, priced against an item wedged forever.
-17c. **The post-merge closing-keyword sweep.** Requirement 25a's checks — its
+17c. <a id="impl-17c"></a>**The post-merge closing-keyword sweep.** Requirement 25a's checks — its
     CI workflow and its script-side gate — stop a *new* pull request from
     merging without a real closing keyword;
     this is the backstop for what already got through — a PR merged before
@@ -1207,7 +1207,7 @@
     escalated" case while retiring nothing for as long as the failure
     lasted. The rest of the pass runs regardless — the closing-keyword
     sweep does not depend on this call.
-17g. **The reservation-release retry sweep.** A `td/<id>`/`td-record/<id>`
+17g. <a id="impl-17g"></a>**The reservation-release retry sweep.** A `td/<id>`/`td-record/<id>`
     tech-debt reservation branch a failed cleanup delete could not remove is
     not left orphaned for good: since TD-PPagop-26082427, that
     failure wrote a durable marker into the state repository instead of
@@ -1268,7 +1268,7 @@
     nothing, since there is nothing to warn about — where `state_repo` is
     unset, the same single-node reading `lib/claim.sh`'s own claim registry
     gives it.
-18. When it skips a blocked item, it may cheaply verify whether the recorded
+18. <a id="impl-18"></a>When it skips a blocked item, it may cheaply verify whether the recorded
     blocker still holds; if the blocker is demonstrably gone, it reports
     that in its final message so the Script can append an `unblocked` event,
     and may then treat the item as a candidate this same cycle. Two limits,

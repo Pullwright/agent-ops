@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# test/enabler-notify-wiring.test.sh — regression test for requirement 2m's
+# test/enabler-notify-wiring.test.sh — regression test for acceptance check 2m's
 # `escalation` class as wired into `lib/enabler.sh` (issue #1279).
 #
 # test/notify.test.sh covers `notify_post` itself — the classes, the alias,

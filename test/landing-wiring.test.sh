@@ -91,7 +91,7 @@ extract() {  # <function name>
 refuse_block="$(extract _landing_refuse)"
 # `run_landing_stage` is gate 0 alone since TD-PPagop-26081701 split the
 # other six gates out into `_landing_stage_attempt` (so the landing-retry
-# sweep, requirement 8u, can reuse them for a pull request outside the
+# sweep, acceptance check 8u, can reuse them for a pull request outside the
 # round that first approved it) — both are extracted and sourced together so
 # a call to `run_landing_stage` below still exercises the whole sequence,
 # unchanged from what this file asserted before the split.
@@ -1152,7 +1152,7 @@ assert_eq "  ... and marks the landing-refused event retry:true" \
   "true" "$(jq -c '.retry' <<<"$(event_of landing-refused)")"
 assert_eq "  ... and never marks _landing_stage_attempt_armed" "0" "$(armed_flag)"
 
-# Requirement 8u (agent-ops#668): the 2.1e retry sweep calls `_landing_stage_
+# Acceptance check 8u (agent-ops#668): the 2.1e retry sweep calls `_landing_stage_
 # attempt` directly, RETRY set — the identical function `run_case`'s own
 # gate-2.5 assertions above already exercise via gate 0, so a held pull
 # request stays held across cycles rather than being re-offered until

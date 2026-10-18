@@ -2,7 +2,7 @@
 
 ### The Script — requirements, continued (part 8 of 10; 4i–8d: The assembled Co-Ordinator prompt is bounded by its model'…)
 
-4i. **The assembled Co-Ordinator prompt is bounded by its model's context
+4i. <a id="impl-4i"></a>**The assembled Co-Ordinator prompt is bounded by its model's context
    window.** Requirement 4g's own text records that moving the fleet-state
    aggregates off argv "raised the ceiling; it did not stop the set from still
    climbing toward whatever ceiling came next". The next ceiling arrived on
@@ -272,7 +272,7 @@
    preflight (requirement 2.0h) reads it too, directly off its own probe's
    transcript rather than off a logged event.
 
-4j. **The unsheddable half of the Co-Ordinator's input is bounded too, and
+4j. <a id="impl-4j"></a>**The unsheddable half of the Co-Ordinator's input is bounded too, and
    `refinements` is bounded by candidacy.** Requirement 4i bounds the prompt
    and sheds `issues` and `tech_debt` to meet the bound. It says nothing about
    the rest of the input document, and on 2026-08-21 that omission cost the
@@ -390,7 +390,7 @@
    input, never toward an empty one" for every *other* path: a budget of 0
    still means the bound is off, and it is only this branch — where the Script
    has already established that no input fits — that shedding is forced.
-4k. **A stage runs nothing that the checkout it runs in, or the Claude
+4k. <a id="impl-4k"></a>**A stage runs nothing that the checkout it runs in, or the Claude
    configuration volume it reads from, supplies.** Headless `claude -p`
    treats its working directory as trusted, and a stage's working directory
    is often a checkout of a pull-request head. Two controls keep that
@@ -487,13 +487,13 @@
      `permissions.deny` above). Same return shape either substrate, so
      `handle_stage_failure` reads it unmodified.
 
-5. If the work order is `{"selected": false}`, log `none-selected` with the
+5. <a id="impl-5"></a>If the work order is `{"selected": false}`, log `none-selected` with the
    Co-Ordinator's reason **and the fingerprint computed in requirement 3b**
    (omitted entirely, not stored empty, when the cycle was unfingerprintable —
    the next cycle must find no fingerprint rather than an empty one it could
    match against an equally empty sample of its own), release the lock, and
    exit. This event is the only thing that makes the next cycle cheap.
-6. **Workspace.** Create `workspace_root/<cycle-id>/` and clone the selected
+6. <a id="impl-6"></a>**Workspace.** Create `workspace_root/<cycle-id>/` and clone the selected
    repo into it, fresh from GitHub. This applies the multi-agent
    ways-of-working rule shared by all Poetic repositories: every agent works
    in its own dedicated fresh clone taken from the tip of the default branch
@@ -533,7 +533,7 @@
    half-finished edits — which is the residue likeliest to mislead the stage
    that inherits it and the hardest to tell from a good clone.
 
-6b. **The workspace root is reclaimed, because the exit trap cannot be
+6b. <a id="impl-6b"></a>**The workspace root is reclaimed, because the exit trap cannot be
    trusted to do it.** The clone is deleted in the cycle's exit trap, and a
    trap is exactly what `SIGKILL` does not run: a cycle killed by the machine
    — an out-of-memory kill, a host freeze, a container recreate mid-stage —
@@ -573,7 +573,7 @@
    the diagnostic — a node reaping a workspace every cycle is a node being
    killed every cycle, which nothing else reports. Reclaiming disk never
    fails a cycle: every failure inside the reap is swallowed.
-6a. **The pipeline creates its own labels.** As it gathers each repository's
+6a. <a id="impl-6a"></a>**The pipeline creates its own labels.** As it gathers each repository's
    data — not only, and not first, at the one it later selects to work — the
    Script ensures every label this system applies exists there, creating
    only those that are absent: `pr_label`, `enabler_escalation_label`,
@@ -611,7 +611,7 @@
    (agent-ops#687). `review-cycle.sh` calls the plain, unstamped
    `labels_reconcile_role` (`lib/labels.sh`) for each repository's own resolved
    `repository_review` pr_label (its override, or
-   `repository_review.defaults.pr_label`, requirement 342) and
+   `repository_review.defaults.pr_label`, issue #342) and
    `pw::type:tech-debt` in each repository it
    is about to review — so a repository in `repository_review.repos` but not
    gathered as an implementation-pipeline target also has the label R12's own
@@ -779,7 +779,7 @@
    human actually types. Whether these five should also move under
    `label_prefix` despite that is an open question left for a maintainer,
    not a gap this item closes.
-6c. **Labels a stage asks for (issue #714).** Beyond the catalogue above,
+6c. <a id="impl-6c"></a>**Labels a stage asks for (issue #714).** Beyond the catalogue above,
    which the Script alone decides, the Refiner and the Implementer may each
    *name* a small number of descriptive labels of their own on their final
    message — the Refiner's per-item verdict (requirement 39h) and the
@@ -810,7 +810,7 @@
    `pr_label`, `enabler_escalation_label`, `needs_refinement_label`,
    `refined_label`, `unvoid_label`, and every project-review pull-request
    label in force (`repository_review.defaults.pr_label` and each repository's
-   own override of it, requirement 342: `review-cycle.sh` skips a
+   own override of it, issue #342: `review-cycle.sh` skips a
    repository's whole review while an open pull request carries that label,
    so a minted one claiming the name would be read to decide something).
    That last value is resolved per repository rather than globally, so the
@@ -858,18 +858,18 @@
    or pull-request number the label was actually applied to. For a
    tech-debt item the two differ, and it is the ref that keeps one item's
    whole trail greppable out of `log.jsonl` by a single key.
-7. **Implementer stage.** Launch the Implementer in the clone (model from
+7. <a id="impl-7"></a>**Implementer stage.** Launch the Implementer in the clone (model from
    the work order, `--dangerously-skip-permissions`, stage timeout), passing
    the implementer prompt plus the work order, and this cycle's `cycle` id and
    `node` name — because any comment the Implementer leaves must carry
    requirement 9d's header and requirement 3e's marker, and a model cannot
    know either on its own.
-8. **Reviewer stage.** If the Implementer reports `complete`, launch the
+8. <a id="impl-8"></a>**Reviewer stage.** If the Implementer reports `complete`, launch the
    Reviewer in the same workspace (model per requirement 8a, same flags,
    stage timeout), passing the reviewer prompt, the work order, the
    Implementer's summary (PR URL, branch, complexity), and this cycle's
    `cycle` id and `node` name — the same reason as the Implementer's above.
-8a. **The Reviewer's model follows the item's complexity.** The Script
+8a. <a id="impl-8a"></a>**The Reviewer's model follows the item's complexity.** The Script
    resolves an effective complexity for the PR and launches the Reviewer with
    `reviewer_model_complex` when it is `high`, `reviewer_model_default`
    otherwise. Resolution takes the **highest** of two signals, either of which
@@ -887,7 +887,7 @@
    event carries the resolved `complexity` and the chosen `model`
    (requirement 33), which is what lets the distribution of self-assessments
    be audited for drift.
-8b. **Approver stage (D18 WI-5, `docs/reviews/2026-08-14-autonomy-investigation.md`
+8b. <a id="impl-8b"></a>**Approver stage (D18 WI-5, `docs/reviews/2026-08-14-autonomy-investigation.md`
    §5.2).** Requirement 31d's own read intercepts ahead of everything below: a
    pull request confirmed merged never reaches this stage at all (requirement
    32c) — there is no `ready` verdict left to clear a gate on, only a
@@ -1022,9 +1022,9 @@
    reason `lib/approver-token.sh`'s own credential-absent path is a `warning`
    and not a blocked pull request: an Approver that cannot run must cost a
    missing review, never a stranded PR.
-8c. **Refuse-wins, and the adjudication path (D18 WI-5, same design §5.2).**
+8c. <a id="impl-8c"></a>**Refuse-wins, and the adjudication path (D18 WI-5, same design §5.2).**
    A refusal is posted as a real `REQUEST_CHANGES` review from the Approver's
-   own GitHub App identity (`lib/approver-token.sh`, requirement 14b), so
+   own GitHub App identity (`lib/approver-token.sh`, component 14b), so
    GitHub itself holds the pull request at `CHANGES_REQUESTED` and the
    existing `review-feedback` source (requirement 3c) picks it up next cycle
    — no new work source, no new gate, the same mechanism a human's own
@@ -1208,7 +1208,7 @@
    request because the owner's shared REST budget was gone" from a genuine
    fault — the same distinction requirement 38a's own review-request read
    and the idle-nudge check's reviews read draw at their own call sites.
-8d. **The arming step (D18 WI-7, same design §5.1/§6/§7; agent-ops#410).**
+8d. <a id="impl-8d"></a>**The arming step (D18 WI-7, same design §5.1/§6/§7; agent-ops#410).**
    Immediately after `run_approver_stage` returns — never before, and gating
    nothing above it, the same placement 8b already establishes for the
    Approver stage itself relative to the handoff — `run_landing_stage`
@@ -1370,7 +1370,7 @@
       `critical_reason`; read from this round's own in-process fact on the
       round that first approved the pull request, or from the fleet log's
       `approver-verdict` event, `landing_retry_tier`, on a landing-retry
-      sweep re-arm outside that round — requirement 8u); the standing
+      sweep re-arm outside that round — acceptance check 8u); the standing
       review's own `commit_id` (gate 4's own read) still matches a fresh
       read of the pull request's current `headRefOid`; and the configurable
       `landing_cool_off_hours` (default 24, `0` disables) has elapsed since
@@ -1394,7 +1394,7 @@
       established) are applied — logging `merge-budget-hold`, or a
       `warning` for `refuse` — and stop here; neither arms anything, and
       this call itself does not queue a retry of its own. The landing-retry
-      sweep (requirement 8u, "## The Landing Gate") is what re-enters this
+      sweep (acceptance check 8u, "## The Landing Gate") is what re-enters this
       whole gate sequence for such a pull request on a later cycle, rather
       than this gate doing so itself. `merge_budget_decide` reads an
       ALREADY_ARMED count from its own caller and discounts it from the live

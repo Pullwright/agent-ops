@@ -62,7 +62,7 @@
 # repair: "be certain" is already in prompts/coordinator.md, twice, and the
 # model that voided #92 was certain. Nor is it enough to point at which stage
 # can see the most — the Co-Ordinator reads a JSON digest of candidates and
-# nothing else, but the Implementer (requirement 27b) and the Enabler
+# nothing else, but the Implementer (requirement 22) and the Enabler
 # (requirement 35) read the tree, the issue and the PR directly, and issue #243
 # is what a Co-Ordinator void looked like anyway: it voided #224 citing "PR
 # #232 implemented all five rewrites" — a real, mergeable PR, just one that

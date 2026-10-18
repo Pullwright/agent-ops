@@ -12,7 +12,7 @@ state" onward, and every one of their cross-references throughout this
 document, for a stage whose numbers do not otherwise need to be contiguous
 with the Reviewer's own.
 
-40. **One engagement, judge only, never fix.** The Approver runs in the same
+40. <a id="impl-40"></a>**One engagement, judge only, never fix.** The Approver runs in the same
     ephemeral clone the Implementer and Reviewer already used, with the pull
     request's branch checked out, and reads: the diff, the work order, the
     Implementer's summary, the Reviewer's summary, and — on an adjudication
@@ -24,7 +24,7 @@ with the Reviewer's own.
     exactly the independence it exists to restore. `prompts/approver.md`
     states this as the stage's own operating rule, not only as a convention
     this requirement documents.
-41. **Posture follows tier, and `prompts/approver.md` defines one for every
+41. <a id="impl-41"></a>**Posture follows tier, and `prompts/approver.md` defines one for every
     tier word the `## Tier` section can carry.** Those words are
     `standard`, `high`, `critical` and `adjudication` — four, not the
     `trivial`/`standard`/`high`/`critical` tier set requirement 8b resolves,
@@ -52,17 +52,17 @@ with the Reviewer's own.
     precedence over whatever tier the complexity grade or a protected path
     chose, so no one engagement is told both words, and the two postures'
     verdict sets never have to be chosen between.
-42. **Never writes to GitHub.** The Approver's prompt is explicitly
+42. <a id="impl-42"></a>**Never writes to GitHub.** The Approver's prompt is explicitly
     forbidden `gh pr review`, `gh pr comment`, `gh api .../reviews`,
     `gh pr merge`, `gh pr ready`, or any other GitHub write — its entire
     contribution is the verdict in its final JSON message. Every actual
     GitHub write (`APPROVE`/`REQUEST_CHANGES`, the escalation issue on an
     unresolved adjudication) is a Script-issued call under the Approver's own
     minted App token (`approver_post_review`, `lib/approver.sh`;
-    `approver_token_get`, `lib/approver-token.sh`, requirement 14b) —
+    `approver_token_get`, `lib/approver-token.sh`, component 14b) —
     requirement 8c's own restatement of D18's cardinal rule, that the model
     never holds approve or merge rights, applied at this stage specifically.
-42a. **`file_debt`/`file_issue` (agent-ops#631): filing what the Approver
+42a. <a id="impl-42a"></a>**`file_debt`/`file_issue` (agent-ops#631): filing what the Approver
     noticed, without it writing anything itself.** Orthogonal to `verdict` —
     either, both, or neither may accompany any verdict this requirement or
     requirement 43 allows, since what it names is deferred work the diff read
@@ -105,7 +105,7 @@ with the Reviewer's own.
 
     Neither call changes `verdict` or whether a review is posted — a failed
     filing attempt costs a `warning`, never a withheld or altered review.
-43. **Ends with a single JSON object:**
+43. <a id="impl-43"></a>**Ends with a single JSON object:**
     `{"verdict": "approve" | "refuse", "reasons": […]}` on a Standard or High
     engagement, `{"verdict": "land" | "refuse" | "escalate", "reasons": […]}`
     on adjudication. `reasons` is a list of short, specific findings — it
@@ -118,7 +118,7 @@ with the Reviewer's own.
     — on adjudication specifically, it is treated the same as an explicit
     `escalate` (requirement 8c), since "cannot settle" is not "nothing
     wrong."
-44. **One-shot, no resumption, same foreground-wait discipline every other
+44. <a id="impl-44"></a>**One-shot, no resumption, same foreground-wait discipline every other
     stage in this pipeline follows.** The Approver is launched exactly once
     per Reviewer-`ready` round via `run_model_stage` (component 4d, the same
     shared launcher every stage in this document uses), on
@@ -131,7 +131,7 @@ with the Reviewer's own.
     no review posted (requirement 43) — never a blocked pull request, since
     nothing about the human's own path to merging depends on this stage
     having run at all.
-46. **A pull request cannot rely on the cycle that owed it an Approver
+46. <a id="impl-46"></a>**A pull request cannot rely on the cycle that owed it an Approver
     round to also deliver one (agent-ops#682, #890).** The ordinary path —
     requirement 8b's own engagement, launched again once the same cycle's
     Reviewer next reports `ready` — already clears an ordinary standing
@@ -152,7 +152,7 @@ with the Reviewer's own.
     open, non-draft, `pr_label` pull request whose `reviewDecision` is
     `CHANGES_REQUESTED` is read fresh
     (`landing_approver_standing_review_at`, the same read `_landing_stage_
-    attempt`'s gate 4 already makes — requirement 8u's own sweep calls its
+    attempt`'s gate 4 already makes — acceptance check 8u's own sweep calls its
     state-only sibling, `landing_approver_standing_review`, which carries no
     `commit_id` for this requirement to compare) for the Approver's own
     standing review. **Stale** (`approver_review_stale`,
@@ -296,7 +296,7 @@ with the Reviewer's own.
     path — and the same fresh `landing_approver_standing_review_at` read the
     stale trigger makes reports no standing Approver review at all (an
     unreadable read is skipped, never guessed at; any standing review at all
-    routes elsewhere: `APPROVED` to requirement 8u, `CHANGES_REQUESTED` to
+    routes elsewhere: `APPROVED` to acceptance check 8u, `CHANGES_REQUESTED` to
     the stale trigger). Non-draft under `pr_label` is itself the handoff
     record: an Implementer raises its pull request as a draft — the draft is
     its claim marker (requirement 23) — and only the Reviewer's handoff
@@ -343,7 +343,7 @@ with the Reviewer's own.
     engagement whose second review lands under the same App identity, which
     GitHub folds into one standing position.
 
-46a. **The stale trigger's own "genuine progress" test also asks whether the
+46a. <a id="impl-46a"></a>**The stale trigger's own "genuine progress" test also asks whether the
     diff actually changed, not only whether a commit's authored date is
     newer than the review (agent-ops#1806).** `approver_newest_commit_
     authored_at` tells a real commit from a bare rebase, never from a
@@ -388,7 +388,7 @@ with the Reviewer's own.
     `diff_patch_id` rather than each defining their own, so the definition of
     "the diff did not change" cannot drift between the two call sites.
 
-47. **Rework record.** D23 of `docs/ROADMAP.md` names nine classes of
+47. <a id="impl-47"></a>**Rework record.** D23 of `docs/ROADMAP.md` names nine classes of
     repetition, the pipeline's only honest quality signal, and this
     requirement is where each one is actually recorded: one `rework` event
     per repetition, logged the moment the detector that already exists for it
@@ -485,7 +485,7 @@ with the Reviewer's own.
     letting a later reader assume the class covers every human change
     request there is.
 
-48. **Expensive per-repository gather runs for one repository per cycle, not
+48. <a id="impl-48"></a>**Expensive per-repository gather runs for one repository per cycle, not
     every configured one (agent-ops#1086).** The seven bands requirement 3
     pre-fetches whole — `findings`, `review_feedback`, `abandoned_drafts`,
     `merge_conflicts`, `dequeued`, `issues` (with
@@ -632,7 +632,7 @@ with the Reviewer's own.
     carries the close, from `gather_source_state`'s own already-sampled
     labels and assignee, which costs no further GitHub read.
 
-49. **Item lifecycle record.** D21 of `docs/ROADMAP.md` names the flow
+49. <a id="impl-49"></a>**Item lifecycle record.** D21 of `docs/ROADMAP.md` names the flow
     account's own invariant — every work item carries a lifecycle from first
     sighting to terminal fate, and items entering equals items leaving plus
     work in progress, with an explicit `unaccounted` bucket for whatever
@@ -746,7 +746,7 @@ with the Reviewer's own.
     identical reduction moved rather than duplicated — with its CLI contract,
     output field names and its own test unchanged.
 
-50. **Node time-state record.** D21 of `docs/ROADMAP.md` names the time
+50. <a id="impl-50"></a>**Node time-state record.** D21 of `docs/ROADMAP.md` names the time
     account's own invariant — every node-second in a window falls into
     exactly one of six states (producing, overhead, externally-blocked,
     idle-with-demand, idle-without-demand, down), and the states sum to

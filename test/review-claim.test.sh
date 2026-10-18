@@ -177,7 +177,7 @@ review_date="$(date -u +%Y-%m-%d)"
 # quietly decide whether this file tests anything), and `repository_review.repos`
 # replaced outright by the three synthetic entries above: an entry carrying
 # only `slug` inherits every other setting from `repository_review.defaults`
-# (requirement 342), so nothing else needs restating per repository.
+# (issue #342), so nothing else needs restating per repository.
 claim_config="$tmp_dir/config.json"
 jq --arg lost "$slug_lost" --arg err "$slug_err" --arg won "$slug_won" \
   'del(.repository_review.defaults.not_before)

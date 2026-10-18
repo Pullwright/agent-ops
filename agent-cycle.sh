@@ -17,7 +17,7 @@ set -euo pipefail
 export AGENT_OPS_SCHEDULER_RUN=1
 
 # Captured before the flag loop below consumes it with `shift`: finish-then-
-# continue (requirement 39) re-launches this same script with the same
+# continue (requirement 67) re-launches this same script with the same
 # arguments a chained cycle later, and by then "$@" is long gone.
 ORIGINAL_ARGV=("$@")
 
@@ -806,7 +806,7 @@ crash_loop_min_clear_minutes="$(cfg '.crash_loop_min_clear_minutes')"
 crash_loop_pending_refile=()
 # escalation_webhook_url is read for its own sake below (an alias
 # notify_resolve_webhook_url folds into notify_webhook_url — issue #1279,
-# requirement 2m) and separately because scripts/doctor.sh's own alias
+# acceptance check 2m) and separately because scripts/doctor.sh's own alias
 # warning reads the raw key, not the resolved one.
 escalation_webhook_url="$(cfg '.escalation_webhook_url')"
 # NOTIFY_WEBHOOK_URL — the non-public, per-node source for the same
@@ -830,7 +830,7 @@ notify_webhook_url_env="$(notify_webhook_url_env_or_empty "${NOTIFY_WEBHOOK_URL:
 # cycle. A set value is still inert on a node whose EGRESS_EXTRA_ALLOW does
 # not name the webhook's host: the POST leaves through the same default-deny
 # egress fence every other outbound call does (D24) — doctor.sh checks for
-# this (requirement 2m).
+# this (acceptance check 2m).
 notify_webhook_url="$(notify_resolve_webhook_url "$(cfg '.notify_webhook_url')" "$escalation_webhook_url" "$notify_webhook_url_env")"
 notify_events_json="$(cfg_json '.notify_events')"
 notify_min_interval_seconds="$(cfg '.notify_min_interval_seconds')"
@@ -1147,7 +1147,7 @@ candidates_max="$(cfg '.candidates_max')"
 coordinator_prompt_max_bytes="$(cfg '.coordinator_prompt_max_bytes')"
 [[ "$coordinator_prompt_max_bytes" =~ ^[0-9]+$ ]] || coordinator_prompt_max_bytes=0
 max_chained_cycles="$(cfg '.max_chained_cycles')"
-# How far apart this node's own cron firings are (requirement 39,
+# How far apart this node's own cron firings are (requirement 67,
 # agent-ops#1096): the width of the window a `roll-pending` marker needs to
 # span so a healthy node that declines to chain on a pending image roll still
 # gets watchtower a real gap to poll into, rather than the sub-second one a
@@ -1485,7 +1485,7 @@ declare -A landing_armed_by_repo=()
 # --- Cleanup (always runs on exit) ---
 lock_acquired=0
 clone_dir=""
-# Finish-then-continue (requirement 39): set true only once this cycle has
+# Finish-then-continue (requirement 67): set true only once this cycle has
 # won a claim and is about to run the Implementer. Initialised here, ahead
 # of the trap, for the same reason lock_acquired is: a cycle that stands
 # down or fails before ever reaching that point still runs cleanup, and an
@@ -1600,7 +1600,7 @@ cleanup() {
   #
   # Holding the lock is necessary but not sufficient: this must also be the
   # cron-fired original, because only that cycle *is* supercronic's running
-  # job. A chained continuation (requirement 39) is spawned detached and
+  # job. A chained continuation (requirement 67) is spawned detached and
   # disowned below and the cron-fired parent then exits, so supercronic's job
   # has already ended by the time the chained cycle runs: its slots are not
   # dropped at all — they fire, contend for the lock, and are already recorded
@@ -1663,7 +1663,7 @@ cleanup() {
   # the TMPDIR this process was given rather than a directory that no longer
   # exists. Nothing between spools anything.
   scratch_release
-  # Yield to a pending image roll (requirement 39, agent-ops#1096, widened by
+  # Yield to a pending image roll (requirement 67, agent-ops#1096, widened by
   # agent-ops#1103): a node running long or chained cycles never presents
   # watchtower's deploy/docker/watchtower-pre-update.sh a gap to poll into,
   # so a healthy, merely-busy node could stay behind the registry's newest
@@ -1695,13 +1695,13 @@ cleanup() {
         '{image: $image, minutes: $minutes}')"
     fi
   fi
-  # Finish-then-continue (requirement 39), last of all: a chained cycle is a
+  # Finish-then-continue (requirement 67), last of all: a chained cycle is a
   # brand-new process with its own cycle id, its own lock acquisition and its
   # own full cleanup, so it must not start until this one has released
   # everything above — the lock first of all, or it would just log
   # `cycle-skipped` and exit. Gated on `exit_code == 0` too: `chain_eligible`
   # is decided in the claim section (requirement 17a) — at a won claim, or at
-  # a raced stand-down whose fresh look is the whole point (requirement 39) —
+  # a raced stand-down whose fresh look is the whole point (requirement 67) —
   # and nothing past that point may turn a real success into a chain off of a
   # genuine failure. Detached
   # with input from /dev/null and both streams appended to the same cron.log
@@ -2128,7 +2128,7 @@ acquire_lock
 log_node_state_transition overhead
 
 # Shed a landed roll-pending marker before this cycle's own stages run
-# (requirement 39c amendment, agent-ops#1102): the marker a prior cycle's
+# (requirement 68 amendment, agent-ops#1102): the marker a prior cycle's
 # cleanup() wrote is honoured on a fixed clock, not "until the next cycle
 # would have started", so a cycle that reacquires the lock (as this one just
 # did) before that clock runs out would otherwise spend its own run
@@ -2146,7 +2146,7 @@ if [[ -f "$state_dir/roll-pending.json" ]]; then
 fi
 
 # Stand down instead of running this cycle's own stages under a marker that
-# survived the clear above (requirement 39c amendment, agent-ops#1102's own
+# survived the clear above (requirement 68 amendment, agent-ops#1102's own
 # option 2): the block above declines to clear a marker whose verdict still
 # reads "behind", which is deliberate — the roll genuinely has not landed —
 # but leaves this cycle free to run every stage underneath an unconditional

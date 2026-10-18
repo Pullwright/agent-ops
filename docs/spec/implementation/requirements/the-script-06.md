@@ -2,7 +2,7 @@
 
 ### The Script — requirements, continued (part 6 of 10; 3c–3v: Review-feedback pre-fetch (requirement 3c)…)
 
-3c. **Review-feedback pre-fetch (requirement 3c).** For each configured repo
+3c. <a id="impl-3c"></a>**Review-feedback pre-fetch (requirement 3c).** For each configured repo
    whose `sources` include `review-feedback` (requirement 48: freshly for the one repository this cycle picks, replayed from this node's expensive-gather cache for the rest), run
    `scripts/gather-review-feedback.sh <slug> <pr_label> <branch_prefix>` and
    attach the array to that repo's entry as `review_feedback`. It prints the
@@ -135,7 +135,7 @@
      (`lib/handoff.sh`) and `_sweep_round_answered`
      (`scripts/sweep-human-visibility.sh`) already use
      (tech-debt/TD-PPagop-26081306.md).
-3e. **Abandoned-drafts pre-fetch.** For each configured repo (requirement 48: freshly for the one repository this cycle picks, replayed from this node's expensive-gather cache for the rest), run
+3e. <a id="impl-3e"></a>**Abandoned-drafts pre-fetch.** For each configured repo (requirement 48: freshly for the one repository this cycle picks, replayed from this node's expensive-gather cache for the rest), run
    `scripts/gather-abandoned-drafts.sh <slug>
    <pr_label> <branch_prefix> <abandoned_draft_after_hours>` and attach the array
    to that repo's entry as `abandoned_drafts` — unconditionally, because
@@ -243,7 +243,7 @@
      date — should never happen — or a collection at the cap, above) is excluded
      rather than treated as maximally stale: the dangerous direction is stealing
      live work, not leaving a stalled draft one more cycle. `shellcheck`-clean.
-3g. **Merge-conflicts pre-fetch.** For each configured repo whose `sources`
+3g. <a id="impl-3g"></a>**Merge-conflicts pre-fetch.** For each configured repo whose `sources`
    include `merge-conflicts` (requirement 48: freshly for the one repository this cycle picks, replayed from this node's expensive-gather cache for the rest), run `scripts/gather-merge-conflicts.sh <slug>
    <pr_label> <branch_prefix>` and attach the array
    to that repo's entry as
@@ -329,7 +329,7 @@
      (`prompts/coordinator.md`, `lib/stage-attempt.sh`'s deterministic
      fallback) — so the Implementer knows what it is resolving before it
      even clones.
-3s. **Dependabot conflicts: nudge, then take over (issue #250).** Requirement
+3s. <a id="impl-3s"></a>**Dependabot conflicts: nudge, then take over (issue #250).** Requirement
    3g's `merge_conflicts` array also carries Dependabot's own conflicted PRs —
    open, non-draft, `mergeable` exactly `CONFLICTING`, authored by
    `DEPENDABOT_LOGIN` (`app/dependabot`, `lib/dependabot-bump.sh`) — regardless
@@ -456,7 +456,7 @@
    is introduced — the acceptance test this requirement was written against
    (poetic-fiddle #129) is a candidate in the same `merge_conflicts` array
    every other conflicted PR is.
-3z. **Dequeued-PR pre-fetch (TD-PPagop-26081409, issue #374).** For each
+3z. <a id="impl-3z"></a>**Dequeued-PR pre-fetch (TD-PPagop-26081409, issue #374).** For each
    configured repo whose `sources` include `dequeued` (requirement 48: freshly for the one repository this cycle picks, replayed from this node's expensive-gather cache for the rest), run
    `scripts/gather-dequeued.sh <slug> <pr_label> <branch_prefix>` and attach the
    array to that repo's entry as `dequeued`. It prints the PRs *this system
@@ -573,7 +573,7 @@
      `source` is `dequeued`" procedure rather than opening a new one.
    - Fails safe to `[]` (exit 0), with the same stderr discipline as
      requirement 3g. `shellcheck`-clean.
-3j. **Issues pre-fetch.** For each configured repo whose `sources` include any
+3j. <a id="impl-3j"></a>**Issues pre-fetch.** For each configured repo whose `sources` include any
    `issues:<band>` entry (one source at four ranks — any band warrants the one
    fetch) (requirement 48: freshly for the one repository this cycle picks, replayed from this node's expensive-gather cache for the rest), run `scripts/gather-issues.sh <slug>`, which prints
    `{"candidates": […], "excluded": […]|null}`, and attach `.candidates` to
@@ -676,7 +676,7 @@
      page; each issue's own comment thread takes one 100-comment window, the
      newest 100 where a thread runs longer than that. Both bounds are stated
      in that function's own header rather than silently applied.
-3k. **Implementation-plan path and report-directory passthrough.** The
+3k. <a id="impl-3k"></a>**Implementation-plan path and report-directory passthrough.** The
    `implementation-plan` source names no path of its own: for each configured
    repo whose `sources` include it, attach that repo's
    `implementation_plan_path` (from its `config.json` entry) to its
@@ -736,7 +736,7 @@
    be handed needs the field and not only the one repository gathered freshly
    — a cheap probe on the same footing as the ones requirement 48's own
    closing paragraph leaves unrestricted.
-3h. **Refinement carry-forward.** The Co-Ordinator's runtime input carries a
+3h. <a id="impl-3h"></a>**Refinement carry-forward.** The Co-Ordinator's runtime input carries a
    `refinements` map — repo → item → the latest `item-refined` payload
    (requirement 33), for items that are not void — built from the fleet's log
    union by `refinements_map` in `lib/cycle-state.sh`, alongside the `blocked`
@@ -796,7 +796,7 @@
    39c (The Refiner)'s recording seam refuses the shape, so the phantom set cannot grow,
    and requirement 35a's own warning still names any phantom standing behind
    an open block.
-3o. **Claim visibility (issue #175).** The Co-Ordinator's runtime input carries
+3o. <a id="impl-3o"></a>**Claim visibility (issue #175).** The Co-Ordinator's runtime input carries
    a `claimed` array — `{repo, item, age_hours}`, plus `pr_number` where the
    claim is known to target one (issue #238; see requirement 17a's PR-keyed
    claim) — alongside `blocked`, `void` and `refinements`, gathered fresh by the
@@ -840,7 +840,7 @@
    ref, or a project-review ref — none of which contain a
    character `claim_branch_for`'s sanitiser would have touched, so there is
    nothing lossy to recover from.
-3p. **PR-level candidate exclusion (issue #238).** The scoped item refs the
+3p. <a id="impl-3p"></a>**PR-level candidate exclusion (issue #238).** The scoped item refs the
    five sources that finish an existing pull request mint — per review round,
    per head SHA, or (for `landing-refusals`) per set of unreconciled comment
    ids (requirements 3c, 3e, 3g, 3z, 53) — mean a
@@ -863,7 +863,7 @@
    filter ran (a peer's cycle overlapping this one) is still possible, and
    requirement 17a's PR-keyed claim is what actually excludes it, fleet-wide,
    the same create-only way every other claim does.
-3q. **Item-level candidate exclusion.** The same deterministic-code-not-
+3q. <a id="impl-3q"></a>**Item-level candidate exclusion.** The same deterministic-code-not-
    model-judgement decision as 3p, extended from PR numbers to item refs and
    from those five sources to every array the Script pre-fetches:
    for each repo, before its `issues`, `findings`, `tech_debt`,
@@ -890,7 +890,7 @@
    atomic claim still arbitrates anything that lands in the gather-to-claim
    window, and 17a's pre-claim skip is the same principle applied on the
    claim side for the derived sources this filter cannot reach.
-3t. **Tech-debt pre-fetch, and deterministic blocked/void exclusion (issue
+3t. <a id="impl-3t"></a>**Tech-debt pre-fetch, and deterministic blocked/void exclusion (issue
    #310; the store moved from the in-repo register to labelled issues by D15
    as revised, #869/#875).** For each configured repo whose `sources` include
    `tech-debt` (requirement 48: freshly for the one repository this cycle
@@ -1029,7 +1029,7 @@
    no-op short-circuit: the very next cycle asks the Co-Ordinator again,
    unconditionally, rather than replaying the wrong answer until
    `none_selected_recheck_hours` forces a recheck.
-3u. **Blocked/void exclusion, extended to every other pre-fetched band, and
+3u. <a id="impl-3u"></a>**Blocked/void exclusion, extended to every other pre-fetched band, and
    `void` withheld from the Co-Ordinator's own input entirely (issue #320).**
    Requirement 3t proved the pattern on one band: candidates the Script
    already knows are blocked or void need no per-item model judgement to
@@ -1131,7 +1131,7 @@
    existing, already-compliant function and a new function built the same
    way; neither introduces a new `--argjson` delivery for either extract.
 
-3v. **Corroboration, scoped to the repositories that said no, and mechanical
+3v. <a id="impl-3v"></a>**Corroboration, scoped to the repositories that said no, and mechanical
    fallback selection (issue #321; scope narrowed to drop the model retry by
    issue #587).** Requirement 3t's gate stops a rejected verdict from arming
    the no-op fingerprint, so the *next* cycle asks again unconditionally —

@@ -2,7 +2,7 @@
 
 ### The Enabler — requirements, continued (part 2 of 2; 36f–38g: The delegate mandate (D18, PR #1389, recommendation 3 of…)
 
-36f. **The delegate mandate (D18, PR #1389, recommendation 3 of
+36f. <a id="impl-36f"></a>**The delegate mandate (D18, PR #1389, recommendation 3 of
     `docs/reviews/2026-09-11-escalation-autonomy-review.md`).** The fourth rung of
     `escalation_autonomy`, `decide-with-veto`, including everything
     `decide-tactical` reaches (requirement 36d) and widening it in exactly
@@ -261,7 +261,7 @@
     at `adjudicate-first`'s own behaviour, never a further widening. That
     exception to "each rung includes the one below it" is stated once in
     requirement 36d's own extended note and holds unchanged for this rung.
-37. **Failure containment.** The Enabler must never change a cycle's outcome.
+37. <a id="impl-37"></a>**Failure containment.** The Enabler must never change a cycle's outcome.
     A timeout, a non-zero exit, or an unparseable final message produces the
     stage's `stage-end`, a `warning`, and **no state events at all**: no
     verdict was reached, so nothing is recorded about any item, and gc is
@@ -295,7 +295,7 @@
     item stays blocked and the log is the only place a stage that routinely
     omits items would ever become visible.
 
-38. **Human-visibility.** Whatever the configured escalation ladder leaves for
+38. <a id="impl-38"></a>**Human-visibility.** Whatever the configured escalation ladder leaves for
     the human — every item `escalation_autonomy`/`merge_autonomy` did not
     settle earlier, not a fixed universal — must be visible to them: on
     `github.com/pulls/review-requested` for a pull request, on Assigned-to-me
@@ -319,7 +319,7 @@
     same-cycle — and is the point at which this membership test would
     genuinely need widening; revisit it there, not before.
 
-38a. **A ready pull request's live review request is kept, not only made
+38a. <a id="impl-38a"></a>**A ready pull request's live review request is kept, not only made
     once.** `lib/handoff.sh`'s `ensure_human_reviewer(pr_url, assignee)`
     covers the case `confirm_review_requested` (requirement 31b) does not:
     nobody's `CHANGES_REQUESTED` is blocking the pull request, so there is no
@@ -430,7 +430,7 @@
     silence, which would be worse than the indistinguishable warning it
     replaced.
 
-38b. **A Co-Ordinator-recorded block gated on a human decision is labelled
+38b. <a id="impl-38b"></a>**A Co-Ordinator-recorded block gated on a human decision is labelled
     `blocked` and by reason, not only by class.** Requirement 34e projects the
     `needs-refinement` label onto the issue behind a `needs_refinement`
     report, but that label alone matches nothing on a human's filtered issue
@@ -786,7 +786,7 @@
     a proven survivor the same way the first reconciliation's does, logging
     its own `own-label-action remove`.
 
-38c. **An idle, approved pull request is nudged, not left silent.** For every
+38c. <a id="impl-38c"></a>**An idle, approved pull request is nudged, not left silent.** For every
     open, non-draft, `pr_label`-carrying pull request in every configured
     repository — fleet-wide, like the sweeps of requirements 17b and 34i,
     regardless of `--repo` — `scripts/sweep-human-visibility.sh` runs once per
@@ -927,7 +927,7 @@
     long-since-ready pull request would rewrite the recorded outcome of a cycle
     that stood down or selected nothing.
 
-38d. **Scope note.** Requirement 38 does not extend the same guarantee to
+38d. <a id="impl-38d"></a>**Scope note.** Requirement 38 does not extend the same guarantee to
     every conceivable class of human-blocked work — an `escalate` verdict
     (requirement 36a) was already assigned and labelled before this
     requirement existed, and remains the canonical path for a decision only a
@@ -939,7 +939,7 @@
     — a violation the sweep finds but cannot itself heal — without extending
     the guarantee to either of these already-otherwise-handled classes.
 
-38e. **A violation the sweep cannot heal is selectable work, not only a log
+38e. <a id="impl-38e"></a>**A violation the sweep cannot heal is selectable work, not only a log
     line.** `scripts/sweep-human-visibility.sh` (requirement 38c) fixes almost
     every violation it finds in the same pass; what it cannot fix — a `gh`
     read, the review-request POST, or the nudge-comment POST itself failing,
@@ -1100,7 +1100,7 @@
     issue human-blocked by a classification other than the two requirement
     38b and 36a cover remains requirement 38d's own, deliberate, scope limit.
 
-38f. **Merge-queue awareness (D17).** Where a target repository has a GitHub
+38f. <a id="impl-38f"></a>**Merge-queue awareness (D17).** Where a target repository has a GitHub
     merge queue enabled, enqueueing is the merge act itself, and the actual
     merge lands minutes later, asynchronously, once the merge group's own
     checks pass — or never, if the queue dequeues the pull request. Below
@@ -1311,7 +1311,7 @@
     `agent-merges-routine` and above — no longer implies "merged" the moment
     it happens.
 
-38g. **The ruleset setting behind requirement 38c's own approval derivation
+38g. <a id="impl-38g"></a>**The ruleset setting behind requirement 38c's own approval derivation
     is reported, not silent (agent-ops#391).** GitHub computes
     `reviewDecision` against the base branch's *required* approving review
     count; where a target repository's ruleset sets that to `0`, the field

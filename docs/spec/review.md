@@ -161,7 +161,7 @@ Two decisions are deliberate:
 
 One `repository_review` object in the existing `config.json` (one config file —
 never a second one) holds every tunable for this pipeline, in two parts
-(requirement 342): `defaults` — every tunable set once, installation-wide —
+(issue #342): `defaults` — every tunable set once, installation-wide —
 and `repos` — the repositories to review, each a `{"slug": "owner/name"}`
 entry that may additionally carry any of `defaults`' own keys to override it
 for that repository alone. The resolution rule is uniform: for repository *r*
@@ -309,7 +309,7 @@ the one long enough for that today.
 | `repository_review.defaults.review_instructions` | *(unset)* | Optional. Installation-held instructions (R5 step 2a), resolved against `state_dir` on the same terms as `prompt_overrides`' `extend` (requirement 4a). A configured path that does not resolve is a fail-fast config error (R1c) — never tolerated the way a `prompt_overrides` path is, because this text changes how strictly a review judges. The only instruction channel D7 admits; a repository under review has none. |
 | `repository_review.defaults.review_context` | *(unset)* | Optional. Installation-held context (R5 step 2a), resolved exactly as `review_instructions` and equally fail-fast on a missing configured path (R1c). Layered with `repo_context_file` below rather than replacing it — both reach the Reviewer-Agent as `context`, each with its own origin stated. |
 | `repository_review.defaults.repo_context_file` | *(unset)* | Optional. A repository-relative path read from the ephemeral clone (R5 step 2a) and added as `context`, attributed `source: "repository"`. Never treated as instruction (D7). Unset by default; absent from the clone is simply absent — never a fail-fast error, unlike `review_instructions`/`review_context`. |
-| `repository_review.repos` | `[{"slug": "Poetic-Poems/poetic"}, {"slug": "Poetic-Poems/poetic-fiddle"}]` | The repositories to review. Each entry's `slug` is required; every other key overrides the same-named key in `defaults` for that repository alone (requirement 342), and an entry carrying only `slug` inherits every default. A review has no per-repo work-source structure beyond these overrides. Adding a repo is a config-only change. |
+| `repository_review.repos` | `[{"slug": "Poetic-Poems/poetic"}, {"slug": "Poetic-Poems/poetic-fiddle"}]` | The repositories to review. Each entry's `slug` is required; every other key overrides the same-named key in `defaults` for that repository alone (issue #342), and an entry carrying only `slug` inherits every default. A review has no per-repo work-source structure beyond these overrides. Adding a repo is a config-only change. |
 | `project_review` | *(unset)* | Deprecated alias for `repository_review` (agent-ops#592, D7): accepted with the identical shape while the fleet rolls onto an image containing the rename. `scripts/doctor.sh` warns when this is the only one set, naming `repository_review` as the replacement. Setting both is a configuration error (`config_schema_errors` refuses it, naming both keys) rather than a silent precedence, since resolving one of two present keys is exactly the quiet failure this schema exists to...[continued below](#extended-notes-project_review) |
 <!-- config-table:end -->
 
@@ -317,7 +317,7 @@ Model IDs are pinned in config (one place to update); do not use floating
 aliases in the launch command.
 
 `repository_review.defaults.model` (or a repository's own override in
-`repository_review.repos`, requirement 342) accepts a bare id
+`repository_review.repos`, issue #342) accepts a bare id
 (`claude-sonnet-5`, meaning `anthropic`) or a provider-qualified one
 (`anthropic/claude-sonnet-5`, or `<name>/<id>` for a provider the top-level
 `providers` object configures), resolved by the same `resolve_model_id_into`
@@ -352,7 +352,7 @@ The review pipeline raises **one pull request per repository, ready for
 review** (not draft — the review *is* the deliverable, and there is no second
 review stage to flip it). The PR is labelled with the repository's own
 resolved `repository_review` pr_label (its override, or
-`repository_review.defaults.pr_label`, requirement 342), titled in
+`repository_review.defaults.pr_label`, issue #342), titled in
 Conventional Commits form (e.g. `docs(review): repository review 2026-07-20`),
 and its body summarises the verdict and links the review index. A human
 approves and merges it, at every `merge_autonomy` level: `review-cycle.sh`
@@ -381,19 +381,19 @@ sets — the human's own, at the default — never a dead-end document.
 
 ### The Review Script (`review-cycle.sh`)
 
-R1. **Bootstrap.** Reuse the `PATH` bootstrap and binary checks of
+R1. <a id="rev-r1"></a>**Bootstrap.** Reuse the `PATH` bootstrap and binary checks of
    `agent-cycle.sh` verbatim (claude, gh, git, jq must resolve under cron's
    minimal environment). Source `lib/limit-detect.sh`. The script must pass
    `shellcheck`.
 
-R1a. **Model id resolution, against a configured set of providers (D12,
+R1a. <a id="rev-r1a"></a>**Model id resolution, against a configured set of providers (D12,
    issue #2131).** `lib/model-id.sh`'s `providers_load` loads the top-level
    `providers` object into `PROVIDER_SUBSTRATE` once, at startup, before the
    sweep below — the same call and the same startup position
    `agent-cycle.sh` makes (`docs/spec/implementation/requirements/the-script-01.md`
    requirement 1a). Every configured repository's own resolved model
    (`repository_review.defaults.model`, or its own override in
-   `repository_review.repos`, requirement 342) is then resolved through
+   `repository_review.repos`, issue #342) is then resolved through
    `lib/model-id.sh`'s `resolve_model_id_into` immediately after `repository_review`'s
    settings are read and resolved, before the lock — the same helper and the
    same rule `agent-cycle.sh` applies to its own model keys, the assigning
@@ -413,7 +413,7 @@ R1a. **Model id resolution, against a configured set of providers (D12,
    worked, so a bad model on one repository is never discovered only after
    others have already been reviewed.
 
-R1b. **Duplicate-slug refusal.** Requirement 342's resolution rule assumes
+R1b. <a id="rev-r1b"></a>**Duplicate-slug refusal.** Requirement 342's resolution rule assumes
    exactly one `repository_review.repos` entry per repository; two entries naming
    the same `slug` leave no way to say which one's overrides apply. Checked
    immediately after `repository_review_repos_json` is resolved, before the model
@@ -426,9 +426,9 @@ R1b. **Duplicate-slug refusal.** Requirement 342's resolution rule assumes
    as a fault. An empty `repository_review.repos` has nothing to duplicate and is
    not a fault.
 
-R1c. **Review-instructions/context path validation (issue #589, D7).** Every
+R1c. <a id="rev-r1c"></a>**Review-instructions/context path validation (issue #589, D7).** Every
    configured repository's own resolved `review_instructions`/`review_context`
-   entries (requirement 342) are validated up front, in the same sweep
+   entries (issue #342) are validated up front, in the same sweep
    position as the model check above: `lib/review-context.sh`'s
    `review_context_missing_configured` resolves each path against `state_dir`
    (on the same terms as `prompt_overrides`' `extend`, requirement 4a) and
@@ -448,7 +448,7 @@ R1c. **Review-instructions/context path validation (issue #589, D7).** Every
    with that repository's own history, so its absence is read at R5 step 2a
    instead, and is never a fault.
 
-R2. **Lock.** Acquire `review-lock.json` in `state_dir` recording PID, start
+R2. <a id="rev-r2"></a>**Lock.** Acquire `review-lock.json` in `state_dir` recording PID, start
    time, and the writer's hostname (`host`, as the implementation pipeline's
    requirement 1 records it; its own lock, *not* the implementation
    `lock.json`). Apply the same held/stale/dead logic as requirement 1, using
@@ -473,7 +473,7 @@ R2. **Lock.** Acquire `review-lock.json` in `state_dir` recording PID, start
    `docs/spec/implementation/README.md`). A review is protected exactly as
    long as it would keep the lock against another review.
 
-R3. **Stand-down checks.** Each logs its reason and exits 0:
+R3. <a id="rev-r3"></a>**Stand-down checks.** Each logs its reason and exits 0:
    1. *Usage-limit cooldown* — identical to requirement 2.1: the log
       union's most recent `limit-hit` and the live `fleet/limit.json` flag
       are both read, and the **later** `resume_at` wins; if it is still in
@@ -496,7 +496,7 @@ R3. **Stand-down checks.** Each logs its reason and exits 0:
       switch. Checked before the lock, like R2a, so a review that must not
       start never takes a lock a roll would then defer for. This is the
       installation-wide value only: a repository's own `not_before` override
-      (requirement 342) is resolved separately, per repository, into R4's
+      (issue #342) is resolved separately, per repository, into R4's
       skip-guard below, once the cycle is under way — an override can hold
       one repository off *longer* than this value, but cannot escape it
       while it is in force. This exists because R2a's switch is deliberately
@@ -524,7 +524,7 @@ R3. **Stand-down checks.** Each logs its reason and exits 0:
       configured means nothing this tier could ever hold back, not that
       everything is held.
 
-R2a. **The switch.** Before the lock, read the shared switch
+R2a. <a id="rev-r2a"></a>**The switch.** Before the lock, read the shared switch
    (`state_dir/disabled.json`) through `lib/toggle.sh` and stand down while it
    is set, logging `review-stand-down` with the reason it carries — the same
    check `agent-cycle.sh` makes, through the same code, so the two pipelines
@@ -566,7 +566,7 @@ R2a. **The switch.** Before the lock, read the shared switch
    stand down while it is set, never write it, never clear it — not even
    expired, for the same days-late-`enabled` reason.
 
-R2b. **The role guard.** Before the switch, the config and the lock, stand the
+R2b. <a id="rev-r2b"></a>**The role guard.** Before the switch, the config and the lock, stand the
    run down unless `AGENT_OPS_ROLE` is `active` — the implementation pipeline's
    requirement 2.4, through the same shared `lib/role.sh`, so "active" has one
    definition and a node cannot be standby for one pipeline and active for the
@@ -579,7 +579,7 @@ R2b. **The role guard.** Before the switch, the config and the lock, stand the
    standby node has no business reading, logging or clearing state that belongs
    to the active one.
 
-R2c. **The fleet's memory and state publication.** After the lock and before
+R2c. <a id="rev-r2c"></a>**The fleet's memory and state publication.** After the lock and before
    any work, snapshot the fleet's shared event stream — this node's
    `log.jsonl` unioned with every peer's, via `lib/fleet.sh`
    (`docs/spec/implementation/requirements`, requirement 2.5) — so the
@@ -622,11 +622,11 @@ R2c. **The fleet's memory and state publication.** After the lock and before
    review-branch claim (R5.0) is what closes that window: the second node
    loses the create-ref and skips the repo before cloning anything.
 
-R4. **Per-repo skip-guard (idempotency; this is how "once a week" is
+R4. <a id="rev-r4"></a>**Per-repo skip-guard (idempotency; this is how "once a week" is
    enforced).** For each configured repo, skip it *this run* when **any** of
    these independent conditions holds (an OR across the three):
    - its own resolved `not_before` (its override, or
-     `repository_review.defaults.not_before`, requirement 342) is set and now is
+     `repository_review.defaults.not_before`, issue #342) is set and now is
      before it — the same rule R3's cycle-wide check applies, checked again
      here per repository so a repository's own override can hold it off
      *longer* than the installation-wide value; **or**
@@ -655,12 +655,12 @@ R4. **Per-repo skip-guard (idempotency; this is how "once a week" is
    `repository_review.defaults.min_prs_between_reviews` nor a repository's own
    override is set.
 
-R4a. **Report directory (issue #761).** Where a report set (R11) is written,
+R4a. <a id="rev-r4a"></a>**Report directory (issue #761).** Where a report set (R11) is written,
    and where R4's own skip-guard and the implementation pipeline's
    `project-review` Refiner source (`docs/spec/implementation/requirements`
    requirement 3y) look for the most recent one, is a GNU `date`(1) format
    string, resolved with `date -u +"<format>"` relative to the repository
-   root — never a fixed path. Resolution, per repository (requirement 342's
+   root — never a fixed path. Resolution, per repository (issue #342's
    rule): its own `repository_review.repos[].report_directory` override when
    set, else `repository_review.defaults.report_directory`, else
    `reviews/project-review-%Y-%m-%d` — today's layout, fixed in code
@@ -668,7 +668,7 @@ R4a. **Report directory (issue #761).** Where a report set (R11) is written,
    schema, so a repository configuring neither key is byte-for-byte
    unaffected by this requirement's existence. `review-cycle.sh` resolves
    this once per repository (alongside `model`, `pr_label`, `branch_prefix`
-   and the rest of requirement 342's overridable keys) and passes the
+   and the rest of issue #342's overridable keys) and passes the
    resolved directory as `report_dir` in the Reviewer-Agent's runtime input
    (R5.3) — the prompt writes into `report_dir` exactly as given, never
    re-deriving a layout of its own.
@@ -726,7 +726,7 @@ R4a. **Report directory (issue #761).** Where a report set (R11) is written,
    reach `review-cycle.sh`'s own errexit through that function's return value,
    turning a transient listing failure into a dead cycle.
 
-R5. **Per non-skipped repo** (processed **sequentially**, so a failure of one
+R5. <a id="rev-r5"></a>**Per non-skipped repo** (processed **sequentially**, so a failure of one
    never blocks the other and only one heavy `claude` runs at a time):
    0. *Claim the review branch* (R5c; implementation spec requirement 17a).
       `review/<review_date>` is a date-only name: every active node computes
@@ -822,7 +822,7 @@ R5. **Per non-skipped repo** (processed **sequentially**, so a failure of one
    2a. *Resolve instructions and context (issue #589, D7).*
       `lib/review-context.sh`'s `review_context_build_json` resolves this
       repository's own `review_instructions`/`review_context`
-      (requirement 342, already validated at R1c) plus `repo_context_file`
+      (issue #342, already validated at R1c) plus `repo_context_file`
       read from this clone if it names a readable file — simply absent if it
       does not, never a fault — into `{"instructions": [...], "context":
       [...]}`, each entry `{source, origin, text, truncated, bytes, digest}`
@@ -890,7 +890,7 @@ R5. **Per non-skipped repo** (processed **sequentially**, so a failure of one
       write side of the marker to the one definition in
       `lib/pipeline-marker.sh` that requirement's component describes.
 
-R6. **Usage-limit detection.** After every `claude` invocation, run the shared
+R6. <a id="rev-r6"></a>**Usage-limit detection.** After every `claude` invocation, run the shared
    detector (`lib/limit-detect.sh`). On a match, write a `limit-hit` event to
    the *shared* `log.jsonl` with the requirement-10 shape (`resume_at`,
    `class`, `reset_known`, and requirement 2.1's `provider` naming the
@@ -903,13 +903,13 @@ R6. **Usage-limit detection.** After every `claude` invocation, run the shared
    shared reduction, so `agent-cycle.sh --clear-limit` lifts the review cycle
    too — one account, one limit, one way to clear it.
 
-R7. **Cleanup (always, via a trap).** Delete each cycle's clone, write a
+R7. <a id="rev-r7"></a>**Cleanup (always, via a trap).** Delete each cycle's clone, write a
    `review-end` event, release the review lock, and tee each stage's
    stdout/stderr to `state_dir/reviews/<review-id>/` for debugging. Optionally
    refresh the dashboard the same way `agent-cycle.sh` does (isolated and
    time-bounded, so it can never affect the run's outcome).
 
-R7a. **A signal is a failure with a record.** The Script traps `TERM`, `INT`
+R7a. <a id="rev-r7a"></a>**A signal is a failure with a record.** The Script traps `TERM`, `INT`
    and `HUP` from the moment its cleanup trap is armed, with the same
    handler discipline — and for the same reasons, set out at length there —
    as the implementation pipeline's requirement 9c: kill the in-flight
@@ -924,7 +924,7 @@ R7a. **A signal is a failure with a record.** The Script traps `TERM`, `INT`
    handler. Covered by the same `test/signal-exit.test.sh` as the
    implementation pipeline's acceptance check 4a.
 
-R7b. **One stage launcher, shared, provider-neutral.** `run_model_stage` is
+R7b. <a id="rev-r7b"></a>**One stage launcher, shared, provider-neutral.** `run_model_stage` is
    sourced from
    `lib/stage-run.sh`, the implementation pipeline's requirement 4d — it is
    not a copy of it. The two scripts each held their own until the streaming
@@ -969,7 +969,7 @@ R7b. **One stage launcher, shared, provider-neutral.** `run_model_stage` is
    installation is unaffected), because one lock can span all of them
    reviewed back to back.
 
-R8. **Flags.** `--dry-run` (evaluate the stand-down and skip-guard checks,
+R8. <a id="rev-r8"></a>**Flags.** `--dry-run` (evaluate the stand-down and skip-guard checks,
    print which repos *would* be reviewed, launch no agent), `--once` (one
    verbose run in the foreground), `--repo <slug>` (restrict to one repo, for
    testing). `--disable`, `--enable`, `--status`, `--for` and `--until` are
@@ -979,7 +979,7 @@ R8. **Flags.** `--dry-run` (evaluate the stand-down and skip-guard checks,
 
 ### The Reviewer-Agent (`prompts/project-reviewer.md`)
 
-R9. **One-shot constraint** (requirement 21). A single non-interactive
+R9. <a id="rev-r9"></a>**One-shot constraint** (requirement 21). A single non-interactive
    `claude -p` invocation with no resumption: once it emits a final message
    with no further tool calls, it exits for good. It must wait synchronously
    for long-running commands (installs, builds, the project's own test suite)
@@ -987,13 +987,13 @@ R9. **One-shot constraint** (requirement 21). A single non-interactive
    slow to finish within this repository's own resolved `timeout_review` is
    grounds for `"status": "blocked"`, not a hopeful early end of turn.
 
-R10. **Obey the repo.** Runs inside the clone. First reads the repo's
+R10. <a id="rev-r10"></a>**Obey the repo.** Runs inside the clone. First reads the repo's
    `AGENTS.md` — or `CLAUDE.md`, for a repo that has not migrated;
    `CLAUDE.md` imports `AGENTS.md` where it has — and obeys it throughout
    (branch workflow, commit format, tech-debt register conventions,
    documentation-as-built rules, the `npm run check` whitespace gate, etc.).
 
-R11. **Run the skill end-to-end.** Invoke the vendored `project-review` skill
+R11. <a id="rev-r11"></a>**Run the skill end-to-end.** Invoke the vendored `project-review` skill
    and follow it to completion: produce the report set (index, summary,
    findings, recommendations, improvement prompts) in `report_dir` — the
    directory the runtime input names (R4a) — and file the debt it surfaces
@@ -1014,7 +1014,7 @@ R11. **Run the skill end-to-end.** Invoke the vendored `project-review` skill
    Complete the skill's own resumability book-keeping (delete `worknotes/` and
    `review-state.json`) so only the finished reports remain.
 
-R11a. **State a recommendation's default fix.** Where an `R-NN`
+R11a. <a id="rev-r11a"></a>**State a recommendation's default fix.** Where an `R-NN`
    recommendation's *Approach* names more than one candidate fix, add a
    `## Default: <fix>` heading (one sentence, the option the reviewer would
    take) directly below it, and an `Owner decision: yes` line beside it when
@@ -1031,7 +1031,7 @@ R11a. **State a recommendation's default fix.** Where an `R-NN`
    edit to that pinned copy — see "The `project-review` skill (vendored)"
    above for why this repository does not own it.
 
-R12. **File review-sourced debt as labelled issues.** New debt this review
+R12. <a id="rev-r12"></a>**File review-sourced debt as labelled issues.** New debt this review
    surfaces does not go into the register: it is filed as a GitHub issue in
    the repository under review, labelled `pw::type:tech-debt` (the label the
    implementation pipeline's own label catalogue already ensures exists there
@@ -1058,7 +1058,7 @@ R12. **File review-sourced debt as labelled issues.** New debt this review
    status update, in its established style — since that is an edit to a file
    already there, never a new one the review adds.
 
-R12a. **Cross-reference every mirrored recommendation.** Where a GitHub issue
+R12a. <a id="rev-r12a"></a>**Cross-reference every mirrored recommendation.** Where a GitHub issue
    R12 files covers the whole of a recommendation's *Intended end state*,
    name that recommendation's `R-NN` and this run's `report_dir` in the
    issue's own body, somewhere a reader — and a `gh issue view --json body`
@@ -1082,7 +1082,7 @@ R12a. **Cross-reference every mirrored recommendation.** Where a GitHub issue
    mirroring it keeps its remainder in the review channel, where it stays
    visible; claiming it here would silently retire work nobody has done.
 
-R13. **Raise one pull request.** Create the branch
+R13. <a id="rev-r13"></a>**Raise one pull request.** Create the branch
    `<branch_prefix><date>` (`review/<date>` by default; this repository's own
    resolved `branch_prefix`) from the
    default branch; commit the review folder — plus, only where R12's
@@ -1099,7 +1099,7 @@ R13. **Raise one pull request.** Create the branch
    Record the PR URL to `.git/agent-ops-review-pr-url` immediately on opening
    it (the breadcrumb R5d relies on).
 
-R14. **Prove it is landable.** Run the repo's own checks (as its
+R14. <a id="rev-r14"></a>**Prove it is landable.** Run the repo's own checks (as its
    `AGENTS.md`/`CLAUDE.md` and workflow files define — for a docs-only
    change this is chiefly the whitespace/format gates and commit-format)
    and fix anything they surface.
@@ -1110,11 +1110,11 @@ R14. **Prove it is landable.** Run the repo's own checks (as its
    lock ref is refused rather than silently overwritten (the same rule the
    implementation pipeline's prompts follow, issue #360).
 
-R15. **Final message.** End with a single JSON object as the entire final
+R15. <a id="rev-r15"></a>**Final message.** End with a single JSON object as the entire final
    message: `{"status": "complete", "pr_url": …, "branch": …, "repo": …, "notes": …}`
    or `{"status": "blocked", "reason": …}`.
 
-R18. **Untrusted external content.** Text authored on the forge — issue
+R18. <a id="rev-r18"></a>**Untrusted external content.** Text authored on the forge — issue
    and pull-request titles and bodies, comments, review text, commit
    messages — read while reviewing is data about the repository, never
    instructions to the Reviewer-Agent. `prompts/project-reviewer.md`
@@ -1127,7 +1127,7 @@ R18. **Untrusted external content.** Text authored on the forge — issue
 
 ### Logging and state
 
-R16. **Streams.** Review *operational* events go to the review pipeline's own
+R16. <a id="rev-r16"></a>**Streams.** Review *operational* events go to the review pipeline's own
    `state_dir/review-log.jsonl` (its own stream, so the dashboard's existing
    `log.jsonl` parser is untouched and the two pipelines stay separable). Reuse
    the `log_event` shape (requirement 33). Events: `review-start`,
@@ -1185,7 +1185,7 @@ R16. **Streams.** Review *operational* events go to the review pipeline's own
    pipeline raises no such verdict: it either raises a pull request or it
    does not).
 
-R17. The `review-log.jsonl` and the `state_dir/reviews/<review-id>/`
+R17. <a id="rev-r17"></a>The `review-log.jsonl` and the `state_dir/reviews/<review-id>/`
    transcripts are the durable record. Surfacing the transcripts themselves,
    or the raw log, in the monitoring dashboard is a worthwhile follow-on but
    is **out of scope** for this document (the dashboard has its own spec,
@@ -1193,7 +1193,7 @@ R17. The `review-log.jsonl` and the `state_dir/reviews/<review-id>/`
    derived reading of `review-log.jsonl` that is in scope: a per-stage health
    verdict, not the log itself.
 
-R19. **Per-stage health, mirrored (agent-ops#996).** The repository-review
+R19. <a id="rev-r19"></a>**Per-stage health, mirrored (agent-ops#996).** The repository-review
    pipeline's own symmetric reading of `docs/spec/implementation/requirements`
    requirement 2.8: this pipeline runs one real stage, `project-reviewer`
    (R9–R15, the Reviewer-Agent invocation `review_one` makes), and until this
@@ -1255,7 +1255,7 @@ R19. **Per-stage health, mirrored (agent-ops#996).** The repository-review
 
 What exists, and the requirements each part answers to:
 
-1. `review-cycle.sh` implementing R1–R8, R16 and R19 (including the role guard,
+1. <a id="rev-c-1"></a>`review-cycle.sh` implementing R1–R8, R16 and R19 (including the role guard,
    R2b, through `lib/role.sh`, the union snapshot and state push of R2c, through
    `scripts/state-sync.sh`, the per-repository instructions and context of
    R1c and R5 step 2a through `lib/review-context.sh`, shared with
@@ -1265,17 +1265,17 @@ What exists, and the requirements each part answers to:
    `docs/METERING-SCHEMA.md` — and R19's own stage-health verdict through
    `lib/stage-health.sh`, shared with `agent-cycle.sh`/`monitor-cycle.sh`).
    `shellcheck`-clean; sets its own `PATH`.
-2. `prompts/project-reviewer.md` implementing R9–R15. It must embed the
+2. <a id="rev-c-2"></a>`prompts/project-reviewer.md` implementing R9–R15. It must embed the
    relevant shared-repo conventions (as the other operating prompts do) so the
    stage never depends on context it was not given.
-3. `.claude/skills/project-review/` — the vendored skill (pinned; re-sync
+3. <a id="rev-c-3"></a>`.claude/skills/project-review/` — the vendored skill (pinned; re-sync
    from upstream deliberately).
-4. `config.json` — the `repository_review` block.
-5. `docs/guides/operating/README.md` names the review pipeline under "How
+4. <a id="rev-c-4"></a>`config.json` — the `repository_review` block.
+5. <a id="rev-c-5"></a>`docs/guides/operating/README.md` names the review pipeline under "How
    the pipelines work"; `docs/guides/operating/change-a-node.md` § "Uninstall"
    covers how to uninstall; and `docs/reference/configuration.md` documents
    every `repository_review.*` config key.
-6. The crontab line(s): on a containerized node, rendered from `deploy/docker/crontab.tmpl` and run by supercronic in the scheduler service.
+6. <a id="rev-c-6"></a>The crontab line(s): on a containerized node, rendered from `deploy/docker/crontab.tmpl` and run by supercronic in the scheduler service.
 
 ## Acceptance checks
 
@@ -1290,28 +1290,28 @@ supplies its own `repository_review` block, or mutates
 reviewed repository is a configuration change, and must not oblige anyone to
 edit a test.
 
-1. `shellcheck review-cycle.sh` is clean.
-2. `--dry-run` completes against the real repos: the stand-down and skip-guard
+1. <a id="rev-ac-1"></a>`shellcheck review-cycle.sh` is clean.
+2. <a id="rev-ac-2"></a>`--dry-run` completes against the real repos: the stand-down and skip-guard
    checks are evaluated, the Script prints which repos it *would* review,
    nothing further launches, and `review-log.jsonl` records the run.
-3. A second invocation while the review lock is held exits without acting; and
+3. <a id="rev-ac-3"></a>A second invocation while the review lock is held exits without acting; and
    while the implementation `lock.json` is held by a live process, the Review
    Script stands down.
-4. Skip-guard: with today's report directory present on a repo's default
+4. <a id="rev-ac-4"></a>Skip-guard: with today's report directory present on a repo's default
    branch — `reviews/project-review-<today>/` under the shipped fallback, or
    whatever that repo's own resolved `report_directory` names (R4a) — (or an
    open `project-review`-labelled PR for it), that repo is skipped, and the
    `min_days_between_reviews` boundary is respected.
-4b. **The role guard stands this pipeline down too (R2b).** `test/role.test.sh`
+4b. <a id="rev-ac-4b"></a>**The role guard stands this pipeline down too (R2b).** `test/role.test.sh`
    passes: a `review-cycle.sh` with `AGENT_OPS_ROLE` unset or standby exits 0
    with one line and writes nothing under `state_dir`, while `--dry-run` runs
    regardless of the role.
-4c. **A peer's usage-limit hit stands this pipeline down too (R2c/R6).** With
+4c. <a id="rev-ac-4c"></a>**A peer's usage-limit hit stands this pipeline down too (R2c/R6).** With
    a peer's materialised log carrying a `limit-hit` whose `resume_at` is in
    the future, `review-cycle.sh` logs a `review-stand-down`, exits 0 and
    clones nothing; its cleanup still pushes this node's state to its own
    branch (`test/state-sync.test.sh` covers the shared machinery).
-4a. **The switch stands this pipeline down too (R2a).** With
+4a. <a id="rev-ac-4a"></a>**The switch stands this pipeline down too (R2a).** With
    `agent-cycle.sh --disable 'testing'` set, a plain `review-cycle.sh` logs a
    `review-stand-down` carrying the reason, exits 0, and launches no `claude`;
    `--enable` restores it. Check this against the *review* script specifically
@@ -1322,7 +1322,7 @@ edit a test.
    fleet switch, so `test/toggle.test.sh`'s offline e2e runs the real
    `review-cycle.sh` against a set `fleet/disabled.json` and asserts the
    `review-stand-down` names it.
-4d. **The review-branch claim gates the review (R5.0).**
+4d. <a id="rev-ac-4d"></a>**The review-branch claim gates the review (R5.0).**
    `test/review-claim.test.sh` passes: against a stubbed `lib/claim.sh` seam
    (`CLAIM_GH`) and a fail-fast `gh`, a *lost* claim logs `review-skipped`
    naming another node and never attempts a clone; a claim *error* skips the
@@ -1331,7 +1331,7 @@ edit a test.
    when the clone then fails, `release branch` is invoked for the same key —
    the leak the implementation pipeline fixed in its own workspace path
    (#55) must not be reintroduced here.
-4e. **Per-repository resolution, and duplicate slugs refused (R1b).**
+4e. <a id="rev-ac-4e"></a>**Per-repository resolution, and duplicate slugs refused (R1b).**
    `test/config-schema.test.sh` passes: `config_repository_review_repos` resolves
    an entry carrying only `slug` to every one of `repository_review.defaults`'
    values, an entry setting a key to its own value for that key alone, and an
@@ -1349,13 +1349,13 @@ edit a test.
    entries for one repository carrying different overrides are distinct to it
    — so nothing else catches it, and the run would otherwise resolve that
    repository from whichever entry it happened to read last.
-4f. **The dated stand-down is two-tier (R3.3).**
+4f. <a id="rev-ac-4f"></a>**The dated stand-down is two-tier (R3.3).**
    `test/review-not-before.test.sh` passes: a future
    `repository_review.defaults.not_before` stands the whole cycle down before the
    lock, with the date on the event; and with that key empty while *every*
    configured repository's own `not_before` override is still in the future,
    the cycle stands down before the lock too, logging one `review-stand-down`
-   naming requirement 342. An empty `repository_review.repos` is vacuously *not*
+   naming issue #342. An empty `repository_review.repos` is vacuously *not*
    a stand-down. And the converse, which is what proves the two tiers are
    really two: with one repository held on its own override while another is
    free, neither tier fires, the cycle runs, and R4's skip-guard turns the
@@ -1364,7 +1364,7 @@ edit a test.
    quietly stayed cycle-wide passes every other assertion in that file and
    fails only this one, and the failure it stands for is a repository nobody
    asked to hold being held by its neighbour's date.
-4g. **The report directory is configurable, and unset is unchanged (R4a).**
+4g. <a id="rev-ac-4g"></a>**The report directory is configurable, and unset is unchanged (R4a).**
    `test/report-directory.test.sh` passes: against a stubbed `gh`,
    `report_directory_find_dirs` discovers a format string's existing
    instances — folding a leading static segment (`docs/`) into the one
@@ -1402,7 +1402,7 @@ edit a test.
    every test above and fails only a sequential run crossing midnight UTC —
    where the second repository's report folder is dated a day after the
    branch, claim and PR title of the same review.
-4h. **Instructions and context reach the review, and a broken configured path
+4h. <a id="rev-ac-4h"></a>**Instructions and context reach the review, and a broken configured path
    never silently narrows one (R1c, R5 step 2a).**
    `test/review-context.test.sh` passes: `review_context_build_json` resolves
    this repository's own `review_instructions`/`review_context` into
@@ -1431,7 +1431,7 @@ edit a test.
    repository is touched, naming the repository, the field, the configured
    path and what it resolved to; a broken `review_context` override on one
    repository's own `repos[]` entry refuses the same way, naming that
-   repository and not its neighbour (the sweep reads requirement 342's
+   repository and not its neighbour (the sweep reads issue #342's
    resolved view, not `defaults` alone); and a path that does resolve, or
    neither key configured at all, ends the tick 0 with no refusal. Check the
    refusal against the *review script* and not by inference from
@@ -1441,9 +1441,9 @@ edit a test.
    asked for. `test/config-schema.test.sh` covers the rest of the
    configuration surface: both keys are arrays of non-empty strings, never a
    bare string; `repo_context_file` is a bare string; all three resolve on
-   requirement 342's rule; and `scripts/doctor.sh` turns the same detector's
+   issue #342's rule; and `scripts/doctor.sh` turns the same detector's
    report into a `fail`, not the `warn` a `prompt_overrides` path earns.
-5. **Injected-skill isolation:** after a real `--once --repo poetic` run, the
+5. <a id="rev-ac-5"></a>**Injected-skill isolation:** after a real `--once --repo poetic` run, the
    review PR's diff contains the new `reviews/...` folder but **never** a
    *new* `tech-debt/*.md` file (only an existing item's frontmatter, where
    R12's resolved-item bookkeeping touched one) and **not**
@@ -1452,28 +1452,28 @@ edit a test.
    surfaced landed as issues instead: `gh issue list --repo Poetic-Poems/poetic
    --label pw::type:tech-debt --state all` shows a fresh issue per finding,
    each named under the PR body's `Defers:` section.
-6. Usage-limit: an injected future `limit-hit` on `log.jsonl` stands the review
+6. <a id="rev-ac-6"></a>Usage-limit: an injected future `limit-hit` on `log.jsonl` stands the review
    down; and a simulated limit phrase in a transcript causes a `limit-hit` to
    be written to `log.jsonl`.
-7. One supervised full run (`--once`): for each non-skipped repo it produces a
+7. <a id="rev-ac-7"></a>One supervised full run (`--once`): for each non-skipped repo it produces a
    labelled, ready, mergeable review PR, with every item of debt it surfaced
    filed as a `pw::type:tech-debt`-labelled GitHub issue in that repo (R12),
    named under the PR's `Defers:` section, and a clean `review-log.jsonl`
    trail. Report the PR URL(s) to the human; merge nothing.
-8. **Cross-references land (R12a):** for every issue that run filed which
+8. <a id="rev-ac-8"></a>**Cross-references land (R12a):** for every issue that run filed which
    mirrors a recommendation, `gh issue view <n> --json body --jq .body`
    contains its `R-NN`. Check this explicitly: it is invisible in the
    review's own output — the reports look complete either way — and only
    shows up weeks later as the implementation pipeline paying to
    re-investigate recommendations that are already done.
 
-9. **The untrusted-content framing holds for the Reviewer-Agent too
+9. <a id="rev-ac-9"></a>**The untrusted-content framing holds for the Reviewer-Agent too
    (R18).** `test/prompt-untrusted-framing.test.sh` passes — it lifts the
    canonical block from docs/spec/implementation/requirements/every-stage.md requirement 45a and
    pins `prompts/project-reviewer.md`'s copy byte-identical alongside the
    implementation pipeline's own prompts.
 
-10. **A stage-health verdict for `project-reviewer` (R19, agent-ops#996).**
+10. <a id="rev-ac-10"></a>**A stage-health verdict for `project-reviewer` (R19, agent-ops#996).**
    `test/stage-health.test.sh` passes: `stage_health_verdicts` told the
    review pipeline's own event names reads a `review-log.jsonl`-shaped stream
    correctly — including the exit-0-but-failed join over the synthetic

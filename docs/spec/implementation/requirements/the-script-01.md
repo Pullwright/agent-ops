@@ -2,7 +2,7 @@
 
 ### The Script (`agent-cycle.sh`)
 
-1. **Lock.** Before the fleet-log union below is built, a cheap pre-check
+1. <a id="impl-1"></a>**Lock.** Before the fleet-log union below is built, a cheap pre-check
    reads any lock file already in `state_dir`: a recorded pid that is alive,
    whose `host` matches (or carries none), and whose age is under the
    pre-derivation default/floor `lock_stale_after` already holds (requirement
@@ -38,7 +38,7 @@
    sized to that handler's worst case (one process-group kill, one log
    append, one 8-second-bounded claim release). Polled rather than slept, so
    a cycle that records and exits in one second costs one second.
-1a. **Model id resolution, against a configured set of providers (D12,
+1a. <a id="impl-1a"></a>**Model id resolution, against a configured set of providers (D12,
    issue #2131).** `providers` states which providers beyond the implicit
    `anthropic` a model key may qualify with — keyed by provider name, each
    entry naming a `substrate` (the adapter that launches it; `claude-code`
@@ -74,7 +74,7 @@
    `reviewer_model_complex` and `enabler_model` both use) passes through
    unresolved. `review-cycle.sh` applies the same resolution to every
    repository's own resolved `repository_review.defaults.model` (or its own
-   override in `repository_review.repos`, requirement 342)
+   override in `repository_review.repos`, issue #342)
    (`docs/spec/review.md`). Both scripts share one implementation,
    `lib/model-id.sh`'s `resolve_model_id_into` (and its siblings
    `resolve_model_id`, the same resolution as a value on stdout, and
@@ -164,7 +164,7 @@
    subscription login carries. Both
    present warns that Grok Build's own precedence prefers the stored session
    over the key; neither is the same `fail`.
-1b. **The configuration has a machine-readable schema, and it is the startup
+1b. <a id="impl-1b"></a>**The configuration has a machine-readable schema, and it is the startup
    gate both pipelines run on.** `config.schema.json` states the shape of
    `config.json` — every key an installation may set, its type, its
    constraints, and the value the code falls back to when it is absent. It
@@ -349,7 +349,7 @@
    condition as a `fail` through that one implementation, so the three can
    never drift.
 
-1c. **The model-tier floor (agent-ops#822).** Nothing before this requirement
+1c. <a id="impl-1c"></a>**The model-tier floor (agent-ops#822).** Nothing before this requirement
     stopped the cheapest model in the fleet from authoring a work order
     specification (`context`/`acceptance`) that a more capable model then
     implemented — #815 (fixed by #819) and #821 both trace to exactly this
@@ -580,7 +580,7 @@
     `scripts/doctor.sh` refuse a configuration violating the floor, including
     `refiner_model` ranked below `implementer_model_default`, and refuse a
     `"required"` source with `refiner_model` empty.
-1d. **Every timing sized against a once-an-hour cycle derives from the
+1d. <a id="impl-1d"></a>**Every timing sized against a once-an-hour cycle derives from the
    configured cadence instead, or states plainly that it does not.** Before
    this requirement, `schedule.cycle_interval_minutes` (issue #248,
    "faster heartbeat") let an installation run its implementation cycle far
@@ -831,7 +831,7 @@
    terms, independent of the implementation cycle's. `log_retained_bytes`
    triggers rotation on size, which self-corrects regardless of how often
    the log is written to.
-52. **The table of contents is generated from headings, not hand-maintained,
+52. <a id="impl-52"></a>**The table of contents is generated from headings, not hand-maintained,
    and regenerating it is gated in CI.** Each guide under `docs/guides/`
    carries a `<!-- toc:start -->` … `<!-- toc:end -->` region, placed
    immediately after the document's title (and any lead-in paragraph,
@@ -866,7 +866,7 @@
    `scripts/render-toc.sh --check` on every pull request, failing it the
    moment a heading is added, removed or reworded without a matching
    regeneration, or a target file's marker pair is missing or malformed.
-52a. **The documentation is measured against a fixed benchmark of real
+52a. <a id="impl-52a"></a>**The documentation is measured against a fixed benchmark of real
    questions, not asserted to be good, and the benchmark is never run by the
    pipeline.** `test/docs-benchmark/questions.jsonl` holds at least 48
    questions, at least eight for each of six readers (`target-user`,
@@ -892,7 +892,7 @@
    three match. No stage, workflow or crontab entry runs the benchmark
    itself: a stage that launched `claude` would be an agent launching an
    agent (see "Actors"), and every run spends tokens.
-52b. **The documentation's links, map, size budget, section citations and
+52b. <a id="impl-52b"></a>**The documentation's links, map, size budget, section citations and
    as-built phrasing are checked offline on every pull request.**
    `scripts/check-docs.sh` (component 24b) makes five checks over every
    tracked Markdown file bar the fixtures `test/check-docs.test.sh` builds to

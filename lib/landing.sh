@@ -2396,7 +2396,7 @@ $(jq . <<<"$input")
 # load-bearing assignee), differing only in what it names: a question about
 # the work order or its scope, never a diff the Approver refused twice.
 # Takes REPO explicitly, never `$selected_repo` — this runs from
-# `_landing_stage_attempt`, which the requirement 8u retry sweep calls once
+# `_landing_stage_attempt`, which the acceptance check 8u retry sweep calls once
 # per candidate across every configured repository, not only the one this
 # cycle selected.
 open_question_escalate() {

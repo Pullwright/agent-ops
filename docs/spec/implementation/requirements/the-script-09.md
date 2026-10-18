@@ -2,7 +2,7 @@
 
 ### The Script — requirements, continued (part 9 of 10; 8e–59: The classifier-escape audit re-checks the outcome, not jus…)
 
-8e. **The classifier-escape audit re-checks the outcome, not just the
+8e. <a id="impl-8e"></a>**The classifier-escape audit re-checks the outcome, not just the
    decision (D18 Stage 2 exit criterion "zero classifier escapes";
    agent-ops#572).** Requirement 8d's `landing_eligible` is a decision:
    asking it whether its own decision was right is no check at all, so
@@ -150,7 +150,7 @@
    enough ago for the sweep to have reached it, merged by someone other than
    the Approver identity, or genuinely unauditable) reads `audit: null`,
    never folded into either `clean` or `escape`.
-8f. **An open question the Reviewer could not settle holds unattended
+8f. <a id="impl-8f"></a>**An open question the Reviewer could not settle holds unattended
     landing (D18, agent-ops#668).** Requirement 32's `open_questions` is
     additive to a `ready` verdict — the pull request still hands off exactly
     as it always has — and names a narrow case: nothing in the diff is
@@ -179,7 +179,7 @@
     (eligibility) and gate 3 (the review gate), on the same terms as every
     gate beside it: `landing_open_question_hit` reads the label fresh from
     GitHub — never a log join, so a human's own removal of the label is
-    seen the moment it happens, and requirement 8u's retry sweep re-reads it
+    seen the moment it happens, and acceptance check 8u's retry sweep re-reads it
     exactly as it re-reads every other gate, needing no second copy of this
     one either. A hit refuses, logged `landing-refused` with its own
     `open-question:` reason class (the same `class:detail` shape
@@ -296,7 +296,7 @@
     it again on every later round) exists by the same round the refusal is
     logged, giving it exactly the visibility requirement 36a's own
     escalations get (Assigned-to-me) with no gap for a sweep to close.
-8w. **Gate 4.5's protected-path-tier sub-case re-engages the Approver at the
+8w. <a id="impl-8w"></a>**Gate 4.5's protected-path-tier sub-case re-engages the Approver at the
    critical tier, rather than only re-arming landing (issue #2514).** A
    landing-retry sweep re-arm (requirement 8u) that finds gate 4.5's
    protected-path-tier sub-case — the recorded tier `landing_retry_tier`
@@ -389,7 +389,7 @@
    triggering value — falling through unchanged would otherwise escalate on
    the strength of a read failure moments after a critical-tier approval was
    established, the one outcome this paragraph exists to rule out.
-62. **A persistent landing refusal says why, on the pull request itself, not
+62. <a id="impl-62"></a>**A persistent landing refusal says why, on the pull request itself, not
    only in the node log (issue #1979).** Requirement 8d's own gates refuse to
    arm a pull request for many reasons, logged as `landing-refused`
    (requirement 33) and nothing else — the pull request itself still shows
@@ -511,7 +511,7 @@
    verdict, or the merge-queue/budget state the gates themselves already
    decided — the notice is informational only, exactly as every other read in
    this function already is.
-9. **Failure handling.** If any stage times out, exits non-zero, or returns
+9. <a id="impl-9"></a>**Failure handling.** If any stage times out, exits non-zero, or returns
    an unparseable summary: kill that stage's process group, log
    `attempt-failed` with enough detail for a future cycle to know the item
    is blocked and what would unblock it, and — if a draft PR was already
@@ -541,7 +541,7 @@
    rather than by verdict — `complete_handoff`, gated on that field
    (requirement 32b) — is unavailable for precisely the failure it exists to
    recover.
-9a. **A reported verdict is not a failure.** A stage that runs to completion
+9a. <a id="impl-9a"></a>**A reported verdict is not a failure.** A stage that runs to completion
    and ends with `{"status": "blocked", …}` or `{"status": "void", …}`
    (requirement 27) has not failed: it has spent a full model run
    establishing something worth keeping. Record it against the selected item,
@@ -549,7 +549,7 @@
    requirement 9's path (which would file it as "exited 0", discarding what it
    found) or, worse, dropping it. This is what stops the pipeline buying the
    same discovery every cycle for as long as the item exists.
-9b. **`blocked` and `void` are different states and must not share one.**
+9b. <a id="impl-9b"></a>**`blocked` and `void` are different states and must not share one.**
    This is the requirement most likely to be read as pedantry and collapsed
    into "an item that can't proceed". Do not.
    - **`blocked`** — the work is real, something is in the way *for now* (an
@@ -575,7 +575,7 @@
    evidence that should have shut the item forever (*the work is done*) was
    the very evidence that reopened it. If a state can be cleared by the same
    fact that ought to make it permanent, it is the wrong state.
-9c. **A signal is a failure with a record.** The Script traps `TERM`, `INT`
+9c. <a id="impl-9c"></a>**A signal is a failure with a record.** The Script traps `TERM`, `INT`
    and `HUP` from the moment its cleanup trap is armed. The kills that reach
    it are real and routine — a peer taking over a stale lock TERMs the whole
    process group (requirement 1), an operator stops a container, a `--once`
@@ -605,7 +605,7 @@
    pid/name pair is advertised only while a stage is in flight. A signal
    landing during cleanup itself must not re-enter the handler.
    `review-cycle.sh` carries the same discipline as R7a of its own spec.
-9d. **Visible attribution.** Every pull-request or issue comment this system
+9d. <a id="impl-9d"></a>**Visible attribution.** Every pull-request or issue comment this system
    posts — from `agent-cycle.sh` directly, and from the Implementer, Reviewer,
    Enabler and Refiner — opens with a leading bold line naming the Actor that
    wrote it and the node it ran on:
@@ -638,7 +638,7 @@
    runtime input's `node` for the Enabler and the Refiner, each of which
    already received it). Regression-tested by
    `test/comment-identity.test.sh`.
-9e. **Salvage before discard.** Before requirement 9's failure path fires on
+9e. <a id="impl-9e"></a>**Salvage before discard.** Before requirement 9's failure path fires on
    an unparseable final message — the Co-Ordinator, Implementer and Reviewer
    stages here, and requirement 37's Enabler engagement — the Script makes
    one bounded resume attempt, provided the failed run actually left a
@@ -693,7 +693,7 @@
    wrapped wrong. A discard should cost a retry only when a stage genuinely
    produced nothing usable, not when the parser of the day could not yet see
    what it produced.
-9f. **`needs-refinement` is the Implementer's own escape hatch, and a third
+9f. <a id="impl-9f"></a>**`needs-refinement` is the Implementer's own escape hatch, and a third
    state alongside `blocked` and `void` (extending requirement 9b).** A stage
    that ran to completion and reported `{"status": "needs-refinement", …}`
    (requirement 27) found real work whose *specification* — not the world
@@ -730,7 +730,7 @@
    Co-Ordinator pasting a specification the Implementer has already found
    wanting into a future work order, whether or not the label removal itself
    succeeded.
-9g. **A stage killed abruptly states, in its own comment, whether it
+9g. <a id="impl-9g"></a>**A stage killed abruptly states, in its own comment, whether it
    pushed.** Requirement 9's stage-failure comment, for every detail branch
    where the stage actually launched and so could have posted something
    before it stopped — the inactivity watchdog (`rc` 124, `stage_kill_reason`
@@ -782,7 +782,7 @@
    substantive comment describing work that did not exist. Any stage that
    can comment on a pull request before it pushes, stopped abruptly by any
    means, can produce the same gap.
-10. **Usage-limit detection.** Two sources, and the structured one is
+10. <a id="impl-10"></a>**Usage-limit detection.** Two sources, and the structured one is
     preferred wherever it exists. When a stage was stopped because its stream
     reported the account `rejected` (requirement 4e), the `limit-hit` is
     derived from that `rate_limit_info` by `limit_decide_structured`: it
@@ -831,12 +831,12 @@
     but nothing inside a cycle can shorten it, because 2.1 stands the cycle
     down before any stage runs. Lifting it early is `--clear-limit`'s job and
     only `--clear-limit`'s.
-11. **Cleanup.** Always: delete the cycle's workspace, engage the Enabler if
+11. <a id="impl-11"></a>**Cleanup.** Always: delete the cycle's workspace, engage the Enabler if
     this cycle should (requirement 35), log the schedule slots this cycle's
     own run overlapped, if any (requirement 11a), write a `cycle-end` event,
     release the lock. Tee each stage's stdout/stderr to
     `state_dir/cycles/<cycle-id>/` for debugging.
-11a. **Overrun-slot skips** (agent-ops#1287). supercronic will not start a job
+11a. <a id="impl-11a"></a>**Overrun-slot skips** (agent-ops#1287). supercronic will not start a job
     while the previous run of that job is still running: it logs the drop
     ("not starting: job is still running since … (…elapsed)") to the
     container log and nothing else records it, so a cycle that runs long
@@ -849,7 +849,7 @@
     all, so nothing else ever gets the chance to log it. At cleanup
     (requirement 11), before the lock releases and only for a cycle that
     actually acquired the lock *and* is the cron-fired original — its chain
-    depth is 1 (requirement 39) and none of `--once`, `--dry-run` or
+    depth is 1 (requirement 67) and none of `--once`, `--dry-run` or
     `--wake-poll` was given — the Script computes which of its own
     schedule's slots fell strictly inside its own run — from its own start
     (`cycle_started_at`) and its own end, its own already-defaulted
@@ -886,7 +886,7 @@
 
     Holding the lock alone would not make either base minute trustworthy:
     only the cron-fired original *is* supercronic's running job. A chained
-    continuation (requirement 39) is spawned detached and disowned and its
+    continuation (requirement 67) is spawned detached and disowned and its
     cron-fired parent then exits, ending supercronic's job, so the slots
     inside a chained cycle's run are not dropped at all — they fire, contend
     for the lock, and are already recorded by the contending tick as
@@ -947,7 +947,7 @@
     a read that fails outright prints `overrun:  unreadable — this node's log
     could not be read` and reports a `guard-degraded` warning on stderr
     rather than a zero nobody counted.
-12. **Flags.** `--dry-run` (run through step 5 then stop: prints the work
+12. <a id="impl-12"></a>**Flags.** `--dry-run` (run through step 5 then stop: prints the work
     order, launches no Implementer), `--once` (one verbose cycle in the
     foreground), `--repo <slug>` (restrict selection, for testing),
     `-h`/`--help` (print the usage text and exit), plus the
@@ -982,12 +982,12 @@
     one. Neither takes `--this-node`: the kill switch has no node-scoped form,
     since a node-scoped merge-autonomy override would contradict the
     fleet-wide identity a single Approver App holds.
-13. The Script must pass `shellcheck` and must set its own `PATH` explicitly
+13. <a id="impl-13"></a>The Script must pass `shellcheck` and must set its own `PATH` explicitly
     (cron's environment is minimal), covering `claude`, `gh`, `git`, `jq`.
     When provisioning a host, prove that a cron-style invocation can resolve
     `claude` by running it from a minimal environment (for example with a
     sanitized `PATH` and `HOME`) before relying on scheduled runs.
-39. **Finish-then-continue** (issue #248): a cycle that wins a claim and
+67. <a id="impl-67"></a>**Finish-then-continue** (issue #248): a cycle that wins a claim and
     launches the Implementer may, once it has fully ended, launch another
     cycle immediately rather than leave the next one to the next cron
     firing — `lib/chain.sh`. Two conditions, both cheap, both judged from
@@ -1053,7 +1053,7 @@
     9c's handler exists to catch, and requirement 1's stale-lock takeover
     would reach it only through the `KILL` that follows its ignored `TERM`
     — no `attempt-failed`, no `cycle-end`, no claim released.
-39c. **A pending image roll overrides the chain, and widens the gap at every
+68. <a id="impl-68"></a>**A pending image roll overrides the chain, and widens the gap at every
     clean cycle-end, not only a chaining one** (agent-ops#1096, widened by
     agent-ops#1103). This covers two separable jobs, not one: cancelling a
     chain this cycle would otherwise take, and widening the gap a poll needs
@@ -1142,7 +1142,7 @@
     The result is the bound the hook's own header now states: one cycle's
     length for a node that is merely busy, and `lock_stale_after` only for
     one that is actually wedged and so never reaches this check at all.
-17d. **Race-loss observability**: how many candidates a cycle lost to a peer
+17d. <a id="impl-17d"></a>**Race-loss observability**: how many candidates a cycle lost to a peer
     genuinely holding the item (17a's `cause: "held"`, as opposed to
     `"unreachable"`) before it won its own claim, or — on the cycle that
     exhausts every candidate — before it stood down. Carried as
@@ -1168,7 +1168,7 @@
     finish-then-continue (39) both
     raise how often nodes contend for the same item, which is why this
     became worth watching rather than left to a `claim-lost` grep.
-54. **Wake-poll: an event-driven wake between cron firings (D14, issue
+54. <a id="impl-54"></a>**Wake-poll: an event-driven wake between cron firings (D14, issue
     #613).** `scripts/wake-poll.sh`, on its own crontab line
     (`schedule.wake_poll_minutes`, default 2m — well under
     `cycle_interval_minutes`'s own 15m default), does one conditional GET
@@ -1319,7 +1319,7 @@
     `scripts/pickup-metrics.sh`'s contended-loss-per-selection ratio
     already counts.
 
-57. **Liveness: is supercronic still firing this node's jobs at all (issue
+57. <a id="impl-57"></a>**Liveness: is supercronic still firing this node's jobs at all (issue
     #608, Phase 2).** A dedicated crontab line, carrying no substitution
     token of its own (`deploy/docker/crontab.tmpl`), touches
     `state_dir/.node-alive` every minute — deliberately the cheapest thing
@@ -1337,7 +1337,7 @@
     `live: false` with a stated reason rather than a bare boolean when the
     marker has never been touched at all (a container in its first minute).
 
-58. **Readiness: could a cycle start now.** `lib/node-health.sh`'s
+58. <a id="impl-58"></a>**Readiness: could a cycle start now.** `lib/node-health.sh`'s
     `node_health_readiness` composes a `{ready, unmet}` verdict from facts
     `scripts/node-health.sh --ready` gathers, every unmet condition named
     by its own stable code rather than folded into a bare boolean:
@@ -1425,7 +1425,7 @@
     the forge by different routes, or the dishonesty just moves from the
     answer to the cache behind it.
 
-59. **Health: is this node doing its job over time, composed from named
+59. <a id="impl-59"></a>**Health: is this node doing its job over time, composed from named
     components, never restating liveness.** `lib/node-health.sh`'s
     `node_health_health` folds exactly two named components —
     `outbound` (`lib/fleet.sh`'s `fleet_publication_status` over this

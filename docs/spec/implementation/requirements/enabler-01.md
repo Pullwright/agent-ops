@@ -2,7 +2,7 @@
 
 ### The Enabler
 
-35. **Engagement.** At the end of a cycle — from the cleanup of requirement 11,
+35. <a id="impl-35"></a>**Engagement.** At the end of a cycle — from the cleanup of requirement 11,
     after the workspace is deleted and before the `cycle-end` event, with the
     lock still held — the Script engages the Enabler over the eligible items of
     requirement 35a: a headless invocation (model `enabler_model`,
@@ -46,7 +46,7 @@
     error if the combination occurs — an unassigned escalation would not be
     excluded by requirement 16.4 and the pipeline could go on to select it as
     its own work, so the failure must be loud rather than a quiet skip.
-35a. **Eligibility.** An item is eligible for the Enabler iff **all** of:
+35a. <a id="impl-35a"></a>**Eligibility.** An item is eligible for the Enabler iff **all** of:
     1. it is **blocked** (requirement 34) — call that latest `attempt-failed`
        event *B*;
     2. it is **not void** (requirement 34c). An item with no work needs no
@@ -189,7 +189,7 @@
     than a second reduction of the same two extracts, always
     succeeds, and yields `[]` for a log it cannot read or a threshold it cannot
     parse — an unreadable setting is not a licence to spend.
-35b. **The eligible set is part of the no-op fingerprint** (requirement 3b),
+35b. <a id="impl-35b"></a>**The eligible set is part of the no-op fingerprint** (requirement 3b),
     projected to `repo|item|reason`, alongside the Enabler's config and a hash
     of `prompts/enabler.md` and any configured `prompt_overrides.enabler`
     files (requirement 4a). It is the third array whose candidacy turns on
@@ -209,7 +209,7 @@
     overrides) busts the fingerprint but does not re-open items already
     examined. `enabler_recheck_hours` is the
     lever for "look at this one again"; a prompt edit is not.
-35c. **One engagement per item, fleet-wide.** Before engaging, the Script takes
+35c. <a id="impl-35c"></a>**One engagement per item, fleet-wide.** Before engaging, the Script takes
     a per-item file claim through `lib/claim.sh` under the pseudo-slug
     `enabler`, keyed `<repo>__<item>__<epoch of B>` (plus `__verify<issue>` for
     an `issue-closed` verification, which needs a key the earlier examination's
@@ -234,7 +234,7 @@
     `config.json` configures, so an Enabler claim can never inflate
     back-pressure (requirement 2.2) with work that raises no PR; and `gc` sweeps
     any directory it finds.
-35d. **Refinement items are capped per engagement.** Before the claims of 35c,
+35d. <a id="impl-35d"></a>**Refinement items are capped per engagement.** Before the claims of 35c,
     the eligible set is reduced to every ordinary blocked item plus at most
     `refinement_max_per_engagement` items of the refinement class, oldest block
     first — deterministically, so every node in the fleet reduces to the same set
@@ -251,7 +251,7 @@
     engagement that spent itself on old vagueness would make the pipeline slower
     at exactly the thing the Enabler exists for. Items over the cap are not lost:
     they are blocked, and they arrive at a later engagement.
-35e. **A stale merge-conflict/abandoned-draft ref, or a retired tech-debt
+35e. <a id="impl-35e"></a>**A stale merge-conflict/abandoned-draft ref, or a retired tech-debt
     register ref, is dropped before it reaches eligibility (issue #238; widened
     by issue #1699).** `merge-conflicts` and `abandoned-drafts`
     ids are scoped to the head SHA they were detected at (requirements 3e, 3g)
@@ -307,7 +307,7 @@
     the eligible set unfiltered — this
     is a cost saving, never the correctness gate; the Enabler still voids a stale
     item it does reach, exactly as it always has.
-36. **The Enabler's powers.** It may read anything through `gh` — issues, PRs,
+36. <a id="impl-36"></a>**The Enabler's powers.** It may read anything through `gh` — issues, PRs,
     reviews, checks, runs, alerts, file contents — and reads an issue or PR as
     its **whole thread** (requirement 14a's rule, for the same reason and with
     more at stake: the material that decides these items is routinely a comment
@@ -354,7 +354,7 @@
     }
     ```
     with one entry per item it was given.
-36a. **What the Script does with a verdict.** Per examined item, and only for
+36a. <a id="impl-36a"></a>**What the Script does with a verdict.** Per examined item, and only for
     items *this cycle claimed* — a verdict naming anything else is logged as a
     `warning` and ignored, since the model cannot introduce work and an item a
     peer holds is the peer's to answer:
@@ -534,7 +534,7 @@
     clause and the human corroboration of a void for three pull-request
     shapes are reachable. It is written there, in full and once, and this
     list is unchanged by it at every other rung.
-36b. **The refinement duty.** For an item carrying `kind: "needs-refinement"`
+36b. <a id="impl-36b"></a>**The refinement duty.** For an item carrying `kind: "needs-refinement"`
     (requirement 34e) the Enabler reads the item and its whole context and then:
 
     - **Specifies it**, where the work can be specified without deciding
@@ -757,7 +757,7 @@
     that reason exists only because a human acted on an escalation about this
     very item (requirement 35a), so the refinement it authorises is the first
     since they did.
-36c. **`file_debt`/`file_issue` (agent-ops#631): filing what the Enabler
+36c. <a id="impl-36c"></a>**`file_debt`/`file_issue` (agent-ops#631): filing what the Enabler
     noticed, without it writing anything itself.** Orthogonal to `verdict` —
     an item's `examined` entry may carry either, both, or neither alongside
     `unblocked`, `still-blocked`, `escalate` or `void` alike, since what it
@@ -811,7 +811,7 @@
     Neither call changes `verdict` or the item's `enabler-examined` outcome —
     a failed filing attempt costs a `warning`, never a reason to treat the
     item itself as unresolved.
-36d. **`decide-tactical` (D18, agent-ops#936).** The third rung of
+36d. <a id="impl-36d"></a>**`decide-tactical` (D18, agent-ops#936).** The third rung of
     `escalation_autonomy`, including everything `adjudicate-first` reaches
     (requirement 36b's own paragraph of the same name) and widening it: at
     `decide-tactical`, before the Script files the escalation issue for **any**
@@ -1023,7 +1023,7 @@
     genuine two-models-disagree loop `adjudicate-first`'s own bound exists to
     stop, one rung wider; a *fresh* reason still earns its own pass, up to
     the cap.
-36e. **The decision log and veto (D18, agent-ops#937).** A `decide-tactical`
+36e. <a id="impl-36e"></a>**The decision log and veto (D18, agent-ops#937).** A `decide-tactical`
     decision is taken on the pipeline's own authority (requirement 36d) rather
     than paged to a human before the fact — the round-trip agent-ops#627
     exists to remove — but it must not thereby become invisible or

@@ -2,7 +2,7 @@
 
 ### The Script — requirements, continued (part 4 of 10; 2.5–2.5: The fleet's shared memory…)
 
-2.5. **The fleet's shared memory.** The pipelines' memory — `state_dir` — is
+2.5. <a id="impl-2-5"></a>**The fleet's shared memory.** The pipelines' memory — `state_dir` — is
    published between nodes through the private repository named by
    `state_repo`, by `scripts/state-sync.sh`, one branch per node. Every mode
    of that script is a silent no-op when `state_repo` is unset, so a
@@ -10,7 +10,7 @@
 
    **What replicates.** Everything under `state_dir` except the live locks
    (`lock.json`, `review-lock.json`, `dashboard.lck`), the roll-pending
-   marker (`roll-pending.json`, requirement 39c (Finish-then-continue), agent-ops#1096), the
+   marker (`roll-pending.json`, requirement 68 (Finish-then-continue), agent-ops#1096), the
    dashboard's own
    machinery (`dashboard/`, `dashboard.log`, `dashboard-server.log`,
    `.dashboard-github.json`, `.dashboard-claims.json`,
@@ -127,7 +127,7 @@
 
    A bearer secret carried in a webhook URL's own path
    (`https://hooks.slack.com/services/T…/B…/…`, the configured
-   `notify_webhook_url`/`escalation_webhook_url`, requirement 2m) has no
+   `notify_webhook_url`/`escalation_webhook_url`, acceptance check 2m) has no
    shape the fixed rules above can match (agent-ops#1721). Before the pass
    runs, `state-sync.sh` resolves that value the same way `agent-cycle.sh`
    and `scripts/publish-dashboard.sh` do (`notify_resolve_webhook_url`,
@@ -678,7 +678,7 @@
    of it — renamed first to a `.agent-ops-sweep.<pid>.<name>` tombstone,
    with `TERM`, `INT` and `HUP` ignored for the duration, then removed — and
    puts `TMPDIR` back, so that a process started from that cleanup (the
-   chained cycle of requirement 39) inherits a directory that exists. The trap is armed, on an empty name, before the
+   chained cycle of requirement 67) inherits a directory that exists. The trap is armed, on an empty name, before the
    directory is made; a process that cannot make one (a full or unwritable
    `$TMPDIR`) says so on stderr and exits 1 rather than aim its writes
    elsewhere. bash runs the `EXIT` trap on `exit`, on `set -e` and on an

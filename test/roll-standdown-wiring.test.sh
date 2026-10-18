@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # test/roll-standdown-wiring.test.sh — regression test for the post-
-# `acquire_lock` roll-pending block in agent-cycle.sh (requirement 39c
+# `acquire_lock` roll-pending block in agent-cycle.sh (requirement 68
 # amendment, agent-ops#1102 option 2): the other half of #1096/#1100/#1102's
 # own marker handling, closing the one case `chain_clear_landed_roll_pending`
 # deliberately leaves open — a cycle that reacquires `lock.json` under a

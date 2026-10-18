@@ -15,12 +15,12 @@ them. Changing a configured value — a threshold, a cadence, an autonomy rung,
 a repository added or removed — is a configuration change, and must never
 oblige anyone to edit a test.
 
-1. `shellcheck agent-cycle.sh scripts/*.sh lib/*.sh` is clean.
-1a. **The role guard holds in both directions.** `test/role.test.sh` passes:
+1. <a id="impl-ac-1"></a>`shellcheck agent-cycle.sh scripts/*.sh lib/*.sh` is clean.
+1a. <a id="impl-ac-1a"></a>**The role guard holds in both directions.** `test/role.test.sh` passes:
    every value that is not `active` stands the node down with a cron-log line,
    exit 0 and nothing written under `state_dir`; `--dry-run`, `--once` and the
    switch commands run regardless of the role.
-1b. **The image builds and carries the whole toolchain, on both
+1b. <a id="impl-ac-1b"></a>**The image builds and carries the whole toolchain, on both
    architectures.** `docker build -f deploy/docker/Dockerfile -t agent-ops .`
    succeeds, and inside it, as user `agent`: `bash`, `git`, `jq`, `curl`,
    `python3`, `perl`, `flock`, `sha256sum`, `rsync`, `node`, `claude`, `gh`
@@ -45,7 +45,7 @@ oblige anyone to edit a test.
    tested path — so a change that breaks either architecture's image cannot be
    merged, and it is the only place the `test/` suite runs in CI. On `main` the
    workflow publishes both architectures as one manifest list per tag.
-1b-i. **A documentation-only change builds nothing, and everything else
+1b-i. <a id="impl-ac-1b-i"></a>**A documentation-only change builds nothing, and everything else
    builds.** `test/is-docs-only.test.sh` passes: `scripts/is-docs-only.sh`
    calls a change documentation-only when every path in it is under `docs/`
    — except `docs/STANDING-DECISIONS.md` and every `docs/*-SPEC.md`, which the
@@ -101,7 +101,7 @@ oblige anyone to edit a test.
    `needs`, its `build` jobs now being successful on a documentation-only
    change rather than skipped. A documentation-only merge to `main` publishes
    no image, and no tag carries that commit's SHA.
-1c. **The stack comes up from nothing and is idempotent.** With a `.env` copied
+1c. <a id="impl-ac-1c"></a>**The stack comes up from nothing and is idempotent.** With a `.env` copied
    from `.env.example` and `COMPOSE_PROFILES=local`, `docker compose up -d` in
    `deploy/docker/` starts `scheduler` and `dashboard-local` on fresh volumes;
    `curl http://127.0.0.1:$DASHBOARD_PORT/` and `/data.js` return 200; the
@@ -115,7 +115,7 @@ oblige anyone to edit a test.
    with host IP `127.0.0.1` and no `network_mode`, so the same curl from
    another machine on the host's network is refused. Check 1c-ii is the same
    property guarded on every commit, where this one needs a node.
-1c-i. **A roll waits for a cycle.** `test/watchtower-pre-update.test.sh`
+1c-i. <a id="impl-ac-1c-i"></a>**A roll waits for a cycle.** `test/watchtower-pre-update.test.sh`
    passes: `deploy/docker/watchtower-pre-update.sh` exits 75 while, inside
    that pipeline's `lock_stale_after`, either `lock.json` or
    `review-lock.json` names a live process in the hook's own container — or
@@ -133,7 +133,7 @@ oblige anyone to edit a test.
    On a live node: `docker compose exec scheduler
    /app/deploy/docker/watchtower-pre-update.sh` echoes its finding and exits
    0 when idle, 75 during a cycle. The same suite also pins the
-   `roll-pending` override (requirement 39c (Finish-then-continue), agent-ops#1096, scoped by
+   `roll-pending` override (requirement 68 (Finish-then-continue), agent-ops#1096, scoped by
    agent-ops#1102): a valid, unexpired `$state_dir/roll-pending.json` makes
    the hook exit 0 despite a live `lock.json` naming a live process in the
    hook's own container — but never despite a live `review-lock.json`, which
@@ -153,7 +153,7 @@ oblige anyone to edit a test.
    when it began; and the same marker past the ten-minute bound, one whose
    `at` will not parse, one holding any other status, junk, and no marker at
    all each leave the hook exactly where it was.
-1c-ii. **The dashboard is published to the host's loopback and to no network.**
+1c-ii. <a id="impl-ac-1c-ii"></a>**The dashboard is published to the host's loopback and to no network.**
    `test/dashboard-exposure.test.sh` passes: in `deploy/docker/compose.yaml`
    every port `dashboard-local` publishes is scoped to `127.0.0.1`, the mapping
    is `127.0.0.1:${DASHBOARD_PORT:-8787}:8787` so `DASHBOARD_PORT` moves only
@@ -172,7 +172,7 @@ oblige anyone to edit a test.
    The socket-level half of the property — that a request from another machine
    is refused — is check 1c, which needs the stack up; this check runs in the
    image, where there is no Docker.
-1c-iii. **A node can tell when its compose.yaml has fallen behind.**
+1c-iii. <a id="impl-ac-1c-iii"></a>**A node can tell when its compose.yaml has fallen behind.**
    `test/compose-drift.test.sh` passes: identical copies read `in-sync` and
    so do copies differing only in comments and blank lines; a material
    difference reads `drifted` with a positive `diff_lines`; a missing mount
@@ -184,7 +184,7 @@ oblige anyone to edit a test.
    the check is armed. The file-level assertions of 1c-i pin the
    repository's copy and prove nothing about any node's; this check is what
    covers the gap they leave.
-1c-iv. **A node can tell when it has fallen behind the newest published
+1c-iv. <a id="impl-ac-1c-iv"></a>**A node can tell when it has fallen behind the newest published
    image.** `test/image-drift.test.sh` passes: a checkout (not a CI-stamped
    image) reads `null`; a matching commit reads `current`; a differing one
    reads `behind`, carrying the registry's commit and the image's creation
@@ -206,7 +206,7 @@ oblige anyone to edit a test.
    not reach exits 2; a node not running a CI-stamped image at all is not a
    failure; and no `compose.yaml` in the stack directory, or a scheduler
    that cannot be exec'd into, is exit 2, never a clean pass.
-1c-v. **The tailnet sidecar refuses to start without `TS_AUTHKEY`, and does
+1c-v. <a id="impl-ac-1c-v"></a>**The tailnet sidecar refuses to start without `TS_AUTHKEY`, and does
    not retry forever over one — and neither does the dashboard sharing its
    namespace.** On a live node with the `tailnet` profile selected and
    `TS_AUTHKEY` unset, `docker compose up -d` exits non-zero — Docker reports
@@ -248,7 +248,7 @@ oblige anyone to edit a test.
    `ockham-container` with `TS_AUTHKEY` genuinely absent.
    With `TS_AUTHKEY` set, the same `up -d` starts both containers normally and
    `docker compose exec tailscale tailscale status` succeeds.
-1c-vi. **A node applies its own merged compose.yaml, and only when it is
+1c-vi. <a id="impl-ac-1c-vi"></a>**A node applies its own merged compose.yaml, and only when it is
    safe to.** `test/compose-reconcile.test.sh` passes against a stubbed
    `docker` that creates nothing: identical copies read `in-sync`, run no
    docker command and log nothing; drift with every required `${VAR}` present
@@ -331,7 +331,7 @@ oblige anyone to edit a test.
    anchor and no secret of its own — the lines through which the reconciler is
    armed and bounded, the way 1c-iii pins the mount line that arms the drift
    check.
-1d. **State replicates per node, and comes back as peers.**
+1d. <a id="impl-ac-1d"></a>**State replicates per node, and comes back as peers.**
    `test/state-sync.test.sh`
    passes: a push carries the logs, cycles, reviews and switch but not the
    locks or the dashboard, and — of the `gh` transport shim's own state
@@ -405,7 +405,7 @@ oblige anyone to edit a test.
    repair rather than the caller, leaving the file and no working copy
    behind; and the swap keeps a file that grew during the repair, discarding
    the repaired copy, while replacing one whose size is unchanged.
-1e. **The fleet flags reach every node.** `test/toggle.test.sh` passes,
+1e. <a id="impl-ac-1e"></a>**The fleet flags reach every node.** `test/toggle.test.sh` passes,
    including its fleet section against the contents-API stub (`TOGGLE_GH`):
    a flag one node writes reads as disabled on another; an unreachable
    state repo falls back to the cached copy, and to enabled with none; a
@@ -484,7 +484,7 @@ oblige anyone to edit a test.
    which probes for itself and reads `unreachable`; and a memo entry that is
    empty, or that has vanished since it was written, falls through to a live
    fetch rather than being served as a confirmed answer.
-1e-i. **The drain is a mode on the same switch, and never loosens a stop
+1e-i. <a id="impl-ac-1e-i"></a>**The drain is a mode on the same switch, and never loosens a stop
    (requirements 2.3d, 2.2c, 2.9).** `test/toggle.test.sh` passes: at the
    library level, `toggle_disable` defaults the record's `mode` to `"stop"`
    and writes `"drain"` when asked, `toggle_mode` reads either back and
@@ -527,7 +527,7 @@ oblige anyone to edit a test.
    spliced line in the union does not hide a matching event; and a read that
    fails outright answers "not logged" and reports itself through
    `guard_warn`.
-1f. **A provider-qualified model id resolves; an unsupported one fails fast
+1f. <a id="impl-ac-1f"></a>**A provider-qualified model id resolves; an unsupported one fails fast
    (requirement 1a).** `test/model-id.test.sh` passes: a bare id and its
    `anthropic/`-qualified form resolve to the same value; an empty value (the
    "disable this stage" convention) passes through unresolved; a qualifier
@@ -545,7 +545,7 @@ oblige anyone to edit a test.
    since the three cycle scripts call this under `set -e` and a disabled
    stage must not abort startup; and a rejected qualifier fails and records
    nothing.
-1g. **Every shell script in the repository is shellcheck-clean, and a caller
+1g. <a id="impl-ac-1g"></a>**Every shell script in the repository is shellcheck-clean, and a caller
    may lint a named subset instead of the whole tree.** `./scripts/lint-shell.sh`
    exits 0. Invoked with no arguments, it discovers the file set — every
    tracked `*.sh`, plus every tracked file whose first line is a sh or bash
@@ -572,7 +572,7 @@ oblige anyone to edit a test.
    `.github/workflows/shellcheck.yml` runs the same script on every pull
    request against a pinned shellcheck (component 10).
    `test/lint-shell.test.sh` passes.
-1g-i. **A script too large to lint in the memory available is degraded, or —
+1g-i. <a id="impl-ac-1g-i"></a>**A script too large to lint in the memory available is degraded, or —
    where not even that fits — skipped, and never allowed to kill the cycle;
    and this is judged against every file, not only ones above some fixed line
    count (agent-ops#1305).** What "too large" measures is the **union `-x` actually
@@ -666,7 +666,7 @@ oblige anyone to edit a test.
    coverage does not quietly track how much memory a runner happens to have,
    which is also what keeps the three suppressed checks checked in full on
    every pull request.
-1g-ii. **Every GraphQL document this repository sends still validates
+1g-ii. <a id="impl-ac-1g-ii"></a>**Every GraphQL document this repository sends still validates
    against GitHub's live schema, checked nightly rather than at merge time.**
    `.github/workflows/graphql-drift.yml` runs
    `./scripts/check-graphql-drift.sh` on a daily schedule, and exit 0 is every

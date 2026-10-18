@@ -304,7 +304,7 @@ require_writable "$state_dir" "the state volume"
 require_writable "$workspace_root" "the workspaces volume"
 mkdir -p "$state_dir/cycles" "$state_dir/reviews"
 
-# --- The schedule (design decision D5: per-node cycle offsets) ---
+# --- The schedule (per-node cycle offsets) ---
 # Rendered over the baked crontab so several active nodes spread across the
 # hour instead of all firing together on one shared account. /app is this
 # container's own copy of the image, owned by agent, so writing there

@@ -161,7 +161,7 @@ fault_ok="$(refinement_traceability_fault "$cand_ok" "$refinements")"
 assert_empty "a work order that really does carry its own refinement comment passes" \
   "$fault_ok"
 
-# The comment may legitimately land in `acceptance` alone (requirement 17b
+# The comment may legitimately land in `acceptance` alone (requirement 64
 # says "set acceptance from it") rather than duplicated into `context` too.
 reset_gh_calls
 cand_ok_acceptance='{"repo":"o/r","item":"571",

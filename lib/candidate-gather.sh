@@ -156,7 +156,7 @@ fi
 latest_issues_excluded_json="$(latest_issues_excluded "$union_log")"
 # This cycle's own resolved report_directory per repository (its override in
 # repository_review.repos, or repository_review.defaults' otherwise,
-# requirement 342) — or, absent from repository_review entirely, the same
+# issue #342) — or, absent from repository_review entirely, the same
 # ultimate fallback review-cycle.sh itself falls back to (issue #761).
 # Computed once, outside the per-repo loop below, the same way
 # lib/eligibility.sh's own refiner_repository_review_repos_json is: every
@@ -1474,7 +1474,7 @@ if (( void_retire_after_days > 0 )); then
   #
   # This repo's own resolved report_directory (its override in
   # repository_review.repos, or repository_review.defaults' otherwise,
-  # requirement 342) — or, absent from repository_review entirely, the same
+  # issue #342) — or, absent from repository_review entirely, the same
   # ultimate fallback review-cycle.sh itself falls back to (issue #761).
   # Computed once, outside the loop, the same way lib/eligibility.sh's own
   # `refiner_repository_review_repos_json` is: every repository's resolved

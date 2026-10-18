@@ -2,7 +2,7 @@
 
 ### The Implementer
 
-21. Operates as a single non-interactive `claude -p` invocation with no
+21. <a id="impl-21"></a>Operates as a single non-interactive `claude -p` invocation with no
     resumption: once it emits a final message with no further tool calls,
     the process exits for good — nothing wakes it later. It must wait for
     long-running commands (dependency installs, builds, test suites)
@@ -10,13 +10,13 @@
     rather than ending its turn expecting an external notification when
     they finish. A command too slow to wait out within the stage timeout is
     grounds for `"status": "blocked"`, not an early, hopeful end of turn.
-22. Runs inside the cycle's clone. First reads the repo's `AGENTS.md` — or
+22. <a id="impl-22"></a>Runs inside the cycle's clone. First reads the repo's `AGENTS.md` — or
     `CLAUDE.md`, for a repo that has not migrated; `CLAUDE.md` imports
     `AGENTS.md` where it has — and obeys it throughout. Checks out the branch
     named in the work order —
     already created on origin by the Script as the item's claim (requirement
     17a) — and never creates, renames, or deletes a branch of its own.
-23. **Makes the claim visible before implementing.** The branch is the
+23. <a id="impl-23"></a>**Makes the claim visible before implementing.** The branch is the
     lock, but humans read PRs, not refs: opens a draft PR immediately,
     labelled with the work order's `pr_label` — the value is guaranteed
     correct because the claim loop stamps it from `config.json`'s own
@@ -50,7 +50,7 @@
     the claim (and, once merged, the completion) is visible to any other cycle
     scanning PRs — there is no register entry and the review folder is not
     modified.
-23b. **Stamps an issue-sourced draft PR with a machine-readable marker naming
+23b. <a id="impl-23b"></a>**Stamps an issue-sourced draft PR with a machine-readable marker naming
     the issue it claims to close.** `<!-- agent-ops:closes-issue item=N -->`
     (`lib/pipeline-marker.sh`'s convention extended to this one new purpose:
     an invisible, greppable fact in the PR body), where `N` is the work
@@ -60,7 +60,7 @@
     defect requirement 25a exists to close (issue #240; PR #206 wrote
     "Implements #198" and #198 stayed open three days after its own fix
     merged).
-23a. **Pushes at checkpoints, not only at the claim and at the end.** Once the
+23a. <a id="impl-23a"></a>**Pushes at checkpoints, not only at the claim and at the end.** Once the
     draft PR exists, the Implementer commits and pushes again at each
     meaningful checkpoint — a passing test, a completed file, a finished
     logical unit — rather than holding every later change in the working tree
@@ -78,10 +78,10 @@
     backstop kill, so a run stopped mid verification — after real work but
     before this stage reached its own next checkpoint — still leaves that
     work recoverable.
-24. Implements the item, then runs the same checks the repo's CI runs (as
+24. <a id="impl-24"></a>Implements the item, then runs the same checks the repo's CI runs (as
     documented in that repo's `AGENTS.md`/`CLAUDE.md` and workflow files) and
     fixes anything they surface.
-24a. **Checks the preview deployment its own pull request produced, for a
+24a. <a id="impl-24a"></a>**Checks the preview deployment its own pull request produced, for a
     repository whose config declares one (D19 Phase 1, agent-ops#586).** Which
     provider, if any, applies is stated in that repository's own `preview`
     config block (`repos[].preview`, requirement 1b's schema) — never
@@ -162,7 +162,7 @@
     exports for the stages, and `test/preview-deploy.test.sh` asserts the export
     and both prompts' use of it against each other, so the path cannot drift
     between the three (requirement 34a).
-24b. **Filing deferred work inline, instead of losing it to scope creep or a
+24b. <a id="impl-24b"></a>**Filing deferred work inline, instead of losing it to scope creep or a
     separate round trip (agent-ops#631; the issue-backed convention, D15 as
     revised, #869/#875/#879).** Adjacent cleanup the Implementer is tempted to
     do but must keep out of this pull request (requirement 24's own scope
@@ -189,7 +189,7 @@
     complexity grading treats it accordingly (issue-only stays `low`). This
     is a **note**, never the fix: the actual work for a filed issue is left
     for a future item to pick up on its own merits.
-24c. **A large test suite is run in pieces, never as one invocation, when the
+24c. <a id="impl-24c"></a>**A large test suite is run in pieces, never as one invocation, when the
     Implementer's own checks are this repo's suite too (agent-ops#962,
     extending 29a's fix to this stage).** Requirement 21's ceiling binds the
     Implementer exactly as it binds the Reviewer, and requirement 24's own
@@ -204,7 +204,7 @@
     group's own `PASS`/`FAIL` lines before the next group runs — the same
     discipline requirement 29a already requires of the Reviewer over the
     same suite.
-25. Updates the originating record: an issue — tech-debt or otherwise —
+25. <a id="impl-25"></a>Updates the originating record: an issue — tech-debt or otherwise —
     linked with a real GitHub closing keyword (`Closes`/`Fixes`/`Resolves
     #N`) naming the same `N` as requirement 23b's marker; implementation-plan
     task marked done.
@@ -262,7 +262,7 @@
     definition (a security fix usually is, under `### Security`), or `None.`
     when it is not — never into `CHANGELOG.md` (requirement 25c).
 
-25a. **The closing keyword requirement 25 asks for is enforced deterministically
+25a. <a id="impl-25a"></a>**The closing keyword requirement 25 asks for is enforced deterministically
     — by CI and by the Script — not by trusting the prompt.**
     `.github/workflows/closing-keyword.yml` runs
     `scripts/check-closing-keyword.sh` against the PR body and head branch
@@ -447,7 +447,7 @@
     from its own CI workflow *and* the script-side gate that also covers it
     a second time, `poetic` and `poetic-fiddle` from the script-side gate
     alone. Acceptance check 8p is how the gate itself is verified.
-25b. **A `pw::type:tech-debt` issue closed some other way still gets an
+25b. <a id="impl-25b"></a>**A `pw::type:tech-debt` issue closed some other way still gets an
     advisory check — never a gate (issue #877; D15 as revised,
     #869/#875/#879's "close-guard").** Requirement 25's closing keyword and
     `td-record` are written only when the resolving change is a pull
@@ -509,15 +509,15 @@
     consults it. A red run means the guard itself could not operate — `gh`
     unreachable, a malformed event payload — never that the close was
     irregular.
-56. **A pull request that deletes, or edits away, the workflow job producing
+56. <a id="impl-56"></a>**A pull request that deletes, or edits away, the workflow job producing
     a required status check names the ruleset edit as an owner-act
     prerequisite deterministically, at pull-request time — not only once a
     downstream item happens to block on it (issue #1543).** The live
-    instance is requirement 55's own: PR #1503 deleted
+    instance is requirement 66's own: PR #1503 deleted
     `.github/workflows/tech-debt-register.yml`, whose `register` job ruleset
     18857310 required, and nothing named the ruleset edit as a prerequisite
     until #1529 happened to block on the merge 6+ hours later. This is the
-    earlier of the issue's two seams; requirement 55 is the backstop that
+    earlier of the issue's two seams; requirement 66 is the backstop that
     catches the same fact again at the Reviewer's `ready` handoff, for a
     finding this one missed or a workflow edited after the Implementer's own
     pass.
@@ -558,7 +558,7 @@
     issue first. A ruleset, changed-file list or file content this cannot
     read is a fact about this node or GitHub's availability, not the pull
     request — `required_check_preflight_findings` prints nothing rather than
-    guessing, the same non-blocking convention requirement 55's own backstop
+    guessing, the same non-blocking convention requirement 66's own backstop
     and `review_gate_security_alerts` already apply to an API they cannot
     ask — and an escalation that could not be filed warns and is retried the
     next time this runs, rather than failing the Implementer's own handoff.
@@ -585,7 +585,7 @@
     doing the ruleset edit early is harmless — a pull request that still
     carries the workflow keeps running it, only without gating — so the safe
     ordering (edit the ruleset, then merge) never wedges the repository.
-25c. **The changelog entry is a section of the pull-request description, and
+25c. <a id="impl-25c"></a>**The changelog entry is a section of the pull-request description, and
     its shape is checked deterministically (roadmap decision D27,
     agent-ops#1804).** A change records its changelog entry under a
     `## Changelog` heading in its own pull-request description: one or more
@@ -694,7 +694,7 @@
     from its own CI workflow *and* the script-side gate that also covers it a
     second time, `poetic` and `poetic-fiddle` from the script-side gate
     alone. Acceptance check 8k is how the gate itself is verified.
-25d. **`CHANGELOG.md` is assembled from merged pull-request descriptions,
+25d. <a id="impl-25d"></a>**`CHANGELOG.md` is assembled from merged pull-request descriptions,
     never hand-edited by the change itself (roadmap decision D27,
     agent-ops#1807).** `scripts/assemble-changelog.sh [--check]
     [--since <ref>] [<path>]` is the one place requirement 25c's descriptions
@@ -794,7 +794,7 @@
     `## [<version>]` headings and stay valid, because the release pull
     request that runs this script assembles first and renames
     `[Unreleased]` second — this script never touches a released section.
-25e. **A repository that cuts no releases still gets its `[Unreleased]`
+25e. <a id="impl-25e"></a>**A repository that cuts no releases still gets its `[Unreleased]`
     section rolled, on a schedule (agent-ops#1809).**
     `scripts/roll-changelog.sh [<owner/repo>]` is the scheduled roll
     requirement 25d's own text names for this repository: run weekly, plus
@@ -877,7 +877,7 @@
     ordinary roll's assemble-then-rename and marker advance, the fixed
     branch being updated rather than duplicated while its pull request is
     still open, and the merge-queue skip; must pass `shellcheck`.
-26. Verifies the PR via `gh pr view --json mergeable,mergeStateStatus`
+26. <a id="impl-26"></a>Verifies the PR via `gh pr view --json mergeable,mergeStateStatus`
     (against GitHub's view, not inferred locally) and resolves any conflict
     with the current default branch. Leaves the PR as a **draft** — the
     Reviewer flips it to ready. For the `review-feedback` and
@@ -888,7 +888,7 @@
     that fails, stops the push and reports `blocked` rather than risking a
     silent eviction. `abandoned-drafts`' push is exempt: its pull request is
     always a draft, which GitHub does not allow to be queued.
-26a. **Grades the complexity of the work, ex post, and labels the PR with
+26a. <a id="impl-26a"></a>**Grades the complexity of the work, ex post, and labels the PR with
     it.** After implementing, the Implementer grades the PR `low`, `medium`
     or `high` against a rubric anchored to observable features of the work,
     never to how difficult it felt — the PR that most needs a strong review
@@ -914,7 +914,7 @@
     authoritative carrier for this cycle's model choice (requirement 8a); the
     label is the durable mirror that survives for later finishing rounds and
     tells the Human Reviewer how carefully to read.
-26b. **May name labels for its own pull request (requirement 6c, issue
+26b. <a id="impl-26b"></a>**May name labels for its own pull request (requirement 6c, issue
     #714).** The summary's optional `labels` field
     (`[{name, colour?, description?}, …]`, requirement 27) is a suggestion,
     not a write: the Script mints and applies each accepted entry to the
@@ -925,7 +925,7 @@
     edit` calls — `labels` is descriptive only, and nothing in this pipeline
     may read one back to decide anything, exactly as requirement 6c's
     inertness invariant states.
-26c. **Re-verifies the PR description against the diff when resolving a
+26c. <a id="impl-26c"></a>**Re-verifies the PR description against the diff when resolving a
     `merge-conflicts` conflict changes the approach (issue #2486; PR #2453's
     own case).** Where reconciling the conflict is a mechanical rebase or
     merge that touches no described behaviour, the existing body still
@@ -945,7 +945,7 @@
     `squash_merge_commit_message: PR_BODY` (requirement 25), a body left
     stale here becomes a permanent misstatement in `main`'s own history, not
     merely a stale comment on GitHub.
-26d. **Re-verifies the PR description against the diff when a
+26d. <a id="impl-26d"></a>**Re-verifies the PR description against the diff when a
     `review-feedback`, `landing-refusals`, `dequeued` or `abandoned-drafts`
     round changes the approach (issues #2496, #2512, #2546).** The same
     staleness risk requirement 26c describes for `merge-conflicts` applies to
@@ -977,7 +977,7 @@
     with `squash_merge_commit_message: PR_BODY` (requirement 25), a body left
     stale here becomes a permanent misstatement in `main`'s own history, not
     merely a stale comment on GitHub.
-27. Ends with a single JSON object as its entire final message:
+27. <a id="impl-27"></a>Ends with a single JSON object as its entire final message:
     `{"status": "complete", "pr_url": …, "branch": …, "complexity": "low" | "medium" | "high", "labels": […, optional], "notes": …}`,
     `{"status": "blocked", "reason": …, "unblock_condition": …}`, or
     `{"status": "void", "reason": …, "evidence": …}`. The Implementer is the

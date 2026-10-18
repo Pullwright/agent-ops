@@ -596,7 +596,7 @@ assert_eq "  ... and nothing is logged for it" "" "$(events)"
 rc="$(run_case PR_LIST_JSON="$(jq -sc '.' <(
   pr_row 33 "https://github.com/acme/widgets/pull/33" "agent/890-33" "sha33" false "APPROVED" "x" "complexity:low" "$created_old"
 ))" STANDING_STATE_33="APPROVED" STANDING_AT_33="$recent_at" STANDING_COMMIT_33="sha33")"
-assert_eq "a standing APPROVED review means requirement 8u's business, not this trigger's" \
+assert_eq "a standing APPROVED review means acceptance check 8u's business, not this trigger's" \
   "0" "$(count "$tmp_dir/review-calls")"
 
 rc="$(run_case PR_LIST_JSON="$unreviewed_list" STANDING_STATE_30="RC1")"

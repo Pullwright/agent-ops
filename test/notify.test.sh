@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# test/notify.test.sh — regression test for requirement 2m (issue #1279):
+# test/notify.test.sh — regression test for acceptance check 2m (issue #1279):
 # the installation's one push-notification channel, lib/notify.sh.
 #
 # Sources lib/notify.sh directly (it is self-contained by design — see its
@@ -246,7 +246,7 @@ assert_eq "…logging notify-suppressed" \
 #
 # A freshly provisioned node has no log.jsonl until its first cycle writes
 # one. Every caller runs under `set -e`, so an unguarded redirect from that
-# path would abort the cycle from inside the one code path requirement 2m
+# path would abort the cycle from inside the one code path acceptance check 2m
 # promises never blocks it.
 
 reset_fixtures

@@ -1160,7 +1160,7 @@ config_documented_value_mismatches() {
 
 # config_repository_review_repos DEFAULTED_CONFIG_JSON
 # `repository_review.repos`, each entry resolved against
-# `repository_review.defaults` per requirement 342's rule: a key present and
+# `repository_review.defaults` per issue #342's rule: a key present and
 # non-null on the repo's own entry wins, `defaults[key]` otherwise; `slug` is
 # never defaulted. One implementation shared by every reader (review-cycle.sh,
 # scripts/doctor.sh, lib/labels.sh's caller) so they cannot resolve the same

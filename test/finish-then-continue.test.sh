@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # test/finish-then-continue.test.sh — the chain-spawn half of finish-then-
-# continue (requirement 39): once lib/chain.sh (test/chain.test.sh) says a
+# continue (requirement 67): once lib/chain.sh (test/chain.test.sh) says a
 # cycle should chain, does agent-cycle.sh's cleanup() actually launch the next
 # one, only when it should, and without ever waiting on it?
 #
@@ -25,7 +25,7 @@
 # check exactly that boundary.
 #
 # The extracted block also carries the image-behind check ahead of the chain
-# decision (requirement 39, agent-ops#1096): a section further down drives it
+# decision (requirement 67, agent-ops#1096): a section further down drives it
 # with the real `chain_image_behind`/`chain_write_roll_pending` (lib/chain.sh,
 # test/chain.test.sh already covers those two in isolation) and a stubbed
 # `image_drift_status`/`agent_ops_version`, checking that this new check only
@@ -60,7 +60,7 @@ assert_eq() {
 
 # --- Extraction ---------------------------------------------------------------
 # From the chain_eligible initialiser through `trap cleanup EXIT`, inclusive —
-# the same span requirement 39's own comments live in.
+# the same span requirement 67's own comments live in.
 extract_chain_block() {
   awk '
     /^chain_eligible=0$/ { on = 1 }
@@ -161,7 +161,7 @@ out="$(run_cycle eligible-handled-failure 1 3 1 0)"
 assert_eq "chain_eligible=1 after a *handled* stage failure (exit 0, like a stand-down) still chains" \
   "count=2 argv=" "$out"
 
-# --- Yielding to a pending image roll (requirement 39, agent-ops#1096, widened
+# --- Yielding to a pending image roll (requirement 67, agent-ops#1096, widened
 # --- by agent-ops#1103) ----------------------------------------------------
 # The image-behind check inside cleanup() has two separable jobs: it only ever
 # *cancels* a chain that was otherwise eligible (never grants one), and it
@@ -251,7 +251,7 @@ assert_eq "an untrapped non-zero exit never checks the image either" "0" \
   "$(test -f "$run_dir/roll-pending.json" && echo 1 || echo 0)"
 
 # `chain_eligible=0` here is the only reachable shape: a real `--once` run is
-# never chain-eligible in the first place (requirement 39's own "never chains
+# never chain-eligible in the first place (requirement 67's own "never chains
 # on --once", asserted separately below in the stand-down section and at the
 # finish-then-continue call site) — this isolates the marker-write guard from
 # that upstream gating rather than re-asserting it.
