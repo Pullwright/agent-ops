@@ -155,8 +155,9 @@
        a correctness gate, so every way of failing to answer it leaves the
        candidate exactly as clause 4 found it: a `gh` failure, a thread that
        does not parse, or a caller that has not sourced the predicate at all
-       — `scripts/publish-dashboard.sh`, which reads this same set only to
-       report it and makes no `gh` call of its own.
+       — `scripts/publish-dashboard.sh`, which shares requirements 34 and
+       34c's definitions out of the same file and so reaches this clause's
+       code without the libraries its inputs come from.
     A re-block re-enters through `threshold`, because every clause above is
     measured from *B*: a fresh `attempt-failed` moves *B* forward, leaving the
     old examination behind it and restarting the count — except the
@@ -217,8 +218,8 @@
     in the same file, and the only clause whose inputs are not in the log:
     `agent-cycle.sh` sources `lib/issue-prefetch.sh` and
     `lib/candidate-select.sh` so that the one process which acts on this set
-    can answer it, and a process that has not (the dashboard) takes the
-    clause's own no-answer fallback instead.
+    can answer it, and any other process that sources this file without them
+    takes the clause's own no-answer fallback instead.
 35b. <a id="impl-35b"></a>**The eligible set is part of the no-op fingerprint** (requirement 3b),
     projected to `repo|item|reason`, alongside the Enabler's config and a hash
     of `prompts/enabler.md` and any configured `prompt_overrides.enabler`
