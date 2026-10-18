@@ -4,7 +4,7 @@
 # ships with: agent-ops#1278's `verdict-unanimous` (fixture heartbeat sets)
 # and `page-outlived-item` (a stubbed `gh`); agent-ops#1282's five
 # peer-vantage invariants; agent-ops#1281's seven selection/ledger
-# invariants (idle-with-demand, fit-ladder-pinned, work-order-repaired-rate,
+# invariants (idle-with-demand, coordinator-fit-ladder-pinned, work-order-repaired-rate,
 # blocked-label-orphaned, claim-unreconciled, escalation-burst,
 # digest-truncated); agent-ops#2277's `gather-claimed-degraded`.
 #
@@ -898,7 +898,7 @@ assert_eq "no configured cycle count: never fires" "false" \
   "$(jq -r '.firing' <<<"$(pager_eval_idle_with_demand "$idle_nodes" "$idle_log")")"
 PAGER_EVAL_IDLE_CYCLES=3
 
-# --- fit-ladder-pinned (agent-ops#1281) -------------------------------------
+# --- coordinator-fit-ladder-pinned (agent-ops#1281) ------------------------
 
 fit_ev() {  # fit_ev TS NODE CYCLE RUNG DROPPED
   jq -nc --arg ts "$1" --arg n "$2" --arg c "$3" --argjson rung "$4" --argjson dropped "$5" \
@@ -936,7 +936,7 @@ assert_eq "  ... n3 (one cycle back up to a prose rung, dropping nothing) is exc
   "$(jq -r '.nodes | index("n3") != null' <<<"$verdict" | grep -c true)"
 assert_eq "  ... n4 (every cycle on the identity-only rung 10, dropping nothing) is excluded" "0" \
   "$(jq -r '.nodes | index("n4") != null' <<<"$verdict" | grep -c true)"
-assert_reduced_verdict_eq fit-ladder-pinned "[]" "$fit_log"
+assert_reduced_verdict_eq coordinator-fit-ladder-pinned "[]" "$fit_log"
 
 fit_log_none="$WORKDIR/fit-none.jsonl"
 write_log "$fit_log_none" "$(fit_ev "$(rel -100000)" n1 c1 20 12)"
