@@ -24,6 +24,14 @@
 # functions from lib/stage-attempt.sh, sourced directly, so this test
 # exercises the genuine classification the shipped preflight depends on.
 #
+# This file also covers the retirement path #2414 added:
+# `credential_refused_retire_resolved` (lib/enabler.sh) is stubbed the same
+# way `create_escalation_issue` is, so these assertions are about whether
+# the shipped block *calls* the retirement function with the right
+# arguments at the right transition, not about what `gh issue close` itself
+# does — the same division of labour `test/crash-loop.test.sh` draws around
+# `crash_loop_retire_resolved`'s own final `gh issue close`.
+#
 # No test framework is used (none exists elsewhere in this repo). Run
 # directly: ./test/standdown-credential-preflight.test.sh — exit 0 iff all
 # passed.
@@ -75,16 +83,19 @@ if [[ "$cred_block" != *'stage: "credential-probe"'* || "$cred_block" != *'meter
   exit 1
 fi
 
-# run_block MODE BOOT_ID DRY_RUN STATE_DIR PROBE_COUNT_FILE ESCALATION_FILE EVENT_FILE
+# run_block MODE BOOT_ID DRY_RUN STATE_DIR PROBE_COUNT_FILE ESCALATION_FILE EVENT_FILE [RETIRE_FILE]
 # MODE selects what the stubbed run_model_stage writes to the probe's .out
 # file: "ok" (a clean reply), "refused-400" (the workspace-scope 400 the
 # 2026-10-10 outage actually returned), or "transient-503" (a 5xx, which
 # must not be mistaken for a credential problem). BOOT_ID is fed to the
 # stubbed _updater_health_own_started, so two calls sharing one BOOT_ID
-# simulate two cycles of the same container's life.
+# simulate two cycles of the same container's life. RETIRE_FILE (optional,
+# defaults to /dev/null) receives one line per call the block makes to the
+# stubbed `credential_refused_retire_resolved` (#2414's retirement path).
 run_block() {
   local mode="$1" boot_id="$2" dry_run="$3" state_dir="$4"
   local probe_count_file="$5" escalation_file="$6" event_file="$7"
+  local retire_file="${8:-/dev/null}"
   : > "$event_file"
   (
     set -euo pipefail
@@ -153,6 +164,12 @@ run_block() {
       printf '99\thttps://github.com/acme/agent-ops/issues/99'
     }
     export ESCALATION_FILE="$escalation_file"
+
+    # shellcheck disable=SC2317  # called from $cred_block via eval
+    credential_refused_retire_resolved() {
+      printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" >> "$RETIRE_FILE"
+    }
+    export RETIRE_FILE="$retire_file"
 
     # shellcheck disable=SC2317  # called from $cred_block via eval
     log_event() { printf '%s\t%s\n' "$1" "${2:-{\}}" >> "$EVENT_FILE"; }
@@ -224,19 +241,46 @@ assert_eq "…and the probe ran again rather than being skipped" \
 assert_eq "…and it still calls through to the escalation route" \
   "1" "$(grep -c '^---end---' "$esc_file2" 2>/dev/null)"
 
+# --- recovered: the next probe on this same (still-refused) node succeeds —
+# #2414's retirement path fires exactly once, naming this cycle and the
+# probe's own timestamp. ---
+
+retire_file_recovered="$tmp_dir/refused-retire"; : > "$retire_file_recovered"
+evt_file3="$tmp_dir/refused-events-3"
+block_rc3="$(run_block ok boot-1 0 "$state_dir" "$probe_count" "$esc_file2" "$evt_file3" \
+  "$retire_file_recovered")"
+assert_eq "a recovered probe on a previously-refused node exits 0" "0" "$block_rc3"
+assert_eq "…and falls through to the rest of the cycle" \
+  "yes" "$(if grep -q 'FELL THROUGH' "$evt_file3"; then echo yes; else echo no; fi)"
+assert_eq "retirement fires exactly once" \
+  "1" "$(wc -l < "$retire_file_recovered" | tr -d ' ')"
+retire_line="$(head -n1 "$retire_file_recovered")"
+assert_eq "…naming crash_loop_repo, never a target repository" \
+  "acme/agent-ops" "$(cut -f1 <<<"$retire_line")"
+assert_eq "…scoped to this node — never another node's escalation" \
+  "test-node" "$(cut -f2 <<<"$retire_line")"
+assert_eq "…naming this cycle" \
+  "20260101T000000Z-test-node-1" "$(cut -f3 <<<"$retire_line")"
+assert_eq "…and a real timestamp for the probe that just succeeded" \
+  "yes" "$(if [[ "$(cut -f4 <<<"$retire_line")" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]; then echo yes; else echo no; fi)"
+
 # --- ok: nothing to do, the cycle proceeds into the gather ---
 
 state_dir_ok="$tmp_dir/state-ok"; mkdir -p "$state_dir_ok"
 probe_count_ok="$tmp_dir/ok-probe-count"; : > "$probe_count_ok"
 esc_file_ok="$tmp_dir/ok-escalations"; : > "$esc_file_ok"
 evt_file_ok="$tmp_dir/ok-events"
-block_rc_ok="$(run_block ok boot-1 0 "$state_dir_ok" "$probe_count_ok" "$esc_file_ok" "$evt_file_ok")"
+retire_file_ok="$tmp_dir/ok-retire"; : > "$retire_file_ok"
+block_rc_ok="$(run_block ok boot-1 0 "$state_dir_ok" "$probe_count_ok" "$esc_file_ok" "$evt_file_ok" \
+  "$retire_file_ok")"
 assert_eq "a healthy credential exits 0" "0" "$block_rc_ok"
 assert_eq "a healthy credential falls through to the rest of the cycle" \
   "yes" "$(if grep -q 'FELL THROUGH' "$evt_file_ok"; then echo yes; else echo no; fi)"
 assert_eq "…without filing anything" "0" "$(grep -c '^---end---' "$esc_file_ok" 2>/dev/null)"
 assert_eq "…and without standing anything down" \
   "no" "$(if grep -q '^stand-down' "$evt_file_ok"; then echo yes; else echo no; fi)"
+assert_eq "a node that was never refused never calls the retirement path" \
+  "0" "$(wc -l < "$retire_file_ok" | tr -d ' ')"
 assert_eq "the first cycle after a container start always probes" \
   "1" "$(wc -l < "$probe_count_ok" | tr -d ' ')"
 assert_eq "…and still logs the probe's own stage-end on the healthy path" \
@@ -276,6 +320,25 @@ assert_eq "…and nothing is escalated for it here" \
   "0" "$(grep -c '^---end---' "$esc_file_t" 2>/dev/null)"
 assert_eq "…and nothing is stood down for it here" \
   "no" "$(if grep -q '^stand-down' "$evt_file_t"; then echo yes; else echo no; fi)"
+
+# --- a node that was refused, then on its next probe only gets a transient
+# 5xx: the transient reply says nothing about the credential, so retirement
+# must not fire on the strength of it — only a genuine clean reply clears a
+# `credential-refused` escalation. ---
+
+state_dir_rt="$tmp_dir/state-refused-then-transient"; mkdir -p "$state_dir_rt"
+probe_count_rt="$tmp_dir/refused-then-transient-probe-count"; : > "$probe_count_rt"
+esc_file_rt="$tmp_dir/refused-then-transient-escalations"; : > "$esc_file_rt"
+evt_file_rt="$tmp_dir/refused-then-transient-events"
+run_block refused-400 boot-1 0 "$state_dir_rt" "$probe_count_rt" "$esc_file_rt" "$evt_file_rt" \
+  >/dev/null
+retire_file_rt="$tmp_dir/refused-then-transient-retire"; : > "$retire_file_rt"
+evt_file_rt2="$tmp_dir/refused-then-transient-events-2"
+block_rc_rt2="$(run_block transient-503 boot-1 0 "$state_dir_rt" "$probe_count_rt" "$esc_file_rt" \
+  "$evt_file_rt2" "$retire_file_rt")"
+assert_eq "a transient reply right after a refused credential exits 0" "0" "$block_rc_rt2"
+assert_eq "…and does not call the retirement path" \
+  "0" "$(wc -l < "$retire_file_rt" | tr -d ' ')"
 
 # --- refused, but not by the credential: `credit_exhausted` reaches
 # `stage_api_refusal_class`'s own default arm as `refused` (deliberately —
@@ -337,6 +400,107 @@ assert_eq "--dry-run makes no probe call at all, even against a refused credenti
   "0" "$(wc -l < "$probe_count_dry" | tr -d ' ')"
 assert_eq "…and falls through to the rest of the cycle" \
   "yes" "$(if grep -q 'FELL THROUGH' "$evt_file_dry"; then echo yes; else echo no; fi)"
+
+# --- --dry-run on a node that was already refused: a cycle that promises to
+# change nothing must not close the escalation either, even though a
+# non-dry-run cycle right now would recover it (#2414's own rule, mirroring
+# 0h's existing "a cycle that promises to change nothing must not write a
+# fresh escalation"). ---
+
+state_dir_dry2="$tmp_dir/state-dry-recovered"; mkdir -p "$state_dir_dry2"
+probe_count_dry2="$tmp_dir/dry-recovered-probe-count"; : > "$probe_count_dry2"
+esc_file_dry2="$tmp_dir/dry-recovered-escalations"; : > "$esc_file_dry2"
+evt_file_dry2a="$tmp_dir/dry-recovered-events-a"
+run_block refused-400 boot-1 0 "$state_dir_dry2" "$probe_count_dry2" "$esc_file_dry2" "$evt_file_dry2a" \
+  >/dev/null
+retire_file_dry2="$tmp_dir/dry-recovered-retire"; : > "$retire_file_dry2"
+evt_file_dry2b="$tmp_dir/dry-recovered-events-b"
+block_rc_dry2="$(run_block ok boot-1 1 "$state_dir_dry2" "$probe_count_dry2" "$esc_file_dry2" \
+  "$evt_file_dry2b" "$retire_file_dry2")"
+assert_eq "--dry-run on a previously-refused node exits 0, falling through" "0" "$block_rc_dry2"
+assert_eq "…and makes no probe call at all" \
+  "1" "$(wc -l < "$probe_count_dry2" | tr -d ' ')"
+assert_eq "…so the retirement path is never called" \
+  "0" "$(wc -l < "$retire_file_dry2" | tr -d ' ')"
+
+# --- credential_refused_retire_resolved itself (lib/enabler.sh, #2414): the
+# function the block above calls, exercised directly against the real
+# function with a stubbed `gh`, rather than through the extracted-block stub
+# — "the close" and "the per-node scoping" acceptance criteria, at the level
+# where they actually bind: the body-match guard inside this function is
+# what makes cross-node scoping safe even if a future caller ever got the
+# node name wrong, not anything about how the block above calls it. ---
+
+# shellcheck source=lib/notify.sh
+. "$SCRIPT_DIR/lib/notify.sh"
+# shellcheck source=lib/enabler.sh
+. "$SCRIPT_DIR/lib/enabler.sh"
+
+cycle_dir="$tmp_dir/retire-fn-cycle"; mkdir -p "$cycle_dir"
+enabler_escalation_label="autonomous-agent-escalation"
+
+retire_fn_gh_issues='[]'
+# One record per call, `---end---` terminated (the body is multi-line, so a
+# bare line count would overcount — the same convention run_block's own
+# escalation stub above already uses for the same reason).
+retire_fn_close_calls="$tmp_dir/retire-fn-close-calls"; : > "$retire_fn_close_calls"
+gh() {
+  if [[ "$1" == "issue" && "$2" == "list" ]]; then
+    printf '%s' "$retire_fn_gh_issues"
+    return 0
+  elif [[ "$1" == "issue" && "$2" == "close" ]]; then
+    # --comment is always the last flag this codebase passes it as.
+    { printf 'number=%s\n' "$3"
+      echo "---comment---"
+      printf '%s\n' "${*: -1}"
+      echo "---end---"
+    } >> "$retire_fn_close_calls"
+    return 0
+  fi
+  return 1
+}
+
+retire_fn_events="$tmp_dir/retire-fn-events"
+log_event() { printf '%s\t%s\n' "$1" "${2:-{\}}" >> "$retire_fn_events"; }
+
+# "the close": a matching open escalation is closed, with a comment naming
+# this cycle and the probe's own timestamp.
+retire_fn_gh_issues='[{"number":55,"url":"https://github.com/acme/agent-ops/issues/55","body":"- node: `test-node`\n\n---\nItem: `credential-refused:test-node` · raised by the Script"}]'
+: > "$retire_fn_close_calls"; : > "$retire_fn_events"
+credential_refused_retire_resolved "acme/agent-ops" "test-node" "20261017T000000Z-test-node-5" \
+  "2026-10-14T19:49:02Z"
+assert_eq "a matching open escalation is closed exactly once" \
+  "1" "$(grep -c '^---end---$' "$retire_fn_close_calls" 2>/dev/null)"
+assert_eq "…the right issue number" \
+  "yes" "$(if grep -q '^number=55$' "$retire_fn_close_calls"; then echo yes; else echo no; fi)"
+assert_eq "…the closing comment names this cycle" \
+  "yes" "$(if grep -q '20261017T000000Z-test-node-5' "$retire_fn_close_calls"; then echo yes; else echo no; fi)"
+assert_eq "…and the probe's own timestamp" \
+  "yes" "$(if grep -q '2026-10-14T19:49:02Z' "$retire_fn_close_calls"; then echo yes; else echo no; fi)"
+assert_eq "…and logs credential-refused-retired" \
+  "1" "$(grep -c '^credential-refused-retired' "$retire_fn_events" 2>/dev/null)"
+
+# "the per-node scoping": an open issue exists in the same repo, under the
+# same escalation label, but it names a *different* node — it must never be
+# closed by this node's own recovery, however GitHub's own `--search` ranked
+# it among the results.
+retire_fn_gh_issues='[{"number":56,"url":"https://github.com/acme/agent-ops/issues/56","body":"- node: `other-node`\n\n---\nItem: `credential-refused:other-node` · raised by the Script"}]'
+: > "$retire_fn_close_calls"; : > "$retire_fn_events"
+credential_refused_retire_resolved "acme/agent-ops" "test-node" "20261017T000000Z-test-node-6" \
+  "2026-10-14T19:49:02Z"
+assert_eq "a different node's escalation is never closed" \
+  "0" "$(wc -l < "$retire_fn_close_calls" | tr -d ' ')"
+assert_eq "…and nothing is logged as retired" \
+  "0" "$(grep -c '^credential-refused-retired' "$retire_fn_events" 2>/dev/null)"
+
+# No open escalation at all (never filed, or already closed by hand): a
+# quiet no-op, not an error.
+retire_fn_gh_issues='[]'
+: > "$retire_fn_close_calls"; : > "$retire_fn_events"
+credential_refused_retire_resolved "acme/agent-ops" "test-node" "20261017T000000Z-test-node-7" \
+  "2026-10-14T19:49:02Z"
+assert_eq "no open escalation means nothing is closed" \
+  "0" "$(wc -l < "$retire_fn_close_calls" | tr -d ' ')"
 
 echo
 if (( failures == 0 )); then

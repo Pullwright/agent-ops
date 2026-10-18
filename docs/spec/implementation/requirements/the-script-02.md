@@ -790,6 +790,25 @@
       reading its own two empty records as unchanged; `--dry-run` makes no
       call at all.
 
+      Retirement (agent-ops#2414): when this node's previous probe verdict
+      was `refused` and the current probe gets a genuine clean reply —
+      `exit_code: 0` and `stage_api_refusal_class` empty (neither `refused`
+      nor `transient`, so neither a credential fault nor an inconclusive
+      5xx/overload) — `credential_refused_retire_resolved` (lib/enabler.sh)
+      closes this node's own open `credential-refused:<node>` escalation,
+      found the same way `create_escalation_issue`'s own duplicate guard
+      finds it (an open issue, labelled `enabler_escalation_label`, whose
+      body quotes `` `credential-refused:<node>` ``), with a comment naming
+      this cycle and the probe's own timestamp. Per node, never fleet-wide:
+      the escalation is filed per node in the first place, so only that
+      node's own probe can speak to whether it has cleared, and a staggered
+      fleet recovery is therefore not the hazard it is for
+      `crash_loop_retire_resolved`'s own fleet-wide run (agent-ops#2311) — a
+      node whose probe never succeeds leaves its own escalation open
+      regardless of what a sibling's probe does. `--dry-run` closes nothing,
+      the same reasoning the probe's own gate above rests on: a cycle that
+      promises to change nothing must not close an escalation either.
+
    1. *Usage-limit cooldown*: the same signal arrives on two carriers, and
       the **later** `resume_at` wins. The log union's most recent `limit-hit`
       is as fresh as the last state-sync fetch; `fleet/limit.json` on the

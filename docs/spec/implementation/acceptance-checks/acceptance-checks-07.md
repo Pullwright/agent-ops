@@ -695,3 +695,20 @@
    `_updater_health_own_started`) probes on its second cycle as well as its
    first, rather than comparing its own two empty records as unchanged;
    `--dry-run` makes no probe call at all.
+
+   A node whose previous probe was `refused` and whose current probe gets a
+   genuine clean reply retires its own `credential-refused:<node>`
+   escalation (agent-ops#2414): the same test file covers
+   `credential_refused_retire_resolved` (lib/enabler.sh) directly, stubbing
+   `gh`, and shows it closes a matching open issue with a comment naming the
+   retiring cycle and the probe's own timestamp; leaves untouched an open
+   issue that names a *different* node, even when `gh issue list` itself
+   returns it among the results (the function's own body-match guard, not
+   GitHub's `--search`, is what scopes this per node); and is a quiet no-op
+   when no matching open issue exists. Against the extracted 0h block
+   itself: the retirement call fires exactly once on the cycle after a
+   `refused` verdict is followed by a clean one; it does not fire when the
+   node was never refused, when a transient 5xx follows a refused verdict
+   (not itself evidence the credential has cleared), or on `--dry-run` —
+   even against a node already recorded as refused, a dry-run cycle probes
+   nothing and so retires nothing either.

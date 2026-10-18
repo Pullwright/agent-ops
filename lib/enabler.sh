@@ -819,6 +819,66 @@ Retired automatically by agent-cycle.sh (requirement 2.7)."
   done < <(crash_loop_open_escalations < "$union_log")
 }
 
+# credential_refused_retire_resolved REPO NODE CYCLE SUCCESS_TS
+# Closes this node's own open `credential-refused:<node>` escalation
+# (requirement 2.0h) once its own credential probe next succeeds — the
+# retirement path #2414 found missing: before this, the escalation
+# `lib/standdown.sh` files on a refused probe stayed open forever once the
+# credential was fixed, and the four filed on 2026-10-12 (#2361–#2364) sat
+# open for two days until a human closed them by hand.
+#
+# Unlike `crash_loop_retire_resolved` above, this needs none of that
+# function's cross-node machinery: the credential preflight is per node (one
+# state file per `state_dir`, one escalation keyed `credential-refused:<node>`
+# per node), so the node whose own probe just succeeded is the only node that
+# can speak to whether *its* escalation has cleared, and a staggered fleet
+# recovery is therefore not the hazard it is for a fleet-wide crash-loop run
+# (agent-ops#2311) — each node simply retires its own in its own cycle,
+# never a peer's. The caller (`lib/standdown.sh`'s own 2.0h block) already
+# knows this is a transition — the previous probe here was `refused` and this
+# one is a genuine clean reply, not a crash or a `transient` non-answer — so
+# this function does no verdict judgement of its own; it only finds and
+# closes the issue.
+#
+# Looked up the same way `create_escalation_issue`'s own duplicate guard
+# finds an existing escalation — an open issue, labelled
+# `enabler_escalation_label`, whose body quotes this exact item ref — rather
+# than through any id this function was handed, since nothing upstream of
+# here ever recorded the issue number the original filing returned. No open
+# issue (never filed, or already closed by hand) is not an error: there is
+# nothing to retire, and the function returns quietly.
+credential_refused_retire_resolved() {
+  local repo="$1" node="$2" cycle="$3" success_ts="$4"
+  [[ -n "$repo" ]] || return 0
+  local item_ref="credential-refused:$node"
+  local existing issue_number issue_url body
+  existing="$(gh issue list -R "$repo" --label "$enabler_escalation_label" --state open --search "$item_ref" \
+                --json number,url,body 2>/dev/null \
+              | jq -r --arg it "$item_ref" \
+                  'map(select(((.body // "") | contains("`" + $it + "`")))) | first
+                   | if . == null then empty else "\(.number)\t\(.url)" end' 2>/dev/null || true)"
+  [[ -n "$existing" ]] || return 0
+  issue_number="${existing%%$'\t'*}"
+  issue_url="${existing#*$'\t'}"
+  body="This node's model credential probe succeeded in cycle \`$cycle\`, at \`$success_ts\`. The credential refusal this escalation reported has cleared.
+
+---
+Retired automatically by agent-cycle.sh (requirement 2.0h)."
+  if gh issue close "$issue_number" -R "$repo" --comment "$body" \
+       >/dev/null 2>>"$cycle_dir/credential-refused-retire.err"; then
+    log_event "credential-refused-retired" "$(jq -nc --arg n "$node" --arg c "$cycle" --arg s "$success_ts" \
+      --argjson num "$issue_number" --arg u "$issue_url" \
+      '{node: $n, cycle: $c, success_ts: $s, issue_number: $num, issue_url: $u}')"
+    notify_post_cycle "escalation-closed" "$repo#issue-$issue_number" \
+      "Credential refusal resolved on node $node" "$issue_url" "$repo" \
+      "This node's model credential probe succeeded in cycle $cycle, at $success_ts."
+  else
+    log_event "warning" "$(jq -nc --argjson n "$issue_number" \
+      --arg d "credential-refused escalation issue #$issue_number has resolved but could not be closed — see credential-refused-retire.err" \
+      '{detail: $d, issue_number: $n}')"
+  fi
+}
+
 # escalation_autonomy_pass_available REPO ITEM CLAIMED_ENTRY_JSON
 # The bound on `adjudicate-first` (agent-ops#627, requirement 36b): one
 # adjudication pass per item, per human touch. True (exit 0) when this item
