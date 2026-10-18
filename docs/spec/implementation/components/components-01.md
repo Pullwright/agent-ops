@@ -647,7 +647,10 @@ What exists, and the requirements each part answers to:
    on, and stayed Enabler-eligible across every recheck window regardless.
    Sourced by both `scripts/gather-issues.sh`
    and `scripts/gather-tech-debt.sh`, so the drops the two bands share cannot
-   drift apart; `issue_blocked_by_ref` calls `dependency_refs`, so
+   drift apart, and by `agent-cycle.sh`, whose own process needs
+   `issue_blocked_by_ref` for requirement 35a's clause 5 (the two gather
+   scripts run as subprocesses and share no definition with the cycle);
+   `issue_blocked_by_ref` calls `dependency_refs`, so
    `lib/dependency-gate.sh` must be sourced first. What qualifies an issue for
    candidacy at all — every open issue for `issues`, only the
    `pw::type:tech-debt`-labelled ones for `tech-debt` — is deliberately left

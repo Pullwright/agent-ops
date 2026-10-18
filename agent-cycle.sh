@@ -276,6 +276,15 @@ scratch_enter agent-cycle || exit 1
 . "$SCRIPT_DIR/lib/preflight.sh"
 # shellcheck source=lib/dependency-gate.sh
 . "$SCRIPT_DIR/lib/dependency-gate.sh"
+# shellcheck source=lib/issue-prefetch.sh
+# Sourced after dependency-gate.sh, whose `dependency_refs` its
+# `issue_blocked_by_ref` calls — the contract that file's own header states.
+# This process needs `issue_blocked_by_ref` for requirement 35a's dependency
+# deferral (`enabler_defer_open_dependency_items`, lib/cycle-state.sh), which
+# skips itself entirely when the predicate is undefined; the two gather
+# scripts that also source this file run as subprocesses and so share none of
+# its definitions with the cycle.
+. "$SCRIPT_DIR/lib/issue-prefetch.sh"
 # shellcheck source=lib/refinement.sh
 # Sourced after void-guard.sh, which defines the `entry_field_text` it uses.
 . "$SCRIPT_DIR/lib/refinement.sh"
