@@ -77,6 +77,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$SCRIPT_DIR/lib/union-log-scan.sh"
 # shellcheck source=lib/landing.sh
 . "$SCRIPT_DIR/lib/landing.sh"
+# Issue #2480: sourced here, a test-only dependency, so the real cool-off
+# reason text `landing_protected_path_controls_ok` emits can be fed straight
+# into `pager_eval_landing_never_armed`'s own `cooloff_elapsed` parser below
+# — never so that lib/pager-invariants.sh itself sources lib/landing.sh at
+# runtime, which issue #2480 rejected as a fix for the same drift.
+# shellcheck source=lib/pager-invariants.sh
+. "$SCRIPT_DIR/lib/pager-invariants.sh"
 # Issue #1979, requirement 62: `_landing_notice_upsert`/`_landing_notice_
 # clear` call `pipeline_comment_header`/`pipeline_comment_marker`/`pipeline_
 # landing_notice_marker`/`pipeline_comment_upsert`/`pipeline_comment_edit_if_
@@ -1116,6 +1123,52 @@ assert_eq "a non-cool-off ineligible reason has no eligible-at" "" "$out"
 
 out="$(_landing_notice_eligible_at "already in the merge queue")"
 assert_eq "an unrelated reason has no eligible-at" "" "$out"
+
+# --- issue #2480: the real cool-off reason feeds both downstream parsers ---
+# lib/landing.sh:692's printf is hand-duplicated by every fixture above (and
+# by test/pager-invariants.test.sh's own cooloff_reason() helper) — none of
+# them feeds the real printf's own output through either consumer, so an
+# edit to that format string could silently break both without failing a
+# test. This drives the real `landing_protected_path_controls_ok` cool-off
+# branch for its actual text, then asserts both `_landing_notice_eligible_at`
+# above and `pager_eval_landing_never_armed`'s own `cooloff_elapsed` jq
+# regex (lib/pager-invariants.sh) parse that real text correctly, in both
+# directions (still open and elapsed) — never a hand-typed literal.
+
+now_epoch="$(date -u +%s)"
+rel() { date -u -d "@$(( now_epoch + $1 ))" +%Y-%m-%dT%H:%M:%SZ; }
+
+files "lib/x.sh"
+cooloff_submitted_at="$(rel -3600)"
+real_cooloff_reason="$(landing_protected_path_controls_ok '{}' acme/widgets 12 critical \
+  "$cooloff_submitted_at" "sha-head-1")"
+files "src/app.py"
+assert_contains "the real cool-off reason names the configured wait" \
+  "landing_cool_off_hours=24" "$real_cooloff_reason"
+assert_contains "  ... and the real approval timestamp" \
+  "approved $cooloff_submitted_at" "$real_cooloff_reason"
+
+out="$(_landing_notice_eligible_at "$real_cooloff_reason")"
+assert_eq "_landing_notice_eligible_at parses the real cool-off reason (approved + 24h)" \
+  "$(rel 82800)" "$out"
+
+landing_never_armed_log="$tmp_dir/landing-never-armed-real-reason.jsonl"
+PAGER_EVAL_REPOS_JSON='[{"slug":"acme/widgets","merge_autonomy":"agent-merges-routine"}]'
+PAGER_EVAL_LANDING_ARMED_WITHIN_DAYS=7
+
+jq -nc --arg ts "$(rel -300)" --arg r "$real_cooloff_reason" \
+  '{ts: $ts, event: "landing-refused", repo: "acme/widgets", reason: $r, class: "protected-path-cooloff"}' \
+  > "$landing_never_armed_log"
+out="$(pager_eval_landing_never_armed "[]" "$landing_never_armed_log")"
+assert_eq "pager_eval_landing_never_armed's cooloff_elapsed reads the real reason as still open: does not fire" \
+  "false" "$(jq -r '.firing' <<<"$out")"
+
+jq -nc --arg ts "$(rel 90000)" --arg r "$real_cooloff_reason" \
+  '{ts: $ts, event: "landing-refused", repo: "acme/widgets", reason: $r, class: "protected-path-cooloff"}' \
+  > "$landing_never_armed_log"
+out="$(pager_eval_landing_never_armed "[]" "$landing_never_armed_log")"
+assert_eq "  ... the same real reason, read against a refusal logged after its own window elapsed: fires" \
+  "true" "$(jq -r '.firing' <<<"$out")"
 
 # --- _landing_notice_upsert / _landing_notice_clear (issue #1979, requirement
 # 62) — the generic lib/pipeline-marker.sh primitives, exercised against the
