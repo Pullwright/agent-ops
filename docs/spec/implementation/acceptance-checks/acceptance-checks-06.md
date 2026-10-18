@@ -331,16 +331,41 @@
     rewrite exists to avoid, since a successful reapproval's own fresh
     `submitted_at` almost always still has its ordinary cool-off ahead of it.
 
-    `run_protected_path_tier_reapproval` and `protected_path_tier_
-    reapproval_attempted_before` are not separately lifted — mirroring `run_
-    open_question_adjudication`'s own real internals (a live `gh pr diff`, a
-    real model engagement against `prompts/approver-reapprove-protected-
-    path-tier.md`) has no business running unstubbed inside a hermetic unit
-    test, the same reasoning that keeps `_landing_protected_path_tier_
-    resolve` itself a black box here. `test/prompt-untrusted-framing.test.sh`
-    (requirement 45) covers `prompts/approver-reapprove-protected-path-tier.md`
-    alongside every other shipped stage prompt, byte-identical to the
-    canonical block.
+    `run_protected_path_tier_reapproval` is not lifted there — mirroring
+    `run_open_question_adjudication`'s own real internals (a live `gh pr
+    diff`, a real model engagement against `prompts/approver-reapprove-
+    protected-path-tier.md`) has no business running unstubbed inside a
+    hermetic unit test, the same reasoning that keeps `_landing_protected_
+    path_tier_resolve` itself a black box in that file.
+    `test/prompt-untrusted-framing.test.sh` (requirement 45) covers
+    `prompts/approver-reapprove-protected-path-tier.md` alongside every other
+    shipped stage prompt, byte-identical to the canonical block.
+
+    **The resolver's own ladder is covered separately
+    (`test/protected-path-tier-reapproval.test.sh`)**, standing to
+    `test/landing-wiring.test.sh` exactly as
+    `test/open-question-adjudication.test.sh` stands to it for requirement
+    8f: `_landing_protected_path_tier_resolve` and
+    `protected_path_tier_reapproval_attempted_before` lifted verbatim, with
+    `run_protected_path_tier_reapproval` and `protected_path_tier_escalate`
+    stubbed as black boxes and two real synthetic logs behind the cap. It
+    pins the two axes a stubbed-whole resolver cannot reach, both of them
+    pure control flow over stubbable collaborators. *When it escalates:* a
+    reapproval that approves and leaves the pull request on its own fresh
+    cool-off raises nothing for a human (the dominant outcome — an
+    escalation there would assert a critical-tier approval "could not be
+    established" moments after the resolver established one), nor does a
+    recomputed `ok` or an `unknown:*` read failure; only the tier or
+    missing-timestamp wording still standing after the pass does, exactly
+    once, naming the `pr-<n>-protected-path-tier` item ref. *Where the cap is
+    read:* an event only a peer node logged binds this node's pass, and so
+    does one only this node's own stream carries when the fleet union came
+    back empty — while an event against an earlier head commit, or another
+    pull request, does not. The triggering and recomputed `ineligible:`
+    wordings the assertions turn on are grepped from `lib/landing.sh` rather
+    than retyped, so a reworded `landing_protected_path_controls_ok` fails
+    this check loudly instead of letting the resolver's own case patterns
+    quietly stop matching.
 
 10. **The egress fence holds its shape (D24).** `test/egress-fence.test.sh`
     passes: the baked allowlist carries every domain the cycles need

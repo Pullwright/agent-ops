@@ -2090,6 +2090,17 @@ $(pipeline_comment_marker "$cycle_id" approver-adjudicate-open-question)" >/dev/
 # (`protected_path_tier_reapproval_attempted_before`) skips straight to
 # escalating: re-engaging the Approver a second time over a diff that has
 # not changed would only ever repeat the same verdict.
+#
+# Escalates only while the sub-case this pass exists to clear is *still*
+# standing — never for whatever else the recomputed verdict turns out to be.
+# A successful reapproval almost always lands on a brand-new cool-off wait
+# (its own `submitted_at` is "now"), which is this gate working exactly as
+# designed and clears itself without anyone; escalating there would file a
+# human-assigned issue asserting that a critical-tier approval "could not be
+# established" moments after this function established one, for a pull
+# request with nothing left for a human to do. An `unknown:*` verdict — a
+# `gh` read that failed, not a control that is unmet — is held back for the
+# same reason: the next retry simply asks again.
 _landing_protected_path_tier_resolve() {
   local slug="$1" pr_url="$2" number="$3" pp_ctl="$4" item="${5:-}"
   local item_ref="pr-${number}-protected-path-tier" head_sha
@@ -2100,7 +2111,21 @@ _landing_protected_path_tier_resolve() {
     return 0
   fi
 
-  if protected_path_tier_reapproval_attempted_before "$pr_url" "$head_sha" "$log_file"; then
+  # Both sources, never either alone — see
+  # `protected_path_tier_reapproval_attempted_before`'s own header. The
+  # fleet union is what stops each node spending its own "one pass" over the
+  # same unchanged head commit (N critical-tier engagements and N App review
+  # writes before any of them escalates, worst on the path that costs most:
+  # a reapproval that escalates logs no `approver-verdict`, so every other
+  # node re-enters the identical sub-case), and this node's own stream is
+  # what keeps the cap on at all when that union came back empty.
+  #
+  # `/dev/null` rather than an empty string for an unset `union_log`: SRC1's
+  # own default is `-`, so an empty first argument would put this read on
+  # *this function's* stdin — whatever the cycle happens to have attached —
+  # instead of on no source at all.
+  if protected_path_tier_reapproval_attempted_before \
+       "$pr_url" "$head_sha" "${union_log:-/dev/null}" "${log_file:-}"; then
     protected_path_tier_escalate "$slug" "$pr_url" "$item_ref" "$pp_ctl"
     printf '%s' "$pp_ctl"
     return 0
@@ -2130,12 +2155,23 @@ _landing_protected_path_tier_resolve() {
     recheck_submitted="${recheck_rest%%$'\t'*}"
     recheck_commit="${recheck_rest#*$'\t'}"
     if [[ "$recheck_standing" == "APPROVED" ]]; then
-      recheck_tier="$(landing_retry_tier "$pr_url" "$log_file")"
+      # `$log_file`, not `$cap_src` above: the one event this read must see is
+      # the `approver-verdict` `run_protected_path_tier_reapproval` wrote a
+      # moment ago, and `log_event` appends it to this node's own stream —
+      # the `$union_log` snapshot was built at cycle start and can never
+      # carry it.
+      recheck_tier="$(landing_retry_tier "$pr_url" "${log_file:-}")"
       pp_ctl="$(landing_protected_path_controls_ok "$DEFAULTED_CONFIG" "$slug" "$number" "$recheck_tier" "$recheck_submitted" "$recheck_commit")"
     fi
   fi
 
-  [[ "$pp_ctl" == "ok" ]] || protected_path_tier_escalate "$slug" "$pr_url" "$item_ref" "$pp_ctl"
+  # The same two patterns gate 4.5's own call site triggers this function on
+  # — and only those: see this function's header on why a fresh cool-off or
+  # an unreadable control must not raise an issue for a human.
+  case "$pp_ctl" in
+    ineligible:*"did not run at the critical tier"*|ineligible:*"no approval timestamp could be established"*)
+      protected_path_tier_escalate "$slug" "$pr_url" "$item_ref" "$pp_ctl" ;;
+  esac
   printf '%s' "$pp_ctl"
 }
 
@@ -2160,11 +2196,10 @@ open_question_adjudicated_before() {
   [[ "$hits" =~ ^[0-9]+$ ]] && (( hits > 0 ))
 }
 
-# protected_path_tier_reapproval_attempted_before PR_URL HEAD_SHA [SRC]
+# protected_path_tier_reapproval_attempted_before PR_URL HEAD_SHA [SRC1] [SRC2]
 # Exit 0 iff a `protected-path-tier-reapproval` event for PR_URL at HEAD_SHA
-# already exists in the log at SRC (same LOG_FILE convention as `landing_
-# retry_tier` above: `-` for stdin, a path, or empty to read nothing) — this
-# occurrence's one reapproval pass has already run — and 1 otherwise. Mirrors
+# already exists in the logs read — this occurrence's one reapproval pass has
+# already run — and 1 otherwise. Mirrors
 # `open_question_adjudicated_before`'s own shape (requirement 8f), with the
 # current head commit standing in for that function's "most recently raised"
 # anchor: a protected-path-tier occurrence has no equivalent "raised" event
@@ -2172,21 +2207,44 @@ open_question_adjudicated_before() {
 # else gate 4.5 reasons about this control (the stale-head sub-case), so
 # keying the cap to HEAD_SHA reuses that same boundary rather than inventing
 # a second one.
+#
+# Reads the union of SRC1 and SRC2, on `landing_approver_adjudication_
+# history`'s own two-source contract (SRC1 may be `-` for stdin; SRC2, if
+# given, is always a path; either may be missing, empty or unreadable and
+# simply contributes nothing) and for the same reason it gives: neither
+# source alone is the whole record. The caller passes `$union_log` as SRC1 —
+# requirement 8u's sweep runs on every node, so a pass a peer already spent
+# on this head has to be visible or each node spends its own — and
+# `${log_file:-}` as SRC2, because that union is a snapshot built at cycle
+# start and `fleet_logs` degrades to an *empty* one silently (requirement
+# 38b's own `fleet_logs_healthy` exists for exactly that): a cap is a
+# negative read ("no pass has been spent"), and reading it off a degraded
+# union alone would quietly switch the cap off on the one node whose fleet
+# fetch is broken — unbounded critical-tier engagements and App review
+# writes, every cycle, which is the cost this cap exists to bound.
 protected_path_tier_reapproval_attempted_before() {
-  local pr_url="$1" head_sha="$2" src="${3:--}" hits
+  local pr_url="$1" head_sha="$2" src1="${3:--}" src2="${4:-}" hits=0
   # shellcheck disable=SC2016  # $pr_url/$head_sha are jq's own --arg variables, not the shell's.
   local jq_prog='
     [ .[] | select(.event == "protected-path-tier-reapproval"
                    and (.pr_url // "") == $u and (.head_sha // "") == $h) ]
     | length'
-  if [[ "$src" == "-" ]]; then
-    hits="$(jq -c -R 'fromjson? // empty' 2>/dev/null \
-      | jq -rs --arg u "$pr_url" --arg h "$head_sha" "$jq_prog" 2>/dev/null || echo 0)"
-  elif [[ -s "$src" ]]; then
-    hits="$(jq -c -R 'fromjson? // empty' "$src" 2>/dev/null \
-      | jq -rs --arg u "$pr_url" --arg h "$head_sha" "$jq_prog" 2>/dev/null || echo 0)"
+  if [[ "$src1" == "-" ]]; then
+    if [[ -n "$src2" && -s "$src2" ]]; then
+      hits="$(cat - "$src2" 2>/dev/null | jq -c -R 'fromjson? // empty' 2>/dev/null \
+        | jq -rs --arg u "$pr_url" --arg h "$head_sha" "$jq_prog" 2>/dev/null || echo 0)"
+    else
+      hits="$(jq -c -R 'fromjson? // empty' 2>/dev/null \
+        | jq -rs --arg u "$pr_url" --arg h "$head_sha" "$jq_prog" 2>/dev/null || echo 0)"
+    fi
   else
-    hits=0
+    local -a files=()
+    if [[ -s "$src1" ]]; then files+=("$src1"); fi
+    if [[ -n "$src2" && -s "$src2" ]]; then files+=("$src2"); fi
+    if [[ "${#files[@]}" -gt 0 ]]; then
+      hits="$(cat "${files[@]}" 2>/dev/null | jq -c -R 'fromjson? // empty' 2>/dev/null \
+        | jq -rs --arg u "$pr_url" --arg h "$head_sha" "$jq_prog" 2>/dev/null || echo 0)"
+    fi
   fi
   [[ "$hits" =~ ^[0-9]+$ ]] && (( hits > 0 ))
 }

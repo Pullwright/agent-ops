@@ -319,7 +319,13 @@
    `pr_url`/head pair) — mirroring requirement 8f's own "one pass per human
    touch" bound, with a fresh push standing in for a human's own touch, since
    a push already earns its own fresh pass everywhere else this gate reasons
-   about this control (the stale-head sub-case's rule). A head whose pass is
+   about this control (the stale-head sub-case's rule). That cap is read
+   fleet-wide — the `union_log` snapshot, falling back to this node's own
+   stream, exactly as requirement 8f's own `open_question_pass_available`
+   reads its cap and as gate 4.5 reads the tier that triggered the call:
+   requirement 8u's sweep runs on every node, so a cap keyed to one node's
+   stream alone would let each node spend its own pass over the same
+   unchanged head commit. A head whose pass is
    already spent skips the reapproval and escalates directly, the same
    `always-escalate`-shaped ladder requirement 8f's own open-question gate
    uses, keyed to a synthetic `pr-<n>-protected-path-tier` item reference
@@ -359,6 +365,21 @@
    triggered the call — a successful reapproval therefore refuses, if it
    refuses at all, under `protected-path-cooloff`, never `protected-path-
    tier` a second time.
+
+   The escalation is bounded by that same recomputed value, and fires only
+   while the sub-case this pass exists to clear is itself still standing —
+   the tier or the missing-timestamp wording, the two gate 4.5 triggers the
+   call on. A recomputed verdict of `ok`, a fresh cool-off wait, a stale head
+   or an `unknown:*` read failure each refuse (or arm) on their own ordinary
+   terms and raise nothing for a human: the dominant outcome of a *successful*
+   reapproval is the brand-new cool-off above, which is this gate working as
+   designed and clears itself unattended, so an escalation there would assert
+   that a critical-tier approval "could not be established" moments after
+   this function established one, for a pull request with nothing left for
+   anyone to do. An `unknown:*` verdict is held back on the same reasoning
+   requirement 8d applies to every unreadable control: it means the gate
+   could not ask, so the next retry asks again rather than a human being
+   asked instead.
 62. **A persistent landing refusal says why, on the pull request itself, not
    only in the node log (issue #1979).** Requirement 8d's own gates refuse to
    arm a pull request for many reasons, logged as `landing-refused`
