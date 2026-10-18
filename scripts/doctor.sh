@@ -2766,27 +2766,30 @@ if (( grok_configured )); then
   xai_auth_file="${GROK_HOME:-$HOME/.grok-run}/auth.json"
   xai_sub_present=0
   xai_sub_unparsed=0
-  # Presence is `-s` alone — never a successful parse. The login runs as the
-  # *stage* user (deploy/docker/grok-shim.sh puts every `grok` through
-  # stage-exec), and xAI's own documentation keeps auth.json owner-only, so
-  # this check, which runs as the Script's user, may be unable to read a file
-  # it can still stat — and `-s` needs only the directory `$GROK_HOME` that
-  # the image already shares between the two users. Taking the parse as the
-  # presence signal would report a completed login as absent and, on a node
-  # holding no key, fail the whole section over it. A parse failure is only
-  # ever reported where the file was actually readable.
-  if [[ -s "$xai_auth_file" ]]; then
-    xai_sub_present=1
-    if [[ -r "$xai_auth_file" ]] && ! jq -e . "$xai_auth_file" >/dev/null 2>&1; then
-      xai_sub_unparsed=1
-    fi
-  fi
 
   if ((offline)); then
     skip "xAI credentials (--offline)"
   elif ((unattended)); then
     skip "xAI credentials (--unattended; a scheduled pass must not read a credential)"
   else
+    # Presence is `-s` alone — never a successful parse. The login runs as the
+    # *stage* user (deploy/docker/grok-shim.sh puts every `grok` through
+    # stage-exec), and xAI's own documentation keeps auth.json owner-only, so
+    # this check, which runs as the Script's user, may be unable to read a file
+    # it can still stat — and `-s` needs only the directory `$GROK_HOME` that
+    # the image already shares between the two users. Taking the parse as the
+    # presence signal would report a completed login as absent and, on a node
+    # holding no key, fail the whole section over it. A parse failure is only
+    # ever reported where the file was actually readable. Run only here,
+    # below the offline/unattended gate above, so a skipped section never
+    # stats or parses the file at all.
+    if [[ -s "$xai_auth_file" ]]; then
+      xai_sub_present=1
+      if [[ -r "$xai_auth_file" ]] && ! jq -e . "$xai_auth_file" >/dev/null 2>&1; then
+        xai_sub_unparsed=1
+      fi
+    fi
+
     # subscription lane first: native auth precedence (verified against the
     # grok-build repository on 2026-10-08) prefers a stored session over the
     # key, so this lane is the one "by default" open whenever it is
