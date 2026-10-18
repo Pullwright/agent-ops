@@ -568,6 +568,48 @@ assert_eq "  ... and it can clear again, with nothing to close" \
   "1" "$(count_events "$union_log" pager-cleared norepo)"
 assert_eq "  ... state back to clear" "clear" "$(pager_state_for norepo < "$union_log")"
 
+# --- a stale peers view: no transition at all, one pager-evaluation-skipped -
+# (agent-ops#2266) A node whose own peers marker is stale cannot tell its own
+# broken fetch apart from a genuinely dark peer, so PEERS_STALE=true must
+# make `pager_evaluate` skip every key outright — no candidate, no fired, no
+# remedy call — rather than act on a reading it cannot trust.
+
+PAGER_EVAL_FN=(); PAGER_REMEDY_CLASS=(); PAGER_REMEDY_ARG=(); PAGER_KEYS=()
+pager_register peerstale stub_eval pipeline-act stub_remedy
+union_log="$WORKDIR/peerstale.jsonl"; : > "$union_log"
+: > "$REMEDY_CALLS_FILE"
+STUB_FIRING="true"
+pager_evaluate "$CLAIM_STUB" "o/r" "pw::pager" "enabler-escalation" \
+  "" "" 0 "$union_log" "$union_log" '[]' n1 c1 \
+  "" "" "" "" "" "" "" "" "" "" "" "" "" "" \
+  "true" "2026-01-01T00:00:00Z"
+assert_eq "peer view stale: no pager-candidate is written, even for a firing invariant" \
+  "0" "$(count_events "$union_log" pager-candidate peerstale)"
+assert_eq "  ... and no pager-fired either" "0" "$(count_events "$union_log" pager-fired peerstale)"
+assert_eq "  ... the remedy never ran" "0" "$(remedy_calls)"
+assert_eq "  ... state stays clear, as if this pass never happened" \
+  "clear" "$(pager_state_for peerstale < "$union_log")"
+assert_eq "  ... exactly one pager-evaluation-skipped is logged" "1" \
+  "$(count_events "$union_log" pager-evaluation-skipped)"
+assert_eq "  ... with reason peer-view-stale" "peer-view-stale" \
+  "$(jq -r 'select(.event == "pager-evaluation-skipped") | .reason' "$union_log" 2>/dev/null)"
+assert_eq "  ... and the marker's own last_ok_ts" "2026-01-01T00:00:00Z" \
+  "$(jq -r 'select(.event == "pager-evaluation-skipped") | .last_ok_ts' "$union_log" 2>/dev/null)"
+
+STUB_FIRING="true"
+pager_evaluate "$CLAIM_STUB" "o/r" "pw::pager" "enabler-escalation" \
+  "" "" 0 "$union_log" "$union_log" '[]' n1 c1
+assert_eq "once the peers view is fresh again (PEERS_STALE omitted), evaluation resumes" \
+  "1" "$(count_events "$union_log" pager-candidate peerstale)"
+
+union_log2="$WORKDIR/peerstale-empty.jsonl"; : > "$union_log2"
+pager_evaluate "$CLAIM_STUB" "o/r" "pw::pager" "enabler-escalation" \
+  "" "" 0 "$union_log2" "$union_log2" '[]' n1 c1 \
+  "" "" "" "" "" "" "" "" "" "" "" "" "" "" \
+  "" ""
+assert_eq "an empty PEERS_STALE (every call site before #2266) behaves exactly as omitted" \
+  "1" "$(count_events "$union_log2" pager-candidate peerstale)"
+
 # --- the notify guard leaves the exit status alone ----------------------------
 # This file sources lib/pager.sh without lib/notify.sh, so `notify_post` is
 # undefined for every assertion above — which is the whole point of the

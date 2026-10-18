@@ -3152,6 +3152,9 @@ fleet_peers_stale "$peers_dir" "$(cfg '.schedule.state_sync_fetch_minutes')" && 
 fleet_peers_json="$(jq -nc --argjson m "$fleet_peers_marker_json" --argjson stale "$fleet_peers_stale_flag" \
   '{stale: $stale, ok: $m.ok, ts: $m.ts, last_ok_ts: $m.last_ok_ts}' 2>/dev/null)"
 [[ -z "$fleet_peers_json" ]] && fleet_peers_json='{"stale":false,"ok":null,"ts":null,"last_ok_ts":null}'
+# `pager_evaluate`'s own PEERS_LAST_OK_TS (agent-ops#2266): read off the same
+# marker as the badge above, so the two can never disagree about it either.
+fleet_peers_last_ok_ts="$(jq -r '.last_ok_ts // empty' <<<"$fleet_peers_marker_json" 2>/dev/null || true)"
 
 # --- Live GitHub (best-effort) -----------------------------------------------
 # The check roll-up and the index entry, written once and used by both the
@@ -3242,7 +3245,8 @@ if (( WITH_GITHUB )); then
       "$review_log_union" "$pager_idle_cycles" "$pager_repair_rate_percent" \
       "$pager_escalation_burst" "$pager_repos_merge_autonomy_json" "$pr_label" \
       "$approver_unreviewed_engage_after_hours" "$pager_landing_armed_within_days" \
-      "$notify_events_json" "$notify_min_interval_seconds" || true
+      "$notify_events_json" "$notify_min_interval_seconds" \
+      "$fleet_peers_stale_flag" "$fleet_peers_last_ok_ts" || true
     # The payload's `pager` array needs this tick's own answer, not the
     # previous one (the dashboard banner, docs/spec/dashboard/site.md), and
     # `pager_evaluate` may just have appended to this node's own log.jsonl,

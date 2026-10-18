@@ -918,6 +918,18 @@ both without a second fetch of either. `pager_enabled` (default `true`)
 gates the whole call; `false` skips it outright, the same as `--no-github`
 does structurally.
 
+`pager_evaluate`'s own two trailing arguments (agent-ops#2266) carry this
+node's peers-marker status: the identical `fleet_peers_stale_flag` and the
+marker's own `last_ok_ts` the fleet-strip badge above is built from, so the
+pager and the badge can never disagree about whether this node's own view is
+trustworthy. While that flag reads `true`, `pager_evaluate` makes no state
+transition for any key — every invariant it registers reads
+`fleet_nodes_json` or the fleet union, both of which a broken fetch on this
+node alone can poison without any peer actually being dark — and logs one
+`pager-evaluation-skipped` event instead (`lib/pager.sh`'s own header). This
+is the requirement 2.5 "union readers" paragraph's pager row; see there for
+the incident (agent-ops#2507) that named it.
+
 One invariant needs a third artefact: `review-pipeline-failing`
 (agent-ops#1282) reads the review pipeline's own log, not the implementation
 one, so the block hands `pager_evaluate` the tick's own `review-log.jsonl`

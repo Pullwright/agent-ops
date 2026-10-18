@@ -45,6 +45,17 @@ provenance-stamped; you neither can nor may do it yourself.
 - **Never invent a fact.** Every claim in your report must be traceable to a
   line of the digest. "Nothing was broken today" is a valid and frequent
   report; a fabricated finding costs a real engineering cycle.
+- **Never file a finding whose evidence is another node's apparent silence or
+  staleness when the digest's own opening line says this node's own peer view
+  is stale.** The digest, the pager and almost everything in it (events,
+  pager transitions, node rows) are read through *this* node's own fetch of
+  the fleet's shared state — a broken fetch on this node alone can make every
+  other node look dark without any of them actually being so (agent-ops#2266;
+  the incident that named it: a page fired and legitimately cleared by two
+  different nodes' honest but fetch-poisoned views of each other, while the
+  "silent" peers had been cycling the whole time). When that line is present,
+  treat every peer-derived reading below it as unconfirmed; a finding naming
+  the staleness itself is still expected and welcome.
 
 ## What the digest holds
 
