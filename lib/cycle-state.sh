@@ -1373,7 +1373,7 @@ enabler_defer_open_dependency_items() {
     [[ -n "$ref_display" ]] || continue
     command -v log_event >/dev/null 2>&1 && log_event "enabler-dependency-deferred" "$(jq -nc \
       --arg repo "$repo" --arg item "$item" --arg ref "$ref_display" \
-      --arg d "enabler-eligibility: deferring threshold candidate $repo#$item — its thread still names an open Blocked-by reference ($ref) that scripts/gather-issues.sh's own live check already excludes it on (issue #2492)" \
+      --arg d "enabler-eligibility: deferring threshold candidate $repo#$item — its thread still names an open Blocked-by reference ($ref_display) that scripts/gather-issues.sh's own live check already excludes it on (issue #2492)" \
       '{detail: $d, repo: $repo, item: $item, ref: $ref}')"
     deferred="$(jq -c --arg r "$repo" --arg i "$item" '. + [{repo: $r, item: $i}]' \
       <<<"$deferred" 2>/dev/null || printf '%s' "$deferred")"
