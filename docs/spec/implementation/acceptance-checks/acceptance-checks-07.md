@@ -698,15 +698,20 @@
 
    A node whose previous probe was `refused` and whose current probe gets a
    genuine clean reply retires its own `credential-refused:<node>`
-   escalation (agent-ops#2414): the same test file covers
-   `credential_refused_retire_resolved` (lib/enabler.sh) directly, stubbing
-   `gh`, and shows it closes a matching open issue with a comment naming the
-   retiring cycle and the probe's own timestamp; leaves untouched an open
-   issue that names a *different* node, even when `gh issue list` itself
-   returns it among the results (the function's own body-match guard, not
-   GitHub's `--search`, is what scopes this per node); and is a quiet no-op
-   when no matching open issue exists. Against the extracted 0h block
-   itself: the retirement call fires exactly once on the cycle after a
+   escalation (agent-ops#2414). `test/credential-refused-retire-resolved.test.sh`
+   covers `credential_refused_retire_resolved` (lib/enabler.sh) directly,
+   stubbing `gh`, and shows it closes a matching open issue with a comment
+   naming the retiring cycle and the probe's own timestamp; leaves untouched
+   an open issue that names a *different* node, even when `gh issue list`
+   itself returns it among the results (the function's own body-match
+   guard, not GitHub's `--search`, is what scopes this per node); and is a
+   quiet no-op when no matching open issue exists — kept out of
+   `test/standdown-credential-preflight.test.sh` itself because sourcing
+   `lib/enabler.sh`/`lib/notify.sh` into that file widens shellcheck's `-x`
+   variable pool enough to surface unrelated SC2030 findings against that
+   file's own pre-existing subshell-local assignments. Against the extracted
+   0h block itself, `test/standdown-credential-preflight.test.sh` shows the
+   retirement call (stubbed there) fires exactly once on the cycle after a
    `refused` verdict is followed by a clean one; it does not fire when the
    node was never refused, when a transient 5xx follows a refused verdict
    (not itself evidence the credential has cleared), or on `--dry-run` —
