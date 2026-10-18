@@ -717,3 +717,23 @@
    (not itself evidence the credential has cleared), or on `--dry-run` —
    even against a node already recorded as refused, a dry-run cycle probes
    nothing and so retires nothing either.
+
+   The retirement trigger persists rather than being consumed unconditionally
+   (agent-ops#2511). `test/credential-refused-retire-resolved.test.sh` shows
+   `credential_refused_retire_resolved` returns non-zero, rather than always
+   0, on both failure windows: a stubbed `gh issue close` failure (logging a
+   `warning` event naming the issue and that it will retry next cycle,
+   leaving `credential-refused-retired` unlogged), and a stubbed `gh issue
+   list` failure distinct from a genuinely empty result — the former logs a
+   `warning` event and returns non-zero, the latter stays a quiet no-op
+   returning 0, exactly as before. `test/standdown-credential-preflight.test.sh`
+   shows the 2.0h block reads that return value: on a recovered probe where
+   the stubbed retirement function reports success, the state file's
+   verdict advances to `"ok"`; where it reports failure, the state file's
+   verdict stays `"refused"`, so the next cycle's gate (`cred_prev_verdict ==
+   "refused"`) probes again and retries the close rather than forfeiting it
+   for the container's remaining lifetime. It also shows a `transient` probe
+   immediately following a `refused` verdict leaves the state file's verdict
+   at `"refused"` rather than advancing it to `"ok"`, so a later genuinely
+   clean probe still finds `cred_prev_verdict == "refused"` and still
+   triggers retirement.
