@@ -106,16 +106,7 @@
     payload the Script reads — is recorded exactly like a fresh comment's
     URL, `item-refined` and the `refined_label` add both included, proving
     the Script never demands the comment be freshly posted (agent-ops#670
-    Part 2). The same-pass block clearance (39c; agent-ops#2477) is pinned
-    from both sides: a `refined` verdict on an item whose `blocked_json`
-    already carries an open `needs-refinement` block for the same repo+item
-    produces, beside the ordinary `item-refined`, exactly one `unblocked`
-    event carrying `by: "refiner"` and the verdict's own `reason`, plus the
-    block's `needs_refinement_label`/`blocked`/`blocked:needs-refinement`
-    labels each released through `release_refinement_label` (lifted from
-    `lib/candidate-select.sh` the same way `record_needs_refinement_block`
-    is); a `refined` verdict on an item with no matching entry in
-    `blocked_json` writes no `unblocked` at all. Requirement 39e's containment:
+    Part 2). Requirement 39e's containment:
     a verdict for an item the cycle never claimed is discarded with a
     `warning` and no `refiner-examined` at all, a claimed item the envelope
     never mentions is warned about by name and left claimed, and an

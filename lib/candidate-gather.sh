@@ -1011,6 +1011,42 @@ fi
 # unblocking, and an `unblocked` written against a void would put a clear in the
 # log for no reason at all.
 open_blocked_now="$(open_blocked_items "$union_log" "$repo_slug_aliases_json")"
+
+# Requirement 34o, in the same pre-extract window as 34f, 34g and 34i above
+# and for the same reason: a `refined` verdict is exactly what an open
+# `needs-refinement` block was waiting for, whatever stage originally
+# recorded it — so the Script clears it deterministically here rather than
+# leaving it for a human or an Enabler engagement that can only escalate
+# (`refinement_second_pass_refused`, requirement 36b).
+#
+# The Refiner's own first attempt at this (agent-ops#2477's first remedy)
+# checked `blocked_json` from inside its own `refined` verdict path, reasoning
+# that an item then being processed could not also be in that same snapshot.
+# That reasoning missed that `blocked_json` is also `refiner_candidate_items`'
+# own exclusion set, so no verdict the Refiner ever processes can name an item
+# already present in it — the check could never fire. This sweep is reachable
+# because it runs off `open_blocked_now`/`refinements_map` directly, with no
+# candidate filter standing between the two (agent-ops#2477's second remedy).
+refined_cleared_json="$(refinement_block_refined_cleared "$open_blocked_now" \
+  "$(refinements_map "$union_log" "$repo_slug_aliases_json")")"
+refined_cleared_n="$(jq 'length' <<<"$refined_cleared_json" 2>&1)" \
+  || { guard_warn "refined_cleared_n" "$refined_cleared_n"; refined_cleared_n=0; }
+if [[ "$refined_cleared_n" != "0" ]]; then
+  log_lines_before="$(wc -l < "$log_file" 2>&1)" \
+    || { guard_warn "log_lines_before" "$log_lines_before"; log_lines_before=0; }
+  while IFS= read -r cleared; do
+    [[ -n "$cleared" ]] || continue
+    cleared_repo="$(jq -r '.repo' <<<"$cleared")"
+    cleared_item="$(jq -r '.item' <<<"$cleared")"
+    # `by: "refined"` distinguishes this from the Co-Ordinator's own
+    # `unblocked` (requirement 18), the Enabler's, the label-driven one of
+    # requirement 34g, 34i's `work-gone` and 34j's `dependency-resolved`.
+    log_event "unblocked" "$(jq -c '{item: .item, repo: .repo, by: "refined"}' <<<"$cleared")"
+    release_refinement_label "$cleared_item" "$cleared_repo" "$refined_cleared_json"
+  done < <(jq -c '.[]' <<<"$refined_cleared_json" 2>/dev/null || true)
+  tail -n "+$(( log_lines_before + 1 ))" "$log_file" >> "$union_log" 2>/dev/null || true
+fi
+
 # The register read, for the repos that have blocked register items and no
 # others — usually none, and then it costs nothing. `ordered_repos_json` is what
 # names each repo's default branch; a repo this cycle did not walk has no entry

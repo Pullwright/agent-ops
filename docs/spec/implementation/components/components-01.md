@@ -711,7 +711,10 @@ What exists, and the requirements each part answers to:
    well-formedness bar for a `needs_refinement` entry, requirement 34e's block
    fields and label projection and requirement 38b's `blocked`/`blocked:<reason>`
    label projection beside it (`REFINEMENT_GH` substitutes a stub for tests,
-   following `CLAIM_GH`), requirement 35d's per-engagement cap, and requirement
+   following `CLAIM_GH`), requirement 35d's per-engagement cap, requirement
+   34o's `refinement_block_refined_cleared` (the open `needs-refinement`
+   blocks a later `item-refined` has superseded, read by
+   `lib/candidate-gather.sh`'s own pre-extract window), and requirement
    36b's `item-refined` payload and thrash guard — `refinement_is_disagreement`
    beside it, the same "needs-refinement block with `refined_before` set" shape
    read without the verdict/`issue-closed` conditions the guard itself also

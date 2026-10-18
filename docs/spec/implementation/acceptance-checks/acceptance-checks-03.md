@@ -645,6 +645,25 @@
    `scripts/gather-review-status.sh` and `scripts/gather-plan-status.sh` each run
    for real against a stubbed `gh` in that file, so what is asserted is the
    shipped scripts rather than a copy of their logic.
+8h-i. **A `needs-refinement` block clears the moment its own specification
+   exists, whoever wrote it (requirement 34o).** `test/needs-refinement.test.sh`
+   passes: `refinement_block_refined_cleared`, given the open `needs-refinement`
+   blocks and a `refinements_map`-shaped repo→item→`{ts}` map, returns the full
+   block entry for an item whose refinement `ts` postdates the block's own
+   (block-then-refine ordering), returns nothing for one whose refinement
+   predates it (refine-then-block — a genuine re-block, left alone) or that
+   carries no refinement at all, and ignores a block of any `kind` other than
+   `needs-refinement`. Then the real `release_refinement_label`
+   (`lib/candidate-select.sh`, lifted the same way `record_needs_refinement_block`
+   is elsewhere in this suite), called with an explicit third `BLOCKED_JSON`
+   argument rather than the cycle's own global, removes exactly the
+   `needs_refinement_label`/`blocked`/`blocked:needs-refinement` labels that
+   argument's matching entry names, against a stubbed `gh` — proving the
+   pre-extract-window call site (`lib/candidate-gather.sh`, requirement 34o)
+   does not depend on the global `blocked_json` existing yet, which it does
+   not at that point in the cycle. Assert the negative too: a block whose
+   refinement is older, or absent, earns no `unblocked` event and no label
+   removal call reaches `gh` at all.
 8i. **A structured dependency is held and released without a model ever
    re-reading it (requirement 34j).** `test/dependency-gate.test.sh` passes:
    `dependency_refs` parses a same-repo `#195`, a cross-repo

@@ -1279,6 +1279,87 @@ assert_eq "an ordinary block carrying no refinement kind is untouched regardless
   "$(refinement_hand_flag_cleared '[]' \
        '[{"repo": "o/r", "item": "52", "kind": "", "hand_flagged": true}]')"
 
+# --- Requirement 34o: a refined specification clears its own block ---------------
+# agent-ops#2477's second remedy. The Refiner's own first attempt (checking
+# `blocked_json` inside its own `refined` verdict path) could never fire:
+# `blocked_json` is also `refiner_candidate_items`'s own exclusion set, so no
+# item that path ever processes can be one already present in it. This sweep
+# runs instead in `lib/candidate-gather.sh`'s own pre-extract window, off
+# `open_blocked_items`/`refinements_map` directly, with no candidate filter
+# standing between the two.
+
+refined_map='{"o/r": {"55": {"ts": "2026-10-17T12:00:00Z", "cycle": "c9"}}}'
+
+block_then_refine='[{"repo": "o/r", "item": "55", "kind": "needs-refinement", "ts": "2026-10-17T10:00:00Z",
+                     "needs_refinement_label": "needs-refinement", "blocked_label": "blocked",
+                     "blocked_reason_label": "blocked:needs-refinement"}]'
+assert_eq "a block older than its own item's refinement is cleared, entry and all" \
+  "$(jq -c . <<<"$block_then_refine")" \
+  "$(refinement_block_refined_cleared "$block_then_refine" "$refined_map")"
+
+refine_then_block='[{"repo": "o/r", "item": "55", "kind": "needs-refinement", "ts": "2026-10-17T13:00:00Z",
+                     "needs_refinement_label": "needs-refinement"}]'
+assert_eq "a block newer than the refinement (a genuine re-block) is left alone" \
+  "[]" "$(refinement_block_refined_cleared "$refine_then_block" "$refined_map")"
+
+no_refinement='[{"repo": "o/r", "item": "56", "kind": "needs-refinement", "ts": "2026-10-17T10:00:00Z",
+                 "needs_refinement_label": "needs-refinement"}]'
+assert_eq "a block whose item carries no refinement at all is left alone" \
+  "[]" "$(refinement_block_refined_cleared "$no_refinement" "$refined_map")"
+
+other_kind='[{"repo": "o/r", "item": "55", "kind": "escalation", "ts": "2026-10-17T10:00:00Z"}]'
+assert_eq "a block of any other kind is never touched by this clearance" \
+  "[]" "$(refinement_block_refined_cleared "$other_kind" "$refined_map")"
+
+assert_eq "an empty open-blocked set clears nothing" "[]" \
+  "$(refinement_block_refined_cleared '[]' "$refined_map")"
+assert_eq "a malformed refinements map clears nothing rather than faulting" "[]" \
+  "$(refinement_block_refined_cleared "$block_then_refine" 'not json')"
+
+# The real `release_refinement_label` (`lib/candidate-select.sh`), called the
+# way `lib/candidate-gather.sh`'s own pre-extract-window call site calls it:
+# with an explicit third BLOCKED_JSON argument, because the global
+# `blocked_json` this function otherwise defaults to does not exist yet at
+# that point in the cycle — it is what that window is still building.
+# Lifted verbatim, the same technique test/refiner-verdicts.test.sh and
+# test/enabler-verdicts.test.sh use for the functions they test for real,
+# rather than restating its logic as a stand-in that could drift from it.
+extract_fn() {
+  local start_pat="$1" file="$2"
+  awk -v start="$start_pat" '
+    $0 == start { on = 1 }
+    on          { print }
+    on && /^}$/ { exit }
+  ' "$file"
+}
+release_refinement_label_fn="$(extract_fn 'release_refinement_label() {' "$SCRIPT_DIR/lib/candidate-select.sh")"
+if [[ "$release_refinement_label_fn" != *"refinement_label_remove"* ]]; then
+  printf 'FAIL - release_refinement_label could not be found in lib/candidate-select.sh (renamed or moved?)\n'
+  exit 1
+fi
+# A dry run changes nothing in any repository (requirement 12) and this test
+# exercises the opposite path; a block clearance's own `log_event` calls are
+# not what this section asserts (the argument-defaulting and the gh calls
+# that follow are), so a no-op is enough here.
+DRY_RUN=0
+# shellcheck disable=SC2317  # invoked only by the eval'd release_refinement_label
+log_event() { :; }
+eval "$release_refinement_label_fn"
+
+reset_calls
+release_refinement_label 55 "o/r" "$block_then_refine"
+assert_contains "the needs-refinement label is removed via the explicit third argument" \
+  "remove o/r 55 needs-refinement" "$(label_calls)"
+assert_contains "  ... and the generic blocked label with it" \
+  "remove o/r 55 blocked" "$(label_calls)"
+assert_contains "  ... and the blocked:needs-refinement reason label too" \
+  "remove o/r 55 blocked:needs-refinement" "$(label_calls)"
+
+reset_calls
+release_refinement_label 55 "o/r"
+assert_eq "with no third argument, and no global blocked_json set, nothing is removed" \
+  "" "$(label_calls)"
+
 # --- The argv cap (requirement 4g) ------------------------------------------------
 # The open blocked set grows with the fleet's history — block entries carry
 # their evidence payloads — and both halves of the hand-flag scan take it.

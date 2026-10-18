@@ -119,10 +119,6 @@ maybe_run_refiner_fn="$(extract_fn 'maybe_run_refiner() {' "$SCRIPT_DIR/lib/refi
 # lives in _refiner_process_one_verdict, the helper that logs each verdict.
 refiner_process_one_verdict_fn="$(extract_fn '_refiner_process_one_verdict() {' "$SCRIPT_DIR/lib/refinement.sh")"
 record_needs_refinement_block_fn="$(extract_fn 'record_needs_refinement_block() {' "$SCRIPT_DIR/lib/candidate-select.sh")"
-# agent-ops#2477: the `refined` path's own same-pass block clearance calls
-# this, lifted the same way as record_needs_refinement_block just above, so
-# the test exercises the genuine removal path rather than a stand-in.
-release_refinement_label_fn="$(extract_fn 'release_refinement_label() {' "$SCRIPT_DIR/lib/candidate-select.sh")"
 refiner_claim_key_fn="$(extract_fn 'refiner_claim_key() {' "$SCRIPT_DIR/lib/refinement.sh")"
 extract_json_result_fn="$(extract_fn 'extract_json_result() {' "$SCRIPT_DIR/lib/stage-attempt.sh")"
 
@@ -132,10 +128,6 @@ if [[ "$refiner_process_one_verdict_fn" != *"refiner-examined"* ]]; then
 fi
 if [[ "$record_needs_refinement_block_fn" != *"attempt-failed"* ]]; then
   printf 'FAIL - record_needs_refinement_block could not be found in agent-cycle.sh (renamed or moved?)\n'
-  exit 1
-fi
-if [[ "$release_refinement_label_fn" != *"refinement_label_remove"* ]]; then
-  printf 'FAIL - release_refinement_label could not be found in lib/candidate-select.sh (renamed or moved?)\n'
   exit 1
 fi
 if [[ "$refiner_claim_key_fn" != *"__"* ]]; then
@@ -150,7 +142,6 @@ fi
 eval "$extract_json_result_fn"
 eval "$refiner_claim_key_fn"
 eval "$record_needs_refinement_block_fn"
-eval "$release_refinement_label_fn"
 eval "$refiner_process_one_verdict_fn"
 eval "$maybe_run_refiner_fn"
 
@@ -422,52 +413,6 @@ assert_eq "prompt: re-affirmation is named" "yes" \
   "$(grep -qi 're-affirm' "$refiner_prompt" && echo yes || echo no)"
 assert_eq "prompt: re-affirmation is reached via refined, not needs-refinement" "yes" \
   "$(grep -qE 'Say so with .refined., not .needs-refinement' "$refiner_prompt" && echo yes || echo no)"
-
-# ============================================================================
-# (a3) refined, item already carries an open needs-refinement block whose
-# blocked_ts predates this refinement (agent-ops#2477): the block is cleared
-# in the same pass — an `unblocked` event attributed `by: "refiner"`, and the
-# block's own labels released — rather than left for a human or an Enabler
-# engagement that can only escalate (`refinement_second_pass_refused`).
-# ============================================================================
-# shellcheck disable=SC2034  # read by the eval'd record/release helpers
-blocked_json='[{"repo":"o/r","item":"55","kind":"needs-refinement",
-                "needs_refinement_label":"needs-refinement","blocked_label":"blocked",
-                "blocked_reason_label":"blocked:needs-refinement"}]'
-verdicts='[{"repo":"o/r","item":"55","verdict":"refined","reason":"the fork settled, specified in full",
-            "comments_posted":["https://github.com/o/r/issues/55#issuecomment-2"]}]'
-calls="$(run_case "refined, clears its own stale block" "$issue_candidates" "$verdicts")"
-# shellcheck disable=SC2034
-blocked_json='[]'
-
-assert_eq "stale block: item-refined is still recorded exactly as before" "1" \
-  "$(grep -cE '^event item-refined ' <<<"$calls")"
-assert_eq "stale block: exactly one unblocked event" "1" \
-  "$(grep -cE '^event unblocked ' <<<"$calls")"
-ub_evt="$(events_named "$calls" unblocked | head -n1)"
-assert_eq "stale block: unblocked is attributed by: refiner" "refiner" "$(jq -r '.by' <<<"$ub_evt")"
-assert_eq "stale block: unblocked names the same repo and item" "o/r 55" \
-  "$(jq -r '"\(.repo) \(.item)"' <<<"$ub_evt")"
-assert_eq "stale block: unblocked carries the refined verdict's own reason" \
-  "the fork settled, specified in full" "$(jq -r '.reason' <<<"$ub_evt")"
-assert_contains "stale block: the needs-refinement label is released" \
-  "gh-label remove o/r 55 needs-refinement" "$calls"
-assert_contains "stale block: the generic blocked label is released" \
-  "gh-label remove o/r 55 blocked" "$calls"
-assert_contains "stale block: the blocked:needs-refinement reason label is released" \
-  "gh-label remove o/r 55 blocked:needs-refinement" "$calls"
-
-# ============================================================================
-# (a4) refined, item carries no open block at all: no unblocked event is
-# fabricated — the clearance above fires only when blocked_json actually
-# shows one.
-# ============================================================================
-verdicts='[{"repo":"o/r","item":"55","verdict":"refined","reason":"specified, nothing was blocking it",
-            "comments_posted":["https://github.com/o/r/issues/55#issuecomment-3"]}]'
-calls="$(run_case "refined, no block to clear" "$issue_candidates" "$verdicts")"
-
-assert_eq "no block: no unblocked event is written" "0" \
-  "$(grep -cE '^event unblocked ' <<<"$calls")"
 
 # ============================================================================
 # (b) refined, source issues, no comment posted: degraded, never recorded

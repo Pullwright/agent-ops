@@ -1,6 +1,6 @@
 ## Requirements
 
-### Logging and state — requirements, continued (part 2 of 2; 34i–34n: A block whose work is gone is cleared without asking anyone…)
+### Logging and state — requirements, continued (part 2 of 2; 34i–34o: A block whose work is gone is cleared without asking anyone…)
 
 34i. **A block whose work is gone is cleared without asking anyone.** The
     common way a block ends is not that the impediment lifts — it is that
@@ -794,4 +794,49 @@
     a live signal that retirement itself has fallen behind (a burst of new
     voids, `void_retire_after_days` set too high, or 34k failing to
     action items), well before any cap could bite.
+34o. **A refined specification is exactly what a `needs-refinement` block was
+    waiting for, and clears it deterministically, whoever originally recorded
+    it (agent-ops#2477).** The common way a refinement block ends is that
+    somebody writes the missing specification — a human comment on the
+    issue's thread, the Enabler's own `unblocked` verdict (requirement 36b),
+    or, now that the item is a candidate again, a fresh Refiner pass. Until
+    the Enabler next examines it (requirement 35a's threshold) or a human
+    notices, the item is reported as blocked even though its specification
+    already exists.
+
+    `agent-ops#2477` specified a narrower fix first: the Refiner's own
+    `refined` verdict path checking, in the same pass, whether `blocked_json`
+    — this cycle's own snapshot, taken before the Refiner ran — already
+    carried an open block for the item, and clearing it there if so. That
+    check could never fire. `blocked_json` is also `refiner_candidate_items`'
+    own exclusion set (requirement 39a): every item the Refiner's `refined`
+    path ever processes was, by construction, *absent* from `blocked_json`
+    when the candidate list was built, so the condition the Refiner's own
+    path tested was unsatisfiable in production — exercised and passing only
+    in a test that set `refiner_candidates_json` directly, bypassing the
+    exclusion the real pipeline always applies.
+
+    So, in the same pre-extract window as requirements 34f, 34g and 34i, and
+    against the *open* `needs-refinement` blocks only (34h — a void item
+    needs no unblocking, and a block of any other kind has no refinement to
+    answer it), the Script compares each block's own `ts` against
+    `refinements_map`'s entry for the same repo+item (requirement 3h,
+    `lib/cycle-state.sh`) — the latest non-phantom `item-refined`, already
+    resolved through `repo_slug_aliases_json` and already skipping a
+    `comment_url` that names no real comment (TD-PPagop-26082819) — and logs
+    `unblocked` with `by: "refined"` for every block whose refinement
+    postdates it, releasing the block's `needs_refinement_label`/`blocked`/
+    `blocked:needs-refinement` labels (requirement 38b) through
+    `release_refinement_label` the same way every other clearance route does.
+    A block
+    whose refinement predates it (a genuine re-block after the specification
+    was found wanting) is left alone, as is a block with no refinement at
+    all — the same "unknown is not gone" discipline requirement 34i's own
+    clearances observe, applied here to "unrefined is not cleared."
+
+    This is not a second pass at the same disagreement, so
+    `refinement_second_pass_refused`'s thrash guard (requirement 36b) never
+    sees it: that guard governs a fresh `unblocked` *verdict* asked of the
+    Enabler, never this deterministic sweep, which reads a fact already on
+    the log rather than asking anyone to re-decide anything.
 

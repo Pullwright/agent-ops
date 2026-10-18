@@ -1493,7 +1493,7 @@ log_recheck_clean_items() {
 # to remove; a label assumed from config is one it might try to remove from an
 # issue that never had it, or leave on an issue after the key changed.
 
-# release_refinement_label ITEM [REPO]
+# release_refinement_label ITEM [REPO] [BLOCKED_JSON]
 # Take the projected labels — `needs_refinement_label`, and `blocked`/
 # `blocked:<reason>` (requirement 38b, agent-ops#639) — off the issue behind
 # ITEM, if this item's refinement block put them there. Called wherever a
@@ -1504,12 +1504,18 @@ log_recheck_clean_items() {
 # `blocked`/`blocked:<reason>` by the reconciliation sweep beside it
 # (agent-ops#651).
 #
-# Reads the blocked extract this cycle computed *before* the Co-Ordinator ran,
-# which is the correct one: the block being cleared is by definition one that was
-# open when the cycle started. Best-effort throughout — a stale label is a
-# cosmetic fault on an issue, and no reason to disturb a cycle recording state.
+# BLOCKED_JSON defaults to the global `blocked_json` — the extract this
+# cycle's own Co-Ordinator/Enabler/Refiner reads are computed against, built
+# *before* those stages ran, which is the correct one: the block being
+# cleared is by definition one that was open when the cycle started. A caller
+# in `lib/candidate-gather.sh`'s own pre-extract window (requirement 34o)
+# passes one explicitly instead, since that window runs *before* the global
+# is assigned (it is what builds it) and so has nothing to default to.
+#
+# Best-effort throughout — a stale label is a cosmetic fault on an issue, and
+# no reason to disturb a cycle recording state.
 release_refinement_label() {
-  local item="$1" repo="${2:-}" t_repo t_num t_label
+  local item="$1" repo="${2:-}" blocked="${3:-${blocked_json:-[]}}" t_repo t_num t_label
   [[ -n "$item" ]] || return 0
   # A dry run changes nothing in any repository (requirement 12). It still logs
   # the verdicts on this path, as it always has, but a label is an outward act.
@@ -1526,7 +1532,7 @@ release_refinement_label() {
         "$(jq -nc --arg d "could not remove the $t_label label from $t_repo#$t_num — the block is cleared regardless" \
            '{detail: $d}')"
     fi
-  done < <(refinement_label_targets "${blocked_json:-[]}" "$item" "$repo")
+  done < <(refinement_label_targets "$blocked" "$item" "$repo")
   while IFS=$'\t' read -r t_repo t_num t_label; do
     [[ -n "$t_repo" && -n "$t_num" && -n "$t_label" ]] || continue
     if refinement_label_remove "$t_repo" "$t_num" "$t_label"; then
@@ -1536,7 +1542,7 @@ release_refinement_label() {
         "$(jq -nc --arg d "could not remove the $t_label label from $t_repo#$t_num — the block is cleared regardless" \
            '{detail: $d}')"
     fi
-  done < <(refinement_blocked_label_targets "${blocked_json:-[]}" "$item" "$repo")
+  done < <(refinement_blocked_label_targets "$blocked" "$item" "$repo")
 }
 
 # record_needs_refinement_block ENTRY STAGE
