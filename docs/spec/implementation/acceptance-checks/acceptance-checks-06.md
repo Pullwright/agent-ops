@@ -312,6 +312,36 @@
    call recorded and no trailing marker proving the block ran to its own
    end.
 
+63. **Gate 4.5's protected-path-tier sub-case re-engages the Approver at the
+    critical tier on a retry, rather than looping on landing alone
+    (requirement 8w, issue #2514).** `test/landing-wiring.test.sh` lifts the
+    modified `_landing_stage_attempt` verbatim, with `_landing_protected_
+    path_tier_resolve` stubbed exactly as `_landing_open_question_resolve`
+    already is: a non-retry attempt never calls it, whatever gate 4.5's own
+    `landing_protected_path_controls_ok` reports; a retry whose verdict
+    matches the tier or missing-timestamp sub-case calls it with the slug,
+    pull request URL, number and the exact ineligible text that triggered
+    the call; a retry whose verdict is the cool-off or stale-head sub-case,
+    or already `ok`, never calls it at all. Critically, gate 4.5's own
+    dispatch reclassifies whatever the stub returns rather than the stale
+    value that triggered the call: a stub reporting `ok` arms the pull
+    request normally; a stub reporting a fresh cool-off message refuses
+    under `protected-path-cooloff`, never the `protected-path-tier` class
+    the call started from — the regression this requirement's own gate-4.5
+    rewrite exists to avoid, since a successful reapproval's own fresh
+    `submitted_at` almost always still has its ordinary cool-off ahead of it.
+
+    `run_protected_path_tier_reapproval` and `protected_path_tier_
+    reapproval_attempted_before` are not separately lifted — mirroring `run_
+    open_question_adjudication`'s own real internals (a live `gh pr diff`, a
+    real model engagement against `prompts/approver-reapprove-protected-
+    path-tier.md`) has no business running unstubbed inside a hermetic unit
+    test, the same reasoning that keeps `_landing_protected_path_tier_
+    resolve` itself a black box here. `test/prompt-untrusted-framing.test.sh`
+    (requirement 45) covers `prompts/approver-reapprove-protected-path-tier.md`
+    alongside every other shipped stage prompt, byte-identical to the
+    canonical block.
+
 10. **The egress fence holds its shape (D24).** `test/egress-fence.test.sh`
     passes: the baked allowlist carries every domain the cycles need
     (`codeload.github.com` and `ghcr.io` included — the two no grep of the
