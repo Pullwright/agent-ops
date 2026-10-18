@@ -439,6 +439,7 @@ if ! (( DRY_RUN )); then
     cred_probe_rc=0
     run_model_stage credential-probe 180 "$implementer_model_trivial" \
       "Reply with the single word: ok" "$cred_probe_out" "$cycle_dir" || cred_probe_rc=$?
+    cred_probe_ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     # The probe's own spend, joined into the fleet-wide ledger like every
     # other launch through run_model_stage (issue #2239, D30), the same way
     # 1b's own limit-probe stage-end does fifty lines below: it never had a
@@ -498,6 +499,21 @@ if ! (( DRY_RUN )); then
         '{reason: $r, cause: "credential-refused", detail: $d, token: $t}')"
       set_node_state_terminal externally-blocked credential-refused
       exit 0
+    fi
+    # Retirement, the credential-refused analogue of `crash_loop_retire_
+    # resolved` (lib/enabler.sh) — but per node rather than fleet-wide, since
+    # this escalation is filed per node and only that node's own probe can
+    # speak to whether it has cleared (agent-ops#2311 is not a hazard here: a
+    # staggered fleet recovery just means each node retires its own
+    # escalation on its own probe, never a peer's). `cred_class` empty (not
+    # `refused`, and not `transient` — a 5xx or an overload answers nothing
+    # about the credential) alongside `cred_probe_rc == 0` is what tells a
+    # genuine clean reply from both a credential refusal *and* a probe that
+    # never produced a considered answer at all (a crashed or timed-out
+    # launch, whose empty output also reads as `cred_class == ""`).
+    if [[ "$cred_prev_verdict" == "refused" ]] && (( cred_probe_rc == 0 )) \
+       && [[ -z "$cred_class" ]] && [[ -n "$crash_loop_repo" ]]; then
+      credential_refused_retire_resolved "$crash_loop_repo" "$node_name" "$cycle_id" "$cred_probe_ts"
     fi
     jq -nc --arg s "$cred_container_started" '{container_started: $s, verdict: "ok"}' \
       > "$cred_state_file" 2>/dev/null || true
