@@ -779,7 +779,18 @@ assert_eq "a second provider's entry does not disturb the first's" "70" \
   "$(fleet_flag_fetch "$slug" "$fs_mix" mix | jq -r '.providers.anthropic.lanes.api.weight')"
 
 # --- mix_write's own CAS retry: a stale sha on the first attempt re-reads and
-# lands on the second, the same two-attempt shape fleet_limit_publish uses ---
+# lands on the second, the same two-attempt shape fleet_limit_publish uses.
+#
+# The peer's own concurrent write actually *lands* in the stub below, between
+# this process's read and its losing PUT, and it names a different provider
+# (`xai`) than the one under test (`anthropic`). That is what makes this case
+# able to tell a genuine re-read from a memo hit at all: mix_write's body is a
+# whole-file replacement built from what it read, so a second attempt served
+# `fleet_flag_fetch_status`' own per-process memo — which `fleet_flag_write`
+# drops only on a *successful* PUT — re-sends the pre-peer snapshot against a
+# sha it does read fresh, and silently deletes `xai` while reporting success.
+# A stub that merely fails the first PUT without changing the file's content
+# leaves the two indistinguishable, so `xai` is the whole assertion here. ---
 
 race_backing="$tmp_dir/mix-race-remote"; mkdir -p "$race_backing/fleet"
 jq -nc '{providers:{anthropic:{lanes:{api:{weight:1}}}}, by: "seed", actor: "seed", ts: "2026-07-17T00:00:00Z"}' \
@@ -819,9 +830,12 @@ case "\$method" in
     echo x >> "\$put_count_file"
     # The first PUT this process ever attempts loses the race outright — a
     # peer's own concurrent write landed between this process's read and its
-    # PUT — whatever sha it offers. Every later attempt behaves like the
-    # ordinary stub: real CAS against the file's live sha.
+    # PUT — whatever sha it offers. That peer's write is applied here, for
+    # real, so the second attempt must re-read to see it. Every later attempt
+    # behaves like the ordinary stub: real CAS against the file's live sha.
     if [[ \$(wc -l < "\$put_count_file") -eq 1 ]]; then
+      jq -c '.providers.xai = {lanes:{api:{weight:5}}} | .by = "peer"' "\$file" \\
+        > "\$file.peer" && mv "\$file.peer" "\$file"
       echo "gh: sha mismatch (HTTP 409)" >&2; exit 1
     fi
     if [[ -f "\$file" ]]; then
@@ -839,6 +853,95 @@ assert_eq "mix_write's own retry converges past a stale-sha PUT" "0" "$?"
 assert_eq "…and the second attempt actually landed" "99" \
   "$(jq -r '.providers.anthropic.lanes.api.weight' "$race_backing/fleet/mix.json")"
 assert_eq "…having tried the PUT exactly twice" "2" "$(wc -l < "$race_put_count")"
+assert_eq "…and the peer's own concurrent entry survived the retry" "5" \
+  "$(jq -r '.providers.xai.lanes.api.weight // "ERASED"' "$race_backing/fleet/mix.json")"
+
+# --- mix_write reads past a memo this same process already filled: the real
+# `agent-cycle.sh --mix` path calls providers_apply_mix at startup (line 1255)
+# long before run_manage_command reaches mix_write, and that read memoises the
+# flag for the identical (NAME, STATE_DIR, MODE) key. Without
+# _mix_fetch_confirmed's FRESH, mix_write's *first* attempt never touches the
+# network at all, so anything a peer wrote in between is erased on a PUT whose
+# own sha was read fresh — and no retry is even involved. ---
+
+memo_backing="$tmp_dir/mix-memo-remote"; mkdir -p "$memo_backing/fleet"
+jq -nc '{providers:{anthropic:{lanes:{api:{weight:1}}}}, by: "seed", actor: "seed", ts: "2026-07-17T00:00:00Z"}' \
+  > "$memo_backing/fleet/mix.json"
+fs_memo="$tmp_dir/fleet-state-mix-memo"; mkdir -p "$fs_memo"
+PROVIDER_LANES=()
+providers_load "{}"
+TOGGLE_GH="$gh_stub" GH_STUB_BACKING="$memo_backing" \
+  providers_apply_mix "$slug" "$fs_memo"
+# The peer's entry lands after this process's startup read, before its write.
+jq -c '.providers.xai = {lanes:{api:{weight:5}}} | .by = "peer"' "$memo_backing/fleet/mix.json" \
+  > "$memo_backing/fleet/mix.json.peer"
+mv "$memo_backing/fleet/mix.json.peer" "$memo_backing/fleet/mix.json"
+TOGGLE_GH="$gh_stub" GH_STUB_BACKING="$memo_backing" \
+  mix_write "$slug" "$fs_memo" anthropic '{"api":{"weight":42}}' "operator pid 5" "operator" >/dev/null
+assert_eq "mix_write after this process's own providers_apply_mix lands its edit" "42" \
+  "$(jq -r '.providers.anthropic.lanes.api.weight' "$memo_backing/fleet/mix.json")"
+assert_eq "…without replaying the startup read's memo over a peer's later entry" "5" \
+  "$(jq -r '.providers.xai.lanes.api.weight // "ERASED"' "$memo_backing/fleet/mix.json")"
+
+# --- Neither writer proceeds on an answer GitHub did not confirm. Every read
+# of this flag fails open (requirement 2.3e), because the lever can only open
+# a lane; a *write* has no such safe direction — its body replaces the whole
+# file, so building one from a cached or unreachable answer deletes every
+# entry written since. mix_reset additionally must not report `absent`, which
+# the CLI prints as "config.json already governs": a reset that never ran. ---
+
+# `fs_dead` is a state dir no fetch has ever filled, so there is no cached
+# copy either — the `unreachable` answer, not `cached`.
+fs_dead="$tmp_dir/fleet-state-mix-dead"
+
+GH_STUB_MODE=down mix_write "$slug" "$fs_dead" anthropic '{"api":{"weight":7}}' "operator pid 7" >/dev/null
+assert_eq "mix_write refuses outright when the state repo is unreachable" "1" "$?"
+
+GH_STUB_MODE=down mix_reset "$slug" "$fs_dead" anthropic "operator pid 7" >/dev/null
+assert_eq "mix_reset refuses rather than reporting a reset it never made" "1" "$?"
+assert_eq "…printing nothing, so the CLI's own catch-all warns instead of saying 'absent'" "" \
+  "$(GH_STUB_MODE=down mix_reset "$slug" "$fs_dead" anthropic "operator pid 7" 2>/dev/null)"
+
+# The `cached` answer is the dangerous one, and the reason the gate tests the
+# status rather than merely asking for a fresh read: a transient failure on
+# the read alone, with the write's own sha GET succeeding a moment later,
+# hands the writer a cache arbitrarily older than the file it is about to
+# replace. Here the cache knows only `anthropic` while the remote already
+# carries a peer's `xai`, and only the first GET fails.
+cached_backing="$tmp_dir/mix-cached-remote"; mkdir -p "$cached_backing/fleet"
+jq -nc '{providers:{anthropic:{lanes:{api:{weight:1}}}, xai:{lanes:{api:{weight:5}}}},
+         by: "peer", actor: "peer", ts: "2026-07-17T00:00:00Z"}' \
+  > "$cached_backing/fleet/mix.json"
+fs_cached="$tmp_dir/fleet-state-mix-cached"
+mkdir -p "$fs_cached/fleet-cache"
+jq -nc '{providers:{anthropic:{lanes:{api:{weight:1}}}},
+         by: "stale", actor: "stale", ts: "2026-07-16T00:00:00Z"}' \
+  > "$(fleet_cache_file "$fs_cached" mix)"
+flaky_count="$tmp_dir/mix-flaky-get-count"; : > "$flaky_count"
+flaky_stub="$tmp_dir/mix-flaky-gh-stub"
+cat > "$flaky_stub" <<STUB
+#!/usr/bin/env bash
+set -uo pipefail
+# Only the very first contents GET fails — the writer's own sha read, and
+# every later attempt, reach the real stub below.
+for a in "\$@"; do
+  if [[ "\$a" == */contents/* ]]; then
+    echo x >> "$flaky_count"
+    if [[ \$(wc -l < "$flaky_count") -eq 1 ]]; then
+      echo "dial tcp: could not resolve host github.com" >&2
+      exit 1
+    fi
+  fi
+done
+exec "$gh_stub" "\$@"
+STUB
+chmod +x "$flaky_stub"
+TOGGLE_GH="$flaky_stub" GH_STUB_BACKING="$cached_backing" \
+  mix_write "$slug" "$fs_cached" anthropic '{"api":{"weight":77}}' "operator pid 8" "operator" >/dev/null
+assert_eq "mix_write past a transiently-failed read lands on its retry" "77" \
+  "$(jq -r '.providers.anthropic.lanes.api.weight' "$cached_backing/fleet/mix.json")"
+assert_eq "…never building the replacement body from the stale local cache" "5" \
+  "$(jq -r '.providers.xai.lanes.api.weight // "ERASED"' "$cached_backing/fleet/mix.json")"
 
 # --- providers_apply_mix: overlays onto PROVIDER_LANES, fails open on a flag
 # too mangled to parse, and MIX_SOURCE names which side supplied each field ---

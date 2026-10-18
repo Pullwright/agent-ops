@@ -454,6 +454,23 @@
    `--mix` themselves, which run far more often and would otherwise flood
    the log with the same finding on every poll).
 
+   Those directions govern every *read* of the flag. A **write** — `--mix`
+   itself, and `--mix <provider> --reset` — has no fail-open direction
+   available to it, because the contents API carries no patch and so each
+   writes the whole file: a body built from anything other than the flag's
+   current contents deletes every entry made since, including a peer
+   operator's concurrent `--mix` for a different provider, under a command
+   that reports success to both. So each writer re-reads the flag
+   immediately before each of its two attempts, bypassing the per-process
+   memo (`fleet_flag_fetch_status`' own FRESH, requirement 2.3a) that would
+   otherwise serve it this process's own earlier read — `providers_apply_mix`
+   at startup, or the attempt whose staleness just lost the compare-and-set —
+   and proceeds only on an answer GitHub confirmed this instant. A `cached`
+   or `unreachable` answer stops the write instead: `agent-cycle.sh` reports
+   that it could not publish (or reset) the mix and exits non-zero, leaving
+   the operator to re-run the command, rather than overwriting a file it
+   cannot see or reporting a reset that never happened.
+
    `--status` reports each configured provider's effective lanes — weight,
    resolved `enabled` (`lane_enabled_desc`'s own "yes"/"no"/"default"
    vocabulary, `scripts/doctor.sh`), whether the lane's credential is present

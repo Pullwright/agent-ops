@@ -178,6 +178,53 @@ mix_build_overlay() {
   jq -nc "$filter"
 }
 
+# _mix_fetch_confirmed STATE_REPO STATE_DIR
+# The flag's current bytes for a caller about to *replace the whole file*
+# under them — `mix_write` and `mix_reset` below, the two writers — printing
+# the raw body (empty when the flag is clear) and returning 0 only when
+# GitHub itself confirmed the answer this instant; returning 1, printing
+# nothing, when it did not.
+#
+# Both halves matter, and neither is what `fleet_flag_fetch` gives:
+#
+#   * **Fresh.** `fleet_flag_fetch_status`' memo serves a `live`/`clear`
+#     answer to every later call for the same (NAME, STATE_DIR, MODE) in this
+#     process, and `fleet_flag_write` drops that memo only on a *successful*
+#     PUT — so a writer's retry after a lost CAS is handed back the very
+#     snapshot whose staleness lost it, re-sends a body built from it, and
+#     this time PUTs against a sha `fleet_flag_write` does read fresh, which
+#     succeeds. The same memo defeats the *first* attempt too, in the one
+#     path that matters: `providers_apply_mix` has already memoised the flag
+#     from `agent-cycle.sh`'s own startup before `run_manage_command` reaches
+#     either writer, so without this, neither writer ever reads the network
+#     at all. Hence FRESH (`fleet_flag_fetch_status`' fifth argument), which
+#     exists for exactly this shape of caller — "taking an outward action
+#     under the answer, rather than merely computing with it".
+#   * **Confirmed.** A `cached` or `unreachable` answer is this process's own
+#     uncertainty, not a reading of the file, and a whole-file replacement
+#     built from one erases every entry written since that cache was filled.
+#     So the writers refuse rather than fail open: unlike every *read* of
+#     this flag (requirement 2.3e's own failure directions, which fail open
+#     because the lever can only ever open a lane), a write that cannot see
+#     what it is overwriting has no safe direction at all. The caller reports
+#     the failure to the operator instead, who can re-run the command.
+#
+# This is the one place `fleet_limit_publish`'s borrowed two-attempt shape
+# does not transfer: that function's `body` is computed *outside* its loop
+# and does not depend on what it read, so a stale read costs it nothing. The
+# mix writers' bodies are `(every other provider's entry) + (this provider's,
+# merged)` — built from the snapshot — so a stale read is a peer's entry
+# silently deleted, under a command that reports success to both operators.
+_mix_fetch_confirmed() {
+  local combined status
+  combined="$(fleet_flag_fetch_status "$1" "$2" mix "" fresh)"
+  status="${combined%%$'\t'*}"
+  case "$status" in
+    live|clear) printf '%s' "${combined#*$'\t'}" ;;
+    *) return 1 ;;
+  esac
+}
+
 # mix_write STATE_REPO STATE_DIR PROVIDER OVERLAY_JSON BY [ACTOR]
 # Merges OVERLAY_JSON (mix_build_overlay's own output) onto PROVIDER's
 # existing lanes entry in fleet/mix.json — field by field, via jq's own `*`,
@@ -186,17 +233,19 @@ mix_build_overlay() {
 # Every other provider's entry, and every field of this provider's own lanes
 # this OVERLAY_JSON does not name, survives untouched: the lever restates
 # preferences incrementally across repeated calls, never replaces the whole
-# record. Two attempts, re-reading between them, the same shape
-# `fleet_limit_publish` (lib/toggle.sh) uses: losing the CAS to a peer's
-# concurrent `--mix` converges onto this process's own edit applied after
-# theirs, rather than failing outright. Returns non-zero only once both
-# attempts fail to write at all.
+# record. Two attempts, each re-reading through `_mix_fetch_confirmed` above:
+# losing the CAS to a peer's concurrent `--mix` converges onto this process's
+# own edit applied after theirs, rather than failing outright. Returns
+# non-zero once both attempts fail to write — or without attempting a write
+# at all when neither attempt could confirm what it would be overwriting
+# (see `_mix_fetch_confirmed` for why a writer refuses where a reader fails
+# open).
 mix_write() {
   local repo="$1" state_dir="$2" provider="$3" overlay_json="$4" by="$5" actor="${6:-}"
   local cur body
   [[ -n "$actor" ]] || actor="$(toggle_actor)"
   for _ in 1 2; do
-    cur="$(fleet_flag_fetch "$repo" "$state_dir" mix)"
+    cur="$(_mix_fetch_confirmed "$repo" "$state_dir")" || continue
     jq -e . >/dev/null 2>&1 <<<"${cur:-{\}}" || cur='{}'
     body="$(jq -nc --argjson cur "${cur:-{\}}" --arg p "$provider" --argjson overlay "$overlay_json" \
       --arg by "$by" --arg actor "$actor" --arg ts "$(_toggle_iso)" '
@@ -222,14 +271,17 @@ mix_write() {
 # still stands). An unparseable flag is reset by deleting it outright rather
 # than edited around — this command's whole job is to return to config, and a
 # body this cannot parse is not a body it can safely edit one provider out
-# of. Two attempts, re-reading between them, the same shape mix_write above
-# uses.
+# of. Two attempts, each re-reading through `_mix_fetch_confirmed` above, the
+# same shape mix_write uses — and for the same two reasons, plus a third of
+# this function's own: a flag merely *unreachable* must never be reported as
+# `absent`, which reads to the operator as "config.json already governs" and
+# would be a reset that never happened.
 mix_reset() {
   local repo="$1" state_dir="$2" provider="$3" by="$4" actor="${5:-}"
   local cur remaining body
   [[ -n "$actor" ]] || actor="$(toggle_actor)"
   for _ in 1 2; do
-    cur="$(fleet_flag_fetch "$repo" "$state_dir" mix)"
+    cur="$(_mix_fetch_confirmed "$repo" "$state_dir")" || continue
     if [[ -z "$cur" ]]; then
       printf 'absent'
       return 0
