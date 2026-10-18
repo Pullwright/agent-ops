@@ -769,6 +769,45 @@ assert_eq "a recheck-reason candidate with an open reference is unaffected" "rec
   "$(reason_for 42 3 72)"
 assert_eq "...and its thread is never even fetched" "0" "$(item_live_entry_calls)"
 
+# Case 6: the filter's own predicates are reachable from the process that
+# actually runs the rule. Every case above stubs `issue_blocked_by_ref` and
+# `item_live_entry` into this harness, which is the only way to exercise the
+# logic without live `gh` calls — but it also means none of them can see
+# whether `agent-cycle.sh`'s process defines either one. It has to, because
+# `enabler_defer_open_dependency_items` skips itself entirely when a predicate
+# is undefined: that fallback is what keeps `scripts/publish-dashboard.sh`'s
+# own read of the eligible set free of `gh` calls, and it swallows the whole
+# rule just as quietly on the one path where the rule is meant to fire. The
+# first cut of this change was swallowed exactly that way —
+# `lib/issue-prefetch.sh`, the one definition of `issue_blocked_by_ref`, was
+# sourced only by `scripts/gather-issues.sh` and `scripts/gather-tech-debt.sh`,
+# both of which run as subprocesses and share no definitions with the cycle.
+# Asserted over the file list `agent-cycle.sh` actually sources, rather than
+# naming the lib that happens to hold each definition today, so moving a
+# predicate between sourced libs keeps passing and dropping one out of the
+# process does not.
+# shellcheck disable=SC2016  # `$SCRIPT_DIR` here is the literal text of agent-cycle.sh's own source lines, matched as a pattern — not this shell's own variable.
+cycle_sourced_libs() {
+  grep -oE '^\. "\$SCRIPT_DIR/lib/[a-z0-9-]+\.sh"$' "$SCRIPT_DIR/agent-cycle.sh" \
+    | sed -E 's|^\. "\$SCRIPT_DIR/||; s|"$||'
+}
+defines_in_cycle() {  # <function name> — 1 if any lib agent-cycle.sh sources defines it
+  local fn="$1" lib
+  while IFS= read -r lib; do
+    [[ -n "$lib" && -f "$SCRIPT_DIR/$lib" ]] || continue
+    if grep -qE "^$fn\(\)" "$SCRIPT_DIR/$lib"; then printf '1'; return 0; fi
+  done < <(cycle_sourced_libs)
+  printf '0'
+}
+assert_eq "the cycle's own process really does source some lib list" "1" \
+  "$( [[ "$(cycle_sourced_libs | wc -l)" -gt 1 ]] && printf '1' || printf '0' )"
+assert_eq "agent-cycle.sh's process defines issue_blocked_by_ref" "1" \
+  "$(defines_in_cycle issue_blocked_by_ref)"
+assert_eq "...and dependency_refs, which issue_blocked_by_ref itself calls" "1" \
+  "$(defines_in_cycle dependency_refs)"
+assert_eq "...and item_live_entry, the thread fetch the filter runs it over" "1" \
+  "$(defines_in_cycle item_live_entry)"
+
 # --- The decision-veto tie (agent-ops#937, agent-ops#1198) ---
 #
 # `lib/decision-veto.sh` logs its `escalated` registration in the very same

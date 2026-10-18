@@ -133,6 +133,30 @@
          gap for everything 18a does not reach: every non-issue blocked
          source, and a blocker on an issue that clears without a comment ever
          landing (nothing then moves `updated_at`).
+    5. **its own thread does not still name an open `Blocked-by:`
+       reference** — tested only where clause 4's reason is `threshold` and
+       the item is a bare issue number, and only while *B* is younger than
+       three times `enabler_recheck_hours` (a flat 72 hours where recheck is
+       disabled). `scripts/gather-issues.sh` already resolves exactly this
+       check live (`issue_blocked_by_ref`, requirement 34j) and excludes such
+       an issue from the Co-Ordinator's own candidate view while the
+       dependency stands, so an engagement here buys the fleet's most
+       expensive model to re-derive what one `gh` read has already answered.
+       The candidate's thread is fetched once and the reference resolved
+       against it; a candidate held back logs one
+       `enabler-dependency-deferred` naming the item and the reference that
+       held it, so the suppression is auditable rather than silent. Past that
+       age bound the candidate is eligible however open the reference is: a
+       dependency that is itself stuck needs the Enabler, and from there a
+       human, the same way any other permanently-stuck item does. `recheck`
+       is outside this clause, and so is `issue-closed` — a human has just
+       acted on the escalation, and the thread's state is precisely what that
+       engagement is there to re-read. This clause is a cost saving and never
+       a correctness gate, so every way of failing to answer it leaves the
+       candidate exactly as clause 4 found it: a `gh` failure, a thread that
+       does not parse, or a caller that has not sourced the predicate at all
+       — `scripts/publish-dashboard.sh`, which reads this same set only to
+       report it and makes no `gh` call of its own.
     A re-block re-enters through `threshold`, because every clause above is
     measured from *B*: a fresh `attempt-failed` moves *B* forward, leaving the
     old examination behind it and restarting the count — except the
@@ -188,7 +212,13 @@
     clauses 1 and 2 above *are* requirement 34h's `open_blocked_items` rather
     than a second reduction of the same two extracts, always
     succeeds, and yields `[]` for a log it cannot read or a threshold it cannot
-    parse — an unreadable setting is not a licence to spend.
+    parse — an unreadable setting is not a licence to spend. Clause 5 is its
+    own post-filter over that result, `enabler_defer_open_dependency_items`
+    in the same file, and the only clause whose inputs are not in the log:
+    `agent-cycle.sh` sources `lib/issue-prefetch.sh` and
+    `lib/candidate-select.sh` so that the one process which acts on this set
+    can answer it, and a process that has not (the dashboard) takes the
+    clause's own no-answer fallback instead.
 35b. <a id="impl-35b"></a>**The eligible set is part of the no-op fingerprint** (requirement 3b),
     projected to `repo|item|reason`, alongside the Enabler's config and a hash
     of `prompts/enabler.md` and any configured `prompt_overrides.enabler`
