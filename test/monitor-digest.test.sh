@@ -307,6 +307,10 @@ assert_contains "the none-selected reason survives into the text" \
 assert_contains "every open page is flagged as owed a triage verdict" \
   "owed a triage verdict" "$rendered"
 assert_contains "the node table names a failing stage" "implementer" "$rendered"
+assert_contains "and carries that stage's own detail, not just its name" \
+  "implementer (clone refused)" "$rendered"
+assert_contains "a failing stage with no last_detail falls back to an explicit label" \
+  "reviewer (no detail)" "$rendered"
 assert_contains "the gotcha sections are present at rung 0" "## Known signatures" "$rendered"
 assert_contains "a real row of the implementation spec's Gotchas table reaches the digest" \
   "A \`--json\` field that is cheap to type and expensive to fetch" "$rendered"
@@ -346,6 +350,22 @@ IFS=$'\t' read -r rung _ < <(monitor_digest_render "$digest" 20000 "$out")
 assert_lacks "a rung that shed the gotchas really has none" "## Known signatures" "$(cat "$out")"
 assert_contains "while the event counts it was protecting are still there" \
   '| `selection` | 4 |' "$(cat "$out")"
+
+# A failing stage's last_detail can carry a `|` or a newline (free-form
+# process output); the Failing-stages cell has to escape it the same way
+# every other cell already does, or it breaks the markdown table.
+escaped_nodes='[{"node":"n4","self":false,"ts":"2026-09-11T12:00:00Z","role":"active",
+  "stage_health":{"stages":{"builder":{"verdict":"failing",
+    "last_detail":"line one | line two\nline three"}}},
+  "updater":null,"compose":null,"image":null,"mirror":null,"doctor":null,"host":null}]'
+escaped_digest="$(monitor_digest_build \
+  "$(jq -nc '{from:"f",to:"t",hours:24,node:"n1"}')" '[]' '{}' "$escaped_nodes" '{}' '{}' '[]' '[]')"
+monitor_digest_render "$escaped_digest" 0 "$tmp_dir/escaped.md" >/dev/null
+escaped_rendered="$(cat "$tmp_dir/escaped.md")"
+assert_eq "the nodes table still has exactly one header separator row" \
+  "1" "$(grep -c '^|---|---|---|---|---|---|---|---|---|---|---|$' <<<"$escaped_rendered")"
+assert_contains "a pipe inside last_detail is escaped rather than splitting the cell" \
+  'builder (line one \\| line two line three)' "$escaped_rendered"
 
 printf '\n'
 if (( failures )); then

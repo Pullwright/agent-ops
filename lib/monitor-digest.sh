@@ -477,7 +477,9 @@ _monitor_digest_render_at() {
         + "|---|---|---|---|---|---|---|---|---|---|---|\n"
         + ( [ .nodes[]
               | "| `\(.node)` | \(.self) | \(.ts // "—") | \(.role // "—") "
-                + "| \( [ ((.stage_health.stages // {}) | to_entries[] | select(.value.verdict == "failing") | .key) ] | if length == 0 then "—" else join(", ") end ) "
+                + "| \( [ ((.stage_health.stages // {}) | to_entries[] | select(.value.verdict == "failing")
+                         | "\(.key) (\(.value.last_detail // "no detail" | esc))") ]
+                       | if length == 0 then "—" else join(", ") end ) "
                 + "| \(.updater.verdict // "—") | \(.compose.verdict // "—") | \(.image.verdict // "—") "
                 + "| \(.mirror.verdict // "—") | \(.doctor.verdict // "—") "
                 + "| \(if .host == null then "none" else "\(.host.driver // "?") @ \(.host.generated_at // "?")" end) |" ]
