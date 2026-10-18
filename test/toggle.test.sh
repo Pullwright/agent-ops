@@ -701,7 +701,7 @@ assert_eq "and records an automatic kind with the node as actor" "auto/node-b" \
 rm -f "$gh_backing/fleet/limit.json"
 
 # ===== The credit mix's live lever, lib/mix.sh (issue #2244, D30) =============
-# `fleet/mix.json` is a fourth member of this file's own fleet-flag family —
+# `fleet/mix.json` is a fifth member of this file's own fleet-flag family —
 # `mix_write`/`mix_reset` below are thin wrappers over `fleet_flag_write`/
 # `_fetch`/`_delete`, exercised here at the lib level; the CLI surface
 # (`agent-cycle.sh --mix`) is exercised further down, alongside
@@ -1527,7 +1527,7 @@ assert_eq "and exits cleanly" "0" "$already_clear_rc"
 rm -f "$gh_backing/fleet/merge-autonomy-kill.json"
 
 # --- agent-cycle.sh --mix (issue #2244, D30): the CLI surface over lib/mix.sh,
-# a fourth fleet flag built on the same family's fleet_flag_write/_fetch -----
+# a fifth fleet flag built on the same family's fleet_flag_write/_fetch ------
 
 mix_out="$(run_node "$a_home" agent-cycle.sh --mix anthropic api=70 subscription=30 subscription.enabled=true 2>&1)"
 assert_contains "--mix reports what it set" "mix set for anthropic" "$mix_out"
