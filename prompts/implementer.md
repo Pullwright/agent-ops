@@ -309,6 +309,18 @@ yourself.
   race the speculative merge exposed that the PR's own head never would have
   hit alone. This is not licence to change the PR's scope — you are fixing
   what made the merge group fail, not extending or redoing the work.
+- **Re-verify the body against the diff before you finish (issue #2512).**
+  Compare the PR's current body (`gh pr view --json body`) — and any
+  `td-record` block it carries — against the diff fixing the merge-group
+  failure actually produced. A fix that touches no described behaviour needs
+  no edit: this is re-verify, and fix only if wrong, not a mandate to touch
+  the body every time. But where diagnosing and fixing the merge-group
+  failure forced a materially different approach than the body states, edit
+  the body (`gh pr edit --body-file`) so the prose, and any `td-record`
+  block's `summary`/`resolution` fields, describe what the diff now actually
+  does. This corrects what the body already claims; it is not licence to add
+  a `Fixes #…`/`Closes #…` or a new `td-record` block — the "Do not close
+  the loop on the originating item" rule below still applies.
 - **You cannot re-queue it, by design.** No prompt in this system enqueues a
   pull request, at any `merge_autonomy` level; the Script's own arming step
   (`agent-merges-routine` and above) arms only on the round the Approver
