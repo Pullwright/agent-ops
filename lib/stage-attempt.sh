@@ -353,7 +353,7 @@ stage_api_refusal_class() {  # <out-file> -> "transient", "refused", or empty
 # globals already give it, unchanged.
 handle_stage_failure() {  # <stage> <rc> <out-file> [pr-url] [extra-json]
   local stage="$1" rc="$2" out_file="$3" pr_url="${4:-}" extra="${5:-{\}}" detail refusal refusal_msg refusal_class
-  local wedge_sha_note=""
+  local wedge_sha_note="" stage_reached_a_head=1
   jq -e 'type == "object"' <<<"$extra" >/dev/null 2>&1 || extra='{}'
   # 124 is now both caps, and they are not the same news to whoever reads this
   # next — the Enabler, or a human asking why an item is blocked. "Ran to its
@@ -369,27 +369,9 @@ handle_stage_failure() {  # <stage> <rc> <out-file> [pr-url] [extra-json]
     # escalation it raised sent its reader to `coordinator.out.stderr`, which
     # an API refusal leaves empty because the refusal is in `coordinator.out`.
     detail="$stage was refused by the API before it could run: $refusal"
+    stage_reached_a_head=0
   elif [[ "$rc" == "124" && "$stage_kill_reason" == "inactivity" ]]; then
     detail="$stage produced no output at all for its inactivity threshold and was stopped as wedged"
-    # Requirement 9g (issue #2236): a stage that comments before it pushes can
-    # leave a PR thread asserting fixes it never pushed, with nothing to
-    # reconcile the claim against the head SHA. `stage_pr_head_sha_at_start`
-    # is set by the caller, immediately before this stage launched, the same
-    # way `stage_kill_reason` is — empty when no PR existed yet at round
-    # start (an ordinary fresh claim). Read here, at kill time, rather than
-    # inside the caller: this is the one place that already knows the stage
-    # has stopped.
-    if [[ -n "$pr_url" && -n "$stage_pr_head_sha_at_start" ]]; then
-      local kill_sha
-      kill_sha="$(gh pr view "$pr_url" --json headRefOid --jq .headRefOid 2>/dev/null || true)"
-      if [[ -n "$kill_sha" ]]; then
-        if [[ "$kill_sha" == "$stage_pr_head_sha_at_start" ]]; then
-          wedge_sha_note=" This round pushed nothing — the head SHA is unchanged at $kill_sha — so every comment it posted this round describes intent, not landed work."
-        else
-          wedge_sha_note=" This round's head moved from $stage_pr_head_sha_at_start to $kill_sha while it ran — diff that range against what its comments claimed before taking any of them at face value."
-        fi
-      fi
-    fi
   elif [[ "$rc" == "124" && "$stage_kill_reason" == "rate-limit" ]]; then
     detail="$stage was stopped the moment the account reported a usage limit — nothing it did after that could have succeeded"
   elif [[ "$rc" == "124" ]]; then
@@ -411,8 +393,34 @@ handle_stage_failure() {  # <stage> <rc> <out-file> [pr-url] [extra-json]
     else
       detail="$stage was not launched: its checkout's working tree holds Claude Code project settings, not in the commit, that no stage may load"
     fi
+    stage_reached_a_head=0
   else
     detail="$stage exited $rc"
+  fi
+  # Requirement 9g (issue #2236; widened to every abrupt death by #2510): a
+  # stage that comments before it pushes can leave a PR thread asserting
+  # fixes it never pushed, with nothing to reconcile the claim against the
+  # head SHA. That risk is not specific to the inactivity kill — a plain
+  # wall-clock timeout, a rate-limit stop, or a generic non-zero exit
+  # (SIGKILL/OOM, e.g. "reviewer exited 137") can equally strand a comment
+  # behind — so this lookup runs for every branch above except the two where
+  # no stage ever ran (the API refusal and the not-launched cases), which
+  # set `stage_reached_a_head=0` and so have nothing to reconcile.
+  # `stage_pr_head_sha_at_start` is set by the caller, immediately before
+  # this stage launched, the same way `stage_kill_reason` is — empty when no
+  # PR existed yet at round start (an ordinary fresh claim). Read here, at
+  # kill time, rather than inside the caller: this is the one place that
+  # already knows the stage has stopped.
+  if [[ "$stage_reached_a_head" == "1" && -n "$pr_url" && -n "$stage_pr_head_sha_at_start" ]]; then
+    local kill_sha
+    kill_sha="$(gh pr view "$pr_url" --json headRefOid --jq .headRefOid 2>/dev/null || true)"
+    if [[ -n "$kill_sha" ]]; then
+      if [[ "$kill_sha" == "$stage_pr_head_sha_at_start" ]]; then
+        wedge_sha_note=" This round pushed nothing — the head SHA is unchanged at $kill_sha — so every comment it posted this round describes intent, not landed work."
+      else
+        wedge_sha_note=" This round's head moved from $stage_pr_head_sha_at_start to $kill_sha while it ran — diff that range against what its comments claimed before taking any of them at face value."
+      fi
+    fi
   fi
   detect_and_log_limit_hit "$out_file" || true
   # The PR travels on the event (requirement 32a) so the Enabler can open it

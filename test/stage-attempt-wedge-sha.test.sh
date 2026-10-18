@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #
-# test/stage-attempt-wedge-sha.test.sh — a stage killed for inactivity, with
+# test/stage-attempt-wedge-sha.test.sh — a stage killed abruptly — for
+# inactivity, a plain timeout, a rate limit, or a generic non-zero exit — with
 # a pull request already known, states in its own comment whether it pushed
-# (requirement 9g, agent-ops#2236).
+# (requirement 9g, agent-ops#2236, widened to every abrupt death by #2510).
 #
 # `handle_stage_failure` (lib/stage-attempt.sh) is exercised directly, the
 # inverse of test/coordinator-merge-fallback.test.sh and
@@ -129,14 +130,26 @@ assert_eq "unreadable kill-time SHA: comment is the plain wedged-stage notice" \
   "The Reviewer stopped on this PR: reviewer produced no output at all for its inactivity threshold and was stopped as wedged. Recorded blocked; the pipeline's Enabler will re-examine it, and will raise an issue if a human is needed." \
   "$(sed -n '3p' <<<"$body")"
 
-# --- Every other detail branch's comment is unaffected by this requirement:
-# both SHAs known, but the kill is not an inactivity one. ---
+# --- Requirement 9g widened by #2510: a generic non-zero exit (a SIGKILL/OOM
+# death, not a 124) is just as capable of stranding a comment behind a push
+# that never happened, so it gets the same SHA sentence as an inactivity
+# kill. ---
 stage_kill_reason=""
 stage_pr_head_sha_at_start="abc1111"
 GH_KILL_SHA="def2222"
-body="$(posted_body handle_stage_failure reviewer 1 "$out_file" "$pr_url")"
-assert_eq "a non-inactivity failure's comment carries no SHA sentence at all" \
-  "The Reviewer stopped on this PR: reviewer exited 1. Recorded blocked; the pipeline's Enabler will re-examine it, and will raise an issue if a human is needed." \
+body="$(posted_body handle_stage_failure reviewer 137 "$out_file" "$pr_url")"
+assert_eq "a generic non-zero exit (e.g. SIGKILL) carries the SHA-move sentence too" \
+  "The Reviewer stopped on this PR: reviewer exited 137. This round's head moved from abc1111 to def2222 while it ran — diff that range against what its comments claimed before taking any of them at face value. Recorded blocked; the pipeline's Enabler will re-examine it, and will raise an issue if a human is needed." \
+  "$(sed -n '3p' <<<"$body")"
+
+# --- A plain wall-clock timeout (rc=124 with no kill reason, as opposed to
+# the inactivity or rate-limit kills above) also gets the sentence. ---
+stage_kill_reason=""
+stage_pr_head_sha_at_start="abc1111"
+GH_KILL_SHA="abc1111"
+body="$(posted_body handle_stage_failure reviewer 124 "$out_file" "$pr_url")"
+assert_eq "a plain wall-clock timeout carries the SHA-unchanged sentence too" \
+  "The Reviewer stopped on this PR: reviewer timed out. This round pushed nothing — the head SHA is unchanged at abc1111 — so every comment it posted this round describes intent, not landed work. Recorded blocked; the pipeline's Enabler will re-examine it, and will raise an issue if a human is needed." \
   "$(sed -n '3p' <<<"$body")"
 
 if (( failures > 0 )); then
