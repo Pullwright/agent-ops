@@ -347,9 +347,12 @@
    already reads for every ordinary round, so a later retry sees it with no
    further plumbing. A missing `approver_model_critical`, a missing prompt
    file, an unreadable credential, a stage failure, an unparseable verdict,
-   or a token that cannot be minted to post the review all print `escalate`
-   and log nothing to `approver-verdict`, since none of them resulted in
-   anything this pipeline can vouch for having reached GitHub.
+   a token that cannot be minted to post the review, or a review write that
+   reaches this point but does not land on GitHub (`approver_post_or_warn`
+   always returns 0 regardless of the write's own outcome, so this is read
+   off `approver_last_post_ok` rather than the call's exit status) all print
+   `escalate` and log nothing to `approver-verdict`, since none of them
+   resulted in anything this pipeline can vouch for having reached GitHub.
 
    `_landing_protected_path_tier_resolve` never hands the caller a bare
    pass/fail: it re-reads the pull request's own live standing review and
@@ -379,7 +382,13 @@
    anyone to do. An `unknown:*` verdict is held back on the same reasoning
    requirement 8d applies to every unreadable control: it means the gate
    could not ask, so the next retry asks again rather than a human being
-   asked instead.
+   asked instead. This holds even when the posted review itself succeeded: a
+   reapproval that approved and posted, followed by a transient failure of
+   this same function's own live recheck (its own identity read, or its own
+   standing-review read), hands back `unknown:*` rather than the stale
+   triggering value — falling through unchanged would otherwise escalate on
+   the strength of a read failure moments after a critical-tier approval was
+   established, the one outcome this paragraph exists to rule out.
 62. **A persistent landing refusal says why, on the pull request itself, not
    only in the node log (issue #1979).** Requirement 8d's own gates refuse to
    arm a pull request for many reasons, logged as `landing-refused`

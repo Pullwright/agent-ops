@@ -331,12 +331,12 @@
     rewrite exists to avoid, since a successful reapproval's own fresh
     `submitted_at` almost always still has its ordinary cool-off ahead of it.
 
-    `run_protected_path_tier_reapproval` is not lifted there — mirroring
-    `run_open_question_adjudication`'s own real internals (a live `gh pr
-    diff`, a real model engagement against `prompts/approver-reapprove-
-    protected-path-tier.md`) has no business running unstubbed inside a
-    hermetic unit test, the same reasoning that keeps `_landing_protected_
-    path_tier_resolve` itself a black box in that file.
+    `run_protected_path_tier_reapproval` is not lifted whole there —
+    mirroring `run_open_question_adjudication`'s own real internals (a live
+    `gh pr diff`, a real model engagement against `prompts/approver-
+    reapprove-protected-path-tier.md`) has no business running unstubbed
+    inside a hermetic unit test, the same reasoning that keeps `_landing_
+    protected_path_tier_resolve` itself a black box in that file.
     `test/prompt-untrusted-framing.test.sh` (requirement 45) covers
     `prompts/approver-reapprove-protected-path-tier.md` alongside every other
     shipped stage prompt, byte-identical to the canonical block.
@@ -357,15 +357,36 @@
     established" moments after the resolver established one), nor does a
     recomputed `ok` or an `unknown:*` read failure; only the tier or
     missing-timestamp wording still standing after the pass does, exactly
-    once, naming the `pr-<n>-protected-path-tier` item ref. *Where the cap is
-    read:* an event only a peer node logged binds this node's pass, and so
-    does one only this node's own stream carries when the fleet union came
-    back empty — while an event against an earlier head commit, or another
-    pull request, does not. The triggering and recomputed `ineligible:`
-    wordings the assertions turn on are grepped from `lib/landing.sh` rather
-    than retyped, so a reworded `landing_protected_path_controls_ok` fails
-    this check loudly instead of letting the resolver's own case patterns
-    quietly stop matching.
+    once, naming the `pr-<n>-protected-path-tier` item ref. This includes the
+    `unknown:*` the resolver manufactures itself: a reapproval that approved
+    and posted, whose own live recheck (its identity read, or its standing-
+    review read) then fails transiently, is asserted to hand back `unknown:*`
+    rather than fall through to the stale triggering text and escalate on the
+    strength of a read failure moments after an approval was established.
+    *Where the cap is read:* an event only a peer node logged binds this
+    node's pass, and so does one only this node's own stream carries when
+    the fleet union came back empty — while an event against an earlier head
+    commit, or another pull request, does not. The triggering and recomputed
+    `ineligible:` wordings the assertions turn on are grepped from
+    `lib/landing.sh` rather than retyped, so a reworded `landing_protected_
+    path_controls_ok` fails this check loudly instead of letting the
+    resolver's own case patterns quietly stop matching.
+
+    **`run_protected_path_tier_reapproval`'s own post/log/return tail is
+    covered directly, in the same file's Part C**, with its collaborators up
+    to and including the model engagement out of scope (covered as above)
+    and `approver_post_or_warn` stubbed instead: the tail lifted verbatim
+    from its own `approver_post_or_warn` call to the function's close.
+    `approver_post_or_warn` always returns 0 regardless of whether the
+    review write reached GitHub (`lib/approver.sh`) and reports that only
+    through the global `approver_last_post_ok`, so the assertions pin both
+    sides of that — a post that lands logs `approver-verdict` with
+    `posted:true` and reports `approve`, and a post that does not land logs
+    no `approver-verdict` event at all and reports `escalate`, never the
+    `approve` the engagement itself reached (issue #2514's own re-opened
+    review on agent-ops#2519: a failed-post path that still logged
+    `approver-verdict` would hand `landing_retry_tier` a critical-tier
+    record for a review GitHub never received).
 
 10. **The egress fence holds its shape (D24).** `test/egress-fence.test.sh`
     passes: the baked allowlist carries every domain the cycles need

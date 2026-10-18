@@ -11,13 +11,16 @@
 # tier_resolve` stubbed as a black box — the same relationship that file
 # already has with `_landing_open_question_resolve`. This file is the other
 # half: what the resolver itself does once called, with `run_protected_path_
-# tier_reapproval` stubbed as its own black box, exactly as
+# tier_reapproval` stubbed as its own black box for Part A, exactly as
 # test/open-question-adjudication.test.sh treats `run_open_question_
-# adjudication` (a live nested Claude launch has no place in a wiring test).
+# adjudication` (a live nested Claude launch has no place in a wiring test) —
+# and, in Part C below (after Part B's own coverage of `protected_path_tier_
+# reapproval_attempted_before`), `run_protected_path_tier_reapproval`'s own
+# post/log/return tail tested directly, with `approver_post_or_warn` stubbed
+# instead, mirroring that same file's own Part C.
 #
-# The two axes a stubbed-whole resolver leaves uncovered, and which this file
-# exists for, are the ones that are pure control flow over stubbable
-# collaborators:
+# The axes a stubbed-whole resolver leaves uncovered, and which Part A exists
+# for, are the ones that are pure control flow over stubbable collaborators:
 #
 #   - *when it escalates*. The escalation is for the sub-case the pass exists
 #     to clear, still standing after the pass — never for whatever else the
@@ -25,12 +28,26 @@
 #     always lands on a brand-new cool-off wait, which clears itself
 #     unattended; escalating there files a human-assigned issue asserting
 #     that a critical-tier approval "could not be established" moments after
-#     the resolver established one.
+#     the resolver established one. The same holds when the resolver's own
+#     live recheck of that approval fails to read at all (a transient `gh`
+#     hiccup, not a control that is unmet) — that reads back `unknown:`,
+#     never the stale triggering text, so this file's stub of the recheck
+#     collaborators can force that path too.
 #   - *where it reads the one-pass cap*. Fleet-wide (`union_log`), like
 #     requirement 8f's own `open_question_pass_available`, never this node's
 #     own stream alone — requirement 8u's sweep runs on every node, so a
 #     node-local cap lets each node spend its own pass over one unchanged
 #     head commit.
+#
+# Part C exists because a stubbed-whole `run_protected_path_tier_reapproval`
+# cannot see its own failure mode: a reapproval that approves and attempts to
+# post, where the post itself does not reach GitHub. `approver_post_or_warn`
+# always returns 0 regardless of the write's own outcome (lib/approver.sh),
+# so that failure is only visible through `approver_last_post_ok` — and a
+# function that logged `approver-verdict` on that path anyway would hand
+# `landing_retry_tier` a tier record for a review that was never actually
+# written (agent-ops#2519's own review of this file's companion pull
+# request).
 #
 # Every function here is lifted verbatim out of lib/landing.sh, so the
 # assertions are about the shipped code rather than a copy of its logic.
@@ -82,8 +99,24 @@ extract() {  # <function name> [source file, default $CYCLE]
   awk -v fn="^$1\\\\(\\\\) \\\\{" '$0 ~ fn { on = 1 } on { print } on && /^\}$/ { exit }' "${2:-$CYCLE}"
 }
 
+# extract_tail <start-line regex> [source file, default $CYCLE] — like
+# extract() above, but anchored on an arbitrary line inside a function
+# rather than its own `name() {` opening, and stopping *before* the
+# function's own closing `}` rather than including it: the result is a bare
+# sequence of statements (with a bare `return`, valid only inside a
+# function), meant to be pasted into a harness function of the test's own
+# naming, not called on its own.
+extract_tail() {
+  awk -v re="$1" '$0 ~ re { on = 1 } on && /^\}$/ { exit } on { print }' "${2:-$CYCLE}"
+}
+
 resolve_block="$(extract _landing_protected_path_tier_resolve)"
 attempted_before_block="$(extract protected_path_tier_reapproval_attempted_before)"
+reapproval_tail_block="$(extract_tail 'approver_post_or_warn "\$pr_url" APPROVE')"
+if [[ -z "$reapproval_tail_block" ]]; then
+  echo "FAIL - could not extract run_protected_path_tier_reapproval's post/log/return tail from lib/landing.sh — has it moved?" >&2
+  exit 1
+fi
 
 for pair in "resolve_block:_landing_protected_path_tier_resolve" \
             "attempted_before_block:protected_path_tier_reapproval_attempted_before"; do
@@ -232,6 +265,17 @@ assert_eq "  ... and hands the caller the recomputed cool-off, never the stale t
 assert_eq "  ... escalating nothing — a fresh cool-off is this gate working, not a human's problem" \
   "" "$(cat "$tmp_dir/escalate_calls")"
 
+# --- a reapproval that approves and posts, but whose own live recheck then
+#     fails to read: held back as unknown, never escalated on the strength
+#     of a read failure moments after a critical-tier approval was
+#     established (the gap the review that reopened issue #2514 found).
+
+out="$(run_case_a REAPPROVAL_JSON='{"verdict":"approve","evidence":"e"}' STANDING="")"
+assert_contains "a posted approval whose live recheck read fails hands back unknown, never the stale tier text" \
+  "unknown:" "$out"
+assert_eq "  ... escalating nothing — a read failure is not a control that is unmet" \
+  "" "$(cat "$tmp_dir/escalate_calls")"
+
 # --- a reapproval that clears every control outright ----------------------
 
 out="$(run_case_a RECHECK_PP_CTL="ok")"
@@ -373,6 +417,80 @@ assert_eq "  ... and when SRC1 does not exist at all" \
   "spent" "$(run_case_b "$tmp_dir/no-such-log.jsonl" "$URL" "$HEAD" "$B_LOG")"
 assert_eq "an unreadable SRC2 simply contributes nothing" \
   "available" "$(run_case_b "$tmp_dir/empty.jsonl" "$URL" "$HEAD" "$tmp_dir/no-such-log.jsonl")"
+
+echo
+
+# ============================================================================
+# Part C: `run_protected_path_tier_reapproval`'s own post/log/return tail —
+# the segment starting at its `approver_post_or_warn` call, lifted verbatim
+# (`$reapproval_tail_block` above) rather than the whole function, since
+# everything above that call (the model engagement, the verdict parse) is
+# out of scope here and already covered elsewhere: requirement 45's own
+# `test/prompt-untrusted-framing.test.sh` for the shipped prompt, and this
+# file's own Part A, one layer up, for everything the ladder does with
+# whatever this tail hands back.
+#
+# `approver_post_or_warn` always returns 0 regardless of the write's own
+# outcome (lib/approver.sh) and reports it only through `approver_last_
+# post_ok` — so the stub below sets that global directly, the same thing
+# the real function does, rather than returning a value nothing downstream
+# reads.
+# ============================================================================
+
+cat >"$tmp_dir/harness_c.sh" <<'HARNESS'
+set -uo pipefail
+
+approver_post_or_warn() {
+  printf '%s\n' "$*" >>"$T/post_args"
+  approver_last_post_ok="${POST_OK:-1}"
+}
+
+log_event() { printf '%s\t%s\n' "$1" "$2" >>"$T/events"; }
+
+run_tail() {
+  local pr_url="$1" slug="$2" approver_model_critical="$3" item="$4" token="$5" evidence="$6"
+HARNESS
+{
+  printf '%s\n' "$reapproval_tail_block"
+  printf '}\n'
+  printf 'run_tail "%s" "%s" "%s" "%s" "%s" "%s"\n' \
+    "$URL" "$SLUG" "critical-model" "2514" "tok-123" "the diff holds up at the critical tier"
+} >>"$tmp_dir/harness_c.sh"
+
+run_case_c() {
+  : >"$tmp_dir/events"; : >"$tmp_dir/post_args"
+  env -i PATH="$PATH" HOME="$HOME" T="$tmp_dir" "$@" \
+    bash "$tmp_dir/harness_c.sh" 2>"$tmp_dir/stderr_c"
+}
+
+event_of_c() { awk -F'\t' -v e="$1" '$1==e{print $2}' "$tmp_dir/events" | tail -1; }
+
+# --- the post lands on GitHub: approve, logged, posted:true --------------
+
+out="$(run_case_c POST_OK="1")"
+assert_eq "a post that reaches GitHub reports approve with the engagement's own evidence" \
+  '{"verdict":"approve","evidence":"the diff holds up at the critical tier"}' "$out"
+assert_contains "  ... logging approver-verdict at the critical tier" \
+  '"tier":"critical"' "$(event_of_c approver-verdict)"
+assert_contains "  ... marked posted:true — the write actually reached GitHub" \
+  '"posted":true' "$(event_of_c approver-verdict)"
+assert_contains "  ... naming protected-path-tier-reapproval as the critical_reason" \
+  '"critical_reason":"protected-path-tier-reapproval"' "$(event_of_c approver-verdict)"
+
+# --- the post does not land on GitHub: escalate, and no approver-verdict
+#     event at all — issue #2519's review of this file's companion pull
+#     request. `approver_post_or_warn` always returns 0 on this path too,
+#     so only `approver_last_post_ok` tells the two apart; logging the event
+#     anyway would hand `landing_retry_tier` a critical-tier record for a
+#     review that was never actually written to GitHub, silently clearing
+#     gate 4.5's protected-path-tier sub-case on a write that failed.
+
+out="$(run_case_c POST_OK="0")"
+assert_eq "a post that does not reach GitHub escalates instead of reporting approve" \
+  '{"verdict":"escalate","evidence":"the reapproval engagement approved, but the review write did not reach GitHub"}' "$out"
+assert_eq "  ... and logs no approver-verdict event at all" \
+  "" "$(event_of_c approver-verdict)"
+assert_eq "  ... the write was still attempted" "1" "$(wc -l <"$tmp_dir/post_args" | tr -d ' ')"
 
 echo
 if (( failures )); then

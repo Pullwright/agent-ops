@@ -2163,6 +2163,19 @@ _landing_protected_path_tier_resolve() {
       recheck_tier="$(landing_retry_tier "$pr_url" "${log_file:-}")"
       pp_ctl="$(landing_protected_path_controls_ok "$DEFAULTED_CONFIG" "$slug" "$number" "$recheck_tier" "$recheck_submitted" "$recheck_commit")"
     fi
+  elif [[ "$verdict" == "approve" ]]; then
+    # The reapproval posted a review this round (`verdict` is only
+    # normalized to `approve` once `run_protected_path_tier_reapproval`
+    # itself confirmed the post landed — see its own header), but this read
+    # — not the post — is what just failed: a transient `gh` hiccup on
+    # either `approver_token_identity_login` or `landing_approver_standing_
+    # review_at`. Falling through with `pp_ctl` unchanged would re-match the
+    # case below and escalate, asserting a critical-tier approval "could not
+    # be established" moments after this function established one. Hand
+    # back `unknown:` instead — the same "could not ask, not a control that
+    # is unmet" verdict the case below already holds back for, per this
+    # function's own header — so the next retry simply asks again.
+    pp_ctl="unknown:could not re-read $slug#$number's standing review after the reapproval posted"
   fi
 
   # The same two patterns gate 4.5's own call site triggers this function on
@@ -2502,16 +2515,19 @@ OQ_ESC_BODY
 #
 # Prints `{"verdict": "approve"|"escalate", "evidence": "..."}` on stdout. A
 # missing `approver_model_critical`, a missing prompt file, an unreadable
-# credential, a stage failure, an unparseable verdict, or a token that
-# cannot be minted to post the review all print `escalate` with an
-# `evidence` string naming why; none of these logs `approver-verdict` at
-# all, since none of them resulted in anything this pipeline can vouch for
-# having been written to GitHub (the same "posted, never merely decided"
-# discipline requirement 8b's own `approver_stage_posted` applies).
+# credential, a stage failure, an unparseable verdict, a token that cannot
+# be minted to post the review, or a review write that reached this point
+# but did not land on GitHub (`approver_post_or_warn` always returns 0, so
+# this is read off `approver_last_post_ok` rather than its exit status) all
+# print `escalate` with an `evidence` string naming why; none of these logs
+# `approver-verdict` at all, since none of them resulted in anything this
+# pipeline can vouch for having been written to GitHub (the same "posted,
+# never merely decided" discipline requirement 8b's own
+# `approver_stage_posted` applies).
 run_protected_path_tier_reapproval() {
   local slug="$1" pr_url="$2" number="$3" item="${4:-}"
   local paths_json diff_text input prompt out rc=0 result parsed verdict evidence
-  local token posted_bool="false"
+  local token
 
   if [[ -z "$approver_model_critical" ]]; then
     printf '{"verdict":"escalate","evidence":"no approver_model_critical is configured to re-engage this pull request"}'
@@ -2593,11 +2609,17 @@ $(jq . <<<"$input")
   fi
 
   approver_post_or_warn "$pr_url" APPROVE "${evidence:-(no evidence given)}" "$token"
-  [[ "$approver_last_post_ok" == "1" ]] && posted_bool="true"
+  if [[ "$approver_last_post_ok" != "1" ]]; then
+    jq -nc --arg v "escalate" \
+      --arg e "the reapproval engagement approved, but the review write did not reach GitHub" \
+      '{verdict: $v, evidence: $e}' 2>/dev/null \
+      || printf '{"verdict":"escalate","evidence":"could not encode the reapproval verdict"}'
+    return 0
+  fi
 
   log_event "approver-verdict" "$(jq -nc --arg u "$pr_url" --arg r "$slug" --arg t "critical" \
     --arg m "$approver_model_critical" --arg v "approve" --argjson s 0 --argjson adj true \
-    --argjson posted "$posted_bool" --arg cr "protected-path-tier-reapproval" --arg i "$item" \
+    --argjson posted true --arg cr "protected-path-tier-reapproval" --arg i "$item" \
     '{pr_url: $u, repo: $r, tier: $t, model: $m, verdict: $v, refuse_streak: $s, adjudication: $adj, posted: $posted}
      + (if $cr == "" then {} else {critical_reason: $cr} end)
      + (if $i == "" then {} else {item: $i} end)')"
