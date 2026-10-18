@@ -381,6 +381,43 @@ for __model_tier_rank_shipped_k in "${!MODEL_TIER_RANK[@]}"; do
 done
 unset __model_tier_rank_shipped_k
 
+# model_tiers_rows MODEL_TIERS_JSON
+# Prints one "<model id><TAB><band>" row per entry of a `model_tiers` object
+# (issue #2465), the one reading both model_tiers_load below and
+# scripts/doctor.sh's own "Model tiers" report take it through, so the band
+# the doctor lists and the band the loader merges can never be two different
+# renderings of the same JSON number. A band JSON writes with a fractional
+# part that is still an integer — `25.0`, or `1e2`, both of which requirement
+# 1b's schema accepts as `integer` (`type_ok` reads the keyword as "a number
+# with nothing after the point", not as jq's own number type) — is
+# canonicalised to the plain decimal form bash arithmetic can evaluate, since
+# jq's own `tostring` would otherwise hand `(( ))` a literal `25.0` and
+# model_tier_below would swallow the arithmetic error as "not below",
+# reporting requirement 1c's floor clear on a comparison it never made.
+# Anything else is passed through unchanged for model_tier_band_ok below to
+# refuse by name.
+model_tiers_rows() {
+  jq -r '(. // {}) | to_entries[]
+         | [.key, (.value | if (type == "number") and (floor == .)
+                            then (floor | tostring) else tostring end)]
+         | @tsv' <<<"${1:-null}" 2>/dev/null
+}
+
+# model_tier_band_ok BAND
+# True (exit 0) iff BAND is the plain decimal non-negative integer every
+# reader of MODEL_TIER_RANK's values can compare — `(( ))` evaluates them,
+# and a value bash cannot parse as an integer is not a wrong answer there but
+# a shell error (`25.0` a syntax error, `ten` an unbound variable under
+# `set -u`) that every caller below swallows. Requirement 1b's schema already
+# rejects a `model_tiers` value that is not an integer >= 0, so this refuses
+# only what reaches the table anyway: a band schema validation accepts but jq
+# cannot render as a plain integer (`1e20`), and any band at all in the
+# scripts that report a config's faults rather than refusing to start on them
+# (scripts/doctor.sh, which names every schema error and then keeps going).
+model_tier_band_ok() {
+  [[ "${1:-}" =~ ^[0-9]+$ ]]
+}
+
 # model_tiers_load MODEL_TIERS_JSON
 # Merges config's own `model_tiers` object (issue #2465, D29's customer-
 # control rule) over MODEL_TIER_RANK — keyed by model id in the `modelId`
@@ -404,8 +441,13 @@ unset __model_tier_rank_shipped_k
 # error that function already prints, naming "model_tiers" as the offending
 # key and the model id as the value. `providers_load` must already have run
 # (the same ordering requirement every other resolution call in this file
-# has). Every key is attempted regardless of an earlier one's fault, so one
-# bad entry never hides what every other entry would have reported; this
+# has). A band model_tier_band_ok above refuses is the same kind of fault,
+# named the same way, and that entry is left at whatever the shipped table
+# says rather than merged: a band the arithmetic below cannot evaluate is
+# worse than no override at all, since model_tier_below swallows the shell
+# error it causes and reports requirement 1c's floor clear on a comparison it
+# never made. Every key is attempted regardless of an earlier one's fault, so
+# one bad entry never hides what every other entry would have reported; this
 # returns 1 once any key failed, after merging every key that resolved
 # cleanly. A caller under `set -euo pipefail` that calls this bare
 # (agent-cycle.sh, review-cycle.sh) aborts right there, the same as a
@@ -423,13 +465,15 @@ model_tiers_load() {
   local id rank qualified status=0
   while IFS=$'\t' read -r id rank; do
     [[ -n "$id" ]] || continue
-    if qualified="$(resolve_model_qualified model_tiers "$id")"; then
-      MODEL_TIER_RANK["$qualified"]="$rank"
-    else
+    if ! qualified="$(resolve_model_qualified model_tiers "$id")"; then
       status=1
+    elif ! model_tier_band_ok "$rank"; then
+      echo "model-id: model_tiers: '$id' names a tier band that is not a non-negative integer — got '$rank'" >&2
+      status=1
+    else
+      MODEL_TIER_RANK["$qualified"]="$rank"
     fi
-  done < <(jq -r '(. // {}) | to_entries[] | [.key, (.value | tostring)] | @tsv' \
-    <<<"$model_tiers_json" 2>/dev/null)
+  done < <(model_tiers_rows "$model_tiers_json")
   return "$status"
 }
 

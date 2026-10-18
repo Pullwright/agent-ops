@@ -1608,6 +1608,27 @@ else
   bad "…the unranked-model warning no longer fires for it"
 fi
 
+# The band itself, where the schema's own reading of `integer` and bash
+# arithmetic disagree: `type_ok` accepts a number with nothing after the
+# point, so `25.0` and `1e2` both pass the startup gate, while `(( ))` can
+# evaluate neither. `model_tiers_rows` canonicalises both on the way in
+# (test/model-id.test.sh covers the loader itself); what matters here is that
+# the whole chain a cycle script drives really compares the canonical band,
+# rather than model_tier_below swallowing a shell error and reporting the
+# floor clear on a comparison it never made — so the assertion is a floor
+# this band *trips*, which no swallowed comparison can produce.
+assert_valid "a model_tiers band written with a point but still an integer is schema-valid" \
+  '.model_tiers = {"xai/grok-5": 25.0}'
+assert_doctor "doctor lists a band the schema accepts with a point as the integer the arithmetic reads" \
+  '.providers = {"xai": {"substrate": "grok-build"}} | .model_tiers = {"xai/grok-5": 25.0}' 0 \
+  'model_tiers: xai/grok-5 → 25 (shipped: not on the shipped ladder)'
+assert_doctor "doctor's floor really compares such a band, rather than swallowing it as no violation" \
+  '.model_tiers = {"anthropic/claude-sonnet-5": 5.0}' 1 \
+  'refiner_model (anthropic/claude-sonnet-5) ranks below implementer_model_trivial (anthropic/claude-haiku-4-5-20251001)'
+assert_doctor "doctor fails a band that is not a non-negative integer rather than listing it as though it took effect" \
+  '.model_tiers = {"anthropic/claude-sonnet-5": "ten"}' 1 \
+  "model_tiers: 'anthropic/claude-sonnet-5' names a tier band that is not a non-negative integer — got 'ten'"
+
 assert_doctor_shipped "doctor passes the shipped configuration with no model_tiers key at all" \
   '.' 0 'refiner_model and enabler_model each rank at or above every implementer tier'
 

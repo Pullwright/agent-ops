@@ -1021,15 +1021,22 @@ done < <(jq -r '
 # it shipped at (or "not on the shipped ladder", for a model the shipped table
 # has never heard of), so a placement that clears or trips the floor below
 # is visible to the operator rather than silent.
+# A band the loader itself refused (model_tier_band_ok) is reported here as a
+# `fail` in the same vocabulary, rather than listed as though it had taken
+# effect: this command reports a config's faults and keeps going where both
+# cycle scripts refuse to start on them, so it is the one reader that reaches
+# this block with a band requirement 1b's schema has already named as wrong.
 while IFS=$'\t' read -r tier_id tier_rank; do
   [[ -n "$tier_id" ]] || continue
-  if tier_qualified="$(resolve_model_qualified model_tiers "$tier_id" 2>&1)"; then
+  if ! tier_qualified="$(resolve_model_qualified model_tiers "$tier_id" 2>&1)"; then
+    fail "$tier_qualified"
+  elif ! model_tier_band_ok "$tier_rank"; then
+    fail "model_tiers: '$tier_id' names a tier band that is not a non-negative integer — got '$tier_rank', so the shipped band stands and the model-tier floor check below cannot read the placement this key intended"
+  else
     tier_shipped="${MODEL_TIER_RANK_SHIPPED[$tier_qualified]:-not on the shipped ladder}"
     ok "model_tiers: $tier_qualified → $tier_rank (shipped: $tier_shipped)"
-  else
-    fail "$tier_qualified"
   fi
-done < <(jq -r '(.model_tiers // {}) | to_entries[] | [.key, (.value | tostring)] | @tsv' <<<"$DEFAULTED_CONFIG")
+done < <(model_tiers_rows "$(cfg_json '.model_tiers')")
 
 # Requirement 1c, "the floor" (agent-ops#822): refiner_model and enabler_model
 # are the two stages that can author a work order's context/acceptance

@@ -356,6 +356,48 @@ case "$err" in
     ;;
 esac
 
+# A band JSON writes with a fractional part that is still an integer is
+# `integer` to requirement 1b's schema (`type_ok` reads the keyword as "a
+# number with nothing after the point"), so it passes both cycle scripts'
+# startup gate and reaches this loader — and jq's own `tostring` would render
+# it `25.0`, which bash arithmetic cannot evaluate. Canonicalised here
+# instead, so model_tier_below compares it rather than swallowing a shell
+# error and reporting requirement 1c's floor clear on a comparison it never
+# made.
+assert_true "model_tiers_load accepts a band the schema calls an integer but JSON writes with a point" \
+  model_tiers_load '{"xai/grok-5": 25.0}'
+assert_eq "…canonicalised to the plain decimal form bash arithmetic can read" \
+  "25" "$(model_tier_rank xai/grok-5)"
+assert_true "…so model_tier_below really compares it" \
+  model_tier_below anthropic/claude-sonnet-5 xai/grok-5
+assert_true "…and exponent notation the schema accepts the same way" \
+  model_tiers_load '{"xai/grok-5": 1e2}'
+assert_eq "…also canonicalised" "100" "$(model_tier_rank xai/grok-5)"
+
+# A band this loader cannot canonicalise is refused by name and the shipped
+# band stands, rather than reaching MODEL_TIER_RANK and turning every later
+# comparison into a swallowed shell error. Only scripts/doctor.sh — which
+# names a schema fault and then keeps going — and a band too large for jq to
+# render as a plain integer get this far, but a band that cannot be compared
+# is worse than no override at all, so it is a fault here rather than a
+# merge.
+assert_false "model_tiers_load refuses a band that is not a non-negative integer" \
+  model_tiers_load '{"xai/grok-4.7": "ten"}'
+assert_eq "…leaving the shipped band standing for it" \
+  "20" "$(model_tier_rank xai/grok-4.7)"
+assert_false "…and a band too large for jq to render as a plain integer, rather than merging '1e+20'" \
+  model_tiers_load '{"xai/grok-4.7": 1e20}'
+assert_eq "…leaving that shipped band standing too" \
+  "20" "$(model_tier_rank xai/grok-4.7)"
+err="$(model_tiers_load '{"xai/grok-4.7": "ten"}' 2>&1 >/dev/null)"
+case "$err" in
+  *"model_tiers"*"xai/grok-4.7"*"ten"*) printf 'ok   - %s\n' "the error names model_tiers, the key and the offending band" ;;
+  *)
+    printf 'FAIL - the error names model_tiers, the key and the offending band\n     actual: %s\n' "$err"
+    failures=$(( failures + 1 ))
+    ;;
+esac
+
 # A caller that never calls model_tiers_load reads the shipped table
 # unchanged — exercised here by resetting with an absent/null object, which
 # must behave identically to never having called it at all.

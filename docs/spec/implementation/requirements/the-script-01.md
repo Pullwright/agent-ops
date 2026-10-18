@@ -223,7 +223,8 @@
    omitted, leaving that property's own typo exactly as silent as before.
    `config_schema_errors` therefore also sweeps the schema on its own
    terms — descending only through the keywords the validator itself
-   understands (`properties`, `items`, `$defs`), never over every `paths`,
+   understands (`properties`, `items`, `propertyNames`, an object-valued
+   `additionalProperties`, `$defs`), never over every `paths`,
    which cannot tell a schema node from a `default`, `const` or `enum` value
    that happens to carry a `$ref` key of its own, and a false positive there
    would fail both pipelines' startup gate for every installation. This sweep
@@ -380,8 +381,8 @@
     id meaning `anthropic/`, as every other model key's shape does), valued
     by an integer tier band >= 0 — the shape is declarative, stated by the
     schema's `propertyNames` (the `modelId` pattern) and `additionalProperties`
-    (an integer schema, rather than the `false` every other dynamically-named
-    object in the schema uses) rather than the escape-valve code `providers`
+    (an integer schema, rather than the `false` a closed object of named
+    properties carries) rather than the escape-valve code `providers`
     needs, since a model id's shape is fixed in advance the way a
     provider's own chosen name is not. `lib/model-id.sh`'s `model_tiers_load`
     merges it over `MODEL_TIER_RANK` — an entry for a model already placed
@@ -394,7 +395,15 @@
     checked: a `model_tiers` key naming a provider `providers` does not
     configure, or one configured with a substrate this node has no adapter
     for, is the identical error, aborting `agent-cycle.sh`/`review-cycle.sh`
-    under `set -e`. `model_tiers_load` always resets `MODEL_TIER_RANK` to the
+    under `set -e`. The band is canonicalised on the way in: requirement 1b's
+    schema reads `integer` as "a number with nothing after the point", so
+    `25.0` and `1e2` are valid bands JSON renders in a form bash arithmetic
+    cannot evaluate, and `model_tiers_load` merges the plain decimal integer
+    each denotes. A band it cannot render that way is refused by name — the
+    same kind of fault as a rejected qualifier — leaving the shipped band
+    standing rather than merging a value `model_tier_below` can only swallow
+    as a shell error while reporting the floor below clear on a comparison it
+    never made. `model_tiers_load` always resets `MODEL_TIER_RANK` to the
     shipped table first, so calling it more than once in one process never
     compounds a previous call's overrides, and a caller that never calls it
     reads the shipped table unchanged — the same convention `providers_load`
@@ -403,7 +412,11 @@
     the shipped ladder", for a model the table has never heard of), so a
     placement that clears or trips the floor below is visible rather than
     silent, and a model an override has placed is exempt from the
-    unranked-model warning above. A placement's own band is still not carried by
+    unranked-model warning above; a band `model_tiers_load` refused is a
+    `fail` there rather than a listing, since that command names a
+    configuration's faults and carries on where both cycle scripts refuse to
+    start on them, and so is the one reader that reaches the report with a
+    band the schema has already rejected. A placement's own band is still not carried by
     the `--mix` lever (D30): `--mix` carries no threshold and never relaxes a
     guard, and a tier placement is configuration, rolled with the image like
     any other.

@@ -57,8 +57,9 @@
     the library validates a config against it (the JSON Schema subset the
     schema uses: `type`, `enum`, `const`, `minimum`, `maximum`,
     `exclusiveMinimum`, `exclusiveMaximum`, `minLength`, `pattern`,
-    `minItems`, `uniqueItems`, `contains`, `properties`, `required`,
-    `additionalProperties: false`, `items`, and local `$ref`s into `$defs`),
+    `minItems`, `uniqueItems`, `contains`, `properties`, `propertyNames`,
+    `required`, `additionalProperties` (`false`, or a schema applied to every
+    key `properties` does not name), `items`, and local `$ref`s into `$defs`),
     returning 0 valid, 1 invalid with one message per offending path, and 2
     when a file is missing or will not parse — a config that is not there is
     not the same finding as one that is wrong. `agent-cycle.sh` and
