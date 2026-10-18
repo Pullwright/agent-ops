@@ -660,6 +660,115 @@ assert_eq "the oversized open-issues fixture really is past MAX_ARG_STRLEN" "1" 
 assert_eq "an open-issues map past the argv cap still reads the escalation as closed" \
   "issue-closed" "$(reason_for TD1 3 0 "$big_open")"
 
+# --- A threshold candidate with an open Blocked-by reference (issue #2492) ---
+#
+# enabler_defer_open_dependency_items is only ever reached, in production,
+# through enabler_eligible_items with issue_blocked_by_ref (lib/issue-prefetch.sh)
+# and item_live_entry (lib/candidate-select.sh) both defined. This file
+# sources neither — both make live `gh` calls — so both are stubbed here the
+# same way log_event already is above, each controllable per test case.
+ITEM_LIVE_ENTRY_RETURN='{"title":"t","body":"blocked on a dependency","comments":[]}'
+ITEM_LIVE_ENTRY_CALLS_FILE="$tmp_dir/item_live_entry_calls"
+item_live_entry() {  # <repo> <source> <item> — stub, see note above
+  printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "$ITEM_LIVE_ENTRY_CALLS_FILE"
+  [[ -n "$ITEM_LIVE_ENTRY_RETURN" ]] || return 1
+  printf '%s' "$ITEM_LIVE_ENTRY_RETURN"
+}
+item_live_entry_calls() { [[ -f "$ITEM_LIVE_ENTRY_CALLS_FILE" ]] && wc -l < "$ITEM_LIVE_ENTRY_CALLS_FILE" | tr -d ' ' || printf '0'; }
+reset_item_live_entry_calls() { rm -f "$ITEM_LIVE_ENTRY_CALLS_FILE"; }
+
+ISSUE_BLOCKED_BY_REF_RETURN=""
+issue_blocked_by_ref() {  # <repo> <thread_text> — stub, see note above
+  printf '%s' "$ISSUE_BLOCKED_BY_REF_RETURN"
+}
+
+# dep_blocked_ts AGE_HOURS — the ISO timestamp AGE_HOURS before the fixed $now.
+dep_blocked_ts() { date -u -d "@$(( now - $1 * 3600 ))" +%Y-%m-%dT%H:%M:%SZ; }
+
+# dep_blocked_log AGE_HOURS — a threshold-eligible block, AGE_HOURS old, on a
+# bare-numeric item ("42") so it is a candidate enabler_defer_open_dependency_items
+# ever looks at (its own selector requires item to match ^[0-9]+$, which "TD1"
+# above never does — the existing fixtures above are unaffected by the new
+# filter for exactly this reason).
+dep_blocked_log() {
+  local ts
+  ts="$(dep_blocked_ts "$1")"
+  printf '{"ts":"%s","cycle":"c0","event":"attempt-failed","stage":"implementer","repo":"o/r","item":"42","detail":"blocked on a dependency"}\n' \
+    "$ts" > "$log"
+  coord_cycles_after "$ts" 3 >> "$log"
+}
+
+# dep_escalated_log AGE_HOURS — like dep_blocked_log, but already escalated
+# and (with open_none) closed, so the item's reason is "issue-closed" rather
+# than "threshold".
+dep_escalated_log() {
+  local blocked_ts examine_ts
+  blocked_ts="$(dep_blocked_ts "$1")"
+  dep_blocked_log "$1"
+  examine_ts="$(date -u -d "$blocked_ts + 1 hour" +%Y-%m-%dT%H:%M:%SZ)"
+  cat >> "$log" <<EOF
+{"ts":"$examine_ts","cycle":"c4","event":"enabler-examined","repo":"o/r","item":"42","blocked_ts":"$blocked_ts","outcome":"escalate","detail":"needs repo secrets set by a human"}
+{"ts":"$examine_ts","cycle":"c4","event":"escalated","repo":"o/r","item":"42","issue_number":52,"issue_url":"https://github.com/o/r/issues/52","blocked_ts":"$blocked_ts"}
+EOF
+}
+
+# dep_recheck_log AGE_HOURS — like recheck_log above, but on item "42" so the
+# new filter's selector sees it, with a "recheck" reason rather than
+# "threshold".
+dep_recheck_log() {
+  printf '{"ts":"2026-07-22T09:00:00Z","cycle":"c0","event":"attempt-failed","stage":"implementer","repo":"o/r","item":"42","detail":"blocked on a dependency"}\n' > "$log"
+  coord_cycles 3 >> "$log"
+  printf '{"ts":"%s","cycle":"c4","event":"enabler-examined","repo":"o/r","item":"42","blocked_ts":"2026-07-22T09:00:00Z","outcome":"still-blocked","detail":"waiting"}\n' \
+    "$(date -u -d "@$(( now - $1 * 3600 ))" +%Y-%m-%dT%H:%M:%SZ)" >> "$log"
+}
+
+# Acceptance criterion 5, case 1: an open-reference threshold candidate is
+# deferred and logged.
+dep_blocked_log 10
+reset_log_event_calls
+reset_item_live_entry_calls
+ISSUE_BLOCKED_BY_REF_RETURN="#99"
+assert_eq "a threshold candidate with an open Blocked-by reference is deferred" "" \
+  "$(reason_for 42)"
+assert_eq "...and the deferral is logged once" "1" "$(log_event_calls)"
+assert_contains "...naming the item" '"item":"42"' "$(log_event_last_fields)"
+assert_contains "...and the reference that held it" '"ref":"#99"' "$(log_event_last_fields)"
+
+# Case 2: the same candidate, once its reference closes, is no longer
+# deferred.
+dep_blocked_log 10
+ISSUE_BLOCKED_BY_REF_RETURN=""
+assert_eq "the same candidate, once its reference closes, is no longer deferred" "threshold" \
+  "$(reason_for 42)"
+
+# Case 3: a deferral exceeding the lapse cap is engaged anyway — the
+# dependency is itself stuck, so it still reaches the Enabler. 75 hours old
+# against the default (recheck_hours=0, so the flat 72-hour fallback) lapse.
+dep_blocked_log 75
+ISSUE_BLOCKED_BY_REF_RETURN="#99"
+assert_eq "a deferral exceeding the lapse cap is engaged anyway" "threshold" \
+  "$(reason_for 42)"
+
+# Case 4: an issue-closed-reason candidate with an open reference is still
+# engaged — the filter is scoped to reason == "threshold" only (the issue's
+# own scope bullet), so it never even looks at this item's thread.
+dep_escalated_log 10
+reset_item_live_entry_calls
+ISSUE_BLOCKED_BY_REF_RETURN="#99"
+assert_eq "an issue-closed-reason candidate with an open reference is still engaged" "issue-closed" \
+  "$(reason_for 42)"
+assert_eq "...and its thread is never even fetched" "0" "$(item_live_entry_calls)"
+
+# Case 5: a recheck-reason candidate with an open reference is likewise
+# unaffected — the same scope bound as case 4, for the other reason this
+# filter must leave alone.
+dep_recheck_log 72
+reset_item_live_entry_calls
+ISSUE_BLOCKED_BY_REF_RETURN="#99"
+assert_eq "a recheck-reason candidate with an open reference is unaffected" "recheck" \
+  "$(reason_for 42 3 72)"
+assert_eq "...and its thread is never even fetched" "0" "$(item_live_entry_calls)"
+
 # --- The decision-veto tie (agent-ops#937, agent-ops#1198) ---
 #
 # `lib/decision-veto.sh` logs its `escalated` registration in the very same
