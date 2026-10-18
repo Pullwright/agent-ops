@@ -1250,9 +1250,18 @@ ENABLER_DEPENDENCY_DEFER_FALLBACK_HOURS="${ENABLER_DEPENDENCY_DEFER_FALLBACK_HOU
 # harness testing this file without also sourcing
 # lib/issue-prefetch.sh/lib/dependency-gate.sh/lib/candidate-select.sh, the
 # same fallback `enabler_eligible_items` already takes for `log_event`), a
-# `gh` failure, or malformed input, are all read the same way: this is a
-# cost saving, never the correctness gate, the same direction every other
+# failed thread fetch, or malformed input, are all read the same way: this is
+# a cost saving, never the correctness gate, the same direction every other
 # live-state filter in this file already takes.
+#
+# One failure inside the check is the exception, and it defers rather than
+# engaging: a `gh` read that cannot resolve a *reference's* own state is read
+# by `issue_blocked_by_ref` as the reference being still open, which is its
+# own documented fail-safe and the right direction for its first caller
+# (`scripts/gather-issues.sh`, where the consequence is holding a candidate
+# back from work). Here the consequence is the opposite one — an Enabler
+# engagement suppressed for the cycle — bounded by the lapse above and by
+# the next cycle asking again.
 enabler_defer_open_dependency_items() {
   local out="${1:-[]}" now="${2:-}" recheck_hours="${3:-0}" aliases="${4:-{\}}"
   command -v issue_blocked_by_ref >/dev/null 2>&1 || { printf '%s' "$out"; return 0; }
