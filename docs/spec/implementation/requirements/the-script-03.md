@@ -471,6 +471,17 @@
    the operator to re-run the command, rather than overwriting a file it
    cannot see or reporting a reset that never happened.
 
+   With no `state_repo` configured, `--mix` refuses (exit 64) rather than
+   pretend to take effect, on requirement 2.3b's own terms: a flag this
+   system cannot publish anywhere a future read would see it moves no
+   fleet's mix, and a single-node install's own `config.json` already
+   governs its lanes entirely. Each write logs its own event (requirement
+   33): `mix-set`, carrying the `provider`, the `overlay` it applied and the
+   same `by`/`actor` pair `disabled`'s own event carries; and `mix-reset`,
+   carrying the `provider`, that pair, and the `outcome` word
+   (`absent`/`deleted`/`written`) the reset resolved to. The no-argument
+   read form logs nothing — it is a report, not a command.
+
    `--status` reports each configured provider's effective lanes — weight,
    resolved `enabled` (`lane_enabled_desc`'s own "yes"/"no"/"default"
    vocabulary, `scripts/doctor.sh`), whether the lane's credential is present

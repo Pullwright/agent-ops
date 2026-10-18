@@ -755,8 +755,9 @@ if [[ -n "$MANAGE_ACTION" ]]; then
             exit 1
             ;;
         esac
-        log_event "mix-reset" "$(jq -nc --arg p "$mix_provider" --arg by "$by" --arg outcome "$mix_outcome" \
-          '{provider: $p, by: $by, actor: $by, outcome: $outcome}')"
+        log_event "mix-reset" "$(jq -nc --arg p "$mix_provider" --arg by "$by" \
+          --arg actor "$(toggle_actor)" --arg outcome "$mix_outcome" \
+          '{provider: $p, by: $by, actor: $actor, outcome: $outcome}')"
         refresh_dashboard
         exit 0
       fi
@@ -776,8 +777,9 @@ if [[ -n "$MANAGE_ACTION" ]]; then
         exit 1
       fi
       printf 'agent-cycle: mix set for %s: %s\n' "$mix_provider" "$mix_overlay"
-      log_event "mix-set" "$(jq -nc --arg p "$mix_provider" --argjson overlay "$mix_overlay" --arg by "$by" \
-        '{provider: $p, overlay: $overlay, by: $by, actor: $by}')"
+      log_event "mix-set" "$(jq -nc --arg p "$mix_provider" --argjson overlay "$mix_overlay" \
+        --arg by "$by" --arg actor "$(toggle_actor)" \
+        '{provider: $p, overlay: $overlay, by: $by, actor: $actor}')"
       refresh_dashboard
       exit 0
       ;;

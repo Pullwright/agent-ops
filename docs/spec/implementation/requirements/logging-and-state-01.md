@@ -27,6 +27,7 @@
     `disabled`, `enabled`,
     `merge-autonomy-killed`, `merge-autonomy-restored`,
     `merge-budget-hold`, `merge-budget-frozen`, `merge-budget-freeze-escalated`,
+    `mix-set`, `mix-reset`,
     `salvage`, `chained`,
     `approver-verdict`, `approver-escalated`, `approver-escalation-retired`,
     `landing-armed`, `landing-refused`, `classifier-escape`, `landing-audit`,
