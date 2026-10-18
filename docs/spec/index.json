@@ -3457,14 +3457,6 @@
       "line": 1025,
       "title": "Refuse-wins, and the adjudication path (D18 WI-5, same design §5.2)."
     },
-    "IMPL 8d": {
-      "kind": "impl",
-      "label": "8d",
-      "anchor": "impl-8d",
-      "file": "docs/spec/implementation/requirements/the-script-08.md",
-      "line": 1211,
-      "title": "The arming step (D18 WI-7, same design §5.1/§6/§7; agent-ops#410)."
-    },
     "IMPL 8e": {
       "kind": "impl",
       "label": "8e",
@@ -3720,6 +3712,14 @@
       "file": "docs/spec/implementation/requirements/the-script-10.md",
       "line": 94,
       "title": "New config keys, documented and rendered."
+    },
+    "IMPL 8d": {
+      "kind": "impl",
+      "label": "8d",
+      "anchor": "impl-8d",
+      "file": "docs/spec/implementation/requirements/the-script-11.md",
+      "line": 5,
+      "title": "The arming step (D18 WI-7, same design §5.1/§6/§7; agent-ops#410)."
     },
     "MON M1": {
       "kind": "mon",
