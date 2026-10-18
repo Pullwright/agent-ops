@@ -6,8 +6,9 @@ name: Spec label check
 # (scripts/spec.sh check), and docs/spec/index.json is exactly what
 # scripts/spec.sh index renders from the current anchors (scripts/spec.sh
 # index --check) — or a citation/duplicate can drift unnoticed the way
-# scripts/doctor.sh's "requirement 14b" (meaning component 14b) did before
-# issue #2095. Modelled on toc.yml and config-table.yml.
+# scripts/doctor.sh's old bare citation of component 14b (mislabelled as a
+# requirement) did before issue #2095. Modelled on toc.yml and
+# config-table.yml.
 #
 # Deliberately `pull_request` (not `pull_request_target`), so a fork PR never
 # runs with write-scoped secrets, and ungated by `paths:` — a citation can be

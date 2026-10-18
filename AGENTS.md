@@ -21,9 +21,9 @@ Each component has an as-built requirements specification in `docs/spec/`:
 - `docs/spec/monitor.md` — Pipeline Monitor
 - `docs/spec/dashboard/README.md` — monitoring dashboard
 
-The specifications are requirement documents: they describe the system as it actually exists. A change that alters what a component does, requires, or produces must land in the same PR as the spec edit that keeps its document accurate.
+The specifications are requirement documents: they describe the system as it actually exists. A change that alters what a component does, requires, or produces must land in the same PR as the spec edit that keeps its document accurate. To resolve a citation of a specific requirement, acceptance check or component (`requirement 17a`, `IMPL AC 1g`, `REV R5`, `MON M4`), run `scripts/spec.sh show <label>` rather than opening and searching the spec file by hand.
 
-For the full details on working with the as-built specifications — understanding the rule, finding governing requirements, adding new ones, and handling specification splits on in-flight branches — see `docs/guides/contributing/README.md` § "The as-built rule in practice".
+For the full details on working with the as-built specifications — understanding the rule, resolving a citation, finding governing requirements, adding new ones, and handling specification splits on in-flight branches — see `docs/guides/contributing/README.md` § "The as-built rule in practice".
 
 ## Generated regions
 

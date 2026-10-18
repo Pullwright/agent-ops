@@ -193,6 +193,11 @@ fallback for a repository that has not migrated — at its root and hold the PR
 to it — it's binding and repo-specific (build/lint/test commands,
 architecture, documentation rules, anything else it states).
 
+When `repo` is agent-ops itself and you need to resolve a citation of a
+specific requirement, acceptance check or component — `requirement 17a`,
+`IMPL AC 1g`, `REV R5`, `MON M4` — run `scripts/spec.sh show <label>`
+rather than opening and grepping the spec file by hand.
+
 ## Shared repository conventions
 
 All target repos follow these rules; check the PR against them as part of

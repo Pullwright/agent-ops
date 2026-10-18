@@ -6,7 +6,7 @@
 # (issue #2095).
 #
 # A label is addressed by a *qualified* form naming which specification and
-# which sequence it belongs to: "IMPL 17a" (a requirement), "IMPL AC 17a"
+# which sequence it belongs to: "IMPL 17a" (a requirement), "IMPL AC 1g"
 # (an acceptance check), "IMPL C 14b" (a component), "REV R5", "REV AC 5",
 # "REV C 5", "MON M4", "MON AC 4", "MON C 4". A bare label ("17a") or the
 # existing English phrase ("requirement 17a") means the implementation

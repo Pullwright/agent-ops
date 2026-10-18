@@ -135,16 +135,22 @@ The specifications are split across multiple readable files, each with numbered 
 
 For example, if changing how claims expire, find and read `docs/spec/implementation/requirements/` files; grep for `claim_ttl` or `expir`; update that requirement; then update the code.
 
+### How to resolve a citation
+
+A citation names a specific requirement, acceptance check or component — a bare `requirement 17a`, or a qualified form naming which specification and sequence it belongs to (`IMPL AC 1g`, `REV R5`, `MON M4`; see `docs/README.md` § "Requirement-label citations" for the full grammar). Run `scripts/spec.sh show <label>` rather than opening and searching the spec file by hand: it prints the entry's own text, its anchor, and every file that cites it, from the committed `docs/spec/index.json`. `scripts/spec.sh check` is the permanent CI guard against a citation that collides, dangles, or names the wrong one of the three sequences.
+
 ### How to add a requirement
 
 When adding new behaviour, add a new numbered requirement to the appropriate spec:
 
 1. Read the spec file's heading to understand the item numbering — it carries a heading like `### Requirements — continued (part N of M; items X–Y)` that tells you the range
-2. Add the new requirement after the last in that file
+2. Add the new requirement after the last in that file, with its own `<a id>` anchor and a label `scripts/spec.sh check` confirms is unique within its sequence
 3. If the file is full (nearing the size budget documented in `AGENTS.md`), start a new file at the next unused number
-4. Add a matching acceptance check in `acceptance-checks/`, using the same numbering
+4. Add a matching acceptance check in `acceptance-checks/`, using the same numbering and the same anchor convention
 5. Update the spec's `README.md` table of contents, and `docs/README.md`'s file-by-file listing
 6. Update the code/prompts to implement the new requirement
+
+Requirements state only what is, never what used to be or what is planned; history and rationale belong in the specs' design-decision and gotcha sections. A parenthetical or subordinate aside inside a requirement may cite what used to be when that explains what is, provided deleting the aside leaves a complete and correct statement of the current system; an aside the requirement cannot stand without is history in the assertion, and belongs in the design-decision or gotcha section instead. If you find a spec and the code disagreeing, that is a bug: fix whichever is wrong rather than working around the mismatch.
 
 ### How to bring in-flight work through a specification split
 

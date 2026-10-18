@@ -417,8 +417,10 @@ stable. For example, two `### Operate` headings produce anchors `#operate` and
 
 Anything cited in code, prompts, or other documents should have an explicit
 anchor that does not change when the heading's wording does. This is not
-yet systematically done in this repository and is left for a future
-documentation sweep.
+yet systematically done for ordinary document headings in this repository
+and is left for a future documentation sweep — requirement, acceptance-check
+and component labels are the one citation family this already covers; see
+"Requirement-label citations" below.
 
 ### How sections are cited
 
@@ -435,6 +437,63 @@ This format is:
 Cited headings should remain stable over time. Where a heading must be
 reworded, update all citations together.
 
+This is separate from citing a requirement, acceptance-check or component
+label, which has its own citation grammar: see "Requirement-label
+citations" below.
+
+### Requirement-label citations
+
+Every requirement, acceptance check and component in `docs/spec/` carries
+an explicit `<a id>` anchor, so each one is linkable
+(`docs/spec/implementation/components/components-02.md#impl-c-14b`) and
+lookupable (`scripts/spec.sh show 14b`) the same way a document heading is.
+
+Three specifications each define their own requirements: the implementation
+specification (`docs/spec/implementation/`), the review specification
+(`docs/spec/review.md`) and the monitor specification (`docs/spec/monitor.md`).
+Within each, a label is drawn from one of three sequences — requirements,
+acceptance checks, components — which may reuse each other's numbers: a
+label unique within its own sequence is not necessarily unique across all
+three. A citation therefore names which specification and, where it is not
+already clear from the word in front of the number, which sequence a label
+belongs to:
+
+- `IMPL 17a`, bare `17a`, or "requirement 17a" — the implementation
+  specification's requirement 17a.
+- `IMPL AC 1g`, or "acceptance check 1g" — the implementation
+  specification's acceptance check 1g.
+- `IMPL C 14b`, or "component 14b" — the implementation specification's
+  component 14b.
+- `REV R5`, or bare `R5` — the review specification's requirement R5.
+- `REV AC 5`, or "acceptance check 5" in review context — the review
+  specification's acceptance check 5.
+- `REV C 5`, or "component 5" in review context — the review
+  specification's component 5.
+- `MON M4`, or bare `M4` — the monitor specification's requirement M4.
+- `MON AC 4` / `MON C 4` — the monitor specification's acceptance check /
+  component 4.
+
+A bare number or the English word ("requirement"/"acceptance
+check"/"component") with no specification prefix means the implementation
+specification — the pipeline's main one, and what every citation already
+meant before this grammar existed. The review and monitor specifications'
+own requirement sequences already carry their own letter (`R5`, `M4`), so a
+bare `R5`/`M4` is unambiguous without the `REV`/`MON` prefix either; their
+acceptance-check and component sequences do not, so citing one of those from
+outside its own document should use the qualified form.
+
+`scripts/spec.sh show <label>` and `scripts/spec.sh where <label>` accept
+every form above. `scripts/spec.sh check` is the permanent guard: it fails
+on a duplicate label within a sequence, on a citation that resolves to
+nothing, and on a bare "requirement N" that actually names an acceptance
+check or a component — the exact bug `scripts/doctor.sh` and
+`config.schema.json` both had before issue #2095 found it. A handful of
+citations this check cannot yet validate — a dotted sub-requirement label
+such as `2.5`, nested inside a requirement's own checklist rather than
+anchored on its own — are a known, filed gap (agent-ops#2521), not
+something `check` silently gets wrong: it skips any citation containing a
+decimal point rather than mismatch it against the truncated integer part.
+
 ### Checked in CI
 
 `scripts/check-docs.sh` (`.github/workflows/docs.yml`) checks five of the
@@ -447,8 +506,10 @@ entry, and every entry there is one the check still reads; a quoted section
 citation names a heading that exists; and a ratchet in
 `scripts/docs-phrasing-ratchet.tsv` holds historical-sounding as-built
 phrasing to its current count or lower.
-It does not check spelling, grammar, external links, or requirement-label
-citations.
+It does not check spelling, grammar, or external links. Requirement-label
+citations have their own separate, permanent check instead:
+`scripts/spec.sh check` (`.github/workflows/spec.yml`), described above
+under "Requirement-label citations".
 
 ### Line wrapping
 
