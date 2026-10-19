@@ -529,7 +529,18 @@
       `refinement_label_remove`'s optional `STDERR_VAR` capture — so a
       genuinely stuck removal (the label missing from the repository
       itself) can be told apart from a stale/racing read instead of only
-      incrementing a failure counter.
+      incrementing a failure counter. A repo named only by a historic
+      union-log event resolves through `config_repo_slug_aliases`'
+      `{old_slug: current_slug}` map (built from `PAGER_EVAL_REPOS_JSON`,
+      the dashboard's own `repos` config) before the live `gh` read, before
+      `refinement_blocked_label_orphaned`, and before the remedy's own
+      `refinement_label_remove` call — the same resolution requirement 34's
+      set/clear match already applies (agent-ops#2359), extended here
+      (agent-ops#2466) to the one invariant that was reading a repo straight
+      off historic events and feeding it to a live write: a repository
+      renamed since the block was recorded would otherwise read and write
+      against its old slug forever, which a GitHub repo-transfer redirect
+      serves for the read but not for the write.
     - **`claim-unreconciled`** (pipeline-act). Fires when an
       `enabler-examined` event whose `outcome` is the Enabler's own escalate
       verdict (`lib/enabler.sh`: `outcome="$verdict"`, never reassigned on
