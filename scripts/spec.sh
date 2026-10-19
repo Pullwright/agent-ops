@@ -341,7 +341,7 @@ spec_ratchet_has() {
 # A citation with a dotted sub-number ("requirement 2.5", "16.1") names a
 # step inside requirement 2's or 16's own nested checklist, a third,
 # unqualified numbering scheme this script does not model yet
-# (agent-ops#2520) — skipped here rather than mismatched against the
+# (agent-ops#2521) — skipped here rather than mismatched against the
 # truncated integer part.
 cmd_check() {
   spec_require_index
@@ -361,6 +361,11 @@ cmd_check() {
     '\bREV( AC| C)? [A-Za-z0-9]+' \
     '\bMON( AC| C)? [A-Za-z0-9]+'
   do
+    # `-H` rather than bare `-n`: grep omits the filename when it is handed a
+    # single path, and xargs hands it one whenever the file list spills into a
+    # batch of one. Without it that batch parses as `lineno:phrase`, every
+    # phrase comes out empty, and the citations in it are skipped silently
+    # instead of checked — the one failure mode a CI guard must not have.
     while IFS=: read -r file lineno phrase; do
       [[ -z "${file:-}" ]] && continue
       if [[ $phrase == *.* ]]; then
@@ -376,7 +381,7 @@ cmd_check() {
       fi
       echo "spec.sh check: $file:$lineno: '$phrase' does not resolve ($key)" >&2
       violations=1
-    done < <(spec_citation_sources | xargs -r grep -noE -- "$pattern" 2>/dev/null)
+    done < <(spec_citation_sources | xargs -r grep -nHoE -- "$pattern" 2>/dev/null)
   done
 
   if (( violations == 0 )); then
