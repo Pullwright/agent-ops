@@ -234,6 +234,7 @@ BLOCKED_ITEMS_JQ='
                         and ((.repo // "") == "" or canon_repo(.repo // "") == canon_repo($b.repo // ""))))
            | map(.ts // "")
            | sort | last) as $rc_ts
+        | ($b + {repo: canon_repo($b.repo // "")}) as $b
         | if $rc_ts == null then $b else $b + {recheck_clean_ts: $rc_ts} end)
 '
 
@@ -252,6 +253,13 @@ BLOCKED_ITEMS_JQ='
 # that repo's `previous_slugs`, and vice versa. Defaults to `{}` (every repo
 # resolves to itself); an argument that is not a JSON object is treated the
 # same way.
+#
+# Every entry's own `.repo` is canonicalized through the same map before it is
+# emitted (agent-ops#2548) — never the raw `attempt-failed` event's repo — so
+# a caller that joins this array against a repo's current configured slug
+# (`refiner_candidate_items`'s `is_blocked`, `exclude_blocked_or_void_items`)
+# finds a block recorded under a slug in `previous_slugs` without needing its
+# own alias resolution.
 blocked_items() {
   local src="${1:--}" aliases="${2:-{\}}" out=""
   jq -e 'type == "object"' <<<"$aliases" >/dev/null 2>&1 || aliases='{}'
@@ -278,15 +286,31 @@ VOID_ITEMS_EVENTS="item-void unvoided"
 # clears an `item-void` recorded under a slug in that repo's `previous_slugs`,
 # and vice versa. Defaults to `{}` (every repo resolves to itself).
 #
+# Every entry's own `.repo` is additionally canonicalized through the same map
+# (agent-ops#2548) — never the raw `item-void` event's repo — so a caller that
+# joins this array against a repo's current configured slug
+# (`refiner_candidate_items`'s `is_void`, `exclude_blocked_or_void_items`)
+# finds a void recorded under a slug in `previous_slugs` without needing its
+# own alias resolution. Done here in this wrapper, not inside
+# `_latest_unresolved` itself: that shared helper's other caller
+# (`REFINEMENTS_MAP_JQ`'s nested `latest_unresolved`) matches a refinement
+# against the *raw* repo it was logged under, via its own `canon_repo` call,
+# and must keep doing so.
+#
 # A void is scoped to the item id, so it cannot outstay its welcome: next week's
 # review files its recommendations under fresh refs (review-<new-date>-R-NN),
 # which no void covers. Voiding R-02 today cannot silence a genuine regression a
 # later review finds.
 void_items() {
-  local log="${1:--}" aliases="${2:-{\}}"
+  local log="${1:--}" aliases="${2:-{\}}" out
+  jq -e 'type == "object"' <<<"$aliases" >/dev/null 2>&1 || aliases='{}'
   # shellcheck disable=SC2086  # VOID_ITEMS_EVENTS is a word list by design.
   set -- "$log" $VOID_ITEMS_EVENTS
-  _latest_unresolved "$2" "$3" "$1" "$aliases"
+  out="$(_latest_unresolved "$2" "$3" "$1" "$aliases")"
+  jq -c --argjson aliases "$aliases" '
+    def canon_repo($r): ($aliases[$r] // $r);
+    map(. + {repo: canon_repo(.repo // "")})
+  ' <<<"$out" 2>/dev/null || printf '%s' "$out"
 }
 
 # void_object_closed_items [LOG_FILE]
@@ -813,7 +837,7 @@ REFINEMENTS_MAP_JQ='
                | not) ]
   | sort_by(.ts)
   | reduce .[] as $r ({};
-      .[$r.repo][($r.item | tostring)] =
+      .[canon_repo($r.repo)][($r.item | tostring)] =
         ({ts: ($r.ts // ""), cycle: ($r.cycle // "")}
          + (if ($r.spec // "") == "" then {} else {spec: $r.spec} end)
          + (if ($r.comment_url // "") == "" then {} else {comment_url: $r.comment_url} end)))
@@ -828,6 +852,15 @@ REFINEMENTS_MAP_JQ='
 # own map, threaded into `REFINEMENTS_MAP_JQ`'s `canon_repo`. Defaults to `{}`
 # (every repo resolves to itself); an argument that is not a JSON object is
 # treated the same way.
+#
+# The map's own outer key is the canonical slug, never the raw repo the
+# `item-refined` event was logged under (agent-ops#2548): without that, a
+# caller joining this map against a repo's current configured slug —
+# `refiner_candidate_items`'s `refinement_for` (lib/refinement.sh) — could
+# never reach a refinement logged under a slug in that repo's
+# `previous_slugs`, even though the void/blocked drops just above already
+# resolve through the same alias map to decide whether the event belongs in
+# the map at all.
 #
 # Always succeeds, printing {} for a missing, empty or unreadable log, for the
 # same reason `_latest_unresolved` prints []: this is computed inside a cycle
@@ -924,7 +957,7 @@ DECISIONS_MAP_JQ='
                | not) ]
   | sort_by(.ts)
   | reduce .[] as $d ({};
-      .[$d.repo][($d.item | tostring)] =
+      .[canon_repo($d.repo)][($d.item | tostring)] =
         {ts: ($d.ts // ""), decision: ($d.decision // ""), rationale: ($d.rationale // "")}
         + (if ($d.options_considered // "") == "" then {} else {options_considered: $d.options_considered} end)
         + (if ($d.comment_url // "") == "" then {} else {comment_url: $d.comment_url} end)
@@ -943,6 +976,10 @@ DECISIONS_MAP_JQ='
 # own map, threaded into `DECISIONS_MAP_JQ`'s `canon_repo`. Defaults to `{}`
 # (every repo resolves to itself); an argument that is not a JSON object is
 # treated the same way.
+#
+# The map's own outer key is the canonical slug, never the raw repo the
+# `decision-taken` event was logged under (agent-ops#2548), the same reason
+# `REFINEMENTS_MAP_JQ`'s own key is canonicalized.
 decisions_map() {
   local src="${1:--}" aliases="${2:-{\}}" out=""
   # Same fallback as refinements_map above, same reason.
