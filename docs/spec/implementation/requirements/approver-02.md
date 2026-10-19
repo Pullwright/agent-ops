@@ -476,7 +476,7 @@
       `coordinator-input-fitted` detail — the two facts a diagnosis starts
       from, per the issue's own acceptance — though neither is load-bearing
       for the firing decision itself.
-    - **`fit-ladder-pinned`** (owner-only). Fires when a node's
+    - **`coordinator-fit-ladder-pinned`** (owner-only). Fires when a node's
       `coordinator-input-fitted` events (`lib/coordinator-input.sh`,
       `agent-cycle.sh`) in the trailing 24h have all run out of prose to shed
       and are dropping whole entries — rung 11 or tighter, the first of the 10

@@ -106,7 +106,7 @@
 # Issue #1281 (part 3b of #1126's findings) adds seven more — the selection
 # and ledger invariants: the class that wedged or starved the fleet in
 # August and September, this time read from the Co-Ordinator's own
-# selection/fit machinery (idle-with-demand, fit-ladder-pinned,
+# selection/fit machinery (idle-with-demand, coordinator-fit-ladder-pinned,
 # work-order-repaired-rate) and from the block/escalation ledger
 # (blocked-label-orphaned, claim-unreconciled, escalation-burst,
 # digest-truncated):
@@ -128,7 +128,7 @@
 #                           fitted` detail, the two facts a diagnosis
 #                           starts from, but there is no fix a pipeline
 #                           could perform on the owner's behalf.
-#   fit-ladder-pinned       `coordinator-input-fitted` pinned in the
+#   coordinator-fit-ladder-pinned  `coordinator-input-fitted` pinned in the
 #                           ladder's own entry-dropping segment — rung 11 or
 #                           tighter, the first of the 10 entry caps that
 #                           follow lib/coordinator-input.sh's 10 prose tiers
@@ -1203,7 +1203,7 @@ pager_remedy_blocked_label_orphaned() {
 # recurring by a different route.
 #
 # The claims are windowed to the trailing 24h, on the same terms every other
-# invariant in this class is (`fit-ladder-pinned`, `work-order-repaired-rate`,
+# invariant in this class is (`coordinator-fit-ladder-pinned`, `work-order-repaired-rate`,
 # `escalation-burst`), and for a reason particular to a ledger reader: the
 # union log is never rotated (scripts/rotate-logs.sh leaves `log.jsonl`
 # alone), so an unwindowed reading would fire on the original #815 incident
@@ -1962,9 +1962,9 @@ pager_register_builtin_invariants() {
   pager_register idle-with-demand pager_eval_idle_with_demand owner-only \
     "A node's own selection/stand-down history shows real demand going unclaimed for several cycles running (agent-ops#1128/#1163/#1165's own class of fleet-wide stand-down and starvation). The evidence above carries this node's own most recent none-selected reason and coordinator-input-fitted detail — the two facts a diagnosis starts from. Check the Co-Ordinator's own verdicts and eligibility gates on this node directly."
   pager_declare_events idle-with-demand node-state none-selected coordinator-input-fitted
-  pager_register fit-ladder-pinned pager_eval_fit_ladder_pinned owner-only \
+  pager_register coordinator-fit-ladder-pinned pager_eval_fit_ladder_pinned owner-only \
     "The coordinator input ladder (lib/coordinator-input.sh) has bottomed out at its own tightest rung and is still shedding backlog entries on every fitted cycle for a full day — the eligible backlog has outgrown coordinator_prompt_max_bytes. Either raise the byte budget or reduce the backlog (close stale issues, tighten a repo's own sources) directly."
-  pager_declare_events fit-ladder-pinned coordinator-input-fitted
+  pager_declare_events coordinator-fit-ladder-pinned coordinator-input-fitted
   pager_register work-order-repaired-rate pager_eval_work_order_repaired_rate owner-only \
     "More than pager_repair_rate_percent of a day's selections needed a work-order-repaired repair (agent-ops#821's own signature: a work order composed from trimmed input). Check the fit report and the trimmed candidates' own sizes directly. Retire this invariant once agent-ops#769's part (b) lands and agent-ops#1156 removes the gate this rate reads."
   pager_declare_events work-order-repaired-rate selection work-order-repaired

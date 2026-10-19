@@ -102,7 +102,7 @@
     firing on that same streak the moment the node's row publishes a
     standby's role, and never fires with `pager_idle_cycles`
     unconfigured, with its evidence carrying the node's own `none-selected`
-    reason and `coordinator-input-fitted` detail; `fit-ladder-pinned` fires
+    reason and `coordinator-input-fitted` detail; `coordinator-fit-ladder-pinned` fires
     on a node whose every `coordinator-input-fitted` event in the trailing
     24h sits at rung 20 with entries dropped *and* on one pinned at rung 11
     (the first entry cap, #1128's own shape renumbered), with its evidence
