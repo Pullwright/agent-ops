@@ -167,6 +167,13 @@
     verdict carrying neither is recorded as `refiner-examined` with outcome
     `refined-uncorroborated` and **no** `item-refined` is written: the item
     stays exactly as unrefined as it was, and is a candidate again next cycle.
+    An `item-refined` this path writes for an item that already carries an
+    open `needs-refinement` block is what requirement 34o's own deterministic
+    sweep, in `lib/candidate-gather.sh`'s pre-extract window, later reads to
+    clear that block — never something this path clears itself, since
+    `blocked_json` is also `refiner_candidate_items`' own exclusion set
+    (requirement 39a), so no item this path ever processes can be one
+    `blocked_json` already carries.
 
     **`comments_posted[0]` must actually name a comment (TD-PPagop-26082819).**
     An `#issuecomment-<n>` anchor or the REST API comment form

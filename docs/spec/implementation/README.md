@@ -28,7 +28,7 @@ Split from a single file by #2094 so every part is within the 100,000-byte docum
   - [Every stage (untrusted external content)](requirements/every-stage.md)
   - [The Implementer](requirements/implementer.md)
   - [Logging and state](requirements/logging-and-state-01.md)
-  - [Logging and state — requirements, continued (part 2 of 2; 34i–34n: A block whose work is gone is cleared without asking anyone…)](requirements/logging-and-state-02.md)
+  - [Logging and state — requirements, continued (part 2 of 2; 34i–34o: A block whose work is gone is cleared without asking anyone…)](requirements/logging-and-state-02.md)
   - [The Refiner](requirements/refiner.md)
   - [The Reviewer](requirements/reviewer.md)
   - [The Script (`agent-cycle.sh`)](requirements/the-script-01.md)

@@ -1021,6 +1021,48 @@ refinement_hand_flag_cleared() {
   printf '%s' "$out"
 }
 
+# refinement_block_refined_cleared BLOCKED_JSON REFINEMENTS_MAP_JSON
+# Print, as a JSON array of full block entries (requirement 34o,
+# agent-ops#2477's second remedy), every open `needs-refinement` block in
+# BLOCKED_JSON whose entry in REFINEMENTS_MAP_JSON — `refinements_map`'s own
+# repo -> item -> {ts, ...} shape (lib/cycle-state.sh), already resolved
+# through `repo_slug_aliases_json` and already skipping a phantom
+# `item-refined` (`comment_url` present but naming no comment,
+# TD-PPagop-26082819) — carries a `ts` later than the block's own: a refined
+# specification is exactly what the block was waiting for, whatever stage
+# originally recorded the block and whatever stage eventually wrote the
+# refinement.
+#
+# The Refiner's own first attempt at this (its `refined` verdict path
+# checking `blocked_json` in the same pass) could never fire: that same
+# `blocked_json` is also `refiner_candidate_items`'s own exclusion set, so no
+# verdict the Refiner ever processes can name an item already present in it.
+# This deterministic sweep is reachable because it runs off `blocked_items`/
+# `refinements_map` directly, with no candidate filter standing between the
+# two.
+#
+# Entries are printed in full, not reduced to {repo, item}, so the caller can
+# read back `needs_refinement_label`/`blocked_label`/`blocked_reason_label`
+# and release them — the same three fields `release_refinement_label` reads
+# off its own BLOCKED_JSON argument.
+refinement_block_refined_cleared() {
+  local blocked="${1:-[]}" refined_map="${2:-{\}}" out docs
+  jq -e 'type == "object"' <<<"$refined_map" >/dev/null 2>&1 || refined_map='{}'
+  docs="$blocked"$'\n'"$refined_map"
+  out="$(jq -nc --arg kind "$REFINEMENT_BLOCK_KIND" '
+    input as $b | input as $r |
+    [ $b[]?
+      | select((.kind // "") == $kind)
+      | select(((.repo // "") != "") and ((.item // "") != ""))
+      | . as $e
+      | ($r[$e.repo][($e.item | tostring)].ts // "") as $rts
+      | select($rts != "" and $rts > ($e.ts // ""))
+      | $e
+    ]' <<<"$docs" 2>/dev/null || true)"
+  [[ -n "$out" ]] && jq -e 'type == "array"' <<<"$out" >/dev/null 2>&1 || out='[]'
+  printf '%s' "$out"
+}
+
 # --- The Refiner (requirement 39) --------------------------------------------
 #
 # Everything above this line predates the Refiner and is unchanged by it: a
