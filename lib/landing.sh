@@ -952,11 +952,16 @@ landing_latest_refusal_reason() {
 # (requirement 8x, agent-ops#578): a pull request a refuse streak sent
 # through more than one Approver engagement carries every one of them here,
 # not only the round that finally approved it. The record's own `approver`
-# object is this array's *last* entry, exactly as `landing_retry_tier` reads
-# the newest matching event's `tier` alone — never a separate in-process
-# fact, so the same read serves both the round that first approves a pull
-# request and a later 2.1e landing-retry re-arm without the two ever risking
-# disagreement.
+# object is this array's *last* entry — read from the log, never from a
+# separate in-process fact, so the same read serves both the round that
+# first approves a pull request and a later 2.1e landing-retry re-arm. This
+# array deliberately carries *every* event, a `posted: false` one included
+# (that is what `posted` is in each row for), where `landing_retry_tier`
+# excludes them: the audit record is a full diagnostic history of what the
+# Approver decided, while the gate-4.5 tier control is a trust decision that
+# may rest only on a review GitHub actually accepted (issue #2534). So the
+# two reads can name different engagements for the same pull request, and
+# the record's own `posted` field is what tells a reader which it has.
 #
 # Reads the union of SRC1 and SRC2, deduplicated — never either alone. On the
 # round that first approves a pull request, `$log_file` (this process's own
