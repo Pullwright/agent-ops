@@ -516,7 +516,16 @@ toggle_status_report() {
 #     deletes it instead, which is how a human ends a stand-down early
 #     without breaking that rule.
 #
-# Both live as files on the state repository's main branch, written through
+# Three further flags reuse this same mechanism outright, under their own flag
+# name, documented where they live rather than here: `fleet/merge-autonomy-
+# kill.json` (requirement 2.3b, `lib/merge-autonomy.sh`),
+# `fleet/merge-budget-freeze-<slug>.json` (requirement 2.3c,
+# `lib/merge-budget.sh` — one flag per repository slug, the only one of the
+# family whose NAME varies at run time) and `fleet/mix.json`, the credit
+# mix's live lever (requirement 2.3e, `lib/mix.sh`, issue #2244).
+#
+# Every flag here lives as a file on the state repository's main branch,
+# written through
 # the contents API — the same CAS the claim registry uses (requirement 17a):
 # a PUT with a stale sha loses, and the loser re-reads before retrying. There
 # is no single writer and no chore to elect one; every operation here is

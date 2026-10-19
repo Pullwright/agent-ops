@@ -531,6 +531,140 @@ assert_eq "...and draws every lane its weights open at least once" \
 assert_eq "...and every one of the 300 drawn lanes was one of the two configured" \
   "300" "$(( shipped_api_n + shipped_sub_n ))"
 
+# --- 6a1m. The credit mix's live lever outranks config for the keys it names
+# (issue #2244, D30) — overlaid once, by providers_apply_mix, before the draw
+# ever runs; stage_lane_draw itself knows nothing about fleet/mix.json. Both
+# credentials are present throughout (the module-level ANTHROPIC_API_KEY/
+# CLAUDE_CONFIG_DIR=$sub_present_dir above 6a), so config alone (1:0, no
+# `enabled` set) keeps subscription closed under D4's own "api present wins"
+# default — exactly the baseline a live mix flag then opens.
+
+# shellcheck source=lib/mix.sh
+. "$SCRIPT_DIR/lib/mix.sh"
+
+mix_gh_backing="$tmp_dir/mix-remote"; mkdir -p "$mix_gh_backing"
+mix_gh_stub="$tmp_dir/mix-gh-stub"
+cat > "$mix_gh_stub" <<'STUB'
+#!/usr/bin/env bash
+set -uo pipefail
+if [[ "${GH_STUB_MODE:-ok}" == "down" ]]; then
+  echo "dial tcp: could not resolve host github.com" >&2
+  exit 1
+fi
+backing="${GH_STUB_BACKING:?}"
+method=GET path="" jq_expr=""
+declare -A f=()
+args=("$@"); i=0
+while (( i < ${#args[@]} )); do
+  a="${args[$i]}"
+  case "$a" in
+    -X)      i=$((i+1)); method="${args[$i]}" ;;
+    --jq)    i=$((i+1)); jq_expr="${args[$i]}" ;;
+    -f)      i=$((i+1)); kv="${args[$i]}"; f["${kv%%=*}"]="${kv#*=}" ;;
+    repos/*) path="$a" ;;
+  esac
+  i=$((i+1))
+done
+if [[ "$path" == repos/*/* && "$path" != */contents/* ]]; then
+  echo '{}'
+  exit 0
+fi
+rel="${path#repos/*/*/contents/}"; rel="${rel%%\?*}"
+file="$backing/$rel"
+sha_of() { sha1sum "$1" | awk '{print $1}'; }
+case "$method" in
+  GET)
+    [[ -f "$file" ]] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
+    if [[ "$jq_expr" == ".sha" ]]; then sha_of "$file"; exit 0; fi
+    jq -n --arg c "$(base64 -w0 < "$file")" --arg s "$(sha_of "$file")" '{content: $c, sha: $s}'
+    ;;
+  PUT)
+    if [[ -f "$file" ]]; then
+      [[ "${f[sha]:-}" == "$(sha_of "$file")" ]] || { echo "gh: sha mismatch (HTTP 409)" >&2; exit 1; }
+    elif [[ -n "${f[sha]:-}" ]]; then
+      echo "gh: sha given for a missing file (HTTP 422)" >&2; exit 1
+    fi
+    mkdir -p "$(dirname "$file")"
+    printf '%s' "${f[content]:?}" | base64 -d > "$file"
+    ;;
+  DELETE)
+    [[ -f "$file" ]] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
+    [[ "${f[sha]:-}" == "$(sha_of "$file")" ]] || { echo "gh: sha mismatch (HTTP 409)" >&2; exit 1; }
+    rm -f "$file"
+    ;;
+esac
+STUB
+chmod +x "$mix_gh_stub"
+mix_slug="example/agent-ops-state"
+mix_fs="$tmp_dir/mix-state"; mkdir -p "$mix_fs"
+
+# Config alone, no flag at all: 1:0, unset enabled — every draw lands on api.
+PROVIDER_LANES=()
+providers_load '{}'
+config_api_n=0 config_sub_n=0
+for ((i = 0; i < 30; i++)); do
+  case "$(stage_lane_draw anthropic claude-code "mix-config-seed-$i")" in
+    api) config_api_n=$(( config_api_n + 1 )) ;;
+    subscription) config_sub_n=$(( config_sub_n + 1 )) ;;
+  esac
+done
+assert_eq "config alone (1:0, unset enabled): every draw lands on api" \
+  "30 0" "$config_api_n $config_sub_n"
+
+# A live mix flag moves to 1:1 and opens subscription explicitly.
+mix_overlay="$(mix_build_overlay anthropic "api=1" "subscription=1" "subscription.enabled=true")"
+TOGGLE_GH="$mix_gh_stub" GH_STUB_BACKING="$mix_gh_backing" \
+  mix_write "$mix_slug" "$mix_fs" anthropic "$mix_overlay" "operator pid 1" "operator" >/dev/null
+TOGGLE_GH="$mix_gh_stub" GH_STUB_BACKING="$mix_gh_backing" \
+  providers_apply_mix "$mix_slug" "$mix_fs"
+
+mix_api_n=0 mix_sub_n=0
+for ((i = 0; i < 300; i++)); do
+  case "$(stage_lane_draw anthropic claude-code "mix-flag-seed-$i")" in
+    api) mix_api_n=$(( mix_api_n + 1 )) ;;
+    subscription) mix_sub_n=$(( mix_sub_n + 1 )) ;;
+  esac
+done
+mix_api_pct=$(( mix_api_n * 100 / 300 ))
+assert_eq "a live 1:1 mix flag splits the seeded draw within tolerance of 1:1" \
+  "within tolerance" \
+  "$(if (( mix_api_pct >= 40 && mix_api_pct <= 60 )); then echo "within tolerance"; else echo "$mix_api_pct% api, outside 40-60%"; fi)"
+
+# The flag unreadable (state repo down, a fresh state_dir with no cache at
+# all): falls back to config exactly as if the flag had never been set.
+PROVIDER_LANES=()
+providers_load '{}'
+mix_fs_down="$tmp_dir/mix-state-down"; mkdir -p "$mix_fs_down"
+GH_STUB_MODE=down TOGGLE_GH="$mix_gh_stub" GH_STUB_BACKING="$mix_gh_backing" \
+  providers_apply_mix "$mix_slug" "$mix_fs_down"
+down_api_n=0 down_sub_n=0
+for ((i = 0; i < 30; i++)); do
+  case "$(stage_lane_draw anthropic claude-code "mix-down-seed-$i")" in
+    api) down_api_n=$(( down_api_n + 1 )) ;;
+    subscription) down_sub_n=$(( down_sub_n + 1 )) ;;
+  esac
+done
+assert_eq "an unreadable flag falls back to config: every draw lands on api" \
+  "30 0" "$down_api_n $down_sub_n"
+
+# --reset withdraws the lever explicitly, rather than merely going
+# unreachable — the same fallback either way.
+TOGGLE_GH="$mix_gh_stub" GH_STUB_BACKING="$mix_gh_backing" \
+  mix_reset "$mix_slug" "$mix_fs" anthropic "operator pid 2" >/dev/null
+PROVIDER_LANES=()
+providers_load '{}'
+TOGGLE_GH="$mix_gh_stub" GH_STUB_BACKING="$mix_gh_backing" \
+  providers_apply_mix "$mix_slug" "$mix_fs"
+reset_api_n=0 reset_sub_n=0
+for ((i = 0; i < 30; i++)); do
+  case "$(stage_lane_draw anthropic claude-code "mix-reset-seed-$i")" in
+    api) reset_api_n=$(( reset_api_n + 1 )) ;;
+    subscription) reset_sub_n=$(( reset_sub_n + 1 )) ;;
+  esac
+done
+assert_eq "after --reset, every draw lands on api again" \
+  "30 0" "$reset_api_n $reset_sub_n"
+
 # --- 6a2. The seed is the launch's own identifier, not just the stage name -
 # review round on PR #2385: review-cycle.sh and monitor-cycle.sh never set
 # `cycle_id` (only agent-cycle.sh does), so before that fix every launch of

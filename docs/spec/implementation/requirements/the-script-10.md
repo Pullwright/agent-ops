@@ -16,13 +16,27 @@
     prints `--health`.
 
     60a. **Read-only throughout.** Touches no lock, writes no event,
-    publishes nothing, and — beyond the one cached forge read of 58a —
-    makes no network call and triggers no state-sync push, gather, dashboard
+    publishes nothing, and triggers no state-sync push, gather, dashboard
     publish or `claude` invocation: every verdict computes on demand from
-    what cron already wrote. `test/node-health-cli.test.sh` asserts this
-    directly — a fixture `state_dir`/`workspace_root` are byte-identical,
-    file for file, before and after every mode runs, excepting only the one
-    cache file 58a's own header documents.
+    what cron already wrote. Exactly two forge reads exist across the whole
+    CLI, each confined to the one mode that reports it: 58a's own cached
+    `/rate_limit` read, which `--ready` needs for the GitHub budget, and —
+    where `state_repo` is configured at all — the single `fleet/mix.json`
+    contents read `--metrics` makes through `providers_apply_mix` for its
+    own `mix` field (60e, requirement 2.3e). That second read is uncached
+    across processes, unlike 58a's: `fleet_flag_fetch`'s own memo is keyed
+    by pid, so one CLI invocation is one read, and a collector polling
+    `/metrics` (60d) spends one contents call per scrape — the cost #2495
+    weighs against routing it through 58a's TTL cache instead.
+    `test/node-health-cli.test.sh` asserts the rest of this directly — a
+    fixture `state_dir`/`workspace_root` are byte-identical, file for file,
+    before and after every mode runs, excepting only the one cache file
+    58a's own header documents. That fixture configures no `state_repo`, so
+    the assertion holds over a CLI whose mix read short-circuits before it
+    fetches (`fleet_flag_fetch_status`' own empty-slug no-op); where one is
+    configured, `--metrics` also writes the family's own
+    `state_dir/fleet-cache/mix.json` (or its `.err` sibling on a failed
+    read), the same cache every other fleet-flag reader shares.
 
     60b. **The three verdicts genuinely diverge, from one CLI, in one
     process.** `test/node-health-cli.test.sh` builds a fixture that is live
@@ -85,7 +99,11 @@
     container resource actuals-against-budget where issue #606's collector
     has produced them (`host-facts/<node>.json`'s own `budget` section,
     `containers`, `null` when absent — reported where it exists, never
-    fabricated: issue #606 itself, not this item, produces those figures).
+    fabricated: issue #606 itself, not this item, produces those figures),
+    and the credit mix's effective lanes per provider (`mix`, requirement
+    2.3e — `mix_fleet_status_json`'s own object verbatim, the identical one
+    `agent-cycle.sh --status` renders from, so the two surfaces cannot
+    disagree about what is open right now, requirement 34a).
     Explicitly not Prometheus/OpenMetrics, not OTLP, and no adapter to
     either — the wire-format question issue #614 owns, deliberately parked
     by this item's own scope. `test/node-health-cli.test.sh` asserts every

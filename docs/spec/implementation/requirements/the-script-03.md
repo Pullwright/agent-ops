@@ -121,6 +121,14 @@
    there, and there is no singleton chore (requirement 2.5). The review
    pipeline honours the fleet switch but never sets or clears it, mirroring
    its relationship to the local one (`docs/spec/review.md`, R2a).
+
+   This flag's own mechanism — `fleet_flag_write`'s compare-and-set,
+   `fleet_flag_fetch`'s three failure directions, the `by`/`actor`/`ts`
+   provenance — is generic rather than specific to stopping cycles: requirement
+   2.1's usage-limit stand-down, requirement 2.3b's merge-autonomy kill
+   switch, requirement 2.3c's per-repository merge-budget freeze and
+   requirement 2.3e's credit-mix lever each reuse it outright, under their
+   own flag name, rather than growing their own copy of it.
 2.3b. **The merge-autonomy kill switch** (D18,
    `docs/reviews/2026-08-14-autonomy-investigation.md` §6; `lib/merge-autonomy.sh`).
    A second fleet flag, `fleet/merge-autonomy-kill.json`, independent of the
@@ -371,6 +379,124 @@
    `mode` (`"stop"`/`"drain"`) alongside `scope` and `fleet_flag`, so a log
    reader can tell which was in force without cross-referencing the record
    file, which may have since been cleared or overwritten.
+2.3e. **The credit mix's live lever** (issue #2244, D30, part of #2238). A
+   fifth fleet flag, `fleet/mix.json`, moving a provider's lane weights and
+   openings across the fleet while it runs — no image roll, no container
+   recreate — outranking `config.json`'s own `providers.<name>.lanes` for the
+   keys it names. Built on the same generic mechanism requirement 2.3a's own
+   fleet switch is (`fleet_flag_write`'s compare-and-set, `fleet_flag_fetch`,
+   `lib/toggle.sh`), under its own name, carrying the same `by`/`actor`/`ts`
+   provenance `fleet/disabled.json` does — the fifth flag built on that
+   machinery, after requirement 2.3a's own switch, requirement 2.1's
+   usage-limit stand-down, requirement 2.3b's merge-autonomy kill switch and
+   requirement 2.3c's per-repository merge-budget freeze.
+
+   Unlike every flag before it, this lever carries **openings and preferences
+   only** — a lane's weight, `enabled: true`, and a restated balance — and
+   never a closure, a cap or a floor: those remain a configuration change (in
+   the file the image carries) or `--close-lane`'s own manual record on
+   `fleet/limit.json` (#2242), where an old reader fails closed on an unknown
+   key the way requirement 2.1's own flag does. `agent-cycle.sh --mix
+   <provider> <lane>=<weight> [<lane>=<weight>] [<lane>.enabled=true]
+   [<lane>.balance_usd=<n>]` writes it; `<lane>` is `api` or `subscription`,
+   `<weight>` a non-negative integer, validated the same way and with the
+   same messages `config_provider_errors` (lib/config-schema.sh) gives a
+   malformed `providers.*.lanes` block. `<lane>.enabled=false` is refused
+   outright, naming `--close-lane` rather than silently reinterpreting it as
+   that command. `--mix <provider> --reset` deletes that provider's own entry
+   from the flag (and the flag itself once it was the last provider on it);
+   `--mix` with no arguments at all prints the effective mix every provider
+   is running under right now.
+
+   `fleet/mix.json`'s own shape:
+
+   ```json
+   {
+     "providers": {
+       "anthropic": {
+         "lanes": {
+           "api": {"weight": 70},
+           "subscription": {"weight": 30, "enabled": true,
+                             "balance_usd": 40, "balance_as_of": "2026-…Z"}
+         }
+       }
+     },
+     "by": "wallen@host pid 4242", "actor": "wallen@host", "ts": "2026-…Z"
+   }
+   ```
+
+   `providers_apply_mix` (`lib/mix.sh`) overlays it onto `PROVIDER_LANES`
+   (requirement 1a, `lib/model-id.sh`) once per process, immediately after
+   `providers_load`, for every provider both config and the flag name: each
+   named lane's own named keys (`weight`, `enabled` when `true`, and
+   `balance_usd` together with `balance_as_of` stamped at write time) overlay
+   config's own value for that key, by the identical recursive merge
+   `providers_load` already applies between a lane's config entry and its own
+   defaults; every key the flag does not name, on a lane it does not mention,
+   or for a provider it never names at all, is left to config entirely. A
+   provider the flag names that config.json's own `providers` does not
+   configure is skipped outright — there is no base lanes object to overlay
+   onto, and a node-local override is deliberately not offered: a share is a
+   fleet decision, and a node's own presence filter already localises it
+   without one.
+
+   Failure directions follow the family's own (requirement 2.3a): a 404 on
+   the flag file means config governs, definitively; an unreachable flag
+   falls back to the last successfully fetched copy, and to config when
+   there is none at all — fail open is the safe direction here precisely
+   because this lever can only ever *open* a lane or restate a preference,
+   never close one, so a flag nobody can read leaves every provider no less
+   open than config alone already made it; a flag present but too mangled to
+   parse as JSON at all also leaves every provider at config's own values,
+   but is not silent about it — the one failure direction distinct from a
+   404 or an unreachable repo — logging a `warning` event naming
+   `fleet/mix.json`, on an ordinary cycle only (never on `--status` or
+   `--mix` themselves, which run far more often and would otherwise flood
+   the log with the same finding on every poll).
+
+   Those directions govern every *read* of the flag. A **write** — `--mix`
+   itself, and `--mix <provider> --reset` — has no fail-open direction
+   available to it, because the contents API carries no patch and so each
+   writes the whole file: a body built from anything other than the flag's
+   current contents deletes every entry made since, including a peer
+   operator's concurrent `--mix` for a different provider, under a command
+   that reports success to both. So each writer re-reads the flag
+   immediately before each of its two attempts, bypassing the per-process
+   memo (`fleet_flag_fetch_status`' own FRESH, requirement 2.3a) that would
+   otherwise serve it this process's own earlier read — `providers_apply_mix`
+   at startup, or the attempt whose staleness just lost the compare-and-set —
+   and proceeds only on an answer GitHub confirmed this instant. A `cached`
+   or `unreachable` answer stops the write instead: `agent-cycle.sh` reports
+   that it could not publish (or reset) the mix and exits non-zero, leaving
+   the operator to re-run the command, rather than overwriting a file it
+   cannot see or reporting a reset that never happened.
+
+   With no `state_repo` configured, `--mix` refuses (exit 64) rather than
+   pretend to take effect, on requirement 2.3b's own terms: a flag this
+   system cannot publish anywhere a future read would see it moves no
+   fleet's mix, and a single-node install's own `config.json` already
+   governs its lanes entirely. Each write logs its own event (requirement
+   33): `mix-set`, carrying the `provider`, the `overlay` it applied and the
+   same `by`/`actor` pair `disabled`'s own event carries; and `mix-reset`,
+   carrying the `provider`, that pair, and the `outcome` word
+   (`absent`/`deleted`/`written`) the reset resolved to. The no-argument
+   read form logs nothing — it is a report, not a command.
+
+   `--status` reports each configured provider's effective lanes — weight,
+   resolved `enabled` (`lane_enabled_desc`'s own "yes"/"no"/"default"
+   vocabulary, `scripts/doctor.sh`), whether the lane's credential is present
+   on this node, and its effective open/closed state (`lane_effective_open`,
+   `lib/lane.sh`, the identical rule `stage_lane_draw` itself draws by) —
+   and, per lane per field, whether `config` or `fleet/mix.json` (with that
+   flag's own `ts`/`by`) supplied it. `scripts/node-health.sh --metrics`
+   carries the identical object as its own `mix` field (`docs/METERING-
+   SCHEMA.md`), built from the one shared function (`mix_fleet_status_json`,
+   `lib/mix.sh`) `--status` itself renders from, so the two can never
+   disagree about what is open right now (requirement 34a).
+
+   `monitor_tactical_keys` may later name the mix so the Pipeline Monitor can
+   move it through decide-tactical (requirement 36); this requirement does
+   not wire that, only leaves the flag's writer callable from the Script.
 2.4. **The role guard.** The environment variable `AGENT_OPS_ROLE` names the
    one node that runs unattended cycles. Compared case-insensitively and
    ignoring surrounding whitespace against the single value `active`;

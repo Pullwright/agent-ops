@@ -180,6 +180,11 @@ scratch_enter agent-cycle || exit 1
 . "$SCRIPT_DIR/lib/refile.sh"
 # shellcheck source=lib/toggle.sh
 . "$SCRIPT_DIR/lib/toggle.sh"
+# shellcheck source=lib/mix.sh
+# After model-id.sh (PROVIDER_LANES, PROVIDER_SUBSTRATE) and toggle.sh (the
+# fleet-flag primitives this file is built on), both sourced above; lib/mix.sh
+# self-sources lib/lane.sh (lane_effective_open) on its own.
+. "$SCRIPT_DIR/lib/mix.sh"
 # shellcheck source=lib/merge-budget.sh
 . "$SCRIPT_DIR/lib/merge-budget.sh"
 # shellcheck source=lib/merge-autonomy.sh
@@ -351,6 +356,7 @@ usage: agent-cycle.sh [--dry-run] [--once] [--wake-poll] [--repo <slug>]
        agent-cycle.sh --clear-limit [<reason>]
        agent-cycle.sh --kill-merge-autonomy [<reason>]
        agent-cycle.sh --restore-merge-autonomy
+       agent-cycle.sh --mix [<provider> [<lane>=<weight>... | <lane>.enabled=true | <lane>.balance_usd=<n>] | <provider> --reset]
        agent-cycle.sh --status
 
 Run one cycle of the autonomous agent pipeline, or manage the switch that
@@ -427,6 +433,21 @@ stops cycles from starting (shared with review-cycle.sh).
                      Clear the kill switch and let each repo's configured
                      `merge_autonomy` level — and any per-repo override —
                      govern again.
+  --mix [<provider> [<lane>=<weight>...] [<lane>.enabled=true] [<lane>.balance_usd=<n>] | <provider> --reset]
+                     Move a provider's lane weights and openings live, across
+                     the fleet, through `fleet/mix.json` — no image roll or
+                     container recreate — outranking `config.json`'s own
+                     `providers.<name>.lanes` for the keys it names. `<lane>`
+                     is `api` or `subscription`; `<weight>` a non-negative
+                     integer. `<lane>.enabled=true` opens a lane this node's
+                     credentials already support; `<lane>.enabled=false` is
+                     refused, naming `--close-lane` instead — this lever only
+                     ever opens or restates a preference, never closes a
+                     lane, caps it, or floors it. `<provider> --reset`
+                     deletes that provider's own entry (and the file once it
+                     is the last one). With no arguments at all, prints the
+                     effective mix every provider is running under right now
+                     — the same report `--status` gives, below.
   --status           Report the switch — distinguishing a node-scoped disable,
                      a fleet disable, or both, whether it is a full stop or a
                      drain (and, while draining, how much finishing-source
@@ -466,9 +487,10 @@ DISABLE_UNTIL=""
 CLEAR_LIMIT_REASON=""
 KILL_MERGE_AUTONOMY_REASON=""
 THIS_NODE=0
+MIX_ARGS=()
 set_manage_action() {
   if [[ -n "$MANAGE_ACTION" ]]; then
-    echo "agent-cycle: --disable, --drain, --enable, --clear-limit, --kill-merge-autonomy, --restore-merge-autonomy and --status are mutually exclusive" >&2
+    echo "agent-cycle: --disable, --drain, --enable, --clear-limit, --kill-merge-autonomy, --restore-merge-autonomy, --mix and --status are mutually exclusive" >&2
     exit 64
   fi
   MANAGE_ACTION="$1"
@@ -507,6 +529,16 @@ while [[ $# -gt 0 ]]; do
       if [[ $# -gt 0 && "$1" != --* ]]; then KILL_MERGE_AUTONOMY_REASON="$1"; shift; fi
       ;;
     --restore-merge-autonomy) set_manage_action restore-merge-autonomy; shift ;;
+    --mix)
+      set_manage_action mix; shift
+      # Everything after --mix is this command's own grammar (a provider name,
+      # <lane>=<weight>/<lane>.<key>=<value> tokens, or --reset) — never mixed
+      # with the cycle flags above, so the rest of argv is handed to it
+      # wholesale rather than re-parsed token by token here. lib/mix.sh's own
+      # mix_build_overlay reports a malformed token.
+      MIX_ARGS=("$@")
+      set --
+      ;;
     --status) set_manage_action status; shift ;;
     --for) DISABLE_FOR="${2:-}"; shift 2 ;;
     --until) DISABLE_UNTIL="${2:-}"; shift 2 ;;
@@ -518,7 +550,7 @@ done
 
 if [[ -n "$MANAGE_ACTION" ]]; then
   if (( DRY_RUN || ONCE || WAKE_POLL )) || [[ -n "$REPO_FILTER" ]]; then
-    echo "agent-cycle: --disable/--drain/--enable/--clear-limit/--kill-merge-autonomy/--restore-merge-autonomy/--status manage stand-down state; they do not run a cycle" >&2
+    echo "agent-cycle: --disable/--drain/--enable/--clear-limit/--kill-merge-autonomy/--restore-merge-autonomy/--mix/--status manage stand-down state; they do not run a cycle" >&2
     exit 64
   fi
   if [[ "$MANAGE_ACTION" != "disable" && "$MANAGE_ACTION" != "drain" ]] && [[ -n "$DISABLE_FOR" || -n "$DISABLE_UNTIL" ]]; then
@@ -1222,6 +1254,27 @@ fi
 # lib/log-event.sh's log_event_append, shared with review-cycle.sh; `cycle`
 # is this pipeline's own id field.
 log_event() { log_event_append "$log_file" cycle "$cycle_id" "$node_name" "$@"; }
+
+# The credit mix's live lever (issue #2244, D30): overlays fleet/mix.json onto
+# PROVIDER_LANES in place, so every reader from here on — the stage launcher's
+# own draw, below; --status and --mix themselves, inside run_manage_command —
+# sees one effective set of lanes (lib/mix.sh, requirement 34a). Run
+# unconditionally, management command or real cycle alike, since `--status`
+# and `--mix` need the live overlay applied exactly as much as a cycle does.
+#
+# Logs the `warning` event only for a real cycle (`-z "$MANAGE_ACTION"`), on
+# the same reasoning the refinement_paused_sources warning just below already
+# gives: a management command writes no cycle-start/cycle-end, so an event
+# logged under its id is a dashboard row with no cycle ever to close it, and
+# `--status` is the command an operator is told to poll — exactly the
+# unbounded source that reasoning warns against. `--mix`/`--status` still
+# report the config-only fallback itself (every source reads "config"), just
+# without a separate log entry recording that it was the flag's own fault
+# rather than simply never having been set.
+if ! providers_apply_mix "$state_repo" "$state_dir" && [[ -z "$MANAGE_ACTION" ]]; then
+  log_event "warning" "$(jq -nc \
+    '{detail: "fleet/mix.json is present but could not be parsed as JSON — config.json'\''s providers.*.lanes governs every provider until it is fixed or reset (agent-cycle.sh --mix <provider> --reset)"}')"
+fi
 
 # Requirement 1c's warn spelling (agent-ops#924's decision on
 # TD-PPagop-26082704/agent-ops#1003), computed above and carried forward to

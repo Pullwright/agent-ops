@@ -26,6 +26,12 @@
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/substrate-claude-code.sh"
 # shellcheck source=lib/substrate-grok-build.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/substrate-grok-build.sh"
+# shellcheck source=lib/lane.sh
+# lane_effective_open, `stage_lane_draw`'s own open/closed rule (below) —
+# self-sourced for the same reason the two substrate adapters above are: a
+# caller of this file alone must not have to know it also needs lib/model-id.sh
+# or lib/lane.sh loaded first.
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lane.sh"
 
 # PROVIDER_SUBSTRATE/MODEL_PROVIDER are lib/model-id.sh's: the provider each
 # model resolves to (requirement 1a), and — populated as a side effect of
@@ -643,25 +649,18 @@ stage_lane_draw() {
   "$fn" api && present_api=1
   "$fn" subscription && present_sub=1
 
-  local w_api w_sub en_api en_sub
+  local w_api w_sub
   w_api="$(jq -r '.api.weight // 1' <<<"$lanes_json" 2>/dev/null)"
   [[ "$w_api" =~ ^[0-9]+$ ]] || w_api=1
   w_sub="$(jq -r '.subscription.weight // 0' <<<"$lanes_json" 2>/dev/null)"
   [[ "$w_sub" =~ ^[0-9]+$ ]] || w_sub=0
-  en_api="$(jq -r '.api.enabled' <<<"$lanes_json" 2>/dev/null)"
-  en_sub="$(jq -r '.subscription.enabled' <<<"$lanes_json" 2>/dev/null)"
 
+  # Open/closed is `lane_effective_open`'s own call (lib/lane.sh) — shared
+  # with `lib/mix.sh`'s status report, so a live `--mix` weight is drawn from
+  # exactly the lanes `--status` describes as open (requirement 34a).
   local open_api=0 open_sub=0
-  case "$en_api" in
-    true) (( present_api )) && open_api=1 ;;
-    false) ;;
-    *) (( present_api )) && open_api=1 ;;
-  esac
-  case "$en_sub" in
-    true) (( present_sub )) && open_sub=1 ;;
-    false) ;;
-    *) (( present_sub && ! present_api )) && open_sub=1 ;;
-  esac
+  lane_effective_open "$lanes_json" api "$present_api" "$present_sub" && open_api=1
+  lane_effective_open "$lanes_json" subscription "$present_api" "$present_sub" && open_sub=1
 
   local -a weighted=() fallback=()
   (( open_api )) && (( w_api > 0 )) && weighted+=(api)
