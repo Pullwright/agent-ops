@@ -1125,6 +1125,16 @@ _pager_blocked_label_candidate_repos() {
 _pager_blocked_label_candidates() {
   local union_log_file="$1" repo canon_repo open_blocked reason_label live_json gh \
     aliases_json stale_hits
+  # Resolution collapses two slugs onto one, so the `sort -u` the candidate
+  # list already carries no longer holds once it is applied: a renamed repo
+  # whose history names both its old and its current slug — the whole case
+  # this resolution exists for, `Pullwright/agent-ops` itself among them —
+  # yields that one repo twice. Both iterations then read the same live
+  # listing and emit the same hits, which doubles every `gh` call this
+  # function's own header budgets at one per repo, doubles the count the
+  # evidence string reports, and makes the remedy write the same removal
+  # twice and log two `own-label-action remove` events for the one action.
+  local -A seen_canon_repos=()
   declare -F blocked_items >/dev/null 2>&1 || return 0
   declare -F refinement_blocked_label_stale >/dev/null 2>&1 || return 0
   declare -F refinement_blocked_label_orphaned >/dev/null 2>&1 || return 0
@@ -1138,9 +1148,15 @@ _pager_blocked_label_candidates() {
   open_blocked="$(blocked_items "$union_log_file" "$aliases_json")"
   stale_hits="$(refinement_blocked_label_stale "$open_blocked" "$union_log_file")"
   if [[ -n "$stale_hits" ]]; then
+    # Deduplicated for the same reason the loop below is, and in the same
+    # case: `refinement_blocked_label_stale` groups by its events' own
+    # literal `repo`, so a label added under both a repo's old and its
+    # current slug with no successful removal under either is two groups,
+    # two hits, and one tuple once both resolve. Order-preserving, so the
+    # grouped order the evidence string reads survives the collapse.
     jq -Rr --argjson aliases "$aliases_json" '
       split("\t") as $f | [($aliases[$f[0]] // $f[0]), $f[1], $f[2]] | join("\t")
-    ' <<<"$stale_hits" 2>/dev/null
+    ' <<<"$stale_hits" 2>/dev/null | awk '!_pager_seen[$0]++'
   fi
   reason_label="$(refinement_blocked_reason_label "${REFINEMENT_BLOCK_KIND:-needs-refinement}")"
   [[ -n "$reason_label" ]] || return 0
@@ -1148,6 +1164,8 @@ _pager_blocked_label_candidates() {
     [[ -n "$repo" ]] || continue
     canon_repo="$(jq -r --arg r "$repo" '.[$r] // $r' <<<"$aliases_json" 2>/dev/null)"
     [[ -n "$canon_repo" ]] || canon_repo="$repo"
+    [[ -z "${seen_canon_repos[$canon_repo]:-}" ]] || continue
+    seen_canon_repos[$canon_repo]=1
     live_json="$("$gh" issue list -R "$canon_repo" --label "$reason_label" --state open --limit 200 \
         --json number,labels 2>/dev/null \
       | jq -c '[.[] | {number: .number, labels: [.labels[].name]}]' 2>/dev/null)"

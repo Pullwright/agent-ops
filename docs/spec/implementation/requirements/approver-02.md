@@ -540,7 +540,12 @@
       off historic events and feeding it to a live write: a repository
       renamed since the block was recorded would otherwise read and write
       against its old slug forever, which a GitHub repo-transfer redirect
-      serves for the read but not for the write.
+      serves for the read but not for the write. The resolved candidates are
+      de-duplicated, on both the live-read and the stale-retry side: a
+      renamed repo whose history names both its old and its current slug
+      resolves to one repo twice, and each live listing is read, each hit
+      counted, and each removal written and logged exactly once per repo and
+      label rather than once per slug the history recorded.
     - **`claim-unreconciled`** (pipeline-act). Fires when an
       `enabler-examined` event whose `outcome` is the Enabler's own escalate
       verdict (`lib/enabler.sh`: `outcome="$verdict"`, never reassigned on
@@ -626,7 +631,10 @@
     set as `PAGER_EVAL_REPOS_JSON` and three siblings, the identical
     plain-variable exception `PAGER_EVAL_REPO`/`PAGER_EVAL_CYCLE_INTERVAL_
     MINUTES` already established. `PAGER_EVAL_REPOS_JSON` carries each
-    configured repository's own *configured* `merge_autonomy` level (a
+    configured repository's `slug`, its own `previous_slugs` (what
+    `blocked-label-orphaned` above builds its alias map from; `[]` for a
+    repository that has never been renamed) and its own *configured*
+    `merge_autonomy` level (a
     repository's own override, else the fleet-wide default) — never the live
     effective level, the identical D18 WI-6 approximation `config_json`'s own
     back-pressure card already makes, since a per-repository merge-budget-

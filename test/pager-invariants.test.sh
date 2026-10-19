@@ -1098,6 +1098,48 @@ assert_eq "  ... the gh issue edit call names the current slug" "1" \
 assert_eq "  ... never the old one" "0" \
   "$(grep -c '^issue edit 7 -R old/r' "$GH_CALLS_FILE")"
 
+# Resolution collapses two slugs onto one, so a renamed repo whose history
+# names both its old and its current slug — the case this whole resolution
+# exists for — reaches the candidate list twice and must be acted on once.
+# Both halves are covered: the live-read loop (two identical `gh issue list`
+# reads, two identical hits) and `refinement_blocked_label_stale`'s own
+# grouping, which keys on each event's literal `repo` and so offers the same
+# label twice when it was added under both slugs with no successful removal
+# under either.
+: > "$GH_CALLS_FILE"
+orph_log_both_slugs="$WORKDIR/orphaned-both-slugs.jsonl"
+write_log "$orph_log_both_slugs" \
+  "$(cycle_ev 2026-09-01T00:00:00Z n1 c1 attempt-failed '{"repo":"old/r","item":"8","kind":"needs-refinement","blocked_label":"blocked"}')" \
+  "$(cycle_ev 2026-09-02T00:00:00Z n1 c2 unblocked '{"repo":"old/r","item":"8"}')" \
+  "$(cycle_ev 2026-09-03T00:00:00Z n1 c3 own-label-action '{"repo":"old/r","item":"9","label":"blocked:needs-refinement","action":"add"}')" \
+  "$(cycle_ev 2026-09-04T00:00:00Z n1 c4 own-label-action '{"repo":"new/r","item":"9","label":"blocked:needs-refinement","action":"add"}')"
+STUB_GH_LIST_BY_LABEL=(["blocked:needs-refinement"]='[{"number":8,"labels":[{"name":"blocked:needs-refinement"}]}]')
+verdict="$(pager_eval_blocked_label_orphaned "[]" "$orph_log_both_slugs")"
+assert_eq "both slugs in the history, each resolving to the same repo: the live read is made once" "1" \
+  "$(grep -c '^issue list -R new/r ' "$GH_CALLS_FILE")"
+assert_eq "  ... the live-read hit is counted once, not once per slug" "1" \
+  "$(grep -c 'new/r#8' <<<"$(jq -r '.evidence' <<<"$verdict")")"
+assert_eq "  ... and so is the stale-retry hit added under both slugs" "1" \
+  "$(grep -c 'new/r#9' <<<"$(jq -r '.evidence' <<<"$verdict")")"
+assert_eq "  ... two issues, two orphaned labels — never four" "1" \
+  "$(grep -c '^2 orphaned blocked-label issue(s)' <<<"$(jq -r '.evidence' <<<"$verdict")")"
+assert_reduced_verdict_eq blocked-label-orphaned "[]" "$orph_log_both_slugs"
+
+: > "$GH_CALLS_FILE"
+PAGER_REMEDY_UNION_LOG_FILE="$orph_log_both_slugs"
+PAGER_REMEDY_LOG_FILE="$WORKDIR/orph-both-slugs-remedy.jsonl"; : > "$PAGER_REMEDY_LOG_FILE"
+PAGER_REMEDY_NODE="n1"; PAGER_REMEDY_CYCLE="c9"
+STUB_GH_EDIT_OK=1
+outcome="$(pager_remedy_blocked_label_orphaned blocked-label-orphaned "irrelevant, re-derived live")"
+assert_eq "the remedy removes each label once" "removed 2 orphaned label(s); 0 removal(s) failed" "$outcome"
+assert_eq "  ... one gh issue edit per issue, not one per recorded slug" "1" \
+  "$(grep -c '^issue edit 8 -R new/r' "$GH_CALLS_FILE")"
+assert_eq "  ... for the stale-retry hit too" "1" \
+  "$(grep -c '^issue edit 9 -R new/r' "$GH_CALLS_FILE")"
+assert_eq "  ... and one own-label-action event per removal, never a duplicate pair" "2" \
+  "$(grep -c '"event":"own-label-action"' "$PAGER_REMEDY_LOG_FILE")"
+
+STUB_GH_LIST_BY_LABEL=()
 PAGER_EVAL_REPOS_JSON=""
 
 # --- claim-unreconciled (agent-ops#1281) ------------------------------------
