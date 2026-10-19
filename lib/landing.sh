@@ -884,14 +884,28 @@ _landing_arm_failure_reason() {
 # request's tier is fixed by that round's engagement and never mutates
 # afterwards, so the log's record is exactly as current as a fresh read
 # would be. Several `approver-verdict` events for the same pull request keep
-# only the most recent. Empty on no match, an unreadable log, or nothing to
+# only the most recent, and an event whose own review write failed —
+# `posted` explicitly `false` — is excluded before that "most recent" pick is
+# made (issue #2534): `run_approver_stage` (lib/approver.sh) logs this event
+# even when the review never reached GitHub, and a tier from one of those
+# events must never outrank an older tier backed by a review that did —
+# filtering here, rather than at each writer, closes every current and
+# future writer of this event in the one place that reads it. A
+# missing `posted` field reads as posted — matching the precedent
+# `verdict_fate_latest_per_pr` (lib/verdict-fate.sh) already sets for an event
+# logged before agent-ops#573 introduced the field. This is why the filter
+# uses `if .posted == null then true else .posted end` rather than jq's `//`
+# operator: `//` treats `false` the same as `null`, so `.posted // true` would
+# silently turn an explicit `false` back into `true` and defeat the filter.
+# Empty on no match, an unreadable log, or nothing to
 # read — `landing_protected_path_controls_ok` must never guess a tier a
 # protected-path pull request never actually got.
 landing_retry_tier() {
   local pr_url="$1" src="${2:--}" out=""
   # shellcheck disable=SC2016  # $pr_url is jq's own --arg variable, not the shell's.
   local jq_prog='
-    [ .[] | select(.event == "approver-verdict" and (.pr_url // "") == $u) ]
+    [ .[] | select(.event == "approver-verdict" and (.pr_url // "") == $u
+        and (if .posted == null then true else .posted end)) ]
     | sort_by(.ts) | last | .tier // empty'
   if [[ "$src" == "-" ]]; then
     out="$(jq -c -R 'fromjson? // empty' 2>/dev/null \
