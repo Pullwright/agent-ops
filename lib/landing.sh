@@ -2226,7 +2226,7 @@ open_question_adjudicated_before() {
 # given, is always a path; either may be missing, empty or unreadable and
 # simply contributes nothing) and for the same reason it gives: neither
 # source alone is the whole record. The caller passes `$union_log` as SRC1 —
-# requirement 8u's sweep runs on every node, so a pass a peer already spent
+# acceptance check 8u's sweep runs on every node, so a pass a peer already spent
 # on this head has to be visible or each node spends its own — and
 # `${log_file:-}` as SRC2, because that union is a snapshot built at cycle
 # start and `fleet_logs` degrades to an *empty* one silently (requirement

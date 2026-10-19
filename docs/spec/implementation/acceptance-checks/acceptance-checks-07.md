@@ -1,6 +1,6 @@
 ## Acceptance checks
 
-### Acceptance checks — continued (part 7 of 7; items 1h–2s)
+### Acceptance checks — continued (part 7 of 8; items 1h–2s)
 
 1h. <a id="impl-ac-1h"></a>**A log past `log_retained_bytes` rotates, keeps `log_generations`, and
    never touches `log.jsonl`.** `test/rotate-logs.test.sh` passes: a log under

@@ -794,7 +794,7 @@
     a live signal that retirement itself has fallen behind (a burst of new
     voids, `void_retire_after_days` set too high, or 34k failing to
     action items), well before any cap could bite.
-34o. **A refined specification is exactly what a `needs-refinement` block was
+34o. <a id="impl-34o"></a>**A refined specification is exactly what a `needs-refinement` block was
     waiting for, and clears it deterministically, whoever originally recorded
     it (agent-ops#2477).** The common way a refinement block ends is that
     somebody writes the missing specification — a human comment on the

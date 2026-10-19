@@ -98,12 +98,13 @@ each with a `README.md` holding a directory-wide table of contents.
 |------|----------|------|---------|
 | `docs/spec/implementation/README.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: index, environment, actors, directory table of contents |
 | `docs/spec/implementation/acceptance-checks/acceptance-checks-01.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks |
-| `docs/spec/implementation/acceptance-checks/acceptance-checks-02.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks, part 2 of 7 |
-| `docs/spec/implementation/acceptance-checks/acceptance-checks-03.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks, part 3 of 7 |
-| `docs/spec/implementation/acceptance-checks/acceptance-checks-04.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks, part 4 of 7 |
-| `docs/spec/implementation/acceptance-checks/acceptance-checks-05.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks, part 5 of 7 |
-| `docs/spec/implementation/acceptance-checks/acceptance-checks-06.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks, part 6 of 7 |
-| `docs/spec/implementation/acceptance-checks/acceptance-checks-07.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks, part 7 of 7 |
+| `docs/spec/implementation/acceptance-checks/acceptance-checks-02.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks, part 2 of 8 |
+| `docs/spec/implementation/acceptance-checks/acceptance-checks-03.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks, part 3 of 8 |
+| `docs/spec/implementation/acceptance-checks/acceptance-checks-04.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks, part 4 of 8 |
+| `docs/spec/implementation/acceptance-checks/acceptance-checks-05.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks, part 5 of 8 |
+| `docs/spec/implementation/acceptance-checks/acceptance-checks-06.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks, part 6 of 8 |
+| `docs/spec/implementation/acceptance-checks/acceptance-checks-07.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks, part 7 of 8 |
+| `docs/spec/implementation/acceptance-checks/acceptance-checks-08.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Acceptance checks, part 8 of 8 |
 | `docs/spec/implementation/components/components-01.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Components |
 | `docs/spec/implementation/components/components-02.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Components, part 2 of 3 |
 | `docs/spec/implementation/components/components-03.md` | agent, contributor, evaluator | reference | Implementation pipeline specification: Components, part 3 of 3 |
