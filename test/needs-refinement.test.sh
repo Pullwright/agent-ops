@@ -1494,6 +1494,29 @@ assert_eq "  ... leaving nothing for the next cycle's own sweep to clear" "[]" \
   "$(refinement_block_refined_cleared "$(open_blocked_items "$refined_clear_log")" \
        "$(refinements_map "$refined_clear_log")")"
 
+# agent-ops#2548's acceptance criterion (d): once the block's own `.repo` and
+# the refinements map's own key are both canonicalized (lib/cycle-state.sh),
+# `refinement_block_refined_cleared` clears a block logged under a repo's old
+# slug by a refinement logged under its current slug, with no change of its
+# own — it joins `open_blocked_items`' entries directly against
+# `refinements_map`'s keys, both already canonical once aliases are given.
+rename_refine_log="$tmp_dir/refine-renamed.jsonl"
+cat > "$rename_refine_log" <<'EOF'
+{"ts":"2026-10-17T10:00:00Z","cycle":"c0","event":"attempt-failed","stage":"refiner","repo":"o/old","item":"57","kind":"needs-refinement","detail":"gated on a decision","unblock_condition":"which packaging approach","needs_refinement_label":"needs-refinement","blocked_label":"blocked","blocked_reason_label":"blocked:needs-refinement"}
+{"ts":"2026-10-17T12:00:00Z","cycle":"c1","event":"item-refined","repo":"o/r","item":"57","spec":"the specification the block was waiting for"}
+EOF
+assert_eq "resolved through the alias map, the old-slug block and the new-slug refinement meet and clear" \
+  '["57"]' \
+  "$(jq -c '[.[].item]' <<<"$(refinement_block_refined_cleared \
+       "$(open_blocked_items "$rename_refine_log" "$aliases")" \
+       "$(refinements_map "$rename_refine_log" "$aliases")")")"
+assert_eq "  ... with no aliases map, the mismatched raw slugs never meet, so the block survives" \
+  '[]' \
+  "$(jq -c '[.[].item]' <<<"$(refinement_block_refined_cleared \
+       "$(open_blocked_items "$rename_refine_log")" \
+       "$(refinements_map "$rename_refine_log")")")"
+rm -f "$rename_refine_log"
+
 # The real `release_refinement_label` (`lib/candidate-select.sh`), called the
 # way `lib/candidate-gather.sh`'s own pre-extract-window call site calls it:
 # with an explicit third BLOCKED_JSON argument, because the global
