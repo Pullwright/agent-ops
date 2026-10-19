@@ -1686,7 +1686,7 @@
       "label": "14a",
       "anchor": "impl-c-14a",
       "file": "docs/spec/implementation/components/components-02.md",
-      "line": 439,
+      "line": 440,
       "title": "`lib/merge-autonomy.sh` implementing requirement 2.3b: the D18 trust"
     },
     "IMPL C 14b": {
@@ -1694,7 +1694,7 @@
       "label": "14b",
       "anchor": "impl-c-14b",
       "file": "docs/spec/implementation/components/components-02.md",
-      "line": 508,
+      "line": 509,
       "title": "`lib/approver-token.sh` — the Pullwright Approver's installation-token"
     },
     "IMPL C 14c": {
@@ -1702,7 +1702,7 @@
       "label": "14c",
       "anchor": "impl-c-14c",
       "file": "docs/spec/implementation/components/components-02.md",
-      "line": 640,
+      "line": 641,
       "title": "`lib/approver.sh` implementing requirements 8b, 8c, 40–43 and 46: the"
     },
     "IMPL C 14d": {
@@ -1710,7 +1710,7 @@
       "label": "14d",
       "anchor": "impl-c-14d",
       "file": "docs/spec/implementation/components/components-02.md",
-      "line": 697,
+      "line": 698,
       "title": "`lib/merge-budget.sh` implementing requirement 2.3c: the"
     },
     "IMPL C 14e": {
@@ -1718,7 +1718,7 @@
       "label": "14e",
       "anchor": "impl-c-14e",
       "file": "docs/spec/implementation/components/components-02.md",
-      "line": 753,
+      "line": 754,
       "title": "`lib/escalation-autonomy.sh` implementing the `escalation_autonomy`"
     },
     "IMPL C 14f": {
@@ -1726,7 +1726,7 @@
       "label": "14f",
       "anchor": "impl-c-14f",
       "file": "docs/spec/implementation/components/components-02.md",
-      "line": 779,
+      "line": 780,
       "title": "`lib/github-app-token.sh` — the GitHub App installation-token minting"
     },
     "IMPL C 14g": {
@@ -1734,7 +1734,7 @@
       "label": "14g",
       "anchor": "impl-c-14g",
       "file": "docs/spec/implementation/components/components-02.md",
-      "line": 810,
+      "line": 811,
       "title": "`lib/author-token.sh` — the forge authoring App's own installation-token"
     },
     "IMPL C 14h": {
@@ -1742,7 +1742,7 @@
       "label": "14h",
       "anchor": "impl-c-14h",
       "file": "docs/spec/implementation/components/components-02.md",
-      "line": 883,
+      "line": 884,
       "title": "`lib/forge-auth.sh` — which identity a cycle authors as (D25,"
     },
     "IMPL C 14i": {
@@ -1750,7 +1750,7 @@
       "label": "14i",
       "anchor": "impl-c-14i",
       "file": "docs/spec/implementation/components/components-02.md",
-      "line": 943,
+      "line": 944,
       "title": "`lib/stage-boundary.sh`, `lib/forge-token-broker.sh` and the image's"
     },
     "IMPL C 15": {
@@ -1758,7 +1758,7 @@
       "label": "15",
       "anchor": "impl-c-15",
       "file": "docs/spec/implementation/components/components-02.md",
-      "line": 961,
+      "line": 962,
       "title": "`lib/labels.sh` implementing requirement 6a: `labels_catalogue` (what a"
     },
     "IMPL C 16": {
@@ -1766,7 +1766,7 @@
       "label": "16",
       "anchor": "impl-c-16",
       "file": "docs/spec/implementation/components/components-02.md",
-      "line": 997,
+      "line": 998,
       "title": "`scripts/render-config-table.sh` implementing requirement 1b's generated-"
     },
     "IMPL C 17": {
@@ -1774,7 +1774,7 @@
       "label": "17",
       "anchor": "impl-c-17",
       "file": "docs/spec/implementation/components/components-02.md",
-      "line": 1103,
+      "line": 1104,
       "title": "`scripts/check-closing-keyword.sh` and `.github/workflows/closing-keyword.yml`"
     },
     "IMPL C 17a": {
@@ -1782,7 +1782,7 @@
       "label": "17a",
       "anchor": "impl-c-17a",
       "file": "docs/spec/implementation/components/components-02.md",
-      "line": 1214,
+      "line": 1215,
       "title": "`lib/closing-keyword-gate.sh` implementing requirement 25a's other"
     },
     "IMPL C 17b": {
@@ -1790,7 +1790,7 @@
       "label": "17b",
       "anchor": "impl-c-17b",
       "file": "docs/spec/implementation/components/components-02.md",
-      "line": 1240,
+      "line": 1241,
       "title": "`scripts/check-changelog-section.sh` and"
     },
     "IMPL C 17c": {
@@ -1798,7 +1798,7 @@
       "label": "17c",
       "anchor": "impl-c-17c",
       "file": "docs/spec/implementation/components/components-02.md",
-      "line": 1266,
+      "line": 1267,
       "title": "`scripts/assemble-changelog.sh` implementing requirement 25d: given"
     },
     "IMPL C 17d": {
@@ -1806,7 +1806,7 @@
       "label": "17d",
       "anchor": "impl-c-17d",
       "file": "docs/spec/implementation/components/components-02.md",
-      "line": 1294,
+      "line": 1295,
       "title": "`lib/changelog-section-gate.sh` implementing requirement 25c's other"
     },
     "IMPL C 17e": {
@@ -2657,12 +2657,20 @@
       "line": 928,
       "title": "Re-verifies the PR description against the diff when resolving a"
     },
+    "IMPL 26d": {
+      "kind": "impl",
+      "label": "26d",
+      "anchor": "impl-26d",
+      "file": "docs/spec/implementation/requirements/implementer.md",
+      "line": 948,
+      "title": "Re-verifies the PR description against the diff when a"
+    },
     "IMPL 27": {
       "kind": "impl",
       "label": "27",
       "anchor": "impl-27",
       "file": "docs/spec/implementation/requirements/implementer.md",
-      "line": 948,
+      "line": 970,
       "title": "Ends with a single JSON object as its entire final message:"
     },
     "IMPL 33": {
@@ -3070,7 +3078,7 @@
       "label": "1c",
       "anchor": "impl-1c",
       "file": "docs/spec/implementation/requirements/the-script-01.md",
-      "line": 351,
+      "line": 352,
       "title": "The model-tier floor (agent-ops#822)."
     },
     "IMPL 1d": {
@@ -3078,7 +3086,7 @@
       "label": "1d",
       "anchor": "impl-1d",
       "file": "docs/spec/implementation/requirements/the-script-01.md",
-      "line": 535,
+      "line": 583,
       "title": "Every timing sized against a once-an-hour cycle derives from the"
     },
     "IMPL 52": {
@@ -3086,7 +3094,7 @@
       "label": "52",
       "anchor": "impl-52",
       "file": "docs/spec/implementation/requirements/the-script-01.md",
-      "line": 786,
+      "line": 834,
       "title": "The table of contents is generated from headings, not hand-maintained,"
     },
     "IMPL 52a": {
@@ -3094,7 +3102,7 @@
       "label": "52a",
       "anchor": "impl-52a",
       "file": "docs/spec/implementation/requirements/the-script-01.md",
-      "line": 821,
+      "line": 869,
       "title": "The documentation is measured against a fixed benchmark of real"
     },
     "IMPL 52b": {
@@ -3102,7 +3110,7 @@
       "label": "52b",
       "anchor": "impl-52b",
       "file": "docs/spec/implementation/requirements/the-script-01.md",
-      "line": 847,
+      "line": 895,
       "title": "The documentation's links, map, size budget, section citations and"
     },
     "IMPL 2": {
@@ -3543,14 +3551,14 @@
       "anchor": "impl-9g",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
       "line": 640,
-      "title": "A stage killed for inactivity states, in its own comment, whether it"
+      "title": "A stage killed abruptly states, in its own comment, whether it"
     },
     "IMPL 10": {
       "kind": "impl",
       "label": "10",
       "anchor": "impl-10",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 684,
+      "line": 692,
       "title": "Usage-limit detection."
     },
     "IMPL 11": {
@@ -3558,7 +3566,7 @@
       "label": "11",
       "anchor": "impl-11",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 733,
+      "line": 741,
       "title": "Cleanup."
     },
     "IMPL 11a": {
@@ -3566,7 +3574,7 @@
       "label": "11a",
       "anchor": "impl-11a",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 738,
+      "line": 746,
       "title": "Overrun-slot skips"
     },
     "IMPL 12": {
@@ -3574,7 +3582,7 @@
       "label": "12",
       "anchor": "impl-12",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 849,
+      "line": 857,
       "title": "Flags."
     },
     "IMPL 13": {
@@ -3582,7 +3590,7 @@
       "label": "13",
       "anchor": "impl-13",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 884,
+      "line": 892,
       "title": "The Script must pass `shellcheck` and must set its own `PATH` explicitly"
     },
     "IMPL 67": {
@@ -3590,7 +3598,7 @@
       "label": "67",
       "anchor": "impl-67",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 889,
+      "line": 897,
       "title": "Finish-then-continue"
     },
     "IMPL 68": {
@@ -3598,7 +3606,7 @@
       "label": "68",
       "anchor": "impl-68",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 955,
+      "line": 963,
       "title": "A pending image roll overrides the chain, and widens the gap at every"
     },
     "IMPL 17d": {
@@ -3606,7 +3614,7 @@
       "label": "17d",
       "anchor": "impl-17d",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 1044,
+      "line": 1052,
       "title": "Race-loss observability"
     },
     "IMPL 54": {
@@ -3614,7 +3622,7 @@
       "label": "54",
       "anchor": "impl-54",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 1070,
+      "line": 1078,
       "title": "Wake-poll: an event-driven wake between cron firings (D14, issue"
     },
     "IMPL 57": {
@@ -3622,7 +3630,7 @@
       "label": "57",
       "anchor": "impl-57",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 1221,
+      "line": 1229,
       "title": "Liveness: is supercronic still firing this node's jobs at all (issue"
     },
     "IMPL 58": {
@@ -3630,7 +3638,7 @@
       "label": "58",
       "anchor": "impl-58",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 1239,
+      "line": 1247,
       "title": "Readiness: could a cycle start now."
     },
     "IMPL 58a": {
@@ -3638,7 +3646,7 @@
       "label": "58a",
       "anchor": "impl-58a",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 1271,
+      "line": 1279,
       "title": "No network call beyond the one exempt read, and no live fetch of"
     },
     "IMPL 59": {
@@ -3646,7 +3654,7 @@
       "label": "59",
       "anchor": "impl-59",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 1327,
+      "line": 1335,
       "title": "Health: is this node doing its job over time, composed from named"
     },
     "IMPL 59a": {
@@ -3654,7 +3662,7 @@
       "label": "59a",
       "anchor": "impl-59a",
       "file": "docs/spec/implementation/requirements/the-script-09.md",
-      "line": 1349,
+      "line": 1357,
       "title": "`updater` and `image` component mappings."
     },
     "IMPL 60": {
