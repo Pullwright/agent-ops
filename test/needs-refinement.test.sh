@@ -1316,6 +1316,51 @@ assert_eq "an empty open-blocked set clears nothing" "[]" \
 assert_eq "a malformed refinements map clears nothing rather than faulting" "[]" \
   "$(refinement_block_refined_cleared "$block_then_refine" 'not json')"
 
+# The same two orderings over a real log, through the two extracts the
+# pre-extract window actually hands this function — `open_blocked_items` and
+# `refinements_map`, not a map written by hand. This is the half that cannot
+# be assumed: `REFINEMENTS_MAP_JQ` (lib/cycle-state.sh) drops an
+# `item-refined` once a *fresher* open `needs-refinement` block stands against
+# the same item, so if that drop were keyed on the block's existence rather
+# than on its `ts`, this clearance would have no entry to compare against and
+# would silently never fire — the same unreachability that sank
+# agent-ops#2477's first remedy, arriving by a different route. Asserted in
+# both directions, and then end-to-end: the `unblocked` the call site writes
+# takes the item out of the extract the Co-Ordinator is handed.
+refined_clear_log="$tmp_dir/refined-clear.jsonl"
+cat > "$refined_clear_log" <<'EOF'
+{"ts":"2026-10-17T10:00:00Z","cycle":"c0","event":"attempt-failed","stage":"refiner","repo":"o/r","item":"55","kind":"needs-refinement","detail":"gated on a decision","unblock_condition":"which packaging approach","needs_refinement_label":"needs-refinement","blocked_label":"blocked","blocked_reason_label":"blocked:needs-refinement"}
+{"ts":"2026-10-17T12:00:00Z","cycle":"c1","event":"item-refined","repo":"o/r","item":"55","spec":"the specification the block was waiting for"}
+{"ts":"2026-10-17T10:00:00Z","cycle":"c0","event":"item-refined","repo":"o/r","item":"56","spec":"a specification that was tried and found wanting"}
+{"ts":"2026-10-17T12:00:00Z","cycle":"c1","event":"attempt-failed","stage":"implementer","repo":"o/r","item":"56","kind":"needs-refinement","detail":"the specification does not say which path","unblock_condition":"which path","needs_refinement_label":"needs-refinement"}
+EOF
+assert_eq "refinements_map keeps the refinement an older block is waiting on" \
+  "2026-10-17T12:00:00Z" \
+  "$(jq -r '."o/r"."55".ts // ""' <<<"$(refinements_map "$refined_clear_log")")"
+assert_eq "  ... and drops the one a fresher re-block postdates" "" \
+  "$(jq -r '."o/r"."56".ts // ""' <<<"$(refinements_map "$refined_clear_log")")"
+assert_eq "over a real log, the block-then-refine item is the only one cleared" \
+  '["55"]' \
+  "$(jq -c '[.[].item]' <<<"$(refinement_block_refined_cleared \
+       "$(open_blocked_items "$refined_clear_log")" \
+       "$(refinements_map "$refined_clear_log")")")"
+assert_eq "  ... carrying the block's own label fields for release" \
+  '["blocked","blocked:needs-refinement","needs-refinement"]' \
+  "$(jq -c '[.[0] | .needs_refinement_label, .blocked_label, .blocked_reason_label] | sort' \
+       <<<"$(refinement_block_refined_cleared \
+               "$(open_blocked_items "$refined_clear_log")" \
+               "$(refinements_map "$refined_clear_log")")")"
+
+printf '%s\n' '{"ts":"2026-10-17T13:00:00Z","cycle":"c2","event":"unblocked","repo":"o/r","item":"55","by":"refined"}' \
+  >> "$refined_clear_log"
+assert_eq "and the unblocked the call site writes takes it out of the extract" \
+  '["56"]' \
+  "$(jq -c '[.[] | select((.kind // "") == "needs-refinement") | .item]' \
+       <<<"$(open_blocked_items "$refined_clear_log")")"
+assert_eq "  ... leaving nothing for the next cycle's own sweep to clear" "[]" \
+  "$(refinement_block_refined_cleared "$(open_blocked_items "$refined_clear_log")" \
+       "$(refinements_map "$refined_clear_log")")"
+
 # The real `release_refinement_label` (`lib/candidate-select.sh`), called the
 # way `lib/candidate-gather.sh`'s own pre-extract-window call site calls it:
 # with an explicit third BLOCKED_JSON argument, because the global
