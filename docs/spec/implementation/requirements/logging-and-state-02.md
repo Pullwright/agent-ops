@@ -804,17 +804,14 @@
     notices, the item is reported as blocked even though its specification
     already exists.
 
-    `agent-ops#2477` specified a narrower fix first: the Refiner's own
-    `refined` verdict path checking, in the same pass, whether `blocked_json`
-    — this cycle's own snapshot, taken before the Refiner ran — already
-    carried an open block for the item, and clearing it there if so. That
-    check could never fire. `blocked_json` is also `refiner_candidate_items`'
-    own exclusion set (requirement 39a): every item the Refiner's `refined`
-    path ever processes was, by construction, *absent* from `blocked_json`
-    when the candidate list was built, so the condition the Refiner's own
-    path tested was unsatisfiable in production — exercised and passing only
-    in a test that set `refiner_candidates_json` directly, bypassing the
-    exclusion the real pipeline always applies.
+    The clearance cannot live in the Refiner's own `refined` verdict path,
+    which is where the block's own answer is written and so the obvious place
+    to look for it. `blocked_json` — this cycle's snapshot of the open blocks,
+    taken before the Refiner runs — is also `refiner_candidate_items`' own
+    exclusion set (requirement 39a), so every item that path processes is, by
+    construction, *absent* from the one snapshot a check there could consult:
+    the condition is unsatisfiable, and only a reader of the open blocked set
+    itself can see the block the refinement has just answered.
 
     So, in the same pre-extract window as requirements 34f, 34g and 34i, and
     against the *open* `needs-refinement` blocks only (34h — a void item
@@ -827,8 +824,9 @@
     `unblocked` with `by: "refined"` for every block whose refinement
     postdates it, releasing the block's `needs_refinement_label`/`blocked`/
     `blocked:needs-refinement` labels (requirement 38b) through
-    `release_refinement_label` the same way every other clearance route does.
-    A block
+    `release_refinement_label`, the same call the Co-Ordinator's own
+    `unblocked` (requirement 18) and the Enabler's clearances (requirement
+    36b) make. A block
     whose refinement predates it (a genuine re-block after the specification
     was found wanting) is left alone, as is a block with no refinement at
     all — the same "unknown is not gone" discipline requirement 34i's own
