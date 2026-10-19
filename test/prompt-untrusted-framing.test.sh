@@ -62,7 +62,8 @@ printf 'ok   - canonical block lifted from requirement 45a (%s lines)\n' "$(wc -
 # project-reviewer.md under docs/spec/review.md R18 and monitor.md under
 # docs/spec/monitor.md M10a.
 prompts=(coordinator implementer reviewer approver enabler enabler-adjudicate
-         enabler-decide approver-adjudicate-open-question refiner project-reviewer
+         enabler-decide approver-adjudicate-open-question
+         approver-reapprove-protected-path-tier refiner project-reviewer
          monitor)
 
 for p in "${prompts[@]}"; do

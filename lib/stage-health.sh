@@ -127,6 +127,7 @@
 # file (see `stage_health_write_status`'s STAGE_NAMES parameter).
 STAGE_HEALTH_STAGE_NAMES='[
   "coordinator", "approver", "approver-adjudicate-open-question",
+  "approver-reapprove-protected-path-tier",
   "enabler-adjudicate", "enabler-decide", "enabler", "refiner", "implementer", "reviewer"
 ]'
 

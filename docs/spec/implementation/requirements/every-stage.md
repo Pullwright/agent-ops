@@ -11,7 +11,8 @@
    prompt — `prompts/coordinator.md`, `prompts/implementer.md`,
    `prompts/reviewer.md`, `prompts/approver.md`, `prompts/enabler.md`,
    `prompts/enabler-adjudicate.md`, `prompts/enabler-decide.md`,
-   `prompts/approver-adjudicate-open-question.md`, `prompts/refiner.md` —
+   `prompts/approver-adjudicate-open-question.md`,
+   `prompts/approver-reapprove-protected-path-tier.md`, `prompts/refiner.md` —
    carries an `## Untrusted external content` section stating this rule to
    the stage it operates.
 

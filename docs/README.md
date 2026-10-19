@@ -211,6 +211,7 @@ implement.
 | `prompts/enabler-adjudicate.md` | agent, contributor | reference | Operating prompt for the Enabler's adjudication pass under `escalation_autonomy: "adjudicate-first"` |
 | `prompts/approver.md` | agent, contributor | reference | Operating prompt for the Approver stage: an independent second look at a Reviewer-certified pull request |
 | `prompts/approver-adjudicate-open-question.md` | agent, contributor | reference | Operating prompt for the Approver's adjudication pass over an open question raised on a pull request |
+| `prompts/approver-reapprove-protected-path-tier.md` | agent, contributor | reference | Operating prompt for the Approver's critical-tier reapproval pass when a protected-path pull request's recorded tier is missing or stale |
 | `prompts/refiner.md` | agent, contributor | reference | Operating prompt for the Refiner stage: writes the specification an unscoped item lacks |
 | `prompts/monitor.md` | agent, operator | reference | Operating prompt for the Pipeline Monitor: a scheduled reading of the pipelines' own state |
 | `prompts/project-reviewer.md` | agent, contributor | reference | Operating prompt for the Reviewer-Agent stage of the repository-review pipeline |

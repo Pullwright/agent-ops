@@ -296,6 +296,99 @@
     it again on every later round) exists by the same round the refusal is
     logged, giving it exactly the visibility requirement 36a's own
     escalations get (Assigned-to-me) with no gap for a sweep to close.
+8w. **Gate 4.5's protected-path-tier sub-case re-engages the Approver at the
+   critical tier, rather than only re-arming landing (issue #2514).** A
+   landing-retry sweep re-arm (requirement 8u) that finds gate 4.5's
+   protected-path-tier sub-case — the recorded tier `landing_retry_tier`
+   reads back is empty or below `critical`, or no usable approval timestamp
+   could be established — can never clear it by retrying landing again: that
+   recorded tier is fixed at whatever round wrote it, and nothing about
+   re-arming changes it, the identical "confident, recurring no-op" shape
+   requirement 62's own `agent-ops#1950` instance names, except here it is a
+   landing attempt holding forever rather than a Co-Ordinator cycle.
+
+   `_landing_protected_path_tier_resolve` (`lib/landing.sh`) is gate 4.5's own
+   call, made only on a retry (never the round that first ran the Approver,
+   which already forces the critical tier for a genuine protected-path hit —
+   requirement 8b's own `critical_reason`) and only for this one sub-case —
+   every other `protected-path-*` refusal (cool-off, stale head) and every
+   other gate are untouched. It is capped at one reapproval pass per
+   occurrence, an occurrence being the pull request's current head commit
+   read fresh from GitHub (`protected_path_tier_reapproval_attempted_before`,
+   keyed on a `protected-path-tier-reapproval` event already logged for that
+   `pr_url`/head pair) — mirroring requirement 8f's own "one pass per human
+   touch" bound, with a fresh push standing in for a human's own touch, since
+   a push already earns its own fresh pass everywhere else this gate reasons
+   about this control (the stale-head sub-case's rule). That cap is read
+   fleet-wide — the `union_log` snapshot, falling back to this node's own
+   stream, exactly as requirement 8f's own `open_question_pass_available`
+   reads its cap and as gate 4.5 reads the tier that triggered the call:
+   requirement 8u's sweep runs on every node, so a cap keyed to one node's
+   stream alone would let each node spend its own pass over the same
+   unchanged head commit. A head whose pass is
+   already spent skips the reapproval and escalates directly, the same
+   `always-escalate`-shaped ladder requirement 8f's own open-question gate
+   uses, keyed to a synthetic `pr-<n>-protected-path-tier` item reference
+   (`protected_path_tier_escalate`, rate-limited by the same
+   `escalation_recent_close`/`escalation_refile_suppressed` guard requirement
+   8f's own `open_question_escalate` applies).
+
+   The reapproval pass itself (`run_protected_path_tier_reapproval`) is a
+   fresh, narrow engagement at the Approver's own critical tier
+   (`approver_model_critical`, never `run_approver_stage` — that function is
+   the ordinary once-per-round review, tied to globals this retry sweep,
+   running across every configured repository, does not carry), against
+   `prompts/approver-reapprove-protected-path-tier.md`, reading the pull
+   request's diff directly (`gh pr diff`, no clone) rather than `run_
+   approver_stage`'s full ceremony. On `approve` it posts a real GitHub
+   review under the Approver App's own identity and logs the resulting
+   `approver-verdict` event itself — `tier: "critical"`, `critical_reason:
+   "protected-path-tier-reapproval"` — exactly the event `landing_retry_tier`
+   already reads for every ordinary round, so a later retry sees it with no
+   further plumbing. A missing `approver_model_critical`, a missing prompt
+   file, an unreadable credential, a stage failure, an unparseable verdict,
+   a token that cannot be minted to post the review, or a review write that
+   reaches this point but does not land on GitHub (`approver_post_or_warn`
+   always returns 0 regardless of the write's own outcome, so this is read
+   off `approver_last_post_ok` rather than the call's exit status) all print
+   `escalate` and log nothing to `approver-verdict`, since none of them
+   resulted in anything this pipeline can vouch for having reached GitHub.
+
+   `_landing_protected_path_tier_resolve` never hands the caller a bare
+   pass/fail: it re-reads the pull request's own live standing review and
+   tier after the attempt and prints whatever `landing_protected_path_
+   controls_ok` now reports — `ok` once a fresh critical-tier approval is
+   standing and every other control (head match, cool-off) also clears, or,
+   almost always on a successful reapproval, a brand-new cool-off wait
+   (the fresh approval's own `submitted_at` is "now", so the ordinary
+   `landing_cool_off_hours` wait still applies before this pull request can
+   land). Gate 4.5's own dispatch below always classifies this *current*
+   value through the same `cooloff`/`tier`/`stale-head`/`ineligible`/
+   `unknown` case every other call already uses, never the stale class that
+   triggered the call — a successful reapproval therefore refuses, if it
+   refuses at all, under `protected-path-cooloff`, never `protected-path-
+   tier` a second time.
+
+   The escalation is bounded by that same recomputed value, and fires only
+   while the sub-case this pass exists to clear is itself still standing —
+   the tier or the missing-timestamp wording, the two gate 4.5 triggers the
+   call on. A recomputed verdict of `ok`, a fresh cool-off wait, a stale head
+   or an `unknown:*` read failure each refuse (or arm) on their own ordinary
+   terms and raise nothing for a human: the dominant outcome of a *successful*
+   reapproval is the brand-new cool-off above, which is this gate working as
+   designed and clears itself unattended, so an escalation there would assert
+   that a critical-tier approval "could not be established" moments after
+   this function established one, for a pull request with nothing left for
+   anyone to do. An `unknown:*` verdict is held back on the same reasoning
+   requirement 8d applies to every unreadable control: it means the gate
+   could not ask, so the next retry asks again rather than a human being
+   asked instead. This holds even when the posted review itself succeeded: a
+   reapproval that approved and posted, followed by a transient failure of
+   this same function's own live recheck (its own identity read, or its own
+   standing-review read), hands back `unknown:*` rather than the stale
+   triggering value — falling through unchanged would otherwise escalate on
+   the strength of a read failure moments after a critical-tier approval was
+   established, the one outcome this paragraph exists to rule out.
 62. **A persistent landing refusal says why, on the pull request itself, not
    only in the node log (issue #1979).** Requirement 8d's own gates refuse to
    arm a pull request for many reasons, logged as `landing-refused`

@@ -312,6 +312,82 @@
    call recorded and no trailing marker proving the block ran to its own
    end.
 
+63. **Gate 4.5's protected-path-tier sub-case re-engages the Approver at the
+    critical tier on a retry, rather than looping on landing alone
+    (requirement 8w, issue #2514).** `test/landing-wiring.test.sh` lifts the
+    modified `_landing_stage_attempt` verbatim, with `_landing_protected_
+    path_tier_resolve` stubbed exactly as `_landing_open_question_resolve`
+    already is: a non-retry attempt never calls it, whatever gate 4.5's own
+    `landing_protected_path_controls_ok` reports; a retry whose verdict
+    matches the tier or missing-timestamp sub-case calls it with the slug,
+    pull request URL, number and the exact ineligible text that triggered
+    the call; a retry whose verdict is the cool-off or stale-head sub-case,
+    or already `ok`, never calls it at all. Critically, gate 4.5's own
+    dispatch reclassifies whatever the stub returns rather than the stale
+    value that triggered the call: a stub reporting `ok` arms the pull
+    request normally; a stub reporting a fresh cool-off message refuses
+    under `protected-path-cooloff`, never the `protected-path-tier` class
+    the call started from — the regression this requirement's own gate-4.5
+    rewrite exists to avoid, since a successful reapproval's own fresh
+    `submitted_at` almost always still has its ordinary cool-off ahead of it.
+
+    `run_protected_path_tier_reapproval` is not lifted whole there —
+    mirroring `run_open_question_adjudication`'s own real internals (a live
+    `gh pr diff`, a real model engagement against `prompts/approver-
+    reapprove-protected-path-tier.md`) has no business running unstubbed
+    inside a hermetic unit test, the same reasoning that keeps `_landing_
+    protected_path_tier_resolve` itself a black box in that file.
+    `test/prompt-untrusted-framing.test.sh` (requirement 45) covers
+    `prompts/approver-reapprove-protected-path-tier.md` alongside every other
+    shipped stage prompt, byte-identical to the canonical block.
+
+    **The resolver's own ladder is covered separately
+    (`test/protected-path-tier-reapproval.test.sh`)**, standing to
+    `test/landing-wiring.test.sh` exactly as
+    `test/open-question-adjudication.test.sh` stands to it for requirement
+    8f: `_landing_protected_path_tier_resolve` and
+    `protected_path_tier_reapproval_attempted_before` lifted verbatim, with
+    `run_protected_path_tier_reapproval` and `protected_path_tier_escalate`
+    stubbed as black boxes and two real synthetic logs behind the cap. It
+    pins the two axes a stubbed-whole resolver cannot reach, both of them
+    pure control flow over stubbable collaborators. *When it escalates:* a
+    reapproval that approves and leaves the pull request on its own fresh
+    cool-off raises nothing for a human (the dominant outcome — an
+    escalation there would assert a critical-tier approval "could not be
+    established" moments after the resolver established one), nor does a
+    recomputed `ok` or an `unknown:*` read failure; only the tier or
+    missing-timestamp wording still standing after the pass does, exactly
+    once, naming the `pr-<n>-protected-path-tier` item ref. This includes the
+    `unknown:*` the resolver manufactures itself: a reapproval that approved
+    and posted, whose own live recheck (its identity read, or its standing-
+    review read) then fails transiently, is asserted to hand back `unknown:*`
+    rather than fall through to the stale triggering text and escalate on the
+    strength of a read failure moments after an approval was established.
+    *Where the cap is read:* an event only a peer node logged binds this
+    node's pass, and so does one only this node's own stream carries when
+    the fleet union came back empty — while an event against an earlier head
+    commit, or another pull request, does not. The triggering and recomputed
+    `ineligible:` wordings the assertions turn on are grepped from
+    `lib/landing.sh` rather than retyped, so a reworded `landing_protected_
+    path_controls_ok` fails this check loudly instead of letting the
+    resolver's own case patterns quietly stop matching.
+
+    **`run_protected_path_tier_reapproval`'s own post/log/return tail is
+    covered directly, in the same file's Part C**, with its collaborators up
+    to and including the model engagement out of scope (covered as above)
+    and `approver_post_or_warn` stubbed instead: the tail lifted verbatim
+    from its own `approver_post_or_warn` call to the function's close.
+    `approver_post_or_warn` always returns 0 regardless of whether the
+    review write reached GitHub (`lib/approver.sh`) and reports that only
+    through the global `approver_last_post_ok`, so the assertions pin both
+    sides of that — a post that lands logs `approver-verdict` with
+    `posted:true` and reports `approve`, and a post that does not land logs
+    no `approver-verdict` event at all and reports `escalate`, never the
+    `approve` the engagement itself reached (issue #2514's own re-opened
+    review on agent-ops#2519: a failed-post path that still logged
+    `approver-verdict` would hand `landing_retry_tier` a critical-tier
+    record for a review GitHub never received).
+
 10. **The egress fence holds its shape (D24).** `test/egress-fence.test.sh`
     passes: the baked allowlist carries every domain the cycles need
     (`codeload.github.com` and `ghcr.io` included — the two no grep of the

@@ -1763,6 +1763,26 @@ _landing_stage_attempt() {
       pp_tier="$approver_stage_tier"
     fi
     pp_ctl="$(landing_protected_path_controls_ok "$DEFAULTED_CONFIG" "$slug" "$number" "$pp_tier" "$submitted_at" "$review_commit")"
+    # Issue #2514: a retry that finds the protected-path-tier sub-case (the
+    # recorded tier is empty or below critical, or no approval timestamp was
+    # ever established) can never clear it by retrying *landing* again —
+    # PP_TIER is fixed at whatever round wrote it (`landing_retry_tier`'s own
+    # header) and nothing about re-arming changes that; this is the "confident,
+    # recurring no-op" shape the item flags. `_landing_protected_path_tier_
+    # resolve` re-engages the Approver at the critical tier instead, mirroring
+    # gate 2.5's own open-question ladder a few lines above, and prints the
+    # gate's own recomputed verdict — `ok` once a fresh critical-tier approval
+    # is standing and every other control also clears, or whatever `landing_
+    # protected_path_controls_ok` now reports (most often a brand new cool-off
+    # wait, since the fresh approval's own `submitted_at` is "now") — never a
+    # bare pass/fail, so the dispatch below always classifies the pull
+    # request's actual, current state rather than the stale one that
+    # triggered this call.
+    if [[ -n "$retry" ]] \
+       && { [[ "$pp_ctl" == ineligible:*"did not run at the critical tier"* ]] \
+            || [[ "$pp_ctl" == ineligible:*"no approval timestamp could be established"* ]]; }; then
+      pp_ctl="$(_landing_protected_path_tier_resolve "$slug" "$pr_url" "$number" "$pp_ctl" "$item")"
+    fi
     if [[ "$pp_ctl" != "ok" ]]; then
       case "$pp_ctl" in
         ineligible:*"cool-off has "*"h remaining"*) _landing_refuse "$pr_url" "$slug" "protected-path-cooloff" "$pp_ctl" "$retry" "$item" ;;
@@ -2046,6 +2066,128 @@ $(pipeline_comment_marker "$cycle_id" approver-adjudicate-open-question)" >/dev/
   return 1
 }
 
+# _landing_protected_path_tier_resolve SLUG PR_URL NUMBER PP_CTL [ITEM]
+# Issue #2514's own re-engagement for gate 4.5's protected-path-tier
+# sub-case, called only on a landing-retry sweep re-arm (never the round
+# that first ran the Approver, which already forces the critical tier for a
+# genuine protected-path hit — `run_approver_stage`'s own header, D18
+# WI-12). PP_CTL is the exact `ineligible:...` text the caller's own
+# `landing_protected_path_controls_ok` just returned, carried along only to
+# log what triggered this and to hand back unchanged on a path that never
+# gets as far as re-checking it.
+#
+# Prints the *current* `landing_protected_path_controls_ok` verdict once the
+# attempt is over, never a bare pass/fail — see the gate 4.5 call site's own
+# comment for why the caller needs the live value rather than a boolean.
+#
+# Capped at one reapproval pass per occurrence, matching `open_question_
+# pass_available`'s own "one pass per human touch" shape (requirement 8f):
+# an occurrence here is this pull request's current head commit, read fresh
+# from GitHub, because a fresh push already gets its own fresh pass
+# everywhere else this gate reasons about this control (the stale-head
+# sub-case's own rule) — there is no equivalent "raised" event for this
+# condition to anchor on instead. A head whose pass is already spent
+# (`protected_path_tier_reapproval_attempted_before`) skips straight to
+# escalating: re-engaging the Approver a second time over a diff that has
+# not changed would only ever repeat the same verdict.
+#
+# Escalates only while the sub-case this pass exists to clear is *still*
+# standing — never for whatever else the recomputed verdict turns out to be.
+# A successful reapproval almost always lands on a brand-new cool-off wait
+# (its own `submitted_at` is "now"), which is this gate working exactly as
+# designed and clears itself without anyone; escalating there would file a
+# human-assigned issue asserting that a critical-tier approval "could not be
+# established" moments after this function established one, for a pull
+# request with nothing left for a human to do. An `unknown:*` verdict — a
+# `gh` read that failed, not a control that is unmet — is held back for the
+# same reason: the next retry simply asks again.
+_landing_protected_path_tier_resolve() {
+  local slug="$1" pr_url="$2" number="$3" pp_ctl="$4" item="${5:-}"
+  local item_ref="pr-${number}-protected-path-tier" head_sha
+
+  head_sha="$(gh pr view "$number" -R "$slug" --json headRefOid --jq '.headRefOid' 2>/dev/null)"
+  if [[ -z "$head_sha" ]]; then
+    printf '%s' "$pp_ctl"
+    return 0
+  fi
+
+  # Both sources, never either alone — see
+  # `protected_path_tier_reapproval_attempted_before`'s own header. The
+  # fleet union is what stops each node spending its own "one pass" over the
+  # same unchanged head commit (N critical-tier engagements and N App review
+  # writes before any of them escalates, worst on the path that costs most:
+  # a reapproval that escalates logs no `approver-verdict`, so every other
+  # node re-enters the identical sub-case), and this node's own stream is
+  # what keeps the cap on at all when that union came back empty.
+  #
+  # `/dev/null` rather than an empty string for an unset `union_log`: SRC1's
+  # own default is `-`, so an empty first argument would put this read on
+  # *this function's* stdin — whatever the cycle happens to have attached —
+  # instead of on no source at all.
+  if protected_path_tier_reapproval_attempted_before \
+       "$pr_url" "$head_sha" "${union_log:-/dev/null}" "${log_file:-}"; then
+    protected_path_tier_escalate "$slug" "$pr_url" "$item_ref" "$pp_ctl"
+    printf '%s' "$pp_ctl"
+    return 0
+  fi
+
+  local reapproval verdict evidence
+  reapproval="$(run_protected_path_tier_reapproval "$slug" "$pr_url" "$number" "$item")"
+  verdict="$(jq -r '.verdict // ""' <<<"$reapproval" 2>/dev/null)"
+  evidence="$(jq -r '.evidence // ""' <<<"$reapproval" 2>/dev/null)"
+  [[ "$verdict" == "approve" ]] || verdict="escalate"
+  log_event "protected-path-tier-reapproval" "$(jq -nc --arg u "$pr_url" --arg r "$slug" \
+    --arg v "$verdict" --arg e "$evidence" --arg h "$head_sha" \
+    '{pr_url: $u, repo: $r, verdict: $v, evidence: $e, head_sha: $h}')"
+
+  # Re-read the standing review and tier live rather than trust the
+  # reapproval's own reported verdict: `run_protected_path_tier_reapproval`
+  # already logs nothing unless the review write actually reached GitHub, so
+  # the pull request's own current state is the one fact this function
+  # trusts — exactly the same discipline gate 4's own `landing_approver_
+  # standing_review_at` read applies to `run_approver_stage`'s in-process
+  # verdict.
+  local recheck_login recheck_at recheck_standing recheck_rest recheck_submitted recheck_commit recheck_tier
+  if recheck_login="$(approver_token_identity_login "")" && [[ -n "$recheck_login" ]] \
+     && recheck_at="$(landing_approver_standing_review_at "$slug" "$number" "$recheck_login")"; then
+    recheck_standing="${recheck_at%%$'\t'*}"
+    recheck_rest="${recheck_at#*$'\t'}"
+    recheck_submitted="${recheck_rest%%$'\t'*}"
+    recheck_commit="${recheck_rest#*$'\t'}"
+    if [[ "$recheck_standing" == "APPROVED" ]]; then
+      # `$log_file`, not `$cap_src` above: the one event this read must see is
+      # the `approver-verdict` `run_protected_path_tier_reapproval` wrote a
+      # moment ago, and `log_event` appends it to this node's own stream —
+      # the `$union_log` snapshot was built at cycle start and can never
+      # carry it.
+      recheck_tier="$(landing_retry_tier "$pr_url" "${log_file:-}")"
+      pp_ctl="$(landing_protected_path_controls_ok "$DEFAULTED_CONFIG" "$slug" "$number" "$recheck_tier" "$recheck_submitted" "$recheck_commit")"
+    fi
+  elif [[ "$verdict" == "approve" ]]; then
+    # The reapproval posted a review this round (`verdict` is only
+    # normalized to `approve` once `run_protected_path_tier_reapproval`
+    # itself confirmed the post landed — see its own header), but this read
+    # — not the post — is what just failed: a transient `gh` hiccup on
+    # either `approver_token_identity_login` or `landing_approver_standing_
+    # review_at`. Falling through with `pp_ctl` unchanged would re-match the
+    # case below and escalate, asserting a critical-tier approval "could not
+    # be established" moments after this function established one. Hand
+    # back `unknown:` instead — the same "could not ask, not a control that
+    # is unmet" verdict the case below already holds back for, per this
+    # function's own header — so the next retry simply asks again.
+    pp_ctl="unknown:could not re-read $slug#$number's standing review after the reapproval posted"
+  fi
+
+  # The same two patterns gate 4.5's own call site triggers this function on
+  # — and only those: see this function's header on why a fresh cool-off or
+  # an unreadable control must not raise an issue for a human.
+  case "$pp_ctl" in
+    ineligible:*"did not run at the critical tier"*|ineligible:*"no approval timestamp could be established"*)
+      protected_path_tier_escalate "$slug" "$pr_url" "$item_ref" "$pp_ctl" ;;
+  esac
+  printf '%s' "$pp_ctl"
+}
+
 # open_question_adjudicated_before PR_URL < union.jsonl
 # Exit 0 when an `open-question-adjudication` event for PR_URL already
 # exists in the log on stdin at or after the most recently logged
@@ -2064,6 +2206,59 @@ open_question_adjudicated_before() {
                        and (.pr_url // "") == $u and (.ts // "") >= $raised_ts)]
     | length
   ' 2>/dev/null || echo 0)"
+  [[ "$hits" =~ ^[0-9]+$ ]] && (( hits > 0 ))
+}
+
+# protected_path_tier_reapproval_attempted_before PR_URL HEAD_SHA [SRC1] [SRC2]
+# Exit 0 iff a `protected-path-tier-reapproval` event for PR_URL at HEAD_SHA
+# already exists in the logs read — this occurrence's one reapproval pass has
+# already run — and 1 otherwise. Mirrors
+# `open_question_adjudicated_before`'s own shape (requirement 8f), with the
+# current head commit standing in for that function's "most recently raised"
+# anchor: a protected-path-tier occurrence has no equivalent "raised" event
+# of its own, but a fresh push already gets its own fresh pass everywhere
+# else gate 4.5 reasons about this control (the stale-head sub-case), so
+# keying the cap to HEAD_SHA reuses that same boundary rather than inventing
+# a second one.
+#
+# Reads the union of SRC1 and SRC2, on `landing_approver_adjudication_
+# history`'s own two-source contract (SRC1 may be `-` for stdin; SRC2, if
+# given, is always a path; either may be missing, empty or unreadable and
+# simply contributes nothing) and for the same reason it gives: neither
+# source alone is the whole record. The caller passes `$union_log` as SRC1 —
+# requirement 8u's sweep runs on every node, so a pass a peer already spent
+# on this head has to be visible or each node spends its own — and
+# `${log_file:-}` as SRC2, because that union is a snapshot built at cycle
+# start and `fleet_logs` degrades to an *empty* one silently (requirement
+# 38b's own `fleet_logs_healthy` exists for exactly that): a cap is a
+# negative read ("no pass has been spent"), and reading it off a degraded
+# union alone would quietly switch the cap off on the one node whose fleet
+# fetch is broken — unbounded critical-tier engagements and App review
+# writes, every cycle, which is the cost this cap exists to bound.
+protected_path_tier_reapproval_attempted_before() {
+  local pr_url="$1" head_sha="$2" src1="${3:--}" src2="${4:-}" hits=0
+  # shellcheck disable=SC2016  # $pr_url/$head_sha are jq's own --arg variables, not the shell's.
+  local jq_prog='
+    [ .[] | select(.event == "protected-path-tier-reapproval"
+                   and (.pr_url // "") == $u and (.head_sha // "") == $h) ]
+    | length'
+  if [[ "$src1" == "-" ]]; then
+    if [[ -n "$src2" && -s "$src2" ]]; then
+      hits="$(cat - "$src2" 2>/dev/null | jq -c -R 'fromjson? // empty' 2>/dev/null \
+        | jq -rs --arg u "$pr_url" --arg h "$head_sha" "$jq_prog" 2>/dev/null || echo 0)"
+    else
+      hits="$(jq -c -R 'fromjson? // empty' 2>/dev/null \
+        | jq -rs --arg u "$pr_url" --arg h "$head_sha" "$jq_prog" 2>/dev/null || echo 0)"
+    fi
+  else
+    local -a files=()
+    if [[ -s "$src1" ]]; then files+=("$src1"); fi
+    if [[ -n "$src2" && -s "$src2" ]]; then files+=("$src2"); fi
+    if [[ "${#files[@]}" -gt 0 ]]; then
+      hits="$(cat "${files[@]}" 2>/dev/null | jq -c -R 'fromjson? // empty' 2>/dev/null \
+        | jq -rs --arg u "$pr_url" --arg h "$head_sha" "$jq_prog" 2>/dev/null || echo 0)"
+    fi
+  fi
   [[ "$hits" =~ ^[0-9]+$ ]] && (( hits > 0 ))
 }
 
@@ -2297,6 +2492,197 @@ OQ_ESC_BODY
   else
     log_event "warning" "$(jq -nc --arg u "$pr_url" \
       --arg d "$pr_url carries an unresolved open question, and the escalation issue could not be filed — will retry next cycle" \
+      '{detail: $d, pr_url: $u}')"
+  fi
+}
+
+# run_protected_path_tier_reapproval SLUG PR_URL NUMBER [ITEM]
+# One bounded critical-tier re-engagement (issue #2514), mirroring `run_
+# open_question_adjudication`'s own shape: a fresh, narrow engagement at the
+# Approver's own critical tier (`approver_model_critical`), never `run_
+# approver_stage` itself — that is the ordinary once-per-round review, tied
+# to globals (`clone_dir`, `selected_repo`, `selected_item`, …) this gate's
+# own retry sweep, running across every configured repository rather than
+# the one cycle selected, does not carry. This re-confirms, against the pull
+# request's existing diff alone (`gh pr diff`, no clone — the same "a quick
+# read, never the full ceremony" discipline `run_open_question_adjudication`
+# already applies), that a critical-tier approval is warranted, and — only
+# on `approve` — posts it as a real GitHub review under the Approver App's
+# own identity and logs the resulting `approver-verdict` event itself,
+# exactly the event `landing_retry_tier` already reads for every ordinary
+# round, so the caller needs nothing more than to re-read the pull request's
+# own live state afterwards.
+#
+# Prints `{"verdict": "approve"|"escalate", "evidence": "..."}` on stdout. A
+# missing `approver_model_critical`, a missing prompt file, an unreadable
+# credential, a stage failure, an unparseable verdict, a token that cannot
+# be minted to post the review, or a review write that reached this point
+# but did not land on GitHub (`approver_post_or_warn` always returns 0, so
+# this is read off `approver_last_post_ok` rather than its exit status) all
+# print `escalate` with an `evidence` string naming why; none of these logs
+# `approver-verdict` at all, since none of them resulted in anything this
+# pipeline can vouch for having been written to GitHub (the same "posted,
+# never merely decided" discipline requirement 8b's own
+# `approver_stage_posted` applies).
+run_protected_path_tier_reapproval() {
+  local slug="$1" pr_url="$2" number="$3" item="${4:-}"
+  local paths_json diff_text input prompt out rc=0 result parsed verdict evidence
+  local token
+
+  if [[ -z "$approver_model_critical" ]]; then
+    printf '{"verdict":"escalate","evidence":"no approver_model_critical is configured to re-engage this pull request"}'
+    return 0
+  fi
+  if [[ ! -f "$PROMPTS_DIR/approver-reapprove-protected-path-tier.md" ]]; then
+    printf '{"verdict":"escalate","evidence":"no prompts/approver-reapprove-protected-path-tier.md in this installation"}'
+    return 0
+  fi
+  if ! approver_token_credential_present "$slug"; then
+    printf '{"verdict":"escalate","evidence":"the Approver'"'"'s runtime credential is not present on this node"}'
+    return 0
+  fi
+
+  paths_json="$(landing_protected_paths_hit "$DEFAULTED_CONFIG" "$slug" "$number" 2>/dev/null \
+    | jq -R -s -c 'split("\n") | map(select(length > 0))' 2>/dev/null || true)"
+  [[ -n "$paths_json" ]] || paths_json='[]'
+  diff_text="$(gh pr diff "$number" -R "$slug" 2>/dev/null | head -c 60000 || true)"
+
+  input="$(jq -nc --arg r "$slug" --arg u "$pr_url" --argjson p "$paths_json" --arg d "$diff_text" \
+    '{repo: $r, pr_url: $u, protected_paths: $p, diff: $d}' 2>/dev/null || true)"
+  if [[ -z "$input" ]]; then
+    printf '{"verdict":"escalate","evidence":"could not build the reapproval input"}'
+    return 0
+  fi
+
+  prompt="$(stage_prompt_text "$PROMPTS_DIR" "$state_dir" approver-reapprove-protected-path-tier '{}')
+
+## Runtime input for this reapproval
+
+\`\`\`json
+$(jq . <<<"$input")
+\`\`\`
+"
+  out="$cycle_dir/approver-reapprove-protected-path-tier-${number}.out"
+  stage_budget_apply approver-reapprove-protected-path-tier "$slug" "$approver_model_critical" '{}' "$item"
+  # Same per-pull-request lane seed as `run_open_question_adjudication`
+  # (issue #2462): the pull request this reapproval is judging is also the
+  # lane draw's own seed suffix, so several same-cycle reapprovals draw
+  # independently rather than sharing the one cycle-and-stage seed every one
+  # of them would otherwise reuse.
+  if run_model_stage approver-reapprove-protected-path-tier "$(( stage_backstop_min * 60 ))" "$approver_model_critical" "$prompt" "$out" "$cycle_dir" "$(( stage_inactivity_min * 60 ))" "" "" "$pr_url"; then
+    rc=0
+  else
+    rc=$?
+  fi
+  log_event "stage-end" "$(jq -nc --argjson rc "$rc" --arg kr "$stage_kill_reason" \
+    --argjson m "$(metering_fields "$approver_model_critical" "$out" "$stage_gaps_json" "$stage_lane_json")" \
+    --arg r "$slug" --arg i "$item" \
+    '{stage: "approver-reapprove-protected-path-tier", exit_code: $rc} + (if $kr == "" then {} else {kill_reason: $kr} end) + $m
+     + (if $r == "" then {} else {repo: $r} end) + (if $i == "" then {} else {item: $i} end)')"
+  rework_stage_rerun_maybe "approver-reapprove-protected-path-tier" "$stage_kill_reason" "$slug" "$item" "$pr_url"
+  log_node_state_transition overhead
+
+  result="$(jq -r '.result // empty' "$out" 2>/dev/null || true)"
+  parsed="$(extract_json_result "$result" 2>/dev/null || true)"
+  if (( rc != 0 )) || [[ -z "$parsed" ]]; then
+    if (( rc == 124 )); then
+      printf '{"verdict":"escalate","evidence":"the reapproval engagement timed out"}'
+    else
+      printf '{"verdict":"escalate","evidence":"the reapproval engagement returned no parseable verdict"}'
+    fi
+    return 0
+  fi
+  verdict="$(jq -r '.verdict // ""' <<<"$parsed" 2>/dev/null || true)"
+  evidence="$(jq -r '.evidence // ""' <<<"$parsed" 2>/dev/null || true)"
+  if [[ "$verdict" != "approve" ]]; then
+    jq -nc --arg v "escalate" --arg e "$evidence" '{verdict: $v, evidence: $e}' 2>/dev/null \
+      || printf '{"verdict":"escalate","evidence":"could not encode the reapproval verdict"}'
+    return 0
+  fi
+
+  if ! token="$(approver_token_get "$slug")"; then
+    jq -nc --arg v "escalate" \
+      --arg e "the reapproval engagement approved, but the Approver's installation token could not be minted to post the review" \
+      '{verdict: $v, evidence: $e}' 2>/dev/null \
+      || printf '{"verdict":"escalate","evidence":"could not encode the reapproval verdict"}'
+    return 0
+  fi
+
+  approver_post_or_warn "$pr_url" APPROVE "${evidence:-(no evidence given)}" "$token"
+  if [[ "$approver_last_post_ok" != "1" ]]; then
+    jq -nc --arg v "escalate" \
+      --arg e "the reapproval engagement approved, but the review write did not reach GitHub" \
+      '{verdict: $v, evidence: $e}' 2>/dev/null \
+      || printf '{"verdict":"escalate","evidence":"could not encode the reapproval verdict"}'
+    return 0
+  fi
+
+  log_event "approver-verdict" "$(jq -nc --arg u "$pr_url" --arg r "$slug" --arg t "critical" \
+    --arg m "$approver_model_critical" --arg v "approve" --argjson s 0 --argjson adj true \
+    --argjson posted true --arg cr "protected-path-tier-reapproval" --arg i "$item" \
+    '{pr_url: $u, repo: $r, tier: $t, model: $m, verdict: $v, refuse_streak: $s, adjudication: $adj, posted: $posted}
+     + (if $cr == "" then {} else {critical_reason: $cr} end)
+     + (if $i == "" then {} else {item: $i} end)')"
+
+  jq -nc --arg v "approve" --arg e "$evidence" '{verdict: $v, evidence: $e}' 2>/dev/null \
+    || printf '{"verdict":"approve","evidence":""}'
+}
+
+# protected_path_tier_escalate SLUG PR_URL ITEM_REF PP_CTL
+# File (or find already-filed, via `create_escalation_issue`'s own dedup)
+# the escalation issue once a protected-path pull request's one reapproval
+# pass (above) has been spent without reaching a critical-tier approval —
+# issue #2514's own cap. Mirrors `open_question_escalate`'s shape (same
+# dedup, same label, same load-bearing assignee) without its two-rung
+# adjudication-ladder bookkeeping, since there is only one rung here: the
+# retry sweep can never clear this gate again on its own without a human
+# (or a fresh push, which starts the cap over under a new head), so
+# re-engaging indefinitely would be exactly the "confident, recurring
+# no-op" shape issue #2514 diagnosed in the first place.
+#
+# Called on every refusing round once the pass is spent, same as
+# `open_question_escalate` — idempotent via `create_escalation_issue`'s own
+# dedup while the issue stays open, and rate-limited by `escalation_recent_
+# close`/`escalation_refile_suppressed` once a human has closed it without
+# the underlying condition actually clearing.
+protected_path_tier_escalate() {
+  local repo="$1" pr_url="$2" item_ref="$3" pp_ctl="$4"
+  local body_file created recent_close prev_number prev_url prev_closed_at
+
+  recent_close="$(escalation_recent_close "$repo" "$item_ref")"
+  if [[ -n "$recent_close" ]]; then
+    IFS=$'\t' read -r prev_number prev_url prev_closed_at <<<"$recent_close"
+    if escalation_refile_suppressed "$prev_closed_at" "$(date -u +%s)" "$escalation_refile_after_hours"; then
+      log_event "warning" "$(jq -nc --arg u "$pr_url" --arg iu "$prev_url" \
+        --arg d "$pr_url's protected-path-tier reapproval was already escalated in $prev_url, closed $prev_closed_at — re-filing suppressed (escalation_refile_after_hours)" \
+        '{detail: $d, pr_url: $u, prior_issue_url: $iu}')"
+      return 0
+    fi
+  fi
+
+  body_file="$cycle_dir/protected-path-tier-escalation-${item_ref}.md"
+  {
+    printf '## What the autonomous pipeline needs from you\n\n'
+    # shellcheck disable=SC2016  # the backticks around agent-merges-all are literal markdown, not command substitution.
+    printf '%s touches a protected path at `agent-merges-all`, and a fresh critical-tier Approver engagement could not establish a standing critical-tier approval for it:\n\n' "$pr_url"
+    printf -- '- %s\n\n' "$pp_ctl"
+    printf 'This pull request'"'"'s one automatic reapproval pass for its current head commit has already run. Review %s yourself and either approve it at the critical tier or request changes — a fresh push also gives this pipeline a fresh pass.\n\n' "$pr_url"
+    cat <<PPT_ESC_BODY
+---
+Item: \`$item_ref\` · pull request $pr_url
+Raised by the landing-retry sweep (issue #2514) · cycle \`$cycle_id\` · node \`$node_name\`
+PPT_ESC_BODY
+  } > "$body_file"
+  if created="$(create_escalation_issue "$repo" "$item_ref" \
+        "$enabler_escalation_label" \
+        "Protected-path tier reapproval needed on $pr_url" \
+        "$body_file")" && [[ -n "$created" ]]; then
+    log_event "protected-path-tier-escalated" "$(jq -nc --arg u "$pr_url" \
+      --arg n "${created%%$'\t'*}" --arg iu "${created#*$'\t'}" \
+      '{pr_url: $u, issue_number: ($n | tonumber), issue_url: $iu}')"
+  else
+    log_event "warning" "$(jq -nc --arg u "$pr_url" \
+      --arg d "$pr_url's protected-path-tier reapproval pass was spent, and the escalation issue could not be filed — will retry next cycle" \
       '{detail: $d, pr_url: $u}')"
   fi
 }

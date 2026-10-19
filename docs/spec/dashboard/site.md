@@ -996,6 +996,7 @@ most recent per-stage verdict computed on *this* node, read from
 its stage, `docs/spec/monitor.md` M17) rather than
 recomputed, on `status.doctor`'s own precedent just above. One row per stage
 (`coordinator`, `approver`, `approver-adjudicate-open-question`,
+`approver-reapprove-protected-path-tier`,
 `enabler-adjudicate`, `enabler-decide`, `enabler`, `refiner`, `implementer`,
 `reviewer`, `monitor`),
 each carrying a verdict badge (`failing` red,

@@ -424,7 +424,7 @@ run_case() {
   : >"$tmp_dir/reached"; : >"$tmp_dir/eligible_args"; : >"$tmp_dir/standing_args"
   : >"$tmp_dir/mal_calls"; : >"$tmp_dir/budget_decide_args"; rm -f "$tmp_dir/armed_flag"
   rm -f "$tmp_dir/armed_by_repo_flag"
-  : >"$tmp_dir/pp_ctl_args"; : >"$tmp_dir/retry_tier_args"; : >"$tmp_dir/kill_state_calls"
+  : >"$tmp_dir/pp_ctl_args"; : >"$tmp_dir/retry_tier_args"; : >"$tmp_dir/pptr_resolve_args"; : >"$tmp_dir/kill_state_calls"
   : >"$tmp_dir/pp_hit_args"; : >"$tmp_dir/reconciliation_args"
   : >"$tmp_dir/oq_hit_args"; : >"$tmp_dir/oq_resolve_args"
   : >"$tmp_dir/pr_merge_state_calls"
@@ -458,6 +458,7 @@ armed_flag() { cat "$tmp_dir/armed_flag" 2>/dev/null || true; }
 armed_by_repo_flag() { cat "$tmp_dir/armed_by_repo_flag" 2>/dev/null || true; }
 pp_ctl_args() { cat "$tmp_dir/pp_ctl_args" 2>/dev/null || true; }
 retry_tier_args() { cat "$tmp_dir/retry_tier_args" 2>/dev/null || true; }
+pptr_resolve_args() { cat "$tmp_dir/pptr_resolve_args" 2>/dev/null || true; }
 kill_state_calls() { cat "$tmp_dir/kill_state_calls" 2>/dev/null || true; }
 reconciliation_args() { cat "$tmp_dir/reconciliation_args" 2>/dev/null || true; }
 notice_upserts() { cat "$tmp_dir/notice_upserts" 2>/dev/null || true; }
@@ -1049,7 +1050,7 @@ assert_eq "  ... and carries the item-lifecycle join key (requirement 49)" \
 run_case_direct() {
   : >"$tmp_dir/events"; : >"$tmp_dir/arms"; : >"$tmp_dir/budget_applied"
   : >"$tmp_dir/budget_decide_args"; rm -f "$tmp_dir/armed_flag"
-  : >"$tmp_dir/pp_ctl_args"; : >"$tmp_dir/retry_tier_args"
+  : >"$tmp_dir/pp_ctl_args"; : >"$tmp_dir/retry_tier_args"; : >"$tmp_dir/pptr_resolve_args"
   env -i PATH="$PATH" HOME="$HOME" \
     T="$tmp_dir" SCRIPT_DIR="$SCRIPT_DIR" PR_URL="$URL" COMPLEXITY="medium" \
     LEVEL="agent-merges-routine" ELIGIBLE="eligible" GATE_WORD="clean" GATE_REASON="" GATE_RC="0" \
@@ -1095,6 +1096,20 @@ run_case_direct() {
       }
       landing_protected_path_controls_ok() { printf "%s\n" "$*" >>"$T/pp_ctl_args"; printf "%s" "${PP_CTL:-ok}"; }
       landing_retry_tier() { printf "%s\n" "$*" >>"$T/retry_tier_args"; printf "%s" "${RETRY_TIER:-critical}"; }
+      # Issue #2514: stubbed exactly as _landing_open_question_resolve is
+      # above — this harness is about gate 4.5 own wiring (does it call the
+      # resolver only on retry, for the tier/no-timestamp sub-case, and does
+      # it reclassify whatever verdict comes back), never the resolver own
+      # internals (a real gh pr view, a real model engagement), which have
+      # no business running unstubbed inside a hermetic unit test. Defaults
+      # to handing PP_CTL back unchanged — the resolver ran and nothing
+      # about the pull request state actually changed — so every existing
+      # assertion below that never overrides PPTR_RESOLVE_RESULT keeps
+      # seeing the identical refusal it saw before this function existed.
+      _landing_protected_path_tier_resolve() {
+        printf "%s\n" "$*" >>"$T/pptr_resolve_args"
+        printf "%s" "${PPTR_RESOLVE_RESULT:-$4}"
+      }
       _handoff_blocking_reviewers() { return 0; }
       reconciliation_gate() { printf "%s\n" "$*" >>"$T/reconciliation_args"; printf "%s" "${RC_WORD:-clean}"; [[ "${RC_WORD:-clean}" != "dirty" ]]; }
       merge_budget_decide() {
@@ -1190,12 +1205,54 @@ assert_contains "  ... having resolved TIER via landing_retry_tier, from the fle
   "$URL" "$(retry_tier_args)"
 assert_contains "  ... and consulting gate 4.5 with the standing review's own submitted_at and commit_id" \
   "critical 2026-08-17T10:00:00Z sha-approved-head" "$(pp_ctl_args)"
+assert_eq "  ... and never calls the issue #2514 reapproval resolver — gate 4.5 already cleared" \
+  "" "$(pptr_resolve_args)"
 
 rc="$(run_case_direct LEVEL="agent-merges-all" PP_CTL="ineligible:touches a protected path at agent-merges-all but the approving engagement did not run at the critical tier (tier: standard)")"
 assert_eq "a retry attempt gate 4.5 refuses is never armed" "0" "$(count arms)"
 assert_contains "  ... naming the reason" "did not run at the critical tier" "$(refusal)"
 assert_eq "  ... and marks the landing-refused event retry:true" \
   "true" "$(jq -c '.retry' <<<"$(event_of landing-refused)")"
+
+# --- Issue #2514: a retry's protected-path-tier sub-case re-engages, never
+# just re-refuses on the same stale tier ------------------------------------
+# A retrying landing-retry sweep can never clear this sub-case by retrying
+# *landing* again — PP_TIER is fixed at whatever round wrote it. Gate 4.5
+# hands the sub-case to `_landing_protected_path_tier_resolve` instead
+# (stubbed above, exactly as `_landing_open_question_resolve` already is),
+# and dispatches on *whatever it returns*, never the stale PP_CTL that
+# triggered the call.
+
+rc="$(run_case_direct LEVEL="agent-merges-all" PP_CTL="ineligible:touches a protected path at agent-merges-all but the approving engagement did not run at the critical tier (tier: standard)")"
+assert_contains "the tier sub-case on a retry calls the issue #2514 resolver" \
+  "Poetic-Poems/agent-ops $URL 512 ineligible:touches a protected path at agent-merges-all but the approving engagement did not run at the critical tier (tier: standard)" \
+  "$(pptr_resolve_args)"
+
+rc="$(run_case_direct LEVEL="agent-merges-all" PP_CTL="ineligible:touches a protected path at agent-merges-all but no approval timestamp could be established for the cool-off")"
+assert_contains "  ... and the missing-timestamp sub-case calls it too" \
+  "no approval timestamp could be established" "$(pptr_resolve_args)"
+
+rc="$(run_case_direct LEVEL="agent-merges-all" PP_CTL="ineligible:protected-path cool-off has 3.2h remaining (approved 2026-08-17T10:00:00Z, landing_cool_off_hours=24)")"
+assert_eq "  ... but the cool-off sub-case never calls it — only a stale tier or timestamp can be fixed by re-engaging" \
+  "" "$(pptr_resolve_args)"
+assert_eq "  ... and still refuses under its own protected-path-cooloff class" \
+  "protected-path-cooloff" "$(refusal_class)"
+
+rc="$(run_case_direct LEVEL="agent-merges-all" \
+  PP_CTL="ineligible:touches a protected path at agent-merges-all but the approving engagement did not run at the critical tier (tier: standard)" \
+  PPTR_RESOLVE_RESULT="ok")"
+assert_eq "a resolver that reports ok arms normally — the fresh critical-tier approval cleared every control" \
+  "0" "$rc"
+assert_eq "  ... exactly once" "1" "$(count arms)"
+
+rc="$(run_case_direct LEVEL="agent-merges-all" \
+  PP_CTL="ineligible:touches a protected path at agent-merges-all but the approving engagement did not run at the critical tier (tier: standard)" \
+  PPTR_RESOLVE_RESULT="ineligible:protected-path cool-off has 24.0h remaining (approved 2026-10-18T08:00:00Z, landing_cool_off_hours=24)")"
+assert_eq "a resolver that reports a fresh cool-off still refuses, never arms" "0" "$(count arms)"
+assert_eq "  ... but reclassified under protected-path-cooloff, never the stale protected-path-tier class the call started from" \
+  "protected-path-cooloff" "$(refusal_class)"
+assert_contains "  ... naming the resolver's own fresh reason, never the stale one that triggered the call" \
+  "cool-off has 24.0h remaining" "$(refusal)"
 
 # --- The closed set of refusal classes (TD-PPagop-26082823, issue #1017) ----
 # `_LANDING_REFUSAL_CLASSES` (lib/landing.sh) is the closed set every literal
