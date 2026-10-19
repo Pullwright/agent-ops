@@ -1,6 +1,6 @@
 ## Components
 
-### Components — continued (part 3 of 3; 17e–24b)
+### Components — continued (part 3 of 3; 17e–24c)
 
 17e. <a id="impl-c-17e"></a>`scripts/roll-changelog.sh` implementing requirement 25e: with no
     marker present, renames the file's whole `[Unreleased]` section
@@ -1048,4 +1048,23 @@
    of fixture documents and runs the shipped script against it, so no
    scenario's break leaks into another's baseline. Acceptance check 52b.
    Must pass `shellcheck`.
+24c. <a id="impl-c-24c"></a>`scripts/spec.sh` and `.github/workflows/spec.yml` implementing
+   requirement 52c: unique, linkable requirement/acceptance-check/component
+   labels and a validated citation of one, across `docs/spec/implementation/`,
+   `docs/spec/review.md` and `docs/spec/monitor.md` (issue #2095). `show`
+   and `where` look a label up against the committed `docs/spec/index.json`
+   rather than the raw spec files; `check` re-derives every anchored label
+   from those files directly, fails on a duplicate within a (specification,
+   sequence) pair, and fails on a citation elsewhere in the repository that
+   dangles or names the wrong one of the nine (specification, sequence)
+   kinds, a known violation ratcheted away in `scripts/spec-check-ratchet.tsv`
+   only at the exact file and line it names; `index` renders the committed
+   index, or (`--check`) fails if it is stale against the specs' own current
+   anchors. Read-only except for `index` writing `docs/spec/index.json`
+   itself; bash and `jq` only, no network. `.github/workflows/spec.yml` runs
+   `check` and `index --check` on every pull request, on `merge_group` and
+   on push to `main`, ungated by `paths:`. `test/spec.test.sh` builds a
+   scratch repository carrying one fixture label of each of the nine kinds,
+   plus a wrong-kind and a dangling citation to break `check` against.
+   Acceptance check 52c. Must pass `shellcheck`.
 

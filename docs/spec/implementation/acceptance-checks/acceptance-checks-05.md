@@ -673,7 +673,7 @@
     `CHANGES_REQUESTED` verdict its `divergence` criterion `met`, naming the
     sample the zero is backed by. `lib/verdict-fate.sh` and
     `scripts/verdict-fate-report.sh` pass `shellcheck`.
-8x. <a id="impl-ac-8x"></a>**The classifier-escape audit recomputes independently, never trusts
+71. <a id="impl-ac-71"></a>**The classifier-escape audit recomputes independently, never trusts
     what it is auditing, and never confuses "cannot tell" with "clean"
     (requirement 8e, agent-ops#572).** `test/detect-classifier-escapes.test.sh`
     pins the reimplemented protected-path matching, protected-path resolution,
@@ -870,7 +870,7 @@
     `pw::type:tech-debt` issue (read, not executed — an Implementer or
     Reviewer engagement is a live model session this suite does not drive).
 
-71. <a id="impl-ac-71"></a>**One durable audit record justifies every autonomous landing, and a
+8x. <a id="impl-ac-8x"></a>**One durable audit record justifies every autonomous landing, and a
     landing with none is an anomaly, not a null (D18, agent-ops#578).**
     `_landing_stage_attempt` (lib/landing.sh) logs `landing-audit-record`
     once, in the same call that logs `landing-armed`, on every successful

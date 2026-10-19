@@ -857,10 +857,10 @@
       "line": 632,
       "title": "The Approver's verdict is paired with the pull request's eventual fate,"
     },
-    "IMPL AC 8x": {
+    "IMPL AC 71": {
       "kind": "impl-ac",
-      "label": "8x",
-      "anchor": "impl-ac-8x",
+      "label": "71",
+      "anchor": "impl-ac-71",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-05.md",
       "line": 676,
       "title": "The classifier-escape audit recomputes independently, never trusts"
@@ -889,10 +889,10 @@
       "line": 840,
       "title": "A stage files inline, on its own branch, and a stale pre-#874"
     },
-    "IMPL AC 71": {
+    "IMPL AC 8x": {
       "kind": "impl-ac",
-      "label": "71",
-      "anchor": "impl-ac-71",
+      "label": "8x",
+      "anchor": "impl-ac-8x",
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-05.md",
       "line": 873,
       "title": "One durable audit record justifies every autonomous landing, and a"
@@ -1016,6 +1016,14 @@
       "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-06.md",
       "line": 560,
       "title": "The documentation's links, map, size, citations and phrasing are"
+    },
+    "IMPL AC 52c": {
+      "kind": "impl-ac",
+      "label": "52c",
+      "anchor": "impl-ac-52c",
+      "file": "docs/spec/implementation/acceptance-checks/acceptance-checks-06.md",
+      "line": 594,
+      "title": "Every requirement, acceptance-check and component label is unique,"
     },
     "IMPL AC 1h": {
       "kind": "impl-ac",
@@ -1936,6 +1944,14 @@
       "file": "docs/spec/implementation/components/components-03.md",
       "line": 1014,
       "title": "`scripts/check-docs.sh`, `scripts/docs-size-ratchet.tsv`,"
+    },
+    "IMPL C 24c": {
+      "kind": "impl-c",
+      "label": "24c",
+      "anchor": "impl-c-24c",
+      "file": "docs/spec/implementation/components/components-03.md",
+      "line": 1051,
+      "title": "`scripts/spec.sh` and `.github/workflows/spec.yml` implementing"
     },
     "IMPL 40": {
       "kind": "impl",
@@ -3112,6 +3128,14 @@
       "file": "docs/spec/implementation/requirements/the-script-01.md",
       "line": 895,
       "title": "The documentation's links, map, size budget, section citations and"
+    },
+    "IMPL 52c": {
+      "kind": "impl",
+      "label": "52c",
+      "anchor": "impl-52c",
+      "file": "docs/spec/implementation/requirements/the-script-01.md",
+      "line": 948,
+      "title": "Every requirement, acceptance-check and component label across"
     },
     "IMPL 2": {
       "kind": "impl",

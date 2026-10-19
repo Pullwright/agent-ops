@@ -293,9 +293,9 @@ cmd_show() {
       echo "  $hit"
       found=1
     done < <(grep -rnE --include='*.md' --include='*.sh' --include='*.json' \
-      -- "$pattern" . \
       --exclude=CHANGELOG.md --exclude-dir=.git --exclude-dir=tech-debt \
-      --exclude-dir=reviews --exclude-dir=fixtures 2>/dev/null \
+      --exclude-dir=reviews --exclude-dir=fixtures \
+      -- "$pattern" . 2>/dev/null \
       | grep -v "^\./$file:$line:" )
   done
   if (( ! found )); then

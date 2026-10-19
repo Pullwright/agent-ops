@@ -1,6 +1,6 @@
 ## Acceptance checks
 
-### Acceptance checks — continued (part 6 of 7; items 51–52b)
+### Acceptance checks — continued (part 6 of 7; items 51–52c)
 
 51. <a id="impl-ac-51"></a>**The pager framework files once per firing key, closes once the fact
     clears, and never twice for the same transition (requirement 51).**
@@ -667,4 +667,24 @@
     own `#human-level` and `#no-op-cycle` links do, both of which sit over a
     heading that slugs to something else — while a fragment matching neither
     a heading nor an anchor still fails.
+52c. <a id="impl-ac-52c"></a>**Every requirement, acceptance-check and component label is unique,
+    and every citation of one resolves to the right kind (requirement 52c,
+    component 24c).** `test/spec.test.sh` builds a scratch repository
+    carrying one fixture label of each of the nine (specification, sequence)
+    kinds and asserts: `show` prints the qualified label, its `file#anchor`
+    and its own text, and surfaces a citing file, exiting non-zero on an
+    unknown label; `where` resolves every input form the convention accepts
+    — bare, the English phrasing, and the qualified form — for a
+    requirement, an acceptance check and a component in each of the
+    implementation, review and monitor specifications; `index` writes
+    `docs/spec/index.json` recording all ten labels (nine kinds plus one
+    deliberately reused number across kinds) with the right anchor, and
+    `index --check` passes when fresh and fails once the fixture spec
+    drifts from it; `check` fails against the fixture's own wrong-kind and
+    dangling citations, naming both, passes once a ratchet entry naming
+    each one's exact file and line is added, and still fails when a ratchet
+    entry names the wrong line — a ratchet cannot mask a violation it does
+    not exactly name — and fails on a duplicate label with no citation
+    involved at all, naming the duplicate. `./scripts/lint-shell.sh` is
+    clean.
 

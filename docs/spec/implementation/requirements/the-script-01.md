@@ -945,3 +945,40 @@
    pull request, on `merge_group` and on push to `main`, ungated by `paths:`
    — a renamed heading, a moved file or a new citation anywhere in the tree
    can break any of the five.
+52c. <a id="impl-52c"></a>**Every requirement, acceptance-check and component label across
+   `docs/spec/implementation/`, `docs/spec/review.md` and `docs/spec/monitor.md`
+   is unique within its own (specification, sequence) pair, and every
+   citation of one resolves to that same kind.** `scripts/spec.sh check`
+   (component 24c) scans every anchored `<a id="…">` label in those three
+   specifications and fails on a duplicate within the same pair. It then
+   scans every tracked file — except `CHANGELOG.md`, `docs/ROADMAP.md`,
+   `docs/STANDING-DECISIONS.md`, the frozen `tech-debt/` archive,
+   `docs/reviews/`, `test/fixtures/`, and `scripts/spec.sh`,
+   `test/spec.test.sh` and `scripts/spec-check-ratchet.tsv` themselves,
+   whose own labels are examples of the citation grammar rather than
+   citations of anything — for a requirement-label citation in either the
+   English phrasing (`requirement 17a`, `acceptance check 1g`,
+   `component 14b`) or the qualified form `docs/README.md`'s
+   "Requirement-label citations" section defines (`IMPL 17a`, `IMPL AC 1g`,
+   `IMPL C 14b`, `REV R5`, `REV AC 5`, `REV C 5`, `MON M4`, `MON AC 4`,
+   `MON C 4`), and fails on one that dangles or names the wrong one of the
+   three sequences — a label cited as a requirement that is really an
+   acceptance check, for instance. A dotted sub-label (`requirement 2.5`) is skipped
+   rather than mismatched against its truncated integer part (agent-ops#2521),
+   and a hyphenated sub-item label is truncated to its parent rather than
+   checked in full (agent-ops#2544) — both open gaps, not silent passes this
+   requirement claims to cover. A known violation may be carried in
+   `scripts/spec-check-ratchet.tsv` (`label`, `file`, `line`, `issue`),
+   matched only at the exact file and line it names, so a ratchet entry
+   cannot silently widen to mask a new violation of the same label
+   elsewhere; an entry is removed by hand once its citation is fixed.
+   `scripts/spec.sh show <label>` and `scripts/spec.sh where <label>`
+   resolve the same grammar for a human or an agent looking a label up
+   instead of opening and searching the spec file by hand, and
+   `scripts/spec.sh index` renders the committed `docs/spec/index.json`
+   every lookup and every `check` run reads from — `scripts/spec.sh index
+   --check` fails if the committed file is stale against the specs' own
+   current anchors. `.github/workflows/spec.yml` runs `scripts/spec.sh
+   check` and `scripts/spec.sh index --check` on every pull request, on
+   `merge_group` and on push to `main`, ungated by `paths:` — a citation can
+   be added or broken from any file in the repository. Acceptance check 52c.

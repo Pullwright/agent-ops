@@ -263,7 +263,7 @@ $(jq -r '[.comments[].body] | join("\n")' <<<"$candidate")"
     continue
   fi
 
-  # $candidate already carries its own whole issue thread (component 3d/
+  # $candidate already carries its own whole issue thread (component 3j/
   # #118) — unbounded past this call (requirement 4g, TD-PPagop-26081406) —
   # so it arrives on stdin, never in argv.
   entry="$(jq -c '{source: "issues", ref: (.number | tostring)} + .' \
