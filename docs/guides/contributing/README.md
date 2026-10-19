@@ -4,6 +4,42 @@ A guide for anyone contributing to this repository — humans working locally, o
 
 For a map of all documentation and how to find answers, see `docs/README.md`.
 
+<!-- toc:start -->
+- [The development loop for a container fleet](#the-development-loop-for-a-container-fleet)
+  - [Make a change](#make-a-change)
+  - [Run the tests](#run-the-tests)
+  - [Try the change on a real node](#try-the-change-on-a-real-node)
+  - [Take one node out](#take-one-node-out)
+  - [Know how a change propagates](#know-how-a-change-propagates)
+- [The as-built rule in practice](#the-as-built-rule-in-practice)
+  - [Which specification to edit](#which-specification-to-edit)
+  - [How to find the governing requirement](#how-to-find-the-governing-requirement)
+  - [How to add a requirement](#how-to-add-a-requirement)
+  - [How to bring in-flight work through a specification split](#how-to-bring-in-flight-work-through-a-specification-split)
+- [Generated and stamped regions](#generated-and-stamped-regions)
+  - [Configuration tables](#configuration-tables)
+  - [Table of contents](#table-of-contents)
+  - [Stamped regions](#stamped-regions)
+- [Documentation workflow](#documentation-workflow)
+  - [Where a new document goes](#where-a-new-document-goes)
+  - [Size budget and checks](#size-budget-and-checks)
+  - [Running the documentation benchmark](#running-the-documentation-benchmark)
+- [What a pull request must carry](#what-a-pull-request-must-carry)
+  - [Conventional Commits title](#conventional-commits-title)
+  - [Changelog section](#changelog-section)
+  - [Closing-keyword marker (for issue-sourced work)](#closing-keyword-marker-for-issue-sourced-work)
+  - [Tech-debt record (if resolving a tech-debt issue)](#tech-debt-record-if-resolving-a-tech-debt-issue)
+  - [Protected paths and cool-off](#protected-paths-and-cool-off)
+  - [Every commit in Conventional Commits format](#every-commit-in-conventional-commits-format)
+- [Branch workflow](#branch-workflow)
+- [Development environment setup](#development-environment-setup)
+  - [Running the tests](#running-the-tests)
+  - [Measuring the documentation](#measuring-the-documentation)
+  - [Trying a change on a real node before it merges](#trying-a-change-on-a-real-node-before-it-merges)
+  - [Taking one node out while the rest keep working](#taking-one-node-out-while-the-rest-keep-working)
+  - [How a change propagates — and what survives it](#how-a-change-propagates--and-what-survives-it)
+<!-- toc:end -->
+
 ## The development loop for a container fleet
 
 The image is the deployment, but it is never the workshop. Changes are made in an ordinary git checkout, land on `main` through a pull request, and reach the fleet as a freshly built image. Nothing is ever edited inside a running container — there is no useful way to: `/app` is baked in at build time, and the next image roll would discard the edit anyway.
@@ -86,7 +122,7 @@ Each pipeline component has a numbered, requirement-based specification that des
 - **Pipeline Monitor** (`monitor-cycle.sh`, `lib/monitor-digest.sh`, prompts): `docs/spec/monitor.md`
 - **Monitoring dashboard** (`scripts/publish-dashboard.sh`, `dashboard/index.html`): `docs/spec/dashboard/README.md` and its numbered requirements
 
-A change to behaviour, requirements, or outputs must update the matching spec first.
+A change to behaviour, requirements, or outputs must update the matching spec first. The specs outrank the operating prompts: `prompts/*.md` implement the specs' requirements, so bring the spec in line first, then the affected prompt(s).
 
 ### How to find the governing requirement
 
@@ -250,27 +286,11 @@ The file `AGENTS.md` is a protected path. A PR that touches it takes:
 - **Critical-tier review** — a more thorough human review than standard
 - **Cool-off** — a time gate of one or more days before it can merge, even after approval, to give the team time to notice and object
 
-Other protected paths (if any) are listed in `.github/workflows/` — check there for your change.
+The full list of protected path prefixes is the `merge_autonomy_protected_paths` key in `config.schema.json` (overridable per repository in `config.json`) — check there for your change.
 
 ### Every commit in Conventional Commits format
 
 Not just the PR title — every individual commit on your branch must also follow the format. CI checks all of them.
-
-<!-- toc:start -->
-- [The development loop for a container fleet](#the-development-loop-for-a-container-fleet)
-- [The as-built rule in practice](#the-as-built-rule-in-practice)
-- [Generated and stamped regions](#generated-and-stamped-regions)
-- [Documentation workflow](#documentation-workflow)
-- [What a pull request must carry](#what-a-pull-request-must-carry)
-- [Branch workflow](#branch-workflow)
-- [Development environment setup](#development-environment-setup)
-  - [Running the tests](#running-the-tests)
-  - [Measuring the documentation](#measuring-the-documentation)
-  - [Trying a change on a real node before it merges](#trying-a-change-on-a-real-node-before-it-merges)
-  - [Taking one node out while the rest keep working](#taking-one-node-out-while-the-rest-keep-working)
-  - [How a change propagates — and what survives it](#how-a-change-propagates--and-what-survives-it)
-<!-- toc:end -->
-
 
 ## Branch workflow
 
