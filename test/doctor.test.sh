@@ -222,6 +222,54 @@ exit 1
 STUB
 chmod +x "$stub_bin/claude"
 
+# --- The stubbed curl -------------------------------------------------------
+# scripts/doctor.sh's xAI api lane live probe (GET
+# https://api.x.ai/v1/api-key) is the only bare `curl` call this suite's
+# fixtures ever reach: the egress section's own curl calls are skipped
+# outright (AGENT_OPS_ROLE is unset in this suite, so that section's own
+# `skip` branch runs before any curl call), and every GitHub App token read
+# goes through its own *_CURL override (APPROVER_TOKEN_CURL,
+# AUTHOR_TOKEN_CURL), never PATH. STUB_XAI_API_KEY_FAIL=1 reproduces a
+# request that cannot be made at all, or that xAI answers with a non-2xx —
+# `curl -f` treats both the same way: a non-zero exit, no body.
+cat > "$stub_bin/curl" <<'STUB'
+#!/usr/bin/env bash
+set -u
+url=""
+for a in "$@"; do case "$a" in https://*) url="$a" ;; esac; done
+case "$url" in
+  https://api.x.ai/v1/api-key)
+    [[ "${STUB_XAI_API_KEY_FAIL:-0}" != "1" ]] || exit 1
+    # Not a brace-shaped default — see the gh stub's comment on why that
+    # breaks the substitution even when the variable is set.
+    body="${STUB_XAI_API_KEY_JSON:-}"
+    [[ -n "$body" ]] || body='{"api_key_blocked":false,"api_key_disabled":false,"team_blocked":false}'
+    printf '%s' "$body"
+    exit 0 ;;
+  *) exit 1 ;;
+esac
+STUB
+chmod +x "$stub_bin/curl"
+
+# --- The stubbed grok --------------------------------------------------------
+# `--version` (the "grok is installed" check) is the only call this suite
+# needs a real answer from. The stream-flushing probe further down is
+# exercised the same way the Claude section's own probe already is above:
+# a stub that falls through to `exit 1` on every other invocation makes the
+# backgrounded process finish before the liveness loop's first `kill -0`, so
+# the check reports its "produced nothing at all" skip rather than waiting
+# out the full 120s.
+cat > "$stub_bin/grok" <<'STUB'
+#!/usr/bin/env bash
+set -u
+if [[ "$1" == "--version" ]]; then
+  printf 'stub-grok 0.0.0\n'
+  exit 0
+fi
+exit 1
+STUB
+chmod +x "$stub_bin/grok"
+
 # --- A single-target-repo fixture, so the stub above only ever has to
 #     answer one `repos/<slug>` call per run. Review repos, state_repo and the
 #     Enabler are all switched off for the same reason — none of them is
@@ -270,6 +318,23 @@ jq --arg slug "$slug" '
   | .providers = {anthropic: {substrate: "claude-code"}}
 ' "$CONFIG" > "$base_config"
 
+# xAI fixtures (issue #2369): a provider named "grok_main" — deliberately not
+# "xai" — with substrate grok-build, so the PROVIDER_LANES lookup keyed by
+# the configured provider's own name is actually exercised rather than
+# merely matching the literal most tests would reach for.
+# xai_config carries no explicit `lanes`, so its assertions are about the
+# default lanes, the same convention base_config's own anthropic entry
+# follows above. xai_lanes_config layers explicit, distinct weight/enabled
+# values on top, to prove that lookup reads grok_main's own lanes rather
+# than falling back to those defaults.
+xai_config="$tmp/xai-config.json"
+jq '.providers.grok_main = {substrate: "grok-build"}' "$base_config" > "$xai_config"
+
+xai_lanes_config="$tmp/xai-lanes-config.json"
+jq '.providers.grok_main = {substrate: "grok-build",
+      lanes: {api: {weight: 7, enabled: true}, subscription: {weight: 2, enabled: false}}}' \
+  "$base_config" > "$xai_lanes_config"
+
 # run_doctor [VAR=value…] [-- extra doctor.sh args]
 # Never passes --offline: that path is test/config-schema.test.sh's, and
 # skipping the network-gated checks here would leave them untested. PATH is
@@ -284,7 +349,7 @@ run_doctor() {
     if [[ "$1" == "--" ]]; then shift; extra_args=( "$@" ); break; fi
     env_pairs+=( "$1" ); shift
   done
-  out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH -u ANTHROPIC_API_KEY -u ANTHROPIC_WORKSPACE_ID -u ANTHROPIC_CUSTOM_HEADERS -u NOTIFY_WEBHOOK_URL PATH="$stub_bin:$PATH" "${env_pairs[@]}" \
+  out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH -u ANTHROPIC_API_KEY -u ANTHROPIC_WORKSPACE_ID -u ANTHROPIC_CUSTOM_HEADERS -u NOTIFY_WEBHOOK_URL -u XAI_API_KEY -u GROK_HOME PATH="$stub_bin:$PATH" "${env_pairs[@]}" \
     bash "$DOCTOR" --config "${doctor_config:-$base_config}" "${extra_args[@]}" 2>&1)"
   rc=$?
 }
@@ -2248,6 +2313,145 @@ assert_contains "the existing sk-ant-api03-abc123 case is unchanged even with a 
 assert_not_contains "...and the workspace id is not mentioned for a key already scoped to a single workspace" \
   "ANTHROPIC_WORKSPACE_ID=" "$out"
 assert_eq "and doctor.sh exits 0" "0" "$rc"
+
+# --- xAI credentials: four states, each reported independently (issue
+#     #2139/#2349), and the move of the auth.json stat/parse below the
+#     --offline/--unattended gate (issue #2369) -----------------------------
+
+doctor_config="$xai_config"
+
+# Subscription only: GROK_HOME/auth.json present and parses, XAI_API_KEY unset.
+xai_home_sub="$tmp/grok-home-sub-only"
+mkdir -p "$xai_home_sub"
+printf '{"token":"stub"}' > "$xai_home_sub/auth.json"
+run_doctor GROK_HOME="$xai_home_sub"
+assert_contains "subscription only: the subscription lane reports present, enabled by default" \
+  "[ ok ] subscription lane: $xai_home_sub/auth.json is present — grok is authenticated via a device-code login (weight 0, enabled by default)" "$out"
+assert_contains "subscription only: the api lane reports absent, deferring to the login above" \
+  "[ ok ] api lane: XAI_API_KEY is absent (weight 1, enabled not by default) — grok runs on the subscription login above" "$out"
+assert_not_contains "subscription only: no failure" "[fail] api lane" "$out"
+assert_eq "and doctor.sh exits 0" "0" "$rc"
+
+# An unparsable auth.json warns, naming the file, but is still a present
+# subscription lane (the login may simply need repeating).
+xai_home_unparsed="$tmp/grok-home-sub-unparsed"
+mkdir -p "$xai_home_unparsed"
+printf 'not json' > "$xai_home_unparsed/auth.json"
+run_doctor GROK_HOME="$xai_home_unparsed"
+assert_contains "subscription present but unparsable: still reported present" \
+  "[ ok ] subscription lane: $xai_home_unparsed/auth.json is present" "$out"
+assert_contains "...and a warning names the file as not parsing" \
+  "[warn] $xai_home_unparsed/auth.json does not parse as JSON — the stored session may be truncated or corrupt; repeat the login (docker compose exec scheduler grok login --device-auth) if a stage fails to authenticate" "$out"
+assert_eq "a warning alone still exits 0" "0" "$rc"
+
+# Key only: XAI_API_KEY set and live, GROK_HOME/auth.json absent.
+xai_home_key="$tmp/grok-home-key-only"
+mkdir -p "$xai_home_key"
+run_doctor GROK_HOME="$xai_home_key" XAI_API_KEY='xai-abc123' \
+  STUB_XAI_API_KEY_JSON='{"api_key_blocked":false,"api_key_disabled":false,"team_blocked":false}'
+assert_contains "key only: the subscription lane reports absent, enabled not by default" \
+  "[ ok ] subscription lane: absent (weight 0, enabled not by default)" "$out"
+assert_contains "key only: the api lane reports shaped correctly" \
+  "[ ok ] api lane: XAI_API_KEY is set and shaped like an xAI key" "$out"
+assert_contains "key only: the live probe reports the key works, enabled by default (no subscription to defer to)" \
+  "[ ok ] api lane: XAI_API_KEY is live (GET /v1/api-key answered 200, every block/disable flag false) (weight 1, enabled by default)" "$out"
+assert_not_contains "key only: no failure" "[fail] api lane" "$out"
+assert_eq "and doctor.sh exits 0" "0" "$rc"
+
+# Both present: subscription and a live key together warn about precedence.
+xai_home_both="$tmp/grok-home-both"
+mkdir -p "$xai_home_both"
+printf '{"token":"stub"}' > "$xai_home_both/auth.json"
+run_doctor GROK_HOME="$xai_home_both" XAI_API_KEY='xai-abc123' \
+  STUB_XAI_API_KEY_JSON='{"api_key_blocked":false,"api_key_disabled":false,"team_blocked":false}'
+assert_contains "both present: the subscription lane reports present" \
+  "[ ok ] subscription lane: $xai_home_both/auth.json is present — grok is authenticated via a device-code login (weight 0, enabled by default)" "$out"
+assert_contains "both present: the live probe reports the key works, enabled not by default (the login takes precedence)" \
+  "[ ok ] api lane: XAI_API_KEY is live (GET /v1/api-key answered 200, every block/disable flag false) (weight 1, enabled not by default)" "$out"
+assert_contains "both present: a warning names the precedence rule" \
+  "[warn] both XAI_API_KEY and a subscription login ($xai_home_both/auth.json) are present — grok's own auth precedence prefers the stored session, so the key above is a fallback only unless \$GROK_HOME/config.toml pins [auth] preferred_method = \"api_key\" (the dual-lane adapter, agent-ops#2246)" "$out"
+assert_eq "a warning alone still exits 0" "0" "$rc"
+
+# Neither present: a failure naming both lanes.
+xai_home_neither="$tmp/grok-home-neither"
+mkdir -p "$xai_home_neither"
+run_doctor GROK_HOME="$xai_home_neither"
+assert_contains "neither present: the subscription lane reports absent" \
+  "[ ok ] subscription lane: absent (weight 0, enabled not by default)" "$out"
+assert_contains "neither present: the api lane fails, naming the auth file it looked for" \
+  "[fail] api lane: XAI_API_KEY is unset and no subscription login is present ($xai_home_neither/auth.json) — every Grok Build stage would fail at the first invocation" "$out"
+assert_eq "and doctor.sh exits 1" "1" "$rc"
+
+# A badly-shaped XAI_API_KEY warns rather than fails (the live probe below
+# still runs and reports independently, same as the Claude section's own key
+# shape check).
+xai_home_badkey="$tmp/grok-home-badkey"
+mkdir -p "$xai_home_badkey"
+run_doctor GROK_HOME="$xai_home_badkey" XAI_API_KEY='not-a-real-key'
+assert_contains "a badly-shaped XAI_API_KEY warns rather than fails" \
+  "[warn] api lane: XAI_API_KEY is set but is not shaped like an xAI key (expected an \"xai-\" prefix) — grok will still try to use it as given; check for a copy-paste error" "$out"
+assert_eq "a warning alone still exits 0" "0" "$rc"
+
+run_doctor GROK_HOME="$xai_home_badkey" XAI_API_KEY='xai-abc123' STUB_XAI_API_KEY_FAIL=1
+assert_contains "a key that does not answer the live probe fails, naming the endpoint" \
+  "[fail] api lane: XAI_API_KEY did not answer GET https://api.x.ai/v1/api-key — either the key is invalid (xAI answers 400) or the request could not be made at all" "$out"
+assert_eq "and doctor.sh exits 1" "1" "$rc"
+
+unset doctor_config
+
+# --- The PROVIDER_LANES lookup is keyed by the configured provider's own
+#     name (grok_main here), never the literal "xai" (issue #2369) ---------
+doctor_config="$xai_lanes_config"
+xai_home_lanes="$tmp/grok-home-lanes"
+mkdir -p "$xai_home_lanes"
+run_doctor GROK_HOME="$xai_home_lanes" XAI_API_KEY='xai-abc123' \
+  STUB_XAI_API_KEY_JSON='{"api_key_blocked":false,"api_key_disabled":false,"team_blocked":false}'
+assert_contains "a non-\"xai\"-named provider's own subscription lane weight/enabled are read, not the default" \
+  "[ ok ] subscription lane: absent (weight 2, enabled no)" "$out"
+assert_contains "...and its own api lane weight/enabled, not the default" \
+  "[ ok ] api lane: XAI_API_KEY is live (GET /v1/api-key answered 200, every block/disable flag false) (weight 7, enabled yes)" "$out"
+assert_eq "and doctor.sh exits 0" "0" "$rc"
+unset doctor_config
+
+# --- --offline and --unattended skip the whole section, and --unattended
+#     never stats or parses auth.json (issue #2369: it used to, ahead of
+#     this very gate) -------------------------------------------------------
+
+xai_home_gated="$tmp/grok-home-gated"
+mkdir -p "$xai_home_gated"
+printf '{"token":"stub"}' > "$xai_home_gated/auth.json"
+
+out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH -u ANTHROPIC_API_KEY -u ANTHROPIC_WORKSPACE_ID -u ANTHROPIC_CUSTOM_HEADERS -u NOTIFY_WEBHOOK_URL -u XAI_API_KEY PATH="$stub_bin:$PATH" GROK_HOME="$xai_home_gated" \
+  bash "$DOCTOR" --config "$xai_config" --offline 2>&1)"
+assert_contains "--offline skips xAI credentials" "[skip] xAI credentials (--offline)" "$out"
+
+# The jq wrapper below logs every call made with auth.json's own path as an
+# argument, then execs the real jq unconditionally — a plain observation,
+# never a behaviour change — so "never touching the file" is asserted
+# rather than assumed, the same way rank_curl's log above proves a read was
+# never spent. auth.json is present and non-empty (the setup above), so
+# `-s` would pass and the parse would run if the gate above it were ever
+# bypassed, exactly the ordering bug this issue fixes.
+xai_jq_log="$tmp/xai-jq-calls.log"
+: > "$xai_jq_log"
+xai_jq_bin="$tmp/xai-jq-bin"
+mkdir -p "$xai_jq_bin"
+real_jq="$(command -v jq)"
+cat > "$xai_jq_bin/jq" <<STUB
+#!/usr/bin/env bash
+for a in "\$@"; do
+  case "\$a" in */auth.json) printf '%s\n' "\$@" >> "$xai_jq_log" ;; esac
+done
+exec "$real_jq" "\$@"
+STUB
+chmod +x "$xai_jq_bin/jq"
+
+out="$(env -u PULLWRIGHT_APPROVER_APP_ID -u PULLWRIGHT_APPROVER_INSTALLATION_ID -u PULLWRIGHT_APPROVER_INSTALLATION_IDS -u PULLWRIGHT_APPROVER_PRIVATE_KEY_PATH -u PULLWRIGHT_AUTHOR_APP_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_ID -u PULLWRIGHT_AUTHOR_INSTALLATION_IDS -u PULLWRIGHT_AUTHOR_PRIVATE_KEY_PATH -u ANTHROPIC_API_KEY -u ANTHROPIC_WORKSPACE_ID -u ANTHROPIC_CUSTOM_HEADERS -u NOTIFY_WEBHOOK_URL -u XAI_API_KEY PATH="$xai_jq_bin:$stub_bin:$PATH" GROK_HOME="$xai_home_gated" \
+  bash "$DOCTOR" --config "$xai_config" --unattended 2>&1)"
+assert_contains "--unattended skips xAI credentials, for its own reason" \
+  "[skip] xAI credentials (--unattended; a scheduled pass must not read a credential)" "$out"
+assert_eq "...and never stats or parses auth.json to get there" "0" \
+  "$(wc -l < "$xai_jq_log" | tr -d ' ')"
 
 # --- The rendered crontab ---------------------------------------------------
 
