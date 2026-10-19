@@ -1,6 +1,6 @@
 ## Requirements
 
-### The Script — requirements, continued (part 3 of 10; 2.3a–2.4: The fleet switch…)
+### The Script — requirements, continued (part 3 of 11; 2.3a–2.4: The fleet switch…)
 
 2.3a. <a id="impl-2-3a"></a>**The fleet switch.** The same switch, one level up: `fleet/disabled.json`
    on the state repository's main, holding the same record shape and read

@@ -1,6 +1,6 @@
 ## Requirements
 
-### The Script — requirements, continued (part 5 of 10; 2.5a–3a: Compose reconciliation…)
+### The Script — requirements, continued (part 5 of 11; 2.5a–3a: Compose reconciliation…)
 
 2.5a. <a id="impl-2-5a"></a>**Compose reconciliation.** A node's `compose.yaml` lives on that node's
    host, and no image roll can replace it: watchtower recreates a container

@@ -1,6 +1,6 @@
 ## Requirements
 
-### The Script — requirements, continued (part 6 of 10; 3c–3v: Review-feedback pre-fetch (requirement 3c)…)
+### The Script — requirements, continued (part 6 of 11; 3c–3v: Review-feedback pre-fetch (requirement 3c)…)
 
 3c. <a id="impl-3c"></a>**Review-feedback pre-fetch (requirement 3c).** For each configured repo
    whose `sources` include `review-feedback` (requirement 48: freshly for the one repository this cycle picks, replayed from this node's expensive-gather cache for the rest), run

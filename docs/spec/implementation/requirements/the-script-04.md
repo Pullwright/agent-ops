@@ -1,6 +1,6 @@
 ## Requirements
 
-### The Script — requirements, continued (part 4 of 10; 2.5–2.5: The fleet's shared memory…)
+### The Script — requirements, continued (part 4 of 11; 2.5–2.5: The fleet's shared memory…)
 
 2.5. <a id="impl-2-5"></a>**The fleet's shared memory.** The pipelines' memory — `state_dir` — is
    published between nodes through the private repository named by
