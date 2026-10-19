@@ -28,6 +28,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$SCRIPT_DIR/lib/void-guard.sh"
 # shellcheck source=lib/refinement.sh
 . "$SCRIPT_DIR/lib/refinement.sh"
+# shellcheck source=lib/cycle-state.sh
+. "$SCRIPT_DIR/lib/cycle-state.sh"
 
 failures=0
 
@@ -121,6 +123,43 @@ assert_eq "an empty repos array yields no candidates" "[]" \
   "$(refiner_candidate_items '[]' "$policy" "$refinements" "$blocked" "$void" "$claimed")"
 assert_eq "unreadable inputs yield an empty array rather than failing" "[]" \
   "$(refiner_candidate_items 'garbage' 'garbage' 'garbage' 'garbage' 'garbage' 'garbage')"
+
+# --- agent-ops#2548: refiner_candidate_items sees a renamed repo's block and
+# --- refinement correctly, through blocked_items/refinements_map alone ---
+#
+# `is_blocked`/`refinement_for` compare `blocked`/`refinements` directly
+# against `$repos[].slug` — always the repo's current, canonical configured
+# slug — with no `canon_repo` of their own. This end-to-end case logs both
+# events under the repo's *old* slug and never mentions the old slug to
+# `refiner_candidate_items` at all, proving the join works purely because
+# `blocked_items`/`refinements_map` canonicalize their own output, not
+# because this function was changed.
+rename_log="$(mktemp)"
+aliases='{"o/old":"o/r"}'
+cat > "$rename_log" <<'EOF'
+{"ts":"2026-10-01T08:00:00Z","event":"attempt-failed","stage":"implementer","kind":"needs-refinement","repo":"o/old","item":"60","reason":"unclear","unblock_condition":"say which behaviour is wanted"}
+{"ts":"2026-10-01T08:00:00Z","event":"item-refined","repo":"o/old","item":"61","spec":"the refined spec"}
+EOF
+rename_blocked="$(blocked_items "$rename_log" "$aliases")"
+rename_void="$(void_items "$rename_log" "$aliases")"
+rename_refinements="$(refinements_map "$rename_log" "$aliases")"
+rename_repos='[
+  {"slug": "o/r",
+   "issues": [
+     {"source": "issues", "ref": "60", "title": "blocked under the old slug"},
+     {"source": "issues", "ref": "61", "title": "refined under the old slug"},
+     {"source": "issues", "ref": "62", "title": "plain, unblocked, unrefined"}
+   ]}
+]'
+rename_candidates="$(refiner_candidate_items "$rename_repos" "$policy" \
+  "$rename_refinements" "$rename_blocked" "$rename_void" '[]' '{}')"
+assert_eq "a needs-refinement block logged under the repo's old slug still excludes the item" "no" \
+  "$(jq -r 'any(.[]; .item == "60") | if . then "yes" else "no" end' <<<"$rename_candidates")"
+assert_eq "a refinement logged under the repo's old slug is still recognized as refining the item" "no" \
+  "$(jq -r 'any(.[]; .item == "61") | if . then "yes" else "no" end' <<<"$rename_candidates")"
+assert_eq "...while an unrelated, unblocked, unrefined item is still a candidate" "yes" \
+  "$(jq -r 'any(.[]; .item == "62") | if . then "yes" else "no" end' <<<"$rename_candidates")"
+rm -f "$rename_log"
 
 # --- The argv cap (requirement 4g, TD-PPagop-26081406) ---
 #

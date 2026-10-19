@@ -1104,6 +1104,27 @@ assert_eq "with no aliases map, a re-block under the old slug does not shadow th
 assert_eq "resolved through the alias map, the re-block does shadow it — restoring the thrash guard across the rename" \
   "null" \
   "$(refinements_map "$rename_log" "$aliases" | jq -r '."o/r"."1199" // "null"')"
+
+# agent-ops#2548: the map's own outer key must itself be the current slug,
+# not the raw slug the item-refined event was logged under — the two tests
+# above only prove the void/shadow *match* resolves the rename; this proves
+# the entry a caller later looks up is actually reachable at the canonical
+# key. `refiner_candidate_items`'s `refinement_for` (lib/refinement.sh)
+# indexes this map on exactly the repo it is handed, `$repos[].slug`, which
+# is always the current, canonical slug — never the raw one an event may
+# have been logged under before a rename.
+cat > "$rename_log" <<'EOF'
+{"ts":"2026-09-06T09:00:00Z","cycle":"c1","event":"item-refined","repo":"o/old","item":"1200","spec":"the refined spec"}
+EOF
+assert_eq "with no aliases map, the entry is keyed under the raw repo the event was logged under" \
+  "the refined spec" \
+  "$(refinements_map "$rename_log" | jq -r '."o/old"."1200".spec // "null"')"
+assert_eq "resolved through the alias map, the entry is keyed under the repo's current slug instead" \
+  "the refined spec" \
+  "$(refinements_map "$rename_log" "$aliases" | jq -r '."o/r"."1200".spec // "null"')"
+assert_eq "...and is no longer reachable under the raw slug it was logged under" \
+  "null" \
+  "$(refinements_map "$rename_log" "$aliases" | jq -r '."o/old"."1200" // "null"')"
 rm -f "$rename_log"
 
 # --- TD-PPagop-26082819, the refinements_map seam: a phantom is not a refinement --
@@ -1206,6 +1227,23 @@ printf '%s' '{"ts":"2026-08-14T10:00:00Z","event":"decision-tak' >> "$dec_log"
 assert_eq "a malformed trailing line does not lose the map" "a later decision still" \
   "$(decisions_map "$dec_log" | jq -r '."o/r"."310".decision')"
 rm -f "$dec_log"
+
+# agent-ops#2548: decisions_map's own outer key must be the current slug too,
+# the same reason refinements_map's is above — `decision_for`
+# (lib/refinement.sh's `refiner_candidate_items`) indexes this map on the
+# repo's canonical configured slug, never the raw one a decision-taken event
+# may have been logged under before a rename.
+rename_dec_log="$(mktemp)"
+cat > "$rename_dec_log" <<'EOF'
+{"ts":"2026-08-10T10:00:00Z","cycle":"c1","event":"decision-taken","repo":"o/old","item":"TD26081099","decision":"the renamed repo's decision","rationale":"because"}
+EOF
+assert_eq "with no aliases map, the decision is keyed under the raw repo it was logged under" \
+  "the renamed repo's decision" \
+  "$(decisions_map "$rename_dec_log" | jq -r '."o/old".TD26081099.decision // "null"')"
+assert_eq "resolved through the alias map, the decision is keyed under the repo's current slug instead" \
+  "the renamed repo's decision" \
+  "$(decisions_map "$rename_dec_log" "$aliases" | jq -r '."o/r".TD26081099.decision // "null"')"
+rm -f "$rename_dec_log"
 
 # --- Requirement 35d: the per-engagement cap -------------------------------------
 # The asymmetry is the point: the backlog of items silently skipped before this

@@ -233,6 +233,34 @@ EOF
 assert_eq "a malformed aliases argument degrades to no resolution, not a crash" \
   "46" "$(blocked_items "$log" 'not json' | jq -r '.[].item')"
 
+# --- blocked_items/void_items: the emitted entry's own .repo is canonicalized
+# --- too, not just the set/clear match (agent-ops#2548) ---
+#
+# #2359 resolved both sides of the set/clear match through the alias map, but
+# left the emitted entry carrying the *raw* repo the originating event was
+# logged under. A cross-extract join — `refiner_candidate_items`'s
+# `is_blocked`/`is_void`, `exclude_blocked_or_void_items` — compares that
+# field directly against a repo's current configured slug with no
+# `canon_repo` of its own, so an entry still carrying the old slug could
+# never be found that way, even though `blocked_items`/`void_items`
+# themselves already resolved the rename correctly for their own set/clear
+# match.
+cat > "$log" <<'EOF'
+{"ts":"2026-07-16T08:00:00Z","event":"attempt-failed","stage":"implementer","repo":"o/old","item":"54","detail":"needs repo secrets"}
+EOF
+assert_eq "with no aliases map, the block's own repo is carried verbatim" \
+  "o/old" "$(blocked_items "$log" | jq -r '.[0].repo')"
+assert_eq "resolved through the alias map, the block's own repo reads as the current slug" \
+  "o/r" "$(blocked_items "$log" "$aliases" | jq -r '.[0].repo')"
+
+cat > "$log" <<'EOF'
+{"ts":"2026-07-16T08:00:00Z","event":"item-void","stage":"enabler","repo":"o/old","item":"55","detail":"already done"}
+EOF
+assert_eq "with no aliases map, the void's own repo is carried verbatim" \
+  "o/old" "$(void_items "$log" | jq -r '.[0].repo')"
+assert_eq "resolved through the alias map, the void's own repo reads as the current slug" \
+  "o/r" "$(void_items "$log" "$aliases" | jq -r '.[0].repo')"
+
 # --- blocked_items: recheck_clean_ts (requirement 18a, TD-PPagop-26072801) ---
 
 cat > "$log" <<'EOF'
