@@ -946,29 +946,37 @@
     stale here becomes a permanent misstatement in `main`'s own history, not
     merely a stale comment on GitHub.
 26d. **Re-verifies the PR description against the diff when a
-    `review-feedback`, `landing-refusals` or `dequeued` round changes the
-    approach (issues #2496, #2512).** The same staleness risk requirement 26c
-    describes for `merge-conflicts` applies to these three sources too: each
-    pushes new commits to a PR whose body — and any `td-record` block it
-    carries — was written before the round. Where answering the round is a
-    direct implementation of what was asked, or a reply contesting it with no
-    code change, or a merge-group fix that touches no described behaviour,
-    with no change to the approach the body already describes, the existing
-    body still describes the diff and needs no edit. Where it forces a
-    materially different approach than the body — and any `td-record`
-    block — already states (for `dequeued`, the diagnosed merge-group failure
-    forcing a different fix than the body described), the Implementer
-    re-reads the current body (`gh pr view --json body`), compares it against
-    the resulting diff, and edits the body (`gh pr edit --body-file`) so the
+    `review-feedback`, `landing-refusals`, `dequeued` or `abandoned-drafts`
+    round changes the approach (issues #2496, #2512, #2546).** The same
+    staleness risk requirement 26c describes for `merge-conflicts` applies to
+    these four sources too: each pushes new commits to a PR whose body — and
+    any `td-record` block it carries — was written before the round. Where
+    answering the round is a direct implementation of what was asked, or a
+    reply contesting it with no code change, or a merge-group fix or a
+    finishing round that touches no described behaviour, with no change to
+    the approach the body already describes, the existing body still
+    describes the diff and needs no edit. Where it forces a materially
+    different approach than the body — and any `td-record` block — already
+    states (for `dequeued`, the diagnosed merge-group failure forcing a
+    different fix than the body described), the Implementer re-reads the
+    current body (`gh pr view --json body`), compares it against the
+    resulting diff, and edits the body (`gh pr edit --body-file`) so the
     prose, and any `td-record` block's `summary`/`resolution` fields, still
     describe what the diff actually does — before reporting `"status":
     "complete"`. This is a correction of a claim the body already makes,
-    never an occasion to add one: the original round already closed the loop
-    on the originating record (requirement 25), and this edit does not add a
-    fresh closing keyword or `td-record` block of its own. Because `main`
-    squash-merges with `squash_merge_commit_message: PR_BODY` (requirement
-    25), a body left stale here becomes a permanent misstatement in `main`'s
-    own history, not merely a stale comment on GitHub.
+    never an occasion to add one: for `review-feedback`, `landing-refusals`
+    and `dequeued`, the original round already closed the loop on the
+    originating record (requirement 25), and this edit does not add a fresh
+    closing keyword or `td-record` block of its own. `abandoned-drafts` is
+    the one source among these four where the same finishing round also
+    closes the loop itself (requirement 25) rather than inheriting it from an
+    earlier round — the obligation still binds only the body's prose/summary
+    and the `td-record` block's `summary`/`resolution` fields describing the
+    approach, never the closing keyword or the block's existence, which this
+    same round adds exactly as it always has. Because `main` squash-merges
+    with `squash_merge_commit_message: PR_BODY` (requirement 25), a body left
+    stale here becomes a permanent misstatement in `main`'s own history, not
+    merely a stale comment on GitHub.
 27. Ends with a single JSON object as its entire final message:
     `{"status": "complete", "pr_url": …, "branch": …, "complexity": "low" | "medium" | "high", "labels": […, optional], "notes": …}`,
     `{"status": "blocked", "reason": …, "unblock_condition": …}`, or

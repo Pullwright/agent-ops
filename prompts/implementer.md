@@ -497,6 +497,18 @@ usual fields, and `branch` names the existing branch. Your job is to *finish* it
   steps 3–4). Keep it scoped to what the draft set out to do; if the draft's whole
   approach turns out to be wrong, that is grounds for `blocked` (explain on the
   PR), not a rewrite into a different change.
+- **Re-verify the body against the diff before you finish (issue #2546).**
+  Compare the draft's current body (`gh pr view --json body`) — written by the
+  abandoned cycle as its original plan — and any `td-record` block it carries,
+  against the diff finishing it actually produced. Where finishing just
+  completed what the body already describes, this is re-verify, and fix only
+  if wrong, not a mandate to touch the body every time. But where finishing it
+  forced a materially different approach than the original draft's plan, edit
+  the body (`gh pr edit --body-file`) so the prose, and any `td-record`
+  block's `summary`/`resolution` fields, describe what the diff now actually
+  does. This binds only the body's prose/summary describing the approach — the
+  closing keyword and the `td-record` block's existence are this same round's
+  own doing (the "close the loop" bullet above), not something this edit adds.
 - **Leave the PR a draft.** Unlike `review-feedback`, finishing an abandoned draft
   rejoins the *normal* flow: the Reviewer stage picks up your completed branch and
   flips the draft to ready. Do not flip it yourself.
