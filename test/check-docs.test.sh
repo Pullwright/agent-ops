@@ -244,6 +244,21 @@ anchor_bad_out="$(run_script "$anchor_repo" 2>&1)"
 assert_fails "explicit-anchor fixture, a fragment matching neither heading nor anchor" "$anchor_bad_out" $? "has no matching heading"
 rm -rf "$anchor_repo"
 
+# --- Check 1, H1 fragment: GitHub anchors a level-1 `#` heading exactly as
+#     it does a `##`, so a fragment targeting one (`docs/spec/implementation
+#     /README.md#fixture-spec`, naming its own `# Fixture spec` title) must
+#     resolve, not fail with "no matching heading or anchor" (issue #2164). ---
+h1_repo="$(new_repo)"
+cat >> "$h1_repo/README.md" <<'MD'
+
+See [the fixture spec's own title](docs/spec/implementation/README.md#fixture-spec) too.
+MD
+h1_out="$(run_script "$h1_repo" 2>&1)"
+h1_rc=$?
+assert_eq "H1-fragment fixture: --check exits 0" "0" "$h1_rc"
+assert_contains "H1-fragment fixture: links and anchors ok" "$h1_out" "links and anchors: ok"
+rm -rf "$h1_repo"
+
 # --- Check 2: the map — an in-scope document that exists on disk but is
 #     never listed. ---
 map_repo="$(new_repo)"
@@ -452,6 +467,42 @@ sed -i 's/"Fixture Heading"/"Nonexistent Heading"/' "$cite_repo/docs/README.md"
 cite_out="$(run_script "$cite_repo" 2>&1)"
 assert_fails "check 4 fixture" "$cite_out" $? "but that heading does not exist in"
 rm -rf "$cite_repo"
+
+# --- Check 4, adjacent-echo false positive: flatten_paragraphs has no shell
+#     syntax awareness, so two adjacent `echo "...file.md,"` / `echo "..."`
+#     statements in a .sh file flatten into one paragraph where the `,`
+#     right after `.md` sits immediately against the closing quote of the
+#     first string — extract_citation_spans then reads everything up to the
+#     next quote (the literal word "echo", from the shell keyword itself) as
+#     if it were the cited heading. scripts/check-brace-default-trap.sh hit
+#     this by accident (issue #2164). The fix is to keep the `.md` citation
+#     and what follows it inside one continuous quoted string, with no
+#     echo-call boundary — and no literal quote — immediately after the
+#     `.md`+separator token, as the second fixture below does. ---
+adjacency_bad_repo="$(new_repo)"
+cat > "$adjacency_bad_repo/scripts/fixture-adjacent-echo.sh" <<'SH'
+#!/usr/bin/env bash
+echo "see docs/spec/implementation/README.md,"
+echo "the Fixture Heading row for details."
+SH
+(cd "$adjacency_bad_repo" && git add -A)
+adjacency_bad_out="$(run_script "$adjacency_bad_repo" 2>&1)"
+assert_fails "adjacent-echo fixture, two separate echo statements" "$adjacency_bad_out" $? \
+  'cites docs/spec/implementation/README.md § " echo " but that heading does not exist in'
+rm -rf "$adjacency_bad_repo"
+
+adjacency_fixed_repo="$(new_repo)"
+cat > "$adjacency_fixed_repo/scripts/fixture-adjacent-echo.sh" <<'SH'
+#!/usr/bin/env bash
+echo "see docs/spec/implementation/README.md, the Fixture Heading row for details."
+SH
+(cd "$adjacency_fixed_repo" && git add -A)
+adjacency_fixed_out="$(run_script "$adjacency_fixed_repo" 2>&1)"
+adjacency_fixed_rc=$?
+assert_eq "adjacent-echo fixture, merged into one echo statement: --check exits 0" "0" "$adjacency_fixed_rc"
+assert_contains "adjacent-echo fixture, merged into one echo statement: section citations ok" \
+  "$adjacency_fixed_out" "section citations: ok"
+rm -rf "$adjacency_fixed_repo"
 
 # --- Check 5: as-built phrasing ratchet — historical phrasing with no
 #     ratchet entry. ---
