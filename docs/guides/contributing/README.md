@@ -126,7 +126,7 @@ A change to behaviour, requirements, or outputs must update the matching spec fi
 
 ### How to find the governing requirement
 
-The specifications are split into readable files by `#2094`. Each has numbered requirements and acceptance checks. When making a change:
+The specifications are split across multiple readable files, each with numbered requirements and acceptance checks. When making a change:
 
 1. Read the spec's `README.md` for an overview and directory structure
 2. Use `grep` to find the requirement that governs the behaviour you are changing
@@ -187,15 +187,15 @@ Three `<!-- agent-info:start fragment=... -->` regions in `AGENTS.md` carry text
 - **A reference document (configuration, glossary):** `docs/reference/`
 - **A concept/explanation:** `docs/concepts/`
 
-Each has a size budget to keep documents readable. See "Measuring the documentation" below.
+Each has a size budget to keep documents readable. See `docs/README.md` § "Size budget".
 
 ### Size budget and checks
 
-The documentation size budget is enforced by `scripts/check-docs.sh`. The budget is per-file within category, not total:
-
-- Guides: 2000 lines each
-- Specifications: 1500 lines each, with numbered requirements and acceptance checks split into separate files when one grows too large
-- Reference and concepts: 1500 lines each
+The documentation size budget is enforced by `scripts/check-docs.sh`. It is a
+single uniform 100,000 hand-written bytes per document (`SIZE_BUDGET_BYTES`
+in that script; see `docs/README.md` § "Size budget" for the full rule,
+including which regions are generated and so left out of the count, and the
+exemptions) — there is no line count and no per-category tier.
 
 Run `scripts/check-docs.sh` before pushing. CI runs the same check on every PR.
 
@@ -277,16 +277,26 @@ resolution: "<what this PR did about it>"
 
 All five fields are required, in this order. The squash commit carries this record into `main`'s history as a permanent entry.
 
-If the issue's body says "Filed as `tech-debt/<id>.md`, <date>.", that file exists in the frozen register. This PR must also flip its frontmatter to `status: resolved`, with `resolved:` and `ref:` fields filled in, as `TECH-DEBT.md` describes.
+If the issue's body says "Filed as `tech-debt/<id>.md`, <date>.", that file exists in the frozen register. This PR must also flip its frontmatter to a terminal status — `status: resolved`, or `status: not-debt` if the resolution concludes the item was never debt — with `resolved:` and `ref:` fields filled in, as `TECH-DEBT.md` describes.
 
 ### Protected paths and cool-off
 
-The file `AGENTS.md` is a protected path. A PR that touches it takes:
+`AGENTS.md` is a protected path in this repository. Below `merge_autonomy:
+agent-merges-all`, a protected-path pull request is simply ineligible for
+autonomous landing. At `agent-merges-all` — the level this repository's own
+`config.json` entry sets — a protected-path hit is instead deferred to two
+compensating controls, neither of which is a human review:
 
-- **Critical-tier review** — a more thorough human review than standard
-- **Cool-off** — a time gate of one or more days before it can merge, even after approval, to give the team time to notice and object
+- **Critical-tier review** — a model verdict at the critical Approver tier,
+  posted by the Pullwright Approver App, forced regardless of the PR's
+  `complexity:*` grade.
+- **Cool-off** — a wait, measured from that standing approval, before the
+  arming step may land it; a fresh push restarts the wait. This repository's
+  own `config.json` entry sets it to 6 hours (`landing_cool_off_hours`); the
+  fleet-wide default, which applies to a repository with no override, is 24
+  hours, and `0` disables the wait.
 
-The full list of protected path prefixes is the `merge_autonomy_protected_paths` key in `config.schema.json` (overridable per repository in `config.json`) — check there for your change.
+The full list of protected path prefixes is the `merge_autonomy_protected_paths` key in `config.schema.json` — a fleet-wide default of nine paths, scoped to agent-ops's own gate code. This repository's `config.json` entry overrides that default with its own list, which is where `AGENTS.md` (along with `CLAUDE.md`, `scripts/*`, `.claude/*` and `docs/STANDING-DECISIONS.md`) is actually added — check that entry, not the schema default, for the list that governs this repository.
 
 ### Every commit in Conventional Commits format
 
