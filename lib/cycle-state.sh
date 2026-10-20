@@ -164,7 +164,7 @@ LATEST_UNRESOLVED_JQ='
 '
 
 # _latest_unresolved SET_EVENT CLEAR_EVENT [LOG_FILE] [ALIASES_JSON]
-# ALIASES_JSON (issue #2064, extended by #2359, extended by #2393) is `config_repo_slug_aliases`'s
+# ALIASES_JSON (issue #2064, extended by #2359) is `config_repo_slug_aliases`'s
 # own map, resolved through `LATEST_UNRESOLVED_JQ`'s `canon_repo` before the
 # set/clear match runs; defaults to `{}`, under which every repo resolves to
 # itself and behaviour is unchanged. An argument that is not a JSON object is
@@ -246,7 +246,7 @@ BLOCKED_ITEMS_JQ='
 # compare a blocked GitHub issue's `updated_at` against alongside the block's
 # own `ts`. Reads LOG_FILE, or stdin if it is omitted or "-".
 #
-# ALIASES_JSON (issue #2064, extended by #2359, extended by #2393) is threaded into
+# ALIASES_JSON (issue #2064, extended by #2359) is threaded into
 # `BLOCKED_ITEMS_JQ`'s own `latest_unresolved`, so an `unblocked` logged under
 # a repo's current slug clears an `attempt-failed` recorded under a slug in
 # that repo's `previous_slugs`, and vice versa. Defaults to `{}` (every repo
@@ -273,7 +273,7 @@ VOID_ITEMS_EVENTS="item-void unvoided"
 # Co-Ordinator must skip and must never clear. Reads LOG_FILE, or stdin if it is
 # omitted or "-".
 #
-# ALIASES_JSON (issue #2064, extended by #2359, extended by #2393) is threaded straight into
+# ALIASES_JSON (issue #2064, extended by #2359) is threaded straight into
 # `_latest_unresolved`, so an `unvoided` logged under a repo's current slug
 # clears an `item-void` recorded under a slug in that repo's `previous_slugs`,
 # and vice versa. Defaults to `{}` (every repo resolves to itself).
@@ -721,7 +721,7 @@ OPEN_BLOCKED_JQ='
 # unchanged, `recheck_clean_ts` and all. Reads LOG_FILE, or stdin if it is
 # omitted or "-".
 #
-# ALIASES_JSON (issue #2064, extended by #2359, extended by #2393) is threaded into
+# ALIASES_JSON (issue #2064, extended by #2359) is threaded into
 # `OPEN_BLOCKED_JQ`'s own nested `latest_unresolved`/`BLOCKED_ITEMS_JQ` calls,
 # on the same terms `blocked_items`/`void_items` document. Defaults to `{}`
 # (every repo resolves to itself).
@@ -824,7 +824,7 @@ REFINEMENTS_MAP_JQ='
 # every item that has one and is not void. Reads LOG_FILE, or stdin if it is
 # omitted or "-".
 #
-# ALIASES_JSON (issue #2064, extended by #2359, extended by #2393) is `config_repo_slug_aliases`'s
+# ALIASES_JSON (issue #2064, extended by #2359) is `config_repo_slug_aliases`'s
 # own map, threaded into `REFINEMENTS_MAP_JQ`'s `canon_repo`. Defaults to `{}`
 # (every repo resolves to itself); an argument that is not a JSON object is
 # treated the same way.
@@ -939,7 +939,7 @@ DECISIONS_MAP_JQ='
 # omitted or "-". Always succeeds, printing {} on a missing, empty or
 # unreadable log, on the same terms `refinements_map` does.
 #
-# ALIASES_JSON (issue #2064, extended by #2359, extended by #2393) is `config_repo_slug_aliases`'
+# ALIASES_JSON (issue #2064, extended by #2359) is `config_repo_slug_aliases`'
 # own map, threaded into `DECISIONS_MAP_JQ`'s `canon_repo`. Defaults to `{}`
 # (every repo resolves to itself); an argument that is not a JSON object is
 # treated the same way.
@@ -1209,7 +1209,7 @@ ENABLER_ELIGIBLE_JQ='
 # when omitted or not a number — the two ages independently only when a
 # caller actually configures them apart (requirement 35a).
 #
-# ALIASES_JSON (issue #2064, extended by #2359, extended by #2393) maps a repo slug this pipeline
+# ALIASES_JSON (issue #2064, extended by #2359) maps a repo slug this pipeline
 # used to be configured under to the slug it is configured under now
 # (`config_repo_slug_aliases`). A block's `repo` is resolved through it before
 # the OPEN_ISSUES_JSON lookup above, since that map is always built from the
