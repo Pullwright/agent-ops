@@ -140,9 +140,9 @@
     anything run at all" rather than `--required`'s narrower subset — up to
     `CI_TRIGGER_POLL_ATTEMPTS` x `CI_TRIGGER_POLL_INTERVAL` seconds (default
     10 x 30s = 5 minutes, the conservative end of a threshold the issue left
-    open), and where every poll across that whole window reports a
-    confirmed-empty list — never an unreadable one, which stays `unknown`
-    and is never treated as "confirmed empty" — pushes one empty commit
+    open), and where that whole window closes on a confirmed-empty list —
+    never on an unreadable one, which stays `unknown` and is never treated
+    as "confirmed empty" — pushes one empty commit
     (`chore(ci): nudge a missed CI trigger for <sha>`) onto the pull
     request's own branch, naming the head commit it nudged. Never `gh run
     rerun`/`workflow_dispatch`: there is no run id to rerun when the count is
@@ -159,6 +159,15 @@
     unreadable `gh` call reads `unknown`, never "confirmed empty" or "not
     queued", the same fail-closed convention `review_gate_required_checks`
     and `merge_queue_probe` already apply to their own unreadable reads.
+    Telling those two apart is a stderr test, not a stdout one: a head with
+    no check runs at all does not make `gh pr checks --json` print `[]`, it
+    makes it *fail* — nothing on stdout, `no checks reported on the
+    '<branch>' branch` on stderr — the identical shape a 502 or a rate limit
+    arrives in, so the diagnosis is the only thing that separates the state
+    this requirement exists to detect from a read that could not be made.
+    This is the same two-shapes-one-reason test
+    `review_gate_required_checks` already applies to its own `--required`
+    read.
     None of this blocks the handoff — `ci_trigger_ensure`'s `unknown`/
     `queued`/`nudge-failed` outcomes only log a warning, `nudged` logs its
     own `ci-trigger-nudged` event, and the Reviewer stage runs regardless.

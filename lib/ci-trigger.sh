@@ -54,9 +54,9 @@
 # _ci_trigger_check_runs_state SLUG NUMBER
 # Exit 0 when `gh pr checks NUMBER -R SLUG --json name,bucket` reports at
 # least one check run at all (any bucket) against NUMBER's current head;
-# exit 1 when it reports a confirmed-empty array; exit 2 when the read
-# itself could not be trusted — a non-array answer, or `gh` failing
-# outright (a 502, a transient auth failure, a rate limit). Unfiltered —
+# exit 1 when it reports a confirmed-empty list; exit 2 when the read
+# itself could not be trusted — `gh` failing for any other reason (a 502, a
+# transient auth failure, a rate limit). Unfiltered —
 # `--required` would narrow to the required subset, and this asks "did
 # anything run at all", the same distinction `review_gate_required_checks`
 # draws between a required check that is absent and one that ran and
@@ -64,12 +64,31 @@
 # all. A caller must never treat exit 2 as exit 1 — an unreadable list is
 # "could not tell", never "confirmed empty", so it must not count toward
 # the nudge threshold below.
+#
+# The confirmed-empty answer does not arrive as `[]`. A pull request whose
+# head carries no check runs at all makes `gh pr checks --json` *fail* —
+# exit 1, nothing on stdout, `no checks reported on the '<branch>' branch`
+# on stderr — which is the whole state this file exists to detect, so
+# stderr, not the shape of stdout, is what separates it from a read that
+# genuinely could not be made. This is the same two-shapes-one-reason test
+# `review_gate_required_checks` already applies to its own `--required`
+# read, and for the same reason; the `[]` branch below is kept because it
+# would mean exactly the same thing, not because any `gh` on record emits
+# it. A `mktemp` that fails leaves the diagnosis empty, which lands on exit
+# 2 — the conservative answer, and the honest one, since nothing was read.
 _ci_trigger_check_runs_state() {
-  local slug="$1" number="$2" gh_bin="${CI_TRIGGER_GH:-gh}" raw
-  raw="$("$gh_bin" pr checks "$number" -R "$slug" --json name,bucket 2>/dev/null)" || return 2
-  jq -e 'type == "array"' <<<"$raw" >/dev/null 2>&1 || return 2
-  jq -e 'length > 0' <<<"$raw" >/dev/null 2>&1 && return 0
-  return 1
+  local slug="$1" number="$2" gh_bin="${CI_TRIGGER_GH:-gh}" raw err_file diagnosis
+  err_file="$(mktemp 2>/dev/null || printf '/dev/null')"
+  raw="$("$gh_bin" pr checks "$number" -R "$slug" --json name,bucket 2>"$err_file")" || true
+  diagnosis="$(cat "$err_file" 2>/dev/null || true)"
+  [[ "$err_file" == /dev/null ]] || rm -f "$err_file"
+
+  if jq -e 'type == "array"' <<<"$raw" >/dev/null 2>&1; then
+    jq -e 'length > 0' <<<"$raw" >/dev/null 2>&1 && return 0
+    return 1
+  fi
+  [[ "$diagnosis" == *"no checks reported on the"* ]] && return 1
+  return 2
 }
 
 # _ci_trigger_nudge_push SLUG BRANCH HEAD_SHA

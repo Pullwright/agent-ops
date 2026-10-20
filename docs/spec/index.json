@@ -3846,7 +3846,7 @@
       "label": "69b",
       "anchor": "impl-69b",
       "file": "docs/spec/implementation/requirements/the-script-10.md",
-      "line": 166,
+      "line": 175,
       "title": "Never computed in the Implementer's own clone."
     },
     "IMPL 8d": {

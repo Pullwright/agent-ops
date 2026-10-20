@@ -1161,9 +1161,11 @@
    pending or failing run still counts as "something ran" — up to
    `CI_TRIGGER_POLL_ATTEMPTS` x `CI_TRIGGER_POLL_INTERVAL` seconds (default
    10 x 30s), printing `triggered` the moment any poll reports at least one
-   check run. Where the whole window reports only a confirmed-empty list
-   (never an unreadable one, which prints `unknown` instead and pushes
-   nothing), it reads the pull request's current head commit, confirms via
+   check run. Where that window closes on a confirmed-empty list — which
+   `gh` reports by failing with `no checks reported on the '<branch>'
+   branch` on stderr rather than by printing `[]`, so the diagnosis is what
+   separates it from an unreadable read, which prints `unknown` instead and
+   pushes nothing — it reads the pull request's current head commit, confirms via
    `lib/merge-queue.sh`'s `merge_queue_probe` that it is not currently
    queued in a merge group, and pushes one empty commit — in a disposable
    repository it fetches by branch name alone and discards, never the

@@ -762,9 +762,14 @@
    the whole window nudges exactly once, naming the head commit it nudged;
    a nudge push that itself fails is reported `nudge-failed` and is not
    retried within the same call; a window ending on an unreadable read is
-   `unknown`, never nudged, even when an earlier poll in the same window was
-   also unreadable and a later one came back confirmed-empty (the window's
-   own last read decides it); a pull request currently in a merge group is
+   `unknown` and never nudged, while one whose own last read came back
+   confirmed-empty after an earlier unreadable poll still nudges (the
+   window's own last read decides it); a `gh pr checks` that fails without
+   the `no checks reported on the` diagnosis is `unknown`, never
+   confirmed-empty, even though its exit status and empty stdout are
+   identical to the real zero-check-runs shape the stub reproduces — and
+   the empty array no `gh` on record emits is read as confirmed-empty too;
+   a pull request currently in a merge group is
    left alone; and an unreadable merge-queue probe is `unknown`, never
    nudged — fail-closed, not "assume not queued". The same file also proves
    `review_gate_required_checks`'s own behaviour is unchanged by this
