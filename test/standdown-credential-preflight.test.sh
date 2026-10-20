@@ -364,6 +364,22 @@ assert_eq "…and nothing is escalated for it here" \
 assert_eq "…and nothing is stood down for it here" \
   "no" "$(if grep -q '^stand-down' "$evt_file_t"; then echo yes; else echo no; fi)"
 
+# --- a transient 5xx on the container's very first cycle leaves the state
+# file's verdict empty (inconclusive), not "ok" — the gate must treat that as
+# still due a probe on the next cycle of the same container, rather than
+# reading an empty verdict as settled and closing itself for the container's
+# whole remaining lifetime (agent-ops#2554). ---
+
+probe_count_t2="$tmp_dir/transient-probe-count-2"; : > "$probe_count_t2"
+esc_file_t2="$tmp_dir/transient-escalations-2"; : > "$esc_file_t2"
+evt_file_t2b="$tmp_dir/transient-events-2b"
+block_rc_t2b="$(run_block transient-503 boot-1 0 "$state_dir_t" "$probe_count_t2" "$esc_file_t2" "$evt_file_t2b")"
+assert_eq "a second cycle after a first-cycle transient reply exits 0" "0" "$block_rc_t2b"
+assert_eq "…and leaves the state file's verdict empty (inconclusive), not ok" \
+  "" "$(state_verdict "$state_dir_t")"
+assert_eq "…and re-probes rather than treating the empty verdict as settled" \
+  "1" "$(wc -l < "$probe_count_t2" | tr -d ' ')"
+
 # --- a node that was refused, then on its next probe only gets a transient
 # 5xx: the transient reply says nothing about the credential, so retirement
 # must not fire on the strength of it — only a genuine clean reply clears a

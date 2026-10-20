@@ -407,9 +407,15 @@ fi
 # Gated, unlike 2.0b: a free `/rate_limit` call costs nothing, but this one
 # spends a fraction of a cent, so it runs only on the first cycle after this
 # container started, or on any cycle whose own last probe here was itself
-# refused — so a healthy node pays this once per container lifetime, and an
-# unhealthy one keeps being caught cheaply rather than crash-looping again
-# until its next restart. "First cycle after this container started" is read
+# refused or inconclusive — a `transient` 5xx/overload, or a crashed or
+# timed-out launch, neither of which answered anything about the
+# credential — so a healthy node pays this once per container lifetime, and
+# an unhealthy or merely-not-yet-answered one keeps being caught cheaply
+# rather than crash-looping again until its next restart (agent-ops#2554: an
+# inconclusive first probe after a container start used to close this gate
+# for the container's whole remaining lifetime, since the state write below
+# already recorded that case as an empty, not `"refused"`, verdict).
+# "First cycle after this container started" is read
 # from `_updater_health_own_started` (lib/updater-health.sh) — this
 # container's own PID 1 start time, the same reading
 # `deploy/docker/watchtower-pre-update.sh`'s own roll ledger uses, and for
@@ -434,6 +440,7 @@ if ! (( DRY_RUN )); then
   if [[ ! -s "$cred_state_file" \
         || -z "$cred_container_started" \
         || "$cred_prev_started" != "$cred_container_started" \
+        || -z "$cred_prev_verdict" \
         || "$cred_prev_verdict" == "refused" ]]; then
     cred_probe_out="$cycle_dir/credential-probe.out"
     cred_probe_rc=0

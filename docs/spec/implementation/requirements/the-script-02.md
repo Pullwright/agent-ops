@@ -748,9 +748,12 @@
       Gated, unlike 0b: a free `/rate_limit` call costs nothing, but this
       probe spends a fraction of a cent, so it runs only on the first cycle
       after this container started, or on any cycle whose own last probe
-      here was itself refused — a healthy node therefore pays this once per
-      container lifetime, and an unhealthy one keeps being caught cheaply
-      rather than crash-looping again until its next restart. "First cycle
+      here was itself refused or inconclusive (the state file's own verdict
+      left empty — a `transient` 5xx/overload, or a crashed or timed-out
+      launch, neither of which answered anything about the credential) — a
+      healthy node therefore pays this once per container lifetime, and an
+      unhealthy or not-yet-answered one keeps being caught cheaply rather
+      than crash-looping again until its next restart. "First cycle
       after this container started" is read from `_updater_health_own_
       started` (`lib/updater-health.sh`) — this container's own PID 1 start
       time, the same reading `deploy/docker/watchtower-pre-update.sh`'s own
@@ -782,7 +785,9 @@
       probe falls through to the rest of the cycle and is not probed again
       on a second cycle of the same healthy container, but is probed again
       after a fresh container start; a `transient` verdict stands nothing
-      down; a `refused` verdict whose own token names something other than
+      down, and is probed again on the next cycle of the same container
+      rather than being read as a settled, healthy verdict; a `refused`
+      verdict whose own token names something other than
       the credential (`credit_exhausted`, which
       `lib/substrate-grok-build.sh` synthesises for a billing lapse) stands
       nothing down either, and files nothing; a container-start reading that
