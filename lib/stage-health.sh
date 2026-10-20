@@ -92,13 +92,26 @@
 #     than taking the stage's globally-last `attempt-failed` matters here:
 #     without it, a failure from a streak a later success already cleared
 #     could still be shown as the *current* one's detail.
+#   - last_failure: the `ts` of the current streak's most recent failing
+#     `stage-end` — equivalently, the last `stage-end` at all, since a
+#     success resets the streak to 0 — while `consecutive_failures` > 0, else
+#     null (issue #2547). This is what lets a `failing` verdict age out below
+#     without touching `last_success`, which can be null, or far older than
+#     the streak, while a stage is genuinely failing right now.
 #   - verdict: one of:
 #       `idle`    — this stage has no `stage-end` record at all on this node
 #                   (never invoked, e.g. a Reviewer this node has never had
-#                   a pull request to review), or its last success is older
-#                   than IDLE_AFTER_HOURS and nothing has failed since — a
-#                   stage that simply has had no work is not unhealthy.
-#       `failing` — consecutive_failures has reached THRESHOLD.
+#                   a pull request to review); or its last success is older
+#                   than IDLE_AFTER_HOURS and nothing has failed since; or
+#                   `consecutive_failures` has reached THRESHOLD but
+#                   `last_failure` is older than IDLE_AFTER_HOURS and nothing
+#                   has run since (issue #2547) — a stage that simply has had
+#                   no work, or had a streak that itself has gone stale, is
+#                   not unhealthy right now, whatever it was when the streak
+#                   was live.
+#       `failing` — consecutive_failures has reached THRESHOLD and
+#                   last_failure is within IDLE_AFTER_HOURS (or null — a
+#                   torn/missing timestamp never ages a live streak out).
 #       `ok`      — anything else, including a stage that has failed once or
 #                   twice but not yet reached THRESHOLD: "one failure does
 #                   not trigger a verdict — normal transients exist" is the
@@ -186,6 +199,7 @@ stage_health_verdicts() {
               | (($e.cycle // $e.monitor // "") | if . == "" then null else . end) as $end_cycle
               | ($fails | map(select($end_cycle != null and (.cycle // .monitor) == $end_cycle)) | last) as $match
               | {
+                  ts: $e.ts,
                   exit_code: ($e.exit_code // 1),
                   is_failure: (($e.exit_code // 1) != 0 or ($match != null)),
                   detail: ($match.detail // null)
@@ -195,9 +209,14 @@ stage_health_verdicts() {
           | ($ends | map(select((.exit_code // 1) == 0)) | last | .ts) as $last_success
           | (if $last_success == null then null
              else (try ($last_success | fromdateiso8601) catch null) end) as $last_success_epoch
+          | (if $consecutive > 0 then ($attempts | last | .ts) else null end) as $last_failure
+          | (if $last_failure == null then null
+             else (try ($last_failure | fromdateiso8601) catch null) end) as $last_failure_epoch
           | (
               if ($ends | length) == 0 then "idle"
-              elif $consecutive >= $threshold then "failing"
+              elif $consecutive >= $threshold then
+                (if $last_failure_epoch != null and ($now - $last_failure_epoch) > $idle_secs
+                 then "idle" else "failing" end)
               elif $consecutive == 0 and $last_success_epoch != null
                    and ($now - $last_success_epoch) > $idle_secs then "idle"
               else "ok"
@@ -206,6 +225,7 @@ stage_health_verdicts() {
           | {
               last_success: $last_success,
               consecutive_failures: $consecutive,
+              last_failure: $last_failure,
               last_detail: (
                 if $consecutive > 0 then
                   ($attempts | last | (.detail // "stage-end exited \(.exit_code)"))

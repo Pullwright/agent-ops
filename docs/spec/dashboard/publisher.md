@@ -346,7 +346,8 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                                     //   GitHub states no expiry for)
              stage_health:{computed_at,threshold,idle_after_hours,
                            stages:{<stage>:{verdict,consecutive_failures,
-                                             last_success,last_detail}}} | null,
+                                             last_success,last_failure,
+                                             last_detail}}} | null,
                                     //   THIS node's most recent per-stage
                                     //   verdict (agent-ops#662), read from
                                     //   state_dir/.stage-health.json —
@@ -355,7 +356,8 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                                     //   completed
              review_stage_health:{computed_at,threshold,idle_after_hours,
                            stages:{<stage>:{verdict,consecutive_failures,
-                                             last_success,last_detail}}} | null },
+                                             last_success,last_failure,
+                                             last_detail}}} | null },
                                     //   THIS node's most recent
                                     //   `project-reviewer` verdict
                                     //   (agent-ops#996), the review
@@ -726,7 +728,8 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                                             //   null if unreported
                                           stages: { "<stage>": {
                                             verdict, consecutive_failures,
-                                            last_success, last_detail } } },
+                                            last_success, last_failure,
+                                            last_detail } } },
                          review_stage_health: { computed_at, threshold,
                                           idle_after_hours,           // the
                                             //   node's own `project-reviewer`
@@ -739,7 +742,8 @@ The `DASHBOARD_DATA` shape (the contract the page renders):
                                             //   for self; null if unreported
                                           stages: { "<stage>": {
                                             verdict, consecutive_failures,
-                                            last_success, last_detail } } },
+                                            last_success, last_failure,
+                                            last_detail } } },
                          mirror: { status, count, last_rebuilt_at },  // the
                                             //   node's own state-sync
                                             //   mirror-rebuild verdict

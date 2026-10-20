@@ -478,7 +478,10 @@ _monitor_digest_render_at() {
         + ( [ .nodes[]
               | "| `\(.node)` | \(.self) | \(.ts // "—") | \(.role // "—") "
                 + "| \( [ ((.stage_health.stages // {}) | to_entries[] | select(.value.verdict == "failing")
-                         | "\(.key) (\(.value.last_detail // "no detail" | esc))") ]
+                         | "\(.key) (\(.value.last_detail // "no detail" | esc)"
+                           + ((.value.last_failure // null) as $lf
+                              | if $lf != null then ", last failed \($lf)" else "" end)
+                           + ")") ]
                        | if length == 0 then "—" else join(", ") end ) "
                 + "| \(.updater.verdict // "—") | \(.compose.verdict // "—") | \(.image.verdict // "—") "
                 + "| \(.mirror.verdict // "—") | \(.doctor.verdict // "—") "

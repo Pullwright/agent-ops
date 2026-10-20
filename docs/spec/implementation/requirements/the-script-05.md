@@ -1099,11 +1099,20 @@
    where a non-zero exit has no matching `attempt-failed`, a synthesized
    `"stage-end exited <exit_code>"` — cleared to null the moment a success
    resets the streak, so an already-cleared streak's failure never leaks in
-   as the current one's detail), and a
-   `verdict` — `idle` (no `stage-end` record at all, i.e. never invoked, or a
-   last success older than `IDLE_AFTER_HOURS` with nothing failed since —
-   a stage with no recent work is not unhealthy), `failing`
-   (`consecutive_failures` has reached `THRESHOLD`), or `ok` (anything else,
+   as the current one's detail), `last_failure` (the current streak's own
+   most recent failing `stage-end`'s own `ts`, or null once
+   `consecutive_failures` resets to 0 — independent of `last_success`, which
+   can be null, or far older than a live streak, while a stage is genuinely
+   failing right now; issue #2547), and a
+   `verdict` — `idle` (no `stage-end` record at all, i.e. never invoked; or a
+   last success older than `IDLE_AFTER_HOURS` with nothing failed since; or
+   `consecutive_failures` has reached `THRESHOLD` but `last_failure` is
+   itself older than `IDLE_AFTER_HOURS` with nothing run since — a stage with
+   no recent work, or whose failing streak has itself gone stale, is not
+   unhealthy right now, whatever it was when the streak was live), `failing`
+   (`consecutive_failures` has reached `THRESHOLD` and `last_failure` is
+   within `IDLE_AFTER_HOURS`, or null — a torn/missing timestamp never ages a
+   live streak out), or `ok` (anything else,
    including one or two failures below `THRESHOLD` — "one failure does not
    trigger a verdict" is the issue's own acceptance bar). `THRESHOLD` (3) and
    `IDLE_AFTER_HOURS` (48) are ordinary function parameters shared by every
